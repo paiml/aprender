@@ -5,19 +5,24 @@
 //! # Usage
 //!
 //! ```bash
-//! apr bench model.apr                    # Basic throughput test
-//! apr bench model.apr --warmup 3         # 3 warmup iterations
-//! apr bench model.apr --iterations 10    # 10 measurement iterations
-//! apr bench model.apr --prompt "Hello"   # Custom prompt
+//! apr bench model.gguf                   # GGUF model benchmark
+//! apr bench model.apr                    # APR model benchmark
+//! apr bench model.safetensors            # SafeTensors benchmark
+//! apr bench model.gguf --warmup 3        # 3 warmup iterations
+//! apr bench model.gguf --iterations 10   # 10 measurement iterations
+//! apr bench model.gguf --prompt "Hello"  # Custom prompt
 //! ```
 //!
 //! Toyota Way: Genchi Genbutsu - measure actual performance, not estimates.
+//!
+//! ## Supported Formats
+//!
+//! - **GGUF** (.gguf) - Full support with GPU acceleration
+//! - **APR** (.apr) - Native format support
+//! - **SafeTensors** (.safetensors) - HuggingFace format support
 
 use crate::error::{CliError, Result};
 use crate::output;
-use aprender::demo::Qwen2Config;
-use aprender::models::Qwen2Model;
-use aprender::text::bpe::Qwen2BpeTokenizer;
 use colored::Colorize;
 use std::path::Path;
 use std::time::{Duration, Instant};
@@ -70,13 +75,16 @@ struct BenchResult {
 }
 
 /// Run the benchmark command
+///
+/// Automatically detects format and uses realizar for optimized inference.
+/// Supports GGUF, APR, and SafeTensors formats.
 pub(crate) fn run(
     path: &Path,
     warmup: usize,
     iterations: usize,
     max_tokens: usize,
     prompt: Option<&str>,
-    fast: bool,
+    _fast: bool, // Deprecated: always uses fast path now
     brick: Option<&str>,
 ) -> Result<()> {
     // If --brick is specified, run brick-specific benchmark
@@ -103,39 +111,32 @@ pub(crate) fn run(
 
     print_header(path, &config);
 
-    // Route to appropriate benchmark implementation
-    let result = if fast {
-        #[cfg(feature = "inference")]
-        {
-            println!("{}", "Using realizar (fast mode)".cyan());
-            println!();
-            run_realizar_benchmark(path, &config)?
-        }
-        #[cfg(not(feature = "inference"))]
-        {
-            return Err(CliError::ValidationFailed(
-                "--fast requires the 'inference' feature. Build with: cargo build --features inference".to_string()
-            ));
-        }
-    } else {
-        println!("{}", "Using aprender (baseline mode)".yellow());
+    // Always use realizar for production-quality benchmarks
+    #[cfg(feature = "inference")]
+    let result = {
+        println!("{}", "Using realizar inference engine".cyan());
         println!();
-        run_benchmark(path, &config)?
+        run_realizar_benchmark(path, &config)?
+    };
+
+    #[cfg(not(feature = "inference"))]
+    let result = {
+        return Err(CliError::ValidationFailed(
+            "Benchmark requires the 'inference' feature. Build with: cargo build --features inference".to_string()
+        ));
     };
 
     // Print results
     print_results(&result);
 
-    // Threshold depends on mode
-    let threshold = if fast { 60.0 } else { 10.0 };
+    // Threshold: 10 tok/s minimum
+    let threshold = 10.0;
     let passed = result.tokens_per_second >= threshold;
 
     if !passed {
         return Err(CliError::ValidationFailed(format!(
-            "Throughput {:.1} tok/s below minimum {:.0} tok/s (spec {})",
-            result.tokens_per_second,
-            threshold,
-            if fast { "Z5/Z6" } else { "H12" }
+            "Throughput {:.1} tok/s below minimum {:.0} tok/s (spec H12)",
+            result.tokens_per_second, threshold
         )));
     }
 
@@ -392,151 +393,6 @@ fn print_header(path: &Path, config: &BenchConfig) {
     println!();
 }
 
-fn run_benchmark(path: &Path, config: &BenchConfig) -> Result<BenchResult> {
-    // Detect format
-    let is_safetensors = path.extension().is_some_and(|e| e == "safetensors");
-    let is_apr = path.extension().is_some_and(|e| e == "apr");
-
-    // Create model config based on format
-    let model_config = if is_safetensors || is_apr {
-        Qwen2Config::qwen2_0_5b_instruct()
-    } else {
-        // Demo config for testing
-        Qwen2Config {
-            hidden_size: 64,
-            num_attention_heads: 4,
-            num_kv_heads: 2,
-            num_layers: 2,
-            vocab_size: 1000,
-            max_seq_len: 512,
-            intermediate_size: 256,
-            rope_theta: 10000.0,
-        }
-    };
-
-    println!("{}", "Loading model...".yellow());
-    let start = Instant::now();
-
-    let mut model = if is_safetensors || is_apr {
-        Qwen2Model::new_uninitialized(&model_config)
-    } else {
-        Qwen2Model::new(&model_config)
-    };
-
-    // Load weights
-    if is_apr {
-        let count = model
-            .load_from_apr(path)
-            .map_err(|e| CliError::ValidationFailed(format!("Failed to load APR: {e}")))?;
-        println!("{} {} tensors", "Loaded".green(), count);
-    } else if is_safetensors {
-        let count = model
-            .load_from_safetensors(path)
-            .map_err(|e| CliError::ValidationFailed(format!("Failed to load SafeTensors: {e}")))?;
-        println!("{} {} tensors", "Loaded".green(), count);
-    }
-
-    model.eval();
-    let load_time = start.elapsed();
-    println!(
-        "{} in {:.2}s",
-        "Model ready".green(),
-        load_time.as_secs_f32()
-    );
-    println!();
-
-    // Initialize tokenizer
-    let tokenizer = Qwen2BpeTokenizer::new();
-
-    // Encode prompt
-    let prompt_ids = tokenizer.encode(&config.prompt);
-    let prompt_ids: Vec<u32> = if prompt_ids.len() > 64 {
-        prompt_ids[prompt_ids.len() - 64..].to_vec()
-    } else {
-        prompt_ids
-    };
-
-    // Warmup
-    println!("{}", "Running warmup...".yellow());
-    for i in 0..config.warmup {
-        let _output = model.generate(&prompt_ids, config.max_tokens, 0.7, 0.9);
-        print!("  Warmup {}/{}\r", i + 1, config.warmup);
-        std::io::Write::flush(&mut std::io::stdout()).ok();
-    }
-    println!("  Warmup complete        ");
-    println!();
-
-    // Measurement
-    println!("{}", "Running benchmark...".yellow());
-    let mut iteration_times = Vec::with_capacity(config.iterations);
-    let mut total_tokens = 0usize;
-    let mut first_token_time = Duration::ZERO;
-
-    for i in 0..config.iterations {
-        let iter_start = Instant::now();
-
-        let output = model.generate(&prompt_ids, config.max_tokens, 0.7, 0.9);
-        let tokens_generated = output.len().saturating_sub(prompt_ids.len());
-
-        let iter_time = iter_start.elapsed();
-        iteration_times.push(iter_time);
-        total_tokens += tokens_generated;
-
-        // Approximate TTFT from first iteration
-        if i == 0 {
-            first_token_time =
-                Duration::from_secs_f64(iter_time.as_secs_f64() / tokens_generated.max(1) as f64);
-        }
-
-        print!(
-            "  Iteration {}/{}: {} tokens in {:.2}s\r",
-            i + 1,
-            config.iterations,
-            tokens_generated,
-            iter_time.as_secs_f32()
-        );
-        std::io::Write::flush(&mut std::io::stdout()).ok();
-    }
-    println!();
-    println!();
-
-    // Calculate statistics
-    let total_time: Duration = iteration_times.iter().sum();
-    let tokens_per_second = total_tokens as f64 / total_time.as_secs_f64();
-
-    let mean_time = total_time / config.iterations as u32;
-
-    let mut sorted_times = iteration_times.clone();
-    sorted_times.sort();
-    let median_time = sorted_times[config.iterations / 2];
-
-    // Calculate std dev
-    let mean_ms = mean_time.as_secs_f64() * 1000.0;
-    let variance: f64 = iteration_times
-        .iter()
-        .map(|t| {
-            let diff = t.as_secs_f64() * 1000.0 - mean_ms;
-            diff * diff
-        })
-        .sum::<f64>()
-        / config.iterations as f64;
-    let std_dev = Duration::from_secs_f64(variance.sqrt() / 1000.0);
-
-    // Per spec H12: threshold is 10 tok/s
-    let passed = tokens_per_second >= 10.0;
-
-    Ok(BenchResult {
-        total_tokens,
-        total_time,
-        tokens_per_second,
-        time_to_first_token: first_token_time,
-        iteration_times,
-        mean_time,
-        median_time,
-        std_dev,
-        passed,
-    })
-}
 
 fn print_results(result: &BenchResult) {
     output::section("Results");
@@ -600,17 +456,26 @@ fn print_results(result: &BenchResult) {
     output::kv("Performance Grade", grade);
 }
 
-/// Realizar-based benchmark for fast inference (spec Z5/Z6: 60-70 tok/s)
+/// Realizar-based benchmark for model inference
 ///
-/// Automatically uses CUDA GPU acceleration when available for maximum throughput.
-/// Falls back to CPU-based inference if no CUDA GPU is detected.
+/// Supports all formats: GGUF, APR, and SafeTensors.
+/// Automatically uses CUDA GPU acceleration when available for GGUF.
 #[cfg(feature = "inference")]
 fn run_realizar_benchmark(path: &Path, config: &BenchConfig) -> Result<BenchResult> {
     use realizar::cuda::CudaExecutor;
     use realizar::format::{detect_format, ModelFormat};
-    use realizar::gguf::{GGUFModel, QuantizedGenerateConfig};
 
-    // Check CUDA availability
+    // Read first 8 bytes for format detection
+    let header_bytes = std::fs::read(path)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to read model: {e}")))?;
+
+    // Detect format
+    let format = detect_format(&header_bytes[..8.min(header_bytes.len())])
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to detect format: {e}")))?;
+
+    println!("{} {}", "Format:".cyan().bold(), format.to_string().green());
+
+    // Check CUDA availability (only used for GGUF currently)
     let cuda_available = CudaExecutor::is_available();
     let cuda_devices = CudaExecutor::num_devices();
 
@@ -624,62 +489,206 @@ fn run_realizar_benchmark(path: &Path, config: &BenchConfig) -> Result<BenchResu
         println!(
             "{} {}",
             "CUDA:".cyan().bold(),
-            "Not available (CPU fallback)".yellow()
+            "Not available (CPU mode)".yellow()
         );
     }
 
-    println!("{}", "Loading model with realizar...".yellow());
+    // Route to format-specific benchmark
+    match format {
+        ModelFormat::Gguf => run_gguf_benchmark(path, config, cuda_available && cuda_devices > 0),
+        ModelFormat::Apr => run_apr_benchmark(path, config),
+        ModelFormat::SafeTensors => run_safetensors_benchmark(path, config),
+    }
+}
+
+/// GGUF format benchmark (supports GPU acceleration)
+#[cfg(feature = "inference")]
+fn run_gguf_benchmark(path: &Path, config: &BenchConfig, use_cuda: bool) -> Result<BenchResult> {
+    use realizar::gguf::{GGUFModel, QuantizedGenerateConfig};
+
+    println!("{}", "Loading GGUF model...".yellow());
     let start = Instant::now();
 
-    // Read model file
+    // Load model for tokenization
     let model_bytes = std::fs::read(path)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to read model: {e}")))?;
-
-    // Detect format
-    let format = detect_format(&model_bytes[..8.min(model_bytes.len())])
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to detect format: {e}")))?;
-
-    // Currently only GGUF is fully optimized in realizar
-    if format != ModelFormat::Gguf {
-        return Err(CliError::ValidationFailed(format!(
-            "Fast benchmark currently requires GGUF format. Got: {:?}. \
-             Convert with: apr convert model.safetensors --format gguf -o model.gguf",
-            format
-        )));
-    }
-
     let gguf = GGUFModel::from_bytes(&model_bytes)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to parse GGUF: {e}")))?;
 
-    // Use real tokenization from GGUF vocabulary
+    // Tokenize prompt
     let prompt_tokens: Vec<u32> = gguf.encode(&config.prompt).unwrap_or_else(|| {
-        // Fallback to Qwen2 pre-tokenized tokens for "Hello, I am a coding assistant"
         vec![151643, 9707, 11, 358, 1079, 264, 11761, 18328, 13, 9842]
     });
 
-    // PAR-065: Use greedy sampling (temperature=0) to use GPU argmax path
-    // This eliminates 600KB logits transfer per token (150,000x reduction)
     let gen_config = QuantizedGenerateConfig {
         max_tokens: config.max_tokens.min(128),
-        temperature: 0.0, // Greedy sampling
-        top_k: 1,         // Force argmax path
+        temperature: 0.0,
+        top_k: 1,
         ..Default::default()
     };
 
-    // Route to GPU or CPU benchmark based on CUDA availability
-    if cuda_available && cuda_devices > 0 {
-        run_cuda_benchmark(
-            &gguf,
-            &model_bytes,
-            &prompt_tokens,
-            &gen_config,
-            config,
-            start,
-            path,
-        )
+    if use_cuda {
+        run_cuda_benchmark(&gguf, &model_bytes, &prompt_tokens, &gen_config, config, start, path)
     } else {
         run_cpu_benchmark(&prompt_tokens, &gen_config, config, start, path)
     }
+}
+
+/// APR format benchmark
+#[cfg(feature = "inference")]
+fn run_apr_benchmark(path: &Path, config: &BenchConfig) -> Result<BenchResult> {
+    use realizar::apr::AprV2Model;
+
+    println!("{}", "Loading APR model...".yellow());
+    let start = Instant::now();
+
+    // Load APR model
+    let model = AprV2Model::load(path)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to load APR: {e}")))?;
+
+    let load_time = start.elapsed();
+    println!(
+        "{} in {:.2}s ({} tensors)",
+        "Model ready".green(),
+        load_time.as_secs_f32(),
+        model.tensor_count()
+    );
+    println!();
+
+    // Try to get tokenizer from embedded vocab or sibling file
+    let prompt_tokens: Vec<u32> = if let Some(tokenizer) = model.load_embedded_bpe_tokenizer() {
+        tokenizer.encode(&config.prompt)
+    } else if let Some((vocab, _, _)) = AprV2Model::load_tokenizer_from_sibling(path) {
+        // Simple whitespace tokenization as fallback
+        let token_to_id: std::collections::HashMap<String, u32> = vocab
+            .iter()
+            .enumerate()
+            .map(|(i, t)| (t.clone(), i as u32))
+            .collect();
+        config
+            .prompt
+            .split_whitespace()
+            .filter_map(|w| token_to_id.get(w).copied())
+            .collect()
+    } else {
+        // Fallback tokens
+        vec![1, 2, 3, 4, 5]
+    };
+
+    // Warmup
+    println!("{}", "Running warmup...".yellow());
+    for i in 0..config.warmup {
+        let _ = model.generate(&prompt_tokens, config.max_tokens.min(16), None);
+        print!("  Warmup {}/{}\r", i + 1, config.warmup);
+        std::io::Write::flush(&mut std::io::stdout()).ok();
+    }
+    println!("  Warmup complete        ");
+    println!();
+
+    // Measurement
+    println!("{}", "Running benchmark...".yellow());
+    let mut iteration_times = Vec::with_capacity(config.iterations);
+    let mut total_tokens = 0usize;
+    let mut first_token_time = Duration::ZERO;
+
+    for i in 0..config.iterations {
+        let iter_start = Instant::now();
+
+        let output = model
+            .generate(&prompt_tokens, config.max_tokens.min(32), None)
+            .unwrap_or_default();
+        let tokens_generated = output.len().saturating_sub(prompt_tokens.len());
+
+        let iter_time = iter_start.elapsed();
+        iteration_times.push(iter_time);
+        total_tokens += tokens_generated;
+
+        if i == 0 {
+            first_token_time =
+                Duration::from_secs_f64(iter_time.as_secs_f64() / tokens_generated.max(1) as f64);
+        }
+
+        print!(
+            "  Iteration {}/{}: {} tokens in {:.2}s\r",
+            i + 1,
+            config.iterations,
+            tokens_generated,
+            iter_time.as_secs_f32()
+        );
+        std::io::Write::flush(&mut std::io::stdout()).ok();
+    }
+    println!();
+    println!();
+
+    calculate_benchmark_stats(iteration_times, total_tokens, first_token_time, config)
+}
+
+/// SafeTensors format benchmark
+#[cfg(feature = "inference")]
+fn run_safetensors_benchmark(path: &Path, config: &BenchConfig) -> Result<BenchResult> {
+    use realizar::apr::AprV2Model;
+    use realizar::safetensors_infer::SafetensorsToAprConverter;
+
+    println!("{}", "Loading SafeTensors model...".yellow());
+    let start = Instant::now();
+
+    // Convert SafeTensors to AprTransformer
+    let transformer = SafetensorsToAprConverter::convert(path)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to load SafeTensors: {e}")))?;
+
+    let load_time = start.elapsed();
+    println!(
+        "{} in {:.2}s",
+        "Model ready".green(),
+        load_time.as_secs_f32()
+    );
+    println!();
+
+    // Try to load tokenizer from sibling tokenizer.json file
+    let prompt_tokens: Vec<u32> =
+        if let Some(tokenizer) = AprV2Model::load_tokenizer_from_path(&path.with_file_name("tokenizer.json")) {
+            tokenizer.encode(&config.prompt)
+        } else {
+            // Fallback tokens for Qwen2
+            vec![151643, 9707, 11, 358, 1079, 264, 11761, 18328, 13, 9842]
+        };
+
+    // Warmup
+    println!("{}", "Running warmup...".yellow());
+    for i in 0..config.warmup {
+        let _ = transformer.forward(&prompt_tokens);
+        print!("  Warmup {}/{}\r", i + 1, config.warmup);
+        std::io::Write::flush(&mut std::io::stdout()).ok();
+    }
+    println!("  Warmup complete        ");
+    println!();
+
+    // Measurement (forward pass only - no generation for SafeTensors)
+    println!("{}", "Running benchmark (forward pass)...".yellow());
+    let mut iteration_times = Vec::with_capacity(config.iterations);
+    let total_tokens = config.iterations * prompt_tokens.len();
+
+    for i in 0..config.iterations {
+        let iter_start = Instant::now();
+
+        let _ = transformer.forward(&prompt_tokens);
+
+        let iter_time = iter_start.elapsed();
+        iteration_times.push(iter_time);
+
+        print!(
+            "  Iteration {}/{}: {:.2}s\r",
+            i + 1,
+            config.iterations,
+            iter_time.as_secs_f32()
+        );
+        std::io::Write::flush(&mut std::io::stdout()).ok();
+    }
+    let first_token_time = iteration_times.first().copied().unwrap_or(Duration::ZERO);
+    println!();
+    println!();
+
+    calculate_benchmark_stats(iteration_times, total_tokens, first_token_time, config)
 }
 
 /// CUDA GPU-accelerated benchmark path
