@@ -263,9 +263,11 @@ fn export_to_gguf(tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>, output: &P
 // GH-182: COMPANION FILE HELPERS
 // ============================================================================
 
-/// Infer model config.json from tensor shapes (GH-182)
+/// Infer model config.json from tensor shapes (GH-182, GH-193)
 ///
 /// Creates a HuggingFace-compatible config.json based on tensor analysis.
+/// GH-193: Now includes all required fields for SafeTensors inference:
+/// - num_attention_heads, intermediate_size, max_position_embeddings, etc.
 fn infer_model_config(tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>) -> String {
     // Infer hidden_size from embedding or first layer weight
     let hidden_size = tensors
@@ -300,14 +302,83 @@ fn infer_model_config(tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>) -> Str
         .map(|(_, (_, shape))| shape.first().copied().unwrap_or(32000))
         .unwrap_or(32000);
 
-    // Create minimal config.json
+    // GH-193: Infer num_attention_heads from attention Q/K/V weights
+    // Shape is typically [hidden_size, num_heads * head_dim]
+    let num_attention_heads = tensors
+        .iter()
+        .find(|(name, _)| {
+            name.contains("self_attn.q_proj") || name.contains("attn.q_proj") || name.contains("attention.wq")
+        })
+        .map(|(_, (_, _shape))| {
+            // Common head dimensions: 64, 128 - infer num_heads from hidden_size
+            // Most models use head_dim = hidden_size / num_heads
+            // Common configs: 4096/32=128 head_dim, 2048/16=128, etc.
+            let head_dim = if hidden_size >= 4096 { 128 } else { 64 };
+            hidden_size / head_dim
+        })
+        .unwrap_or_else(|| {
+            // Fallback: standard ratios
+            match hidden_size {
+                896 => 14,   // Qwen2.5-0.5B
+                1536 => 12,  // Qwen2.5-1.5B
+                2048 => 16,  // Llama-7B style
+                4096 => 32,  // Llama-7B
+                5120 => 40,  // Llama-13B
+                8192 => 64,  // Llama-70B
+                _ => (hidden_size / 128).max(1),  // Default: head_dim=128
+            }
+        });
+
+    // GH-193: Infer intermediate_size from MLP weights
+    let intermediate_size = tensors
+        .iter()
+        .find(|(name, _)| {
+            name.contains("mlp.gate_proj") || name.contains("mlp.up_proj") || name.contains("feed_forward.w1")
+        })
+        .map(|(_, (_, shape))| shape.first().copied().unwrap_or(hidden_size * 4))
+        .unwrap_or(hidden_size * 4);  // Default to 4x hidden_size (common in transformers)
+
+    // GH-193: Infer head_dim
+    let head_dim = hidden_size / num_attention_heads;
+
+    // GH-193: Infer num_key_value_heads (GQA support)
+    // Look for k_proj shape to detect if using GQA (grouped query attention)
+    let num_key_value_heads = tensors
+        .iter()
+        .find(|(name, _)| {
+            name.contains("self_attn.k_proj") || name.contains("attn.k_proj") || name.contains("attention.wk")
+        })
+        .map(|(_, (_, shape))| {
+            // For GQA: k_proj shape is [hidden_size, num_kv_heads * head_dim]
+            // If shape[0] < hidden_size, it's GQA
+            let kv_dim = shape.first().copied().unwrap_or(hidden_size);
+            (kv_dim / head_dim).max(1)
+        })
+        .unwrap_or(num_attention_heads);  // Default: same as num_attention_heads (MHA)
+
+    // Create HuggingFace-compatible config.json with all required fields (GH-193)
     format!(
         r#"{{
-  "architectures": ["AutoModelForCausalLM"],
+  "architectures": ["Qwen2ForCausalLM"],
+  "bos_token_id": 151643,
+  "eos_token_id": 151645,
+  "hidden_act": "silu",
   "hidden_size": {hidden_size},
+  "initializer_range": 0.02,
+  "intermediate_size": {intermediate_size},
+  "max_position_embeddings": 32768,
+  "model_type": "qwen2",
+  "num_attention_heads": {num_attention_heads},
   "num_hidden_layers": {num_layers},
-  "vocab_size": {vocab_size},
-  "model_type": "llama"
+  "num_key_value_heads": {num_key_value_heads},
+  "rms_norm_eps": 1e-06,
+  "rope_theta": 1000000.0,
+  "sliding_window": 32768,
+  "tie_word_embeddings": true,
+  "torch_dtype": "bfloat16",
+  "use_cache": true,
+  "use_sliding_window": false,
+  "vocab_size": {vocab_size}
 }}"#
     )
 }

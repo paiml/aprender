@@ -494,10 +494,12 @@ fn run_realizar_benchmark(path: &Path, config: &BenchConfig) -> Result<BenchResu
     }
 
     // Route to format-specific benchmark
+    // GH-192: All formats now support CUDA acceleration
+    let use_cuda = cuda_available && cuda_devices > 0;
     match format {
-        ModelFormat::Gguf => run_gguf_benchmark(path, config, cuda_available && cuda_devices > 0),
-        ModelFormat::Apr => run_apr_benchmark(path, config),
-        ModelFormat::SafeTensors => run_safetensors_benchmark(path, config),
+        ModelFormat::Gguf => run_gguf_benchmark(path, config, use_cuda),
+        ModelFormat::Apr => run_apr_benchmark(path, config, use_cuda),
+        ModelFormat::SafeTensors => run_safetensors_benchmark(path, config, use_cuda),
     }
 }
 
@@ -535,11 +537,16 @@ fn run_gguf_benchmark(path: &Path, config: &BenchConfig, use_cuda: bool) -> Resu
 }
 
 /// APR format benchmark
+/// GH-192: Now supports CUDA GPU acceleration
 #[cfg(feature = "inference")]
-fn run_apr_benchmark(path: &Path, config: &BenchConfig) -> Result<BenchResult> {
+fn run_apr_benchmark(path: &Path, config: &BenchConfig, use_cuda: bool) -> Result<BenchResult> {
     use realizar::apr::AprV2Model;
 
-    println!("{}", "Loading APR model...".yellow());
+    if use_cuda {
+        return run_apr_cuda_benchmark(path, config);
+    }
+
+    println!("{}", "Loading APR model (CPU)...".yellow());
     let start = Instant::now();
 
     // Load APR model
@@ -623,13 +630,116 @@ fn run_apr_benchmark(path: &Path, config: &BenchConfig) -> Result<BenchResult> {
     calculate_benchmark_stats(iteration_times, total_tokens, first_token_time, config)
 }
 
-/// SafeTensors format benchmark
+/// APR format CUDA benchmark (GH-192)
 #[cfg(feature = "inference")]
-fn run_safetensors_benchmark(path: &Path, config: &BenchConfig) -> Result<BenchResult> {
+fn run_apr_cuda_benchmark(path: &Path, config: &BenchConfig) -> Result<BenchResult> {
+    use realizar::apr::{AprV2Model, AprV2ModelCuda};
+
+    println!("{}", "Loading APR model (GPU)...".yellow());
+    let start = Instant::now();
+
+    // First load APR model (CPU), then wrap with CUDA
+    let cpu_model = AprV2Model::load(path)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to load APR: {e}")))?;
+
+    let tensor_count = cpu_model.tensor_count();
+
+    // Try to get tokenizer before wrapping with CUDA
+    let prompt_tokens: Vec<u32> = if let Some(tokenizer) = cpu_model.load_embedded_bpe_tokenizer() {
+        tokenizer.encode(&config.prompt)
+    } else if let Some((vocab, _, _)) = AprV2Model::load_tokenizer_from_sibling(path) {
+        // Simple whitespace tokenization as fallback
+        let token_to_id: std::collections::HashMap<String, u32> = vocab
+            .iter()
+            .enumerate()
+            .map(|(i, t)| (t.clone(), i as u32))
+            .collect();
+        config
+            .prompt
+            .split_whitespace()
+            .filter_map(|w| token_to_id.get(w).copied())
+            .collect()
+    } else {
+        // Fallback tokens
+        vec![1, 2, 3, 4, 5]
+    };
+
+    // Wrap with CUDA acceleration
+    let mut model = AprV2ModelCuda::new(cpu_model, 0)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to init APR CUDA: {e}")))?;
+
+    // EOS token for Qwen2 models
+    let eos_token: u32 = 151645;
+
+    let load_time = start.elapsed();
+    println!(
+        "{} in {:.2}s ({} tensors, GPU device 0)",
+        "Model ready".green(),
+        load_time.as_secs_f32(),
+        tensor_count
+    );
+    println!();
+
+    // Warmup
+    println!("{}", "Running warmup (GPU)...".yellow());
+    for i in 0..config.warmup {
+        let _ = model.generate_cuda(&prompt_tokens, config.max_tokens.min(16), eos_token);
+        print!("  Warmup {}/{}\r", i + 1, config.warmup);
+        std::io::Write::flush(&mut std::io::stdout()).ok();
+    }
+    println!("  Warmup complete        ");
+    println!();
+
+    // Measurement
+    println!("{}", "Running benchmark (GPU)...".yellow());
+    let mut iteration_times = Vec::with_capacity(config.iterations);
+    let mut total_tokens = 0usize;
+    let mut first_token_time = Duration::ZERO;
+
+    for i in 0..config.iterations {
+        let iter_start = Instant::now();
+
+        let output = model
+            .generate_cuda(&prompt_tokens, config.max_tokens.min(32), eos_token)
+            .unwrap_or_default();
+        let tokens_generated = output.len().saturating_sub(prompt_tokens.len());
+
+        let iter_time = iter_start.elapsed();
+        iteration_times.push(iter_time);
+        total_tokens += tokens_generated;
+
+        if i == 0 {
+            first_token_time =
+                Duration::from_secs_f64(iter_time.as_secs_f64() / tokens_generated.max(1) as f64);
+        }
+
+        print!(
+            "  Iteration {}/{}: {} tokens in {:.2}s\r",
+            i + 1,
+            config.iterations,
+            tokens_generated,
+            iter_time.as_secs_f32()
+        );
+        std::io::Write::flush(&mut std::io::stdout()).ok();
+    }
+    println!();
+    println!();
+
+    calculate_benchmark_stats(iteration_times, total_tokens, first_token_time, config)
+}
+
+/// SafeTensors format benchmark
+/// GH-192: Now supports CUDA GPU acceleration
+#[cfg(feature = "inference")]
+fn run_safetensors_benchmark(path: &Path, config: &BenchConfig, use_cuda: bool) -> Result<BenchResult> {
     use realizar::apr::AprV2Model;
     use realizar::safetensors_infer::SafetensorsToAprConverter;
 
-    println!("{}", "Loading SafeTensors model...".yellow());
+    if use_cuda {
+        return run_safetensors_cuda_benchmark(path, config);
+    }
+
+    println!("{}", "Loading SafeTensors model (CPU)...".yellow());
     let start = Instant::now();
 
     // Convert SafeTensors to AprTransformer
@@ -685,6 +795,88 @@ fn run_safetensors_benchmark(path: &Path, config: &BenchConfig) -> Result<BenchR
         std::io::Write::flush(&mut std::io::stdout()).ok();
     }
     let first_token_time = iteration_times.first().copied().unwrap_or(Duration::ZERO);
+    println!();
+    println!();
+
+    calculate_benchmark_stats(iteration_times, total_tokens, first_token_time, config)
+}
+
+/// SafeTensors CUDA benchmark (GH-192)
+/// Uses SafeTensorsCudaModel for direct GPU loading
+#[cfg(feature = "inference")]
+fn run_safetensors_cuda_benchmark(path: &Path, config: &BenchConfig) -> Result<BenchResult> {
+    use realizar::apr::AprV2Model;
+    use realizar::safetensors_cuda::SafeTensorsCudaModel;
+
+    println!("{}", "Loading SafeTensors model (GPU)...".yellow());
+    let start = Instant::now();
+
+    // Load SafeTensors directly to GPU (PMAT-116)
+    let mut model = SafeTensorsCudaModel::load(path, 0)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to load SafeTensors CUDA: {e}")))?;
+
+    // Try to load tokenizer from sibling tokenizer.json file
+    let prompt_tokens: Vec<u32> =
+        if let Some(tokenizer) = AprV2Model::load_tokenizer_from_path(&path.with_file_name("tokenizer.json")) {
+            tokenizer.encode(&config.prompt)
+        } else {
+            // Fallback tokens for Qwen2
+            vec![151643, 9707, 11, 358, 1079, 264, 11761, 18328, 13, 9842]
+        };
+
+    // EOS token for Qwen2 models
+    let eos_token: u32 = 151645;
+
+    let load_time = start.elapsed();
+    println!(
+        "{} in {:.2}s (GPU device 0)",
+        "Model ready".green(),
+        load_time.as_secs_f32()
+    );
+    println!();
+
+    // Warmup
+    println!("{}", "Running warmup (GPU)...".yellow());
+    for i in 0..config.warmup {
+        let _ = model.generate(&prompt_tokens, config.max_tokens.min(16), eos_token);
+        print!("  Warmup {}/{}\r", i + 1, config.warmup);
+        std::io::Write::flush(&mut std::io::stdout()).ok();
+    }
+    println!("  Warmup complete        ");
+    println!();
+
+    // Measurement
+    println!("{}", "Running benchmark (GPU)...".yellow());
+    let mut iteration_times = Vec::with_capacity(config.iterations);
+    let mut total_tokens = 0usize;
+    let mut first_token_time = Duration::ZERO;
+
+    for i in 0..config.iterations {
+        let iter_start = Instant::now();
+
+        let output = model
+            .generate(&prompt_tokens, config.max_tokens.min(32), eos_token)
+            .unwrap_or_else(|_| prompt_tokens.to_vec());
+        let tokens_generated = output.len().saturating_sub(prompt_tokens.len());
+
+        let iter_time = iter_start.elapsed();
+        iteration_times.push(iter_time);
+        total_tokens += tokens_generated;
+
+        if i == 0 {
+            first_token_time =
+                Duration::from_secs_f64(iter_time.as_secs_f64() / tokens_generated.max(1) as f64);
+        }
+
+        print!(
+            "  Iteration {}/{}: {} tokens in {:.2}s\r",
+            i + 1,
+            config.iterations,
+            tokens_generated,
+            iter_time.as_secs_f32()
+        );
+        std::io::Write::flush(&mut std::io::stdout()).ok();
+    }
     println!();
     println!();
 
