@@ -2328,20 +2328,22 @@ roadmap:
   github_issue: 186
   item_type: task
   title: 'FIXED: PMAT-127 APR from GGUF produces garbage (dtype mismatch)'
-  status: done
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-01-28T23:40:09.296872973+00:00
   updated: 2026-01-30T19:20:00+00:00
   spec: null
   acceptance_criteria:
-    - '[x] apr check /tmp/test.apr passes 10/10 stages'
-    - '[x] apr trace --payload shows valid logits (L2=1311.75, not NaN)'
-    - '[x] Root cause identified: dtype byte mismatch (APR 12=Q4K, realizar expected 8)'
+  - '[x] apr check /tmp/test.apr passes 10/10 stages'
+  - '[x] apr trace --payload shows valid logits (L2=1311.75, not NaN)'
+  - '[x] Root cause identified: dtype byte mismatch (APR 12=Q4K, realizar expected 8)'
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: ['bugfix', 'p0-resolved']
+  labels:
+  - bugfix
+  - p0-resolved
   notes: |
     Root Cause: DType byte mapping mismatch between aprender and realizar.
     - APR format uses dtype 12 for Q4K, 14 for Q6K (per aprender/src/format/v2.rs)
@@ -2389,6 +2391,22 @@ roadmap:
   assigned_to: null
   created: 2026-01-29T08:06:40.076272804+00:00
   updated: 2026-01-29T08:06:40.076272804+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-189
+  github_issue: null
+  item_type: task
+  title: APR chat special tokens fix (BpeTokenizer)
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-01-31T06:24:21.819716591+00:00
+  updated: 2026-01-31T06:24:56Z
   spec: null
   acceptance_criteria: []
   phases: []
