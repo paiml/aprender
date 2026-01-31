@@ -939,7 +939,11 @@ pub fn run_diff_tensors(
         let count_a = report_a.tensors.len();
         let count_b = report_b.tensors.len();
         let count_match = count_a == count_b;
-        let count_status = if count_match { "✓".green() } else { "✗".red() };
+        let count_status = if count_match {
+            "✓".green()
+        } else {
+            "✗".red()
+        };
         println!(
             "║ {} Tensor Count: A={:<5} B={:<5} {}║",
             count_status,
@@ -948,7 +952,13 @@ pub fn run_diff_tensors(
             if count_match {
                 "                                  ".to_string()
             } else {
-                format!("MISSING {} TENSORS!", (count_a as i64 - count_b as i64).abs()).red().bold().to_string()
+                format!(
+                    "MISSING {} TENSORS!",
+                    (count_a as i64 - count_b as i64).abs()
+                )
+                .red()
+                .bold()
+                .to_string()
             }
         );
         println!(
@@ -995,15 +1005,11 @@ pub fn run_diff_tensors(
                         println!("║ {} {:<72} ║", status, name);
                         println!(
                             "║   A: {:?} {:>20} {:>15} bytes    ║",
-                            a.shape,
-                            a.dtype,
-                            a.size_bytes
+                            a.shape, a.dtype, a.size_bytes
                         );
                         println!(
                             "║   B: {:?} {:>20} {:>15} bytes    ║",
-                            b.shape,
-                            b.dtype,
-                            b.size_bytes
+                            b.shape, b.dtype, b.size_bytes
                         );
 
                         if is_transposed {
@@ -1130,37 +1136,28 @@ pub fn run_diff_tensors(
                 "╠══════════════════════════════════════════════════════════════════════════════╣"
                     .cyan()
             );
-            println!(
-                "║ {} ║",
-                "LAYOUT MISMATCH DETECTED!".red().bold()
-            );
+            println!("║ {} ║", "LAYOUT MISMATCH DETECTED!".red().bold());
             println!(
                 "║ {} ║",
                 "Tensors with transposed dimensions found. This causes garbage output."
             );
             println!("║ {} ║", "");
-            println!("║ {} ║", "Root Cause: GGML stores weights as [in_dim, out_dim]");
+            println!(
+                "║ {} ║",
+                "Root Cause: GGML stores weights as [in_dim, out_dim]"
+            );
             println!(
                 "║ {} ║",
                 "             Standard ML expects [out_dim, in_dim]"
             );
             println!("║ {} ║", "");
-            println!(
-                "║ {} ║",
-                "Fix Options:".yellow().bold()
-            );
-            println!(
-                "║ {} ║",
-                "  1. Transpose tensor data during APR load"
-            );
+            println!("║ {} ║", "Fix Options:".yellow().bold());
+            println!("║ {} ║", "  1. Transpose tensor data during APR load");
             println!(
                 "║ {} ║",
                 "  2. Use row-major kernels that expect GGML layout"
             );
-            println!(
-                "║ {} ║",
-                "  3. Store layout convention in APR metadata"
-            );
+            println!("║ {} ║", "  3. Store layout convention in APR metadata");
             println!(
                 "{}",
                 "╠══════════════════════════════════════════════════════════════════════════════╣"
@@ -1174,10 +1171,7 @@ pub fn run_diff_tensors(
                 println!("║     A: {:?} → B: {:?} ║", shape_a, shape_b);
             }
         } else {
-            println!(
-                "║ {} ║",
-                "No layout mismatches detected".green().bold()
-            );
+            println!("║ {} ║", "No layout mismatches detected".green().bold());
         }
 
         println!(
@@ -1195,7 +1189,9 @@ pub fn run_diff_tensors(
     if count_a != count_b {
         return Err(CliError::ValidationFailed(format!(
             "TENSOR COUNT MISMATCH: Model A has {} tensors, Model B has {} ({} missing!)",
-            count_a, count_b, (count_a as i64 - count_b as i64).abs()
+            count_a,
+            count_b,
+            (count_a as i64 - count_b as i64).abs()
         )));
     }
 
@@ -1287,8 +1283,9 @@ pub fn run_fingerprint(
     // Output to file if requested
     if let Some(output_path) = output {
         let json_content = fingerprints_to_json(&fingerprints_a);
-        std::fs::write(output_path, json_content)
-            .map_err(|e| CliError::ValidationFailed(format!("Failed to write fingerprints: {e}")))?;
+        std::fs::write(output_path, json_content).map_err(|e| {
+            CliError::ValidationFailed(format!("Failed to write fingerprints: {e}"))
+        })?;
         if !json {
             println!("║ Saved fingerprints to: {:<53} ║", output_path.display());
         }
@@ -1346,7 +1343,11 @@ pub fn run_validate_stats(
             "║ Model: {:<69} ║",
             truncate_path(model.display().to_string(), 69)
         );
-        println!("║ Threshold: {:.1}σ{:<60} ║", threshold, if strict { " (strict mode)" } else { "" });
+        println!(
+            "║ Threshold: {:.1}σ{:<60} ║",
+            threshold,
+            if strict { " (strict mode)" } else { "" }
+        );
     }
 
     // Compute actual fingerprints
@@ -1421,12 +1422,9 @@ pub fn run_validate_stats(
         } else {
             println!(
                 "║ {} ║",
-                format!(
-                    "✗ {} STATISTICAL ANOMALIES DETECTED",
-                    anomalies.len()
-                )
-                .red()
-                .bold()
+                format!("✗ {} STATISTICAL ANOMALIES DETECTED", anomalies.len())
+                    .red()
+                    .bold()
             );
             println!(
                 "{}",
@@ -1459,7 +1457,10 @@ pub fn run_validate_stats(
 
     // Fail if anomalies found
     if !anomalies.is_empty() {
-        let critical_count = anomalies.iter().filter(|a| a.deviation_sigma > 10.0).count();
+        let critical_count = anomalies
+            .iter()
+            .filter(|a| a.deviation_sigma > 10.0)
+            .count();
         if critical_count > 0 {
             return Err(CliError::ValidationFailed(format!(
                 "E020: {} critical statistical anomalies detected (>{:.0}σ deviation)",
@@ -1523,18 +1524,31 @@ fn compute_fingerprints(model_path: &Path, filter: Option<&str>) -> Result<Vec<T
         }
 
         // Compute statistics from actual data if available
-        let (mean, std, min, max, p5, p25, p50, p75, p95, nan_count, inf_count, zero_fraction, checksum) =
-            if let Some(ref data_map) = tensor_data {
-                if let Some(values) = data_map.get(&tensor_info.name) {
-                    compute_tensor_stats(values)
-                } else {
-                    // No data available - use placeholder
-                    (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0, 0, 0.0, 0)
-                }
+        let (
+            mean,
+            std,
+            min,
+            max,
+            p5,
+            p25,
+            p50,
+            p75,
+            p95,
+            nan_count,
+            inf_count,
+            zero_fraction,
+            checksum,
+        ) = if let Some(ref data_map) = tensor_data {
+            if let Some(values) = data_map.get(&tensor_info.name) {
+                compute_tensor_stats(values)
             } else {
                 // No data available - use placeholder
                 (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0, 0, 0.0, 0)
-            };
+            }
+        } else {
+            // No data available - use placeholder
+            (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0, 0, 0.0, 0)
+        };
 
         fingerprints.push(TensorFingerprint {
             name: tensor_info.name.clone(),
@@ -1585,7 +1599,9 @@ fn load_tensor_data(model_path: &Path) -> Option<std::collections::HashMap<Strin
 }
 
 /// Direct tensor loading via aprender format module
-fn load_tensor_data_direct(model_path: &Path) -> Option<std::collections::HashMap<String, Vec<f32>>> {
+fn load_tensor_data_direct(
+    model_path: &Path,
+) -> Option<std::collections::HashMap<String, Vec<f32>>> {
     use aprender::format::gguf::GgufReader;
 
     let ext = model_path.extension()?.to_str()?;
@@ -1620,26 +1636,30 @@ fn load_tensor_data_direct(model_path: &Path) -> Option<std::collections::HashMa
 
             let tensor_count = u32::from_le_bytes([data[8], data[9], data[10], data[11]]) as usize;
             let tensor_index_offset = u64::from_le_bytes([
-                data[24], data[25], data[26], data[27],
-                data[28], data[29], data[30], data[31],
+                data[24], data[25], data[26], data[27], data[28], data[29], data[30], data[31],
             ]) as usize;
             let data_offset = u64::from_le_bytes([
-                data[32], data[33], data[34], data[35],
-                data[36], data[37], data[38], data[39],
+                data[32], data[33], data[34], data[35], data[36], data[37], data[38], data[39],
             ]) as usize;
 
             // Parse tensor index
             let mut pos = tensor_index_offset;
             for _ in 0..tensor_count {
-                if pos + 2 > data.len() { break; }
+                if pos + 2 > data.len() {
+                    break;
+                }
                 let name_len = u16::from_le_bytes([data[pos], data[pos + 1]]) as usize;
                 pos += 2;
 
-                if pos + name_len > data.len() { break; }
+                if pos + name_len > data.len() {
+                    break;
+                }
                 let name = String::from_utf8_lossy(&data[pos..pos + name_len]).to_string();
                 pos += name_len;
 
-                if pos + 2 > data.len() { break; }
+                if pos + 2 > data.len() {
+                    break;
+                }
                 let dtype = data[pos];
                 pos += 1;
                 let ndim = data[pos] as usize;
@@ -1647,38 +1667,63 @@ fn load_tensor_data_direct(model_path: &Path) -> Option<std::collections::HashMa
 
                 let mut dims = Vec::with_capacity(ndim);
                 for _ in 0..ndim {
-                    if pos + 8 > data.len() { break; }
+                    if pos + 8 > data.len() {
+                        break;
+                    }
                     let dim = u64::from_le_bytes([
-                        data[pos], data[pos + 1], data[pos + 2], data[pos + 3],
-                        data[pos + 4], data[pos + 5], data[pos + 6], data[pos + 7],
+                        data[pos],
+                        data[pos + 1],
+                        data[pos + 2],
+                        data[pos + 3],
+                        data[pos + 4],
+                        data[pos + 5],
+                        data[pos + 6],
+                        data[pos + 7],
                     ]) as usize;
                     dims.push(dim);
                     pos += 8;
                 }
 
-                if pos + 16 > data.len() { break; }
+                if pos + 16 > data.len() {
+                    break;
+                }
                 let offset = u64::from_le_bytes([
-                    data[pos], data[pos + 1], data[pos + 2], data[pos + 3],
-                    data[pos + 4], data[pos + 5], data[pos + 6], data[pos + 7],
+                    data[pos],
+                    data[pos + 1],
+                    data[pos + 2],
+                    data[pos + 3],
+                    data[pos + 4],
+                    data[pos + 5],
+                    data[pos + 6],
+                    data[pos + 7],
                 ]) as usize;
                 pos += 8;
                 let size = u64::from_le_bytes([
-                    data[pos], data[pos + 1], data[pos + 2], data[pos + 3],
-                    data[pos + 4], data[pos + 5], data[pos + 6], data[pos + 7],
+                    data[pos],
+                    data[pos + 1],
+                    data[pos + 2],
+                    data[pos + 3],
+                    data[pos + 4],
+                    data[pos + 5],
+                    data[pos + 6],
+                    data[pos + 7],
                 ]) as usize;
                 pos += 8;
 
                 // Load tensor data
                 let tensor_start = data_offset + offset;
                 let tensor_end = tensor_start + size;
-                if tensor_end > data.len() { continue; }
+                if tensor_end > data.len() {
+                    continue;
+                }
                 let tensor_bytes = &data[tensor_start..tensor_end];
 
                 // Dequantize based on dtype
                 let values: Vec<f32> = match dtype {
                     0 => {
                         // F32 - direct read
-                        tensor_bytes.chunks_exact(4)
+                        tensor_bytes
+                            .chunks_exact(4)
                             .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
                             .collect()
                     }
@@ -1813,7 +1858,23 @@ fn parse_tensor_stats_json(_json_str: &str) -> Option<std::collections::HashMap<
 }
 
 /// Compute statistics for a tensor
-fn compute_tensor_stats(values: &[f32]) -> (f32, f32, f32, f32, f32, f32, f32, f32, f32, u32, u32, f32, u32) {
+fn compute_tensor_stats(
+    values: &[f32],
+) -> (
+    f32,
+    f32,
+    f32,
+    f32,
+    f32,
+    f32,
+    f32,
+    f32,
+    f32,
+    u32,
+    u32,
+    f32,
+    u32,
+) {
     if values.is_empty() {
         return (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0, 0, 0.0, 0);
     }
@@ -1854,16 +1915,22 @@ fn compute_tensor_stats(values: &[f32]) -> (f32, f32, f32, f32, f32, f32, f32, f
 
     let n = valid_values.len();
     if n == 0 {
-        return (0.0, 0.0, min, max, 0.0, 0.0, 0.0, 0.0, 0.0, nan_count, inf_count, 0.0, checksum);
+        return (
+            0.0, 0.0, min, max, 0.0, 0.0, 0.0, 0.0, 0.0, nan_count, inf_count, 0.0, checksum,
+        );
     }
 
     let mean = (sum / n as f64) as f32;
 
     // Compute std
-    let variance: f64 = valid_values.iter().map(|&v| {
-        let diff = v as f64 - sum / n as f64;
-        diff * diff
-    }).sum::<f64>() / n as f64;
+    let variance: f64 = valid_values
+        .iter()
+        .map(|&v| {
+            let diff = v as f64 - sum / n as f64;
+            diff * diff
+        })
+        .sum::<f64>()
+        / n as f64;
     let std = variance.sqrt() as f32;
 
     // Compute percentiles (sort for percentile calculation)
@@ -1882,7 +1949,21 @@ fn compute_tensor_stats(values: &[f32]) -> (f32, f32, f32, f32, f32, f32, f32, f
 
     let zero_fraction = zero_count as f32 / values.len() as f32;
 
-    (mean, std, min, max, p5, p25, p50, p75, p95, nan_count, inf_count, zero_fraction, checksum)
+    (
+        mean,
+        std,
+        min,
+        max,
+        p5,
+        p25,
+        p50,
+        p75,
+        p95,
+        nan_count,
+        inf_count,
+        zero_fraction,
+        checksum,
+    )
 }
 
 /// Print fingerprints
@@ -1893,14 +1974,8 @@ fn print_fingerprints(fingerprints: &[TensorFingerprint], verbose: bool, json: b
     }
 
     for fp in fingerprints {
-        println!(
-            "║ {:<74} ║",
-            truncate_path(fp.name.clone(), 74)
-        );
-        println!(
-            "║   shape={:?} dtype={:<10} ║",
-            fp.shape, fp.dtype
-        );
+        println!("║ {:<74} ║", truncate_path(fp.name.clone(), 74));
+        println!("║   shape={:?} dtype={:<10} ║", fp.shape, fp.dtype);
         if verbose {
             println!(
                 "║   mean={:>10.6} std={:>10.6} min={:>10.6} max={:>10.6} ║",
@@ -1965,13 +2040,23 @@ fn print_fingerprint_diff(
                 (fp_a.mean - fp_b.mean).abs()
             };
 
-            let has_anomaly = mean_diff > 3.0 || fp_a.nan_count != fp_b.nan_count || fp_a.inf_count != fp_b.inf_count;
+            let has_anomaly = mean_diff > 3.0
+                || fp_a.nan_count != fp_b.nan_count
+                || fp_a.inf_count != fp_b.inf_count;
 
             if has_anomaly || verbose {
-                let status = if has_anomaly { "⚠️".yellow() } else { "✓".green() };
+                let status = if has_anomaly {
+                    "⚠️".yellow()
+                } else {
+                    "✓".green()
+                };
 
                 if !json {
-                    println!("║ {} {:<72} ║", status, truncate_path(fp_a.name.clone(), 72));
+                    println!(
+                        "║ {} {:<72} ║",
+                        status,
+                        truncate_path(fp_a.name.clone(), 72)
+                    );
                     println!(
                         "║   A: mean={:>10.6} std={:>10.6} nan={} inf={} ║",
                         fp_a.mean, fp_a.std, fp_a.nan_count, fp_a.inf_count
@@ -1983,7 +2068,8 @@ fn print_fingerprint_diff(
                     if has_anomaly {
                         println!(
                             "║   {} mean_diff={:.2}σ ║",
-                            "ANOMALY:".red().bold(), mean_diff
+                            "ANOMALY:".red().bold(),
+                            mean_diff
                         );
                     }
                     println!(
@@ -2004,7 +2090,11 @@ fn print_fingerprint_diff(
                 }
             }
         } else if !json {
-            println!("║ {} {:<72} ║", "−".red(), truncate_path(fp_a.name.clone(), 72));
+            println!(
+                "║ {} {:<72} ║",
+                "−".red(),
+                truncate_path(fp_a.name.clone(), 72)
+            );
             println!("║   Missing in Model B ║");
         }
     }
@@ -2018,7 +2108,9 @@ fn print_fingerprint_diff(
         } else {
             println!(
                 "║ {} ║",
-                format!("✗ {} ANOMALIES DETECTED", anomalies.len()).red().bold()
+                format!("✗ {} ANOMALIES DETECTED", anomalies.len())
+                    .red()
+                    .bold()
             );
         }
     } else {
@@ -2063,7 +2155,9 @@ fn load_fingerprints_from_json(path: &Path) -> Result<Vec<TensorFingerprint>> {
         if line.contains("\"name\":") {
             // Extract tensor info from JSON
             // This is a placeholder - proper implementation would use serde_json
-            let name = line.split("\"name\": \"").nth(1)
+            let name = line
+                .split("\"name\": \"")
+                .nth(1)
                 .and_then(|s| s.split('"').next())
                 .unwrap_or("unknown")
                 .to_string();
@@ -2099,7 +2193,8 @@ fn validate_fingerprints(
     threshold: f32,
     strict: bool,
 ) -> Vec<StatisticalAnomaly> {
-    let ref_map: std::collections::HashMap<_, _> = reference.iter()
+    let ref_map: std::collections::HashMap<_, _> = reference
+        .iter()
         .map(|fp| (normalize_tensor_name(&fp.name), fp))
         .collect();
 
@@ -2162,7 +2257,10 @@ fn validate_fingerprints(
 fn get_role_threshold(tensor_name: &str) -> f32 {
     let name_lower = tensor_name.to_lowercase();
 
-    if name_lower.contains("layernorm") || name_lower.contains("layer_norm") || name_lower.contains("ln_") {
+    if name_lower.contains("layernorm")
+        || name_lower.contains("layer_norm")
+        || name_lower.contains("ln_")
+    {
         // LayerNorm weights should be very close to 1.0 - tight threshold
         2.0
     } else if name_lower.contains("embed") {
@@ -2264,8 +2362,16 @@ fn run_model_with_logits(
     if std::env::var("ROSETTA_DEBUG").is_ok() {
         eprintln!("[ROSETTA] Model: {}", model_path.display());
         eprintln!("[ROSETTA] Exit code: {:?}", output.status.code());
-        eprintln!("[ROSETTA] STDOUT ({} bytes): {:?}", stdout_text.len(), &stdout_text[..stdout_text.len().min(200)]);
-        eprintln!("[ROSETTA] STDERR ({} bytes): {:?}", stderr_text.len(), &stderr_text[..stderr_text.len().min(200)]);
+        eprintln!(
+            "[ROSETTA] STDOUT ({} bytes): {:?}",
+            stdout_text.len(),
+            &stdout_text[..stdout_text.len().min(200)]
+        );
+        eprintln!(
+            "[ROSETTA] STDERR ({} bytes): {:?}",
+            stderr_text.len(),
+            &stderr_text[..stderr_text.len().min(200)]
+        );
     }
 
     // Combine stdout and stderr for parsing (trace goes to both)

@@ -1313,31 +1313,27 @@ fn test_tsne_builder_chain() {
 
 #[test]
 fn test_tsne_very_short_iterations() {
-    let data = Matrix::from_vec(
-        4,
-        2,
-        vec![1.0, 2.0, 2.0, 3.0, 10.0, 11.0, 11.0, 12.0],
-    )
-    .expect("valid matrix dimensions");
+    let data = Matrix::from_vec(4, 2, vec![1.0, 2.0, 2.0, 3.0, 10.0, 11.0, 11.0, 12.0])
+        .expect("valid matrix dimensions");
 
     // Test with very few iterations (to hit early iteration paths)
     let mut tsne = TSNE::new(2).with_n_iter(10).with_random_state(42);
-    let result = tsne.fit_transform(&data).expect("fit_transform should succeed");
+    let result = tsne
+        .fit_transform(&data)
+        .expect("fit_transform should succeed");
     assert_eq!(result.shape(), (4, 2));
 }
 
 #[test]
 fn test_tsne_high_iterations() {
-    let data = Matrix::from_vec(
-        4,
-        2,
-        vec![1.0, 2.0, 2.0, 3.0, 10.0, 11.0, 11.0, 12.0],
-    )
-    .expect("valid matrix dimensions");
+    let data = Matrix::from_vec(4, 2, vec![1.0, 2.0, 2.0, 3.0, 10.0, 11.0, 11.0, 12.0])
+        .expect("valid matrix dimensions");
 
     // Test with iterations past momentum switch (250+)
     let mut tsne = TSNE::new(2).with_n_iter(300).with_random_state(42);
-    let result = tsne.fit_transform(&data).expect("fit_transform should succeed");
+    let result = tsne
+        .fit_transform(&data)
+        .expect("fit_transform should succeed");
     assert_eq!(result.shape(), (4, 2));
 }
 
@@ -1346,13 +1342,17 @@ fn test_tsne_single_component() {
     let data = Matrix::from_vec(
         4,
         3,
-        vec![1.0, 2.0, 3.0, 2.0, 3.0, 4.0, 10.0, 11.0, 12.0, 11.0, 12.0, 13.0],
+        vec![
+            1.0, 2.0, 3.0, 2.0, 3.0, 4.0, 10.0, 11.0, 12.0, 11.0, 12.0, 13.0,
+        ],
     )
     .expect("valid matrix dimensions");
 
     // Reduce to 1D
     let mut tsne = TSNE::new(1).with_n_iter(100).with_random_state(42);
-    let result = tsne.fit_transform(&data).expect("fit_transform should succeed");
+    let result = tsne
+        .fit_transform(&data)
+        .expect("fit_transform should succeed");
     assert_eq!(result.shape(), (4, 1));
 }
 
@@ -1373,22 +1373,22 @@ fn test_tsne_very_low_perplexity() {
         .with_perplexity(1.5)
         .with_n_iter(50)
         .with_random_state(42);
-    let result = tsne.fit_transform(&data).expect("fit_transform should succeed");
+    let result = tsne
+        .fit_transform(&data)
+        .expect("fit_transform should succeed");
     assert_eq!(result.shape(), (6, 2));
 }
 
 #[test]
 fn test_tsne_identical_points() {
     // Test with nearly identical points (tests numerical stability)
-    let data = Matrix::from_vec(
-        4,
-        2,
-        vec![1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-    )
-    .expect("valid matrix dimensions");
+    let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
+        .expect("valid matrix dimensions");
 
     let mut tsne = TSNE::new(2).with_n_iter(50).with_random_state(42);
-    let result = tsne.fit_transform(&data).expect("fit_transform should succeed");
+    let result = tsne
+        .fit_transform(&data)
+        .expect("fit_transform should succeed");
     assert_eq!(result.shape(), (4, 2));
 
     // Results should be finite
@@ -1402,17 +1402,13 @@ fn test_tsne_identical_points() {
 #[test]
 fn test_tsne_large_values() {
     // Test with large values (checks numerical stability)
-    let data = Matrix::from_vec(
-        4,
-        2,
-        vec![
-            1e6, 2e6, 1.1e6, 2.1e6, 5e6, 6e6, 5.1e6, 6.1e6,
-        ],
-    )
-    .expect("valid matrix dimensions");
+    let data = Matrix::from_vec(4, 2, vec![1e6, 2e6, 1.1e6, 2.1e6, 5e6, 6e6, 5.1e6, 6.1e6])
+        .expect("valid matrix dimensions");
 
     let mut tsne = TSNE::new(2).with_n_iter(50).with_random_state(42);
-    let result = tsne.fit_transform(&data).expect("fit_transform should succeed");
+    let result = tsne
+        .fit_transform(&data)
+        .expect("fit_transform should succeed");
     assert_eq!(result.shape(), (4, 2));
 
     // Results should be finite
@@ -1425,16 +1421,14 @@ fn test_tsne_large_values() {
 
 #[test]
 fn test_tsne_without_random_state() {
-    let data = Matrix::from_vec(
-        4,
-        2,
-        vec![1.0, 2.0, 2.0, 3.0, 10.0, 11.0, 11.0, 12.0],
-    )
-    .expect("valid matrix dimensions");
+    let data = Matrix::from_vec(4, 2, vec![1.0, 2.0, 2.0, 3.0, 10.0, 11.0, 11.0, 12.0])
+        .expect("valid matrix dimensions");
 
     // Without random state, should use time-based seed
     let mut tsne = TSNE::new(2).with_n_iter(10);
-    let result = tsne.fit_transform(&data).expect("fit_transform should succeed");
+    let result = tsne
+        .fit_transform(&data)
+        .expect("fit_transform should succeed");
     assert_eq!(result.shape(), (4, 2));
 }
 
@@ -1461,8 +1455,12 @@ fn test_standard_scaler_save_with_options() {
 
     // Verify transform behavior matches
     let test_data = Matrix::from_vec(1, 2, vec![2.0, 20.0]).expect("valid matrix dimensions");
-    let orig_transformed = scaler.transform(&test_data).expect("transform should succeed");
-    let loaded_transformed = loaded.transform(&test_data).expect("transform should succeed");
+    let orig_transformed = scaler
+        .transform(&test_data)
+        .expect("transform should succeed");
+    let loaded_transformed = loaded
+        .transform(&test_data)
+        .expect("transform should succeed");
 
     assert!((orig_transformed.get(0, 0) - loaded_transformed.get(0, 0)).abs() < 1e-5);
     assert!((orig_transformed.get(0, 1) - loaded_transformed.get(0, 1)).abs() < 1e-5);

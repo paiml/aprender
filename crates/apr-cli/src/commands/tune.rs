@@ -15,7 +15,7 @@
 use crate::error::CliError;
 use crate::output;
 use colored::Colorize;
-use entrenar_lora::{plan, Method, MemoryPlanner};
+use entrenar_lora::{plan, MemoryPlanner, Method};
 use std::path::Path;
 
 /// Tuning method selection
@@ -93,9 +93,8 @@ pub fn run(
     }
 
     // Plan optimal configuration using entrenar-lora
-    let config = plan(model_params, vram_gb, method.into()).map_err(|e| {
-        CliError::ValidationFailed(format!("Failed to plan tuning config: {e}"))
-    })?;
+    let config = plan(model_params, vram_gb, method.into())
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to plan tuning config: {e}")))?;
 
     if json_output {
         // JSON output for CI integration
@@ -111,7 +110,10 @@ pub fn run(
             "utilization_percent": config.utilization_percent,
             "speedup": config.speedup,
         });
-        println!("{}", serde_json::to_string_pretty(&json).unwrap_or_default());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json).unwrap_or_default()
+        );
         return Ok(());
     }
 
@@ -133,10 +135,12 @@ pub fn run(
     );
     println!(
         "  Memory required:  {:.2} GB ({:.0}% utilization)",
-        config.memory_gb,
-        config.utilization_percent
+        config.memory_gb, config.utilization_percent
     );
-    println!("  Speedup:          {:.1}x vs full fine-tuning", config.speedup);
+    println!(
+        "  Speedup:          {:.1}x vs full fine-tuning",
+        config.speedup
+    );
     println!();
 
     // Memory breakdown
@@ -158,7 +162,10 @@ pub fn run(
     println!("  Activations:      {:.2} GB", activation_gb);
     println!("{}", "─".repeat(50));
     println!("  {}:            {:.2} GB", "TOTAL".bold(), total_gb);
-    println!("  Savings:          {:.0}% vs full fine-tuning", req.savings_percent);
+    println!(
+        "  Savings:          {:.0}% vs full fine-tuning",
+        req.savings_percent
+    );
     println!();
 
     // Feasibility check
@@ -192,7 +199,10 @@ pub fn run(
     println!("{}", "─".repeat(50));
     println!("  1. Prepare training data in JSONL format");
     println!("  2. Run: apr tune model.gguf --train-data data.jsonl");
-    println!("  3. Output adapter saved to: model-lora-r{}.bin", config.rank);
+    println!(
+        "  3. Output adapter saved to: model-lora-r{}.bin",
+        config.rank
+    );
 
     Ok(())
 }
@@ -219,9 +229,8 @@ fn parse_model_size(size: &str) -> Result<u64, CliError> {
 
 /// Estimate parameters from model file size
 fn estimate_params_from_file(path: &Path) -> Result<u64, CliError> {
-    let metadata = std::fs::metadata(path).map_err(|e| {
-        CliError::ValidationFailed(format!("Cannot read model file: {e}"))
-    })?;
+    let metadata = std::fs::metadata(path)
+        .map_err(|e| CliError::ValidationFailed(format!("Cannot read model file: {e}")))?;
 
     let size_bytes = metadata.len();
 
@@ -277,9 +286,21 @@ mod tests {
 
     #[test]
     fn test_tune_method_parse() {
-        assert!(matches!("lora".parse::<TuneMethod>().unwrap(), TuneMethod::LoRA));
-        assert!(matches!("qlora".parse::<TuneMethod>().unwrap(), TuneMethod::QLoRA));
-        assert!(matches!("auto".parse::<TuneMethod>().unwrap(), TuneMethod::Auto));
-        assert!(matches!("full".parse::<TuneMethod>().unwrap(), TuneMethod::Full));
+        assert!(matches!(
+            "lora".parse::<TuneMethod>().unwrap(),
+            TuneMethod::LoRA
+        ));
+        assert!(matches!(
+            "qlora".parse::<TuneMethod>().unwrap(),
+            TuneMethod::QLoRA
+        ));
+        assert!(matches!(
+            "auto".parse::<TuneMethod>().unwrap(),
+            TuneMethod::Auto
+        ));
+        assert!(matches!(
+            "full".parse::<TuneMethod>().unwrap(),
+            TuneMethod::Full
+        ));
     }
 }

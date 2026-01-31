@@ -228,12 +228,9 @@ fn derive_output_path(source: &str) -> Result<PathBuf> {
                 Ok(PathBuf::from(format!("{base_name}.apr")))
             }
             Source::Local(path) => {
-                let stem = path
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .ok_or_else(|| {
-                        CliError::ValidationFailed("Cannot derive output name from source".into())
-                    })?;
+                let stem = path.file_stem().and_then(|s| s.to_str()).ok_or_else(|| {
+                    CliError::ValidationFailed("Cannot derive output name from source".into())
+                })?;
                 Ok(PathBuf::from(format!("{stem}.apr")))
             }
             Source::Url(url) => {
@@ -249,14 +246,11 @@ fn derive_output_path(source: &str) -> Result<PathBuf> {
     } else {
         // Fallback: try to extract filename from source string
         let path = Path::new(source);
-        let stem = path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .ok_or_else(|| {
-                CliError::ValidationFailed(
-                    "Cannot derive output name from source. Please specify --output.".into(),
-                )
-            })?;
+        let stem = path.file_stem().and_then(|s| s.to_str()).ok_or_else(|| {
+            CliError::ValidationFailed(
+                "Cannot derive output name from source. Please specify --output.".into(),
+            )
+        })?;
         Ok(PathBuf::from(format!("{stem}.apr")))
     }
 }
@@ -293,8 +287,7 @@ mod tests {
 
     #[test]
     fn test_derive_output_path_url() {
-        let result =
-            derive_output_path("https://example.com/models/qwen-1.5b.gguf").unwrap();
+        let result = derive_output_path("https://example.com/models/qwen-1.5b.gguf").unwrap();
         assert_eq!(result, PathBuf::from("qwen-1.5b.apr"));
     }
 }

@@ -956,7 +956,12 @@ fn test_f_convert_001_rosetta_help() {
 #[test]
 fn test_f_convert_002_missing_model() {
     apr()
-        .args(["rosetta", "convert", "/nonexistent/model.gguf", "/tmp/out.apr"])
+        .args([
+            "rosetta",
+            "convert",
+            "/nonexistent/model.gguf",
+            "/tmp/out.apr",
+        ])
         .assert()
         .failure()
         .stderr(
@@ -1198,8 +1203,7 @@ fn test_f_validate_gguf_002_magic_error_message() {
 
     // Create a file with invalid magic
     let mut file = NamedTempFile::new().expect("create temp file");
-    file.write_all(b"BADM1234567890123456789012345678")
-        .unwrap();
+    file.write_all(b"BADM1234567890123456789012345678").unwrap();
 
     apr()
         .args(["validate", file.path().to_str().unwrap()])
@@ -1224,7 +1228,7 @@ fn test_f_validate_gguf_003_accepts_gguf_magic() {
     file.write_all(&3u32.to_le_bytes()).unwrap(); // version 3
     file.write_all(&0u64.to_le_bytes()).unwrap(); // tensor count
     file.write_all(&0u64.to_le_bytes()).unwrap(); // metadata count
-    // Pad to 32 bytes
+                                                  // Pad to 32 bytes
     file.write_all(&[0u8; 8]).unwrap();
 
     // This should pass the magic check (might fail later for other reasons)

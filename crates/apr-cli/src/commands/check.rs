@@ -122,7 +122,9 @@ fn run_real_checks_apr(path: &Path) -> Result<Vec<StageResult>, CliError> {
     });
 
     // Stage 2: Embedding (check for various naming conventions)
-    let has_embed = tensor_names.iter().any(|n| n.contains("emb") || n.contains("wte") || n.contains("token_embd"));
+    let has_embed = tensor_names
+        .iter()
+        .any(|n| n.contains("emb") || n.contains("wte") || n.contains("token_embd"));
     results.push(StageResult {
         name: "Embedding",
         eli5: "Numbers → vectors",
@@ -135,48 +137,84 @@ fn run_real_checks_apr(path: &Path) -> Result<Vec<StageResult>, CliError> {
     });
 
     // Stage 3: Positional Encoding
-    let has_rope = tensor_names.iter().any(|n| n.contains("rope") || n.contains("rotary"));
+    let has_rope = tensor_names
+        .iter()
+        .any(|n| n.contains("rope") || n.contains("rotary"));
     results.push(StageResult {
         name: "Positional Encoding",
         eli5: "\"You are word #3\"",
         passed: true, // RoPE is computed, not stored
-        details: Some(if has_rope { "RoPE tensors found".to_string() } else { "RoPE computed inline".to_string() }),
+        details: Some(if has_rope {
+            "RoPE tensors found".to_string()
+        } else {
+            "RoPE computed inline".to_string()
+        }),
     });
 
     // Stage 4: Q/K/V
-    let has_qkv = tensor_names.iter().any(|n| n.contains("q_proj") || n.contains("attn_q"))
-        && tensor_names.iter().any(|n| n.contains("k_proj") || n.contains("attn_k"))
-        && tensor_names.iter().any(|n| n.contains("v_proj") || n.contains("attn_v"));
+    let has_qkv = tensor_names
+        .iter()
+        .any(|n| n.contains("q_proj") || n.contains("attn_q"))
+        && tensor_names
+            .iter()
+            .any(|n| n.contains("k_proj") || n.contains("attn_k"))
+        && tensor_names
+            .iter()
+            .any(|n| n.contains("v_proj") || n.contains("attn_v"));
     results.push(StageResult {
         name: "Q/K/V Projection",
         eli5: "Make 3 question copies",
         passed: has_qkv,
-        details: if has_qkv { Some("Q/K/V found".to_string()) } else { Some("Missing Q/K/V".to_string()) },
+        details: if has_qkv {
+            Some("Q/K/V found".to_string())
+        } else {
+            Some("Missing Q/K/V".to_string())
+        },
     });
 
     // Stage 5: Attention
-    let has_attn_out = tensor_names.iter().any(|n| n.contains("o_proj") || n.contains("attn_output"));
+    let has_attn_out = tensor_names
+        .iter()
+        .any(|n| n.contains("o_proj") || n.contains("attn_output"));
     results.push(StageResult {
         name: "Attention Scores",
         eli5: "\"Who to look at?\"",
         passed: has_attn_out,
-        details: if has_attn_out { Some("Attention output found".to_string()) } else { Some("Missing attention output".to_string()) },
+        details: if has_attn_out {
+            Some("Attention output found".to_string())
+        } else {
+            Some("Missing attention output".to_string())
+        },
     });
 
     // Stage 6: FFN
-    let has_ffn = tensor_names.iter().any(|n| n.contains("gate_proj") || n.contains("ffn_gate"))
-        && tensor_names.iter().any(|n| n.contains("up_proj") || n.contains("ffn_up"))
-        && tensor_names.iter().any(|n| n.contains("down_proj") || n.contains("ffn_down"));
+    let has_ffn = tensor_names
+        .iter()
+        .any(|n| n.contains("gate_proj") || n.contains("ffn_gate"))
+        && tensor_names
+            .iter()
+            .any(|n| n.contains("up_proj") || n.contains("ffn_up"))
+        && tensor_names
+            .iter()
+            .any(|n| n.contains("down_proj") || n.contains("ffn_down"));
     results.push(StageResult {
         name: "Feed-Forward (MLP)",
         eli5: "\"Think about it\"",
         passed: has_ffn,
-        details: if has_ffn { Some("MLP found".to_string()) } else { Some("Missing MLP".to_string()) },
+        details: if has_ffn {
+            Some("MLP found".to_string())
+        } else {
+            Some("Missing MLP".to_string())
+        },
     });
 
     // Stage 7: LayerNorm
-    let has_norm = tensor_names.iter().any(|n| n.contains("input_layernorm") || n.contains("attn_norm"))
-        && tensor_names.iter().any(|n| n.contains("post_attention_layernorm") || n.contains("ffn_norm"));
+    let has_norm = tensor_names
+        .iter()
+        .any(|n| n.contains("input_layernorm") || n.contains("attn_norm"))
+        && tensor_names
+            .iter()
+            .any(|n| n.contains("post_attention_layernorm") || n.contains("ffn_norm"));
     results.push(StageResult {
         name: "Layer Norm",
         eli5: "Keep numbers stable",
@@ -185,12 +223,18 @@ fn run_real_checks_apr(path: &Path) -> Result<Vec<StageResult>, CliError> {
     });
 
     // Stage 8: LM Head
-    let has_lm_head = tensor_names.iter().any(|n| n.contains("lm_head") || n == &"output.weight");
+    let has_lm_head = tensor_names
+        .iter()
+        .any(|n| n.contains("lm_head") || n == &"output.weight");
     results.push(StageResult {
         name: "LM Head",
         eli5: "Vector → vocab scores",
         passed: has_lm_head || has_embed, // tied embeddings OK
-        details: Some(format!("vocab_size={}{}", vocab_size, if !has_lm_head { " (tied)" } else { "" })),
+        details: Some(format!(
+            "vocab_size={}{}",
+            vocab_size,
+            if !has_lm_head { " (tied)" } else { "" }
+        )),
     });
 
     // Stage 9: Logits - run forward pass
@@ -203,7 +247,13 @@ fn run_real_checks_apr(path: &Path) -> Result<Vec<StageResult>, CliError> {
                 name: "Logits → Probs",
                 eli5: "Scores → percentages",
                 passed: valid,
-                details: Some(if has_nan { "NaN detected".to_string() } else if has_inf { "Inf detected".to_string() } else { format!("logits[{}]", logits.len()) }),
+                details: Some(if has_nan {
+                    "NaN detected".to_string()
+                } else if has_inf {
+                    "Inf detected".to_string()
+                } else {
+                    format!("logits[{}]", logits.len())
+                }),
             }
         }
         Err(e) => StageResult {
@@ -220,7 +270,10 @@ fn run_real_checks_apr(path: &Path) -> Result<Vec<StageResult>, CliError> {
         Ok(logits) => {
             let max_logit = logits.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
             let exp_sum: f32 = logits.iter().map(|x| (x - max_logit).exp()).sum();
-            let probs: Vec<f32> = logits.iter().map(|x| (x - max_logit).exp() / exp_sum).collect();
+            let probs: Vec<f32> = logits
+                .iter()
+                .map(|x| (x - max_logit).exp() / exp_sum)
+                .collect();
             let prob_sum: f32 = probs.iter().sum();
             let valid = (prob_sum - 1.0).abs() < 0.001;
             StageResult {

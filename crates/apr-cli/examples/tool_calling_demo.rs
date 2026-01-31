@@ -173,7 +173,10 @@ fn main() {
     };
 
     println!("Example Response (with tool call):");
-    println!("{}\n", serde_json::to_string_pretty(&example_response).unwrap());
+    println!(
+        "{}\n",
+        serde_json::to_string_pretty(&example_response).unwrap()
+    );
 
     // Show multi-turn conversation with tool result
     println!("Multi-turn conversation with tool result:\n");
@@ -200,7 +203,9 @@ fn main() {
         },
         ChatMessage {
             role: "tool".to_string(),
-            content: Some(r#"{"temperature": 22, "condition": "sunny", "humidity": 65}"#.to_string()),
+            content: Some(
+                r#"{"temperature": 22, "condition": "sunny", "humidity": 65}"#.to_string(),
+            ),
             tool_calls: None,
             tool_call_id: Some("call_abc123".to_string()),
         },
@@ -214,7 +219,10 @@ fn main() {
     };
 
     println!("Follow-up request with tool result:");
-    println!("{}\n", serde_json::to_string_pretty(&follow_up_request).unwrap());
+    println!(
+        "{}\n",
+        serde_json::to_string_pretty(&follow_up_request).unwrap()
+    );
 
     println!("---");
     println!("To test with a real server:");

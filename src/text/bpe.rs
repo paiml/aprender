@@ -1374,7 +1374,7 @@ mod tests {
         let tokenizer = BpeTokenizer::gpt2_base();
         // Decode with special token ID
         let decoded = tokenizer.decode(&[50256, 72]); // endoftext + 'H'
-        // Should not contain the special token text
+                                                      // Should not contain the special token text
         assert!(!decoded.contains("<|endoftext|>"));
     }
 
