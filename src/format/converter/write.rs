@@ -9,7 +9,7 @@ use crate::format::gguf::{
 };
 
 // Import quantization function from parent module
-use super::quantize_q4_k;
+use super::{quantize_q4_k, transpose_q4k_for_matmul, transpose_q6k_for_matmul};
 use crate::format::v2::{AprV2Metadata, AprV2Writer, TensorDType};
 use std::collections::BTreeMap;
 use std::fs;
@@ -681,22 +681,49 @@ pub(crate) fn write_apr_file_raw(
                 );
             }
             12 => {
-                // Q4_K - store raw for fused kernels with GGML-order dims
-                writer.add_tensor(
-                    name,
-                    TensorDType::Q4K,
-                    tensor.shape.clone(),
-                    tensor.data.clone(),
-                );
+                // Q4_K - transpose from GGUF column-major to row-major for GPU kernel
+                // GH-189 FIX: GGUF stores column-major, trueno kernel expects row-major
+                // Only transpose 2D weight tensors (projections, embeddings)
+                if tensor.shape.len() == 2 {
+                    let (transposed_data, transposed_shape) =
+                        transpose_q4k_for_matmul(&tensor.data, &tensor.shape);
+                    writer.add_tensor(
+                        name,
+                        TensorDType::Q4K,
+                        transposed_shape,
+                        transposed_data,
+                    );
+                } else {
+                    // 1D tensors (norms, biases) - store as-is
+                    writer.add_tensor(
+                        name,
+                        TensorDType::Q4K,
+                        tensor.shape.clone(),
+                        tensor.data.clone(),
+                    );
+                }
             }
             14 => {
-                // Q6_K - store raw for fused kernels with GGML-order dims
-                writer.add_tensor(
-                    name,
-                    TensorDType::Q6K,
-                    tensor.shape.clone(),
-                    tensor.data.clone(),
-                );
+                // Q6_K - transpose from GGUF column-major to row-major for GPU kernel
+                // GH-189 FIX: GGUF stores column-major, trueno kernel expects row-major
+                if tensor.shape.len() == 2 {
+                    let (transposed_data, transposed_shape) =
+                        transpose_q6k_for_matmul(&tensor.data, &tensor.shape);
+                    // Note: transpose_q6k outputs Q4K since Q6K encoder not yet implemented
+                    writer.add_tensor(
+                        name,
+                        TensorDType::Q4K,
+                        transposed_shape,
+                        transposed_data,
+                    );
+                } else {
+                    writer.add_tensor(
+                        name,
+                        TensorDType::Q6K,
+                        tensor.shape.clone(),
+                        tensor.data.clone(),
+                    );
+                }
             }
             2 => {
                 // Q4_0 - dequantize to F32, keep GGML convention dims

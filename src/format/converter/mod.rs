@@ -1128,10 +1128,8 @@ fn quantize_q4_k(data: &[f32]) -> Vec<u8> {
 ///
 /// Returns: (transposed_q4k_bytes, transposed_shape)
 ///
-/// Note: Scaffolding for PMAT-103 layout conversion optimization. Will be integrated
-/// when the realizar inference engine adopts APR-native tensor ordering.
-#[allow(dead_code)]
-fn transpose_q4k_for_matmul(data: &[u8], shape: &[usize]) -> (Vec<u8>, Vec<usize>) {
+/// Note: GH-189 FIX - Now used in write.rs for GGUF→APR conversion.
+pub(crate) fn transpose_q4k_for_matmul(data: &[u8], shape: &[usize]) -> (Vec<u8>, Vec<usize>) {
     // Only transpose 2D tensors
     if shape.len() != 2 {
         return (data.to_vec(), shape.to_vec());
@@ -1165,10 +1163,9 @@ fn transpose_q4k_for_matmul(data: &[u8], shape: &[usize]) -> (Vec<u8>, Vec<usize
 ///
 /// Same as transpose_q4k_for_matmul but for Q6K format.
 ///
-/// Note: Scaffolding for PMAT-103 layout conversion optimization.
+/// Note: GH-189 FIX - Now used in write.rs for GGUF→APR conversion.
 /// Currently outputs Q4K for re-quantized transpose until Q6K encoder is added.
-#[allow(dead_code)]
-fn transpose_q6k_for_matmul(data: &[u8], shape: &[usize]) -> (Vec<u8>, Vec<usize>) {
+pub(crate) fn transpose_q6k_for_matmul(data: &[u8], shape: &[usize]) -> (Vec<u8>, Vec<usize>) {
     // Only transpose 2D tensors
     if shape.len() != 2 {
         return (data.to_vec(), shape.to_vec());
