@@ -1077,4 +1077,225 @@ mod tests_coverage_boost {
         assert_eq!(acc.safe_min(), 0.0);
         assert_eq!(acc.safe_max(), 0.0);
     }
+
+    // ========================================================================
+    // ExportFormat and ExportOptions Tests (T-COV-95)
+    // ========================================================================
+
+    #[test]
+    fn test_export_format_from_str_safetensors() {
+        use std::str::FromStr;
+        assert_eq!(ExportFormat::from_str("safetensors").unwrap(), ExportFormat::SafeTensors);
+        assert_eq!(ExportFormat::from_str("st").unwrap(), ExportFormat::SafeTensors);
+        assert_eq!(ExportFormat::from_str("SAFETENSORS").unwrap(), ExportFormat::SafeTensors);
+    }
+
+    #[test]
+    fn test_export_format_from_str_gguf() {
+        use std::str::FromStr;
+        assert_eq!(ExportFormat::from_str("gguf").unwrap(), ExportFormat::Gguf);
+        assert_eq!(ExportFormat::from_str("GGUF").unwrap(), ExportFormat::Gguf);
+    }
+
+    #[test]
+    fn test_export_format_from_str_onnx() {
+        use std::str::FromStr;
+        assert_eq!(ExportFormat::from_str("onnx").unwrap(), ExportFormat::Onnx);
+    }
+
+    #[test]
+    fn test_export_format_from_str_torchscript() {
+        use std::str::FromStr;
+        assert_eq!(ExportFormat::from_str("torchscript").unwrap(), ExportFormat::TorchScript);
+        assert_eq!(ExportFormat::from_str("pt").unwrap(), ExportFormat::TorchScript);
+        assert_eq!(ExportFormat::from_str("torch").unwrap(), ExportFormat::TorchScript);
+    }
+
+    #[test]
+    fn test_export_format_from_str_unknown() {
+        use std::str::FromStr;
+        let result = ExportFormat::from_str("unknown_format");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Unknown"));
+    }
+
+    #[test]
+    fn test_export_format_extension() {
+        assert_eq!(ExportFormat::SafeTensors.extension(), "safetensors");
+        assert_eq!(ExportFormat::Gguf.extension(), "gguf");
+        assert_eq!(ExportFormat::Onnx.extension(), "onnx");
+        assert_eq!(ExportFormat::TorchScript.extension(), "pt");
+    }
+
+    #[test]
+    fn test_export_format_is_supported() {
+        assert!(ExportFormat::SafeTensors.is_supported());
+        assert!(ExportFormat::Gguf.is_supported());
+        assert!(!ExportFormat::Onnx.is_supported());
+        assert!(!ExportFormat::TorchScript.is_supported());
+    }
+
+    #[test]
+    fn test_export_format_debug() {
+        let format = ExportFormat::SafeTensors;
+        let debug_str = format!("{:?}", format);
+        assert!(debug_str.contains("SafeTensors"));
+    }
+
+    #[test]
+    fn test_export_format_clone() {
+        let format = ExportFormat::Gguf;
+        let cloned = format;
+        assert_eq!(format, cloned);
+    }
+
+    #[test]
+    fn test_export_options_default() {
+        let opts = ExportOptions::default();
+        assert_eq!(opts.format, ExportFormat::SafeTensors);
+        assert!(opts.quantize.is_none());
+        assert!(opts.include_tokenizer);
+        assert!(opts.include_config);
+    }
+
+    #[test]
+    fn test_export_options_custom() {
+        let opts = ExportOptions {
+            format: ExportFormat::Gguf,
+            quantize: Some(QuantizationType::Int8),
+            include_tokenizer: false,
+            include_config: false,
+        };
+        assert_eq!(opts.format, ExportFormat::Gguf);
+        assert_eq!(opts.quantize, Some(QuantizationType::Int8));
+        assert!(!opts.include_tokenizer);
+        assert!(!opts.include_config);
+    }
+
+    #[test]
+    fn test_export_options_debug() {
+        let opts = ExportOptions::default();
+        let debug_str = format!("{:?}", opts);
+        assert!(debug_str.contains("ExportOptions"));
+    }
+
+    #[test]
+    fn test_export_options_clone() {
+        let opts = ExportOptions {
+            format: ExportFormat::Gguf,
+            quantize: Some(QuantizationType::Int4),
+            include_tokenizer: true,
+            include_config: false,
+        };
+        let cloned = opts.clone();
+        assert_eq!(opts.format, cloned.format);
+        assert_eq!(opts.quantize, cloned.quantize);
+    }
+
+    #[test]
+    fn test_export_report_struct() {
+        let report = ExportReport {
+            original_size: 1000,
+            exported_size: 500,
+            tensor_count: 10,
+            format: ExportFormat::SafeTensors,
+            quantization: Some(QuantizationType::Int8),
+        };
+        assert_eq!(report.original_size, 1000);
+        assert_eq!(report.exported_size, 500);
+        assert_eq!(report.tensor_count, 10);
+        assert_eq!(report.format, ExportFormat::SafeTensors);
+        assert_eq!(report.quantization, Some(QuantizationType::Int8));
+    }
+
+    #[test]
+    fn test_export_report_debug() {
+        let report = ExportReport {
+            original_size: 100,
+            exported_size: 50,
+            tensor_count: 5,
+            format: ExportFormat::Gguf,
+            quantization: None,
+        };
+        let debug_str = format!("{:?}", report);
+        assert!(debug_str.contains("ExportReport"));
+    }
+
+    // ========================================================================
+    // MergeOptions and MergeReport Tests (T-COV-95)
+    // ========================================================================
+
+    #[test]
+    fn test_merge_strategy_variants() {
+        let _ = MergeStrategy::Average;
+        let _ = MergeStrategy::Weighted;
+        let _ = MergeStrategy::Slerp;
+        let _ = MergeStrategy::Ties;
+        let _ = MergeStrategy::Dare;
+    }
+
+    #[test]
+    fn test_merge_strategy_from_str() {
+        use std::str::FromStr;
+        assert_eq!(MergeStrategy::from_str("average").unwrap(), MergeStrategy::Average);
+        assert_eq!(MergeStrategy::from_str("weighted").unwrap(), MergeStrategy::Weighted);
+        assert_eq!(MergeStrategy::from_str("slerp").unwrap(), MergeStrategy::Slerp);
+        assert_eq!(MergeStrategy::from_str("ties").unwrap(), MergeStrategy::Ties);
+        assert_eq!(MergeStrategy::from_str("dare").unwrap(), MergeStrategy::Dare);
+    }
+
+    #[test]
+    fn test_merge_strategy_from_str_case_insensitive() {
+        use std::str::FromStr;
+        assert_eq!(MergeStrategy::from_str("AVERAGE").unwrap(), MergeStrategy::Average);
+        assert_eq!(MergeStrategy::from_str("Average").unwrap(), MergeStrategy::Average);
+    }
+
+    #[test]
+    fn test_merge_strategy_from_str_unknown() {
+        use std::str::FromStr;
+        let result = MergeStrategy::from_str("unknown");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_merge_options_default() {
+        let opts = MergeOptions::default();
+        assert_eq!(opts.strategy, MergeStrategy::Average);
+        assert!(opts.weights.is_none());
+    }
+
+    #[test]
+    fn test_merge_options_custom() {
+        let opts = MergeOptions {
+            strategy: MergeStrategy::Weighted,
+            weights: Some(vec![0.7, 0.3]),
+        };
+        assert_eq!(opts.strategy, MergeStrategy::Weighted);
+        assert!(opts.weights.is_some());
+        assert_eq!(opts.weights.as_ref().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn test_merge_options_slerp() {
+        let opts = MergeOptions {
+            strategy: MergeStrategy::Slerp,
+            weights: None,
+        };
+        assert_eq!(opts.strategy, MergeStrategy::Slerp);
+        assert!(opts.weights.is_none());
+    }
+
+    #[test]
+    fn test_merge_report_struct() {
+        let report = MergeReport {
+            model_count: 3,
+            strategy: MergeStrategy::Average,
+            tensor_count: 100,
+            output_size: 10000,
+            weights_used: None,
+        };
+        assert_eq!(report.model_count, 3);
+        assert_eq!(report.tensor_count, 100);
+    }
 }
