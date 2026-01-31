@@ -537,10 +537,11 @@ fn run_gguf_benchmark(path: &Path, config: &BenchConfig, use_cuda: bool) -> Resu
 }
 
 /// APR format benchmark
-/// GH-192: Now supports CUDA GPU acceleration
+/// GH-192: Now supports CUDA GPU acceleration and uses KV cache for O(n) generation
 #[cfg(feature = "inference")]
 fn run_apr_benchmark(path: &Path, config: &BenchConfig, use_cuda: bool) -> Result<BenchResult> {
     use realizar::apr::AprV2Model;
+    use realizar::apr_transformer::{AprTransformer, GenerateConfig};
 
     if use_cuda {
         return run_apr_cuda_benchmark(path, config);
@@ -549,50 +550,60 @@ fn run_apr_benchmark(path: &Path, config: &BenchConfig, use_cuda: bool) -> Resul
     println!("{}", "Loading APR model (CPU)...".yellow());
     let start = Instant::now();
 
-    // Load APR model
-    let model = AprV2Model::load(path)
+    // Load APR model as AprTransformer for KV cache support
+    let transformer = AprTransformer::from_apr_file(path)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to load APR: {e}")))?;
 
     let load_time = start.elapsed();
     println!(
-        "{} in {:.2}s ({} tensors)",
+        "{} in {:.2}s",
         "Model ready".green(),
-        load_time.as_secs_f32(),
-        model.tensor_count()
+        load_time.as_secs_f32()
     );
     println!();
 
-    // Try to get tokenizer from embedded vocab or sibling file
-    let prompt_tokens: Vec<u32> = if let Some(tokenizer) = model.load_embedded_bpe_tokenizer() {
-        tokenizer.encode(&config.prompt)
-    } else if let Some((vocab, _, _)) = AprV2Model::load_tokenizer_from_sibling(path) {
-        // Simple whitespace tokenization as fallback
-        let token_to_id: std::collections::HashMap<String, u32> = vocab
-            .iter()
-            .enumerate()
-            .map(|(i, t)| (t.clone(), i as u32))
-            .collect();
-        config
-            .prompt
-            .split_whitespace()
-            .filter_map(|w| token_to_id.get(w).copied())
-            .collect()
-    } else {
-        // Fallback tokens
-        vec![1, 2, 3, 4, 5]
+    // Try to get tokenizer from sibling file
+    let prompt_tokens: Vec<u32> =
+        if let Some(tokenizer) = AprV2Model::load_tokenizer_from_path(&path.with_file_name("tokenizer.json")) {
+            tokenizer.encode(&config.prompt)
+        } else if let Some((vocab, _, _)) = AprV2Model::load_tokenizer_from_sibling(path) {
+            // Simple whitespace tokenization as fallback
+            let token_to_id: std::collections::HashMap<String, u32> = vocab
+                .iter()
+                .enumerate()
+                .map(|(i, t)| (t.clone(), i as u32))
+                .collect();
+            config
+                .prompt
+                .split_whitespace()
+                .filter_map(|w| token_to_id.get(w).copied())
+                .collect()
+        } else {
+            // Fallback tokens
+            vec![1, 2, 3, 4, 5]
+        };
+
+    // Generation config for greedy sampling
+    let gen_config = GenerateConfig {
+        max_tokens: config.max_tokens.min(32),
+        temperature: 0.0,  // Greedy
+        top_p: 1.0,
+        top_k: 0,
+        repetition_penalty: 1.0,
+        trace: false,
     };
 
-    // Warmup
+    // Warmup - uses KV cache for O(n) complexity
     println!("{}", "Running warmup...".yellow());
     for i in 0..config.warmup {
-        let _ = model.generate(&prompt_tokens, config.max_tokens.min(16), None);
+        let _ = transformer.generate_with_cache(&prompt_tokens, &gen_config);
         print!("  Warmup {}/{}\r", i + 1, config.warmup);
         std::io::Write::flush(&mut std::io::stdout()).ok();
     }
     println!("  Warmup complete        ");
     println!();
 
-    // Measurement
+    // Measurement - uses KV cache for O(n) complexity
     println!("{}", "Running benchmark...".yellow());
     let mut iteration_times = Vec::with_capacity(config.iterations);
     let mut total_tokens = 0usize;
@@ -601,9 +612,9 @@ fn run_apr_benchmark(path: &Path, config: &BenchConfig, use_cuda: bool) -> Resul
     for i in 0..config.iterations {
         let iter_start = Instant::now();
 
-        let output = model
-            .generate(&prompt_tokens, config.max_tokens.min(32), None)
-            .unwrap_or_default();
+        let output = transformer
+            .generate_with_cache(&prompt_tokens, &gen_config)
+            .unwrap_or_else(|_| prompt_tokens.to_vec());
         let tokens_generated = output.len().saturating_sub(prompt_tokens.len());
 
         let iter_time = iter_start.elapsed();
@@ -680,17 +691,19 @@ fn run_apr_cuda_benchmark(path: &Path, config: &BenchConfig) -> Result<BenchResu
     );
     println!();
 
-    // Warmup
+    // Warmup - use cached version for proper KV cache usage
     println!("{}", "Running warmup (GPU)...".yellow());
     for i in 0..config.warmup {
-        let _ = model.generate_cuda(&prompt_tokens, config.max_tokens.min(16), eos_token);
+        // Reset KV cache position for each iteration
+        model.reset_kv_cache();
+        let _ = model.generate_cuda_with_cache(&prompt_tokens, config.max_tokens.min(16), eos_token);
         print!("  Warmup {}/{}\r", i + 1, config.warmup);
         std::io::Write::flush(&mut std::io::stdout()).ok();
     }
     println!("  Warmup complete        ");
     println!();
 
-    // Measurement
+    // Measurement - use cached version for O(n) instead of O(n²)
     println!("{}", "Running benchmark (GPU)...".yellow());
     let mut iteration_times = Vec::with_capacity(config.iterations);
     let mut total_tokens = 0usize;
@@ -699,8 +712,10 @@ fn run_apr_cuda_benchmark(path: &Path, config: &BenchConfig) -> Result<BenchResu
     for i in 0..config.iterations {
         let iter_start = Instant::now();
 
+        // Reset KV cache and use cached generation
+        model.reset_kv_cache();
         let output = model
-            .generate_cuda(&prompt_tokens, config.max_tokens.min(32), eos_token)
+            .generate_cuda_with_cache(&prompt_tokens, config.max_tokens.min(32), eos_token)
             .unwrap_or_default();
         let tokens_generated = output.len().saturating_sub(prompt_tokens.len());
 
@@ -835,9 +850,10 @@ fn run_safetensors_cuda_benchmark(path: &Path, config: &BenchConfig) -> Result<B
     );
     println!();
 
-    // Warmup
+    // Warmup - reset KV cache for each iteration
     println!("{}", "Running warmup (GPU)...".yellow());
     for i in 0..config.warmup {
+        model.reset_kv_cache();
         let _ = model.generate(&prompt_tokens, config.max_tokens.min(16), eos_token);
         print!("  Warmup {}/{}\r", i + 1, config.warmup);
         std::io::Write::flush(&mut std::io::stdout()).ok();
@@ -845,7 +861,7 @@ fn run_safetensors_cuda_benchmark(path: &Path, config: &BenchConfig) -> Result<B
     println!("  Warmup complete        ");
     println!();
 
-    // Measurement
+    // Measurement - reset KV cache for each iteration
     println!("{}", "Running benchmark (GPU)...".yellow());
     let mut iteration_times = Vec::with_capacity(config.iterations);
     let mut total_tokens = 0usize;
@@ -854,6 +870,7 @@ fn run_safetensors_cuda_benchmark(path: &Path, config: &BenchConfig) -> Result<B
     for i in 0..config.iterations {
         let iter_start = Instant::now();
 
+        model.reset_kv_cache();
         let output = model
             .generate(&prompt_tokens, config.max_tokens.min(32), eos_token)
             .unwrap_or_else(|_| prompt_tokens.to_vec());
