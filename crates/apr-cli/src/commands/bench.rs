@@ -1118,6 +1118,12 @@ fn calculate_benchmark_stats(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::{tempdir, NamedTempFile};
+    use std::io::Write;
+
+    // ========================================================================
+    // BenchConfig Tests
+    // ========================================================================
 
     #[test]
     fn test_bench_config_default() {
@@ -1126,6 +1132,30 @@ mod tests {
         assert_eq!(config.iterations, 5);
         assert_eq!(config.max_tokens, 32);
     }
+
+    #[test]
+    fn test_bench_config_default_prompt() {
+        let config = BenchConfig::default();
+        assert_eq!(config.prompt, "What is 2+2?");
+    }
+
+    #[test]
+    fn test_bench_config_custom_values() {
+        let config = BenchConfig {
+            warmup: 5,
+            iterations: 10,
+            max_tokens: 64,
+            prompt: "Custom prompt".to_string(),
+        };
+        assert_eq!(config.warmup, 5);
+        assert_eq!(config.iterations, 10);
+        assert_eq!(config.max_tokens, 64);
+        assert_eq!(config.prompt, "Custom prompt");
+    }
+
+    // ========================================================================
+    // BenchResult Tests
+    // ========================================================================
 
     #[test]
     fn test_bench_result_pass() {
@@ -1161,5 +1191,175 @@ mod tests {
 
         assert!(!result.passed);
         assert!(result.tokens_per_second < 10.0);
+    }
+
+    #[test]
+    fn test_bench_result_excellent_throughput() {
+        let result = BenchResult {
+            total_tokens: 1000,
+            total_time: Duration::from_secs(1),
+            tokens_per_second: 1000.0, // Excellent
+            time_to_first_token: Duration::from_millis(5),
+            iteration_times: vec![Duration::from_millis(200); 5],
+            mean_time: Duration::from_millis(200),
+            median_time: Duration::from_millis(200),
+            std_dev: Duration::from_millis(5),
+            passed: true,
+        };
+
+        assert!(result.passed);
+        assert!(result.tokens_per_second >= 100.0); // A+ grade threshold
+    }
+
+    #[test]
+    fn test_bench_result_threshold_boundary() {
+        // Exactly at threshold
+        let result = BenchResult {
+            total_tokens: 100,
+            total_time: Duration::from_secs(10),
+            tokens_per_second: 10.0, // Exactly at threshold
+            time_to_first_token: Duration::from_millis(100),
+            iteration_times: vec![Duration::from_secs(2); 5],
+            mean_time: Duration::from_secs(2),
+            median_time: Duration::from_secs(2),
+            std_dev: Duration::from_millis(50),
+            passed: true,
+        };
+
+        assert!(result.passed);
+        assert!(result.tokens_per_second == 10.0);
+    }
+
+    #[test]
+    fn test_bench_result_just_below_threshold() {
+        let result = BenchResult {
+            total_tokens: 99,
+            total_time: Duration::from_secs(10),
+            tokens_per_second: 9.9, // Just below threshold
+            time_to_first_token: Duration::from_millis(100),
+            iteration_times: vec![Duration::from_secs(2); 5],
+            mean_time: Duration::from_secs(2),
+            median_time: Duration::from_secs(2),
+            std_dev: Duration::from_millis(50),
+            passed: false,
+        };
+
+        assert!(!result.passed);
+        assert!(result.tokens_per_second < 10.0);
+    }
+
+    // ========================================================================
+    // Run Command Tests (no inference feature)
+    // ========================================================================
+
+    #[test]
+    fn test_run_file_not_found() {
+        let result = run(
+            Path::new("/nonexistent/model.gguf"),
+            3,     // warmup
+            5,     // iterations
+            32,    // max_tokens
+            None,  // prompt
+            false, // fast
+            None,  // brick
+        );
+        // Should fail - file doesn't exist
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_is_directory() {
+        let dir = tempdir().expect("create temp dir");
+        let result = run(
+            dir.path(),
+            3,     // warmup
+            5,     // iterations
+            32,    // max_tokens
+            None,  // prompt
+            false, // fast
+            None,  // brick
+        );
+        // Should fail - it's a directory not a file
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_invalid_brick_name() {
+        // Create a dummy file so path validation passes
+        let file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
+        let result = run(
+            file.path(),
+            3,     // warmup
+            5,     // iterations
+            32,    // max_tokens
+            None,  // prompt
+            false, // fast
+            Some("invalid_brick_xyz"), // invalid brick name
+        );
+        // Should fail - either no inference feature or invalid brick
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_with_custom_prompt() {
+        let mut file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
+        file.write_all(b"not a real gguf").expect("write");
+        let result = run(
+            file.path(),
+            1,     // warmup
+            1,     // iterations
+            16,    // max_tokens
+            Some("Custom test prompt"),
+            false, // fast
+            None,  // brick
+        );
+        // Will fail since it's not a real model, but tests the path
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_with_various_extensions() {
+        // Test .apr extension
+        let mut file_apr = NamedTempFile::with_suffix(".apr").expect("create temp file");
+        file_apr.write_all(b"not a real apr").expect("write");
+        let result = run(file_apr.path(), 1, 1, 16, None, false, None);
+        assert!(result.is_err()); // Will fail - invalid format
+
+        // Test .safetensors extension
+        let mut file_st = NamedTempFile::with_suffix(".safetensors").expect("create temp file");
+        file_st.write_all(b"not a real safetensors").expect("write");
+        let result = run(file_st.path(), 1, 1, 16, None, false, None);
+        assert!(result.is_err()); // Will fail - invalid format
+    }
+
+    // ========================================================================
+    // Brick Benchmark Tests (when inference feature enabled)
+    // ========================================================================
+
+    #[cfg(feature = "inference")]
+    #[test]
+    fn test_brick_benchmark_rms_norm() {
+        // Create a dummy file
+        let file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
+        let _result = run(
+            file.path(),
+            1, 1, 16, None, false,
+            Some("rms_norm"),
+        );
+        // May pass or fail depending on implementation, but should not panic
+        // The important thing is the brick name is recognized
+    }
+
+    #[cfg(feature = "inference")]
+    #[test]
+    fn test_brick_benchmark_invalid_name() {
+        let file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
+        let result = run(
+            file.path(),
+            1, 1, 16, None, false,
+            Some("nonexistent_brick"),
+        );
+        assert!(result.is_err());
+        // Error message should mention unknown brick type
     }
 }

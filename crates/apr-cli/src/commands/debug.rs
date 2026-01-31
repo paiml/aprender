@@ -366,3 +366,230 @@ fn format_model_type(type_id: u16) -> String {
         _ => format!("Unknown(0x{type_id:04X})"),
     }
 }
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use tempfile::{tempdir, NamedTempFile};
+
+    // ========================================================================
+    // Path Validation Tests
+    // ========================================================================
+
+    #[test]
+    fn test_validate_path_not_found() {
+        let result = validate_path(Path::new("/nonexistent/model.apr"));
+        assert!(result.is_err());
+        match result {
+            Err(CliError::FileNotFound(_)) => {}
+            _ => panic!("Expected FileNotFound error"),
+        }
+    }
+
+    #[test]
+    fn test_validate_path_is_directory() {
+        let dir = tempdir().expect("create dir");
+        let result = validate_path(dir.path());
+        assert!(result.is_err());
+        match result {
+            Err(CliError::NotAFile(_)) => {}
+            _ => panic!("Expected NotAFile error"),
+        }
+    }
+
+    #[test]
+    fn test_validate_path_valid() {
+        let file = NamedTempFile::new().expect("create file");
+        let result = validate_path(file.path());
+        assert!(result.is_ok());
+    }
+
+    // ========================================================================
+    // Model Type Formatting Tests
+    // ========================================================================
+
+    #[test]
+    fn test_format_model_type_linear_regression() {
+        assert_eq!(format_model_type(0x0001), "LinearRegression");
+    }
+
+    #[test]
+    fn test_format_model_type_logistic_regression() {
+        assert_eq!(format_model_type(0x0002), "LogisticRegression");
+    }
+
+    #[test]
+    fn test_format_model_type_decision_tree() {
+        assert_eq!(format_model_type(0x0003), "DecisionTree");
+    }
+
+    #[test]
+    fn test_format_model_type_random_forest() {
+        assert_eq!(format_model_type(0x0004), "RandomForest");
+    }
+
+    #[test]
+    fn test_format_model_type_gradient_boosting() {
+        assert_eq!(format_model_type(0x0005), "GradientBoosting");
+    }
+
+    #[test]
+    fn test_format_model_type_kmeans() {
+        assert_eq!(format_model_type(0x0006), "KMeans");
+    }
+
+    #[test]
+    fn test_format_model_type_pca() {
+        assert_eq!(format_model_type(0x0007), "PCA");
+    }
+
+    #[test]
+    fn test_format_model_type_naive_bayes() {
+        assert_eq!(format_model_type(0x0008), "NaiveBayes");
+    }
+
+    #[test]
+    fn test_format_model_type_knn() {
+        assert_eq!(format_model_type(0x0009), "KNN");
+    }
+
+    #[test]
+    fn test_format_model_type_svm() {
+        assert_eq!(format_model_type(0x000A), "SVM");
+    }
+
+    #[test]
+    fn test_format_model_type_ngram_lm() {
+        assert_eq!(format_model_type(0x0010), "NgramLM");
+    }
+
+    #[test]
+    fn test_format_model_type_tfidf() {
+        assert_eq!(format_model_type(0x0011), "TfIdf");
+    }
+
+    #[test]
+    fn test_format_model_type_count_vectorizer() {
+        assert_eq!(format_model_type(0x0012), "CountVectorizer");
+    }
+
+    #[test]
+    fn test_format_model_type_neural_sequential() {
+        assert_eq!(format_model_type(0x0020), "NeuralSequential");
+    }
+
+    #[test]
+    fn test_format_model_type_neural_custom() {
+        assert_eq!(format_model_type(0x0021), "NeuralCustom");
+    }
+
+    #[test]
+    fn test_format_model_type_content_recommender() {
+        assert_eq!(format_model_type(0x0030), "ContentRecommender");
+    }
+
+    #[test]
+    fn test_format_model_type_mixture_of_experts() {
+        assert_eq!(format_model_type(0x0040), "MixtureOfExperts");
+    }
+
+    #[test]
+    fn test_format_model_type_custom() {
+        assert_eq!(format_model_type(0x00FF), "Custom");
+    }
+
+    #[test]
+    fn test_format_model_type_unknown() {
+        assert_eq!(format_model_type(0xDEAD), "Unknown(0xDEAD)");
+    }
+
+    // ========================================================================
+    // Run Command Tests
+    // ========================================================================
+
+    #[test]
+    fn test_run_file_not_found() {
+        let result = run(
+            Path::new("/nonexistent/model.apr"),
+            false,
+            false,
+            false,
+            100,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_with_small_file() {
+        let mut file = NamedTempFile::with_suffix(".apr").expect("create file");
+        // Write something smaller than header size
+        file.write_all(b"short").expect("write");
+
+        // Should fail because file is too small for header
+        let result = run(file.path(), false, false, false, 100);
+        assert!(result.is_err());
+    }
+
+    // ========================================================================
+    // Header Parsing Tests
+    // ========================================================================
+
+    #[test]
+    fn test_parse_header_invalid_magic() {
+        let mut header = [0u8; HEADER_SIZE];
+        header[0..4].copy_from_slice(b"XXXX");
+        let info = parse_header(&header);
+        assert!(!info.magic_valid);
+        assert_eq!(info.magic_str, "XXXX");
+    }
+
+    #[test]
+    fn test_parse_header_valid_aprn_magic() {
+        let mut header = [0u8; HEADER_SIZE];
+        header[0..4].copy_from_slice(b"APRN");
+        header[4] = 1; // version major
+        header[5] = 0; // version minor
+        let info = parse_header(&header);
+        assert!(info.magic_valid);
+        assert_eq!(info.magic_str, "APRN");
+        assert_eq!(info.version, (1, 0));
+    }
+
+    #[test]
+    fn test_parse_header_valid_apr2_magic() {
+        let mut header = [0u8; HEADER_SIZE];
+        header[0..4].copy_from_slice(b"APR2");
+        header[4] = 2; // version major
+        header[5] = 0; // version minor
+        let info = parse_header(&header);
+        assert!(info.magic_valid);
+        assert_eq!(info.magic_str, "APR2");
+        assert_eq!(info.version, (2, 0));
+    }
+
+    #[test]
+    fn test_parse_header_flags() {
+        let mut header = [0u8; HEADER_SIZE];
+        header[0..4].copy_from_slice(b"APRN");
+        header[21] = 0b00000111; // compressed, signed, encrypted
+        let info = parse_header(&header);
+        assert!(info.compressed);
+        assert!(info.signed);
+        assert!(info.encrypted);
+    }
+
+    #[test]
+    fn test_parse_header_model_type() {
+        let mut header = [0u8; HEADER_SIZE];
+        header[0..4].copy_from_slice(b"APRN");
+        header[6] = 0x06; // KMeans (low byte)
+        header[7] = 0x00; // (high byte)
+        let info = parse_header(&header);
+        assert_eq!(info.model_type, 0x0006);
+    }
+}
