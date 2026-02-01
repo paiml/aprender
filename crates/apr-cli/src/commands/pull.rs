@@ -357,8 +357,13 @@ pub fn resolve_hf_uri(uri: &str) -> Result<String> {
         return Ok(uri.to_string());
     }
 
-    // If already has .gguf extension, return unchanged
-    if uri.to_lowercase().ends_with(".gguf") {
+    // If already has a known model extension, return unchanged
+    let lower = uri.to_lowercase();
+    if lower.ends_with(".gguf")
+        || lower.ends_with(".safetensors")
+        || lower.ends_with(".apr")
+        || lower.ends_with(".pt")
+    {
         return Ok(uri.to_string());
     }
 
@@ -400,8 +405,23 @@ pub fn resolve_hf_uri(uri: &str) -> Result<String> {
         .collect();
 
     if gguf_files.is_empty() {
+        // Fall back to SafeTensors files
+        let st_files: Vec<&str> = siblings
+            .iter()
+            .filter_map(|s| s["rfilename"].as_str())
+            .filter(|f| f.to_lowercase().ends_with(".safetensors"))
+            .collect();
+
+        if let Some(file) = st_files
+            .iter()
+            .find(|f| f.to_lowercase().contains("model.safetensors"))
+            .or(st_files.first())
+        {
+            return Ok(format!("hf://{}/{}/{}", org, repo, file));
+        }
+
         return Err(CliError::ValidationFailed(format!(
-            "No .gguf files found in {}/{}",
+            "No .gguf or .safetensors files found in {}/{}",
             org, repo
         )));
     }
