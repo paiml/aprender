@@ -196,11 +196,13 @@ tier4: tier3
 # Exclusion patterns for coverage reports
 # ONLY excludes truly external/feature-gated code - all apr subcommands INCLUDED
 #   External crates:
-#     - crates/           : Separate crates (tested independently)
+#     - .cargo/           : Dependencies from crates.io
+#     - trueno/           : Local sibling crate (SIMD tensor ops)
+#     - realizar/         : Local sibling crate (inference engine)
+#     - entrenar/         : Local sibling crate (training)
+#   Local exclusions:
 #     - fuzz/             : Fuzz test infrastructure
 #     - golden_traces/    : Trace data files
-#     - realizar/         : External inference crate
-#     - trueno/           : External tensor crate
 #   Feature-gated (require --all-features):
 #     - audio/            : Requires audio feature + ALSA
 #     - hf_hub/           : HuggingFace hub (network-dependent)
@@ -209,7 +211,7 @@ tier4: tier3
 #     - demo/             : Demo/example code
 # NOTE: ALL format/ modules INCLUDED - apr subcommands must have 95%+ coverage
 # Include apr-cli, exclude external deps and non-aprender workspace crates
-COVERAGE_EXCLUDE := --ignore-filename-regex='(fuzz/|golden_traces/|realizar/|trueno/|audio/|hf_hub/|demo/|test_factory|pacha/|entrenar/)'
+COVERAGE_EXCLUDE := --ignore-filename-regex='(\.cargo/|trueno/|trueno-|realizar/|entrenar/|fuzz/|golden_traces/|audio/|hf_hub/|demo/|test_factory|pacha/)'
 
 # Fast coverage (<2min): Core modules with 95%+ coverage
 # NOTE: Feature-gated modules (signing, encryption, quantize) require --all-features

@@ -1,6 +1,13 @@
 # PMAT Quality Gates Configuration for aprender
 # ComputeBrick ecosystem - ML inference runtime
 
+[gates]
+# Quality gate thresholds
+coverage_threshold = 95.0
+complexity_threshold = 10
+satd_threshold = 0
+mutation_threshold = 80.0
+
 [exclude]
 # mdBook generated files (not our code)
 patterns = [
@@ -9,8 +16,8 @@ patterns = [
 ]
 
 [quality]
-coverage_threshold = 85.0
-max_complexity = 20
+coverage_threshold = 95.0
+max_complexity = 10
 max_binary_size_mb = 100
 
 [compute-brick]
