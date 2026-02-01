@@ -652,13 +652,14 @@ mod tests_convert {
 
     #[test]
     fn test_convert_no_quantization() {
-        let input = Path::new("/tmp/test_convert_input.safetensors");
-        let output = Path::new("/tmp/test_convert_output.apr");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let input = dir.path().join("convert_input.safetensors");
+        let output = dir.path().join("convert_output.apr");
 
-        create_test_model(input);
+        create_test_model(&input);
 
         let options = ConvertOptions::default();
-        let result = apr_convert(input, output, options);
+        let result = apr_convert(&input, &output, options);
 
         assert!(
             result.is_ok(),
@@ -668,23 +669,21 @@ mod tests_convert {
         let report = result.unwrap();
         assert_eq!(report.tensor_count, 3);
         assert!(report.quantization.is_none());
-
-        fs::remove_file(input).ok();
-        fs::remove_file(output).ok();
     }
 
     #[test]
     fn test_convert_with_int8_quantization() {
-        let input = Path::new("/tmp/test_convert_int8_input.safetensors");
-        let output = Path::new("/tmp/test_convert_int8_output.apr");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let input = dir.path().join("convert_int8_input.safetensors");
+        let output = dir.path().join("convert_int8_output.apr");
 
-        create_test_model(input);
+        create_test_model(&input);
 
         let options = ConvertOptions {
             quantize: Some(QuantizationType::Int8),
             ..Default::default()
         };
-        let result = apr_convert(input, output, options);
+        let result = apr_convert(&input, &output, options);
 
         assert!(
             result.is_ok(),
@@ -694,38 +693,37 @@ mod tests_convert {
         let report = result.unwrap();
         assert_eq!(report.quantization, Some(QuantizationType::Int8));
         assert_eq!(report.tensor_count, 3);
-
-        fs::remove_file(input).ok();
-        fs::remove_file(output).ok();
     }
 
     #[test]
     fn test_convert_with_fp16_quantization() {
-        let input = Path::new("/tmp/test_convert_fp16_input.safetensors");
-        let output = Path::new("/tmp/test_convert_fp16_output.apr");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let input = dir.path().join("convert_fp16_input.safetensors");
+        let output = dir.path().join("convert_fp16_output.apr");
 
-        create_test_model(input);
+        create_test_model(&input);
 
         let options = ConvertOptions {
             quantize: Some(QuantizationType::Fp16),
             ..Default::default()
         };
-        let result = apr_convert(input, output, options);
+        let result = apr_convert(&input, &output, options);
 
         assert!(
             result.is_ok(),
             "FP16 quantization should work: {:?}",
             result.err()
         );
-
-        fs::remove_file(input).ok();
-        fs::remove_file(output).ok();
     }
 
     #[test]
     fn test_convert_nonexistent_file() {
         let options = ConvertOptions::default();
-        let result = apr_convert("/tmp/nonexistent.safetensors", "/tmp/out.apr", options);
+        let result = apr_convert(
+            "/tmp/nonexistent_model_abc123.safetensors",
+            "/tmp/nonexistent_output_abc123.apr",
+            options,
+        );
 
         assert!(result.is_err(), "Nonexistent file should fail");
     }

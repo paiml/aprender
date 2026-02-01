@@ -384,27 +384,35 @@ impl GgufTensor {
 /// # Errors
 ///
 /// Returns error on I/O failure
+///
+/// # DEFECT-002 FIX
+///
+/// Previously, the padding before tensor data was calculated incorrectly, causing
+/// the tensor data to be written at the wrong offset. The fix writes header/metadata/
+/// tensor-infos to a buffer first to accurately track the byte count for alignment.
 pub fn export_tensors_to_gguf<W: Write>(
     writer: &mut W,
     tensors: &[GgufTensor],
     metadata: &[(String, GgufValue)],
 ) -> Result<()> {
+    // DEFECT-002 FIX: Write header section to buffer first to track exact byte count
+    let mut header_buffer = Vec::new();
+
     // Write header
     let header = GgufHeader {
         version: GGUF_VERSION,
         tensor_count: tensors.len() as u64,
         metadata_kv_count: metadata.len() as u64,
     };
-    header.write_to(writer)?;
+    header.write_to(&mut header_buffer)?;
 
     // Write metadata
     for (key, value) in metadata {
-        write_metadata_kv(writer, key, value)?;
+        write_metadata_kv(&mut header_buffer, key, value)?;
     }
 
-    // Calculate tensor data offsets
-    // First, calculate header + metadata size
-    let mut current_offset = 0usize;
+    // Calculate tensor data offsets (relative to tensor data section start)
+    let mut tensor_data_offset = 0usize;
 
     // Write tensor infos
     for tensor in tensors {
@@ -413,16 +421,24 @@ pub fn export_tensors_to_gguf<W: Write>(
             n_dims: tensor.shape.len() as u32,
             dims: tensor.shape.clone(),
             dtype: tensor.dtype,
-            offset: current_offset as u64,
+            offset: tensor_data_offset as u64,
         };
-        info.write_to(writer)?;
-        current_offset += tensor.data.len();
+        info.write_to(&mut header_buffer)?;
+        tensor_data_offset += tensor.data.len();
         // Add padding for alignment
-        current_offset += padding_for_alignment(current_offset, GGUF_DEFAULT_ALIGNMENT);
+        tensor_data_offset += padding_for_alignment(tensor_data_offset, GGUF_DEFAULT_ALIGNMENT);
     }
 
-    // Pad to alignment before tensor data
-    let padding = padding_for_alignment(current_offset, GGUF_DEFAULT_ALIGNMENT);
+    // DEFECT-002 FIX: Calculate padding based on actual header buffer size
+    let header_size = header_buffer.len();
+    let padding = padding_for_alignment(header_size, GGUF_DEFAULT_ALIGNMENT);
+
+    // Write the header buffer to the actual writer
+    writer
+        .write_all(&header_buffer)
+        .map_err(|e| AprenderError::Io(io::Error::new(e.kind(), e.to_string())))?;
+
+    // Write alignment padding before tensor data
     for _ in 0..padding {
         writer
             .write_all(&[0u8])
@@ -436,8 +452,8 @@ pub fn export_tensors_to_gguf<W: Write>(
             .map_err(|e| AprenderError::Io(io::Error::new(e.kind(), e.to_string())))?;
 
         // Pad to alignment
-        let padding = padding_for_alignment(tensor.data.len(), GGUF_DEFAULT_ALIGNMENT);
-        for _ in 0..padding {
+        let data_padding = padding_for_alignment(tensor.data.len(), GGUF_DEFAULT_ALIGNMENT);
+        for _ in 0..data_padding {
             writer
                 .write_all(&[0u8])
                 .map_err(|e| AprenderError::Io(io::Error::new(e.kind(), e.to_string())))?;

@@ -210,7 +210,7 @@ cargo test -p apr-cli -- commands::inspect
 
 # Master Falsification QA Protocol
 
-**Status:** Executed / 2 Defects Found
+**Status:** Executed / 2 Defects Found & Fixed
 **Philosophy:** Karl Popper (Refutation) & Toyota Way (Jidoka)
 **Code:** `src/format/test_factory.rs` (harness module)
 
@@ -226,7 +226,7 @@ Hypothesis: *"The Rosetta Stone ecosystem correctly dispatches and converts mode
 | **F-CONV-01** | Bit-Flipping (corrupt 1 byte) | `verify_apr()` detects mismatch | ✅ **[Refuted]** |
 | **F-CONV-02** | Tolerance Drift (1e-12 strict) | Standard tests should fail | ✅ **[Refuted]** |
 | **F-CONV-03** | Auto-Arch (garbage tensor names) | Architecture = Unknown/graceful | ✅ **[Refuted]** |
-| **F-CONV-04** | Strict Leakage (missing norm) | Import MUST fail | ⚠️ **[FAILED TO REFUTE]** → DEFECT-001 |
+| **F-CONV-04** | Strict Leakage (missing norm) | Import MUST fail | ✅ **[FIXED]** DEFECT-001 |
 
 ### 2. Universal CLI Dispatch (PMAT-ROSETTA-001)
 
@@ -242,7 +242,7 @@ Hypothesis: *"The Rosetta Stone ecosystem correctly dispatches and converts mode
 | ID | Test | Expectation | Result |
 |----|------|-------------|--------|
 | **F-DATA-01** | NaN Propagation | Report NaN in validation | ✅ **[Refuted]** |
-| **F-DATA-02** | All-Zeros Refutation | Trigger Jidoka alarm | ⚠️ **[FAILED TO REFUTE]** → DEFECT-002 |
+| **F-DATA-02** | All-Zeros Refutation | Trigger Jidoka alarm | ✅ **[FIXED]** DEFECT-002 |
 
 ### 4. TPS "Standard Work" (Developer UX)
 
@@ -254,15 +254,27 @@ Hypothesis: *"The Rosetta Stone ecosystem correctly dispatches and converts mode
 ## Summary
 
 - **Total Checks:** 12
-- **Refuted (System Correct):** 10
-- **Failed to Refute (Defects Found):** 2
+- **Refuted (System Correct):** 12 (including 2 fixed defects)
+- **Defects Fixed:** 2
 
-### Defects Requiring Jidoka Intervention
+### Defect Resolution Log
 
-| ID | Description | Severity | Fix |
-|----|-------------|----------|-----|
-| **DEFECT-001** | Strict mode accepts models missing norm tensors | P2 | Add norm tensor validation to strict mode |
-| **DEFECT-002** | All-zeros detection not working for GGUF format | P2 | Extend RosettaStone.validate_gguf() to check for all-zeros |
+| ID | Description | Severity | Fix | Status |
+|----|-------------|----------|-----|--------|
+| **DEFECT-001** | Strict mode accepts models missing norm tensors | P2 | Added `STRICT_REQUIRED_TENSORS` check in `validate_tensors()` | ✅ FIXED |
+| **DEFECT-002** | All-zeros detection not working for GGUF format | P2 | Fixed GGUF export padding calculation in `export_tensors_to_gguf()` | ✅ FIXED |
+
+#### DEFECT-001 Fix Details
+
+**Root Cause:** `validate_tensors()` in `src/format/converter/import.rs` only validated tensor values, not required tensor presence.
+
+**Fix:** Added `STRICT_REQUIRED_TENSORS` constant and validation loop that checks for `model.norm.weight` when `options.strict = true`.
+
+#### DEFECT-002 Fix Details
+
+**Root Cause:** `export_tensors_to_gguf()` in `src/format/gguf/types.rs` calculated padding before tensor data using `current_offset` (cumulative tensor data sizes) instead of the actual file position after writing header/metadata/tensor-infos.
+
+**Fix:** Changed to write header section to a buffer first, then calculate padding based on the buffer's actual size. This ensures tensor data is written at the correct aligned offset.
 
 ## Verification Command
 

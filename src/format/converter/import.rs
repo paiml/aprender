@@ -981,6 +981,25 @@ pub(crate) fn validate_single_tensor(
     validator.add_tensor_stats(stats);
 }
 
+/// Required tensor alternatives for strict mode validation (DEFECT-001 fix)
+/// At least one tensor from each group must be present for a model to be considered complete.
+/// Each group represents equivalent tensors that may have different names across formats.
+const STRICT_REQUIRED_TENSOR_GROUPS: &[&[&str]] = &[
+    // Final layer norm - different formats use different names:
+    // - SafeTensors (HuggingFace): model.norm.weight
+    // - GGUF: output_norm.weight (mapped to model.norm.weight)
+    // - Some models: norm.weight
+    &["model.norm.weight", "norm.weight", "output_norm.weight"],
+];
+
+/// Check if any tensor from a group of alternatives is present
+fn has_required_tensor(
+    tensor_names: &std::collections::HashSet<&str>,
+    alternatives: &[&str],
+) -> bool {
+    alternatives.iter().any(|&name| tensor_names.contains(name))
+}
+
 /// Validate tensors according to architecture expectations
 pub(crate) fn validate_tensors(
     tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
@@ -988,6 +1007,22 @@ pub(crate) fn validate_tensors(
 ) -> Result<ValidationReport> {
     let mut validator = AprValidator::new();
     let mut validation_errors = Vec::new();
+
+    // DEFECT-001 FIX: Check for required tensors in strict mode
+    if options.strict {
+        let tensor_names: std::collections::HashSet<&str> =
+            tensors.keys().map(|s| s.as_str()).collect();
+
+        for alternatives in STRICT_REQUIRED_TENSOR_GROUPS {
+            if !has_required_tensor(&tensor_names, alternatives) {
+                validation_errors.push(format!(
+                    "Missing required tensor: {} (or equivalents: {})",
+                    alternatives[0],
+                    alternatives[1..].join(", ")
+                ));
+            }
+        }
+    }
 
     for (name, (data, _shape)) in tensors {
         validate_single_tensor(name, data, options, &mut validator, &mut validation_errors);

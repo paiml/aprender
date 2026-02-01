@@ -1691,12 +1691,12 @@ pub(crate) mod harness {
     /// F-CONV-04 (Strict Leakage): Import missing norm tensor with --strict
     ///
     /// **FALSIFICATION FINDING (DEFECT-001):**
-    /// Strict mode does NOT reject models missing norm tensors. This is a Jidoka
+    /// Strict mode did NOT reject models missing norm tensors. This was a Jidoka
     /// violation - the system should stop-the-line for incomplete models.
     ///
-    /// **Current Behavior:** Import succeeds (result.is_ok())
-    /// **Expected Behavior:** Import should fail with "Missing required tensor"
-    /// **Status:** FAILED TO REFUTE → Requires Jidoka intervention
+    /// **Previous Behavior:** Import succeeds (result.is_ok())
+    /// **Fixed Behavior:** Import fails with "Missing required tensor: model.norm.weight"
+    /// **Status:** FIXED (DEFECT-001)
     #[test]
     fn test_f_conv_04_strict_missing_norm() {
         // Create config without norms
@@ -1714,15 +1714,18 @@ pub(crate) mod harness {
         let h = ConversionTestHarness::new().with_safetensors(config);
         let result = h.try_import_to_apr(options);
 
-        // DEFECT-001: Strict mode currently DOES NOT reject missing norms
-        // This test documents the defect and passes (the defect exists)
-        if result.is_ok() {
-            // FAILED TO REFUTE: System has a defect
-            eprintln!(
-                "[DEFECT-001] F-CONV-04 FAILED TO REFUTE: Strict mode accepts missing norms"
-            );
-        }
-        // Test passes to document the finding - actual fix tracked separately
+        // DEFECT-001 FIX VERIFICATION: Strict mode should now reject missing norms
+        assert!(
+            result.is_err(),
+            "DEFECT-001 FIX: Strict mode should reject missing model.norm.weight"
+        );
+
+        // Verify the error message mentions the missing tensor
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("model.norm.weight"),
+            "Error should mention missing tensor: {err_msg}"
+        );
     }
 
     /// F-DISP-01 (Magic vs Extension): GGUF as .txt → should work via magic bytes
@@ -1893,9 +1896,9 @@ pub(crate) mod harness {
     /// All-zero tensors are NOT being detected in GGUF validation.
     /// This is a Jidoka violation - uninitialized weights should trigger alarm.
     ///
-    /// **Current Behavior:** `all_zero_tensors` is empty
-    /// **Expected Behavior:** Should contain "model.weight"
-    /// **Status:** FAILED TO REFUTE → Requires Jidoka intervention
+    /// **Previous Behavior:** `all_zero_tensors` was empty (GGUF export bug)
+    /// **Fixed Behavior:** Should contain "model.weight"
+    /// **Status:** FIXED (DEFECT-002)
     #[test]
     fn test_f_data_02_all_zeros_alarm() {
         use crate::format::gguf::{export_tensors_to_gguf, GgmlType, GgufTensor, GgufValue};
@@ -1907,7 +1910,7 @@ pub(crate) mod harness {
             name: "model.weight".to_string(),
             shape: vec![4, 4],
             dtype: GgmlType::F32,
-            data: vec![0u8; 64], // All zeros
+            data: vec![0u8; 64], // All zeros - 4x4 F32 = 16 elements * 4 bytes = 64 bytes
         };
         let metadata = vec![(
             "general.architecture".to_string(),
@@ -1926,14 +1929,12 @@ pub(crate) mod harness {
         assert!(result.is_ok(), "F-DATA-02: Validation should not crash");
         let report = result.unwrap();
 
-        // DEFECT-002: All-zeros detection not working for GGUF
-        if report.all_zero_tensors.is_empty() {
-            // FAILED TO REFUTE: System has a defect
-            eprintln!(
-                "[DEFECT-002] F-DATA-02 FAILED TO REFUTE: All-zeros detection not working for GGUF"
-            );
-        }
-        // Test passes to document the finding - actual fix tracked separately
+        // DEFECT-002 FIX VERIFICATION: All-zeros should now be detected
+        assert!(
+            report.all_zero_tensors.contains(&"model.weight".to_string()),
+            "DEFECT-002 FIX: All-zeros tensor should be detected. Got: {:?}",
+            report.all_zero_tensors
+        );
     }
 
     /// F-TPS-01 (Boilerplate Check): New conversion test < 10 lines
