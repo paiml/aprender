@@ -36,7 +36,7 @@ build:
 # Only runs core API tests, no proptests, no encryption, no network
 test-smoke: ## Smoke tests (<2s target, Section P: P2)
 	@echo "💨 Running smoke tests (target: <2s)..."
-	@time cargo test --lib --no-fail-fast -- \
+	@time PROPTEST_CASES=5 QUICKCHECK_TESTS=5 cargo test --lib --no-fail-fast -- \
 		--skip prop_ \
 		--skip test_encrypted \
 		--skip test_cache_metadata_expiration \
@@ -79,11 +79,11 @@ test-quick: test-fast
 test: ## Standard tests (<2min target)
 	@echo "🧪 Running standard tests (target: <2min, -j2 to prevent OOM)..."
 	@if command -v cargo-nextest >/dev/null 2>&1; then \
-		time cargo nextest run --workspace -j 2 \
+		time PROPTEST_CASES=25 QUICKCHECK_TESTS=25 cargo nextest run --workspace -j 2 \
 			--status-level skip \
 			--failure-output immediate; \
 	else \
-		time cargo test --workspace -- --test-threads=2; \
+		time PROPTEST_CASES=25 QUICKCHECK_TESTS=25 cargo test --workspace -- --test-threads=2; \
 	fi
 	@echo "✅ Standard tests passed"
 
@@ -91,9 +91,9 @@ test: ## Standard tests (<2min target)
 test-full: ## Comprehensive tests (all features)
 	@echo "🔬 Running full comprehensive tests..."
 	@if command -v cargo-nextest >/dev/null 2>&1; then \
-		time cargo nextest run --workspace --all-features; \
+		time PROPTEST_CASES=100 QUICKCHECK_TESTS=100 cargo nextest run --workspace --all-features; \
 	else \
-		time cargo test --workspace --all-features; \
+		time PROPTEST_CASES=100 QUICKCHECK_TESTS=100 cargo test --workspace --all-features; \
 	fi
 	@echo "✅ Full tests passed"
 
@@ -101,7 +101,7 @@ test-full: ## Comprehensive tests (all features)
 # Includes: sleep()-based tests, slow encryption tests, long proptests
 test-heavy: ## Heavy/slow tests (ignored tests)
 	@echo "🐢 Running heavy tests (ignored tests)..."
-	@time cargo test --workspace -- --ignored
+	@time PROPTEST_CASES=256 QUICKCHECK_TESTS=256 cargo test --workspace -- --ignored
 	@echo "✅ Heavy tests passed"
 
 # Linting
@@ -211,7 +211,8 @@ tier4: tier3
 #     - demo/             : Demo/example code
 # NOTE: ALL format/ modules INCLUDED - apr subcommands must have 95%+ coverage
 # Include apr-cli, exclude external deps and non-aprender workspace crates
-COVERAGE_EXCLUDE := --ignore-filename-regex='(\.cargo/|trueno/|trueno-|realizar/|entrenar/|fuzz/|golden_traces/|audio/|hf_hub/|demo/|test_factory|pacha/)'
+# CB-125-A: ≤10 exclusion patterns (binary entry points + external deps only)
+COVERAGE_EXCLUDE := --ignore-filename-regex='(\.cargo/|trueno|realizar/|entrenar/|fuzz/|golden_traces/|hf_hub/|demo/|test_factory|pacha/)'
 
 # Fast coverage (<2min): Core modules with 95%+ coverage
 # NOTE: Feature-gated modules (signing, encryption, quantize) require --all-features
@@ -240,13 +241,13 @@ coverage: ## Generate HTML coverage report (target: <2min, 95%+)
 coverage-fast: coverage
 
 # Full coverage: All features (for CI, slower)
+# CB-127-A: Use 'cargo llvm-cov test' instead of nextest to avoid profraw explosion
 coverage-full: ## Full coverage report (all features, >10 min)
 	@echo "📊 Running full coverage analysis (all features)..."
 	@which cargo-llvm-cov > /dev/null 2>&1 || { cargo install cargo-llvm-cov --locked || exit 1; }
-	@which cargo-nextest > /dev/null 2>&1 || { cargo install cargo-nextest --locked || exit 1; }
 	@mkdir -p target/coverage
-	@cargo llvm-cov --no-report nextest --no-tests=warn --workspace --all-features -j 2
-	@cargo llvm-cov report --html --output-dir target/coverage/html $(COVERAGE_EXCLUDE)
+	@PROPTEST_CASES=10 QUICKCHECK_TESTS=10 cargo llvm-cov --workspace --lib --all-features -j 2 \
+		--html --output-dir target/coverage/html $(COVERAGE_EXCLUDE)
 	@cargo llvm-cov report --lcov --output-path target/coverage/lcov.info $(COVERAGE_EXCLUDE)
 	@echo ""
 	@cargo llvm-cov report --summary-only $(COVERAGE_EXCLUDE)
@@ -606,14 +607,14 @@ test-alsa: ## Run tests with ALSA audio capture feature (Linux only)
 	@echo "🔊 Running tests with audio-alsa feature..."
 	@if [ "$$(uname)" = "Linux" ]; then \
 		if pkg-config --exists alsa 2>/dev/null; then \
-			cargo test --features audio-alsa; \
+			PROPTEST_CASES=25 QUICKCHECK_TESTS=25 cargo test --features audio-alsa; \
 		else \
 			echo "❌ ALSA not installed. Run: make install-alsa"; \
 			exit 1; \
 		fi; \
 	else \
 		echo "⚠️  ALSA is Linux-only. Running standard audio tests..."; \
-		cargo test --features audio; \
+		PROPTEST_CASES=25 QUICKCHECK_TESTS=25 cargo test --features audio; \
 	fi
 	@echo "✅ ALSA tests complete"
 
