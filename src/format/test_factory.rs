@@ -114,6 +114,40 @@ impl PygmyConfig {
             include_mlp: true,
         }
     }
+
+    /// GH-197 FIX: Generate config.json that matches the tensors this config creates.
+    ///
+    /// This ensures round-trip testing uses consistent config values instead of
+    /// relying on inference which can fail with incorrect defaults.
+    #[must_use]
+    pub fn to_config_json(&self) -> String {
+        // Compute derived values matching HuggingFace conventions
+        let num_attention_heads = (self.hidden_size / 64).max(1); // head_dim=64
+        let num_key_value_heads = num_attention_heads; // MHA (no GQA for pygmy)
+        let intermediate_size = self.hidden_size * 4;
+
+        format!(
+            r#"{{
+  "architectures": ["Qwen2ForCausalLM"],
+  "hidden_size": {},
+  "num_hidden_layers": {},
+  "num_attention_heads": {},
+  "num_key_value_heads": {},
+  "vocab_size": {},
+  "intermediate_size": {},
+  "max_position_embeddings": 2048,
+  "rms_norm_eps": 1e-06,
+  "rope_theta": 10000.0,
+  "model_type": "qwen2"
+}}"#,
+            self.hidden_size,
+            self.num_layers,
+            num_attention_heads,
+            num_key_value_heads,
+            self.vocab_size,
+            intermediate_size
+        )
+    }
 }
 
 /// Build SafeTensors with custom config
@@ -2021,6 +2055,28 @@ mod tests {
 
         // Minimal config should produce small file
         assert!(data.len() < 1000);
+    }
+
+    /// GH-197: PygmyConfig should generate matching config.json
+    #[test]
+    fn test_pygmy_config_to_config_json() {
+        let config = PygmyConfig::llama_style();
+        let json = config.to_config_json();
+
+        // Should contain all required fields
+        assert!(json.contains("\"hidden_size\": 8"));
+        assert!(json.contains("\"num_hidden_layers\": 1"));
+        assert!(json.contains("\"vocab_size\": 16"));
+        assert!(json.contains("\"num_attention_heads\":"));
+        assert!(json.contains("\"num_key_value_heads\":"));
+        assert!(json.contains("\"intermediate_size\":"));
+
+        // Should be valid JSON
+        assert!(json.starts_with('{'));
+        assert!(json.ends_with('}'));
+
+        // Validate consistency: vocab_size > hidden_size (GH-197 sanity check)
+        assert!(config.vocab_size > config.hidden_size);
     }
 
     #[test]

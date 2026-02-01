@@ -287,15 +287,28 @@ fn export_to_gguf(tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>, output: &P
 /// GH-193: Now includes all required fields for SafeTensors inference:
 /// - num_attention_heads, intermediate_size, max_position_embeddings, etc.
 fn infer_model_config(tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>) -> String {
+    // GH-197 FIX: Track inference failures for diagnostics
+    let mut inference_warnings: Vec<String> = Vec::new();
+
     // Infer hidden_size from embedding or first layer weight
-    let hidden_size = tensors
+    let (hidden_size, hidden_inferred) = tensors
         .iter()
         .find(|(name, _)| name.contains("embed_tokens") || name.contains("token_embd"))
-        .map(|(_, (_, shape))| shape.last().copied().unwrap_or(4096))
-        .unwrap_or(4096);
+        .map(|(name, (_, shape))| {
+            let dim = shape.last().copied().unwrap_or(4096);
+            eprintln!("[GH-197] Inferred hidden_size={dim} from tensor '{name}'");
+            (dim, true)
+        })
+        .unwrap_or_else(|| {
+            inference_warnings.push(
+                "hidden_size: No embed_tokens/token_embd tensor found, defaulting to 4096"
+                    .to_string(),
+            );
+            (4096, false)
+        });
 
     // Count layers by looking for layer patterns
-    let num_layers = tensors
+    let layer_numbers: Vec<usize> = tensors
         .keys()
         .filter_map(|name| {
             if name.contains("layers.") || name.contains("blk.") {
@@ -309,16 +322,45 @@ fn infer_model_config(tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>) -> Str
             }
             None
         })
-        .max()
-        .map(|n| n + 1)
-        .unwrap_or(12);
+        .collect();
+
+    let num_layers = if let Some(&max_layer) = layer_numbers.iter().max() {
+        let count = max_layer + 1;
+        eprintln!("[GH-197] Inferred num_layers={count} from layer indices 0..{max_layer}");
+        count
+    } else {
+        inference_warnings
+            .push("num_layers: No layers.N/blk.N tensors found, defaulting to 12".to_string());
+        12
+    };
 
     // Infer vocab_size from lm_head or output weight
-    let vocab_size = tensors
+    let (vocab_size, vocab_inferred) = tensors
         .iter()
         .find(|(name, _)| name.contains("lm_head") || name.contains("output.weight"))
-        .map(|(_, (_, shape))| shape.first().copied().unwrap_or(32000))
-        .unwrap_or(32000);
+        .map(|(name, (_, shape))| {
+            let dim = shape.first().copied().unwrap_or(32000);
+            eprintln!("[GH-197] Inferred vocab_size={dim} from tensor '{name}'");
+            (dim, true)
+        })
+        .unwrap_or_else(|| {
+            inference_warnings
+                .push("vocab_size: No lm_head/output.weight tensor found, defaulting to 32000".to_string());
+            (32000, false)
+        });
+
+    // GH-197 FIX: Sanity validation - vocab_size should be >> hidden_size for LLMs
+    if vocab_inferred && hidden_inferred && vocab_size < hidden_size {
+        eprintln!(
+            "[GH-197] WARNING: vocab_size ({vocab_size}) < hidden_size ({hidden_size}). \
+             This is unusual for LLMs - dimensions may be swapped!"
+        );
+    }
+
+    // Print all inference warnings
+    for warning in &inference_warnings {
+        eprintln!("[GH-197] WARNING: {warning}");
+    }
 
     // GH-193: Infer num_attention_heads from attention Q/K/V weights
     // Shape is typically [hidden_size, num_heads * head_dim]
