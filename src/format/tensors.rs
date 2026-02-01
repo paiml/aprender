@@ -138,11 +138,11 @@ const MAGIC_APR0: [u8; 4] = [0x41, 0x50, 0x52, 0x00]; // "APR\0"
 
 /// Detect APR format version from magic bytes
 fn detect_format(magic: &[u8; 4]) -> Option<&'static str> {
-    match magic {
-        &MAGIC_APRN => Some("v1"),
-        &MAGIC_APR1 => Some("v1"),
-        &MAGIC_APR2 => Some("v2"),
-        &MAGIC_APR0 => Some("v2"),
+    match *magic {
+        MAGIC_APRN => Some("v1"),
+        MAGIC_APR1 => Some("v1"),
+        MAGIC_APR2 => Some("v2"),
+        MAGIC_APR0 => Some("v2"),
         _ => None,
     }
 }
@@ -168,7 +168,10 @@ pub fn is_valid_apr_magic(magic: &[u8; 4]) -> bool {
 ///
 /// # Errors
 /// Returns error if the format is invalid or parsing fails.
-pub fn list_tensors_from_bytes(data: &[u8], options: TensorListOptions) -> Result<TensorListResult> {
+pub fn list_tensors_from_bytes(
+    data: &[u8],
+    options: TensorListOptions,
+) -> Result<TensorListResult> {
     // Check minimum size
     if data.len() < 4 {
         return Err(AprenderError::FormatError {
@@ -177,9 +180,11 @@ pub fn list_tensors_from_bytes(data: &[u8], options: TensorListOptions) -> Resul
     }
 
     // Read magic bytes
-    let magic: [u8; 4] = data[0..4].try_into().map_err(|_| AprenderError::FormatError {
-        message: "Failed to read magic bytes".to_string(),
-    })?;
+    let magic: [u8; 4] = data[0..4]
+        .try_into()
+        .map_err(|_| AprenderError::FormatError {
+            message: "Failed to read magic bytes".to_string(),
+        })?;
 
     // Detect format version
     let format_version = detect_format(&magic).ok_or_else(|| AprenderError::FormatError {
@@ -362,7 +367,10 @@ fn parse_shape_array(shape_val: &serde_json::Value) -> Vec<usize> {
 ///
 /// # Errors
 /// Returns error if the file doesn't exist or is invalid.
-pub fn list_tensors(path: impl AsRef<Path>, options: TensorListOptions) -> Result<TensorListResult> {
+pub fn list_tensors(
+    path: impl AsRef<Path>,
+    options: TensorListOptions,
+) -> Result<TensorListResult> {
     let path = path.as_ref();
 
     // Read file
@@ -426,11 +434,7 @@ fn compute_tensor_stats(info: &mut TensorInfo, data: &[f32]) {
         let n = valid_count as f64;
         let mean = sum / n;
         let variance = (sum_sq / n) - (mean * mean);
-        let std = if variance > 0.0 {
-            variance.sqrt()
-        } else {
-            0.0
-        };
+        let std = if variance > 0.0 { variance.sqrt() } else { 0.0 };
 
         info.mean = Some(mean as f32);
         info.std = Some(std as f32);
@@ -590,9 +594,10 @@ mod tests {
         let result = list_tensors_from_bytes(&apr_bytes, opts).expect("list tensors");
 
         // Check at least one tensor has stats
-        let has_stats = result.tensors.iter().any(|t| {
-            t.mean.is_some() && t.std.is_some() && t.nan_count.is_some()
-        });
+        let has_stats = result
+            .tensors
+            .iter()
+            .any(|t| t.mean.is_some() && t.std.is_some() && t.nan_count.is_some());
         assert!(has_stats, "Expected at least one tensor to have stats");
     }
 
