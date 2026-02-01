@@ -5713,19 +5713,21 @@ First token from APR matches ground truth ("4"), proving the forward pass is cor
 
 **Severity:** P1 — single-token inference works, multi-token generation broken.
 
-#### BUG-3: Pacha Format Misdetection (P2)
+#### BUG-3: Pacha Format Misdetection (P2) — ✅ FIXED (pacha#4)
 
-SafeTensors files with `"format":"pt"` in their `__metadata__` are saved as `.pt` by pacha. Both the 0.5B and 1.5B SafeTensors have this metadata (it indicates original source format, not file format). The 0.5B was correctly saved in a previous pacha version; the 1.5B was not.
+SafeTensors files whose u64 header_size has low byte `0x80` were misidentified as PyTorch pickle. `detect_format()` checked `data[0] == 0x80` (PyTorch magic) before trying SafeTensors parsing. The 1.5B model has header_size=38528 (first byte `0x80`); the 0.5B has header_size=32280 (first byte `0x18`).
 
-**Workaround:** Symlink with `.safetensors` extension.
+**Root cause:** Detection order in `pacha/src/format.rs` — PyTorch check ran before SafeTensors.
+**Fix:** pacha commit `a9266a1` — moved SafeTensors detection before PyTorch. Regression test added.
+**Verified:** `apr pull hf://Qwen/Qwen2.5-Coder-1.5B-Instruct` now correctly saves as `.safetensors`.
 
 #### BUG-4: 0.5B SafeTensors Produces Garbage (P2)
 
 `Qwen2.5-Coder-0.5B-Instruct` (MHA: 14 heads, 14 KV heads, 24 layers) produces garbage output via SafeTensors path. The 1.5B (GQA: 12 heads, 2 KV heads, 28 layers) works. Possible MHA handling bug in realizar.
 
-#### BUG-5: `apr pull` Cannot Pull SafeTensors-Only Repos (P1) — FIXED
+#### BUG-5: `apr pull` Cannot Pull SafeTensors-Only Repos (P1) — ✅ FIXED (commit 3e27f981)
 
-`resolve_hf_uri()` only searched for `.gguf` files. Fixed in this round by adding `.safetensors` passthrough and SafeTensors fallback search. (Code fix applied but not yet committed.)
+`resolve_hf_uri()` only searched for `.gguf` files. Fixed by adding `.safetensors`/`.apr`/`.pt` passthrough and SafeTensors fallback search when no GGUF found.
 
 ### 31.4 Honest Scorecard
 
@@ -5748,13 +5750,33 @@ Both were invisible when testing with Qwen's pre-baked GGUF because we were test
 
 ### 31.6 Fix Priority
 
-| Bug | Severity | Blocks | Fix Location |
-|-----|----------|--------|-------------|
-| GGUF exporter zero metadata | **P0** | All GGUF testing | `src/format/converter/` |
-| APR autoregressive degeneration | **P1** | Multi-token APR inference | `realizar/src/apr/` |
-| `apr pull` SafeTensors | **P1 FIXED** | Pipeline Step 1 | `crates/apr-cli/src/commands/pull.rs` |
-| Pacha format detection | **P2** | UX only (workaround exists) | `pacha/src/fetcher.rs` |
-| 0.5B MHA garbage | **P2** | 0.5B model only | `realizar/src/safetensors/` |
+| Bug | Severity | Blocks | Fix Location | Status |
+|-----|----------|--------|-------------|--------|
+| GGUF exporter zero metadata | **P0** | All GGUF testing | `src/format/converter/` | OPEN |
+| APR autoregressive degeneration | **P1** | Multi-token APR inference | `realizar/src/apr/` | OPEN |
+| `apr pull` SafeTensors | **P1** | Pipeline Step 1 | `crates/apr-cli/src/commands/pull.rs` | ✅ FIXED |
+| Pacha format detection | **P2** | `apr pull` 1.5B model | `pacha/src/format.rs` | ✅ FIXED (pacha#4) |
+| 0.5B MHA garbage | **P2** | 0.5B model only | `realizar/src/safetensors/` | OPEN |
+
+### 31.7 Verified Pipeline (Post-Fix)
+
+After fixing pacha#4 and `apr pull` SafeTensors support, the complete `apr pull` → inference pipeline works:
+
+```
+$ apr pull hf://Qwen/Qwen2.5-Coder-1.5B-Instruct
+  ─→ Resolves to model.safetensors (SafeTensors fallback, no GGUF in repo)
+  ─→ Downloads to ~/.cache/pacha/models/b7a969a05a81cc52.safetensors (was .pt before fix)
+  ─→ Downloads tokenizer.json (6.8 MB)
+  ─→ Downloads config.json (660 B, hidden_size=1536, 28 layers, GQA 12/2)
+
+$ apr run ~/.cache/pacha/models/b7a969a05a81cc52.safetensors \
+    --prompt "What is 2+2? Answer with just the number." --max-tokens 32
+  ─→ Output: "4" + explanation   ✅ CORRECT
+```
+
+**Remaining blockers for full pipeline:**
+- APR conversion works but autoregressive generation degenerates after first token (BUG-2)
+- GGUF export produces invalid file with zero metadata (BUG-1)
 
 
 ## Appendix F: The Popperian Enhancement - Advanced Falsification Protocols
