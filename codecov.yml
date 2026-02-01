@@ -6,9 +6,8 @@ coverage:
     project:
       default:
         target: 95%
-        # CB-124: threshold is "allowed drop below target", not minimum coverage
-        # PMAT requires threshold >= 80% to pass compliance (may be misinterpretation)
-        threshold: 80%
+        # CB-124: PMAT sovereign stack standard requires 95%
+        threshold: 95%
     patch:
       default:
         target: 90%
