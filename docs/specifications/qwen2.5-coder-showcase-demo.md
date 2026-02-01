@@ -1,15 +1,15 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 6.18.0
-**Status:** ✅ **CORROBORATED** - Full Format Parity Achieved (SafeTensors, GGUF, APR)
-**Popperian Score:** 100/100 (Grade: A - All paths honestly documented and empirically verified)
+**Version:** 6.19.0
+**Status:** 🛑 **SPECIFICATION INCOMPLETE** - Round 18 Falsified "Completeness" Claim
+**Popperian Score:** 85/100 (Grade: B - Core inference verified, but Metadata/Architecture gaps found)
 **Code Coverage:** 95.82% (target: ≥95%)
 **Tool Coverage:** 16/16 (100%) - All APR tools verified
 **CLI Test Coverage:** 1190+ total tests
 **Author:** PAIML Engineering
 **Date:** 2026-02-01
 **Ground Truth:** SafeTensors (F32/BF16) - See Section 0
-**Last Falsification Run:** 2026-02-01 (Round 17 - **CORROBORATED**: GGUF path fixed)
+**Last Falsification Run:** 2026-02-01 (Round 18 - **FALSIFIED**: Metadata Loss & Silent Failures)
 **Quality Philosophy:** Toyota Way + Popperian Falsification (Zero SATD, Stop-the-Line)
 
 ### Release Criteria (ALL PASS)
@@ -5182,11 +5182,78 @@ Round 17 successfully corroborates the "Unified Inference Architecture" by resol
 
 ---
 
-### 25.3 Final Audit Trail
+---
 
-| Date | Auditor | Score | Status |
-|------|---------|-------|--------|
-| 2026-01-31 | Claude Opus 4.5 | 25/100 | FALSIFIED (Tensor Holocaust) |
-| 2026-02-01 | Claude Opus 4.5 | 100/100 | ✅ **CORROBORATED** (Round 17 - RELEASE AUTHORIZED) |
+## Section 25: Round 18 - Deep Falsification Report (2026-02-01)
 
-**Authorization:** PAIML Engineering / SPEC-AUDIT-20260201-GO ✅
+### 25.1 Executive Summary
+
+**Status: SPECIFICATION INCOMPLETE** 🛑
+
+The claim "SPECIFICATION COMPLETE" was falsified by the "Deep Falsification" audit. While core inference is solid, edge cases in metadata fidelity and architecture validation revealed gaps between the Spec's promises ("Universal Translator", "Graceful Failures") and reality.
+
+| Criterion | Status | Evidence |
+|-----------|--------|----------|
+| Sharding Support | 🟡 PARTIAL | SafeTensors works, but APR native sharding is vaporware (spec'd but not built). |
+| Mixed Quantization | ✅ PASS | Preserved correctly in binary. |
+| Metadata Fidelity | ❌ **FAIL** | Arbitrary metadata (e.g. `training_run_id`) is explicitly dropped. |
+| Architecture Safety | ❌ **FAIL** | BERT/Whisper models silently import but produce broken APR files. |
+
+### 25.2 Blocking Defects (Spec Gaps)
+
+#### Defect 1: Metadata Data Loss (PMAT-223)
+**Severity:** P1 (Data Integrity)
+- **Problem:** `import.rs:778` explicitly drops keys starting with `__`.
+- **Impact:** Users lose training metadata during conversion.
+- **Spec Violation:** "Universal Translator" implies lossless conversion.
+
+#### Defect 2: Silent Failure for Unsupported Architectures (PMAT-224)
+**Severity:** P1 (UX/Safety)
+- **Problem:** Importing a BERT model succeeds (`apr import bert.safetensors`), but the resulting APR file has identity name mapping (`k_proj` -> `k_proj`) which fails at inference time because Qwen2 expects specific mapping.
+- **Impact:** User thinks conversion worked, but inference fails confusingly.
+- **Spec Violation:** APR-SPEC #95 "Should ask user for unknown architectures" is not implemented.
+
+### 25.3 Five-Whys Root Cause Analysis
+
+**Why is metadata dropped?**
+→ Because `import.rs` filters `__metadata__` to avoid cluttering the tensor index.
+**Why is there no separate metadata store?**
+→ Because `AprV2Metadata.custom` was intended for internal use (tokenizer), not user metadata.
+**Root Cause:** Spec failed to define "User Metadata" persistence strategy.
+
+**Why are BERT models silently accepted?**
+→ Because `auto_detect_arch` defaults to a generic "Transformer" if no specific pattern matches.
+**Why does generic Transformer succeed?**
+→ Because the converter is "permissive by default" to allow experimentation.
+**Why no warning?**
+→ Because the logging system doesn't differentiate "Confident Match" vs "Fallback".
+**Root Cause:** Spec prioritized "easy import" over "type safety".
+
+### 25.4 Required Fixes
+
+1.  **PMAT-223 (Metadata):** Update `AprV2Metadata` to support arbitrary user key-values, or document `__metadata__` stripping as a permanent limitation.
+2.  **PMAT-224 (Arch Safety):** Implement "Strict Mode" or interactive prompt when architecture is unknown. Update Spec to reflect this behavior.
+
+---
+
+### 25.5 Falsification Prompt (Round 18 → Round 19)
+
+> **Subject: ROUND 19 - THE LAST MILE (METADATA & SAFETY)**
+>
+> Round 18 falsified the "Completeness" claim. We have gaps in Metadata persistence and Architecture safety.
+>
+> **Your Objectives:**
+> 1.  **Fix Metadata Loss:** Allow `__metadata__` from SafeTensors to survive the round-trip (GGUF metadata too).
+> 2.  **Fix Silent Acceptance:** When importing an unknown architecture (BERT), `apr import` MUST warn or fail (unless `--force`).
+> 3.  **Verify Sharding:** Explicitly document the "SafeTensors Sharding OK, GGUF/APR Sharding Future" status.
+>
+> **Acceptance Criteria:**
+> - `apr import model.safetensors` preserves custom metadata keys.
+> - `apr import bert.safetensors` prints "WARNING: Unknown architecture 'bert'. Use --force to proceed."
+> - Spec accurately reflects these behaviors.
+>
+> **Falsification:**
+> If metadata is still dropped, the "Universal Translator" is a lie.
+> If BERT imports silently, the "Safe" claim is a lie.
+>
+> The line is open. Close the gaps.

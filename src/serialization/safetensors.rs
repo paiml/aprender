@@ -34,6 +34,10 @@ pub struct TensorMetadata {
 /// Uses `BTreeMap` for deterministic JSON serialization (sorted keys).
 pub type SafeTensorsMetadata = BTreeMap<String, TensorMetadata>;
 
+/// User metadata from `SafeTensors` `__metadata__` header section.
+/// SafeTensors stores arbitrary string→string metadata under `__metadata__`.
+pub type UserMetadata = BTreeMap<String, String>;
+
 /// Saves tensors to `SafeTensors` format.
 ///
 /// # Arguments
@@ -98,6 +102,71 @@ pub fn save_safetensors<P: AsRef<Path>>(
     Ok(())
 }
 
+/// Saves tensors to `SafeTensors` format with user metadata (PMAT-223).
+///
+/// Like `save_safetensors`, but includes a `__metadata__` section in the
+/// SafeTensors header for preserving arbitrary user metadata through
+/// format conversion round-trips.
+///
+/// # Errors
+///
+/// Returns an error if file writing or JSON serialization fails.
+pub fn save_safetensors_with_metadata<P: AsRef<Path>>(
+    path: P,
+    tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+    user_metadata: &UserMetadata,
+) -> Result<(), String> {
+    // Build a serde_json::Value containing both __metadata__ and tensor entries
+    let mut header = serde_json::Map::new();
+
+    // Add __metadata__ if non-empty
+    if !user_metadata.is_empty() {
+        let meta_obj: serde_json::Map<String, serde_json::Value> = user_metadata
+            .iter()
+            .map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone())))
+            .collect();
+        header.insert(
+            "__metadata__".to_string(),
+            serde_json::Value::Object(meta_obj),
+        );
+    }
+
+    // Add tensor metadata (BTreeMap already provides sorted iteration)
+    let mut raw_data = Vec::new();
+    let mut current_offset = 0;
+
+    for (name, (data, shape)) in tensors {
+        let start_offset = current_offset;
+        let data_size = data.len() * 4;
+        let end_offset = current_offset + data_size;
+
+        let tensor_meta = serde_json::json!({
+            "dtype": "F32",
+            "shape": shape,
+            "data_offsets": [start_offset, end_offset]
+        });
+        header.insert(name.clone(), tensor_meta);
+
+        for &value in data {
+            raw_data.extend_from_slice(&value.to_le_bytes());
+        }
+        current_offset = end_offset;
+    }
+
+    let metadata_json = serde_json::to_string(&header)
+        .map_err(|e| format!("JSON serialization failed: {e}"))?;
+    let metadata_bytes = metadata_json.as_bytes();
+    let metadata_len = metadata_bytes.len() as u64;
+
+    let mut output = Vec::new();
+    output.extend_from_slice(&metadata_len.to_le_bytes());
+    output.extend_from_slice(metadata_bytes);
+    output.extend_from_slice(&raw_data);
+
+    fs::write(path, output).map_err(|e| format!("File write failed: {e}"))?;
+    Ok(())
+}
+
 /// Loads tensors from `SafeTensors` format.
 ///
 /// # Arguments
@@ -120,7 +189,7 @@ pub fn save_safetensors<P: AsRef<Path>>(
 pub fn load_safetensors<P: AsRef<Path>>(path: P) -> Result<(SafeTensorsMetadata, Vec<u8>), String> {
     let bytes = fs::read(path).map_err(|e| format!("File read failed: {e}"))?;
     let metadata_len = validate_and_read_header(&bytes)?;
-    let metadata = parse_metadata(&bytes, metadata_len)?;
+    let (metadata, _user_metadata) = parse_metadata(&bytes, metadata_len)?;
     let raw_data = bytes[8 + metadata_len..].to_vec();
     Ok((metadata, raw_data))
 }
@@ -144,6 +213,8 @@ pub struct MappedSafeTensors {
     mmap: MappedFile,
     /// Parsed metadata
     metadata: SafeTensorsMetadata,
+    /// User metadata from `__metadata__` header section (PMAT-223)
+    user_metadata: UserMetadata,
     /// Offset where tensor data begins (after header + metadata JSON)
     data_offset: usize,
 }
@@ -159,12 +230,13 @@ impl MappedSafeTensors {
         let bytes = mmap.as_slice();
 
         let metadata_len = validate_and_read_header(bytes)?;
-        let metadata = parse_metadata(bytes, metadata_len)?;
+        let (metadata, user_metadata) = parse_metadata(bytes, metadata_len)?;
         let data_offset = 8 + metadata_len;
 
         Ok(Self {
             mmap,
             metadata,
+            user_metadata,
             data_offset,
         })
     }
@@ -237,6 +309,16 @@ impl MappedSafeTensors {
     pub fn is_empty(&self) -> bool {
         self.metadata.is_empty()
     }
+
+    /// Get user metadata from `__metadata__` header section (PMAT-223).
+    ///
+    /// SafeTensors files may contain arbitrary string→string metadata under
+    /// the `__metadata__` key. This method exposes that data for preservation
+    /// during format conversion.
+    #[must_use]
+    pub fn user_metadata(&self) -> &UserMetadata {
+        &self.user_metadata
+    }
 }
 
 fn validate_and_read_header(bytes: &[u8]) -> Result<usize, String> {
@@ -265,7 +347,10 @@ fn validate_and_read_header(bytes: &[u8]) -> Result<usize, String> {
     Ok(metadata_len)
 }
 
-fn parse_metadata(bytes: &[u8], metadata_len: usize) -> Result<SafeTensorsMetadata, String> {
+fn parse_metadata(
+    bytes: &[u8],
+    metadata_len: usize,
+) -> Result<(SafeTensorsMetadata, UserMetadata), String> {
     let metadata_json = &bytes[8..8 + metadata_len];
     let metadata_str = std::str::from_utf8(metadata_json)
         .map_err(|e| format!("Metadata is not valid UTF-8: {e}"))?;
@@ -274,8 +359,21 @@ fn parse_metadata(bytes: &[u8], metadata_len: usize) -> Result<SafeTensorsMetada
         serde_json::from_str(metadata_str).map_err(|e| format!("JSON parsing failed: {e}"))?;
 
     let mut metadata = SafeTensorsMetadata::new();
+    let mut user_metadata = UserMetadata::new();
+
     if let serde_json::Value::Object(map) = raw_metadata {
         for (key, value) in map {
+            if key == "__metadata__" {
+                // PMAT-223: Extract user metadata instead of discarding it
+                if let serde_json::Value::Object(meta_map) = value {
+                    for (mk, mv) in meta_map {
+                        if let serde_json::Value::String(s) = mv {
+                            user_metadata.insert(mk, s);
+                        }
+                    }
+                }
+                continue;
+            }
             if key.starts_with("__") {
                 continue;
             }
@@ -285,7 +383,7 @@ fn parse_metadata(bytes: &[u8], metadata_len: usize) -> Result<SafeTensorsMetada
         }
     }
 
-    Ok(metadata)
+    Ok((metadata, user_metadata))
 }
 
 /// Extracts a tensor from raw `SafeTensors` data.
@@ -679,8 +777,8 @@ mod tests {
     fn test_parse_metadata_with_dunder_keys() {
         let path = "/tmp/test_dunder.safetensors";
 
-        // Manually create file with __metadata__ key (should be skipped)
-        let metadata = r#"{"__metadata__":{"format":"pt"},"tensor":{"dtype":"F32","shape":[1],"data_offsets":[0,4]}}"#;
+        // PMAT-223: __metadata__ is now extracted as user metadata, not discarded
+        let metadata = r#"{"__metadata__":{"format":"pt","training_run_id":"12345"},"tensor":{"dtype":"F32","shape":[1],"data_offsets":[0,4]}}"#;
         let meta_bytes = metadata.as_bytes();
 
         let mut bytes = Vec::new();
@@ -691,8 +789,62 @@ mod tests {
 
         let mapped = MappedSafeTensors::open(path).expect("open");
         assert_eq!(mapped.len(), 1); // only "tensor", not "__metadata__"
-        assert!(mapped.get_metadata("__metadata__").is_none());
+        assert!(mapped.get_metadata("__metadata__").is_none()); // Not a tensor
         assert!(mapped.get_metadata("tensor").is_some());
+
+        // PMAT-223: User metadata IS extracted
+        let user_meta = mapped.user_metadata();
+        assert_eq!(user_meta.len(), 2);
+        assert_eq!(user_meta.get("format"), Some(&"pt".to_string()));
+        assert_eq!(user_meta.get("training_run_id"), Some(&"12345".to_string()));
+
+        fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn test_save_safetensors_with_metadata_round_trip() {
+        let path = "/tmp/test_metadata_roundtrip.safetensors";
+        let mut tensors = BTreeMap::new();
+        tensors.insert(
+            "weight".to_string(),
+            (vec![1.0f32, 2.0, 3.0, 4.0], vec![2, 2]),
+        );
+
+        let mut user_metadata = UserMetadata::new();
+        user_metadata.insert("my_run_id".to_string(), "test_123".to_string());
+        user_metadata.insert("framework".to_string(), "pytorch".to_string());
+
+        // Write with metadata
+        save_safetensors_with_metadata(path, &tensors, &user_metadata).expect("save");
+
+        // Read back and verify metadata round-trips
+        let mapped = MappedSafeTensors::open(path).expect("open");
+        assert_eq!(mapped.len(), 1);
+        assert!(mapped.get_metadata("weight").is_some());
+
+        let restored = mapped.user_metadata();
+        assert_eq!(restored.get("my_run_id"), Some(&"test_123".to_string()));
+        assert_eq!(restored.get("framework"), Some(&"pytorch".to_string()));
+
+        fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn test_empty_user_metadata_no_dunder_section() {
+        let path = "/tmp/test_no_dunder.safetensors";
+
+        // File without __metadata__ should have empty user_metadata
+        let metadata = r#"{"tensor":{"dtype":"F32","shape":[1],"data_offsets":[0,4]}}"#;
+        let meta_bytes = metadata.as_bytes();
+
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&(meta_bytes.len() as u64).to_le_bytes());
+        bytes.extend_from_slice(meta_bytes);
+        bytes.extend_from_slice(&1.0f32.to_le_bytes());
+        fs::write(path, &bytes).expect("write");
+
+        let mapped = MappedSafeTensors::open(path).expect("open");
+        assert!(mapped.user_metadata().is_empty());
 
         fs::remove_file(path).ok();
     }

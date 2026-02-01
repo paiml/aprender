@@ -7,6 +7,7 @@ use crate::format::gguf::{
     dequantize_q4_0, dequantize_q4_1, dequantize_q5_0, dequantize_q8_0, GgufModelConfig,
     GgufRawTensor, GgufTokenizer,
 };
+use crate::serialization::safetensors::UserMetadata;
 
 // Import quantization functions from parent module
 use super::{quantize_q4_k, quantize_q4_k_matrix, quantize_q6_k_matrix};
@@ -21,12 +22,16 @@ use std::path::Path;
 // ============================================================================
 
 /// Write tensors to native APR format
+///
+/// PMAT-223: `user_metadata` preserves arbitrary user metadata from SafeTensors `__metadata__`
+/// section through the conversion pipeline. Stored under `"source_metadata"` in APR custom field.
 pub(crate) fn write_apr_file(
     tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
     output: &Path,
     options: &ImportOptions,
     tokenizer: Option<&GgufTokenizer>,
     model_config: Option<&GgufModelConfig>,
+    user_metadata: &UserMetadata,
 ) -> Result<()> {
     // PMAT-100: Handle tied embeddings (common in Qwen, LLaMA, etc.)
     // Many models share embed_tokens.weight with lm_head.weight to reduce parameters.
@@ -208,6 +213,18 @@ pub(crate) fn write_apr_file(
         "tensor_shapes".to_string(),
         serde_json::Value::Object(tensor_shapes),
     );
+
+    // PMAT-223: Preserve user metadata from SafeTensors __metadata__ section
+    if !user_metadata.is_empty() {
+        let meta_obj: serde_json::Map<String, serde_json::Value> = user_metadata
+            .iter()
+            .map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone())))
+            .collect();
+        custom.insert(
+            "source_metadata".to_string(),
+            serde_json::Value::Object(meta_obj),
+        );
+    }
 
     // Add tokenizer data if available (CRITICAL for GGUF import)
     if let Some(tok) = tokenizer {

@@ -9,7 +9,7 @@ use crate::format::gguf::{
     load_gguf_raw, load_gguf_with_tokenizer, GgufModelConfig, GgufRawTensor, GgufTokenizer,
 };
 use crate::format::validation::{AprValidator, TensorStats, ValidationReport};
-use crate::serialization::safetensors::MappedSafeTensors;
+use crate::serialization::safetensors::{MappedSafeTensors, UserMetadata};
 use std::collections::BTreeMap;
 
 // Import write functions and helpers from parent module
@@ -56,20 +56,63 @@ pub fn apr_import<P: AsRef<Path>>(
         }
     }
 
+    // PMAT-224: Warn about unverified architectures before proceeding
+    let effective_arch = if options.architecture == Architecture::Auto {
+        // Try to infer from model config
+        load_result
+            .model_config
+            .as_ref()
+            .and_then(|cfg| cfg.architecture.as_ref())
+            .and_then(|arch_str| match arch_str.to_lowercase().as_str() {
+                "qwen2" | "qwen" | "qwen2.5" => Some(Architecture::Qwen2),
+                "llama" | "llama2" | "llama3" => Some(Architecture::Llama),
+                "whisper" => Some(Architecture::Whisper),
+                "bert" => Some(Architecture::Bert),
+                _ => None,
+            })
+            .unwrap_or(Architecture::Auto)
+    } else {
+        options.architecture
+    };
+
+    if !effective_arch.is_inference_verified() {
+        eprintln!(
+            "[PMAT-224] WARNING: Architecture '{}' has not been verified for inference.",
+            effective_arch.display_name()
+        );
+        eprintln!(
+            "[PMAT-224] The imported APR file may not produce correct output with `apr run`."
+        );
+        eprintln!(
+            "[PMAT-224] Verified architectures: Qwen2, LLaMA. Use --force to suppress this warning."
+        );
+        if !options.force {
+            return Err(AprenderError::FormatError {
+                message: format!(
+                    "Architecture '{}' is not verified for inference. \
+                     Use --force to import anyway, or specify --arch qwen2/llama.",
+                    effective_arch.display_name()
+                ),
+            });
+        }
+    }
+
     // Step 3: Map tensor names to canonical APR names
-    let mapped_tensors = map_tensor_names(&load_result.tensors, options.architecture);
+    let mapped_tensors = map_tensor_names(&load_result.tensors, effective_arch);
 
     // Step 4: Validate tensors (inline validation)
     let validation_result = validate_tensors(&mapped_tensors, &options)?;
 
     // Step 5: Write APR format (with tokenizer AND model config - CRITICAL for inference)
     // Note: Quantization (fp16/int8/int4) is applied during write for true packed storage
+    // PMAT-223: Pass user metadata for preservation in APR custom field
     write_apr_file(
         &mapped_tensors,
         output_path,
         &options,
         load_result.tokenizer.as_ref(),
         load_result.model_config.as_ref(),
+        &load_result.user_metadata,
     )?;
 
     Ok(validation_result)
@@ -113,6 +156,26 @@ pub(crate) fn apr_import_gguf_raw(
             "[PMAT-222] Auto-detected architecture: {:?} (tensor names will be mapped)",
             effective_arch
         );
+    }
+
+    // PMAT-224: Warn about unverified architectures
+    if !effective_arch.is_inference_verified() {
+        eprintln!(
+            "[PMAT-224] WARNING: Architecture '{}' has not been verified for inference.",
+            effective_arch.display_name()
+        );
+        eprintln!(
+            "[PMAT-224] Verified architectures: Qwen2, LLaMA. Use --force to suppress."
+        );
+        if !options.force {
+            return Err(AprenderError::FormatError {
+                message: format!(
+                    "Architecture '{}' is not verified for inference. \
+                     Use --force to import anyway, or specify --arch qwen2/llama.",
+                    effective_arch.display_name()
+                ),
+            });
+        }
     }
 
     // Map tensor names to APR canonical format using detected architecture
@@ -340,6 +403,8 @@ pub(crate) struct SourceLoadResult {
     tokenizer: Option<GgufTokenizer>,
     /// Model config (CRITICAL for inference - from GGUF)
     model_config: Option<GgufModelConfig>,
+    /// PMAT-223: User metadata from SafeTensors `__metadata__` section
+    user_metadata: UserMetadata,
 }
 
 /// Load model config from config.json alongside the model file (PMAT-098)
@@ -716,7 +781,8 @@ pub(crate) fn load_source_tensors(
 
     match extension {
         "safetensors" => {
-            let tensors = load_safetensors_tensors(path)?;
+            // PMAT-223: Load tensors AND user metadata from SafeTensors
+            let (tensors, user_metadata) = load_safetensors_with_user_metadata(path)?;
             // PMAT-098: Read config.json if available (CRITICAL for correct inference)
             // Fall back to shape inference only if config.json is missing
             let model_config = load_model_config_from_json(path)
@@ -727,6 +793,7 @@ pub(crate) fn load_source_tensors(
                 tensors,
                 tokenizer,
                 model_config,
+                user_metadata,
             })
         }
         "apr" => {
@@ -742,6 +809,7 @@ pub(crate) fn load_source_tensors(
                 tensors: result.tensors,
                 tokenizer: Some(result.tokenizer),
                 model_config: Some(result.model_config),
+                user_metadata: UserMetadata::new(),
             })
         }
         "bin" | "pt" | "pth" => Err(AprenderError::FormatError {
@@ -798,6 +866,56 @@ pub(crate) fn load_safetensors_tensors(
     }
 
     Ok(tensors)
+}
+
+/// Load tensors AND user metadata from SafeTensors file (PMAT-223).
+///
+/// Unlike `load_safetensors_tensors`, this also extracts the `__metadata__`
+/// section from the SafeTensors header for preservation during format conversion.
+pub(crate) fn load_safetensors_with_user_metadata(
+    path: &Path,
+) -> Result<(BTreeMap<String, (Vec<f32>, Vec<usize>)>, UserMetadata)> {
+    let mapped = MappedSafeTensors::open(path).map_err(|e| AprenderError::FormatError {
+        message: format!("Failed to mmap SafeTensors: {e}"),
+    })?;
+
+    let user_metadata = mapped.user_metadata().clone();
+    if !user_metadata.is_empty() {
+        eprintln!(
+            "[PMAT-223] Extracted {} user metadata key(s) from SafeTensors __metadata__",
+            user_metadata.len()
+        );
+    }
+
+    let mut tensors = BTreeMap::new();
+    let names: Vec<String> = mapped
+        .tensor_names()
+        .iter()
+        .map(|&s| (*s).to_string())
+        .collect();
+
+    for name in &names {
+        if name.starts_with("__") {
+            continue;
+        }
+
+        let meta = mapped
+            .get_metadata(name)
+            .ok_or_else(|| AprenderError::FormatError {
+                message: format!("Tensor metadata not found for '{name}'"),
+            })?;
+
+        let data = mapped
+            .get_tensor(name)
+            .map_err(|e| AprenderError::FormatError {
+                message: format!("Failed to extract tensor '{name}': {e}"),
+            })?;
+
+        validate_tensor_values(name, &data)?;
+        tensors.insert(name.clone(), (data, meta.shape.clone()));
+    }
+
+    Ok((tensors, user_metadata))
 }
 
 /// Map tensor names to APR canonical format

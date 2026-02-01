@@ -105,6 +105,27 @@ impl Architecture {
         }
     }
 
+    /// PMAT-224: Check if this architecture has verified inference support.
+    ///
+    /// Returns true only for architectures with tested tensor name mapping
+    /// and confirmed realizar inference compatibility.
+    #[must_use]
+    pub fn is_inference_verified(&self) -> bool {
+        matches!(self, Self::Qwen2 | Self::Llama)
+    }
+
+    /// PMAT-224: Get a human-readable name for warning messages.
+    #[must_use]
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            Self::Auto => "auto-detected",
+            Self::Whisper => "Whisper",
+            Self::Llama => "LLaMA",
+            Self::Bert => "BERT",
+            Self::Qwen2 => "Qwen2",
+        }
+    }
+
     fn auto_map_name(name: &str) -> String {
         // PMAT-099: Preserve original tensor names for AprTransformer compatibility
         // AprTransformer::from_apr_bytes expects model.* prefixes for HuggingFace models

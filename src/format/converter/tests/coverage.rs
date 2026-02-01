@@ -1826,7 +1826,7 @@ mod tests_write_functions {
         );
 
         let options = ImportOptions::default();
-        let result = write_apr_file(&tensors, &output_path, &options, None, None);
+        let result = write_apr_file(&tensors, &output_path, &options, None, None, &Default::default());
         assert!(result.is_ok(), "write_apr_file should succeed: {:?}", result.err());
         assert!(output_path.exists());
     }
@@ -1853,7 +1853,7 @@ mod tests_write_functions {
         };
 
         let options = ImportOptions::default();
-        let result = write_apr_file(&tensors, &output_path, &options, Some(&tokenizer), None);
+        let result = write_apr_file(&tensors, &output_path, &options, Some(&tokenizer), None, &Default::default());
         assert!(result.is_ok(), "write_apr_file with tokenizer should succeed");
     }
 
@@ -1896,7 +1896,7 @@ mod tests_write_functions {
         };
 
         let options = ImportOptions::default();
-        let result = write_apr_file(&tensors, &output_path, &options, None, Some(&model_config));
+        let result = write_apr_file(&tensors, &output_path, &options, None, Some(&model_config), &Default::default());
         assert!(result.is_ok(), "write_apr_file with config should succeed: {:?}", result.err());
     }
 
@@ -1914,7 +1914,7 @@ mod tests_write_functions {
         let mut options = ImportOptions::default();
         options.quantize = Some(QuantizationType::Fp16);
 
-        let result = write_apr_file(&tensors, &output_path, &options, None, None);
+        let result = write_apr_file(&tensors, &output_path, &options, None, None, &Default::default());
         assert!(result.is_ok(), "write_apr_file with fp16 should succeed");
     }
 
@@ -1932,7 +1932,7 @@ mod tests_write_functions {
         let mut options = ImportOptions::default();
         options.quantize = Some(QuantizationType::Int8);
 
-        let result = write_apr_file(&tensors, &output_path, &options, None, None);
+        let result = write_apr_file(&tensors, &output_path, &options, None, None, &Default::default());
         assert!(result.is_ok(), "write_apr_file with int8 should succeed");
     }
 
@@ -1950,7 +1950,7 @@ mod tests_write_functions {
         );
 
         let options = ImportOptions::default();
-        let result = write_apr_file(&tensors, &output_path, &options, None, None);
+        let result = write_apr_file(&tensors, &output_path, &options, None, None, &Default::default());
         assert!(result.is_ok());
 
         // Read back and verify lm_head was created
@@ -1988,7 +1988,7 @@ mod tests_write_functions {
         };
 
         let options = ImportOptions::default();
-        let result = write_apr_file(&tensors, &output_path, &options, None, Some(&model_config));
+        let result = write_apr_file(&tensors, &output_path, &options, None, Some(&model_config), &Default::default());
         assert!(result.is_ok(), "write_apr_file with QKV fusion should succeed: {:?}", result.err());
     }
 

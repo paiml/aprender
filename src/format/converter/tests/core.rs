@@ -502,12 +502,13 @@ mod tests_conversion {
 
         let options = ImportOptions {
             architecture: Architecture::Whisper,
+            force: true, // PMAT-224: Whisper is unverified, need --force
             ..Default::default()
         };
         let result = apr_import(input, output, options);
         assert!(
             result.is_ok(),
-            "Whisper mapping should work: {:?}",
+            "Whisper mapping should work with --force: {:?}",
             result.err()
         );
 

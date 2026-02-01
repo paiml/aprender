@@ -3,7 +3,9 @@
 
 use crate::error::{AprenderError, Result};
 use crate::format::converter_types::QuantizationType;
-use crate::serialization::safetensors::save_safetensors;
+use crate::serialization::safetensors::{
+    save_safetensors, save_safetensors_with_metadata, UserMetadata,
+};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
@@ -166,9 +168,23 @@ pub fn apr_export<P: AsRef<Path>>(
     // Export to target format
     match options.format {
         ExportFormat::SafeTensors => {
-            save_safetensors(output_path, &tensors).map_err(|e| AprenderError::FormatError {
-                message: format!("Failed to export to SafeTensors: {e}"),
-            })?;
+            // PMAT-223: Extract user metadata from APR custom field for round-trip
+            let user_metadata = extract_user_metadata(input_path);
+            if user_metadata.is_empty() {
+                save_safetensors(output_path, &tensors)
+                    .map_err(|e| AprenderError::FormatError {
+                        message: format!("Failed to export to SafeTensors: {e}"),
+                    })?;
+            } else {
+                eprintln!(
+                    "[PMAT-223] Restoring {} user metadata key(s) to SafeTensors __metadata__",
+                    user_metadata.len()
+                );
+                save_safetensors_with_metadata(output_path, &tensors, &user_metadata)
+                    .map_err(|e| AprenderError::FormatError {
+                        message: format!("Failed to export to SafeTensors: {e}"),
+                    })?;
+            }
 
             // GH-182: Write companion files alongside SafeTensors
             let output_dir = output_path.parent().unwrap_or(Path::new("."));
@@ -430,4 +446,56 @@ fn infer_tokenizer_json(input_path: &Path) -> String {
 
     // Return empty if no tokenizer found
     String::new()
+}
+
+/// PMAT-223: Extract user metadata from APR file's custom field.
+///
+/// Reads the APR metadata JSON and looks for the `"source_metadata"` key
+/// that was preserved during import from SafeTensors.
+fn extract_user_metadata(apr_path: &Path) -> UserMetadata {
+    let data = match fs::read(apr_path) {
+        Ok(d) => d,
+        Err(_) => return UserMetadata::new(),
+    };
+
+    // APR v2 format: magic(4) + version(4) + metadata_len(8) + metadata_json
+    if data.len() < 16 {
+        return UserMetadata::new();
+    }
+
+    let metadata_len = u64::from_le_bytes(
+        data[8..16]
+            .try_into()
+            .unwrap_or([0u8; 8]),
+    ) as usize;
+
+    if data.len() < 16 + metadata_len {
+        return UserMetadata::new();
+    }
+
+    let metadata_json = match std::str::from_utf8(&data[16..16 + metadata_len]) {
+        Ok(s) => s,
+        Err(_) => return UserMetadata::new(),
+    };
+
+    let parsed: serde_json::Value = match serde_json::from_str(metadata_json) {
+        Ok(v) => v,
+        Err(_) => return UserMetadata::new(),
+    };
+
+    // Look for custom.source_metadata
+    if let Some(serde_json::Value::Object(map)) = parsed
+        .get("custom")
+        .and_then(|c| c.get("source_metadata"))
+    {
+        let mut result = UserMetadata::new();
+        for (k, v) in map {
+            if let serde_json::Value::String(s) = v {
+                result.insert(k.clone(), s.clone());
+            }
+        }
+        return result;
+    }
+
+    UserMetadata::new()
 }
