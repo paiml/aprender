@@ -624,3 +624,274 @@ fn test_decode_sentencepiece_handles_hybrid_space() {
     let decoded = tokenizer.decode(&[3]);
     assert_eq!(decoded, "world"); // Leading space removed
 }
+
+// ========================================================================
+// Additional Coverage Tests for 95% Target
+// ========================================================================
+
+#[test]
+fn test_pad_token_accessors() {
+    let tokens = vec![
+        "<unk>".to_string(),
+        "<s>".to_string(),
+        "</s>".to_string(),
+        "<pad>".to_string(),
+    ];
+    let scores = vec![0.0; tokens.len()];
+    let tokenizer = LlamaTokenizer::new(tokens, scores, 1, 2, 0).unwrap();
+
+    // PAD token not set by default
+    assert!(tokenizer.pad_token_id.is_none());
+}
+
+#[test]
+fn test_encode_long_text() {
+    let tokenizer = create_test_tokenizer();
+    // Test with text longer than 32 chars (max substring check)
+    let long_text = "Hello World Hello World Hello World Hello World";
+    let tokens = tokenizer.encode(long_text);
+    assert!(!tokens.is_empty());
+}
+
+#[test]
+fn test_encode_special_chars() {
+    let tokenizer = create_test_tokenizer();
+    let text_with_special = "Hello\tWorld\nNew Line";
+    let tokens = tokenizer.encode(text_with_special);
+    assert!(!tokens.is_empty());
+}
+
+#[test]
+fn test_encode_numbers() {
+    let tokenizer = create_test_tokenizer();
+    let numeric = "12345 67890";
+    let tokens = tokenizer.encode(numeric);
+    assert!(!tokens.is_empty());
+}
+
+#[test]
+fn test_decode_empty() {
+    let tokenizer = create_test_tokenizer();
+    let decoded = tokenizer.decode(&[]);
+    assert!(decoded.is_empty());
+}
+
+#[test]
+fn test_decode_gpt2_with_all_special_tokens() {
+    let tokens = vec![
+        "<unk>".to_string(),
+        "<|endoftext|>".to_string(),
+        "</s>".to_string(),
+        "test".to_string(),
+    ];
+    let scores = vec![0.0; tokens.len()];
+    let mut tokenizer = LlamaTokenizer::new(tokens, scores, 1, 2, 0).unwrap();
+    tokenizer.set_model(TokenizerModel::Gpt2);
+
+    // Decode with only special tokens
+    let decoded = tokenizer.decode(&[1, 2]); // BOS and EOS
+    assert!(decoded.is_empty());
+}
+
+#[test]
+fn test_decode_gpt2_mixed_tokens() {
+    let tokens = vec![
+        "<unk>".to_string(),
+        "<|endoftext|>".to_string(),
+        "</s>".to_string(),
+        "Hello".to_string(),
+        "Ġworld".to_string(),
+    ];
+    let scores = vec![0.0; tokens.len()];
+    let mut tokenizer = LlamaTokenizer::new(tokens, scores, 1, 2, 0).unwrap();
+    tokenizer.set_model(TokenizerModel::Gpt2);
+
+    let decoded = tokenizer.decode(&[1, 3, 4, 2]); // BOS, Hello, world, EOS
+    assert_eq!(decoded, "Hello world");
+}
+
+#[test]
+fn test_encode_gpt2_with_newlines() {
+    let tokens = vec![
+        "<unk>".to_string(),
+        "<s>".to_string(),
+        "</s>".to_string(),
+        "Hello".to_string(),
+        "Ċworld".to_string(), // newline prefix
+    ];
+    let scores = vec![0.0; tokens.len()];
+    let mut tokenizer = LlamaTokenizer::new(tokens, scores, 1, 2, 0).unwrap();
+    tokenizer.set_model(TokenizerModel::Gpt2);
+
+    let encoded = tokenizer.encode("test\nline");
+    assert!(!encoded.is_empty());
+}
+
+#[test]
+fn test_token_to_id_all_tokens() {
+    let tokenizer = create_test_tokenizer();
+
+    // Test all known tokens
+    assert!(tokenizer.token_to_id("<unk>").is_some());
+    assert!(tokenizer.token_to_id("<s>").is_some());
+    assert!(tokenizer.token_to_id("</s>").is_some());
+}
+
+#[test]
+fn test_id_to_token_boundary() {
+    let tokenizer = create_test_tokenizer();
+
+    // Test boundary conditions
+    assert!(tokenizer.id_to_token(0).is_some()); // First token
+    assert!(tokenizer.id_to_token(tokenizer.vocab_size() as u32 - 1).is_some()); // Last valid
+    assert!(tokenizer.id_to_token(tokenizer.vocab_size() as u32).is_none()); // Out of bounds
+}
+
+#[test]
+fn test_eos_token_id_accessor() {
+    let tokenizer = create_test_tokenizer();
+    assert_eq!(tokenizer.eos_token_id(), 2);
+}
+
+#[test]
+fn test_unk_token_id_accessor() {
+    let tokenizer = create_test_tokenizer();
+    assert_eq!(tokenizer.unk_token_id(), 0);
+}
+
+#[test]
+fn test_bos_token_id_accessor() {
+    let tokenizer = create_test_tokenizer();
+    assert_eq!(tokenizer.bos_token_id(), 1);
+}
+
+#[test]
+fn test_encode_with_bos_empty() {
+    let tokenizer = create_test_tokenizer();
+    let tokens = tokenizer.encode_with_bos("");
+    assert_eq!(tokens.len(), 1);
+    assert_eq!(tokens[0], tokenizer.bos_token_id());
+}
+
+#[test]
+fn test_encode_with_bos_single_word() {
+    let tokenizer = create_test_tokenizer();
+    let tokens = tokenizer.encode_with_bos("Hello");
+    assert!(tokens.len() >= 2); // BOS + at least one token
+    assert_eq!(tokens[0], tokenizer.bos_token_id());
+}
+
+#[test]
+fn test_decode_sentencepiece_byte_fallback_invalid() {
+    // Create tokenizer with incomplete byte token
+    let tokens = vec![
+        "<unk>".to_string(),
+        "<s>".to_string(),
+        "</s>".to_string(),
+        "<0x".to_string(), // Malformed - no closing >
+    ];
+    let scores = vec![0.0; tokens.len()];
+    let tokenizer = LlamaTokenizer::new(tokens, scores, 1, 2, 0).unwrap();
+
+    let decoded = tokenizer.decode(&[3]);
+    // Should not crash, just output token as-is
+    assert_eq!(decoded, "<0x");
+}
+
+#[test]
+fn test_from_gguf_bytes_v1_format() {
+    // Test GGUF version 1 (if supported)
+    let mut data = Vec::new();
+    data.extend_from_slice(b"GGUF");
+    data.extend_from_slice(&1u32.to_le_bytes()); // version 1
+    data.extend_from_slice(&0u64.to_le_bytes());
+    data.extend_from_slice(&0u64.to_le_bytes());
+
+    // This may fail if v1 isn't supported
+    let result = LlamaTokenizer::from_gguf_bytes(&data);
+    // Just verify it doesn't panic
+    let _ = result.is_ok();
+}
+
+#[test]
+fn test_gguf_value_array_nested() {
+    let values = GGUFValue::Array(vec![
+        GGUFValue::Array(vec![GGUFValue::UInt8(1), GGUFValue::UInt8(2)]),
+        GGUFValue::Array(vec![GGUFValue::UInt8(3), GGUFValue::UInt8(4)]),
+    ]);
+
+    let debug = format!("{:?}", values);
+    assert!(debug.contains("Array"));
+}
+
+#[test]
+fn test_tokenizer_model_values() {
+    // Test all TokenizerModel variants
+    let sp = TokenizerModel::SentencePiece;
+    let gpt2 = TokenizerModel::Gpt2;
+
+    assert_ne!(sp, gpt2);
+    assert_eq!(sp, TokenizerModel::default());
+}
+
+#[test]
+fn test_encode_all_unk() {
+    // Create tokenizer with minimal vocab
+    let tokens = vec![
+        "<unk>".to_string(),
+        "<s>".to_string(),
+        "</s>".to_string(),
+    ];
+    let scores = vec![0.0; tokens.len()];
+    let tokenizer = LlamaTokenizer::new(tokens, scores, 1, 2, 0).unwrap();
+
+    // Encode text that has no matching tokens
+    let encoded = tokenizer.encode("xyz123");
+    // Should use byte fallback or UNK
+    assert!(!encoded.is_empty());
+}
+
+#[test]
+fn test_decode_multiple_byte_tokens() {
+    // Create tokenizer with multiple byte tokens
+    let mut tokens = vec![
+        "<unk>".to_string(),
+        "<s>".to_string(),
+        "</s>".to_string(),
+    ];
+    // Add byte tokens
+    for i in 0u8..10 {
+        tokens.push(format!("<0x{:02X}>", i));
+    }
+    let scores = vec![0.0; tokens.len()];
+    let tokenizer = LlamaTokenizer::new(tokens, scores, 1, 2, 0).unwrap();
+
+    // Decode multiple consecutive byte tokens
+    let decoded = tokenizer.decode(&[3, 4, 5]); // <0x00>, <0x01>, <0x02>
+    assert_eq!(decoded.len(), 3);
+}
+
+#[test]
+fn test_gpt2_byte_decoder_all_chars() {
+    let decoder = build_gpt2_byte_decoder();
+
+    // Verify all 256 bytes are mapped
+    assert_eq!(decoder.len(), 256);
+
+    // Verify specific mappings
+    for b in b'!'..(b'~' + 1) {
+        assert!(decoder.values().any(|&v| v == b));
+    }
+}
+
+#[test]
+fn test_decode_gpt2_token_complex() {
+    // Test complex unicode sequences
+    let token = "HelloĠworldĊnewline";
+    let bytes = decode_gpt2_token(token);
+
+    // Should contain space for Ġ and newline for Ċ
+    let text = String::from_utf8_lossy(&bytes);
+    assert!(text.contains(" ")); // Ġ → space
+    assert!(text.contains("\n")); // Ċ → newline
+}
