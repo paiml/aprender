@@ -4,6 +4,7 @@
 //! Validates model integrity using the 100-point QA checklist.
 
 use crate::error::CliError;
+use aprender::format::rosetta::{FormatType, RosettaStone};
 use aprender::format::validation::{AprValidator, Category, CheckStatus, ValidationReport};
 use colored::Colorize;
 use std::fs;
@@ -19,24 +20,37 @@ pub(crate) fn run(
     validate_path(path)?;
     println!("Validating {}...\n", path.display());
 
-    // Read entire file
-    let data = fs::read(path)?;
+    // Detect format via magic bytes (Rosetta Stone dispatch)
+    let format = FormatType::from_magic(path)
+        .or_else(|_| FormatType::from_extension(path))
+        .map_err(|e| CliError::InvalidFormat(format!("Cannot detect format: {e}")))?;
 
-    // Run validation
+    match format {
+        FormatType::Apr => run_apr_validation(path, quality, strict, min_score),
+        FormatType::Gguf | FormatType::SafeTensors => {
+            run_rosetta_validation(path, format, quality)
+        }
+    }
+}
+
+/// APR validation via 100-point QA checklist (existing path)
+fn run_apr_validation(
+    path: &Path,
+    quality: bool,
+    strict: bool,
+    min_score: Option<u8>,
+) -> Result<(), CliError> {
+    let data = fs::read(path)?;
     let mut validator = AprValidator::new();
     let report = validator.validate_bytes(&data);
 
-    // Print detailed check results
     print_check_results(report);
-
-    // Print summary
     print_summary(report, strict)?;
 
     if quality {
         print_quality_assessment(report);
     }
 
-    // Check minimum score if specified
     if let Some(min) = min_score {
         if report.total_score < min {
             return Err(CliError::ValidationFailed(format!(
@@ -47,6 +61,57 @@ pub(crate) fn run(
     }
 
     Ok(())
+}
+
+/// GGUF/SafeTensors validation via RosettaStone (physics constraints)
+fn run_rosetta_validation(
+    path: &Path,
+    format: FormatType,
+    quality: bool,
+) -> Result<(), CliError> {
+    println!(
+        "Format: {} (using Rosetta Stone validation)\n",
+        format.to_string().cyan()
+    );
+
+    let rosetta = RosettaStone::new();
+    let report = rosetta
+        .validate(path)
+        .map_err(|e| CliError::ValidationFailed(format!("Validation failed: {e}")))?;
+
+    // Print per-tensor results
+    for tv in &report.tensors {
+        let status = if tv.is_valid {
+            "[PASS]".green().to_string()
+        } else {
+            "[FAIL]".red().to_string()
+        };
+        println!("  {} {}", status, tv.name);
+        for failure in &tv.failures {
+            println!("    - {}", failure.red());
+        }
+    }
+
+    println!();
+    println!("{}", report.summary());
+
+    if quality {
+        println!();
+        println!("{}", "=== Physics Constraints (APR-SPEC 10.9) ===".cyan().bold());
+        println!("  Total NaN:  {}", report.total_nan_count);
+        println!("  Total Inf:  {}", report.total_inf_count);
+        println!("  All-zeros:  {}", report.all_zero_tensors.len());
+        println!("  Duration:   {} ms", report.duration_ms);
+    }
+
+    if report.is_valid {
+        Ok(())
+    } else {
+        Err(CliError::ValidationFailed(format!(
+            "{} tensors failed validation",
+            report.failed_tensor_count
+        )))
+    }
 }
 
 fn validate_path(path: &Path) -> Result<(), CliError> {

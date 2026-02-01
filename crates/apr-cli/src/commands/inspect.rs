@@ -113,25 +113,101 @@ pub(crate) fn run(
 ) -> Result<(), CliError> {
     validate_path(path)?;
 
-    let file = File::open(path)?;
-    let file_size = file.metadata()?.len();
-    let mut reader = BufReader::new(file);
+    // Detect format via magic bytes (Rosetta Stone dispatch)
+    let format = aprender::format::rosetta::FormatType::from_magic(path)
+        .or_else(|_| aprender::format::rosetta::FormatType::from_extension(path));
 
-    let header = read_and_parse_header(&mut reader)?;
-    let metadata_info = read_metadata(&mut reader, &header);
+    match format {
+        Ok(
+            aprender::format::rosetta::FormatType::Gguf
+            | aprender::format::rosetta::FormatType::SafeTensors,
+        ) => {
+            run_rosetta_inspect(path, json_output)
+        }
+        _ => {
+            // Default: APR v2 inspect (existing path)
+            let file = File::open(path)?;
+            let file_size = file.metadata()?.len();
+            let mut reader = BufReader::new(file);
+
+            let header = read_and_parse_header(&mut reader)?;
+            let metadata_info = read_metadata(&mut reader, &header);
+
+            if json_output {
+                output_json(path, file_size, &header, metadata_info);
+            } else {
+                output_text(
+                    path,
+                    file_size,
+                    &header,
+                    &metadata_info,
+                    show_vocab,
+                    show_filters,
+                    show_weights,
+                );
+            }
+            Ok(())
+        }
+    }
+}
+
+/// GGUF/SafeTensors inspect via RosettaStone
+fn run_rosetta_inspect(path: &Path, json_output: bool) -> Result<(), CliError> {
+    use aprender::format::rosetta::RosettaStone;
+
+    let rosetta = RosettaStone::new();
+    let report = rosetta
+        .inspect(path)
+        .map_err(|e| CliError::InvalidFormat(format!("Inspection failed: {e}")))?;
 
     if json_output {
-        output_json(path, file_size, &header, metadata_info);
-    } else {
-        output_text(
-            path,
-            file_size,
-            &header,
-            &metadata_info,
-            show_vocab,
-            show_filters,
-            show_weights,
+        // Serialize InspectionReport as JSON
+        let mut json_map = serde_json::Map::new();
+        json_map.insert(
+            "file".to_string(),
+            serde_json::Value::String(path.display().to_string()),
         );
+        json_map.insert(
+            "format".to_string(),
+            serde_json::Value::String(report.format.to_string()),
+        );
+        json_map.insert(
+            "file_size".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(report.file_size)),
+        );
+        json_map.insert(
+            "total_params".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(report.total_params)),
+        );
+        if let Some(ref arch) = report.architecture {
+            json_map.insert(
+                "architecture".to_string(),
+                serde_json::Value::String(arch.clone()),
+            );
+        }
+        if let Some(ref quant) = report.quantization {
+            json_map.insert(
+                "quantization".to_string(),
+                serde_json::Value::String(quant.clone()),
+            );
+        }
+        json_map.insert(
+            "tensor_count".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(report.tensors.len())),
+        );
+        let metadata: serde_json::Value = report
+            .metadata
+            .iter()
+            .map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone())))
+            .collect::<serde_json::Map<_, _>>()
+            .into();
+        json_map.insert("metadata".to_string(), metadata);
+
+        if let Ok(json) = serde_json::to_string_pretty(&json_map) {
+            println!("{json}");
+        }
+    } else {
+        print!("{report}");
     }
 
     Ok(())

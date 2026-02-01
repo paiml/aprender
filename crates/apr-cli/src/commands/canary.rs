@@ -105,10 +105,95 @@ pub(crate) fn run(command: CanaryCommands) -> Result<()> {
     }
 }
 
+/// Loaded tensor data: name → (f32 values, shape)
+type TensorDataMap = BTreeMap<String, (Vec<f32>, Vec<usize>)>;
+
+/// Load tensor data from any supported format (APR, GGUF, SafeTensors).
+/// Uses Rosetta Stone format detection to dispatch to the appropriate reader.
+fn load_tensor_data(model_path: &Path) -> Result<TensorDataMap> {
+    use aprender::format::rosetta::FormatType;
+
+    let format = FormatType::from_magic(model_path)
+        .or_else(|_| FormatType::from_extension(model_path))
+        .map_err(|e| CliError::InvalidFormat(format!("Cannot detect format: {e}")))?;
+
+    match format {
+        FormatType::SafeTensors => load_tensor_data_safetensors(model_path),
+        FormatType::Gguf => load_tensor_data_gguf(model_path),
+        FormatType::Apr => load_tensor_data_apr(model_path),
+    }
+}
+
+/// Load tensor data from SafeTensors format.
+fn load_tensor_data_safetensors(path: &Path) -> Result<TensorDataMap> {
+    use aprender::serialization::safetensors::load_safetensors;
+
+    let (metadata, raw_data) =
+        load_safetensors(path).map_err(|e| CliError::ValidationFailed(e.clone()))?;
+
+    let mut result = BTreeMap::new();
+    for (name, info) in &metadata {
+        let start = info.data_offsets[0];
+        let end = info.data_offsets[1];
+        let tensor_bytes = &raw_data[start..end];
+
+        let data: Vec<f32> = tensor_bytes
+            .chunks_exact(4)
+            .map(|chunk| {
+                let bytes: [u8; 4] = chunk.try_into().unwrap_or([0; 4]);
+                f32::from_le_bytes(bytes)
+            })
+            .collect();
+
+        result.insert(name.clone(), (data, info.shape.clone()));
+    }
+    Ok(result)
+}
+
+/// Load tensor data from GGUF format.
+fn load_tensor_data_gguf(path: &Path) -> Result<TensorDataMap> {
+    use aprender::format::gguf::reader::GgufReader;
+
+    let data = fs::read(path)?;
+    let reader = GgufReader::from_bytes(data)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to parse GGUF: {e}")))?;
+
+    let mut result = BTreeMap::new();
+    let tensor_names: Vec<String> = reader.tensors.iter().map(|t| t.name.clone()).collect();
+
+    for name in &tensor_names {
+        if let Ok((f32_data, shape)) = reader.get_tensor_f32(name) {
+            result.insert(name.clone(), (f32_data, shape));
+        }
+    }
+    Ok(result)
+}
+
+/// Load tensor data from APR v2 format.
+fn load_tensor_data_apr(path: &Path) -> Result<TensorDataMap> {
+    use aprender::format::v2::AprV2Reader;
+
+    let data = fs::read(path)?;
+    let reader = AprV2Reader::from_bytes(&data)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to parse APR: {e}")))?;
+
+    let mut result = BTreeMap::new();
+    let names = reader.tensor_names();
+
+    for name in &names {
+        if let Some(entry) = reader.get_tensor(name) {
+            let shape = entry.shape.clone();
+            if let Some(f32_data) = reader.get_tensor_as_f32(name) {
+                result.insert((*name).to_string(), (f32_data, shape));
+            }
+        }
+    }
+    Ok(result)
+}
+
 /// Create a canary test from a model
 fn create_canary(model_path: &Path, _input_path: &Path, output_path: &Path) -> Result<()> {
     use aprender::format::TensorStats;
-    use aprender::serialization::safetensors::load_safetensors;
 
     println!("{}", "=== APR Canary Create ===".cyan().bold());
     println!();
@@ -121,37 +206,21 @@ fn create_canary(model_path: &Path, _input_path: &Path, output_path: &Path) -> R
         return Err(CliError::FileNotFound(model_path.to_path_buf()));
     }
 
-    // Load model tensors
+    // Load model tensors (auto-detects APR, GGUF, SafeTensors)
     println!("{}", "Loading model...".yellow());
-    let (metadata, raw_data) =
-        load_safetensors(model_path).map_err(|e| CliError::ValidationFailed(e.clone()))?;
+    let tensor_data = load_tensor_data(model_path)?;
 
     // Compute tensor statistics
     println!("{}", "Computing tensor statistics...".yellow());
     let mut tensors = BTreeMap::new();
 
-    for (name, info) in &metadata {
-        // Extract tensor data
-        let start = info.data_offsets[0];
-        let end = info.data_offsets[1];
-        let tensor_bytes = &raw_data[start..end];
-
-        // Convert to f32
-        let data: Vec<f32> = tensor_bytes
-            .chunks_exact(4)
-            .map(|chunk| {
-                let bytes: [u8; 4] = chunk.try_into().unwrap_or([0; 4]);
-                f32::from_le_bytes(bytes)
-            })
-            .collect();
-
-        // Compute statistics
-        let stats = TensorStats::compute(name, &data);
+    for (name, (data, shape)) in &tensor_data {
+        let stats = TensorStats::compute(name, data);
 
         tensors.insert(
             name.clone(),
             TensorCanary {
-                shape: info.shape.clone(),
+                shape: shape.clone(),
                 count: data.len(),
                 mean: stats.mean,
                 std: stats.std,
@@ -192,21 +261,18 @@ const STD_THRESHOLD: f32 = 0.2; // 20% std drift allowed
 
 /// Check a model against a canary test
 fn check_canary(model_path: &Path, canary_path: &Path) -> Result<()> {
-    use aprender::serialization::safetensors::load_safetensors;
-
     print_canary_check_header(model_path, canary_path);
     validate_paths_exist(model_path, canary_path)?;
 
     let canary = load_canary_data(canary_path)?;
 
     println!("{}", "Loading model...".yellow());
-    let (metadata, raw_data) =
-        load_safetensors(model_path).map_err(|e| CliError::ValidationFailed(e.clone()))?;
+    let tensor_data = load_tensor_data(model_path)?;
 
     println!("{}", "Comparing tensors...".yellow());
     println!();
 
-    let results = compare_all_tensors(&canary, &metadata, &raw_data);
+    let results = compare_all_tensors_generic(&canary, &tensor_data);
     display_canary_results(&results, canary.tensor_count)
 }
 
@@ -238,19 +304,18 @@ fn load_canary_data(canary_path: &Path) -> Result<CanaryData> {
         .map_err(|e| CliError::ValidationFailed(format!("Failed to parse canary file: {e}")))
 }
 
-/// Compare all tensors from canary against model tensors.
-fn compare_all_tensors(
+/// Compare all tensors from canary against model tensors (format-agnostic).
+fn compare_all_tensors_generic(
     canary: &CanaryData,
-    metadata: &BTreeMap<String, aprender::serialization::safetensors::TensorMetadata>,
-    raw_data: &[u8],
+    tensor_data: &TensorDataMap,
 ) -> Vec<CanaryCheckResult> {
     canary
         .tensors
         .iter()
         .map(|(name, expected)| {
-            metadata.get(name).map_or_else(
+            tensor_data.get(name).map_or_else(
                 || missing_tensor_result(name),
-                |info| compare_single_tensor(name, expected, info, raw_data),
+                |(data, shape)| compare_single_tensor_generic(name, expected, data, shape),
             )
         })
         .collect()
@@ -268,24 +333,24 @@ fn missing_tensor_result(name: &str) -> CanaryCheckResult {
     }
 }
 
-/// Compare a single tensor against expected canary values.
-fn compare_single_tensor(
+/// Compare a single tensor against expected canary values (format-agnostic).
+fn compare_single_tensor_generic(
     name: &str,
     expected: &TensorCanary,
-    info: &aprender::serialization::safetensors::TensorMetadata,
-    raw_data: &[u8],
+    data: &[f32],
+    shape: &[usize],
 ) -> CanaryCheckResult {
     use aprender::format::TensorStats;
 
-    let data = extract_tensor_data(info, raw_data);
-    let stats = TensorStats::compute(name, &data);
+    let stats = TensorStats::compute(name, data);
 
-    let shape_match = info.shape == expected.shape;
+    let shape_match = shape == expected.shape.as_slice();
     let mean_drift = compute_relative_drift(stats.mean, expected.mean);
     let std_drift = compute_relative_drift(stats.std, expected.std);
 
     let passed = shape_match && mean_drift <= MEAN_THRESHOLD && std_drift <= STD_THRESHOLD;
-    let message = build_failure_message(passed, shape_match, mean_drift, std_drift, expected, info);
+    let message =
+        build_failure_message_generic(passed, shape_match, mean_drift, std_drift, expected, shape);
 
     CanaryCheckResult {
         tensor_name: name.to_string(),
@@ -297,24 +362,6 @@ fn compare_single_tensor(
     }
 }
 
-/// Extract f32 tensor data from raw bytes.
-fn extract_tensor_data(
-    info: &aprender::serialization::safetensors::TensorMetadata,
-    raw_data: &[u8],
-) -> Vec<f32> {
-    let start = info.data_offsets[0];
-    let end = info.data_offsets[1];
-    let tensor_bytes = &raw_data[start..end];
-
-    tensor_bytes
-        .chunks_exact(4)
-        .map(|chunk| {
-            let bytes: [u8; 4] = chunk.try_into().unwrap_or([0; 4]);
-            f32::from_le_bytes(bytes)
-        })
-        .collect()
-}
-
 /// Compute relative drift, handling near-zero expected values.
 fn compute_relative_drift(actual: f32, expected: f32) -> f32 {
     if expected.abs() > 1e-6 {
@@ -324,14 +371,14 @@ fn compute_relative_drift(actual: f32, expected: f32) -> f32 {
     }
 }
 
-/// Build failure message if check failed.
-fn build_failure_message(
+/// Build failure message if check failed (format-agnostic).
+fn build_failure_message_generic(
     passed: bool,
     shape_match: bool,
     mean_drift: f32,
     std_drift: f32,
     expected: &TensorCanary,
-    info: &aprender::serialization::safetensors::TensorMetadata,
+    actual_shape: &[usize],
 ) -> Option<String> {
     if passed {
         return None;
@@ -340,7 +387,7 @@ fn build_failure_message(
     Some(if !shape_match {
         format!(
             "Shape mismatch: expected {:?}, got {:?}",
-            expected.shape, info.shape
+            expected.shape, actual_shape
         )
     } else if mean_drift > MEAN_THRESHOLD {
         format!(

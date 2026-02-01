@@ -185,8 +185,8 @@ pub use converter::{
 
 // Re-export lint types (spec §4.11 - Best Practices & Conventions)
 pub use lint::{
-    lint_apr_file, lint_model, LintCategory, LintIssue, LintLevel, LintReport, ModelLintInfo,
-    TensorLintInfo,
+    lint_apr_file, lint_model, lint_model_file, LintCategory, LintIssue, LintLevel, LintReport,
+    ModelLintInfo, TensorLintInfo,
 };
 
 // Re-export sharded import types (GH-127 - multi-tensor repos)

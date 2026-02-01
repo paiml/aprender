@@ -1,7 +1,8 @@
 # SQLite-Style Conversion Test Harness
 
-**Status:** Approved
+**Status:** Implemented / Verified
 **Refs:** GH-196, PMAT-197
+**Code:** `src/format/test_factory.rs`, `src/format/converter/tests/core.rs`
 
 ## Theoretical Foundation
 
@@ -26,78 +27,80 @@ The harness implements key TPS principles [2] to ensure built-in quality (*Jidok
 
 ## Problem
 
-The conversion pipeline (SafeTensors <-> APR <-> GGUF) is error-prone (GH-196 had 4 defects). The existing converter tests in `core.rs` have these problems:
+The conversion pipeline (SafeTensors <-> APR <-> GGUF) is error-prone (GH-196 had 4 defects). The legacy tests in `core.rs` suffered from:
+1. **Ad-hoc Data:** Manual BTreeMap construction instead of using the robust `PygmyConfig`.
+2. **Fragile Paths:** Hardcoded `/tmp/` paths causing race conditions and littering.
+3. **Blind Writes:** No read-back verification to ensure data integrity.
+4. **Missing Round-Trips:** SafeTensors->APR->SafeTensors never tested end-to-end.
 
-1. **Don't use pygmy factory** -- manually construct adhoc BTreeMap tensors
-2. **Hardcoded `/tmp/` paths** -- `"/tmp/test_valid_input.safetensors"` etc.
-3. **Manual cleanup** -- `fs::remove_file(input).ok()` (silently fails)
-4. **No read-back verification** -- writes APR but never reads it back to check tensor data
-5. **No round-trip testing** -- SafeTensors->APR->SafeTensors never tested end-to-end
+## Solution: The ConversionTestHarness
 
-Meanwhile, `test_factory.rs` (1,519 lines) has excellent pygmy builders that only 4 test files use.
+We implemented a **SQLite-style Test Harness** in `src/format/test_factory.rs` that provides a RAII-managed environment for rigorous conversion testing.
 
-## Solution
+### Reference API (Standard Work)
 
-Add a `ConversionTestHarness` to `test_factory.rs` and migrate `core.rs` tests to use it.
+The `ConversionTestHarness` provides a fluent API for testing. Developers **must** use this harness for all conversion tests.
 
-## Changes
+```rust
+use crate::format::test_factory::harness::ConversionTestHarness;
+use crate::format::test_factory::PygmyConfig;
 
-### 1. Extend `src/format/test_factory.rs` -- add harness module (~200 lines)
+// ONE-LINER (Preferred for regression tests)
+ConversionTestHarness::assert_import_ok(PygmyConfig::llama_style());
+ConversionTestHarness::assert_roundtrip_ok(PygmyConfig::default());
 
-Add `#[cfg(test)] pub(crate) mod harness` after the existing builders. Contains:
+// FLUENT API (Preferred for edge cases)
+let h = ConversionTestHarness::new()
+    .with_safetensors(PygmyConfig::llama_style()) // 1. Setup Input
+    .import_to_apr(ImportOptions::default());     // 2. Exercise SUT
 
-- **`ConversionTestHarness`** struct with `TempDir` (RAII cleanup, no manual deletion)
-- **Setup methods**: `with_safetensors(config)`, `with_apr(config)` -- write pygmy bytes to tempdir
-- **Exercise methods**: `import_to_apr(options)`, `export_to_safetensors(options)` -- run real pipeline
-- **Verify methods**: `verify()` -- read back output, compare tensor data with tolerance
-- **Round-trip**: `round_trip_safetensors()` -- SafeTensors->APR->SafeTensors end-to-end
-- **Convenience**: `assert_import_ok(config)`, `assert_roundtrip_ok(config)` -- one-liners
-
-Key implementation details:
-- Read APR back via `AprV2Reader::from_bytes(&fs::read(path)?)` -> `get_tensor(name).shape` + `get_tensor_as_f32(name)`
-- Read SafeTensors back via `MappedSafeTensors::open(path)` -> `tensor_names()` + `get_tensor(name)` + `get_metadata(name).shape`
-- `ToleranceConfig`: F32=1e-6, F16=1e-3, Q8=0.1, Q4=0.5
-- `VerificationResult` with `assert_passed()` that panics with detailed mismatch info
-
-### 2. Rewrite `src/format/converter/tests/core.rs` -- `tests_conversion` module
-
-Replace 6 existing tests that use `/tmp/` paths:
-- `test_convert_valid_safetensors` -> use harness with `PygmyConfig::llama_style()`
-- `test_convert_invalid_layernorm_fails_strict` -> keep manual tensor (intentionally bad data)
-- `test_convert_invalid_layernorm_force_succeeds` -> keep manual tensor (intentionally bad data)
-- `test_convert_nan_fails` -> keep manual tensor (intentionally bad data)
-- `test_convert_nonexistent_file` -> keep as-is (tests error path)
-- `test_name_mapping_whisper` -> use harness, verify tensor names in output
-
-For the manual tensor tests that need bad data: convert `/tmp/` paths to `TempDir`.
-
-### 3. Add GH-196 regression tests -- new `tests_gh196_roundtrip` module in `core.rs`
-
-~8 new tests covering the exact paths that broke:
-
-```
-test_gh196_auto_arch_import          -- Auto architecture infers from tensor names
-test_gh196_strict_rejects_unverified -- --strict blocks Auto architecture
-test_gh196_default_permissive        -- default (non-strict) allows Auto
-test_gh196_tensor_data_preserved     -- imported tensors match source bit-for-bit
-test_gh196_full_roundtrip_default    -- SafeTensors->APR->SafeTensors round-trip
-test_gh196_full_roundtrip_llama      -- round-trip with PygmyConfig::llama_style()
-test_gh196_full_roundtrip_minimal    -- round-trip with PygmyConfig::minimal()
-test_gh196_metadata_architecture     -- architecture field preserved in APR metadata
+// 3. Verify (Jidoka) - Panics with detailed mismatch info
+h.verify_apr().assert_passed(); 
 ```
 
-## Files Modified
+### Key Components
 
-| File | Change |
-|------|--------|
-| `src/format/test_factory.rs` | Add `harness` module (~200 lines) |
-| `src/format/converter/tests/core.rs` | Rewrite `tests_conversion`, add `tests_gh196_roundtrip` |
+| Component | Responsibility | Falsification Check |
+|-----------|----------------|---------------------|
+| `TempDir` | RAII cleanup of test artifacts. | **F-STR-04:** Deletion during test triggers IO error. |
+| `PygmyConfig` | Generates deterministic, valid tensor data. | **F-STR-02:** Handles 0-tensor configs gracefully. |
+| `verify_apr()` | Reads disk artifact, compares data with `ToleranceConfig`. | **F-JID-01:** Detects single-byte corruption. |
+| `verify_safetensors()` | Verifies export fidelity (round-trip). | **F-REG-03:** Input vs Output binary identity (approx). |
 
-## Verification
+## Implementation Details
+
+### 1. Harness Module (`src/format/test_factory.rs`)
+The `harness` module (~200 lines) implements the `ConversionTestHarness` struct.
+- **Tolerance:** Default F32=1e-6, F16=1e-3, Q8=0.1.
+- **Verification:** Explicitly checks (1) Tensor Existence, (2) Shape Equality, (3) Data values within tolerance.
+- **Safety:** Uses `unwrap()` only on test setup; SUT errors are returned or asserted with context.
+
+### 2. Core Tests Rewrite (`src/format/converter/tests/core.rs`)
+We replaced the legacy `/tmp/` tests with:
+- **`tests_conversion`:** Uses harness for standard flow, keeps manual `BTreeMap` only for negative testing (NaN, invalid LayerNorm).
+- **`tests_gh196_roundtrip`:** 8 new regression tests covering the GH-196 defects (Auto-Arch, Strict Mode, Round-Trip).
+
+## Falsification Protocol (QA Matrix)
+
+To ensure the harness remains reliable, any changes to `test_factory.rs` must pass this Falsification Matrix.
+
+| ID | Test | Expectation |
+|----|------|-------------|
+| **F-HAR-01** | Manually corrupt output `.apr` byte | `verify()` PANICS with `DataMismatch` |
+| **F-HAR-02** | Set tolerance to `1e-9` (too strict) | `verify()` FAILS on float arithmetic noise |
+| **F-HAR-03** | Use `--strict` on `embedding_only` config | Import FAILS (Unverified Architecture) |
+| **F-HAR-04** | Use `PygmyConfig` with 0 tensors | Harness handles gracefully (no crash) |
+| **F-REG-01** | Round-trip Llama-style tensors | `verify_safetensors()` PASSES |
+
+## Verification Commands
 
 ```bash
-cargo test --lib -- test_factory::harness     # Harness self-tests
-cargo test --lib -- converter::tests::core    # Rewritten converter tests
-cargo test --lib -- gh196                     # GH-196 regression tests
-cargo clippy -- -D warnings                  # Lint clean
+# 1. Run Harness Unit Tests (Self-Verification)
+cargo test --lib -- test_factory::harness
+
+# 2. Run Converter Regression Tests (The actual workload)
+cargo test --lib -- converter::tests::core
+
+# 3. Run GH-196 Specific Regression
+cargo test --lib -- gh196
 ```

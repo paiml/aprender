@@ -711,8 +711,8 @@ pub(crate) fn run(
         return result;
     }
 
-    let (format_name, metadata_bytes) = read_model_metadata(path)?;
-    let layers = trace_layers(&metadata_bytes, layer_filter, verbose);
+    // Detect format via Rosetta Stone dispatch
+    let (format_name, layers) = detect_and_trace(path, layer_filter, verbose)?;
     let summary = compute_trace_summary(&layers);
 
     if let Some(ref_path) = reference {
@@ -726,6 +726,215 @@ pub(crate) fn run(
     }
 
     Ok(())
+}
+
+/// Detect format and trace layers from any supported format.
+fn detect_and_trace(
+    path: &Path,
+    layer_filter: Option<&str>,
+    verbose: bool,
+) -> Result<(String, Vec<LayerTrace>), CliError> {
+    use aprender::format::rosetta::FormatType;
+
+    validate_path(path)?;
+
+    let format = FormatType::from_magic(path)
+        .or_else(|_| FormatType::from_extension(path))
+        .map_err(|e| CliError::InvalidFormat(format!("Cannot detect format: {e}")))?;
+
+    match format {
+        FormatType::Apr => {
+            let (format_name, metadata_bytes) = read_model_metadata(path)?;
+            let layers = trace_layers(&metadata_bytes, layer_filter, verbose);
+            Ok((format_name, layers))
+        }
+        FormatType::Gguf => trace_gguf(path, layer_filter),
+        FormatType::SafeTensors => trace_safetensors(path, layer_filter),
+    }
+}
+
+/// Extract a u32 value from GGUF metadata (handles Uint32 and Uint64 variants).
+fn gguf_meta_u32(
+    metadata: &BTreeMap<String, aprender::format::gguf::GgufValue>,
+    key: &str,
+) -> Option<u32> {
+    use aprender::format::gguf::GgufValue;
+    match metadata.get(key)? {
+        GgufValue::Uint32(v) => Some(*v),
+        GgufValue::Uint64(v) => Some(*v as u32),
+        GgufValue::Int32(v) => Some(*v as u32),
+        _ => None,
+    }
+}
+
+/// Trace layers from GGUF format by extracting architecture from KV metadata.
+fn trace_gguf(
+    path: &Path,
+    layer_filter: Option<&str>,
+) -> Result<(String, Vec<LayerTrace>), CliError> {
+    use aprender::format::gguf::reader::GgufReader;
+    use aprender::format::gguf::GgufValue;
+
+    let data = std::fs::read(path)?;
+    let reader = GgufReader::from_bytes(data)
+        .map_err(|e| CliError::InvalidFormat(format!("Failed to parse GGUF: {e}")))?;
+
+    // Extract architecture info from GGUF KV metadata
+    let arch = match reader.metadata.get("general.architecture") {
+        Some(GgufValue::String(s)) => s.clone(),
+        _ => String::new(),
+    };
+    let n_layers = gguf_meta_u32(&reader.metadata, &format!("{arch}.block_count"))
+        .or_else(|| gguf_meta_u32(&reader.metadata, "general.block_count"))
+        .unwrap_or(0) as usize;
+    let n_embd = gguf_meta_u32(&reader.metadata, &format!("{arch}.embedding_length"))
+        .unwrap_or(0) as usize;
+
+    let format_name = format!("GGUF ({arch})");
+
+    let mut layers = vec![create_embedding_layer(n_embd)];
+    layers.extend(create_transformer_layers(n_layers, layer_filter));
+    layers.push(create_final_layer_norm());
+
+    // Add tensor count info as anomaly note if verbose
+    if layers.len() <= 2 && !reader.tensors.is_empty() {
+        // No layers detected from metadata but tensors exist
+        layers.clear();
+        layers.extend(infer_layers_from_tensor_names(
+            &reader
+                .tensors
+                .iter()
+                .map(|t| t.name.as_str())
+                .collect::<Vec<_>>(),
+            layer_filter,
+        ));
+    }
+
+    if layers.is_empty() {
+        layers.push(create_default_layer());
+    }
+
+    Ok((format_name, layers))
+}
+
+/// Trace layers from SafeTensors format by inferring architecture from tensor names.
+fn trace_safetensors(
+    path: &Path,
+    layer_filter: Option<&str>,
+) -> Result<(String, Vec<LayerTrace>), CliError> {
+    use aprender::format::rosetta::RosettaStone;
+
+    let rosetta = RosettaStone::new();
+    let report = rosetta
+        .inspect(path)
+        .map_err(|e| CliError::InvalidFormat(format!("Failed to inspect SafeTensors: {e}")))?;
+
+    let format_name = "SafeTensors".to_string();
+    let tensor_names: Vec<&str> = report.tensors.iter().map(|t| t.name.as_str()).collect();
+    let mut layers = infer_layers_from_tensor_names(&tensor_names, layer_filter);
+
+    if layers.is_empty() {
+        layers.push(create_default_layer());
+    }
+
+    Ok((format_name, layers))
+}
+
+/// Infer layer structure from tensor naming conventions.
+/// Supports patterns like: `model.layers.N.*`, `encoder.layer.N.*`, `h.N.*`
+fn infer_layers_from_tensor_names(
+    tensor_names: &[&str],
+    layer_filter: Option<&str>,
+) -> Vec<LayerTrace> {
+    let mut layer_indices: BTreeMap<usize, Vec<String>> = BTreeMap::new();
+    let mut has_embedding = false;
+    let mut has_lm_head = false;
+
+    for &name in tensor_names {
+        let lower = name.to_lowercase();
+
+        if lower.contains("embed") || lower.contains("wte") || lower.contains("wpe") {
+            has_embedding = true;
+        }
+        if lower.contains("lm_head") || lower.contains("output") {
+            has_lm_head = true;
+        }
+
+        // Extract layer index from common patterns
+        if let Some(idx) = extract_layer_index(name) {
+            layer_indices
+                .entry(idx)
+                .or_default()
+                .push(name.to_string());
+        }
+    }
+
+    let mut layers = Vec::new();
+
+    if has_embedding {
+        let embedding = LayerTrace {
+            name: "embedding".to_string(),
+            index: None,
+            input_stats: None,
+            output_stats: None,
+            weight_stats: None,
+            anomalies: vec![],
+        };
+        if layer_filter.is_none() || layer_filter.is_some_and(|f| "embedding".contains(f)) {
+            layers.push(embedding);
+        }
+    }
+
+    for &idx in layer_indices.keys() {
+        let layer_name = format!("transformer_block_{idx}");
+        if layer_filter.is_some_and(|f| !layer_name.contains(f)) {
+            continue;
+        }
+        layers.push(LayerTrace {
+            name: layer_name,
+            index: Some(idx),
+            input_stats: None,
+            output_stats: None,
+            weight_stats: None,
+            anomalies: vec![],
+        });
+    }
+
+    if has_lm_head {
+        let lm_head = LayerTrace {
+            name: "lm_head".to_string(),
+            index: None,
+            input_stats: None,
+            output_stats: None,
+            weight_stats: None,
+            anomalies: vec![],
+        };
+        if layer_filter.is_none() || layer_filter.is_some_and(|f| "lm_head".contains(f)) {
+            layers.push(lm_head);
+        }
+    }
+
+    layers
+}
+
+/// Extract layer index from tensor name patterns.
+/// Matches: `model.layers.N.`, `encoder.layer.N.`, `h.N.`, `blk.N.`
+fn extract_layer_index(name: &str) -> Option<usize> {
+    // Common patterns: layers.N, layer.N, h.N, blk.N, blocks.N
+    let patterns = [
+        "layers.", "layer.", "h.", "blk.", "blocks.", "block.",
+    ];
+
+    for pattern in &patterns {
+        if let Some(pos) = name.find(pattern) {
+            let after = &name[pos + pattern.len()..];
+            let num_str: String = after.chars().take_while(char::is_ascii_digit).collect();
+            if let Ok(idx) = num_str.parse::<usize>() {
+                return Some(idx);
+            }
+        }
+    }
+    None
 }
 
 fn validate_path(path: &Path) -> Result<(), CliError> {

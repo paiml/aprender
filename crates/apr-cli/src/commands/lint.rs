@@ -7,7 +7,7 @@
 //! for *quality* and *standardization*.
 
 use crate::error::{CliError, Result};
-use aprender::format::{lint_apr_file, LintCategory, LintLevel, LintReport};
+use aprender::format::{lint_model_file, LintCategory, LintLevel, LintReport};
 use colored::Colorize;
 use std::path::Path;
 
@@ -18,13 +18,13 @@ pub(crate) fn run(file: &Path) -> Result<()> {
         return Err(CliError::FileNotFound(file.to_path_buf()));
     }
 
-    println!("{}", "=== APR Lint ===".cyan().bold());
+    println!("{}", "=== Model Lint ===".cyan().bold());
     println!();
     println!("Checking: {}", file.display());
     println!();
 
-    // Run lint
-    let report = lint_apr_file(file).map_err(|e| CliError::ValidationFailed(e.to_string()))?;
+    // Run lint (auto-detects APR, GGUF, SafeTensors via Rosetta Stone)
+    let report = lint_model_file(file).map_err(|e| CliError::ValidationFailed(e.to_string()))?;
 
     // Display results
     display_report(&report);

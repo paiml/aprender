@@ -25,6 +25,8 @@
 //! ```
 
 use crate::error::{AprenderError, Result};
+use crate::format::gguf::reader::GgufReader;
+use crate::format::rosetta::FormatType;
 use crate::format::v2::{AprV2Reader, TensorIndexEntry};
 use crate::format::HEADER_SIZE;
 use std::collections::HashMap;
@@ -157,13 +159,14 @@ pub fn is_valid_apr_magic(magic: &[u8; 4]) -> bool {
 // Tensor Listing - From Bytes
 // ============================================================================
 
-/// List tensors from APR file bytes
+/// List tensors from model file bytes (APR, GGUF, or SafeTensors)
 ///
+/// Detects format from magic bytes and dispatches to the appropriate reader.
 /// This is the core function that reads from the actual tensor index,
 /// not just metadata. This fixes TOOL-APR-001.
 ///
 /// # Arguments
-/// * `data` - Raw APR file bytes
+/// * `data` - Raw model file bytes
 /// * `options` - Listing options
 ///
 /// # Errors
@@ -175,26 +178,41 @@ pub fn list_tensors_from_bytes(
     // Check minimum size
     if data.len() < 4 {
         return Err(AprenderError::FormatError {
-            message: "File too small to contain APR header".to_string(),
+            message: "File too small to contain model header".to_string(),
         });
     }
 
-    // Read magic bytes
+    // Detect format from magic bytes (Rosetta Stone dispatch)
+    if data.len() >= 4 && &data[0..4] == b"GGUF" {
+        return list_tensors_gguf(data, options);
+    }
+
+    if data.len() >= 10 {
+        let header_len = u64::from_le_bytes(
+            data[0..8]
+                .try_into()
+                .unwrap_or([0u8; 8]),
+        );
+        if header_len < 100_000_000 && &data[8..10] == b"{\"" {
+            return list_tensors_safetensors(data, options);
+        }
+    }
+
+    // Fall through to APR detection
     let magic: [u8; 4] = data[0..4]
         .try_into()
         .map_err(|_| AprenderError::FormatError {
             message: "Failed to read magic bytes".to_string(),
         })?;
 
-    // Detect format version
     let format_version = detect_format(&magic).ok_or_else(|| AprenderError::FormatError {
         message: format!(
-            "Invalid APR magic: expected APRN/APR1/APR2/APR\\0, got {:?}",
-            magic
+            "Unknown model format: magic bytes {:02x}{:02x}{:02x}{:02x}. \
+             Supported formats: APR (.apr), GGUF (.gguf), SafeTensors (.safetensors)",
+            magic[0], magic[1], magic[2], magic[3]
         ),
     })?;
 
-    // Parse based on format version
     match format_version {
         "v2" => list_tensors_v2(data, options),
         "v1" => list_tensors_v1(data, options),
@@ -292,6 +310,306 @@ fn list_tensors_v1(data: &[u8], options: TensorListOptions) -> Result<TensorList
     })
 }
 
+// ============================================================================
+// GGUF Format Support (PMAT-ROSETTA-001)
+// ============================================================================
+
+/// GGML data type names from dtype id
+fn ggml_dtype_name(dtype: u32) -> &'static str {
+    match dtype {
+        0 => "F32",
+        1 => "F16",
+        2 => "Q4_0",
+        3 => "Q4_1",
+        6 => "Q5_0",
+        7 => "Q5_1",
+        8 => "Q8_0",
+        9 => "Q8_1",
+        10 => "Q2_K",
+        11 => "Q3_K",
+        12 => "Q4_K",
+        13 => "Q5_K",
+        14 => "Q6_K",
+        15 => "Q8_K",
+        16 => "IQ2_XXS",
+        17 => "IQ2_XS",
+        18 => "IQ3_XXS",
+        26 => "BF16",
+        _ => "unknown",
+    }
+}
+
+/// Bytes per element for GGML data types (approximate for block types)
+fn ggml_dtype_element_size(dtype: u32) -> f64 {
+    match dtype {
+        0 => 4.0,           // F32
+        1 => 2.0,           // F16
+        2 => 0.5 + 2.0/32.0, // Q4_0: 4-bit + scale
+        3 => 0.5 + 4.0/32.0, // Q4_1: 4-bit + scale + min
+        6 => 0.625 + 2.0/32.0, // Q5_0
+        7 => 0.625 + 4.0/32.0, // Q5_1
+        8 => 1.0 + 2.0/32.0, // Q8_0
+        9 => 1.0 + 4.0/32.0, // Q8_1
+        10 => 0.3125,       // Q2_K
+        11 => 0.4375,       // Q3_K
+        12 => 0.5625,       // Q4_K
+        13 => 0.6875,       // Q5_K
+        14 => 0.8125,       // Q6_K
+        15 => 1.0625,       // Q8_K
+        26 => 2.0,          // BF16
+        _ => 4.0,           // default assume F32
+    }
+}
+
+/// List tensors from GGUF file bytes
+fn list_tensors_gguf(data: &[u8], options: TensorListOptions) -> Result<TensorListResult> {
+    let reader = GgufReader::from_bytes(data.to_vec()).map_err(|e| AprenderError::FormatError {
+        message: format!("Failed to parse GGUF: {e}"),
+    })?;
+
+    let mut tensors = Vec::new();
+    let mut total_size = 0usize;
+
+    for meta in &reader.tensors {
+        // Apply filter
+        if let Some(ref pattern) = options.filter {
+            if !meta.name.contains(pattern.as_str()) {
+                continue;
+            }
+        }
+
+        let shape: Vec<usize> = meta.dims.iter().map(|&d| d as usize).collect();
+        let num_elements: usize = shape.iter().product();
+        let size_bytes = (num_elements as f64 * ggml_dtype_element_size(meta.dtype)) as usize;
+
+        let mut info = TensorInfo {
+            name: meta.name.clone(),
+            shape,
+            dtype: ggml_dtype_name(meta.dtype).to_string(),
+            size_bytes,
+            mean: None,
+            std: None,
+            min: None,
+            max: None,
+            nan_count: None,
+            inf_count: None,
+        };
+
+        if options.compute_stats {
+            if let Ok((f32_data, _shape)) = reader.get_tensor_f32(&meta.name) {
+                compute_tensor_stats(&mut info, &f32_data);
+            }
+        }
+
+        total_size += info.size_bytes;
+        tensors.push(info);
+
+        if tensors.len() >= options.limit {
+            break;
+        }
+    }
+
+    Ok(TensorListResult {
+        file: String::new(),
+        format_version: format!("GGUF v{}", reader.version),
+        tensor_count: tensors.len(),
+        total_size_bytes: total_size,
+        tensors,
+    })
+}
+
+// ============================================================================
+// SafeTensors Format Support (PMAT-ROSETTA-001)
+// ============================================================================
+
+/// List tensors from SafeTensors file bytes by parsing the JSON header
+fn list_tensors_safetensors(data: &[u8], options: TensorListOptions) -> Result<TensorListResult> {
+    if data.len() < 8 {
+        return Err(AprenderError::FormatError {
+            message: "SafeTensors file too small".to_string(),
+        });
+    }
+
+    let header_len =
+        u64::from_le_bytes(data[0..8].try_into().map_err(|_| AprenderError::FormatError {
+            message: "Failed to read SafeTensors header length".to_string(),
+        })?) as usize;
+
+    if data.len() < 8 + header_len {
+        return Err(AprenderError::FormatError {
+            message: "SafeTensors file truncated (header extends past EOF)".to_string(),
+        });
+    }
+
+    let header_json = &data[8..8 + header_len];
+    let header: serde_json::Value =
+        serde_json::from_slice(header_json).map_err(|e| AprenderError::FormatError {
+            message: format!("Failed to parse SafeTensors JSON header: {e}"),
+        })?;
+
+    let obj = header
+        .as_object()
+        .ok_or_else(|| AprenderError::FormatError {
+            message: "SafeTensors header is not a JSON object".to_string(),
+        })?;
+
+    let data_start = 8 + header_len;
+    let mut tensors = Vec::new();
+    let mut total_size = 0usize;
+
+    // Collect and sort tensor names for deterministic output
+    let mut tensor_entries: Vec<(&String, &serde_json::Value)> = obj
+        .iter()
+        .filter(|(k, _)| *k != "__metadata__")
+        .collect();
+    tensor_entries.sort_by_key(|(k, _)| *k);
+
+    for (name, value) in tensor_entries {
+        // Apply filter
+        if let Some(ref pattern) = options.filter {
+            if !name.contains(pattern.as_str()) {
+                continue;
+            }
+        }
+
+        let dtype = value
+            .get("dtype")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+
+        let shape: Vec<usize> = value
+            .get("shape")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_u64().map(|n| n as usize))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let offsets = value.get("data_offsets").and_then(|v| v.as_array());
+        let size_bytes = offsets
+            .and_then(|arr| {
+                let start = arr.first()?.as_u64()? as usize;
+                let end = arr.get(1)?.as_u64()? as usize;
+                Some(end - start)
+            })
+            .unwrap_or(0);
+
+        let mut info = TensorInfo {
+            name: name.clone(),
+            shape: shape.clone(),
+            dtype,
+            size_bytes,
+            mean: None,
+            std: None,
+            min: None,
+            max: None,
+            nan_count: None,
+            inf_count: None,
+        };
+
+        if options.compute_stats {
+            if let Some(arr) = offsets {
+                if let (Some(start), Some(end)) = (
+                    arr.first().and_then(|v| v.as_u64()),
+                    arr.get(1).and_then(|v| v.as_u64()),
+                ) {
+                    let abs_start = data_start + start as usize;
+                    let abs_end = data_start + end as usize;
+                    if abs_end <= data.len() {
+                        let tensor_bytes = &data[abs_start..abs_end];
+                        let f32_data = safetensors_bytes_to_f32(tensor_bytes, &info.dtype);
+                        compute_tensor_stats(&mut info, &f32_data);
+                    }
+                }
+            }
+        }
+
+        total_size += info.size_bytes;
+        tensors.push(info);
+
+        if tensors.len() >= options.limit {
+            break;
+        }
+    }
+
+    Ok(TensorListResult {
+        file: String::new(),
+        format_version: "SafeTensors".to_string(),
+        tensor_count: tensors.len(),
+        total_size_bytes: total_size,
+        tensors,
+    })
+}
+
+/// Convert SafeTensors raw bytes to f32 based on dtype
+fn safetensors_bytes_to_f32(bytes: &[u8], dtype: &str) -> Vec<f32> {
+    match dtype {
+        "F32" => bytes
+            .chunks_exact(4)
+            .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+            .collect(),
+        "F16" => bytes
+            .chunks_exact(2)
+            .map(|c| {
+                let bits = u16::from_le_bytes([c[0], c[1]]);
+                f16_to_f32(bits)
+            })
+            .collect(),
+        "BF16" => bytes
+            .chunks_exact(2)
+            .map(|c| {
+                let bits = u16::from_le_bytes([c[0], c[1]]);
+                bf16_to_f32(bits)
+            })
+            .collect(),
+        _ => Vec::new(), // Unknown dtype, skip stats
+    }
+}
+
+/// Convert IEEE 754 half-precision float to f32
+fn f16_to_f32(bits: u16) -> f32 {
+    let sign = ((bits >> 15) as u32) << 31;
+    let exponent = ((bits >> 10) & 0x1F) as u32;
+    let mantissa = (bits & 0x3FF) as u32;
+
+    if exponent == 0 {
+        if mantissa == 0 {
+            return f32::from_bits(sign);
+        }
+        // Denormalized: convert to normalized f32
+        let mut e = 1u32;
+        let mut m = mantissa;
+        while (m & 0x400) == 0 {
+            m <<= 1;
+            e += 1;
+        }
+        let f32_exp = (127 - 15 - e + 1) << 23;
+        let f32_mant = (m & 0x3FF) << 13;
+        f32::from_bits(sign | f32_exp | f32_mant)
+    } else if exponent == 31 {
+        // Inf/NaN
+        let f32_exp = 0xFF << 23;
+        let f32_mant = mantissa << 13;
+        f32::from_bits(sign | f32_exp | f32_mant)
+    } else {
+        let f32_exp = (exponent + 127 - 15) << 23;
+        let f32_mant = mantissa << 13;
+        f32::from_bits(sign | f32_exp | f32_mant)
+    }
+}
+
+/// Convert BFloat16 to f32 (simple: just shift left by 16)
+fn bf16_to_f32(bits: u16) -> f32 {
+    f32::from_bits((bits as u32) << 16)
+}
+
+// ============================================================================
+// Path-Based Format Dispatch (PMAT-ROSETTA-001)
+// ============================================================================
+
 /// Convert tensor index entry to TensorInfo
 fn tensor_info_from_entry(entry: &TensorIndexEntry) -> TensorInfo {
     TensorInfo {
@@ -359,10 +677,13 @@ fn parse_shape_array(shape_val: &serde_json::Value) -> Vec<usize> {
 // Tensor Listing - From File
 // ============================================================================
 
-/// List tensors from an APR file
+/// List tensors from a model file (APR, GGUF, or SafeTensors)
+///
+/// Uses magic byte detection for reliable format identification,
+/// then delegates to the appropriate format-specific reader.
 ///
 /// # Arguments
-/// * `path` - Path to APR file
+/// * `path` - Path to model file
 /// * `options` - Listing options
 ///
 /// # Errors
@@ -373,17 +694,87 @@ pub fn list_tensors(
 ) -> Result<TensorListResult> {
     let path = path.as_ref();
 
-    // Read file
+    // For SafeTensors, prefer MappedSafeTensors (mmap-based, handles large files)
+    if let Ok(FormatType::SafeTensors) = FormatType::from_magic(path) {
+        let mut result = list_tensors_safetensors_path(path, options)?;
+        result.file = path.display().to_string();
+        return Ok(result);
+    }
+
+    // For APR and GGUF, read into memory and dispatch
     let file = File::open(path)?;
     let mut reader = BufReader::new(file);
     let mut data = Vec::new();
     reader.read_to_end(&mut data)?;
 
-    // Parse
     let mut result = list_tensors_from_bytes(&data, options)?;
     result.file = path.display().to_string();
 
     Ok(result)
+}
+
+/// List tensors from SafeTensors via mmap (efficient for large files)
+fn list_tensors_safetensors_path(
+    path: &Path,
+    options: TensorListOptions,
+) -> Result<TensorListResult> {
+    use crate::serialization::safetensors::MappedSafeTensors;
+
+    let mapped = MappedSafeTensors::open(path).map_err(|e| AprenderError::FormatError {
+        message: format!("Failed to open SafeTensors: {e}"),
+    })?;
+
+    let mut tensors = Vec::new();
+    let mut total_size = 0usize;
+
+    let mut names: Vec<&str> = mapped.tensor_names();
+    names.sort_unstable();
+
+    for name in names {
+        if let Some(ref pattern) = options.filter {
+            if !name.contains(pattern.as_str()) {
+                continue;
+            }
+        }
+
+        if let Some(meta) = mapped.get_metadata(name) {
+            let size_bytes = meta.data_offsets[1] - meta.data_offsets[0];
+
+            let mut info = TensorInfo {
+                name: name.to_string(),
+                shape: meta.shape.clone(),
+                dtype: meta.dtype.clone(),
+                size_bytes,
+                mean: None,
+                std: None,
+                min: None,
+                max: None,
+                nan_count: None,
+                inf_count: None,
+            };
+
+            if options.compute_stats {
+                if let Ok(f32_data) = mapped.get_tensor(name) {
+                    compute_tensor_stats(&mut info, &f32_data);
+                }
+            }
+
+            total_size += info.size_bytes;
+            tensors.push(info);
+
+            if tensors.len() >= options.limit {
+                break;
+            }
+        }
+    }
+
+    Ok(TensorListResult {
+        file: String::new(),
+        format_version: "SafeTensors".to_string(),
+        tensor_count: tensors.len(),
+        total_size_bytes: total_size,
+        tensors,
+    })
 }
 
 // ============================================================================
@@ -694,7 +1085,7 @@ mod tests {
         let result = list_tensors_from_bytes(&data, TensorListOptions::default());
         assert!(result.is_err());
         let err = result.unwrap_err();
-        assert!(err.to_string().contains("Invalid APR magic"));
+        assert!(err.to_string().contains("Unknown model format"));
     }
 
     #[test]

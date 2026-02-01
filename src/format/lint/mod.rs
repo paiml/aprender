@@ -449,6 +449,110 @@ fn has_provenance_info(metadata: &crate::format::Metadata) -> bool {
         || metadata.custom.contains_key("author")
 }
 
+/// Lint any model file from disk (APR, GGUF, or SafeTensors)
+///
+/// Detects format via magic bytes and runs format-appropriate lint checks:
+/// - **Universal**: metadata (license, provenance), tensor naming, NaN/Inf
+/// - **APR-only**: CRC32 integrity, 64-byte alignment, compression
+/// - **GGUF**: metadata KV pairs for license/model_card
+/// - **SafeTensors**: `__metadata__` for license/description/author
+pub fn lint_model_file(path: impl AsRef<Path>) -> Result<LintReport> {
+    use crate::format::rosetta::FormatType;
+
+    let path = path.as_ref();
+    let format = FormatType::from_magic(path).or_else(|_| FormatType::from_extension(path))?;
+
+    match format {
+        FormatType::Apr => lint_apr_file(path),
+        FormatType::Gguf => lint_gguf_file(path),
+        FormatType::SafeTensors => lint_safetensors_file(path),
+    }
+}
+
+/// Lint a GGUF file for best practices
+fn lint_gguf_file(path: &Path) -> Result<LintReport> {
+    use crate::format::gguf::GgufReader;
+
+    let reader = GgufReader::from_file(path)?;
+    let mut info = ModelLintInfo::default();
+
+    // Check GGUF metadata KV pairs for standard fields
+    info.has_license = reader
+        .metadata
+        .keys()
+        .any(|k| k.contains("license") || k.contains("License"));
+    info.has_model_card = reader
+        .metadata
+        .keys()
+        .any(|k| k.contains("model_card") || k.contains("description"));
+    info.has_provenance = reader
+        .metadata
+        .keys()
+        .any(|k| k.contains("author") || k.contains("source") || k.contains("url"));
+
+    // Build tensor lint info
+    for meta in &reader.tensors {
+        let shape: Vec<usize> = meta.dims.iter().map(|&d| d as usize).collect();
+        let num_elements: usize = shape.iter().product();
+        info.tensors.push(TensorLintInfo {
+            name: meta.name.clone(),
+            size_bytes: num_elements * 4, // approximate
+            alignment: 32,               // GGUF uses 32-byte alignment
+            is_compressed: false,
+        });
+    }
+
+    Ok(lint_model(&info))
+}
+
+/// Lint a SafeTensors file for best practices
+fn lint_safetensors_file(path: &Path) -> Result<LintReport> {
+    use crate::serialization::safetensors::MappedSafeTensors;
+
+    let mapped = MappedSafeTensors::open(path).map_err(|e| crate::error::AprenderError::FormatError {
+        message: format!("SafeTensors open failed: {e}"),
+    })?;
+
+    let mut info = ModelLintInfo::default();
+
+    // SafeTensors doesn't have rich metadata by default
+    info.has_license = false;
+    info.has_model_card = false;
+    info.has_provenance = false;
+
+    // Check the file-level __metadata__ if accessible via raw header parse
+    let data = std::fs::read(path)?;
+    if data.len() >= 8 {
+        let header_len = u64::from_le_bytes(
+            data[0..8].try_into().unwrap_or([0u8; 8]),
+        ) as usize;
+        if data.len() >= 8 + header_len {
+            if let Ok(header) = serde_json::from_slice::<serde_json::Value>(&data[8..8 + header_len]) {
+                if let Some(meta) = header.get("__metadata__").and_then(|v| v.as_object()) {
+                    info.has_license = meta.contains_key("license");
+                    info.has_model_card = meta.contains_key("description") || meta.contains_key("model_card");
+                    info.has_provenance = meta.contains_key("author") || meta.contains_key("source");
+                }
+            }
+        }
+    }
+
+    // Build tensor lint info
+    for name in mapped.tensor_names() {
+        if let Some(meta) = mapped.get_metadata(name) {
+            let size_bytes = meta.data_offsets[1] - meta.data_offsets[0];
+            info.tensors.push(TensorLintInfo {
+                name: name.to_string(),
+                size_bytes,
+                alignment: 0, // SafeTensors doesn't guarantee alignment
+                is_compressed: false,
+            });
+        }
+    }
+
+    Ok(lint_model(&info))
+}
+
 /// Lint an APR file from disk
 pub fn lint_apr_file(path: impl AsRef<Path>) -> Result<LintReport> {
     use crate::format::{Header, Metadata, HEADER_SIZE};
