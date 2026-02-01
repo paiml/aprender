@@ -84,14 +84,11 @@ pub(crate) fn run(
     validate_paths(path1, path2)?;
 
     // Build options
-    let options = DiffOptions::new()
-        .with_tensors()
-        .with_metadata();
+    let options = DiffOptions::new().with_tensors().with_metadata();
 
     // Call library function
-    let report = diff_models(path1, path2, options).map_err(|e| {
-        CliError::InvalidFormat(format!("Failed to diff models: {e}"))
-    })?;
+    let report = diff_models(path1, path2, options)
+        .map_err(|e| CliError::InvalidFormat(format!("Failed to diff models: {e}")))?;
 
     // Output results
     if json_output {

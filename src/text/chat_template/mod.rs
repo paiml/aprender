@@ -1054,6 +1054,5 @@ pub fn auto_detect_template(model_name: &str) -> Box<dyn ChatTemplateEngine + Se
     create_template(format)
 }
 
-
 #[cfg(test)]
 mod tests;

@@ -732,7 +732,12 @@ pub(crate) fn write_apr_file_raw(
                     }
                     Err(e) => {
                         eprintln!("[WARN] Failed to dequantize Q4_0 tensor {name}: {e}");
-                        writer.add_tensor(name, TensorDType::F32, effective_shape, tensor.data.clone());
+                        writer.add_tensor(
+                            name,
+                            TensorDType::F32,
+                            effective_shape,
+                            tensor.data.clone(),
+                        );
                     }
                 }
             }
@@ -745,7 +750,12 @@ pub(crate) fn write_apr_file_raw(
                     }
                     Err(e) => {
                         eprintln!("[WARN] Failed to dequantize Q4_1 tensor {name}: {e}");
-                        writer.add_tensor(name, TensorDType::F32, effective_shape, tensor.data.clone());
+                        writer.add_tensor(
+                            name,
+                            TensorDType::F32,
+                            effective_shape,
+                            tensor.data.clone(),
+                        );
                     }
                 }
             }
@@ -758,7 +768,12 @@ pub(crate) fn write_apr_file_raw(
                     }
                     Err(e) => {
                         eprintln!("[WARN] Failed to dequantize Q5_0 tensor {name}: {e}");
-                        writer.add_tensor(name, TensorDType::F32, effective_shape, tensor.data.clone());
+                        writer.add_tensor(
+                            name,
+                            TensorDType::F32,
+                            effective_shape,
+                            tensor.data.clone(),
+                        );
                     }
                 }
             }
@@ -771,7 +786,12 @@ pub(crate) fn write_apr_file_raw(
                     }
                     Err(e) => {
                         eprintln!("[WARN] Failed to dequantize Q8_0 tensor {name}: {e}");
-                        writer.add_tensor(name, TensorDType::F32, effective_shape, tensor.data.clone());
+                        writer.add_tensor(
+                            name,
+                            TensorDType::F32,
+                            effective_shape,
+                            tensor.data.clone(),
+                        );
                     }
                 }
             }

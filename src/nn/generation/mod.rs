@@ -835,6 +835,5 @@ impl TeacherForcing {
     }
 }
 
-
 #[cfg(test)]
 mod tests;

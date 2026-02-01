@@ -1186,7 +1186,9 @@ mod tests {
         };
 
         let anomalies = stats.detect_anomalies("test");
-        assert!(anomalies.iter().any(|a| a.contains("zero std") || a.contains("variance")));
+        assert!(anomalies
+            .iter()
+            .any(|a| a.contains("zero std") || a.contains("variance")));
     }
 
     #[test]
@@ -1234,16 +1236,7 @@ mod tests {
         let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
         file.write_all(b"not a valid apr file").expect("write");
 
-        let result = run(
-            file.path(),
-            None,
-            None,
-            false,
-            false,
-            false,
-            false,
-            false,
-        );
+        let result = run(file.path(), None, None, false, false, false, false, false);
         // Should fail (invalid APR)
         assert!(result.is_err());
     }
@@ -1251,16 +1244,7 @@ mod tests {
     #[test]
     fn test_run_is_directory() {
         let dir = tempdir().expect("create temp dir");
-        let result = run(
-            dir.path(),
-            None,
-            None,
-            false,
-            false,
-            false,
-            false,
-            false,
-        );
+        let result = run(dir.path(), None, None, false, false, false, false, false);
         // Should fail (is a directory)
         assert!(result.is_err());
     }
@@ -1388,16 +1372,7 @@ mod tests {
         let mut file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
         file.write_all(b"not valid gguf").expect("write");
 
-        let result = run(
-            file.path(),
-            None,
-            None,
-            false,
-            false,
-            false,
-            false,
-            false,
-        );
+        let result = run(file.path(), None, None, false, false, false, false, false);
         // Should fail (invalid GGUF)
         assert!(result.is_err());
     }
@@ -1407,16 +1382,7 @@ mod tests {
         let mut file = NamedTempFile::with_suffix(".safetensors").expect("create temp file");
         file.write_all(b"not valid safetensors").expect("write");
 
-        let result = run(
-            file.path(),
-            None,
-            None,
-            false,
-            false,
-            false,
-            false,
-            false,
-        );
+        let result = run(file.path(), None, None, false, false, false, false, false);
         // Should fail (invalid SafeTensors)
         assert!(result.is_err());
     }

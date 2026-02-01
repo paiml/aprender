@@ -101,7 +101,6 @@ fn v7_no_crash_reports() {
     assert!(!cargo_toml.contains("bugsnag"), "V7: Bugsnag found in core");
 }
 
-
 // ============================================================================
 // Section V Additional: Sovereign Enforcement (V4-V6, V8-V10)
 // ============================================================================

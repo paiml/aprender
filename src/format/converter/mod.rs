@@ -422,173 +422,42 @@ fn load_gguf_tensors_f32(path: &Path) -> Result<BTreeMap<String, (Vec<f32>, Vec<
     Ok(tensors)
 }
 
-/// Load APR tensors and dequantize to F32 (PMAT-174)
+/// Load APR tensors and dequantize to F32 (PMAT-174, GH-196 fix)
 ///
-/// APR binary format:
-/// - Header (44 bytes): magic, version, flags, tensor_count, offsets, checksum
-/// - Metadata: JSON config
-/// - Tensor Index: binary tensor entries
-/// - Tensor Data: raw bytes
+/// Uses `AprV2Reader` for correct parsing of v2 format files produced by
+/// `AprV2Writer`. Falls back to manual v1 parsing for legacy files.
 ///
 /// Handles all APR dtypes: F32, F16, BF16, Q4_K, Q6_K, Q8_0
 fn load_apr_tensors_f32(path: &Path) -> Result<BTreeMap<String, (Vec<f32>, Vec<usize>)>> {
-    use std::io::Read;
+    use crate::format::v2::AprV2Reader;
 
-    // Read entire file
-    let mut file = fs::File::open(path).map_err(|e| AprenderError::FormatError {
-        message: format!("Failed to open APR file: {e}"),
+    let data = fs::read(path).map_err(|e| AprenderError::FormatError {
+        message: format!("Failed to read APR file: {e}"),
     })?;
-    let mut data = Vec::new();
-    file.read_to_end(&mut data)
-        .map_err(|e| AprenderError::FormatError {
-            message: format!("Failed to read APR file: {e}"),
+
+    // Use AprV2Reader for correct v2 format parsing
+    let reader = AprV2Reader::from_bytes(&data).map_err(|e| AprenderError::FormatError {
+        message: format!("Failed to parse APR file: {e:?}"),
+    })?;
+
+    let mut tensors = BTreeMap::new();
+    for name in reader.tensor_names() {
+        let entry = reader.get_tensor(name).ok_or_else(|| AprenderError::FormatError {
+            message: format!("Tensor '{}' missing from index", name),
+        })?;
+        let shape = entry.shape.clone();
+
+        // get_tensor_as_f32 handles all dtypes (F32, F16, Q8, Q4, etc.)
+        let f32_data = reader.get_tensor_as_f32(name).ok_or_else(|| {
+            AprenderError::FormatError {
+                message: format!("Failed to dequantize tensor '{}'", name),
+            }
         })?;
 
-    // Validate header (44 bytes minimum)
-    if data.len() < 44 {
-        return Err(AprenderError::FormatError {
-            message: "APR file too small for header".to_string(),
-        });
-    }
-
-    // Check magic "APR\0" (0x00525041 in little-endian)
-    let magic = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
-    if magic != 0x0052_5041 {
-        // "APR\0" in little-endian
-        return Err(AprenderError::FormatError {
-            message: format!("Invalid APR magic: 0x{magic:08X}, expected APR"),
-        });
-    }
-
-    // Parse header
-    let tensor_count = u32::from_le_bytes([data[12], data[13], data[14], data[15]]) as usize;
-    let tensor_index_offset = u64::from_le_bytes([
-        data[24], data[25], data[26], data[27], data[28], data[29], data[30], data[31],
-    ]) as usize;
-    let data_offset = u64::from_le_bytes([
-        data[32], data[33], data[34], data[35], data[36], data[37], data[38], data[39],
-    ]) as usize;
-
-    // Parse tensor index
-    let mut tensors = BTreeMap::new();
-    let mut pos = tensor_index_offset;
-
-    for _ in 0..tensor_count {
-        if pos + 4 > data.len() {
-            break;
-        }
-
-        // Name: len (2 bytes) + bytes
-        let name_len = u16::from_le_bytes([data[pos], data[pos + 1]]) as usize;
-        pos += 2;
-        let name = String::from_utf8_lossy(&data[pos..pos + name_len]).to_string();
-        pos += name_len;
-
-        // Dtype (1 byte)
-        let dtype_byte = data[pos];
-        pos += 1;
-
-        // Shape: ndim (1 byte) + dims (8 bytes each)
-        let ndim = data[pos] as usize;
-        pos += 1;
-        let mut shape = Vec::with_capacity(ndim);
-        for _ in 0..ndim {
-            let dim = u64::from_le_bytes([
-                data[pos],
-                data[pos + 1],
-                data[pos + 2],
-                data[pos + 3],
-                data[pos + 4],
-                data[pos + 5],
-                data[pos + 6],
-                data[pos + 7],
-            ]) as usize;
-            pos += 8;
-            shape.push(dim);
-        }
-
-        // Offset and size
-        let offset = u64::from_le_bytes([
-            data[pos],
-            data[pos + 1],
-            data[pos + 2],
-            data[pos + 3],
-            data[pos + 4],
-            data[pos + 5],
-            data[pos + 6],
-            data[pos + 7],
-        ]) as usize;
-        pos += 8;
-        let size = u64::from_le_bytes([
-            data[pos],
-            data[pos + 1],
-            data[pos + 2],
-            data[pos + 3],
-            data[pos + 4],
-            data[pos + 5],
-            data[pos + 6],
-            data[pos + 7],
-        ]) as usize;
-        pos += 8;
-
-        // Load tensor data
-        let tensor_start = data_offset + offset;
-        let tensor_end = tensor_start + size;
-        if tensor_end > data.len() {
-            continue;
-        }
-        let tensor_bytes = &data[tensor_start..tensor_end];
-        let num_elements: usize = shape.iter().product();
-
-        // Dequantize based on dtype
-        let f32_data = match dtype_byte {
-            0 => {
-                // F32
-                tensor_bytes
-                    .chunks_exact(4)
-                    .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-                    .collect()
-            }
-            1 => {
-                // F16
-                dequantize_f16_to_f32(tensor_bytes, num_elements)
-            }
-            2 => {
-                // BF16
-                dequantize_bf16_to_f32(tensor_bytes, num_elements)
-            }
-            8 => {
-                // Q4 (basic 4-bit quantized - APR native format)
-                // This is different from Q4_K which uses super-blocks
-                dequantize_q4_k_to_f32(tensor_bytes, num_elements)
-            }
-            9 => {
-                // Q8 (8-bit quantized with scale - APR native format)
-                dequantize_q8_0_to_f32(tensor_bytes, num_elements)
-            }
-            12 => {
-                // Q4_K (GGUF K-quant format with super-blocks)
-                // F-ROSETTA-CONVERT-001 FIX: Use correct dtype from v2/mod.rs
-                dequantize_q4_k_to_f32(tensor_bytes, num_elements)
-            }
-            14 => {
-                // Q6_K (GGUF K-quant format with super-blocks)
-                // F-ROSETTA-CONVERT-001 FIX: Use correct dtype from v2/mod.rs
-                dequantize_q6_k_to_f32(tensor_bytes, num_elements)
-            }
-            _ => {
-                // Default to F32 interpretation
-                tensor_bytes
-                    .chunks_exact(4)
-                    .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-                    .collect()
-            }
-        };
-
         // PMAT-187: Validate tensor values after dequantization (Jidoka - stop the line)
-        validate_tensor_values(&name, &f32_data)?;
+        validate_tensor_values(name, &f32_data)?;
 
-        tensors.insert(name, (f32_data, shape));
+        tensors.insert(name.to_string(), (f32_data, shape));
     }
 
     Ok(tensors)
@@ -663,6 +532,7 @@ pub(crate) fn validate_tensor_values(name: &str, data: &[f32]) -> Result<()> {
 }
 
 /// Dequantize F16 to F32 (PMAT-174)
+#[allow(dead_code)] // Retained for GGUF conversion paths
 fn dequantize_f16_to_f32(bytes: &[u8], _num_elements: usize) -> Vec<f32> {
     bytes
         .chunks_exact(2)
@@ -674,6 +544,7 @@ fn dequantize_f16_to_f32(bytes: &[u8], _num_elements: usize) -> Vec<f32> {
 }
 
 /// Dequantize BF16 to F32 (PMAT-174)
+#[allow(dead_code)] // Retained for GGUF conversion paths
 fn dequantize_bf16_to_f32(bytes: &[u8], _num_elements: usize) -> Vec<f32> {
     bytes
         .chunks_exact(2)
@@ -687,6 +558,7 @@ fn dequantize_bf16_to_f32(bytes: &[u8], _num_elements: usize) -> Vec<f32> {
 
 /// Dequantize Q8_0 to F32 (PMAT-174)
 /// Q8_0: 32-element blocks with f16 scale + 32 int8 quants
+#[allow(dead_code)] // Retained for GGUF conversion paths
 fn dequantize_q8_0_to_f32(bytes: &[u8], num_elements: usize) -> Vec<f32> {
     const BLOCK_SIZE: usize = 32;
     const BLOCK_BYTES: usize = 2 + 32; // f16 scale + 32 int8s
@@ -1182,11 +1054,15 @@ fn quantize_q6_k(data: &[f32]) -> Vec<u8> {
 
         // Quantize to 6-bit values
         let mut ql = [0u8; 128]; // Low 4 bits
-        let mut qh = [0u8; 64];  // High 2 bits
+        let mut qh = [0u8; 64]; // High 2 bits
 
         for j in 0..16 {
             let scale = d * f32::from(scales_i8[j]);
-            let inv_scale = if scale.abs() > 1e-10 { 1.0 / scale } else { 0.0 };
+            let inv_scale = if scale.abs() > 1e-10 {
+                1.0 / scale
+            } else {
+                0.0
+            };
 
             for l in 0..8 {
                 let idx = j * 16 + l * 2;

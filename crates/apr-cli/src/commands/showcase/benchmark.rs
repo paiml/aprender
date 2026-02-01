@@ -16,7 +16,10 @@ use std::time::{Duration, Instant};
 use super::types::{Baseline, BenchMeasurement, BenchmarkComparison, ModelTier, ShowcaseConfig};
 
 /// Export benchmark results to JSON or CSV (Point 85)
-pub(super) fn export_benchmark_results(bench: &BenchmarkComparison, config: &ShowcaseConfig) -> Result<()> {
+pub(super) fn export_benchmark_results(
+    bench: &BenchmarkComparison,
+    config: &ShowcaseConfig,
+) -> Result<()> {
     match config.export_format {
         super::types::ExportFormat::None => Ok(()),
         super::types::ExportFormat::Json => {
@@ -98,7 +101,6 @@ pub(super) fn format_benchmark_csv(bench: &BenchmarkComparison) -> String {
 
     csv
 }
-
 
 /// Step E: Benchmark Comparison with real measurements
 #[cfg(feature = "inference")]

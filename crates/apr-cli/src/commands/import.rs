@@ -15,7 +15,7 @@ pub(crate) fn run(
     output: Option<&Path>,
     arch: Option<&str>,
     quantize: Option<&str>,
-    force: bool,
+    strict: bool,
     preserve_q4k: bool,
 ) -> Result<()> {
     // GH-169: Derive output path from source if not provided
@@ -66,14 +66,14 @@ pub(crate) fn run(
 
     let options = ImportOptions {
         architecture,
-        validation: if force {
-            ValidationConfig::Basic
-        } else {
+        validation: if strict {
             ValidationConfig::Strict
+        } else {
+            ValidationConfig::Basic
         },
         quantize: parse_quantize(quantize)?,
         compress: None,
-        force,
+        strict,
         cache: true,
     };
 
@@ -513,14 +513,7 @@ mod tests {
     #[test]
     fn test_run_invalid_source() {
         // Empty source should fail
-        let result = run(
-            "",
-            Some(Path::new("output.apr")),
-            None,
-            None,
-            false,
-            false,
-        );
+        let result = run("", Some(Path::new("output.apr")), None, None, false, false);
 
         assert!(result.is_err());
     }

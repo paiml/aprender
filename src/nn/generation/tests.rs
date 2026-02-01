@@ -501,7 +501,9 @@ fn test_beam_search_with_early_stopping() {
 
 #[test]
 fn test_beam_search_debug_display() {
-    let beam = BeamSearch::new(5).with_length_penalty(1.5).with_eos_token_id(2);
+    let beam = BeamSearch::new(5)
+        .with_length_penalty(1.5)
+        .with_eos_token_id(2);
     let debug = format!("{:?}", beam);
     assert!(debug.contains("BeamSearch"));
     assert!(debug.contains("beam_size"));
@@ -553,7 +555,9 @@ fn test_beam_hypothesis_clone() {
 
 #[test]
 fn test_generation_config_clone() {
-    let config = GenerationConfig::new().with_max_length(100).with_temperature(0.8);
+    let config = GenerationConfig::new()
+        .with_max_length(100)
+        .with_temperature(0.8);
     let cloned = config.clone();
     assert_eq!(cloned.max_length, 100);
     assert_eq!(cloned.temperature, 0.8);

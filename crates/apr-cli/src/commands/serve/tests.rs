@@ -462,8 +462,8 @@ mod tests {
 
 #[cfg(all(test, feature = "inference"))]
 mod http_tests {
-    use super::*;
     use super::super::routes::create_router;
+    use super::*;
     use axum::body::Body;
     use axum::http::{Request, StatusCode};
     use std::io::Write;

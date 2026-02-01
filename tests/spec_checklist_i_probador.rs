@@ -111,7 +111,6 @@ fn i17_logit_precision() {
     assert!(!bad_result.passed, "I17 FAIL: Above 1e-3 should fail");
 }
 
-
 // ============================================================================
 // Section I Additional: Probador Tests
 // ============================================================================
@@ -192,7 +191,6 @@ fn i9_boundary_testing() {
         "I9 FAIL: Inf with boundary tokens"
     );
 }
-
 
 // ============================================================================
 // Section I Additional: Probador Tests (I2-I4, I6-I8, I10-I13, I15-I16, I18)
@@ -665,7 +663,6 @@ fn i18_cross_runtime_consistency() {
         "I18: Different inputs produce different outputs"
     );
 }
-
 
 // ============================================================================
 // Section I Bonus: Probador Integration (I19-I20)

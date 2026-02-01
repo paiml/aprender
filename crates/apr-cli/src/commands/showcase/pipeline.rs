@@ -500,4 +500,3 @@ pub(super) fn run_apr_inference(config: &ShowcaseConfig) -> Result<bool> {
 
     Ok(true)
 }
-

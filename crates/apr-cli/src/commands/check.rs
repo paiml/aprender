@@ -767,7 +767,7 @@ mod tests {
         file.write_all(b"not valid").expect("write");
 
         let result = run(file.path(), true); // no_gpu = true
-        // Should fail (invalid file)
+                                             // Should fail (invalid file)
         assert!(result.is_err());
     }
 
@@ -815,42 +815,36 @@ mod tests {
 
     #[test]
     fn test_print_results_all_failed() {
-        let results = vec![
-            StageResult {
-                name: "Stage 1",
-                eli5: "Test 1",
-                passed: false,
-                details: Some("ERROR".to_string()),
-            },
-        ];
+        let results = vec![StageResult {
+            name: "Stage 1",
+            eli5: "Test 1",
+            passed: false,
+            details: Some("ERROR".to_string()),
+        }];
         // Should not panic
         print_results_table(&results);
     }
 
     #[test]
     fn test_print_results_no_details() {
-        let results = vec![
-            StageResult {
-                name: "Stage 1",
-                eli5: "Test",
-                passed: true,
-                details: None,
-            },
-        ];
+        let results = vec![StageResult {
+            name: "Stage 1",
+            eli5: "Test",
+            passed: true,
+            details: None,
+        }];
         // Should not panic
         print_results_table(&results);
     }
 
     #[test]
     fn test_print_results_long_name() {
-        let results = vec![
-            StageResult {
-                name: "This is a very long stage name that should handle gracefully",
-                eli5: "Test",
-                passed: true,
-                details: Some("OK".to_string()),
-            },
-        ];
+        let results = vec![StageResult {
+            name: "This is a very long stage name that should handle gracefully",
+            eli5: "Test",
+            passed: true,
+            details: Some("OK".to_string()),
+        }];
         // Should not panic
         print_results_table(&results);
     }

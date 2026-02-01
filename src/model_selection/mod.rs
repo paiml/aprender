@@ -681,6 +681,5 @@ pub fn train_test_split(
     Ok((x_train, x_test, y_train, y_test))
 }
 
-
 #[cfg(test)]
 mod tests;

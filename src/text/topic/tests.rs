@@ -21,8 +21,8 @@ fn test_lda_fit() {
 
 #[test]
 fn test_lda_top_words() {
-    let dtm = Matrix::from_vec(2, 3, vec![2.0, 1.0, 0.0, 0.0, 1.0, 2.0])
-        .expect("matrix should succeed");
+    let dtm =
+        Matrix::from_vec(2, 3, vec![2.0, 1.0, 0.0, 0.0, 1.0, 2.0]).expect("matrix should succeed");
 
     let mut lda = LatentDirichletAllocation::new(2);
     lda.fit(&dtm, 10).expect("fit should succeed");
@@ -79,8 +79,8 @@ fn test_topic_words_not_fitted() {
 
 #[test]
 fn test_top_words_vocab_mismatch() {
-    let dtm = Matrix::from_vec(2, 3, vec![2.0, 1.0, 0.0, 0.0, 1.0, 2.0])
-        .expect("matrix should succeed");
+    let dtm =
+        Matrix::from_vec(2, 3, vec![2.0, 1.0, 0.0, 0.0, 1.0, 2.0]).expect("matrix should succeed");
 
     let mut lda = LatentDirichletAllocation::new(2);
     lda.fit(&dtm, 5).expect("fit should succeed");
@@ -103,8 +103,8 @@ fn test_lda_debug() {
 
 #[test]
 fn test_lda_topic_words_access() {
-    let dtm = Matrix::from_vec(2, 3, vec![2.0, 1.0, 0.0, 0.0, 1.0, 2.0])
-        .expect("matrix should succeed");
+    let dtm =
+        Matrix::from_vec(2, 3, vec![2.0, 1.0, 0.0, 0.0, 1.0, 2.0]).expect("matrix should succeed");
 
     let mut lda = LatentDirichletAllocation::new(2);
     lda.fit(&dtm, 5).expect("fit should succeed");
@@ -125,8 +125,8 @@ fn test_lda_topic_words_access() {
 
 #[test]
 fn test_lda_single_topic() {
-    let dtm = Matrix::from_vec(2, 3, vec![2.0, 1.0, 0.0, 0.0, 1.0, 2.0])
-        .expect("matrix should succeed");
+    let dtm =
+        Matrix::from_vec(2, 3, vec![2.0, 1.0, 0.0, 0.0, 1.0, 2.0]).expect("matrix should succeed");
 
     let mut lda = LatentDirichletAllocation::new(1);
     lda.fit(&dtm, 5).expect("fit should succeed");
@@ -201,8 +201,8 @@ fn test_lda_top_words_all() {
 
 #[test]
 fn test_lda_reproducibility() {
-    let dtm = Matrix::from_vec(2, 3, vec![2.0, 1.0, 0.0, 0.0, 1.0, 2.0])
-        .expect("matrix should succeed");
+    let dtm =
+        Matrix::from_vec(2, 3, vec![2.0, 1.0, 0.0, 0.0, 1.0, 2.0]).expect("matrix should succeed");
 
     // Fit with same seed twice
     let mut lda1 = LatentDirichletAllocation::new(2).with_random_seed(42);
@@ -520,8 +520,7 @@ fn test_lda_fit_uniform_distribution() {
 #[test]
 fn test_lda_top_words_with_ties() {
     // Create a situation where multiple words have same probability
-    let dtm =
-        Matrix::from_vec(2, 4, vec![1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]).expect("matrix");
+    let dtm = Matrix::from_vec(2, 4, vec![1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]).expect("matrix");
 
     let mut lda = LatentDirichletAllocation::new(1);
     lda.fit(&dtm, 10).expect("fit");
@@ -568,8 +567,8 @@ fn test_lda_single_term() {
 #[test]
 fn test_lda_topics_equals_terms() {
     // Edge case: number of topics equals number of terms
-    let dtm = Matrix::from_vec(3, 3, vec![2.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 2.0])
-        .expect("matrix");
+    let dtm =
+        Matrix::from_vec(3, 3, vec![2.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 2.0]).expect("matrix");
 
     let mut lda = LatentDirichletAllocation::new(3);
     lda.fit(&dtm, 20).expect("fit");
@@ -593,8 +592,7 @@ fn test_lda_topics_exceeds_terms() {
 #[test]
 fn test_lda_high_count_values() {
     // Test with larger count values
-    let dtm =
-        Matrix::from_vec(2, 3, vec![100.0, 50.0, 10.0, 10.0, 50.0, 100.0]).expect("matrix");
+    let dtm = Matrix::from_vec(2, 3, vec![100.0, 50.0, 10.0, 10.0, 50.0, 100.0]).expect("matrix");
 
     let mut lda = LatentDirichletAllocation::new(2);
     lda.fit(&dtm, 10).expect("fit");

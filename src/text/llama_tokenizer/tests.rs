@@ -743,8 +743,12 @@ fn test_id_to_token_boundary() {
 
     // Test boundary conditions
     assert!(tokenizer.id_to_token(0).is_some()); // First token
-    assert!(tokenizer.id_to_token(tokenizer.vocab_size() as u32 - 1).is_some()); // Last valid
-    assert!(tokenizer.id_to_token(tokenizer.vocab_size() as u32).is_none()); // Out of bounds
+    assert!(tokenizer
+        .id_to_token(tokenizer.vocab_size() as u32 - 1)
+        .is_some()); // Last valid
+    assert!(tokenizer
+        .id_to_token(tokenizer.vocab_size() as u32)
+        .is_none()); // Out of bounds
 }
 
 #[test]
@@ -837,11 +841,7 @@ fn test_tokenizer_model_values() {
 #[test]
 fn test_encode_all_unk() {
     // Create tokenizer with minimal vocab
-    let tokens = vec![
-        "<unk>".to_string(),
-        "<s>".to_string(),
-        "</s>".to_string(),
-    ];
+    let tokens = vec!["<unk>".to_string(), "<s>".to_string(), "</s>".to_string()];
     let scores = vec![0.0; tokens.len()];
     let tokenizer = LlamaTokenizer::new(tokens, scores, 1, 2, 0).unwrap();
 
@@ -854,11 +854,7 @@ fn test_encode_all_unk() {
 #[test]
 fn test_decode_multiple_byte_tokens() {
     // Create tokenizer with multiple byte tokens
-    let mut tokens = vec![
-        "<unk>".to_string(),
-        "<s>".to_string(),
-        "</s>".to_string(),
-    ];
+    let mut tokens = vec!["<unk>".to_string(), "<s>".to_string(), "</s>".to_string()];
     // Add byte tokens
     for i in 0u8..10 {
         tokens.push(format!("<0x{:02X}>", i));

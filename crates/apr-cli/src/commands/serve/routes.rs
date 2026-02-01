@@ -3,11 +3,11 @@
 #![allow(unused_imports)]
 #![allow(unused_variables)]
 
+use super::health_check;
 use super::types::{
     ErrorResponse, GenerateRequest, GenerateResponse, HealthResponse, HealthStatus, ServerInfo,
     ServerState, StreamEvent, TranscribeResponse, MAX_REQUEST_SIZE,
 };
-use super::health_check;
 use std::sync::Arc;
 use std::time::Instant;
 

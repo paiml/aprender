@@ -285,9 +285,7 @@ mod tests {
         let mut file1 = NamedTempFile::with_suffix(".apr").expect("create temp file");
         let mut file2 = NamedTempFile::with_suffix(".apr").expect("create temp file");
 
-        file1
-            .write_all(b"not valid APR")
-            .expect("write to file");
+        file1.write_all(b"not valid APR").expect("write to file");
         file2
             .write_all(b"also not valid APR")
             .expect("write to file");

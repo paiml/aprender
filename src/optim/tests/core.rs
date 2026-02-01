@@ -4,7 +4,6 @@
 
 use super::super::*;
 
-
 // ==================== SafeCholesky Tests ====================
 
 #[test]

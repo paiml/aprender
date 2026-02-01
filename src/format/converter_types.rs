@@ -246,7 +246,7 @@ impl TensorExpectation {
     /// Trained models show means from ~0.0 to ~2.0 (`TinyLlama`: 0.005-0.5)
     /// Issue #46: Qwen2.5-Coder-0.5B has mean=7.23 and std=2.11, widen ranges
     pub const RMSNORM_WEIGHT: Self = Self {
-        mean_range: (-1.0, 10.0), // Wider range for Qwen and other architectures
+        mean_range: (-1.0, 10.0),    // Wider range for Qwen and other architectures
         std_range: Some((0.0, 5.0)), // Qwen has std up to 2.11
         description: "RMSNorm weight (gamma)",
     };
@@ -381,8 +381,10 @@ pub struct ImportOptions {
     pub quantize: Option<QuantizationType>,
     /// Compression algorithm
     pub compress: Option<Compression>,
-    /// Force import even if validation fails
-    pub force: bool,
+    /// GH-196: Strict mode rejects unverified architectures.
+    /// Default is permissive (imports proceed with a warning).
+    /// Use `--strict` on CLI to enable this.
+    pub strict: bool,
     /// Cache downloaded files
     pub cache: bool,
 }
@@ -394,7 +396,7 @@ impl Default for ImportOptions {
             validation: ValidationConfig::Strict,
             quantize: None,
             compress: None,
-            force: false,
+            strict: false,
             cache: true,
         }
     }

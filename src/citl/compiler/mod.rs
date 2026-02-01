@@ -984,6 +984,5 @@ fn extract_suggestions_from_json(_json: &str) -> Option<Vec<CompilerSuggestion>>
     None
 }
 
-
 #[cfg(test)]
 mod tests;

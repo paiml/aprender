@@ -1206,6 +1206,5 @@ pub enum EdgeType {
     Found,
 }
 
-
 #[cfg(test)]
 mod tests;

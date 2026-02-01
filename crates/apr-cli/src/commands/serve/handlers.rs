@@ -14,9 +14,9 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
 
-use super::types::ServerConfig;
 #[cfg(feature = "inference")]
-use super::safetensors::{SafeTensorsTokenizerInfo, load_safetensors_tokenizer};
+use super::safetensors::{load_safetensors_tokenizer, SafeTensorsTokenizerInfo};
+use super::types::ServerConfig;
 
 // ============================================================================
 // Format detection and dispatch

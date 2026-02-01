@@ -1027,6 +1027,5 @@ pub trait MessagePassing {
     }
 }
 
-
 #[cfg(test)]
 mod tests;

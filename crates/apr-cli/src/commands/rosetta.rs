@@ -2735,13 +2735,7 @@ mod tests {
         source.write_all(b"not valid gguf").expect("write");
         let target = NamedTempFile::with_suffix(".apr").expect("create target");
 
-        let result = run_convert(
-            source.path(),
-            target.path(),
-            Some("int8"),
-            false,
-            false,
-        );
+        let result = run_convert(source.path(), target.path(), Some("int8"), false, false);
         // Should fail (invalid file) but tests quantize path
         assert!(result.is_err());
     }
@@ -2898,11 +2892,11 @@ mod tests {
         // run_validate_stats(model, reference, fingerprints_file, threshold, strict, json)
         let result = run_validate_stats(
             Path::new("/nonexistent/model.gguf"),
-            None,   // reference
-            None,   // fingerprints_file
-            1e-5,   // threshold
-            false,  // strict
-            false,  // json
+            None,  // reference
+            None,  // fingerprints_file
+            1e-5,  // threshold
+            false, // strict
+            false, // json
         );
         assert!(result.is_err());
     }
@@ -2923,7 +2917,8 @@ mod tests {
         let mut ref_file = NamedTempFile::with_suffix(".gguf").expect("create ref file");
         ref_file.write_all(b"not valid ref").expect("write");
 
-        let result = run_validate_stats(file.path(), Some(ref_file.path()), None, 1e-5, false, false);
+        let result =
+            run_validate_stats(file.path(), Some(ref_file.path()), None, 1e-5, false, false);
         // Should fail (invalid files) but tests reference path
         assert!(result.is_err());
     }
@@ -2994,10 +2989,10 @@ mod tests {
         let result = run_diff_tensors(
             model1.path(),
             model2.path(),
-            false,          // mismatches_only
-            0,              // show_values
+            false,           // mismatches_only
+            0,               // show_values
             Some("encoder"), // filter
-            false,          // json
+            false,           // json
         );
         // Should fail (invalid files) but tests filter path
         assert!(result.is_err());
@@ -3013,9 +3008,9 @@ mod tests {
         let result = run_diff_tensors(
             model1.path(),
             model2.path(),
-            true, // mismatches_only
-            0,    // show_values
-            None, // filter
+            true,  // mismatches_only
+            0,     // show_values
+            None,  // filter
             false, // json
         );
         // Should fail (invalid files) but tests mismatches_only path
@@ -3073,7 +3068,11 @@ mod tests {
             json: false,
         };
         match cmd {
-            RosettaCommands::Inspect { file, hexdump, json } => {
+            RosettaCommands::Inspect {
+                file,
+                hexdump,
+                json,
+            } => {
                 assert_eq!(file.to_string_lossy(), "model.gguf");
                 assert!(!hexdump);
                 assert!(!json);
@@ -3092,7 +3091,12 @@ mod tests {
             json: false,
         };
         match cmd {
-            RosettaCommands::Convert { source, target, quantize, .. } => {
+            RosettaCommands::Convert {
+                source,
+                target,
+                quantize,
+                ..
+            } => {
                 assert_eq!(source.to_string_lossy(), "model.gguf");
                 assert_eq!(target.to_string_lossy(), "model.apr");
                 assert!(quantize.is_none());
@@ -3128,7 +3132,11 @@ mod tests {
             json: false,
         };
         match cmd {
-            RosettaCommands::Verify { tolerance, intermediate, .. } => {
+            RosettaCommands::Verify {
+                tolerance,
+                intermediate,
+                ..
+            } => {
                 assert_eq!(tolerance, 1e-5);
                 assert_eq!(intermediate, "safetensors");
             }
@@ -3428,7 +3436,11 @@ mod tests {
             json: false,
         };
         match cmd {
-            RosettaCommands::CompareInference { max_tokens, temperature, .. } => {
+            RosettaCommands::CompareInference {
+                max_tokens,
+                temperature,
+                ..
+            } => {
                 assert_eq!(max_tokens, 10);
                 assert_eq!(temperature, 0.0);
             }
@@ -3447,7 +3459,12 @@ mod tests {
             json: false,
         };
         match cmd {
-            RosettaCommands::DiffTensors { mismatches_only, show_values, filter, .. } => {
+            RosettaCommands::DiffTensors {
+                mismatches_only,
+                show_values,
+                filter,
+                ..
+            } => {
                 assert!(mismatches_only);
                 assert_eq!(show_values, 5);
                 assert_eq!(filter, Some("attention".to_string()));
@@ -3467,7 +3484,9 @@ mod tests {
             json: false,
         };
         match cmd {
-            RosettaCommands::Fingerprint { verbose, output, .. } => {
+            RosettaCommands::Fingerprint {
+                verbose, output, ..
+            } => {
                 assert!(verbose);
                 assert!(output.is_some());
             }
@@ -3486,7 +3505,12 @@ mod tests {
             json: true,
         };
         match cmd {
-            RosettaCommands::ValidateStats { strict, threshold, json, .. } => {
+            RosettaCommands::ValidateStats {
+                strict,
+                threshold,
+                json,
+                ..
+            } => {
                 assert!(strict);
                 assert_eq!(threshold, 0.01);
                 assert!(json);

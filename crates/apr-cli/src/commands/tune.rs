@@ -476,12 +476,12 @@ mod tests {
     #[test]
     fn test_run_no_model_or_size() {
         let result = run(
-            None,         // No model path
+            None, // No model path
             TuneMethod::Auto,
             None,
             16.0,
             true,
-            None,         // No model size
+            None, // No model size
             false,
             None,
             false,

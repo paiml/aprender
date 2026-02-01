@@ -727,6 +727,5 @@ pub fn split_sentences(text: &str) -> Vec<String> {
 // Tests
 // ============================================================================
 
-
 #[cfg(test)]
 mod tests;

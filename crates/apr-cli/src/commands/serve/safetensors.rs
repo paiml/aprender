@@ -16,10 +16,8 @@
 #![allow(clippy::redundant_closure_for_method_calls)]
 #![allow(clippy::inefficient_to_string)]
 
-use super::types::{
-    ChatCompletionRequest, ChatMessage, ServerConfig,
-};
 use super::routes::create_router;
+use super::types::{ChatCompletionRequest, ChatMessage, ServerConfig};
 
 use crate::error::{CliError, Result};
 use colored::Colorize;
@@ -392,7 +390,8 @@ pub(crate) async fn safetensors_chat_completions_handler(
 
     // Add system message with tools if present (GH-160)
     if has_tools {
-        let tools_prompt = super::types::format_tools_prompt(parsed_request.tools.as_deref().unwrap_or(&[]));
+        let tools_prompt =
+            super::types::format_tools_prompt(parsed_request.tools.as_deref().unwrap_or(&[]));
         // Insert tools description in system message or create one
         let has_system = parsed_request.messages.iter().any(|m| m.role == "system");
         if !has_system {

@@ -70,7 +70,7 @@ fn main() {
         validation: ValidationConfig::Strict,
         quantize: None, // Keep FP16 for now
         compress: None,
-        force: false,
+        strict: false,
         cache: true,
     };
 

@@ -85,7 +85,10 @@ fn d192_02_argmax_tiebreaking_determinism() {
 
     // Argmax should return lowest index for tie
     let selected = argmax_with_tiebreak(&logits);
-    assert_eq!(selected, 1, "Argmax should consistently select lowest index on tie");
+    assert_eq!(
+        selected, 1,
+        "Argmax should consistently select lowest index on tie"
+    );
 
     // Verify consistency
     for _ in 0..100 {

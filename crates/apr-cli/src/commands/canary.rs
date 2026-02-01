@@ -680,7 +680,11 @@ mod tests {
             output: PathBuf::from("canary.json"),
         };
         match cmd {
-            CanaryCommands::Create { file, input, output } => {
+            CanaryCommands::Create {
+                file,
+                input,
+                output,
+            } => {
                 assert_eq!(file.to_string_lossy(), "model.safetensors");
                 assert_eq!(input.to_string_lossy(), "input.wav");
                 assert_eq!(output.to_string_lossy(), "canary.json");
@@ -750,7 +754,9 @@ mod tests {
     #[test]
     fn test_run_create_invalid_model() {
         let mut model = NamedTempFile::with_suffix(".safetensors").expect("create model");
-        model.write_all(b"not a valid safetensors file").expect("write");
+        model
+            .write_all(b"not a valid safetensors file")
+            .expect("write");
         let output = NamedTempFile::with_suffix(".json").expect("create output");
         let input = NamedTempFile::with_suffix(".wav").expect("create input");
 
@@ -766,7 +772,11 @@ mod tests {
     #[test]
     fn test_run_check_model_not_found() {
         let mut canary = NamedTempFile::with_suffix(".json").expect("create canary");
-        canary.write_all(br#"{"model_name": "test", "tensor_count": 0, "tensors": {}, "created_at": ""}"#).expect("write");
+        canary
+            .write_all(
+                br#"{"model_name": "test", "tensor_count": 0, "tensors": {}, "created_at": ""}"#,
+            )
+            .expect("write");
 
         let cmd = CanaryCommands::Check {
             file: PathBuf::from("/nonexistent/model.safetensors"),
@@ -811,20 +821,15 @@ mod tests {
     #[test]
     fn test_validate_paths_exist_model_missing() {
         let canary = NamedTempFile::with_suffix(".json").expect("create canary");
-        let result = validate_paths_exist(
-            Path::new("/nonexistent/model.safetensors"),
-            canary.path(),
-        );
+        let result =
+            validate_paths_exist(Path::new("/nonexistent/model.safetensors"), canary.path());
         assert!(result.is_err());
     }
 
     #[test]
     fn test_validate_paths_exist_canary_missing() {
         let model = NamedTempFile::with_suffix(".safetensors").expect("create model");
-        let result = validate_paths_exist(
-            model.path(),
-            Path::new("/nonexistent/canary.json"),
-        );
+        let result = validate_paths_exist(model.path(), Path::new("/nonexistent/canary.json"));
         assert!(result.is_err());
     }
 

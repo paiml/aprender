@@ -1380,6 +1380,5 @@ fn explain_inference_hotspot(component: &str, percentage: f64) -> (String, bool)
 // Tests
 // ============================================================================
 
-
 #[cfg(test)]
 mod tests;

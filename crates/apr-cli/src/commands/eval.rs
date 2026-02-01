@@ -822,13 +822,7 @@ mod tests {
 
     #[test]
     fn test_run_unknown_dataset() {
-        let result = run(
-            Path::new("test.apr"),
-            "invalid_dataset",
-            None,
-            None,
-            None,
-        );
+        let result = run(Path::new("test.apr"), "invalid_dataset", None, None, None);
 
         assert!(result.is_err());
         match result {

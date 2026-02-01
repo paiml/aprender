@@ -84,13 +84,13 @@ pub fn apr_import<P: AsRef<Path>>(
             "[PMAT-224] The imported APR file may not produce correct output with `apr run`."
         );
         eprintln!(
-            "[PMAT-224] Verified architectures: Qwen2, LLaMA. Use --force to suppress this warning."
+            "[PMAT-224] Verified architectures: Qwen2, LLaMA. Use --strict to reject unverified."
         );
-        if !options.force {
+        if options.strict {
             return Err(AprenderError::FormatError {
                 message: format!(
-                    "Architecture '{}' is not verified for inference. \
-                     Use --force to import anyway, or specify --arch qwen2/llama.",
+                    "Architecture '{}' is not verified for inference (--strict mode). \
+                     Remove --strict to import anyway, or specify --arch qwen2/llama.",
                     effective_arch.display_name()
                 ),
             });
@@ -164,14 +164,12 @@ pub(crate) fn apr_import_gguf_raw(
             "[PMAT-224] WARNING: Architecture '{}' has not been verified for inference.",
             effective_arch.display_name()
         );
-        eprintln!(
-            "[PMAT-224] Verified architectures: Qwen2, LLaMA. Use --force to suppress."
-        );
-        if !options.force {
+        eprintln!("[PMAT-224] Verified architectures: Qwen2, LLaMA. Use --strict to reject.");
+        if options.strict {
             return Err(AprenderError::FormatError {
                 message: format!(
-                    "Architecture '{}' is not verified for inference. \
-                     Use --force to import anyway, or specify --arch qwen2/llama.",
+                    "Architecture '{}' is not verified for inference (--strict mode). \
+                     Remove --strict to import anyway, or specify --arch qwen2/llama.",
                     effective_arch.display_name()
                 ),
             });
@@ -943,7 +941,7 @@ fn check_tensor_expectation(
     }
     let expectation = TensorExpectation::for_tensor(name)?;
     let err = expectation.check(stats).err()?;
-    if options.validation == ValidationConfig::Strict && !options.force {
+    if options.validation == ValidationConfig::Strict && options.strict {
         Some(format!("{name}: {err}"))
     } else {
         None
@@ -997,7 +995,7 @@ pub(crate) fn validate_tensors(
 
     let report = validator.validate();
 
-    if !validation_errors.is_empty() && !options.force {
+    if !validation_errors.is_empty() && options.strict {
         return Err(AprenderError::FormatError {
             message: format!(
                 "Validation failed ({} errors):\n  - {}",

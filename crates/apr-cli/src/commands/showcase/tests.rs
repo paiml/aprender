@@ -4,11 +4,11 @@ use super::*;
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use super::benchmark::{calculate_stddev, generate_jitter};
-    use super::demo::{run_zram_demo, run_cuda_demo};
-    use std::time::Duration;
     use super::super::benchmark::{export_benchmark_results, format_benchmark_csv};
+    use super::benchmark::{calculate_stddev, generate_jitter};
+    use super::demo::{run_cuda_demo, run_zram_demo};
+    use super::*;
+    use std::time::Duration;
 
     /// Helper: create a full-run config for testing validation
     fn full_run_config() -> ShowcaseConfig {

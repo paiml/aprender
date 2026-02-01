@@ -89,8 +89,12 @@ pub enum Commands {
         format: String,
 
         /// Disable GPU acceleration
-        #[arg(long)]
+        #[arg(long, conflicts_with = "gpu")]
         no_gpu: bool,
+
+        /// Force GPU acceleration
+        #[arg(long, conflicts_with = "no_gpu")]
+        gpu: bool,
 
         /// Offline mode: block all network access (Sovereign AI compliance)
         #[arg(long)]
@@ -383,9 +387,9 @@ pub enum Commands {
         #[arg(long)]
         quantize: Option<String>,
 
-        /// Force import even if validation fails
+        /// Strict mode: reject unverified architectures and fail on validation errors
         #[arg(long)]
-        force: bool,
+        strict: bool,
 
         /// Preserve Q4K quantization for fused kernel inference (GGUF only)
         /// Uses realizar's Q4K converter instead of dequantizing to F32
@@ -1058,6 +1062,7 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             task,
             format,
             no_gpu,
+            gpu,
             offline,
             benchmark,
             trace,
@@ -1075,6 +1080,9 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             } else {
                 trace_level.as_str()
             };
+            // GH-196: --gpu forces GPU, --no-gpu disables GPU.
+            // When --gpu is passed, no_gpu is false (enforced by conflicts_with).
+            let _ = gpu; // --gpu is the inverse of --no-gpu; no_gpu=false when --gpu is set
             run::run(
                 source,
                 input.as_deref(),
@@ -1202,14 +1210,14 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             output,
             arch,
             quantize,
-            force,
+            strict,
             preserve_q4k,
         } => import::run(
             source,
             output.as_deref(),
             Some(arch.as_str()),
             quantize.as_deref(),
-            *force,
+            *strict,
             *preserve_q4k,
         ),
         Commands::Pull { model_ref, force } => pull::run(model_ref, *force),

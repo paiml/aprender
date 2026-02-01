@@ -674,6 +674,5 @@ impl std::fmt::Display for NativeModelError {
 
 impl std::error::Error for NativeModelError {}
 
-
 #[cfg(test)]
 mod tests;

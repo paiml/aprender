@@ -1,6 +1,6 @@
 //! Advanced tree tests: integration, coverage, utilities, and estimator traits.
 
-use crate::tree::*;
+use crate::primitives::{Matrix, Vector};
 use crate::tree::helpers::{
     at_max_depth, bootstrap_sample, calculate_information_gain, check_stopping_criteria,
     compute_mse, compute_regression_tree_feature_importances, compute_tree_feature_importances,
@@ -11,7 +11,7 @@ use crate::tree::helpers::{
     split_data_by_indices, split_indices_by_threshold, split_labels_by_threshold,
     split_regression_data_by_indices, variance_f32,
 };
-use crate::primitives::{Matrix, Vector};
+use crate::tree::*;
 
 // ===================================================================
 // Out-of-Bag (OOB) Error Estimation Tests

@@ -845,6 +845,5 @@ impl Module for Flatten {
     }
 }
 
-
 #[cfg(test)]
 mod tests;

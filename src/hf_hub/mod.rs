@@ -1060,6 +1060,5 @@ impl Default for HfHubClient {
 // Unit Tests (EXTREME TDD)
 // ============================================================================
 
-
 #[cfg(test)]
 mod tests;

@@ -1106,9 +1106,7 @@ fn test_kmeans_save_safetensors_unfitted_error() {
 
     let result = kmeans.save_safetensors(&path);
     assert!(result.is_err());
-    assert!(result
-        .unwrap_err()
-        .contains("Cannot save unfitted model"));
+    assert!(result.unwrap_err().contains("Cannot save unfitted model"));
 }
 
 #[test]
@@ -1133,4 +1131,3 @@ fn test_kmeans_load_safetensors_invalid_format() {
 
     fs::remove_file(&path).ok();
 }
-

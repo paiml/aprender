@@ -353,6 +353,5 @@ impl LatentDirichletAllocation {
     }
 }
 
-
 #[cfg(test)]
 mod tests;

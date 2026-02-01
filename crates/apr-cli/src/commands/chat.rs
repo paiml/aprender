@@ -2115,19 +2115,7 @@ mod tests {
     fn test_run_file_not_found() {
         let path = Path::new("/nonexistent/model.gguf");
         let result = run(
-            path,
-            0.7,
-            0.9,
-            512,
-            None,
-            false,
-            false,
-            false,
-            None,
-            false,
-            None,
-            "info",
-            false,
+            path, 0.7, 0.9, 512, None, false, false, false, None, false, None, "info", false,
         );
         assert!(result.is_err());
         match result {

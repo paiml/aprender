@@ -1301,6 +1301,5 @@ impl DirichletMultinomial {
     }
 }
 
-
 #[cfg(test)]
 mod tests;

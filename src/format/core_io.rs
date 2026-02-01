@@ -1,8 +1,6 @@
 //! APR format core I/O operations (save, load, inspect)
 
-use super::{
-    Compression, Header, Metadata, ModelInfo, ModelType, SaveOptions, HEADER_SIZE,
-};
+use super::{Compression, Header, Metadata, ModelInfo, ModelType, SaveOptions, HEADER_SIZE};
 use crate::error::{AprenderError, Result};
 use serde::{de::DeserializeOwned, Serialize};
 use std::fs::File;

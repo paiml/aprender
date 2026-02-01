@@ -1691,9 +1691,7 @@ fn test_admm_adaptive_rho_increase() {
 // Test AugmentedLagrangian with rho increase
 #[test]
 fn test_augmented_lagrangian_with_rho_increase_factor() {
-    let objective = |x: &Vector<f32>| {
-        0.5 * (x[0] - 2.0).powi(2) + 0.5 * (x[1] - 3.0).powi(2)
-    };
+    let objective = |x: &Vector<f32>| 0.5 * (x[0] - 2.0).powi(2) + 0.5 * (x[1] - 3.0).powi(2);
 
     let gradient = |x: &Vector<f32>| Vector::from_slice(&[x[0] - 2.0, x[1] - 3.0]);
 

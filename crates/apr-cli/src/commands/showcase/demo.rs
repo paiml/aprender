@@ -16,7 +16,10 @@ use trueno_zram_core::{Algorithm as ZramAlgorithm, CompressorBuilder, PAGE_SIZE}
 use super::types::*;
 
 /// Step H: Visualization with trueno-viz
-pub(super) fn run_visualize(config: &ShowcaseConfig, benchmark: Option<&BenchmarkComparison>) -> Result<bool> {
+pub(super) fn run_visualize(
+    config: &ShowcaseConfig,
+    benchmark: Option<&BenchmarkComparison>,
+) -> Result<bool> {
     println!();
     println!(
         "{}",

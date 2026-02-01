@@ -163,7 +163,6 @@ fn c8_swiglu_non_monotonic() {
     );
 }
 
-
 // ============================================================================
 // Section C Additional: Causal Mask Verification (C4)
 // ============================================================================
@@ -325,7 +324,6 @@ fn c6_rope_position_encoding() {
         "C6 FAIL: RoPE near max_seq_len produced NaN"
     );
 }
-
 
 // ============================================================================
 // Section C Additional: Forward Pass Tests

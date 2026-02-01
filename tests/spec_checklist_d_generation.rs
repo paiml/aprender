@@ -106,7 +106,6 @@ fn d4_repetition_detection() {
     );
 }
 
-
 // ============================================================================
 // Section D Additional: Throughput Test (D5)
 // ============================================================================
@@ -151,7 +150,6 @@ fn d5_throughput_baseline() {
         "D5 FAIL: Throughput too low: {tokens_per_sec:.1} tok/s"
     );
 }
-
 
 // ============================================================================
 // Section D Additional: Generation Quality Tests

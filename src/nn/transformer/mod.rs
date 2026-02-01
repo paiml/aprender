@@ -1754,6 +1754,5 @@ impl ALiBi {
     }
 }
 
-
 #[cfg(test)]
 mod tests;

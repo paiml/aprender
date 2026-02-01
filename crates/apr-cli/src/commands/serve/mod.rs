@@ -4,12 +4,12 @@
 //! Implements OpenAI-compatible endpoints for generation, prediction, and transcription.
 
 // Submodules (PMAT-200: split from 4351-line serve.rs)
-pub mod types;
-pub mod routes;
 #[cfg(feature = "inference")]
 pub mod handlers;
+pub mod routes;
 #[cfg(feature = "inference")]
 pub mod safetensors;
+pub mod types;
 
 // Re-exports for backward compatibility
 pub use types::*;

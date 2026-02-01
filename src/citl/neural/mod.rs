@@ -1535,6 +1535,5 @@ impl TrainingSample {
     }
 }
 
-
 #[cfg(test)]
 mod tests;

@@ -5,9 +5,14 @@ use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 
+use super::dequant::{
+    dequantize_iq_approximate, dequantize_q2_k, dequantize_q3_k, dequantize_q4_k, dequantize_q5_1,
+    dequantize_q5_k, dequantize_q6_k, f16_to_f32,
+};
+use super::types::{
+    padding_for_alignment, GgufValue, TensorDataMap, GGUF_DEFAULT_ALIGNMENT, GGUF_MAGIC,
+};
 use crate::error::{AprenderError, Result};
-use super::types::{GgufValue, TensorDataMap, GGUF_MAGIC, GGUF_DEFAULT_ALIGNMENT, padding_for_alignment};
-use super::dequant::{f16_to_f32, dequantize_q5_1, dequantize_q2_k, dequantize_q3_k, dequantize_q4_k, dequantize_q5_k, dequantize_q6_k, dequantize_iq_approximate};
 
 // ============================================================================
 // GGUF Reading/Import API
@@ -61,7 +66,11 @@ pub(crate) fn read_string(data: &[u8], offset: usize) -> Result<(String, usize)>
 }
 
 /// Read a metadata value and return (value, bytes_consumed)
-pub(crate) fn read_metadata_value(data: &[u8], offset: usize, value_type: u32) -> Result<(GgufValue, usize)> {
+pub(crate) fn read_metadata_value(
+    data: &[u8],
+    offset: usize,
+    value_type: u32,
+) -> Result<(GgufValue, usize)> {
     match value_type {
         0 => {
             // Uint8

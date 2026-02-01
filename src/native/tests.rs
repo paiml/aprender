@@ -107,8 +107,7 @@ fn test_trueno_native_model_with_params() {
 #[test]
 fn test_trueno_native_model_validate() {
     let params = AlignedVec::from_slice(&[0.5_f32, -0.3, 0.8]);
-    let model =
-        TruenoNativeModel::new(ModelType::LinearRegression, 3, 3, 1).with_params(params);
+    let model = TruenoNativeModel::new(ModelType::LinearRegression, 3, 3, 1).with_params(params);
 
     assert!(model.validate().is_ok());
 }
@@ -128,8 +127,7 @@ fn test_trueno_native_model_validate_param_mismatch() {
 #[test]
 fn test_trueno_native_model_validate_nan() {
     let params = AlignedVec::from_slice(&[0.5_f32, f32::NAN, 0.8]);
-    let model =
-        TruenoNativeModel::new(ModelType::LinearRegression, 3, 3, 1).with_params(params);
+    let model = TruenoNativeModel::new(ModelType::LinearRegression, 3, 3, 1).with_params(params);
 
     assert!(matches!(
         model.validate(),
@@ -154,8 +152,7 @@ fn test_trueno_native_model_predict_linear() {
 #[test]
 fn test_trueno_native_model_predict_linear_feature_mismatch() {
     let params = AlignedVec::from_slice(&[1.0_f32, 2.0, 3.0]);
-    let model =
-        TruenoNativeModel::new(ModelType::LinearRegression, 3, 3, 1).with_params(params);
+    let model = TruenoNativeModel::new(ModelType::LinearRegression, 3, 3, 1).with_params(params);
 
     let result = model.predict_linear(&[1.0, 2.0]); // only 2 features
     assert!(matches!(
@@ -304,8 +301,7 @@ fn test_trueno_native_model_with_extra() {
 #[test]
 fn test_trueno_native_model_params_ptr() {
     let params = AlignedVec::from_slice(&[1.0_f32, 2.0, 3.0]);
-    let model =
-        TruenoNativeModel::new(ModelType::LinearRegression, 3, 3, 1).with_params(params);
+    let model = TruenoNativeModel::new(ModelType::LinearRegression, 3, 3, 1).with_params(params);
 
     let ptr = model.params_ptr();
     assert!(ptr.is_some());
@@ -519,8 +515,7 @@ fn test_model_extra_size_bytes_all_components() {
 #[test]
 fn test_trueno_native_model_predict_linear_no_bias() {
     let params = AlignedVec::from_slice(&[1.0_f32, 2.0, 3.0]);
-    let model =
-        TruenoNativeModel::new(ModelType::LinearRegression, 3, 3, 1).with_params(params);
+    let model = TruenoNativeModel::new(ModelType::LinearRegression, 3, 3, 1).with_params(params);
 
     // 1*1 + 2*2 + 3*3 + 0 = 14
     let pred = model.predict_linear(&[1.0, 2.0, 3.0]).unwrap();

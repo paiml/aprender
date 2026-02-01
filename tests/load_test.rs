@@ -142,7 +142,11 @@ fn l50_01_fifty_concurrent_requests() {
             let failure = Arc::clone(&failure_count);
 
             thread::spawn(move || {
-                match http_get(&host, "/health", Duration::from_millis(MAX_HEALTH_RESPONSE_MS * 10)) {
+                match http_get(
+                    &host,
+                    "/health",
+                    Duration::from_millis(MAX_HEALTH_RESPONSE_MS * 10),
+                ) {
                     Ok(200) => {
                         success.fetch_add(1, Ordering::SeqCst);
                         println!("Request {i}: OK");

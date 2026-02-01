@@ -208,12 +208,7 @@ mod tests {
 
     #[test]
     fn test_run_file_not_found() {
-        let result = run(
-            Path::new("/nonexistent/model.apr"),
-            false,
-            false,
-            None,
-        );
+        let result = run(Path::new("/nonexistent/model.apr"), false, false, None);
         assert!(result.is_err());
         match result {
             Err(CliError::FileNotFound(_)) => {}

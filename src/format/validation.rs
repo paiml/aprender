@@ -1095,7 +1095,6 @@ impl WhisperValidation {
 // Poka-yoke Tests (APR-POKA-001)
 // ============================================================================
 
-
 // Tests extracted to validation_tests.rs (PMAT-197)
 #[cfg(test)]
 #[path = "validation_tests.rs"]

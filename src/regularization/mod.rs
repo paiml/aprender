@@ -748,6 +748,5 @@ impl RandAugment {
     }
 }
 
-
 #[cfg(test)]
 mod tests;

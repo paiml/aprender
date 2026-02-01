@@ -734,6 +734,5 @@ impl LlamaTokenizer {
 // Tests (EXTREME TDD - Falsification Tests First)
 // ============================================================================
 
-
 #[cfg(test)]
 mod tests;

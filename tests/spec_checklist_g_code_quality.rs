@@ -93,7 +93,6 @@ fn verify_golden_trace_infrastructure() {
     assert_eq!(trace_set.traces.len(), 1);
 }
 
-
 // ============================================================================
 // Section G Additional: Code Quality Tests
 // ============================================================================
@@ -183,7 +182,6 @@ fn numerical_stability_edge_cases() {
         "NaN with mixed values"
     );
 }
-
 
 // ============================================================================
 // Section G Additional: Code Quality Tests (G4-G10)

@@ -153,8 +153,8 @@ pub fn save_safetensors_with_metadata<P: AsRef<Path>>(
         current_offset = end_offset;
     }
 
-    let metadata_json = serde_json::to_string(&header)
-        .map_err(|e| format!("JSON serialization failed: {e}"))?;
+    let metadata_json =
+        serde_json::to_string(&header).map_err(|e| format!("JSON serialization failed: {e}"))?;
     let metadata_bytes = metadata_json.as_bytes();
     let metadata_len = metadata_bytes.len() as u64;
 

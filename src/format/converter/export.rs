@@ -171,19 +171,21 @@ pub fn apr_export<P: AsRef<Path>>(
             // PMAT-223: Extract user metadata from APR custom field for round-trip
             let user_metadata = extract_user_metadata(input_path);
             if user_metadata.is_empty() {
-                save_safetensors(output_path, &tensors)
-                    .map_err(|e| AprenderError::FormatError {
+                save_safetensors(output_path, &tensors).map_err(|e| {
+                    AprenderError::FormatError {
                         message: format!("Failed to export to SafeTensors: {e}"),
-                    })?;
+                    }
+                })?;
             } else {
                 eprintln!(
                     "[PMAT-223] Restoring {} user metadata key(s) to SafeTensors __metadata__",
                     user_metadata.len()
                 );
-                save_safetensors_with_metadata(output_path, &tensors, &user_metadata)
-                    .map_err(|e| AprenderError::FormatError {
+                save_safetensors_with_metadata(output_path, &tensors, &user_metadata).map_err(
+                    |e| AprenderError::FormatError {
                         message: format!("Failed to export to SafeTensors: {e}"),
-                    })?;
+                    },
+                )?;
             }
 
             // GH-182: Write companion files alongside SafeTensors
@@ -323,7 +325,9 @@ fn infer_model_config(tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>) -> Str
     let num_attention_heads = tensors
         .iter()
         .find(|(name, _)| {
-            name.contains("self_attn.q_proj") || name.contains("attn.q_proj") || name.contains("attention.wq")
+            name.contains("self_attn.q_proj")
+                || name.contains("attn.q_proj")
+                || name.contains("attention.wq")
         })
         .map(|(_, (_, _shape))| {
             // Common head dimensions: 64, 128 - infer num_heads from hidden_size
@@ -335,13 +339,13 @@ fn infer_model_config(tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>) -> Str
         .unwrap_or_else(|| {
             // Fallback: standard ratios
             match hidden_size {
-                896 => 14,   // Qwen2.5-0.5B
-                1536 => 12,  // Qwen2.5-1.5B
-                2048 => 16,  // Llama-7B style
-                4096 => 32,  // Llama-7B
-                5120 => 40,  // Llama-13B
-                8192 => 64,  // Llama-70B
-                _ => (hidden_size / 128).max(1),  // Default: head_dim=128
+                896 => 14,                       // Qwen2.5-0.5B
+                1536 => 12,                      // Qwen2.5-1.5B
+                2048 => 16,                      // Llama-7B style
+                4096 => 32,                      // Llama-7B
+                5120 => 40,                      // Llama-13B
+                8192 => 64,                      // Llama-70B
+                _ => (hidden_size / 128).max(1), // Default: head_dim=128
             }
         });
 
@@ -349,16 +353,18 @@ fn infer_model_config(tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>) -> Str
     let intermediate_size = tensors
         .iter()
         .find(|(name, _)| {
-            name.contains("mlp.gate_proj") || name.contains("mlp.up_proj") || name.contains("feed_forward.w1")
+            name.contains("mlp.gate_proj")
+                || name.contains("mlp.up_proj")
+                || name.contains("feed_forward.w1")
         })
         .map(|(_, (_, shape))| shape.first().copied().unwrap_or(hidden_size * 4))
-        .unwrap_or(hidden_size * 4);  // Default to 4x hidden_size (common in transformers)
+        .unwrap_or(hidden_size * 4); // Default to 4x hidden_size (common in transformers)
 
     // GH-193: Infer head_dim (guard against division by zero)
     let head_dim = if num_attention_heads > 0 {
         hidden_size / num_attention_heads
     } else {
-        64  // Default head dimension
+        64 // Default head dimension
     };
 
     // GH-193: Infer num_key_value_heads (GQA support)
@@ -366,16 +372,22 @@ fn infer_model_config(tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>) -> Str
     let num_key_value_heads = tensors
         .iter()
         .find(|(name, _)| {
-            name.contains("self_attn.k_proj") || name.contains("attn.k_proj") || name.contains("attention.wk")
+            name.contains("self_attn.k_proj")
+                || name.contains("attn.k_proj")
+                || name.contains("attention.wk")
         })
         .map(|(_, (_, shape))| {
             // For GQA: k_proj shape is [hidden_size, num_kv_heads * head_dim]
             // If shape[0] < hidden_size, it's GQA
             let kv_dim = shape.first().copied().unwrap_or(hidden_size);
             // Guard against division by zero
-            if head_dim > 0 { (kv_dim / head_dim).max(1) } else { 1 }
+            if head_dim > 0 {
+                (kv_dim / head_dim).max(1)
+            } else {
+                1
+            }
         })
-        .unwrap_or(num_attention_heads);  // Default: same as num_attention_heads (MHA)
+        .unwrap_or(num_attention_heads); // Default: same as num_attention_heads (MHA)
 
     // Create HuggingFace-compatible config.json with all required fields (GH-193)
     format!(
@@ -463,11 +475,7 @@ fn extract_user_metadata(apr_path: &Path) -> UserMetadata {
         return UserMetadata::new();
     }
 
-    let metadata_len = u64::from_le_bytes(
-        data[8..16]
-            .try_into()
-            .unwrap_or([0u8; 8]),
-    ) as usize;
+    let metadata_len = u64::from_le_bytes(data[8..16].try_into().unwrap_or([0u8; 8])) as usize;
 
     if data.len() < 16 + metadata_len {
         return UserMetadata::new();
@@ -484,9 +492,8 @@ fn extract_user_metadata(apr_path: &Path) -> UserMetadata {
     };
 
     // Look for custom.source_metadata
-    if let Some(serde_json::Value::Object(map)) = parsed
-        .get("custom")
-        .and_then(|c| c.get("source_metadata"))
+    if let Some(serde_json::Value::Object(map)) =
+        parsed.get("custom").and_then(|c| c.get("source_metadata"))
     {
         let mut result = UserMetadata::new();
         for (k, v) in map {

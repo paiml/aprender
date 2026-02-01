@@ -95,7 +95,10 @@ pub(super) fn print_summary(results: &ShowcaseResults, _config: &ShowcaseConfig)
     }
 }
 
-pub(super) fn validate_falsification(results: &ShowcaseResults, config: &ShowcaseConfig) -> Result<()> {
+pub(super) fn validate_falsification(
+    results: &ShowcaseResults,
+    config: &ShowcaseConfig,
+) -> Result<()> {
     let mut failures = Vec::new();
 
     // Determine which steps were requested

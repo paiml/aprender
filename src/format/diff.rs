@@ -239,11 +239,7 @@ impl DiffReport {
 /// # Errors
 ///
 /// Returns error if files cannot be read or formats are unsupported
-pub fn diff_models<P: AsRef<Path>>(
-    path1: P,
-    path2: P,
-    options: DiffOptions,
-) -> Result<DiffReport> {
+pub fn diff_models<P: AsRef<Path>>(path1: P, path2: P, options: DiffOptions) -> Result<DiffReport> {
     let path1 = path1.as_ref();
     let path2 = path2.as_ref();
 
@@ -368,8 +364,14 @@ fn compute_differences(
     if i1.architecture != i2.architecture {
         diffs.push(DiffEntry {
             field: "architecture".to_string(),
-            value1: i1.architecture.clone().unwrap_or_else(|| "(none)".to_string()),
-            value2: i2.architecture.clone().unwrap_or_else(|| "(none)".to_string()),
+            value1: i1
+                .architecture
+                .clone()
+                .unwrap_or_else(|| "(none)".to_string()),
+            value2: i2
+                .architecture
+                .clone()
+                .unwrap_or_else(|| "(none)".to_string()),
             category: DiffCategory::Metadata,
         });
     }
@@ -378,8 +380,14 @@ fn compute_differences(
     if i1.quantization != i2.quantization {
         diffs.push(DiffEntry {
             field: "quantization".to_string(),
-            value1: i1.quantization.clone().unwrap_or_else(|| "(none)".to_string()),
-            value2: i2.quantization.clone().unwrap_or_else(|| "(none)".to_string()),
+            value1: i1
+                .quantization
+                .clone()
+                .unwrap_or_else(|| "(none)".to_string()),
+            value2: i2
+                .quantization
+                .clone()
+                .unwrap_or_else(|| "(none)".to_string()),
             category: DiffCategory::Quantization,
         });
     }
@@ -939,7 +947,10 @@ mod tests {
     #[test]
     fn test_truncate_value() {
         assert_eq!(truncate_value("short", 10), "short");
-        assert_eq!(truncate_value("this is a very long string", 10), "this is a ...");
+        assert_eq!(
+            truncate_value("this is a very long string", 10),
+            "this is a ..."
+        );
     }
 
     // ========================================================================
@@ -1215,7 +1226,7 @@ mod tests {
             size_bytes: 40,
             stats: Some(TensorStats {
                 min: 0.0,
-                max: 2.0, // Different
+                max: 2.0,  // Different
                 mean: 0.6, // Different
                 std: 0.1,
             }),

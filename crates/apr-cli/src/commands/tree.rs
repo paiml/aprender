@@ -382,8 +382,8 @@ fn format_size(bytes: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::{tempdir, NamedTempFile};
     use std::io::Write;
+    use tempfile::{tempdir, NamedTempFile};
 
     // ========================================================================
     // TreeFormat Tests
@@ -403,7 +403,10 @@ mod tests {
 
     #[test]
     fn test_tree_format_from_str_mermaid() {
-        assert_eq!("mermaid".parse::<TreeFormat>().unwrap(), TreeFormat::Mermaid);
+        assert_eq!(
+            "mermaid".parse::<TreeFormat>().unwrap(),
+            TreeFormat::Mermaid
+        );
         assert_eq!("md".parse::<TreeFormat>().unwrap(), TreeFormat::Mermaid);
     }
 

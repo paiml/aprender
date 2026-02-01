@@ -274,6 +274,5 @@ impl Vad {
     }
 }
 
-
 #[cfg(test)]
 mod tests;

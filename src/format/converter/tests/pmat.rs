@@ -535,7 +535,10 @@ mod tests_gh190_tensor_name_contract {
             ("blk.0.attn_q.bias", "model.layers.0.self_attn.q_proj.bias"),
             ("blk.0.attn_k.bias", "model.layers.0.self_attn.k_proj.bias"),
             ("blk.0.attn_v.bias", "model.layers.0.self_attn.v_proj.bias"),
-            ("blk.0.attn_output.bias", "model.layers.0.self_attn.o_proj.bias"),
+            (
+                "blk.0.attn_output.bias",
+                "model.layers.0.self_attn.o_proj.bias",
+            ),
         ];
 
         for (gguf_name, expected) in bias_cases {
@@ -551,7 +554,10 @@ mod tests_gh190_tensor_name_contract {
     #[test]
     fn test_gh190_gguf_norm_tensors_hf_convention() {
         let norm_cases = [
-            ("blk.0.attn_norm.weight", "model.layers.0.input_layernorm.weight"),
+            (
+                "blk.0.attn_norm.weight",
+                "model.layers.0.input_layernorm.weight",
+            ),
             (
                 "blk.0.ffn_norm.weight",
                 "model.layers.0.post_attention_layernorm.weight",
@@ -593,10 +599,7 @@ mod tests_gh190_tensor_name_contract {
         // PMAT-222: Mapped names use HuggingFace convention (most have "model." prefix)
         // Only lm_head.weight lacks the prefix (HF standard)
         for name in &mapped_names {
-            assert!(
-                !name.is_empty(),
-                "PMAT-222: Mapped name is empty"
-            );
+            assert!(!name.is_empty(), "PMAT-222: Mapped name is empty");
         }
 
         // INVARIANT: All names must be unique
@@ -657,7 +660,7 @@ mod tests_gh190_tensor_name_contract {
 
 #[cfg(test)]
 mod tests_gh194_tensor_count_preservation {
-    use crate::format::v2::{AprV2Writer, AprV2Metadata, TensorDType};
+    use crate::format::v2::{AprV2Metadata, AprV2Writer, TensorDType};
 
     /// GH-194 INVARIANT: Writer must write exactly as many tensors as added.
     #[test]

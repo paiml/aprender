@@ -1205,6 +1205,8 @@ impl RosettaStone {
 
         match (source_format, target_format) {
             // GGUF/SafeTensors → APR (same conversion path via apr_import)
+            // GH-196: Default ImportOptions are permissive (strict=false),
+            // so format conversion proceeds with warnings for unverified architectures.
             (FormatType::Gguf | FormatType::SafeTensors, FormatType::Apr) => {
                 let source_str = source.to_string_lossy();
                 apr_import(&source_str, target, ImportOptions::default())?;
@@ -1375,7 +1377,6 @@ impl Default for RosettaStone {
 // ============================================================================
 // Tests (Extreme TDD - Popperian Falsification)
 // ============================================================================
-
 
 #[cfg(test)]
 mod tests;

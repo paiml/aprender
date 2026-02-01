@@ -666,6 +666,5 @@ pub fn generate_column_mask(
     SparsityMask::new(Tensor::new(&mask_data, shape), SparsityPattern::Column)
 }
 
-
 #[cfg(test)]
 mod tests;

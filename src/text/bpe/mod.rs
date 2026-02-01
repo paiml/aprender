@@ -905,6 +905,5 @@ pub fn load_from_files(vocab_json: &str, merges_txt: &str) -> Result<BpeTokenize
 // Tests
 // ============================================================================
 
-
 #[cfg(test)]
 mod tests;

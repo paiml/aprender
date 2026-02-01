@@ -68,7 +68,8 @@ fn d50_01_abrupt_disconnect_during_request() {
         let _ = stream.set_write_timeout(Some(Duration::from_secs(1)));
 
         // Send valid health request
-        let _ = stream.write_all(b"GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n");
+        let _ = stream
+            .write_all(b"GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n");
         let _ = stream.flush();
 
         let mut response = String::new();
@@ -78,7 +79,10 @@ fn d50_01_abrupt_disconnect_during_request() {
             response.contains("200") || response.contains("OK"),
             "Server should respond to health check after client abort. Got: {response}"
         );
-        println!("Server recovered: {}", response.lines().next().unwrap_or(""));
+        println!(
+            "Server recovered: {}",
+            response.lines().next().unwrap_or("")
+        );
     } else {
         panic!("Server became unresponsive after client abort");
     }
@@ -118,7 +122,8 @@ fn d50_02_multiple_abrupt_disconnects() {
         let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
         let _ = stream.set_write_timeout(Some(Duration::from_secs(1)));
 
-        let _ = stream.write_all(b"GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n");
+        let _ = stream
+            .write_all(b"GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n");
         let _ = stream.flush();
 
         let mut response = String::new();
@@ -184,7 +189,8 @@ fn d50_03_disconnect_during_streaming() {
         let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
         let _ = stream.set_write_timeout(Some(Duration::from_secs(1)));
 
-        let _ = stream.write_all(b"GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n");
+        let _ = stream
+            .write_all(b"GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n");
         let _ = stream.flush();
 
         let mut response = String::new();
@@ -222,7 +228,9 @@ fn d50_04_concurrent_disconnects() {
             thread::spawn(move || {
                 if let Ok(mut stream) = TcpStream::connect(&host) {
                     let _ = stream.set_write_timeout(Some(Duration::from_millis(100)));
-                    let _ = stream.write_all(format!("GET /health HTTP/1.1\r\nX-Request: {i}\r\n").as_bytes());
+                    let _ = stream.write_all(
+                        format!("GET /health HTTP/1.1\r\nX-Request: {i}\r\n").as_bytes(),
+                    );
                     // Abrupt drop
                 }
             })
@@ -243,7 +251,8 @@ fn d50_04_concurrent_disconnects() {
         let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
         let _ = stream.set_write_timeout(Some(Duration::from_secs(1)));
 
-        let _ = stream.write_all(b"GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n");
+        let _ = stream
+            .write_all(b"GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n");
         let _ = stream.flush();
 
         let mut response = String::new();
@@ -293,7 +302,8 @@ fn d50_05_idle_connection_timeout() {
         let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
         let _ = stream.set_write_timeout(Some(Duration::from_secs(1)));
 
-        let _ = stream.write_all(b"GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n");
+        let _ = stream
+            .write_all(b"GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n");
         let _ = stream.flush();
 
         let mut response = String::new();

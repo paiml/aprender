@@ -747,6 +747,5 @@ pub fn estimate_shard_memory(file_size: u64) -> u64 {
 // Tests
 // ============================================================================
 
-
 #[cfg(test)]
 mod tests;

@@ -2619,7 +2619,8 @@ mod tests {
     fn test_format_prediction_output_single() {
         use std::time::Duration;
         let options = RunOptions::default();
-        let result = format_prediction_output(&[0.9, 0.05, 0.05], Duration::from_millis(100), &options);
+        let result =
+            format_prediction_output(&[0.9, 0.05, 0.05], Duration::from_millis(100), &options);
         assert!(result.is_ok());
     }
 

@@ -1353,13 +1353,7 @@ mod tests {
 
     #[test]
     fn test_gate_result_clone() {
-        let result = GateResult::passed(
-            "test",
-            "ok",
-            Some(100.0),
-            None,
-            Duration::from_secs(1),
-        );
+        let result = GateResult::passed("test", "ok", Some(100.0), None, Duration::from_secs(1));
         let cloned = result.clone();
         assert_eq!(cloned.name, result.name);
         assert_eq!(cloned.passed, result.passed);
@@ -1367,13 +1361,7 @@ mod tests {
 
     #[test]
     fn test_gate_result_debug() {
-        let result = GateResult::passed(
-            "test",
-            "ok",
-            None,
-            None,
-            Duration::from_secs(0),
-        );
+        let result = GateResult::passed("test", "ok", None, None, Duration::from_secs(0));
         let debug = format!("{result:?}");
         assert!(debug.contains("GateResult"));
     }
@@ -1394,7 +1382,8 @@ mod tests {
 
     #[test]
     fn test_gate_result_deserialize() {
-        let json = r#"{"name":"test","passed":true,"message":"ok","duration_ms":1000,"skipped":false}"#;
+        let json =
+            r#"{"name":"test","passed":true,"message":"ok","duration_ms":1000,"skipped":false}"#;
         let result: GateResult = serde_json::from_str(json).expect("deserialize");
         assert_eq!(result.name, "test");
         assert!(result.passed);
@@ -1468,7 +1457,13 @@ mod tests {
             passed: true,
             gates: vec![
                 GateResult::passed("golden", "ok", None, None, Duration::from_secs(1)),
-                GateResult::passed("throughput", "ok", Some(100.0), Some(60.0), Duration::from_secs(2)),
+                GateResult::passed(
+                    "throughput",
+                    "ok",
+                    Some(100.0),
+                    Some(60.0),
+                    Duration::from_secs(2),
+                ),
                 GateResult::skipped("ollama", "skipped"),
             ],
             total_duration_ms: 3000,
@@ -1565,9 +1560,9 @@ mod tests {
 
         let result = run(
             file.path(),
-            Some(50.0),   // min_tps
-            Some(1.5),    // min_speedup
-            Some(3.0),    // min_gpu_speedup
+            Some(50.0), // min_tps
+            Some(1.5),  // min_speedup
+            Some(3.0),  // min_gpu_speedup
             false,
             false,
             false,
@@ -1594,11 +1589,11 @@ mod tests {
             None,
             None,
             None,
-            true,  // skip_golden
-            true,  // skip_throughput
-            true,  // skip_ollama
-            true,  // skip_gpu_speedup
-            true,  // skip_format_parity
+            true, // skip_golden
+            true, // skip_throughput
+            true, // skip_ollama
+            true, // skip_gpu_speedup
+            true, // skip_format_parity
             None,
             10,
             3,
@@ -1629,7 +1624,7 @@ mod tests {
             10,
             3,
             32,
-            true,  // json output
+            true, // json output
             false,
         );
         // Should fail (invalid file)
@@ -1656,7 +1651,7 @@ mod tests {
             3,
             32,
             false,
-            true,  // verbose
+            true, // verbose
         );
         // Should fail (invalid file)
         assert!(result.is_err());
@@ -1678,7 +1673,7 @@ mod tests {
             false,
             false,
             false,
-            Some(st_file.path().to_path_buf()),  // safetensors path
+            Some(st_file.path().to_path_buf()), // safetensors path
             10,
             3,
             32,
@@ -1705,9 +1700,9 @@ mod tests {
             false,
             false,
             None,
-            1,  // small iterations
-            0,  // no warmup
-            8,  // small max tokens
+            1, // small iterations
+            0, // no warmup
+            8, // small max tokens
             false,
             false,
         );

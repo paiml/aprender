@@ -450,8 +450,7 @@ fn test_integration_pattern_library_workflow() {
 
     let source_code = "pub fn foo() -> String { 42 }";
     let embedding = encoder.encode(&diag, source_code);
-    let template =
-        FixTemplate::new("$expr.to_string()", "Convert to String").with_code("E0308");
+    let template = FixTemplate::new("$expr.to_string()", "Convert to String").with_code("E0308");
 
     lib.add_pattern(embedding.clone(), template);
     assert_eq!(lib.len(), 1);
@@ -701,8 +700,8 @@ fn test_apply_fix_start_offset_out_of_bounds() {
         .expect("Should build");
 
     let source = "let x = 42;";
-    let fix = SuggestedFix::new("replacement".to_string(), 0.9, "Test".to_string())
-        .with_span(100, 105); // start >= source.len()
+    let fix =
+        SuggestedFix::new("replacement".to_string(), 0.9, "Test".to_string()).with_span(100, 105); // start >= source.len()
 
     let result = citl.apply_fix(source, &fix);
     assert_eq!(result, source); // Should return original source unchanged
@@ -1134,9 +1133,13 @@ fn test_citl_suggest_fix_no_match() {
 
 #[test]
 fn test_suggested_fix_with_span() {
-    let fix = SuggestedFix::new("fix text".to_string(), 0.95, "Test fix description".to_string())
-        .with_span(10, 20)
-        .with_error_code("E0308");
+    let fix = SuggestedFix::new(
+        "fix text".to_string(),
+        0.95,
+        "Test fix description".to_string(),
+    )
+    .with_span(10, 20)
+    .with_error_code("E0308");
 
     assert_eq!(fix.replacement, "fix text");
     assert!((fix.confidence - 0.95).abs() < f32::EPSILON);

@@ -688,6 +688,5 @@ fn apply_dropout(input: &Tensor, p: f32, rng: &Mutex<StdRng>) -> Tensor {
     Tensor::new(&data, input.shape())
 }
 
-
 #[cfg(test)]
 mod tests;

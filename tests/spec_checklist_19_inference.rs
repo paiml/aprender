@@ -296,7 +296,7 @@ fn z_import_qwen2_0_5b_instruct_infra() {
         validation: ValidationConfig::Strict,
         quantize: None,
         compress: None,
-        force: false,
+        strict: false,
         cache: true,
     };
     assert_eq!(options.architecture, Architecture::Qwen2);
@@ -336,7 +336,7 @@ fn z_import_qwen25_coder_0_5b_infra() {
         validation: ValidationConfig::Basic,
         quantize: Some(aprender::format::converter::QuantizationType::Int4),
         compress: None,
-        force: true,
+        strict: false,
         cache: false,
     };
     assert!(options.quantize.is_some(), "INT4 quantization supported");

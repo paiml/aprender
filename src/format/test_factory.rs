@@ -196,7 +196,11 @@ pub fn build_pygmy_safetensors_with_config(config: PygmyConfig) -> Vec<u8> {
     // Final norm
     if config.include_norms && config.num_layers > 0 {
         let norm_data: Vec<f32> = vec![1.0; config.hidden_size];
-        tensors.push(("model.norm.weight".to_string(), vec![config.hidden_size], norm_data));
+        tensors.push((
+            "model.norm.weight".to_string(),
+            vec![config.hidden_size],
+            norm_data,
+        ));
     }
 
     // LM head: [vocab_size, hidden_size]
@@ -289,7 +293,9 @@ pub fn build_pygmy_apr_with_config(config: PygmyConfig) -> Vec<u8> {
     metadata.hidden_size = Some(config.hidden_size);
     metadata.vocab_size = Some(config.vocab_size);
     metadata.num_layers = Some(config.num_layers);
-    metadata.custom.insert("pygmy".to_string(), serde_json::json!(true));
+    metadata
+        .custom
+        .insert("pygmy".to_string(), serde_json::json!(true));
 
     let mut writer = AprV2Writer::new(metadata);
 
@@ -634,13 +640,13 @@ pub fn build_pygmy_quantize_data() -> Vec<f32> {
     }
 
     // Edge case values
-    data.push(0.0);           // Zero
-    data.push(1.0);           // Max normal
-    data.push(-1.0);          // Min normal
-    data.push(0.5);           // Mid positive
-    data.push(-0.5);          // Mid negative
+    data.push(0.0); // Zero
+    data.push(1.0); // Max normal
+    data.push(-1.0); // Min normal
+    data.push(0.5); // Mid positive
+    data.push(-0.5); // Mid negative
     for _ in 0..27 {
-        data.push(0.001);     // Small values
+        data.push(0.001); // Small values
     }
 
     data
@@ -716,8 +722,13 @@ pub fn build_pygmy_apr_gguf_names_with_config(config: GgufPygmyConfig) -> Vec<u8
     metadata.hidden_size = Some(config.hidden_size);
     metadata.vocab_size = Some(config.vocab_size);
     metadata.num_layers = Some(config.num_layers);
-    metadata.custom.insert("naming".to_string(), serde_json::json!("gguf"));
-    metadata.custom.insert("weight_tying".to_string(), serde_json::json!(config.weight_tying));
+    metadata
+        .custom
+        .insert("naming".to_string(), serde_json::json!("gguf"));
+    metadata.custom.insert(
+        "weight_tying".to_string(),
+        serde_json::json!(config.weight_tying),
+    );
 
     let mut writer = AprV2Writer::new(metadata);
 
@@ -821,8 +832,12 @@ pub fn build_pygmy_apr_hf_names_tied() -> Vec<u8> {
     metadata.hidden_size = Some(config.hidden_size);
     metadata.vocab_size = Some(config.vocab_size);
     metadata.num_layers = Some(config.num_layers);
-    metadata.custom.insert("naming".to_string(), serde_json::json!("huggingface"));
-    metadata.custom.insert("weight_tying".to_string(), serde_json::json!(true));
+    metadata
+        .custom
+        .insert("naming".to_string(), serde_json::json!("huggingface"));
+    metadata
+        .custom
+        .insert("weight_tying".to_string(), serde_json::json!(true));
 
     let mut writer = AprV2Writer::new(metadata);
 
@@ -897,6 +912,584 @@ pub fn build_pygmy_apr_hf_names_tied() -> Vec<u8> {
     // realizaer must find lm_head via model.embed_tokens.weight or embed_tokens.weight
 
     writer.write().unwrap_or_default()
+}
+
+// ============================================================================
+// Conversion Test Harness (rosetta-testing.md spec)
+// ============================================================================
+
+/// SQLite-style conversion test harness for SafeTensors <-> APR round-trips.
+///
+/// Uses `TempDir` for RAII cleanup (no manual `fs::remove_file`), pygmy builders
+/// for input data, and read-back verification with configurable tolerance.
+///
+/// # Example
+///
+/// ```rust,ignore
+/// use crate::format::test_factory::harness::ConversionTestHarness;
+/// use crate::format::test_factory::PygmyConfig;
+///
+/// ConversionTestHarness::assert_import_ok(PygmyConfig::llama_style());
+/// ConversionTestHarness::assert_roundtrip_ok(PygmyConfig::default());
+/// ```
+#[cfg(test)]
+pub(crate) mod harness {
+    use super::{build_pygmy_apr_with_config, build_pygmy_safetensors_with_config, PygmyConfig};
+    use crate::format::converter::{
+        apr_export, apr_import, ExportFormat, ExportOptions, ImportOptions,
+    };
+    use crate::format::v2::AprV2Reader;
+    use crate::serialization::safetensors::MappedSafeTensors;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use tempfile::TempDir;
+
+    /// Tolerance thresholds per dtype for tensor data comparison.
+    #[derive(Debug, Clone, Copy)]
+    pub(crate) struct ToleranceConfig {
+        pub(crate) f32_atol: f32,
+        pub(crate) f16_atol: f32,
+        pub(crate) q8_atol: f32,
+        pub(crate) q4_atol: f32,
+    }
+
+    impl Default for ToleranceConfig {
+        fn default() -> Self {
+            Self {
+                f32_atol: 1e-6,
+                f16_atol: 1e-3,
+                q8_atol: 0.1,
+                q4_atol: 0.5,
+            }
+        }
+    }
+
+    /// A single tensor mismatch found during verification.
+    #[derive(Debug)]
+    pub(crate) struct TensorMismatch {
+        pub(crate) tensor_name: String,
+        pub(crate) kind: MismatchKind,
+    }
+
+    /// What went wrong with a tensor comparison.
+    #[derive(Debug)]
+    pub(crate) enum MismatchKind {
+        Missing,
+        ShapeMismatch {
+            expected: Vec<usize>,
+            actual: Vec<usize>,
+        },
+        DataMismatch {
+            index: usize,
+            expected: f32,
+            actual: f32,
+            tolerance: f32,
+        },
+    }
+
+    impl core::fmt::Display for TensorMismatch {
+        fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            match &self.kind {
+                MismatchKind::Missing => {
+                    write!(f, "tensor '{}': missing in output", self.tensor_name)
+                }
+                MismatchKind::ShapeMismatch { expected, actual } => {
+                    write!(
+                        f,
+                        "tensor '{}': shape mismatch expected={:?} actual={:?}",
+                        self.tensor_name, expected, actual
+                    )
+                }
+                MismatchKind::DataMismatch {
+                    index,
+                    expected,
+                    actual,
+                    tolerance,
+                } => {
+                    write!(
+                        f,
+                        "tensor '{}': data[{}] expected={} actual={} (tol={})",
+                        self.tensor_name, index, expected, actual, tolerance
+                    )
+                }
+            }
+        }
+    }
+
+    /// Result of a verification pass.
+    #[derive(Debug)]
+    pub(crate) struct VerificationResult {
+        pub(crate) mismatches: Vec<TensorMismatch>,
+    }
+
+    impl VerificationResult {
+        /// Panics with detailed info if any mismatches were found.
+        pub(crate) fn assert_passed(&self) {
+            if !self.mismatches.is_empty() {
+                let msgs: Vec<String> = self.mismatches.iter().map(ToString::to_string).collect();
+                panic!(
+                    "Verification failed with {} mismatch(es):\n  {}",
+                    self.mismatches.len(),
+                    msgs.join("\n  ")
+                );
+            }
+        }
+
+        #[must_use]
+        pub(crate) fn passed(&self) -> bool {
+            self.mismatches.is_empty()
+        }
+    }
+
+    /// RAII conversion test harness. The `TempDir` is dropped (cleaned up)
+    /// when the harness goes out of scope.
+    pub(crate) struct ConversionTestHarness {
+        dir: TempDir,
+        input_path: Option<PathBuf>,
+        output_path: Option<PathBuf>,
+        /// Original pygmy tensor data for verification (name -> (data, shape))
+        source_tensors: Vec<(String, Vec<f32>, Vec<usize>)>,
+        pub(crate) tolerance: ToleranceConfig,
+    }
+
+    impl ConversionTestHarness {
+        /// Create a new empty harness with a fresh temp directory.
+        pub(crate) fn new() -> Self {
+            Self {
+                dir: TempDir::new().expect("Failed to create temp dir for test harness"),
+                input_path: None,
+                output_path: None,
+                source_tensors: Vec::new(),
+                tolerance: ToleranceConfig::default(),
+            }
+        }
+
+        /// Access the temp directory path.
+        pub(crate) fn dir(&self) -> &Path {
+            self.dir.path()
+        }
+
+        // ----------------------------------------------------------------
+        // Setup: write pygmy input files
+        // ----------------------------------------------------------------
+
+        /// Write a pygmy SafeTensors file into the temp dir and record
+        /// the source tensor data for later verification.
+        pub(crate) fn with_safetensors(mut self, config: PygmyConfig) -> Self {
+            let bytes = build_pygmy_safetensors_with_config(config.clone());
+            let path = self.dir.path().join("input.safetensors");
+            fs::write(&path, &bytes).expect("Failed to write pygmy safetensors");
+
+            // Record source tensors for verification
+            self.source_tensors = collect_pygmy_tensors(&config);
+            self.input_path = Some(path);
+            self
+        }
+
+        /// Write a pygmy APR file into the temp dir.
+        pub(crate) fn with_apr(mut self, config: PygmyConfig) -> Self {
+            let bytes = build_pygmy_apr_with_config(config.clone());
+            let path = self.dir.path().join("input.apr");
+            fs::write(&path, &bytes).expect("Failed to write pygmy apr");
+
+            self.source_tensors = collect_pygmy_tensors(&config);
+            self.input_path = Some(path);
+            self
+        }
+
+        // ----------------------------------------------------------------
+        // Exercise: run real pipeline
+        // ----------------------------------------------------------------
+
+        /// Import the input SafeTensors to APR using `apr_import`.
+        pub(crate) fn import_to_apr(mut self, options: ImportOptions) -> Self {
+            let input = self
+                .input_path
+                .as_ref()
+                .expect("Call with_safetensors() first");
+            let output = self.dir.path().join("output.apr");
+            let input_str = input.to_string_lossy().to_string();
+
+            let result = apr_import(&input_str, &output, options);
+            assert!(
+                result.is_ok(),
+                "apr_import failed: {:?}",
+                result.unwrap_err()
+            );
+
+            self.output_path = Some(output);
+            self
+        }
+
+        /// Import and return the Result (for testing error paths).
+        pub(crate) fn try_import_to_apr(
+            &self,
+            options: ImportOptions,
+        ) -> crate::error::Result<crate::format::validation::ValidationReport> {
+            let input = self
+                .input_path
+                .as_ref()
+                .expect("Call with_safetensors() first");
+            let output = self.dir.path().join("output.apr");
+            let input_str = input.to_string_lossy().to_string();
+            apr_import(&input_str, &output, options)
+        }
+
+        /// Export the output APR back to SafeTensors using `apr_export`.
+        pub(crate) fn export_to_safetensors(mut self) -> Self {
+            let input = self
+                .output_path
+                .as_ref()
+                .expect("Call import_to_apr() first");
+            let output = self.dir.path().join("roundtrip.safetensors");
+
+            let options = ExportOptions {
+                format: ExportFormat::SafeTensors,
+                quantize: None,
+                include_tokenizer: false,
+                include_config: false,
+            };
+            let result = apr_export(input, &output, options);
+            assert!(
+                result.is_ok(),
+                "apr_export failed: {:?}",
+                result.unwrap_err()
+            );
+
+            self.output_path = Some(output);
+            self
+        }
+
+        // ----------------------------------------------------------------
+        // Verify: read back output and compare
+        // ----------------------------------------------------------------
+
+        /// Read back the output file and verify tensor data matches source.
+        pub(crate) fn verify_apr(&self) -> VerificationResult {
+            let output = self
+                .output_path
+                .as_ref()
+                .expect("No output path set -- run import first");
+            let data = fs::read(output).expect("Failed to read output APR");
+            let reader =
+                AprV2Reader::from_bytes(&data).expect("Failed to parse output APR");
+
+            let mut mismatches = Vec::new();
+            let tolerance = self.tolerance.f32_atol;
+
+            for (name, expected_data, expected_shape) in &self.source_tensors {
+                // Check tensor exists
+                let entry = match reader.get_tensor(name) {
+                    Some(e) => e,
+                    None => {
+                        mismatches.push(TensorMismatch {
+                            tensor_name: name.clone(),
+                            kind: MismatchKind::Missing,
+                        });
+                        continue;
+                    }
+                };
+
+                // Check shape
+                if &entry.shape != expected_shape {
+                    mismatches.push(TensorMismatch {
+                        tensor_name: name.clone(),
+                        kind: MismatchKind::ShapeMismatch {
+                            expected: expected_shape.clone(),
+                            actual: entry.shape.clone(),
+                        },
+                    });
+                    continue;
+                }
+
+                // Check data values
+                if let Some(actual_data) = reader.get_tensor_as_f32(name) {
+                    for (i, (&exp, &act)) in
+                        expected_data.iter().zip(actual_data.iter()).enumerate()
+                    {
+                        if (exp - act).abs() > tolerance {
+                            mismatches.push(TensorMismatch {
+                                tensor_name: name.clone(),
+                                kind: MismatchKind::DataMismatch {
+                                    index: i,
+                                    expected: exp,
+                                    actual: act,
+                                    tolerance,
+                                },
+                            });
+                            break; // One mismatch per tensor is enough
+                        }
+                    }
+                }
+            }
+
+            VerificationResult { mismatches }
+        }
+
+        /// Read back the output SafeTensors and verify tensor data matches source.
+        pub(crate) fn verify_safetensors(&self) -> VerificationResult {
+            let output = self
+                .output_path
+                .as_ref()
+                .expect("No output path set -- run export first");
+            let mapped = MappedSafeTensors::open(output)
+                .expect("Failed to open output SafeTensors");
+
+            let mut mismatches = Vec::new();
+            let tolerance = self.tolerance.f32_atol;
+
+            for (name, expected_data, expected_shape) in &self.source_tensors {
+                let meta = match mapped.get_metadata(name) {
+                    Some(m) => m,
+                    None => {
+                        mismatches.push(TensorMismatch {
+                            tensor_name: name.clone(),
+                            kind: MismatchKind::Missing,
+                        });
+                        continue;
+                    }
+                };
+
+                if &meta.shape != expected_shape {
+                    mismatches.push(TensorMismatch {
+                        tensor_name: name.clone(),
+                        kind: MismatchKind::ShapeMismatch {
+                            expected: expected_shape.clone(),
+                            actual: meta.shape.clone(),
+                        },
+                    });
+                    continue;
+                }
+
+                if let Ok(actual_data) = mapped.get_tensor(name) {
+                    for (i, (&exp, &act)) in
+                        expected_data.iter().zip(actual_data.iter()).enumerate()
+                    {
+                        if (exp - act).abs() > tolerance {
+                            mismatches.push(TensorMismatch {
+                                tensor_name: name.clone(),
+                                kind: MismatchKind::DataMismatch {
+                                    index: i,
+                                    expected: exp,
+                                    actual: act,
+                                    tolerance,
+                                },
+                            });
+                            break;
+                        }
+                    }
+                }
+            }
+
+            VerificationResult { mismatches }
+        }
+
+        /// Get the output APR path (for manual inspection).
+        pub(crate) fn output_path(&self) -> Option<&Path> {
+            self.output_path.as_deref()
+        }
+
+        /// Get the input path.
+        pub(crate) fn input_path(&self) -> Option<&Path> {
+            self.input_path.as_deref()
+        }
+
+        // ----------------------------------------------------------------
+        // Convenience one-liners
+        // ----------------------------------------------------------------
+
+        /// Import pygmy SafeTensors -> APR with default options and verify.
+        pub(crate) fn assert_import_ok(config: PygmyConfig) {
+            let h = Self::new()
+                .with_safetensors(config)
+                .import_to_apr(ImportOptions::default());
+            h.verify_apr().assert_passed();
+        }
+
+        /// Full round-trip: SafeTensors -> APR -> SafeTensors, verify data preserved.
+        pub(crate) fn assert_roundtrip_ok(config: PygmyConfig) {
+            let h = Self::new()
+                .with_safetensors(config)
+                .import_to_apr(ImportOptions::default())
+                .export_to_safetensors();
+            h.verify_safetensors().assert_passed();
+        }
+    }
+
+    /// Collect the tensor names, data, and shapes that a pygmy config would produce.
+    /// Mirrors the logic in `build_pygmy_safetensors_with_config`.
+    fn collect_pygmy_tensors(config: &PygmyConfig) -> Vec<(String, Vec<f32>, Vec<usize>)> {
+        let mut tensors = Vec::new();
+
+        if config.include_embedding {
+            let data: Vec<f32> = (0..config.vocab_size * config.hidden_size)
+                .map(|i| ((i % 100) as f32 - 50.0) / 1000.0)
+                .collect();
+            tensors.push((
+                "model.embed_tokens.weight".to_string(),
+                data,
+                vec![config.vocab_size, config.hidden_size],
+            ));
+        }
+
+        for layer_idx in 0..config.num_layers {
+            if config.include_norms {
+                let norm_data: Vec<f32> = vec![1.0; config.hidden_size];
+                tensors.push((
+                    format!("model.layers.{layer_idx}.input_layernorm.weight"),
+                    norm_data.clone(),
+                    vec![config.hidden_size],
+                ));
+                tensors.push((
+                    format!("model.layers.{layer_idx}.post_attention_layernorm.weight"),
+                    norm_data,
+                    vec![config.hidden_size],
+                ));
+            }
+
+            if config.include_attention {
+                let qkvo_data: Vec<f32> = (0..config.hidden_size * config.hidden_size)
+                    .map(|i| ((i % 200) as f32 - 100.0) / 2000.0)
+                    .collect();
+                for suffix in &["q_proj", "k_proj", "v_proj", "o_proj"] {
+                    tensors.push((
+                        format!("model.layers.{layer_idx}.self_attn.{suffix}.weight"),
+                        qkvo_data.clone(),
+                        vec![config.hidden_size, config.hidden_size],
+                    ));
+                }
+            }
+
+            if config.include_mlp {
+                let intermediate = config.hidden_size * 2;
+                let gate_up_data: Vec<f32> = (0..intermediate * config.hidden_size)
+                    .map(|i| ((i % 200) as f32 - 100.0) / 2000.0)
+                    .collect();
+                let down_data: Vec<f32> = (0..config.hidden_size * intermediate)
+                    .map(|i| ((i % 200) as f32 - 100.0) / 2000.0)
+                    .collect();
+
+                tensors.push((
+                    format!("model.layers.{layer_idx}.mlp.gate_proj.weight"),
+                    gate_up_data.clone(),
+                    vec![intermediate, config.hidden_size],
+                ));
+                tensors.push((
+                    format!("model.layers.{layer_idx}.mlp.up_proj.weight"),
+                    gate_up_data,
+                    vec![intermediate, config.hidden_size],
+                ));
+                tensors.push((
+                    format!("model.layers.{layer_idx}.mlp.down_proj.weight"),
+                    down_data,
+                    vec![config.hidden_size, intermediate],
+                ));
+            }
+        }
+
+        if config.include_norms && config.num_layers > 0 {
+            let norm_data: Vec<f32> = vec![1.0; config.hidden_size];
+            tensors.push((
+                "model.norm.weight".to_string(),
+                norm_data,
+                vec![config.hidden_size],
+            ));
+        }
+
+        if config.include_embedding {
+            let data: Vec<f32> = (0..config.vocab_size * config.hidden_size)
+                .map(|i| ((i % 100) as f32 - 50.0) / 1000.0)
+                .collect();
+            tensors.push((
+                "lm_head.weight".to_string(),
+                data,
+                vec![config.vocab_size, config.hidden_size],
+            ));
+        }
+
+        tensors
+    }
+
+    // ====================================================================
+    // Harness self-tests
+    // ====================================================================
+
+    #[test]
+    fn test_harness_new_creates_temp_dir() {
+        let h = ConversionTestHarness::new();
+        assert!(h.dir().exists());
+    }
+
+    #[test]
+    fn test_harness_with_safetensors_writes_file() {
+        let h = ConversionTestHarness::new().with_safetensors(PygmyConfig::default());
+        assert!(h.input_path().is_some());
+        assert!(h.input_path().expect("input").exists());
+    }
+
+    #[test]
+    fn test_harness_with_apr_writes_file() {
+        let h = ConversionTestHarness::new().with_apr(PygmyConfig::default());
+        assert!(h.input_path().is_some());
+        assert!(h.input_path().expect("input").exists());
+    }
+
+    #[test]
+    fn test_harness_import_produces_output() {
+        let h = ConversionTestHarness::new()
+            .with_safetensors(PygmyConfig::default())
+            .import_to_apr(ImportOptions::default());
+        assert!(h.output_path().is_some());
+        assert!(h.output_path().expect("output").exists());
+    }
+
+    #[test]
+    fn test_harness_assert_import_ok_default() {
+        ConversionTestHarness::assert_import_ok(PygmyConfig::default());
+    }
+
+    #[test]
+    fn test_harness_assert_import_ok_llama() {
+        ConversionTestHarness::assert_import_ok(PygmyConfig::llama_style());
+    }
+
+    #[test]
+    fn test_harness_assert_import_ok_minimal() {
+        ConversionTestHarness::assert_import_ok(PygmyConfig::minimal());
+    }
+
+    #[test]
+    fn test_harness_assert_roundtrip_ok_default() {
+        ConversionTestHarness::assert_roundtrip_ok(PygmyConfig::default());
+    }
+
+    #[test]
+    fn test_harness_assert_roundtrip_ok_llama() {
+        ConversionTestHarness::assert_roundtrip_ok(PygmyConfig::llama_style());
+    }
+
+    #[test]
+    fn test_harness_assert_roundtrip_ok_minimal() {
+        ConversionTestHarness::assert_roundtrip_ok(PygmyConfig::minimal());
+    }
+
+    #[test]
+    fn test_harness_verify_apr_checks_shapes() {
+        let h = ConversionTestHarness::new()
+            .with_safetensors(PygmyConfig::default())
+            .import_to_apr(ImportOptions::default());
+        let result = h.verify_apr();
+        assert!(result.passed(), "Default import should verify cleanly");
+    }
+
+    #[test]
+    fn test_tolerance_config_default() {
+        let t = ToleranceConfig::default();
+        assert!((t.f32_atol - 1e-6).abs() < 1e-9);
+        assert!((t.f16_atol - 1e-3).abs() < 1e-6);
+        assert!((t.q8_atol - 0.1).abs() < 1e-6);
+        assert!((t.q4_atol - 0.5).abs() < 1e-6);
+    }
 }
 
 // ============================================================================
@@ -1102,8 +1695,8 @@ mod tests {
         fn test_pygmy_encrypted_wrong_password_fails() {
             use crate::format::{load_encrypted, ModelType};
             use serde::{Deserialize, Serialize};
-            use tempfile::NamedTempFile;
             use std::io::Write;
+            use tempfile::NamedTempFile;
 
             #[derive(Debug, Serialize, Deserialize)]
             struct PygmyModel {
@@ -1153,8 +1746,8 @@ mod tests {
         fn test_pygmy_signed_roundtrip() {
             use crate::format::{load_verified, ModelType};
             use serde::{Deserialize, Serialize};
-            use tempfile::NamedTempFile;
             use std::io::Write;
+            use tempfile::NamedTempFile;
 
             #[derive(Debug, Serialize, Deserialize, PartialEq)]
             struct PygmyModel {
@@ -1191,8 +1784,8 @@ mod tests {
         fn test_pygmy_signed_tampering_detected() {
             use crate::format::{load_verified, ModelType};
             use serde::{Deserialize, Serialize};
-            use tempfile::NamedTempFile;
             use std::io::Write;
+            use tempfile::NamedTempFile;
 
             #[derive(Debug, Serialize, Deserialize)]
             struct PygmyModel {
@@ -1492,7 +2085,11 @@ mod tests {
                     name
                 );
                 let bytes = tensor_data.unwrap();
-                assert!(!bytes.is_empty(), "GH-194: Tensor '{}' must not be empty", name);
+                assert!(
+                    !bytes.is_empty(),
+                    "GH-194: Tensor '{}' must not be empty",
+                    name
+                );
             }
         }
     }

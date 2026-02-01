@@ -704,6 +704,5 @@ const CRC32_TABLE: [u32; 256] = [
     0x2D02_EF8D,
 ];
 
-
 #[cfg(test)]
 mod tests;

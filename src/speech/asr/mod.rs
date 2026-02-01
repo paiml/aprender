@@ -730,6 +730,5 @@ impl Iterator for StreamingTranscription {
 // Tests
 // ============================================================================
 
-
 #[cfg(test)]
 mod tests;

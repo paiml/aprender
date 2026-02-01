@@ -393,7 +393,6 @@ fn print_header(path: &Path, config: &BenchConfig) {
     println!();
 }
 
-
 fn print_results(result: &BenchResult) {
     output::section("Results");
     println!();
@@ -518,9 +517,9 @@ fn run_gguf_benchmark(path: &Path, config: &BenchConfig, use_cuda: bool) -> Resu
         .map_err(|e| CliError::ValidationFailed(format!("Failed to parse GGUF: {e}")))?;
 
     // Tokenize prompt
-    let prompt_tokens: Vec<u32> = gguf.encode(&config.prompt).unwrap_or_else(|| {
-        vec![151643, 9707, 11, 358, 1079, 264, 11761, 18328, 13, 9842]
-    });
+    let prompt_tokens: Vec<u32> = gguf
+        .encode(&config.prompt)
+        .unwrap_or_else(|| vec![151643, 9707, 11, 358, 1079, 264, 11761, 18328, 13, 9842]);
 
     let gen_config = QuantizedGenerateConfig {
         max_tokens: config.max_tokens.min(128),
@@ -530,7 +529,15 @@ fn run_gguf_benchmark(path: &Path, config: &BenchConfig, use_cuda: bool) -> Resu
     };
 
     if use_cuda {
-        run_cuda_benchmark(&gguf, &model_bytes, &prompt_tokens, &gen_config, config, start, path)
+        run_cuda_benchmark(
+            &gguf,
+            &model_bytes,
+            &prompt_tokens,
+            &gen_config,
+            config,
+            start,
+            path,
+        )
     } else {
         run_cpu_benchmark(&prompt_tokens, &gen_config, config, start, path)
     }
@@ -563,30 +570,31 @@ fn run_apr_benchmark(path: &Path, config: &BenchConfig, use_cuda: bool) -> Resul
     println!();
 
     // Try to get tokenizer from sibling file
-    let prompt_tokens: Vec<u32> =
-        if let Some(tokenizer) = AprV2Model::load_tokenizer_from_path(&path.with_file_name("tokenizer.json")) {
-            tokenizer.encode(&config.prompt)
-        } else if let Some((vocab, _, _)) = AprV2Model::load_tokenizer_from_sibling(path) {
-            // Simple whitespace tokenization as fallback
-            let token_to_id: std::collections::HashMap<String, u32> = vocab
-                .iter()
-                .enumerate()
-                .map(|(i, t)| (t.clone(), i as u32))
-                .collect();
-            config
-                .prompt
-                .split_whitespace()
-                .filter_map(|w| token_to_id.get(w).copied())
-                .collect()
-        } else {
-            // Fallback tokens
-            vec![1, 2, 3, 4, 5]
-        };
+    let prompt_tokens: Vec<u32> = if let Some(tokenizer) =
+        AprV2Model::load_tokenizer_from_path(&path.with_file_name("tokenizer.json"))
+    {
+        tokenizer.encode(&config.prompt)
+    } else if let Some((vocab, _, _)) = AprV2Model::load_tokenizer_from_sibling(path) {
+        // Simple whitespace tokenization as fallback
+        let token_to_id: std::collections::HashMap<String, u32> = vocab
+            .iter()
+            .enumerate()
+            .map(|(i, t)| (t.clone(), i as u32))
+            .collect();
+        config
+            .prompt
+            .split_whitespace()
+            .filter_map(|w| token_to_id.get(w).copied())
+            .collect()
+    } else {
+        // Fallback tokens
+        vec![1, 2, 3, 4, 5]
+    };
 
     // Generation config for greedy sampling
     let gen_config = GenerateConfig {
         max_tokens: config.max_tokens.min(32),
-        temperature: 0.0,  // Greedy
+        temperature: 0.0, // Greedy
         top_p: 1.0,
         top_k: 0,
         repetition_penalty: 1.0,
@@ -696,7 +704,8 @@ fn run_apr_cuda_benchmark(path: &Path, config: &BenchConfig) -> Result<BenchResu
     for i in 0..config.warmup {
         // Reset KV cache position for each iteration
         model.reset_kv_cache();
-        let _ = model.generate_cuda_with_cache(&prompt_tokens, config.max_tokens.min(16), eos_token);
+        let _ =
+            model.generate_cuda_with_cache(&prompt_tokens, config.max_tokens.min(16), eos_token);
         print!("  Warmup {}/{}\r", i + 1, config.warmup);
         std::io::Write::flush(&mut std::io::stdout()).ok();
     }
@@ -746,7 +755,11 @@ fn run_apr_cuda_benchmark(path: &Path, config: &BenchConfig) -> Result<BenchResu
 /// SafeTensors format benchmark
 /// GH-192: Now supports CUDA GPU acceleration
 #[cfg(feature = "inference")]
-fn run_safetensors_benchmark(path: &Path, config: &BenchConfig, use_cuda: bool) -> Result<BenchResult> {
+fn run_safetensors_benchmark(
+    path: &Path,
+    config: &BenchConfig,
+    use_cuda: bool,
+) -> Result<BenchResult> {
     use realizar::apr::AprV2Model;
     use realizar::safetensors_infer::SafetensorsToAprConverter;
 
@@ -770,13 +783,14 @@ fn run_safetensors_benchmark(path: &Path, config: &BenchConfig, use_cuda: bool) 
     println!();
 
     // Try to load tokenizer from sibling tokenizer.json file
-    let prompt_tokens: Vec<u32> =
-        if let Some(tokenizer) = AprV2Model::load_tokenizer_from_path(&path.with_file_name("tokenizer.json")) {
-            tokenizer.encode(&config.prompt)
-        } else {
-            // Fallback tokens for Qwen2
-            vec![151643, 9707, 11, 358, 1079, 264, 11761, 18328, 13, 9842]
-        };
+    let prompt_tokens: Vec<u32> = if let Some(tokenizer) =
+        AprV2Model::load_tokenizer_from_path(&path.with_file_name("tokenizer.json"))
+    {
+        tokenizer.encode(&config.prompt)
+    } else {
+        // Fallback tokens for Qwen2
+        vec![151643, 9707, 11, 358, 1079, 264, 11761, 18328, 13, 9842]
+    };
 
     // Warmup
     println!("{}", "Running warmup...".yellow());
@@ -831,13 +845,14 @@ fn run_safetensors_cuda_benchmark(path: &Path, config: &BenchConfig) -> Result<B
         .map_err(|e| CliError::ValidationFailed(format!("Failed to load SafeTensors CUDA: {e}")))?;
 
     // Try to load tokenizer from sibling tokenizer.json file
-    let prompt_tokens: Vec<u32> =
-        if let Some(tokenizer) = AprV2Model::load_tokenizer_from_path(&path.with_file_name("tokenizer.json")) {
-            tokenizer.encode(&config.prompt)
-        } else {
-            // Fallback tokens for Qwen2
-            vec![151643, 9707, 11, 358, 1079, 264, 11761, 18328, 13, 9842]
-        };
+    let prompt_tokens: Vec<u32> = if let Some(tokenizer) =
+        AprV2Model::load_tokenizer_from_path(&path.with_file_name("tokenizer.json"))
+    {
+        tokenizer.encode(&config.prompt)
+    } else {
+        // Fallback tokens for Qwen2
+        vec![151643, 9707, 11, 358, 1079, 264, 11761, 18328, 13, 9842]
+    };
 
     // EOS token for Qwen2 models
     let eos_token: u32 = 151645;
@@ -1118,8 +1133,8 @@ fn calculate_benchmark_stats(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::{tempdir, NamedTempFile};
     use std::io::Write;
+    use tempfile::{tempdir, NamedTempFile};
 
     // ========================================================================
     // BenchConfig Tests
@@ -1289,11 +1304,11 @@ mod tests {
         let file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
         let result = run(
             file.path(),
-            3,     // warmup
-            5,     // iterations
-            32,    // max_tokens
-            None,  // prompt
-            false, // fast
+            3,                         // warmup
+            5,                         // iterations
+            32,                        // max_tokens
+            None,                      // prompt
+            false,                     // fast
             Some("invalid_brick_xyz"), // invalid brick name
         );
         // Should fail - either no inference feature or invalid brick
@@ -1306,9 +1321,9 @@ mod tests {
         file.write_all(b"not a real gguf").expect("write");
         let result = run(
             file.path(),
-            1,     // warmup
-            1,     // iterations
-            16,    // max_tokens
+            1,  // warmup
+            1,  // iterations
+            16, // max_tokens
             Some("Custom test prompt"),
             false, // fast
             None,  // brick
@@ -1341,11 +1356,7 @@ mod tests {
     fn test_brick_benchmark_rms_norm() {
         // Create a dummy file
         let file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
-        let _result = run(
-            file.path(),
-            1, 1, 16, None, false,
-            Some("rms_norm"),
-        );
+        let _result = run(file.path(), 1, 1, 16, None, false, Some("rms_norm"));
         // May pass or fail depending on implementation, but should not panic
         // The important thing is the brick name is recognized
     }
@@ -1356,7 +1367,11 @@ mod tests {
         let file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
         let result = run(
             file.path(),
-            1, 1, 16, None, false,
+            1,
+            1,
+            16,
+            None,
+            false,
             Some("nonexistent_brick"),
         );
         assert!(result.is_err());

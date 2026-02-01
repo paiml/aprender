@@ -1,12 +1,12 @@
 //! Tests for decision tree algorithms.
 
-use crate::tree::*;
+use crate::primitives::{Matrix, Vector};
+use crate::traits::Estimator;
 use crate::tree::helpers::{
     bootstrap_sample, build_tree, find_best_split, find_best_split_for_feature, gini_impurity,
     gini_split, majority_class,
 };
-use crate::primitives::{Matrix, Vector};
-use crate::traits::Estimator;
+use crate::tree::*;
 
 // RED Phase: Write failing tests first
 
@@ -962,7 +962,10 @@ fn test_gradient_boosting_default() {
     let gbm1 = GradientBoostingClassifier::new();
     let gbm2 = GradientBoostingClassifier::default();
 
-    assert_eq!(gbm1.configured_n_estimators(), gbm2.configured_n_estimators());
+    assert_eq!(
+        gbm1.configured_n_estimators(),
+        gbm2.configured_n_estimators()
+    );
     assert!((gbm1.learning_rate() - gbm2.learning_rate()).abs() < 1e-6);
     assert_eq!(gbm1.max_depth(), gbm2.max_depth());
 }
@@ -1596,4 +1599,3 @@ fn test_random_forest_regressor_max_depth_effect() {
         "Deeper trees R² {r2_deep} should be at least as good as shallow trees R² {r2_shallow}"
     );
 }
-

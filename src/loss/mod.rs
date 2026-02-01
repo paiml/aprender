@@ -961,6 +961,5 @@ impl Loss for WassersteinLoss {
     }
 }
 
-
 #[cfg(test)]
 mod tests;

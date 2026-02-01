@@ -781,6 +781,5 @@ impl Module for InstanceNorm {
     }
 }
 
-
 #[cfg(test)]
 mod tests;

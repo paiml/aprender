@@ -154,8 +154,7 @@ fn test_fastspeech2_synthesizer() {
 #[test]
 fn test_fastspeech2_unknown_speaker() {
     let synth = FastSpeech2Synthesizer::default_config();
-    let request =
-        SynthesisRequest::new("Hello".to_string()).with_speaker("unknown".to_string());
+    let request = SynthesisRequest::new("Hello".to_string()).with_speaker("unknown".to_string());
     let result = synth.synthesize(&request);
     assert!(matches!(result, Err(SpeechError::InvalidConfig(_))));
 }
@@ -391,8 +390,7 @@ fn test_fastspeech2_new_custom_config() {
 #[test]
 fn test_vits_unknown_speaker() {
     let synth = VitsSynthesizer::default_config();
-    let request =
-        SynthesisRequest::new("Hello".to_string()).with_speaker("unknown".to_string());
+    let request = SynthesisRequest::new("Hello".to_string()).with_speaker("unknown".to_string());
     let result = synth.synthesize(&request);
     assert!(matches!(result, Err(SpeechError::InvalidConfig(_))));
 }

@@ -1716,6 +1716,5 @@ impl Tokenizer for UnigramTokenizer {
     }
 }
 
-
 #[cfg(test)]
 mod tests;

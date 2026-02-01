@@ -1104,6 +1104,5 @@ pub fn global_max_pool(x: &Tensor, batch: Option<&[usize]>) -> Tensor {
     }
 }
 
-
 #[cfg(test)]
 mod tests;

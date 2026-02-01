@@ -494,6 +494,5 @@ pub fn lint_apr_file(path: impl AsRef<Path>) -> Result<LintReport> {
 // TESTS - Written first following EXTREME TDD
 // ============================================================================
 
-
 #[cfg(test)]
 mod tests;

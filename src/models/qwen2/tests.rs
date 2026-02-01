@@ -557,9 +557,7 @@ fn s1_tokenizer_loads_from_json() {
     if !tokenizer_path.exists() {
         eprintln!("SKIP S1: tokenizer.json not found at {:?}", tokenizer_path);
         eprintln!("Download: curl -L -o ~/.cache/qwen2/tokenizer.json \\");
-        eprintln!(
-            "  https://huggingface.co/Qwen/Qwen2-0.5B-Instruct/resolve/main/tokenizer.json"
-        );
+        eprintln!("  https://huggingface.co/Qwen/Qwen2-0.5B-Instruct/resolve/main/tokenizer.json");
         return;
     }
 
@@ -855,8 +853,7 @@ fn test_decoder_layer_forward_profiled() {
     let hidden = Tensor::ones(&[1, 5, 64]);
     let position_ids: Vec<usize> = (0..5).collect();
 
-    let (output, attn_time, mlp_time) =
-        layer.forward_profiled(&hidden, &position_ids, &rope, None);
+    let (output, attn_time, mlp_time) = layer.forward_profiled(&hidden, &position_ids, &rope, None);
 
     assert_eq!(output.shape(), &[1, 5, 64]);
     // Verify timing values are returned (they're always valid Durations)
@@ -897,8 +894,7 @@ fn test_load_from_safetensors_error_path() {
     let config = create_tiny_config();
     let mut model = Qwen2Model::new(&config);
     // Try loading from non-existent path
-    let result =
-        model.load_from_safetensors(std::path::Path::new("/nonexistent/path.safetensors"));
+    let result = model.load_from_safetensors(std::path::Path::new("/nonexistent/path.safetensors"));
     assert!(result.is_err());
 }
 

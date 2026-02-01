@@ -219,9 +219,7 @@ pub use tensors::{
 };
 
 // Re-export diff types (TOOL-APR-002 - format-agnostic comparison)
-pub use diff::{
-    diff_inspections, diff_models, DiffCategory, DiffEntry, DiffOptions, DiffReport,
-};
+pub use diff::{diff_inspections, diff_models, DiffCategory, DiffEntry, DiffOptions, DiffReport};
 
 // Re-export quantization types when feature is enabled
 #[cfg(feature = "format-quantize")]
@@ -302,7 +300,6 @@ pub use signing::*;
 // Re-export encryption functions (PMAT-198 - backward compatibility)
 #[cfg(feature = "format-encryption")]
 pub use encryption::*;
-
 
 #[cfg(test)]
 mod tests;

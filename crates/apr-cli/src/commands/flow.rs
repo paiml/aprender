@@ -656,43 +656,85 @@ mod tests {
 
     #[test]
     fn test_flow_component_from_str_full() {
-        assert_eq!("full".parse::<FlowComponent>().unwrap(), FlowComponent::Full);
+        assert_eq!(
+            "full".parse::<FlowComponent>().unwrap(),
+            FlowComponent::Full
+        );
         assert_eq!("all".parse::<FlowComponent>().unwrap(), FlowComponent::Full);
     }
 
     #[test]
     fn test_flow_component_from_str_encoder() {
-        assert_eq!("encoder".parse::<FlowComponent>().unwrap(), FlowComponent::Encoder);
-        assert_eq!("enc".parse::<FlowComponent>().unwrap(), FlowComponent::Encoder);
-        assert_eq!("ENCODER".parse::<FlowComponent>().unwrap(), FlowComponent::Encoder);
+        assert_eq!(
+            "encoder".parse::<FlowComponent>().unwrap(),
+            FlowComponent::Encoder
+        );
+        assert_eq!(
+            "enc".parse::<FlowComponent>().unwrap(),
+            FlowComponent::Encoder
+        );
+        assert_eq!(
+            "ENCODER".parse::<FlowComponent>().unwrap(),
+            FlowComponent::Encoder
+        );
     }
 
     #[test]
     fn test_flow_component_from_str_decoder() {
-        assert_eq!("decoder".parse::<FlowComponent>().unwrap(), FlowComponent::Decoder);
-        assert_eq!("dec".parse::<FlowComponent>().unwrap(), FlowComponent::Decoder);
+        assert_eq!(
+            "decoder".parse::<FlowComponent>().unwrap(),
+            FlowComponent::Decoder
+        );
+        assert_eq!(
+            "dec".parse::<FlowComponent>().unwrap(),
+            FlowComponent::Decoder
+        );
     }
 
     #[test]
     fn test_flow_component_from_str_self_attention() {
-        assert_eq!("self_attn".parse::<FlowComponent>().unwrap(), FlowComponent::SelfAttention);
-        assert_eq!("self-attn".parse::<FlowComponent>().unwrap(), FlowComponent::SelfAttention);
-        assert_eq!("selfattn".parse::<FlowComponent>().unwrap(), FlowComponent::SelfAttention);
+        assert_eq!(
+            "self_attn".parse::<FlowComponent>().unwrap(),
+            FlowComponent::SelfAttention
+        );
+        assert_eq!(
+            "self-attn".parse::<FlowComponent>().unwrap(),
+            FlowComponent::SelfAttention
+        );
+        assert_eq!(
+            "selfattn".parse::<FlowComponent>().unwrap(),
+            FlowComponent::SelfAttention
+        );
     }
 
     #[test]
     fn test_flow_component_from_str_cross_attention() {
-        assert_eq!("cross_attn".parse::<FlowComponent>().unwrap(), FlowComponent::CrossAttention);
-        assert_eq!("cross-attn".parse::<FlowComponent>().unwrap(), FlowComponent::CrossAttention);
-        assert_eq!("crossattn".parse::<FlowComponent>().unwrap(), FlowComponent::CrossAttention);
-        assert_eq!("encoder_attn".parse::<FlowComponent>().unwrap(), FlowComponent::CrossAttention);
+        assert_eq!(
+            "cross_attn".parse::<FlowComponent>().unwrap(),
+            FlowComponent::CrossAttention
+        );
+        assert_eq!(
+            "cross-attn".parse::<FlowComponent>().unwrap(),
+            FlowComponent::CrossAttention
+        );
+        assert_eq!(
+            "crossattn".parse::<FlowComponent>().unwrap(),
+            FlowComponent::CrossAttention
+        );
+        assert_eq!(
+            "encoder_attn".parse::<FlowComponent>().unwrap(),
+            FlowComponent::CrossAttention
+        );
     }
 
     #[test]
     fn test_flow_component_from_str_ffn() {
         assert_eq!("ffn".parse::<FlowComponent>().unwrap(), FlowComponent::Ffn);
         assert_eq!("mlp".parse::<FlowComponent>().unwrap(), FlowComponent::Ffn);
-        assert_eq!("feedforward".parse::<FlowComponent>().unwrap(), FlowComponent::Ffn);
+        assert_eq!(
+            "feedforward".parse::<FlowComponent>().unwrap(),
+            FlowComponent::Ffn
+        );
     }
 
     #[test]
@@ -757,10 +799,7 @@ mod tests {
 
     #[test]
     fn test_detect_architecture_unknown() {
-        let names = vec![
-            "weight".to_string(),
-            "bias".to_string(),
-        ];
+        let names = vec!["weight".to_string(), "bias".to_string()];
         assert_eq!(detect_architecture(&names), "unknown");
     }
 

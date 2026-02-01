@@ -990,6 +990,5 @@ fn hash_term(term: &str, n_features: usize) -> usize {
     (hasher.finish() as usize) % n_features
 }
 
-
 #[cfg(test)]
 mod tests;

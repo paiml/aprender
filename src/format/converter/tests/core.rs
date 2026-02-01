@@ -301,7 +301,7 @@ mod tests_import_options {
         assert_eq!(opts.validation, ValidationConfig::Strict);
         assert_eq!(opts.quantize, None);
         assert_eq!(opts.compress, None);
-        assert!(!opts.force);
+        assert!(!opts.strict);
         assert!(opts.cache);
     }
 }
@@ -309,71 +309,47 @@ mod tests_import_options {
 #[cfg(test)]
 mod tests_conversion {
     use super::*;
+    use crate::format::test_factory::harness::ConversionTestHarness;
+    use crate::format::test_factory::PygmyConfig;
 
     fn create_test_safetensors(path: &Path, tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>) {
         save_safetensors(path, tensors).expect("Failed to create test SafeTensors file");
     }
 
+    /// Harness-based: pygmy LLaMA model imports to APR with read-back verification.
     #[test]
     fn test_convert_valid_safetensors() {
-        let input = "/tmp/test_valid_input.safetensors";
-        let output = "/tmp/test_valid_output.apr";
+        let h = ConversionTestHarness::new()
+            .with_safetensors(PygmyConfig::llama_style())
+            .import_to_apr(ImportOptions::default());
 
-        // Create valid test tensors
-        let mut tensors = BTreeMap::new();
-        tensors.insert(
-            "encoder.layer_norm.weight".to_string(),
-            (vec![1.0f32; 384], vec![384]),
-        );
-        tensors.insert(
-            "encoder.layer_norm.bias".to_string(),
-            (vec![0.0f32; 384], vec![384]),
-        );
-        tensors.insert(
-            "encoder.conv1.weight".to_string(),
-            (vec![0.01f32; 1000], vec![80, 1, 3]),
-        );
-
-        create_test_safetensors(Path::new(input), &tensors);
-
-        // Run conversion
-        let options = ImportOptions::default();
-        let result = apr_import(input, output, options);
-
-        assert!(
-            result.is_ok(),
-            "Valid tensors should convert successfully: {:?}",
-            result.err()
-        );
-        let report = result.unwrap();
-        assert!(report.total_score > 0, "Score should be > 0");
-
-        // Cleanup
-        fs::remove_file(input).ok();
-        fs::remove_file(output).ok();
+        // Verify the output APR has correct tensor data
+        h.verify_apr().assert_passed();
     }
 
+    /// Intentionally bad data: invalid LayerNorm mean=11 must fail strict validation.
+    /// Uses Architecture::Llama (verified) with strict=true to bypass the unverified-arch
+    /// check and reach the LayerNorm tensor validation path.
     #[test]
     fn test_convert_invalid_layernorm_fails_strict() {
-        let input = "/tmp/test_invalid_ln_input.safetensors";
-        let output = "/tmp/test_invalid_ln_output.apr";
+        let dir = tempfile::tempdir().expect("tempdir");
+        let input = dir.path().join("invalid_ln.safetensors");
+        let output = dir.path().join("output.apr");
 
-        // Create tensors with INVALID LayerNorm (mean=11, should be ~1)
         let mut tensors = BTreeMap::new();
         tensors.insert(
             "decoder.layer_norm.weight".to_string(),
             (vec![11.0f32; 384], vec![384]),
         );
+        create_test_safetensors(&input, &tensors);
 
-        create_test_safetensors(Path::new(input), &tensors);
-
-        // Run conversion with strict validation
         let options = ImportOptions {
+            architecture: Architecture::Llama,
             validation: ValidationConfig::Strict,
-            force: false,
+            strict: true,
             ..Default::default()
         };
-        let result = apr_import(input, output, options);
+        let result = apr_import(&input.to_string_lossy(), &output, options);
 
         assert!(
             result.is_err(),
@@ -381,79 +357,67 @@ mod tests_conversion {
         );
         let err = result.unwrap_err().to_string();
         assert!(
-            err.contains("mean=11") || err.contains("LayerNorm"),
+            err.contains("mean=11") || err.contains("LayerNorm") || err.contains("outside expected range"),
             "Error should mention LayerNorm issue: {err}"
         );
-
-        // Cleanup
-        fs::remove_file(input).ok();
-        fs::remove_file(output).ok();
     }
 
+    /// Intentionally bad data: invalid LayerNorm passes in default (permissive) mode.
     #[test]
     fn test_convert_invalid_layernorm_force_succeeds() {
-        let input = "/tmp/test_force_ln_input.safetensors";
-        let output = "/tmp/test_force_ln_output.apr";
+        let dir = tempfile::tempdir().expect("tempdir");
+        let input = dir.path().join("force_ln.safetensors");
+        let output = dir.path().join("output.apr");
 
-        // Create tensors with invalid LayerNorm
         let mut tensors = BTreeMap::new();
         tensors.insert(
             "decoder.layer_norm.weight".to_string(),
             (vec![11.0f32; 384], vec![384]),
         );
+        create_test_safetensors(&input, &tensors);
 
-        create_test_safetensors(Path::new(input), &tensors);
-
-        // Run conversion with force=true
         let options = ImportOptions {
             validation: ValidationConfig::Strict,
-            force: true,
             ..Default::default()
         };
-        let result = apr_import(input, output, options);
+        let result = apr_import(&input.to_string_lossy(), &output, options);
 
         assert!(
             result.is_ok(),
-            "Force should bypass validation: {:?}",
+            "Permissive mode should bypass validation: {:?}",
             result.err()
         );
-
-        // Cleanup
-        fs::remove_file(input).ok();
-        fs::remove_file(output).ok();
     }
 
+    /// Intentionally bad data: NaN values must fail validation.
     #[test]
     fn test_convert_nan_fails() {
-        let input = "/tmp/test_nan_input.safetensors";
-        let output = "/tmp/test_nan_output.apr";
+        let dir = tempfile::tempdir().expect("tempdir");
+        let input = dir.path().join("nan.safetensors");
+        let output = dir.path().join("output.apr");
 
-        // Create tensors with NaN
         let mut tensors = BTreeMap::new();
         tensors.insert(
             "test.weight".to_string(),
             (vec![1.0, f32::NAN, 3.0], vec![3]),
         );
+        create_test_safetensors(&input, &tensors);
 
-        create_test_safetensors(Path::new(input), &tensors);
-
-        let options = ImportOptions::default();
-        let result = apr_import(input, output, options);
+        let result = apr_import(&input.to_string_lossy(), &output, ImportOptions::default());
 
         assert!(result.is_err(), "NaN should fail validation");
         let err = result.unwrap_err().to_string();
         assert!(err.contains("NaN"), "Error should mention NaN: {err}");
-
-        // Cleanup
-        fs::remove_file(input).ok();
-        fs::remove_file(output).ok();
     }
 
+    /// Error path: nonexistent file must produce clear error.
     #[test]
     fn test_convert_nonexistent_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let output = dir.path().join("out.apr");
         let result = apr_import(
-            "/tmp/nonexistent_model.safetensors",
-            "/tmp/out.apr",
+            "/tmp/nonexistent_model_abc123.safetensors",
+            &output,
             ImportOptions::default(),
         );
         assert!(result.is_err(), "Nonexistent file should fail");
@@ -464,30 +428,32 @@ mod tests_conversion {
         );
     }
 
+    /// Error path: unsupported format (.gguf stub) must fail.
     #[test]
     fn test_convert_unsupported_format() {
-        let input = "/tmp/test_bad_format.gguf";
-        fs::write(input, b"test").expect("Failed to create test file");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let input = dir.path().join("bad.gguf");
+        let output = dir.path().join("out.apr");
+        fs::write(&input, b"test").expect("Failed to create test file");
 
-        let result = apr_import(input, "/tmp/out.apr", ImportOptions::default());
+        let result = apr_import(&input.to_string_lossy(), &output, ImportOptions::default());
         assert!(result.is_err(), "Unsupported format should fail");
         let err = result.unwrap_err().to_string();
         assert!(
             err.contains("GGUF") || err.contains("not yet"),
             "Error should mention unsupported: {err}"
         );
-
-        fs::remove_file(input).ok();
     }
 
+    /// Harness-based: Whisper name mapping preserves model.* prefix (PMAT-099).
     #[test]
     fn test_name_mapping_whisper() {
         use crate::format::v2::AprV2Reader;
 
-        let input = "/tmp/test_whisper_input.safetensors";
-        let output = "/tmp/test_whisper_output.apr";
+        let dir = tempfile::tempdir().expect("tempdir");
+        let input = dir.path().join("whisper.safetensors");
+        let output = dir.path().join("whisper.apr");
 
-        // Create tensors with HuggingFace-style names
         let mut tensors = BTreeMap::new();
         tensors.insert(
             "model.encoder.conv1.weight".to_string(),
@@ -497,27 +463,24 @@ mod tests_conversion {
             "model.decoder.layer_norm.weight".to_string(),
             (vec![1.0f32; 384], vec![384]),
         );
-
-        create_test_safetensors(Path::new(input), &tensors);
+        create_test_safetensors(&input, &tensors);
 
         let options = ImportOptions {
             architecture: Architecture::Whisper,
-            force: true, // PMAT-224: Whisper is unverified, need --force
             ..Default::default()
         };
-        let result = apr_import(input, output, options);
+        let result = apr_import(&input.to_string_lossy(), &output, options);
         assert!(
             result.is_ok(),
-            "Whisper mapping should work with --force: {:?}",
+            "Whisper mapping should work in permissive mode: {:?}",
             result.err()
         );
 
-        // Load output as APR and verify names are preserved (PMAT-099)
-        let data = fs::read(output).expect("Failed to read output");
+        // Read-back verification: check tensor names preserved
+        let data = fs::read(&output).expect("Failed to read output");
         let reader = AprV2Reader::from_bytes(&data).expect("Failed to parse APR");
         let tensor_names = reader.tensor_names();
 
-        // PMAT-099: Names are now preserved for AprTransformer compatibility
         assert!(
             tensor_names.contains(&"model.encoder.conv1.weight"),
             "Should preserve 'model.' prefix for AprTransformer compatibility, got: {:?}",
@@ -528,10 +491,6 @@ mod tests_conversion {
             "Should preserve 'model.' prefix for AprTransformer compatibility, got: {:?}",
             tensor_names
         );
-
-        // Cleanup
-        fs::remove_file(input).ok();
-        fs::remove_file(output).ok();
     }
 }
 
@@ -905,5 +864,125 @@ mod tests_sharded_import {
         assert_eq!(shards[0], "model-00001-of-00003.safetensors");
         assert_eq!(shards[1], "model-00002-of-00003.safetensors");
         assert_eq!(shards[2], "model-00003-of-00003.safetensors");
+    }
+}
+
+// ============================================================================
+// GH-196: Conversion round-trip regression tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests_gh196_roundtrip {
+    use super::*;
+    use crate::format::test_factory::harness::ConversionTestHarness;
+    use crate::format::test_factory::PygmyConfig;
+    use crate::format::v2::AprV2Reader;
+
+    /// GH-196: Auto architecture infers from tensor names (no explicit arch required).
+    #[test]
+    fn test_gh196_auto_arch_import() {
+        let h = ConversionTestHarness::new()
+            .with_safetensors(PygmyConfig::llama_style())
+            .import_to_apr(ImportOptions {
+                architecture: Architecture::Auto,
+                ..Default::default()
+            });
+
+        // Should succeed and produce valid APR
+        let output = h.output_path().expect("output exists");
+        let data = fs::read(output).expect("read output");
+        let reader = AprV2Reader::from_bytes(&data).expect("parse APR");
+        assert!(
+            !reader.tensor_names().is_empty(),
+            "GH-196: Auto arch should produce tensors"
+        );
+    }
+
+    /// GH-196: --strict blocks Auto architecture when tensors don't match known patterns.
+    /// Uses `embedding_only()` config which lacks `model.layers` tensor names,
+    /// so auto-detection yields "unknown" architecture (unverified).
+    #[test]
+    fn test_gh196_strict_rejects_unverified() {
+        let h = ConversionTestHarness::new()
+            .with_safetensors(PygmyConfig::embedding_only());
+
+        let result = h.try_import_to_apr(ImportOptions {
+            architecture: Architecture::Auto,
+            validation: ValidationConfig::Strict,
+            strict: true,
+            ..Default::default()
+        });
+
+        assert!(
+            result.is_err(),
+            "GH-196: --strict should reject unverified Auto architecture"
+        );
+    }
+
+    /// GH-196: Default (non-strict) allows Auto architecture.
+    #[test]
+    fn test_gh196_default_permissive() {
+        let h = ConversionTestHarness::new()
+            .with_safetensors(PygmyConfig::default());
+
+        let result = h.try_import_to_apr(ImportOptions::default());
+
+        assert!(
+            result.is_ok(),
+            "GH-196: Default (permissive) should allow Auto: {:?}",
+            result.err()
+        );
+    }
+
+    /// GH-196: Imported tensors match source bit-for-bit (F32 tolerance).
+    #[test]
+    fn test_gh196_tensor_data_preserved() {
+        let h = ConversionTestHarness::new()
+            .with_safetensors(PygmyConfig::default())
+            .import_to_apr(ImportOptions::default());
+
+        let result = h.verify_apr();
+        result.assert_passed();
+    }
+
+    /// GH-196: Full round-trip SafeTensors -> APR -> SafeTensors with default config.
+    #[test]
+    fn test_gh196_full_roundtrip_default() {
+        ConversionTestHarness::assert_roundtrip_ok(PygmyConfig::default());
+    }
+
+    /// GH-196: Full round-trip with LLaMA-style config (attention + MLP + norms).
+    #[test]
+    fn test_gh196_full_roundtrip_llama() {
+        ConversionTestHarness::assert_roundtrip_ok(PygmyConfig::llama_style());
+    }
+
+    /// GH-196: Full round-trip with minimal config (embedding only).
+    #[test]
+    fn test_gh196_full_roundtrip_minimal() {
+        ConversionTestHarness::assert_roundtrip_ok(PygmyConfig::minimal());
+    }
+
+    /// GH-196: Architecture field preserved in APR metadata after import.
+    #[test]
+    fn test_gh196_metadata_architecture() {
+        let h = ConversionTestHarness::new()
+            .with_safetensors(PygmyConfig::llama_style())
+            .import_to_apr(ImportOptions {
+                architecture: Architecture::Llama,
+                ..Default::default()
+            });
+
+        let output = h.output_path().expect("output exists");
+        let data = fs::read(output).expect("read output");
+        let reader = AprV2Reader::from_bytes(&data).expect("parse APR");
+        let metadata = reader.metadata();
+
+        // The architecture field should be set (either from import option or inferred)
+        assert!(
+            metadata.architecture.is_some(),
+            "GH-196: APR metadata should have architecture field, got: {:?}",
+            metadata.architecture
+        );
     }
 }

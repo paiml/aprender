@@ -824,6 +824,5 @@ impl CacheStats {
     }
 }
 
-
 #[cfg(test)]
 mod tests;

@@ -3,8 +3,8 @@
 //! Ensemble methods using bootstrap sampling and majority voting.
 
 use super::helpers::{
-    bootstrap_sample, compute_regression_tree_feature_importances, compute_tree_feature_importances,
-    flatten_tree_node, reconstruct_tree_node,
+    bootstrap_sample, compute_regression_tree_feature_importances,
+    compute_tree_feature_importances, flatten_tree_node, reconstruct_tree_node,
 };
 use super::{DecisionTreeClassifier, DecisionTreeRegressor};
 use crate::error::Result;

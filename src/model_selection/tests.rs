@@ -190,8 +190,7 @@ fn test_cross_validate_basic() {
     let model = LinearRegression::new();
     let kfold = KFold::new(5).with_random_state(42);
 
-    let result =
-        cross_validate(&model, &x, &y, &kfold).expect("Cross-validation should succeed");
+    let result = cross_validate(&model, &x, &y, &kfold).expect("Cross-validation should succeed");
 
     // Should have 5 scores (one per fold)
     assert_eq!(result.scores.len(), 5, "Should have 5 fold scores");
@@ -247,8 +246,8 @@ fn test_cross_validate_reproducible() {
         cross_validate(&model, &x, &y, &kfold1).expect("First cross-validation should succeed");
 
     let kfold2 = KFold::new(5).with_random_state(42);
-    let result2 = cross_validate(&model, &x, &y, &kfold2)
-        .expect("Second cross-validation should succeed");
+    let result2 =
+        cross_validate(&model, &x, &y, &kfold2).expect("Second cross-validation should succeed");
 
     assert_eq!(
         result1.scores, result2.scores,
@@ -407,8 +406,7 @@ fn test_stratified_kfold_with_random_state() {
 fn test_stratified_kfold_different_random_states() {
     // Use larger dataset so different random states are more likely to differ
     let y = Vector::from_slice(&[
-        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 2.0, 2.0,
-        2.0,
+        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0,
     ]);
 
     let skfold1 = StratifiedKFold::new(3).with_random_state(42);

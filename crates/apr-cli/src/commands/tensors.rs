@@ -114,9 +114,8 @@ pub(crate) fn run(
     }
 
     // Call library function
-    let result = list_tensors(path, options).map_err(|e| {
-        CliError::InvalidFormat(format!("Failed to list tensors: {e}"))
-    })?;
+    let result = list_tensors(path, options)
+        .map_err(|e| CliError::InvalidFormat(format!("Failed to list tensors: {e}")))?;
 
     // Output results
     if json_output {
@@ -277,13 +276,7 @@ mod tests {
 
     #[test]
     fn test_run_file_not_found() {
-        let result = run(
-            Path::new("/nonexistent/model.apr"),
-            false,
-            None,
-            false,
-            100,
-        );
+        let result = run(Path::new("/nonexistent/model.apr"), false, None, false, 100);
         assert!(result.is_err());
     }
 
@@ -578,7 +571,7 @@ mod tests {
             dtype: "f32".to_string(),
             size_bytes: 40,
             mean: Some(0.5),
-            std: None,  // Should be skipped in JSON
+            std: None, // Should be skipped in JSON
             min: None,
             max: None,
             nan_count: None,

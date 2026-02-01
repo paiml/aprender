@@ -685,6 +685,5 @@ impl BlockSparseTensor {
     }
 }
 
-
 #[cfg(test)]
 mod tests;

@@ -1192,5 +1192,4 @@ mod tests_import_errors {
         let result = calculate_merge_weights(3, &options);
         assert!(result.is_err());
     }
-
 }

@@ -532,6 +532,5 @@ impl LRScheduler for ReduceLROnPlateau {
     }
 }
 
-
 #[cfg(test)]
 mod tests;

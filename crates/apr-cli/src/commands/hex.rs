@@ -318,8 +318,8 @@ fn output_json(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::{tempdir, NamedTempFile};
     use std::io::Write;
+    use tempfile::{tempdir, NamedTempFile};
 
     // ========================================================================
     // Statistics Tests
@@ -417,14 +417,7 @@ mod tests {
         let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
         file.write_all(b"not a valid apr file").expect("write");
 
-        let result = run(
-            file.path(),
-            None,
-            100,
-            false,
-            false,
-            false,
-        );
+        let result = run(file.path(), None, 100, false, false, false);
         // Should fail because it's not a valid APR
         assert!(result.is_err());
     }
@@ -432,14 +425,7 @@ mod tests {
     #[test]
     fn test_run_is_directory() {
         let dir = tempdir().expect("create temp dir");
-        let result = run(
-            dir.path(),
-            None,
-            100,
-            false,
-            false,
-            false,
-        );
+        let result = run(dir.path(), None, 100, false, false, false);
         // Should fail because it's a directory
         assert!(result.is_err());
     }
@@ -449,14 +435,7 @@ mod tests {
         let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
         file.write_all(b"not a valid apr file").expect("write");
 
-        let result = run(
-            file.path(),
-            Some("encoder"),
-            100,
-            false,
-            false,
-            false,
-        );
+        let result = run(file.path(), Some("encoder"), 100, false, false, false);
         // Should fail (invalid file) but tests the filter path
         assert!(result.is_err());
     }

@@ -327,12 +327,12 @@ mod tests_coverage_boost {
             validation: ValidationConfig::Basic,
             quantize: Some(QuantizationType::Int8),
             compress: Some(Compression::Lz4),
-            force: true,
+            strict: true,
             cache: false,
         };
         assert!(opts.quantize.is_some());
         assert!(opts.compress.is_some());
-        assert!(opts.force);
+        assert!(opts.strict);
         assert!(!opts.cache);
     }
 
@@ -1085,9 +1085,18 @@ mod tests_coverage_boost {
     #[test]
     fn test_export_format_from_str_safetensors() {
         use std::str::FromStr;
-        assert_eq!(ExportFormat::from_str("safetensors").unwrap(), ExportFormat::SafeTensors);
-        assert_eq!(ExportFormat::from_str("st").unwrap(), ExportFormat::SafeTensors);
-        assert_eq!(ExportFormat::from_str("SAFETENSORS").unwrap(), ExportFormat::SafeTensors);
+        assert_eq!(
+            ExportFormat::from_str("safetensors").unwrap(),
+            ExportFormat::SafeTensors
+        );
+        assert_eq!(
+            ExportFormat::from_str("st").unwrap(),
+            ExportFormat::SafeTensors
+        );
+        assert_eq!(
+            ExportFormat::from_str("SAFETENSORS").unwrap(),
+            ExportFormat::SafeTensors
+        );
     }
 
     #[test]
@@ -1106,9 +1115,18 @@ mod tests_coverage_boost {
     #[test]
     fn test_export_format_from_str_torchscript() {
         use std::str::FromStr;
-        assert_eq!(ExportFormat::from_str("torchscript").unwrap(), ExportFormat::TorchScript);
-        assert_eq!(ExportFormat::from_str("pt").unwrap(), ExportFormat::TorchScript);
-        assert_eq!(ExportFormat::from_str("torch").unwrap(), ExportFormat::TorchScript);
+        assert_eq!(
+            ExportFormat::from_str("torchscript").unwrap(),
+            ExportFormat::TorchScript
+        );
+        assert_eq!(
+            ExportFormat::from_str("pt").unwrap(),
+            ExportFormat::TorchScript
+        );
+        assert_eq!(
+            ExportFormat::from_str("torch").unwrap(),
+            ExportFormat::TorchScript
+        );
     }
 
     #[test]
@@ -1237,18 +1255,39 @@ mod tests_coverage_boost {
     #[test]
     fn test_merge_strategy_from_str() {
         use std::str::FromStr;
-        assert_eq!(MergeStrategy::from_str("average").unwrap(), MergeStrategy::Average);
-        assert_eq!(MergeStrategy::from_str("weighted").unwrap(), MergeStrategy::Weighted);
-        assert_eq!(MergeStrategy::from_str("slerp").unwrap(), MergeStrategy::Slerp);
-        assert_eq!(MergeStrategy::from_str("ties").unwrap(), MergeStrategy::Ties);
-        assert_eq!(MergeStrategy::from_str("dare").unwrap(), MergeStrategy::Dare);
+        assert_eq!(
+            MergeStrategy::from_str("average").unwrap(),
+            MergeStrategy::Average
+        );
+        assert_eq!(
+            MergeStrategy::from_str("weighted").unwrap(),
+            MergeStrategy::Weighted
+        );
+        assert_eq!(
+            MergeStrategy::from_str("slerp").unwrap(),
+            MergeStrategy::Slerp
+        );
+        assert_eq!(
+            MergeStrategy::from_str("ties").unwrap(),
+            MergeStrategy::Ties
+        );
+        assert_eq!(
+            MergeStrategy::from_str("dare").unwrap(),
+            MergeStrategy::Dare
+        );
     }
 
     #[test]
     fn test_merge_strategy_from_str_case_insensitive() {
         use std::str::FromStr;
-        assert_eq!(MergeStrategy::from_str("AVERAGE").unwrap(), MergeStrategy::Average);
-        assert_eq!(MergeStrategy::from_str("Average").unwrap(), MergeStrategy::Average);
+        assert_eq!(
+            MergeStrategy::from_str("AVERAGE").unwrap(),
+            MergeStrategy::Average
+        );
+        assert_eq!(
+            MergeStrategy::from_str("Average").unwrap(),
+            MergeStrategy::Average
+        );
     }
 
     #[test]
@@ -1307,9 +1346,11 @@ mod tests_coverage_boost {
 #[cfg(test)]
 mod tests_export_merge_functions {
     use super::*;
-    use crate::format::test_factory::{build_pygmy_safetensors, build_pygmy_safetensors_with_config, PygmyConfig};
-    use tempfile::TempDir;
+    use crate::format::test_factory::{
+        build_pygmy_safetensors, build_pygmy_safetensors_with_config, PygmyConfig,
+    };
     use std::fs;
+    use tempfile::TempDir;
 
     // ------------------------------------------------------------------------
     // apr_export tests
@@ -1467,7 +1508,11 @@ mod tests_export_merge_functions {
             weights: Some(vec![0.7, 0.3]),
         };
         let result = apr_merge(&[&input1, &input2], &output, options);
-        assert!(result.is_ok(), "Weighted merge should succeed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Weighted merge should succeed: {:?}",
+            result.err()
+        );
 
         let report = result.unwrap();
         assert!(report.weights_used.is_some());
@@ -1567,7 +1612,11 @@ mod tests_export_merge_functions {
 
         let options = MergeOptions::default();
         let result = apr_merge(&[&input1, &input2, &input3], &output, options);
-        assert!(result.is_ok(), "3-model merge should succeed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "3-model merge should succeed: {:?}",
+            result.err()
+        );
 
         let report = result.unwrap();
         assert_eq!(report.model_count, 3);
@@ -1597,11 +1646,11 @@ mod tests_export_merge_functions {
 #[cfg(test)]
 mod tests_write_import_lint {
     use super::*;
-    use crate::format::test_factory::build_pygmy_apr;
-    use crate::format::gguf::{GgufTokenizer, GgufModelConfig};
+    use crate::format::gguf::{GgufModelConfig, GgufTokenizer};
     use crate::format::lint::{lint_apr_file, LintLevel};
-    use tempfile::TempDir;
+    use crate::format::test_factory::build_pygmy_apr;
     use std::fs;
+    use tempfile::TempDir;
 
     // ------------------------------------------------------------------------
     // GgufTokenizer tests (improve gguf/api.rs coverage)
@@ -1802,12 +1851,12 @@ mod tests_write_import_lint {
 #[cfg(test)]
 mod tests_write_functions {
     use super::*;
-    use crate::format::test_factory::{build_pygmy_apr, build_pygmy_safetensors};
     use crate::format::gguf::{GgufModelConfig, GgufTokenizer};
+    use crate::format::test_factory::{build_pygmy_apr, build_pygmy_safetensors};
     use crate::format::v2::AprV2Reader;
-    use tempfile::TempDir;
     use std::collections::BTreeMap;
     use std::fs;
+    use tempfile::TempDir;
 
     // ------------------------------------------------------------------------
     // write_apr_file coverage tests
@@ -1826,8 +1875,19 @@ mod tests_write_functions {
         );
 
         let options = ImportOptions::default();
-        let result = write_apr_file(&tensors, &output_path, &options, None, None, &Default::default());
-        assert!(result.is_ok(), "write_apr_file should succeed: {:?}", result.err());
+        let result = write_apr_file(
+            &tensors,
+            &output_path,
+            &options,
+            None,
+            None,
+            &Default::default(),
+        );
+        assert!(
+            result.is_ok(),
+            "write_apr_file should succeed: {:?}",
+            result.err()
+        );
         assert!(output_path.exists());
     }
 
@@ -1843,7 +1903,12 @@ mod tests_write_functions {
         );
 
         let tokenizer = GgufTokenizer {
-            vocabulary: vec!["hello".to_string(), "world".to_string(), "test".to_string(), "end".to_string()],
+            vocabulary: vec![
+                "hello".to_string(),
+                "world".to_string(),
+                "test".to_string(),
+                "end".to_string(),
+            ],
             merges: vec!["he llo".to_string(), "wo rld".to_string()],
             model_type: Some("bpe".to_string()),
             bos_token_id: Some(0),
@@ -1853,8 +1918,18 @@ mod tests_write_functions {
         };
 
         let options = ImportOptions::default();
-        let result = write_apr_file(&tensors, &output_path, &options, Some(&tokenizer), None, &Default::default());
-        assert!(result.is_ok(), "write_apr_file with tokenizer should succeed");
+        let result = write_apr_file(
+            &tensors,
+            &output_path,
+            &options,
+            Some(&tokenizer),
+            None,
+            &Default::default(),
+        );
+        assert!(
+            result.is_ok(),
+            "write_apr_file with tokenizer should succeed"
+        );
     }
 
     #[test]
@@ -1896,8 +1971,19 @@ mod tests_write_functions {
         };
 
         let options = ImportOptions::default();
-        let result = write_apr_file(&tensors, &output_path, &options, None, Some(&model_config), &Default::default());
-        assert!(result.is_ok(), "write_apr_file with config should succeed: {:?}", result.err());
+        let result = write_apr_file(
+            &tensors,
+            &output_path,
+            &options,
+            None,
+            Some(&model_config),
+            &Default::default(),
+        );
+        assert!(
+            result.is_ok(),
+            "write_apr_file with config should succeed: {:?}",
+            result.err()
+        );
     }
 
     #[test]
@@ -1914,7 +2000,14 @@ mod tests_write_functions {
         let mut options = ImportOptions::default();
         options.quantize = Some(QuantizationType::Fp16);
 
-        let result = write_apr_file(&tensors, &output_path, &options, None, None, &Default::default());
+        let result = write_apr_file(
+            &tensors,
+            &output_path,
+            &options,
+            None,
+            None,
+            &Default::default(),
+        );
         assert!(result.is_ok(), "write_apr_file with fp16 should succeed");
     }
 
@@ -1932,7 +2025,14 @@ mod tests_write_functions {
         let mut options = ImportOptions::default();
         options.quantize = Some(QuantizationType::Int8);
 
-        let result = write_apr_file(&tensors, &output_path, &options, None, None, &Default::default());
+        let result = write_apr_file(
+            &tensors,
+            &output_path,
+            &options,
+            None,
+            None,
+            &Default::default(),
+        );
         assert!(result.is_ok(), "write_apr_file with int8 should succeed");
     }
 
@@ -1950,15 +2050,24 @@ mod tests_write_functions {
         );
 
         let options = ImportOptions::default();
-        let result = write_apr_file(&tensors, &output_path, &options, None, None, &Default::default());
+        let result = write_apr_file(
+            &tensors,
+            &output_path,
+            &options,
+            None,
+            None,
+            &Default::default(),
+        );
         assert!(result.is_ok());
 
         // Read back and verify lm_head was created
         let apr_data = fs::read(&output_path).expect("Read APR");
         let reader = AprV2Reader::from_bytes(&apr_data).expect("Parse APR");
         let tensor_names = reader.tensor_names();
-        assert!(tensor_names.iter().any(|n| *n == "lm_head.weight"),
-            "lm_head.weight should be created from tied embeddings");
+        assert!(
+            tensor_names.iter().any(|n| *n == "lm_head.weight"),
+            "lm_head.weight should be created from tied embeddings"
+        );
     }
 
     #[test]
@@ -1967,11 +2076,26 @@ mod tests_write_functions {
         let output_path = temp_dir.path().join("fused.apr");
 
         let mut tensors: BTreeMap<String, (Vec<f32>, Vec<usize>)> = BTreeMap::new();
-        tensors.insert("model.embed_tokens.weight".to_string(), (vec![0.1; 16], vec![4, 4]));
-        tensors.insert("model.layers.0.self_attn.q_proj.weight".to_string(), (vec![0.1; 16], vec![4, 4]));
-        tensors.insert("model.layers.0.self_attn.k_proj.weight".to_string(), (vec![0.2; 16], vec![4, 4]));
-        tensors.insert("model.layers.0.self_attn.v_proj.weight".to_string(), (vec![0.3; 16], vec![4, 4]));
-        tensors.insert("model.layers.0.self_attn.o_proj.weight".to_string(), (vec![0.4; 16], vec![4, 4]));
+        tensors.insert(
+            "model.embed_tokens.weight".to_string(),
+            (vec![0.1; 16], vec![4, 4]),
+        );
+        tensors.insert(
+            "model.layers.0.self_attn.q_proj.weight".to_string(),
+            (vec![0.1; 16], vec![4, 4]),
+        );
+        tensors.insert(
+            "model.layers.0.self_attn.k_proj.weight".to_string(),
+            (vec![0.2; 16], vec![4, 4]),
+        );
+        tensors.insert(
+            "model.layers.0.self_attn.v_proj.weight".to_string(),
+            (vec![0.3; 16], vec![4, 4]),
+        );
+        tensors.insert(
+            "model.layers.0.self_attn.o_proj.weight".to_string(),
+            (vec![0.4; 16], vec![4, 4]),
+        );
 
         let model_config = GgufModelConfig {
             architecture: Some("llama".to_string()),
@@ -1988,8 +2112,19 @@ mod tests_write_functions {
         };
 
         let options = ImportOptions::default();
-        let result = write_apr_file(&tensors, &output_path, &options, None, Some(&model_config), &Default::default());
-        assert!(result.is_ok(), "write_apr_file with QKV fusion should succeed: {:?}", result.err());
+        let result = write_apr_file(
+            &tensors,
+            &output_path,
+            &options,
+            None,
+            Some(&model_config),
+            &Default::default(),
+        );
+        assert!(
+            result.is_ok(),
+            "write_apr_file with QKV fusion should succeed: {:?}",
+            result.err()
+        );
     }
 
     // ------------------------------------------------------------------------
@@ -2008,7 +2143,11 @@ mod tests_write_functions {
 
         let rosetta = RosettaStone::new();
         let result = rosetta.inspect(&st_path);
-        assert!(result.is_ok(), "Rosetta inspect should succeed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Rosetta inspect should succeed: {:?}",
+            result.err()
+        );
 
         let inspection = result.unwrap();
         assert!(!inspection.tensors.is_empty());
@@ -2027,7 +2166,11 @@ mod tests_write_functions {
 
         let rosetta = RosettaStone::new();
         let result = rosetta.inspect(&apr_path);
-        assert!(result.is_ok(), "Rosetta inspect APR should succeed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Rosetta inspect APR should succeed: {:?}",
+            result.err()
+        );
     }
 
     #[test]
@@ -2043,7 +2186,11 @@ mod tests_write_functions {
 
         let rosetta = RosettaStone::new();
         let result = rosetta.convert(&st_path, &apr_path, None);
-        assert!(result.is_ok(), "Rosetta convert should succeed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Rosetta convert should succeed: {:?}",
+            result.err()
+        );
 
         let report = result.unwrap();
         assert!(!report.source_inspection.tensors.is_empty());
@@ -2142,7 +2289,11 @@ mod tests_write_functions {
         fs::write(&st_path, &st_data).expect("Write safetensors");
 
         let result = load_model_tensors(&st_path);
-        assert!(result.is_ok(), "load_model_tensors should succeed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "load_model_tensors should succeed: {:?}",
+            result.err()
+        );
 
         let tensors = result.unwrap();
         assert!(!tensors.is_empty());

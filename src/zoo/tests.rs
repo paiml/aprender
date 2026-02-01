@@ -139,12 +139,9 @@ fn test_model_zoo_index_add_model() {
 fn test_model_zoo_index_search() {
     let mut index = ModelZooIndex::new("1.0.0");
 
-    index.add_model(
-        ModelZooEntry::new("linear-reg", "Linear Regression").with_tag("regression"),
-    );
-    index.add_model(
-        ModelZooEntry::new("random-forest", "Random Forest").with_tag("classification"),
-    );
+    index.add_model(ModelZooEntry::new("linear-reg", "Linear Regression").with_tag("regression"));
+    index
+        .add_model(ModelZooEntry::new("random-forest", "Random Forest").with_tag("classification"));
 
     let results = index.search("linear");
     assert_eq!(results.len(), 1);
@@ -507,9 +504,7 @@ fn test_model_zoo_index_get_model() {
 #[test]
 fn test_model_zoo_index_filter_by_category() {
     let mut index = ModelZooIndex::new("1.0.0");
-    index.add_model(
-        ModelZooEntry::new("lr", "LR").with_model_type(ModelZooType::LinearRegression),
-    );
+    index.add_model(ModelZooEntry::new("lr", "LR").with_model_type(ModelZooType::LinearRegression));
     index.add_model(ModelZooEntry::new("rf", "RF").with_model_type(ModelZooType::RandomForest));
     index.add_model(ModelZooEntry::new("km", "KM").with_model_type(ModelZooType::KMeans));
 
@@ -638,8 +633,7 @@ fn test_human_bytes_boundaries() {
 
 #[test]
 fn test_model_zoo_entry_with_author() {
-    let author =
-        AuthorInfo::new("Test Author", "test@example.com").with_organization("Test Org");
+    let author = AuthorInfo::new("Test Author", "test@example.com").with_organization("Test Org");
     let entry = ModelZooEntry::new("test", "Test").with_author(author);
 
     assert_eq!(entry.author.name, "Test Author");

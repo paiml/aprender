@@ -249,7 +249,8 @@ mod tests {
     fn test_run_invalid_file() {
         // Create a temp file with invalid APR content
         let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
-        file.write_all(b"not a valid APR file").expect("write to temp file");
+        file.write_all(b"not a valid APR file")
+            .expect("write to temp file");
 
         let result = run(file.path());
         // Should return error since it's not a valid APR file

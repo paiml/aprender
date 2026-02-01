@@ -126,7 +126,8 @@ impl GradientBoostingClassifier {
         // Gradient boosting iterations
         for _ in 0..self.n_estimators {
             // Compute probabilities from raw predictions
-            let probabilities: Vec<f32> = raw_predictions.iter().map(|&r| Self::sigmoid(r)).collect();
+            let probabilities: Vec<f32> =
+                raw_predictions.iter().map(|&r| Self::sigmoid(r)).collect();
 
             // Compute negative gradients (pseudo-residuals)
             // For log-loss: residual = y - p

@@ -690,6 +690,5 @@ impl Default for FormatCompatibility {
     }
 }
 
-
 #[cfg(test)]
 mod tests;

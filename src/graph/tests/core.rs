@@ -1357,4 +1357,3 @@ fn test_dijkstra_floating_point_precision() {
     assert!((dist - 0.3).abs() < 1e-10); // 0.1 + 0.2 = 0.3
     assert_eq!(path, vec![0, 1, 2]);
 }
-
