@@ -2226,4 +2226,166 @@ mod tests {
         let cleaned = clean_chat_response(raw);
         assert_eq!(cleaned, "Steps:\n1. First\n2. Second\n3. Third");
     }
+
+    // =========================================================================
+    // format_params tests (non-inference only)
+    // =========================================================================
+
+    #[cfg(not(feature = "inference"))]
+    #[test]
+    fn test_format_params_billions() {
+        assert_eq!(format_params(7_000_000_000), "7.0B");
+        assert_eq!(format_params(1_500_000_000), "1.5B");
+    }
+
+    #[cfg(not(feature = "inference"))]
+    #[test]
+    fn test_format_params_millions() {
+        assert_eq!(format_params(500_000_000), "500.0M");
+        assert_eq!(format_params(7_000_000), "7.0M");
+        assert_eq!(format_params(1_500_000), "1.5M");
+    }
+
+    #[cfg(not(feature = "inference"))]
+    #[test]
+    fn test_format_params_thousands() {
+        assert_eq!(format_params(500_000), "500.0K");
+        assert_eq!(format_params(7_000), "7.0K");
+        assert_eq!(format_params(1_500), "1.5K");
+    }
+
+    #[cfg(not(feature = "inference"))]
+    #[test]
+    fn test_format_params_small() {
+        assert_eq!(format_params(999), "999");
+        assert_eq!(format_params(100), "100");
+        assert_eq!(format_params(1), "1");
+        assert_eq!(format_params(0), "0");
+    }
+
+    // =========================================================================
+    // Additional ChatConfig tests
+    // =========================================================================
+
+    #[test]
+    fn test_chat_config_extreme_values() {
+        let config = ChatConfig {
+            temperature: 0.0,
+            top_p: 0.0,
+            max_tokens: 1,
+            system: None,
+            inspect: false,
+            force_cpu: false,
+            trace: false,
+            trace_output: None,
+        };
+        assert_eq!(config.temperature, 0.0);
+        assert_eq!(config.top_p, 0.0);
+        assert_eq!(config.max_tokens, 1);
+    }
+
+    #[test]
+    fn test_chat_config_high_temp() {
+        let config = ChatConfig {
+            temperature: 2.0,
+            top_p: 1.0,
+            max_tokens: 4096,
+            system: Some("Creative mode".to_string()),
+            inspect: true,
+            force_cpu: true,
+            trace: true,
+            trace_output: Some(PathBuf::from("/tmp/creative_trace.json")),
+        };
+        assert_eq!(config.temperature, 2.0);
+        assert_eq!(config.max_tokens, 4096);
+    }
+
+    #[test]
+    fn test_chat_config_inspect_mode() {
+        let config = ChatConfig {
+            inspect: true,
+            ..Default::default()
+        };
+        assert!(config.inspect);
+    }
+
+    // =========================================================================
+    // Additional clean_chat_response edge cases
+    // =========================================================================
+
+    #[test]
+    fn test_clean_chat_response_deeply_nested_markers() {
+        let raw = "<|im_start|><|im_start|>assistant\nTest<|im_end|><|im_end|>";
+        let cleaned = clean_chat_response(raw);
+        assert_eq!(cleaned, "Test");
+    }
+
+    #[test]
+    fn test_clean_chat_response_escaped_newlines() {
+        let raw = "Line1\\nLine2";
+        let cleaned = clean_chat_response(raw);
+        // Should preserve escaped newlines
+        assert!(cleaned.contains("\\n") || cleaned.contains('\n'));
+    }
+
+    #[test]
+    fn test_clean_chat_response_tabs() {
+        let raw = "Column1\tColumn2";
+        let cleaned = clean_chat_response(raw);
+        assert_eq!(cleaned, "Column1\tColumn2");
+    }
+
+    #[test]
+    fn test_clean_chat_response_markdown_headers() {
+        let raw = "# Header 1\n## Header 2\n### Header 3";
+        let cleaned = clean_chat_response(raw);
+        assert!(cleaned.contains("# Header 1"));
+        assert!(cleaned.contains("## Header 2"));
+    }
+
+    #[test]
+    fn test_clean_chat_response_math_expression() {
+        let raw = "E = mc²";
+        let cleaned = clean_chat_response(raw);
+        assert_eq!(cleaned, "E = mc²");
+    }
+
+    #[test]
+    fn test_clean_chat_response_url() {
+        let raw = "Visit https://example.com for more info";
+        let cleaned = clean_chat_response(raw);
+        assert_eq!(cleaned, "Visit https://example.com for more info");
+    }
+
+    // =========================================================================
+    // ModelFormat additional tests
+    // =========================================================================
+
+    #[test]
+    fn test_model_format_all_variants() {
+        // Ensure all variants exist
+        let _apr = ModelFormat::Apr;
+        let _gguf = ModelFormat::Gguf;
+        let _st = ModelFormat::SafeTensors;
+        let _demo = ModelFormat::Demo;
+    }
+
+    #[test]
+    fn test_detect_format_double_extension() {
+        let path = Path::new("/models/model.tar.gz");
+        // Should detect based on last extension
+        assert_eq!(detect_format(path), ModelFormat::Demo);
+    }
+
+    #[test]
+    fn test_detect_format_hidden_file() {
+        let path = Path::new("/models/.hidden.gguf");
+        assert_eq!(detect_format(path), ModelFormat::Gguf);
+    }
+
+    #[test]
+    fn test_detect_format_dot_in_name() {
+        let path = Path::new("/models/model.v2.0.safetensors");
+        assert_eq!(detect_format(path), ModelFormat::SafeTensors);
+    }
 }
