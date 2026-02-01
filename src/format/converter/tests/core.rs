@@ -228,17 +228,18 @@ mod tests_tensor_expectations {
         // LLaMA-style input_layernorm
         let exp = TensorExpectation::for_tensor("model.layers.0.input_layernorm.weight");
         assert!(exp.is_some());
-        assert_eq!(exp.unwrap().mean_range, (-0.5, 3.0));
+        // Issue #46: Widened ranges for Qwen2.5 compatibility (mean=7.23, std=2.11)
+        assert_eq!(exp.unwrap().mean_range, (-1.0, 10.0));
 
         // LLaMA-style post_attention_layernorm
         let exp = TensorExpectation::for_tensor("model.layers.5.post_attention_layernorm.weight");
         assert!(exp.is_some());
-        assert_eq!(exp.unwrap().mean_range, (-0.5, 3.0));
+        assert_eq!(exp.unwrap().mean_range, (-1.0, 10.0));
 
         // Final norm
         let exp = TensorExpectation::for_tensor("model.norm.weight");
         assert!(exp.is_some());
-        assert_eq!(exp.unwrap().mean_range, (-0.5, 3.0));
+        assert_eq!(exp.unwrap().mean_range, (-1.0, 10.0));
     }
 
     #[test]

@@ -221,9 +221,10 @@ impl TensorExpectation {
 
     /// `RMSNorm` weight: gamma initialized to ~1.0 but varies after training
     /// Trained models show means from ~0.0 to ~2.0 (`TinyLlama`: 0.005-0.5)
+    /// Issue #46: Qwen2.5-Coder-0.5B has mean=7.23 and std=2.11, widen ranges
     pub const RMSNORM_WEIGHT: Self = Self {
-        mean_range: (-0.5, 3.0), // Wide range for trained models
-        std_range: Some((0.0, 2.0)),
+        mean_range: (-1.0, 10.0), // Wider range for Qwen and other architectures
+        std_range: Some((0.0, 5.0)), // Qwen has std up to 2.11
         description: "RMSNorm weight (gamma)",
     };
 
