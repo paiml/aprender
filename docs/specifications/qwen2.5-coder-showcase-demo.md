@@ -1,7 +1,7 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 7.0.0
-**Status:** 🟡 **RELEASE BLOCKED** - GH-198: `apr pull` missing SafeTensors companion files (tokenizer.json, config.json)
+**Version:** 7.1.0
+**Status:** 🟢 **ROSETTA COMPLETE** - Round 20: All P0 defects resolved (GH-196/197/198 closed), universal multi-format CLI
 **Popperian Score:** 94/100 (Grade: A — Core inference + metadata + architecture safety + universal format support verified)
 **Code Coverage:** 95.82% (target: ≥95%)
 **Tool Coverage:** 16/16 (100%) - All APR tools verified
@@ -9,7 +9,7 @@
 **Author:** PAIML Engineering
 **Date:** 2026-02-01
 **Ground Truth:** SafeTensors (F32/BF16) - See Section 0
-**Last Falsification Run:** 2026-02-01 (Round 20 - GH-196/197 **CLOSED**, PMAT-ROSETTA-001: Universal multi-format CLI)
+**Last Falsification Run:** 2026-02-01 (Round 20 - GH-196/197/198 **CLOSED**, PMAT-ROSETTA-001: Universal multi-format CLI)
 **Quality Philosophy:** Toyota Way + Popperian Falsification (Zero SATD, Stop-the-Line)
 
 ### Release Criteria (ALL PASS)
@@ -27,11 +27,11 @@
 
 ## GitHub Issues Status (Toyota Way: Transparency)
 
-**Summary:** 🟡 **RELEASE BLOCKED** - Round 20: GH-198 open (SafeTensors companion files missing from `apr pull`)
+**Summary:** ✅ **RELEASE AUTHORIZED** - Round 20: All P0 defects resolved. Universal multi-format CLI complete.
 
 | Issue | Title | Severity | Status | PMAT |
 |-------|-------|----------|--------|------|
-| [#198](https://github.com/paiml/aprender/issues/198) | **apr pull: SafeTensors missing tokenizer.json, config.json** | **P0** | 🔴 **OPEN** | PMAT-195 |
+| [#198](https://github.com/paiml/aprender/issues/198) | **apr pull: SafeTensors missing tokenizer.json, config.json** | **P0** | ✅ **FIXED** | PMAT-195 |
 | [#197](https://github.com/paiml/aprender/issues/197) | **SafeTensors inference garbage: layer misdetection** | **P0** | ✅ **FIXED** | GH-197 |
 | [#196](https://github.com/paiml/aprender/issues/196) | **Conversion pipeline: 4 defects blocking MVP** | **P0** | ✅ **FIXED** | PMAT-197 |
 | **FIXED** | **GGUF→APR Shape Convention (GGML layout)** | **P0** | ✅ **FIXED** | PMAT-222 |
