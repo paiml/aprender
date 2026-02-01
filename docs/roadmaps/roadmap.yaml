@@ -2514,3 +2514,19 @@ roadmap:
   - testing
   - round-12
   notes: null
+- id: PMAT-ROSETTA-001
+  github_issue: null
+  item_type: task
+  title: 'New task: PMAT-ROSETTA-001'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-02-01T18:33:22.303949274+00:00
+  updated: 2026-02-01T18:33:22.303949274+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
