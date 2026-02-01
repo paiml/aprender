@@ -76,13 +76,12 @@ impl EmbeddingSpace {
             return 0.0;
         };
 
-        // Compute s^T × W × o
-        // First: temp = W × o
+        // Compute s^T × W × o via two matrix-vector products
         let temp: Vec<f64> = (0..self.dim)
             .map(|i| (0..self.dim).map(|j| w[i][j] * o[j]).sum())
             .collect();
 
-        // Then: s^T × temp
+        // s^T × temp gives final score
         s.iter().zip(temp.iter()).map(|(si, ti)| si * ti).sum()
     }
 

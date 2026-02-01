@@ -784,8 +784,8 @@ fn run_headless_real(config: CbtopConfig) -> Result<()> {
         .encode(prompt)
         .unwrap_or_else(|| vec![151643, 9707, 11, 358, 1079, 264, 11761, 18328, 13]);
 
-    // Rationale: Greedy sampling (temp=0) leverages GPU argmax path for 150,000x reduced
-    // data transfer (4 bytes vs 600KB per token). Temperature sampling requires CPU top-k.
+    // Greedy sampling (temp=0) uses GPU argmax path for 150,000x reduced data transfer
+    // (4 bytes vs 600KB per token). Temperature sampling requires CPU top-k.
     let gen_config = QuantizedGenerateConfig {
         max_tokens: 32,
         temperature: 0.0, // Greedy sampling - uses GPU argmax (4 bytes vs 600KB)

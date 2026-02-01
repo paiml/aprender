@@ -181,8 +181,8 @@ pub fn p4_no_network_calls() -> VelocityResult {
 /// Verify test-fast makes no disk writes (except /tmp)
 #[must_use]
 pub fn p5_no_disk_writes() -> VelocityResult {
-    // Tests use tempfile crate for temporary files
-    // No writes to project directories during tests
+    // Tempfile crate provides isolated temp directories
+    // Project directories remain untouched during tests
 
     let no_disk_writes = true; // Verified by test design
 
@@ -205,7 +205,7 @@ pub fn p5_no_disk_writes() -> VelocityResult {
 #[must_use]
 pub fn p6_compile_under_5s() -> VelocityResult {
     // Incremental compilation is enabled by default
-    // First compile is slow, subsequent compiles are fast
+    // Initial build slower, incremental builds are fast
 
     let incremental_enabled = true; // Default cargo behavior
 
@@ -221,7 +221,7 @@ pub fn p6_compile_under_5s() -> VelocityResult {
 }
 
 // =============================================================================
-// P7: make test-heavy isolates slow tests
+// Slow Test Isolation (test-heavy target)
 // =============================================================================
 
 /// Verify test-heavy target exists for slow tests

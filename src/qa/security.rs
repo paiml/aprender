@@ -473,7 +473,7 @@ pub fn n13_timing_attack_resistance() -> SecurityResult {
 }
 
 // =============================================================================
-// N14: XSS/Injection Prevention
+// Output Escaping (XSS/Injection mitigation)
 // =============================================================================
 
 /// Verify UI escapes all model outputs

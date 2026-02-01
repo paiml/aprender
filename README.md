@@ -27,7 +27,7 @@ Aprender provides implementations of classical machine learning algorithms optim
 
 - [Features](#features)
 - [Installation](#installation)
-- [Quick Start](#quick-start)
+- [Usage](#usage)
 - [Algorithms](#algorithms)
 - [Model Persistence](#model-persistence)
 - [Documentation](#documentation)
@@ -66,7 +66,7 @@ aprender = { version = "0.13", features = ["format-encryption", "hf-hub-integrat
 | `hf-hub-integration` | Hugging Face Hub push/pull support |
 | `gpu` | GPU acceleration via wgpu |
 
-## Quick Start
+## Usage
 
 ```rust
 use aprender::prelude::*;
