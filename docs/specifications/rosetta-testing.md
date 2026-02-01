@@ -204,5 +204,69 @@ cargo test -p apr-cli -- commands::trace
 cargo test -p apr-cli -- commands::validate
 
 cargo test -p apr-cli -- commands::inspect
+```
 
+---
+
+# Master Falsification QA Protocol
+
+**Status:** Executed / 2 Defects Found
+**Philosophy:** Karl Popper (Refutation) & Toyota Way (Jidoka)
+**Code:** `src/format/test_factory.rs` (harness module)
+
+## Falsification Audit Log
+
+Executed: 2026-02-01
+Hypothesis: *"The Rosetta Stone ecosystem correctly dispatches and converts model data across APR, GGUF, and SafeTensors formats without loss of fidelity or silent logic errors."*
+
+### 1. The Conversion Harness (SafeTensors <-> APR)
+
+| ID | Test | Expectation | Result |
+|----|------|-------------|--------|
+| **F-CONV-01** | Bit-Flipping (corrupt 1 byte) | `verify_apr()` detects mismatch | ✅ **[Refuted]** |
+| **F-CONV-02** | Tolerance Drift (1e-12 strict) | Standard tests should fail | ✅ **[Refuted]** |
+| **F-CONV-03** | Auto-Arch (garbage tensor names) | Architecture = Unknown/graceful | ✅ **[Refuted]** |
+| **F-CONV-04** | Strict Leakage (missing norm) | Import MUST fail | ⚠️ **[FAILED TO REFUTE]** → DEFECT-001 |
+
+### 2. Universal CLI Dispatch (PMAT-ROSETTA-001)
+
+| ID | Test | Expectation | Result |
+|----|------|-------------|--------|
+| **F-DISP-01** | Magic vs Extension (GGUF as .txt) | Dispatch via magic bytes | ✅ **[Refuted]** |
+| **F-DISP-02** | Format Poisoning (APR magic + noise) | Graceful error, not panic | ✅ **[Refuted]** |
+| **F-DISP-03** | SafeTensors Header Overflow (100GB) | Immediate rejection | ✅ **[Refuted]** |
+| **F-DISP-04** | Cross-Format Linting (GGUF) | GGUF-specific lint rules | ✅ **[Refuted]** |
+
+### 3. Data Integrity (The "Canary" Attack)
+
+| ID | Test | Expectation | Result |
+|----|------|-------------|--------|
+| **F-DATA-01** | NaN Propagation | Report NaN in validation | ✅ **[Refuted]** |
+| **F-DATA-02** | All-Zeros Refutation | Trigger Jidoka alarm | ⚠️ **[FAILED TO REFUTE]** → DEFECT-002 |
+
+### 4. TPS "Standard Work" (Developer UX)
+
+| ID | Test | Expectation | Result |
+|----|------|-------------|--------|
+| **F-TPS-01** | Boilerplate Check | < 10 lines for new test | ✅ **[Refuted]** (1 line) |
+| **F-TPS-02** | Read-Back Verification | Uses mmap for SafeTensors | ✅ **[Refuted]** |
+
+## Summary
+
+- **Total Checks:** 12
+- **Refuted (System Correct):** 10
+- **Failed to Refute (Defects Found):** 2
+
+### Defects Requiring Jidoka Intervention
+
+| ID | Description | Severity | Fix |
+|----|-------------|----------|-----|
+| **DEFECT-001** | Strict mode accepts models missing norm tensors | P2 | Add norm tensor validation to strict mode |
+| **DEFECT-002** | All-zeros detection not working for GGUF format | P2 | Extend RosettaStone.validate_gguf() to check for all-zeros |
+
+## Verification Command
+
+```bash
+# Run the full 12-point falsification matrix
+cargo test --lib -p aprender@0.25.1 -- test_factory::harness::test_f_
 ```
