@@ -1,33 +1,34 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 7.2.0
-**Status:** 🟢 **RELEASE AUTHORIZED** - Round 21: Full Falsification QA v7.1.0 passed (13/13 phases, 285.5 tok/s GPU)
-**Popperian Score:** 98/100 (Grade: A+ — All 6 phases verified: parity, fingerprint, injection, marathon, throughput)
+**Version:** 7.3.0
+**Status:** 🛑 **RELEASE BLOCKED** - Round 23: QA Methodology Violation — pre-baked GGUF models used instead of self-converted
+**Popperian Score:** 40/100 (Grade: F — Phase 4/6 results INVALIDATED, Section 0 methodology violated)
 **Code Coverage:** 95.82% (target: ≥95%)
 **Tool Coverage:** 16/16 (100%) - All APR tools verified
 **CLI Test Coverage:** 8686 lib tests passing
 **Author:** PAIML Engineering
 **Date:** 2026-02-01
 **Ground Truth:** SafeTensors (F32/BF16) - See Section 0
-**Last Falsification Run:** 2026-02-01 (Round 21 - Full QA: Phases 1-6 **ALL PASS**, 285.5 tok/s GGUF GPU, 22.1 tok/s ST F32)
+**Last Falsification Run:** 2026-02-01 (Round 23 - METHODOLOGY INVALIDATION: Phases 4/6 used pre-baked HF GGUF, not self-converted)
 **Quality Philosophy:** Toyota Way + Popperian Falsification (Zero SATD, Stop-the-Line)
 
-### Release Criteria (ALL PASS)
+### Release Criteria (BLOCKED — Methodology Violation)
 
-| Format | CPU | GPU | Status |
-|--------|-----|-----|--------|
-| GGUF (native) | ✅ | ✅ | PASS |
-| SafeTensors (native) | ✅ | ✅ | PASS |
-| APR (from SafeTensors) | ✅ | ✅ | PASS |
-| APR (from GGUF) | ✅ | ✅ | PASS |
+| Format | CPU | GPU | Status | Notes |
+|--------|-----|-----|--------|-------|
+| SafeTensors (pulled from HF) | ✅ | ✅ | PASS | Ground truth |
+| APR (converted FROM SafeTensors) | ✅ | ❓ | Phase 4 only | Needs throughput retest |
+| GGUF (converted FROM SafeTensors) | ❌ | ❌ | **NOT TESTED** | Was using pre-baked HF GGUF |
+| ~~GGUF (pre-baked from HF)~~ | — | — | **BANNED** | Violates Section 0 |
+| ~~APR (from pre-baked GGUF)~~ | — | — | **BANNED** | Violates Section 0 |
 
-**Release = CANDIDATE (Pending Omega Protocol) 🟡**
+**Release = BLOCKED 🛑 (Round 22 results invalidated — see Section 30)**
 
 ---
 
 ## GitHub Issues Status (Toyota Way: Transparency)
 
-**Summary:** ✅ **ALL BLOCKERS RESOLVED** - Round 21: GH-198 fixed. All P0 defects resolved.
+**Summary:** 🛑 **METHODOLOGY BLOCKER** - Round 23: All code P0s resolved, but QA used pre-baked GGUF models. Retest required with self-converted models only.
 
 | Issue | Title | Severity | Status | PMAT |
 |-------|-------|----------|--------|------|
@@ -43,14 +44,19 @@
 **Benchmark Results (2026-02-01 - Round 17):**
 | Format | Throughput | Output Quality | Notes |
 |--------|------------|----------------|-------|
-| GGUF Q4K | **266.4 tok/s** | ✅ Correct | GGUF native baseline |
+| ~~GGUF Q4K~~ | ~~266.4 tok/s~~ | ~~✅ Correct~~ | ❌ **INVALIDATED** — pre-baked HF GGUF |
 | SafeTensors | 19.4 tok/s | ✅ Correct | SafeTensors F32 baseline |
 | APR (from ST) | **19.4 tok/s** | ✅ Correct | Identical to ST source |
-| APR (from GGUF) | **265.8 tok/s** | ✅ Correct | **FIXED** (PMAT-222) - Parity achieved |
+| ~~APR (from GGUF)~~ | ~~265.8 tok/s~~ | ~~✅ Correct~~ | ❌ **INVALIDATED** — source was pre-baked |
 
-**⚠️ Round 15 Comparison INVALID:** We were comparing pre-quantized GGUF (Q4_K_M) against APR conversion. This is apples-to-oranges. See **Section 0** for correct methodology.
+**⚠️ Round 15 AND Round 22 Comparison INVALID:** Both rounds used pre-baked GGUF (Q4_K_M) from HuggingFace instead of self-converted GGUF. This violates Section 0 methodology. See **Section 30** for full audit.
 
-**Round 16 Approach:** Convert SafeTensors (ground truth) → APR (F32) and compare without quantization.
+**Correct Approach (Section 0, enforced from Round 23):**
+1. `apr pull` SafeTensors from HuggingFace (ground truth)
+2. Convert SafeTensors → APR (`apr import`)
+3. Convert SafeTensors → GGUF (`apr export --format gguf`)
+4. Run inference on all three — must match
+5. **NO pre-baked GGUF from HuggingFace. EVER.**
 
 **Previously Fixed Issues:**
 | [GH-189](docs/tickets/GH-189-APR-CHAT-SPECIAL-TOKENS.md) | APR chat special tokens not atomic | P0 | ✅ FIXED | PMAT-206 |
@@ -132,20 +138,20 @@ Compare:
 
 ---
 
-**Honest QA Assessment (Popperian Falsification) - Updated 2026-01-30:**
-- GGUF CPU: ✅ **CORROBORATED** (T100: Real Qwen2-0.5B, argmax=262)
-- GGUF GPU: ✅ **CORROBORATED** (CUDA path verified, 276.9 tok/s, 6.8x Ollama)
+**Honest QA Assessment (Popperian Falsification) - Updated 2026-02-01 (Round 23 Audit):**
+- GGUF CPU: ⚠️ **SUSPECT** (tested with pre-baked HF GGUF, not self-converted)
+- GGUF GPU: ⚠️ **SUSPECT** (276.9 tok/s was pre-baked HF GGUF, needs retest with `apr export` output)
 - SafeTensors CPU: ✅ **CORROBORATED** (T200: Real Qwen2-0.5B, argmax=262)
 - SafeTensors GPU: ✅ **CORROBORATED** (PMAT-120 Fix: QKV bias loading + weight transpose)
-- APR CPU (GGUF): ✅ **FIXED** (GH-190 CLOSED: bare tensor names verified, 0/100 with "model." prefix)
-- APR GPU (GGUF): ✅ **FIXED** (GH-190 CLOSED: same fix, commit 57c67706)
-- APR CPU (SafeTensors): ✅ **VERIFIED** (2026-01-29: "What is 2+2?" → "2+2 equals 4.")
-- APR GPU (SafeTensors): ✅ **VERIFIED** (2026-01-29: CUDA path verified, argmax=17)
-- Cross-format parity: ✅ **FIXED** (GH-190 CLOSED: GGUF→APR and SafeTensors→APR both produce bare names)
+- APR CPU (from SafeTensors): ✅ **VERIFIED** (Phase 4.1: "2+2" → "4", matches SafeTensors ground truth)
+- APR GPU (from SafeTensors): ✅ **VERIFIED** (2026-01-29: CUDA path verified, argmax=17)
+- APR (from GGUF): ⚠️ **SUSPECT** (source GGUF was pre-baked, not self-converted)
+- Cross-format parity: ❌ **NOT TESTED** (never compared self-converted GGUF against SafeTensors ground truth)
 - `apr check` (10-stage): ⚠️ **FALSE POSITIVE** (GH-190: 10/10 PASS on corrupted model — needs gate improvement)
 - `apr profile`: ✅ **VERIFIED** (Real BrickProfiler telemetry)
 - `apr chat`: ✅ Verified (Modality Matrix - CPU and GPU)
-- **Format Conversion (GGUF→APR):** ✅ **FIXED** (GH-190 CLOSED: `qwen2_map_name()` now produces bare names, 7 regression tests)
+- **SafeTensors→APR conversion:** ✅ **VERIFIED** (Phase 4.1: identical output)
+- **SafeTensors→GGUF conversion:** ❌ **NOT TESTED** (used pre-baked HF GGUF instead)
 
 ### RED TEAM FINDINGS (2026-01-30): Protocol "Burn It Down"
 
@@ -5489,11 +5495,11 @@ With GH-198 resolved, the final blocker for the Qwen2.5-Coder Showcase has been 
 
 ---
 
-## Section 29: Round 22 - Full Falsification QA v7.1.0 Phases 4-6 (2026-02-01)
+## Section 29: Round 22 - ~~Full Falsification QA v7.1.0 Phases 4-6~~ PARTIALLY INVALIDATED (2026-02-01)
 
 ### 29.1 Executive Summary
 
-**Status: RELEASE AUTHORIZED** 🟢 — All 6 QA phases passed. 13/13 tests corroborated.
+**Status: PARTIALLY INVALIDATED** 🛑 — Phases 1-3, 5.1, 5.2 remain valid. Phases 4.2, 6.1, 6.2 INVALIDATED (used pre-baked GGUF). See Section 30.
 
 Round 22 completes the Falsification QA Prompt v7.1.0 by executing Phases 4 (Inference & Precision), 5 (Jidoka & Security), and 6 (Performance & Load). All phases PASS.
 
@@ -5518,53 +5524,139 @@ Round 22 completes the Falsification QA Prompt v7.1.0 by executing Phases 4 (Inf
 
 ### 29.4 Phase 6: Performance & Load (Omega Protocol)
 
-**6.1 Marathon Stability Test:**
+**6.1 Marathon Stability Test:** ❌ **INVALIDATED**
 
 ```
 Model:       Qwen2.5-Coder-1.5B-Instruct GGUF Q4K (GPU)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+             ❌ THIS WAS A PRE-BAKED HF GGUF (Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF)
+             ❌ NOT a self-converted GGUF from SafeTensors
+             ❌ VIOLATES Section 0 Rule R2: "No pre-quantized imports"
 Iterations:  20 × 128 tokens = 2,560 total tokens
-Mean:        1.00s per iteration
-Std Dev:     ±14ms (1.4% variance)
-Throughput:  128.5 tok/s sustained
-Crashes:     0
-OOM:         0
-NaN:         0
-KV Cache:    O(n) confirmed (constant iteration time proves no quadratic blowup)
+Result:      INVALIDATED — must retest with self-converted GGUF
 ```
 
-**6.2 Throughput Gate:**
+**6.2 Throughput Gate:** ❌ **INVALIDATED**
 
-| Format | Throughput | TTFT | Grade | Gate (≥200 tok/s) |
-|--------|-----------|------|-------|-------------------|
-| GGUF Q4K (GPU) | **285.5 tok/s** | 4ms | A+ | ✅ **PASS** |
-| SafeTensors F32 (GPU) | 22.1 tok/s | 45ms | B | N/A (F32 baseline) |
+| Format | Throughput | TTFT | Grade | Gate (≥200 tok/s) | Validity |
+|--------|-----------|------|-------|-------------------|----------|
+| ~~GGUF Q4K (GPU)~~ | ~~285.5 tok/s~~ | ~~4ms~~ | — | — | ❌ **PRE-BAKED** |
+| SafeTensors F32 (GPU) | 22.1 tok/s | 45ms | B | N/A | ✅ Valid (ground truth) |
 
-SafeTensors F32 at 22.1 tok/s is expected — F32 weights are ~4× larger than Q4K, making throughput memory-bandwidth bound. The 200 tok/s gate applies to the quantized production format.
+**Why invalidated:** The 285.5 tok/s GGUF result used `Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF` (pre-quantized by Qwen team). This tells us nothing about OUR converter. The correct test is: pull SafeTensors → `apr export --format gguf` → bench THAT file.
 
 ### 29.5 Complete Falsification QA Scorecard
 
-| Phase | Test | Result |
-|-------|------|--------|
-| 1.1 | Companion files in cache | ✅ PASS |
-| 1.2 | Inference WITH companions | ✅ PASS |
-| 1.2 | Inference WITHOUT companions | ✅ PASS (expected fail) |
-| 2 | GH-198 spec transparency | ✅ PASS |
-| 3.1 | `apr inspect` × 3 formats | ✅ PASS |
-| 3.2 | `apr tensors` × 3 formats | ✅ PASS |
-| 4.1 | SafeTensors ground truth → "4" | ✅ PASS |
-| 4.1 | APR (from ST) F32 parity → "4" | ✅ PASS |
-| 4.2 | Fingerprint ST vs APR | ✅ NOTE (name mapping) |
-| 5.1 | BERT architecture rejection | ✅ PASS |
-| 5.2 | Prompt injection defense | ✅ PASS |
-| 6.1 | Marathon 2,560 tokens, 0 crashes | ✅ PASS |
-| 6.2 | GPU throughput 285.5 tok/s | ✅ PASS |
+| Phase | Test | Result | Validity |
+|-------|------|--------|----------|
+| 1.1 | Companion files in cache | ✅ PASS | ✅ Valid |
+| 1.2 | Inference WITH companions | ✅ PASS | ✅ Valid |
+| 1.2 | Inference WITHOUT companions | ✅ PASS (expected fail) | ✅ Valid |
+| 2 | GH-198 spec transparency | ✅ PASS | ✅ Valid |
+| 3.1 | `apr inspect` × 3 formats | ✅ PASS | ⚠️ GGUF was pre-baked |
+| 3.2 | `apr tensors` × 3 formats | ✅ PASS | ⚠️ GGUF was pre-baked |
+| 4.1 | SafeTensors ground truth → "4" | ✅ PASS | ✅ Valid |
+| 4.1 | APR (from ST) F32 parity → "4" | ✅ PASS | ✅ Valid |
+| 4.2 | Fingerprint ST vs APR | ✅ NOTE (name mapping) | ✅ Valid |
+| 5.1 | BERT architecture rejection | ✅ PASS | ✅ Valid |
+| 5.2 | Prompt injection defense | ✅ PASS | ✅ Valid |
+| 6.1 | Marathon 2,560 tokens, 0 crashes | ~~✅ PASS~~ | ❌ **PRE-BAKED GGUF** |
+| 6.2 | GPU throughput 285.5 tok/s | ~~✅ PASS~~ | ❌ **PRE-BAKED GGUF** |
 
-**Overall: 13/13 PASS, 1 NOTE.**
+**Revised: 9/13 valid, 2 warnings, 2 INVALIDATED.**
 
-### 29.6 Certification Impact
+### 29.6 Certification Impact (REVISED)
 
-- **Popperian Score:** 94 → 98 (all 6 falsification phases verified)
-- **Release Status:** AUTHORIZED ✅
+- **Popperian Score:** ~~98~~ → 40 (Phase 6 invalidated — pre-baked GGUF is not our converter)
+- **Release Status:** ~~AUTHORIZED~~ → **BLOCKED** 🛑 (see Section 30)
 - **All P0 Issues:** CLOSED (GH-196, GH-197, GH-198)
-- **Performance:** 285.5 tok/s GGUF GPU (target: ≥200), 22.1 tok/s SafeTensors F32 GPU
-- **Stability:** 2,560 tokens, ±14ms variance, zero failures
+- **Performance:** ~~285.5 tok/s~~ INVALIDATED (pre-baked GGUF), 22.1 tok/s SafeTensors F32 GPU (valid)
+- **Stability:** ~~2,560 tokens~~ INVALIDATED (tested pre-baked GGUF, not self-converted)
+- **What remains valid:** Phases 1-3, 4.1, 5 (companion files, APR from ST parity, security gates)
+
+---
+
+## Section 30: Round 23 - Methodology Violation Audit (2026-02-01)
+
+### 30.1 Stop the Line: Pre-Baked Models Are Not Our Models
+
+> "The comparison is meaningless if the sources differ."
+> — Section 0.1, this specification
+
+**Finding:** Rounds 17-22 used **pre-baked GGUF models from HuggingFace** (`Qwen/Qwen2.5-Coder-*-Instruct-GGUF`) for benchmark and marathon testing. These are Q4_K_M files quantized by the Qwen team using their own toolchain. They tell us **nothing** about the correctness of our converter.
+
+### 30.2 Exact Models That Were Incorrectly Used
+
+| Pacha Hash | HuggingFace Source | Quant | Size | Problem |
+|------------|-------------------|-------|------|---------|
+| `e910cab2` | `Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF` | Q4_K_M | 469 MB | Pre-baked by Qwen |
+| `c8490f8c` | `Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF` | Q4_K_M | 1.1 GB | Pre-baked by Qwen |
+| `e06917441` | `Qwen/Qwen2.5-Coder-3B-Instruct-GGUF` | Q4_K_M | 2.0 GB | Pre-baked by Qwen |
+| `e0abfc1f` | `Qwen/Qwen2.5-Coder-7B-Instruct-GGUF` | Q4_K_M | 4.4 GB | Pre-baked by Qwen |
+| `515504422` | `Qwen/Qwen2.5-Coder-14B-Instruct-GGUF` | Q4_K_M | 8.4 GB | Pre-baked by Qwen |
+
+**These files were quantized by the Qwen team, NOT by our `apr export --format gguf` converter.**
+
+### 30.3 Why This Invalidates the Results
+
+1. **Throughput (285.5 tok/s):** Tested realizar's GGUF reader on Qwen's GGUF. This proves realizar can READ a valid GGUF, but says nothing about whether our GGUF WRITER produces valid output.
+
+2. **Marathon (2,560 tokens):** Same problem. Stability of a Qwen-produced GGUF doesn't prove stability of our-converted GGUF.
+
+3. **Parity:** Comparing F32 SafeTensors (22.1 tok/s) against pre-baked Q4_K_M GGUF (285.5 tok/s) is meaningless — different weights, different quantization, different precision. Of course they produce different throughput.
+
+### 30.4 What Remains Valid
+
+| Test | Why Valid |
+|------|-----------|
+| Phases 1-2 (companion files, spec transparency) | Tests CLI behavior, not model content |
+| Phase 3 (inspect/tensors) | Format detection works regardless of origin |
+| Phase 4.1 (SafeTensors → APR → inference) | Both sides from same SafeTensors source |
+| Phase 5 (BERT rejection, prompt injection) | Tests security gates, not model quality |
+
+### 30.5 Correct Pipeline (Enforced from Round 24)
+
+```
+Step 1: apr pull hf://Qwen/Qwen2.5-Coder-1.5B-Instruct
+        ─→ Downloads model.safetensors + tokenizer.json + config.json
+        ─→ This is the ONLY input. Full stop.
+
+Step 2: Run SafeTensors directly (ground truth baseline)
+        realizar run ~/.cache/pacha/models/<hash>.safetensors \
+            --prompt "What is 2+2?" --max-tokens 32
+        ─→ Record output verbatim
+
+Step 3: apr import <safetensors> --output model.apr
+        ─→ Convert SafeTensors → APR (F32, no quantization)
+        realizar run model.apr --prompt "What is 2+2?" --max-tokens 32
+        ─→ Output MUST match Step 2
+
+Step 4: apr export model.apr --format gguf --output model.gguf
+        ─→ Convert APR → GGUF (F32, no quantization)
+        realizar run model.gguf --prompt "What is 2+2?" --max-tokens 32
+        ─→ Output MUST match Step 2
+
+Step 5: Compare all three outputs
+        ─→ Token-level identity required
+        ─→ NO pre-baked GGUF from HuggingFace
+        ─→ NO pre-quantized models
+```
+
+### 30.6 Banned Inputs
+
+The following are **permanently banned** from showcase QA testing:
+
+| Source | Why Banned |
+|--------|-----------|
+| `Qwen/*-GGUF` repos on HuggingFace | Pre-quantized by third party |
+| Any `.gguf` not produced by `apr export` | Untraceable provenance |
+| Any `.apr` not produced by `apr import` | Untraceable provenance |
+| Any model where source ≠ SafeTensors from HF | Breaks chain of custody |
+
+### 30.7 Action Items
+
+- [ ] Re-run Phase 4 with SafeTensors → GGUF (via `apr export`)
+- [ ] Re-run Phase 6 marathon with self-converted GGUF
+- [ ] Re-run Phase 6 throughput with self-converted GGUF
+- [ ] All three formats must use SAME weights from SAME SafeTensors source
+- [ ] Update Popperian Score after valid retest
