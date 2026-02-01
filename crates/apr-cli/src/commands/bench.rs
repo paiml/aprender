@@ -1362,4 +1362,289 @@ mod tests {
         assert!(result.is_err());
         // Error message should mention unknown brick type
     }
+
+    // ========================================================================
+    // Additional BenchConfig Tests
+    // ========================================================================
+
+    #[test]
+    fn test_bench_config_zero_iterations() {
+        let config = BenchConfig {
+            warmup: 0,
+            iterations: 0,
+            max_tokens: 0,
+            prompt: String::new(),
+        };
+        assert_eq!(config.warmup, 0);
+        assert_eq!(config.iterations, 0);
+        assert_eq!(config.max_tokens, 0);
+        assert!(config.prompt.is_empty());
+    }
+
+    #[test]
+    fn test_bench_config_large_values() {
+        let config = BenchConfig {
+            warmup: 1000,
+            iterations: 10000,
+            max_tokens: 4096,
+            prompt: "x".repeat(10000),
+        };
+        assert_eq!(config.warmup, 1000);
+        assert_eq!(config.iterations, 10000);
+        assert_eq!(config.max_tokens, 4096);
+        assert_eq!(config.prompt.len(), 10000);
+    }
+
+    #[test]
+    fn test_bench_config_unicode_prompt() {
+        let config = BenchConfig {
+            warmup: 1,
+            iterations: 1,
+            max_tokens: 32,
+            prompt: "日本語テスト 🎉 émojis".to_string(),
+        };
+        assert!(config.prompt.contains('日'));
+        assert!(config.prompt.contains('🎉'));
+    }
+
+    // ========================================================================
+    // Additional BenchResult Tests
+    // ========================================================================
+
+    #[test]
+    fn test_bench_result_zero_tokens() {
+        let result = BenchResult {
+            total_tokens: 0,
+            total_time: Duration::from_secs(1),
+            tokens_per_second: 0.0,
+            time_to_first_token: Duration::from_millis(0),
+            iteration_times: vec![],
+            mean_time: Duration::from_secs(0),
+            median_time: Duration::from_secs(0),
+            std_dev: Duration::from_secs(0),
+            passed: false,
+        };
+
+        assert_eq!(result.total_tokens, 0);
+        assert_eq!(result.tokens_per_second, 0.0);
+        assert!(!result.passed);
+    }
+
+    #[test]
+    fn test_bench_result_single_iteration() {
+        let result = BenchResult {
+            total_tokens: 10,
+            total_time: Duration::from_millis(500),
+            tokens_per_second: 20.0,
+            time_to_first_token: Duration::from_millis(50),
+            iteration_times: vec![Duration::from_millis(500)],
+            mean_time: Duration::from_millis(500),
+            median_time: Duration::from_millis(500),
+            std_dev: Duration::from_millis(0),
+            passed: true,
+        };
+
+        assert_eq!(result.iteration_times.len(), 1);
+        assert_eq!(result.mean_time, result.median_time);
+    }
+
+    #[test]
+    fn test_bench_result_high_variance() {
+        let result = BenchResult {
+            total_tokens: 100,
+            total_time: Duration::from_secs(10),
+            tokens_per_second: 10.0,
+            time_to_first_token: Duration::from_millis(100),
+            iteration_times: vec![
+                Duration::from_millis(100),
+                Duration::from_secs(5),
+                Duration::from_millis(200),
+            ],
+            mean_time: Duration::from_millis(1767),
+            median_time: Duration::from_millis(200),
+            std_dev: Duration::from_secs(2), // High variance
+            passed: true,
+        };
+
+        // Mean and median are very different due to outlier
+        assert!(result.mean_time > result.median_time);
+    }
+
+    #[test]
+    fn test_bench_result_fast_ttft() {
+        let result = BenchResult {
+            total_tokens: 100,
+            total_time: Duration::from_secs(1),
+            tokens_per_second: 100.0,
+            time_to_first_token: Duration::from_micros(500), // 0.5ms
+            iteration_times: vec![Duration::from_millis(200); 5],
+            mean_time: Duration::from_millis(200),
+            median_time: Duration::from_millis(200),
+            std_dev: Duration::from_millis(1),
+            passed: true,
+        };
+
+        assert!(result.time_to_first_token < Duration::from_millis(1));
+    }
+
+    #[test]
+    fn test_bench_result_slow_ttft() {
+        let result = BenchResult {
+            total_tokens: 100,
+            total_time: Duration::from_secs(10),
+            tokens_per_second: 10.0,
+            time_to_first_token: Duration::from_secs(5), // 5s - very slow
+            iteration_times: vec![Duration::from_secs(2); 5],
+            mean_time: Duration::from_secs(2),
+            median_time: Duration::from_secs(2),
+            std_dev: Duration::from_millis(10),
+            passed: true,
+        };
+
+        assert!(result.time_to_first_token >= Duration::from_secs(5));
+    }
+
+    // ========================================================================
+    // Edge Case Tests
+    // ========================================================================
+
+    #[test]
+    fn test_run_empty_file() {
+        let file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
+        // File is empty - should fail validation
+        let result = run(file.path(), 1, 1, 16, None, false, None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_unknown_extension() {
+        let mut file = NamedTempFile::with_suffix(".xyz").expect("create temp file");
+        file.write_all(b"some content").expect("write");
+        let result = run(file.path(), 1, 1, 16, None, false, None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_no_extension() {
+        let mut file = NamedTempFile::new().expect("create temp file");
+        file.write_all(b"some content").expect("write");
+        let result = run(file.path(), 1, 1, 16, None, false, None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_bench_result_iterations_consistency() {
+        // Ensure iteration_times length matches what would be expected
+        let times = vec![Duration::from_millis(100); 10];
+        let result = BenchResult {
+            total_tokens: 320,
+            total_time: Duration::from_secs(1),
+            tokens_per_second: 320.0,
+            time_to_first_token: Duration::from_millis(10),
+            iteration_times: times.clone(),
+            mean_time: Duration::from_millis(100),
+            median_time: Duration::from_millis(100),
+            std_dev: Duration::from_millis(0),
+            passed: true,
+        };
+
+        assert_eq!(result.iteration_times.len(), 10);
+    }
+
+    #[test]
+    fn test_bench_result_debug_trait() {
+        let result = BenchResult {
+            total_tokens: 100,
+            total_time: Duration::from_secs(1),
+            tokens_per_second: 100.0,
+            time_to_first_token: Duration::from_millis(10),
+            iteration_times: vec![],
+            mean_time: Duration::from_millis(100),
+            median_time: Duration::from_millis(100),
+            std_dev: Duration::from_millis(1),
+            passed: true,
+        };
+
+        // BenchResult derives Debug
+        let debug_str = format!("{:?}", result);
+        assert!(debug_str.contains("BenchResult"));
+        assert!(debug_str.contains("tokens_per_second"));
+    }
+
+    #[test]
+    fn test_bench_result_clone_trait() {
+        let result = BenchResult {
+            total_tokens: 100,
+            total_time: Duration::from_secs(1),
+            tokens_per_second: 100.0,
+            time_to_first_token: Duration::from_millis(10),
+            iteration_times: vec![Duration::from_millis(100)],
+            mean_time: Duration::from_millis(100),
+            median_time: Duration::from_millis(100),
+            std_dev: Duration::from_millis(1),
+            passed: true,
+        };
+
+        let cloned = result.clone();
+        assert_eq!(cloned.total_tokens, result.total_tokens);
+        assert_eq!(cloned.tokens_per_second, result.tokens_per_second);
+    }
+
+    // ========================================================================
+    // Throughput Grade Tests
+    // ========================================================================
+
+    #[test]
+    fn test_throughput_grade_a_plus() {
+        // A+ grade: >= 100 tok/s
+        let result = BenchResult {
+            total_tokens: 500,
+            total_time: Duration::from_millis(500),
+            tokens_per_second: 1000.0,
+            time_to_first_token: Duration::from_millis(1),
+            iteration_times: vec![Duration::from_millis(100); 5],
+            mean_time: Duration::from_millis(100),
+            median_time: Duration::from_millis(100),
+            std_dev: Duration::from_millis(1),
+            passed: true,
+        };
+
+        assert!(result.tokens_per_second >= 100.0);
+    }
+
+    #[test]
+    fn test_throughput_grade_b() {
+        // B grade: 50-99 tok/s
+        let result = BenchResult {
+            total_tokens: 250,
+            total_time: Duration::from_secs(5),
+            tokens_per_second: 50.0,
+            time_to_first_token: Duration::from_millis(20),
+            iteration_times: vec![Duration::from_secs(1); 5],
+            mean_time: Duration::from_secs(1),
+            median_time: Duration::from_secs(1),
+            std_dev: Duration::from_millis(10),
+            passed: true,
+        };
+
+        assert!(result.tokens_per_second >= 50.0 && result.tokens_per_second < 100.0);
+    }
+
+    #[test]
+    fn test_throughput_grade_c() {
+        // C grade: 20-49 tok/s
+        let result = BenchResult {
+            total_tokens: 100,
+            total_time: Duration::from_secs(5),
+            tokens_per_second: 20.0,
+            time_to_first_token: Duration::from_millis(50),
+            iteration_times: vec![Duration::from_secs(1); 5],
+            mean_time: Duration::from_secs(1),
+            median_time: Duration::from_secs(1),
+            std_dev: Duration::from_millis(50),
+            passed: true,
+        };
+
+        assert!(result.tokens_per_second >= 20.0 && result.tokens_per_second < 50.0);
+    }
 }

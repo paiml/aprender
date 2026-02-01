@@ -1972,4 +1972,301 @@ mod tests {
         // Should fail (invalid files)
         assert!(result.is_err());
     }
+
+    // ========================================================================
+    // Additional Hotspot Tests
+    // ========================================================================
+
+    #[test]
+    fn test_hotspot_debug() {
+        let hotspot = Hotspot {
+            name: "matmul".to_string(),
+            time_us: 1000.0,
+            percent: 50.0,
+            count: 10,
+            avg_us: 100.0,
+            min_us: 80.0,
+            max_us: 120.0,
+        };
+        let debug = format!("{:?}", hotspot);
+        assert!(debug.contains("Hotspot"));
+        assert!(debug.contains("matmul"));
+    }
+
+    #[test]
+    fn test_hotspot_clone() {
+        let hotspot = Hotspot {
+            name: "attention".to_string(),
+            time_us: 500.0,
+            percent: 25.0,
+            count: 5,
+            avg_us: 100.0,
+            min_us: 90.0,
+            max_us: 110.0,
+        };
+        let cloned = hotspot.clone();
+        assert_eq!(cloned.name, hotspot.name);
+        assert_eq!(cloned.time_us, hotspot.time_us);
+    }
+
+    #[test]
+    fn test_hotspot_zero_count() {
+        let hotspot = Hotspot {
+            name: "empty".to_string(),
+            time_us: 0.0,
+            percent: 0.0,
+            count: 0,
+            avg_us: 0.0,
+            min_us: 0.0,
+            max_us: 0.0,
+        };
+        assert_eq!(hotspot.count, 0);
+        assert_eq!(hotspot.avg_us, 0.0);
+    }
+
+    #[test]
+    fn test_hotspot_high_variance() {
+        let hotspot = Hotspot {
+            name: "variable_op".to_string(),
+            time_us: 10000.0,
+            percent: 100.0,
+            count: 100,
+            avg_us: 100.0,
+            min_us: 10.0,
+            max_us: 500.0, // High max vs avg
+        };
+        assert!(hotspot.max_us > hotspot.avg_us * 4.0);
+    }
+
+    // ========================================================================
+    // Additional RealProfileResults Tests
+    // ========================================================================
+
+    #[test]
+    fn test_real_profile_results_construction() {
+        let results = RealProfileResults {
+            model_path: "test.gguf".to_string(),
+            architecture: "llama".to_string(),
+            num_layers: 32,
+            vocab_size: 32000,
+            hidden_dim: 4096,
+            warmup_passes: 3,
+            measure_passes: 10,
+            total_inference_us: 10000.0,
+            throughput_tok_s: 100.0,
+            tokens_per_pass: 10,
+            hotspots: vec![],
+            per_layer_us: vec![],
+            is_real_data: true,
+        };
+        assert_eq!(results.model_path, "test.gguf");
+        assert_eq!(results.architecture, "llama");
+        assert!(results.is_real_data);
+    }
+
+    #[test]
+    fn test_real_profile_results_with_hotspots() {
+        let hotspots = vec![
+            Hotspot {
+                name: "matmul".to_string(),
+                time_us: 5000.0,
+                percent: 50.0,
+                count: 10,
+                avg_us: 500.0,
+                min_us: 450.0,
+                max_us: 550.0,
+            },
+            Hotspot {
+                name: "attention".to_string(),
+                time_us: 3000.0,
+                percent: 30.0,
+                count: 10,
+                avg_us: 300.0,
+                min_us: 280.0,
+                max_us: 320.0,
+            },
+        ];
+        let results = RealProfileResults {
+            model_path: "test.gguf".to_string(),
+            architecture: "llama".to_string(),
+            num_layers: 32,
+            vocab_size: 32000,
+            hidden_dim: 4096,
+            warmup_passes: 3,
+            measure_passes: 10,
+            total_inference_us: 10000.0,
+            throughput_tok_s: 100.0,
+            tokens_per_pass: 10,
+            hotspots,
+            per_layer_us: vec![100.0; 32],
+            is_real_data: true,
+        };
+        assert_eq!(results.hotspots.len(), 2);
+        assert_eq!(results.per_layer_us.len(), 32);
+    }
+
+    #[test]
+    fn test_real_profile_results_synthetic_data() {
+        let results = RealProfileResults {
+            model_path: "synthetic.gguf".to_string(),
+            architecture: "mock".to_string(),
+            num_layers: 4,
+            vocab_size: 1000,
+            hidden_dim: 256,
+            warmup_passes: 1,
+            measure_passes: 1,
+            total_inference_us: 1000.0,
+            throughput_tok_s: 1000.0,
+            tokens_per_pass: 1,
+            hotspots: vec![],
+            per_layer_us: vec![],
+            is_real_data: false,
+        };
+        assert!(!results.is_real_data);
+    }
+
+    // ========================================================================
+    // Edge Cases for Formats
+    // ========================================================================
+
+    #[test]
+    fn test_detect_format_apr_path() {
+        let path = Path::new("/some/deep/path/model.apr");
+        assert_eq!(detect_format(path), "apr");
+    }
+
+    #[test]
+    fn test_detect_format_safetensors_path() {
+        let path = Path::new("models/v1.0/model.safetensors");
+        assert_eq!(detect_format(path), "safetensors");
+    }
+
+    #[test]
+    fn test_detect_format_gguf_with_version() {
+        let path = Path::new("qwen2.5-coder-1.5b-q4_k_m.gguf");
+        assert_eq!(detect_format(path), "gguf");
+    }
+
+    #[test]
+    fn test_detect_format_empty_extension() {
+        let path = Path::new("model.");
+        assert_eq!(detect_format(path), "unknown");
+    }
+
+    // ========================================================================
+    // CI Assertions Edge Cases
+    // ========================================================================
+
+    #[test]
+    fn test_ci_assertions_all_set() {
+        let assertions = CiAssertions {
+            min_throughput: Some(100.0),
+            max_p99_ms: Some(50.0),
+            max_p50_ms: Some(25.0),
+            max_memory_mb: Some(1024.0),
+        };
+        assert!(assertions.min_throughput.is_some());
+        assert!(assertions.max_p99_ms.is_some());
+        assert!(assertions.max_p50_ms.is_some());
+    }
+
+    #[test]
+    fn test_ci_profile_report_multiple_assertions_fail() {
+        let results = RealProfileResults {
+            model_path: "model.gguf".to_string(),
+            architecture: "llama".to_string(),
+            num_layers: 32,
+            vocab_size: 32000,
+            hidden_dim: 4096,
+            warmup_passes: 3,
+            measure_passes: 10,
+            total_inference_us: 100000.0, // 100ms
+            throughput_tok_s: 10.0,       // Low
+            tokens_per_pass: 10,
+            hotspots: vec![],
+            per_layer_us: vec![],
+            is_real_data: true,
+        };
+        let assertions = CiAssertions {
+            min_throughput: Some(100.0), // Will fail
+            max_p99_ms: Some(50.0),      // Will fail (100ms > 50ms)
+            ..Default::default()
+        };
+        let report = CiProfileReport::from_results(&results, &assertions);
+        assert!(!report.passed);
+        // Both assertions should fail
+        assert_eq!(report.assertions.iter().filter(|a| !a.passed).count(), 2);
+    }
+
+    #[test]
+    fn test_ci_profile_report_boundary_values() {
+        // Exactly at threshold
+        let results = RealProfileResults {
+            model_path: "model.gguf".to_string(),
+            architecture: "llama".to_string(),
+            num_layers: 32,
+            vocab_size: 32000,
+            hidden_dim: 4096,
+            warmup_passes: 3,
+            measure_passes: 10,
+            total_inference_us: 50000.0, // Exactly 50ms
+            throughput_tok_s: 100.0,     // Exactly at threshold
+            tokens_per_pass: 10,
+            hotspots: vec![],
+            per_layer_us: vec![],
+            is_real_data: true,
+        };
+        let assertions = CiAssertions {
+            min_throughput: Some(100.0), // Exactly at threshold
+            max_p99_ms: Some(50.0),      // Exactly at threshold
+            ..Default::default()
+        };
+        let report = CiProfileReport::from_results(&results, &assertions);
+        // Exactly at threshold should pass for >= and <=
+        assert!(report.passed);
+    }
+
+    // ========================================================================
+    // OutputFormat and ProfileFocus Exhaustive Tests
+    // ========================================================================
+
+    #[test]
+    fn test_output_format_copy_trait() {
+        let format = OutputFormat::Json;
+        let copied = format;
+        assert!(matches!(format, OutputFormat::Json));
+        assert!(matches!(copied, OutputFormat::Json));
+    }
+
+    #[test]
+    fn test_profile_focus_copy_trait() {
+        let focus = ProfileFocus::Mlp;
+        let copied = focus;
+        assert!(matches!(focus, ProfileFocus::Mlp));
+        assert!(matches!(copied, ProfileFocus::Mlp));
+    }
+
+    #[test]
+    fn test_output_format_parse_mixed_case() {
+        assert!(matches!(
+            "Json".parse::<OutputFormat>().unwrap(),
+            OutputFormat::Json
+        ));
+        assert!(matches!(
+            "FLAMEGRAPH".parse::<OutputFormat>().unwrap(),
+            OutputFormat::Flamegraph
+        ));
+    }
+
+    #[test]
+    fn test_profile_focus_parse_mixed_case() {
+        assert!(matches!(
+            "ATTENTION".parse::<ProfileFocus>().unwrap(),
+            ProfileFocus::Attention
+        ));
+        assert!(matches!(
+            "Mlp".parse::<ProfileFocus>().unwrap(),
+            ProfileFocus::Mlp
+        ));
+    }
 }
