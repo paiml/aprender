@@ -87,12 +87,40 @@ pub(crate) fn apr_import_gguf_raw(
     // Load GGUF with raw quantized tensors (preserves Q4_K bytes)
     let raw_result = load_gguf_raw(gguf_path)?;
 
-    // Map tensor names to APR canonical format
+    // PMAT-222: Auto-detect architecture from GGUF model config
+    // This ensures proper tensor name mapping (GGUF→HF convention)
+    // Critical for format parity: GGUF uses blk.N.attn_q, APR uses layers.N.self_attn.q_proj
+    let effective_arch = if options.architecture == Architecture::Auto {
+        // Detect from model config
+        raw_result
+            .model_config
+            .architecture
+            .as_ref()
+            .and_then(|arch_str| match arch_str.to_lowercase().as_str() {
+                "qwen2" | "qwen" => Some(Architecture::Qwen2),
+                "llama" | "llama2" | "llama3" => Some(Architecture::Llama),
+                "whisper" => Some(Architecture::Whisper),
+                "bert" => Some(Architecture::Bert),
+                _ => None,
+            })
+            .unwrap_or(Architecture::Auto)
+    } else {
+        options.architecture.clone()
+    };
+
+    if effective_arch != Architecture::Auto {
+        eprintln!(
+            "[PMAT-222] Auto-detected architecture: {:?} (tensor names will be mapped)",
+            effective_arch
+        );
+    }
+
+    // Map tensor names to APR canonical format using detected architecture
     let mapped_tensors: BTreeMap<String, GgufRawTensor> = raw_result
         .tensors
         .into_iter()
         .map(|(name, tensor)| {
-            let mapped_name = options.architecture.map_name(&name);
+            let mapped_name = effective_arch.map_name(&name);
             (mapped_name, tensor)
         })
         .collect();

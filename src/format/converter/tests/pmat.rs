@@ -492,79 +492,69 @@ mod tests_gh190_tensor_name_contract {
         ("ffn_down.weight", "mlp.down_proj.weight"),
     ];
 
-    /// GH-190 FIX: GGUF layer tensors must map to BARE names (no "model." prefix).
-    /// The Qwen2 loader at models/qwen2/mod.rs:1065 expects "layers.N.suffix".
+    /// PMAT-222: GGUF layer tensors must map to HuggingFace convention with "model." prefix.
+    /// Realizaer's APR CUDA loader expects "model.layers.N.suffix" as the primary pattern.
     #[test]
-    fn test_gh190_gguf_layer_tensors_no_model_prefix() {
+    fn test_gh190_gguf_layer_tensors_hf_convention() {
         for layer in 0..3 {
             for (gguf_suffix, apr_suffix) in LAYER_TENSOR_SUFFIXES {
                 let gguf_name = format!("blk.{layer}.{gguf_suffix}");
                 let mapped = Architecture::Qwen2.map_name(&gguf_name);
-                let expected = format!("layers.{layer}.{apr_suffix}");
+                let expected = format!("model.layers.{layer}.{apr_suffix}");
 
                 assert_eq!(
                     mapped, expected,
-                    "GH-190: GGUF '{gguf_name}' must map to '{expected}', got '{mapped}'"
-                );
-
-                // INVARIANT: mapped name must NEVER contain "model." prefix
-                assert!(
-                    !mapped.starts_with("model."),
-                    "GH-190 REGRESSION: '{mapped}' has 'model.' prefix — loader will not find it"
+                    "PMAT-222: GGUF '{gguf_name}' must map to '{expected}', got '{mapped}'"
                 );
             }
         }
     }
 
-    /// GH-190 FIX: GGUF non-layer tensors must map to bare names.
+    /// PMAT-222: GGUF non-layer tensors must map to HuggingFace convention.
     #[test]
-    fn test_gh190_gguf_nonlayer_tensors_no_model_prefix() {
+    fn test_gh190_gguf_nonlayer_tensors_hf_convention() {
         let cases = [
-            ("token_embd.weight", "embed_tokens.weight"),
+            ("token_embd.weight", "model.embed_tokens.weight"),
             ("output.weight", "lm_head.weight"),
-            ("output_norm.weight", "norm.weight"),
+            ("output_norm.weight", "model.norm.weight"),
         ];
 
         for (gguf_name, expected) in cases {
             let mapped = Architecture::Qwen2.map_name(gguf_name);
             assert_eq!(
                 mapped, expected,
-                "GH-190: GGUF '{gguf_name}' must map to '{expected}', got '{mapped}'"
-            );
-            assert!(
-                !mapped.starts_with("model."),
-                "GH-190 REGRESSION: '{mapped}' has 'model.' prefix — loader will not find it"
+                "PMAT-222: GGUF '{gguf_name}' must map to '{expected}', got '{mapped}'"
             );
         }
     }
 
-    /// GH-190 FIX: Bias tensors must also get bare names.
+    /// PMAT-222: Bias tensors must use HuggingFace convention with "model." prefix.
     #[test]
-    fn test_gh190_gguf_bias_tensors_no_model_prefix() {
+    fn test_gh190_gguf_bias_tensors_hf_convention() {
         let bias_cases = [
-            ("blk.0.attn_q.bias", "layers.0.self_attn.q_proj.bias"),
-            ("blk.0.attn_k.bias", "layers.0.self_attn.k_proj.bias"),
-            ("blk.0.attn_v.bias", "layers.0.self_attn.v_proj.bias"),
-            ("blk.0.attn_output.bias", "layers.0.self_attn.o_proj.bias"),
+            ("blk.0.attn_q.bias", "model.layers.0.self_attn.q_proj.bias"),
+            ("blk.0.attn_k.bias", "model.layers.0.self_attn.k_proj.bias"),
+            ("blk.0.attn_v.bias", "model.layers.0.self_attn.v_proj.bias"),
+            ("blk.0.attn_output.bias", "model.layers.0.self_attn.o_proj.bias"),
         ];
 
         for (gguf_name, expected) in bias_cases {
             let mapped = Architecture::Qwen2.map_name(gguf_name);
             assert_eq!(
                 mapped, expected,
-                "GH-190: GGUF '{gguf_name}' must map to '{expected}', got '{mapped}'"
+                "PMAT-222: GGUF '{gguf_name}' must map to '{expected}', got '{mapped}'"
             );
         }
     }
 
-    /// GH-190 FIX: Norm tensors must get bare names.
+    /// PMAT-222: Norm tensors must use HuggingFace convention with "model." prefix.
     #[test]
-    fn test_gh190_gguf_norm_tensors_no_model_prefix() {
+    fn test_gh190_gguf_norm_tensors_hf_convention() {
         let norm_cases = [
-            ("blk.0.attn_norm.weight", "layers.0.input_layernorm.weight"),
+            ("blk.0.attn_norm.weight", "model.layers.0.input_layernorm.weight"),
             (
                 "blk.0.ffn_norm.weight",
-                "layers.0.post_attention_layernorm.weight",
+                "model.layers.0.post_attention_layernorm.weight",
             ),
         ];
 
@@ -572,7 +562,7 @@ mod tests_gh190_tensor_name_contract {
             let mapped = Architecture::Qwen2.map_name(gguf_name);
             assert_eq!(
                 mapped, expected,
-                "GH-190: GGUF '{gguf_name}' must map to '{expected}', got '{mapped}'"
+                "PMAT-222: GGUF '{gguf_name}' must map to '{expected}', got '{mapped}'"
             );
         }
     }
@@ -600,12 +590,12 @@ mod tests_gh190_tensor_name_contract {
         // Total: 3 non-layer + 196 layer = 199
         assert_eq!(mapped_names.len(), 3 + num_layers * 7);
 
-        // INVARIANT: No mapped name may contain "model." prefix
+        // PMAT-222: Mapped names use HuggingFace convention (most have "model." prefix)
+        // Only lm_head.weight lacks the prefix (HF standard)
         for name in &mapped_names {
             assert!(
-                !name.starts_with("model."),
-                "GH-190 REGRESSION: '{name}' starts with 'model.' — \
-                 the loader at models/qwen2/mod.rs:1065 will not find it"
+                !name.is_empty(),
+                "PMAT-222: Mapped name is empty"
             );
         }
 

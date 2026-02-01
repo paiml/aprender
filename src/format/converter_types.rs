@@ -160,16 +160,18 @@ impl Architecture {
                     other => other, // Preserve unknown suffixes
                 };
 
-                // GH-190 FIX: No "model." prefix — loader expects "layers.N.suffix"
-                return format!("layers.{layer_num}.{apr_suffix}");
+                // PMAT-222 FIX: Add "model." prefix to match SafeTensors convention
+                // GH-190 was wrong - realizar DOES expect "model.layers.N.suffix"
+                return format!("model.layers.{layer_num}.{apr_suffix}");
             }
         }
 
-        // Handle non-layer tensors (bare names, no "model." prefix)
+        // PMAT-222 FIX: Handle non-layer tensors with "model." prefix to match SafeTensors
+        // Realizar's AprTransformer looks for "model.embed_tokens.weight" not "embed_tokens.weight"
         match name {
-            "token_embd.weight" => "embed_tokens.weight".to_string(),
+            "token_embd.weight" => "model.embed_tokens.weight".to_string(),
             "output.weight" => "lm_head.weight".to_string(),
-            "output_norm.weight" => "norm.weight".to_string(),
+            "output_norm.weight" => "model.norm.weight".to_string(),
             _ => name.to_string(), // Preserve unknown names
         }
     }

@@ -274,8 +274,8 @@ pub enum Commands {
         #[arg(long)]
         filter: Option<String>,
 
-        /// Limit number of tensors shown
-        #[arg(long, default_value = "100")]
+        /// Limit number of tensors shown (0 = unlimited)
+        #[arg(long, default_value = "0")]
         limit: usize,
 
         /// Output as JSON

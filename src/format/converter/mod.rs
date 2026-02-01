@@ -1122,6 +1122,151 @@ fn quantize_q4_k(data: &[f32]) -> Vec<u8> {
     result
 }
 
+/// Quantize F32 to Q6_K format (PMAT-216: Higher precision for Q8_0 tensors)
+///
+/// Q6_K format: 256-element super-blocks
+/// Each super block: ql (128 bytes) + qh (64 bytes) + scales (16 bytes) + d (f16) = 210 bytes
+/// - 6-bit values stored split: low 4 bits in ql, high 2 bits in qh
+/// - 16 sub-blocks of 16 elements each, with int8 scale per sub-block
+fn quantize_q6_k(data: &[f32]) -> Vec<u8> {
+    const SUPER_BLOCK_SIZE: usize = 256;
+    const SUPER_BLOCK_BYTES: usize = 210; // 128 + 64 + 16 + 2
+    const F16_MIN_NORMAL: f32 = 6.1e-5;
+
+    if data.is_empty() {
+        return vec![];
+    }
+
+    let num_blocks = (data.len() + SUPER_BLOCK_SIZE - 1) / SUPER_BLOCK_SIZE;
+    let mut result = Vec::with_capacity(num_blocks * SUPER_BLOCK_BYTES);
+
+    for block_idx in 0..num_blocks {
+        let block_start = block_idx * SUPER_BLOCK_SIZE;
+        let block_end = (block_start + SUPER_BLOCK_SIZE).min(data.len());
+        let block_data = &data[block_start..block_end];
+
+        // Pad to 256 if needed
+        let mut padded = [0.0f32; SUPER_BLOCK_SIZE];
+        padded[..block_data.len()].copy_from_slice(block_data);
+
+        // Compute per-sub-block statistics (16 sub-blocks of 16 elements each)
+        // Q6_K uses signed 6-bit values (-32 to 31) with int8 scales
+        let mut sub_scales = [0.0f32; 16];
+        let mut sub_max_abs = [0.0f32; 16];
+
+        for (j, sub_block) in padded.chunks(16).enumerate().take(16) {
+            // Find max absolute value in sub-block
+            let max_abs = sub_block.iter().fold(0.0f32, |a, &b| a.max(b.abs()));
+            sub_max_abs[j] = max_abs;
+            // Scale to fit in signed 6-bit range (-32 to 31)
+            sub_scales[j] = if max_abs > F16_MIN_NORMAL {
+                max_abs / 31.0
+            } else {
+                F16_MIN_NORMAL
+            };
+        }
+
+        // Find global scale factor d
+        let max_scale = sub_scales.iter().fold(0.0f32, |a, &b| a.max(b));
+        let d = if max_scale > F16_MIN_NORMAL {
+            max_scale / 127.0 // Scale to fit in int8
+        } else {
+            F16_MIN_NORMAL
+        };
+
+        // Compute int8 scales for each sub-block
+        let mut scales_i8 = [0i8; 16];
+        for j in 0..16 {
+            scales_i8[j] = ((sub_scales[j] / d).round().clamp(-127.0, 127.0)) as i8;
+        }
+
+        // Quantize to 6-bit values
+        let mut ql = [0u8; 128]; // Low 4 bits
+        let mut qh = [0u8; 64];  // High 2 bits
+
+        for j in 0..16 {
+            let scale = d * f32::from(scales_i8[j]);
+            let inv_scale = if scale.abs() > 1e-10 { 1.0 / scale } else { 0.0 };
+
+            for l in 0..8 {
+                let idx = j * 16 + l * 2;
+
+                // Quantize two values
+                let q0 = (padded[idx] * inv_scale).round().clamp(-32.0, 31.0) as i8;
+                let q1 = (padded[idx + 1] * inv_scale).round().clamp(-32.0, 31.0) as i8;
+
+                // Convert to unsigned 6-bit (add 32)
+                let q0_u = (q0 + 32) as u8;
+                let q1_u = (q1 + 32) as u8;
+
+                // Pack low 4 bits into ql
+                let ql_idx = j * 8 + l;
+                ql[ql_idx] = (q0_u & 0x0F) | ((q1_u & 0x0F) << 4);
+
+                // Pack high 2 bits into qh
+                let qh_idx = ql_idx / 2;
+                let qh_shift = (l % 2) * 4;
+                qh[qh_idx] |= ((q0_u >> 4) & 0x03) << qh_shift;
+                qh[qh_idx] |= ((q1_u >> 4) & 0x03) << (qh_shift + 2);
+            }
+        }
+
+        // Write ql (128 bytes)
+        result.extend_from_slice(&ql);
+        // Write qh (64 bytes)
+        result.extend_from_slice(&qh);
+        // Write scales (16 bytes as i8)
+        for s in &scales_i8 {
+            result.push(*s as u8);
+        }
+        // Write d (f16)
+        let d_f16 = f32_to_f16(d);
+        result.extend_from_slice(&d_f16.to_le_bytes());
+    }
+
+    result
+}
+
+/// Quantize F32 matrix to Q6_K format with proper row layout (PMAT-216)
+///
+/// Higher precision alternative to Q4_K for Q8_0 source tensors.
+/// Q6_K uses 6 bits per value vs Q4_K's 4 bits, reducing precision loss.
+pub(crate) fn quantize_q6_k_matrix(data: &[f32], shape: &[usize]) -> Vec<u8> {
+    const SUPER_BLOCK_SIZE: usize = 256;
+    const SUPER_BLOCK_BYTES: usize = 210;
+
+    // For 1D tensors, use the flat quantizer
+    if shape.len() != 2 {
+        return quantize_q6_k(data);
+    }
+
+    let rows = shape[0];
+    let cols = shape[1];
+
+    // Calculate super-blocks per row (with padding to 256)
+    let super_blocks_per_row = (cols + SUPER_BLOCK_SIZE - 1) / SUPER_BLOCK_SIZE;
+    let padded_cols = super_blocks_per_row * SUPER_BLOCK_SIZE;
+
+    let mut result = Vec::with_capacity(rows * super_blocks_per_row * SUPER_BLOCK_BYTES);
+
+    // Process each row
+    for row_idx in 0..rows {
+        // Extract and pad this row
+        let mut padded_row = vec![0.0f32; padded_cols];
+        let row_start = row_idx * cols;
+        let row_end = row_start + cols;
+        if row_end <= data.len() {
+            padded_row[..cols].copy_from_slice(&data[row_start..row_end]);
+        }
+
+        // Quantize this padded row
+        let row_q6k = quantize_q6_k(&padded_row);
+        result.extend_from_slice(&row_q6k);
+    }
+
+    result
+}
+
 /// Quantize F32 matrix to Q4_K format with proper row padding (GH-189)
 ///
 /// Unlike the flat `quantize_q4_k`, this function:

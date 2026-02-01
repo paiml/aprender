@@ -8,8 +8,8 @@ use crate::format::gguf::{
     GgufRawTensor, GgufTokenizer,
 };
 
-// Import quantization function from parent module
-use super::{quantize_q4_k, quantize_q4_k_matrix};
+// Import quantization functions from parent module
+use super::{quantize_q4_k, quantize_q4_k_matrix, quantize_q6_k_matrix};
 use crate::format::v2::{AprV2Metadata, AprV2Writer, TensorDType};
 use std::collections::BTreeMap;
 use std::fs;
@@ -255,6 +255,24 @@ pub(crate) fn write_apr_file(
             custom.insert(
                 "tokenizer.model_name".to_string(),
                 serde_json::Value::String(name.clone()),
+            );
+        }
+        // PMAT-221 FIX: Embed BPE merge rules for SafeTensors path
+        // This was missing, causing SafeTensors→APR to produce garbage output
+        // because the tokenizer couldn't properly encode input text without merges
+        if !tok.merges.is_empty() {
+            eprintln!(
+                "[PMAT-221] Embedding {} BPE merge rules into APR metadata (SafeTensors path)",
+                tok.merges.len()
+            );
+            let merges_array: Vec<serde_json::Value> = tok
+                .merges
+                .iter()
+                .map(|s| serde_json::Value::String(s.clone()))
+                .collect();
+            custom.insert(
+                "tokenizer.merges".to_string(),
+                serde_json::Value::Array(merges_array),
             );
         }
     }
@@ -648,9 +666,11 @@ pub(crate) fn write_apr_file_raw(
     let mut writer = AprV2Writer::new(metadata);
 
     // Add all tensors with their native quantization format
-    // PMAT-103: Store tensors as-is from GGUF for supported formats, dequantize others
-    // PMAT-086: APR stores GGUF data in row-major layout with GGML convention dims
-    // AprTransformer expects dims in GGML convention, data in row-major
+    // PMAT-222 FIX: Reverse 2D tensor shapes from GGML [ne0, ne1] to standard [ne1, ne0]
+    // GGML uses column-major convention: ne[0] is contiguous in memory.
+    // This means GGML [ne0, ne1] in column-major = [ne1, ne0] in row-major.
+    // The DATA layout is identical - only shape metadata needs swapping.
+    // Realizaer's GGUF loader does `dims.reverse()` for the same reason.
     let mut dtype_counts: std::collections::HashMap<u32, usize> = std::collections::HashMap::new();
     for (name, tensor) in tensors {
         *dtype_counts.entry(tensor.dtype).or_insert(0) += 1;
@@ -658,133 +678,83 @@ pub(crate) fn write_apr_file_raw(
         // Calculate element count for dequantization
         let num_elements: usize = tensor.shape.iter().product();
 
+        // PMAT-222: Reverse GGML shape [ne0, ne1] → standard [ne1, ne0] for 2D tensors
+        // The data bytes are NOT modified - GGML column-major = row-major with reversed dims
+        let effective_shape = if tensor.shape.len() == 2 {
+            vec![tensor.shape[1], tensor.shape[0]]
+        } else {
+            tensor.shape.clone()
+        };
+
         // Process tensor based on dtype
         // Q5_0/Q8_0 need dequantization since realizar doesn't support them natively
-        // All formats: store raw data bytes as-is, keep GGML-order dims
         match tensor.dtype {
             0 => {
-                // F32 - store data as-is with GGML-order dims
-                writer.add_tensor(
-                    name,
-                    TensorDType::F32,
-                    tensor.shape.clone(),
-                    tensor.data.clone(),
-                );
+                // F32 - data stays as-is, shape reversed for 2D
+                writer.add_tensor(name, TensorDType::F32, effective_shape, tensor.data.clone());
             }
             1 => {
-                // F16 - store data as-is with GGML-order dims
-                writer.add_tensor(
-                    name,
-                    TensorDType::F16,
-                    tensor.shape.clone(),
-                    tensor.data.clone(),
-                );
+                // F16 - data stays as-is, shape reversed for 2D
+                writer.add_tensor(name, TensorDType::F16, effective_shape, tensor.data.clone());
             }
             12 => {
-                // Q4_K - store raw for fused kernels with GGML-order dims
-                // GH-189: GGUF row-major storage matches realizaer kernel expectations
-                // The kernel uses config dims (hidden_dim, kv_dim) not stored dims
-                writer.add_tensor(
-                    name,
-                    TensorDType::Q4K,
-                    tensor.shape.clone(),
-                    tensor.data.clone(),
-                );
+                // Q4_K - data stays as-is, shape reversed for 2D
+                writer.add_tensor(name, TensorDType::Q4K, effective_shape, tensor.data.clone());
             }
             14 => {
-                // Q6_K - store raw for fused kernels with GGML-order dims
-                // GH-189: GGUF row-major storage matches realizaer kernel expectations
-                writer.add_tensor(
-                    name,
-                    TensorDType::Q6K,
-                    tensor.shape.clone(),
-                    tensor.data.clone(),
-                );
+                // Q6_K - data stays as-is, shape reversed for 2D
+                writer.add_tensor(name, TensorDType::Q6K, effective_shape, tensor.data.clone());
             }
             2 => {
-                // Q4_0 - dequantize to F32, then requantize to Q4_K for realizaer compatibility
-                // GH-189: realizaer fused_matmul requires Q4_K/Q6_K, F32 weights fail
-                // Use matrix-aware quantizer for proper row padding
+                // Q4_0 - dequantize then requantize to Q4_K (realizar needs K-quants)
+                // Data layout preserved, shape already reversed above
                 match dequantize_q4_0(&tensor.data, 0, num_elements) {
                     Ok(f32_data) => {
-                        // Requantize to Q4_K with proper matrix layout
-                        let q4k_bytes = quantize_q4_k_matrix(&f32_data, &tensor.shape);
-                        writer.add_tensor(name, TensorDType::Q4K, tensor.shape.clone(), q4k_bytes);
+                        let q4k_bytes = quantize_q4_k_matrix(&f32_data, &effective_shape);
+                        writer.add_tensor(name, TensorDType::Q4K, effective_shape, q4k_bytes);
                     }
                     Err(e) => {
                         eprintln!("[WARN] Failed to dequantize Q4_0 tensor {name}: {e}");
-                        writer.add_tensor(
-                            name,
-                            TensorDType::F32,
-                            tensor.shape.clone(),
-                            tensor.data.clone(),
-                        );
+                        writer.add_tensor(name, TensorDType::F32, effective_shape, tensor.data.clone());
                     }
                 }
             }
             3 => {
-                // Q4_1 - dequantize to F32, then requantize to Q4_K for realizaer compatibility
-                // GH-189: realizaer fused_matmul requires Q4_K/Q6_K, F32 weights fail
-                // Use matrix-aware quantizer for proper row padding
+                // Q4_1 - dequantize then requantize to Q4_K (realizar needs K-quants)
                 match dequantize_q4_1(&tensor.data, 0, num_elements) {
                     Ok(f32_data) => {
-                        // Requantize to Q4_K with proper matrix layout
-                        let q4k_bytes = quantize_q4_k_matrix(&f32_data, &tensor.shape);
-                        writer.add_tensor(name, TensorDType::Q4K, tensor.shape.clone(), q4k_bytes);
+                        let q4k_bytes = quantize_q4_k_matrix(&f32_data, &effective_shape);
+                        writer.add_tensor(name, TensorDType::Q4K, effective_shape, q4k_bytes);
                     }
                     Err(e) => {
                         eprintln!("[WARN] Failed to dequantize Q4_1 tensor {name}: {e}");
-                        // Fall back to storing raw bytes (will fail at inference time)
-                        writer.add_tensor(
-                            name,
-                            TensorDType::F32,
-                            tensor.shape.clone(),
-                            tensor.data.clone(),
-                        );
+                        writer.add_tensor(name, TensorDType::F32, effective_shape, tensor.data.clone());
                     }
                 }
             }
             6 => {
-                // Q5_0 - dequantize to F32, then requantize to Q4_K for realizaer compatibility
-                // GH-189: realizaer fused_matmul requires Q4_K/Q6_K, F32 weights fail
-                // PMAT-086: APR stores GGUF data in row-major layout with GGML convention dims
-                // Use matrix-aware quantizer for proper row padding
+                // Q5_0 - dequantize then requantize to Q6_K (closer bit-width match)
                 match dequantize_q5_0(&tensor.data, 0, num_elements) {
                     Ok(f32_data) => {
-                        // Requantize to Q4_K with proper matrix layout
-                        let q4k_bytes = quantize_q4_k_matrix(&f32_data, &tensor.shape);
-                        writer.add_tensor(name, TensorDType::Q4K, tensor.shape.clone(), q4k_bytes);
+                        let q6k_bytes = quantize_q6_k_matrix(&f32_data, &effective_shape);
+                        writer.add_tensor(name, TensorDType::Q6K, effective_shape, q6k_bytes);
                     }
                     Err(e) => {
                         eprintln!("[WARN] Failed to dequantize Q5_0 tensor {name}: {e}");
-                        writer.add_tensor(
-                            name,
-                            TensorDType::F32,
-                            tensor.shape.clone(),
-                            tensor.data.clone(),
-                        );
+                        writer.add_tensor(name, TensorDType::F32, effective_shape, tensor.data.clone());
                     }
                 }
             }
             8 => {
-                // Q8_0 - dequantize to F32, then requantize to Q4_K for realizaer compatibility
-                // GH-189: realizaer fused_matmul requires Q4_K/Q6_K, F32 weights fail
-                // PMAT-086: APR stores GGUF data in row-major layout with GGML convention dims
-                // Use matrix-aware quantizer for proper row padding
+                // Q8_0 - dequantize then requantize to Q6_K (closer bit-width match)
                 match dequantize_q8_0(&tensor.data, 0, num_elements) {
                     Ok(f32_data) => {
-                        // Requantize to Q4_K with proper matrix layout
-                        let q4k_bytes = quantize_q4_k_matrix(&f32_data, &tensor.shape);
-                        writer.add_tensor(name, TensorDType::Q4K, tensor.shape.clone(), q4k_bytes);
+                        let q6k_bytes = quantize_q6_k_matrix(&f32_data, &effective_shape);
+                        writer.add_tensor(name, TensorDType::Q6K, effective_shape, q6k_bytes);
                     }
                     Err(e) => {
                         eprintln!("[WARN] Failed to dequantize Q8_0 tensor {name}: {e}");
-                        writer.add_tensor(
-                            name,
-                            TensorDType::F32,
-                            tensor.shape.clone(),
-                            tensor.data.clone(),
-                        );
+                        writer.add_tensor(name, TensorDType::F32, effective_shape, tensor.data.clone());
                     }
                 }
             }
