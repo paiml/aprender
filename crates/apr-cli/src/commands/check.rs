@@ -667,4 +667,191 @@ mod tests {
         };
         assert!(truncated.len() <= 39); // 36 + "..."
     }
+
+    // ========================================================================
+    // StageResult Tests
+    // ========================================================================
+
+    #[test]
+    fn test_stage_result_passed() {
+        let result = StageResult {
+            name: "Stage 1",
+            eli5: "Checking model integrity",
+            passed: true,
+            details: Some("All checks passed".to_string()),
+        };
+        assert!(result.passed);
+        assert!(result.details.is_some());
+    }
+
+    #[test]
+    fn test_stage_result_failed() {
+        let result = StageResult {
+            name: "Stage 2",
+            eli5: "Checking tokenizer",
+            passed: false,
+            details: Some("Tokenizer not found".to_string()),
+        };
+        assert!(!result.passed);
+    }
+
+    #[test]
+    fn test_stage_result_no_details() {
+        let result = StageResult {
+            name: "Stage 3",
+            eli5: "Check",
+            passed: true,
+            details: None,
+        };
+        assert!(result.details.is_none());
+    }
+
+    #[test]
+    fn test_stage_result_debug() {
+        let result = StageResult {
+            name: "Test",
+            eli5: "Test",
+            passed: true,
+            details: None,
+        };
+        let debug = format!("{result:?}");
+        assert!(debug.contains("StageResult"));
+    }
+
+    // ========================================================================
+    // run Command Tests
+    // ========================================================================
+
+    use std::io::Write;
+    use tempfile::{tempdir, NamedTempFile};
+
+    #[test]
+    fn test_run_file_not_found() {
+        let result = run(Path::new("/nonexistent/model.gguf"), false);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_invalid_gguf() {
+        let mut file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
+        file.write_all(b"not a valid gguf file").expect("write");
+
+        let result = run(file.path(), false);
+        // Should fail (invalid GGUF or feature disabled)
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_invalid_apr() {
+        let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
+        file.write_all(b"not a valid apr file").expect("write");
+
+        let result = run(file.path(), false);
+        // Should fail (invalid APR or feature disabled)
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_unsupported_format() {
+        let mut file = NamedTempFile::with_suffix(".bin").expect("create temp file");
+        file.write_all(b"binary data").expect("write");
+
+        let result = run(file.path(), false);
+        // Should fail (unsupported format or feature disabled)
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_with_no_gpu() {
+        let mut file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
+        file.write_all(b"not valid").expect("write");
+
+        let result = run(file.path(), true); // no_gpu = true
+        // Should fail (invalid file)
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_is_directory() {
+        let dir = tempdir().expect("create temp dir");
+        let result = run(dir.path(), false);
+        // Should fail (is a directory)
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_safetensors_format() {
+        let mut file = NamedTempFile::with_suffix(".safetensors").expect("create temp file");
+        file.write_all(b"not valid safetensors").expect("write");
+
+        let result = run(file.path(), false);
+        // Should fail (unsupported format or feature disabled)
+        assert!(result.is_err());
+    }
+
+    // ========================================================================
+    // print_results_table Tests
+    // ========================================================================
+
+    #[test]
+    fn test_print_results_all_passed() {
+        let results = vec![
+            StageResult {
+                name: "Stage 1",
+                eli5: "Test 1",
+                passed: true,
+                details: Some("OK".to_string()),
+            },
+            StageResult {
+                name: "Stage 2",
+                eli5: "Test 2",
+                passed: true,
+                details: Some("OK".to_string()),
+            },
+        ];
+        // Should not panic
+        print_results_table(&results);
+    }
+
+    #[test]
+    fn test_print_results_all_failed() {
+        let results = vec![
+            StageResult {
+                name: "Stage 1",
+                eli5: "Test 1",
+                passed: false,
+                details: Some("ERROR".to_string()),
+            },
+        ];
+        // Should not panic
+        print_results_table(&results);
+    }
+
+    #[test]
+    fn test_print_results_no_details() {
+        let results = vec![
+            StageResult {
+                name: "Stage 1",
+                eli5: "Test",
+                passed: true,
+                details: None,
+            },
+        ];
+        // Should not panic
+        print_results_table(&results);
+    }
+
+    #[test]
+    fn test_print_results_long_name() {
+        let results = vec![
+            StageResult {
+                name: "This is a very long stage name that should handle gracefully",
+                eli5: "Test",
+                passed: true,
+                details: Some("OK".to_string()),
+            },
+        ];
+        // Should not panic
+        print_results_table(&results);
+    }
 }

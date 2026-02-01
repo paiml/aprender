@@ -461,4 +461,258 @@ mod tests {
         let json = serde_json::to_string(&snapshot).expect("serialize");
         assert!(json.contains("\"name\":\"test\""));
     }
+
+    // ========================================================================
+    // ExportFormat Tests
+    // ========================================================================
+
+    #[test]
+    fn test_export_format_parse_uppercase() {
+        assert!(matches!(
+            "JSON".parse::<ExportFormat>(),
+            Ok(ExportFormat::Json)
+        ));
+        assert!(matches!(
+            "PNG".parse::<ExportFormat>(),
+            Ok(ExportFormat::Png)
+        ));
+    }
+
+    #[test]
+    fn test_export_format_debug() {
+        let format = ExportFormat::Json;
+        let debug = format!("{format:?}");
+        assert!(debug.contains("Json"));
+    }
+
+    #[test]
+    fn test_export_format_clone() {
+        let format = ExportFormat::Png;
+        let cloned = format;
+        assert!(matches!(cloned, ExportFormat::Png));
+    }
+
+    // ========================================================================
+    // LayerSnapshot Tests
+    // ========================================================================
+
+    #[test]
+    fn test_layer_snapshot_with_heatmap() {
+        let snapshot = LayerSnapshot {
+            name: "attn".to_string(),
+            index: 1,
+            histogram: vec![0; 256],
+            mean: 0.0,
+            std: 1.0,
+            min: -3.0,
+            max: 3.0,
+            heatmap: Some(vec![1.0, 2.0, 3.0, 4.0]),
+            heatmap_width: Some(2),
+            heatmap_height: Some(2),
+        };
+        assert!(snapshot.heatmap.is_some());
+        assert_eq!(snapshot.heatmap_width, Some(2));
+    }
+
+    #[test]
+    fn test_layer_snapshot_clone() {
+        let snapshot = LayerSnapshot {
+            name: "test".to_string(),
+            index: 0,
+            histogram: vec![1, 2, 3],
+            mean: 0.5,
+            std: 1.0,
+            min: -1.0,
+            max: 2.0,
+            heatmap: None,
+            heatmap_width: None,
+            heatmap_height: None,
+        };
+        let cloned = snapshot.clone();
+        assert_eq!(cloned.name, snapshot.name);
+        assert_eq!(cloned.index, snapshot.index);
+    }
+
+    #[test]
+    fn test_layer_snapshot_deserialize() {
+        let json = r#"{"name":"test","index":0,"histogram":[1,2,3],"mean":0.5,"std":1.0,"min":-1.0,"max":2.0}"#;
+        let snapshot: LayerSnapshot = serde_json::from_str(json).expect("deserialize");
+        assert_eq!(snapshot.name, "test");
+        assert_eq!(snapshot.index, 0);
+    }
+
+    #[test]
+    fn test_layer_snapshot_histogram() {
+        let snapshot = LayerSnapshot {
+            name: "hist".to_string(),
+            index: 0,
+            histogram: vec![10, 20, 30, 40],
+            mean: 0.0,
+            std: 1.0,
+            min: -2.0,
+            max: 2.0,
+            heatmap: None,
+            heatmap_width: None,
+            heatmap_height: None,
+        };
+        assert_eq!(snapshot.histogram.len(), 4);
+        assert_eq!(snapshot.histogram[0], 10);
+    }
+
+    // ========================================================================
+    // run Command Tests
+    // ========================================================================
+
+    use std::io::Write;
+    use tempfile::{tempdir, NamedTempFile};
+
+    #[test]
+    fn test_run_file_not_found() {
+        let output_dir = tempdir().expect("create output dir");
+        let result = run(
+            Path::new("/nonexistent/model.apr"),
+            output_dir.path(),
+            ExportFormat::Json,
+            None,
+            None,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_invalid_apr() {
+        let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
+        file.write_all(b"not a valid apr file").expect("write");
+        let output_dir = tempdir().expect("create output dir");
+
+        let result = run(
+            file.path(),
+            output_dir.path(),
+            ExportFormat::Json,
+            None,
+            None,
+        );
+        // Should fail (invalid APR)
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_with_png_format() {
+        let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
+        file.write_all(b"not valid").expect("write");
+        let output_dir = tempdir().expect("create output dir");
+
+        let result = run(
+            file.path(),
+            output_dir.path(),
+            ExportFormat::Png,
+            None,
+            None,
+        );
+        // Should fail (invalid file)
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_with_both_format() {
+        let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
+        file.write_all(b"not valid").expect("write");
+        let output_dir = tempdir().expect("create output dir");
+
+        let result = run(
+            file.path(),
+            output_dir.path(),
+            ExportFormat::Both,
+            None,
+            None,
+        );
+        // Should fail (invalid file)
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_with_golden() {
+        let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
+        file.write_all(b"not valid").expect("write");
+        let mut golden = NamedTempFile::with_suffix(".json").expect("create golden file");
+        golden.write_all(b"{}").expect("write");
+        let output_dir = tempdir().expect("create output dir");
+
+        let result = run(
+            file.path(),
+            output_dir.path(),
+            ExportFormat::Json,
+            Some(golden.path()),
+            None,
+        );
+        // Should fail (invalid file)
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_with_layer_filter() {
+        let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
+        file.write_all(b"not valid").expect("write");
+        let output_dir = tempdir().expect("create output dir");
+
+        let result = run(
+            file.path(),
+            output_dir.path(),
+            ExportFormat::Json,
+            None,
+            Some("encoder"),
+        );
+        // Should fail (invalid file)
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_is_directory() {
+        let dir = tempdir().expect("create input dir");
+        let output_dir = tempdir().expect("create output dir");
+
+        let result = run(
+            dir.path(),
+            output_dir.path(),
+            ExportFormat::Json,
+            None,
+            None,
+        );
+        // Should fail (is a directory)
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_gguf_format() {
+        let mut file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
+        file.write_all(b"not valid gguf").expect("write");
+        let output_dir = tempdir().expect("create output dir");
+
+        let result = run(
+            file.path(),
+            output_dir.path(),
+            ExportFormat::Json,
+            None,
+            None,
+        );
+        // Should fail (invalid GGUF)
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_safetensors_format() {
+        let mut file = NamedTempFile::with_suffix(".safetensors").expect("create temp file");
+        file.write_all(b"not valid safetensors").expect("write");
+        let output_dir = tempdir().expect("create output dir");
+
+        let result = run(
+            file.path(),
+            output_dir.path(),
+            ExportFormat::Json,
+            None,
+            None,
+        );
+        // Should fail (invalid SafeTensors)
+        assert!(result.is_err());
+    }
 }
