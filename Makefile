@@ -62,13 +62,13 @@ test-smoke: ## Smoke tests (<2s target, Section P: P2)
 test-fast: ## Fast unit tests (<30s target)
 	@echo "⚡ Running fast tests (target: <30s, -j2 to prevent OOM)..."
 	@if command -v cargo-nextest >/dev/null 2>&1; then \
-		time env PROPTEST_CASES=25 cargo nextest run --workspace --lib -j 2 \
+		time env PROPTEST_CASES=25 QUICKCHECK_TESTS=25 cargo nextest run --workspace --lib -j 2 \
 			--status-level skip \
 			--failure-output immediate \
 			-E 'not test(/prop_gbm_expected_value_convergence/)'; \
 	else \
 		echo "💡 Install cargo-nextest for faster tests: cargo install cargo-nextest"; \
-		time env PROPTEST_CASES=25 cargo test --workspace --lib -- --test-threads=2 --skip prop_gbm_expected_value_convergence; \
+		time env PROPTEST_CASES=25 QUICKCHECK_TESTS=25 cargo test --workspace --lib -- --test-threads=2 --skip prop_gbm_expected_value_convergence; \
 	fi
 	@echo "✅ Fast tests passed"
 
