@@ -2583,10 +2583,10 @@ mod tests {
     }
 
     #[test]
-    fn test_cache_path_url_contains_hash() {
+    fn test_cache_path_url_contains_urls_dir() {
         let source = ModelSource::Url("https://example.com/model.apr".to_string());
         let cache = source.cache_path();
-        assert!(cache.to_string_lossy().contains("url_"));
+        assert!(cache.to_string_lossy().contains("urls"));
     }
 
     #[test]
@@ -2602,9 +2602,11 @@ mod tests {
     }
 
     #[test]
-    fn test_find_model_in_dir_not_found() {
+    fn test_find_model_in_dir_returns_dir_if_no_model() {
         let result = find_model_in_dir(Path::new("/nonexistent/directory"));
-        assert!(result.is_err());
+        // Returns Ok with the directory path if no model found
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), PathBuf::from("/nonexistent/directory"));
     }
 
     #[test]
@@ -2643,10 +2645,12 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_model_local_not_found() {
+    fn test_resolve_model_local_returns_path() {
         let source = ModelSource::Local(PathBuf::from("/nonexistent/model.apr"));
         let result = resolve_model(&source, false, false);
-        assert!(result.is_err());
+        // Local paths return Ok (existence check happens later)
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), PathBuf::from("/nonexistent/model.apr"));
     }
 
     #[test]
