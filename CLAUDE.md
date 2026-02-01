@@ -909,22 +909,27 @@ make semantic-search
 
 ## Stack Documentation Search
 
-Query this component's documentation and the entire Sovereign AI Stack using batuta's RAG Oracle:
+**IMPORTANT: Proactively use the batuta RAG oracle when:**
+- Looking up patterns from other stack components (trueno SIMD, realizar inference, etc.)
+- Finding cross-language equivalents (Python HuggingFace → Rust aprender)
+- Understanding how similar problems are solved elsewhere in the stack
+- Researching best practices for ML algorithms or training patterns
 
 ```bash
-# Index all stack documentation (run once, persists to ~/.cache/batuta/rag/)
-batuta oracle --rag-index
-
-# Search across the entire stack
+# Search across the entire Sovereign AI Stack
 batuta oracle --rag "your question here"
 
-# Examples
-batuta oracle --rag "SIMD matrix multiplication"
-batuta oracle --rag "how to train a model"
-batuta oracle --rag "tokenization for BERT"
+# Examples for aprender development
+batuta oracle --rag "SIMD matrix multiplication trueno"
+batuta oracle --rag "gradient descent implementation"
+batuta oracle --rag "how does HuggingFace handle tokenization"
+batuta oracle --rag "APR model format serialization"
 
-# Check index status
-batuta oracle --rag-stats
+# Reindex if needed (persists to ~/.cache/batuta/rag/)
+batuta oracle --rag-index
 ```
 
-The RAG index includes CLAUDE.md, README.md, and source files from all stack components plus Python ground truth corpora for cross-language pattern matching.
+The RAG index includes 335 documents across:
+- All Sovereign AI Stack repos (trueno, realizar, entrenar, etc.)
+- Python ground truth corpora (HuggingFace, JAX, vLLM patterns)
+- Rust ground truth corpora (TGI, MLOps patterns)
