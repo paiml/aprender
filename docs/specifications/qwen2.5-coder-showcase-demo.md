@@ -1,11 +1,11 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 6.11.0
+**Version:** 6.12.0
 **Status:** 🔧 COVERAGE IMPROVEMENT IN PROGRESS - Target 95% overall
 **Popperian Score:** 88/100 (Grade: P0 BUGS FIXED - 12 CLI commands with comprehensive tests)
-**Code Coverage:** 85.73% (target: ≥95%, +250 tests added to CLI)
+**Code Coverage:** 85.8% (target: ≥95%, +280 tests added to CLI + lib)
 **Tool Coverage:** 16/16 (100%) - All APR tools verified (+ rosetta fingerprint, validate-stats)
-**CLI Test Coverage:** 1160+ total tests (added: rosetta 60+, run 35+, cbtop 68+, bench 20+, profile 28+, chat 22+)
+**CLI Test Coverage:** 1190+ total tests (CLI: 160+, llama_tokenizer: 30+)
 **TDG Score:** 97.7/100 (A+)
 **Author:** PAIML Engineering
 **Date:** 2026-02-01
