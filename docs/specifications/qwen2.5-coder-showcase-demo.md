@@ -1,11 +1,12 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 6.8.0
-**Status:** ⚠️ TESTING REQUIRED - All P0 bugs fixed, TOOL-APR-001 + TOOL-APR-002 + TOOL-APR-003 complete
+**Version:** 6.9.0
+**Status:** 🔧 COVERAGE IMPROVEMENT IN PROGRESS - Target 95% overall
 **Popperian Score:** 88/100 (Grade: P0 BUGS FIXED - 12 CLI commands with comprehensive tests)
-**Code Coverage:** 96.17% (target: ≥95%)
+**Code Coverage:** 85.93% (target: ≥95%, +100 tests added to rosetta.rs/run.rs)
 **Tool Coverage:** 16/16 (100%) - All APR tools verified (+ rosetta fingerprint, validate-stats)
-**CLI Test Coverage:** 845 total command tests (chat: 46, publish: 26, import: 29, tune: 29, eval: 28, pull: 23, tensors: 24 + prior)
+**CLI Test Coverage:** 1008+ total tests (added: rosetta 60+, run 35+, coverage helpers)
+**TDG Score:** 97.7/100 (A+)
 **Author:** PAIML Engineering
 **Date:** 2026-02-01
 **Last Falsification Run:** 2026-01-31 (Round 14 - FALSIFIED: Tensor Holocaust)
