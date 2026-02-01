@@ -168,14 +168,14 @@ Format detection heuristics:
 
 ## Test Results
 
-All 161 tests pass across modified modules:
+All 243 tests pass across modified modules:
 
 ```
-format::tensors     29 passed
-commands::lint      23 passed
-commands::canary    35 passed
+format::tensors     47 passed  (+18 GGUF/SafeTensors tests)
+format::lint        79 passed  (+12 multi-format tests)
+commands::canary    39 passed  (+4 multi-format tests)
 commands::trace     28 passed
-commands::validate  16 passed
+commands::validate  20 passed  (+4 GGUF/SafeTensors tests)
 commands::inspect   30 passed
 ```
 

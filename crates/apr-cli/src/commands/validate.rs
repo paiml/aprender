@@ -453,4 +453,131 @@ mod tests {
         // Should not panic even with empty report
         print_quality_assessment(&report);
     }
+
+    // ========================================================================
+    // Multi-Format Dispatch Tests (GGUF, SafeTensors)
+    // ========================================================================
+
+    #[test]
+    fn test_run_gguf_format_dispatch() {
+        use aprender::format::gguf::{export_tensors_to_gguf, GgmlType, GgufTensor, GgufValue};
+
+        // Create valid GGUF file
+        let tensor = GgufTensor {
+            name: "model.weight".to_string(),
+            shape: vec![4, 4],
+            dtype: GgmlType::F32,
+            data: vec![0u8; 64],
+        };
+        let metadata = vec![(
+            "general.architecture".to_string(),
+            GgufValue::String("test".to_string()),
+        )];
+
+        let mut gguf_bytes = Vec::new();
+        export_tensors_to_gguf(&mut gguf_bytes, &[tensor], &metadata).expect("export GGUF");
+
+        let mut file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
+        file.write_all(&gguf_bytes).expect("write GGUF");
+
+        // Should dispatch to GGUF validation path (RosettaStone::validate)
+        let result = run(file.path(), false, false, None);
+        // GGUF validation should succeed (physics constraints pass)
+        assert!(result.is_ok(), "GGUF format dispatch should work");
+    }
+
+    #[test]
+    fn test_run_safetensors_format_dispatch() {
+        // Create valid SafeTensors file manually
+        let header_json = serde_json::json!({
+            "test.weight": {
+                "dtype": "F32",
+                "shape": [2, 2],
+                "data_offsets": [0, 16]
+            }
+        });
+        let header_bytes = serde_json::to_vec(&header_json).expect("serialize header");
+        let header_len = header_bytes.len() as u64;
+
+        let mut st_bytes = Vec::new();
+        st_bytes.extend_from_slice(&header_len.to_le_bytes());
+        st_bytes.extend_from_slice(&header_bytes);
+        // Add valid tensor data (4 floats = 16 bytes)
+        let floats: [f32; 4] = [1.0, 2.0, 3.0, 4.0];
+        for f in floats {
+            st_bytes.extend_from_slice(&f.to_le_bytes());
+        }
+
+        let mut file = NamedTempFile::with_suffix(".safetensors").expect("create temp file");
+        file.write_all(&st_bytes).expect("write SafeTensors");
+
+        // Should dispatch to SafeTensors validation path (RosettaStone::validate)
+        let result = run(file.path(), false, false, None);
+        // SafeTensors validation should succeed
+        assert!(result.is_ok(), "SafeTensors format dispatch should work");
+    }
+
+    #[test]
+    fn test_run_gguf_format_detection_by_magic() {
+        use aprender::format::gguf::{export_tensors_to_gguf, GgmlType, GgufTensor, GgufValue};
+
+        // Create GGUF with .bin extension (magic detection, not extension)
+        // Use valid non-zero tensor data
+        let floats: [f32; 4] = [1.0, 2.0, 3.0, 4.0];
+        let tensor_data: Vec<u8> = floats.iter().flat_map(|f| f.to_le_bytes()).collect();
+
+        let tensor = GgufTensor {
+            name: "test.weight".to_string(),
+            shape: vec![2, 2],
+            dtype: GgmlType::F32,
+            data: tensor_data,
+        };
+        let metadata = vec![(
+            "general.architecture".to_string(),
+            GgufValue::String("test".to_string()),
+        )];
+
+        let mut gguf_bytes = Vec::new();
+        export_tensors_to_gguf(&mut gguf_bytes, &[tensor], &metadata).expect("export GGUF");
+
+        let mut file = NamedTempFile::with_suffix(".bin").expect("create temp file");
+        file.write_all(&gguf_bytes).expect("write GGUF");
+
+        // Should detect GGUF by magic bytes, not extension
+        let result = run(file.path(), false, false, None);
+        assert!(result.is_ok(), "Should detect GGUF by magic bytes");
+    }
+
+    #[test]
+    fn test_run_gguf_with_physics_violations() {
+        use aprender::format::gguf::{export_tensors_to_gguf, GgmlType, GgufTensor, GgufValue};
+
+        // Create GGUF with NaN values (physics violation)
+        let nan_f32 = f32::NAN.to_le_bytes();
+        let mut tensor_data = Vec::new();
+        for _ in 0..4 {
+            tensor_data.extend_from_slice(&nan_f32);
+        }
+
+        let tensor = GgufTensor {
+            name: "model.weight".to_string(),
+            shape: vec![2, 2],
+            dtype: GgmlType::F32,
+            data: tensor_data,
+        };
+        let metadata = vec![(
+            "general.architecture".to_string(),
+            GgufValue::String("test".to_string()),
+        )];
+
+        let mut gguf_bytes = Vec::new();
+        export_tensors_to_gguf(&mut gguf_bytes, &[tensor], &metadata).expect("export GGUF");
+
+        let mut file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
+        file.write_all(&gguf_bytes).expect("write GGUF");
+
+        // Should fail due to NaN physics violation
+        let result = run(file.path(), false, false, None);
+        assert!(result.is_err(), "Should fail with NaN tensors");
+    }
 }
