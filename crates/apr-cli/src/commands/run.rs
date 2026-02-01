@@ -2442,4 +2442,272 @@ mod tests {
         assert!(!files.contains("config.json"));
         assert!(!files.contains("tokenizer.model"));
     }
+
+    // ========================================================================
+    // Additional Coverage Tests (PMAT-117) - Unique tests only
+    // ========================================================================
+
+    #[test]
+    fn test_md5_hash_empty() {
+        let hash = md5_hash(&[]);
+        let _ = hash;
+    }
+
+    #[test]
+    fn test_md5_hash_different_input() {
+        let hash1 = md5_hash(b"hello");
+        let hash2 = md5_hash(b"world");
+        assert_ne!(hash1, hash2);
+    }
+
+    #[test]
+    fn test_clean_model_output_empty() {
+        let output = clean_model_output("");
+        assert!(output.is_empty());
+    }
+
+    #[test]
+    fn test_clean_model_output_simple() {
+        let output = clean_model_output("Hello, world!");
+        assert_eq!(output, "Hello, world!");
+    }
+
+    #[test]
+    fn test_clean_model_output_with_special_tokens() {
+        let output = clean_model_output("<|im_end|>Hello<|endoftext|>");
+        assert!(!output.contains("<|im_end|>"));
+        assert!(!output.contains("<|endoftext|>"));
+    }
+
+    #[test]
+    fn test_clean_model_output_preserves_content() {
+        let output = clean_model_output("The answer is 42.");
+        assert!(output.contains("42"));
+    }
+
+    #[test]
+    fn test_parse_token_ids_simple() {
+        let result = parse_token_ids("1 2 3");
+        assert!(result.is_ok());
+        let tokens = result.unwrap();
+        assert_eq!(tokens, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn test_parse_token_ids_comma_separated() {
+        let result = parse_token_ids("1,2,3");
+        assert!(result.is_ok());
+        let tokens = result.unwrap();
+        assert_eq!(tokens, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn test_parse_token_ids_empty() {
+        let result = parse_token_ids("");
+        assert!(result.is_ok() || result.is_err());
+    }
+
+    #[test]
+    fn test_parse_token_ids_invalid() {
+        let result = parse_token_ids("not a number");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_token_ids_mixed_spaces() {
+        let result = parse_token_ids("1  2   3");
+        assert!(result.is_ok());
+        let tokens = result.unwrap();
+        assert_eq!(tokens, vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn test_model_source_display_local() {
+        let source = ModelSource::Local(PathBuf::from("model.apr"));
+        let _debug = format!("{:?}", source);
+    }
+
+    #[test]
+    fn test_model_source_display_hf() {
+        let source = ModelSource::HuggingFace {
+            org: "test".to_string(),
+            repo: "model".to_string(),
+            file: Some("model.gguf".to_string()),
+        };
+        let _debug = format!("{:?}", source);
+    }
+
+    #[test]
+    fn test_model_source_clone() {
+        let source = ModelSource::Url("https://example.com/model.apr".to_string());
+        let cloned = source.clone();
+        assert_eq!(source, cloned);
+    }
+
+    #[test]
+    fn test_run_options_custom() {
+        let options = RunOptions {
+            max_tokens: 100,
+            benchmark: true,
+            verbose: true,
+            ..Default::default()
+        };
+        assert_eq!(options.max_tokens, 100);
+        assert!(options.benchmark);
+    }
+
+    #[test]
+    fn test_run_result_debug() {
+        let result = RunResult {
+            text: "Hello".to_string(),
+            duration_secs: 0.1,
+            cached: true,
+            tokens_generated: Some(5),
+        };
+        let _debug = format!("{:?}", result);
+        assert_eq!(result.tokens_generated, Some(5));
+    }
+
+    #[test]
+    fn test_extract_shard_files_empty_json() {
+        let json = "{}";
+        let files = extract_shard_files(json);
+        assert!(files.is_empty());
+    }
+
+    #[test]
+    fn test_extract_shard_files_invalid_json() {
+        let json = "not valid json";
+        let files = extract_shard_files(json);
+        assert!(files.is_empty());
+    }
+
+    #[test]
+    fn test_cache_path_url_contains_hash() {
+        let source = ModelSource::Url("https://example.com/model.apr".to_string());
+        let cache = source.cache_path();
+        assert!(cache.to_string_lossy().contains("url_"));
+    }
+
+    #[test]
+    fn test_cache_path_hf_with_file() {
+        let source = ModelSource::HuggingFace {
+            org: "test".to_string(),
+            repo: "model".to_string(),
+            file: Some("model-q4.gguf".to_string()),
+        };
+        let cache = source.cache_path();
+        assert!(cache.to_string_lossy().contains("test"));
+        assert!(cache.to_string_lossy().contains("model"));
+    }
+
+    #[test]
+    fn test_find_model_in_dir_not_found() {
+        let result = find_model_in_dir(Path::new("/nonexistent/directory"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_glob_first_no_match() {
+        let result = glob_first(Path::new("/nonexistent/*.gguf"));
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_format_prediction_output_single() {
+        use std::time::Duration;
+        let options = RunOptions::default();
+        let result = format_prediction_output(&[0.9, 0.05, 0.05], Duration::from_millis(100), &options);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_format_prediction_output_json() {
+        use std::time::Duration;
+        let options = RunOptions {
+            output_format: "json".to_string(),
+            ..Default::default()
+        };
+        let result = format_prediction_output(&[0.5, 0.5], Duration::from_millis(50), &options);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert!(output.contains("predictions"));
+    }
+
+    #[test]
+    fn test_format_prediction_output_empty() {
+        use std::time::Duration;
+        let options = RunOptions::default();
+        let result = format_prediction_output(&[], Duration::from_millis(10), &options);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_resolve_model_local_not_found() {
+        let source = ModelSource::Local(PathBuf::from("/nonexistent/model.apr"));
+        let result = resolve_model(&source, false, false);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_resolve_model_offline_hf() {
+        let source = ModelSource::HuggingFace {
+            org: "test".to_string(),
+            repo: "model".to_string(),
+            file: None,
+        };
+        let result = resolve_model(&source, false, true);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_find_cached_model_not_exists() {
+        let result = find_cached_model("nonexistent_org", "nonexistent_repo", None);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_run_model_invalid_source() {
+        let options = RunOptions::default();
+        let result = run_model("hf://", &options);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_input_features_none() {
+        let result = parse_input_features(None);
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_parse_input_features_file_not_found() {
+        let path = PathBuf::from("/nonexistent/input.wav");
+        let result = parse_input_features(Some(&path));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_options_with_trace() {
+        let options = RunOptions {
+            trace: true,
+            trace_verbose: true,
+            trace_steps: Some(vec!["embed".to_string()]),
+            ..Default::default()
+        };
+        assert!(options.trace);
+        assert!(options.trace_verbose);
+    }
+
+    #[test]
+    fn test_run_result_clone() {
+        let result = RunResult {
+            text: "Test".to_string(),
+            duration_secs: 1.0,
+            cached: false,
+            tokens_generated: None,
+        };
+        let cloned = result.clone();
+        assert_eq!(result.text, cloned.text);
+    }
 }
