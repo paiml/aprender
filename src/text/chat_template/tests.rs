@@ -1489,3 +1489,438 @@ mod proptests {
         }
     }
 }
+
+// ============================================================================
+// Additional Coverage Tests for 95% Target
+// ============================================================================
+
+#[test]
+fn test_detect_format_from_tokens_chatml_im_start() {
+    let tokens = SpecialTokens {
+        im_start_token: Some("<|im_start|>".to_string()),
+        ..Default::default()
+    };
+    assert_eq!(detect_format_from_tokens(&tokens), TemplateFormat::ChatML);
+}
+
+#[test]
+fn test_detect_format_from_tokens_chatml_im_end() {
+    let tokens = SpecialTokens {
+        im_end_token: Some("<|im_end|>".to_string()),
+        ..Default::default()
+    };
+    assert_eq!(detect_format_from_tokens(&tokens), TemplateFormat::ChatML);
+}
+
+#[test]
+fn test_detect_format_from_tokens_llama2_inst_start() {
+    let tokens = SpecialTokens {
+        inst_start: Some("[INST]".to_string()),
+        ..Default::default()
+    };
+    assert_eq!(detect_format_from_tokens(&tokens), TemplateFormat::Llama2);
+}
+
+#[test]
+fn test_detect_format_from_tokens_llama2_inst_end() {
+    let tokens = SpecialTokens {
+        inst_end: Some("[/INST]".to_string()),
+        ..Default::default()
+    };
+    assert_eq!(detect_format_from_tokens(&tokens), TemplateFormat::Llama2);
+}
+
+#[test]
+fn test_detect_format_from_tokens_raw_empty() {
+    let tokens = SpecialTokens::default();
+    assert_eq!(detect_format_from_tokens(&tokens), TemplateFormat::Raw);
+}
+
+#[test]
+fn test_auto_detect_template_qwen() {
+    let template = auto_detect_template("Qwen2-0.5B-Instruct");
+    assert_eq!(template.format(), TemplateFormat::ChatML);
+}
+
+#[test]
+fn test_auto_detect_template_unknown() {
+    let template = auto_detect_template("unknown-model-xyz");
+    assert_eq!(template.format(), TemplateFormat::Raw);
+}
+
+#[test]
+fn test_mistral_format_message_user() {
+    let template = MistralTemplate::new();
+    let result = template.format_message("user", "Hello!").unwrap();
+    assert!(result.contains("[INST]"));
+    assert!(result.contains("[/INST]"));
+}
+
+#[test]
+fn test_mistral_format_message_assistant() {
+    let template = MistralTemplate::new();
+    let result = template.format_message("assistant", "Hi!").unwrap();
+    assert!(result.contains("</s>"));
+}
+
+#[test]
+fn test_mistral_format_message_system_coverage() {
+    let template = MistralTemplate::new();
+    let result = template.format_message("system", "You are helpful").unwrap();
+    assert!(result.contains("\n\n"));
+}
+
+#[test]
+fn test_mistral_format_message_unknown_role_coverage() {
+    let template = MistralTemplate::new();
+    let result = template.format_message("custom", "content").unwrap();
+    assert_eq!(result, "content");
+}
+
+#[test]
+fn test_phi_format_message_user() {
+    let template = PhiTemplate::new();
+    let result = template.format_message("user", "Hello!").unwrap();
+    assert!(result.contains("Instruct:"));
+}
+
+#[test]
+fn test_phi_format_message_assistant() {
+    let template = PhiTemplate::new();
+    let result = template.format_message("assistant", "Hi!").unwrap();
+    assert!(result.contains("Output:"));
+}
+
+#[test]
+fn test_phi_format_message_system() {
+    let template = PhiTemplate::new();
+    let result = template.format_message("system", "System prompt").unwrap();
+    assert!(result.contains("System prompt"));
+}
+
+#[test]
+fn test_phi_format_message_unknown_role() {
+    let template = PhiTemplate::new();
+    let result = template.format_message("custom", "content").unwrap();
+    assert_eq!(result, "content");
+}
+
+#[test]
+fn test_llama2_format_message_user() {
+    let template = Llama2Template::new();
+    let result = template.format_message("user", "Hello!").unwrap();
+    assert!(result.contains("[INST]"));
+    assert!(result.contains("[/INST]"));
+}
+
+#[test]
+fn test_llama2_format_message_assistant() {
+    let template = Llama2Template::new();
+    let result = template.format_message("assistant", "Hi!").unwrap();
+    assert!(result.contains("</s>"));
+}
+
+#[test]
+fn test_llama2_format_message_system() {
+    let template = Llama2Template::new();
+    let result = template.format_message("system", "System").unwrap();
+    assert!(result.contains("<<SYS>>"));
+    assert!(result.contains("<</SYS>>"));
+}
+
+#[test]
+fn test_llama2_format_message_unknown_role_coverage() {
+    let template = Llama2Template::new();
+    let result = template.format_message("custom", "content").unwrap();
+    assert_eq!(result, "content");
+}
+
+#[test]
+fn test_alpaca_format_message_user() {
+    let template = AlpacaTemplate::new();
+    let result = template.format_message("user", "Hello!").unwrap();
+    assert!(result.contains("### Instruction:"));
+}
+
+#[test]
+fn test_alpaca_format_message_assistant() {
+    let template = AlpacaTemplate::new();
+    let result = template.format_message("assistant", "Response").unwrap();
+    assert!(result.contains("### Response:"));
+}
+
+#[test]
+fn test_alpaca_format_message_system() {
+    let template = AlpacaTemplate::new();
+    let result = template.format_message("system", "System").unwrap();
+    assert!(result.contains("System"));
+}
+
+#[test]
+fn test_alpaca_format_message_unknown_role() {
+    let template = AlpacaTemplate::new();
+    let result = template.format_message("custom", "content").unwrap();
+    assert_eq!(result, "content");
+}
+
+#[test]
+fn test_chatml_format_message_non_user() {
+    let template = ChatMLTemplate::new();
+    // Non-user role should not sanitize content
+    let result = template.format_message("assistant", "<|im_start|>test").unwrap();
+    // Assistant messages are not sanitized
+    assert!(result.contains("<|im_start|>test"));
+}
+
+#[test]
+fn test_raw_template_format_message() {
+    let template = RawTemplate::new();
+    let result = template.format_message("user", "Hello").unwrap();
+    assert_eq!(result, "Hello");
+}
+
+#[test]
+fn test_raw_template_format_conversation() {
+    let template = RawTemplate::new();
+    let messages = vec![
+        ChatMessage::user("Hello"),
+        ChatMessage::assistant("Hi"),
+    ];
+    let result = template.format_conversation(&messages).unwrap();
+    assert_eq!(result, "HelloHi");
+}
+
+#[test]
+fn test_huggingface_template_debug() {
+    let json = r#"{
+        "chat_template": "{% for m in messages %}{{ m.content }}{% endfor %}",
+        "bos_token": "<s>"
+    }"#;
+    let template = HuggingFaceTemplate::from_json(json).unwrap();
+    let debug = format!("{:?}", template);
+    assert!(debug.contains("HuggingFaceTemplate"));
+}
+
+#[test]
+fn test_huggingface_template_format_message() {
+    let json = r#"{
+        "chat_template": "{% for m in messages %}{{ m.content }}{% endfor %}",
+        "bos_token": "<s>",
+        "eos_token": "</s>"
+    }"#;
+    let template = HuggingFaceTemplate::from_json(json).unwrap();
+    let result = template.format_message("user", "Hello").unwrap();
+    assert!(result.contains("Hello"));
+}
+
+#[test]
+fn test_huggingface_template_detect_format_chatml() {
+    let json = r#"{
+        "chat_template": "{% for m in messages %}<|im_start|>{{ m.role }}{{ m.content }}<|im_end|>{% endfor %}",
+        "bos_token": "<s>"
+    }"#;
+    let template = HuggingFaceTemplate::from_json(json).unwrap();
+    assert_eq!(template.format(), TemplateFormat::ChatML);
+}
+
+#[test]
+fn test_huggingface_template_detect_format_llama2() {
+    let json = r#"{
+        "chat_template": "{% for m in messages %}[INST] {{ m.content }} [/INST]{% endfor %}",
+        "bos_token": "<s>"
+    }"#;
+    let template = HuggingFaceTemplate::from_json(json).unwrap();
+    assert_eq!(template.format(), TemplateFormat::Llama2);
+}
+
+#[test]
+fn test_huggingface_template_detect_format_alpaca() {
+    // Use string concatenation to avoid raw string issues with ### pattern
+    let chat_template = String::from("") + "##" + "# Instruction:{{ content }}" + "##" + "# Response:";
+    let json = format!(r#"{{
+        "chat_template": "{}",
+        "bos_token": "<s>"
+    }}"#, chat_template);
+    let template = HuggingFaceTemplate::from_json(&json).unwrap();
+    assert_eq!(template.format(), TemplateFormat::Alpaca);
+}
+
+#[test]
+fn test_huggingface_template_detect_format_custom() {
+    let json = r#"{
+        "chat_template": "{% for m in messages %}{{ m.content }}{% endfor %}",
+        "bos_token": "<s>"
+    }"#;
+    let template = HuggingFaceTemplate::from_json(json).unwrap();
+    assert_eq!(template.format(), TemplateFormat::Custom);
+}
+
+#[test]
+fn test_huggingface_template_supports_system() {
+    let json = r#"{
+        "chat_template": "test",
+        "bos_token": "<s>"
+    }"#;
+    let template = HuggingFaceTemplate::from_json(json).unwrap();
+    assert!(template.supports_system_prompt());
+}
+
+#[test]
+fn test_special_tokens_all_fields() {
+    let tokens = SpecialTokens {
+        bos_token: Some("bos".to_string()),
+        eos_token: Some("eos".to_string()),
+        unk_token: Some("unk".to_string()),
+        pad_token: Some("pad".to_string()),
+        im_start_token: Some("im_start".to_string()),
+        im_end_token: Some("im_end".to_string()),
+        inst_start: Some("inst_start".to_string()),
+        inst_end: Some("inst_end".to_string()),
+        sys_start: Some("sys_start".to_string()),
+        sys_end: Some("sys_end".to_string()),
+    };
+    let debug = format!("{:?}", tokens);
+    assert!(debug.contains("SpecialTokens"));
+}
+
+#[test]
+fn test_special_tokens_clone() {
+    let tokens = SpecialTokens {
+        bos_token: Some("<s>".to_string()),
+        ..Default::default()
+    };
+    let cloned = tokens.clone();
+    assert_eq!(cloned.bos_token, tokens.bos_token);
+}
+
+#[test]
+fn test_template_format_serde() {
+    let format = TemplateFormat::ChatML;
+    let json = serde_json::to_string(&format).unwrap();
+    let restored: TemplateFormat = serde_json::from_str(&json).unwrap();
+    assert_eq!(format, restored);
+}
+
+#[test]
+fn test_template_format_all_variants_serde() {
+    let formats = vec![
+        TemplateFormat::ChatML,
+        TemplateFormat::Llama2,
+        TemplateFormat::Mistral,
+        TemplateFormat::Alpaca,
+        TemplateFormat::Phi,
+        TemplateFormat::Custom,
+        TemplateFormat::Raw,
+    ];
+    for format in formats {
+        let json = serde_json::to_string(&format).unwrap();
+        let restored: TemplateFormat = serde_json::from_str(&json).unwrap();
+        assert_eq!(format, restored);
+    }
+}
+
+#[test]
+fn test_chatml_with_tokens() {
+    let tokens = SpecialTokens {
+        bos_token: Some("custom_bos".to_string()),
+        ..Default::default()
+    };
+    let template = ChatMLTemplate::with_tokens(tokens);
+    assert_eq!(
+        template.special_tokens().bos_token,
+        Some("custom_bos".to_string())
+    );
+}
+
+#[test]
+fn test_llama2_multi_turn() {
+    let template = Llama2Template::new();
+    let messages = vec![
+        ChatMessage::system("You are helpful"),
+        ChatMessage::user("Hi"),
+        ChatMessage::assistant("Hello!"),
+        ChatMessage::user("How are you?"),
+    ];
+    let result = template.format_conversation(&messages).unwrap();
+    assert!(result.starts_with("<s>"));
+    assert!(result.contains("<<SYS>>"));
+    assert!(result.contains("[INST]"));
+    assert!(result.contains("[/INST]"));
+    assert!(result.contains("</s>"));
+}
+
+#[test]
+fn test_phi_conversation_with_all_roles() {
+    let template = PhiTemplate::new();
+    let messages = vec![
+        ChatMessage::system("System"),
+        ChatMessage::user("User"),
+        ChatMessage::assistant("Assistant"),
+    ];
+    let result = template.format_conversation(&messages).unwrap();
+    assert!(result.contains("System"));
+    assert!(result.contains("Instruct:"));
+    assert!(result.contains("Output:"));
+}
+
+#[test]
+fn test_alpaca_conversation_all_roles() {
+    let template = AlpacaTemplate::new();
+    let messages = vec![
+        ChatMessage::system("Context"),
+        ChatMessage::user("Question"),
+        ChatMessage::assistant("Answer"),
+    ];
+    let result = template.format_conversation(&messages).unwrap();
+    assert!(result.contains("Context")); // system message content
+    assert!(result.contains("### Instruction:"));
+    assert!(result.contains("### Response:"));
+}
+
+#[test]
+fn test_mistral_conversation_with_assistant() {
+    let template = MistralTemplate::new();
+    let messages = vec![
+        ChatMessage::user("Hello"),
+        ChatMessage::assistant("Hi!"),
+        ChatMessage::user("Bye"),
+    ];
+    let result = template.format_conversation(&messages).unwrap();
+    assert!(result.contains("[INST]"));
+    assert!(result.contains("</s>"));
+}
+
+#[test]
+fn test_detect_format_yi_model() {
+    assert_eq!(detect_format_from_name("yi-34b-chat"), TemplateFormat::ChatML);
+}
+
+#[test]
+fn test_detect_format_openhermes() {
+    assert_eq!(detect_format_from_name("OpenHermes-2.5"), TemplateFormat::ChatML);
+}
+
+#[test]
+fn test_detect_format_mixtral() {
+    assert_eq!(detect_format_from_name("Mixtral-8x7B-Instruct"), TemplateFormat::Mistral);
+}
+
+#[test]
+fn test_detect_format_vicuna() {
+    assert_eq!(detect_format_from_name("vicuna-13b-v1.5"), TemplateFormat::Llama2);
+}
+
+#[test]
+fn test_detect_format_phi2() {
+    assert_eq!(detect_format_from_name("phi2"), TemplateFormat::Phi);
+}
+
+#[test]
+fn test_detect_format_phi3() {
+    assert_eq!(detect_format_from_name("phi3-medium"), TemplateFormat::Phi);
+}
+
+#[test]
+fn test_detect_format_alpaca() {
+    assert_eq!(detect_format_from_name("alpaca-7b"), TemplateFormat::Alpaca);
+}
