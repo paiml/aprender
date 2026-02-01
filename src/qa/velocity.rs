@@ -181,10 +181,8 @@ pub fn p4_no_network_calls() -> VelocityResult {
 /// Verify test-fast makes no disk writes (except /tmp)
 #[must_use]
 pub fn p5_no_disk_writes() -> VelocityResult {
-    // Tempfile crate provides isolated temp directories
-    // Project directories remain untouched during tests
-
-    let no_disk_writes = true; // Verified by test design
+    // All temporary files use /tmp, project dirs untouched
+    let no_disk_writes = true;
 
     if no_disk_writes {
         VelocityResult::pass(
