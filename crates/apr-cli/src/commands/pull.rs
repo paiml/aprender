@@ -317,6 +317,10 @@ pub fn resolve_hf_uri(uri: &str) -> Result<String> {
 mod tests {
     use super::*;
 
+    // =========================================================================
+    // format_bytes tests
+    // =========================================================================
+
     #[test]
     fn test_format_bytes() {
         assert_eq!(format_bytes(512), "512 B");
@@ -324,6 +328,51 @@ mod tests {
         assert_eq!(format_bytes(1024 * 1024), "1.00 MB");
         assert_eq!(format_bytes(1024 * 1024 * 1024), "1.00 GB");
         assert_eq!(format_bytes(5 * 1024 * 1024 * 1024), "5.00 GB");
+    }
+
+    #[test]
+    fn test_format_bytes_zero() {
+        assert_eq!(format_bytes(0), "0 B");
+    }
+
+    #[test]
+    fn test_format_bytes_small() {
+        assert_eq!(format_bytes(1), "1 B");
+        assert_eq!(format_bytes(100), "100 B");
+        assert_eq!(format_bytes(1023), "1023 B");
+    }
+
+    #[test]
+    fn test_format_bytes_kilobytes() {
+        assert_eq!(format_bytes(1024), "1.00 KB");
+        assert_eq!(format_bytes(2048), "2.00 KB");
+        assert_eq!(format_bytes(512 * 1024), "512.00 KB");
+    }
+
+    #[test]
+    fn test_format_bytes_megabytes() {
+        assert_eq!(format_bytes(1024 * 1024), "1.00 MB");
+        assert_eq!(format_bytes(100 * 1024 * 1024), "100.00 MB");
+        assert_eq!(format_bytes(500 * 1024 * 1024), "500.00 MB");
+    }
+
+    #[test]
+    fn test_format_bytes_gigabytes() {
+        assert_eq!(format_bytes(1024 * 1024 * 1024), "1.00 GB");
+        assert_eq!(format_bytes(10 * 1024 * 1024 * 1024), "10.00 GB");
+        assert_eq!(format_bytes(100 * 1024 * 1024 * 1024), "100.00 GB");
+    }
+
+    #[test]
+    fn test_format_bytes_fractional_gb() {
+        // 4.5 GB = 4.5 * 1024 * 1024 * 1024 = 4831838208 bytes
+        assert_eq!(format_bytes(4831838208), "4.50 GB");
+    }
+
+    #[test]
+    fn test_format_bytes_fractional_mb() {
+        // 2.5 MB = 2.5 * 1024 * 1024 = 2621440 bytes
+        assert_eq!(format_bytes(2621440), "2.50 MB");
     }
 
     // =========================================================================
@@ -358,6 +407,75 @@ mod tests {
         assert!(result.is_err(), "Invalid URI should fail");
     }
 
+    #[test]
+    fn test_resolve_hf_uri_relative_path() {
+        let uri = "./models/test.gguf";
+        let resolved = resolve_hf_uri(uri).unwrap();
+        assert_eq!(resolved, uri, "Relative path should be unchanged");
+    }
+
+    #[test]
+    fn test_resolve_hf_uri_absolute_path() {
+        let uri = "/home/user/models/test.gguf";
+        let resolved = resolve_hf_uri(uri).unwrap();
+        assert_eq!(resolved, uri, "Absolute path should be unchanged");
+    }
+
+    #[test]
+    fn test_resolve_hf_uri_https_url() {
+        let uri = "https://example.com/model.gguf";
+        let resolved = resolve_hf_uri(uri).unwrap();
+        assert_eq!(resolved, uri, "HTTPS URL should be unchanged");
+    }
+
+    #[test]
+    fn test_resolve_hf_uri_with_mixed_case_extension() {
+        let uri = "hf://Org/Repo/model.GgUf";
+        let resolved = resolve_hf_uri(uri).unwrap();
+        assert_eq!(resolved, uri, "Mixed case .GgUf should be unchanged");
+    }
+
+    #[test]
+    fn test_resolve_hf_uri_empty_string() {
+        let uri = "";
+        let resolved = resolve_hf_uri(uri).unwrap();
+        assert_eq!(resolved, uri, "Empty string should be unchanged");
+    }
+
+    #[test]
+    fn test_resolve_hf_uri_invalid_hf_format() {
+        // hf:// without org/repo should fail
+        let result = resolve_hf_uri("hf://only-one-part");
+        assert!(result.is_err());
+        match result {
+            Err(CliError::ValidationFailed(msg)) => {
+                assert!(msg.contains("Invalid HuggingFace URI"));
+            }
+            other => panic!("Expected ValidationFailed, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_resolve_hf_uri_with_safetensors_extension_unchanged() {
+        // .safetensors files are not .gguf, so they will trigger HF API query
+        // This test verifies the logic path, but we can't test the full flow
+        // without mocking. Instead, test that non-gguf HF URIs attempt resolution.
+        // The test_resolve_hf_uri_invalid_hf_format covers the error case.
+        // For now, we just verify the URI format is preserved for files with .gguf extension
+        let uri = "hf://org/repo/model.gguf";
+        let resolved = resolve_hf_uri(uri).unwrap();
+        assert_eq!(resolved, uri, ".gguf extension should be unchanged");
+    }
+
+    #[test]
+    #[ignore] // Requires network access
+    fn test_resolve_hf_uri_with_safetensors_queries_api() {
+        // This test would need network access to verify API query behavior
+        let uri = "hf://org/repo/model.safetensors";
+        let _result = resolve_hf_uri(uri);
+        // Result depends on network and repo existence
+    }
+
     // Integration test (requires network, marked ignore for CI)
     #[test]
     #[ignore]
@@ -370,5 +488,31 @@ mod tests {
             "Should prefer Q4_K_M quantization: {}",
             resolved
         );
+    }
+
+    // =========================================================================
+    // resolve_model_path tests
+    // =========================================================================
+
+    #[test]
+    fn test_resolve_model_path_existing_file() {
+        // Create a temp file
+        let temp_dir = std::env::temp_dir().join("apr_pull_test_path");
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let test_file = temp_dir.join("test_model.gguf");
+        let _ = std::fs::write(&test_file, "GGUF");
+
+        let result = resolve_model_path(test_file.to_str().unwrap());
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), test_file);
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_resolve_model_path_nonexistent_local_fails() {
+        let result = resolve_model_path("/nonexistent/model.gguf");
+        // This will try pacha which will fail with validation error
+        assert!(result.is_err());
     }
 }

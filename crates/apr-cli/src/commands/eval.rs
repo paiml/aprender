@@ -531,6 +531,10 @@ they could find a way to start again.
 mod tests {
     use super::*;
 
+    // =========================================================================
+    // Dataset tests
+    // =========================================================================
+
     #[test]
     fn test_dataset_parse() {
         assert_eq!("wikitext-2".parse::<Dataset>().unwrap(), Dataset::WikiText2);
@@ -540,9 +544,62 @@ mod tests {
     }
 
     #[test]
+    fn test_dataset_parse_case_insensitive() {
+        assert_eq!("WIKITEXT-2".parse::<Dataset>().unwrap(), Dataset::WikiText2);
+        assert_eq!("WikiText2".parse::<Dataset>().unwrap(), Dataset::WikiText2);
+        assert_eq!("LAMBADA".parse::<Dataset>().unwrap(), Dataset::Lambada);
+        assert_eq!("CUSTOM".parse::<Dataset>().unwrap(), Dataset::Custom);
+    }
+
+    #[test]
     fn test_dataset_parse_error() {
         assert!("unknown".parse::<Dataset>().is_err());
     }
+
+    #[test]
+    fn test_dataset_parse_error_message() {
+        let result: std::result::Result<Dataset, String> = "invalid".parse();
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.contains("Unknown dataset"));
+        assert!(err.contains("wikitext-2"));
+        assert!(err.contains("lambada"));
+        assert!(err.contains("custom"));
+    }
+
+    #[test]
+    fn test_dataset_debug() {
+        assert_eq!(format!("{:?}", Dataset::WikiText2), "WikiText2");
+        assert_eq!(format!("{:?}", Dataset::Lambada), "Lambada");
+        assert_eq!(format!("{:?}", Dataset::Custom), "Custom");
+    }
+
+    #[test]
+    fn test_dataset_clone() {
+        let dataset = Dataset::WikiText2;
+        let cloned = dataset;
+        assert_eq!(dataset, cloned);
+    }
+
+    #[test]
+    fn test_dataset_copy() {
+        let dataset = Dataset::Lambada;
+        let copied: Dataset = dataset;
+        assert_eq!(dataset, copied);
+    }
+
+    #[test]
+    fn test_dataset_eq() {
+        assert_eq!(Dataset::WikiText2, Dataset::WikiText2);
+        assert_eq!(Dataset::Lambada, Dataset::Lambada);
+        assert_eq!(Dataset::Custom, Dataset::Custom);
+        assert_ne!(Dataset::WikiText2, Dataset::Lambada);
+        assert_ne!(Dataset::Lambada, Dataset::Custom);
+    }
+
+    // =========================================================================
+    // EvalResult tests
+    // =========================================================================
 
     #[test]
     fn test_eval_result_pass() {
@@ -575,10 +632,272 @@ mod tests {
     }
 
     #[test]
+    fn test_eval_result_excellent() {
+        let result = EvalResult {
+            perplexity: 8.5,
+            cross_entropy: 2.14,
+            tokens_evaluated: 512,
+            eval_time_secs: 3.0,
+            passed: true,
+            threshold: 20.0,
+        };
+
+        assert!(result.passed);
+        assert!(result.perplexity < 10.0); // Excellent threshold
+    }
+
+    #[test]
+    fn test_eval_result_good() {
+        let result = EvalResult {
+            perplexity: 12.5,
+            cross_entropy: 2.53,
+            tokens_evaluated: 256,
+            eval_time_secs: 2.0,
+            passed: true,
+            threshold: 20.0,
+        };
+
+        assert!(result.passed);
+        assert!(result.perplexity >= 10.0 && result.perplexity < 15.0); // Good threshold
+    }
+
+    #[test]
+    fn test_eval_result_poor() {
+        let result = EvalResult {
+            perplexity: 35.0,
+            cross_entropy: 3.56,
+            tokens_evaluated: 100,
+            eval_time_secs: 1.0,
+            passed: false,
+            threshold: 20.0,
+        };
+
+        assert!(!result.passed);
+        assert!(result.perplexity >= 20.0 && result.perplexity < 50.0); // Poor threshold
+    }
+
+    #[test]
+    fn test_eval_result_garbage() {
+        let result = EvalResult {
+            perplexity: 150.0,
+            cross_entropy: 5.01,
+            tokens_evaluated: 50,
+            eval_time_secs: 0.5,
+            passed: false,
+            threshold: 20.0,
+        };
+
+        assert!(!result.passed);
+        assert!(result.perplexity >= 50.0); // Garbage threshold
+    }
+
+    #[test]
+    fn test_eval_result_debug() {
+        let result = EvalResult {
+            perplexity: 15.0,
+            cross_entropy: 2.7,
+            tokens_evaluated: 100,
+            eval_time_secs: 1.5,
+            passed: true,
+            threshold: 20.0,
+        };
+
+        let debug_str = format!("{:?}", result);
+        assert!(debug_str.contains("EvalResult"));
+        assert!(debug_str.contains("perplexity: 15.0"));
+        assert!(debug_str.contains("passed: true"));
+    }
+
+    #[test]
+    fn test_eval_result_clone() {
+        let result = EvalResult {
+            perplexity: 15.0,
+            cross_entropy: 2.7,
+            tokens_evaluated: 100,
+            eval_time_secs: 1.5,
+            passed: true,
+            threshold: 20.0,
+        };
+
+        let cloned = result.clone();
+        assert_eq!(cloned.perplexity, result.perplexity);
+        assert_eq!(cloned.passed, result.passed);
+    }
+
+    // =========================================================================
+    // get_eval_text tests
+    // =========================================================================
+
+    #[test]
+    fn test_get_eval_text_wikitext() {
+        let config = EvalConfig {
+            dataset: Dataset::WikiText2,
+            text: None,
+            max_tokens: 512,
+            threshold: 20.0,
+        };
+
+        let text = get_eval_text(&config).unwrap();
+        assert!(!text.is_empty());
+        assert!(text.contains("Eiffel Tower")); // WikiText sample contains this
+    }
+
+    #[test]
+    fn test_get_eval_text_lambada() {
+        let config = EvalConfig {
+            dataset: Dataset::Lambada,
+            text: None,
+            max_tokens: 512,
+            threshold: 20.0,
+        };
+
+        let text = get_eval_text(&config).unwrap();
+        assert!(!text.is_empty());
+        assert!(text.contains("walked into the room")); // LAMBADA sample contains this
+    }
+
+    #[test]
+    fn test_get_eval_text_custom() {
+        let config = EvalConfig {
+            dataset: Dataset::Custom,
+            text: Some("This is custom evaluation text.".to_string()),
+            max_tokens: 512,
+            threshold: 20.0,
+        };
+
+        let text = get_eval_text(&config).unwrap();
+        assert_eq!(text, "This is custom evaluation text.");
+    }
+
+    #[test]
+    fn test_get_eval_text_custom_no_text() {
+        let config = EvalConfig {
+            dataset: Dataset::Custom,
+            text: None, // Missing text for custom dataset
+            max_tokens: 512,
+            threshold: 20.0,
+        };
+
+        let result = get_eval_text(&config);
+        assert!(result.is_err());
+        match result {
+            Err(CliError::ValidationFailed(msg)) => {
+                assert!(msg.contains("Custom dataset requires --text argument"));
+            }
+            other => panic!("Expected ValidationFailed, got {:?}", other),
+        }
+    }
+
+    // =========================================================================
+    // Sample text tests
+    // =========================================================================
+
+    #[test]
     fn test_sample_texts_not_empty() {
         assert!(!SAMPLE_WIKITEXT.is_empty());
         assert!(!SAMPLE_LAMBADA.is_empty());
         assert!(SAMPLE_WIKITEXT.len() > 100);
         assert!(SAMPLE_LAMBADA.len() > 100);
+    }
+
+    #[test]
+    fn test_sample_wikitext_content() {
+        // WikiText-2 sample should contain recognizable content
+        assert!(SAMPLE_WIKITEXT.contains("tower"));
+        assert!(SAMPLE_WIKITEXT.contains("metres"));
+        assert!(SAMPLE_WIKITEXT.contains("Paris"));
+    }
+
+    #[test]
+    fn test_sample_lambada_content() {
+        // LAMBADA sample should contain narrative text
+        assert!(SAMPLE_LAMBADA.contains("She"));
+        assert!(SAMPLE_LAMBADA.contains("friend"));
+        assert!(SAMPLE_LAMBADA.contains("window"));
+    }
+
+    // =========================================================================
+    // run() error cases tests
+    // =========================================================================
+
+    #[test]
+    fn test_run_unknown_dataset() {
+        let result = run(
+            Path::new("test.apr"),
+            "invalid_dataset",
+            None,
+            None,
+            None,
+        );
+
+        assert!(result.is_err());
+        match result {
+            Err(CliError::ValidationFailed(msg)) => {
+                assert!(msg.contains("Unknown dataset"));
+            }
+            other => panic!("Expected ValidationFailed, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_run_file_not_found() {
+        let result = run(
+            Path::new("/nonexistent/model.apr"),
+            "wikitext-2",
+            None,
+            None,
+            None,
+        );
+
+        // Will fail because file doesn't exist
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_custom_without_text() {
+        let result = run(
+            Path::new("test.apr"),
+            "custom",
+            None, // Missing text for custom dataset
+            None,
+            None,
+        );
+
+        // Will fail at validation or file loading
+        assert!(result.is_err());
+    }
+
+    // =========================================================================
+    // EvalConfig tests
+    // =========================================================================
+
+    #[test]
+    fn test_eval_config_default_values() {
+        let config = EvalConfig {
+            dataset: Dataset::WikiText2,
+            text: None,
+            max_tokens: 512,
+            threshold: 20.0,
+        };
+
+        assert!(matches!(config.dataset, Dataset::WikiText2));
+        assert!(config.text.is_none());
+        assert_eq!(config.max_tokens, 512);
+        assert!((config.threshold - 20.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_eval_config_with_text() {
+        let config = EvalConfig {
+            dataset: Dataset::Custom,
+            text: Some("Test text".to_string()),
+            max_tokens: 256,
+            threshold: 15.0,
+        };
+
+        assert!(matches!(config.dataset, Dataset::Custom));
+        assert_eq!(config.text, Some("Test text".to_string()));
+        assert_eq!(config.max_tokens, 256);
+        assert!((config.threshold - 15.0).abs() < 0.01);
     }
 }

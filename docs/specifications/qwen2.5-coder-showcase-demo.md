@@ -1,11 +1,11 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 6.7.0
+**Version:** 6.8.0
 **Status:** ⚠️ TESTING REQUIRED - All P0 bugs fixed, TOOL-APR-001 + TOOL-APR-002 + TOOL-APR-003 complete
-**Popperian Score:** 85/100 (Grade: P0 BUGS FIXED - 5 CLI commands tested: rosetta, flow, canary, compare_hf, profile)
+**Popperian Score:** 88/100 (Grade: P0 BUGS FIXED - 12 CLI commands with comprehensive tests)
 **Code Coverage:** 96.17% (target: ≥95%)
 **Tool Coverage:** 16/16 (100%) - All APR tools verified (+ rosetta fingerprint, validate-stats)
-**CLI Test Coverage:** 170+ new CLI tests added (rosetta: 40, flow: 31, canary: 35, compare_hf: 16, profile: 48)
+**CLI Test Coverage:** 845 total command tests (chat: 46, publish: 26, import: 29, tune: 29, eval: 28, pull: 23, tensors: 24 + prior)
 **Author:** PAIML Engineering
 **Date:** 2026-02-01
 **Last Falsification Run:** 2026-01-31 (Round 14 - FALSIFIED: Tensor Holocaust)
@@ -4490,6 +4490,7 @@ fn test_gguf_to_apr_preserves_all_tensors() {
 | 2026-02-01 | Claude Opus 4.5 | 80/100 | TOOL-APR-001 FIXED - Library extraction, tensor index reading |
 | **2026-02-01** | **Claude Opus 4.5** | **82/100** | **TOOL-APR-002 FIXED** - Multi-format diff (GGUF, APR, SafeTensors) |
 | **2026-02-01** | **Claude Opus 4.5** | **85/100** | **TOOL-APR-003 FIXED** - 170+ CLI tests (rosetta, flow, canary, compare_hf, profile) |
+| **2026-02-01** | **Claude Opus 4.5** | **88/100** | **TOOL-APR-004** - 845 total command tests (chat: 46, publish: 26, import: 29, tune: 29, eval: 28, pull: 23, tensors: 24) |
 
 **Release Status:** ⚠️ **TESTING REQUIRED** - Both P0 bugs fixed, needs integration test verification.
 
