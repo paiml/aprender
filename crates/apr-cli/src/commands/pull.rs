@@ -11,7 +11,9 @@
 use crate::error::{CliError, Result};
 use colored::Colorize;
 use pacha::fetcher::{FetchConfig, ModelFetcher};
-use std::io::{self, Write};
+use pacha::format::ModelFormat;
+use std::io::{self, Read, Write};
+use std::path::Path;
 
 /// Run the pull command
 pub fn run(model_ref: &str, force: bool) -> Result<()> {
@@ -41,6 +43,12 @@ pub fn run(model_ref: &str, force: bool) -> Result<()> {
         println!("  Path: {}", result.path.display());
         println!("  Size: {}", result.size_human());
         println!("  Format: {:?}", result.format);
+
+        // GH-198: Ensure companion files exist for cached SafeTensors models
+        if matches!(result.format, ModelFormat::SafeTensors(_)) {
+            fetch_safetensors_companions(&result.path, &result.resolved_uri)?;
+        }
+
         println!();
         println!("{}", "Usage:".cyan().bold());
         println!("  apr run {}", result.path.display());
@@ -79,6 +87,11 @@ pub fn run(model_ref: &str, force: bool) -> Result<()> {
     println!("  Size: {}", result.size_human().yellow());
     println!("  Format: {:?}", result.format);
     println!("  Hash: {}", &result.hash[..16]);
+
+    // GH-198: Download companion files for SafeTensors models
+    if matches!(result.format, ModelFormat::SafeTensors(_)) {
+        fetch_safetensors_companions(&result.path, &result.resolved_uri)?;
+    }
 
     println!();
     println!("{}", "Usage:".cyan().bold());
@@ -231,6 +244,99 @@ fn format_bytes(bytes: u64) -> String {
         format!("{:.2} KB", bytes as f64 / KB as f64)
     } else {
         format!("{} B", bytes)
+    }
+}
+
+/// GH-198: Download companion files (tokenizer.json, config.json) for SafeTensors models.
+///
+/// SafeTensors format stores weights only — unlike GGUF which embeds tokenizer and config.
+/// The realizar inference engine expects these as sibling files via `with_file_name()`.
+fn fetch_safetensors_companions(model_path: &Path, resolved_uri: &str) -> Result<()> {
+    // Extract HF repo from resolved URI: "hf://org/repo/file.safetensors" → "org/repo"
+    let Some(repo_id) = extract_hf_repo(resolved_uri) else {
+        // Not an HF URI — can't fetch companions (local file or unknown source)
+        return Ok(());
+    };
+
+    let companions = ["tokenizer.json", "config.json"];
+    let cache_dir = model_path
+        .parent()
+        .ok_or_else(|| CliError::ValidationFailed("Model path has no parent directory".into()))?;
+
+    for filename in &companions {
+        let sibling_path = cache_dir.join(filename);
+        if sibling_path.exists() {
+            println!(
+                "  {} {} (already exists)",
+                "✓".green(),
+                filename.dimmed()
+            );
+            continue;
+        }
+
+        let url = format!(
+            "https://huggingface.co/{}/resolve/main/{}",
+            repo_id, filename
+        );
+
+        match ureq::get(&url).call() {
+            Ok(response) => {
+                let mut body = Vec::new();
+                response
+                    .into_reader()
+                    .read_to_end(&mut body)
+                    .map_err(|e| {
+                        CliError::NetworkError(format!("Failed to read {filename}: {e}"))
+                    })?;
+                std::fs::write(&sibling_path, &body).map_err(|e| {
+                    CliError::ValidationFailed(format!(
+                        "Failed to write {}: {e}",
+                        sibling_path.display()
+                    ))
+                })?;
+                println!(
+                    "  {} {} ({})",
+                    "✓".green(),
+                    filename,
+                    format_bytes(body.len() as u64).dimmed()
+                );
+            }
+            Err(ureq::Error::Status(404, _)) => {
+                // File doesn't exist in repo — not fatal
+                println!(
+                    "  {} {} (not found in repo)",
+                    "⚠".yellow(),
+                    filename.dimmed()
+                );
+            }
+            Err(e) => {
+                // Network error — warn but don't block the pull
+                eprintln!(
+                    "  {} Failed to download {}: {}",
+                    "⚠".yellow(),
+                    filename,
+                    e
+                );
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Extract HuggingFace repo ID from a resolved URI.
+///
+/// Examples:
+///   "hf://Qwen/Qwen2.5-Coder-0.5B-Instruct/model.safetensors" → Some("Qwen/Qwen2.5-Coder-0.5B-Instruct")
+///   "hf://Qwen/Qwen2.5-Coder-0.5B-Instruct" → Some("Qwen/Qwen2.5-Coder-0.5B-Instruct")
+///   "/local/path/model.safetensors" → None
+fn extract_hf_repo(uri: &str) -> Option<String> {
+    let path = uri.strip_prefix("hf://")?;
+    let parts: Vec<&str> = path.split('/').collect();
+    if parts.len() >= 2 {
+        Some(format!("{}/{}", parts[0], parts[1]))
+    } else {
+        None
     }
 }
 
@@ -514,5 +620,138 @@ mod tests {
         let result = resolve_model_path("/nonexistent/model.gguf");
         // This will try pacha which will fail with validation error
         assert!(result.is_err());
+    }
+
+    // =========================================================================
+    // GH-198: extract_hf_repo tests
+    // =========================================================================
+
+    #[test]
+    fn test_gh198_extract_hf_repo_with_file() {
+        let uri = "hf://Qwen/Qwen2.5-Coder-0.5B-Instruct/model.safetensors";
+        assert_eq!(
+            extract_hf_repo(uri),
+            Some("Qwen/Qwen2.5-Coder-0.5B-Instruct".to_string())
+        );
+    }
+
+    #[test]
+    fn test_gh198_extract_hf_repo_without_file() {
+        let uri = "hf://Qwen/Qwen2.5-Coder-0.5B-Instruct";
+        assert_eq!(
+            extract_hf_repo(uri),
+            Some("Qwen/Qwen2.5-Coder-0.5B-Instruct".to_string())
+        );
+    }
+
+    #[test]
+    fn test_gh198_extract_hf_repo_local_path() {
+        assert_eq!(extract_hf_repo("/local/path/model.safetensors"), None);
+    }
+
+    #[test]
+    fn test_gh198_extract_hf_repo_empty() {
+        assert_eq!(extract_hf_repo(""), None);
+    }
+
+    #[test]
+    fn test_gh198_extract_hf_repo_only_org() {
+        // hf://org (missing repo) → None
+        assert_eq!(extract_hf_repo("hf://org"), None);
+    }
+
+    #[test]
+    fn test_gh198_extract_hf_repo_nested_path() {
+        let uri = "hf://org/repo/subdir/model.safetensors";
+        assert_eq!(
+            extract_hf_repo(uri),
+            Some("org/repo".to_string())
+        );
+    }
+
+    // =========================================================================
+    // GH-198: fetch_safetensors_companions tests
+    // =========================================================================
+
+    #[test]
+    fn test_gh198_companions_non_hf_uri_is_noop() {
+        let temp_dir = std::env::temp_dir().join("apr_gh198_noop");
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let model_path = temp_dir.join("model.safetensors");
+        let _ = std::fs::write(&model_path, b"dummy");
+
+        // Local URI → should return Ok without downloading anything
+        let result = fetch_safetensors_companions(&model_path, "/local/model.safetensors");
+        assert!(result.is_ok());
+
+        // No companion files should be created
+        assert!(!temp_dir.join("tokenizer.json").exists());
+        assert!(!temp_dir.join("config.json").exists());
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_gh198_companions_skips_existing() {
+        let temp_dir = std::env::temp_dir().join("apr_gh198_existing");
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let model_path = temp_dir.join("model.safetensors");
+        let _ = std::fs::write(&model_path, b"dummy");
+
+        // Pre-create companion files
+        let _ = std::fs::write(temp_dir.join("tokenizer.json"), b"{}");
+        let _ = std::fs::write(temp_dir.join("config.json"), b"{}");
+
+        // Should succeed without attempting downloads (files already exist)
+        let result = fetch_safetensors_companions(
+            &model_path,
+            "hf://Qwen/Qwen2.5-Coder-0.5B-Instruct/model.safetensors",
+        );
+        assert!(result.is_ok());
+
+        // Verify files are unchanged (still our dummy content)
+        let content = std::fs::read_to_string(temp_dir.join("tokenizer.json")).unwrap();
+        assert_eq!(content, "{}");
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    #[ignore] // Requires network access
+    fn test_gh198_companions_downloads_from_hf() {
+        let temp_dir = std::env::temp_dir().join("apr_gh198_download");
+        let _ = std::fs::remove_dir_all(&temp_dir);
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let model_path = temp_dir.join("model.safetensors");
+        let _ = std::fs::write(&model_path, b"dummy");
+
+        let result = fetch_safetensors_companions(
+            &model_path,
+            "hf://Qwen/Qwen2.5-Coder-0.5B-Instruct/model.safetensors",
+        );
+        assert!(result.is_ok());
+
+        // Both companion files should now exist
+        assert!(
+            temp_dir.join("tokenizer.json").exists(),
+            "tokenizer.json should be downloaded"
+        );
+        assert!(
+            temp_dir.join("config.json").exists(),
+            "config.json should be downloaded"
+        );
+
+        // Verify tokenizer.json has vocab
+        let tok = std::fs::read_to_string(temp_dir.join("tokenizer.json")).unwrap();
+        assert!(tok.contains("vocab"), "tokenizer.json should contain vocab");
+
+        // Verify config.json has model architecture
+        let cfg = std::fs::read_to_string(temp_dir.join("config.json")).unwrap();
+        assert!(
+            cfg.contains("num_hidden_layers"),
+            "config.json should contain num_hidden_layers"
+        );
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }

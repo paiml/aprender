@@ -2530,3 +2530,23 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-195
+  github_issue: null
+  item_type: task
+  title: 'GH-198: apr pull SafeTensors missing companion files (tokenizer.json, config.json)'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-02-01T22:14:01Z
+  updated: 2026-02-01T22:14:01Z
+  spec: null
+  acceptance_criteria:
+  - apr pull for SafeTensors only downloads weight file, missing tokenizer.json and config.json. Causes apr run to fail with PMAT-172.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - bug
+  - safetensors
+  - cli
+  notes: null
