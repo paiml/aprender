@@ -977,14 +977,11 @@ fn run_format_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
         use realizar::gguf::{GGUFModel, MappedGGUFModel, OwnedQuantizedModel};
         use realizar::safetensors_infer::SafetensorsToAprConverter;
 
-        let safetensors_path = match &config.safetensors_path {
-            Some(p) => p,
-            None => {
-                return Ok(GateResult::skipped(
-                    "format_parity",
-                    "No SafeTensors path provided (use --safetensors-path)",
-                ));
-            }
+        let Some(safetensors_path) = &config.safetensors_path else {
+            return Ok(GateResult::skipped(
+                "format_parity",
+                "No SafeTensors path provided (use --safetensors-path)",
+            ));
         };
 
         // Verify GGUF model

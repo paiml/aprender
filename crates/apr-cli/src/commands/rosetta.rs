@@ -14,6 +14,7 @@ use aprender::format::rosetta::{
 };
 use clap::Subcommand;
 use colored::Colorize;
+use std::fmt::Write;
 use std::path::{Path, PathBuf};
 
 /// Rosetta Stone subcommands
@@ -644,7 +645,29 @@ pub fn run_compare_inference(
         }
     }
 
-    if !json {
+    if json {
+        // JSON output
+        let match_rate = if total_tokens > 0 {
+            1.0 - (mismatches as f64 / total_tokens as f64)
+        } else {
+            0.0
+        };
+
+        println!("{{");
+        println!("  \"model_a\": \"{}\",", model_a.display());
+        println!("  \"model_b\": \"{}\",", model_b.display());
+        println!("  \"prompt\": {:?},", prompt);
+        println!("  \"total_tokens\": {},", total_tokens);
+        println!("  \"mismatches\": {},", mismatches);
+        println!("  \"match_rate\": {:.4},", match_rate);
+        println!("  \"text_a\": {:?},", result_a.output_text);
+        println!("  \"text_b\": {:?},", result_b.output_text);
+        println!(
+            "  \"passed\": {}",
+            mismatches == 0 || (1.0 - match_rate as f32) <= tolerance
+        );
+        println!("}}");
+    } else {
         println!(
             "{}",
             "╠══════════════════════════════════════════════════════════════════════════════╣"
@@ -781,28 +804,6 @@ pub fn run_compare_inference(
             println!("{}", "⚠️  TEXT CONTENT DIFFERS:".yellow().bold());
             println!("   Models produced different outputs (may be precision-related).");
         }
-    } else {
-        // JSON output
-        let match_rate = if total_tokens > 0 {
-            1.0 - (mismatches as f64 / total_tokens as f64)
-        } else {
-            0.0
-        };
-
-        println!("{{");
-        println!("  \"model_a\": \"{}\",", model_a.display());
-        println!("  \"model_b\": \"{}\",", model_b.display());
-        println!("  \"prompt\": {:?},", prompt);
-        println!("  \"total_tokens\": {},", total_tokens);
-        println!("  \"mismatches\": {},", mismatches);
-        println!("  \"match_rate\": {:.4},", match_rate);
-        println!("  \"text_a\": {:?},", result_a.output_text);
-        println!("  \"text_b\": {:?},", result_b.output_text);
-        println!(
-            "  \"passed\": {}",
-            mismatches == 0 || (1.0 - match_rate as f32) <= tolerance
-        );
-        println!("}}");
     }
 
     // GH-188 FIX: Fail if no tokens were captured (tracing broken or inference failed)
@@ -1124,7 +1125,9 @@ pub fn run_diff_tensors(
                 .cyan()
         );
 
-        if !layout_mismatches.is_empty() {
+        if layout_mismatches.is_empty() {
+            println!("║ {} ║", "No layout mismatches detected".green().bold());
+        } else {
             println!(
                 "{}",
                 "║                              DIAGNOSIS                                       ║"
@@ -1137,27 +1140,15 @@ pub fn run_diff_tensors(
                     .cyan()
             );
             println!("║ {} ║", "LAYOUT MISMATCH DETECTED!".red().bold());
-            println!(
-                "║ {} ║",
-                "Tensors with transposed dimensions found. This causes garbage output."
-            );
-            println!("║ {} ║", "");
-            println!(
-                "║ {} ║",
-                "Root Cause: GGML stores weights as [in_dim, out_dim]"
-            );
-            println!(
-                "║ {} ║",
-                "             Standard ML expects [out_dim, in_dim]"
-            );
-            println!("║ {} ║", "");
+            println!("║ Tensors with transposed dimensions found. This causes garbage output. ║");
+            println!("║  ║");
+            println!("║ Root Cause: GGML stores weights as [in_dim, out_dim] ║");
+            println!("║              Standard ML expects [out_dim, in_dim] ║");
+            println!("║  ║");
             println!("║ {} ║", "Fix Options:".yellow().bold());
-            println!("║ {} ║", "  1. Transpose tensor data during APR load");
-            println!(
-                "║ {} ║",
-                "  2. Use row-major kernels that expect GGML layout"
-            );
-            println!("║ {} ║", "  3. Store layout convention in APR metadata");
+            println!("║   1. Transpose tensor data during APR load ║");
+            println!("║   2. Use row-major kernels that expect GGML layout ║");
+            println!("║   3. Store layout convention in APR metadata ║");
             println!(
                 "{}",
                 "╠══════════════════════════════════════════════════════════════════════════════╣"
@@ -1170,8 +1161,6 @@ pub fn run_diff_tensors(
                 println!("║   {} ║", name);
                 println!("║     A: {:?} → B: {:?} ║", shape_a, shape_b);
             }
-        } else {
-            println!("║ {} ║", "No layout mismatches detected".green().bold());
         }
 
         println!(
@@ -1858,6 +1847,7 @@ fn parse_tensor_stats_json(_json_str: &str) -> Option<std::collections::HashMap<
 }
 
 /// Compute statistics for a tensor
+#[allow(clippy::type_complexity)]
 fn compute_tensor_stats(
     values: &[f32],
 ) -> (
@@ -2099,26 +2089,24 @@ fn print_fingerprint_diff(
         }
     }
 
-    if !json {
-        if anomalies.is_empty() {
-            println!(
-                "║ {} ║",
-                "✓ No statistical anomalies detected".green().bold()
-            );
-        } else {
-            println!(
-                "║ {} ║",
-                format!("✗ {} ANOMALIES DETECTED", anomalies.len())
-                    .red()
-                    .bold()
-            );
-        }
-    } else {
+    if json {
         println!("{{");
         println!("  \"total_tensors\": {},", fps_a.len());
         println!("  \"anomalies\": {},", anomalies.len());
         println!("  \"passed\": {}", anomalies.is_empty());
         println!("}}");
+    } else if anomalies.is_empty() {
+        println!(
+            "║ {} ║",
+            "✓ No statistical anomalies detected".green().bold()
+        );
+    } else {
+        println!(
+            "║ {} ║",
+            format!("✗ {} ANOMALIES DETECTED", anomalies.len())
+                .red()
+                .bold()
+        );
     }
 
     Ok(())
@@ -2130,12 +2118,14 @@ fn fingerprints_to_json(fingerprints: &[TensorFingerprint]) -> String {
 
     for (i, fp) in fingerprints.iter().enumerate() {
         let comma = if i < fingerprints.len() - 1 { "," } else { "" };
-        json.push_str(&format!(
+        write!(
+            json,
             "    {{\n      \"name\": \"{}\",\n      \"shape\": {:?},\n      \"dtype\": \"{}\",\n      \"mean\": {},\n      \"std\": {},\n      \"min\": {},\n      \"max\": {},\n      \"p5\": {},\n      \"p25\": {},\n      \"p50\": {},\n      \"p75\": {},\n      \"p95\": {},\n      \"nan_count\": {},\n      \"inf_count\": {},\n      \"zero_fraction\": {},\n      \"checksum\": {}\n    }}{}\n",
             fp.name, fp.shape, fp.dtype, fp.mean, fp.std, fp.min, fp.max,
             fp.p5, fp.p25, fp.p50, fp.p75, fp.p95,
             fp.nan_count, fp.inf_count, fp.zero_fraction, fp.checksum, comma
-        ));
+        )
+        .expect("write to String should not fail");
     }
 
     json.push_str("  ]\n}");
@@ -2436,7 +2426,7 @@ fn run_model_with_logits(
         .filter(|l| {
             let t = l.trim();
             !t.is_empty()
-                && !t.starts_with("[")
+                && !t.starts_with('[')
                 && !t.starts_with("Loading")
                 && !t.starts_with("Model loaded")
                 && !t.starts_with("Prompt tokens")

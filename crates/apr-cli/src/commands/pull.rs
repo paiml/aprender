@@ -266,11 +266,7 @@ fn fetch_safetensors_companions(model_path: &Path, resolved_uri: &str) -> Result
     for filename in &companions {
         let sibling_path = cache_dir.join(filename);
         if sibling_path.exists() {
-            println!(
-                "  {} {} (already exists)",
-                "✓".green(),
-                filename.dimmed()
-            );
+            println!("  {} {} (already exists)", "✓".green(), filename.dimmed());
             continue;
         }
 
@@ -282,12 +278,9 @@ fn fetch_safetensors_companions(model_path: &Path, resolved_uri: &str) -> Result
         match ureq::get(&url).call() {
             Ok(response) => {
                 let mut body = Vec::new();
-                response
-                    .into_reader()
-                    .read_to_end(&mut body)
-                    .map_err(|e| {
-                        CliError::NetworkError(format!("Failed to read {filename}: {e}"))
-                    })?;
+                response.into_reader().read_to_end(&mut body).map_err(|e| {
+                    CliError::NetworkError(format!("Failed to read {filename}: {e}"))
+                })?;
                 std::fs::write(&sibling_path, &body).map_err(|e| {
                     CliError::ValidationFailed(format!(
                         "Failed to write {}: {e}",
@@ -311,12 +304,7 @@ fn fetch_safetensors_companions(model_path: &Path, resolved_uri: &str) -> Result
             }
             Err(e) => {
                 // Network error — warn but don't block the pull
-                eprintln!(
-                    "  {} Failed to download {}: {}",
-                    "⚠".yellow(),
-                    filename,
-                    e
-                );
+                eprintln!("  {} Failed to download {}: {}", "⚠".yellow(), filename, e);
             }
         }
     }
@@ -358,12 +346,13 @@ pub fn resolve_hf_uri(uri: &str) -> Result<String> {
     }
 
     // If already has a known model extension, return unchanged
-    let lower = uri.to_lowercase();
-    if lower.ends_with(".gguf")
-        || lower.ends_with(".safetensors")
-        || lower.ends_with(".apr")
-        || lower.ends_with(".pt")
-    {
+    let has_model_ext = std::path::Path::new(uri).extension().is_some_and(|ext| {
+        ext.eq_ignore_ascii_case("gguf")
+            || ext.eq_ignore_ascii_case("safetensors")
+            || ext.eq_ignore_ascii_case("apr")
+            || ext.eq_ignore_ascii_case("pt")
+    });
+    if has_model_ext {
         return Ok(uri.to_string());
     }
 
@@ -683,10 +672,7 @@ mod tests {
     #[test]
     fn test_gh198_extract_hf_repo_nested_path() {
         let uri = "hf://org/repo/subdir/model.safetensors";
-        assert_eq!(
-            extract_hf_repo(uri),
-            Some("org/repo".to_string())
-        );
+        assert_eq!(extract_hf_repo(uri), Some("org/repo".to_string()));
     }
 
     // =========================================================================

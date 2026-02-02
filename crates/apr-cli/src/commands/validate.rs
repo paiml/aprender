@@ -27,9 +27,7 @@ pub(crate) fn run(
 
     match format {
         FormatType::Apr => run_apr_validation(path, quality, strict, min_score),
-        FormatType::Gguf | FormatType::SafeTensors => {
-            run_rosetta_validation(path, format, quality)
-        }
+        FormatType::Gguf | FormatType::SafeTensors => run_rosetta_validation(path, format, quality),
     }
 }
 
@@ -64,11 +62,7 @@ fn run_apr_validation(
 }
 
 /// GGUF/SafeTensors validation via RosettaStone (physics constraints)
-fn run_rosetta_validation(
-    path: &Path,
-    format: FormatType,
-    quality: bool,
-) -> Result<(), CliError> {
+fn run_rosetta_validation(path: &Path, format: FormatType, quality: bool) -> Result<(), CliError> {
     println!(
         "Format: {} (using Rosetta Stone validation)\n",
         format.to_string().cyan()
@@ -97,7 +91,10 @@ fn run_rosetta_validation(
 
     if quality {
         println!();
-        println!("{}", "=== Physics Constraints (APR-SPEC 10.9) ===".cyan().bold());
+        println!(
+            "{}",
+            "=== Physics Constraints (APR-SPEC 10.9) ===".cyan().bold()
+        );
         println!("  Total NaN:  {}", report.total_nan_count);
         println!("  Total Inf:  {}", report.total_inf_count);
         println!("  All-zeros:  {}", report.all_zero_tensors.len());
@@ -462,12 +459,14 @@ mod tests {
     fn test_run_gguf_format_dispatch() {
         use aprender::format::gguf::{export_tensors_to_gguf, GgmlType, GgufTensor, GgufValue};
 
-        // Create valid GGUF file
+        // Create valid GGUF file with non-zero tensor data
+        let floats: Vec<f32> = (0..16).map(|i| (i as f32 + 1.0) * 0.1).collect();
+        let data: Vec<u8> = floats.iter().flat_map(|f| f.to_le_bytes()).collect();
         let tensor = GgufTensor {
             name: "model.weight".to_string(),
             shape: vec![4, 4],
             dtype: GgmlType::F32,
-            data: vec![0u8; 64],
+            data,
         };
         let metadata = vec![(
             "general.architecture".to_string(),

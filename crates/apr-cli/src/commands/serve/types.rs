@@ -351,6 +351,7 @@ pub struct ChatChoice {
 
 /// Token usage statistics
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[allow(clippy::struct_field_names)]
 pub struct TokenUsage {
     pub prompt_tokens: u32,
     pub completion_tokens: u32,

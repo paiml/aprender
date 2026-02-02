@@ -233,7 +233,7 @@ fn run_real_checks_apr(path: &Path) -> Result<Vec<StageResult>, CliError> {
         details: Some(format!(
             "vocab_size={}{}",
             vocab_size,
-            if !has_lm_head { " (tied)" } else { "" }
+            if has_lm_head { "" } else { " (tied)" }
         )),
     });
 
@@ -268,7 +268,7 @@ fn run_real_checks_apr(path: &Path) -> Result<Vec<StageResult>, CliError> {
     // Stage 10: Sampler
     let sampler_result = match model.forward(&[1u32]) {
         Ok(logits) => {
-            let max_logit = logits.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+            let max_logit = logits.iter().copied().fold(f32::NEG_INFINITY, f32::max);
             let exp_sum: f32 = logits.iter().map(|x| (x - max_logit).exp()).sum();
             let probs: Vec<f32> = logits
                 .iter()
@@ -511,8 +511,8 @@ fn check_logits_real(model: &OwnedQuantizedModel) -> StageResult {
             } else if logits.is_empty() {
                 "FAIL: Empty logits".to_string()
             } else {
-                let min = logits.iter().cloned().fold(f32::INFINITY, f32::min);
-                let max = logits.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+                let min = logits.iter().copied().fold(f32::INFINITY, f32::min);
+                let max = logits.iter().copied().fold(f32::NEG_INFINITY, f32::max);
                 format!("logits[{}]: min={:.2}, max={:.2}", logits.len(), min, max)
             };
 
@@ -542,7 +542,7 @@ fn check_sampler_real(model: &OwnedQuantizedModel) -> StageResult {
     match model.forward(&test_tokens) {
         Ok(logits) => {
             // Compute softmax (numerically stable)
-            let max_logit = logits.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+            let max_logit = logits.iter().copied().fold(f32::NEG_INFINITY, f32::max);
             let exp_sum: f32 = logits.iter().map(|x| (x - max_logit).exp()).sum();
             let probs: Vec<f32> = logits
                 .iter()

@@ -23,6 +23,7 @@
 use crate::error::CliError;
 use crate::output;
 use colored::Colorize;
+use std::fmt::Write;
 use std::path::Path;
 use std::time::Instant;
 
@@ -235,32 +236,25 @@ impl CiProfileReport {
     /// Print CI report as JSON
     pub fn print_json(&self) {
         let mut json = String::from("{\n");
-        json.push_str(&format!("  \"model\": \"{}\",\n", self.model_path));
-        json.push_str(&format!("  \"passed\": {},\n", self.passed));
+        writeln!(json, "  \"model\": \"{}\",", self.model_path).unwrap();
+        writeln!(json, "  \"passed\": {},", self.passed).unwrap();
         json.push_str("  \"metrics\": {\n");
-        json.push_str(&format!(
-            "    \"throughput_tok_s\": {:.2},\n",
+        writeln!(
+            json,
+            "    \"throughput_tok_s\": {:.2},",
             self.throughput_tok_s
-        ));
-        json.push_str(&format!(
-            "    \"latency_p50_ms\": {:.2},\n",
-            self.latency_p50_ms
-        ));
-        json.push_str(&format!(
-            "    \"latency_p99_ms\": {:.2}\n",
-            self.latency_p99_ms
-        ));
+        )
+        .unwrap();
+        writeln!(json, "    \"latency_p50_ms\": {:.2},", self.latency_p50_ms).unwrap();
+        writeln!(json, "    \"latency_p99_ms\": {:.2}", self.latency_p99_ms).unwrap();
         json.push_str("  },\n");
         json.push_str("  \"assertions\": [\n");
         for (i, assertion) in self.assertions.iter().enumerate() {
             json.push_str("    {\n");
-            json.push_str(&format!("      \"name\": \"{}\",\n", assertion.name));
-            json.push_str(&format!(
-                "      \"expected\": \"{}\",\n",
-                assertion.expected
-            ));
-            json.push_str(&format!("      \"actual\": \"{}\",\n", assertion.actual));
-            json.push_str(&format!("      \"passed\": {}\n", assertion.passed));
+            writeln!(json, "      \"name\": \"{}\",", assertion.name).unwrap();
+            writeln!(json, "      \"expected\": \"{}\",", assertion.expected).unwrap();
+            writeln!(json, "      \"actual\": \"{}\",", assertion.actual).unwrap();
+            writeln!(json, "      \"passed\": {}", assertion.passed).unwrap();
             if i < self.assertions.len() - 1 {
                 json.push_str("    },\n");
             } else {
@@ -396,7 +390,7 @@ pub(crate) fn run(
 pub(crate) fn run_ci(
     path: &Path,
     format: OutputFormat,
-    assertions: CiAssertions,
+    assertions: &CiAssertions,
     warmup: usize,
     measure: usize,
 ) -> Result<bool, CliError> {
@@ -417,7 +411,7 @@ pub(crate) fn run_ci(
     }
 
     // Build CI report with assertion checks
-    let report = CiProfileReport::from_results(&results, &assertions);
+    let report = CiProfileReport::from_results(&results, assertions);
 
     // Output based on format
     match format {
@@ -460,18 +454,9 @@ impl DiffBenchmarkReport {
         println!();
 
         // Table header
-        println!(
-            "{}",
-            "┌─────────────┬──────────────┬──────────────┬──────────────┐"
-        );
-        println!(
-            "{}",
-            "│ Metric      │ Model A      │ Model B      │ Delta        │"
-        );
-        println!(
-            "{}",
-            "├─────────────┼──────────────┼──────────────┼──────────────┤"
-        );
+        println!("┌─────────────┬──────────────┬──────────────┬──────────────┐");
+        println!("│ Metric      │ Model A      │ Model B      │ Delta        │");
+        println!("├─────────────┼──────────────┼──────────────┼──────────────┤");
 
         // Throughput row
         let tps_delta_str = if self.throughput_delta_pct >= 0.0 {
@@ -503,10 +488,7 @@ impl DiffBenchmarkReport {
             self.latency_a_ms, self.latency_b_ms, lat_delta_str
         );
 
-        println!(
-            "{}",
-            "└─────────────┴──────────────┴──────────────┴──────────────┘"
-        );
+        println!("└─────────────┴──────────────┴──────────────┴──────────────┘");
         println!();
 
         // Winner
@@ -539,41 +521,43 @@ impl DiffBenchmarkReport {
     /// Print JSON diff report
     pub fn print_json(&self) {
         let mut json = String::from("{\n");
-        json.push_str(&format!("  \"model_a\": \"{}\",\n", self.model_a));
-        json.push_str(&format!("  \"model_b\": \"{}\",\n", self.model_b));
+        writeln!(json, "  \"model_a\": \"{}\",", self.model_a).unwrap();
+        writeln!(json, "  \"model_b\": \"{}\",", self.model_b).unwrap();
         json.push_str("  \"metrics\": {\n");
-        json.push_str(&format!(
-            "    \"throughput_a_tok_s\": {:.2},\n",
+        writeln!(
+            json,
+            "    \"throughput_a_tok_s\": {:.2},",
             self.throughput_a
-        ));
-        json.push_str(&format!(
-            "    \"throughput_b_tok_s\": {:.2},\n",
+        )
+        .unwrap();
+        writeln!(
+            json,
+            "    \"throughput_b_tok_s\": {:.2},",
             self.throughput_b
-        ));
-        json.push_str(&format!(
-            "    \"throughput_delta_pct\": {:.2},\n",
+        )
+        .unwrap();
+        writeln!(
+            json,
+            "    \"throughput_delta_pct\": {:.2},",
             self.throughput_delta_pct
-        ));
-        json.push_str(&format!(
-            "    \"latency_a_ms\": {:.2},\n",
-            self.latency_a_ms
-        ));
-        json.push_str(&format!(
-            "    \"latency_b_ms\": {:.2},\n",
-            self.latency_b_ms
-        ));
-        json.push_str(&format!(
-            "    \"latency_delta_pct\": {:.2}\n",
+        )
+        .unwrap();
+        writeln!(json, "    \"latency_a_ms\": {:.2},", self.latency_a_ms).unwrap();
+        writeln!(json, "    \"latency_b_ms\": {:.2},", self.latency_b_ms).unwrap();
+        writeln!(
+            json,
+            "    \"latency_delta_pct\": {:.2}",
             self.latency_delta_pct
-        ));
+        )
+        .unwrap();
         json.push_str("  },\n");
-        json.push_str(&format!("  \"winner\": \"{}\",\n", self.winner));
+        writeln!(json, "  \"winner\": \"{}\",", self.winner).unwrap();
         json.push_str("  \"regressions\": [");
         for (i, r) in self.regressions.iter().enumerate() {
             if i > 0 {
                 json.push_str(", ");
             }
-            json.push_str(&format!("\"{}\"", r));
+            write!(json, "\"{}\"", r).unwrap();
         }
         json.push_str("],\n");
         json.push_str("  \"improvements\": [");
@@ -581,7 +565,7 @@ impl DiffBenchmarkReport {
             if i > 0 {
                 json.push_str(", ");
             }
-            json.push_str(&format!("\"{}\"", imp));
+            write!(json, "\"{}\"", imp).unwrap();
         }
         json.push_str("]\n");
         json.push_str("}\n");
@@ -902,10 +886,10 @@ fn profile_gguf_real(
     let total_us: f64 = forward_times.iter().sum();
     let avg_us = total_us / measure_passes as f64;
     // min/max computed for future detailed output
-    let _min_us = forward_times.iter().cloned().fold(f64::INFINITY, f64::min);
+    let _min_us = forward_times.iter().copied().fold(f64::INFINITY, f64::min);
     let _max_us = forward_times
         .iter()
-        .cloned()
+        .copied()
         .fold(f64::NEG_INFINITY, f64::max);
 
     // Build hotspots from profiler report
@@ -1031,10 +1015,10 @@ fn profile_apr_real(
 
     let total_us: f64 = forward_times.iter().sum();
     let avg_us = total_us / measure_passes as f64;
-    let min_us = forward_times.iter().cloned().fold(f64::INFINITY, f64::min);
+    let min_us = forward_times.iter().copied().fold(f64::INFINITY, f64::min);
     let max_us = forward_times
         .iter()
-        .cloned()
+        .copied()
         .fold(f64::NEG_INFINITY, f64::max);
 
     Ok(RealProfileResults {
@@ -1132,7 +1116,7 @@ fn print_human_results(results: &RealProfileResults, granular: bool) -> Result<(
         println!("{}", "═".repeat(60));
         println!();
 
-        let max_layer_time = results.per_layer_us.iter().cloned().fold(0.0f64, f64::max);
+        let max_layer_time = results.per_layer_us.iter().copied().fold(0.0f64, f64::max);
 
         for (i, &time_us) in results.per_layer_us.iter().enumerate() {
             let bar_width = if max_layer_time > 0.0 {
@@ -1168,43 +1152,38 @@ fn print_human_results(results: &RealProfileResults, granular: bool) -> Result<(
 /// Print JSON output
 fn print_json_results(results: &RealProfileResults) -> Result<(), CliError> {
     let mut json = String::from("{\n");
-    json.push_str(&format!("  \"model\": \"{}\",\n", results.model_path));
-    json.push_str(&format!(
-        "  \"architecture\": \"{}\",\n",
-        results.architecture
-    ));
-    json.push_str(&format!("  \"num_layers\": {},\n", results.num_layers));
-    json.push_str(&format!("  \"vocab_size\": {},\n", results.vocab_size));
-    json.push_str(&format!("  \"hidden_dim\": {},\n", results.hidden_dim));
-    json.push_str(&format!("  \"is_real_data\": {},\n", results.is_real_data));
+    writeln!(json, "  \"model\": \"{}\",", results.model_path).unwrap();
+    writeln!(json, "  \"architecture\": \"{}\",", results.architecture).unwrap();
+    writeln!(json, "  \"num_layers\": {},", results.num_layers).unwrap();
+    writeln!(json, "  \"vocab_size\": {},", results.vocab_size).unwrap();
+    writeln!(json, "  \"hidden_dim\": {},", results.hidden_dim).unwrap();
+    writeln!(json, "  \"is_real_data\": {},", results.is_real_data).unwrap();
     json.push_str("  \"timing\": {\n");
-    json.push_str(&format!(
-        "    \"warmup_passes\": {},\n",
-        results.warmup_passes
-    ));
-    json.push_str(&format!(
-        "    \"measure_passes\": {},\n",
-        results.measure_passes
-    ));
-    json.push_str(&format!(
-        "    \"avg_inference_us\": {:.2},\n",
+    writeln!(json, "    \"warmup_passes\": {},", results.warmup_passes).unwrap();
+    writeln!(json, "    \"measure_passes\": {},", results.measure_passes).unwrap();
+    writeln!(
+        json,
+        "    \"avg_inference_us\": {:.2},",
         results.total_inference_us
-    ));
-    json.push_str(&format!(
-        "    \"throughput_tok_s\": {:.2}\n",
+    )
+    .unwrap();
+    writeln!(
+        json,
+        "    \"throughput_tok_s\": {:.2}",
         results.throughput_tok_s
-    ));
+    )
+    .unwrap();
     json.push_str("  },\n");
 
     json.push_str("  \"hotspots\": [\n");
     for (i, hotspot) in results.hotspots.iter().enumerate() {
         json.push_str("    {\n");
-        json.push_str(&format!("      \"name\": \"{}\",\n", hotspot.name));
-        json.push_str(&format!("      \"total_us\": {:.2},\n", hotspot.time_us));
-        json.push_str(&format!("      \"avg_us\": {:.2},\n", hotspot.avg_us));
-        json.push_str(&format!("      \"min_us\": {:.2},\n", hotspot.min_us));
-        json.push_str(&format!("      \"max_us\": {:.2},\n", hotspot.max_us));
-        json.push_str(&format!("      \"count\": {}\n", hotspot.count));
+        writeln!(json, "      \"name\": \"{}\",", hotspot.name).unwrap();
+        writeln!(json, "      \"total_us\": {:.2},", hotspot.time_us).unwrap();
+        writeln!(json, "      \"avg_us\": {:.2},", hotspot.avg_us).unwrap();
+        writeln!(json, "      \"min_us\": {:.2},", hotspot.min_us).unwrap();
+        writeln!(json, "      \"max_us\": {:.2},", hotspot.max_us).unwrap();
+        writeln!(json, "      \"count\": {}", hotspot.count).unwrap();
         if i < results.hotspots.len() - 1 {
             json.push_str("    },\n");
         } else {
@@ -1218,7 +1197,7 @@ fn print_json_results(results: &RealProfileResults) -> Result<(), CliError> {
         if i > 0 {
             json.push_str(", ");
         }
-        json.push_str(&format!("{:.2}", time));
+        write!(json, "{:.2}", time).unwrap();
     }
     json.push_str("]\n");
 
@@ -1265,16 +1244,19 @@ fn print_flamegraph(
         let g = (200.0 * (1.0 - percent / 100.0).max(0.0)) as u8;
         let color = format!("#{:02X}{:02X}50", r, g);
 
-        svg.push_str(&format!(
-            "  <rect x=\"{x:.1}\" y=\"{y:.1}\" width=\"{width:.1}\" height=\"{height:.1}\" fill=\"{color}\" class=\"frame\"/>\n"
-        ));
-        svg.push_str(&format!(
-            "  <text x=\"{:.1}\" y=\"{:.1}\" class=\"label\">{} ({:.1}%)</text>\n",
+        writeln!(
+            svg,
+            "  <rect x=\"{x:.1}\" y=\"{y:.1}\" width=\"{width:.1}\" height=\"{height:.1}\" fill=\"{color}\" class=\"frame\"/>"
+        ).unwrap();
+        writeln!(
+            svg,
+            "  <text x=\"{:.1}\" y=\"{:.1}\" class=\"label\">{} ({:.1}%)</text>",
             x + 5.0,
             y + 16.0,
             hotspot.name,
             percent
-        ));
+        )
+        .unwrap();
 
         y -= height + 2.0;
     }
@@ -1874,7 +1856,7 @@ mod tests {
         let result = run_ci(
             Path::new("/nonexistent/model.gguf"),
             OutputFormat::Human,
-            CiAssertions::default(),
+            &CiAssertions::default(),
             3,  // warmup
             10, // measure
         );
@@ -1889,7 +1871,7 @@ mod tests {
         let result = run_ci(
             file.path(),
             OutputFormat::Json,
-            CiAssertions {
+            &CiAssertions {
                 min_throughput: Some(100.0),
                 ..Default::default()
             },
@@ -1908,7 +1890,7 @@ mod tests {
         let result = run_ci(
             file.path(),
             OutputFormat::Human,
-            CiAssertions {
+            &CiAssertions {
                 max_p99_ms: Some(50.0),
                 max_p50_ms: Some(25.0),
                 ..Default::default()

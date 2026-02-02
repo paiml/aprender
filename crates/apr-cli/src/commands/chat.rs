@@ -216,18 +216,16 @@ fn find_qwen_tokenizer(model_path: &Path) -> Result<Option<Qwen2BpeTokenizer>, C
                                 for snapshot in snapshots.flatten() {
                                     let tokenizer_path = snapshot.path().join("tokenizer.json");
                                     if tokenizer_path.exists() {
-                                        match Qwen2BpeTokenizer::from_file(&tokenizer_path) {
-                                            Ok(tok) => {
-                                                println!(
-                                                    "{} {} ({})",
-                                                    "Loaded tokenizer from HuggingFace cache:"
-                                                        .green(),
-                                                    tokenizer_path.display(),
-                                                    format!("{} tokens", tok.vocab_size()).dimmed()
-                                                );
-                                                return Ok(Some(tok));
-                                            }
-                                            Err(_) => continue, // Try next snapshot
+                                        if let Ok(tok) =
+                                            Qwen2BpeTokenizer::from_file(&tokenizer_path)
+                                        {
+                                            println!(
+                                                "{} {} ({})",
+                                                "Loaded tokenizer from HuggingFace cache:".green(),
+                                                tokenizer_path.display(),
+                                                format!("{} tokens", tok.vocab_size()).dimmed()
+                                            );
+                                            return Ok(Some(tok));
                                         }
                                     }
                                 }

@@ -121,9 +121,7 @@ pub(crate) fn run(
         Ok(
             aprender::format::rosetta::FormatType::Gguf
             | aprender::format::rosetta::FormatType::SafeTensors,
-        ) => {
-            run_rosetta_inspect(path, json_output)
-        }
+        ) => run_rosetta_inspect(path, json_output),
         _ => {
             // Default: APR v2 inspect (existing path)
             let file = File::open(path)?;

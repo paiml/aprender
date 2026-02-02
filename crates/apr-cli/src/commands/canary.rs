@@ -995,7 +995,10 @@ mod tests {
 
         // load_tensor_data should dispatch to SafeTensors path
         let result = load_tensor_data(file.path());
-        assert!(result.is_ok(), "load_tensor_data should work for SafeTensors");
+        assert!(
+            result.is_ok(),
+            "load_tensor_data should work for SafeTensors"
+        );
 
         let tensor_map = result.unwrap();
         assert_eq!(tensor_map.len(), 1);
@@ -1004,8 +1007,8 @@ mod tests {
 
     #[test]
     fn test_load_tensor_data_gguf_multiple_tensors() {
-        use aprender::format::gguf::{export_tensors_to_gguf, GgmlType, GgufTensor, GgufValue};
         use aprender::format::gguf::reader::GgufReader;
+        use aprender::format::gguf::{export_tensors_to_gguf, GgmlType, GgufTensor, GgufValue};
 
         // Create GGUF with multiple tensors (same shape to avoid alignment issues)
         let floats1: Vec<u8> = [1.0f32, 2.0, 3.0, 4.0]

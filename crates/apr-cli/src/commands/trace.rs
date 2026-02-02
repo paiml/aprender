@@ -787,8 +787,8 @@ fn trace_gguf(
     let n_layers = gguf_meta_u32(&reader.metadata, &format!("{arch}.block_count"))
         .or_else(|| gguf_meta_u32(&reader.metadata, "general.block_count"))
         .unwrap_or(0) as usize;
-    let n_embd = gguf_meta_u32(&reader.metadata, &format!("{arch}.embedding_length"))
-        .unwrap_or(0) as usize;
+    let n_embd =
+        gguf_meta_u32(&reader.metadata, &format!("{arch}.embedding_length")).unwrap_or(0) as usize;
 
     let format_name = format!("GGUF ({arch})");
 
@@ -862,10 +862,7 @@ fn infer_layers_from_tensor_names(
 
         // Extract layer index from common patterns
         if let Some(idx) = extract_layer_index(name) {
-            layer_indices
-                .entry(idx)
-                .or_default()
-                .push(name.to_string());
+            layer_indices.entry(idx).or_default().push(name.to_string());
         }
     }
 
@@ -921,9 +918,7 @@ fn infer_layers_from_tensor_names(
 /// Matches: `model.layers.N.`, `encoder.layer.N.`, `h.N.`, `blk.N.`
 fn extract_layer_index(name: &str) -> Option<usize> {
     // Common patterns: layers.N, layer.N, h.N, blk.N, blocks.N
-    let patterns = [
-        "layers.", "layer.", "h.", "blk.", "blocks.", "block.",
-    ];
+    let patterns = ["layers.", "layer.", "h.", "blk.", "blocks.", "block."];
 
     for pattern in &patterns {
         if let Some(pos) = name.find(pattern) {

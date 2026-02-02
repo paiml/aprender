@@ -73,11 +73,11 @@ pub fn run(config: &ShowcaseConfig) -> Result<()> {
         match step {
             ShowcaseStep::Import => results.import = pipeline::run_import(config)?,
             ShowcaseStep::GgufInference => {
-                results.gguf_inference = pipeline::run_gguf_inference(config)?
+                results.gguf_inference = pipeline::run_gguf_inference(config)?;
             }
             ShowcaseStep::Convert => results.convert = pipeline::run_convert(config)?,
             ShowcaseStep::AprInference => {
-                results.apr_inference = pipeline::run_apr_inference(config)?
+                results.apr_inference = pipeline::run_apr_inference(config)?;
             }
             ShowcaseStep::Benchmark => results.benchmark = Some(run_benchmark(config)?),
             ShowcaseStep::Visualize => {

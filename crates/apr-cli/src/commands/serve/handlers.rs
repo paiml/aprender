@@ -10,6 +10,7 @@
 
 use crate::error::{CliError, Result};
 use colored::Colorize;
+use std::fmt::Write;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
@@ -440,8 +441,8 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
 
                             // Extract messages from request
                             let messages = req.get("messages").and_then(|m| m.as_array());
-                            let stream_mode = req.get("stream").and_then(|s| s.as_bool()).unwrap_or(false);
-                            let max_tokens = req.get("max_tokens").and_then(|m| m.as_u64()).unwrap_or(32) as usize;
+                            let stream_mode = req.get("stream").and_then(serde_json::Value::as_bool).unwrap_or(false);
+                            let max_tokens = req.get("max_tokens").and_then(serde_json::Value::as_u64).unwrap_or(32) as usize;
 
                             let prompt = if let Some(msgs) = messages {
                                 // Format as ChatML
@@ -449,7 +450,7 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
                                 for msg in msgs {
                                     let role = msg.get("role").and_then(|r| r.as_str()).unwrap_or("user");
                                     let content = msg.get("content").and_then(|c| c.as_str()).unwrap_or("");
-                                    prompt.push_str(&format!("<|im_start|>{}\n{}<|im_end|>\n", role, content));
+                                    write!(prompt, "<|im_start|>{}\n{}<|im_end|>\n", role, content).expect("write to String cannot fail");
                                 }
                                 prompt.push_str("<|im_start|>assistant\n");
                                 prompt
@@ -477,7 +478,7 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
                             // generate_with_cache() uses KV cache for incremental generation = O(n)
                             let gen_start = Instant::now();
                             let max_tokens = max_tokens.min(256);
-                            let temperature = req.get("temperature").and_then(|t| t.as_f64()).unwrap_or(0.0) as f32;
+                            let temperature = req.get("temperature").and_then(serde_json::Value::as_f64).unwrap_or(0.0) as f32;
 
                             let gen_config = realizar::apr_transformer::GenerateConfig {
                                 max_tokens,
@@ -862,8 +863,8 @@ fn start_apr_server_gpu(
 
                             // Extract messages from request
                             let messages = req.get("messages").and_then(|m| m.as_array());
-                            let stream_mode = req.get("stream").and_then(|s| s.as_bool()).unwrap_or(false);
-                            let max_tokens = req.get("max_tokens").and_then(|m| m.as_u64()).unwrap_or(32) as usize;
+                            let stream_mode = req.get("stream").and_then(serde_json::Value::as_bool).unwrap_or(false);
+                            let max_tokens = req.get("max_tokens").and_then(serde_json::Value::as_u64).unwrap_or(32) as usize;
 
                             let prompt = if let Some(msgs) = messages {
                                 // Format as ChatML
@@ -871,7 +872,7 @@ fn start_apr_server_gpu(
                                 for msg in msgs {
                                     let role = msg.get("role").and_then(|r| r.as_str()).unwrap_or("user");
                                     let content = msg.get("content").and_then(|c| c.as_str()).unwrap_or("");
-                                    prompt.push_str(&format!("<|im_start|>{}\n{}<|im_end|>\n", role, content));
+                                    write!(prompt, "<|im_start|>{}\n{}<|im_end|>\n", role, content).expect("write to String cannot fail");
                                 }
                                 prompt.push_str("<|im_start|>assistant\n");
                                 prompt

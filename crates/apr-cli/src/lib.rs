@@ -33,7 +33,7 @@ use commands::{
 #[command(propagate_version = true)]
 pub struct Cli {
     #[command(subcommand)]
-    pub command: Commands,
+    pub command: Box<Commands>,
 
     /// Output as JSON
     #[arg(long, global = true)]
@@ -1050,7 +1050,7 @@ pub enum Commands {
 /// Execute the CLI command and return the result.
 #[allow(clippy::too_many_lines)]
 pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
-    match &cli.command {
+    match cli.command.as_ref() {
         Commands::Check { file, no_gpu } => commands::check::run(file, *no_gpu),
         Commands::Run {
             source,
@@ -1464,7 +1464,7 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
                     max_p50_ms: *assert_p50,
                     max_memory_mb: None,
                 };
-                match profile::run_ci(file, output_format, assertions, *warmup, *measure) {
+                match profile::run_ci(file, output_format, &assertions, *warmup, *measure) {
                     Ok(true) => Ok(()),
                     Ok(false) => {
                         // Exit with error code for CI pipeline failure
@@ -1697,8 +1697,8 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
                 json,
             } => rosetta::run_fingerprint(
                 model,
-                model_b.as_ref().map(|p| p.as_path()),
-                output.as_ref().map(|p| p.as_path()),
+                model_b.as_ref().map(std::path::PathBuf::as_path),
+                output.as_ref().map(std::path::PathBuf::as_path),
                 filter.as_deref(),
                 *verbose,
                 *json || cli.json,
@@ -1712,8 +1712,8 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
                 json,
             } => rosetta::run_validate_stats(
                 model,
-                reference.as_ref().map(|p| p.as_path()),
-                fingerprints.as_ref().map(|p| p.as_path()),
+                reference.as_ref().map(std::path::PathBuf::as_path),
+                fingerprints.as_ref().map(std::path::PathBuf::as_path),
                 *threshold,
                 *strict,
                 *json || cli.json,
@@ -1753,20 +1753,36 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
 mod tests {
     use super::*;
 
+    /// Parse CLI args on a thread with 16 MB stack.
+    /// Clap's parser for 34 subcommands exceeds the default test-thread
+    /// stack in debug builds.
+    fn parse_cli(args: Vec<&'static str>) -> Result<Cli, clap::error::Error> {
+        std::thread::Builder::new()
+            .stack_size(16 * 1024 * 1024)
+            .spawn(move || Cli::try_parse_from(args))
+            .expect("spawn thread")
+            .join()
+            .expect("join thread")
+    }
+
     /// Test CLI parsing with clap's debug_assert
     #[test]
     fn test_cli_parsing_valid() {
         use clap::CommandFactory;
-        // Verify CLI is well-formed
-        Cli::command().debug_assert();
+        std::thread::Builder::new()
+            .stack_size(16 * 1024 * 1024)
+            .spawn(|| Cli::command().debug_assert())
+            .expect("spawn")
+            .join()
+            .expect("join");
     }
 
     /// Test parsing 'apr inspect' command
     #[test]
     fn test_parse_inspect_command() {
         let args = vec!["apr", "inspect", "model.apr"];
-        let cli = Cli::try_parse_from(args).expect("Failed to parse");
-        match cli.command {
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
             Commands::Inspect { file, .. } => {
                 assert_eq!(file, PathBuf::from("model.apr"));
             }
@@ -1778,8 +1794,8 @@ mod tests {
     #[test]
     fn test_parse_inspect_with_flags() {
         let args = vec!["apr", "inspect", "model.apr", "--vocab", "--json"];
-        let cli = Cli::try_parse_from(args).expect("Failed to parse");
-        match cli.command {
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
             Commands::Inspect {
                 file, vocab, json, ..
             } => {
@@ -1795,8 +1811,8 @@ mod tests {
     #[test]
     fn test_parse_serve_command() {
         let args = vec!["apr", "serve", "model.apr", "--port", "3000"];
-        let cli = Cli::try_parse_from(args).expect("Failed to parse");
-        match cli.command {
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
             Commands::Serve { file, port, .. } => {
                 assert_eq!(file, PathBuf::from("model.apr"));
                 assert_eq!(port, 3000);
@@ -1817,8 +1833,8 @@ mod tests {
             "--max-tokens",
             "64",
         ];
-        let cli = Cli::try_parse_from(args).expect("Failed to parse");
-        match cli.command {
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
             Commands::Run {
                 source,
                 prompt,
@@ -1845,8 +1861,8 @@ mod tests {
             "--top-p",
             "0.95",
         ];
-        let cli = Cli::try_parse_from(args).expect("Failed to parse");
-        match cli.command {
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
             Commands::Chat {
                 file,
                 temperature,
@@ -1865,8 +1881,8 @@ mod tests {
     #[test]
     fn test_parse_validate_with_quality() {
         let args = vec!["apr", "validate", "model.apr", "--quality", "--strict"];
-        let cli = Cli::try_parse_from(args).expect("Failed to parse");
-        match cli.command {
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
             Commands::Validate {
                 file,
                 quality,
@@ -1885,8 +1901,8 @@ mod tests {
     #[test]
     fn test_parse_diff_command() {
         let args = vec!["apr", "diff", "model1.apr", "model2.apr", "--weights"];
-        let cli = Cli::try_parse_from(args).expect("Failed to parse");
-        match cli.command {
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
             Commands::Diff {
                 file1,
                 file2,
@@ -1913,8 +1929,8 @@ mod tests {
             "--iterations",
             "10",
         ];
-        let cli = Cli::try_parse_from(args).expect("Failed to parse");
-        match cli.command {
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
             Commands::Bench {
                 file,
                 warmup,
@@ -1942,8 +1958,8 @@ mod tests {
             "--brick-score",
             "90",
         ];
-        let cli = Cli::try_parse_from(args).expect("Failed to parse");
-        match cli.command {
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
             Commands::Cbtop {
                 headless,
                 ci,
@@ -1971,8 +1987,8 @@ mod tests {
             "50.0",
             "--skip-ollama",
         ];
-        let cli = Cli::try_parse_from(args).expect("Failed to parse");
-        match cli.command {
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
             Commands::Qa {
                 file,
                 assert_tps,
@@ -1991,7 +2007,7 @@ mod tests {
     #[test]
     fn test_global_verbose_flag() {
         let args = vec!["apr", "--verbose", "inspect", "model.apr"];
-        let cli = Cli::try_parse_from(args).expect("Failed to parse");
+        let cli = parse_cli(args).expect("Failed to parse");
         assert!(cli.verbose);
     }
 
@@ -1999,7 +2015,7 @@ mod tests {
     #[test]
     fn test_global_json_flag() {
         let args = vec!["apr", "--json", "inspect", "model.apr"];
-        let cli = Cli::try_parse_from(args).expect("Failed to parse");
+        let cli = parse_cli(args).expect("Failed to parse");
         assert!(cli.json);
     }
 
@@ -2007,24 +2023,24 @@ mod tests {
     #[test]
     fn test_parse_list_command() {
         let args = vec!["apr", "list"];
-        let cli = Cli::try_parse_from(args).expect("Failed to parse");
-        assert!(matches!(cli.command, Commands::List));
+        let cli = parse_cli(args).expect("Failed to parse");
+        assert!(matches!(*cli.command, Commands::List));
     }
 
     /// Test parsing 'apr ls' alias
     #[test]
     fn test_parse_ls_alias() {
         let args = vec!["apr", "ls"];
-        let cli = Cli::try_parse_from(args).expect("Failed to parse");
-        assert!(matches!(cli.command, Commands::List));
+        let cli = parse_cli(args).expect("Failed to parse");
+        assert!(matches!(*cli.command, Commands::List));
     }
 
     /// Test parsing 'apr rm' command (alias 'remove')
     #[test]
     fn test_parse_rm_command() {
         let args = vec!["apr", "rm", "model-name"];
-        let cli = Cli::try_parse_from(args).expect("Failed to parse");
-        match cli.command {
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
             Commands::Rm { model_ref } => {
                 assert_eq!(model_ref, "model-name");
             }
@@ -2036,7 +2052,7 @@ mod tests {
     #[test]
     fn test_invalid_command() {
         let args = vec!["apr", "invalid-command"];
-        let result = Cli::try_parse_from(args);
+        let result = parse_cli(args);
         assert!(result.is_err());
     }
 
@@ -2044,7 +2060,7 @@ mod tests {
     #[test]
     fn test_missing_required_arg() {
         let args = vec!["apr", "inspect"]; // Missing FILE
-        let result = Cli::try_parse_from(args);
+        let result = parse_cli(args);
         assert!(result.is_err());
     }
 
@@ -2063,8 +2079,8 @@ mod tests {
             "-o",
             "merged.apr",
         ];
-        let cli = Cli::try_parse_from(args).expect("Failed to parse");
-        match cli.command {
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
             Commands::Merge {
                 files,
                 strategy,
@@ -2091,8 +2107,8 @@ mod tests {
             "--gpu",
             "--auto-verify",
         ];
-        let cli = Cli::try_parse_from(args).expect("Failed to parse");
-        match cli.command {
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
             Commands::Showcase {
                 tier,
                 gpu,
@@ -2118,8 +2134,8 @@ mod tests {
             "--detect-naive",
             "--fail-on-naive",
         ];
-        let cli = Cli::try_parse_from(args).expect("Failed to parse");
-        match cli.command {
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
             Commands::Profile {
                 file,
                 granular,
@@ -2151,8 +2167,8 @@ mod tests {
             "--format",
             "json",
         ];
-        let cli = Cli::try_parse_from(args).expect("Failed to parse");
-        match cli.command {
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
             Commands::Profile {
                 file,
                 ci,
@@ -2175,8 +2191,8 @@ mod tests {
     #[test]
     fn test_parse_rosetta_inspect() {
         let args = vec!["apr", "rosetta", "inspect", "model.gguf", "--json"];
-        let cli = Cli::try_parse_from(args).expect("Failed to parse");
-        match cli.command {
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
             Commands::Rosetta { action } => match action {
                 RosettaCommands::Inspect { file, json, .. } => {
                     assert_eq!(file, PathBuf::from("model.gguf"));
@@ -2199,8 +2215,8 @@ mod tests {
             "model.safetensors",
             "--verify",
         ];
-        let cli = Cli::try_parse_from(args).expect("Failed to parse");
-        match cli.command {
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
             Commands::Rosetta { action } => match action {
                 RosettaCommands::Convert {
                     source,
@@ -2231,8 +2247,8 @@ mod tests {
             "--work-dir",
             "/tmp/rosetta",
         ];
-        let cli = Cli::try_parse_from(args).expect("Failed to parse");
-        match cli.command {
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
             Commands::Rosetta { action } => match action {
                 RosettaCommands::Chain {
                     source,
@@ -2263,8 +2279,8 @@ mod tests {
             "--tolerance",
             "1e-4",
         ];
-        let cli = Cli::try_parse_from(args).expect("Failed to parse");
-        match cli.command {
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
             Commands::Rosetta { action } => match action {
                 RosettaCommands::Verify {
                     source,

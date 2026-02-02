@@ -136,16 +136,16 @@ fn output_text(report: &DiffReport, show_weights: bool) {
     println!();
 
     // Format info
-    if !report.same_format() {
+    if report.same_format() {
+        println!("Format: {}", report.format1.white().bold());
+        println!();
+    } else {
         println!(
             "{} Comparing different formats: {} vs {}",
             "NOTE:".yellow(),
             report.format1.white().bold(),
             report.format2.white().bold()
         );
-        println!();
-    } else {
-        println!("Format: {}", report.format1.white().bold());
         println!();
     }
 

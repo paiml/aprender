@@ -622,7 +622,7 @@ fn run_apr_benchmark(path: &Path, config: &BenchConfig, use_cuda: bool) -> Resul
 
         let output = transformer
             .generate_with_cache(&prompt_tokens, &gen_config)
-            .unwrap_or_else(|_| prompt_tokens.to_vec());
+            .unwrap_or_else(|_| prompt_tokens.clone());
         let tokens_generated = output.len().saturating_sub(prompt_tokens.len());
 
         let iter_time = iter_start.elapsed();
@@ -888,7 +888,7 @@ fn run_safetensors_cuda_benchmark(path: &Path, config: &BenchConfig) -> Result<B
         model.reset_kv_cache();
         let output = model
             .generate(&prompt_tokens, config.max_tokens.min(32), eos_token)
-            .unwrap_or_else(|_| prompt_tokens.to_vec());
+            .unwrap_or_else(|_| prompt_tokens.clone());
         let tokens_generated = output.len().saturating_sub(prompt_tokens.len());
 
         let iter_time = iter_start.elapsed();
