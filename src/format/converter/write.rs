@@ -69,143 +69,24 @@ pub(crate) fn write_apr_file(
         .map(|(data, _)| data.len() as u64)
         .sum();
 
-    // PMAT-101: Pre-fuse Q, K, V into qkv_proj.weight for realizar compatibility
-    // Compute this FIRST so we can include fused tensors in tensor_shapes metadata
-    let (qkv_fused, qkv_bias_fused): (
-        BTreeMap<String, (Vec<f32>, Vec<usize>)>,
-        BTreeMap<String, (Vec<f32>, Vec<usize>)>,
-    ) = {
-        let mut fused = BTreeMap::new();
-        let mut bias_fused = BTreeMap::new();
-        if let Some(cfg) = model_config {
-            if let (Some(hidden_dim), Some(num_heads), Some(num_kv_heads)) =
-                (cfg.hidden_size, cfg.num_heads, cfg.num_kv_heads)
-            {
-                let head_dim = hidden_dim / num_heads;
-                let kv_dim = num_kv_heads * head_dim;
-                let qkv_dim = hidden_dim + kv_dim + kv_dim;
-
-                let layer_count = cfg.num_layers.unwrap_or(0);
-                for layer_idx in 0..layer_count {
-                    let q_name = format!("model.layers.{layer_idx}.self_attn.q_proj.weight");
-                    let k_name = format!("model.layers.{layer_idx}.self_attn.k_proj.weight");
-                    let v_name = format!("model.layers.{layer_idx}.self_attn.v_proj.weight");
-
-                    if let (Some((q_data, _)), Some((k_data, _)), Some((v_data, _))) = (
-                        tensors_with_lm_head.get(&q_name),
-                        tensors_with_lm_head.get(&k_name),
-                        tensors_with_lm_head.get(&v_name),
-                    ) {
-                        // Fuse as [Q; K; V] - simple concatenation (same as SafetensorsToAprConverter)
-                        let mut qkv_data =
-                            Vec::with_capacity(q_data.len() + k_data.len() + v_data.len());
-                        qkv_data.extend_from_slice(q_data);
-                        qkv_data.extend_from_slice(k_data);
-                        qkv_data.extend_from_slice(v_data);
-
-                        let qkv_name =
-                            format!("model.layers.{layer_idx}.self_attn.qkv_proj.weight");
-                        fused.insert(qkv_name, (qkv_data, vec![qkv_dim, hidden_dim]));
-                    }
-
-                    // PMAT-114: Also fuse Q, K, V biases if present (Qwen2 has attention bias)
-                    let q_bias_name = format!("model.layers.{layer_idx}.self_attn.q_proj.bias");
-                    let k_bias_name = format!("model.layers.{layer_idx}.self_attn.k_proj.bias");
-                    let v_bias_name = format!("model.layers.{layer_idx}.self_attn.v_proj.bias");
-
-                    if let (Some((q_bias, _)), Some((k_bias, _)), Some((v_bias, _))) = (
-                        tensors_with_lm_head.get(&q_bias_name),
-                        tensors_with_lm_head.get(&k_bias_name),
-                        tensors_with_lm_head.get(&v_bias_name),
-                    ) {
-                        // Fuse biases as [Q_bias; K_bias; V_bias]
-                        let mut qkv_bias_data =
-                            Vec::with_capacity(q_bias.len() + k_bias.len() + v_bias.len());
-                        qkv_bias_data.extend_from_slice(q_bias);
-                        qkv_bias_data.extend_from_slice(k_bias);
-                        qkv_bias_data.extend_from_slice(v_bias);
-
-                        let qkv_bias_name =
-                            format!("model.layers.{layer_idx}.self_attn.qkv_proj.bias");
-                        bias_fused.insert(qkv_bias_name, (qkv_bias_data, vec![qkv_dim]));
-                    }
-                }
-            }
-        }
-        (fused, bias_fused)
-    };
+    // ROSETTA-003: Track tied embeddings for round-trip export fidelity.
+    // If we synthesized lm_head from embed_tokens, flag it so export paths
+    // can remove the duplicate and restore the original tied structure.
+    let has_tied_embeddings = !tensors.keys().any(|k| k == "lm_head.weight")
+        && tensors_with_lm_head.contains_key("lm_head.weight");
 
     // Build tensor_shapes map for metadata (used by `apr tensors` command)
-    // PMAT-101: Skip individual Q/K/V, include fused qkv_proj instead
-    // PMAT-114: Also skip individual Q/K/V biases if fused
-    let tensor_shapes: serde_json::Map<String, serde_json::Value> = {
-        let mut shapes = serde_json::Map::new();
-
-        // Add non-QKV tensors
-        for (name, (_, shape)) in &tensors_with_lm_head {
-            // Skip individual Q, K, V weights if we have fused versions
-            if name.contains("q_proj.weight")
-                || name.contains("k_proj.weight")
-                || name.contains("v_proj.weight")
-            {
-                let layer_idx_opt = name
-                    .split("layers.")
-                    .nth(1)
-                    .and_then(|s| s.split('.').next())
-                    .and_then(|s| s.parse::<usize>().ok());
-                if let Some(layer_idx) = layer_idx_opt {
-                    let qkv_name = format!("model.layers.{layer_idx}.self_attn.qkv_proj.weight");
-                    if qkv_fused.contains_key(&qkv_name) {
-                        continue;
-                    }
-                }
-            }
-
-            // PMAT-114: Skip individual Q, K, V biases if we have fused versions
-            if name.contains("q_proj.bias")
-                || name.contains("k_proj.bias")
-                || name.contains("v_proj.bias")
-            {
-                let layer_idx_opt = name
-                    .split("layers.")
-                    .nth(1)
-                    .and_then(|s| s.split('.').next())
-                    .and_then(|s| s.parse::<usize>().ok());
-                if let Some(layer_idx) = layer_idx_opt {
-                    let qkv_bias_name = format!("model.layers.{layer_idx}.self_attn.qkv_proj.bias");
-                    if qkv_bias_fused.contains_key(&qkv_bias_name) {
-                        continue;
-                    }
-                }
-            }
-
+    // ROSETTA-003: Store all tensors individually (no QKV fusion)
+    let tensor_shapes: serde_json::Map<String, serde_json::Value> = tensors_with_lm_head
+        .iter()
+        .map(|(name, (_, shape))| {
             let shape_array: Vec<serde_json::Value> = shape
                 .iter()
                 .map(|&dim| serde_json::Value::Number(serde_json::Number::from(dim as u64)))
                 .collect();
-            shapes.insert(name.clone(), serde_json::Value::Array(shape_array));
-        }
-
-        // Add fused QKV weight tensors
-        for (name, (_, shape)) in &qkv_fused {
-            let shape_array: Vec<serde_json::Value> = shape
-                .iter()
-                .map(|&dim| serde_json::Value::Number(serde_json::Number::from(dim as u64)))
-                .collect();
-            shapes.insert(name.clone(), serde_json::Value::Array(shape_array));
-        }
-
-        // PMAT-114: Add fused QKV bias tensors
-        for (name, (_, shape)) in &qkv_bias_fused {
-            let shape_array: Vec<serde_json::Value> = shape
-                .iter()
-                .map(|&dim| serde_json::Value::Number(serde_json::Number::from(dim as u64)))
-                .collect();
-            shapes.insert(name.clone(), serde_json::Value::Array(shape_array));
-        }
-
-        shapes
-    };
+            (name.clone(), serde_json::Value::Array(shape_array))
+        })
+        .collect();
 
     // Create metadata with architecture info and tensor shapes
     let mut custom = std::collections::HashMap::new();
@@ -224,6 +105,11 @@ pub(crate) fn write_apr_file(
             "source_metadata".to_string(),
             serde_json::Value::Object(meta_obj),
         );
+    }
+
+    // ROSETTA-003: Flag tied embeddings for round-trip export fidelity
+    if has_tied_embeddings {
+        custom.insert("tied_embeddings".to_string(), serde_json::Value::Bool(true));
     }
 
     // Add tokenizer data if available (CRITICAL for GGUF import)
@@ -356,45 +242,9 @@ pub(crate) fn write_apr_file(
     // Create APR writer
     let mut writer = AprV2Writer::new(metadata);
 
-    // Add all tensors with appropriate quantization (qkv_fused computed earlier)
+    // ROSETTA-003: Write all tensors individually (no QKV fusion).
+    // Q, K, V are stored as separate tensors. Fusion happens at runtime in realizar.
     for (name, (data, shape)) in &tensors_with_lm_head {
-        // Skip individual Q, K, V weights if we fused them
-        if name.contains("q_proj.weight")
-            || name.contains("k_proj.weight")
-            || name.contains("v_proj.weight")
-        {
-            // Check if we have a fused version for this layer
-            let layer_idx_opt = name
-                .split("layers.")
-                .nth(1)
-                .and_then(|s| s.split('.').next())
-                .and_then(|s| s.parse::<usize>().ok());
-            if let Some(layer_idx) = layer_idx_opt {
-                let qkv_name = format!("model.layers.{layer_idx}.self_attn.qkv_proj.weight");
-                if qkv_fused.contains_key(&qkv_name) {
-                    continue; // Skip individual tensor, we'll write fused version
-                }
-            }
-        }
-
-        // PMAT-114: Skip individual Q, K, V biases if we fused them
-        if name.contains("q_proj.bias")
-            || name.contains("k_proj.bias")
-            || name.contains("v_proj.bias")
-        {
-            let layer_idx_opt = name
-                .split("layers.")
-                .nth(1)
-                .and_then(|s| s.split('.').next())
-                .and_then(|s| s.parse::<usize>().ok());
-            if let Some(layer_idx) = layer_idx_opt {
-                let qkv_bias_name = format!("model.layers.{layer_idx}.self_attn.qkv_proj.bias");
-                if qkv_bias_fused.contains_key(&qkv_bias_name) {
-                    continue; // Skip individual bias, we'll write fused version
-                }
-            }
-        }
-
         // Determine if tensor should skip quantization
         // - Biases are too small and precision-sensitive
         // - LayerNorm/RMSNorm weights are critical for numerical stability
@@ -405,7 +255,6 @@ pub(crate) fn write_apr_file(
             || name.contains("norm.weight")
             || data.len() < 1024;
 
-        // Write tensor (no transposition needed - QKV fusion handles it)
         match options.quantize {
             Some(QuantizationType::Fp16) => {
                 writer.add_f16_tensor(name, shape.clone(), data);
@@ -417,42 +266,13 @@ pub(crate) fn write_apr_file(
                 writer.add_q4_tensor(name, shape.clone(), data);
             }
             Some(QuantizationType::Q4K) if !should_skip_quant => {
-                // Native Q4_K quantization: F32 -> packed Q4_K bytes
                 let q4k_bytes = quantize_q4_k(data);
                 writer.add_q4k_raw_tensor(name, shape.clone(), q4k_bytes);
             }
             _ => {
-                // Keep as F32 for small/critical tensors or when no quantization
                 writer.add_f32_tensor(name, shape.clone(), data);
             }
         }
-    }
-
-    // Write fused QKV tensors (always large enough to quantize)
-    for (name, (data, shape)) in &qkv_fused {
-        match options.quantize {
-            Some(QuantizationType::Fp16) => {
-                writer.add_f16_tensor(name, shape.clone(), data);
-            }
-            Some(QuantizationType::Int8) => {
-                writer.add_q8_tensor(name, shape.clone(), data);
-            }
-            Some(QuantizationType::Int4) => {
-                writer.add_q4_tensor(name, shape.clone(), data);
-            }
-            Some(QuantizationType::Q4K) => {
-                let q4k_bytes = quantize_q4_k(data);
-                writer.add_q4k_raw_tensor(name, shape.clone(), q4k_bytes);
-            }
-            None => {
-                writer.add_f32_tensor(name, shape.clone(), data);
-            }
-        }
-    }
-
-    // PMAT-114: Write fused QKV bias tensors (always F32 - biases are small and precision-sensitive)
-    for (name, (data, shape)) in &qkv_bias_fused {
-        writer.add_f32_tensor(name, shape.clone(), data);
     }
 
     // Write to file

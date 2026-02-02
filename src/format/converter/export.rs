@@ -158,6 +158,19 @@ pub fn apr_export<P: AsRef<Path>>(
     let original_size = calculate_tensor_size(&tensors);
     let original_count = tensors.len();
 
+    // ROSETTA-003: Unfuse legacy QKV tensors for lossless round-trip export.
+    // Old APR files (pre-ROSETTA-003) fused Q/K/V into qkv_proj for realizar.
+    // New APR files store separate Q/K/V. This handles both.
+    let tensors = unfuse_qkv_tensors(tensors, input_path);
+
+    // ROSETTA-003: Remove synthesized lm_head for SafeTensors export (tied embeddings).
+    // HuggingFace convention omits lm_head.weight when tied to embed_tokens.
+    let tensors = if options.format == ExportFormat::SafeTensors {
+        remove_tied_lm_head(tensors, input_path)
+    } else {
+        tensors
+    };
+
     // Apply quantization if requested
     let tensors = if let Some(ref quant_type) = options.quantize {
         quantize_tensors(&tensors, quant_type)?
@@ -211,7 +224,7 @@ pub fn apr_export<P: AsRef<Path>>(
             }
         }
         ExportFormat::Gguf => {
-            export_to_gguf(&tensors, output_path)?;
+            export_to_gguf(&tensors, output_path, input_path)?;
         }
         ExportFormat::Onnx | ExportFormat::TorchScript => {
             return Err(AprenderError::FormatError {
@@ -234,39 +247,182 @@ pub fn apr_export<P: AsRef<Path>>(
     })
 }
 
-/// Export tensors to GGUF format
-fn export_to_gguf(tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>, output: &Path) -> Result<()> {
+/// Export tensors to GGUF format (GGUF-EXPORT-001 fix)
+///
+/// Reads APR metadata to populate GGUF KV pairs and maps tensor names
+/// from HuggingFace convention to GGUF convention.
+fn export_to_gguf(
+    tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+    output: &Path,
+    input: &Path,
+) -> Result<()> {
     use crate::format::gguf::{export_tensors_to_gguf, GgmlType, GgufTensor, GgufValue};
+    use crate::format::v2::AprV2Reader;
     use std::fs::File;
     use std::io::BufWriter;
 
-    // Convert tensors to GGUF format
+    // GGUF-EXPORT-001: Read APR metadata for GGUF KV pairs
+    let apr_metadata = if input.extension().and_then(|e| e.to_str()) == Some("apr") {
+        let data = fs::read(input).ok();
+        data.and_then(|d| AprV2Reader::from_bytes(&d).ok())
+            .map(|r| r.metadata().clone())
+    } else {
+        None
+    };
+
+    // GGUF-EXPORT-001: Infer config from tensors as fallback
+    let inferred = super::import::infer_model_config_from_tensors(tensors);
+
+    let arch = apr_metadata
+        .as_ref()
+        .and_then(|m| m.architecture.as_deref())
+        .or(inferred.as_ref().and_then(|c| c.architecture.as_deref()))
+        .unwrap_or("qwen2");
+
+    let hidden_size = apr_metadata
+        .as_ref()
+        .and_then(|m| m.hidden_size)
+        .or(inferred.as_ref().and_then(|c| c.hidden_size))
+        .unwrap_or(4096);
+
+    let num_layers = apr_metadata
+        .as_ref()
+        .and_then(|m| m.num_layers)
+        .or(inferred.as_ref().and_then(|c| c.num_layers))
+        .unwrap_or(32);
+
+    let num_heads = apr_metadata
+        .as_ref()
+        .and_then(|m| m.num_heads)
+        .or(inferred.as_ref().and_then(|c| c.num_heads))
+        .unwrap_or(32);
+
+    let num_kv_heads = apr_metadata
+        .as_ref()
+        .and_then(|m| m.num_kv_heads)
+        .or(inferred.as_ref().and_then(|c| c.num_kv_heads))
+        .unwrap_or(num_heads);
+
+    let vocab_size = apr_metadata
+        .as_ref()
+        .and_then(|m| m.vocab_size)
+        .or(inferred.as_ref().and_then(|c| c.vocab_size))
+        .unwrap_or(32000);
+
+    let intermediate_size = apr_metadata
+        .as_ref()
+        .and_then(|m| m.intermediate_size)
+        .or(inferred.as_ref().and_then(|c| c.intermediate_size))
+        .unwrap_or(11008);
+
+    let max_pos = apr_metadata
+        .as_ref()
+        .and_then(|m| m.max_position_embeddings)
+        .unwrap_or(32768);
+
+    let rope_theta = apr_metadata
+        .as_ref()
+        .and_then(|m| m.rope_theta)
+        .unwrap_or(1_000_000.0);
+
+    let rms_norm_eps = apr_metadata
+        .as_ref()
+        .and_then(|m| m.rms_norm_eps)
+        .unwrap_or(1e-6);
+
+    let head_dim = if num_heads > 0 {
+        hidden_size / num_heads
+    } else {
+        128
+    };
+
+    let model_name = apr_metadata
+        .as_ref()
+        .and_then(|m| m.name.clone())
+        .unwrap_or_else(|| "model".to_string());
+
+    // Build GGUF metadata KV pairs
+    let metadata = vec![
+        (
+            "general.architecture".to_string(),
+            GgufValue::String(arch.to_string()),
+        ),
+        ("general.name".to_string(), GgufValue::String(model_name)),
+        (
+            "general.quantization_version".to_string(),
+            GgufValue::Uint32(2),
+        ),
+        (
+            "general.file_type".to_string(),
+            GgufValue::Uint32(0), // F32
+        ),
+        (
+            format!("{arch}.context_length"),
+            GgufValue::Uint32(max_pos as u32),
+        ),
+        (
+            format!("{arch}.embedding_length"),
+            GgufValue::Uint32(hidden_size as u32),
+        ),
+        (
+            format!("{arch}.block_count"),
+            GgufValue::Uint32(num_layers as u32),
+        ),
+        (
+            format!("{arch}.feed_forward_length"),
+            GgufValue::Uint32(intermediate_size as u32),
+        ),
+        (
+            format!("{arch}.attention.head_count"),
+            GgufValue::Uint32(num_heads as u32),
+        ),
+        (
+            format!("{arch}.attention.head_count_kv"),
+            GgufValue::Uint32(num_kv_heads as u32),
+        ),
+        (
+            format!("{arch}.attention.layer_norm_rms_epsilon"),
+            GgufValue::Float32(rms_norm_eps),
+        ),
+        (
+            format!("{arch}.rope.dimension_count"),
+            GgufValue::Uint32(head_dim as u32),
+        ),
+        (
+            format!("{arch}.rope.freq_base"),
+            GgufValue::Float32(rope_theta),
+        ),
+        (
+            format!("{arch}.vocab_size"),
+            GgufValue::Uint32(vocab_size as u32),
+        ),
+    ];
+
+    eprintln!(
+        "[GGUF-EXPORT-001] Writing {} metadata keys (arch={}, layers={}, heads={}/{}kv, hidden={})",
+        metadata.len(),
+        arch,
+        num_layers,
+        num_heads,
+        num_kv_heads,
+        hidden_size
+    );
+
+    // GGUF-EXPORT-001: Map tensor names from HF convention to GGUF convention
     let gguf_tensors: Vec<GgufTensor> = tensors
         .iter()
         .map(|(name, (data, shape))| {
-            // Convert f32 data to bytes
+            let gguf_name = hf_to_gguf_name(name);
             let bytes: Vec<u8> = data.iter().flat_map(|f| f.to_le_bytes()).collect();
 
             GgufTensor {
-                name: name.clone(),
+                name: gguf_name,
                 shape: shape.iter().map(|&d| d as u64).collect(),
                 dtype: GgmlType::F32,
                 data: bytes,
             }
         })
         .collect();
-
-    // Basic metadata
-    let metadata = vec![
-        (
-            "general.name".to_string(),
-            GgufValue::String("model".to_string()),
-        ),
-        (
-            "general.quantization_version".to_string(),
-            GgufValue::Uint32(1),
-        ),
-    ];
 
     // Write to file
     let file = File::create(output).map_err(|e| AprenderError::FormatError {
@@ -275,6 +431,49 @@ fn export_to_gguf(tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>, output: &P
     let mut writer = BufWriter::new(file);
 
     export_tensors_to_gguf(&mut writer, &gguf_tensors, &metadata)
+}
+
+/// Map HuggingFace-style tensor names to GGUF convention (GGUF-EXPORT-001)
+///
+/// Reverse of `Architecture::qwen2_map_name()` which maps GGUF→HF.
+/// This maps HF→GGUF for export.
+fn hf_to_gguf_name(name: &str) -> String {
+    // Handle layer tensors: model.layers.N.suffix → blk.N.suffix
+    if let Some(rest) = name.strip_prefix("model.layers.") {
+        if let Some(dot_pos) = rest.find('.') {
+            let layer_num = &rest[..dot_pos];
+            let suffix = &rest[dot_pos + 1..];
+
+            let gguf_suffix = match suffix {
+                "self_attn.q_proj.weight" => "attn_q.weight",
+                "self_attn.q_proj.bias" => "attn_q.bias",
+                "self_attn.k_proj.weight" => "attn_k.weight",
+                "self_attn.k_proj.bias" => "attn_k.bias",
+                "self_attn.v_proj.weight" => "attn_v.weight",
+                "self_attn.v_proj.bias" => "attn_v.bias",
+                "self_attn.o_proj.weight" => "attn_output.weight",
+                "self_attn.o_proj.bias" => "attn_output.bias",
+                "self_attn.qkv_proj.weight" => "attn_qkv.weight",
+                "self_attn.qkv_proj.bias" => "attn_qkv.bias",
+                "input_layernorm.weight" => "attn_norm.weight",
+                "mlp.gate_proj.weight" => "ffn_gate.weight",
+                "mlp.up_proj.weight" => "ffn_up.weight",
+                "mlp.down_proj.weight" => "ffn_down.weight",
+                "post_attention_layernorm.weight" => "ffn_norm.weight",
+                other => other, // Preserve unknown suffixes
+            };
+
+            return format!("blk.{layer_num}.{gguf_suffix}");
+        }
+    }
+
+    // Handle non-layer tensors
+    match name {
+        "model.embed_tokens.weight" => "token_embd.weight".to_string(),
+        "lm_head.weight" => "output.weight".to_string(),
+        "model.norm.weight" => "output_norm.weight".to_string(),
+        _ => name.to_string(), // Preserve unknown names
+    }
 }
 
 // ============================================================================
@@ -344,8 +543,10 @@ fn infer_model_config(tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>) -> Str
             (dim, true)
         })
         .unwrap_or_else(|| {
-            inference_warnings
-                .push("vocab_size: No lm_head/output.weight tensor found, defaulting to 32000".to_string());
+            inference_warnings.push(
+                "vocab_size: No lm_head/output.weight tensor found, defaulting to 32000"
+                    .to_string(),
+            );
             (32000, false)
         });
 
@@ -500,6 +701,144 @@ fn infer_tokenizer_json(input_path: &Path) -> String {
 
     // Return empty if no tokenizer found
     String::new()
+}
+
+/// ROSETTA-003: Read APR v2 metadata from file.
+///
+/// Returns `None` for non-APR files or on any read/parse failure.
+fn read_apr_metadata(apr_path: &Path) -> Option<crate::format::v2::AprV2Metadata> {
+    if apr_path.extension().and_then(|e| e.to_str()) != Some("apr") {
+        return None;
+    }
+    let data = fs::read(apr_path).ok()?;
+    let reader = crate::format::v2::AprV2Reader::from_bytes(&data).ok()?;
+    Some(reader.metadata().clone())
+}
+
+/// ROSETTA-003: Unfuse legacy QKV tensors for lossless round-trip export.
+///
+/// Old APR files (pre-ROSETTA-003) stored fused `qkv_proj.weight` tensors.
+/// This function splits them back into separate `q_proj`, `k_proj`, `v_proj`
+/// for correct GGUF/SafeTensors export. New APR files with separate Q/K/V
+/// pass through unchanged.
+fn unfuse_qkv_tensors(
+    tensors: BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+    apr_path: &Path,
+) -> BTreeMap<String, (Vec<f32>, Vec<usize>)> {
+    let has_fused = tensors.keys().any(|k| k.contains("qkv_proj."));
+    if !has_fused {
+        return tensors;
+    }
+
+    let metadata = read_apr_metadata(apr_path);
+    let (hidden_size, num_heads, num_kv_heads) = match &metadata {
+        Some(m) => {
+            let hs = m.hidden_size.unwrap_or(0);
+            let nh = m.num_heads.unwrap_or(0);
+            let nkv = m.num_kv_heads.unwrap_or(nh);
+            (hs, nh, nkv)
+        }
+        None => return tensors,
+    };
+
+    if hidden_size == 0 || num_heads == 0 {
+        return tensors;
+    }
+
+    let head_dim = hidden_size / num_heads;
+    let kv_dim = num_kv_heads * head_dim;
+
+    let mut result = BTreeMap::new();
+
+    for (name, (data, shape)) in tensors {
+        if name.contains("qkv_proj.weight") {
+            // Split [Q;K;V] weight back into separate tensors.
+            // Shape was [qkv_dim, hidden_dim] where qkv_dim = hidden_size + 2*kv_dim.
+            let hidden_dim = if shape.len() >= 2 {
+                shape[1]
+            } else {
+                hidden_size
+            };
+            let q_elements = hidden_size * hidden_dim;
+            let kv_elements = kv_dim * hidden_dim;
+
+            if data.len() >= q_elements + 2 * kv_elements {
+                let prefix = name.strip_suffix("qkv_proj.weight").unwrap_or(&name);
+
+                result.insert(
+                    format!("{prefix}q_proj.weight"),
+                    (data[..q_elements].to_vec(), vec![hidden_size, hidden_dim]),
+                );
+                result.insert(
+                    format!("{prefix}k_proj.weight"),
+                    (
+                        data[q_elements..q_elements + kv_elements].to_vec(),
+                        vec![kv_dim, hidden_dim],
+                    ),
+                );
+                result.insert(
+                    format!("{prefix}v_proj.weight"),
+                    (
+                        data[q_elements + kv_elements..q_elements + 2 * kv_elements].to_vec(),
+                        vec![kv_dim, hidden_dim],
+                    ),
+                );
+            } else {
+                result.insert(name, (data, shape));
+            }
+        } else if name.contains("qkv_proj.bias") {
+            // Split [Q_bias; K_bias; V_bias] back into separate biases.
+            let qkv_dim = hidden_size + 2 * kv_dim;
+            if data.len() == qkv_dim {
+                let prefix = name.strip_suffix("qkv_proj.bias").unwrap_or(&name);
+
+                result.insert(
+                    format!("{prefix}q_proj.bias"),
+                    (data[..hidden_size].to_vec(), vec![hidden_size]),
+                );
+                result.insert(
+                    format!("{prefix}k_proj.bias"),
+                    (
+                        data[hidden_size..hidden_size + kv_dim].to_vec(),
+                        vec![kv_dim],
+                    ),
+                );
+                result.insert(
+                    format!("{prefix}v_proj.bias"),
+                    (data[hidden_size + kv_dim..].to_vec(), vec![kv_dim]),
+                );
+            } else {
+                result.insert(name, (data, shape));
+            }
+        } else {
+            result.insert(name, (data, shape));
+        }
+    }
+
+    result
+}
+
+/// ROSETTA-003: Remove synthesized `lm_head.weight` for SafeTensors export.
+///
+/// When the APR metadata has `tied_embeddings: true`, the lm_head was copied
+/// from embed_tokens during import. For SafeTensors round-trip fidelity,
+/// remove it so the exported file matches the original HuggingFace convention.
+fn remove_tied_lm_head(
+    mut tensors: BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+    apr_path: &Path,
+) -> BTreeMap<String, (Vec<f32>, Vec<usize>)> {
+    let metadata = read_apr_metadata(apr_path);
+    let is_tied = metadata
+        .as_ref()
+        .and_then(|m| m.custom.get("tied_embeddings"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    if is_tied {
+        tensors.remove("lm_head.weight");
+    }
+
+    tensors
 }
 
 /// PMAT-223: Extract user metadata from APR file's custom field.

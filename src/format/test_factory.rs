@@ -48,6 +48,10 @@ pub struct PygmyConfig {
     pub hidden_size: usize,
     /// Number of layers
     pub num_layers: usize,
+    /// Number of attention heads (None = derive from hidden_size)
+    pub num_heads: Option<usize>,
+    /// Number of key/value heads for GQA (None = same as num_heads, i.e. MHA)
+    pub num_kv_heads: Option<usize>,
     /// Include embedding tensor
     pub include_embedding: bool,
     /// Include norm tensors
@@ -56,6 +60,10 @@ pub struct PygmyConfig {
     pub include_attention: bool,
     /// Include MLP tensors
     pub include_mlp: bool,
+    /// Include attention biases (Qwen2-style)
+    pub include_bias: bool,
+    /// Simulate tied embeddings (omit lm_head, let import synthesize it)
+    pub tied_embeddings: bool,
 }
 
 impl Default for PygmyConfig {
@@ -64,10 +72,14 @@ impl Default for PygmyConfig {
             vocab_size: 8,
             hidden_size: 4,
             num_layers: 1,
+            num_heads: None,
+            num_kv_heads: None,
             include_embedding: true,
             include_norms: true,
             include_attention: true,
             include_mlp: true,
+            include_bias: false,
+            tied_embeddings: false,
         }
     }
 }
@@ -84,6 +96,7 @@ impl PygmyConfig {
             include_norms: false,
             include_attention: false,
             include_mlp: false,
+            ..Default::default()
         }
     }
 
@@ -98,6 +111,7 @@ impl PygmyConfig {
             include_norms: false,
             include_attention: false,
             include_mlp: false,
+            ..Default::default()
         }
     }
 
@@ -112,18 +126,86 @@ impl PygmyConfig {
             include_norms: true,
             include_attention: true,
             include_mlp: true,
+            ..Default::default()
         }
+    }
+
+    /// ROSETTA-003: Create Qwen2-style GQA config with attention biases.
+    ///
+    /// Tests the GQA path where K/V have fewer heads than Q:
+    /// - num_heads=4, num_kv_heads=2 → head_dim=2, kv_dim=4
+    /// - Q shape: [8, 8], K/V shape: [4, 8]
+    /// - Includes Q/K/V biases (Qwen2-style)
+    /// - 2 layers for multi-layer coverage
+    #[must_use]
+    pub fn qwen2_gqa() -> Self {
+        Self {
+            vocab_size: 16,
+            hidden_size: 8,
+            num_layers: 2,
+            num_heads: Some(4),
+            num_kv_heads: Some(2),
+            include_embedding: true,
+            include_norms: true,
+            include_attention: true,
+            include_mlp: true,
+            include_bias: true,
+            tied_embeddings: false,
+        }
+    }
+
+    /// ROSETTA-003: Qwen2 GQA with tied embeddings (no explicit lm_head).
+    ///
+    /// Simulates HuggingFace models where `lm_head.weight` is omitted because
+    /// it's tied to `embed_tokens.weight`. The import pipeline should synthesize it.
+    #[must_use]
+    pub fn qwen2_gqa_tied() -> Self {
+        Self {
+            tied_embeddings: true,
+            ..Self::qwen2_gqa()
+        }
+    }
+
+    /// Effective number of attention heads
+    #[must_use]
+    pub fn effective_num_heads(&self) -> usize {
+        self.num_heads
+            .unwrap_or_else(|| (self.hidden_size / 64).max(1))
+    }
+
+    /// Effective number of key/value heads (GQA)
+    #[must_use]
+    pub fn effective_num_kv_heads(&self) -> usize {
+        self.num_kv_heads
+            .unwrap_or_else(|| self.effective_num_heads())
+    }
+
+    /// Head dimension
+    #[must_use]
+    pub fn head_dim(&self) -> usize {
+        let nh = self.effective_num_heads();
+        if nh > 0 {
+            self.hidden_size / nh
+        } else {
+            self.hidden_size
+        }
+    }
+
+    /// Key/Value dimension (for GQA, smaller than hidden_size)
+    #[must_use]
+    pub fn kv_dim(&self) -> usize {
+        self.effective_num_kv_heads() * self.head_dim()
     }
 
     /// GH-197 FIX: Generate config.json that matches the tensors this config creates.
     ///
     /// This ensures round-trip testing uses consistent config values instead of
     /// relying on inference which can fail with incorrect defaults.
+    /// ROSETTA-003: Uses explicit num_heads/num_kv_heads for GQA support.
     #[must_use]
     pub fn to_config_json(&self) -> String {
-        // Compute derived values matching HuggingFace conventions
-        let num_attention_heads = (self.hidden_size / 64).max(1); // head_dim=64
-        let num_key_value_heads = num_attention_heads; // MHA (no GQA for pygmy)
+        let num_attention_heads = self.effective_num_heads();
+        let num_key_value_heads = self.effective_num_kv_heads();
         let intermediate_size = self.hidden_size * 4;
 
         format!(
@@ -186,15 +268,60 @@ pub fn build_pygmy_safetensors_with_config(config: PygmyConfig) -> Vec<u8> {
         }
 
         // Attention: Q, K, V, O projections
+        // ROSETTA-003: GQA support - K/V may have fewer heads than Q
         if config.include_attention {
-            let qkvo_data: Vec<f32> = (0..config.hidden_size * config.hidden_size)
+            let kv_dim = config.kv_dim();
+
+            // Q and O: [hidden_size, hidden_size]
+            let q_data: Vec<f32> = (0..config.hidden_size * config.hidden_size)
                 .map(|i| ((i % 200) as f32 - 100.0) / 2000.0)
                 .collect();
-            for suffix in &["q_proj", "k_proj", "v_proj", "o_proj"] {
+            tensors.push((
+                format!("model.layers.{layer_idx}.self_attn.q_proj.weight"),
+                vec![config.hidden_size, config.hidden_size],
+                q_data.clone(),
+            ));
+            tensors.push((
+                format!("model.layers.{layer_idx}.self_attn.o_proj.weight"),
+                vec![config.hidden_size, config.hidden_size],
+                q_data,
+            ));
+
+            // K and V: [kv_dim, hidden_size] (may differ from Q for GQA)
+            let kv_data: Vec<f32> = (0..kv_dim * config.hidden_size)
+                .map(|i| ((i % 200) as f32 - 100.0) / 2000.0)
+                .collect();
+            tensors.push((
+                format!("model.layers.{layer_idx}.self_attn.k_proj.weight"),
+                vec![kv_dim, config.hidden_size],
+                kv_data.clone(),
+            ));
+            tensors.push((
+                format!("model.layers.{layer_idx}.self_attn.v_proj.weight"),
+                vec![kv_dim, config.hidden_size],
+                kv_data,
+            ));
+
+            // Biases (Qwen2-style)
+            if config.include_bias {
+                let q_bias: Vec<f32> = (0..config.hidden_size)
+                    .map(|i| (i as f32) / 1000.0)
+                    .collect();
                 tensors.push((
-                    format!("model.layers.{layer_idx}.self_attn.{suffix}.weight"),
-                    vec![config.hidden_size, config.hidden_size],
-                    qkvo_data.clone(),
+                    format!("model.layers.{layer_idx}.self_attn.q_proj.bias"),
+                    vec![config.hidden_size],
+                    q_bias,
+                ));
+                let kv_bias: Vec<f32> = (0..kv_dim).map(|i| (i as f32) / 1000.0).collect();
+                tensors.push((
+                    format!("model.layers.{layer_idx}.self_attn.k_proj.bias"),
+                    vec![kv_dim],
+                    kv_bias.clone(),
+                ));
+                tensors.push((
+                    format!("model.layers.{layer_idx}.self_attn.v_proj.bias"),
+                    vec![kv_dim],
+                    kv_bias,
                 ));
             }
         }
@@ -238,7 +365,8 @@ pub fn build_pygmy_safetensors_with_config(config: PygmyConfig) -> Vec<u8> {
     }
 
     // LM head: [vocab_size, hidden_size]
-    if config.include_embedding {
+    // ROSETTA-003: Omit lm_head when tied_embeddings=true (HuggingFace convention)
+    if config.include_embedding && !config.tied_embeddings {
         let lm_head_data: Vec<f32> = (0..config.vocab_size * config.hidden_size)
             .map(|i| ((i % 100) as f32 - 50.0) / 1000.0)
             .collect();
@@ -1212,8 +1340,7 @@ pub(crate) mod harness {
                 .as_ref()
                 .expect("No output path set -- run import first");
             let data = fs::read(output).expect("Failed to read output APR");
-            let reader =
-                AprV2Reader::from_bytes(&data).expect("Failed to parse output APR");
+            let reader = AprV2Reader::from_bytes(&data).expect("Failed to parse output APR");
 
             let mut mismatches = Vec::new();
             let tolerance = self.tolerance.f32_atol;
@@ -1280,8 +1407,8 @@ pub(crate) mod harness {
                 .output_path
                 .as_ref()
                 .expect("No output path set -- run export first");
-            let mapped = MappedSafeTensors::open(output)
-                .expect("Failed to open output SafeTensors");
+            let mapped =
+                MappedSafeTensors::open(output).expect("Failed to open output SafeTensors");
 
             let mut mismatches = Vec::new();
             let tolerance = self.tolerance.f32_atol;
@@ -1396,14 +1523,58 @@ pub(crate) mod harness {
             }
 
             if config.include_attention {
-                let qkvo_data: Vec<f32> = (0..config.hidden_size * config.hidden_size)
+                let kv_dim = config.kv_dim();
+
+                // Q and O: [hidden_size, hidden_size]
+                let q_data: Vec<f32> = (0..config.hidden_size * config.hidden_size)
                     .map(|i| ((i % 200) as f32 - 100.0) / 2000.0)
                     .collect();
-                for suffix in &["q_proj", "k_proj", "v_proj", "o_proj"] {
+                tensors.push((
+                    format!("model.layers.{layer_idx}.self_attn.q_proj.weight"),
+                    q_data.clone(),
+                    vec![config.hidden_size, config.hidden_size],
+                ));
+                tensors.push((
+                    format!("model.layers.{layer_idx}.self_attn.o_proj.weight"),
+                    q_data,
+                    vec![config.hidden_size, config.hidden_size],
+                ));
+
+                // K and V: [kv_dim, hidden_size]
+                let kv_data: Vec<f32> = (0..kv_dim * config.hidden_size)
+                    .map(|i| ((i % 200) as f32 - 100.0) / 2000.0)
+                    .collect();
+                tensors.push((
+                    format!("model.layers.{layer_idx}.self_attn.k_proj.weight"),
+                    kv_data.clone(),
+                    vec![kv_dim, config.hidden_size],
+                ));
+                tensors.push((
+                    format!("model.layers.{layer_idx}.self_attn.v_proj.weight"),
+                    kv_data,
+                    vec![kv_dim, config.hidden_size],
+                ));
+
+                // Biases
+                if config.include_bias {
+                    let q_bias: Vec<f32> = (0..config.hidden_size)
+                        .map(|i| (i as f32) / 1000.0)
+                        .collect();
                     tensors.push((
-                        format!("model.layers.{layer_idx}.self_attn.{suffix}.weight"),
-                        qkvo_data.clone(),
-                        vec![config.hidden_size, config.hidden_size],
+                        format!("model.layers.{layer_idx}.self_attn.q_proj.bias"),
+                        q_bias,
+                        vec![config.hidden_size],
+                    ));
+                    let kv_bias: Vec<f32> = (0..kv_dim).map(|i| (i as f32) / 1000.0).collect();
+                    tensors.push((
+                        format!("model.layers.{layer_idx}.self_attn.k_proj.bias"),
+                        kv_bias.clone(),
+                        vec![kv_dim],
+                    ));
+                    tensors.push((
+                        format!("model.layers.{layer_idx}.self_attn.v_proj.bias"),
+                        kv_bias,
+                        vec![kv_dim],
                     ));
                 }
             }
@@ -1444,7 +1615,7 @@ pub(crate) mod harness {
             ));
         }
 
-        if config.include_embedding {
+        if config.include_embedding && !config.tied_embeddings {
             let data: Vec<f32> = (0..config.vocab_size * config.hidden_size)
                 .map(|i| ((i % 100) as f32 - 50.0) / 1000.0)
                 .collect();
@@ -1630,6 +1801,7 @@ pub(crate) mod harness {
             include_norms: false,
             include_attention: false,
             include_mlp: false,
+            ..Default::default()
         };
 
         // Should not crash when building SafeTensors with zero tensors
@@ -1965,7 +2137,9 @@ pub(crate) mod harness {
 
         // DEFECT-002 FIX VERIFICATION: All-zeros should now be detected
         assert!(
-            report.all_zero_tensors.contains(&"model.weight".to_string()),
+            report
+                .all_zero_tensors
+                .contains(&"model.weight".to_string()),
             "DEFECT-002 FIX: All-zeros tensor should be detected. Got: {:?}",
             report.all_zero_tensors
         );

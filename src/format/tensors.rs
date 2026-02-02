@@ -188,11 +188,7 @@ pub fn list_tensors_from_bytes(
     }
 
     if data.len() >= 10 {
-        let header_len = u64::from_le_bytes(
-            data[0..8]
-                .try_into()
-                .unwrap_or([0u8; 8]),
-        );
+        let header_len = u64::from_le_bytes(data[0..8].try_into().unwrap_or([0u8; 8]));
         if header_len < 100_000_000 && &data[8..10] == b"{\"" {
             return list_tensors_safetensors(data, options);
         }
@@ -342,22 +338,22 @@ fn ggml_dtype_name(dtype: u32) -> &'static str {
 /// Bytes per element for GGML data types (approximate for block types)
 fn ggml_dtype_element_size(dtype: u32) -> f64 {
     match dtype {
-        0 => 4.0,           // F32
-        1 => 2.0,           // F16
-        2 => 0.5 + 2.0/32.0, // Q4_0: 4-bit + scale
-        3 => 0.5 + 4.0/32.0, // Q4_1: 4-bit + scale + min
-        6 => 0.625 + 2.0/32.0, // Q5_0
-        7 => 0.625 + 4.0/32.0, // Q5_1
-        8 => 1.0 + 2.0/32.0, // Q8_0
-        9 => 1.0 + 4.0/32.0, // Q8_1
-        10 => 0.3125,       // Q2_K
-        11 => 0.4375,       // Q3_K
-        12 => 0.5625,       // Q4_K
-        13 => 0.6875,       // Q5_K
-        14 => 0.8125,       // Q6_K
-        15 => 1.0625,       // Q8_K
-        26 => 2.0,          // BF16
-        _ => 4.0,           // default assume F32
+        0 => 4.0,                // F32
+        1 => 2.0,                // F16
+        2 => 0.5 + 2.0 / 32.0,   // Q4_0: 4-bit + scale
+        3 => 0.5 + 4.0 / 32.0,   // Q4_1: 4-bit + scale + min
+        6 => 0.625 + 2.0 / 32.0, // Q5_0
+        7 => 0.625 + 4.0 / 32.0, // Q5_1
+        8 => 1.0 + 2.0 / 32.0,   // Q8_0
+        9 => 1.0 + 4.0 / 32.0,   // Q8_1
+        10 => 0.3125,            // Q2_K
+        11 => 0.4375,            // Q3_K
+        12 => 0.5625,            // Q4_K
+        13 => 0.6875,            // Q5_K
+        14 => 0.8125,            // Q6_K
+        15 => 1.0625,            // Q8_K
+        26 => 2.0,               // BF16
+        _ => 4.0,                // default assume F32
     }
 }
 
@@ -431,9 +427,13 @@ fn list_tensors_safetensors(data: &[u8], options: TensorListOptions) -> Result<T
     }
 
     let header_len =
-        u64::from_le_bytes(data[0..8].try_into().map_err(|_| AprenderError::FormatError {
-            message: "Failed to read SafeTensors header length".to_string(),
-        })?) as usize;
+        u64::from_le_bytes(
+            data[0..8]
+                .try_into()
+                .map_err(|_| AprenderError::FormatError {
+                    message: "Failed to read SafeTensors header length".to_string(),
+                })?,
+        ) as usize;
 
     if data.len() < 8 + header_len {
         return Err(AprenderError::FormatError {
@@ -458,10 +458,8 @@ fn list_tensors_safetensors(data: &[u8], options: TensorListOptions) -> Result<T
     let mut total_size = 0usize;
 
     // Collect and sort tensor names for deterministic output
-    let mut tensor_entries: Vec<(&String, &serde_json::Value)> = obj
-        .iter()
-        .filter(|(k, _)| *k != "__metadata__")
-        .collect();
+    let mut tensor_entries: Vec<(&String, &serde_json::Value)> =
+        obj.iter().filter(|(k, _)| *k != "__metadata__").collect();
     tensor_entries.sort_by_key(|(k, _)| *k);
 
     for (name, value) in tensor_entries {
@@ -1318,9 +1316,9 @@ mod tests {
     fn test_ggml_dtype_element_size() {
         assert!((ggml_dtype_element_size(0) - 4.0).abs() < 0.001); // F32
         assert!((ggml_dtype_element_size(1) - 2.0).abs() < 0.001); // F16
-        // Q8_0 = 1.0 + 2.0/32.0 ≈ 1.0625
+                                                                   // Q8_0 = 1.0 + 2.0/32.0 ≈ 1.0625
         assert!((ggml_dtype_element_size(8) - 1.0625).abs() < 0.01); // Q8_0
-        // Q4_0 = 0.5 + 2.0/32.0 ≈ 0.5625
+                                                                     // Q4_0 = 0.5 + 2.0/32.0 ≈ 0.5625
         assert!((ggml_dtype_element_size(2) - 0.5625).abs() < 0.01); // Q4_0
     }
 
@@ -1358,16 +1356,13 @@ mod tests {
             data: tensor_data,
         };
 
-        let metadata = vec![
-            (
-                "general.architecture".to_string(),
-                GgufValue::String("test".to_string()),
-            ),
-        ];
+        let metadata = vec![(
+            "general.architecture".to_string(),
+            GgufValue::String("test".to_string()),
+        )];
 
         let mut gguf_bytes = Vec::new();
-        export_tensors_to_gguf(&mut gguf_bytes, &[tensor], &metadata)
-            .expect("export GGUF");
+        export_tensors_to_gguf(&mut gguf_bytes, &[tensor], &metadata).expect("export GGUF");
 
         let result = list_tensors_from_bytes(&gguf_bytes, TensorListOptions::default())
             .expect("list GGUF tensors");
@@ -1396,8 +1391,7 @@ mod tests {
         };
 
         let mut gguf_bytes = Vec::new();
-        export_tensors_to_gguf(&mut gguf_bytes, &[tensor], &[])
-            .expect("export GGUF");
+        export_tensors_to_gguf(&mut gguf_bytes, &[tensor], &[]).expect("export GGUF");
 
         let opts = TensorListOptions::new().with_stats();
         let result = list_tensors_from_bytes(&gguf_bytes, opts).expect("list");
@@ -1439,8 +1433,8 @@ mod tests {
         let mut gguf_bytes = Vec::new();
         export_tensors_to_gguf(&mut gguf_bytes, &tensors, &[]).expect("export");
 
-        let result = list_tensors_from_bytes(&gguf_bytes, TensorListOptions::default())
-            .expect("list");
+        let result =
+            list_tensors_from_bytes(&gguf_bytes, TensorListOptions::default()).expect("list");
 
         assert_eq!(result.tensor_count, 2);
         assert!(result.tensors.iter().any(|t| t.name == "layer.0.weight"));
@@ -1569,8 +1563,8 @@ mod tests {
     fn test_list_tensors_safetensors_with_config() {
         let st_bytes = build_pygmy_safetensors_with_config(PygmyConfig::llama_style());
 
-        let result = list_tensors_from_bytes(&st_bytes, TensorListOptions::default())
-            .expect("list");
+        let result =
+            list_tensors_from_bytes(&st_bytes, TensorListOptions::default()).expect("list");
 
         assert_eq!(result.format_version, "SafeTensors");
         // LLaMA style should have multiple tensors
@@ -1635,8 +1629,8 @@ mod tests {
         // APR v2 magic
         let apr_bytes = build_pygmy_apr();
 
-        let result = list_tensors_from_bytes(&apr_bytes, TensorListOptions::default())
-            .expect("list APR");
+        let result =
+            list_tensors_from_bytes(&apr_bytes, TensorListOptions::default()).expect("list APR");
 
         assert_eq!(result.format_version, "v2");
     }

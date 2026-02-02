@@ -442,17 +442,20 @@ fn load_apr_tensors_f32(path: &Path) -> Result<BTreeMap<String, (Vec<f32>, Vec<u
 
     let mut tensors = BTreeMap::new();
     for name in reader.tensor_names() {
-        let entry = reader.get_tensor(name).ok_or_else(|| AprenderError::FormatError {
-            message: format!("Tensor '{}' missing from index", name),
-        })?;
+        let entry = reader
+            .get_tensor(name)
+            .ok_or_else(|| AprenderError::FormatError {
+                message: format!("Tensor '{}' missing from index", name),
+            })?;
         let shape = entry.shape.clone();
 
         // get_tensor_as_f32 handles all dtypes (F32, F16, Q8, Q4, etc.)
-        let f32_data = reader.get_tensor_as_f32(name).ok_or_else(|| {
-            AprenderError::FormatError {
-                message: format!("Failed to dequantize tensor '{}'", name),
-            }
-        })?;
+        let f32_data =
+            reader
+                .get_tensor_as_f32(name)
+                .ok_or_else(|| AprenderError::FormatError {
+                    message: format!("Failed to dequantize tensor '{}'", name),
+                })?;
 
         // PMAT-187: Validate tensor values after dequantization (Jidoka - stop the line)
         validate_tensor_values(name, &f32_data)?;

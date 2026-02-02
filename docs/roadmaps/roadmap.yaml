@@ -2534,11 +2534,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'GH-198: apr pull SafeTensors missing companion files (tokenizer.json, config.json)'
-  status: planned
+  status: inprogress
   priority: critical
   assigned_to: null
   created: 2026-02-01T22:14:01Z
-  updated: 2026-02-01T22:14:01Z
+  updated: 2026-02-01T22:20:55.222129362+00:00
   spec: null
   acceptance_criteria:
   - apr pull for SafeTensors only downloads weight file, missing tokenizer.json and config.json. Causes apr run to fail with PMAT-172.
@@ -2549,4 +2549,21 @@ roadmap:
   - bug
   - safetensors
   - cli
+  notes: null
+- id: PMAT-196
+  github_issue: null
+  item_type: task
+  title: GGUF-EXPORT-001
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-02-01T23:21:56Z
+  updated: 2026-02-01T23:21:56Z
+  spec: null
+  acceptance_criteria:
+  - 'P0: GGUF exporter writes zero metadata keys and HF-style tensor names'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
   notes: null

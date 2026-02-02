@@ -357,7 +357,9 @@ mod tests_conversion {
         );
         let err = result.unwrap_err().to_string();
         assert!(
-            err.contains("mean=11") || err.contains("LayerNorm") || err.contains("outside expected range"),
+            err.contains("mean=11")
+                || err.contains("LayerNorm")
+                || err.contains("outside expected range"),
             "Error should mention LayerNorm issue: {err}"
         );
     }
@@ -901,8 +903,7 @@ mod tests_gh196_roundtrip {
     /// so auto-detection yields "unknown" architecture (unverified).
     #[test]
     fn test_gh196_strict_rejects_unverified() {
-        let h = ConversionTestHarness::new()
-            .with_safetensors(PygmyConfig::embedding_only());
+        let h = ConversionTestHarness::new().with_safetensors(PygmyConfig::embedding_only());
 
         let result = h.try_import_to_apr(ImportOptions {
             architecture: Architecture::Auto,
@@ -920,8 +921,7 @@ mod tests_gh196_roundtrip {
     /// GH-196: Default (non-strict) allows Auto architecture.
     #[test]
     fn test_gh196_default_permissive() {
-        let h = ConversionTestHarness::new()
-            .with_safetensors(PygmyConfig::default());
+        let h = ConversionTestHarness::new().with_safetensors(PygmyConfig::default());
 
         let result = h.try_import_to_apr(ImportOptions::default());
 
@@ -981,6 +981,234 @@ mod tests_gh196_roundtrip {
             metadata.architecture.is_some(),
             "GH-196: APR metadata should have architecture field, got: {:?}",
             metadata.architecture
+        );
+    }
+}
+
+// ============================================================================
+// ROSETTA-003: GQA round-trip tests (Option C - Store Separate, Fuse at Runtime)
+// ============================================================================
+#[cfg(test)]
+mod tests_rosetta003_gqa_roundtrip {
+    use super::*;
+    use crate::format::test_factory::harness::ConversionTestHarness;
+    use crate::format::test_factory::PygmyConfig;
+    use crate::format::v2::AprV2Reader;
+
+    /// ROSETTA-003: GQA model round-trip preserves separate Q/K/V tensors.
+    #[test]
+    fn test_rosetta003_gqa_roundtrip_safetensors() {
+        ConversionTestHarness::assert_roundtrip_ok(PygmyConfig::qwen2_gqa());
+    }
+
+    /// ROSETTA-003: GQA import produces correct tensor names (no qkv_proj fusion).
+    #[test]
+    fn test_rosetta003_gqa_no_fusion_in_apr() {
+        let h = ConversionTestHarness::new()
+            .with_safetensors(PygmyConfig::qwen2_gqa())
+            .import_to_apr(ImportOptions::default());
+
+        let output = h.output_path().expect("output exists");
+        let data = fs::read(output).expect("read output");
+        let reader = AprV2Reader::from_bytes(&data).expect("parse APR");
+
+        let names = reader.tensor_names();
+
+        // ROSETTA-003: Must have separate Q/K/V, never fused qkv_proj
+        assert!(
+            names.iter().any(|n| n.contains("q_proj.weight")),
+            "APR must contain separate q_proj.weight"
+        );
+        assert!(
+            names.iter().any(|n| n.contains("k_proj.weight")),
+            "APR must contain separate k_proj.weight"
+        );
+        assert!(
+            names.iter().any(|n| n.contains("v_proj.weight")),
+            "APR must contain separate v_proj.weight"
+        );
+        assert!(
+            !names.iter().any(|n| n.contains("qkv_proj")),
+            "APR must NOT contain fused qkv_proj (ROSETTA-003): found {:?}",
+            names
+                .iter()
+                .filter(|n| n.contains("qkv_proj"))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    /// ROSETTA-003: GQA K/V dimensions preserved through round-trip.
+    /// Q: [hidden_size, hidden_size], K/V: [kv_dim, hidden_size]
+    #[test]
+    fn test_rosetta003_gqa_kv_dimensions_preserved() {
+        let config = PygmyConfig::qwen2_gqa();
+        let kv_dim = config.kv_dim(); // 4 for this config
+        let hidden = config.hidden_size; // 8
+
+        let h = ConversionTestHarness::new()
+            .with_safetensors(config)
+            .import_to_apr(ImportOptions::default());
+
+        let output = h.output_path().expect("output exists");
+        let data = fs::read(output).expect("read output");
+        let reader = AprV2Reader::from_bytes(&data).expect("parse APR");
+
+        // Check Q has full hidden_size dimension
+        let q = reader
+            .get_tensor("model.layers.0.self_attn.q_proj.weight")
+            .expect("q_proj exists");
+        assert_eq!(
+            q.shape,
+            vec![hidden, hidden],
+            "Q shape must be [hidden_size, hidden_size]"
+        );
+
+        // Check K/V have reduced kv_dim
+        let k = reader
+            .get_tensor("model.layers.0.self_attn.k_proj.weight")
+            .expect("k_proj exists");
+        assert_eq!(
+            k.shape,
+            vec![kv_dim, hidden],
+            "K shape must be [kv_dim, hidden_size] for GQA"
+        );
+
+        let v = reader
+            .get_tensor("model.layers.0.self_attn.v_proj.weight")
+            .expect("v_proj exists");
+        assert_eq!(
+            v.shape,
+            vec![kv_dim, hidden],
+            "V shape must be [kv_dim, hidden_size] for GQA"
+        );
+    }
+
+    /// ROSETTA-003: Attention biases preserved in round-trip.
+    #[test]
+    fn test_rosetta003_gqa_biases_preserved() {
+        let config = PygmyConfig::qwen2_gqa();
+        let kv_dim = config.kv_dim();
+        let hidden = config.hidden_size;
+
+        let h = ConversionTestHarness::new()
+            .with_safetensors(config)
+            .import_to_apr(ImportOptions::default());
+
+        let output = h.output_path().expect("output exists");
+        let data = fs::read(output).expect("read output");
+        let reader = AprV2Reader::from_bytes(&data).expect("parse APR");
+
+        // Q bias: [hidden_size]
+        let q_bias = reader
+            .get_tensor("model.layers.0.self_attn.q_proj.bias")
+            .expect("q_proj.bias exists");
+        assert_eq!(
+            q_bias.shape,
+            vec![hidden],
+            "Q bias shape must be [hidden_size]"
+        );
+
+        // K/V bias: [kv_dim]
+        let k_bias = reader
+            .get_tensor("model.layers.0.self_attn.k_proj.bias")
+            .expect("k_proj.bias exists");
+        assert_eq!(k_bias.shape, vec![kv_dim], "K bias shape must be [kv_dim]");
+
+        let v_bias = reader
+            .get_tensor("model.layers.0.self_attn.v_proj.bias")
+            .expect("v_proj.bias exists");
+        assert_eq!(v_bias.shape, vec![kv_dim], "V bias shape must be [kv_dim]");
+    }
+
+    /// ROSETTA-003: Multi-layer GQA verified (layer 0 and layer 1 both correct).
+    #[test]
+    fn test_rosetta003_gqa_multi_layer() {
+        let config = PygmyConfig::qwen2_gqa();
+        let kv_dim = config.kv_dim();
+        let hidden = config.hidden_size;
+
+        let h = ConversionTestHarness::new()
+            .with_safetensors(config)
+            .import_to_apr(ImportOptions::default());
+
+        let output = h.output_path().expect("output exists");
+        let data = fs::read(output).expect("read output");
+        let reader = AprV2Reader::from_bytes(&data).expect("parse APR");
+
+        // Both layers must have separate Q/K/V with correct shapes
+        for layer in 0..2 {
+            let q = reader
+                .get_tensor(&format!("model.layers.{layer}.self_attn.q_proj.weight"))
+                .unwrap_or_else(|| panic!("layer {layer} q_proj missing"));
+            assert_eq!(q.shape, vec![hidden, hidden]);
+
+            let k = reader
+                .get_tensor(&format!("model.layers.{layer}.self_attn.k_proj.weight"))
+                .unwrap_or_else(|| panic!("layer {layer} k_proj missing"));
+            assert_eq!(k.shape, vec![kv_dim, hidden]);
+        }
+    }
+
+    /// ROSETTA-003: Tied embeddings flag set in APR metadata.
+    #[test]
+    fn test_rosetta003_tied_embeddings_flag() {
+        let config = PygmyConfig::qwen2_gqa_tied();
+
+        let h = ConversionTestHarness::new()
+            .with_safetensors(config)
+            .import_to_apr(ImportOptions::default());
+
+        let output = h.output_path().expect("output exists");
+        let data = fs::read(output).expect("read output");
+        let reader = AprV2Reader::from_bytes(&data).expect("parse APR");
+        let metadata = reader.metadata();
+
+        // Verify lm_head.weight was synthesized (exists in APR)
+        assert!(
+            reader.get_tensor("lm_head.weight").is_some(),
+            "lm_head.weight should be synthesized from embed_tokens"
+        );
+
+        // Verify tied_embeddings flag is set
+        let is_tied = metadata
+            .custom
+            .get("tied_embeddings")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        assert!(
+            is_tied,
+            "ROSETTA-003: tied_embeddings flag must be set when lm_head was synthesized"
+        );
+    }
+
+    /// ROSETTA-003: Tensor count matches expected (no fusion reduces count).
+    #[test]
+    fn test_rosetta003_gqa_tensor_count() {
+        let config = PygmyConfig::qwen2_gqa();
+
+        let h = ConversionTestHarness::new()
+            .with_safetensors(config)
+            .import_to_apr(ImportOptions::default());
+
+        let output = h.output_path().expect("output exists");
+        let data = fs::read(output).expect("read output");
+        let reader = AprV2Reader::from_bytes(&data).expect("parse APR");
+
+        let names = reader.tensor_names();
+
+        // Expected per layer: q_proj, k_proj, v_proj, o_proj (weights)
+        //                    + q_proj, k_proj, v_proj (biases)
+        //                    + input_layernorm, post_attention_layernorm
+        //                    + gate_proj, up_proj, down_proj
+        // = 4 + 3 + 2 + 3 = 12 per layer
+        // Plus: embed_tokens, lm_head, model.norm = 3 global
+        // 2 layers * 12 + 3 = 27 total
+        assert_eq!(
+            names.len(),
+            27,
+            "GQA model should have 27 tensors (no fusion), got: {}\nTensors: {:?}",
+            names.len(),
+            names
         );
     }
 }

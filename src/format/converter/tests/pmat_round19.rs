@@ -25,7 +25,7 @@ mod tests {
         let mut tensors = BTreeMap::new();
         tensors.insert(
             "model.embed_tokens.weight".to_string(),
-            (vec![0.0; 10], vec![10])
+            (vec![0.0; 10], vec![10]),
         );
 
         // Mock User Metadata (simulating SafeTensors __metadata__)
@@ -46,19 +46,26 @@ mod tests {
             &options,
             None, // No tokenizer
             None, // No config
-            &user_metadata
-        ).expect("Failed to write APR file");
+            &user_metadata,
+        )
+        .expect("Failed to write APR file");
 
         // Read back and verify
         let bytes = fs::read(&output_path).expect("Failed to read APR file");
-        
+
         // Parse metadata (JSON header is at the end of the file or beginning? APR v2 has it at end typically or header)
         // We'll just regex for it to be robust against format changes in this test
         let content = String::from_utf8_lossy(&bytes);
-        
+
         // Check for source_metadata
-        assert!(content.contains("source_metadata"), "APR missing source_metadata field");
-        assert!(content.contains("training_run_id"), "APR missing custom key");
+        assert!(
+            content.contains("source_metadata"),
+            "APR missing source_metadata field"
+        );
+        assert!(
+            content.contains("training_run_id"),
+            "APR missing custom key"
+        );
         assert!(content.contains("run_12345"), "APR missing custom value");
         assert!(content.contains("base_model"), "APR missing base_model key");
 
@@ -90,10 +97,10 @@ mod tests {
         };
 
         if !options_strict.architecture.is_inference_verified() && options_strict.strict {
-             // This represents the error path
-             assert!(true, "Strict import correctly flagged unverified arch");
+            // This represents the error path
+            assert!(true, "Strict import correctly flagged unverified arch");
         } else {
-             panic!("Strict import of BERT should have failed check");
+            panic!("Strict import of BERT should have failed check");
         }
 
         // Default (permissive) mode allows unverified architectures with warning
@@ -103,10 +110,10 @@ mod tests {
         };
 
         if !options_permissive.architecture.is_inference_verified() && options_permissive.strict {
-             panic!("Permissive import of BERT should have passed check");
+            panic!("Permissive import of BERT should have passed check");
         } else {
-             // This represents the success path
-             assert!(true, "Permissive import correctly bypassed check");
+            // This represents the success path
+            assert!(true, "Permissive import correctly bypassed check");
         }
     }
 }

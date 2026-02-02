@@ -92,3 +92,304 @@
 ### Notable Architecture Finding
 
 The `infer_model_config_from_tensors()` function (import.rs:716) maps `model.layers` → `"qwen2"` for ALL models using that naming pattern. This means `PygmyConfig::llama_style()` is inferred as `"qwen2"`, which is verified. This is a naming ambiguity — not a defect — but it means `test_gh196_auto_arch_import` tests "qwen2-classified-as-verified" rather than "llama-classified-as-verified". Both architectures share `model.layers.*` naming.
+
+---
+
+## Phase 6: Round-Trip Conversion Integrity (PMAT-ROSETTA-002)
+
+**Date:** 2026-02-02
+**Status:** FAILED — All 6 conversion paths produce incorrect output for real models
+**Severity:** P0 — RELEASE BLOCKING
+
+### Discovery Context
+
+During Qwen2.5-Coder-1.5B-Instruct pipeline testing (Section 30.5 of showcase spec),
+the self-converted GGUF crashed at inference:
+
+```
+error: Model architecture not supported for GPU-resident path
+       (requires separate Q/K/V, SwiGLU, RMSNorm)
+```
+
+### Root Cause: PMAT-101 QKV Fusion Without Corresponding Unfusion
+
+**Location:** `src/format/converter/write.rs:72-136`
+
+The APR writer (PMAT-101) pre-fuses separate Q/K/V into a single `qkv_proj` tensor
+for realizar inference performance. This is a **lossy, irreversible transformation**
+performed during every SafeTensors/GGUF → APR conversion:
+
+```
+SafeTensors: q_proj [1536,1536] + k_proj [256,1536] + v_proj [256,1536] = 3 tensors
+APR:         qkv_proj [2048,1536]                                       = 1 tensor
+```
+
+No code exists to split QKV back into separate Q/K/V during export.
+
+### Falsification Checks
+
+| Check | ID | Result | Severity | Finding |
+|-------|----|--------|----------|---------|
+| QKV Fusion Detection | F-RT-01 | **FAILED** | P0 | SafeTensors (338 tensors) → APR (227 tensors): 111 tensors lost to QKV fusion across 28 layers. No test catches this because PygmyConfig doesn't trigger fusion. |
+| APR→GGUF Tensor Names | F-RT-02 | **FAILED** | P0 | Exported GGUF contains `attn_qkv.weight` instead of standard `attn_q.weight` + `attn_k.weight` + `attn_v.weight`. Both llama.cpp and realizar reject merged QKV. |
+| APR→SafeTensors Names | F-RT-03 | **FAILED** | P0 | Exported SafeTensors contains `qkv_proj.weight` instead of `q_proj.weight` + `k_proj.weight` + `v_proj.weight`. HuggingFace transformers cannot load this. |
+| Multi-Hop Idempotency | F-RT-04 | **FAILED** | P0 | Chain `ST→APR→GGUF→APR→ST` produces 227 tensors instead of 338. Damage is permanent — QKV fusion cannot be reversed without dimension metadata. |
+| PygmyConfig Trigger | F-RT-05 | **FAILED** | HIGH | PygmyConfig (hidden=4, layers=1) does NOT trigger PMAT-101 fusion code path. All existing round-trip tests pass vacuously — they never exercise the fusion/unfusion path that real models hit. |
+
+### Impact on Conversion Matrix
+
+| Path | Status | Failure |
+|------|--------|---------|
+| SafeTensors → APR | **LOSSY** | Q/K/V fused into QKV |
+| APR → SafeTensors | **BROKEN** | Outputs `qkv_proj` (non-standard) |
+| APR → GGUF | **BROKEN** | Outputs `attn_qkv` (non-standard) |
+| GGUF → APR | **LOSSY** | Separate Q/K/V fused into QKV |
+| SafeTensors → GGUF (via APR) | **BROKEN** | Inherits ST→APR + APR→GGUF |
+| GGUF → SafeTensors (via APR) | **BROKEN** | Inherits GGUF→APR + APR→ST |
+
+**0 of 6 paths produce correct output for GQA models (Qwen2, LLaMA 3, Mistral, etc.).**
+
+### Remediation Required
+
+1. **Immediate (P0):** Add QKV splitting to `export_to_gguf()` and SafeTensors export
+   using APR metadata (`num_heads`, `num_kv_heads`, `hidden_size`) to compute split dimensions.
+2. **Test Coverage:** Add `PygmyConfig::qwen2_gqa()` that triggers PMAT-101 fusion,
+   then test round-trip with tensor NAME equality (not just data fidelity).
+3. **Architecture Decision:** Evaluate whether PMAT-101 fusion belongs in APR writer
+   or should be deferred to realizar load-time (Option C: store separate, fuse at runtime).
+
+### Updated Consolidated Results
+
+| Phase | Checks | Pass | Fail | Design | Pass Rate |
+|-------|--------|------|------|--------|-----------|
+| 1: Jidoka | 5 | 2 | 0 | 3 | 100% |
+| 2: Standard Work | 5 | 4 | 1 | 0 | 80% |
+| 3: GH-196 Regression | 3 | 3 | 0 | 0 | 100% |
+| 4: Toyota Way | 2 | 2 | 0 | 0 | 100% |
+| 5: Edge Cases | 3 | 3 | 0 | 0 | 100% |
+| **6: Round-Trip (NEW)** | **5** | **0** | **5** | **0** | **0%** |
+| **TOTAL** | **23** | **14** | **6** | **3** | **61%** |
+
+**Previous Status:** CONDITIONAL PASS (94%)
+**Updated Status:** FAILED (61%) — RELEASE BLOCKED by Phase 6
+
+---
+
+## Phase 7: Format-Blind Loading (GH-192)
+
+**Date:** 2026-02-02
+**Related Issue:** [GH-192](https://github.com/paiml/aprender/issues/192) — APR 500x
+slower than GGUF (0.5 vs 270 tok/s)
+**Status:** FAILED — No pre-load inspection, cannot handle multiple model sizes
+
+### Connection to Round-Trip Breakage
+
+GH-192 and the QKV fusion trap (Phase 6) share the same architectural root cause:
+**the pipeline does not inspect model structure before committing to a code path.**
+
+| Symptom | Root Cause |
+|---------|-----------|
+| PMAT-101 fuses Q/K/V blindly | No inspection of whether export path can unfuse |
+| APR inference 500x slower than GGUF | No inspection to select GPU kernels, quant type, attention structure |
+| Cannot load different model sizes | No inspection to detect hidden_size, num_heads, num_kv_heads before allocation |
+| Stale config.json in pacha cache (GH-198) | No per-model inspection; flat cache shares one config across all models |
+
+### Falsification Checks
+
+| Check | ID | Result | Severity | Finding |
+|-------|----|--------|----------|---------|
+| Pre-Load Inspection | F-GH192-01 | **FAILED** | P1 | `realizar::Model::load_safetensors()` reads tensors without first calling `FormatType::from_magic()` or `RosettaStone::inspect()`. It hardcodes architecture assumptions. |
+| Model Size Switching | F-GH192-02 | **FAILED** | P1 | Loading a 0.5B model (MHA, 14 heads, hidden=896) then a 1.5B model (GQA, 12 heads, 2 KV heads, hidden=1536) reuses stale config. The pacha cache stores one `config.json` for all models — loading a different size requires manual cache invalidation. |
+| GPU Kernel Selection | F-GH192-03 | **FAILED** | P1 | APR loader uses generic F32 path regardless of tensor quantization type. GGUF loader inspects `general.file_type` metadata to select Q4_K/Q6_K dequant kernels. This metadata-driven dispatch is missing from APR path. |
+
+### Proposed Fix: Inspect-Before-Load
+
+The Rosetta Stone module already has per-format inspection (`inspect()` →
+`InspectionReport`). The fix is to make inspection **mandatory** before load:
+
+```
+1. detect_format(path) → FormatType
+2. inspect(path)       → ModelManifest { arch, hidden, heads, kv_heads, quant, ... }
+3. select_loader(manifest) → specialized loader with pre-allocated buffers
+4. load(path, loader)  → model ready for inference
+```
+
+The same `ModelManifest` provides metadata for:
+- QKV splitting during export (fixes Phase 6)
+- GPU kernel selection (fixes GH-192 throughput)
+- Correct buffer pre-allocation per model size
+
+### Updated Final Consolidated Results
+
+| Phase | Checks | Pass | Fail | Design | Pass Rate |
+|-------|--------|------|------|--------|-----------|
+| 1: Jidoka | 5 | 2 | 0 | 3 | 100% |
+| 2: Standard Work | 5 | 4 | 1 | 0 | 80% |
+| 3: GH-196 Regression | 3 | 3 | 0 | 0 | 100% |
+| 4: Toyota Way | 2 | 2 | 0 | 0 | 100% |
+| 5: Edge Cases | 3 | 3 | 0 | 0 | 100% |
+| 6: Round-Trip (PMAT-ROSETTA-002) | 5 | 0 | 5 | 0 | 0% |
+| **7: Format-Blind Loading (GH-192)** | **3** | **0** | **3** | **0** | **0%** |
+| **TOTAL** | **26** | **14** | **9** | **3** | **54%** |
+
+**Final Status:** FAILED (54%) — RELEASE BLOCKED by Phase 6 + Phase 7
+
+---
+
+## Phase 8: Full Pipeline Certification — GH-199 Evidence
+
+**Date:** 2026-02-02
+**Related Issue:** [GH-199](https://github.com/paiml/aprender/issues/199) — APR 1.5B:
+dequantize `lm_head.weight` fails, inference 8x slower than GGUF, GPU output garbage
+**Status:** FAILED — 3 P0/P1 bugs, MQS 283/1000 (BLOCKED)
+**Model:** Qwen/Qwen2.5-Coder-1.5B-Instruct (28 layers, hidden=1536, GQA 12/2kv)
+
+### Context
+
+GH-199 provides the empirical certification data that confirms Phases 6 and 7 in
+production. The `apr-qa certify --subprocess` tool ran 32 falsification scenarios
+against all three formats (GGUF, APR, SafeTensors) on both backends (CPU, GPU).
+
+### Falsification Checks
+
+| Check | ID | Result | Severity | Finding |
+|-------|----|--------|----------|---------|
+| Q6K Dequantization | F-GH199-01 | **FAILED** | P0 | `apr convert model.apr -o model.safetensors` crashes on `lm_head.weight` (Q6K dtype=14, 191MB). APR→SafeTensors round-trip is completely broken for quantized models. The reverse conversion path does not exist for Q6K tensors. |
+| APR Multi-Threading | F-GH199-02 | **FAILED** | P1 | GGUF achieves 358% CPU utilization (multi-threaded), APR stuck at 99% (single-threaded). GGUF: 16.0 tok/s, APR: 1.9 tok/s. The APR loader does not inspect model metadata to configure thread pool size. |
+| APR GPU Correctness | F-GH199-03 | **FAILED** | P1 | GGUF GPU: "2 + 2 equals 4." APR GPU: "2T". Model pre-caches 5596 MB on GPU (197 quantized + 112 F32 tensors) but produces garbage. Consistent with LAYOUT-001 kernel mismatch or incorrect Q4K/Q6K dequant during GPU matmul. |
+| APR GPU vs CPU Perf | F-GH199-04 | **FAILED** | P1 | APR GPU (0.5 tok/s) is **slower** than APR CPU (1.9 tok/s). GPU codepath adds overhead without benefit — the kernels selected are wrong for APR's tensor layout. |
+| Conversion Round-Trip | F-GH199-05 | **FAILED** | P0 | 12 of 12 F-CONV-* scenarios failed. APR→SafeTensors crashes (dequant). APR→GGUF produces non-standard tensor names (Phase 6 QKV fusion). SafeTensors→APR→SafeTensors loses tensor identity. |
+
+### Throughput Evidence (12 passing inference tests from GH-199)
+
+```
+Gate           Format         Backend   tok/s   Duration
+──────────────────────────────────────────────────────────
+F-A1-001       gguf           cpu         4.5     4948ms
+F-A1-001       safetensors    cpu         0.4    14282ms
+F-A2-001       gguf           gpu         4.3     5186ms
+F-A2-001       safetensors    gpu         0.4    14093ms
+F-A3-001       gguf           cpu         4.5     4997ms
+F-A3-001       safetensors    cpu         0.4    13544ms
+F-A4-001       gguf           gpu         5.2     4296ms
+F-A4-001       safetensors    gpu         0.5    12392ms
+F-A5-001       gguf           cpu         5.2     4316ms
+F-A5-001       safetensors    cpu         0.5    12420ms
+F-A6-001       gguf           gpu         5.4     4190ms
+F-A6-001       safetensors    gpu         0.5    12297ms
+```
+
+Note: APR format not in this table because `apr-qa` could not create APR at test time
+(conversion failure). The 1.9/0.5 tok/s figures come from manual `apr run` testing
+documented in GH-199.
+
+### Connection to Prior Phases
+
+| GH-199 Bug | Prior Phase | Shared Root Cause |
+|------------|-------------|-------------------|
+| 199-A: Q6K dequant crash | Phase 6 (QKV Fusion) | Import transforms are one-way — no reverse path for either QKV unfusion or Q6K dequantization |
+| 199-B: APR 8x slower | Phase 7 (GH-192) | No pre-load inspection → single-threaded generic path instead of metadata-driven thread pool |
+| 199-C: GPU garbage | Phase 7 (GH-192) | No pre-load inspection → wrong GPU kernel for tensor layout and quantization type |
+
+### Certification Record
+
+```csv
+model_id,mqs_score,grade,status,g1,g2,g3,g4,tps_gguf_cpu,tps_gguf_gpu,tps_apr_cpu,tps_apr_gpu
+Qwen/Qwen2.5-Coder-1.5B-Instruct,283,F,BLOCKED,true,true,false,true,16.0,118.7,1.9,0.5
+```
+
+### Final Consolidated Results (All Phases)
+
+| Phase | Checks | Pass | Fail | Design | Pass Rate |
+|-------|--------|------|------|--------|-----------|
+| 1: Jidoka | 5 | 2 | 0 | 3 | 100% |
+| 2: Standard Work | 5 | 4 | 1 | 0 | 80% |
+| 3: GH-196 Regression | 3 | 3 | 0 | 0 | 100% |
+| 4: Toyota Way | 2 | 2 | 0 | 0 | 100% |
+| 5: Edge Cases | 3 | 3 | 0 | 0 | 100% |
+| 6: Round-Trip (PMAT-ROSETTA-002) | 5 | 0 | 5 | 0 | 0% |
+| 7: Format-Blind Loading (GH-192) | 3 | 0 | 3 | 0 | 0% |
+| **8: Full Certification (GH-199)** | **5** | **0** | **5** | **0** | **0%** |
+| **TOTAL** | **31** | **14** | **14** | **3** | **45%** |
+
+**Final Status:** FAILED (45%) — RELEASE BLOCKED by Phases 6 + 7 + 8
+
+---
+
+## Phase 9: Architectural Analysis — Industry Parity Assessment (PMAT-ROSETTA-003)
+
+**Date:** 2026-02-02
+**Status:** ANALYSIS COMPLETE — Architecture decision required before implementation
+**Methodology:** Comparative industry survey + Toyota Way + Popperian falsification
+**Academic Citations:** 30 peer-reviewed sources (see rosetta-testing.md References)
+
+### Context
+
+Following the Phase 6-8 failures, a deep architectural analysis was conducted
+comparing the APR conversion pipeline against industry-leading systems: llama.cpp,
+vLLM, TensorRT-LLM, ONNX, and MLIR. The analysis was grounded in Toyota
+Production System principles (Ohno 1988, Liker 2004, Shingo 1986) and Popperian
+falsification methodology (Popper 1959, Mayo 2018, Claessen & Hughes 2000).
+
+### Key Finding: APR is the Only System That Fuses QKV Without Unfusion Metadata
+
+| System | QKV Storage | Fusion Point | Reversible? |
+|--------|-------------|-------------|-------------|
+| llama.cpp | Separate Q/K/V | Never fused in storage | N/A |
+| vLLM | Separate Q/K/V | Runtime (QKVParallelLinear) | Yes |
+| TensorRT-LLM | Fused qkv.weight | Storage (with full metadata) | Yes |
+| ONNX | Operator-defined | Runtime | Yes |
+| **APR (current)** | **Fused qkv_proj** | **Import time (PMAT-101)** | **No** |
+
+### TPS Principle Violations Identified
+
+| Principle | Violation | Citation |
+|-----------|-----------|---------|
+| **Jidoka** | PMAT-101 performs lossy QKV fusion silently — no alarm, no halt | Ohno (1988), Danovaro et al. (2008) |
+| **Heijunka** | Canonical form (APR) introduces irreversible transformation instead of eliminating representation anomalies | Codd (1970), Liker (2004) |
+| **Genchi Genbutsu** | No pre-load inspection — pipeline commits to code path without inspecting actual artifact | Staats et al. (2011) |
+| **Poka-Yoke** | No type-level prevention of lossy conversion — `convert()` and `convert_lossy()` use same API | Shingo (1986) |
+| **Standard Work** | No documented conversion protocol — each path has ad-hoc validation | Ohno (1988) |
+| **Muda** | Dequant→requant round-trip for Q4K when raw byte preservation available | Foidl et al. (2024) |
+
+### Falsification Severity Assessment
+
+| Severity Criterion (Mayo 2018) | Current Level | Required Level |
+|-------------------------------|---------------|----------------|
+| Input adversariness | LOW (PygmyConfig only) | HIGH (NaN, Inf, denormals, GQA configs) |
+| Path coverage | LOW (no multi-hop) | HIGH (all 720 permutations) |
+| Comparison granularity | LOW (statistics only) | HIGH (per-value comparison) |
+| Cross-format differential | NONE | HIGH (same model through all formats) |
+| Mutation score on converter code | UNKNOWN | Target 85%+ |
+
+### Recommended Architecture: Option C (Store Separate, Fuse at Runtime)
+
+Aligned with vLLM and llama.cpp consensus. Full details in rosetta-testing.md
+Section "Part IV: Recommended Architecture."
+
+### Assessment Checks
+
+| Check | ID | Result | Finding |
+|-------|----|--------|---------|
+| Industry parity | F-ARCH-01 | **FAILED** | APR is the only system that performs irreversible QKV fusion during import without storing unfusion metadata |
+| TPS compliance | F-ARCH-02 | **FAILED** | 6 of 6 TPS principles violated (Jidoka, Heijunka, Genchi Genbutsu, Poka-Yoke, Standard Work, Muda) |
+| Test severity | F-ARCH-03 | **FAILED** | Current tests do not constitute "severe tests" per Mayo (2018) — PygmyConfig does not exercise critical code paths |
+| Canonical form correctness | F-ARCH-04 | **FAILED** | APR canonical form violates Codd's normalization theory — introduces representation anomaly (QKV fusion) rather than eliminating them |
+| Conversion protocol | F-ARCH-05 | **FAILED** | No standardized conversion protocol — each path has different validation, transformation, and verification steps |
+
+### Final Consolidated Results (All Phases)
+
+| Phase | Checks | Pass | Fail | Design | Pass Rate |
+|-------|--------|------|------|--------|-----------|
+| 1: Jidoka | 5 | 2 | 0 | 3 | 100% |
+| 2: Standard Work | 5 | 4 | 1 | 0 | 80% |
+| 3: GH-196 Regression | 3 | 3 | 0 | 0 | 100% |
+| 4: Toyota Way | 2 | 2 | 0 | 0 | 100% |
+| 5: Edge Cases | 3 | 3 | 0 | 0 | 100% |
+| 6: Round-Trip (PMAT-ROSETTA-002) | 5 | 0 | 5 | 0 | 0% |
+| 7: Format-Blind Loading (GH-192) | 3 | 0 | 3 | 0 | 0% |
+| 8: Full Certification (GH-199) | 5 | 0 | 5 | 0 | 0% |
+| **9: Architecture Analysis (NEW)** | **5** | **0** | **5** | **0** | **0%** |
+| **TOTAL** | **36** | **14** | **19** | **3** | **39%** |
+
+**Final Status:** FAILED (39%) — RELEASE BLOCKED by Phases 6 + 7 + 8 + 9

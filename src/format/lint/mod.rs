@@ -497,7 +497,7 @@ fn lint_gguf_file(path: &Path) -> Result<LintReport> {
         info.tensors.push(TensorLintInfo {
             name: meta.name.clone(),
             size_bytes: num_elements * 4, // approximate
-            alignment: 32,               // GGUF uses 32-byte alignment
+            alignment: 32,                // GGUF uses 32-byte alignment
             is_compressed: false,
         });
     }
@@ -509,9 +509,10 @@ fn lint_gguf_file(path: &Path) -> Result<LintReport> {
 fn lint_safetensors_file(path: &Path) -> Result<LintReport> {
     use crate::serialization::safetensors::MappedSafeTensors;
 
-    let mapped = MappedSafeTensors::open(path).map_err(|e| crate::error::AprenderError::FormatError {
-        message: format!("SafeTensors open failed: {e}"),
-    })?;
+    let mapped =
+        MappedSafeTensors::open(path).map_err(|e| crate::error::AprenderError::FormatError {
+            message: format!("SafeTensors open failed: {e}"),
+        })?;
 
     let mut info = ModelLintInfo::default();
 
@@ -523,15 +524,17 @@ fn lint_safetensors_file(path: &Path) -> Result<LintReport> {
     // Check the file-level __metadata__ if accessible via raw header parse
     let data = std::fs::read(path)?;
     if data.len() >= 8 {
-        let header_len = u64::from_le_bytes(
-            data[0..8].try_into().unwrap_or([0u8; 8]),
-        ) as usize;
+        let header_len = u64::from_le_bytes(data[0..8].try_into().unwrap_or([0u8; 8])) as usize;
         if data.len() >= 8 + header_len {
-            if let Ok(header) = serde_json::from_slice::<serde_json::Value>(&data[8..8 + header_len]) {
+            if let Ok(header) =
+                serde_json::from_slice::<serde_json::Value>(&data[8..8 + header_len])
+            {
                 if let Some(meta) = header.get("__metadata__").and_then(|v| v.as_object()) {
                     info.has_license = meta.contains_key("license");
-                    info.has_model_card = meta.contains_key("description") || meta.contains_key("model_card");
-                    info.has_provenance = meta.contains_key("author") || meta.contains_key("source");
+                    info.has_model_card =
+                        meta.contains_key("description") || meta.contains_key("model_card");
+                    info.has_provenance =
+                        meta.contains_key("author") || meta.contains_key("source");
                 }
             }
         }
