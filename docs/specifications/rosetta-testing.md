@@ -117,9 +117,9 @@ We added 38 tests to ensure the dispatch logic is robust and falsifiable.
 | `format::lint` | 67 | 79 | +12 multi-format lint tests |
 | `commands::canary` | 35 | 39 | +4 `load_tensor_data` tests |
 | `commands::validate`| 16 | 20 | +4 GGUF/SafeTensors dispatch tests |
-| `commands::trace` | 28 | 28 | ⚠️ GGUF/ST dispatch untested (only negative tests with garbage data) |
-| `commands::inspect` | 30 | 30 | ⚠️ GGUF/ST dispatch untested (`run_rosetta_inspect()` never called in tests) |
-| **Total** | **205** | **243** | **+38 new multi-format tests** |
+| `commands::trace` | 28 | 34 | +6 valid GGUF/ST dispatch tests (Audit #3 fix) |
+| `commands::inspect` | 30 | 36 | +6 valid GGUF/ST dispatch + `run_rosetta_inspect()` tests (Audit #3 fix) |
+| **Total** | **205** | **255** | **+50 new multi-format tests** (38 original + 12 Audit #3 fix) |
 
 ### Key Verified Capabilities (Jidoka)
 
@@ -219,10 +219,10 @@ cargo test --lib -- test_factory::harness::test_f_ test_factory::harness::test_t
 |---|----------|--------|--------|----------|----------|
 | 1 | **Standard Work** | Search for harness bypass in converter tests | ⚠️ **Partially Refuted** | MEDIUM | 19/368 tests (5.2%) use harness. All *new* tests (post-Feb 1) comply. 349 pre-existing tests never migrated. |
 | 2 | **Genchi Genbutsu** | Verify F-HAR-01 corrupts on disk, not in memory | ✅ **Corroborated** | — | Test reads APR from disk (`fs::read`), XOR-flips 16 bytes at `data_offset`, writes back via `OpenOptions::new().write(true).truncate(true)`, then `verify_apr()` re-reads from disk independently. |
-| 3 | **GGUF/ST Coverage** | Check trace.rs/inspect.rs dispatch branch coverage | ❌ **Refuted** | HIGH | trace.rs: 2 tests create garbage data (`"not valid gguf"`), never exercise `trace_gguf()`/`trace_safetensors()`. inspect.rs: 0 GGUF/ST tests; `run_rosetta_inspect()` never called. Spec table corrected. |
+| 3 | **GGUF/ST Coverage** | Check trace.rs/inspect.rs dispatch branch coverage | ✅ **Fixed** | — | Was refuted: garbage-data-only tests. Fixed: 6 trace + 6 inspect tests with valid GGUF/SafeTensors files exercise `trace_gguf()`, `trace_safetensors()`, `run_rosetta_inspect()`. |
 | 4 | **111 Missing Tensors** | Reproduce ST→APR→GGUF tensor count mismatch | ✅ **Corroborated (Fixed)** | — | PMAT-101 fusion completely removed from `write.rs`. `unfuse_qkv_tensors()` retained for legacy backward compatibility only. `test_rosetta003_gqa_tensor_count` + T-QKV-03/04 confirm preservation. Bug is no longer reproducible. |
 | 5 | **PygmyConfig Blind Spot** | Check if harness configs trigger config inference | ⚠️ **Partially Corroborated** | LOW | All PygmyConfig constructors use tiny dims (hidden=2-8). None trigger `infer_model_config_from_tensors()` (requires head_dim ∈ {64,128,96,80}). But `test_f_infer_config_realistic_dimensions` (hidden=128) tests inference separately. The claim "tests pass vacuously" is FALSE for fusion (PMAT-101 is gone) but TRUE for config inference. |
-| 6 | **Latency Budget** | Check if Phase 2 runtime fusion has loading time budget | ❌ **Refuted** | HIGH | APR loading budgets exist (50ms for 10MB, automotive ISO 26262 ASIL-B). Cold-start targets exist elsewhere (6.7ms–100ms). But Phase 2 runtime QKV fusion cost is **not analyzed** against any budget. For 70B (140GB): estimated 3s read + fusion overhead — no SLA defined. |
+| 6 | **Latency Budget** | Check if Phase 2 runtime fusion has loading time budget | ✅ **Fixed** | — | Was refuted: no budget. Fixed: Phase 2 now specifies per-model-size fusion cost table (0.5B→70B), SLA constraints (Lambda <100ms, interactive <5s), and lazy-fusion requirement for >7B models. |
 | 7 | **num_kv_heads Safety** | Check if Option A panics on legacy models | ✅ **Corroborated (Safe)** | — | `num_kv_heads` is `Option<usize>` with `#[serde(default)]`. All code paths use `.unwrap_or(num_heads)` fallback. No panic possible. Silent corruption risk if legacy APR has fused QKV + missing metadata — function returns fused tensors unchanged (safe early return, not garbage). |
 | 8 | **Citation [T11]** | Verify Foidl et al. (2024) paper and statistics | ✅ **Corroborated** | — | Paper verified: DOI `10.1016/j.jss.2023.111855`, JSS Vol. 207. "33% data types" and "35% data cleaning" statistics confirmed from paper's findings. Also available on arXiv (2309.07067). |
 | 9 | **/tmp/ Ban** | Check spec and code for /tmp/ hypocrisy | ⚠️ **Partially Refuted** | LOW | Spec bans `/tmp/` paths (line 32). Code has 3 violations: `converter/tests/core.rs:421` and `:725-726` (nonexistent file tests), `rosetta/tests.rs:332` (no-extension test). `p091_pdf_imposter_test` demonstrates the correct pattern (`std::env::temp_dir()`). |
@@ -231,18 +231,18 @@ cargo test --lib -- test_factory::harness::test_f_ test_factory::harness::test_t
 
 | Phase | Items | Refuted | Corroborated | Partial |
 |-------|-------|---------|-------------|---------|
-| 1. Harness | 3 | 1 (#3) | 1 (#2) | 1 (#1) |
+| 1. Harness | 3 | 0 (was 1, #3 fixed) | 2 (#2, #3) | 1 (#1) |
 | 2. Release Block | 2 | 0 | 1 (#4) | 1 (#5) |
-| 3. Architecture | 2 | 1 (#6) | 1 (#7) | 0 |
+| 3. Architecture | 2 | 0 (was 1, #6 fixed) | 2 (#6, #7) | 0 |
 | 4. Integrity | 2 | 0 | 1 (#8) | 1 (#9) |
-| **Total** | **9** | **2** | **4** | **3** |
+| **Total** | **9** | **0** | **6** | **3** |
 
 ## Required Actions
 
-### Must Fix (from Refuted claims)
+### Fixed (previously Refuted)
 
-1. **#3 — GGUF/ST dispatch coverage**: Add real GGUF/SafeTensors tests for `trace.rs` and `inspect.rs`. The `run_rosetta_inspect()` and `trace_gguf()`/`trace_safetensors()` code paths are untested. Create valid test files via `ConversionTestHarness`, not garbage data.
-2. **#6 — Phase 2 latency budget**: Define loading time SLA for runtime QKV fusion. Document worst-case latency per model size (1B, 7B, 13B, 70B). Connect Phase 2 to existing cold-start constraints (6.7ms–100ms).
+1. ~~**#3 — GGUF/ST dispatch coverage**~~ **FIXED:** Added 6 trace + 6 inspect tests with valid GGUF/SafeTensors files. `trace_gguf()`, `trace_safetensors()`, and `run_rosetta_inspect()` now exercised.
+2. ~~**#6 — Phase 2 latency budget**~~ **FIXED:** Phase 2 now specifies per-model-size fusion cost table (0.5B→70B), SLA constraints (Lambda <100ms, interactive <5s), and lazy-fusion requirement for >7B models.
 
 ### Should Fix (from Partially Refuted claims)
 
@@ -924,6 +924,32 @@ APR Canonical Form (v3):
 
 3. **Phase 2 (realizar):** Move QKV fusion to realizar's model loading path.
    `Model::load_apr()` concatenates Q/K/V into fused tensor at runtime.
+
+   **Loading Time Budget (Audit #6 fix):**
+
+   QKV fusion at load time is a memory-bandwidth-bound operation: concatenating
+   3 tensors per layer requires reading Q, K, V and writing QKV. The cost is
+   `2 × (q_dim + kv_dim + kv_dim) × hidden_size × 4 bytes × num_layers` of
+   memory traffic (read + write).
+
+   | Model Size | Layers | Hidden | Fusion Data | @50 GB/s | Total Load + Fusion |
+   |-----------|--------|--------|-------------|----------|---------------------|
+   | 0.5B | 24 | 896 | ~37 MB | <1 ms | <50 ms |
+   | 1.5B | 28 | 1536 | ~158 MB | ~3 ms | <100 ms |
+   | 7B | 32 | 4096 | ~1.5 GB | ~30 ms | <500 ms |
+   | 13B | 40 | 5120 | ~3.1 GB | ~62 ms | <1 s |
+   | 70B | 80 | 8192 | ~16 GB | ~320 ms | <5 s |
+
+   **Constraints:**
+   - Lambda/serverless cold-start SLA (<100 ms): Only 0.5B–1.5B models qualify.
+     Larger models require pre-fused weight caches or lazy fusion.
+   - Interactive cold-start SLA (<5 s): All models up to 70B qualify.
+   - Inference latency: Fusion is one-time at load, zero cost per token.
+
+   **Implementation requirement:** For models >7B, fusion MUST be either:
+   (a) lazy per-layer (fuse on first forward pass, amortized), or
+   (b) pre-computed during `apr import` with a `--prefuse` flag that writes
+   fused weights alongside separate Q/K/V (belt-and-suspenders).
 
 4. **Phase 3 (Testing):** Implement full property-based + metamorphic +
    differential test suite per Section III.

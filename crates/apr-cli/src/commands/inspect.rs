@@ -1142,4 +1142,128 @@ mod tests {
         assert!(!flags.encrypted);
         assert!(!flags.sharded);
     }
+
+    // ================================================================
+    // Audit #3 fix: Real GGUF/SafeTensors dispatch tests
+    // These exercise run_rosetta_inspect() with valid data.
+    // ================================================================
+
+    /// Build a minimal valid GGUF file for inspect tests.
+    fn build_inspect_gguf() -> NamedTempFile {
+        use aprender::format::gguf::{export_tensors_to_gguf, GgmlType, GgufTensor, GgufValue};
+        use std::io::BufWriter;
+
+        let file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
+        let mut writer = BufWriter::new(&file);
+
+        let tensors = vec![
+            GgufTensor {
+                name: "token_embd.weight".to_string(),
+                shape: vec![4, 8],
+                dtype: GgmlType::F32,
+                data: vec![0u8; 4 * 8 * 4],
+            },
+            GgufTensor {
+                name: "blk.0.attn_q.weight".to_string(),
+                shape: vec![8, 8],
+                dtype: GgmlType::F32,
+                data: vec![0u8; 8 * 8 * 4],
+            },
+        ];
+
+        let metadata = vec![
+            ("general.architecture".to_string(), GgufValue::String("llama".to_string())),
+            ("general.name".to_string(), GgufValue::String("test-model".to_string())),
+            ("llama.block_count".to_string(), GgufValue::Uint32(1)),
+            ("llama.embedding_length".to_string(), GgufValue::Uint32(8)),
+        ];
+
+        export_tensors_to_gguf(&mut writer, &tensors, &metadata)
+            .expect("write GGUF");
+        drop(writer);
+        file
+    }
+
+    /// Build a minimal valid SafeTensors file for inspect tests.
+    fn build_inspect_safetensors() -> NamedTempFile {
+        let tensors: Vec<(&str, Vec<usize>, usize)> = vec![
+            ("model.embed_tokens.weight", vec![8, 4], 32),
+            ("model.layers.0.self_attn.q_proj.weight", vec![4, 4], 16),
+            ("lm_head.weight", vec![8, 4], 32),
+        ];
+
+        let mut data_bytes = Vec::new();
+        let mut header_map = serde_json::Map::new();
+        let mut offset = 0usize;
+
+        for (name, shape, n_elements) in &tensors {
+            let byte_len = n_elements * 4; // f32 = 4 bytes
+            let end = offset + byte_len;
+
+            let mut entry = serde_json::Map::new();
+            entry.insert("dtype".to_string(), serde_json::json!("F32"));
+            entry.insert("shape".to_string(), serde_json::json!(shape));
+            entry.insert("data_offsets".to_string(), serde_json::json!([offset, end]));
+            header_map.insert(name.to_string(), serde_json::Value::Object(entry));
+
+            data_bytes.extend(vec![0u8; byte_len]);
+            offset = end;
+        }
+
+        let header_json = serde_json::to_string(&header_map).expect("serialize header");
+        let header_len = header_json.len() as u64;
+
+        let mut file_data = Vec::new();
+        file_data.extend_from_slice(&header_len.to_le_bytes());
+        file_data.extend_from_slice(header_json.as_bytes());
+        file_data.extend_from_slice(&data_bytes);
+
+        let mut file =
+            NamedTempFile::with_suffix(".safetensors").expect("create temp file");
+        file.write_all(&file_data).expect("write safetensors");
+        file
+    }
+
+    #[test]
+    fn test_run_valid_gguf_inspect() {
+        let file = build_inspect_gguf();
+        let result = run(file.path(), false, false, false, false);
+        assert!(result.is_ok(), "inspect on valid GGUF failed: {result:?}");
+    }
+
+    #[test]
+    fn test_run_valid_gguf_inspect_json() {
+        let file = build_inspect_gguf();
+        let result = run(file.path(), false, false, false, true);
+        assert!(result.is_ok(), "inspect JSON on valid GGUF failed: {result:?}");
+    }
+
+    #[test]
+    fn test_run_valid_safetensors_inspect() {
+        let file = build_inspect_safetensors();
+        let result = run(file.path(), false, false, false, false);
+        assert!(result.is_ok(), "inspect on valid SafeTensors failed: {result:?}");
+    }
+
+    #[test]
+    fn test_run_valid_safetensors_inspect_json() {
+        let file = build_inspect_safetensors();
+        let result = run(file.path(), false, false, false, true);
+        assert!(result.is_ok(), "inspect JSON on valid SafeTensors failed: {result:?}");
+    }
+
+    #[test]
+    fn test_rosetta_inspect_dispatch_gguf() {
+        // Directly test run_rosetta_inspect() is reachable
+        let file = build_inspect_gguf();
+        let result = run_rosetta_inspect(file.path(), false);
+        assert!(result.is_ok(), "run_rosetta_inspect GGUF failed: {result:?}");
+    }
+
+    #[test]
+    fn test_rosetta_inspect_dispatch_safetensors() {
+        let file = build_inspect_safetensors();
+        let result = run_rosetta_inspect(file.path(), true);
+        assert!(result.is_ok(), "run_rosetta_inspect SafeTensors JSON failed: {result:?}");
+    }
 }

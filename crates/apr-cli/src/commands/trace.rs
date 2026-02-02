@@ -1572,7 +1572,7 @@ mod tests {
     }
 
     #[test]
-    fn test_run_gguf_format() {
+    fn test_run_gguf_format_invalid() {
         let mut file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
         file.write_all(b"not valid gguf").expect("write");
 
@@ -1582,12 +1582,177 @@ mod tests {
     }
 
     #[test]
-    fn test_run_safetensors_format() {
+    fn test_run_safetensors_format_invalid() {
         let mut file = NamedTempFile::with_suffix(".safetensors").expect("create temp file");
         file.write_all(b"not valid safetensors").expect("write");
 
         let result = run(file.path(), None, None, false, false, false, false, false);
         // Should fail (invalid SafeTensors)
         assert!(result.is_err());
+    }
+
+    // ================================================================
+    // Audit #3 fix: Real GGUF/SafeTensors dispatch tests
+    // These exercise trace_gguf() and trace_safetensors() with valid data.
+    // ================================================================
+
+    /// Build a minimal valid GGUF file with architecture metadata and tensors.
+    fn build_test_gguf() -> NamedTempFile {
+        use aprender::format::gguf::{export_tensors_to_gguf, GgmlType, GgufTensor, GgufValue};
+        use std::io::BufWriter;
+
+        let file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
+        let mut writer = BufWriter::new(&file);
+
+        let tensors = vec![
+            GgufTensor {
+                name: "token_embd.weight".to_string(),
+                shape: vec![4, 8],
+                dtype: GgmlType::F32,
+                data: vec![0u8; 4 * 8 * 4], // 4*8 f32s
+            },
+            GgufTensor {
+                name: "blk.0.attn_q.weight".to_string(),
+                shape: vec![8, 8],
+                dtype: GgmlType::F32,
+                data: vec![0u8; 8 * 8 * 4],
+            },
+            GgufTensor {
+                name: "blk.0.attn_k.weight".to_string(),
+                shape: vec![8, 8],
+                dtype: GgmlType::F32,
+                data: vec![0u8; 8 * 8 * 4],
+            },
+            GgufTensor {
+                name: "blk.0.attn_v.weight".to_string(),
+                shape: vec![8, 8],
+                dtype: GgmlType::F32,
+                data: vec![0u8; 8 * 8 * 4],
+            },
+            GgufTensor {
+                name: "blk.0.ffn_gate.weight".to_string(),
+                shape: vec![16, 8],
+                dtype: GgmlType::F32,
+                data: vec![0u8; 16 * 8 * 4],
+            },
+            GgufTensor {
+                name: "output_norm.weight".to_string(),
+                shape: vec![8],
+                dtype: GgmlType::F32,
+                data: vec![0u8; 8 * 4],
+            },
+        ];
+
+        let metadata = vec![
+            ("general.architecture".to_string(), GgufValue::String("llama".to_string())),
+            ("llama.block_count".to_string(), GgufValue::Uint32(1)),
+            ("llama.embedding_length".to_string(), GgufValue::Uint32(8)),
+            ("llama.attention.head_count".to_string(), GgufValue::Uint32(2)),
+            ("llama.attention.head_count_kv".to_string(), GgufValue::Uint32(2)),
+        ];
+
+        export_tensors_to_gguf(&mut writer, &tensors, &metadata)
+            .expect("write GGUF");
+        drop(writer);
+        file
+    }
+
+    /// Build a minimal valid SafeTensors file with named tensors.
+    fn build_test_safetensors() -> NamedTempFile {
+        // Build SafeTensors manually: 8-byte header_len + JSON header + tensor data
+        let tensors: Vec<(&str, Vec<usize>, Vec<f32>)> = vec![
+            ("model.embed_tokens.weight", vec![8, 4], vec![0.1; 32]),
+            ("model.layers.0.self_attn.q_proj.weight", vec![4, 4], vec![0.2; 16]),
+            ("model.layers.0.self_attn.k_proj.weight", vec![4, 4], vec![0.3; 16]),
+            ("model.layers.0.mlp.gate_proj.weight", vec![8, 4], vec![0.4; 32]),
+            ("lm_head.weight", vec![8, 4], vec![0.5; 32]),
+        ];
+
+        // Build header JSON and data bytes
+        let mut data_bytes = Vec::new();
+        let mut header_map = serde_json::Map::new();
+        let mut offset = 0usize;
+
+        for (name, shape, values) in &tensors {
+            let bytes: Vec<u8> = values.iter().flat_map(|f| f.to_le_bytes()).collect();
+            let end = offset + bytes.len();
+
+            let mut entry = serde_json::Map::new();
+            entry.insert("dtype".to_string(), serde_json::json!("F32"));
+            entry.insert("shape".to_string(), serde_json::json!(shape));
+            entry.insert("data_offsets".to_string(), serde_json::json!([offset, end]));
+            header_map.insert(name.to_string(), serde_json::Value::Object(entry));
+
+            data_bytes.extend_from_slice(&bytes);
+            offset = end;
+        }
+
+        let header_json = serde_json::to_string(&header_map).expect("serialize header");
+        let header_len = header_json.len() as u64;
+
+        let mut file_data = Vec::new();
+        file_data.extend_from_slice(&header_len.to_le_bytes());
+        file_data.extend_from_slice(header_json.as_bytes());
+        file_data.extend_from_slice(&data_bytes);
+
+        let mut file = NamedTempFile::with_suffix(".safetensors").expect("create temp file");
+        file.write_all(&file_data).expect("write safetensors");
+        file
+    }
+
+    #[test]
+    fn test_run_valid_gguf_dispatch() {
+        let file = build_test_gguf();
+        let result = run(file.path(), None, None, false, false, false, false, false);
+        assert!(result.is_ok(), "trace on valid GGUF failed: {result:?}");
+    }
+
+    #[test]
+    fn test_run_valid_gguf_json_output() {
+        let file = build_test_gguf();
+        let result = run(file.path(), None, None, true, false, false, false, false);
+        assert!(result.is_ok(), "trace JSON on valid GGUF failed: {result:?}");
+    }
+
+    #[test]
+    fn test_run_valid_safetensors_dispatch() {
+        let file = build_test_safetensors();
+        let result = run(file.path(), None, None, false, false, false, false, false);
+        assert!(result.is_ok(), "trace on valid SafeTensors failed: {result:?}");
+    }
+
+    #[test]
+    fn test_run_valid_safetensors_json_output() {
+        let file = build_test_safetensors();
+        let result = run(file.path(), None, None, true, false, false, false, false);
+        assert!(result.is_ok(), "trace JSON on valid SafeTensors failed: {result:?}");
+    }
+
+    #[test]
+    fn test_trace_gguf_detects_layers() {
+        let file = build_test_gguf();
+        let (format_name, layers) = detect_and_trace(file.path(), None, false)
+            .expect("detect_and_trace GGUF");
+        assert!(
+            format_name.contains("GGUF"),
+            "format should be GGUF, got: {format_name}"
+        );
+        // Should detect at least the embedding and one transformer block
+        assert!(
+            !layers.is_empty(),
+            "GGUF trace must produce at least one layer"
+        );
+    }
+
+    #[test]
+    fn test_trace_safetensors_detects_layers() {
+        let file = build_test_safetensors();
+        let (format_name, layers) = detect_and_trace(file.path(), None, false)
+            .expect("detect_and_trace SafeTensors");
+        assert_eq!(format_name, "SafeTensors");
+        assert!(
+            !layers.is_empty(),
+            "SafeTensors trace must produce at least one layer"
+        );
     }
 }
