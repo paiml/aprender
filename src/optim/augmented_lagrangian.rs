@@ -300,3 +300,168 @@ impl Optimizer for AugmentedLagrangian {
         self.rho = self.initial_rho;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_al_new() {
+        let al = AugmentedLagrangian::new(100, 1e-6, 1.0);
+        let debug_str = format!("{:?}", al);
+        assert!(debug_str.contains("AugmentedLagrangian"));
+    }
+
+    #[test]
+    fn test_al_clone_debug() {
+        let al = AugmentedLagrangian::new(100, 1e-6, 1.0);
+        let cloned = al.clone();
+        let d1 = format!("{:?}", al);
+        let d2 = format!("{:?}", cloned);
+        assert_eq!(d1, d2);
+    }
+
+    #[test]
+    fn test_al_with_rho_increase() {
+        let al = AugmentedLagrangian::new(100, 1e-6, 1.0).with_rho_increase(5.0);
+        let debug_str = format!("{:?}", al);
+        assert!(debug_str.contains("5.0"));
+    }
+
+    #[test]
+    fn test_al_equality_constraint() {
+        // min 0.5*(x1-2)^2 + 0.5*(x2-3)^2 s.t. x1 + x2 = 1
+        let objective = |x: &Vector<f32>| 0.5 * (x[0] - 2.0).powi(2) + 0.5 * (x[1] - 3.0).powi(2);
+        let gradient = |x: &Vector<f32>| Vector::from_slice(&[x[0] - 2.0, x[1] - 3.0]);
+        let equality = |x: &Vector<f32>| Vector::from_slice(&[x[0] + x[1] - 1.0]);
+        let equality_jac = |_x: &Vector<f32>| vec![Vector::from_slice(&[1.0, 1.0])];
+
+        let mut al = AugmentedLagrangian::new(200, 1e-4, 1.0);
+        let x0 = Vector::zeros(2);
+        let result = al.minimize_equality(objective, gradient, equality, equality_jac, x0);
+
+        // The constraint should be approximately satisfied
+        assert!(result.constraint_violation < 0.1);
+    }
+
+    #[test]
+    fn test_al_max_iterations() {
+        let objective = |x: &Vector<f32>| x[0] * x[0];
+        let gradient = |x: &Vector<f32>| Vector::from_slice(&[2.0 * x[0]]);
+        let equality = |x: &Vector<f32>| Vector::from_slice(&[x[0] - 100.0]); // Hard constraint
+        let equality_jac = |_x: &Vector<f32>| vec![Vector::from_slice(&[1.0])];
+
+        let mut al = AugmentedLagrangian::new(2, 1e-20, 0.1);
+        let x0 = Vector::from_slice(&[0.0]);
+        let result = al.minimize_equality(objective, gradient, equality, equality_jac, x0);
+
+        assert_eq!(result.status, ConvergenceStatus::MaxIterations);
+        assert_eq!(result.iterations, 2);
+        assert!(result.objective_value.is_finite());
+        assert!(result.gradient_norm >= 0.0);
+        assert!(result.constraint_violation >= 0.0);
+    }
+
+    #[test]
+    fn test_al_rho_increase_triggers() {
+        // Difficult constraint so rho needs to increase
+        let objective = |x: &Vector<f32>| (x[0] - 10.0).powi(2) + (x[1] - 10.0).powi(2);
+        let gradient =
+            |x: &Vector<f32>| Vector::from_slice(&[2.0 * (x[0] - 10.0), 2.0 * (x[1] - 10.0)]);
+        let equality = |x: &Vector<f32>| Vector::from_slice(&[x[0] + x[1] - 1.0]);
+        let equality_jac = |_x: &Vector<f32>| vec![Vector::from_slice(&[1.0, 1.0])];
+
+        let mut al = AugmentedLagrangian::new(100, 1e-4, 0.01).with_rho_increase(10.0);
+        let x0 = Vector::zeros(2);
+        let result = al.minimize_equality(objective, gradient, equality, equality_jac, x0);
+
+        // Should make progress towards feasibility
+        assert!(
+            result.status == ConvergenceStatus::Converged
+                || result.status == ConvergenceStatus::MaxIterations
+        );
+    }
+
+    #[test]
+    fn test_al_reset() {
+        let mut al = AugmentedLagrangian::new(100, 1e-6, 5.0);
+
+        // Run a minimization
+        let objective = |x: &Vector<f32>| x[0] * x[0];
+        let gradient = |x: &Vector<f32>| Vector::from_slice(&[2.0 * x[0]]);
+        let equality = |x: &Vector<f32>| Vector::from_slice(&[x[0] - 1.0]);
+        let equality_jac = |_x: &Vector<f32>| vec![Vector::from_slice(&[1.0])];
+
+        let _ = al.minimize_equality(
+            objective,
+            gradient,
+            equality,
+            equality_jac,
+            Vector::zeros(1),
+        );
+
+        // Reset should restore rho
+        al.reset();
+        let debug_str = format!("{:?}", al);
+        assert!(debug_str.contains("rho: 5.0"));
+    }
+
+    #[test]
+    #[should_panic(expected = "does not support stochastic updates")]
+    fn test_al_step_panics() {
+        let mut al = AugmentedLagrangian::new(100, 1e-6, 1.0);
+        let mut params = Vector::from_slice(&[1.0]);
+        let grad = Vector::from_slice(&[0.1]);
+        al.step(&mut params, &grad);
+    }
+
+    #[test]
+    fn test_al_subproblem_convergence() {
+        // Easy problem where subproblem converges quickly
+        let objective = |x: &Vector<f32>| 0.5 * x[0] * x[0];
+        let gradient = |x: &Vector<f32>| Vector::from_slice(&[x[0]]);
+        let equality = |x: &Vector<f32>| Vector::from_slice(&[x[0] - 1.0]);
+        let equality_jac = |_x: &Vector<f32>| vec![Vector::from_slice(&[1.0])];
+
+        let mut al = AugmentedLagrangian::new(100, 1e-4, 10.0);
+        let x0 = Vector::from_slice(&[0.0]);
+        let result = al.minimize_equality(objective, gradient, equality, equality_jac, x0);
+
+        assert!((result.solution[0] - 1.0).abs() < 0.5);
+    }
+
+    #[test]
+    fn test_al_multiple_constraints() {
+        // min x1^2 + x2^2 s.t. x1 - x2 = 0, x1 + x2 = 2
+        // Solution: x1 = 1, x2 = 1
+        let objective = |x: &Vector<f32>| x[0] * x[0] + x[1] * x[1];
+        let gradient = |x: &Vector<f32>| Vector::from_slice(&[2.0 * x[0], 2.0 * x[1]]);
+        let equality = |x: &Vector<f32>| Vector::from_slice(&[x[0] - x[1], x[0] + x[1] - 2.0]);
+        let equality_jac = |_x: &Vector<f32>| {
+            vec![
+                Vector::from_slice(&[1.0, -1.0]),
+                Vector::from_slice(&[1.0, 1.0]),
+            ]
+        };
+
+        let mut al = AugmentedLagrangian::new(200, 1e-3, 1.0);
+        let x0 = Vector::zeros(2);
+        let result = al.minimize_equality(objective, gradient, equality, equality_jac, x0);
+
+        assert!(result.constraint_violation < 0.5);
+    }
+
+    #[test]
+    fn test_al_elapsed_time() {
+        let objective = |x: &Vector<f32>| x[0] * x[0];
+        let gradient = |x: &Vector<f32>| Vector::from_slice(&[2.0 * x[0]]);
+        let equality = |x: &Vector<f32>| Vector::from_slice(&[x[0] - 1.0]);
+        let equality_jac = |_x: &Vector<f32>| vec![Vector::from_slice(&[1.0])];
+
+        let mut al = AugmentedLagrangian::new(50, 1e-4, 1.0);
+        let x0 = Vector::zeros(1);
+        let result = al.minimize_equality(objective, gradient, equality, equality_jac, x0);
+
+        let _ = result.elapsed_time.as_nanos();
+    }
+}

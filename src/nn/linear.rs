@@ -415,4 +415,117 @@ mod tests {
         let x = Tensor::ones(&[2, 8]);
         let _ = layer.forward(&x); // Should panic
     }
+
+    // =========================================================================
+    // Coverage: Debug impl
+    // =========================================================================
+
+    #[test]
+    fn test_linear_debug_with_bias() {
+        let layer = Linear::new(10, 5);
+        let debug_str = format!("{:?}", layer);
+        assert!(debug_str.contains("Linear"));
+        assert!(debug_str.contains("in_features"));
+        assert!(debug_str.contains("out_features"));
+        assert!(debug_str.contains("bias"));
+        assert!(debug_str.contains("10"));
+        assert!(debug_str.contains("5"));
+        assert!(debug_str.contains("true"));
+    }
+
+    #[test]
+    fn test_linear_debug_without_bias() {
+        let layer = Linear::without_bias(8, 4);
+        let debug_str = format!("{:?}", layer);
+        assert!(debug_str.contains("false"));
+    }
+
+    // =========================================================================
+    // Coverage: N-dimensional forward (ndim > 2 branch)
+    // =========================================================================
+
+    #[test]
+    fn test_linear_forward_3d_input() {
+        // Tests the ndim > 2 branch in forward()
+        let layer = Linear::with_seed(4, 3, Some(42));
+        // 3D input: [batch=2, seq_len=3, features=4]
+        let x = Tensor::ones(&[2, 3, 4]);
+        let output = layer.forward(&x);
+        // Output should be [2, 3, 3]
+        assert_eq!(output.shape(), &[2, 3, 3]);
+    }
+
+    #[test]
+    fn test_linear_forward_4d_input() {
+        // Tests the ndim > 2 branch with 4D input
+        let layer = Linear::with_seed(2, 3, Some(42));
+        let x = Tensor::ones(&[2, 2, 2, 2]);
+        let output = layer.forward(&x);
+        assert_eq!(output.shape(), &[2, 2, 2, 3]);
+    }
+
+    // =========================================================================
+    // Coverage: refresh_caches
+    // =========================================================================
+
+    #[test]
+    fn test_linear_refresh_caches() {
+        let mut layer = Linear::new(4, 3);
+        // Modify weight via parameters_mut, then refresh
+        layer.refresh_caches();
+        assert!(layer.is_ready());
+        // Verify forward still works after refresh
+        let x = Tensor::ones(&[1, 4]);
+        let output = layer.forward(&x);
+        assert_eq!(output.shape(), &[1, 3]);
+    }
+
+    // =========================================================================
+    // Coverage: parameters_mut for both bias/no-bias paths
+    // =========================================================================
+
+    #[test]
+    fn test_linear_parameters_mut_with_bias() {
+        let mut layer = Linear::new(4, 3);
+        let params = layer.parameters_mut();
+        assert_eq!(params.len(), 2);
+    }
+
+    #[test]
+    fn test_linear_parameters_mut_without_bias() {
+        let mut layer = Linear::without_bias(4, 3);
+        let params = layer.parameters_mut();
+        assert_eq!(params.len(), 1);
+    }
+
+    // =========================================================================
+    // Coverage: without_bias forward (no bias branch in forward)
+    // =========================================================================
+
+    #[test]
+    fn test_linear_forward_without_bias_computation() {
+        let mut layer = Linear::without_bias_with_seed(2, 2, Some(42));
+        // Set known weights to verify no bias is added
+        layer.set_weight(Tensor::new(&[1.0, 0.0, 0.0, 1.0], &[2, 2]).requires_grad());
+        let x = Tensor::new(&[3.0, 7.0], &[1, 2]);
+        let output = layer.forward(&x);
+        let out_data = output.data();
+        // Without bias: y = x @ W^T = [3, 7] @ I = [3, 7]
+        assert!((out_data[0] - 3.0).abs() < 1e-5);
+        assert!((out_data[1] - 7.0).abs() < 1e-5);
+    }
+
+    // =========================================================================
+    // Coverage: accessor methods on placeholder
+    // =========================================================================
+
+    #[test]
+    fn test_placeholder_accessors() {
+        let layer = Linear::placeholder(16, 8);
+        assert_eq!(layer.in_features(), 16);
+        assert_eq!(layer.out_features(), 8);
+        assert!(!layer.has_bias());
+        assert!(layer.bias().is_none());
+        assert_eq!(layer.weight().shape(), &[1]); // placeholder uses 1-element tensor
+    }
 }

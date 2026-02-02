@@ -575,3 +575,484 @@ fn test_matrix_inversion_singular() {
     let nonsquare = vec![vec![1.0, 2.0]];
     assert!(invert_matrix(&nonsquare).is_none());
 }
+
+// =========================================================================
+// Coverage: WilsonScore with low confidence (<0.90)
+// =========================================================================
+
+#[test]
+fn test_wilson_score_low_confidence() {
+    let score = WilsonScore::calculate(8, 10, 0.80); // Below 0.90 threshold
+    assert!(score.proportion > 0.0);
+    // With low confidence, the default z=1.96 should be used
+    assert!(score.lower < score.proportion);
+    assert!(score.upper > score.proportion);
+}
+
+#[test]
+fn test_wilson_score_exact_boundaries() {
+    // Test each z-score branch
+    let score_99 = WilsonScore::calculate(5, 10, 0.99);
+    assert!(score_99.confidence >= 0.99);
+
+    let score_95 = WilsonScore::calculate(5, 10, 0.95);
+    assert!((score_95.confidence - 0.95).abs() < 0.01);
+
+    let score_90 = WilsonScore::calculate(5, 10, 0.90);
+    assert!((score_90.confidence - 0.90).abs() < 0.01);
+}
+
+#[test]
+fn test_wilson_score_zero_total() {
+    let score = WilsonScore::calculate(0, 0, 0.95);
+    assert_eq!(score.n, 0);
+    assert!(score.proportion.abs() < 1e-6);
+    assert!(score.lower.abs() < 1e-6);
+    assert!(score.upper.abs() < 1e-6);
+}
+
+// =========================================================================
+// Coverage: AndonLevel Display (all variants)
+// =========================================================================
+
+#[test]
+fn test_andon_level_display_all_variants() {
+    assert_eq!(format!("{}", AndonLevel::Green), "GREEN");
+    assert_eq!(format!("{}", AndonLevel::Yellow), "YELLOW");
+    assert_eq!(format!("{}", AndonLevel::Red), "RED");
+}
+
+// =========================================================================
+// Coverage: WilsonScore andon_level
+// =========================================================================
+
+#[test]
+fn test_wilson_score_andon_level_green() {
+    let score = WilsonScore::calculate(9, 10, 0.95);
+    assert_eq!(score.andon_level(0.8), AndonLevel::Green);
+}
+
+#[test]
+fn test_wilson_score_andon_level_yellow() {
+    let score = WilsonScore::calculate(6, 10, 0.95);
+    assert_eq!(score.andon_level(0.8), AndonLevel::Yellow);
+}
+
+#[test]
+fn test_wilson_score_andon_level_red() {
+    let score = WilsonScore::calculate(1, 10, 0.95);
+    assert_eq!(score.andon_level(0.8), AndonLevel::Red);
+}
+
+// =========================================================================
+// Coverage: HanseiReport empty() and andon_level()
+// =========================================================================
+
+#[test]
+fn test_hansei_report_empty() {
+    let report = HanseiReport::empty();
+    assert_eq!(report.total_attempts, 0);
+    assert_eq!(report.successes, 0);
+    assert!(report.success_rate.abs() < 1e-6);
+    assert!(report.pareto_categories.is_empty());
+    assert!(report.issues.is_empty());
+}
+
+#[test]
+fn test_hansei_report_andon_level() {
+    let results = vec![
+        (ConversionCategory::GgufToApr, true),
+        (ConversionCategory::GgufToApr, true),
+        (ConversionCategory::GgufToApr, false),
+    ];
+    let report = HanseiReport::from_results(&results);
+    // success_rate ~= 0.67
+    let level = report.andon_level(0.9);
+    assert_eq!(level, AndonLevel::Yellow);
+}
+
+#[test]
+fn test_hansei_report_from_empty_results() {
+    let results: Vec<(ConversionCategory, bool)> = vec![];
+    let report = HanseiReport::from_results(&results);
+    assert_eq!(report.total_attempts, 0);
+}
+
+// =========================================================================
+// Coverage: ConversionCategory Display all variants
+// =========================================================================
+
+#[test]
+fn test_conversion_category_display_all() {
+    assert_eq!(
+        format!("{}", ConversionCategory::GgufToApr),
+        "GGUF\u{2192}APR"
+    );
+    assert_eq!(
+        format!("{}", ConversionCategory::AprToGguf),
+        "APR\u{2192}GGUF"
+    );
+    assert_eq!(
+        format!("{}", ConversionCategory::SafeTensorsToApr),
+        "SafeTensors\u{2192}APR"
+    );
+    assert_eq!(
+        format!("{}", ConversionCategory::AprToSafeTensors),
+        "APR\u{2192}SafeTensors"
+    );
+    assert_eq!(
+        format!("{}", ConversionCategory::GgufToSafeTensors),
+        "GGUF\u{2192}SafeTensors"
+    );
+    assert_eq!(
+        format!("{}", ConversionCategory::SafeTensorsToGguf),
+        "SafeTensors\u{2192}GGUF"
+    );
+}
+
+// =========================================================================
+// Coverage: ErrorPattern match_confidence
+// =========================================================================
+
+#[test]
+fn test_error_pattern_match_confidence_zero() {
+    let pattern = ErrorPattern::new(
+        "test",
+        vec!["alignment".into(), "padding".into()],
+        FixAction::PadAlignment { alignment: 64 },
+    );
+    let conf = pattern.match_confidence("completely unrelated error message");
+    assert!(conf.abs() < 1e-6, "No keyword matches should give 0.0");
+}
+
+#[test]
+fn test_error_pattern_match_confidence_partial() {
+    let pattern = ErrorPattern::new(
+        "test",
+        vec!["alignment".into(), "padding".into()],
+        FixAction::PadAlignment { alignment: 64 },
+    );
+    let conf = pattern.match_confidence("alignment issue in tensor");
+    assert!(
+        (conf - 0.5).abs() < 1e-6,
+        "One of two keywords should give 0.5"
+    );
+}
+
+#[test]
+fn test_error_pattern_match_confidence_full() {
+    let pattern = ErrorPattern::new(
+        "test",
+        vec!["alignment".into(), "padding".into()],
+        FixAction::PadAlignment { alignment: 64 },
+    );
+    let conf = pattern.match_confidence("alignment and padding issue");
+    assert!((conf - 1.0).abs() < 1e-6, "All keywords should give 1.0");
+}
+
+// =========================================================================
+// Coverage: ErrorPattern should_retire
+// =========================================================================
+
+#[test]
+fn test_error_pattern_should_retire_not_enough_applications() {
+    let pattern = ErrorPattern::new("test", vec!["error".into()], FixAction::SkipTensor);
+    // < 5 applications, should not retire
+    assert!(!pattern.should_retire());
+}
+
+#[test]
+fn test_error_pattern_should_retire_low_success() {
+    let mut pattern = ErrorPattern::new("test", vec!["error".into()], FixAction::SkipTensor);
+    // 5 applications, 1 success = 20% < 30%
+    for _ in 0..4 {
+        pattern.record_application(false);
+    }
+    pattern.record_application(true);
+    assert!(
+        pattern.should_retire(),
+        "Low success rate after 5 apps should retire"
+    );
+}
+
+#[test]
+fn test_error_pattern_should_not_retire_high_success() {
+    let mut pattern = ErrorPattern::new("test", vec!["error".into()], FixAction::SkipTensor);
+    // 5 applications, 4 successes = 80% > 30%
+    for _ in 0..4 {
+        pattern.record_application(true);
+    }
+    pattern.record_application(false);
+    assert!(
+        !pattern.should_retire(),
+        "High success rate should not retire"
+    );
+}
+
+// =========================================================================
+// Coverage: TensorCanary detect_regression - RangeDrift
+// =========================================================================
+
+#[test]
+fn test_tensor_canary_range_drift() {
+    let baseline = TensorCanary {
+        name: "test_tensor".into(),
+        shape: vec![4, 4],
+        dtype: "F32".into(),
+        mean: 0.5,
+        std: 0.1,
+        min: 0.0,
+        max: 1.0,
+        checksum: 12345,
+    };
+
+    let current = TensorCanary {
+        name: "test_tensor".into(),
+        shape: vec![4, 4],
+        dtype: "F32".into(),
+        mean: 0.5, // same
+        std: 0.1,  // same
+        min: -0.5, // drifted below min - range_tolerance
+        max: 1.0,  // same
+        checksum: 12345,
+    };
+
+    let regression = baseline.detect_regression(&current);
+    assert!(regression.is_some());
+    match regression.unwrap() {
+        Regression::RangeDrift { .. } => {} // Expected
+        other => panic!("Expected RangeDrift, got {:?}", other),
+    }
+}
+
+#[test]
+fn test_tensor_canary_range_drift_max() {
+    let baseline = TensorCanary {
+        name: "t".into(),
+        shape: vec![2],
+        dtype: "F32".into(),
+        mean: 0.0,
+        std: 0.1,
+        min: -1.0,
+        max: 1.0,
+        checksum: 100,
+    };
+
+    let current = TensorCanary {
+        name: "t".into(),
+        shape: vec![2],
+        dtype: "F32".into(),
+        mean: 0.0,
+        std: 0.1,
+        min: -1.0,
+        max: 2.0, // drifted above max + range_tolerance
+        checksum: 100,
+    };
+
+    let regression = baseline.detect_regression(&current);
+    assert!(regression.is_some());
+    match regression.unwrap() {
+        Regression::RangeDrift { .. } => {}
+        other => panic!("Expected RangeDrift, got {:?}", other),
+    }
+}
+
+#[test]
+fn test_tensor_canary_no_regression() {
+    let baseline = TensorCanary {
+        name: "t".into(),
+        shape: vec![2, 2],
+        dtype: "F32".into(),
+        mean: 0.5,
+        std: 0.1,
+        min: 0.0,
+        max: 1.0,
+        checksum: 42,
+    };
+
+    let current = baseline.clone();
+    assert!(baseline.detect_regression(&current).is_none());
+}
+
+// =========================================================================
+// Coverage: TensorCanary - shape mismatch
+// =========================================================================
+
+#[test]
+fn test_tensor_canary_shape_mismatch() {
+    let baseline = TensorCanary {
+        name: "t".into(),
+        shape: vec![2, 2],
+        dtype: "F32".into(),
+        mean: 0.0,
+        std: 0.1,
+        min: -1.0,
+        max: 1.0,
+        checksum: 0,
+    };
+
+    let current = TensorCanary {
+        name: "t".into(),
+        shape: vec![3, 3], // different shape
+        dtype: "F32".into(),
+        mean: 0.0,
+        std: 0.1,
+        min: -1.0,
+        max: 1.0,
+        checksum: 0,
+    };
+
+    match baseline.detect_regression(&current).unwrap() {
+        Regression::ShapeMismatch { .. } => {}
+        other => panic!("Expected ShapeMismatch, got {:?}", other),
+    }
+}
+
+// =========================================================================
+// Coverage: TensorCanary - checksum mismatch
+// =========================================================================
+
+#[test]
+fn test_tensor_canary_checksum_mismatch() {
+    let baseline = TensorCanary {
+        name: "t".into(),
+        shape: vec![2],
+        dtype: "F32".into(),
+        mean: 0.0,
+        std: 0.1,
+        min: -1.0,
+        max: 1.0,
+        checksum: 100,
+    };
+
+    let current = TensorCanary {
+        name: "t".into(),
+        shape: vec![2],
+        dtype: "F32".into(),
+        mean: 0.0,
+        std: 0.1,
+        min: -1.0,
+        max: 1.0,
+        checksum: 999, // different checksum
+    };
+
+    match baseline.detect_regression(&current).unwrap() {
+        Regression::ChecksumMismatch { .. } => {}
+        other => panic!("Expected ChecksumMismatch, got {:?}", other),
+    }
+}
+
+// =========================================================================
+// Coverage: CanaryFile new, add_tensor, verify
+// =========================================================================
+
+#[test]
+fn test_canary_file_new() {
+    let canary = CanaryFile::new("test-model");
+    assert_eq!(canary.model_name, "test-model");
+    assert!(canary.tensors.is_empty());
+    assert!(!canary.created_at.is_empty());
+}
+
+#[test]
+fn test_canary_file_verify_missing_tensor() {
+    let mut canary = CanaryFile::new("model");
+    canary.add_tensor(TensorCanary {
+        name: "missing_tensor".into(),
+        shape: vec![2, 2],
+        dtype: "F32".into(),
+        mean: 0.0,
+        std: 0.1,
+        min: -1.0,
+        max: 1.0,
+        checksum: 0,
+    });
+
+    // Verify against empty list of current tensors
+    let regressions = canary.verify(&[]);
+    assert_eq!(regressions.len(), 1);
+    assert_eq!(regressions[0].0, "missing_tensor");
+}
+
+#[test]
+fn test_canary_file_verify_no_regressions() {
+    let tensor = TensorCanary {
+        name: "t".into(),
+        shape: vec![2],
+        dtype: "F32".into(),
+        mean: 0.5,
+        std: 0.1,
+        min: 0.0,
+        max: 1.0,
+        checksum: 42,
+    };
+
+    let mut canary = CanaryFile::new("model");
+    canary.add_tensor(tensor.clone());
+
+    let regressions = canary.verify(&[tensor]);
+    assert!(regressions.is_empty());
+}
+
+// =========================================================================
+// Coverage: Trend and Regression Debug/Clone
+// =========================================================================
+
+#[test]
+fn test_trend_variants_debug() {
+    let trends = [
+        Trend::Improving,
+        Trend::Stable,
+        Trend::Degrading,
+        Trend::Oscillating,
+    ];
+    for t in &trends {
+        let debug = format!("{:?}", t);
+        assert!(!debug.is_empty());
+    }
+}
+
+#[test]
+fn test_regression_debug_clone() {
+    let r = Regression::MeanDrift {
+        expected: 1.0,
+        actual: 2.0,
+        error: 1.0,
+    };
+    let debug = format!("{:?}", r);
+    assert!(debug.contains("MeanDrift"));
+    let cloned = r.clone();
+    let debug2 = format!("{:?}", cloned);
+    assert_eq!(debug, debug2);
+}
+
+// =========================================================================
+// Coverage: HanseiReport from_results with failures
+// =========================================================================
+
+#[test]
+fn test_hansei_report_with_mixed_results() {
+    let results = vec![
+        (ConversionCategory::GgufToApr, true),
+        (ConversionCategory::GgufToApr, false),
+        (ConversionCategory::AprToGguf, true),
+        (ConversionCategory::SafeTensorsToApr, false),
+        (ConversionCategory::SafeTensorsToApr, false),
+    ];
+    let report = HanseiReport::from_results(&results);
+    assert_eq!(report.total_attempts, 5);
+    assert_eq!(report.successes, 2);
+    assert!(!report.pareto_categories.is_empty());
+    assert!(report.success_rate > 0.0 && report.success_rate < 1.0);
+}
+
+#[test]
+fn test_hansei_report_all_success() {
+    let results = vec![
+        (ConversionCategory::GgufToApr, true),
+        (ConversionCategory::AprToGguf, true),
+    ];
+    let report = HanseiReport::from_results(&results);
+    assert!((report.success_rate - 1.0).abs() < 1e-6);
+    assert!(report.pareto_categories.is_empty()); // No failures -> no Pareto
+}

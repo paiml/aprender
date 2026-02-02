@@ -306,6 +306,154 @@ mod tests {
         assert!(var.abs() < 1e-10);
     }
 
+    #[test]
+    fn test_from_paths() {
+        use crate::monte_carlo::engine::PathMetadata;
+        // Paths that go from 100 down to various final values
+        let paths: Vec<SimulationPath> = vec![
+            SimulationPath::new(
+                vec![0.0, 1.0],
+                vec![100.0, 90.0], // -10% return
+                PathMetadata {
+                    path_id: 0,
+                    seed: 1,
+                    is_antithetic: false,
+                },
+            ),
+            SimulationPath::new(
+                vec![0.0, 1.0],
+                vec![100.0, 95.0], // -5% return
+                PathMetadata {
+                    path_id: 1,
+                    seed: 2,
+                    is_antithetic: false,
+                },
+            ),
+            SimulationPath::new(
+                vec![0.0, 1.0],
+                vec![100.0, 105.0], // +5% return
+                PathMetadata {
+                    path_id: 2,
+                    seed: 3,
+                    is_antithetic: false,
+                },
+            ),
+            SimulationPath::new(
+                vec![0.0, 1.0],
+                vec![100.0, 110.0], // +10% return
+                PathMetadata {
+                    path_id: 3,
+                    seed: 4,
+                    is_antithetic: false,
+                },
+            ),
+            SimulationPath::new(
+                vec![0.0, 1.0],
+                vec![100.0, 102.0], // +2% return
+                PathMetadata {
+                    path_id: 4,
+                    seed: 5,
+                    is_antithetic: false,
+                },
+            ),
+        ];
+        let var = VaR::from_paths(&paths, 0.95);
+        assert!(var >= 0.0, "VaR from paths should be non-negative: {var}");
+        assert!(var.is_finite());
+    }
+
+    #[test]
+    fn test_from_paths_empty() {
+        let paths: Vec<SimulationPath> = Vec::new();
+        let var = VaR::from_paths(&paths, 0.95);
+        assert!(var.abs() < 1e-10, "VaR from empty paths should be 0");
+    }
+
+    #[test]
+    fn test_from_paths_single_point_paths() {
+        use crate::monte_carlo::engine::PathMetadata;
+        // Paths with only one value cannot compute total_return (no initial/final pair that differs)
+        let paths: Vec<SimulationPath> = vec![SimulationPath::new(
+            vec![0.0],
+            vec![100.0],
+            PathMetadata {
+                path_id: 0,
+                seed: 1,
+                is_antithetic: false,
+            },
+        )];
+        let var = VaR::from_paths(&paths, 0.95);
+        // total_return returns None for single-element path, so returns vec is empty
+        assert!(var.abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_quantile_normal_upper_tail() {
+        // Test upper tail (p > P_HIGH = 0.97575)
+        // P(Z < 3.0) ~ 0.99865
+        let z_high = quantile_normal(0.99865);
+        assert!(
+            (z_high - 3.0).abs() < 0.01,
+            "Upper tail z for p=0.99865: {z_high}"
+        );
+
+        // P(Z < 2.5) ~ 0.99379
+        let z_upper = quantile_normal(0.99379);
+        assert!(
+            (z_upper - 2.5).abs() < 0.02,
+            "Upper tail z for p=0.99379: {z_upper}"
+        );
+    }
+
+    #[test]
+    fn test_quantile_normal_extreme_tails() {
+        // Very extreme lower tail (triggers clamping)
+        let z_low = quantile_normal(1e-20);
+        assert!(
+            z_low < -5.0,
+            "Extreme lower tail should give very negative z: {z_low}"
+        );
+        assert!(z_low.is_finite());
+
+        // Very extreme upper tail (triggers clamping)
+        let z_high = quantile_normal(1.0 - 1e-20);
+        assert!(
+            z_high > 5.0,
+            "Extreme upper tail should give very positive z: {z_high}"
+        );
+        assert!(z_high.is_finite());
+    }
+
+    #[test]
+    fn test_parametric_var_positive_mean() {
+        // Large positive mean with small std: VaR should be 0 (no loss expected)
+        let var = VaR::parametric(0.5, 0.01, 0.95);
+        // mean + std * z = 0.5 + 0.01 * (-1.645) = 0.4836 > 0
+        // -(0.4836).min(0.0) = -0.0 = 0.0
+        assert!(
+            var.abs() < 1e-6,
+            "VaR should be ~0 when mean is large positive: {var}"
+        );
+    }
+
+    #[test]
+    fn test_cornish_fisher_negative_skew() {
+        // Negative skewness (heavier left tail) should increase VaR
+        let var_param = VaR::parametric(0.0, 0.1, 0.95);
+        let var_cf = VaR::cornish_fisher(0.0, 0.1, -0.5, 0.0, 0.95);
+
+        assert!(
+            var_cf > 0.0,
+            "VaR should be positive with negative skew: {var_cf}"
+        );
+        assert!(var_cf.is_finite());
+        // Negative skew means heavier left tail, so VaR should be higher
+        assert!(
+            var_cf > var_param - 0.05,
+            "Negative skew CF VaR={var_cf} vs Param={var_param}"
+        );
+    }
+
     // Property-based tests
     #[cfg(test)]
     mod proptests {

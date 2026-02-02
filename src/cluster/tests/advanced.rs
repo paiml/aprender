@@ -1164,6 +1164,264 @@ fn test_isolation_forest_empty_after_construction() {
 }
 
 // ========================================================================
+// Isolation Forest Edge Case / Coverage Tests
+// ========================================================================
+
+#[test]
+fn test_isolation_forest_default() {
+    // Exercise the Default impl for IsolationForest
+    let iforest = IsolationForest::default();
+    assert!(!iforest.is_fitted());
+}
+
+#[test]
+fn test_isolation_forest_debug_impl() {
+    // Exercise the Debug derive
+    let iforest = IsolationForest::new()
+        .with_n_estimators(50)
+        .with_contamination(0.2);
+    let debug_str = format!("{:?}", iforest);
+    assert!(debug_str.contains("IsolationForest"));
+    assert!(debug_str.contains("n_estimators"));
+}
+
+#[test]
+fn test_isolation_forest_clone() {
+    // Exercise the Clone derive
+    let data = Matrix::from_vec(
+        6,
+        2,
+        vec![
+            2.0, 2.0, 2.1, 2.0, 1.9, 2.1, 2.0, 1.9, 10.0, 10.0, -10.0, -10.0,
+        ],
+    )
+    .expect("Matrix creation should succeed");
+
+    let mut iforest = IsolationForest::new().with_random_state(42);
+    iforest.fit(&data).expect("Fit should succeed");
+
+    let iforest_clone = iforest.clone();
+    assert!(iforest_clone.is_fitted());
+
+    let scores_orig = iforest.score_samples(&data);
+    let scores_clone = iforest_clone.score_samples(&data);
+    assert_eq!(scores_orig, scores_clone);
+}
+
+#[test]
+fn test_isolation_forest_contamination_clamping_high() {
+    // Values > 0.5 get clamped to 0.5
+    let iforest = IsolationForest::new().with_contamination(0.9);
+    let debug_str = format!("{:?}", iforest);
+    assert!(debug_str.contains("0.5"));
+}
+
+#[test]
+fn test_isolation_forest_contamination_clamping_low() {
+    // Values < 0.0 get clamped to 0.0
+    let iforest = IsolationForest::new().with_contamination(-1.0);
+    let debug_str = format!("{:?}", iforest);
+    assert!(debug_str.contains("contamination: 0.0"));
+}
+
+#[test]
+fn test_isolation_forest_identical_points() {
+    // All identical points: exercises the all-same-values leaf path (line 81)
+    // in build_tree where (max_val - min_val).abs() < 1e-10
+    let data = Matrix::from_vec(5, 2, vec![3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0])
+        .expect("Matrix creation should succeed");
+
+    let mut iforest = IsolationForest::new()
+        .with_n_estimators(10)
+        .with_random_state(42);
+    iforest
+        .fit(&data)
+        .expect("Fit should succeed with identical points");
+    assert!(iforest.is_fitted());
+
+    let scores = iforest.score_samples(&data);
+    for &score in &scores {
+        assert!(score.is_finite());
+    }
+}
+
+#[test]
+fn test_isolation_forest_single_point() {
+    // A single data point: exercises n_samples <= 1 terminal condition (line 57)
+    // Also exercises c(1) = 0.0, which makes c_norm = 0.0.
+    // The score formula 2^(-path/0) produces -inf, which is expected behavior
+    // for degenerate input.
+    let data = Matrix::from_vec(1, 2, vec![1.0, 2.0]).expect("Matrix creation should succeed");
+
+    let mut iforest = IsolationForest::new()
+        .with_n_estimators(10)
+        .with_random_state(42);
+    iforest
+        .fit(&data)
+        .expect("Fit should succeed with single point");
+    assert!(iforest.is_fitted());
+
+    let scores = iforest.score_samples(&data);
+    assert_eq!(scores.len(), 1);
+    // With n=1, c_norm=0.0 so score is 2^(-path/0) = -inf or NaN
+    // The important thing is the model fits and produces a score without crashing
+}
+
+#[test]
+fn test_isolation_forest_two_points() {
+    // Two data points: exercises c(2) == 1.0 path (line 169)
+    let data =
+        Matrix::from_vec(2, 2, vec![0.0, 0.0, 10.0, 10.0]).expect("Matrix creation should succeed");
+
+    let mut iforest = IsolationForest::new()
+        .with_n_estimators(10)
+        .with_max_samples(2)
+        .with_random_state(42);
+    iforest
+        .fit(&data)
+        .expect("Fit should succeed with two points");
+    assert!(iforest.is_fitted());
+
+    let scores = iforest.score_samples(&data);
+    assert_eq!(scores.len(), 2);
+    for &score in &scores {
+        assert!(score.is_finite());
+    }
+}
+
+#[test]
+fn test_isolation_forest_without_random_state() {
+    // Exercises the from_entropy() path (line 310) when no seed is provided
+    let data = Matrix::from_vec(
+        6,
+        2,
+        vec![
+            2.0, 2.0, 2.1, 2.0, 1.9, 2.1, 2.0, 1.9, 10.0, 10.0, -10.0, -10.0,
+        ],
+    )
+    .expect("Matrix creation should succeed");
+
+    let mut iforest = IsolationForest::new().with_n_estimators(10);
+    // No .with_random_state() call
+    iforest.fit(&data).expect("Fit should succeed without seed");
+    assert!(iforest.is_fitted());
+}
+
+#[test]
+fn test_isolation_forest_single_feature() {
+    // Exercise with 1D data
+    let data = Matrix::from_vec(5, 1, vec![1.0, 1.1, 1.2, 1.0, 100.0])
+        .expect("Matrix creation should succeed");
+
+    let mut iforest = IsolationForest::new()
+        .with_n_estimators(50)
+        .with_contamination(0.2)
+        .with_random_state(42);
+    iforest.fit(&data).expect("Fit should succeed");
+
+    let predictions = iforest.predict(&data);
+    assert_eq!(predictions.len(), 5);
+
+    // The outlier at 100.0 should likely be flagged
+    let scores = iforest.score_samples(&data);
+    // Outlier should have more negative score (more anomalous)
+    assert!(scores[4] < scores[0]);
+}
+
+#[test]
+fn test_isolation_forest_max_samples_larger_than_data() {
+    // max_samples > n_samples: exercises default clamping n_samples.min(256)
+    let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0])
+        .expect("Matrix creation should succeed");
+
+    let mut iforest = IsolationForest::new()
+        .with_max_samples(1000)
+        .with_n_estimators(10)
+        .with_random_state(42);
+    iforest.fit(&data).expect("Fit should succeed");
+    assert!(iforest.is_fitted());
+}
+
+#[test]
+fn test_isolation_forest_contamination_zero() {
+    // With contamination=0, threshold_idx=0
+    let data = Matrix::from_vec(
+        6,
+        2,
+        vec![
+            2.0, 2.0, 2.1, 2.0, 1.9, 2.1, 2.0, 1.9, 10.0, 10.0, -10.0, -10.0,
+        ],
+    )
+    .expect("Matrix creation should succeed");
+
+    let mut iforest = IsolationForest::new()
+        .with_contamination(0.0)
+        .with_random_state(42);
+    iforest.fit(&data).expect("Fit should succeed");
+
+    let predictions = iforest.predict(&data);
+    assert_eq!(predictions.len(), 6);
+}
+
+#[test]
+fn test_isolation_forest_refit_clears_trees() {
+    // Exercises the self.trees.clear() path (line 314) on refit
+    let data = Matrix::from_vec(
+        6,
+        2,
+        vec![
+            2.0, 2.0, 2.1, 2.0, 1.9, 2.1, 2.0, 1.9, 10.0, 10.0, -10.0, -10.0,
+        ],
+    )
+    .expect("Matrix creation should succeed");
+
+    let mut iforest = IsolationForest::new()
+        .with_n_estimators(10)
+        .with_random_state(42);
+    iforest.fit(&data).expect("First fit should succeed");
+
+    let scores1 = iforest.score_samples(&data);
+
+    // Refit on same data - exercises clear + rebuild
+    iforest.fit(&data).expect("Second fit should succeed");
+
+    let scores2 = iforest.score_samples(&data);
+    // Same seed + same data = same scores
+    assert_eq!(scores1, scores2);
+}
+
+#[test]
+fn test_isolation_forest_many_features() {
+    // Higher dimensionality exercises random feature selection more thoroughly
+    let data = Matrix::from_vec(
+        5,
+        5,
+        vec![
+            1.0, 2.0, 3.0, 4.0, 5.0, 1.1, 2.1, 3.1, 4.1, 5.1, 1.0, 2.0, 3.0, 4.0, 5.0, 0.9, 1.9,
+            2.9, 3.9, 4.9, 50.0, 50.0, 50.0, 50.0, 50.0, // Outlier
+        ],
+    )
+    .expect("Matrix creation should succeed");
+
+    let mut iforest = IsolationForest::new()
+        .with_n_estimators(50)
+        .with_contamination(0.2)
+        .with_random_state(42);
+    iforest.fit(&data).expect("Fit should succeed");
+
+    let scores = iforest.score_samples(&data);
+    assert_eq!(scores.len(), 5);
+    // Outlier at index 4 should have the most negative score
+    let min_idx = scores
+        .iter()
+        .enumerate()
+        .min_by(|(_, a), (_, b)| a.partial_cmp(b).expect("Valid floats"))
+        .map(|(i, _)| i)
+        .expect("Non-empty scores");
+    assert_eq!(min_idx, 4);
+}
+
+// ========================================================================
 // Local Outlier Factor (LOF) Tests
 // ========================================================================
 
@@ -1523,6 +1781,178 @@ fn test_lof_decision_consistency() {
 }
 
 // ========================================================================
+// Local Outlier Factor (LOF) Edge Case / Coverage Tests
+// ========================================================================
+
+#[test]
+fn test_lof_default() {
+    // Exercise the Default impl for LocalOutlierFactor
+    let lof = LocalOutlierFactor::default();
+    assert!(!lof.is_fitted());
+}
+
+#[test]
+fn test_lof_debug_impl() {
+    // Exercise the Debug derive
+    let lof = LocalOutlierFactor::new().with_n_neighbors(5);
+    let debug_str = format!("{:?}", lof);
+    assert!(debug_str.contains("LocalOutlierFactor"));
+    assert!(debug_str.contains("n_neighbors"));
+}
+
+#[test]
+fn test_lof_clone() {
+    // Exercise the Clone derive
+    let data = Matrix::from_vec(
+        6,
+        2,
+        vec![
+            2.0, 2.0, 2.1, 2.0, 1.9, 2.1, 2.0, 1.9, 10.0, 10.0, -10.0, -10.0,
+        ],
+    )
+    .expect("Matrix creation should succeed");
+
+    let mut lof = LocalOutlierFactor::new().with_n_neighbors(3);
+    lof.fit(&data).expect("LOF fit should succeed");
+
+    let lof_clone = lof.clone();
+    assert!(lof_clone.is_fitted());
+    assert_eq!(
+        lof.negative_outlier_factor().len(),
+        lof_clone.negative_outlier_factor().len()
+    );
+}
+
+#[test]
+fn test_lof_n_neighbors_too_large() {
+    // Exercise the error path: n_neighbors >= n_samples
+    let data = Matrix::from_vec(3, 2, vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0])
+        .expect("Matrix creation should succeed");
+
+    let mut lof = LocalOutlierFactor::new().with_n_neighbors(5);
+    let result = lof.fit(&data);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_lof_n_neighbors_equal_n_samples() {
+    // Edge case: n_neighbors == n_samples (should fail)
+    let data = Matrix::from_vec(3, 2, vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0])
+        .expect("Matrix creation should succeed");
+
+    let mut lof = LocalOutlierFactor::new().with_n_neighbors(3);
+    let result = lof.fit(&data);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_lof_contamination_clamping_high() {
+    // Exercise the contamination clamping: values > 0.5 get clamped to 0.5
+    let lof = LocalOutlierFactor::new().with_contamination(0.9);
+    let debug_str = format!("{:?}", lof);
+    // After clamping, contamination should be 0.5
+    assert!(debug_str.contains("0.5"));
+}
+
+#[test]
+fn test_lof_contamination_clamping_low() {
+    // Exercise the contamination clamping: values < 0.0 get clamped to 0.0
+    let lof = LocalOutlierFactor::new().with_contamination(-1.0);
+    let debug_str = format!("{:?}", lof);
+    // After clamping, contamination should be 0.0
+    assert!(debug_str.contains("contamination: 0.0"));
+}
+
+#[test]
+fn test_lof_identical_points_zero_reach_dist() {
+    // When all points are identical, reachability distances become 0.
+    // This exercises the sum_reach_dist == 0.0 branch in compute_lrd (line 256).
+    let data = Matrix::from_vec(4, 2, vec![1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
+        .expect("Matrix creation should succeed");
+
+    let mut lof = LocalOutlierFactor::new().with_n_neighbors(2);
+    lof.fit(&data)
+        .expect("LOF fit should succeed with identical points");
+    assert!(lof.is_fitted());
+
+    let scores = lof.score_samples(&data);
+    for &score in &scores {
+        assert!(score.is_finite());
+    }
+
+    let predictions = lof.predict(&data);
+    assert_eq!(predictions.len(), 4);
+}
+
+#[test]
+fn test_lof_contamination_zero() {
+    // With contamination=0, threshold_idx rounds to 0
+    let data = Matrix::from_vec(
+        6,
+        2,
+        vec![
+            2.0, 2.0, 2.1, 2.0, 1.9, 2.1, 2.0, 1.9, 10.0, 10.0, -10.0, -10.0,
+        ],
+    )
+    .expect("Matrix creation should succeed");
+
+    let mut lof = LocalOutlierFactor::new()
+        .with_n_neighbors(3)
+        .with_contamination(0.0);
+    lof.fit(&data).expect("LOF fit should succeed");
+
+    let predictions = lof.predict(&data);
+    assert_eq!(predictions.len(), 6);
+}
+
+#[test]
+fn test_lof_contamination_max() {
+    // With contamination=0.5 (max allowed), many points flagged
+    let data = Matrix::from_vec(
+        6,
+        2,
+        vec![
+            2.0, 2.0, 2.1, 2.0, 1.9, 2.1, 2.0, 1.9, 10.0, 10.0, -10.0, -10.0,
+        ],
+    )
+    .expect("Matrix creation should succeed");
+
+    let mut lof = LocalOutlierFactor::new()
+        .with_n_neighbors(3)
+        .with_contamination(0.5);
+    lof.fit(&data).expect("LOF fit should succeed");
+
+    let predictions = lof.predict(&data);
+    let n_anomalies = predictions.iter().filter(|&&p| p == -1).count();
+    // With 50% contamination, should flag about half
+    assert!(n_anomalies >= 2);
+}
+
+#[test]
+fn test_lof_single_feature() {
+    // Exercise with 1D data
+    let data = Matrix::from_vec(5, 1, vec![1.0, 1.1, 1.2, 1.0, 100.0])
+        .expect("Matrix creation should succeed");
+
+    let mut lof = LocalOutlierFactor::new()
+        .with_n_neighbors(2)
+        .with_contamination(0.2);
+    lof.fit(&data).expect("LOF fit should succeed");
+
+    let scores = lof.score_samples(&data);
+    assert_eq!(scores.len(), 5);
+
+    // The outlier at 100.0 should have highest LOF score
+    let max_score_idx = scores
+        .iter()
+        .enumerate()
+        .max_by(|(_, a), (_, b)| a.partial_cmp(b).expect("Valid floats"))
+        .map(|(i, _)| i)
+        .expect("Non-empty scores");
+    assert_eq!(max_score_idx, 4);
+}
+
+// ========================================================================
 // Spectral Clustering Tests
 // ========================================================================
 
@@ -1754,4 +2184,135 @@ fn test_spectral_clustering_well_separated() {
     assert_eq!(labels[3], labels[4]);
     assert_eq!(labels[3], labels[5]);
     assert_ne!(labels[0], labels[3]);
+}
+
+// ========================================================================
+// Spectral Clustering Edge Case / Coverage Tests
+// ========================================================================
+
+#[test]
+fn test_spectral_clustering_default() {
+    // Exercise the Default impl for SpectralClustering
+    let sc = SpectralClustering::default();
+    assert!(!sc.is_fitted());
+}
+
+#[test]
+fn test_spectral_clustering_unsupervised_estimator_trait() {
+    // Exercise the UnsupervisedEstimator::fit and ::predict dispatch paths
+    let data = Matrix::from_vec(
+        6,
+        2,
+        vec![1.0, 1.0, 1.1, 1.0, 0.9, 1.1, 5.0, 5.0, 5.1, 5.0, 4.9, 5.1],
+    )
+    .expect("Matrix creation should succeed");
+
+    let mut sc = SpectralClustering::new(2);
+    // Use the trait method explicitly
+    UnsupervisedEstimator::fit(&mut sc, &data).expect("UnsupervisedEstimator::fit should succeed");
+    assert!(sc.is_fitted());
+
+    let labels = UnsupervisedEstimator::predict(&sc, &data);
+    assert_eq!(labels.len(), 6);
+}
+
+#[test]
+#[should_panic(expected = "Model not fitted")]
+fn test_spectral_clustering_unsupervised_predict_before_fit() {
+    // Exercise the panic path in UnsupervisedEstimator::predict
+    let data =
+        Matrix::from_vec(2, 2, vec![1.0, 1.0, 2.0, 2.0]).expect("Matrix creation should succeed");
+    let sc = SpectralClustering::new(2);
+    let _ = UnsupervisedEstimator::predict(&sc, &data);
+}
+
+#[test]
+fn test_spectral_clustering_debug_impl() {
+    // Exercise the Debug derive on SpectralClustering
+    let sc = SpectralClustering::new(3);
+    let debug_str = format!("{:?}", sc);
+    assert!(debug_str.contains("SpectralClustering"));
+    assert!(debug_str.contains("n_clusters"));
+}
+
+#[test]
+fn test_spectral_clustering_clone() {
+    // Exercise the Clone derive
+    let data = Matrix::from_vec(4, 2, vec![0.0, 0.0, 0.1, 0.1, 5.0, 5.0, 5.1, 5.1])
+        .expect("Matrix creation should succeed");
+
+    let mut sc = SpectralClustering::new(2).with_gamma(0.5);
+    sc.fit(&data).expect("Fit should succeed");
+
+    let sc_clone = sc.clone();
+    assert!(sc_clone.is_fitted());
+    assert_eq!(sc.labels(), sc_clone.labels());
+}
+
+#[test]
+fn test_spectral_clustering_with_n_neighbors() {
+    // Exercise the with_n_neighbors builder method
+    let sc = SpectralClustering::new(2).with_n_neighbors(5);
+    let debug_str = format!("{:?}", sc);
+    assert!(debug_str.contains("5"));
+}
+
+#[test]
+fn test_spectral_clustering_knn_small_n_neighbors() {
+    // Use KNN affinity with n_neighbors > n_samples-1 to exercise the
+    // k_neighbors = self.n_neighbors.min(n_samples - 1) clamping path
+    let data = Matrix::from_vec(4, 2, vec![0.0, 0.0, 0.1, 0.1, 5.0, 5.0, 5.1, 5.1])
+        .expect("Matrix creation should succeed");
+
+    let mut sc = SpectralClustering::new(2)
+        .with_affinity(Affinity::KNN)
+        .with_n_neighbors(100); // much larger than n_samples
+    sc.fit(&data)
+        .expect("Fit should succeed with clamped n_neighbors");
+    assert!(sc.is_fitted());
+}
+
+#[test]
+fn test_affinity_debug_clone_eq() {
+    // Exercise Debug, Clone, Copy, PartialEq, Eq on Affinity enum
+    let rbf = Affinity::RBF;
+    let knn = Affinity::KNN;
+    let rbf_clone = rbf;
+
+    assert_eq!(rbf, rbf_clone);
+    assert_ne!(rbf, knn);
+
+    let debug_rbf = format!("{:?}", rbf);
+    assert!(debug_rbf.contains("RBF"));
+
+    let debug_knn = format!("{:?}", knn);
+    assert!(debug_knn.contains("KNN"));
+}
+
+#[test]
+fn test_spectral_clustering_high_gamma() {
+    // Very high gamma makes RBF similarities very local (close to 0 for distant pairs).
+    // This exercises the laplacian normalization with small degree values,
+    // hitting the .max(1e-10) guard in compute_laplacian.
+    let data = Matrix::from_vec(4, 2, vec![0.0, 0.0, 0.1, 0.1, 100.0, 100.0, 100.1, 100.1])
+        .expect("Matrix creation should succeed");
+
+    let mut sc = SpectralClustering::new(2).with_gamma(100.0);
+    sc.fit(&data).expect("Fit should succeed with high gamma");
+    assert!(sc.is_fitted());
+}
+
+#[test]
+fn test_spectral_clustering_single_feature() {
+    // Exercise with 1D data
+    let data =
+        Matrix::from_vec(4, 1, vec![0.0, 0.1, 10.0, 10.1]).expect("Matrix creation should succeed");
+
+    let mut sc = SpectralClustering::new(2);
+    sc.fit(&data).expect("Fit should succeed with 1D data");
+    let labels = sc.labels();
+    assert_eq!(labels.len(), 4);
+    assert_eq!(labels[0], labels[1]);
+    assert_eq!(labels[2], labels[3]);
+    assert_ne!(labels[0], labels[2]);
 }

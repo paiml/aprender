@@ -515,6 +515,261 @@ mod tests {
         assert!(sortino_ratio(&returns, 0.0, 0.0).abs() < 1e-10);
     }
 
+    #[test]
+    fn test_sharpe_ratio_zero_variance_negative_excess() {
+        // All identical returns below risk-free rate => negative infinity
+        let returns = vec![0.01, 0.01, 0.01, 0.01, 0.01];
+        let sharpe = sharpe_ratio(&returns, 0.05);
+        assert!(
+            sharpe.is_infinite() && sharpe < 0.0,
+            "Sharpe with zero variance and negative excess should be -Infinity: {sharpe}"
+        );
+    }
+
+    #[test]
+    fn test_sharpe_ratio_zero_variance_zero_excess() {
+        // All identical returns equal to risk-free rate => 0
+        let returns = vec![0.01, 0.01, 0.01, 0.01, 0.01];
+        let sharpe = sharpe_ratio(&returns, 0.01);
+        assert!(
+            sharpe.abs() < 1e-10,
+            "Sharpe with zero variance and zero excess should be 0: {sharpe}"
+        );
+    }
+
+    #[test]
+    fn test_sharpe_annualized_short_returns() {
+        // Less than 2 returns should return 0
+        let sharpe = sharpe_ratio_annualized(&[0.01], 0.05, 252.0);
+        assert!(sharpe.abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_sharpe_annualized_zero_vol_positive_excess() {
+        // All identical returns with positive annualized excess => Infinity
+        let returns = vec![0.01, 0.01, 0.01, 0.01, 0.01];
+        let sharpe = sharpe_ratio_annualized(&returns, 0.0, 252.0);
+        // annualized return = 0.01 * 252 = 2.52, excess = 2.52 - 0.0 = 2.52
+        // annualized vol = 0
+        assert!(
+            sharpe.is_infinite() && sharpe > 0.0,
+            "Annualized Sharpe with zero vol and positive excess should be +Infinity: {sharpe}"
+        );
+    }
+
+    #[test]
+    fn test_sharpe_annualized_zero_vol_negative_excess() {
+        // All identical returns below annualized risk-free => -Infinity
+        let returns = vec![0.001, 0.001, 0.001, 0.001, 0.001];
+        let sharpe = sharpe_ratio_annualized(&returns, 10.0, 252.0);
+        // annualized return = 0.001 * 252 = 0.252, excess = 0.252 - 10.0 = -9.748
+        assert!(
+            sharpe.is_infinite() && sharpe < 0.0,
+            "Annualized Sharpe with zero vol and negative excess should be -Infinity: {sharpe}"
+        );
+    }
+
+    #[test]
+    fn test_sharpe_annualized_zero_vol_zero_excess() {
+        // All identical returns equal to annualized risk-free => 0
+        let returns = vec![0.01, 0.01, 0.01, 0.01, 0.01];
+        // annualized return = 0.01 * 12 = 0.12
+        let sharpe = sharpe_ratio_annualized(&returns, 0.12, 12.0);
+        assert!(
+            sharpe.abs() < 1e-10,
+            "Annualized Sharpe with zero vol and zero excess should be 0: {sharpe}"
+        );
+    }
+
+    #[test]
+    fn test_sortino_zero_downside_negative_excess() {
+        // All positive returns but mean below risk-free => negative infinity
+        let returns = vec![0.01, 0.02, 0.03, 0.04, 0.05];
+        let sortino = sortino_ratio(&returns, 0.10, 0.0);
+        // mean = 0.03, excess = 0.03 - 0.10 = -0.07
+        // No returns below target, downside_deviation = 0
+        assert!(
+            sortino.is_infinite() && sortino < 0.0,
+            "Sortino with zero downside and negative excess should be -Infinity: {sortino}"
+        );
+    }
+
+    #[test]
+    fn test_sortino_zero_downside_zero_excess() {
+        // All positive returns, mean equals risk-free, no downside => 0
+        let returns = vec![0.03, 0.03, 0.03, 0.03, 0.03];
+        let sortino = sortino_ratio(&returns, 0.03, 0.0);
+        assert!(
+            sortino.abs() < 1e-10,
+            "Sortino with zero downside and zero excess should be 0: {sortino}"
+        );
+    }
+
+    #[test]
+    fn test_calmar_zero_drawdown_negative_return() {
+        let calmar = calmar_ratio(-0.10, 0.0);
+        assert!(
+            calmar.is_infinite() && calmar < 0.0,
+            "Calmar with zero drawdown and negative return should be -Infinity: {calmar}"
+        );
+    }
+
+    #[test]
+    fn test_calmar_zero_drawdown_zero_return() {
+        let calmar = calmar_ratio(0.0, 0.0);
+        assert!(
+            calmar.abs() < 1e-10,
+            "Calmar with zero drawdown and zero return should be 0: {calmar}"
+        );
+    }
+
+    #[test]
+    fn test_treynor_empty_returns() {
+        let treynor = treynor_ratio(&[], &[], 0.01);
+        assert!(
+            treynor.abs() < 1e-10,
+            "Treynor with empty returns should be 0: {treynor}"
+        );
+    }
+
+    #[test]
+    fn test_treynor_mismatched_lengths() {
+        // Mismatched lengths: beta defaults to 1.0
+        let returns = vec![0.01, 0.02, 0.03];
+        let benchmark = vec![0.01, 0.02];
+        let treynor = treynor_ratio(&returns, &benchmark, 0.0);
+        // beta = 1.0 (from mismatched lengths)
+        // excess = mean(returns) - rf = 0.02 - 0.0 = 0.02
+        // treynor = 0.02 / 1.0 = 0.02
+        assert!(treynor.is_finite());
+    }
+
+    #[test]
+    fn test_treynor_zero_beta() {
+        // When benchmark has zero variance, beta = 1.0 (fallback)
+        let returns = vec![0.01, 0.02, 0.03, 0.04];
+        let benchmark = vec![0.05, 0.05, 0.05, 0.05]; // zero variance
+        let treynor = treynor_ratio(&returns, &benchmark, 0.0);
+        // var_benchmark = 0, so beta = 1.0
+        // excess = 0.025 / 1.0 = 0.025
+        assert!(treynor.is_finite());
+        assert!(treynor > 0.0);
+    }
+
+    #[test]
+    fn test_information_ratio_mismatched_lengths() {
+        let returns = vec![0.01, 0.02, 0.03];
+        let benchmark = vec![0.01, 0.02];
+        let ir = information_ratio(&returns, &benchmark);
+        assert!(
+            ir.abs() < 1e-10,
+            "IR with mismatched lengths should be 0: {ir}"
+        );
+    }
+
+    #[test]
+    fn test_information_ratio_single_value() {
+        let ir = information_ratio(&[0.01], &[0.01]);
+        assert!(ir.abs() < 1e-10, "IR with single value should be 0: {ir}");
+    }
+
+    #[test]
+    fn test_omega_ratio_all_above_threshold() {
+        // All returns above threshold, losses = 0, gains > 0 => Infinity
+        let returns = vec![0.05, 0.06, 0.07, 0.08];
+        let omega = omega_ratio(&returns, 0.0);
+        assert!(
+            omega.is_infinite() && omega > 0.0,
+            "Omega with no losses and gains should be Infinity: {omega}"
+        );
+    }
+
+    #[test]
+    fn test_omega_ratio_all_equal_threshold() {
+        // All returns exactly at threshold: gains=0, losses=0 => 1.0
+        let returns = vec![0.0, 0.0, 0.0, 0.0];
+        let omega = omega_ratio(&returns, 0.0);
+        assert!(
+            (omega - 1.0).abs() < 1e-10,
+            "Omega with all returns at threshold should be 1.0: {omega}"
+        );
+    }
+
+    #[test]
+    fn test_gain_to_pain_all_negative() {
+        let returns = vec![-0.01, -0.02, -0.03, -0.04];
+        let gpr = gain_to_pain_ratio(&returns);
+        assert!(
+            gpr.abs() < 1e-10,
+            "Gain-to-pain with all negative and no gains should be 0: {gpr}"
+        );
+    }
+
+    #[test]
+    fn test_gain_to_pain_all_zero() {
+        let returns = vec![0.0, 0.0, 0.0];
+        let gpr = gain_to_pain_ratio(&returns);
+        assert!(
+            gpr.abs() < 1e-10,
+            "Gain-to-pain with all zeros should be 0: {gpr}"
+        );
+    }
+
+    #[test]
+    fn test_gain_to_pain_empty() {
+        let gpr = gain_to_pain_ratio(&[]);
+        assert!(
+            gpr.abs() < 1e-10,
+            "Gain-to-pain with empty should be 0: {gpr}"
+        );
+    }
+
+    #[test]
+    fn test_jensens_alpha_empty_returns() {
+        let alpha = jensens_alpha(&[], &[0.01, 0.02], 0.01);
+        assert!(
+            alpha.abs() < 1e-10,
+            "Alpha with empty returns should be 0: {alpha}"
+        );
+    }
+
+    #[test]
+    fn test_jensens_alpha_empty_benchmark() {
+        let alpha = jensens_alpha(&[0.01, 0.02], &[], 0.01);
+        assert!(
+            alpha.abs() < 1e-10,
+            "Alpha with empty benchmark should be 0: {alpha}"
+        );
+    }
+
+    #[test]
+    fn test_calculate_beta_mismatched() {
+        // Mismatched lengths returns default beta of 1.0
+        let beta = calculate_beta(&[0.01, 0.02, 0.03], &[0.01, 0.02]);
+        assert!(
+            (beta - 1.0).abs() < 1e-10,
+            "Beta with mismatched lengths should be 1.0: {beta}"
+        );
+    }
+
+    #[test]
+    fn test_calculate_beta_single_value() {
+        let beta = calculate_beta(&[0.01], &[0.02]);
+        assert!(
+            (beta - 1.0).abs() < 1e-10,
+            "Beta with single value should be 1.0: {beta}"
+        );
+    }
+
+    #[test]
+    fn test_calculate_beta_zero_benchmark_variance() {
+        let beta = calculate_beta(&[0.01, 0.02, 0.03], &[0.05, 0.05, 0.05]);
+        assert!(
+            (beta - 1.0).abs() < 1e-10,
+            "Beta with zero benchmark variance should be 1.0: {beta}"
+        );
+    }
+
     // Property-based tests
     #[cfg(test)]
     mod proptests {

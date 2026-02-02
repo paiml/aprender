@@ -1029,4 +1029,110 @@ mod tests {
             assert_eq!(result.expected, result.actual);
         }
     }
+
+    // =====================================================================
+    // Coverage boost: process_edge_case_result with failed + error message
+    // =====================================================================
+
+    #[test]
+    fn test_process_edge_case_result_failed_with_error_message() {
+        use super::{process_edge_case_result, CategoryScore};
+
+        let result = EdgeCaseResult {
+            name: "Failing with error".to_string(),
+            passed: false,
+            expected: EdgeCaseBehavior::Normal,
+            actual: EdgeCaseBehavior::Panics,
+            error: Some("Panic detected in handler".to_string()),
+            duration: Duration::from_millis(5),
+        };
+
+        let mut score = CategoryScore::new(10);
+        process_edge_case_result(&result, &mut score);
+
+        assert_eq!(score.tests_failed, 1);
+        assert_eq!(score.tests_passed, 0);
+    }
+
+    // =====================================================================
+    // Coverage boost: max_size_handling with test_size > 10_000 cap
+    // =====================================================================
+
+    #[test]
+    fn test_max_size_handling_large_max() {
+        use super::test_max_size_handling;
+
+        // max_size > 10_000 means test_size is capped at 10_000
+        let result = test_max_size_handling(1_000_000);
+        assert!(result.passed);
+        assert_eq!(result.actual, EdgeCaseBehavior::Normal);
+    }
+
+    // =====================================================================
+    // Coverage boost: run_edge_case_tests with all enabled and allow_panic
+    // =====================================================================
+
+    #[test]
+    fn test_run_edge_case_tests_all_enabled_allow_panic() {
+        let config = EdgeCaseConfig {
+            test_nan: true,
+            test_inf: true,
+            test_empty: true,
+            test_zero: true,
+            test_max_size: true,
+            max_input_size: 500,
+            allow_panic: true,
+        };
+
+        let (score, issues) = run_edge_case_tests(&config);
+        // All 5 tests should run
+        assert_eq!(score.tests_passed + score.tests_failed, 5);
+        // With allow_panic, NaN issue should not be Critical
+        let critical_issues: Vec<_> = issues
+            .iter()
+            .filter(|i| i.severity == super::Severity::Critical)
+            .collect();
+        assert!(critical_issues.is_empty());
+    }
+
+    // =====================================================================
+    // Coverage boost: numerical module edge cases
+    // =====================================================================
+
+    #[test]
+    fn test_numerical_precision_loss_passed_field() {
+        let result = numerical::test_precision_loss();
+        assert!(result.passed);
+        assert!(result.error.is_none());
+    }
+
+    // =====================================================================
+    // Coverage boost: EdgeCaseBehavior Debug
+    // =====================================================================
+
+    #[test]
+    fn test_edge_case_behavior_debug() {
+        let behaviors = [
+            EdgeCaseBehavior::GracefulError,
+            EdgeCaseBehavior::ReturnsDefault,
+            EdgeCaseBehavior::Panics,
+            EdgeCaseBehavior::Hangs,
+            EdgeCaseBehavior::Normal,
+        ];
+        for b in &behaviors {
+            let debug = format!("{:?}", b);
+            assert!(!debug.is_empty());
+        }
+    }
+
+    // =====================================================================
+    // Coverage boost: test_max_size_handling directly
+    // =====================================================================
+
+    #[test]
+    fn test_max_size_handling_zero() {
+        use super::test_max_size_handling;
+        let result = test_max_size_handling(0);
+        assert!(result.passed);
+    }
 }

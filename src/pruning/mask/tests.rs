@@ -706,3 +706,195 @@ fn test_sparsity_mask_shape() {
     let mask = SparsityMask::new(mask_data, SparsityPattern::Unstructured).unwrap();
     assert_eq!(mask.shape(), &[2, 3]);
 }
+
+// ==========================================================================
+// FALSIFICATION: Block validation with <2D mask
+// ==========================================================================
+#[test]
+fn test_block_validate_1d_mask() {
+    let mask_data = Tensor::new(&[1.0, 0.0, 1.0, 0.0], &[4]);
+    let result = SparsityMask::new(
+        mask_data,
+        SparsityPattern::Block {
+            height: 2,
+            width: 2,
+        },
+    );
+    assert!(result.is_err(), "Block sparsity should require 2D mask");
+}
+
+// ==========================================================================
+// FALSIFICATION: Block validation with non-divisible shape
+// ==========================================================================
+#[test]
+fn test_block_validate_non_divisible_shape() {
+    // 3x3 mask with 2x2 blocks - 3 is not divisible by 2
+    let mask_data = Tensor::new(&[1.0; 9], &[3, 3]);
+    let result = SparsityMask::new(
+        mask_data,
+        SparsityPattern::Block {
+            height: 2,
+            width: 2,
+        },
+    );
+    assert!(result.is_err(), "Block should error on non-divisible shape");
+}
+
+// ==========================================================================
+// FALSIFICATION: Block validation with non-uniform block
+// ==========================================================================
+#[test]
+fn test_block_validate_non_uniform_block() {
+    // 2x2 mask with 2x2 block, but values are not uniform within the block
+    let mask_data = Tensor::new(&[1.0, 0.0, 1.0, 1.0], &[2, 2]);
+    let result = SparsityMask::new(
+        mask_data,
+        SparsityPattern::Block {
+            height: 2,
+            width: 2,
+        },
+    );
+    assert!(result.is_err(), "Block should error on non-uniform block");
+}
+
+// ==========================================================================
+// FALSIFICATION: Row validation with <2D mask
+// ==========================================================================
+#[test]
+fn test_row_validate_1d_mask() {
+    let mask_data = Tensor::new(&[1.0, 0.0, 1.0, 0.0], &[4]);
+    let result = SparsityMask::new(mask_data, SparsityPattern::Row);
+    assert!(result.is_err(), "Row sparsity should require 2D mask");
+}
+
+// ==========================================================================
+// FALSIFICATION: Row validation with non-uniform row
+// ==========================================================================
+#[test]
+fn test_row_validate_non_uniform_row() {
+    // 2x2 mask where first row is not uniform
+    let mask_data = Tensor::new(&[1.0, 0.0, 1.0, 1.0], &[2, 2]);
+    let result = SparsityMask::new(mask_data, SparsityPattern::Row);
+    assert!(result.is_err(), "Row should error on non-uniform row");
+}
+
+// ==========================================================================
+// FALSIFICATION: Column validation with <2D mask
+// ==========================================================================
+#[test]
+fn test_column_validate_1d_mask() {
+    let mask_data = Tensor::new(&[1.0, 0.0, 1.0, 0.0], &[4]);
+    let result = SparsityMask::new(mask_data, SparsityPattern::Column);
+    assert!(result.is_err(), "Column sparsity should require 2D mask");
+}
+
+// ==========================================================================
+// FALSIFICATION: Column validation with non-uniform column
+// ==========================================================================
+#[test]
+fn test_column_validate_non_uniform_column() {
+    // 2x2 mask where first column is not uniform (top-left=1.0, bottom-left=0.0)
+    let mask_data = Tensor::new(&[1.0, 1.0, 0.0, 1.0], &[2, 2]);
+    let result = SparsityMask::new(mask_data, SparsityPattern::Column);
+    assert!(result.is_err(), "Column should error on non-uniform column");
+}
+
+// ==========================================================================
+// FALSIFICATION: SparsityMask with empty data
+// ==========================================================================
+#[test]
+fn test_sparsity_mask_empty_data() {
+    let mask_data = Tensor::new(&[], &[0]);
+    let mask = SparsityMask::new(mask_data, SparsityPattern::Unstructured);
+    assert!(mask.is_ok());
+    let mask = mask.unwrap();
+    assert!((mask.sparsity() - 0.0).abs() < 1e-6);
+}
+
+// ==========================================================================
+// FALSIFICATION: SparsityPattern Default
+// ==========================================================================
+#[test]
+fn test_sparsity_pattern_default() {
+    let pattern = SparsityPattern::default();
+    assert_eq!(pattern, SparsityPattern::Unstructured);
+}
+
+// ==========================================================================
+// FALSIFICATION: generate_nm_mask with m=0
+// ==========================================================================
+#[test]
+fn test_generate_nm_mask_m_zero() {
+    let scores = Tensor::new(&[1.0; 4], &[4]);
+    let result = generate_nm_mask(&scores, 1, 0);
+    assert!(result.is_err(), "M=0 should error");
+}
+
+// ==========================================================================
+// FALSIFICATION: generate_nm_mask with n > m
+// ==========================================================================
+#[test]
+fn test_generate_nm_mask_n_greater_than_m() {
+    let scores = Tensor::new(&[1.0; 4], &[4]);
+    let result = generate_nm_mask(&scores, 3, 2);
+    assert!(result.is_err(), "N > M should error");
+}
+
+// ==========================================================================
+// FALSIFICATION: generate_nm_mask data not divisible by m (coverage boost)
+// ==========================================================================
+#[test]
+fn test_generate_nm_mask_not_divisible_coverage() {
+    let scores = Tensor::new(&[1.0; 5], &[5]); // 5 is not divisible by 4
+    let result = generate_nm_mask(&scores, 2, 4);
+    assert!(result.is_err(), "Length not divisible by M should error");
+}
+
+// ==========================================================================
+// FALSIFICATION: generate_unstructured_mask with empty tensor
+// ==========================================================================
+#[test]
+fn test_generate_unstructured_mask_empty() {
+    let scores = Tensor::new(&[], &[0]);
+    let mask = generate_unstructured_mask(&scores, 0.5);
+    assert!(mask.is_ok());
+}
+
+// ==========================================================================
+// FALSIFICATION: Block validation with valid uniform blocks
+// ==========================================================================
+#[test]
+fn test_block_validate_valid_uniform() {
+    // 4x4 mask with 2x2 blocks, all ones (uniform)
+    let mask_data = Tensor::new(&[1.0; 16], &[4, 4]);
+    let result = SparsityMask::new(
+        mask_data,
+        SparsityPattern::Block {
+            height: 2,
+            width: 2,
+        },
+    );
+    assert!(result.is_ok(), "Uniform blocks should be valid");
+}
+
+// ==========================================================================
+// FALSIFICATION: Row validation with valid uniform rows
+// ==========================================================================
+#[test]
+fn test_row_validate_valid_uniform() {
+    // 2x3 mask where each row is uniform
+    let mask_data = Tensor::new(&[1.0, 1.0, 1.0, 0.0, 0.0, 0.0], &[2, 3]);
+    let result = SparsityMask::new(mask_data, SparsityPattern::Row);
+    assert!(result.is_ok(), "Uniform rows should be valid");
+}
+
+// ==========================================================================
+// FALSIFICATION: Column validation with valid uniform columns
+// ==========================================================================
+#[test]
+fn test_column_validate_valid_uniform() {
+    // 2x2 mask where each column is uniform
+    let mask_data = Tensor::new(&[1.0, 0.0, 1.0, 0.0], &[2, 2]);
+    let result = SparsityMask::new(mask_data, SparsityPattern::Column);
+    assert!(result.is_ok(), "Uniform columns should be valid");
+}

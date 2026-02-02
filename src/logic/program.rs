@@ -321,4 +321,173 @@ mod tests {
         // 0.8 * 0.7 = 0.56
         assert!((grandparent[0][2] - 0.56).abs() < 1e-6);
     }
+
+    #[test]
+    fn test_copy_equation() {
+        let data = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
+        let mut program = ProgramBuilder::new(LogicMode::Boolean)
+            .add_fact("original", data.clone())
+            .add_rule("copy", Equation::Copy("original".into()))
+            .build();
+
+        let results = program.forward();
+        let copied = results.get("copy").unwrap();
+        assert_eq!(copied[0][0], 1.0);
+        assert_eq!(copied[0][1], 0.0);
+        assert_eq!(copied[1][0], 0.0);
+        assert_eq!(copied[1][1], 1.0);
+    }
+
+    #[test]
+    fn test_join_multiple_empty() {
+        let mut program = ProgramBuilder::new(LogicMode::Boolean)
+            .add_rule("empty_join", Equation::JoinMultiple(vec![]))
+            .build();
+
+        let results = program.forward();
+        let empty = results.get("empty_join").unwrap();
+        assert!(empty.is_empty());
+    }
+
+    #[test]
+    fn test_join_multiple_single() {
+        let data = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
+        let mut program = ProgramBuilder::new(LogicMode::Boolean)
+            .add_fact("a", data)
+            .add_rule("single", Equation::JoinMultiple(vec!["a".into()]))
+            .build();
+
+        let results = program.forward();
+        let result = results.get("single").unwrap();
+        assert_eq!(result[0][0], 1.0);
+        assert_eq!(result[1][1], 1.0);
+    }
+
+    #[test]
+    fn test_join_multiple_three() {
+        let identity = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
+        let mut program = ProgramBuilder::new(LogicMode::Boolean)
+            .add_fact("id", identity)
+            .add_rule(
+                "triple",
+                Equation::JoinMultiple(vec!["id".into(), "id".into(), "id".into()]),
+            )
+            .build();
+
+        let results = program.forward();
+        let result = results.get("triple").unwrap();
+        // Identity * Identity * Identity = Identity
+        assert_eq!(result[0][0], 1.0);
+        assert_eq!(result[1][1], 1.0);
+    }
+
+    #[test]
+    fn test_query_returns_fact() {
+        let data = vec![vec![1.0, 0.0]];
+        let mut program = ProgramBuilder::new(LogicMode::Boolean)
+            .add_fact("my_fact", data.clone())
+            .build();
+
+        let result = program.query("my_fact");
+        assert!(result.is_some());
+        assert_eq!(result.unwrap()[0][0], 1.0);
+    }
+
+    #[test]
+    fn test_query_returns_already_derived() {
+        let data = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
+        let mut program = ProgramBuilder::new(LogicMode::Boolean)
+            .add_fact("a", data)
+            .add_rule("b", Equation::Copy("a".into()))
+            .build();
+
+        // First call derives and caches
+        let _ = program.forward();
+        // Second query hits the derived cache
+        let result = program.query("b");
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_query_returns_none() {
+        let mut program = ProgramBuilder::new(LogicMode::Boolean).build();
+        let result = program.query("nonexistent");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_get_fact_and_derived() {
+        let data = vec![vec![1.0, 0.0]];
+        let mut program = ProgramBuilder::new(LogicMode::Boolean)
+            .add_fact("fact1", data)
+            .add_rule("derived1", Equation::Copy("fact1".into()))
+            .build();
+
+        // Before forward, derived is not available
+        assert!(program.get("fact1").is_some());
+        assert!(program.get("derived1").is_none());
+
+        // After forward, both are available
+        program.forward();
+        assert!(program.get("fact1").is_some());
+        assert!(program.get("derived1").is_some());
+
+        // Missing key returns None
+        assert!(program.get("missing").is_none());
+    }
+
+    #[test]
+    fn test_results_method() {
+        let data = vec![vec![1.0]];
+        let mut program = ProgramBuilder::new(LogicMode::Boolean)
+            .add_fact("f", data)
+            .add_rule("d", Equation::Copy("f".into()))
+            .build();
+
+        program.forward();
+        let all = program.results();
+        assert!(all.contains_key("f"));
+        assert!(all.contains_key("d"));
+        assert_eq!(all.len(), 2);
+    }
+
+    #[test]
+    fn test_get_tensor_missing_returns_empty() {
+        let mut program = ProgramBuilder::new(LogicMode::Boolean)
+            .add_rule(
+                "bad",
+                Equation::Join("nonexistent_a".into(), "nonexistent_b".into()),
+            )
+            .build();
+
+        // forward will call get_tensor for missing names, returning empty vecs
+        let results = program.forward();
+        let bad = results.get("bad").unwrap();
+        assert!(bad.is_empty());
+    }
+
+    #[test]
+    fn test_equation_debug_clone() {
+        let eq = Equation::Join("a".into(), "b".into());
+        let debug_str = format!("{:?}", eq);
+        assert!(debug_str.contains("Join"));
+
+        let cloned = eq.clone();
+        let cloned_debug = format!("{:?}", cloned);
+        assert_eq!(debug_str, cloned_debug);
+    }
+
+    #[test]
+    fn test_program_builder_debug() {
+        let builder = ProgramBuilder::new(LogicMode::Boolean);
+        let debug_str = format!("{:?}", builder);
+        assert!(debug_str.contains("ProgramBuilder"));
+    }
+
+    #[test]
+    fn test_tensor_program_debug() {
+        let program = TensorProgram::new(LogicMode::Continuous);
+        let debug_str = format!("{:?}", program);
+        assert!(debug_str.contains("TensorProgram"));
+    }
 }

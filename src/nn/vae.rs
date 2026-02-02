@@ -945,4 +945,212 @@ mod tests {
 
         assert_eq!(output.reconstruction.shape(), &[4, 100]);
     }
+
+    // ========================================================================
+    // Coverage: Debug impls
+    // ========================================================================
+
+    #[test]
+    fn test_vae_debug() {
+        let vae = VAE::new(784, vec![256, 128], 20);
+        let debug_str = format!("{:?}", vae);
+        assert!(debug_str.contains("VAE"));
+        assert!(debug_str.contains("input_dim"));
+        assert!(debug_str.contains("784"));
+        assert!(debug_str.contains("latent_dim"));
+        assert!(debug_str.contains("20"));
+        assert!(debug_str.contains("beta"));
+    }
+
+    #[test]
+    fn test_vae_debug_with_beta() {
+        let vae = VAE::new(100, vec![64], 10).with_beta(4.0);
+        let debug_str = format!("{:?}", vae);
+        assert!(debug_str.contains("4.0"));
+    }
+
+    #[test]
+    fn test_cvae_debug() {
+        let cvae = ConditionalVAE::new(100, 10, vec![64], 20);
+        let debug_str = format!("{:?}", cvae);
+        assert!(debug_str.contains("ConditionalVAE"));
+        assert!(debug_str.contains("input_dim"));
+        assert!(debug_str.contains("100"));
+        assert!(debug_str.contains("latent_dim"));
+        assert!(debug_str.contains("20"));
+        assert!(debug_str.contains("num_classes"));
+        assert!(debug_str.contains("10"));
+    }
+
+    #[test]
+    fn test_vae_output_debug() {
+        let vae = VAE::new(50, vec![32], 5);
+        let x = Tensor::ones(&[2, 50]);
+        let output = vae.forward_vae(&x);
+        let debug_str = format!("{:?}", output);
+        assert!(debug_str.contains("VAEOutput"));
+    }
+
+    // ========================================================================
+    // Coverage: VAE parameters_mut
+    // ========================================================================
+
+    #[test]
+    fn test_vae_parameters_mut() {
+        let mut vae = VAE::new(100, vec![64], 10);
+        let params = vae.parameters_mut();
+        // Same count as parameters(): 1 encoder + 2 latent + 1 decoder + 1 output = 5 layers * 2 = 10
+        assert_eq!(params.len(), 10);
+    }
+
+    // ========================================================================
+    // Coverage: CVAE reparameterize in eval mode (training == false)
+    // ========================================================================
+
+    #[test]
+    fn test_cvae_reparameterize_eval_mode() {
+        let mut cvae = ConditionalVAE::new(50, 5, vec![32], 10);
+        // Switch to eval to hit the !self.training path in reparameterize
+        cvae.training = false;
+
+        let x = Tensor::ones(&[2, 50]);
+        let output = cvae.forward_cvae(&x, 2);
+
+        // In eval mode, z should equal mu (no sampling noise)
+        assert_eq!(output.z.data(), output.mu.data());
+    }
+
+    // ========================================================================
+    // Coverage: CVAE with no hidden layers (unwrap_or path)
+    // ========================================================================
+
+    #[test]
+    fn test_cvae_no_hidden_layers() {
+        // When hidden_dims is empty, unwrap_or fallback is used
+        let cvae = ConditionalVAE::new(50, 5, vec![], 10);
+
+        let x = Tensor::ones(&[2, 50]);
+        let output = cvae.forward_cvae(&x, 3);
+
+        assert_eq!(output.reconstruction.shape(), &[2, 50]);
+        assert_eq!(output.mu.shape(), &[2, 10]);
+        assert_eq!(output.z.shape(), &[2, 10]);
+    }
+
+    // ========================================================================
+    // Coverage: CVAE decode directly
+    // ========================================================================
+
+    #[test]
+    fn test_cvae_decode() {
+        let cvae = ConditionalVAE::new(50, 5, vec![32], 10);
+        let z = Tensor::ones(&[2, 10]);
+        let reconstruction = cvae.decode(&z, 1);
+        assert_eq!(reconstruction.shape(), &[2, 50]);
+    }
+
+    // ========================================================================
+    // Coverage: VAE Module::forward (wraps forward_vae)
+    // ========================================================================
+
+    #[test]
+    fn test_vae_module_forward_returns_reconstruction() {
+        let vae = VAE::new(50, vec![32], 10);
+        let x = Tensor::ones(&[2, 50]);
+        // Module::forward only returns reconstruction
+        let output = Module::forward(&vae, &x);
+        assert_eq!(output.shape(), &[2, 50]);
+    }
+
+    // ========================================================================
+    // Coverage: VAE loss with beta > 1 (beta-VAE)
+    // ========================================================================
+
+    #[test]
+    fn test_vae_loss_with_high_beta() {
+        let vae = VAE::new(50, vec![32], 5).with_beta(10.0);
+        let x = Tensor::ones(&[4, 50]);
+        let output = vae.forward_vae(&x);
+        let (total, recon, kl) = vae.loss(&output, &x);
+
+        // With high beta, total should be recon + 10*kl
+        let expected_total = recon + 10.0 * kl;
+        assert!((total - expected_total).abs() < 1e-4);
+    }
+
+    // ========================================================================
+    // Coverage: sample_standard_normal with multi-dim shape
+    // ========================================================================
+
+    #[test]
+    fn test_sample_standard_normal_2d() {
+        let samples = sample_standard_normal(&[10, 5]);
+        assert_eq!(samples.shape(), &[10, 5]);
+        assert_eq!(samples.data().len(), 50);
+    }
+
+    // ========================================================================
+    // Coverage: lerp boundary values
+    // ========================================================================
+
+    #[test]
+    fn test_lerp_boundary_alpha_zero() {
+        let a = Tensor::new(&[1.0, 2.0], &[2]);
+        let b = Tensor::new(&[10.0, 20.0], &[2]);
+        let result = lerp(&a, &b, 0.0);
+        assert_eq!(result.data(), &[1.0, 2.0]);
+    }
+
+    #[test]
+    fn test_lerp_boundary_alpha_one() {
+        let a = Tensor::new(&[1.0, 2.0], &[2]);
+        let b = Tensor::new(&[10.0, 20.0], &[2]);
+        let result = lerp(&a, &b, 1.0);
+        assert_eq!(result.data(), &[10.0, 20.0]);
+    }
+
+    // ========================================================================
+    // Coverage: concat_one_hot with class_label 0
+    // ========================================================================
+
+    #[test]
+    fn test_concat_one_hot_first_class() {
+        let x = Tensor::new(&[1.0, 2.0], &[1, 2]);
+        let result = concat_one_hot(&x, 0, 3);
+        assert_eq!(result.shape(), &[1, 5]);
+        // [1.0, 2.0, 1.0, 0.0, 0.0]
+        assert_eq!(result.data()[2], 1.0);
+        assert_eq!(result.data()[3], 0.0);
+        assert_eq!(result.data()[4], 0.0);
+    }
+
+    // ========================================================================
+    // Coverage: KL divergence with non-zero values
+    // ========================================================================
+
+    #[test]
+    fn test_kl_divergence_nonzero() {
+        // Non-trivial mu and log_var should give positive KL
+        let mu = Tensor::new(&[1.0, 2.0, -1.0, 0.5], &[2, 2]);
+        let log_var = Tensor::new(&[0.5, -0.5, 1.0, -1.0], &[2, 2]);
+        let kl = kl_divergence_loss(&mu, &log_var);
+        assert!(
+            kl > 0.0,
+            "KL should be positive for non-standard distribution"
+        );
+        assert!(kl.is_finite());
+    }
+
+    // ========================================================================
+    // Coverage: CVAE sample
+    // ========================================================================
+
+    #[test]
+    fn test_cvae_sample_multiple_classes() {
+        let cvae = ConditionalVAE::new(50, 5, vec![32], 10);
+        for class in 0..5 {
+            let samples = cvae.sample(3, class);
+            assert_eq!(samples.shape(), &[3, 50]);
+        }
+    }
 }

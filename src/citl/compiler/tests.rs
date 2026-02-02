@@ -588,3 +588,457 @@ fn test_compiler_version_with_commit() {
     assert_eq!(version.commit, Some("abc123".to_string()));
     assert_eq!(format!("{version}"), "1.80.0");
 }
+
+// ==================== Coverage: CompilerVersion PartialEq ====================
+
+#[test]
+fn test_compiler_version_equality() {
+    let v1 = CompilerVersion {
+        major: 1,
+        minor: 75,
+        patch: 0,
+        full: "1.75.0".to_string(),
+        commit: None,
+    };
+    let v2 = CompilerVersion {
+        major: 1,
+        minor: 75,
+        patch: 0,
+        full: "1.75.0".to_string(),
+        commit: None,
+    };
+    let v3 = CompilerVersion {
+        major: 1,
+        minor: 80,
+        patch: 0,
+        full: "1.80.0".to_string(),
+        commit: None,
+    };
+    assert_eq!(v1, v2);
+    assert_ne!(v1, v3);
+}
+
+// ==================== Coverage: CompilerVersion parse edge cases ====================
+
+#[test]
+fn test_compiler_version_parse_with_pre_release() {
+    let version = CompilerVersion::parse("1.82.0-beta.1").expect("Should parse");
+    assert_eq!(version.major, 1);
+    assert_eq!(version.minor, 82);
+    assert_eq!(version.patch, 0);
+}
+
+// ==================== Coverage: RustEdition Debug ====================
+
+#[test]
+fn test_rust_edition_debug() {
+    let edition = RustEdition::E2024;
+    let debug_str = format!("{:?}", edition);
+    assert!(debug_str.contains("E2024"));
+}
+
+// ==================== Coverage: CompilationMode Debug ====================
+
+#[test]
+fn test_compilation_mode_debug() {
+    let standalone = CompilationMode::Standalone;
+    let debug_str = format!("{:?}", standalone);
+    assert!(debug_str.contains("Standalone"));
+
+    let cargo = CompilationMode::Cargo {
+        manifest_path: PathBuf::from("/tmp/Cargo.toml"),
+    };
+    let debug_str = format!("{:?}", cargo);
+    assert!(debug_str.contains("Cargo"));
+
+    let check = CompilationMode::CargoCheck {
+        manifest_path: PathBuf::from("/tmp/Cargo.toml"),
+    };
+    let debug_str = format!("{:?}", check);
+    assert!(debug_str.contains("CargoCheck"));
+}
+
+// ==================== Coverage: CompileOptions Debug ====================
+
+#[test]
+fn test_compile_options_debug() {
+    let options = CompileOptions::default();
+    let debug_str = format!("{:?}", options);
+    assert!(debug_str.contains("CompileOptions"));
+    assert!(debug_str.contains("Debug"));
+}
+
+// ==================== Coverage: CompiledArtifact Debug/Clone ====================
+
+#[test]
+fn test_compiled_artifact_debug_clone() {
+    let artifact = CompiledArtifact {
+        artifact_type: ArtifactType::Wasm,
+        path: None,
+        size: 0,
+    };
+    let debug_str = format!("{:?}", artifact);
+    assert!(debug_str.contains("Wasm"));
+
+    let cloned = artifact.clone();
+    assert_eq!(cloned.artifact_type, ArtifactType::Wasm);
+    assert!(cloned.path.is_none());
+    assert_eq!(cloned.size, 0);
+}
+
+// ==================== Coverage: CompilationMetrics Debug/Clone ====================
+
+#[test]
+fn test_compilation_metrics_debug_clone() {
+    let metrics = CompilationMetrics {
+        duration: Duration::from_millis(500),
+        memory_bytes: Some(4096),
+        units: 2,
+    };
+    let debug_str = format!("{:?}", metrics);
+    assert!(debug_str.contains("CompilationMetrics"));
+
+    let cloned = metrics.clone();
+    assert_eq!(cloned.duration, Duration::from_millis(500));
+    assert_eq!(cloned.memory_bytes, Some(4096));
+    assert_eq!(cloned.units, 2);
+}
+
+// ==================== Coverage: CompilationResult Clone ====================
+
+#[test]
+fn test_compilation_result_clone_success() {
+    let result = CompilationResult::Success {
+        artifact: Some(CompiledArtifact {
+            artifact_type: ArtifactType::StaticLib,
+            path: Some(PathBuf::from("/tmp/lib.a")),
+            size: 2048,
+        }),
+        warnings: vec![],
+        metrics: CompilationMetrics::default(),
+    };
+    let cloned = result.clone();
+    assert!(cloned.is_success());
+    assert_eq!(cloned.error_count(), 0);
+}
+
+#[test]
+fn test_compilation_result_clone_failure() {
+    let code = ErrorCode::new("E0308", ErrorCategory::TypeMismatch, Difficulty::Easy);
+    let span = SourceSpan::default();
+    let error = CompilerDiagnostic::new(code, DiagnosticSeverity::Error, "test", span);
+
+    let result = CompilationResult::Failure {
+        errors: vec![error],
+        warnings: vec![],
+        raw_output: "raw output".to_string(),
+    };
+    let cloned = result.clone();
+    assert!(!cloned.is_success());
+    assert_eq!(cloned.error_count(), 1);
+}
+
+// ==================== Coverage: parse_single_json_diagnostic severity variants ====================
+
+#[test]
+fn test_parse_diagnostic_warning() {
+    let compiler = RustCompiler::new();
+    let json = r#"{"level":"warning","message":"unused variable","code":{"code":"W0001"}}"#;
+    let diag = compiler.parse_diagnostic(json);
+    assert!(diag.is_some());
+    let d = diag.expect("Should parse");
+    assert_eq!(d.severity, DiagnosticSeverity::Warning);
+}
+
+#[test]
+fn test_parse_diagnostic_note() {
+    let compiler = RustCompiler::new();
+    let json = r#"{"level":"note","message":"consider using","code":{"code":"N0001"}}"#;
+    let diag = compiler.parse_diagnostic(json);
+    assert!(diag.is_some());
+    let d = diag.expect("Should parse");
+    assert_eq!(d.severity, DiagnosticSeverity::Note);
+}
+
+#[test]
+fn test_parse_diagnostic_help() {
+    let compiler = RustCompiler::new();
+    let json = r#"{"level":"help","message":"try adding a reference","code":{"code":"H0001"}}"#;
+    let diag = compiler.parse_diagnostic(json);
+    assert!(diag.is_some());
+    let d = diag.expect("Should parse");
+    assert_eq!(d.severity, DiagnosticSeverity::Help);
+}
+
+#[test]
+fn test_parse_diagnostic_unknown_level() {
+    let compiler = RustCompiler::new();
+    let json = r#"{"level":"ice","message":"internal error","code":{"code":"ICE"}}"#;
+    let diag = compiler.parse_diagnostic(json);
+    assert!(diag.is_none());
+}
+
+// ==================== Coverage: parse_single_json_diagnostic with expected/found ====================
+
+#[test]
+fn test_parse_diagnostic_with_expected_found() {
+    let compiler = RustCompiler::new();
+    let json = r#"{"level":"error","message":"mismatched types","code":{"code":"E0308"},"expected":"i32","found":"String"}"#;
+    let diag = compiler.parse_diagnostic(json);
+    assert!(diag.is_some());
+    let d = diag.expect("Should parse");
+    assert!(d.expected.is_some());
+    assert!(d.found.is_some());
+}
+
+// ==================== Coverage: parse_single_json_diagnostic missing code ====================
+
+#[test]
+fn test_parse_diagnostic_no_code() {
+    let compiler = RustCompiler::new();
+    let json = r#"{"level":"error","message":"some error"}"#;
+    let diag = compiler.parse_diagnostic(json);
+    assert!(diag.is_some());
+    let d = diag.expect("Should parse");
+    assert_eq!(d.code.code, "unknown");
+}
+
+// ==================== Coverage: extract_json_string without children ====================
+
+#[test]
+fn test_extract_json_string_level_no_children() {
+    let json = r#"{"level":"warning","message":"test warning"}"#;
+    assert_eq!(
+        extract_json_string(json, "level"),
+        Some("warning".to_string())
+    );
+    assert_eq!(
+        extract_json_string(json, "message"),
+        Some("test warning".to_string())
+    );
+}
+
+// ==================== Coverage: extract_json_string for non-level/message keys ====================
+
+#[test]
+fn test_extract_json_string_non_special_key() {
+    let json = r#"{"level":"error","file_name":"test.rs","children":[{"level":"note"}]}"#;
+    assert_eq!(
+        extract_json_string(json, "file_name"),
+        Some("test.rs".to_string())
+    );
+}
+
+// ==================== Coverage: extract_top_level_json_value after children ====================
+
+#[test]
+fn test_extract_top_level_json_value_after_children() {
+    // In cargo format, the top-level "message" can come after "children"
+    let json = r#"{"children":[{"message":"inner"}],"message":"outer"}"#;
+    let children_start = json.find("\"children\":").expect("Should find");
+    let result = extract_top_level_json_value(json, "\"message\":\"", children_start);
+    assert_eq!(result, Some("outer".to_string()));
+}
+
+// ==================== Coverage: extract_nested_json_string missing outer key ====================
+
+#[test]
+fn test_extract_nested_json_string_missing_key() {
+    let json = r#"{"other":"value"}"#;
+    assert!(extract_nested_json_string(json, "code", "code").is_none());
+}
+
+// ==================== Coverage: find_children_array_end deeply nested ====================
+
+#[test]
+fn test_find_children_array_end_empty_array() {
+    let json = r#"{"children":[]}"#;
+    let start = json.find("\"children\":").expect("Should find");
+    let end = find_children_array_end(json, start);
+    assert!(end > start);
+    assert!(end <= json.len());
+}
+
+// ==================== Coverage: CargoProject name() accessor ====================
+
+#[test]
+fn test_cargo_project_name_accessor() {
+    let project = CargoProject::new("my_project");
+    assert_eq!(project.name(), "my_project");
+}
+
+// ==================== Coverage: CargoProject edition builder ====================
+
+#[test]
+fn test_cargo_project_edition_builder() {
+    let project = CargoProject::new("test").edition(RustEdition::E2018);
+    let toml = project.generate_cargo_toml();
+    assert!(toml.contains("edition = \"2018\""));
+}
+
+// ==================== Coverage: CargoProject project_dir before write ====================
+
+#[test]
+fn test_cargo_project_dir_before_write() {
+    let project = CargoProject::new("unwritten");
+    assert!(project.project_dir().is_none());
+    assert!(project.manifest_path().is_none());
+}
+
+// ==================== Coverage: CargoProject generate_cargo_toml with no deps ====================
+
+#[test]
+fn test_cargo_project_toml_no_deps() {
+    let project = CargoProject::new("nodeps").edition(RustEdition::E2021);
+    let toml = project.generate_cargo_toml();
+    assert!(toml.contains("name = \"nodeps\""));
+    assert!(toml.contains("edition = \"2021\""));
+    assert!(toml.contains("[dependencies]"));
+}
+
+// ==================== Coverage: parse_json_diagnostics with non-JSON lines ====================
+
+#[test]
+fn test_parse_json_diagnostics_ignores_non_json() {
+    let compiler = RustCompiler::new();
+    let output = "not json at all\n\nstill not json\n";
+    let (errors, warnings) = compiler.parse_json_diagnostics(output);
+    assert!(errors.is_empty());
+    assert!(warnings.is_empty());
+}
+
+// ==================== Coverage: parse_json_diagnostics with rendered lines ====================
+
+#[test]
+fn test_parse_json_diagnostics_skips_rendered() {
+    let compiler = RustCompiler::new();
+    // Lines with "rendered" should be skipped
+    let output = r#"{"level":"error","rendered":"some rendered text"}"#;
+    let (errors, warnings) = compiler.parse_json_diagnostics(output);
+    assert!(errors.is_empty());
+    assert!(warnings.is_empty());
+}
+
+// ==================== Coverage: parse_cargo_json_diagnostics empty ====================
+
+#[test]
+fn test_parse_cargo_json_diagnostics_empty() {
+    let compiler = RustCompiler::new();
+    let (errors, warnings) = compiler.parse_cargo_json_diagnostics("");
+    assert!(errors.is_empty());
+    assert!(warnings.is_empty());
+}
+
+// ==================== Coverage: parse_cargo_json_diagnostics non-compiler-message ====================
+
+#[test]
+fn test_parse_cargo_json_diagnostics_non_compiler_message() {
+    let compiler = RustCompiler::new();
+    let output = r#"{"reason":"build-finished","success":true}"#;
+    let (errors, warnings) = compiler.parse_cargo_json_diagnostics(output);
+    assert!(errors.is_empty());
+    assert!(warnings.is_empty());
+}
+
+// ==================== Coverage: parse_cargo_message with malformed nested message ====================
+
+#[test]
+fn test_parse_cargo_message_no_message_field() {
+    let compiler = RustCompiler::new();
+    let json = r#"{"reason":"compiler-message","other":"data"}"#;
+    // No "message":{} in the JSON - should return None from parse_cargo_message
+    let (errors, warnings) = compiler.parse_cargo_json_diagnostics(json);
+    assert!(errors.is_empty());
+    assert!(warnings.is_empty());
+}
+
+// ==================== Coverage: RustCompiler mode setter ====================
+
+#[test]
+fn test_rust_compiler_mode_setter() {
+    let manifest = PathBuf::from("/tmp/Cargo.toml");
+    let compiler = RustCompiler::new().mode(CompilationMode::Cargo {
+        manifest_path: manifest.clone(),
+    });
+    match &compiler.mode {
+        CompilationMode::Cargo { manifest_path } => {
+            assert_eq!(manifest_path, &manifest);
+        }
+        _ => panic!("Expected Cargo mode"),
+    }
+}
+
+// ==================== Coverage: CompilerVersion Clone ====================
+
+#[test]
+fn test_compiler_version_clone() {
+    let version = CompilerVersion {
+        major: 1,
+        minor: 75,
+        patch: 0,
+        full: "1.75.0".to_string(),
+        commit: Some("abc".to_string()),
+    };
+    let cloned = version.clone();
+    assert_eq!(cloned.major, 1);
+    assert_eq!(cloned.minor, 75);
+    assert_eq!(cloned.commit, Some("abc".to_string()));
+}
+
+// ==================== Coverage: RustCompiler Clone ====================
+
+#[test]
+fn test_rust_compiler_clone() {
+    let compiler = RustCompiler::new()
+        .edition(RustEdition::E2018)
+        .timeout(Duration::from_secs(30))
+        .extra_flag("-W");
+    let cloned = compiler.clone();
+    assert_eq!(cloned.edition, RustEdition::E2018);
+    assert_eq!(cloned.timeout, Duration::from_secs(30));
+    assert_eq!(cloned.extra_flags.len(), 1);
+}
+
+// ==================== Coverage: extract_span_from_json with all fields ====================
+
+#[test]
+fn test_extract_span_from_json_complete() {
+    let json = r#"{"file_name":"main.rs","line_start":"10","line_end":"15","column_start":"3","column_end":"25"}"#;
+    let span = extract_span_from_json(json);
+    assert_eq!(span.file, "main.rs");
+    assert_eq!(span.line_start, 10);
+    assert_eq!(span.line_end, 15);
+    assert_eq!(span.column_start, 3);
+    assert_eq!(span.column_end, 25);
+}
+
+// ==================== Coverage: extract_span_from_json with no fields ====================
+
+#[test]
+fn test_extract_span_from_json_empty_json() {
+    let json = r#"{}"#;
+    let span = extract_span_from_json(json);
+    assert_eq!(span.file, "");
+    assert_eq!(span.line_start, 1);
+    assert_eq!(span.line_end, 1);
+    assert_eq!(span.column_start, 1);
+    assert_eq!(span.column_end, 1);
+}
+
+// ==================== Coverage: extract_value_from_segment with no end quote ====================
+
+#[test]
+fn test_extract_value_from_segment_no_end_quote() {
+    let segment = r#""key":"value_no_end"#;
+    // Pattern starts at 7 (after "key":"), value has no closing quote in remaining
+    // Actually the whole segment starts: the pattern "\"key\":\"" matches and
+    // then we look for closing ", it is at the end
+    let result = extract_value_from_segment(segment, "\"key\":\"");
+    // "value_no_end" has no closing quote so this depends on implementation
+    // The function finds the quote: value_no_end doesn't have one after the last "
+    // Actually segment has trailing " at the very end. Let me check correctly.
+    // The segment is: "key":"value_no_end
+    // After finding "key":" at position 0, rest is: value_no_end
+    // find('"') in "value_no_end" -> None
+    assert!(result.is_none());
+}

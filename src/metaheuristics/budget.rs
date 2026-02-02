@@ -304,4 +304,113 @@ mod tests {
 
         assert!(tracker.is_exhausted());
     }
+
+    #[test]
+    fn test_max_iterations_zero_population() {
+        // When population_size is 0, it should be treated as 1
+        // to avoid division by zero.
+        let budget = Budget::Evaluations(100);
+        assert_eq!(budget.max_iterations(0), 100);
+
+        let budget_iter = Budget::Iterations(50);
+        assert_eq!(budget_iter.max_iterations(0), 50);
+
+        let budget_conv = Budget::convergence_with(10, 1e-6, 1000);
+        assert_eq!(budget_conv.max_iterations(0), 1000);
+    }
+
+    #[test]
+    fn test_convergence_tracker_from_iterations_budget() {
+        // Exercises the Budget::Iterations branch in ConvergenceTracker::from_budget.
+        let budget = Budget::Iterations(50);
+        let tracker = ConvergenceTracker::from_budget(&budget);
+        // Iterations budget assumes large population: max_evaluations = n * 1000
+        assert_eq!(tracker.max_evaluations, 50_000);
+        assert_eq!(tracker.patience, usize::MAX);
+        assert!((tracker.min_delta - 0.0).abs() < 1e-15);
+        assert!(tracker.best().is_infinite());
+        assert!(tracker.best() > 0.0); // Positive infinity
+    }
+
+    #[test]
+    fn test_convergence_tracker_small_improvement() {
+        // Test the branch where improvement exists but is less than min_delta.
+        // This exercises lines 196-199: value < best_value but
+        // (best_value - value) <= min_delta.
+        let budget = Budget::convergence_with(100, 1.0, 100_000);
+        let mut tracker = ConvergenceTracker::from_budget(&budget);
+
+        // First update sets best to 10.0
+        assert!(tracker.update(10.0, 1));
+        assert!((tracker.best() - 10.0).abs() < 1e-10);
+        assert_eq!(tracker.no_improvement_count, 0);
+
+        // A tiny improvement (less than min_delta=1.0): 10.0 -> 9.5
+        // best_value - value = 0.5 which is < 1.0 (min_delta)
+        // But value < best_value, so this hits the small improvement branch
+        assert!(tracker.update(9.5, 1));
+        assert!((tracker.best() - 9.5).abs() < 1e-10);
+        assert_eq!(tracker.no_improvement_count, 1);
+    }
+
+    #[test]
+    fn test_convergence_tracker_evaluations_accessor() {
+        let budget = Budget::evaluations(10_000);
+        let mut tracker = ConvergenceTracker::from_budget(&budget);
+        assert_eq!(tracker.evaluations(), 0);
+
+        tracker.update(5.0, 42);
+        assert_eq!(tracker.evaluations(), 42);
+
+        tracker.update(4.0, 58);
+        assert_eq!(tracker.evaluations(), 100);
+    }
+
+    #[test]
+    fn test_convergence_default_constructor() {
+        let budget = Budget::convergence();
+        if let Budget::Convergence {
+            patience,
+            min_delta,
+            max_evaluations,
+        } = budget
+        {
+            assert_eq!(patience, 50);
+            assert!((min_delta - 1e-8).abs() < 1e-15);
+            assert_eq!(max_evaluations, 1_000_000);
+        } else {
+            panic!("Expected Convergence variant");
+        }
+    }
+
+    #[test]
+    fn test_budget_max_evaluations_iterations() {
+        // Verify max_evaluations for Iterations variant multiplies by population
+        let budget = Budget::iterations(10);
+        assert_eq!(budget.max_evaluations(25), 250);
+    }
+
+    #[test]
+    fn test_budget_max_iterations_convergence() {
+        let budget = Budget::convergence_with(50, 1e-6, 10_000);
+        // max_iterations for convergence divides max_evaluations by pop_size
+        assert_eq!(budget.max_iterations(100), 100);
+    }
+
+    #[test]
+    fn test_convergence_tracker_is_converged_initially_false() {
+        let budget = Budget::convergence_with(5, 1e-6, 100_000);
+        let tracker = ConvergenceTracker::from_budget(&budget);
+        assert!(!tracker.is_converged());
+        assert!(!tracker.is_exhausted());
+    }
+
+    #[test]
+    fn test_budget_equality() {
+        let a = Budget::Evaluations(100);
+        let b = Budget::Evaluations(100);
+        let c = Budget::Evaluations(200);
+        assert_eq!(a, b);
+        assert_ne!(a, c);
+    }
 }

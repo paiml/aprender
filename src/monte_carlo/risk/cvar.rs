@@ -201,6 +201,111 @@ mod tests {
         assert!((cvar - 0.05).abs() < 0.01);
     }
 
+    #[test]
+    fn test_cvar_from_paths() {
+        use crate::monte_carlo::engine::PathMetadata;
+        let paths: Vec<SimulationPath> = vec![
+            SimulationPath::new(
+                vec![0.0, 1.0],
+                vec![100.0, 90.0], // -10% return
+                PathMetadata {
+                    path_id: 0,
+                    seed: 1,
+                    is_antithetic: false,
+                },
+            ),
+            SimulationPath::new(
+                vec![0.0, 1.0],
+                vec![100.0, 95.0], // -5% return
+                PathMetadata {
+                    path_id: 1,
+                    seed: 2,
+                    is_antithetic: false,
+                },
+            ),
+            SimulationPath::new(
+                vec![0.0, 1.0],
+                vec![100.0, 105.0], // +5% return
+                PathMetadata {
+                    path_id: 2,
+                    seed: 3,
+                    is_antithetic: false,
+                },
+            ),
+            SimulationPath::new(
+                vec![0.0, 1.0],
+                vec![100.0, 110.0], // +10% return
+                PathMetadata {
+                    path_id: 3,
+                    seed: 4,
+                    is_antithetic: false,
+                },
+            ),
+            SimulationPath::new(
+                vec![0.0, 1.0],
+                vec![100.0, 102.0], // +2% return
+                PathMetadata {
+                    path_id: 4,
+                    seed: 5,
+                    is_antithetic: false,
+                },
+            ),
+        ];
+        let cvar = CVaR::from_paths(&paths, 0.95);
+        assert!(
+            cvar >= 0.0,
+            "CVaR from paths should be non-negative: {cvar}"
+        );
+        assert!(cvar.is_finite());
+    }
+
+    #[test]
+    fn test_cvar_from_paths_empty() {
+        let paths: Vec<SimulationPath> = Vec::new();
+        let cvar = CVaR::from_paths(&paths, 0.95);
+        assert!(cvar.abs() < 1e-10, "CVaR from empty paths should be 0");
+    }
+
+    #[test]
+    fn test_cvar_continuous_approximation_empty() {
+        let cvar = CVaR::continuous_approximation(&[], 0.95);
+        assert!(
+            cvar.abs() < 1e-10,
+            "CVaR continuous approx of empty should be 0"
+        );
+    }
+
+    #[test]
+    fn test_cvar_continuous_approximation_single() {
+        let returns = vec![-0.05];
+        let cvar = CVaR::continuous_approximation(&returns, 0.95);
+        // Single negative return: tail_size = ceil(0.05*1) = 1, average of [-0.05] = -0.05
+        // -(-0.05).min(0.0) = 0.05
+        assert!((cvar - 0.05).abs() < 0.01, "CVaR single value: {cvar}");
+    }
+
+    #[test]
+    fn test_cvar_continuous_approximation_all_positive() {
+        // All positive returns: tail is still the lowest returns
+        let returns = vec![0.01, 0.02, 0.03, 0.04, 0.05];
+        let cvar = CVaR::continuous_approximation(&returns, 0.95);
+        // tail_size = ceil(0.05*5) = 1, worst return = 0.01
+        // -(0.01).min(0.0) = -0.0 = 0.0
+        assert!(cvar >= 0.0, "CVaR continuous all positive: {cvar}");
+    }
+
+    #[test]
+    fn test_cvar_high_confidence_empty_tail() {
+        // With very high confidence on a small dataset, the tail_returns filter might
+        // produce an empty set, triggering the fallback to VaR
+        let returns = vec![0.10, 0.20, 0.30];
+        let cvar = CVaR::from_returns(&returns, 0.999);
+        // All returns positive. quantile_level = 0.001, threshold near 0.10
+        // filter r <= threshold should catch at least the lowest
+        assert!(cvar >= 0.0);
+        assert!(cvar.is_finite());
+    }
+
     // Property-based tests
     #[cfg(test)]
     mod proptests {

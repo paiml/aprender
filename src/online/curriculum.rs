@@ -815,4 +815,324 @@ mod tests {
         assert!(curriculum.is_complete());
         assert_eq!(curriculum.stage(), 1.0);
     }
+
+    #[test]
+    fn test_linear_curriculum_zero_stages() {
+        let mut curriculum = LinearCurriculum::new(0);
+        // step_size should be 1.0 when n_stages is 0
+        assert_eq!(curriculum.stage(), 0.0);
+
+        curriculum.advance();
+        // After one advance with step_size 1.0, should be complete
+        assert!(curriculum.is_complete());
+        assert!((curriculum.stage() - 1.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_exponential_curriculum_reset() {
+        let mut curriculum = ExponentialCurriculum::new(0.3);
+
+        // Advance several times
+        for _ in 0..5 {
+            curriculum.advance();
+        }
+        assert!(curriculum.stage() > 0.0);
+
+        // Reset should bring back to 0
+        curriculum.reset();
+        assert_eq!(curriculum.stage(), 0.0);
+        assert!(!curriculum.is_complete());
+    }
+
+    #[test]
+    fn test_exponential_curriculum_threshold() {
+        let mut curriculum = ExponentialCurriculum::new(0.3);
+
+        // Threshold equals stage for exponential curriculum
+        curriculum.advance();
+        assert!((curriculum.current_threshold() - curriculum.stage()).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_self_paced_curriculum_reset() {
+        let mut curriculum = SelfPacedCurriculum::new(0.1, 2.0);
+
+        let samples = vec![
+            ScoredSample::new(vec![1.0], 1.0, 0.05),
+            ScoredSample::new(vec![2.0], 2.0, 0.5),
+        ];
+        curriculum.add_samples(samples);
+
+        // Advance and change state
+        curriculum.advance();
+        assert!(curriculum.threshold() > 0.1);
+
+        // Reset should restore initial threshold
+        curriculum.reset();
+        assert!((curriculum.threshold() - 0.1).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_self_paced_curriculum_n_total() {
+        let mut curriculum = SelfPacedCurriculum::new(0.5, 1.5);
+
+        assert_eq!(curriculum.n_total(), 0);
+
+        let samples = vec![
+            ScoredSample::new(vec![1.0], 1.0, 0.1),
+            ScoredSample::new(vec![2.0], 2.0, 0.2),
+            ScoredSample::new(vec![3.0], 3.0, 0.3),
+        ];
+        curriculum.add_samples(samples);
+
+        assert_eq!(curriculum.n_total(), 3);
+    }
+
+    #[test]
+    fn test_self_paced_next_batch_exhaustion() {
+        let mut curriculum = SelfPacedCurriculum::new(1.0, 1.5);
+
+        let samples = vec![
+            ScoredSample::new(vec![1.0], 1.0, 0.1),
+            ScoredSample::new(vec![2.0], 2.0, 0.2),
+        ];
+        curriculum.add_samples(samples);
+
+        // Get all samples
+        let batch1 = curriculum.next_batch(10);
+        assert_eq!(batch1.len(), 2);
+
+        // Next batch should be empty (exhausted) and reset batch_idx
+        let batch2 = curriculum.next_batch(10);
+        assert!(batch2.is_empty());
+    }
+
+    #[test]
+    fn test_self_paced_stage_with_samples() {
+        let mut curriculum = SelfPacedCurriculum::new(0.15, 1.5);
+
+        let samples = vec![
+            ScoredSample::new(vec![1.0], 1.0, 0.1),
+            ScoredSample::new(vec![2.0], 2.0, 0.2),
+            ScoredSample::new(vec![3.0], 3.0, 0.5),
+            ScoredSample::new(vec![4.0], 4.0, 0.8),
+        ];
+        curriculum.add_samples(samples);
+
+        // With threshold 0.15, only sample with difficulty 0.1 is eligible
+        let stage = curriculum.stage();
+        // stage = n_eligible / n_total = 1/4 = 0.25
+        assert!((stage - 0.25).abs() < 0.01);
+        assert!(!curriculum.is_complete());
+    }
+
+    #[test]
+    fn test_self_paced_eligible_samples() {
+        let mut curriculum = SelfPacedCurriculum::new(0.3, 1.5);
+
+        let samples = vec![
+            ScoredSample::new(vec![1.0], 1.0, 0.1),
+            ScoredSample::new(vec![2.0], 2.0, 0.2),
+            ScoredSample::new(vec![3.0], 3.0, 0.5),
+        ];
+        curriculum.add_samples(samples);
+
+        let eligible = curriculum.eligible_samples();
+        // Threshold is 0.3, so samples with difficulty 0.1 and 0.2 are eligible
+        assert_eq!(eligible.len(), 2);
+    }
+
+    #[test]
+    fn test_loss_difficulty_scorer_with_mean() {
+        let scorer = LossDifficultyScorer::with_mean(5.0);
+
+        // Distance from mean 5.0
+        let d1 = scorer.score(&[0.0], 5.0); // 0.0 distance
+        let d2 = scorer.score(&[0.0], 10.0); // 5.0 distance
+
+        assert!((d1 - 0.0).abs() < 1e-10);
+        assert!((d2 - 5.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_loss_difficulty_scorer_fit_empty() {
+        let mut scorer = LossDifficultyScorer::new();
+        // fit with empty slice should not change target_mean
+        scorer.fit(&[]);
+        assert!((scorer.score(&[0.0], 0.0) - 0.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_loss_difficulty_scorer_default() {
+        let scorer = LossDifficultyScorer::default();
+        // Default target_mean is 0.0
+        let d = scorer.score(&[1.0, 2.0], 3.0);
+        assert!((d - 3.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_feature_norm_scorer_default() {
+        let scorer = FeatureNormScorer::default();
+        let d = scorer.score(&[3.0, 4.0], 0.0);
+        assert!((d - 5.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_feature_norm_scorer_empty_features() {
+        let scorer = FeatureNormScorer::new();
+        let d = scorer.score(&[], 0.0);
+        assert!((d - 0.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_curriculum_trainer_reset() {
+        let scheduler = LinearCurriculum::new(5);
+        let mut trainer = CurriculumTrainer::new(scheduler);
+
+        let features = vec![1.0, 2.0, 3.0, 4.0];
+        let targets = vec![1.0, 2.0];
+        let scorer = FeatureNormScorer::new();
+
+        trainer
+            .add_samples(&features, &targets, 2, &scorer)
+            .unwrap();
+
+        trainer.advance();
+        assert!(trainer.stage() > 0.0);
+
+        trainer.reset();
+        assert_eq!(trainer.stage(), 0.0);
+    }
+
+    #[test]
+    fn test_curriculum_trainer_scheduler_access() {
+        let scheduler = LinearCurriculum::new(5);
+        let trainer = CurriculumTrainer::new(scheduler);
+
+        let sched = trainer.scheduler();
+        assert_eq!(sched.stage(), 0.0);
+    }
+
+    #[test]
+    fn test_curriculum_trainer_is_complete() {
+        let scheduler = LinearCurriculum::new(2);
+        let mut trainer = CurriculumTrainer::new(scheduler);
+
+        assert!(!trainer.is_complete());
+
+        // Advance past completion
+        for _ in 0..5 {
+            trainer.advance();
+        }
+        assert!(trainer.is_complete());
+    }
+
+    #[test]
+    fn test_scored_sample_debug_clone() {
+        let sample = ScoredSample::new(vec![1.0, 2.0], 3.0, 0.5);
+        let debug_str = format!("{:?}", sample);
+        assert!(debug_str.contains("ScoredSample"));
+
+        let cloned = sample.clone();
+        assert_eq!(cloned.features, vec![1.0, 2.0]);
+        assert_eq!(cloned.target, 3.0);
+        assert_eq!(cloned.difficulty, 0.5);
+    }
+
+    #[test]
+    fn test_linear_curriculum_debug_clone() {
+        let curriculum = LinearCurriculum::new(5);
+        let debug_str = format!("{:?}", curriculum);
+        assert!(debug_str.contains("LinearCurriculum"));
+
+        let cloned = curriculum.clone();
+        assert_eq!(cloned.stage(), 0.0);
+    }
+
+    #[test]
+    fn test_exponential_curriculum_debug_clone() {
+        let curriculum = ExponentialCurriculum::new(0.3);
+        let debug_str = format!("{:?}", curriculum);
+        assert!(debug_str.contains("ExponentialCurriculum"));
+
+        let cloned = curriculum.clone();
+        assert_eq!(cloned.stage(), 0.0);
+    }
+
+    #[test]
+    fn test_self_paced_curriculum_debug_clone() {
+        let curriculum = SelfPacedCurriculum::new(0.5, 1.5);
+        let debug_str = format!("{:?}", curriculum);
+        assert!(debug_str.contains("SelfPacedCurriculum"));
+
+        let cloned = curriculum.clone();
+        assert_eq!(cloned.n_total(), 0);
+    }
+
+    #[test]
+    fn test_loss_difficulty_scorer_debug_clone() {
+        let scorer = LossDifficultyScorer::with_mean(3.0);
+        let debug_str = format!("{:?}", scorer);
+        assert!(debug_str.contains("LossDifficultyScorer"));
+
+        let cloned = scorer.clone();
+        // Cloned should produce same result
+        let d1 = scorer.score(&[0.0], 5.0);
+        let d2 = cloned.score(&[0.0], 5.0);
+        assert!((d1 - d2).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_self_paced_advance_resets_batch_idx() {
+        let mut curriculum = SelfPacedCurriculum::new(1.0, 1.5);
+
+        let samples = vec![
+            ScoredSample::new(vec![1.0], 1.0, 0.1),
+            ScoredSample::new(vec![2.0], 2.0, 0.2),
+        ];
+        curriculum.add_samples(samples);
+
+        // Consume some batch
+        let _ = curriculum.next_batch(1);
+
+        // Advance resets batch_idx
+        curriculum.advance();
+
+        // Should start from beginning again
+        let batch = curriculum.next_batch(10);
+        assert_eq!(batch.len(), 2);
+    }
+
+    #[test]
+    fn test_linear_curriculum_full_cycle() {
+        let mut curriculum = LinearCurriculum::new(4).with_difficulty_range(0.0, 1.0);
+
+        // Stage 0: threshold = 0.0
+        assert!((curriculum.current_threshold() - 0.0).abs() < 0.01);
+
+        // Advance through all stages
+        curriculum.advance(); // 0.25
+        assert!((curriculum.current_threshold() - 0.25).abs() < 0.01);
+
+        curriculum.advance(); // 0.5
+        assert!((curriculum.current_threshold() - 0.5).abs() < 0.01);
+
+        curriculum.advance(); // 0.75
+        assert!((curriculum.current_threshold() - 0.75).abs() < 0.01);
+
+        curriculum.advance(); // 1.0
+        assert!((curriculum.current_threshold() - 1.0).abs() < 0.01);
+        assert!(curriculum.is_complete());
+    }
+
+    #[test]
+    fn test_curriculum_trainer_eligible_empty_samples() {
+        let scheduler = LinearCurriculum::new(5);
+        let trainer = CurriculumTrainer::<LinearCurriculum>::new(scheduler);
+
+        // No samples added - eligible should be empty
+        let eligible = trainer.eligible_samples();
+        assert!(eligible.is_empty());
+        assert_eq!(trainer.n_eligible(), 0);
+    }
 }

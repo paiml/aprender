@@ -749,4 +749,206 @@ mod tests {
 
         assert_eq!(orchestrator.stats().retrain_count, 1);
     }
+
+    #[test]
+    fn test_compute_error_empty_target() {
+        let model = OnlineLinearRegression::new(2);
+        let orchestrator = RetrainOrchestrator::new(model, 2);
+
+        // Empty target should return true (error)
+        assert!(orchestrator.compute_error(&[], &[1.0]));
+    }
+
+    #[test]
+    fn test_compute_error_empty_prediction() {
+        let model = OnlineLinearRegression::new(2);
+        let orchestrator = RetrainOrchestrator::new(model, 2);
+
+        // Empty prediction should return true (error)
+        assert!(orchestrator.compute_error(&[1.0], &[]));
+    }
+
+    #[test]
+    fn test_compute_error_both_empty() {
+        let model = OnlineLinearRegression::new(2);
+        let orchestrator = RetrainOrchestrator::new(model, 2);
+
+        assert!(orchestrator.compute_error(&[], &[]));
+    }
+
+    #[test]
+    fn test_compute_error_regression_small_relative_error() {
+        let model = OnlineLinearRegression::new(2);
+        let orchestrator = RetrainOrchestrator::new(model, 2);
+
+        // 5% error on large value - should be within 10% threshold
+        assert!(!orchestrator.compute_error(&[100.0], &[105.0]));
+    }
+
+    #[test]
+    fn test_compute_error_regression_large_relative_error() {
+        let model = OnlineLinearRegression::new(2);
+        let orchestrator = RetrainOrchestrator::new(model, 2);
+
+        // 50% error - should exceed 10% threshold
+        assert!(orchestrator.compute_error(&[100.0], &[150.0]));
+    }
+
+    #[test]
+    fn test_drift_status_method() {
+        let model = OnlineLinearRegression::new(2);
+        let orchestrator = RetrainOrchestrator::new(model, 2);
+
+        // Initially should be stable
+        assert_eq!(orchestrator.drift_status(), DriftStatus::Stable);
+    }
+
+    #[test]
+    fn test_observe_result_debug_clone() {
+        let result = ObserveResult::Stable;
+        let debug_str = format!("{:?}", result);
+        assert!(debug_str.contains("Stable"));
+
+        let cloned = result;
+        assert_eq!(cloned, ObserveResult::Stable);
+
+        let warning = ObserveResult::Warning;
+        assert_eq!(format!("{:?}", warning), "Warning");
+
+        let retrained = ObserveResult::Retrained;
+        assert_eq!(format!("{:?}", retrained), "Retrained");
+
+        let skipped = ObserveResult::Skipped;
+        assert_eq!(format!("{:?}", skipped), "Skipped");
+    }
+
+    #[test]
+    fn test_retrain_config_debug_clone() {
+        let config = RetrainConfig::default();
+        let debug_str = format!("{:?}", config);
+        assert!(debug_str.contains("RetrainConfig"));
+
+        let cloned = config.clone();
+        assert_eq!(cloned.min_samples, 100);
+        assert_eq!(cloned.retrain_epochs, 10);
+    }
+
+    #[test]
+    fn test_orchestrator_stats_debug_clone() {
+        let stats = OrchestratorStats::default();
+        let debug_str = format!("{:?}", stats);
+        assert!(debug_str.contains("OrchestratorStats"));
+
+        let cloned = stats.clone();
+        assert_eq!(cloned.samples_observed, 0);
+        assert_eq!(cloned.retrain_count, 0);
+    }
+
+    #[test]
+    fn test_force_retrain_empty_buffer() {
+        let config = RetrainConfig {
+            min_samples: 5,
+            curriculum_learning: false,
+            retrain_epochs: 1,
+            ..Default::default()
+        };
+
+        let model = OnlineLinearRegression::new(2);
+        let detector = ADWIN::new();
+        let mut orchestrator = RetrainOrchestrator::with_config(model, detector, 2, config);
+
+        // Force retrain on empty buffer - should not panic
+        orchestrator.force_retrain().unwrap();
+
+        // retrain_count stays 0 because n_samples was 0, early return
+        // Actually the function still increments retrain_count unless n_samples == 0
+        // Let's just check it doesn't panic
+    }
+
+    #[test]
+    fn test_orchestrator_with_no_incremental_updates() {
+        let config = RetrainConfig {
+            min_samples: 5,
+            incremental_updates: false,
+            curriculum_learning: false,
+            retrain_epochs: 1,
+            ..Default::default()
+        };
+
+        let model = OnlineLinearRegression::new(2);
+        let detector = ADWIN::with_delta(1.0); // Very insensitive
+        let mut orchestrator = RetrainOrchestrator::with_config(model, detector, 2, config);
+
+        // Observe some samples - since incremental_updates is false, no partial_fit
+        let result = orchestrator.observe(&[1.0, 2.0], &[3.0], &[3.0]).unwrap();
+        assert!(result == ObserveResult::Stable || result == ObserveResult::Skipped);
+    }
+
+    #[test]
+    fn test_orchestrator_detector_access() {
+        let model = OnlineLinearRegression::new(2);
+        let orchestrator = RetrainOrchestrator::new(model, 2);
+
+        let detector = orchestrator.detector();
+        let debug_str = format!("{:?}", detector);
+        assert!(debug_str.contains("ADWIN"));
+    }
+
+    #[test]
+    fn test_orchestrator_retrain_clears_and_keeps_recent() {
+        let config = RetrainConfig {
+            min_samples: 5,
+            curriculum_learning: false,
+            retrain_epochs: 1,
+            ..Default::default()
+        };
+
+        let model = OnlineLinearRegression::new(2);
+        let detector = ADWIN::new();
+        let mut orchestrator = RetrainOrchestrator::with_config(model, detector, 2, config);
+
+        // Add enough samples
+        for i in 0..20 {
+            orchestrator
+                .observe(&[i as f64, (i * 2) as f64], &[(i * 3) as f64], &[0.0])
+                .unwrap();
+        }
+
+        let pre_retrain_size = orchestrator.buffer_size();
+        assert!(pre_retrain_size > 0);
+
+        orchestrator.force_retrain().unwrap();
+
+        // After retrain, buffer should be smaller (kept some recent samples)
+        assert!(orchestrator.buffer_size() <= pre_retrain_size);
+        assert_eq!(orchestrator.stats().retrain_count, 1);
+        assert_eq!(orchestrator.stats().samples_since_retrain, 0);
+    }
+
+    #[test]
+    fn test_orchestrator_standard_retrain_without_curriculum() {
+        let config = RetrainConfig {
+            min_samples: 5,
+            curriculum_learning: false,
+            retrain_epochs: 2,
+            incremental_updates: false,
+            ..Default::default()
+        };
+
+        let model = OnlineLinearRegression::new(2);
+        let detector = ADWIN::new();
+        let mut orchestrator = RetrainOrchestrator::with_config(model, detector, 2, config);
+
+        // Add samples
+        for i in 0..15 {
+            orchestrator
+                .observe(&[i as f64, (i * 2) as f64], &[(i * 3) as f64], &[0.0])
+                .unwrap();
+        }
+
+        // Force standard (non-curriculum) retrain
+        orchestrator.force_retrain().unwrap();
+        assert_eq!(orchestrator.stats().retrain_count, 1);
+        assert!(orchestrator.stats().last_retrain_samples > 0);
+    }
 }

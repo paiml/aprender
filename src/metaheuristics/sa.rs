@@ -244,4 +244,84 @@ mod tests {
         sa.reset();
         assert!(sa.best().is_none());
     }
+
+    #[test]
+    fn test_sa_temperature_exhaustion() {
+        // Use a very high cooling rate so temperature drops below final_temp quickly,
+        // hitting the temp < final_temp break path.
+        let objective = |x: &[f64]| x.iter().map(|xi| xi * xi).sum();
+        let mut sa = SimulatedAnnealing::default()
+            .with_initial_temp(1.0)
+            .with_cooling_rate(0.01) // Very aggressive cooling
+            .with_seed(99);
+        let space = SearchSpace::continuous(2, -5.0, 5.0);
+        let result = sa.optimize(&objective, &space, Budget::Evaluations(100_000));
+        // Should terminate early due to temperature, not budget exhaustion
+        assert!(
+            result.termination == TerminationReason::MaxIterations
+                || result.termination == TerminationReason::Converged
+        );
+        // Should have done far fewer iterations than the budget allows
+        assert!(result.iterations < 100_000);
+    }
+
+    #[test]
+    fn test_sa_budget_exhausted_termination() {
+        // Use a tiny budget with slow cooling so the evaluations run out
+        // before temperature drops, exercising the BudgetExhausted branch.
+        let objective = |x: &[f64]| x.iter().map(|xi| xi * xi).sum();
+        let mut sa = SimulatedAnnealing::default()
+            .with_initial_temp(1e10)
+            .with_cooling_rate(0.9999)
+            .with_seed(7);
+        let space = SearchSpace::continuous(2, -5.0, 5.0);
+        let result = sa.optimize(&objective, &space, Budget::Evaluations(10));
+        assert_eq!(result.termination, TerminationReason::BudgetExhausted);
+    }
+
+    #[test]
+    fn test_sa_convergence_termination() {
+        // Use convergence budget with small patience on a trivial flat objective
+        // so convergence is detected quickly (no improvement possible).
+        let objective = |_x: &[f64]| 0.0; // Flat - every evaluation is the same
+        let mut sa = SimulatedAnnealing::default()
+            .with_initial_temp(100.0)
+            .with_cooling_rate(0.95)
+            .with_seed(42);
+        let space = SearchSpace::continuous(2, -1.0, 1.0);
+        let budget = Budget::Convergence {
+            patience: 5,
+            min_delta: 1e-6,
+            max_evaluations: 100_000,
+        };
+        let result = sa.optimize(&objective, &space, budget);
+        assert_eq!(result.termination, TerminationReason::Converged);
+    }
+
+    #[test]
+    fn test_sa_best_before_optimize() {
+        let sa = SimulatedAnnealing::default();
+        assert!(sa.best().is_none());
+        assert!(sa.history().is_empty());
+    }
+
+    #[test]
+    fn test_sa_history_populated() {
+        let objective = |x: &[f64]| x.iter().map(|xi| xi * xi).sum();
+        let mut sa = SimulatedAnnealing::default().with_seed(42);
+        let space = SearchSpace::continuous(2, -5.0, 5.0);
+        let result = sa.optimize(&objective, &space, Budget::Evaluations(50));
+        // History should have entries: initial + one per iteration
+        assert!(!result.history.is_empty());
+        assert_eq!(sa.history().len(), result.history.len());
+    }
+
+    #[test]
+    fn test_sa_default_values() {
+        let sa = SimulatedAnnealing::default();
+        assert!((sa.initial_temp - 100.0).abs() < 1e-10);
+        assert!((sa.final_temp - 1e-8).abs() < 1e-15);
+        assert!((sa.cooling_rate - 0.95).abs() < 1e-10);
+        assert!((sa.step_scale - 0.1).abs() < 1e-10);
+    }
 }

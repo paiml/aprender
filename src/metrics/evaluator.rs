@@ -480,4 +480,204 @@ mod tests {
             0.95
         );
     }
+
+    // ================================================================
+    // Additional coverage tests for missed branches
+    // ================================================================
+
+    #[test]
+    fn test_comparison_result_best_model_empty() {
+        let comparison = ComparisonResult {
+            models: vec![],
+            task_type: TaskType::Regression,
+            primary_metric: "R\u{00b2}".to_string(),
+        };
+        assert!(comparison.best_model().is_none());
+    }
+
+    #[test]
+    fn test_comparison_result_ranked_empty() {
+        let comparison = ComparisonResult {
+            models: vec![],
+            task_type: TaskType::Regression,
+            primary_metric: "R\u{00b2}".to_string(),
+        };
+        let ranked = comparison.ranked();
+        assert!(ranked.is_empty());
+    }
+
+    #[test]
+    fn test_comparison_report_empty_models() {
+        let comparison = ComparisonResult {
+            models: vec![],
+            task_type: TaskType::Classification,
+            primary_metric: "accuracy".to_string(),
+        };
+        let report = comparison.report();
+        assert!(report.contains("Classification"));
+        assert!(report.contains("accuracy"));
+        // No best model line since models is empty
+        assert!(!report.contains("Best model:"));
+    }
+
+    #[test]
+    fn test_comparison_report_classification_task() {
+        let mut result = ModelResult::new("LR");
+        result.mean_score = 0.85;
+        result.std_score = 0.02;
+
+        let comparison = ComparisonResult {
+            models: vec![result],
+            task_type: TaskType::Classification,
+            primary_metric: "accuracy".to_string(),
+        };
+
+        let report = comparison.report();
+        assert!(report.contains("Classification"));
+        assert!(report.contains("accuracy"));
+        assert!(report.contains("LR"));
+        assert!(report.contains("Best model:"));
+    }
+
+    #[test]
+    fn test_model_result_train_time_ms() {
+        let mut result = ModelResult::new("timed");
+        result.train_time_ms = Some(1234);
+        assert_eq!(result.train_time_ms, Some(1234));
+    }
+
+    #[test]
+    fn test_model_result_compute_stats_two_scores() {
+        let mut result = ModelResult::new("test");
+        result.cv_scores = vec![0.8, 0.9];
+        result.compute_stats();
+
+        assert!((result.mean_score - 0.85).abs() < 1e-6);
+        // std of [0.8, 0.9] with sample std = sqrt(0.005) ~ 0.0707
+        assert!(result.std_score > 0.0);
+    }
+
+    #[test]
+    fn test_evaluator_with_cv_folds_minimum_clamp() {
+        // cv_folds.max(2) means requesting 1 or 0 should yield 2
+        let evaluator = ModelEvaluator::new(TaskType::Regression).with_cv_folds(1);
+        assert_eq!(evaluator.cv_folds, 2);
+
+        let evaluator0 = ModelEvaluator::new(TaskType::Regression).with_cv_folds(0);
+        assert_eq!(evaluator0.cv_folds, 2);
+    }
+
+    #[test]
+    fn test_evaluate_classification_imperfect() {
+        let y_true = vec![0, 0, 1, 1, 2, 2];
+        let y_pred = vec![0, 1, 1, 0, 2, 1]; // Some errors
+
+        let metrics = evaluate_classification(&y_pred, &y_true);
+
+        let acc = *metrics.get("accuracy").expect("has accuracy");
+        assert!(acc < 1.0);
+        assert!(acc > 0.0);
+
+        let f1 = *metrics.get("f1_macro").expect("has f1_macro");
+        assert!(f1 < 1.0);
+        assert!(f1 > 0.0);
+
+        // Weighted metrics should also be present
+        assert!(metrics.contains_key("precision_weighted"));
+        assert!(metrics.contains_key("recall_weighted"));
+        assert!(metrics.contains_key("f1_weighted"));
+    }
+
+    #[test]
+    fn test_comparison_best_model_with_nan_score() {
+        let mut r1 = ModelResult::new("Normal");
+        r1.mean_score = 0.85;
+
+        let mut r2 = ModelResult::new("NaN");
+        r2.mean_score = f32::NAN;
+
+        let comparison = ComparisonResult {
+            models: vec![r1, r2],
+            task_type: TaskType::Regression,
+            primary_metric: "R\u{00b2}".to_string(),
+        };
+
+        // Should return Some even with NaN (uses Ordering::Equal fallback)
+        let best = comparison.best_model();
+        assert!(best.is_some());
+    }
+
+    #[test]
+    fn test_comparison_ranked_with_equal_scores() {
+        let mut r1 = ModelResult::new("A");
+        r1.mean_score = 0.9;
+
+        let mut r2 = ModelResult::new("B");
+        r2.mean_score = 0.9;
+
+        let comparison = ComparisonResult {
+            models: vec![r1, r2],
+            task_type: TaskType::Regression,
+            primary_metric: "R\u{00b2}".to_string(),
+        };
+
+        let ranked = comparison.ranked();
+        assert_eq!(ranked.len(), 2);
+    }
+
+    #[test]
+    fn test_model_result_multiple_metrics() {
+        let mut result = ModelResult::new("multi");
+        result.add_metric("f1", 0.88);
+        result.add_metric("auc", 0.92);
+        result.add_metric("precision", 0.85);
+
+        assert_eq!(result.metrics.len(), 3);
+        assert_eq!(*result.metrics.get("f1").expect("has f1"), 0.88);
+        assert_eq!(*result.metrics.get("auc").expect("has auc"), 0.92);
+    }
+
+    #[test]
+    fn test_model_result_clone_and_debug() {
+        let mut result = ModelResult::new("test");
+        result.cv_scores = vec![0.9, 0.85];
+        result.mean_score = 0.875;
+        result.std_score = 0.025;
+
+        let cloned = result.clone();
+        assert_eq!(cloned.name, "test");
+        assert_eq!(cloned.cv_scores.len(), 2);
+
+        let debug_str = format!("{:?}", result);
+        assert!(debug_str.contains("ModelResult"));
+    }
+
+    #[test]
+    fn test_comparison_result_clone_and_debug() {
+        let comparison = ComparisonResult {
+            models: vec![],
+            task_type: TaskType::Regression,
+            primary_metric: "R\u{00b2}".to_string(),
+        };
+
+        let cloned = comparison.clone();
+        assert_eq!(cloned.task_type, TaskType::Regression);
+
+        let debug_str = format!("{:?}", comparison);
+        assert!(debug_str.contains("ComparisonResult"));
+    }
+
+    #[test]
+    fn test_task_type_eq() {
+        assert_eq!(TaskType::Regression, TaskType::Regression);
+        assert_eq!(TaskType::Classification, TaskType::Classification);
+        assert_ne!(TaskType::Regression, TaskType::Classification);
+    }
+
+    #[test]
+    fn test_evaluator_debug() {
+        let evaluator = ModelEvaluator::new(TaskType::Regression);
+        let debug_str = format!("{:?}", evaluator);
+        assert!(debug_str.contains("ModelEvaluator"));
+    }
 }

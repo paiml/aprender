@@ -578,6 +578,361 @@ mod tests {
             assert!((2..=19).contains(&d));
         }
     }
+
+    // ==================== COVERAGE GAP TESTS ====================
+
+    #[test]
+    fn test_bandwidth_single_sample() {
+        // Covers compute_bandwidth with < 2 samples (line 150-151)
+        let samples = vec![0.5];
+        let bw = TPE::compute_bandwidth(&samples);
+        assert!(
+            (bw - 1.0).abs() < 1e-10,
+            "Single sample bandwidth should be 1.0"
+        );
+    }
+
+    #[test]
+    fn test_bandwidth_empty_samples() {
+        // Covers compute_bandwidth with 0 samples
+        let samples: Vec<f64> = vec![];
+        let bw = TPE::compute_bandwidth(&samples);
+        assert!(
+            (bw - 1.0).abs() < 1e-10,
+            "Empty samples bandwidth should be 1.0"
+        );
+    }
+
+    #[test]
+    fn test_bandwidth_identical_samples() {
+        // Covers the variance.sqrt().max(0.01) path (line 157)
+        let samples = vec![0.5, 0.5, 0.5, 0.5];
+        let bw = TPE::compute_bandwidth(&samples);
+        assert!(
+            bw > 0.0,
+            "Bandwidth should be positive even for zero variance"
+        );
+    }
+
+    #[test]
+    fn test_split_observations_empty_history() {
+        // Covers split_observations with empty history (line 165-167)
+        let tpe = TPE::new(100);
+        let (good, bad) = tpe.split_observations();
+        assert!(good.is_empty());
+        assert!(bad.is_empty());
+    }
+
+    #[test]
+    fn test_split_observations_single_observation() {
+        // Covers n_good.max(1).min(sorted.len() - 1) edge case
+        let mut tpe = TPE::new(100).with_gamma(0.25);
+        tpe.history.push(Observation {
+            values: vec![0.5],
+            score: 0.9,
+        });
+        // With 1 observation: n_good = ceil(1 * 0.25) = 1, but min(sorted.len()-1) = 0
+        // So n_good becomes 0 wait no: max(1) first, then min(0) = 0
+        // Actually: n_good = max(1, ...).min(sorted.len()-1) = max(1, 1).min(0) = min(1, 0) = 0
+        // Let's just verify it doesn't panic
+        let (good, bad) = tpe.split_observations();
+        // Total should be 1
+        assert_eq!(good.len() + bad.len(), 1);
+    }
+
+    #[test]
+    fn test_split_observations_two_observations() {
+        let mut tpe = TPE::new(100).with_gamma(0.25);
+        tpe.history.push(Observation {
+            values: vec![0.3],
+            score: 0.5,
+        });
+        tpe.history.push(Observation {
+            values: vec![0.7],
+            score: 0.9,
+        });
+
+        let (good, bad) = tpe.split_observations();
+        assert_eq!(good.len(), 1);
+        assert_eq!(bad.len(), 1);
+        // Best score (0.9) should be in good
+        assert!((good[0].score - 0.9).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_ei_ratio_empty_candidate() {
+        // Covers compute_ei_ratio with empty candidate (line 189-191)
+        let good: Vec<&Observation> = vec![];
+        let bad: Vec<&Observation> = vec![];
+        let ratio = TPE::compute_ei_ratio(&[], &good, &bad);
+        assert!(
+            (ratio - 0.0).abs() < 1e-10,
+            "Empty candidate should return 0.0"
+        );
+    }
+
+    #[test]
+    fn test_ei_ratio_with_observations() {
+        let obs_good = Observation {
+            values: vec![0.5],
+            score: 0.9,
+        };
+        let obs_bad = Observation {
+            values: vec![0.1],
+            score: 0.1,
+        };
+
+        let good = vec![&obs_good];
+        let bad = vec![&obs_bad];
+
+        // Near good observation should have high EI ratio
+        let ratio_near_good = TPE::compute_ei_ratio(&[0.5], &good, &bad);
+        let ratio_near_bad = TPE::compute_ei_ratio(&[0.1], &good, &bad);
+
+        assert!(ratio_near_good > 0.0);
+        assert!(ratio_near_bad > 0.0);
+        assert!(
+            ratio_near_good > ratio_near_bad,
+            "Point near good ({ratio_near_good}) should have higher EI than near bad ({ratio_near_bad})"
+        );
+    }
+
+    #[test]
+    fn test_tpe_update_empty_results() {
+        // Covers update with empty results (line 319-321)
+        let mut tpe = TPE::new(100);
+        let empty: &[TrialResult<RF>] = &[];
+        tpe.update(empty); // Should return early, no panic
+        assert_eq!(tpe.n_observations(), 0);
+    }
+
+    #[test]
+    fn test_tpe_update_with_non_numeric_values() {
+        // Covers the case where ParamValue::as_f64 returns None for non-numeric
+        let mut tpe = TPE::new(100);
+
+        let mut values = std::collections::HashMap::new();
+        values.insert(RF::MaxFeatures, ParamValue::String("sqrt".to_string()));
+        let trial = Trial { values };
+        let result = TrialResult {
+            trial,
+            score: 0.8,
+            metrics: std::collections::HashMap::new(),
+        };
+
+        tpe.update(&[result]);
+        assert_eq!(tpe.n_observations(), 1);
+        // Non-numeric values are filtered out, so observation has empty values
+        assert!(tpe.history[0].values.is_empty());
+    }
+
+    #[test]
+    fn test_tpe_update_with_bool_values() {
+        // Bool values should not convert to f64
+        let mut tpe = TPE::new(100);
+
+        let mut values = std::collections::HashMap::new();
+        values.insert(RF::Bootstrap, ParamValue::Bool(true));
+        let trial = Trial { values };
+        let result = TrialResult {
+            trial,
+            score: 0.7,
+            metrics: std::collections::HashMap::new(),
+        };
+
+        tpe.update(&[result]);
+        assert_eq!(tpe.n_observations(), 1);
+    }
+
+    #[test]
+    fn test_tpe_config_clone_debug() {
+        let config = TPEConfig::default();
+        let cloned = config.clone();
+        assert!((cloned.gamma - config.gamma).abs() < 0.001);
+        assert_eq!(cloned.n_candidates, config.n_candidates);
+        assert_eq!(cloned.n_startup_trials, config.n_startup_trials);
+
+        let debug = format!("{config:?}");
+        assert!(debug.contains("TPEConfig"));
+    }
+
+    #[test]
+    fn test_tpe_clone_debug() {
+        let tpe = TPE::new(50).with_seed(99);
+        let cloned = tpe.clone();
+        assert_eq!(cloned.n_trials, 50);
+        assert_eq!(cloned.seed, 99);
+        assert_eq!(cloned.remaining(), 50);
+
+        let debug = format!("{tpe:?}");
+        assert!(debug.contains("TPE"));
+    }
+
+    #[test]
+    fn test_tpe_model_phase_with_continuous() {
+        // Tests the TPE model phase with continuous parameters
+        let space: SearchSpace<RF> =
+            SearchSpace::new().add_continuous(RF::NEstimators, 10.0, 500.0);
+
+        let mut tpe = TPE::new(100).with_startup_trials(5).with_seed(42);
+
+        // Add enough observations to activate model
+        for i in 0..5 {
+            let mut values = std::collections::HashMap::new();
+            values.insert(RF::NEstimators, ParamValue::Float(100.0 + i as f64 * 50.0));
+            let trial = Trial { values };
+            let result = TrialResult {
+                trial,
+                score: i as f64 / 5.0,
+                metrics: std::collections::HashMap::new(),
+            };
+            tpe.update(&[result]);
+        }
+
+        assert!(tpe.should_use_model());
+        let trials = tpe.suggest(&space, 3);
+        assert_eq!(trials.len(), 3);
+
+        for trial in &trials {
+            let v = trial.get_f64(&RF::NEstimators).expect("should have value");
+            assert!(v >= 10.0 && v <= 500.0, "Continuous value {v} out of range");
+        }
+    }
+
+    #[test]
+    fn test_tpe_model_phase_with_log_scale() {
+        // Tests denormalize_candidate with log_scale=true
+        let space: SearchSpace<RF> = SearchSpace::new().add_log_scale(
+            RF::NEstimators,
+            crate::automl::LogScale {
+                low: 1e-4,
+                high: 1.0,
+            },
+        );
+
+        let mut tpe = TPE::new(100).with_startup_trials(3).with_seed(42);
+
+        // Activate model
+        for i in 0..3 {
+            let mut values = std::collections::HashMap::new();
+            values.insert(RF::NEstimators, ParamValue::Float(0.001 * (i as f64 + 1.0)));
+            let trial = Trial { values };
+            let result = TrialResult {
+                trial,
+                score: i as f64 * 0.3,
+                metrics: std::collections::HashMap::new(),
+            };
+            tpe.update(&[result]);
+        }
+
+        assert!(tpe.should_use_model());
+        let trials = tpe.suggest(&space, 2);
+        assert_eq!(trials.len(), 2);
+    }
+
+    #[test]
+    fn test_tpe_model_phase_with_categorical() {
+        // Tests denormalize_candidate with categorical params
+        let space: SearchSpace<RF> =
+            SearchSpace::new().add_categorical(RF::MaxFeatures, ["sqrt", "log2", "auto"]);
+
+        let mut tpe = TPE::new(100).with_startup_trials(3).with_seed(42);
+
+        // Add observations with string values
+        for i in 0..3 {
+            let mut values = std::collections::HashMap::new();
+            let choices = ["sqrt", "log2", "auto"];
+            values.insert(
+                RF::MaxFeatures,
+                ParamValue::String(choices[i % 3].to_string()),
+            );
+            let trial = Trial { values };
+            let result = TrialResult {
+                trial,
+                score: i as f64 * 0.2,
+                metrics: std::collections::HashMap::new(),
+            };
+            tpe.update(&[result]);
+        }
+
+        assert!(tpe.should_use_model());
+        let trials = tpe.suggest(&space, 3);
+        assert_eq!(trials.len(), 3);
+
+        for trial in &trials {
+            let v = trial.get(&RF::MaxFeatures).expect("should have value");
+            let s = v.as_str().expect("should be string");
+            assert!(
+                ["sqrt", "log2", "auto"].contains(&s),
+                "Categorical value '{s}' not in choices"
+            );
+        }
+    }
+
+    #[test]
+    fn test_tpe_zero_remaining() {
+        // Covers the n == 0 early return in suggest (line 272-274)
+        let space: SearchSpace<RF> = SearchSpace::new().add(RF::NEstimators, 10..100);
+
+        let mut tpe = TPE::new(0);
+        let trials = tpe.suggest(&space, 10);
+        assert!(trials.is_empty());
+    }
+
+    #[test]
+    fn test_tpe_with_startup_trials() {
+        let tpe = TPE::new(50).with_startup_trials(20);
+        assert_eq!(tpe.config.n_startup_trials, 20);
+    }
+
+    #[test]
+    fn test_kde_density_multiple_samples() {
+        let samples = vec![0.2, 0.4, 0.6, 0.8];
+        let bw = TPE::compute_bandwidth(&samples);
+
+        // Density at center should be reasonable
+        let density_center = TPE::kde_density(&samples, 0.5, bw);
+        assert!(density_center > 0.0);
+
+        // Density far away should be lower
+        let density_far = TPE::kde_density(&samples, 10.0, bw);
+        assert!(density_center > density_far);
+    }
+
+    #[test]
+    fn test_tpe_suggest_empty_space_with_model() {
+        // Empty space with model active: n_dims == 0 forces random sampling
+        let space: SearchSpace<RF> = SearchSpace::new();
+
+        let mut tpe = TPE::new(100).with_startup_trials(0).with_seed(42);
+
+        // Even with startup_trials=0, empty space triggers random path
+        // because n_dims == 0
+        let trials = tpe.suggest(&space, 3);
+        assert_eq!(trials.len(), 3);
+    }
+
+    #[test]
+    fn test_split_observations_with_nan_scores() {
+        // NaN scores should be handled by the partial_cmp fallback
+        let mut tpe = TPE::new(100).with_gamma(0.5);
+        tpe.history.push(Observation {
+            values: vec![0.3],
+            score: f64::NAN,
+        });
+        tpe.history.push(Observation {
+            values: vec![0.5],
+            score: 0.5,
+        });
+        tpe.history.push(Observation {
+            values: vec![0.7],
+            score: 0.8,
+        });
+
+        // Should not panic on NaN comparisons
+        let (good, bad) = tpe.split_observations();
+        assert_eq!(good.len() + bad.len(), 3);
+    }
 }
 
 #[cfg(test)]

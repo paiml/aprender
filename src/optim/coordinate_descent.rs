@@ -262,3 +262,191 @@ impl Optimizer for CoordinateDescent {
         // Coordinate Descent is stateless - nothing to reset
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cd_new() {
+        let cd = CoordinateDescent::new(500, 1e-4);
+        assert_eq!(cd.max_iter(), 500);
+        assert!((cd.tol() - 1e-4).abs() < 1e-10);
+        assert!(!cd.random_order());
+    }
+
+    #[test]
+    fn test_cd_clone_debug() {
+        let cd = CoordinateDescent::new(100, 1e-6);
+        let cloned = cd.clone();
+        assert_eq!(cd.max_iter(), cloned.max_iter());
+        let debug_str = format!("{:?}", cd);
+        assert!(debug_str.contains("CoordinateDescent"));
+    }
+
+    #[test]
+    fn test_cd_with_random_order() {
+        let cd = CoordinateDescent::new(100, 1e-6).with_random_order(true);
+        assert!(cd.random_order());
+    }
+
+    #[test]
+    fn test_cd_with_random_order_false() {
+        let cd = CoordinateDescent::new(100, 1e-6).with_random_order(false);
+        assert!(!cd.random_order());
+    }
+
+    #[test]
+    fn test_cd_cyclic_convergence() {
+        let c = vec![1.0, 2.0, 3.0];
+        let update = move |x: &mut Vector<f32>, i: usize| {
+            x[i] = c[i];
+        };
+
+        let mut cd = CoordinateDescent::new(100, 1e-6);
+        let x0 = Vector::from_slice(&[0.0, 0.0, 0.0]);
+        let result = cd.minimize(update, x0);
+
+        assert_eq!(result.status, ConvergenceStatus::Converged);
+        assert!((result.solution[0] - 1.0).abs() < 1e-5);
+        assert!((result.solution[1] - 2.0).abs() < 1e-5);
+        assert!((result.solution[2] - 3.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_cd_random_order_convergence() {
+        let c = vec![4.0, 5.0, 6.0];
+        let update = move |x: &mut Vector<f32>, i: usize| {
+            x[i] = c[i];
+        };
+
+        let mut cd = CoordinateDescent::new(100, 1e-6).with_random_order(true);
+        let x0 = Vector::from_slice(&[0.0, 0.0, 0.0]);
+        let result = cd.minimize(update, x0);
+
+        assert_eq!(result.status, ConvergenceStatus::Converged);
+        assert!((result.solution[0] - 4.0).abs() < 1e-5);
+        assert!((result.solution[1] - 5.0).abs() < 1e-5);
+        assert!((result.solution[2] - 6.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_cd_max_iterations() {
+        // Update function that never converges (keeps oscillating)
+        let update = |x: &mut Vector<f32>, i: usize| {
+            x[i] += 1.0; // Always changes, never settles
+        };
+
+        let mut cd = CoordinateDescent::new(3, 1e-10);
+        let x0 = Vector::from_slice(&[0.0, 0.0]);
+        let result = cd.minimize(update, x0);
+
+        assert_eq!(result.status, ConvergenceStatus::MaxIterations);
+        assert_eq!(result.iterations, 3);
+        assert!((result.gradient_norm - 0.0).abs() < 1e-10);
+        assert!((result.objective_value - 0.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_cd_already_converged() {
+        // Update function that makes no changes (already at optimum)
+        let update = |_x: &mut Vector<f32>, _i: usize| {
+            // No change - already at minimum
+        };
+
+        let mut cd = CoordinateDescent::new(100, 1e-6);
+        let x0 = Vector::from_slice(&[1.0, 2.0, 3.0]);
+        let result = cd.minimize(update, x0);
+
+        assert_eq!(result.status, ConvergenceStatus::Converged);
+        assert_eq!(result.iterations, 0);
+    }
+
+    #[test]
+    fn test_cd_soft_threshold_update() {
+        let lambda = 0.1;
+        let update = move |x: &mut Vector<f32>, i: usize| {
+            let v = x[i];
+            x[i] = if v > lambda {
+                v - lambda
+            } else if v < -lambda {
+                v + lambda
+            } else {
+                0.0
+            };
+        };
+
+        let mut cd = CoordinateDescent::new(100, 1e-6);
+        let x0 = Vector::from_slice(&[1.0, -0.5, 0.05]);
+        let result = cd.minimize(update, x0);
+
+        assert_eq!(result.status, ConvergenceStatus::Converged);
+        // All should converge to 0 after enough soft-thresholding
+        assert!(result.solution[2].abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_cd_reset() {
+        let mut cd = CoordinateDescent::new(100, 1e-6);
+        cd.reset(); // Stateless, should not panic
+    }
+
+    #[test]
+    #[should_panic(expected = "does not support stochastic updates")]
+    fn test_cd_step_panics() {
+        let mut cd = CoordinateDescent::new(100, 1e-6);
+        let mut params = Vector::from_slice(&[1.0]);
+        let grad = Vector::from_slice(&[0.1]);
+        cd.step(&mut params, &grad);
+    }
+
+    #[test]
+    fn test_cd_1d() {
+        let target = 7.0;
+        let update = move |x: &mut Vector<f32>, _i: usize| {
+            x[0] = target;
+        };
+
+        let mut cd = CoordinateDescent::new(100, 1e-6);
+        let x0 = Vector::from_slice(&[0.0]);
+        let result = cd.minimize(update, x0);
+
+        assert_eq!(result.status, ConvergenceStatus::Converged);
+        assert!((result.solution[0] - 7.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_cd_convergence_fields() {
+        let update = |_x: &mut Vector<f32>, _i: usize| {};
+
+        let mut cd = CoordinateDescent::new(100, 1e-6);
+        let x0 = Vector::from_slice(&[1.0]);
+        let result = cd.minimize(update, x0);
+
+        assert!((result.constraint_violation - 0.0).abs() < 1e-10);
+        let _ = result.elapsed_time.as_nanos();
+    }
+
+    #[test]
+    fn test_cd_random_order_with_single_coordinate() {
+        // Edge case: single coordinate with random order
+        let update = |x: &mut Vector<f32>, _i: usize| {
+            x[0] = 42.0;
+        };
+
+        let mut cd = CoordinateDescent::new(100, 1e-6).with_random_order(true);
+        let x0 = Vector::from_slice(&[0.0]);
+        let result = cd.minimize(update, x0);
+
+        assert_eq!(result.status, ConvergenceStatus::Converged);
+        assert!((result.solution[0] - 42.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_cd_getters() {
+        let cd = CoordinateDescent::new(200, 1e-3).with_random_order(true);
+        assert_eq!(cd.max_iter(), 200);
+        assert!((cd.tol() - 1e-3).abs() < 1e-10);
+        assert!(cd.random_order());
+    }
+}

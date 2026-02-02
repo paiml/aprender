@@ -327,3 +327,179 @@ impl Optimizer for InteriorPoint {
         self.mu = self.initial_mu;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_ip_new() {
+        let ip = InteriorPoint::new(50, 1e-6, 1.0);
+        let debug_str = format!("{:?}", ip);
+        assert!(debug_str.contains("InteriorPoint"));
+        assert!(debug_str.contains("50"));
+    }
+
+    #[test]
+    fn test_ip_clone_debug() {
+        let ip = InteriorPoint::new(50, 1e-6, 1.0);
+        let cloned = ip.clone();
+        let d1 = format!("{:?}", ip);
+        let d2 = format!("{:?}", cloned);
+        assert_eq!(d1, d2);
+    }
+
+    #[test]
+    fn test_ip_with_beta() {
+        let ip = InteriorPoint::new(50, 1e-6, 1.0).with_beta(0.1);
+        let debug_str = format!("{:?}", ip);
+        assert!(debug_str.contains("0.1"));
+    }
+
+    #[test]
+    fn test_ip_nonnegative_quadratic() {
+        // min x1^2 + x2^2 s.t. x >= 0
+        let objective = |x: &Vector<f32>| x[0] * x[0] + x[1] * x[1];
+        let gradient = |x: &Vector<f32>| Vector::from_slice(&[2.0 * x[0], 2.0 * x[1]]);
+        let inequality = |x: &Vector<f32>| Vector::from_slice(&[-x[0], -x[1]]);
+        let inequality_jac = |_x: &Vector<f32>| {
+            vec![
+                Vector::from_slice(&[-1.0, 0.0]),
+                Vector::from_slice(&[0.0, -1.0]),
+            ]
+        };
+
+        let mut ip = InteriorPoint::new(50, 1e-3, 1.0);
+        let x0 = Vector::from_slice(&[1.0, 1.0]);
+        let result = ip.minimize(objective, gradient, inequality, inequality_jac, x0);
+
+        assert!(result.solution[0] >= -1e-2);
+        assert!(result.solution[1] >= -1e-2);
+    }
+
+    #[test]
+    fn test_ip_max_iterations() {
+        let objective = |x: &Vector<f32>| (x[0] - 5.0).powi(2);
+        let gradient = |x: &Vector<f32>| Vector::from_slice(&[2.0 * (x[0] - 5.0)]);
+        let inequality = |x: &Vector<f32>| Vector::from_slice(&[-x[0]]);
+        let inequality_jac = |_x: &Vector<f32>| vec![Vector::from_slice(&[-1.0])];
+
+        let mut ip = InteriorPoint::new(2, 1e-20, 1.0);
+        let x0 = Vector::from_slice(&[1.0]);
+        let result = ip.minimize(objective, gradient, inequality, inequality_jac, x0);
+
+        assert_eq!(result.status, ConvergenceStatus::MaxIterations);
+        assert_eq!(result.iterations, 2);
+        assert!(result.objective_value.is_finite());
+        assert!(result.gradient_norm >= 0.0);
+    }
+
+    #[test]
+    fn test_ip_converged_result_fields() {
+        let objective = |x: &Vector<f32>| x[0] * x[0] + x[1] * x[1];
+        let gradient = |x: &Vector<f32>| Vector::from_slice(&[2.0 * x[0], 2.0 * x[1]]);
+        let inequality = |x: &Vector<f32>| Vector::from_slice(&[-x[0], -x[1]]);
+        let inequality_jac = |_x: &Vector<f32>| {
+            vec![
+                Vector::from_slice(&[-1.0, 0.0]),
+                Vector::from_slice(&[0.0, -1.0]),
+            ]
+        };
+
+        let mut ip = InteriorPoint::new(100, 1e-3, 1.0).with_beta(0.1);
+        let x0 = Vector::from_slice(&[1.0, 1.0]);
+        let result = ip.minimize(objective, gradient, inequality, inequality_jac, x0);
+
+        assert!(result.constraint_violation >= 0.0);
+        let _ = result.elapsed_time.as_nanos();
+    }
+
+    #[test]
+    #[should_panic(expected = "Initial point is infeasible")]
+    fn test_ip_infeasible_start() {
+        let objective = |x: &Vector<f32>| x[0] * x[0];
+        let gradient = |x: &Vector<f32>| Vector::from_slice(&[2.0 * x[0]]);
+        // Constraint: -x <= 0, i.e. x >= 0
+        let inequality = |x: &Vector<f32>| Vector::from_slice(&[-x[0]]);
+        let inequality_jac = |_x: &Vector<f32>| vec![Vector::from_slice(&[-1.0])];
+
+        let mut ip = InteriorPoint::new(50, 1e-6, 1.0);
+        let x0 = Vector::from_slice(&[-1.0]); // Infeasible: g(x) = 1.0 >= 0
+        let _ = ip.minimize(objective, gradient, inequality, inequality_jac, x0);
+    }
+
+    #[test]
+    fn test_ip_reset() {
+        let mut ip = InteriorPoint::new(50, 1e-6, 5.0);
+        // Run a minimization to change mu
+        let objective = |x: &Vector<f32>| x[0] * x[0];
+        let gradient = |x: &Vector<f32>| Vector::from_slice(&[2.0 * x[0]]);
+        let inequality = |x: &Vector<f32>| Vector::from_slice(&[-x[0]]);
+        let inequality_jac = |_x: &Vector<f32>| vec![Vector::from_slice(&[-1.0])];
+
+        let _ = ip.minimize(
+            objective,
+            gradient,
+            inequality,
+            inequality_jac,
+            Vector::from_slice(&[1.0]),
+        );
+
+        // Reset should restore mu to initial value
+        ip.reset();
+        // The next call should start with initial_mu again
+        let debug_str = format!("{:?}", ip);
+        assert!(debug_str.contains("mu: 5.0"));
+    }
+
+    #[test]
+    #[should_panic(expected = "does not support stochastic updates")]
+    fn test_ip_step_panics() {
+        let mut ip = InteriorPoint::new(50, 1e-6, 1.0);
+        let mut params = Vector::from_slice(&[1.0]);
+        let grad = Vector::from_slice(&[0.1]);
+        ip.step(&mut params, &grad);
+    }
+
+    #[test]
+    fn test_ip_constraint_boundary_hit() {
+        // Problem where solution is at constraint boundary (barrier subproblem
+        // exercises the infeasible branch within the inner loop)
+        let objective = |x: &Vector<f32>| (x[0] - 10.0).powi(2);
+        let gradient = |x: &Vector<f32>| Vector::from_slice(&[2.0 * (x[0] - 10.0)]);
+        // Constraint: x <= 2 => g(x) = x - 2 <= 0
+        let inequality = |x: &Vector<f32>| Vector::from_slice(&[x[0] - 2.0]);
+        let inequality_jac = |_x: &Vector<f32>| vec![Vector::from_slice(&[1.0])];
+
+        let mut ip = InteriorPoint::new(100, 1e-3, 1.0).with_beta(0.1);
+        let x0 = Vector::from_slice(&[1.0]); // feasible: g(1) = -1 < 0
+        let result = ip.minimize(objective, gradient, inequality, inequality_jac, x0);
+
+        // Solution should move towards the boundary x = 2 (interior point
+        // uses small gradient steps, so it may not reach exactly)
+        assert!(
+            result.solution[0] > 0.5,
+            "Expected solution > 0.5, got {}",
+            result.solution[0]
+        );
+    }
+
+    #[test]
+    fn test_ip_aggressive_beta() {
+        // Use very aggressive beta to exercise fast mu decrease
+        let objective = |x: &Vector<f32>| x[0] * x[0];
+        let gradient = |x: &Vector<f32>| Vector::from_slice(&[2.0 * x[0]]);
+        let inequality = |x: &Vector<f32>| Vector::from_slice(&[-x[0]]);
+        let inequality_jac = |_x: &Vector<f32>| vec![Vector::from_slice(&[-1.0])];
+
+        let mut ip = InteriorPoint::new(100, 1e-3, 10.0).with_beta(0.01);
+        let x0 = Vector::from_slice(&[1.0]);
+        let result = ip.minimize(objective, gradient, inequality, inequality_jac, x0);
+
+        // Should converge since mu decreases quickly
+        assert!(
+            result.status == ConvergenceStatus::Converged
+                || result.status == ConvergenceStatus::MaxIterations
+        );
+    }
+}

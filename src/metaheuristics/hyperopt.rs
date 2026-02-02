@@ -575,4 +575,165 @@ mod tests {
         assert!((x - 0.5).abs() < 0.01, "x should be 0.5, got {}", x);
         assert!((y - 15.0).abs() < 0.1, "y should be 15.0, got {}", y);
     }
+
+    #[test]
+    fn test_hyperopt_cmaes_algorithm() {
+        // Exercises the SearchAlgorithm::CmaEs branch in minimize().
+        let search = HyperoptSearch::new()
+            .add_real("x", 0.0, 10.0, false)
+            .with_algorithm(SearchAlgorithm::CmaEs)
+            .with_seed(42);
+
+        let objective = |params: &HyperparameterSet| -> f64 {
+            let x = params.get_real("x").unwrap();
+            (x - 5.0).powi(2)
+        };
+
+        let result = search.minimize(objective, Budget::Evaluations(200));
+        assert!(result.evaluations > 0);
+        assert!(result.best_params.get_real("x").is_some());
+    }
+
+    #[test]
+    fn test_hyperopt_maximize_returns_positive_scores() {
+        // Verify maximize negates objective and history correctly.
+        let search = HyperoptSearch::new()
+            .add_real("x", 0.0, 10.0, false)
+            .with_seed(42);
+
+        let objective = |params: &HyperparameterSet| -> f64 {
+            let x = params.get_real("x").unwrap();
+            -(x - 5.0).powi(2) + 25.0 // Maximum of 25 at x=5
+        };
+
+        let result = search.maximize(objective, Budget::Evaluations(200));
+        // The negated best_score should be positive (near 25)
+        assert!(
+            result.best_score > 0.0,
+            "Maximize should return positive best_score"
+        );
+        // History entries should also be negated (non-positive objective becomes non-negative)
+        for &h in &result.history {
+            assert!(h.is_finite());
+        }
+    }
+
+    #[test]
+    fn test_hyperopt_with_n_jobs() {
+        // Exercises the with_n_jobs builder, including the max(1) clamp.
+        let search = HyperoptSearch::new().with_n_jobs(4);
+        assert_eq!(search.n_jobs, 4);
+
+        let search_zero = HyperoptSearch::new().with_n_jobs(0);
+        assert_eq!(search_zero.n_jobs, 1); // Clamped to at least 1
+    }
+
+    #[test]
+    fn test_hyperopt_default() {
+        // Exercises the Default impl which delegates to new().
+        let search = HyperoptSearch::default();
+        assert!(search.parameters.is_empty());
+        assert!(search.seed.is_none());
+        assert_eq!(search.n_jobs, 1);
+    }
+
+    #[test]
+    fn test_hyperparameter_name_all_variants() {
+        let real = Hyperparameter::Real {
+            name: "lr".to_string(),
+            lower: 0.0,
+            upper: 1.0,
+            log_scale: false,
+        };
+        assert_eq!(real.name(), "lr");
+
+        let int = Hyperparameter::Int {
+            name: "epochs".to_string(),
+            lower: 1,
+            upper: 100,
+        };
+        assert_eq!(int.name(), "epochs");
+
+        let cat = Hyperparameter::Categorical {
+            name: "optimizer".to_string(),
+            choices: vec!["sgd".to_string(), "adam".to_string()],
+        };
+        assert_eq!(cat.name(), "optimizer");
+    }
+
+    #[test]
+    fn test_hyperparameter_dim() {
+        let real = Hyperparameter::Real {
+            name: "x".to_string(),
+            lower: 0.0,
+            upper: 1.0,
+            log_scale: false,
+        };
+        assert_eq!(real.dim(), 1);
+
+        let int = Hyperparameter::Int {
+            name: "n".to_string(),
+            lower: 1,
+            upper: 10,
+        };
+        assert_eq!(int.dim(), 1);
+
+        let cat = Hyperparameter::Categorical {
+            name: "color".to_string(),
+            choices: vec!["r".to_string(), "g".to_string(), "b".to_string()],
+        };
+        assert_eq!(cat.dim(), 3);
+    }
+
+    #[test]
+    fn test_hyperparameter_set_missing_keys() {
+        let params = HyperparameterSet::new();
+        assert_eq!(params.get_real("nonexistent"), None);
+        assert_eq!(params.get_int("nonexistent"), None);
+        assert_eq!(params.get_categorical("nonexistent"), None);
+    }
+
+    #[test]
+    fn test_hyperopt_total_dim_mixed() {
+        // Verify total_dim sums correctly across real, int, and categorical.
+        let search = HyperoptSearch::new()
+            .add_real("lr", 0.0, 1.0, false)          // dim = 1
+            .add_int("n", 1, 10)                       // dim = 1
+            .add_categorical("opt", &["a", "b", "c"]); // dim = 3
+        assert_eq!(search.total_dim(), 5);
+    }
+
+    #[test]
+    fn test_decode_int_bounds_clamped() {
+        // Verify integer decoding clamps to bounds at extremes.
+        let search = HyperoptSearch::new().add_int("n", 5, 10);
+
+        // t=0.0 should give lower bound
+        let params_low = search.decode(&[0.0]);
+        assert_eq!(params_low.get_int("n"), Some(5));
+
+        // t=1.0 should give upper bound
+        let params_high = search.decode(&[1.0]);
+        assert_eq!(params_high.get_int("n"), Some(10));
+    }
+
+    #[test]
+    fn test_decode_categorical_one_hot() {
+        // Verify categorical decoding picks the index with highest value.
+        let search = HyperoptSearch::new().add_categorical("color", &["red", "green", "blue"]);
+
+        // One-hot: green has highest value
+        let params = search.decode(&[0.1, 0.9, 0.2]);
+        assert_eq!(params.get_categorical("color"), Some("green"));
+
+        // One-hot: blue has highest value
+        let params2 = search.decode(&[0.1, 0.2, 0.8]);
+        assert_eq!(params2.get_categorical("color"), Some("blue"));
+    }
+
+    #[test]
+    fn test_search_algorithm_default() {
+        let algo = SearchAlgorithm::default();
+        assert!(matches!(algo, SearchAlgorithm::DifferentialEvolution));
+    }
 }

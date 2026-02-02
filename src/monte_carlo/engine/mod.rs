@@ -596,4 +596,248 @@ mod tests {
         assert!(pcts.p5 < pcts.p50);
         assert!(pcts.p50 < pcts.p95);
     }
+
+    #[test]
+    fn test_engine_default() {
+        let engine = MonteCarloEngine::default();
+        assert_eq!(engine.seed, 42);
+        assert_eq!(engine.n_simulations, 10_000);
+        assert_eq!(engine.max_simulations, 100_000);
+    }
+
+    #[test]
+    fn test_engine_reproducible() {
+        let engine = MonteCarloEngine::reproducible(99);
+        assert_eq!(engine.seed, 99);
+        assert_eq!(engine.n_simulations, 10_000);
+    }
+
+    #[test]
+    fn test_engine_with_max_simulations() {
+        let engine = MonteCarloEngine::new(42).with_max_simulations(500);
+        assert_eq!(engine.max_simulations, 500);
+    }
+
+    #[test]
+    fn test_engine_debug_clone() {
+        let engine = MonteCarloEngine::new(42).with_n_simulations(100);
+        let debug_str = format!("{:?}", engine);
+        assert!(debug_str.contains("MonteCarloEngine"));
+
+        let cloned = engine.clone();
+        assert_eq!(cloned.seed, 42);
+        assert_eq!(cloned.n_simulations, 100);
+    }
+
+    #[test]
+    fn test_simulate_with_budget_simulations() {
+        let engine = MonteCarloEngine::new(42);
+        let model = ConstantGrowthModel {
+            initial: 100.0,
+            growth_rate: 0.05,
+        };
+        let horizon = TimeHorizon::years(1);
+        let budget = Budget::Simulations(200);
+
+        let result = engine.simulate_with_budget(&model, &horizon, &budget);
+        assert!(result.n_paths() > 0);
+        assert!(result.n_paths() <= 200);
+    }
+
+    #[test]
+    fn test_simulate_with_budget_evaluations() {
+        let engine = MonteCarloEngine::new(42);
+        let model = ConstantGrowthModel {
+            initial: 100.0,
+            growth_rate: 0.05,
+        };
+        let horizon = TimeHorizon::years(1);
+        let budget = Budget::Evaluations(300);
+
+        let result = engine.simulate_with_budget(&model, &horizon, &budget);
+        assert!(result.n_paths() > 0);
+        assert!(result.n_paths() <= 300);
+    }
+
+    #[test]
+    fn test_simulate_with_budget_no_antithetic() {
+        let engine = MonteCarloEngine::new(42).with_variance_reduction(VarianceReduction::None);
+        let model = ConstantGrowthModel {
+            initial: 100.0,
+            growth_rate: 0.05,
+        };
+        let horizon = TimeHorizon::years(1);
+        let budget = Budget::Simulations(100);
+
+        let result = engine.simulate_with_budget(&model, &horizon, &budget);
+        assert_eq!(result.n_paths(), 100);
+    }
+
+    #[test]
+    fn test_simulate_no_antithetic() {
+        let engine = MonteCarloEngine::new(42)
+            .with_n_simulations(50)
+            .with_variance_reduction(VarianceReduction::None);
+        let model = ConstantGrowthModel {
+            initial: 100.0,
+            growth_rate: 0.05,
+        };
+        let horizon = TimeHorizon::years(1);
+
+        let result = engine.simulate(&model, &horizon);
+        assert_eq!(result.n_paths(), 50);
+    }
+
+    #[test]
+    fn test_simulation_result_return_statistics() {
+        let engine = MonteCarloEngine::new(42).with_n_simulations(100);
+        let model = ConstantGrowthModel {
+            initial: 100.0,
+            growth_rate: 0.05,
+        };
+        let horizon = TimeHorizon::years(1);
+        let result = engine.simulate(&model, &horizon);
+
+        let return_stats = result.return_statistics();
+        assert!(return_stats.n > 0);
+    }
+
+    #[test]
+    fn test_simulation_result_return_percentiles() {
+        let engine = MonteCarloEngine::new(42).with_n_simulations(100);
+        let model = ConstantGrowthModel {
+            initial: 100.0,
+            growth_rate: 0.05,
+        };
+        let horizon = TimeHorizon::years(1);
+        let result = engine.simulate(&model, &horizon);
+
+        let pcts = result.return_percentiles();
+        assert!(pcts.p50.is_finite());
+    }
+
+    #[test]
+    fn test_simulation_result_total_returns() {
+        let engine = MonteCarloEngine::new(42).with_n_simulations(50);
+        let model = ConstantGrowthModel {
+            initial: 100.0,
+            growth_rate: 0.05,
+        };
+        let horizon = TimeHorizon::years(1);
+        let result = engine.simulate(&model, &horizon);
+
+        let returns = result.total_returns();
+        assert!(!returns.is_empty());
+        // Growth rate is positive so returns should be positive
+        for r in &returns {
+            assert!(r.is_finite());
+        }
+    }
+
+    #[test]
+    fn test_simulation_result_empty_paths() {
+        let result = SimulationResult {
+            paths: vec![],
+            diagnostics: ConvergenceDiagnostics::new(),
+            model_name: "empty".to_string(),
+            seed: 0,
+        };
+
+        assert_eq!(result.n_paths(), 0);
+        assert!(result.final_values().is_empty());
+        assert!(result.total_returns().is_empty());
+        assert!(result.statistics_over_time().is_empty());
+        assert!(result.values_at_time(0).is_empty());
+    }
+
+    #[test]
+    fn test_simulation_result_debug_clone() {
+        let engine = MonteCarloEngine::new(42).with_n_simulations(10);
+        let model = ConstantGrowthModel {
+            initial: 100.0,
+            growth_rate: 0.05,
+        };
+        let horizon = TimeHorizon::years(1);
+        let result = engine.simulate(&model, &horizon);
+
+        let debug_str = format!("{:?}", result);
+        assert!(debug_str.contains("SimulationResult"));
+
+        let cloned = result.clone();
+        assert_eq!(cloned.n_paths(), result.n_paths());
+        assert_eq!(cloned.model_name, result.model_name);
+    }
+
+    // Test default implementation of generate_antithetic_path
+    struct NoAntitheticModel;
+
+    impl SimulationModel for NoAntitheticModel {
+        fn name(&self) -> &'static str {
+            "NoAntithetic"
+        }
+
+        fn generate_path(
+            &self,
+            _rng: &mut MonteCarloRng,
+            time_horizon: &TimeHorizon,
+            path_id: usize,
+        ) -> SimulationPath {
+            let n = time_horizon.n_steps();
+            SimulationPath::new(
+                time_horizon.time_points(),
+                vec![1.0; n + 1],
+                PathMetadata {
+                    path_id,
+                    seed: 0,
+                    is_antithetic: false,
+                },
+            )
+        }
+    }
+
+    #[test]
+    fn test_default_antithetic_path_impl() {
+        let model = NoAntitheticModel;
+        let mut rng = MonteCarloRng::new(42);
+        let horizon = TimeHorizon::years(1);
+
+        // Default antithetic just calls generate_path
+        let path = model.generate_antithetic_path(&mut rng, &horizon, 0);
+        assert_eq!(path.values.len(), horizon.n_steps() + 1);
+    }
+
+    #[test]
+    fn test_simulate_with_budget_convergence_not_converged() {
+        // Use a budget where convergence won't happen quickly
+        let engine = MonteCarloEngine::new(42).with_variance_reduction(VarianceReduction::None);
+        let model = ConstantGrowthModel {
+            initial: 100.0,
+            growth_rate: 0.05,
+        };
+        let horizon = TimeHorizon::years(1);
+        let budget = Budget::Convergence {
+            patience: 100,  // Very high patience
+            min_delta: 0.0, // Impossible to converge
+            max_simulations: 200,
+        };
+
+        let result = engine.simulate_with_budget(&model, &horizon, &budget);
+        // Should run all simulations since convergence won't happen
+        assert!(result.n_paths() > 0);
+    }
+
+    #[test]
+    fn test_values_at_time_out_of_bounds() {
+        let engine = MonteCarloEngine::new(42).with_n_simulations(10);
+        let model = ConstantGrowthModel {
+            initial: 100.0,
+            growth_rate: 0.05,
+        };
+        let horizon = TimeHorizon::years(1);
+        let result = engine.simulate(&model, &horizon);
+
+        // Request a time index beyond path length
+        let vals = result.values_at_time(99999);
+        assert!(vals.is_empty());
+    }
 }

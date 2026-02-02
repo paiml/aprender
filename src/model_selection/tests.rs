@@ -686,3 +686,343 @@ fn test_grid_search_single_alpha() {
     assert_eq!(result.alphas.len(), 1);
     assert_eq!(result.scores.len(), 1);
 }
+
+// ==================== Coverage gap tests (targeting 24 missed lines) ====================
+
+#[test]
+fn test_cross_validation_result_empty_scores_mean() {
+    // Covers mean() with empty scores (line 22-23)
+    let result = CrossValidationResult { scores: vec![] };
+    assert_eq!(result.mean(), 0.0);
+}
+
+#[test]
+fn test_cross_validation_result_empty_scores_std() {
+    // Covers std() with empty scores (line 31-33)
+    let result = CrossValidationResult { scores: vec![] };
+    assert_eq!(result.std(), 0.0);
+}
+
+#[test]
+fn test_cross_validation_result_empty_scores_min() {
+    // Covers min() with empty scores - returns f32::INFINITY
+    let result = CrossValidationResult { scores: vec![] };
+    assert_eq!(result.min(), f32::INFINITY);
+}
+
+#[test]
+fn test_cross_validation_result_empty_scores_max() {
+    // Covers max() with empty scores - returns f32::NEG_INFINITY
+    let result = CrossValidationResult { scores: vec![] };
+    assert_eq!(result.max(), f32::NEG_INFINITY);
+}
+
+#[test]
+fn test_cross_validation_result_single_score() {
+    let result = CrossValidationResult { scores: vec![0.85] };
+    assert!((result.mean() - 0.85).abs() < 1e-6);
+    assert_eq!(result.std(), 0.0);
+    assert_eq!(result.min(), 0.85);
+    assert_eq!(result.max(), 0.85);
+}
+
+#[test]
+fn test_cross_validation_result_debug_clone() {
+    let result = CrossValidationResult {
+        scores: vec![0.9, 0.95],
+    };
+    let cloned = result.clone();
+    assert_eq!(cloned.scores, result.scores);
+
+    let debug = format!("{result:?}");
+    assert!(debug.contains("CrossValidationResult"));
+    assert!(debug.contains("0.9"));
+}
+
+#[test]
+fn test_train_test_split_invalid_test_size_zero() {
+    // Covers test_size <= 0.0 error (line 618)
+    let x = Matrix::from_vec(10, 1, (0..10).map(|i| i as f32).collect()).expect("valid matrix");
+    let y = Vector::from_vec(vec![0.0; 10]);
+
+    let result = train_test_split(&x, &y, 0.0, Some(42));
+    assert!(result.is_err());
+    assert!(result
+        .expect_err("zero test_size should fail")
+        .contains("test_size must be between 0 and 1"));
+}
+
+#[test]
+fn test_train_test_split_invalid_test_size_negative() {
+    let x = Matrix::from_vec(10, 1, (0..10).map(|i| i as f32).collect()).expect("valid matrix");
+    let y = Vector::from_vec(vec![0.0; 10]);
+
+    let result = train_test_split(&x, &y, -0.5, Some(42));
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_train_test_split_invalid_test_size_one() {
+    // Covers test_size >= 1.0 error (line 618)
+    let x = Matrix::from_vec(10, 1, (0..10).map(|i| i as f32).collect()).expect("valid matrix");
+    let y = Vector::from_vec(vec![0.0; 10]);
+
+    let result = train_test_split(&x, &y, 1.0, Some(42));
+    assert!(result.is_err());
+    assert!(result
+        .expect_err("test_size=1.0 should fail")
+        .contains("test_size must be between 0 and 1"));
+}
+
+#[test]
+fn test_train_test_split_invalid_test_size_above_one() {
+    let x = Matrix::from_vec(10, 1, (0..10).map(|i| i as f32).collect()).expect("valid matrix");
+    let y = Vector::from_vec(vec![0.0; 10]);
+
+    let result = train_test_split(&x, &y, 1.5, Some(42));
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_train_test_split_mismatched_dimensions() {
+    // Covers n_samples != y.len() error (lines 625-631)
+    let x = Matrix::from_vec(10, 2, (0..20).map(|i| i as f32).collect()).expect("valid matrix");
+    let y = Vector::from_vec(vec![0.0; 5]); // Mismatch: 10 samples vs 5 labels
+
+    let result = train_test_split(&x, &y, 0.2, Some(42));
+    assert!(result.is_err());
+    assert!(result
+        .expect_err("mismatched dims should fail")
+        .contains("same number of samples"));
+}
+
+#[test]
+fn test_train_test_split_empty_result_set() {
+    // Covers n_test == 0 || n_train == 0 error (lines 636-639)
+    // With 2 samples and test_size=0.01, n_test rounds to 0
+    let x = Matrix::from_vec(2, 1, vec![1.0, 2.0]).expect("valid matrix");
+    let y = Vector::from_vec(vec![0.0, 1.0]);
+
+    let result = train_test_split(&x, &y, 0.01, Some(42));
+    assert!(result.is_err());
+    assert!(result
+        .expect_err("empty split should fail")
+        .contains("empty train or test set"));
+}
+
+#[test]
+fn test_train_test_split_without_random_state() {
+    // Covers shuffle_indices without seed (line 655-657: thread_rng branch)
+    let x = Matrix::from_vec(20, 2, (0..40).map(|i| i as f32).collect()).expect("valid matrix");
+    let y = Vector::from_vec(vec![0.0; 20]);
+
+    let result = train_test_split(&x, &y, 0.3, None);
+    assert!(result.is_ok());
+    let (x_train, x_test, y_train, y_test) = result.expect("split should succeed");
+    assert_eq!(x_train.shape().0, 14);
+    assert_eq!(x_test.shape().0, 6);
+    assert_eq!(y_train.len(), 14);
+    assert_eq!(y_test.len(), 6);
+}
+
+#[test]
+fn test_kfold_with_shuffle_no_random_state() {
+    // Covers KFold shuffle without random_state (line 213: thread_rng)
+    let kfold = KFold::new(3).with_shuffle(true);
+    let splits = kfold.split(9);
+
+    assert_eq!(splits.len(), 3);
+    // All indices should appear
+    let mut all_test: Vec<usize> = splits.iter().flat_map(|(_, t)| t).copied().collect();
+    all_test.sort_unstable();
+    assert_eq!(all_test, (0..9).collect::<Vec<_>>());
+}
+
+#[test]
+fn test_kfold_debug_clone() {
+    let kfold = KFold::new(5).with_random_state(42);
+    let cloned = kfold.clone();
+    let splits_orig = kfold.split(10);
+    let splits_clone = cloned.split(10);
+    assert_eq!(splits_orig, splits_clone);
+
+    let debug = format!("{kfold:?}");
+    assert!(debug.contains("KFold"));
+}
+
+#[test]
+fn test_stratified_kfold_debug_clone() {
+    let skfold = StratifiedKFold::new(3).with_random_state(42);
+    let cloned = skfold.clone();
+
+    let debug = format!("{skfold:?}");
+    assert!(debug.contains("StratifiedKFold"));
+
+    let y = Vector::from_slice(&[0.0, 0.0, 1.0, 1.0, 2.0, 2.0]);
+    let splits_orig = skfold.split(&y);
+    let splits_clone = cloned.split(&y);
+    assert_eq!(splits_orig.len(), splits_clone.len());
+}
+
+#[test]
+fn test_stratified_kfold_with_shuffle_false() {
+    // Covers with_shuffle(false) explicitly (line 314)
+    let skfold = StratifiedKFold::new(2).with_shuffle(false);
+    let y = Vector::from_slice(&[0.0, 0.0, 1.0, 1.0]);
+    let splits = skfold.split(&y);
+    assert_eq!(splits.len(), 2);
+}
+
+#[test]
+fn test_stratified_kfold_shuffle_no_random_state() {
+    // Covers shuffle without random_state (line 381: thread_rng)
+    let skfold = StratifiedKFold::new(2).with_shuffle(true);
+    let y = Vector::from_slice(&[0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
+    let splits = skfold.split(&y);
+    assert_eq!(splits.len(), 2);
+
+    // Stratification should still hold
+    for (_, test_idx) in &splits {
+        let mut c0 = 0;
+        let mut c1 = 0;
+        for &idx in test_idx {
+            if y[idx] == 0.0 {
+                c0 += 1;
+            } else {
+                c1 += 1;
+            }
+        }
+        // Each fold should maintain approximate class ratio
+        assert!(c0 > 0 && c1 > 0);
+    }
+}
+
+#[test]
+fn test_grid_search_result_debug_clone() {
+    let result = GridSearchResult {
+        best_alpha: 0.1,
+        best_score: 0.95,
+        alphas: vec![0.01, 0.1],
+        scores: vec![0.9, 0.95],
+    };
+    let cloned = result.clone();
+    assert_eq!(cloned.best_alpha, 0.1);
+    assert_eq!(cloned.best_score, 0.95);
+
+    let debug = format!("{result:?}");
+    assert!(debug.contains("GridSearchResult"));
+}
+
+#[test]
+fn test_grid_search_result_best_index_single_element() {
+    let result = GridSearchResult {
+        best_alpha: 0.5,
+        best_score: 0.8,
+        alphas: vec![0.5],
+        scores: vec![0.8],
+    };
+    assert_eq!(result.best_index(), 0);
+}
+
+#[test]
+fn test_grid_search_result_best_index_descending() {
+    // Best score is at the first position
+    let result = GridSearchResult {
+        best_alpha: 0.01,
+        best_score: 0.99,
+        alphas: vec![0.01, 0.1, 1.0],
+        scores: vec![0.99, 0.95, 0.85],
+    };
+    assert_eq!(result.best_index(), 0);
+}
+
+#[test]
+fn test_update_best_if_improved_no_improvement() {
+    // Covers the case where score <= best_score (no update)
+    let mut best_score = 0.9_f32;
+    let mut best_alpha = 0.1_f32;
+
+    update_best_if_improved(0.8, 0.5, &mut best_score, &mut best_alpha);
+    assert_eq!(best_score, 0.9);
+    assert_eq!(best_alpha, 0.1);
+}
+
+#[test]
+fn test_update_best_if_improved_with_improvement() {
+    let mut best_score = 0.5_f32;
+    let mut best_alpha = 0.1_f32;
+
+    update_best_if_improved(0.9, 0.01, &mut best_score, &mut best_alpha);
+    assert_eq!(best_score, 0.9);
+    assert_eq!(best_alpha, 0.01);
+}
+
+#[test]
+fn test_kfold_split_single_sample_per_fold() {
+    // 3 samples, 3 folds: each fold has exactly 1 test sample
+    let kfold = KFold::new(3);
+    let splits = kfold.split(3);
+
+    for (train_idx, test_idx) in &splits {
+        assert_eq!(test_idx.len(), 1);
+        assert_eq!(train_idx.len(), 2);
+    }
+}
+
+#[test]
+fn test_kfold_split_two_folds() {
+    let kfold = KFold::new(2);
+    let splits = kfold.split(10);
+
+    assert_eq!(splits.len(), 2);
+    assert_eq!(splits[0].1.len(), 5);
+    assert_eq!(splits[1].1.len(), 5);
+}
+
+#[test]
+fn test_kfold_with_shuffle_true() {
+    // Covers with_shuffle(true) (line 183)
+    let kfold = KFold::new(3).with_shuffle(true);
+    let splits = kfold.split(9);
+    assert_eq!(splits.len(), 3);
+}
+
+#[test]
+fn test_train_test_split_large_test_size() {
+    // Test with test_size close to 1.0
+    let x = Matrix::from_vec(100, 1, (0..100).map(|i| i as f32).collect()).expect("valid matrix");
+    let y = Vector::from_vec(vec![0.0; 100]);
+
+    let result = train_test_split(&x, &y, 0.9, Some(42));
+    assert!(result.is_ok());
+    let (x_train, x_test, _, _) = result.expect("should succeed");
+    assert_eq!(x_train.shape().0, 10);
+    assert_eq!(x_test.shape().0, 90);
+}
+
+#[test]
+fn test_train_test_split_small_test_size() {
+    // Test with test_size close to 0.0
+    let x = Matrix::from_vec(100, 1, (0..100).map(|i| i as f32).collect()).expect("valid matrix");
+    let y = Vector::from_vec(vec![0.0; 100]);
+
+    let result = train_test_split(&x, &y, 0.05, Some(42));
+    assert!(result.is_ok());
+    let (x_train, x_test, _, _) = result.expect("should succeed");
+    assert_eq!(x_train.shape().0, 95);
+    assert_eq!(x_test.shape().0, 5);
+}
+
+#[test]
+fn test_stratified_kfold_single_class() {
+    // All samples are the same class
+    let y = Vector::from_slice(&[0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
+    let skfold = StratifiedKFold::new(3);
+    let splits = skfold.split(&y);
+
+    assert_eq!(splits.len(), 3);
+    // Each fold should have 2 test samples
+    for (_, test_idx) in &splits {
+        assert_eq!(test_idx.len(), 2);
+    }
+}

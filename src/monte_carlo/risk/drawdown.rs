@@ -401,6 +401,166 @@ mod tests {
         assert_eq!(DrawdownAnalysis::drawdown_series(&values).len(), 1);
     }
 
+    #[test]
+    fn test_recovery_factor_initial_zero() {
+        // first <= 0.0 should return 0.0
+        let values = vec![0.0, 50.0, 100.0];
+        let rf = DrawdownAnalysis::recovery_factor(&values);
+        assert!(
+            rf.abs() < 1e-10,
+            "Recovery factor with zero initial should be 0: {rf}"
+        );
+    }
+
+    #[test]
+    fn test_recovery_factor_initial_negative() {
+        let values = vec![-10.0, 50.0, 100.0];
+        let rf = DrawdownAnalysis::recovery_factor(&values);
+        assert!(
+            rf.abs() < 1e-10,
+            "Recovery factor with negative initial should be 0: {rf}"
+        );
+    }
+
+    #[test]
+    fn test_recovery_factor_no_drawdown_positive_return() {
+        // Monotonically increasing: max_dd = 0, total_return > 0 => Infinity
+        let values = vec![100.0, 110.0, 120.0, 130.0];
+        let rf = DrawdownAnalysis::recovery_factor(&values);
+        assert!(
+            rf.is_infinite() && rf > 0.0,
+            "Recovery factor with no drawdown and positive return should be Infinity: {rf}"
+        );
+    }
+
+    #[test]
+    fn test_recovery_factor_no_drawdown_no_return() {
+        // Flat values: max_dd = 0, total_return = 0 => 0.0
+        let values = vec![100.0, 100.0, 100.0];
+        let rf = DrawdownAnalysis::recovery_factor(&values);
+        assert!(
+            rf.abs() < 1e-10,
+            "Recovery factor with no drawdown and no return should be 0: {rf}"
+        );
+    }
+
+    #[test]
+    fn test_recovery_factor_single_value() {
+        let values = vec![100.0];
+        let rf = DrawdownAnalysis::recovery_factor(&values);
+        assert!(
+            rf.abs() < 1e-10,
+            "Recovery factor with single value should be 0: {rf}"
+        );
+    }
+
+    #[test]
+    fn test_recovery_factor_empty() {
+        let rf = DrawdownAnalysis::recovery_factor(&[]);
+        assert!(
+            rf.abs() < 1e-10,
+            "Recovery factor with empty should be 0: {rf}"
+        );
+    }
+
+    #[test]
+    fn test_drawdown_series_zero_peak() {
+        // peak <= 0 triggers the else branch returning 0.0 for drawdown
+        let values = vec![0.0, 0.0, 0.0];
+        let series = DrawdownAnalysis::drawdown_series(&values);
+        assert_eq!(series.len(), 3);
+        for dd in &series {
+            assert!(
+                dd.abs() < 1e-10,
+                "Drawdown with zero peak should be 0: {dd}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_drawdown_series_negative_values() {
+        // Negative starting values: peak stays at initial negative value
+        let values = vec![-10.0, -5.0, -2.0];
+        let series = DrawdownAnalysis::drawdown_series(&values);
+        assert_eq!(series.len(), 3);
+        // Peak starts at -10, then goes to -5 (new peak), then -2 (new peak)
+        // All are new peaks, so all drawdowns should be 0
+        for dd in &series {
+            assert!(
+                dd.abs() < 1e-10,
+                "Drawdown with rising negative values: {dd}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_max_drawdown_zero_peak() {
+        // Peak at 0: the else-if branch `peak > 0.0` is false, so drawdown not computed
+        let values = vec![0.0, -5.0, -10.0];
+        let dd = DrawdownAnalysis::max_drawdown(&values);
+        // Peak=0 at start, values go negative but peak > 0.0 check fails
+        assert!(dd.abs() < 1e-10, "Max drawdown with zero peak: {dd}");
+    }
+
+    #[test]
+    fn test_from_paths_empty() {
+        let stats = DrawdownAnalysis::from_paths(&[]);
+        assert!(stats.mean.abs() < 1e-10);
+        assert!(stats.worst.abs() < 1e-10 || stats.worst == f64::NEG_INFINITY);
+    }
+
+    #[test]
+    fn test_drawdown_statistics_empty() {
+        let stats = DrawdownStatistics::from_drawdowns(&[]);
+        assert!(stats.mean.abs() < 1e-10);
+        assert!(stats.median.abs() < 1e-10);
+        assert!(stats.std.abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_exceeds_threshold_various_confidence_levels() {
+        let drawdowns = vec![0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40];
+        let stats = DrawdownStatistics::from_drawdowns(&drawdowns);
+
+        // Test confidence >= 0.99 => uses p99
+        assert!(stats.exceeds_threshold(0.01, 0.99));
+
+        // Test confidence >= 0.95 but < 0.99 => uses p95
+        assert!(stats.exceeds_threshold(0.01, 0.96));
+
+        // Test confidence >= 0.75 but < 0.95 => uses p75
+        assert!(stats.exceeds_threshold(0.01, 0.80));
+
+        // Test confidence >= 0.50 but < 0.75 => uses median
+        assert!(stats.exceeds_threshold(0.01, 0.60));
+
+        // Test confidence < 0.50 => uses p25
+        assert!(stats.exceeds_threshold(0.01, 0.30));
+
+        // Test threshold too high for each level
+        assert!(!stats.exceeds_threshold(0.99, 0.30));
+    }
+
+    #[test]
+    fn test_max_drawdown_duration_no_drawdown() {
+        // Monotonically increasing: never in drawdown
+        let values = vec![100.0, 110.0, 120.0, 130.0];
+        let duration = DrawdownAnalysis::max_drawdown_duration(&values);
+        assert_eq!(duration, 0);
+    }
+
+    #[test]
+    fn test_max_drawdown_duration_single() {
+        let values = vec![100.0];
+        let duration = DrawdownAnalysis::max_drawdown_duration(&values);
+        assert_eq!(duration, 0);
+    }
+
+    #[test]
+    fn test_pain_index_empty() {
+        assert!(DrawdownAnalysis::pain_index(&[]).abs() < 1e-10);
+    }
+
     // Property-based tests
     #[cfg(test)]
     mod proptests {
