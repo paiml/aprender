@@ -760,4 +760,204 @@ mod tests {
             Some(".clone()".to_string())
         );
     }
+
+    // ========================================================================
+    // Coverage Tests for uncovered branches
+    // ========================================================================
+
+    #[test]
+    fn test_source_span_len_with_byte_offsets() {
+        // Cover line 200: byte_end > byte_start branch
+        let span = SourceSpan {
+            file: "test.rs".to_string(),
+            line_start: 1,
+            line_end: 1,
+            column_start: 5,
+            column_end: 15,
+            byte_start: 10,
+            byte_end: 25, // byte offsets specified
+        };
+        assert_eq!(span.len(), 15); // Uses byte_end - byte_start
+    }
+
+    #[test]
+    fn test_source_span_len_multiline_estimate() {
+        // Cover line 205: multi-line estimate branch
+        let span = SourceSpan {
+            file: "test.rs".to_string(),
+            line_start: 10,
+            line_end: 15, // Multi-line
+            column_start: 1,
+            column_end: 80,
+            byte_start: 0,
+            byte_end: 0, // No byte offsets
+        };
+        // Multi-line formula: (line_end - line_start + 1) * 40 = 6 * 40 = 240
+        assert_eq!(span.len(), 240);
+    }
+
+    #[test]
+    fn test_source_span_is_empty() {
+        // Cover lines 211-213: is_empty() based on len()
+        let empty_span = SourceSpan {
+            file: "test.rs".to_string(),
+            line_start: 10,
+            line_end: 10,
+            column_start: 5,
+            column_end: 5, // Same column = zero length
+            byte_start: 0,
+            byte_end: 0,
+        };
+        assert!(empty_span.is_empty());
+
+        let non_empty_span = SourceSpan::single_line("test.rs", 10, 5, 10);
+        assert!(!non_empty_span.is_empty());
+    }
+
+    #[test]
+    fn test_code_replacement_apply_with_byte_offsets() {
+        // Cover lines 343-346: byte offset code replacement path
+        let span = SourceSpan {
+            file: "test.rs".to_string(),
+            line_start: 1,
+            line_end: 1,
+            column_start: 5,
+            column_end: 10,
+            byte_start: 4,  // "let " (0-3), then target starts at 4
+            byte_end: 9,    // "hello"
+        };
+        let replacement = CodeReplacement::new(span, "world");
+        let source = "let hello = 42;";
+        let result = replacement.apply(source);
+        assert_eq!(result, "let world = 42;");
+    }
+
+    #[test]
+    fn test_code_replacement_apply_multiline_preservation() {
+        // Cover lines 356-357: lines outside replacement range
+        let span = SourceSpan {
+            file: "test.rs".to_string(),
+            line_start: 2,
+            line_end: 2,
+            column_start: 5,
+            column_end: 10,
+            byte_start: 0,
+            byte_end: 0,
+        };
+        let replacement = CodeReplacement::new(span, "world");
+        let source = "line one\nlet hello = 42;\nline three";
+        let result = replacement.apply(source);
+        // Line 1 and line 3 should be preserved, line 2 modified
+        assert!(result.contains("line one"));
+        assert!(result.contains("world"));
+        assert!(result.contains("line three"));
+    }
+
+    #[test]
+    fn test_type_info_with_lifetime() {
+        // Cover lines 415-416: lifetime parsing with space
+        let ti = TypeInfo::new("&'a str");
+        assert!(ti.is_reference);
+        assert!(!ti.is_mutable);
+        assert_eq!(ti.lifetime, Some("'a".to_string()));
+        assert_eq!(ti.base, "str");
+    }
+
+    #[test]
+    fn test_type_info_with_lifetime_no_space() {
+        // Cover lifetime parsing where find(' ') returns None
+        let ti = TypeInfo::new("&'static");
+        assert!(ti.is_reference);
+        assert_eq!(ti.lifetime, Some("'static".to_string()));
+    }
+
+    #[test]
+    fn test_type_info_conversion_vec_to_slice() {
+        // Cover line 463: Vec -> slice conversion
+        let from = TypeInfo::new("Vec<i32>");
+        let to = TypeInfo::new("&[i32]");
+        assert_eq!(
+            from.suggest_conversion_to(&to),
+            Some(".as_slice()".to_string())
+        );
+    }
+
+    #[test]
+    fn test_type_info_conversion_slice_to_vec() {
+        // Cover line 466: slice -> Vec conversion
+        let from = TypeInfo::new("&[i32]");
+        let to = TypeInfo::new("Vec<i32>");
+        assert_eq!(
+            from.suggest_conversion_to(&to),
+            Some(".to_vec()".to_string())
+        );
+    }
+
+    #[test]
+    fn test_type_info_conversion_no_conversion() {
+        // Cover line 477: None return path
+        let from = TypeInfo::new("HashMap<String, i32>");
+        let to = TypeInfo::new("BTreeMap<String, i32>");
+        assert_eq!(from.suggest_conversion_to(&to), None);
+    }
+
+    #[test]
+    fn test_type_info_conversion_ref_to_owned() {
+        // Cover line 474: reference to non-reference (clone path)
+        // This is a different case from &String -> String which was already tested
+        let from = TypeInfo::new("&i32");
+        let to = TypeInfo::new("i32");
+        assert_eq!(
+            from.suggest_conversion_to(&to),
+            Some(".clone()".to_string())
+        );
+    }
+
+    #[test]
+    fn test_type_info_conversion_same_ref() {
+        // When both are same reference type, no conversion available
+        let from = TypeInfo::new("&String");
+        let to = TypeInfo::new("&String");
+        // Neither adds ref (both refs) nor removes ref (both refs) -> None
+        // Actually from.is_reference=true, target.is_reference=true,
+        // so line 473 condition: self.is_reference && !target.is_reference is false
+        // and line 470: !self.is_reference && target.is_reference is false
+        // So it returns None
+        assert_eq!(from.suggest_conversion_to(&to), None);
+    }
+
+    #[test]
+    fn test_type_info_display() {
+        let ti = TypeInfo::new("Vec<String>");
+        let display = format!("{}", ti);
+        assert_eq!(display, "Vec<String>");
+    }
+
+    #[test]
+    fn test_source_span_default() {
+        let span = SourceSpan::default();
+        assert!(span.file.is_empty());
+        assert_eq!(span.line_start, 1);
+        assert_eq!(span.line_end, 1);
+        assert_eq!(span.column_start, 1);
+        assert_eq!(span.column_end, 1);
+    }
+
+    #[test]
+    fn test_code_replacement_apply_preserves_no_trailing_newline() {
+        // Cover lines 371-373: remove trailing newline if original didn't have one
+        let span = SourceSpan {
+            file: "test.rs".to_string(),
+            line_start: 1,
+            line_end: 1,
+            column_start: 1,
+            column_end: 6,
+            byte_start: 0,
+            byte_end: 0,
+        };
+        let replacement = CodeReplacement::new(span, "world");
+        let source = "hello"; // No trailing newline
+        let result = replacement.apply(source);
+        assert!(!result.ends_with('\n'));
+    }
 }

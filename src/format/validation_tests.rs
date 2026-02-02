@@ -119,6 +119,101 @@ mod tests_poka_yoke {
             .unwrap()
             .contains("Implement PokaYoke"));
     }
+
+    #[test]
+    #[allow(deprecated)]
+    fn test_no_validation_result_deprecated() {
+        // Test the deprecated alias
+        let result = no_validation_result();
+        assert_eq!(result.score, 0);
+        assert_eq!(result.grade(), "F");
+        assert!(!result.passed());
+    }
+
+    #[test]
+    fn test_poka_yoke_result_empty_error_summary() {
+        // Test error_summary when all gates pass
+        let mut result = PokaYokeResult::new();
+        result.add_gate(Gate::pass("gate1", 50));
+        result.add_gate(Gate::pass("gate2", 50));
+        let summary = result.error_summary();
+        assert!(summary.is_empty(), "Should be empty when no failed gates");
+    }
+
+    #[test]
+    fn test_poka_yoke_result_failed_gates() {
+        let mut result = PokaYokeResult::new();
+        result.add_gate(Gate::pass("pass1", 30));
+        result.add_gate(Gate::fail("fail1", 40, "Error 1"));
+        result.add_gate(Gate::fail("fail2", 30, "Error 2"));
+        let failed = result.failed_gates();
+        assert_eq!(failed.len(), 2);
+    }
+
+    // Test PokaYoke trait default implementation
+    struct MockModel {
+        score: u8,
+    }
+
+    impl PokaYoke for MockModel {
+        fn poka_yoke_validate(&self) -> PokaYokeResult {
+            let mut result = PokaYokeResult::new();
+            result.add_gate(Gate::pass("mock_check", self.score));
+            result
+        }
+    }
+
+    #[test]
+    fn test_poka_yoke_trait_quality_score() {
+        let model = MockModel { score: 80 };
+        // Test the default quality_score() method
+        let score = model.quality_score();
+        assert_eq!(score, 100); // 80/80 = 100%
+    }
+
+    #[test]
+    fn test_gate_debug() {
+        let gate = Gate::pass("test", 10);
+        let debug = format!("{:?}", gate);
+        assert!(debug.contains("Gate"));
+        assert!(debug.contains("test"));
+    }
+
+    #[test]
+    fn test_gate_clone() {
+        let gate = Gate::fail("test", 20, "error msg");
+        let cloned = gate.clone();
+        assert_eq!(gate.name, cloned.name);
+        assert_eq!(gate.passed, cloned.passed);
+        assert_eq!(gate.points, cloned.points);
+    }
+
+    #[test]
+    fn test_poka_yoke_result_clone() {
+        let mut result = PokaYokeResult::new();
+        result.add_gate(Gate::pass("test", 50));
+        let cloned = result.clone();
+        assert_eq!(result.score, cloned.score);
+        assert_eq!(result.gates.len(), cloned.gates.len());
+    }
+
+    #[test]
+    fn test_whisper_validation_debug() {
+        let wv = WhisperValidation;
+        let debug = format!("{:?}", wv);
+        assert!(debug.contains("WhisperValidation"));
+    }
+
+    #[test]
+    fn test_whisper_validation_clone() {
+        let wv = WhisperValidation;
+        let _cloned = wv.clone();
+    }
+
+    #[test]
+    fn test_whisper_validation_default() {
+        let _wv = WhisperValidation::default();
+    }
 }
 
 // ============================================================================
@@ -1120,5 +1215,213 @@ mod tests_report {
         let failed = report.failed_checks();
         assert_eq!(failed.len(), 1);
         assert_eq!(failed[0].id, 2);
+    }
+
+    // ====================================================================
+    // Coverage: CheckStatus::Warn variant
+    // ====================================================================
+
+    #[test]
+    fn test_check_status_warn() {
+        let warn = CheckStatus::Warn("warning message".to_string());
+        assert!(!warn.is_pass());
+        assert!(!warn.is_fail());
+    }
+
+    // ====================================================================
+    // Coverage: AprHeader::is_valid_magic
+    // ====================================================================
+
+    #[test]
+    fn test_apr_header_is_valid_magic_true() {
+        let header = AprHeader {
+            magic: *b"APR\0",
+            version_major: 1,
+            version_minor: 0,
+            flags: 0,
+            metadata_offset: 0,
+            metadata_size: 0,
+            index_offset: 0,
+            index_size: 0,
+            data_offset: 0,
+        };
+        assert!(header.is_valid_magic());
+    }
+
+    #[test]
+    fn test_apr_header_is_valid_magic_false() {
+        let header = AprHeader {
+            magic: *b"GGUF",
+            version_major: 1,
+            version_minor: 0,
+            flags: 0,
+            metadata_offset: 0,
+            metadata_size: 0,
+            index_offset: 0,
+            index_size: 0,
+            data_offset: 0,
+        };
+        assert!(!header.is_valid_magic());
+    }
+
+    // ====================================================================
+    // Coverage: AprHeader::parse error path
+    // ====================================================================
+
+    #[test]
+    fn test_apr_header_parse_too_small() {
+        let data = vec![0u8; 16]; // Too small
+        let result = AprHeader::parse(&data);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        let err_msg = format!("{:?}", err);
+        assert!(err_msg.contains("Header too small"));
+    }
+
+    // ====================================================================
+    // Coverage: ValidationCheck with Warn status
+    // ====================================================================
+
+    #[test]
+    fn test_validation_check_with_warn_status() {
+        let check = ValidationCheck {
+            id: 11,
+            name: "unknown_flags",
+            category: Category::Structure,
+            status: CheckStatus::Warn("Unknown flag bits".to_string()),
+            points: 0,
+        };
+        assert!(!check.status.is_pass());
+        assert!(!check.status.is_fail());
+    }
+
+    // ====================================================================
+    // Coverage: AprValidator::validate (tensor validation path)
+    // ====================================================================
+
+    #[test]
+    fn test_apr_validator_validate_tensors() {
+        let mut validator = AprValidator::new();
+        // Add some tensor stats
+        validator.add_tensor_stats(TensorStats::compute("test.weight", &vec![1.0f32; 100]));
+        let report = validator.validate();
+        // Should have run tensor validation
+        assert!(!report.checks.is_empty());
+    }
+
+    // ====================================================================
+    // Coverage: AprValidator Default trait
+    // ====================================================================
+
+    #[test]
+    fn test_apr_validator_default() {
+        let validator = AprValidator::default();
+        assert!(validator.report().checks.is_empty());
+    }
+
+    // ====================================================================
+    // Coverage: ValidationReport Default trait
+    // ====================================================================
+
+    #[test]
+    fn test_validation_report_default() {
+        let report = ValidationReport::default();
+        assert!(report.checks.is_empty());
+        assert_eq!(report.total_score, 0);
+    }
+
+    // ====================================================================
+    // Coverage: File too small for magic bytes
+    // ====================================================================
+
+    #[test]
+    fn test_check_magic_file_too_small() {
+        let data = vec![0u8; 2]; // Only 2 bytes
+        let mut validator = AprValidator::new();
+        validator.validate_bytes(&data);
+        let check = validator
+            .report()
+            .checks
+            .iter()
+            .find(|c| c.id == 1)
+            .unwrap();
+        assert!(check.status.is_fail());
+    }
+
+    // ====================================================================
+    // Coverage: GGUF file too small for version check
+    // ====================================================================
+
+    #[test]
+    fn test_gguf_version_file_too_small() {
+        // GGUF magic but not enough bytes for version
+        let mut data = vec![0u8; 6]; // Less than 8 bytes
+        data[0..4].copy_from_slice(b"GGUF");
+        let mut validator = AprValidator::new();
+        validator.validate_bytes(&data);
+        let check = validator
+            .report()
+            .checks
+            .iter()
+            .find(|c| c.id == 3)
+            .unwrap();
+        assert!(check.status.is_fail());
+    }
+
+    // ====================================================================
+    // Coverage: Unknown flags warning path (check 11)
+    // ====================================================================
+
+    #[test]
+    fn test_check_11_unknown_flags_warn() {
+        let mut data = vec![0u8; 32];
+        data[0..4].copy_from_slice(b"APR\0");
+        data[4] = 1; // version major
+        // Set unknown flag bits (beyond bit 7)
+        data[9] = 0x01; // This sets bit 8 which is unknown
+        let mut validator = AprValidator::new();
+        validator.validate_bytes(&data);
+        let check = validator
+            .report()
+            .checks
+            .iter()
+            .find(|c| c.id == 11)
+            .unwrap();
+        // Should be a warning for unknown flags
+        assert!(matches!(check.status, CheckStatus::Warn(_)));
+    }
+
+    // ====================================================================
+    // Coverage: TensorStats with only NaN/Inf values
+    // ====================================================================
+
+    #[test]
+    fn test_tensor_stats_all_nan() {
+        let data = vec![f32::NAN, f32::NAN, f32::NAN];
+        let stats = TensorStats::compute("nan_tensor", &data);
+        assert_eq!(stats.nan_count, 3);
+        assert_eq!(stats.mean, 0.0); // No valid values, mean defaults to 0
+        assert_eq!(stats.std, 0.0);  // No valid values, std defaults to 0
+    }
+
+    #[test]
+    fn test_tensor_stats_all_inf() {
+        let data = vec![f32::INFINITY, f32::NEG_INFINITY];
+        let stats = TensorStats::compute("inf_tensor", &data);
+        assert_eq!(stats.inf_count, 2);
+        assert_eq!(stats.mean, 0.0);
+        assert_eq!(stats.min, 0.0); // min/max default when all inf
+        assert_eq!(stats.max, 0.0);
+    }
+
+    #[test]
+    fn test_tensor_stats_single_value() {
+        let data = vec![42.0f32];
+        let stats = TensorStats::compute("single", &data);
+        assert_eq!(stats.count, 1);
+        assert_eq!(stats.mean, 42.0);
+        assert_eq!(stats.std, 0.0); // std with single value is 0
+        assert_eq!(stats.min, 42.0);
+        assert_eq!(stats.max, 42.0);
     }
 }

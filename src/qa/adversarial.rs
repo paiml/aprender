@@ -494,4 +494,112 @@ mod tests {
         // PGD typically fails with default config
         assert!(!issues.is_empty());
     }
+
+    #[test]
+    fn test_run_robustness_tests_all_robust() {
+        // Create config where all tests pass (large max_accuracy_drop)
+        let config = AdversarialConfig {
+            max_accuracy_drop: 0.20, // 20% allowed drop - all should pass
+            ..Default::default()
+        };
+        let (score, issues) = run_robustness_tests(&config);
+
+        // With large allowed drop, all tests should pass
+        assert!(score.tests_passed >= 3);
+        assert!(issues.is_empty());
+    }
+
+    #[test]
+    fn test_run_robustness_tests_none_robust() {
+        // Create config where all tests fail (tiny max_accuracy_drop)
+        let config = AdversarialConfig {
+            max_accuracy_drop: 0.001, // 0.1% allowed - all should fail
+            ..Default::default()
+        };
+        let (score, issues) = run_robustness_tests(&config);
+
+        // With tiny allowed drop, all tests should fail
+        assert!(score.tests_failed >= 3);
+        // Should have issues for FGSM, PGD, and noise
+        assert!(issues.len() >= 2); // At least FGSM and PGD issues
+    }
+
+    #[test]
+    fn test_attack_result_negative_drop_clamped() {
+        // Test that negative accuracy drop is clamped to 0
+        let result = AttackResult::new(
+            "Test",
+            0.90,
+            0.95, // attacked is higher than original
+            0.05,
+            Duration::from_millis(100),
+        );
+
+        assert!((result.accuracy_drop - 0.0).abs() < 1e-6);
+        assert!(result.is_robust); // 0% drop is within threshold
+    }
+
+    #[test]
+    fn test_fgsm_perturb_empty_input() {
+        let attack = FgsmAttack::new(0.1);
+        let input: Vec<f32> = vec![];
+        let gradient: Vec<f32> = vec![];
+
+        let perturbed = attack.perturb(&input, &gradient);
+        assert!(perturbed.is_empty());
+    }
+
+    #[test]
+    fn test_pgd_attack_zero_steps() {
+        let attack = PgdAttack::new(0, 0.01, 0.1);
+        let input = vec![1.0, 2.0, 3.0];
+
+        // With zero steps, output should equal input
+        let result = attack.attack(&input, |_x| vec![1.0, 1.0, 1.0]);
+        assert_eq!(result, input);
+    }
+
+    #[test]
+    fn test_gaussian_noise_different_seeds() {
+        let attack1 = GaussianNoiseAttack::new(0.1, 42);
+        let attack2 = GaussianNoiseAttack::new(0.1, 43); // Different seed
+        let input = vec![1.0, 2.0, 3.0];
+
+        let perturbed1 = attack1.perturb(&input);
+        let perturbed2 = attack2.perturb(&input);
+
+        // Different seeds should give different results
+        let any_different = perturbed1
+            .iter()
+            .zip(perturbed2.iter())
+            .any(|(a, b)| (a - b).abs() > 1e-10);
+        assert!(any_different);
+    }
+
+    #[test]
+    fn test_gaussian_noise_empty_input() {
+        let attack = GaussianNoiseAttack::new(0.1, 42);
+        let input: Vec<f32> = vec![];
+
+        let perturbed = attack.perturb(&input);
+        assert!(perturbed.is_empty());
+    }
+
+    #[test]
+    fn test_adversarial_config_clone() {
+        let config = AdversarialConfig::default();
+        let cloned = config.clone();
+
+        assert!((config.fgsm_epsilon - cloned.fgsm_epsilon).abs() < 1e-6);
+        assert_eq!(config.pgd_steps, cloned.pgd_steps);
+    }
+
+    #[test]
+    fn test_attack_result_clone() {
+        let result = AttackResult::new("Test", 0.95, 0.90, 0.05, Duration::from_millis(100));
+        let cloned = result.clone();
+
+        assert_eq!(result.attack_name, cloned.attack_name);
+        assert!((result.accuracy_drop - cloned.accuracy_drop).abs() < 1e-6);
+    }
 }

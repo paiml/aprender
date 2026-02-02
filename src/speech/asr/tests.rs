@@ -408,3 +408,67 @@ fn test_transcription_with_cross_attention() {
     let w = t.cross_attention_weights.as_ref().unwrap();
     assert_eq!(w.shape(), (6, 10, 100));
 }
+
+// ========================================================================
+// Additional Coverage Tests
+// ========================================================================
+
+#[test]
+fn test_asr_session_model_and_config_accessors() {
+    let model = MockAsrModel;
+    let session = AsrSession::with_default_config(model).unwrap();
+
+    // Test model() accessor
+    assert_eq!(session.model().model_id(), "mock-model");
+
+    // Test config() accessor
+    assert_eq!(session.config().beam_size, 5);
+    assert_eq!(session.config().temperature, 0.0);
+}
+
+#[test]
+fn test_streaming_transcription_default() {
+    // Test Default impl for StreamingTranscription
+    let stream = StreamingTranscription::default();
+    assert!(!stream.is_complete());
+}
+
+#[test]
+fn test_cross_attention_peak_frame_zero_frames() {
+    // Test peak_frame when n_frames == 0
+    let weights = CrossAttentionWeights::zeros(2, 3, 0);
+    assert_eq!(weights.peak_frame(0), None);
+}
+
+#[test]
+fn test_cross_attention_peak_frame_out_of_bounds_token() {
+    let weights = CrossAttentionWeights::zeros(2, 3, 10);
+    // Token index out of bounds
+    assert_eq!(weights.peak_frame(10), None);
+}
+
+#[test]
+fn test_asr_session_with_custom_config() {
+    let model = MockAsrModel;
+    let config = AsrConfig::default()
+        .with_language("es")
+        .with_beam_size(10)
+        .with_word_timestamps();
+
+    let session = AsrSession::new(model, config).unwrap();
+
+    // Verify custom config is preserved
+    assert_eq!(session.config().language, Some("es".to_string()));
+    assert_eq!(session.config().beam_size, 10);
+    assert!(session.config().word_timestamps);
+}
+
+#[test]
+fn test_asr_session_invalid_config() {
+    let model = MockAsrModel;
+    let mut config = AsrConfig::default();
+    config.beam_size = 0; // Invalid
+
+    let result = AsrSession::new(model, config);
+    assert!(result.is_err());
+}

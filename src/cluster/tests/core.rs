@@ -1131,3 +1131,38 @@ fn test_kmeans_load_safetensors_invalid_format() {
 
     fs::remove_file(&path).ok();
 }
+
+#[test]
+fn test_kmeans_load_safetensors_invalid_centroids_shape() {
+    use crate::serialization::safetensors;
+    use std::collections::BTreeMap;
+    use std::fs;
+    use tempfile::tempdir;
+
+    let dir = tempdir().expect("tempdir creation should succeed");
+    let path = dir.path().join("invalid_shape.safetensors");
+
+    // Create a safetensors file with 1D centroids tensor (invalid shape)
+    let mut tensors = BTreeMap::new();
+    tensors.insert(
+        "centroids".to_string(),
+        (vec![1.0_f32, 2.0, 3.0, 4.0], vec![4]), // 1D shape, should be 2D
+    );
+    tensors.insert("n_clusters".to_string(), (vec![2.0_f32], vec![1]));
+    tensors.insert("max_iter".to_string(), (vec![100.0_f32], vec![1]));
+    tensors.insert("tol".to_string(), (vec![1e-4_f32], vec![1]));
+    tensors.insert("random_state".to_string(), (vec![-1.0_f32], vec![1]));
+    tensors.insert("inertia".to_string(), (vec![0.0_f32], vec![1]));
+    tensors.insert("n_iter".to_string(), (vec![10.0_f32], vec![1]));
+
+    safetensors::save_safetensors(&path, &tensors).expect("save should succeed");
+
+    let result = KMeans::load_safetensors(&path);
+    assert!(result.is_err());
+    assert!(
+        result.unwrap_err().contains("Invalid centroids tensor shape"),
+        "Error message should indicate invalid shape"
+    );
+
+    fs::remove_file(&path).ok();
+}

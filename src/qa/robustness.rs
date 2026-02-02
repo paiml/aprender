@@ -1135,4 +1135,233 @@ mod tests {
         let result = test_max_size_handling(0);
         assert!(result.passed);
     }
+
+    // =====================================================================
+    // Coverage boost: test_max_size_handling with actual failure scenario
+    // =====================================================================
+
+    #[test]
+    fn test_max_size_handling_result_fields() {
+        use super::test_max_size_handling;
+        let result = test_max_size_handling(5000);
+        assert_eq!(result.name, "Max size handling");
+        assert_eq!(result.expected, EdgeCaseBehavior::Normal);
+        assert!(result.error.is_none()); // Passes so no error
+    }
+
+    // =====================================================================
+    // Coverage: run_edge_case_tests with max_size failure generating issue
+    // =====================================================================
+
+    #[test]
+    fn test_run_edge_case_tests_max_size_failure_path() {
+        // This tests the issue generation for max_size when test fails
+        // However since the internal implementation always passes (min caps to 10k),
+        // we test with allow_panic to ensure all branches are visited
+        let config = EdgeCaseConfig {
+            test_nan: false,
+            test_inf: false,
+            test_empty: false,
+            test_zero: false,
+            test_max_size: true,
+            max_input_size: 5, // Small value
+            allow_panic: false,
+        };
+
+        let (score, _issues) = run_edge_case_tests(&config);
+        assert!(score.tests_passed + score.tests_failed > 0);
+    }
+
+    // =====================================================================
+    // Coverage: EdgeCaseResult with all fields populated
+    // =====================================================================
+
+    #[test]
+    fn test_edge_case_result_full_fields() {
+        let result = EdgeCaseResult {
+            name: "Full test".to_string(),
+            passed: false,
+            expected: EdgeCaseBehavior::GracefulError,
+            actual: EdgeCaseBehavior::Panics,
+            error: Some("Test error message".to_string()),
+            duration: Duration::from_millis(100),
+        };
+
+        assert_eq!(result.name, "Full test");
+        assert!(!result.passed);
+        assert_eq!(result.expected, EdgeCaseBehavior::GracefulError);
+        assert_eq!(result.actual, EdgeCaseBehavior::Panics);
+        assert!(result.error.is_some());
+        assert_eq!(result.duration.as_millis(), 100);
+    }
+
+    // =====================================================================
+    // Coverage: numerical module tests with different behaviors
+    // =====================================================================
+
+    #[test]
+    fn test_numerical_underflow_actual_behavior() {
+        let result = numerical::test_underflow();
+        // Underflow to zero is expected and acceptable
+        assert!(result.actual.is_acceptable());
+    }
+
+    #[test]
+    fn test_numerical_overflow_actual_behavior() {
+        let result = numerical::test_overflow();
+        // Overflow to infinity is expected and acceptable
+        assert!(result.actual.is_acceptable());
+    }
+
+    // =====================================================================
+    // Coverage: process_edge_case_result edge cases
+    // =====================================================================
+
+    #[test]
+    fn test_process_result_graceful_error() {
+        use super::{process_edge_case_result, CategoryScore};
+
+        let result = EdgeCaseResult {
+            name: "Graceful error test".to_string(),
+            passed: true,
+            expected: EdgeCaseBehavior::GracefulError,
+            actual: EdgeCaseBehavior::GracefulError,
+            error: Some("Expected error".to_string()),
+            duration: Duration::from_millis(1),
+        };
+
+        let mut score = CategoryScore::new(10);
+        process_edge_case_result(&result, &mut score);
+
+        assert_eq!(score.tests_passed, 1);
+        assert_eq!(score.tests_failed, 0);
+    }
+
+    #[test]
+    fn test_process_result_returns_default() {
+        use super::{process_edge_case_result, CategoryScore};
+
+        let result = EdgeCaseResult {
+            name: "Returns default test".to_string(),
+            passed: true,
+            expected: EdgeCaseBehavior::ReturnsDefault,
+            actual: EdgeCaseBehavior::ReturnsDefault,
+            error: None,
+            duration: Duration::from_millis(1),
+        };
+
+        let mut score = CategoryScore::new(10);
+        process_edge_case_result(&result, &mut score);
+
+        assert_eq!(score.tests_passed, 1);
+    }
+
+    // =====================================================================
+    // Coverage: Edge case handlers returning specific behaviors
+    // =====================================================================
+
+    #[test]
+    fn test_nan_handling_returns_default_with_nan() {
+        let predict = |input: &[f32]| -> Result<Vec<f32>, String> {
+            // Return NaN in output (propagate)
+            Ok(input.to_vec())
+        };
+
+        let result = test_nan_handling(predict);
+        assert!(result.passed);
+        // With NaN input propagated to output, actual should be ReturnsDefault
+        assert_eq!(result.actual, EdgeCaseBehavior::ReturnsDefault);
+    }
+
+    #[test]
+    fn test_inf_handling_returns_default_with_inf() {
+        let predict = |input: &[f32]| -> Result<Vec<f32>, String> {
+            // Return Inf in output (propagate)
+            Ok(input.to_vec())
+        };
+
+        let result = test_inf_handling(predict);
+        assert!(result.passed);
+        assert_eq!(result.actual, EdgeCaseBehavior::ReturnsDefault);
+    }
+
+    // =====================================================================
+    // Coverage: run_edge_case_tests individual test enable flags
+    // =====================================================================
+
+    #[test]
+    fn test_run_edge_case_tests_all_five_enabled() {
+        let config = EdgeCaseConfig {
+            test_nan: true,
+            test_inf: true,
+            test_empty: true,
+            test_zero: true,
+            test_max_size: true,
+            max_input_size: 1000,
+            allow_panic: false,
+        };
+
+        let (score, _issues) = run_edge_case_tests(&config);
+        assert_eq!(
+            score.tests_passed + score.tests_failed,
+            5,
+            "All 5 tests should run"
+        );
+    }
+
+    // =====================================================================
+    // Coverage: Edge case result with Hangs behavior
+    // =====================================================================
+
+    #[test]
+    fn test_edge_case_hangs_behavior() {
+        let result = EdgeCaseResult {
+            name: "Hang simulation".to_string(),
+            passed: false,
+            expected: EdgeCaseBehavior::Normal,
+            actual: EdgeCaseBehavior::Hangs,
+            error: Some("Operation timed out".to_string()),
+            duration: Duration::from_secs(30),
+        };
+
+        assert!(!result.actual.is_acceptable());
+        assert_eq!(result.actual.description(), "Hangs/loops (UNACCEPTABLE)");
+    }
+
+    // =====================================================================
+    // Coverage: test empty handling with different outcomes
+    // =====================================================================
+
+    #[test]
+    fn test_empty_handling_error_path() {
+        let predict = |_input: &[f32]| -> Result<Vec<f32>, String> {
+            Err("Empty not supported".to_string())
+        };
+
+        let result = test_empty_handling(predict);
+        assert!(result.passed); // Error is acceptable
+        assert_eq!(result.actual, EdgeCaseBehavior::GracefulError);
+    }
+
+    #[test]
+    fn test_zero_handling_error_path() {
+        let predict = |_input: &[f32]| -> Result<Vec<f32>, String> {
+            Err("Zero vector rejected".to_string())
+        };
+
+        let result = test_zero_handling(predict);
+        assert!(result.passed); // Error is acceptable
+        assert_eq!(result.actual, EdgeCaseBehavior::GracefulError);
+    }
+
+    // =====================================================================
+    // Coverage: numerical precision loss error path
+    // =====================================================================
+
+    #[test]
+    fn test_numerical_precision_error_field() {
+        // The test_precision_loss always passes, but we verify error is None
+        let result = numerical::test_precision_loss();
+        assert!(result.error.is_none());
+    }
 }
