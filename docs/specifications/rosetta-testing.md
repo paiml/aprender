@@ -1,7 +1,7 @@
 # SQLite-Style Conversion Test Harness
 
-**Status:** Certified (2026-02-01)
-**Refs:** GH-196, PMAT-197, PMAT-ROSETTA-001
+**Status:** Certified (2026-02-02, Rev 3)
+**Refs:** GH-196, PMAT-197, PMAT-ROSETTA-001, PMAT-222
 **Code:** `src/format/test_factory.rs`, `src/format/converter/tests/core.rs`
 
 ## Theoretical Foundation
@@ -117,8 +117,8 @@ We added 38 tests to ensure the dispatch logic is robust and falsifiable.
 | `format::lint` | 67 | 79 | +12 multi-format lint tests |
 | `commands::canary` | 35 | 39 | +4 `load_tensor_data` tests |
 | `commands::validate`| 16 | 20 | +4 GGUF/SafeTensors dispatch tests |
-| `commands::trace` | 28 | 28 | (Verified GGUF/ST coverage) |
-| `commands::inspect` | 30 | 30 | (Verified GGUF/ST coverage) |
+| `commands::trace` | 28 | 28 | ⚠️ GGUF/ST dispatch untested (only negative tests with garbage data) |
+| `commands::inspect` | 30 | 30 | ⚠️ GGUF/ST dispatch untested (`run_rosetta_inspect()` never called in tests) |
 | **Total** | **205** | **243** | **+38 new multi-format tests** |
 
 ### Key Verified Capabilities (Jidoka)
@@ -181,12 +181,80 @@ We added 38 tests to ensure the dispatch logic is robust and falsifiable.
 
 **Verdict:** $H_0$ is FULLY REFUTED. Certification: **✅ PASSED**.
 
+### 5. Multi-Hop Conversion Integrity (Round 2 — 2026-02-02)
+
+| ID | Test | Expectation | Result | Evidence |
+|:---|:---|:---|:---|:---|
+| **F-QKV-02** | Name-set equality | Extra/missing tensor names detected | ✅ **[Refuted]** | `test_t_qkv_02_name_set_equality_apr`, `_roundtrip` |
+| **F-QKV-03** | GGUF separate Q/K/V | No fused `attn_qkv` in GGUF output | ✅ **[Refuted]** | `test_t_qkv_03_safetensors_apr_gguf` |
+| **F-QKV-04** | Multi-hop chain | ST→APR→GGUF→APR→ST preserves data | ✅ **[Refuted]** | `test_t_qkv_04_multihop_st_apr_gguf_apr_st` |
+| **F-SHAPE-01** | GGUF 2D shape reversal | Export reverses [rows,cols]→[ne0,ne1] | ✅ **[Refuted]** | PMAT-222 fix in `export.rs` — caught by F-QKV-04 |
+
+### Defect Resolution Status (Updated)
+
+| Defect ID | Description | Fix Location | Status |
+|:---|:---|:---|:---|
+| **DEFECT-001** | Strict mode accepts missing norm tensors | `src/format/converter/import.rs` | ✅ FIXED & VERIFIED |
+| **DEFECT-002** | All-zeros detection not working for GGUF | `src/format/gguf/types.rs` | ✅ FIXED & VERIFIED |
+| **DEFECT-003** | GGUF export 2D shape not reversed to GGML convention | `src/format/converter/export.rs:420` | ✅ FIXED & VERIFIED (PMAT-222) |
+
 ## Verification Command
 
 ```bash
-# Run the full 17-point falsification matrix (12 protocol + 5 harness tests)
-cargo test --lib -- test_factory::harness::test_f_
+# Run the full 22-point falsification matrix (12 protocol + 5 harness + 1 inference + 4 multi-hop tests)
+cargo test --lib -- test_factory::harness::test_f_ test_factory::harness::test_t_qkv
 ```
+
+---
+
+# Hostile Falsification Audit — Round 3 (2026-02-02)
+
+**Auditor:** Claude Opus 4.5 (Hostile Systems Auditor — Popperian Falsification Mode)
+**Subject:** `docs/specifications/rosetta-testing.md` (Rev 3, 2026-02-02)
+**Methodology:** 9-point attack across 4 phases: Harness, Release Block, Architecture, Integrity
+
+## Audit Results
+
+| # | Claim ID | Attack | Status | Severity | Evidence |
+|---|----------|--------|--------|----------|----------|
+| 1 | **Standard Work** | Search for harness bypass in converter tests | ⚠️ **Partially Refuted** | MEDIUM | 19/368 tests (5.2%) use harness. All *new* tests (post-Feb 1) comply. 349 pre-existing tests never migrated. |
+| 2 | **Genchi Genbutsu** | Verify F-HAR-01 corrupts on disk, not in memory | ✅ **Corroborated** | — | Test reads APR from disk (`fs::read`), XOR-flips 16 bytes at `data_offset`, writes back via `OpenOptions::new().write(true).truncate(true)`, then `verify_apr()` re-reads from disk independently. |
+| 3 | **GGUF/ST Coverage** | Check trace.rs/inspect.rs dispatch branch coverage | ❌ **Refuted** | HIGH | trace.rs: 2 tests create garbage data (`"not valid gguf"`), never exercise `trace_gguf()`/`trace_safetensors()`. inspect.rs: 0 GGUF/ST tests; `run_rosetta_inspect()` never called. Spec table corrected. |
+| 4 | **111 Missing Tensors** | Reproduce ST→APR→GGUF tensor count mismatch | ✅ **Corroborated (Fixed)** | — | PMAT-101 fusion completely removed from `write.rs`. `unfuse_qkv_tensors()` retained for legacy backward compatibility only. `test_rosetta003_gqa_tensor_count` + T-QKV-03/04 confirm preservation. Bug is no longer reproducible. |
+| 5 | **PygmyConfig Blind Spot** | Check if harness configs trigger config inference | ⚠️ **Partially Corroborated** | LOW | All PygmyConfig constructors use tiny dims (hidden=2-8). None trigger `infer_model_config_from_tensors()` (requires head_dim ∈ {64,128,96,80}). But `test_f_infer_config_realistic_dimensions` (hidden=128) tests inference separately. The claim "tests pass vacuously" is FALSE for fusion (PMAT-101 is gone) but TRUE for config inference. |
+| 6 | **Latency Budget** | Check if Phase 2 runtime fusion has loading time budget | ❌ **Refuted** | HIGH | APR loading budgets exist (50ms for 10MB, automotive ISO 26262 ASIL-B). Cold-start targets exist elsewhere (6.7ms–100ms). But Phase 2 runtime QKV fusion cost is **not analyzed** against any budget. For 70B (140GB): estimated 3s read + fusion overhead — no SLA defined. |
+| 7 | **num_kv_heads Safety** | Check if Option A panics on legacy models | ✅ **Corroborated (Safe)** | — | `num_kv_heads` is `Option<usize>` with `#[serde(default)]`. All code paths use `.unwrap_or(num_heads)` fallback. No panic possible. Silent corruption risk if legacy APR has fused QKV + missing metadata — function returns fused tensors unchanged (safe early return, not garbage). |
+| 8 | **Citation [T11]** | Verify Foidl et al. (2024) paper and statistics | ✅ **Corroborated** | — | Paper verified: DOI `10.1016/j.jss.2023.111855`, JSS Vol. 207. "33% data types" and "35% data cleaning" statistics confirmed from paper's findings. Also available on arXiv (2309.07067). |
+| 9 | **/tmp/ Ban** | Check spec and code for /tmp/ hypocrisy | ⚠️ **Partially Refuted** | LOW | Spec bans `/tmp/` paths (line 32). Code has 3 violations: `converter/tests/core.rs:421` and `:725-726` (nonexistent file tests), `rosetta/tests.rs:332` (no-extension test). `p091_pdf_imposter_test` demonstrates the correct pattern (`std::env::temp_dir()`). |
+
+## Summary
+
+| Phase | Items | Refuted | Corroborated | Partial |
+|-------|-------|---------|-------------|---------|
+| 1. Harness | 3 | 1 (#3) | 1 (#2) | 1 (#1) |
+| 2. Release Block | 2 | 0 | 1 (#4) | 1 (#5) |
+| 3. Architecture | 2 | 1 (#6) | 1 (#7) | 0 |
+| 4. Integrity | 2 | 0 | 1 (#8) | 1 (#9) |
+| **Total** | **9** | **2** | **4** | **3** |
+
+## Required Actions
+
+### Must Fix (from Refuted claims)
+
+1. **#3 — GGUF/ST dispatch coverage**: Add real GGUF/SafeTensors tests for `trace.rs` and `inspect.rs`. The `run_rosetta_inspect()` and `trace_gguf()`/`trace_safetensors()` code paths are untested. Create valid test files via `ConversionTestHarness`, not garbage data.
+2. **#6 — Phase 2 latency budget**: Define loading time SLA for runtime QKV fusion. Document worst-case latency per model size (1B, 7B, 13B, 70B). Connect Phase 2 to existing cold-start constraints (6.7ms–100ms).
+
+### Should Fix (from Partially Refuted claims)
+
+3. **#1 — Harness adoption**: Enforce harness-only rule for new converter tests. Consider CI gate blocking `BTreeMap::new()` in `converter/tests/`.
+4. **#9 — /tmp/ violations**: Replace 3 hardcoded `/tmp/` paths in `core.rs:421`, `core.rs:725-726`, `rosetta/tests.rs:332` with `tempfile::tempdir()` or `std::env::temp_dir()`.
+
+### Acceptable (Corroborated)
+
+5. **#2** (F-HAR-01 disk corruption): Genchi Genbutsu compliant.
+6. **#4** (111 tensor loss): Fully fixed, regression tests in place.
+7. **#7** (num_kv_heads safety): Defensive fallbacks prevent panic.
+8. **#8** (Citation [T11]): Real paper, accurate statistics.
 
 ---
 
@@ -707,12 +775,12 @@ of the tests that fail to find bugs [M1, M2].
 Mayo (2018) formalized the severity principle: "If little has been done to rule
 out flaws in inferring a claim, then it has not passed a severe test" [M2].
 
-**Current test severity is LOW because:**
-1. PygmyConfig (hidden=4, layers=1) does not trigger PMAT-101 QKV fusion
-2. Only well-conditioned F32 values are tested (no NaN, Inf, denormals)
-3. Round-trip tests compare tensor statistics, not actual values
-4. No multi-hop chains are tested (A→B→C→A)
-5. No cross-format differential testing (same model in GGUF vs SafeTensors vs APR)
+**Current test severity — post-ROSETTA-003 improvements:**
+1. ~~PygmyConfig (hidden=4, layers=1) does not trigger PMAT-101 QKV fusion~~ **FIXED:** PMAT-101 removed; `PygmyConfig::qwen2_gqa()` tests GQA configs (T-QKV-01)
+2. Only well-conditioned F32 values are tested (no NaN, Inf, denormals) — **OPEN**
+3. ~~Round-trip tests compare tensor statistics, not actual values~~ **FIXED:** `verify_apr()`/`verify_safetensors()` compare per-element values within tolerance + name-set equality (T-QKV-02)
+4. ~~No multi-hop chains are tested (A→B→C→A)~~ **FIXED:** `test_t_qkv_04_multihop_st_apr_gguf_apr_st` (T-QKV-04)
+5. No cross-format differential testing (same model in GGUF vs SafeTensors vs APR) — **OPEN**
 
 **Required severity upgrades:**
 - **Adversarial inputs:** NaN, Inf, denormalized floats, zero-dimensional tensors
