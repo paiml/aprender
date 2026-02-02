@@ -1,7 +1,7 @@
 # SQLite-Style Conversion Test Harness
 
-**Status:** Certified (2026-02-02, Rev 3)
-**Refs:** GH-196, PMAT-197, PMAT-ROSETTA-001, PMAT-222
+**Status:** Certified (2026-02-02, Rev 4)
+**Refs:** GH-196, GH-199, GH-200, PMAT-197, PMAT-ROSETTA-001, PMAT-222
 **Code:** `src/format/test_factory.rs`, `src/format/converter/tests/core.rs`
 
 ## Theoretical Foundation
@@ -107,19 +107,21 @@ Previously, 6 of 10 `apr` CLI subcommands only accepted APR format files, reject
 
 We implemented the **Rosetta Stone dispatch pattern** (proven in `diff.rs`) across the remaining commands: detect format via magic bytes, dispatch to format-specific handler, and return common result types.
 
-### Multi-Format Test Coverage (38 New Tests)
+### Multi-Format Test Coverage (50+ New Tests)
 
-We added 38 tests to ensure the dispatch logic is robust and falsifiable.
+We added 50+ tests to ensure the dispatch logic is robust and falsifiable.
 
 | Module | Before | After | New Tests |
 |:--- |:--- |:--- |:--- |
 | `format::tensors` | 29 | 47 | +18 GGUF/SafeTensors tests |
 | `format::lint` | 67 | 79 | +12 multi-format lint tests |
+| `format::rosetta_ml` | — | +8 | +8 AndonLevel, WilsonScore, invert_matrix coverage |
+| `format::gguf::dequant` | — | +6 | +6 dequantization edge case tests |
 | `commands::canary` | 35 | 39 | +4 `load_tensor_data` tests |
 | `commands::validate`| 16 | 20 | +4 GGUF/SafeTensors dispatch tests |
 | `commands::trace` | 28 | 34 | +6 valid GGUF/ST dispatch tests (Audit #3 fix) |
 | `commands::inspect` | 30 | 36 | +6 valid GGUF/ST dispatch + `run_rosetta_inspect()` tests (Audit #3 fix) |
-| **Total** | **205** | **255** | **+50 new multi-format tests** (38 original + 12 Audit #3 fix) |
+| **Total** | **205** | **269** | **+64 new multi-format tests** (38 original + 12 Audit #3 + 14 Rev 4 coverage) |
 
 ### Key Verified Capabilities (Jidoka)
 
@@ -253,6 +255,63 @@ cargo test --lib -- test_factory::harness::test_f_ test_factory::harness::test_t
 6. **#4** (111 tensor loss): Fully fixed, regression tests in place.
 7. **#7** (num_kv_heads safety): Defensive fallbacks prevent panic.
 8. **#8** (Citation [T11]): Real paper, accurate statistics.
+
+---
+
+# Rev 4: Coverage-Driven Test Expansion (2026-02-02)
+
+**Status:** In Progress
+**Refs:** PMAT-ROSETTA-001, GH-199, GH-200
+**Objective:** Raise every `src/` file to >= 95% line coverage
+
+## Motivation
+
+The Rosetta testing infrastructure (harness, falsification matrix, multi-format dispatch) had strong integration coverage but left edge cases in individual modules uncovered. Rev 4 systematically closes these gaps through targeted unit tests across the entire `src/` tree.
+
+## Scope
+
+| Phase | Files | New Tests | Target Coverage |
+|-------|-------|-----------|----------------|
+| 1: Quick wins (90-95% -> 95%) | ~50 | ~200 | 95%+ |
+| 2: Medium effort (60-90% -> 95%) | ~25 | ~200 | 95%+ |
+| 3: Format subsystem heavy lift (17-36%) | 7 | ~150 | 95%+ |
+| 4: Feature-gated files (0-70%) | ~20 | ~200 | 95%+ |
+| 5: Optimizer files (82-90%) | 9 | ~30 | 95%+ |
+| **Total** | **~111** | **~780** | **95%+** |
+
+## Format Module Coverage Improvements
+
+The format subsystem has the largest coverage gaps. Key files targeted:
+
+| File | Before | Target | Strategy |
+|------|--------|--------|----------|
+| `format/converter/export.rs` | 17.72% | 95%+ | ConversionTestHarness round-trips for SafeTensors/GGUF export |
+| `format/converter/write.rs` | 21.99% | 95%+ | QKV handling (PMAT-101 removal verified), metadata embedding |
+| `format/tensors.rs` | 23.67% | 95%+ | Tensor listing, stats, shape display |
+| `format/converter/mod.rs` | 25.10% | 95%+ | Quantization paths (Q4K, Q6K, Q8, FP16), name mapping |
+| `format/core_io.rs` | 27.08% | 95%+ | Core I/O read/write operations |
+| `format/converter/import.rs` | 35.82% | 95%+ | GGUF/SafeTensors import, architecture detection |
+| `format/rosetta_ml/mod.rs` | 94.84% | 95%+ | AndonLevel Display, WilsonScore, invert_matrix edge cases |
+| `format/gguf/dequant.rs` | 91.47% | 95%+ | Dequantization edge cases |
+
+## Connection to GH-199 and GH-200
+
+The coverage push directly addresses gaps identified in the GH-199 (APR pipeline defects) and GH-200 (Qwen2.5-Coder qualification) triage:
+
+- **GH-199-A (dequant failure):** Tests for `format/converter/export.rs` and `format/quantize.rs` exercise the Q6K dequantization path that blocked `apr convert`
+- **GH-199-B (APR slow):** Coverage of `format/converter/import.rs` ensures architecture detection and metadata extraction are tested (precondition for inspect-before-load)
+- **GH-200 (0/6 models pass):** The `format/rosetta_ml` coverage tests verify the AndonLevel/WilsonScore quality gates used by `apr qa`
+
+## Verification
+
+```bash
+# Run all tests after each phase
+cargo test --lib --all-features
+cargo clippy --all-features -- -D warnings
+
+# Check coverage progress
+cargo llvm-cov report --summary-only
+```
 
 ---
 
@@ -508,6 +567,11 @@ The proposed **inspect-before-load** architecture fixes all three:
 | **T-QKV-04** | No multi-hop test exists | Added `test_t_qkv_04_multihop_st_apr_gguf_apr_st` — full chain test. Also fixed GGUF export 2D shape reversal bug (PMAT-222). | ✅ Done |
 | **T-GH192-01** | No pre-load inspection test | Add test that inspect() returns correct metadata for all 3 formats | ❌ Open |
 | **T-GH192-02** | No model-size-switching test | Add test loading 0.5B then 1.5B sequentially with correct config | ❌ Open |
+| **T-GH194-01** | APR conversion drops critical tensors | GGUF→APR drops token_embd, lm_head, output_norm (291→100 tensors) | ❌ Open (GH-194) |
+| **T-GH195-01** | `apr tensors` truncates at 100 | Display truncation bug, all 291 tensors present in file | ❌ Open (GH-195) |
+| **T-GH186-01** | NaN in GGUF→APR→GGUF roundtrip | Q4_K dequant produces NaN in `blk.0.attn_k.weight` | ❌ Open (GH-186) |
+| **T-GH189-01** | `apr chat` repetitive garbage output | GPU path produces "VILLEVILLEVILLEVILLE" — LAYOUT-001 class bug | ❌ Open (GH-189) |
+| **T-GH200-01** | 0/6 Qwen2.5-Coder models pass QA | Full qualification blocked across all model sizes | ❌ Open (GH-200) |
 
 ---
 

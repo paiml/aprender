@@ -4,14 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Aprender is a next-generation machine learning library written in pure Rust. v0.4.1 implements the TOP 10 ML algorithms with 742 tests (unit, property, integration, doc) and comprehensive quality gates achieving 96.94% code coverage.
+Aprender is a next-generation machine learning library written in pure Rust. v0.25.1 implements the TOP 10 ML algorithms plus advanced modules (time series, NLP, Bayesian, GLM, graph, audio, format conversion). 9,893 tests (unit, property, integration, doc) with comprehensive quality gates.
 
 ## Build Commands
 
 ```bash
 # Standard Cargo commands
 cargo build --release        # Optimized build
-cargo test                   # Full test suite (742 tests: unit + property + integration + doc)
+cargo test                   # Full test suite (9893 tests: unit + property + integration + doc)
 cargo test --lib             # Unit tests only
 cargo fmt --check            # Check formatting
 cargo clippy -- -D warnings  # Strict linting
@@ -328,7 +328,7 @@ Target distribution: 60% unit, 30% property tests, 10% integration
 ### Test Execution
 
 ```bash
-cargo test                              # All tests (742 unit + property + doc tests)
+cargo test                              # All tests (9893 unit + property + doc tests)
 cargo test --lib                        # Unit tests only
 cargo test --test integration           # Integration tests
 cargo test --test property_tests        # Property-based tests (proptest)
@@ -764,7 +764,7 @@ Aprender uses PMAT (Professional Maintenance Analysis Tool) v2.200.0 for compreh
 **Rust Project Score:** 124.0/134 (92.5%, Grade: A+)
 **TDG Score:** 95.2/100 (Grade: A+)
 **Test Coverage:** 96.94% line, 95.46% region, 96.62% function (target: ≥95%)
-**Test Count:** 742 tests (unit + property + integration + doc)
+**Test Count:** 9,893 tests (unit + property + integration + doc)
 **Mutation Score:** 85.3% (target: ≥85%)
 **Cyclomatic Complexity:** Max 9 (target: ≤10)
 **SATD Violations:** 0 (zero tolerance)
