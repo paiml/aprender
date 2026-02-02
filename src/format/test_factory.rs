@@ -1714,7 +1714,7 @@ pub(crate) mod harness {
     // Falsification Protocol (rosetta-testing.md QA Matrix)
     // ====================================================================
 
-    /// F-HAR-01: Manually corrupt output `.apr` byte → `verify()` detects DataMismatch
+    /// F-HAR-01: Corrupt tensor data region of `.apr` → `verify()` detects DataMismatch
     #[test]
     fn test_f_har_01_corruption_detected() {
         use std::io::Write;
@@ -1726,14 +1726,22 @@ pub(crate) mod harness {
 
         let output_path = h.output_path().expect("output exists");
 
-        // 2. Read original data and corrupt a byte
+        // 2. Read APR, find tensor data offset from header (bytes 32-39 = data_offset u64 LE)
         let mut data = std::fs::read(&output_path).expect("read APR");
-        let len = data.len();
-        if len > 256 {
-            data[len - 128] ^= 0xFF; // Flip bits in tensor data
+        let data_offset = u64::from_le_bytes(
+            data[32..40].try_into().expect("8 bytes for data_offset"),
+        ) as usize;
+
+        // 3. Corrupt first 16 bytes of actual tensor data (4 f32 values)
+        assert!(
+            data.len() > data_offset + 16,
+            "APR file must have tensor data after data_offset={data_offset}"
+        );
+        for byte in &mut data[data_offset..data_offset + 16] {
+            *byte ^= 0xFF;
         }
 
-        // 3. Write corrupted data back
+        // 4. Write corrupted data back
         let mut file = std::fs::OpenOptions::new()
             .write(true)
             .truncate(true)
@@ -1742,11 +1750,12 @@ pub(crate) mod harness {
         file.write_all(&data).expect("write corrupted");
         drop(file);
 
-        // 4. Verify should detect the corruption (or handle gracefully)
+        // 5. Verify MUST detect the data mismatch
         let result = h.verify_apr();
-        // The verification might pass if corruption is in padding, or fail if in data
-        // The important thing is that it doesn't crash
-        let _ = result.passed();
+        assert!(
+            !result.passed(),
+            "F-HAR-01: Corruption at data_offset MUST be detected by verify_apr()"
+        );
     }
 
     /// F-HAR-02: Set tolerance to `1e-9` (too strict) → verify with default tolerance
@@ -1823,7 +1832,7 @@ pub(crate) mod harness {
     // Philosophy: Karl Popper (Refutation) & Toyota Way (Jidoka)
     // ====================================================================
 
-    /// F-CONV-01 (Bit-Flipping): Corrupt 1 byte in tensor data → verify_apr() MUST detect
+    /// F-CONV-01 (Bit-Flipping): Corrupt single f32 in tensor data → verify_apr() MUST detect
     #[test]
     fn test_f_conv_01_bit_flipping_detected() {
         use std::io::Write;
@@ -1834,12 +1843,19 @@ pub(crate) mod harness {
 
         let output_path = h.output_path().expect("output exists");
 
-        // Read and corrupt in the MIDDLE of tensor data (not header)
+        // Read APR, find tensor data offset from header (bytes 32-39 = data_offset u64 LE)
         let mut data = std::fs::read(&output_path).expect("read APR");
-        let len = data.len();
-        let mid = len / 2;
-        if mid > 0 {
-            data[mid] ^= 0xFF; // Flip all bits
+        let data_offset = u64::from_le_bytes(
+            data[32..40].try_into().expect("8 bytes for data_offset"),
+        ) as usize;
+
+        // Flip all bits in a single f32 value (4 bytes) at start of tensor data
+        assert!(
+            data.len() > data_offset + 4,
+            "APR file must have tensor data after data_offset={data_offset}"
+        );
+        for byte in &mut data[data_offset..data_offset + 4] {
+            *byte ^= 0xFF;
         }
 
         // Write corrupted data
@@ -1851,11 +1867,12 @@ pub(crate) mod harness {
         file.write_all(&data).expect("write");
         drop(file);
 
-        // Verify should detect mismatch (or at least not crash)
+        // Verify MUST detect the single-value mismatch
         let result = h.verify_apr();
-        // Either it detects corruption OR the corruption was in padding
-        // Key: no panic, system remains stable
-        let _ = result.passed();
+        assert!(
+            !result.passed(),
+            "F-CONV-01: Single f32 bit-flip MUST be detected by verify_apr()"
+        );
     }
 
     /// F-CONV-02 (Tolerance Drift): Set f32_atol to 1e-12 → Standard tests should fail
@@ -2177,6 +2194,53 @@ pub(crate) mod harness {
             info.format_version.contains("SafeTensors"),
             "F-TPS-02: Should detect SafeTensors format via mmap path"
         );
+    }
+
+    // ====================================================================
+    // Audit Item 4: infer_model_config_from_tensors with realistic dims
+    // Complements pmat.rs tests — verifies head_dim detection is triggered
+    // ====================================================================
+
+    /// Verify `infer_model_config_from_tensors` correctly infers num_heads and
+    /// num_kv_heads when given realistic dimensions (hidden_size=128, head_dim=64).
+    /// PygmyConfig's tiny dims (hidden_size=4/8) never match head_dim candidates
+    /// [64, 128, 96, 80], so this path was previously untested via harness.
+    #[test]
+    fn test_f_infer_config_realistic_dimensions() {
+        use crate::format::converter::infer_model_config_from_tensors;
+        use std::collections::BTreeMap;
+
+        let mut tensors: BTreeMap<String, (Vec<f32>, Vec<usize>)> = BTreeMap::new();
+
+        // embedding: [vocab=256, hidden=128] → vocab_size=256 (larger), hidden_size=128
+        tensors.insert(
+            "model.embed_tokens.weight".to_string(),
+            (vec![0.0; 256 * 128], vec![256, 128]),
+        );
+        // Q: [128, 128] → q_dim==hidden_size → try head_dim=64 → num_heads=2
+        tensors.insert(
+            "model.layers.0.self_attn.q_proj.weight".to_string(),
+            (vec![0.0; 128 * 128], vec![128, 128]),
+        );
+        // K: [64, 128] → kv_dim=64, head_dim=64 → num_kv_heads=1 (GQA 2:1)
+        tensors.insert(
+            "model.layers.0.self_attn.k_proj.weight".to_string(),
+            (vec![0.0; 64 * 128], vec![64, 128]),
+        );
+        tensors.insert(
+            "model.layers.1.self_attn.q_proj.weight".to_string(),
+            (vec![0.0; 128 * 128], vec![128, 128]),
+        );
+
+        let config = infer_model_config_from_tensors(&tensors);
+        assert!(config.is_some(), "Inference must succeed with realistic dims");
+
+        let config = config.unwrap();
+        assert_eq!(config.hidden_size, Some(128));
+        assert_eq!(config.vocab_size, Some(256));
+        assert_eq!(config.num_heads, Some(2), "128/64 head_dim = 2 heads");
+        assert_eq!(config.num_kv_heads, Some(1), "64/64 = 1 KV head (GQA)");
+        assert_eq!(config.num_layers, Some(2));
     }
 }
 

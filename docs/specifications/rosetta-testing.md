@@ -94,7 +94,7 @@ To ensure the harness remains reliable, any changes to `test_factory.rs` must pa
 
 ## Universal Multi-Format Support for APR CLI Subcommands
 
-**Status:** Complete (Verified with 82 new tests)
+**Status:** Complete (Verified with 38 new tests)
 **Refs:** PMAT-ROSETTA-001
 **Commit:** `6b433a7b`
 **Bug Reference:** `apr tensors model.safetensors` failed with "Invalid APR magic"
@@ -107,9 +107,9 @@ Previously, 6 of 10 `apr` CLI subcommands only accepted APR format files, reject
 
 We implemented the **Rosetta Stone dispatch pattern** (proven in `diff.rs`) across the remaining commands: detect format via magic bytes, dispatch to format-specific handler, and return common result types.
 
-### Multi-Format Test Coverage (82 New Tests)
+### Multi-Format Test Coverage (38 New Tests)
 
-We added 82 tests (1,017 lines) to ensure the dispatch logic is robust and falsifiable.
+We added 38 tests to ensure the dispatch logic is robust and falsifiable.
 
 | Module | Before | After | New Tests |
 |:--- |:--- |:--- |:--- |
@@ -119,7 +119,7 @@ We added 82 tests (1,017 lines) to ensure the dispatch logic is robust and falsi
 | `commands::validate`| 16 | 20 | +4 GGUF/SafeTensors dispatch tests |
 | `commands::trace` | 28 | 28 | (Verified GGUF/ST coverage) |
 | `commands::inspect` | 30 | 30 | (Verified GGUF/ST coverage) |
-| **Total** | **205** | **243** | **82 new multi-format tests** |
+| **Total** | **205** | **243** | **+38 new multi-format tests** |
 
 ### Key Verified Capabilities (Jidoka)
 
@@ -190,12 +190,13 @@ cargo test --lib -- test_factory::harness::test_f_
 
 ---
 
-# RELEASE BLOCK: Broken Round-Trip Conversion (PMAT-ROSETTA-002)
+# Round-Trip Conversion Fix (PMAT-ROSETTA-002)
 
-**Status:** RELEASE BLOCKED
+**Status:** RESOLVED (Fixed 2026-02-02)
 **Date:** 2026-02-02
-**Severity:** P0 — All conversion paths through APR are broken for real models
+**Severity:** P0 (was) — All conversion paths through APR were broken for real models
 **Root Cause:** PMAT-101 QKV fusion in APR writer with no corresponding unfusion in exporter
+**Fix:** Option C implemented — PMAT-101 fusion removed from `write.rs`, separate Q/K/V stored in APR, realizar fuses at runtime. See commits `9d5ee34d`, `4cea5fcb`, `62468c29`.
 
 ## The QKV Fusion Trap
 
@@ -445,9 +446,10 @@ The proposed **inspect-before-load** architecture fixes all three:
 
 # Architecture for Universal Bidirectional Conversion (PMAT-ROSETTA-003)
 
-**Status:** PROPOSED (Pending Approval)
+**Status:** IMPLEMENTED (Phase 0-1 Complete)
 **Date:** 2026-02-02
 **Refs:** GH-192, GH-199, PMAT-ROSETTA-002
+**Implementation:** Phase 0 (QKV splitting in export) and Phase 1 (PMAT-101 removal from write.rs) are complete. Phase 2-4 (realizar runtime fusion, property-based testing, inspect-before-load) remain as future work.
 **Goal:** Qualify 100s of models across all formats (SafeTensors, APR, GGUF) with
 lossless round-trip fidelity and universal CLI support.
 
