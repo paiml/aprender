@@ -49,6 +49,7 @@
 //! - All public APIs return `Result<T, E>`
 //! - 64-byte alignment enforced at type level
 
+use crate::format::gguf::dequant::{dequantize_q4_k, dequantize_q6_k};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -1388,6 +1389,8 @@ impl AprV2Reader {
     /// - F16: IEEE 754 half-precision → f32
     /// - Q8: 8-bit symmetric dequantization
     /// - Q4: 4-bit block dequantization
+    /// - Q4K: GGUF Q4_K super-block dequantization (GH-200)
+    /// - Q6K: GGUF Q6_K super-block dequantization (GH-200)
     #[must_use]
     pub fn get_tensor_as_f32(&self, name: &str) -> Option<Vec<f32>> {
         let entry = self.get_tensor(name)?;
@@ -1421,6 +1424,8 @@ impl AprV2Reader {
                 Some(floats)
             }
             TensorDType::Q4 => Some(dequantize_q4(data, element_count)),
+            TensorDType::Q4K => dequantize_q4_k(data, 0, element_count).ok(),
+            TensorDType::Q6K => dequantize_q6_k(data, 0, element_count).ok(),
             _ => None, // Other types not yet supported
         }
     }
@@ -1561,6 +1566,8 @@ impl<'a> AprV2ReaderRef<'a> {
     /// - F16: IEEE 754 half-precision → f32
     /// - Q8: 8-bit symmetric dequantization
     /// - Q4: 4-bit block dequantization
+    /// - Q4K: GGUF Q4_K super-block dequantization (GH-200)
+    /// - Q6K: GGUF Q6_K super-block dequantization (GH-200)
     #[must_use]
     pub fn get_tensor_as_f32(&self, name: &str) -> Option<Vec<f32>> {
         let entry = self.get_tensor(name)?;
@@ -1594,6 +1601,8 @@ impl<'a> AprV2ReaderRef<'a> {
                 Some(floats)
             }
             TensorDType::Q4 => Some(dequantize_q4(data, element_count)),
+            TensorDType::Q4K => dequantize_q4_k(data, 0, element_count).ok(),
+            TensorDType::Q6K => dequantize_q6_k(data, 0, element_count).ok(),
             _ => None, // Other types not yet supported
         }
     }

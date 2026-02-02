@@ -2,7 +2,8 @@
 //! PMAT-197: Extracted from mod.rs for file size reduction
 
 use crate::error::{AprenderError, Result};
-use crate::format::converter_types::QuantizationType;
+use crate::format::converter_types::{Architecture, QuantizationType};
+use crate::format::gguf::GgufReader;
 use crate::serialization::safetensors::{
     save_safetensors, save_safetensors_with_metadata, UserMetadata,
 };
@@ -11,7 +12,7 @@ use std::fs;
 use std::path::Path;
 
 // Import shared functions from parent module
-use super::{calculate_tensor_size, load_model_tensors, quantize_tensors};
+use super::{calculate_tensor_size, load_model_tensors, map_tensor_names, quantize_tensors};
 
 /// Export format options
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -157,6 +158,17 @@ pub fn apr_export<P: AsRef<Path>>(
     let tensors = load_model_tensors(input_path)?;
     let original_size = calculate_tensor_size(&tensors);
     let original_count = tensors.len();
+
+    // GH-200: Map GGUF tensor names to HF canonical format before export.
+    // GGUF uses names like "blk.0.attn_q.weight" but SafeTensors/HF expects
+    // "model.layers.0.self_attn.q_proj.weight". Without this, exported
+    // SafeTensors files have wrong names and fail inference.
+    let tensors = if input_path.extension().and_then(|e| e.to_str()) == Some("gguf") {
+        let arch = detect_gguf_architecture(input_path);
+        map_tensor_names(&tensors, arch)
+    } else {
+        tensors
+    };
 
     // ROSETTA-003: Unfuse legacy QKV tensors for lossless round-trip export.
     // Old APR files (pre-ROSETTA-003) fused Q/K/V into qkv_proj for realizar.
@@ -896,4 +908,17 @@ fn extract_user_metadata(apr_path: &Path) -> UserMetadata {
     }
 
     UserMetadata::new()
+}
+
+/// Detect GGUF model architecture for tensor name mapping (GH-200).
+fn detect_gguf_architecture(path: &Path) -> Architecture {
+    GgufReader::from_file(path)
+        .ok()
+        .and_then(|r| r.architecture())
+        .map(|a| match a.to_lowercase().as_str() {
+            "qwen2" | "qwen" => Architecture::Qwen2,
+            "llama" => Architecture::Llama,
+            _ => Architecture::Qwen2, // Safe default: most GGUF models use same mapping
+        })
+        .unwrap_or(Architecture::Qwen2)
 }

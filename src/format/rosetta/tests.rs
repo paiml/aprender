@@ -1187,16 +1187,12 @@ fn p116_bitflip_apr_corruption_detected() {
 // P117: GGUF format detection from real file
 // H0: Real GGUF file is correctly detected
 // Refutation: Fails if detection returns wrong format
+// NOTE: Requires models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf on disk.
+// Marked #[ignore] so CI reports "ignored" instead of silently passing.
 #[test]
+#[ignore = "requires local GGUF model file"]
 fn p117_gguf_format_detection_real_file() {
-    // Use the smallest GGUF file available
     let gguf_path = Path::new("models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf");
-
-    // Skip if no GGUF file available (CI environment)
-    if !gguf_path.exists() {
-        eprintln!("Skipping GGUF test: no model file available");
-        return;
-    }
 
     let format = FormatType::from_magic(gguf_path).expect("Detect GGUF format");
     assert_eq!(format, FormatType::Gguf, "Should detect GGUF format");
@@ -1205,14 +1201,12 @@ fn p117_gguf_format_detection_real_file() {
 // P118: GGUF inspection from real file
 // H0: Real GGUF file can be inspected
 // Refutation: Fails if inspection fails or returns empty tensors
+// NOTE: Requires models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf on disk.
+// Marked #[ignore] so CI reports "ignored" instead of silently passing.
 #[test]
+#[ignore = "requires local GGUF model file"]
 fn p118_gguf_inspection_real_file() {
     let gguf_path = Path::new("models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf");
-
-    if !gguf_path.exists() {
-        eprintln!("Skipping GGUF inspection test: no model file available");
-        return;
-    }
 
     let rosetta = RosettaStone::new();
     let report = rosetta.inspect(gguf_path).expect("Inspect GGUF");

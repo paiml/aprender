@@ -1634,4 +1634,321 @@ mod tests {
 
         assert_eq!(result.format_version, "v2");
     }
+
+    // ====================================================================
+    // Coverage: f16_to_f32 special cases (denorm, inf, NaN)
+    // ====================================================================
+
+    #[test]
+    fn test_f16_to_f32_denormalized() {
+        // Smallest positive denorm: sign=0, exp=0, mantissa=1
+        let val = super::f16_to_f32(0x0001);
+        assert!(
+            val > 0.0 && val < 1e-6,
+            "denorm should be tiny positive: {val}"
+        );
+    }
+
+    #[test]
+    fn test_f16_to_f32_positive_infinity() {
+        // +Inf: sign=0, exp=31, mantissa=0 → 0x7C00
+        let val = super::f16_to_f32(0x7C00);
+        assert!(val.is_infinite() && val > 0.0);
+    }
+
+    #[test]
+    fn test_f16_to_f32_negative_infinity() {
+        // -Inf: sign=1, exp=31, mantissa=0 → 0xFC00
+        let val = super::f16_to_f32(0xFC00);
+        assert!(val.is_infinite() && val < 0.0);
+    }
+
+    #[test]
+    fn test_f16_to_f32_nan() {
+        // NaN: sign=0, exp=31, mantissa!=0 → 0x7E00
+        let val = super::f16_to_f32(0x7E00);
+        assert!(val.is_nan());
+    }
+
+    #[test]
+    fn test_f16_to_f32_negative_zero() {
+        // -0: sign=1, exp=0, mantissa=0 → 0x8000
+        let val = super::f16_to_f32(0x8000);
+        assert_eq!(val, 0.0);
+        assert!(val.is_sign_negative());
+    }
+
+    // ====================================================================
+    // Coverage: safetensors_bytes_to_f32 all dtype branches
+    // ====================================================================
+
+    #[test]
+    fn test_safetensors_bytes_to_f32_bf16() {
+        // BF16 for 1.0: top 16 bits of f32 1.0 (0x3F80_0000) → 0x3F80
+        let bf16_bytes = 0x3F80u16.to_le_bytes();
+        let result = super::safetensors_bytes_to_f32(&bf16_bytes, "BF16");
+        assert_eq!(result.len(), 1);
+        assert!((result[0] - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_safetensors_bytes_to_f32_unknown_dtype() {
+        let bytes = [0u8; 16];
+        let result = super::safetensors_bytes_to_f32(&bytes, "Q4_K");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_safetensors_bytes_to_f32_f32() {
+        let val: f32 = 3.14;
+        let bytes = val.to_le_bytes();
+        let result = super::safetensors_bytes_to_f32(&bytes, "F32");
+        assert_eq!(result.len(), 1);
+        assert!((result[0] - 3.14).abs() < 1e-6);
+    }
+
+    // ====================================================================
+    // Coverage: compute_tensor_stats edge cases
+    // ====================================================================
+
+    #[test]
+    fn test_compute_stats_all_nan() {
+        let mut info = TensorInfo {
+            name: "t".to_string(),
+            shape: vec![3],
+            dtype: "F32".to_string(),
+            size_bytes: 12,
+            mean: None,
+            std: None,
+            min: None,
+            max: None,
+            nan_count: None,
+            inf_count: None,
+        };
+        super::compute_tensor_stats(&mut info, &[f32::NAN, f32::NAN, f32::NAN]);
+        assert_eq!(info.nan_count, Some(3));
+        assert!(info.mean.is_none(), "no valid values → no mean");
+    }
+
+    #[test]
+    fn test_compute_stats_all_inf() {
+        let mut info = TensorInfo {
+            name: "t".to_string(),
+            shape: vec![2],
+            dtype: "F32".to_string(),
+            size_bytes: 8,
+            mean: None,
+            std: None,
+            min: None,
+            max: None,
+            nan_count: None,
+            inf_count: None,
+        };
+        super::compute_tensor_stats(&mut info, &[f32::INFINITY, f32::NEG_INFINITY]);
+        assert_eq!(info.inf_count, Some(2));
+        assert!(info.mean.is_none());
+    }
+
+    #[test]
+    fn test_compute_stats_single_value() {
+        let mut info = TensorInfo {
+            name: "t".to_string(),
+            shape: vec![1],
+            dtype: "F32".to_string(),
+            size_bytes: 4,
+            mean: None,
+            std: None,
+            min: None,
+            max: None,
+            nan_count: None,
+            inf_count: None,
+        };
+        super::compute_tensor_stats(&mut info, &[42.0]);
+        assert_eq!(info.mean, Some(42.0));
+        assert_eq!(info.std, Some(0.0));
+        assert_eq!(info.min, Some(42.0));
+        assert_eq!(info.max, Some(42.0));
+    }
+
+    #[test]
+    fn test_compute_stats_identical_values() {
+        let mut info = TensorInfo {
+            name: "t".to_string(),
+            shape: vec![4],
+            dtype: "F32".to_string(),
+            size_bytes: 16,
+            mean: None,
+            std: None,
+            min: None,
+            max: None,
+            nan_count: None,
+            inf_count: None,
+        };
+        super::compute_tensor_stats(&mut info, &[5.0, 5.0, 5.0, 5.0]);
+        assert_eq!(info.mean, Some(5.0));
+        assert_eq!(info.std, Some(0.0));
+    }
+
+    // ====================================================================
+    // Coverage: list_tensors_safetensors error paths
+    // ====================================================================
+
+    #[test]
+    fn test_safetensors_too_small() {
+        let result = list_tensors_from_bytes(&[0u8; 4], TensorListOptions::default());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_safetensors_truncated_header() {
+        // header_len says 1000, but only 20 bytes total
+        let mut data = vec![0u8; 20];
+        data[0..8].copy_from_slice(&1000u64.to_le_bytes());
+        // Make it look like SafeTensors (bytes 8-9 = '{"')
+        data[8] = b'{';
+        data[9] = b'"';
+        let result = super::list_tensors_safetensors(&data, TensorListOptions::default());
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("truncated"));
+    }
+
+    #[test]
+    fn test_safetensors_invalid_json() {
+        let header = b"not json at all";
+        let header_len = header.len() as u64;
+        let mut data = Vec::new();
+        data.extend_from_slice(&header_len.to_le_bytes());
+        data.extend_from_slice(header);
+        let result = super::list_tensors_safetensors(&data, TensorListOptions::default());
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("JSON"));
+    }
+
+    #[test]
+    fn test_safetensors_json_not_object() {
+        let header = b"[1, 2, 3]";
+        let header_len = header.len() as u64;
+        let mut data = Vec::new();
+        data.extend_from_slice(&header_len.to_le_bytes());
+        data.extend_from_slice(header);
+        let result = super::list_tensors_safetensors(&data, TensorListOptions::default());
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("not a JSON object"));
+    }
+
+    #[test]
+    fn test_safetensors_with_stats() {
+        // Build a minimal SafeTensors with one F32 tensor and compute stats
+        let tensor_data: Vec<u8> = [1.0f32, 2.0, 3.0, 4.0]
+            .iter()
+            .flat_map(|v| v.to_le_bytes())
+            .collect();
+        let header = format!(
+            r#"{{"test_tensor":{{"dtype":"F32","shape":[4],"data_offsets":[0,{}]}}}}"#,
+            tensor_data.len()
+        );
+        let header_bytes = header.as_bytes();
+        let mut data = Vec::new();
+        data.extend_from_slice(&(header_bytes.len() as u64).to_le_bytes());
+        data.extend_from_slice(header_bytes);
+        data.extend_from_slice(&tensor_data);
+
+        let opts = TensorListOptions {
+            compute_stats: true,
+            ..TensorListOptions::default()
+        };
+        let result = super::list_tensors_safetensors(&data, opts).expect("parse ok");
+        assert_eq!(result.tensor_count, 1);
+        let t = &result.tensors[0];
+        assert!(t.mean.is_some());
+        assert!((t.mean.unwrap() - 2.5).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_safetensors_limit() {
+        // Two tensors, limit=1
+        let header = r#"{"a":{"dtype":"F32","shape":[1],"data_offsets":[0,4]},"b":{"dtype":"F32","shape":[1],"data_offsets":[4,8]}}"#;
+        let mut data = Vec::new();
+        data.extend_from_slice(&(header.len() as u64).to_le_bytes());
+        data.extend_from_slice(header.as_bytes());
+        data.extend_from_slice(&[0u8; 8]);
+
+        let opts = TensorListOptions {
+            limit: 1,
+            ..TensorListOptions::default()
+        };
+        let result = super::list_tensors_safetensors(&data, opts).expect("parse ok");
+        assert_eq!(result.tensor_count, 1);
+    }
+
+    #[test]
+    fn test_safetensors_filter() {
+        let header = r#"{"attn.weight":{"dtype":"F32","shape":[2],"data_offsets":[0,8]},"mlp.weight":{"dtype":"F32","shape":[2],"data_offsets":[8,16]}}"#;
+        let mut data = Vec::new();
+        data.extend_from_slice(&(header.len() as u64).to_le_bytes());
+        data.extend_from_slice(header.as_bytes());
+        data.extend_from_slice(&[0u8; 16]);
+
+        let opts = TensorListOptions {
+            filter: Some("attn".to_string()),
+            ..TensorListOptions::default()
+        };
+        let result = super::list_tensors_safetensors(&data, opts).expect("parse ok");
+        assert_eq!(result.tensor_count, 1);
+        assert_eq!(result.tensors[0].name, "attn.weight");
+    }
+
+    // ====================================================================
+    // Coverage: list_tensors_v1 basic path
+    // ====================================================================
+
+    #[test]
+    fn test_list_tensors_v1_too_small() {
+        let data = vec![0u8; 16]; // less than HEADER_SIZE
+        let result = super::list_tensors_v1(&data, TensorListOptions::default());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_list_tensors_v1_metadata_truncated() {
+        // Header says metadata is 1000 bytes but file is too small
+        let mut data = vec![0u8; 64]; // HEADER_SIZE
+                                      // offset 8-11: metadata_size = 1000
+        data[8..12].copy_from_slice(&1000u32.to_le_bytes());
+        let result = super::list_tensors_v1(&data, TensorListOptions::default());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_list_tensors_v1_empty_metadata() {
+        // Valid header with empty metadata (size=2, content="{}")
+        let metadata = b"{}";
+        let mut data = vec![0u8; 64];
+        data[8..12].copy_from_slice(&(metadata.len() as u32).to_le_bytes());
+        data.extend_from_slice(metadata);
+        let result = super::list_tensors_v1(&data, TensorListOptions::default());
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().tensor_count, 0);
+    }
+
+    // ====================================================================
+    // Coverage: ggml_dtype_name all branches
+    // ====================================================================
+
+    #[test]
+    fn test_ggml_dtype_name_all() {
+        assert_eq!(super::ggml_dtype_name(0), "F32");
+        assert_eq!(super::ggml_dtype_name(1), "F16");
+        assert_eq!(super::ggml_dtype_name(2), "Q4_0");
+        assert_eq!(super::ggml_dtype_name(3), "Q4_1");
+        assert_eq!(super::ggml_dtype_name(6), "Q5_0");
+        assert_eq!(super::ggml_dtype_name(7), "Q5_1");
+        assert_eq!(super::ggml_dtype_name(8), "Q8_0");
+        assert_eq!(super::ggml_dtype_name(12), "Q4_K");
+        assert_eq!(super::ggml_dtype_name(14), "Q6_K");
+        assert_eq!(super::ggml_dtype_name(999), "unknown");
+    }
 }

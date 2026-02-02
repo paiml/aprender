@@ -713,6 +713,106 @@ pub fn build_pygmy_apr_f16() -> Vec<u8> {
 }
 
 // ============================================================================
+// K-Quant Pygmy Builders (Q4K / Q6K)
+// ============================================================================
+
+/// Build APR with Q4_K quantized tensors (GGUF-style names)
+///
+/// Q4_K format: 256-element super-blocks, 144 bytes each.
+/// Layout: d (f16, 2B) + dmin (f16, 2B) + scales (12B) + qs (128B) = 144 bytes.
+/// Uses GGUF naming: `token_embd.weight`, `blk.0.attn_q.weight`, etc.
+#[must_use]
+pub fn build_pygmy_apr_q4k() -> Vec<u8> {
+    let mut metadata = AprV2Metadata::new("pygmy-q4k");
+    metadata.architecture = Some("qwen2".to_string());
+    metadata.hidden_size = Some(256);
+    metadata.vocab_size = Some(8);
+    metadata.num_layers = Some(1);
+    metadata
+        .custom
+        .insert("naming".to_string(), serde_json::json!("gguf"));
+
+    let mut writer = AprV2Writer::new(metadata);
+
+    // Token embedding (F32 — embedding lookup tables stay unquantized)
+    let embed_data: Vec<f32> = (0..8 * 256)
+        .map(|i| ((i % 100) as f32 - 50.0) / 1000.0)
+        .collect();
+    writer.add_f32_tensor("token_embd.weight", vec![8, 256], &embed_data);
+
+    // Layer 0 attention weights (Q4K): 256 elements = 1 super-block = 144 bytes
+    let q4k_block = vec![0u8; 144];
+    for suffix in &["attn_q", "attn_k", "attn_v", "attn_output"] {
+        writer.add_q4k_raw_tensor(
+            format!("blk.0.{suffix}.weight"),
+            vec![256, 1],
+            q4k_block.clone(),
+        );
+    }
+
+    // Norms (F32)
+    let norm_data: Vec<f32> = vec![1.0; 256];
+    writer.add_f32_tensor("blk.0.attn_norm.weight", vec![256], &norm_data);
+    writer.add_f32_tensor("output_norm.weight", vec![256], &norm_data);
+
+    // Output (F32)
+    let output_data: Vec<f32> = (0..8 * 256)
+        .map(|i| ((i % 100) as f32 - 50.0) / 1000.0)
+        .collect();
+    writer.add_f32_tensor("output.weight", vec![8, 256], &output_data);
+
+    writer.write().unwrap_or_default()
+}
+
+/// Build APR with Q6_K quantized tensors (GGUF-style names)
+///
+/// Q6_K format: 256-element super-blocks, 210 bytes each.
+/// Layout: ql (128B) + qh (64B) + scales (16B) + d (f16, 2B) = 210 bytes.
+/// Uses GGUF naming: `token_embd.weight`, `blk.0.attn_q.weight`, etc.
+#[must_use]
+pub fn build_pygmy_apr_q6k() -> Vec<u8> {
+    let mut metadata = AprV2Metadata::new("pygmy-q6k");
+    metadata.architecture = Some("qwen2".to_string());
+    metadata.hidden_size = Some(256);
+    metadata.vocab_size = Some(8);
+    metadata.num_layers = Some(1);
+    metadata
+        .custom
+        .insert("naming".to_string(), serde_json::json!("gguf"));
+
+    let mut writer = AprV2Writer::new(metadata);
+
+    // Token embedding (F32)
+    let embed_data: Vec<f32> = (0..8 * 256)
+        .map(|i| ((i % 100) as f32 - 50.0) / 1000.0)
+        .collect();
+    writer.add_f32_tensor("token_embd.weight", vec![8, 256], &embed_data);
+
+    // Layer 0 attention weights (Q6K): 256 elements = 1 super-block = 210 bytes
+    let q6k_block = vec![0u8; 210];
+    for suffix in &["attn_q", "attn_k", "attn_v", "attn_output"] {
+        writer.add_q6k_raw_tensor(
+            format!("blk.0.{suffix}.weight"),
+            vec![256, 1],
+            q6k_block.clone(),
+        );
+    }
+
+    // Norms (F32)
+    let norm_data: Vec<f32> = vec![1.0; 256];
+    writer.add_f32_tensor("blk.0.attn_norm.weight", vec![256], &norm_data);
+    writer.add_f32_tensor("output_norm.weight", vec![256], &norm_data);
+
+    // Output (F32)
+    let output_data: Vec<f32> = (0..8 * 256)
+        .map(|i| ((i % 100) as f32 - 50.0) / 1000.0)
+        .collect();
+    writer.add_f32_tensor("output.weight", vec![8, 256], &output_data);
+
+    writer.write().unwrap_or_default()
+}
+
+// ============================================================================
 // Encryption Pygmy Builders (feature-gated)
 // ============================================================================
 
@@ -1294,6 +1394,24 @@ pub(crate) mod harness {
             self
         }
 
+        /// Write a Q4K-quantized APR file (GGUF-style names) into the temp dir.
+        pub(crate) fn with_apr_q4k(mut self) -> Self {
+            let bytes = super::build_pygmy_apr_q4k();
+            let path = self.dir.path().join("input.apr");
+            fs::write(&path, &bytes).expect("write pygmy q4k apr");
+            self.input_path = Some(path);
+            self
+        }
+
+        /// Write a Q6K-quantized APR file (GGUF-style names) into the temp dir.
+        pub(crate) fn with_apr_q6k(mut self) -> Self {
+            let bytes = super::build_pygmy_apr_q6k();
+            let path = self.dir.path().join("input.apr");
+            fs::write(&path, &bytes).expect("write pygmy q6k apr");
+            self.input_path = Some(path);
+            self
+        }
+
         // ----------------------------------------------------------------
         // Exercise: run real pipeline
         // ----------------------------------------------------------------
@@ -1472,8 +1590,11 @@ pub(crate) mod harness {
             }
 
             // T-QKV-02: Check for EXTRA tensors in output (detects fusion/split bugs)
-            let expected_names: std::collections::HashSet<&str> =
-                self.source_tensors.iter().map(|(n, _, _)| n.as_str()).collect();
+            let expected_names: std::collections::HashSet<&str> = self
+                .source_tensors
+                .iter()
+                .map(|(n, _, _)| n.as_str())
+                .collect();
             for output_name in reader.tensor_names() {
                 if !expected_names.contains(output_name) {
                     mismatches.push(TensorMismatch {
@@ -1549,8 +1670,11 @@ pub(crate) mod harness {
             }
 
             // T-QKV-02: Check for EXTRA tensors in output (detects fusion/split bugs)
-            let expected_names: std::collections::HashSet<&str> =
-                self.source_tensors.iter().map(|(n, _, _)| n.as_str()).collect();
+            let expected_names: std::collections::HashSet<&str> = self
+                .source_tensors
+                .iter()
+                .map(|(n, _, _)| n.as_str())
+                .collect();
             for output_name in mapped.tensor_names() {
                 // SafeTensors __metadata__ key is not a tensor, skip it
                 if output_name == "__metadata__" {
@@ -1836,9 +1960,8 @@ pub(crate) mod harness {
 
         // 2. Read APR, find tensor data offset from header (bytes 32-39 = data_offset u64 LE)
         let mut data = std::fs::read(&output_path).expect("read APR");
-        let data_offset = u64::from_le_bytes(
-            data[32..40].try_into().expect("8 bytes for data_offset"),
-        ) as usize;
+        let data_offset =
+            u64::from_le_bytes(data[32..40].try_into().expect("8 bytes for data_offset")) as usize;
 
         // 3. Corrupt first 16 bytes of actual tensor data (4 f32 values)
         assert!(
@@ -1953,9 +2076,8 @@ pub(crate) mod harness {
 
         // Read APR, find tensor data offset from header (bytes 32-39 = data_offset u64 LE)
         let mut data = std::fs::read(&output_path).expect("read APR");
-        let data_offset = u64::from_le_bytes(
-            data[32..40].try_into().expect("8 bytes for data_offset"),
-        ) as usize;
+        let data_offset =
+            u64::from_le_bytes(data[32..40].try_into().expect("8 bytes for data_offset")) as usize;
 
         // Flip all bits in a single f32 value (4 bytes) at start of tensor data
         assert!(
@@ -2341,7 +2463,10 @@ pub(crate) mod harness {
         );
 
         let config = infer_model_config_from_tensors(&tensors);
-        assert!(config.is_some(), "Inference must succeed with realistic dims");
+        assert!(
+            config.is_some(),
+            "Inference must succeed with realistic dims"
+        );
 
         let config = config.unwrap();
         assert_eq!(config.hidden_size, Some(128));
@@ -2486,7 +2611,7 @@ pub(crate) mod harness {
             .import_to_apr(ImportOptions::default())     // ST → APR
             .export_to_gguf()                            // APR → GGUF
             .reimport_to_apr()                           // GGUF → APR
-            .export_to_safetensors();                    // APR → ST
+            .export_to_safetensors(); // APR → ST
 
         // Verify final SafeTensors matches original input
         let result = h.verify_safetensors();

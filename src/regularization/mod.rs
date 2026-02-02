@@ -178,6 +178,16 @@ impl CutMix {
     /// Sample lambda and bounding box for cutmix.
     #[must_use]
     pub fn sample(&self, height: usize, width: usize) -> CutMixParams {
+        // Alpha <= 0 means no mixing: lambda = 1.0, empty box
+        if self.alpha <= 0.0 {
+            return CutMixParams {
+                lambda: 1.0,
+                x1: 0,
+                y1: 0,
+                x2: 0,
+                y2: 0,
+            };
+        }
         let lambda = sample_beta(self.alpha, self.alpha);
 
         // Sample bounding box

@@ -30,7 +30,8 @@ pub use crate::format::converter_types::{
 
 // PMAT-197: Import functions moved to import.rs that are used elsewhere
 pub(crate) use import::infer_model_config_from_tensors;
-use import::{load_safetensors_tensors, map_tensor_names};
+use import::load_safetensors_tensors;
+pub(crate) use import::map_tensor_names;
 
 // For tests: re-export helper types and functions
 #[cfg(test)]

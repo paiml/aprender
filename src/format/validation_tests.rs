@@ -941,4 +941,184 @@ mod tests_report {
         assert_eq!(report.category_scores.get(&Category::Structure), Some(&1));
         assert_eq!(report.category_scores.get(&Category::Physics), Some(&1));
     }
+
+    // ====================================================================
+    // Coverage: CheckStatus methods
+    // ====================================================================
+
+    #[test]
+    fn test_check_status_is_pass() {
+        assert!(CheckStatus::Pass.is_pass());
+        assert!(!CheckStatus::Pass.is_fail());
+    }
+
+    #[test]
+    fn test_check_status_is_fail() {
+        let fail = CheckStatus::Fail("bad".to_string());
+        assert!(fail.is_fail());
+        assert!(!fail.is_pass());
+    }
+
+    #[test]
+    fn test_check_status_skip_not_pass_not_fail() {
+        let skip = CheckStatus::Skip("n/a".to_string());
+        assert!(!skip.is_pass());
+        assert!(!skip.is_fail());
+    }
+
+    // ====================================================================
+    // Coverage: Category methods
+    // ====================================================================
+
+    #[test]
+    fn test_category_letter() {
+        assert_eq!(Category::Structure.letter(), 'A');
+        assert_eq!(Category::Physics.letter(), 'B');
+        assert_eq!(Category::Tooling.letter(), 'C');
+        assert_eq!(Category::Conversion.letter(), 'D');
+    }
+
+    #[test]
+    fn test_category_name() {
+        assert_eq!(Category::Structure.name(), "Format & Structural Integrity");
+        assert_eq!(Category::Physics.name(), "Tensor Physics & Statistics");
+        assert_eq!(Category::Tooling.name(), "Tooling & Operations");
+        assert_eq!(Category::Conversion.name(), "Conversion & Interoperability");
+    }
+
+    // ====================================================================
+    // Coverage: AprHeader flag methods
+    // ====================================================================
+
+    #[test]
+    fn test_apr_header_is_compressed() {
+        let header = AprHeader {
+            magic: [0x41, 0x50, 0x52, 0x00],
+            version_major: 2,
+            version_minor: 0,
+            flags: 0x01, // compressed bit
+            metadata_offset: 0,
+            metadata_size: 0,
+            index_offset: 0,
+            index_size: 0,
+            data_offset: 0,
+        };
+        assert!(header.is_compressed());
+        assert!(!header.is_signed());
+        assert!(!header.is_encrypted());
+    }
+
+    #[test]
+    fn test_apr_header_is_signed() {
+        let header = AprHeader {
+            magic: [0x41, 0x50, 0x52, 0x00],
+            version_major: 2,
+            version_minor: 0,
+            flags: 0x20, // signed bit
+            metadata_offset: 0,
+            metadata_size: 0,
+            index_offset: 0,
+            index_size: 0,
+            data_offset: 0,
+        };
+        assert!(!header.is_compressed());
+        assert!(header.is_signed());
+        assert!(!header.is_encrypted());
+    }
+
+    #[test]
+    fn test_apr_header_is_encrypted() {
+        let header = AprHeader {
+            magic: [0x41, 0x50, 0x52, 0x00],
+            version_major: 2,
+            version_minor: 0,
+            flags: 0x10, // encrypted bit
+            metadata_offset: 0,
+            metadata_size: 0,
+            index_offset: 0,
+            index_size: 0,
+            data_offset: 0,
+        };
+        assert!(!header.is_compressed());
+        assert!(!header.is_signed());
+        assert!(header.is_encrypted());
+    }
+
+    #[test]
+    fn test_apr_header_supported_versions() {
+        // v1.0, v1.1, v1.2 supported
+        for minor in 0..=2 {
+            let h = AprHeader {
+                magic: [0x41, 0x50, 0x52, 0x00],
+                version_major: 1,
+                version_minor: minor,
+                flags: 0,
+                metadata_offset: 0,
+                metadata_size: 0,
+                index_offset: 0,
+                index_size: 0,
+                data_offset: 0,
+            };
+            assert!(h.is_supported_version(), "v1.{minor} should be supported");
+        }
+        // v2.0 supported
+        let h = AprHeader {
+            magic: [0x41, 0x50, 0x52, 0x00],
+            version_major: 2,
+            version_minor: 0,
+            flags: 0,
+            metadata_offset: 0,
+            metadata_size: 0,
+            index_offset: 0,
+            index_size: 0,
+            data_offset: 0,
+        };
+        assert!(h.is_supported_version());
+        // v3.0 not supported
+        let h = AprHeader {
+            magic: [0x41, 0x50, 0x52, 0x00],
+            version_major: 3,
+            version_minor: 0,
+            flags: 0,
+            metadata_offset: 0,
+            metadata_size: 0,
+            index_offset: 0,
+            index_size: 0,
+            data_offset: 0,
+        };
+        assert!(!h.is_supported_version());
+    }
+
+    // ====================================================================
+    // Coverage: ValidationReport::failed_checks
+    // ====================================================================
+
+    #[test]
+    fn test_report_failed_checks_mixed() {
+        let mut report = ValidationReport::new();
+        report.add_check(ValidationCheck {
+            id: 1,
+            name: "pass_check",
+            category: Category::Structure,
+            status: CheckStatus::Pass,
+            points: 1,
+        });
+        report.add_check(ValidationCheck {
+            id: 2,
+            name: "fail_check",
+            category: Category::Structure,
+            status: CheckStatus::Fail("bad".to_string()),
+            points: 0,
+        });
+        report.add_check(ValidationCheck {
+            id: 3,
+            name: "skip_check",
+            category: Category::Physics,
+            status: CheckStatus::Skip("n/a".to_string()),
+            points: 0,
+        });
+        let failed = report.failed_checks();
+        assert_eq!(failed.len(), 1);
+        assert_eq!(failed[0].id, 2);
+    }
 }

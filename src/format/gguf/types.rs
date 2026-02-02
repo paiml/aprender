@@ -63,6 +63,10 @@ pub enum GgmlType {
     Q4_1 = 3,
     /// 8-bit quantization (type 0)
     Q8_0 = 8,
+    /// K-quant 4-bit (Q4_K) - 256-element super-blocks, 144 bytes each
+    Q4K = 12,
+    /// K-quant 6-bit (Q6_K) - 256-element super-blocks, 210 bytes each
+    Q6K = 14,
     /// 8-bit signed integer
     I8 = 24,
     /// 16-bit signed integer
@@ -354,10 +358,10 @@ impl GgufTensor {
     #[must_use]
     pub fn byte_size(&self) -> usize {
         let elements: u64 = self.shape.iter().product();
-        let bytes_per_element = match self.dtype {
-            GgmlType::F32 | GgmlType::I32 => 4,
-            GgmlType::F16 | GgmlType::I16 => 2,
-            GgmlType::I8 => 1,
+        match self.dtype {
+            GgmlType::F32 | GgmlType::I32 => elements as usize * 4,
+            GgmlType::F16 | GgmlType::I16 => elements as usize * 2,
+            GgmlType::I8 => elements as usize,
             GgmlType::Q4_0 | GgmlType::Q4_1 => {
                 // Block-quantized: 32 elements per block
                 // Q4_0: 2 bytes scale + 16 bytes data = 18 bytes per 32 elements
@@ -367,9 +371,16 @@ impl GgufTensor {
                 // Q8_0: 2 bytes scale + 32 bytes data = 34 bytes per 32 elements
                 ((elements as usize + 31) / 32) * 34
             }
-            GgmlType::F64 | GgmlType::I64 => 8,
-        };
-        elements as usize * bytes_per_element / elements.max(1) as usize
+            GgmlType::Q4K => {
+                // Q4_K: 256-element super-blocks, 144 bytes each
+                ((elements as usize + 255) / 256) * 144
+            }
+            GgmlType::Q6K => {
+                // Q6_K: 256-element super-blocks, 210 bytes each
+                ((elements as usize + 255) / 256) * 210
+            }
+            GgmlType::F64 | GgmlType::I64 => elements as usize * 8,
+        }
     }
 }
 

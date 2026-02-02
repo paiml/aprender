@@ -1644,15 +1644,23 @@ mod tests {
         ];
 
         let metadata = vec![
-            ("general.architecture".to_string(), GgufValue::String("llama".to_string())),
+            (
+                "general.architecture".to_string(),
+                GgufValue::String("llama".to_string()),
+            ),
             ("llama.block_count".to_string(), GgufValue::Uint32(1)),
             ("llama.embedding_length".to_string(), GgufValue::Uint32(8)),
-            ("llama.attention.head_count".to_string(), GgufValue::Uint32(2)),
-            ("llama.attention.head_count_kv".to_string(), GgufValue::Uint32(2)),
+            (
+                "llama.attention.head_count".to_string(),
+                GgufValue::Uint32(2),
+            ),
+            (
+                "llama.attention.head_count_kv".to_string(),
+                GgufValue::Uint32(2),
+            ),
         ];
 
-        export_tensors_to_gguf(&mut writer, &tensors, &metadata)
-            .expect("write GGUF");
+        export_tensors_to_gguf(&mut writer, &tensors, &metadata).expect("write GGUF");
         drop(writer);
         file
     }
@@ -1662,9 +1670,21 @@ mod tests {
         // Build SafeTensors manually: 8-byte header_len + JSON header + tensor data
         let tensors: Vec<(&str, Vec<usize>, Vec<f32>)> = vec![
             ("model.embed_tokens.weight", vec![8, 4], vec![0.1; 32]),
-            ("model.layers.0.self_attn.q_proj.weight", vec![4, 4], vec![0.2; 16]),
-            ("model.layers.0.self_attn.k_proj.weight", vec![4, 4], vec![0.3; 16]),
-            ("model.layers.0.mlp.gate_proj.weight", vec![8, 4], vec![0.4; 32]),
+            (
+                "model.layers.0.self_attn.q_proj.weight",
+                vec![4, 4],
+                vec![0.2; 16],
+            ),
+            (
+                "model.layers.0.self_attn.k_proj.weight",
+                vec![4, 4],
+                vec![0.3; 16],
+            ),
+            (
+                "model.layers.0.mlp.gate_proj.weight",
+                vec![8, 4],
+                vec![0.4; 32],
+            ),
             ("lm_head.weight", vec![8, 4], vec![0.5; 32]),
         ];
 
@@ -1711,28 +1731,37 @@ mod tests {
     fn test_run_valid_gguf_json_output() {
         let file = build_test_gguf();
         let result = run(file.path(), None, None, true, false, false, false, false);
-        assert!(result.is_ok(), "trace JSON on valid GGUF failed: {result:?}");
+        assert!(
+            result.is_ok(),
+            "trace JSON on valid GGUF failed: {result:?}"
+        );
     }
 
     #[test]
     fn test_run_valid_safetensors_dispatch() {
         let file = build_test_safetensors();
         let result = run(file.path(), None, None, false, false, false, false, false);
-        assert!(result.is_ok(), "trace on valid SafeTensors failed: {result:?}");
+        assert!(
+            result.is_ok(),
+            "trace on valid SafeTensors failed: {result:?}"
+        );
     }
 
     #[test]
     fn test_run_valid_safetensors_json_output() {
         let file = build_test_safetensors();
         let result = run(file.path(), None, None, true, false, false, false, false);
-        assert!(result.is_ok(), "trace JSON on valid SafeTensors failed: {result:?}");
+        assert!(
+            result.is_ok(),
+            "trace JSON on valid SafeTensors failed: {result:?}"
+        );
     }
 
     #[test]
     fn test_trace_gguf_detects_layers() {
         let file = build_test_gguf();
-        let (format_name, layers) = detect_and_trace(file.path(), None, false)
-            .expect("detect_and_trace GGUF");
+        let (format_name, layers) =
+            detect_and_trace(file.path(), None, false).expect("detect_and_trace GGUF");
         assert!(
             format_name.contains("GGUF"),
             "format should be GGUF, got: {format_name}"
@@ -1747,8 +1776,8 @@ mod tests {
     #[test]
     fn test_trace_safetensors_detects_layers() {
         let file = build_test_safetensors();
-        let (format_name, layers) = detect_and_trace(file.path(), None, false)
-            .expect("detect_and_trace SafeTensors");
+        let (format_name, layers) =
+            detect_and_trace(file.path(), None, false).expect("detect_and_trace SafeTensors");
         assert_eq!(format_name, "SafeTensors");
         assert!(
             !layers.is_empty(),

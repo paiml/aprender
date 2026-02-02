@@ -1172,14 +1172,19 @@ mod tests {
         ];
 
         let metadata = vec![
-            ("general.architecture".to_string(), GgufValue::String("llama".to_string())),
-            ("general.name".to_string(), GgufValue::String("test-model".to_string())),
+            (
+                "general.architecture".to_string(),
+                GgufValue::String("llama".to_string()),
+            ),
+            (
+                "general.name".to_string(),
+                GgufValue::String("test-model".to_string()),
+            ),
             ("llama.block_count".to_string(), GgufValue::Uint32(1)),
             ("llama.embedding_length".to_string(), GgufValue::Uint32(8)),
         ];
 
-        export_tensors_to_gguf(&mut writer, &tensors, &metadata)
-            .expect("write GGUF");
+        export_tensors_to_gguf(&mut writer, &tensors, &metadata).expect("write GGUF");
         drop(writer);
         file
     }
@@ -1218,8 +1223,7 @@ mod tests {
         file_data.extend_from_slice(header_json.as_bytes());
         file_data.extend_from_slice(&data_bytes);
 
-        let mut file =
-            NamedTempFile::with_suffix(".safetensors").expect("create temp file");
+        let mut file = NamedTempFile::with_suffix(".safetensors").expect("create temp file");
         file.write_all(&file_data).expect("write safetensors");
         file
     }
@@ -1235,21 +1239,30 @@ mod tests {
     fn test_run_valid_gguf_inspect_json() {
         let file = build_inspect_gguf();
         let result = run(file.path(), false, false, false, true);
-        assert!(result.is_ok(), "inspect JSON on valid GGUF failed: {result:?}");
+        assert!(
+            result.is_ok(),
+            "inspect JSON on valid GGUF failed: {result:?}"
+        );
     }
 
     #[test]
     fn test_run_valid_safetensors_inspect() {
         let file = build_inspect_safetensors();
         let result = run(file.path(), false, false, false, false);
-        assert!(result.is_ok(), "inspect on valid SafeTensors failed: {result:?}");
+        assert!(
+            result.is_ok(),
+            "inspect on valid SafeTensors failed: {result:?}"
+        );
     }
 
     #[test]
     fn test_run_valid_safetensors_inspect_json() {
         let file = build_inspect_safetensors();
         let result = run(file.path(), false, false, false, true);
-        assert!(result.is_ok(), "inspect JSON on valid SafeTensors failed: {result:?}");
+        assert!(
+            result.is_ok(),
+            "inspect JSON on valid SafeTensors failed: {result:?}"
+        );
     }
 
     #[test]
@@ -1257,13 +1270,19 @@ mod tests {
         // Directly test run_rosetta_inspect() is reachable
         let file = build_inspect_gguf();
         let result = run_rosetta_inspect(file.path(), false);
-        assert!(result.is_ok(), "run_rosetta_inspect GGUF failed: {result:?}");
+        assert!(
+            result.is_ok(),
+            "run_rosetta_inspect GGUF failed: {result:?}"
+        );
     }
 
     #[test]
     fn test_rosetta_inspect_dispatch_safetensors() {
         let file = build_inspect_safetensors();
         let result = run_rosetta_inspect(file.path(), true);
-        assert!(result.is_ok(), "run_rosetta_inspect SafeTensors JSON failed: {result:?}");
+        assert!(
+            result.is_ok(),
+            "run_rosetta_inspect SafeTensors JSON failed: {result:?}"
+        );
     }
 }
