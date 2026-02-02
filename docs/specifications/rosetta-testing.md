@@ -1,7 +1,7 @@
 # SQLite-Style Conversion Test Harness
 
-**Status:** Certified (2026-02-02, Rev 4)
-**Refs:** GH-196, GH-199, GH-200, PMAT-197, PMAT-ROSETTA-001, PMAT-222
+**Status:** Certified (2026-02-02, Rev 5)
+**Refs:** GH-186, GH-189, GH-194, GH-195, GH-196, GH-199, GH-200, PMAT-197, PMAT-ROSETTA-001, PMAT-222
 **Code:** `src/format/test_factory.rs`, `src/format/converter/tests/core.rs`
 
 ## Theoretical Foundation
@@ -568,8 +568,8 @@ The proposed **inspect-before-load** architecture fixes all three:
 | **T-GH192-01** | No pre-load inspection test | Add test that inspect() returns correct metadata for all 3 formats | ❌ Open |
 | **T-GH192-02** | No model-size-switching test | Add test loading 0.5B then 1.5B sequentially with correct config | ❌ Open |
 | **T-GH194-01** | APR conversion drops critical tensors | GGUF→APR drops token_embd, lm_head, output_norm (291→100 tensors) | ❌ Open (GH-194) |
-| **T-GH195-01** | `apr tensors` truncates at 100 | Display truncation bug, all 291 tensors present in file | ❌ Open (GH-195) |
-| **T-GH186-01** | NaN in GGUF→APR→GGUF roundtrip | Q4_K dequant produces NaN in `blk.0.attn_k.weight` | ❌ Open (GH-186) |
+| **T-GH195-01** | `apr tensors` truncates at 100 | `tensor_count` reflected truncated length, not true total | ✅ Fixed (GH-195) |
+| **T-GH186-01** | NaN in GGUF→APR→GGUF roundtrip | f16 scale factors in dequant lacked NaN/Inf/subnormal clamping | ✅ Fixed (GH-186) |
 | **T-GH189-01** | `apr chat` repetitive garbage output | GPU path produces "VILLEVILLEVILLEVILLE" — LAYOUT-001 class bug | ❌ Open (GH-189) |
 | **T-GH200-01** | 0/6 Qwen2.5-Coder models pass QA | Full qualification blocked across all model sizes | ❌ Open (GH-200) |
 
@@ -1028,6 +1028,134 @@ APR Canonical Form (v3):
 | Multi-hop chains supported | 0 | All permutations |
 | Models qualifiable | ~2 (manually verified) | 100s (automated) |
 | Inference regression | None | None (fusion moves to runtime) |
+
+---
+
+## Five-Whys Root Cause Analysis: Persistent Rosetta Bugs (Rev 4 — 2026-02-02)
+
+**Methodology:** Toyota Five-Whys [T5] applied to understand why certain defect classes persist across multiple releases despite the Popperian falsification framework. The Five-Whys technique asks "why?" iteratively until the root cause is exposed.
+
+### GH-186: NaN Propagation in GGUF Dequantization
+
+**Symptom:** GGUF→APR→GGUF round-trip produces NaN in `blk.0.attn_k.weight`. Entire tensors become NaN.
+
+**Status:** ✅ FIXED (2026-02-02)
+
+| Why | Answer |
+|-----|--------|
+| **Why 1:** Why did the dequantizer output NaN? | Because f16 scale factors containing NaN/Inf/subnormal were multiplied with quantized values, propagating NaN through the entire tensor. |
+| **Why 2:** Why were NaN/Inf/subnormal scales not filtered? | Because `f16_to_f32()` faithfully converts *all* f16 bit patterns, including pathological ones like NaN (0x7E00) and subnormals (< 6.1e-5). |
+| **Why 3:** Why didn't the existing tests catch this? | Because the PygmyConfig factory generates well-formed tensors with normal f16 scales. The tests never exercised the corrupted-input edge case. |
+| **Why 4:** Why was there a "safe" version in `converter/mod.rs` but not in `dequant.rs`? | Because `dequantize_q4_k_to_f32()` was written for the export path which requires robustness to real-world GGUF files, while `dequant.rs` was written for the v2 reader path where inputs were assumed clean. **Code duplication hid the inconsistency.** |
+| **Why 5 (Root):** Why wasn't the NaN clamping pattern applied uniformly? | **No canonical "safe f16 scale" function existed.** Each dequantizer reimplemented f16 handling ad-hoc. Without a shared `safe_f16_scale()` function, the defensive pattern couldn't propagate. |
+
+**Fix:** Introduced `safe_f16_scale()` in `dequant.rs` with F16_MIN_NORMAL clamping. Applied to all 10 dequantizers (Q4_0, Q4_1, Q5_0, Q5_1, Q8_0, Q2_K, Q3_K, Q4_K, Q5_K, Q6_K). Added 7 regression tests.
+
+**Countermeasure:** Define shared safety helpers once, use everywhere. The converter's `F16_MIN_NORMAL` constant is now the single source of truth.
+
+---
+
+### GH-195: `apr tensors` Truncates at 100
+
+**Symptom:** `apr tensors model.gguf` reports "Total tensors: 100" when the file contains 291.
+
+**Status:** ✅ FIXED (2026-02-02)
+
+| Why | Answer |
+|-----|--------|
+| **Why 1:** Why did the tensor count show 100 instead of 291? | Because `tensor_count` was set to `tensors.len()` after applying the display limit, not to the true total. |
+| **Why 2:** Why was the code structured this way? | Because the developer conflated "how many tensors to *display*" with "how many tensors *exist*". The loop broke early at `limit`, then assigned `tensor_count: tensors.len()`. |
+| **Why 3:** Why did existing tests not catch this? | Because `list_tensors_pygmy_apr_with_limit()` asserted `tensor_count <= 3` (the limit), which was true but wrong. The test validated the bug, not the fix. |
+| **Why 4:** Why wasn't the semantic distinction (total vs. displayed) explicit in the data structure? | Because `TensorListResult` had one field `tensor_count` with ambiguous meaning. No `displayed_count` or `truncated` flag existed. |
+| **Why 5 (Root):** Why was the limit feature added without considering the UX impact? | **The limit was added as a performance optimization (skip stats computation) without specifying the expected output semantics.** The test was written to match the *implementation*, not a *specification*. |
+
+**Fix:** Refactored all 4 format handlers (v2, GGUF, SafeTensors, SafeTensors-path) to:
+1. Count `total_matching` through the entire iteration
+2. Accumulate `total_size` for all tensors, not just displayed
+3. Only collect tensor details up to `limit`
+4. Set `tensor_count: total_matching` (true count)
+
+Updated 2 test assertions to check `tensors.len() <= limit` AND `tensor_count >= tensors.len()`.
+
+**Countermeasure:** Specify output semantics before implementing. Tests should validate *requirements*, not *current behavior*.
+
+---
+
+### GH-194: APR Conversion Drops Critical Tensors
+
+**Symptom:** GGUF→APR drops token_embd, lm_head, output_norm (291→100 tensors).
+
+**Status:** ❌ OPEN
+
+| Why | Answer |
+|-----|--------|
+| **Why 1:** Why are tensors dropped during GGUF→APR conversion? | Because the GGUF→APR import path in `import.rs` has a filter/whitelist that only recognizes certain tensor name patterns. |
+| **Why 2:** Why does the whitelist miss critical tensors? | Because GGUF naming conventions (`token_embd.weight`, `output_norm.weight`, `output.weight`) differ from HuggingFace conventions (`embed_tokens`, `norm`, `lm_head`) and the mapping table is incomplete. |
+| **Why 3:** Why is the mapping table incomplete? | Because it was built iteratively by adding names as they were encountered during testing, not by systematically enumerating llama.cpp's naming convention. |
+| **Why 4:** Why wasn't a systematic enumeration performed? | Because the Rosetta module evolved organically from single-model support (Qwen2) to multi-architecture support without a formal architecture-name mapping specification. |
+| **Why 5 (Root):** **No authoritative GGUF↔HuggingFace name mapping exists.** The codebase has multiple ad-hoc mappings in `import.rs`, `export.rs`, and `name_mapping.rs` that can disagree. |
+
+**Proposed Fix:**
+1. Create `src/format/name_registry.rs` with exhaustive bidirectional mappings for all supported architectures (Qwen2, LLaMA, Mistral, Phi)
+2. Add `F-NAME-01` falsification test: "GGUF→APR import preserves tensor count"
+3. Add `F-NAME-02` falsification test: "APR→GGUF export produces same tensor names as llama.cpp conversion"
+
+---
+
+### GH-189: APR Chat Produces Repetitive Garbage
+
+**Symptom:** `apr chat model.apr` outputs "VILLEVILLEVILLEVILLE..." instead of coherent text.
+
+**Status:** ❌ OPEN
+
+| Why | Answer |
+|-----|--------|
+| **Why 1:** Why does the model output repetitive garbage? | Because the GPU matmul kernel is producing incorrect results, causing the softmax distribution to collapse to a single repeating token. |
+| **Why 2:** Why is the GPU matmul producing incorrect results? | Because the quantized weight tensor layout (row-major from GGUF/APR) doesn't match what the GPU kernel expects (column-major for cuBLAS-style GEMM). This is the LAYOUT-001 bug class. |
+| **Why 3:** Why is there a layout mismatch for APR but not GGUF? | Because the GGUF GPU path (`realizar/src/gguf/cuda/`) was developed and tested extensively, while the APR GPU path (`realizar/src/apr_cuda/`) was added later with insufficient testing. |
+| **Why 4:** Why was the APR GPU path added with insufficient testing? | Because the focus was on achieving feature parity ("APR supports GPU too"), not correctness parity. No differential test comparing GGUF GPU vs APR GPU output was written. |
+| **Why 5 (Root):** **No differential correctness oracle exists for APR GPU.** The GGUF path serves as the reference implementation, but no automated test verifies that APR GPU produces the same output as GGUF GPU for identical inputs. |
+
+**Proposed Fix:**
+1. Add differential test: `apr run model.gguf --gpu` vs `apr run model.apr --gpu` must produce identical argmax sequence for deterministic seed
+2. Add `CLAUDE.md` guidance: "Before adding a new format/backend path, add a differential test against the reference implementation"
+3. Add LAYOUT-001 linter rule: flag any quantized kernel import without explicit layout annotation
+
+---
+
+### GH-199/GH-200: Systemic APR Pipeline Failure
+
+**Symptom:** 0/6 Qwen2.5-Coder models pass QA certification.
+
+**Status:** ❌ OPEN (umbrella issue)
+
+| Why | Answer |
+|-----|--------|
+| **Why 1:** Why do 0/6 models pass QA? | Because multiple blocking bugs compound: GH-186 (NaN), GH-194 (dropped tensors), GH-189 (GPU garbage), GH-199-A (dequant failure). Each bug blocks a different model size. |
+| **Why 2:** Why do so many bugs coexist? | Because the bugs are in different subsystems (dequant, name mapping, GPU kernels) that were developed independently without integration testing. |
+| **Why 3:** Why wasn't integration testing performed? | Because the test infrastructure focused on unit-level falsification (single-function edge cases) rather than end-to-end pipeline validation. |
+| **Why 4:** Why did the falsification framework miss these? | Because the PygmyConfig factory generates minimal models that don't exercise real-world model characteristics: large tensor counts (291 vs 5), realistic dimensions (1536 vs 4), quantization types (Q4_K vs F32). |
+| **Why 5 (Root):** **The falsification tests falsified the *infrastructure*, not the *pipeline*.** All F-CONV-*, F-DISP-*, F-DATA-* tests verified that the harness detects corruption, not that the pipeline avoids creating it. The tests were self-referential. |
+
+**Proposed Fix (Phase 5 of Rosetta plan):**
+1. Add `PygmyConfig::realistic()` variants matching real model dimensions
+2. Add end-to-end certification test: `cargo test --ignored -- qwen2_certification` that downloads, converts, and runs inference on actual Qwen2.5-Coder-0.5B
+3. Add daily CI job that runs full QA certification against a model zoo
+4. Reframe falsification targets: instead of "does the harness catch corruption?", ask "does the pipeline produce correct output for real models?"
+
+---
+
+### Meta-Analysis: Why Bugs Persist
+
+The Five-Whys analyses reveal three systemic issues:
+
+| Pattern | Instances | Root Cause | Countermeasure |
+|---------|-----------|------------|----------------|
+| **Code duplication hides inconsistency** | GH-186 (two dequant paths) | No shared safety helpers | Canonical helper functions with single implementation |
+| **Tests validate implementation, not requirements** | GH-195 (test matched bug) | Specification-implementation gap | Write tests from spec *before* implementation (TDD) |
+| **Self-referential falsification** | GH-199/200 (harness tests harness) | Falsification targets wrong hypothesis | Test pipeline *output correctness*, not infrastructure *detection* |
+
+**Toyota Way Connection [T5]:** The Five-Whys technique was designed to expose systemic issues, not just fix symptoms. These analyses show that individual bug fixes (GH-186, GH-195) address immediate defects, but the *systemic* issues (code duplication, spec-implementation gap, self-referential tests) will generate new bugs unless the countermeasures are implemented.
 
 ---
 
