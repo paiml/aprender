@@ -22,51 +22,27 @@ fn apr() -> Command {
     Command::cargo_bin("apr").expect("Failed to find apr binary")
 }
 
-/// Create a minimal valid .apr file for testing
+/// Create a minimal valid APR v2 file for testing
 fn create_test_apr_file() -> NamedTempFile {
-    use std::collections::HashMap;
+    use aprender::format::v2::{AprV2Metadata, AprV2Writer};
 
-    // We'll create a simple model and save it
     let file = NamedTempFile::new().expect("Failed to create temp file");
-    let path = file.path();
 
-    // Use aprender to create a real .apr file
-    // For now, create a minimal binary that looks like an APR file
-    let mut f = std::fs::File::create(path).expect("create file");
+    let mut metadata = AprV2Metadata::new("test");
+    metadata.architecture = Some("llama".to_string());
+    metadata.hidden_size = Some(8);
+    metadata.vocab_size = Some(16);
+    metadata.num_layers = Some(1);
 
-    // Magic: APRN
-    f.write_all(b"APRN").unwrap();
-    // Version: 1.0
-    f.write_all(&[1, 0]).unwrap();
-    // Model type: Custom (0x00FF)
-    f.write_all(&[0xFF, 0x00]).unwrap();
-    // Metadata size: 64 bytes (little endian)
-    f.write_all(&64u32.to_le_bytes()).unwrap();
-    // Payload size: 32 bytes
-    f.write_all(&32u32.to_le_bytes()).unwrap();
-    // Uncompressed size: 32 bytes
-    f.write_all(&32u32.to_le_bytes()).unwrap();
-    // Compression: None (0x00)
-    f.write_all(&[0x00]).unwrap();
-    // Flags: None (0x00)
-    f.write_all(&[0x00]).unwrap();
-    // Reserved: 6 bytes
-    f.write_all(&[0u8; 6]).unwrap();
+    let mut writer = AprV2Writer::new(metadata);
 
-    // Minimal MessagePack metadata (empty map)
-    let metadata = rmp_serde::to_vec_named(&HashMap::<String, String>::new()).unwrap();
-    // Pad to 64 bytes
-    let mut meta_padded = metadata.clone();
-    meta_padded.resize(64, 0);
-    f.write_all(&meta_padded).unwrap();
+    // Add a minimal tensor with non-zero data
+    let data: Vec<f32> = (0..128).map(|i| (i as f32 + 1.0) * 0.01).collect();
+    writer.add_f32_tensor("model.embed_tokens.weight", vec![16, 8], &data);
 
-    // Minimal payload (32 bytes of zeros)
-    f.write_all(&[0u8; 32]).unwrap();
+    let bytes = writer.write().expect("Failed to write APR v2");
+    std::fs::write(file.path(), bytes).expect("write file");
 
-    // CRC32 checksum (placeholder)
-    f.write_all(&[0xDE, 0xAD, 0xBE, 0xEF]).unwrap();
-
-    drop(f);
     file
 }
 
@@ -158,7 +134,7 @@ fn test_qa_006_inspect_shows_version() {
         .args(["inspect", file.path().to_str().unwrap()])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Version").or(predicate::str::contains("1.0")));
+        .stdout(predicate::str::contains("Version").or(predicate::str::contains("2.0")));
 }
 
 #[test]
@@ -195,7 +171,7 @@ fn test_qa_011_debug_basic() {
         .args(["debug", file.path().to_str().unwrap()])
         .assert()
         .success()
-        .stdout(predicate::str::contains("APRN").or(predicate::str::contains("apr")));
+        .stdout(predicate::str::contains("APR").or(predicate::str::contains("apr")));
 }
 
 #[test]
@@ -217,7 +193,7 @@ fn test_qa_011_debug_hex_mode() {
         .args(["debug", file.path().to_str().unwrap(), "--hex"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("4150524e").or(predicate::str::contains("APRN")));
+        .stdout(predicate::str::contains("41505200").or(predicate::str::contains("APR")));
 }
 
 #[test]
@@ -228,7 +204,7 @@ fn test_qa_011_debug_strings_mode() {
         .args(["debug", file.path().to_str().unwrap(), "--strings"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("APRN"));
+        .stdout(predicate::str::contains("llama").or(predicate::str::contains("model")));
 }
 
 // ============================================================================
@@ -265,7 +241,11 @@ fn test_qa_016_validate_corrupted() {
         .args(["validate", file.path().to_str().unwrap()])
         .assert()
         .failure()
-        .stdout(predicate::str::contains("FAIL").or(predicate::str::contains("incomplete")));
+        .stdout(
+            predicate::str::contains("FAIL")
+                .or(predicate::str::contains("INVALID"))
+                .or(predicate::str::contains("Invalid")),
+        );
 }
 
 #[test]
@@ -1209,10 +1189,10 @@ fn test_f_validate_gguf_002_magic_error_message() {
         .args(["validate", file.path().to_str().unwrap()])
         .assert()
         .failure()
-        .stdout(
-            predicate::str::contains("Invalid magic")
+        .stderr(
+            predicate::str::contains("Invalid")
                 .or(predicate::str::contains("magic"))
-                .or(predicate::str::contains("BADM")),
+                .or(predicate::str::contains("Unknown")),
         );
 }
 
