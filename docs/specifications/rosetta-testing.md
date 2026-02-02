@@ -1195,12 +1195,12 @@ The Five-Whys analyses reveal three systemic issues:
 | **P0** | Apply `safe_f16_scale()` or inline clamping | `src/format/v2/mod.rs` | 180 | ✅ Done (Rev 7) |
 | **P1** | Apply `safe_f16_scale()` or inline clamping | `src/format/converter/mod.rs` | 580 | ✅ Done (Rev 7) |
 | **P1** | Fix `list_tensors_v1()` to use `total_matching` | `src/format/tensors.rs` | 277-314 | ✅ Done (Rev 7) |
-| **P2** | Change APR limit test to exact assertion | `src/format/tensors.rs` | 990-992 | ❌ Open |
-| **P2** | Extract `F16_MIN_NORMAL` to shared module | `src/format/f16_safety.rs` (new) | — | ❌ Open |
-| **P3** | Increase `PygmyConfig::realistic()` adoption to >80% | Test files | — | ❌ Open |
-| **P3** | Add boundary test for 0x0400 (smallest normal f16) | `src/format/gguf/dequant.rs` | — | ❌ Open |
+| **P2** | Change APR limit test to exact assertion | `src/format/tensors.rs` | 990-992 | ✅ Done (Rev 7) |
+| **P2** | Extract `F16_MIN_NORMAL` to shared module | `src/format/f16_safety.rs` (new) | — | ✅ Done (Rev 7) |
+| **P3** | Increase `PygmyConfig::realistic()` adoption to >80% | Test files | — | ⏳ Deferred |
+| **P3** | Add boundary test for 0x0400 (smallest normal f16) | `src/format/f16_safety.rs` | — | ✅ Done (Rev 7) |
 
-**Verdict (Rev 7):** P0-P1 fixes complete. GH-186 and GH-195 now genuinely FIXED. Status upgraded to **CERTIFIED (Rev 7)** for core functionality. P2-P3 improvements remain as technical debt.
+**Verdict (Rev 7):** All P0-P2 fixes complete. P3 boundary tests complete. GH-186 and GH-195 now genuinely FIXED. Status upgraded to **CERTIFIED (Rev 7)**. Only P3 PygmyConfig adoption deferred as low-priority technical debt.
 
 ---
 
