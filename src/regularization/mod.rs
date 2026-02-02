@@ -119,7 +119,14 @@ fn sample_beta(alpha: f32, beta: f32) -> f32 {
     let mut rng = rand::thread_rng();
     let x = sample_gamma(alpha, &mut rng);
     let y = sample_gamma(beta, &mut rng);
-    x / (x + y)
+    let sum = x + y;
+    // With extreme shape parameters (e.g. 0.01), f32 gamma samples can
+    // underflow to 0.0, producing 0/0 = NaN. Return 0.5 in that case
+    // (unbiased midpoint, correct for the symmetric alpha==beta case).
+    if sum <= 0.0 {
+        return 0.5;
+    }
+    (x / sum).clamp(0.0, 1.0)
 }
 
 fn sample_gamma(shape: f32, rng: &mut impl Rng) -> f32 {
