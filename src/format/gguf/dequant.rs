@@ -1,6 +1,7 @@
 //! GGUF dequantization kernels
 
 use crate::error::{AprenderError, Result};
+use crate::format::f16_safety::F16_MIN_NORMAL;
 
 /// Convert F16 (IEEE 754 half-precision) to F32
 pub(crate) fn f16_to_f32(bits: u16) -> f32 {
@@ -47,7 +48,7 @@ pub(crate) fn f16_to_f32(bits: u16) -> f32 {
 /// behavior in `converter/mod.rs::dequantize_q4_k_to_f32`.
 #[inline]
 fn safe_f16_scale(bits: u16) -> f32 {
-    const F16_MIN_NORMAL: f32 = 6.1e-5;
+    // Uses shared F16_MIN_NORMAL from crate::format::f16_safety (P2 fix)
     let val = f16_to_f32(bits);
     if val.is_nan() || val.is_infinite() || val.abs() < F16_MIN_NORMAL {
         0.0

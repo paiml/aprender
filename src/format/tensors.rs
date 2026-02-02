@@ -274,6 +274,63 @@ fn list_tensors_v2(data: &[u8], options: TensorListOptions) -> Result<TensorList
     })
 }
 
+/// Parse shape array from JSON value
+fn parse_shape_array(shape_val: &serde_json::Value) -> Vec<usize> {
+    shape_val.as_array().map_or(Vec::new(), |arr| {
+        arr.iter()
+            .filter_map(|v| v.as_u64().map(|n| n as usize))
+            .collect()
+    })
+}
+
+/// GH-195 FIX: Extract tensors with accurate total count and size
+/// Returns (tensors_up_to_limit, total_matching_count, total_size_bytes)
+fn extract_tensors_from_metadata_with_counts(
+    metadata: &HashMap<String, serde_json::Value>,
+    options: &TensorListOptions,
+) -> (Vec<TensorInfo>, usize, usize) {
+    let Some(shapes) = metadata.get("tensor_shapes").and_then(|s| s.as_object()) else {
+        return (Vec::new(), 0, 0);
+    };
+
+    let mut tensors = Vec::new();
+    let mut total_matching = 0usize;
+    let mut total_size = 0usize;
+
+    for (name, shape_val) in shapes {
+        // Apply filter
+        if let Some(ref pattern) = options.filter {
+            if !name.contains(pattern.as_str()) {
+                continue;
+            }
+        }
+
+        let shape = parse_shape_array(shape_val);
+        let size_bytes = shape.iter().product::<usize>() * 4; // Assume f32
+
+        total_size += size_bytes;
+        total_matching += 1;
+
+        // Only collect details up to the limit
+        if tensors.len() < options.limit {
+            tensors.push(TensorInfo {
+                name: name.clone(),
+                shape,
+                dtype: "f32".to_string(),
+                size_bytes,
+                mean: None,
+                std: None,
+                min: None,
+                max: None,
+                nan_count: None,
+                inf_count: None,
+            });
+        }
+    }
+
+    (tensors, total_matching, total_size)
+}
+
 /// List tensors from APR v1 format (fallback to metadata)
 fn list_tensors_v1(data: &[u8], options: TensorListOptions) -> Result<TensorListResult> {
     // APR v1 stores tensor info in metadata, not a separate index
@@ -300,14 +357,14 @@ fn list_tensors_v1(data: &[u8], options: TensorListOptions) -> Result<TensorList
         .or_else(|_| rmp_serde::from_slice(metadata_bytes))
         .unwrap_or_default();
 
-    // Extract tensor shapes from metadata
-    let tensors = extract_tensors_from_metadata(&metadata, &options);
-    let total_size: usize = tensors.iter().map(|t| t.size_bytes).sum();
+    // GH-195 FIX: Extract ALL matching tensors first to get true count and total size
+    let (tensors, total_matching, total_size) =
+        extract_tensors_from_metadata_with_counts(&metadata, &options);
 
     Ok(TensorListResult {
         file: String::new(),
         format_version: "v1".to_string(),
-        tensor_count: tensors.len(),
+        tensor_count: total_matching,
         total_size_bytes: total_size,
         tensors,
     })
@@ -635,53 +692,6 @@ fn tensor_info_from_entry(entry: &TensorIndexEntry) -> TensorInfo {
     }
 }
 
-/// Extract tensor info from v1 metadata
-fn extract_tensors_from_metadata(
-    metadata: &HashMap<String, serde_json::Value>,
-    options: &TensorListOptions,
-) -> Vec<TensorInfo> {
-    let Some(shapes) = metadata.get("tensor_shapes").and_then(|s| s.as_object()) else {
-        return Vec::new();
-    };
-
-    shapes
-        .iter()
-        .filter(|(name, _)| {
-            options
-                .filter
-                .as_ref()
-                .map_or(true, |f| name.contains(f.as_str()))
-        })
-        .take(options.limit)
-        .map(|(name, shape_val)| {
-            let shape = parse_shape_array(shape_val);
-            let size_bytes = shape.iter().product::<usize>() * 4; // Assume f32
-
-            TensorInfo {
-                name: name.clone(),
-                shape,
-                dtype: "f32".to_string(),
-                size_bytes,
-                mean: None,
-                std: None,
-                min: None,
-                max: None,
-                nan_count: None,
-                inf_count: None,
-            }
-        })
-        .collect()
-}
-
-/// Parse shape array from JSON value
-fn parse_shape_array(shape_val: &serde_json::Value) -> Vec<usize> {
-    shape_val.as_array().map_or(Vec::new(), |arr| {
-        arr.iter()
-            .filter_map(|v| v.as_u64().map(|n| n as usize))
-            .collect()
-    })
-}
-
 // ============================================================================
 // Tensor Listing - From File
 // ============================================================================
@@ -983,13 +993,34 @@ mod tests {
 
     #[test]
     fn test_list_tensors_pygmy_apr_with_limit() {
-        let apr_bytes = build_pygmy_apr();
-        let opts = TensorListOptions::new().with_limit(3);
-        let result = list_tensors_from_bytes(&apr_bytes, opts).expect("list tensors");
+        // Use llama_style which has many tensors (>10)
+        let apr_bytes = build_pygmy_apr_with_config(PygmyConfig::llama_style());
 
-        // GH-195 FIX: tensor_count is the true total; tensors.len() is the limited count
-        assert!(result.tensors.len() <= 3);
-        assert!(result.tensor_count >= result.tensors.len());
+        // First, get total count without limit
+        let full_result =
+            list_tensors_from_bytes(&apr_bytes, TensorListOptions::default()).expect("full list");
+        let total_tensors = full_result.tensor_count;
+
+        // GH-195 FIX: Verify model has more than our test limit
+        assert!(
+            total_tensors > 3,
+            "Test requires model with >3 tensors, got {total_tensors}"
+        );
+
+        // Now apply limit
+        let opts = TensorListOptions::new().with_limit(3);
+        let limited_result = list_tensors_from_bytes(&apr_bytes, opts).expect("limited list");
+
+        // P2 FIX: Use exact assertions, not tautological >= checks
+        assert_eq!(
+            limited_result.tensors.len(),
+            3,
+            "tensors.len() should equal the limit when total > limit"
+        );
+        assert_eq!(
+            limited_result.tensor_count, total_tensors,
+            "tensor_count must reflect TRUE total ({total_tensors}), not truncated length"
+        );
     }
 
     #[test]

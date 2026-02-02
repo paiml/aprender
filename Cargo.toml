@@ -119,7 +119,7 @@ semicolon_if_nothing_returned = "allow"  # Style preference
 
 [package]
 name = "aprender"
-version = "0.25.1"
+version = "0.25.2"
 edition = "2021"
 rust-version = "1.70"
 authors = ["Noah Gift <noah@paiml.com>"]

@@ -49,6 +49,7 @@
 //! - All public APIs return `Result<T, E>`
 //! - 64-byte alignment enforced at type level
 
+use crate::format::f16_safety::F16_MIN_NORMAL;
 use crate::format::gguf::dequant::{dequantize_q4_k, dequantize_q6_k};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -176,8 +177,15 @@ fn dequantize_q4(data: &[u8], element_count: usize) -> Vec<f32> {
 
     while remaining > 0 && pos + 2 <= data.len() {
         // Read scale (f16)
+        // GH-186 FIX: Clamp NaN/Inf/subnormal to prevent propagation
+        // Uses shared F16_MIN_NORMAL from crate::format::f16_safety (P2 fix)
         let scale_bits = u16::from_le_bytes([data[pos], data[pos + 1]]);
-        let scale = f16_to_f32(scale_bits);
+        let scale_raw = f16_to_f32(scale_bits);
+        let scale = if scale_raw.is_nan() || scale_raw.is_infinite() || scale_raw.abs() < F16_MIN_NORMAL {
+            0.0
+        } else {
+            scale_raw
+        };
         pos += 2;
 
         // Read packed nibbles (16 bytes max)

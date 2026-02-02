@@ -135,6 +135,9 @@ pub mod rosetta_ml;
 // Type definitions (spec §2-§9, PMAT-198)
 pub mod types;
 
+// F16 safety constants and helpers (GH-186 - prevent NaN propagation)
+pub mod f16_safety;
+
 // Core I/O operations (save, load, inspect, PMAT-198)
 pub mod core_io;
 

@@ -9,6 +9,7 @@
 //! - Quantization and compression
 
 use crate::error::{AprenderError, Result};
+use crate::format::f16_safety::F16_MIN_NORMAL;
 use crate::format::gguf::{
     load_gguf_raw, load_gguf_with_tokenizer, GgufModelConfig, GgufRawTensor, GgufReader,
     GgufTokenizer,
@@ -577,7 +578,14 @@ fn dequantize_q8_0_to_f32(bytes: &[u8], num_elements: usize) -> Vec<f32> {
             break;
         }
         let scale_bits = u16::from_le_bytes([bytes[block_start], bytes[block_start + 1]]);
-        let scale = f16_to_f32(scale_bits);
+        // GH-186 FIX: Clamp NaN/Inf/subnormal to prevent propagation
+        let scale_raw = f16_to_f32(scale_bits);
+        // Uses shared F16_MIN_NORMAL from crate::format::f16_safety (P2 fix)
+        let scale = if scale_raw.is_nan() || scale_raw.is_infinite() || scale_raw.abs() < F16_MIN_NORMAL {
+            0.0
+        } else {
+            scale_raw
+        };
 
         for j in 0..BLOCK_SIZE {
             if result.len() >= num_elements {
@@ -631,7 +639,7 @@ fn dequantize_q4_k_to_f32(data: &[u8], num_elements: usize) -> Vec<f32> {
     const SUPER_BLOCK_SIZE: usize = 256;
     const SUPER_BLOCK_BYTES: usize = 144;
     // PMAT-177: Minimum valid f16 normal value (~6.1e-5), clamp scales to avoid NaN
-    const F16_MIN_NORMAL: f32 = 6.1e-5;
+    // Uses shared F16_MIN_NORMAL from crate::format::f16_safety (P2 fix)
 
     let num_blocks = (num_elements + SUPER_BLOCK_SIZE - 1) / SUPER_BLOCK_SIZE;
     let mut result = vec![0.0f32; num_blocks * SUPER_BLOCK_SIZE];
@@ -871,7 +879,7 @@ fn quantize_q4_k(data: &[f32]) -> Vec<u8> {
     const SUB_BLOCK_SIZE: usize = 32;
     const SUPER_BLOCK_BYTES: usize = 144; // 2 + 2 + 12 + 128
                                           // PMAT-177: Minimum valid f16 normal value (~6.1e-5) - prevents NaN on round-trip
-    const F16_MIN_NORMAL: f32 = 6.1e-5;
+    // Uses shared F16_MIN_NORMAL from crate::format::f16_safety (P2 fix)
 
     if data.is_empty() {
         return vec![];
@@ -1008,7 +1016,7 @@ fn quantize_q4_k(data: &[f32]) -> Vec<u8> {
 fn quantize_q6_k(data: &[f32]) -> Vec<u8> {
     const SUPER_BLOCK_SIZE: usize = 256;
     const SUPER_BLOCK_BYTES: usize = 210; // 128 + 64 + 16 + 2
-    const F16_MIN_NORMAL: f32 = 6.1e-5;
+    // Uses shared F16_MIN_NORMAL from crate::format::f16_safety (P2 fix)
 
     if data.is_empty() {
         return vec![];
@@ -1282,7 +1290,7 @@ fn dequantize_q6_k_to_f32(data: &[u8], num_elements: usize) -> Vec<f32> {
     const SUPER_BLOCK_SIZE: usize = 256;
     const SUPER_BLOCK_BYTES: usize = 210;
     // PMAT-177: Minimum valid f16 normal value (~6.1e-5), clamp scales to avoid NaN
-    const F16_MIN_NORMAL: f32 = 6.1e-5;
+    // Uses shared F16_MIN_NORMAL from crate::format::f16_safety (P2 fix)
 
     let num_blocks = (num_elements + SUPER_BLOCK_SIZE - 1) / SUPER_BLOCK_SIZE;
     let mut result = vec![0.0f32; num_blocks * SUPER_BLOCK_SIZE];
