@@ -409,15 +409,25 @@ fn export_to_gguf(
     );
 
     // GGUF-EXPORT-001: Map tensor names from HF convention to GGUF convention
+    // PMAT-222 FIX: Reverse 2D shapes from standard [rows, cols] to GGML [ne0, ne1]
+    // GGML convention: ne[0] is the contiguous dimension (cols), ne[1] is rows.
+    // This is the inverse of write.rs:520 which reverses GGML→standard on import.
     let gguf_tensors: Vec<GgufTensor> = tensors
         .iter()
         .map(|(name, (data, shape))| {
             let gguf_name = hf_to_gguf_name(name);
             let bytes: Vec<u8> = data.iter().flat_map(|f| f.to_le_bytes()).collect();
 
+            // Reverse 2D shapes: standard [rows, cols] → GGML [ne0=cols, ne1=rows]
+            let gguf_shape = if shape.len() == 2 {
+                vec![shape[1] as u64, shape[0] as u64]
+            } else {
+                shape.iter().map(|&d| d as u64).collect()
+            };
+
             GgufTensor {
                 name: gguf_name,
-                shape: shape.iter().map(|&d| d as u64).collect(),
+                shape: gguf_shape,
                 dtype: GgmlType::F32,
                 data: bytes,
             }

@@ -1137,6 +1137,8 @@ pub(crate) mod harness {
     #[derive(Debug)]
     pub(crate) enum MismatchKind {
         Missing,
+        /// T-QKV-02: Output contains a tensor not present in source (possible fusion/split)
+        Extra,
         ShapeMismatch {
             expected: Vec<usize>,
             actual: Vec<usize>,
@@ -1154,6 +1156,13 @@ pub(crate) mod harness {
             match &self.kind {
                 MismatchKind::Missing => {
                     write!(f, "tensor '{}': missing in output", self.tensor_name)
+                }
+                MismatchKind::Extra => {
+                    write!(
+                        f,
+                        "tensor '{}': extra in output (not in source)",
+                        self.tensor_name
+                    )
                 }
                 MismatchKind::ShapeMismatch { expected, actual } => {
                     write!(
@@ -1322,6 +1331,51 @@ pub(crate) mod harness {
             self
         }
 
+        /// Export APR → GGUF (for T-QKV-03 and T-QKV-04 multi-hop tests).
+        pub(crate) fn export_to_gguf(mut self) -> Self {
+            let input = self
+                .output_path
+                .as_ref()
+                .expect("Call import_to_apr() first");
+            let output = self.dir.path().join("roundtrip.gguf");
+
+            let options = ExportOptions {
+                format: ExportFormat::Gguf,
+                quantize: None,
+                include_tokenizer: false,
+                include_config: false,
+            };
+            let result = apr_export(input, &output, options);
+            assert!(
+                result.is_ok(),
+                "apr_export to GGUF failed: {:?}",
+                result.unwrap_err()
+            );
+
+            self.output_path = Some(output);
+            self
+        }
+
+        /// Import from current output (GGUF or SafeTensors) → APR (for multi-hop chains).
+        pub(crate) fn reimport_to_apr(mut self) -> Self {
+            let input = self
+                .output_path
+                .as_ref()
+                .expect("No output to reimport from");
+            let input_str = input.to_string_lossy().to_string();
+            let output = self.dir.path().join("reimported.apr");
+
+            let result = apr_import(&input_str, &output, ImportOptions::default());
+            assert!(
+                result.is_ok(),
+                "reimport to APR failed: {:?}",
+                result.unwrap_err()
+            );
+
+            self.output_path = Some(output);
+            self
+        }
+
         // ----------------------------------------------------------------
         // Verify: read back output and compare
         // ----------------------------------------------------------------
@@ -1391,6 +1445,18 @@ pub(crate) mod harness {
                 }
             }
 
+            // T-QKV-02: Check for EXTRA tensors in output (detects fusion/split bugs)
+            let expected_names: std::collections::HashSet<&str> =
+                self.source_tensors.iter().map(|(n, _, _)| n.as_str()).collect();
+            for output_name in reader.tensor_names() {
+                if !expected_names.contains(output_name) {
+                    mismatches.push(TensorMismatch {
+                        tensor_name: output_name.to_string(),
+                        kind: MismatchKind::Extra,
+                    });
+                }
+            }
+
             VerificationResult { mismatches }
         }
 
@@ -1453,6 +1519,22 @@ pub(crate) mod harness {
                             break;
                         }
                     }
+                }
+            }
+
+            // T-QKV-02: Check for EXTRA tensors in output (detects fusion/split bugs)
+            let expected_names: std::collections::HashSet<&str> =
+                self.source_tensors.iter().map(|(n, _, _)| n.as_str()).collect();
+            for output_name in mapped.tensor_names() {
+                // SafeTensors __metadata__ key is not a tensor, skip it
+                if output_name == "__metadata__" {
+                    continue;
+                }
+                if !expected_names.contains(output_name) {
+                    mismatches.push(TensorMismatch {
+                        tensor_name: output_name.to_string(),
+                        kind: MismatchKind::Extra,
+                    });
                 }
             }
 
@@ -2241,6 +2323,108 @@ pub(crate) mod harness {
         assert_eq!(config.num_heads, Some(2), "128/64 head_dim = 2 heads");
         assert_eq!(config.num_kv_heads, Some(1), "64/64 = 1 KV head (GQA)");
         assert_eq!(config.num_layers, Some(2));
+    }
+
+    // ====================================================================
+    // T-QKV-02: Round-trip tests must verify tensor NAME set equality
+    // ====================================================================
+
+    /// T-QKV-02: verify_apr() detects extra tensors not in source (name-set check)
+    #[test]
+    fn test_t_qkv_02_name_set_equality_apr() {
+        // Standard import — names should match exactly
+        let h = ConversionTestHarness::new()
+            .with_safetensors(PygmyConfig::llama_style())
+            .import_to_apr(ImportOptions::default());
+        let result = h.verify_apr();
+        assert!(
+            result.passed(),
+            "T-QKV-02: Llama-style import should have matching tensor names. \
+             Mismatches: {:?}",
+            result.mismatches
+        );
+    }
+
+    /// T-QKV-02: verify_safetensors() detects name-set equality on round-trip
+    #[test]
+    fn test_t_qkv_02_name_set_equality_roundtrip() {
+        // Full round-trip — names should survive ST→APR→ST
+        let h = ConversionTestHarness::new()
+            .with_safetensors(PygmyConfig::qwen2_gqa())
+            .import_to_apr(ImportOptions::default())
+            .export_to_safetensors();
+        let result = h.verify_safetensors();
+        assert!(
+            result.passed(),
+            "T-QKV-02: GQA round-trip should preserve tensor name set. \
+             Mismatches: {:?}",
+            result.mismatches
+        );
+    }
+
+    // ====================================================================
+    // T-QKV-03: SafeTensors→APR→GGUF round-trip test
+    // ====================================================================
+
+    /// T-QKV-03: Export to GGUF preserves tensor count and separate Q/K/V
+    #[test]
+    fn test_t_qkv_03_safetensors_apr_gguf() {
+        use crate::format::gguf::GgufReader;
+
+        let h = ConversionTestHarness::new()
+            .with_safetensors(PygmyConfig::qwen2_gqa())
+            .import_to_apr(ImportOptions::default())
+            .export_to_gguf();
+
+        let gguf_path = h.output_path().expect("GGUF output exists");
+        let gguf_data = std::fs::read(gguf_path).expect("read GGUF");
+        let reader = GgufReader::from_bytes(gguf_data).expect("T-QKV-03: parse GGUF");
+
+        // Verify GGUF is valid and has tensors
+        assert!(
+            !reader.tensors.is_empty(),
+            "T-QKV-03: GGUF must contain tensors"
+        );
+
+        // T-QKV-03 key check: Q/K/V must be SEPARATE (not fused as attn_qkv)
+        let names: Vec<&str> = reader.tensors.iter().map(|t| t.name.as_str()).collect();
+        assert!(
+            !names.iter().any(|n| n.contains("attn_qkv")),
+            "T-QKV-03: Must NOT have fused attn_qkv tensor. Found: {names:?}"
+        );
+
+        // Should have separate attn_q, attn_k, attn_v
+        let has_q = names.iter().any(|n| n.contains("attn_q."));
+        let has_k = names.iter().any(|n| n.contains("attn_k."));
+        let has_v = names.iter().any(|n| n.contains("attn_v."));
+        assert!(
+            has_q && has_k && has_v,
+            "T-QKV-03: Must have separate attn_q, attn_k, attn_v. Found: {names:?}"
+        );
+    }
+
+    // ====================================================================
+    // T-QKV-04: Multi-hop chain test (ST→APR→GGUF→APR→ST)
+    // ====================================================================
+
+    /// T-QKV-04: Full multi-hop chain preserves tensor data
+    #[test]
+    fn test_t_qkv_04_multihop_st_apr_gguf_apr_st() {
+        let h = ConversionTestHarness::new()
+            .with_safetensors(PygmyConfig::llama_style())
+            .import_to_apr(ImportOptions::default())     // ST → APR
+            .export_to_gguf()                            // APR → GGUF
+            .reimport_to_apr()                           // GGUF → APR
+            .export_to_safetensors();                    // APR → ST
+
+        // Verify final SafeTensors matches original input
+        let result = h.verify_safetensors();
+        assert!(
+            result.passed(),
+            "T-QKV-04: Multi-hop ST→APR→GGUF→APR→ST must preserve data. \
+             Mismatches: {:?}",
+            result.mismatches
+        );
     }
 }
 

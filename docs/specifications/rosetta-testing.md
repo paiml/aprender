@@ -252,39 +252,40 @@ PygmyConfig's tiny dimensions either:
 **Result:** Fusion is silently skipped for pygmy models. Tests pass vacuously.
 Real models (Qwen2 1.5B with 12 heads, 2 KV heads) always trigger fusion.
 
-## Broken Conversion Matrix
+## Conversion Matrix (Post-Fix)
 
-The spec claims 6 bidirectional paths. Here is the actual state:
+All 6 bidirectional paths now preserve separate Q/K/V after ROSETTA-003:
 
-| Path | Claimed | Actual | Failure Mode |
-|------|---------|--------|-------------|
-| SafeTensors -> APR | Works | **LOSSY** | Q/K/V fused into QKV (irreversible without metadata) |
-| APR -> SafeTensors | Works | **BROKEN** | Outputs `qkv_proj` instead of separate `q_proj`/`k_proj`/`v_proj` |
-| APR -> GGUF | Works | **BROKEN** | Outputs `attn_qkv` instead of separate `attn_q`/`attn_k`/`attn_v` |
-| GGUF -> APR | Works | **LOSSY** | GGUF separate Q/K/V get fused into QKV during APR write |
-| SafeTensors -> GGUF (via APR) | Works | **BROKEN** | Inherits both ST->APR and APR->GGUF failures |
-| GGUF -> SafeTensors (via APR) | Works | **BROKEN** | Inherits both GGUF->APR and APR->ST failures |
+| Path | Pre-Fix | Post-Fix | Notes |
+|------|---------|----------|-------|
+| SafeTensors -> APR | **LOSSY** | ✅ Working | `write.rs` stores separate Q/K/V (PMAT-101 removed) |
+| APR -> SafeTensors | **BROKEN** | ✅ Working | `export.rs` maps separate tensors; `unfuse_qkv_tensors()` handles legacy APR |
+| APR -> GGUF | **BROKEN** | ✅ Working | `export.rs` maps `q_proj`→`attn_q`, `k_proj`→`attn_k`, `v_proj`→`attn_v`. 2D shape reversal (PMAT-222) ensures GGML dim convention. |
+| GGUF -> APR | **LOSSY** | ✅ Working | `import.rs` maps GGUF names to HF names, `write_apr_file_raw()` stores separate |
+| SafeTensors -> GGUF (via APR) | **BROKEN** | ✅ Working | Composes paths 1 + 3 |
+| GGUF -> SafeTensors (via APR) | **BROKEN** | ✅ Working | Composes paths 4 + 2 |
 
-**0 of 6 paths produce correct output for real models with GQA (Grouped Query Attention).**
+**6 of 6 paths produce correct output for GQA models.** Verified by `test_rosetta003_gqa_no_fusion_in_apr()`, `test_rosetta003_gqa_kv_dimensions_preserved()`, and `test_t_qkv_04_multihop_st_apr_gguf_apr_st()`.
 
-## Multi-Hop Damage Accumulation
+## Multi-Hop Chain (Post-Fix)
 
-The user's requirement: "safetensors to apr or apr to safetensors or gguf to safetensors
-or safetensors to apr to gguf to safetensors" — every chain through APR destroys Q/K/V
-separation and cannot reconstruct it.
+After ROSETTA-003, all chains through APR preserve separate Q/K/V:
 
 ```
 SafeTensors (338 tensors, separate Q/K/V)
     │
-    ▼  apr import (PMAT-101 fusion)
-APR (227 tensors, fused QKV)        ◄── INFORMATION LOST HERE
+    ▼  apr import (no fusion — PMAT-101 removed)
+APR (338 tensors, separate Q/K/V)        ✅ Lossless
     │
     ▼  apr export --format gguf
-GGUF (227 tensors, fused attn_qkv)  ◄── llama.cpp/realizar REJECTS this
+GGUF (338 tensors, separate attn_q/k/v)  ✅ llama.cpp compatible
     │
     ▼  apr export --format safetensors
-SafeTensors (227 tensors, qkv_proj)  ◄── HuggingFace tools REJECT this
+SafeTensors (338 tensors, q_proj/k_proj/v_proj)  ✅ HuggingFace compatible
 ```
+
+**Legacy APR files** (created before ROSETTA-003) that contain fused `qkv_proj` tensors are
+handled by `unfuse_qkv_tensors()` in `export.rs`, which splits them using APR metadata.
 
 ## Required Fix: QKV Unfusion in Export Path
 
@@ -433,14 +434,14 @@ The proposed **inspect-before-load** architecture fixes all three:
 
 ## Test Gaps to Close
 
-| Gap | Description | Fix |
-|-----|-------------|-----|
-| **T-QKV-01** | PygmyConfig doesn't trigger QKV fusion | Add `PygmyConfig::qwen2_gqa()` with num_heads=12, num_kv_heads=2 |
-| **T-QKV-02** | Round-trip test doesn't check tensor NAMES | Add name-set equality check in `verify_safetensors()` |
-| **T-QKV-03** | No GGUF round-trip test exists | Add SafeTensors -> APR -> GGUF -> inference test |
-| **T-QKV-04** | No multi-hop test exists | Add SafeTensors -> APR -> GGUF -> APR -> SafeTensors chain test |
-| **T-GH192-01** | No pre-load inspection test | Add test that inspect() returns correct metadata for all 3 formats |
-| **T-GH192-02** | No model-size-switching test | Add test loading 0.5B then 1.5B sequentially with correct config |
+| Gap | Description | Fix | Status |
+|-----|-------------|-----|--------|
+| **T-QKV-01** | PygmyConfig doesn't trigger QKV fusion | Added `PygmyConfig::qwen2_gqa()` with GQA config (num_heads=32, num_kv_heads=4) | ✅ Done |
+| **T-QKV-02** | Round-trip test doesn't check tensor NAMES | Added `MismatchKind::Extra` + name-set equality checks in `verify_apr()` and `verify_safetensors()` | ✅ Done |
+| **T-QKV-03** | No GGUF round-trip test exists | Added `test_t_qkv_03_safetensors_apr_gguf` — verifies separate Q/K/V in GGUF output | ✅ Done |
+| **T-QKV-04** | No multi-hop test exists | Added `test_t_qkv_04_multihop_st_apr_gguf_apr_st` — full chain test. Also fixed GGUF export 2D shape reversal bug (PMAT-222). | ✅ Done |
+| **T-GH192-01** | No pre-load inspection test | Add test that inspect() returns correct metadata for all 3 formats | ❌ Open |
+| **T-GH192-02** | No model-size-switching test | Add test loading 0.5B then 1.5B sequentially with correct config | ❌ Open |
 
 ---
 
@@ -553,9 +554,10 @@ testable and reversible — not bundled into monolithic functions.
 | **vLLM** | Separate Q/K/V | Runtime (`QKVParallelLinear`) | Model config | Yes (from config) |
 | **TensorRT-LLM** | Fused `qkv.weight` | Storage time | `num_attention_heads`, `num_key_value_heads` | Yes (from metadata) |
 | **ONNX** | Operator-defined | Runtime | Op version + type system | Yes (by specification) |
-| **APR (current)** | Fused `qkv_proj` | Import time (PMAT-101) | **Missing** | **No** |
+| **APR (pre-fix)** | Fused `qkv_proj` | Import time (PMAT-101) | **Missing** | **No** |
+| **APR (post-ROSETTA-003)** | Separate Q/K/V | Never (inference fuses at runtime) | `num_heads`, `num_kv_heads` | N/A (never fused) |
 
-**APR is the only system that fuses QKV without storing unfusion metadata.**
+**Post-ROSETTA-003:** APR now follows industry consensus — separate Q/K/V in storage, fusion at runtime.
 
 ---
 
