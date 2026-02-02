@@ -6,6 +6,10 @@
 //! - errors.rs: Import errors and coverage boost (part 1)
 //! - coverage.rs: Coverage boost (part 2) and internal helper tests
 //! - pmat.rs: PMAT/GH issue specific regression tests
+//!
+//! # Harness Policy (Audit Round 3, Item #1)
+//!
+//! All new conversion tests MUST use `ConversionTestHarness`. See `core.rs` header.
 
 mod core;
 mod coverage;

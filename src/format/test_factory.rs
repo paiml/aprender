@@ -166,6 +166,32 @@ impl PygmyConfig {
         }
     }
 
+    /// Realistic-dimension config for testing `infer_model_config_from_tensors()`.
+    ///
+    /// All other PygmyConfig constructors use tiny hidden sizes (2-8) that never
+    /// trigger the head_dim candidate path in config inference (requires
+    /// `hidden_size % head_dim == 0` where head_dim ∈ {64, 128, 96, 80}).
+    ///
+    /// This config uses hidden_size=128 with 2 attention heads (head_dim=64)
+    /// and 1 KV head (GQA 2:1), exercising the full inference pipeline
+    /// through the harness round-trip path.
+    #[must_use]
+    pub fn realistic() -> Self {
+        Self {
+            vocab_size: 256,
+            hidden_size: 128,
+            num_layers: 2,
+            num_heads: Some(2),
+            num_kv_heads: Some(1),
+            include_embedding: true,
+            include_norms: true,
+            include_attention: true,
+            include_mlp: true,
+            include_bias: false,
+            tied_embeddings: false,
+        }
+    }
+
     /// Effective number of attention heads
     #[must_use]
     pub fn effective_num_heads(&self) -> usize {
@@ -2326,6 +2352,51 @@ pub(crate) mod harness {
     }
 
     // ====================================================================
+    // Audit Item 5 fix: Harness round-trip with PygmyConfig::realistic()
+    // Exercises infer_model_config_from_tensors through the full pipeline
+    // ====================================================================
+
+    /// Audit #5: Import with realistic dims succeeds via harness
+    #[test]
+    fn test_f_harness_import_realistic_dims() {
+        ConversionTestHarness::assert_import_ok(PygmyConfig::realistic());
+    }
+
+    /// Audit #5: Full round-trip (ST→APR→ST) with realistic dims
+    #[test]
+    fn test_f_harness_roundtrip_realistic_dims() {
+        ConversionTestHarness::assert_roundtrip_ok(PygmyConfig::realistic());
+    }
+
+    /// Audit #5: ST→APR→GGUF with realistic dims (exercises GGUF export shape handling)
+    #[test]
+    fn test_f_harness_gguf_export_realistic_dims() {
+        use crate::format::gguf::GgufReader;
+
+        let h = ConversionTestHarness::new()
+            .with_safetensors(PygmyConfig::realistic())
+            .import_to_apr(ImportOptions::default())
+            .export_to_gguf();
+
+        let gguf_path = h.output_path().expect("GGUF output exists");
+        let gguf_data = std::fs::read(gguf_path).expect("read GGUF");
+        let reader = GgufReader::from_bytes(gguf_data).expect("parse GGUF");
+
+        // Realistic dims should produce valid GGUF with tensors
+        assert!(
+            !reader.tensors.is_empty(),
+            "Realistic config must produce GGUF with tensors"
+        );
+
+        // Should have separate Q/K/V (no fusion)
+        let names: Vec<&str> = reader.tensors.iter().map(|t| t.name.as_str()).collect();
+        assert!(
+            !names.iter().any(|n| n.contains("attn_qkv")),
+            "Realistic config must NOT have fused attn_qkv. Found: {names:?}"
+        );
+    }
+
+    // ====================================================================
     // T-QKV-02: Round-trip tests must verify tensor NAME set equality
     // ====================================================================
 
@@ -2590,6 +2661,7 @@ mod tests {
             PygmyConfig::minimal(),
             PygmyConfig::embedding_only(),
             PygmyConfig::llama_style(),
+            PygmyConfig::realistic(),
         ] {
             let st_data = build_pygmy_safetensors_with_config(config.clone());
             assert!(st_data.len() > 8);

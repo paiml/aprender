@@ -4,6 +4,24 @@
 //! Contains: source parsing, name mapping, tensor expectations,
 //! converter builder, import options, conversion, tensor stats,
 //! quantization, convert, and sharded import tests.
+//!
+//! # Harness Policy (Audit Round 3, Item #1)
+//!
+//! **All new conversion tests MUST use `ConversionTestHarness`** from
+//! `crate::format::test_factory::harness`. Direct `BTreeMap::new()` +
+//! manual tensor construction is forbidden for new tests. The harness
+//! provides: temp directory management, PygmyConfig-driven model
+//! generation, and automatic cleanup. Pre-existing tests (349 legacy)
+//! are grandfathered but should be migrated when touched.
+//!
+//! ```rust,ignore
+//! // CORRECT: Use harness
+//! ConversionTestHarness::assert_import_ok(PygmyConfig::default());
+//!
+//! // WRONG: Manual tensor construction (legacy only)
+//! let mut tensors = BTreeMap::new();
+//! tensors.insert("weight".into(), (vec![0.0; 64], vec![8, 8]));
+//! ```
 
 #[allow(unused_imports)]
 use super::super::*;
@@ -416,9 +434,10 @@ mod tests_conversion {
     #[test]
     fn test_convert_nonexistent_file() {
         let dir = tempfile::tempdir().expect("tempdir");
+        let nonexistent = dir.path().join("nonexistent_model_abc123.safetensors");
         let output = dir.path().join("out.apr");
         let result = apr_import(
-            "/tmp/nonexistent_model_abc123.safetensors",
+            &nonexistent.to_string_lossy(),
             &output,
             ImportOptions::default(),
         );
@@ -720,10 +739,13 @@ mod tests_convert {
 
     #[test]
     fn test_convert_nonexistent_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let nonexistent_input = dir.path().join("nonexistent_model_abc123.safetensors");
+        let nonexistent_output = dir.path().join("nonexistent_output_abc123.apr");
         let options = ConvertOptions::default();
         let result = apr_convert(
-            "/tmp/nonexistent_model_abc123.safetensors",
-            "/tmp/nonexistent_output_abc123.apr",
+            &nonexistent_input,
+            &nonexistent_output,
             options,
         );
 

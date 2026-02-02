@@ -329,7 +329,9 @@ fn p035_rosetta_inspect_nonexistent() {
 #[test]
 fn p036_rosetta_inspect_no_extension() {
     let rosetta = RosettaStone::new();
-    let result = rosetta.inspect("/tmp/noextension");
+    let dir = std::env::temp_dir();
+    let noext = dir.join("rosetta_test_noextension_abc123");
+    let result = rosetta.inspect(&noext);
     assert!(result.is_err());
 }
 
