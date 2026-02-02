@@ -228,6 +228,8 @@ fn list_tensors_v2(data: &[u8], options: TensorListOptions) -> Result<TensorList
     // Get tensor info from actual index
     let mut tensors = Vec::new();
     let mut total_size = 0usize;
+    let mut total_matching = 0usize;
+    let limit_reached = options.limit < usize::MAX;
 
     for name in reader.tensor_names() {
         // Apply filter
@@ -239,29 +241,34 @@ fn list_tensors_v2(data: &[u8], options: TensorListOptions) -> Result<TensorList
 
         // Get tensor entry
         if let Some(entry) = reader.get_tensor(name) {
-            let mut info = tensor_info_from_entry(entry);
+            let size = entry.size as usize;
+            total_size += size;
+            total_matching += 1;
 
-            // Compute stats if requested
-            if options.compute_stats {
-                if let Some(data) = reader.get_tensor_as_f32(name) {
-                    compute_tensor_stats(&mut info, &data);
+            // Only collect details up to the limit
+            if tensors.len() < options.limit {
+                let mut info = tensor_info_from_entry(entry);
+
+                // Compute stats if requested
+                if options.compute_stats {
+                    if let Some(data) = reader.get_tensor_as_f32(name) {
+                        compute_tensor_stats(&mut info, &data);
+                    }
                 }
-            }
 
-            total_size += info.size_bytes;
-            tensors.push(info);
-
-            // Check limit
-            if tensors.len() >= options.limit {
-                break;
+                tensors.push(info);
             }
         }
     }
 
+    // When no limit is applied, total_matching == tensors.len().
+    // When a limit truncates, total_matching reflects the true count.
+    let _ = limit_reached;
+
     Ok(TensorListResult {
         file: String::new(), // Set by caller
         format_version: "v2".to_string(),
-        tensor_count: tensors.len(),
+        tensor_count: total_matching,
         total_size_bytes: total_size,
         tensors,
     })
@@ -365,6 +372,7 @@ fn list_tensors_gguf(data: &[u8], options: TensorListOptions) -> Result<TensorLi
 
     let mut tensors = Vec::new();
     let mut total_size = 0usize;
+    let mut total_matching = 0usize;
 
     for meta in &reader.tensors {
         // Apply filter
@@ -378,37 +386,38 @@ fn list_tensors_gguf(data: &[u8], options: TensorListOptions) -> Result<TensorLi
         let num_elements: usize = shape.iter().product();
         let size_bytes = (num_elements as f64 * ggml_dtype_element_size(meta.dtype)) as usize;
 
-        let mut info = TensorInfo {
-            name: meta.name.clone(),
-            shape,
-            dtype: ggml_dtype_name(meta.dtype).to_string(),
-            size_bytes,
-            mean: None,
-            std: None,
-            min: None,
-            max: None,
-            nan_count: None,
-            inf_count: None,
-        };
+        total_size += size_bytes;
+        total_matching += 1;
 
-        if options.compute_stats {
-            if let Ok((f32_data, _shape)) = reader.get_tensor_f32(&meta.name) {
-                compute_tensor_stats(&mut info, &f32_data);
+        // Only collect details up to the limit
+        if tensors.len() < options.limit {
+            let mut info = TensorInfo {
+                name: meta.name.clone(),
+                shape,
+                dtype: ggml_dtype_name(meta.dtype).to_string(),
+                size_bytes,
+                mean: None,
+                std: None,
+                min: None,
+                max: None,
+                nan_count: None,
+                inf_count: None,
+            };
+
+            if options.compute_stats {
+                if let Ok((f32_data, _shape)) = reader.get_tensor_f32(&meta.name) {
+                    compute_tensor_stats(&mut info, &f32_data);
+                }
             }
-        }
 
-        total_size += info.size_bytes;
-        tensors.push(info);
-
-        if tensors.len() >= options.limit {
-            break;
+            tensors.push(info);
         }
     }
 
     Ok(TensorListResult {
         file: String::new(),
         format_version: format!("GGUF v{}", reader.version),
-        tensor_count: tensors.len(),
+        tensor_count: total_matching,
         total_size_bytes: total_size,
         tensors,
     })
@@ -456,6 +465,7 @@ fn list_tensors_safetensors(data: &[u8], options: TensorListOptions) -> Result<T
     let data_start = 8 + header_len;
     let mut tensors = Vec::new();
     let mut total_size = 0usize;
+    let mut total_matching = 0usize;
 
     // Collect and sort tensor names for deterministic output
     let mut tensor_entries: Vec<(&String, &serde_json::Value)> =
@@ -495,48 +505,49 @@ fn list_tensors_safetensors(data: &[u8], options: TensorListOptions) -> Result<T
             })
             .unwrap_or(0);
 
-        let mut info = TensorInfo {
-            name: name.clone(),
-            shape: shape.clone(),
-            dtype,
-            size_bytes,
-            mean: None,
-            std: None,
-            min: None,
-            max: None,
-            nan_count: None,
-            inf_count: None,
-        };
+        total_size += size_bytes;
+        total_matching += 1;
 
-        if options.compute_stats {
-            if let Some(arr) = offsets {
-                if let (Some(start), Some(end)) = (
-                    arr.first().and_then(|v| v.as_u64()),
-                    arr.get(1).and_then(|v| v.as_u64()),
-                ) {
-                    let abs_start = data_start + start as usize;
-                    let abs_end = data_start + end as usize;
-                    if abs_end <= data.len() {
-                        let tensor_bytes = &data[abs_start..abs_end];
-                        let f32_data = safetensors_bytes_to_f32(tensor_bytes, &info.dtype);
-                        compute_tensor_stats(&mut info, &f32_data);
+        // Only collect details up to the limit
+        if tensors.len() < options.limit {
+            let mut info = TensorInfo {
+                name: name.clone(),
+                shape: shape.clone(),
+                dtype,
+                size_bytes,
+                mean: None,
+                std: None,
+                min: None,
+                max: None,
+                nan_count: None,
+                inf_count: None,
+            };
+
+            if options.compute_stats {
+                if let Some(arr) = offsets {
+                    if let (Some(start), Some(end)) = (
+                        arr.first().and_then(|v| v.as_u64()),
+                        arr.get(1).and_then(|v| v.as_u64()),
+                    ) {
+                        let abs_start = data_start + start as usize;
+                        let abs_end = data_start + end as usize;
+                        if abs_end <= data.len() {
+                            let tensor_bytes = &data[abs_start..abs_end];
+                            let f32_data = safetensors_bytes_to_f32(tensor_bytes, &info.dtype);
+                            compute_tensor_stats(&mut info, &f32_data);
+                        }
                     }
                 }
             }
-        }
 
-        total_size += info.size_bytes;
-        tensors.push(info);
-
-        if tensors.len() >= options.limit {
-            break;
+            tensors.push(info);
         }
     }
 
     Ok(TensorListResult {
         file: String::new(),
         format_version: "SafeTensors".to_string(),
-        tensor_count: tensors.len(),
+        tensor_count: total_matching,
         total_size_bytes: total_size,
         tensors,
     })
@@ -724,6 +735,7 @@ fn list_tensors_safetensors_path(
 
     let mut tensors = Vec::new();
     let mut total_size = 0usize;
+    let mut total_matching = 0usize;
 
     let mut names: Vec<&str> = mapped.tensor_names();
     names.sort_unstable();
@@ -738,30 +750,31 @@ fn list_tensors_safetensors_path(
         if let Some(meta) = mapped.get_metadata(name) {
             let size_bytes = meta.data_offsets[1] - meta.data_offsets[0];
 
-            let mut info = TensorInfo {
-                name: name.to_string(),
-                shape: meta.shape.clone(),
-                dtype: meta.dtype.clone(),
-                size_bytes,
-                mean: None,
-                std: None,
-                min: None,
-                max: None,
-                nan_count: None,
-                inf_count: None,
-            };
+            total_size += size_bytes;
+            total_matching += 1;
 
-            if options.compute_stats {
-                if let Ok(f32_data) = mapped.get_tensor(name) {
-                    compute_tensor_stats(&mut info, &f32_data);
+            // Only collect details up to the limit
+            if tensors.len() < options.limit {
+                let mut info = TensorInfo {
+                    name: name.to_string(),
+                    shape: meta.shape.clone(),
+                    dtype: meta.dtype.clone(),
+                    size_bytes,
+                    mean: None,
+                    std: None,
+                    min: None,
+                    max: None,
+                    nan_count: None,
+                    inf_count: None,
+                };
+
+                if options.compute_stats {
+                    if let Ok(f32_data) = mapped.get_tensor(name) {
+                        compute_tensor_stats(&mut info, &f32_data);
+                    }
                 }
-            }
 
-            total_size += info.size_bytes;
-            tensors.push(info);
-
-            if tensors.len() >= options.limit {
-                break;
+                tensors.push(info);
             }
         }
     }
@@ -769,7 +782,7 @@ fn list_tensors_safetensors_path(
     Ok(TensorListResult {
         file: String::new(),
         format_version: "SafeTensors".to_string(),
-        tensor_count: tensors.len(),
+        tensor_count: total_matching,
         total_size_bytes: total_size,
         tensors,
     })
@@ -974,7 +987,9 @@ mod tests {
         let opts = TensorListOptions::new().with_limit(3);
         let result = list_tensors_from_bytes(&apr_bytes, opts).expect("list tensors");
 
-        assert!(result.tensor_count <= 3);
+        // GH-195 FIX: tensor_count is the true total; tensors.len() is the limited count
+        assert!(result.tensors.len() <= 3);
+        assert!(result.tensor_count >= result.tensors.len());
     }
 
     #[test]
@@ -1881,7 +1896,9 @@ mod tests {
             ..TensorListOptions::default()
         };
         let result = super::list_tensors_safetensors(&data, opts).expect("parse ok");
-        assert_eq!(result.tensor_count, 1);
+        // GH-195 FIX: tensor_count reflects true total, not limited count
+        assert_eq!(result.tensor_count, 2);
+        assert_eq!(result.tensors.len(), 1);
     }
 
     #[test]
