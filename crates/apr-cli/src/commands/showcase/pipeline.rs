@@ -403,13 +403,17 @@ pub(super) fn run_convert(config: &ShowcaseConfig) -> Result<bool> {
 /// Step D: APR Inference
 #[cfg(feature = "inference")]
 pub(super) fn run_apr_inference(config: &ShowcaseConfig) -> Result<bool> {
-    use realizar::apr_transformer::AprTransformer;
+    // BUG-FIX: Use GgufToAprConverter::from_apr_bytes which handles JSON tensor index
+    // The AprTransformer::from_apr_bytes uses binary format which is incompatible
+    use realizar::convert::GgufToAprConverter;
 
     println!();
     println!("{}", "═══ Step D: APR Inference ═══".cyan().bold());
     println!();
 
-    let apr_path = config.model_dir.join("qwen2.5-coder-32b.apr");
+    // BUG-FIX: Use the converted file matching the tier, not hardcoded 32b
+    let apr_basename = config.tier.gguf_filename().replace(".gguf", ".apr");
+    let apr_path = config.model_dir.join(&apr_basename);
 
     if !apr_path.exists() {
         println!("{} APR model not found. Run conversion first.", "✗".red());
@@ -431,7 +435,8 @@ pub(super) fn run_apr_inference(config: &ShowcaseConfig) -> Result<bool> {
     let model_bytes = std::fs::read(&apr_path)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to read APR: {e}")))?;
 
-    let transformer = AprTransformer::from_apr_bytes(&model_bytes)
+    // Use GgufToAprConverter which writes/reads JSON tensor index format
+    let transformer = GgufToAprConverter::from_apr_bytes(&model_bytes)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to load APR: {e}")))?;
 
     let load_time = start.elapsed();
@@ -479,7 +484,9 @@ pub(super) fn run_apr_inference(config: &ShowcaseConfig) -> Result<bool> {
     println!("{}", "═══ Step D: APR Inference ═══".cyan().bold());
     println!();
 
-    let apr_path = config.model_dir.join("qwen2.5-coder-32b.apr");
+    // BUG-FIX: Use the converted file matching the tier, not hardcoded 32b
+    let apr_basename = config.tier.gguf_filename().replace(".gguf", ".apr");
+    let apr_path = config.model_dir.join(&apr_basename);
     if !apr_path.exists() {
         println!("{} APR model not found. Run conversion first.", "✗".red());
         return Ok(false);
