@@ -174,6 +174,12 @@ but passed them directly to `apr run` without resolving to format-specific files
 
 **Last Updated:** 2026-02-03 (Round 40 - Showcase Pipeline Fixed)
 
+**APR Format Note:** Two APR variants exist:
+1. **realizar JSON-APR** - JSON tensor index, used by `GgufToAprConverter` for showcase
+2. **aprender APR v2** - Binary tensor index, used by rosetta/format tools
+
+The showcase pipeline uses realizar's JSON-APR format for GGUF→APR conversion. Rosetta inspect expects APR v2 binary format. Cross-format tools should detect and handle both.
+
 ---
 
 ## Quality Philosophy: The Toyota Way
