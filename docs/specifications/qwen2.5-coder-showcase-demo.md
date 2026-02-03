@@ -31,11 +31,11 @@
 | Ollama | 442 tok/s | 6.0ms | Baseline |
 | Speedup | -40.6% | — | ❌ FALSIFIED (need ≥25%) |
 
-**QA Gates (apr qa):**
+**QA Gates (apr qa - BUG-QA-001/002 fixed):**
 - ✅ Golden Output: 2/2 test cases
-- ✅ Throughput: 284.5 tok/s (pass ≥100)
-- ✅ Ollama Parity: 5.8x (263 vs 45 tok/s) on `apr qa`
-- ✅ GPU Speedup: 96x CPU→GPU
+- ✅ Throughput: 282 tok/s (pass ≥100)
+- ✅ Ollama Parity: 0.6x (259 vs 419 tok/s) — now uses correct model size and eval_duration
+- ✅ GPU Speedup: 93x CPU→GPU
 
 **GH-201 Fix (Layer Streaming Mode):** Both SafeTensors AND APR GPU paths now support two modes:
 
@@ -176,6 +176,8 @@ but passed them directly to `apr run` without resolving to format-specific files
 **Previously Fixed Issues:**
 | Issue | Description | Priority | Status | PMAT |
 |-------|-------------|----------|--------|------|
+| BUG-QA-001 | apr qa compared 0.5B APR vs 1.5B Ollama (unfair) | P1 | ✅ FIXED | 2026-02-03 |
+| BUG-QA-002 | apr qa used wall clock time instead of eval_duration | P0 | ✅ FIXED | 2026-02-03 |
 | BUG-SHOWCASE-001 | APR inference used wrong loader (binary vs JSON format) | P0 | ✅ FIXED | 2026-02-03 |
 | BUG-SHOWCASE-002 | APR inference hardcoded to 32b model path | P1 | ✅ FIXED | 2026-02-03 |
 | [GH-191](docs/tickets/GH-191-APR-QUANTIZATION-DATA-LOSS.md) | APR dtype byte mapping mismatch | P0 | ✅ FIXED | PMAT-223 |
