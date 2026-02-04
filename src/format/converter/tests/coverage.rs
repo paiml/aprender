@@ -1859,8 +1859,11 @@ mod tests_write_functions {
     use std::fs;
     use tempfile::TempDir;
     // GAP-UX-002: Import trueno_quant functions for Q5K/Q6K tests
+    // GH-202: transpose functions no longer re-exported from converter (wrong assumption removed)
+    // Import directly from trueno_quant for tests that validate the functions themselves.
     use trueno_quant::{
-        dequantize_q6_k_to_f32, quantize_q5_k, quantize_q5_k_matrix, transpose_q5k_for_matmul,
+        dequantize_q6_k_to_f32, quantize_q5_k, quantize_q5_k_matrix,
+        transpose_q4k_for_matmul, transpose_q5k_for_matmul, transpose_q6k_for_matmul,
     };
 
     // ------------------------------------------------------------------------

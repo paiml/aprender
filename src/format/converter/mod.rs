@@ -9,7 +9,19 @@
 //! - Quantization and compression
 
 use crate::error::{AprenderError, Result};
-use crate::format::f16_safety::F16_MIN_NORMAL;
+
+// Toyota Way: ONE source of truth for quantization (trueno-quant crate)
+// PMAT-230: trueno-quant created 2026-02-03, resolves cyclic dependency
+// Re-export constants and key functions for external use
+pub use trueno_quant::F16_MIN_NORMAL;
+
+// Internal imports - use trueno_quant as the canonical implementation
+// Re-exported as pub(crate) so tests can access them
+// Note: Only import functions actually used in this module
+pub(crate) use trueno_quant::{
+    dequantize_q4_k_to_f32, quantize_q4_k, quantize_q4_k_matrix, quantize_q6_k_matrix,
+};
+
 use crate::format::gguf::{
     load_gguf_raw, load_gguf_with_tokenizer, GgufModelConfig, GgufRawTensor, GgufReader,
     GgufTokenizer,
@@ -422,6 +434,31 @@ fn load_gguf_tensors_f32(path: &Path) -> Result<BTreeMap<String, (Vec<f32>, Vec<
         validate_tensor_values(name, data)?;
     }
 
+    // GH-202 FIX: Reverse GGML shapes [ne0, ne1] → standard [ne1, ne0]
+    //
+    // GGML convention: data[i0 + i1*ne0] where ne0 is the contiguous dimension.
+    // This is IDENTICAL to C row-major with shape [ne1, ne0]:
+    //   row-major: data[row * cols + col] = data[i1 * ne0 + i0]
+    //
+    // So reversing the shape gives the correct row-major interpretation
+    // WITHOUT any data movement. This is the boundary conversion from
+    // GGML shape convention to standard [rows, cols] convention.
+    //
+    // Evidence: GGML's ggml_mul_mat(W, x) computes W^T @ x.
+    //   W shape [ne0=in, ne1=out], W^T has effective shape [out, in].
+    //   Standard y = M @ x where M is [out, in] in row-major = same layout.
+    let tensors = tensors
+        .into_iter()
+        .map(|(name, (data, shape))| {
+            let standard_shape = if shape.len() == 2 {
+                vec![shape[1], shape[0]]
+            } else {
+                shape
+            };
+            (name, (data, standard_shape))
+        })
+        .collect();
+
     Ok(tensors)
 }
 
@@ -581,11 +618,12 @@ fn dequantize_q8_0_to_f32(bytes: &[u8], num_elements: usize) -> Vec<f32> {
         // GH-186 FIX: Clamp NaN/Inf/subnormal to prevent propagation
         let scale_raw = f16_to_f32(scale_bits);
         // Uses shared F16_MIN_NORMAL from crate::format::f16_safety (P2 fix)
-        let scale = if scale_raw.is_nan() || scale_raw.is_infinite() || scale_raw.abs() < F16_MIN_NORMAL {
-            0.0
-        } else {
-            scale_raw
-        };
+        let scale =
+            if scale_raw.is_nan() || scale_raw.is_infinite() || scale_raw.abs() < F16_MIN_NORMAL {
+                0.0
+            } else {
+                scale_raw
+            };
 
         for j in 0..BLOCK_SIZE {
             if result.len() >= num_elements {
@@ -605,6 +643,11 @@ pub(crate) fn calculate_tensor_size(tensors: &BTreeMap<String, (Vec<f32>, Vec<us
 }
 
 /// Apply quantization to tensors
+///
+/// BUG-EXPORT-004 FIX: Embedding tensors are SKIPPED from quantization.
+/// Embeddings are lookup tables with small values that would round to zero
+/// under global-scale Int4/Int8 quantization (78% of values become zero).
+/// They are kept in F32 and exported as F32 in GGUF.
 pub(crate) fn quantize_tensors(
     tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
     quant_type: &QuantizationType,
@@ -612,15 +655,28 @@ pub(crate) fn quantize_tensors(
     let mut result = BTreeMap::new();
 
     for (name, (data, shape)) in tensors {
-        let quantized_data = match quant_type {
-            QuantizationType::Fp16 => quantize_fp16(data),
-            QuantizationType::Int8 => quantize_int8(data),
-            QuantizationType::Int4 => quantize_int4(data),
-            QuantizationType::Q4K => {
-                // Q4K: quantize to packed bytes then dequantize back to f32
-                // This preserves the shape but shows quantization error
-                let q4k_bytes = quantize_q4_k(data);
-                dequantize_q4_k_to_f32(&q4k_bytes, data.len())
+        // BUG-EXPORT-004: Skip quantization for embedding tensors
+        // Embeddings have small values (-0.3 to 0.2) that would mostly round to 0
+        // under global-scale Int4 quantization (scale=0.042, values<0.021 → 0)
+        let is_embedding = name.contains("embed_tokens")
+            || name.contains("token_embd")
+            || name.contains("wte")  // GPT-style
+            || name.contains("word_embeddings"); // BERT-style
+
+        let quantized_data = if is_embedding {
+            // Keep embeddings in original F32 - no quantization
+            data.clone()
+        } else {
+            match quant_type {
+                QuantizationType::Fp16 => quantize_fp16(data),
+                QuantizationType::Int8 => quantize_int8(data),
+                QuantizationType::Int4 => quantize_int4(data),
+                QuantizationType::Q4K => {
+                    // Q4K: quantize to packed bytes then dequantize back to f32
+                    // This preserves the shape but shows quantization error
+                    let q4k_bytes = quantize_q4_k(data);
+                    dequantize_q4_k_to_f32(&q4k_bytes, data.len())
+                }
             }
         };
         result.insert(name.clone(), (quantized_data, shape.clone()));
@@ -629,89 +685,7 @@ pub(crate) fn quantize_tensors(
     Ok(result)
 }
 
-/// Dequantize Q4_K bytes back to F32 (for verification/testing)
-/// Dequantize Q4_K data to f32 (llama.cpp compatible)
-///
-/// Matches the encoder format and realizar's `dequantize_q4_k_apr`:
-/// - Scale packing: blocks 0-3 in lower 6 bits, blocks 4-7 use upper bits
-/// - Value packing: 64-value chunks with low/high nibble interleaving
-fn dequantize_q4_k_to_f32(data: &[u8], num_elements: usize) -> Vec<f32> {
-    const SUPER_BLOCK_SIZE: usize = 256;
-    const SUPER_BLOCK_BYTES: usize = 144;
-    // PMAT-177: Minimum valid f16 normal value (~6.1e-5), clamp scales to avoid NaN
-    // Uses shared F16_MIN_NORMAL from crate::format::f16_safety (P2 fix)
-
-    let num_blocks = (num_elements + SUPER_BLOCK_SIZE - 1) / SUPER_BLOCK_SIZE;
-    let mut result = vec![0.0f32; num_blocks * SUPER_BLOCK_SIZE];
-
-    for sb_idx in 0..num_blocks {
-        let sb_start = sb_idx * SUPER_BLOCK_BYTES;
-        let out_start = sb_idx * SUPER_BLOCK_SIZE;
-
-        if sb_start + SUPER_BLOCK_BYTES > data.len() {
-            break;
-        }
-
-        // Read d and dmin (f16) - PMAT-177: Validate for NaN/Inf
-        let d_raw = f16_to_f32(u16::from_le_bytes([data[sb_start], data[sb_start + 1]]));
-        let dmin_raw = f16_to_f32(u16::from_le_bytes([data[sb_start + 2], data[sb_start + 3]]));
-
-        // PMAT-177: Replace NaN/Inf/subnormal with safe values to prevent corruption
-        let d = if d_raw.is_nan() || d_raw.is_infinite() || d_raw.abs() < F16_MIN_NORMAL {
-            0.0
-        } else {
-            d_raw
-        };
-        let dmin = if dmin_raw.is_nan() || dmin_raw.is_infinite() || dmin_raw.abs() < F16_MIN_NORMAL
-        {
-            0.0
-        } else {
-            dmin_raw
-        };
-
-        // Unpack scales and mins (llama.cpp format)
-        let scales_bytes = &data[sb_start + 4..sb_start + 16];
-        let mut scales = [0u8; 8];
-        let mut mins = [0u8; 8];
-
-        for i in 0..4 {
-            // Blocks 0-3: lower 6 bits of bytes 0-3 and 4-7
-            scales[i] = scales_bytes[i] & 0x3F;
-            mins[i] = scales_bytes[i + 4] & 0x3F;
-            // Blocks 4-7: lower 4 bits from bytes 8-11, upper 2 bits from bytes 0-3/4-7
-            scales[i + 4] = (scales_bytes[i + 8] & 0x0F) | ((scales_bytes[i] >> 6) << 4);
-            mins[i + 4] = (scales_bytes[i + 8] >> 4) | ((scales_bytes[i + 4] >> 6) << 4);
-        }
-
-        // Read quantized values (128 bytes = 256 4-bit values)
-        let qs = &data[sb_start + 16..sb_start + 144];
-
-        // PMAT-190 FIX: Match gguf.rs dequantize_q4_k layout exactly
-        // Q4_K uses 8 sub-blocks of 32 elements each
-        // Each sub-block uses ONE scale for ALL 32 elements (not different for low/high!)
-        // Layout: 16 bytes per sub-block, each byte → 2 values (low nibble, high nibble)
-        let mut ys_index = out_start;
-
-        for j in 0..8 {
-            // One scale per sub-block (same for both nibbles!)
-            let scale = d * f32::from(scales[j]);
-            let min_val = dmin * f32::from(mins[j]);
-
-            // Process 16 bytes → 32 values
-            for l in 0..16 {
-                let q_byte = qs[j * 16 + l];
-                let q0 = f32::from(q_byte & 0x0F);
-                let q1 = f32::from(q_byte >> 4);
-                result[ys_index] = q0 * scale - min_val;
-                result[ys_index + 1] = q1 * scale - min_val;
-                ys_index += 2;
-            }
-        }
-    }
-
-    result.truncate(num_elements);
-    result
-}
+// NOTE: dequantize_q4_k_to_f32 moved to trueno-quant crate (Toyota Way consolidation)
 
 /// Quantize to fp16 - TRUE PACKING (2 bytes per value)
 /// Returns dequantized f32 for now (proper f16 storage requires format change)
@@ -847,511 +821,25 @@ fn quantize_int4(data: &[f32]) -> Vec<f32> {
         .collect()
 }
 
-/// Quantize F32 data to Q4_K format (GGML K-quants)
-///
-/// Q4_K format: 256-element super-blocks, each with:
-/// - d (f16, 2 bytes): scale for scales
-/// - dmin (f16, 2 bytes): scale for mins (offsets)
-/// - scales (12 bytes): 8 6-bit scale values packed
-/// - qs (128 bytes): 256 4-bit quantized values
-///
-/// Decoding formula: `value = q * (d * scales[j]) - (dmin * mins[j])`
-/// Total: 144 bytes per 256 elements = 4.5 bits/weight
-///
-/// Returns packed Q4_K bytes ready for APR storage.
-/// Quantize f32 data to Q4_K format (llama.cpp compatible)
-///
-/// Q4_K super-block layout (144 bytes per 256 elements):
-/// - d: 2 bytes (f16 global scale)
-/// - dmin: 2 bytes (f16 global min scale)
-/// - scales: 12 bytes (packed 6-bit scales and mins for 8 sub-blocks)
-/// - qs: 128 bytes (4-bit quantized values, interleaved low/high nibbles)
-///
-/// Scale packing (llama.cpp get_scale_min_k4):
-/// - Blocks 0-3: scales[j] = scale_6bit, scales[j+4] = min_6bit
-/// - Blocks 4-7: packed in bytes 8-11 using high bits of bytes 0-7
-///
-/// Value packing (candle/llama.cpp layout):
-/// - For each 64-value chunk: 32 bytes store low nibbles first, then high nibbles
-/// - Low nibbles use scale[is], high nibbles use scale[is+1]
-fn quantize_q4_k(data: &[f32]) -> Vec<u8> {
-    const SUPER_BLOCK_SIZE: usize = 256;
-    const SUB_BLOCK_SIZE: usize = 32;
-    const SUPER_BLOCK_BYTES: usize = 144; // 2 + 2 + 12 + 128
-                                          // PMAT-177: Minimum valid f16 normal value (~6.1e-5) - prevents NaN on round-trip
-    // Uses shared F16_MIN_NORMAL from crate::format::f16_safety (P2 fix)
+// NOTE: quantize_q4_k moved to trueno-quant crate (Toyota Way consolidation)
 
-    if data.is_empty() {
-        return vec![];
-    }
+// NOTE: quantize_q6_k moved to trueno-quant crate (Toyota Way consolidation)
 
-    let num_blocks = (data.len() + SUPER_BLOCK_SIZE - 1) / SUPER_BLOCK_SIZE;
-    let mut result = Vec::with_capacity(num_blocks * SUPER_BLOCK_BYTES);
+// NOTE: quantize_q6_k_matrix moved to trueno-quant crate (Toyota Way consolidation)
 
-    for block_idx in 0..num_blocks {
-        let block_start = block_idx * SUPER_BLOCK_SIZE;
-        let block_end = (block_start + SUPER_BLOCK_SIZE).min(data.len());
-        let block_data = &data[block_start..block_end];
+// NOTE: quantize_q5_k moved to trueno-quant crate (Toyota Way consolidation)
 
-        // Pad to 256 if needed
-        let mut padded = [0.0f32; SUPER_BLOCK_SIZE];
-        padded[..block_data.len()].copy_from_slice(block_data);
+// NOTE: quantize_q5_k_matrix moved to trueno-quant crate (Toyota Way consolidation)
 
-        // Compute per-sub-block statistics (8 sub-blocks of 32 elements each)
-        // Q4_K decoding: value = q * d * scale - dmin * min
-        let mut sub_scales = [0.0f32; 8];
-        let mut sub_mins = [0.0f32; 8];
+// NOTE: quantize_q4_k_matrix moved to trueno-quant crate (Toyota Way consolidation)
 
-        for (j, sub_block) in padded.chunks(SUB_BLOCK_SIZE).enumerate().take(8) {
-            let min = sub_block.iter().fold(f32::INFINITY, |a, &b| a.min(b));
-            let max = sub_block.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b));
-            let range = max - min;
-
-            // PMAT-177: Clamp to F16_MIN_NORMAL to prevent underflow in f16 encoding
-            sub_scales[j] = if range > F16_MIN_NORMAL {
-                range / 15.0
-            } else {
-                F16_MIN_NORMAL
-            };
-            sub_mins[j] = (-min).max(0.0); // Store as positive offset
-        }
-
-        // Find global scale factors d and dmin
-        let max_scale = sub_scales.iter().fold(0.0f32, |a, &b| a.max(b));
-        let max_min = sub_mins.iter().fold(0.0f32, |a, &b| a.max(b));
-
-        // PMAT-177: Clamp d/dmin to F16_MIN_NORMAL to prevent NaN after f16 round-trip
-        let d = if max_scale > F16_MIN_NORMAL {
-            max_scale / 63.0
-        } else {
-            F16_MIN_NORMAL
-        };
-        let dmin = if max_min > F16_MIN_NORMAL {
-            max_min / 63.0
-        } else {
-            F16_MIN_NORMAL
-        };
-
-        // Compute 6-bit scales and mins for each sub-block
-        let mut scales_6bit = [0u8; 8];
-        let mut mins_6bit = [0u8; 8];
-
-        for j in 0..8 {
-            scales_6bit[j] = ((sub_scales[j] / d).round() as u8).min(63);
-            mins_6bit[j] = ((sub_mins[j] / dmin).round() as u8).min(63);
-        }
-
-        // Write d (f16) - 2 bytes
-        let d_f16 = f32_to_f16(d);
-        result.extend_from_slice(&d_f16.to_le_bytes());
-
-        // Write dmin (f16) - 2 bytes
-        let dmin_f16 = f32_to_f16(dmin);
-        result.extend_from_slice(&dmin_f16.to_le_bytes());
-
-        // Pack scales and mins into 12 bytes (llama.cpp format)
-        // Decoder expects:
-        // - Blocks 0-3: scale = scales[j] & 63, min = scales[j+4] & 63
-        // - Blocks 4-7: scale = (scales[j+4] & 0xF) | ((scales[j-4] >> 6) << 4)
-        //               min = (scales[j+4] >> 4) | ((scales[j] >> 6) << 4)
-        let mut scales_packed = [0u8; 12];
-
-        // Blocks 0-3: store lower 6 bits directly, use upper 2 bits for blocks 4-7
-        for i in 0..4 {
-            // Lower 6 bits of scale[i], upper 2 bits store part of scale[i+4]
-            scales_packed[i] = (scales_6bit[i] & 0x3F) | ((scales_6bit[i + 4] & 0x30) << 2);
-            // Lower 6 bits of min[i], upper 2 bits store part of min[i+4]
-            scales_packed[i + 4] = (mins_6bit[i] & 0x3F) | ((mins_6bit[i + 4] & 0x30) << 2);
-        }
-
-        // Blocks 4-7: store lower 4 bits of scale and min in bytes 8-11
-        for i in 0..4 {
-            scales_packed[i + 8] = (scales_6bit[i + 4] & 0x0F) | ((mins_6bit[i + 4] & 0x0F) << 4);
-        }
-        result.extend_from_slice(&scales_packed);
-
-        // PMAT-190 FIX: Quantize to match gguf.rs dequantize_q4_k layout
-        // Q4_K: 8 sub-blocks of 32 elements, ONE scale per sub-block
-        // 16 bytes per sub-block, each byte packs TWO CONSECUTIVE values
-        let mut qs = [0u8; 128];
-
-        for j in 0..8 {
-            // One scale per sub-block (same for both nibbles!)
-            let scale = d * f32::from(scales_6bit[j]);
-            let min_val = dmin * f32::from(mins_6bit[j]);
-
-            // Process 32 values → 16 bytes
-            for l in 0..16 {
-                let idx0 = j * 32 + l * 2; // First value of pair
-                let idx1 = j * 32 + l * 2 + 1; // Second value of pair
-
-                // Quantize: q = (value + min_val) / scale
-                let q0 = if scale > 1e-10 {
-                    ((padded[idx0] + min_val) / scale).round().clamp(0.0, 15.0) as u8
-                } else {
-                    0
-                };
-                let q1 = if scale > 1e-10 {
-                    ((padded[idx1] + min_val) / scale).round().clamp(0.0, 15.0) as u8
-                } else {
-                    0
-                };
-
-                // Pack: low nibble = q0, high nibble = q1
-                qs[j * 16 + l] = (q0 & 0x0F) | ((q1 & 0x0F) << 4);
-            }
-        }
-        result.extend_from_slice(&qs);
-    }
-
-    result
-}
-
-/// Quantize F32 to Q6_K format (PMAT-216: Higher precision for Q8_0 tensors)
-///
-/// Q6_K format: 256-element super-blocks
-/// Each super block: ql (128 bytes) + qh (64 bytes) + scales (16 bytes) + d (f16) = 210 bytes
-/// - 6-bit values stored split: low 4 bits in ql, high 2 bits in qh
-/// - 16 sub-blocks of 16 elements each, with int8 scale per sub-block
-fn quantize_q6_k(data: &[f32]) -> Vec<u8> {
-    const SUPER_BLOCK_SIZE: usize = 256;
-    const SUPER_BLOCK_BYTES: usize = 210; // 128 + 64 + 16 + 2
-    // Uses shared F16_MIN_NORMAL from crate::format::f16_safety (P2 fix)
-
-    if data.is_empty() {
-        return vec![];
-    }
-
-    let num_blocks = (data.len() + SUPER_BLOCK_SIZE - 1) / SUPER_BLOCK_SIZE;
-    let mut result = Vec::with_capacity(num_blocks * SUPER_BLOCK_BYTES);
-
-    for block_idx in 0..num_blocks {
-        let block_start = block_idx * SUPER_BLOCK_SIZE;
-        let block_end = (block_start + SUPER_BLOCK_SIZE).min(data.len());
-        let block_data = &data[block_start..block_end];
-
-        // Pad to 256 if needed
-        let mut padded = [0.0f32; SUPER_BLOCK_SIZE];
-        padded[..block_data.len()].copy_from_slice(block_data);
-
-        // Compute per-sub-block statistics (16 sub-blocks of 16 elements each)
-        // Q6_K uses signed 6-bit values (-32 to 31) with int8 scales
-        let mut sub_scales = [0.0f32; 16];
-        let mut sub_max_abs = [0.0f32; 16];
-
-        for (j, sub_block) in padded.chunks(16).enumerate().take(16) {
-            // Find max absolute value in sub-block
-            let max_abs = sub_block.iter().fold(0.0f32, |a, &b| a.max(b.abs()));
-            sub_max_abs[j] = max_abs;
-            // Scale to fit in signed 6-bit range (-32 to 31)
-            sub_scales[j] = if max_abs > F16_MIN_NORMAL {
-                max_abs / 31.0
-            } else {
-                F16_MIN_NORMAL
-            };
-        }
-
-        // Find global scale factor d
-        let max_scale = sub_scales.iter().fold(0.0f32, |a, &b| a.max(b));
-        let d = if max_scale > F16_MIN_NORMAL {
-            max_scale / 127.0 // Scale to fit in int8
-        } else {
-            F16_MIN_NORMAL
-        };
-
-        // Compute int8 scales for each sub-block
-        let mut scales_i8 = [0i8; 16];
-        for j in 0..16 {
-            scales_i8[j] = ((sub_scales[j] / d).round().clamp(-127.0, 127.0)) as i8;
-        }
-
-        // Quantize to 6-bit values
-        let mut ql = [0u8; 128]; // Low 4 bits
-        let mut qh = [0u8; 64]; // High 2 bits
-
-        for j in 0..16 {
-            let scale = d * f32::from(scales_i8[j]);
-            let inv_scale = if scale.abs() > 1e-10 {
-                1.0 / scale
-            } else {
-                0.0
-            };
-
-            for l in 0..8 {
-                let idx = j * 16 + l * 2;
-
-                // Quantize two values
-                let q0 = (padded[idx] * inv_scale).round().clamp(-32.0, 31.0) as i8;
-                let q1 = (padded[idx + 1] * inv_scale).round().clamp(-32.0, 31.0) as i8;
-
-                // Convert to unsigned 6-bit (add 32)
-                let q0_u = (q0 + 32) as u8;
-                let q1_u = (q1 + 32) as u8;
-
-                // Pack low 4 bits into ql
-                let ql_idx = j * 8 + l;
-                ql[ql_idx] = (q0_u & 0x0F) | ((q1_u & 0x0F) << 4);
-
-                // Pack high 2 bits into qh
-                let qh_idx = ql_idx / 2;
-                let qh_shift = (l % 2) * 4;
-                qh[qh_idx] |= ((q0_u >> 4) & 0x03) << qh_shift;
-                qh[qh_idx] |= ((q1_u >> 4) & 0x03) << (qh_shift + 2);
-            }
-        }
-
-        // Write ql (128 bytes)
-        result.extend_from_slice(&ql);
-        // Write qh (64 bytes)
-        result.extend_from_slice(&qh);
-        // Write scales (16 bytes as i8)
-        for s in &scales_i8 {
-            result.push(*s as u8);
-        }
-        // Write d (f16)
-        let d_f16 = f32_to_f16(d);
-        result.extend_from_slice(&d_f16.to_le_bytes());
-    }
-
-    result
-}
-
-/// Quantize F32 matrix to Q6_K format with proper row layout (PMAT-216)
-///
-/// Higher precision alternative to Q4_K for Q8_0 source tensors.
-/// Q6_K uses 6 bits per value vs Q4_K's 4 bits, reducing precision loss.
-pub(crate) fn quantize_q6_k_matrix(data: &[f32], shape: &[usize]) -> Vec<u8> {
-    const SUPER_BLOCK_SIZE: usize = 256;
-    const SUPER_BLOCK_BYTES: usize = 210;
-
-    // For 1D tensors, use the flat quantizer
-    if shape.len() != 2 {
-        return quantize_q6_k(data);
-    }
-
-    let rows = shape[0];
-    let cols = shape[1];
-
-    // Calculate super-blocks per row (with padding to 256)
-    let super_blocks_per_row = (cols + SUPER_BLOCK_SIZE - 1) / SUPER_BLOCK_SIZE;
-    let padded_cols = super_blocks_per_row * SUPER_BLOCK_SIZE;
-
-    let mut result = Vec::with_capacity(rows * super_blocks_per_row * SUPER_BLOCK_BYTES);
-
-    // Process each row
-    for row_idx in 0..rows {
-        // Extract and pad this row
-        let mut padded_row = vec![0.0f32; padded_cols];
-        let row_start = row_idx * cols;
-        let row_end = row_start + cols;
-        if row_end <= data.len() {
-            padded_row[..cols].copy_from_slice(&data[row_start..row_end]);
-        }
-
-        // Quantize this padded row
-        let row_q6k = quantize_q6_k(&padded_row);
-        result.extend_from_slice(&row_q6k);
-    }
-
-    result
-}
-
-/// Quantize F32 matrix to Q4_K format with proper row padding (GH-189)
-///
-/// Unlike the flat `quantize_q4_k`, this function:
-/// - Takes matrix shape as input
-/// - Pads each row to a multiple of 256 elements
-/// - Creates super-blocks row-by-row for correct realizaer kernel layout
-///
-/// This matches how realizaer expects Q4_K weights: each output row has
-/// `ceil(in_dim/256)` super-blocks organized contiguously.
-pub(crate) fn quantize_q4_k_matrix(data: &[f32], shape: &[usize]) -> Vec<u8> {
-    const SUPER_BLOCK_SIZE: usize = 256;
-    const SUPER_BLOCK_BYTES: usize = 144;
-
-    // For 1D tensors, use the flat quantizer
-    if shape.len() != 2 {
-        return quantize_q4_k(data);
-    }
-
-    let rows = shape[0];
-    let cols = shape[1];
-
-    // Calculate super-blocks per row (with padding to 256)
-    let super_blocks_per_row = (cols + SUPER_BLOCK_SIZE - 1) / SUPER_BLOCK_SIZE;
-    let padded_cols = super_blocks_per_row * SUPER_BLOCK_SIZE;
-
-    let mut result = Vec::with_capacity(rows * super_blocks_per_row * SUPER_BLOCK_BYTES);
-
-    // Process each row
-    for row_idx in 0..rows {
-        // Extract and pad this row
-        let mut padded_row = vec![0.0f32; padded_cols];
-        let row_start = row_idx * cols;
-        let row_end = row_start + cols;
-        if row_end <= data.len() {
-            padded_row[..cols].copy_from_slice(&data[row_start..row_end]);
-        }
-
-        // Quantize this padded row using the flat quantizer
-        let row_q4k = quantize_q4_k(&padded_row);
-        result.extend_from_slice(&row_q4k);
-    }
-
-    result
-}
-
-/// Transpose Q4K data for matmul kernel compatibility (PMAT-103)
-///
-/// GGUF stores weight matrices in column-major order (GGML convention) for `x @ W`.
-/// The trueno Q4K kernel expects row-major order for `W @ x`.
-/// These are transposes of each other.
-///
-/// This function:
-/// 1. Dequantizes Q4K to F32
-/// 2. Transposes from [rows, cols] to [cols, rows]
-/// 3. Re-quantizes to Q4K
-///
-/// Returns: (transposed_q4k_bytes, transposed_shape)
-///
-/// Note: GH-189 FIX - Reserved for GGUF→APR conversion optimization.
-#[allow(dead_code)]
-pub(crate) fn transpose_q4k_for_matmul(data: &[u8], shape: &[usize]) -> (Vec<u8>, Vec<usize>) {
-    // Only transpose 2D tensors
-    if shape.len() != 2 {
-        return (data.to_vec(), shape.to_vec());
-    }
-
-    let rows = shape[0];
-    let cols = shape[1];
-    let num_elements = rows * cols;
-
-    // Step 1: Dequantize Q4K to F32
-    let f32_data = dequantize_q4_k_to_f32(data, num_elements);
-
-    // Step 2: Transpose the F32 matrix from [rows, cols] to [cols, rows]
-    // Original: data[i * cols + j] = element at row i, column j
-    // Transposed: data[j * rows + i] = element at row j, column i
-    let mut transposed_f32 = vec![0.0f32; num_elements];
-    for i in 0..rows {
-        for j in 0..cols {
-            transposed_f32[j * rows + i] = f32_data[i * cols + j];
-        }
-    }
-
-    // Step 3: Re-quantize to Q4K
-    let transposed_q4k = quantize_q4_k(&transposed_f32);
-
-    // Return with swapped dimensions
-    (transposed_q4k, vec![cols, rows])
-}
-
-/// Transpose Q6K data for matmul kernel compatibility (PMAT-103)
-///
-/// Same as transpose_q4k_for_matmul but for Q6K format.
-///
-/// Note: GH-189 FIX - Reserved for GGUF→APR conversion optimization.
-/// Currently outputs Q4K for re-quantized transpose until Q6K encoder is added.
-#[allow(dead_code)]
-pub(crate) fn transpose_q6k_for_matmul(data: &[u8], shape: &[usize]) -> (Vec<u8>, Vec<usize>) {
-    // Only transpose 2D tensors
-    if shape.len() != 2 {
-        return (data.to_vec(), shape.to_vec());
-    }
-
-    let rows = shape[0];
-    let cols = shape[1];
-    let num_elements = rows * cols;
-
-    // Step 1: Dequantize Q6K to F32
-    let f32_data = dequantize_q6_k_to_f32(data, num_elements);
-
-    // Step 2: Transpose the F32 matrix
-    let mut transposed_f32 = vec![0.0f32; num_elements];
-    for i in 0..rows {
-        for j in 0..cols {
-            transposed_f32[j * rows + i] = f32_data[i * cols + j];
-        }
-    }
-
-    // Step 3: Re-quantize to Q6K (for now, convert to Q4K since we don't have Q6K encoder)
-    // Note: Proper Q6K quantization will be added when Q6K encoder is implemented
-    let transposed_q4k = quantize_q4_k(&transposed_f32);
-
-    // Return with swapped dimensions
-    (transposed_q4k, vec![cols, rows])
-}
-
-/// Dequantize Q6_K data to f32 (for transpose)
-///
-/// Note: Scaffolding for PMAT-103 layout conversion optimization.
-#[allow(dead_code)]
-fn dequantize_q6_k_to_f32(data: &[u8], num_elements: usize) -> Vec<f32> {
-    const SUPER_BLOCK_SIZE: usize = 256;
-    const SUPER_BLOCK_BYTES: usize = 210;
-    // PMAT-177: Minimum valid f16 normal value (~6.1e-5), clamp scales to avoid NaN
-    // Uses shared F16_MIN_NORMAL from crate::format::f16_safety (P2 fix)
-
-    let num_blocks = (num_elements + SUPER_BLOCK_SIZE - 1) / SUPER_BLOCK_SIZE;
-    let mut result = vec![0.0f32; num_blocks * SUPER_BLOCK_SIZE];
-
-    for sb_idx in 0..num_blocks {
-        let sb_start = sb_idx * SUPER_BLOCK_BYTES;
-        let out_start = sb_idx * SUPER_BLOCK_SIZE;
-
-        if sb_start + SUPER_BLOCK_BYTES > data.len() {
-            break;
-        }
-
-        // Q6_K layout: ql (128B) + qh (64B) + scales (16B) + d (2B)
-        let ql = &data[sb_start..sb_start + 128];
-        let qh = &data[sb_start + 128..sb_start + 192];
-        let scales_raw = &data[sb_start + 192..sb_start + 208];
-        let d_raw = f16_to_f32(u16::from_le_bytes([
-            data[sb_start + 208],
-            data[sb_start + 209],
-        ]));
-
-        // PMAT-177: Replace NaN/Inf/subnormal with safe values to prevent corruption
-        let d = if d_raw.is_nan() || d_raw.is_infinite() || d_raw.abs() < F16_MIN_NORMAL {
-            0.0
-        } else {
-            d_raw
-        };
-
-        // Decode scales as signed i8
-        let mut scales = [0i8; 16];
-        for i in 0..16 {
-            scales[i] = scales_raw[i] as i8;
-        }
-
-        // Dequantize 256 values
-        for j in 0..256 {
-            // Get 6-bit quantized value
-            let ql_byte = ql[j / 2];
-            let ql_val = if j % 2 == 0 {
-                ql_byte & 0x0F
-            } else {
-                ql_byte >> 4
-            };
-
-            let qh_byte = qh[j / 4];
-            let qh_val = (qh_byte >> ((j % 4) * 2)) & 0x03;
-
-            let q6 = (ql_val as i32) | ((qh_val as i32) << 4);
-            let q6_signed = q6 - 32; // Q6K uses offset encoding
-
-            // Get scale for this 16-element block
-            let scale_idx = j / 16;
-            let scale = scales[scale_idx] as f32;
-
-            result[out_start + j] = d * scale * q6_signed as f32;
-        }
-    }
-
-    result.truncate(num_elements);
-    result
-}
+// Transpose Q4K data for matmul kernel compatibility (LAYOUT-002)
+// GGUF stores weight matrices in column-major order (GGML convention).
+// NOTE: transpose_q4k_for_matmul moved to trueno-quant crate (Toyota Way consolidation)
+// NOTE: transpose_q5k_for_matmul moved to trueno-quant crate (Toyota Way consolidation)
+// NOTE: transpose_q6k_for_matmul moved to trueno-quant crate (Toyota Way consolidation)
+// NOTE: dequantize_q6_k_to_f32 moved to trueno-quant crate (Toyota Way consolidation)
+// NOTE: dequantize_q5_k_to_f32 moved to trueno-quant crate (Toyota Way consolidation)
 
 /// Check if a tensor name represents a 2D weight that needs transposition
 ///
@@ -1709,6 +1197,9 @@ fn save_model_tensors_q4k(
     let mut writer = AprV2Writer::new(metadata);
 
     // Add tensors, selectively quantizing to Q4K
+    // GH-202 FIX: Use quantize_q4_k_matrix for 2D tensors to ensure proper
+    // row-aligned block layout. quantize_q4_k treats data as flat, which
+    // produces wrong block boundaries when row width != multiple of 256.
     for (name, (data, shape)) in tensors {
         // Skip quantization for small tensors (biases, norms, scales)
         // and for 1D tensors which are typically biases/norms
@@ -1720,8 +1211,8 @@ fn save_model_tensors_q4k(
             && !name.contains("embed"); // Keep embeddings as F32 for now
 
         if should_quantize {
-            // Quantize to Q4K bytes
-            let q4k_bytes = quantize_q4_k(data);
+            // GH-202 FIX: Use matrix-aware quantization for proper row padding
+            let q4k_bytes = quantize_q4_k_matrix(data, shape);
             writer.add_q4k_raw_tensor(name, shape.clone(), q4k_bytes);
         } else {
             // Keep as F32

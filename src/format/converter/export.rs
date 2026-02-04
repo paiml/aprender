@@ -15,44 +15,9 @@ use std::path::Path;
 use super::{calculate_tensor_size, load_model_tensors, map_tensor_names, quantize_tensors};
 // NOTE: quantize_q4_k_matrix imported via super:: through mod.rs
 
-// ============================================================================
-// BUG-EXPORT-002: LAYOUT-002 Transpose for Export
-// ============================================================================
-
-/// Transpose F32 matrix from row-major to column-major layout for GGUF export.
-///
-/// BUG-EXPORT-002 FIX: APR stores tensors in row-major layout with shape [rows, cols].
-/// GGUF expects column-major layout with shape [cols, rows].
-/// This function transposes the data for GGUF compatibility.
-///
-/// # Arguments
-/// * `data` - F32 values in row-major order
-/// * `shape` - APR shape [rows, cols]
-///
-/// # Returns
-/// Transposed F32 data in column-major order (stored as row-major [cols, rows])
-fn transpose_f32_rowmajor_to_colmajor(data: &[f32], shape: &[usize]) -> Vec<f32> {
-    if shape.len() != 2 {
-        // Only transpose 2D tensors
-        return data.to_vec();
-    }
-
-    let rows = shape[0];
-    let cols = shape[1];
-
-    // Transpose: row-major [rows, cols] -> column-major layout
-    // Column-major with shape [cols, rows] stored as: for each column (original row), store values
-    let mut transposed = vec![0.0f32; data.len()];
-    for r in 0..rows {
-        for c in 0..cols {
-            // Row-major source: data[r * cols + c]
-            // Column-major dest (stored as row-major [cols, rows]): transposed[c * rows + r]
-            transposed[c * rows + r] = data[r * cols + c];
-        }
-    }
-
-    transposed
-}
+// GH-202 FIX: Removed transpose_f32_rowmajor_to_colmajor.
+// GGML data layout is C row-major with reversed shape [ne0, ne1].
+// No data transposition is needed for GGUF export — only shape reversal.
 
 /// Export format options
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -308,6 +273,9 @@ pub fn apr_export<P: AsRef<Path>>(
 ///
 /// BUG-1 FIX: Now supports Q4_K quantization for GGUF inference compatibility.
 /// F32 GGUF files don't work with realizar's fused matmul kernels.
+///
+/// BUG-EXPORT-004 FIX: Now includes tokenizer metadata for realizar inference.
+/// Without BOS/EOS token IDs, the model produces empty output.
 fn export_to_gguf(
     tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
     output: &Path,
@@ -318,6 +286,11 @@ fn export_to_gguf(
     use crate::format::v2::AprV2Reader;
     use std::fs::File;
     use std::io::BufWriter;
+
+    // BUG-EXPORT-004: Load tokenizer from sibling tokenizer.json for GGUF metadata
+    eprintln!("[DEBUG-TOK] Looking for tokenizer near: {}", input.display());
+    let tokenizer = super::import::load_tokenizer_from_json(input);
+    eprintln!("[DEBUG-TOK] Tokenizer loaded: {}", tokenizer.is_some());
 
     // GGUF-EXPORT-001: Read APR metadata for GGUF KV pairs
     let apr_metadata = if input.extension().and_then(|e| e.to_str()) == Some("apr") {
@@ -456,6 +429,68 @@ fn export_to_gguf(
         ),
     ];
 
+    // BUG-EXPORT-004: Add tokenizer metadata for realizar inference
+    // Without BOS/EOS tokens, realizar can't properly tokenize/detokenize
+    let mut metadata = metadata; // Make mutable for tokenizer additions
+    if let Some(ref tok) = tokenizer {
+        // Add tokenizer model type (gpt2 for BPE models like Qwen)
+        let model_type = tok.model_type.as_deref().unwrap_or("gpt2");
+        metadata.push((
+            "tokenizer.ggml.model".to_string(),
+            GgufValue::String(model_type.to_lowercase()),
+        ));
+
+        // Add pre-tokenizer type (qwen2 for Qwen models)
+        metadata.push((
+            "tokenizer.ggml.pre".to_string(),
+            GgufValue::String(arch.to_string()),
+        ));
+
+        // Add BOS token ID (critical for inference)
+        if let Some(bos) = tok.bos_token_id {
+            metadata.push((
+                "tokenizer.ggml.bos_token_id".to_string(),
+                GgufValue::Uint32(bos),
+            ));
+        }
+
+        // Add EOS token ID (critical for knowing when to stop)
+        if let Some(eos) = tok.eos_token_id {
+            metadata.push((
+                "tokenizer.ggml.eos_token_id".to_string(),
+                GgufValue::Uint32(eos),
+            ));
+        }
+
+        // Add vocabulary (required for tokenization)
+        if !tok.vocabulary.is_empty() {
+            metadata.push((
+                "tokenizer.ggml.tokens".to_string(),
+                GgufValue::ArrayString(tok.vocabulary.clone()),
+            ));
+            eprintln!(
+                "[BUG-EXPORT-004] Added tokenizer metadata: model={}, vocab_size={}, bos={:?}, eos={:?}",
+                model_type,
+                tok.vocabulary.len(),
+                tok.bos_token_id,
+                tok.eos_token_id
+            );
+        }
+
+        // Add merges if available (for BPE tokenization)
+        if !tok.merges.is_empty() {
+            metadata.push((
+                "tokenizer.ggml.merges".to_string(),
+                GgufValue::ArrayString(tok.merges.clone()),
+            ));
+        }
+    } else {
+        eprintln!(
+            "[BUG-EXPORT-004] Warning: No tokenizer.json found near {}, GGUF may lack tokenizer metadata",
+            input.display()
+        );
+    }
+
     eprintln!(
         "[GGUF-EXPORT-001] Writing {} metadata keys (arch={}, layers={}, heads={}/{}kv, hidden={})",
         metadata.len(),
@@ -479,115 +514,54 @@ fn export_to_gguf(
         Some(QuantizationType::Q4K | QuantizationType::Int4)
     );
 
+    // GH-202 FIX: Build GGUF tensors WITHOUT data transpose.
+    //
+    // CRITICAL INSIGHT: GGML data layout data[i0 + i1*ne0] is IDENTICAL to
+    // C row-major data[row*cols + col] when shape is reversed. The data does
+    // NOT need transposing for GGUF export — only shape needs reversal from
+    // standard [rows, cols] back to GGML [ne0=cols, ne1=rows].
     let gguf_tensors: Vec<GgufTensor> = tensors
         .iter()
         .map(|(name, (data, shape))| {
             let gguf_name = hf_to_gguf_name(name);
 
-            // BUG-1 FIX: Quantize to Q4_K for GGUF inference compatibility
-            // Only quantize 2D weight tensors, keep 1D tensors (biases, norms) as F32
-            //
-            // BUG-4 FIX: Embedding tensors MUST stay as F32 for realizar compatibility!
-            // Realizar uses get_tensor_f32() which expects flat layout, but Q4_K is row-padded.
-            // This matches official GGUF files (e.g., Qwen2-0.5B uses Q8_0 for embedding).
             let is_embedding = gguf_name == "token_embd.weight" || name.contains("embed_tokens");
 
-            // BUG-EXPORT-004 FIX: Embedding tensors must NOT be transposed.
-            // Realizar expects token_embd.weight with shape [vocab_size, hidden_dim].
-            // Weight matrices are transposed for GGUF column-major layout, but embeddings
-            // use direct lookup (token ID → row), so they must stay row-major.
-            //
-            // Shape convention:
-            // - token_embd.weight: [vocab_size, hidden_dim] - NO transpose, NO shape reversal
-            // - Weight matrices: [rows, cols] → [cols, rows] with transposed data
-            let gguf_shape = if shape.len() == 2 && !is_embedding {
-                // Reverse shape for weight matrices: [rows, cols] → [cols, rows]
+            // Reverse shape for GGUF: [rows, cols] → [ne0=cols, ne1=rows]
+            let gguf_shape = if shape.len() == 2 {
                 vec![shape[1] as u64, shape[0] as u64]
             } else {
-                // Keep original shape for embeddings and 1D tensors
                 shape.iter().map(|&d| d as u64).collect()
             };
 
-            // BUG-EXPORT-002 FIX: APR uses row-major layout, GGUF uses column-major.
-            // Must transpose 2D weight tensors before exporting (but NOT embeddings).
+            // GH-202 FIX: No data transpose needed. Data is row-major in APR,
+            // and GGML's layout with reversed shape is identical.
             let (dtype, bytes) = if use_q4k && shape.len() == 2 && data.len() >= 256 && !is_embedding {
-                // Transpose first, then quantize
-                // APR row-major [rows, cols] -> GGUF column-major (transposed shape [cols, rows])
-                let transposed_data = transpose_f32_rowmajor_to_colmajor(data, shape);
-                let transposed_shape = vec![shape[1], shape[0]]; // [cols, rows]
-                let q4k_bytes = super::quantize_q4_k_matrix(&transposed_data, &transposed_shape);
-
-                // DEBUG: Check quantization output size (now using transposed shape)
-                let rows = transposed_shape[0]; // cols became rows
-                let cols = transposed_shape[1]; // rows became cols
-                let expected_blocks_per_row = (cols + 255) / 256;
-                let expected_bytes = rows * expected_blocks_per_row * 144;
-                if q4k_bytes.len() != expected_bytes {
-                    eprintln!(
-                        "[Q4K-SIZE-MISMATCH] '{}': shape={:?}, expected={}, actual={}",
-                        name, transposed_shape, expected_bytes, q4k_bytes.len()
-                    );
-                }
+                // Quantize row-major F32 to Q4K using GGUF shape [ne0, ne1]
+                // quantize_q4_k_matrix processes per-row with ne0 elements per row
+                let gguf_shape_usize = vec![shape[1], shape[0]]; // [ne0=cols, ne1=rows]
+                let q4k_bytes = super::quantize_q4_k_matrix(data, &gguf_shape_usize);
                 (GgmlType::Q4K, q4k_bytes)
-            } else if shape.len() == 2 && !is_embedding {
-                // F32 2D weight tensor - transpose for GGUF column-major layout
-                let transposed_data = transpose_f32_rowmajor_to_colmajor(data, shape);
-                let f32_bytes: Vec<u8> = transposed_data.iter().flat_map(|f| f.to_le_bytes()).collect();
-                (GgmlType::F32, f32_bytes)
-            } else if shape.len() == 2 && is_embedding {
-                // BUG-EXPORT-004 FIX: Embedding tensor - keep row-major, no transpose
-                // Data layout: token ID i → row i → contiguous elements at offset i * hidden_dim
-                let f32_bytes: Vec<u8> = data.iter().flat_map(|f| f.to_le_bytes()).collect();
-                (GgmlType::F32, f32_bytes)
             } else {
-                // 1D tensor (biases, norms) - no transpose needed
+                // F32 (weights, embeddings, 1D) - just convert to bytes, no transpose
                 let f32_bytes: Vec<u8> = data.iter().flat_map(|f| f.to_le_bytes()).collect();
                 (GgmlType::F32, f32_bytes)
             };
 
-            // DEBUG: Verify data size being passed to GgufTensor
-            static TENSOR_DEBUG: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-            let tensor_count = TENSOR_DEBUG.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            if tensor_count < 3 {
-                eprintln!(
-                    "[DEBUG-TENSOR-CREATE] '{}': dtype={:?}, shape={:?}, bytes.len()={}, bytes_ptr={:p}",
-                    gguf_name, dtype, gguf_shape, bytes.len(), bytes.as_ptr()
-                );
-            }
-
-            let tensor = GgufTensor {
+            GgufTensor {
                 name: gguf_name,
                 shape: gguf_shape,
                 dtype,
                 data: bytes,
-            };
-
-            if tensor_count < 3 {
-                eprintln!(
-                    "[DEBUG-TENSOR-AFTER] '{}': tensor.data.len()={}, tensor.data.ptr={:p}",
-                    tensor.name, tensor.data.len(), tensor.data.as_ptr()
-                );
             }
-
-            tensor
         })
         .collect();
 
-    // DEBUG: Verify collected tensors
-    eprintln!(
-        "[DEBUG-COLLECTED] Total tensors: {}, first tensor data.len()={}",
-        gguf_tensors.len(),
-        gguf_tensors.first().map(|t| t.data.len()).unwrap_or(0)
-    );
-
-    // BUG-4 FIX: For tied embedding models (Qwen2, etc.), create a separate Q4K
-    // output.weight tensor for the LM head, since the embedding is kept as F32.
-    // Realizar's fused matmul requires quantized LM head weights.
+    // BUG-4 FIX: For tied embedding models, create Q4K output.weight from embedding
     let has_lm_head = gguf_tensors.iter().any(|t| t.name == "output.weight");
     let mut gguf_tensors = gguf_tensors;
 
     if use_q4k && !has_lm_head {
-        // Find the embedding tensor and create a Q4K copy for output.weight
         if let Some(embed_data) = tensors
             .iter()
             .find(|(name, _)| name.contains("embed_tokens") || name.contains("token_embedding"))
@@ -598,14 +572,10 @@ fn export_to_gguf(
                     "[BUG-4-FIX] Creating Q4K output.weight from embedding for tied embeddings"
                 );
 
-                // BUG-EXPORT-004 FIX: output.weight is used in matmul, so it needs to be
-                // transposed from row-major [vocab_size, hidden_dim] to column-major layout.
-                // The embedding shape is [vocab_size, hidden_dim], but output.weight
-                // for matmul needs shape [hidden_dim, vocab_size] with transposed data.
-                let transposed_data = transpose_f32_rowmajor_to_colmajor(data, shape);
-                let transposed_shape = vec![shape[1], shape[0]]; // [hidden_dim, vocab_size]
-                let q4k_bytes = super::quantize_q4_k_matrix(&transposed_data, &transposed_shape);
-                let gguf_shape = vec![shape[1] as u64, shape[0] as u64]; // [hidden_dim, vocab_size]
+                // GH-202 FIX: No transpose needed. Quantize with GGUF shape.
+                let gguf_shape_usize = vec![shape[1], shape[0]]; // [ne0=cols, ne1=rows]
+                let q4k_bytes = super::quantize_q4_k_matrix(data, &gguf_shape_usize);
+                let gguf_shape = vec![shape[1] as u64, shape[0] as u64];
 
                 gguf_tensors.push(GgufTensor {
                     name: "output.weight".to_string(),

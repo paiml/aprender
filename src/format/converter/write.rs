@@ -9,136 +9,24 @@ use crate::format::gguf::{
 };
 use crate::serialization::safetensors::UserMetadata;
 
-// Import quantization and transpose functions from parent module
-// LAYOUT-002: transpose functions convert GGUF column-major to APR row-major
+// Import quantization functions from parent module
+// GH-202 FIX: transpose functions removed - GGML data is already row-major
 // NOTE: Local implementations until trueno-quant crate resolves cyclic dependency
-use super::{
-    quantize_q4_k, quantize_q4_k_matrix, quantize_q6_k_matrix, transpose_q4k_for_matmul,
-    transpose_q6k_for_matmul,
-};
+use super::{quantize_q4_k, quantize_q4_k_matrix, quantize_q6_k_matrix};
 use crate::format::v2::{AprV2Metadata, AprV2Writer, TensorDType};
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::Write;
 use std::path::Path;
 
-// ============================================================================
-// LAYOUT-002 Helper Functions
-// ============================================================================
-
-/// Transpose an F32 matrix from column-major to row-major layout.
-///
-/// BUG-CONV-001 FIX: Legacy quant formats (Q4_0/Q4_1/Q5_0/Q8_0) dequantize to F32 in
-/// column-major order. Before re-quantizing to row-major K-quants, we need to transpose.
-///
-/// # Arguments
-/// * `data` - F32 values in column-major order (GGML: cols contiguous)
-/// * `shape` - Original GGUF shape [ne0=cols, ne1=rows]
-///
-/// # Returns
-/// (transposed F32 data in row-major order, new shape [rows, cols])
-fn transpose_f32_colmajor_to_rowmajor(data: &[f32], shape: &[usize]) -> (Vec<f32>, Vec<usize>) {
-    if shape.len() != 2 {
-        // Only transpose 2D tensors
-        return (data.to_vec(), shape.to_vec());
-    }
-
-    let cols = shape[0]; // GGML ne0 = cols (contiguous)
-    let rows = shape[1]; // GGML ne1 = rows
-
-    // Transpose: column-major [cols, rows] -> row-major [rows, cols]
-    let mut transposed = vec![0.0f32; data.len()];
-    for r in 0..rows {
-        for c in 0..cols {
-            // Column-major source: data[c * rows + r]
-            // Row-major dest: transposed[r * cols + c]
-            transposed[r * cols + c] = data[c * rows + r];
-        }
-    }
-
-    (transposed, vec![rows, cols])
-}
-
-/// Transpose F32 bytes from column-major to row-major layout.
-///
-/// BUG-CONV-001 FIX: Raw F32 bytes in GGUF are column-major. Need to transpose for APR.
-///
-/// # Arguments
-/// * `data` - F32 bytes in column-major order (little-endian f32s)
-/// * `shape` - Original GGUF shape [ne0=cols, ne1=rows]
-///
-/// # Returns
-/// (transposed F32 bytes in row-major order, new shape [rows, cols])
-fn transpose_f32_bytes_colmajor_to_rowmajor(data: &[u8], shape: &[usize]) -> (Vec<u8>, Vec<usize>) {
-    if shape.len() != 2 {
-        // Only transpose 2D tensors
-        return (data.to_vec(), shape.to_vec());
-    }
-
-    let cols = shape[0]; // GGML ne0 = cols (contiguous)
-    let rows = shape[1]; // GGML ne1 = rows
-
-    // Interpret bytes as f32 (little-endian)
-    let f32_data: Vec<f32> = data
-        .chunks_exact(4)
-        .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-        .collect();
-
-    // Transpose: column-major [cols, rows] -> row-major [rows, cols]
-    let mut transposed = vec![0.0f32; f32_data.len()];
-    for r in 0..rows {
-        for c in 0..cols {
-            // Column-major source: data[c * rows + r]
-            // Row-major dest: transposed[r * cols + c]
-            transposed[r * cols + c] = f32_data[c * rows + r];
-        }
-    }
-
-    // Convert back to bytes
-    let transposed_bytes: Vec<u8> = transposed.iter().flat_map(|f| f.to_le_bytes()).collect();
-
-    (transposed_bytes, vec![rows, cols])
-}
-
-/// Transpose F16 bytes from column-major to row-major layout.
-///
-/// BUG-CONV-001 FIX: Raw F16 bytes in GGUF are column-major. Need to transpose for APR.
-/// Note: This preserves F16 format, unlike the F32 variant.
-///
-/// # Arguments
-/// * `data` - F16 bytes in column-major order (little-endian f16s)
-/// * `shape` - Original GGUF shape [ne0=cols, ne1=rows]
-///
-/// # Returns
-/// (transposed F16 bytes in row-major order, new shape [rows, cols])
-fn transpose_f16_bytes_colmajor_to_rowmajor(data: &[u8], shape: &[usize]) -> (Vec<u8>, Vec<usize>) {
-    if shape.len() != 2 {
-        // Only transpose 2D tensors
-        return (data.to_vec(), shape.to_vec());
-    }
-
-    let cols = shape[0]; // GGML ne0 = cols (contiguous)
-    let rows = shape[1]; // GGML ne1 = rows
-
-    // F16 is 2 bytes per element
-    let mut transposed = vec![0u8; data.len()];
-
-    for r in 0..rows {
-        for c in 0..cols {
-            // Column-major source index: c * rows + r
-            // Row-major dest index: r * cols + c
-            let src_idx = (c * rows + r) * 2;
-            let dst_idx = (r * cols + c) * 2;
-
-            if src_idx + 1 < data.len() && dst_idx + 1 < transposed.len() {
-                transposed[dst_idx] = data[src_idx];
-                transposed[dst_idx + 1] = data[src_idx + 1];
-            }
-        }
-    }
-
-    (transposed, vec![rows, cols])
-}
+// GH-202 FIX: Removed transpose_f32_colmajor_to_rowmajor,
+// transpose_f32_bytes_colmajor_to_rowmajor, transpose_f16_bytes_colmajor_to_rowmajor.
+//
+// These functions were based on a WRONG assumption that GGML stores data in
+// Fortran-style column-major order. In reality, GGML data[i0 + i1*ne0] is
+// C row-major with shape [ne1, ne0]. Only shape reversal is needed, not
+// data transposition. The wrong transpose corrupted non-square tensors,
+// causing 58-90% diff in GH-202 conversion fidelity tests.
 
 // ============================================================================
 // High-level API
@@ -433,25 +321,16 @@ pub(crate) fn write_apr_file_raw(
         .sum();
 
     // Build tensor_shapes map for metadata
-    // LAYOUT-002 FIX: Compute shapes AFTER transpose for K-quant tensors
-    // Q4K/Q5K/Q6K dtypes are transposed during import, so their shapes must reflect
-    // the transposed dimensions [cols, rows] rather than original GGML [rows, cols].
-    // Other dtypes use effective_shape (GGML reversed to standard [ne1, ne0]).
+    // GH-202 FIX: All 2D tensors get shape reversal [ne0, ne1] → [ne1, ne0]
+    // This is the standard convention where shape[0]=rows, shape[1]=cols.
+    // 1D tensors keep original shape.
     let tensor_shapes: serde_json::Map<String, serde_json::Value> = tensors
         .iter()
         .map(|(name, tensor)| {
-            // LAYOUT-002: Determine the actual output shape after processing
-            let output_shape = match (tensor.dtype, tensor.shape.len()) {
-                // Q4K, Q5K, Q6K are transposed: [rows, cols] → [cols, rows]
-                (12..=14, 2) => {
-                    vec![tensor.shape[1], tensor.shape[0]]
-                }
-                // Other 2D tensors use effective_shape (GGML reversed)
-                (_, 2) => {
-                    vec![tensor.shape[1], tensor.shape[0]]
-                }
-                // 1D tensors keep original shape
-                _ => tensor.shape.clone(),
+            let output_shape = if tensor.shape.len() == 2 {
+                vec![tensor.shape[1], tensor.shape[0]]
+            } else {
+                tensor.shape.clone()
             };
             let shape_array: Vec<serde_json::Value> = output_shape
                 .iter()
@@ -649,56 +528,49 @@ pub(crate) fn write_apr_file_raw(
         // Calculate element count for dequantization
         let num_elements: usize = tensor.shape.iter().product();
 
-        // PMAT-222: Reverse GGML shape [ne0, ne1] → standard [ne1, ne0] for 2D tensors
-        // The data bytes are NOT modified - GGML column-major = row-major with reversed dims
-        // Note: This was used by error paths that now return errors (BUG-LAYOUT-003 fix)
-        let _effective_shape = if tensor.shape.len() == 2 {
+        // GH-202 FIX: Process tensor based on dtype
+        // CRITICAL LAYOUT INSIGHT: GGML data layout data[i0 + i1*ne0] is IDENTICAL
+        // to C row-major data[row*cols + col] when shape is reversed [ne1, ne0].
+        // NO data transpose is needed - only shape reversal.
+        //
+        // For quantized formats (Q4K/Q6K), the super-block layout in GGML already
+        // has ne0 elements contiguous per "row", which IS row-major block layout.
+        // Raw bytes can be used directly with reversed shape.
+        //
+        // For legacy quant formats (Q4_0/Q4_1/Q5_0/Q8_0): dequant to F32 (already
+        // row-major with GGML shapes), reverse shape, then requantize with
+        // matrix-aware quantization for proper row-aligned blocks.
+        let reversed_shape = if tensor.shape.len() == 2 {
             vec![tensor.shape[1], tensor.shape[0]]
         } else {
             tensor.shape.clone()
         };
 
-        // Process tensor based on dtype
-        // Q5_0/Q8_0 need dequantization since realizar doesn't support them natively
-        // BUG-CONV-001 FIX: All GGUF tensors are column-major, need transpose for row-major APR
         match tensor.dtype {
             0 => {
-                // F32 - BUG-CONV-001 FIX: Transpose column-major to row-major
-                let (transposed_data, transposed_shape) =
-                    transpose_f32_bytes_colmajor_to_rowmajor(&tensor.data, &tensor.shape);
-                writer.add_tensor(name, TensorDType::F32, transposed_shape, transposed_data);
+                // F32 - GH-202 FIX: Data is already row-major, just reverse shape
+                writer.add_tensor(name, TensorDType::F32, reversed_shape, tensor.data.clone());
             }
             1 => {
-                // F16 - BUG-CONV-001 FIX: Transpose column-major to row-major
-                let (transposed_data, transposed_shape) =
-                    transpose_f16_bytes_colmajor_to_rowmajor(&tensor.data, &tensor.shape);
-                writer.add_tensor(name, TensorDType::F16, transposed_shape, transposed_data);
+                // F16 - GH-202 FIX: Data is already row-major, just reverse shape
+                writer.add_tensor(name, TensorDType::F16, reversed_shape, tensor.data.clone());
             }
             12 => {
-                // Q4_K - LAYOUT-002: Dequantize and re-quantize with row-padded layout
-                // GGUF has column-major super-blocks, APR needs row-padded super-blocks
-                // dequant→requant converts layout while preserving values
-                let (row_major_q4k, transposed_shape) =
-                    transpose_q4k_for_matmul(&tensor.data, &tensor.shape);
-                writer.add_tensor(name, TensorDType::Q4K, transposed_shape, row_major_q4k);
+                // Q4_K - GH-202 FIX: Raw Q4K bytes are already row-major block layout
+                // Each "row" (ne1 index) has ceil(ne0/256) contiguous super-blocks.
+                // Just reverse the shape metadata.
+                writer.add_tensor(name, TensorDType::Q4K, reversed_shape, tensor.data.clone());
             }
             13 => {
-                // Q5_K - LAYOUT-002: Convert column-major to row-major
-                // APR doesn't have native Q5K dtype, so convert to Q6K (closer bit-width)
-                // BUG-CONV-001 FIX: F32 data from dequant is column-major, need to transpose
+                // Q5_K - Convert to Q6K (closer bit-width, realizar supported)
+                // GH-202 FIX: Dequant produces row-major F32, use reversed shape
                 use crate::format::gguf::dequantize_q5_k;
                 match dequantize_q5_k(&tensor.data, 0, num_elements) {
                     Ok(f32_data) => {
-                        // Transpose from column-major to row-major before requantizing
-                        let (transposed_f32, transposed_shape) =
-                            transpose_f32_colmajor_to_rowmajor(&f32_data, &tensor.shape);
-                        let q6k_bytes = quantize_q6_k_matrix(&transposed_f32, &transposed_shape);
-                        writer.add_tensor(name, TensorDType::Q6K, transposed_shape, q6k_bytes);
+                        let q6k_bytes = quantize_q6_k_matrix(&f32_data, &reversed_shape);
+                        writer.add_tensor(name, TensorDType::Q6K, reversed_shape, q6k_bytes);
                     }
                     Err(e) => {
-                        // BUG-LAYOUT-003 FIX: Fail instead of silently corrupting data
-                        // Writing raw column-major quantized bytes as F32 violates LAYOUT-002
-                        // and corrupts the tensor interpretation
                         return Err(AprenderError::FormatError {
                             message: format!(
                                 "Failed to dequantize Q5_K tensor '{}': {}. \
@@ -710,25 +582,19 @@ pub(crate) fn write_apr_file_raw(
                 }
             }
             14 => {
-                // Q6_K - LAYOUT-002: Dequantize and re-quantize with row-padded layout
-                // Same as Q4_K - convert column-major super-blocks to row-padded
-                let (row_major_q6k, transposed_shape) =
-                    transpose_q6k_for_matmul(&tensor.data, &tensor.shape);
-                writer.add_tensor(name, TensorDType::Q6K, transposed_shape, row_major_q6k);
+                // Q6_K - GH-202 FIX: Raw Q6K bytes are already row-major block layout
+                // Same as Q4K - just reverse shape metadata.
+                writer.add_tensor(name, TensorDType::Q6K, reversed_shape, tensor.data.clone());
             }
             2 => {
-                // Q4_0 - dequantize then requantize to Q4_K (realizar needs K-quants)
-                // BUG-CONV-001 FIX: F32 data from dequant is column-major, need to transpose
+                // Q4_0 - dequant to F32, requant to Q4_K (realizar needs K-quants)
+                // GH-202 FIX: Dequant produces row-major F32, use reversed shape
                 match dequantize_q4_0(&tensor.data, 0, num_elements) {
                     Ok(f32_data) => {
-                        // Transpose from column-major to row-major before requantizing
-                        let (transposed_f32, transposed_shape) =
-                            transpose_f32_colmajor_to_rowmajor(&f32_data, &tensor.shape);
-                        let q4k_bytes = quantize_q4_k_matrix(&transposed_f32, &transposed_shape);
-                        writer.add_tensor(name, TensorDType::Q4K, transposed_shape, q4k_bytes);
+                        let q4k_bytes = quantize_q4_k_matrix(&f32_data, &reversed_shape);
+                        writer.add_tensor(name, TensorDType::Q4K, reversed_shape, q4k_bytes);
                     }
                     Err(e) => {
-                        // BUG-LAYOUT-003 FIX: Fail instead of silently corrupting data
                         return Err(AprenderError::FormatError {
                             message: format!(
                                 "Failed to dequantize Q4_0 tensor '{}': {}. \
@@ -740,18 +606,14 @@ pub(crate) fn write_apr_file_raw(
                 }
             }
             3 => {
-                // Q4_1 - dequantize then requantize to Q4_K (realizar needs K-quants)
-                // BUG-CONV-001 FIX: F32 data from dequant is column-major, need to transpose
+                // Q4_1 - dequant to F32, requant to Q4_K
+                // GH-202 FIX: Dequant produces row-major F32, use reversed shape
                 match dequantize_q4_1(&tensor.data, 0, num_elements) {
                     Ok(f32_data) => {
-                        // Transpose from column-major to row-major before requantizing
-                        let (transposed_f32, transposed_shape) =
-                            transpose_f32_colmajor_to_rowmajor(&f32_data, &tensor.shape);
-                        let q4k_bytes = quantize_q4_k_matrix(&transposed_f32, &transposed_shape);
-                        writer.add_tensor(name, TensorDType::Q4K, transposed_shape, q4k_bytes);
+                        let q4k_bytes = quantize_q4_k_matrix(&f32_data, &reversed_shape);
+                        writer.add_tensor(name, TensorDType::Q4K, reversed_shape, q4k_bytes);
                     }
                     Err(e) => {
-                        // BUG-LAYOUT-003 FIX: Fail instead of silently corrupting data
                         return Err(AprenderError::FormatError {
                             message: format!(
                                 "Failed to dequantize Q4_1 tensor '{}': {}. \
@@ -763,18 +625,14 @@ pub(crate) fn write_apr_file_raw(
                 }
             }
             6 => {
-                // Q5_0 - dequantize then requantize to Q6_K (closer bit-width match)
-                // BUG-CONV-001 FIX: F32 data from dequant is column-major, need to transpose
+                // Q5_0 - dequant to F32, requant to Q6_K (closer bit-width)
+                // GH-202 FIX: Dequant produces row-major F32, use reversed shape
                 match dequantize_q5_0(&tensor.data, 0, num_elements) {
                     Ok(f32_data) => {
-                        // Transpose from column-major to row-major before requantizing
-                        let (transposed_f32, transposed_shape) =
-                            transpose_f32_colmajor_to_rowmajor(&f32_data, &tensor.shape);
-                        let q6k_bytes = quantize_q6_k_matrix(&transposed_f32, &transposed_shape);
-                        writer.add_tensor(name, TensorDType::Q6K, transposed_shape, q6k_bytes);
+                        let q6k_bytes = quantize_q6_k_matrix(&f32_data, &reversed_shape);
+                        writer.add_tensor(name, TensorDType::Q6K, reversed_shape, q6k_bytes);
                     }
                     Err(e) => {
-                        // BUG-LAYOUT-003 FIX: Fail instead of silently corrupting data
                         return Err(AprenderError::FormatError {
                             message: format!(
                                 "Failed to dequantize Q5_0 tensor '{}': {}. \
@@ -786,18 +644,14 @@ pub(crate) fn write_apr_file_raw(
                 }
             }
             8 => {
-                // Q8_0 - dequantize then requantize to Q6_K (closer bit-width match)
-                // BUG-CONV-001 FIX: F32 data from dequant is column-major, need to transpose
+                // Q8_0 - dequant to F32, requant to Q6_K (closer bit-width)
+                // GH-202 FIX: Dequant produces row-major F32, use reversed shape
                 match dequantize_q8_0(&tensor.data, 0, num_elements) {
                     Ok(f32_data) => {
-                        // Transpose from column-major to row-major before requantizing
-                        let (transposed_f32, transposed_shape) =
-                            transpose_f32_colmajor_to_rowmajor(&f32_data, &tensor.shape);
-                        let q6k_bytes = quantize_q6_k_matrix(&transposed_f32, &transposed_shape);
-                        writer.add_tensor(name, TensorDType::Q6K, transposed_shape, q6k_bytes);
+                        let q6k_bytes = quantize_q6_k_matrix(&f32_data, &reversed_shape);
+                        writer.add_tensor(name, TensorDType::Q6K, reversed_shape, q6k_bytes);
                     }
                     Err(e) => {
-                        // BUG-LAYOUT-003 FIX: Fail instead of silently corrupting data
                         return Err(AprenderError::FormatError {
                             message: format!(
                                 "Failed to dequantize Q8_0 tensor '{}': {}. \
