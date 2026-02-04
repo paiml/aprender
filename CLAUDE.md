@@ -402,8 +402,31 @@ Same bytes, different interpretation → GARBAGE OUTPUT
 3. Re-quantize with `quantize_q4_k_matrix()` for row-padded layout
 
 **Key Files:**
+- `contracts/tensor-layout-v1.yaml` - **THE SOURCE OF TRUTH** for tensor layouts
+- `src/format/layout_contract.rs` - Rust implementation with validation API
 - `src/format/converter/write.rs` - GGUF→APR import with transpose
 - `src/format/converter/mod.rs` - `transpose_q4k_for_matmul()`, `transpose_q6k_for_matmul()`
+
+**Tensor Layout Contract (LAYOUT-CONTRACT-001):**
+
+DO NOT GREP THE CODEBASE for tensor layout information. Use the contract:
+
+```rust
+use aprender::format::layout_contract::{CONTRACT, LayoutContract};
+
+// Check if tensor should be transposed
+let transpose = CONTRACT.should_transpose_gguf("output.weight");  // true for 2D, false for 1D
+
+// Validate APR tensor shape
+CONTRACT.validate_apr_shape("lm_head.weight", &[vocab, hidden], vocab, hidden)?;
+
+// Get per-tensor contract
+if let Some(c) = CONTRACT.get_gguf_contract("blk.0.attn_q.weight") {
+    println!("APR shape: {}", c.apr_shape_formula);  // "[heads*head_dim, hidden]"
+}
+```
+
+See `docs/specifications/qwen2.5-coder-showcase-demo.md` Section E.8 for full specification.
 
 **Falsification Test (F-LAYOUT-001):**
 ```bash
