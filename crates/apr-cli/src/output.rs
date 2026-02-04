@@ -25,6 +25,7 @@ pub(crate) fn is_valid_magic(magic: &[u8]) -> bool {
 }
 
 /// Get format name from magic bytes
+/// BUG-PROBAR-001 FIX: Now returns correct name for GGUF format
 pub(crate) fn format_name(magic: &[u8]) -> &'static str {
     if magic.len() >= 4 {
         if magic[..4] == MAGIC_APRN {
@@ -38,6 +39,9 @@ pub(crate) fn format_name(magic: &[u8]) -> &'static str {
         }
         if magic[..4] == MAGIC_APR0 {
             return "APR v2 (ONE TRUE format)";
+        }
+        if magic[..4] == MAGIC_GGUF {
+            return "GGUF (llama.cpp)";
         }
     }
     "Unknown"

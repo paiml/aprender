@@ -216,9 +216,10 @@ fn validate_header(reader: &mut BufReader<File>) -> Result<String, CliError> {
         .read_exact(&mut magic)
         .map_err(|_| CliError::InvalidFormat("File too small".to_string()))?;
 
+    // BUG-PROBAR-001 FIX: Updated error message to include GGUF
     if !output::is_valid_magic(&magic) {
         return Err(CliError::InvalidFormat(format!(
-            "Invalid magic: expected APRN, APR1, APR2, or APR\\0, got {magic:?}"
+            "Invalid magic: expected APRN, APR1, APR2, APR\\0, or GGUF, got {magic:?}"
         )));
     }
 
