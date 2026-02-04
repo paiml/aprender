@@ -1,6 +1,6 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 9.20.0 (BUG-EXPORT-004 Fixed - GGUF embedding shape/transpose)
+**Version:** 9.21.0 (LAYOUT-CONTRACT-001 - Tensor Layout Contract as Source of Truth)
 **Status:** ✅ **SHOWCASE PIPELINE WORKING** - Export now correctly infers model config
 **Popperian Score:** 92/100 (Grade: A+ — Pipeline bugs fixed, 34 falsification tests passing)
 **Code Coverage:** 96.94% (target: ≥95%)
@@ -7432,6 +7432,33 @@ apr lint model.apr
 - `test_critical_tensors`
 - `test_should_transpose`
 - `test_global_contract`
+
+#### E.8.8 Summary: Layout Contract Benefits
+
+**Before (GH-202 Era):**
+```
+Developer: "What shape should lm_head have?"
+Answer: *greps 15 files, finds conflicting comments, picks wrong answer*
+Result: GARBAGE OUTPUT for 3 days
+```
+
+**After (LAYOUT-CONTRACT-001):**
+```
+Developer: "What shape should lm_head have?"
+Answer: CONTRACT.get_apr_contract("lm_head.weight").apr_shape_formula → "[vocab, hidden]"
+Result: Correct answer in <1 second
+```
+
+**Key Achievements:**
+1. **Single Source of Truth** — `contracts/tensor-layout-v1.yaml` is authoritative
+2. **Integrated Validation** — `apr lint` catches layout violations at runtime
+3. **Pattern Matching** — Handles any layer number (`blk.0.attn_q.weight` matches `blk.{n}.attn_q.weight`)
+4. **Critical Tensor Flagging** — lm_head marked critical with shape validation
+5. **Byte Size Calculation** — Q4K/Q6K size formulas prevent data truncation
+6. **Playbook Integration** — apr-model-qa-playbook generates tests from contract (paiml/apr-model-qa-playbook#4)
+
+**Toyota Way Principle Applied:** "Standardized work is the foundation for continuous improvement."
+The layout contract is our standardized work for tensor transformations.
 
 ### E.9 trueno-quant Full Stack Migration (2026-02-03)
 
