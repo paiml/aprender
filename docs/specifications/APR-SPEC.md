@@ -3,8 +3,15 @@
 **Version**: 2.1.0-draft
 **Status**: Draft
 **Created**: 2025-12-16
-**Last Updated**: 2026-01-02
+**Last Updated**: 2026-02-03
 **GitHub Issue**: https://github.com/paiml/aprender/issues/119
+
+> **⚠️ LAYOUT-002: Row-Major Mandate**
+>
+> APR format is **exclusively row-major**. GGUF column-major data is transposed
+> during import by aprender. Realizar kernels assume row-major layout — there is
+> ONE WAY ONLY. Legacy `colmajor` aliases have been deleted from realizar.
+> See `unified-tensor-formats.md` Section 8 for details.
 
 ---
 
@@ -60,6 +67,7 @@
     - [10.9 Expected Tensor Statistics](#109-expected-tensor-statistics)
     - [10.10 Conversion Validation Requirements](#1010-conversion-validation-requirements)
     - [10.11 Known Failure Modes](#1011-known-failure-modes)
+    - [10.12 Outstanding Bugs (P0/P1)](#1012-outstanding-bugs-p0p1)
 11. [Master Falsification QA Checklist (100 Points)](#11-master-falsification-qa-checklist-100-points)
     - [A. Format & Structural Integrity](#a-format--structural-integrity-25-points)
     - [B. Tensor Physics & Statistics](#b-tensor-physics--statistics-25-points)
@@ -2975,6 +2983,43 @@ positional_embedding                     ~0.0            0.01 - 0.02
 | Missing conv bias | Zero encoder output | Conv layer not loaded | Check `--analyze-source` |
 | Transposed weights | Garbage output | Row-major vs column-major confusion | Run `apr diff` vs reference |
 | Truncated tensors | Partial outputs | Size mismatch during copy | Verify header vs file size |
+
+### 10.12 Outstanding Bugs (P0/P1)
+
+**Last Updated**: 2026-02-04
+
+| GitHub | Priority | Summary | Root Cause | Status |
+|--------|----------|---------|------------|--------|
+| [#202](https://github.com/paiml/aprender/issues/202) | **P0** | LAYOUT-002: Conversion fidelity failures (58-90% diff) | Quantized tensor transpose during GGUF→APR import | **INVESTIGATING** |
+| [#200](https://github.com/paiml/aprender/issues/200) | **P0** | QA: Qwen2.5-Coder dev-tier BLOCKED (0/6 pass) | Depends on #202 layout fix | **BLOCKED** |
+| [#199](https://github.com/paiml/aprender/issues/199) | **P1** | APR 1.5B: dequantize lm_head fails, 8x slower, GPU garbage | lm_head quantization + kernel dispatch | **OPEN** |
+| [#193](https://github.com/paiml/aprender/issues/193) | **P2** | rosetta convert: SafeTensors missing num_attention_heads | config.json generation incomplete | **OPEN** |
+| [#192](https://github.com/paiml/aprender/issues/192) | **P1** | APR inference 0.5 tok/s vs GGUF 270 tok/s | Dequant path not using fused kernels | **OPEN** |
+| [#188](https://github.com/paiml/aprender/issues/188) | **P2** | Differential tracing for layout bugs | Need automated GGUF↔APR tensor comparison | **OPEN** |
+| [#187](https://github.com/paiml/aprender/issues/187) | **P2** | Format-aware differential tracing | Same as #188, duplicate | **DUPLICATE** |
+
+**Blocking Dependency Graph:**
+```
+#202 (LAYOUT-002) ──blocks──► #200 (QA qualification)
+                  ──blocks──► #192 (performance)
+                  ──blocks──► #199 (1.5B issues)
+```
+
+**Debugging Commands:**
+```bash
+# P0: Verify layout fix with apr qa
+apr qa model.apr                        # Must pass golden_output gate
+
+# P0: Compare tensor statistics
+apr tensors model.gguf | head -20
+apr tensors model.apr | head -20        # Must match GGUF stats
+
+# P1: Check performance
+apr qa model.apr --assert-tps 100       # Must achieve 100+ tok/s
+
+# P1: Verify dequantization
+apr debug model.apr --tensor lm_head.weight  # Check for errors
+```
 
 ---
 
