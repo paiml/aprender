@@ -233,9 +233,17 @@ fn read_and_parse_header(reader: &mut BufReader<File>) -> Result<HeaderData, Cli
         )
     })?;
 
-    // Check magic - only APR\0 (v2) is supported
+    // Check magic - only APR\0 (v2) is supported for detailed inspection
+    // BUG-INSPECT-001 FIX: Distinguish GGUF from legacy APR formats
     let magic = &header_bytes[0..4];
     if magic != MAGIC_V2 {
+        if magic == output::MAGIC_GGUF {
+            return Err(CliError::InvalidFormat(
+                "GGUF format detected. Use 'apr inspect' with --format gguf flag \
+                 or convert to APR format with 'apr import'."
+                    .to_string(),
+            ));
+        }
         if output::is_valid_magic(magic) {
             return Err(CliError::InvalidFormat(
                 "Legacy APR format detected (APRN/APR1/APR2). Only APR v2 (APR\\0) is supported. \
