@@ -1765,20 +1765,21 @@ mod tests_write_import_lint {
     }
 
     #[test]
-    fn test_lint_apr_file_v2_format_mismatch() {
-        // Note: lint_apr_file expects v1 format (APRN magic) but pygmy uses v2 (APR\0 magic)
-        // This test documents this limitation
+    fn test_lint_apr_file_v2_format_support() {
+        // lint_apr_file now supports both v1 (APRN) and v2 (APR\0) formats
+        // LAYOUT-CONTRACT-001: Updated to support unified format linting
         let temp_dir = TempDir::new().expect("Create temp dir");
         let apr_path = temp_dir.path().join("v2_model.apr");
 
         let apr_data = build_pygmy_apr();
         fs::write(&apr_path, &apr_data).expect("Write APR");
 
-        // V2 format should fail V1 lint (different magic)
+        // V2 format should now be supported (fixed as part of LAYOUT-CONTRACT-001)
         let result = lint_apr_file(&apr_path);
-        assert!(result.is_err(), "V2 APR should fail V1 lint");
-        let err = result.unwrap_err().to_string();
-        assert!(err.contains("magic") || err.contains("Invalid"));
+        assert!(result.is_ok(), "V2 APR should now be linted successfully");
+        let report = result.expect("Lint report");
+        // Pygmy models have missing metadata by design
+        assert!(report.warn_count > 0, "Should have metadata warnings");
     }
 
     #[test]

@@ -221,6 +221,7 @@ fn test_lint_abbreviated_weight_name() {
             size_bytes: 1000,
             alignment: 64,
             is_compressed: false,
+            shape: vec![],
         }],
         ..Default::default()
     };
@@ -242,6 +243,7 @@ fn test_lint_abbreviated_bias_name() {
             size_bytes: 1000,
             alignment: 64,
             is_compressed: false,
+            shape: vec![],
         }],
         ..Default::default()
     };
@@ -263,6 +265,7 @@ fn test_lint_canonical_name_passes() {
             size_bytes: 1000,
             alignment: 64,
             is_compressed: false,
+            shape: vec![],
         }],
         ..Default::default()
     };
@@ -289,6 +292,7 @@ fn test_lint_nonstandard_pattern_double_underscore() {
             size_bytes: 1000,
             alignment: 64,
             is_compressed: false,
+            shape: vec![],
         }],
         ..Default::default()
     };
@@ -313,6 +317,7 @@ fn test_lint_too_short_name() {
             size_bytes: 1000,
             alignment: 64,
             is_compressed: false,
+            shape: vec![],
         }],
         ..Default::default()
     };
@@ -338,12 +343,14 @@ fn test_lint_unaligned_tensors() {
                 size_bytes: 1000,
                 alignment: 32, // Unaligned
                 is_compressed: false,
+                shape: vec![],
             },
             TensorLintInfo {
                 name: "tensor2".to_string(),
                 size_bytes: 1000,
                 alignment: 16, // Unaligned
                 is_compressed: false,
+                shape: vec![],
             },
         ],
         ..Default::default()
@@ -370,6 +377,7 @@ fn test_lint_aligned_tensors_pass() {
             size_bytes: 1000,
             alignment: 64, // Aligned
             is_compressed: false,
+            shape: vec![],
         }],
         ..Default::default()
     };
@@ -394,6 +402,7 @@ fn test_lint_large_uncompressed_tensor() {
             size_bytes: 2 * 1024 * 1024, // 2MB
             alignment: 64,
             is_compressed: false, // Not compressed
+            shape: vec![],
         }],
         ..Default::default()
     };
@@ -418,6 +427,7 @@ fn test_lint_large_compressed_tensor_passes() {
             size_bytes: 2 * 1024 * 1024, // 2MB
             alignment: 64,
             is_compressed: true, // Compressed
+            shape: vec![],
         }],
         ..Default::default()
     };
@@ -442,6 +452,7 @@ fn test_lint_small_uncompressed_tensor_passes() {
             size_bytes: 500 * 1024, // 500KB
             alignment: 64,
             is_compressed: false,
+            shape: vec![],
         }],
         ..Default::default()
     };
@@ -471,15 +482,19 @@ fn test_lint_clean_model() {
                 size_bytes: 500 * 1024,
                 alignment: 64,
                 is_compressed: true,
+                shape: vec![],
             },
             TensorLintInfo {
                 name: "encoder.conv1.bias".to_string(),
                 size_bytes: 1024,
                 alignment: 64,
                 is_compressed: true,
+                shape: vec![],
             },
         ],
         is_compressed: true,
+        vocab_size: None,
+        hidden_dim: None,
     };
 
     let report = lint_model(&info);
@@ -497,8 +512,11 @@ fn test_lint_model_with_all_issues() {
             size_bytes: 2 * 1024 * 1024, // INFO (large uncompressed)
             alignment: 32,               // INFO (unaligned)
             is_compressed: false,
+            shape: vec![],
         }],
         is_compressed: false,
+        vocab_size: None,
+        hidden_dim: None,
     };
 
     let report = lint_model(&info);
@@ -636,6 +654,7 @@ fn test_tensor_lint_info_clone() {
         size_bytes: 1024,
         alignment: 64,
         is_compressed: true,
+        shape: vec![],
     };
     let cloned = tensor.clone();
     assert_eq!(cloned.name, "test_tensor");
@@ -651,6 +670,7 @@ fn test_tensor_lint_info_debug() {
         size_bytes: 512,
         alignment: 32,
         is_compressed: false,
+        shape: vec![],
     };
     let debug_str = format!("{:?}", tensor);
     assert!(debug_str.contains("debug_test"));
@@ -665,6 +685,8 @@ fn test_model_lint_info_clone() {
         has_provenance: false,
         tensors: vec![],
         is_compressed: true,
+        vocab_size: None,
+        hidden_dim: None,
     };
     let cloned = info.clone();
     assert!(cloned.has_license);
@@ -807,18 +829,21 @@ fn test_lint_with_all_abbreviation_patterns() {
                 size_bytes: 1000,
                 alignment: 64,
                 is_compressed: false,
+                shape: vec![],
             },
             TensorLintInfo {
                 name: "encoder.layer_b.data".to_string(), // _b -> .bias
                 size_bytes: 1000,
                 alignment: 64,
                 is_compressed: false,
+                shape: vec![],
             },
             TensorLintInfo {
                 name: "encoder.attn_qkv.data".to_string(), // attn_ -> self_attn.
                 size_bytes: 1000,
                 alignment: 64,
                 is_compressed: false,
+                shape: vec![],
             },
         ],
         ..Default::default()
@@ -886,6 +911,7 @@ fn test_lint_zero_alignment() {
             size_bytes: 1000,
             alignment: 0, // Zero alignment - skip check
             is_compressed: false,
+            shape: vec![],
         }],
         ..Default::default()
     };

@@ -1,0 +1,197 @@
+# Tensor Layout Contract v1.0.0
+# THE SOURCE OF TRUTH for GGUF→APR tensor conversion
+#
+# STATUS: Authoritative - DO NOT GREP THE CODEBASE, READ THIS FILE
+# SPEC: docs/specifications/qwen2.5-coder-showcase-demo.md Section E.8
+# CONSUMERS:
+#   - aprender/src/format/converter/write.rs (compile-time)
+#   - realizar/src/apr_transformer/mod.rs (validation)
+#   - apr-model-qa-playbook (test generation)
+
+metadata:
+  version: "1.0.0"
+  created: "2026-02-04"
+  author: "PAIML Engineering"
+  description: "Tensor layout contract for GGUF→APR conversion"
+  lesson_learned: "GH-202 - we had no canonical spec, wasted hours grepping"
+
+# Format conventions
+formats:
+  gguf:
+    layout: column-major
+    shape_convention: "[ne0, ne1]"
+    note: "GGML convention - ne[0] is contiguous (inner) dimension"
+  apr:
+    layout: row-major
+    shape_convention: "[rows, cols]"
+    note: "Standard ML convention - rows are contiguous"
+  safetensors:
+    layout: row-major
+    shape_convention: "[rows, cols]"
+    note: "HuggingFace native format - same as APR"
+
+# Kernel convention - THE source of truth for shapes
+# When in doubt, trust the kernel signature, not comments
+kernel:
+  signature: "fused_q*k_parallel_matvec(weights, activations, in_dim, out_dim)"
+  weight_shape: "[out_dim, in_dim]"
+  computation: "y[out] = dot(activations[in], weights[out, :])"
+  byte_calculation: "out_dim * ceil(in_dim / QK_K) * block_bytes"
+  block_sizes:
+    Q4_K: 144  # bytes per super-block
+    Q5_K: 176
+    Q6_K: 210
+  QK_K: 256  # elements per super-block
+  note: "Kernel defines shape. Comments describe math. Trust the kernel."
+
+# Per-tensor specifications
+# Key: tensor logical name
+# Values: gguf_name, apr_name, shapes, transpose rule, kernel info
+tensors:
+  embedding:
+    gguf_name: "token_embd.weight"
+    apr_name: "model.embed_tokens.weight"
+    gguf_shape: "[hidden, vocab]"
+    apr_shape: "[vocab, hidden]"
+    transpose: true
+    kernel: "lookup (row = token embedding, not matmul)"
+    validation: "shape[0] == vocab_size AND shape[1] == hidden_dim"
+
+  lm_head:
+    gguf_name: "output.weight"
+    apr_name: "lm_head.weight"
+    gguf_shape: "[hidden, vocab]"
+    apr_shape: "[vocab, hidden]"
+    transpose: true
+    kernel: "matmul_q*k_rowmajor(W, x, vocab_size, hidden_dim)"
+    kernel_out_dim: vocab_size
+    kernel_in_dim: hidden_dim
+    validation: "shape[0] == vocab_size AND shape[1] == hidden_dim"
+    critical: true
+    note: "GH-202 root cause - wrong shape caused [PAD] garbage output"
+
+  q_proj:
+    gguf_name: "blk.{n}.attn_q.weight"
+    apr_name: "model.layers.{n}.self_attn.q_proj.weight"
+    gguf_shape: "[hidden, heads*head_dim]"
+    apr_shape: "[heads*head_dim, hidden]"
+    transpose: true
+    kernel: "matmul_q*k_rowmajor(W, x, num_heads*head_dim, hidden_dim)"
+    kernel_out_dim: "num_heads * head_dim"
+    kernel_in_dim: hidden_dim
+
+  k_proj:
+    gguf_name: "blk.{n}.attn_k.weight"
+    apr_name: "model.layers.{n}.self_attn.k_proj.weight"
+    gguf_shape: "[hidden, kv_heads*head_dim]"
+    apr_shape: "[kv_heads*head_dim, hidden]"
+    transpose: true
+    kernel: "matmul_q*k_rowmajor(W, x, num_kv_heads*head_dim, hidden_dim)"
+    kernel_out_dim: "num_kv_heads * head_dim"
+    kernel_in_dim: hidden_dim
+
+  v_proj:
+    gguf_name: "blk.{n}.attn_v.weight"
+    apr_name: "model.layers.{n}.self_attn.v_proj.weight"
+    gguf_shape: "[hidden, kv_heads*head_dim]"
+    apr_shape: "[kv_heads*head_dim, hidden]"
+    transpose: true
+    kernel: "matmul_q*k_rowmajor(W, x, num_kv_heads*head_dim, hidden_dim)"
+    kernel_out_dim: "num_kv_heads * head_dim"
+    kernel_in_dim: hidden_dim
+
+  o_proj:
+    gguf_name: "blk.{n}.attn_output.weight"
+    apr_name: "model.layers.{n}.self_attn.o_proj.weight"
+    gguf_shape: "[heads*head_dim, hidden]"
+    apr_shape: "[hidden, heads*head_dim]"
+    transpose: true
+    kernel: "matmul_q*k_rowmajor(W, x, hidden_dim, num_heads*head_dim)"
+    kernel_out_dim: hidden_dim
+    kernel_in_dim: "num_heads * head_dim"
+
+  gate_proj:
+    gguf_name: "blk.{n}.ffn_gate.weight"
+    apr_name: "model.layers.{n}.mlp.gate_proj.weight"
+    gguf_shape: "[hidden, intermediate]"
+    apr_shape: "[intermediate, hidden]"
+    transpose: true
+    kernel: "matmul_q*k_rowmajor(W, x, intermediate_dim, hidden_dim)"
+    kernel_out_dim: intermediate_dim
+    kernel_in_dim: hidden_dim
+
+  up_proj:
+    gguf_name: "blk.{n}.ffn_up.weight"
+    apr_name: "model.layers.{n}.mlp.up_proj.weight"
+    gguf_shape: "[hidden, intermediate]"
+    apr_shape: "[intermediate, hidden]"
+    transpose: true
+    kernel: "matmul_q*k_rowmajor(W, x, intermediate_dim, hidden_dim)"
+    kernel_out_dim: intermediate_dim
+    kernel_in_dim: hidden_dim
+
+  down_proj:
+    gguf_name: "blk.{n}.ffn_down.weight"
+    apr_name: "model.layers.{n}.mlp.down_proj.weight"
+    gguf_shape: "[intermediate, hidden]"
+    apr_shape: "[hidden, intermediate]"
+    transpose: true
+    kernel: "matmul_q*k_rowmajor(W, x, hidden_dim, intermediate_dim)"
+    kernel_out_dim: hidden_dim
+    kernel_in_dim: intermediate_dim
+
+  input_layernorm:
+    gguf_name: "blk.{n}.attn_norm.weight"
+    apr_name: "model.layers.{n}.input_layernorm.weight"
+    gguf_shape: "[hidden]"
+    apr_shape: "[hidden]"
+    transpose: false
+    kernel: "element-wise multiply"
+
+  post_attention_layernorm:
+    gguf_name: "blk.{n}.ffn_norm.weight"
+    apr_name: "model.layers.{n}.post_attention_layernorm.weight"
+    gguf_shape: "[hidden]"
+    apr_shape: "[hidden]"
+    transpose: false
+    kernel: "element-wise multiply"
+
+  final_norm:
+    gguf_name: "output_norm.weight"
+    apr_name: "model.norm.weight"
+    gguf_shape: "[hidden]"
+    apr_shape: "[hidden]"
+    transpose: false
+    kernel: "element-wise multiply"
+
+# Validation rules for automated testing
+# These generate tests in apr-model-qa-playbook
+validation_rules:
+  - id: F-LAYOUT-CONTRACT-001
+    name: "All 2D weights are transposed"
+    description: "For tensors with transpose=true, apr_shape == swap(gguf_shape)"
+    severity: P0
+
+  - id: F-LAYOUT-CONTRACT-002
+    name: "lm_head shape matches kernel expectation"
+    description: "lm_head.apr_shape[0] == vocab_size AND lm_head.apr_shape[1] == hidden_dim"
+    severity: P0
+    critical: true
+    reference: "GH-202"
+
+  - id: F-LAYOUT-CONTRACT-003
+    name: "1D tensors unchanged"
+    description: "For tensors with transpose=false, apr_shape == gguf_shape"
+    severity: P1
+
+  - id: F-LAYOUT-CONTRACT-004
+    name: "Byte size matches kernel expectation"
+    description: "tensor.bytes == out_dim * ceil(in_dim/QK_K) * block_bytes"
+    severity: P0
+
+  - id: F-LAYOUT-CONTRACT-005
+    name: "No garbage output from lm_head"
+    description: "Inference does not produce [PAD] tokens repeatedly"
+    severity: P0
+    critical: true
+    reference: "GH-202"

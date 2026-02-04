@@ -147,6 +147,11 @@ pub mod tensors;
 // Model diff library (TOOL-APR-002 - format-agnostic comparison)
 pub mod diff;
 
+// Tensor Layout Contract - THE SOURCE OF TRUTH (LAYOUT-CONTRACT-001)
+// ALL tooling that deals with tensor shapes/layouts MUST use this module.
+// See: contracts/tensor-layout-v1.yaml and docs/specifications/qwen2.5-coder-showcase-demo.md §E.8
+pub mod layout_contract;
+
 // Digital signatures (spec §4.2, PMAT-198)
 #[cfg(feature = "format-signing")]
 pub mod signing;
@@ -223,6 +228,11 @@ pub use tensors::{
 
 // Re-export diff types (TOOL-APR-002 - format-agnostic comparison)
 pub use diff::{diff_inspections, diff_models, DiffCategory, DiffEntry, DiffOptions, DiffReport};
+
+// Re-export layout contract types (LAYOUT-CONTRACT-001 - Source of Truth)
+pub use layout_contract::{
+    block_sizes, validation_rules, ContractError, LayoutContract, TensorContract, CONTRACT,
+};
 
 // Re-export quantization types when feature is enabled
 #[cfg(feature = "format-quantize")]

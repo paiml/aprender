@@ -55,6 +55,9 @@ pub enum LintCategory {
     Naming,
     /// Efficiency checks (alignment, compression)
     Efficiency,
+    /// Layout contract checks (LAYOUT-CONTRACT-001)
+    /// See: contracts/tensor-layout-v1.yaml
+    Layout,
 }
 
 impl LintCategory {
@@ -65,6 +68,7 @@ impl LintCategory {
             Self::Metadata => "Metadata",
             Self::Naming => "Tensor Naming",
             Self::Efficiency => "Efficiency",
+            Self::Layout => "Layout Contract",
         }
     }
 }
@@ -129,6 +133,18 @@ impl LintIssue {
     #[must_use]
     pub fn efficiency_info(message: impl Into<String>) -> Self {
         Self::new(LintLevel::Info, LintCategory::Efficiency, message)
+    }
+
+    /// Create layout warning (LAYOUT-CONTRACT-001)
+    #[must_use]
+    pub fn layout_warn(message: impl Into<String>) -> Self {
+        Self::new(LintLevel::Warn, LintCategory::Layout, message)
+    }
+
+    /// Create layout error (critical contract violation)
+    #[must_use]
+    pub fn layout_error(message: impl Into<String>) -> Self {
+        Self::new(LintLevel::Error, LintCategory::Layout, message)
     }
 }
 
@@ -232,6 +248,10 @@ pub struct ModelLintInfo {
     pub tensors: Vec<TensorLintInfo>,
     /// Whether compression is enabled
     pub is_compressed: bool,
+    /// Model vocabulary size (for layout contract validation)
+    pub vocab_size: Option<usize>,
+    /// Model hidden dimension (for layout contract validation)
+    pub hidden_dim: Option<usize>,
 }
 
 /// Information about a single tensor for linting
@@ -245,6 +265,8 @@ pub struct TensorLintInfo {
     pub alignment: usize,
     /// Whether tensor is compressed
     pub is_compressed: bool,
+    /// Tensor shape (dimensions)
+    pub shape: Vec<usize>,
 }
 
 /// Canonical tensor name patterns for Whisper models
@@ -297,6 +319,10 @@ pub fn lint_model(info: &ModelLintInfo) -> LintReport {
 
     // Efficiency checks (INFO level)
     check_efficiency(&mut report, info);
+
+    // Layout contract checks (ERROR level for critical violations)
+    // See: contracts/tensor-layout-v1.yaml
+    check_layout_contract(&mut report, info);
 
     report
 }
@@ -394,6 +420,63 @@ fn is_nonstandard_pattern(name: &str) -> bool {
     let too_short = !name.is_empty() && name.len() < 5;
 
     has_odd_numbers || has_unusual_separators(name) || too_short
+}
+
+/// Check layout contract compliance (LAYOUT-CONTRACT-001)
+///
+/// Validates tensor shapes against the authoritative tensor layout contract.
+/// See: `contracts/tensor-layout-v1.yaml` for the full specification.
+fn check_layout_contract(report: &mut LintReport, info: &ModelLintInfo) {
+    use crate::format::layout_contract::CONTRACT;
+
+    // Only validate if we have model dimensions
+    let (vocab_size, hidden_dim) = match (info.vocab_size, info.hidden_dim) {
+        (Some(v), Some(h)) => (v, h),
+        _ => return, // Skip contract checks without model config
+    };
+
+    for tensor in &info.tensors {
+        // Check if this tensor is in the contract
+        if let Some(contract) = CONTRACT.get_apr_contract(&tensor.name) {
+            // Validate shape for critical tensors
+            if contract.is_critical && !tensor.shape.is_empty() {
+                if let Err(e) = CONTRACT.validate_apr_shape(
+                    &tensor.name,
+                    &tensor.shape,
+                    vocab_size,
+                    hidden_dim,
+                ) {
+                    report.add_issue(
+                        LintIssue::layout_error(format!(
+                            "F-LAYOUT-CONTRACT-002 violation: {}",
+                            e
+                        ))
+                        .with_suggestion(format!(
+                            "Expected shape {} per contract",
+                            contract.apr_shape_formula
+                        )),
+                    );
+                }
+            }
+
+            // Check for 2D tensors that should be transposed
+            if contract.should_transpose && tensor.shape.len() == 2 {
+                // Validate shape dimensions make sense
+                let (dim0, _dim1) = (tensor.shape[0], tensor.shape[1]);
+
+                // For lm_head specifically, dim0 should be vocab_size
+                if tensor.name.contains("lm_head") && dim0 != vocab_size {
+                    report.add_issue(
+                        LintIssue::layout_warn(format!(
+                            "lm_head.weight shape[0]={} but expected vocab_size={}",
+                            dim0, vocab_size
+                        ))
+                        .with_suggestion("Shape should be [vocab_size, hidden_dim] after transpose"),
+                    );
+                }
+            }
+        }
+    }
 }
 
 /// Check efficiency requirements
@@ -495,15 +578,26 @@ fn lint_gguf_file(path: &Path) -> Result<LintReport> {
         .keys()
         .any(|k| k.contains("author") || k.contains("source") || k.contains("url"));
 
-    // Build tensor lint info
+    // Build tensor lint info and extract model config
     for meta in &reader.tensors {
         let shape: Vec<usize> = meta.dims.iter().map(|&d| d as usize).collect();
         let num_elements: usize = shape.iter().product();
+
+        // Extract vocab_size and hidden_dim from known tensors
+        if meta.name == "output.weight" || meta.name.contains("lm_head") {
+            // GGUF stores as [hidden, vocab], APR as [vocab, hidden]
+            if shape.len() == 2 {
+                info.hidden_dim = Some(shape[0]);
+                info.vocab_size = Some(shape[1]);
+            }
+        }
+
         info.tensors.push(TensorLintInfo {
             name: meta.name.clone(),
             size_bytes: num_elements * 4, // approximate
             alignment: 32,                // GGUF uses 32-byte alignment
             is_compressed: false,
+            shape: shape.clone(),
         });
     }
 
@@ -549,11 +643,22 @@ fn lint_safetensors_file(path: &Path) -> Result<LintReport> {
     for name in mapped.tensor_names() {
         if let Some(meta) = mapped.get_metadata(name) {
             let size_bytes = meta.data_offsets[1] - meta.data_offsets[0];
+            let shape: Vec<usize> = meta.shape.to_vec();
+
+            // Extract vocab_size and hidden_dim from lm_head
+            if name.contains("lm_head") {
+                if shape.len() == 2 {
+                    info.vocab_size = Some(shape[0]);
+                    info.hidden_dim = Some(shape[1]);
+                }
+            }
+
             info.tensors.push(TensorLintInfo {
                 name: name.to_string(),
                 size_bytes,
                 alignment: 0, // SafeTensors doesn't guarantee alignment
                 is_compressed: false,
+                shape,
             });
         }
     }
@@ -625,6 +730,7 @@ fn lint_apr_v1_file(path: &Path) -> Result<LintReport> {
             size_bytes: payload_size,
             alignment: 64, // Assume aligned for now
             is_compressed: info.is_compressed,
+            shape: vec![], // v1 format doesn't store shape info in header
         });
     }
 
@@ -656,11 +762,20 @@ fn lint_apr_v2_file(path: &Path) -> Result<LintReport> {
     // Add tensor info (use tensor_names and get_tensor)
     for name in reader.tensor_names() {
         if let Some(tensor) = reader.get_tensor(name) {
+            let shape: Vec<usize> = tensor.shape.to_vec();
+
+            // Extract vocab_size and hidden_dim from lm_head
+            if name.contains("lm_head") && shape.len() == 2 {
+                info.vocab_size = Some(shape[0]);
+                info.hidden_dim = Some(shape[1]);
+            }
+
             info.tensors.push(TensorLintInfo {
                 name: name.to_string(),
                 size_bytes: tensor.size as usize,
                 alignment: 64, // v2 uses 64-byte alignment
                 is_compressed: false,
+                shape,
             });
         }
     }
