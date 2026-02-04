@@ -2013,7 +2013,11 @@ fn print_fingerprint_diff(
     verbose: bool,
     json: bool,
 ) -> Result<()> {
-    let map_b: std::collections::HashMap<_, _> = fps_b.iter().map(|fp| (&fp.name, fp)).collect();
+    // GH-202: Use normalized names for cross-format matching
+    let map_b: std::collections::HashMap<_, _> = fps_b
+        .iter()
+        .map(|fp| (normalize_tensor_name(&fp.name), fp))
+        .collect();
 
     let mut anomalies = Vec::new();
 
@@ -2031,7 +2035,9 @@ fn print_fingerprint_diff(
     }
 
     for fp_a in fps_a {
-        if let Some(fp_b) = map_b.get(&fp_a.name) {
+        // GH-202: Use normalized name for cross-format lookup
+        let norm_name_a = normalize_tensor_name(&fp_a.name);
+        if let Some(fp_b) = map_b.get(&norm_name_a) {
             // Check for significant differences
             let mean_diff = if fp_a.std > 1e-10 {
                 (fp_a.mean - fp_b.mean).abs() / fp_a.std
