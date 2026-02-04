@@ -368,7 +368,12 @@ fn is_abbreviated(name: &str, abbrev: &str, full: &str) -> bool {
 }
 
 /// Known patterns where numeric suffixes are acceptable.
-const STANDARD_NUMERIC_PATTERNS: &[&str] = &["layers.", "conv1", "conv2", "fc1", "fc2"];
+/// BUG-LINT-001 FIX: Include GGUF naming patterns (blk.N.) alongside HF patterns (layers.)
+const STANDARD_NUMERIC_PATTERNS: &[&str] = &[
+    "layers.", // HuggingFace style: model.layers.0.self_attn
+    "blk.",    // GGUF style: blk.0.attn_k, blk.0.ffn_gate
+    "conv1", "conv2", "fc1", "fc2", // CNN/MLP patterns
+];
 
 /// Check if name contains numbers in a standard pattern.
 fn has_standard_numbering(name: &str) -> bool {
