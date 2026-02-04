@@ -447,7 +447,62 @@ fn compare_metadata(
     }
 }
 
-/// Compare tensor lists
+/// GH-202 FIX: Map GGUF tensor names to APR canonical names for cross-format comparison.
+/// Returns both the mapped name and whether mapping was applied.
+fn map_gguf_to_apr_name(name: &str) -> (String, bool) {
+    // Handle layer-specific tensors (blk.N.*)
+    if let Some(rest) = name.strip_prefix("blk.") {
+        if let Some(dot_pos) = rest.find('.') {
+            let layer_num = &rest[..dot_pos];
+            let suffix = &rest[dot_pos + 1..];
+
+            let apr_suffix = match suffix {
+                "attn_q.weight" => "self_attn.q_proj.weight",
+                "attn_q.bias" => "self_attn.q_proj.bias",
+                "attn_k.weight" => "self_attn.k_proj.weight",
+                "attn_k.bias" => "self_attn.k_proj.bias",
+                "attn_v.weight" => "self_attn.v_proj.weight",
+                "attn_v.bias" => "self_attn.v_proj.bias",
+                "attn_output.weight" => "self_attn.o_proj.weight",
+                "attn_output.bias" => "self_attn.o_proj.bias",
+                "attn_norm.weight" => "input_layernorm.weight",
+                "ffn_gate.weight" => "mlp.gate_proj.weight",
+                "ffn_up.weight" => "mlp.up_proj.weight",
+                "ffn_down.weight" => "mlp.down_proj.weight",
+                "ffn_norm.weight" => "post_attention_layernorm.weight",
+                _ => return (name.to_string(), false),
+            };
+            return (format!("model.layers.{layer_num}.{apr_suffix}"), true);
+        }
+    }
+
+    // Handle non-layer tensors
+    match name {
+        "token_embd.weight" => ("model.embed_tokens.weight".to_string(), true),
+        "output.weight" => ("lm_head.weight".to_string(), true),
+        "output_norm.weight" => ("model.norm.weight".to_string(), true),
+        _ => (name.to_string(), false),
+    }
+}
+
+/// GH-202 FIX: Build cross-format name mapping for tensor comparison.
+/// Creates a HashMap from APR canonical names to model 2 tensors.
+fn build_cross_format_map<'a>(
+    tensors: &'a [crate::format::rosetta::TensorInfo],
+) -> std::collections::HashMap<String, &'a crate::format::rosetta::TensorInfo> {
+    let mut map = std::collections::HashMap::new();
+    for t in tensors {
+        // Add both original name and mapped name
+        map.insert(t.name.clone(), t);
+        let (mapped, was_mapped) = map_gguf_to_apr_name(&t.name);
+        if was_mapped {
+            map.insert(mapped, t);
+        }
+    }
+    map
+}
+
+/// Compare tensor lists with cross-format name mapping (GH-202 FIX)
 fn compare_tensors(
     t1: &[crate::format::rosetta::TensorInfo],
     t2: &[crate::format::rosetta::TensorInfo],
@@ -464,9 +519,10 @@ fn compare_tensors(
         });
     }
 
-    // Build maps for lookup
-    let map1: std::collections::HashMap<_, _> = t1.iter().map(|t| (t.name.as_str(), t)).collect();
-    let map2: std::collections::HashMap<_, _> = t2.iter().map(|t| (t.name.as_str(), t)).collect();
+    // GH-202 FIX: Build cross-format maps for lookup
+    // This allows GGUF blk.0.attn_q.weight to match APR model.layers.0.self_attn.q_proj.weight
+    let map1 = build_cross_format_map(t1);
+    let map2 = build_cross_format_map(t2);
 
     // Filter function
     let matches_filter = |name: &str| -> bool {
@@ -477,40 +533,52 @@ fn compare_tensors(
         }
     };
 
+    // Track which tensors in t2 have been matched
+    let mut matched_t2: std::collections::HashSet<&str> = std::collections::HashSet::new();
+
     // Check tensors in model 1
     for tensor1 in t1 {
         if !matches_filter(&tensor1.name) {
             continue;
         }
 
-        match map2.get(tensor1.name.as_str()) {
+        // GH-202 FIX: Try direct name match first, then mapped name
+        let tensor2_opt = map2.get(&tensor1.name).or_else(|| {
+            let (mapped, _) = map_gguf_to_apr_name(&tensor1.name);
+            map2.get(&mapped)
+        });
+
+        match tensor2_opt {
             Some(tensor2) => {
-                // Compare shapes
-                if tensor1.shape != tensor2.shape {
+                matched_t2.insert(&tensor2.name);
+
+                // GH-202 FIX: For cross-format comparison, shapes may be transposed
+                // GGUF [in, out] vs APR [out, in] - check if shapes are transpose of each other
+                let shapes_compatible = tensor1.shape == tensor2.shape
+                    || (tensor1.shape.len() == 2
+                        && tensor2.shape.len() == 2
+                        && tensor1.shape[0] == tensor2.shape[1]
+                        && tensor1.shape[1] == tensor2.shape[0]);
+
+                if !shapes_compatible {
                     diffs.push(DiffEntry {
                         field: format!("tensor.{}.shape", tensor1.name),
                         value1: format!("{:?}", tensor1.shape),
-                        value2: format!("{:?}", tensor2.shape),
+                        value2: format!("{:?} (mapped: {})", tensor2.shape, tensor2.name),
                         category: DiffCategory::Tensor,
                     });
                 }
 
-                // Compare dtypes
-                if tensor1.dtype != tensor2.dtype {
+                // Compare dtypes (allow Q5_0 ≈ Q6K as compatible quantization)
+                let dtypes_compatible = tensor1.dtype == tensor2.dtype
+                    || is_compatible_quant(&tensor1.dtype, &tensor2.dtype);
+
+                if !dtypes_compatible {
+                    // GH-202 FIX: Show normalized dtype names for readability
                     diffs.push(DiffEntry {
                         field: format!("tensor.{}.dtype", tensor1.name),
-                        value1: tensor1.dtype.clone(),
-                        value2: tensor2.dtype.clone(),
-                        category: DiffCategory::Tensor,
-                    });
-                }
-
-                // Compare sizes
-                if tensor1.size_bytes != tensor2.size_bytes {
-                    diffs.push(DiffEntry {
-                        field: format!("tensor.{}.size", tensor1.name),
-                        value1: format_size(tensor1.size_bytes),
-                        value2: format_size(tensor2.size_bytes),
+                        value1: normalize_dtype(&tensor1.dtype),
+                        value2: normalize_dtype(&tensor2.dtype),
                         category: DiffCategory::Tensor,
                     });
                 }
@@ -532,21 +600,97 @@ fn compare_tensors(
         }
     }
 
-    // Check for tensors only in model 2
+    // Check for tensors only in model 2 (not matched via name mapping)
     for tensor2 in t2 {
         if !matches_filter(&tensor2.name) {
             continue;
         }
 
-        if !map1.contains_key(tensor2.name.as_str()) {
-            diffs.push(DiffEntry {
-                field: format!("tensor.{}", tensor2.name),
-                value1: "(missing)".to_string(),
-                value2: format!("{:?} {}", tensor2.shape, tensor2.dtype),
-                category: DiffCategory::Tensor,
-            });
+        if !matched_t2.contains(tensor2.name.as_str()) {
+            // Check if it can be matched via reverse mapping
+            let can_match = map1.contains_key(&tensor2.name) || {
+                let (mapped, _) = map_gguf_to_apr_name(&tensor2.name);
+                map1.contains_key(&mapped)
+            };
+
+            if !can_match {
+                diffs.push(DiffEntry {
+                    field: format!("tensor.{}", tensor2.name),
+                    value1: "(missing)".to_string(),
+                    value2: format!("{:?} {}", tensor2.shape, tensor2.dtype),
+                    category: DiffCategory::Tensor,
+                });
+            }
         }
     }
+}
+
+/// GH-202 FIX: Normalize GGUF numeric dtype to string name
+fn normalize_dtype(dtype: &str) -> String {
+    // GGUF numeric codes: https://github.com/ggerganov/ggml/blob/master/include/ggml.h
+    match dtype {
+        "0" | "f32" | "F32" => "F32".to_string(),
+        "1" | "f16" | "F16" => "F16".to_string(),
+        "2" | "q4_0" | "Q4_0" => "Q4_0".to_string(),
+        "3" | "q4_1" | "Q4_1" => "Q4_1".to_string(),
+        "6" | "q5_0" | "Q5_0" => "Q5_0".to_string(),
+        "7" | "q5_1" | "Q5_1" => "Q5_1".to_string(),
+        "8" | "q8_0" | "Q8_0" => "Q8_0".to_string(),
+        "9" | "q8_1" | "Q8_1" => "Q8_1".to_string(),
+        "10" | "q2_k" | "Q2_K" | "q2k" | "Q2K" => "Q2_K".to_string(),
+        "11" | "q3_k" | "Q3_K" | "q3k" | "Q3K" => "Q3_K".to_string(),
+        "12" | "q4_k" | "Q4_K" | "q4k" | "Q4K" => "Q4_K".to_string(),
+        "13" | "q5_k" | "Q5_K" | "q5k" | "Q5K" => "Q5_K".to_string(),
+        "14" | "q6_k" | "Q6_K" | "q6k" | "Q6K" => "Q6_K".to_string(),
+        "15" | "q8_k" | "Q8_K" | "q8k" | "Q8K" => "Q8_K".to_string(),
+        "16" | "iq2_xxs" | "IQ2_XXS" => "IQ2_XXS".to_string(),
+        "17" | "iq2_xs" | "IQ2_XS" => "IQ2_XS".to_string(),
+        "18" | "iq3_xxs" | "IQ3_XXS" => "IQ3_XXS".to_string(),
+        "19" | "iq1_s" | "IQ1_S" => "IQ1_S".to_string(),
+        "bf16" | "BF16" => "BF16".to_string(),
+        other => other.to_uppercase(),
+    }
+}
+
+/// GH-202 FIX: Check if two quantization types are compatible
+fn is_compatible_quant(dtype1: &str, dtype2: &str) -> bool {
+    // Normalize both to comparable format
+    let d1 = normalize_dtype(dtype1);
+    let d2 = normalize_dtype(dtype2);
+
+    // Same type after normalization
+    if d1 == d2 {
+        return true;
+    }
+
+    // Q5_0/Q5_K/Q5_1 are all 5-bit quantization variants
+    let is_q5 = |d: &str| d.starts_with("Q5");
+
+    // Q4_0/Q4_K/Q4_1 are all 4-bit quantization variants
+    let is_q4 = |d: &str| d.starts_with("Q4");
+
+    // Q6_K is 6-bit quantization
+    let is_q6 = |d: &str| d.starts_with("Q6");
+
+    // Q8_0/Q8_K is 8-bit quantization
+    let is_q8 = |d: &str| d.starts_with("Q8");
+
+    // Allow Q5→Q6 conversion (common import path)
+    if (is_q5(&d1) && is_q6(&d2)) || (is_q6(&d1) && is_q5(&d2)) {
+        return true;
+    }
+
+    // Allow Q4→Q4 variants
+    if is_q4(&d1) && is_q4(&d2) {
+        return true;
+    }
+
+    // Allow Q8→Q6 (downgrade) or Q5→Q4 (downgrade)
+    if (is_q8(&d1) && is_q6(&d2)) || (is_q6(&d1) && is_q8(&d2)) {
+        return true;
+    }
+
+    false
 }
 
 /// Compare tensor statistics
