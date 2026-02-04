@@ -8582,3 +8582,65 @@ The inference tracing infrastructure (APR-TRACE-001) now works:
 3. **Embedding Value Check:** Compare embed_tokens values between GGUF and APR
 4. **Layout Validation:** Use `--trace` to inspect embedding output range
 
+---
+
+## Section 44: Round 53 - GH-202 Root Cause Fix (2026-02-04)
+
+### 44.1 Root Cause Analysis (Five-Whys)
+
+1. **WHY 58-90% diff in conversion fidelity?** → Data was corrupted during GGUF↔APR conversion
+2. **WHY corruption?** → Code applied data transpose (column-major ↔ row-major) to all 2D tensors
+3. **WHY transpose?** → Assumption that GGML uses Fortran-style column-major layout
+4. **WHY was assumption wrong?** → GGML data[i0 + i1*ne0] IS C row-major data[row*cols + col] with reversed shape
+5. **WHY shape reversal sufficient?** → GGML ne0=contiguous dim = cols, ne1=rows. Reversing [ne0,ne1]→[ne1,ne0] gives standard [rows,cols]
+
+### 44.2 Fix Applied
+
+**Commit:** `1ea1e0b2` (Fixes #202, Refs PMAT-208)
+
+**Principle:** Only reverse shapes [ne0, ne1] → [ne1, ne0]. Never transpose data.
+
+| File | Change | Lines Removed |
+|------|--------|--------------|
+| `converter/mod.rs` | Reverse 2D shapes in `load_gguf_tensors_f32()` | -500+ |
+| `converter/write.rs` | Remove all transpose calls, delete 3 helper functions | -200+ |
+| `converter/export.rs` | Remove data transpose from GGUF export | -60+ |
+| `converter/mod.rs` | `quantize_q4_k` → `quantize_q4_k_matrix` for row-aligned blocks | -1 |
+| **Total** | Net: -761 lines | |
+
+### 44.3 Additional Fixes
+
+**Commit:** `70914d9e` - Clippy: implicit_clone, collapsible_if, MSRV compatibility
+**Commit:** `5378030c` - Fix head_dim inference: prefer 64 over 128, derive GQA n_kv from head_dim
+
+### 44.4 Test Results
+
+| Suite | Result |
+|-------|--------|
+| Unit tests | 10333 passed, 0 failed |
+| GH-202 layout tests | 5/5 pass |
+| PMAT-107 GQA metadata | 4/4 pass (was 2/4) |
+| Diff shape comparison | 1/1 pass (was 0/1) |
+| Test factory config | 1/1 pass (was 0/1) |
+
+### 44.5 Real-Model Verification Results
+
+**Model:** Qwen2.5-Coder-0.5B-Instruct (Q4_K_M, 380MB GGUF)
+
+| Gate | Conversion | Pre-Fix Diff | Post-Fix Diff | Status |
+|------|-----------|-------------|---------------|--------|
+| F-CONV-G-A | GGUF → APR | 0.746 | **0 diffs** | ✅ **PASS** |
+| F-CONV-A-G | APR → GGUF (F32) | 0.560 | dtype only (Q→F32) | ✅ **PASS** (expected) |
+
+**Evidence:**
+```
+$ apr diff model.gguf converted.apr
+DIFF: 10 differences found:
+  format (1): GGUF → APR
+  size (1): file size difference (expected)
+  metadata (7): format-specific keys
+  tensors: ZERO DIFFS ← GH-202 fix confirmed
+```
+
+290/290 tensors matched. No shape or data differences.
+
