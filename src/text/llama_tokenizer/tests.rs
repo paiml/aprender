@@ -875,7 +875,7 @@ fn test_gpt2_byte_decoder_all_chars() {
     assert_eq!(decoder.len(), 256);
 
     // Verify specific mappings
-    for b in b'!'..(b'~' + 1) {
+    for b in b'!'..=b'~' {
         assert!(decoder.values().any(|&v| v == b));
     }
 }
@@ -1453,8 +1453,8 @@ fn create_gguf_with_array_metadata(elem_type: u32, elem_bytes: &[u8]) -> Vec<u8>
     let elem_size = match elem_type {
         0 | 1 | 7 => 1,
         2 | 3 => 2,
-        4 | 5 | 6 => 4,
-        10 | 11 | 12 => 8,
+        4..=6 => 4,
+        10..=12 => 8,
         _ => 1,
     };
     let count = elem_bytes.len() / elem_size;
@@ -1882,6 +1882,117 @@ fn test_encode_multibyte_unicode_byte_fallback() {
     let encoded = tokenizer.encode("\u{4e16}"); // "世"
                                                 // Should produce 3 byte tokens (0xE4, 0xB8, 0x96) plus the leading ▁
     assert!(!encoded.is_empty());
+}
+
+// ========================================================================
+// BUG-TOK-001: Multibyte UTF-8 Byte Token Decoding
+// ========================================================================
+
+/// BUG-TOK-001: Byte tokens >= 128 MUST combine into valid UTF-8
+///
+/// Falsification: Previous code used `byte as char` which produces garbage
+/// for multibyte UTF-8 sequences. For example:
+/// - <0xE4><0xB8><0x96> should decode to "世" (Chinese character)
+/// - Old code produced "ä¸\u{0096}" (Latin Extended + cedilla + control)
+#[test]
+fn test_bug_tok_001_multibyte_utf8_byte_tokens() {
+    // Create tokenizer with all byte tokens
+    let mut tokens = vec!["<unk>".to_string(), "<s>".to_string(), "</s>".to_string()];
+    for i in 0u8..=255 {
+        tokens.push(format!("<0x{i:02X}>"));
+    }
+    let scores = vec![0.0; tokens.len()];
+    let tokenizer = LlamaTokenizer::new(tokens, scores, 1, 2, 0).unwrap();
+
+    // UTF-8 bytes for "世" (Chinese character for "world")
+    // U+4E16 = 0xE4 0xB8 0x96 in UTF-8
+    // Token IDs: 3 + 0xE4 = 3 + 228 = 231, 3 + 0xB8 = 187, 3 + 0x96 = 153
+    let token_ids = vec![
+        3 + 0xE4, // <0xE4>
+        3 + 0xB8, // <0xB8>
+        3 + 0x96, // <0x96>
+    ];
+
+    let decoded = tokenizer.decode(&token_ids);
+
+    // BUG-TOK-001 FIX: Should decode to "世" not "ä¸\u{0096}"
+    assert_eq!(
+        decoded, "世",
+        "FALSIFIED: Multibyte UTF-8 byte tokens decoded incorrectly. \
+         Expected '世' but got '{decoded}'"
+    );
+}
+
+/// BUG-TOK-001: Mixed byte tokens and regular tokens
+#[test]
+fn test_bug_tok_001_mixed_byte_and_regular_tokens() {
+    let mut tokens = vec![
+        "<unk>".to_string(),
+        "<s>".to_string(),
+        "</s>".to_string(),
+        "Hello".to_string(), // ID 3
+    ];
+    // Add byte tokens starting at ID 4
+    for i in 0u8..=255 {
+        tokens.push(format!("<0x{i:02X}>"));
+    }
+    let scores = vec![0.0; tokens.len()];
+    let tokenizer = LlamaTokenizer::new(tokens, scores, 1, 2, 0).unwrap();
+
+    // "Hello世" = "Hello" + UTF-8(世) = "Hello" + 0xE4 0xB8 0x96
+    let token_ids = vec![
+        3,          // "Hello"
+        4 + 0xE4,   // <0xE4>
+        4 + 0xB8,   // <0xB8>
+        4 + 0x96,   // <0x96>
+    ];
+
+    let decoded = tokenizer.decode(&token_ids);
+    assert_eq!(decoded, "Hello世");
+}
+
+/// BUG-TOK-001: Emoji decoding via byte tokens
+#[test]
+fn test_bug_tok_001_emoji_byte_tokens() {
+    let mut tokens = vec!["<unk>".to_string(), "<s>".to_string(), "</s>".to_string()];
+    for i in 0u8..=255 {
+        tokens.push(format!("<0x{i:02X}>"));
+    }
+    let scores = vec![0.0; tokens.len()];
+    let tokenizer = LlamaTokenizer::new(tokens, scores, 1, 2, 0).unwrap();
+
+    // UTF-8 bytes for "🎉" (party popper emoji)
+    // U+1F389 = 0xF0 0x9F 0x8E 0x89 in UTF-8
+    let token_ids = vec![
+        3 + 0xF0, // <0xF0>
+        3 + 0x9F, // <0x9F>
+        3 + 0x8E, // <0x8E>
+        3 + 0x89, // <0x89>
+    ];
+
+    let decoded = tokenizer.decode(&token_ids);
+    assert_eq!(decoded, "🎉");
+}
+
+/// BUG-TOK-001: Invalid UTF-8 byte sequence should use replacement char
+#[test]
+fn test_bug_tok_001_invalid_utf8_uses_replacement() {
+    let mut tokens = vec!["<unk>".to_string(), "<s>".to_string(), "</s>".to_string()];
+    for i in 0u8..=255 {
+        tokens.push(format!("<0x{i:02X}>"));
+    }
+    let scores = vec![0.0; tokens.len()];
+    let tokenizer = LlamaTokenizer::new(tokens, scores, 1, 2, 0).unwrap();
+
+    // Invalid UTF-8: 0xE4 alone (incomplete sequence)
+    let token_ids = vec![3 + 0xE4];
+
+    let decoded = tokenizer.decode(&token_ids);
+    // Should use replacement character (�) for invalid UTF-8
+    assert!(
+        decoded.contains('\u{FFFD}'),
+        "Invalid UTF-8 should produce replacement character"
+    );
 }
 
 #[test]

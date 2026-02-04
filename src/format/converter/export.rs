@@ -197,7 +197,6 @@ pub fn apr_export<P: AsRef<Path>>(
     // Load tensors
     let tensors = load_model_tensors(input_path)?;
     let original_size = calculate_tensor_size(&tensors);
-    let original_count = tensors.len();
 
     // GH-200: Map GGUF tensor names to HF canonical format before export.
     // GGUF uses names like "blk.0.attn_q.weight" but SafeTensors/HF expects
@@ -290,10 +289,13 @@ pub fn apr_export<P: AsRef<Path>>(
         .map(|m| m.len() as usize)
         .unwrap_or(0);
 
+    // BUG-EXPORT-003 FIX: Report actual exported tensor count, not original.
+    // After unfuse_qkv_tensors (increases count) and remove_tied_lm_head
+    // (decreases count for SafeTensors), the count may differ from original.
     Ok(ExportReport {
         original_size,
         exported_size,
-        tensor_count: original_count,
+        tensor_count: tensors.len(),
         format: options.format,
         quantization: options.quantize,
     })

@@ -374,8 +374,21 @@ impl LlamaTokenizer {
     }
 
     /// Decode using SentencePiece-style BPE (LLaMA, Mistral, etc.)
+    ///
+    /// # BUG-TOK-001 FIX: Correct byte token handling for multibyte UTF-8
+    ///
+    /// Previous implementation used `byte as char` which is WRONG for bytes >= 128.
+    /// For example, decoding `<0xE4><0xB8><0x96>` (UTF-8 for "世") would produce:
+    ///   - 0xE4 as char = 'ä' (Latin Extended)
+    ///   - 0xB8 as char = '¸' (cedilla)
+    ///   - 0x96 as char = control char
+    ///
+    /// Instead of the correct output "世".
+    ///
+    /// The fix collects bytes and converts to UTF-8 at boundaries.
     fn decode_sentencepiece(&self, token_ids: &[u32]) -> String {
         let mut result = String::with_capacity(token_ids.len() * 4);
+        let mut pending_bytes: Vec<u8> = Vec::new();
 
         for &token_id in token_ids {
             // Skip special tokens in output
@@ -384,25 +397,37 @@ impl LlamaTokenizer {
             }
 
             if let Some(token) = self.id_to_token.get(&token_id) {
-                // Handle SentencePiece space prefix (U+2581)
-                let text = token.replace('▁', " ");
-                // Handle GPT-2 BPE space prefix (U+0120 'Ġ') for hybrid tokenizers
-                let text = text.replace('Ġ', " ");
-
                 // Handle byte tokens like <0x0A> for newlines
-                if text.starts_with(BYTE_FALLBACK_PREFIX) && text.ends_with('>') {
-                    if let Some(hex) = text.strip_prefix(BYTE_FALLBACK_PREFIX) {
+                if token.starts_with(BYTE_FALLBACK_PREFIX) && token.ends_with('>') {
+                    if let Some(hex) = token.strip_prefix(BYTE_FALLBACK_PREFIX) {
                         if let Some(hex) = hex.strip_suffix('>') {
                             if let Ok(byte) = u8::from_str_radix(hex, 16) {
-                                result.push(byte as char);
+                                // BUG-TOK-001 FIX: Collect bytes instead of casting to char
+                                pending_bytes.push(byte);
                                 continue;
                             }
                         }
                     }
                 }
 
+                // Flush pending bytes as UTF-8 before adding regular token
+                if !pending_bytes.is_empty() {
+                    result.push_str(&String::from_utf8_lossy(&pending_bytes));
+                    pending_bytes.clear();
+                }
+
+                // Handle SentencePiece space prefix (U+2581)
+                let text = token.replace('▁', " ");
+                // Handle GPT-2 BPE space prefix (U+0120 'Ġ') for hybrid tokenizers
+                let text = text.replace('Ġ', " ");
+
                 result.push_str(&text);
             }
+        }
+
+        // Flush any remaining pending bytes
+        if !pending_bytes.is_empty() {
+            result.push_str(&String::from_utf8_lossy(&pending_bytes));
         }
 
         // Clean up leading space if present (SentencePiece adds leading space)
