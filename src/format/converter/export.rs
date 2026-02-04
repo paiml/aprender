@@ -484,13 +484,6 @@ fn export_to_gguf(
         .map(|(name, (data, shape))| {
             let gguf_name = hf_to_gguf_name(name);
 
-            // Reverse 2D shapes: standard [rows, cols] → GGML [ne0=cols, ne1=rows]
-            let gguf_shape = if shape.len() == 2 {
-                vec![shape[1] as u64, shape[0] as u64]
-            } else {
-                shape.iter().map(|&d| d as u64).collect()
-            };
-
             // BUG-1 FIX: Quantize to Q4_K for GGUF inference compatibility
             // Only quantize 2D weight tensors, keep 1D tensors (biases, norms) as F32
             //
@@ -499,8 +492,24 @@ fn export_to_gguf(
             // This matches official GGUF files (e.g., Qwen2-0.5B uses Q8_0 for embedding).
             let is_embedding = gguf_name == "token_embd.weight" || name.contains("embed_tokens");
 
+            // BUG-EXPORT-004 FIX: Embedding tensors must NOT be transposed.
+            // Realizar expects token_embd.weight with shape [vocab_size, hidden_dim].
+            // Weight matrices are transposed for GGUF column-major layout, but embeddings
+            // use direct lookup (token ID → row), so they must stay row-major.
+            //
+            // Shape convention:
+            // - token_embd.weight: [vocab_size, hidden_dim] - NO transpose, NO shape reversal
+            // - Weight matrices: [rows, cols] → [cols, rows] with transposed data
+            let gguf_shape = if shape.len() == 2 && !is_embedding {
+                // Reverse shape for weight matrices: [rows, cols] → [cols, rows]
+                vec![shape[1] as u64, shape[0] as u64]
+            } else {
+                // Keep original shape for embeddings and 1D tensors
+                shape.iter().map(|&d| d as u64).collect()
+            };
+
             // BUG-EXPORT-002 FIX: APR uses row-major layout, GGUF uses column-major.
-            // Must transpose 2D tensors before exporting.
+            // Must transpose 2D weight tensors before exporting (but NOT embeddings).
             let (dtype, bytes) = if use_q4k && shape.len() == 2 && data.len() >= 256 && !is_embedding {
                 // Transpose first, then quantize
                 // APR row-major [rows, cols] -> GGUF column-major (transposed shape [cols, rows])
@@ -520,10 +529,15 @@ fn export_to_gguf(
                     );
                 }
                 (GgmlType::Q4K, q4k_bytes)
-            } else if shape.len() == 2 {
-                // F32 2D tensor - transpose for GGUF column-major layout
+            } else if shape.len() == 2 && !is_embedding {
+                // F32 2D weight tensor - transpose for GGUF column-major layout
                 let transposed_data = transpose_f32_rowmajor_to_colmajor(data, shape);
                 let f32_bytes: Vec<u8> = transposed_data.iter().flat_map(|f| f.to_le_bytes()).collect();
+                (GgmlType::F32, f32_bytes)
+            } else if shape.len() == 2 && is_embedding {
+                // BUG-EXPORT-004 FIX: Embedding tensor - keep row-major, no transpose
+                // Data layout: token ID i → row i → contiguous elements at offset i * hidden_dim
+                let f32_bytes: Vec<u8> = data.iter().flat_map(|f| f.to_le_bytes()).collect();
                 (GgmlType::F32, f32_bytes)
             } else {
                 // 1D tensor (biases, norms) - no transpose needed
@@ -584,8 +598,14 @@ fn export_to_gguf(
                     "[BUG-4-FIX] Creating Q4K output.weight from embedding for tied embeddings"
                 );
 
-                let q4k_bytes = super::quantize_q4_k_matrix(data, shape);
-                let gguf_shape = vec![shape[1] as u64, shape[0] as u64]; // reversed for GGML
+                // BUG-EXPORT-004 FIX: output.weight is used in matmul, so it needs to be
+                // transposed from row-major [vocab_size, hidden_dim] to column-major layout.
+                // The embedding shape is [vocab_size, hidden_dim], but output.weight
+                // for matmul needs shape [hidden_dim, vocab_size] with transposed data.
+                let transposed_data = transpose_f32_rowmajor_to_colmajor(data, shape);
+                let transposed_shape = vec![shape[1], shape[0]]; // [hidden_dim, vocab_size]
+                let q4k_bytes = super::quantize_q4_k_matrix(&transposed_data, &transposed_shape);
+                let gguf_shape = vec![shape[1] as u64, shape[0] as u64]; // [hidden_dim, vocab_size]
 
                 gguf_tensors.push(GgufTensor {
                     name: "output.weight".to_string(),
