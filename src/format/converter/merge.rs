@@ -201,10 +201,26 @@ pub(crate) fn calculate_merge_weights(
         }
         MergeStrategy::Weighted => {
             let raw_weights = options.weights.as_ref().expect("validated above");
+
+            // BUG-MERGE-006 FIX: Validate each weight is finite before summing.
+            // NaN/Inf weights would produce NaN sum, and `NaN <= 0.0` is false,
+            // so the old check would pass. Division by NaN produces NaN weights.
+            for (i, &w) in raw_weights.iter().enumerate() {
+                if !w.is_finite() {
+                    return Err(AprenderError::FormatError {
+                        message: format!(
+                            "Weight {} is not finite ({}). All weights must be finite values.",
+                            i, w
+                        ),
+                    });
+                }
+            }
+
             let sum: f32 = raw_weights.iter().sum();
-            if sum <= 0.0 {
+            // BUG-MERGE-006 FIX: Also check sum is finite (overflow protection)
+            if sum <= 0.0 || !sum.is_finite() {
                 return Err(AprenderError::FormatError {
-                    message: "Weights must sum to a positive value".to_string(),
+                    message: "Weights must sum to a finite positive value".to_string(),
                 });
             }
             Ok(raw_weights.iter().map(|w| w / sum).collect())
@@ -482,7 +498,7 @@ mod tests {
         let result = calculate_merge_weights(2, &options);
         assert!(result.is_err());
         let err = format!("{:?}", result.unwrap_err());
-        assert!(err.contains("positive value"));
+        assert!(err.contains("finite positive value"));
     }
 
     #[test]
@@ -493,6 +509,77 @@ mod tests {
         };
         let result = calculate_merge_weights(2, &options);
         assert!(result.is_err());
+    }
+
+    // ========================================================================
+    // BUG-MERGE-006 Falsification Tests: NaN/Inf Weight Handling
+    // ========================================================================
+
+    /// BUG-MERGE-006 FIX: NaN weights must be rejected.
+    ///
+    /// Before fix: `NaN <= 0.0` is false, so NaN weights passed validation.
+    /// Division by NaN sum produced NaN normalized weights.
+    #[test]
+    fn test_bug_merge_006_nan_weight_rejected() {
+        let options = MergeOptions {
+            strategy: MergeStrategy::Weighted,
+            weights: Some(vec![f32::NAN, 0.5]),
+        };
+        let result = calculate_merge_weights(2, &options);
+        assert!(
+            result.is_err(),
+            "FALSIFIED: NaN weight should be rejected but was accepted"
+        );
+        let err = format!("{:?}", result.unwrap_err());
+        assert!(
+            err.contains("not finite"),
+            "Error message should mention 'not finite': {err}"
+        );
+    }
+
+    /// BUG-MERGE-006 FIX: Infinity weights must be rejected.
+    ///
+    /// Before fix: `Inf <= 0.0` is false, so Inf weights passed validation.
+    /// Inf/Inf = NaN, so normalized weights contained NaN.
+    #[test]
+    fn test_bug_merge_006_infinity_weight_rejected() {
+        let options = MergeOptions {
+            strategy: MergeStrategy::Weighted,
+            weights: Some(vec![f32::INFINITY, 1.0]),
+        };
+        let result = calculate_merge_weights(2, &options);
+        assert!(
+            result.is_err(),
+            "FALSIFIED: Infinity weight should be rejected but was accepted"
+        );
+    }
+
+    /// BUG-MERGE-006 FIX: Negative infinity weights must be rejected.
+    #[test]
+    fn test_bug_merge_006_neg_infinity_weight_rejected() {
+        let options = MergeOptions {
+            strategy: MergeStrategy::Weighted,
+            weights: Some(vec![f32::NEG_INFINITY, 1.0]),
+        };
+        let result = calculate_merge_weights(2, &options);
+        assert!(
+            result.is_err(),
+            "FALSIFIED: Negative infinity weight should be rejected"
+        );
+    }
+
+    /// BUG-MERGE-006 FIX: Weights that overflow to infinity when summed must be rejected.
+    #[test]
+    fn test_bug_merge_006_overflow_sum_rejected() {
+        let options = MergeOptions {
+            strategy: MergeStrategy::Weighted,
+            weights: Some(vec![f32::MAX, f32::MAX]), // Sum overflows to Inf
+        };
+        let result = calculate_merge_weights(2, &options);
+        assert!(
+            result.is_err(),
+            "FALSIFIED: Overflow to infinity should be rejected"
+        );
     }
 
     #[test]
