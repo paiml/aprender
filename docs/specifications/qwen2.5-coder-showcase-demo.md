@@ -203,6 +203,7 @@ but passed them directly to `apr run` without resolving to format-specific files
 | BUG-LAYOUT-003 | GGUF→APR error paths bypass LAYOUT-002 transpose (corrupt output) | P0 | ✅ FIXED | 2026-02-04 |
 | BUG-GGUF-002 | GGUF reader shape.iter().product() integer overflow (security) | P0 | ✅ FIXED | 2026-02-04 |
 | GH-202 | diff-tensors/fingerprint cross-format tensor name mismatch | P1 | ✅ FIXED | 2026-02-04 |
+| BUG-TOK-002 | Tokenizer not found for Pacha cache layout ({hash}.tokenizer.json) | P0 | ✅ FIXED | 2026-02-04 |
 | [GH-191](docs/tickets/GH-191-APR-QUANTIZATION-DATA-LOSS.md) | APR dtype byte mapping mismatch | P0 | ✅ FIXED | PMAT-223 |
 | [GH-190](docs/tickets/GH-190-GGUF-APR-CONVERSION-GARBAGE-OUTPUT.md) | GGUF→APR tensor name mismatch | P0 | ✅ FIXED | PMAT-205 |
 | [GH-189](docs/tickets/GH-189-APR-CHAT-SPECIAL-TOKENS.md) | APR chat special tokens not atomic | P0 | ✅ FIXED | PMAT-206 |
@@ -210,7 +211,24 @@ but passed them directly to `apr run` without resolving to format-specific files
 | [#186](https://github.com/paiml/aprender/issues/186) | APR Q4_K PAD token garbage | P0 | ✅ FIXED | PMAT-196 |
 | [#185](https://github.com/paiml/aprender/issues/185) | APR missing embedded tokenizer | P0 | ✅ FIXED | PMAT-195 |
 
-**Last Updated:** 2026-02-04 (Round 41 - GH-202 cross-format tensor name normalization in rosetta diff-tensors/fingerprint)
+**Last Updated:** 2026-02-04 (Round 43 - BUG-TOK-002 Fix: APR tokenizer path resolution for Pacha cache)
+
+**Round 42 Summary (2026-02-04):**
+- Implemented `batuta bug-hunter` subcommand with 5 hunting modes (FDV, SBEST, LLIFT, FourFuzz, COTTONTAIL)
+- Added 10 new checklist items (BH-01 to BH-10) to popperian-falsification-checklist.md
+- PMAT work cleanup: 18 tickets verified and marked done
+- Remaining in-progress: 10 items (mostly performance optimization)
+
+| Mode | Pattern | Description |
+|------|---------|-------------|
+| falsify | FDV | Mutation-based invariant falsification |
+| hunt | SBEST | SBFL from stack traces/coverage |
+| analyze | LLIFT | LLM-augmented static analysis |
+| fuzz | FourFuzz | Targeted unsafe Rust fuzzing |
+| deep-hunt | COTTONTAIL | Hybrid concolic + SBFL |
+| ensemble | — | Run all modes combined |
+
+**Previous:** Round 41 - GH-202 cross-format tensor name normalization in rosetta diff-tensors/fingerprint
 
 **APR Format Note:** Two APR variants exist:
 1. **realizar JSON-APR** - JSON tensor index, used by `GgufToAprConverter` for showcase
@@ -6978,4 +6996,109 @@ $ apr inspect model.apr --json | grep rope_type
 
 **SafeTensors inference: ✅ VERIFIED** (ground truth working)
 **APR Q4_K inference: ❌ BLOCKED** (quantized kernel investigation needed)
+
+---
+
+## 34. Round 42: PMAT Work Cleanup (2026-02-04)
+
+### 34.1 Tickets Verified & Closed (18 items)
+
+| Ticket | Description | Verification |
+|--------|-------------|--------------|
+| PMAT-193 | Prompt injection sanitization | 176 chat_template tests pass |
+| PMAT-ROSETTA-001 | Universal multi-format CLI | 96 tests, falsification checklist verified |
+| PMAT-201 | Per-tensor statistical fingerprints | Implemented in rosetta fingerprint |
+| PMAT-194/GH-205 | Load testing infrastructure | 10 tests (5 load + 5 disconnect) |
+| PMAT-085 | Split optim/mod.rs | 11 submodules, mod.rs now 577 lines |
+| PMAT-098 | QA testing protocol | 21-cell matrix, 100% pass |
+| PMAT-115/116 | SafeTensors GPU inference | SafeTensorsCudaModel implemented |
+| PMAT-119 | Argmax parity GGUF vs SafeTensors | Cross-format parity verified |
+| PMAT-120 | SafeTensors GPU chat fix | QKV bias + weight transpose |
+| PMAT-121/122 | Systematic falsification | 66/66 tests CORROBORATED |
+| PMAT-124 | /generate endpoint handler | quantized_model handler added |
+| PMAT-129 | SafeTensors GPU in apr run | SafeTensorsCudaModel wired up |
+| PMAT-130 | Q4_0 dequantization fix | Legacy quants forced to CPU |
+| PMAT-118 | GPU > 2x CPU throughput | --assert-gpu-speedup implemented |
+| PMAT-094 | SafeTensors garbage output | LayerNorm→RMSNorm fix |
+| PMAT-099 | APR config reading | AprTransformer config fix |
+| GH-80 | Metaheuristics | DE, PSO, SA, GA implemented |
+| APR-VERIFY-001 | Pipeline verification | 144 tests (6 modules) |
+
+### 34.2 Remaining In-Progress (9 items)
+
+| Ticket | Description | Priority | Notes |
+|--------|-------------|----------|-------|
+| APR-PARITY-001 | APR Q4_K inference parity | P0 | F-PAR-001 root cause identified |
+| PMAT-110 | APR CUDA KV cache | Medium | Needed for APR GPU autoregression |
+| PMAT-103-SIMD | AVX2 SIMD Q4K matmul | Medium | Performance optimization |
+| PMAT-PERF-2X-TARGET | GPU 2x CPU verification | Medium | F-PERF-002 inconclusive |
+| PMAT-PERF-OPTIMIZE | General perf optimization | Medium | Ongoing |
+| PMAT-PERF-009-CUDA | CUDA performance | Medium | GPU path optimization |
+| PMAT-PERF-009-WIRE | Wire protocol perf | Medium | Serve path optimization |
+| APR-PUB-001 | APR crates.io publish | Medium | Release preparation |
+| WAPR-CLI-STUBS | Whisper CLI stubs | Medium | Audio inference feature |
+
+### 34.3 Bug Hunter Implementation (batuta)
+
+Implemented `batuta bug-hunter` subcommand with 5 hunting modes:
+
+| Mode | Pattern | Description |
+|------|---------|-------------|
+| falsify | FDV | Mutation-based invariant falsification |
+| hunt | SBEST | SBFL from stack traces/coverage |
+| analyze | LLIFT | LLM-augmented static analysis |
+| fuzz | FourFuzz | Targeted unsafe Rust fuzzing |
+| deep-hunt | COTTONTAIL | Hybrid concolic + SBFL |
+| ensemble | — | Run all modes combined |
+
+**Files Created:**
+- `src/bug_hunter/mod.rs` — Main module with 5 hunting modes
+- `src/bug_hunter/types.rs` — Types for findings, evidence, configs
+- `src/cli/bug_hunter.rs` — CLI command implementation
+
+**CLI Usage:**
+```bash
+batuta bug-hunter analyze .           # LLM-augmented static analysis
+batuta bug-hunter hunt --stack-trace crash.log  # SBFL from crash
+batuta bug-hunter falsify --target src/lib.rs   # Mutation testing
+batuta bug-hunter fuzz --target-unsafe          # Fuzz unsafe blocks
+batuta bug-hunter ensemble .          # Run all modes and combine
+```
+
+**Output formats:** text, json, sarif, markdown
+
+**Specification Updates:**
+- Added Section 11: Proactive Bug Hunting (BH-01 to BH-10) to `popperian-falsification-checklist.md`
+- Total checklist items: 118 (was 108)
+- Added peer-reviewed references [70-78] for bug hunting research
+- 24 tests passing (BH-TYP-xxx and BH-MOD-xxx naming)
+
+### 34.4 BUG-TOK-002 Fix (APR Parity Root Cause)
+
+**Root Cause Identified and Fixed:**
+
+The tokenizer path resolution in `load_tokenizer_from_json()` used `with_file_name("tokenizer.json")` which only works for standard HuggingFace layouts. For Pacha cache layouts where the tokenizer is named `{hash}.tokenizer.json`, it wasn't found.
+
+**Fix Applied:** `src/format/converter/import.rs`
+- Now tries both path patterns:
+  1. Standard HuggingFace: `tokenizer.json` in same directory
+  2. Pacha cache: `{hash}.tokenizer.json` (same stem as model)
+
+**Verification:**
+```
+Before fix:  "leds, lights, lights, lights, lights" ❌
+After fix:   "2+2=4" ✅
+```
+
+**APR Parity Status Updated:**
+| Path | Status | Notes |
+|------|--------|-------|
+| SafeTensors → APR F32 → inference | ✅ **FIXED** | BUG-TOK-002 resolved |
+| GGUF → APR Q4_K → inference | ⚠️ Needs testing | May have separate quantization issues |
+
+### 34.5 Next Steps
+
+1. **P1: PMAT-110** — Implement APR CUDA KV cache for GPU autoregression
+2. **P2: F-UX-001** — Add "Quantization:" label to verbose telemetry (realizar change)
+3. **P2:** Test GGUF→APR Q4_K path with the tokenizer fix
 

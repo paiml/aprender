@@ -497,11 +497,28 @@ pub(crate) fn load_model_config_from_json(model_path: &Path) -> Option<GgufModel
 ///
 /// For SafeTensors models, the tokenizer is stored in a separate tokenizer.json file.
 /// This function reads it and converts to GgufTokenizer format for APR embedding.
+///
+/// BUG-TOK-002 FIX: Support both HuggingFace layout (tokenizer.json) and
+/// Pacha cache layout ({hash}.tokenizer.json).
 pub(crate) fn load_tokenizer_from_json(model_path: &Path) -> Option<GgufTokenizer> {
-    let tokenizer_path = model_path.with_file_name("tokenizer.json");
-    if !tokenizer_path.exists() {
+    // Try standard HuggingFace layout: tokenizer.json in same directory
+    let standard_path = model_path.with_file_name("tokenizer.json");
+
+    // Try Pacha cache layout: {hash}.tokenizer.json (same stem as model)
+    let stem = model_path.file_stem()?.to_str()?;
+    // Strip any existing extensions like .converted from the stem
+    let base_stem = stem.split('.').next().unwrap_or(stem);
+    let pacha_path = model_path.with_file_name(format!("{}.tokenizer.json", base_stem));
+
+    // Try both paths
+    let tokenizer_path = if standard_path.exists() {
+        standard_path
+    } else if pacha_path.exists() {
+        eprintln!("[BUG-TOK-002] Found tokenizer at Pacha cache path: {}", pacha_path.display());
+        pacha_path
+    } else {
         return None;
-    }
+    };
 
     let content = fs::read_to_string(&tokenizer_path).ok()?;
     let json: serde_json::Value = serde_json::from_str(&content).ok()?;
