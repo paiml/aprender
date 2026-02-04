@@ -561,13 +561,42 @@ fn lint_safetensors_file(path: &Path) -> Result<LintReport> {
     Ok(lint_model(&info))
 }
 
-/// Lint an APR file from disk
+/// Lint an APR file from disk (supports both v1 and v2 formats)
 pub fn lint_apr_file(path: impl AsRef<Path>) -> Result<LintReport> {
-    use crate::format::{Header, Metadata, HEADER_SIZE};
     use std::fs::File;
     use std::io::{BufReader, Read};
 
     let path = path.as_ref();
+    let file = File::open(path)?;
+    let mut reader = BufReader::new(file);
+
+    // Read first 4 bytes to detect version
+    let mut magic = [0u8; 4];
+    reader.read_exact(&mut magic)?;
+
+    // Detect APR v1 (APRN) vs v2 (APR\0 or APR2)
+    if &magic == b"APRN" {
+        // APR v1 format - use v1 Header
+        lint_apr_v1_file(path)
+    } else if magic[0..3] == *b"APR" {
+        // APR v2 format - use v2 reader
+        lint_apr_v2_file(path)
+    } else {
+        Err(crate::error::AprenderError::FormatError {
+            message: format!(
+                "Invalid APR magic: {:02X}{:02X}{:02X}{:02X}",
+                magic[0], magic[1], magic[2], magic[3]
+            ),
+        })
+    }
+}
+
+/// Lint an APR v1 file (APRN magic)
+fn lint_apr_v1_file(path: &Path) -> Result<LintReport> {
+    use crate::format::{Header, Metadata, HEADER_SIZE};
+    use std::fs::File;
+    use std::io::{BufReader, Read};
+
     let file = File::open(path)?;
     let mut reader = BufReader::new(file);
 
@@ -597,6 +626,43 @@ pub fn lint_apr_file(path: impl AsRef<Path>) -> Result<LintReport> {
             alignment: 64, // Assume aligned for now
             is_compressed: info.is_compressed,
         });
+    }
+
+    Ok(lint_model(&info))
+}
+
+/// Lint an APR v2 file (APR\0 or APR2 magic)
+fn lint_apr_v2_file(path: &Path) -> Result<LintReport> {
+    use crate::format::v2::AprV2Reader;
+    use std::fs;
+
+    // Read file and create reader
+    let data = fs::read(path)?;
+    let reader = AprV2Reader::from_bytes(&data).map_err(|e| crate::error::AprenderError::FormatError {
+        message: format!("Failed to parse APR v2: {e}"),
+    })?;
+
+    // Build lint info from v2 metadata
+    let mut info = ModelLintInfo::default();
+    let metadata = reader.metadata();
+
+    // Check for standard metadata fields
+    info.has_license = metadata.license.is_some();
+    info.has_model_card = metadata.description.is_some();
+    info.has_provenance = metadata.author.is_some()
+        || metadata.source.is_some()
+        || metadata.original_format.is_some();
+
+    // Add tensor info (use tensor_names and get_tensor)
+    for name in reader.tensor_names() {
+        if let Some(tensor) = reader.get_tensor(name) {
+            info.tensors.push(TensorLintInfo {
+                name: name.to_string(),
+                size_bytes: tensor.size as usize,
+                alignment: 64, // v2 uses 64-byte alignment
+                is_compressed: false,
+            });
+        }
     }
 
     Ok(lint_model(&info))
