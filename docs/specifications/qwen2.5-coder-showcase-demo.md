@@ -821,6 +821,50 @@ apr benchmark model_v1.gguf model_v2.gguf --report diff.md
 
 ---
 
+### GH-202: Cross-Format Tensor Name Normalization (Rosetta) ✅ FIXED
+
+**GitHub Issue:** [paiml/aprender#202](https://github.com/paiml/aprender/issues/202)
+**Severity:** P1
+**Status:** ✅ FIXED (2026-02-04, Round 41)
+**Component:** `apr rosetta diff-tensors`, `apr rosetta fingerprint`
+
+**Problem:** When comparing GGUF and APR files, identical tensors appeared as "missing" in both directions due to different naming conventions:
+- GGUF: `blk.0.attn_q.weight`
+- APR/HF: `model.layers.0.self_attn.q_proj.weight`
+
+**Five Whys Analysis:**
+1. WHY did diff-tensors show 58-90% diff? → Tensors not matched by name
+2. WHY weren't tensors matched? → HashMap key was raw tensor name
+3. WHY use raw names? → `normalize_tensor_name()` only stripped prefixes
+4. WHY insufficient normalization? → Original code only handled same-format comparisons
+5. ROOT CAUSE: Cross-format name mapping not implemented
+
+**Fix Applied:**
+Enhanced `normalize_tensor_name()` in `rosetta.rs`:
+1. Strip format-specific prefixes (`model.`, `blk.`, `layers.`)
+2. Remove HF intermediate paths (`.self_attn.`, `.mlp.`)
+3. Map GGUF suffixes to HF convention (`attn_q` → `q_proj`, etc.)
+4. Handle special cases (`output.weight` → `lm_head.weight`)
+
+**Commits:**
+- `c61c4f64` - Main fix: Cross-format tensor name normalization
+- `ecf262ba` - Tests: 7 comprehensive normalization tests
+- `6a608b5f` - Fix: Apply same fix to fingerprint comparison
+
+**Verification:**
+```bash
+apr rosetta diff-tensors model.gguf model.apr
+# Before: Missing in A: 169, Missing in B: 169
+# After:  Missing in A: 0, Missing in B: 0
+
+apr rosetta fingerprint model.gguf model.apr
+# Result: ✓ No statistical anomalies detected
+```
+
+**Toyota Way:** Genchi Genbutsu - Go and see the actual tensor names to understand the problem.
+
+---
+
 ### PMAT-176/177: Format Conversion NaN Corruption (Original Fix - GH-172)
 
 **GitHub Issue:** [paiml/aprender#172](https://github.com/paiml/aprender/issues/172)
