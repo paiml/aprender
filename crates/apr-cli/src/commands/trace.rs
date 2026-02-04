@@ -744,8 +744,14 @@ fn detect_and_trace(
         FormatType::Apr => {
             let (format_name, metadata_bytes) = read_model_metadata(path)?;
             let layers = trace_layers(&metadata_bytes, layer_filter, verbose);
-            // APR: compute params from file metadata (TODO: parse properly)
-            Ok((format_name, layers, 0))
+            // BUG-TRACE-003 FIX: Use RosettaStone to compute total_params from tensor shapes
+            // Previously hardcoded to 0, now properly computed like GGUF/SafeTensors
+            let rosetta = aprender::format::rosetta::RosettaStone::new();
+            let total_params = rosetta
+                .inspect(path)
+                .map(|report| report.total_params)
+                .unwrap_or(0);
+            Ok((format_name, layers, total_params))
         }
         FormatType::Gguf => trace_gguf(path, layer_filter),
         FormatType::SafeTensors => trace_safetensors(path, layer_filter),
