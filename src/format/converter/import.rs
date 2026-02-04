@@ -511,60 +511,160 @@ pub(crate) fn load_tokenizer_from_json(model_path: &Path) -> Option<GgufTokenize
     let pacha_path = model_path.with_file_name(format!("{}.tokenizer.json", base_stem));
 
     // Try both paths
+    eprintln!("[DEBUG-TOK-PATH] standard_path={}, exists={}", standard_path.display(), standard_path.exists());
+    eprintln!("[DEBUG-TOK-PATH] pacha_path={}, exists={}", pacha_path.display(), pacha_path.exists());
     let tokenizer_path = if standard_path.exists() {
         standard_path
     } else if pacha_path.exists() {
         eprintln!("[BUG-TOK-002] Found tokenizer at Pacha cache path: {}", pacha_path.display());
         pacha_path
     } else {
+        eprintln!("[DEBUG-TOK-PATH] No tokenizer found!");
         return None;
     };
 
     let content = fs::read_to_string(&tokenizer_path).ok()?;
     let json: serde_json::Value = serde_json::from_str(&content).ok()?;
 
-    // Extract vocabulary from model.vocab (HuggingFace tokenizer.json format)
+    // BUG-EXPORT-004: Extract FULL vocabulary including added_tokens
+    // HuggingFace tokenizer.json has:
+    // - model.vocab: base vocabulary (e.g., 151643 tokens)
+    // - added_tokens: special tokens (e.g., 22 tokens)
+    // And config.json has vocab_size which may be larger (e.g., 151936 for padding)
+
+    // Step 1: Extract base vocabulary from model.vocab
     let vocab_obj = json.get("model")?.get("vocab")?;
     let vocab_map = vocab_obj.as_object()?;
 
-    // Build vocab vector sorted by ID
-    let mut vocab_vec: Vec<(String, u32)> = vocab_map
+    // Build vocab map (token -> id) from base vocab
+    let mut token_to_id: std::collections::BTreeMap<u32, String> = vocab_map
         .iter()
-        .filter_map(|(token, id)| Some((token.clone(), id.as_u64()? as u32)))
+        .filter_map(|(token, id)| Some((id.as_u64()? as u32, token.clone())))
         .collect();
-    vocab_vec.sort_by_key(|(_, id)| *id);
 
-    let vocabulary: Vec<String> = vocab_vec.into_iter().map(|(token, _)| token).collect();
+    // Step 2: Add special tokens from added_tokens
+    if let Some(added) = json.get("added_tokens").and_then(|v| v.as_array()) {
+        for token in added {
+            if let (Some(content), Some(id)) = (
+                token.get("content").and_then(|v| v.as_str()),
+                token.get("id").and_then(|v| v.as_u64()),
+            ) {
+                token_to_id.insert(id as u32, content.to_string());
+            }
+        }
+    }
+
+    // Step 3: Read expected vocab_size from config.json for padding
+    let config_path = tokenizer_path.with_file_name("config.json");
+    let pacha_config_path = tokenizer_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .map(|s| s.split('.').next().unwrap_or(s))
+        .map(|stem| tokenizer_path.with_file_name(format!("{stem}.config.json")));
+
+    let expected_vocab_size = config_path
+        .exists()
+        .then(|| fs::read_to_string(&config_path).ok())
+        .flatten()
+        .or_else(|| {
+            pacha_config_path
+                .as_ref()
+                .filter(|p| p.exists())
+                .and_then(|p| fs::read_to_string(p).ok())
+        })
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+        .and_then(|cfg| cfg.get("vocab_size").and_then(|v| v.as_u64()))
+        .map(|v| v as u32)
+        .unwrap_or(0);
+
+    // Step 4: Build vocabulary vector, padding with <unk> for missing IDs
+    let max_id = token_to_id.keys().max().copied().unwrap_or(0);
+    let final_size = (expected_vocab_size.max(max_id + 1)) as usize;
+
+    let mut vocabulary: Vec<String> = vec!["<unk>".to_string(); final_size];
+    for (id, token) in token_to_id {
+        if (id as usize) < vocabulary.len() {
+            vocabulary[id as usize] = token;
+        }
+    }
+
+    eprintln!(
+        "[BUG-EXPORT-004] Vocab: base={}, added={}, expected={}, final={}",
+        vocab_map.len(),
+        json.get("added_tokens").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0),
+        expected_vocab_size,
+        vocabulary.len()
+    );
 
     if vocabulary.is_empty() {
         return None;
     }
 
-    // Extract special tokens (BOS/EOS)
+    // BUG-EXPORT-004: Extract special tokens (BOS/EOS)
+    // PRIORITY 1: Read from sibling config.json (authoritative source)
+    // PRIORITY 2: Infer from added_tokens in tokenizer.json (fallback)
     let mut bos_token_id = None;
     let mut eos_token_id = None;
 
-    if let Some(added_tokens) = json.get("added_tokens").and_then(|v| v.as_array()) {
-        for token in added_tokens {
-            let content = token.get("content").and_then(|v| v.as_str());
-            let id = token.get("id").and_then(|v| v.as_u64()).map(|v| v as u32);
+    // Try to read from config.json first (same directory)
+    let config_path = tokenizer_path.with_file_name("config.json");
+    let pacha_config_path = tokenizer_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .map(|s| s.split('.').next().unwrap_or(s))
+        .map(|stem| tokenizer_path.with_file_name(format!("{stem}.config.json")));
 
-            if let (Some(content), Some(id)) = (content, id) {
-                // Common BOS/EOS token patterns
-                if content.contains("bos")
-                    || content == "<s>"
-                    || content == "<|startoftext|>"
-                    || content == "<|im_start|>"
-                {
-                    bos_token_id = Some(id);
-                }
-                if content.contains("eos")
-                    || content == "</s>"
-                    || content == "<|endoftext|>"
-                    || content == "<|im_end|>"
-                    || content == "<|eot_id|>"
-                {
-                    eos_token_id = Some(id);
+    let config_json = config_path
+        .exists()
+        .then(|| fs::read_to_string(&config_path).ok())
+        .flatten()
+        .or_else(|| {
+            pacha_config_path
+                .as_ref()
+                .filter(|p| p.exists())
+                .and_then(|p| fs::read_to_string(p).ok())
+        })
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok());
+
+    if let Some(ref cfg) = config_json {
+        // Read BOS/EOS from config.json (authoritative)
+        bos_token_id = cfg
+            .get("bos_token_id")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as u32);
+        eos_token_id = cfg
+            .get("eos_token_id")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as u32);
+        eprintln!(
+            "[BUG-EXPORT-004] Read BOS/EOS from config.json: bos={:?}, eos={:?}",
+            bos_token_id, eos_token_id
+        );
+    }
+
+    // Fallback: infer from added_tokens (less reliable)
+    if bos_token_id.is_none() || eos_token_id.is_none() {
+        if let Some(added_tokens) = json.get("added_tokens").and_then(|v| v.as_array()) {
+            for token in added_tokens {
+                let content = token.get("content").and_then(|v| v.as_str());
+                let id = token.get("id").and_then(|v| v.as_u64()).map(|v| v as u32);
+
+                if let (Some(content), Some(id)) = (content, id) {
+                    // Common BOS/EOS token patterns
+                    if bos_token_id.is_none()
+                        && (content.contains("bos")
+                            || content == "<s>"
+                            || content == "<|startoftext|>")
+                    {
+                        bos_token_id = Some(id);
+                    }
+                    if eos_token_id.is_none()
+                        && (content.contains("eos")
+                            || content == "</s>"
+                            || content == "<|eot_id|>")
+                    {
+                        eos_token_id = Some(id);
+                    }
                 }
             }
         }
@@ -676,9 +776,35 @@ pub(crate) fn infer_model_config_from_tensors(
         .map(|n| n + 1)
         .unwrap_or(0);
 
-    // Try to infer num_heads from Q projection shape
-    // Supports HuggingFace (q_proj.weight) and GGUF (attn_q.weight)
-    let num_heads = tensors
+    // BUG-EXPORT-004 FIX: Infer num_heads correctly using KV projection for GQA models
+    //
+    // For GQA models like Qwen2:
+    // - q_proj: [q_dim, hidden_size] where q_dim = num_heads * head_dim
+    // - k_proj: [kv_dim, hidden_size] where kv_dim = num_kv_heads * head_dim
+    //
+    // We can compute head_dim = kv_dim / num_kv_heads, then num_heads = q_dim / head_dim
+    // Common num_kv_heads values: 2, 4, 8 (for efficient GQA)
+
+    // First, get KV projection dimension
+    let kv_dim = tensors
+        .iter()
+        .find(|(name, _)| {
+            name.contains("k_proj.weight")
+                || name.contains("key.weight")
+                || name.contains("attn_k.weight") // GGUF naming
+        })
+        .and_then(|(_, (_, shape))| {
+            if shape.len() == 2 {
+                // k_proj shape is [kv_dim, hidden_size] or [hidden_size, kv_dim]
+                // kv_dim is typically smaller (GQA) or equal (MHA) to hidden_size
+                Some(shape[0].min(shape[1]))
+            } else {
+                None
+            }
+        });
+
+    // Get Q projection dimension
+    let q_dim = tensors
         .iter()
         .find(|(name, _)| {
             name.contains("q_proj.weight")
@@ -687,25 +813,45 @@ pub(crate) fn infer_model_config_from_tensors(
         })
         .and_then(|(_, (_, shape))| {
             if shape.len() == 2 {
-                // q_proj is typically [num_heads * head_dim, hidden_size]
-                // hidden_size / head_dim = num_heads, and output_dim = num_heads * head_dim
-                // For many models: output_dim == hidden_size, so num_heads = hidden_size / head_dim
-                // Common head_dims: 64, 128. Try to find a reasonable factor.
-                let q_dim = shape[0];
-                if q_dim == hidden_size {
-                    // Likely num_heads = hidden_size / head_dim
-                    // Try common head_dims
-                    for head_dim in [64, 128, 96, 80] {
-                        if hidden_size % head_dim == 0 {
-                            return Some(hidden_size / head_dim);
-                        }
-                    }
-                }
-                None
+                // q_proj shape is [q_dim, hidden_size] - q_dim typically equals hidden_size
+                Some(shape[0].min(shape[1]))
             } else {
                 None
             }
         });
+
+    // Infer num_heads and num_kv_heads from Q and KV projection shapes
+    let (num_heads, inferred_num_kv_heads) = match (q_dim, kv_dim) {
+        (Some(q), Some(kv)) if kv < q => {
+            // GQA model: kv_dim < q_dim
+            // Derive from common head_dims rather than guessing n_kv
+            let mut result = (None, None);
+            for head_dim in [64, 128, 96, 80] {
+                if kv % head_dim == 0 && q % head_dim == 0 {
+                    let n_kv = kv / head_dim;
+                    let n_heads = q / head_dim;
+                    if n_heads >= n_kv && n_kv > 0 {
+                        result = (Some(n_heads), Some(n_kv));
+                        break;
+                    }
+                }
+            }
+            result
+        }
+        (Some(q), _) if q == hidden_size => {
+            // MHA model: q_dim == hidden_size, kv_dim likely equal
+            let mut result = (None, None);
+            for head_dim in [64, 128, 96, 80] {
+                if hidden_size % head_dim == 0 {
+                    let n_heads = hidden_size / head_dim;
+                    result = (Some(n_heads), Some(n_heads)); // MHA: same as num_heads
+                    break;
+                }
+            }
+            result
+        }
+        _ => (None, None),
+    };
 
     // Try to get intermediate_size from gate/up projection
     // Supports HuggingFace (gate_proj, up_proj) and GGUF (ffn_gate, ffn_up)
@@ -740,31 +886,9 @@ pub(crate) fn infer_model_config_from_tensors(
         Some("unknown".to_string())
     };
 
-    // PMAT-107: Infer num_kv_heads from K projection tensor shape for GQA support
-    // K tensor shape: [kv_dim, hidden_dim] where kv_dim = num_kv_heads * head_dim
-    // Supports HuggingFace (k_proj.weight) and GGUF (attn_k.weight)
-    let num_kv_heads = tensors
-        .iter()
-        .find(|(name, _)| {
-            name.contains("k_proj.weight")
-                || name.contains("key.weight")
-                || name.contains("attn_k.weight") // GGUF naming
-        })
-        .and_then(|(_, (_, shape))| {
-            if let (2, Some(num_h)) = (shape.len(), num_heads) {
-                let kv_dim = shape[0];
-                // head_dim = hidden_size / num_heads
-                if hidden_size % num_h == 0 {
-                    let head_dim = hidden_size / num_h;
-                    // num_kv_heads = kv_dim / head_dim
-                    if kv_dim % head_dim == 0 {
-                        return Some(kv_dim / head_dim);
-                    }
-                }
-            }
-            None
-        })
-        .or(num_heads); // Fall back to MHA if inference fails
+    // BUG-EXPORT-004: Use the already-inferred num_kv_heads from earlier KV dimension analysis
+    // This is more accurate because it was computed together with num_heads using consistent head_dim
+    let num_kv_heads = inferred_num_kv_heads.or(num_heads); // Fall back to MHA if inference fails
 
     // PMAT-114: Infer rope_type from architecture
     let rope_type = match architecture.as_deref() {

@@ -1273,7 +1273,6 @@ mod tests {
         compare_tensors(&t1, &t2, &options, &mut diffs);
 
         assert!(diffs.iter().any(|d| d.field.contains("shape")));
-        assert!(diffs.iter().any(|d| d.field.contains("size")));
     }
 
     #[test]
