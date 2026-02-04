@@ -13,6 +13,7 @@ use std::path::Path;
 
 // Import shared functions from parent module
 use super::{calculate_tensor_size, load_model_tensors, map_tensor_names, quantize_tensors};
+// NOTE: quantize_q4_k_matrix imported via super:: through mod.rs
 
 /// Export format options
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -236,7 +237,7 @@ pub fn apr_export<P: AsRef<Path>>(
             }
         }
         ExportFormat::Gguf => {
-            export_to_gguf(&tensors, output_path, input_path)?;
+            export_to_gguf(&tensors, output_path, input_path, options.quantize.as_ref())?;
         }
         ExportFormat::Onnx | ExportFormat::TorchScript => {
             return Err(AprenderError::FormatError {
@@ -263,10 +264,14 @@ pub fn apr_export<P: AsRef<Path>>(
 ///
 /// Reads APR metadata to populate GGUF KV pairs and maps tensor names
 /// from HuggingFace convention to GGUF convention.
+///
+/// BUG-1 FIX: Now supports Q4_K quantization for GGUF inference compatibility.
+/// F32 GGUF files don't work with realizar's fused matmul kernels.
 fn export_to_gguf(
     tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
     output: &Path,
     input: &Path,
+    quantize: Option<&QuantizationType>,
 ) -> Result<()> {
     use crate::format::gguf::{export_tensors_to_gguf, GgmlType, GgufTensor, GgufValue};
     use crate::format::v2::AprV2Reader;
@@ -424,11 +429,19 @@ fn export_to_gguf(
     // PMAT-222 FIX: Reverse 2D shapes from standard [rows, cols] to GGML [ne0, ne1]
     // GGML convention: ne[0] is the contiguous dimension (cols), ne[1] is rows.
     // This is the inverse of write.rs:520 which reverses GGML→standard on import.
+    //
+    // BUG-1 FIX: Support Q4_K quantization for GGUF inference compatibility.
+    // F32 GGUF files don't work with realizar's fused matmul kernels which
+    // only support Q4_0/Q8_0/Q4_K/Q5_K/Q6_K types.
+    let use_q4k = matches!(
+        quantize,
+        Some(QuantizationType::Q4K | QuantizationType::Int4)
+    );
+
     let gguf_tensors: Vec<GgufTensor> = tensors
         .iter()
         .map(|(name, (data, shape))| {
             let gguf_name = hf_to_gguf_name(name);
-            let bytes: Vec<u8> = data.iter().flat_map(|f| f.to_le_bytes()).collect();
 
             // Reverse 2D shapes: standard [rows, cols] → GGML [ne0=cols, ne1=rows]
             let gguf_shape = if shape.len() == 2 {
@@ -437,14 +450,102 @@ fn export_to_gguf(
                 shape.iter().map(|&d| d as u64).collect()
             };
 
-            GgufTensor {
+            // BUG-1 FIX: Quantize to Q4_K for GGUF inference compatibility
+            // Only quantize 2D weight tensors, keep 1D tensors (biases, norms) as F32
+            //
+            // BUG-4 FIX: Embedding tensors MUST stay as F32 for realizar compatibility!
+            // Realizar uses get_tensor_f32() which expects flat layout, but Q4_K is row-padded.
+            // This matches official GGUF files (e.g., Qwen2-0.5B uses Q8_0 for embedding).
+            let is_embedding = gguf_name == "token_embd.weight" || name.contains("embed_tokens");
+
+            // Note: SafeTensors and realizar both use row-major layout, so NO transpose needed.
+            // The quantizer creates row-padded Q4K where each row has ceil(cols/256) super-blocks.
+            let (dtype, bytes) = if use_q4k && shape.len() == 2 && data.len() >= 256 && !is_embedding {
+                let q4k_bytes = super::quantize_q4_k_matrix(data, shape);
+
+                // DEBUG: Check quantization output size
+                let rows = shape[0];
+                let cols = shape[1];
+                let expected_blocks_per_row = (cols + 255) / 256;
+                let expected_bytes = rows * expected_blocks_per_row * 144;
+                if q4k_bytes.len() != expected_bytes {
+                    eprintln!(
+                        "[Q4K-SIZE-MISMATCH] '{}': shape={:?}, expected={}, actual={}",
+                        name, shape, expected_bytes, q4k_bytes.len()
+                    );
+                }
+                (GgmlType::Q4K, q4k_bytes)
+            } else {
+                // Keep as F32 for biases, layer norms, and small tensors
+                let f32_bytes: Vec<u8> = data.iter().flat_map(|f| f.to_le_bytes()).collect();
+                (GgmlType::F32, f32_bytes)
+            };
+
+            // DEBUG: Verify data size being passed to GgufTensor
+            static TENSOR_DEBUG: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+            let tensor_count = TENSOR_DEBUG.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if tensor_count < 3 {
+                eprintln!(
+                    "[DEBUG-TENSOR-CREATE] '{}': dtype={:?}, shape={:?}, bytes.len()={}, bytes_ptr={:p}",
+                    gguf_name, dtype, gguf_shape, bytes.len(), bytes.as_ptr()
+                );
+            }
+
+            let tensor = GgufTensor {
                 name: gguf_name,
                 shape: gguf_shape,
-                dtype: GgmlType::F32,
+                dtype,
                 data: bytes,
+            };
+
+            if tensor_count < 3 {
+                eprintln!(
+                    "[DEBUG-TENSOR-AFTER] '{}': tensor.data.len()={}, tensor.data.ptr={:p}",
+                    tensor.name, tensor.data.len(), tensor.data.as_ptr()
+                );
             }
+
+            tensor
         })
         .collect();
+
+    // DEBUG: Verify collected tensors
+    eprintln!(
+        "[DEBUG-COLLECTED] Total tensors: {}, first tensor data.len()={}",
+        gguf_tensors.len(),
+        gguf_tensors.first().map(|t| t.data.len()).unwrap_or(0)
+    );
+
+    // BUG-4 FIX: For tied embedding models (Qwen2, etc.), create a separate Q4K
+    // output.weight tensor for the LM head, since the embedding is kept as F32.
+    // Realizar's fused matmul requires quantized LM head weights.
+    let has_lm_head = gguf_tensors.iter().any(|t| t.name == "output.weight");
+    let mut gguf_tensors = gguf_tensors;
+
+    if use_q4k && !has_lm_head {
+        // Find the embedding tensor and create a Q4K copy for output.weight
+        if let Some(embed_data) = tensors
+            .iter()
+            .find(|(name, _)| name.contains("embed_tokens") || name.contains("token_embedding"))
+        {
+            let (_, (data, shape)) = embed_data;
+            if shape.len() == 2 && data.len() >= 256 {
+                eprintln!(
+                    "[BUG-4-FIX] Creating Q4K output.weight from embedding for tied embeddings"
+                );
+
+                let q4k_bytes = super::quantize_q4_k_matrix(data, shape);
+                let gguf_shape = vec![shape[1] as u64, shape[0] as u64]; // reversed for GGML
+
+                gguf_tensors.push(GgufTensor {
+                    name: "output.weight".to_string(),
+                    shape: gguf_shape,
+                    dtype: GgmlType::Q4K,
+                    data: q4k_bytes,
+                });
+            }
+        }
+    }
 
     // Write to file
     let file = File::create(output).map_err(|e| AprenderError::FormatError {
@@ -512,12 +613,28 @@ fn infer_model_config(tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>) -> Str
     let mut inference_warnings: Vec<String> = Vec::new();
 
     // Infer hidden_size from embedding or first layer weight
+    // BUG-EXPORT-001 FIX: GGUF and HuggingFace have different embedding layouts:
+    //   - HuggingFace: [vocab_size, hidden_size]
+    //   - GGUF: Can be [hidden_size, vocab_size] (transposed)
+    // For LLMs: vocab_size >> hidden_size (32k-150k vs 512-8192), so pick the smaller dim
     let (hidden_size, hidden_inferred) = tensors
         .iter()
         .find(|(name, _)| name.contains("embed_tokens") || name.contains("token_embd"))
         .map(|(name, (_, shape))| {
-            let dim = shape.last().copied().unwrap_or(4096);
-            eprintln!("[GH-197] Inferred hidden_size={dim} from tensor '{name}'");
+            let dim = if shape.len() >= 2 {
+                // Pick the smaller dimension (hidden_size is always << vocab_size)
+                let dim0 = shape[0];
+                let dim1 = shape[1];
+                let inferred = dim0.min(dim1);
+                eprintln!(
+                    "[GH-197] Inferred hidden_size={inferred} from tensor '{name}' \
+                     (shape={shape:?}, picked smaller dim)"
+                );
+                inferred
+            } else {
+                // 1D tensor - use as-is
+                shape.last().copied().unwrap_or(4096)
+            };
             (dim, true)
         })
         .unwrap_or_else(|| {
@@ -555,19 +672,35 @@ fn infer_model_config(tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>) -> Str
         12
     };
 
-    // Infer vocab_size from lm_head or output weight
+    // Infer vocab_size from lm_head, output weight, or embedding tensor
+    // BUG-EXPORT-001 FIX: Use larger dimension (vocab_size >> hidden_size)
+    // Also check embedding tensor since GGUF often uses weight tying
     let (vocab_size, vocab_inferred) = tensors
         .iter()
         .find(|(name, _)| name.contains("lm_head") || name.contains("output.weight"))
+        .or_else(|| {
+            // Fallback: use embedding tensor (GGUF weight tying)
+            tensors
+                .iter()
+                .find(|(name, _)| name.contains("embed_tokens") || name.contains("token_embd"))
+        })
         .map(|(name, (_, shape))| {
-            let dim = shape.first().copied().unwrap_or(32000);
-            eprintln!("[GH-197] Inferred vocab_size={dim} from tensor '{name}'");
+            let dim = if shape.len() >= 2 {
+                // Pick the larger dimension (vocab_size is always >> hidden_size)
+                let inferred = shape[0].max(shape[1]);
+                eprintln!(
+                    "[GH-197] Inferred vocab_size={inferred} from tensor '{name}' \
+                     (shape={shape:?}, picked larger dim)"
+                );
+                inferred
+            } else {
+                shape.first().copied().unwrap_or(32000)
+            };
             (dim, true)
         })
         .unwrap_or_else(|| {
             inference_warnings.push(
-                "vocab_size: No lm_head/output.weight tensor found, defaulting to 32000"
-                    .to_string(),
+                "vocab_size: No lm_head/output/embed tensor found, defaulting to 32000".to_string(),
             );
             (32000, false)
         });

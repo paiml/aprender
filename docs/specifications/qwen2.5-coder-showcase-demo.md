@@ -1,13 +1,13 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 9.11.0 (Showcase Pipeline Fixed)
-**Status:** ✅ **SHOWCASE PIPELINE WORKING** - APR inference loader fixed, tier-aware paths
-**Popperian Score:** 92/100 (Grade: A+ — Pipeline bugs fixed, 33 falsification tests passing)
+**Version:** 9.12.0 (Export Config Inference Fixed)
+**Status:** ✅ **SHOWCASE PIPELINE WORKING** - Export now correctly infers model config
+**Popperian Score:** 92/100 (Grade: A+ — Pipeline bugs fixed, 34 falsification tests passing)
 **Code Coverage:** 96.94% (target: ≥95%)
 **Tool Coverage:** 16/16 (100%) - All APR tools verified
 **CLI Test Coverage:** 10,266 lib tests passing
 **Author:** PAIML Engineering
-**Date:** 2026-02-03
+**Date:** 2026-02-04
 **Ground Truth:** SafeTensors (F32/BF16) - See Section 0
 **Last Falsification Run:** 2026-02-03 (Round 40 - Showcase: 9/10 steps, 1 falsification failure)
 **Quality Philosophy:** Toyota Way + Popperian Falsification (Zero SATD, Stop-the-Line, see Appendix F)
@@ -180,6 +180,7 @@ but passed them directly to `apr run` without resolving to format-specific files
 | BUG-QA-002 | apr qa used wall clock time instead of eval_duration | P0 | ✅ FIXED | 2026-02-03 |
 | BUG-SHOWCASE-001 | APR inference used wrong loader (binary vs JSON format) | P0 | ✅ FIXED | 2026-02-03 |
 | BUG-SHOWCASE-002 | APR inference hardcoded to 32b model path | P1 | ✅ FIXED | 2026-02-03 |
+| BUG-EXPORT-001 | Export infer_model_config confused hidden_size with vocab_size | P1 | ✅ FIXED | 2026-02-04 |
 | [GH-191](docs/tickets/GH-191-APR-QUANTIZATION-DATA-LOSS.md) | APR dtype byte mapping mismatch | P0 | ✅ FIXED | PMAT-223 |
 | [GH-190](docs/tickets/GH-190-GGUF-APR-CONVERSION-GARBAGE-OUTPUT.md) | GGUF→APR tensor name mismatch | P0 | ✅ FIXED | PMAT-205 |
 | [GH-189](docs/tickets/GH-189-APR-CHAT-SPECIAL-TOKENS.md) | APR chat special tokens not atomic | P0 | ✅ FIXED | PMAT-206 |
