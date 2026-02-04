@@ -2312,13 +2312,11 @@ fn normalize_tensor_name(name: &str) -> String {
 
     // Step 4: Handle lm_head vs output naming
     // GGUF: output.weight → APR: lm_head.weight
-    let name = if name == "output.weight" {
+    if name == "output.weight" {
         "lm_head.weight".to_string()
     } else {
         name
-    };
-
-    name
+    }
 }
 
 /// Check if two shapes are transposed versions of each other
