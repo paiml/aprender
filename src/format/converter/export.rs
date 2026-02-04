@@ -15,6 +15,45 @@ use std::path::Path;
 use super::{calculate_tensor_size, load_model_tensors, map_tensor_names, quantize_tensors};
 // NOTE: quantize_q4_k_matrix imported via super:: through mod.rs
 
+// ============================================================================
+// BUG-EXPORT-002: LAYOUT-002 Transpose for Export
+// ============================================================================
+
+/// Transpose F32 matrix from row-major to column-major layout for GGUF export.
+///
+/// BUG-EXPORT-002 FIX: APR stores tensors in row-major layout with shape [rows, cols].
+/// GGUF expects column-major layout with shape [cols, rows].
+/// This function transposes the data for GGUF compatibility.
+///
+/// # Arguments
+/// * `data` - F32 values in row-major order
+/// * `shape` - APR shape [rows, cols]
+///
+/// # Returns
+/// Transposed F32 data in column-major order (stored as row-major [cols, rows])
+fn transpose_f32_rowmajor_to_colmajor(data: &[f32], shape: &[usize]) -> Vec<f32> {
+    if shape.len() != 2 {
+        // Only transpose 2D tensors
+        return data.to_vec();
+    }
+
+    let rows = shape[0];
+    let cols = shape[1];
+
+    // Transpose: row-major [rows, cols] -> column-major layout
+    // Column-major with shape [cols, rows] stored as: for each column (original row), store values
+    let mut transposed = vec![0.0f32; data.len()];
+    for r in 0..rows {
+        for c in 0..cols {
+            // Row-major source: data[r * cols + c]
+            // Column-major dest (stored as row-major [cols, rows]): transposed[c * rows + r]
+            transposed[c * rows + r] = data[r * cols + c];
+        }
+    }
+
+    transposed
+}
+
 /// Export format options
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExportFormat {
@@ -458,25 +497,34 @@ fn export_to_gguf(
             // This matches official GGUF files (e.g., Qwen2-0.5B uses Q8_0 for embedding).
             let is_embedding = gguf_name == "token_embd.weight" || name.contains("embed_tokens");
 
-            // Note: SafeTensors and realizar both use row-major layout, so NO transpose needed.
-            // The quantizer creates row-padded Q4K where each row has ceil(cols/256) super-blocks.
+            // BUG-EXPORT-002 FIX: APR uses row-major layout, GGUF uses column-major.
+            // Must transpose 2D tensors before exporting.
             let (dtype, bytes) = if use_q4k && shape.len() == 2 && data.len() >= 256 && !is_embedding {
-                let q4k_bytes = super::quantize_q4_k_matrix(data, shape);
+                // Transpose first, then quantize
+                // APR row-major [rows, cols] -> GGUF column-major (transposed shape [cols, rows])
+                let transposed_data = transpose_f32_rowmajor_to_colmajor(data, shape);
+                let transposed_shape = vec![shape[1], shape[0]]; // [cols, rows]
+                let q4k_bytes = super::quantize_q4_k_matrix(&transposed_data, &transposed_shape);
 
-                // DEBUG: Check quantization output size
-                let rows = shape[0];
-                let cols = shape[1];
+                // DEBUG: Check quantization output size (now using transposed shape)
+                let rows = transposed_shape[0]; // cols became rows
+                let cols = transposed_shape[1]; // rows became cols
                 let expected_blocks_per_row = (cols + 255) / 256;
                 let expected_bytes = rows * expected_blocks_per_row * 144;
                 if q4k_bytes.len() != expected_bytes {
                     eprintln!(
                         "[Q4K-SIZE-MISMATCH] '{}': shape={:?}, expected={}, actual={}",
-                        name, shape, expected_bytes, q4k_bytes.len()
+                        name, transposed_shape, expected_bytes, q4k_bytes.len()
                     );
                 }
                 (GgmlType::Q4K, q4k_bytes)
+            } else if shape.len() == 2 {
+                // F32 2D tensor - transpose for GGUF column-major layout
+                let transposed_data = transpose_f32_rowmajor_to_colmajor(data, shape);
+                let f32_bytes: Vec<u8> = transposed_data.iter().flat_map(|f| f.to_le_bytes()).collect();
+                (GgmlType::F32, f32_bytes)
             } else {
-                // Keep as F32 for biases, layer norms, and small tensors
+                // 1D tensor (biases, norms) - no transpose needed
                 let f32_bytes: Vec<u8> = data.iter().flat_map(|f| f.to_le_bytes()).collect();
                 (GgmlType::F32, f32_bytes)
             };

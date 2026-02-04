@@ -186,6 +186,8 @@ but passed them directly to `apr run` without resolving to format-specific files
 | BUG-DEBUG-001 | Debug command showed INVALID/CORRUPTED for valid GGUF files | P2 | ✅ FIXED | 2026-02-04 |
 | BUG-PROBAR-001 | Probar showed "Format: Unknown" for GGUF files | P3 | ✅ FIXED | 2026-02-04 |
 | BUG-RUN-001 | Benchmark token count uses word approximation instead of actual count | P1 | ✅ FIXED | PMAT-203 |
+| BUG-EXPORT-002 | Export to GGUF doesn't transpose data (LAYOUT-002 violation on export) | P0 | ✅ FIXED | 2026-02-04 |
+| BUG-CONV-001 | Legacy quant (Q4_0/Q4_1/Q5_0/Q8_0) and F32/F16 import doesn't transpose | P0 | ✅ FIXED | 2026-02-04 |
 | [GH-191](docs/tickets/GH-191-APR-QUANTIZATION-DATA-LOSS.md) | APR dtype byte mapping mismatch | P0 | ✅ FIXED | PMAT-223 |
 | [GH-190](docs/tickets/GH-190-GGUF-APR-CONVERSION-GARBAGE-OUTPUT.md) | GGUF→APR tensor name mismatch | P0 | ✅ FIXED | PMAT-205 |
 | [GH-189](docs/tickets/GH-189-APR-CHAT-SPECIAL-TOKENS.md) | APR chat special tokens not atomic | P0 | ✅ FIXED | PMAT-206 |
