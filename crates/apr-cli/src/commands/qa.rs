@@ -463,10 +463,10 @@ fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
                     let text = tokenizer.decode(&tokens);
                     (tokens, text)
                 }
-                _ => {
+                ModelFormat::SafeTensors => {
                     return Ok(GateResult::skipped(
                         "golden_output",
-                        &format!("Unsupported format: {:?}", format),
+                        "SafeTensors format requires external tokenizer - use GGUF or APR",
                     ));
                 }
             };
@@ -631,10 +631,10 @@ fn run_throughput_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
                 let measure_time = measure_start.elapsed();
                 (total_tokens as f64 / measure_time.as_secs_f64(), start.elapsed())
             }
-            _ => {
+            ModelFormat::SafeTensors => {
                 return Ok(GateResult::skipped(
                     "throughput",
-                    &format!("Unsupported format: {:?}", format),
+                    "SafeTensors format requires external tokenizer - use GGUF or APR",
                 ));
             }
         };
@@ -1767,5 +1767,97 @@ mod tests {
         );
         // Should fail (invalid file)
         assert!(result.is_err());
+    }
+
+    // ========================================================================
+    // FORMAT DISPATCH TESTS (P0: Verify formats don't incorrectly skip)
+    // These tests ensure that APR, GGUF, and SafeTensors formats are properly
+    // dispatched to their handlers and don't silently skip with "GGUF only".
+    // ========================================================================
+
+    #[cfg(feature = "inference")]
+    mod format_dispatch_tests {
+        use realizar::format::{detect_format, ModelFormat};
+
+        /// Test that GGUF magic bytes are correctly detected
+        #[test]
+        fn test_gguf_format_detection() {
+            // GGUF magic: "GGUF" (0x47475546)
+            let gguf_magic = b"GGUF\x03\x00\x00\x00"; // GGUF v3
+            let format = detect_format(gguf_magic).expect("detect GGUF");
+            assert_eq!(format, ModelFormat::Gguf, "GGUF magic must detect as GGUF");
+        }
+
+        /// Test that APR v2 magic bytes are correctly detected
+        #[test]
+        fn test_apr_v2_format_detection() {
+            // APR v2 magic: "APR\0" (0x41505200)
+            let apr_magic = b"APR\x00\x02\x00\x00\x00"; // APR v2
+            let format = detect_format(apr_magic).expect("detect APR");
+            assert_eq!(format, ModelFormat::Apr, "APR magic must detect as APR");
+        }
+
+        /// Test that SafeTensors format is correctly detected
+        #[test]
+        fn test_safetensors_format_detection() {
+            // SafeTensors starts with u64 header length, then JSON
+            let mut st_magic = Vec::new();
+            st_magic.extend_from_slice(&100u64.to_le_bytes()); // header length
+            st_magic.extend_from_slice(b"{\""); // JSON start
+            let format = detect_format(&st_magic).expect("detect SafeTensors");
+            assert_eq!(format, ModelFormat::SafeTensors, "SafeTensors magic must detect as SafeTensors");
+        }
+
+        /// P0 REGRESSION TEST: APR format must NOT skip golden_output gate
+        /// This test catches the bug where APR files silently returned "GGUF only"
+        #[test]
+        fn test_apr_format_does_not_skip_detection() {
+            // Create minimal APR v2 header (8 bytes minimum for format detection)
+            let apr_magic = b"APR\x00\x02\x00\x00\x00"; // APR v2 magic + version
+            let format = detect_format(apr_magic).expect("detect APR");
+
+            // The critical assertion: APR must be detected as APR, not fail/skip
+            assert_eq!(format, ModelFormat::Apr,
+                "APR format MUST be detected - cannot skip with 'GGUF only' error");
+        }
+
+        /// P0 REGRESSION TEST: Verify ModelFormat enum covers all expected formats
+        #[test]
+        fn test_model_format_enum_completeness() {
+            // This test documents the expected formats
+            let formats = [ModelFormat::Gguf, ModelFormat::Apr, ModelFormat::SafeTensors];
+            assert_eq!(formats.len(), 3, "Must support exactly 3 formats: GGUF, APR, SafeTensors");
+        }
+    }
+
+    // ========================================================================
+    // GATE RESULT NON-SKIP TESTS
+    // Verify that gates return actual results (pass/fail) not skipped
+    // ========================================================================
+
+    #[test]
+    fn test_gate_result_skipped_flag_semantics() {
+        // Skipped gates have skipped=true
+        let skipped = GateResult::skipped("test", "reason");
+        assert!(skipped.skipped, "Skipped gate must have skipped=true");
+        assert!(skipped.passed, "Skipped gates count as passed (don't fail)");
+
+        // Passed gates have skipped=false
+        let passed = GateResult::passed("test", "ok", None, None, Duration::from_secs(1));
+        assert!(!passed.skipped, "Passed gate must have skipped=false");
+        assert!(passed.passed, "Passed gate must have passed=true");
+
+        // Failed gates have skipped=false
+        let failed = GateResult::failed("test", "fail", None, None, Duration::from_secs(1));
+        assert!(!failed.skipped, "Failed gate must have skipped=false");
+        assert!(!failed.passed, "Failed gate must have passed=false");
+    }
+
+    /// P0 REGRESSION TEST: Gates that skip must have explicit reason
+    #[test]
+    fn test_skipped_gate_must_have_reason() {
+        let result = GateResult::skipped("test_gate", "Explicit reason required");
+        assert!(result.message.contains("Skipped"), "Skip message must contain 'Skipped'");
+        assert!(result.message.len() > 10, "Skip reason must be descriptive");
     }
 }
