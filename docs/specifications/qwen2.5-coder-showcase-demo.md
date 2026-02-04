@@ -1,6 +1,6 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 9.13.0 (Bug Hunter Scan - Clean)
+**Version:** 9.14.0 (GH-202 Investigation - Root Cause Identified)
 **Status:** ✅ **SHOWCASE PIPELINE WORKING** - Export now correctly infers model config
 **Popperian Score:** 92/100 (Grade: A+ — Pipeline bugs fixed, 34 falsification tests passing)
 **Code Coverage:** 96.94% (target: ≥95%)
@@ -7161,4 +7161,82 @@ Bug-hunter detected stack drift (non-blocking in local dev):
 - 2 info-level configuration notes (expected)
 
 The codebase passes bug-hunter validation. No new PMAT work items required from this scan.
+
+---
+
+## Round 45: GH-202 LAYOUT-002 Investigation (2026-02-04)
+
+### 36.1 Issue Summary
+
+**GH-202: LAYOUT-002 Conversion fidelity failures in Qwen2.5-Coder-0.5B qualification (58-90% diff)**
+
+P0 CRITICAL - Blocks model qualification. MQS Score: 320/1000 (Grade F).
+
+### 36.2 Root Cause Identified
+
+**APR from GGUF conversion produces garbage inference** while original GGUF produces correct output:
+
+```
+GGUF inference: "4" (correct)
+APR inference:  "linguisticçļĦæĵįä½ľ()); ìįħintent" (garbage)
+```
+
+### 36.3 Investigation Findings
+
+| Finding | Status | Details |
+|---------|--------|---------|
+| Tensor count preserved | ✅ | 579 tensors in both GGUF and APR |
+| Shapes correctly transposed | ✅ | GGUF [13824,5120] → APR [5120,13824] |
+| BPE rules embedded | ✅ | 151387 merge rules in APR metadata |
+| Inference output | ❌ | Garbage text from APR, correct from GGUF |
+
+**Tensor Shape Analysis (down_proj example):**
+```
+GGUF: 0.down_proj.weight [13824, 5120] (column-major, GGML convention)
+APR:  0.down_proj.weight [5120, 13824] (row-major, standard convention)
+```
+
+### 36.4 Suspect Areas
+
+1. **trueno-quant `transpose_q4k_for_matmul`** (`trueno/crates/trueno-quant/src/lib.rs:757`):
+   - Uses `shape[0]` as cols, `shape[1]` as rows
+   - GGUF may report shapes in different convention
+
+2. **realizar APR loader**:
+   - May misinterpret transposed tensor shapes
+   - Kernel dimension mismatch possible
+
+3. **Q4K super-block layout**:
+   - Byte ordering may differ after transpose
+   - Requantization may corrupt scale/min values
+
+### 36.5 Cross-Repo Impact
+
+| Repo | Component | Role |
+|------|-----------|------|
+| aprender | `src/format/converter/write.rs` | GGUF→APR conversion |
+| trueno | `trueno-quant/src/lib.rs` | `transpose_q4k_for_matmul` |
+| realizar | `src/apr_transformer/` | APR loader and inference |
+
+### 36.6 Next Steps (Priority Order)
+
+1. **P0: GH-202-FIX-001** — Add tensor value validation test in conversion
+2. **P0: GH-202-FIX-002** — Compare first tensor values between GGUF and APR
+3. **P0: GH-202-FIX-003** — Trace single matmul through both inference paths
+4. **P1: GH-202-FIX-004** — Verify Q4K super-block layout after transpose
+
+### 36.7 Bug Tracker Update
+
+| Bug ID | Description | Priority | Status | Date |
+|--------|-------------|----------|--------|------|
+| GH-202 | LAYOUT-002 conversion fidelity (58-90% diff) | P0 | 🔍 INVESTIGATING | 2026-02-04 |
+| BUG-TOK-002 | Tokenizer path resolution for Pacha cache | P1 | ✅ FIXED | 2026-02-04 |
+
+### 36.8 APR Parity Status (Updated)
+
+| Path | Status | Notes |
+|------|--------|-------|
+| SafeTensors → APR F32 → inference | ✅ **WORKING** | BUG-TOK-002 fixed |
+| GGUF → APR Q4_K → inference | ❌ **BROKEN** | GH-202 - garbage output |
+| GGUF direct inference | ✅ **WORKING** | Baseline for comparison |
 

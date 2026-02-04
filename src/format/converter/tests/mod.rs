@@ -14,5 +14,6 @@
 mod core;
 mod coverage;
 mod errors;
+mod gh202_layout;
 mod pmat;
 mod pmat_round19;
