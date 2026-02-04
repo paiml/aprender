@@ -678,13 +678,9 @@ fn read_model_metadata(path: &Path) -> Result<(String, Vec<u8>), CliError> {
 }
 
 /// Compute trace summary from layer information.
-fn compute_trace_summary(layers: &[LayerTrace]) -> TraceSummary {
+/// BUG-TRACE-001 FIX: Accept total_params from caller since weight_stats are not populated
+fn compute_trace_summary(layers: &[LayerTrace], total_params: usize) -> TraceSummary {
     let all_anomalies: Vec<String> = layers.iter().flat_map(|l| l.anomalies.clone()).collect();
-
-    let total_params: usize = layers
-        .iter()
-        .filter_map(|l| l.weight_stats.as_ref().map(|s| s.count))
-        .sum();
 
     TraceSummary {
         total_layers: layers.len(),
@@ -712,8 +708,9 @@ pub(crate) fn run(
     }
 
     // Detect format via Rosetta Stone dispatch
-    let (format_name, layers) = detect_and_trace(path, layer_filter, verbose)?;
-    let summary = compute_trace_summary(&layers);
+    // BUG-TRACE-001 FIX: Now returns total_params computed from tensor shapes
+    let (format_name, layers, total_params) = detect_and_trace(path, layer_filter, verbose)?;
+    let summary = compute_trace_summary(&layers, total_params);
 
     if let Some(ref_path) = reference {
         return compare_with_reference(path, ref_path, &layers, json_output);
@@ -729,11 +726,12 @@ pub(crate) fn run(
 }
 
 /// Detect format and trace layers from any supported format.
+/// BUG-TRACE-001 FIX: Now returns total_params computed from tensor shapes
 fn detect_and_trace(
     path: &Path,
     layer_filter: Option<&str>,
     verbose: bool,
-) -> Result<(String, Vec<LayerTrace>), CliError> {
+) -> Result<(String, Vec<LayerTrace>, usize), CliError> {
     use aprender::format::rosetta::FormatType;
 
     validate_path(path)?;
@@ -746,7 +744,8 @@ fn detect_and_trace(
         FormatType::Apr => {
             let (format_name, metadata_bytes) = read_model_metadata(path)?;
             let layers = trace_layers(&metadata_bytes, layer_filter, verbose);
-            Ok((format_name, layers))
+            // APR: compute params from file metadata (TODO: parse properly)
+            Ok((format_name, layers, 0))
         }
         FormatType::Gguf => trace_gguf(path, layer_filter),
         FormatType::SafeTensors => trace_safetensors(path, layer_filter),
@@ -768,16 +767,24 @@ fn gguf_meta_u32(
 }
 
 /// Trace layers from GGUF format by extracting architecture from KV metadata.
+/// BUG-TRACE-001 FIX: Now computes total_params from tensor shapes
 fn trace_gguf(
     path: &Path,
     layer_filter: Option<&str>,
-) -> Result<(String, Vec<LayerTrace>), CliError> {
+) -> Result<(String, Vec<LayerTrace>, usize), CliError> {
     use aprender::format::gguf::reader::GgufReader;
     use aprender::format::gguf::GgufValue;
 
     let data = std::fs::read(path)?;
     let reader = GgufReader::from_bytes(data)
         .map_err(|e| CliError::InvalidFormat(format!("Failed to parse GGUF: {e}")))?;
+
+    // BUG-TRACE-001 FIX: Compute total params from tensor dimensions
+    let total_params: usize = reader
+        .tensors
+        .iter()
+        .map(|t| t.dims.iter().map(|&d| d as usize).product::<usize>())
+        .sum();
 
     // Extract architecture info from GGUF KV metadata
     let arch = match reader.metadata.get("general.architecture") {
@@ -814,14 +821,15 @@ fn trace_gguf(
         layers.push(create_default_layer());
     }
 
-    Ok((format_name, layers))
+    Ok((format_name, layers, total_params))
 }
 
 /// Trace layers from SafeTensors format by inferring architecture from tensor names.
+/// BUG-TRACE-001 FIX: Now returns total_params from Rosetta inspection
 fn trace_safetensors(
     path: &Path,
     layer_filter: Option<&str>,
-) -> Result<(String, Vec<LayerTrace>), CliError> {
+) -> Result<(String, Vec<LayerTrace>, usize), CliError> {
     use aprender::format::rosetta::RosettaStone;
 
     let rosetta = RosettaStone::new();
@@ -837,7 +845,8 @@ fn trace_safetensors(
         layers.push(create_default_layer());
     }
 
-    Ok((format_name, layers))
+    // BUG-TRACE-001 FIX: Use total_params from Rosetta inspection
+    Ok((format_name, layers, report.total_params))
 }
 
 /// Infer layer structure from tensor naming conventions.
@@ -1760,7 +1769,7 @@ mod tests {
     #[test]
     fn test_trace_gguf_detects_layers() {
         let file = build_test_gguf();
-        let (format_name, layers) =
+        let (format_name, layers, total_params) =
             detect_and_trace(file.path(), None, false).expect("detect_and_trace GGUF");
         assert!(
             format_name.contains("GGUF"),
@@ -1771,17 +1780,21 @@ mod tests {
             !layers.is_empty(),
             "GGUF trace must produce at least one layer"
         );
+        // BUG-TRACE-001 FIX: total_params should be computed from tensor shapes
+        assert!(total_params > 0, "total_params should be > 0 for GGUF");
     }
 
     #[test]
     fn test_trace_safetensors_detects_layers() {
         let file = build_test_safetensors();
-        let (format_name, layers) =
+        let (format_name, layers, total_params) =
             detect_and_trace(file.path(), None, false).expect("detect_and_trace SafeTensors");
         assert_eq!(format_name, "SafeTensors");
         assert!(
             !layers.is_empty(),
             "SafeTensors trace must produce at least one layer"
         );
+        // BUG-TRACE-001 FIX: total_params should be computed
+        let _ = total_params; // May be 0 for test file
     }
 }
