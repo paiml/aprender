@@ -46,9 +46,70 @@ cargo mutants --no-times                     # Mutation testing (target: 85%)
 pmat tdg . --include-components              # TDG score (target: A+ = 95.0+)
 ```
 
-## ⚠️ MANDATORY: Debugging with Tracing (Don't Just Read Code)
+## ⚠️ MANDATORY: Debugging with apr Diagnostic Tools (Don't Just Grep)
 
-**STOP. Before debugging performance or correctness issues by reading code, USE THE TRACING TOOLS.**
+**STOP. Before debugging by reading code or using grep, USE THE APR DIAGNOSTIC TOOLCHAIN.**
+
+### Why Tools First? (GH-202 Five-Whys Lesson)
+
+GH-202 revealed a critical bug where APR format was silently skipped with "GGUF only" messages.
+The root cause: we read code instead of running `apr qa` which would have instantly shown the failure.
+
+**Anti-pattern (WRONG):**
+```bash
+# ❌ WRONG: Grepping through code to understand why output is garbage
+grep -r "generate" src/
+rg "ModelFormat" --type rust
+# Hours of reading code, still confused
+```
+
+**Correct pattern (RIGHT):**
+```bash
+# ✅ RIGHT: Run diagnostic tools FIRST - they tell you exactly what's wrong
+apr qa model.apr                    # Instantly shows: "golden_output: FAILED"
+apr tensors model.apr               # Shows: hidden_dim=1536 (wrong model!)
+apr diff model1.gguf model2.apr     # Shows: architecture mismatch
+```
+
+### apr CLI Diagnostic Toolchain
+
+**Use these tools BEFORE reading code:**
+
+| Tool | Purpose | When to Use |
+|------|---------|-------------|
+| `apr qa` | **Falsifiable QA gates** | First tool for ANY issue - tests golden output, throughput |
+| `apr tensors` | **Tensor inspection** | Wrong output? Check shapes/stats match expected |
+| `apr validate` | **Integrity check** | File corruption, format errors |
+| `apr lint` | **Best practices** | Naming conventions, metadata completeness |
+| `apr diff` | **Model comparison** | Compare two models tensor-by-tensor |
+| `apr trace` | **Layer-by-layer analysis** | Performance issues, identify slow layers |
+| `apr profile` | **Roofline analysis** | Memory-bound vs compute-bound diagnosis |
+| `apr inspect` | **Metadata inspection** | Architecture, vocab size, config |
+| `apr debug` | **Quick debug output** | Simple debugging, "drama" mode for verbose |
+
+### Debugging Workflow (Mandatory Order)
+
+```bash
+# Step 1: ALWAYS start with apr qa (catches 80% of issues)
+apr qa model.apr
+# If FAILED → problem identified, fix it
+# If PASSED but still broken → continue to step 2
+
+# Step 2: Check tensor statistics match expected
+apr tensors model.apr | head -20
+apr tensors reference.gguf | head -20
+# Compare: hidden_dim, vocab_size, num_layers must match
+
+# Step 3: Diff against known-good model
+apr diff model.apr reference.gguf
+
+# Step 4: Check format/metadata integrity
+apr validate model.apr --quality
+apr lint model.apr
+
+# Step 5: ONLY NOW read code to understand WHY
+# You now know WHAT is broken, code tells you WHY
+```
 
 ### Realizar Inference Tracing (APR-TRACE-001)
 
@@ -94,11 +155,33 @@ apr profile model.gguf      # Roofline analysis (memory vs compute bound)
 
 ### When Debugging Performance Issues
 
-1. **FIRST**: Run with `--trace` to get actual timing data
-2. **THEN**: Check per-token timing to identify O(n) vs O(n²)
-3. **ONLY THEN**: Read code to understand WHY
+1. **FIRST**: Run `apr qa --assert-tps 100` to get baseline throughput
+2. **THEN**: Run `apr trace` to identify slow layers
+3. **THEN**: Run `apr profile` for roofline analysis (memory vs compute bound)
+4. **ONLY THEN**: Read code to understand WHY
 
-**Dr. Popper says**: "Reading code is theorizing. Running traces is experimenting. Do experiments first."
+### Format-Specific Debugging
+
+All apr tools support GGUF, APR, and SafeTensors formats:
+
+```bash
+# GGUF (llama.cpp compatible)
+apr qa model.gguf
+apr tensors model.gguf
+
+# APR (native format, v1 or v2)
+apr qa model.apr
+apr tensors model.apr
+
+# SafeTensors (HuggingFace)
+apr validate model.safetensors
+apr tensors model.safetensors
+```
+
+**P0 Regression Tests (GH-202):** Format dispatch is now tested to prevent silent skipping.
+If a tool says "format not supported", that's a BUG - file an issue.
+
+**Dr. Popper says**: "Reading code is theorizing. Running tools is experimenting. Do experiments first."
 
 ## Architecture
 
@@ -275,6 +358,59 @@ RIGHT kernel: "Hello!" (correct)
 ```
 
 **CI Enforcement:** See `docs/specifications/qwen2.5-coder-showcase-demo.md` Section 13.
+
+### LAYOUT-002: Row-Major Mandate (GGUF Import)
+
+**Policy: APR and realizar are EXCLUSIVELY row-major. GGUF data is transposed at import.**
+
+This is the permanent architectural fix for BUG-4 (garbage output). The root cause was GGUF's column-major layout being passed through to row-major kernels without transposition.
+
+**The Problem:**
+```
+GGUF (column-major)     APR/realizar (row-major)
+─────────────────────   ─────────────────────────
+W[i,j] at j*rows + i    W[i,j] at i*cols + j
+
+Same bytes, different interpretation → GARBAGE OUTPUT
+```
+
+**The Solution - Boundary Conversion:**
+```
+┌──────────────────────────────────────────────────────────┐
+│           APRENDER/REALIZAR DOMAIN (Row-Major Only)       │
+│                                                           │
+│  SafeTensors ──(native)──► APR ──► realizar ──► output   │
+│                             ▲                             │
+│  GGUF ──(TRANSPOSE)─────────┘                            │
+│         at import boundary                                │
+└──────────────────────────────────────────────────────────┘
+```
+
+**Implementation (src/format/converter/write.rs):**
+```rust
+// Q4_K GGUF import - LAYOUT-002 transpose
+12 => {
+    let (transposed_data, transposed_shape) =
+        transpose_q4k_for_matmul(&tensor.data, &tensor.shape);
+    writer.add_tensor(name, TensorDType::Q4K, transposed_shape, transposed_data);
+}
+```
+
+**Transpose Function (src/format/converter/mod.rs:1273):**
+1. Dequantize Q4K/Q6K → F32
+2. Transpose F32 matrix: `[rows, cols]` → `[cols, rows]`
+3. Re-quantize with `quantize_q4_k_matrix()` for row-padded layout
+
+**Key Files:**
+- `src/format/converter/write.rs` - GGUF→APR import with transpose
+- `src/format/converter/mod.rs` - `transpose_q4k_for_matmul()`, `transpose_q6k_for_matmul()`
+
+**Falsification Test (F-LAYOUT-001):**
+```bash
+apr import model.gguf -o model.apr
+apr run model.apr --prompt "2+2=" --max-tokens 10
+# Expected: "4" (coherent), NOT: "olumbia+lsi" (garbage)
+```
 
 ### Code Scheduled for Deletion
 
