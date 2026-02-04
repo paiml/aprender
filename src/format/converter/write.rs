@@ -651,7 +651,8 @@ pub(crate) fn write_apr_file_raw(
 
         // PMAT-222: Reverse GGML shape [ne0, ne1] → standard [ne1, ne0] for 2D tensors
         // The data bytes are NOT modified - GGML column-major = row-major with reversed dims
-        let effective_shape = if tensor.shape.len() == 2 {
+        // Note: This was used by error paths that now return errors (BUG-LAYOUT-003 fix)
+        let _effective_shape = if tensor.shape.len() == 2 {
             vec![tensor.shape[1], tensor.shape[0]]
         } else {
             tensor.shape.clone()
@@ -695,13 +696,16 @@ pub(crate) fn write_apr_file_raw(
                         writer.add_tensor(name, TensorDType::Q6K, transposed_shape, q6k_bytes);
                     }
                     Err(e) => {
-                        eprintln!("[WARN] Failed to dequantize Q5_K tensor {name}: {e}");
-                        writer.add_tensor(
-                            name,
-                            TensorDType::F32,
-                            effective_shape,
-                            tensor.data.clone(),
-                        );
+                        // BUG-LAYOUT-003 FIX: Fail instead of silently corrupting data
+                        // Writing raw column-major quantized bytes as F32 violates LAYOUT-002
+                        // and corrupts the tensor interpretation
+                        return Err(AprenderError::FormatError {
+                            message: format!(
+                                "Failed to dequantize Q5_K tensor '{}': {}. \
+                                 Cannot proceed - would violate LAYOUT-002 mandate.",
+                                name, e
+                            ),
+                        });
                     }
                 }
             }
@@ -724,13 +728,14 @@ pub(crate) fn write_apr_file_raw(
                         writer.add_tensor(name, TensorDType::Q4K, transposed_shape, q4k_bytes);
                     }
                     Err(e) => {
-                        eprintln!("[WARN] Failed to dequantize Q4_0 tensor {name}: {e}");
-                        writer.add_tensor(
-                            name,
-                            TensorDType::F32,
-                            effective_shape,
-                            tensor.data.clone(),
-                        );
+                        // BUG-LAYOUT-003 FIX: Fail instead of silently corrupting data
+                        return Err(AprenderError::FormatError {
+                            message: format!(
+                                "Failed to dequantize Q4_0 tensor '{}': {}. \
+                                 Cannot proceed - would violate LAYOUT-002 mandate.",
+                                name, e
+                            ),
+                        });
                     }
                 }
             }
@@ -746,13 +751,14 @@ pub(crate) fn write_apr_file_raw(
                         writer.add_tensor(name, TensorDType::Q4K, transposed_shape, q4k_bytes);
                     }
                     Err(e) => {
-                        eprintln!("[WARN] Failed to dequantize Q4_1 tensor {name}: {e}");
-                        writer.add_tensor(
-                            name,
-                            TensorDType::F32,
-                            effective_shape,
-                            tensor.data.clone(),
-                        );
+                        // BUG-LAYOUT-003 FIX: Fail instead of silently corrupting data
+                        return Err(AprenderError::FormatError {
+                            message: format!(
+                                "Failed to dequantize Q4_1 tensor '{}': {}. \
+                                 Cannot proceed - would violate LAYOUT-002 mandate.",
+                                name, e
+                            ),
+                        });
                     }
                 }
             }
@@ -768,13 +774,14 @@ pub(crate) fn write_apr_file_raw(
                         writer.add_tensor(name, TensorDType::Q6K, transposed_shape, q6k_bytes);
                     }
                     Err(e) => {
-                        eprintln!("[WARN] Failed to dequantize Q5_0 tensor {name}: {e}");
-                        writer.add_tensor(
-                            name,
-                            TensorDType::F32,
-                            effective_shape,
-                            tensor.data.clone(),
-                        );
+                        // BUG-LAYOUT-003 FIX: Fail instead of silently corrupting data
+                        return Err(AprenderError::FormatError {
+                            message: format!(
+                                "Failed to dequantize Q5_0 tensor '{}': {}. \
+                                 Cannot proceed - would violate LAYOUT-002 mandate.",
+                                name, e
+                            ),
+                        });
                     }
                 }
             }
@@ -790,40 +797,38 @@ pub(crate) fn write_apr_file_raw(
                         writer.add_tensor(name, TensorDType::Q6K, transposed_shape, q6k_bytes);
                     }
                     Err(e) => {
-                        eprintln!("[WARN] Failed to dequantize Q8_0 tensor {name}: {e}");
-                        writer.add_tensor(
-                            name,
-                            TensorDType::F32,
-                            effective_shape,
-                            tensor.data.clone(),
-                        );
+                        // BUG-LAYOUT-003 FIX: Fail instead of silently corrupting data
+                        return Err(AprenderError::FormatError {
+                            message: format!(
+                                "Failed to dequantize Q8_0 tensor '{}': {}. \
+                                 Cannot proceed - would violate LAYOUT-002 mandate.",
+                                name, e
+                            ),
+                        });
                     }
                 }
             }
             7 | 9 => {
-                // Q5_1/Q8_1 - not yet supported, store raw with warning
-                eprintln!(
-                    "[WARN] GGUF dtype {} for tensor {} not yet supported, storing raw bytes",
-                    tensor.dtype, name
-                );
-                writer.add_tensor(
-                    name,
-                    TensorDType::F32,
-                    tensor.shape.clone(),
-                    tensor.data.clone(),
-                );
+                // Q5_1/Q8_1 - BUG-LAYOUT-003 FIX: Fail instead of silently corrupting
+                // Writing column-major quantized bytes as F32 violates LAYOUT-002
+                return Err(AprenderError::FormatError {
+                    message: format!(
+                        "GGUF dtype {} (Q5_1/Q8_1) for tensor '{}' not yet supported. \
+                         Cannot store raw bytes - would violate LAYOUT-002 mandate.",
+                        tensor.dtype, name
+                    ),
+                });
             }
             _ => {
-                eprintln!(
-                    "[WARN] Unsupported GGUF dtype {} for tensor {}, storing as-is",
-                    tensor.dtype, name
-                );
-                writer.add_tensor(
-                    name,
-                    TensorDType::F32,
-                    tensor.shape.clone(),
-                    tensor.data.clone(),
-                );
+                // BUG-LAYOUT-003 FIX: Fail instead of silently corrupting
+                // Unknown dtypes cannot be safely converted
+                return Err(AprenderError::FormatError {
+                    message: format!(
+                        "Unsupported GGUF dtype {} for tensor '{}'. \
+                         Cannot store raw bytes - would violate LAYOUT-002 mandate.",
+                        tensor.dtype, name
+                    ),
+                });
             }
         }
     }
