@@ -3224,6 +3224,124 @@ mod tests {
         assert!(!normalized.is_empty());
     }
 
+    // GH-202: Cross-format tensor name normalization tests
+    #[test]
+    fn test_normalize_tensor_name_gguf_to_canonical() {
+        // GGUF style: blk.N.attn_q.weight → N.q_proj.weight
+        assert_eq!(
+            normalize_tensor_name("blk.0.attn_q.weight"),
+            "0.q_proj.weight"
+        );
+        assert_eq!(
+            normalize_tensor_name("blk.5.attn_k.weight"),
+            "5.k_proj.weight"
+        );
+        assert_eq!(
+            normalize_tensor_name("blk.12.attn_v.weight"),
+            "12.v_proj.weight"
+        );
+        assert_eq!(
+            normalize_tensor_name("blk.0.attn_output.weight"),
+            "0.o_proj.weight"
+        );
+    }
+
+    #[test]
+    fn test_normalize_tensor_name_apr_to_canonical() {
+        // APR/HF style: model.layers.N.self_attn.q_proj.weight → N.q_proj.weight
+        assert_eq!(
+            normalize_tensor_name("model.layers.0.self_attn.q_proj.weight"),
+            "0.q_proj.weight"
+        );
+        assert_eq!(
+            normalize_tensor_name("model.layers.5.self_attn.k_proj.weight"),
+            "5.k_proj.weight"
+        );
+        assert_eq!(
+            normalize_tensor_name("model.layers.12.self_attn.v_proj.weight"),
+            "12.v_proj.weight"
+        );
+        assert_eq!(
+            normalize_tensor_name("model.layers.0.self_attn.o_proj.weight"),
+            "0.o_proj.weight"
+        );
+    }
+
+    #[test]
+    fn test_normalize_tensor_name_ffn_mapping() {
+        // GGUF FFN → HF MLP
+        assert_eq!(
+            normalize_tensor_name("blk.0.ffn_gate.weight"),
+            "0.gate_proj.weight"
+        );
+        assert_eq!(
+            normalize_tensor_name("blk.0.ffn_up.weight"),
+            "0.up_proj.weight"
+        );
+        assert_eq!(
+            normalize_tensor_name("blk.0.ffn_down.weight"),
+            "0.down_proj.weight"
+        );
+
+        // APR/HF MLP
+        assert_eq!(
+            normalize_tensor_name("model.layers.0.mlp.gate_proj.weight"),
+            "0.gate_proj.weight"
+        );
+        assert_eq!(
+            normalize_tensor_name("model.layers.0.mlp.up_proj.weight"),
+            "0.up_proj.weight"
+        );
+        assert_eq!(
+            normalize_tensor_name("model.layers.0.mlp.down_proj.weight"),
+            "0.down_proj.weight"
+        );
+    }
+
+    #[test]
+    fn test_normalize_tensor_name_layernorm() {
+        // GGUF: attn_norm/ffn_norm → HF: input_layernorm/post_attention_layernorm
+        assert_eq!(
+            normalize_tensor_name("blk.0.attn_norm.weight"),
+            "0.input_layernorm.weight"
+        );
+        assert_eq!(
+            normalize_tensor_name("blk.0.ffn_norm.weight"),
+            "0.post_attention_layernorm.weight"
+        );
+    }
+
+    #[test]
+    fn test_normalize_tensor_name_embeddings() {
+        // token_embd → embed_tokens
+        assert_eq!(
+            normalize_tensor_name("token_embd.weight"),
+            "embed_tokens.weight"
+        );
+        // output_norm → norm
+        assert_eq!(normalize_tensor_name("output_norm.weight"), "norm.weight");
+        // output → lm_head
+        assert_eq!(normalize_tensor_name("output.weight"), "lm_head.weight");
+    }
+
+    #[test]
+    fn test_normalize_tensor_name_cross_format_match() {
+        // Verify GGUF and APR/HF normalize to the SAME canonical form (GH-202 core fix)
+        let gguf_name = "blk.3.attn_q.weight";
+        let apr_name = "model.layers.3.self_attn.q_proj.weight";
+        assert_eq!(
+            normalize_tensor_name(gguf_name),
+            normalize_tensor_name(apr_name)
+        );
+
+        let gguf_ffn = "blk.7.ffn_down.weight";
+        let apr_ffn = "model.layers.7.mlp.down_proj.weight";
+        assert_eq!(
+            normalize_tensor_name(gguf_ffn),
+            normalize_tensor_name(apr_ffn)
+        );
+    }
+
     #[test]
     fn test_is_transposed_dims_true() {
         let shape_a = vec![768, 3072];
