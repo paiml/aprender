@@ -487,9 +487,9 @@ fn map_gguf_to_apr_name(name: &str) -> (String, bool) {
 
 /// GH-202 FIX: Build cross-format name mapping for tensor comparison.
 /// Creates a HashMap from APR canonical names to model 2 tensors.
-fn build_cross_format_map<'a>(
-    tensors: &'a [crate::format::rosetta::TensorInfo],
-) -> std::collections::HashMap<String, &'a crate::format::rosetta::TensorInfo> {
+fn build_cross_format_map(
+    tensors: &[crate::format::rosetta::TensorInfo],
+) -> std::collections::HashMap<String, &crate::format::rosetta::TensorInfo> {
     let mut map = std::collections::HashMap::new();
     for t in tensors {
         // Add both original name and mapped name

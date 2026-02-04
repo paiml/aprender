@@ -231,7 +231,7 @@ pub use diff::{diff_inspections, diff_models, DiffCategory, DiffEntry, DiffOptio
 
 // Re-export layout contract types (LAYOUT-CONTRACT-001 - Source of Truth)
 pub use layout_contract::{
-    block_sizes, validation_rules, ContractError, LayoutContract, TensorContract, CONTRACT,
+    block_sizes, contract, validation_rules, ContractError, LayoutContract, TensorContract,
 };
 
 // Re-export quantization types when feature is enabled

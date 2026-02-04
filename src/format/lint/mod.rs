@@ -427,7 +427,7 @@ fn is_nonstandard_pattern(name: &str) -> bool {
 /// Validates tensor shapes against the authoritative tensor layout contract.
 /// See: `contracts/tensor-layout-v1.yaml` for the full specification.
 fn check_layout_contract(report: &mut LintReport, info: &ModelLintInfo) {
-    use crate::format::layout_contract::CONTRACT;
+    use crate::format::layout_contract::contract;
 
     // Only validate if we have model dimensions
     let (vocab_size, hidden_dim) = match (info.vocab_size, info.hidden_dim) {
@@ -435,12 +435,13 @@ fn check_layout_contract(report: &mut LintReport, info: &ModelLintInfo) {
         _ => return, // Skip contract checks without model config
     };
 
+    let layout = contract();
     for tensor in &info.tensors {
         // Check if this tensor is in the contract
-        if let Some(contract) = CONTRACT.get_apr_contract(&tensor.name) {
+        if let Some(tc) = layout.get_apr_contract(&tensor.name) {
             // Validate shape for critical tensors
-            if contract.is_critical && !tensor.shape.is_empty() {
-                if let Err(e) = CONTRACT.validate_apr_shape(
+            if tc.is_critical && !tensor.shape.is_empty() {
+                if let Err(e) = layout.validate_apr_shape(
                     &tensor.name,
                     &tensor.shape,
                     vocab_size,
@@ -453,14 +454,14 @@ fn check_layout_contract(report: &mut LintReport, info: &ModelLintInfo) {
                         ))
                         .with_suggestion(format!(
                             "Expected shape {} per contract",
-                            contract.apr_shape_formula
+                            tc.apr_shape_formula
                         )),
                     );
                 }
             }
 
             // Check for 2D tensors that should be transposed
-            if contract.should_transpose && tensor.shape.len() == 2 {
+            if tc.should_transpose && tensor.shape.len() == 2 {
                 // Validate shape dimensions make sense
                 let (dim0, _dim1) = (tensor.shape[0], tensor.shape[1]);
 
@@ -643,14 +644,12 @@ fn lint_safetensors_file(path: &Path) -> Result<LintReport> {
     for name in mapped.tensor_names() {
         if let Some(meta) = mapped.get_metadata(name) {
             let size_bytes = meta.data_offsets[1] - meta.data_offsets[0];
-            let shape: Vec<usize> = meta.shape.to_vec();
+            let shape: Vec<usize> = meta.shape.clone();
 
             // Extract vocab_size and hidden_dim from lm_head
-            if name.contains("lm_head") {
-                if shape.len() == 2 {
-                    info.vocab_size = Some(shape[0]);
-                    info.hidden_dim = Some(shape[1]);
-                }
+            if name.contains("lm_head") && shape.len() == 2 {
+                info.vocab_size = Some(shape[0]);
+                info.hidden_dim = Some(shape[1]);
             }
 
             info.tensors.push(TensorLintInfo {
@@ -762,7 +761,7 @@ fn lint_apr_v2_file(path: &Path) -> Result<LintReport> {
     // Add tensor info (use tensor_names and get_tensor)
     for name in reader.tensor_names() {
         if let Some(tensor) = reader.get_tensor(name) {
-            let shape: Vec<usize> = tensor.shape.to_vec();
+            let shape: Vec<usize> = tensor.shape.clone();
 
             // Extract vocab_size and hidden_dim from lm_head
             if name.contains("lm_head") && shape.len() == 2 {

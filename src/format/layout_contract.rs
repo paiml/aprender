@@ -537,8 +537,11 @@ fn normalize_layer_pattern(name: &str) -> String {
 /// Global layout contract instance.
 ///
 /// Use this for all layout validation instead of creating new instances.
-pub static CONTRACT: std::sync::LazyLock<LayoutContract> =
-    std::sync::LazyLock::new(LayoutContract::new);
+/// Note: Using a function instead of LazyLock for MSRV 1.70 compatibility.
+/// LazyLock requires Rust 1.80+.
+pub fn contract() -> LayoutContract {
+    LayoutContract::new()
+}
 
 /// Validation rule IDs from the contract.
 pub mod validation_rules {
@@ -723,8 +726,8 @@ mod tests {
     #[test]
     fn test_global_contract() {
         // Test the global lazy static instance
-        assert!(CONTRACT.get_gguf_contract("output.weight").is_some());
-        assert!(CONTRACT.should_transpose_gguf("output.weight"));
-        assert!(!CONTRACT.should_transpose_gguf("output_norm.weight"));
+        assert!(contract().get_gguf_contract("output.weight").is_some());
+        assert!(contract().should_transpose_gguf("output.weight"));
+        assert!(!contract().should_transpose_gguf("output_norm.weight"));
     }
 }
