@@ -1224,3 +1224,175 @@ fn test_f_validate_gguf_003_accepts_gguf_magic() {
         "GGUF magic should be accepted: {stdout}"
     );
 }
+
+// ============================================================================
+// P0 FORMAT DISPATCH TESTS (GH-202)
+// Verify all critical subcommands support GGUF, APR, and SafeTensors formats.
+// These tests catch the bug where commands silently skip with "format not supported".
+// ============================================================================
+
+/// Create a minimal valid GGUF file for testing
+fn create_test_gguf_file() -> NamedTempFile {
+    let file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
+    let mut data = Vec::new();
+
+    // GGUF magic + version 3
+    data.extend_from_slice(b"GGUF");
+    data.extend_from_slice(&3u32.to_le_bytes()); // version 3
+    data.extend_from_slice(&0u64.to_le_bytes()); // tensor count = 0
+    data.extend_from_slice(&0u64.to_le_bytes()); // metadata count = 0
+    data.extend_from_slice(&[0u8; 8]); // padding to 32 bytes
+
+    std::fs::write(file.path(), data).expect("write file");
+    file
+}
+
+/// Create a minimal valid SafeTensors file for testing
+fn create_test_safetensors_file() -> NamedTempFile {
+    let file = NamedTempFile::with_suffix(".safetensors").expect("create temp file");
+
+    // Minimal SafeTensors: header length + empty JSON header
+    let header = b"{}";
+    let header_len = header.len() as u64;
+
+    let mut data = Vec::new();
+    data.extend_from_slice(&header_len.to_le_bytes());
+    data.extend_from_slice(header);
+
+    std::fs::write(file.path(), data).expect("write file");
+    file
+}
+
+// F-FORMAT-DISPATCH-001: apr inspect supports all 3 formats
+#[test]
+fn test_f_format_dispatch_001_inspect_all_formats() {
+    // GGUF
+    let gguf = create_test_gguf_file();
+    let output = apr()
+        .args(["inspect", gguf.path().to_str().unwrap()])
+        .output()
+        .expect("run inspect on GGUF");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("not supported") && !stderr.contains("Only GGUF"),
+        "GGUF inspect should not skip: {stderr}"
+    );
+
+    // APR
+    let apr_file = create_test_apr_file();
+    let output = apr()
+        .args(["inspect", apr_file.path().to_str().unwrap()])
+        .output()
+        .expect("run inspect on APR");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("not supported") && !stderr.contains("Only GGUF"),
+        "APR inspect should not skip: {stderr}"
+    );
+
+    // SafeTensors
+    let st = create_test_safetensors_file();
+    let output = apr()
+        .args(["inspect", st.path().to_str().unwrap()])
+        .output()
+        .expect("run inspect on SafeTensors");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("not supported") && !stderr.contains("Only GGUF"),
+        "SafeTensors inspect should not skip: {stderr}"
+    );
+}
+
+// F-FORMAT-DISPATCH-002: apr validate supports all 3 formats
+#[test]
+fn test_f_format_dispatch_002_validate_all_formats() {
+    for (name, file) in [
+        ("GGUF", create_test_gguf_file()),
+        ("APR", create_test_apr_file()),
+        ("SafeTensors", create_test_safetensors_file()),
+    ] {
+        let output = apr()
+            .args(["validate", file.path().to_str().unwrap()])
+            .output()
+            .expect(&format!("run validate on {name}"));
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            !stderr.contains("not supported") && !stderr.contains("Only GGUF"),
+            "{name} validate should not skip: {stderr}"
+        );
+    }
+}
+
+// F-FORMAT-DISPATCH-003: apr tensors supports all 3 formats
+#[test]
+fn test_f_format_dispatch_003_tensors_all_formats() {
+    for (name, file) in [
+        ("GGUF", create_test_gguf_file()),
+        ("APR", create_test_apr_file()),
+        ("SafeTensors", create_test_safetensors_file()),
+    ] {
+        let output = apr()
+            .args(["tensors", file.path().to_str().unwrap()])
+            .output()
+            .expect(&format!("run tensors on {name}"));
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            !stderr.contains("not supported") && !stderr.contains("Only GGUF"),
+            "{name} tensors should not skip: {stderr}"
+        );
+    }
+}
+
+// F-FORMAT-DISPATCH-004: apr lint supports all 3 formats
+#[test]
+fn test_f_format_dispatch_004_lint_all_formats() {
+    for (name, file) in [
+        ("GGUF", create_test_gguf_file()),
+        ("APR", create_test_apr_file()),
+        ("SafeTensors", create_test_safetensors_file()),
+    ] {
+        let output = apr()
+            .args(["lint", file.path().to_str().unwrap()])
+            .output()
+            .expect(&format!("run lint on {name}"));
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            !stderr.contains("not supported") && !stderr.contains("Only GGUF"),
+            "{name} lint should not skip: {stderr}"
+        );
+    }
+}
+
+// F-FORMAT-DISPATCH-005: apr diff supports all format combinations
+#[test]
+fn test_f_format_dispatch_005_diff_all_format_combinations() {
+    let gguf = create_test_gguf_file();
+    let apr_file = create_test_apr_file();
+    let st = create_test_safetensors_file();
+
+    // Test all 6 combinations (excluding same-file comparisons)
+    let combinations = [
+        ("GGUF-APR", gguf.path(), apr_file.path()),
+        ("GGUF-ST", gguf.path(), st.path()),
+        ("APR-GGUF", apr_file.path(), gguf.path()),
+        ("APR-ST", apr_file.path(), st.path()),
+        ("ST-GGUF", st.path(), gguf.path()),
+        ("ST-APR", st.path(), apr_file.path()),
+    ];
+
+    for (name, path1, path2) in combinations {
+        let output = apr()
+            .args([
+                "diff",
+                path1.to_str().unwrap(),
+                path2.to_str().unwrap(),
+            ])
+            .output()
+            .expect(&format!("run diff {name}"));
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            !stderr.contains("not supported") && !stderr.contains("Only GGUF"),
+            "{name} diff should not skip: {stderr}"
+        );
+    }
+}
