@@ -875,7 +875,7 @@ pub fn run_diff_tensors(
         .inspect(model_b)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to inspect model B: {e}")))?;
 
-    // Build tensor maps by normalized name
+    // Build tensor maps by normalized name (GH-202: cross-format tensor matching)
     let tensors_a: std::collections::HashMap<String, _> = report_a
         .tensors
         .iter()
@@ -1191,7 +1191,16 @@ pub fn run_diff_tensors(
         )));
     }
 
-    let _ = show_values; // TODO: implement value comparison
+    // PMAT-GLASS-HOUSE: show_values feature deferred (P2)
+    // When show_values > 0, user expects to see tensor value samples.
+    // Currently not implemented - inform user rather than silently ignore.
+    if show_values > 0 {
+        eprintln!(
+            "Note: --show-values {} requested but value comparison not yet implemented. \
+             Use 'apr rosetta fingerprint' for tensor statistics.",
+            show_values
+        );
+    }
 
     Ok(())
 }
@@ -2265,16 +2274,31 @@ fn get_role_threshold(tensor_name: &str) -> f32 {
     }
 }
 
-/// Normalize tensor name for cross-format comparison
+/// Normalize tensor name for cross-format comparison (GH-202 fix)
+///
+/// Maps both GGUF and APR/HuggingFace naming conventions to a common canonical form.
+/// This enables proper tensor matching when comparing models across formats.
+///
+/// GGUF convention: `blk.N.attn_q.weight`
+/// APR/HF convention: `model.layers.N.self_attn.q_proj.weight`
+/// Canonical form: `N.q_proj.weight`
 fn normalize_tensor_name(name: &str) -> String {
-    // Remove common prefixes
+    // Step 1: Remove format-specific prefixes
     let name = name
         .trim_start_matches("model.")
         .trim_start_matches("blk.")
         .trim_start_matches("layers.");
 
-    // Normalize GGUF vs HF naming
-    name.replace("attn_q", "q_proj")
+    // Step 2: Remove APR/HF intermediate prefixes (self_attn., mlp.)
+    // These don't exist in GGUF naming
+    let name = name
+        .replace(".self_attn.", ".")
+        .replace(".mlp.", ".");
+
+    // Step 3: Normalize GGUF tensor suffixes to HF convention
+    // GGUF: attn_q → HF: q_proj
+    let name = name
+        .replace("attn_q", "q_proj")
         .replace("attn_k", "k_proj")
         .replace("attn_v", "v_proj")
         .replace("attn_output", "o_proj")
@@ -2284,7 +2308,17 @@ fn normalize_tensor_name(name: &str) -> String {
         .replace("attn_norm", "input_layernorm")
         .replace("ffn_norm", "post_attention_layernorm")
         .replace("token_embd", "embed_tokens")
-        .replace("output_norm", "norm")
+        .replace("output_norm", "norm");
+
+    // Step 4: Handle lm_head vs output naming
+    // GGUF: output.weight → APR: lm_head.weight
+    let name = if name == "output.weight" {
+        "lm_head.weight".to_string()
+    } else {
+        name
+    };
+
+    name
 }
 
 /// Check if two shapes are transposed versions of each other
