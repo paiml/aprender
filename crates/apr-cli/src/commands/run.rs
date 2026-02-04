@@ -204,15 +204,19 @@ pub(crate) fn run_model(source: &str, options: &RunOptions) -> Result<RunResult>
     let input_path = options.input.as_ref();
 
     // Load and run model
-    let text = execute_inference(&model_path, input_path, options)?;
+    // BUG-RUN-001 FIX: Now receives InferenceOutput with actual token count
+    let output = execute_inference(&model_path, input_path, options)?;
 
     let duration = start.elapsed();
 
-    // Estimate tokens generated from output text (word count approximation)
-    let tokens_generated = Some(text.split_whitespace().count());
+    // BUG-RUN-001 FIX: Use actual token count from inference engine if available,
+    // otherwise fall back to word count approximation
+    let tokens_generated = output.tokens_generated.or_else(|| {
+        Some(output.text.split_whitespace().count())
+    });
 
     Ok(RunResult {
-        text,
+        text: output.text,
         duration_secs: duration.as_secs_f64(),
         cached: matches!(model_source, ModelSource::Local(_)) || model_source.cache_path().exists(),
         tokens_generated,
@@ -589,12 +593,21 @@ fn glob_first(pattern: &Path) -> Option<PathBuf> {
     glob::glob(pattern.to_str()?).ok()?.next()?.ok()
 }
 
+/// Inference output with text and metrics
+/// BUG-RUN-001 FIX: Return actual token count from inference engine
+struct InferenceOutput {
+    text: String,
+    tokens_generated: Option<usize>,
+    inference_ms: Option<f64>,
+}
+
 /// Execute inference on model
+/// BUG-RUN-001 FIX: Now returns InferenceOutput with actual token count
 fn execute_inference(
     model_path: &Path,
     input_path: Option<&PathBuf>,
     options: &RunOptions,
-) -> Result<String> {
+) -> Result<InferenceOutput> {
     // Check model file size for mmap decision
     let metadata = std::fs::metadata(model_path)?;
     let use_mmap = metadata.len() > 50 * 1024 * 1024; // 50MB threshold
@@ -619,13 +632,17 @@ fn execute_inference(
         let input_desc =
             input_path.map_or_else(|| "stdin".to_string(), |p| p.display().to_string());
 
-        Ok(format!(
-            "[Inference requires --features inference]\nModel: {}\nInput: {}\nFormat: {}\nGPU: {}",
-            model_path.display(),
-            input_desc,
-            options.output_format,
-            if options.no_gpu { "disabled" } else { "auto" }
-        ))
+        Ok(InferenceOutput {
+            text: format!(
+                "[Inference requires --features inference]\nModel: {}\nInput: {}\nFormat: {}\nGPU: {}",
+                model_path.display(),
+                input_desc,
+                options.output_format,
+                if options.no_gpu { "disabled" } else { "auto" }
+            ),
+            tokens_generated: None,
+            inference_ms: None,
+        })
     }
 }
 
@@ -633,13 +650,14 @@ fn execute_inference(
 ///
 /// Per spec APR-CLI-DELEGATE-001: All inference delegates to realizar's
 /// high-level API. This eliminates ~1500 lines of duplicated code.
+/// BUG-RUN-001 FIX: Now returns InferenceOutput with actual token count
 #[cfg(feature = "inference")]
 fn execute_with_realizar(
     model_path: &Path,
     input_path: Option<&PathBuf>,
     options: &RunOptions,
     _use_mmap: bool,
-) -> Result<String> {
+) -> Result<InferenceOutput> {
     use realizar::{run_inference, InferenceConfig};
 
     // Get prompt from options or input file
@@ -689,7 +707,12 @@ fn execute_with_realizar(
         );
     }
 
-    Ok(result.text)
+    // BUG-RUN-001 FIX: Return actual token count from realizar instead of word approximation
+    Ok(InferenceOutput {
+        text: result.text,
+        tokens_generated: Some(result.generated_token_count),
+        inference_ms: Some(result.inference_ms),
+    })
 }
 
 /// Execute APR model inference (APR v2 format)
