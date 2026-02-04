@@ -10,13 +10,18 @@ pub(crate) const MAGIC_APR1: [u8; 4] = [0x41, 0x50, 0x52, 0x31]; // "APR1" - whi
 pub(crate) const MAGIC_APR2: [u8; 4] = [0x41, 0x50, 0x52, 0x32]; // "APR2" - aprender v2
 pub(crate) const MAGIC_APR0: [u8; 4] = [0x41, 0x50, 0x52, 0x00]; // "APR\0" - ONE TRUE APR format (v2)
 
-/// Check if magic bytes are valid (supports APRN, APR1, APR2, APR\0)
+/// GGUF format magic bytes
+pub(crate) const MAGIC_GGUF: [u8; 4] = [0x47, 0x47, 0x55, 0x46]; // "GGUF" - llama.cpp quantized
+
+/// Check if magic bytes are valid (supports APR, GGUF formats)
+/// BUG-DEBUG-001 FIX: Now accepts GGUF format magic as valid
 pub(crate) fn is_valid_magic(magic: &[u8]) -> bool {
     magic.len() >= 4
         && (magic[..4] == MAGIC_APRN
             || magic[..4] == MAGIC_APR1
             || magic[..4] == MAGIC_APR2
-            || magic[..4] == MAGIC_APR0)
+            || magic[..4] == MAGIC_APR0
+            || magic[..4] == MAGIC_GGUF)
 }
 
 /// Get format name from magic bytes

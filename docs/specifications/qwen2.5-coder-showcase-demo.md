@@ -183,6 +183,7 @@ but passed them directly to `apr run` without resolving to format-specific files
 | BUG-EXPORT-001 | Export infer_model_config confused hidden_size with vocab_size | P1 | ✅ FIXED | 2026-02-04 |
 | BUG-LINT-001 | Lint flagged valid GGUF tensor names (blk.N.) as non-standard | P2 | ✅ FIXED | 2026-02-04 |
 | BUG-TRACE-001 | Trace command showed Parameters: 0 instead of actual count | P2 | ✅ FIXED | 2026-02-04 |
+| BUG-DEBUG-001 | Debug command showed INVALID/CORRUPTED for valid GGUF files | P2 | ✅ FIXED | 2026-02-04 |
 | [GH-191](docs/tickets/GH-191-APR-QUANTIZATION-DATA-LOSS.md) | APR dtype byte mapping mismatch | P0 | ✅ FIXED | PMAT-223 |
 | [GH-190](docs/tickets/GH-190-GGUF-APR-CONVERSION-GARBAGE-OUTPUT.md) | GGUF→APR tensor name mismatch | P0 | ✅ FIXED | PMAT-205 |
 | [GH-189](docs/tickets/GH-189-APR-CHAT-SPECIAL-TOKENS.md) | APR chat special tokens not atomic | P0 | ✅ FIXED | PMAT-206 |
