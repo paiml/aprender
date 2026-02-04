@@ -407,41 +407,70 @@ fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
         let format = detect_format(&model_bytes[..8.min(model_bytes.len())])
             .map_err(|e| CliError::ValidationFailed(format!("Failed to detect format: {e}")))?;
 
-        if format != ModelFormat::Gguf {
-            return Ok(GateResult::skipped(
-                "golden_output",
-                "Only GGUF format supported currently",
-            ));
-        }
-
-        let gguf = GGUFModel::from_bytes(&model_bytes)
-            .map_err(|e| CliError::ValidationFailed(format!("Failed to parse GGUF: {e}")))?;
-
-        // Test each golden case
+        // Test each golden case - support both GGUF and APR formats
         for (prompt, expected_patterns) in &test_cases {
-            let prompt_tokens = gguf.encode(prompt).unwrap_or_else(|| vec![151643, 9707]);
+            let (output_tokens, output_text) = match format {
+                ModelFormat::Gguf => {
+                    let gguf = GGUFModel::from_bytes(&model_bytes)
+                        .map_err(|e| CliError::ValidationFailed(format!("Failed to parse GGUF: {e}")))?;
+                    let prompt_tokens = gguf.encode(prompt).unwrap_or_else(|| vec![151643, 9707]);
 
-            let gen_config = QuantizedGenerateConfig {
-                max_tokens: config.max_tokens,
-                temperature: 0.0, // Greedy for deterministic output
-                top_k: 1,
-                ..Default::default()
+                    let gen_config = QuantizedGenerateConfig {
+                        max_tokens: config.max_tokens,
+                        temperature: 0.0,
+                        top_k: 1,
+                        ..Default::default()
+                    };
+
+                    let tokens = {
+                        let mapped = MappedGGUFModel::from_path(path)
+                            .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
+                        let model = OwnedQuantizedModel::from_mapped(&mapped)
+                            .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
+                        model
+                            .generate_with_cache(&prompt_tokens, &gen_config)
+                            .map_err(|e| CliError::ValidationFailed(format!("Generation failed: {e}")))?
+                    };
+                    let text = gguf.decode(&tokens);
+                    (tokens, text)
+                }
+                ModelFormat::Apr => {
+                    use realizar::apr_transformer::{AprTransformer, GenerateConfig};
+                    use realizar::apr::AprV2Model;
+
+                    // Load APR model and get embedded tokenizer
+                    let apr_model = AprV2Model::load(path)
+                        .map_err(|e| CliError::ValidationFailed(format!("Failed to load APR: {e}")))?;
+                    let tokenizer = apr_model.load_embedded_bpe_tokenizer()
+                        .ok_or_else(|| CliError::ValidationFailed("APR missing embedded tokenizer".to_string()))?;
+
+                    let transformer = AprTransformer::from_apr_file(path)
+                        .map_err(|e| CliError::ValidationFailed(format!("Failed to load APR transformer: {e}")))?;
+
+                    let prompt_tokens = tokenizer.encode(prompt);
+
+                    let gen_config = GenerateConfig {
+                        max_tokens: config.max_tokens,
+                        temperature: 0.0,
+                        top_k: 1,
+                        ..Default::default()
+                    };
+
+                    let tokens = transformer
+                        .generate_with_cache(&prompt_tokens, &gen_config)
+                        .map_err(|e| CliError::ValidationFailed(format!("Generation failed: {e}")))?;
+
+                    let text = tokenizer.decode(&tokens);
+                    (tokens, text)
+                }
+                _ => {
+                    return Ok(GateResult::skipped(
+                        "golden_output",
+                        &format!("Unsupported format: {:?}", format),
+                    ));
+                }
             };
-
-            // Use CPU path (generate_with_cache) - GPU path has bugs causing garbage output
-            let output_tokens = {
-                let mapped = MappedGGUFModel::from_path(path)
-                    .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
-                let model = OwnedQuantizedModel::from_mapped(&mapped)
-                    .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
-                model
-                    .generate_with_cache(&prompt_tokens, &gen_config)
-                    .map_err(|e| CliError::ValidationFailed(format!("Generation failed: {e}")))?
-            };
-            let _ = cuda_available; // suppress warning
-
-            // Decode output
-            let output_text = gguf.decode(&output_tokens);
+            let _ = (cuda_available, output_tokens); // suppress warnings
 
             // Check if any expected pattern is present
             let pattern_found = expected_patterns
@@ -513,122 +542,123 @@ fn run_throughput_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
         let format = detect_format(&model_bytes[..8.min(model_bytes.len())])
             .map_err(|e| CliError::ValidationFailed(format!("Failed to detect format: {e}")))?;
 
-        if format != ModelFormat::Gguf {
-            return Ok(GateResult::skipped(
-                "throughput",
-                "Only GGUF format supported currently",
-            ));
-        }
-
-        let gguf = GGUFModel::from_bytes(&model_bytes)
-            .map_err(|e| CliError::ValidationFailed(format!("Failed to parse GGUF: {e}")))?;
-
         let prompt = "Write a hello world program in Python:";
-        let prompt_tokens = gguf.encode(prompt).unwrap_or_else(|| vec![151643, 9707]);
 
-        let gen_config = QuantizedGenerateConfig {
-            max_tokens: config.max_tokens,
-            temperature: 0.0,
-            top_k: 1,
-            ..Default::default()
+        // Measure throughput based on format
+        let (tps, duration) = match format {
+            ModelFormat::Gguf => {
+                let gguf = GGUFModel::from_bytes(&model_bytes)
+                    .map_err(|e| CliError::ValidationFailed(format!("Failed to parse GGUF: {e}")))?;
+                let prompt_tokens = gguf.encode(prompt).unwrap_or_else(|| vec![151643, 9707]);
+
+                let gen_config = QuantizedGenerateConfig {
+                    max_tokens: config.max_tokens,
+                    temperature: 0.0,
+                    top_k: 1,
+                    ..Default::default()
+                };
+
+                if cuda_available {
+                    let mapped = MappedGGUFModel::from_path(path)
+                        .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
+                    let model = OwnedQuantizedModel::from_mapped(&mapped)
+                        .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
+                    let mut cuda_model = OwnedQuantizedModelCuda::new(model, 0)
+                        .map_err(|e| CliError::ValidationFailed(format!("CUDA init failed: {e}")))?;
+
+                    for _ in 0..config.warmup {
+                        let _ = cuda_model.generate_gpu_resident(&prompt_tokens, &gen_config);
+                    }
+
+                    let mut total_tokens = 0usize;
+                    let measure_start = Instant::now();
+                    for _ in 0..config.iterations {
+                        let output = cuda_model.generate_gpu_resident(&prompt_tokens, &gen_config).unwrap_or_default();
+                        total_tokens += output.len().saturating_sub(prompt_tokens.len());
+                    }
+                    let measure_time = measure_start.elapsed();
+                    (total_tokens as f64 / measure_time.as_secs_f64(), start.elapsed())
+                } else {
+                    let mapped = MappedGGUFModel::from_path(path)
+                        .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
+                    let model = OwnedQuantizedModel::from_mapped(&mapped)
+                        .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
+
+                    for _ in 0..config.warmup {
+                        let _ = model.generate_with_cache(&prompt_tokens, &gen_config);
+                    }
+
+                    let mut total_tokens = 0usize;
+                    let measure_start = Instant::now();
+                    for _ in 0..config.iterations {
+                        let output = model.generate_with_cache(&prompt_tokens, &gen_config).unwrap_or_default();
+                        total_tokens += output.len().saturating_sub(prompt_tokens.len());
+                    }
+                    let measure_time = measure_start.elapsed();
+                    (total_tokens as f64 / measure_time.as_secs_f64(), start.elapsed())
+                }
+            }
+            ModelFormat::Apr => {
+                use realizar::apr_transformer::{AprTransformer, GenerateConfig};
+                use realizar::apr::AprV2Model;
+
+                let apr_model = AprV2Model::load(path)
+                    .map_err(|e| CliError::ValidationFailed(format!("Failed to load APR: {e}")))?;
+                let tokenizer = apr_model.load_embedded_bpe_tokenizer()
+                    .ok_or_else(|| CliError::ValidationFailed("APR missing embedded tokenizer".to_string()))?;
+                let transformer = AprTransformer::from_apr_file(path)
+                    .map_err(|e| CliError::ValidationFailed(format!("Failed to load APR transformer: {e}")))?;
+
+                let prompt_tokens = tokenizer.encode(prompt);
+                let gen_config = GenerateConfig {
+                    max_tokens: config.max_tokens,
+                    temperature: 0.0,
+                    top_k: 1,
+                    ..Default::default()
+                };
+
+                // Warmup
+                for _ in 0..config.warmup {
+                    let _ = transformer.generate_with_cache(&prompt_tokens, &gen_config);
+                }
+
+                let mut total_tokens = 0usize;
+                let measure_start = Instant::now();
+                for _ in 0..config.iterations {
+                    let output = transformer.generate_with_cache(&prompt_tokens, &gen_config).unwrap_or_default();
+                    total_tokens += output.len().saturating_sub(prompt_tokens.len());
+                }
+                let measure_time = measure_start.elapsed();
+                (total_tokens as f64 / measure_time.as_secs_f64(), start.elapsed())
+            }
+            _ => {
+                return Ok(GateResult::skipped(
+                    "throughput",
+                    &format!("Unsupported format: {:?}", format),
+                ));
+            }
         };
+        let _ = cuda_available; // suppress warning
 
-        // Warmup
-        if cuda_available {
-            let mapped = MappedGGUFModel::from_path(path)
-                .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
-            let model = OwnedQuantizedModel::from_mapped(&mapped)
-                .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
-            let mut cuda_model = OwnedQuantizedModelCuda::new(model, 0)
-                .map_err(|e| CliError::ValidationFailed(format!("CUDA init failed: {e}")))?;
+        // Use CPU threshold (10 tok/s minimum)
+        let threshold = 10.0_f64.max(config.min_tps / 10.0);
 
-            for _ in 0..config.warmup {
-                let _ = cuda_model.generate_gpu_resident(&prompt_tokens, &gen_config);
-            }
-
-            // Measurement
-            let mut total_tokens = 0usize;
-            let measure_start = Instant::now();
-
-            for _ in 0..config.iterations {
-                let output = cuda_model
-                    .generate_gpu_resident(&prompt_tokens, &gen_config)
-                    .unwrap_or_default();
-                total_tokens += output.len().saturating_sub(prompt_tokens.len());
-            }
-
-            let measure_time = measure_start.elapsed();
-            let tps = total_tokens as f64 / measure_time.as_secs_f64();
-            let duration = start.elapsed();
-
-            if tps >= config.min_tps {
-                Ok(GateResult::passed(
-                    "throughput",
-                    &format!("{:.1} tok/s >= {:.0} tok/s threshold", tps, config.min_tps),
-                    Some(tps),
-                    Some(config.min_tps),
-                    duration,
-                ))
-            } else {
-                Ok(GateResult::failed(
-                    "throughput",
-                    &format!("{:.1} tok/s < {:.0} tok/s threshold", tps, config.min_tps),
-                    Some(tps),
-                    Some(config.min_tps),
-                    duration,
-                ))
-            }
+        if tps >= threshold {
+            Ok(GateResult::passed(
+                "throughput",
+                &format!("{:.1} tok/s >= {:.0} tok/s threshold", tps, threshold),
+                Some(tps),
+                Some(threshold),
+                duration,
+            ))
         } else {
-            // CPU fallback - use lower threshold
-            let mapped = MappedGGUFModel::from_path(path)
-                .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
-            let model = OwnedQuantizedModel::from_mapped(&mapped)
-                .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
-
-            for _ in 0..config.warmup {
-                let _ = model.generate_with_cache(&prompt_tokens, &gen_config);
-            }
-
-            let mut total_tokens = 0usize;
-            let measure_start = Instant::now();
-
-            for _ in 0..config.iterations {
-                let output = model
-                    .generate_with_cache(&prompt_tokens, &gen_config)
-                    .unwrap_or_default();
-                total_tokens += output.len().saturating_sub(prompt_tokens.len());
-            }
-
-            let measure_time = measure_start.elapsed();
-            let tps = total_tokens as f64 / measure_time.as_secs_f64();
-            let duration = start.elapsed();
-
-            // CPU threshold is lower (10 tok/s)
-            let cpu_threshold = 10.0_f64.max(config.min_tps / 10.0);
-
-            if tps >= cpu_threshold {
-                Ok(GateResult::passed(
-                    "throughput",
-                    &format!(
-                        "{:.1} tok/s >= {:.0} tok/s threshold (CPU)",
-                        tps, cpu_threshold
-                    ),
-                    Some(tps),
-                    Some(cpu_threshold),
-                    duration,
-                ))
-            } else {
-                Ok(GateResult::failed(
-                    "throughput",
-                    &format!(
-                        "{:.1} tok/s < {:.0} tok/s threshold (CPU)",
-                        tps, cpu_threshold
-                    ),
-                    Some(tps),
-                    Some(cpu_threshold),
-                    duration,
-                ))
-            }
+            Ok(GateResult::failed(
+                "throughput",
+                &format!("{:.1} tok/s < {:.0} tok/s threshold", tps, threshold),
+                Some(tps),
+                Some(threshold),
+                duration,
+            ))
         }
     }
 
