@@ -1,0 +1,1596 @@
+roadmap_version: '1.0'
+github_enabled: true
+github_repo: paiml/aprender
+roadmap:
+- id: GH-9
+  github_issue: 9
+  item_type: task
+  title: Implement graph algorithms and descriptive statistics
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-19T11:43:09.463886521+00:00
+  updated: 2025-11-19T11:43:09.463886521+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-10
+  github_issue: 10
+  item_type: task
+  title: Add Graph and Statistics Examples (cargo examples + book chapters)
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-19T11:51:12.022014868+00:00
+  updated: 2025-11-20T22:15:00.000000000+00:00
+  spec: null
+  acceptance_criteria:
+  - '`examples/graph_social_network.rs` implemented and tested'
+  - '`examples/descriptive_statistics.rs` implemented and tested'
+  - '`book/src/ml-fundamentals/graph-algorithms.md` written'
+  - '`book/src/ml-fundamentals/descriptive-statistics.md` written'
+  - '`book/src/examples/graph-social-network.md` written'
+  - '`book/src/examples/descriptive-statistics.md` written'
+  - '`book/src/SUMMARY.md` updated'
+  - '`cargo run --example graph_social_network` works'
+  - '`cargo run --example descriptive_statistics` works'
+  - '`mdbook test` passes'
+  - All examples in CI
+  - Zero clippy warnings
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - documentation
+  - enhancement
+  notes: null
+- id: GH-11
+  github_issue: 11
+  item_type: task
+  title: Add Graph and Statistics Book Chapters
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-19T11:58:39.815125498+00:00
+  updated: 2025-11-20T22:15:00.000000000+00:00
+  spec: null
+  acceptance_criteria:
+  - book/src/ml-fundamentals/graph-algorithms.md written
+  - book/src/ml-fundamentals/descriptive-statistics.md written
+  - book/src/examples/graph-social-network.md written
+  - book/src/examples/descriptive-statistics.md written
+  - book/src/SUMMARY.md updated
+  - '`mdbook test` passes'
+  - Zero clippy warnings
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - documentation
+  notes: null
+- id: GH-13
+  github_issue: 13
+  item_type: task
+  title: Implement PCA (Principal Component Analysis) for Dimensionality Reduction
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-19T13:44:12.333717587+00:00
+  updated: 2025-11-20T21:05:00.000000000+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - enhancement
+  notes: null
+- id: GH-23
+  github_issue: 23
+  item_type: task
+  title: '[TOP 10] Implement K-Nearest Neighbors (kNN) Classifier'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-19T14:08:23.937219293+00:00
+  updated: 2025-11-20T21:05:00.000000000+00:00
+  spec: null
+  acceptance_criteria:
+  - KNN struct with fit/predict
+  - Distance metric selection
+  - Weighted voting option
+  - Comprehensive tests (EXTREME TDD)
+  - 'Example: knn_iris.rs'
+  - 'Book chapter: ml-fundamentals/knn.md'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - enhancement
+  notes: null
+- id: GH-26
+  github_issue: 26
+  item_type: task
+  title: '[TOP 10] Implement Gradient Boosting Machine (GBM)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-19T14:56:44.525541927+00:00
+  updated: 2025-11-20T21:05:00.000000000+00:00
+  spec: null
+  acceptance_criteria:
+  - GradientBoostingClassifier struct
+  - GradientBoostingRegressor struct
+  - fit/predict/staged_predict
+  - Feature importance
+  - Early stopping
+  - Comprehensive tests (EXTREME TDD)
+  - 'Example: gbm_boston_housing.rs'
+  - 'Book chapter: ml-fundamentals/gradient-boosting.md'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - enhancement
+  notes: null
+- id: Sovereign AI Integration Specification v1.1 - Complete architecture document with 10 peer-reviewed references, Toyota Way principles, and Rust safety improvements
+  github_issue: null
+  item_type: task
+  title: 'New task: Sovereign AI Integration Specification v1.1 - Complete architecture document with 10 peer-reviewed references, Toyota Way principles, and Rust safety improvements'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-20T19:29:36.580632661+00:00
+  updated: 2025-11-20T19:29:42.227136934+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: 'Apply code review safety fixes: Add AprenderError enum and bounds checking to SIMD intrinsics'
+  github_issue: null
+  item_type: task
+  title: 'New task: Apply code review safety fixes: Add AprenderError enum and bounds checking to SIMD intrinsics'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-20T20:42:39.109330358+00:00
+  updated: 2025-11-20T20:44:14.615018758+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: Update trait signatures to use AprenderError instead of static str
+  github_issue: null
+  item_type: task
+  title: 'New task: Update trait signatures to use AprenderError instead of static str'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-20T20:46:40.295933316+00:00
+  updated: 2025-11-20T21:00:09.527059615+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: Commit integration specification and proptest configuration
+  github_issue: null
+  item_type: task
+  title: 'New task: Commit integration specification and proptest configuration'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-20T21:03:37.876707487+00:00
+  updated: 2025-11-20T21:04:09.930853994+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: Update roadmap status for completed TOP 10 algorithms (KNN, GBM, PCA)
+  github_issue: null
+  item_type: task
+  title: 'New task: Update roadmap status for completed TOP 10 algorithms (KNN, GBM, PCA)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-20T21:04:35.044773055+00:00
+  updated: 2025-11-20T21:05:13.323191271+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: Push completed work to origin/main (5 commits)
+  github_issue: null
+  item_type: task
+  title: 'New task: Push completed work to origin/main (5 commits)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-20T21:17:27.397448525+00:00
+  updated: 2025-11-20T21:17:51.956065347+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: Fix remaining mdbook test failures - Phase 3 (21 chapters remaining)
+  github_issue: null
+  item_type: task
+  title: 'New task: Fix remaining mdbook test failures - Phase 3 (21 chapters remaining)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-20T21:39:39.730580744+00:00
+  updated: 2025-11-20T21:41:50.464473351+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: Fix mdbook test failures - Phase 4 (20 chapters remaining)
+  github_issue: null
+  item_type: task
+  title: 'New task: Fix mdbook test failures - Phase 4 (20 chapters remaining)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-20T21:44:50.318332431+00:00
+  updated: 2025-11-20T21:46:50.712543446+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: Fix mdbook test failures - Phase 5 (~17 chapters remaining)
+  github_issue: null
+  item_type: task
+  title: 'New task: Fix mdbook test failures - Phase 5 (~17 chapters remaining)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-20T21:48:29.672555653+00:00
+  updated: 2025-11-20T21:50:13.463967687+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: Fix mdbook test failures - Phase 6 (~15 chapters remaining)
+  github_issue: null
+  item_type: task
+  title: 'New task: Fix mdbook test failures - Phase 6 (~15 chapters remaining)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-20T21:52:06.527576971+00:00
+  updated: 2025-11-20T21:54:35.813015665+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: Fix mdbook test failures - Phase 7 (pca.md + classification-metrics.md)
+  github_issue: null
+  item_type: task
+  title: 'New task: Fix mdbook test failures - Phase 7 (pca.md + classification-metrics.md)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-20T21:58:39.173370149+00:00
+  updated: 2025-11-20T22:02:26.233402895+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: Fix mdbook test failures - Phase 8 (cross-validation.md + graph-algorithms.md)
+  github_issue: null
+  item_type: task
+  title: 'New task: Fix mdbook test failures - Phase 8 (cross-validation.md + graph-algorithms.md)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-20T22:02:58.867836574+00:00
+  updated: 2025-11-20T22:04:15.869386732+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: Fix mdbook test failures - Phase 9 (descriptive-statistics.md + gradient-descent.md)
+  github_issue: null
+  item_type: task
+  title: 'New task: Fix mdbook test failures - Phase 9 (descriptive-statistics.md + gradient-descent.md)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-20T22:04:47.052534186+00:00
+  updated: 2025-11-20T22:06:24.550064133+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: Fix mdbook test failures - Phase 10 (remaining example chapters)
+  github_issue: null
+  item_type: task
+  title: 'New task: Fix mdbook test failures - Phase 10 (remaining example chapters)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-20T22:07:00.816335284+00:00
+  updated: 2025-11-20T22:08:13.348266540+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: Fix mdbook test failures - Phase 11 (pca-iris.md remaining failures)
+  github_issue: null
+  item_type: task
+  title: 'New task: Fix mdbook test failures - Phase 11 (pca-iris.md remaining failures)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-20T22:11:09.621505588+00:00
+  updated: 2025-11-20T22:15:09.640635618+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-15
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-15'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-21T07:03:43.949171785+00:00
+  updated: 2025-11-21T07:12:09.670302987+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-16
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-16'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-21T07:17:59.807813566+00:00
+  updated: 2025-11-21T07:28:00.029018122+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-17
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-17'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-21T07:40:31.818413888+00:00
+  updated: 2025-11-21T12:13:31.151843094+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-20
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-20'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-21T07:52:04.630299986+00:00
+  updated: 2025-11-21T12:10:25.405809841+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-19
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-19'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-21T10:59:12.766837898+00:00
+  updated: 2025-11-21T12:11:44.082761246+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-18
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-18'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-21T11:17:52.675519944+00:00
+  updated: 2025-11-21T12:14:04.777014796+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-21
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-21'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-21T11:30:25.181964870+00:00
+  updated: 2025-11-21T12:07:22.866631497+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-22
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-22'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-21T11:49:10.771678483+00:00
+  updated: 2025-11-21T11:59:43.592344208+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-28
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-28'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-21T12:42:05.362403072+00:00
+  updated: 2025-11-21T12:46:42.641483587+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-29
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-29'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-21T12:49:45.703737502+00:00
+  updated: 2025-11-21T13:11:53.462171579+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-30
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-30'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-21T13:16:18.584051+00:00
+  updated: 2025-11-21T13:29:44.157674935+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-31
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-31'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-21T13:33:21.749313999+00:00
+  updated: 2025-11-21T13:48:32.660770197+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-32
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-32'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-21T13:55:00.544325403+00:00
+  updated: 2025-11-21T14:08:59.586296342+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-33
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-33'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-21T14:17:30.771076175+00:00
+  updated: 2025-11-21T14:17:57.608899601+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-34
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-34'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-21T14:23:06.530519972+00:00
+  updated: 2025-11-21T14:31:20.029584765+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-35
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-35'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-21T14:34:14.673583967+00:00
+  updated: 2025-11-21T14:38:41.793960708+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-36
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-36'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-21T14:42:41.019533660+00:00
+  updated: 2025-11-21T14:51:05.174993365+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-37
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-37'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-21T14:55:09.364756572+00:00
+  updated: 2025-11-21T15:01:01.611666699+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-38
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-38'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-21T15:03:31.978891972+00:00
+  updated: 2025-11-21T16:12:51.743937903+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-39
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-39'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-21T16:16:55.158861570+00:00
+  updated: 2025-11-21T16:22:12.459727091+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-40
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-40'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-21T16:34:18.816174139+00:00
+  updated: 2025-11-21T16:40:15.070800228+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-41
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-41'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-21T16:41:38.188482755+00:00
+  updated: 2025-11-21T17:36:21.927026904+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-42
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-42'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-21T17:41:19.984865645+00:00
+  updated: 2025-11-21T22:08:41.304854828+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-43
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-43'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-21T17:50:56.372225985+00:00
+  updated: 2025-11-21T22:57:34.454368119+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-44
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-44'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-21T18:42:10.066174690+00:00
+  updated: 2025-11-21T18:56:13.410426185+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-45
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-45'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-21T18:57:42.654906864+00:00
+  updated: 2025-11-21T19:02:44.219926904+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-55
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-55'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-21T19:18:55.587113319+00:00
+  updated: 2025-11-21T22:01:46.951089115+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: 'Phase 1: Graph Pathfinding Algorithms (Dijkstra, A*, APSP, shortest_path)'
+  github_issue: null
+  item_type: task
+  title: 'New task: Phase 1: Graph Pathfinding Algorithms (Dijkstra, A*, APSP, shortest_path)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-22T11:21:26.608035364+00:00
+  updated: 2025-11-22T12:01:38.044632189+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: 'Phase 2: Components & Traversal (DFS, connected_components, SCCs, topological_sort)'
+  github_issue: null
+  item_type: task
+  title: 'New task: Phase 2: Components & Traversal (DFS, connected_components, SCCs, topological_sort)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-22T12:02:23.982829586+00:00
+  updated: 2025-11-22T12:13:40.616541034+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: 'Phase 3: Community & Link Analysis (label_propagation, common_neighbors, adamic_adar)'
+  github_issue: null
+  item_type: task
+  title: 'New task: Phase 3: Community & Link Analysis (label_propagation, common_neighbors, adamic_adar)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-22T12:14:44.002528997+00:00
+  updated: 2025-11-22T12:24:00.000000000+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: 'Phase 4: Graph Benchmarks & Spec Update'
+  github_issue: null
+  item_type: task
+  title: 'New task: Phase 4: Graph Benchmarks & Spec Update'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-22T12:30:00.000000000+00:00
+  updated: 2025-11-22T12:42:00.000000000+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: 'Phase 1: Classical Bayesian Inference - Conjugate Priors (Gamma-Poisson, Normal-InverseGamma, Dirichlet-Multinomial)'
+  github_issue: null
+  item_type: task
+  title: 'New task: Phase 1: Classical Bayesian Inference - Conjugate Priors (Gamma-Poisson, Normal-InverseGamma, Dirichlet-Multinomial)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-22T14:14:32.956638985+00:00
+  updated: 2025-11-22T14:39:39.086233973+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: 'Phase 2: Bayesian Examples & Documentation - Create cargo examples and book chapters for Gamma-Poisson, Normal-InverseGamma, and Dirichlet-Multinomial conjugate priors'
+  github_issue: null
+  item_type: task
+  title: 'New task: Phase 2: Bayesian Examples & Documentation - Create cargo examples and book chapters for Gamma-Poisson, Normal-InverseGamma, and Dirichlet-Multinomial conjugate priors'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-22T14:41:15.060857542+00:00
+  updated: 2025-11-22T14:55:52.231115468+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: Fix mdbook test failures in Bayesian inference chapters
+  github_issue: null
+  item_type: task
+  title: 'New task: Fix mdbook test failures in Bayesian inference chapters'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-22T15:33:54.554385059+00:00
+  updated: 2025-11-22T15:40:56.449462740+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: Fix 4 failing Bayesian doctests
+  github_issue: null
+  item_type: task
+  title: 'New task: Fix 4 failing Bayesian doctests'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-22T15:45:02.954748688+00:00
+  updated: 2025-11-22T15:48:16.753235600+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: Push 4 commits to origin/main (Bayesian documentation and doctest fixes)
+  github_issue: null
+  item_type: task
+  title: 'New task: Push 4 commits to origin/main (Bayesian documentation and doctest fixes)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-22T15:55:11.609457368+00:00
+  updated: 2025-11-22T15:56:02.775467885+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: Implement Bayesian Linear Regression (analytical posterior)
+  github_issue: null
+  item_type: task
+  title: 'New task: Implement Bayesian Linear Regression (analytical posterior)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-22T16:01:33.865842603+00:00
+  updated: 2025-11-22T16:57:12.367914920+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: Implement Bayesian Model Selection (Bayes Factors, DIC, WAIC)
+  github_issue: null
+  item_type: task
+  title: 'New task: Implement Bayesian Model Selection (Bayes Factors, DIC, WAIC)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-22T16:58:14.002509466+00:00
+  updated: 2025-11-22T17:07:12.377508121+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: Implement Bayesian Logistic Regression (Laplace approximation)
+  github_issue: null
+  item_type: task
+  title: 'New task: Implement Bayesian Logistic Regression (Laplace approximation)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-22T17:08:26.938091419+00:00
+  updated: 2025-11-22T17:28:20.766867698+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: Implement Generalized Linear Models (GLM) - Poisson, Gamma, Binomial families
+  github_issue: null
+  item_type: task
+  title: 'New task: Implement Generalized Linear Models (GLM) - Poisson, Gamma, Binomial families'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-22T17:31:10.952421911+00:00
+  updated: 2025-11-22T18:19:13.275008215+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: Implement Statistical Hypothesis Tests (t-test, chi-square, ANOVA)
+  github_issue: null
+  item_type: task
+  title: 'New task: Implement Statistical Hypothesis Tests (t-test, chi-square, ANOVA)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-22T17:57:31.042254053+00:00
+  updated: 2025-11-22T18:08:46.664578379+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: Implement Covariance and Correlation Matrices
+  github_issue: null
+  item_type: task
+  title: 'New task: Implement Covariance and Correlation Matrices'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-22T18:21:14.036353506+00:00
+  updated: 2025-11-22T18:26:45.985389771+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: Implement Independent Component Analysis (ICA)
+  github_issue: null
+  item_type: task
+  title: 'New task: Implement Independent Component Analysis (ICA)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-22T18:28:43.837291798+00:00
+  updated: 2025-11-22T18:35:57.909396818+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: Implement ARIMA (Auto-Regressive Integrated Moving Average)
+  github_issue: null
+  item_type: task
+  title: 'New task: Implement ARIMA (Auto-Regressive Integrated Moving Average)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-22T18:37:35.339187341+00:00
+  updated: 2025-11-24T20:42:07.198350802+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: nlp-text-preprocessing
+  github_issue: null
+  item_type: task
+  title: 'New task: nlp-text-preprocessing'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-24T20:09:32.343204134+00:00
+  updated: 2025-11-24T20:29:28.403844977+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: Implement document similarity (cosine, Jaccard, edit distance)
+  github_issue: null
+  item_type: task
+  title: 'New task: Implement document similarity (cosine, Jaccard, edit distance)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-24T21:22:04.356333142+00:00
+  updated: 2025-11-24T21:41:35.169137165+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: Implement pattern-based entity extraction (emails, URLs, keywords)
+  github_issue: null
+  item_type: task
+  title: 'New task: Implement pattern-based entity extraction (emails, URLs, keywords)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-24T21:22:15.633104377+00:00
+  updated: 2025-11-24T21:41:43.155607139+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: Implement extractive summarization (TextRank, TF-IDF)
+  github_issue: null
+  item_type: task
+  title: 'New task: Implement extractive summarization (TextRank, TF-IDF)'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-24T21:22:17.774131412+00:00
+  updated: 2025-11-24T21:41:50.085071482+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-71
+  github_issue: 71
+  item_type: task
+  title: Implement Content-Based Recommender with HNSW (Phase 1)
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-24T22:36:39.711447967+00:00
+  updated: 2025-11-24T23:13:58.525879463+00:00
+  spec: null
+  acceptance_criteria:
+  - HNSW index implemented with property tests
+  - Incremental IDF tracker with decay mechanism
+  - Content-Based Recommender with <100ms latency benchmark
+  - Example code demonstrating movie/article recommendations
+  - Book chapter with usage tutorial
+  - All quality gates pass (`make tier3`)
+  - Test coverage ≥95%
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - enhancement
+  notes: null
+- id: GH-73
+  github_issue: 73
+  item_type: task
+  title: 'feat: Model evaluation framework for .apr models with retraining support'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-11-26T13:45:00.888174658+00:00
+  updated: 2025-11-26T15:30:00.000000000+00:00
+  spec: null
+  acceptance_criteria:
+  - Add classification metrics to `src/metrics/mod.rs`
+  - Add `src/eval/mod.rs` evaluation framework
+  - Add drift detection (`src/eval/drift.rs`)
+  - Integration with entrenar
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - enhancement
+  notes: null
+- id: aprender-tsp-v0.1.0
+  github_issue: null
+  item_type: task
+  title: 'release: aprender-tsp v0.1.0 - TSP solver with ACO, Tabu, GA, Hybrid and HuggingFace POC models'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2025-11-29T12:00:00.000000000+00:00
+  updated: 2025-11-29T18:00:00.000000000+00:00
+  spec: null
+  acceptance_criteria:
+  - ACO solver using core aprender::metaheuristics::AntColony
+  - Tabu Search with 2-opt moves
+  - Genetic Algorithm with order crossover
+  - Hybrid solver combining GA + Tabu + ACO
+  - TSPLIB parser with ATT distance formula fix
+  - Model persistence with .apr binary format
+  - CLI with train/solve/benchmark/info commands
+  - POC models published to HuggingFace (paiml/aprender-tsp-poc)
+  - 142 tests (105 unit + 22 integration + 15 property)
+  - Published to crates.io
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - release
+  - metaheuristics
+  notes: null
+- id: GH-80
+  github_issue: 80
+  item_type: epic
+  title: 'feat(metaheuristics): Implement derivative-free global optimization for aprender-contrib'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2025-11-27T08:53:16.807707680+00:00
+  updated: 2025-11-29T08:27:54.372237151+00:00
+  spec: null
+  acceptance_criteria:
+  - '`SearchSpace` enum (Continuous, Mixed, Binary, Permutation, Graph)'
+  - '`PerturbativeMetaheuristic` trait'
+  - Differential Evolution (DE/rand/1/bin, JADE, SHADE)
+  - Particle Swarm Optimization (standard, constriction, SPSO 2011)
+  - Simulated Annealing (geometric, adaptive cooling)
+  - Genetic Algorithm (SBX, polynomial mutation)
+  - Harmony Search
+  - CEC 2013 benchmark suite
+  - CMA-ES with eigendecomposition, boundary handling, IPOP restart
+  - Binary GA with BitVec solution type
+  - Feature selection utilities
+  - '`ConstructiveMetaheuristic` trait'
+  - '`NeighborhoodSearch` trait'
+  - Ant Colony Optimization (AS, MMAS, ACS)
+  - Tabu Search
+  - HyperoptSearch wrapper
+  - Neural architecture search primitives
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: APR-FORMAT-002
+  github_issue: null
+  item_type: task
+  title: 'New task: APR-FORMAT-002'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-12-16T00:03:27.193222803+00:00
+  updated: 2025-12-16T00:05:56.309890261+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: Add APR-SPEC to book and verify examples
+  github_issue: null
+  item_type: task
+  title: 'New task: Add APR-SPEC to book and verify examples'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-12-16T09:20:59.016120866+00:00
+  updated: 2026-02-04T13:28:41Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: WAPR-CLI-STUBS
+  github_issue: null
+  item_type: task
+  title: 'New task: WAPR-CLI-STUBS'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2025-12-16T09:48:19.113691302+00:00
+  updated: 2025-12-16T09:48:19.113691302+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: Implement apr-cli TUI command
+  github_issue: null
+  item_type: task
+  title: 'New task: Implement apr-cli TUI command'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-12-16T10:23:26.469253952+00:00
+  updated: 2025-12-16T10:31:28.031659933+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: APR-VERIFY-001
+  github_issue: null
+  item_type: task
+  title: 'New task: APR-VERIFY-001'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-12-16T18:46:36.901960159+00:00
+  updated: 2026-02-04T13:28:37Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: APR-POKA-001
+  github_issue: null
+  item_type: task
+  title: 'New task: APR-POKA-001'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2025-12-16T19:25:20.831662792+00:00
+  updated: 2026-02-04T13:28:38Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: APRENDER-METAL-001
+  github_issue: null
+  item_type: task
+  title: 'Metal Backend Integration: AMD GPU Tensor Ops via Intel Mac'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-01-02T12:00:00+00:00
+  updated: 2026-01-02T12:00:00+00:00
+  spec: null
+  acceptance_criteria:
+  - trueno Metal backend available for tensor operations
+  - Neural network forward pass works on AMD GPU (Metal)
+  - Training backward pass validated on Metal
+  - Cross-platform model inference (CUDA/Metal) produces identical results
+  - Performance within 30% of CUDA for common ML workloads
+  - CI integration via self-hosted Intel Mac runner
+  phases: []
+  subtasks: []
+  estimated_effort: 1 week
+  labels:
+  - metal
+  - amd-gpu
+  - cross-platform
+  - intel-mac
+  - depends-on-trueno
+  notes: |
+    Depends on TRUENO-METAL-001 completion.
+    Uses lambda-lab-rust-development Intel Mac integration:
+    - Host: mac (Intel Mac Pro with AMD Radeon Pro W5700X, 16GB VRAM)
+    - Metal 3 support, 60 Compute Units
+    - Run health check: make mac-health (from lambda-lab-rust-development)
+- id: docs/specifications/qwen2.5-coder-showcase-demo.md
+  github_issue: null
+  item_type: task
+  title: 'New task: docs/specifications/qwen2.5-coder-showcase-demo.md'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-01-08T17:11:08.672007318+00:00
+  updated: 2026-01-08T17:17:13.458191789+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-PERF-009-CUDA
+  github_issue: null
+  item_type: task
+  title: 'New task: PMAT-PERF-009-CUDA'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-01-11T23:07:13.191160326+00:00
+  updated: 2026-01-11T23:07:13.191160326+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-PERF-009-WIRE
+  github_issue: null
+  item_type: task
+  title: 'New task: PMAT-PERF-009-WIRE'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-01-12T09:15:48.332874564+00:00
+  updated: 2026-01-12T09:15:48.332874564+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-SHOWCASE-NEXT
+  github_issue: null
+  item_type: task
+  title: 'New task: PMAT-SHOWCASE-NEXT'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-01-12T09:30:13.183954948+00:00
+  updated: 2026-02-04T13:28:40Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-PERF-OPTIMIZE
+  github_issue: null
+  item_type: task
+  title: 'New task: PMAT-PERF-OPTIMIZE'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-01-12T09:38:13.765147245+00:00
+  updated: 2026-01-12T09:38:13.765147245+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-PERF-2X-TARGET
+  github_issue: null
+  item_type: task
+  title: 'New task: PMAT-PERF-2X-TARGET'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-01-12T09:46:30.149149972+00:00
+  updated: 2026-01-12T09:46:30.149149972+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: SHOWCASE-BRICK-001
+  github_issue: null
+  item_type: task
+  title: 'New task: SHOWCASE-BRICK-001'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-01-12T23:02:11.425753080+00:00
+  updated: 2026-01-20T10:39:55.357397569+00:00
+  spec: null
+  acceptance_criteria:
+  - PAR-201 regressions fixed (F-GPU-134b, F-PIPE-166b, F-UX-40). Dead code documented. 32B model added.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: 'APR-TOK-001: Fix tokenizer decoding for coherent text output'
+  github_issue: null
+  item_type: task
+  title: 'New task: APR-TOK-001: Fix tokenizer decoding for coherent text output'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-01-15T14:15:28.015657827+00:00
+  updated: 2026-02-04T13:28:32Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-081
+  github_issue: null
+  item_type: task
+  title: 'FORMAT-PARITY-001: Implement SafeTensors and APR inference'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-01-20T11:24:51Z
+  updated: 2026-02-04T13:28:33Z
+  spec: null
+  acceptance_criteria:
+  - Implement PAR-301 (SafeTensors) and PAR-302 (APR) format inference in realizar
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-082
+  github_issue: null
+  item_type: task
+  title: 'PAR-301: apr serve supports APR and SafeTensors'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-04T13:28:21Z
+  updated: 2026-02-04T13:28:25Z
+  spec: null
+  acceptance_criteria:
+  - 'Verified: apr serve works with both SafeTensors and APR formats. COMPLETED.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-083
+  github_issue: null
+  item_type: task
+  title: 'GGUF-EXPORT-001: GGUF export implemented'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-04T13:28:26Z
+  updated: 2026-02-04T13:28:31Z
+  spec: null
+  acceptance_criteria:
+  - 'Verified: ExportFormat::Gguf implemented in src/format/converter/export.rs with full metadata and tensor conversion.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-084
+  github_issue: null
+  item_type: task
+  title: 'STACK-DRIFT-001: Update downstream crates'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-02-04T13:28:52Z
+  updated: 2026-02-04T13:28:52Z
+  spec: null
+  acceptance_criteria:
+  - 'Stack drift detected by batuta bug-hunter. Crates needing update: aprender-shell, aprender-tsp, realizar, whisper-apr, pmat. Run batuta stack drift --fix after publish.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-202
+  github_issue: 202
+  item_type: task
+  title: 'LAYOUT-002: Conversion fidelity failures in Qwen2.5-Coder-0.5B qualification (58-90% diff)'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-02-04T13:30:21.129684303+00:00
+  updated: 2026-02-04T13:53:00Z
+  spec: null
+  acceptance_criteria:
+  - 'LAYOUT-002 conversion fidelity failures. ROOT CAUSE IDENTIFIED: APR from GGUF conversion produces garbage inference output (''linguisticçļĦ...'') while original GGUF produces correct output (''4''). Tensors are correctly transposed (shapes match expected row-major layout), but inference kernel may be using wrong layout. Needs realizar code investigation.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - bug
+  notes: null
