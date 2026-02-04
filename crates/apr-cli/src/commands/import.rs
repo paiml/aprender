@@ -38,9 +38,17 @@ pub(crate) fn run(
         }
     }
 
-    #[allow(unused_variables)]
-    let _ = preserve_q4k; // Suppress unused warning when inference feature not enabled
-                          // Parse and display source info
+    // BUG-IMPORT-001 FIX: Warn if preserve_q4k is used but feature not enabled
+    #[cfg(not(feature = "inference"))]
+    if preserve_q4k {
+        eprintln!(
+            "{} --preserve-q4k requires the 'inference' feature. \
+             Falling back to standard import (Q4K will be dequantized to F32).",
+            "[WARN]".yellow()
+        );
+    }
+
+    // Parse and display source info
     let parsed_source = Source::parse(source)
         .map_err(|e| CliError::ValidationFailed(format!("Invalid source: {e}")))?;
 

@@ -17,6 +17,16 @@ pub(crate) fn run(
     strict: bool,
     min_score: Option<u8>,
 ) -> Result<(), CliError> {
+    // BUG-VALIDATE-001 FIX: Validate min_score is in valid range [0, 100]
+    if let Some(score) = min_score {
+        if score > 100 {
+            return Err(CliError::ValidationFailed(format!(
+                "Invalid --min-score value: {}. Must be in range 0-100.",
+                score
+            )));
+        }
+    }
+
     validate_path(path)?;
     println!("Validating {}...\n", path.display());
 

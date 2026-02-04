@@ -189,6 +189,10 @@ but passed them directly to `apr run` without resolving to format-specific files
 | BUG-EXPORT-002 | Export to GGUF doesn't transpose data (LAYOUT-002 violation on export) | P0 | ✅ FIXED | 2026-02-04 |
 | BUG-CONV-001 | Legacy quant (Q4_0/Q4_1/Q5_0/Q8_0) and F32/F16 import doesn't transpose | P0 | ✅ FIXED | 2026-02-04 |
 | BUG-PATH-001 | "No file extension found" unhelpful when directory passed | P2 | ✅ FIXED | 2026-02-04 |
+| BUG-MERGE-001 | Merge command missing weight validation (count, negative, NaN) | P1 | ✅ FIXED | 2026-02-04 |
+| BUG-MERGE-002 | Merge --weights silently ignored for non-weighted strategies | P2 | ✅ FIXED | 2026-02-04 |
+| BUG-VALIDATE-001 | Validate --min-score accepts values > 100 | P2 | ✅ FIXED | 2026-02-04 |
+| BUG-IMPORT-001 | Import --preserve-q4k silently ignored without inference feature | P2 | ✅ FIXED | 2026-02-04 |
 | [GH-191](docs/tickets/GH-191-APR-QUANTIZATION-DATA-LOSS.md) | APR dtype byte mapping mismatch | P0 | ✅ FIXED | PMAT-223 |
 | [GH-190](docs/tickets/GH-190-GGUF-APR-CONVERSION-GARBAGE-OUTPUT.md) | GGUF→APR tensor name mismatch | P0 | ✅ FIXED | PMAT-205 |
 | [GH-189](docs/tickets/GH-189-APR-CHAT-SPECIAL-TOKENS.md) | APR chat special tokens not atomic | P0 | ✅ FIXED | PMAT-206 |

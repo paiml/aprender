@@ -60,16 +60,88 @@ pub(crate) fn run(
 
     println!("Strategy: {merge_strategy:?}");
 
-    // Show weights if weighted merge
-    if let Some(ref w) = weights {
-        println!("Weights: {w:?}");
-    }
+    // BUG-MERGE-001 FIX: Validate weights for weighted strategy
+    let validated_weights = match merge_strategy {
+        MergeStrategy::Weighted => {
+            // Weighted strategy requires weights
+            let w = weights.ok_or_else(|| {
+                CliError::ValidationFailed(
+                    "Weighted merge strategy requires --weights argument. \
+                     Example: --weights 0.7 0.3"
+                        .to_string(),
+                )
+            })?;
+
+            // BUG-MERGE-002 FIX: Validate weight count matches file count
+            if w.len() != files.len() {
+                return Err(CliError::ValidationFailed(format!(
+                    "Weight count ({}) must match file count ({}). \
+                     Provide one weight per input model.",
+                    w.len(),
+                    files.len()
+                )));
+            }
+
+            // BUG-MERGE-003 FIX: Validate weights are non-negative
+            for (i, &weight) in w.iter().enumerate() {
+                if weight < 0.0 {
+                    return Err(CliError::ValidationFailed(format!(
+                        "Weight {} is negative ({:.3}). All weights must be >= 0.",
+                        i + 1,
+                        weight
+                    )));
+                }
+                if !weight.is_finite() {
+                    return Err(CliError::ValidationFailed(format!(
+                        "Weight {} is not a valid number ({:.3}). Use finite values.",
+                        i + 1,
+                        weight
+                    )));
+                }
+            }
+
+            // Warn if weights sum is far from 1.0 (but don't error - some use cases need this)
+            let sum: f32 = w.iter().sum();
+            if (sum - 1.0).abs() > 0.01 {
+                eprintln!(
+                    "{} Weights sum to {:.3}, not 1.0. Results will be scaled accordingly.",
+                    "[WARN]".yellow(),
+                    sum
+                );
+            }
+
+            println!("Weights: {:?}", w);
+            Some(w)
+        }
+        MergeStrategy::Average => {
+            // BUG-MERGE-004 FIX: Warn if weights provided but not using weighted strategy
+            if weights.is_some() {
+                eprintln!(
+                    "{} --weights argument ignored for '{}' strategy. Use --strategy weighted to apply weights.",
+                    "[WARN]".yellow(),
+                    strategy
+                );
+            }
+            None
+        }
+        _ => {
+            // Other strategies (ties, dare, slerp) - ignore weights for now
+            if weights.is_some() {
+                eprintln!(
+                    "{} --weights argument not supported for '{}' strategy.",
+                    "[WARN]".yellow(),
+                    strategy
+                );
+            }
+            None
+        }
+    };
     println!();
 
     // Build options
     let options = MergeOptions {
         strategy: merge_strategy,
-        weights,
+        weights: validated_weights,
     };
 
     // Run merge
