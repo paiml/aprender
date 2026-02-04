@@ -199,6 +199,7 @@ but passed them directly to `apr run` without resolving to format-specific files
 | BUG-INSPECT-001 | Inspect shows "Legacy APR format" for GGUF files (misleading) | P3 | ✅ FIXED | 2026-02-04 |
 | BUG-MERGE-006 | calculate_merge_weights accepts NaN/Inf (NaN <= 0 is false) | P1 | ✅ FIXED | 2026-02-04 |
 | BUG-TRACE-003 | APR trace hardcodes total_params=0 (BUG-TRACE-001 fix incomplete) | P2 | ✅ FIXED | 2026-02-04 |
+| BUG-GGUF-001 | GGUF reader allocates Vec without validating count (OOM attack vector) | P0 | ✅ FIXED | 2026-02-04 |
 | [GH-191](docs/tickets/GH-191-APR-QUANTIZATION-DATA-LOSS.md) | APR dtype byte mapping mismatch | P0 | ✅ FIXED | PMAT-223 |
 | [GH-190](docs/tickets/GH-190-GGUF-APR-CONVERSION-GARBAGE-OUTPUT.md) | GGUF→APR tensor name mismatch | P0 | ✅ FIXED | PMAT-205 |
 | [GH-189](docs/tickets/GH-189-APR-CHAT-SPECIAL-TOKENS.md) | APR chat special tokens not atomic | P0 | ✅ FIXED | PMAT-206 |
@@ -206,7 +207,7 @@ but passed them directly to `apr run` without resolving to format-specific files
 | [#186](https://github.com/paiml/aprender/issues/186) | APR Q4_K PAD token garbage | P0 | ✅ FIXED | PMAT-196 |
 | [#185](https://github.com/paiml/aprender/issues/185) | APR missing embedded tokenizer | P0 | ✅ FIXED | PMAT-195 |
 
-**Last Updated:** 2026-02-04 (Round 40 - BUG-TRACE-003 APR total_params fix)
+**Last Updated:** 2026-02-04 (Round 40 - BUG-GGUF-001 allocation attack prevention)
 
 **APR Format Note:** Two APR variants exist:
 1. **realizar JSON-APR** - JSON tensor index, used by `GgufToAprConverter` for showcase

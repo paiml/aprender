@@ -5,6 +5,16 @@ use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 
+// BUG-GGUF-001 FIX: Define reasonable limits to prevent allocation attacks
+// A malicious file with tensor_count=u64::MAX could cause OOM or panic.
+// Even the largest models (Llama 405B) have <1000 tensors.
+/// Maximum number of tensors allowed in a GGUF file (prevents OOM attack)
+const MAX_TENSOR_COUNT: u64 = 100_000;
+/// Maximum number of metadata entries allowed (prevents OOM attack)
+const MAX_METADATA_COUNT: u64 = 100_000;
+/// Maximum number of dimensions per tensor (no real tensor has > 8 dims)
+const MAX_DIMS: u32 = 16;
+
 use super::dequant::{
     dequantize_iq_approximate, dequantize_q2_k, dequantize_q3_k, dequantize_q4_k, dequantize_q5_1,
     dequantize_q5_k, dequantize_q6_k, f16_to_f32,
@@ -378,6 +388,24 @@ impl GgufReader {
         let tensor_count = read_u64(&data, 8)?;
         let metadata_kv_count = read_u64(&data, 16)?;
 
+        // BUG-GGUF-001 FIX: Validate counts before allocation to prevent OOM attacks
+        if tensor_count > MAX_TENSOR_COUNT {
+            return Err(AprenderError::FormatError {
+                message: format!(
+                    "GGUF tensor_count {} exceeds maximum allowed {} (possible corrupted/malicious file)",
+                    tensor_count, MAX_TENSOR_COUNT
+                ),
+            });
+        }
+        if metadata_kv_count > MAX_METADATA_COUNT {
+            return Err(AprenderError::FormatError {
+                message: format!(
+                    "GGUF metadata_kv_count {} exceeds maximum allowed {} (possible corrupted/malicious file)",
+                    metadata_kv_count, MAX_METADATA_COUNT
+                ),
+            });
+        }
+
         // Parse metadata section (extract vocabulary and other tokenizer data)
         let mut offset = 24;
         let mut metadata = BTreeMap::new();
@@ -417,11 +445,21 @@ impl GgufReader {
             offset += name_len;
 
             // Read n_dims
-            let n_dims = read_u32(&data, offset)? as usize;
+            let n_dims = read_u32(&data, offset)?;
             offset += 4;
 
+            // BUG-GGUF-001 FIX: Validate n_dims to prevent allocation attacks
+            if n_dims > MAX_DIMS {
+                return Err(AprenderError::FormatError {
+                    message: format!(
+                        "Tensor '{}' has {} dimensions, exceeds maximum {} (possible corrupted file)",
+                        name, n_dims, MAX_DIMS
+                    ),
+                });
+            }
+
             // Read dimensions
-            let mut dims = Vec::with_capacity(n_dims);
+            let mut dims = Vec::with_capacity(n_dims as usize);
             for _ in 0..n_dims {
                 dims.push(read_u64(&data, offset)?);
                 offset += 8;
@@ -842,5 +880,105 @@ impl GgufReader {
             result.insert(meta.name.clone(), (data, shape, dtype));
         }
         Ok(result)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ========================================================================
+    // BUG-GGUF-001 Falsification Tests: Allocation Attack Prevention
+    // ========================================================================
+
+    /// Create minimal GGUF header bytes for testing
+    fn create_gguf_header(tensor_count: u64, metadata_count: u64) -> Vec<u8> {
+        let mut data = Vec::new();
+        // Magic: "GGUF"
+        data.extend_from_slice(&GGUF_MAGIC.to_le_bytes());
+        // Version: 3
+        data.extend_from_slice(&3u32.to_le_bytes());
+        // Tensor count
+        data.extend_from_slice(&tensor_count.to_le_bytes());
+        // Metadata count
+        data.extend_from_slice(&metadata_count.to_le_bytes());
+        data
+    }
+
+    #[test]
+    fn test_bug_gguf_001_excessive_tensor_count_rejected() {
+        // Create GGUF with tensor_count > MAX_TENSOR_COUNT
+        let data = create_gguf_header(MAX_TENSOR_COUNT + 1, 0);
+
+        let result = GgufReader::from_bytes(data);
+        assert!(
+            result.is_err(),
+            "FALSIFIED: Excessive tensor_count should be rejected"
+        );
+        let err = format!("{:?}", result.unwrap_err());
+        assert!(
+            err.contains("exceeds maximum"),
+            "Error should mention limit: {err}"
+        );
+    }
+
+    #[test]
+    fn test_bug_gguf_001_excessive_metadata_count_rejected() {
+        // Create GGUF with metadata_kv_count > MAX_METADATA_COUNT
+        let data = create_gguf_header(1, MAX_METADATA_COUNT + 1);
+
+        let result = GgufReader::from_bytes(data);
+        assert!(
+            result.is_err(),
+            "FALSIFIED: Excessive metadata_kv_count should be rejected"
+        );
+        let err = format!("{:?}", result.unwrap_err());
+        assert!(
+            err.contains("exceeds maximum"),
+            "Error should mention limit: {err}"
+        );
+    }
+
+    #[test]
+    fn test_bug_gguf_001_max_tensor_count_allowed() {
+        // Create GGUF with tensor_count = MAX_TENSOR_COUNT (should be allowed)
+        // Will fail due to truncated file, but NOT due to count validation
+        let data = create_gguf_header(MAX_TENSOR_COUNT, 0);
+
+        let result = GgufReader::from_bytes(data);
+        // Will fail because file is truncated, but NOT because of tensor_count
+        match result {
+            Err(e) => {
+                let err = format!("{e:?}");
+                assert!(
+                    !err.contains("tensor_count") || !err.contains("exceeds"),
+                    "MAX_TENSOR_COUNT should be accepted: {err}"
+                );
+            }
+            Ok(_) => {
+                // Unlikely but acceptable
+            }
+        }
+    }
+
+    #[test]
+    fn test_bug_gguf_001_zero_counts_valid() {
+        // Zero tensor/metadata counts are valid (empty model)
+        let data = create_gguf_header(0, 0);
+
+        // Will succeed or fail due to other reasons (no tensor data), not counts
+        let result = GgufReader::from_bytes(data);
+        match result {
+            Err(e) => {
+                let err = format!("{e:?}");
+                assert!(
+                    !err.contains("exceeds maximum"),
+                    "Zero counts should be valid: {err}"
+                );
+            }
+            Ok(_) => {
+                // Valid: empty GGUF file
+            }
+        }
     }
 }
