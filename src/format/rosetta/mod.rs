@@ -85,8 +85,36 @@ impl FormatType {
         let ext = path
             .extension()
             .and_then(|e| e.to_str())
-            .ok_or_else(|| AprenderError::FormatError {
-                message: "No file extension found".to_string(),
+            .ok_or_else(|| {
+                // BUG-PATH-001: Provide helpful error when directory passed instead of file
+                let is_dir = path.is_dir();
+                let message = if is_dir {
+                    // Check if common model files exist in directory
+                    let candidates = ["model.gguf", "model.apr", "model.safetensors"];
+                    let found: Vec<_> = candidates
+                        .iter()
+                        .filter(|f| path.join(f).exists())
+                        .collect();
+                    if found.is_empty() {
+                        format!(
+                            "Path '{}' is a directory, not a model file. \
+                             Expected a file with .gguf, .apr, or .safetensors extension.",
+                            path.display()
+                        )
+                    } else {
+                        format!(
+                            "Path '{}' is a directory. Did you mean '{}'?",
+                            path.display(),
+                            path.join(found[0]).display()
+                        )
+                    }
+                } else {
+                    format!(
+                        "No file extension found in '{}'. Expected .gguf, .apr, or .safetensors",
+                        path.display()
+                    )
+                };
+                AprenderError::FormatError { message }
             })?
             .to_lowercase();
 
