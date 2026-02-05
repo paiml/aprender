@@ -572,6 +572,7 @@ fn cc2_trueno_is_compute_backend() {
     let cargo_toml = include_str!("../Cargo.toml");
     // Check [dependencies] section for realizar - it should NOT be there
     // The [patch.crates-io] section is allowed for local development overrides
+    // Comments mentioning realizar are OK (e.g., "# realizar = ..." blocked notes)
     let deps_section = cargo_toml
         .find("[dependencies]")
         .map(|start| {
@@ -580,8 +581,14 @@ fn cc2_trueno_is_compute_backend() {
                 .map_or(&cargo_toml[start..], |end| &cargo_toml[start..start + end])
         })
         .unwrap_or("");
+    let has_uncommented_realizar = deps_section
+        .lines()
+        .any(|line| {
+            let trimmed = line.trim();
+            !trimmed.starts_with('#') && trimmed.contains("realizar")
+        });
     assert!(
-        !deps_section.contains("realizar"),
+        !has_uncommented_realizar,
         "CC2: aprender should NOT have realizar in [dependencies] (it's the other way)"
     );
 }

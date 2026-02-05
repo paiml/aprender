@@ -50,6 +50,10 @@ pub struct Cli {
     /// Disable network access (Sovereign AI compliance, Section 9)
     #[arg(long, global = true)]
     pub offline: bool,
+
+    /// Skip tensor contract validation (PMAT-237: use with diagnostic tooling)
+    #[arg(long, global = true)]
+    pub skip_contract: bool,
 }
 
 #[derive(Subcommand, Debug)]
@@ -1083,9 +1087,104 @@ pub enum Commands {
     },
 }
 
+/// PMAT-237: Extract model file paths from a command variant.
+///
+/// Returns paths for action commands (run, serve, bench, etc.) that should be
+/// validated against the tensor contract. Returns empty vec for diagnostic
+/// commands (qa, validate, inspect, debug, etc.) that must work on corrupt models.
+fn extract_model_paths(command: &Commands) -> Vec<PathBuf> {
+    match command {
+        // === ACTION COMMANDS (gated) ===
+        Commands::Run { source, .. } => {
+            // Only validate local files, not hf:// or URLs
+            let path = PathBuf::from(source);
+            if path.exists() { vec![path] } else { vec![] }
+        }
+        Commands::Serve { file, .. }
+        | Commands::Trace { file, .. }
+        | Commands::Export { file, .. }
+        | Commands::Convert { file, .. }
+        | Commands::Probar { file, .. }
+        | Commands::CompareHf { file, .. }
+        | Commands::Chat { file, .. }
+        | Commands::Bench { file, .. }
+        | Commands::Eval { file, .. }
+        | Commands::Profile { file, .. }
+        | Commands::Check { file, .. } => vec![file.clone()],
+
+        Commands::Merge { files, .. } => files.clone(),
+
+        Commands::Cbtop { model_path, .. } => {
+            model_path.iter().cloned().collect()
+        }
+        Commands::Tui { file, .. } => {
+            file.iter().cloned().collect()
+        }
+        Commands::Import { source, .. } => {
+            let path = PathBuf::from(source);
+            if path.exists() { vec![path] } else { vec![] }
+        }
+
+        // Rosetta action subcommands
+        Commands::Rosetta { action } => match action {
+            RosettaCommands::Convert { source, .. }
+            | RosettaCommands::Chain { source, .. }
+            | RosettaCommands::Verify { source, .. } => vec![source.clone()],
+            RosettaCommands::CompareInference { model_a, model_b, .. } => {
+                vec![model_a.clone(), model_b.clone()]
+            }
+            // Diagnostic rosetta commands — exempt
+            _ => vec![],
+        },
+
+        // === DIAGNOSTIC COMMANDS (exempt) ===
+        // qa, validate, inspect, debug, tensors, hex, diff, lint, tree, flow,
+        // explain, list, rm, pull, showcase, tune, canary, publish
+        _ => vec![],
+    }
+}
+
+/// PMAT-237: Validate model files against tensor contract before dispatch.
+///
+/// Uses `RosettaStone::validate()` to check for NaN, Inf, all-zeros, density,
+/// and other contract violations. Returns `CliError::ValidationFailed` (exit 5)
+/// if any violations are found.
+fn validate_model_contract(paths: &[PathBuf]) -> Result<(), CliError> {
+    let rosetta = aprender::format::rosetta::RosettaStone::new();
+    for path in paths {
+        if !path.exists() {
+            continue; // Let the subcommand handle FileNotFound
+        }
+        let report = rosetta.validate(path).map_err(|e| {
+            CliError::ValidationFailed(format!(
+                "Contract validation failed for {}: {e}", path.display()
+            ))
+        })?;
+        if !report.is_valid {
+            let violation_count: usize = report.tensors.iter()
+                .map(|t| t.failures.len()).sum();
+            return Err(CliError::ValidationFailed(format!(
+                "PMAT-237 CONTRACT VIOLATION: {} has {} violations in {} tensors. \
+                 Use 'apr qa {}' for details. Use --skip-contract to bypass.",
+                path.display(),
+                violation_count,
+                report.failed_tensor_count,
+                path.display(),
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// Execute the CLI command and return the result.
 #[allow(clippy::too_many_lines)]
 pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
+    // PMAT-237: Contract gate — refuse to operate on corrupt models
+    if !cli.skip_contract {
+        let paths = extract_model_paths(&cli.command);
+        validate_model_contract(&paths)?;
+    }
+
     match cli.command.as_ref() {
         Commands::Check { file, no_gpu } => commands::check::run(file, *no_gpu),
         Commands::Run {
@@ -2355,5 +2454,114 @@ mod tests {
             },
             _ => panic!("Expected Rosetta command"),
         }
+    }
+
+    // =========================================================================
+    // PMAT-237: Contract gate tests
+    // =========================================================================
+
+    /// Test that --skip-contract global flag is parsed
+    #[test]
+    fn test_parse_skip_contract_flag() {
+        let args = vec!["apr", "--skip-contract", "inspect", "model.apr"];
+        let cli = parse_cli(args).expect("Failed to parse");
+        assert!(cli.skip_contract);
+    }
+
+    /// Test that --skip-contract defaults to false
+    #[test]
+    fn test_skip_contract_default_false() {
+        let args = vec!["apr", "inspect", "model.apr"];
+        let cli = parse_cli(args).expect("Failed to parse");
+        assert!(!cli.skip_contract);
+    }
+
+    /// Test extract_model_paths: diagnostic commands return empty vec
+    #[test]
+    fn test_extract_paths_diagnostic_exempt() {
+        // Diagnostic commands should return no paths (exempt from validation)
+        let diagnostic_commands = vec![
+            Commands::Inspect { file: PathBuf::from("m.apr"), vocab: false, filters: false, weights: false, json: false },
+            Commands::Debug { file: PathBuf::from("m.apr"), drama: false, hex: false, strings: false, limit: 256 },
+            Commands::Validate { file: PathBuf::from("m.apr"), quality: false, strict: false, min_score: None },
+            Commands::Tensors { file: PathBuf::from("m.apr"), stats: false, filter: None, limit: 0, json: false },
+            Commands::Lint { file: PathBuf::from("m.apr") },
+            Commands::Qa { file: PathBuf::from("m.apr"), assert_tps: None, assert_speedup: None, assert_gpu_speedup: None, skip_golden: false, skip_throughput: false, skip_ollama: false, skip_gpu_speedup: false, skip_contract: false, skip_format_parity: false, safetensors_path: None, iterations: 10, warmup: 3, max_tokens: 32, json: false, verbose: false },
+            Commands::Hex { file: PathBuf::from("m.apr"), tensor: None, limit: 64, stats: false, list: false, json: false },
+            Commands::Tree { file: PathBuf::from("m.apr"), filter: None, format: "ascii".to_string(), sizes: false, depth: None },
+            Commands::Flow { file: PathBuf::from("m.apr"), layer: None, component: "full".to_string(), verbose: false },
+            Commands::Explain { code: None, file: None, tensor: None },
+            Commands::List,
+        ];
+        for cmd in &diagnostic_commands {
+            let paths = extract_model_paths(cmd);
+            assert!(paths.is_empty(), "Diagnostic command should be exempt: {cmd:?}");
+        }
+    }
+
+    /// Test extract_model_paths: action commands return file paths
+    #[test]
+    fn test_extract_paths_action_commands() {
+        let serve_cmd = Commands::Serve {
+            file: PathBuf::from("model.gguf"),
+            port: 8080, host: "127.0.0.1".to_string(),
+            no_cors: false, no_metrics: false, no_gpu: false,
+            gpu: false, batch: false, trace: false,
+            trace_level: "basic".to_string(), profile: false,
+        };
+        let paths = extract_model_paths(&serve_cmd);
+        assert_eq!(paths, vec![PathBuf::from("model.gguf")]);
+
+        let bench_cmd = Commands::Bench {
+            file: PathBuf::from("model.apr"),
+            warmup: 3, iterations: 5, max_tokens: 32,
+            prompt: None, fast: false, brick: None,
+        };
+        let paths = extract_model_paths(&bench_cmd);
+        assert_eq!(paths, vec![PathBuf::from("model.apr")]);
+    }
+
+    /// Test extract_model_paths: Run with hf:// URL returns empty
+    #[test]
+    fn test_extract_paths_run_hf_url() {
+        let cmd = Commands::Run {
+            source: "hf://org/repo".to_string(),
+            input: None, prompt: None, max_tokens: 32, stream: false,
+            language: None, task: None, format: "text".to_string(),
+            no_gpu: false, gpu: false, offline: false, benchmark: false,
+            trace: false, trace_steps: None, trace_verbose: false,
+            trace_output: None, trace_level: "basic".to_string(),
+            trace_payload: false, profile: false, chat: false, verbose: false,
+        };
+        let paths = extract_model_paths(&cmd);
+        assert!(paths.is_empty(), "hf:// URLs should not be validated locally");
+    }
+
+    /// Test extract_model_paths: Merge returns multiple files
+    #[test]
+    fn test_extract_paths_merge_multiple() {
+        let cmd = Commands::Merge {
+            files: vec![PathBuf::from("a.apr"), PathBuf::from("b.apr"), PathBuf::from("c.apr")],
+            strategy: "average".to_string(),
+            output: PathBuf::from("merged.apr"),
+            weights: None,
+        };
+        let paths = extract_model_paths(&cmd);
+        assert_eq!(paths.len(), 3);
+    }
+
+    /// Test validate_model_contract: non-existent path is skipped (Ok)
+    #[test]
+    fn test_validate_contract_nonexistent_skipped() {
+        let paths = vec![PathBuf::from("nonexistent_model_xyz.apr")];
+        let result = validate_model_contract(&paths);
+        assert!(result.is_ok(), "Non-existent paths should be skipped");
+    }
+
+    /// Test validate_model_contract: empty paths is Ok
+    #[test]
+    fn test_validate_contract_empty_paths() {
+        let result = validate_model_contract(&[]);
+        assert!(result.is_ok());
     }
 }

@@ -3605,27 +3605,17 @@ mod tests_pmat205_sharding_placement_falsification {
                 return PartitionSpec::None;
             }
 
-            // Embedding and lm_head: replicate for vocab parallelism
-            if name.contains("embed_tokens") || name.contains("lm_head") {
-                PartitionSpec::Replicated
-            }
-            // LayerNorm: replicate (small, needs exact sync)
-            else if name.contains("layernorm") || name.contains("ln_") {
-                PartitionSpec::Replicated
-            }
-            // Attention QKV projections: hidden sharding for tensor parallelism
-            else if name.contains("q_proj") || name.contains("k_proj") || name.contains("v_proj")
+            // Attention/MLP projections: hidden sharding for tensor parallelism
+            if name.contains("q_proj")
+                || name.contains("k_proj")
+                || name.contains("v_proj")
+                || name.contains("o_proj")
+                || name.contains("mlp")
+                || name.contains("ffn")
             {
                 PartitionSpec::HiddenSharded
-            }
-            // Attention output: hidden sharding
-            else if name.contains("o_proj") {
-                PartitionSpec::HiddenSharded
-            }
-            // MLP: hidden sharding for tensor parallelism
-            else if name.contains("mlp") || name.contains("ffn") {
-                PartitionSpec::HiddenSharded
             } else {
+                // Embedding, lm_head, LayerNorm, and everything else: replicate
                 PartitionSpec::Replicated
             }
         }

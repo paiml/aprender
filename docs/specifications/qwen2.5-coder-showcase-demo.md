@@ -1,18 +1,18 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 9.29.0 (PMAT-236 - Chat Template Enforcement)
+**Version:** 9.30.0 (PMAT-237 - Pre-Dispatch Contract Gate)
 **Status:** ✅ **ALL FORMATS WORKING** (GGUF, SafeTensors CPU, SafeTensors GPU)
-**Popperian Score:** 98/100 (Grade: A+ — Full GPU/CPU parity, mandatory testing, compile-time contracts)
+**Popperian Score:** 99/100 (Grade: A+ — Full GPU/CPU parity, mandatory testing, compile-time contracts, pre-dispatch validation)
 **Code Coverage:** 96.94% (target: ≥95%)
 **Tool Coverage:** 17/17 (100%) - All APR tools verified + tensor contract gate
-**CLI Test Coverage:** 10,355 lib tests passing (446 converter tests)
+**CLI Test Coverage:** 10,363 lib tests passing (446 converter tests)
 **Author:** PAIML Engineering
 **Date:** 2026-02-05
 **Ground Truth:** SafeTensors (F32/BF16/F16) - See Section 0
-**Last Falsification Run:** 2026-02-05 (Round 52 - PMAT-236 Chat Template Enforcement)
+**Last Falsification Run:** 2026-02-05 (Round 53 - PMAT-237 Pre-Dispatch Contract Gate)
 **Quality Philosophy:** Toyota Way + Popperian Falsification (Zero SATD, Stop-the-Line, Jidoka, see Appendix F)
 
-### Release Criteria (Round 52 Update - 2026-02-05)
+### Release Criteria (Round 53 Update - 2026-02-05)
 
 | Format | CPU | GPU | Status | Notes |
 |--------|-----|-----|--------|-------|
@@ -24,6 +24,38 @@
 | GGUF Q4K (converted FROM SafeTensors) | ✅ | ✅ | **FIXED** | Rosetta now defaults to Q4K ([#205](https://github.com/paiml/aprender/issues/205)) |
 
 **Release = READY ✅ (All formats verified working)**
+
+**Round 53 Progress (2026-02-05) - PMAT-237 PRE-DISPATCH CONTRACT GATE:**
+| Component | Before | After | Status | Notes |
+|-----------|--------|-------|--------|-------|
+| Corrupt model detection | `apr qa` catches, `apr run` ignores | **All action commands gated** | ✅ **IMPLEMENTED** | Single gate in `execute_command()` |
+| `--skip-contract` flag | Not exist | **Global CLI flag** | ✅ **NEW** | Escape hatch for diagnostic tooling |
+| `extract_model_paths()` | Not exist | **Command-aware path extraction** | ✅ **NEW** | Action vs diagnostic classification |
+| `validate_model_contract()` | Not exist | **`RosettaStone::validate()` pre-dispatch** | ✅ **NEW** | Exit code 5 on violation |
+| Action commands gated | 0/25 | **17+ commands gated** | ✅ **ENFORCED** | run, serve, chat, bench, eval, profile, trace, etc. |
+| Diagnostic commands exempt | N/A | **13+ commands exempt** | ✅ **CORRECT** | qa, validate, inspect, debug, tensors, etc. |
+| Rosetta subcommands | Not classified | **Action vs diagnostic split** | ✅ **NEW** | convert/chain/verify gated; inspect/diff exempt |
+| E2E: corrupt APR blocked | Runs and produces garbage | **Exit 5: "12 violations in 12 tensors"** | ✅ **VERIFIED** | `e910cab26ae116eb.converted.apr` |
+| E2E: --skip-contract bypass | N/A | **Bypasses gate, runs inference** | ✅ **VERIFIED** | Escape hatch works |
+| E2E: diagnostic on corrupt | Always worked | **Still works (exempt)** | ✅ **VERIFIED** | inspect, tensors unaffected |
+| Clippy (coverage.rs) | 3 identical-block errors | **Consolidated branches** | ✅ **FIXED** | `PartitionSpec::from_tensor_name()` |
+| Test: cc2_trueno_is_compute | FAILED (matched comment) | **Ignores commented lines** | ✅ **FIXED** | `format_parity_tests.rs` |
+
+**PMAT-237 Root Cause (Five Whys):**
+
+| Why | Question | Answer |
+|-----|----------|--------|
+| 1 | Why does `apr run` produce garbage on corrupt models? | No contract validation before inference dispatch |
+| 2 | Why no validation? | Each command handled its own validation (or didn't) |
+| 3 | Why per-command? | No centralized gate existed |
+| 4 | Why no centralized gate? | Validation was treated as a per-tool concern, not a pre-dispatch concern |
+| 5 | Why solution? | **Single `validate_model_contract()` gate in `execute_command()` before match dispatch. Diagnostic commands exempt. `--skip-contract` escape hatch.** |
+
+**PMAT-237 Design Principles:**
+1. **Single gate, all commands** — one function in `execute_command()`, not 25 per-command changes
+2. **Diagnostic commands exempt** — tools like `qa`, `inspect`, `debug` MUST work on corrupt models
+3. **Uses existing infrastructure** — `RosettaStone::validate()` + `CliError::ValidationFailed` (exit 5)
+4. **`--skip-contract` escape hatch** — global flag for power users and CI
 
 **Round 52 Progress (2026-02-05) - PMAT-236 CHAT TEMPLATE COMPILE-TIME ENFORCEMENT:**
 | Component | Before | After | Status | Notes |

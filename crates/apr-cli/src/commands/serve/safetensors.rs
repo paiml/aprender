@@ -88,7 +88,7 @@ pub(crate) fn start_safetensors_server(model_path: &Path, config: &ServerConfig)
                 )
                 .cyan()
             );
-            Some(Arc::new(Mutex::new(t)))
+            Some(Arc::new(Mutex::new(t.into_inner())))
         }
         Err(e) => {
             println!(
