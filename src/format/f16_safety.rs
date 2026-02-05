@@ -55,8 +55,14 @@ pub const F16_SMALLEST_NORMAL_BITS: u16 = 0x0400;
 
 /// Clamp an f16-derived scale factor to a safe range.
 ///
-/// Returns 0.0 for NaN, Inf, or subnormal values to prevent propagation
+/// Returns 0.0 for NaN or Inf values to prevent propagation
 /// of invalid data through dequantization.
+///
+/// PMAT-238 FIX: Subnormal f16 values are now PRESERVED. They represent
+/// valid scale factors for quantized blocks with very small weights.
+/// The previous behavior (clamping subnormals to 0.0) caused Q6_K
+/// dequantization to produce 99.7% zeros, triggering false positive
+/// contract violations in `apr validate --quality`.
 ///
 /// # Arguments
 ///
@@ -64,8 +70,8 @@ pub const F16_SMALLEST_NORMAL_BITS: u16 = 0x0400;
 ///
 /// # Returns
 ///
-/// * `0.0` if val is NaN, infinite, or below [`F16_MIN_NORMAL`]
-/// * `val` otherwise (preserves the original value)
+/// * `0.0` if val is NaN or infinite
+/// * `val` otherwise (preserves the original value, including subnormals)
 ///
 /// # Example
 ///
@@ -77,7 +83,7 @@ pub const F16_SMALLEST_NORMAL_BITS: u16 = 0x0400;
 #[inline]
 #[must_use]
 pub fn safe_f16_scale(val: f32) -> f32 {
-    if val.is_nan() || val.is_infinite() || val.abs() < F16_MIN_NORMAL {
+    if val.is_nan() || val.is_infinite() {
         0.0
     } else {
         val
@@ -144,11 +150,12 @@ mod tests {
     }
 
     #[test]
-    fn test_safe_f16_scale_subnormal_clamped() {
-        // Values below F16_MIN_NORMAL are clamped
-        assert_eq!(safe_f16_scale(1e-6), 0.0);
-        assert_eq!(safe_f16_scale(1e-8), 0.0);
-        assert_eq!(safe_f16_scale(F16_MIN_NORMAL * 0.5), 0.0);
+    fn test_safe_f16_scale_subnormal_preserved() {
+        // PMAT-238: Subnormal values are now PRESERVED (valid Q6_K scale factors)
+        assert_eq!(safe_f16_scale(1e-6), 1e-6);
+        assert_eq!(safe_f16_scale(1e-8), 1e-8);
+        let half = F16_MIN_NORMAL * 0.5;
+        assert_eq!(safe_f16_scale(half), half);
     }
 
     #[test]
@@ -170,9 +177,9 @@ mod tests {
         let just_above = F16_MIN_NORMAL * 1.01;
         assert_eq!(safe_f16_scale(just_above), just_above);
 
-        // Just below threshold - clamped
+        // PMAT-238: Just below threshold - now PRESERVED (subnormal is valid)
         let just_below = F16_MIN_NORMAL * 0.99;
-        assert_eq!(safe_f16_scale(just_below), 0.0);
+        assert_eq!(safe_f16_scale(just_below), just_below);
     }
 
     // ========================================================================
@@ -227,24 +234,24 @@ mod tests {
     #[test]
     fn test_gh186_boundary_0x03ff_largest_subnormal() {
         // 0x03FF is the largest positive subnormal f16
-        // When converted to f32, it should be < F16_MIN_NORMAL and thus clamped
+        // PMAT-238: Subnormals are now PRESERVED (valid scale factors)
 
         // 0x03FF = sign=0, exp=0 (subnormal), mantissa=0x3FF (all 1s)
         // value = 2^(-14) * (0.1111111111)_2 = 2^(-14) * (1 - 2^(-10))
         //       ≈ 6.1e-5 * 0.999 ≈ 6.09e-5
         let largest_subnormal_f32 = 2.0_f32.powi(-14) * (1.0 - 2.0_f32.powi(-10));
 
-        // This value should be below our threshold
+        // This value should be below the normal threshold
         assert!(
             largest_subnormal_f32 < F16_MIN_NORMAL,
             "0x03FF ({largest_subnormal_f32}) should be < F16_MIN_NORMAL ({F16_MIN_NORMAL})"
         );
 
-        // And should be clamped by safe_f16_scale
+        // PMAT-238: Subnormals are now preserved (valid Q6_K scale factors)
         assert_eq!(
             safe_f16_scale(largest_subnormal_f32),
-            0.0,
-            "Largest subnormal f16 should be clamped to 0.0"
+            largest_subnormal_f32,
+            "Largest subnormal f16 should be preserved (PMAT-238)"
         );
     }
 }

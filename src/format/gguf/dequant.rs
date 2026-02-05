@@ -1,7 +1,6 @@
 //! GGUF dequantization kernels
 
 use crate::error::{AprenderError, Result};
-use crate::format::f16_safety::F16_MIN_NORMAL;
 
 /// Convert F16 (IEEE 754 half-precision) to F32
 pub(crate) fn f16_to_f32(bits: u16) -> f32 {
@@ -48,9 +47,10 @@ pub(crate) fn f16_to_f32(bits: u16) -> f32 {
 /// behavior in `converter/mod.rs::dequantize_q4_k_to_f32`.
 #[inline]
 fn safe_f16_scale(bits: u16) -> f32 {
-    // Uses shared F16_MIN_NORMAL from crate::format::f16_safety (P2 fix)
+    // PMAT-238: Only clamp NaN/Inf, NOT subnormals. Subnormal f16 values are
+    // valid scale factors for quantized blocks with very small weights.
     let val = f16_to_f32(bits);
-    if val.is_nan() || val.is_infinite() || val.abs() < F16_MIN_NORMAL {
+    if val.is_nan() || val.is_infinite() {
         0.0
     } else {
         val
@@ -444,6 +444,15 @@ pub(crate) fn dequantize_q5_k(data: &[u8], start: usize, num_elements: usize) ->
 /// Dequantize `Q6_K` format (K-quants)
 /// `Q6_K`: super blocks of 256 elements
 /// Each super block: ql (128 bytes) + qh (64 bytes) + scales (16 bytes) + d (f16) = 210 bytes
+///
+/// Layout matches llama.cpp/ggml `dequantize_row_q6_K`:
+/// - Two half-blocks of 128 elements each
+/// - For each half-block, 32 iterations produce 4 values each at positions [l, l+32, l+64, l+96]
+/// - ql[l] and ql[l+32] provide low 4 bits; qh[l] provides high 2 bits (shifts 0,2,4,6)
+/// - 16 scales: [0..7] for first half, [8..15] for second half
+///
+/// PMAT-238 FIX: Previous implementation had wrong index mapping and qh bit extraction,
+/// causing 99.7% of dequantized values to be zero (false positive in contract validator).
 pub(crate) fn dequantize_q6_k(data: &[u8], start: usize, num_elements: usize) -> Result<Vec<f32>> {
     const SUPER_BLOCK_SIZE: usize = 256;
     const SUPER_BLOCK_BYTES: usize = 128 + 64 + 16 + 2; // 210 bytes
@@ -478,24 +487,35 @@ pub(crate) fn dequantize_q6_k(data: &[u8], start: usize, num_elements: usize) ->
         let d = safe_f16_scale(u16::from_le_bytes([data[offset], data[offset + 1]]));
         offset += 2;
 
-        // Dequantize 16 sub-blocks of 16 elements each
-        for j in 0..16 {
-            let scale = d * f32::from(scales[j] as i8);
+        // Two half-blocks of 128 elements each (matching llama.cpp layout)
+        let mut y = [0.0f32; 256];
 
-            for l in 0..8 {
-                let idx = j * 8 + l;
-                let ql_byte = ql[idx];
-                let qh_byte = qh[idx / 2];
+        for half in 0..2usize {
+            let ql_off = half * 64;
+            let qh_off = half * 32;
+            let sc_off = half * 8;
 
-                // Extract two 6-bit values
-                let qh_shift = (l % 2) * 4;
-                let q0 = ((ql_byte & 0x0F) | ((qh_byte >> qh_shift) & 0x03) << 4) as i8 - 32;
-                let q1 = ((ql_byte >> 4) | (((qh_byte >> qh_shift) >> 2) & 0x03) << 4) as i8 - 32;
+            for l in 0..32usize {
+                let is = l / 16;
+                let ql_lo = ql[ql_off + l];
+                let ql_hi = ql[ql_off + l + 32];
+                let qh_byte = qh[qh_off + l];
 
-                result.push(f32::from(q0) * scale);
-                result.push(f32::from(q1) * scale);
+                // Each qh byte provides high 2 bits for 4 values at different bit positions
+                let q1 = (i32::from(ql_lo & 0x0F) | (i32::from((qh_byte >> 0) & 3) << 4)) - 32;
+                let q2 = (i32::from(ql_hi & 0x0F) | (i32::from((qh_byte >> 2) & 3) << 4)) - 32;
+                let q3 = (i32::from(ql_lo >> 4) | (i32::from((qh_byte >> 4) & 3) << 4)) - 32;
+                let q4 = (i32::from(ql_hi >> 4) | (i32::from((qh_byte >> 6) & 3) << 4)) - 32;
+
+                let base = half * 128;
+                y[base + l] = d * f32::from(scales[sc_off + is] as i8) * q1 as f32;
+                y[base + l + 32] = d * f32::from(scales[sc_off + is + 2] as i8) * q2 as f32;
+                y[base + l + 64] = d * f32::from(scales[sc_off + is + 4] as i8) * q3 as f32;
+                y[base + l + 96] = d * f32::from(scales[sc_off + is + 6] as i8) * q4 as f32;
             }
         }
+
+        result.extend_from_slice(&y);
     }
 
     result.truncate(num_elements);
@@ -1087,11 +1107,12 @@ mod tests {
     }
 
     #[test]
-    fn test_safe_f16_scale_subnormal_clamped() {
-        // Smallest subnormal: 0x0001 → ~5.96e-8 (well below F16_MIN_NORMAL = 6.1e-5)
-        assert_eq!(safe_f16_scale(0x0001), 0.0);
-        // Largest subnormal: 0x03FF → still below F16_MIN_NORMAL
-        assert_eq!(safe_f16_scale(0x03FF), 0.0);
+    fn test_safe_f16_scale_subnormal_preserved() {
+        // PMAT-238: Subnormals are now PRESERVED (valid Q6_K scale factors)
+        // Smallest subnormal: 0x0001 → ~5.96e-8
+        assert!(safe_f16_scale(0x0001) > 0.0);
+        // Largest subnormal: 0x03FF → ~6.09e-5
+        assert!(safe_f16_scale(0x03FF) > 0.0);
     }
 
     #[test]
