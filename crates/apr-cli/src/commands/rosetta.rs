@@ -1742,8 +1742,15 @@ fn load_tensor_data_direct(
             }
         }
         "safetensors" => {
-            // SafeTensors not implemented yet
-            return None;
+            // PMAT-203 FIX: Implement SafeTensors tensor loading for fingerprints
+            use aprender::serialization::safetensors::MappedSafeTensors;
+
+            let mapped = MappedSafeTensors::open(model_path).ok()?;
+            for name in mapped.tensor_names() {
+                if let Ok(values) = mapped.get_tensor(name) {
+                    tensor_map.insert((*name).to_string(), values);
+                }
+            }
         }
         _ => return None,
     }
