@@ -131,6 +131,17 @@ pub enum Commands {
         /// Enable inline Roofline profiling (PMAT-SHOWCASE-METHODOLOGY-001)
         #[arg(long)]
         profile: bool,
+
+        /// Apply chat template for Instruct models (GAP-UX-001)
+        ///
+        /// Wraps prompt in ChatML format for Qwen2, LLaMA, Mistral Instruct models.
+        /// Format: <|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n
+        #[arg(long)]
+        chat: bool,
+
+        /// Show verbose output (model loading, backend info)
+        #[arg(short, long)]
+        verbose: bool,
     },
 
     /// Start inference server (REST API, streaming, metrics)
@@ -258,6 +269,22 @@ pub enum Commands {
         /// Show weight-level differences
         #[arg(long)]
         weights: bool,
+
+        /// Compare actual tensor values with statistical analysis
+        #[arg(long)]
+        values: bool,
+
+        /// Filter tensors by name pattern (for --values)
+        #[arg(long)]
+        filter: Option<String>,
+
+        /// Maximum number of tensors to compare (for --values)
+        #[arg(long, default_value = "10")]
+        limit: usize,
+
+        /// Account for transpose when comparing (GGUF col-major vs APR row-major)
+        #[arg(long)]
+        transpose_aware: bool,
 
         /// Output as JSON
         #[arg(long)]
@@ -395,6 +422,11 @@ pub enum Commands {
         /// Uses realizar's Q4K converter instead of dequantizing to F32
         #[arg(long)]
         preserve_q4k: bool,
+
+        /// PMAT-232: External tokenizer.json for weights-only GGUF files.
+        /// Required if the GGUF has no embedded tokenizer vocabulary.
+        #[arg(long)]
+        tokenizer: Option<PathBuf>,
     },
 
     /// Download and cache model from HuggingFace (Ollama-like UX)
@@ -1072,6 +1104,8 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             trace_level,
             trace_payload,
             profile,
+            chat,
+            verbose,
         } => {
             // Handle --trace-payload shorthand (enables trace + sets level to payload)
             let effective_trace = *trace || *trace_payload;
@@ -1083,10 +1117,23 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             // GH-196: --gpu forces GPU, --no-gpu disables GPU.
             // When --gpu is passed, no_gpu is false (enforced by conflicts_with).
             let _ = gpu; // --gpu is the inverse of --no-gpu; no_gpu=false when --gpu is set
+
+            // GAP-UX-001: Apply chat template if --chat flag is set
+            let effective_prompt = if *chat {
+                prompt
+                    .as_ref()
+                    .map(|p| format!("<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n", p))
+            } else {
+                prompt.clone()
+            };
+
+            // Use local verbose flag if set, otherwise fall back to global
+            let effective_verbose = *verbose || cli.verbose;
+
             run::run(
                 source,
                 input.as_deref(),
-                prompt.as_deref(),
+                effective_prompt.as_deref(),
                 *max_tokens,
                 *stream,
                 language.as_deref(),
@@ -1095,7 +1142,7 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
                 *no_gpu,
                 *offline,
                 *benchmark,
-                cli.verbose,
+                effective_verbose,
                 effective_trace,
                 trace_steps.as_deref(),
                 *trace_verbose,
@@ -1163,8 +1210,12 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             file1,
             file2,
             weights,
+            values,
+            filter,
+            limit,
+            transpose_aware,
             json,
-        } => diff::run(file1, file2, *weights, *json || cli.json),
+        } => diff::run(file1, file2, *weights, *values, filter.as_deref(), *limit, *transpose_aware, *json || cli.json),
 
         Commands::Tensors {
             file,
@@ -1212,6 +1263,7 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             quantize,
             strict,
             preserve_q4k,
+            tokenizer,
         } => import::run(
             source,
             output.as_deref(),
@@ -1219,6 +1271,7 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             quantize.as_deref(),
             *strict,
             *preserve_q4k,
+            tokenizer.as_ref(),
         ),
         Commands::Pull { model_ref, force } => pull::run(model_ref, *force),
         Commands::List => pull::list(),

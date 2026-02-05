@@ -3,16 +3,13 @@
 
 use crate::error::{AprenderError, Result};
 use crate::format::converter_types::{ImportOptions, QuantizationType};
-use crate::format::gguf::{
-    dequantize_q4_0, dequantize_q4_1, dequantize_q5_0, dequantize_q8_0, GgufModelConfig,
-    GgufRawTensor, GgufTokenizer,
-};
+use crate::format::gguf::{GgufModelConfig, GgufRawTensor, GgufTokenizer};
 use crate::serialization::safetensors::UserMetadata;
 
 // Import quantization functions from parent module
 // GH-202 FIX: transpose functions removed - GGML data is already row-major
 // NOTE: Local implementations until trueno-quant crate resolves cyclic dependency
-use super::{quantize_q4_k, quantize_q4_k_matrix, quantize_q6_k_matrix};
+use super::quantize_q4_k;
 use crate::format::v2::{AprV2Metadata, AprV2Writer, TensorDType};
 use std::collections::BTreeMap;
 use std::fs;
@@ -314,6 +311,39 @@ pub(crate) fn write_apr_file_raw(
     tokenizer: Option<&GgufTokenizer>,
     model_config: Option<&GgufModelConfig>,
 ) -> Result<()> {
+    // GH-202: Handle tied embeddings (common in Qwen2.5, LLaMA, etc.)
+    // Many models share embed_tokens.weight with lm_head.weight to reduce parameters.
+    // GGUF omits output.weight when tied, but realizar's AprTransformer expects
+    // lm_head.weight to exist. Clone the embedding tensor as lm_head.weight.
+    // NOTE: Check for BOTH lm_head.weight AND output.weight - the APR loader
+    // checks both names, so if output.weight exists we must NOT synthesize a
+    // wrong lm_head.weight from token_embd.weight.
+    let original_has_lm_head = tensors
+        .keys()
+        .any(|k| k == "lm_head.weight" || k == "output.weight");
+    let tensors = {
+        let mut result = tensors.clone();
+        if !original_has_lm_head {
+            let embed_key = result
+                .keys()
+                .find(|k| k.contains("embed_tokens.weight") || *k == "token_embd.weight")
+                .cloned();
+            if let Some(embed_name) = embed_key {
+                if let Some(embed_tensor) = result.get(&embed_name).cloned() {
+                    eprintln!(
+                        "[GH-202] Synthesizing lm_head.weight from {} (tied embeddings)",
+                        embed_name
+                    );
+                    result.insert("lm_head.weight".to_string(), embed_tensor);
+                }
+            }
+        }
+        result
+    };
+
+    // ROSETTA-003: Track tied embeddings for round-trip export fidelity
+    let has_tied_embeddings = !original_has_lm_head && tensors.contains_key("lm_head.weight");
+
     // Calculate total parameter count (approximate - based on shapes)
     let param_count: u64 = tensors
         .values()
@@ -478,6 +508,11 @@ pub(crate) fn write_apr_file_raw(
         }
     }
 
+    // ROSETTA-003: Record tied embeddings for round-trip export fidelity
+    if has_tied_embeddings {
+        custom.insert("tied_embeddings".to_string(), serde_json::Value::Bool(true));
+    }
+
     // Build metadata using correct AprV2Metadata structure
     let metadata = AprV2Metadata {
         model_type: model_config
@@ -525,8 +560,8 @@ pub(crate) fn write_apr_file_raw(
     for (name, tensor) in tensors {
         *dtype_counts.entry(tensor.dtype).or_insert(0) += 1;
 
-        // Calculate element count for dequantization
-        let num_elements: usize = tensor.shape.iter().product();
+        // Calculate element count (kept for future use/debugging)
+        let _num_elements: usize = tensor.shape.iter().product();
 
         // GH-202 FIX: Process tensor based on dtype
         // CRITICAL LAYOUT INSIGHT: GGML data layout data[i0 + i1*ne0] is IDENTICAL
@@ -537,9 +572,8 @@ pub(crate) fn write_apr_file_raw(
         // has ne0 elements contiguous per "row", which IS row-major block layout.
         // Raw bytes can be used directly with reversed shape.
         //
-        // For legacy quant formats (Q4_0/Q4_1/Q5_0/Q8_0): dequant to F32 (already
-        // row-major with GGML shapes), reverse shape, then requantize with
-        // matrix-aware quantization for proper row-aligned blocks.
+        // For legacy quant formats (Q4_0/Q4_1/Q5_0/Q8_0): FAIL with clear error.
+        // Import = passthrough only. Use `apr convert` for format transformation.
         let reversed_shape = if tensor.shape.len() == 2 {
             vec![tensor.shape[1], tensor.shape[0]]
         } else {
@@ -562,24 +596,15 @@ pub(crate) fn write_apr_file_raw(
                 writer.add_tensor(name, TensorDType::Q4K, reversed_shape, tensor.data.clone());
             }
             13 => {
-                // Q5_K - Convert to Q6K (closer bit-width, realizar supported)
-                // GH-202 FIX: Dequant produces row-major F32, use reversed shape
-                use crate::format::gguf::dequantize_q5_k;
-                match dequantize_q5_k(&tensor.data, 0, num_elements) {
-                    Ok(f32_data) => {
-                        let q6k_bytes = quantize_q6_k_matrix(&f32_data, &reversed_shape);
-                        writer.add_tensor(name, TensorDType::Q6K, reversed_shape, q6k_bytes);
-                    }
-                    Err(e) => {
-                        return Err(AprenderError::FormatError {
-                            message: format!(
-                                "Failed to dequantize Q5_K tensor '{}': {}. \
-                                 Cannot proceed - would violate LAYOUT-002 mandate.",
-                                name, e
-                            ),
-                        });
-                    }
-                }
+                // Q5_K - NOT SUPPORTED for passthrough import
+                return Err(AprenderError::FormatError {
+                    message: format!(
+                        "GGUF tensor '{}' uses Q5_K quantization which APR cannot represent exactly. \
+                         Import requires exact format preservation. \
+                         Use `apr convert --quantize q6_k` to convert to a supported format.",
+                        name
+                    ),
+                });
             }
             14 => {
                 // Q6_K - GH-202 FIX: Raw Q6K bytes are already row-major block layout
@@ -587,80 +612,50 @@ pub(crate) fn write_apr_file_raw(
                 writer.add_tensor(name, TensorDType::Q6K, reversed_shape, tensor.data.clone());
             }
             2 => {
-                // Q4_0 - dequant to F32, requant to Q4_K (realizar needs K-quants)
-                // GH-202 FIX: Dequant produces row-major F32, use reversed shape
-                match dequantize_q4_0(&tensor.data, 0, num_elements) {
-                    Ok(f32_data) => {
-                        let q4k_bytes = quantize_q4_k_matrix(&f32_data, &reversed_shape);
-                        writer.add_tensor(name, TensorDType::Q4K, reversed_shape, q4k_bytes);
-                    }
-                    Err(e) => {
-                        return Err(AprenderError::FormatError {
-                            message: format!(
-                                "Failed to dequantize Q4_0 tensor '{}': {}. \
-                                 Cannot proceed - would violate LAYOUT-002 mandate.",
-                                name, e
-                            ),
-                        });
-                    }
-                }
+                // Q4_0 - NOT SUPPORTED for passthrough import
+                return Err(AprenderError::FormatError {
+                    message: format!(
+                        "GGUF tensor '{}' uses Q4_0 quantization which APR cannot represent exactly. \
+                         Import requires exact format preservation. \
+                         Use `apr convert --quantize q4_k` to convert to a supported format.",
+                        name
+                    ),
+                });
             }
             3 => {
-                // Q4_1 - dequant to F32, requant to Q4_K
-                // GH-202 FIX: Dequant produces row-major F32, use reversed shape
-                match dequantize_q4_1(&tensor.data, 0, num_elements) {
-                    Ok(f32_data) => {
-                        let q4k_bytes = quantize_q4_k_matrix(&f32_data, &reversed_shape);
-                        writer.add_tensor(name, TensorDType::Q4K, reversed_shape, q4k_bytes);
-                    }
-                    Err(e) => {
-                        return Err(AprenderError::FormatError {
-                            message: format!(
-                                "Failed to dequantize Q4_1 tensor '{}': {}. \
-                                 Cannot proceed - would violate LAYOUT-002 mandate.",
-                                name, e
-                            ),
-                        });
-                    }
-                }
+                // Q4_1 - NOT SUPPORTED for passthrough import
+                return Err(AprenderError::FormatError {
+                    message: format!(
+                        "GGUF tensor '{}' uses Q4_1 quantization which APR cannot represent exactly. \
+                         Import requires exact format preservation. \
+                         Use `apr convert --quantize q4_k` to convert to a supported format.",
+                        name
+                    ),
+                });
             }
             6 => {
-                // Q5_0 - dequant to F32, requant to Q6_K (closer bit-width)
-                // GH-202 FIX: Dequant produces row-major F32, use reversed shape
-                match dequantize_q5_0(&tensor.data, 0, num_elements) {
-                    Ok(f32_data) => {
-                        let q6k_bytes = quantize_q6_k_matrix(&f32_data, &reversed_shape);
-                        writer.add_tensor(name, TensorDType::Q6K, reversed_shape, q6k_bytes);
-                    }
-                    Err(e) => {
-                        return Err(AprenderError::FormatError {
-                            message: format!(
-                                "Failed to dequantize Q5_0 tensor '{}': {}. \
-                                 Cannot proceed - would violate LAYOUT-002 mandate.",
-                                name, e
-                            ),
-                        });
-                    }
-                }
+                // Q5_0 - NOT SUPPORTED for passthrough import
+                // Use `apr convert` to transform to a supported format
+                return Err(AprenderError::FormatError {
+                    message: format!(
+                        "GGUF tensor '{}' uses Q5_0 quantization which APR cannot represent exactly. \
+                         Import requires exact format preservation. \
+                         Use `apr convert --quantize q6_k` to convert to a supported format.",
+                        name
+                    ),
+                });
             }
             8 => {
-                // Q8_0 - dequant to F32, requant to Q6_K (closer bit-width)
-                // GH-202 FIX: Dequant produces row-major F32, use reversed shape
-                match dequantize_q8_0(&tensor.data, 0, num_elements) {
-                    Ok(f32_data) => {
-                        let q6k_bytes = quantize_q6_k_matrix(&f32_data, &reversed_shape);
-                        writer.add_tensor(name, TensorDType::Q6K, reversed_shape, q6k_bytes);
-                    }
-                    Err(e) => {
-                        return Err(AprenderError::FormatError {
-                            message: format!(
-                                "Failed to dequantize Q8_0 tensor '{}': {}. \
-                                 Cannot proceed - would violate LAYOUT-002 mandate.",
-                                name, e
-                            ),
-                        });
-                    }
-                }
+                // Q8_0 - NOT SUPPORTED for passthrough import
+                // Use `apr convert` to transform to a supported format
+                return Err(AprenderError::FormatError {
+                    message: format!(
+                        "GGUF tensor '{}' uses Q8_0 quantization which APR cannot represent exactly. \
+                         Import requires exact format preservation. \
+                         Use `apr convert --quantize q6_k` to convert to a supported format.",
+                        name
+                    ),
+                });
             }
             7 | 9 => {
                 // Q5_1/Q8_1 - BUG-LAYOUT-003 FIX: Fail instead of silently corrupting

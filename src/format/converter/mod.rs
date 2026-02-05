@@ -18,9 +18,7 @@ pub use trueno_quant::F16_MIN_NORMAL;
 // Internal imports - use trueno_quant as the canonical implementation
 // Re-exported as pub(crate) so tests can access them
 // Note: Only import functions actually used in this module
-pub(crate) use trueno_quant::{
-    dequantize_q4_k_to_f32, quantize_q4_k, quantize_q4_k_matrix, quantize_q6_k_matrix,
-};
+pub(crate) use trueno_quant::{dequantize_q4_k_to_f32, quantize_q4_k, quantize_q4_k_matrix};
 
 use crate::format::gguf::{
     load_gguf_raw, load_gguf_with_tokenizer, GgufModelConfig, GgufRawTensor, GgufReader,
