@@ -1,18 +1,18 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 9.27.0 (P0-QA-001 - SafeTensors QA Fix)
+**Version:** 9.28.0 (PMAT-235 - Compile-Time Contract Enforcement)
 **Status:** ✅ **GGUF/APR WORKING** ⚠️ **SafeTensors inference UNVERIFIED**
-**Popperian Score:** 97/100 (Grade: A+ — Full GPU/CPU parity, mandatory testing)
+**Popperian Score:** 98/100 (Grade: A+ — Full GPU/CPU parity, mandatory testing, compile-time contracts)
 **Code Coverage:** 96.94% (target: ≥95%)
-**Tool Coverage:** 16/16 (100%) - All APR tools verified
-**CLI Test Coverage:** 10,344 lib tests passing (446 converter tests)
+**Tool Coverage:** 17/17 (100%) - All APR tools verified + tensor contract gate
+**CLI Test Coverage:** 10,355 lib tests passing (446 converter tests)
 **Author:** PAIML Engineering
 **Date:** 2026-02-05
 **Ground Truth:** SafeTensors (F32/BF16/F16) - See Section 0
-**Last Falsification Run:** 2026-02-05 (Round 50 - P0-QA-001 QA silent skip fix)
-**Quality Philosophy:** Toyota Way + Popperian Falsification (Zero SATD, Stop-the-Line, see Appendix F)
+**Last Falsification Run:** 2026-02-05 (Round 51 - PMAT-235 Poka-Yoke enforcement)
+**Quality Philosophy:** Toyota Way + Popperian Falsification (Zero SATD, Stop-the-Line, Jidoka, see Appendix F)
 
-### Release Criteria (Round 50 Update - 2026-02-05)
+### Release Criteria (Round 51 Update - 2026-02-05)
 
 | Format | CPU | GPU | Status | Notes |
 |--------|-----|-----|--------|-------|
@@ -25,6 +25,46 @@
 | GGUF Q4K (converted FROM SafeTensors) | ✅ | ✅ | **FIXED** | Rosetta now defaults to Q4K ([#205](https://github.com/paiml/aprender/issues/205)) |
 
 **Release = CONDITIONAL ⚠️ (SafeTensors direct inference needs E2E verification)**
+
+**Round 51 Progress (2026-02-05) - PMAT-235 COMPILE-TIME CONTRACT ENFORCEMENT:**
+| Component | Before | After | Status | Notes |
+|-----------|--------|-------|--------|-------|
+| Tensor validation | Runtime (bypassable) | **Compile-time (newtypes)** | ✅ **IMPLEMENTED** | Poka-Yoke pattern |
+| `ValidatedEmbedding` | Not exist | **Newtype with private fields** | ✅ **NEW** | F-DATA-QUALITY-001/002/003/004 gates |
+| `ValidatedWeight` | Not exist | **Newtype with private fields** | ✅ **NEW** | Density + NaN/Inf + L2 gates |
+| `ValidatedVector` | Not exist | **Newtype with private fields** | ✅ **NEW** | Shape + content validation |
+| `apr qa` Gate 0 | Not exist | **tensor_contract gate** | ✅ **NEW** | Pre-inference contract check |
+| `apr validate --quality` | NaN/Inf only | **PMAT-235 rule breakdown** | ✅ **ENHANCED** | Groups by F-DATA-QUALITY-* |
+| `apr trace --payload` | No pre-check | **Contract pre-flight** | ✅ **ENHANCED** | Warns before inference |
+| `compute_tensor_validation()` | NaN/Inf/zeros | **+Density +L2 +Variation** | ✅ **ENHANCED** | Rule-ID prefixed messages |
+| Norm/bias exemption | Not exist | **Constant-value exempt** | ✅ **NEW** | RMS norm init is correct at all-1.0 |
+| Contract spec | v1.0 | **v2.0.0** | ✅ **UPDATED** | `tensor-layout-v1.yaml` |
+| Toyota Way book | Stub | **Full Jidoka chapter** | ✅ **NEW** | Peer-reviewed citations |
+
+**PMAT-235 Key Insight (Five Whys):**
+
+| Why | Question | Answer |
+|-----|----------|--------|
+| 1 | Why did PMAT-234 bug reach inference? | Validation was runtime-only, could be bypassed |
+| 2 | Why bypassable? | Validation was a separate function call, not enforced by types |
+| 3 | Why not types? | Historical Vec<f32> used everywhere without wrapper |
+| 4 | Why dangerous? | Invalid data (94.5% zeros) passes all structural checks |
+| 5 | Why solution? | **Poka-Yoke: make invalid states unrepresentable at compile time** |
+
+**Theoretical Foundation:**
+- Shingo, S. (1986). *Zero Quality Control: Source Inspection and the Poka-Yoke System*. Productivity Press.
+- Brady, E. (2017). *Type-Driven Development with Idris*. Manning.
+- Parsons, A. (2019). "Parse, Don't Validate" https://lexi-lambda.github.io/blog/2019/11/05/parse-don-t-validate/
+
+**Validation Gates (F-DATA-QUALITY):**
+| Gate ID | Rule | Threshold | Exempt |
+|---------|------|-----------|--------|
+| F-DATA-QUALITY-001 | Embedding density | < 50% zeros | - |
+| F-DATA-QUALITY-001 | Weight density | < 80% zeros | - |
+| F-DATA-QUALITY-002 | No NaN/Inf | count = 0 | - |
+| F-DATA-QUALITY-003 | L2 norm | > 1e-6 | - |
+| F-DATA-QUALITY-003 | Variation | not constant | Norm/bias tensors |
+| F-DATA-QUALITY-004 | Spot check | 10/50/90% non-zero | - |
 
 **Round 50 Progress (2026-02-05) - P0-QA-001 QA SILENT SKIP FIXED:**
 | Component | Before | After | Status | Notes |
@@ -52,11 +92,11 @@
 3. Runs actual inference via `SafetensorsToAprConverter::convert()` + `generate_with_cache()`
 4. Only skips if tokenizer.json truly not found (with clear message)
 
-**Next Steps (PMAT-233):**
-1. Download complete Qwen2.5-Coder-0.5B SafeTensors model
-2. Run `apr qa` to verify end-to-end inference
-3. If garbage output, apply five-whys to find root cause
-4. Expected issue: possible weight layout mismatch in `SafetensorsToAprConverter`
+**Next Steps:**
+1. **PMAT-233**: Download Qwen2.5-Coder-0.5B SafeTensors, run `apr qa` E2E verification
+2. **GH-5**: GPU throughput fix (FlashAttention tile_kv >= head_dim) - plan ready
+3. **PMAT-235 realizaar parity**: Port `ValidatedEmbedding`/`ValidatedWeight` to realizar inference path
+4. **Complexity refactor**: Reduce cyclomatic complexity in qa.rs, trace.rs, cbtop.rs (pre-commit gate)
 
 **Round 49 Progress (2026-02-05) - GH-205 F16 PASSTHROUGH FIXED:**
 | Component | Before | After | Status | Notes |
