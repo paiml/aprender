@@ -457,13 +457,31 @@ pub fn export_tensors_to_gguf<W: Write>(
     }
 
     // Write tensor data
+    // DEBUG: Track tensor writes - with unique ID to verify binary
+    eprintln!(
+        "[DEBUG-GGUF-WRITE-V2] Starting tensor writes for {} tensors",
+        tensors.len()
+    );
+    static WRITE_DEBUG: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let mut total_bytes_written: usize = 0;
     for tensor in tensors {
+        let write_count = WRITE_DEBUG.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        if write_count < 5 {
+            eprintln!(
+                "[DEBUG-WRITE-V2] '{}': writing {} bytes (dtype={:?})",
+                tensor.name,
+                tensor.data.len(),
+                tensor.dtype
+            );
+        }
+        total_bytes_written += tensor.data.len();
         writer
             .write_all(&tensor.data)
             .map_err(|e| AprenderError::Io(io::Error::new(e.kind(), e.to_string())))?;
 
         // Pad to alignment
         let data_padding = padding_for_alignment(tensor.data.len(), GGUF_DEFAULT_ALIGNMENT);
+        total_bytes_written += data_padding;
         for _ in 0..data_padding {
             writer
                 .write_all(&[0u8])
@@ -471,6 +489,10 @@ pub fn export_tensors_to_gguf<W: Write>(
         }
     }
 
+    eprintln!(
+        "[DEBUG-GGUF-WRITE-V2] Total tensor data bytes written: {}",
+        total_bytes_written
+    );
     Ok(())
 }
 
@@ -577,17 +599,35 @@ mod tests {
         assert_eq!(GgufValue::Int8(-1).value_type(), GgufValueType::Int8);
         assert_eq!(GgufValue::Uint16(1000).value_type(), GgufValueType::Uint16);
         assert_eq!(GgufValue::Int16(-500).value_type(), GgufValueType::Int16);
-        assert_eq!(GgufValue::Uint32(100_000).value_type(), GgufValueType::Uint32);
-        assert_eq!(GgufValue::Int32(-100_000).value_type(), GgufValueType::Int32);
-        assert_eq!(GgufValue::Float32(3.14).value_type(), GgufValueType::Float32);
+        assert_eq!(
+            GgufValue::Uint32(100_000).value_type(),
+            GgufValueType::Uint32
+        );
+        assert_eq!(
+            GgufValue::Int32(-100_000).value_type(),
+            GgufValueType::Int32
+        );
+        assert_eq!(
+            GgufValue::Float32(3.14).value_type(),
+            GgufValueType::Float32
+        );
         assert_eq!(GgufValue::Bool(true).value_type(), GgufValueType::Bool);
         assert_eq!(
             GgufValue::String("test".to_string()).value_type(),
             GgufValueType::String
         );
-        assert_eq!(GgufValue::Uint64(u64::MAX).value_type(), GgufValueType::Uint64);
-        assert_eq!(GgufValue::Int64(i64::MIN).value_type(), GgufValueType::Int64);
-        assert_eq!(GgufValue::Float64(2.718).value_type(), GgufValueType::Float64);
+        assert_eq!(
+            GgufValue::Uint64(u64::MAX).value_type(),
+            GgufValueType::Uint64
+        );
+        assert_eq!(
+            GgufValue::Int64(i64::MIN).value_type(),
+            GgufValueType::Int64
+        );
+        assert_eq!(
+            GgufValue::Float64(2.718).value_type(),
+            GgufValueType::Float64
+        );
     }
 
     #[test]
@@ -918,7 +958,8 @@ mod tests {
     #[test]
     fn test_write_metadata_kv_string() {
         let mut buf = Vec::new();
-        write_metadata_kv(&mut buf, "arch", &GgufValue::String("llama".to_string())).expect("write kv");
+        write_metadata_kv(&mut buf, "arch", &GgufValue::String("llama".to_string()))
+            .expect("write kv");
 
         // Key: length (8) + "arch" (4)
         assert_eq!(&buf[0..8], &4u64.to_le_bytes());
@@ -963,15 +1004,18 @@ mod tests {
     #[test]
     fn test_write_metadata_kv_arrays() {
         let mut buf = Vec::new();
-        write_metadata_kv(&mut buf, "ids", &GgufValue::ArrayUint32(vec![1, 2, 3])).expect("write kv");
+        write_metadata_kv(&mut buf, "ids", &GgufValue::ArrayUint32(vec![1, 2, 3]))
+            .expect("write kv");
         assert!(!buf.is_empty());
 
         let mut buf = Vec::new();
-        write_metadata_kv(&mut buf, "vals", &GgufValue::ArrayInt32(vec![-1, 0, 1])).expect("write kv");
+        write_metadata_kv(&mut buf, "vals", &GgufValue::ArrayInt32(vec![-1, 0, 1]))
+            .expect("write kv");
         assert!(!buf.is_empty());
 
         let mut buf = Vec::new();
-        write_metadata_kv(&mut buf, "floats", &GgufValue::ArrayFloat32(vec![1.0, 2.0])).expect("write kv");
+        write_metadata_kv(&mut buf, "floats", &GgufValue::ArrayFloat32(vec![1.0, 2.0]))
+            .expect("write kv");
         assert!(!buf.is_empty());
 
         let mut buf = Vec::new();

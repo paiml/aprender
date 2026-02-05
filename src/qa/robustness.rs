@@ -1334,9 +1334,8 @@ mod tests {
 
     #[test]
     fn test_empty_handling_error_path() {
-        let predict = |_input: &[f32]| -> Result<Vec<f32>, String> {
-            Err("Empty not supported".to_string())
-        };
+        let predict =
+            |_input: &[f32]| -> Result<Vec<f32>, String> { Err("Empty not supported".to_string()) };
 
         let result = test_empty_handling(predict);
         assert!(result.passed); // Error is acceptable

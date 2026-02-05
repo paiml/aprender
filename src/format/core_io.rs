@@ -831,7 +831,8 @@ mod tests {
     #[test]
     fn test_compress_payload_none() {
         let data = b"test data for compression";
-        let (compressed, compression) = compress_payload(data, Compression::None).expect("compress");
+        let (compressed, compression) =
+            compress_payload(data, Compression::None).expect("compress");
         assert_eq!(compression, Compression::None);
         assert_eq!(compressed, data);
     }
@@ -944,7 +945,13 @@ mod tests {
         let dir = tempfile::tempdir().expect("create temp dir");
         let path = dir.path().join("type_test.apr");
 
-        save(&model, ModelType::LinearRegression, &path, SaveOptions::default()).expect("save");
+        save(
+            &model,
+            ModelType::LinearRegression,
+            &path,
+            SaveOptions::default(),
+        )
+        .expect("save");
 
         let result: Result<TestModel> = load(&path, ModelType::KMeans);
         assert!(result.is_err());
@@ -952,7 +959,8 @@ mod tests {
 
     #[test]
     fn test_load_nonexistent_file() {
-        let result: Result<TestModel> = load("/nonexistent/path/model.apr", ModelType::LinearRegression);
+        let result: Result<TestModel> =
+            load("/nonexistent/path/model.apr", ModelType::LinearRegression);
         assert!(result.is_err());
     }
 
@@ -1039,7 +1047,13 @@ mod tests {
         let dir = tempfile::tempdir().expect("create temp dir");
         let path = dir.path().join("bytes_test.apr");
 
-        save(&model, ModelType::LinearRegression, &path, SaveOptions::default()).expect("save");
+        save(
+            &model,
+            ModelType::LinearRegression,
+            &path,
+            SaveOptions::default(),
+        )
+        .expect("save");
 
         let data = std::fs::read(&path).expect("read file");
         let info = inspect_bytes(&data).expect("inspect bytes");

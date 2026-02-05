@@ -33,8 +33,13 @@ use std::path::Path;
 ///
 /// PMAT-223: `user_metadata` preserves arbitrary user metadata from SafeTensors `__metadata__`
 /// section through the conversion pipeline. Stored under `"source_metadata"` in APR custom field.
+///
+/// GH-205: `f16_raw_tensors` contains raw F16 bytes for passthrough. When a tensor appears
+/// in both `tensors` (as F32) and `f16_raw_tensors` (raw bytes), the raw bytes are preferred
+/// to avoid precision loss from F16→F32→F16 conversion.
 pub(crate) fn write_apr_file(
     tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+    f16_raw_tensors: &BTreeMap<String, (Vec<u8>, Vec<usize>)>,
     output: &Path,
     options: &ImportOptions,
     tokenizer: Option<&GgufTokenizer>,
@@ -252,7 +257,19 @@ pub(crate) fn write_apr_file(
 
     // ROSETTA-003: Write all tensors individually (no QKV fusion).
     // Q, K, V are stored as separate tensors. Fusion happens at runtime in realizar.
+    //
+    // GH-205: F16 passthrough - if a tensor has raw F16 bytes, use those directly
+    // to avoid precision loss from F16→F32→F16 conversion.
+    let mut f16_passthrough_count = 0usize;
     for (name, (data, shape)) in &tensors_with_lm_head {
+        // GH-205: Check if we have raw F16 bytes for this tensor
+        if let Some((f16_bytes, f16_shape)) = f16_raw_tensors.get(name) {
+            // Use raw F16 bytes directly (passthrough)
+            writer.add_tensor(name, TensorDType::F16, f16_shape.clone(), f16_bytes.clone());
+            f16_passthrough_count += 1;
+            continue;
+        }
+
         // Determine if tensor should skip quantization
         // - Biases are too small and precision-sensitive
         // - LayerNorm/RMSNorm weights are critical for numerical stability
@@ -281,6 +298,13 @@ pub(crate) fn write_apr_file(
                 writer.add_f32_tensor(name, shape.clone(), data);
             }
         }
+    }
+
+    if f16_passthrough_count > 0 {
+        eprintln!(
+            "[GH-205] F16 passthrough: {} tensors written as raw F16 (no precision loss)",
+            f16_passthrough_count
+        );
     }
 
     // Write to file
@@ -574,26 +598,25 @@ pub(crate) fn write_apr_file_raw(
         //
         // For legacy quant formats (Q4_0/Q4_1/Q5_0/Q8_0): FAIL with clear error.
         // Import = passthrough only. Use `apr convert` for format transformation.
-        let reversed_shape = if tensor.shape.len() == 2 {
-            vec![tensor.shape[1], tensor.shape[0]]
-        } else {
-            tensor.shape.clone()
-        };
+        //
+        // GH-208: Shape is ALREADY in APR format after enforce_import_contract().
+        // Do NOT reverse again - that was causing double-reversal bug.
+        let apr_shape = tensor.shape.clone();
 
         match tensor.dtype {
             0 => {
                 // F32 - GH-202 FIX: Data is already row-major, just reverse shape
-                writer.add_tensor(name, TensorDType::F32, reversed_shape, tensor.data.clone());
+                writer.add_tensor(name, TensorDType::F32, apr_shape, tensor.data.clone());
             }
             1 => {
                 // F16 - GH-202 FIX: Data is already row-major, just reverse shape
-                writer.add_tensor(name, TensorDType::F16, reversed_shape, tensor.data.clone());
+                writer.add_tensor(name, TensorDType::F16, apr_shape, tensor.data.clone());
             }
             12 => {
                 // Q4_K - GH-202 FIX: Raw Q4K bytes are already row-major block layout
                 // Each "row" (ne1 index) has ceil(ne0/256) contiguous super-blocks.
                 // Just reverse the shape metadata.
-                writer.add_tensor(name, TensorDType::Q4K, reversed_shape, tensor.data.clone());
+                writer.add_tensor(name, TensorDType::Q4K, apr_shape, tensor.data.clone());
             }
             13 => {
                 // Q5_K - NOT SUPPORTED for passthrough import
@@ -609,7 +632,7 @@ pub(crate) fn write_apr_file_raw(
             14 => {
                 // Q6_K - GH-202 FIX: Raw Q6K bytes are already row-major block layout
                 // Same as Q4K - just reverse shape metadata.
-                writer.add_tensor(name, TensorDType::Q6K, reversed_shape, tensor.data.clone());
+                writer.add_tensor(name, TensorDType::Q6K, apr_shape, tensor.data.clone());
             }
             2 => {
                 // Q4_0 - NOT SUPPORTED for passthrough import

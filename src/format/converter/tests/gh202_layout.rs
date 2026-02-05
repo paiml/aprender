@@ -84,7 +84,10 @@ fn test_gh202_q4k_roundtrip_fidelity() {
         assert!(
             diff < 0.2,
             "GH-202: Q4K roundtrip error at [{}]: orig={}, deq={}, diff={}",
-            i, orig, deq, diff
+            i,
+            orig,
+            deq,
+            diff
         );
     }
 }
@@ -131,7 +134,8 @@ fn test_gh202_nonsquare_shape_reversal_preserves_values() {
     assert!(
         mismatch_pct < 5.0,
         "GH-202: {}% values mismatched (max_diff={:.4}). Shape reversal should preserve values!",
-        mismatch_pct, max_diff
+        mismatch_pct,
+        max_diff
     );
     assert!(
         max_diff < 0.2,

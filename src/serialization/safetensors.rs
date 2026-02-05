@@ -19,6 +19,67 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
+/// GH-205: Original dtype from SafeTensors file.
+///
+/// Used for F16 passthrough to avoid precision loss from F16→F32→F16 conversion.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SafeTensorsDType {
+    /// 32-bit float
+    F32,
+    /// 16-bit float (IEEE 754 half-precision)
+    F16,
+    /// Brain float 16
+    BF16,
+}
+
+impl SafeTensorsDType {
+    /// Bytes per element
+    #[must_use]
+    pub fn bytes_per_element(self) -> usize {
+        match self {
+            Self::F32 => 4,
+            Self::F16 | Self::BF16 => 2,
+        }
+    }
+}
+
+/// GH-205: Raw tensor data with dtype information preserved.
+///
+/// This struct carries tensor data without dtype conversion, enabling
+/// lossless F16 passthrough through the import pipeline.
+#[derive(Debug, Clone)]
+pub struct RawTensorData {
+    /// Original dtype from SafeTensors
+    pub dtype: SafeTensorsDType,
+    /// Tensor shape
+    pub shape: Vec<usize>,
+    /// Raw bytes (no conversion applied)
+    pub bytes: Vec<u8>,
+}
+
+impl RawTensorData {
+    /// Convert to f32 values (performs conversion if needed)
+    pub fn to_f32(&self) -> Result<Vec<f32>, String> {
+        match self.dtype {
+            SafeTensorsDType::F32 => extract_f32(&self.bytes),
+            SafeTensorsDType::F16 => extract_f16_to_f32(&self.bytes),
+            SafeTensorsDType::BF16 => extract_bf16_to_f32(&self.bytes),
+        }
+    }
+
+    /// Check if this is F16 data (for passthrough optimization)
+    #[must_use]
+    pub fn is_f16(&self) -> bool {
+        self.dtype == SafeTensorsDType::F16
+    }
+
+    /// Check if this is BF16 data
+    #[must_use]
+    pub fn is_bf16(&self) -> bool {
+        self.dtype == SafeTensorsDType::BF16
+    }
+}
+
 /// Metadata for a single tensor in `SafeTensors` format.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TensorMetadata {
@@ -298,6 +359,52 @@ impl MappedSafeTensors {
         self.mmap.slice(abs_start, abs_end)
     }
 
+    /// GH-205 FIX: Get tensor with original dtype preserved (no F16→F32 conversion).
+    ///
+    /// Returns the raw tensor bytes along with dtype and shape information.
+    /// This enables F16 passthrough: SafeTensors F16 → APR F16 without precision loss.
+    ///
+    /// For F32 tensors, returns f32 data directly.
+    /// For F16/BF16 tensors, returns the raw bytes without conversion.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if tensor not found or data is invalid.
+    pub fn get_tensor_raw(&self, name: &str) -> Result<RawTensorData, String> {
+        let meta = self
+            .metadata
+            .get(name)
+            .ok_or_else(|| format!("Tensor '{name}' not found"))?;
+
+        let bytes = self.mmap.as_slice();
+        let [start, end] = meta.data_offsets;
+        let abs_start = self.data_offset + start;
+        let abs_end = self.data_offset + end;
+
+        if abs_end > bytes.len() {
+            return Err(format!(
+                "Tensor '{name}' data out of bounds: {abs_end} > {}",
+                bytes.len()
+            ));
+        }
+
+        let tensor_bytes = &bytes[abs_start..abs_end];
+
+        // Parse dtype string to enum
+        let dtype = match meta.dtype.as_str() {
+            "F32" => SafeTensorsDType::F32,
+            "F16" => SafeTensorsDType::F16,
+            "BF16" => SafeTensorsDType::BF16,
+            other => return Err(format!("Unsupported dtype for '{name}': {other}")),
+        };
+
+        Ok(RawTensorData {
+            dtype,
+            shape: meta.shape.clone(),
+            bytes: tensor_bytes.to_vec(),
+        })
+    }
+
     /// Number of tensors in the file.
     #[must_use]
     pub fn len(&self) -> usize {
@@ -538,7 +645,9 @@ fn f16_to_f32(bytes: [u8; 2]) -> f32 {
         (u32::from(sign) << 31) | (0xFF << 23) | mant32
     } else {
         // Normal number
-        let exp32 = u32::from(exp) - 15 + 127; // Adjust bias
+        // GH-205 FIX: Rearrange to avoid underflow in debug mode
+        // F16 bias is 15, F32 bias is 127, so we add 112 (127 - 15)
+        let exp32 = u32::from(exp) + 112; // Was: exp - 15 + 127 (underflows if exp < 15)
         let mant32 = u32::from(mant) << 13;
         (u32::from(sign) << 31) | (exp32 << 23) | mant32
     };

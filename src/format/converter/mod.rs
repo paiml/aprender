@@ -432,28 +432,29 @@ fn load_gguf_tensors_f32(path: &Path) -> Result<BTreeMap<String, (Vec<f32>, Vec<
         validate_tensor_values(name, data)?;
     }
 
-    // GH-202 FIX: Reverse GGML shapes [ne0, ne1] → standard [ne1, ne0]
+    // GH-208: MANDATORY CONTRACT ENFORCEMENT
+    // Shape transformation goes through enforce_import_contract().
+    // See: contracts/tensor-layout-v1.yaml, Five Whys in layout_contract.rs
     //
-    // GGML convention: data[i0 + i1*ne0] where ne0 is the contiguous dimension.
-    // This is IDENTICAL to C row-major with shape [ne1, ne0]:
-    //   row-major: data[row * cols + col] = data[i1 * ne0 + i0]
-    //
-    // So reversing the shape gives the correct row-major interpretation
-    // WITHOUT any data movement. This is the boundary conversion from
-    // GGML shape convention to standard [rows, cols] convention.
-    //
-    // Evidence: GGML's ggml_mul_mat(W, x) computes W^T @ x.
-    //   W shape [ne0=in, ne1=out], W^T has effective shape [out, in].
-    //   Standard y = M @ x where M is [out, in] in row-major = same layout.
+    // NOTE: This F32 path is for dequantized tensors. The raw quantized path
+    // (import.rs:apr_import_gguf_raw) also uses enforce_import_contract.
+    use crate::format::layout_contract::enforce_import_contract;
+
     let tensors = tensors
         .into_iter()
         .map(|(name, (data, shape))| {
-            let standard_shape = if shape.len() == 2 {
-                vec![shape[1], shape[0]]
-            } else {
-                shape
-            };
-            (name, (data, standard_shape))
+            // Use CONTRACT for shape transformation (vocab_size/hidden_dim=0 means unknown)
+            let (apr_shape, needs_data_transpose) = enforce_import_contract(&name, &shape, 0, 0);
+
+            // GH-208: Data transpose should NEVER be needed
+            assert!(
+                !needs_data_transpose,
+                "CONTRACT BUG: enforce_import_contract returned needs_data_transpose=true for '{}'. \
+                 GGUF→APR NEVER needs data transpose.",
+                name
+            );
+
+            (name, (data, apr_shape))
         })
         .collect();
 

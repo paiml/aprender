@@ -387,6 +387,9 @@ pub struct ImportOptions {
     pub strict: bool,
     /// Cache downloaded files
     pub cache: bool,
+    /// PMAT-232: External tokenizer.json path for weights-only GGUF files.
+    /// If the GGUF has no embedded tokenizer, this file will be used instead.
+    pub tokenizer_path: Option<std::path::PathBuf>,
 }
 
 impl Default for ImportOptions {
@@ -398,6 +401,7 @@ impl Default for ImportOptions {
             compress: None,
             strict: false,
             cache: true,
+            tokenizer_path: None,
         }
     }
 }

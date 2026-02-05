@@ -1,9 +1,14 @@
 # Unified Tensor Format Specification
 
-**Version**: 1.0.0
-**Status**: Draft
+**Version**: 1.1.0 (LAYOUT-002 Row-Major Mandate)
+**Status**: Active
 **Created**: 2026-01-23
+**Updated**: 2026-02-03
 **Scope**: aprender (write/inspect), realizar (read/infer)
+
+> **LAYOUT-002:** The Sovereign AI Stack is exclusively ROW-MAJOR. GGUF column-major
+> data is transposed at import. Realizar has ONE kernel API (no colmajor aliases).
+> See Section 8 for details.
 
 ---
 
@@ -498,39 +503,57 @@ pub fn convert_dtype(src: Dtype, dst_format: TensorFormat) -> Result<Dtype, Conv
 
 ## 8. Dimension Conventions
 
-### 8.1 Layout Comparison
+### 8.1 LAYOUT-002: Row-Major Mandate (ONE WAY ONLY)
 
-| Format | Matrix Storage | Dimension Order | Example: W[out, in] |
-|--------|---------------|-----------------|---------------------|
-| SafeTensors | Row-major | [out_dim, in_dim] | shape=[1536, 768] |
-| GGUF | Column-major | [out_dim, in_dim] | dims=[1536, 768]* |
-| APR | Row-major | [out_dim, in_dim] | dims=[1536, 768] |
+**Policy:** The Sovereign AI Stack is exclusively ROW-MAJOR. No exceptions.
 
-*GGUF stores dims as [ne0, ne1] where ne0=cols, ne1=rows in GGML convention.
+| Format | Native Layout | Import Action | APR/Realizar Storage |
+|--------|---------------|---------------|----------------------|
+| SafeTensors | Row-major | Zero-copy | Row-major ✅ |
+| GGUF | Column-major | **TRANSPOSE** | Row-major ✅ |
+| APR | Row-major | Native | Row-major ✅ |
 
-### 8.2 Conversion Between Layouts
+### 8.2 GGUF Import: Transpose at Boundary
 
-```rust
-/// Convert GGUF column-major tensor to row-major
-pub fn gguf_to_rowmajor(data: &[f32], dims: &[usize]) -> Vec<f32> {
-    let (ne0, ne1) = (dims[0], dims[1]);  // GGUF: ne0=out_dim, ne1=in_dim
-    let mut result = vec![0.0; ne0 * ne1];
+GGUF data is transposed **once** during import by aprender. Realizar never sees column-major data.
 
-    // GGUF data: column by column (ne0 elements per column, ne1 columns)
-    // Row-major: row by row (ne1 elements per row, ne0 rows)
-    for col in 0..ne1 {
-        for row in 0..ne0 {
-            let src_idx = col * ne0 + row;  // Column-major
-            let dst_idx = row * ne1 + col;  // Row-major
-            result[dst_idx] = data[src_idx];
-        }
-    }
-    result
-}
-
-/// For quantized GGUF, preserve column-major and use specialized kernels
-pub fn matmul_q4k_colmajor(weights: &[u8], input: &[f32], ne0: usize, ne1: usize) -> Vec<f32>;
 ```
+GGUF (column-major) → aprender converter → APR (row-major) → realizar (row-major kernels)
+                      ↑
+                      TRANSPOSE HAPPENS HERE (one-time cost)
+```
+
+**Implementation:** `aprender/src/format/converter/write.rs`
+```rust
+// Q4K GGUF import - LAYOUT-002 transpose
+12 => {
+    let (transposed_data, transposed_shape) =
+        transpose_q4k_for_matmul(&tensor.data, &tensor.shape);
+    writer.add_tensor(name, TensorDType::Q4K, transposed_shape, transposed_data);
+}
+```
+
+### 8.3 Kernel API: ONE WAY ONLY
+
+**DELETED** (legacy aliases that caused confusion):
+- ~~`fused_q6k_colmajor_matvec`~~ — REMOVED from realizar
+- ~~`fused_q4k_auto_matvec_into`~~ — REMOVED from realizar
+- ~~`matmul_q4k_colmajor`~~ — NEVER USE
+
+**Canonical API** (row-major only):
+```rust
+// realizar kernel API - ALL row-major
+fused_q4k_parallel_matvec(weights, activations, in_dim, out_dim)
+fused_q5k_parallel_matvec(weights, activations, in_dim, out_dim)
+fused_q6k_parallel_matvec(weights, activations, in_dim, out_dim)
+```
+
+### 8.4 Why ONE WAY ONLY?
+
+Having multiple layouts creates O(n) complexity — every layer must handle both cases.
+This caused BUG-4 (garbage output) when column-major data was fed to row-major kernels.
+
+**The fix:** Transpose ONCE at import, use row-major EVERYWHERE else.
 
 ---
 

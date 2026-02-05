@@ -2266,10 +2266,9 @@ fn test_lbfgs_debug_clone2() {
 #[test]
 fn test_damped_newton_debug_clone2() {
     let dn = DampedNewton::new(100, 1e-6);
-    let cloned = dn.clone();
+    let _cloned = dn.clone();
     // Just verify clone doesn't panic
 
     let debug_str = format!("{:?}", dn);
     assert!(debug_str.contains("DampedNewton"));
-    drop(cloned);
 }

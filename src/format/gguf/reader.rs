@@ -737,11 +737,12 @@ impl GgufReader {
             0 => {
                 // F32 - direct copy
                 // BUG-GGUF-002 FIX: Use checked_mul for byte size calculation
-                let byte_size = num_elements.checked_mul(4).ok_or_else(|| {
-                    AprenderError::FormatError {
-                        message: format!("Tensor '{}' byte size calculation overflow", name),
-                    }
-                })?;
+                let byte_size =
+                    num_elements
+                        .checked_mul(4)
+                        .ok_or_else(|| AprenderError::FormatError {
+                            message: format!("Tensor '{}' byte size calculation overflow", name),
+                        })?;
                 if tensor_start + byte_size > self.data.len() {
                     return Err(AprenderError::FormatError {
                         message: format!("Tensor '{name}' data exceeds file size"),
@@ -756,11 +757,12 @@ impl GgufReader {
             1 => {
                 // F16 - convert to F32
                 // BUG-GGUF-002 FIX: Use checked_mul for byte size calculation
-                let byte_size = num_elements.checked_mul(2).ok_or_else(|| {
-                    AprenderError::FormatError {
-                        message: format!("Tensor '{}' byte size calculation overflow", name),
-                    }
-                })?;
+                let byte_size =
+                    num_elements
+                        .checked_mul(2)
+                        .ok_or_else(|| AprenderError::FormatError {
+                            message: format!("Tensor '{}' byte size calculation overflow", name),
+                        })?;
                 if tensor_start + byte_size > self.data.len() {
                     return Err(AprenderError::FormatError {
                         message: format!("Tensor '{name}' data exceeds file size"),

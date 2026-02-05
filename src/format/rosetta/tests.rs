@@ -1850,8 +1850,8 @@ fn t_gh192_02_sequential_model_size_switching() {
 /// Note: Uses SafeTensors as source since GGUF builder is not available.
 #[test]
 fn t_gh194_01_safetensors_apr_preserves_tensor_count() {
-    use crate::format::test_factory::{build_pygmy_safetensors_with_config, PygmyConfig};
     use crate::format::tensors::{list_tensors_from_bytes, TensorListOptions};
+    use crate::format::test_factory::{build_pygmy_safetensors_with_config, PygmyConfig};
     use std::io::Write;
     use tempfile::NamedTempFile;
 

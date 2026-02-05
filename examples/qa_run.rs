@@ -438,11 +438,10 @@ impl ModelFixture {
                 self.resolved_path = Some(self.uri.clone());
                 self.verified = true;
                 return true;
-            } else {
-                self.error = Some(format!("Local path not found: {}", self.uri));
-                self.verified = false;
-                return false;
             }
+            self.error = Some(format!("Local path not found: {}", self.uri));
+            self.verified = false;
+            return false;
         }
 
         // For HF URIs, use apr to verify/download

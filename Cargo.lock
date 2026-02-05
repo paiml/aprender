@@ -356,6 +356,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "trueno 0.14.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "trueno-quant",
  "trueno-rag",
  "trueno-zram-core 0.3.0",
  "ureq",
@@ -5202,6 +5203,7 @@ dependencies = [
  "tracing",
  "trueno 0.14.4",
  "trueno-gpu 0.4.12",
+ "trueno-quant",
  "uuid",
 ]
 
@@ -6711,6 +6713,13 @@ dependencies = [
  "tokio",
  "trueno 0.13.0",
  "trueno-db",
+]
+
+[[package]]
+name = "trueno-quant"
+version = "0.1.0"
+dependencies = [
+ "half",
 ]
 
 [[package]]

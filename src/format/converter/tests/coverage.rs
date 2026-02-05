@@ -7,6 +7,8 @@
 
 #[allow(unused_imports)]
 use super::super::*;
+// For Q6K transpose tests - convert functionality still exists for `apr convert`
+use trueno_quant::quantize_q6_k_matrix;
 
 #[cfg(test)]
 mod tests_coverage_boost {
@@ -329,6 +331,7 @@ mod tests_coverage_boost {
             compress: Some(Compression::Lz4),
             strict: true,
             cache: false,
+            tokenizer_path: None,
         };
         assert!(opts.quantize.is_some());
         assert!(opts.compress.is_some());
@@ -1862,8 +1865,8 @@ mod tests_write_functions {
     // GH-202: transpose functions no longer re-exported from converter (wrong assumption removed)
     // Import directly from trueno_quant for tests that validate the functions themselves.
     use trueno_quant::{
-        dequantize_q6_k_to_f32, quantize_q5_k, quantize_q5_k_matrix,
-        transpose_q4k_for_matmul, transpose_q5k_for_matmul, transpose_q6k_for_matmul,
+        dequantize_q6_k_to_f32, quantize_q5_k, quantize_q5_k_matrix, transpose_q4k_for_matmul,
+        transpose_q5k_for_matmul, transpose_q6k_for_matmul,
     };
 
     // ------------------------------------------------------------------------
@@ -1883,8 +1886,10 @@ mod tests_write_functions {
         );
 
         let options = ImportOptions::default();
+        let empty_f16: BTreeMap<String, (Vec<u8>, Vec<usize>)> = BTreeMap::new();
         let result = write_apr_file(
             &tensors,
+            &empty_f16, // GH-205: F16 passthrough
             &output_path,
             &options,
             None,
@@ -1926,8 +1931,10 @@ mod tests_write_functions {
         };
 
         let options = ImportOptions::default();
+        let empty_f16: BTreeMap<String, (Vec<u8>, Vec<usize>)> = BTreeMap::new();
         let result = write_apr_file(
             &tensors,
+            &empty_f16, // GH-205: F16 passthrough
             &output_path,
             &options,
             Some(&tokenizer),
@@ -1979,8 +1986,10 @@ mod tests_write_functions {
         };
 
         let options = ImportOptions::default();
+        let empty_f16: BTreeMap<String, (Vec<u8>, Vec<usize>)> = BTreeMap::new();
         let result = write_apr_file(
             &tensors,
+            &empty_f16,
             &output_path,
             &options,
             None,
@@ -2008,8 +2017,10 @@ mod tests_write_functions {
         let mut options = ImportOptions::default();
         options.quantize = Some(QuantizationType::Fp16);
 
+        let empty_f16: BTreeMap<String, (Vec<u8>, Vec<usize>)> = BTreeMap::new();
         let result = write_apr_file(
             &tensors,
+            &empty_f16,
             &output_path,
             &options,
             None,
@@ -2033,8 +2044,10 @@ mod tests_write_functions {
         let mut options = ImportOptions::default();
         options.quantize = Some(QuantizationType::Int8);
 
+        let empty_f16: BTreeMap<String, (Vec<u8>, Vec<usize>)> = BTreeMap::new();
         let result = write_apr_file(
             &tensors,
+            &empty_f16,
             &output_path,
             &options,
             None,
@@ -2058,8 +2071,10 @@ mod tests_write_functions {
         );
 
         let options = ImportOptions::default();
+        let empty_f16: BTreeMap<String, (Vec<u8>, Vec<usize>)> = BTreeMap::new();
         let result = write_apr_file(
             &tensors,
+            &empty_f16,
             &output_path,
             &options,
             None,
@@ -2120,8 +2135,10 @@ mod tests_write_functions {
         };
 
         let options = ImportOptions::default();
+        let empty_f16: BTreeMap<String, (Vec<u8>, Vec<usize>)> = BTreeMap::new();
         let result = write_apr_file(
             &tensors,
+            &empty_f16,
             &output_path,
             &options,
             None,
@@ -2132,6 +2149,100 @@ mod tests_write_functions {
             result.is_ok(),
             "write_apr_file with QKV fusion should succeed: {:?}",
             result.err()
+        );
+    }
+
+    // ------------------------------------------------------------------------
+    // GH-205: F16 Passthrough Tests
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn test_gh205_f16_passthrough_preserves_bytes() {
+        // GH-205: Verify F16 SafeTensors → APR conversion preserves raw bytes
+        use crate::format::converter::import::apr_import;
+        use crate::format::test_factory::build_pygmy_safetensors_f16;
+        use crate::format::v2::AprV2Reader;
+
+        let temp_dir = TempDir::new().expect("Create temp dir");
+        let st_path = temp_dir.path().join("f16_model.safetensors");
+        let apr_path = temp_dir.path().join("f16_model.apr");
+
+        // Create F16 SafeTensors
+        let st_data = build_pygmy_safetensors_f16();
+        fs::write(&st_path, &st_data).expect("Write F16 SafeTensors");
+
+        // Import with default options (should use F16 passthrough)
+        let mut options = ImportOptions::default();
+        options.architecture = Architecture::Qwen2;
+
+        let result = apr_import(st_path.to_str().unwrap(), &apr_path, options);
+        assert!(result.is_ok(), "F16 import should succeed: {:?}", result.err());
+
+        // Read back APR and verify tensors are F16
+        let apr_bytes = fs::read(&apr_path).expect("Read APR");
+        let reader = AprV2Reader::from_bytes(&apr_bytes).expect("Parse APR");
+
+        // Find embedding tensor and verify dtype
+        let tensor_names = reader.tensor_names();
+        let embed_name = tensor_names
+            .iter()
+            .find(|n| n.contains("embed_tokens"))
+            .expect("Should have embed_tokens tensor");
+
+        let entry = reader.get_tensor(embed_name).expect("Get tensor entry");
+        assert_eq!(
+            entry.dtype,
+            crate::format::v2::TensorDType::F16,
+            "GH-205 FAIL: Tensor should be F16, got {:?}",
+            entry.dtype
+        );
+    }
+
+    #[test]
+    fn test_gh205_f16_passthrough_no_precision_loss() {
+        // GH-205: Verify F16 → APR → readback produces identical bytes
+        use crate::format::converter::import::apr_import;
+        use crate::format::test_factory::build_pygmy_safetensors_f16;
+        use crate::serialization::safetensors::MappedSafeTensors;
+
+        let temp_dir = TempDir::new().expect("Create temp dir");
+        let st_path = temp_dir.path().join("f16_model.safetensors");
+        let apr_path = temp_dir.path().join("f16_model.apr");
+
+        // Create F16 SafeTensors
+        let st_data = build_pygmy_safetensors_f16();
+        fs::write(&st_path, &st_data).expect("Write F16 SafeTensors");
+
+        // Get original F16 bytes from SafeTensors
+        let mapped = MappedSafeTensors::open(&st_path).expect("Open SafeTensors");
+        let original_bytes = mapped
+            .get_tensor_bytes("model.embed_tokens.weight")
+            .expect("Get original F16 bytes");
+        let original_len = original_bytes.len();
+
+        // Import with F16 passthrough
+        let mut options = ImportOptions::default();
+        options.architecture = Architecture::Qwen2;
+
+        let result = apr_import(st_path.to_str().unwrap(), &apr_path, options);
+        assert!(result.is_ok(), "F16 import should succeed: {:?}", result.err());
+
+        // Read back from APR
+        let apr_bytes = fs::read(&apr_path).expect("Read APR");
+        let reader = crate::format::v2::AprV2Reader::from_bytes(&apr_bytes).expect("Parse APR");
+
+        // Get F16 bytes from APR (mapped name)
+        let apr_tensor_bytes = reader
+            .get_tensor_data("model.embed_tokens.weight")
+            .expect("Get APR tensor bytes");
+
+        // Verify size matches (same number of bytes = no conversion happened)
+        assert_eq!(
+            apr_tensor_bytes.len(),
+            original_len,
+            "GH-205 FAIL: APR tensor size {} != original F16 size {} (conversion occurred)",
+            apr_tensor_bytes.len(),
+            original_len
         );
     }
 
@@ -2586,39 +2697,63 @@ mod tests_bug1_gguf_export_falsification {
         // Embedding
         tensors.insert(
             "model.embed_tokens.weight".to_string(),
-            (vec![0.01; vocab_size * hidden_size], vec![vocab_size, hidden_size]),
+            (
+                vec![0.01; vocab_size * hidden_size],
+                vec![vocab_size, hidden_size],
+            ),
         );
 
         // Layer 0 attention
         tensors.insert(
             "model.layers.0.self_attn.q_proj.weight".to_string(),
-            (vec![0.01; hidden_size * hidden_size], vec![hidden_size, hidden_size]),
+            (
+                vec![0.01; hidden_size * hidden_size],
+                vec![hidden_size, hidden_size],
+            ),
         );
         tensors.insert(
             "model.layers.0.self_attn.k_proj.weight".to_string(),
-            (vec![0.01; hidden_size * hidden_size], vec![hidden_size, hidden_size]),
+            (
+                vec![0.01; hidden_size * hidden_size],
+                vec![hidden_size, hidden_size],
+            ),
         );
         tensors.insert(
             "model.layers.0.self_attn.v_proj.weight".to_string(),
-            (vec![0.01; hidden_size * hidden_size], vec![hidden_size, hidden_size]),
+            (
+                vec![0.01; hidden_size * hidden_size],
+                vec![hidden_size, hidden_size],
+            ),
         );
         tensors.insert(
             "model.layers.0.self_attn.o_proj.weight".to_string(),
-            (vec![0.01; hidden_size * hidden_size], vec![hidden_size, hidden_size]),
+            (
+                vec![0.01; hidden_size * hidden_size],
+                vec![hidden_size, hidden_size],
+            ),
         );
 
         // Layer 0 MLP
         tensors.insert(
             "model.layers.0.mlp.gate_proj.weight".to_string(),
-            (vec![0.01; intermediate_size * hidden_size], vec![intermediate_size, hidden_size]),
+            (
+                vec![0.01; intermediate_size * hidden_size],
+                vec![intermediate_size, hidden_size],
+            ),
         );
         tensors.insert(
             "model.layers.0.mlp.up_proj.weight".to_string(),
-            (vec![0.01; intermediate_size * hidden_size], vec![intermediate_size, hidden_size]),
+            (
+                vec![0.01; intermediate_size * hidden_size],
+                vec![intermediate_size, hidden_size],
+            ),
         );
         tensors.insert(
             "model.layers.0.mlp.down_proj.weight".to_string(),
-            (vec![0.01; hidden_size * intermediate_size], vec![hidden_size, intermediate_size]),
+            (
+                vec![0.01; hidden_size * intermediate_size],
+                vec![hidden_size, intermediate_size],
+            ),
         );
 
         // Layer 0 norms
@@ -2638,7 +2773,10 @@ mod tests_bug1_gguf_export_falsification {
         );
         tensors.insert(
             "lm_head.weight".to_string(),
-            (vec![0.01; vocab_size * hidden_size], vec![vocab_size, hidden_size]),
+            (
+                vec![0.01; vocab_size * hidden_size],
+                vec![vocab_size, hidden_size],
+            ),
         );
 
         // Write as SafeTensors first (with proper extension)
@@ -2656,15 +2794,17 @@ mod tests_bug1_gguf_export_falsification {
             include_config: false,
         };
 
-        apr_export(&input_path, &output_path, options)
-            .expect("GGUF export should succeed");
+        apr_export(&input_path, &output_path, options).expect("GGUF export should succeed");
 
         // FALSIFICATION: Read back and verify magic bytes
         let gguf_data = std::fs::read(&output_path).expect("read exported GGUF");
         assert!(gguf_data.len() >= 4, "GGUF file too small");
 
         let magic = &gguf_data[0..4];
-        assert_eq!(magic, b"GGUF", "F-GGUF-EXPORT-001: GGUF magic bytes must be 'GGUF'");
+        assert_eq!(
+            magic, b"GGUF",
+            "F-GGUF-EXPORT-001: GGUF magic bytes must be 'GGUF'"
+        );
     }
 
     /// F-GGUF-EXPORT-002: GGUF export includes general.architecture metadata
@@ -2677,15 +2817,24 @@ mod tests_bug1_gguf_export_falsification {
 
         tensors.insert(
             "model.embed_tokens.weight".to_string(),
-            (vec![0.01; vocab_size * hidden_size], vec![vocab_size, hidden_size]),
+            (
+                vec![0.01; vocab_size * hidden_size],
+                vec![vocab_size, hidden_size],
+            ),
         );
         tensors.insert(
             "model.layers.0.self_attn.q_proj.weight".to_string(),
-            (vec![0.01; hidden_size * hidden_size], vec![hidden_size, hidden_size]),
+            (
+                vec![0.01; hidden_size * hidden_size],
+                vec![hidden_size, hidden_size],
+            ),
         );
         tensors.insert(
             "lm_head.weight".to_string(),
-            (vec![0.01; vocab_size * hidden_size], vec![vocab_size, hidden_size]),
+            (
+                vec![0.01; vocab_size * hidden_size],
+                vec![vocab_size, hidden_size],
+            ),
         );
 
         let temp_dir = tempfile::tempdir().expect("create temp dir");
@@ -2701,8 +2850,7 @@ mod tests_bug1_gguf_export_falsification {
             include_config: false,
         };
 
-        apr_export(&input_path, &output_path, options)
-            .expect("GGUF export should succeed");
+        apr_export(&input_path, &output_path, options).expect("GGUF export should succeed");
 
         // FALSIFICATION: Parse GGUF and verify metadata exists
         let reader = GgufReader::from_file(&output_path)
@@ -2725,11 +2873,17 @@ mod tests_bug1_gguf_export_falsification {
         // HuggingFace-style names
         tensors.insert(
             "model.embed_tokens.weight".to_string(),
-            (vec![0.01; vocab_size * hidden_size], vec![vocab_size, hidden_size]),
+            (
+                vec![0.01; vocab_size * hidden_size],
+                vec![vocab_size, hidden_size],
+            ),
         );
         tensors.insert(
             "model.layers.0.self_attn.q_proj.weight".to_string(),
-            (vec![0.01; hidden_size * hidden_size], vec![hidden_size, hidden_size]),
+            (
+                vec![0.01; hidden_size * hidden_size],
+                vec![hidden_size, hidden_size],
+            ),
         );
 
         let temp_dir = tempfile::tempdir().expect("create temp dir");
@@ -2745,18 +2899,20 @@ mod tests_bug1_gguf_export_falsification {
             include_config: false,
         };
 
-        apr_export(&input_path, &output_path, options)
-            .expect("GGUF export should succeed");
+        apr_export(&input_path, &output_path, options).expect("GGUF export should succeed");
 
         // FALSIFICATION: Read tensor names and verify GGML convention
-        let reader = GgufReader::from_file(&output_path)
-            .expect("read GGUF");
+        let reader = GgufReader::from_file(&output_path).expect("read GGUF");
 
         let tensor_names: Vec<String> = reader.tensors.iter().map(|t| t.name.clone()).collect();
 
         // Must have GGML-style names, not HF-style
-        let has_ggml_embed = tensor_names.iter().any(|n: &String| n == "token_embd.weight");
-        let has_ggml_attn = tensor_names.iter().any(|n: &String| n.starts_with("blk.0.attn_"));
+        let has_ggml_embed = tensor_names
+            .iter()
+            .any(|n: &String| n == "token_embd.weight");
+        let has_ggml_attn = tensor_names
+            .iter()
+            .any(|n: &String| n.starts_with("blk.0.attn_"));
 
         assert!(
             has_ggml_embed,
@@ -2791,7 +2947,10 @@ mod tests_pmat201_fingerprint_falsification {
 
         // Mean of 0..100 is 49.5
         let mean: f32 = data.iter().sum::<f32>() / data.len() as f32;
-        assert!((mean - 49.5).abs() < 0.01, "F-FINGERPRINT-001: Mean should be ~49.5");
+        assert!(
+            (mean - 49.5).abs() < 0.01,
+            "F-FINGERPRINT-001: Mean should be ~49.5"
+        );
 
         // Min and max
         let min = data.iter().cloned().fold(f32::INFINITY, f32::min);
@@ -2800,9 +2959,13 @@ mod tests_pmat201_fingerprint_falsification {
         assert_eq!(max, 99.0, "F-FINGERPRINT-001: Max should be 99");
 
         // Std dev of 0..100
-        let variance: f32 = data.iter().map(|x| (x - mean).powi(2)).sum::<f32>() / data.len() as f32;
+        let variance: f32 =
+            data.iter().map(|x| (x - mean).powi(2)).sum::<f32>() / data.len() as f32;
         let std = variance.sqrt();
-        assert!((std - 28.87).abs() < 0.1, "F-FINGERPRINT-001: Std should be ~28.87");
+        assert!(
+            (std - 28.87).abs() < 0.1,
+            "F-FINGERPRINT-001: Std should be ~28.87"
+        );
     }
 
     /// F-FINGERPRINT-002: Detect NaN values in tensors
@@ -2811,7 +2974,10 @@ mod tests_pmat201_fingerprint_falsification {
         let data = vec![1.0_f32, 2.0, f32::NAN, 4.0, f32::NAN, 6.0];
         let nan_count = data.iter().filter(|x| x.is_nan()).count();
 
-        assert_eq!(nan_count, 2, "F-FINGERPRINT-002: Should detect 2 NaN values");
+        assert_eq!(
+            nan_count, 2,
+            "F-FINGERPRINT-002: Should detect 2 NaN values"
+        );
     }
 
     /// F-FINGERPRINT-003: Detect Inf values in tensors
@@ -2820,7 +2986,10 @@ mod tests_pmat201_fingerprint_falsification {
         let data = vec![1.0_f32, f32::INFINITY, 3.0, f32::NEG_INFINITY, 5.0];
         let inf_count = data.iter().filter(|x| x.is_infinite()).count();
 
-        assert_eq!(inf_count, 2, "F-FINGERPRINT-003: Should detect 2 Inf values");
+        assert_eq!(
+            inf_count, 2,
+            "F-FINGERPRINT-003: Should detect 2 Inf values"
+        );
     }
 
     /// F-FINGERPRINT-004: Compute zero fraction
@@ -2830,7 +2999,10 @@ mod tests_pmat201_fingerprint_falsification {
         let zero_count = data.iter().filter(|&&x| x == 0.0).count();
         let zero_fraction = zero_count as f32 / data.len() as f32;
 
-        assert_eq!(zero_fraction, 0.5, "F-FINGERPRINT-004: Zero fraction should be 0.5");
+        assert_eq!(
+            zero_fraction, 0.5,
+            "F-FINGERPRINT-004: Zero fraction should be 0.5"
+        );
     }
 
     /// F-FINGERPRINT-005: CRC32 checksum for tensor bytes
@@ -2840,13 +3012,20 @@ mod tests_pmat201_fingerprint_falsification {
         let bytes: Vec<u8> = data.iter().flat_map(|f| f.to_le_bytes()).collect();
 
         // Simple checksum (sum of bytes mod 2^32)
-        let checksum: u32 = bytes.iter().fold(0u32, |acc, &b| acc.wrapping_add(b as u32));
+        let checksum: u32 = bytes
+            .iter()
+            .fold(0u32, |acc, &b| acc.wrapping_add(b as u32));
 
         // Same data should produce same checksum
         let bytes2: Vec<u8> = data.iter().flat_map(|f| f.to_le_bytes()).collect();
-        let checksum2: u32 = bytes2.iter().fold(0u32, |acc, &b| acc.wrapping_add(b as u32));
+        let checksum2: u32 = bytes2
+            .iter()
+            .fold(0u32, |acc, &b| acc.wrapping_add(b as u32));
 
-        assert_eq!(checksum, checksum2, "F-FINGERPRINT-005: Same data should produce same checksum");
+        assert_eq!(
+            checksum, checksum2,
+            "F-FINGERPRINT-005: Same data should produce same checksum"
+        );
     }
 
     /// F-FINGERPRINT-006: Detect statistical anomaly (mean > 3σ from expected)
@@ -2863,7 +3042,11 @@ mod tests_pmat201_fingerprint_falsification {
         let threshold = normal_mean.abs() + 3.0 * normal_std;
 
         let is_anomaly = corrupted_mean.abs() > threshold;
-        assert!(is_anomaly, "F-FINGERPRINT-006: Mean 11.3 should be detected as anomaly (3σ = {})", threshold);
+        assert!(
+            is_anomaly,
+            "F-FINGERPRINT-006: Mean 11.3 should be detected as anomaly (3σ = {})",
+            threshold
+        );
     }
 }
 
@@ -2895,9 +3078,18 @@ mod tests_pmat203_golden_output_falsification {
             tolerance: 1e-5,
         };
 
-        assert!(!golden.prompt.is_empty(), "F-GOLDEN-001: Prompt must not be empty");
-        assert!(!golden.expected_tokens.is_empty(), "F-GOLDEN-001: Expected tokens must not be empty");
-        assert!(golden.tolerance > 0.0, "F-GOLDEN-001: Tolerance must be positive");
+        assert!(
+            !golden.prompt.is_empty(),
+            "F-GOLDEN-001: Prompt must not be empty"
+        );
+        assert!(
+            !golden.expected_tokens.is_empty(),
+            "F-GOLDEN-001: Expected tokens must not be empty"
+        );
+        assert!(
+            golden.tolerance > 0.0,
+            "F-GOLDEN-001: Tolerance must be positive"
+        );
     }
 
     /// F-GOLDEN-002: Validation passes for exact match
@@ -2907,7 +3099,10 @@ mod tests_pmat203_golden_output_falsification {
         let actual = vec![17_u32, 488, 220, 17];
 
         let matches = expected == actual;
-        assert!(matches, "F-GOLDEN-002: Exact token match should pass validation");
+        assert!(
+            matches,
+            "F-GOLDEN-002: Exact token match should pass validation"
+        );
     }
 
     /// F-GOLDEN-003: Validation fails for mismatch
@@ -2917,7 +3112,10 @@ mod tests_pmat203_golden_output_falsification {
         let actual = vec![42_u32, 999, 123, 456]; // Garbage output
 
         let matches = expected == actual;
-        assert!(!matches, "F-GOLDEN-003: Mismatched tokens should fail validation");
+        assert!(
+            !matches,
+            "F-GOLDEN-003: Mismatched tokens should fail validation"
+        );
     }
 
     /// F-GOLDEN-004: Validation with logit tolerance
@@ -2927,10 +3125,15 @@ mod tests_pmat203_golden_output_falsification {
         let actual_logits = vec![17.500001_f32, -2.3000001, 0.01000001];
         let tolerance = 1e-5_f32;
 
-        let within_tolerance = expected_logits.iter().zip(actual_logits.iter())
+        let within_tolerance = expected_logits
+            .iter()
+            .zip(actual_logits.iter())
             .all(|(e, a)| (e - a).abs() < tolerance);
 
-        assert!(within_tolerance, "F-GOLDEN-004: Logits within tolerance should pass");
+        assert!(
+            within_tolerance,
+            "F-GOLDEN-004: Logits within tolerance should pass"
+        );
     }
 
     /// F-GOLDEN-005: Validation fails outside tolerance
@@ -2940,10 +3143,15 @@ mod tests_pmat203_golden_output_falsification {
         let actual_logits = vec![17.6_f32, -2.4, 0.02]; // 0.1 off
         let tolerance = 1e-5_f32;
 
-        let within_tolerance = expected_logits.iter().zip(actual_logits.iter())
+        let within_tolerance = expected_logits
+            .iter()
+            .zip(actual_logits.iter())
             .all(|(e, a)| (e - a).abs() < tolerance);
 
-        assert!(!within_tolerance, "F-GOLDEN-005: Logits outside tolerance should fail");
+        assert!(
+            !within_tolerance,
+            "F-GOLDEN-005: Logits outside tolerance should fail"
+        );
     }
 }
 
@@ -2992,9 +3200,17 @@ mod tests_pmat202_validate_stats_falsification {
                 } else {
                     TensorRole::LayerNormWeight
                 }
-            } else if name.contains("attn") || name.contains("q_proj") || name.contains("k_proj") || name.contains("v_proj") {
+            } else if name.contains("attn")
+                || name.contains("q_proj")
+                || name.contains("k_proj")
+                || name.contains("v_proj")
+            {
                 TensorRole::AttentionWeight
-            } else if name.contains("mlp") || name.contains("gate") || name.contains("up") || name.contains("down") {
+            } else if name.contains("mlp")
+                || name.contains("gate")
+                || name.contains("up")
+                || name.contains("down")
+            {
                 TensorRole::MlpWeight
             } else {
                 TensorRole::Unknown
@@ -3064,7 +3280,11 @@ mod tests_pmat202_validate_stats_falsification {
         let threshold = role.threshold();
 
         let deviation = (mean - threshold.expected_mean).abs();
-        let sigma_deviation = if std > 0.0 { deviation / std } else { deviation * 1000.0 };
+        let sigma_deviation = if std > 0.0 {
+            deviation / std
+        } else {
+            deviation * 1000.0
+        };
 
         if sigma_deviation > threshold.sigma_threshold {
             return Err(E020Error {
@@ -3083,7 +3303,10 @@ mod tests_pmat202_validate_stats_falsification {
     fn test_f_validate_stats_001_pass_correct() {
         // Normal attention weight: mean ≈ 0, std ≈ 0.02
         let result = validate_tensor_stats("model.layers.0.self_attn.q_proj.weight", 0.001, 0.02);
-        assert!(result.is_ok(), "F-VALIDATE-STATS-001: Correct stats should pass validation");
+        assert!(
+            result.is_ok(),
+            "F-VALIDATE-STATS-001: Correct stats should pass validation"
+        );
     }
 
     /// F-VALIDATE-STATS-002: Fail with E020 for corrupted tensor
@@ -3092,11 +3315,20 @@ mod tests_pmat202_validate_stats_falsification {
         // Corrupted tensor: mean = 11.3 (way off from expected 0)
         let result = validate_tensor_stats("model.layers.0.self_attn.q_proj.weight", 11.3, 0.02);
 
-        assert!(result.is_err(), "F-VALIDATE-STATS-002: Corrupted stats should fail validation");
+        assert!(
+            result.is_err(),
+            "F-VALIDATE-STATS-002: Corrupted stats should fail validation"
+        );
 
         let err = result.unwrap_err();
-        assert!(err.message().contains("E020"), "F-VALIDATE-STATS-002: Error must include E020 code");
-        assert!(err.sigma_deviation > 100.0, "F-VALIDATE-STATS-002: Deviation should be very high");
+        assert!(
+            err.message().contains("E020"),
+            "F-VALIDATE-STATS-002: Error must include E020 code"
+        );
+        assert!(
+            err.sigma_deviation > 100.0,
+            "F-VALIDATE-STATS-002: Deviation should be very high"
+        );
     }
 
     /// F-VALIDATE-STATS-003: Role-specific thresholds for LayerNorm
@@ -3104,11 +3336,17 @@ mod tests_pmat202_validate_stats_falsification {
     fn test_f_validate_stats_003_layernorm_threshold() {
         // LayerNorm weight should have mean ≈ 1, std ≈ 0.01
         let result = validate_tensor_stats("model.layers.0.input_layernorm.weight", 1.001, 0.005);
-        assert!(result.is_ok(), "F-VALIDATE-STATS-003: Normal LayerNorm should pass");
+        assert!(
+            result.is_ok(),
+            "F-VALIDATE-STATS-003: Normal LayerNorm should pass"
+        );
 
         // LayerNorm with mean = 0 (should fail - expected mean is 1)
         let result = validate_tensor_stats("model.layers.0.input_layernorm.weight", 0.0, 0.005);
-        assert!(result.is_err(), "F-VALIDATE-STATS-003: LayerNorm with mean=0 should fail (expected mean=1)");
+        assert!(
+            result.is_err(),
+            "F-VALIDATE-STATS-003: LayerNorm with mean=0 should fail (expected mean=1)"
+        );
     }
 
     /// F-VALIDATE-STATS-004: Embedding tensor validation
@@ -3116,7 +3354,10 @@ mod tests_pmat202_validate_stats_falsification {
     fn test_f_validate_stats_004_embedding() {
         // Embedding: mean ≈ 0, std in [0.02, 0.1]
         let result = validate_tensor_stats("model.embed_tokens.weight", 0.001, 0.05);
-        assert!(result.is_ok(), "F-VALIDATE-STATS-004: Normal embedding should pass");
+        assert!(
+            result.is_ok(),
+            "F-VALIDATE-STATS-004: Normal embedding should pass"
+        );
     }
 
     /// F-VALIDATE-STATS-005: MLP weight validation
@@ -3124,16 +3365,31 @@ mod tests_pmat202_validate_stats_falsification {
     fn test_f_validate_stats_005_mlp() {
         // MLP gate: mean ≈ 0, std in [0.01, 0.05]
         let result = validate_tensor_stats("model.layers.0.mlp.gate_proj.weight", 0.002, 0.03);
-        assert!(result.is_ok(), "F-VALIDATE-STATS-005: Normal MLP should pass");
+        assert!(
+            result.is_ok(),
+            "F-VALIDATE-STATS-005: Normal MLP should pass"
+        );
     }
 
     /// F-VALIDATE-STATS-006: Role detection from tensor names
     #[test]
     fn test_f_validate_stats_006_role_detection() {
-        assert_eq!(TensorRole::from_name("model.embed_tokens.weight"), TensorRole::Embedding);
-        assert_eq!(TensorRole::from_name("model.layers.0.input_layernorm.weight"), TensorRole::LayerNormWeight);
-        assert_eq!(TensorRole::from_name("model.layers.0.self_attn.q_proj.weight"), TensorRole::AttentionWeight);
-        assert_eq!(TensorRole::from_name("model.layers.0.mlp.gate_proj.weight"), TensorRole::MlpWeight);
+        assert_eq!(
+            TensorRole::from_name("model.embed_tokens.weight"),
+            TensorRole::Embedding
+        );
+        assert_eq!(
+            TensorRole::from_name("model.layers.0.input_layernorm.weight"),
+            TensorRole::LayerNormWeight
+        );
+        assert_eq!(
+            TensorRole::from_name("model.layers.0.self_attn.q_proj.weight"),
+            TensorRole::AttentionWeight
+        );
+        assert_eq!(
+            TensorRole::from_name("model.layers.0.mlp.gate_proj.weight"),
+            TensorRole::MlpWeight
+        );
         assert_eq!(TensorRole::from_name("random_tensor"), TensorRole::Unknown);
     }
 
@@ -3148,10 +3404,22 @@ mod tests_pmat202_validate_stats_falsification {
         };
 
         let msg = err.message();
-        assert!(msg.contains("E020"), "F-VALIDATE-STATS-007: Must include E020 code");
-        assert!(msg.contains("11.3"), "F-VALIDATE-STATS-007: Must include actual mean");
-        assert!(msg.contains("565"), "F-VALIDATE-STATS-007: Must include sigma deviation");
-        assert!(msg.contains("corrupted"), "F-VALIDATE-STATS-007: Must explain likely cause");
+        assert!(
+            msg.contains("E020"),
+            "F-VALIDATE-STATS-007: Must include E020 code"
+        );
+        assert!(
+            msg.contains("11.3"),
+            "F-VALIDATE-STATS-007: Must include actual mean"
+        );
+        assert!(
+            msg.contains("565"),
+            "F-VALIDATE-STATS-007: Must include sigma deviation"
+        );
+        assert!(
+            msg.contains("corrupted"),
+            "F-VALIDATE-STATS-007: Must explain likely cause"
+        );
     }
 }
 
@@ -3213,52 +3481,98 @@ mod tests_pmat204_distribution_tags_falsification {
     #[test]
     fn test_f_dist_tag_001_critical_tensors() {
         let tag = TensorDistributionTag::from_tensor_name("model.embed_tokens.weight");
-        assert_eq!(tag, TensorDistributionTag::Critical, "F-DIST-TAG-001: embed_tokens must be Critical");
+        assert_eq!(
+            tag,
+            TensorDistributionTag::Critical,
+            "F-DIST-TAG-001: embed_tokens must be Critical"
+        );
 
         let tag = TensorDistributionTag::from_tensor_name("lm_head.weight");
-        assert_eq!(tag, TensorDistributionTag::Critical, "F-DIST-TAG-001: lm_head must be Critical");
+        assert_eq!(
+            tag,
+            TensorDistributionTag::Critical,
+            "F-DIST-TAG-001: lm_head must be Critical"
+        );
     }
 
     /// F-DIST-TAG-002: LayerNorm identified as high precision
     #[test]
     fn test_f_dist_tag_002_layernorm() {
         let tag = TensorDistributionTag::from_tensor_name("model.layers.0.input_layernorm.weight");
-        assert_eq!(tag, TensorDistributionTag::HighPrecision, "F-DIST-TAG-002: layernorm must be HighPrecision");
+        assert_eq!(
+            tag,
+            TensorDistributionTag::HighPrecision,
+            "F-DIST-TAG-002: layernorm must be HighPrecision"
+        );
 
         let tag = TensorDistributionTag::from_tensor_name("model.ln_f.weight");
-        assert_eq!(tag, TensorDistributionTag::HighPrecision, "F-DIST-TAG-002: ln_f must be HighPrecision");
+        assert_eq!(
+            tag,
+            TensorDistributionTag::HighPrecision,
+            "F-DIST-TAG-002: ln_f must be HighPrecision"
+        );
     }
 
     /// F-DIST-TAG-003: Attention weights as standard
     #[test]
     fn test_f_dist_tag_003_attention() {
         let tag = TensorDistributionTag::from_tensor_name("model.layers.0.self_attn.q_proj.weight");
-        assert_eq!(tag, TensorDistributionTag::Standard, "F-DIST-TAG-003: attention must be Standard");
+        assert_eq!(
+            tag,
+            TensorDistributionTag::Standard,
+            "F-DIST-TAG-003: attention must be Standard"
+        );
     }
 
     /// F-DIST-TAG-004: MLP weights as compressible
     #[test]
     fn test_f_dist_tag_004_mlp() {
         let tag = TensorDistributionTag::from_tensor_name("model.layers.0.mlp.gate_proj.weight");
-        assert_eq!(tag, TensorDistributionTag::Compressible, "F-DIST-TAG-004: mlp must be Compressible");
+        assert_eq!(
+            tag,
+            TensorDistributionTag::Compressible,
+            "F-DIST-TAG-004: mlp must be Compressible"
+        );
     }
 
     /// F-DIST-TAG-005: Quantization recommendations match spec
     #[test]
     fn test_f_dist_tag_005_quant_recommendations() {
         assert_eq!(TensorDistributionTag::Critical.recommended_quant(), "Q8_0");
-        assert_eq!(TensorDistributionTag::HighPrecision.recommended_quant(), "F32");
+        assert_eq!(
+            TensorDistributionTag::HighPrecision.recommended_quant(),
+            "F32"
+        );
         assert_eq!(TensorDistributionTag::Standard.recommended_quant(), "Q6_K");
-        assert_eq!(TensorDistributionTag::Compressible.recommended_quant(), "Q4_K");
+        assert_eq!(
+            TensorDistributionTag::Compressible.recommended_quant(),
+            "Q4_K"
+        );
     }
 
     /// F-DIST-TAG-006: Minimum bits per tag
     #[test]
     fn test_f_dist_tag_006_min_bits() {
-        assert_eq!(TensorDistributionTag::Critical.min_bits(), 8, "F-DIST-TAG-006: Critical needs 8 bits min");
-        assert_eq!(TensorDistributionTag::HighPrecision.min_bits(), 16, "F-DIST-TAG-006: HighPrecision needs 16 bits min");
-        assert_eq!(TensorDistributionTag::Standard.min_bits(), 6, "F-DIST-TAG-006: Standard needs 6 bits min");
-        assert_eq!(TensorDistributionTag::Compressible.min_bits(), 4, "F-DIST-TAG-006: Compressible needs 4 bits min");
+        assert_eq!(
+            TensorDistributionTag::Critical.min_bits(),
+            8,
+            "F-DIST-TAG-006: Critical needs 8 bits min"
+        );
+        assert_eq!(
+            TensorDistributionTag::HighPrecision.min_bits(),
+            16,
+            "F-DIST-TAG-006: HighPrecision needs 16 bits min"
+        );
+        assert_eq!(
+            TensorDistributionTag::Standard.min_bits(),
+            6,
+            "F-DIST-TAG-006: Standard needs 6 bits min"
+        );
+        assert_eq!(
+            TensorDistributionTag::Compressible.min_bits(),
+            4,
+            "F-DIST-TAG-006: Compressible needs 4 bits min"
+        );
     }
 }
 
@@ -3300,7 +3614,8 @@ mod tests_pmat205_sharding_placement_falsification {
                 PartitionSpec::Replicated
             }
             // Attention QKV projections: hidden sharding for tensor parallelism
-            else if name.contains("q_proj") || name.contains("k_proj") || name.contains("v_proj") {
+            else if name.contains("q_proj") || name.contains("k_proj") || name.contains("v_proj")
+            {
                 PartitionSpec::HiddenSharded
             }
             // Attention output: hidden sharding
@@ -3310,8 +3625,7 @@ mod tests_pmat205_sharding_placement_falsification {
             // MLP: hidden sharding for tensor parallelism
             else if name.contains("mlp") || name.contains("ffn") {
                 PartitionSpec::HiddenSharded
-            }
-            else {
+            } else {
                 PartitionSpec::Replicated
             }
         }
@@ -3331,57 +3645,105 @@ mod tests_pmat205_sharding_placement_falsification {
     #[test]
     fn test_f_shard_001_single_device() {
         let spec = PartitionSpec::from_tensor_name("model.layers.0.self_attn.q_proj.weight", 1);
-        assert_eq!(spec, PartitionSpec::None, "F-SHARD-001: Single device must be None");
+        assert_eq!(
+            spec,
+            PartitionSpec::None,
+            "F-SHARD-001: Single device must be None"
+        );
 
         let spec = PartitionSpec::from_tensor_name("model.embed_tokens.weight", 1);
-        assert_eq!(spec, PartitionSpec::None, "F-SHARD-001: Single device must be None");
+        assert_eq!(
+            spec,
+            PartitionSpec::None,
+            "F-SHARD-001: Single device must be None"
+        );
     }
 
     /// F-SHARD-002: Embedding/lm_head replicated
     #[test]
     fn test_f_shard_002_embedding_replicated() {
         let spec = PartitionSpec::from_tensor_name("model.embed_tokens.weight", 4);
-        assert_eq!(spec, PartitionSpec::Replicated, "F-SHARD-002: Embedding must be Replicated");
+        assert_eq!(
+            spec,
+            PartitionSpec::Replicated,
+            "F-SHARD-002: Embedding must be Replicated"
+        );
 
         let spec = PartitionSpec::from_tensor_name("lm_head.weight", 4);
-        assert_eq!(spec, PartitionSpec::Replicated, "F-SHARD-002: lm_head must be Replicated");
+        assert_eq!(
+            spec,
+            PartitionSpec::Replicated,
+            "F-SHARD-002: lm_head must be Replicated"
+        );
     }
 
     /// F-SHARD-003: LayerNorm replicated
     #[test]
     fn test_f_shard_003_layernorm_replicated() {
         let spec = PartitionSpec::from_tensor_name("model.layers.0.input_layernorm.weight", 4);
-        assert_eq!(spec, PartitionSpec::Replicated, "F-SHARD-003: LayerNorm must be Replicated");
+        assert_eq!(
+            spec,
+            PartitionSpec::Replicated,
+            "F-SHARD-003: LayerNorm must be Replicated"
+        );
     }
 
     /// F-SHARD-004: Attention hidden-sharded
     #[test]
     fn test_f_shard_004_attention_hidden() {
         let spec = PartitionSpec::from_tensor_name("model.layers.0.self_attn.q_proj.weight", 4);
-        assert_eq!(spec, PartitionSpec::HiddenSharded, "F-SHARD-004: q_proj must be HiddenSharded");
+        assert_eq!(
+            spec,
+            PartitionSpec::HiddenSharded,
+            "F-SHARD-004: q_proj must be HiddenSharded"
+        );
 
         let spec = PartitionSpec::from_tensor_name("model.layers.0.self_attn.k_proj.weight", 4);
-        assert_eq!(spec, PartitionSpec::HiddenSharded, "F-SHARD-004: k_proj must be HiddenSharded");
+        assert_eq!(
+            spec,
+            PartitionSpec::HiddenSharded,
+            "F-SHARD-004: k_proj must be HiddenSharded"
+        );
 
         let spec = PartitionSpec::from_tensor_name("model.layers.0.self_attn.v_proj.weight", 4);
-        assert_eq!(spec, PartitionSpec::HiddenSharded, "F-SHARD-004: v_proj must be HiddenSharded");
+        assert_eq!(
+            spec,
+            PartitionSpec::HiddenSharded,
+            "F-SHARD-004: v_proj must be HiddenSharded"
+        );
     }
 
     /// F-SHARD-005: MLP hidden-sharded
     #[test]
     fn test_f_shard_005_mlp_hidden() {
         let spec = PartitionSpec::from_tensor_name("model.layers.0.mlp.gate_proj.weight", 4);
-        assert_eq!(spec, PartitionSpec::HiddenSharded, "F-SHARD-005: mlp must be HiddenSharded");
+        assert_eq!(
+            spec,
+            PartitionSpec::HiddenSharded,
+            "F-SHARD-005: mlp must be HiddenSharded"
+        );
     }
 
     /// F-SHARD-006: Memory multiplier for replicated tensors
     #[test]
     fn test_f_shard_006_memory_multiplier() {
         // Replicated uses N× memory (one copy per device)
-        assert_eq!(PartitionSpec::Replicated.memory_multiplier(4), 4.0, "F-SHARD-006: Replicated uses 4× memory on 4 devices");
+        assert_eq!(
+            PartitionSpec::Replicated.memory_multiplier(4),
+            4.0,
+            "F-SHARD-006: Replicated uses 4× memory on 4 devices"
+        );
 
         // Sharded uses 1× memory (distributed across devices)
-        assert_eq!(PartitionSpec::HiddenSharded.memory_multiplier(4), 1.0, "F-SHARD-006: HiddenSharded uses 1× memory");
-        assert_eq!(PartitionSpec::BatchSharded.memory_multiplier(4), 1.0, "F-SHARD-006: BatchSharded uses 1× memory");
+        assert_eq!(
+            PartitionSpec::HiddenSharded.memory_multiplier(4),
+            1.0,
+            "F-SHARD-006: HiddenSharded uses 1× memory"
+        );
+        assert_eq!(
+            PartitionSpec::BatchSharded.memory_multiplier(4),
+            1.0,
+            "F-SHARD-006: BatchSharded uses 1× memory"
+        );
     }
 }

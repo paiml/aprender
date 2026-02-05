@@ -287,9 +287,12 @@ pub(super) fn run_gguf_inference(config: &ShowcaseConfig) -> Result<bool> {
 }
 
 /// Step C: Convert GGUF to APR format
+///
+/// Uses the canonical `apr_import` path from aprender - the ONE way to convert GGUF to APR.
+/// This preserves quantization (Q4_K/Q6_K) and embeds tokenizer+config.
 #[cfg(feature = "inference")]
 pub(super) fn run_convert(config: &ShowcaseConfig) -> Result<bool> {
-    use realizar::convert::GgufToAprConverter;
+    use aprender::format::{apr_import, ImportOptions};
 
     println!();
     println!("{}", "═══ Step C: APR Conversion ═══".cyan().bold());
@@ -310,60 +313,42 @@ pub(super) fn run_convert(config: &ShowcaseConfig) -> Result<bool> {
 
     println!("Input: {}", gguf_path.display());
     println!("Output: {}", apr_path.display());
-    // NOTE: APR currently uses JSON serialization (no compression)
-    // APR file will be LARGER because GGUF is quantized, APR dequantizes to F32
-    println!("Format: {} (dequantized F32 weights)", "JSON".yellow());
+    println!(
+        "Format: {} (preserves Q4_K/Q6_K quantization)",
+        "APR v2".cyan()
+    );
     println!();
 
     let start = Instant::now();
-    println!("Converting GGUF to APR format (dequantizing to F32)...");
+    println!("Converting GGUF to APR format (preserving quantization)...");
 
-    // Read GGUF bytes
-    let gguf_bytes = std::fs::read(&gguf_path)
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to read GGUF: {e}")))?;
+    // Use canonical apr_import path - the ONE way to convert GGUF to APR
+    let gguf_size = std::fs::metadata(&gguf_path)
+        .map(|m| m.len())
+        .unwrap_or(0);
 
-    // Convert to APR Transformer
-    let apr_transformer = GgufToAprConverter::convert(&gguf_bytes)
-        .map_err(|e| CliError::ValidationFailed(format!("Conversion failed: {e}")))?;
-
-    // Serialize to APR format
-    let apr_bytes = GgufToAprConverter::to_apr_bytes(&apr_transformer)
-        .map_err(|e| CliError::ValidationFailed(format!("Serialization failed: {e}")))?;
-
-    // Write to file
-    std::fs::write(&apr_path, &apr_bytes)
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to write APR: {e}")))?;
+    let _report = apr_import(
+        gguf_path.to_string_lossy().as_ref(),
+        &apr_path,
+        ImportOptions::default(),
+    )
+    .map_err(|e| CliError::ValidationFailed(format!("Conversion failed: {e}")))?;
 
     let elapsed = start.elapsed();
-    let apr_size = apr_bytes.len();
-    let gguf_size = gguf_bytes.len();
-    let size_ratio = apr_size as f64 / gguf_size as f64;
+    let apr_size = std::fs::metadata(&apr_path)
+        .map(|m| m.len())
+        .unwrap_or(0);
 
     println!(
         "{} Conversion complete in {:.2}s",
         "✓".green(),
         elapsed.as_secs_f32()
     );
-    // Be honest: APR is larger because it's dequantized F32 (no quantization, no compression)
-    if apr_size > gguf_size {
-        println!(
-            "  GGUF: {:.2} GB → APR: {:.2} GB ({:.1}x expansion due to F32 dequantization)",
-            gguf_size as f64 / 1e9,
-            apr_size as f64 / 1e9,
-            size_ratio
-        );
-        println!(
-            "  {} APR is larger because GGUF uses Q4_K_M quantization (~4 bits/weight)",
-            "ℹ".cyan()
-        );
-    } else {
-        println!(
-            "  GGUF: {:.2} GB → APR: {:.2} GB ({:.2}x)",
-            gguf_size as f64 / 1e9,
-            apr_size as f64 / 1e9,
-            gguf_size as f64 / apr_size as f64
-        );
-    }
+    println!(
+        "  GGUF: {:.2} GB → APR: {:.2} GB (quantization preserved)",
+        gguf_size as f64 / 1e9,
+        apr_size as f64 / 1e9
+    );
 
     Ok(true)
 }

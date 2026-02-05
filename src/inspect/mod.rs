@@ -1029,7 +1029,9 @@ mod tests {
         let metadata = MetadataInspection::new("Test");
         let mut result = InspectionResult::new(header, metadata);
 
-        result.warnings.push(InspectionWarning::new("W001", "Test warning"));
+        result
+            .warnings
+            .push(InspectionWarning::new("W001", "Test warning"));
         assert!(result.has_issues());
         assert!(result.is_valid()); // Still valid, just has warnings
         assert_eq!(result.issue_count(), 1);
@@ -1041,7 +1043,9 @@ mod tests {
         let metadata = MetadataInspection::new("Test");
         let mut result = InspectionResult::new(header, metadata);
 
-        result.errors.push(InspectionError::new("E001", "Test error", true));
+        result
+            .errors
+            .push(InspectionError::new("E001", "Test error", true));
         assert!(result.has_issues());
         assert!(!result.is_valid()); // Invalid due to errors
         assert_eq!(result.issue_count(), 1);
@@ -1053,8 +1057,12 @@ mod tests {
         let metadata = MetadataInspection::new("Test");
         let mut result = InspectionResult::new(header, metadata);
 
-        result.warnings.push(InspectionWarning::new("W001", "Warning"));
-        result.errors.push(InspectionError::new("E001", "Error", false));
+        result
+            .warnings
+            .push(InspectionWarning::new("W001", "Warning"));
+        result
+            .errors
+            .push(InspectionError::new("E001", "Error", false));
         assert_eq!(result.issue_count(), 2);
     }
 

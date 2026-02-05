@@ -307,8 +307,14 @@ mod tests {
                 "tokenizer.ggml.merges".to_string(),
                 GgufValue::ArrayString(vec!["he llo".to_string(), "wor ld".to_string()]),
             ),
-            ("tokenizer.ggml.bos_token_id".to_string(), GgufValue::Uint32(1)),
-            ("tokenizer.ggml.eos_token_id".to_string(), GgufValue::Uint32(2)),
+            (
+                "tokenizer.ggml.bos_token_id".to_string(),
+                GgufValue::Uint32(1),
+            ),
+            (
+                "tokenizer.ggml.eos_token_id".to_string(),
+                GgufValue::Uint32(2),
+            ),
             ("llama.block_count".to_string(), GgufValue::Uint32(2)),
             ("llama.embedding_length".to_string(), GgufValue::Uint32(64)),
             (
@@ -417,7 +423,10 @@ mod tests {
         assert_eq!(tokenizer.model_type, Some("llama".to_string()));
         assert_eq!(tokenizer.merges.len(), 2);
         assert_eq!(tokenizer.architecture, Some("llama".to_string()));
-        assert_eq!(tokenizer.model_name, Some("test-tokenizer-model".to_string()));
+        assert_eq!(
+            tokenizer.model_name,
+            Some("test-tokenizer-model".to_string())
+        );
     }
 
     #[test]

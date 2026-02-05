@@ -4,6 +4,7 @@
 use crate::error::{AprenderError, Result};
 use crate::format::converter_types::{Architecture, QuantizationType};
 use crate::format::gguf::GgufReader;
+use crate::format::layout_contract::contract;
 use crate::serialization::safetensors::{
     save_safetensors, save_safetensors_with_metadata, UserMetadata,
 };
@@ -187,6 +188,24 @@ pub fn apr_export<P: AsRef<Path>>(
         tensors
     };
 
+    // ENFORCE CONTRACT (P0 - contracts/tensor-layout-v1.yaml)
+    // Validate tensors before export to catch any corrupted APR files.
+    let layout_contract = contract();
+    // Infer vocab_size and hidden_dim from tensors
+    let (vocab_size, hidden_dim) = infer_vocab_hidden(&tensors);
+    if vocab_size > 0 && hidden_dim > 0 {
+        for (name, (_data, shape)) in &tensors {
+            if let Err(e) = layout_contract.validate_apr_shape(name, shape, vocab_size, hidden_dim)
+            {
+                eprintln!(
+                    "[CONTRACT-VIOLATION] Export validation failed for {}: {}",
+                    name, e
+                );
+                // Don't hard fail on export - log the warning
+            }
+        }
+    }
+
     // Apply quantization if requested
     let tensors = if let Some(ref quant_type) = options.quantize {
         quantize_tensors(&tensors, quant_type)?
@@ -288,7 +307,10 @@ fn export_to_gguf(
     use std::io::BufWriter;
 
     // BUG-EXPORT-004: Load tokenizer from sibling tokenizer.json for GGUF metadata
-    eprintln!("[DEBUG-TOK] Looking for tokenizer near: {}", input.display());
+    eprintln!(
+        "[DEBUG-TOK] Looking for tokenizer near: {}",
+        input.display()
+    );
     let tokenizer = super::import::load_tokenizer_from_json(input);
     eprintln!("[DEBUG-TOK] Tokenizer loaded: {}", tokenizer.is_some());
 
@@ -536,17 +558,18 @@ fn export_to_gguf(
 
             // GH-202 FIX: No data transpose needed. Data is row-major in APR,
             // and GGML's layout with reversed shape is identical.
-            let (dtype, bytes) = if use_q4k && shape.len() == 2 && data.len() >= 256 && !is_embedding {
-                // Quantize row-major F32 to Q4K using GGUF shape [ne0, ne1]
-                // quantize_q4_k_matrix processes per-row with ne0 elements per row
-                let gguf_shape_usize = vec![shape[1], shape[0]]; // [ne0=cols, ne1=rows]
-                let q4k_bytes = super::quantize_q4_k_matrix(data, &gguf_shape_usize);
-                (GgmlType::Q4K, q4k_bytes)
-            } else {
-                // F32 (weights, embeddings, 1D) - just convert to bytes, no transpose
-                let f32_bytes: Vec<u8> = data.iter().flat_map(|f| f.to_le_bytes()).collect();
-                (GgmlType::F32, f32_bytes)
-            };
+            let (dtype, bytes) =
+                if use_q4k && shape.len() == 2 && data.len() >= 256 && !is_embedding {
+                    // Quantize row-major F32 to Q4K using GGUF shape [ne0, ne1]
+                    // quantize_q4_k_matrix processes per-row with ne0 elements per row
+                    let gguf_shape_usize = vec![shape[1], shape[0]]; // [ne0=cols, ne1=rows]
+                    let q4k_bytes = super::quantize_q4_k_matrix(data, &gguf_shape_usize);
+                    (GgmlType::Q4K, q4k_bytes)
+                } else {
+                    // F32 (weights, embeddings, 1D) - just convert to bytes, no transpose
+                    let f32_bytes: Vec<u8> = data.iter().flat_map(|f| f.to_le_bytes()).collect();
+                    (GgmlType::F32, f32_bytes)
+                };
 
             GgufTensor {
                 name: gguf_name,
@@ -1094,4 +1117,45 @@ fn detect_gguf_architecture(path: &Path) -> Architecture {
             _ => Architecture::Qwen2, // Safe default: most GGUF models use same mapping
         })
         .unwrap_or(Architecture::Qwen2)
+}
+
+/// Infer vocab_size and hidden_dim from tensor shapes.
+///
+/// Used for contract validation during export.
+fn infer_vocab_hidden(tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>) -> (usize, usize) {
+    let mut vocab_size = 0;
+    let mut hidden_dim = 0;
+
+    // Try embedding first (most reliable)
+    for (name, (_, shape)) in tensors {
+        if (name.contains("embed_tokens") || name.contains("token_embd")) && shape.len() == 2 {
+            // Embedding shape: [vocab_size, hidden_dim]
+            vocab_size = shape[0];
+            hidden_dim = shape[1];
+            break;
+        }
+    }
+
+    // Fallback to lm_head
+    if vocab_size == 0 {
+        for (name, (_, shape)) in tensors {
+            if (name.contains("lm_head") || name.contains("output.weight")) && shape.len() == 2 {
+                vocab_size = shape[0];
+                hidden_dim = shape[1];
+                break;
+            }
+        }
+    }
+
+    // Fallback to layer weights for hidden_dim
+    if hidden_dim == 0 {
+        for (name, (_, shape)) in tensors {
+            if name.contains("q_proj") && shape.len() == 2 {
+                hidden_dim = shape[1];
+                break;
+            }
+        }
+    }
+
+    (vocab_size, hidden_dim)
 }

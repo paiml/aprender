@@ -1941,10 +1941,10 @@ fn test_bug_tok_001_mixed_byte_and_regular_tokens() {
 
     // "Hello世" = "Hello" + UTF-8(世) = "Hello" + 0xE4 0xB8 0x96
     let token_ids = vec![
-        3,          // "Hello"
-        4 + 0xE4,   // <0xE4>
-        4 + 0xB8,   // <0xB8>
-        4 + 0x96,   // <0x96>
+        3,        // "Hello"
+        4 + 0xE4, // <0xE4>
+        4 + 0xB8, // <0xB8>
+        4 + 0x96, // <0x96>
     ];
 
     let decoded = tokenizer.decode(&token_ids);

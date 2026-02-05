@@ -441,21 +441,15 @@ fn check_layout_contract(report: &mut LintReport, info: &ModelLintInfo) {
         if let Some(tc) = layout.get_apr_contract(&tensor.name) {
             // Validate shape for critical tensors
             if tc.is_critical && !tensor.shape.is_empty() {
-                if let Err(e) = layout.validate_apr_shape(
-                    &tensor.name,
-                    &tensor.shape,
-                    vocab_size,
-                    hidden_dim,
-                ) {
+                if let Err(e) =
+                    layout.validate_apr_shape(&tensor.name, &tensor.shape, vocab_size, hidden_dim)
+                {
                     report.add_issue(
-                        LintIssue::layout_error(format!(
-                            "F-LAYOUT-CONTRACT-002 violation: {}",
-                            e
-                        ))
-                        .with_suggestion(format!(
-                            "Expected shape {} per contract",
-                            tc.apr_shape_formula
-                        )),
+                        LintIssue::layout_error(format!("F-LAYOUT-CONTRACT-002 violation: {}", e))
+                            .with_suggestion(format!(
+                                "Expected shape {} per contract",
+                                tc.apr_shape_formula
+                            )),
                     );
                 }
             }
@@ -472,7 +466,9 @@ fn check_layout_contract(report: &mut LintReport, info: &ModelLintInfo) {
                             "lm_head.weight shape[0]={} but expected vocab_size={}",
                             dim0, vocab_size
                         ))
-                        .with_suggestion("Shape should be [vocab_size, hidden_dim] after transpose"),
+                        .with_suggestion(
+                            "Shape should be [vocab_size, hidden_dim] after transpose",
+                        ),
                     );
                 }
             }
@@ -743,9 +739,10 @@ fn lint_apr_v2_file(path: &Path) -> Result<LintReport> {
 
     // Read file and create reader
     let data = fs::read(path)?;
-    let reader = AprV2Reader::from_bytes(&data).map_err(|e| crate::error::AprenderError::FormatError {
-        message: format!("Failed to parse APR v2: {e}"),
-    })?;
+    let reader =
+        AprV2Reader::from_bytes(&data).map_err(|e| crate::error::AprenderError::FormatError {
+            message: format!("Failed to parse APR v2: {e}"),
+        })?;
 
     // Build lint info from v2 metadata
     let mut info = ModelLintInfo::default();

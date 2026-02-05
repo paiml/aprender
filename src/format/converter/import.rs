@@ -8,6 +8,7 @@ use crate::format::converter_types::{
 use crate::format::gguf::{
     load_gguf_raw, load_gguf_with_tokenizer, GgufModelConfig, GgufRawTensor, GgufTokenizer,
 };
+use crate::format::layout_contract::contract;
 use crate::format::validation::{AprValidator, TensorStats, ValidationReport};
 use crate::serialization::safetensors::{MappedSafeTensors, UserMetadata};
 use std::collections::BTreeMap;
@@ -100,14 +101,67 @@ pub fn apr_import<P: AsRef<Path>>(
     // Step 3: Map tensor names to canonical APR names
     let mapped_tensors = map_tensor_names(&load_result.tensors, effective_arch);
 
-    // Step 4: Validate tensors (inline validation)
+    // GH-205: Also map F16 raw tensor names for passthrough
+    let mapped_f16_raw: BTreeMap<String, (Vec<u8>, Vec<usize>)> = load_result
+        .f16_raw_tensors
+        .iter()
+        .map(|(name, (bytes, shape))| {
+            let mapped_name = effective_arch.map_name(name);
+            (mapped_name, (bytes.clone(), shape.clone()))
+        })
+        .collect();
+
+    // Step 4: ENFORCE CONTRACT (P0 - contracts/tensor-layout-v1.yaml)
+    // The contract is the SOURCE OF TRUTH for tensor shapes.
+    let layout_contract = contract();
+    let vocab_size = load_result
+        .model_config
+        .as_ref()
+        .and_then(|c| c.vocab_size)
+        .unwrap_or(0);
+    let hidden_dim = load_result
+        .model_config
+        .as_ref()
+        .and_then(|c| c.hidden_size)
+        .unwrap_or(0);
+
+    if vocab_size > 0 && hidden_dim > 0 {
+        for (name, (_data, shape)) in &mapped_tensors {
+            if let Err(e) = layout_contract.validate_apr_shape(name, shape, vocab_size, hidden_dim)
+            {
+                eprintln!(
+                    "[CONTRACT-VIOLATION] {}: {} (see contracts/tensor-layout-v1.yaml)",
+                    name, e
+                );
+                if options.strict {
+                    return Err(AprenderError::FormatError {
+                        message: format!("Contract violation: {e}"),
+                    });
+                }
+            }
+        }
+        eprintln!(
+            "[CONTRACT] Validated {} tensors against tensor-layout-v1.yaml (vocab={}, hidden={})",
+            mapped_tensors.len(),
+            vocab_size,
+            hidden_dim
+        );
+    } else {
+        eprintln!(
+            "[CONTRACT] WARNING: Cannot validate contract - missing vocab_size or hidden_dim"
+        );
+    }
+
+    // Step 5: Validate tensors (inline validation)
     let validation_result = validate_tensors(&mapped_tensors, &options)?;
 
     // Step 5: Write APR format (with tokenizer AND model config - CRITICAL for inference)
     // Note: Quantization (fp16/int8/int4) is applied during write for true packed storage
     // PMAT-223: Pass user metadata for preservation in APR custom field
+    // GH-205: Pass F16 raw tensors for passthrough
     write_apr_file(
         &mapped_tensors,
+        &mapped_f16_raw,
         output_path,
         &options,
         load_result.tokenizer.as_ref(),
@@ -129,6 +183,68 @@ pub(crate) fn apr_import_gguf_raw(
 ) -> Result<ValidationReport> {
     // Load GGUF with raw quantized tensors (preserves Q4_K bytes)
     let raw_result = load_gguf_raw(gguf_path)?;
+
+    // PMAT-232: Validate tokenizer data before import
+    // GGUF files without embedded vocabulary cannot produce working APR files.
+    // The APR format requires vocabulary+merges for text encoding/decoding.
+    //
+    // If GGUF has no tokenizer but --tokenizer was provided, load from external file.
+    let effective_tokenizer = if raw_result.tokenizer.vocabulary.is_empty() {
+        // Try external tokenizer if provided
+        if let Some(ref tokenizer_path) = options.tokenizer_path {
+            eprintln!(
+                "[PMAT-232] GGUF has no embedded tokenizer, trying external: {}",
+                tokenizer_path.display()
+            );
+            match load_tokenizer_from_explicit_path(tokenizer_path) {
+                Some(tok) => {
+                    eprintln!(
+                        "[PMAT-232] External tokenizer loaded: {} vocab tokens, {} merge rules",
+                        tok.vocabulary.len(),
+                        tok.merges.len()
+                    );
+                    tok
+                }
+                None => {
+                    let msg = format!(
+                        "Failed to load external tokenizer from '{}'. \
+                         Ensure the file is a valid HuggingFace tokenizer.json.",
+                        tokenizer_path.display()
+                    );
+                    eprintln!("[PMAT-232] ERROR: {}", msg);
+                    return Err(AprenderError::FormatError { message: msg });
+                }
+            }
+        } else {
+            let msg = format!(
+                "GGUF file '{}' has no embedded tokenizer vocabulary. \
+                 This is a 'weights-only' GGUF that cannot produce a working APR file. \
+                 Solutions: (1) Use a GGUF with embedded tokenizer, or \
+                 (2) Provide --tokenizer /path/to/tokenizer.json, or \
+                 (3) Use SafeTensors format with sibling tokenizer.json, or \
+                 (4) Import from HuggingFace source: apr import hf://ORG/REPO -o model.apr",
+                gguf_path.display()
+            );
+            eprintln!("[PMAT-232] ERROR: {}", msg);
+            return Err(AprenderError::FormatError { message: msg });
+        }
+    } else {
+        // GGUF has embedded tokenizer
+        if raw_result.tokenizer.merges.is_empty() {
+            eprintln!(
+                "[PMAT-232] WARNING: GGUF file has vocabulary but no BPE merges. \
+                 Text encoding may fail for multi-character tokens. \
+                 Consider using a GGUF with embedded tokenizer.ggml.merges."
+            );
+        } else {
+            eprintln!(
+                "[PMAT-232] Tokenizer validated: {} vocab tokens, {} merge rules",
+                raw_result.tokenizer.vocabulary.len(),
+                raw_result.tokenizer.merges.len()
+            );
+        }
+        raw_result.tokenizer.clone()
+    };
 
     // PMAT-222: Auto-detect architecture from GGUF model config
     // This ensures proper tensor name mapping (GGUF→HF convention)
@@ -186,16 +302,67 @@ pub(crate) fn apr_import_gguf_raw(
         })
         .collect();
 
+    // MANDATORY CONTRACT ENFORCEMENT (GH-208)
+    // The contract is NOT A SUGGESTION - it is the SOURCE OF TRUTH.
+    // ALL shape transformations go through enforce_import_contract().
+    // See: contracts/tensor-layout-v1.yaml, Five Whys analysis in layout_contract.rs
+    use crate::format::layout_contract::enforce_import_contract;
+
+    let vocab_size = raw_result.model_config.vocab_size.unwrap_or(0);
+    let hidden_dim = raw_result.model_config.hidden_size.unwrap_or(0);
+
+    // Validate contract enforcement is possible
+    if vocab_size == 0 || hidden_dim == 0 {
+        return Err(AprenderError::FormatError {
+            message: format!(
+                "CONTRACT ENFORCEMENT FAILED: Missing vocab_size ({}) or hidden_dim ({}). \
+                 Cannot validate tensor layouts without model config. \
+                 This GGUF file may be malformed.",
+                vocab_size, hidden_dim
+            ),
+        });
+    }
+
+    // Apply CONTRACT-ENFORCED shape transformation to all tensors
+    let mapped_tensors: BTreeMap<String, GgufRawTensor> = mapped_tensors
+        .into_iter()
+        .map(|(name, mut tensor)| {
+            // Use CONTRACT to determine shape transformation
+            let (apr_shape, needs_data_transpose) =
+                enforce_import_contract(&name, &tensor.shape, vocab_size, hidden_dim);
+
+            // GH-208: Data transpose should NEVER be needed for GGUF import
+            // If this fires, the contract is misconfigured
+            assert!(
+                !needs_data_transpose,
+                "CONTRACT BUG: enforce_import_contract returned needs_data_transpose=true for '{}'. \
+                 GGUF→APR NEVER needs data transpose. See GH-208.",
+                name
+            );
+
+            tensor.shape = apr_shape;
+            (name, tensor)
+        })
+        .collect();
+
+    eprintln!(
+        "[CONTRACT-ENFORCED] {} tensors transformed via tensor-layout-v1.yaml (vocab={}, hidden={})",
+        mapped_tensors.len(),
+        vocab_size,
+        hidden_dim
+    );
+
     // Basic validation (skip strict validation for quantized tensors - can't compute meaningful stats)
     let mut validation_result = ValidationReport::new();
     validation_result.total_score = 85; // Default score for raw import (tensors preserved)
 
     // Write APR file with raw quantized tensors
+    // Use effective_tokenizer which may be from external file (PMAT-232)
     write_apr_file_raw(
         &mapped_tensors,
         output_path,
         options,
-        Some(&raw_result.tokenizer),
+        Some(&effective_tokenizer),
         Some(&raw_result.model_config),
     )?;
 
@@ -397,6 +564,9 @@ fn download_from_hf(repo_id: &str, filename: &str) -> Result<PathBuf> {
 pub(crate) struct SourceLoadResult {
     /// Tensor data (name -> (data, shape))
     tensors: BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+    /// GH-205: Raw F16 tensor bytes for passthrough (name -> bytes)
+    /// Tensors in this map should NOT be converted - write raw to APR
+    f16_raw_tensors: BTreeMap<String, (Vec<u8>, Vec<usize>)>,
     /// Tokenizer data (only present for GGUF files)
     tokenizer: Option<GgufTokenizer>,
     /// Model config (CRITICAL for inference - from GGUF)
@@ -511,12 +681,23 @@ pub(crate) fn load_tokenizer_from_json(model_path: &Path) -> Option<GgufTokenize
     let pacha_path = model_path.with_file_name(format!("{}.tokenizer.json", base_stem));
 
     // Try both paths
-    eprintln!("[DEBUG-TOK-PATH] standard_path={}, exists={}", standard_path.display(), standard_path.exists());
-    eprintln!("[DEBUG-TOK-PATH] pacha_path={}, exists={}", pacha_path.display(), pacha_path.exists());
+    eprintln!(
+        "[DEBUG-TOK-PATH] standard_path={}, exists={}",
+        standard_path.display(),
+        standard_path.exists()
+    );
+    eprintln!(
+        "[DEBUG-TOK-PATH] pacha_path={}, exists={}",
+        pacha_path.display(),
+        pacha_path.exists()
+    );
     let tokenizer_path = if standard_path.exists() {
         standard_path
     } else if pacha_path.exists() {
-        eprintln!("[BUG-TOK-002] Found tokenizer at Pacha cache path: {}", pacha_path.display());
+        eprintln!(
+            "[BUG-TOK-002] Found tokenizer at Pacha cache path: {}",
+            pacha_path.display()
+        );
         pacha_path
     } else {
         eprintln!("[DEBUG-TOK-PATH] No tokenizer found!");
@@ -591,7 +772,10 @@ pub(crate) fn load_tokenizer_from_json(model_path: &Path) -> Option<GgufTokenize
     eprintln!(
         "[BUG-EXPORT-004] Vocab: base={}, added={}, expected={}, final={}",
         vocab_map.len(),
-        json.get("added_tokens").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0),
+        json.get("added_tokens")
+            .and_then(|v| v.as_array())
+            .map(|a| a.len())
+            .unwrap_or(0),
         expected_vocab_size,
         vocabulary.len()
     );
@@ -659,9 +843,7 @@ pub(crate) fn load_tokenizer_from_json(model_path: &Path) -> Option<GgufTokenize
                         bos_token_id = Some(id);
                     }
                     if eos_token_id.is_none()
-                        && (content.contains("eos")
-                            || content == "</s>"
-                            || content == "<|eot_id|>")
+                        && (content.contains("eos") || content == "</s>" || content == "<|eot_id|>")
                     {
                         eos_token_id = Some(id);
                     }
@@ -678,6 +860,150 @@ pub(crate) fn load_tokenizer_from_json(model_path: &Path) -> Option<GgufTokenize
         .map(String::from);
 
     // PMAT-171: Extract BPE merge rules for encoding
+    let merges = json
+        .get("model")
+        .and_then(|m| m.get("merges"))
+        .and_then(|m| m.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    Some(GgufTokenizer {
+        vocabulary,
+        merges,
+        model_type,
+        bos_token_id,
+        eos_token_id,
+        architecture: None,
+        model_name: None,
+    })
+}
+
+/// PMAT-232: Load tokenizer from explicit path (for --tokenizer CLI option)
+///
+/// Unlike `load_tokenizer_from_json` which searches for tokenizer.json in standard locations,
+/// this function loads directly from the provided path. Used for weights-only GGUF imports
+/// where the tokenizer is provided externally.
+pub(crate) fn load_tokenizer_from_explicit_path(tokenizer_path: &Path) -> Option<GgufTokenizer> {
+    if !tokenizer_path.exists() {
+        eprintln!(
+            "[PMAT-232] External tokenizer not found: {}",
+            tokenizer_path.display()
+        );
+        return None;
+    }
+
+    let content = fs::read_to_string(tokenizer_path).ok()?;
+    let json: serde_json::Value = serde_json::from_str(&content).ok()?;
+
+    // Extract vocabulary from model.vocab
+    let vocab_obj = json.get("model")?.get("vocab")?;
+    let vocab_map = vocab_obj.as_object()?;
+
+    // Build vocab map (token -> id) from base vocab
+    let mut token_to_id: std::collections::BTreeMap<u32, String> = vocab_map
+        .iter()
+        .filter_map(|(token, id)| Some((id.as_u64()? as u32, token.clone())))
+        .collect();
+
+    // Add special tokens from added_tokens
+    if let Some(added) = json.get("added_tokens").and_then(|v| v.as_array()) {
+        for token in added {
+            if let (Some(content), Some(id)) = (
+                token.get("content").and_then(|v| v.as_str()),
+                token.get("id").and_then(|v| v.as_u64()),
+            ) {
+                token_to_id.insert(id as u32, content.to_string());
+            }
+        }
+    }
+
+    // Read expected vocab_size from sibling config.json
+    let config_path = tokenizer_path.with_file_name("config.json");
+    let expected_vocab_size = config_path
+        .exists()
+        .then(|| fs::read_to_string(&config_path).ok())
+        .flatten()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+        .and_then(|cfg| cfg.get("vocab_size").and_then(|v| v.as_u64()))
+        .map(|v| v as u32)
+        .unwrap_or(0);
+
+    // Build vocabulary vector
+    let max_id = token_to_id.keys().max().copied().unwrap_or(0);
+    let final_size = (expected_vocab_size.max(max_id + 1)) as usize;
+    let mut vocabulary: Vec<String> = vec!["<unk>".to_string(); final_size];
+    for (id, token) in &token_to_id {
+        if (*id as usize) < vocabulary.len() {
+            vocabulary[*id as usize] = token.clone();
+        }
+    }
+
+    eprintln!(
+        "[PMAT-232] External tokenizer loaded: {} vocab tokens from {}",
+        vocabulary.len(),
+        tokenizer_path.display()
+    );
+
+    if vocabulary.is_empty() {
+        return None;
+    }
+
+    // Extract BOS/EOS from config.json
+    let mut bos_token_id = None;
+    let mut eos_token_id = None;
+
+    if let Some(cfg) = config_path
+        .exists()
+        .then(|| fs::read_to_string(&config_path).ok())
+        .flatten()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+    {
+        bos_token_id = cfg
+            .get("bos_token_id")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as u32);
+        eos_token_id = cfg
+            .get("eos_token_id")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as u32);
+    }
+
+    // Fallback: infer from added_tokens
+    if bos_token_id.is_none() || eos_token_id.is_none() {
+        if let Some(added_tokens) = json.get("added_tokens").and_then(|v| v.as_array()) {
+            for token in added_tokens {
+                let content = token.get("content").and_then(|v| v.as_str());
+                let id = token.get("id").and_then(|v| v.as_u64()).map(|v| v as u32);
+
+                if let (Some(content), Some(id)) = (content, id) {
+                    if bos_token_id.is_none()
+                        && (content.contains("bos")
+                            || content == "<s>"
+                            || content == "<|startoftext|>")
+                    {
+                        bos_token_id = Some(id);
+                    }
+                    if eos_token_id.is_none()
+                        && (content.contains("eos") || content == "</s>" || content == "<|eot_id|>")
+                    {
+                        eos_token_id = Some(id);
+                    }
+                }
+            }
+        }
+    }
+
+    // Extract model type and merge rules
+    let model_type = json
+        .get("model")
+        .and_then(|m| m.get("type"))
+        .and_then(|t| t.as_str())
+        .map(String::from);
+
     let merges = json
         .get("model")
         .and_then(|m| m.get("merges"))
@@ -920,19 +1246,20 @@ pub(crate) fn load_source_tensors(
 
     match extension {
         "safetensors" => {
-            // PMAT-223: Load tensors AND user metadata from SafeTensors
-            let (tensors, user_metadata) = load_safetensors_with_user_metadata(path)?;
+            // GH-205: Load tensors with F16 passthrough support
+            let st_result = load_safetensors_with_f16_passthrough(path)?;
             // PMAT-098: Read config.json if available (CRITICAL for correct inference)
             // Fall back to shape inference only if config.json is missing
             let model_config = load_model_config_from_json(path)
-                .or_else(|| infer_model_config_from_tensors(&tensors));
+                .or_else(|| infer_model_config_from_tensors(&st_result.tensors));
             // PMAT-APR-TOK-001: Load tokenizer from sibling tokenizer.json for APR embedding
             let tokenizer = load_tokenizer_from_json(path);
             Ok(SourceLoadResult {
-                tensors,
+                tensors: st_result.tensors,
+                f16_raw_tensors: st_result.f16_raw_tensors, // GH-205: F16 passthrough
                 tokenizer,
                 model_config,
-                user_metadata,
+                user_metadata: st_result.user_metadata,
             })
         }
         "apr" => {
@@ -946,6 +1273,7 @@ pub(crate) fn load_source_tensors(
             let result = load_gguf_with_tokenizer(path)?;
             Ok(SourceLoadResult {
                 tensors: result.tensors,
+                f16_raw_tensors: BTreeMap::new(), // GGUF uses different quant formats
                 tokenizer: Some(result.tokenizer),
                 model_config: Some(result.model_config),
                 user_metadata: UserMetadata::new(),
@@ -1007,13 +1335,28 @@ pub(crate) fn load_safetensors_tensors(
     Ok(tensors)
 }
 
-/// Load tensors AND user metadata from SafeTensors file (PMAT-223).
+/// GH-205: Result of loading SafeTensors with F16 passthrough support.
+pub(crate) struct SafeTensorsLoadResult {
+    /// F32 tensors (native F32 or converted from other dtypes for non-passthrough)
+    pub tensors: BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+    /// Raw F16 tensor bytes for passthrough (avoids F16→F32→F16 precision loss)
+    pub f16_raw_tensors: BTreeMap<String, (Vec<u8>, Vec<usize>)>,
+    /// User metadata from `__metadata__` section
+    pub user_metadata: UserMetadata,
+}
+
+/// GH-205: Load SafeTensors with F16 passthrough support.
 ///
-/// Unlike `load_safetensors_tensors`, this also extracts the `__metadata__`
-/// section from the SafeTensors header for preservation during format conversion.
-pub(crate) fn load_safetensors_with_user_metadata(
+/// This function preserves raw F16 bytes for direct passthrough to APR format,
+/// avoiding the precision loss from F16→F32→F16 round-trip conversion.
+///
+/// Returns:
+/// - `tensors`: All tensors as F32 (for backward compatibility and validation)
+/// - `f16_raw_tensors`: Raw F16 bytes for passthrough (only F16 tensors)
+/// - `user_metadata`: User metadata from SafeTensors header
+pub(crate) fn load_safetensors_with_f16_passthrough(
     path: &Path,
-) -> Result<(BTreeMap<String, (Vec<f32>, Vec<usize>)>, UserMetadata)> {
+) -> Result<SafeTensorsLoadResult> {
     let mapped = MappedSafeTensors::open(path).map_err(|e| AprenderError::FormatError {
         message: format!("Failed to mmap SafeTensors: {e}"),
     })?;
@@ -1027,6 +1370,9 @@ pub(crate) fn load_safetensors_with_user_metadata(
     }
 
     let mut tensors = BTreeMap::new();
+    let mut f16_raw_tensors = BTreeMap::new();
+    let mut f16_count = 0usize;
+
     let names: Vec<String> = mapped
         .tensor_names()
         .iter()
@@ -1044,6 +1390,16 @@ pub(crate) fn load_safetensors_with_user_metadata(
                 message: format!("Tensor metadata not found for '{name}'"),
             })?;
 
+        // GH-205: Check if this is an F16 tensor for passthrough
+        if meta.dtype == "F16" {
+            // Get raw bytes for passthrough (no conversion)
+            if let Some(raw_bytes) = mapped.get_tensor_bytes(name) {
+                f16_raw_tensors.insert(name.clone(), (raw_bytes.to_vec(), meta.shape.clone()));
+                f16_count += 1;
+            }
+        }
+
+        // Always also get F32 representation (for validation and backward compat)
         let data = mapped
             .get_tensor(name)
             .map_err(|e| AprenderError::FormatError {
@@ -1054,7 +1410,19 @@ pub(crate) fn load_safetensors_with_user_metadata(
         tensors.insert(name.clone(), (data, meta.shape.clone()));
     }
 
-    Ok((tensors, user_metadata))
+    if f16_count > 0 {
+        eprintln!(
+            "[GH-205] F16 passthrough: {} of {} tensors will be written as raw F16",
+            f16_count,
+            tensors.len()
+        );
+    }
+
+    Ok(SafeTensorsLoadResult {
+        tensors,
+        f16_raw_tensors,
+        user_metadata,
+    })
 }
 
 /// Map tensor names to APR canonical format

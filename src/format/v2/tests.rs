@@ -1347,3 +1347,103 @@ fn test_q6k_via_ref_reader() {
     assert!(f32_data.is_some(), "Q6K via ref reader must dequantize");
     assert_eq!(f32_data.unwrap().len(), 256);
 }
+
+// ============================================================================
+// LAYOUT-002 Jidoka Guard Tests
+// ============================================================================
+
+/// LAYOUT-002: New APR files should have LAYOUT_ROW_MAJOR flag set.
+#[test]
+fn test_layout_002_writer_sets_row_major_flag() {
+    let mut writer = AprV2Writer::new(AprV2Metadata::new("test"));
+    let bytes = writer.write().expect("write APR");
+
+    let header = AprV2Header::from_bytes(&bytes).expect("parse header");
+    assert!(
+        header.flags.is_row_major(),
+        "LAYOUT-002: New APR files must have LAYOUT_ROW_MAJOR flag set"
+    );
+    assert!(
+        !header.flags.is_column_major(),
+        "LAYOUT-002: New APR files must NOT have LAYOUT_COLUMN_MAJOR flag set"
+    );
+}
+
+/// LAYOUT-002: Reader should accept valid row-major APR files.
+#[test]
+fn test_layout_002_reader_accepts_row_major() {
+    let mut writer = AprV2Writer::new(AprV2Metadata::new("test"));
+    writer.add_f32_tensor("test", vec![4], &[1.0, 2.0, 3.0, 4.0]);
+    let bytes = writer.write().expect("write APR");
+
+    // Both readers should accept the file
+    assert!(AprV2Reader::from_bytes(&bytes).is_ok());
+    assert!(AprV2ReaderRef::from_bytes(&bytes).is_ok());
+}
+
+/// LAYOUT-002: Reader should reject "dirty" APR files with LAYOUT_COLUMN_MAJOR flag.
+#[test]
+fn test_layout_002_jidoka_guard_rejects_column_major() {
+    let mut writer = AprV2Writer::new(AprV2Metadata::new("test"));
+    writer.add_f32_tensor("test", vec![4], &[1.0, 2.0, 3.0, 4.0]);
+    let mut bytes = writer.write().expect("write APR");
+
+    // Manually set the LAYOUT_COLUMN_MAJOR flag (simulating a dirty APR file)
+    // Flag bits are at offset 6-7 (u16 little-endian)
+    let current_flags = u16::from_le_bytes([bytes[6], bytes[7]]);
+    let dirty_flags = current_flags | AprV2Flags::LAYOUT_COLUMN_MAJOR;
+    bytes[6] = (dirty_flags & 0xFF) as u8;
+    bytes[7] = ((dirty_flags >> 8) & 0xFF) as u8;
+
+    // Update checksum after modifying flags
+    let mut header = AprV2Header::from_bytes(&bytes).expect("parse header");
+    header.update_checksum();
+    let header_bytes = header.to_bytes();
+    bytes[..HEADER_SIZE_V2].copy_from_slice(&header_bytes);
+
+    // Both readers should reject the dirty file
+    let result1 = AprV2Reader::from_bytes(&bytes);
+    assert!(
+        result1.is_err(),
+        "LAYOUT-002: Reader must reject column-major APR"
+    );
+    assert!(
+        result1.unwrap_err().to_string().contains("LAYOUT-002"),
+        "Error message should mention LAYOUT-002"
+    );
+
+    let result2 = AprV2ReaderRef::from_bytes(&bytes);
+    assert!(
+        result2.is_err(),
+        "LAYOUT-002: ReaderRef must reject column-major APR"
+    );
+}
+
+/// LAYOUT-002: Flags helper functions work correctly.
+#[test]
+fn test_layout_002_flags_helpers() {
+    // Test row-major flag
+    let row_major = AprV2Flags::new().with(AprV2Flags::LAYOUT_ROW_MAJOR);
+    assert!(row_major.is_row_major());
+    assert!(!row_major.is_column_major());
+    assert!(row_major.is_layout_valid());
+
+    // Test column-major flag (forbidden)
+    let col_major = AprV2Flags::new().with(AprV2Flags::LAYOUT_COLUMN_MAJOR);
+    assert!(!col_major.is_row_major());
+    assert!(col_major.is_column_major());
+    assert!(!col_major.is_layout_valid());
+
+    // Test both flags (invalid combination)
+    let both = AprV2Flags::new()
+        .with(AprV2Flags::LAYOUT_ROW_MAJOR)
+        .with(AprV2Flags::LAYOUT_COLUMN_MAJOR);
+    assert!(!both.is_layout_valid(), "Both flags set should be invalid");
+
+    // Test no layout flags (pre-LAYOUT-002 files - assumed valid)
+    let no_flags = AprV2Flags::new();
+    assert!(
+        no_flags.is_layout_valid(),
+        "Pre-LAYOUT-002 files should be accepted"
+    );
+}

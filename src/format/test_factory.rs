@@ -459,6 +459,132 @@ fn build_safetensors_bytes(tensors: &[(String, Vec<usize>, Vec<f32>)]) -> Vec<u8
 }
 
 // ============================================================================
+// GH-205: F16 SafeTensors Builder for Passthrough Testing
+// ============================================================================
+
+/// Build a minimal valid F16 SafeTensors file in memory
+///
+/// Creates a SafeTensors file with F16 (half-precision) tensors for testing
+/// the GH-205 F16 passthrough fix. The F32 values are converted to F16.
+#[must_use]
+pub fn build_pygmy_safetensors_f16() -> Vec<u8> {
+    build_pygmy_safetensors_f16_with_config(PygmyConfig::minimal())
+}
+
+/// Build F16 SafeTensors with custom config
+#[must_use]
+pub fn build_pygmy_safetensors_f16_with_config(config: PygmyConfig) -> Vec<u8> {
+    // Build tensor metadata and data (same as F32 version, but stored as F16)
+    let mut tensors: Vec<(String, Vec<usize>, Vec<f32>)> = Vec::new();
+
+    // Token embedding: [vocab_size, hidden_size]
+    if config.include_embedding {
+        let embed_data: Vec<f32> = (0..config.vocab_size * config.hidden_size)
+            .map(|i| ((i % 100) as f32 - 50.0) / 1000.0)
+            .collect();
+        tensors.push((
+            "model.embed_tokens.weight".to_string(),
+            vec![config.vocab_size, config.hidden_size],
+            embed_data,
+        ));
+    }
+
+    // LM head: [vocab_size, hidden_size]
+    if config.include_embedding && !config.tied_embeddings {
+        let lm_head_data: Vec<f32> = (0..config.vocab_size * config.hidden_size)
+            .map(|i| ((i % 100) as f32 - 50.0) / 1000.0)
+            .collect();
+        tensors.push((
+            "lm_head.weight".to_string(),
+            vec![config.vocab_size, config.hidden_size],
+            lm_head_data,
+        ));
+    }
+
+    build_safetensors_bytes_f16(&tensors)
+}
+
+/// Build F16 SafeTensors bytes from tensor list
+///
+/// Converts F32 values to F16 format for storage.
+fn build_safetensors_bytes_f16(tensors: &[(String, Vec<usize>, Vec<f32>)]) -> Vec<u8> {
+    use std::collections::BTreeMap;
+
+    // Calculate tensor data offsets
+    let mut current_offset = 0usize;
+    let mut tensor_info: BTreeMap<String, serde_json::Value> = BTreeMap::new();
+    let mut all_data = Vec::new();
+
+    for (name, shape, data) in tensors {
+        let byte_size = data.len() * 2; // f16 = 2 bytes
+
+        // SafeTensors format: {"dtype": "F16", "shape": [...], "data_offsets": [start, end]}
+        tensor_info.insert(
+            name.clone(),
+            serde_json::json!({
+                "dtype": "F16",
+                "shape": shape,
+                "data_offsets": [current_offset, current_offset + byte_size]
+            }),
+        );
+
+        // Append tensor data (little-endian f16)
+        for &val in data {
+            all_data.extend_from_slice(&f32_to_f16_bits(val).to_le_bytes());
+        }
+
+        current_offset += byte_size;
+    }
+
+    // Add __metadata__ for completeness
+    tensor_info.insert(
+        "__metadata__".to_string(),
+        serde_json::json!({"format": "pt", "pygmy": "true", "dtype": "F16"}),
+    );
+
+    // Serialize header
+    let header_json = serde_json::to_string(&tensor_info).unwrap_or_default();
+    let header_bytes = header_json.as_bytes();
+    let header_len = header_bytes.len() as u64;
+
+    // Build final file: [header_len: u64] + [header: JSON] + [tensor_data]
+    let mut result = Vec::with_capacity(8 + header_bytes.len() + all_data.len());
+    result.extend_from_slice(&header_len.to_le_bytes());
+    result.extend_from_slice(header_bytes);
+    result.extend_from_slice(&all_data);
+
+    result
+}
+
+/// Convert f32 to f16 bits (IEEE 754 half-precision)
+fn f32_to_f16_bits(val: f32) -> u16 {
+    let bits = val.to_bits();
+    let sign = ((bits >> 16) & 0x8000) as u16;
+    let exp = ((bits >> 23) & 0xff) as i32;
+    let mant = bits & 0x007fffff;
+
+    if exp == 255 {
+        // Inf or NaN
+        if mant != 0 {
+            sign | 0x7e00 // NaN
+        } else {
+            sign | 0x7c00 // Inf
+        }
+    } else if exp > 142 {
+        // Overflow to Inf
+        sign | 0x7c00
+    } else if exp < 113 {
+        // Underflow to zero (or denormal, which we skip for simplicity)
+        sign
+    } else {
+        // Normal number
+        let new_exp = ((exp - 127 + 15) as u16) << 10;
+        let new_mant = (mant >> 13) as u16;
+        sign | new_exp | new_mant
+    }
+}
+
+// ============================================================================
 // APR v2 Pygmy Builder
 // ============================================================================
 

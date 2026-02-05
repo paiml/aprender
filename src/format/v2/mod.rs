@@ -181,11 +181,12 @@ fn dequantize_q4(data: &[u8], element_count: usize) -> Vec<f32> {
         // Uses shared F16_MIN_NORMAL from crate::format::f16_safety (P2 fix)
         let scale_bits = u16::from_le_bytes([data[pos], data[pos + 1]]);
         let scale_raw = f16_to_f32(scale_bits);
-        let scale = if scale_raw.is_nan() || scale_raw.is_infinite() || scale_raw.abs() < F16_MIN_NORMAL {
-            0.0
-        } else {
-            scale_raw
-        };
+        let scale =
+            if scale_raw.is_nan() || scale_raw.is_infinite() || scale_raw.abs() < F16_MIN_NORMAL {
+                0.0
+            } else {
+                scale_raw
+            };
         pos += 2;
 
         // Read packed nibbles (16 bytes max)
@@ -271,6 +272,16 @@ impl AprV2Flags {
     /// Contains vocabulary/tokenizer
     pub const HAS_VOCAB: u16 = 0b0000_0010_0000_0000;
 
+    /// LAYOUT-002: Tensor layout is row-major (REQUIRED for valid APR files)
+    /// All APR files created after LAYOUT-002 must have this flag set.
+    /// Pre-LAYOUT-002 files without this flag are assumed row-major.
+    pub const LAYOUT_ROW_MAJOR: u16 = 0b0000_0100_0000_0000;
+
+    /// LAYOUT-002: Tensor layout is column-major (FORBIDDEN - Jidoka guard)
+    /// If this flag is set, the APR file is "dirty" and must be rejected.
+    /// This flag exists to catch improperly converted GGUF files.
+    pub const LAYOUT_COLUMN_MAJOR: u16 = 0b0000_1000_0000_0000;
+
     /// Create new empty flags
     #[must_use]
     pub const fn new() -> Self {
@@ -335,6 +346,27 @@ impl AprV2Flags {
     #[must_use]
     pub const fn is_quantized(self) -> bool {
         self.contains(Self::QUANTIZED)
+    }
+
+    /// LAYOUT-002: Check if row-major layout flag is set
+    #[must_use]
+    pub const fn is_row_major(self) -> bool {
+        self.contains(Self::LAYOUT_ROW_MAJOR)
+    }
+
+    /// LAYOUT-002: Check if column-major layout flag is set (should be rejected)
+    #[must_use]
+    pub const fn is_column_major(self) -> bool {
+        self.contains(Self::LAYOUT_COLUMN_MAJOR)
+    }
+
+    /// LAYOUT-002: Validate layout is safe for inference
+    /// Returns true if the file is row-major or pre-LAYOUT-002 (assumed row-major)
+    /// Returns false if explicitly marked as column-major (dirty APR file)
+    #[must_use]
+    pub const fn is_layout_valid(self) -> bool {
+        // Reject if explicitly marked as column-major
+        !self.is_column_major()
     }
 }
 
@@ -979,10 +1011,16 @@ pub struct AprV2Writer {
 
 impl AprV2Writer {
     /// Create new writer
+    ///
+    /// LAYOUT-002: All new APR files are created with LAYOUT_ROW_MAJOR flag set.
+    /// This ensures realizar can safely assume row-major layout for all tensors.
     #[must_use]
     pub fn new(metadata: AprV2Metadata) -> Self {
+        let mut header = AprV2Header::new();
+        // LAYOUT-002: Mark all new APR files as row-major
+        header.flags = header.flags.with(AprV2Flags::LAYOUT_ROW_MAJOR);
         Self {
-            header: AprV2Header::new(),
+            header,
             metadata,
             tensors: Vec::new(),
         }
@@ -1270,6 +1308,10 @@ impl AprV2Reader {
     ///
     /// # Errors
     /// Returns error if parsing fails.
+    ///
+    /// # LAYOUT-002 Jidoka Guard
+    /// Rejects APR files with `LAYOUT_COLUMN_MAJOR` flag set, as these indicate
+    /// improperly converted GGUF files that would produce garbage output.
     pub fn from_bytes(data: &[u8]) -> Result<Self, V2FormatError> {
         if data.len() < HEADER_SIZE_V2 {
             return Err(V2FormatError::InvalidHeader("file too small".to_string()));
@@ -1281,6 +1323,16 @@ impl AprV2Reader {
         // Verify checksum
         if !header.verify_checksum() {
             return Err(V2FormatError::ChecksumMismatch);
+        }
+
+        // LAYOUT-002: Jidoka Guard - Reject "dirty" APR files with column-major layout
+        if !header.flags.is_layout_valid() {
+            return Err(V2FormatError::InvalidHeader(
+                "LAYOUT-002 violation: APR file has LAYOUT_COLUMN_MAJOR flag set. \
+                 This indicates a dirty import from GGUF without proper transpose. \
+                 Re-import the model using `apr import` with LAYOUT-002 enforcement."
+                    .to_string(),
+            ));
         }
 
         // Parse metadata
@@ -1456,6 +1508,10 @@ impl<'a> AprV2ReaderRef<'a> {
     ///
     /// # Errors
     /// Returns error if parsing fails.
+    ///
+    /// # LAYOUT-002 Jidoka Guard
+    /// Rejects APR files with `LAYOUT_COLUMN_MAJOR` flag set, as these indicate
+    /// improperly converted GGUF files that would produce garbage output.
     pub fn from_bytes(data: &'a [u8]) -> Result<Self, V2FormatError> {
         if data.len() < HEADER_SIZE_V2 {
             return Err(V2FormatError::InvalidHeader("file too small".to_string()));
@@ -1467,6 +1523,16 @@ impl<'a> AprV2ReaderRef<'a> {
         // Verify checksum
         if !header.verify_checksum() {
             return Err(V2FormatError::ChecksumMismatch);
+        }
+
+        // LAYOUT-002: Jidoka Guard - Reject "dirty" APR files with column-major layout
+        if !header.flags.is_layout_valid() {
+            return Err(V2FormatError::InvalidHeader(
+                "LAYOUT-002 violation: APR file has LAYOUT_COLUMN_MAJOR flag set. \
+                 This indicates a dirty import from GGUF without proper transpose. \
+                 Re-import the model using `apr import` with LAYOUT-002 enforcement."
+                    .to_string(),
+            ));
         }
 
         // Parse metadata

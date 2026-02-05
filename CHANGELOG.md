@@ -1276,3 +1276,4 @@ Major feature release adding tree-based models, ensemble methods, cross-validati
 - Implement Content-Based Recommender with HNSW (Phase 1) (#71)
 - PMAT-114: SafeTensors→APR inference fix
 - PMAT-114: SafeTensors→APR inference fix
+- GH-205: F16 SafeTensors Passthrough Fix

@@ -1594,3 +1594,20 @@ roadmap:
   labels:
   - bug
   notes: null
+- id: PMAT-203
+  github_issue: null
+  item_type: task
+  title: 'GH-202-FIX-001: Add tensor value validation test'
+  status: inprogress
+  priority: critical
+  assigned_to: null
+  created: 2026-02-04T14:04:48Z
+  updated: 2026-02-04T14:04:52.947389341+00:00
+  spec: null
+  acceptance_criteria:
+  - Add test that compares first N values of key tensors between GGUF source and APR output during conversion. Validates transpose doesn't corrupt data.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

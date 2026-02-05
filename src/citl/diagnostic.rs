@@ -823,8 +823,8 @@ mod tests {
             line_end: 1,
             column_start: 5,
             column_end: 10,
-            byte_start: 4,  // "let " (0-3), then target starts at 4
-            byte_end: 9,    // "hello"
+            byte_start: 4, // "let " (0-3), then target starts at 4
+            byte_end: 9,   // "hello"
         };
         let replacement = CodeReplacement::new(span, "world");
         let source = "let hello = 42;";

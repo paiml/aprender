@@ -1222,11 +1222,11 @@ roadmap:
   github_issue: 80
   item_type: epic
   title: 'feat(metaheuristics): Implement derivative-free global optimization for aprender-contrib'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2025-11-27T08:53:16.807707680+00:00
-  updated: 2025-11-29T08:27:54.372237151+00:00
+  updated: 2026-02-04T12:49:49Z
   spec: null
   acceptance_criteria:
   - '`SearchSpace` enum (Continuous, Mixed, Binary, Permutation, Graph)'
@@ -1271,11 +1271,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'New task: Add APR-SPEC to book and verify examples'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2025-12-16T09:20:59.016120866+00:00
-  updated: 2025-12-16T09:20:59.016120866+00:00
+  updated: 2026-02-04T12:51:06Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -1319,11 +1319,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'New task: APR-VERIFY-001'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2025-12-16T18:46:36.901960159+00:00
-  updated: 2025-12-16T18:46:36.901960159+00:00
+  updated: 2026-02-04T12:50:14Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -1335,11 +1335,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'New task: APR-POKA-001'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2025-12-16T19:25:20.831662792+00:00
-  updated: 2025-12-16T19:25:20.831662792+00:00
+  updated: 2026-02-04T12:55:50Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -1641,11 +1641,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'FILE-HEALTH-002: Split optim/mod.rs into submodules'
-  status: inprogress
+  status: completed
   priority: critical
   assigned_to: null
   created: 2026-01-21T16:49:43Z
-  updated: 2026-01-29T22:22:06.550972032+00:00
+  updated: 2026-02-04T12:47:27Z
   spec: null
   acceptance_criteria:
   - Extract optimizers into separate files to reduce optim/mod.rs from 7090 to <2000 lines
@@ -1864,11 +1864,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'FIVE-WHYS-ST-001: SafeTensors inference produces garbage output'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-01-22T10:09:34Z
-  updated: 2026-01-25T10:17:35.951330631+00:00
+  updated: 2026-02-04T12:49:05Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -1913,11 +1913,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'New task: PMAT-099: APR format parity - fix AprTransformer config reading'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-01-22T14:11:54.074583783+00:00
-  updated: 2026-01-22T14:11:54.074583783+00:00
+  updated: 2026-02-04T12:49:26Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -1929,11 +1929,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'New task: APR-PARITY-001: APR/SafeTensors GGUF parity - all QA scripts pass'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-01-22T15:35:30.231896505+00:00
-  updated: 2026-01-22T15:35:30.231896505+00:00
+  updated: 2026-02-04T13:08:15Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -2029,11 +2029,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-QA-PROTOCOL-001: Implement comprehensive QA testing protocol'
-  status: inprogress
+  status: completed
   priority: critical
   assigned_to: null
   created: 2026-01-26T15:03:49Z
-  updated: 2026-01-26T15:54:50.326576146+00:00
+  updated: 2026-02-04T12:47:42Z
   spec: null
   acceptance_criteria:
   - Implement 27-test modality × format × tracing matrix with ModelFixture, timeouts, and output verification. See spec §7.
@@ -2175,11 +2175,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-117: Implement SafeTensors GPU inference (from spec)'
-  status: inprogress
+  status: completed
   priority: critical
   assigned_to: null
   created: 2026-01-28T07:44:31Z
-  updated: 2026-01-28T07:44:35.931134400+00:00
+  updated: 2026-02-04T12:48:02Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -2195,11 +2195,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'New task: PMAT-116'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-01-28T08:06:27.533748827+00:00
-  updated: 2026-01-28T08:06:27.533748827+00:00
+  updated: 2026-02-04T12:48:04Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -2211,11 +2211,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: Fix SATD violations in apr-cli (Toyota Way compliance)
-  status: inprogress
+  status: completed
   priority: high
   assigned_to: null
   created: 2026-01-28T08:58:23Z
-  updated: 2026-01-28T08:58:28.300749415+00:00
+  updated: 2026-02-04T12:41:51Z
   spec: null
   acceptance_criteria:
   - Fix 4 TODO/FIXME/HACK markers in apr-cli per Toyota Way zero-SATD policy
@@ -2228,11 +2228,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'F-PERF-042: GPU > 2x CPU throughput verification'
-  status: inprogress
+  status: completed
   priority: high
   assigned_to: null
   created: 2026-01-28T09:08:38Z
-  updated: 2026-01-28T09:08:47.496264857+00:00
+  updated: 2026-02-04T12:48:53Z
   spec: null
   acceptance_criteria:
   - Implement automated verification that GPU inference achieves >2x CPU throughput. Add to CI quality gates.
@@ -2245,11 +2245,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'F-QUAL-032: Argmax parity GGUF vs SafeTensors QA gate'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-01-28T09:19:57Z
-  updated: 2026-01-28T09:20:01.794783588+00:00
+  updated: 2026-02-04T12:48:37Z
   spec: null
   acceptance_criteria:
   - 'Implement QA gate to verify argmax parity between GGUF and SafeTensors formats for the same model. The invariant is: argmax(forward_gguf(M, tokens)) == argmax(forward_safetensors(M, tokens)). This prevents drift where one format produces subtle errors.'
@@ -2262,11 +2262,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'DEFECT: SafeTensors GPU chat produces garbage (Andon)'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-01-28T10:38:39Z
-  updated: 2026-01-28T11:07:18.685600198+00:00
+  updated: 2026-02-04T12:48:37Z
   spec: null
   acceptance_criteria:
   - 'Observed: SafeTensors GPU chat produces garbage output despite spec claiming CORROBORATED. This is a STOP THE LINE defect requiring five-whys analysis. Evidence: ''apr chat model.safetensors --gpu'' produced garbage Chinese characters instead of ''2+2=4''.'
@@ -2279,11 +2279,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'FALSIFY-SPEC-001: Systematic falsification of qwen2.5-coder-showcase-demo.md claims'
-  status: inprogress
+  status: completed
   priority: high
   assigned_to: null
   created: 2026-01-28T17:42:30Z
-  updated: 2026-01-28T17:42:36.672183931+00:00
+  updated: 2026-02-04T12:48:24Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -2295,11 +2295,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-123: Continue systematic falsification testing'
-  status: inprogress
+  status: completed
   priority: high
   assigned_to: null
   created: 2026-01-28T20:38:31Z
-  updated: 2026-01-28T20:52:33.632764177+00:00
+  updated: 2026-02-04T12:48:24Z
   spec: null
   acceptance_criteria:
   - Continue falsification of qwen2.5-coder-showcase-demo.md spec claims
@@ -2312,11 +2312,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'New task: PMAT-124'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-01-28T20:53:22.329521595+00:00
-  updated: 2026-01-28T20:53:22.329521595+00:00
+  updated: 2026-02-04T12:48:45Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -2354,11 +2354,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'New task: PMAT-129: Fix F-SAFETENSORS-GPU - apr run should support SafeTensors GPU'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-01-29T07:44:56.916841389+00:00
-  updated: 2026-01-29T07:44:56.916841389+00:00
+  updated: 2026-02-04T12:48:45Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -2370,11 +2370,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'New task: PMAT-130: Fix F-Q4_0 - GGUF Q4_0 dequantization produces garbage'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-01-29T07:51:38.043099434+00:00
-  updated: 2026-01-29T07:51:38.043099434+00:00
+  updated: 2026-02-04T12:48:45Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -2386,11 +2386,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'New task: PMAT-131: Fix F-UX-033 - SafeTensors CPU should display backend type'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-01-29T08:06:40.076272804+00:00
-  updated: 2026-01-29T08:06:40.076272804+00:00
+  updated: 2026-02-04T12:43:49Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -2458,11 +2458,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'GH-203: Cross-architecture determinism validation'
-  status: inprogress
+  status: completed
   priority: high
   assigned_to: null
   created: 2026-01-31T09:33:56Z
-  updated: 2026-01-31T09:44:40.793861455+00:00
+  updated: 2026-02-04T12:44:28Z
   spec: null
   acceptance_criteria:
   - 'Add cross-machine determinism tests for zero-temperature inference. Ref: Popperian Audit Round 12, Test 4. Root cause: Incorrect FMA reproducibility assumption.'
@@ -2478,11 +2478,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'GH-204: Prompt injection sanitization'
-  status: inprogress
+  status: completed
   priority: high
   assigned_to: null
   created: 2026-01-31T09:33:57Z
-  updated: 2026-01-31T09:47:40.086444103+00:00
+  updated: 2026-02-04T12:46:02Z
   spec: null
   acceptance_criteria:
   - 'Add sanitization for control tokens in user input. Ref: Popperian Audit Round 12, Test 17. Root cause: Missing security threat model.'
@@ -2498,11 +2498,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'GH-205: Load testing infrastructure'
-  status: inprogress
+  status: completed
   priority: high
   assigned_to: null
   created: 2026-01-31T09:33:59Z
-  updated: 2026-01-31T09:47:41.180383544+00:00
+  updated: 2026-02-04T12:47:13Z
   spec: null
   acceptance_criteria:
   - 'Add 50-concurrent request tests and disconnect cleanup tests. Ref: Popperian Audit Round 12, Tests 9-10. Root cause: Spec evolution from CLI to server.'
@@ -2518,11 +2518,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'New task: PMAT-ROSETTA-001'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-02-01T18:33:22.303949274+00:00
-  updated: 2026-02-01T18:33:22.303949274+00:00
+  updated: 2026-02-04T12:46:49Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -2534,11 +2534,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'GH-198: apr pull SafeTensors missing companion files (tokenizer.json, config.json)'
-  status: inprogress
+  status: completed
   priority: critical
   assigned_to: null
   created: 2026-02-01T22:14:01Z
-  updated: 2026-02-01T22:20:55.222129362+00:00
+  updated: 2026-02-04T12:42:26Z
   spec: null
   acceptance_criteria:
   - apr pull for SafeTensors only downloads weight file, missing tokenizer.json and config.json. Causes apr run to fail with PMAT-172.
@@ -2554,11 +2554,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: GGUF-EXPORT-001
-  status: planned
+  status: inprogress
   priority: critical
   assigned_to: null
   created: 2026-02-01T23:21:56Z
-  updated: 2026-02-01T23:21:56Z
+  updated: 2026-02-04T14:42:51.640175315+00:00
   spec: null
   acceptance_criteria:
   - 'P0: GGUF exporter writes zero metadata keys and HF-style tensor names'
@@ -2566,4 +2566,470 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
+- id: PMAT-197
+  github_issue: null
+  item_type: task
+  title: 'PMAT-210: Fix BUG-1 GGUF Export from SafeTensors (CRASH)'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-02-03T17:51:49Z
+  updated: 2026-02-03T17:59:00Z
+  spec: null
+  acceptance_criteria:
+  - 'GGUF export from SafeTensors crashes with zero metadata and wrong tensor names. SafeTensors → GGUF conversion path completely broken. Falsification: apr export model.apr --format gguf produces valid GGUF with correct metadata and tensor names.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P0
+  - falsification
+  - gguf
+  - export
+  notes: null
+- id: PMAT-198
+  github_issue: null
+  item_type: task
+  title: 'PMAT-201: Complete Per-Tensor Statistical Fingerprints'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-02-03T17:51:55Z
+  updated: 2026-02-03T18:01:01Z
+  spec: null
+  acceptance_criteria:
+  - 'Implement apr rosetta fingerprint command with JSON output, fingerprint comparison (--diff), and CI integration. Falsification: apr rosetta fingerprint model.gguf --output fp.json produces valid JSON with mean, std, min, max, nan_count, checksum for each tensor.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P1
+  - falsification
+  - fingerprint
+  - rosetta
+  notes: null
+- id: PMAT-199
+  github_issue: null
+  item_type: task
+  title: 'PMAT-202: Tensor Statistics Validation'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-02-03T17:52:02Z
+  updated: 2026-02-03T18:04:24Z
+  spec: null
+  acceptance_criteria:
+  - 'Implement apr rosetta validate-stats with role-specific thresholds (LayerNorm, Attention, MLP). Falsification: apr rosetta validate-stats model.apr --reference model.gguf returns E020 error for corrupted tensors.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P1
+  - falsification
+  - validation
+  - rosetta
+  notes: null
+- id: PMAT-200
+  github_issue: null
+  item_type: task
+  title: 'PMAT-203: Golden Output Embedding'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-03T17:52:02Z
+  updated: 2026-02-03T18:01:01Z
+  spec: null
+  acceptance_criteria:
+  - 'Embed golden test cases in APR metadata. Implement apr validate --golden for self-validating artifacts. Falsification: Model metadata contains golden_tests array and inference matches expected within tolerance.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P2
+  - falsification
+  - golden
+  - validation
+  notes: null
+- id: PMAT-201
+  github_issue: null
+  item_type: task
+  title: 'PMAT-204: Tensor Distribution Tags'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-03T18:24:00Z
+  updated: 2026-02-04T12:46:50Z
+  spec: null
+  acceptance_criteria:
+  - 'Tag tensors with semantic role (Embedding, LayerNorm, etc.) for role-specific validation and quantization guidance. Falsification: TensorRole enum with from_name() method correctly identifies all tensor types.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P2
+  - falsification
+  - validation
+  notes: null
+- id: PMAT-202
+  github_issue: null
+  item_type: task
+  title: 'PMAT-205: Sharding-Aware Placement'
+  status: planned
+  priority: low
+  assigned_to: null
+  created: 2026-02-03T18:24:00Z
+  updated: 2026-02-03T18:24:00Z
+  spec: null
+  acceptance_criteria:
+  - 'JAX-inspired PartitionSpec for multi-GPU device placement hints. Falsification: ShardingSpec struct with device placement and tensor partitioning.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P3
+  - falsification
+  - sharding
+  notes: null
+- id: PMAT-203
+  github_issue: null
+  item_type: task
+  title: 'BUG-RUN-001: Fix benchmark token count mismatch in apr run'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-04T10:00:33Z
+  updated: 2026-02-04T14:12:16Z
+  spec: null
+  acceptance_criteria:
+  - |-
+    The apr run --benchmark command shows inconsistent token counts:
+    - Header shows actual count from inference engine: 'Generated 10 tokens in 5920.0ms (1.7 tok/s)'
+    - Benchmark section shows word approximation: 'tok/s: 0.3, tokens: 5'
+
+    Root cause: execute_inference() returns only text, discarding result.generated_token_count.
+    run_model() then approximates with text.split_whitespace().count().
+
+    Fix: Return actual token count from execute_inference() and use it in benchmark output.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-202
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-202'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-04T12:40:00.035130982+00:00
+  updated: 2026-02-04T12:41:13Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-204
+  github_issue: null
+  item_type: task
+  title: 'STACK-DRIFT-001: Update downstream crates for aprender 0.25.1'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-02-04T13:19:13Z
+  updated: 2026-02-04T13:19:13Z
+  spec: null
+  acceptance_criteria:
+  - 'Stack drift detected by batuta bug-hunter. Crates needing update: aprender-shell, aprender-tsp, realizar, whisper-apr, pmat. Run ''batuta stack drift --fix'' after publish.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - stack
+  - dependencies
+  notes: null
+- id: PMAT-205
+  github_issue: null
+  item_type: task
+  title: 'GH-202-FIX-002: Debug realizar APR loader tensor shapes'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-02-04T14:13:49Z
+  updated: 2026-02-04T14:25:14Z
+  spec: null
+  acceptance_criteria:
+  - Add debug logging to realizar AprTransformer::from_apr_v2() to compare tensor shapes and first N values between GGUF and APR inference paths. Root cause is in realizar, not aprender.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-206
+  github_issue: null
+  item_type: task
+  title: 'GH-202-FIX-003: E2E tensor comparison test for GGUF vs APR'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-02-04T14:25:49Z
+  updated: 2026-02-04T14:27:58Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-207
+  github_issue: null
+  item_type: task
+  title: 'GH-202-FIX-004: realizar E2E test comparing GGUF vs APR inference'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-02-04T14:28:04Z
+  updated: 2026-02-04T14:37:50.775554155+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: 'PMAT-PHASE6: Re-run Phase 6 (marathon + throughput) with self-converted GGUF'
+  github_issue: null
+  item_type: task
+  title: 'New task: PMAT-PHASE6: Re-run Phase 6 (marathon + throughput) with self-converted GGUF'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-02-04T14:50:34.685386748+00:00
+  updated: 2026-02-04T14:50:34.685386748+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-208
+  github_issue: null
+  item_type: task
+  title: 'GH-202: LAYOUT-002 conversion fidelity fix'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-02-04T17:25:51Z
+  updated: 2026-02-04T19:23:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Fix quantized tensor transpose during GGUF→APR import causing 58-90% diff. Blocks #200, #192, #199.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-209
+  github_issue: null
+  item_type: task
+  title: 'GH-200: Qwen2.5-Coder dev-tier QA qualification'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-02-04T17:25:52Z
+  updated: 2026-02-04T17:25:52Z
+  spec: null
+  acceptance_criteria:
+  - '0/6 models pass QA gates. Blocked by #202 LAYOUT-002 fix.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-210
+  github_issue: null
+  item_type: task
+  title: 'GH-199: APR 1.5B dequantize and GPU issues'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-02-04T17:25:54Z
+  updated: 2026-02-04T17:25:54Z
+  spec: null
+  acceptance_criteria:
+  - lm_head.weight dequantize fails, APR 8x slower than GGUF, GPU output garbage.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-211
+  github_issue: null
+  item_type: task
+  title: 'GH-192: APR inference performance (0.5 vs 270 tok/s)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-02-04T17:25:55Z
+  updated: 2026-02-04T17:25:55Z
+  spec: null
+  acceptance_criteria:
+  - APR format inference too slow. Dequant path not using fused kernels.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-212
+  github_issue: null
+  item_type: task
+  title: 'LAYOUT-CONTRACT-001: Implement tensor layout contract validation tests'
+  status: completed
+  priority: critical
+  assigned_to: null
+  created: 2026-02-04T18:13:49Z
+  updated: 2026-02-04T18:23:56Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-213
+  github_issue: null
+  item_type: task
+  title: 'LAYOUT-CONTRACT-002: Finalize spec documentation and playbook integration'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-02-04T18:26:00Z
+  updated: 2026-02-04T18:26:39Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-214
+  github_issue: null
+  item_type: task
+  title: 'SPEC-FINAL-001: Complete tensor layout contract specification'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-02-04T18:27:18Z
+  updated: 2026-02-04T18:28:14Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-205
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-205'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-02-05T11:20:38.193678509+00:00
+  updated: 2026-02-05T11:20:38.193678509+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-207
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-207'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-02-05T11:27:20.280899150+00:00
+  updated: 2026-02-05T11:27:20.280899150+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-208
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-208'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-02-05T11:29:43.574421852+00:00
+  updated: 2026-02-05T11:35:10.932807006+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-215
+  github_issue: null
+  item_type: task
+  title: 'GH-208: APR Inference - Layer Weight Investigation'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-02-05T12:13:27Z
+  updated: 2026-02-05T12:13:32.651486896+00:00
+  spec: null
+  acceptance_criteria:
+  - Embedding correlation fixed (1.0), but APR inference still produces garbage. Need to investigate layer weights and GPU kernels.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-216
+  github_issue: null
+  item_type: task
+  title: 'GH-208-GPU: Fix GPU inference garbage output (Five Whys root cause analysis)'
+  status: inprogress
+  priority: critical
+  assigned_to: null
+  created: 2026-02-05T12:35:13Z
+  updated: 2026-02-05T12:35:18.513804845+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-217
+  github_issue: null
+  item_type: task
+  title: 'GH-205: F16 SafeTensors Passthrough Fix'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-02-05T14:33:31Z
+  updated: 2026-02-05T14:35:21.316402748+00:00
+  spec: null
+  acceptance_criteria:
+  - Fixed F16 SafeTensors→APR 95% diff caused by F16→F32→F16 precision loss. Implemented F16 passthrough that preserves raw bytes. Also fixed F16→F32 conversion arithmetic overflow.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - bug
+  - converter
+  - f16
   notes: null

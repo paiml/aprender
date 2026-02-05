@@ -1339,7 +1339,10 @@ fn test_lint_apr_file_magic_dispatch() {
     // Should fail because invalid v1 file, but NOT with "unknown magic" error
     assert!(result.is_err(), "Invalid v1 file should error");
     let err = result.unwrap_err().to_string();
-    assert!(!err.contains("Invalid APR magic"), "APR v1 magic should be recognized");
+    assert!(
+        !err.contains("Invalid APR magic"),
+        "APR v1 magic should be recognized"
+    );
 
     // Test APR v2 magic detection (should attempt v2 parsing)
     let apr_v2_file = NamedTempFile::with_suffix(".apr").expect("create temp file");
@@ -1349,7 +1352,10 @@ fn test_lint_apr_file_magic_dispatch() {
     // Should fail because invalid v2 file, but NOT with "unknown magic" error
     assert!(result.is_err(), "Invalid v2 file should error");
     let err = result.unwrap_err().to_string();
-    assert!(!err.contains("Invalid APR magic"), "APR v2 magic should be recognized");
+    assert!(
+        !err.contains("Invalid APR magic"),
+        "APR v2 magic should be recognized"
+    );
 }
 
 /// P0 REGRESSION TEST: Unknown magic should produce clear error
@@ -1364,8 +1370,11 @@ fn test_lint_apr_file_unknown_magic_error() {
     let result = lint_apr_file(unknown_file.path());
     assert!(result.is_err(), "Unknown magic should error");
     let err = result.unwrap_err().to_string();
-    assert!(err.contains("Invalid APR magic") || err.contains("magic"),
-        "Unknown magic error should mention 'magic': {}", err);
+    assert!(
+        err.contains("Invalid APR magic") || err.contains("magic"),
+        "Unknown magic error should mention 'magic': {}",
+        err
+    );
 }
 
 /// P0 REGRESSION TEST: lint_model_file dispatches to correct handler
@@ -1381,7 +1390,10 @@ fn test_lint_model_file_format_dispatch() {
 
     let format = FormatType::from_magic(gguf_file.path());
     assert!(format.is_ok(), "GGUF format should be detected");
-    assert!(matches!(format.unwrap(), FormatType::Gguf), "Must detect as GGUF");
+    assert!(
+        matches!(format.unwrap(), FormatType::Gguf),
+        "Must detect as GGUF"
+    );
 
     // Test APR dispatch
     let apr_file = NamedTempFile::with_suffix(".apr").expect("create temp file");
@@ -1389,7 +1401,10 @@ fn test_lint_model_file_format_dispatch() {
 
     let format = FormatType::from_magic(apr_file.path());
     assert!(format.is_ok(), "APR format should be detected");
-    assert!(matches!(format.unwrap(), FormatType::Apr), "Must detect as APR");
+    assert!(
+        matches!(format.unwrap(), FormatType::Apr),
+        "Must detect as APR"
+    );
 
     // Test SafeTensors dispatch
     let st_file = NamedTempFile::with_suffix(".safetensors").expect("create temp file");
@@ -1401,5 +1416,8 @@ fn test_lint_model_file_format_dispatch() {
 
     let format = FormatType::from_magic(st_file.path());
     assert!(format.is_ok(), "SafeTensors format should be detected");
-    assert!(matches!(format.unwrap(), FormatType::SafeTensors), "Must detect as SafeTensors");
+    assert!(
+        matches!(format.unwrap(), FormatType::SafeTensors),
+        "Must detect as SafeTensors"
+    );
 }

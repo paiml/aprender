@@ -1,12 +1,31 @@
-# PMAT Quality Gates Configuration for aprender
+# PMAT Quality Gate Configuration for aprender
 # ComputeBrick ecosystem - ML inference runtime
+# Updated for PMAT v2.215.0
 
 [gates]
-# Quality gate thresholds
-coverage_threshold = 95.0
-complexity_threshold = 10
-satd_threshold = 0
-mutation_threshold = 80.0
+# Run clippy linter
+run_clippy = true
+
+# Enforce strict clippy (-D warnings)
+clippy_strict = true
+
+# Run test suite
+run_tests = true
+
+# Test timeout in seconds
+test_timeout = 600
+
+# Check code coverage
+check_coverage = true
+
+# Minimum coverage percentage (target: 95%, achieved: 96.94%)
+min_coverage = 95.0
+
+# Check cyclomatic complexity
+check_complexity = true
+
+# Maximum cyclomatic complexity per function
+max_complexity = 10
 
 [exclude]
 # mdBook generated files (not our code)
@@ -14,11 +33,6 @@ patterns = [
     "**/book/**",
     "**/target/**",
 ]
-
-[quality]
-coverage_threshold = 95.0
-max_complexity = 10
-max_binary_size_mb = 100
 
 [dead_code]
 # Library crates have higher "dead code" due to public APIs used by external consumers

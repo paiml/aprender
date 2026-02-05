@@ -152,6 +152,12 @@ pub mod diff;
 // See: contracts/tensor-layout-v1.yaml and docs/specifications/qwen2.5-coder-showcase-demo.md §E.8
 pub mod layout_contract;
 
+// Validated Tensor Types - Compile-Time Contract Enforcement (PMAT-235)
+// Implements Poka-Yoke (mistake-proofing) via newtype pattern.
+// Makes it IMPOSSIBLE to use unvalidated tensor data at compile time.
+// See: contracts/tensor-layout-v1.yaml §type_enforcement
+pub mod validated_tensors;
+
 // Digital signatures (spec §4.2, PMAT-198)
 #[cfg(feature = "format-signing")]
 pub mod signing;
@@ -232,6 +238,13 @@ pub use diff::{diff_inspections, diff_models, DiffCategory, DiffEntry, DiffOptio
 // Re-export layout contract types (LAYOUT-CONTRACT-001 - Source of Truth)
 pub use layout_contract::{
     block_sizes, contract, validation_rules, ContractError, LayoutContract, TensorContract,
+};
+
+// Re-export validated tensor types (PMAT-235 - Compile-Time Contract Enforcement)
+// Implements Poka-Yoke: makes invalid tensor states unrepresentable
+pub use validated_tensors::{
+    ContractValidationError, TensorStats as ValidatedTensorStats, ValidatedEmbedding,
+    ValidatedVector, ValidatedWeight,
 };
 
 // Re-export quantization types when feature is enabled

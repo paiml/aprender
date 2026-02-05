@@ -1377,7 +1377,7 @@ mod tests_report {
         let mut data = vec![0u8; 32];
         data[0..4].copy_from_slice(b"APR\0");
         data[4] = 1; // version major
-        // Set unknown flag bits (beyond bit 7)
+                     // Set unknown flag bits (beyond bit 7)
         data[9] = 0x01; // This sets bit 8 which is unknown
         let mut validator = AprValidator::new();
         validator.validate_bytes(&data);
@@ -1401,7 +1401,7 @@ mod tests_report {
         let stats = TensorStats::compute("nan_tensor", &data);
         assert_eq!(stats.nan_count, 3);
         assert_eq!(stats.mean, 0.0); // No valid values, mean defaults to 0
-        assert_eq!(stats.std, 0.0);  // No valid values, std defaults to 0
+        assert_eq!(stats.std, 0.0); // No valid values, std defaults to 0
     }
 
     #[test]

@@ -907,6 +907,10 @@ pub enum Commands {
         #[arg(long)]
         skip_gpu_speedup: bool,
 
+        /// Skip tensor contract validation (PMAT-235)
+        #[arg(long)]
+        skip_contract: bool,
+
         /// Skip cross-format parity test (F-QUAL-032)
         #[arg(long)]
         skip_format_parity: bool,
@@ -1557,6 +1561,7 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             skip_throughput,
             skip_ollama,
             skip_gpu_speedup,
+            skip_contract,
             skip_format_parity,
             safetensors_path,
             iterations,
@@ -1573,6 +1578,7 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             *skip_throughput,
             *skip_ollama,
             *skip_gpu_speedup,
+            *skip_contract,
             *skip_format_parity,
             safetensors_path.clone(),
             *iterations,

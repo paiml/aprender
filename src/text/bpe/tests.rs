@@ -389,7 +389,7 @@ fn test_split_on_special_tokens_empty_text() {
     let mut tokenizer = BpeTokenizer::new(BpeConfig::default());
     tokenizer.add_special_token("<test>", 100);
     let segments = tokenizer.split_on_special_tokens("");
-    assert!(segments.is_empty() || segments == vec!["".to_string()]);
+    assert!(segments.is_empty() || segments == vec![String::new()]);
 }
 
 #[test]
@@ -456,7 +456,8 @@ fn test_decode_with_unknown_id() {
     // ID that doesn't exist in vocab
     let decoded = tokenizer.decode(&[999999]);
     // Unknown ID should be skipped
-    assert!(decoded.is_empty() || decoded == "");
+    // Either empty or an empty string - both cases handled by is_empty()
+    assert!(decoded.is_empty());
 }
 
 #[test]

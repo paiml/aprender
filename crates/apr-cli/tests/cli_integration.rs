@@ -1382,11 +1382,7 @@ fn test_f_format_dispatch_005_diff_all_format_combinations() {
 
     for (name, path1, path2) in combinations {
         let output = apr()
-            .args([
-                "diff",
-                path1.to_str().unwrap(),
-                path2.to_str().unwrap(),
-            ])
+            .args(["diff", path1.to_str().unwrap(), path2.to_str().unwrap()])
             .output()
             .expect(&format!("run diff {name}"));
         let stderr = String::from_utf8_lossy(&output.stderr);

@@ -718,7 +718,9 @@ mod tests {
 
         // 100-dimensional vectors (orthogonal-ish to avoid cosine distance edge cases)
         let v1: Vec<f64> = (0..100).map(|i| if i < 33 { 1.0 } else { 0.0 }).collect();
-        let v2: Vec<f64> = (0..100).map(|i| if (33..66).contains(&i) { 1.0 } else { 0.0 }).collect();
+        let v2: Vec<f64> = (0..100)
+            .map(|i| if (33..66).contains(&i) { 1.0 } else { 0.0 })
+            .collect();
         let v3: Vec<f64> = (0..100).map(|i| if i >= 66 { 1.0 } else { 0.0 }).collect();
 
         index.add("a", Vector::from_slice(&v1));

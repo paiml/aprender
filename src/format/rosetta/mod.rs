@@ -546,13 +546,19 @@ impl ValidationReport {
     pub fn summary(&self) -> String {
         if self.is_valid {
             format!(
-                "VALID: {} tensors checked, 0 NaN, 0 Inf, 0 all-zeros",
+                "VALID: {} tensors checked, 0 contract violations (PMAT-235)",
                 self.tensor_count
             )
         } else {
+            let contract_failures: usize = self
+                .tensors
+                .iter()
+                .map(|t| t.failures.len())
+                .sum();
             format!(
-                "INVALID: {} tensors, {} NaN, {} Inf, {} all-zeros",
+                "INVALID: {} tensors, {} contract violations, {} NaN, {} Inf, {} all-zeros",
                 self.tensor_count,
+                contract_failures,
                 self.total_nan_count,
                 self.total_inf_count,
                 self.all_zero_tensors.len()
@@ -830,6 +836,65 @@ impl RosettaStone {
         self.compare_files(source, &roundtrip_path)
     }
 
+    /// Load a tensor as f32 values from any supported format
+    ///
+    /// Handles dequantization for quantized formats (Q4_K, Q6_K, etc.)
+    ///
+    /// # Errors
+    ///
+    /// Returns error if file cannot be read, format is unknown, or tensor not found
+    pub fn load_tensor_f32<P: AsRef<Path>>(&self, path: P, tensor_name: &str) -> Result<Vec<f32>> {
+        let path = path.as_ref();
+        let format = FormatType::from_magic(path).or_else(|_| FormatType::from_extension(path))?;
+
+        match format {
+            FormatType::Gguf => self.load_tensor_f32_gguf(path, tensor_name),
+            FormatType::SafeTensors => self.load_tensor_f32_safetensors(path, tensor_name),
+            FormatType::Apr => self.load_tensor_f32_apr(path, tensor_name),
+        }
+    }
+
+    fn load_tensor_f32_gguf(&self, path: &Path, tensor_name: &str) -> Result<Vec<f32>> {
+        use crate::format::gguf::GgufReader;
+
+        let reader = GgufReader::from_file(path)?;
+        let (data, _shape) = reader
+            .get_tensor_f32(tensor_name)
+            .map_err(|e| AprenderError::FormatError {
+                message: format!("Failed to load GGUF tensor '{}': {}", tensor_name, e),
+            })?;
+        Ok(data)
+    }
+
+    fn load_tensor_f32_safetensors(&self, path: &Path, tensor_name: &str) -> Result<Vec<f32>> {
+        use crate::serialization::safetensors::MappedSafeTensors;
+
+        let mapped = MappedSafeTensors::open(path).map_err(|e| AprenderError::FormatError {
+            message: format!("SafeTensors open failed: {e}"),
+        })?;
+        mapped
+            .get_tensor(tensor_name)
+            .map_err(|e| AprenderError::FormatError {
+                message: format!("Failed to load SafeTensors tensor '{}': {}", tensor_name, e),
+            })
+    }
+
+    fn load_tensor_f32_apr(&self, path: &Path, tensor_name: &str) -> Result<Vec<f32>> {
+        use crate::format::v2::AprV2Reader;
+
+        let data = std::fs::read(path).map_err(|e| AprenderError::FormatError {
+            message: format!("Cannot read APR file: {e}"),
+        })?;
+        let reader = AprV2Reader::from_bytes(&data).map_err(|e| AprenderError::FormatError {
+            message: format!("APR parse failed: {e}"),
+        })?;
+        reader
+            .get_tensor_as_f32(tensor_name)
+            .ok_or_else(|| AprenderError::FormatError {
+                message: format!("Tensor '{}' not found in APR file", tensor_name),
+            })
+    }
+
     // ========================================================================
     // Private Methods
     // ========================================================================
@@ -865,7 +930,7 @@ impl RosettaStone {
         }
 
         let failed_count = tensors.iter().filter(|t| !t.is_valid).count();
-        let is_valid = total_nan == 0 && total_inf == 0 && all_zero_tensors.is_empty();
+        let is_valid = failed_count == 0;
 
         Ok(ValidationReport {
             format: FormatType::Gguf,
@@ -908,7 +973,7 @@ impl RosettaStone {
         }
 
         let failed_count = tensors.iter().filter(|t| !t.is_valid).count();
-        let is_valid = total_nan == 0 && total_inf == 0 && all_zero_tensors.is_empty();
+        let is_valid = failed_count == 0;
 
         Ok(ValidationReport {
             format: FormatType::SafeTensors,
@@ -955,7 +1020,7 @@ impl RosettaStone {
         }
 
         let failed_count = tensors.iter().filter(|t| !t.is_valid).count();
-        let is_valid = total_nan == 0 && total_inf == 0 && all_zero_tensors.is_empty();
+        let is_valid = failed_count == 0;
 
         Ok(ValidationReport {
             format: FormatType::Apr,
@@ -1038,16 +1103,70 @@ impl RosettaStone {
             0.0
         };
 
-        // Collect failures
+        // Collect failures (APR-SPEC 10.9 + PMAT-235 contract gates)
         let mut failures = Vec::new();
         if nan_count > 0 {
-            failures.push(format!("{nan_count} NaN values detected"));
+            failures.push(format!(
+                "[F-DATA-QUALITY-002] {nan_count} NaN values detected"
+            ));
         }
         if inf_count > 0 {
-            failures.push(format!("{inf_count} Inf values detected"));
+            failures.push(format!(
+                "[F-DATA-QUALITY-002] {inf_count} Inf values detected"
+            ));
         }
         if zero_count == element_count {
-            failures.push("All values are zero (uninitialized?)".to_string());
+            failures.push(
+                "[F-DATA-QUALITY-001] All values are zero (uninitialized?)".to_string(),
+            );
+        }
+
+        // PMAT-235: Density gate (F-DATA-QUALITY-001)
+        // Embedding tensors: >50% zeros is suspicious (catches PMAT-234 offset bug)
+        // Weight tensors: >80% zeros is suspicious
+        let zero_pct = if element_count > 0 {
+            100.0 * zero_count as f32 / element_count as f32
+        } else {
+            0.0
+        };
+        let name_lower = name.to_lowercase();
+        let is_embedding = name_lower.contains("embed");
+        let density_threshold = if is_embedding { 50.0 } else { 80.0 };
+        if zero_pct > density_threshold && zero_count < element_count {
+            failures.push(format!(
+                "[F-DATA-QUALITY-001] DENSITY: {zero_pct:.1}% zeros (max {density_threshold}%)"
+            ));
+        }
+
+        // PMAT-235: L2 norm gate (F-DATA-QUALITY-003)
+        let l2_norm = {
+            let mut sum_sq = 0.0f64;
+            for &v in data {
+                if !v.is_nan() && !v.is_infinite() {
+                    sum_sq += f64::from(v) * f64::from(v);
+                }
+            }
+            sum_sq.sqrt() as f32
+        };
+        if valid_count > 0 && l2_norm < 1e-6 {
+            failures.push(
+                "[F-DATA-QUALITY-003] L2 norm ~0: tensor is effectively empty".to_string(),
+            );
+        }
+
+        // PMAT-235: Variation gate (F-DATA-QUALITY-003)
+        // Norm and bias tensors are exempt: constant init (e.g., all 1.0 for RMS norm) is correct
+        let is_norm_or_bias = name_lower.contains("norm")
+            || name_lower.contains("bias")
+            || name_lower.contains("ln_");
+        if valid_count > 1
+            && (max - min).abs() < 1e-10
+            && !min.is_infinite()
+            && !is_norm_or_bias
+        {
+            failures.push(
+                "[F-DATA-QUALITY-003] All values identical: tensor is constant".to_string(),
+            );
         }
 
         let is_valid = failures.is_empty();
@@ -1225,11 +1344,20 @@ impl RosettaStone {
         opts: &ConversionOptions,
     ) -> Result<()> {
         use crate::format::converter::{
-            apr_export, apr_import, ExportFormat, ExportOptions, ImportOptions,
+            apr_export, apr_import, ExportFormat, ExportOptions, ImportOptions, QuantizationType,
         };
 
-        // Allow opts for future use and recursive calls
-        let _ = &opts;
+        // GH-205 FIX: Map ConversionOptions.quantization to ExportOptions.quantize
+        // Previously opts was ignored, causing F32 GGUF export even when quantization requested.
+        // Note: Q6_K maps to Q4K since that's what realizar's inference supports.
+        let export_quantize = opts.quantization.as_ref().and_then(|q| {
+            match q.to_lowercase().as_str() {
+                "q4_k" | "q4_k_m" | "int4" | "q6_k" => Some(QuantizationType::Q4K),
+                "int8" | "q8_0" => Some(QuantizationType::Int8),
+                "fp16" | "f16" => Some(QuantizationType::Fp16),
+                _ => None,
+            }
+        });
 
         match (source_format, target_format) {
             // GGUF/SafeTensors → APR (same conversion path via apr_import)
@@ -1242,12 +1370,19 @@ impl RosettaStone {
             }
 
             // APR → GGUF
+            // GH-205 FIX: Default to Q4_K quantization for GGUF export.
+            // F32 GGUF files don't work with realizar's fused matmul kernels
+            // (see export.rs:532-537 comment). Q4_K is the standard format.
             (FormatType::Apr, FormatType::Gguf) => {
+                let gguf_quantize = export_quantize
+                    .clone()
+                    .or(Some(QuantizationType::Q4K)); // Default to Q4K for GGUF
                 apr_export(
                     source,
                     target,
                     ExportOptions {
                         format: ExportFormat::Gguf,
+                        quantize: gguf_quantize,
                         ..Default::default()
                     },
                 )?;

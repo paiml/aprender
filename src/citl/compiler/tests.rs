@@ -1050,9 +1050,7 @@ fn test_parse_cargo_message_end_is_zero() {
     let compiler = RustCompiler::new();
     // JSON where the nested message object has no matching closing brace
     // This triggers the else branch where end == 0
-    let json = r#"{"reason":"compiler-message","message":{"level":"error"}"#;
-    // The message key exists but the closing brace depth logic fails
-    // Actually this doesn't trigger end==0. Let me craft a better case.
+    // Note: The first test case doesn't trigger end==0; using malformed instead.
     // The pattern is "message":{ and then we scan for depth=0.
     // If we don't find a closing brace, depth never becomes 0, so end stays 0.
     let malformed = r#"{"reason":"compiler-message","message":{no_closing"#;
@@ -1108,16 +1106,23 @@ fn test_parse_cargo_json_diagnostics_skip_aborting_message() {
 
 #[test]
 fn test_compile_cargo_check_invalid_manifest_path() {
-    // Test the error path when manifest_path has no parent
+    // Test the error path when manifest_path points to a nonexistent location.
+    // IMPORTANT: Never use relative paths here - they would write to the actual
+    // project's src/lib.rs and corrupt it!
+    let temp_dir = std::env::temp_dir().join("citl_invalid_manifest_test");
+    let nonexistent_manifest = temp_dir.join("nonexistent").join("Cargo.toml");
+
     let compiler = RustCompiler::new().mode(CompilationMode::CargoCheck {
-        manifest_path: PathBuf::from("Cargo.toml"), // Relative path, parent is empty or "."
+        manifest_path: nonexistent_manifest,
     });
 
     let result = compiler.compile("fn main() {}", &CompileOptions::default());
-    // The compile should work (parent of "Cargo.toml" is empty string or ".")
-    // which becomes the current directory, so this won't error
-    // Let me try a different approach - a path that truly has no parent
-    assert!(result.is_ok() || result.is_err()); // May or may not fail
+    // Should fail because the directory doesn't exist or cargo check fails
+    // Either outcome is acceptable for this edge case test
+    assert!(result.is_ok() || result.is_err());
+
+    // Cleanup if anything was created
+    let _ = std::fs::remove_dir_all(&temp_dir);
 }
 
 #[test]

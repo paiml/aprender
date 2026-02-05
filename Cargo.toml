@@ -159,6 +159,10 @@ rayon = { version = "1.10", optional = true }
 # v0.14.3 fixes WASM compilation (hostname crate gated for native-only)
 trueno = "0.14.3"
 
+# K-quantization formats (Q4_K, Q5_K, Q6_K) - Toyota Way: ONE source of truth
+# Path dependency until published to crates.io
+trueno-quant = { path = "../trueno/crates/trueno-quant" }
+
 # RAG pipeline for document-based ML (optional, GH-125)
 trueno-rag = { version = "0.1.10", optional = true }
 
@@ -203,6 +207,12 @@ safetensors = { version = "0.4", optional = true }
 wasm-bindgen = { version = "0.2", optional = true }
 js-sys = { version = "0.3", optional = true }
 minijinja = { version = "2.14.0", features = ["loader", "serde"] }
+
+# Toyota Way: ONE source of truth for quantization (Step E)
+# NOTE: Currently blocked by cyclic dependency (realizar optionally depends on aprender).
+# Resolution requires creating a separate quantization crate.
+# See docs/specifications/qwen2.5-coder-showcase-demo.md Section E.7 for roadmap.
+# realizar = { version = "0.6", default-features = false, optional = true }  # BLOCKED
 
 [dev-dependencies]
 proptest = "1.6"

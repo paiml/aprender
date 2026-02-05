@@ -17,6 +17,7 @@ pub(crate) fn run(
     quantize: Option<&str>,
     strict: bool,
     preserve_q4k: bool,
+    tokenizer: Option<&PathBuf>,
 ) -> Result<()> {
     // GH-169: Derive output path from source if not provided
     let output_path = match output {
@@ -83,6 +84,7 @@ pub(crate) fn run(
         compress: None,
         strict,
         cache: true,
+        tokenizer_path: tokenizer.cloned(),
     };
 
     println!("Architecture: {:?}", options.architecture);
@@ -394,6 +396,7 @@ mod tests {
             None,
             false,
             false,
+            None, // tokenizer
         );
 
         assert!(result.is_err());
@@ -416,6 +419,7 @@ mod tests {
             None,
             false,
             false,
+            None, // tokenizer
         );
 
         // Will fail at network stage, not architecture parsing
@@ -432,6 +436,7 @@ mod tests {
             None,
             false,
             false,
+            None, // tokenizer
         );
 
         // Will fail at network stage, not architecture parsing
@@ -448,6 +453,7 @@ mod tests {
             None,
             false,
             false,
+            None, // tokenizer
         );
 
         // Will fail at network stage, not architecture parsing
@@ -464,6 +470,7 @@ mod tests {
             None,
             false,
             false,
+            None, // tokenizer
         );
 
         // Will fail at network stage, not architecture parsing
@@ -480,6 +487,7 @@ mod tests {
             None,
             false,
             false,
+            None, // tokenizer
         );
 
         // Will fail at network stage, not architecture parsing
@@ -496,6 +504,7 @@ mod tests {
             Some("int8"),
             false,
             false,
+            None, // tokenizer
         );
 
         // Will fail at network stage, not quantize parsing
@@ -512,6 +521,7 @@ mod tests {
             None,
             true, // force
             false,
+            None, // tokenizer
         );
 
         // Will fail at network stage
@@ -521,7 +531,7 @@ mod tests {
     #[test]
     fn test_run_invalid_source() {
         // Empty source should fail
-        let result = run("", Some(Path::new("output.apr")), None, None, false, false);
+        let result = run("", Some(Path::new("output.apr")), None, None, false, false, None);
 
         assert!(result.is_err());
     }

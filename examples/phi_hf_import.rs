@@ -72,6 +72,7 @@ fn main() {
         compress: None,
         strict: false,
         cache: true,
+        tokenizer_path: None,
     };
 
     println!("Architecture: {:?}", options.architecture);

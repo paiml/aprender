@@ -67,9 +67,7 @@ fn test_subnormal_preservation() {
 fn test_nan_input_halts() {
     let data_with_nan = vec![1.0, 2.0, f32::NAN, 4.0];
     // TODO: rosetta::convert should detect and halt
-    if data_with_nan.iter().any(|x| x.is_nan()) {
-        panic!("ROSETTA-NAN-001");
-    }
+    assert!(!data_with_nan.iter().any(|x| x.is_nan()), "ROSETTA-NAN-001");
 }
 
 /// F-EDGE-006: Infinity propagation halt (Jidoka)
@@ -77,9 +75,10 @@ fn test_nan_input_halts() {
 #[should_panic(expected = "ROSETTA-INF-001")]
 fn test_inf_input_halts() {
     let data_with_inf = vec![1.0, f32::INFINITY, 3.0];
-    if data_with_inf.iter().any(|x| x.is_infinite()) {
-        panic!("ROSETTA-INF-001");
-    }
+    assert!(
+        !data_with_inf.iter().any(|x| x.is_infinite()),
+        "ROSETTA-INF-001"
+    );
 }
 
 // =============================================================================

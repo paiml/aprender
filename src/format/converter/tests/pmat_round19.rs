@@ -40,8 +40,10 @@ mod tests {
             ..Default::default()
         };
 
+        let empty_f16: BTreeMap<String, (Vec<u8>, Vec<usize>)> = BTreeMap::new();
         write_apr_file(
             &tensors,
+            &empty_f16,
             &output_path,
             &options,
             None, // No tokenizer

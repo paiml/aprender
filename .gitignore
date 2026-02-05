@@ -44,3 +44,8 @@ models/
 .pmat/backup/
 .pmat-qa/
 .pmat-work/
+
+# PMAT
+.pmat/context.idx/
+.pmat/workspace.idx/
+.pmat/deps-cache.json

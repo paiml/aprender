@@ -611,9 +611,7 @@ mod tests {
         let objective = |x: &Vector<f32>| x[0] * x[0] + x[1] * x[1];
         let gradient = |x: &Vector<f32>| Vector::from_slice(&[2.0 * x[0], 2.0 * x[1]]);
         // g1: -x <= 0, g2: -y <= 0, g3: x + y - 3 <= 0
-        let inequality = |x: &Vector<f32>| {
-            Vector::from_slice(&[-x[0], -x[1], x[0] + x[1] - 3.0])
-        };
+        let inequality = |x: &Vector<f32>| Vector::from_slice(&[-x[0], -x[1], x[0] + x[1] - 3.0]);
         let inequality_jac = |_x: &Vector<f32>| {
             vec![
                 Vector::from_slice(&[-1.0, 0.0]),

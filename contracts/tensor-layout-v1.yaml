@@ -1,19 +1,118 @@
-# Tensor Layout Contract v1.0.0
-# THE SOURCE OF TRUTH for GGUF→APR tensor conversion
+# Tensor Layout Contract v1.1.0
+# THE SOURCE OF TRUTH for GGUF/SafeTensors→APR tensor conversion
 #
 # STATUS: Authoritative - DO NOT GREP THE CODEBASE, READ THIS FILE
 # SPEC: docs/specifications/qwen2.5-coder-showcase-demo.md Section E.8
 # CONSUMERS:
-#   - aprender/src/format/converter/write.rs (compile-time)
-#   - realizar/src/apr_transformer/mod.rs (validation)
+#   - aprender/src/format/converter/write.rs (GGUF import - structural)
+#   - aprender/src/format/layout_contract.rs (Rust API)
+#   - realizar/src/safetensors_infer.rs (SafeTensors load - structural + semantic)
+#   - realizar/src/safetensors/validation.rs (semantic validation)
 #   - apr-model-qa-playbook (test generation)
+#
+# ENFORCEMENT: Both aprender AND realizar MUST enforce this contract.
+# Structural validation (shapes) prevents wrong layout.
+# Semantic validation (data quality) prevents garbage data that parses correctly.
 
 metadata:
-  version: "1.0.0"
+  version: "2.0.0"
   created: "2026-02-04"
+  updated: "2026-02-05"
   author: "PAIML Engineering"
-  description: "Tensor layout contract for GGUF→APR conversion"
-  lesson_learned: "GH-202 - we had no canonical spec, wasted hours grepping"
+  description: "Tensor layout and data quality contract with compile-time enforcement"
+  lessons_learned:
+    - "GH-202: No canonical spec for shapes - wasted hours grepping"
+    - "PMAT-234: SafeTensors 94.5% zeros passed all structural checks but produced garbage"
+    - "PMAT-235: Runtime validation can be bypassed - need compile-time guarantees"
+
+# =============================================================================
+# THEORETICAL FOUNDATION
+# =============================================================================
+#
+# This contract implements defensive design principles from:
+#
+# 1. Toyota Production System (TPS) - Poka-Yoke (mistake-proofing)
+#    Citation: Shingo, S. (1986). Zero Quality Control: Source Inspection
+#              and the Poka-Yoke System. Productivity Press.
+#    Principle: "Make it impossible to do wrong, not just easy to do right"
+#    Application: Newtype pattern makes invalid states unrepresentable
+#
+# 2. Popperian Falsificationism - Scientific method for software
+#    Citation: Popper, K. (1959). The Logic of Scientific Discovery.
+#              Hutchinson & Co.
+#    Principle: "A theory is scientific iff it makes falsifiable predictions"
+#    Application: Each validation rule has explicit falsification criteria
+#
+# 3. Type-Driven Development - Compile-time correctness
+#    Citation: Brady, E. (2017). Type-Driven Development with Idris.
+#              Manning Publications.
+#    Principle: "Make illegal states unrepresentable"
+#    Application: ValidatedTensor types cannot exist without passing validation
+#
+# 4. Parse, Don't Validate - Data integrity pattern
+#    Citation: Parsons, A. (2019). "Parse, Don't Validate"
+#              https://lexi-lambda.github.io/blog/2019/11/05/parse-don-t-validate/
+#    Principle: "Represent validation in the type system, not runtime checks"
+#    Application: Raw Vec<f32> → ValidatedEmbedding transformation
+#
+# =============================================================================
+
+# Compile-time enforcement via Rust type system
+type_enforcement:
+  principle: "Poka-Yoke (mistake-proofing) via newtype pattern"
+
+  validated_types:
+    ValidatedEmbedding:
+      inner: "Vec<f32>"
+      constructor: "fn new(data, vocab_size, hidden_dim) -> Result<Self, ContractError>"
+      invariants:
+        - "data.len() == vocab_size * hidden_dim"
+        - "zero_pct < 50%"
+        - "no NaN or Inf"
+        - "L2 norm > 1e-6"
+      consumers:
+        - "AprTransformer.embedding"
+        - "GpuModel.embedding"
+      note: "Private inner field - ONLY way to get data is through validated constructor"
+
+    ValidatedWeight:
+      inner: "Vec<f32>"
+      constructor: "fn new(data, out_dim, in_dim, name) -> Result<Self, ContractError>"
+      invariants:
+        - "data.len() == out_dim * in_dim"
+        - "zero_pct < 80%"
+        - "no NaN or Inf"
+      consumers:
+        - "AprTransformerLayer.q_proj, k_proj, v_proj, etc."
+        - "GpuModel layer weights"
+
+    ValidatedVector:
+      inner: "Vec<f32>"
+      constructor: "fn new(data, expected_len, name) -> Result<Self, ContractError>"
+      invariants:
+        - "data.len() == expected_len"
+        - "no NaN or Inf"
+      consumers:
+        - "Layer norm weights"
+        - "Bias vectors"
+
+  enforcement_locations:
+    aprender:
+      - "src/format/validated_tensors.rs"
+      - "src/format/converter/write.rs (uses ValidatedTensor)"
+    realizar:
+      - "src/validated_tensors.rs"
+      - "src/apr_transformer/mod.rs (requires ValidatedEmbedding)"
+      - "src/safetensors_infer.rs (produces ValidatedTensor)"
+
+  compiler_guarantee: |
+    It is IMPOSSIBLE to construct AprTransformer with unvalidated data because:
+    1. AprTransformer fields are ValidatedEmbedding, not Vec<f32>
+    2. ValidatedEmbedding::new() is the ONLY constructor (no Default, no unsafe)
+    3. ValidatedEmbedding::new() runs ALL validation checks
+    4. Inner data field is private - cannot be accessed without validation
+
+    This is Poka-Yoke: the mistake (using unvalidated data) is physically impossible.
 
 # Format conventions
 formats:
@@ -195,3 +294,202 @@ validation_rules:
     severity: P0
     critical: true
     reference: "GH-202"
+
+# Semantic validation rules (PMAT-234)
+# These catch data that parses correctly but is semantically garbage.
+# MUST be enforced by BOTH aprender (import) AND realizar (load).
+semantic_validation:
+  # Density gates - reject tensors that are mostly zeros
+  density:
+    embedding_max_zero_pct: 50.0   # Embeddings with >50% zeros = dead tokens
+    weight_max_zero_pct: 80.0     # Weights with >80% zeros = likely corrupt
+    note: "PMAT-234: SafeTensors had 94.5% zeros, passed structural checks"
+
+  # NaN/Inf gates - reject tensors with invalid values
+  numeric:
+    allow_nan: false
+    allow_inf: false
+    note: "NaN/Inf in weights = training diverged or corrupt file"
+
+  # Distribution gates - reject tensors with degenerate distributions
+  distribution:
+    min_l2_norm: 1.0e-6           # L2 ~0 means tensor is effectively empty
+    require_variation: true       # All values identical = constant tensor
+    note: "Degenerate distributions indicate corrupt or placeholder data"
+
+  # Spot check gates - sample tokens to verify data is distributed
+  spot_check:
+    enabled: true
+    sample_percentiles: [10, 50, 90]  # Check tokens at 10%, 50%, 90% of vocab
+    min_token_l2: 1.0e-6              # Each sampled token must have non-zero embedding
+    note: "Catches offset bugs where data is shifted (e.g., first 94.5% zeros)"
+
+validation_rules_semantic:
+  - id: F-DATA-QUALITY-001
+    name: "Embedding density check"
+    description: "Embedding tensor must have <50% zero values"
+    severity: P0
+    critical: true
+    reference: "PMAT-234"
+    enforcement:
+      - "aprender/src/format/layout_contract.rs:enforce_semantic_validation()"
+      - "realizar/src/safetensors/validation.rs:validate_embedding()"
+
+  - id: F-DATA-QUALITY-002
+    name: "No NaN or Inf values"
+    description: "All tensor values must be finite"
+    severity: P0
+    critical: true
+    enforcement:
+      - "aprender/src/format/layout_contract.rs:enforce_semantic_validation()"
+      - "realizar/src/safetensors/validation.rs:validate_*()"
+
+  - id: F-DATA-QUALITY-003
+    name: "Non-degenerate distribution"
+    description: "Tensor L2 norm must be >1e-6 and values must vary"
+    severity: P0
+    enforcement:
+      - "aprender/src/format/layout_contract.rs:enforce_semantic_validation()"
+      - "realizar/src/safetensors/validation.rs:validate_*()"
+
+  - id: F-DATA-QUALITY-004
+    name: "Spot check token embeddings"
+    description: "Sampled tokens at 10%/50%/90% must have non-zero embeddings"
+    severity: P0
+    critical: true
+    reference: "PMAT-234"
+    note: "Catches the 94.5% leading zeros bug"
+    enforcement:
+      - "realizar/src/safetensors/validation.rs:validate_embedding()"
+
+# =============================================================================
+# POPPERIAN FALSIFICATION CRITERIA
+# =============================================================================
+#
+# Per Popper (1959), a specification is scientific iff it makes predictions
+# that could be proven false. Each rule below has explicit falsification tests.
+#
+# If ANY falsification test passes (finds a counterexample), the contract
+# implementation is BROKEN and must be fixed before release.
+#
+falsification_tests:
+  - id: FALSIFY-001
+    rule: "F-DATA-QUALITY-001 (Embedding density)"
+    prediction: "It is impossible to construct ValidatedEmbedding with >50% zeros"
+    falsification_test: |
+      #[test]
+      #[should_panic(expected = "DENSITY FAILURE")]
+      fn falsify_001_embedding_density() {
+          let bad_data = vec![0.0f32; 151936 * 896];  // 100% zeros
+          ValidatedEmbedding::new(bad_data, 151936, 896).unwrap();
+      }
+    if_test_passes: "Contract is BROKEN - density validation not enforced"
+
+  - id: FALSIFY-002
+    rule: "Type enforcement (Poka-Yoke)"
+    prediction: "It is impossible to construct AprTransformer without ValidatedEmbedding"
+    falsification_test: |
+      // This code should NOT compile
+      fn falsify_002_type_enforcement() {
+          let raw_data: Vec<f32> = vec![0.1; 1000];
+          let transformer = AprTransformer {
+              embedding: raw_data,  // ERROR: expected ValidatedEmbedding
+              ..
+          };
+      }
+    if_test_compiles: "Contract is BROKEN - type enforcement bypassed"
+
+  - id: FALSIFY-003
+    rule: "F-DATA-QUALITY-002 (NaN rejection)"
+    prediction: "It is impossible to construct ValidatedWeight containing NaN"
+    falsification_test: |
+      #[test]
+      #[should_panic(expected = "NaN")]
+      fn falsify_003_nan_rejection() {
+          let mut data = vec![0.1f32; 1000];
+          data[500] = f32::NAN;
+          ValidatedWeight::new(data, 100, 10, "test").unwrap();
+      }
+    if_test_passes: "Contract is BROKEN - NaN validation not enforced"
+
+  - id: FALSIFY-004
+    rule: "F-DATA-QUALITY-004 (Spot check)"
+    prediction: "It is impossible to load SafeTensors with 94.5% leading zeros"
+    falsification_test: |
+      #[test]
+      fn falsify_004_spot_check() {
+          // Simulate the PMAT-234 bug: 94.5% leading zeros
+          let vocab_size = 151936;
+          let hidden_dim = 896;
+          let mut data = vec![0.0f32; vocab_size * hidden_dim];
+          // Only last 5.5% non-zero (starting at token 143620)
+          for i in (143620 * hidden_dim)..(vocab_size * hidden_dim) {
+              data[i] = 0.1;
+          }
+          let result = ValidatedEmbedding::new(data, vocab_size, hidden_dim);
+          assert!(result.is_err(), "Should reject 94.5% zeros");
+          assert!(result.unwrap_err().to_string().contains("DENSITY"));
+      }
+    if_test_passes: "Contract is BROKEN - spot check not catching offset bugs"
+
+  - id: FALSIFY-005
+    rule: "F-LAYOUT-CONTRACT-002 (lm_head shape)"
+    prediction: "It is impossible to construct AprTransformer with wrong lm_head shape"
+    falsification_test: |
+      #[test]
+      #[should_panic(expected = "CONTRACT VIOLATION")]
+      fn falsify_005_lm_head_shape() {
+          // Wrong shape: [hidden, vocab] instead of [vocab, hidden]
+          let data = vec![0.1f32; 896 * 151936];
+          ValidatedWeight::new(data, 896, 151936, "lm_head.weight").unwrap();
+          // Should fail because lm_head MUST be [vocab, hidden]
+      }
+    if_test_passes: "Contract is BROKEN - lm_head shape not validated"
+
+  - id: FALSIFY-006
+    rule: "Cross-crate enforcement"
+    prediction: "Both aprender AND realizar enforce identical validation"
+    falsification_test: |
+      #[test]
+      fn falsify_006_cross_crate_parity() {
+          let data = vec![0.0f32; 1000];  // All zeros
+
+          // aprender validation
+          let apr_result = aprender::format::ValidatedEmbedding::new(
+              data.clone(), 10, 100
+          );
+
+          // realizar validation
+          let rlz_result = realizar::ValidatedEmbedding::new(
+              data.clone(), 10, 100
+          );
+
+          // Both must fail with same error type
+          assert!(apr_result.is_err());
+          assert!(rlz_result.is_err());
+          assert_eq!(
+              apr_result.unwrap_err().to_string(),
+              rlz_result.unwrap_err().to_string()
+          );
+      }
+    if_test_passes: "Contract is BROKEN - crates have divergent validation"
+
+# Toyota Way application notes
+toyota_way_principles:
+  jidoka: |
+    "Automation with a human touch" - The validation stops the line immediately
+    when a defect is detected. No garbage data propagates to inference.
+
+  poka_yoke: |
+    "Mistake-proofing" - The type system makes it physically impossible to
+    use unvalidated data. This is not a warning or a lint - it's a compile error.
+
+  genchi_genbutsu: |
+    "Go and see" - The falsification tests require actually running the code
+    with known-bad data. We don't assume validation works - we prove it fails
+    on bad input.
+
+  kaizen: |
+    "Continuous improvement" - When PMAT-234 revealed a new failure mode
+    (94.5% zeros), we added F-DATA-QUALITY-004 and FALSIFY-004. The contract
+    evolves to prevent every observed failure mode.

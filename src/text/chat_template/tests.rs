@@ -1740,8 +1740,7 @@ fn test_huggingface_template_detect_format_llama2() {
 #[test]
 fn test_huggingface_template_detect_format_alpaca() {
     // Use string concatenation to avoid raw string issues with ### pattern
-    let chat_template =
-        String::from("") + "##" + "# Instruction:{{ content }}" + "##" + "# Response:";
+    let chat_template = String::new() + "##" + "# Instruction:{{ content }}" + "##" + "# Response:";
     let json = format!(
         r#"{{
         "chat_template": "{}",

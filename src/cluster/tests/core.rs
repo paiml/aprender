@@ -1160,7 +1160,9 @@ fn test_kmeans_load_safetensors_invalid_centroids_shape() {
     let result = KMeans::load_safetensors(&path);
     assert!(result.is_err());
     assert!(
-        result.unwrap_err().contains("Invalid centroids tensor shape"),
+        result
+            .unwrap_err()
+            .contains("Invalid centroids tensor shape"),
         "Error message should indicate invalid shape"
     );
 
