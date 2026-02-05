@@ -94,11 +94,10 @@ impl EmbeddingSpace {
             return vec![vec![0.0; self.dim]; self.dim];
         }
 
-        let mut result = self
-            .relation_matrices
-            .get(relations[0])
-            .cloned()
-            .unwrap_or_else(|| vec![vec![0.0; self.dim]; self.dim]);
+        // Return zero matrix if first relation unknown (graceful handling)
+        let Some(mut result) = self.relation_matrices.get(relations[0]).cloned() else {
+            return vec![vec![0.0; self.dim]; self.dim];
+        };
 
         for &rel_name in relations.iter().skip(1) {
             if let Some(m) = self.relation_matrices.get(rel_name) {

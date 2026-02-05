@@ -298,6 +298,7 @@ fn z_import_qwen2_0_5b_instruct_infra() {
         compress: None,
         strict: false,
         cache: true,
+        tokenizer_path: None,
     };
     assert_eq!(options.architecture, Architecture::Qwen2);
 
@@ -338,6 +339,7 @@ fn z_import_qwen25_coder_0_5b_infra() {
         compress: None,
         strict: false,
         cache: false,
+        tokenizer_path: None,
     };
     assert!(options.quantize.is_some(), "INT4 quantization supported");
 

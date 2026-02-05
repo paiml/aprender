@@ -41,6 +41,7 @@ pub fn build_pygmy_safetensors() -> Vec<u8> {
 
 /// Configuration for pygmy model generation
 #[derive(Debug, Clone)]
+#[allow(clippy::struct_excessive_bools)] // Config struct legitimately needs multiple flags
 pub struct PygmyConfig {
     /// Vocabulary size
     pub vocab_size: usize,
@@ -933,9 +934,8 @@ pub fn build_pygmy_quantize_data() -> Vec<f32> {
     data.push(-1.0); // Min normal
     data.push(0.5); // Mid positive
     data.push(-0.5); // Mid negative
-    for _ in 0..27 {
-        data.push(0.001); // Small values
-    }
+                     // Small values to fill remaining capacity
+    data.extend(std::iter::repeat(0.001).take(27));
 
     data
 }
@@ -1234,6 +1234,7 @@ pub(crate) mod harness {
 
     /// Tolerance thresholds per dtype for tensor data comparison.
     #[derive(Debug, Clone, Copy)]
+    #[allow(clippy::struct_field_names)] // Postfix naming is intentional for clarity
     pub(crate) struct ToleranceConfig {
         pub(crate) f32_atol: f32,
         pub(crate) f16_atol: f32,
@@ -1509,7 +1510,24 @@ pub(crate) mod harness {
             let input_str = input.to_string_lossy().to_string();
             let output = self.dir.path().join("reimported.apr");
 
-            let result = apr_import(&input_str, &output, ImportOptions::default());
+            // Create synthetic tokenizer for PMAT-232 compliance (GGUF imports need tokenizer)
+            let tokenizer_path = self.dir.path().join("synthetic_tokenizer.json");
+            let synthetic_tokenizer = r#"{
+                "version": "1.0",
+                "model": {
+                    "type": "BPE",
+                    "vocab": {"<pad>": 0, "<eos>": 1, "<unk>": 2},
+                    "merges": []
+                }
+            }"#;
+            std::fs::write(&tokenizer_path, synthetic_tokenizer)
+                .expect("Failed to write synthetic tokenizer");
+
+            let options = ImportOptions {
+                tokenizer_path: Some(tokenizer_path),
+                ..ImportOptions::default()
+            };
+            let result = apr_import(&input_str, &output, options);
             assert!(
                 result.is_ok(),
                 "reimport to APR failed: {:?}",
@@ -3233,7 +3251,7 @@ mod tests {
             let reader = AprV2Reader::from_bytes(&data).unwrap();
 
             for name in reader.tensor_names() {
-                let tensor_data = reader.get_tensor_data(&name);
+                let tensor_data = reader.get_tensor_data(name);
                 assert!(
                     tensor_data.is_some(),
                     "GH-194: Tensor '{}' data must be accessible",
