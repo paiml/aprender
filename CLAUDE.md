@@ -303,6 +303,16 @@ pmat query "<intent>" --rank-by pagerank # Most important functions
 pmat query "<intent>" --format json      # Machine-readable
 pmat query "<intent>" --include-source   # Include full source code
 pmat query "<intent>" --exclude-tests    # Skip test functions
+
+# Git history search (find code by commit intent via RRF fusion)
+pmat query "fix serialization" -G
+pmat query "apr format" --git-history
+
+# Enrichment flags (combine freely)
+pmat query "ml algorithm" --churn                  # git volatility (commit count, churn score)
+pmat query "tensor operation" --duplicates          # code clone detection (MinHash+LSH)
+pmat query "loss function" --entropy                # pattern diversity (repetitive vs unique)
+pmat query "model training" --churn --duplicates --entropy --faults -G  # full audit
 ```
 
 ## Stack Documentation Search
