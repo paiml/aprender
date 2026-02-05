@@ -247,10 +247,13 @@ fn format_bytes(bytes: u64) -> String {
     }
 }
 
-/// GH-198: Download companion files (tokenizer.json, config.json) for SafeTensors models.
+/// GH-198 + GAP-UX-002: Download companion files (tokenizer.json, config.json) for SafeTensors models.
 ///
 /// SafeTensors format stores weights only — unlike GGUF which embeds tokenizer and config.
-/// The realizar inference engine expects these as sibling files via `with_file_name()`.
+/// The realizar inference engine expects these as sibling files.
+///
+/// GAP-UX-002: Store companions with model hash prefix to prevent cross-model conflicts.
+/// Example: `d71534cb.safetensors` → `d71534cb.config.json`, `d71534cb.tokenizer.json`
 fn fetch_safetensors_companions(model_path: &Path, resolved_uri: &str) -> Result<()> {
     // Extract HF repo from resolved URI: "hf://org/repo/file.safetensors" → "org/repo"
     let Some(repo_id) = extract_hf_repo(resolved_uri) else {
@@ -258,15 +261,29 @@ fn fetch_safetensors_companions(model_path: &Path, resolved_uri: &str) -> Result
         return Ok(());
     };
 
+    // GAP-UX-002: Extract model stem (hash) for prefixing companion files
+    // Model: d71534cb948e32eb.safetensors → stem: d71534cb948e32eb
+    let model_stem = model_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("model");
+
     let companions = ["tokenizer.json", "config.json"];
     let cache_dir = model_path
         .parent()
         .ok_or_else(|| CliError::ValidationFailed("Model path has no parent directory".into()))?;
 
     for filename in &companions {
-        let sibling_path = cache_dir.join(filename);
+        // GAP-UX-002: Use hash-prefixed filename (e.g., "d71534cb.config.json")
+        let prefixed_filename = format!("{}.{}", model_stem, filename);
+        let sibling_path = cache_dir.join(&prefixed_filename);
+
         if sibling_path.exists() {
-            println!("  {} {} (already exists)", "✓".green(), filename.dimmed());
+            println!(
+                "  {} {} (already exists)",
+                "✓".green(),
+                prefixed_filename.dimmed()
+            );
             continue;
         }
 
@@ -290,7 +307,7 @@ fn fetch_safetensors_companions(model_path: &Path, resolved_uri: &str) -> Result
                 println!(
                     "  {} {} ({})",
                     "✓".green(),
-                    filename,
+                    prefixed_filename,
                     format_bytes(body.len() as u64).dimmed()
                 );
             }
@@ -299,12 +316,17 @@ fn fetch_safetensors_companions(model_path: &Path, resolved_uri: &str) -> Result
                 println!(
                     "  {} {} (not found in repo)",
                     "⚠".yellow(),
-                    filename.dimmed()
+                    prefixed_filename.dimmed()
                 );
             }
             Err(e) => {
                 // Network error — warn but don't block the pull
-                eprintln!("  {} Failed to download {}: {}", "⚠".yellow(), filename, e);
+                eprintln!(
+                    "  {} Failed to download {}: {}",
+                    "⚠".yellow(),
+                    prefixed_filename,
+                    e
+                );
             }
         }
     }
@@ -683,16 +705,16 @@ mod tests {
     fn test_gh198_companions_non_hf_uri_is_noop() {
         let temp_dir = std::env::temp_dir().join("apr_gh198_noop");
         let _ = std::fs::create_dir_all(&temp_dir);
-        let model_path = temp_dir.join("model.safetensors");
+        let model_path = temp_dir.join("d71534cb.safetensors");
         let _ = std::fs::write(&model_path, b"dummy");
 
         // Local URI → should return Ok without downloading anything
         let result = fetch_safetensors_companions(&model_path, "/local/model.safetensors");
         assert!(result.is_ok());
 
-        // No companion files should be created
-        assert!(!temp_dir.join("tokenizer.json").exists());
-        assert!(!temp_dir.join("config.json").exists());
+        // No companion files should be created (GAP-UX-002: hash-prefixed)
+        assert!(!temp_dir.join("d71534cb.tokenizer.json").exists());
+        assert!(!temp_dir.join("d71534cb.config.json").exists());
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }
@@ -701,12 +723,12 @@ mod tests {
     fn test_gh198_companions_skips_existing() {
         let temp_dir = std::env::temp_dir().join("apr_gh198_existing");
         let _ = std::fs::create_dir_all(&temp_dir);
-        let model_path = temp_dir.join("model.safetensors");
+        let model_path = temp_dir.join("abc123.safetensors");
         let _ = std::fs::write(&model_path, b"dummy");
 
-        // Pre-create companion files
-        let _ = std::fs::write(temp_dir.join("tokenizer.json"), b"{}");
-        let _ = std::fs::write(temp_dir.join("config.json"), b"{}");
+        // Pre-create companion files (GAP-UX-002: hash-prefixed)
+        let _ = std::fs::write(temp_dir.join("abc123.tokenizer.json"), b"{}");
+        let _ = std::fs::write(temp_dir.join("abc123.config.json"), b"{}");
 
         // Should succeed without attempting downloads (files already exist)
         let result = fetch_safetensors_companions(
@@ -716,7 +738,7 @@ mod tests {
         assert!(result.is_ok());
 
         // Verify files are unchanged (still our dummy content)
-        let content = std::fs::read_to_string(temp_dir.join("tokenizer.json")).unwrap();
+        let content = std::fs::read_to_string(temp_dir.join("abc123.tokenizer.json")).unwrap();
         assert_eq!(content, "{}");
 
         let _ = std::fs::remove_dir_all(&temp_dir);
@@ -728,7 +750,8 @@ mod tests {
         let temp_dir = std::env::temp_dir().join("apr_gh198_download");
         let _ = std::fs::remove_dir_all(&temp_dir);
         let _ = std::fs::create_dir_all(&temp_dir);
-        let model_path = temp_dir.join("model.safetensors");
+        // GAP-UX-002: Use hash-prefixed model name
+        let model_path = temp_dir.join("d71534cb948e32eb.safetensors");
         let _ = std::fs::write(&model_path, b"dummy");
 
         let result = fetch_safetensors_companions(
@@ -737,22 +760,23 @@ mod tests {
         );
         assert!(result.is_ok());
 
-        // Both companion files should now exist
+        // Both companion files should now exist (GAP-UX-002: hash-prefixed)
         assert!(
-            temp_dir.join("tokenizer.json").exists(),
-            "tokenizer.json should be downloaded"
+            temp_dir.join("d71534cb948e32eb.tokenizer.json").exists(),
+            "d71534cb948e32eb.tokenizer.json should be downloaded"
         );
         assert!(
-            temp_dir.join("config.json").exists(),
-            "config.json should be downloaded"
+            temp_dir.join("d71534cb948e32eb.config.json").exists(),
+            "d71534cb948e32eb.config.json should be downloaded"
         );
 
         // Verify tokenizer.json has vocab
-        let tok = std::fs::read_to_string(temp_dir.join("tokenizer.json")).unwrap();
+        let tok =
+            std::fs::read_to_string(temp_dir.join("d71534cb948e32eb.tokenizer.json")).unwrap();
         assert!(tok.contains("vocab"), "tokenizer.json should contain vocab");
 
         // Verify config.json has model architecture
-        let cfg = std::fs::read_to_string(temp_dir.join("config.json")).unwrap();
+        let cfg = std::fs::read_to_string(temp_dir.join("d71534cb948e32eb.config.json")).unwrap();
         assert!(
             cfg.contains("num_hidden_layers"),
             "config.json should contain num_hidden_layers"

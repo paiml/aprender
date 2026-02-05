@@ -77,6 +77,8 @@ pub struct QaConfig {
     pub skip_ollama: bool,
     /// Skip GPU vs CPU speedup test (F-PERF-042)
     pub skip_gpu_speedup: bool,
+    /// Skip tensor contract validation (PMAT-235)
+    pub skip_contract: bool,
     /// Skip cross-format parity test (F-QUAL-032)
     pub skip_format_parity: bool,
     /// SafeTensors model path for cross-format parity (F-QUAL-032)
@@ -103,6 +105,7 @@ impl Default for QaConfig {
             skip_throughput: false,
             skip_ollama: false,
             skip_gpu_speedup: false,
+            skip_contract: false,
             skip_format_parity: false,
             safetensors_path: None,
             iterations: 10,
@@ -213,6 +216,7 @@ pub fn run(
     skip_throughput: bool,
     skip_ollama: bool,
     skip_gpu_speedup: bool,
+    skip_contract: bool,
     skip_format_parity: bool,
     safetensors_path: Option<std::path::PathBuf>,
     iterations: usize,
@@ -229,6 +233,7 @@ pub fn run(
         skip_throughput,
         skip_ollama,
         skip_gpu_speedup,
+        skip_contract,
         skip_format_parity,
         safetensors_path,
         iterations,
@@ -267,6 +272,17 @@ fn run_qa(path: &Path, config: &QaConfig) -> Result<QaReport> {
         output::kv("Min Speedup", format!("{:.1}x Ollama", config.min_speedup));
         println!();
     }
+
+    // Gate 0: Tensor Contract Validation (PMAT-235)
+    let contract_result = if config.skip_contract {
+        GateResult::skipped("tensor_contract", "Skipped by --skip-contract")
+    } else {
+        run_tensor_contract_gate(path, config)?
+    };
+    if !config.json {
+        print_gate_result(&contract_result);
+    }
+    gates.push(contract_result);
 
     // Gate 1: Golden Output Test (Correctness)
     let golden_result = if config.skip_golden {
@@ -365,6 +381,85 @@ fn run_qa(path: &Path, config: &QaConfig) -> Result<QaReport> {
     })
 }
 
+/// Gate 0: Tensor Contract Validation (PMAT-235)
+///
+/// Validates model tensors against the PMAT-235 data quality contract BEFORE
+/// running any inference. This catches bad models early (density, NaN/Inf,
+/// degenerate distributions) without expensive forward passes.
+///
+/// Toyota Way: Jidoka - Stop the line before producing defective output.
+/// Poka-Yoke: Invalid tensor data is rejected before it can cause garbage inference.
+fn run_tensor_contract_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
+    let start = Instant::now();
+
+    if !config.json && config.verbose {
+        println!("{}", "Running tensor contract validation (PMAT-235)...".yellow());
+    }
+
+    let rosetta = aprender::format::rosetta::RosettaStone::new();
+    let report = match rosetta.validate(path) {
+        Ok(r) => r,
+        Err(e) => {
+            let duration = start.elapsed();
+            return Ok(GateResult::failed(
+                "tensor_contract",
+                &format!("Failed to validate: {e}"),
+                None,
+                None,
+                duration,
+            ));
+        }
+    };
+
+    let duration = start.elapsed();
+
+    // Collect all contract violations (F-DATA-QUALITY-* rules)
+    let contract_failures: Vec<String> = report
+        .tensors
+        .iter()
+        .flat_map(|t| {
+            t.failures
+                .iter()
+                .map(|f| format!("{}: {}", t.name, f))
+        })
+        .collect();
+
+    if contract_failures.is_empty() {
+        Ok(GateResult::passed(
+            "tensor_contract",
+            &format!(
+                "{} tensors passed all PMAT-235 contract gates",
+                report.tensor_count
+            ),
+            Some(report.tensor_count as f64),
+            Some(0.0),
+            duration,
+        ))
+    } else {
+        let summary = if contract_failures.len() <= 3 {
+            contract_failures.join("; ")
+        } else {
+            format!(
+                "{}; ... and {} more",
+                contract_failures[..3].join("; "),
+                contract_failures.len() - 3
+            )
+        };
+        Ok(GateResult::failed(
+            "tensor_contract",
+            &format!(
+                "{} contract violations in {} tensors: {}",
+                contract_failures.len(),
+                report.failed_tensor_count,
+                summary
+            ),
+            Some(contract_failures.len() as f64),
+            Some(0.0),
+            duration,
+        ))
+    }
+}
+
 /// Gate 1: Golden Output Test
 ///
 /// Runs the model with a known prompt and verifies the output contains expected patterns.
@@ -411,8 +506,9 @@ fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
         for (prompt, expected_patterns) in &test_cases {
             let (output_tokens, output_text) = match format {
                 ModelFormat::Gguf => {
-                    let gguf = GGUFModel::from_bytes(&model_bytes)
-                        .map_err(|e| CliError::ValidationFailed(format!("Failed to parse GGUF: {e}")))?;
+                    let gguf = GGUFModel::from_bytes(&model_bytes).map_err(|e| {
+                        CliError::ValidationFailed(format!("Failed to parse GGUF: {e}"))
+                    })?;
                     let prompt_tokens = gguf.encode(prompt).unwrap_or_else(|| vec![151643, 9707]);
 
                     let gen_config = QuantizedGenerateConfig {
@@ -425,27 +521,33 @@ fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
                     let tokens = {
                         let mapped = MappedGGUFModel::from_path(path)
                             .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
-                        let model = OwnedQuantizedModel::from_mapped(&mapped)
-                            .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
+                        let model = OwnedQuantizedModel::from_mapped(&mapped).map_err(|e| {
+                            CliError::ValidationFailed(format!("Model failed: {e}"))
+                        })?;
                         model
                             .generate_with_cache(&prompt_tokens, &gen_config)
-                            .map_err(|e| CliError::ValidationFailed(format!("Generation failed: {e}")))?
+                            .map_err(|e| {
+                                CliError::ValidationFailed(format!("Generation failed: {e}"))
+                            })?
                     };
                     let text = gguf.decode(&tokens);
                     (tokens, text)
                 }
                 ModelFormat::Apr => {
-                    use realizar::apr_transformer::{AprTransformer, GenerateConfig};
                     use realizar::apr::AprV2Model;
+                    use realizar::apr_transformer::{AprTransformer, GenerateConfig};
 
                     // Load APR model and get embedded tokenizer
-                    let apr_model = AprV2Model::load(path)
-                        .map_err(|e| CliError::ValidationFailed(format!("Failed to load APR: {e}")))?;
-                    let tokenizer = apr_model.load_embedded_bpe_tokenizer()
-                        .ok_or_else(|| CliError::ValidationFailed("APR missing embedded tokenizer".to_string()))?;
+                    let apr_model = AprV2Model::load(path).map_err(|e| {
+                        CliError::ValidationFailed(format!("Failed to load APR: {e}"))
+                    })?;
+                    let tokenizer = apr_model.load_embedded_bpe_tokenizer().ok_or_else(|| {
+                        CliError::ValidationFailed("APR missing embedded tokenizer".to_string())
+                    })?;
 
-                    let transformer = AprTransformer::from_apr_file(path)
-                        .map_err(|e| CliError::ValidationFailed(format!("Failed to load APR transformer: {e}")))?;
+                    let transformer = AprTransformer::from_apr_file(path).map_err(|e| {
+                        CliError::ValidationFailed(format!("Failed to load APR transformer: {e}"))
+                    })?;
 
                     let prompt_tokens = tokenizer.encode(prompt);
 
@@ -458,16 +560,53 @@ fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
 
                     let tokens = transformer
                         .generate_with_cache(&prompt_tokens, &gen_config)
-                        .map_err(|e| CliError::ValidationFailed(format!("Generation failed: {e}")))?;
+                        .map_err(|e| {
+                            CliError::ValidationFailed(format!("Generation failed: {e}"))
+                        })?;
 
                     let text = tokenizer.decode(&tokens);
                     (tokens, text)
                 }
                 ModelFormat::SafeTensors => {
-                    return Ok(GateResult::skipped(
-                        "golden_output",
-                        "SafeTensors format requires external tokenizer - use GGUF or APR",
-                    ));
+                    use aprender::text::bpe::{load_from_json, BpeTokenizer};
+                    use realizar::safetensors_infer::SafetensorsToAprConverter;
+
+                    // Look for tokenizer.json in same directory as model
+                    let tokenizer_path = path.parent().map(|p| p.join("tokenizer.json"));
+                    let tokenizer: Option<BpeTokenizer> = tokenizer_path
+                        .as_ref()
+                        .filter(|p| p.exists())
+                        .and_then(|p| std::fs::read_to_string(p).ok())
+                        .and_then(|json| load_from_json(&json).ok());
+
+                    let Some(tokenizer) = tokenizer else {
+                        return Ok(GateResult::skipped(
+                            "golden_output",
+                            "SafeTensors: tokenizer.json not found in model directory",
+                        ));
+                    };
+
+                    let transformer = SafetensorsToAprConverter::convert(path).map_err(|e| {
+                        CliError::ValidationFailed(format!("SafeTensors convert failed: {e}"))
+                    })?;
+
+                    let prompt_tokens = tokenizer.encode(prompt);
+
+                    let gen_config = realizar::apr_transformer::GenerateConfig {
+                        max_tokens: config.max_tokens,
+                        temperature: 0.0,
+                        top_k: 1,
+                        ..Default::default()
+                    };
+
+                    let tokens = transformer
+                        .generate_with_cache(&prompt_tokens, &gen_config)
+                        .map_err(|e| {
+                            CliError::ValidationFailed(format!("Generation failed: {e}"))
+                        })?;
+
+                    let text = tokenizer.decode(&tokens);
+                    (tokens, text)
                 }
             };
             let _ = (cuda_available, output_tokens); // suppress warnings
@@ -547,8 +686,9 @@ fn run_throughput_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
         // Measure throughput based on format
         let (tps, duration) = match format {
             ModelFormat::Gguf => {
-                let gguf = GGUFModel::from_bytes(&model_bytes)
-                    .map_err(|e| CliError::ValidationFailed(format!("Failed to parse GGUF: {e}")))?;
+                let gguf = GGUFModel::from_bytes(&model_bytes).map_err(|e| {
+                    CliError::ValidationFailed(format!("Failed to parse GGUF: {e}"))
+                })?;
                 let prompt_tokens = gguf.encode(prompt).unwrap_or_else(|| vec![151643, 9707]);
 
                 let gen_config = QuantizedGenerateConfig {
@@ -563,8 +703,9 @@ fn run_throughput_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
                         .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
                     let model = OwnedQuantizedModel::from_mapped(&mapped)
                         .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
-                    let mut cuda_model = OwnedQuantizedModelCuda::new(model, 0)
-                        .map_err(|e| CliError::ValidationFailed(format!("CUDA init failed: {e}")))?;
+                    let mut cuda_model = OwnedQuantizedModelCuda::new(model, 0).map_err(|e| {
+                        CliError::ValidationFailed(format!("CUDA init failed: {e}"))
+                    })?;
 
                     for _ in 0..config.warmup {
                         let _ = cuda_model.generate_gpu_resident(&prompt_tokens, &gen_config);
@@ -573,11 +714,16 @@ fn run_throughput_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
                     let mut total_tokens = 0usize;
                     let measure_start = Instant::now();
                     for _ in 0..config.iterations {
-                        let output = cuda_model.generate_gpu_resident(&prompt_tokens, &gen_config).unwrap_or_default();
+                        let output = cuda_model
+                            .generate_gpu_resident(&prompt_tokens, &gen_config)
+                            .unwrap_or_default();
                         total_tokens += output.len().saturating_sub(prompt_tokens.len());
                     }
                     let measure_time = measure_start.elapsed();
-                    (total_tokens as f64 / measure_time.as_secs_f64(), start.elapsed())
+                    (
+                        total_tokens as f64 / measure_time.as_secs_f64(),
+                        start.elapsed(),
+                    )
                 } else {
                     let mapped = MappedGGUFModel::from_path(path)
                         .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
@@ -591,23 +737,30 @@ fn run_throughput_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
                     let mut total_tokens = 0usize;
                     let measure_start = Instant::now();
                     for _ in 0..config.iterations {
-                        let output = model.generate_with_cache(&prompt_tokens, &gen_config).unwrap_or_default();
+                        let output = model
+                            .generate_with_cache(&prompt_tokens, &gen_config)
+                            .unwrap_or_default();
                         total_tokens += output.len().saturating_sub(prompt_tokens.len());
                     }
                     let measure_time = measure_start.elapsed();
-                    (total_tokens as f64 / measure_time.as_secs_f64(), start.elapsed())
+                    (
+                        total_tokens as f64 / measure_time.as_secs_f64(),
+                        start.elapsed(),
+                    )
                 }
             }
             ModelFormat::Apr => {
-                use realizar::apr_transformer::{AprTransformer, GenerateConfig};
                 use realizar::apr::AprV2Model;
+                use realizar::apr_transformer::{AprTransformer, GenerateConfig};
 
                 let apr_model = AprV2Model::load(path)
                     .map_err(|e| CliError::ValidationFailed(format!("Failed to load APR: {e}")))?;
-                let tokenizer = apr_model.load_embedded_bpe_tokenizer()
-                    .ok_or_else(|| CliError::ValidationFailed("APR missing embedded tokenizer".to_string()))?;
-                let transformer = AprTransformer::from_apr_file(path)
-                    .map_err(|e| CliError::ValidationFailed(format!("Failed to load APR transformer: {e}")))?;
+                let tokenizer = apr_model.load_embedded_bpe_tokenizer().ok_or_else(|| {
+                    CliError::ValidationFailed("APR missing embedded tokenizer".to_string())
+                })?;
+                let transformer = AprTransformer::from_apr_file(path).map_err(|e| {
+                    CliError::ValidationFailed(format!("Failed to load APR transformer: {e}"))
+                })?;
 
                 let prompt_tokens = tokenizer.encode(prompt);
                 let gen_config = GenerateConfig {
@@ -625,17 +778,66 @@ fn run_throughput_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
                 let mut total_tokens = 0usize;
                 let measure_start = Instant::now();
                 for _ in 0..config.iterations {
-                    let output = transformer.generate_with_cache(&prompt_tokens, &gen_config).unwrap_or_default();
+                    let output = transformer
+                        .generate_with_cache(&prompt_tokens, &gen_config)
+                        .unwrap_or_default();
                     total_tokens += output.len().saturating_sub(prompt_tokens.len());
                 }
                 let measure_time = measure_start.elapsed();
-                (total_tokens as f64 / measure_time.as_secs_f64(), start.elapsed())
+                (
+                    total_tokens as f64 / measure_time.as_secs_f64(),
+                    start.elapsed(),
+                )
             }
             ModelFormat::SafeTensors => {
-                return Ok(GateResult::skipped(
-                    "throughput",
-                    "SafeTensors format requires external tokenizer - use GGUF or APR",
-                ));
+                use aprender::text::bpe::{load_from_json, BpeTokenizer};
+                use realizar::safetensors_infer::SafetensorsToAprConverter;
+
+                // Look for tokenizer.json in same directory as model
+                let tokenizer_path = path.parent().map(|p| p.join("tokenizer.json"));
+                let tokenizer: Option<BpeTokenizer> = tokenizer_path
+                    .as_ref()
+                    .filter(|p| p.exists())
+                    .and_then(|p| std::fs::read_to_string(p).ok())
+                    .and_then(|json| load_from_json(&json).ok());
+
+                let Some(tokenizer) = tokenizer else {
+                    return Ok(GateResult::skipped(
+                        "throughput",
+                        "SafeTensors: tokenizer.json not found in model directory",
+                    ));
+                };
+
+                let transformer = SafetensorsToAprConverter::convert(path).map_err(|e| {
+                    CliError::ValidationFailed(format!("SafeTensors convert failed: {e}"))
+                })?;
+
+                let prompt_tokens = tokenizer.encode(prompt);
+                let gen_config = realizar::apr_transformer::GenerateConfig {
+                    max_tokens: config.max_tokens,
+                    temperature: 0.0,
+                    top_k: 1,
+                    ..Default::default()
+                };
+
+                // Warmup
+                for _ in 0..config.warmup {
+                    let _ = transformer.generate_with_cache(&prompt_tokens, &gen_config);
+                }
+
+                let mut total_tokens = 0usize;
+                let measure_start = Instant::now();
+                for _ in 0..config.iterations {
+                    let output = transformer
+                        .generate_with_cache(&prompt_tokens, &gen_config)
+                        .unwrap_or_default();
+                    total_tokens += output.len().saturating_sub(prompt_tokens.len());
+                }
+                let measure_time = measure_start.elapsed();
+                (
+                    total_tokens as f64 / measure_time.as_secs_f64(),
+                    start.elapsed(),
+                )
             }
         };
         let _ = cuda_available; // suppress warning
@@ -1213,8 +1415,12 @@ fn measure_ollama_throughput(path: &Path, config: &QaConfig) -> Result<f64> {
                 // BUG-QA-002 FIX: Use eval_count and eval_duration from Ollama response
                 // This measures actual inference time, not HTTP overhead
                 if let (Some(eval_count), Some(eval_duration)) = (
-                    response.get("eval_count").and_then(serde_json::Value::as_u64),
-                    response.get("eval_duration").and_then(serde_json::Value::as_u64),
+                    response
+                        .get("eval_count")
+                        .and_then(serde_json::Value::as_u64),
+                    response
+                        .get("eval_duration")
+                        .and_then(serde_json::Value::as_u64),
                 ) {
                     total_tokens += eval_count as usize;
                     total_duration_ns += eval_duration;
@@ -1243,6 +1449,7 @@ fn print_gate_result(result: &GateResult) {
     };
 
     let name = match result.name.as_str() {
+        "tensor_contract" => "Tensor Contract",
         "golden_output" => "Golden Output",
         "throughput" => "Throughput",
         "ollama_parity" => "Ollama Parity",
@@ -1576,6 +1783,7 @@ mod tests {
             false,
             false,
             false,
+            false,
             None,
             10,
             3,
@@ -1596,6 +1804,7 @@ mod tests {
             None,
             None,
             None,
+            false,
             false,
             false,
             false,
@@ -1627,6 +1836,7 @@ mod tests {
             false,
             false,
             false,
+            false,
             None,
             5,
             2,
@@ -1652,6 +1862,7 @@ mod tests {
             true, // skip_throughput
             true, // skip_ollama
             true, // skip_gpu_speedup
+            true, // skip_contract
             true, // skip_format_parity
             None,
             10,
@@ -1679,6 +1890,7 @@ mod tests {
             false,
             false,
             false,
+            false,
             None,
             10,
             3,
@@ -1700,6 +1912,7 @@ mod tests {
             None,
             None,
             None,
+            false,
             false,
             false,
             false,
@@ -1732,6 +1945,7 @@ mod tests {
             false,
             false,
             false,
+            false,
             Some(st_file.path().to_path_buf()), // safetensors path
             10,
             3,
@@ -1753,6 +1967,7 @@ mod tests {
             None,
             None,
             None,
+            false,
             false,
             false,
             false,
@@ -1805,7 +2020,11 @@ mod tests {
             st_magic.extend_from_slice(&100u64.to_le_bytes()); // header length
             st_magic.extend_from_slice(b"{\""); // JSON start
             let format = detect_format(&st_magic).expect("detect SafeTensors");
-            assert_eq!(format, ModelFormat::SafeTensors, "SafeTensors magic must detect as SafeTensors");
+            assert_eq!(
+                format,
+                ModelFormat::SafeTensors,
+                "SafeTensors magic must detect as SafeTensors"
+            );
         }
 
         /// P0 REGRESSION TEST: APR format must NOT skip golden_output gate
@@ -1817,16 +2036,27 @@ mod tests {
             let format = detect_format(apr_magic).expect("detect APR");
 
             // The critical assertion: APR must be detected as APR, not fail/skip
-            assert_eq!(format, ModelFormat::Apr,
-                "APR format MUST be detected - cannot skip with 'GGUF only' error");
+            assert_eq!(
+                format,
+                ModelFormat::Apr,
+                "APR format MUST be detected - cannot skip with 'GGUF only' error"
+            );
         }
 
         /// P0 REGRESSION TEST: Verify ModelFormat enum covers all expected formats
         #[test]
         fn test_model_format_enum_completeness() {
             // This test documents the expected formats
-            let formats = [ModelFormat::Gguf, ModelFormat::Apr, ModelFormat::SafeTensors];
-            assert_eq!(formats.len(), 3, "Must support exactly 3 formats: GGUF, APR, SafeTensors");
+            let formats = [
+                ModelFormat::Gguf,
+                ModelFormat::Apr,
+                ModelFormat::SafeTensors,
+            ];
+            assert_eq!(
+                formats.len(),
+                3,
+                "Must support exactly 3 formats: GGUF, APR, SafeTensors"
+            );
         }
     }
 
@@ -1857,7 +2087,10 @@ mod tests {
     #[test]
     fn test_skipped_gate_must_have_reason() {
         let result = GateResult::skipped("test_gate", "Explicit reason required");
-        assert!(result.message.contains("Skipped"), "Skip message must contain 'Skipped'");
+        assert!(
+            result.message.contains("Skipped"),
+            "Skip message must contain 'Skipped'"
+        );
         assert!(result.message.len() > 10, "Skip reason must be descriptive");
     }
 }

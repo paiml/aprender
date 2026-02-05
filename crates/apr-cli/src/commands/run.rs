@@ -211,9 +211,9 @@ pub(crate) fn run_model(source: &str, options: &RunOptions) -> Result<RunResult>
 
     // BUG-RUN-001 FIX: Use actual token count from inference engine if available,
     // otherwise fall back to word count approximation
-    let tokens_generated = output.tokens_generated.or_else(|| {
-        Some(output.text.split_whitespace().count())
-    });
+    let tokens_generated = output
+        .tokens_generated
+        .or_else(|| Some(output.text.split_whitespace().count()));
 
     Ok(RunResult {
         text: output.text,

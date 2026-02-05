@@ -245,6 +245,69 @@ fn run_traced_inference(path: &Path) -> Result<(), CliError> {
         path.to_path_buf()
     };
 
+    // PMAT-235: Pre-flight contract validation before traced inference
+    {
+        use aprender::format::rosetta::RosettaStone;
+        let rosetta = RosettaStone::new();
+        match rosetta.validate(&local_path) {
+            Ok(report) => {
+                let contract_failures: Vec<String> = report
+                    .tensors
+                    .iter()
+                    .flat_map(|t| {
+                        t.failures
+                            .iter()
+                            .map(move |f| format!("{}: {}", t.name, f))
+                    })
+                    .collect();
+                if contract_failures.is_empty() {
+                    println!(
+                        "{}",
+                        format!(
+                            "Contract: {} tensors pass PMAT-235 gates",
+                            report.tensor_count
+                        )
+                        .green()
+                    );
+                } else {
+                    println!(
+                        "{}",
+                        format!(
+                            "Contract: {} violations in {} tensors",
+                            contract_failures.len(),
+                            report.failed_tensor_count
+                        )
+                        .red()
+                        .bold()
+                    );
+                    for failure in contract_failures.iter().take(5) {
+                        println!("  {}", failure.red());
+                    }
+                    if contract_failures.len() > 5 {
+                        println!(
+                            "  ... and {} more",
+                            contract_failures.len() - 5
+                        );
+                    }
+                    println!();
+                    println!(
+                        "{}",
+                        "WARNING: Contract violations may cause garbage output."
+                            .yellow()
+                            .bold()
+                    );
+                }
+            }
+            Err(e) => {
+                println!(
+                    "{}",
+                    format!("Contract: validation skipped ({e})").yellow()
+                );
+            }
+        }
+        println!();
+    }
+
     // Detect format from extension
     let ext = local_path
         .extension()
@@ -376,11 +439,12 @@ fn run_traced_inference_gguf(_path: &Path) -> Result<(), CliError> {
 fn run_traced_inference_apr(path: &Path) -> Result<(), CliError> {
     use colored::Colorize;
     use realizar::apr::AprV2Model;
+    use realizar::apr_transformer::AprTransformer;
 
     println!("{}", "Format: APR (native)".cyan());
     println!();
 
-    // Load the APR model
+    // Load the APR model (for tokenizer access)
     let model = AprV2Model::load(path)
         .map_err(|e| CliError::ModelLoadFailed(format!("Failed to load APR model: {e}")))?;
 
@@ -397,76 +461,204 @@ fn run_traced_inference_apr(path: &Path) -> Result<(), CliError> {
     println!("  Heads: {}", num_heads);
     println!();
 
-    // Use test tokens (simple sequence for debugging)
-    // Token 29906 = "2", Token 29974 = "+", Token 29922 = "="
-    let test_tokens: Vec<u32> = vec![1, 29906, 29974, 29906, 29922]; // BOS, "2", "+", "2", "="
-    println!("{}", format!("Test tokens: {:?}", test_tokens).cyan());
-    println!("  (Using hardcoded tokens since tokenizer not loaded)");
+    // Load embedded BPE tokenizer and encode test prompt (PMAT-232 fix)
+    let test_prompt = "What is 2+2?";
+    let test_tokens: Vec<u32> = match model.load_embedded_bpe_tokenizer() {
+        Some(tokenizer) => {
+            let tokens = tokenizer.encode(test_prompt);
+            println!("{}", format!("Test prompt: {:?}", test_prompt).cyan());
+            println!("{}", format!("Encoded tokens: {:?}", tokens).cyan());
+            tokens
+        }
+        None => {
+            // Fail fast - no silent fallback to wrong tokens
+            return Err(CliError::InferenceFailed(
+                "FATAL: APR file has no embedded tokenizer. Cannot trace without proper tokenization. \
+                 Re-import with: apr import <source>.gguf -o <output>.apr".to_string()
+            ));
+        }
+    };
     println!();
 
-    // Run forward pass
-    println!("{}", "FORWARD PASS:".green().bold());
-    let logits = model
-        .forward(&test_tokens)
-        .map_err(|e| CliError::InferenceFailed(format!("Forward pass failed: {e}")))?;
+    // Try to load as AprTransformer for layer-by-layer tracing
+    match AprTransformer::from_apr_file(path) {
+        Ok(transformer) => {
+            // Use forward_traced for layer-by-layer statistics
+            println!("{}", "FORWARD PASS (with layer tracing):".green().bold());
+            let trace = transformer
+                .forward_traced(&test_tokens)
+                .map_err(|e| CliError::InferenceFailed(format!("Forward pass failed: {e}")))?;
 
-    // Compute statistics on output logits
-    let logit_stats = compute_vector_stats(&logits);
-    println!();
-    println!("{}", "LM_HEAD output:".green().bold());
-    println!("  Vocab size: {}", logits.len());
-    print_stats("  ", &logit_stats);
+            // Embedding stats
+            println!();
+            println!("{}", "EMBEDDING:".cyan().bold());
+            print_activation_stats_colored("  ", &trace.embed_stats);
 
-    // Top 5 predictions
-    println!();
-    println!("{}", "Top 5 predictions:".green().bold());
-    let mut indexed: Vec<(usize, f32)> = logits.iter().copied().enumerate().collect();
-    indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-    for (i, (token_id, logit)) in indexed.iter().take(5).enumerate() {
-        println!("  {}. token_id={}, logit={:.4}", i + 1, token_id, logit);
+            // Layer-by-layer stats with colors
+            println!();
+            println!("{}", "LAYER-BY-LAYER ACTIVATIONS:".cyan().bold());
+            println!("{}", "  Legend: std>100=RED, std>50=YELLOW, std>10=BLUE, else=GREEN".dimmed());
+            println!();
+
+            let total_layers = trace.layer_activations.len();
+            for layer in &trace.layer_activations {
+                // Color layer header based on position (gradient from cyan to magenta)
+                let layer_header = format!("Layer {:>2}/{}", layer.layer_idx, total_layers);
+                let header_colored = match layer.layer_idx % 6 {
+                    0 => layer_header.cyan().bold(),
+                    1 => layer_header.blue().bold(),
+                    2 => layer_header.magenta().bold(),
+                    3 => layer_header.purple().bold(),
+                    4 => layer_header.bright_blue().bold(),
+                    _ => layer_header.bright_cyan().bold(),
+                };
+
+                // Check for anomalies at this layer
+                let has_nan = layer.attn_norm_stats.nan_count > 0
+                    || layer.qkv_stats.nan_count > 0
+                    || layer.attn_out_stats.nan_count > 0
+                    || layer.ffn_norm_stats.nan_count > 0
+                    || layer.ffn_out_stats.nan_count > 0
+                    || layer.output_stats.nan_count > 0;
+                let has_inf = layer.attn_norm_stats.inf_count > 0
+                    || layer.qkv_stats.inf_count > 0
+                    || layer.attn_out_stats.inf_count > 0
+                    || layer.ffn_norm_stats.inf_count > 0
+                    || layer.ffn_out_stats.inf_count > 0
+                    || layer.output_stats.inf_count > 0;
+
+                // Status indicator
+                let status = if has_nan || has_inf {
+                    "ANOMALY".red().bold()
+                } else if layer.output_stats.std_dev > 100.0 {
+                    "HIGH-VAR".yellow().bold()
+                } else {
+                    "OK".green()
+                };
+
+                println!("  {} [{}]", header_colored, status);
+
+                // Print each stage with color-coded std_dev
+                print_stage_stats("    attn_norm", &layer.attn_norm_stats);
+                print_stage_stats("    qkv      ", &layer.qkv_stats);
+                print_stage_stats("    attn_out ", &layer.attn_out_stats);
+                print_stage_stats("    ffn_norm ", &layer.ffn_norm_stats);
+                print_stage_stats("    ffn_out  ", &layer.ffn_out_stats);
+                print_stage_stats("    output   ", &layer.output_stats);
+
+                // Early exit if critical anomalies detected
+                if has_nan || has_inf {
+                    println!();
+                    println!("{}", "    CRITICAL: NaN/Inf detected - numerical instability!".red().bold());
+                    println!("{}", "    Possible causes:".red());
+                    println!("{}", "      - Weight overflow during dequantization".red());
+                    println!("{}", "      - Attention score explosion (missing scaling)".red());
+                    println!("{}", "      - RoPE frequency miscalculation".red());
+                    println!();
+                    break;
+                }
+                println!();
+            }
+
+            // Final norm stats
+            println!();
+            println!("{}", "FINAL LAYER NORM:".cyan().bold());
+            print_activation_stats("  ", &trace.final_norm_stats);
+
+            // Logits
+            let logits = &trace.logits;
+            let logit_stats = compute_vector_stats(logits);
+            println!();
+            println!("{}", "LM_HEAD output:".green().bold());
+            println!("  Vocab size: {}", logits.len());
+            print_stats("  ", &logit_stats);
+
+            // Top 5 predictions
+            println!();
+            println!("{}", "Top 5 predictions:".green().bold());
+            let mut indexed: Vec<(usize, f32)> = logits.iter().copied().enumerate().collect();
+            indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            for (i, (token_id, logit)) in indexed.iter().take(5).enumerate() {
+                println!("  {}. token_id={}, logit={:.4}", i + 1, token_id, logit);
+            }
+
+            // Summary analysis
+            println!();
+            println!("{}", "TRACE SUMMARY:".white().bold());
+
+            // Find layers with highest variance
+            let mut max_std_layer = 0;
+            let mut max_std_value = 0.0f32;
+            let mut high_var_count = 0;
+            let mut total_nan = 0;
+            let mut total_inf = 0;
+
+            for layer in &trace.layer_activations {
+                if layer.output_stats.std_dev > max_std_value {
+                    max_std_value = layer.output_stats.std_dev;
+                    max_std_layer = layer.layer_idx;
+                }
+                if layer.output_stats.std_dev > 50.0 {
+                    high_var_count += 1;
+                }
+                total_nan += layer.output_stats.nan_count;
+                total_inf += layer.output_stats.inf_count;
+            }
+
+            if total_nan > 0 || total_inf > 0 {
+                println!("  {}", format!("CRITICAL: {} NaN, {} Inf values detected!", total_nan, total_inf).red().bold());
+                println!("  {}", "Model weights or computation is corrupted.".red());
+            } else if high_var_count > 0 {
+                println!("  {}", format!("WARNING: {} layers with std > 50", high_var_count).yellow());
+                println!("  Peak variance at layer {} (std={:.2})", max_std_layer, max_std_value);
+                if max_std_value > 100.0 {
+                    println!("  {}", "High variance may indicate attention explosion or weight issues.".yellow());
+                }
+            } else {
+                println!("  {}", "All layers have reasonable variance (std < 50)".green());
+            }
+
+            // Logit range analysis
+            let logit_range = logit_stats.max - logit_stats.min;
+            if logit_range < 1.0 {
+                println!("  {}", format!("WARNING: Logit range too narrow ({:.4})", logit_range).yellow());
+                println!("  {}", "Model may not have learned meaningful patterns.".yellow());
+            } else if logit_range > 100.0 {
+                println!("  {}", format!("WARNING: Logit range very wide ({:.4})", logit_range).yellow());
+            } else {
+                println!("  Logit range: {:.2} {}", logit_range, "(reasonable)".green());
+            }
+        }
+        Err(e) => {
+            // Fall back to AprV2Model forward if AprTransformer fails
+            eprintln!("{}", format!("Note: AprTransformer failed ({e}), using AprV2Model").yellow());
+            println!("{}", "FORWARD PASS:".green().bold());
+            let logits = model
+                .forward(&test_tokens)
+                .map_err(|e| CliError::InferenceFailed(format!("Forward pass failed: {e}")))?;
+
+            // Compute statistics on output logits
+            let logit_stats = compute_vector_stats(&logits);
+            println!();
+            println!("{}", "LM_HEAD output:".green().bold());
+            println!("  Vocab size: {}", logits.len());
+            print_stats("  ", &logit_stats);
+
+            // Top 5 predictions
+            println!();
+            println!("{}", "Top 5 predictions:".green().bold());
+            let mut indexed: Vec<(usize, f32)> = logits.iter().copied().enumerate().collect();
+            indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            for (i, (token_id, logit)) in indexed.iter().take(5).enumerate() {
+                println!("  {}. token_id={}, logit={:.4}", i + 1, token_id, logit);
+            }
+
+            println!();
+            println!("{}", "NOTE:".cyan().bold());
+            println!("  Layer-by-layer tracing not available for this APR file.");
+            println!("  Re-import with newer format for full tracing support.");
+        }
     }
-
-    // Bottom 5 (for debugging garbage)
-    println!();
-    println!("{}", "Bottom 5 (sanity check):".yellow());
-    indexed.reverse();
-    for (i, (token_id, logit)) in indexed.iter().take(5).enumerate() {
-        println!("  {}. token_id={}, logit={:.4}", i + 1, token_id, logit);
-    }
-
-    // Check for anomalies
-    println!();
-    if logit_stats.nan_count > 0 || logit_stats.inf_count > 0 {
-        println!("{}", "ANOMALIES DETECTED!".red().bold());
-        println!("  NaN count: {}", logit_stats.nan_count);
-        println!("  Inf count: {}", logit_stats.inf_count);
-        println!();
-        println!("This indicates numerical instability. Check:");
-        println!("  1. Weight loading (tensor layout)");
-        println!("  2. Quantization dequantization");
-        println!("  3. RoPE/attention computation");
-    } else if logit_stats.max - logit_stats.min < 0.01 {
-        println!("{}", "WARNING: Logit range is very small!".yellow().bold());
-        println!("  Range: {:.6}", logit_stats.max - logit_stats.min);
-        println!("  This may indicate:");
-        println!("    - All weights are zero/near-zero");
-        println!("    - Forward pass is not computing correctly");
-    } else {
-        println!("{}", "Logit statistics look reasonable.".green());
-        println!("  If output is still garbage, check:");
-        println!("    - Tokenizer encoding/decoding");
-        println!("    - Token vocabulary mismatch");
-    }
-
-    // NOTE: For full layer-by-layer tracing, realizar needs to add:
-    // - forward_traced() method on AprV2Model
-    // - LayerTraceStats struct for per-layer statistics
-    // See: https://github.com/paiml/aprender/issues/154
-    println!();
-    println!("{}", "NOTE:".cyan().bold());
-    println!("  Layer-by-layer tracing requires forward_traced() in realizar.");
-    println!("  Currently only showing final logits.");
-    println!("  See: https://github.com/paiml/aprender/issues/154");
 
     Ok(())
 }
@@ -536,6 +728,90 @@ fn print_stats(prefix: &str, stats: &VectorStats) {
             "{}NaN: {}, Inf: {}",
             prefix, stats.nan_count, stats.inf_count
         );
+    }
+}
+
+/// Print activation statistics from realizar's ActivationStats
+#[cfg(feature = "inference")]
+fn print_activation_stats(_prefix: &str, stats: &realizar::apr_transformer::ActivationStats) {
+    use colored::Colorize;
+    println!("  Range: [{:.6}, {:.6}]", stats.min, stats.max);
+    println!("  Mean: {:.6}, Std: {:.6}", stats.mean, stats.std_dev);
+    if stats.nan_count > 0 || stats.inf_count > 0 {
+        println!(
+            "  {}: NaN={}, Inf={}",
+            "ANOMALY".red().bold(),
+            stats.nan_count,
+            stats.inf_count
+        );
+    }
+}
+
+/// Print activation statistics with color coding
+#[cfg(feature = "inference")]
+fn print_activation_stats_colored(_prefix: &str, stats: &realizar::apr_transformer::ActivationStats) {
+    use colored::Colorize;
+
+    // Color code the std_dev
+    let std_colored = format_std_colored(stats.std_dev);
+
+    println!("  Range: [{:.4}, {:.4}]", stats.min, stats.max);
+    println!("  Mean: {:.4}, Std: {}", stats.mean, std_colored);
+
+    if stats.nan_count > 0 {
+        println!("  {}", format!("NaN count: {}", stats.nan_count).red().bold());
+    }
+    if stats.inf_count > 0 {
+        println!("  {}", format!("Inf count: {}", stats.inf_count).red().bold());
+    }
+}
+
+/// Print stage-specific stats in a compact colored format
+#[cfg(feature = "inference")]
+fn print_stage_stats(stage_name: &str, stats: &realizar::apr_transformer::ActivationStats) {
+    use colored::Colorize;
+
+    let std_colored = format_std_colored(stats.std_dev);
+    let mean_str = format!("{:>8.4}", stats.mean);
+
+    // Build anomaly indicators
+    let mut anomalies = String::new();
+    if stats.nan_count > 0 {
+        use std::fmt::Write;
+        let _ = write!(anomalies, " NaN:{}", stats.nan_count);
+    }
+    if stats.inf_count > 0 {
+        use std::fmt::Write;
+        let _ = write!(anomalies, " Inf:{}", stats.inf_count);
+    }
+
+    if anomalies.is_empty() {
+        println!("{}: mean={} std={}", stage_name.dimmed(), mean_str, std_colored);
+    } else {
+        println!(
+            "{}: mean={} std={} {}",
+            stage_name.dimmed(),
+            mean_str,
+            std_colored,
+            anomalies.red().bold()
+        );
+    }
+}
+
+/// Format std_dev with color based on magnitude
+#[cfg(feature = "inference")]
+fn format_std_colored(std_dev: f32) -> colored::ColoredString {
+    use colored::Colorize;
+
+    let formatted = format!("{:>8.4}", std_dev);
+    if std_dev > 100.0 {
+        formatted.red().bold()
+    } else if std_dev > 50.0 {
+        formatted.yellow()
+    } else if std_dev > 10.0 {
+        formatted.blue()
+    } else {
+        formatted.green()
     }
 }
 

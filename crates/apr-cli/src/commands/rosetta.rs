@@ -2304,9 +2304,7 @@ fn normalize_tensor_name(name: &str) -> String {
 
     // Step 2: Remove APR/HF intermediate prefixes (self_attn., mlp.)
     // These don't exist in GGUF naming
-    let name = name
-        .replace(".self_attn.", ".")
-        .replace(".mlp.", ".");
+    let name = name.replace(".self_attn.", ".").replace(".mlp.", ".");
 
     // Step 3: Normalize GGUF tensor suffixes to HF convention
     // GGUF: attn_q → HF: q_proj
