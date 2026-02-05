@@ -3093,13 +3093,141 @@ fn test_cross_entropy_increases_with_wrong_prediction() {
 <li><a href="toyota-way/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
 <li><a href="toyota-way/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
 </ul>
-<div style="break-before: page; page-break-before: always;"></div><h1 id="jidoka"><a class="header" href="#jidoka">Jidoka</a></h1>
-<p>📝 <strong>This chapter is under construction.</strong></p>
-<p>Content will be added following EXTREME TDD principles demonstrated in aprender.</p>
+<div style="break-before: page; page-break-before: always;"></div><h1 id="jidoka-autonomation"><a class="header" href="#jidoka-autonomation">Jidoka (Autonomation)</a></h1>
+<p>Jidoka is a Toyota Production System principle meaning &quot;automation with a human touch.&quot;
+When a defect is detected, the process stops immediately rather than producing more defective items.</p>
+<p>In software, Jidoka means <strong>making invalid states unrepresentable</strong> at the type level.</p>
+<h2 id="theoretical-foundation"><a class="header" href="#theoretical-foundation">Theoretical Foundation</a></h2>
+<ul>
+<li><strong>Shingo, S. (1986)</strong>. <em>Zero Quality Control: Source Inspection and the Poka-Yoke System</em>. Productivity Press.</li>
+<li><strong>Brady, E. (2017)</strong>. <em>Type-Driven Development with Idris</em>. Manning Publications.</li>
+<li><strong>Parsons, A. (2019)</strong>. &quot;Parse, Don't Validate&quot; - https://lexi-lambda.github.io/blog/2019/11/05/parse-don-t-validate/</li>
+</ul>
+<h2 id="the-problem-runtime-validation-can-be-bypassed"><a class="header" href="#the-problem-runtime-validation-can-be-bypassed">The Problem: Runtime Validation Can Be Bypassed</a></h2>
+<p>Traditional runtime validation has a fatal flaw: it can be bypassed.</p>
+<pre><code class="language-rust">// DANGEROUS: Nothing prevents using unvalidated data
+fn process_embedding(data: Vec&lt;f32&gt;, vocab_size: usize, hidden_dim: usize) {
+    // Validation can be skipped or forgotten
+    if !validate_embedding(&amp;data, vocab_size, hidden_dim) {
+        return; // Easy to forget this check
+    }
+    // ... process data
+}
+
+// This compiles and runs, even with garbage data:
+process_embedding(vec![0.0; 100], 151936, 896); // Wrong size!</code></pre>
+<h2 id="the-solution-poka-yoke-via-newtypes"><a class="header" href="#the-solution-poka-yoke-via-newtypes">The Solution: Poka-Yoke via Newtypes</a></h2>
+<p>Poka-Yoke (mistake-proofing) makes the invalid state <strong>impossible to represent</strong>:</p>
+<pre><code class="language-rust">/// Validated embedding - inner data is PRIVATE
+pub struct ValidatedEmbedding {
+    data: Vec&lt;f32&gt;,      // PRIVATE - cannot be accessed directly
+    vocab_size: usize,
+    hidden_dim: usize,
+}
+
+impl ValidatedEmbedding {
+    /// The ONLY way to create a ValidatedEmbedding
+    pub fn new(data: Vec&lt;f32&gt;, vocab_size: usize, hidden_dim: usize)
+        -&gt; Result&lt;Self, ContractValidationError&gt;
+    {
+        // All validation gates run here
+        if data.len() != vocab_size * hidden_dim {
+            return Err(/* shape error */);
+        }
+        if zero_pct(&amp;data) &gt; 50.0 {
+            return Err(/* density error - catches PMAT-234 bug */);
+        }
+        // ... more gates
+
+        Ok(Self { data, vocab_size, hidden_dim })
+    }
+
+    /// Access validated data
+    pub fn data(&amp;self) -&gt; &amp;[f32] { &amp;self.data }
+}</code></pre>
+<p>Now invalid data <strong>cannot exist</strong>:</p>
+<pre><code class="language-rust">// This function REQUIRES validated data - cannot be bypassed
+fn process_embedding(embedding: ValidatedEmbedding) {
+    // Compiler guarantees data passed validation
+    let data = embedding.data(); // Safe to use
+}
+
+// Cannot call with invalid data - compilation error!
+process_embedding(vec![0.0; 100]); // ERROR: expected ValidatedEmbedding</code></pre>
+<h2 id="validation-gates"><a class="header" href="#validation-gates">Validation Gates</a></h2>
+<p>The contract defines these validation gates (see <code>contracts/tensor-layout-v1.yaml</code>):</p>
+<div class="table-wrapper"><table><thead><tr><th>Gate ID</th><th>Rule</th><th>Threshold</th></tr></thead><tbody>
+<tr><td>F-DATA-QUALITY-001</td><td>Embedding density</td><td>&lt; 50% zeros</td></tr>
+<tr><td>F-DATA-QUALITY-002</td><td>No NaN/Inf</td><td>count = 0</td></tr>
+<tr><td>F-DATA-QUALITY-003</td><td>Non-degenerate</td><td>L2 &gt; 1e-6</td></tr>
+<tr><td>F-DATA-QUALITY-004</td><td>Spot check</td><td>tokens at 10/50/90% non-zero</td></tr>
+</tbody></table>
+</div>
+<h2 id="real-bug-pmat-234"><a class="header" href="#real-bug-pmat-234">Real Bug: PMAT-234</a></h2>
+<p>This pattern caught a real bug where SafeTensors data had 94.5% leading zeros due to an offset calculation error:</p>
+<pre><code># Trace output showing the bug
+embedding len: 136134656 floats
+first non-zero at index 128684288: value=-0.0131
+leading zeros: 128684288 (94.5% of total)
+</code></pre>
+<p>Without validation, this data would have been used for inference, producing garbage output (Hebrew characters instead of English).</p>
+<p>With <code>ValidatedEmbedding</code>, the load fails immediately with:</p>
+<pre><code>[F-DATA-QUALITY-001] Tensor 'embedding': DENSITY FAILURE: 94.5% zeros
+(max 50%). Data likely loaded from wrong offset!
+</code></pre>
+<h2 id="popperian-falsification-tests"><a class="header" href="#popperian-falsification-tests">Popperian Falsification Tests</a></h2>
+<p>Per Popper (1959), each validation rule has explicit falsification tests that attempt to <strong>disprove</strong> the contract works:</p>
+<pre><code class="language-rust">#[test]
+fn falsify_001_embedding_rejects_all_zeros() {
+    let bad_data = vec![0.0f32; 100 * 64]; // 100% zeros
+    let result = ValidatedEmbedding::new(bad_data, 100, 64);
+    assert!(result.is_err(), &quot;Should reject 100% zeros&quot;);
+    assert!(result.unwrap_err().message.contains(&quot;DENSITY&quot;));
+}</code></pre>
+<p>If any falsification test passes when it should fail, the contract implementation is broken.</p>
+<h2 id="running-the-example"><a class="header" href="#running-the-example">Running the Example</a></h2>
+<pre><code class="language-bash">cargo run --example validated_tensors
+</code></pre>
+<p>Output:</p>
+<pre><code>═══════════════════════════════════════════════════════════════════
+     PMAT-235: Validated Tensors - Compile-Time Enforcement
+═══════════════════════════════════════════════════════════════════
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Demo 1: Valid Embedding (Passes All Gates)                      │
+└─────────────────────────────────────────────────────────────────┘
+
+  ✅ ValidatedEmbedding created successfully!
+     vocab_size: 100
+     hidden_dim: 64
+     Statistics:
+       elements: 6400
+       zero_pct: 0.0%
+       min: -0.0998, max: 0.0998
+       L2 norm: 6.3489
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Demo 2: Density Rejection (Catches PMAT-234 Bug)                │
+└─────────────────────────────────────────────────────────────────┘
+
+  Creating embedding with 94.5% zeros (simulates offset bug)...
+  ✅ Correctly rejected!
+     Rule: F-DATA-QUALITY-001
+     Tensor: embedding
+     Error: DENSITY FAILURE: 94.5% zeros (max 50%)
+</code></pre>
+<h2 id="key-takeaways"><a class="header" href="#key-takeaways">Key Takeaways</a></h2>
+<ol>
+<li><strong>Make invalid states unrepresentable</strong> - Use newtypes with private fields</li>
+<li><strong>Validation at construction</strong> - The only way to create the type runs validation</li>
+<li><strong>Compiler enforcement</strong> - Cannot bypass validation because the type requires it</li>
+<li><strong>Popperian testing</strong> - Write tests that attempt to disprove correctness</li>
+</ol>
 <p><strong>See also:</strong></p>
 <ul>
 <li><a href="toyota-way/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
-<li><a href="toyota-way/../examples/cross-validation.html">Case Study: Cross-Validation</a></li>
+<li><a href="toyota-way/../../examples/poka_yoke_validation.rs">Poka-Yoke Validation Example</a></li>
+<li><a href="toyota-way/../../contracts/tensor-layout-v1.yaml">Contract Specification</a></li>
 </ul>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="pdca-cycle"><a class="header" href="#pdca-cycle">Pdca Cycle</a></h1>
 <p>📝 <strong>This chapter is under construction.</strong></p>
@@ -9204,7 +9332,7 @@ let result = AutoTuner::new(TPE::new(1000))
 <p>Bergstra, J., &amp; Bengio, Y. (2012). <strong>Random Search for Hyper-Parameter Optimization.</strong> JMLR, 13, 281-305.</p>
 </li>
 </ol>
-<h2 id="running-the-example"><a class="header" href="#running-the-example">Running the Example</a></h2>
+<h2 id="running-the-example-1"><a class="header" href="#running-the-example-1">Running the Example</a></h2>
 <pre><code class="language-bash">cargo run --example automl_clustering
 </code></pre>
 <p><strong>Sample Output:</strong></p>
@@ -16535,7 +16663,7 @@ dbd9a2d feat: cross-validation - Implement train_test_split and KFold
 <li>Selecting parameters that maximize CV score</li>
 <li>Retraining the final model with optimal parameters</li>
 </ol>
-<h2 id="running-the-example-1"><a class="header" href="#running-the-example-1">Running the Example</a></h2>
+<h2 id="running-the-example-2"><a class="header" href="#running-the-example-2">Running the Example</a></h2>
 <pre><code class="language-bash">cargo run --example grid_search_tuning
 </code></pre>
 <h2 id="key-concepts-1"><a class="header" href="#key-concepts-1">Key Concepts</a></h2>
@@ -16763,7 +16891,7 @@ println!(&quot;Final performance: {}&quot;, result.best_score); // Wrong!</code>
 <li><a href="examples/./regularized-regression.html">Regularized Regression</a> - Ridge, Lasso, ElasticNet</li>
 <li><a href="examples/./linear-regression.html">Linear Regression</a> - Baseline model</li>
 </ul>
-<h2 id="key-takeaways"><a class="header" href="#key-takeaways">Key Takeaways</a></h2>
+<h2 id="key-takeaways-1"><a class="header" href="#key-takeaways-1">Key Takeaways</a></h2>
 <ol>
 <li><strong>Grid search automates</strong> hyperparameter optimization</li>
 <li><strong>Cross-validation</strong> provides unbiased performance estimates</li>
@@ -16776,7 +16904,7 @@ println!(&quot;Final performance: {}&quot;, result.best_score); // Wrong!</code>
 </ol>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="case-study-automl-clustering-tpe"><a class="header" href="#case-study-automl-clustering-tpe">Case Study: AutoML Clustering (TPE)</a></h1>
 <p>This example demonstrates using TPE (Tree-structured Parzen Estimator) to automatically find the optimal number of clusters for K-Means.</p>
-<h2 id="running-the-example-2"><a class="header" href="#running-the-example-2">Running the Example</a></h2>
+<h2 id="running-the-example-3"><a class="header" href="#running-the-example-3">Running the Example</a></h2>
 <pre><code class="language-bash">cargo run --example automl_clustering
 </code></pre>
 <h2 id="overview-20"><a class="header" href="#overview-20">Overview</a></h2>
@@ -20073,7 +20201,7 @@ renacer --format json -e trace=file -- ./target/debug/examples/bundle_trace_demo
 renacer -c -e trace=file -- ./target/debug/examples/bundle_1kb_limit
 renacer -c -e trace=file -- ./target/debug/examples/bundle_10kb_limit
 </code></pre>
-<h2 id="key-takeaways-1"><a class="header" href="#key-takeaways-1">Key Takeaways</a></h2>
+<h2 id="key-takeaways-2"><a class="header" href="#key-takeaways-2">Key Takeaways</a></h2>
 <ol>
 <li><strong>Use <code>-c</code> for quick overview</strong> - Shows syscall distribution</li>
 <li><strong>Use <code>-T</code> for timing</strong> - Identifies slow operations</li>
@@ -20198,7 +20326,7 @@ fn main() {
 </ul>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="case-study-synthetic-data-generation-for-ml"><a class="header" href="#case-study-synthetic-data-generation-for-ml">Case Study: Synthetic Data Generation for ML</a></h1>
 <p>Synthetic data generation augments training datasets when labeled data is scarce. This example demonstrates aprender's synthetic data module for text augmentation, template-based generation, and weak supervision.</p>
-<h2 id="running-the-example-3"><a class="header" href="#running-the-example-3">Running the Example</a></h2>
+<h2 id="running-the-example-4"><a class="header" href="#running-the-example-4">Running the Example</a></h2>
 <pre><code class="language-bash">cargo run --example synthetic_data_generation
 </code></pre>
 <h2 id="techniques-demonstrated"><a class="header" href="#techniques-demonstrated">Techniques Demonstrated</a></h2>
@@ -20989,7 +21117,7 @@ fn main() {
 
     println!(&quot;Graph embedding: {:?}&quot;, &amp;graph_emb[..4]);
 }</code></pre>
-<h2 id="running-the-example-4"><a class="header" href="#running-the-example-4">Running the Example</a></h2>
+<h2 id="running-the-example-5"><a class="header" href="#running-the-example-5">Running the Example</a></h2>
 <pre><code class="language-bash">cargo run --example code_analysis
 </code></pre>
 <p>Output:</p>
@@ -21254,7 +21382,7 @@ Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.53s
 <strong>Coverage:</strong> All DBSCAN functionality comprehensively tested
 <strong>Quality:</strong> Zero clippy warnings, full documentation
 <strong>Exports:</strong> Available via <code>use aprender::prelude::*;</code></p>
-<h2 id="key-takeaways-2"><a class="header" href="#key-takeaways-2">Key Takeaways</a></h2>
+<h2 id="key-takeaways-3"><a class="header" href="#key-takeaways-3">Key Takeaways</a></h2>
 <ol>
 <li><strong>EXTREME TDD works:</strong> Tests written first caught edge cases early</li>
 <li><strong>Algorithm correctness:</strong> Comprehensive tests verify all scenarios</li>
@@ -21511,7 +21639,7 @@ Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.89s
 <strong>Coverage:</strong> All AgglomerativeClustering functionality comprehensively tested
 <strong>Quality:</strong> Zero clippy warnings, full documentation
 <strong>Exports:</strong> Available via <code>use aprender::prelude::*;</code></p>
-<h2 id="key-takeaways-3"><a class="header" href="#key-takeaways-3">Key Takeaways</a></h2>
+<h2 id="key-takeaways-4"><a class="header" href="#key-takeaways-4">Key Takeaways</a></h2>
 <ol>
 <li>
 <p><strong>Hierarchical clustering advantages:</strong></p>
@@ -21644,7 +21772,7 @@ Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.89s
 <li>GMM vs K-Means advantages</li>
 <li>Reproducibility</li>
 </ol>
-<h2 id="key-takeaways-4"><a class="header" href="#key-takeaways-4">Key Takeaways</a></h2>
+<h2 id="key-takeaways-5"><a class="header" href="#key-takeaways-5">Key Takeaways</a></h2>
 <ol>
 <li><strong>Probabilistic Framework:</strong> GMM provides uncertainty quantification unlike K-Means</li>
 <li><strong>Soft Clustering:</strong> Points can partially belong to multiple clusters</li>
@@ -22030,7 +22158,7 @@ Best practices for robust error handling</li>
 <li>Analyze weighted vs uniform voting</li>
 <li>Generate probabilistic predictions with confidence scores</li>
 </ul>
-<h2 id="running-the-example-5"><a class="header" href="#running-the-example-5">Running the Example</a></h2>
+<h2 id="running-the-example-6"><a class="header" href="#running-the-example-6">Running the Example</a></h2>
 <pre><code class="language-bash">cargo run --example knn_iris
 </code></pre>
 <p>Expected output: Comprehensive kNN analysis including accuracy for different k values, distance metric comparison, voting strategy comparison, and probabilistic predictions with confidence scores.</p>
@@ -22369,7 +22497,7 @@ let knn15 = KNearestNeighbors::new(15); // 75% of training data</code></pre>
 </ul>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="case-study-naive-bayes-iris"><a class="header" href="#case-study-naive-bayes-iris">Case Study: Naive Bayes Iris</a></h1>
 <p>This case study demonstrates Gaussian Naive Bayes classification on the Iris dataset, achieving perfect 100% test accuracy and outperforming k-Nearest Neighbors.</p>
-<h2 id="running-the-example-6"><a class="header" href="#running-the-example-6">Running the Example</a></h2>
+<h2 id="running-the-example-7"><a class="header" href="#running-the-example-7">Running the Example</a></h2>
 <pre><code class="language-bash">cargo run --example naive_bayes_iris
 </code></pre>
 <h2 id="results-summary"><a class="header" href="#results-summary">Results Summary</a></h2>
@@ -22473,7 +22601,7 @@ println!(&quot;Accuracy: {:.1}%&quot;, accuracy * 100.0);</code></pre>
 <li><strong>Posterior</strong>: Beta(α + k, β + n - k) with closed-form update</li>
 </ul>
 <p>This enables exact Bayesian inference without numerical integration.</p>
-<h2 id="running-the-example-7"><a class="header" href="#running-the-example-7">Running the Example</a></h2>
+<h2 id="running-the-example-8"><a class="header" href="#running-the-example-8">Running the Example</a></h2>
 <pre><code class="language-bash">cargo run --example beta_binomial_inference
 </code></pre>
 <p>Expected output: Four demonstrations showing prior specification, posterior updating, credible intervals, and sequential learning.</p>
@@ -22655,7 +22783,7 @@ informative.update(7, 10);
 <li>If posteriors differ substantially, <strong>collect more data</strong> until they converge</li>
 </ol>
 <p>With enough data, all reasonable priors converge to the same posterior (Bayesian consistency).</p>
-<h2 id="key-takeaways-5"><a class="header" href="#key-takeaways-5">Key Takeaways</a></h2>
+<h2 id="key-takeaways-6"><a class="header" href="#key-takeaways-6">Key Takeaways</a></h2>
 <p><strong>1. Conjugate priors enable closed-form updates</strong></p>
 <ul>
 <li>No MCMC or numerical integration required</li>
@@ -22713,7 +22841,7 @@ informative.update(7, 10);
 <li><strong>Posterior</strong>: Gamma(α + Σxᵢ, β + n) with closed-form update</li>
 </ul>
 <p>This enables exact Bayesian inference for Poisson-distributed data without numerical integration.</p>
-<h2 id="running-the-example-8"><a class="header" href="#running-the-example-8">Running the Example</a></h2>
+<h2 id="running-the-example-9"><a class="header" href="#running-the-example-9">Running the Example</a></h2>
 <pre><code class="language-bash">cargo run --example gamma_poisson_inference
 </code></pre>
 <p>Expected output: Four demonstrations showing prior specification, posterior updating, credible intervals, and sequential learning for count data.</p>
@@ -22933,7 +23061,7 @@ informative.update(&amp;counts);
 <li>If posteriors differ substantially, <strong>collect more data</strong> until they converge</li>
 </ol>
 <p>With enough data, all reasonable priors converge to the same posterior (Bayesian consistency).</p>
-<h2 id="key-takeaways-6"><a class="header" href="#key-takeaways-6">Key Takeaways</a></h2>
+<h2 id="key-takeaways-7"><a class="header" href="#key-takeaways-7">Key Takeaways</a></h2>
 <p><strong>1. Conjugate priors enable closed-form updates</strong></p>
 <ul>
 <li>No MCMC or numerical integration required</li>
@@ -23002,7 +23130,7 @@ informative.update(&amp;counts);
 <li>μ | σ² ~ Normal(μ₀, σ²/κ) - conditional mean prior</li>
 </ul>
 <p>This enables exact bivariate Bayesian inference without numerical integration.</p>
-<h2 id="running-the-example-9"><a class="header" href="#running-the-example-9">Running the Example</a></h2>
+<h2 id="running-the-example-10"><a class="header" href="#running-the-example-10">Running the Example</a></h2>
 <pre><code class="language-bash">cargo run --example normal_inverse_gamma_inference
 </code></pre>
 <p>Expected output: Four demonstrations showing prior specification, bivariate posterior updating, credible intervals for both parameters, and sequential learning.</p>
@@ -23246,7 +23374,7 @@ informative.update(&amp;measurements);
 <li>If posteriors differ substantially, <strong>collect more data</strong> until convergence</li>
 <li>With sufficient data (n &gt; 30), all reasonable priors converge (Bernstein-von Mises theorem)</li>
 </ol>
-<h2 id="key-takeaways-7"><a class="header" href="#key-takeaways-7">Key Takeaways</a></h2>
+<h2 id="key-takeaways-8"><a class="header" href="#key-takeaways-8">Key Takeaways</a></h2>
 <p><strong>1. Bivariate conjugate prior for (μ, σ²)</strong></p>
 <ul>
 <li>Hierarchical structure: σ² ~ InverseGamma, μ | σ² ~ Normal</li>
@@ -23315,7 +23443,7 @@ informative.update(&amp;measurements);
 </ul>
 <p>The probability simplex constraint: Σθᵢ = 1, where each θᵢ ∈ [0, 1] represents the probability of category i.</p>
 <p>This enables exact Bayesian inference for multinomial data without numerical integration.</p>
-<h2 id="running-the-example-10"><a class="header" href="#running-the-example-10">Running the Example</a></h2>
+<h2 id="running-the-example-11"><a class="header" href="#running-the-example-11">Running the Example</a></h2>
 <pre><code class="language-bash">cargo run --example dirichlet_multinomial_inference
 </code></pre>
 <p>Expected output: Four demonstrations showing prior specification, posterior updating, credible intervals per category, and sequential learning for categorical data.</p>
@@ -23551,7 +23679,7 @@ informative.update(&amp;page_visits);
 <li>If posteriors diverge, collect more data until convergence</li>
 </ol>
 <p><strong>Convergence criterion</strong>: ||θ̂_uniform - θ̂_informative|| &lt; ε (e.g., ε = 0.05 for 5% tolerance)</p>
-<h2 id="key-takeaways-8"><a class="header" href="#key-takeaways-8">Key Takeaways</a></h2>
+<h2 id="key-takeaways-9"><a class="header" href="#key-takeaways-9">Key Takeaways</a></h2>
 <p><strong>1. k-dimensional conjugate prior for categorical data</strong></p>
 <ul>
 <li>Operates on probability simplex: Σθᵢ = 1</li>
@@ -24270,7 +24398,7 @@ fn main() {
     println!(&quot;  - Hilbe (2011): Negative Binomial Regression&quot;);
     println!(&quot;  - See notes-poisson.md for detailed explanation&quot;);
 }</code></pre>
-<h2 id="running-the-example-11"><a class="header" href="#running-the-example-11">Running the Example</a></h2>
+<h2 id="running-the-example-12"><a class="header" href="#running-the-example-12">Running the Example</a></h2>
 <pre><code class="language-bash">cargo run --example negative_binomial_glm
 </code></pre>
 <h2 id="expected-output"><a class="header" href="#expected-output">Expected Output</a></h2>
@@ -24467,7 +24595,7 @@ let step_size = match self.link {
 <p>When your count data shows overdispersion (variance/mean &gt; 1.5), <strong>always use Negative Binomial</strong> instead of Poisson.</p>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="case-study-linear-svm-iris"><a class="header" href="#case-study-linear-svm-iris">Case Study: Linear SVM Iris</a></h1>
 <p>This case study demonstrates Linear Support Vector Machine (SVM) classification on the Iris dataset, achieving perfect 100% test accuracy for binary classification.</p>
-<h2 id="running-the-example-12"><a class="header" href="#running-the-example-12">Running the Example</a></h2>
+<h2 id="running-the-example-13"><a class="header" href="#running-the-example-13">Running the Example</a></h2>
 <pre><code class="language-bash">cargo run --example svm_iris
 </code></pre>
 <h2 id="results-summary-1"><a class="header" href="#results-summary-1">Results Summary</a></h2>
@@ -24674,7 +24802,7 @@ println!(&quot;Accuracy: {:.1}%&quot;, accuracy * 100.0);</code></pre>
 </code></pre>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="case-study-gradient-boosting-iris"><a class="header" href="#case-study-gradient-boosting-iris">Case Study: Gradient Boosting Iris</a></h1>
 <p>This case study demonstrates Gradient Boosting Machine (GBM) on the Iris dataset for binary classification, comparing with other TOP 10 algorithms.</p>
-<h2 id="running-the-example-13"><a class="header" href="#running-the-example-13">Running the Example</a></h2>
+<h2 id="running-the-example-14"><a class="header" href="#running-the-example-14">Running the Example</a></h2>
 <pre><code class="language-bash">cargo run --example gbm_iris
 </code></pre>
 <h2 id="results-summary-2"><a class="header" href="#results-summary-2">Results Summary</a></h2>
@@ -24930,7 +25058,7 @@ optimization, following EXTREME TDD principles.</p>
 <tr><td>Damped Newton</td><td>~20-30</td><td>~3-5</td><td>O(n²)</td></tr>
 </tbody></table>
 </div>
-<h2 id="running-the-example-14"><a class="header" href="#running-the-example-14">Running the Example</a></h2>
+<h2 id="running-the-example-15"><a class="header" href="#running-the-example-15">Running the Example</a></h2>
 <pre><code class="language-bash">cargo run --example batch_optimization
 </code></pre>
 <p>The example runs all test functions with all optimizers, displaying:</p>
@@ -25234,7 +25362,7 @@ optimization, following EXTREME TDD principles.</p>
 <li><strong>Gradient norm</strong>: Measures first-order optimality</li>
 <li><strong>Objective value</strong>: Final cost</li>
 </ul>
-<h2 id="running-the-example-15"><a class="header" href="#running-the-example-15">Running the Example</a></h2>
+<h2 id="running-the-example-16"><a class="header" href="#running-the-example-16">Running the Example</a></h2>
 <pre><code class="language-bash">cargo run --example constrained_optimization
 </code></pre>
 <p>The example demonstrates all five constrained optimization scenarios with detailed analysis of:</p>
@@ -25325,7 +25453,7 @@ subject to Ax + Bz = c
 <li>ADMM: Better for distributed settings, complex constraints</li>
 <li>FISTA: Simpler for centralized, composite problems</li>
 </ul>
-<h2 id="running-the-example-16"><a class="header" href="#running-the-example-16">Running the Example</a></h2>
+<h2 id="running-the-example-17"><a class="header" href="#running-the-example-17">Running the Example</a></h2>
 <pre><code class="language-bash">cargo run --example admm_optimization
 </code></pre>
 <p>The example demonstrates all four ADMM use cases with detailed convergence analysis and performance metrics.</p>
@@ -25598,7 +25726,7 @@ println!(&quot;Stopped after {} evaluations (uncertainty: {:.4})&quot;,
 </ul>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="case-study-metaheuristics-optimization"><a class="header" href="#case-study-metaheuristics-optimization">Case Study: Metaheuristics Optimization</a></h1>
 <p>This example demonstrates derivative-free global optimization using Aprender's metaheuristics module. We compare multiple algorithms on standard benchmark functions.</p>
-<h2 id="running-the-example-17"><a class="header" href="#running-the-example-17">Running the Example</a></h2>
+<h2 id="running-the-example-18"><a class="header" href="#running-the-example-18">Running the Example</a></h2>
 <pre><code class="language-bash">cargo run --example metaheuristics_optimization
 </code></pre>
 <h2 id="available-algorithms"><a class="header" href="#available-algorithms">Available Algorithms</a></h2>
@@ -25763,7 +25891,7 @@ for info in benchmarks::all_benchmarks() {
 │  5. Repeat until budget exhausted                       │
 └─────────────────────────────────────────────────────────┘
 </code></pre>
-<h2 id="running-the-example-18"><a class="header" href="#running-the-example-18">Running the Example</a></h2>
+<h2 id="running-the-example-19"><a class="header" href="#running-the-example-19">Running the Example</a></h2>
 <pre><code class="language-bash">cargo run --example aco_tsp
 </code></pre>
 <h2 id="using-the-aprender-tsp-crate"><a class="header" href="#using-the-aprender-tsp-crate">Using the aprender-tsp Crate</a></h2>
@@ -25914,7 +26042,7 @@ Comparison with Greedy:
 │  7. Repeat until budget exhausted                       │
 └─────────────────────────────────────────────────────────┘
 </code></pre>
-<h2 id="running-the-example-19"><a class="header" href="#running-the-example-19">Running the Example</a></h2>
+<h2 id="running-the-example-20"><a class="header" href="#running-the-example-20">Running the Example</a></h2>
 <pre><code class="language-bash">cargo run --example tabu_tsp
 </code></pre>
 <h2 id="code-walkthrough-3"><a class="header" href="#code-walkthrough-3">Code Walkthrough</a></h2>
@@ -26341,7 +26469,7 @@ dy/dt = δxy - γy    (predator: growth from prey minus death)
 │  Predators lag behind prey in classic boom-bust cycles  │
 └────────────────────────────────────────────────────────┘
 </code></pre>
-<h2 id="running-the-example-20"><a class="header" href="#running-the-example-20">Running the Example</a></h2>
+<h2 id="running-the-example-21"><a class="header" href="#running-the-example-21">Running the Example</a></h2>
 <pre><code class="language-bash">cargo run --example predator_prey_optimization
 </code></pre>
 <h2 id="the-optimization-problem"><a class="header" href="#the-optimization-problem">The Optimization Problem</a></h2>
@@ -26497,7 +26625,7 @@ in aprender, following EXTREME TDD principles.</p>
 <p>This example demonstrates feature scaling with <code>StandardScaler</code> and <code>MinMaxScaler</code>, two fundamental data preprocessing techniques used before training machine learning models.</p>
 <h2 id="overview-32"><a class="header" href="#overview-32">Overview</a></h2>
 <p>Feature scaling ensures that all features are on comparable scales, which is crucial for many ML algorithms (especially distance-based methods like K-NN, SVM, and neural networks).</p>
-<h2 id="running-the-example-21"><a class="header" href="#running-the-example-21">Running the Example</a></h2>
+<h2 id="running-the-example-22"><a class="header" href="#running-the-example-22">Running the Example</a></h2>
 <pre><code class="language-bash">cargo run --example data_preprocessing_scalers
 </code></pre>
 <h2 id="key-concepts-4"><a class="header" href="#key-concepts-4">Key Concepts</a></h2>
@@ -26692,7 +26820,7 @@ let x_train_scaled = scaler.transform(&amp;x_train).unwrap();</code></pre>
 <li><a href="examples/./descriptive-statistics.html">Descriptive Statistics</a> - Computing mean and std</li>
 <li><a href="examples/./linear-regression.html">Linear Regression</a> - Model that benefits from scaling</li>
 </ul>
-<h2 id="key-takeaways-9"><a class="header" href="#key-takeaways-9">Key Takeaways</a></h2>
+<h2 id="key-takeaways-10"><a class="header" href="#key-takeaways-10">Key Takeaways</a></h2>
 <ol>
 <li><strong>Feature scaling is essential</strong> for distance-based and gradient-based algorithms</li>
 <li><strong>StandardScaler</strong> is robust to outliers and preserves relative distances</li>
@@ -26716,7 +26844,7 @@ let x_train_scaled = scaler.transform(&amp;x_train).unwrap();</code></pre>
 <li>Diana ↔ Eve (Tech ↔ Art)</li>
 <li>Grace ↔ Henry (Art ↔ Isolated)</li>
 </ul>
-<h2 id="running-the-example-22"><a class="header" href="#running-the-example-22">Running the Example</a></h2>
+<h2 id="running-the-example-23"><a class="header" href="#running-the-example-23">Running the Example</a></h2>
 <pre><code class="language-bash">cargo run --example graph_social_network
 </code></pre>
 <p>Expected output: Social network analysis with degree centrality, PageRank, and betweenness centrality rankings.</p>
@@ -27112,7 +27240,7 @@ for value in values {
 <li><strong>Modularity comparison</strong>: Good (Q=0.5) vs bad (Q=-0.167) partitions</li>
 <li><strong>Complete graph</strong>: Single community (Q≈0)</li>
 </ol>
-<h2 id="key-takeaways-10"><a class="header" href="#key-takeaways-10">Key Takeaways</a></h2>
+<h2 id="key-takeaways-11"><a class="header" href="#key-takeaways-11">Key Takeaways</a></h2>
 <ol>
 <li><strong>Modularity Q</strong>: Measures community quality (higher is better)</li>
 <li><strong>Greedy optimization</strong>: Louvain finds local optima efficiently</li>
@@ -27170,7 +27298,7 @@ for value in values {
 <li><strong>Phase 2</strong>: Components &amp; traversal (DFS, connected_components, SCCs, topological_sort)</li>
 <li><strong>Phase 3</strong>: Community detection &amp; link prediction (label_propagation, common_neighbors, adamic_adar)</li>
 </ul>
-<h2 id="running-the-example-23"><a class="header" href="#running-the-example-23">Running the Example</a></h2>
+<h2 id="running-the-example-24"><a class="header" href="#running-the-example-24">Running the Example</a></h2>
 <pre><code class="language-bash">cargo run --example graph_algorithms_comprehensive
 </code></pre>
 <p>Expected output: Three demonstration phases covering all 11 new graph algorithms with real-world scenarios.</p>
@@ -27386,7 +27514,7 @@ let aa_across = g_social.adamic_adar_index(0, 7)?;
 <li>Visualize distribution (histograms with different binning methods)</li>
 <li>Make data-driven recommendations (pass rate, grade distribution)</li>
 </ul>
-<h2 id="running-the-example-24"><a class="header" href="#running-the-example-24">Running the Example</a></h2>
+<h2 id="running-the-example-25"><a class="header" href="#running-the-example-25">Running the Example</a></h2>
 <pre><code class="language-bash">cargo run --example descriptive_statistics
 </code></pre>
 <p>Expected output: Statistical analysis with quantiles, five-number summary, histogram comparisons, and summary statistics.</p>
@@ -27785,7 +27913,7 @@ Q(0.5) = data[14] + 0.5 * (data[15] - data[14])
 <p>This example demonstrates the Bayesian Blocks optimal histogram binning algorithm, which uses dynamic programming to find optimal change points in data distributions.</p>
 <h2 id="overview-36"><a class="header" href="#overview-36">Overview</a></h2>
 <p>The Bayesian Blocks algorithm (Scargle et al., 2013) is an adaptive histogram method that automatically determines the optimal number and placement of bins based on the data structure. Unlike fixed-width methods (Sturges, Scott, etc.), it detects change points and adjusts bin widths to match data density.</p>
-<h2 id="running-the-example-25"><a class="header" href="#running-the-example-25">Running the Example</a></h2>
+<h2 id="running-the-example-26"><a class="header" href="#running-the-example-26">Running the Example</a></h2>
 <pre><code class="language-bash">cargo run --example bayesian_blocks_histogram
 </code></pre>
 <h2 id="key-concepts-5"><a class="header" href="#key-concepts-5">Key Concepts</a></h2>
@@ -27885,7 +28013,7 @@ let fitness = previous_best + density_score - ncp_prior;</code></pre>
 <li><a href="examples/./descriptive-statistics.html">Descriptive Statistics</a> - Basic statistical analysis</li>
 <li><a href="examples/./kmeans-clustering.html">K-Means Clustering</a> - Density-based clustering</li>
 </ul>
-<h2 id="key-takeaways-11"><a class="header" href="#key-takeaways-11">Key Takeaways</a></h2>
+<h2 id="key-takeaways-12"><a class="header" href="#key-takeaways-12">Key Takeaways</a></h2>
 <ol>
 <li><strong>Adaptive binning</strong> outperforms fixed-width methods for non-uniform data</li>
 <li><strong>Change point detection</strong> happens automatically without manual tuning</li>
@@ -27903,7 +28031,7 @@ let fitness = previous_best + density_score - ncp_prior;</code></pre>
 <li>Reconstruct original data and measure reconstruction error</li>
 <li>Understand principal component loadings (feature importance)</li>
 </ul>
-<h2 id="running-the-example-26"><a class="header" href="#running-the-example-26">Running the Example</a></h2>
+<h2 id="running-the-example-27"><a class="header" href="#running-the-example-27">Running the Example</a></h2>
 <pre><code class="language-bash">cargo run --example pca_iris
 </code></pre>
 <p>Expected output: Step-by-step PCA analysis including standardization, dimensionality reduction, explained variance analysis, transformed data samples, reconstruction quality, and principal component loadings.</p>
@@ -28135,7 +28263,7 @@ assert!((norm_sq.sqrt() - 1.0).abs() &lt; 1e-6); // ≈ 1</code></pre>
 <li><strong>Total</strong>: ~576 bytes</li>
 </ul>
 <p><strong>General formula</strong>: 4(n·p + p²) bytes</p>
-<h2 id="key-takeaways-12"><a class="header" href="#key-takeaways-12">Key Takeaways</a></h2>
+<h2 id="key-takeaways-13"><a class="header" href="#key-takeaways-13">Key Takeaways</a></h2>
 <h3 id="when-to-use-pca-1"><a class="header" href="#when-to-use-pca-1">When to Use PCA</a></h3>
 <p>✓ <strong>Visualization</strong>: Reduce to 2D/3D for plotting<br />
 ✓ <strong>Preprocessing</strong>: Remove correlated features before ML<br />
@@ -28400,7 +28528,7 @@ where H(n) is harmonic number ≈ ln(n) + 0.5772
 <li>Isolation path length concept</li>
 <li>Max samples parameter</li>
 </ol>
-<h2 id="key-takeaways-13"><a class="header" href="#key-takeaways-13">Key Takeaways</a></h2>
+<h2 id="key-takeaways-14"><a class="header" href="#key-takeaways-14">Key Takeaways</a></h2>
 <ol>
 <li><strong>Unsupervised Anomaly Detection</strong>: No labeled data required</li>
 <li><strong>Fast Training</strong>: O(n log m) makes it scalable</li>
@@ -28633,7 +28761,7 @@ where H(n) is harmonic number ≈ ln(n) + 0.5772
 <li>negative_outlier_factor for sklearn compatibility</li>
 <li>Reproducibility</li>
 </ol>
-<h2 id="key-takeaways-14"><a class="header" href="#key-takeaways-14">Key Takeaways</a></h2>
+<h2 id="key-takeaways-15"><a class="header" href="#key-takeaways-15">Key Takeaways</a></h2>
 <ol>
 <li><strong>Density-Based</strong>: LOF compares local densities, not global isolation</li>
 <li><strong>Varying Density</strong>: Excels where clusters have different densities</li>
@@ -28874,7 +29002,7 @@ Symmetrize: W[i,j] = max(W[i,j], W[j,i])
 <li>Spectral Clustering vs K-Means comparison</li>
 <li>Affinity matrix interpretation</li>
 </ol>
-<h2 id="key-takeaways-15"><a class="header" href="#key-takeaways-15">Key Takeaways</a></h2>
+<h2 id="key-takeaways-16"><a class="header" href="#key-takeaways-16">Key Takeaways</a></h2>
 <ol>
 <li><strong>Graph-Based</strong>: Uses graph theory and eigendecomposition</li>
 <li><strong>Non-Convex</strong>: Handles non-convex cluster shapes better than K-Means</li>
@@ -29136,7 +29264,7 @@ Symmetrize: W[i,j] = max(W[i,j], W[j,i])
 <li>Reproducibility with random_state</li>
 <li>t-SNE vs PCA comparison</li>
 </ol>
-<h2 id="key-takeaways-16"><a class="header" href="#key-takeaways-16">Key Takeaways</a></h2>
+<h2 id="key-takeaways-17"><a class="header" href="#key-takeaways-17">Key Takeaways</a></h2>
 <ol>
 <li><strong>Non-Linear</strong>: Captures manifolds that PCA cannot</li>
 <li><strong>Local Preservation</strong>: Excellent at preserving neighborhoods</li>
@@ -29428,7 +29556,7 @@ Association rules (confidence &gt;= 60%):
     Confidence: 100.00%
     Lift: 1.11  (11% uplift)
 </code></pre>
-<h2 id="key-takeaways-17"><a class="header" href="#key-takeaways-17">Key Takeaways</a></h2>
+<h2 id="key-takeaways-18"><a class="header" href="#key-takeaways-18">Key Takeaways</a></h2>
 <ol>
 <li><strong>Apriori Property</strong>: Monotonicity enables efficient pruning</li>
 <li><strong>Support vs Confidence</strong>: Trade-off between frequency and reliability</li>
@@ -29773,7 +29901,7 @@ Q20: $295.5M
 <tr><td>ARMA</td><td>ARIMA(p,0,q)</td><td>Stationary with AR and MA</td></tr>
 </tbody></table>
 </div>
-<h2 id="running-the-example-27"><a class="header" href="#running-the-example-27">Running the Example</a></h2>
+<h2 id="running-the-example-28"><a class="header" href="#running-the-example-28">Running the Example</a></h2>
 <pre><code class="language-bash">cargo run --example time_series_forecasting
 </code></pre>
 <p>The example demonstrates three real-world scenarios:</p>
@@ -29782,7 +29910,7 @@ Q20: $295.5M
 <li><strong>Temperature anomalies</strong> - Stationary mean-reverting series</li>
 <li><strong>Revenue forecasting</strong> - Complex growth patterns</li>
 </ol>
-<h2 id="key-takeaways-18"><a class="header" href="#key-takeaways-18">Key Takeaways</a></h2>
+<h2 id="key-takeaways-19"><a class="header" href="#key-takeaways-19">Key Takeaways</a></h2>
 <ol>
 <li><strong>ARIMA is powerful</strong>: Handles trends, seasonality, and autocorrelation</li>
 <li><strong>Start simple</strong>: Try ARIMA(1,1,1) as baseline</li>
@@ -30073,7 +30201,7 @@ Total reduction: 23.8%
 <p><strong>Character-Level (Language Models):</strong></p>
 <pre><code>Text → Character tokenization → No further preprocessing
 </code></pre>
-<h2 id="running-the-example-28"><a class="header" href="#running-the-example-28">Running the Example</a></h2>
+<h2 id="running-the-example-29"><a class="header" href="#running-the-example-29">Running the Example</a></h2>
 <pre><code class="language-bash">cargo run --example text_preprocessing
 </code></pre>
 <p>The example demonstrates four scenarios:</p>
@@ -30083,7 +30211,7 @@ Total reduction: 23.8%
 <li><strong>Stemming</strong> - Porter algorithm for word normalization</li>
 <li><strong>Full pipeline</strong> - Complete preprocessing workflow</li>
 </ol>
-<h2 id="key-takeaways-19"><a class="header" href="#key-takeaways-19">Key Takeaways</a></h2>
+<h2 id="key-takeaways-20"><a class="header" href="#key-takeaways-20">Key Takeaways</a></h2>
 <ol>
 <li><strong>Preprocessing is crucial</strong>: Directly impacts ML model performance</li>
 <li><strong>Pipeline matters</strong>: Order of operations affects results</li>
@@ -30453,7 +30581,7 @@ let (train_labels, test_labels) = labels.split_at(split_idx);</code></pre>
 <li>Precision/Recall: Class-specific performance</li>
 <li>Confusion matrix: Error analysis</li>
 </ul>
-<h2 id="running-the-example-29"><a class="header" href="#running-the-example-29">Running the Example</a></h2>
+<h2 id="running-the-example-30"><a class="header" href="#running-the-example-30">Running the Example</a></h2>
 <pre><code class="language-bash">cargo run --example text_classification
 </code></pre>
 <p>The example demonstrates three scenarios:</p>
@@ -30462,7 +30590,7 @@ let (train_labels, test_labels) = labels.split_at(split_idx);</code></pre>
 <li><strong>Topic classification</strong> - TF-IDF with Logistic Regression</li>
 <li><strong>Full pipeline</strong> - Complete preprocessing workflow</li>
 </ol>
-<h2 id="key-takeaways-20"><a class="header" href="#key-takeaways-20">Key Takeaways</a></h2>
+<h2 id="key-takeaways-21"><a class="header" href="#key-takeaways-21">Key Takeaways</a></h2>
 <ol>
 <li><strong>TF-IDF &gt; Bag of Words</strong>: Almost always better performance</li>
 <li><strong>Preprocessing matters</strong>: Stop words + stemming improve generalization</li>
@@ -30681,7 +30809,7 @@ realizar chat qwen2-0.5b.gguf --prompt &quot;Hello!&quot;
 # Explicit template override
 realizar chat model.gguf --template chatml --prompt &quot;Hello!&quot;
 </code></pre>
-<h2 id="running-the-example-30"><a class="header" href="#running-the-example-30">Running the Example</a></h2>
+<h2 id="running-the-example-31"><a class="header" href="#running-the-example-31">Running the Example</a></h2>
 <pre><code class="language-bash">cargo run --example chat_template
 </code></pre>
 <h2 id="test-coverage-1"><a class="header" href="#test-coverage-1">Test Coverage</a></h2>
@@ -31147,7 +31275,7 @@ fn main() {
 <pre><code class="language-rust">optimizer.step_with_params(&amp;mut params);</code></pre>
 <p>Updates weights: <code>w = w - lr × ∂L/∂w</code></p>
 <p>With learning rate 0.5, the network converges in ~100 epochs.</p>
-<h2 id="running-the-example-31"><a class="header" href="#running-the-example-31">Running the Example</a></h2>
+<h2 id="running-the-example-32"><a class="header" href="#running-the-example-32">Running the Example</a></h2>
 <pre><code class="language-bash">cargo run --example xor_training
 </code></pre>
 <h2 id="exercises-2"><a class="header" href="#exercises-2">Exercises</a></h2>
@@ -31264,7 +31392,7 @@ Results:
   (1, 0) → 0.991 (expected 1)
   (1, 1) → 0.008 (expected 0)
 </code></pre>
-<h2 id="key-takeaways-21"><a class="header" href="#key-takeaways-21">Key Takeaways</a></h2>
+<h2 id="key-takeaways-22"><a class="header" href="#key-takeaways-22">Key Takeaways</a></h2>
 <ol>
 <li><strong>Hidden layers enable non-linear decision boundaries</strong></li>
 <li><strong>ReLU activation</strong> introduces non-linearity</li>
@@ -33209,7 +33337,7 @@ kubectl get pods
     name: shell-benchmarks
     path: target/criterion
 </code></pre>
-<h2 id="key-takeaways-22"><a class="header" href="#key-takeaways-22">Key Takeaways</a></h2>
+<h2 id="key-takeaways-23"><a class="header" href="#key-takeaways-23">Key Takeaways</a></h2>
 <ol>
 <li><strong>10ms target easily met</strong>: Worst case 14.6 µs = 685x headroom</li>
 <li><strong>Scales sub-linearly</strong>: O(log n) not O(n)</li>
@@ -35437,7 +35565,7 @@ Suggested fixes:
 <tr><td><strong>Test failures</strong></td><td>Assertion, Timeout, Setup, Flaky</td><td>Test names, stack traces</td></tr>
 </tbody></table>
 </div>
-<h2 id="key-takeaways-23"><a class="header" href="#key-takeaways-23">Key Takeaways</a></h2>
+<h2 id="key-takeaways-24"><a class="header" href="#key-takeaways-24">Key Takeaways</a></h2>
 <ol>
 <li><strong>Combine features</strong>: Hand-crafted domain knowledge + TF-IDF captures both explicit and latent patterns</li>
 <li><strong>N-gram matching</strong>: Simple but effective for text similarity</li>
@@ -36816,7 +36944,7 @@ Drift status: Stable
 
 === Online Learning Complete! ===
 </code></pre>
-<h2 id="key-takeaways-24"><a class="header" href="#key-takeaways-24">Key Takeaways</a></h2>
+<h2 id="key-takeaways-25"><a class="header" href="#key-takeaways-25">Key Takeaways</a></h2>
 <ol>
 <li><strong>Use <code>partial_fit()</code></strong> for incremental updates instead of full retraining</li>
 <li><strong>ADWIN is the recommended</strong> drift detector for most applications</li>
@@ -36865,7 +36993,7 @@ Drift status: Stable
 <tr><td>Paranoid</td><td>Yes</td><td>Yes + ASIL-D</td><td>Safety-critical</td></tr>
 </tbody></table>
 </div>
-<h2 id="running-the-example-32"><a class="header" href="#running-the-example-32">Running the Example</a></h2>
+<h2 id="running-the-example-33"><a class="header" href="#running-the-example-33">Running the Example</a></h2>
 <pre><code class="language-bash">cargo run --example apr_loading_modes
 </code></pre>
 <h2 id="key-code-patterns"><a class="header" href="#key-code-patterns">Key Code Patterns</a></h2>
@@ -36921,7 +37049,7 @@ let config = LoadConfig::new()
 <tr><td>Jidoka</td><td>Built-in quality checks with health assessment</td></tr>
 </tbody></table>
 </div>
-<h2 id="running-the-example-33"><a class="header" href="#running-the-example-33">Running the Example</a></h2>
+<h2 id="running-the-example-34"><a class="header" href="#running-the-example-34">Running the Example</a></h2>
 <pre><code class="language-bash">cargo run --example apr_inspection
 </code></pre>
 <h2 id="header-inspection"><a class="header" href="#header-inspection">Header Inspection</a></h2>
@@ -37023,7 +37151,7 @@ let default = InspectOptions::default();</code></pre>
 <tr><td>Security &amp; Safety</td><td>10</td><td>Poka-yoke (error-proofing)</td></tr>
 </tbody></table>
 </div>
-<h2 id="running-the-example-34"><a class="header" href="#running-the-example-34">Running the Example</a></h2>
+<h2 id="running-the-example-35"><a class="header" href="#running-the-example-35">Running the Example</a></h2>
 <pre><code class="language-bash">cargo run --example apr_scoring
 </code></pre>
 <h2 id="grade-system"><a class="header" href="#grade-system">Grade System</a></h2>
@@ -37374,7 +37502,7 @@ let options = SaveOptions::new()
 <tr><td><code>with_poka_yoke_result(&amp;result)</code></td><td>Set score from validation result</td></tr>
 </tbody></table>
 </div>
-<h2 id="running-the-example-35"><a class="header" href="#running-the-example-35">Running the Example</a></h2>
+<h2 id="running-the-example-36"><a class="header" href="#running-the-example-36">Running the Example</a></h2>
 <pre><code class="language-bash">cargo run --example poka_yoke_validation
 </code></pre>
 <p>Output demonstrates:</p>
@@ -37423,7 +37551,7 @@ let options = SaveOptions::new()
 <tr><td>Right Place</td><td>L1 = hot, L2 = warm, L3 = cold storage</td></tr>
 </tbody></table>
 </div>
-<h2 id="running-the-example-36"><a class="header" href="#running-the-example-36">Running the Example</a></h2>
+<h2 id="running-the-example-37"><a class="header" href="#running-the-example-37">Running the Example</a></h2>
 <pre><code class="language-bash">cargo run --example apr_cache
 </code></pre>
 <h2 id="eviction-policies-1"><a class="header" href="#eviction-policies-1">Eviction Policies</a></h2>
@@ -37575,7 +37703,7 @@ println!(&quot;Mapped: {}&quot;, mapped.is_mapped());</code></pre>
 <tr><td>Kaizen</td><td>TinyModelRepr optimizes for common patterns</td></tr>
 </tbody></table>
 </div>
-<h2 id="running-the-example-37"><a class="header" href="#running-the-example-37">Running the Example</a></h2>
+<h2 id="running-the-example-38"><a class="header" href="#running-the-example-38">Running the Example</a></h2>
 <pre><code class="language-bash">cargo run --example apr_embed
 </code></pre>
 <h2 id="embedded-test-data"><a class="header" href="#embedded-test-data">Embedded Test Data</a></h2>
@@ -38196,7 +38324,7 @@ let gpu_streaming = LoadConfig::new()
 <tr><td>Best For</td><td>General</td><td>Cross-platform GPU</td><td>Max NVIDIA perf</td><td>Browser</td><td>IoT</td></tr>
 </tbody></table>
 </div>
-<h2 id="running-the-example-38"><a class="header" href="#running-the-example-38">Running the Example</a></h2>
+<h2 id="running-the-example-39"><a class="header" href="#running-the-example-39">Running the Example</a></h2>
 <pre><code class="language-bash"># Default CPU SIMD backend
 cargo run --example cuda_backend
 
@@ -38435,7 +38563,7 @@ let mut rng_dropout = StdRng::seed_from_u64(seed.dropout);</code></pre>
 <tr><td><code>ExperimentSeed::default()</code></td><td>Master seed = 42</td></tr>
 </tbody></table>
 </div>
-<h2 id="running-the-example-39"><a class="header" href="#running-the-example-39">Running the Example</a></h2>
+<h2 id="running-the-example-40"><a class="header" href="#running-the-example-40">Running the Example</a></h2>
 <pre><code class="language-bash">cargo run --example trueno_compute_integration
 </code></pre>
 <p>Output demonstrates:</p>
@@ -38874,7 +39002,7 @@ This is a **Whisper (Tiny)** model.
 - **Input**: 80-channel Mel spectrograms
 - **Output**: Text tokens (multilingual)
 </code></pre>
-<h2 id="key-takeaways-25"><a class="header" href="#key-takeaways-25">Key Takeaways</a></h2>
+<h2 id="key-takeaways-26"><a class="header" href="#key-takeaways-26">Key Takeaways</a></h2>
 <ol>
 <li><strong>Genchi Genbutsu</strong>: <code>apr inspect</code> lets you see actual model data</li>
 <li><strong>Genchi Genbutsu</strong>: <code>apr tensors</code> reveals actual tensor structure and statistics</li>
@@ -39533,7 +39661,7 @@ apr debug model.apr --drama
 <li><strong>Popularity metrics</strong></li>
 <li><strong>Search and discovery</strong></li>
 </ul>
-<h2 id="running-the-example-40"><a class="header" href="#running-the-example-40">Running the Example</a></h2>
+<h2 id="running-the-example-41"><a class="header" href="#running-the-example-41">Running the Example</a></h2>
 <pre><code class="language-bash">cargo run --example model_zoo
 </code></pre>
 <h2 id="model-zoo-entry"><a class="header" href="#model-zoo-entry">Model Zoo Entry</a></h2>
@@ -39742,7 +39870,7 @@ assert!(verification.valid, &quot;Audit chain compromised!&quot;);</code></pre>
 <li><strong>Genchi Genbutsu</strong>: Decision paths let you trace exactly why a model decided what it did</li>
 <li><strong>Shihai wo Kakusanai</strong>: Every decision is auditable, nothing is hidden</li>
 </ol>
-<h2 id="running-the-example-41"><a class="header" href="#running-the-example-41">Running the Example</a></h2>
+<h2 id="running-the-example-42"><a class="header" href="#running-the-example-42">Running the Example</a></h2>
 <pre><code class="language-bash">cargo run --example sovereign_stack
 </code></pre>
 <h2 id="stack-components-in-code"><a class="header" href="#stack-components-in-code">Stack Components in Code</a></h2>
@@ -40559,7 +40687,7 @@ let response = gateway.infer(&amp;request).await?;</code></pre>
 │  └──────────┘       └──────────┘       └──────────┘            │
 └─────────────────────────────────────────────────────────────────┘
 </code></pre>
-<h2 id="running-the-example-42"><a class="header" href="#running-the-example-42">Running the Example</a></h2>
+<h2 id="running-the-example-43"><a class="header" href="#running-the-example-43">Running the Example</a></h2>
 <pre><code class="language-bash">cargo run -p apr-cli --features inference --example federation_gateway
 </code></pre>
 <h2 id="core-components"><a class="header" href="#core-components">Core Components</a></h2>
@@ -40758,7 +40886,7 @@ cargo test -p apr-cli --features inference test_full_federation_flow
 <tr><td>Cost</td><td>Balance price vs performance</td><td>1.0</td></tr>
 </tbody></table>
 </div>
-<h2 id="running-the-example-43"><a class="header" href="#running-the-example-43">Running the Example</a></h2>
+<h2 id="running-the-example-44"><a class="header" href="#running-the-example-44">Running the Example</a></h2>
 <pre><code class="language-bash">cargo run -p apr-cli --features inference --example federation_routing
 </code></pre>
 <h2 id="health-policy"><a class="header" href="#health-policy">Health Policy</a></h2>
@@ -41006,7 +41134,7 @@ fn test_privacy_policy_eligibility() {
 <li><strong>Frame sequences</strong> - Test state transitions across frames</li>
 <li><strong>UX coverage</strong> - Track interaction and state coverage</li>
 </ul>
-<h2 id="running-the-example-44"><a class="header" href="#running-the-example-44">Running the Example</a></h2>
+<h2 id="running-the-example-45"><a class="header" href="#running-the-example-45">Running the Example</a></h2>
 <pre><code class="language-bash">cargo run -p apr-cli --features inference --example probar_tui_testing
 </code></pre>
 <h2 id="frame-rendering"><a class="header" href="#frame-rendering">Frame Rendering</a></h2>
@@ -42373,7 +42501,7 @@ model.fit(&amp;x_train, &amp;y_train, epochs: 100);</code></pre>
 <li><strong>Program Synthesis</strong>: Generate programs from input-output examples</li>
 <li><strong>Explainable AI</strong>: Provide logical explanations for neural predictions</li>
 </ol>
-<h2 id="running-the-example-45"><a class="header" href="#running-the-example-45">Running the Example</a></h2>
+<h2 id="running-the-example-46"><a class="header" href="#running-the-example-46">Running the Example</a></h2>
 <pre><code class="language-bash">cargo run -p aprender@0.20.1 --example logic_family_tree
 </code></pre>
 <h2 id="test-coverage-3"><a class="header" href="#test-coverage-3">Test Coverage</a></h2>
@@ -43752,7 +43880,7 @@ cargo run --example gnn_graph_classification
 <p>This example demonstrates neural network pruning using magnitude-based importance scoring with Aprender's pruning module.</p>
 <h2 id="overview-70"><a class="header" href="#overview-70">Overview</a></h2>
 <p>Magnitude pruning is the simplest and most widely-used pruning technique. It removes weights with the smallest absolute values, based on the intuition that small weights contribute less to the network's output.</p>
-<h2 id="running-the-example-46"><a class="header" href="#running-the-example-46">Running the Example</a></h2>
+<h2 id="running-the-example-47"><a class="header" href="#running-the-example-47">Running the Example</a></h2>
 <pre><code class="language-bash">cargo run --example pruning_magnitude
 </code></pre>
 <h2 id="code-walkthrough-5"><a class="header" href="#code-walkthrough-5">Code Walkthrough</a></h2>
@@ -44165,7 +44293,7 @@ Memory savings:
   Pruned: 0.021 MB
   Saved: 2.08 MB (99.0%)
 </code></pre>
-<h2 id="key-takeaways-26"><a class="header" href="#key-takeaways-26">Key Takeaways</a></h2>
+<h2 id="key-takeaways-27"><a class="header" href="#key-takeaways-27">Key Takeaways</a></h2>
 <ol>
 <li><strong>Iterative Pruning</strong> - LTH uses multiple prune-rewind cycles to find sparse subnetworks</li>
 <li><strong>Rewind Strategies</strong> - Different rewinding points affect ticket quality</li>
