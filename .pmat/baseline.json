@@ -1,22 +1,7 @@
 {
-  "version": "2.201.0",
-  "created_at": "2025-11-22T16:05:23.553091896Z",
-  "git_context": {
-    "commit_sha": "0b759b03077ab89761fd7124b60f0278285e9ae1",
-    "commit_sha_short": "0b759b0",
-    "branch": "main",
-    "author_name": "Noah Gift",
-    "author_email": "noah.gift@gmail.com",
-    "commit_timestamp": "2025-11-22T15:56:14Z",
-    "commit_message": "feat: Complete push of 4 Bayesian commits to origin/main",
-    "tags": [],
-    "parent_commits": [
-      "5b59e6dbd23f3139b7d9f4c160430656b2fb2092"
-    ],
-    "remote_url": "git@github.com:paiml/aprender.git",
-    "is_clean": false,
-    "uncommitted_files": 6
-  },
+  "version": "2.217.0",
+  "created_at": "2026-02-05T16:11:20.681382023Z",
+  "git_context": null,
   "files": {},
   "summary": {
     "total_files": 0,
