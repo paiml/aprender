@@ -1161,6 +1161,13 @@ fn validate_model_contract(paths: &[PathBuf]) -> Result<(), CliError> {
         if !path.exists() {
             continue; // Let the subcommand handle FileNotFound
         }
+        // GH-213: Skip contract validation for sharded SafeTensors index files.
+        // The index.json is a metadata file, not a model file — RosettaStone
+        // doesn't know how to validate it. The actual shard files will be
+        // validated when loaded by ShardedSafeTensorsModel.
+        if path.to_string_lossy().ends_with(".safetensors.index.json") {
+            continue;
+        }
         let report = rosetta.validate(path).map_err(|e| {
             CliError::ValidationFailed(format!(
                 "Contract validation failed for {}: {e}",
