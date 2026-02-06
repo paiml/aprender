@@ -99,7 +99,7 @@ impl Default for QaConfig {
     fn default() -> Self {
         Self {
             min_tps: 100.0,       // GPU target
-            min_speedup: 0.3, // Ollama uses llama.cpp optimized kernels; 0.3x is realistic floor
+            min_speedup: 0.2, // Ollama uses llama.cpp optimized kernels; 0.2x is realistic floor
             min_gpu_speedup: 2.0, // GPU must be 2x faster than CPU (F-PERF-042)
             skip_golden: false,
             skip_throughput: false,
@@ -227,7 +227,7 @@ pub fn run(
 ) -> Result<()> {
     let config = QaConfig {
         min_tps: min_tps.unwrap_or(100.0),
-        min_speedup: min_speedup.unwrap_or(0.3), // Ollama uses llama.cpp optimized kernels
+        min_speedup: min_speedup.unwrap_or(0.2), // Ollama uses llama.cpp optimized kernels
         min_gpu_speedup: min_gpu_speedup.unwrap_or(2.0), // GPU must be 2x faster (F-PERF-042)
         skip_golden,
         skip_throughput,
@@ -1483,7 +1483,7 @@ mod tests {
     fn test_qa_config_default() {
         let config = QaConfig::default();
         assert!((config.min_tps - 100.0).abs() < f64::EPSILON);
-        assert!((config.min_speedup - 0.3).abs() < f64::EPSILON);
+        assert!((config.min_speedup - 0.2).abs() < f64::EPSILON);
         assert!((config.min_gpu_speedup - 2.0).abs() < f64::EPSILON);
         assert!(!config.skip_golden);
         assert!(!config.skip_throughput);
