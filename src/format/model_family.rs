@@ -952,8 +952,9 @@ mod tests {
             "Default registry should contain families from YAML contracts"
         );
         assert!(
-            registry.len() >= 4,
-            "Should have at least 4 families (bert, llama, qwen2, whisper)"
+            registry.len() >= 8,
+            "Should have at least 8 families (bert, deepseek, gemma, llama, mistral, phi, qwen2, whisper), got {}",
+            registry.len()
         );
     }
 
@@ -979,6 +980,10 @@ mod tests {
         assert_eq!(LLAMA_VENDOR, "Meta");
         assert_eq!(BERT_VENDOR, "Google");
         assert_eq!(WHISPER_VENDOR, "OpenAI");
+        assert_eq!(MISTRAL_VENDOR, "Mistral AI");
+        assert_eq!(PHI_VENDOR, "Microsoft");
+        assert_eq!(GEMMA_VENDOR, "Google");
+        assert_eq!(DEEPSEEK_VENDOR, "DeepSeek");
 
         // Verify some well-known size constants
         assert_eq!(QWEN2_0_5B_HIDDEN_DIM, 896);
@@ -987,6 +992,10 @@ mod tests {
         assert_eq!(LLAMA_8B_NUM_LAYERS, 32);
         assert_eq!(BERT_BASE_HIDDEN_DIM, 768);
         assert_eq!(WHISPER_TINY_HIDDEN_DIM, 384);
+        assert_eq!(MISTRAL_7B_HIDDEN_DIM, 4096);
+        assert_eq!(PHI_3_8B_HIDDEN_DIM, 3072);
+        assert_eq!(GEMMA_2B_HIDDEN_DIM, 2048);
+        assert_eq!(DEEPSEEK_7B_HIDDEN_DIM, 4096);
     }
 
     #[test]

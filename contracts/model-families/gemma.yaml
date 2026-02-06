@@ -1,0 +1,98 @@
+family: gemma
+display_name: "Google Gemma"
+vendor: Google
+architectures:
+  - GemmaForCausalLM
+  - Gemma2ForCausalLM
+hf_pattern: "google/gemma-*"
+
+size_variants:
+  2b:
+    parameters: "2B"
+    hidden_dim: 2048
+    num_layers: 18
+    num_heads: 8
+    num_kv_heads: 1
+    intermediate_dim: 16384
+    vocab_size: 256000
+    max_position_embeddings: 8192
+    head_dim: 256
+    rope_theta: 10000.0
+    rms_norm_eps: 0.000001
+  7b:
+    parameters: "7B"
+    hidden_dim: 3072
+    num_layers: 28
+    num_heads: 16
+    num_kv_heads: 16
+    intermediate_dim: 24576
+    vocab_size: 256000
+    max_position_embeddings: 8192
+    head_dim: 256
+    rope_theta: 10000.0
+    rms_norm_eps: 0.000001
+
+constraints:
+  attention_type: gqa
+  activation: silu
+  norm_type: rmsnorm
+  has_bias: false
+  tied_embeddings: true
+  positional_encoding: rope
+  mlp_type: gelu_mlp
+
+tensor_template:
+  embedding: "model.embed_tokens.weight"
+  lm_head: "lm_head.weight"
+  final_norm: "model.norm.weight"
+  per_layer:
+    q_proj: "model.layers.{n}.self_attn.q_proj.weight"
+    k_proj: "model.layers.{n}.self_attn.k_proj.weight"
+    v_proj: "model.layers.{n}.self_attn.v_proj.weight"
+    o_proj: "model.layers.{n}.self_attn.o_proj.weight"
+    gate_proj: "model.layers.{n}.mlp.gate_proj.weight"
+    up_proj: "model.layers.{n}.mlp.up_proj.weight"
+    down_proj: "model.layers.{n}.mlp.down_proj.weight"
+    input_layernorm: "model.layers.{n}.input_layernorm.weight"
+    post_attention_layernorm: "model.layers.{n}.post_attention_layernorm.weight"
+    q_proj_bias: null
+    k_proj_bias: null
+    v_proj_bias: null
+
+shape_template:
+  embedding: "[vocab_size, hidden_dim]"
+  lm_head: "[vocab_size, hidden_dim]"
+  q_proj: "[num_heads * head_dim, hidden_dim]"
+  k_proj: "[num_kv_heads * head_dim, hidden_dim]"
+  v_proj: "[num_kv_heads * head_dim, hidden_dim]"
+  o_proj: "[hidden_dim, num_heads * head_dim]"
+  gate_proj: "[intermediate_dim, hidden_dim]"
+  up_proj: "[intermediate_dim, hidden_dim]"
+  down_proj: "[hidden_dim, intermediate_dim]"
+  input_layernorm: "[hidden_dim]"
+  post_attention_layernorm: "[hidden_dim]"
+
+quantizations:
+  - q4_k_m
+  - q5_k_m
+  - q8_0
+  - f16
+  - f32
+
+chat_template:
+  format: gemma
+  template: "{% for message in messages %}{% if message['role'] == 'user' %}<start_of_turn>user\n{{ message['content'] }}<end_of_turn>\n{% elif message['role'] == 'model' %}<start_of_turn>model\n{{ message['content'] }}<end_of_turn>\n{% endif %}{% endfor %}{% if add_generation_prompt %}<start_of_turn>model\n{% endif %}"
+  bos_token: "<bos>"
+  eos_token: "<eos>"
+  special_tokens:
+    bos: "<bos>"
+    eos: "<eos>"
+    start_of_turn: "<start_of_turn>"
+    end_of_turn: "<end_of_turn>"
+
+certification:
+  playbook_path: "../apr-model-qa-playbook/playbooks/models/gemma-{size}.playbook.yaml"
+  csv_family_key: "gemma"
+  size_categories:
+    2b: small
+    7b: medium

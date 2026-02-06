@@ -1,0 +1,98 @@
+family: phi
+display_name: "Microsoft Phi"
+vendor: Microsoft
+architectures:
+  - PhiForCausalLM
+  - Phi3ForCausalLM
+hf_pattern: "microsoft/phi-*"
+
+size_variants:
+  2.7b:
+    parameters: "2.7B"
+    hidden_dim: 2560
+    num_layers: 32
+    num_heads: 32
+    num_kv_heads: 32
+    intermediate_dim: 10240
+    vocab_size: 51200
+    max_position_embeddings: 2048
+    head_dim: 80
+    rope_theta: 10000.0
+    rms_norm_eps: 0.00001
+  3.8b:
+    parameters: "3.8B"
+    hidden_dim: 3072
+    num_layers: 32
+    num_heads: 32
+    num_kv_heads: 32
+    intermediate_dim: 8192
+    vocab_size: 32064
+    max_position_embeddings: 4096
+    head_dim: 96
+    rope_theta: 10000.0
+    rms_norm_eps: 0.00001
+
+constraints:
+  attention_type: mha
+  activation: silu
+  norm_type: layernorm
+  has_bias: true
+  tied_embeddings: false
+  positional_encoding: rope
+  mlp_type: swiglu
+
+tensor_template:
+  embedding: "model.embed_tokens.weight"
+  lm_head: "lm_head.weight"
+  final_norm: "model.norm.weight"
+  per_layer:
+    q_proj: "model.layers.{n}.self_attn.q_proj.weight"
+    k_proj: "model.layers.{n}.self_attn.k_proj.weight"
+    v_proj: "model.layers.{n}.self_attn.v_proj.weight"
+    o_proj: "model.layers.{n}.self_attn.o_proj.weight"
+    gate_proj: "model.layers.{n}.mlp.gate_proj.weight"
+    up_proj: "model.layers.{n}.mlp.up_proj.weight"
+    down_proj: "model.layers.{n}.mlp.down_proj.weight"
+    input_layernorm: "model.layers.{n}.input_layernorm.weight"
+    post_attention_layernorm: "model.layers.{n}.post_attention_layernorm.weight"
+    q_proj_bias: "model.layers.{n}.self_attn.q_proj.bias"
+    k_proj_bias: "model.layers.{n}.self_attn.k_proj.bias"
+    v_proj_bias: "model.layers.{n}.self_attn.v_proj.bias"
+
+shape_template:
+  embedding: "[vocab_size, hidden_dim]"
+  lm_head: "[vocab_size, hidden_dim]"
+  q_proj: "[num_heads * head_dim, hidden_dim]"
+  k_proj: "[num_kv_heads * head_dim, hidden_dim]"
+  v_proj: "[num_kv_heads * head_dim, hidden_dim]"
+  o_proj: "[hidden_dim, num_heads * head_dim]"
+  gate_proj: "[intermediate_dim, hidden_dim]"
+  up_proj: "[intermediate_dim, hidden_dim]"
+  down_proj: "[hidden_dim, intermediate_dim]"
+  input_layernorm: "[hidden_dim]"
+  post_attention_layernorm: "[hidden_dim]"
+
+quantizations:
+  - q4_k_m
+  - q5_k_m
+  - q8_0
+  - f16
+  - f32
+
+chat_template:
+  format: phi
+  template: "{% for message in messages %}{% if message['role'] == 'system' %}<|system|>\n{{ message['content'] }}<|end|>\n{% elif message['role'] == 'user' %}<|user|>\n{{ message['content'] }}<|end|>\n{% elif message['role'] == 'assistant' %}<|assistant|>\n{{ message['content'] }}<|end|>\n{% endif %}{% endfor %}{% if add_generation_prompt %}<|assistant|>\n{% endif %}"
+  bos_token: ""
+  eos_token: "<|end|>"
+  special_tokens:
+    system: "<|system|>"
+    user: "<|user|>"
+    assistant: "<|assistant|>"
+    end: "<|end|>"
+
+certification:
+  playbook_path: "../apr-model-qa-playbook/playbooks/models/phi-{size}.playbook.yaml"
+  csv_family_key: "phi"
+  size_categories:
+    2.7b: small
+    3.8b: small
