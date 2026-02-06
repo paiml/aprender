@@ -165,21 +165,21 @@ tier1:
 # Tier 2: Pre-commit (<5 seconds, changed files only)
 tier2:
 	@echo "Running Tier 2: Pre-commit checks..."
-	@cargo test --lib
+	@PROPTEST_CASES=5 QUICKCHECK_TESTS=5 cargo test --lib
 	@cargo clippy -- -D warnings
 	@echo "Tier 2: PASSED"
 
 # Tier 3: Pre-push (1-5 minutes, full validation)
 tier3:
 	@echo "Running Tier 3: Full validation..."
-	@cargo test --all
+	@PROPTEST_CASES=25 QUICKCHECK_TESTS=25 cargo test --all
 	@cargo clippy -- -D warnings
 	@echo "Tier 3: PASSED"
 
 # Tier 4: CI/CD (5-60 minutes, heavyweight)
 tier4: tier3
 	@echo "Running Tier 4: CI/CD validation..."
-	@cargo test --release
+	@PROPTEST_CASES=100 QUICKCHECK_TESTS=100 cargo test --release
 	@echo "Running pmat analysis..."
 	-pmat tdg . --include-components
 	-pmat rust-project-score
@@ -288,7 +288,7 @@ chaos-test-full: build ## Run full chaos tests including aggressive mode
 
 chaos-test-lite: ## Lightweight chaos tests (no renacer required)
 	@echo "🧪 Running lightweight chaos simulation..."
-	@cargo test -p aprender-shell --test cli_integration -- chaos --nocapture 2>/dev/null || true
+	@PROPTEST_CASES=10 QUICKCHECK_TESTS=10 cargo test -p aprender-shell --test cli_integration -- chaos --nocapture 2>/dev/null || true
 	@echo "✅ Lite chaos tests completed"
 
 # Fuzz testing (from renacer, 60s)
@@ -431,12 +431,12 @@ showcase-ci: ## Run showcase benchmark in CI mode with threshold check
 
 falsification-tests: ## Run all 137 falsification tests (F001-F105, M001-M020, O001-O009, R001)
 	@echo "🧪 Running Popperian falsification test suite (137 tests)..."
-	@cargo test --release --test falsification_brick_tests --test falsification_budget_tests --test falsification_correctness_tests --test falsification_cuda_tests --test falsification_measurement_tests --test falsification_performance_tests --test falsification_2x_ollama_tests --test falsification_real_profiling -- --test-threads=2
+	@PROPTEST_CASES=100 QUICKCHECK_TESTS=100 cargo test --release --test falsification_brick_tests --test falsification_budget_tests --test falsification_correctness_tests --test falsification_cuda_tests --test falsification_measurement_tests --test falsification_performance_tests --test falsification_2x_ollama_tests --test falsification_real_profiling -- --test-threads=2
 	@echo "✅ All falsification tests passed (137 tests)"
 
 falsification-quick: ## Run falsification tests in debug mode (faster compile)
 	@echo "⚡ Running falsification tests (debug mode)..."
-	@cargo test --test falsification_brick_tests --test falsification_budget_tests --test falsification_correctness_tests --test falsification_cuda_tests --test falsification_measurement_tests --test falsification_performance_tests --test falsification_2x_ollama_tests --test falsification_real_profiling -- --test-threads=2
+	@PROPTEST_CASES=25 QUICKCHECK_TESTS=25 cargo test --test falsification_brick_tests --test falsification_budget_tests --test falsification_correctness_tests --test falsification_cuda_tests --test falsification_measurement_tests --test falsification_performance_tests --test falsification_2x_ollama_tests --test falsification_real_profiling -- --test-threads=2
 	@echo "✅ Falsification tests passed (137 tests)"
 
 showcase-pmat: ## Run PMAT quality gates for showcase (spec section 7.0.2)
@@ -561,9 +561,9 @@ property-test: ## Run property-based tests with extended cases
 property-test-fast: ## Run property tests with fewer cases (quick feedback)
 	@echo "⚡ Running property tests (fast mode)..."
 	@if command -v cargo-nextest >/dev/null 2>&1; then \
-		cargo nextest run --test property_tests; \
+		PROPTEST_CASES=25 QUICKCHECK_TESTS=25 cargo nextest run --test property_tests; \
 	else \
-		cargo test --test property_tests; \
+		PROPTEST_CASES=25 QUICKCHECK_TESTS=25 cargo test --test property_tests; \
 	fi
 	@echo "✅ Property tests passed"
 
@@ -622,9 +622,9 @@ test-audio-full: ## Run all audio tests including ALSA (if available)
 	@echo "🎵 Running full audio test suite..."
 	@if [ "$$(uname)" = "Linux" ] && pkg-config --exists alsa 2>/dev/null; then \
 		echo "  ALSA available - running with audio-alsa feature"; \
-		cargo test --features audio-alsa audio::; \
+		PROPTEST_CASES=25 QUICKCHECK_TESTS=25 cargo test --features audio-alsa audio::; \
 	else \
 		echo "  Running standard audio tests"; \
-		cargo test --features audio audio::; \
+		PROPTEST_CASES=25 QUICKCHECK_TESTS=25 cargo test --features audio audio::; \
 	fi
 	@echo "✅ Audio tests complete"

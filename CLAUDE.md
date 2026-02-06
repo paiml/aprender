@@ -266,11 +266,9 @@ unwrap() banned via `.clippy.toml` disallowed-methods. Use `expect()` or `ok_or_
 ### Examples
 
 ```bash
-# BAD - Don't do this
-grep -r "error" src/ | head -20  # 500+ noisy matches
-
-# GOOD - Do this instead
-pmat query "error handling" --limit 10  # 10 ranked functions with quality metrics
+# BAD - Raw text search returns 500+ noisy matches with no context
+# GOOD - Semantic search returns 10 ranked functions with quality metrics
+pmat query "error handling" --limit 10
 ```
 
 ### Cross-Project Search
