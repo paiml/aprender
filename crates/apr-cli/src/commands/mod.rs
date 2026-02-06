@@ -23,6 +23,7 @@ pub(crate) mod import;
 pub(crate) mod inspect;
 pub(crate) mod lint;
 pub(crate) mod merge;
+pub(crate) mod oracle;
 pub(crate) mod probar;
 pub(crate) mod profile;
 pub(crate) mod publish;

@@ -18,9 +18,9 @@ pub mod federation;
 // Commands are crate-private, used internally by execute_command
 use commands::{
     bench, canary, canary::CanaryCommands, cbtop, chat, compare_hf, convert, debug, diff, eval,
-    explain, export, flow, hex, import, inspect, lint, merge, probar, profile, publish, pull, qa,
-    rosetta, rosetta::RosettaCommands, run, serve, showcase, tensors, trace, tree, tui, tune,
-    validate,
+    explain, export, flow, hex, import, inspect, lint, merge, oracle, probar, profile, publish,
+    pull, qa, rosetta, rosetta::RosettaCommands, run, serve, showcase, tensors, trace, tree, tui,
+    tune, validate,
 };
 
 /// apr - APR Model Operations Tool
@@ -1085,6 +1085,34 @@ pub enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
+
+    /// Model Oracle: identify family, size, constraints, and contract compliance
+    ///
+    /// Three modes:
+    ///   apr oracle <FILE>         - Analyze local model file
+    ///   apr oracle hf://org/repo  - Query HuggingFace API
+    ///   apr oracle --family qwen2 - Describe contract from YAML
+    Oracle {
+        /// Model file path or hf:// URI
+        #[arg(value_name = "SOURCE")]
+        source: Option<String>,
+
+        /// Show contract for a model family (e.g., qwen2, llama, whisper, bert)
+        #[arg(long)]
+        family: Option<String>,
+
+        /// Filter to a specific size variant (e.g., 0.5b, 7b)
+        #[arg(long)]
+        size: Option<String>,
+
+        /// Run full contract compliance check
+        #[arg(long)]
+        compliance: bool,
+
+        /// List all tensor shapes
+        #[arg(long)]
+        tensors: bool,
+    },
 }
 
 /// PMAT-237: Extract model file paths from a command variant.
@@ -1974,6 +2002,23 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             message.as_deref(),
             *dry_run,
             cli.verbose,
+        ),
+
+        Commands::Oracle {
+            source,
+            family,
+            size,
+            compliance,
+            tensors,
+        } => oracle::run(
+            source.as_ref(),
+            family.as_ref(),
+            size.as_ref(),
+            *compliance,
+            *tensors,
+            cli.json,
+            cli.verbose,
+            cli.offline,
         ),
     }
 }
