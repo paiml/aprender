@@ -114,6 +114,9 @@ dirs = "5.0"
 # HTTP client for downloads
 ureq = "2.10"
 
+# Checksum integrity (GH-213: shard manifest checksums)
+blake3 = "1"
+
 # TUI
 ratatui = { version = "0.29", default-features = true }
 crossterm = "0.28"

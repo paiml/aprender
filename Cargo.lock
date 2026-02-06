@@ -249,6 +249,7 @@ dependencies = [
  "assert_cmd",
  "axum",
  "axum-test",
+ "blake3",
  "chrono",
  "clap",
  "colored",

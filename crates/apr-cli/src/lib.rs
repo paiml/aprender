@@ -1155,18 +1155,25 @@ fn extract_model_paths(command: &Commands) -> Vec<PathBuf> {
 /// Uses `RosettaStone::validate()` to check for NaN, Inf, all-zeros, density,
 /// and other contract violations. Returns `CliError::ValidationFailed` (exit 5)
 /// if any violations are found.
+///
+/// GH-213: For sharded SafeTensors models (index.json), validates shard integrity
+/// via `.apr-manifest.json` checksums instead of RosettaStone (which can't parse
+/// index files). This catches truncated downloads before inference.
 fn validate_model_contract(paths: &[PathBuf]) -> Result<(), CliError> {
     let rosetta = aprender::format::rosetta::RosettaStone::new();
     for path in paths {
         if !path.exists() {
             continue; // Let the subcommand handle FileNotFound
         }
-        // GH-213: Skip contract validation for sharded SafeTensors index files.
-        // The index.json is a metadata file, not a model file — RosettaStone
-        // doesn't know how to validate it. The actual shard files will be
-        // validated when loaded by ShardedSafeTensorsModel.
+        // GH-213: For sharded index.json, validate shard integrity via manifest
         if path.to_string_lossy().ends_with(".safetensors.index.json") {
-            continue;
+            if let Some(parent) = path.parent() {
+                let manifest_path = parent.join(".apr-manifest.json");
+                if manifest_path.exists() {
+                    validate_shard_manifest(&manifest_path, parent)?;
+                }
+            }
+            continue; // Skip RosettaStone (index.json is not a model file)
         }
         let report = rosetta.validate(path).map_err(|e| {
             CliError::ValidationFailed(format!(
@@ -1183,6 +1190,52 @@ fn validate_model_contract(paths: &[PathBuf]) -> Result<(), CliError> {
                 violation_count,
                 report.failed_tensor_count,
                 path.display(),
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// GH-213: Validate sharded model integrity by checking file sizes against manifest.
+///
+/// This is an O(1)-per-file check (stat syscall only, no hashing) that catches
+/// truncated downloads before they cause cryptic "tensor not found" errors.
+fn validate_shard_manifest(
+    manifest_path: &std::path::Path,
+    cache_dir: &std::path::Path,
+) -> Result<(), CliError> {
+    let manifest_str = std::fs::read_to_string(manifest_path).map_err(|e| {
+        CliError::ValidationFailed(format!(
+            "Failed to read manifest {}: {e}",
+            manifest_path.display()
+        ))
+    })?;
+    let manifest: commands::pull::ShardManifest =
+        serde_json::from_str(&manifest_str).map_err(|e| {
+            CliError::ValidationFailed(format!(
+                "Failed to parse manifest {}: {e}",
+                manifest_path.display()
+            ))
+        })?;
+
+    for (filename, checksum) in &manifest.files {
+        let file_path = cache_dir.join(filename);
+        if !file_path.exists() {
+            return Err(CliError::ValidationFailed(format!(
+                "Shard '{}' is missing. Re-run 'apr pull --force' to re-download.",
+                filename
+            )));
+        }
+        let actual_size = std::fs::metadata(&file_path)
+            .map(|m| m.len())
+            .map_err(|e| {
+                CliError::ValidationFailed(format!("Failed to stat shard '{}': {e}", filename))
+            })?;
+        if actual_size != checksum.size {
+            return Err(CliError::ValidationFailed(format!(
+                "Shard '{}' size mismatch: expected {} bytes, got {} bytes \
+                 (file may be truncated). Re-run 'apr pull --force' to re-download.",
+                filename, checksum.size, actual_size
             )));
         }
     }

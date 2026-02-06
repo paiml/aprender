@@ -12,7 +12,8 @@ use crate::error::{CliError, Result};
 use colored::Colorize;
 use pacha::fetcher::{FetchConfig, ModelFetcher};
 use pacha::format::ModelFormat;
-use std::collections::HashSet;
+use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
 use std::io::{self, Read, Write};
 use std::path::Path;
 
@@ -29,6 +30,24 @@ enum ResolvedModel {
         repo: String,
         shard_files: Vec<String>,
     },
+}
+
+/// GH-213: Manifest recording checksums for each file in a sharded download.
+///
+/// Written to `.apr-manifest.json` in the cache directory after a successful download.
+/// Used by the pre-inference contract gate to verify shard integrity without re-hashing.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ShardManifest {
+    pub version: u32,
+    pub repo: String,
+    pub files: HashMap<String, FileChecksum>,
+}
+
+/// GH-213: Size and BLAKE3 hash of a downloaded file.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FileChecksum {
+    pub size: u64,
+    pub blake3: String,
 }
 
 /// Run the pull command
@@ -162,20 +181,66 @@ fn run_sharded(org: &str, repo: &str, shard_files: &[String], force: bool) -> Re
         println!("  {} model.safetensors.index.json (cached)", "✓".green());
     }
 
-    // Download each shard
+    // GH-213: Load existing manifest for cache-hit verification
+    let manifest_path = cache_dir.join(".apr-manifest.json");
+    let existing_manifest: Option<ShardManifest> = if !force && manifest_path.exists() {
+        std::fs::read_to_string(&manifest_path)
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+    } else {
+        None
+    };
+
+    // Download each shard, collecting checksums
+    let mut file_checksums: HashMap<String, FileChecksum> = HashMap::new();
     let total_shards = shard_files.len();
     for (i, shard_file) in shard_files.iter().enumerate() {
         let shard_path = cache_dir.join(shard_file);
 
         if !force && shard_path.exists() {
-            println!(
-                "  {} [{}/{}] {} (cached)",
-                "✓".green(),
-                i + 1,
-                total_shards,
-                shard_file
-            );
-            continue;
+            // GH-213: On cache hit, verify file size against manifest
+            if let Some(ref manifest) = existing_manifest {
+                if let Some(expected) = manifest.files.get(shard_file.as_str()) {
+                    let actual_size = std::fs::metadata(&shard_path).map(|m| m.len()).unwrap_or(0);
+                    if actual_size == expected.size {
+                        // Carry forward existing checksum
+                        file_checksums.insert(
+                            shard_file.clone(),
+                            FileChecksum {
+                                size: expected.size,
+                                blake3: expected.blake3.clone(),
+                            },
+                        );
+                        println!(
+                            "  {} [{}/{}] {} (cached, verified)",
+                            "✓".green(),
+                            i + 1,
+                            total_shards,
+                            shard_file
+                        );
+                        continue;
+                    }
+                    println!(
+                        "  {} [{}/{}] {} (size mismatch: {} vs {} bytes, re-downloading)",
+                        "⚠".yellow(),
+                        i + 1,
+                        total_shards,
+                        shard_file,
+                        actual_size,
+                        expected.size
+                    );
+                    // Fall through to re-download
+                }
+            } else {
+                println!(
+                    "  {} [{}/{}] {} (cached)",
+                    "✓".green(),
+                    i + 1,
+                    total_shards,
+                    shard_file
+                );
+                continue;
+            }
         }
 
         let shard_url = format!("{base_url}/{shard_file}");
@@ -188,7 +253,8 @@ fn run_sharded(org: &str, repo: &str, shard_files: &[String], force: bool) -> Re
         );
         io::stdout().flush().ok();
 
-        download_file_with_progress(&shard_url, &shard_path)?;
+        let checksum = download_file_with_progress(&shard_url, &shard_path)?;
+        file_checksums.insert(shard_file.clone(), checksum);
         println!(" {}", "done".green());
     }
 
@@ -215,6 +281,20 @@ fn run_sharded(org: &str, repo: &str, shard_files: &[String], force: bool) -> Re
             }
             Err(_) => println!("  {} {} (not available, optional)", "⚠".yellow(), filename),
         }
+    }
+
+    // GH-213: Write shard manifest with checksums
+    if !file_checksums.is_empty() {
+        let manifest = ShardManifest {
+            version: 1,
+            repo: format!("{org}/{repo}"),
+            files: file_checksums,
+        };
+        let manifest_json = serde_json::to_string_pretty(&manifest).map_err(|e| {
+            CliError::ValidationFailed(format!("Failed to serialize manifest: {e}"))
+        })?;
+        std::fs::write(&manifest_path, manifest_json)?;
+        println!("  {} .apr-manifest.json (integrity checksums)", "✓".green());
     }
 
     println!();
@@ -712,8 +792,11 @@ fn download_file(url: &str, path: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Download a file with a simple progress indicator (prints dots)
-fn download_file_with_progress(url: &str, path: &Path) -> Result<()> {
+/// GH-213: Download a file with progress, computing BLAKE3 hash incrementally.
+///
+/// Returns a `FileChecksum` with the downloaded size and BLAKE3 hash.
+/// Verifies that downloaded bytes match Content-Length when available.
+fn download_file_with_progress(url: &str, path: &Path) -> Result<FileChecksum> {
     let response = ureq::get(url)
         .call()
         .map_err(|e| CliError::NetworkError(format!("Download failed: {e}")))?;
@@ -725,6 +808,7 @@ fn download_file_with_progress(url: &str, path: &Path) -> Result<()> {
 
     let mut file = std::fs::File::create(path)?;
     let mut reader = response.into_reader();
+    let mut hasher = blake3::Hasher::new();
     let mut downloaded: u64 = 0;
     let mut buf = vec![0u8; 64 * 1024];
     let mut last_pct: u64 = 0;
@@ -736,7 +820,9 @@ fn download_file_with_progress(url: &str, path: &Path) -> Result<()> {
         if n == 0 {
             break;
         }
-        io::Write::write_all(&mut file, &buf[..n])?;
+        let chunk = &buf[..n];
+        io::Write::write_all(&mut file, chunk)?;
+        hasher.update(chunk);
         downloaded += n as u64;
 
         if total > 0 {
@@ -749,7 +835,22 @@ fn download_file_with_progress(url: &str, path: &Path) -> Result<()> {
         }
     }
 
-    Ok(())
+    // GH-213: Verify Content-Length match (catches incomplete transfers)
+    if total > 0 && downloaded != total {
+        // Remove the partial file
+        let _ = std::fs::remove_file(path);
+        return Err(CliError::NetworkError(format!(
+            "Download incomplete for '{}': expected {} bytes, got {} bytes",
+            path.display(),
+            total,
+            downloaded
+        )));
+    }
+
+    Ok(FileChecksum {
+        size: downloaded,
+        blake3: hasher.finalize().to_hex().to_string(),
+    })
 }
 
 /// Backward-compatible wrapper: resolve URI to string (for existing callers that expect String)
