@@ -1,1678 +1,604 @@
 # Compiler-Enforced Model Types & Model Oracle
 
-**Version**: 1.0.0
-**Status**: Draft
-**Created**: 2026-02-06
-**Author**: PAIML Engineering
-**Tickets**: PMAT-240 through PMAT-253
+**Version**: 2.0.0
+**Status**: Implemented
+**Updated**: 2026-02-06
 
-> This specification defines a five-layer compiler enforcement architecture for model
-> family contracts and introduces the `apr oracle` CLI command for model introspection.
-> No code changes are included in this PR; implementation follows in subsequent tickets.
+> 297 compile-time algebraic proofs enforce transformer mathematics at build time.
+> 116 falsification tests across 3 adversarial rounds found 8 bugs. Zero remain open.
+> If `cargo build` succeeds, the model configuration is mathematically valid.
 
 ---
 
-## Table of Contents
+## 1. Core Thesis
 
-1. [Abstract](#1-abstract)
-2. [Motivation](#2-motivation)
-3. [Theoretical Foundation](#3-theoretical-foundation)
-4. [Model Family Contract YAML Specification](#4-model-family-contract-yaml-specification)
-   - [4.1 Directory Structure](#41-directory-structure)
-   - [4.2 YAML Schema](#42-yaml-schema)
-   - [4.3 Reference: qwen2.yaml](#43-reference-qwen2yaml)
-   - [4.4 Reference: llama.yaml](#44-reference-llamayaml)
-   - [4.5 Relationship to tensor-layout-v1.yaml](#45-relationship-to-tensor-layout-v1yaml)
-5. [Compiler Enforcement Architecture](#5-compiler-enforcement-architecture)
-   - [5.1 Layer 1: Clippy disallowed-methods](#51-layer-1-clippy-disallowed-methods)
-   - [5.2 Layer 2: ModelFamily trait + ModelFamilyConfig](#52-layer-2-modelfamily-trait--modelfamilyconfig)
-   - [5.3 Layer 3: PhantomData\<Layout\> markers on Validated\* types](#53-layer-3-phantomdatalayout-markers-on-validated-types)
-   - [5.4 Layer 4: AprTransformer migration to Validated\* fields](#54-layer-4-aprtransformer-migration-to-validated-fields)
-   - [5.5 Layer 5: build.rs YAML-to-Rust code generation](#55-layer-5-buildrs-yaml-to-rust-code-generation)
-   - [5.6 Enforcement Matrix](#56-enforcement-matrix)
-6. [apr oracle CLI Command](#6-apr-oracle-cli-command)
-   - [6.1 Mode 1: Local File Analysis](#61-mode-1-local-file-analysis)
-   - [6.2 Mode 2: HuggingFace API Query](#62-mode-2-huggingface-api-query)
-   - [6.3 Mode 3: Contract Description](#63-mode-3-contract-description)
-   - [6.4 Output Format](#64-output-format)
-   - [6.5 ModelOracleReport Struct](#65-modeloraclereport-struct)
-   - [6.6 Integration with apr-model-qa-playbook](#66-integration-with-apr-model-qa-playbook)
-7. [Popperian Falsification Protocol](#7-popperian-falsification-protocol)
-   - [7.1 Phase 1: Model Family Contracts](#71-phase-1-model-family-contracts)
-   - [7.2 Phase 2: Oracle CLI](#72-phase-2-oracle-cli)
-   - [7.3 Phase 3: Compiler Enforcement](#73-phase-3-compiler-enforcement)
-   - [7.4 Phase 4: Build-Time Codegen](#74-phase-4-build-time-codegen)
-8. [Implementation Roadmap](#8-implementation-roadmap)
-   - [8.1 Phase 1: Foundation (PMAT-240..243)](#81-phase-1-foundation)
-   - [8.2 Phase 2: Oracle CLI (PMAT-244..247)](#82-phase-2-oracle-cli)
-   - [8.3 Phase 3: Type Enforcement (PMAT-248..249)](#83-phase-3-type-enforcement)
-   - [8.4 Phase 4: Codegen & Generics (PMAT-250..251)](#84-phase-4-codegen--generics)
-   - [8.5 Phase 5: Documentation & Expansion (PMAT-252..253)](#85-phase-5-documentation--expansion)
-9. [Architectural Decisions](#9-architectural-decisions)
-   - [9.1 YAML as Source of Truth](#91-yaml-as-source-of-truth)
-   - [9.2 PhantomData\<Layout\> vs Separate Types](#92-phantomdatalayout-vs-separate-types)
-   - [9.3 Generic AprTransformer\<F\> vs Box\<dyn ModelFamily\>](#93-generic-aprtransformerf-vs-boxdyn-modelfamily)
-   - [9.4 New oracle Command vs Extending inspect](#94-new-oracle-command-vs-extending-inspect)
-10. [References](#10-references)
-11. [Appendix A: PMAT Ticket Descriptions](#appendix-a-pmat-ticket-descriptions)
-
----
-
-## 1. Abstract
-
-Aprender and realizar currently handle model loading through a single code path that
-treats all transformer architectures identically. This design has produced three
-categories of defects:
-
-1. **Layout errors** (GH-202, GH-208): Column-major/row-major confusion caused garbage
-   inference output. The root cause was the absence of compile-time enforcement for
-   tensor layout conventions.
-
-2. **Unvalidated model loading** (GH-213): Models from untested families were loaded
-   without verifying that their tensor names, shapes, and constraints matched any known
-   contract. Failures surfaced at inference time, not load time.
-
-3. **Missing introspection** (GH-190): Users had no way to determine *before* loading
-   whether a model file matched a supported architecture, what constraints apply, or
-   whether the model's tensors conform to its family's contract.
-
-This specification introduces:
-
-- **Model Family Contract YAML files** that declare per-family architectural constraints,
-  tensor templates, size variants, and chat template configurations.
-
-- **A five-layer compiler enforcement stack** that progressively moves validation from
-  runtime to compile time, making entire categories of defects unrepresentable.
-
-- **The `apr oracle` CLI command** for model introspection: given a local file, a
-  HuggingFace URI, or a family name, oracle reports the model's family, configuration,
-  contract compliance, and certification status.
-
----
-
-## 2. Motivation
-
-### 2.1 Lessons from GH-202, GH-208, and GH-213
-
-**GH-202** (lm_head garbage output): The lm_head weight matrix was stored with
-shape `[hidden_dim, vocab_size]` instead of `[vocab_size, hidden_dim]`. The kernel
-expected row-major `[out_dim, in_dim]`, but received transposed data. Result: every
-inference token was `[PAD151935]`.
-
-**Root cause**: No compile-time mechanism prevented passing a `Vec<f32>` with wrong
-shape semantics to a matmul kernel. The `ValidatedWeight` type (PMAT-235) now catches
-shape errors at construction, but layout semantics (row-major vs column-major) remain
-a runtime convention, not a type-level guarantee.
-
-**GH-208** (embedding transpose regression): A "fix" for GH-202 introduced an
-unnecessary data transpose during GGUF import. GGUF data layout is already compatible
-with row-major when shape metadata is swapped. The data transpose corrupted embeddings.
-
-**Root cause**: The contract (`contracts/tensor-layout-v1.yaml`) was documentation,
-not code. Developers could bypass it without compiler errors.
-
-**GH-213** (sharded model loading): Sharded SafeTensors models from untested families
-failed with cryptic "tensor not found" errors because the tensor name mapping
-(`Architecture::map_name`) only covered Qwen2 and LLaMA.
-
-**Root cause**: No mechanism existed to declare which model families are supported,
-what tensor names they use, or what size variants exist. The `Architecture` enum is
-a flat list with no associated contract data.
-
-### 2.2 Current Gaps
-
-| Gap | Description | Risk |
-|-----|-------------|------|
-| No family contracts | `Architecture` enum has no associated constraints | Runtime failures on unsupported models |
-| Layout as convention | Row-major is documented but not enforced at type level | Regression (GH-208 happened despite GH-202 fix) |
-| No model introspection | Users cannot query "what is this model?" before loading | Wasted time on incompatible models |
-| Certification disconnect | Playbook certifications live in separate repo with no programmatic link | Cannot verify certification status from CLI |
-| Hardcoded size configs | Model configs (hidden_dim, num_heads, etc.) are scattered across code | Adding new size variants requires code changes |
-
-### 2.3 Design Goals
-
-1. Make layout errors a **compile-time error**, not a runtime bug.
-2. Make unsupported model families a **load-time rejection**, not an inference-time crash.
-3. Provide **single-command introspection** for any model file or HuggingFace repo.
-4. Maintain **YAML as the single source of truth** for model family contracts,
-   consumable by aprender, realizar, and apr-model-qa-playbook.
-
----
-
-## 3. Theoretical Foundation
-
-This specification draws on seven established works in quality engineering, type
-theory, and scientific methodology.
-
-### 3.1 Poka-Yoke / Zero Quality Control
-
-> "The most effective inspection is source inspection, which detects errors at the
-> point where they are created and provides immediate feedback to prevent defects."
-
-**Citation**: Shingo, S. (1986). *Zero Quality Control: Source Inspection and the
-Poka-Yoke System*. Productivity Press. ISBN 0-915299-07-0.
-
-**Application**: The `ValidatedWeight` newtype pattern (PMAT-235) makes it
-impossible to construct a weight matrix without passing shape and data quality
-checks. This specification extends Poka-Yoke to the model family level: the
-`ModelFamily` trait makes it impossible to load a model without declaring and
-validating its family contract.
-
-### 3.2 Toyota Production System
-
-> "We are not simply making automobiles. We are making the process of making
-> automobiles."
-
-**Citation**: Ohno, T. (1988). *Toyota Production System: Beyond Large-Scale
-Production*. Productivity Press. ISBN 0-915299-14-3.
-
-**Application**: The five-layer enforcement stack is a production line with
-progressive quality gates. Each layer catches a class of defects that the
-previous layer cannot. Layer 1 (clippy) is the fastest feedback; Layer 5
-(build.rs codegen) is the most comprehensive. The goal is *jidoka* (automation
-with a human touch): the compiler stops the line when it detects a defect.
-
-### 3.3 Falsificationism
-
-> "The criterion of the scientific status of a theory is its falsifiability."
-
-**Citation**: Popper, K. (1959). *The Logic of Scientific Discovery*. Hutchinson
-& Co. ISBN 0-415-27844-9.
-
-**Application**: Every validation rule in this specification has explicit
-falsification criteria (Section 7). A rule is meaningful only if it can be
-disproven by a concrete test. If a falsification test passes (finds a
-counterexample), the implementation is broken. This is the same pattern used
-in `contracts/tensor-layout-v1.yaml` (FALSIFY-001 through FALSIFY-006).
-
-### 3.4 Type-Driven Development
-
-> "If it compiles, it works."
-
-**Citation**: Brady, E. (2017). *Type-Driven Development with Idris*. Manning
-Publications. ISBN 978-1-61729-302-5.
-
-**Application**: The `PhantomData<RowMajor>` marker on `ValidatedWeight` encodes
-layout semantics in the type system. A function that requires `ValidatedWeight<RowMajor>`
-cannot accept `ValidatedWeight<ColumnMajor>` (which does not exist in APR, but the
-type system prevents future regressions if it were introduced). This is stronger
-than runtime assertions: the invalid state is unrepresentable, not merely checked.
-
-### 3.5 Parse, Don't Validate
-
-> "Use the type system to make invalid states unrepresentable. When you validate,
-> you check a property but retain the unvalidated type. When you parse, you transform
-> to a type that structurally guarantees the property."
-
-**Citation**: Parsons, A. (2019). "Parse, Don't Validate." Blog post.
-
-**Application**: The transition from `Vec<f32>` to `ValidatedEmbedding` is a parse,
-not a validation. The raw data is consumed and the validated type is returned. There
-is no way to access the data without first proving it satisfies the contract. The
-`ModelFamily` trait extends this to the model level: raw tensor data is parsed into
-a family-specific validated structure, not merely checked against a list of rules.
-
-### 3.6 Typestate Programming
-
-> "A typestate associates an abstract state with each variable and defines state
-> transitions as function signatures."
-
-**Citation**: Strom, R. E. & Yemini, S. (1986). "Typestate: A Programming Language
-Concept for Enhancing Software Reliability." *IEEE Transactions on Software
-Engineering*, SE-12(1), pp. 157-171.
-
-**Application**: The `AprTransformer<F: ModelFamily>` generic parameter acts as a
-typestate. An `AprTransformer<Qwen2>` cannot be passed to a function expecting
-`AprTransformer<Llama>`. The model family is part of the type, not a runtime field
-that could be wrong.
-
-### 3.7 Deny Capabilities for Safe, Fast Actors
-
-> "Capabilities that are not needed should be denied by default. This principle,
-> applied to concurrent systems, prevents entire classes of race conditions."
-
-**Citation**: Clebsch, S., Drossopoulou, S., Blessing, S., & McNeil, A. (2015).
-"Deny Capabilities for Safe, Fast Actors." In *Proceedings of the 5th International
-Workshop on Programming Based on Actors, Agents, and Decentralized Control (AGERE!)*.
-ACM. pp. 1-12.
-
-**Application**: Layer 1 (clippy `disallowed-methods`) denies the capability to call
-column-major matmul kernels. This is not a warning or a convention; the denied
-function cannot be called. The deny-by-default principle ensures that new code cannot
-introduce layout errors without explicitly overriding the deny rule, which would
-trigger code review.
-
----
-
-## 4. Model Family Contract YAML Specification
-
-### 4.1 Directory Structure
+Transformer architectures are **closed algebraic systems**. A model family is fully determined by seven integer parameters:
 
 ```
-contracts/
-├── tensor-layout-v1.yaml          # Existing: per-tensor layout contract
-└── model-families/
-    ├── _schema.yaml               # JSON Schema for model family YAMLs
-    ├── qwen2.yaml                 # Qwen2 / Qwen2.5 / Qwen2.5-Coder
-    ├── llama.yaml                 # LLaMA 2 / LLaMA 3 / LLaMA 3.2
-    ├── whisper.yaml               # OpenAI Whisper (encoder-decoder)
-    └── bert.yaml                  # Google BERT (encoder-only)
+M = (hidden_dim, num_layers, num_heads, num_kv_heads, intermediate_dim, vocab_size, head_dim)
 ```
 
-Each YAML file is the **single source of truth** for one model family. Consumers:
+Every derived quantity -- parameter count, memory footprint, KV cache size, attention FLOPs, tensor shapes, tensor counts -- is a **deterministic polynomial function** of M plus a discrete constraint vector C = (mlp_type, attention_type, activation, bias, tied_embeddings, positional_encoding, norm_type).
 
-- **aprender**: `build.rs` reads YAMLs and generates `ModelFamilyConfig` structs
-- **realizar**: Reads at runtime to validate loaded models
-- **apr-model-qa-playbook**: Generates test matrices from size variants
-- **apr oracle**: Renders contract descriptions for users
+**Consequence**: Every derivable property can be proven at compile time. These are not runtime checks that depend on test coverage. They are `const _: () = assert!(...)` statements evaluated by the Rust compiler. If any invariant is violated, `cargo build` fails -- the binary cannot exist in a state that violates these theorems.
 
-### 4.2 YAML Schema
+---
+
+## 2. Contract Architecture
+
+### 2.1 YAML as Source of Truth
+
+Each model family is defined by a single YAML file in `contracts/model-families/`:
+
+```
+contracts/model-families/
+  qwen2.yaml       # Qwen2 / Qwen2.5-Coder (6 sizes: 0.5B--32B)
+  llama.yaml        # LLaMA 3 / 3.2 (4 sizes: 1B--70B)
+  gemma.yaml        # Gemma / Gemma 2 (4 sizes: 2B--27B)
+  mistral.yaml      # Mistral / Mistral-Nemo (3 sizes)
+  deepseek.yaml     # DeepSeek-V2 (2 sizes)
+  phi.yaml          # Phi-3 (3 sizes)
+  bert.yaml         # BERT (2 sizes)
+  whisper.yaml      # Whisper (5 sizes)
+```
+
+Consumers: `build.rs` (compile-time codegen), `apr oracle` (CLI introspection), `apr-model-qa-playbook` (QA test matrices), `realizar` (runtime validation).
+
+### 2.2 YAML Schema
 
 ```yaml
-# Required top-level fields
-family: string                    # Canonical family name (e.g., "qwen2")
-display_name: string              # Human-readable name (e.g., "Qwen2.5-Coder")
-vendor: string                    # Organization (e.g., "Alibaba")
-architectures: [string]           # HF config.json model_type values
-hf_pattern: string                # Glob for matching HF repo names
-
-# Size variants
-size_variants:
-  <name>:                         # e.g., "0.5b", "1.5b", "7b"
-    parameters: string            # e.g., "0.5B"
-    hidden_dim: int
-    num_layers: int
-    num_heads: int
-    num_kv_heads: int
-    intermediate_dim: int
-    vocab_size: int
-    max_position_embeddings: int
-    head_dim: int                 # Derived: hidden_dim / num_heads
-    rope_theta: float             # RoPE base frequency
-    rms_norm_eps: float           # RMSNorm epsilon
-
-# Architectural constraints
-constraints:
-  attention_type: string          # "gqa" | "mha" | "mqa"
-  activation: string              # "silu" | "gelu" | "relu"
-  norm_type: string               # "rmsnorm" | "layernorm"
-  has_bias: bool                  # Whether projections have bias terms
-  tied_embeddings: bool           # Whether embed_tokens == lm_head
-  positional_encoding: string     # "rope" | "alibi" | "absolute" | "relative"
-  mlp_type: string                # "swiglu" | "gelu_mlp" | "gated_mlp"
-
-# Tensor name template (parameterized by layer index)
-tensor_template:
-  embedding: string               # e.g., "model.embed_tokens.weight"
-  lm_head: string                 # e.g., "lm_head.weight"
-  final_norm: string              # e.g., "model.norm.weight"
-  per_layer:                      # Indexed by {n}
-    q_proj: string
-    k_proj: string
-    v_proj: string
-    o_proj: string
-    gate_proj: string
-    up_proj: string
-    down_proj: string
-    input_layernorm: string
-    post_attention_layernorm: string
-    q_proj_bias: string | null     # null = tensor does not exist
-    k_proj_bias: string | null
-    v_proj_bias: string | null
-
-# Shape template (parameterized by config values)
-shape_template:
-  embedding: "[vocab_size, hidden_dim]"
-  lm_head: "[vocab_size, hidden_dim]"
-  q_proj: "[num_heads * head_dim, hidden_dim]"
-  k_proj: "[num_kv_heads * head_dim, hidden_dim]"
-  v_proj: "[num_kv_heads * head_dim, hidden_dim]"
-  o_proj: "[hidden_dim, num_heads * head_dim]"
-  gate_proj: "[intermediate_dim, hidden_dim]"
-  up_proj: "[intermediate_dim, hidden_dim]"
-  down_proj: "[hidden_dim, intermediate_dim]"
-  input_layernorm: "[hidden_dim]"
-  post_attention_layernorm: "[hidden_dim]"
-
-# Supported quantizations
-quantizations:
-  - q4_k_m
-  - q5_k_m
-  - q6_k
-  - q8_0
-  - f16
-  - f32
-
-# Chat template
-chat_template:
-  format: string                  # e.g., "chatml", "llama", "mistral"
-  template: string                # Jinja2 template string
-  bos_token: string
-  eos_token: string
-  special_tokens:
-    <token_name>: string          # e.g., im_start: "<|im_start|>"
-
-# Certification cross-reference
-certification:
-  playbook_path: string           # Relative path to playbook YAML
-  csv_family_key: string          # Key in models.csv family column
-  size_categories:
-    <variant>: string             # Maps variant to size category
-```
-
-### 4.3 Reference: qwen2.yaml
-
-```yaml
-family: qwen2
+family: qwen2                          # Canonical name
 display_name: "Qwen2 / Qwen2.5-Coder"
 vendor: Alibaba
-architectures:
-  - Qwen2ForCausalLM
+architectures: [Qwen2ForCausalLM]      # HF config.json model_type values
 hf_pattern: "Qwen/Qwen2*"
 
 size_variants:
   0.5b:
     parameters: "0.5B"
-    hidden_dim: 896
-    num_layers: 24
-    num_heads: 14
-    num_kv_heads: 2
-    intermediate_dim: 4864
-    vocab_size: 151936
+    hidden_dim: 896        # h
+    num_layers: 24         # L
+    num_heads: 14          # n_h
+    num_kv_heads: 2        # n_kv
+    intermediate_dim: 4864 # d_ff
+    vocab_size: 151936     # V
+    head_dim: 64           # d_k
     max_position_embeddings: 32768
-    head_dim: 64
     rope_theta: 1000000.0
     rms_norm_eps: 0.000001
-  1.5b:
-    parameters: "1.5B"
-    hidden_dim: 1536
-    num_layers: 28
-    num_heads: 12
-    num_kv_heads: 2
-    intermediate_dim: 8960
-    vocab_size: 151936
-    max_position_embeddings: 32768
-    head_dim: 128
-    rope_theta: 1000000.0
-    rms_norm_eps: 0.000001
-  3b:
-    parameters: "3B"
-    hidden_dim: 2048
-    num_layers: 36
-    num_heads: 16
-    num_kv_heads: 2
-    intermediate_dim: 11008
-    vocab_size: 151936
-    max_position_embeddings: 32768
-    head_dim: 128
-    rope_theta: 1000000.0
-    rms_norm_eps: 0.000001
-  7b:
-    parameters: "7B"
-    hidden_dim: 3584
-    num_layers: 28
-    num_heads: 28
-    num_kv_heads: 4
-    intermediate_dim: 18944
-    vocab_size: 152064
-    max_position_embeddings: 131072
-    head_dim: 128
-    rope_theta: 1000000.0
-    rms_norm_eps: 0.000001
-  14b:
-    parameters: "14B"
-    hidden_dim: 5120
-    num_layers: 48
-    num_heads: 40
-    num_kv_heads: 8
-    intermediate_dim: 13824
-    vocab_size: 152064
-    max_position_embeddings: 131072
-    head_dim: 128
-    rope_theta: 1000000.0
-    rms_norm_eps: 0.000001
-  32b:
-    parameters: "32B"
-    hidden_dim: 5120
-    num_layers: 64
-    num_heads: 40
-    num_kv_heads: 8
-    intermediate_dim: 27648
-    vocab_size: 152064
-    max_position_embeddings: 131072
-    head_dim: 128
-    rope_theta: 1000000.0
-    rms_norm_eps: 0.000001
+  # ... (1.5b, 3b, 7b, 14b, 32b)
 
 constraints:
-  attention_type: gqa
-  activation: silu
-  norm_type: rmsnorm
+  attention_type: gqa       # gqa | mha | mqa
+  activation: silu          # silu | gelu | relu
+  norm_type: rmsnorm        # rmsnorm | layernorm
   has_bias: true
   tied_embeddings: false
-  positional_encoding: rope
-  mlp_type: swiglu
+  positional_encoding: rope # rope | absolute | alibi
+  mlp_type: swiglu          # swiglu | gelu_mlp | gated_mlp
 
-tensor_template:
+tensor_template:            # Parameterized by layer index {n}
   embedding: "model.embed_tokens.weight"
   lm_head: "lm_head.weight"
-  final_norm: "model.norm.weight"
   per_layer:
     q_proj: "model.layers.{n}.self_attn.q_proj.weight"
-    k_proj: "model.layers.{n}.self_attn.k_proj.weight"
-    v_proj: "model.layers.{n}.self_attn.v_proj.weight"
-    o_proj: "model.layers.{n}.self_attn.o_proj.weight"
-    gate_proj: "model.layers.{n}.mlp.gate_proj.weight"
-    up_proj: "model.layers.{n}.mlp.up_proj.weight"
-    down_proj: "model.layers.{n}.mlp.down_proj.weight"
-    input_layernorm: "model.layers.{n}.input_layernorm.weight"
-    post_attention_layernorm: "model.layers.{n}.post_attention_layernorm.weight"
-    q_proj_bias: "model.layers.{n}.self_attn.q_proj.bias"
-    k_proj_bias: "model.layers.{n}.self_attn.k_proj.bias"
-    v_proj_bias: "model.layers.{n}.self_attn.v_proj.bias"
+    # ... (k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj, norms, biases)
 
-shape_template:
+shape_template:             # Parameterized by config values
   embedding: "[vocab_size, hidden_dim]"
-  lm_head: "[vocab_size, hidden_dim]"
   q_proj: "[num_heads * head_dim, hidden_dim]"
-  k_proj: "[num_kv_heads * head_dim, hidden_dim]"
-  v_proj: "[num_kv_heads * head_dim, hidden_dim]"
-  o_proj: "[hidden_dim, num_heads * head_dim]"
-  gate_proj: "[intermediate_dim, hidden_dim]"
-  up_proj: "[intermediate_dim, hidden_dim]"
-  down_proj: "[hidden_dim, intermediate_dim]"
-  input_layernorm: "[hidden_dim]"
-  post_attention_layernorm: "[hidden_dim]"
-
-quantizations:
-  - q4_k_m
-  - q5_k_m
-  - q6_k
-  - q8_0
-  - f16
-  - f32
-
-chat_template:
-  format: chatml
-  template: "{% for message in messages %}{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>' + '\n'}}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}"
-  bos_token: ""
-  eos_token: "<|im_end|>"
-  special_tokens:
-    im_start: "<|im_start|>"
-    im_end: "<|im_end|>"
-    endoftext: "<|endoftext|>"
-
-certification:
-  playbook_path: "../apr-model-qa-playbook/playbooks/models/qwen2.5-coder-{size}.playbook.yaml"
-  csv_family_key: "qwen-coder"
-  size_categories:
-    0.5b: tiny
-    1.5b: small
-    3b: small
-    7b: medium
-    14b: large
-    32b: xlarge
+  # ...
 ```
 
-### 4.4 Reference: llama.yaml
-
-```yaml
-family: llama
-display_name: "LLaMA 3 / LLaMA 3.2"
-vendor: Meta
-architectures:
-  - LlamaForCausalLM
-hf_pattern: "meta-llama/Llama-*"
-
-size_variants:
-  1b:
-    parameters: "1B"
-    hidden_dim: 2048
-    num_layers: 16
-    num_heads: 32
-    num_kv_heads: 8
-    intermediate_dim: 8192
-    vocab_size: 128256
-    max_position_embeddings: 131072
-    head_dim: 64
-    rope_theta: 500000.0
-    rms_norm_eps: 0.00001
-  3b:
-    parameters: "3B"
-    hidden_dim: 3072
-    num_layers: 28
-    num_heads: 24
-    num_kv_heads: 8
-    intermediate_dim: 8192
-    vocab_size: 128256
-    max_position_embeddings: 131072
-    head_dim: 128
-    rope_theta: 500000.0
-    rms_norm_eps: 0.00001
-  8b:
-    parameters: "8B"
-    hidden_dim: 4096
-    num_layers: 32
-    num_heads: 32
-    num_kv_heads: 8
-    intermediate_dim: 14336
-    vocab_size: 128256
-    max_position_embeddings: 131072
-    head_dim: 128
-    rope_theta: 500000.0
-    rms_norm_eps: 0.00001
-  70b:
-    parameters: "70B"
-    hidden_dim: 8192
-    num_layers: 80
-    num_heads: 64
-    num_kv_heads: 8
-    intermediate_dim: 28672
-    vocab_size: 128256
-    max_position_embeddings: 131072
-    head_dim: 128
-    rope_theta: 500000.0
-    rms_norm_eps: 0.00001
-
-constraints:
-  attention_type: gqa
-  activation: silu
-  norm_type: rmsnorm
-  has_bias: false
-  tied_embeddings: false
-  positional_encoding: rope
-  mlp_type: swiglu
-
-tensor_template:
-  embedding: "model.embed_tokens.weight"
-  lm_head: "lm_head.weight"
-  final_norm: "model.norm.weight"
-  per_layer:
-    q_proj: "model.layers.{n}.self_attn.q_proj.weight"
-    k_proj: "model.layers.{n}.self_attn.k_proj.weight"
-    v_proj: "model.layers.{n}.self_attn.v_proj.weight"
-    o_proj: "model.layers.{n}.self_attn.o_proj.weight"
-    gate_proj: "model.layers.{n}.mlp.gate_proj.weight"
-    up_proj: "model.layers.{n}.mlp.up_proj.weight"
-    down_proj: "model.layers.{n}.mlp.down_proj.weight"
-    input_layernorm: "model.layers.{n}.input_layernorm.weight"
-    post_attention_layernorm: "model.layers.{n}.post_attention_layernorm.weight"
-    q_proj_bias: null
-    k_proj_bias: null
-    v_proj_bias: null
-
-shape_template:
-  embedding: "[vocab_size, hidden_dim]"
-  lm_head: "[vocab_size, hidden_dim]"
-  q_proj: "[num_heads * head_dim, hidden_dim]"
-  k_proj: "[num_kv_heads * head_dim, hidden_dim]"
-  v_proj: "[num_kv_heads * head_dim, hidden_dim]"
-  o_proj: "[hidden_dim, num_heads * head_dim]"
-  gate_proj: "[intermediate_dim, hidden_dim]"
-  up_proj: "[intermediate_dim, hidden_dim]"
-  down_proj: "[hidden_dim, intermediate_dim]"
-  input_layernorm: "[hidden_dim]"
-  post_attention_layernorm: "[hidden_dim]"
-
-quantizations:
-  - q4_k_m
-  - q5_k_m
-  - q6_k
-  - q8_0
-  - f16
-  - f32
-
-chat_template:
-  format: llama
-  template: "{% for message in messages %}{% if message['role'] == 'system' %}<|start_header_id|>system<|end_header_id|>\n\n{{ message['content'] }}<|eot_id|>{% elif message['role'] == 'user' %}<|start_header_id|>user<|end_header_id|>\n\n{{ message['content'] }}<|eot_id|>{% elif message['role'] == 'assistant' %}<|start_header_id|>assistant<|end_header_id|>\n\n{{ message['content'] }}<|eot_id|>{% endif %}{% endfor %}{% if add_generation_prompt %}<|start_header_id|>assistant<|end_header_id|>\n\n{% endif %}"
-  bos_token: "<|begin_of_text|>"
-  eos_token: "<|eot_id|>"
-  special_tokens:
-    begin_of_text: "<|begin_of_text|>"
-    end_of_text: "<|end_of_text|>"
-    start_header_id: "<|start_header_id|>"
-    end_header_id: "<|end_header_id|>"
-    eot_id: "<|eot_id|>"
-
-certification:
-  playbook_path: "../apr-model-qa-playbook/playbooks/models/llama-3.2-{size}.playbook.yaml"
-  csv_family_key: "llama"
-  size_categories:
-    1b: small
-    3b: small
-    8b: medium
-    70b: xlarge
-```
-
-### 4.5 Relationship to tensor-layout-v1.yaml
-
-`tensor-layout-v1.yaml` defines the **per-tensor** layout contract: which tensors
-need transposing, kernel shapes, byte size calculations, and semantic validation
-thresholds. It is architecture-agnostic.
-
-Model family YAMLs define the **per-family** architectural contract: which tensors
-exist, what their parameterized shapes are, which config values apply, and how
-tensor names map between GGUF and APR conventions.
-
-The two contracts are complementary:
-
-| Aspect | tensor-layout-v1.yaml | model-families/*.yaml |
-|--------|----------------------|----------------------|
-| Scope | Per-tensor rules | Per-family architecture |
-| Parametrized by | None (universal rules) | Model config (hidden_dim, etc.) |
-| Validates | Shapes, layout, data quality | Tensor names, sizes, constraints |
-| Consumed by | `layout_contract.rs`, `validated_tensors.rs` | `model_family.rs`, `build.rs` |
-| Changed when | New tensor type discovered | New model family added |
-
-The `shape_template` in a family YAML is evaluated using the family's config values,
-then validated against `tensor-layout-v1.yaml` rules. For example, `qwen2.yaml`
-declares `lm_head: "[vocab_size, hidden_dim]"` and `tensor-layout-v1.yaml` declares
-that `lm_head` must have shape `[vocab, hidden]` and is critical. Both contracts
-must be satisfied.
+Full reference: `contracts/model-families/qwen2.yaml` (150 lines including chat template and certification).
 
 ---
 
-## 5. Compiler Enforcement Architecture
+## 3. Six-Layer Enforcement Stack
 
-### 5.1 Layer 1: Clippy disallowed-methods
+| Layer | Mechanism | Catches | When | Runtime Cost |
+|-------|-----------|---------|------|-------------|
+| 1 | Clippy `disallowed-methods` | Column-major kernel imports | `cargo clippy` | 0 |
+| 2 | `ModelFamily` trait + registry | Unknown model families, wrong tensor names | Model load | Negligible |
+| 3 | `PhantomData<RowMajor>` on `ValidatedWeight` | Layout type mismatch | `cargo build` | 0 |
+| 4 | `Validated*` newtypes on `AprTransformer` | Unvalidated tensor data | `cargo build` | Construction |
+| 5 | `build.rs` YAML-to-Rust codegen | YAML/Rust contract drift | `cargo build` | 0 |
+| 6 | `const_assert!` algebraic proofs (297) | Mathematically invalid configs | `cargo build` | 0 |
 
-**Enforcement**: Compile time
-**Catches**: Column-major kernel imports
+**Cumulative guarantee**: If `cargo build` succeeds and a model loads, then: (1) no column-major kernel is callable, (2) the model's family is contracted, (3) all tensors are validated row-major, (4) YAML and Rust agree exactly, (5) all 297 algebraic invariants hold.
 
-The `.clippy.toml` file already bans `unwrap()` via `disallowed-methods`. This
-layer extends the ban to column-major matmul kernel functions that should never
-be called in APR/realizar code.
+### 3.1 Layer 6: Compile-Time Algebraic Proofs
 
-```toml
-# .clippy.toml additions (PMAT-243)
-[[disallowed-methods]]
-path = "trueno::backends::q4k::matmul_q4k_f32_colmajor"
-reason = "LAYOUT-001: APR is exclusively row-major. Use fused_q4k_parallel_matvec."
-
-[[disallowed-methods]]
-path = "trueno::backends::q6k::matmul_q6k_f32_colmajor"
-reason = "LAYOUT-001: APR is exclusively row-major. Use fused_q6k_parallel_matvec."
-
-[[disallowed-methods]]
-path = "trueno::backends::q4k::matmul_q4k_f32_colmajor_dispatch"
-reason = "LAYOUT-001: APR is exclusively row-major. Use fused_q4k_parallel_matvec."
-
-[[disallowed-methods]]
-path = "trueno::backends::q6k::matmul_q6k_f32_colmajor_dispatch"
-reason = "LAYOUT-001: APR is exclusively row-major. Use fused_q6k_parallel_matvec."
-```
-
-**Why Layer 1 matters**: This is the fastest feedback loop. `cargo clippy` runs in
-seconds and catches the most common layout error (importing a column-major kernel)
-before any code executes.
-
-### 5.2 Layer 2: ModelFamily trait + ModelFamilyConfig
-
-**Enforcement**: Load time
-**Catches**: Unknown/uncontracted model families
+`build.rs` reads every YAML contract and emits `const` assertions for every provable invariant. These are evaluated during Rust's constant evaluation phase -- not at runtime, not in tests.
 
 ```rust
-// src/format/model_family.rs (PMAT-241)
-
-/// Configuration for a specific model size within a family.
-///
-/// Generated from YAML by build.rs (PMAT-250) or loaded at runtime.
-#[derive(Debug, Clone)]
-pub struct ModelSizeConfig {
-    pub parameters: String,
-    pub hidden_dim: usize,
-    pub num_layers: usize,
-    pub num_heads: usize,
-    pub num_kv_heads: usize,
-    pub intermediate_dim: usize,
-    pub vocab_size: usize,
-    pub max_position_embeddings: usize,
-    pub head_dim: usize,
-    pub rope_theta: f64,
-    pub rms_norm_eps: f64,
-}
-
-/// Architectural constraints for a model family.
-#[derive(Debug, Clone)]
-pub struct ModelConstraints {
-    pub attention_type: AttentionType,
-    pub activation: Activation,
-    pub norm_type: NormType,
-    pub has_bias: bool,
-    pub tied_embeddings: bool,
-    pub positional_encoding: PositionalEncoding,
-    pub mlp_type: MlpType,
-}
-
-/// Complete configuration for a model family.
-#[derive(Debug, Clone)]
-pub struct ModelFamilyConfig {
-    pub family: String,
-    pub display_name: String,
-    pub vendor: String,
-    pub architectures: Vec<String>,
-    pub size_variants: std::collections::HashMap<String, ModelSizeConfig>,
-    pub constraints: ModelConstraints,
-    pub tensor_template: TensorTemplate,
-    pub shape_template: ShapeTemplate,
-}
-
-/// Trait implemented by each model family.
-///
-/// This trait is the compile-time bridge between YAML contracts and Rust code.
-/// Implementations are generated by build.rs from model family YAMLs (PMAT-250).
-pub trait ModelFamily: std::fmt::Debug + Send + Sync {
-    /// Canonical family name (e.g., "qwen2")
-    fn family_name(&self) -> &str;
-
-    /// Get configuration for a specific size variant
-    fn size_config(&self, size: &str) -> Option<&ModelSizeConfig>;
-
-    /// Detect size variant from model config (hidden_dim, num_layers, etc.)
-    fn detect_size(&self, hidden_dim: usize, num_layers: usize) -> Option<String>;
-
-    /// Get architectural constraints
-    fn constraints(&self) -> &ModelConstraints;
-
-    /// Map GGUF tensor name to APR canonical name
-    fn map_tensor_name(&self, gguf_name: &str) -> String;
-
-    /// Expected tensor count for a given size variant
-    fn expected_tensor_count(&self, size: &str) -> Option<usize>;
-
-    /// Validate that a set of tensor names matches the contract
-    fn validate_tensor_names(&self, names: &[&str], size: &str)
-        -> Result<(), ContractError>;
-}
+// Generated by build.rs -- compiler-verified mathematical proofs
+const _: () = assert!(QWEN2_0_5B_HIDDEN_DIM % QWEN2_0_5B_NUM_HEADS == 0,
+    "Vaswani (2017): hidden_dim must be divisible by num_heads");
+const _: () = assert!(QWEN2_0_5B_NUM_HEADS % QWEN2_0_5B_NUM_KV_HEADS == 0,
+    "Ainslie (2023) GQA: num_heads must be divisible by num_kv_heads");
+const _: () = assert!(QWEN2_0_5B_NUM_KV_HEADS <= QWEN2_0_5B_NUM_HEADS,
+    "GQA ordering: num_kv_heads must be <= num_heads");
+const _: () = assert!(QWEN2_0_5B_INTERMEDIATE_DIM > QWEN2_0_5B_HIDDEN_DIM,
+    "Shazeer (2020) FFN expansion: intermediate_dim must exceed hidden_dim");
+const _: () = assert!(QWEN2_0_5B_HEAD_DIM % 2 == 0,
+    "Su (2024) RoPE: head_dim must be even for cos/sin pairs");
+// ... 297 total across 8 families, 24 size variants
 ```
 
-**Why Layer 2 matters**: This catches the GH-213 class of errors. When a model is
-loaded, the `Architecture` detection now maps to a `ModelFamily` implementation. If
-no family matches, the error is actionable ("Unknown model family; known families:
-qwen2, llama, whisper, bert") rather than a cryptic tensor-not-found crash.
-
-### 5.3 Layer 3: PhantomData\<Layout\> markers on Validated\* types
-
-**Enforcement**: Compile time
-**Catches**: Layout mismatch in kernel calls
-
-```rust
-// src/format/validated_tensors.rs extension (PMAT-248)
-
-use std::marker::PhantomData;
-
-/// Marker type for row-major layout (APR convention).
-#[derive(Debug, Clone, Copy)]
-pub struct RowMajor;
-
-/// Validated weight matrix with layout encoded in the type.
-///
-/// The PhantomData<L> marker ensures that row-major and column-major
-/// weights cannot be accidentally mixed. Since APR is exclusively
-/// row-major, the ColumnMajor marker does not exist — making the
-/// invalid state literally unrepresentable.
-#[derive(Debug, Clone)]
-pub struct ValidatedWeight<L = RowMajor> {
-    data: Vec<f32>,
-    out_dim: usize,
-    in_dim: usize,
-    name: String,
-    stats: TensorStats,
-    _layout: PhantomData<L>,
-}
-
-impl ValidatedWeight<RowMajor> {
-    /// Construct a validated row-major weight matrix.
-    ///
-    /// This is the ONLY constructor. There is no way to create a
-    /// ValidatedWeight<ColumnMajor> because ColumnMajor does not exist.
-    pub fn new(
-        data: Vec<f32>,
-        out_dim: usize,
-        in_dim: usize,
-        name: &str,
-    ) -> Result<Self, ContractValidationError> {
-        // ... existing validation gates ...
-        Ok(Self {
-            data,
-            out_dim,
-            in_dim,
-            name: name.to_string(),
-            stats,
-            _layout: PhantomData,
-        })
-    }
-}
-```
-
-**Why Layer 3 matters**: The `PhantomData` marker has zero runtime cost but provides
-a compile-time guarantee. If a future developer were to add column-major support
-(e.g., for a different backend), they would need to create a `ColumnMajor` marker type
-and a separate constructor. Any attempt to pass a `ValidatedWeight<ColumnMajor>` to a
-function expecting `ValidatedWeight<RowMajor>` would be a compile error.
-
-### 5.4 Layer 4: AprTransformer migration to Validated\* fields
-
-**Enforcement**: Compile time
-**Catches**: Unvalidated tensor data in model structs
-
-The existing `AprTransformer` struct uses `Vec<f32>` for its fields. After migration:
-
-```rust
-// realizar/src/apr_transformer/mod.rs (PMAT-249)
-
-pub struct AprTransformer {
-    // BEFORE: pub embedding: Vec<f32>,
-    // AFTER:
-    pub embedding: ValidatedEmbedding,
-    pub lm_head: ValidatedWeight<RowMajor>,
-    pub final_norm: ValidatedVector,
-    pub layers: Vec<AprTransformerLayer>,
-}
-
-pub struct AprTransformerLayer {
-    pub q_proj: ValidatedWeight<RowMajor>,
-    pub k_proj: ValidatedWeight<RowMajor>,
-    pub v_proj: ValidatedWeight<RowMajor>,
-    pub o_proj: ValidatedWeight<RowMajor>,
-    pub gate_proj: ValidatedWeight<RowMajor>,
-    pub up_proj: ValidatedWeight<RowMajor>,
-    pub down_proj: ValidatedWeight<RowMajor>,
-    pub input_layernorm: ValidatedVector,
-    pub post_attention_layernorm: ValidatedVector,
-    // Bias vectors (optional, family-dependent)
-    pub q_proj_bias: Option<ValidatedVector>,
-    pub k_proj_bias: Option<ValidatedVector>,
-    pub v_proj_bias: Option<ValidatedVector>,
-}
-```
-
-**Why Layer 4 matters**: This is the Poka-Yoke completion. After migration, it is
-**impossible** to construct an `AprTransformer` with unvalidated data. Every field
-requires passing through a validation constructor. The PMAT-234 bug (94.5% zeros
-loading successfully) is physically unrepresentable.
-
-### 5.5 Layer 5: build.rs YAML-to-Rust code generation
-
-**Enforcement**: Build time
-**Catches**: YAML/Rust contract drift
-
-```rust
-// build.rs (PMAT-250)
-
-fn main() {
-    // Read model family YAMLs
-    let families_dir = Path::new("contracts/model-families");
-
-    if families_dir.exists() {
-        let mut generated = String::new();
-
-        for entry in std::fs::read_dir(families_dir).expect("read contracts dir") {
-            let entry = entry.expect("dir entry");
-            let path = entry.path();
-
-            if path.extension().map_or(false, |e| e == "yaml")
-                && !path.file_name().map_or(false, |n| n.to_str()
-                    .map_or(false, |s| s.starts_with('_')))
-            {
-                let yaml_content = std::fs::read_to_string(&path)
-                    .expect("read YAML");
-                generated.push_str(&generate_family_impl(&yaml_content, &path));
-            }
-        }
-
-        let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR");
-        let out_path = Path::new(&out_dir).join("model_families_generated.rs");
-        std::fs::write(&out_path, generated).expect("write generated code");
-    }
-
-    // Tell Cargo to re-run if any YAML changes
-    println!("cargo:rerun-if-changed=contracts/model-families");
-}
-```
-
-The generated code includes:
-
-1. `const` definitions for each size variant's config values
-2. `ModelFamily` trait implementations for each family
-3. A `KNOWN_FAMILIES` array for runtime family detection
-4. Static assertions that YAML values match Rust expectations
-
-**Why Layer 5 matters**: This closes the loop between the YAML source of truth and the
-Rust code. If a developer changes a YAML value (e.g., adjusts `hidden_dim` for a new
-size variant), the generated code updates automatically. If the YAML schema changes in
-a way that breaks the code generator, the build fails — not inference.
-
-### 5.6 Enforcement Matrix
-
-| Layer | Mechanism | Catches | When | Cost |
-|-------|-----------|---------|------|------|
-| 1 | Clippy `disallowed-methods` | Column-major kernel imports | `cargo clippy` | 0 runtime |
-| 2 | `ModelFamily` trait | Unknown model families, wrong tensor names | Model load | Negligible (name matching) |
-| 3 | `PhantomData<RowMajor>` | Layout type mismatch | `cargo build` | 0 runtime |
-| 4 | `Validated*` fields on `AprTransformer` | Unvalidated tensor data | `cargo build` | Validation at construction |
-| 5 | `build.rs` YAML codegen | YAML/Rust contract drift | `cargo build` | Build-time code generation |
-
-**Cumulative guarantee**: After all five layers are implemented, the following invariant
-holds:
-
-> If `cargo build` succeeds and a model loads without error, then:
-> 1. No column-major kernel is called anywhere in the codebase.
-> 2. The model's family is known and contracted.
-> 3. All tensor data is row-major (by type).
-> 4. All tensor data has passed density, NaN, Inf, and distribution checks.
-> 5. The Rust code matches the YAML contract exactly.
+Generated file: `$OUT_DIR/model_families_generated.rs` (included via `include!` in `src/format/model_family.rs`).
 
 ---
 
-## 6. apr oracle CLI Command
+## 4. Algebraic Proof Catalog
 
-### 6.1 Mode 1: Local File Analysis
+### 4.1 Provability Hierarchy
+
+| Level | Class | Invariant | Citation | Count |
+|-------|-------|-----------|----------|-------|
+| L1 | Divisibility | `h % n_h == 0` | Vaswani et al. (2017) | 24 |
+| L1 | Divisibility | `n_h % n_kv == 0` (when n_kv > 1) | Ainslie et al. (2023) | 19 |
+| L1 | Divisibility | `d_k % 2 == 0` (RoPE families) | Su et al. (2024) | 19 |
+| L2 | Bounds | `d_k >= h / n_h` | Vaswani et al. (2017) | 24 |
+| L2 | Bounds | `d_k <= 2 * (h / n_h)` | Gemma exception (1.33x) | 24 |
+| L3 | Ordering | `d_ff > h` | Shazeer (2020) | 24 |
+| L3 | Ordering | `n_kv <= n_h` | Ainslie et al. (2023) | 24 |
+| L3 | Ordering | `max_pos > 0` (RoPE families) | Su et al. (2024) | 19 |
+| L4 | Non-degeneracy | `h > 0, L > 0, n_h > 0, V > 0, n_kv > 0` | Definition | 120 |
+| L5 | Cross-constraint | SwiGLU => SiLU, GeGLU => GELU | Shazeer (2020) | per-family |
+| L5 | Cross-constraint | `rope_theta > 0, finite` (RoPE) | Su et al. (2024) | per-family |
+| L5 | Cross-constraint | `0 < norm_eps < 1, finite` | Zhang & Sennrich (2019) | per-family |
+
+**Total**: 297 compile-time proofs.
+
+### 4.2 Mathematical Foundations
+
+**Attention head divisibility** (Vaswani et al., 2017, NeurIPS): `Attention(Q,K,V) = softmax(QK^T / sqrt(d_k))V` requires partitioning hidden_dim into num_heads equal-sized heads. If `h % n_h != 0`, the Q/K/V weight matrices cannot be reshaped. `const_assert!(h % n_h == 0)`.
+
+**GQA group divisibility** (Ainslie et al., 2023, EMNLP): GQA partitions query heads into groups sharing one KV pair. `n_h % n_kv == 0` ensures even groups. Empirical: ratios range from 1 (MHA) to 8 (LLaMA 70B). LLaMA 3B uses ratio=3, **disproving the power-of-two hypothesis**.
+
+**Gated linear units** (Shazeer, 2020, arXiv:2002.05202): SwiGLU uses `FFN(x) = (W_up * x . SiLU(W_gate * x)) * W_down`, requiring three weight matrices per layer. The activation function constrains the MLP type: SwiGLU => SiLU, GeGLU => GELU.
+
+**RoPE** (Su et al., 2024, Neurocomputing): `freq_i = theta^(-2i/d)` for `i = 0..d/2`. Requires: `theta > 0` (degenerate rotations otherwise), `d_k % 2 == 0` (cos/sin pairs), `max_pos > 0`.
+
+**RMSNorm** (Zhang & Sennrich, 2019, NeurIPS): `RMSNorm(x) = x / sqrt(mean(x^2) + eps)`. Requires `eps > 0` to prevent division by zero. Upper bound `eps < 1.0` prevents activation collapse.
+
+**Chinchilla scaling** (Hoffmann et al., 2022, NeurIPS): `optimal_tokens ~ 20 * params`. Used by `apr oracle` to compute training data estimates.
+
+---
+
+## 5. Popperian Falsification Protocol
+
+> "The criterion of the scientific status of a theory is its falsifiability." -- Popper (1959)
+
+Every proof must make a prediction that could be disproven. If a falsification test finds a counterexample, the implementation is broken. Three rounds of adversarial self-falsification found **8 real bugs**.
+
+### 5.1 Falsification Test Summary
+
+116 tests in `tests/falsification_model_oracle_tests.rs`:
+
+| Phase | Tests | What |
+|-------|-------|------|
+| MFC-001..003 | 12 | Family detection (best-match scoring, bias disambiguation) |
+| ORC-001..004 | 8 | Oracle CLI modes (local file, HF API, contract description) |
+| CMP-001..003 | 3 | Compiler enforcement (PhantomData, Validated* newtypes, clippy bans) |
+| BGN-001..002 | 2 | Build-time codegen (YAML change tracking, invalid YAML rejection) |
+| ITER3..ITER7 | 44 | Deep structural (tensor counts, cross-family rejection, param estimates) |
+| ALG-001..009 | 47 | Algebraic invariants (all items from Section 4) |
+
+### 5.2 Adversarial Rounds and Bugs Found
+
+**Method**: Create deliberately broken YAML contracts (attack vectors), run `cargo build`, verify the compiler rejects them. Then examine what *wasn't* caught.
+
+#### Round 1: Tautological guards (2 bugs)
+
+| Bug | Pattern | Impact |
+|-----|---------|--------|
+| Tautological guards | `if x > 0 { assert!(x > 0) }` | All-zeros YAML passed all proofs silently |
+| Vacuous catch-all | `_ => true` in activation-MLP match | `swiglu + gelu` accepted as valid |
+
+**Lesson**: Guards on assertions must NOT check the same condition they assert. Match arms for validity checks must default to `false`, not `true`.
+
+#### Round 2: Missing coverage (3 bugs)
+
+| Bug | Attack Vector | Impact |
+|-----|---------------|--------|
+| No `num_kv_heads > 0` | `num_kv_heads: 0` | Zero KV heads passed all non-degeneracy checks |
+| No KV ordering | `num_kv_heads: 16, num_heads: 4` | Only caught by GQA divisibility (accidental) |
+| No `norm_eps > 0` | `rms_norm_eps: 0.0` | Division-by-zero in RMSNorm undetected |
+
+**Lesson**: Non-degeneracy must cover ALL architectural parameters. f64 invariants need build.rs runtime asserts (not const -- Rust const eval doesn't support f64 comparisons).
+
+#### Round 3: Adversarial depth (3 bugs, from 32 attack vectors)
+
+| Bug | Attack Vector | Impact |
+|-----|---------------|--------|
+| No head_dim upper bound | `head_dim: 1024, hidden_dim: 128` | Silent shape corruption (16x expansion) |
+| No `norm_eps < 1.0` | `norm_eps: 1e30` | All activations collapse to zero (dead model) |
+| No finiteness check | `rope_theta: inf` | Failed for wrong reason (syntax error, not assertion) |
+
+**Lesson**: Bounds need both lower AND upper limits. Finiteness must be explicit.
+
+#### Falsified Prediction
+
+**Hypothesis**: "GQA ratios are always power-of-two (1, 2, 4, 8, 16)."
+**Counterexample**: LLaMA 3B uses 24 heads / 8 KV heads = ratio 3.
+**Revised**: GQA ratios are clean bounded integers in [1, 32].
+
+### 5.3 Proof Count Progression
+
+| Round | Proofs | Tests | Bugs Found |
+|-------|--------|-------|------------|
+| Initial | 225 | 107 | 0 (before adversarial testing) |
+| After Round 1 | 225 | 107 | 2 (fixed: tautological guards, vacuous catch-all) |
+| After Round 2 | 273 | 113 | 3 (fixed: kv_heads non-degeneracy, ordering, norm_eps) |
+| After Round 3 | 297 | 116 | 3 (fixed: head_dim upper bound, norm_eps upper bound, finiteness) |
+
+---
+
+## 6. apr oracle CLI
+
+The oracle provides 3X the depth of HuggingFace model cards by combining contract data, statistical analysis, architecture explanations, kernel compatibility, and cross-validation.
+
+### 6.1 Three Modes
 
 ```bash
+# Mode 1: Local file analysis
 apr oracle model.gguf
 apr oracle model.safetensors
-apr oracle model.apr
+
+# Mode 2: HuggingFace API query
+apr oracle hf://Qwen/Qwen2.5-Coder-1.5B
+
+# Mode 3: Contract description
+apr oracle --family qwen2 --size 1.5b
 ```
 
-**Behavior**:
-
-1. Open file using `RosettaStone::inspect()` to get `InspectionReport`
-2. Detect model family by matching tensor names against known `tensor_template` patterns
-3. Detect size variant by matching `(hidden_dim, num_layers)` against `size_variants`
-4. Validate tensor names and shapes against family contract
-5. Output `ModelOracleReport`
-
-**Flags**:
-
-- `--compliance`: Run full contract compliance check (tensor names, shapes, counts)
-- `--tensors`: List all tensor shapes alongside contract expectations
-- `--json`: Output as JSON `ModelOracleReport`
-- `--verbose`: Show detailed matching logic
-
-```
-$ apr oracle qwen2.5-coder-1.5b-q4_k_m.gguf
-
-Model Oracle Report
-  File: qwen2.5-coder-1.5b-q4_k_m.gguf
-  Format: GGUF
-  Family: qwen2 (Qwen2 / Qwen2.5-Coder)
-  Size: 1.5B (hidden=1536, layers=28, heads=12, kv_heads=2)
-  Quantization: Q4_K_M
-  Tensors: 339 (expected: 339)
-  Contract: COMPLIANT
-  Certification: BLOCKED (MQS 415, see playbook qwen2.5-coder-1.5b)
-
-Constraints:
-  Attention: GQA (12 heads, 2 KV heads)
-  Activation: SiLU
-  Norm: RMSNorm (eps=1e-6)
-  Bias: yes (Q/K/V projections)
-  Tied embeddings: no
-  MLP: SwiGLU
-
-Chat Template: ChatML
-  BOS: (none)
-  EOS: <|im_end|>
-```
-
-### 6.2 Mode 2: HuggingFace API Query
+### 6.2 Enhancement Flags
 
 ```bash
-apr oracle hf://Qwen/Qwen2.5-Coder-1.5B-Instruct
-apr oracle hf://meta-llama/Llama-3.2-1B-Instruct
+--stats       # Statistical analysis (GQA ratio, KV cache, memory estimates, FFN expansion)
+--explain     # Architecture explanations with literature citations
+--kernels     # Kernel compatibility report (supported quantizations, estimated tok/s)
+--validate    # Cross-validate contract vs HuggingFace config.json ground truth
+--full        # Enable all analysis sections
+--json        # Machine-readable output
 ```
 
-**Behavior**:
+### 6.3 Statistical Analysis
 
-1. Query HuggingFace API for `config.json`: `GET https://huggingface.co/{org}/{repo}/raw/main/config.json`
-2. Extract `model_type` from config.json (e.g., `"qwen2"`, `"llama"`)
-3. Match `model_type` against `architectures` field in known family YAMLs
-4. Extract size config from `config.json` fields (`hidden_size`, `num_hidden_layers`, etc.)
-5. Match against `size_variants` to identify the exact variant
-6. Output `ModelOracleReport` with HuggingFace-specific fields
+Computed from the seven-parameter vector M with zero network I/O:
 
-**Flags**:
+| Metric | Formula |
+|--------|---------|
+| GQA ratio | `n_h / n_kv` (1.0 = MHA, <1 impossible) |
+| KV cache reduction | `1 - n_kv/n_h` (memory savings vs MHA) |
+| KV cache per token | `2 * L * n_kv * d_k * 2` bytes (k+v, f16) |
+| Model size (f16) | `P * 2` bytes |
+| Model size (Q4_K_M) | `P * 0.5` bytes (approximate) |
+| FFN expansion | `d_ff / h` (typically ~2.67 for SwiGLU, ~4 for standard) |
+| RoPE max wavelength | `2 * pi * theta` tokens |
+| Parameter count | `V*h + L*(attention + FFN + norms) + (1-tied)*V*h` |
+| Chinchilla tokens | `20 * P` (compute-optimal training data) |
 
-- `--json`: Output as JSON
-- `--offline`: Fail if network access is needed (Sovereign AI compliance)
+### 6.4 Cross-Validation
 
-```
-$ apr oracle hf://Qwen/Qwen2.5-Coder-1.5B-Instruct
-
-Model Oracle Report
-  Source: hf://Qwen/Qwen2.5-Coder-1.5B-Instruct
-  Family: qwen2 (Qwen2 / Qwen2.5-Coder)
-  Size: 1.5B (hidden=1536, layers=28, heads=12, kv_heads=2)
-  Formats: safetensors (2 shards), gguf (community)
-  Certification: BLOCKED (MQS 415)
-  Inference Verified: yes (qwen2 + llama verified)
-```
-
-### 6.3 Mode 3: Contract Description
-
-```bash
-apr oracle --family qwen2
-apr oracle --family llama
-apr oracle --family whisper
-```
-
-**Behavior**:
-
-1. Load the family YAML from `contracts/model-families/{family}.yaml`
-2. Display the complete contract: size variants, constraints, tensor templates
-3. Optionally filter to a specific size variant with `--size`
+When `--validate` is used with an HF source, the oracle compares our YAML contract against HuggingFace's `config.json`:
 
 ```
-$ apr oracle --family qwen2 --size 0.5b
-
-Qwen2 Family Contract
-  Vendor: Alibaba
-  Architectures: Qwen2ForCausalLM
-  HF Pattern: Qwen/Qwen2*
-
-  Size: 0.5B
-    hidden_dim: 896
-    num_layers: 24
-    num_heads: 14
-    num_kv_heads: 2
-    intermediate_dim: 4864
-    vocab_size: 151936
-    head_dim: 64
-    rope_theta: 1000000.0
-
-  Tensor Template (339 tensors for 24 layers):
-    model.embed_tokens.weight           [151936, 896]
-    lm_head.weight                      [151936, 896]
-    model.norm.weight                   [896]
-    model.layers.{n}.self_attn.q_proj.weight   [896, 896]
-    model.layers.{n}.self_attn.k_proj.weight   [128, 896]
-    ... (14 per layer)
-
-  Constraints:
-    Attention: GQA | Activation: SiLU | Norm: RMSNorm
-    Bias: yes | Tied: no | MLP: SwiGLU | Position: RoPE
+Cross-Validation: qwen2/1.5b vs hf://Qwen/Qwen2.5-Coder-1.5B-Instruct
+  hidden_size:          1536 == 1536  MATCH
+  num_hidden_layers:      28 ==   28  MATCH
+  num_attention_heads:    12 ==   12  MATCH
+  num_key_value_heads:     2 ==    2  MATCH
+  intermediate_size:    8960 == 8960  MATCH
+  vocab_size:         151936 vs 151936  MATCH
+  rope_theta:      1000000 == 1000000  MATCH
+  rms_norm_eps:     0.000001 == 0.000001  MATCH
 ```
 
-### 6.4 Output Format
-
-All modes support `--json` for machine-readable output. The JSON output matches
-the `ModelOracleReport` struct.
-
-Text output follows the existing `apr inspect` formatting conventions:
-- Section headers in all-caps
-- Key-value pairs with fixed-width key columns
-- Tensor lists truncated with `... (N more) ...` for large models
-
-### 6.5 ModelOracleReport Struct
-
-```rust
-// crates/apr-cli/src/commands/oracle.rs (PMAT-244)
-
-/// Complete oracle report for a model
-#[derive(Debug, Clone, Serialize)]
-pub struct ModelOracleReport {
-    /// Source path, HF URI, or family name
-    pub source: String,
-    /// Analysis mode (local, hf, family)
-    pub mode: OracleMode,
-    /// Detected or specified model family
-    pub family: Option<FamilyInfo>,
-    /// Detected size variant
-    pub size_variant: Option<SizeVariantInfo>,
-    /// Format information (for local files)
-    pub format: Option<FormatInfo>,
-    /// Contract compliance result (for local files with --compliance)
-    pub compliance: Option<ComplianceResult>,
-    /// Certification status from apr-model-qa-playbook
-    pub certification: Option<CertificationInfo>,
-    /// Tensor list (for --tensors flag)
-    pub tensors: Option<Vec<TensorComplianceEntry>>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct FamilyInfo {
-    pub name: String,
-    pub display_name: String,
-    pub vendor: String,
-    pub architectures: Vec<String>,
-    pub constraints: ConstraintsSummary,
-    pub chat_template_format: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct SizeVariantInfo {
-    pub name: String,
-    pub parameters: String,
-    pub hidden_dim: usize,
-    pub num_layers: usize,
-    pub num_heads: usize,
-    pub num_kv_heads: usize,
-    pub intermediate_dim: usize,
-    pub vocab_size: usize,
-    pub expected_tensor_count: usize,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct ComplianceResult {
-    pub is_compliant: bool,
-    pub tensor_count_match: bool,
-    pub missing_tensors: Vec<String>,
-    pub unexpected_tensors: Vec<String>,
-    pub shape_mismatches: Vec<ShapeMismatch>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct CertificationInfo {
-    pub status: String,           // "CERTIFIED", "BLOCKED", "PENDING"
-    pub mqs_score: Option<u32>,
-    pub grade: Option<String>,
-    pub certified_tier: Option<String>,
-    pub playbook_path: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct TensorComplianceEntry {
-    pub name: String,
-    pub expected_shape: Vec<usize>,
-    pub actual_shape: Option<Vec<usize>>,
-    pub compliant: bool,
-    pub note: Option<String>,
-}
-```
-
-### 6.6 Integration with apr-model-qa-playbook
-
-The oracle command reads certification data from two sources:
-
-1. **models.csv** (`../apr-model-qa-playbook/docs/certifications/models.csv`):
-   Contains MQS scores, grades, certification tiers, and gate pass/fail per model.
-
-2. **Playbook YAMLs** (`../apr-model-qa-playbook/playbooks/models/`): Contains
-   test matrices, oracle configurations, and gate definitions.
-
-The oracle maps a detected model to its certification entry using the
-`certification.csv_family_key` from the family YAML and the detected size variant.
-
-```
-model_id → family YAML → csv_family_key → models.csv lookup → CertificationInfo
-```
-
-Example: `qwen2.5-coder-1.5b-q4_k_m.gguf` → `qwen2.yaml` → `csv_family_key: "qwen-coder"`
-→ match `Qwen/Qwen2.5-Coder-1.5B-Instruct` → `status: BLOCKED, mqs_score: 415`.
-
-If `../apr-model-qa-playbook` is not present on disk, certification fields are omitted
-with a note: "Certification data not available (apr-model-qa-playbook not found)."
+This catches contract staleness: if a model family updates its config, cross-validation flags the drift.
 
 ---
 
-## 7. Popperian Falsification Protocol
-
-Per Popper (1959), each validation rule must make a prediction that could be proven
-false. If a falsification test finds a counterexample, the implementation is broken.
-
-### 7.1 Phase 1: Model Family Contracts
-
-**FALSIFY-MFC-001**: Family detection accuracy (best-match scoring)
-
-```
-Prediction: detect_family() uses best-match scoring to separate families by
-  tensor naming specificity:
-
-  (a) Tensor names WITH bias patterns (q_proj.bias, k_proj.bias, v_proj.bias)
-      → detected as a bias-bearing family (Qwen2 or Phi, score 13)
-      → NOT detected as a bias-free family (LLaMA, DeepSeek, Mistral, score 10)
-
-  (b) Tensor names WITHOUT bias patterns
-      → detected as a bias-free family (LLaMA, DeepSeek, Mistral, score 10)
-      → NOT detected as a bias-bearing family (Qwen2, Phi would score 10, not 13)
-
-  (c) model_type detection (from HF config.json) is always unambiguous:
-      detect_from_model_type("qwen2") → "qwen2", never "phi"
-
-Mechanism: detect_family() counts matching per-layer patterns per family.
-  The highest scorer wins. Ties are broken by alphabetical order (deterministic
-  but not semantically meaningful — use detect_from_model_type() when metadata
-  is available).
-
-Known limitation: Families with identical tensor naming AND identical
-  per-layer pattern counts are indistinguishable from tensor names alone:
-  - Bias group: Qwen2, Phi (both 12 per-layer)
-  - No-bias group: LLaMA, DeepSeek, Mistral (all 9 per-layer)
-  Within each group, model_type from config.json or GGUF metadata is required
-  for unambiguous family identification.
-
-Falsification tests:
-  1. Tensor names WITH biases → result is in {phi, qwen2} (bias families)
-  2. Tensor names WITHOUT biases → result is in {deepseek, llama, mistral}
-  3. Whisper/BERT names → NOT detected as any LLaMA-style family
-  4. detect_from_model_type("qwen2") → exactly "qwen2"
-  5. Random names → None
-
-If tests fail: Best-match scoring or model_type disambiguation is broken.
-```
-
-**FALSIFY-MFC-002**: Size variant detection accuracy
-
-```
-Prediction: Given hidden_dim=1536 and num_layers=28, detect_size() returns "1.5b".
-
-Falsification test:
-  fn falsify_mfc_002() {
-      let qwen2 = Qwen2Family::new();
-      assert_eq!(qwen2.detect_size(1536, 28), Some("1.5b".to_string()));
-      assert_eq!(qwen2.detect_size(896, 24), Some("0.5b".to_string()));
-      assert_eq!(qwen2.detect_size(999, 99), None); // Unknown config
-  }
-
-If test fails: Size variant detection does not match YAML contract.
-```
-
-**FALSIFY-MFC-003**: Tensor name validation rejects wrong names
-
-```
-Prediction: validate_tensor_names() rejects a tensor list that includes names
-  from a different family (e.g., LLaMA names in a Qwen2 contract check).
-
-Falsification test:
-  fn falsify_mfc_003() {
-      let qwen2 = Qwen2Family::new();
-      let llama_names = ["model.layers.0.mlp.gate_proj.weight"];
-      // This should pass (Qwen2 uses the same name)
-      assert!(qwen2.validate_tensor_names(&llama_names, "0.5b").is_ok());
-
-      // Whisper names should fail
-      let whisper_names = ["encoder.conv1.weight"];
-      assert!(qwen2.validate_tensor_names(&whisper_names, "0.5b").is_err());
-  }
-
-If test fails: Tensor name validation is not family-specific.
-```
-
-### 7.2 Phase 2: Oracle CLI
-
-**FALSIFY-ORC-001**: Local file family detection
-
-```
-Prediction: apr oracle correctly identifies a local GGUF file's family.
-
-Falsification test (integration):
-  $ apr oracle test-fixtures/qwen2-tiny.gguf --json | jq '.family.name'
-  Expected: "qwen2"
-
-If test fails: Oracle file analysis does not match family contracts.
-```
-
-**FALSIFY-ORC-002**: HuggingFace API family detection
-
-```
-Prediction: apr oracle hf://Qwen/Qwen2.5-Coder-0.5B-Instruct identifies qwen2 family.
-
-Falsification test (integration, requires network):
-  $ apr oracle hf://Qwen/Qwen2.5-Coder-0.5B-Instruct --json | jq '.family.name'
-  Expected: "qwen2"
-
-If test fails: HuggingFace config.json parsing does not match family contracts.
-```
-
-**FALSIFY-ORC-003**: Contract description completeness
-
-```
-Prediction: apr oracle --family qwen2 --size 0.5b outputs all config values
-  matching the YAML source.
-
-Falsification test:
-  $ apr oracle --family qwen2 --size 0.5b --json \
-    | jq '.size_variant.hidden_dim'
-  Expected: 896
-
-If test fails: Contract description does not reflect YAML content.
-```
-
-**FALSIFY-ORC-004**: Compliance detection catches missing tensors
-
-```
-Prediction: A model file missing the lm_head tensor fails --compliance.
-
-Falsification test:
-  1. Create a GGUF with all Qwen2 tensors EXCEPT lm_head
-  2. Run: apr oracle bad-model.gguf --compliance --json
-  3. Assert: .compliance.is_compliant == false
-  4. Assert: .compliance.missing_tensors contains "lm_head.weight"
-
-If test fails: Compliance check does not detect missing tensors.
-```
-
-### 7.3 Phase 3: Compiler Enforcement
-
-**FALSIFY-CMP-001**: PhantomData prevents layout mismatch
-
-```
-Prediction: Code that passes ValidatedWeight<RowMajor> to a function expecting
-  a different layout type does not compile.
-
-Falsification test (compile-fail test):
-  // This code should NOT compile
-  fn expects_col_major(_w: ValidatedWeight<ColumnMajor>) {}  // ColumnMajor doesn't exist
-  fn falsify_cmp_001() {
-      let w = ValidatedWeight::<RowMajor>::new(data, 10, 10, "test").unwrap();
-      expects_col_major(w);  // ERROR: type mismatch
-  }
-
-If this compiles: PhantomData enforcement is broken.
-```
-
-**FALSIFY-CMP-002**: AprTransformer rejects unvalidated data
-
-```
-Prediction: Constructing AprTransformer with raw Vec<f32> does not compile.
-
-Falsification test (compile-fail test):
-  fn falsify_cmp_002() {
-      let raw: Vec<f32> = vec![1.0; 1000];
-      let t = AprTransformer {
-          embedding: raw,  // ERROR: expected ValidatedEmbedding, found Vec<f32>
-          ..
-      };
-  }
-
-If this compiles: Type enforcement is broken.
-```
-
-**FALSIFY-CMP-003**: Clippy catches column-major import
-
-```
-Prediction: Code importing matmul_q4k_f32_colmajor fails cargo clippy.
-
-Falsification test:
-  // Add to a test file:
-  use trueno::backends::q4k::matmul_q4k_f32_colmajor;
-  // Run: cargo clippy -- -D warnings
-  // Expected: error: use of disallowed method
-
-If clippy passes: disallowed-methods configuration is broken.
-```
-
-### 7.4 Phase 4: Build-Time Codegen
-
-**FALSIFY-BGN-001**: Generated code matches YAML
-
-```
-Prediction: Modifying a YAML value (e.g., changing qwen2 0.5b hidden_dim from
-  896 to 897) causes the generated ModelFamily::size_config() to return 897.
-
-Falsification test:
-  1. Modify qwen2.yaml: 0.5b.hidden_dim = 897
-  2. Run cargo build
-  3. Assert Qwen2Family.size_config("0.5b").hidden_dim == 897
-  4. Restore YAML
-
-If test fails: build.rs code generation does not track YAML changes.
-```
-
-**FALSIFY-BGN-002**: Invalid YAML causes build failure
-
-```
-Prediction: A YAML file with missing required fields (e.g., no size_variants)
-  causes cargo build to fail with a descriptive error.
-
-Falsification test:
-  1. Create contracts/model-families/bad.yaml with only "family: bad"
-  2. Run cargo build
-  3. Expected: build error mentioning "missing field: size_variants"
-  4. Remove bad.yaml
-
-If build succeeds: build.rs schema validation is missing.
-```
-
-### 7.5 Iteration 4: Deep Structural Falsification
-
-**FALSIFY-ITER4-001**: Unique-naming families (BERT, Whisper) detected unambiguously
-
-```
-Prediction: BERT and Whisper use unique tensor naming conventions that differ
-  from all standard "model.layers.*" families:
-  - BERT: embedding = "bert.embeddings.word_embeddings.weight" (unique prefix)
-  - Whisper: embedding = "encoder.conv1.weight" (unique prefix)
-
-  detect_family() with BERT-specific tensors MUST return exactly "bert".
-  detect_family() with Whisper-specific tensors MUST return exactly "whisper".
-
-If test fails: Unique-naming families are incorrectly matched to another family.
-```
-
-**FALSIFY-ITER4-002**: Constraint consistency (activation ↔ MLP type)
-
-```
-Prediction: The activation function and MLP type must be consistent:
-  - SwiGLU → SiLU (SiLU-gated linear unit)
-  - GELU MLP → GELU (standard feedforward)
-  - Gated MLP → GELU (GeGLU = GELU-gated linear unit, used by Gemma)
-
-FIXED in iteration 4: gemma.yaml had activation: silu + mlp_type: gelu_mlp.
-  Research confirmed Gemma uses GeGLU (GELU-gated), not SwiGLU.
-  Fix: activation: gelu, mlp_type: gated_mlp.
-
-If test fails: YAML constraint values are architecturally inconsistent.
-```
-
-**FALSIFY-ITER4-003**: head_dim validity
-
-```
-Prediction: head_dim >= hidden_dim / num_heads for all families and sizes.
-  Standard: head_dim == hidden_dim / num_heads (most models).
-  Override: head_dim > hidden_dim / num_heads (e.g., Gemma 7B: 256 > 192).
-  head_dim < hidden_dim / num_heads would indicate a contract bug.
-
-Note: Gemma 7B (hidden=3072, heads=16, head_dim=256) intentionally uses
-  expanded attention dimensionality (16×256=4096 > 3072) for improved
-  attention quality — confirmed by Google's architecture documentation.
-
-If test fails: A YAML contract has a head_dim smaller than the standard,
-  which would cause information loss in attention projections.
-```
-
-**FALSIFY-ITER4-004**: No-bias families have null bias patterns
-
-```
-Prediction: Families declaring has_bias=false should have all bias-related
-  per_layer entries set to null (no tensor patterns for q_proj_bias, etc.).
-  Conversely, bias families (Qwen2, Phi) must have >= 3 non-null bias patterns.
-
-If test fails: YAML constraint/template mismatch — family declares no bias
-  but has bias tensor patterns (or vice versa).
-```
-
-**FALSIFY-ITER4-005**: Cross-family tensor validation
-
-```
-Prediction: validate_tensor_names() rejects tensor names from any other
-  family. Specifically: BERT tensors rejected by Whisper contract, Whisper
-  tensors rejected by Qwen2 contract, Qwen2 tensors rejected by BERT contract.
-
-If test fails: Tensor validation is not family-specific enough.
-```
+## 7. Key Files
+
+| File | Purpose |
+|------|---------|
+| `build.rs` | YAML parser + algebraic proof generator (297 const assertions) |
+| `contracts/model-families/*.yaml` | Source of truth for 8 model families |
+| `src/format/model_family.rs` | `ModelFamily` trait, registry, generated code via `include!` |
+| `src/format/validated_tensors.rs` | `ValidatedWeight<RowMajor>`, `ValidatedEmbedding` newtypes |
+| `crates/apr-cli/src/commands/oracle.rs` | Oracle CLI (3 modes + statistical/explanation/kernel engines) |
+| `tests/falsification_model_oracle_tests.rs` | 116 Popperian falsification tests |
+| `contracts/tensor-layout-v1.yaml` | Per-tensor layout contract (complements family contracts) |
 
 ---
 
-## 8. Implementation Roadmap
+## 8. Theoretical Foundations
 
-### 8.1 Phase 1: Foundation
-
-| Ticket | Scope | Deliverables |
-|--------|-------|-------------|
-| PMAT-240 | Create model family YAMLs | `contracts/model-families/qwen2.yaml`, `llama.yaml`, `whisper.yaml`, `bert.yaml` |
-| PMAT-241 | `ModelFamily` trait + `ModelFamilyConfig` | `src/format/model_family.rs` with trait, config structs, and `detect_family()` |
-| PMAT-242 | YAML contract loader | Runtime YAML parser in `src/format/model_family_loader.rs` |
-| PMAT-243 | Clippy column-major bans | `.clippy.toml` additions, CI verification |
-
-**Dependencies**: None. Can begin immediately.
-**Estimated effort**: 1-2 days per ticket.
-
-### 8.2 Phase 2: Oracle CLI
-
-| Ticket | Scope | Deliverables |
-|--------|-------|-------------|
-| PMAT-244 | `apr oracle` local file mode | `crates/apr-cli/src/commands/oracle.rs`, `Commands::Oracle` variant, file analysis logic |
-| PMAT-245 | `apr oracle` HuggingFace API mode | HF config.json fetcher, family/size matching from API data |
-| PMAT-246 | `apr oracle --family` contract mode | YAML rendering, `--size` filter, text + JSON output |
-| PMAT-247 | Playbook certification cross-reference | `models.csv` parser, `CertificationInfo` struct, playbook path resolution |
-
-**Dependencies**: PMAT-240 (YAMLs), PMAT-241 (trait), PMAT-242 (loader).
-**Estimated effort**: 1-2 days per ticket.
-
-### 8.3 Phase 3: Type Enforcement
-
-| Ticket | Scope | Deliverables |
-|--------|-------|-------------|
-| PMAT-248 | `PhantomData<Layout>` on `Validated*` types | `RowMajor` marker, `ValidatedWeight<L>` generic, backward-compatible default |
-| PMAT-249 | `AprTransformer` migration to `Validated*` fields | Update `AprTransformer` and `AprTransformerLayer` field types, update all constructors |
-
-**Dependencies**: PMAT-248 must complete before PMAT-249.
-**Estimated effort**: PMAT-248: 1 day. PMAT-249: 2-3 days (large refactor with many callsites).
-
-### 8.4 Phase 4: Codegen & Generics
-
-| Ticket | Scope | Deliverables |
-|--------|-------|-------------|
-| PMAT-250 | `build.rs` YAML-to-Rust code generation | `build.rs` codegen, `include!` in `model_family.rs`, `cargo:rerun-if-changed` |
-| PMAT-251 | Generic `AprTransformer<F: ModelFamily>` | Parameterize `AprTransformer` by family, update realizar loader |
-
-**Dependencies**: PMAT-240 (YAMLs), PMAT-241 (trait), PMAT-249 (Validated* fields).
-**Estimated effort**: PMAT-250: 2 days. PMAT-251: 3-4 days (significant refactor).
-
-### 8.5 Phase 5: Documentation & Expansion
-
-| Ticket | Scope | Deliverables |
-|--------|-------|-------------|
-| PMAT-252 | Specification document | This document (already delivered in this PR) |
-| PMAT-253 | Additional model family YAMLs | `mistral.yaml`, `phi.yaml`, `gemma.yaml`, `deepseek.yaml` |
-
-**Dependencies**: PMAT-252: None. PMAT-253: PMAT-240 (established YAML schema).
-**Estimated effort**: PMAT-253: 1 day per family.
+| Principle | Citation | Application |
+|-----------|----------|-------------|
+| Poka-Yoke | Shingo (1986) | `ValidatedWeight` newtypes make invalid state unconstructable |
+| Toyota Production System | Ohno (1988) | 6-layer enforcement = progressive quality gates (jidoka) |
+| Falsificationism | Popper (1959) | Every proof has a falsification test that could disprove it |
+| Type-Driven Development | Brady (2017) | `PhantomData<RowMajor>` encodes layout in the type system |
+| Parse, Don't Validate | Parsons (2019) | Raw `Vec<f32>` is consumed; `ValidatedWeight` is returned |
+| Typestate Programming | Strom & Yemini (1986) | `AprTransformer<F: ModelFamily>` -- family is a type, not a field |
+| Deny Capabilities | Clebsch et al. (2015) | Clippy `disallowed-methods` bans column-major kernels |
 
 ---
 
-## 9. Architectural Decisions
+## 9. Falsification Catalog
 
-### 9.1 YAML as Source of Truth
+Every prediction below can be disproven by a concrete counterexample. If a test passes and finds one, the implementation is broken. Test file: `tests/falsification_model_oracle_tests.rs`.
 
-**Decision**: Model family contracts are YAML files, not Rust code.
+### 9.1 FALSIFY-MFC: Model Family Contracts (12 tests)
 
-**Rationale**:
-- **Cross-project consumption**: apr-model-qa-playbook (Python) needs to read the same
-  contracts. YAML is language-agnostic.
-- **Non-programmer editing**: Model researchers can update size variants without knowing
-  Rust.
-- **Separation of concerns**: The *what* (contract data) is separate from the *how*
-  (enforcement code).
-- **Precedent**: `tensor-layout-v1.yaml` already uses this pattern successfully.
+**MFC-001**: Family detection accuracy via best-match scoring.
 
-**Alternative considered**: Rust `const` definitions. Rejected because they require
-recompilation for every change and cannot be consumed by non-Rust tools.
+| Prediction | Test |
+|------------|------|
+| Tensor names WITH bias patterns (q_proj.bias) detect a bias-bearing family (qwen2 or phi), never LLaMA/DeepSeek/Mistral | `falsify_mfc_001_bias_tensors_detected_as_bias_family` |
+| Tensor names WITHOUT bias patterns detect a no-bias family, never a bias family | `falsify_mfc_001_no_bias_tensors_detected_as_no_bias_family` |
+| `detect_from_model_type("qwen2")` returns exactly "qwen2", never "phi" | `falsify_mfc_001_model_type_detection_is_unambiguous` |
+| Whisper tensor names (encoder.conv1.weight) never detected as qwen2 | `falsify_mfc_001_whisper_tensor_names_not_detected_as_qwen2` |
+| Random garbage tensor names return None | `falsify_mfc_001_random_names_not_detected` |
 
-### 9.2 PhantomData\<Layout\> vs Separate Types
+**MFC-002**: Size variant detection is a function of (hidden_dim, num_layers).
 
-**Decision**: Use `PhantomData<RowMajor>` on `ValidatedWeight<L>` rather than creating
-separate `RowMajorWeight` and `ColumnMajorWeight` types.
+| Prediction | Test |
+|------------|------|
+| Qwen2: (896, 24) -> "0.5b", (1536, 28) -> "1.5b", (999, 99) -> None | `falsify_mfc_002_qwen2_size_detection` |
+| LLaMA: (4096, 32) -> "8b", (8192, 80) -> "70b" | `falsify_mfc_002_llama_size_detection` |
+| Whisper: size detection by d_model/encoder_layers | `falsify_mfc_002_whisper_size_detection` |
+| BERT: size detection by hidden_dim/num_layers | `falsify_mfc_002_bert_size_detection` |
 
-**Rationale**:
-- **Backward compatibility**: `ValidatedWeight` (without explicit type parameter) defaults
-  to `ValidatedWeight<RowMajor>` via `L = RowMajor`. Existing code compiles unchanged.
-- **Extensibility**: If column-major support is ever needed (e.g., for a GPU backend
-  that prefers column-major), a `ColumnMajor` marker can be added without renaming types.
-- **Zero cost**: `PhantomData` is a zero-sized type; the generic parameter adds no
-  runtime overhead.
+**MFC-003**: Tensor name validation rejects wrong-family names.
 
-**Alternative considered**: Completely separate types (`RowMajorWeight`, `ColumnMajorWeight`).
-Rejected because it would break all existing callsites and the naming is less clear about
-the relationship between the types.
+| Prediction | Test |
+|------------|------|
+| Whisper tensor names rejected by Qwen2 contract | `falsify_mfc_003_qwen2_rejects_whisper_names` |
+| Empty tensor list rejected | `falsify_mfc_003_qwen2_rejects_empty_tensor_list` |
+| Unknown size variant rejected | `falsify_mfc_003_qwen2_rejects_unknown_size` |
+| Correct Qwen2 tensor names with correct size accepted | `falsify_mfc_003_qwen2_accepts_correct_tensor_names` |
 
-### 9.3 Generic AprTransformer\<F\> vs Box\<dyn ModelFamily\>
+### 9.2 FALSIFY-ORC: Oracle CLI (8 tests)
 
-**Decision**: Use `AprTransformer<F: ModelFamily>` (monomorphization) rather than
-`AprTransformer { family: Box<dyn ModelFamily> }` (dynamic dispatch).
+**ORC-001**: Registry detects all contracted families.
 
-**Rationale**:
-- **Compile-time safety**: A function that expects `AprTransformer<Qwen2>` cannot
-  receive `AprTransformer<Llama>`. The model family is a type-level guarantee, not
-  a runtime field.
-- **Performance**: Monomorphization enables inlining of family-specific code paths
-  (e.g., bias handling for Qwen2 vs no-bias for LLaMA).
-- **Error messages**: Compile errors reference concrete types ("expected Qwen2, found
-  Llama") rather than trait object mismatches.
+| Prediction | Test |
+|------------|------|
+| Every family in KNOWN_FAMILIES has a config accessible via `detect_from_model_type` | `falsify_orc_001_registry_detects_all_families_from_model_type` |
+| Detected family returns non-empty config with valid constraints | `falsify_orc_001_registry_provides_config_for_detected_family` |
 
-**Alternative considered**: `Box<dyn ModelFamily>`. This would be simpler but loses
-compile-time family safety. A `dyn` approach is still used for the `detect_family()`
-path where the family is not known at compile time. `detect_family()` uses
-best-match scoring (counting matching per-layer tensor patterns) to disambiguate
-families with overlapping naming conventions (e.g., Qwen2's bias tensors
-score 13 vs LLaMA/DeepSeek/Mistral's 10). The return value is then downcast
-or matched to construct the appropriate generic type.
+**ORC-002**: HuggingFace model_type maps to correct family.
 
-### 9.4 New oracle Command vs Extending inspect
+| Prediction | Test |
+|------------|------|
+| "qwen2" -> qwen2, "llama" -> llama, "whisper" -> whisper, "bert" -> bert | `falsify_orc_002_hf_model_type_mapping` |
 
-**Decision**: Add a new `apr oracle` subcommand rather than extending `apr inspect`.
+**ORC-003**: Contract description matches YAML source.
 
-**Rationale**:
-- **Different purpose**: `inspect` shows what's *in* a file (tensors, metadata, flags).
-  `oracle` answers *what* a model is (family, compliance, certification). These are
-  different user questions.
-- **Different sources**: `inspect` works on local files only. `oracle` also works on
-  HuggingFace URIs and family names (no file required).
-- **Namespace cleanliness**: `inspect` already has `--vocab`, `--filters`, `--weights`.
-  Adding `--family`, `--compliance`, `--certification` would overload it.
-- **Precedent**: `apr qa` (quality assurance) was a new command, not an extension of
-  `apr validate`. The oracle/inspect split follows the same pattern.
+| Prediction | Test |
+|------------|------|
+| Qwen2 0.5b: hidden_dim=896, num_layers=24, head_dim=64 exactly | `falsify_orc_003_qwen2_contract_matches_yaml` |
+| All 6 Qwen2 sizes present (0.5b, 1.5b, 3b, 7b, 14b, 32b) | `falsify_orc_003_all_qwen2_sizes_present` |
+| Qwen2 constraints: GQA, SiLU, RMSNorm, has_bias=true, SwiGLU, RoPE | `falsify_orc_003_constraints_match_yaml` |
 
-**Alternative considered**: `apr inspect --oracle`. Rejected because the `hf://` and
-`--family` modes have no file to inspect — the command name would be misleading.
+**ORC-004**: Compliance catches structural violations.
+
+| Prediction | Test |
+|------------|------|
+| Model missing lm_head tensor fails compliance | `falsify_orc_004_missing_lm_head_detected` |
+| Model with unexpected extra tensors flagged | `falsify_orc_004_extra_unexpected_tensor_detected` |
+| Model missing per-layer tensors (k_proj, v_proj) fails compliance | `falsify_orc_004_missing_layer_tensors_detected` |
+
+### 9.3 FALSIFY-CMP: Compiler Enforcement (3 tests)
+
+| Prediction | Test |
+|------------|------|
+| `RowMajor` is the only layout marker; `ColumnMajor` type does not exist | `falsify_cmp_001_row_major_is_only_layout` |
+| `ValidatedWeight` default type parameter is `RowMajor` | `falsify_cmp_001_validated_weight_default_is_row_major` |
+| Module search confirms no `ColumnMajor` struct anywhere | `falsify_cmp_001_no_column_major_type_exists` |
+| `Validated*` newtypes reject raw `Vec<f32>` construction | `falsify_cmp_002_validated_types_reject_raw_data` |
+| `.clippy.toml` contains `disallowed-methods` for column-major kernels | `falsify_cmp_003_clippy_toml_bans_column_major` |
+
+### 9.4 FALSIFY-BGN: Build-Time Codegen (5 tests)
+
+| Prediction | Test |
+|------------|------|
+| Generated constants match YAML: QWEN2_0_5B_HIDDEN_DIM == 896, LLAMA_8B == 4096 | `falsify_bgn_001_generated_constants_match_yaml` |
+| KNOWN_FAMILIES matches the set of .yaml files in contracts/model-families/ | `falsify_bgn_001_known_families_matches_yaml_directory` |
+| Registry from codegen contains all families with correct configs | `falsify_bgn_001_registry_from_codegen_matches_yaml` |
+| Every family has required fields: display_name, vendor, architectures, sizes | `falsify_bgn_002_all_families_have_required_fields` |
+| build.rs exists and references contracts/model-families | `falsify_bgn_002_build_rs_exists_and_references_contracts` |
+
+### 9.5 FALSIFY-ITER3..7: Deep Structural (44 tests)
+
+**Iter3**: Scoring, uniqueness, and structural invariants.
+
+| Prediction | Test |
+|------------|------|
+| Bias families score higher than no-bias families on bias tensor sets | `falsify_iter3_scoring_bias_vs_no_bias_separation` |
+| All families have unique model_type (no collisions) | `falsify_iter3_all_families_have_unique_model_type` |
+| Size detection is injective: no two sizes share (hidden_dim, num_layers) | `falsify_iter3_size_detection_is_injective_per_family` |
+| Expected tensor count = 3 + num_per_layer * num_layers | `falsify_iter3_expected_tensor_count_all_families` |
+| Expected tensor count consistent with validate_tensor_names | `falsify_cross_expected_tensor_count_consistent_with_validation` |
+| Gemma detected distinctly from other families | `falsify_iter3_gemma_detected_distinctly` |
+| ValidatedWeight rejects Inf values | `falsify_iter3_validated_weight_rejects_inf` |
+| ValidatedWeight enforces shape (out_dim * in_dim == data.len()) | `falsify_iter3_validated_weight_shape_enforcement` |
+| contracts/model-families/ directory exists with .yaml files | `falsify_iter3_yaml_contracts_dir_exists` |
+| Registry lookup by name returns correct family for all 8 families | `falsify_iter3_registry_lookup_by_name_all_families` |
+
+**Iter4**: Cross-family, adversarial, and constraint consistency.
+
+| Prediction | Test |
+|------------|------|
+| BERT tensors (bert.embeddings.*) detected as exactly "bert" | `falsify_iter4_bert_detected_unambiguously_from_tensor_names` |
+| Whisper tensors (encoder.*) detected as exactly "whisper" | `falsify_iter4_whisper_detected_unambiguously_from_tensor_names` |
+| BERT per-layer patterns all start with "bert." | `falsify_iter4_bert_per_layer_patterns_all_bert_specific` |
+| Whisper per-layer patterns all start with "encoder." or "decoder." | `falsify_iter4_whisper_per_layer_patterns_all_encoder_specific` |
+| GQA families: num_kv_heads < num_heads for at least one size | `falsify_iter4_gqa_families_have_kv_heads_less_than_heads` |
+| has_bias=false families have no bias tensor patterns | `falsify_iter4_no_bias_families_have_no_bias_constraint` |
+| has_bias=true families have >= 3 bias tensor patterns | `falsify_iter4_bias_families_have_bias_patterns` |
+| BERT and Whisper have unique embedding tensor names | `falsify_iter4_embedding_uniqueness_bert_whisper` |
+| detect_from_model_type("nonexistent_model") returns None | `falsify_iter4_detect_from_model_type_unknown_returns_none` |
+| Per-layer tensor roles are unique within each family | `falsify_iter4_per_layer_roles_unique_per_family` |
+| Trailing whitespace in tensor names not detected as any family | `falsify_iter4_adversarial_trailing_whitespace_not_detected` |
+| Case-changed tensor names not detected (case-sensitive matching) | `falsify_iter4_adversarial_case_sensitivity` |
+| Activation/MLP consistency: SwiGLU->SiLU, GatedMlp->GELU, GeluMlp->GELU | `falsify_iter4_all_families_constraints_consistent` |
+| BERT validate_tensor_names accepts complete BERT tensor set | `falsify_iter4_bert_validate_tensor_names_complete` |
+| Whisper validate_tensor_names accepts complete Whisper tensor set | `falsify_iter4_whisper_validate_tensor_names_complete` |
+| Cross-family: BERT tensors rejected by Whisper, Whisper by Qwen2, etc. | `falsify_iter4_cross_family_validate_tensor_names_rejects` |
+| head_dim >= hidden_dim / num_heads for all families | `falsify_iter4_head_dim_consistency` |
+
+**Iter5**: Architectural constraints across all families.
+
+| Prediction | Test |
+|------------|------|
+| intermediate_dim > hidden_dim for all sizes with nonzero intermediate | `falsify_iter5_intermediate_dim_greater_than_hidden_dim` |
+| RoPE families have rope_theta > 0 for all sizes | `falsify_iter5_rope_families_have_nonzero_rope_theta` |
+| Non-RoPE families have rope_theta == 0 (unused) | `falsify_iter5_non_rope_families_have_zero_or_default_rope_theta` |
+| MHA families (attention_type=mha): num_kv_heads == num_heads | `falsify_iter5_mha_families_have_kv_heads_equal_heads` |
+| vocab_size > 0 for all families and sizes | `falsify_iter5_vocab_size_positive_for_all` |
+| norm_eps in [1e-12, 0.1] for all sizes | `falsify_iter5_norm_eps_in_valid_range` |
+| Registry config is self-consistent (family name matches) | `falsify_iter5_registry_returns_consistent_data` |
+| Partial tensor set (only 3 of 12 per-layer) rejected | `falsify_iter5_partial_tensor_set_rejected` |
+| All families have at least one supported quantization | `falsify_iter5_all_families_have_at_least_one_quantization` |
+| All standard (non-Whisper) families have lm_head tensor | `falsify_iter5_all_standard_families_have_lm_head` |
+| All standard families have final_norm tensor | `falsify_iter5_all_standard_families_have_final_norm` |
+| GQA families: num_heads % num_kv_heads == 0 | `falsify_iter5_gqa_kv_heads_divides_heads` |
+
+**Iter6**: Statistical computation correctness.
+
+| Prediction | Test |
+|------------|------|
+| GQA ratio in [1, 32] for all families | `falsify_iter6_gqa_ratio_range_for_all_families` |
+| FFN expansion ratio in [1.5, 6.0] | `falsify_iter6_ffn_expansion_ratio_consistent` |
+| KV cache per token > 0 for all GQA/MHA families | `falsify_iter6_kv_cache_per_token_computed_correctly` |
+| Computed param count within 3x of declared size | `falsify_iter6_param_count_order_of_magnitude` |
+| RoPE wavelength > 0 for all RoPE families | `falsify_iter6_rope_wavelength_positive_for_rope_models` |
+| Context window > 0 for all RoPE families | `falsify_iter6_context_window_positive_for_rope_models` |
+| GQA (n_kv < n_h) implies KV cache reduction > 0% | `falsify_iter6_gqa_implies_kv_cache_savings` |
+| Model size f16 > model size Q4 for all families | `falsify_iter6_model_size_f16_gt_q4` |
+
+**Iter7**: Oracle computation identities and cross-checks.
+
+| Prediction | Test |
+|------------|------|
+| All oracle computed values are finite (no NaN/Inf) | `falsify_iter7_all_computed_values_finite` |
+| GQA ratio + KV cache reduction == 1.0 (identity) | `falsify_iter7_gqa_ratio_plus_reduction_equals_one` |
+| F16 memory == exactly 4x Q4 memory | `falsify_iter7_f16_memory_exactly_4x_q4` |
+| KV cache per token formula: `2 * L * n_kv * d_k * 2` | `falsify_iter7_kv_cache_per_token_formula` |
+| FFN expansion == intermediate_dim / hidden_dim exactly | `falsify_iter7_ffn_ratio_exact` |
+| RoPE wavelength == 0 iff theta == 0 | `falsify_iter7_rope_wavelength_zero_iff_theta_zero` |
+| FFN FLOPs dominate attention FLOPs for all models | `falsify_iter7_flops_ffn_dominates_attention` |
+| Param count monotonically increases across size variants | `falsify_iter7_param_count_monotonic_across_sizes` |
+| Computed param count within 3x of declared | `falsify_iter7_param_count_within_3x_of_declared` |
+| Quantization sizes: f32 > f16 > Q8 > Q6 > Q5 > Q4 | `falsify_iter7_quant_sizes_strictly_ordered` |
+| Estimated GPU tok/s >= 18x CPU tok/s (bandwidth ratio) | `falsify_iter7_gpu_tps_18x_cpu_tps` |
+| Memory required >= model weight size | `falsify_iter7_memory_required_exceeds_model_size` |
+| GQA KV cache < MHA KV cache | `falsify_iter7_gqa_kv_cache_smaller_than_mha` |
+| Gated MLP (SwiGLU, GatedMlp) uses 3 weight matrices | `falsify_iter7_gated_mlp_uses_3_matrices` |
+| Chinchilla tokens == 20 * param_count | `falsify_iter7_chinchilla_tokens_20x_params` |
+| attention_type matches num_heads/num_kv_heads relationship | `falsify_iter7_attention_type_matches_head_config` |
+| Independent param count computation matches oracle | `falsify_iter7_independent_param_count_matches_oracle` |
+
+### 9.6 FALSIFY-ALG: Algebraic Invariants (47 tests)
+
+Each algebraic test corresponds to a compile-time proof in `build.rs` (Section 4). The test validates the same invariant at the runtime level, providing defense-in-depth.
+
+**ALG-001**: Vaswani divisibility -- `hidden_dim % num_heads == 0`.
+
+| Prediction | Test |
+|------------|------|
+| For all families/sizes: h % n_h == 0 | `falsify_alg_001_attention_head_divisibility_vaswani_2017` |
+
+**ALG-002**: GQA group divisibility -- `num_heads % num_kv_heads == 0`.
+
+| Prediction | Test |
+|------------|------|
+| For all families/sizes: n_h % n_kv == 0 | `falsify_alg_002_gqa_group_divisibility_ainslie_2023` |
+| Special cases: MHA (ratio=1), MQA (n_kv=1), GQA (1 < n_kv < n_h) | `falsify_alg_002_gqa_special_cases` |
+
+**ALG-003**: Head dimension bounds.
+
+| Prediction | Test |
+|------------|------|
+| d_k >= h / n_h (lower bound, information preservation) | `falsify_alg_003_head_dim_lower_bound` |
+| d_k <= 2 * (h / n_h) (upper bound, Gemma exception at 1.33x) | `falsify_alg_003_head_dim_upper_bound` |
+
+**ALG-004**: FFN expansion -- `intermediate_dim > hidden_dim`.
+
+| Prediction | Test |
+|------------|------|
+| d_ff > h for all families/sizes | `falsify_alg_004_ffn_expansion_shazeer_2020` |
+
+**ALG-005**: Non-degeneracy -- all architectural parameters positive.
+
+| Prediction | Test |
+|------------|------|
+| h > 0, L > 0, n_h > 0, V > 0 for all families/sizes | `falsify_alg_005_non_degeneracy` |
+| n_kv > 0 for all families/sizes (Round 2 bug fix) | `falsify_alg_005_num_kv_heads_nonzero` |
+
+**ALG-006**: Activation-MLP consistency.
+
+| Prediction | Test |
+|------------|------|
+| SwiGLU => SiLU, GeluMlp => GELU, GatedMlp => GELU | `falsify_alg_006_activation_mlp_consistency_shazeer_2020` |
+
+**ALG-007**: RoPE requirements.
+
+| Prediction | Test |
+|------------|------|
+| RoPE families: theta > 0, d_k even, max_pos > 0 | `falsify_alg_007_rope_requirements_su_2024` |
+| Non-RoPE families: no theta requirement | `falsify_alg_007_non_rope_no_theta_requirement` |
+
+**ALG-008**: KV head ordering and GQA ratio bounds.
+
+| Prediction | Test |
+|------------|------|
+| n_kv <= n_h for all families/sizes | `falsify_alg_008_kv_heads_ordering` |
+| GQA ratio in [1, 32] and clean integer | `falsify_alg_008_gqa_ratio_bounded` |
+
+**ALG-009**: Norm epsilon bounds and finiteness.
+
+| Prediction | Test |
+|------------|------|
+| norm_eps > 0 (prevents division by zero) | `falsify_alg_009_norm_eps_positive` |
+| norm_eps in [1e-12, 0.1] (reasonable range) | `falsify_alg_009_norm_eps_reasonable_range` |
+| norm_eps < 1.0 (prevents activation collapse) | `falsify_alg_009_norm_eps_upper_bound` |
+| norm_eps and rope_theta are finite (not NaN/Inf) | `falsify_alg_finiteness_invariants` |
+
+**META**: Proof infrastructure.
+
+| Prediction | Test |
+|------------|------|
+| Build-time constants HEAD_DIM and NUM_HEADS are exported and correct | `falsify_alg_build_time_constants_exported` |
+| Total compile-time proofs >= 200 (current: 297) | `falsify_alg_226_compile_time_proofs_exist` |
+| Proof count regression check (11 proofs/size minimum) | `falsify_alg_297_compile_time_proofs_count` |
 
 ---
 
 ## 10. References
 
-1. Shingo, S. (1986). *Zero Quality Control: Source Inspection and the Poka-Yoke
-   System*. Productivity Press. ISBN 0-915299-07-0.
+### Transformer Architecture
 
-2. Ohno, T. (1988). *Toyota Production System: Beyond Large-Scale Production*.
-   Productivity Press. ISBN 0-915299-14-3.
+1. Vaswani, A. et al. (2017). "Attention Is All You Need." NeurIPS 2017. arXiv:1706.03762.
+2. Ainslie, J. et al. (2023). "GQA: Training Generalized Multi-Query Transformer Models from Multi-Head Checkpoints." EMNLP 2023. arXiv:2305.13245.
+3. Shazeer, N. (2020). "GLU Variants Improve Transformer." arXiv:2002.05202.
+4. Su, J. et al. (2024). "RoFormer: Enhanced Transformer with Rotary Position Embedding." Neurocomputing 568. arXiv:2104.09864.
+5. Zhang, B. & Sennrich, R. (2019). "Root Mean Square Layer Normalization." NeurIPS 2019. arXiv:1910.07467.
+6. Hoffmann, J. et al. (2022). "Training Compute-Optimal Large Language Models." NeurIPS 2022. arXiv:2203.15556.
+7. Shazeer, N. (2019). "Fast Transformer Decoding: One Write-Head is All You Need." arXiv:1911.02150.
 
-3. Popper, K. (1959). *The Logic of Scientific Discovery*. Hutchinson & Co.
-   ISBN 0-415-27844-9.
+### Quality Engineering & Type Theory
 
-4. Brady, E. (2017). *Type-Driven Development with Idris*. Manning Publications.
-   ISBN 978-1-61729-302-5.
-
-5. Parsons, A. (2019). "Parse, Don't Validate." Blog post.
-   https://lexi-lambda.github.io/blog/2019/11/05/parse-don-t-validate/
-
-6. Strom, R. E. & Yemini, S. (1986). "Typestate: A Programming Language Concept for
-   Enhancing Software Reliability." *IEEE Transactions on Software Engineering*,
-   SE-12(1), pp. 157-171.
-
-7. Clebsch, S., Drossopoulou, S., Blessing, S., & McNeil, A. (2015). "Deny
-   Capabilities for Safe, Fast Actors." In *Proceedings of the 5th International
-   Workshop on Programming Based on Actors, Agents, and Decentralized Control
-   (AGERE!)*. ACM. pp. 1-12.
-
----
-
-## Appendix A: PMAT Ticket Descriptions
-
-| Ticket | Phase | Title | Description |
-|--------|-------|-------|-------------|
-| PMAT-240 | 1 | Create model family YAMLs | Write `contracts/model-families/qwen2.yaml`, `llama.yaml`, `whisper.yaml`, and `bert.yaml` following the schema in Section 4.2. Each YAML declares size variants, constraints, tensor templates, shape templates, and chat template configurations. Validate with `python3 -c "import yaml; yaml.safe_load(open('file'))"`. |
-| PMAT-241 | 1 | `ModelFamily` trait + `ModelFamilyConfig` | Create `src/format/model_family.rs` with the `ModelFamily` trait, `ModelFamilyConfig`, `ModelSizeConfig`, `ModelConstraints`, and associated enums (`AttentionType`, `Activation`, `NormType`, `PositionalEncoding`, `MlpType`). Include `detect_family()` function that takes a list of tensor names and returns the matching `ModelFamily` implementation. |
-| PMAT-242 | 1 | YAML contract loader | Create `src/format/model_family_loader.rs` that parses model family YAML files at runtime. Uses minimal YAML parsing (no serde_yaml dependency — manual parsing or lightweight parser). Returns `ModelFamilyConfig` structs. This is the runtime fallback; `build.rs` codegen (PMAT-250) is the preferred path. |
-| PMAT-243 | 1 | Clippy column-major bans | Add `disallowed-methods` entries to `.clippy.toml` for all column-major matmul kernel functions. Verify in CI that `cargo clippy -- -D warnings` catches any column-major imports. Add a test that confirms the ban works by checking clippy output on a known-bad file. |
-| PMAT-244 | 2 | `apr oracle` local file mode | Add `Commands::Oracle` to `crates/apr-cli/src/lib.rs`. Implement local file analysis: open with `RosettaStone::inspect()`, match tensor names against family contracts, detect size variant, output `ModelOracleReport` in text and JSON. Include `--compliance` and `--tensors` flags. |
-| PMAT-245 | 2 | `apr oracle` HuggingFace API mode | Implement HF API query for `config.json`. Parse `model_type`, `hidden_size`, `num_hidden_layers`, `num_attention_heads`, `num_key_value_heads` from config. Match against family contracts. Handle gated models (401), rate limits (429), and offline mode. |
-| PMAT-246 | 2 | `apr oracle --family` contract mode | Implement contract description rendering. Load YAML, display all size variants or filter with `--size`. Show constraints, tensor templates with evaluated shapes, and chat template. Text and JSON output formats. |
-| PMAT-247 | 2 | Playbook certification cross-reference | Parse `../apr-model-qa-playbook/docs/certifications/models.csv`. Map detected model to certification entry using `csv_family_key` and size variant. Populate `CertificationInfo` in `ModelOracleReport`. Handle missing playbook repo gracefully. |
-| PMAT-248 | 3 | `PhantomData<Layout>` on `Validated*` types | Add `RowMajor` marker type. Make `ValidatedWeight` generic: `ValidatedWeight<L = RowMajor>`. Existing code uses the default and compiles unchanged. Add `PhantomData<L>` field. Update `ValidatedEmbedding` similarly. |
-| PMAT-249 | 3 | `AprTransformer` migration to `Validated*` fields | Change `AprTransformer` and `AprTransformerLayer` fields from `Vec<f32>` to `ValidatedEmbedding`, `ValidatedWeight<RowMajor>`, and `ValidatedVector`. Update all construction sites in aprender and realizar. This is a large refactor — track callsite count before and after. |
-| PMAT-250 | 4 | `build.rs` YAML-to-Rust code generation | Write `build.rs` that reads `contracts/model-families/*.yaml`, generates `ModelFamily` trait implementations, and writes to `$OUT_DIR/model_families_generated.rs`. Include `cargo:rerun-if-changed` directives. Validate YAML schema during build. |
-| PMAT-251 | 4 | Generic `AprTransformer<F: ModelFamily>` | Parameterize `AprTransformer<F>` by model family. Update realizar's model loading to construct `AprTransformer<Qwen2>` or `AprTransformer<Llama>` based on detected family. Maintain backward compatibility via type alias `AprTransformerDyn = AprTransformer<DynFamily>`. |
-| PMAT-252 | 5 | Specification document | This document. |
-| PMAT-253 | 5 | Additional model family YAMLs | Create `contracts/model-families/mistral.yaml`, `phi.yaml`, `gemma.yaml`, `deepseek.yaml`. Follow the schema established in PMAT-240. Source config values from HuggingFace model cards and config.json files. |
+8. Shingo, S. (1986). *Zero Quality Control: Source Inspection and the Poka-Yoke System*. Productivity Press.
+9. Ohno, T. (1988). *Toyota Production System: Beyond Large-Scale Production*. Productivity Press.
+10. Popper, K. (1959). *The Logic of Scientific Discovery*. Hutchinson & Co.
+11. Brady, E. (2017). *Type-Driven Development with Idris*. Manning Publications.
+12. Parsons, A. (2019). "Parse, Don't Validate." https://lexi-lambda.github.io/blog/2019/11/05/parse-don-t-validate/
+13. Strom, R. E. & Yemini, S. (1986). "Typestate: A Programming Language Concept for Enhancing Software Reliability." IEEE TSE SE-12(1).
+14. Clebsch, S. et al. (2015). "Deny Capabilities for Safe, Fast Actors." AGERE! 2015. ACM.

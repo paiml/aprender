@@ -3033,3 +3033,250 @@ roadmap:
   - converter
   - f16
   notes: null
+- id: PMAT-218
+  github_issue: null
+  item_type: task
+  title: 'PMAT-240: Create model family YAMLs (qwen2, llama, whisper, bert)'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-02-06T11:05:49Z
+  updated: 2026-02-06T11:06:31.775758025+00:00
+  spec: null
+  acceptance_criteria:
+  - Write contracts/model-families/qwen2.yaml, llama.yaml, whisper.yaml, bert.yaml following the schema in Section 4.2 of the model oracle spec. Each YAML declares size variants, constraints, tensor templates, shape templates, and chat template configurations.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - model-oracle
+  - phase-1
+  notes: null
+- id: PMAT-219
+  github_issue: null
+  item_type: task
+  title: 'PMAT-241: ModelFamily trait + ModelFamilyConfig'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-02-06T11:05:53Z
+  updated: 2026-02-06T11:20:09.463661752+00:00
+  spec: null
+  acceptance_criteria:
+  - Create src/format/model_family.rs with ModelFamily trait, ModelFamilyConfig, ModelSizeConfig, ModelConstraints, and associated enums (AttentionType, Activation, NormType, PositionalEncoding, MlpType). Include detect_family() function that takes tensor names and returns matching ModelFamily impl.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - model-oracle
+  - phase-1
+  notes: null
+- id: PMAT-220
+  github_issue: null
+  item_type: task
+  title: 'PMAT-242: YAML contract loader'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-02-06T11:05:55Z
+  updated: 2026-02-06T11:20:19.826643964+00:00
+  spec: null
+  acceptance_criteria:
+  - Create src/format/model_family_loader.rs that parses model family YAML files at runtime. Uses minimal YAML parsing (no serde_yaml dependency). Returns ModelFamilyConfig structs. Runtime fallback for build.rs codegen.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - model-oracle
+  - phase-1
+  notes: null
+- id: PMAT-221
+  github_issue: null
+  item_type: task
+  title: 'PMAT-243: Clippy column-major bans'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-02-06T11:05:58Z
+  updated: 2026-02-06T11:10:27.433354440+00:00
+  spec: null
+  acceptance_criteria:
+  - Add disallowed-methods entries to .clippy.toml for all column-major matmul kernel functions. Verify cargo clippy -- -D warnings catches column-major imports.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - model-oracle
+  - phase-1
+  notes: null
+- id: PMAT-222
+  github_issue: null
+  item_type: task
+  title: 'PMAT-244: apr oracle local file mode'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-02-06T11:06:05Z
+  updated: 2026-02-06T11:06:05Z
+  spec: null
+  acceptance_criteria:
+  - Add Commands::Oracle to crates/apr-cli/src/lib.rs. Implement local file analysis via RosettaStone::inspect(), match tensor names against family contracts, detect size variant, output ModelOracleReport in text and JSON. Include --compliance and --tensors flags.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - model-oracle
+  - phase-2
+  notes: null
+- id: PMAT-223
+  github_issue: null
+  item_type: task
+  title: 'PMAT-245: apr oracle HuggingFace API mode'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-02-06T11:06:07Z
+  updated: 2026-02-06T11:06:07Z
+  spec: null
+  acceptance_criteria:
+  - Implement HF API query for config.json. Parse model_type, hidden_size, num_hidden_layers from config. Match against family contracts. Handle gated models (401), rate limits (429), offline mode.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - model-oracle
+  - phase-2
+  notes: null
+- id: PMAT-224
+  github_issue: null
+  item_type: task
+  title: 'PMAT-246: apr oracle --family contract mode'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-02-06T11:06:09Z
+  updated: 2026-02-06T11:06:09Z
+  spec: null
+  acceptance_criteria:
+  - Implement contract description rendering. Load YAML, display all size variants or filter with --size. Show constraints, tensor templates with evaluated shapes, chat template. Text and JSON output.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - model-oracle
+  - phase-2
+  notes: null
+- id: PMAT-225
+  github_issue: null
+  item_type: task
+  title: 'PMAT-247: Playbook certification cross-reference'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-02-06T11:06:12Z
+  updated: 2026-02-06T11:06:12Z
+  spec: null
+  acceptance_criteria:
+  - Parse ../apr-model-qa-playbook/docs/certifications/models.csv. Map detected model to certification entry using csv_family_key and size variant. Populate CertificationInfo in ModelOracleReport. Handle missing playbook repo.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - model-oracle
+  - phase-2
+  notes: null
+- id: PMAT-226
+  github_issue: null
+  item_type: task
+  title: 'PMAT-248: PhantomData<Layout> on Validated* types'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-02-06T11:06:18Z
+  updated: 2026-02-06T11:06:18Z
+  spec: null
+  acceptance_criteria:
+  - 'Add RowMajor marker type. Make ValidatedWeight generic: ValidatedWeight<L = RowMajor>. Existing code uses default and compiles unchanged. Add PhantomData<L> field. Update ValidatedEmbedding similarly.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - model-oracle
+  - phase-3
+  notes: null
+- id: PMAT-227
+  github_issue: null
+  item_type: task
+  title: 'PMAT-249: AprTransformer migration to Validated* fields'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-02-06T11:06:20Z
+  updated: 2026-02-06T11:06:20Z
+  spec: null
+  acceptance_criteria:
+  - Change AprTransformer and AprTransformerLayer fields from Vec<f32> to ValidatedEmbedding, ValidatedWeight<RowMajor>, ValidatedVector. Update all construction sites in aprender and realizar.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - model-oracle
+  - phase-3
+  notes: null
+- id: PMAT-228
+  github_issue: null
+  item_type: task
+  title: 'PMAT-250: build.rs YAML-to-Rust code generation'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-02-06T11:06:22Z
+  updated: 2026-02-06T11:06:22Z
+  spec: null
+  acceptance_criteria:
+  - Write build.rs that reads contracts/model-families/*.yaml, generates ModelFamily trait implementations, writes to OUT_DIR/model_families_generated.rs. Include cargo:rerun-if-changed directives.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - model-oracle
+  - phase-4
+  notes: null
+- id: PMAT-229
+  github_issue: null
+  item_type: task
+  title: 'PMAT-251: Generic AprTransformer<F: ModelFamily>'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-02-06T11:06:25Z
+  updated: 2026-02-06T11:06:25Z
+  spec: null
+  acceptance_criteria:
+  - Parameterize AprTransformer<F> by model family. Update realizar model loading to construct AprTransformer<Qwen2> or AprTransformer<Llama> based on detected family. Maintain backward compat via type alias.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - model-oracle
+  - phase-4
+  notes: null
+- id: PMAT-230
+  github_issue: null
+  item_type: task
+  title: 'PMAT-253: Additional model family YAMLs'
+  status: planned
+  priority: low
+  assigned_to: null
+  created: 2026-02-06T11:06:26Z
+  updated: 2026-02-06T11:06:26Z
+  spec: null
+  acceptance_criteria:
+  - Create contracts/model-families/mistral.yaml, phi.yaml, gemma.yaml, deepseek.yaml. Follow schema established in PMAT-240. Source config values from HuggingFace model cards and config.json files.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - model-oracle
+  - phase-5
+  notes: null

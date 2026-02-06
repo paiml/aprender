@@ -465,8 +465,16 @@ fn generate_rust(families: &[FamilyData]) -> String {
                 s.intermediate_dim
             ));
             out.push_str(&format!("pub const {prefix}_VOCAB_SIZE: usize = {};\n", s.vocab_size));
+            out.push_str(&format!("pub const {prefix}_HEAD_DIM: usize = {};\n", s.head_dim));
+            out.push_str(&format!(
+                "pub const {prefix}_MAX_POSITION_EMBEDDINGS: usize = {};\n",
+                s.max_position_embeddings
+            ));
         }
         out.push('\n');
+
+        // Compile-time algebraic proofs (§3.14, §5.6 of spec)
+        out.push_str(&generate_algebraic_proofs(f));
     }
 
     // Generate build_default_registry function
@@ -617,4 +625,193 @@ fn format_f64(v: f64) -> String {
     } else {
         format!("{v}")
     }
+}
+
+// ============================================================================
+// Compile-Time Algebraic Proofs (Spec §3.14, §5.6)
+//
+// These generate `const _: () = assert!(...)` statements that are evaluated
+// by the Rust compiler at build time. If any invariant is violated, the build
+// fails — the binary cannot exist in a state that violates these theorems.
+// ============================================================================
+
+fn generate_algebraic_proofs(f: &FamilyData) -> String {
+    let mut out = String::new();
+    let upper = f.family.to_uppercase();
+
+    out.push_str(&format!(
+        "// ── Algebraic proofs for {} ──\n",
+        f.family
+    ));
+
+    for s in &f.sizes {
+        let size_upper = s.name.replace('.', "_").to_uppercase();
+        let prefix = format!("{upper}_{size_upper}");
+
+        // FALSIFY-ALG-005: Non-degeneracy constraints
+        // These are UNCONDITIONAL — a model with hidden_dim=0 is always invalid.
+        // Previous version had tautological guards (if x > 0 { assert!(x > 0) })
+        // that silently passed degenerate models. Found via self-falsification.
+        out.push_str(&format!(
+            "const _: () = assert!({prefix}_HIDDEN_DIM > 0, \
+             \"non-degeneracy: {}/{} hidden_dim must be positive\");\n",
+            f.family, s.name
+        ));
+        out.push_str(&format!(
+            "const _: () = assert!({prefix}_NUM_LAYERS > 0, \
+             \"non-degeneracy: {}/{} num_layers must be positive\");\n",
+            f.family, s.name
+        ));
+        out.push_str(&format!(
+            "const _: () = assert!({prefix}_NUM_HEADS > 0, \
+             \"non-degeneracy: {}/{} num_heads must be positive\");\n",
+            f.family, s.name
+        ));
+        out.push_str(&format!(
+            "const _: () = assert!({prefix}_VOCAB_SIZE > 0, \
+             \"non-degeneracy: {}/{} vocab_size must be positive\");\n",
+            f.family, s.name
+        ));
+        out.push_str(&format!(
+            "const _: () = assert!({prefix}_NUM_KV_HEADS > 0, \
+             \"non-degeneracy: {}/{} num_kv_heads must be positive\");\n",
+            f.family, s.name
+        ));
+
+        // FALSIFY-ALG-008: KV head ordering constraint
+        // num_kv_heads <= num_heads (GQA reduces heads, never adds)
+        out.push_str(&format!(
+            "const _: () = assert!({prefix}_NUM_KV_HEADS <= {prefix}_NUM_HEADS, \
+             \"GQA ordering: {}/{} num_kv_heads must be <= num_heads\");\n",
+            f.family, s.name
+        ));
+
+        // FALSIFY-ALG-001: Attention head divisibility (Vaswani, 2017)
+        // hidden_dim % num_heads == 0
+        // Unconditional — non-degeneracy asserts above guarantee nonzero divisor
+        out.push_str(&format!(
+            "const _: () = assert!({prefix}_HIDDEN_DIM % {prefix}_NUM_HEADS == 0, \
+             \"Vaswani (2017): {}/{} hidden_dim must be divisible by num_heads\");\n",
+            f.family, s.name
+        ));
+
+        // FALSIFY-ALG-002: GQA group divisibility (Ainslie et al., 2023)
+        // num_heads % num_kv_heads == 0
+        // Skip when num_kv_heads == 1 (MQA) to avoid clippy::modulo_one
+        if s.num_kv_heads > 1 {
+            out.push_str(&format!(
+                "const _: () = assert!({prefix}_NUM_HEADS % {prefix}_NUM_KV_HEADS == 0, \
+                 \"Ainslie (2023) GQA: {}/{} num_heads must be divisible by num_kv_heads\");\n",
+                f.family, s.name
+            ));
+        }
+
+        // FALSIFY-ALG-003: Head dimension bounds
+        // head_dim >= hidden_dim / num_heads (lower bound)
+        // head_dim <= 2 * (hidden_dim / num_heads) (upper bound — Gemma uses 1.33x)
+        out.push_str(&format!(
+            "const _: () = assert!({prefix}_HEAD_DIM >= {prefix}_HIDDEN_DIM / {prefix}_NUM_HEADS, \
+             \"head_dim underflow: {}/{} head_dim must be >= hidden_dim/num_heads\");\n",
+            f.family, s.name
+        ));
+        out.push_str(&format!(
+            "const _: () = assert!({prefix}_HEAD_DIM <= 2 * ({prefix}_HIDDEN_DIM / {prefix}_NUM_HEADS), \
+             \"head_dim overflow: {}/{} head_dim must be <= 2x hidden_dim/num_heads\");\n",
+            f.family, s.name
+        ));
+
+        // FALSIFY-ALG-004: FFN expansion ratio (Shazeer, 2020)
+        // intermediate_dim > hidden_dim
+        out.push_str(&format!(
+            "const _: () = assert!({prefix}_INTERMEDIATE_DIM > {prefix}_HIDDEN_DIM, \
+             \"Shazeer (2020) FFN expansion: {}/{} intermediate_dim must exceed hidden_dim\");\n",
+            f.family, s.name
+        ));
+
+        // NOTE: max_position_embeddings > 0 is only enforced for RoPE models (ALG-007).
+        // Non-RoPE models like Whisper define context size via different fields
+        // (max_source_positions, max_target_positions), making max_position_embeddings=0 valid.
+    }
+
+    // FALSIFY-ALG-006: Activation-MLP consistency (Shazeer, 2020)
+    // SwiGLU requires SiLU, GeGLU/GatedMlp requires GELU, GeluMlp requires GELU.
+    // The match lists VALID combinations — anything else is INVALID.
+    let activation_mlp_valid = match (f.constraints.mlp.as_str(), f.constraints.activation.as_str())
+    {
+        ("swiglu", "silu") => true,
+        ("gelu_mlp", "gelu") => true,
+        ("gated_mlp", "gelu") => true,
+        // Unknown MLP types pass (future-proof for new architectures)
+        (mlp, _) if mlp != "swiglu" && mlp != "gelu_mlp" && mlp != "gated_mlp" => true,
+        // Known MLP type with WRONG activation — this is the bug we catch
+        _ => false,
+    };
+    assert!(
+        activation_mlp_valid,
+        "PMAT-250: {} has inconsistent activation/MLP: activation={}, mlp={} \
+         (Shazeer 2020: swiglu→silu, gelu_mlp→gelu, gated_mlp→gelu)",
+        f.family, f.constraints.activation, f.constraints.mlp
+    );
+
+    // FALSIFY-ALG-007: RoPE requirements (Su et al., 2024)
+    if f.constraints.position == "rope" {
+        for s in &f.sizes {
+            let size_upper = s.name.replace('.', "_").to_uppercase();
+            let prefix = format!("{upper}_{size_upper}");
+
+            // head_dim must be even for cos/sin pairs — UNCONDITIONAL
+            out.push_str(&format!(
+                "const _: () = assert!({prefix}_HEAD_DIM % 2 == 0, \
+                 \"Su (2024) RoPE: {}/{} head_dim must be even for cos/sin pairs\");\n",
+                f.family, s.name
+            ));
+
+            // max_position_embeddings must be positive — UNCONDITIONAL
+            out.push_str(&format!(
+                "const _: () = assert!({prefix}_MAX_POSITION_EMBEDDINGS > 0, \
+                 \"Su (2024) RoPE: {}/{} max_position_embeddings must be positive\");\n",
+                f.family, s.name
+            ));
+
+            // rope_theta > 0 is checked at parse time (f64, not const-friendly)
+            // We validate it in build.rs directly:
+            assert!(
+                s.rope_theta > 0.0,
+                "PMAT-250: {}/{} has rope_theta={} but positional_encoding=rope \
+                 (Su et al., 2024 requires theta > 0)",
+                f.family, s.name, s.rope_theta
+            );
+            assert!(
+                s.rope_theta.is_finite(),
+                "PMAT-250: {}/{} has non-finite rope_theta={}",
+                f.family, s.name, s.rope_theta
+            );
+        }
+    }
+
+    // FALSIFY-ALG-009: Norm epsilon positivity (Zhang & Sennrich, 2019)
+    // RMSNorm computes x / sqrt(mean(x²) + eps) — eps=0 causes division by zero
+    // on zero inputs. LayerNorm has the same requirement.
+    for s in &f.sizes {
+        assert!(
+            s.norm_eps > 0.0,
+            "PMAT-250: {}/{} has norm_eps={} — must be positive \
+             (Zhang & Sennrich 2019: RMSNorm requires eps > 0 to prevent division by zero)",
+            f.family, s.name, s.norm_eps
+        );
+        assert!(
+            s.norm_eps < 1.0,
+            "PMAT-250: {}/{} has norm_eps={} — must be < 1.0 \
+             (values near 1.0 collapse all activations to zero in RMSNorm)",
+            f.family, s.name, s.norm_eps
+        );
+        assert!(
+            s.norm_eps.is_finite(),
+            "PMAT-250: {}/{} has non-finite norm_eps={}",
+            f.family, s.name, s.norm_eps
+        );
+    }
+
+    out.push('\n');
+    out
 }

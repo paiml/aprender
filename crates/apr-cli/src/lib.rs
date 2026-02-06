@@ -1112,6 +1112,26 @@ pub enum Commands {
         /// List all tensor shapes
         #[arg(long)]
         tensors: bool,
+
+        /// Show statistical analysis (GQA, memory, FFN, FLOPS)
+        #[arg(long)]
+        stats: bool,
+
+        /// Show architecture explanations with literature references
+        #[arg(long)]
+        explain: bool,
+
+        /// Show kernel compatibility report (quantization, TPS estimates)
+        #[arg(long)]
+        kernels: bool,
+
+        /// Cross-validate contract against HuggingFace config.json
+        #[arg(long)]
+        validate: bool,
+
+        /// Enable all analysis sections (stats + explain + kernels + validate)
+        #[arg(long)]
+        full: bool,
     },
 }
 
@@ -2010,6 +2030,11 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             size,
             compliance,
             tensors,
+            stats,
+            explain,
+            kernels,
+            validate,
+            full,
         } => oracle::run(
             source.as_ref(),
             family.as_ref(),
@@ -2019,6 +2044,13 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             cli.json,
             cli.verbose,
             cli.offline,
+            oracle::OracleFlags {
+                stats: *stats,
+                explain: *explain,
+                kernels: *kernels,
+                validate: *validate,
+                full: *full,
+            },
         ),
     }
 }
