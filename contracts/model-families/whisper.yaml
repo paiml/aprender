@@ -1,0 +1,184 @@
+family: whisper
+display_name: "OpenAI Whisper"
+vendor: OpenAI
+architectures:
+  - WhisperForConditionalGeneration
+hf_pattern: "openai/whisper-*"
+
+size_variants:
+  tiny:
+    parameters: "39M"
+    n_mels: 80
+    encoder_layers: 4
+    decoder_layers: 4
+    d_model: 384
+    encoder_attention_heads: 6
+    decoder_attention_heads: 6
+    encoder_ffn_dim: 1536
+    decoder_ffn_dim: 1536
+    vocab_size: 51865
+    max_source_positions: 1500
+    max_target_positions: 448
+  base:
+    parameters: "74M"
+    n_mels: 80
+    encoder_layers: 6
+    decoder_layers: 6
+    d_model: 512
+    encoder_attention_heads: 8
+    decoder_attention_heads: 8
+    encoder_ffn_dim: 2048
+    decoder_ffn_dim: 2048
+    vocab_size: 51865
+    max_source_positions: 1500
+    max_target_positions: 448
+  small:
+    parameters: "244M"
+    n_mels: 80
+    encoder_layers: 12
+    decoder_layers: 12
+    d_model: 768
+    encoder_attention_heads: 12
+    decoder_attention_heads: 12
+    encoder_ffn_dim: 3072
+    decoder_ffn_dim: 3072
+    vocab_size: 51865
+    max_source_positions: 1500
+    max_target_positions: 448
+  medium:
+    parameters: "769M"
+    n_mels: 80
+    encoder_layers: 24
+    decoder_layers: 24
+    d_model: 1024
+    encoder_attention_heads: 16
+    decoder_attention_heads: 16
+    encoder_ffn_dim: 4096
+    decoder_ffn_dim: 4096
+    vocab_size: 51865
+    max_source_positions: 1500
+    max_target_positions: 448
+  large:
+    parameters: "1550M"
+    n_mels: 80
+    encoder_layers: 32
+    decoder_layers: 32
+    d_model: 1280
+    encoder_attention_heads: 20
+    decoder_attention_heads: 20
+    encoder_ffn_dim: 5120
+    decoder_ffn_dim: 5120
+    vocab_size: 51865
+    max_source_positions: 1500
+    max_target_positions: 448
+
+constraints:
+  attention_type: mha
+  activation: gelu
+  norm_type: layernorm
+  has_bias: true
+  tied_embeddings: false
+  positional_encoding: absolute
+  mlp_type: gelu_mlp
+
+tensor_template:
+  encoder:
+    conv1_weight: "encoder.conv1.weight"
+    conv1_bias: "encoder.conv1.bias"
+    conv2_weight: "encoder.conv2.weight"
+    conv2_bias: "encoder.conv2.bias"
+    embed_positions: "encoder.embed_positions.weight"
+    layer_norm_weight: "encoder.layer_norm.weight"
+    layer_norm_bias: "encoder.layer_norm.bias"
+    per_layer:
+      self_attn_q_proj_weight: "encoder.layers.{n}.self_attn.q_proj.weight"
+      self_attn_q_proj_bias: "encoder.layers.{n}.self_attn.q_proj.bias"
+      self_attn_k_proj_weight: "encoder.layers.{n}.self_attn.k_proj.weight"
+      self_attn_k_proj_bias: "encoder.layers.{n}.self_attn.k_proj.bias"
+      self_attn_v_proj_weight: "encoder.layers.{n}.self_attn.v_proj.weight"
+      self_attn_v_proj_bias: "encoder.layers.{n}.self_attn.v_proj.bias"
+      self_attn_out_proj_weight: "encoder.layers.{n}.self_attn.out_proj.weight"
+      self_attn_out_proj_bias: "encoder.layers.{n}.self_attn.out_proj.bias"
+      self_attn_layer_norm_weight: "encoder.layers.{n}.self_attn_layer_norm.weight"
+      self_attn_layer_norm_bias: "encoder.layers.{n}.self_attn_layer_norm.bias"
+      fc1_weight: "encoder.layers.{n}.fc1.weight"
+      fc1_bias: "encoder.layers.{n}.fc1.bias"
+      fc2_weight: "encoder.layers.{n}.fc2.weight"
+      fc2_bias: "encoder.layers.{n}.fc2.bias"
+      final_layer_norm_weight: "encoder.layers.{n}.final_layer_norm.weight"
+      final_layer_norm_bias: "encoder.layers.{n}.final_layer_norm.bias"
+  decoder:
+    embed_tokens: "decoder.embed_tokens.weight"
+    embed_positions: "decoder.embed_positions.weight"
+    layer_norm_weight: "decoder.layer_norm.weight"
+    layer_norm_bias: "decoder.layer_norm.bias"
+    per_layer:
+      self_attn_q_proj_weight: "decoder.layers.{n}.self_attn.q_proj.weight"
+      self_attn_q_proj_bias: "decoder.layers.{n}.self_attn.q_proj.bias"
+      self_attn_k_proj_weight: "decoder.layers.{n}.self_attn.k_proj.weight"
+      self_attn_k_proj_bias: "decoder.layers.{n}.self_attn.k_proj.bias"
+      self_attn_v_proj_weight: "decoder.layers.{n}.self_attn.v_proj.weight"
+      self_attn_v_proj_bias: "decoder.layers.{n}.self_attn.v_proj.bias"
+      self_attn_out_proj_weight: "decoder.layers.{n}.self_attn.out_proj.weight"
+      self_attn_out_proj_bias: "decoder.layers.{n}.self_attn.out_proj.bias"
+      self_attn_layer_norm_weight: "decoder.layers.{n}.self_attn_layer_norm.weight"
+      self_attn_layer_norm_bias: "decoder.layers.{n}.self_attn_layer_norm.bias"
+      encoder_attn_q_proj_weight: "decoder.layers.{n}.encoder_attn.q_proj.weight"
+      encoder_attn_q_proj_bias: "decoder.layers.{n}.encoder_attn.q_proj.bias"
+      encoder_attn_k_proj_weight: "decoder.layers.{n}.encoder_attn.k_proj.weight"
+      encoder_attn_k_proj_bias: "decoder.layers.{n}.encoder_attn.k_proj.bias"
+      encoder_attn_v_proj_weight: "decoder.layers.{n}.encoder_attn.v_proj.weight"
+      encoder_attn_v_proj_bias: "decoder.layers.{n}.encoder_attn.v_proj.bias"
+      encoder_attn_out_proj_weight: "decoder.layers.{n}.encoder_attn.out_proj.weight"
+      encoder_attn_out_proj_bias: "decoder.layers.{n}.encoder_attn.out_proj.bias"
+      encoder_attn_layer_norm_weight: "decoder.layers.{n}.encoder_attn_layer_norm.weight"
+      encoder_attn_layer_norm_bias: "decoder.layers.{n}.encoder_attn_layer_norm.bias"
+      fc1_weight: "decoder.layers.{n}.fc1.weight"
+      fc1_bias: "decoder.layers.{n}.fc1.bias"
+      fc2_weight: "decoder.layers.{n}.fc2.weight"
+      fc2_bias: "decoder.layers.{n}.fc2.bias"
+      final_layer_norm_weight: "decoder.layers.{n}.final_layer_norm.weight"
+      final_layer_norm_bias: "decoder.layers.{n}.final_layer_norm.bias"
+  proj_out: "proj_out.weight"
+
+shape_template:
+  encoder:
+    conv1_weight: "[d_model, n_mels, 3]"
+    conv2_weight: "[d_model, d_model, 3]"
+    embed_positions: "[max_source_positions, d_model]"
+    self_attn_q_proj: "[d_model, d_model]"
+    self_attn_k_proj: "[d_model, d_model]"
+    self_attn_v_proj: "[d_model, d_model]"
+    self_attn_out_proj: "[d_model, d_model]"
+    fc1: "[encoder_ffn_dim, d_model]"
+    fc2: "[d_model, encoder_ffn_dim]"
+    layer_norm: "[d_model]"
+  decoder:
+    embed_tokens: "[vocab_size, d_model]"
+    embed_positions: "[max_target_positions, d_model]"
+    self_attn_q_proj: "[d_model, d_model]"
+    self_attn_k_proj: "[d_model, d_model]"
+    self_attn_v_proj: "[d_model, d_model]"
+    self_attn_out_proj: "[d_model, d_model]"
+    encoder_attn_q_proj: "[d_model, d_model]"
+    encoder_attn_k_proj: "[d_model, d_model]"
+    encoder_attn_v_proj: "[d_model, d_model]"
+    encoder_attn_out_proj: "[d_model, d_model]"
+    fc1: "[decoder_ffn_dim, d_model]"
+    fc2: "[d_model, decoder_ffn_dim]"
+    layer_norm: "[d_model]"
+  proj_out: "[vocab_size, d_model]"
+
+quantizations:
+  - f16
+  - f32
+
+certification:
+  playbook_path: "../apr-model-qa-playbook/playbooks/models/whisper-{size}.playbook.yaml"
+  csv_family_key: "whisper"
+  size_categories:
+    tiny: tiny
+    base: tiny
+    small: small
+    medium: medium
+    large: large

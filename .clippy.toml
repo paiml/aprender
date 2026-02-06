@@ -26,3 +26,22 @@ allowed-idents-below-min-chars = ["x", "y", "i", "j", "k", "n", "m", "a", "b", "
 
 # Minimum identifier length (allow single chars for math)
 min-ident-chars-threshold = 1
+
+# LAYOUT-001: Column-major kernel bans (PMAT-243)
+# APR is exclusively row-major. Column-major kernels produce garbage output.
+# See: contracts/tensor-layout-v1.yaml, GH-202, GH-208
+[[disallowed-methods]]
+path = "trueno::backends::q4k::colmajor::matmul_q4k_f32_colmajor"
+reason = "LAYOUT-001: APR is exclusively row-major. Use fused_q4k_parallel_matvec. See GH-202."
+
+[[disallowed-methods]]
+path = "trueno::backends::q4k::colmajor::matmul_q4k_f32_colmajor_dispatch"
+reason = "LAYOUT-001: APR is exclusively row-major. Use fused_q4k_parallel_matvec. See GH-202."
+
+[[disallowed-methods]]
+path = "trueno::backends::q6k::colmajor::matmul_q6k_f32_colmajor"
+reason = "LAYOUT-001: APR is exclusively row-major. Use fused_q6k_parallel_matvec. See GH-202."
+
+[[disallowed-methods]]
+path = "trueno::backends::q6k::colmajor::matmul_q6k_f32_colmajor_dispatch"
+reason = "LAYOUT-001: APR is exclusively row-major. Use fused_q6k_parallel_matvec. See GH-202."

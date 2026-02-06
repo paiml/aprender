@@ -1,0 +1,149 @@
+family: qwen2
+display_name: "Qwen2 / Qwen2.5-Coder"
+vendor: Alibaba
+architectures:
+  - Qwen2ForCausalLM
+hf_pattern: "Qwen/Qwen2*"
+
+size_variants:
+  0.5b:
+    parameters: "0.5B"
+    hidden_dim: 896
+    num_layers: 24
+    num_heads: 14
+    num_kv_heads: 2
+    intermediate_dim: 4864
+    vocab_size: 151936
+    max_position_embeddings: 32768
+    head_dim: 64
+    rope_theta: 1000000.0
+    rms_norm_eps: 0.000001
+  1.5b:
+    parameters: "1.5B"
+    hidden_dim: 1536
+    num_layers: 28
+    num_heads: 12
+    num_kv_heads: 2
+    intermediate_dim: 8960
+    vocab_size: 151936
+    max_position_embeddings: 32768
+    head_dim: 128
+    rope_theta: 1000000.0
+    rms_norm_eps: 0.000001
+  3b:
+    parameters: "3B"
+    hidden_dim: 2048
+    num_layers: 36
+    num_heads: 16
+    num_kv_heads: 2
+    intermediate_dim: 11008
+    vocab_size: 151936
+    max_position_embeddings: 32768
+    head_dim: 128
+    rope_theta: 1000000.0
+    rms_norm_eps: 0.000001
+  7b:
+    parameters: "7B"
+    hidden_dim: 3584
+    num_layers: 28
+    num_heads: 28
+    num_kv_heads: 4
+    intermediate_dim: 18944
+    vocab_size: 152064
+    max_position_embeddings: 131072
+    head_dim: 128
+    rope_theta: 1000000.0
+    rms_norm_eps: 0.000001
+  14b:
+    parameters: "14B"
+    hidden_dim: 5120
+    num_layers: 48
+    num_heads: 40
+    num_kv_heads: 8
+    intermediate_dim: 13824
+    vocab_size: 152064
+    max_position_embeddings: 131072
+    head_dim: 128
+    rope_theta: 1000000.0
+    rms_norm_eps: 0.000001
+  32b:
+    parameters: "32B"
+    hidden_dim: 5120
+    num_layers: 64
+    num_heads: 40
+    num_kv_heads: 8
+    intermediate_dim: 27648
+    vocab_size: 152064
+    max_position_embeddings: 131072
+    head_dim: 128
+    rope_theta: 1000000.0
+    rms_norm_eps: 0.000001
+
+constraints:
+  attention_type: gqa
+  activation: silu
+  norm_type: rmsnorm
+  has_bias: true
+  tied_embeddings: false
+  positional_encoding: rope
+  mlp_type: swiglu
+
+tensor_template:
+  embedding: "model.embed_tokens.weight"
+  lm_head: "lm_head.weight"
+  final_norm: "model.norm.weight"
+  per_layer:
+    q_proj: "model.layers.{n}.self_attn.q_proj.weight"
+    k_proj: "model.layers.{n}.self_attn.k_proj.weight"
+    v_proj: "model.layers.{n}.self_attn.v_proj.weight"
+    o_proj: "model.layers.{n}.self_attn.o_proj.weight"
+    gate_proj: "model.layers.{n}.mlp.gate_proj.weight"
+    up_proj: "model.layers.{n}.mlp.up_proj.weight"
+    down_proj: "model.layers.{n}.mlp.down_proj.weight"
+    input_layernorm: "model.layers.{n}.input_layernorm.weight"
+    post_attention_layernorm: "model.layers.{n}.post_attention_layernorm.weight"
+    q_proj_bias: "model.layers.{n}.self_attn.q_proj.bias"
+    k_proj_bias: "model.layers.{n}.self_attn.k_proj.bias"
+    v_proj_bias: "model.layers.{n}.self_attn.v_proj.bias"
+
+shape_template:
+  embedding: "[vocab_size, hidden_dim]"
+  lm_head: "[vocab_size, hidden_dim]"
+  q_proj: "[num_heads * head_dim, hidden_dim]"
+  k_proj: "[num_kv_heads * head_dim, hidden_dim]"
+  v_proj: "[num_kv_heads * head_dim, hidden_dim]"
+  o_proj: "[hidden_dim, num_heads * head_dim]"
+  gate_proj: "[intermediate_dim, hidden_dim]"
+  up_proj: "[intermediate_dim, hidden_dim]"
+  down_proj: "[hidden_dim, intermediate_dim]"
+  input_layernorm: "[hidden_dim]"
+  post_attention_layernorm: "[hidden_dim]"
+
+quantizations:
+  - q4_k_m
+  - q5_k_m
+  - q6_k
+  - q8_0
+  - f16
+  - f32
+
+chat_template:
+  format: chatml
+  template: "{% for message in messages %}{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>' + '\n'}}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}"
+  bos_token: ""
+  eos_token: "<|im_end|>"
+  special_tokens:
+    im_start: "<|im_start|>"
+    im_end: "<|im_end|>"
+    endoftext: "<|endoftext|>"
+
+certification:
+  playbook_path: "../apr-model-qa-playbook/playbooks/models/qwen2.5-coder-{size}.playbook.yaml"
+  csv_family_key: "qwen-coder"
+  size_categories:
+    0.5b: tiny
+    1.5b: small
+    3b: small
+    7b: medium
+    14b: large
+    32b: xlarge

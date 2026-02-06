@@ -158,6 +158,17 @@ pub mod layout_contract;
 // See: contracts/tensor-layout-v1.yaml §type_enforcement
 pub mod validated_tensors;
 
+// Model Family Contract Types (PMAT-241)
+// Compiler-enforced model family contracts: trait, config types, registry.
+// See: contracts/model-families/*.yaml and
+// docs/specifications/compiler-enforced-model-types-model-oracle.md
+pub mod model_family;
+
+// Model Family YAML Contract Loader (PMAT-242)
+// Runtime YAML parser for model family contracts (no external deps).
+// Fallback path; build.rs codegen (PMAT-250) is preferred.
+pub mod model_family_loader;
+
 // Digital signatures (spec §4.2, PMAT-198)
 #[cfg(feature = "format-signing")]
 pub mod signing;

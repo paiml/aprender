@@ -1,0 +1,93 @@
+# Model Family Contract YAML Schema
+# Version: 1.0.0
+# See: docs/specifications/compiler-enforced-model-types-model-oracle.md S4.2
+#
+# Each YAML file in this directory defines one model family contract.
+# Files starting with _ are schema/documentation, not contracts.
+#
+# Required fields: family, display_name, vendor, architectures, hf_pattern,
+#   size_variants, constraints, tensor_template, shape_template
+# Optional fields: quantizations, chat_template, certification
+#
+# -------------------------------------------------------------------------
+# Field Descriptions
+# -------------------------------------------------------------------------
+#
+# family: string
+#   Unique identifier for the model family (e.g., "qwen2", "llama", "whisper").
+#   Used as the canonical key in code and file references.
+#
+# display_name: string
+#   Human-readable name shown in UI/CLI output (e.g., "Qwen2 / Qwen2.5-Coder").
+#
+# vendor: string
+#   Organization that created the model (e.g., "Alibaba", "Meta", "OpenAI").
+#
+# architectures: list[string]
+#   HuggingFace architecture class names this family matches.
+#   Used for auto-detection from config.json "architectures" field.
+#
+# hf_pattern: string
+#   Glob pattern matching HuggingFace model repository IDs.
+#   Used for auto-detection from model repository names.
+#
+# size_variants: map[string, map]
+#   Each key is a size label (e.g., "0.5b", "7b", "base", "large").
+#   Each value is a map of architecture parameters for that size:
+#     - parameters: string          # Human-readable param count (e.g., "7B")
+#     - hidden_dim: int             # Hidden dimension / d_model
+#     - num_layers: int             # Number of transformer layers
+#     - num_heads: int              # Number of attention heads
+#     - num_kv_heads: int           # Number of KV heads (for GQA; omit for MHA)
+#     - intermediate_dim: int       # FFN intermediate dimension
+#     - vocab_size: int             # Vocabulary size
+#     - max_position_embeddings: int # Maximum sequence length
+#     - head_dim: int               # Per-head dimension
+#     - rope_theta: float           # RoPE base frequency (decoder models)
+#     - rms_norm_eps: float         # RMSNorm epsilon (decoder models)
+#   Audio models (e.g., Whisper) use different keys:
+#     - n_mels, encoder_layers, decoder_layers, d_model,
+#       encoder_attention_heads, decoder_attention_heads,
+#       encoder_ffn_dim, decoder_ffn_dim, max_source_positions,
+#       max_target_positions
+#
+# constraints: map
+#   Architectural invariants that hold across all sizes:
+#     - attention_type: string      # "mha" | "gqa" | "mqa"
+#     - activation: string          # "silu" | "gelu" | "relu"
+#     - norm_type: string           # "rmsnorm" | "layernorm"
+#     - has_bias: bool              # Whether linear layers have bias terms
+#     - tied_embeddings: bool       # Whether input/output embeddings are shared
+#     - positional_encoding: string # "rope" | "absolute" | "alibi"
+#     - mlp_type: string            # "swiglu" | "gelu_mlp" | "relu_mlp"
+#
+# tensor_template: map
+#   Maps logical tensor roles to actual tensor name patterns.
+#   Use {n} as placeholder for layer index.
+#   Structure varies by architecture type:
+#     - Decoder-only (LLaMA, Qwen2): flat with per_layer sub-map
+#     - Encoder-decoder (Whisper): encoder/decoder sub-maps each with per_layer
+#     - Encoder-only (BERT): embeddings + per_layer + task head sub-maps
+#
+# shape_template: map
+#   Maps logical tensor roles to parameterized shape expressions.
+#   Shape expressions reference size_variant keys (e.g., "[vocab_size, hidden_dim]").
+#   Structure mirrors tensor_template.
+#
+# quantizations: list[string] (optional)
+#   Supported quantization formats (e.g., "q4_k_m", "q8_0", "f16", "f32").
+#
+# chat_template: map (optional)
+#   Chat formatting template for conversational models.
+#   Omitted for non-conversational models (audio, encoder-only).
+#     - format: string              # Template format name
+#     - template: string            # Jinja2 template string
+#     - bos_token: string           # Beginning-of-sequence token
+#     - eos_token: string           # End-of-sequence token
+#     - special_tokens: map         # Named special tokens
+#
+# certification: map (optional)
+#   Links to QA playbooks and test infrastructure.
+#     - playbook_path: string       # Path to playbook template ({size} placeholder)
+#     - csv_family_key: string      # Key used in CSV test result tracking
+#     - size_categories: map        # Maps size variant to category label
