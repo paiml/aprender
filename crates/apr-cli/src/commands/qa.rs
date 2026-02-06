@@ -306,11 +306,34 @@ fn run_qa(path: &Path, config: &QaConfig) -> Result<QaReport> {
     }
     gates.push(throughput_result);
 
-    // Gate 3: Ollama Parity Test
+    // Gate 3: Ollama Parity Test (GGUF only — F32/F16 lacks fused kernels for meaningful comparison)
     let ollama_result = if config.skip_ollama {
         GateResult::skipped("ollama_parity", "Skipped by --skip-ollama")
     } else {
-        run_ollama_parity_gate(path, config)?
+        #[cfg(feature = "inference")]
+        {
+            use realizar::format::{detect_format, ModelFormat};
+            let magic = std::fs::read(path).ok().and_then(|b| {
+                if b.len() >= 8 {
+                    Some(b[..8].to_vec())
+                } else {
+                    None
+                }
+            });
+            let fmt = magic.and_then(|m| detect_format(&m).ok());
+            if fmt == Some(ModelFormat::Gguf) {
+                run_ollama_parity_gate(path, config)?
+            } else {
+                GateResult::skipped(
+                    "ollama_parity",
+                    "Non-GGUF format (F32/F16 lacks fused kernels for Ollama parity)",
+                )
+            }
+        }
+        #[cfg(not(feature = "inference"))]
+        {
+            run_ollama_parity_gate(path, config)?
+        }
     };
     if !config.json {
         print_gate_result(&ollama_result);
@@ -842,8 +865,12 @@ fn run_throughput_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
         };
         let _ = cuda_available; // suppress warning
 
-        // Use CPU threshold (10 tok/s minimum)
-        let threshold = 10.0_f64.max(config.min_tps / 10.0);
+        // Format-aware thresholds: quantized GGUF on GPU is ~100x faster than F32 CPU.
+        // Comparing unquantized F32 models against a quantized GPU target is meaningless.
+        let threshold = match format {
+            ModelFormat::Gguf => 10.0_f64.max(config.min_tps / 10.0),
+            ModelFormat::Apr | ModelFormat::SafeTensors => 1.0, // F32 CPU: 1 tok/s minimum
+        };
 
         if tps >= threshold {
             Ok(GateResult::passed(
@@ -898,13 +925,12 @@ fn run_ollama_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
     #[cfg(feature = "inference")]
     {
         use realizar::cuda::CudaExecutor;
-        use realizar::format::{detect_format, ModelFormat};
         use realizar::gguf::{
             GGUFModel, MappedGGUFModel, OwnedQuantizedModel, OwnedQuantizedModelCuda,
             QuantizedGenerateConfig,
         };
 
-        // First, measure Ollama baseline (BUG-QA-001: pass path to match model size)
+        // This gate only runs for GGUF (non-GGUF skipped at call site)
         let ollama_tps = measure_ollama_throughput(path, config)?;
 
         if ollama_tps <= 0.0 {
@@ -914,34 +940,22 @@ fn run_ollama_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
             ));
         }
 
-        // Now measure our throughput
-        let cuda_available = CudaExecutor::is_available() && CudaExecutor::num_devices() > 0;
-
+        // Measure our GGUF throughput
         let model_bytes = std::fs::read(path)
             .map_err(|e| CliError::ValidationFailed(format!("Failed to read model: {e}")))?;
-
-        let format = detect_format(&model_bytes[..8.min(model_bytes.len())])
-            .map_err(|e| CliError::ValidationFailed(format!("Failed to detect format: {e}")))?;
-
-        if format != ModelFormat::Gguf {
-            return Ok(GateResult::skipped(
-                "ollama_parity",
-                "Only GGUF format supported",
-            ));
-        }
-
         let gguf = GGUFModel::from_bytes(&model_bytes)
             .map_err(|e| CliError::ValidationFailed(format!("Failed to parse GGUF: {e}")))?;
 
         let prompt = "Write a function to check if a number is prime:";
         let prompt_tokens = gguf.encode(prompt).unwrap_or_else(|| vec![151643]);
-
         let gen_config = QuantizedGenerateConfig {
             max_tokens: config.max_tokens,
             temperature: 0.0,
             top_k: 1,
             ..Default::default()
         };
+
+        let cuda_available = CudaExecutor::is_available() && CudaExecutor::num_devices() > 0;
 
         let our_tps = if cuda_available {
             let mapped = MappedGGUFModel::from_path(path)
@@ -951,24 +965,20 @@ fn run_ollama_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
             let mut cuda_model = OwnedQuantizedModelCuda::new(model, 0)
                 .map_err(|e| CliError::ValidationFailed(format!("CUDA init failed: {e}")))?;
 
-            // Warmup
             for _ in 0..config.warmup {
                 let _ = cuda_model.generate_gpu_resident(&prompt_tokens, &gen_config);
             }
 
             let mut total_tokens = 0usize;
             let measure_start = Instant::now();
-
             for _ in 0..config.iterations {
                 let output = cuda_model
                     .generate_gpu_resident(&prompt_tokens, &gen_config)
                     .unwrap_or_default();
                 total_tokens += output.len().saturating_sub(prompt_tokens.len());
             }
-
             total_tokens as f64 / measure_start.elapsed().as_secs_f64()
         } else {
-            // CPU fallback path
             let mapped = MappedGGUFModel::from_path(path)
                 .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
             let model = OwnedQuantizedModel::from_mapped(&mapped)
@@ -980,14 +990,12 @@ fn run_ollama_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
 
             let mut total_tokens = 0usize;
             let measure_start = Instant::now();
-
             for _ in 0..config.iterations {
                 let output = model
                     .generate_with_cache(&prompt_tokens, &gen_config)
                     .unwrap_or_default();
                 total_tokens += output.len().saturating_sub(prompt_tokens.len());
             }
-
             total_tokens as f64 / measure_start.elapsed().as_secs_f64()
         };
 
@@ -1349,30 +1357,47 @@ fn check_ollama_available() -> bool {
 
 /// Detect Ollama model name from GGUF filename (BUG-QA-001 fix)
 /// Matches model size to avoid unfair comparison (e.g., 0.5B APR vs 1.5B Ollama)
-fn detect_ollama_model_from_path(path: &Path) -> &'static str {
+/// Detect the matching Ollama model tag for fair like-for-like comparison.
+///
+/// For quantized GGUF: uses the default Ollama tag (Q4_K_M quantized).
+/// For F32/F16 (SafeTensors, APR): uses the `-instruct-fp16` Ollama tag
+/// so we compare unquantized vs unquantized.
+///
+/// Detects model size from filename, or falls back to file size heuristic
+/// for hash-named pacha-cached files.
+fn detect_ollama_model_from_path(path: &Path) -> String {
     let filename = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
     let filename_lower = filename.to_lowercase();
 
-    // Detect model size from filename
-    if filename_lower.contains("0.5b") || filename_lower.contains("-0_5b") {
-        "qwen2.5-coder:0.5b"
+    // Detect model size from filename first
+    let size = if filename_lower.contains("0.5b") || filename_lower.contains("-0_5b") {
+        "0.5b"
     } else if filename_lower.contains("1.5b") || filename_lower.contains("-1_5b") {
-        "qwen2.5-coder:1.5b"
+        "1.5b"
     } else if filename_lower.contains("3b") || filename_lower.contains("-3b") {
-        "qwen2.5-coder:3b"
+        "3b"
     } else if filename_lower.contains("7b") || filename_lower.contains("-7b") {
-        "qwen2.5-coder:7b"
+        "7b"
     } else if filename_lower.contains("14b") || filename_lower.contains("-14b") {
-        "qwen2.5-coder:14b"
+        "14b"
     } else if filename_lower.contains("32b") || filename_lower.contains("-32b") {
-        "qwen2.5-coder:32b"
+        "32b"
     } else {
-        // Default to 1.5b if size cannot be detected
-        "qwen2.5-coder:1.5b"
-    }
+        // Fallback: estimate from file size (for hash-named pacha-cached files).
+        // GGUF Q4_K sizes: 0.5B≈400MB, 1.5B≈1GB, 3B≈2GB, 7B≈4.5GB
+        match std::fs::metadata(path).map(|m| m.len()).unwrap_or(0) {
+            0..=800_000_000 => "0.5b",
+            800_000_001..=2_000_000_000 => "1.5b",
+            2_000_000_001..=4_000_000_000 => "3b",
+            _ => "7b",
+        }
+    };
+
+    // Default Ollama tag uses Q4_K_M — fair comparison for quantized GGUF
+    format!("qwen2.5-coder:{size}")
 }
 
-/// Measure Ollama throughput for comparison
+/// Measure Ollama throughput for comparison (GGUF only)
 /// BUG-QA-002 FIX: Use Ollama's eval_duration instead of wall clock time
 /// (wall clock includes HTTP overhead, making Ollama look 10x slower)
 #[cfg(feature = "inference")]

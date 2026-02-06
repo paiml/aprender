@@ -147,7 +147,7 @@ impl TensorDiffStatus {
         }
     }
 
-    fn colored_string(&self) -> colored::ColoredString {
+    fn colored_string(self) -> colored::ColoredString {
         match self {
             TensorDiffStatus::Identical => "IDENTICAL".green().bold(),
             TensorDiffStatus::NearlyIdentical => "~IDENTICAL".green(),
@@ -307,14 +307,15 @@ fn run_tensor_value_diff(
         let t2 = tensors2.get(name).expect("tensor exists");
 
         // Load actual tensor data
-        let data1 = rosetta
-            .load_tensor_f32(path1, &t1.name)
-            .map_err(|e| CliError::ValidationFailed(format!("Failed to load tensor {}: {e}", t1.name)))?;
-        let data2 = rosetta
-            .load_tensor_f32(path2, &t2.name)
-            .map_err(|e| CliError::ValidationFailed(format!("Failed to load tensor {}: {e}", t2.name)))?;
+        let data1 = rosetta.load_tensor_f32(path1, &t1.name).map_err(|e| {
+            CliError::ValidationFailed(format!("Failed to load tensor {}: {e}", t1.name))
+        })?;
+        let data2 = rosetta.load_tensor_f32(path2, &t2.name).map_err(|e| {
+            CliError::ValidationFailed(format!("Failed to load tensor {}: {e}", t2.name))
+        })?;
 
-        let stats = compute_tensor_diff_stats(name, &t1.shape, &t2.shape, &data1, &data2, transpose_aware);
+        let stats =
+            compute_tensor_diff_stats(name, &t1.shape, &t2.shape, &data1, &data2, transpose_aware);
 
         match stats.status {
             TensorDiffStatus::Critical => critical_count += 1,
@@ -322,7 +323,7 @@ fn run_tensor_value_diff(
             TensorDiffStatus::MediumDiff => medium_count += 1,
             TensorDiffStatus::Transposed => transposed_count += 1,
             TensorDiffStatus::Identical | TensorDiffStatus::NearlyIdentical => identical_count += 1,
-            _ => {}
+            TensorDiffStatus::SmallDiff => {}
         }
 
         if !json_output {
@@ -332,7 +333,24 @@ fn run_tensor_value_diff(
         results.push(stats);
     }
 
-    if !json_output {
+    if json_output {
+        // JSON output
+        let json = serde_json::json!({
+            "model_a": path1.display().to_string(),
+            "model_b": path2.display().to_string(),
+            "tensors_compared": results.len(),
+            "identical_count": identical_count,
+            "transposed_count": transposed_count,
+            "critical_count": critical_count,
+            "large_count": large_count,
+            "medium_count": medium_count,
+            "results": results,
+        });
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json).unwrap_or_default()
+        );
+    } else {
         // Summary
         println!(
             "{}",
@@ -397,12 +415,11 @@ fn run_tensor_value_diff(
         if critical_count > 0 {
             println!(
                 "║ {} ║",
-                "DIAGNOSIS: Critical value differences detected!".red().bold()
+                "DIAGNOSIS: Critical value differences detected!"
+                    .red()
+                    .bold()
             );
-            println!(
-                "║ {:<75} ║",
-                "Possible causes:".yellow()
-            );
+            println!("║ {:<75} ║", "Possible causes:".yellow());
             println!(
                 "║ {:<75} ║",
                 "  - Different quantization/dequantization algorithms"
@@ -411,10 +428,7 @@ fn run_tensor_value_diff(
                 "║ {:<75} ║",
                 "  - Tensor layout mismatch (row-major vs column-major)"
             );
-            println!(
-                "║ {:<75} ║",
-                "  - Corrupted weights during conversion"
-            );
+            println!("║ {:<75} ║", "  - Corrupted weights during conversion");
         } else if large_count > 0 {
             println!(
                 "║ {} ║",
@@ -446,8 +460,7 @@ fn run_tensor_value_diff(
         } else if medium_count > 0 {
             println!(
                 "║ {} ║",
-                "DIAGNOSIS: Medium differences - likely acceptable quantization variance"
-                    .blue()
+                "DIAGNOSIS: Medium differences - likely acceptable quantization variance".blue()
             );
         } else if transposed_count > 0 && identical_count > 0 {
             println!(
@@ -467,20 +480,6 @@ fn run_tensor_value_diff(
             "╚══════════════════════════════════════════════════════════════════════════════╝"
                 .cyan()
         );
-    } else {
-        // JSON output
-        let json = serde_json::json!({
-            "model_a": path1.display().to_string(),
-            "model_b": path2.display().to_string(),
-            "tensors_compared": results.len(),
-            "identical_count": identical_count,
-            "transposed_count": transposed_count,
-            "critical_count": critical_count,
-            "large_count": large_count,
-            "medium_count": medium_count,
-            "results": results,
-        });
-        println!("{}", serde_json::to_string_pretty(&json).unwrap_or_default());
     }
 
     Ok(())
@@ -640,17 +639,10 @@ fn print_tensor_diff_row(stats: &TensorValueStats) {
         cos_str.red()
     };
 
-    println!(
-        "║ [{}] {:<40} ║",
-        status_str,
-        name_truncated
-    );
+    println!("║ [{}] {:<40} ║", status_str, name_truncated);
     println!(
         "║   max_diff={} mean_diff={:.6} rmse={:.6} cos_sim={} ║",
-        max_diff_colored,
-        stats.mean_diff,
-        stats.rmse,
-        cos_colored
+        max_diff_colored, stats.mean_diff, stats.rmse, cos_colored
     );
 
     // Check for shape mismatch and if it's a transpose
@@ -696,8 +688,7 @@ fn print_tensor_diff_row(stats: &TensorValueStats) {
 
     println!(
         "{}",
-        "╠──────────────────────────────────────────────────────────────────────────────╣"
-            .dimmed()
+        "╠──────────────────────────────────────────────────────────────────────────────╣".dimmed()
     );
 }
 
@@ -906,7 +897,16 @@ mod tests {
         file1.write_all(b"short").expect("write");
         file2.write_all(b"short").expect("write");
 
-        let result = run(file1.path(), file2.path(), false, false, None, 10, false, false);
+        let result = run(
+            file1.path(),
+            file2.path(),
+            false,
+            false,
+            None,
+            10,
+            false,
+            false,
+        );
         // Should fail because files are too small/invalid
         assert!(result.is_err());
     }
