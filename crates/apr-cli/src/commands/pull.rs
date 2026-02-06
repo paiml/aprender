@@ -12,18 +12,45 @@ use crate::error::{CliError, Result};
 use colored::Colorize;
 use pacha::fetcher::{FetchConfig, ModelFetcher};
 use pacha::format::ModelFormat;
+use std::collections::HashSet;
 use std::io::{self, Read, Write};
 use std::path::Path;
+
+/// Result of resolving a HuggingFace model reference.
+///
+/// Single-file models (small SafeTensors, GGUF) use the pacha fetcher.
+/// Sharded models (3B+ SafeTensors) are downloaded directly to `~/.apr/cache/hf/`.
+enum ResolvedModel {
+    /// Single file downloadable via pacha (existing behavior)
+    SingleFile(String),
+    /// Sharded SafeTensors model (multiple .safetensors files + index.json)
+    Sharded {
+        org: String,
+        repo: String,
+        shard_files: Vec<String>,
+    },
+}
 
 /// Run the pull command
 pub fn run(model_ref: &str, force: bool) -> Result<()> {
     println!("{}", "=== APR Pull ===".cyan().bold());
     println!();
 
-    // PMAT-108: Resolve HuggingFace URI to include filename if missing
-    let resolved_ref = resolve_hf_uri(model_ref)?;
-    let model_ref = resolved_ref.as_str();
+    // GH-213: Resolve HuggingFace URI — detect single vs sharded models
+    let resolved = resolve_hf_model(model_ref)?;
 
+    match resolved {
+        ResolvedModel::SingleFile(ref uri) => run_single_file(uri, force),
+        ResolvedModel::Sharded {
+            ref org,
+            ref repo,
+            ref shard_files,
+        } => run_sharded(org, repo, shard_files, force),
+    }
+}
+
+/// Pull a single-file model via pacha (existing behavior)
+fn run_single_file(model_ref: &str, force: bool) -> Result<()> {
     println!("Model: {}", model_ref.cyan());
 
     // Initialize pacha ModelFetcher
@@ -97,6 +124,108 @@ pub fn run(model_ref: &str, force: bool) -> Result<()> {
     println!("{}", "Usage:".cyan().bold());
     println!("  apr run {}", result.path.display());
     println!("  apr serve {}", result.path.display());
+
+    Ok(())
+}
+
+/// GH-213: Pull a sharded SafeTensors model (3B+ models with multiple shard files)
+fn run_sharded(org: &str, repo: &str, shard_files: &[String], force: bool) -> Result<()> {
+    println!(
+        "Model: {}/{} ({} shards)",
+        org.cyan(),
+        repo.cyan(),
+        shard_files.len().to_string().yellow()
+    );
+
+    let cache_dir = dirs::home_dir()
+        .ok_or_else(|| CliError::ValidationFailed("Cannot find home directory".to_string()))?
+        .join(".apr")
+        .join("cache")
+        .join("hf")
+        .join(org)
+        .join(repo);
+
+    std::fs::create_dir_all(&cache_dir)?;
+
+    let base_url = format!("https://huggingface.co/{org}/{repo}/resolve/main");
+
+    // Download index.json
+    let index_path = cache_dir.join("model.safetensors.index.json");
+    if force || !index_path.exists() {
+        println!();
+        println!("  {} model.safetensors.index.json", "Downloading".yellow());
+        download_file(
+            &format!("{base_url}/model.safetensors.index.json"),
+            &index_path,
+        )?;
+    } else {
+        println!("  {} model.safetensors.index.json (cached)", "✓".green());
+    }
+
+    // Download each shard
+    let total_shards = shard_files.len();
+    for (i, shard_file) in shard_files.iter().enumerate() {
+        let shard_path = cache_dir.join(shard_file);
+
+        if !force && shard_path.exists() {
+            println!(
+                "  {} [{}/{}] {} (cached)",
+                "✓".green(),
+                i + 1,
+                total_shards,
+                shard_file
+            );
+            continue;
+        }
+
+        let shard_url = format!("{base_url}/{shard_file}");
+        print!(
+            "  {} [{}/{}] {}...",
+            "↓".yellow(),
+            i + 1,
+            total_shards,
+            shard_file
+        );
+        io::stdout().flush().ok();
+
+        download_file_with_progress(&shard_url, &shard_path)?;
+        println!(" {}", "done".green());
+    }
+
+    // Download companion files (tokenizer.json, config.json, tokenizer_config.json)
+    let companions = [
+        ("tokenizer.json", true),
+        ("config.json", true),
+        ("tokenizer_config.json", false),
+    ];
+    for (filename, required) in &companions {
+        let companion_path = cache_dir.join(filename);
+        if !force && companion_path.exists() {
+            println!("  {} {} (cached)", "✓".green(), filename);
+            continue;
+        }
+
+        let url = format!("{base_url}/{filename}");
+        match download_file(&url, &companion_path) {
+            Ok(()) => println!("  {} {}", "✓".green(), filename),
+            Err(e) if *required => {
+                return Err(CliError::ValidationFailed(format!(
+                    "{filename} is required for inference but download failed: {e}"
+                )));
+            }
+            Err(_) => println!("  {} {} (not available, optional)", "⚠".yellow(), filename),
+        }
+    }
+
+    println!();
+    println!("{} Downloaded successfully", "✓".green());
+    println!("  Path: {}", index_path.display().to_string().green());
+    println!("  Shards: {}", total_shards.to_string().yellow());
+
+    println!();
+    println!("{}", "Usage:".cyan().bold());
+    println!("  apr run {}", index_path.display());
+    println!("  apr serve {}", index_path.display());
 
     Ok(())
 }
@@ -350,21 +479,22 @@ fn extract_hf_repo(uri: &str) -> Option<String> {
     }
 }
 
-/// PMAT-108: Resolve HuggingFace URI to include filename if missing
+/// PMAT-108 + GH-213: Resolve HuggingFace model reference to a downloadable target.
 ///
-/// Accepts both formats:
-/// - `hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF` (auto-detects Q4_K_M .gguf)
-/// - `hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/model.gguf` (unchanged)
+/// Returns `SingleFile` for:
+/// - Non-HF URIs (local paths, URLs)
+/// - URIs with explicit file extension (`.gguf`, `.safetensors`, etc.)
+/// - Repos with a single `model.safetensors`
+/// - GGUF repos (auto-detects best quantization)
 ///
-/// Priority for auto-detection:
-/// 1. Q4_K_M (best quality/size ratio)
-/// 2. Q4_K_S
-/// 3. Q4_0
-/// 4. Any .gguf file
-pub fn resolve_hf_uri(uri: &str) -> Result<String> {
-    // If not a HuggingFace URI, return unchanged
+/// Returns `Sharded` for:
+/// - Repos with `model.safetensors.index.json` (sharded SafeTensors, typically 3B+ models)
+///
+/// Priority for GGUF auto-detection: Q4_K_M > Q4_K_S > Q4_0 > Q8_0 > any
+fn resolve_hf_model(uri: &str) -> Result<ResolvedModel> {
+    // If not a HuggingFace URI, return unchanged as single file
     if !uri.starts_with("hf://") {
-        return Ok(uri.to_string());
+        return Ok(ResolvedModel::SingleFile(uri.to_string()));
     }
 
     // If already has a known model extension, return unchanged
@@ -375,7 +505,7 @@ pub fn resolve_hf_uri(uri: &str) -> Result<String> {
             || ext.eq_ignore_ascii_case("pt")
     });
     if has_model_ext {
-        return Ok(uri.to_string());
+        return Ok(ResolvedModel::SingleFile(uri.to_string()));
     }
 
     // Parse org/repo from URI
@@ -408,46 +538,218 @@ pub fn resolve_hf_uri(uri: &str) -> Result<String> {
         .as_array()
         .ok_or_else(|| CliError::ValidationFailed("No files found in repository".to_string()))?;
 
-    // Find GGUF files
-    let gguf_files: Vec<&str> = siblings
+    let filenames: Vec<&str> = siblings
         .iter()
         .filter_map(|s| s["rfilename"].as_str())
+        .collect();
+
+    // Find GGUF files
+    let gguf_files: Vec<&str> = filenames
+        .iter()
+        .copied()
         .filter(|f| f.to_lowercase().ends_with(".gguf"))
         .collect();
 
-    if gguf_files.is_empty() {
-        // Fall back to SafeTensors files
-        let st_files: Vec<&str> = siblings
-            .iter()
-            .filter_map(|s| s["rfilename"].as_str())
-            .filter(|f| f.to_lowercase().ends_with(".safetensors"))
-            .collect();
+    if !gguf_files.is_empty() {
+        // Priority: Q4_K_M > Q4_K_S > Q4_0 > Q8_0 > any
+        let quantization_priority = ["q4_k_m", "q4_k_s", "q4_0", "q8_0"];
 
-        if let Some(file) = st_files
-            .iter()
-            .find(|f| f.to_lowercase().contains("model.safetensors"))
-            .or(st_files.first())
-        {
-            return Ok(format!("hf://{}/{}/{}", org, repo, file));
+        for quant in quantization_priority {
+            if let Some(file) = gguf_files.iter().find(|f| f.to_lowercase().contains(quant)) {
+                return Ok(ResolvedModel::SingleFile(format!(
+                    "hf://{}/{}/{}",
+                    org, repo, file
+                )));
+            }
         }
 
-        return Err(CliError::ValidationFailed(format!(
-            "No .gguf or .safetensors files found in {}/{}",
+        // Fallback to first GGUF file
+        return Ok(ResolvedModel::SingleFile(format!(
+            "hf://{}/{}/{}",
+            org, repo, gguf_files[0]
+        )));
+    }
+
+    // GH-213: Check for sharded SafeTensors (model.safetensors.index.json)
+    let has_index = filenames.contains(&"model.safetensors.index.json");
+
+    if has_index {
+        // Download and parse index.json to get shard filenames
+        let index_url = format!(
+            "https://huggingface.co/{}/{}/resolve/main/model.safetensors.index.json",
+            org, repo
+        );
+        let index_response = ureq::get(&index_url)
+            .call()
+            .map_err(|e| CliError::NetworkError(format!("Failed to download model index: {e}")))?;
+
+        let mut index_body = Vec::new();
+        index_response
+            .into_reader()
+            .read_to_end(&mut index_body)
+            .map_err(|e| CliError::NetworkError(format!("Failed to read model index: {e}")))?;
+
+        let index_json = String::from_utf8_lossy(&index_body);
+        let shard_files = extract_shard_files_from_index(&index_json);
+
+        if shard_files.is_empty() {
+            return Err(CliError::ValidationFailed(format!(
+                "Sharded model index for {}/{} contains no shard files",
+                org, repo
+            )));
+        }
+
+        return Ok(ResolvedModel::Sharded {
+            org: org.to_string(),
+            repo: repo.to_string(),
+            shard_files,
+        });
+    }
+
+    // Fall back to single model.safetensors
+    let has_single_st = filenames
+        .iter()
+        .any(|f| f.to_lowercase() == "model.safetensors");
+
+    if has_single_st {
+        return Ok(ResolvedModel::SingleFile(format!(
+            "hf://{}/{}/model.safetensors",
             org, repo
         )));
     }
 
-    // Priority: Q4_K_M > Q4_K_S > Q4_0 > Q8_0 > any
-    let quantization_priority = ["q4_k_m", "q4_k_s", "q4_0", "q8_0"];
+    // Last resort: any .safetensors file
+    if let Some(file) = filenames
+        .iter()
+        .find(|f| f.to_lowercase().ends_with(".safetensors"))
+    {
+        return Ok(ResolvedModel::SingleFile(format!(
+            "hf://{}/{}/{}",
+            org, repo, file
+        )));
+    }
 
-    for quant in quantization_priority {
-        if let Some(file) = gguf_files.iter().find(|f| f.to_lowercase().contains(quant)) {
-            return Ok(format!("hf://{}/{}/{}", org, repo, file));
+    Err(CliError::ValidationFailed(format!(
+        "No .gguf or .safetensors files found in {}/{}",
+        org, repo
+    )))
+}
+
+/// GH-213: Extract unique shard filenames from index.json weight_map, sorted for deterministic order.
+///
+/// Format: `{"metadata": {...}, "weight_map": {"tensor.name": "model-00001-of-00006.safetensors", ...}}`
+fn extract_shard_files_from_index(json: &str) -> Vec<String> {
+    let mut files = HashSet::new();
+
+    if let Some(weight_map_start) = json.find("\"weight_map\"") {
+        let after_key = &json[weight_map_start..];
+        if let Some(brace_start) = after_key.find('{') {
+            let content = &after_key[brace_start + 1..];
+            // Find matching closing brace
+            let mut depth = 1;
+            let mut end_pos = 0;
+            for (i, c) in content.char_indices() {
+                match c {
+                    '{' => depth += 1,
+                    '}' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            end_pos = i;
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            let entries = &content[..end_pos];
+
+            // Extract shard filenames (values in key:value pairs)
+            for part in entries.split(',') {
+                if let Some(colon_pos) = part.rfind(':') {
+                    let value = part[colon_pos + 1..].trim();
+                    let filename =
+                        value.trim_matches(|c| c == '"' || c == ' ' || c == '\n' || c == '\r');
+                    if filename.ends_with(".safetensors") && !filename.is_empty() {
+                        files.insert(filename.to_string());
+                    }
+                }
+            }
         }
     }
 
-    // Fallback to first GGUF file
-    Ok(format!("hf://{}/{}/{}", org, repo, gguf_files[0]))
+    // Sort for deterministic download order (model-00001, model-00002, ...)
+    let mut sorted: Vec<String> = files.into_iter().collect();
+    sorted.sort();
+    sorted
+}
+
+/// Download a file from URL to local path (no progress)
+fn download_file(url: &str, path: &Path) -> Result<()> {
+    let response = ureq::get(url)
+        .call()
+        .map_err(|e| CliError::NetworkError(format!("Download failed: {e}")))?;
+
+    let mut file = std::fs::File::create(path)?;
+    let mut reader = response.into_reader();
+    std::io::copy(&mut reader, &mut file)?;
+
+    Ok(())
+}
+
+/// Download a file with a simple progress indicator (prints dots)
+fn download_file_with_progress(url: &str, path: &Path) -> Result<()> {
+    let response = ureq::get(url)
+        .call()
+        .map_err(|e| CliError::NetworkError(format!("Download failed: {e}")))?;
+
+    let total = response
+        .header("Content-Length")
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(0);
+
+    let mut file = std::fs::File::create(path)?;
+    let mut reader = response.into_reader();
+    let mut downloaded: u64 = 0;
+    let mut buf = vec![0u8; 64 * 1024];
+    let mut last_pct: u64 = 0;
+
+    loop {
+        let n = reader
+            .read(&mut buf)
+            .map_err(|e| CliError::NetworkError(format!("Read failed: {e}")))?;
+        if n == 0 {
+            break;
+        }
+        io::Write::write_all(&mut file, &buf[..n])?;
+        downloaded += n as u64;
+
+        if total > 0 {
+            let pct = downloaded * 100 / total;
+            if pct / 10 > last_pct / 10 {
+                print!(" {}%", pct);
+                io::stdout().flush().ok();
+                last_pct = pct;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Backward-compatible wrapper: resolve URI to string (for existing callers that expect String)
+#[allow(dead_code)]
+pub fn resolve_hf_uri(uri: &str) -> Result<String> {
+    match resolve_hf_model(uri)? {
+        ResolvedModel::SingleFile(s) => Ok(s),
+        ResolvedModel::Sharded { org, repo, .. } => {
+            // Return the index.json URI for backward compatibility
+            Ok(format!(
+                "hf://{}/{}/model.safetensors.index.json",
+                org, repo
+            ))
+        }
+    }
 }
 
 #[cfg(test)]
@@ -783,5 +1085,194 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    // =========================================================================
+    // GH-213: extract_shard_files_from_index tests
+    // =========================================================================
+
+    #[test]
+    fn test_gh213_extract_shard_files_basic() {
+        let json = r#"{
+            "metadata": {"total_size": 123456},
+            "weight_map": {
+                "model.embed_tokens.weight": "model-00001-of-00004.safetensors",
+                "model.layers.0.self_attn.q_proj.weight": "model-00001-of-00004.safetensors",
+                "model.layers.1.self_attn.q_proj.weight": "model-00002-of-00004.safetensors",
+                "model.layers.2.self_attn.q_proj.weight": "model-00003-of-00004.safetensors",
+                "lm_head.weight": "model-00004-of-00004.safetensors"
+            }
+        }"#;
+
+        let shards = extract_shard_files_from_index(json);
+        assert_eq!(shards.len(), 4);
+        assert_eq!(shards[0], "model-00001-of-00004.safetensors");
+        assert_eq!(shards[1], "model-00002-of-00004.safetensors");
+        assert_eq!(shards[2], "model-00003-of-00004.safetensors");
+        assert_eq!(shards[3], "model-00004-of-00004.safetensors");
+    }
+
+    #[test]
+    fn test_gh213_extract_shard_files_deduplicates() {
+        let json = r#"{
+            "weight_map": {
+                "a.weight": "model-00001-of-00002.safetensors",
+                "b.weight": "model-00001-of-00002.safetensors",
+                "c.weight": "model-00001-of-00002.safetensors",
+                "d.weight": "model-00002-of-00002.safetensors"
+            }
+        }"#;
+
+        let shards = extract_shard_files_from_index(json);
+        assert_eq!(shards.len(), 2, "Should deduplicate shard filenames");
+    }
+
+    #[test]
+    fn test_gh213_extract_shard_files_sorted() {
+        let json = r#"{
+            "weight_map": {
+                "z.weight": "model-00003-of-00003.safetensors",
+                "a.weight": "model-00001-of-00003.safetensors",
+                "m.weight": "model-00002-of-00003.safetensors"
+            }
+        }"#;
+
+        let shards = extract_shard_files_from_index(json);
+        assert_eq!(shards.len(), 3);
+        // Should be sorted alphabetically
+        assert!(shards[0] < shards[1]);
+        assert!(shards[1] < shards[2]);
+    }
+
+    #[test]
+    fn test_gh213_extract_shard_files_empty_weight_map() {
+        let json = r#"{"weight_map": {}}"#;
+        let shards = extract_shard_files_from_index(json);
+        assert!(shards.is_empty());
+    }
+
+    #[test]
+    fn test_gh213_extract_shard_files_no_weight_map() {
+        let json = r#"{"metadata": {"total_size": 123}}"#;
+        let shards = extract_shard_files_from_index(json);
+        assert!(shards.is_empty());
+    }
+
+    #[test]
+    fn test_gh213_extract_shard_files_ignores_non_safetensors() {
+        let json = r#"{
+            "weight_map": {
+                "a.weight": "model-00001-of-00002.safetensors",
+                "b.weight": "not-a-safetensors-file.bin"
+            }
+        }"#;
+
+        let shards = extract_shard_files_from_index(json);
+        assert_eq!(shards.len(), 1);
+        assert_eq!(shards[0], "model-00001-of-00002.safetensors");
+    }
+
+    #[test]
+    fn test_gh213_extract_shard_files_malformed_json() {
+        let json = "not valid json at all";
+        let shards = extract_shard_files_from_index(json);
+        assert!(shards.is_empty(), "Malformed JSON should return empty");
+    }
+
+    // =========================================================================
+    // GH-213: resolve_hf_model tests (offline, no network)
+    // =========================================================================
+
+    #[test]
+    fn test_gh213_resolve_non_hf_uri_is_single_file() {
+        let result = resolve_hf_model("/path/to/model.gguf").unwrap();
+        match result {
+            ResolvedModel::SingleFile(s) => assert_eq!(s, "/path/to/model.gguf"),
+            ResolvedModel::Sharded { .. } => panic!("Expected SingleFile"),
+        }
+    }
+
+    #[test]
+    fn test_gh213_resolve_hf_with_extension_is_single_file() {
+        let result = resolve_hf_model("hf://org/repo/model.safetensors").unwrap();
+        match result {
+            ResolvedModel::SingleFile(s) => assert_eq!(s, "hf://org/repo/model.safetensors"),
+            ResolvedModel::Sharded { .. } => panic!("Expected SingleFile"),
+        }
+    }
+
+    #[test]
+    fn test_gh213_resolve_hf_invalid_uri_fails() {
+        let result = resolve_hf_model("hf://invalid");
+        assert!(result.is_err());
+    }
+
+    // Integration tests (require network, marked ignore for CI)
+    #[test]
+    #[ignore]
+    fn test_gh213_resolve_small_model_is_single_file() {
+        // 0.5B model has a single model.safetensors
+        let result = resolve_hf_model("hf://Qwen/Qwen2.5-Coder-0.5B-Instruct").unwrap();
+        match result {
+            ResolvedModel::SingleFile(s) => {
+                assert!(
+                    s.contains("model.safetensors"),
+                    "Should resolve to model.safetensors: {}",
+                    s
+                );
+            }
+            ResolvedModel::Sharded { .. } => panic!("0.5B should be single file, not sharded"),
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn test_gh213_resolve_large_model_is_sharded() {
+        // 3B+ models use sharded SafeTensors
+        let result = resolve_hf_model("hf://Qwen/Qwen2.5-Coder-3B-Instruct").unwrap();
+        match result {
+            ResolvedModel::Sharded {
+                org,
+                repo,
+                shard_files,
+            } => {
+                assert_eq!(org, "Qwen");
+                assert_eq!(repo, "Qwen2.5-Coder-3B-Instruct");
+                assert!(
+                    shard_files.len() > 1,
+                    "3B model should have multiple shards, got {}",
+                    shard_files.len()
+                );
+                // All shards should end with .safetensors
+                for f in &shard_files {
+                    assert!(
+                        f.ends_with(".safetensors"),
+                        "Shard should be .safetensors: {}",
+                        f
+                    );
+                }
+            }
+            ResolvedModel::SingleFile(s) => {
+                panic!("3B should be sharded, got SingleFile({})", s)
+            }
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn test_gh213_resolve_7b_model_is_sharded() {
+        let result = resolve_hf_model("hf://Qwen/Qwen2.5-Coder-7B-Instruct").unwrap();
+        match result {
+            ResolvedModel::Sharded { shard_files, .. } => {
+                assert!(
+                    shard_files.len() > 1,
+                    "7B model should have multiple shards, got {}",
+                    shard_files.len()
+                );
+            }
+            ResolvedModel::SingleFile(s) => {
+                panic!("7B should be sharded, got SingleFile({})", s)
+            }
+        }
     }
 }
