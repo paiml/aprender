@@ -41,6 +41,7 @@ models/
 
 # PMAT caches and generated data
 .pmat/baseline.json
+.pmat/project.toml
 .pmat/backup/
 .pmat/bug-hunter-cache/
 .pmat/dead-code-cache.json
