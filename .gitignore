@@ -37,15 +37,24 @@ crates/aprender-shell/qa_test_artifacts/
 /*.apr
 models/
 .pmat-metrics/
-*.cov-backup
 .cargo/config.toml
 
-# PMAT
+# PMAT caches and generated data
 .pmat/backup/
-.pmat-qa/
-.pmat-work/
-
-# PMAT
+.pmat/bug-hunter-cache/
+.pmat/dead-code-cache.json
+.pmat/metrics/
 .pmat/context.idx/
 .pmat/workspace.idx/
 .pmat/deps-cache.json
+.pmat-qa/
+.pmat-work/
+**/.pmat/dead-code-cache.json
+
+# Generated exports
+probar-export/
+
+# Backup files
+*.bak
+*.cov-backup
+.cargo/config.toml.coverage-backup

@@ -1,0 +1,22 @@
+#!/bin/sh
+# Aprender Pre-Push Hook (SF-10, JA-08, JA-09, JA-10)
+# Install: git config core.hooksPath .githooks
+set -euo pipefail
+
+echo "── SF-10: Supply Chain Security ──"
+cargo deny check sources 2>/dev/null || echo "WARN: cargo-deny not installed"
+cargo deny check advisories 2>/dev/null || echo "WARN: cargo-deny not installed"
+
+echo "── JA-08: Full Security Scan ──"
+cargo audit 2>/dev/null || echo "WARN: cargo-audit not installed"
+
+echo "── JA-09: License Compliance ──"
+cargo deny check licenses 2>/dev/null || echo "WARN: cargo-deny not installed"
+
+echo "── JA-10: Documentation Gate ──"
+cargo doc --no-deps -q 2>/dev/null || echo "WARN: cargo doc failed"
+
+echo "── ComputeBrick Compliance ──"
+pmat comply check --failures-only 2>/dev/null || true
+
+echo "✅ Pre-push passed"

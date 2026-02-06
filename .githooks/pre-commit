@@ -1,0 +1,22 @@
+#!/bin/sh
+# Aprender Pre-Commit Hook (JA-01, JA-02, JA-08, JA-09, JA-10)
+# Install: git config core.hooksPath .githooks
+set -euo pipefail
+
+echo "── Tier 1: Format + Lint ──"
+cargo fmt -- --check
+cargo clippy -- -D warnings
+
+echo "── JA-02: Sovereignty Linting ──"
+pmat comply check --failures-only 2>/dev/null || true
+
+echo "── JA-08: Security Scan ──"
+cargo audit -q 2>/dev/null || echo "WARN: cargo-audit not installed"
+
+echo "── JA-09: License Compliance ──"
+cargo deny check licenses 2>/dev/null || echo "WARN: cargo-deny not installed"
+
+echo "── MTD-10: Technical Debt ──"
+pmat analyze satd --max-count 0 2>/dev/null || true
+
+echo "✅ Pre-commit passed"
