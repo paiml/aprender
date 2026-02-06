@@ -779,10 +779,12 @@ fn run_headless_real(config: CbtopConfig) -> Result<()> {
 
     // Create prompt tokens from GGUF vocab - FAIL FAST if tokenizer unavailable
     let prompt = "Hello, I am a coding assistant.";
-    let prompt_tokens: Vec<u32> = mapped
-        .model
-        .encode(prompt)
-        .ok_or_else(|| CliError::InferenceFailed("FATAL: GGUF model has no tokenizer - cannot encode prompt for cbtop benchmark".to_string()))?;
+    let prompt_tokens: Vec<u32> = mapped.model.encode(prompt).ok_or_else(|| {
+        CliError::InferenceFailed(
+            "FATAL: GGUF model has no tokenizer - cannot encode prompt for cbtop benchmark"
+                .to_string(),
+        )
+    })?;
 
     // Greedy sampling (temp=0) uses GPU argmax path for 150,000x reduced data transfer
     // (4 bytes vs 600KB per token). Temperature sampling requires CPU top-k.

@@ -584,7 +584,11 @@ mod tests {
             .map(|i| (i as f32 * 0.01).sin() * 0.1)
             .collect();
         let result = ValidatedEmbedding::new(data, vocab_size, hidden_dim);
-        assert!(result.is_ok(), "Should accept good data: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Should accept good data: {:?}",
+            result.err()
+        );
     }
 
     // FALSIFY-003: NaN rejection

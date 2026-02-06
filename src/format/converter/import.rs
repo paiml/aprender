@@ -1354,9 +1354,7 @@ pub(crate) struct SafeTensorsLoadResult {
 /// - `tensors`: All tensors as F32 (for backward compatibility and validation)
 /// - `f16_raw_tensors`: Raw F16 bytes for passthrough (only F16 tensors)
 /// - `user_metadata`: User metadata from SafeTensors header
-pub(crate) fn load_safetensors_with_f16_passthrough(
-    path: &Path,
-) -> Result<SafeTensorsLoadResult> {
+pub(crate) fn load_safetensors_with_f16_passthrough(path: &Path) -> Result<SafeTensorsLoadResult> {
     let mapped = MappedSafeTensors::open(path).map_err(|e| AprenderError::FormatError {
         message: format!("Failed to mmap SafeTensors: {e}"),
     })?;

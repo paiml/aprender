@@ -676,11 +676,7 @@ pub fn enforce_load_contract(
 /// # Panics
 ///
 /// Panics if embedding layout is wrong. This prevents garbage inference output.
-pub fn enforce_embedding_contract(
-    embedding_len: usize,
-    vocab_size: usize,
-    hidden_dim: usize,
-) {
+pub fn enforce_embedding_contract(embedding_len: usize, vocab_size: usize, hidden_dim: usize) {
     let expected_len = vocab_size * hidden_dim;
     assert_eq!(
         embedding_len, expected_len,
@@ -706,9 +702,11 @@ pub fn enforce_matmul_contract(
     expected_in_dim: usize,
 ) {
     assert_eq!(
-        weight_shape.len(), 2,
+        weight_shape.len(),
+        2,
         "CONTRACT VIOLATION: {} must be 2D, got {:?}",
-        tensor_name, weight_shape
+        tensor_name,
+        weight_shape
     );
     assert_eq!(
         weight_shape[0], expected_out_dim,
@@ -913,7 +911,11 @@ mod tests {
         let (apr_shape, needs_transpose) =
             enforce_import_contract("token_embd.weight", &[1536, 151936], 151936, 1536);
 
-        assert_eq!(apr_shape, vec![151936, 1536], "Embedding shape must be [vocab, hidden]");
+        assert_eq!(
+            apr_shape,
+            vec![151936, 1536],
+            "Embedding shape must be [vocab, hidden]"
+        );
         assert!(!needs_transpose, "GGUF→APR NEVER needs data transpose");
     }
 
@@ -924,7 +926,11 @@ mod tests {
         let (apr_shape, needs_transpose) =
             enforce_import_contract("output.weight", &[1536, 151936], 151936, 1536);
 
-        assert_eq!(apr_shape, vec![151936, 1536], "LM head shape must be [vocab, hidden]");
+        assert_eq!(
+            apr_shape,
+            vec![151936, 1536],
+            "LM head shape must be [vocab, hidden]"
+        );
         assert!(!needs_transpose, "GGUF→APR NEVER needs data transpose");
     }
 

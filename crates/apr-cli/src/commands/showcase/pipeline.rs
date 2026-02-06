@@ -323,9 +323,7 @@ pub(super) fn run_convert(config: &ShowcaseConfig) -> Result<bool> {
     println!("Converting GGUF to APR format (preserving quantization)...");
 
     // Use canonical apr_import path - the ONE way to convert GGUF to APR
-    let gguf_size = std::fs::metadata(&gguf_path)
-        .map(|m| m.len())
-        .unwrap_or(0);
+    let gguf_size = std::fs::metadata(&gguf_path).map(|m| m.len()).unwrap_or(0);
 
     let _report = apr_import(
         gguf_path.to_string_lossy().as_ref(),
@@ -335,9 +333,7 @@ pub(super) fn run_convert(config: &ShowcaseConfig) -> Result<bool> {
     .map_err(|e| CliError::ValidationFailed(format!("Conversion failed: {e}")))?;
 
     let elapsed = start.elapsed();
-    let apr_size = std::fs::metadata(&apr_path)
-        .map(|m| m.len())
-        .unwrap_or(0);
+    let apr_size = std::fs::metadata(&apr_path).map(|m| m.len()).unwrap_or(0);
 
     println!(
         "{} Conversion complete in {:.2}s",

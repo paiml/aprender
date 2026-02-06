@@ -581,12 +581,10 @@ fn cc2_trueno_is_compute_backend() {
                 .map_or(&cargo_toml[start..], |end| &cargo_toml[start..start + end])
         })
         .unwrap_or("");
-    let has_uncommented_realizar = deps_section
-        .lines()
-        .any(|line| {
-            let trimmed = line.trim();
-            !trimmed.starts_with('#') && trimmed.contains("realizar")
-        });
+    let has_uncommented_realizar = deps_section.lines().any(|line| {
+        let trimmed = line.trim();
+        !trimmed.starts_with('#') && trimmed.contains("realizar")
+    });
     assert!(
         !has_uncommented_realizar,
         "CC2: aprender should NOT have realizar in [dependencies] (it's the other way)"

@@ -254,11 +254,7 @@ fn run_traced_inference(path: &Path) -> Result<(), CliError> {
                 let contract_failures: Vec<String> = report
                     .tensors
                     .iter()
-                    .flat_map(|t| {
-                        t.failures
-                            .iter()
-                            .map(move |f| format!("{}: {}", t.name, f))
-                    })
+                    .flat_map(|t| t.failures.iter().map(move |f| format!("{}: {}", t.name, f)))
                     .collect();
                 if contract_failures.is_empty() {
                     println!(
@@ -284,10 +280,7 @@ fn run_traced_inference(path: &Path) -> Result<(), CliError> {
                         println!("  {}", failure.red());
                     }
                     if contract_failures.len() > 5 {
-                        println!(
-                            "  ... and {} more",
-                            contract_failures.len() - 5
-                        );
+                        println!("  ... and {} more", contract_failures.len() - 5);
                     }
                     println!();
                     println!(
@@ -299,10 +292,7 @@ fn run_traced_inference(path: &Path) -> Result<(), CliError> {
                 }
             }
             Err(e) => {
-                println!(
-                    "{}",
-                    format!("Contract: validation skipped ({e})").yellow()
-                );
+                println!("{}", format!("Contract: validation skipped ({e})").yellow());
             }
         }
         println!();
@@ -497,7 +487,10 @@ fn run_traced_inference_apr(path: &Path) -> Result<(), CliError> {
             // Layer-by-layer stats with colors
             println!();
             println!("{}", "LAYER-BY-LAYER ACTIVATIONS:".cyan().bold());
-            println!("{}", "  Legend: std>100=RED, std>50=YELLOW, std>10=BLUE, else=GREEN".dimmed());
+            println!(
+                "{}",
+                "  Legend: std>100=RED, std>50=YELLOW, std>10=BLUE, else=GREEN".dimmed()
+            );
             println!();
 
             let total_layers = trace.layer_activations.len();
@@ -549,10 +542,18 @@ fn run_traced_inference_apr(path: &Path) -> Result<(), CliError> {
                 // Early exit if critical anomalies detected
                 if has_nan || has_inf {
                     println!();
-                    println!("{}", "    CRITICAL: NaN/Inf detected - numerical instability!".red().bold());
+                    println!(
+                        "{}",
+                        "    CRITICAL: NaN/Inf detected - numerical instability!"
+                            .red()
+                            .bold()
+                    );
                     println!("{}", "    Possible causes:".red());
                     println!("{}", "      - Weight overflow during dequantization".red());
-                    println!("{}", "      - Attention score explosion (missing scaling)".red());
+                    println!(
+                        "{}",
+                        "      - Attention score explosion (missing scaling)".red()
+                    );
                     println!("{}", "      - RoPE frequency miscalculation".red());
                     println!();
                     break;
@@ -606,32 +607,68 @@ fn run_traced_inference_apr(path: &Path) -> Result<(), CliError> {
             }
 
             if total_nan > 0 || total_inf > 0 {
-                println!("  {}", format!("CRITICAL: {} NaN, {} Inf values detected!", total_nan, total_inf).red().bold());
+                println!(
+                    "  {}",
+                    format!(
+                        "CRITICAL: {} NaN, {} Inf values detected!",
+                        total_nan, total_inf
+                    )
+                    .red()
+                    .bold()
+                );
                 println!("  {}", "Model weights or computation is corrupted.".red());
             } else if high_var_count > 0 {
-                println!("  {}", format!("WARNING: {} layers with std > 50", high_var_count).yellow());
-                println!("  Peak variance at layer {} (std={:.2})", max_std_layer, max_std_value);
+                println!(
+                    "  {}",
+                    format!("WARNING: {} layers with std > 50", high_var_count).yellow()
+                );
+                println!(
+                    "  Peak variance at layer {} (std={:.2})",
+                    max_std_layer, max_std_value
+                );
                 if max_std_value > 100.0 {
-                    println!("  {}", "High variance may indicate attention explosion or weight issues.".yellow());
+                    println!(
+                        "  {}",
+                        "High variance may indicate attention explosion or weight issues.".yellow()
+                    );
                 }
             } else {
-                println!("  {}", "All layers have reasonable variance (std < 50)".green());
+                println!(
+                    "  {}",
+                    "All layers have reasonable variance (std < 50)".green()
+                );
             }
 
             // Logit range analysis
             let logit_range = logit_stats.max - logit_stats.min;
             if logit_range < 1.0 {
-                println!("  {}", format!("WARNING: Logit range too narrow ({:.4})", logit_range).yellow());
-                println!("  {}", "Model may not have learned meaningful patterns.".yellow());
+                println!(
+                    "  {}",
+                    format!("WARNING: Logit range too narrow ({:.4})", logit_range).yellow()
+                );
+                println!(
+                    "  {}",
+                    "Model may not have learned meaningful patterns.".yellow()
+                );
             } else if logit_range > 100.0 {
-                println!("  {}", format!("WARNING: Logit range very wide ({:.4})", logit_range).yellow());
+                println!(
+                    "  {}",
+                    format!("WARNING: Logit range very wide ({:.4})", logit_range).yellow()
+                );
             } else {
-                println!("  Logit range: {:.2} {}", logit_range, "(reasonable)".green());
+                println!(
+                    "  Logit range: {:.2} {}",
+                    logit_range,
+                    "(reasonable)".green()
+                );
             }
         }
         Err(e) => {
             // Fall back to AprV2Model forward if AprTransformer fails
-            eprintln!("{}", format!("Note: AprTransformer failed ({e}), using AprV2Model").yellow());
+            eprintln!(
+                "{}",
+                format!("Note: AprTransformer failed ({e}), using AprV2Model").yellow()
+            );
             println!("{}", "FORWARD PASS:".green().bold());
             let logits = model
                 .forward(&test_tokens)
@@ -749,7 +786,10 @@ fn print_activation_stats(_prefix: &str, stats: &realizar::apr_transformer::Acti
 
 /// Print activation statistics with color coding
 #[cfg(feature = "inference")]
-fn print_activation_stats_colored(_prefix: &str, stats: &realizar::apr_transformer::ActivationStats) {
+fn print_activation_stats_colored(
+    _prefix: &str,
+    stats: &realizar::apr_transformer::ActivationStats,
+) {
     use colored::Colorize;
 
     // Color code the std_dev
@@ -759,10 +799,16 @@ fn print_activation_stats_colored(_prefix: &str, stats: &realizar::apr_transform
     println!("  Mean: {:.4}, Std: {}", stats.mean, std_colored);
 
     if stats.nan_count > 0 {
-        println!("  {}", format!("NaN count: {}", stats.nan_count).red().bold());
+        println!(
+            "  {}",
+            format!("NaN count: {}", stats.nan_count).red().bold()
+        );
     }
     if stats.inf_count > 0 {
-        println!("  {}", format!("Inf count: {}", stats.inf_count).red().bold());
+        println!(
+            "  {}",
+            format!("Inf count: {}", stats.inf_count).red().bold()
+        );
     }
 }
 
@@ -786,7 +832,12 @@ fn print_stage_stats(stage_name: &str, stats: &realizar::apr_transformer::Activa
     }
 
     if anomalies.is_empty() {
-        println!("{}: mean={} std={}", stage_name.dimmed(), mean_str, std_colored);
+        println!(
+            "{}: mean={} std={}",
+            stage_name.dimmed(),
+            mean_str,
+            std_colored
+        );
     } else {
         println!(
             "{}: mean={} std={} {}",

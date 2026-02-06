@@ -531,7 +531,15 @@ mod tests {
     #[test]
     fn test_run_invalid_source() {
         // Empty source should fail
-        let result = run("", Some(Path::new("output.apr")), None, None, false, false, None);
+        let result = run(
+            "",
+            Some(Path::new("output.apr")),
+            None,
+            None,
+            false,
+            false,
+            None,
+        );
 
         assert!(result.is_err());
     }

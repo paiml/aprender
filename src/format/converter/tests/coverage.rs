@@ -2176,7 +2176,11 @@ mod tests_write_functions {
         options.architecture = Architecture::Qwen2;
 
         let result = apr_import(st_path.to_str().unwrap(), &apr_path, options);
-        assert!(result.is_ok(), "F16 import should succeed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "F16 import should succeed: {:?}",
+            result.err()
+        );
 
         // Read back APR and verify tensors are F16
         let apr_bytes = fs::read(&apr_path).expect("Read APR");
@@ -2225,7 +2229,11 @@ mod tests_write_functions {
         options.architecture = Architecture::Qwen2;
 
         let result = apr_import(st_path.to_str().unwrap(), &apr_path, options);
-        assert!(result.is_ok(), "F16 import should succeed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "F16 import should succeed: {:?}",
+            result.err()
+        );
 
         // Read back from APR
         let apr_bytes = fs::read(&apr_path).expect("Read APR");

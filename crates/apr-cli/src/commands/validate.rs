@@ -129,29 +129,20 @@ fn run_rosetta_validation(path: &Path, format: FormatType, quality: bool) -> Res
             );
         } else {
             println!();
-            println!(
-                "{}",
-                "=== PMAT-235 Contract Violations ===".red().bold()
-            );
+            println!("{}", "=== PMAT-235 Contract Violations ===".red().bold());
             // Group by rule ID
             let mut by_rule: std::collections::BTreeMap<&str, Vec<&str>> =
                 std::collections::BTreeMap::new();
             for (tensor_name, failure) in &all_failures {
                 let rule_id = if failure.starts_with('[') {
-                    failure
-                        .find(']')
-                        .map_or("UNKNOWN", |end| &failure[1..end])
+                    failure.find(']').map_or("UNKNOWN", |end| &failure[1..end])
                 } else {
                     "UNKNOWN"
                 };
                 by_rule.entry(rule_id).or_default().push(tensor_name);
             }
             for (rule, tensors) in &by_rule {
-                println!(
-                    "  {} {} tensor(s) failed",
-                    rule.red(),
-                    tensors.len()
-                );
+                println!("  {} {} tensor(s) failed", rule.red(), tensors.len());
                 for name in tensors.iter().take(5) {
                     println!("    - {}", name);
                 }

@@ -550,11 +550,7 @@ impl ValidationReport {
                 self.tensor_count
             )
         } else {
-            let contract_failures: usize = self
-                .tensors
-                .iter()
-                .map(|t| t.failures.len())
-                .sum();
+            let contract_failures: usize = self.tensors.iter().map(|t| t.failures.len()).sum();
             format!(
                 "INVALID: {} tensors, {} contract violations, {} NaN, {} Inf, {} all-zeros",
                 self.tensor_count,
@@ -858,11 +854,12 @@ impl RosettaStone {
         use crate::format::gguf::GgufReader;
 
         let reader = GgufReader::from_file(path)?;
-        let (data, _shape) = reader
-            .get_tensor_f32(tensor_name)
-            .map_err(|e| AprenderError::FormatError {
-                message: format!("Failed to load GGUF tensor '{}': {}", tensor_name, e),
-            })?;
+        let (data, _shape) =
+            reader
+                .get_tensor_f32(tensor_name)
+                .map_err(|e| AprenderError::FormatError {
+                    message: format!("Failed to load GGUF tensor '{}': {}", tensor_name, e),
+                })?;
         Ok(data)
     }
 
@@ -1116,9 +1113,7 @@ impl RosettaStone {
             ));
         }
         if zero_count == element_count {
-            failures.push(
-                "[F-DATA-QUALITY-001] All values are zero (uninitialized?)".to_string(),
-            );
+            failures.push("[F-DATA-QUALITY-001] All values are zero (uninitialized?)".to_string());
         }
 
         // PMAT-235: Density gate (F-DATA-QUALITY-001)
@@ -1149,9 +1144,8 @@ impl RosettaStone {
             sum_sq.sqrt() as f32
         };
         if valid_count > 0 && l2_norm < 1e-6 {
-            failures.push(
-                "[F-DATA-QUALITY-003] L2 norm ~0: tensor is effectively empty".to_string(),
-            );
+            failures
+                .push("[F-DATA-QUALITY-003] L2 norm ~0: tensor is effectively empty".to_string());
         }
 
         // PMAT-235: Variation gate (F-DATA-QUALITY-003)
@@ -1159,14 +1153,9 @@ impl RosettaStone {
         let is_norm_or_bias = name_lower.contains("norm")
             || name_lower.contains("bias")
             || name_lower.contains("ln_");
-        if valid_count > 1
-            && (max - min).abs() < 1e-10
-            && !min.is_infinite()
-            && !is_norm_or_bias
-        {
-            failures.push(
-                "[F-DATA-QUALITY-003] All values identical: tensor is constant".to_string(),
-            );
+        if valid_count > 1 && (max - min).abs() < 1e-10 && !min.is_infinite() && !is_norm_or_bias {
+            failures
+                .push("[F-DATA-QUALITY-003] All values identical: tensor is constant".to_string());
         }
 
         let is_valid = failures.is_empty();
@@ -1350,14 +1339,15 @@ impl RosettaStone {
         // GH-205 FIX: Map ConversionOptions.quantization to ExportOptions.quantize
         // Previously opts was ignored, causing F32 GGUF export even when quantization requested.
         // Note: Q6_K maps to Q4K since that's what realizar's inference supports.
-        let export_quantize = opts.quantization.as_ref().and_then(|q| {
-            match q.to_lowercase().as_str() {
-                "q4_k" | "q4_k_m" | "int4" | "q6_k" => Some(QuantizationType::Q4K),
-                "int8" | "q8_0" => Some(QuantizationType::Int8),
-                "fp16" | "f16" => Some(QuantizationType::Fp16),
-                _ => None,
-            }
-        });
+        let export_quantize =
+            opts.quantization
+                .as_ref()
+                .and_then(|q| match q.to_lowercase().as_str() {
+                    "q4_k" | "q4_k_m" | "int4" | "q6_k" => Some(QuantizationType::Q4K),
+                    "int8" | "q8_0" => Some(QuantizationType::Int8),
+                    "fp16" | "f16" => Some(QuantizationType::Fp16),
+                    _ => None,
+                });
 
         match (source_format, target_format) {
             // GGUF/SafeTensors → APR (same conversion path via apr_import)
@@ -1374,9 +1364,7 @@ impl RosettaStone {
             // F32 GGUF files don't work with realizar's fused matmul kernels
             // (see export.rs:532-537 comment). Q4_K is the standard format.
             (FormatType::Apr, FormatType::Gguf) => {
-                let gguf_quantize = export_quantize
-                    .clone()
-                    .or(Some(QuantizationType::Q4K)); // Default to Q4K for GGUF
+                let gguf_quantize = export_quantize.clone().or(Some(QuantizationType::Q4K)); // Default to Q4K for GGUF
                 apr_export(
                     source,
                     target,

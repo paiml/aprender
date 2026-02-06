@@ -1098,7 +1098,11 @@ fn extract_model_paths(command: &Commands) -> Vec<PathBuf> {
         Commands::Run { source, .. } => {
             // Only validate local files, not hf:// or URLs
             let path = PathBuf::from(source);
-            if path.exists() { vec![path] } else { vec![] }
+            if path.exists() {
+                vec![path]
+            } else {
+                vec![]
+            }
         }
         Commands::Serve { file, .. }
         | Commands::Trace { file, .. }
@@ -1114,15 +1118,15 @@ fn extract_model_paths(command: &Commands) -> Vec<PathBuf> {
 
         Commands::Merge { files, .. } => files.clone(),
 
-        Commands::Cbtop { model_path, .. } => {
-            model_path.iter().cloned().collect()
-        }
-        Commands::Tui { file, .. } => {
-            file.iter().cloned().collect()
-        }
+        Commands::Cbtop { model_path, .. } => model_path.iter().cloned().collect(),
+        Commands::Tui { file, .. } => file.iter().cloned().collect(),
         Commands::Import { source, .. } => {
             let path = PathBuf::from(source);
-            if path.exists() { vec![path] } else { vec![] }
+            if path.exists() {
+                vec![path]
+            } else {
+                vec![]
+            }
         }
 
         // Rosetta action subcommands
@@ -1130,7 +1134,9 @@ fn extract_model_paths(command: &Commands) -> Vec<PathBuf> {
             RosettaCommands::Convert { source, .. }
             | RosettaCommands::Chain { source, .. }
             | RosettaCommands::Verify { source, .. } => vec![source.clone()],
-            RosettaCommands::CompareInference { model_a, model_b, .. } => {
+            RosettaCommands::CompareInference {
+                model_a, model_b, ..
+            } => {
                 vec![model_a.clone(), model_b.clone()]
             }
             // Diagnostic rosetta commands — exempt
@@ -1157,12 +1163,12 @@ fn validate_model_contract(paths: &[PathBuf]) -> Result<(), CliError> {
         }
         let report = rosetta.validate(path).map_err(|e| {
             CliError::ValidationFailed(format!(
-                "Contract validation failed for {}: {e}", path.display()
+                "Contract validation failed for {}: {e}",
+                path.display()
             ))
         })?;
         if !report.is_valid {
-            let violation_count: usize = report.tensors.iter()
-                .map(|t| t.failures.len()).sum();
+            let violation_count: usize = report.tensors.iter().map(|t| t.failures.len()).sum();
             return Err(CliError::ValidationFailed(format!(
                 "PMAT-237 CONTRACT VIOLATION: {} has {} violations in {} tensors. \
                  Use 'apr qa {}' for details. Use --skip-contract to bypass.",
@@ -1318,7 +1324,16 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             limit,
             transpose_aware,
             json,
-        } => diff::run(file1, file2, *weights, *values, filter.as_deref(), *limit, *transpose_aware, *json || cli.json),
+        } => diff::run(
+            file1,
+            file2,
+            *weights,
+            *values,
+            filter.as_deref(),
+            *limit,
+            *transpose_aware,
+            *json || cli.json,
+        ),
 
         Commands::Tensors {
             file,
@@ -2481,21 +2496,88 @@ mod tests {
     fn test_extract_paths_diagnostic_exempt() {
         // Diagnostic commands should return no paths (exempt from validation)
         let diagnostic_commands = vec![
-            Commands::Inspect { file: PathBuf::from("m.apr"), vocab: false, filters: false, weights: false, json: false },
-            Commands::Debug { file: PathBuf::from("m.apr"), drama: false, hex: false, strings: false, limit: 256 },
-            Commands::Validate { file: PathBuf::from("m.apr"), quality: false, strict: false, min_score: None },
-            Commands::Tensors { file: PathBuf::from("m.apr"), stats: false, filter: None, limit: 0, json: false },
-            Commands::Lint { file: PathBuf::from("m.apr") },
-            Commands::Qa { file: PathBuf::from("m.apr"), assert_tps: None, assert_speedup: None, assert_gpu_speedup: None, skip_golden: false, skip_throughput: false, skip_ollama: false, skip_gpu_speedup: false, skip_contract: false, skip_format_parity: false, safetensors_path: None, iterations: 10, warmup: 3, max_tokens: 32, json: false, verbose: false },
-            Commands::Hex { file: PathBuf::from("m.apr"), tensor: None, limit: 64, stats: false, list: false, json: false },
-            Commands::Tree { file: PathBuf::from("m.apr"), filter: None, format: "ascii".to_string(), sizes: false, depth: None },
-            Commands::Flow { file: PathBuf::from("m.apr"), layer: None, component: "full".to_string(), verbose: false },
-            Commands::Explain { code: None, file: None, tensor: None },
+            Commands::Inspect {
+                file: PathBuf::from("m.apr"),
+                vocab: false,
+                filters: false,
+                weights: false,
+                json: false,
+            },
+            Commands::Debug {
+                file: PathBuf::from("m.apr"),
+                drama: false,
+                hex: false,
+                strings: false,
+                limit: 256,
+            },
+            Commands::Validate {
+                file: PathBuf::from("m.apr"),
+                quality: false,
+                strict: false,
+                min_score: None,
+            },
+            Commands::Tensors {
+                file: PathBuf::from("m.apr"),
+                stats: false,
+                filter: None,
+                limit: 0,
+                json: false,
+            },
+            Commands::Lint {
+                file: PathBuf::from("m.apr"),
+            },
+            Commands::Qa {
+                file: PathBuf::from("m.apr"),
+                assert_tps: None,
+                assert_speedup: None,
+                assert_gpu_speedup: None,
+                skip_golden: false,
+                skip_throughput: false,
+                skip_ollama: false,
+                skip_gpu_speedup: false,
+                skip_contract: false,
+                skip_format_parity: false,
+                safetensors_path: None,
+                iterations: 10,
+                warmup: 3,
+                max_tokens: 32,
+                json: false,
+                verbose: false,
+            },
+            Commands::Hex {
+                file: PathBuf::from("m.apr"),
+                tensor: None,
+                limit: 64,
+                stats: false,
+                list: false,
+                json: false,
+            },
+            Commands::Tree {
+                file: PathBuf::from("m.apr"),
+                filter: None,
+                format: "ascii".to_string(),
+                sizes: false,
+                depth: None,
+            },
+            Commands::Flow {
+                file: PathBuf::from("m.apr"),
+                layer: None,
+                component: "full".to_string(),
+                verbose: false,
+            },
+            Commands::Explain {
+                code: None,
+                file: None,
+                tensor: None,
+            },
             Commands::List,
         ];
         for cmd in &diagnostic_commands {
             let paths = extract_model_paths(cmd);
-            assert!(paths.is_empty(), "Diagnostic command should be exempt: {cmd:?}");
+            assert!(
+                paths.is_empty(),
+                "Diagnostic command should be exempt: {cmd:?}"
+            );
         }
     }
 
@@ -2504,18 +2586,28 @@ mod tests {
     fn test_extract_paths_action_commands() {
         let serve_cmd = Commands::Serve {
             file: PathBuf::from("model.gguf"),
-            port: 8080, host: "127.0.0.1".to_string(),
-            no_cors: false, no_metrics: false, no_gpu: false,
-            gpu: false, batch: false, trace: false,
-            trace_level: "basic".to_string(), profile: false,
+            port: 8080,
+            host: "127.0.0.1".to_string(),
+            no_cors: false,
+            no_metrics: false,
+            no_gpu: false,
+            gpu: false,
+            batch: false,
+            trace: false,
+            trace_level: "basic".to_string(),
+            profile: false,
         };
         let paths = extract_model_paths(&serve_cmd);
         assert_eq!(paths, vec![PathBuf::from("model.gguf")]);
 
         let bench_cmd = Commands::Bench {
             file: PathBuf::from("model.apr"),
-            warmup: 3, iterations: 5, max_tokens: 32,
-            prompt: None, fast: false, brick: None,
+            warmup: 3,
+            iterations: 5,
+            max_tokens: 32,
+            prompt: None,
+            fast: false,
+            brick: None,
         };
         let paths = extract_model_paths(&bench_cmd);
         assert_eq!(paths, vec![PathBuf::from("model.apr")]);
@@ -2526,22 +2618,43 @@ mod tests {
     fn test_extract_paths_run_hf_url() {
         let cmd = Commands::Run {
             source: "hf://org/repo".to_string(),
-            input: None, prompt: None, max_tokens: 32, stream: false,
-            language: None, task: None, format: "text".to_string(),
-            no_gpu: false, gpu: false, offline: false, benchmark: false,
-            trace: false, trace_steps: None, trace_verbose: false,
-            trace_output: None, trace_level: "basic".to_string(),
-            trace_payload: false, profile: false, chat: false, verbose: false,
+            input: None,
+            prompt: None,
+            max_tokens: 32,
+            stream: false,
+            language: None,
+            task: None,
+            format: "text".to_string(),
+            no_gpu: false,
+            gpu: false,
+            offline: false,
+            benchmark: false,
+            trace: false,
+            trace_steps: None,
+            trace_verbose: false,
+            trace_output: None,
+            trace_level: "basic".to_string(),
+            trace_payload: false,
+            profile: false,
+            chat: false,
+            verbose: false,
         };
         let paths = extract_model_paths(&cmd);
-        assert!(paths.is_empty(), "hf:// URLs should not be validated locally");
+        assert!(
+            paths.is_empty(),
+            "hf:// URLs should not be validated locally"
+        );
     }
 
     /// Test extract_model_paths: Merge returns multiple files
     #[test]
     fn test_extract_paths_merge_multiple() {
         let cmd = Commands::Merge {
-            files: vec![PathBuf::from("a.apr"), PathBuf::from("b.apr"), PathBuf::from("c.apr")],
+            files: vec![
+                PathBuf::from("a.apr"),
+                PathBuf::from("b.apr"),
+                PathBuf::from("c.apr"),
+            ],
             strategy: "average".to_string(),
             output: PathBuf::from("merged.apr"),
             weights: None,
