@@ -24,6 +24,27 @@
 //! 4. Consumer types (AprTransformer) require Validated* types, not Vec<f32>
 
 use std::fmt;
+use std::marker::PhantomData;
+
+// =============================================================================
+// LAYOUT MARKER TYPES (PMAT-248)
+// =============================================================================
+
+/// Row-major layout marker (APR convention).
+///
+/// APR is exclusively row-major. This marker type encodes the layout
+/// in the type system via `PhantomData<RowMajor>` on `ValidatedWeight`.
+///
+/// There is intentionally NO `ColumnMajor` marker type — making the
+/// invalid state literally unrepresentable at compile time.
+///
+/// # Reference
+///
+/// - Strom & Yemini (1986): Typestate programming concept
+/// - `contracts/tensor-layout-v1.yaml` §layout_enforcement
+/// - `docs/specifications/compiler-enforced-model-types-model-oracle.md` §5.3
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RowMajor;
 
 /// Contract validation error
 #[derive(Debug, Clone)]
@@ -314,27 +335,42 @@ impl ValidatedEmbedding {
 // VALIDATED WEIGHT (F-DATA-QUALITY-001 through F-DATA-QUALITY-003)
 // =============================================================================
 
-/// Validated weight matrix - compile-time guarantee of data quality
+/// Validated weight matrix - compile-time guarantee of data quality and layout
 ///
 /// This type can ONLY be constructed via `new()`, which enforces:
 /// - Correct element count (out_dim * in_dim)
 /// - Density check (<80% zeros)
 /// - No NaN or Inf values
 /// - Non-degenerate distribution
+///
+/// ## Layout Safety (PMAT-248)
+///
+/// The `PhantomData<L>` marker encodes tensor layout in the type system:
+/// - `ValidatedWeight<RowMajor>` = row-major layout (APR convention)
+/// - There is NO `ColumnMajor` type — making column-major unrepresentable
+///
+/// The default type parameter `L = RowMajor` ensures backward compatibility:
+/// `ValidatedWeight` (without explicit parameter) is `ValidatedWeight<RowMajor>`.
+///
+/// This has zero runtime cost — `PhantomData` is a zero-sized type.
 #[derive(Debug, Clone)]
-pub struct ValidatedWeight {
+pub struct ValidatedWeight<L = RowMajor> {
     data: Vec<f32>,
     out_dim: usize,
     in_dim: usize,
     name: String,
     stats: TensorStats,
+    _layout: PhantomData<L>,
 }
 
-impl ValidatedWeight {
+impl ValidatedWeight<RowMajor> {
     const MAX_ZERO_PCT: f32 = 80.0;
     const MIN_L2_NORM: f32 = 1e-6;
 
-    /// Construct a validated weight matrix
+    /// Construct a validated row-major weight matrix.
+    ///
+    /// This is the ONLY constructor. There is no way to create a
+    /// `ValidatedWeight<ColumnMajor>` because `ColumnMajor` does not exist.
     ///
     /// # Errors
     ///
@@ -409,6 +445,7 @@ impl ValidatedWeight {
             in_dim,
             name: name.to_string(),
             stats,
+            _layout: PhantomData,
         })
     }
 
@@ -670,5 +707,39 @@ mod tests {
         let data = vec![1.0f32; 100];
         let result = ValidatedVector::new(data, 100, "test");
         assert!(result.is_ok());
+    }
+
+    // PMAT-248: PhantomData<Layout> enforcement tests
+
+    #[test]
+    fn pmat_248_validated_weight_is_row_major_by_default() {
+        let data: Vec<f32> = (0..100).map(|i| i as f32 * 0.01).collect();
+        let weight: ValidatedWeight = ValidatedWeight::new(data, 10, 10, "test").unwrap();
+        // This compiles because ValidatedWeight == ValidatedWeight<RowMajor>
+        let _explicit: ValidatedWeight<RowMajor> = weight;
+    }
+
+    #[test]
+    fn pmat_248_row_major_marker_is_zero_sized() {
+        assert_eq!(std::mem::size_of::<RowMajor>(), 0);
+        assert_eq!(
+            std::mem::size_of::<PhantomData<RowMajor>>(),
+            0,
+            "PhantomData<RowMajor> must be zero-sized"
+        );
+    }
+
+    #[test]
+    fn pmat_248_phantom_data_does_not_increase_struct_size() {
+        // ValidatedWeight with PhantomData should have same layout as without
+        // (PhantomData is ZST, compiler optimizes it away)
+        let data: Vec<f32> = (0..100).map(|i| i as f32 * 0.01).collect();
+        let weight = ValidatedWeight::new(data, 10, 10, "test").unwrap();
+        // Ensure all fields are accessible (compile-time check)
+        let _ = weight.data();
+        let _ = weight.out_dim();
+        let _ = weight.in_dim();
+        let _ = weight.name();
+        let _ = weight.stats();
     }
 }

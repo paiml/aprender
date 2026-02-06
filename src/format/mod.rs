@@ -253,8 +253,9 @@ pub use layout_contract::{
 
 // Re-export validated tensor types (PMAT-235 - Compile-Time Contract Enforcement)
 // Implements Poka-Yoke: makes invalid tensor states unrepresentable
+// RowMajor: PMAT-248 layout marker (PhantomData zero-cost enforcement)
 pub use validated_tensors::{
-    ContractValidationError, TensorStats as ValidatedTensorStats, ValidatedEmbedding,
+    ContractValidationError, RowMajor, TensorStats as ValidatedTensorStats, ValidatedEmbedding,
     ValidatedVector, ValidatedWeight,
 };
 
