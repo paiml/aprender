@@ -1425,6 +1425,74 @@ Falsification test:
 If build succeeds: build.rs schema validation is missing.
 ```
 
+### 7.5 Iteration 4: Deep Structural Falsification
+
+**FALSIFY-ITER4-001**: Unique-naming families (BERT, Whisper) detected unambiguously
+
+```
+Prediction: BERT and Whisper use unique tensor naming conventions that differ
+  from all standard "model.layers.*" families:
+  - BERT: embedding = "bert.embeddings.word_embeddings.weight" (unique prefix)
+  - Whisper: embedding = "encoder.conv1.weight" (unique prefix)
+
+  detect_family() with BERT-specific tensors MUST return exactly "bert".
+  detect_family() with Whisper-specific tensors MUST return exactly "whisper".
+
+If test fails: Unique-naming families are incorrectly matched to another family.
+```
+
+**FALSIFY-ITER4-002**: Constraint consistency (activation ↔ MLP type)
+
+```
+Prediction: The activation function and MLP type must be consistent:
+  - SwiGLU → SiLU (SiLU-gated linear unit)
+  - GELU MLP → GELU (standard feedforward)
+  - Gated MLP → GELU (GeGLU = GELU-gated linear unit, used by Gemma)
+
+FIXED in iteration 4: gemma.yaml had activation: silu + mlp_type: gelu_mlp.
+  Research confirmed Gemma uses GeGLU (GELU-gated), not SwiGLU.
+  Fix: activation: gelu, mlp_type: gated_mlp.
+
+If test fails: YAML constraint values are architecturally inconsistent.
+```
+
+**FALSIFY-ITER4-003**: head_dim validity
+
+```
+Prediction: head_dim >= hidden_dim / num_heads for all families and sizes.
+  Standard: head_dim == hidden_dim / num_heads (most models).
+  Override: head_dim > hidden_dim / num_heads (e.g., Gemma 7B: 256 > 192).
+  head_dim < hidden_dim / num_heads would indicate a contract bug.
+
+Note: Gemma 7B (hidden=3072, heads=16, head_dim=256) intentionally uses
+  expanded attention dimensionality (16×256=4096 > 3072) for improved
+  attention quality — confirmed by Google's architecture documentation.
+
+If test fails: A YAML contract has a head_dim smaller than the standard,
+  which would cause information loss in attention projections.
+```
+
+**FALSIFY-ITER4-004**: No-bias families have null bias patterns
+
+```
+Prediction: Families declaring has_bias=false should have all bias-related
+  per_layer entries set to null (no tensor patterns for q_proj_bias, etc.).
+  Conversely, bias families (Qwen2, Phi) must have >= 3 non-null bias patterns.
+
+If test fails: YAML constraint/template mismatch — family declares no bias
+  but has bias tensor patterns (or vice versa).
+```
+
+**FALSIFY-ITER4-005**: Cross-family tensor validation
+
+```
+Prediction: validate_tensor_names() rejects tensor names from any other
+  family. Specifically: BERT tensors rejected by Whisper contract, Whisper
+  tensors rejected by Qwen2 contract, Qwen2 tensors rejected by BERT contract.
+
+If test fails: Tensor validation is not family-specific enough.
+```
+
 ---
 
 ## 8. Implementation Roadmap

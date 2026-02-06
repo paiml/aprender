@@ -34,12 +34,12 @@ size_variants:
 
 constraints:
   attention_type: gqa
-  activation: silu
+  activation: gelu
   norm_type: rmsnorm
   has_bias: false
   tied_embeddings: true
   positional_encoding: rope
-  mlp_type: gelu_mlp
+  mlp_type: gated_mlp
 
 tensor_template:
   embedding: "model.embed_tokens.weight"

@@ -1334,6 +1334,793 @@ fn falsify_iter3_registry_lookup_by_name_all_families() {
 }
 
 // =============================================================================
+// Iteration 4: Deeper Falsification — Unique Families, Constraints, Adversarial
+// =============================================================================
+
+#[test]
+fn falsify_iter4_bert_detected_unambiguously_from_tensor_names() {
+    // STRONG PREDICTION: BERT has unique tensor naming (bert.embeddings.* / bert.encoder.layer.*)
+    // that no other family shares. detect_family() MUST return "bert" — not just any family.
+    let registry = build_default_registry();
+
+    let bert_tensors = vec![
+        "bert.embeddings.word_embeddings.weight",
+        "bert.encoder.layer.0.attention.self.query.weight",
+        "bert.encoder.layer.0.attention.self.query.bias",
+        "bert.encoder.layer.0.attention.self.key.weight",
+        "bert.encoder.layer.0.attention.self.key.bias",
+        "bert.encoder.layer.0.attention.self.value.weight",
+        "bert.encoder.layer.0.attention.self.value.bias",
+        "bert.encoder.layer.0.attention.output.dense.weight",
+        "bert.encoder.layer.0.attention.output.dense.bias",
+        "bert.encoder.layer.0.attention.output.LayerNorm.weight",
+        "bert.encoder.layer.0.attention.output.LayerNorm.bias",
+        "bert.encoder.layer.0.intermediate.dense.weight",
+        "bert.encoder.layer.0.intermediate.dense.bias",
+        "bert.encoder.layer.0.output.dense.weight",
+        "bert.encoder.layer.0.output.dense.bias",
+        "bert.encoder.layer.0.output.LayerNorm.weight",
+        "bert.encoder.layer.0.output.LayerNorm.bias",
+    ];
+
+    let detected = registry.detect_family(&bert_tensors);
+    assert!(
+        detected.is_some(),
+        "ITER4: BERT tensor names must be detected"
+    );
+    assert_eq!(
+        detected.expect("bert detected").family_name(),
+        "bert",
+        "ITER4: BERT-specific tensors must unambiguously detect as 'bert', not any other family"
+    );
+}
+
+#[test]
+fn falsify_iter4_whisper_detected_unambiguously_from_tensor_names() {
+    // STRONG PREDICTION: Whisper has unique tensor naming (encoder.conv1.* / encoder.layers.*)
+    // that no other family shares. detect_family() MUST return "whisper".
+    let registry = build_default_registry();
+
+    let whisper_tensors = vec![
+        "encoder.conv1.weight",
+        "encoder.layers.0.self_attn.q_proj.weight",
+        "encoder.layers.0.self_attn.q_proj.bias",
+        "encoder.layers.0.self_attn.k_proj.weight",
+        "encoder.layers.0.self_attn.k_proj.bias",
+        "encoder.layers.0.self_attn.v_proj.weight",
+        "encoder.layers.0.self_attn.v_proj.bias",
+        "encoder.layers.0.self_attn.out_proj.weight",
+        "encoder.layers.0.self_attn.out_proj.bias",
+        "encoder.layers.0.self_attn_layer_norm.weight",
+        "encoder.layers.0.self_attn_layer_norm.bias",
+        "encoder.layers.0.fc1.weight",
+        "encoder.layers.0.fc1.bias",
+        "encoder.layers.0.fc2.weight",
+        "encoder.layers.0.fc2.bias",
+        "encoder.layers.0.final_layer_norm.weight",
+        "encoder.layers.0.final_layer_norm.bias",
+    ];
+
+    let detected = registry.detect_family(&whisper_tensors);
+    assert!(
+        detected.is_some(),
+        "ITER4: Whisper tensor names must be detected"
+    );
+    assert_eq!(
+        detected.expect("whisper detected").family_name(),
+        "whisper",
+        "ITER4: Whisper-specific tensors must unambiguously detect as 'whisper', not any other family"
+    );
+}
+
+#[test]
+fn falsify_iter4_bert_per_layer_patterns_all_bert_specific() {
+    // STRONG PREDICTION: Every per_layer pattern in BERT's config contains "bert.encoder.layer.{n}"
+    let registry = build_default_registry();
+    let bert = registry.get("bert").expect("bert in registry");
+    let config = bert.config();
+
+    for (role, pattern) in &config.tensor_template.per_layer {
+        if let Some(pat) = pattern {
+            assert!(
+                pat.contains("bert.encoder.layer.{n}"),
+                "ITER4: BERT per_layer role '{role}' pattern '{pat}' must contain 'bert.encoder.layer.{{n}}'"
+            );
+        }
+    }
+}
+
+#[test]
+fn falsify_iter4_whisper_per_layer_patterns_all_encoder_specific() {
+    // STRONG PREDICTION: Every per_layer pattern in Whisper's config contains "encoder.layers.{n}"
+    let registry = build_default_registry();
+    let whisper = registry.get("whisper").expect("whisper in registry");
+    let config = whisper.config();
+
+    for (role, pattern) in &config.tensor_template.per_layer {
+        if let Some(pat) = pattern {
+            assert!(
+                pat.contains("encoder.layers.{n}"),
+                "ITER4: Whisper per_layer role '{role}' pattern '{pat}' must contain 'encoder.layers.{{n}}'"
+            );
+        }
+    }
+}
+
+#[test]
+fn falsify_iter4_gqa_families_have_kv_heads_less_than_heads() {
+    // STRONG PREDICTION: For GQA families (not MHA), at least one size variant
+    // has num_kv_heads < num_heads (otherwise it's just MHA).
+    use aprender::format::model_family::AttentionType;
+
+    let registry = build_default_registry();
+
+    for family_name in KNOWN_FAMILIES {
+        let family = registry.get(family_name).expect("family exists");
+        let constraints = family.constraints();
+
+        if constraints.attention_type == AttentionType::Gqa {
+            let config = family.config();
+            let has_gqa_size = config.size_variants.values().any(|s| s.num_kv_heads < s.num_heads);
+            assert!(
+                has_gqa_size,
+                "ITER4: {family_name} declares GQA but no size has num_kv_heads < num_heads"
+            );
+        }
+    }
+}
+
+#[test]
+fn falsify_iter4_no_bias_families_have_no_bias_constraint() {
+    // STRONG PREDICTION: Families that declare has_bias=false should NOT have
+    // bias patterns (q_proj_bias, k_proj_bias, v_proj_bias) resolving to real tensors.
+    let registry = build_default_registry();
+
+    for family_name in KNOWN_FAMILIES {
+        let family = registry.get(family_name).expect("family exists");
+        let constraints = family.constraints();
+        let config = family.config();
+
+        if !constraints.has_bias {
+            // Check that bias-related per_layer entries are None
+            for (role, pattern) in &config.tensor_template.per_layer {
+                if role.contains("bias") {
+                    assert!(
+                        pattern.is_none(),
+                        "ITER4: {family_name} declares has_bias=false but per_layer '{role}' is Some('{}')",
+                        pattern.as_deref().unwrap_or("?")
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn falsify_iter4_bias_families_have_bias_patterns() {
+    // STRONG PREDICTION: Families declaring has_bias=true AND using standard LLaMA-like
+    // naming (model.layers.*) should have at least one non-None bias per_layer entry.
+    let registry = build_default_registry();
+
+    let standard_bias_families = ["qwen2", "phi"]; // These use model.layers.* with biases
+    for &family_name in &standard_bias_families {
+        let family = registry.get(family_name).expect("family exists");
+        let config = family.config();
+
+        let bias_count = config
+            .tensor_template
+            .per_layer
+            .iter()
+            .filter(|(role, pat)| role.contains("bias") && pat.is_some())
+            .count();
+
+        assert!(
+            bias_count >= 3,
+            "ITER4: {family_name} declares has_bias=true but only has {bias_count} bias patterns (expected >= 3)"
+        );
+    }
+}
+
+#[test]
+fn falsify_iter4_embedding_uniqueness_bert_whisper() {
+    // STRONG PREDICTION: BERT and Whisper have embedding tensor names different
+    // from all standard "model.embed_tokens.weight" families.
+    let registry = build_default_registry();
+
+    let bert = registry.get("bert").expect("bert");
+    let whisper = registry.get("whisper").expect("whisper");
+
+    // BERT and Whisper must NOT use model.embed_tokens.weight
+    assert_ne!(
+        bert.config().tensor_template.embedding,
+        "model.embed_tokens.weight",
+        "ITER4: BERT embedding must differ from standard families"
+    );
+    assert_ne!(
+        whisper.config().tensor_template.embedding,
+        "model.embed_tokens.weight",
+        "ITER4: Whisper embedding must differ from standard families"
+    );
+
+    // BERT and Whisper must have different embedding from each other
+    assert_ne!(
+        bert.config().tensor_template.embedding,
+        whisper.config().tensor_template.embedding,
+        "ITER4: BERT and Whisper must have different embedding tensor names"
+    );
+}
+
+#[test]
+fn falsify_iter4_detect_from_model_type_unknown_returns_none() {
+    // STRONG PREDICTION: Unknown model_type should return None
+    let registry = build_default_registry();
+
+    let unknown_types = ["gpt2", "falcon", "mamba", "rwkv", "t5", "unknown_model_xyz"];
+    for model_type in &unknown_types {
+        let detected = registry.detect_from_model_type(model_type);
+        assert!(
+            detected.is_none(),
+            "ITER4: Unknown model_type '{model_type}' should return None, got '{}'",
+            detected.map_or("None", |f| f.family_name())
+        );
+    }
+}
+
+#[test]
+fn falsify_iter4_per_layer_roles_unique_per_family() {
+    // STRONG PREDICTION: Within each family, no two per_layer roles map to the
+    // exact same tensor pattern (that would be a YAML copy-paste bug).
+    let registry = build_default_registry();
+
+    for family_name in KNOWN_FAMILIES {
+        let family = registry.get(family_name).expect("family exists");
+        let config = family.config();
+
+        let patterns: Vec<&str> = config
+            .tensor_template
+            .per_layer
+            .values()
+            .filter_map(|p| p.as_deref())
+            .collect();
+
+        let mut seen = std::collections::HashSet::new();
+        for pat in &patterns {
+            assert!(
+                seen.insert(*pat),
+                "ITER4: {family_name} has duplicate per_layer pattern: '{pat}'"
+            );
+        }
+    }
+}
+
+#[test]
+fn falsify_iter4_adversarial_trailing_whitespace_not_detected() {
+    // STRONG PREDICTION: Tensor names with trailing whitespace should NOT match.
+    let registry = build_default_registry();
+
+    let adversarial_names = vec![
+        "model.embed_tokens.weight ",  // trailing space
+        " model.embed_tokens.weight",  // leading space
+        "model.layers.0.self_attn.q_proj.weight\t", // trailing tab
+    ];
+
+    let detected = registry.detect_family(&adversarial_names);
+    assert!(
+        detected.is_none(),
+        "ITER4: Adversarial tensor names with whitespace should not match any family"
+    );
+}
+
+#[test]
+fn falsify_iter4_adversarial_case_sensitivity() {
+    // STRONG PREDICTION: Tensor names are case-sensitive — "Model.Embed_Tokens.Weight"
+    // should NOT match "model.embed_tokens.weight".
+    let registry = build_default_registry();
+
+    let wrong_case = vec![
+        "Model.Embed_Tokens.Weight",
+        "model.layers.0.Self_Attn.Q_Proj.Weight",
+    ];
+
+    let detected = registry.detect_family(&wrong_case);
+    assert!(
+        detected.is_none(),
+        "ITER4: Wrong-case tensor names must not match any family"
+    );
+}
+
+#[test]
+fn falsify_iter4_all_families_constraints_consistent() {
+    // STRONG PREDICTION: Constraint cross-checks:
+    // - SwiGLU MLP implies SiLU activation (SiLU-gated linear unit)
+    // - GELU MLP implies GELU activation (standard GELU feedforward)
+    // - Gated MLP implies GELU activation (GeGLU = GELU-gated linear unit, e.g. Gemma)
+    use aprender::format::model_family::{Activation, MlpType};
+
+    let registry = build_default_registry();
+
+    for family_name in KNOWN_FAMILIES {
+        let family = registry.get(family_name).expect("family exists");
+        let constraints = family.constraints();
+
+        // SwiGLU always uses SiLU activation
+        if constraints.mlp_type == MlpType::SwiGlu {
+            assert_eq!(
+                constraints.activation,
+                Activation::Silu,
+                "ITER4: {family_name} uses SwiGLU MLP but activation is {:?}, expected SiLU",
+                constraints.activation
+            );
+        }
+
+        // GELU MLP uses GELU activation
+        if constraints.mlp_type == MlpType::GeluMlp {
+            assert_eq!(
+                constraints.activation,
+                Activation::Gelu,
+                "ITER4: {family_name} uses GELU MLP but activation is {:?}, expected GELU",
+                constraints.activation
+            );
+        }
+
+        // Gated MLP (GeGLU) uses GELU activation
+        if constraints.mlp_type == MlpType::GatedMlp {
+            assert_eq!(
+                constraints.activation,
+                Activation::Gelu,
+                "ITER4: {family_name} uses Gated MLP (GeGLU) but activation is {:?}, expected GELU",
+                constraints.activation
+            );
+        }
+    }
+}
+
+#[test]
+fn falsify_iter4_bert_validate_tensor_names_complete() {
+    // STRONG PREDICTION: Building BERT tensor names from its config and validating
+    // against its own contract passes for BOTH sizes.
+    let registry = build_default_registry();
+    let bert = registry.get("bert").expect("bert");
+    let config = bert.config();
+
+    for (size_name, size_config) in &config.size_variants {
+        let mut names: Vec<String> = Vec::new();
+        names.push(config.tensor_template.embedding.clone());
+        if let Some(ref lm_head) = config.tensor_template.lm_head {
+            names.push(lm_head.clone());
+        }
+        if let Some(ref final_norm) = config.tensor_template.final_norm {
+            names.push(final_norm.clone());
+        }
+        for layer_idx in 0..size_config.num_layers {
+            for pat in config.tensor_template.per_layer.values().flatten() {
+                names.push(pat.replace("{n}", &layer_idx.to_string()));
+            }
+        }
+
+        let name_refs: Vec<&str> = names.iter().map(String::as_str).collect();
+        let result = bert.validate_tensor_names(&name_refs, size_name);
+        assert!(
+            result.is_ok(),
+            "ITER4: BERT/{size_name} full tensor set must pass self-validation, got: {:?}",
+            result.err()
+        );
+    }
+}
+
+#[test]
+fn falsify_iter4_whisper_validate_tensor_names_complete() {
+    // STRONG PREDICTION: Building Whisper tensor names from its config and validating
+    // against its own contract passes for ALL sizes.
+    let registry = build_default_registry();
+    let whisper = registry.get("whisper").expect("whisper");
+    let config = whisper.config();
+
+    for (size_name, size_config) in &config.size_variants {
+        let mut names: Vec<String> = Vec::new();
+        names.push(config.tensor_template.embedding.clone());
+        if let Some(ref lm_head) = config.tensor_template.lm_head {
+            names.push(lm_head.clone());
+        }
+        if let Some(ref final_norm) = config.tensor_template.final_norm {
+            names.push(final_norm.clone());
+        }
+        for layer_idx in 0..size_config.num_layers {
+            for pat in config.tensor_template.per_layer.values().flatten() {
+                names.push(pat.replace("{n}", &layer_idx.to_string()));
+            }
+        }
+
+        let name_refs: Vec<&str> = names.iter().map(String::as_str).collect();
+        let result = whisper.validate_tensor_names(&name_refs, size_name);
+        assert!(
+            result.is_ok(),
+            "ITER4: Whisper/{size_name} full tensor set must pass self-validation, got: {:?}",
+            result.err()
+        );
+    }
+}
+
+#[test]
+fn falsify_iter4_cross_family_validate_tensor_names_rejects() {
+    // STRONG PREDICTION: Every family rejects every other family's tensor names.
+    let registry = build_default_registry();
+
+    // Build tensor name sets for selected families
+    let test_families = ["bert", "whisper", "qwen2"];
+
+    for &source_family_name in &test_families {
+        let source = registry.get(source_family_name).expect("source");
+        let config = source.config();
+
+        // Get the first size variant name
+        let (first_size_name, first_size) = config
+            .size_variants
+            .iter()
+            .next()
+            .expect("at least one size");
+
+        // Build tensor names for source family
+        let mut names: Vec<String> = Vec::new();
+        names.push(config.tensor_template.embedding.clone());
+        if let Some(ref lm_head) = config.tensor_template.lm_head {
+            names.push(lm_head.clone());
+        }
+        if let Some(ref final_norm) = config.tensor_template.final_norm {
+            names.push(final_norm.clone());
+        }
+        for layer_idx in 0..first_size.num_layers {
+            for pat in config.tensor_template.per_layer.values().flatten() {
+                names.push(pat.replace("{n}", &layer_idx.to_string()));
+            }
+        }
+        let name_refs: Vec<&str> = names.iter().map(String::as_str).collect();
+
+        // Try validating against other families — should fail
+        for &target_family_name in &test_families {
+            if target_family_name == source_family_name {
+                continue;
+            }
+            let target = registry.get(target_family_name).expect("target");
+            let target_config = target.config();
+            let (target_size_name, _) = target_config
+                .size_variants
+                .iter()
+                .next()
+                .expect("at least one size");
+
+            let result = target.validate_tensor_names(&name_refs, target_size_name);
+            assert!(
+                result.is_err(),
+                "ITER4: {source_family_name}'s tensors (size={first_size_name}) must be REJECTED by {target_family_name}'s contract (size={target_size_name})"
+            );
+        }
+    }
+}
+
+#[test]
+fn falsify_iter4_head_dim_consistency() {
+    // PREDICTION: For most families/sizes, head_dim == hidden_dim / num_heads.
+    // Exception: Some models (e.g., Gemma 7B) intentionally override head_dim
+    // to a larger value for improved attention quality. For such models,
+    // head_dim * num_heads > hidden_dim, meaning attention operates in a
+    // higher-dimensional space than the residual stream.
+    //
+    // The falsifiable prediction is: head_dim is EITHER:
+    //   (a) == hidden_dim / num_heads (standard), OR
+    //   (b) > hidden_dim / num_heads (intentional override — valid)
+    //
+    // head_dim < hidden_dim / num_heads would be suspicious and likely a bug.
+    let registry = build_default_registry();
+
+    for family_name in KNOWN_FAMILIES {
+        let family = registry.get(family_name).expect("family exists");
+        let config = family.config();
+
+        for (size_name, size_config) in &config.size_variants {
+            if size_config.num_heads > 0 {
+                let standard_head_dim = size_config.hidden_dim / size_config.num_heads;
+                assert!(
+                    size_config.head_dim >= standard_head_dim,
+                    "ITER4: {family_name}/{size_name} head_dim ({}) < hidden_dim/num_heads ({}/{}={}). \
+                     head_dim should be >= standard to avoid information loss.",
+                    size_config.head_dim, size_config.hidden_dim, size_config.num_heads, standard_head_dim
+                );
+            }
+        }
+    }
+}
+
+// =============================================================================
+// Iteration 5: Architectural Consistency & Mathematical Invariants
+// =============================================================================
+
+#[test]
+fn falsify_iter5_intermediate_dim_greater_than_hidden_dim() {
+    // STRONG PREDICTION: For ALL families and sizes, intermediate_dim > hidden_dim
+    // (the FFN expands the representation before projecting back down).
+    // If intermediate_dim <= hidden_dim, the FFN is a bottleneck, which is invalid.
+    let registry = build_default_registry();
+
+    for family_name in KNOWN_FAMILIES {
+        let family = registry.get(family_name).expect("family exists");
+        let config = family.config();
+
+        for (size_name, size_config) in &config.size_variants {
+            if size_config.intermediate_dim > 0 {
+                assert!(
+                    size_config.intermediate_dim > size_config.hidden_dim,
+                    "ITER5: {family_name}/{size_name} intermediate_dim ({}) must be > hidden_dim ({})",
+                    size_config.intermediate_dim,
+                    size_config.hidden_dim
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn falsify_iter5_rope_families_have_nonzero_rope_theta() {
+    // STRONG PREDICTION: Families using RoPE positional encoding must have
+    // rope_theta > 0 for all size variants.
+    use aprender::format::model_family::PositionalEncoding;
+
+    let registry = build_default_registry();
+
+    for family_name in KNOWN_FAMILIES {
+        let family = registry.get(family_name).expect("family exists");
+        let constraints = family.constraints();
+
+        if constraints.positional_encoding == PositionalEncoding::Rope {
+            let config = family.config();
+            for (size_name, size_config) in &config.size_variants {
+                assert!(
+                    size_config.rope_theta > 0.0,
+                    "ITER5: {family_name}/{size_name} uses RoPE but rope_theta is {} (must be > 0)",
+                    size_config.rope_theta
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn falsify_iter5_non_rope_families_have_zero_or_default_rope_theta() {
+    // STRONG PREDICTION: Families NOT using RoPE should have rope_theta == 0.0
+    // (default value, not meaningful). If they have a nonzero value, either
+    // the positional encoding label is wrong or the theta is misleading.
+    use aprender::format::model_family::PositionalEncoding;
+
+    let registry = build_default_registry();
+
+    for family_name in KNOWN_FAMILIES {
+        let family = registry.get(family_name).expect("family exists");
+        let constraints = family.constraints();
+
+        if constraints.positional_encoding != PositionalEncoding::Rope {
+            let config = family.config();
+            for (size_name, size_config) in &config.size_variants {
+                // rope_theta should be 0.0 (default) or at least the YAML shouldn't set it
+                assert!(
+                    size_config.rope_theta == 0.0 || size_config.rope_theta == 1e-6,
+                    "ITER5: {family_name}/{size_name} does NOT use RoPE but has rope_theta={} (should be 0)",
+                    size_config.rope_theta
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn falsify_iter5_mha_families_have_kv_heads_equal_heads() {
+    // STRONG PREDICTION: For MHA families, num_kv_heads == num_heads for ALL sizes.
+    // (MHA means every head has its own K/V projection — no sharing.)
+    use aprender::format::model_family::AttentionType;
+
+    let registry = build_default_registry();
+
+    for family_name in KNOWN_FAMILIES {
+        let family = registry.get(family_name).expect("family exists");
+        let constraints = family.constraints();
+
+        if constraints.attention_type == AttentionType::Mha {
+            let config = family.config();
+            for (size_name, size_config) in &config.size_variants {
+                assert_eq!(
+                    size_config.num_kv_heads, size_config.num_heads,
+                    "ITER5: {family_name}/{size_name} declares MHA but num_kv_heads ({}) != num_heads ({})",
+                    size_config.num_kv_heads, size_config.num_heads
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn falsify_iter5_vocab_size_positive_for_all() {
+    // STRONG PREDICTION: Every family/size must have vocab_size > 0.
+    let registry = build_default_registry();
+
+    for family_name in KNOWN_FAMILIES {
+        let family = registry.get(family_name).expect("family exists");
+        let config = family.config();
+
+        for (size_name, size_config) in &config.size_variants {
+            assert!(
+                size_config.vocab_size > 0,
+                "ITER5: {family_name}/{size_name} vocab_size must be > 0, got {}",
+                size_config.vocab_size
+            );
+        }
+    }
+}
+
+#[test]
+fn falsify_iter5_norm_eps_in_valid_range() {
+    // STRONG PREDICTION: norm_eps must be in (0, 0.01) for all families/sizes.
+    // Too small (0) causes div-by-zero, too large (>0.01) corrupts normalization.
+    let registry = build_default_registry();
+
+    for family_name in KNOWN_FAMILIES {
+        let family = registry.get(family_name).expect("family exists");
+        let config = family.config();
+
+        for (size_name, size_config) in &config.size_variants {
+            assert!(
+                size_config.norm_eps > 0.0 && size_config.norm_eps < 0.01,
+                "ITER5: {family_name}/{size_name} norm_eps ({}) must be in (0, 0.01)",
+                size_config.norm_eps
+            );
+        }
+    }
+}
+
+#[test]
+fn falsify_iter5_registry_returns_consistent_data() {
+    // STRONG PREDICTION: Multiple calls to build_default_registry() return
+    // identical data (the generated code is deterministic).
+    let registry1 = build_default_registry();
+    let registry2 = build_default_registry();
+
+    assert_eq!(
+        registry1.len(),
+        registry2.len(),
+        "ITER5: Two registry builds must have same length"
+    );
+
+    for family_name in KNOWN_FAMILIES {
+        let f1 = registry1.get(family_name).expect("f1");
+        let f2 = registry2.get(family_name).expect("f2");
+
+        assert_eq!(
+            f1.family_name(),
+            f2.family_name(),
+            "ITER5: {family_name} name mismatch between registries"
+        );
+        assert_eq!(
+            f1.config().vendor,
+            f2.config().vendor,
+            "ITER5: {family_name} vendor mismatch between registries"
+        );
+        assert_eq!(
+            f1.config().size_variants.len(),
+            f2.config().size_variants.len(),
+            "ITER5: {family_name} size variant count mismatch"
+        );
+    }
+}
+
+#[test]
+fn falsify_iter5_partial_tensor_set_rejected() {
+    // STRONG PREDICTION: A tensor set with only embedding + 1 layer (but contract
+    // expects 24 layers) should fail validation because layer 1..23 tensors are missing.
+    let registry = build_default_registry();
+    let qwen2 = registry.get("qwen2").expect("qwen2");
+    let config = qwen2.config();
+
+    let mut names: Vec<String> = Vec::new();
+    names.push(config.tensor_template.embedding.clone());
+    if let Some(ref lm_head) = config.tensor_template.lm_head {
+        names.push(lm_head.clone());
+    }
+    if let Some(ref final_norm) = config.tensor_template.final_norm {
+        names.push(final_norm.clone());
+    }
+    // Only layer 0 — layers 1..23 missing
+    for pat in config.tensor_template.per_layer.values().flatten() {
+        names.push(pat.replace("{n}", "0"));
+    }
+
+    let name_refs: Vec<&str> = names.iter().map(String::as_str).collect();
+    let result = qwen2.validate_tensor_names(&name_refs, "0.5b");
+    assert!(
+        result.is_err(),
+        "ITER5: Partial tensor set (only layer 0) must be rejected for 0.5b (24 layers expected)"
+    );
+}
+
+#[test]
+fn falsify_iter5_all_families_have_at_least_one_quantization() {
+    // STRONG PREDICTION: Every family supports at least one quantization format.
+    let registry = build_default_registry();
+
+    for family_name in KNOWN_FAMILIES {
+        let family = registry.get(family_name).expect("family exists");
+        let config = family.config();
+
+        assert!(
+            !config.quantizations.is_empty(),
+            "ITER5: {family_name} must support at least one quantization format"
+        );
+    }
+}
+
+#[test]
+fn falsify_iter5_all_standard_families_have_lm_head() {
+    // STRONG PREDICTION: All causal LM families (not BERT, not Whisper) must
+    // have an lm_head tensor for next-token prediction.
+    let registry = build_default_registry();
+
+    let causal_lm_families = ["qwen2", "llama", "mistral", "phi", "deepseek", "gemma"];
+    for &family_name in &causal_lm_families {
+        let family = registry.get(family_name).expect("family exists");
+        let config = family.config();
+
+        assert!(
+            config.tensor_template.lm_head.is_some(),
+            "ITER5: Causal LM family {family_name} must have lm_head tensor"
+        );
+    }
+}
+
+#[test]
+fn falsify_iter5_all_standard_families_have_final_norm() {
+    // STRONG PREDICTION: All causal LM families must have a final normalization
+    // layer (model.norm.weight or equivalent).
+    let registry = build_default_registry();
+
+    let causal_lm_families = ["qwen2", "llama", "mistral", "phi", "deepseek", "gemma"];
+    for &family_name in &causal_lm_families {
+        let family = registry.get(family_name).expect("family exists");
+        let config = family.config();
+
+        assert!(
+            config.tensor_template.final_norm.is_some(),
+            "ITER5: Causal LM family {family_name} must have final_norm tensor"
+        );
+    }
+}
+
+#[test]
+fn falsify_iter5_gqa_kv_heads_divides_heads() {
+    // STRONG PREDICTION: For GQA families, num_heads must be divisible by
+    // num_kv_heads (each KV group serves the same number of query heads).
+    use aprender::format::model_family::AttentionType;
+
+    let registry = build_default_registry();
+
+    for family_name in KNOWN_FAMILIES {
+        let family = registry.get(family_name).expect("family exists");
+        let constraints = family.constraints();
+
+        if constraints.attention_type == AttentionType::Gqa {
+            let config = family.config();
+            for (size_name, size_config) in &config.size_variants {
+                if size_config.num_kv_heads > 0 {
+                    assert_eq!(
+                        size_config.num_heads % size_config.num_kv_heads,
+                        0,
+                        "ITER5: {family_name}/{size_name} num_heads ({}) must be divisible by num_kv_heads ({})",
+                        size_config.num_heads,
+                        size_config.num_kv_heads
+                    );
+                }
+            }
+        }
+    }
+}
+
+// =============================================================================
 // Helpers
 // =============================================================================
 
