@@ -492,6 +492,21 @@ fn extract_hf_repo(uri: &str) -> Option<String> {
 ///
 /// Priority for GGUF auto-detection: Q4_K_M > Q4_K_S > Q4_0 > Q8_0 > any
 fn resolve_hf_model(uri: &str) -> Result<ResolvedModel> {
+    // GH-213: Normalize bare "org/repo" to "hf://org/repo"
+    // Detects patterns like "Qwen/Qwen2.5-Coder-3B-Instruct" (no scheme, no extension,
+    // exactly one slash separating org/repo, optionally with a filename after second slash)
+    let uri = if !uri.contains("://") && !uri.starts_with('/') && !uri.starts_with('.') {
+        let parts: Vec<&str> = uri.split('/').collect();
+        if parts.len() >= 2 && !parts[0].is_empty() && !parts[1].is_empty() {
+            format!("hf://{uri}")
+        } else {
+            uri.to_string()
+        }
+    } else {
+        uri.to_string()
+    };
+    let uri = uri.as_str();
+
     // If not a HuggingFace URI, return unchanged as single file
     if !uri.starts_with("hf://") {
         return Ok(ResolvedModel::SingleFile(uri.to_string()));
@@ -1205,6 +1220,60 @@ mod tests {
     fn test_gh213_resolve_hf_invalid_uri_fails() {
         let result = resolve_hf_model("hf://invalid");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_gh213_resolve_bare_org_repo_normalizes() {
+        // "Qwen/Qwen2.5-Coder-3B-Instruct" should be treated as "hf://Qwen/Qwen2.5-Coder-3B-Instruct"
+        // Can't test full resolution without network, but verify it doesn't return as SingleFile unchanged
+        let result = resolve_hf_model("Qwen/FakeRepo");
+        // Will fail with network error (repo doesn't exist), which proves it tried HF API
+        assert!(
+            result.is_err(),
+            "Bare org/repo should attempt HF resolution"
+        );
+    }
+
+    #[test]
+    fn test_gh213_resolve_bare_org_repo_with_gguf_extension() {
+        // "org/repo/file.gguf" should normalize to "hf://org/repo/file.gguf" → SingleFile
+        let result = resolve_hf_model("org/repo/model.gguf").unwrap();
+        match result {
+            ResolvedModel::SingleFile(s) => {
+                assert_eq!(s, "hf://org/repo/model.gguf");
+            }
+            ResolvedModel::Sharded { .. } => panic!("Expected SingleFile"),
+        }
+    }
+
+    #[test]
+    fn test_gh213_resolve_bare_single_component_unchanged() {
+        // "justAName" (no slash) should not be normalized, stays as local path
+        let result = resolve_hf_model("justAName").unwrap();
+        match result {
+            ResolvedModel::SingleFile(s) => assert_eq!(s, "justAName"),
+            ResolvedModel::Sharded { .. } => panic!("Expected SingleFile"),
+        }
+    }
+
+    #[test]
+    fn test_gh213_resolve_relative_path_not_normalized() {
+        // "./path/to/model" should NOT be treated as org/repo
+        let result = resolve_hf_model("./path/to/model").unwrap();
+        match result {
+            ResolvedModel::SingleFile(s) => assert_eq!(s, "./path/to/model"),
+            ResolvedModel::Sharded { .. } => panic!("Expected SingleFile"),
+        }
+    }
+
+    #[test]
+    fn test_gh213_resolve_absolute_path_not_normalized() {
+        // "/home/user/model" should NOT be treated as org/repo
+        let result = resolve_hf_model("/home/user/model").unwrap();
+        match result {
+            ResolvedModel::SingleFile(s) => assert_eq!(s, "/home/user/model"),
+            ResolvedModel::Sharded { .. } => panic!("Expected SingleFile"),
+        }
     }
 
     // Integration tests (require network, marked ignore for CI)
