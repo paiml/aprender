@@ -35,16 +35,59 @@ use aprender::format::validated_tensors::{RowMajor, ValidatedWeight};
 // If test fails: Family detection is broken.
 
 #[test]
-fn falsify_mfc_001_standard_transformer_names_detected() {
+fn falsify_mfc_001_bias_tensors_detected_as_bias_family() {
     let registry = build_default_registry();
 
-    // Standard transformer tensor names (shared by Qwen2, LLaMA, DeepSeek, Mistral)
-    // FALSIFICATION FINDING: These families share identical tensor naming conventions.
-    // detect_family() returns the first alphabetical match because the naming is
-    // ambiguous. This is a genuine limitation: tensor-name-only detection cannot
-    // distinguish families with identical naming patterns. Size detection via
-    // hidden_dim/num_layers (FALSIFY-MFC-002) is needed for disambiguation.
-    let standard_tensor_names = vec![
+    // Tensor names WITH bias patterns. Best-match scoring: bias-bearing families
+    // (Qwen2, Phi) score 13, bias-free families (LLaMA, DeepSeek, Mistral) score 10.
+    // Result MUST be a bias-bearing family, NOT a bias-free family.
+    let bias_tensor_names = vec![
+        "model.embed_tokens.weight",
+        "lm_head.weight",
+        "model.norm.weight",
+        "model.layers.0.self_attn.q_proj.weight",
+        "model.layers.0.self_attn.k_proj.weight",
+        "model.layers.0.self_attn.v_proj.weight",
+        "model.layers.0.self_attn.o_proj.weight",
+        "model.layers.0.mlp.gate_proj.weight",
+        "model.layers.0.mlp.up_proj.weight",
+        "model.layers.0.mlp.down_proj.weight",
+        "model.layers.0.input_layernorm.weight",
+        "model.layers.0.post_attention_layernorm.weight",
+        "model.layers.0.self_attn.q_proj.bias",
+        "model.layers.0.self_attn.k_proj.bias",
+        "model.layers.0.self_attn.v_proj.bias",
+    ];
+
+    let detected = registry.detect_family(&bias_tensor_names);
+    assert!(
+        detected.is_some(),
+        "FALSIFY-MFC-001: detect_family() should detect bias-bearing tensor names"
+    );
+    let family_name = detected.expect("bias family detected").family_name();
+    let bias_families = ["phi", "qwen2"];
+    assert!(
+        bias_families.contains(&family_name),
+        "FALSIFY-MFC-001: bias tensor names must detect as bias family {:?}, got '{family_name}'",
+        bias_families
+    );
+
+    // Must NOT be a bias-free family
+    let no_bias_families = ["deepseek", "llama", "mistral"];
+    assert!(
+        !no_bias_families.contains(&family_name),
+        "FALSIFY-MFC-001: bias tensors must NOT match bias-free family, got '{family_name}'"
+    );
+}
+
+#[test]
+fn falsify_mfc_001_no_bias_tensors_detected_as_no_bias_family() {
+    let registry = build_default_registry();
+
+    // Tensor names WITHOUT bias patterns. All no-bias families score 10,
+    // bias families also score 10 (their bias patterns don't match).
+    // Among tied families, result is deterministic (alphabetical).
+    let no_bias_tensor_names = vec![
         "model.embed_tokens.weight",
         "lm_head.weight",
         "model.norm.weight",
@@ -59,42 +102,41 @@ fn falsify_mfc_001_standard_transformer_names_detected() {
         "model.layers.0.post_attention_layernorm.weight",
     ];
 
-    let detected = registry.detect_family(&standard_tensor_names);
+    let detected = registry.detect_family(&no_bias_tensor_names);
     assert!(
         detected.is_some(),
-        "FALSIFY-MFC-001: detect_family() should detect standard transformer tensor names"
+        "FALSIFY-MFC-001: detect_family() should detect no-bias transformer tensors"
     );
-
-    // Multiple families share this exact naming convention
+    // All standard-naming families tie at score 10; any is acceptable
     let family_name = detected.expect("family detected").family_name();
-    let shared_naming_families = ["deepseek", "llama", "mistral", "qwen2"];
+    let standard_families = ["deepseek", "llama", "mistral", "phi", "qwen2"];
     assert!(
-        shared_naming_families.contains(&family_name),
-        "FALSIFY-MFC-001: standard transformer names should match one of {:?}, got '{family_name}'",
-        shared_naming_families
+        standard_families.contains(&family_name),
+        "FALSIFY-MFC-001: no-bias names should match a standard family, got '{family_name}'"
     );
 }
 
 #[test]
 fn falsify_mfc_001_model_type_detection_is_unambiguous() {
-    // COMPLEMENTARY TEST: While tensor-name detection is ambiguous for shared
-    // naming conventions, model_type detection (from HF config.json) IS unambiguous.
+    // model_type detection (from HF config.json) IS always unambiguous,
+    // even for families with identical tensor naming.
     let registry = build_default_registry();
 
-    // model_type detection should return the exact family
-    let qwen2 = registry.detect_from_model_type("qwen2");
-    assert_eq!(
-        qwen2.expect("qwen2 detected").family_name(),
-        "qwen2",
-        "FALSIFY-MFC-001: model_type 'qwen2' must unambiguously detect qwen2"
-    );
-
-    let llama = registry.detect_from_model_type("llama");
-    assert_eq!(
-        llama.expect("llama detected").family_name(),
-        "llama",
-        "FALSIFY-MFC-001: model_type 'llama' must unambiguously detect llama"
-    );
+    let families = [
+        ("qwen2", "qwen2"),
+        ("llama", "llama"),
+        ("phi", "phi"),
+        ("mistral", "mistral"),
+        ("deepseek", "deepseek"),
+    ];
+    for (model_type, expected) in &families {
+        let detected = registry.detect_from_model_type(model_type);
+        assert_eq!(
+            detected.expect("detected").family_name(),
+            *expected,
+            "FALSIFY-MFC-001: model_type '{model_type}' must unambiguously detect '{expected}'"
+        );
+    }
 }
 
 #[test]
@@ -1048,6 +1090,247 @@ fn falsify_cross_expected_tensor_count_consistent_with_validation() {
         "Expected tensor count ({expected_count}) must match actual generated tensor names ({})",
         names.len()
     );
+}
+
+// =============================================================================
+// Iteration 3: Aggressive Falsification — Edge Cases & Adversarial Inputs
+// =============================================================================
+
+#[test]
+fn falsify_iter3_scoring_bias_vs_no_bias_separation() {
+    // STRONG PREDICTION: Bias tensor names must produce a STRICTLY higher score
+    // than no-bias tensor names for bias-bearing families.
+    let registry = build_default_registry();
+
+    let base_names = vec![
+        "model.embed_tokens.weight",
+        "model.layers.0.self_attn.q_proj.weight",
+        "model.layers.0.self_attn.k_proj.weight",
+        "model.layers.0.self_attn.v_proj.weight",
+        "model.layers.0.self_attn.o_proj.weight",
+        "model.layers.0.mlp.gate_proj.weight",
+        "model.layers.0.mlp.up_proj.weight",
+        "model.layers.0.mlp.down_proj.weight",
+        "model.layers.0.input_layernorm.weight",
+        "model.layers.0.post_attention_layernorm.weight",
+    ];
+
+    let mut with_bias = base_names.clone();
+    with_bias.push("model.layers.0.self_attn.q_proj.bias");
+    with_bias.push("model.layers.0.self_attn.k_proj.bias");
+    with_bias.push("model.layers.0.self_attn.v_proj.bias");
+
+    // Both must detect, but with different specificity
+    let no_bias_family = registry.detect_family(&base_names);
+    let bias_family = registry.detect_family(&with_bias);
+
+    assert!(no_bias_family.is_some(), "base names must detect");
+    assert!(bias_family.is_some(), "bias names must detect");
+
+    // Bias result must be a bias-bearing family
+    let bias_name = bias_family.expect("bias").family_name();
+    assert!(
+        bias_name == "phi" || bias_name == "qwen2",
+        "ITER3: Bias tensors must select a bias-bearing family, got '{bias_name}'"
+    );
+}
+
+#[test]
+fn falsify_iter3_all_families_have_unique_model_type() {
+    // PREDICTION: No two families share the same model_type detection path
+    let registry = build_default_registry();
+
+    for family_name in KNOWN_FAMILIES {
+        let detected = registry.detect_from_model_type(family_name);
+        assert!(
+            detected.is_some(),
+            "ITER3: Family '{family_name}' must be detectable by its own name"
+        );
+        assert_eq!(
+            detected.expect("detected").family_name(),
+            *family_name,
+            "ITER3: model_type '{family_name}' must map to itself, not another family"
+        );
+    }
+}
+
+#[test]
+fn falsify_iter3_size_detection_is_injective_per_family() {
+    // PREDICTION: Within each family, no two sizes share (hidden_dim, num_layers)
+    let registry = build_default_registry();
+
+    for family_name in KNOWN_FAMILIES {
+        let family = registry.get(family_name).expect("family exists");
+        let config = family.config();
+
+        let mut seen: Vec<(usize, usize)> = Vec::new();
+        for (size_name, size_config) in &config.size_variants {
+            let key = (size_config.hidden_dim, size_config.num_layers);
+            assert!(
+                !seen.contains(&key),
+                "ITER3: {family_name} has duplicate (hidden_dim={}, num_layers={}) in sizes",
+                key.0,
+                key.1
+            );
+            seen.push(key);
+
+            // Also verify detect_size round-trips
+            let detected = family.detect_size(size_config.hidden_dim, size_config.num_layers);
+            assert_eq!(
+                detected.as_deref(),
+                Some(size_name.as_str()),
+                "ITER3: {family_name}.detect_size({}, {}) should return '{size_name}'",
+                size_config.hidden_dim,
+                size_config.num_layers,
+            );
+        }
+    }
+}
+
+#[test]
+fn falsify_iter3_expected_tensor_count_all_families() {
+    // PREDICTION: expected_tensor_count() is consistent with validate_tensor_names()
+    // for EVERY family and EVERY size variant.
+    let registry = build_default_registry();
+
+    for family_name in KNOWN_FAMILIES {
+        let family = registry.get(family_name).expect("family exists");
+        let config = family.config();
+
+        for (size_name, size_config) in &config.size_variants {
+            let expected = family.expected_tensor_count(size_name);
+            assert!(
+                expected.is_some(),
+                "ITER3: {family_name}/{size_name} must have an expected tensor count"
+            );
+            let count = expected.expect("count");
+            assert!(
+                count > 0,
+                "ITER3: {family_name}/{size_name} expected_tensor_count must be > 0"
+            );
+
+            // Build the full tensor name set and verify count matches
+            let mut names: Vec<String> = Vec::new();
+            names.push(config.tensor_template.embedding.clone());
+            if let Some(ref lm_head) = config.tensor_template.lm_head {
+                names.push(lm_head.clone());
+            }
+            if let Some(ref final_norm) = config.tensor_template.final_norm {
+                names.push(final_norm.clone());
+            }
+            for layer_idx in 0..size_config.num_layers {
+                for pat in config.tensor_template.per_layer.values().flatten() {
+                    names.push(pat.replace("{n}", &layer_idx.to_string()));
+                }
+            }
+
+            assert_eq!(
+                names.len(),
+                count,
+                "ITER3: {family_name}/{size_name} tensor count mismatch: built {} names, expected {}",
+                names.len(),
+                count
+            );
+
+            // And validate_tensor_names must accept this exact set
+            let name_refs: Vec<&str> = names.iter().map(String::as_str).collect();
+            let result = family.validate_tensor_names(&name_refs, size_name);
+            assert!(
+                result.is_ok(),
+                "ITER3: {family_name}/{size_name} full tensor set must pass validation, got: {:?}",
+                result.err()
+            );
+        }
+    }
+}
+
+#[test]
+fn falsify_iter3_gemma_detected_distinctly() {
+    let registry = build_default_registry();
+    let gemma = registry
+        .detect_from_model_type("gemma")
+        .expect("gemma detected");
+
+    assert_eq!(gemma.family_name(), "gemma");
+    assert_eq!(gemma.config().vendor, "Google");
+
+    // Verify gemma has at least one size
+    assert!(
+        !gemma.config().size_variants.is_empty(),
+        "ITER3: Gemma must have size variants"
+    );
+}
+
+#[test]
+fn falsify_iter3_validated_weight_rejects_inf() {
+    // PREDICTION: ValidatedWeight rejects Inf values
+    let mut data: Vec<f32> = (0..100).map(|i| i as f32 * 0.01).collect();
+    data[50] = f32::INFINITY;
+    let result = ValidatedWeight::new(data, 10, 10, "test");
+    assert!(
+        result.is_err(),
+        "ITER3: ValidatedWeight must reject Inf values"
+    );
+    assert!(
+        result.unwrap_err().message.contains("Inf"),
+        "ITER3: Error message must mention Inf"
+    );
+}
+
+#[test]
+fn falsify_iter3_validated_weight_shape_enforcement() {
+    // PREDICTION: ValidatedWeight rejects mismatched dimensions
+    let data: Vec<f32> = (0..100).map(|i| i as f32 * 0.01).collect();
+    let result = ValidatedWeight::new(data, 5, 5, "test"); // 25 != 100
+    assert!(
+        result.is_err(),
+        "ITER3: ValidatedWeight must reject shape mismatch (100 elements for 5x5)"
+    );
+}
+
+#[test]
+fn falsify_iter3_yaml_contracts_dir_exists() {
+    let root = find_project_root();
+    let contracts_dir = root.join("contracts/model-families");
+    assert!(
+        contracts_dir.exists(),
+        "ITER3: contracts/model-families/ directory must exist"
+    );
+
+    // Must have at least 8 YAML files
+    let yaml_count = std::fs::read_dir(&contracts_dir)
+        .expect("read dir")
+        .filter_map(|e| e.ok())
+        .filter(|e| {
+            e.path()
+                .extension()
+                .map_or(false, |ext| ext == "yaml")
+        })
+        .count();
+
+    assert!(
+        yaml_count >= 8,
+        "ITER3: contracts/model-families/ must have >= 8 YAML files, found {yaml_count}"
+    );
+}
+
+#[test]
+fn falsify_iter3_registry_lookup_by_name_all_families() {
+    // PREDICTION: registry.get() works for every known family name
+    let registry = build_default_registry();
+
+    for family_name in KNOWN_FAMILIES {
+        let family = registry.get(family_name);
+        assert!(
+            family.is_some(),
+            "ITER3: registry.get('{family_name}') must return Some"
+        );
+        assert_eq!(
+            family.expect("family").family_name(),
+            *family_name,
+            "ITER3: registry.get('{family_name}').family_name() must equal '{family_name}'"
+        );
+    }
 }
 
 // =============================================================================

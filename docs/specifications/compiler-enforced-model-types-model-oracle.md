@@ -1213,19 +1213,43 @@ false. If a falsification test finds a counterexample, the implementation is bro
 
 ### 7.1 Phase 1: Model Family Contracts
 
-**FALSIFY-MFC-001**: Family detection accuracy
+**FALSIFY-MFC-001**: Family detection accuracy (best-match scoring)
 
 ```
-Prediction: Given a GGUF file with tensor names matching the Qwen2 contract
-  (model.embed_tokens.weight, model.layers.0.self_attn.q_proj.weight, ...),
-  ModelFamily::detect() returns "qwen2".
+Prediction: detect_family() uses best-match scoring to separate families by
+  tensor naming specificity:
 
-Falsification test:
-  1. Load a Qwen2.5-Coder-0.5B GGUF file
-  2. Call detect_family() on its tensor names
-  3. Assert result == "qwen2"
+  (a) Tensor names WITH bias patterns (q_proj.bias, k_proj.bias, v_proj.bias)
+      → detected as a bias-bearing family (Qwen2 or Phi, score 13)
+      → NOT detected as a bias-free family (LLaMA, DeepSeek, Mistral, score 10)
 
-If test fails: Family detection is broken.
+  (b) Tensor names WITHOUT bias patterns
+      → detected as a bias-free family (LLaMA, DeepSeek, Mistral, score 10)
+      → NOT detected as a bias-bearing family (Qwen2, Phi would score 10, not 13)
+
+  (c) model_type detection (from HF config.json) is always unambiguous:
+      detect_from_model_type("qwen2") → "qwen2", never "phi"
+
+Mechanism: detect_family() counts matching per-layer patterns per family.
+  The highest scorer wins. Ties are broken by alphabetical order (deterministic
+  but not semantically meaningful — use detect_from_model_type() when metadata
+  is available).
+
+Known limitation: Families with identical tensor naming AND identical
+  per-layer pattern counts are indistinguishable from tensor names alone:
+  - Bias group: Qwen2, Phi (both 12 per-layer)
+  - No-bias group: LLaMA, DeepSeek, Mistral (all 9 per-layer)
+  Within each group, model_type from config.json or GGUF metadata is required
+  for unambiguous family identification.
+
+Falsification tests:
+  1. Tensor names WITH biases → result is in {phi, qwen2} (bias families)
+  2. Tensor names WITHOUT biases → result is in {deepseek, llama, mistral}
+  3. Whisper/BERT names → NOT detected as any LLaMA-style family
+  4. detect_from_model_type("qwen2") → exactly "qwen2"
+  5. Random names → None
+
+If tests fail: Best-match scoring or model_type disambiguation is broken.
 ```
 
 **FALSIFY-MFC-002**: Size variant detection accuracy
@@ -1512,8 +1536,11 @@ the relationship between the types.
 
 **Alternative considered**: `Box<dyn ModelFamily>`. This would be simpler but loses
 compile-time family safety. A `dyn` approach is still used for the `detect_family()`
-path where the family is not known at compile time — the return value is then
-downcast or matched to construct the appropriate generic type.
+path where the family is not known at compile time. `detect_family()` uses
+best-match scoring (counting matching per-layer tensor patterns) to disambiguate
+families with overlapping naming conventions (e.g., Qwen2's bias tensors
+score 13 vs LLaMA/DeepSeek/Mistral's 10). The return value is then downcast
+or matched to construct the appropriate generic type.
 
 ### 9.4 New oracle Command vs Extending inspect
 

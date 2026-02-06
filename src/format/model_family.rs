@@ -553,33 +553,50 @@ impl FamilyRegistry {
             .map(|f| f.as_ref())
     }
 
-    /// Detect model family from tensor names.
+    /// Detect model family from tensor names using best-match scoring.
     ///
-    /// Iterates over registered families and checks if any family's tensor template
-    /// matches the given tensor names. Returns the first match.
+    /// Scores each family by counting how many of its expected tensor patterns
+    /// (embedding + per-layer for layer 0) match the given tensor names.
+    /// Returns the family with the highest score, which disambiguates families
+    /// with overlapping naming conventions (e.g., Qwen2's bias tensors
+    /// distinguish it from LLaMA/DeepSeek/Mistral which share the same base
+    /// naming but lack bias patterns).
     #[must_use]
     pub fn detect_family(&self, tensor_names: &[&str]) -> Option<&dyn ModelFamily> {
+        let mut best: Option<(usize, &dyn ModelFamily)> = None;
+
         for family in &self.families {
             let config = family.config();
 
-            // Check if the embedding tensor exists in the name list
-            if tensor_names.contains(&config.tensor_template.embedding.as_str()) {
-                // Check a few per-layer tensors for layer 0
-                let has_layer_tensors = config.tensor_template.per_layer.values().any(|pattern| {
-                    if let Some(pat) = pattern {
-                        let layer0 = pat.replace("{n}", "0");
-                        tensor_names.contains(&layer0.as_str())
-                    } else {
-                        false
-                    }
-                });
+            // Must have the embedding tensor
+            if !tensor_names.contains(&config.tensor_template.embedding.as_str()) {
+                continue;
+            }
 
-                if has_layer_tensors {
-                    return Some(family.as_ref());
+            // Score: 1 point for embedding match + 1 for each per-layer pattern match
+            let mut score = 1usize;
+            for pattern in config.tensor_template.per_layer.values().flatten() {
+                let layer0 = pattern.replace("{n}", "0");
+                if tensor_names.contains(&layer0.as_str()) {
+                    score += 1;
                 }
             }
+
+            // Need at least one per-layer match (score > 1)
+            if score <= 1 {
+                continue;
+            }
+
+            match best {
+                None => best = Some((score, family.as_ref())),
+                Some((best_score, _)) if score > best_score => {
+                    best = Some((score, family.as_ref()));
+                }
+                _ => {}
+            }
         }
-        None
+
+        best.map(|(_, family)| family)
     }
 
     /// Detect model family from HuggingFace `model_type` string.
