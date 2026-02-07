@@ -147,6 +147,7 @@ fn options_demo() {
         preserve_metadata: true,
         add_provenance: true,
         compute_stats: true,
+        tokenizer_path: None,
     };
     println!("\nQuantized Conversion Options:");
     println!("  Quantization: {:?}", quant_opts.quantization);
@@ -273,6 +274,7 @@ fn rosetta_api_demo() {
         preserve_metadata: true,
         add_provenance: true,
         compute_stats: true,
+        tokenizer_path: None,
     };
     let _custom_rosetta = RosettaStone::with_options(custom_opts);
     println!("\nRosettaStone (custom options):");

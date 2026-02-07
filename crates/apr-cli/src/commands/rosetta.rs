@@ -56,6 +56,10 @@ pub enum RosettaCommands {
         /// Output as JSON
         #[arg(long)]
         json: bool,
+
+        /// External tokenizer.json for weights-only models (PMAT-232)
+        #[arg(long, value_name = "TOKENIZER")]
+        tokenizer: Option<PathBuf>,
     },
 
     /// Execute multi-step conversion chain
@@ -248,6 +252,7 @@ pub fn run_convert(
     quantize: Option<&str>,
     verify: bool,
     json: bool,
+    tokenizer: Option<&Path>,
 ) -> Result<()> {
     if !source.exists() {
         return Err(CliError::FileNotFound(source.to_path_buf()));
@@ -256,6 +261,7 @@ pub fn run_convert(
     let options = ConversionOptions {
         quantization: quantize.map(String::from),
         verify,
+        tokenizer_path: tokenizer.map(PathBuf::from),
         ..Default::default()
     };
 
@@ -2764,6 +2770,7 @@ mod tests {
             None,
             false,
             false,
+            None,
         );
         assert!(result.is_err());
     }
@@ -2774,7 +2781,7 @@ mod tests {
         source.write_all(b"not valid gguf").expect("write");
         let target = NamedTempFile::with_suffix(".apr").expect("create target");
 
-        let result = run_convert(source.path(), target.path(), None, false, false);
+        let result = run_convert(source.path(), target.path(), None, false, false, None);
         assert!(result.is_err());
     }
 
@@ -2784,7 +2791,7 @@ mod tests {
         source.write_all(b"not valid gguf").expect("write");
         let target = NamedTempFile::with_suffix(".apr").expect("create target");
 
-        let result = run_convert(source.path(), target.path(), Some("int8"), false, false);
+        let result = run_convert(source.path(), target.path(), Some("int8"), false, false, None);
         // Should fail (invalid file) but tests quantize path
         assert!(result.is_err());
     }
@@ -2795,7 +2802,7 @@ mod tests {
         source.write_all(b"not valid gguf").expect("write");
         let target = NamedTempFile::with_suffix(".apr").expect("create target");
 
-        let result = run_convert(source.path(), target.path(), None, true, false);
+        let result = run_convert(source.path(), target.path(), None, true, false, None);
         // Should fail (invalid file) but tests verify path
         assert!(result.is_err());
     }
@@ -3138,6 +3145,7 @@ mod tests {
             quantize: None,
             verify: false,
             json: false,
+            tokenizer: None,
         };
         match cmd {
             RosettaCommands::Convert {
@@ -4569,6 +4577,7 @@ mod tests {
             tolerance: 0.01,
             preserve_metadata: false,
             add_provenance: false,
+            tokenizer_path: None,
         };
         assert_eq!(opts.quantization.as_deref(), Some("int8"));
         assert!(!opts.verify);
@@ -5102,6 +5111,7 @@ mod tests {
             quantize: Some("int4".to_string()),
             verify: true,
             json: true,
+            tokenizer: None,
         };
         match cmd {
             RosettaCommands::Convert {
@@ -5153,7 +5163,7 @@ mod tests {
         source.write_all(b"not valid gguf").expect("write");
         let target = NamedTempFile::with_suffix(".apr").expect("create target");
 
-        let result = run_convert(source.path(), target.path(), None, false, true);
+        let result = run_convert(source.path(), target.path(), None, false, true, None);
         // Fails due to invalid file, but exercises json=true path
         assert!(result.is_err());
     }
@@ -5412,7 +5422,7 @@ mod tests {
         source.write_all(b"not valid gguf").expect("write");
         let target = NamedTempFile::with_suffix(".apr").expect("create target");
 
-        let result = run_convert(source.path(), target.path(), Some("fp16"), true, false);
+        let result = run_convert(source.path(), target.path(), Some("fp16"), true, false, None);
         assert!(result.is_err());
     }
 
@@ -5422,7 +5432,7 @@ mod tests {
         source.write_all(b"not valid gguf").expect("write");
         let target = NamedTempFile::with_suffix(".apr").expect("create target");
 
-        let result = run_convert(source.path(), target.path(), Some("int4"), false, true);
+        let result = run_convert(source.path(), target.path(), Some("int4"), false, true, None);
         assert!(result.is_err());
     }
 
@@ -6790,6 +6800,7 @@ mod tests {
             tolerance: 0.01,
             preserve_metadata: true,
             add_provenance: true,
+            tokenizer_path: None,
         };
         let cloned = opts.clone();
         assert_eq!(opts.quantization, cloned.quantization);

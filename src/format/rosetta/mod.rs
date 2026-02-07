@@ -58,7 +58,7 @@
 use crate::error::{AprenderError, Result};
 use std::collections::BTreeMap;
 use std::fmt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 // ============================================================================
 // Format Types
@@ -619,6 +619,8 @@ pub struct ConversionOptions {
     pub preserve_metadata: bool,
     /// Add conversion provenance to metadata
     pub add_provenance: bool,
+    /// External tokenizer.json for weights-only models (PMAT-232)
+    pub tokenizer_path: Option<PathBuf>,
 }
 
 impl Default for ConversionOptions {
@@ -630,6 +632,7 @@ impl Default for ConversionOptions {
             tolerance: 1e-6,
             preserve_metadata: true,
             add_provenance: true,
+            tokenizer_path: None,
         }
     }
 }
@@ -1355,7 +1358,15 @@ impl RosettaStone {
             // so format conversion proceeds with warnings for unverified architectures.
             (FormatType::Gguf | FormatType::SafeTensors, FormatType::Apr) => {
                 let source_str = source.to_string_lossy();
-                apr_import(&source_str, target, ImportOptions::default())?;
+                let effective_tokenizer = opts.tokenizer_path.clone().or_else(|| {
+                    let sibling = source.with_file_name("tokenizer.json");
+                    if sibling.exists() { Some(sibling) } else { None }
+                });
+                let import_opts = ImportOptions {
+                    tokenizer_path: effective_tokenizer,
+                    ..ImportOptions::default()
+                };
+                apr_import(&source_str, target, import_opts)?;
                 Ok(())
             }
 

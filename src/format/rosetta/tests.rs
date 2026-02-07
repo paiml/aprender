@@ -266,6 +266,7 @@ fn p029_all_options_custom() {
         tolerance: 1e-4,
         preserve_metadata: false,
         add_provenance: false,
+        tokenizer_path: None,
     };
     assert_eq!(opts.quantization, Some("Q8_0".to_string()));
     assert!(!opts.verify);

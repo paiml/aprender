@@ -1927,12 +1927,14 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
                 quantize,
                 verify,
                 json,
+                tokenizer,
             } => rosetta::run_convert(
                 source,
                 target,
                 quantize.as_deref(),
                 *verify,
                 *json || cli.json,
+                tokenizer.as_deref(),
             ),
             RosettaCommands::Chain {
                 source,
@@ -5220,6 +5222,7 @@ mod tests {
                 quantize: None,
                 verify: false,
                 json: false,
+                tokenizer: None,
             },
         };
         let paths = extract_model_paths(&cmd);
@@ -6153,6 +6156,7 @@ mod tests {
                 quantize: None,
                 verify: false,
                 json: false,
+                tokenizer: None,
             },
         });
         let result = execute_command(&cli);
