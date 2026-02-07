@@ -8,6 +8,7 @@
 //! - Kaizen: Multi-step chains for iterative improvement
 
 use crate::error::{CliError, Result};
+use crate::output;
 use aprender::format::rosetta::{
     ConversionOptions, ConversionPath, FormatType, InspectionReport, RosettaStone,
     VerificationReport,
@@ -2551,64 +2552,81 @@ fn truncate_path(path: String, max_len: usize) -> String {
 // ============================================================================
 
 fn print_inspection_report(report: &InspectionReport, hexdump: bool) {
-    println!("{}", "=== Rosetta Stone Inspection ===".cyan().bold());
-    println!();
-    println!("Format: {}", report.format);
-    println!("File Size: {} bytes", report.file_size);
-    println!("Total Parameters: {}", report.total_params);
+    output::header("Rosetta Stone Inspection");
 
+    let mut pairs: Vec<(&str, String)> = vec![
+        ("Format", report.format.to_string()),
+        ("File Size", output::format_size(report.file_size as u64)),
+        ("Parameters", output::count_fmt(report.total_params)),
+    ];
     if let Some(ref arch) = report.architecture {
-        println!("Architecture: {arch}");
+        pairs.push(("Architecture", arch.clone()));
     }
     if let Some(ref quant) = report.quantization {
-        println!("Quantization: {quant}");
+        pairs.push(("Quantization", quant.clone()));
+    }
+    println!("{}", output::kv_table(&pairs));
+
+    // Metadata
+    if !report.metadata.is_empty() {
+        output::subheader(&format!("Metadata ({} keys)", report.metadata.len()));
+        let meta_pairs: Vec<(&str, String)> = report
+            .metadata
+            .iter()
+            .map(|(k, v)| {
+                let display_v = if v.len() > 60 {
+                    format!("{}...", &v[..60])
+                } else {
+                    v.clone()
+                };
+                (k.as_str(), display_v)
+            })
+            .collect();
+        println!("{}", output::kv_table(&meta_pairs));
     }
 
-    println!();
-    println!("{}", "--- Metadata ---".yellow());
-    for (k, v) in &report.metadata {
-        let display_v = if v.len() > 60 {
-            format!("{}...", &v[..60])
-        } else {
-            v.clone()
-        };
-        println!("  {k}: {display_v}");
-    }
-
-    println!();
-    println!(
-        "{}",
-        format!("--- Tensors ({} total) ---", report.tensors.len()).yellow()
-    );
+    // Tensors
+    output::subheader(&format!("Tensors ({} total)", report.tensors.len()));
+    let mut rows: Vec<Vec<String>> = Vec::new();
     for (i, t) in report.tensors.iter().enumerate() {
-        if i < 10 || i >= report.tensors.len() - 2 {
-            println!(
-                "  {}: {} {:?} ({} bytes)",
-                t.name, t.dtype, t.shape, t.size_bytes
-            );
+        if i < 10 || i >= report.tensors.len().saturating_sub(2) {
+            rows.push(vec![
+                t.name.clone(),
+                format!("{}", output::dtype_color(&t.dtype)),
+                format!("{:?}", t.shape),
+                output::format_size(t.size_bytes as u64),
+            ]);
         } else if i == 10 {
-            println!("  ... ({} more tensors) ...", report.tensors.len() - 12);
+            rows.push(vec![
+                format!("... {} more ...", report.tensors.len().saturating_sub(12)),
+                String::new(),
+                String::new(),
+                String::new(),
+            ]);
         }
     }
+    println!("{}", output::table(&["Name", "DType", "Shape", "Size"], &rows));
 
     if hexdump {
-        println!();
-        println!("{}", "--- Hexdump (first 64 bytes) ---".yellow());
+        output::subheader("Hexdump (first 64 bytes)");
         println!("  (Use 'apr hex <file>' for full hex dump)");
     }
 }
 
 fn print_inspection_summary(report: &InspectionReport) {
-    println!("  Format: {}", report.format);
-    println!("  File Size: {} bytes", report.file_size);
-    println!("  Tensors: {}", report.tensors.len());
-    println!("  Parameters: {}", report.total_params);
+    let mut pairs: Vec<(&str, String)> = vec![
+        ("Format", report.format.to_string()),
+        ("File Size", output::format_size(report.file_size as u64)),
+        ("Tensors", output::count_fmt(report.tensors.len())),
+        ("Parameters", output::count_fmt(report.total_params)),
+    ];
     if let Some(ref arch) = report.architecture {
-        println!("  Architecture: {arch}");
+        pairs.push(("Architecture", arch.clone()));
     }
     if let Some(ref quant) = report.quantization {
-        println!("  Quantization: {quant}");
+        pairs.push(("Quantization", quant.clone()));
     }
+    println!("{}", output::kv_table(&pairs));
 }
 
 fn print_inspection_json(report: &InspectionReport) {

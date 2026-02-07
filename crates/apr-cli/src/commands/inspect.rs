@@ -205,7 +205,64 @@ fn run_rosetta_inspect(path: &Path, json_output: bool) -> Result<(), CliError> {
             println!("{json}");
         }
     } else {
-        print!("{report}");
+        // Rich formatted output for GGUF/SafeTensors
+        output::header("Rosetta Stone Inspection");
+
+        let mut pairs: Vec<(&str, String)> = vec![
+            ("Format", report.format.to_string()),
+            ("File Size", output::format_size(report.file_size as u64)),
+            ("Parameters", output::count_fmt(report.total_params)),
+        ];
+        if let Some(ref arch) = report.architecture {
+            pairs.push(("Architecture", arch.clone()));
+        }
+        if let Some(ref quant) = report.quantization {
+            pairs.push(("Quantization", quant.clone()));
+        }
+        println!("{}", output::kv_table(&pairs));
+
+        // Metadata
+        if !report.metadata.is_empty() {
+            output::subheader(&format!("Metadata ({} keys)", report.metadata.len()));
+            let meta_pairs: Vec<(&str, String)> = report
+                .metadata
+                .iter()
+                .map(|(k, v)| {
+                    let display_v = if v.len() > 60 {
+                        format!("{}...", &v[..60])
+                    } else {
+                        v.clone()
+                    };
+                    (k.as_str(), display_v)
+                })
+                .collect();
+            println!("{}", output::kv_table(&meta_pairs));
+        }
+
+        // Tensors summary
+        output::subheader(&format!("Tensors ({} total)", report.tensors.len()));
+        let mut rows: Vec<Vec<String>> = Vec::new();
+        for (i, t) in report.tensors.iter().enumerate() {
+            if i < 10 || i >= report.tensors.len().saturating_sub(2) {
+                rows.push(vec![
+                    t.name.clone(),
+                    format!("{}", output::dtype_color(&t.dtype)),
+                    format!("{:?}", t.shape),
+                    output::format_size(t.size_bytes as u64),
+                ]);
+            } else if i == 10 {
+                rows.push(vec![
+                    format!("... {} more ...", report.tensors.len().saturating_sub(12)),
+                    String::new(),
+                    String::new(),
+                    String::new(),
+                ]);
+            }
+        }
+        println!(
+            "{}",
+            output::table(&["Name", "DType", "Shape", "Size"], &rows)
+        );
     }
 
     Ok(())
