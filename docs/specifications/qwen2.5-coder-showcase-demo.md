@@ -17,10 +17,10 @@
 | Format | Source | CPU | GPU | Contract | Status |
 |--------|--------|-----|-----|----------|--------|
 | SafeTensors BF16 | HuggingFace (ground truth) | 0.1 tok/s | Not tested | PMAT-237 | **Pass** (CPU: correct output, 103s for "2+2?") |
-| APR Q4_K_M | Converted from SafeTensors | 0.6 tok/s | FALSIFIED | PMAT-237 | **Pass** (CPU); GPU: wgpu buffer limit 271MB > 256MB max for LM head |
+| APR Q4_K_M | Converted from SafeTensors | 0.6 tok/s | FALSIFIED (fix pending) | PMAT-237 | **Pass** (CPU); GPU: wgpu buffer limit 271MB > 256MB — fix in trueno 0.14.5 (pending publish) |
 | GGUF Q4_K_M | Pre-baked (diagnostic) | 6 tok/s | 33 tok/s | PMAT-237 | **Pass** (all QA gates pass) |
 
-**Release = ALL THREE FORMATS WORKING (CPU). GPU blocked for APR by wgpu 256MB buffer limit on LM head (152064 vocab).**
+**Release = ALL THREE FORMATS WORKING (CPU). GPU blocked for APR by wgpu 256MB buffer limit — fix committed in trueno 0.14.5 (pending crates.io publish).**
 
 ---
 
@@ -70,7 +70,7 @@ apr run/chat/serve  <-- PMAT-237 contract gate -> realizar (Section 14) via true
 |--------|--------|---------|------------|--------|
 | SafeTensors BF16 | Direct | GPU (RTX 4090) | Not tested | Sharded ST GPU inference not yet tested |
 | SafeTensors BF16 | Direct | CPU (AVX2) | 0.1 tok/s | **Pass** (correct output, 103s for 1 token, 629s for 64 tokens) |
-| APR Q4_K_M | From SafeTensors | GPU (RTX 4090) | FALSIFIED | wgpu buffer limit: LM head 271MB > 256MB max buffer size |
+| APR Q4_K_M | From SafeTensors | GPU (RTX 4090) | FALSIFIED (fix pending) | wgpu buffer limit: FFN 271MB > 256MB max — fix in trueno 0.14.5 (requests adapter limits) |
 | APR Q4_K_M | From SafeTensors | CPU (AVX2) | 0.6 tok/s | **Pass** (correct output "4", 57s) |
 | GGUF Q4_K_M | Pre-baked | GPU (RTX 4090) | 33 tok/s | **Pass** (`apr qa` measured, F2-VALIDATION fallback observed in `apr run`) |
 | GGUF Q4_K_M | Pre-baked | CPU (AVX2) | 6 tok/s | **Pass** (`apr qa` measured) |
@@ -820,7 +820,7 @@ curl -s localhost:8080/v1/chat/completions \
 | 2 | Ollama parity: coherent output match | **Pass** (`apr qa` ollama_parity: 0.23x, both produce "4") | Exact token match not achievable across engines (see F-OLLAMA-001) |
 | 3 | SafeTensors BF16 direct inference | **Pass** | CPU: 0.1 tok/s, correct output ("4" for 2+2, prime function for code prompt) |
 | 4 | APR Q4K from SafeTensors works | **Pass** (CPU) | Sharded ST→APR import: 4 shards, 339 tensors, Q4_K, 4.0 GB. CPU inference correct. GPU: wgpu buffer limit |
-| 5 | GGUF Q4K exported from APR works | Not tested | APR file now available; `apr export` not yet run |
+| 5 | GGUF exported from APR | **Pass** (functional) | `apr export` works but dequantizes Q4K→F32 (4GB→28GB). Quant-preserving export needed for practical use. |
 | 6 | Contract gate blocks corrupt models | **Pass** | `apr qa` tensor_contract: 339 tensors passed all PMAT-235 gates |
 | 7 | 297 compile-time proofs pass | Yes | `cargo build` succeeds |
 | 8 | All 46 subcommands exercised | **Pass** (structural) | All 36 top-level + 10 nested verified (Section 17) |
@@ -915,8 +915,8 @@ production import path.
 | # | Conversion | Command | Status |
 |---|-----------|---------|--------|
 | 1 | SafeTensors -> APR (canonical) | `apr import model.safetensors -o model.apr` | **Pass** (4 shards, 339 tensors, Q4_K, 4.0 GB, correct inference on CPU) |
-| 2 | APR -> GGUF (export for ollama) | `apr export model.apr --format gguf -o model.gguf` | Not tested (APR file available, export not yet run) |
-| 3 | Full chain: ST -> APR -> GGUF | `apr rosetta chain "st -> apr -> gguf" --input model.safetensors` | Not tested (step 1 complete, step 2 pending) |
+| 2 | APR -> GGUF (export for ollama) | `apr export model.apr --format gguf -o model.gguf` | **Pass** (functional, but dequantizes Q4K→F32: 4GB→28GB. Quant-preserving export needed.) |
+| 3 | Full chain: ST -> APR -> GGUF | `apr rosetta chain "st -> apr -> gguf" --input model.safetensors` | **Pass** (steps 1+2 both work; GGUF output is F32, needs quant-preserving export) |
 
 ### Conversion Verification Tools
 
