@@ -105,38 +105,36 @@ fn run_basic_mode(path: &Path, file_size: u64, info: &HeaderInfo) {
         .unwrap_or(OsStr::new("unknown"))
         .to_string_lossy();
 
-    println!(
-        "{}: APR v{}.{} {} ({})",
-        filename.cyan().bold(),
-        info.version.0,
-        info.version.1,
-        format_model_type(info.model_type),
-        humansize::format_size(file_size, humansize::BINARY)
-    );
+    output::header(&format!(
+        "{}: APR v{}.{} {}",
+        filename, info.version.0, info.version.1, format_model_type(info.model_type)
+    ));
 
-    println!(
-        "  magic: {} ({})",
-        info.magic_str,
-        if info.magic_valid {
-            "valid".green()
-        } else {
-            "INVALID".red().bold()
-        }
-    );
-
-    // Flags
+    let magic_status = if info.magic_valid {
+        output::badge_pass("valid")
+    } else {
+        output::badge_fail("INVALID")
+    };
+    let health = if info.magic_valid {
+        output::badge_pass("OK")
+    } else {
+        output::badge_fail("CORRUPTED")
+    };
     let flag_list = collect_flags(info);
-    if !flag_list.is_empty() {
-        println!("  flags: {}", flag_list.join(", "));
-    }
+    let flags_str = if flag_list.is_empty() {
+        "none".to_string()
+    } else {
+        flag_list.join(", ")
+    };
 
     println!(
-        "  health: {}",
-        if info.magic_valid {
-            "OK".green().bold()
-        } else {
-            "CORRUPTED".red().bold()
-        }
+        "{}",
+        output::kv_table(&[
+            ("Size", humansize::format_size(file_size, humansize::BINARY)),
+            ("Magic", format!("{} {}", info.magic_str, magic_status)),
+            ("Flags", flags_str),
+            ("Health", health),
+        ])
     );
 }
 

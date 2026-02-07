@@ -65,13 +65,11 @@ pub(crate) fn kv(key: &str, value: impl std::fmt::Display) {
 }
 
 /// Print a success message
-#[allow(dead_code)]
 pub(crate) fn success(msg: &str) {
     println!("{} {}", "[PASS]".green().bold(), msg);
 }
 
 /// Print a warning message
-#[allow(dead_code)]
 pub(crate) fn warning(msg: &str) {
     println!("{} {}", "[WARN]".yellow().bold(), msg);
 }
@@ -95,7 +93,6 @@ pub(crate) fn error(msg: &str) {
 }
 
 /// Print a warning message (alias for backward compatibility)
-#[allow(dead_code)]
 pub(crate) fn warn(msg: &str) {
     warning(msg);
 }
@@ -112,7 +109,6 @@ pub(crate) fn format_size(bytes: u64) -> String {
 // ── Section Headers (Unicode box-drawing) ──
 
 /// Print a bold section header with Unicode line drawing
-#[allow(dead_code)]
 pub(crate) fn header(title: &str) {
     let bar = "━".repeat(60);
     println!("\n{}", bar.cyan());
@@ -121,7 +117,6 @@ pub(crate) fn header(title: &str) {
 }
 
 /// Print a subsection header with lighter line drawing
-#[allow(dead_code)]
 pub(crate) fn subheader(title: &str) {
     println!("\n  {} {}", "───".dimmed(), title.cyan());
 }
@@ -129,31 +124,26 @@ pub(crate) fn subheader(title: &str) {
 // ── Status Badges (Unicode + color) ──
 
 /// Format a pass badge: "✓ label" in green bold
-#[allow(dead_code)]
 pub(crate) fn badge_pass(label: &str) -> String {
     format!("{} {}", "✓".green().bold(), label.green().bold())
 }
 
 /// Format a fail badge: "✗ label" in red bold
-#[allow(dead_code)]
 pub(crate) fn badge_fail(label: &str) -> String {
     format!("{} {}", "✗".red().bold(), label.red().bold())
 }
 
 /// Format a warning badge: "⚠ label" in yellow bold
-#[allow(dead_code)]
 pub(crate) fn badge_warn(label: &str) -> String {
     format!("{} {}", "⚠".yellow().bold(), label.yellow().bold())
 }
 
 /// Format a skip badge: "○ label" in dimmed
-#[allow(dead_code)]
 pub(crate) fn badge_skip(label: &str) -> String {
     format!("{} {}", "○".dimmed(), label.dimmed())
 }
 
 /// Format an info badge: "ℹ label" in blue
-#[allow(dead_code)]
 pub(crate) fn badge_info(label: &str) -> String {
     format!("{} {}", "ℹ".blue(), label.blue())
 }
@@ -161,7 +151,6 @@ pub(crate) fn badge_info(label: &str) -> String {
 // ── Metrics Display ──
 
 /// Print a metric with label, value, and unit
-#[allow(dead_code)]
 pub(crate) fn metric(label: &str, value: impl Display, unit: &str) {
     println!(
         "  {}: {}{}",
@@ -176,7 +165,6 @@ pub(crate) fn metric(label: &str, value: impl Display, unit: &str) {
 }
 
 /// Render a progress bar as a string
-#[allow(dead_code)]
 pub(crate) fn progress_bar(current: usize, total: usize, width: usize) -> String {
     if total == 0 {
         return format!("[{}]", " ".repeat(width));
@@ -187,7 +175,6 @@ pub(crate) fn progress_bar(current: usize, total: usize, width: usize) -> String
 }
 
 /// Format a duration in human-readable form
-#[allow(dead_code)]
 pub(crate) fn duration_fmt(ms: u64) -> String {
     if ms >= 60_000 {
         format!("{:.1}m", ms as f64 / 60_000.0)
@@ -199,7 +186,6 @@ pub(crate) fn duration_fmt(ms: u64) -> String {
 }
 
 /// Format a count with thousands separators
-#[allow(dead_code)]
 pub(crate) fn count_fmt(n: usize) -> String {
     if n < 1_000 {
         return n.to_string();
@@ -236,7 +222,6 @@ pub(crate) fn filepath(path: &Path) -> ColoredString {
 }
 
 /// Color a dtype string semantically
-#[allow(dead_code)]
 pub(crate) fn dtype_color(dtype: &str) -> ColoredString {
     match dtype.to_uppercase().as_str() {
         "F32" => dtype.green(),
@@ -250,7 +235,6 @@ pub(crate) fn dtype_color(dtype: &str) -> ColoredString {
 }
 
 /// Color a grade string semantically
-#[allow(dead_code)]
 pub(crate) fn grade_color(grade: &str) -> ColoredString {
     match grade {
         "A+" | "A" => grade.green().bold(),
@@ -265,7 +249,6 @@ pub(crate) fn grade_color(grade: &str) -> ColoredString {
 
 /// Render a table from headers and rows.
 /// Returns the formatted table string with Unicode box-drawing borders.
-#[allow(dead_code)]
 pub(crate) fn table(headers: &[&str], rows: &[Vec<String>]) -> String {
     if rows.is_empty() {
         return String::new();
@@ -288,7 +271,6 @@ pub(crate) fn table(headers: &[&str], rows: &[Vec<String>]) -> String {
 }
 
 /// Render a key-value table (two columns: Key, Value)
-#[allow(dead_code)]
 pub(crate) fn kv_table(pairs: &[(&str, String)]) -> String {
     if pairs.is_empty() {
         return String::new();
@@ -317,7 +299,6 @@ pub(crate) enum StageStatus {
 }
 
 /// Print a pipeline stage with status indicator
-#[allow(dead_code)]
 pub(crate) fn pipeline_stage(name: &str, status: StageStatus) {
     let indicator = match status {
         StageStatus::Pending => "○".dimmed(),

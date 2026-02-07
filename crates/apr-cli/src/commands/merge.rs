@@ -10,8 +10,8 @@
 //! - slerp: Spherical linear interpolation (planned)
 
 use crate::error::{CliError, Result};
+use crate::output;
 use aprender::format::{apr_merge, MergeOptions, MergeReport, MergeStrategy};
-use colored::Colorize;
 use humansize::{format_size, BINARY};
 use std::path::{Path, PathBuf};
 
@@ -36,13 +36,14 @@ pub(crate) fn run(
         }
     }
 
-    println!("{}", "=== APR Merge ===".cyan().bold());
-    println!();
-    println!("Merging {} models:", files.len());
+    output::header("APR Merge");
+    let mut input_pairs: Vec<(&str, String)> = Vec::new();
     for (i, file) in files.iter().enumerate() {
-        println!("  {}. {}", i + 1, file.display());
+        // Use a leak-free approach: push all as "Input N"
+        input_pairs.push(("Input", format!("{}. {}", i + 1, file.display())));
     }
-    println!("Output: {}", output.display());
+    input_pairs.push(("Output", output.display().to_string()));
+    println!("{}", output::kv_table(&input_pairs));
 
     // Parse merge strategy
     let merge_strategy: MergeStrategy = strategy.parse().map_err(|_| {
@@ -104,8 +105,8 @@ pub(crate) fn run(
             let sum: f32 = w.iter().sum();
             if (sum - 1.0).abs() > 0.01 {
                 eprintln!(
-                    "{} Weights sum to {:.3}, not 1.0. Results will be scaled accordingly.",
-                    "[WARN]".yellow(),
+                    "  {} Weights sum to {:.3}, not 1.0. Results will be scaled accordingly.",
+                    output::badge_warn("WARN"),
                     sum
                 );
             }
@@ -117,8 +118,8 @@ pub(crate) fn run(
             // BUG-MERGE-004 FIX: Warn if weights provided but not using weighted strategy
             if weights.is_some() {
                 eprintln!(
-                    "{} --weights argument ignored for '{}' strategy. Use --strategy weighted to apply weights.",
-                    "[WARN]".yellow(),
+                    "  {} --weights argument ignored for '{}' strategy. Use --strategy weighted to apply weights.",
+                    output::badge_warn("WARN"),
                     strategy
                 );
             }
@@ -128,8 +129,8 @@ pub(crate) fn run(
             // Other strategies (ties, dare, slerp) - ignore weights for now
             if weights.is_some() {
                 eprintln!(
-                    "{} --weights argument not supported for '{}' strategy.",
-                    "[WARN]".yellow(),
+                    "  {} --weights argument not supported for '{}' strategy.",
+                    output::badge_warn("WARN"),
                     strategy
                 );
             }
@@ -145,7 +146,7 @@ pub(crate) fn run(
     };
 
     // Run merge
-    println!("{}", "Merging...".yellow());
+    output::pipeline_stage("Merging", output::StageStatus::Running);
 
     match apr_merge(files, output.to_path_buf(), options) {
         Ok(report) => {
@@ -154,7 +155,7 @@ pub(crate) fn run(
         }
         Err(e) => {
             println!();
-            println!("{}", "Merge failed".red().bold());
+            println!("  {}", output::badge_fail("Merge failed"));
             Err(CliError::ValidationFailed(e.to_string()))
         }
     }
@@ -163,28 +164,22 @@ pub(crate) fn run(
 /// Display merge report
 fn display_report(report: &MergeReport) {
     println!();
-    println!("{}", "=== Merge Report ===".cyan().bold());
-    println!();
-    println!("Models merged:  {}", report.model_count);
-    println!("Tensors:        {}", report.tensor_count);
-    println!(
-        "Output size:    {}",
-        format_size(report.output_size, BINARY)
-    );
-    println!("Strategy:       {:?}", report.strategy);
+    output::subheader("Merge Report");
 
+    let mut pairs: Vec<(&str, String)> = vec![
+        ("Models merged", report.model_count.to_string()),
+        ("Tensors", output::count_fmt(report.tensor_count)),
+        ("Output size", format_size(report.output_size, BINARY)),
+        ("Strategy", format!("{:?}", report.strategy)),
+    ];
     if let Some(ref weights) = report.weights_used {
-        println!(
-            "Weights used:   {:?}",
-            weights
-                .iter()
-                .map(|w| format!("{w:.3}"))
-                .collect::<Vec<_>>()
-        );
+        let w_str = weights.iter().map(|w| format!("{w:.3}")).collect::<Vec<_>>().join(", ");
+        pairs.push(("Weights used", w_str));
     }
 
+    println!("{}", output::kv_table(&pairs));
     println!();
-    println!("{}", "Merge successful".green().bold());
+    println!("  {}", output::badge_pass("Merge successful"));
 }
 
 #[cfg(test)]

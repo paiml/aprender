@@ -5,8 +5,8 @@
 //! Applies quantization and compression to models.
 
 use crate::error::{CliError, Result};
+use crate::output;
 use aprender::format::{apr_convert, Compression, ConvertOptions, QuantizationType};
-use colored::Colorize;
 use humansize::{format_size, BINARY};
 use std::path::Path;
 
@@ -31,10 +31,14 @@ pub(crate) fn run(
         )));
     }
 
-    println!("{}", "=== APR Convert ===".cyan().bold());
-    println!();
-    println!("Input:  {}", file.display());
-    println!("Output: {}", output.display());
+    output::header("APR Convert");
+    println!(
+        "{}",
+        output::kv_table(&[
+            ("Input", file.display().to_string()),
+            ("Output", output.display().to_string()),
+        ])
+    );
 
     // Parse quantization option
     let quant_type = match quantize {
@@ -64,14 +68,18 @@ pub(crate) fn run(
         None => None,
     };
 
-    if let Some(ref q) = quant_type {
-        println!("Quantization: {q:?}");
-    } else {
-        println!("Quantization: None (copy)");
+    let quant_str = quant_type
+        .as_ref()
+        .map_or("None (copy)".to_string(), |q| format!("{q:?}"));
+    let compress_str = compress_type
+        .as_ref()
+        .map_or(String::new(), |c| format!("{c:?}"));
+
+    let mut config_pairs: Vec<(&str, String)> = vec![("Quantization", quant_str)];
+    if !compress_str.is_empty() {
+        config_pairs.push(("Compression", compress_str));
     }
-    if let Some(ref c) = compress_type {
-        println!("Compression:  {c:?}");
-    }
+    println!("{}", output::kv_table(&config_pairs));
     println!();
 
     // Build options
@@ -82,35 +90,32 @@ pub(crate) fn run(
     };
 
     // Run conversion
-    println!("{}", "Converting...".yellow());
+    output::pipeline_stage("Converting", output::StageStatus::Running);
 
     match apr_convert(file, output, options) {
         Ok(report) => {
             println!();
-            println!("{}", "=== Conversion Report ===".cyan().bold());
-            println!();
+            output::subheader("Conversion Report");
             println!(
-                "Original size:  {}",
-                format_size(report.original_size, BINARY)
-            );
-            println!(
-                "Converted size: {}",
-                format_size(report.converted_size, BINARY)
-            );
-            println!("Tensors:        {}", report.tensor_count);
-            println!(
-                "Reduction:      {} ({:.2}x)",
-                report.reduction_percent(),
-                report.reduction_ratio
+                "{}",
+                output::kv_table(&[
+                    ("Original size", format_size(report.original_size, BINARY)),
+                    ("Converted size", format_size(report.converted_size, BINARY)),
+                    ("Tensors", output::count_fmt(report.tensor_count)),
+                    (
+                        "Reduction",
+                        format!("{} ({:.2}x)", report.reduction_percent(), report.reduction_ratio),
+                    ),
+                ])
             );
             println!();
 
             if report.reduction_ratio >= 1.0 {
-                println!("{}", "✓ Conversion successful".green().bold());
+                println!("  {}", output::badge_pass("Conversion successful"));
             } else {
                 println!(
-                    "{}",
-                    "⚠ Conversion completed (output larger than input)".yellow()
+                    "  {}",
+                    output::badge_warn("Conversion completed (output larger than input)")
                 );
             }
 
@@ -118,7 +123,7 @@ pub(crate) fn run(
         }
         Err(e) => {
             println!();
-            println!("{}", "✗ Conversion failed".red().bold());
+            println!("  {}", output::badge_fail("Conversion failed"));
             Err(CliError::ValidationFailed(e.to_string()))
         }
     }

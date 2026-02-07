@@ -1594,7 +1594,7 @@ fn format_text_report(report: &ModelOracleReport) -> String {
 }
 
 fn output_text(report: &ModelOracleReport, verbose: bool) {
-    output::section("Model Oracle Report");
+    output::header("Model Oracle Report");
     print!("{}", format_text_report(report));
 
     output_text_format(report.format.as_ref());
