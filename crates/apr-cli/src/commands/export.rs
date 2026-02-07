@@ -9,8 +9,8 @@
 //! - TorchScript (.pt) - PyTorch deployment (planned)
 
 use crate::error::{CliError, Result};
+use crate::output;
 use aprender::format::{apr_export, ExportFormat, ExportOptions, ExportReport, QuantizationType};
-use colored::Colorize;
 use humansize::{format_size, BINARY};
 use std::path::Path;
 
@@ -21,11 +21,15 @@ pub(crate) fn run(file: &Path, format: &str, output: &Path, quantize: Option<&st
         return Err(CliError::FileNotFound(file.to_path_buf()));
     }
 
-    println!("{}", "=== APR Export ===".cyan().bold());
-    println!();
-    println!("Input:  {}", file.display());
-    println!("Output: {}", output.display());
-    println!("Format: {format}");
+    output::header("APR Export");
+    println!(
+        "{}",
+        output::kv_table(&[
+            ("Input", file.display().to_string()),
+            ("Output", output.display().to_string()),
+            ("Format", format.to_string()),
+        ])
+    );
 
     // Parse export format
     let export_format: ExportFormat = format.parse().map_err(|_| {
@@ -55,7 +59,7 @@ pub(crate) fn run(file: &Path, format: &str, output: &Path, quantize: Option<&st
     };
 
     if let Some(ref q) = quant_type {
-        println!("Quantization: {q:?}");
+        output::metric("Quantization", format!("{q:?}"), "");
     }
     println!();
 
@@ -67,7 +71,7 @@ pub(crate) fn run(file: &Path, format: &str, output: &Path, quantize: Option<&st
     };
 
     // Run export
-    println!("{}", "Exporting...".yellow());
+    output::pipeline_stage("Exporting", output::StageStatus::Running);
 
     match apr_export(file, output, options) {
         Ok(report) => {
@@ -76,7 +80,7 @@ pub(crate) fn run(file: &Path, format: &str, output: &Path, quantize: Option<&st
         }
         Err(e) => {
             println!();
-            println!("{}", "Export failed".red().bold());
+            println!("  {}", output::badge_fail("Export failed"));
             Err(CliError::ValidationFailed(e.to_string()))
         }
     }
@@ -85,25 +89,21 @@ pub(crate) fn run(file: &Path, format: &str, output: &Path, quantize: Option<&st
 /// Display export report
 fn display_report(report: &ExportReport) {
     println!();
-    println!("{}", "=== Export Report ===".cyan().bold());
-    println!();
-    println!(
-        "Original size:  {}",
-        format_size(report.original_size, BINARY)
-    );
-    println!(
-        "Exported size:  {}",
-        format_size(report.exported_size, BINARY)
-    );
-    println!("Tensors:        {}", report.tensor_count);
-    println!("Format:         {:?}", report.format);
+    output::subheader("Export Report");
 
+    let mut pairs: Vec<(&str, String)> = vec![
+        ("Original size", format_size(report.original_size, BINARY)),
+        ("Exported size", format_size(report.exported_size, BINARY)),
+        ("Tensors", output::count_fmt(report.tensor_count)),
+        ("Format", format!("{:?}", report.format)),
+    ];
     if let Some(ref quant) = report.quantization {
-        println!("Quantization:   {quant:?}");
+        pairs.push(("Quantization", format!("{quant:?}")));
     }
 
+    println!("{}", output::kv_table(&pairs));
     println!();
-    println!("{}", "Export successful".green().bold());
+    println!("  {}", output::badge_pass("Export successful"));
 }
 
 #[cfg(test)]

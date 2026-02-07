@@ -1467,52 +1467,76 @@ fn output_text(
     summary: &TraceSummary,
     verbose: bool,
 ) {
-    output::section(&format!("Layer Trace: {}", path.display()));
-    println!();
+    output::header(&format!("Layer Trace: {}", path.display()));
 
-    output::kv("Format", format);
-    output::kv("Layers", summary.total_layers);
-    output::kv("Parameters", format!("{}", summary.total_parameters));
+    println!(
+        "{}",
+        output::kv_table(&[
+            ("Format", format.to_string()),
+            ("Layers", summary.total_layers.to_string()),
+            ("Parameters", output::count_fmt(summary.total_parameters)),
+        ])
+    );
 
     if !summary.anomalies.is_empty() {
         println!();
         println!(
-            "{}",
-            format!("⚠ {} anomalies detected:", summary.anomaly_count)
-                .yellow()
-                .bold()
+            "  {} {} anomalies detected:",
+            output::badge_warn("ANOMALY"),
+            summary.anomaly_count
         );
         for anomaly in &summary.anomalies {
-            println!("  - {}", anomaly.red());
+            println!("    - {}", anomaly.red());
         }
     }
 
     println!();
-    println!("{}", "Layer Breakdown:".white().bold());
+    output::subheader("Layer Breakdown");
 
+    // Build layer table
+    let mut rows: Vec<Vec<String>> = Vec::new();
     for layer in layers {
-        let idx_str = layer.index.map_or(String::new(), |i| format!("[{i}]"));
-        println!("  {} {}", layer.name.cyan(), idx_str);
+        let idx_str = layer.index.map_or(String::new(), |i| format!("{i}"));
+        let anomaly_str = if layer.anomalies.is_empty() {
+            String::new()
+        } else {
+            layer.anomalies.join("; ")
+        };
 
         if verbose {
-            if let Some(ref stats) = layer.weight_stats {
-                println!(
-                    "    weights: {} params, mean={:.4}, std={:.4}, L2={:.4}",
-                    stats.count, stats.mean, stats.std, stats.l2_norm
-                );
-            }
-
-            if let Some(ref stats) = layer.output_stats {
-                println!(
-                    "    output:  mean={:.4}, std={:.4}, range=[{:.4}, {:.4}]",
-                    stats.mean, stats.std, stats.min, stats.max
-                );
-            }
+            let weight_info = layer.weight_stats.as_ref().map_or(
+                String::from("-"),
+                |s| format!("{} params, mean={:.4}, std={:.4}", s.count, s.mean, s.std),
+            );
+            let output_info = layer.output_stats.as_ref().map_or(
+                String::from("-"),
+                |s| format!("mean={:.4}, std={:.4}, [{:.4}, {:.4}]", s.mean, s.std, s.min, s.max),
+            );
+            rows.push(vec![
+                idx_str,
+                layer.name.clone(),
+                weight_info,
+                output_info,
+                anomaly_str,
+            ]);
+        } else {
+            rows.push(vec![idx_str, layer.name.clone(), anomaly_str]);
         }
+    }
 
-        for anomaly in &layer.anomalies {
-            println!("    {}", anomaly.red());
-        }
+    if verbose {
+        println!(
+            "{}",
+            output::table(
+                &["#", "Layer", "Weights", "Output", "Anomalies"],
+                &rows,
+            )
+        );
+    } else {
+        println!(
+            "{}",
+            output::table(&["#", "Layer", "Anomalies"], &rows)
+        );
     }
 }
 

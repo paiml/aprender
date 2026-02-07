@@ -1053,97 +1053,114 @@ fn profile_apr_real(
 /// Print human-readable results
 fn print_human_results(results: &RealProfileResults, granular: bool) -> Result<(), CliError> {
     // Model info
-    println!("{}", "MODEL INFO".white().bold());
-    println!("{}", "═".repeat(60));
-    println!("  Architecture:    {}", results.architecture.cyan());
-    println!("  Layers:          {}", results.num_layers);
-    println!("  Hidden dim:      {}", results.hidden_dim);
-    println!("  Vocab size:      {}", results.vocab_size);
-    println!("  Warmup passes:   {}", results.warmup_passes);
-    println!("  Measure passes:  {}", results.measure_passes);
+    output::header("Model Profile");
+    println!(
+        "{}",
+        output::kv_table(&[
+            ("Architecture", results.architecture.clone()),
+            ("Layers", results.num_layers.to_string()),
+            ("Hidden dim", output::count_fmt(results.hidden_dim)),
+            ("Vocab size", output::count_fmt(results.vocab_size)),
+            ("Warmup passes", results.warmup_passes.to_string()),
+            ("Measure passes", results.measure_passes.to_string()),
+        ])
+    );
     println!();
 
     // Real data indicator
     if results.is_real_data {
-        println!("{}", "✓ REAL TELEMETRY (not simulated)".green().bold());
+        println!("  {}", output::badge_pass("REAL TELEMETRY (not simulated)"));
     } else {
-        println!("{}", "⚠ SIMULATED DATA (inference disabled)".yellow());
+        println!("  {}", output::badge_warn("SIMULATED DATA (inference disabled)"));
     }
     println!();
 
     // Hotspot analysis
-    println!("{}", "HOTSPOT ANALYSIS".white().bold());
-    println!("{}", "═".repeat(60));
+    output::subheader("Hotspot Analysis");
     println!();
 
     let total_time = results.hotspots.iter().map(|h| h.time_us).sum::<f64>();
 
+    let mut hotspot_rows: Vec<Vec<String>> = Vec::new();
     for (i, hotspot) in results.hotspots.iter().enumerate() {
         let percent = if total_time > 0.0 {
             (hotspot.time_us / total_time) * 100.0
         } else {
             0.0
         };
-
-        let bar_width = ((percent / 100.0) * 20.0) as usize;
-        let bar = format!(
-            "{}{}",
-            "█".repeat(bar_width.min(20)),
-            "░".repeat(20 - bar_width.min(20))
-        );
-
-        println!(
-            "  #{} {:<20} {:>10.1}µs ({:>5.1}%)  {}",
-            i + 1,
-            hotspot.name.cyan(),
-            hotspot.avg_us,
-            percent,
-            bar
-        );
-
+        let bar = output::progress_bar(percent as usize, 100, 20);
+        let mut row = vec![
+            format!("#{}", i + 1),
+            hotspot.name.clone(),
+            format!("{:.1}µs", hotspot.avg_us),
+            format!("{:.1}%", percent),
+            bar,
+        ];
         if granular {
-            println!(
-                "     └─ count={}, min={:.1}µs, max={:.1}µs",
+            row.push(format!(
+                "n={}, min={:.1}µs, max={:.1}µs",
                 hotspot.count, hotspot.min_us, hotspot.max_us
-            );
+            ));
         }
+        hotspot_rows.push(row);
+    }
+
+    if granular {
+        println!(
+            "{}",
+            output::table(
+                &["#", "Component", "Avg", "%", "Bar", "Detail"],
+                &hotspot_rows,
+            )
+        );
+    } else {
+        println!(
+            "{}",
+            output::table(
+                &["#", "Component", "Avg", "%", "Bar"],
+                &hotspot_rows,
+            )
+        );
     }
     println!();
 
     // Per-layer breakdown (if granular)
     if granular && !results.per_layer_us.is_empty() {
-        println!("{}", "PER-LAYER TIMING (estimated)".white().bold());
-        println!("{}", "═".repeat(60));
+        output::subheader("Per-Layer Timing (estimated)");
         println!();
 
         let max_layer_time = results.per_layer_us.iter().copied().fold(0.0f64, f64::max);
 
+        let mut layer_rows: Vec<Vec<String>> = Vec::new();
         for (i, &time_us) in results.per_layer_us.iter().enumerate() {
             let bar_width = if max_layer_time > 0.0 {
-                ((time_us / max_layer_time) * 30.0) as usize
+                ((time_us / max_layer_time) * 100.0) as usize
             } else {
                 0
             };
-            let bar = "█".repeat(bar_width.min(30));
-            println!("  Layer {:>2}: {:>8.1}µs  {}", i, time_us, bar);
+            layer_rows.push(vec![
+                format!("Layer {i}"),
+                format!("{time_us:.1}µs"),
+                output::progress_bar(bar_width, 100, 30),
+            ]);
         }
+        println!(
+            "{}",
+            output::table(&["Layer", "Time", "Bar"], &layer_rows)
+        );
         println!();
     }
 
     // Summary
-    println!("{}", "SUMMARY".white().bold());
-    println!("{}", "═".repeat(60));
+    output::subheader("Summary");
     println!();
-    println!(
-        "  Avg forward pass:   {:.1}µs ({:.2}ms)",
-        results.total_inference_us,
-        results.total_inference_us / 1000.0
+    output::metric(
+        "Avg forward pass",
+        format!("{:.1}µs ({:.2}ms)", results.total_inference_us, results.total_inference_us / 1000.0),
+        "",
     );
-    println!(
-        "  Throughput:         {:.2} tok/s",
-        results.throughput_tok_s
-    );
-    println!("  Tokens per pass:    {}", results.tokens_per_pass);
+    output::metric("Throughput", format!("{:.2}", results.throughput_tok_s), "tok/s");
+    output::metric("Tokens per pass", results.tokens_per_pass, "");
     println!();
 
     Ok(())

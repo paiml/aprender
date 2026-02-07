@@ -5,6 +5,7 @@
 //! Downloads models from HuggingFace, converts to APR format with inline validation.
 
 use crate::error::{CliError, Result};
+use crate::output;
 use aprender::format::{apr_import, Architecture, ImportOptions, Source, ValidationConfig};
 use colored::Colorize;
 use std::path::{Path, PathBuf};
@@ -43,9 +44,9 @@ pub(crate) fn run(
     #[cfg(not(feature = "inference"))]
     if preserve_q4k {
         eprintln!(
-            "{} --preserve-q4k requires the 'inference' feature. \
+            "  {} --preserve-q4k requires the 'inference' feature. \
              Falling back to standard import (Q4K will be dequantized to F32).",
-            "[WARN]".yellow()
+            output::badge_warn("WARN")
         );
     }
 
@@ -53,10 +54,24 @@ pub(crate) fn run(
     let parsed_source = Source::parse(source)
         .map_err(|e| CliError::ValidationFailed(format!("Invalid source: {e}")))?;
 
-    println!("{}", "=== APR Import Pipeline ===".cyan().bold());
-    println!();
-    print_source_info(&parsed_source);
-    println!("Output: {}", output.display());
+    output::header("APR Import Pipeline");
+
+    let source_desc = match &parsed_source {
+        Source::HuggingFace { org, repo, file } => {
+            let base = format!("hf://{org}/{repo}");
+            file.as_ref().map_or(base.clone(), |f| format!("{base}/{f}"))
+        }
+        Source::Local(path) => path.display().to_string(),
+        Source::Url(url) => url.clone(),
+    };
+
+    println!(
+        "{}",
+        output::kv_table(&[
+            ("Source", source_desc),
+            ("Output", output.display().to_string()),
+        ])
+    );
     println!();
 
     // Build import options
@@ -87,62 +102,45 @@ pub(crate) fn run(
         tokenizer_path: tokenizer.cloned(),
     };
 
-    println!("Architecture: {:?}", options.architecture);
+    let mut config_pairs: Vec<(&str, String)> = vec![
+        ("Architecture", format!("{:?}", options.architecture)),
+        ("Validation", format!("{:?}", options.validation)),
+    ];
     if let Some(q) = &options.quantize {
-        println!("Quantization: {q:?}");
+        config_pairs.push(("Quantization", format!("{q:?}")));
     }
-    println!("Validation: {:?}", options.validation);
+    println!("{}", output::kv_table(&config_pairs));
     println!();
 
     // Run import pipeline
-    println!("{}", "Importing...".yellow());
-    println!(
-        "[DEBUG-CLI] About to call apr_import with source={}",
-        source
-    );
+    output::pipeline_stage("Importing", output::StageStatus::Running);
 
     match apr_import(source, output, options) {
         Ok(report) => {
             println!();
-            println!("{}", "=== Validation Report ===".cyan().bold());
+            output::subheader("Validation Report");
+            let grade = report.grade();
             println!(
-                "Score: {}/100 (Grade: {})",
-                report.total_score,
-                report.grade()
+                "{}",
+                output::kv_table(&[
+                    ("Score", format!("{}/100", report.total_score)),
+                    ("Grade", output::grade_color(grade).to_string()),
+                ])
             );
             println!();
 
             if report.passed(95) {
-                println!("{}", "✓ Import successful".green().bold());
+                println!("  {}", output::badge_pass("Import successful"));
             } else {
-                println!("{}", "⚠ Import completed with warnings".yellow().bold());
+                println!("  {}", output::badge_warn("Import completed with warnings"));
             }
 
             Ok(())
         }
         Err(e) => {
             println!();
-            println!("{}", "✗ Import failed".red().bold());
+            println!("  {}", output::badge_fail("Import failed"));
             Err(CliError::ValidationFailed(e.to_string()))
-        }
-    }
-}
-
-fn print_source_info(source: &Source) {
-    match source {
-        Source::HuggingFace { org, repo, file } => {
-            println!("Source: {} (HuggingFace)", "hf://".cyan());
-            println!("  Organization: {org}");
-            println!("  Repository: {repo}");
-            if let Some(f) = file {
-                println!("  File: {f}");
-            }
-        }
-        Source::Local(path) => {
-            println!("Source: {} (Local)", path.display());
-        }
-        Source::Url(url) => {
-            println!("Source: {url} (URL)");
         }
     }
 }
@@ -173,32 +171,35 @@ fn run_q4k_import(source: &Path, output: &Path) -> Result<()> {
     use humansize::{format_size, BINARY};
     use realizar::convert::GgufToAprQ4KConverter;
 
-    println!("{}", "=== APR Q4K Import (Fused Kernel) ===".cyan().bold());
-    println!();
-    println!("Source: {} (GGUF)", source.display());
-    println!("Output: {} (APR with Q4K)", output.display());
-    println!();
+    output::header("APR Q4K Import (Fused Kernel)");
     println!(
         "{}",
-        "Preserving Q4K quantization for fused kernel inference...".yellow()
+        output::kv_table(&[
+            ("Source", format!("{} (GGUF)", source.display())),
+            ("Output", format!("{} (APR with Q4K)", output.display())),
+        ])
     );
+    println!();
+    output::pipeline_stage("Preserving Q4K quantization", output::StageStatus::Running);
 
     // Use realizar's Q4K converter
     match GgufToAprQ4KConverter::convert(source, output) {
         Ok(stats) => {
             println!();
-            println!("{}", "=== Q4K Import Report ===".cyan().bold());
-            println!("Total tensors:    {}", stats.tensor_count);
-            println!("Q4K tensors:      {}", stats.q4k_tensor_count);
+            output::subheader("Q4K Import Report");
             println!(
-                "Total bytes:      {}",
-                format_size(stats.total_bytes as u64, BINARY)
+                "{}",
+                output::kv_table(&[
+                    ("Total tensors", stats.tensor_count.to_string()),
+                    ("Q4K tensors", stats.q4k_tensor_count.to_string()),
+                    ("Total bytes", format_size(stats.total_bytes as u64, BINARY)),
+                    ("Architecture", stats.architecture.clone()),
+                    ("Layers", stats.num_layers.to_string()),
+                    ("Hidden size", stats.hidden_size.to_string()),
+                ])
             );
-            println!("Architecture:     {}", stats.architecture);
-            println!("Layers:           {}", stats.num_layers);
-            println!("Hidden size:      {}", stats.hidden_size);
             println!();
-            println!("{}", "✓ Q4K import successful".green().bold());
+            println!("  {}", output::badge_pass("Q4K import successful"));
             println!(
                 "{}",
                 "  Model ready for fused kernel inference (30+ tok/s CPU target)".dimmed()
@@ -207,7 +208,7 @@ fn run_q4k_import(source: &Path, output: &Path) -> Result<()> {
         }
         Err(e) => {
             println!();
-            println!("{}", "✗ Q4K import failed".red().bold());
+            println!("  {}", output::badge_fail("Q4K import failed"));
             Err(CliError::ValidationFailed(e.to_string()))
         }
     }
