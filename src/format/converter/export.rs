@@ -160,6 +160,23 @@ pub fn apr_export<P: AsRef<Path>>(
         });
     }
 
+    // PMAT-252: Auto-detect source quantization for GGUF export.
+    // When no explicit --quantize is given and the APR source uses Q4_K,
+    // default to Q4_K to avoid bloated F32 GGUF output (4GB→28GB).
+    let mut options = options;
+    if options.quantize.is_none()
+        && options.format == ExportFormat::Gguf
+        && input_path.extension().and_then(|e| e.to_str()) == Some("apr")
+    {
+        if let Some(detected) = detect_apr_quantization(input_path) {
+            eprintln!(
+                "[PMAT-252] Auto-detected source quantization: {:?}. Preserving for GGUF export.",
+                detected
+            );
+            options.quantize = Some(detected);
+        }
+    }
+
     // Load tensors
     let tensors = load_model_tensors(input_path)?;
     let original_size = calculate_tensor_size(&tensors);
@@ -1104,6 +1121,48 @@ fn extract_user_metadata(apr_path: &Path) -> UserMetadata {
     }
 
     UserMetadata::new()
+}
+
+/// Detect predominant quantization type from an APR file (PMAT-252).
+///
+/// Reads the tensor index and checks the dtype of 2D weight tensors.
+/// Returns the `QuantizationType` if the majority of weights use a
+/// quantized format (Q4K, Q6K), or `None` for F32/F16 files.
+fn detect_apr_quantization(apr_path: &Path) -> Option<QuantizationType> {
+    use crate::format::v2::{AprV2Reader, TensorDType};
+
+    let data = fs::read(apr_path).ok()?;
+    let reader = AprV2Reader::from_bytes(&data).ok()?;
+
+    // Count dtypes across 2D weight tensors (skip 1D biases/norms)
+    let mut q4k_count = 0usize;
+    let mut q6k_count = 0usize;
+    let mut other_count = 0usize;
+
+    for name in reader.tensor_names() {
+        if let Some(entry) = reader.get_tensor(name) {
+            if entry.shape.len() >= 2 {
+                match entry.dtype {
+                    TensorDType::Q4K => q4k_count += 1,
+                    TensorDType::Q6K => q6k_count += 1,
+                    _ => other_count += 1,
+                }
+            }
+        }
+    }
+
+    let total = q4k_count + q6k_count + other_count;
+    if total == 0 {
+        return None;
+    }
+
+    // If majority of 2D tensors are Q4K, default to Q4K export
+    if q4k_count > q6k_count && q4k_count > other_count {
+        return Some(QuantizationType::Q4K);
+    }
+
+    // Q6K not yet in QuantizationType — treat as no auto-detect
+    None
 }
 
 /// Detect GGUF model architecture for tensor name mapping (GH-200).

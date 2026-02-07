@@ -1,7 +1,7 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 10.5.0 (Full Stack: apr-cli + aprender + realizar + trueno, Popperian falsified)
-**Status:** Benchmarked (7B all 3 formats measured 2026-02-07; full provenance chain ST→APR→inference working)
+**Version:** 10.6.0 (Full Stack: apr-cli + aprender + realizar + trueno, Popperian falsified)
+**Status:** Benchmarked (7B all 3 formats measured 2026-02-07; full provenance chain ST→APR→GGUF export working)
 **Primary Model:** `Qwen/Qwen2.5-Coder-7B-Instruct`
 **Source Format:** SafeTensors BF16 (HuggingFace, sharded, ~14 GB)
 **Popperian Score:** 119/119 gates passing (100%) — 139 tests, 0 ignored. Gated by `model-tests` feature (`make test-model`)
@@ -943,8 +943,8 @@ Conversion halts immediately on: NaN, Inf, dimension mismatch, tensor count mism
 | ID | Prediction | Test | Expected | Status |
 |----|-----------|------|----------|--------|
 | F-ROSETTA-001 | ST->APR preserves tensor count | `apr tensors` on both, compare count | Identical tensor count | **Pass** (both APR and GGUF: 339 tensors; APR 3.99 GB all Q4_K, GGUF 4.34 GB mixed Q4_K/Q6_K) |
-| F-ROSETTA-002 | SafeTensors->APR->GGUF roundtrip produces valid output | `apr import` ST->APR, `apr export` APR->GGUF, `apr validate` GGUF | Validation passes | **Pass** (full chain: SafeTensors import + GGUF export + validation) |
-| F-ROSETTA-003 | Chain command produces valid GGUF | `apr rosetta chain "st -> apr -> gguf"` then `apr validate` on output | Validation passes | Not tested (APR file available, chain export pending) |
+| F-ROSETTA-002 | SafeTensors->APR->GGUF roundtrip produces valid output | `apr import` ST->APR, `apr export` APR->GGUF, `apr run` GGUF | Correct inference output | **FALSIFIED** (structural export works: ST→APR (4.0GB Q4K) → GGUF (5.74GB Q4K) via PMAT-252 auto-detect, but inference produces garbage due to double quantization Q4K→F32→Q4K lossy round-trip) |
+| F-ROSETTA-003 | Chain command produces valid GGUF | `apr export model.apr --format gguf` then `apr run` on output | Correct inference output | **FALSIFIED** (PMAT-252: file structurally valid, 339 tensors, 5.74 GiB, but double-quant destroys weight fidelity — need raw Q4K block passthrough) |
 | F-ROSETTA-004 | Fingerprint detects tensor corruption | Flip 1 byte in APR file, re-fingerprint | Different fingerprint hash | Not tested (APR file now available for testing) |
 | F-ROSETTA-005 | NaN in source halts conversion | Inject NaN into SafeTensors tensor | Jidoka stop, exit != 0 | **Pass** (compute_tensor_validation NaN detection verified in rosetta) |
 | F-ROSETTA-006 | Vocab size mismatch halts conversion | Modify vocab_size in config.json | Jidoka stop, "vocab size mismatch" | **Pass** (import.rs vocabulary validation verified, PMAT-232) |
