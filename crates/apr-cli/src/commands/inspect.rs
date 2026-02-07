@@ -366,33 +366,32 @@ fn output_text(
     show_filters: bool,
     show_weights: bool,
 ) {
-    output::section(&path.display().to_string());
-    println!();
+    output::header(&path.display().to_string());
 
-    // Header info
+    // Header info as kv_table
     let (v_maj, v_min) = header.version;
-    output::kv("Format", "APR v2");
-    output::kv("Version", format!("{v_maj}.{v_min}"));
-    output::kv("Size", output::format_size(file_size));
-    output::kv("Tensors", header.tensor_count);
-    output::kv(
-        "Checksum",
-        if header.checksum_valid {
-            "VALID"
-        } else {
-            "INVALID"
-        },
-    );
+    let checksum_str = if header.checksum_valid {
+        output::badge_pass("VALID")
+    } else {
+        output::badge_fail("INVALID")
+    };
 
-    // Data layout
-    output::kv(
-        "Data Offset",
-        format!(
-            "0x{:X} ({})",
-            header.data_offset,
-            output::format_size(header.data_offset)
+    let header_pairs = vec![
+        ("Format", "APR v2".to_string()),
+        ("Version", format!("{v_maj}.{v_min}")),
+        ("Size", output::format_size(file_size)),
+        ("Tensors", output::count_fmt(header.tensor_count as usize)),
+        ("Checksum", checksum_str),
+        (
+            "Data Offset",
+            format!(
+                "0x{:X} ({})",
+                header.data_offset,
+                output::format_size(header.data_offset)
+            ),
         ),
-    );
+    ];
+    println!("{}", output::kv_table(&header_pairs));
 
     // Flags
     output_flags(header);

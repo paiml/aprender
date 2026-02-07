@@ -272,7 +272,7 @@ pub(crate) fn table(headers: &[&str], rows: &[Vec<String>]) -> String {
     }
     // Build data: header row + data rows
     let mut data: Vec<Vec<String>> = Vec::with_capacity(rows.len() + 1);
-    data.push(headers.iter().map(|h| h.to_string()).collect());
+    data.push(headers.iter().map(|h| (*h).to_string()).collect());
     for row in rows {
         data.push(row.clone());
     }

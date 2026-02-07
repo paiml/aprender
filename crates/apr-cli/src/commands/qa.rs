@@ -265,12 +265,13 @@ fn run_qa(path: &Path, config: &QaConfig) -> Result<QaReport> {
     let mut gates = Vec::new();
 
     if !config.json {
-        output::section("APR Quality Assurance");
-        println!();
-        output::kv("Model", path.display());
-        output::kv("Min TPS", format!("{:.0} tok/s", config.min_tps));
-        output::kv("Min Speedup", format!("{:.1}x Ollama", config.min_speedup));
-        println!();
+        output::header("APR Quality Assurance");
+        let config_pairs = vec![
+            ("Model", path.display().to_string()),
+            ("Min TPS", format!("{:.0} tok/s", config.min_tps)),
+            ("Min Speedup", format!("{:.1}x Ollama", config.min_speedup)),
+        ];
+        println!("{}", output::kv_table(&config_pairs));
     }
 
     // Gate 0: Tensor Contract Validation (PMAT-235)
@@ -376,21 +377,64 @@ fn run_qa(path: &Path, config: &QaConfig) -> Result<QaReport> {
     };
 
     if !config.json {
-        println!();
-        output::section("QA Summary");
+        output::header("QA Summary");
+
+        // Summary table
+        let gate_rows: Vec<Vec<String>> = gates
+            .iter()
+            .map(|g| {
+                let badge = if g.skipped {
+                    output::badge_skip("SKIP")
+                } else if g.passed {
+                    output::badge_pass("PASS")
+                } else {
+                    output::badge_fail("FAIL")
+                };
+                let name = match g.name.as_str() {
+                    "tensor_contract" => "Tensor Contract",
+                    "golden_output" => "Golden Output",
+                    "throughput" => "Throughput",
+                    "ollama_parity" => "Ollama Parity",
+                    "gpu_speedup" => "GPU Speedup",
+                    "format_parity" => "Format Parity",
+                    _ => &g.name,
+                };
+                let measured = g
+                    .value
+                    .map_or("—".to_string(), |v| format!("{v:.2}"));
+                let threshold = g
+                    .threshold
+                    .map_or("—".to_string(), |v| format!("{v:.2}"));
+                vec![
+                    name.to_string(),
+                    badge,
+                    measured,
+                    threshold,
+                    output::duration_fmt(g.duration_ms),
+                ]
+            })
+            .collect();
+        println!(
+            "{}",
+            output::table(
+                &["Gate", "Status", "Measured", "Threshold", "Duration"],
+                &gate_rows
+            )
+        );
+
         println!();
         if passed {
-            println!("{}", "✅ ALL GATES PASSED".green().bold());
+            println!("  {}", output::badge_pass("ALL GATES PASSED"));
         } else {
-            println!("{}", "❌ GATES FAILED".red().bold());
+            println!("  {}", output::badge_fail("GATES FAILED"));
             for gate in &failed_gates {
-                println!("   - {}: {}", gate.name.red(), gate.message);
+                println!("    {} {}", "✗".red(), gate.name);
             }
         }
-        println!();
-        output::kv(
+        output::metric(
             "Total Duration",
-            format!("{:.2}s", total_duration.as_secs_f32()),
+            output::duration_fmt(total_duration.as_millis() as u64),
+            "",
         );
     }
 
@@ -1526,12 +1570,12 @@ fn measure_ollama_throughput(path: &Path, config: &QaConfig) -> Result<f64> {
 
 /// Print a gate result to the terminal
 fn print_gate_result(result: &GateResult) {
-    let status = if result.skipped {
-        "[SKIP]".blue().bold()
+    let badge = if result.skipped {
+        output::badge_skip("SKIP")
     } else if result.passed {
-        "[PASS]".green().bold()
+        output::badge_pass("PASS")
     } else {
-        "[FAIL]".red().bold()
+        output::badge_fail("FAIL")
     };
 
     let name = match result.name.as_str() {
@@ -1544,12 +1588,17 @@ fn print_gate_result(result: &GateResult) {
         _ => &result.name,
     };
 
-    println!("{} {} - {}", status, name.white().bold(), result.message);
+    println!(
+        "  {} {} {}",
+        badge,
+        name.white().bold(),
+        result.message.dimmed()
+    );
 
     if !result.skipped {
         println!(
-            "       Duration: {:.2}s",
-            result.duration_ms as f64 / 1000.0
+            "       {}",
+            output::duration_fmt(result.duration_ms).dimmed()
         );
     }
     println!();

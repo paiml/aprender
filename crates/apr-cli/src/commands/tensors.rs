@@ -153,63 +153,108 @@ fn output_json(result: &TensorListResult) {
 }
 
 fn output_text(result: &TensorListResult, show_stats: bool) {
-    output::section(&format!("Tensors: {}", result.file));
-    println!();
+    output::header(&format!("Tensors: {}", result.file));
 
     if result.tensors.is_empty() {
         println!("  No tensor information available");
         return;
     }
 
-    output::kv("Format version", &result.format_version);
-    output::kv("Total tensors", result.tensor_count);
-    output::kv("Total size", format_size(result.total_size_bytes as u64));
-    println!();
+    // Summary table
+    let summary = vec![
+        ("Format", result.format_version.clone()),
+        ("Tensors", output::count_fmt(result.tensor_count)),
+        ("Total Size", format_size(result.total_size_bytes as u64)),
+    ];
+    println!("{}", output::kv_table(&summary));
+
+    // Collect dtype distribution
+    let mut dtype_counts: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+    for tensor in &result.tensors {
+        *dtype_counts.entry(&tensor.dtype).or_insert(0) += 1;
+    }
+    let dominant_dtype = dtype_counts
+        .iter()
+        .max_by_key(|(_, c)| **c)
+        .map_or("unknown", |(dt, _)| *dt);
+
+    // Build tensor table
+    let mut headers: Vec<&str> = vec!["Name", "Shape", "DType", "Size"];
+    if show_stats {
+        headers.extend(&["Mean", "Std", "Range"]);
+    }
+
+    let mut rows: Vec<Vec<String>> = Vec::new();
+    let mut anomaly_warnings: Vec<String> = Vec::new();
 
     for tensor in &result.tensors {
         let shape_str = format!("{:?}", tensor.shape);
-        println!("  {} [{}] {}", tensor.name, tensor.dtype, shape_str);
+        let dtype_str = tensor.dtype.clone();
+        let size_str = format_size(tensor.size_bytes as u64);
 
-        if tensor.size_bytes > 0 {
-            println!("    Size: {}", format_size(tensor.size_bytes as u64));
-        }
+        let mut row = vec![tensor.name.clone(), shape_str, dtype_str, size_str];
 
         if show_stats {
-            if let (Some(mean), Some(std)) = (tensor.mean, tensor.std) {
-                // Check for NaN stats (spec H8)
-                if mean.is_nan() || std.is_nan() {
-                    println!(
-                        "    Stats: {} (FAIL: NaN detected per spec H8)",
-                        "NaN".red()
-                    );
-                } else {
-                    println!("    Stats: mean={mean:.4}, std={std:.4}");
-                }
-            }
-            if let (Some(min), Some(max)) = (tensor.min, tensor.max) {
-                println!("    Range: [{min:.4}, {max:.4}]");
-            }
-            // Display NaN/Inf count warnings
+            let mean_str = match tensor.mean {
+                Some(m) if m.is_nan() => "NaN".to_string(),
+                Some(m) => format!("{m:.4}"),
+                None => "—".to_string(),
+            };
+            let std_str = match tensor.std {
+                Some(s) if s.is_nan() => "NaN".to_string(),
+                Some(s) => format!("{s:.4}"),
+                None => "—".to_string(),
+            };
+            let range_str = match (tensor.min, tensor.max) {
+                (Some(min), Some(max)) => format!("[{min:.4}, {max:.4}]"),
+                _ => "—".to_string(),
+            };
+            row.extend(vec![mean_str, std_str, range_str]);
+
+            // Collect anomaly warnings
             if let Some(nan_count) = tensor.nan_count {
                 if nan_count > 0 {
-                    println!(
-                        "    {} {} NaN values detected (spec H8 violation)",
-                        "WARNING:".red().bold(),
+                    anomaly_warnings.push(format!(
+                        "  {} {}: {} NaN values (spec H8 violation)",
+                        "✗".red().bold(),
+                        tensor.name,
                         nan_count
-                    );
+                    ));
                 }
             }
             if let Some(inf_count) = tensor.inf_count {
                 if inf_count > 0 {
-                    println!(
-                        "    {} {} Inf values detected",
-                        "WARNING:".yellow().bold(),
+                    anomaly_warnings.push(format!(
+                        "  {} {}: {} Inf values",
+                        "⚠".yellow().bold(),
+                        tensor.name,
                         inf_count
-                    );
+                    ));
                 }
             }
         }
+
+        rows.push(row);
     }
+
+    println!("{}", output::table(&headers, &rows));
+
+    // Print anomaly warnings below the table
+    if !anomaly_warnings.is_empty() {
+        output::subheader("Anomalies");
+        for w in &anomaly_warnings {
+            println!("{w}");
+        }
+    }
+
+    // Summary line
+    println!(
+        "\n  {} {} {} {}",
+        output::count_fmt(result.tensor_count).white().bold(),
+        "tensors".dimmed(),
+        format_size(result.total_size_bytes as u64).white().bold(),
+        output::dtype_color(dominant_dtype),
+    );
 }
 
 // ============================================================================

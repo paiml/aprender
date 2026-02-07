@@ -7,7 +7,8 @@
 //! for *quality* and *standardization*.
 
 use crate::error::{CliError, Result};
-use aprender::format::{lint_model_file, LintCategory, LintLevel, LintReport};
+use crate::output;
+use aprender::format::{lint_model_file, LintLevel, LintReport};
 use colored::Colorize;
 use std::path::Path;
 
@@ -18,9 +19,8 @@ pub(crate) fn run(file: &Path) -> Result<()> {
         return Err(CliError::FileNotFound(file.to_path_buf()));
     }
 
-    println!("{}", "=== Model Lint ===".cyan().bold());
-    println!();
-    println!("Checking: {}", file.display());
+    output::header("Model Lint");
+    println!("  Checking: {}", file.display().to_string().cyan());
     println!();
 
     // Run lint (auto-detects APR, GGUF, SafeTensors via Rosetta Stone)
@@ -40,62 +40,66 @@ pub(crate) fn run(file: &Path) -> Result<()> {
     }
 }
 
-/// Format lint level as colored string.
-fn format_level(level: LintLevel) -> colored::ColoredString {
+/// Format lint level as a badge.
+fn level_badge(level: LintLevel) -> String {
     match level {
-        LintLevel::Info => format!("[{}]", level.as_str()).blue(),
-        LintLevel::Warn => format!("[{}]", level.as_str()).yellow(),
-        LintLevel::Error => format!("[{}]", level.as_str()).red(),
-    }
-}
-
-/// Print a single lint issue.
-fn print_issue(issue: &aprender::format::LintIssue, category: LintCategory) {
-    let level_str = format_level(issue.level);
-    println!("{} {}: {}", level_str, category.name(), issue.message);
-
-    if let Some(ref suggestion) = issue.suggestion {
-        println!("       {}", suggestion.dimmed());
-    }
-}
-
-/// Print issues for a category.
-fn print_category_issues(report: &LintReport, category: LintCategory) {
-    let issues = report.issues_in_category(category);
-    for issue in &issues {
-        print_issue(issue, category);
+        LintLevel::Info => output::badge_info("INFO"),
+        LintLevel::Warn => output::badge_warn("WARN"),
+        LintLevel::Error => output::badge_fail("ERROR"),
     }
 }
 
 /// Print summary and final status.
 fn print_summary(report: &LintReport) {
     let total = report.total_issues();
-    let summary = format!(
-        "Found {} issue(s): {} error(s), {} warning(s), {} info(s)",
-        total, report.error_count, report.warn_count, report.info_count
-    );
 
     if report.passed() {
-        println!("{}", summary.green());
-        println!("{}", "Lint passed (info only)".green().bold());
+        println!(
+            "  {} {} issue(s) ({} info)",
+            output::badge_pass("Lint passed"),
+            total,
+            report.info_count,
+        );
     } else {
-        println!("{}", summary.yellow());
-        println!("{}", "Lint failed (has warnings or errors)".red().bold());
+        println!(
+            "  {} {} issue(s): {} error(s), {} warning(s), {} info(s)",
+            output::badge_fail("Lint failed"),
+            total,
+            report.error_count,
+            report.warn_count,
+            report.info_count,
+        );
     }
 }
 
 /// Display lint report
 fn display_report(report: &LintReport) {
     if report.issues.is_empty() {
-        println!("{}", "No issues found.".green().bold());
+        println!("  {}", output::badge_pass("No issues found"));
         println!();
         return;
     }
 
-    // Print issues grouped by category
-    print_category_issues(report, LintCategory::Metadata);
-    print_category_issues(report, LintCategory::Naming);
-    print_category_issues(report, LintCategory::Efficiency);
+    // Build table of all issues
+    let mut rows: Vec<Vec<String>> = Vec::new();
+    for issue in &report.issues {
+        let badge = level_badge(issue.level);
+        let suggestion = issue
+            .suggestion
+            .as_deref()
+            .unwrap_or("")
+            .to_string();
+        rows.push(vec![
+            badge,
+            issue.category.name().to_string(),
+            issue.message.clone(),
+            suggestion,
+        ]);
+    }
+    println!(
+        "{}",
+        output::table(&["Level", "Category", "Message", "Suggestion"], &rows)
+    );
 
     println!();
     print_summary(report);
@@ -104,77 +108,30 @@ fn display_report(report: &LintReport) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aprender::format::{LintIssue, LintReport};
+    use aprender::format::{LintCategory, LintIssue, LintReport};
     use std::io::Write;
     use tempfile::NamedTempFile;
 
     // ========================================================================
-    // Unit Tests for format_level
+    // Unit Tests for level_badge
     // ========================================================================
 
     #[test]
-    fn test_format_level_info() {
-        let formatted = format_level(LintLevel::Info);
-        assert!(formatted.to_string().contains("INFO"));
+    fn test_level_badge_info() {
+        let badge = level_badge(LintLevel::Info);
+        assert!(badge.contains("INFO"));
     }
 
     #[test]
-    fn test_format_level_warn() {
-        let formatted = format_level(LintLevel::Warn);
-        assert!(formatted.to_string().contains("WARN"));
+    fn test_level_badge_warn() {
+        let badge = level_badge(LintLevel::Warn);
+        assert!(badge.contains("WARN"));
     }
 
     #[test]
-    fn test_format_level_error() {
-        let formatted = format_level(LintLevel::Error);
-        assert!(formatted.to_string().contains("ERROR"));
-    }
-
-    // ========================================================================
-    // Unit Tests for print_issue
-    // ========================================================================
-
-    #[test]
-    fn test_print_issue_basic() {
-        let issue = LintIssue::new(
-            LintLevel::Warn,
-            LintCategory::Metadata,
-            "Test warning message",
-        );
-        // Just verify it doesn't panic
-        print_issue(&issue, LintCategory::Metadata);
-    }
-
-    #[test]
-    fn test_print_issue_with_suggestion() {
-        let issue = LintIssue::new(
-            LintLevel::Info,
-            LintCategory::Naming,
-            "Naming convention issue",
-        )
-        .with_suggestion("Use snake_case");
-        // Just verify it doesn't panic
-        print_issue(&issue, LintCategory::Naming);
-    }
-
-    // ========================================================================
-    // Unit Tests for print_category_issues
-    // ========================================================================
-
-    #[test]
-    fn test_print_category_issues_empty() {
-        let report = LintReport::new();
-        // Should not panic with empty report
-        print_category_issues(&report, LintCategory::Metadata);
-    }
-
-    #[test]
-    fn test_print_category_issues_with_issues() {
-        let mut report = LintReport::new();
-        report.add_issue(LintIssue::metadata_warn("Missing license"));
-        report.add_issue(LintIssue::metadata_warn("Missing model_card"));
-        // Should not panic
-        print_category_issues(&report, LintCategory::Metadata);
+    fn test_level_badge_error() {
+        let badge = level_badge(LintLevel::Error);
+        assert!(badge.contains("ERROR"));
     }
 
     // ========================================================================

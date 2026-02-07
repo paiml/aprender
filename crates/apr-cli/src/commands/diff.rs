@@ -13,6 +13,7 @@
 //! - Output formatting (text/JSON)
 
 use crate::error::CliError;
+use crate::output;
 use aprender::format::diff::{diff_models, DiffCategory, DiffOptions, DiffReport};
 use aprender::format::rosetta::RosettaStone;
 use colored::Colorize;
@@ -754,40 +755,33 @@ fn output_json(report: &DiffReport) {
 }
 
 fn output_text(report: &DiffReport, show_weights: bool) {
+    output::header("Model Diff");
+
+    let format_info = if report.same_format() {
+        report.format1.clone()
+    } else {
+        format!("{} vs {}", report.format1, report.format2)
+    };
+
     println!(
-        "Comparing {} vs {}",
-        report.path1.cyan(),
-        report.path2.cyan()
+        "{}",
+        output::kv_table(&[
+            ("File A", report.path1.clone()),
+            ("File B", report.path2.clone()),
+            ("Format", format_info),
+        ])
     );
     println!();
 
-    // Format info
-    if report.same_format() {
-        println!("Format: {}", report.format1.white().bold());
-        println!();
-    } else {
-        println!(
-            "{} Comparing different formats: {} vs {}",
-            "NOTE:".yellow(),
-            report.format1.white().bold(),
-            report.format2.white().bold()
-        );
-        println!();
-    }
-
     if report.is_identical() {
-        println!(
-            "{}",
-            "Models are IDENTICAL in structure and metadata"
-                .green()
-                .bold()
-        );
+        println!("  {}", output::badge_pass("Models are IDENTICAL in structure and metadata"));
     } else {
         let count = report.diff_count();
-        println!("{} {} differences found:", "DIFF:".yellow().bold(), count);
+        println!("  {} {} differences found", output::badge_warn("DIFF"), count);
         println!();
 
-        // Group by category
+        // Build diff table
+        let mut rows: Vec<Vec<String>> = Vec::new();
         for category in [
             DiffCategory::Format,
             DiffCategory::Size,
@@ -796,26 +790,28 @@ fn output_text(report: &DiffReport, show_weights: bool) {
             DiffCategory::Tensor,
         ] {
             let diffs = report.differences_by_category(category);
-            if !diffs.is_empty() {
-                println!("  {} ({}):", category.name().white().bold(), diffs.len());
-                for diff in diffs {
-                    println!(
-                        "    {}: {} → {}",
-                        diff.field.white(),
-                        diff.value1.red(),
-                        diff.value2.green()
-                    );
-                }
-                println!();
+            for diff in diffs {
+                rows.push(vec![
+                    category.name().to_string(),
+                    diff.field.clone(),
+                    diff.value1.clone(),
+                    diff.value2.clone(),
+                ]);
             }
+        }
+        if !rows.is_empty() {
+            println!(
+                "{}",
+                output::table(&["Category", "Field", "File A", "File B"], &rows)
+            );
         }
     }
 
     if show_weights {
         println!();
         println!(
-            "{} Use --values to compare actual tensor values",
-            "TIP:".blue()
+            "  {} Use --values to compare actual tensor values",
+            output::badge_info("TIP")
         );
     }
 }

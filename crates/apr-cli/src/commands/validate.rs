@@ -4,6 +4,7 @@
 //! Validates model integrity using the 100-point QA checklist.
 
 use crate::error::CliError;
+use crate::output;
 use aprender::format::rosetta::{FormatType, RosettaStone};
 use aprender::format::validation::{AprValidator, Category, CheckStatus, ValidationReport};
 use colored::Colorize;
@@ -73,27 +74,36 @@ fn run_apr_validation(
 
 /// GGUF/SafeTensors validation via RosettaStone (physics constraints)
 fn run_rosetta_validation(path: &Path, format: FormatType, quality: bool) -> Result<(), CliError> {
-    println!(
-        "Format: {} (using Rosetta Stone validation)\n",
-        format.to_string().cyan()
-    );
+    output::header(&format!(
+        "Validate: {} (Rosetta Stone)",
+        format
+    ));
 
     let rosetta = RosettaStone::new();
     let report = rosetta
         .validate(path)
         .map_err(|e| CliError::ValidationFailed(format!("Validation failed: {e}")))?;
 
-    // Print per-tensor results
+    // Print per-tensor results as table
+    let mut rows: Vec<Vec<String>> = Vec::new();
     for tv in &report.tensors {
-        let status = if tv.is_valid {
-            "[PASS]".green().to_string()
+        let badge = if tv.is_valid {
+            output::badge_pass("PASS")
         } else {
-            "[FAIL]".red().to_string()
+            output::badge_fail("FAIL")
         };
-        println!("  {} {}", status, tv.name);
-        for failure in &tv.failures {
-            println!("    - {}", failure.red());
-        }
+        let failures_str = if tv.failures.is_empty() {
+            String::new()
+        } else {
+            tv.failures.join("; ")
+        };
+        rows.push(vec![tv.name.clone(), badge, failures_str]);
+    }
+    if !rows.is_empty() {
+        println!(
+            "{}",
+            output::table(&["Tensor", "Status", "Failures"], &rows)
+        );
     }
 
     println!();
@@ -174,16 +184,25 @@ fn validate_path(path: &Path) -> Result<(), CliError> {
 }
 
 fn print_check_results(report: &ValidationReport) {
+    let mut rows: Vec<Vec<String>> = Vec::new();
     for check in &report.checks {
-        let status_str = match &check.status {
-            CheckStatus::Pass => "[PASS]".green().to_string(),
-            CheckStatus::Fail(reason) => format!("{} {}", "[FAIL]".red(), reason),
-            CheckStatus::Warn(reason) => format!("{} {}", "[WARN]".yellow(), reason),
-            CheckStatus::Skip(reason) => format!("{} {}", "[SKIP]".cyan(), reason),
+        let (badge, detail) = match &check.status {
+            CheckStatus::Pass => (output::badge_pass("PASS"), String::new()),
+            CheckStatus::Fail(reason) => (output::badge_fail("FAIL"), reason.clone()),
+            CheckStatus::Warn(reason) => (output::badge_warn("WARN"), reason.clone()),
+            CheckStatus::Skip(reason) => (output::badge_skip("SKIP"), reason.clone()),
         };
-
-        println!("  {:>3}. {:30} {}", check.id, check.name, status_str);
+        rows.push(vec![
+            format!("{}", check.id),
+            check.name.to_string(),
+            badge,
+            detail,
+        ]);
     }
+    println!(
+        "{}",
+        output::table(&["#", "Check", "Status", "Detail"], &rows)
+    );
 }
 
 fn print_summary(report: &ValidationReport, _strict: bool) -> Result<(), CliError> {
@@ -193,18 +212,17 @@ fn print_summary(report: &ValidationReport, _strict: bool) -> Result<(), CliErro
 
     if failed_checks.is_empty() {
         println!(
-            "Result: {} ({}/100 points)",
-            "VALID".green().bold(),
+            "  {} {}/100 points",
+            output::badge_pass("VALID"),
             report.total_score
         );
         Ok(())
     } else {
         println!(
-            "Result: {} ({} checks failed)",
-            "INVALID".red().bold(),
+            "  {} {} checks failed",
+            output::badge_fail("INVALID"),
             failed_checks.len()
         );
-        // Always fail when there are failed checks (corrupted files etc.)
         Err(CliError::ValidationFailed(format!(
             "{} validation checks failed",
             failed_checks.len()
@@ -213,68 +231,56 @@ fn print_summary(report: &ValidationReport, _strict: bool) -> Result<(), CliErro
 }
 
 fn print_quality_assessment(report: &ValidationReport) {
-    println!();
-    println!("{}", "=== 100-Point Quality Assessment ===".cyan().bold());
-    println!();
+    output::header("100-Point Quality Assessment");
 
-    // Print category scores
-    print_category_score(
-        report,
-        Category::Structure,
-        "A. Format & Structural Integrity",
+    // Category score rows as table
+    let categories = [
+        (Category::Structure, "A. Format & Structural Integrity"),
+        (Category::Physics, "B. Tensor Physics & Statistics"),
+        (Category::Tooling, "C. Tooling & Operations"),
+        (Category::Conversion, "D. Conversion & Interoperability"),
+    ];
+
+    let mut rows: Vec<Vec<String>> = Vec::new();
+    for (cat, name) in &categories {
+        let score = report.category_scores.get(cat).copied().unwrap_or(0);
+        let max = 25;
+        let bar = output::progress_bar(score as usize, max as usize, 20);
+        rows.push(vec![
+            (*name).to_string(),
+            format!("{score}/{max}"),
+            bar,
+        ]);
+    }
+    println!(
+        "{}",
+        output::table(&["Category", "Score", "Progress"], &rows)
     );
-    print_category_score(report, Category::Physics, "B. Tensor Physics & Statistics");
-    print_category_score(report, Category::Tooling, "C. Tooling & Operations");
-    print_category_score(
-        report,
-        Category::Conversion,
-        "D. Conversion & Interoperability",
-    );
 
-    println!();
-
-    // Print total score with grade
+    // Total score with grade
     let grade = report.grade();
-    let grade_color = match grade {
-        "A+" | "A" => grade.green().bold(),
-        "B+" | "B" => grade.green(),
-        "C+" | "C" => grade.yellow(),
-        "D" => grade.yellow().bold(),
-        _ => grade.red().bold(),
-    };
-
-    println!("TOTAL: {}/100 (Grade: {})", report.total_score, grade_color);
+    println!(
+        "\n  TOTAL: {}/100  Grade: {}",
+        format!("{}", report.total_score).white().bold(),
+        output::grade_color(grade),
+    );
 
     // Print failed checks summary
     let failed = report.failed_checks();
     if !failed.is_empty() {
-        println!();
-        println!("{}", "Failed Checks:".red().bold());
+        output::subheader("Failed Checks");
         for check in failed {
             if let CheckStatus::Fail(reason) = &check.status {
-                println!("  - #{}: {} - {}", check.id, check.name, reason);
+                println!(
+                    "  {} #{}: {} - {}",
+                    "✗".red().bold(),
+                    check.id,
+                    check.name,
+                    reason.dimmed()
+                );
             }
         }
     }
-}
-
-fn print_category_score(report: &ValidationReport, category: Category, name: &str) {
-    let score = report.category_scores.get(&category).copied().unwrap_or(0);
-    let max = 25;
-
-    let bar_filled = (score as usize * 20) / max as usize;
-    let bar_empty = 20 - bar_filled;
-    let bar = format!("[{}{}]", "█".repeat(bar_filled), "░".repeat(bar_empty));
-
-    let color_bar = if score >= 20 {
-        bar.green()
-    } else if score >= 15 {
-        bar.yellow()
-    } else {
-        bar.red()
-    };
-
-    println!("{name:40} {score:>2}/{max} {color_bar}");
 }
 
 #[cfg(test)]
@@ -406,8 +412,7 @@ mod tests {
     // ========================================================================
 
     #[test]
-    fn test_category_score_display() {
-        // Test that category score display doesn't panic
+    fn test_quality_assessment_display() {
         let mut category_scores = HashMap::new();
         category_scores.insert(Category::Structure, 25);
         category_scores.insert(Category::Physics, 20);
@@ -420,48 +425,40 @@ mod tests {
             category_scores,
         };
 
-        // These functions should not panic
-        print_category_score(&report, Category::Structure, "A. Format");
-        print_category_score(&report, Category::Physics, "B. Physics");
-        print_category_score(&report, Category::Tooling, "C. Tooling");
-        print_category_score(&report, Category::Conversion, "D. Conversion");
+        // Should not panic
+        print_quality_assessment(&report);
     }
 
     #[test]
-    fn test_category_score_missing() {
+    fn test_quality_assessment_missing_categories() {
         let report = ValidationReport {
             checks: Vec::new(),
             total_score: 0,
             category_scores: HashMap::new(),
         };
 
-        // Should handle missing category gracefully (default to 0)
-        print_category_score(&report, Category::Structure, "A. Structure");
+        // Should handle missing categories gracefully (default to 0)
+        print_quality_assessment(&report);
     }
 
     #[test]
-    fn test_category_score_colors() {
-        // Test all color thresholds
+    fn test_quality_assessment_all_score_ranges() {
+        // High scores
         let mut high_scores = HashMap::new();
-        high_scores.insert(Category::Structure, 25); // Green
-
-        let mut mid_scores = HashMap::new();
-        mid_scores.insert(Category::Structure, 17); // Yellow
-
-        let mut low_scores = HashMap::new();
-        low_scores.insert(Category::Structure, 5); // Red
+        high_scores.insert(Category::Structure, 25);
+        high_scores.insert(Category::Physics, 25);
+        high_scores.insert(Category::Tooling, 25);
+        high_scores.insert(Category::Conversion, 25);
 
         let high_report = ValidationReport {
             checks: Vec::new(),
-            total_score: 25,
+            total_score: 100,
             category_scores: high_scores,
         };
 
-        let mid_report = ValidationReport {
-            checks: Vec::new(),
-            total_score: 17,
-            category_scores: mid_scores,
-        };
+        // Low scores
+        let mut low_scores = HashMap::new();
+        low_scores.insert(Category::Structure, 5);
 
         let low_report = ValidationReport {
             checks: Vec::new(),
@@ -470,9 +467,8 @@ mod tests {
         };
 
         // All should display without panic
-        print_category_score(&high_report, Category::Structure, "High");
-        print_category_score(&mid_report, Category::Structure, "Medium");
-        print_category_score(&low_report, Category::Structure, "Low");
+        print_quality_assessment(&high_report);
+        print_quality_assessment(&low_report);
     }
 
     // ========================================================================
