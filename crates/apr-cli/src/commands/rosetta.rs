@@ -674,136 +674,13 @@ pub fn run_compare_inference(
                 .cyan()
         );
 
-        // Diagnosis
-        println!(
-            "{}",
-            "║                           DIAGNOSIS                                           ║"
-                .cyan()
+        print_inference_diagnosis(
+            total_tokens,
+            mismatches,
+            tolerance,
+            &result_a.output_text,
+            &result_b.output_text,
         );
-        println!(
-            "{}",
-            "╠══════════════════════════════════════════════════════════════════════════════╣"
-                .cyan()
-        );
-
-        // GH-188 FIX: Detect when tracing captured nothing (inference failure)
-        if total_tokens == 0 {
-            println!(
-                "║ {:<76} ║",
-                "⚠️  NO TOKENS CAPTURED - INFERENCE MAY HAVE FAILED!"
-                    .red()
-                    .bold()
-            );
-            println!(
-                "║ {:<76} ║",
-                "Check that APR_TRACE_LOGITS output is being parsed correctly."
-            );
-            println!(
-                "║ {:<76} ║",
-                "Model A output: see below. Model B output: see below."
-            );
-        } else if mismatches == 0 {
-            println!(
-                "║ {:<76} ║",
-                "All tokens match - models produce identical output"
-                    .green()
-                    .bold()
-            );
-        } else {
-            println!(
-                "║ {:<76} ║",
-                format!(
-                    "{}/{} tokens differ - see possible causes below",
-                    mismatches, total_tokens
-                )
-                .yellow()
-            );
-            println!(
-                "║ Possible causes:                                                              ║"
-            );
-            println!(
-                "║   1. Precision difference (F32 vs Q4K): logit variance ~0.5                  ║"
-            );
-            println!(
-                "║   2. RoPE type mismatch: Qwen2 needs rope_type=2 (NEOX style)                ║"
-            );
-            println!(
-                "║   3. Missing QKV bias: check APR has qkv_proj.bias tensors                   ║"
-            );
-            println!(
-                "║   4. LayerNorm epsilon: check rms_norm_eps matches (1e-6 for Qwen2)          ║"
-            );
-        }
-
-        println!(
-            "{}",
-            "╠══════════════════════════════════════════════════════════════════════════════╣"
-                .cyan()
-        );
-
-        // Result
-        let match_rate = if total_tokens > 0 {
-            1.0 - (mismatches as f32 / total_tokens as f32)
-        } else {
-            0.0
-        };
-
-        let result_text = if mismatches == 0 {
-            "RESULT: INFERENCE MATCH (100%)".green().bold().to_string()
-        } else if match_rate >= (1.0 - tolerance) {
-            format!(
-                "RESULT: PARTIAL MATCH ({:.0}% within tolerance {:.0}%)",
-                match_rate * 100.0,
-                tolerance * 100.0
-            )
-            .yellow()
-            .bold()
-            .to_string()
-        } else {
-            format!(
-                "RESULT: INFERENCE MISMATCH ({}/{} tokens = {:.0}%)",
-                mismatches,
-                total_tokens,
-                match_rate * 100.0
-            )
-            .red()
-            .bold()
-            .to_string()
-        };
-        println!("║ {:<76} ║", result_text);
-        println!(
-            "{}",
-            "╚══════════════════════════════════════════════════════════════════════════════╝"
-                .cyan()
-        );
-
-        // Show actual outputs
-        println!();
-        println!("{}", "=== Generated Text ===".cyan().bold());
-        println!("Model A: {:?}", result_a.output_text);
-        println!("Model B: {:?}", result_b.output_text);
-
-        // GH-188: Direct text comparison for quick diagnosis
-        let text_a_clean = result_a.output_text.trim();
-        let text_b_clean = result_b.output_text.trim();
-        let text_a_has_content = !text_a_clean.is_empty() && !text_a_clean.contains("tok/s");
-        let text_b_has_content = !text_b_clean.is_empty() && !text_b_clean.contains("tok/s");
-
-        if text_a_has_content != text_b_has_content {
-            println!();
-            println!("{}", "⚠️  TEXT OUTPUT MISMATCH DETECTED:".red().bold());
-            if text_a_has_content && !text_b_has_content {
-                println!("   Model A produced text, Model B produced nothing/garbage.");
-                println!("   → Model B likely has inference bug (layout, kernel, or load issue).");
-            } else {
-                println!("   Model B produced text, Model A produced nothing/garbage.");
-                println!("   → Model A likely has inference bug (layout, kernel, or load issue).");
-            }
-        } else if text_a_has_content && text_b_has_content && text_a_clean != text_b_clean {
-            println!();
-            println!("{}", "⚠️  TEXT CONTENT DIFFERS:".yellow().bold());
-            println!("   Models produced different outputs (may be precision-related).");
-        }
     }
 
     // GH-188 FIX: Fail if no tokens were captured (tracing broken or inference failed)
@@ -843,6 +720,145 @@ pub fn run_compare_inference(
     }
 
     Ok(())
+}
+
+/// Print diagnosis section for inference comparison (extracted for complexity reduction).
+fn print_inference_diagnosis(
+    total_tokens: usize,
+    mismatches: usize,
+    tolerance: f32,
+    text_a: &str,
+    text_b: &str,
+) {
+    println!(
+        "{}",
+        "║                           DIAGNOSIS                                           ║"
+            .cyan()
+    );
+    println!(
+        "{}",
+        "╠══════════════════════════════════════════════════════════════════════════════╣"
+            .cyan()
+    );
+
+    // GH-188 FIX: Detect when tracing captured nothing (inference failure)
+    if total_tokens == 0 {
+        println!(
+            "║ {:<76} ║",
+            "⚠️  NO TOKENS CAPTURED - INFERENCE MAY HAVE FAILED!"
+                .red()
+                .bold()
+        );
+        println!(
+            "║ {:<76} ║",
+            "Check that APR_TRACE_LOGITS output is being parsed correctly."
+        );
+        println!(
+            "║ {:<76} ║",
+            "Model A output: see below. Model B output: see below."
+        );
+    } else if mismatches == 0 {
+        println!(
+            "║ {:<76} ║",
+            "All tokens match - models produce identical output"
+                .green()
+                .bold()
+        );
+    } else {
+        println!(
+            "║ {:<76} ║",
+            format!(
+                "{}/{} tokens differ - see possible causes below",
+                mismatches, total_tokens
+            )
+            .yellow()
+        );
+        println!(
+            "║ Possible causes:                                                              ║"
+        );
+        println!(
+            "║   1. Precision difference (F32 vs Q4K): logit variance ~0.5                  ║"
+        );
+        println!(
+            "║   2. RoPE type mismatch: Qwen2 needs rope_type=2 (NEOX style)                ║"
+        );
+        println!(
+            "║   3. Missing QKV bias: check APR has qkv_proj.bias tensors                   ║"
+        );
+        println!(
+            "║   4. LayerNorm epsilon: check rms_norm_eps matches (1e-6 for Qwen2)          ║"
+        );
+    }
+
+    println!(
+        "{}",
+        "╠══════════════════════════════════════════════════════════════════════════════╣"
+            .cyan()
+    );
+
+    // Result
+    let match_rate = if total_tokens > 0 {
+        1.0 - (mismatches as f32 / total_tokens as f32)
+    } else {
+        0.0
+    };
+
+    let result_text = if mismatches == 0 {
+        "RESULT: INFERENCE MATCH (100%)".green().bold().to_string()
+    } else if match_rate >= (1.0 - tolerance) {
+        format!(
+            "RESULT: PARTIAL MATCH ({:.0}% within tolerance {:.0}%)",
+            match_rate * 100.0,
+            tolerance * 100.0
+        )
+        .yellow()
+        .bold()
+        .to_string()
+    } else {
+        format!(
+            "RESULT: INFERENCE MISMATCH ({}/{} tokens = {:.0}%)",
+            mismatches,
+            total_tokens,
+            match_rate * 100.0
+        )
+        .red()
+        .bold()
+        .to_string()
+    };
+    println!("║ {:<76} ║", result_text);
+    println!(
+        "{}",
+        "╚══════════════════════════════════════════════════════════════════════════════╝"
+            .cyan()
+    );
+
+    // Show actual outputs
+    println!();
+    println!("{}", "=== Generated Text ===".cyan().bold());
+    println!("Model A: {:?}", text_a);
+    println!("Model B: {:?}", text_b);
+
+    // GH-188: Direct text comparison for quick diagnosis
+    let text_a_clean = text_a.trim();
+    let text_b_clean = text_b.trim();
+    let text_a_has_content = !text_a_clean.is_empty() && !text_a_clean.contains("tok/s");
+    let text_b_has_content = !text_b_clean.is_empty() && !text_b_clean.contains("tok/s");
+
+    if text_a_has_content != text_b_has_content {
+        println!();
+        println!("{}", "⚠️  TEXT OUTPUT MISMATCH DETECTED:".red().bold());
+        if text_a_has_content && !text_b_has_content {
+            println!("   Model A produced text, Model B produced nothing/garbage.");
+            println!("   → Model B likely has inference bug (layout, kernel, or load issue).");
+        } else {
+            println!("   Model B produced text, Model A produced nothing/garbage.");
+            println!("   → Model A likely has inference bug (layout, kernel, or load issue).");
+        }
+    } else if text_a_has_content && text_b_has_content && text_a_clean != text_b_clean {
+        println!();
+        println!("{}", "⚠️  TEXT CONTENT DIFFERS:".yellow().bold());
+        println!("   Models produced different outputs (may be precision-related).");
+    }
 }
 
 /// Run the rosetta diff-tensors subcommand (GH-188)
