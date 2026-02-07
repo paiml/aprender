@@ -9,6 +9,7 @@ use crate::format::gguf::{
     load_gguf_raw, load_gguf_with_tokenizer, GgufModelConfig, GgufRawTensor, GgufTokenizer,
 };
 use crate::format::layout_contract::contract;
+use crate::format::sharded::ShardIndex;
 use crate::format::validation::{AprValidator, TensorStats, ValidationReport};
 use crate::serialization::safetensors::{MappedSafeTensors, UserMetadata};
 use std::collections::BTreeMap;
@@ -381,6 +382,23 @@ pub(crate) fn resolve_source(source: &Source, cache: bool) -> Result<PathBuf> {
                 };
                 return Err(AprenderError::from(err));
             }
+            // GH-218: Handle sharded SafeTensors directories
+            if path.is_dir() {
+                let index = path.join("model.safetensors.index.json");
+                if index.exists() {
+                    return Ok(index);
+                }
+                let single = path.join("model.safetensors");
+                if single.exists() {
+                    return Ok(single);
+                }
+                return Err(AprenderError::FormatError {
+                    message: format!(
+                        "Directory {} contains no model.safetensors.index.json or model.safetensors",
+                        path.display()
+                    ),
+                });
+            }
             Ok(path.clone())
         }
         Source::HuggingFace { org, repo, file } => {
@@ -561,18 +579,19 @@ fn download_from_hf(repo_id: &str, filename: &str) -> Result<PathBuf> {
 }
 
 /// Result of loading source tensors (may include tokenizer data)
+#[derive(Debug)]
 pub(crate) struct SourceLoadResult {
     /// Tensor data (name -> (data, shape))
-    tensors: BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+    pub(crate) tensors: BTreeMap<String, (Vec<f32>, Vec<usize>)>,
     /// GH-205: Raw F16 tensor bytes for passthrough (name -> bytes)
     /// Tensors in this map should NOT be converted - write raw to APR
-    f16_raw_tensors: BTreeMap<String, (Vec<u8>, Vec<usize>)>,
+    pub(crate) f16_raw_tensors: BTreeMap<String, (Vec<u8>, Vec<usize>)>,
     /// Tokenizer data (only present for GGUF files)
-    tokenizer: Option<GgufTokenizer>,
+    pub(crate) tokenizer: Option<GgufTokenizer>,
     /// Model config (CRITICAL for inference - from GGUF)
-    model_config: Option<GgufModelConfig>,
+    pub(crate) model_config: Option<GgufModelConfig>,
     /// PMAT-223: User metadata from SafeTensors `__metadata__` section
-    user_metadata: UserMetadata,
+    pub(crate) user_metadata: UserMetadata,
 }
 
 /// Load model config from config.json alongside the model file (PMAT-098)
@@ -1231,11 +1250,19 @@ pub(crate) fn infer_model_config_from_tensors(
 /// Load tensors from source file (`SafeTensors` format)
 pub(crate) fn load_source_tensors(
     path: &Path,
-    _options: &ImportOptions,
+    options: &ImportOptions,
 ) -> Result<SourceLoadResult> {
     let extension = path.extension().and_then(|e| e.to_str()).unwrap_or("");
 
     match extension {
+        // GH-218: Sharded SafeTensors via index.json
+        "json"
+            if path
+                .file_name()
+                .is_some_and(|n| n.to_string_lossy().ends_with(".index.json")) =>
+        {
+            load_sharded_safetensors(path, options)
+        }
         "safetensors" => {
             // GH-205: Load tensors with F16 passthrough support
             let st_result = load_safetensors_with_f16_passthrough(path)?;
@@ -1279,6 +1306,93 @@ pub(crate) fn load_source_tensors(
             message: format!("Unknown file format: .{other}. Supported: .safetensors"),
         }),
     }
+}
+
+/// GH-218: Load tensors from sharded SafeTensors model (via index.json).
+///
+/// Iterates shard files, calling `load_safetensors_with_f16_passthrough()` per shard,
+/// and merges results into a single `SourceLoadResult`.
+pub(crate) fn load_sharded_safetensors(
+    index_path: &Path,
+    _options: &ImportOptions,
+) -> Result<SourceLoadResult> {
+    let content = fs::read_to_string(index_path).map_err(|e| AprenderError::FormatError {
+        message: format!("Failed to read shard index {}: {e}", index_path.display()),
+    })?;
+    let index = ShardIndex::from_json(&content)?;
+
+    if index.shard_count() == 0 {
+        return Err(AprenderError::FormatError {
+            message: format!(
+                "Shard index {} contains no shard files",
+                index_path.display()
+            ),
+        });
+    }
+
+    let base_dir = index_path
+        .parent()
+        .ok_or_else(|| AprenderError::FormatError {
+            message: format!(
+                "Cannot determine parent directory of {}",
+                index_path.display()
+            ),
+        })?;
+
+    eprintln!(
+        "[GH-218] Loading sharded SafeTensors: {} shards, {} tensors",
+        index.shard_count(),
+        index.tensor_count(),
+    );
+
+    let mut merged_tensors: BTreeMap<String, (Vec<f32>, Vec<usize>)> = BTreeMap::new();
+    let mut merged_f16: BTreeMap<String, (Vec<u8>, Vec<usize>)> = BTreeMap::new();
+    let mut merged_metadata = UserMetadata::new();
+
+    for shard_file in index.shard_files() {
+        let shard_path = base_dir.join(shard_file);
+        if !shard_path.exists() {
+            return Err(AprenderError::FormatError {
+                message: format!(
+                    "Shard file {} referenced in index but not found at {}",
+                    shard_file,
+                    shard_path.display()
+                ),
+            });
+        }
+
+        eprintln!("[GH-218] Loading shard: {shard_file}");
+        let st_result = load_safetensors_with_f16_passthrough(&shard_path)?;
+
+        merged_tensors.extend(st_result.tensors);
+        merged_f16.extend(st_result.f16_raw_tensors);
+        // First shard wins for metadata conflicts
+        for (k, v) in st_result.user_metadata {
+            merged_metadata.entry(k).or_insert(v);
+        }
+    }
+
+    eprintln!(
+        "[GH-218] Merged {} tensors ({} F16 passthrough) from {} shards",
+        merged_tensors.len(),
+        merged_f16.len(),
+        index.shard_count(),
+    );
+
+    // Load config.json and tokenizer.json from the same directory as index
+    // Use a dummy file path in the base directory so sibling lookup works
+    let sibling_path = base_dir.join("model.safetensors.index.json");
+    let model_config = load_model_config_from_json(&sibling_path)
+        .or_else(|| infer_model_config_from_tensors(&merged_tensors));
+    let tokenizer = load_tokenizer_from_json(&sibling_path);
+
+    Ok(SourceLoadResult {
+        tensors: merged_tensors,
+        f16_raw_tensors: merged_f16,
+        tokenizer,
+        model_config,
+        user_metadata: merged_metadata,
+    })
 }
 
 /// Load tensors from `SafeTensors` file using memory-mapped I/O for efficiency
