@@ -738,13 +738,11 @@ fn print_inference_diagnosis(
 ) {
     println!(
         "{}",
-        "║                           DIAGNOSIS                                           ║"
-            .cyan()
+        "║                           DIAGNOSIS                                           ║".cyan()
     );
     println!(
         "{}",
-        "╠══════════════════════════════════════════════════════════════════════════════╣"
-            .cyan()
+        "╠══════════════════════════════════════════════════════════════════════════════╣".cyan()
     );
 
     // GH-188 FIX: Detect when tracing captured nothing (inference failure)
@@ -798,8 +796,7 @@ fn print_inference_diagnosis(
 
     println!(
         "{}",
-        "╠══════════════════════════════════════════════════════════════════════════════╣"
-            .cyan()
+        "╠══════════════════════════════════════════════════════════════════════════════╣".cyan()
     );
 
     // Result
@@ -834,8 +831,7 @@ fn print_inference_diagnosis(
     println!("║ {:<76} ║", result_text);
     println!(
         "{}",
-        "╚══════════════════════════════════════════════════════════════════════════════╝"
-            .cyan()
+        "╚══════════════════════════════════════════════════════════════════════════════╝".cyan()
     );
 
     // Show actual outputs
@@ -2791,7 +2787,14 @@ mod tests {
         source.write_all(b"not valid gguf").expect("write");
         let target = NamedTempFile::with_suffix(".apr").expect("create target");
 
-        let result = run_convert(source.path(), target.path(), Some("int8"), false, false, None);
+        let result = run_convert(
+            source.path(),
+            target.path(),
+            Some("int8"),
+            false,
+            false,
+            None,
+        );
         // Should fail (invalid file) but tests quantize path
         assert!(result.is_err());
     }
@@ -5422,7 +5425,14 @@ mod tests {
         source.write_all(b"not valid gguf").expect("write");
         let target = NamedTempFile::with_suffix(".apr").expect("create target");
 
-        let result = run_convert(source.path(), target.path(), Some("fp16"), true, false, None);
+        let result = run_convert(
+            source.path(),
+            target.path(),
+            Some("fp16"),
+            true,
+            false,
+            None,
+        );
         assert!(result.is_err());
     }
 
@@ -5432,7 +5442,14 @@ mod tests {
         source.write_all(b"not valid gguf").expect("write");
         let target = NamedTempFile::with_suffix(".apr").expect("create target");
 
-        let result = run_convert(source.path(), target.path(), Some("int4"), false, true, None);
+        let result = run_convert(
+            source.path(),
+            target.path(),
+            Some("int4"),
+            false,
+            true,
+            None,
+        );
         assert!(result.is_err());
     }
 

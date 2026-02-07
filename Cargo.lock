@@ -1202,18 +1202,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bitvec"
-version = "1.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1bc2832c24239b0141d5674bb9174f9d68a8b5b3f2753311927c172ca46f7e9c"
-dependencies = [
- "funty",
- "radium",
- "tap",
- "wyz",
-]
-
-[[package]]
 name = "blake2"
 version = "0.10.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2199,9 +2187,7 @@ dependencies = [
 name = "entrenar"
 version = "0.5.8"
 dependencies = [
- "alimentar",
  "aprender 0.25.0",
- "arrow 57.2.0",
  "bytemuck",
  "chrono",
  "clap",
@@ -2210,11 +2196,8 @@ dependencies = [
  "ed25519-dalek",
  "half",
  "hex",
- "hf-hub",
- "memmap2",
  "ndarray",
  "rand 0.9.2",
- "realizar",
  "regex",
  "safetensors 0.7.0",
  "serde",
@@ -2222,10 +2205,8 @@ dependencies = [
  "serde_yaml",
  "sha2",
  "thiserror 2.0.18",
- "tokio",
  "toml",
  "trueno 0.14.4 (registry+https://github.com/rust-lang/crates.io-index)",
- "trueno-gpu 0.4.12 (registry+https://github.com/rust-lang/crates.io-index)",
  "trueno-viz",
  "zip",
 ]
@@ -2484,12 +2465,6 @@ checksum = "76ee7a02da4d231650c7cea31349b889be2f45ddb3ef3032d2ec8185f6313fd2"
 dependencies = [
  "libc",
 ]
-
-[[package]]
-name = "funty"
-version = "2.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e6d5a32815ae3f33302d95fdcb2ce17862f8c65363dcfd29360480ba1001fc9c"
 
 [[package]]
 name = "futures"
@@ -3485,36 +3460,6 @@ dependencies = [
  "png 0.17.16",
  "proc-macro2",
  "ratatui",
- "regex",
- "serde",
- "serde_json",
- "serde_yaml",
- "sha2",
- "syn 2.0.114",
- "thiserror 2.0.18",
- "tracing",
- "tracing-subscriber",
- "uuid",
- "wasm-bindgen",
- "web-sys",
-]
-
-[[package]]
-name = "jugar-probar"
-version = "1.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1262117dc0de289ca7fd514b944fa84242d5274929e5792749b94c267ab2f7ff"
-dependencies = [
- "base64",
- "bincode",
- "chrono",
- "gif 0.13.3",
- "image",
- "js-sys",
- "mp4",
- "notify",
- "png 0.17.16",
- "proc-macro2",
  "regex",
  "serde",
  "serde_json",
@@ -4745,33 +4690,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "presentar-core"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "48ea7601aed6ef0857477f827bb4245fb70cce342d25432607d1789ea9af7e9f"
-dependencies = [
- "jugar-probar 1.0.1",
- "serde",
- "serde_json",
- "trueno 0.13.0",
-]
-
-[[package]]
-name = "presentar-terminal"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e157826c23b6f8db29b6ffe46de22494213b22dd7b666253efb9aae0b4cd89c3"
-dependencies = [
- "bitvec",
- "compact_str",
- "crossterm",
- "presentar-core",
- "thiserror 2.0.18",
- "unicode-segmentation",
- "unicode-width 0.2.0",
-]
-
-[[package]]
 name = "presser"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4991,12 +4909,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "69cdb34c158ceb288df11e18b4bd39de994f6657d83847bdffdbd7f346754b0f"
 
 [[package]]
-name = "radium"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dc33ff2d4973d518d823d61aa239014831e521c75da58e3df4840d3f47749d09"
-
-[[package]]
 name = "rand"
 version = "0.8.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5183,7 +5095,6 @@ dependencies = [
  "async-stream",
  "axum",
  "chrono",
- "clap",
  "futures",
  "half",
  "libc",
@@ -5191,7 +5102,6 @@ dependencies = [
  "minijinja",
  "num-traits",
  "once_cell",
- "presentar-terminal",
  "rand 0.8.5",
  "rayon",
  "serde",
@@ -6105,12 +6015,6 @@ dependencies = [
  "quote",
  "syn 1.0.109",
 ]
-
-[[package]]
-name = "tap"
-version = "1.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "55937e1799185b12863d447f42597ed69d9928686b8d88a1df17376a097d8369"
 
 [[package]]
 name = "tempfile"
@@ -7654,15 +7558,6 @@ name = "writeable"
 version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9edde0db4769d2dc68579893f2306b26c6ecfbe0ef499b013d731b7b9247e0b9"
-
-[[package]]
-name = "wyz"
-version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "05f360fc0b24296329c78fda852a1e9ae82de9cf7b27dae4b7f62f118f77b9ed"
-dependencies = [
- "tap",
-]
 
 [[package]]
 name = "x25519-dalek"

@@ -161,10 +161,7 @@ fn apr_binary() -> PathBuf {
 
 /// Find ollama binary if installed
 fn which_ollama() -> Option<PathBuf> {
-    let output = Command::new("which")
-        .arg("ollama")
-        .output()
-        .ok()?;
+    let output = Command::new("which").arg("ollama").output().ok()?;
     if output.status.success() {
         let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
         if path.is_empty() {
@@ -236,11 +233,8 @@ fn f_gt_002_mixed_quant_level_detected() {
     // F-GT-002: `apr diff` between APR (Q4K) and GGUF detects quant differences
     let gguf = require_model!(gguf_model_path(), "GGUF model");
     let apr = require_model!(apr_model_path(), "APR model");
-    let (success, stdout, _stderr) = run_apr(&[
-        "diff",
-        gguf.to_str().unwrap(),
-        apr.to_str().unwrap(),
-    ]);
+    let (success, stdout, _stderr) =
+        run_apr(&["diff", gguf.to_str().unwrap(), apr.to_str().unwrap()]);
     // diff should run (even if it reports differences)
     assert!(
         success || stdout.contains("tensor") || stdout.contains("diff"),
@@ -303,8 +297,14 @@ fn f_gt_005_tokenizer_roundtrip() {
     assert!(ok1, "F-GT-005: apr tensors must succeed on GGUF");
     assert!(ok2, "F-GT-005: apr tensors must succeed on APR");
     // Both should show tensor listings (non-empty)
-    assert!(!stdout1.is_empty(), "F-GT-005: GGUF tensors output non-empty");
-    assert!(!stdout2.is_empty(), "F-GT-005: APR tensors output non-empty");
+    assert!(
+        !stdout1.is_empty(),
+        "F-GT-005: GGUF tensors output non-empty"
+    );
+    assert!(
+        !stdout2.is_empty(),
+        "F-GT-005: APR tensors output non-empty"
+    );
 }
 
 #[test]
@@ -448,7 +448,9 @@ fn f_arch_005_diagnostic_commands_exempt_from_gate() {
     // Diagnostic commands return empty vec (exempt)
     // The catch-all `_ =>` returns vec![] for diagnostic commands
     assert!(
-        content.contains("Diagnostic") || content.contains("diagnostic") || content.contains("exempt"),
+        content.contains("Diagnostic")
+            || content.contains("diagnostic")
+            || content.contains("exempt"),
         "F-ARCH-005: Diagnostic commands must be documented as exempt"
     );
 }
@@ -874,7 +876,9 @@ fn f_model_002_hf_cross_validation_matches() {
         "F-MODEL-002: compare_hf.rs must have execute/run function"
     );
     assert!(
-        content.contains("huggingface") || content.contains("HuggingFace") || content.contains("hf"),
+        content.contains("huggingface")
+            || content.contains("HuggingFace")
+            || content.contains("hf"),
         "F-MODEL-002: compare_hf must reference HuggingFace"
     );
 }
@@ -1143,13 +1147,7 @@ fn f_checklist_004_falsification_depth_ge_level_5() {
     let content = std::fs::read_to_string(&spec_path).expect("spec readable");
 
     // Count Level 5 indicators
-    let level_5_indicators = [
-        "hang detection",
-        "fuzzing",
-        "timeout",
-        "Inject",
-        "corrupt",
-    ];
+    let level_5_indicators = ["hang detection", "fuzzing", "timeout", "Inject", "corrupt"];
 
     let mut count = 0;
     for indicator in &level_5_indicators {
@@ -1181,10 +1179,7 @@ fn f_checklist_005_satd_is_zero() {
                     if let Some(pos) = trimmed.find(marker) {
                         let after = trimmed.get(pos + marker.len()..pos + marker.len() + 1);
                         let is_satd = match after {
-                            Some(c) => !c
-                                .chars()
-                                .next()
-                                .map_or(false, |ch| ch.is_alphanumeric()),
+                            Some(c) => !c.chars().next().map_or(false, |ch| ch.is_alphanumeric()),
                             None => true,
                         };
                         if is_satd {
@@ -1219,7 +1214,10 @@ fn f_qa_001_all_20_matrix_cells_pass() {
     let gguf = require_model!(gguf_model_path(), "GGUF model");
     let (success, stdout, stderr) = run_apr(&["qa", gguf.to_str().unwrap()]);
     if !success {
-        eprintln!("SKIP: apr qa failed (may need inference feature): {}", stderr);
+        eprintln!(
+            "SKIP: apr qa failed (may need inference feature): {}",
+            stderr
+        );
         return;
     }
     let combined = format!("{stdout}{stderr}");
@@ -1277,17 +1275,26 @@ fn f_qa_002_hang_detection_catches_silent_hangs() {
     let gguf = require_model!(gguf_model_path(), "GGUF model");
     let start = std::time::Instant::now();
     let (ok, _stdout, _stderr) = run_apr(&[
-        "qa", gguf.to_str().unwrap(),
-        "--skip-golden", "--skip-throughput", "--skip-ollama", "--skip-gpu-speedup",
+        "qa",
+        gguf.to_str().unwrap(),
+        "--skip-golden",
+        "--skip-throughput",
+        "--skip-ollama",
+        "--skip-gpu-speedup",
         "--skip-format-parity",
     ]);
     let elapsed = start.elapsed();
     // Structural-only qa should complete in < 60s
     assert!(
         elapsed.as_secs() < 60,
-        "F-QA-002: apr qa hung (took {}s, limit 60s)", elapsed.as_secs()
+        "F-QA-002: apr qa hung (took {}s, limit 60s)",
+        elapsed.as_secs()
     );
-    eprintln!("F-QA-002: apr qa completed in {:.1}s (success={})", elapsed.as_secs_f64(), ok);
+    eprintln!(
+        "F-QA-002: apr qa completed in {:.1}s (success={})",
+        elapsed.as_secs_f64(),
+        ok
+    );
 }
 
 #[test]
@@ -1421,14 +1428,20 @@ fn f_ollama_001_token_level_parity_at_temp_zero() {
                 .replace("\\n", "\n")
                 .to_string()
         }
-        _ => { eprintln!("SKIP: ollama API not reachable"); return; }
+        _ => {
+            eprintln!("SKIP: ollama API not reachable");
+            return;
+        }
     };
 
     // Run apr with same GGUF (auto-detects instruct, applies template)
     let (apr_ok, apr_stdout, apr_stderr) = run_apr(&[
-        "run", gguf_str,
-        "--prompt", "What is 2+2? Answer with just the number.",
-        "--max-tokens", "10",
+        "run",
+        gguf_str,
+        "--prompt",
+        "What is 2+2? Answer with just the number.",
+        "--max-tokens",
+        "10",
     ]);
     if !apr_ok {
         eprintln!("SKIP: apr run failed: {}", apr_stderr);
@@ -1445,19 +1458,33 @@ fn f_ollama_001_token_level_parity_at_temp_zero() {
         .to_string();
 
     // Both must produce non-empty, non-garbage output
-    assert!(!ollama_text.is_empty(), "F-OLLAMA-001: ollama produced empty output");
-    assert!(!apr_text.is_empty(), "F-OLLAMA-001: apr produced empty output");
-    assert!(!ollama_text.contains('\u{FFFD}'), "F-OLLAMA-001: ollama output has U+FFFD");
-    assert!(!apr_text.contains('\u{FFFD}'), "F-OLLAMA-001: apr output has U+FFFD");
+    assert!(
+        !ollama_text.is_empty(),
+        "F-OLLAMA-001: ollama produced empty output"
+    );
+    assert!(
+        !apr_text.is_empty(),
+        "F-OLLAMA-001: apr produced empty output"
+    );
+    assert!(
+        !ollama_text.contains('\u{FFFD}'),
+        "F-OLLAMA-001: ollama output has U+FFFD"
+    );
+    assert!(
+        !apr_text.contains('\u{FFFD}'),
+        "F-OLLAMA-001: apr output has U+FFFD"
+    );
 
     // Both should produce coherent text (non-empty, contains printable chars)
     assert!(
         ollama_text.chars().any(|c| c.is_alphanumeric()),
-        "F-OLLAMA-001: ollama output not coherent: {:?}", ollama_text
+        "F-OLLAMA-001: ollama output not coherent: {:?}",
+        ollama_text
     );
     assert!(
         apr_text.chars().any(|c| c.is_alphanumeric()),
-        "F-OLLAMA-001: apr output not coherent: {:?}", apr_text
+        "F-OLLAMA-001: apr output not coherent: {:?}",
+        apr_text
     );
 }
 
@@ -1489,31 +1516,56 @@ fn f_ollama_002_apr_throughput_ge_50_percent_of_ollama() {
             };
             let eval_count: f64 = parse_json_num(&body, "eval_count");
             let eval_duration: f64 = parse_json_num(&body, "eval_duration");
-            if eval_duration > 0.0 { eval_count / (eval_duration / 1e9) } else { 0.0 }
+            if eval_duration > 0.0 {
+                eval_count / (eval_duration / 1e9)
+            } else {
+                0.0
+            }
         }
-        _ => { eprintln!("SKIP: ollama API not reachable"); return; }
+        _ => {
+            eprintln!("SKIP: ollama API not reachable");
+            return;
+        }
     };
 
     // Measure apr throughput via bench --fast (uses realizar)
     // Use warmup=1 so model is loaded and GPU is warm before measurement
     let (apr_ok, apr_stdout, apr_stderr) = run_apr(&[
-        "bench", gguf_str, "--iterations", "3", "--warmup", "1",
-        "--max-tokens", "32", "--fast", "--prompt", "Write quicksort in Python",
+        "bench",
+        gguf_str,
+        "--iterations",
+        "3",
+        "--warmup",
+        "1",
+        "--max-tokens",
+        "32",
+        "--fast",
+        "--prompt",
+        "Write quicksort in Python",
     ]);
     if !apr_ok {
         eprintln!("SKIP: apr bench failed: {}", apr_stderr);
         return;
     }
     // Parse "Throughput: 148.2 tok/s"
-    let apr_tps: f64 = apr_stdout.lines()
+    let apr_tps: f64 = apr_stdout
+        .lines()
         .chain(apr_stderr.lines())
         .find(|l| l.contains("Throughput:") && l.contains("tok/s"))
         .and_then(|l| l.split_whitespace().nth(1))
         .and_then(|s| s.parse().ok())
         .unwrap_or(0.0);
 
-    eprintln!("F-OLLAMA-002: ollama={:.1} tok/s, apr={:.1} tok/s, ratio={:.2}",
-        ollama_tps, apr_tps, if ollama_tps > 0.0 { apr_tps / ollama_tps } else { 0.0 });
+    eprintln!(
+        "F-OLLAMA-002: ollama={:.1} tok/s, apr={:.1} tok/s, ratio={:.2}",
+        ollama_tps,
+        apr_tps,
+        if ollama_tps > 0.0 {
+            apr_tps / ollama_tps
+        } else {
+            0.0
+        }
+    );
 
     assert!(ollama_tps > 0.0, "F-OLLAMA-002: ollama produced 0 tok/s");
     assert!(apr_tps > 0.0, "F-OLLAMA-002: apr produced 0 tok/s");
@@ -1557,20 +1609,31 @@ fn f_ollama_003_ttft_within_2x_of_ollama() {
             };
             parse_num(&body, "prompt_eval_duration") / 1e6 // ns → ms
         }
-        _ => { eprintln!("SKIP: ollama API not reachable"); return; }
+        _ => {
+            eprintln!("SKIP: ollama API not reachable");
+            return;
+        }
     };
 
     // Measure apr TTFT from bench output ("Time to first token: Xms")
     let (apr_ok, apr_stdout, apr_stderr) = run_apr(&[
-        "bench", gguf_str, "--iterations", "1", "--warmup", "1",
-        "--max-tokens", "5", "--fast",
+        "bench",
+        gguf_str,
+        "--iterations",
+        "1",
+        "--warmup",
+        "1",
+        "--max-tokens",
+        "5",
+        "--fast",
     ]);
     if !apr_ok {
         eprintln!("SKIP: apr bench failed: {}", apr_stderr);
         return;
     }
     let combined = format!("{}{}", apr_stdout, apr_stderr);
-    let apr_ttft_ms: f64 = combined.lines()
+    let apr_ttft_ms: f64 = combined
+        .lines()
         .find(|l| l.to_lowercase().contains("first token"))
         .and_then(|l| {
             l.split_whitespace()
@@ -1579,7 +1642,10 @@ fn f_ollama_003_ttft_within_2x_of_ollama() {
         })
         .unwrap_or(0.0);
 
-    eprintln!("F-OLLAMA-003: ollama TTFT={:.1}ms, apr TTFT={:.1}ms", ollama_ttft_ms, apr_ttft_ms);
+    eprintln!(
+        "F-OLLAMA-003: ollama TTFT={:.1}ms, apr TTFT={:.1}ms",
+        ollama_ttft_ms, apr_ttft_ms
+    );
 
     assert!(ollama_ttft_ms > 0.0, "F-OLLAMA-003: ollama TTFT is 0");
     assert!(apr_ttft_ms >= 0.0, "F-OLLAMA-003: apr TTFT is negative");
@@ -1621,7 +1687,10 @@ fn f_ollama_004_api_response_content_matches() {
                 .replace("\\n", "\n")
                 .to_string()
         }
-        _ => { eprintln!("SKIP: ollama API not reachable"); return; }
+        _ => {
+            eprintln!("SKIP: ollama API not reachable");
+            return;
+        }
     };
 
     // 2. Start apr serve in background
@@ -1633,7 +1702,10 @@ fn f_ollama_004_api_response_content_matches() {
         .spawn();
     let mut child = match child {
         Ok(c) => c,
-        Err(e) => { eprintln!("SKIP: cannot start apr serve: {}", e); return; }
+        Err(e) => {
+            eprintln!("SKIP: cannot start apr serve: {}", e);
+            return;
+        }
     };
 
     // Wait for server to become ready (up to 30s)
@@ -1641,7 +1713,14 @@ fn f_ollama_004_api_response_content_matches() {
     for _ in 0..60 {
         std::thread::sleep(std::time::Duration::from_millis(500));
         if let Ok(resp) = Command::new("curl")
-            .args(["-s", "-o", "/dev/null", "-w", "%{http_code}", "http://127.0.0.1:18234/health"])
+            .args([
+                "-s",
+                "-o",
+                "/dev/null",
+                "-w",
+                "%{http_code}",
+                "http://127.0.0.1:18234/health",
+            ])
             .output()
         {
             let code = String::from_utf8_lossy(&resp.stdout).to_string();
@@ -1677,22 +1756,37 @@ fn f_ollama_004_api_response_content_matches() {
                 .replace("\\n", "\n")
                 .to_string()
         }
-        _ => { String::new() }
+        _ => String::new(),
     };
 
-    eprintln!("F-OLLAMA-004: ollama: {:?}, apr: {:?}", ollama_content, apr_content);
+    eprintln!(
+        "F-OLLAMA-004: ollama: {:?}, apr: {:?}",
+        ollama_content, apr_content
+    );
 
     // Both must produce non-empty, non-garbage output
-    assert!(!ollama_content.is_empty(), "F-OLLAMA-004: ollama produced empty response");
-    assert!(!apr_content.is_empty(), "F-OLLAMA-004: apr serve produced empty response");
-    assert!(!apr_content.contains('\u{FFFD}'), "F-OLLAMA-004: apr response has U+FFFD garbage");
+    assert!(
+        !ollama_content.is_empty(),
+        "F-OLLAMA-004: ollama produced empty response"
+    );
+    assert!(
+        !apr_content.is_empty(),
+        "F-OLLAMA-004: apr serve produced empty response"
+    );
+    assert!(
+        !apr_content.contains('\u{FFFD}'),
+        "F-OLLAMA-004: apr response has U+FFFD garbage"
+    );
 
     // Both should contain greeting-related content
     let apr_lower = apr_content.to_lowercase();
     assert!(
-        apr_lower.contains("hello") || apr_lower.contains("hi") || apr_lower.contains("hey")
+        apr_lower.contains("hello")
+            || apr_lower.contains("hi")
+            || apr_lower.contains("hey")
             || apr_lower.chars().any(|c| c.is_alphabetic()),
-        "F-OLLAMA-004: apr response not coherent for 'Say hello': {:?}", apr_content
+        "F-OLLAMA-004: apr response not coherent for 'Say hello': {:?}",
+        apr_content
     );
 }
 
@@ -1704,7 +1798,11 @@ fn f_ollama_005_same_gguf_loadable_by_both() {
 
     // 1. Verify apr can load it
     let (apr_ok, _stdout, apr_err) = run_apr(&["validate", gguf_str]);
-    assert!(apr_ok, "F-OLLAMA-005: apr must load GGUF. stderr: {}", apr_err);
+    assert!(
+        apr_ok,
+        "F-OLLAMA-005: apr must load GGUF. stderr: {}",
+        apr_err
+    );
 
     // 2. Verify ollama can load it via `ollama create` from a Modelfile
     let ollama = which_ollama();
@@ -1718,7 +1816,12 @@ fn f_ollama_005_same_gguf_loadable_by_both() {
     std::fs::write(&modelfile_path, &modelfile_content).expect("write Modelfile");
 
     let output = Command::new(&ollama_bin)
-        .args(["create", "f_ollama_005_test:latest", "-f", modelfile_path.to_str().unwrap()])
+        .args([
+            "create",
+            "f_ollama_005_test:latest",
+            "-f",
+            modelfile_path.to_str().unwrap(),
+        ])
         .output()
         .expect("ollama create");
 
@@ -1783,9 +1886,25 @@ fn f_dod_004_all_sections_have_ge_5_gates() {
     let content = std::fs::read_to_string(&spec_path).expect("spec readable");
 
     let prefixes = [
-        "F-GT-", "F-ARCH-", "F-CLI-", "F-PIPE-", "F-MODEL-", "F-FMT-", "F-CHECKLIST-",
-        "F-QA-", "F-OLLAMA-", "F-DOD-", "F-LAYOUT-", "F-ROSETTA-", "F-DIAG-", "F-PERF-",
-        "F-TRUENO-", "F-REALIZE-", "F-CONTRACT-", "F-PROVE-", "F-SURFACE-",
+        "F-GT-",
+        "F-ARCH-",
+        "F-CLI-",
+        "F-PIPE-",
+        "F-MODEL-",
+        "F-FMT-",
+        "F-CHECKLIST-",
+        "F-QA-",
+        "F-OLLAMA-",
+        "F-DOD-",
+        "F-LAYOUT-",
+        "F-ROSETTA-",
+        "F-DIAG-",
+        "F-PERF-",
+        "F-TRUENO-",
+        "F-REALIZE-",
+        "F-CONTRACT-",
+        "F-PROVE-",
+        "F-SURFACE-",
     ];
 
     for prefix in &prefixes {
@@ -1819,11 +1938,7 @@ fn f_dod_005_no_silent_fallbacks_in_dtype_handling() {
                 if let Some(pos) = trimmed.find("_ =>") {
                     let after = &trimmed[pos + 4..];
                     if after.contains("F32") {
-                        violations.push(format!(
-                            "{}:{}: '{trimmed}'",
-                            path.display(),
-                            line_no + 1
-                        ));
+                        violations.push(format!("{}:{}: '{trimmed}'", path.display(), line_no + 1));
                     }
                 }
             }
@@ -1860,11 +1975,7 @@ fn f_layout_001_clippy_bans_colmajor_imports() {
                     continue;
                 }
                 if trimmed.contains("colmajor") && trimmed.contains("use ") {
-                    violations.push(format!(
-                        "{}:{}: '{trimmed}'",
-                        path.display(),
-                        line_no + 1
-                    ));
+                    violations.push(format!("{}:{}: '{trimmed}'", path.display(), line_no + 1));
                 }
             }
         }
@@ -1898,18 +2009,12 @@ fn f_layout_002_enforce_import_contract_reverses_gguf_shapes() {
 #[test]
 fn f_layout_003_enforce_load_contract_validates_shapes() {
     // F-LAYOUT-003: APR shapes must be [out_dim, in_dim] for 2D
-    let (apr_shape, _) =
-        enforce_import_contract("blk.0.attn_q.weight", &[896, 896], 151936, 896);
+    let (apr_shape, _) = enforce_import_contract("blk.0.attn_q.weight", &[896, 896], 151936, 896);
 
-    assert_eq!(
-        apr_shape.len(),
-        2,
-        "F-LAYOUT-003: 2D tensor must remain 2D"
-    );
+    assert_eq!(apr_shape.len(), 2, "F-LAYOUT-003: 2D tensor must remain 2D");
 
     // 1D tensors keep their shape
-    let (apr_shape_1d, _) =
-        enforce_import_contract("output_norm.weight", &[896], 151936, 896);
+    let (apr_shape_1d, _) = enforce_import_contract("output_norm.weight", &[896], 151936, 896);
     assert_eq!(
         apr_shape_1d.len(),
         1,
@@ -1949,11 +2054,8 @@ fn f_layout_006_rosetta_diff_detects_transposed_dims() {
     // F-LAYOUT-006: `apr diff` detects tensor shape differences between formats
     let gguf = require_model!(gguf_model_path(), "GGUF model");
     let apr = require_model!(apr_model_path(), "APR model");
-    let (success, stdout, stderr) = run_apr(&[
-        "diff",
-        gguf.to_str().unwrap(),
-        apr.to_str().unwrap(),
-    ]);
+    let (success, stdout, stderr) =
+        run_apr(&["diff", gguf.to_str().unwrap(), apr.to_str().unwrap()]);
     // diff should run and produce tensor comparison output
     assert!(
         success || !stdout.is_empty() || !stderr.is_empty(),
@@ -1975,8 +2077,14 @@ fn f_rosetta_001_st_to_apr_preserves_tensor_count() {
     assert!(ok1, "F-ROSETTA-001: apr tensors GGUF must succeed");
     assert!(ok2, "F-ROSETTA-001: apr tensors APR must succeed");
     // Count tensor lines (non-header lines with tensor info)
-    let count1 = stdout1.lines().filter(|l| l.contains('[') && l.contains(']')).count();
-    let count2 = stdout2.lines().filter(|l| l.contains('[') && l.contains(']')).count();
+    let count1 = stdout1
+        .lines()
+        .filter(|l| l.contains('[') && l.contains(']'))
+        .count();
+    let count2 = stdout2
+        .lines()
+        .filter(|l| l.contains('[') && l.contains(']'))
+        .count();
     assert!(
         count1 > 0 && count2 > 0,
         "F-ROSETTA-001: Both formats must have tensors (GGUF:{count1}, APR:{count2})"
@@ -1991,7 +2099,10 @@ fn f_rosetta_002_apr_to_gguf_roundtrip_lossless() {
     let st_dir = safetensors_model_dir();
     let st_dir = match st_dir {
         Some(d) => d,
-        None => { eprintln!("SKIP: SafeTensors model not available"); return; }
+        None => {
+            eprintln!("SKIP: SafeTensors model not available");
+            return;
+        }
     };
     let st_path = st_dir.join("model.safetensors");
     if !st_path.exists() {
@@ -2003,9 +2114,7 @@ fn f_rosetta_002_apr_to_gguf_roundtrip_lossless() {
     let tmp_gguf = "/tmp/test-rosetta-002.gguf";
 
     // Step 1: SafeTensors -> APR (canonical import path)
-    let (ok1, _stdout1, stderr1) = run_apr(&[
-        "import", st_path.to_str().unwrap(), "-o", tmp_apr,
-    ]);
+    let (ok1, _stdout1, stderr1) = run_apr(&["import", st_path.to_str().unwrap(), "-o", tmp_apr]);
     if !ok1 {
         eprintln!("SKIP: apr import from SafeTensors failed: {}", stderr1);
         let _ = std::fs::remove_file(tmp_apr);
@@ -2013,9 +2122,8 @@ fn f_rosetta_002_apr_to_gguf_roundtrip_lossless() {
     }
 
     // Step 2: APR -> GGUF (export for ollama parity)
-    let (ok2, _stdout2, stderr2) = run_apr(&[
-        "export", tmp_apr, "--format", "gguf", "-o", tmp_gguf,
-    ]);
+    let (ok2, _stdout2, stderr2) =
+        run_apr(&["export", tmp_apr, "--format", "gguf", "-o", tmp_gguf]);
     // Clean up APR regardless
     let _ = std::fs::remove_file(tmp_apr);
 
@@ -2074,12 +2182,7 @@ fn f_rosetta_005_nan_in_source_halts_conversion() {
     let content = std::fs::read_to_string(&rosetta_path)
         .or_else(|_| {
             // Try rosetta.rs (non-module layout)
-            std::fs::read_to_string(
-                project_root()
-                    .join("src")
-                    .join("format")
-                    .join("rosetta.rs"),
-            )
+            std::fs::read_to_string(project_root().join("src").join("format").join("rosetta.rs"))
         })
         .expect("rosetta source must exist");
     assert!(
@@ -2101,7 +2204,9 @@ fn f_rosetta_006_vocab_mismatch_halts_conversion() {
         .join("import.rs");
     let content = std::fs::read_to_string(&import_path).expect("import.rs must exist");
     assert!(
-        content.contains("vocab") || content.contains("vocabulary") || content.contains("tokenizer"),
+        content.contains("vocab")
+            || content.contains("vocabulary")
+            || content.contains("tokenizer"),
         "F-ROSETTA-006: Import pipeline must have vocabulary validation"
     );
 }
@@ -2182,7 +2287,10 @@ fn f_diag_004_naive_bayes_classifies_fix_category() {
 fn f_diag_005_rosetta_ml_has_tests() {
     // F-DIAG-005: rosetta_ml module has adequate test coverage
     // Structural check: verify the module has tests and coverage infrastructure
-    let rosetta_ml_path = project_root().join("src").join("format").join("rosetta_ml.rs");
+    let rosetta_ml_path = project_root()
+        .join("src")
+        .join("format")
+        .join("rosetta_ml.rs");
 
     if !rosetta_ml_path.exists() {
         eprintln!("F-DIAG-005: rosetta_ml.rs not found, checking alternate locations");
@@ -2246,10 +2354,7 @@ fn f_perf_002_fused_q4k_matches_reference() {
             break;
         }
     }
-    assert!(
-        has_fused,
-        "F-PERF-002: trueno must have Q4K matmul kernel"
-    );
+    assert!(has_fused, "F-PERF-002: trueno must have Q4K matmul kernel");
 }
 
 #[test]
@@ -2270,11 +2375,19 @@ fn f_perf_003_gpu_throughput_gt_cpu() {
 
     // Measure GPU throughput
     let (_gpu_ok, gpu_stdout, gpu_stderr) = run_apr(&[
-        "bench", gguf_str, "--iterations", "1", "--warmup", "0",
-        "--max-tokens", "20", "--fast",
+        "bench",
+        gguf_str,
+        "--iterations",
+        "1",
+        "--warmup",
+        "0",
+        "--max-tokens",
+        "20",
+        "--fast",
     ]);
     let gpu_combined = format!("{}{}", gpu_stdout, gpu_stderr);
-    let gpu_tps: f64 = gpu_combined.lines()
+    let gpu_tps: f64 = gpu_combined
+        .lines()
         .find(|l| l.contains("Throughput:") && l.contains("tok/s"))
         .and_then(|l| l.split_whitespace().nth(1))
         .and_then(|s| s.parse().ok())
@@ -2282,30 +2395,51 @@ fn f_perf_003_gpu_throughput_gt_cpu() {
 
     // Measure CPU throughput (hide GPU via CUDA_VISIBLE_DEVICES)
     let cpu_out = Command::new(apr_binary())
-        .args(["bench", gguf_str, "--iterations", "1", "--warmup", "0",
-               "--max-tokens", "20", "--fast"])
+        .args([
+            "bench",
+            gguf_str,
+            "--iterations",
+            "1",
+            "--warmup",
+            "0",
+            "--max-tokens",
+            "20",
+            "--fast",
+        ])
         .env("CUDA_VISIBLE_DEVICES", "")
         .current_dir(project_root())
         .output()
         .expect("apr bench CPU");
-    let cpu_combined = format!("{}{}",
+    let cpu_combined = format!(
+        "{}{}",
         String::from_utf8_lossy(&cpu_out.stdout),
-        String::from_utf8_lossy(&cpu_out.stderr));
-    let cpu_tps: f64 = cpu_combined.lines()
+        String::from_utf8_lossy(&cpu_out.stderr)
+    );
+    let cpu_tps: f64 = cpu_combined
+        .lines()
         .find(|l| l.contains("Throughput:") && l.contains("tok/s"))
         .and_then(|l| l.split_whitespace().nth(1))
         .and_then(|s| s.parse().ok())
         .unwrap_or(0.0);
 
-    eprintln!("F-PERF-003: GPU={:.1} tok/s, CPU={:.1} tok/s, speedup={:.1}x",
-        gpu_tps, cpu_tps, if cpu_tps > 0.0 { gpu_tps / cpu_tps } else { 0.0 });
+    eprintln!(
+        "F-PERF-003: GPU={:.1} tok/s, CPU={:.1} tok/s, speedup={:.1}x",
+        gpu_tps,
+        cpu_tps,
+        if cpu_tps > 0.0 {
+            gpu_tps / cpu_tps
+        } else {
+            0.0
+        }
+    );
 
     assert!(gpu_tps > 0.0, "F-PERF-003: GPU produced 0 tok/s");
     assert!(cpu_tps > 0.0, "F-PERF-003: CPU produced 0 tok/s");
     assert!(
         gpu_tps > cpu_tps,
         "F-PERF-003: GPU ({:.1} tok/s) must be faster than CPU ({:.1} tok/s)",
-        gpu_tps, cpu_tps
+        gpu_tps,
+        cpu_tps
     );
 }
 
@@ -2324,7 +2458,9 @@ fn f_perf_004_profile_ci_fails_on_threshold_violation() {
         "F-PERF-004: profile.rs must have CI threshold logic"
     );
     assert!(
-        content.contains("assert") || content.contains("ValidationFailed") || content.contains("Err("),
+        content.contains("assert")
+            || content.contains("ValidationFailed")
+            || content.contains("Err("),
         "F-PERF-004: profile.rs must fail on threshold violation"
     );
 }
@@ -2333,14 +2469,12 @@ fn f_perf_004_profile_ci_fails_on_threshold_violation() {
 fn f_perf_005_bench_produces_stable_measurements() {
     // F-PERF-005: `apr bench` produces consistent results (low CoV)
     let gguf = require_model!(gguf_model_path(), "GGUF model");
-    let (success, stdout, stderr) = run_apr(&[
-        "bench",
-        gguf.to_str().unwrap(),
-        "--runs",
-        "3",
-    ]);
+    let (success, stdout, stderr) = run_apr(&["bench", gguf.to_str().unwrap(), "--runs", "3"]);
     if !success {
-        eprintln!("SKIP: apr bench failed (may need inference feature): {}", stderr);
+        eprintln!(
+            "SKIP: apr bench failed (may need inference feature): {}",
+            stderr
+        );
         return;
     }
     assert!(
@@ -2481,7 +2615,10 @@ fn f_trueno_004_cuda_ptx_compiles_and_runs() {
         return;
     }
     let ptx_mod = trueno_ptx.join("mod.rs");
-    assert!(ptx_mod.exists(), "F-TRUENO-004: trueno PTX module must exist");
+    assert!(
+        ptx_mod.exists(),
+        "F-TRUENO-004: trueno PTX module must exist"
+    );
 
     // 2. Verify CUDA hardware is available
     let gpu_available = Command::new("nvidia-smi")
@@ -2496,22 +2633,32 @@ fn f_trueno_004_cuda_ptx_compiles_and_runs() {
     // 3. Runtime: GPU inference works (proves PTX compiled and ran)
     let gguf = require_model!(gguf_model_path(), "GGUF model");
     let (_ok, stdout, stderr) = run_apr(&[
-        "bench", gguf.to_str().unwrap(), "--iterations", "1",
-        "--warmup", "0", "--max-tokens", "5", "--fast",
+        "bench",
+        gguf.to_str().unwrap(),
+        "--iterations",
+        "1",
+        "--warmup",
+        "0",
+        "--max-tokens",
+        "5",
+        "--fast",
     ]);
     let combined = format!("{}{}", stdout, stderr);
     assert!(
         combined.contains("GPU") || combined.contains("CUDA"),
-        "F-TRUENO-004: bench --fast must use CUDA GPU. output: {}", combined
+        "F-TRUENO-004: bench --fast must use CUDA GPU. output: {}",
+        combined
     );
-    let tps: f64 = combined.lines()
+    let tps: f64 = combined
+        .lines()
         .find(|l| l.contains("Throughput:") && l.contains("tok/s"))
         .and_then(|l| l.split_whitespace().nth(1))
         .and_then(|s| s.parse().ok())
         .unwrap_or(0.0);
     assert!(
         tps > 10.0,
-        "F-TRUENO-004: CUDA inference must produce >10 tok/s (got {:.1})", tps
+        "F-TRUENO-004: CUDA inference must produce >10 tok/s (got {:.1})",
+        tps
     );
 }
 
@@ -2528,7 +2675,10 @@ fn f_trueno_005_jidoka_guard_catches_nan() {
         eprintln!("F-TRUENO-005: trueno not found at sibling path, verifying dependency");
         let cargo_toml = project_root().join("Cargo.toml");
         let content = std::fs::read_to_string(&cargo_toml).expect("Cargo.toml");
-        assert!(content.contains("trueno"), "F-TRUENO-005: must depend on trueno");
+        assert!(
+            content.contains("trueno"),
+            "F-TRUENO-005: must depend on trueno"
+        );
         return;
     }
 
@@ -2638,13 +2788,14 @@ fn f_trueno_008_wgsl_matmul_shader_correct() {
     // F-TRUENO-008: WGSL matmul shader exists and has correct structure
     // The wgpu backend uses WGSL shaders for cross-platform GPU compute.
     // Runtime execution verified by GPU inference tests (F-PERF-003, F-TRUENO-004).
-    let trueno_dir = project_root()
-        .parent()
-        .expect("parent dir")
-        .join("trueno");
+    let trueno_dir = project_root().parent().expect("parent dir").join("trueno");
 
     // Check shaders.rs in trueno backends
-    let shaders_path = trueno_dir.join("src").join("backends").join("gpu").join("shaders.rs");
+    let shaders_path = trueno_dir
+        .join("src")
+        .join("backends")
+        .join("gpu")
+        .join("shaders.rs");
     if !shaders_path.exists() {
         eprintln!("SKIP: trueno shaders.rs not found at {:?}", shaders_path);
         return;
@@ -2687,8 +2838,14 @@ fn f_realize_001_prefill_and_incremental_same_logits() {
     let mut outputs = Vec::new();
     for _ in 0..2 {
         let (success, stdout, stderr) = run_apr(&[
-            "run", gguf_str, "--prompt", "The capital of France is",
-            "--max-tokens", "1", "--temperature", "0",
+            "run",
+            gguf_str,
+            "--prompt",
+            "The capital of France is",
+            "--max-tokens",
+            "1",
+            "--temperature",
+            "0",
         ]);
         if !success {
             eprintln!("SKIP: apr run failed: {}", stderr);
@@ -2886,7 +3043,9 @@ fn f_realize_009_greedy_sampling_is_deterministic() {
     // Greedy = argmax = deterministic. Verify no randomness in greedy path.
     // Check that there's a Decode trait or similar
     assert!(
-        content.contains("fn decode") || content.contains("fn sample") || content.contains("fn generate"),
+        content.contains("fn decode")
+            || content.contains("fn sample")
+            || content.contains("fn generate"),
         "F-REALIZE-009: GreedyDecoder must have decode/sample/generate method"
     );
 }
@@ -2897,8 +3056,14 @@ fn f_realize_010_paged_attention_no_corruption_on_long_seq() {
     let gguf = require_model!(gguf_model_path(), "GGUF model");
     let gguf_str = gguf.to_str().unwrap();
     let (success, stdout, stderr) = run_apr(&[
-        "run", gguf_str, "--prompt", "Write a short poem about the ocean.",
-        "--max-tokens", "50", "--temperature", "0",
+        "run",
+        gguf_str,
+        "--prompt",
+        "Write a short poem about the ocean.",
+        "--max-tokens",
+        "50",
+        "--temperature",
+        "0",
     ]);
     if !success {
         eprintln!("SKIP: apr run failed: {}", stderr);
@@ -3153,7 +3318,9 @@ fn f_prove_006_oracle_validate_catches_hf_mismatch() {
         "F-PROVE-006: oracle.rs must have validation logic"
     );
     assert!(
-        content.contains("hf") || content.contains("HuggingFace") || content.contains("huggingface")
+        content.contains("hf")
+            || content.contains("HuggingFace")
+            || content.contains("huggingface")
             || content.contains("config.json"),
         "F-PROVE-006: oracle must reference HuggingFace for cross-validation"
     );
@@ -3291,7 +3458,9 @@ fn f_surface_005_contract_classification_matches_code() {
 
     // Diagnostic keyword must appear (documenting exemptions)
     assert!(
-        content.contains("diagnostic") || content.contains("DIAGNOSTIC") || content.contains("exempt"),
+        content.contains("diagnostic")
+            || content.contains("DIAGNOSTIC")
+            || content.contains("exempt"),
         "F-SURFACE-005: Contract classification must document diagnostic exemptions"
     );
 }
@@ -3441,10 +3610,7 @@ fn count_enum_variants(source: &str, enum_header: &str) -> usize {
                 break;
             }
             if depth_before == 1 {
-                if trimmed.starts_with('#')
-                    || trimmed.starts_with("//")
-                    || trimmed.is_empty()
-                {
+                if trimmed.starts_with('#') || trimmed.starts_with("//") || trimmed.is_empty() {
                     continue;
                 }
                 let first_char = trimmed.chars().next().unwrap_or(' ');
@@ -3489,10 +3655,7 @@ fn extract_enum_variant_names(source: &str, enum_header: &str) -> Vec<String> {
                 break;
             }
             if depth_before == 1 {
-                if trimmed.starts_with('#')
-                    || trimmed.starts_with("//")
-                    || trimmed.is_empty()
-                {
+                if trimmed.starts_with('#') || trimmed.starts_with("//") || trimmed.is_empty() {
                     continue;
                 }
                 let first_char = trimmed.chars().next().unwrap_or(' ');
@@ -3699,11 +3862,7 @@ fn f_dod_unsafe_code_is_deny_by_default() {
                 continue;
             }
             if trimmed.contains("unsafe ") || trimmed.contains("unsafe{") {
-                violations.push(format!(
-                    "{}:{}: '{trimmed}'",
-                    path.display(),
-                    line_no + 1
-                ));
+                violations.push(format!("{}:{}: '{trimmed}'", path.display(), line_no + 1));
             }
         }
     }

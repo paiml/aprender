@@ -502,7 +502,11 @@ pub enum OutputVerification {
 /// 2. No garbage patterns (BEFORE checking answer)
 /// 3. No BPE artifacts
 /// 4. Contains expected answer
-pub fn verify_output(output: &str, test_id: &str, expected_patterns: &[&str]) -> OutputVerification {
+pub fn verify_output(
+    output: &str,
+    test_id: &str,
+    expected_patterns: &[&str],
+) -> OutputVerification {
     // Check 1: Not empty
     if output.trim().is_empty() {
         return OutputVerification::Fail {

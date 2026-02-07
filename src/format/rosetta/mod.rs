@@ -1360,7 +1360,11 @@ impl RosettaStone {
                 let source_str = source.to_string_lossy();
                 let effective_tokenizer = opts.tokenizer_path.clone().or_else(|| {
                     let sibling = source.with_file_name("tokenizer.json");
-                    if sibling.exists() { Some(sibling) } else { None }
+                    if sibling.exists() {
+                        Some(sibling)
+                    } else {
+                        None
+                    }
                 });
                 let import_opts = ImportOptions {
                     tokenizer_path: effective_tokenizer,

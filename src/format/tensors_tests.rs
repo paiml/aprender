@@ -1193,14 +1193,14 @@ fn test_ggml_dtype_element_size_exhaustive() {
     assert!((super::ggml_dtype_element_size(21) - 0.4375).abs() < 0.01); // IQ3_S
     assert!((super::ggml_dtype_element_size(22) - 0.625).abs() < 0.01); // IQ2_S
     assert!((super::ggml_dtype_element_size(23) - 0.5).abs() < 0.01); // IQ4_XS
-    // Integer types
+                                                                      // Integer types
     assert!((super::ggml_dtype_element_size(24) - 1.0).abs() < 0.01); // I8
     assert!((super::ggml_dtype_element_size(25) - 2.0).abs() < 0.01); // I16
     assert!((super::ggml_dtype_element_size(27) - 4.0).abs() < 0.01); // I32
     assert!((super::ggml_dtype_element_size(28) - 8.0).abs() < 0.01); // I64
     assert!((super::ggml_dtype_element_size(29) - 8.0).abs() < 0.01); // F64
     assert!((super::ggml_dtype_element_size(30) - 0.375).abs() < 0.01); // IQ1_M
-    // Unknown defaults to F32 (4.0) — conservative size estimate
+                                                                        // Unknown defaults to F32 (4.0) — conservative size estimate
     assert!((super::ggml_dtype_element_size(99) - 4.0).abs() < 0.001);
     assert!((super::ggml_dtype_element_size(u32::MAX) - 4.0).abs() < 0.001);
 }
