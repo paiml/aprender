@@ -160,24 +160,23 @@ pub fn apr_export<P: AsRef<Path>>(
         });
     }
 
-    // PMAT-252: Auto-detect source quantization for GGUF export.
-    // When no explicit --quantize is given and the APR source uses Q4_K,
-    // default to Q4_K to avoid bloated F32 GGUF output (4GB→28GB).
-    let mut options = options;
-    if options.quantize.is_none()
-        && options.format == ExportFormat::Gguf
+    // PMAT-252: For APR→GGUF with quantized source, use raw block passthrough
+    // to avoid lossy double quantization (Q4K→F32→Q4K).
+    if options.format == ExportFormat::Gguf
+        && options.quantize.is_none()
         && input_path.extension().and_then(|e| e.to_str()) == Some("apr")
     {
         if let Some(detected) = detect_apr_quantization(input_path) {
             eprintln!(
-                "[PMAT-252] Auto-detected source quantization: {:?}. Preserving for GGUF export.",
+                "[PMAT-252] Raw passthrough: detected {:?} in APR source. Copying blocks directly (zero loss).",
                 detected
             );
-            options.quantize = Some(detected);
+            let report = export_apr_to_gguf_raw(input_path, output_path)?;
+            return Ok(report);
         }
     }
 
-    // Load tensors
+    // Load tensors (dequantizes to F32 — only used for F32 sources or SafeTensors export)
     let tensors = load_model_tensors(input_path)?;
     let original_size = calculate_tensor_size(&tensors);
 
@@ -634,6 +633,158 @@ fn export_to_gguf(
     let mut writer = BufWriter::new(file);
 
     export_tensors_to_gguf(&mut writer, &gguf_tensors, &metadata)
+}
+
+/// PMAT-252: Raw block passthrough for APR→GGUF export.
+///
+/// Reads raw tensor bytes directly from APR file (Q4K super-blocks, F32 vectors,
+/// etc.) and writes them to GGUF without any dequantization/requantization.
+/// This is LOSSLESS for quantized data — zero quality degradation.
+///
+/// The key insight: APR and GGUF both store Q4K blocks in the same binary format
+/// (256-element super-blocks, 144 bytes each). The only differences are:
+/// 1. Tensor names (HF convention in APR → GGML convention in GGUF)
+/// 2. Shape representation (APR [rows, cols] → GGUF [ne0=cols, ne1=rows])
+/// 3. File-level metadata (APR header → GGUF KV pairs)
+fn export_apr_to_gguf_raw(input: &Path, output: &Path) -> Result<ExportReport> {
+    use crate::format::gguf::{export_tensors_to_gguf, GgmlType, GgufTensor, GgufValue};
+    use crate::format::v2::{AprV2Reader, TensorDType};
+    use std::fs::File;
+    use std::io::BufWriter;
+
+    let data = fs::read(input).map_err(|e| AprenderError::FormatError {
+        message: format!("Failed to read APR file: {e}"),
+    })?;
+    let original_size = data.len();
+
+    let reader = AprV2Reader::from_bytes(&data).map_err(|e| AprenderError::FormatError {
+        message: format!("Failed to parse APR file: {e:?}"),
+    })?;
+
+    let apr_metadata = reader.metadata().clone();
+
+    // Build GGUF metadata (same logic as export_to_gguf but from APR metadata directly)
+    let arch = apr_metadata
+        .architecture
+        .as_deref()
+        .unwrap_or("qwen2");
+    let hidden_size = apr_metadata.hidden_size.unwrap_or(4096);
+    let num_layers = apr_metadata.num_layers.unwrap_or(32);
+    let num_heads = apr_metadata.num_heads.unwrap_or(32);
+    let num_kv_heads = apr_metadata.num_kv_heads.unwrap_or(num_heads);
+    let vocab_size = apr_metadata.vocab_size.unwrap_or(32000);
+    let intermediate_size = apr_metadata.intermediate_size.unwrap_or(11008);
+    let max_pos = apr_metadata.max_position_embeddings.unwrap_or(32768);
+    let rope_theta = apr_metadata.rope_theta.unwrap_or(1_000_000.0);
+    let rms_norm_eps = apr_metadata.rms_norm_eps.unwrap_or(1e-6);
+    let head_dim = if num_heads > 0 { hidden_size / num_heads } else { 128 };
+    let model_name = apr_metadata.name.clone().unwrap_or_else(|| "model".to_string());
+
+    let mut metadata = vec![
+        ("general.architecture".to_string(), GgufValue::String(arch.to_string())),
+        ("general.name".to_string(), GgufValue::String(model_name)),
+        ("general.quantization_version".to_string(), GgufValue::Uint32(2)),
+        ("general.file_type".to_string(), GgufValue::Uint32(0)),
+        (format!("{arch}.context_length"), GgufValue::Uint32(max_pos as u32)),
+        (format!("{arch}.embedding_length"), GgufValue::Uint32(hidden_size as u32)),
+        (format!("{arch}.block_count"), GgufValue::Uint32(num_layers as u32)),
+        (format!("{arch}.feed_forward_length"), GgufValue::Uint32(intermediate_size as u32)),
+        (format!("{arch}.attention.head_count"), GgufValue::Uint32(num_heads as u32)),
+        (format!("{arch}.attention.head_count_kv"), GgufValue::Uint32(num_kv_heads as u32)),
+        (format!("{arch}.attention.layer_norm_rms_epsilon"), GgufValue::Float32(rms_norm_eps)),
+        (format!("{arch}.rope.dimension_count"), GgufValue::Uint32(head_dim as u32)),
+        (format!("{arch}.rope.freq_base"), GgufValue::Float32(rope_theta)),
+        (format!("{arch}.vocab_size"), GgufValue::Uint32(vocab_size as u32)),
+    ];
+
+    // Load tokenizer metadata (same as export_to_gguf)
+    let tokenizer = super::import::load_tokenizer_from_json(input);
+    if let Some(ref tok) = tokenizer {
+        let model_type = tok.model_type.as_deref().unwrap_or("gpt2");
+        metadata.push(("tokenizer.ggml.model".to_string(), GgufValue::String(model_type.to_lowercase())));
+        metadata.push(("tokenizer.ggml.pre".to_string(), GgufValue::String(arch.to_string())));
+        if let Some(bos) = tok.bos_token_id {
+            metadata.push(("tokenizer.ggml.bos_token_id".to_string(), GgufValue::Uint32(bos)));
+        }
+        if let Some(eos) = tok.eos_token_id {
+            metadata.push(("tokenizer.ggml.eos_token_id".to_string(), GgufValue::Uint32(eos)));
+        }
+        if !tok.vocabulary.is_empty() {
+            metadata.push(("tokenizer.ggml.tokens".to_string(), GgufValue::ArrayString(tok.vocabulary.clone())));
+        }
+        if !tok.merges.is_empty() {
+            metadata.push(("tokenizer.ggml.merges".to_string(), GgufValue::ArrayString(tok.merges.clone())));
+        }
+    }
+
+    eprintln!(
+        "[PMAT-252] Writing {} metadata keys (arch={}, layers={}, heads={}/{}kv, hidden={})",
+        metadata.len(), arch, num_layers, num_heads, num_kv_heads, hidden_size
+    );
+
+    // Build GGUF tensors with raw byte passthrough
+    let tensor_names = reader.tensor_names();
+    let mut gguf_tensors = Vec::with_capacity(tensor_names.len());
+
+    for name in &tensor_names {
+        let entry = reader.get_tensor(name).ok_or_else(|| AprenderError::FormatError {
+            message: format!("Tensor '{}' missing from index", name),
+        })?;
+        let raw_bytes = reader.get_tensor_data(name).ok_or_else(|| AprenderError::FormatError {
+            message: format!("Tensor '{}' data not found", name),
+        })?;
+
+        let gguf_name = hf_to_gguf_name(name);
+
+        // Map APR dtype → GGUF dtype (same discriminant values)
+        let gguf_dtype = match entry.dtype {
+            TensorDType::F32 => GgmlType::F32,
+            TensorDType::F16 => GgmlType::F16,
+            TensorDType::Q4K => GgmlType::Q4K,
+            TensorDType::Q6K => GgmlType::Q6K,
+            TensorDType::Q8 => GgmlType::Q8_0,
+            _ => GgmlType::F32, // Fallback for BF16, I32, etc.
+        };
+
+        // Reverse shape for GGUF: [rows, cols] → [ne0=cols, ne1=rows]
+        let gguf_shape = if entry.shape.len() == 2 {
+            vec![entry.shape[1] as u64, entry.shape[0] as u64]
+        } else {
+            entry.shape.iter().map(|&d| d as u64).collect()
+        };
+
+        eprintln!(
+            "[PMAT-252] '{}': {} bytes (dtype={:?})",
+            gguf_name, raw_bytes.len(), entry.dtype
+        );
+
+        gguf_tensors.push(GgufTensor {
+            name: gguf_name,
+            shape: gguf_shape,
+            dtype: gguf_dtype,
+            data: raw_bytes.to_vec(),
+        });
+    }
+
+    // Write to file
+    let file = File::create(output).map_err(|e| AprenderError::FormatError {
+        message: format!("Failed to create output file: {e}"),
+    })?;
+    let mut writer = BufWriter::new(file);
+
+    export_tensors_to_gguf(&mut writer, &gguf_tensors, &metadata)?;
+
+    let exported_size = fs::metadata(output)
+        .map(|m| m.len() as usize)
+        .unwrap_or(0);
+
+    Ok(ExportReport {
+        original_size,
+        exported_size,
+        tensor_count: gguf_tensors.len(),
+        format: ExportFormat::Gguf,
+        quantization: Some(QuantizationType::Q4K),
+    })
 }
 
 /// Map HuggingFace-style tensor names to GGUF convention (GGUF-EXPORT-001)
