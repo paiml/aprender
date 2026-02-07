@@ -607,4 +607,249 @@ mod tests {
         // Should fail (invalid file) but tests max_depth path
         assert!(result.is_err());
     }
+
+    // ========================================================================
+    // TreeFormat error message content
+    // ========================================================================
+
+    #[test]
+    fn tree_format_error_contains_input_string() {
+        let err = "banana".parse::<TreeFormat>().unwrap_err();
+        assert!(
+            err.contains("banana"),
+            "Error message should contain the invalid input"
+        );
+    }
+
+    #[test]
+    fn tree_format_error_for_empty_string() {
+        let err = "".parse::<TreeFormat>().unwrap_err();
+        assert!(err.contains("Unknown format"));
+    }
+
+    // ========================================================================
+    // TreeNode: deeply nested total_size and tensor_count
+    // ========================================================================
+
+    #[test]
+    fn tree_node_total_size_three_level_hierarchy() {
+        // root -> mid -> leaf1(100), leaf2(200)
+        let mut root = TreeNode::new("root", "");
+
+        let mut mid = TreeNode::new("mid", "mid");
+        let mut leaf1 = TreeNode::new("leaf1", "mid.leaf1");
+        leaf1.is_leaf = true;
+        leaf1.size_bytes = 100;
+        let mut leaf2 = TreeNode::new("leaf2", "mid.leaf2");
+        leaf2.is_leaf = true;
+        leaf2.size_bytes = 200;
+        mid.children.insert("leaf1".to_string(), leaf1);
+        mid.children.insert("leaf2".to_string(), leaf2);
+
+        root.children.insert("mid".to_string(), mid);
+
+        assert_eq!(root.total_size(), 300);
+    }
+
+    #[test]
+    fn tree_node_tensor_count_three_level_hierarchy() {
+        let mut root = TreeNode::new("root", "");
+        let mut group_a = TreeNode::new("a", "a");
+        let mut group_b = TreeNode::new("b", "a.b");
+
+        let mut leaf1 = TreeNode::new("w", "a.b.w");
+        leaf1.is_leaf = true;
+        let mut leaf2 = TreeNode::new("b", "a.b.b");
+        leaf2.is_leaf = true;
+
+        group_b.children.insert("w".to_string(), leaf1);
+        group_b.children.insert("b".to_string(), leaf2);
+        group_a.children.insert("b".to_string(), group_b);
+
+        let mut leaf3 = TreeNode::new("v", "a.v");
+        leaf3.is_leaf = true;
+        group_a.children.insert("v".to_string(), leaf3);
+
+        root.children.insert("a".to_string(), group_a);
+
+        assert_eq!(root.tensor_count(), 3);
+    }
+
+    // ========================================================================
+    // TreeNode: empty parent (no children)
+    // ========================================================================
+
+    #[test]
+    fn tree_node_total_size_empty_non_leaf_is_zero() {
+        let node = TreeNode::new("empty", "empty");
+        assert_eq!(node.total_size(), 0);
+    }
+
+    #[test]
+    fn tree_node_tensor_count_empty_non_leaf_is_zero() {
+        let node = TreeNode::new("empty", "empty");
+        assert_eq!(node.tensor_count(), 0);
+    }
+
+    // ========================================================================
+    // TreeNode: leaf with shape
+    // ========================================================================
+
+    #[test]
+    fn tree_node_leaf_with_shape_and_size() {
+        let mut node = TreeNode::new("weight", "layer.weight");
+        node.is_leaf = true;
+        node.shape = Some(vec![768, 3072]);
+        node.size_bytes = 768 * 3072 * 4;
+        assert_eq!(node.total_size(), 768 * 3072 * 4);
+        assert_eq!(node.tensor_count(), 1);
+        assert_eq!(
+            node.shape.as_ref().expect("should have shape"),
+            &[768, 3072]
+        );
+    }
+
+    // ========================================================================
+    // TreeNode: mixed leaf and non-leaf children
+    // ========================================================================
+
+    #[test]
+    fn tree_node_total_size_mixed_children() {
+        let mut parent = TreeNode::new("parent", "parent");
+
+        // Direct leaf child
+        let mut direct_leaf = TreeNode::new("bias", "parent.bias");
+        direct_leaf.is_leaf = true;
+        direct_leaf.size_bytes = 50;
+
+        // Group child with a nested leaf
+        let mut group = TreeNode::new("attn", "parent.attn");
+        let mut nested_leaf = TreeNode::new("weight", "parent.attn.weight");
+        nested_leaf.is_leaf = true;
+        nested_leaf.size_bytes = 150;
+        group.children.insert("weight".to_string(), nested_leaf);
+
+        parent.children.insert("bias".to_string(), direct_leaf);
+        parent.children.insert("attn".to_string(), group);
+
+        assert_eq!(parent.total_size(), 200);
+        assert_eq!(parent.tensor_count(), 2);
+    }
+
+    // ========================================================================
+    // format_size: boundary values
+    // ========================================================================
+
+    #[test]
+    fn format_size_exactly_1kb() {
+        assert_eq!(format_size(1024), "1.00 KB");
+    }
+
+    #[test]
+    fn format_size_just_under_1kb() {
+        assert_eq!(format_size(1023), "1023 B");
+    }
+
+    #[test]
+    fn format_size_exactly_1mb() {
+        assert_eq!(format_size(1024 * 1024), "1.00 MB");
+    }
+
+    #[test]
+    fn format_size_just_under_1mb() {
+        // 1MB - 1 byte = 1023.999... KB
+        let result = format_size(1024 * 1024 - 1);
+        assert!(result.ends_with(" KB"), "Expected KB, got: {result}");
+    }
+
+    #[test]
+    fn format_size_exactly_1gb() {
+        assert_eq!(format_size(1024 * 1024 * 1024), "1.00 GB");
+    }
+
+    #[test]
+    fn format_size_just_under_1gb() {
+        let result = format_size(1024 * 1024 * 1024 - 1);
+        assert!(result.ends_with(" MB"), "Expected MB, got: {result}");
+    }
+
+    #[test]
+    fn format_size_fractional_gb() {
+        // 1.5 GB
+        let bytes = 1024 * 1024 * 1024 + 512 * 1024 * 1024;
+        assert_eq!(format_size(bytes), "1.50 GB");
+    }
+
+    #[test]
+    fn format_size_one_byte() {
+        assert_eq!(format_size(1), "1 B");
+    }
+
+    // ========================================================================
+    // TreeFormat: all aliases roundtrip
+    // ========================================================================
+
+    #[test]
+    fn tree_format_mixed_case_mermaid() {
+        assert_eq!(
+            "Mermaid".parse::<TreeFormat>().expect("valid"),
+            TreeFormat::Mermaid
+        );
+        assert_eq!(
+            "MD".parse::<TreeFormat>().expect("valid"),
+            TreeFormat::Mermaid
+        );
+    }
+
+    #[test]
+    fn tree_format_graphviz_alias() {
+        assert_eq!(
+            "GRAPHVIZ".parse::<TreeFormat>().expect("valid"),
+            TreeFormat::Dot
+        );
+    }
+
+    #[test]
+    fn tree_format_text_alias() {
+        assert_eq!(
+            "TEXT".parse::<TreeFormat>().expect("valid"),
+            TreeFormat::Ascii
+        );
+    }
+
+    // ========================================================================
+    // run: error variants
+    // ========================================================================
+
+    #[test]
+    fn run_file_not_found_returns_correct_error_variant() {
+        let result = run(
+            Path::new("/definitely/does/not/exist.apr"),
+            None,
+            TreeFormat::Ascii,
+            false,
+            None,
+        );
+        assert!(
+            matches!(result, Err(CliError::FileNotFound(_))),
+            "Expected FileNotFound, got: {result:?}"
+        );
+    }
+
+    #[test]
+    fn run_with_mermaid_format_invalid_file() {
+        let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
+        file.write_all(b"not valid").expect("write");
+
+        let result = run(file.path(), None, TreeFormat::Mermaid, false, None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn run_directory_returns_invalid_format() {
+        let dir = tempdir().expect("create temp dir");
+        let result = run(dir.path(), None, TreeFormat::Ascii, false, None);
+        // Directory will fail at AprReader::open
+        assert!(result.is_err());
+    }
 }

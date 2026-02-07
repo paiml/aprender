@@ -21,6 +21,7 @@ use std::path::Path;
 ///
 /// Single-file models (small SafeTensors, GGUF) use the pacha fetcher.
 /// Sharded models (3B+ SafeTensors) are downloaded directly to `~/.apr/cache/hf/`.
+#[derive(Debug)]
 enum ResolvedModel {
     /// Single file downloadable via pacha (existing behavior)
     SingleFile(String),
@@ -1444,5 +1445,1270 @@ mod tests {
                 panic!("7B should be sharded, got SingleFile({})", s)
             }
         }
+    }
+
+    // =========================================================================
+    // format_bytes: exhaustive boundary tests
+    // =========================================================================
+
+    #[test]
+    fn test_format_bytes_boundary_just_below_kb() {
+        assert_eq!(format_bytes(1023), "1023 B");
+    }
+
+    #[test]
+    fn test_format_bytes_boundary_exact_kb() {
+        assert_eq!(format_bytes(1024), "1.00 KB");
+    }
+
+    #[test]
+    fn test_format_bytes_boundary_just_above_kb() {
+        assert_eq!(format_bytes(1025), "1.00 KB");
+    }
+
+    #[test]
+    fn test_format_bytes_boundary_just_below_mb() {
+        // 1 MB - 1 byte = 1048575 bytes → KB range
+        assert_eq!(format_bytes(1_048_575), "1024.00 KB");
+    }
+
+    #[test]
+    fn test_format_bytes_boundary_exact_mb() {
+        assert_eq!(format_bytes(1_048_576), "1.00 MB");
+    }
+
+    #[test]
+    fn test_format_bytes_boundary_just_below_gb() {
+        // 1 GB - 1 byte = 1073741823 bytes → MB range
+        assert_eq!(format_bytes(1_073_741_823), "1024.00 MB");
+    }
+
+    #[test]
+    fn test_format_bytes_boundary_exact_gb() {
+        assert_eq!(format_bytes(1_073_741_824), "1.00 GB");
+    }
+
+    #[test]
+    fn test_format_bytes_large_gb() {
+        // 100 GB
+        assert_eq!(format_bytes(107_374_182_400), "100.00 GB");
+    }
+
+    #[test]
+    fn test_format_bytes_u64_max() {
+        // u64::MAX should not panic, gives some large GB value
+        let result = format_bytes(u64::MAX);
+        assert!(
+            result.contains("GB"),
+            "u64::MAX should be in GB range: {}",
+            result
+        );
+    }
+
+    #[test]
+    fn test_format_bytes_fractional_kb() {
+        // 1.5 KB = 1536 bytes
+        assert_eq!(format_bytes(1536), "1.50 KB");
+    }
+
+    #[test]
+    fn test_format_bytes_7b_model_size() {
+        // ~4.1 GB typical for 7B Q4_K_M
+        assert_eq!(format_bytes(4_402_341_888), "4.10 GB");
+    }
+
+    // =========================================================================
+    // extract_hf_repo: comprehensive edge cases
+    // =========================================================================
+
+    #[test]
+    fn test_extract_hf_repo_just_prefix() {
+        // "hf://" with nothing after → parts = [""], len < 2
+        assert_eq!(extract_hf_repo("hf://"), None);
+    }
+
+    #[test]
+    fn test_extract_hf_repo_single_slash_after_prefix() {
+        // "hf://org/" → parts = ["org", ""], but parts[1] is empty
+        // Still returns Some because len >= 2 and format just joins
+        let result = extract_hf_repo("hf://org/");
+        assert_eq!(result, Some("org/".to_string()));
+    }
+
+    #[test]
+    fn test_extract_hf_repo_with_multiple_nested_paths() {
+        // Deep nesting: only org/repo extracted
+        let uri = "hf://org/repo/subdir1/subdir2/model.safetensors";
+        assert_eq!(extract_hf_repo(uri), Some("org/repo".to_string()));
+    }
+
+    #[test]
+    fn test_extract_hf_repo_wrong_scheme() {
+        assert_eq!(extract_hf_repo("https://huggingface.co/org/repo"), None);
+    }
+
+    #[test]
+    fn test_extract_hf_repo_no_scheme() {
+        assert_eq!(extract_hf_repo("org/repo/model.gguf"), None);
+    }
+
+    #[test]
+    fn test_extract_hf_repo_hf_prefix_case_sensitive() {
+        // "HF://" (uppercase) should not match
+        assert_eq!(extract_hf_repo("HF://org/repo"), None);
+    }
+
+    #[test]
+    fn test_extract_hf_repo_special_chars_in_name() {
+        let uri = "hf://TheBloke/Llama-2-7B-GGUF/model.gguf";
+        assert_eq!(
+            extract_hf_repo(uri),
+            Some("TheBloke/Llama-2-7B-GGUF".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_hf_repo_dots_in_name() {
+        let uri = "hf://org/model.name.v2/file.safetensors";
+        assert_eq!(extract_hf_repo(uri), Some("org/model.name.v2".to_string()));
+    }
+
+    // =========================================================================
+    // extract_shard_files_from_index: comprehensive edge cases
+    // =========================================================================
+
+    #[test]
+    fn test_extract_shard_files_single_shard() {
+        let json = r#"{"weight_map": {"a.weight": "model-00001-of-00001.safetensors"}}"#;
+        let shards = extract_shard_files_from_index(json);
+        assert_eq!(shards.len(), 1);
+        assert_eq!(shards[0], "model-00001-of-00001.safetensors");
+    }
+
+    #[test]
+    fn test_extract_shard_files_many_shards() {
+        // 6 shards with heavy deduplication
+        let json = r#"{
+            "weight_map": {
+                "a": "model-00001-of-00006.safetensors",
+                "b": "model-00001-of-00006.safetensors",
+                "c": "model-00002-of-00006.safetensors",
+                "d": "model-00003-of-00006.safetensors",
+                "e": "model-00004-of-00006.safetensors",
+                "f": "model-00005-of-00006.safetensors",
+                "g": "model-00005-of-00006.safetensors",
+                "h": "model-00006-of-00006.safetensors"
+            }
+        }"#;
+        let shards = extract_shard_files_from_index(json);
+        assert_eq!(shards.len(), 6);
+        assert_eq!(shards[0], "model-00001-of-00006.safetensors");
+        assert_eq!(shards[5], "model-00006-of-00006.safetensors");
+    }
+
+    #[test]
+    fn test_extract_shard_files_empty_string() {
+        let shards = extract_shard_files_from_index("");
+        assert!(shards.is_empty());
+    }
+
+    #[test]
+    fn test_extract_shard_files_no_weight_map_key() {
+        let json = r#"{"other_key": {"a": "file.safetensors"}}"#;
+        let shards = extract_shard_files_from_index(json);
+        assert!(shards.is_empty());
+    }
+
+    #[test]
+    fn test_extract_shard_files_weight_map_not_object() {
+        // weight_map is a string, not object — should not crash
+        let json = r#"{"weight_map": "not an object"}"#;
+        let shards = extract_shard_files_from_index(json);
+        assert!(shards.is_empty());
+    }
+
+    #[test]
+    fn test_extract_shard_files_mixed_extensions() {
+        // Only .safetensors files should be included
+        let json = r#"{
+            "weight_map": {
+                "a": "model-00001.safetensors",
+                "b": "model-00002.bin",
+                "c": "model-00003.pt",
+                "d": "model-00004.safetensors"
+            }
+        }"#;
+        let shards = extract_shard_files_from_index(json);
+        assert_eq!(shards.len(), 2);
+        assert!(shards.contains(&"model-00001.safetensors".to_string()));
+        assert!(shards.contains(&"model-00004.safetensors".to_string()));
+    }
+
+    #[test]
+    fn test_extract_shard_files_nested_braces() {
+        // JSON with nested braces in metadata before weight_map
+        let json = r#"{
+            "metadata": {"nested": {"deep": "value"}},
+            "weight_map": {
+                "a.weight": "shard-001.safetensors",
+                "b.weight": "shard-002.safetensors"
+            }
+        }"#;
+        let shards = extract_shard_files_from_index(json);
+        assert_eq!(shards.len(), 2);
+    }
+
+    #[test]
+    fn test_extract_shard_files_whitespace_in_values() {
+        // Extra whitespace and newlines around values
+        let json = r#"{
+            "weight_map": {
+                "a.weight":   "  model-00001.safetensors  "  ,
+                "b.weight":
+                    "model-00002.safetensors"
+            }
+        }"#;
+        let shards = extract_shard_files_from_index(json);
+        assert_eq!(shards.len(), 2);
+    }
+
+    #[test]
+    fn test_extract_shard_files_values_with_path_separators() {
+        // Filenames shouldn't have path separators, but test robustness
+        let json = r#"{"weight_map": {"a": "subdir/model.safetensors"}}"#;
+        let shards = extract_shard_files_from_index(json);
+        // Contains "/" so not matching simple pattern, but the function does string trim
+        // It checks ends_with(".safetensors")
+        assert_eq!(shards.len(), 1);
+    }
+
+    #[test]
+    fn test_extract_shard_files_real_qwen_format() {
+        // Realistic index.json fragment from Qwen2.5-Coder-3B-Instruct
+        let json = r#"{
+  "metadata": {
+    "total_size": 6534782976
+  },
+  "weight_map": {
+    "lm_head.weight": "model-00002-of-00002.safetensors",
+    "model.embed_tokens.weight": "model-00001-of-00002.safetensors",
+    "model.layers.0.input_layernorm.weight": "model-00001-of-00002.safetensors",
+    "model.layers.0.mlp.down_proj.weight": "model-00001-of-00002.safetensors",
+    "model.layers.0.mlp.gate_proj.weight": "model-00001-of-00002.safetensors",
+    "model.layers.0.mlp.up_proj.weight": "model-00001-of-00002.safetensors",
+    "model.layers.0.post_attention_layernorm.weight": "model-00001-of-00002.safetensors",
+    "model.layers.0.self_attn.k_proj.weight": "model-00001-of-00002.safetensors",
+    "model.layers.0.self_attn.o_proj.weight": "model-00001-of-00002.safetensors",
+    "model.layers.0.self_attn.q_proj.weight": "model-00001-of-00002.safetensors",
+    "model.layers.0.self_attn.v_proj.weight": "model-00001-of-00002.safetensors",
+    "model.layers.35.self_attn.v_proj.weight": "model-00002-of-00002.safetensors",
+    "model.norm.weight": "model-00002-of-00002.safetensors"
+  }
+}"#;
+        let shards = extract_shard_files_from_index(json);
+        assert_eq!(shards.len(), 2);
+        assert_eq!(shards[0], "model-00001-of-00002.safetensors");
+        assert_eq!(shards[1], "model-00002-of-00002.safetensors");
+    }
+
+    // =========================================================================
+    // resolve_hf_model: offline URI normalization & extension detection
+    // =========================================================================
+
+    #[test]
+    fn test_resolve_hf_model_with_apr_extension() {
+        let result = resolve_hf_model("hf://org/repo/model.apr").unwrap();
+        match result {
+            ResolvedModel::SingleFile(s) => assert_eq!(s, "hf://org/repo/model.apr"),
+            ResolvedModel::Sharded { .. } => panic!("Expected SingleFile for .apr"),
+        }
+    }
+
+    #[test]
+    fn test_resolve_hf_model_with_pt_extension() {
+        let result = resolve_hf_model("hf://org/repo/model.pt").unwrap();
+        match result {
+            ResolvedModel::SingleFile(s) => assert_eq!(s, "hf://org/repo/model.pt"),
+            ResolvedModel::Sharded { .. } => panic!("Expected SingleFile for .pt"),
+        }
+    }
+
+    #[test]
+    fn test_resolve_hf_model_case_insensitive_safetensors() {
+        let result = resolve_hf_model("hf://org/repo/model.SafeTensors").unwrap();
+        match result {
+            ResolvedModel::SingleFile(s) => assert_eq!(s, "hf://org/repo/model.SafeTensors"),
+            ResolvedModel::Sharded { .. } => panic!("Expected SingleFile"),
+        }
+    }
+
+    #[test]
+    fn test_resolve_hf_model_with_mixed_case_apr() {
+        let result = resolve_hf_model("hf://org/repo/model.APR").unwrap();
+        match result {
+            ResolvedModel::SingleFile(s) => assert_eq!(s, "hf://org/repo/model.APR"),
+            ResolvedModel::Sharded { .. } => panic!("Expected SingleFile for .APR"),
+        }
+    }
+
+    #[test]
+    fn test_resolve_hf_model_bare_org_repo_with_safetensors() {
+        // "org/repo/model.safetensors" → "hf://org/repo/model.safetensors" → SingleFile
+        let result = resolve_hf_model("org/repo/model.safetensors").unwrap();
+        match result {
+            ResolvedModel::SingleFile(s) => assert_eq!(s, "hf://org/repo/model.safetensors"),
+            ResolvedModel::Sharded { .. } => panic!("Expected SingleFile"),
+        }
+    }
+
+    #[test]
+    fn test_resolve_hf_model_bare_org_repo_with_apr() {
+        let result = resolve_hf_model("org/repo/model.apr").unwrap();
+        match result {
+            ResolvedModel::SingleFile(s) => assert_eq!(s, "hf://org/repo/model.apr"),
+            ResolvedModel::Sharded { .. } => panic!("Expected SingleFile"),
+        }
+    }
+
+    #[test]
+    fn test_resolve_hf_model_relative_path_with_dots() {
+        // ../path should NOT be normalized to hf://
+        let result = resolve_hf_model("../models/test.gguf").unwrap();
+        match result {
+            ResolvedModel::SingleFile(s) => assert_eq!(s, "../models/test.gguf"),
+            ResolvedModel::Sharded { .. } => panic!("Expected SingleFile"),
+        }
+    }
+
+    #[test]
+    fn test_resolve_hf_model_http_url() {
+        let result = resolve_hf_model("http://example.com/model.gguf").unwrap();
+        match result {
+            ResolvedModel::SingleFile(s) => assert_eq!(s, "http://example.com/model.gguf"),
+            ResolvedModel::Sharded { .. } => panic!("Expected SingleFile"),
+        }
+    }
+
+    #[test]
+    fn test_resolve_hf_model_ftp_url() {
+        let result = resolve_hf_model("ftp://example.com/model.gguf").unwrap();
+        match result {
+            ResolvedModel::SingleFile(s) => assert_eq!(s, "ftp://example.com/model.gguf"),
+            ResolvedModel::Sharded { .. } => panic!("Expected SingleFile"),
+        }
+    }
+
+    #[test]
+    fn test_resolve_hf_model_empty_org_fails() {
+        // "hf:///repo" → parts = ["", "repo"] → len >= 2 but first is empty
+        // The function proceeds with empty org, which goes to API call → fails
+        let result = resolve_hf_model("hf:///repo");
+        // This triggers a network call with empty org, which will fail
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_resolve_hf_model_hf_with_single_part_fails() {
+        let result = resolve_hf_model("hf://onlyorg");
+        assert!(result.is_err());
+        match result {
+            Err(CliError::ValidationFailed(msg)) => {
+                assert!(msg.contains("Invalid HuggingFace URI"));
+            }
+            Err(other) => panic!("Expected ValidationFailed, got: {}", other),
+            Ok(_) => panic!("Expected error, got Ok"),
+        }
+    }
+
+    #[test]
+    fn test_resolve_hf_model_bare_empty_parts() {
+        // "/" alone → parts = ["", ""], both empty → does NOT normalize
+        let result = resolve_hf_model("/").unwrap();
+        match result {
+            ResolvedModel::SingleFile(s) => assert_eq!(s, "/"),
+            ResolvedModel::Sharded { .. } => panic!("Expected SingleFile"),
+        }
+    }
+
+    #[test]
+    fn test_resolve_hf_model_bare_single_slash() {
+        // "a/" → parts = ["a", ""], parts[1].is_empty() → no normalization
+        let result = resolve_hf_model("a/").unwrap();
+        // parts[1] is empty, so bare org/repo normalization skipped
+        match result {
+            ResolvedModel::SingleFile(s) => assert_eq!(s, "a/"),
+            ResolvedModel::Sharded { .. } => panic!("Expected SingleFile"),
+        }
+    }
+
+    // =========================================================================
+    // ShardManifest serialization/deserialization tests
+    // =========================================================================
+
+    #[test]
+    fn test_shard_manifest_serialize_deserialize() {
+        let mut files = HashMap::new();
+        files.insert(
+            "model-00001-of-00002.safetensors".to_string(),
+            FileChecksum {
+                size: 5_000_000_000,
+                blake3: "abc123def456".to_string(),
+            },
+        );
+        files.insert(
+            "model-00002-of-00002.safetensors".to_string(),
+            FileChecksum {
+                size: 3_000_000_000,
+                blake3: "789xyz000111".to_string(),
+            },
+        );
+
+        let manifest = ShardManifest {
+            version: 1,
+            repo: "Qwen/Qwen2.5-Coder-3B-Instruct".to_string(),
+            files,
+        };
+
+        let json = serde_json::to_string_pretty(&manifest).expect("serialize");
+        let deserialized: ShardManifest = serde_json::from_str(&json).expect("deserialize");
+
+        assert_eq!(deserialized.version, 1);
+        assert_eq!(deserialized.repo, "Qwen/Qwen2.5-Coder-3B-Instruct");
+        assert_eq!(deserialized.files.len(), 2);
+
+        let shard1 = deserialized
+            .files
+            .get("model-00001-of-00002.safetensors")
+            .expect("shard1");
+        assert_eq!(shard1.size, 5_000_000_000);
+        assert_eq!(shard1.blake3, "abc123def456");
+
+        let shard2 = deserialized
+            .files
+            .get("model-00002-of-00002.safetensors")
+            .expect("shard2");
+        assert_eq!(shard2.size, 3_000_000_000);
+        assert_eq!(shard2.blake3, "789xyz000111");
+    }
+
+    #[test]
+    fn test_shard_manifest_empty_files() {
+        let manifest = ShardManifest {
+            version: 1,
+            repo: "org/repo".to_string(),
+            files: HashMap::new(),
+        };
+
+        let json = serde_json::to_string(&manifest).expect("serialize");
+        let deserialized: ShardManifest = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(deserialized.version, 1);
+        assert!(deserialized.files.is_empty());
+    }
+
+    #[test]
+    fn test_file_checksum_serialize_deserialize() {
+        let checksum = FileChecksum {
+            size: 1_234_567_890,
+            blake3: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".to_string(),
+        };
+
+        let json = serde_json::to_string(&checksum).expect("serialize");
+        let deserialized: FileChecksum = serde_json::from_str(&json).expect("deserialize");
+
+        assert_eq!(deserialized.size, 1_234_567_890);
+        assert_eq!(
+            deserialized.blake3,
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        );
+    }
+
+    #[test]
+    fn test_shard_manifest_version_zero() {
+        let manifest = ShardManifest {
+            version: 0,
+            repo: "test/repo".to_string(),
+            files: HashMap::new(),
+        };
+        let json = serde_json::to_string(&manifest).expect("serialize");
+        assert!(json.contains("\"version\":0"));
+    }
+
+    #[test]
+    fn test_shard_manifest_large_version() {
+        let manifest = ShardManifest {
+            version: u32::MAX,
+            repo: "test/repo".to_string(),
+            files: HashMap::new(),
+        };
+        let json = serde_json::to_string(&manifest).expect("serialize");
+        let deserialized: ShardManifest = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(deserialized.version, u32::MAX);
+    }
+
+    #[test]
+    fn test_file_checksum_zero_size() {
+        let checksum = FileChecksum {
+            size: 0,
+            blake3: "empty".to_string(),
+        };
+        let json = serde_json::to_string(&checksum).expect("serialize");
+        let deserialized: FileChecksum = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(deserialized.size, 0);
+    }
+
+    #[test]
+    fn test_file_checksum_max_u64_size() {
+        let checksum = FileChecksum {
+            size: u64::MAX,
+            blake3: "huge".to_string(),
+        };
+        let json = serde_json::to_string(&checksum).expect("serialize");
+        let deserialized: FileChecksum = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(deserialized.size, u64::MAX);
+    }
+
+    // =========================================================================
+    // resolve_hf_uri: backward-compat wrapper edge cases
+    // =========================================================================
+
+    #[test]
+    fn test_resolve_hf_uri_with_apr_extension() {
+        let uri = "hf://org/repo/model.apr";
+        let resolved = resolve_hf_uri(uri).unwrap();
+        assert_eq!(resolved, uri);
+    }
+
+    #[test]
+    fn test_resolve_hf_uri_with_pt_extension() {
+        let uri = "hf://org/repo/model.pt";
+        let resolved = resolve_hf_uri(uri).unwrap();
+        assert_eq!(resolved, uri);
+    }
+
+    #[test]
+    fn test_resolve_hf_uri_bare_org_repo_gguf() {
+        // "org/repo/file.gguf" → normalizes to "hf://org/repo/file.gguf"
+        let resolved = resolve_hf_uri("org/repo/file.gguf").unwrap();
+        assert_eq!(resolved, "hf://org/repo/file.gguf");
+    }
+
+    #[test]
+    fn test_resolve_hf_uri_dot_relative_path() {
+        let uri = "./some/dir/model.gguf";
+        let resolved = resolve_hf_uri(uri).unwrap();
+        assert_eq!(resolved, uri, "dot-relative path should not be normalized");
+    }
+
+    #[test]
+    fn test_resolve_hf_uri_dot_dot_relative_path() {
+        let uri = "../parent/model.gguf";
+        let resolved = resolve_hf_uri(uri).unwrap();
+        assert_eq!(
+            resolved, uri,
+            "parent-relative path should not be normalized"
+        );
+    }
+
+    #[test]
+    fn test_resolve_hf_uri_just_a_word() {
+        // Single word with no slashes: not normalized, returned as SingleFile
+        let resolved = resolve_hf_uri("model").unwrap();
+        assert_eq!(resolved, "model");
+    }
+
+    // =========================================================================
+    // fetch_safetensors_companions: path edge cases (offline)
+    // =========================================================================
+
+    #[test]
+    fn test_fetch_companions_empty_uri() {
+        let temp_dir = std::env::temp_dir().join("apr_companion_empty_uri");
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let model_path = temp_dir.join("hash123.safetensors");
+        let _ = std::fs::write(&model_path, b"dummy");
+
+        // Empty URI → not hf:// → noop
+        let result = fetch_safetensors_companions(&model_path, "");
+        assert!(result.is_ok());
+        assert!(!temp_dir.join("hash123.tokenizer.json").exists());
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_fetch_companions_model_stem_extraction() {
+        let temp_dir = std::env::temp_dir().join("apr_companion_stem");
+        let _ = std::fs::create_dir_all(&temp_dir);
+
+        // Model with complex hash stem
+        let model_path = temp_dir.join("e910cab26ae116eb.converted.safetensors");
+        let _ = std::fs::write(&model_path, b"dummy");
+
+        // Pre-create companion files with the full stem (without .safetensors)
+        // The stem is "e910cab26ae116eb.converted"
+        let _ = std::fs::write(
+            temp_dir.join("e910cab26ae116eb.converted.tokenizer.json"),
+            b"{}",
+        );
+        let _ = std::fs::write(
+            temp_dir.join("e910cab26ae116eb.converted.config.json"),
+            b"{}",
+        );
+
+        // Should succeed — files already exist
+        let result = fetch_safetensors_companions(&model_path, "hf://org/repo/model.safetensors");
+        assert!(result.is_ok());
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_fetch_companions_https_uri_noop() {
+        let temp_dir = std::env::temp_dir().join("apr_companion_https");
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let model_path = temp_dir.join("model.safetensors");
+        let _ = std::fs::write(&model_path, b"dummy");
+
+        // https:// URI — extract_hf_repo returns None → noop
+        let result =
+            fetch_safetensors_companions(&model_path, "https://example.com/model.safetensors");
+        assert!(result.is_ok());
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    // =========================================================================
+    // resolve_hf_model: URI normalization edge cases
+    // =========================================================================
+
+    #[test]
+    fn test_resolve_hf_model_double_slash_bare_path() {
+        // "a//b" → parts = ["a", "", "b"], parts[1].is_empty() → no normalization
+        let result = resolve_hf_model("a//b").unwrap();
+        match result {
+            ResolvedModel::SingleFile(s) => assert_eq!(s, "a//b"),
+            ResolvedModel::Sharded { .. } => panic!("Expected SingleFile"),
+        }
+    }
+
+    #[test]
+    fn test_resolve_hf_model_with_query_string() {
+        // URI with query params in extension — extension check uses Path
+        // Path::extension sees "gguf?rev=main" which doesn't match .gguf
+        // So it falls through to the HF API query path which fails with network error
+        let result = resolve_hf_model("hf://org/repo/model.gguf?rev=main");
+        // The result should be an error since the extension is not recognized
+        // and the API query for "org/repo" will fail (doesn't exist)
+        match result {
+            Ok(ResolvedModel::SingleFile(_)) => {
+                // Extension was detected somehow — acceptable
+            }
+            Err(CliError::NetworkError(_)) => {
+                // Expected: API query failed since "org/repo" doesn't exist
+            }
+            Err(CliError::ValidationFailed(_)) => {
+                // Also acceptable: no files found
+            }
+            other => panic!("Unexpected result: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_resolve_hf_model_unicode_in_path() {
+        // Unicode org/repo should be normalized
+        // Will fail at API call since repo doesn't exist
+        let result = resolve_hf_model("org-\u{00e9}/repo-\u{00fc}/model.gguf").unwrap();
+        match result {
+            ResolvedModel::SingleFile(s) => {
+                assert!(s.starts_with("hf://"), "Should be normalized: {}", s);
+                assert!(s.ends_with("model.gguf"));
+            }
+            ResolvedModel::Sharded { .. } => panic!("Expected SingleFile"),
+        }
+    }
+
+    #[test]
+    fn test_resolve_hf_model_spaces_in_path() {
+        // Spaces in path — should not crash
+        let result = resolve_hf_model("org name/repo name/model.gguf").unwrap();
+        match result {
+            ResolvedModel::SingleFile(s) => {
+                assert!(s.starts_with("hf://"));
+                assert!(s.ends_with("model.gguf"));
+            }
+            ResolvedModel::Sharded { .. } => panic!("Expected SingleFile"),
+        }
+    }
+
+    // =========================================================================
+    // NEW: format_bytes additional edge cases
+    // =========================================================================
+
+    #[test]
+    fn test_format_bytes_one_byte() {
+        assert_eq!(format_bytes(1), "1 B");
+    }
+
+    #[test]
+    fn test_format_bytes_exactly_two_kb() {
+        assert_eq!(format_bytes(2 * 1024), "2.00 KB");
+    }
+
+    #[test]
+    fn test_format_bytes_just_above_mb() {
+        // 1 MB + 1 byte
+        assert_eq!(format_bytes(1_048_577), "1.00 MB");
+    }
+
+    #[test]
+    fn test_format_bytes_just_above_gb() {
+        // 1 GB + 1 byte
+        assert_eq!(format_bytes(1_073_741_825), "1.00 GB");
+    }
+
+    #[test]
+    fn test_format_bytes_terabyte_range() {
+        // 1 TB = 1024 GB
+        let tb = 1024_u64 * 1024 * 1024 * 1024;
+        let result = format_bytes(tb);
+        assert_eq!(result, "1024.00 GB");
+    }
+
+    #[test]
+    fn test_format_bytes_10_tb() {
+        let ten_tb = 10 * 1024_u64 * 1024 * 1024 * 1024;
+        let result = format_bytes(ten_tb);
+        assert_eq!(result, "10240.00 GB");
+    }
+
+    #[test]
+    fn test_format_bytes_exact_256_mb() {
+        assert_eq!(format_bytes(256 * 1024 * 1024), "256.00 MB");
+    }
+
+    #[test]
+    fn test_format_bytes_1b_model_size() {
+        // ~600 MB typical for 1B Q4_K_M
+        assert_eq!(format_bytes(629_145_600), "600.00 MB");
+    }
+
+    #[test]
+    fn test_format_bytes_13b_model_size() {
+        // ~7.4 GB typical for 13B Q4_K_M
+        assert_eq!(format_bytes(7_945_689_498), "7.40 GB");
+    }
+
+    #[test]
+    fn test_format_bytes_half_kb() {
+        assert_eq!(format_bytes(512), "512 B");
+    }
+
+    // =========================================================================
+    // NEW: extract_hf_repo additional edge cases
+    // =========================================================================
+
+    #[test]
+    fn test_extract_hf_repo_trailing_slash_after_repo() {
+        // "hf://org/repo/" → parts = ["org", "repo", ""], len >= 2 → Some("org/repo")
+        assert_eq!(
+            extract_hf_repo("hf://org/repo/"),
+            Some("org/repo".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_hf_repo_with_multiple_trailing_slashes() {
+        let uri = "hf://org/repo///";
+        assert_eq!(extract_hf_repo(uri), Some("org/repo".to_string()));
+    }
+
+    #[test]
+    fn test_extract_hf_repo_just_hf_no_colon_slash() {
+        // "hf" without "://" → strip_prefix fails → None
+        assert_eq!(extract_hf_repo("hf"), None);
+    }
+
+    #[test]
+    fn test_extract_hf_repo_hf_colon_no_slashes() {
+        assert_eq!(extract_hf_repo("hf:org/repo"), None);
+    }
+
+    #[test]
+    fn test_extract_hf_repo_hf_single_slash() {
+        assert_eq!(extract_hf_repo("hf:/org/repo"), None);
+    }
+
+    #[test]
+    fn test_extract_hf_repo_numeric_org_and_repo() {
+        let uri = "hf://12345/67890/model.safetensors";
+        assert_eq!(extract_hf_repo(uri), Some("12345/67890".to_string()));
+    }
+
+    #[test]
+    fn test_extract_hf_repo_hyphenated_names() {
+        let uri = "hf://my-org/my-awesome-model-v2/weights.safetensors";
+        assert_eq!(
+            extract_hf_repo(uri),
+            Some("my-org/my-awesome-model-v2".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_hf_repo_underscored_names() {
+        let uri = "hf://my_org/my_model_v2";
+        assert_eq!(extract_hf_repo(uri), Some("my_org/my_model_v2".to_string()));
+    }
+
+    #[test]
+    fn test_extract_hf_repo_very_long_names() {
+        let long_org = "a".repeat(100);
+        let long_repo = "b".repeat(200);
+        let uri = format!("hf://{}/{}/model.safetensors", long_org, long_repo);
+        assert_eq!(
+            extract_hf_repo(&uri),
+            Some(format!("{}/{}", long_org, long_repo))
+        );
+    }
+
+    #[test]
+    fn test_extract_hf_repo_with_at_symbol() {
+        // Some HF repos use @ for versions
+        let uri = "hf://org/repo@main/model.safetensors";
+        assert_eq!(extract_hf_repo(uri), Some("org/repo@main".to_string()));
+    }
+
+    #[test]
+    fn test_extract_hf_repo_empty_after_prefix() {
+        // "hf://" → path = "" → parts = [""], len < 2 → None
+        assert_eq!(extract_hf_repo("hf://"), None);
+    }
+
+    #[test]
+    fn test_extract_hf_repo_single_char_org_and_repo() {
+        assert_eq!(extract_hf_repo("hf://a/b"), Some("a/b".to_string()));
+    }
+
+    // =========================================================================
+    // NEW: extract_shard_files_from_index additional edge cases
+    // =========================================================================
+
+    #[test]
+    fn test_extract_shard_files_truncated_json() {
+        // JSON that's cut off mid-stream
+        let json = r#"{"weight_map": {"a.weight": "model-00001.safe"#;
+        let shards = extract_shard_files_from_index(json);
+        assert!(
+            shards.is_empty(),
+            "Truncated JSON should produce no results"
+        );
+    }
+
+    #[test]
+    fn test_extract_shard_files_unicode_tensor_names() {
+        let json = r#"{
+            "weight_map": {
+                "模型.层.0.权重": "model-00001-of-00001.safetensors"
+            }
+        }"#;
+        let shards = extract_shard_files_from_index(json);
+        assert_eq!(shards.len(), 1);
+        assert_eq!(shards[0], "model-00001-of-00001.safetensors");
+    }
+
+    #[test]
+    fn test_extract_shard_files_colons_in_tensor_names() {
+        // Tensor names with colons (like "model:layers:0:weight") use rfind(':')
+        // so the last colon determines the split point
+        let json = r#"{
+            "weight_map": {
+                "model:layers:0:weight": "shard-001.safetensors",
+                "model:layers:1:weight": "shard-002.safetensors"
+            }
+        }"#;
+        let shards = extract_shard_files_from_index(json);
+        assert_eq!(shards.len(), 2);
+    }
+
+    #[test]
+    fn test_extract_shard_files_empty_json_object() {
+        let json = "{}";
+        let shards = extract_shard_files_from_index(json);
+        assert!(shards.is_empty());
+    }
+
+    #[test]
+    fn test_extract_shard_files_null_json() {
+        let json = "null";
+        let shards = extract_shard_files_from_index(json);
+        assert!(shards.is_empty());
+    }
+
+    #[test]
+    fn test_extract_shard_files_array_instead_of_object() {
+        let json = r#"[{"weight_map": {"a": "model.safetensors"}}]"#;
+        // weight_map is inside an array element — the string search still finds it
+        let shards = extract_shard_files_from_index(json);
+        assert_eq!(shards.len(), 1);
+    }
+
+    #[test]
+    fn test_extract_shard_files_weight_map_with_empty_value() {
+        let json = r#"{"weight_map": {"a.weight": ""}}"#;
+        let shards = extract_shard_files_from_index(json);
+        assert!(shards.is_empty(), "Empty filename should be excluded");
+    }
+
+    #[test]
+    fn test_extract_shard_files_weight_map_value_not_safetensors() {
+        let json = r#"{"weight_map": {"a.weight": "model.gguf"}}"#;
+        let shards = extract_shard_files_from_index(json);
+        assert!(
+            shards.is_empty(),
+            "Non-safetensors files should be excluded"
+        );
+    }
+
+    #[test]
+    fn test_extract_shard_files_large_model_40_shards() {
+        // Simulate a very large model with 40 shards
+        let mut entries = Vec::new();
+        for i in 1..=200 {
+            let shard_num = (i % 40) + 1;
+            entries.push(format!(
+                "\"tensor_{}\": \"model-{:05}-of-00040.safetensors\"",
+                i, shard_num
+            ));
+        }
+        let json = format!("{{\"weight_map\": {{{}}}}}", entries.join(",\n"));
+        let shards = extract_shard_files_from_index(&json);
+        assert_eq!(shards.len(), 40);
+        assert_eq!(shards[0], "model-00001-of-00040.safetensors");
+        assert_eq!(shards[39], "model-00040-of-00040.safetensors");
+    }
+
+    #[test]
+    fn test_extract_shard_files_weight_map_appears_in_metadata() {
+        // "weight_map" string appears in metadata as well — should find the right one
+        let json = r#"{
+            "metadata": {"description": "This model has a weight_map section"},
+            "weight_map": {
+                "a.weight": "actual-shard.safetensors"
+            }
+        }"#;
+        let shards = extract_shard_files_from_index(json);
+        // The first occurrence of "weight_map" is in metadata description (as string content),
+        // but the parser looks for `"weight_map"` and then the next `{`
+        // The first `"weight_map"` found is inside the metadata string value, and the next `{` after it
+        // would be the actual weight_map object. This is a known edge case of string-based parsing.
+        // The result depends on the exact JSON layout.
+        assert!(
+            !shards.is_empty(),
+            "Should find shards from the actual weight_map"
+        );
+    }
+
+    #[test]
+    fn test_extract_shard_files_sorted_alphanumerically() {
+        let json = r#"{
+            "weight_map": {
+                "z": "shard-c.safetensors",
+                "y": "shard-a.safetensors",
+                "x": "shard-b.safetensors"
+            }
+        }"#;
+        let shards = extract_shard_files_from_index(json);
+        assert_eq!(shards.len(), 3);
+        assert_eq!(shards[0], "shard-a.safetensors");
+        assert_eq!(shards[1], "shard-b.safetensors");
+        assert_eq!(shards[2], "shard-c.safetensors");
+    }
+
+    #[test]
+    fn test_extract_shard_files_weight_map_no_opening_brace() {
+        // "weight_map" key exists but is followed by a string, not object
+        let json = r#"{"weight_map": "just a string, no object here"}"#;
+        let shards = extract_shard_files_from_index(json);
+        assert!(shards.is_empty());
+    }
+
+    #[test]
+    fn test_extract_shard_files_multiple_weight_map_keys() {
+        // Technically invalid JSON (duplicate keys), but tests parser resilience
+        // The string search finds the first "weight_map"
+        let json = r#"{
+            "weight_map": {"a": "first.safetensors"},
+            "weight_map": {"b": "second.safetensors"}
+        }"#;
+        let shards = extract_shard_files_from_index(json);
+        // First weight_map is found; second is ignored
+        assert_eq!(shards.len(), 1);
+        assert_eq!(shards[0], "first.safetensors");
+    }
+
+    // =========================================================================
+    // NEW: ResolvedModel enum tests
+    // =========================================================================
+
+    #[test]
+    fn test_resolved_model_single_file_debug() {
+        let model = ResolvedModel::SingleFile("test.gguf".to_string());
+        let debug = format!("{:?}", model);
+        assert!(debug.contains("SingleFile"));
+        assert!(debug.contains("test.gguf"));
+    }
+
+    #[test]
+    fn test_resolved_model_sharded_debug() {
+        let model = ResolvedModel::Sharded {
+            org: "Qwen".to_string(),
+            repo: "Qwen2.5-Coder-3B".to_string(),
+            shard_files: vec!["shard-001.safetensors".to_string()],
+        };
+        let debug = format!("{:?}", model);
+        assert!(debug.contains("Sharded"));
+        assert!(debug.contains("Qwen"));
+        assert!(debug.contains("Qwen2.5-Coder-3B"));
+        assert!(debug.contains("shard-001.safetensors"));
+    }
+
+    #[test]
+    fn test_resolved_model_sharded_empty_shard_files() {
+        let model = ResolvedModel::Sharded {
+            org: "org".to_string(),
+            repo: "repo".to_string(),
+            shard_files: vec![],
+        };
+        match model {
+            ResolvedModel::Sharded { shard_files, .. } => {
+                assert!(shard_files.is_empty());
+            }
+            _ => panic!("Expected Sharded"),
+        }
+    }
+
+    // =========================================================================
+    // NEW: ShardManifest/FileChecksum additional tests
+    // =========================================================================
+
+    #[test]
+    fn test_shard_manifest_deserialize_unknown_fields() {
+        // Forward compatibility: extra fields should be ignored (serde default)
+        let json = r#"{"version": 2, "repo": "org/repo", "files": {}, "extra_field": "ignored"}"#;
+        let manifest: ShardManifest =
+            serde_json::from_str(json).expect("unknown fields should be ignored by default");
+        assert_eq!(manifest.version, 2);
+    }
+
+    #[test]
+    fn test_shard_manifest_missing_required_field() {
+        // Missing "repo" field should fail deserialization
+        let json = r#"{"version": 1, "files": {}}"#;
+        assert!(serde_json::from_str::<ShardManifest>(json).is_err());
+    }
+
+    #[test]
+    fn test_file_checksum_missing_blake3_field() {
+        // Missing "blake3" should fail
+        let json = r#"{"size": 100}"#;
+        assert!(serde_json::from_str::<FileChecksum>(json).is_err());
+    }
+
+    #[test]
+    fn test_file_checksum_missing_size_field() {
+        // Missing "size" should fail
+        let json = r#"{"blake3": "abc123"}"#;
+        assert!(serde_json::from_str::<FileChecksum>(json).is_err());
+    }
+
+    #[test]
+    fn test_shard_manifest_special_chars_in_repo() {
+        let manifest = ShardManifest {
+            version: 1,
+            repo: "org/repo-with.dots_and-dashes".to_string(),
+            files: HashMap::new(),
+        };
+        let json = serde_json::to_string(&manifest).expect("serialize");
+        let deserialized: ShardManifest = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(deserialized.repo, "org/repo-with.dots_and-dashes");
+    }
+
+    #[test]
+    fn test_shard_manifest_many_files() {
+        let mut files = HashMap::new();
+        for i in 0..100 {
+            files.insert(
+                format!("model-{:05}-of-00100.safetensors", i + 1),
+                FileChecksum {
+                    size: 5_000_000_000 + i as u64,
+                    blake3: format!("hash_{:05}", i),
+                },
+            );
+        }
+        let manifest = ShardManifest {
+            version: 1,
+            repo: "big/model".to_string(),
+            files,
+        };
+        let json = serde_json::to_string(&manifest).expect("serialize");
+        let deserialized: ShardManifest = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(deserialized.files.len(), 100);
+    }
+
+    #[test]
+    fn test_file_checksum_unicode_blake3() {
+        // blake3 field is a string — should handle any string content
+        let checksum = FileChecksum {
+            size: 42,
+            blake3: "hash_with_\u{00e9}moji".to_string(),
+        };
+        let json = serde_json::to_string(&checksum).expect("serialize");
+        let deserialized: FileChecksum = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(deserialized.blake3, "hash_with_\u{00e9}moji");
+    }
+
+    // =========================================================================
+    // NEW: resolve_hf_model additional URI edge cases
+    // =========================================================================
+
+    #[test]
+    fn test_resolve_hf_model_bare_org_repo_with_pt_extension() {
+        // "org/repo/model.pt" → normalizes to "hf://org/repo/model.pt" → SingleFile
+        let result = resolve_hf_model("org/repo/model.pt").unwrap();
+        match result {
+            ResolvedModel::SingleFile(s) => assert_eq!(s, "hf://org/repo/model.pt"),
+            ResolvedModel::Sharded { .. } => panic!("Expected SingleFile"),
+        }
+    }
+
+    #[test]
+    fn test_resolve_hf_model_file_url_scheme() {
+        // "file:///path/to/model" has "://" so NOT normalized
+        let result = resolve_hf_model("file:///path/to/model.gguf").unwrap();
+        match result {
+            ResolvedModel::SingleFile(s) => assert_eq!(s, "file:///path/to/model.gguf"),
+            ResolvedModel::Sharded { .. } => panic!("Expected SingleFile"),
+        }
+    }
+
+    #[test]
+    fn test_resolve_hf_model_s3_url_scheme() {
+        // "s3://bucket/key" has "://" → not normalized, not hf:// → SingleFile
+        let result = resolve_hf_model("s3://bucket/model.gguf").unwrap();
+        match result {
+            ResolvedModel::SingleFile(s) => assert_eq!(s, "s3://bucket/model.gguf"),
+            ResolvedModel::Sharded { .. } => panic!("Expected SingleFile"),
+        }
+    }
+
+    #[test]
+    fn test_resolve_hf_model_just_dot() {
+        // "." starts with '.' → NOT normalized
+        let result = resolve_hf_model(".").unwrap();
+        match result {
+            ResolvedModel::SingleFile(s) => assert_eq!(s, "."),
+            ResolvedModel::Sharded { .. } => panic!("Expected SingleFile"),
+        }
+    }
+
+    #[test]
+    fn test_resolve_hf_model_empty_string() {
+        let result = resolve_hf_model("").unwrap();
+        match result {
+            ResolvedModel::SingleFile(s) => assert_eq!(s, ""),
+            ResolvedModel::Sharded { .. } => panic!("Expected SingleFile"),
+        }
+    }
+
+    #[test]
+    fn test_resolve_hf_model_gguf_mixed_case_extension() {
+        let result = resolve_hf_model("hf://org/repo/model.GGuF").unwrap();
+        match result {
+            ResolvedModel::SingleFile(s) => assert_eq!(s, "hf://org/repo/model.GGuF"),
+            ResolvedModel::Sharded { .. } => panic!("Expected SingleFile for .GGuF"),
+        }
+    }
+
+    #[test]
+    fn test_resolve_hf_model_pt_mixed_case() {
+        let result = resolve_hf_model("hf://org/repo/model.PT").unwrap();
+        match result {
+            ResolvedModel::SingleFile(s) => assert_eq!(s, "hf://org/repo/model.PT"),
+            ResolvedModel::Sharded { .. } => panic!("Expected SingleFile"),
+        }
+    }
+
+    // =========================================================================
+    // NEW: resolve_hf_uri backward-compat wrapper additional tests
+    // =========================================================================
+
+    #[test]
+    fn test_resolve_hf_uri_single_file_with_safetensors() {
+        // .safetensors has a known extension → SingleFile passthrough
+        let uri = "hf://org/repo/model.safetensors";
+        let resolved = resolve_hf_uri(uri).unwrap();
+        assert_eq!(resolved, uri);
+    }
+
+    #[test]
+    fn test_resolve_hf_uri_with_file_scheme() {
+        let uri = "file:///home/user/model.gguf";
+        let resolved = resolve_hf_uri(uri).unwrap();
+        assert_eq!(resolved, uri);
+    }
+
+    #[test]
+    fn test_resolve_hf_uri_s3_scheme() {
+        let uri = "s3://bucket/key/model.safetensors";
+        let resolved = resolve_hf_uri(uri).unwrap();
+        assert_eq!(resolved, uri);
+    }
+
+    // =========================================================================
+    // NEW: fetch_safetensors_companions additional offline tests
+    // =========================================================================
+
+    #[test]
+    fn test_fetch_companions_hf_single_slash_uri_noop() {
+        // "hf:/onlyorg" → extract_hf_repo returns None → noop
+        let temp_dir = std::env::temp_dir().join("apr_companion_hf_single_slash");
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let model_path = temp_dir.join("model.safetensors");
+        let _ = std::fs::write(&model_path, b"dummy");
+
+        let result = fetch_safetensors_companions(&model_path, "hf:/onlyorg");
+        assert!(result.is_ok());
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_fetch_companions_uppercase_hf_noop() {
+        // "HF://org/repo" — extract_hf_repo uses strip_prefix("hf://") which is case-sensitive
+        let temp_dir = std::env::temp_dir().join("apr_companion_uppercase_hf");
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let model_path = temp_dir.join("model.safetensors");
+        let _ = std::fs::write(&model_path, b"dummy");
+
+        let result = fetch_safetensors_companions(&model_path, "HF://Org/Repo");
+        assert!(result.is_ok());
+        // No companions created (not a valid hf:// URI)
+        assert!(!temp_dir.join("model.tokenizer.json").exists());
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_fetch_companions_model_without_extension() {
+        // Model file with no extension → file_stem returns the whole name
+        let temp_dir = std::env::temp_dir().join("apr_companion_no_ext");
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let model_path = temp_dir.join("model_no_ext");
+        let _ = std::fs::write(&model_path, b"dummy");
+
+        // Pre-create companion files with the stem prefix
+        let _ = std::fs::write(temp_dir.join("model_no_ext.tokenizer.json"), b"{}");
+        let _ = std::fs::write(temp_dir.join("model_no_ext.config.json"), b"{}");
+
+        let result = fetch_safetensors_companions(&model_path, "hf://org/repo/model.safetensors");
+        assert!(result.is_ok());
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }

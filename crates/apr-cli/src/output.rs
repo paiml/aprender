@@ -100,3 +100,209 @@ pub(crate) fn warn(msg: &str) {
 pub(crate) fn format_size(bytes: u64) -> String {
     humansize::format_size(bytes, humansize::BINARY)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ==================== Magic Byte Detection ====================
+
+    #[test]
+    fn test_is_valid_magic_aprn() {
+        assert!(is_valid_magic(&MAGIC_APRN));
+    }
+
+    #[test]
+    fn test_is_valid_magic_apr1() {
+        assert!(is_valid_magic(&MAGIC_APR1));
+    }
+
+    #[test]
+    fn test_is_valid_magic_apr2() {
+        assert!(is_valid_magic(&MAGIC_APR2));
+    }
+
+    #[test]
+    fn test_is_valid_magic_apr0() {
+        assert!(is_valid_magic(&MAGIC_APR0));
+    }
+
+    #[test]
+    fn test_is_valid_magic_gguf() {
+        assert!(is_valid_magic(&MAGIC_GGUF));
+    }
+
+    #[test]
+    fn test_is_valid_magic_unknown() {
+        assert!(!is_valid_magic(&[0x00, 0x00, 0x00, 0x00]));
+    }
+
+    #[test]
+    fn test_is_valid_magic_too_short() {
+        assert!(!is_valid_magic(&[0x41, 0x50]));
+    }
+
+    #[test]
+    fn test_is_valid_magic_empty() {
+        assert!(!is_valid_magic(&[]));
+    }
+
+    #[test]
+    fn test_is_valid_magic_extra_bytes_ignored() {
+        let mut bytes = MAGIC_GGUF.to_vec();
+        bytes.extend_from_slice(&[0xFF, 0xFF]);
+        assert!(is_valid_magic(&bytes));
+    }
+
+    // ==================== Format Name ====================
+
+    #[test]
+    fn test_format_name_aprn() {
+        assert_eq!(format_name(&MAGIC_APRN), "APRN (aprender v1)");
+    }
+
+    #[test]
+    fn test_format_name_apr1() {
+        assert_eq!(format_name(&MAGIC_APR1), "APR1 (whisper.apr)");
+    }
+
+    #[test]
+    fn test_format_name_apr2() {
+        assert_eq!(format_name(&MAGIC_APR2), "APR2 (aprender v2)");
+    }
+
+    #[test]
+    fn test_format_name_apr0() {
+        assert_eq!(format_name(&MAGIC_APR0), "APR v2 (ONE TRUE format)");
+    }
+
+    #[test]
+    fn test_format_name_gguf() {
+        assert_eq!(format_name(&MAGIC_GGUF), "GGUF (llama.cpp)");
+    }
+
+    #[test]
+    fn test_format_name_unknown() {
+        assert_eq!(format_name(&[0x00, 0x00, 0x00, 0x00]), "Unknown");
+    }
+
+    #[test]
+    fn test_format_name_too_short() {
+        assert_eq!(format_name(&[0x41]), "Unknown");
+    }
+
+    #[test]
+    fn test_format_name_empty() {
+        assert_eq!(format_name(&[]), "Unknown");
+    }
+
+    // ==================== Output Formatting (no-panic) ====================
+
+    #[test]
+    fn test_section_does_not_panic() {
+        section("Test Section");
+    }
+
+    #[test]
+    fn test_kv_does_not_panic() {
+        kv("key", "value");
+    }
+
+    #[test]
+    fn test_kv_with_number() {
+        kv("count", 42);
+    }
+
+    #[test]
+    fn test_success_does_not_panic() {
+        success("operation completed");
+    }
+
+    #[test]
+    fn test_warning_does_not_panic() {
+        warning("something may be wrong");
+    }
+
+    #[test]
+    fn test_fail_does_not_panic() {
+        fail("operation failed");
+    }
+
+    #[test]
+    fn test_info_does_not_panic() {
+        info("informational message");
+    }
+
+    #[test]
+    fn test_error_does_not_panic() {
+        error("error message");
+    }
+
+    #[test]
+    fn test_warn_alias_does_not_panic() {
+        warn("warning via alias");
+    }
+
+    // ==================== Format Size ====================
+
+    #[test]
+    fn test_format_size_zero() {
+        let s = format_size(0);
+        assert!(s.contains('0'));
+    }
+
+    #[test]
+    fn test_format_size_bytes() {
+        let s = format_size(512);
+        assert!(s.contains("512"));
+    }
+
+    #[test]
+    fn test_format_size_kib() {
+        let s = format_size(1024);
+        assert!(s.contains("KiB") || s.contains("1"));
+    }
+
+    #[test]
+    fn test_format_size_mib() {
+        let s = format_size(1024 * 1024);
+        assert!(s.contains("MiB") || s.contains("1"));
+    }
+
+    #[test]
+    fn test_format_size_gib() {
+        let s = format_size(1024 * 1024 * 1024);
+        assert!(s.contains("GiB") || s.contains("1"));
+    }
+
+    // ==================== Magic Byte Constants ====================
+
+    #[test]
+    fn test_magic_constants_are_4_bytes() {
+        assert_eq!(MAGIC_APRN.len(), 4);
+        assert_eq!(MAGIC_APR1.len(), 4);
+        assert_eq!(MAGIC_APR2.len(), 4);
+        assert_eq!(MAGIC_APR0.len(), 4);
+        assert_eq!(MAGIC_GGUF.len(), 4);
+    }
+
+    #[test]
+    fn test_magic_aprn_is_ascii_aprn() {
+        assert_eq!(&MAGIC_APRN, b"APRN");
+    }
+
+    #[test]
+    fn test_magic_apr1_is_ascii_apr1() {
+        assert_eq!(&MAGIC_APR1, b"APR1");
+    }
+
+    #[test]
+    fn test_magic_apr2_is_ascii_apr2() {
+        assert_eq!(&MAGIC_APR2, b"APR2");
+    }
+
+    #[test]
+    fn test_magic_gguf_is_ascii_gguf() {
+        assert_eq!(&MAGIC_GGUF, b"GGUF");
+    }
+}

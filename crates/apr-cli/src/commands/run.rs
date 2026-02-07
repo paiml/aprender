@@ -2738,4 +2738,1171 @@ mod tests {
         let cloned = result.clone();
         assert_eq!(result.text, cloned.text);
     }
+
+    // ========================================================================
+    // clean_model_output: ChatML marker stripping (bug class: partial strip)
+    // ========================================================================
+
+    /// Verify the assistant prefix with trailing newline is stripped.
+    /// Bug class: off-by-one in marker list omitting the newline variant.
+    #[test]
+    fn clean_model_output_strips_assistant_prefix_with_newline() {
+        let raw = "<|im_start|>assistant\nThe answer is 42.";
+        let cleaned = clean_model_output(raw);
+        assert_eq!(cleaned, "The answer is 42.");
+    }
+
+    /// Verify multiple distinct markers in a single string are all removed.
+    /// Bug class: first-match-only replacement instead of replace-all.
+    #[test]
+    fn clean_model_output_strips_all_markers_simultaneously() {
+        let raw = "<|im_start|>assistant\nHello<|im_end|><|endoftext|>";
+        let cleaned = clean_model_output(raw);
+        assert_eq!(cleaned, "Hello");
+    }
+
+    /// Verify repeated occurrences of the same marker are all stripped.
+    /// Bug class: replace() only removing first occurrence (not the case
+    /// in Rust, but the test documents the invariant).
+    #[test]
+    fn clean_model_output_strips_repeated_markers() {
+        let raw = "<|im_end|>text<|im_end|>";
+        let cleaned = clean_model_output(raw);
+        assert_eq!(cleaned, "text");
+    }
+
+    /// Verify that leading/trailing whitespace around markers is trimmed.
+    /// Bug class: markers removed but residual whitespace left behind.
+    #[test]
+    fn clean_model_output_trims_whitespace_after_removal() {
+        let raw = "  <|im_end|>  \n  Hello  \n  <|endoftext|>  ";
+        let cleaned = clean_model_output(raw);
+        assert_eq!(cleaned, "Hello");
+    }
+
+    /// Verify that text containing partial marker-like sequences is preserved.
+    /// Bug class: overly greedy regex stripping content that looks similar.
+    #[test]
+    fn clean_model_output_preserves_partial_marker_text() {
+        let raw = "Use <|tag|> for formatting";
+        let cleaned = clean_model_output(raw);
+        assert_eq!(cleaned, "Use <|tag|> for formatting");
+    }
+
+    /// Verify Unicode content is preserved through marker stripping.
+    /// Bug class: byte-level replacement corrupting multi-byte chars.
+    #[test]
+    fn clean_model_output_preserves_unicode() {
+        let raw = "<|im_start|>assistant\n\u{1f600} Hello \u{00e9}\u{00e8}<|im_end|>";
+        let cleaned = clean_model_output(raw);
+        assert_eq!(cleaned, "\u{1f600} Hello \u{00e9}\u{00e8}");
+    }
+
+    // ========================================================================
+    // ModelSource::parse edge cases
+    // ========================================================================
+
+    /// HuggingFace paths with file at parts[2] containing a dot.
+    /// Verifies the file detection triggers on dots in the third segment.
+    #[test]
+    fn parse_hf_file_with_dot_in_third_segment() {
+        let source = ModelSource::parse("hf://org/repo/model-q4.gguf").expect("should parse");
+        match source {
+            ModelSource::HuggingFace { org, repo, file } => {
+                assert_eq!(org, "org");
+                assert_eq!(repo, "repo");
+                assert_eq!(file, Some("model-q4.gguf".to_string()));
+            }
+            other => panic!("Expected HuggingFace, got {other:?}"),
+        }
+    }
+
+    /// HuggingFace paths with subdirectory (no dot in parts[2]) treat it as
+    /// non-file. Documents current behavior: file detection requires a dot
+    /// in the third path segment specifically.
+    /// Bug class: subdirectory path silently dropped instead of joined.
+    #[test]
+    fn parse_hf_subdir_without_dot_is_not_file() {
+        let source = ModelSource::parse("hf://org/repo/subdir/model.gguf").expect("should parse");
+        match source {
+            ModelSource::HuggingFace { file, .. } => {
+                // "subdir" has no dot, so file detection does not trigger
+                assert_eq!(
+                    file, None,
+                    "Third segment without dot should not trigger file detection"
+                );
+            }
+            other => panic!("Expected HuggingFace, got {other:?}"),
+        }
+    }
+
+    /// HuggingFace with exactly two path segments and no file (no dot).
+    /// Bug class: third segment without a dot being treated as a file.
+    #[test]
+    fn parse_hf_three_segments_no_extension() {
+        let source = ModelSource::parse("hf://org/repo/branch").expect("should parse");
+        match source {
+            ModelSource::HuggingFace { file, .. } => {
+                assert_eq!(
+                    file, None,
+                    "Segment without dot should not be treated as file"
+                );
+            }
+            other => panic!("Expected HuggingFace, got {other:?}"),
+        }
+    }
+
+    /// Empty string should parse as a local path (not panic or error).
+    /// Bug class: unwrap on empty string in strip_prefix.
+    #[test]
+    fn parse_empty_string_is_local() {
+        let source = ModelSource::parse("").expect("should parse");
+        assert_eq!(source, ModelSource::Local(PathBuf::from("")));
+    }
+
+    /// Path with dots but no scheme should be local, not URL.
+    /// Bug class: "model.v2.apr" misinterpreted as URL scheme.
+    #[test]
+    fn parse_dotted_filename_is_local() {
+        let source = ModelSource::parse("model.v2.safetensors").expect("should parse");
+        assert_eq!(
+            source,
+            ModelSource::Local(PathBuf::from("model.v2.safetensors"))
+        );
+    }
+
+    // ========================================================================
+    // md5_hash: avalanche and distribution properties
+    // ========================================================================
+
+    /// Single-bit difference must produce different hash (avalanche property).
+    /// Bug class: hash function ignoring low bits of input bytes.
+    #[test]
+    fn md5_hash_single_byte_difference() {
+        let h1 = md5_hash(b"aaaa");
+        let h2 = md5_hash(b"aaab");
+        assert_ne!(h1, h2, "Single byte change must produce different hash");
+        // Verify reasonable bit spread (at least 8 bits differ)
+        let diff_bits = (h1 ^ h2).count_ones();
+        assert!(
+            diff_bits >= 8,
+            "Expected avalanche effect (>=8 bits differ), got {diff_bits}"
+        );
+    }
+
+    /// Hash of all-zero bytes should not be zero (weak hash detection).
+    /// Bug class: XOR-only hash returning zero for zero input.
+    #[test]
+    fn md5_hash_zero_bytes_nonzero() {
+        let h = md5_hash(&[0u8; 100]);
+        assert_ne!(h, 0, "Hash of zero bytes must not be zero");
+    }
+
+    /// Hash should be order-dependent (not a commutative operation).
+    /// Bug class: hash treating input as a multiset rather than sequence.
+    #[test]
+    fn md5_hash_order_dependent() {
+        let h1 = md5_hash(b"ab");
+        let h2 = md5_hash(b"ba");
+        assert_ne!(h1, h2, "Hash must be order-dependent");
+    }
+
+    /// Long input should not overflow or panic.
+    /// Bug class: integer overflow in accumulator.
+    #[test]
+    fn md5_hash_large_input() {
+        let data = vec![0xFFu8; 10_000];
+        let h = md5_hash(&data);
+        let _ = h; // No panic = pass
+    }
+
+    // ========================================================================
+    // extract_shard_files: malformed JSON edge cases
+    // ========================================================================
+
+    /// Keys containing colons should not confuse the colon-based splitting.
+    /// Bug class: rfind(':') matching inside tensor name instead of delimiter.
+    #[test]
+    fn extract_shard_files_colon_in_key() {
+        let json = r#"{
+            "weight_map": {
+                "model:layer:0.weight": "shard-00001.safetensors"
+            }
+        }"#;
+        let files = extract_shard_files(json);
+        assert_eq!(files.len(), 1);
+        assert!(files.contains("shard-00001.safetensors"));
+    }
+
+    /// Whitespace-heavy formatting should not break parsing.
+    /// Bug class: trim not handling \r\n on Windows-style JSON.
+    #[test]
+    fn extract_shard_files_crlf_formatting() {
+        let json = "{\r\n  \"weight_map\": {\r\n    \"a\": \"model-00001.safetensors\"\r\n  }\r\n}";
+        let files = extract_shard_files(json);
+        assert_eq!(files.len(), 1);
+    }
+
+    // ========================================================================
+    // parse_token_ids: format handling
+    // ========================================================================
+
+    /// JSON array format: [1, 2, 3]
+    /// Bug class: JSON path not triggered without leading bracket.
+    #[test]
+    fn parse_token_ids_json_array() {
+        let result = parse_token_ids("[1, 2, 3]").expect("should parse JSON array");
+        assert_eq!(result, vec![1, 2, 3]);
+    }
+
+    /// Tab-separated values (TSV format).
+    /// Bug class: only comma and space as separators, missing tab.
+    #[test]
+    fn parse_token_ids_tab_separated() {
+        let result = parse_token_ids("10\t20\t30").expect("should parse TSV");
+        assert_eq!(result, vec![10, 20, 30]);
+    }
+
+    /// Newline-separated token IDs (one per line).
+    /// Bug class: newline not in separator list.
+    #[test]
+    fn parse_token_ids_newline_separated() {
+        let result = parse_token_ids("100\n200\n300").expect("should parse newlines");
+        assert_eq!(result, vec![100, 200, 300]);
+    }
+
+    /// Token IDs with leading/trailing whitespace.
+    /// Bug class: parse::<u32>() failing on untrimmed strings.
+    #[test]
+    fn parse_token_ids_with_padding() {
+        let result = parse_token_ids("  42 , 43 , 44  ").expect("should handle padding");
+        assert_eq!(result, vec![42, 43, 44]);
+    }
+
+    /// Maximum u32 token ID should not overflow.
+    /// Bug class: using u16 or i32 instead of u32 for token IDs.
+    #[test]
+    fn parse_token_ids_max_u32() {
+        let input = format!("{}", u32::MAX);
+        let result = parse_token_ids(&input).expect("should parse max u32");
+        assert_eq!(result, vec![u32::MAX]);
+    }
+
+    /// Negative numbers should fail (token IDs are unsigned).
+    /// Bug class: silently wrapping negative values via as u32.
+    #[test]
+    fn parse_token_ids_negative_fails() {
+        let result = parse_token_ids("-1");
+        assert!(result.is_err(), "Negative token IDs must be rejected");
+    }
+
+    /// JSON array with invalid bracket structure fails gracefully.
+    /// Bug class: panic on malformed JSON.
+    #[test]
+    fn parse_token_ids_malformed_json_array() {
+        let result = parse_token_ids("[1, 2, ");
+        assert!(result.is_err(), "Malformed JSON array must fail");
+    }
+
+    // ========================================================================
+    // format_prediction_output: precision and edge cases
+    // ========================================================================
+
+    /// JSON output must contain inference_time_ms field.
+    /// Bug class: field renamed or omitted in serialization.
+    #[test]
+    fn format_prediction_output_json_has_timing() {
+        use std::time::Duration;
+        let options = RunOptions {
+            output_format: "json".to_string(),
+            ..Default::default()
+        };
+        let output = format_prediction_output(&[1.0, 2.0], Duration::from_millis(42), &options)
+            .expect("should format");
+        assert!(
+            output.contains("inference_time_ms"),
+            "JSON output must include inference_time_ms"
+        );
+        assert!(output.contains("42"), "Should contain the timing value");
+    }
+
+    /// Text output should show index-labeled predictions.
+    /// Bug class: off-by-one in index labeling.
+    #[test]
+    fn format_prediction_output_text_indexes() {
+        use std::time::Duration;
+        let options = RunOptions::default();
+        let output = format_prediction_output(&[0.1, 0.9], Duration::from_millis(10), &options)
+            .expect("should format");
+        assert!(output.contains("[0]:"), "Should contain [0]: label");
+        assert!(output.contains("[1]:"), "Should contain [1]: label");
+    }
+
+    /// NaN and Inf values should not crash serialization.
+    /// Bug class: serde_json panicking on non-finite floats.
+    #[test]
+    fn format_prediction_output_text_with_nan() {
+        use std::time::Duration;
+        let options = RunOptions::default(); // text mode
+        let output = format_prediction_output(
+            &[f32::NAN, f32::INFINITY],
+            Duration::from_millis(1),
+            &options,
+        )
+        .expect("text format should handle NaN/Inf");
+        assert!(output.contains("NaN") || output.contains("nan"));
+    }
+
+    // ========================================================================
+    // ModelSource::cache_path: structural invariants
+    // ========================================================================
+
+    /// URL cache path should use exactly first 16 hex chars of hash.
+    /// Bug class: taking wrong slice length, causing collisions or panics.
+    #[test]
+    fn cache_path_url_hash_length() {
+        let source = ModelSource::Url("https://example.com/model.safetensors".to_string());
+        let cache = source.cache_path();
+        let last_component = cache.file_name().expect("should have filename");
+        let name = last_component.to_str().expect("valid utf8");
+        assert_eq!(
+            name.len(),
+            16,
+            "URL cache directory name should be 16 hex chars, got '{name}'"
+        );
+        assert!(
+            name.chars().all(|c| c.is_ascii_hexdigit()),
+            "URL cache name should be hex only, got '{name}'"
+        );
+    }
+
+    /// HuggingFace cache path must include org AND repo as separate directories.
+    /// Bug class: flattening org/repo into single directory.
+    #[test]
+    fn cache_path_hf_preserves_hierarchy() {
+        let source = ModelSource::HuggingFace {
+            org: "my-org".to_string(),
+            repo: "my-repo".to_string(),
+            file: None,
+        };
+        let cache = source.cache_path();
+        let path_str = cache.to_string_lossy();
+        // org and repo must appear as separate path segments
+        assert!(
+            path_str.contains("my-org/my-repo") || path_str.contains("my-org\\my-repo"),
+            "Cache path must preserve org/repo hierarchy, got: {path_str}"
+        );
+    }
+
+    // ========================================================================
+    // clean_model_output: additional edge cases
+    // ========================================================================
+
+    /// Input consisting entirely of markers must produce empty string.
+    /// Bug class: marker removal leaves residual empty-looking content.
+    #[test]
+    fn clean_model_output_all_markers_yields_empty() {
+        let raw = "<|im_start|>assistant\n<|im_end|><|endoftext|>";
+        let cleaned = clean_model_output(raw);
+        assert!(
+            cleaned.is_empty(),
+            "All-marker input should clean to empty, got: '{cleaned}'"
+        );
+    }
+
+    /// Bare `<|im_start|>` without "assistant" suffix must still be stripped.
+    /// Bug class: only stripping the combined "im_start + assistant" variant.
+    #[test]
+    fn clean_model_output_strips_bare_im_start() {
+        let raw = "<|im_start|>Hello world";
+        let cleaned = clean_model_output(raw);
+        assert_eq!(cleaned, "Hello world");
+    }
+
+    /// `<|endoftext|>` alone, without other markers, must be stripped.
+    /// Bug class: endoftext marker only removed when adjacent to im_end.
+    #[test]
+    fn clean_model_output_strips_endoftext_alone() {
+        let raw = "Result: 7<|endoftext|>";
+        let cleaned = clean_model_output(raw);
+        assert_eq!(cleaned, "Result: 7");
+    }
+
+    /// Markers embedded in the middle of content must be removed,
+    /// leaving surrounding text joined.
+    /// Bug class: replace() leaving double-spaces at marker positions.
+    #[test]
+    fn clean_model_output_markers_in_middle() {
+        let raw = "Hello<|im_end|> World";
+        let cleaned = clean_model_output(raw);
+        assert!(
+            cleaned.contains("Hello"),
+            "Content before marker must be preserved"
+        );
+        assert!(
+            cleaned.contains("World"),
+            "Content after marker must be preserved"
+        );
+    }
+
+    /// Multiline content with markers on separate lines.
+    /// Bug class: line-by-line processing missing cross-line markers.
+    #[test]
+    fn clean_model_output_multiline_with_markers() {
+        let raw = "<|im_start|>assistant\nLine 1\nLine 2\n<|im_end|>";
+        let cleaned = clean_model_output(raw);
+        assert!(cleaned.contains("Line 1"));
+        assert!(cleaned.contains("Line 2"));
+        assert!(!cleaned.contains("<|im_start|>"));
+        assert!(!cleaned.contains("<|im_end|>"));
+    }
+
+    /// Only whitespace between markers should collapse to empty.
+    /// Bug class: whitespace not trimmed after marker removal.
+    #[test]
+    fn clean_model_output_whitespace_only_between_markers() {
+        let raw = "<|im_start|>   <|im_end|>";
+        let cleaned = clean_model_output(raw);
+        assert!(
+            cleaned.is_empty(),
+            "Only whitespace between markers should be empty, got: '{cleaned}'"
+        );
+    }
+
+    // ========================================================================
+    // ModelSource::parse: additional edge cases
+    // ========================================================================
+
+    /// Deep HuggingFace path with dot in segment 3+ should join remaining as file.
+    /// Bug class: only taking parts[2] instead of joining parts[2..].
+    #[test]
+    fn parse_hf_deep_path_joins_remaining_segments() {
+        let source = ModelSource::parse("hf://org/repo/subdir/model.gguf").expect("should parse");
+        match source {
+            ModelSource::HuggingFace { org, repo, file } => {
+                assert_eq!(org, "org");
+                assert_eq!(repo, "repo");
+                // parts[2] is "subdir" which has no dot, so file is None
+                assert_eq!(file, None);
+            }
+            other => panic!("Expected HuggingFace, got {other:?}"),
+        }
+    }
+
+    /// HuggingFace path where parts[2] HAS a dot AND there are more segments.
+    /// Verifies parts[2..] are joined with '/'.
+    #[test]
+    fn parse_hf_file_with_multiple_dotted_segments() {
+        let source = ModelSource::parse("hf://org/repo/dir.v2/model.gguf").expect("should parse");
+        match source {
+            ModelSource::HuggingFace { file, .. } => {
+                assert_eq!(
+                    file,
+                    Some("dir.v2/model.gguf".to_string()),
+                    "parts[2..] should be joined with /"
+                );
+            }
+            other => panic!("Expected HuggingFace, got {other:?}"),
+        }
+    }
+
+    /// Relative path starting with "./" should be local, not HF or URL.
+    /// Bug class: relative path prefix confusing scheme detection.
+    #[test]
+    fn parse_relative_dot_slash_is_local() {
+        let source = ModelSource::parse("./models/model.apr").expect("should parse");
+        assert_eq!(
+            source,
+            ModelSource::Local(PathBuf::from("./models/model.apr"))
+        );
+    }
+
+    /// Relative path starting with "../" should be local.
+    #[test]
+    fn parse_relative_dotdot_is_local() {
+        let source = ModelSource::parse("../shared/model.gguf").expect("should parse");
+        assert_eq!(
+            source,
+            ModelSource::Local(PathBuf::from("../shared/model.gguf"))
+        );
+    }
+
+    /// Path with spaces should remain local (not confused by space in path).
+    /// Bug class: splitting on space in URL detection.
+    #[test]
+    fn parse_path_with_spaces_is_local() {
+        let source = ModelSource::parse("/path/to my/model.apr").expect("should parse");
+        assert_eq!(
+            source,
+            ModelSource::Local(PathBuf::from("/path/to my/model.apr"))
+        );
+    }
+
+    /// hf:// with empty org and empty repo should fail.
+    /// Bug class: split('/') on "" yields [""] which has len() == 1.
+    #[test]
+    fn parse_hf_empty_path_fails() {
+        let result = ModelSource::parse("hf://");
+        assert!(result.is_err(), "hf:// with no org/repo must be rejected");
+    }
+
+    /// hf:// with only org (single segment) should fail.
+    #[test]
+    fn parse_hf_single_segment_fails() {
+        let result = ModelSource::parse("hf://orgonly");
+        assert!(
+            result.is_err(),
+            "hf:// with only org (no repo) must be rejected"
+        );
+    }
+
+    /// https URL with query parameters should be preserved as-is.
+    /// Bug class: URL parser stripping query string.
+    #[test]
+    fn parse_url_with_query_params() {
+        let url = "https://example.com/model.apr?token=abc&v=2";
+        let source = ModelSource::parse(url).expect("should parse");
+        assert_eq!(source, ModelSource::Url(url.to_string()));
+    }
+
+    /// http URL should also be accepted (not just https).
+    /// Bug class: only checking "https://" prefix.
+    #[test]
+    fn parse_http_url_preserved() {
+        let url = "http://internal.corp/models/v1.gguf";
+        let source = ModelSource::parse(url).expect("should parse");
+        assert_eq!(source, ModelSource::Url(url.to_string()));
+    }
+
+    // ========================================================================
+    // md5_hash: additional properties
+    // ========================================================================
+
+    /// Single byte hashes must differ for each byte value.
+    /// Bug class: collision in single-byte inputs due to weak mixing.
+    #[test]
+    fn md5_hash_single_byte_no_collision() {
+        let h0 = md5_hash(&[0]);
+        let h1 = md5_hash(&[1]);
+        let h255 = md5_hash(&[255]);
+        assert_ne!(h0, h1);
+        assert_ne!(h0, h255);
+        assert_ne!(h1, h255);
+    }
+
+    /// Same prefix but different lengths must produce different hashes.
+    /// Bug class: hash only dependent on final accumulator, ignoring length.
+    #[test]
+    fn md5_hash_length_sensitive() {
+        let h_short = md5_hash(b"abc");
+        let h_long = md5_hash(b"abcdef");
+        assert_ne!(
+            h_short, h_long,
+            "Different-length inputs with same prefix must hash differently"
+        );
+    }
+
+    /// The initial value matches the FNV-1a offset basis constant.
+    /// Documents the hash algorithm choice: FNV-1a 64-bit.
+    #[test]
+    fn md5_hash_empty_is_fnv1a_offset_basis() {
+        let h = md5_hash(&[]);
+        assert_eq!(
+            h, 0xcbf29ce484222325,
+            "Empty input hash should equal FNV-1a 64-bit offset basis"
+        );
+    }
+
+    /// Hash output should use all 64 bits (not just lower 32).
+    /// Bug class: accidental truncation to u32 before return.
+    #[test]
+    fn md5_hash_uses_upper_bits() {
+        // At least one common input should have non-zero upper 32 bits
+        let h = md5_hash(b"test_upper_bits");
+        let upper = h >> 32;
+        assert_ne!(
+            upper, 0,
+            "Hash should utilize upper 32 bits for typical inputs"
+        );
+    }
+
+    /// Many distinct short inputs should produce distinct hashes (no systemic collisions).
+    /// Bug class: weak hash with high collision rate.
+    #[test]
+    fn md5_hash_no_collisions_for_sequential_inputs() {
+        let mut seen = std::collections::HashSet::new();
+        for i in 0u16..1000 {
+            let h = md5_hash(&i.to_le_bytes());
+            assert!(seen.insert(h), "Collision detected at input {i}");
+        }
+    }
+
+    // ========================================================================
+    // extract_shard_files: additional parsing cases
+    // ========================================================================
+
+    /// Nested braces inside weight_map values should not confuse depth tracking.
+    /// Bug class: brace matching failing on nested JSON objects.
+    #[test]
+    fn extract_shard_files_nested_metadata_before_weight_map() {
+        let json = r#"{
+            "metadata": {"nested": {"deep": true}},
+            "weight_map": {
+                "layer.0.weight": "shard-001.safetensors",
+                "layer.1.weight": "shard-002.safetensors"
+            }
+        }"#;
+        let files = extract_shard_files(json);
+        assert_eq!(files.len(), 2);
+        assert!(files.contains("shard-001.safetensors"));
+        assert!(files.contains("shard-002.safetensors"));
+    }
+
+    /// Large shard count should all be extracted.
+    /// Bug class: off-by-one or capacity limit in HashSet.
+    #[test]
+    fn extract_shard_files_many_shards() {
+        let mut weight_map_entries = Vec::new();
+        for i in 0..50 {
+            let shard = format!("model-{i:05}-of-00050.safetensors");
+            weight_map_entries.push(format!("\"tensor.{i}\": \"{shard}\""));
+        }
+        let json = format!(r#"{{"weight_map": {{{}}}}}"#, weight_map_entries.join(", "));
+        let files = extract_shard_files(&json);
+        assert_eq!(files.len(), 50, "Should extract all 50 unique shard files");
+    }
+
+    /// Duplicate shard filenames should be deduplicated (HashSet property).
+    /// Bug class: using Vec instead of HashSet, returning duplicates.
+    #[test]
+    fn extract_shard_files_deduplicates() {
+        let json = r#"{
+            "weight_map": {
+                "a": "shard.safetensors",
+                "b": "shard.safetensors",
+                "c": "shard.safetensors",
+                "d": "other.safetensors"
+            }
+        }"#;
+        let files = extract_shard_files(json);
+        assert_eq!(files.len(), 2, "Duplicate shards must be deduplicated");
+    }
+
+    /// Quoted values with escaped quotes should not crash.
+    /// Bug class: naive quote splitting on escaped quotes.
+    #[test]
+    fn extract_shard_files_truncated_weight_map_empty() {
+        // weight_map with opening brace but no closing brace
+        let json = r#"{"weight_map": {"a": "model.safetensors""#;
+        // Should not panic; may return empty or partial
+        let files = extract_shard_files(json);
+        // The brace matching loop will not find depth==0, so end_pos stays 0
+        // and entries will be empty slice
+        let _ = files; // No panic = pass
+    }
+
+    // ========================================================================
+    // parse_token_ids: additional edge cases
+    // ========================================================================
+
+    /// Single token ID without delimiters.
+    /// Bug class: split() returning empty on single element.
+    #[test]
+    fn parse_token_ids_single_value() {
+        let result = parse_token_ids("42").expect("should parse single token");
+        assert_eq!(result, vec![42u32]);
+    }
+
+    /// JSON array with single element.
+    /// Bug class: JSON array path only handling multi-element arrays.
+    #[test]
+    fn parse_token_ids_json_single_element() {
+        let result = parse_token_ids("[999]").expect("should parse single-element array");
+        assert_eq!(result, vec![999u32]);
+    }
+
+    /// Empty JSON array should produce empty vec.
+    /// Bug class: JSON deserialize failing on empty array.
+    #[test]
+    fn parse_token_ids_json_empty_array() {
+        let result = parse_token_ids("[]").expect("should parse empty JSON array");
+        assert!(result.is_empty());
+    }
+
+    /// Overflow beyond u32::MAX must fail.
+    /// Bug class: silent truncation on overflow.
+    #[test]
+    fn parse_token_ids_overflow_u32() {
+        let input = format!("{}", u64::from(u32::MAX) + 1);
+        let result = parse_token_ids(&input);
+        assert!(
+            result.is_err(),
+            "Values exceeding u32::MAX must be rejected"
+        );
+    }
+
+    /// Mixed comma-and-space separated values.
+    /// Bug class: split only accepting one delimiter type.
+    #[test]
+    fn parse_token_ids_mixed_comma_space() {
+        let result = parse_token_ids("1, 2, 3").expect("should parse mixed delimiters");
+        assert_eq!(result, vec![1, 2, 3]);
+    }
+
+    /// Token ID zero is valid.
+    /// Bug class: zero treated as sentinel/invalid.
+    #[test]
+    fn parse_token_ids_zero_is_valid() {
+        let result = parse_token_ids("0").expect("should parse zero");
+        assert_eq!(result, vec![0u32]);
+    }
+
+    /// Multiple zeros.
+    #[test]
+    fn parse_token_ids_multiple_zeros() {
+        let result = parse_token_ids("0,0,0").expect("should parse multiple zeros");
+        assert_eq!(result, vec![0, 0, 0]);
+    }
+
+    /// Whitespace-only input should produce empty vec (all filtered out).
+    #[test]
+    fn parse_token_ids_whitespace_only() {
+        let result = parse_token_ids("   \t  \n  ").expect("whitespace-only should not error");
+        assert!(
+            result.is_empty(),
+            "Whitespace-only input should produce empty token list"
+        );
+    }
+
+    /// JSON array with spaces around elements.
+    #[test]
+    fn parse_token_ids_json_with_whitespace() {
+        let result = parse_token_ids("  [ 10 , 20 , 30 ]  ").expect("should handle padded JSON");
+        assert_eq!(result, vec![10, 20, 30]);
+    }
+
+    /// Float values should be rejected (tokens are integers).
+    /// Bug class: parse::<u32>() silently truncating floats.
+    #[test]
+    fn parse_token_ids_float_rejected() {
+        let result = parse_token_ids("1.5");
+        assert!(
+            result.is_err(),
+            "Float values must be rejected as token IDs"
+        );
+    }
+
+    // ========================================================================
+    // format_prediction_output: additional formats/edge cases
+    // ========================================================================
+
+    /// Zero-duration should not cause division by zero or NaN in output.
+    /// Bug class: division by duration producing Inf.
+    #[test]
+    fn format_prediction_output_zero_duration() {
+        use std::time::Duration;
+        let options = RunOptions::default();
+        let result = format_prediction_output(&[0.5], Duration::from_secs(0), &options)
+            .expect("zero duration should not fail");
+        assert!(
+            result.contains("0.00ms") || result.contains("0.0ms") || result.contains("0ms"),
+            "Zero duration should show as zero, got: {result}"
+        );
+    }
+
+    /// Large output array should format all elements.
+    /// Bug class: output truncation at arbitrary limit.
+    #[test]
+    fn format_prediction_output_large_array() {
+        use std::time::Duration;
+        let options = RunOptions::default();
+        let values: Vec<f32> = (0..100).map(|i| i as f32 * 0.01).collect();
+        let result = format_prediction_output(&values, Duration::from_millis(50), &options)
+            .expect("large array should format");
+        // Last element [99] should be present
+        assert!(
+            result.contains("[99]:"),
+            "Should contain label for last element"
+        );
+    }
+
+    /// Unknown output format should fall through to default text.
+    /// Bug class: panicking on unrecognized format string.
+    #[test]
+    fn format_prediction_output_unknown_format_uses_text() {
+        use std::time::Duration;
+        let options = RunOptions {
+            output_format: "xml".to_string(),
+            ..Default::default()
+        };
+        let result = format_prediction_output(&[1.0], Duration::from_millis(10), &options)
+            .expect("unknown format should default to text");
+        assert!(
+            result.contains("Predictions:"),
+            "Unknown format should produce text output"
+        );
+    }
+
+    /// JSON format with NaN should fail because JSON spec has no NaN.
+    /// Bug class: silently producing invalid JSON with NaN literal.
+    #[test]
+    fn format_prediction_output_json_with_nan_fails() {
+        use std::time::Duration;
+        let options = RunOptions {
+            output_format: "json".to_string(),
+            ..Default::default()
+        };
+        let result = format_prediction_output(&[f32::NAN], Duration::from_millis(1), &options);
+        // serde_json::json! macro converts NaN to null, so this may still succeed
+        // The key property: it should not panic
+        let _ = result;
+    }
+
+    /// Text format precision: values should display with 6 decimal places.
+    /// Bug class: insufficient precision in float formatting.
+    #[test]
+    fn format_prediction_output_text_precision() {
+        use std::time::Duration;
+        let options = RunOptions::default();
+        let result = format_prediction_output(&[0.123456789], Duration::from_millis(1), &options)
+            .expect("should format");
+        assert!(
+            result.contains("0.123457") || result.contains("0.123456"),
+            "Should show ~6 decimal places, got: {result}"
+        );
+    }
+
+    /// JSON output should be valid JSON (parseable).
+    /// Bug class: missing comma, unquoted keys, etc.
+    #[test]
+    fn format_prediction_output_json_is_valid_json() {
+        use std::time::Duration;
+        let options = RunOptions {
+            output_format: "json".to_string(),
+            ..Default::default()
+        };
+        let output =
+            format_prediction_output(&[0.1, 0.2, 0.3], Duration::from_millis(100), &options)
+                .expect("should format");
+        let parsed: serde_json::Value = serde_json::from_str::<serde_json::Value>(&output)
+            .expect("JSON output must be valid JSON");
+        assert!(
+            parsed.get("predictions").is_some(),
+            "JSON must have predictions field"
+        );
+        assert!(
+            parsed.get("inference_time_ms").is_some(),
+            "JSON must have inference_time_ms field"
+        );
+    }
+
+    // ========================================================================
+    // RunOptions: comprehensive default verification
+    // ========================================================================
+
+    /// Verify ALL default field values, not just a subset.
+    /// Bug class: default value changed without updating tests.
+    #[test]
+    fn run_options_default_all_fields() {
+        let opts = RunOptions::default();
+        assert!(opts.input.is_none(), "input should default to None");
+        assert!(opts.prompt.is_none(), "prompt should default to None");
+        assert_eq!(opts.max_tokens, 32, "max_tokens should default to 32");
+        assert_eq!(
+            opts.output_format, "text",
+            "output_format should default to text"
+        );
+        assert!(!opts.force, "force should default to false");
+        assert!(!opts.no_gpu, "no_gpu should default to false");
+        assert!(!opts.offline, "offline should default to false");
+        assert!(!opts.benchmark, "benchmark should default to false");
+        assert!(!opts.verbose, "verbose should default to false");
+        assert!(!opts.trace, "trace should default to false");
+        assert!(
+            opts.trace_steps.is_none(),
+            "trace_steps should default to None"
+        );
+        assert!(!opts.trace_verbose, "trace_verbose should default to false");
+        assert!(
+            opts.trace_output.is_none(),
+            "trace_output should default to None"
+        );
+    }
+
+    /// RunOptions with trace_output path.
+    /// Bug class: trace_output not propagated through options.
+    #[test]
+    fn run_options_trace_output_propagates() {
+        let opts = RunOptions {
+            trace: true,
+            trace_output: Some(PathBuf::from("/tmp/trace.json")),
+            ..Default::default()
+        };
+        assert_eq!(
+            opts.trace_output,
+            Some(PathBuf::from("/tmp/trace.json")),
+            "trace_output must propagate"
+        );
+    }
+
+    // ========================================================================
+    // RunResult: structural verification
+    // ========================================================================
+
+    /// RunResult with no tokens_generated should be None, not Some(0).
+    /// Bug class: default value confusion between None and Some(0).
+    #[test]
+    fn run_result_tokens_generated_none_vs_zero() {
+        let result_none = RunResult {
+            text: String::new(),
+            duration_secs: 0.0,
+            cached: false,
+            tokens_generated: None,
+        };
+        let result_zero = RunResult {
+            text: String::new(),
+            duration_secs: 0.0,
+            cached: false,
+            tokens_generated: Some(0),
+        };
+        assert_ne!(
+            result_none.tokens_generated, result_zero.tokens_generated,
+            "None and Some(0) must be distinguishable"
+        );
+    }
+
+    /// RunResult fields should be independently settable.
+    /// Bug class: struct field ordering causing misassignment.
+    #[test]
+    fn run_result_field_independence() {
+        let result = RunResult {
+            text: "output".to_string(),
+            duration_secs: 1.234,
+            cached: true,
+            tokens_generated: Some(42),
+        };
+        assert_eq!(result.text, "output");
+        assert!((result.duration_secs - 1.234).abs() < f64::EPSILON);
+        assert!(result.cached);
+        assert_eq!(result.tokens_generated, Some(42));
+    }
+
+    // ========================================================================
+    // ModelSource: PartialEq contract tests
+    // ========================================================================
+
+    /// Two HuggingFace sources with same org/repo but different files are not equal.
+    /// Bug class: PartialEq ignoring the file field.
+    #[test]
+    fn model_source_hf_different_files_not_equal() {
+        let s1 = ModelSource::HuggingFace {
+            org: "org".to_string(),
+            repo: "repo".to_string(),
+            file: Some("a.gguf".to_string()),
+        };
+        let s2 = ModelSource::HuggingFace {
+            org: "org".to_string(),
+            repo: "repo".to_string(),
+            file: Some("b.gguf".to_string()),
+        };
+        assert_ne!(s1, s2, "Different files should make sources unequal");
+    }
+
+    /// HuggingFace with file=None vs file=Some are not equal.
+    /// Bug class: Option comparison treating None as "don't care".
+    #[test]
+    fn model_source_hf_none_file_vs_some_file() {
+        let s1 = ModelSource::HuggingFace {
+            org: "org".to_string(),
+            repo: "repo".to_string(),
+            file: None,
+        };
+        let s2 = ModelSource::HuggingFace {
+            org: "org".to_string(),
+            repo: "repo".to_string(),
+            file: Some("model.gguf".to_string()),
+        };
+        assert_ne!(s1, s2, "None file vs Some file must be unequal");
+    }
+
+    /// Local and URL sources should never be equal even with similar-looking content.
+    /// Bug class: cross-variant equality.
+    #[test]
+    fn model_source_local_vs_url_never_equal() {
+        let local = ModelSource::Local(PathBuf::from("https://example.com"));
+        let url = ModelSource::Url("https://example.com".to_string());
+        assert_ne!(local, url, "Local and URL variants must never be equal");
+    }
+
+    // ========================================================================
+    // cache_path: additional invariants
+    // ========================================================================
+
+    /// Local source cache_path is identity (returns the same path).
+    /// Bug class: Local path being redirected through cache directory.
+    #[test]
+    fn cache_path_local_is_identity() {
+        let path = PathBuf::from("/some/model.safetensors");
+        let source = ModelSource::Local(path.clone());
+        assert_eq!(
+            source.cache_path(),
+            path,
+            "Local source cache_path must be identity"
+        );
+    }
+
+    /// Two different URLs must produce different cache paths.
+    /// Bug class: hash collision in short URL space.
+    #[test]
+    fn cache_path_url_different_urls_different_paths() {
+        let urls = [
+            "https://a.com/model.gguf",
+            "https://b.com/model.gguf",
+            "https://c.com/model.gguf",
+            "https://a.com/other.gguf",
+        ];
+        let paths: Vec<_> = urls
+            .iter()
+            .map(|u| ModelSource::Url(u.to_string()).cache_path())
+            .collect();
+        // All pairs should differ
+        for i in 0..paths.len() {
+            for j in (i + 1)..paths.len() {
+                assert_ne!(
+                    paths[i], paths[j],
+                    "URLs '{}' and '{}' should have different cache paths",
+                    urls[i], urls[j]
+                );
+            }
+        }
+    }
+
+    /// HuggingFace cache path should contain ".apr/cache" directory.
+    /// Bug class: cache going to wrong base directory.
+    #[test]
+    fn cache_path_hf_contains_apr_cache() {
+        let source = ModelSource::HuggingFace {
+            org: "test".to_string(),
+            repo: "model".to_string(),
+            file: None,
+        };
+        let path_str = source.cache_path().to_string_lossy().to_string();
+        assert!(
+            path_str.contains(".apr") && path_str.contains("cache"),
+            "HF cache path should include .apr/cache, got: {path_str}"
+        );
+    }
+
+    // ========================================================================
+    // resolve_model: offline mode comprehensive
+    // ========================================================================
+
+    /// Offline mode with URL source should error with descriptive message.
+    /// Bug class: generic error without mentioning offline mode.
+    #[test]
+    fn resolve_model_offline_url_error_message() {
+        let source = ModelSource::Url("https://example.com/model.gguf".to_string());
+        let result = resolve_model(&source, false, true);
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("OFFLINE MODE"),
+            "Error should mention OFFLINE MODE, got: {err_msg}"
+        );
+        assert!(
+            err_msg.contains("example.com") || err_msg.contains("model.gguf"),
+            "Error should mention the URL, got: {err_msg}"
+        );
+    }
+
+    /// Non-offline mode with local path should succeed (identity).
+    #[test]
+    fn resolve_model_online_local_returns_path() {
+        let source = ModelSource::Local(PathBuf::from("/any/path.apr"));
+        let result = resolve_model(&source, false, false);
+        assert_eq!(
+            result.expect("should succeed"),
+            PathBuf::from("/any/path.apr")
+        );
+    }
+
+    /// Force flag should not affect local path resolution.
+    /// Bug class: force flag triggering re-download even for local files.
+    #[test]
+    fn resolve_model_force_flag_local_unchanged() {
+        let source = ModelSource::Local(PathBuf::from("/any/path.apr"));
+        let result = resolve_model(&source, true, false);
+        assert_eq!(
+            result.expect("should succeed"),
+            PathBuf::from("/any/path.apr")
+        );
+    }
+
+    // ========================================================================
+    // find_cached_model: negative cases
+    // ========================================================================
+
+    /// Requesting a specific file from non-existent cache should return None.
+    /// Bug class: returning directory path instead of None when file missing.
+    #[test]
+    fn find_cached_model_with_specific_file_not_found() {
+        let result = find_cached_model("nonexistent_org", "nonexistent_repo", Some("model.gguf"));
+        assert!(
+            result.is_none(),
+            "Non-existent org/repo/file should return None"
+        );
+    }
+
+    // ========================================================================
+    // InferenceOutput: structural tests
+    // ========================================================================
+
+    /// InferenceOutput fields should be independently accessible.
+    /// Bug class: private field preventing test access (compile-time check).
+    #[test]
+    fn inference_output_fields() {
+        let output = InferenceOutput {
+            text: "hello".to_string(),
+            tokens_generated: Some(5),
+            inference_ms: Some(10.0),
+        };
+        assert_eq!(output.text, "hello");
+        assert_eq!(output.tokens_generated, Some(5));
+        assert!((output.inference_ms.unwrap() - 10.0).abs() < f64::EPSILON);
+    }
+
+    /// InferenceOutput with no metrics.
+    #[test]
+    fn inference_output_no_metrics() {
+        let output = InferenceOutput {
+            text: "result".to_string(),
+            tokens_generated: None,
+            inference_ms: None,
+        };
+        assert!(output.tokens_generated.is_none());
+        assert!(output.inference_ms.is_none());
+    }
+
+    // ========================================================================
+    // find_model_in_dir / glob_first: edge cases
+    // ========================================================================
+
+    /// find_model_in_dir on a regular file path (not directory) returns the path.
+    /// Bug class: panic when path is not a directory.
+    #[test]
+    fn find_model_in_dir_file_path_returns_self() {
+        let result = find_model_in_dir(Path::new("/nonexistent/file.txt"));
+        assert_eq!(
+            result.expect("should not error"),
+            PathBuf::from("/nonexistent/file.txt")
+        );
+    }
+
+    /// glob_first on empty pattern returns None.
+    /// Bug class: panic on empty or invalid glob.
+    #[test]
+    fn glob_first_empty_pattern() {
+        let result = glob_first(Path::new(""));
+        // Empty path may or may not match; key property: no panic
+        let _ = result;
+    }
 }

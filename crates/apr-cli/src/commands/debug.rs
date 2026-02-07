@@ -592,4 +592,361 @@ mod tests {
         let info = parse_header(&header);
         assert_eq!(info.model_type, 0x0006);
     }
+
+    // ========================================================================
+    // collect_flags Tests
+    // ========================================================================
+
+    #[test]
+    fn collect_flags_returns_empty_when_no_flags_set() {
+        let info = HeaderInfo {
+            magic_valid: true,
+            magic_str: "APRN".to_string(),
+            version: (1, 0),
+            model_type: 0x0001,
+            compressed: false,
+            signed: false,
+            encrypted: false,
+        };
+        let flags = collect_flags(&info);
+        assert!(flags.is_empty());
+    }
+
+    #[test]
+    fn collect_flags_returns_compressed_only() {
+        let info = HeaderInfo {
+            magic_valid: true,
+            magic_str: "APRN".to_string(),
+            version: (1, 0),
+            model_type: 0x0001,
+            compressed: true,
+            signed: false,
+            encrypted: false,
+        };
+        let flags = collect_flags(&info);
+        assert_eq!(flags, vec!["compressed"]);
+    }
+
+    #[test]
+    fn collect_flags_returns_signed_only() {
+        let info = HeaderInfo {
+            magic_valid: true,
+            magic_str: "APRN".to_string(),
+            version: (1, 0),
+            model_type: 0x0001,
+            compressed: false,
+            signed: true,
+            encrypted: false,
+        };
+        let flags = collect_flags(&info);
+        assert_eq!(flags, vec!["signed"]);
+    }
+
+    #[test]
+    fn collect_flags_returns_encrypted_only() {
+        let info = HeaderInfo {
+            magic_valid: true,
+            magic_str: "APRN".to_string(),
+            version: (1, 0),
+            model_type: 0x0001,
+            compressed: false,
+            signed: false,
+            encrypted: true,
+        };
+        let flags = collect_flags(&info);
+        assert_eq!(flags, vec!["encrypted"]);
+    }
+
+    #[test]
+    fn collect_flags_returns_all_three_in_order() {
+        let info = HeaderInfo {
+            magic_valid: true,
+            magic_str: "APRN".to_string(),
+            version: (1, 0),
+            model_type: 0x0001,
+            compressed: true,
+            signed: true,
+            encrypted: true,
+        };
+        let flags = collect_flags(&info);
+        assert_eq!(flags, vec!["compressed", "signed", "encrypted"]);
+    }
+
+    #[test]
+    fn collect_flags_signed_and_encrypted_without_compressed() {
+        let info = HeaderInfo {
+            magic_valid: true,
+            magic_str: "APRN".to_string(),
+            version: (1, 0),
+            model_type: 0x0001,
+            compressed: false,
+            signed: true,
+            encrypted: true,
+        };
+        let flags = collect_flags(&info);
+        assert_eq!(flags, vec!["signed", "encrypted"]);
+    }
+
+    // ========================================================================
+    // parse_header: compression via byte 20 (legacy path)
+    // ========================================================================
+
+    #[test]
+    fn parse_header_compression_via_legacy_byte20() {
+        let mut header = [0u8; HEADER_SIZE];
+        header[0..4].copy_from_slice(b"APRN");
+        // Flag bits all zero, but legacy byte 20 is nonzero
+        header[20] = 0x01;
+        header[21] = 0x00;
+        let info = parse_header(&header);
+        assert!(info.compressed, "byte 20 nonzero should set compressed");
+        assert!(!info.signed);
+        assert!(!info.encrypted);
+    }
+
+    #[test]
+    fn parse_header_no_flags_no_legacy() {
+        let mut header = [0u8; HEADER_SIZE];
+        header[0..4].copy_from_slice(b"APRN");
+        header[20] = 0x00;
+        header[21] = 0x00;
+        let info = parse_header(&header);
+        assert!(!info.compressed);
+        assert!(!info.signed);
+        assert!(!info.encrypted);
+    }
+
+    // ========================================================================
+    // parse_header: model type little-endian encoding
+    // ========================================================================
+
+    #[test]
+    fn parse_header_model_type_high_byte_nonzero() {
+        let mut header = [0u8; HEADER_SIZE];
+        header[0..4].copy_from_slice(b"APRN");
+        header[6] = 0xFF;
+        header[7] = 0x00;
+        let info = parse_header(&header);
+        assert_eq!(info.model_type, 0x00FF);
+        // Verify this maps to Custom
+        assert_eq!(format_model_type(info.model_type), "Custom");
+    }
+
+    #[test]
+    fn parse_header_model_type_multibyte_le() {
+        let mut header = [0u8; HEADER_SIZE];
+        header[0..4].copy_from_slice(b"APRN");
+        header[6] = 0x40; // low byte
+        header[7] = 0x00; // high byte
+        let info = parse_header(&header);
+        assert_eq!(info.model_type, 0x0040);
+        assert_eq!(format_model_type(info.model_type), "MixtureOfExperts");
+    }
+
+    // ========================================================================
+    // parse_header: version tuple extraction
+    // ========================================================================
+
+    #[test]
+    fn parse_header_version_zero_zero() {
+        let mut header = [0u8; HEADER_SIZE];
+        header[0..4].copy_from_slice(b"APRN");
+        header[4] = 0;
+        header[5] = 0;
+        let info = parse_header(&header);
+        assert_eq!(info.version, (0, 0));
+    }
+
+    #[test]
+    fn parse_header_version_high_minor() {
+        let mut header = [0u8; HEADER_SIZE];
+        header[0..4].copy_from_slice(b"APRN");
+        header[4] = 2;
+        header[5] = 99;
+        let info = parse_header(&header);
+        assert_eq!(info.version, (2, 99));
+    }
+
+    // ========================================================================
+    // parse_header: GGUF magic recognized
+    // ========================================================================
+
+    #[test]
+    fn parse_header_gguf_magic_is_valid() {
+        let mut header = [0u8; HEADER_SIZE];
+        header[0..4].copy_from_slice(b"GGUF");
+        let info = parse_header(&header);
+        assert!(info.magic_valid);
+        assert_eq!(info.magic_str, "GGUF");
+    }
+
+    // ========================================================================
+    // parse_header: non-UTF8 magic bytes
+    // ========================================================================
+
+    #[test]
+    fn parse_header_non_utf8_magic_lossily_converted() {
+        let mut header = [0u8; HEADER_SIZE];
+        header[0..4].copy_from_slice(&[0xFF, 0xFE, 0xFD, 0xFC]);
+        let info = parse_header(&header);
+        assert!(!info.magic_valid);
+        // from_utf8_lossy replaces invalid bytes with replacement char
+        assert!(info.magic_str.contains('\u{FFFD}'));
+    }
+
+    // ========================================================================
+    // format_model_type: exhaustive unknown branch
+    // ========================================================================
+
+    #[test]
+    fn format_model_type_zero_is_unknown() {
+        assert_eq!(format_model_type(0x0000), "Unknown(0x0000)");
+    }
+
+    #[test]
+    fn format_model_type_max_u16_is_unknown() {
+        assert_eq!(format_model_type(0xFFFF), "Unknown(0xFFFF)");
+    }
+
+    // ========================================================================
+    // run: hex and strings modes (file-backed, no model needed)
+    // ========================================================================
+
+    #[test]
+    fn run_hex_mode_succeeds_on_regular_file() {
+        let mut file = NamedTempFile::new().expect("create file");
+        file.write_all(b"Hello, hex world! 0123456789ABCDEF")
+            .expect("write");
+        let result = run(file.path(), false, true, false, 256);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn run_strings_mode_succeeds_on_regular_file() {
+        let mut file = NamedTempFile::new().expect("create file");
+        file.write_all(b"Hello\x00World\x00teststring\x00ab\x00longword")
+            .expect("write");
+        let result = run(file.path(), false, false, true, 100);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn run_hex_mode_file_not_found() {
+        let result = run(Path::new("/nonexistent/file.bin"), false, true, false, 256);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn run_strings_mode_file_not_found() {
+        let result = run(Path::new("/nonexistent/file.bin"), false, false, true, 256);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn run_basic_mode_with_valid_header_size_file() {
+        let mut file = NamedTempFile::with_suffix(".apr").expect("create file");
+        // Write exactly HEADER_SIZE bytes with valid magic
+        let mut buf = vec![0u8; HEADER_SIZE];
+        buf[0..4].copy_from_slice(b"APRN");
+        buf[4] = 1; // version major
+        buf[5] = 0; // version minor
+        file.write_all(&buf).expect("write");
+        // basic mode (no drama, no hex, no strings)
+        let result = run(file.path(), false, false, false, 100);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn run_drama_mode_with_valid_header() {
+        let mut file = NamedTempFile::with_suffix(".apr").expect("create file");
+        let mut buf = vec![0u8; HEADER_SIZE];
+        buf[0..4].copy_from_slice(b"APRN");
+        buf[4] = 1;
+        buf[5] = 0;
+        file.write_all(&buf).expect("write");
+        let result = run(file.path(), true, false, false, 100);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn run_drama_mode_with_invalid_magic() {
+        let mut file = NamedTempFile::with_suffix(".apr").expect("create file");
+        let mut buf = vec![0u8; HEADER_SIZE];
+        buf[0..4].copy_from_slice(b"XXXX");
+        buf[4] = 1;
+        file.write_all(&buf).expect("write");
+        let result = run(file.path(), true, false, false, 100);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn run_drama_mode_with_flags_set() {
+        let mut file = NamedTempFile::with_suffix(".apr").expect("create file");
+        let mut buf = vec![0u8; HEADER_SIZE];
+        buf[0..4].copy_from_slice(b"APRN");
+        buf[4] = 1;
+        // Set compressed + signed + encrypted + quantized flags
+        buf[21] = 0b00100111;
+        file.write_all(&buf).expect("write");
+        let result = run(file.path(), true, false, false, 100);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn run_drama_mode_version_non_one() {
+        let mut file = NamedTempFile::with_suffix(".apr").expect("create file");
+        let mut buf = vec![0u8; HEADER_SIZE];
+        buf[0..4].copy_from_slice(b"APR2");
+        buf[4] = 2; // non-1 version triggers "murmurs of concern"
+        buf[5] = 1;
+        file.write_all(&buf).expect("write");
+        let result = run(file.path(), true, false, false, 100);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn run_basic_mode_with_invalid_magic() {
+        let mut file = NamedTempFile::with_suffix(".apr").expect("create file");
+        let mut buf = vec![0u8; HEADER_SIZE];
+        buf[0..4].copy_from_slice(b"ZZZZ");
+        file.write_all(&buf).expect("write");
+        let result = run(file.path(), false, false, false, 100);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn run_basic_mode_with_flags_shows_flag_line() {
+        let mut file = NamedTempFile::with_suffix(".apr").expect("create file");
+        let mut buf = vec![0u8; HEADER_SIZE];
+        buf[0..4].copy_from_slice(b"APRN");
+        buf[21] = 0x02; // signed flag
+        file.write_all(&buf).expect("write");
+        let result = run(file.path(), false, false, false, 100);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn run_strings_mode_with_limit_one() {
+        let mut file = NamedTempFile::new().expect("create file");
+        // Two strings separated by null bytes
+        file.write_all(b"firststring\x00secondstring\x00thirdstring")
+            .expect("write");
+        let result = run(file.path(), false, false, true, 1);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn run_hex_mode_with_small_limit() {
+        let mut file = NamedTempFile::new().expect("create file");
+        file.write_all(&[0u8; 256]).expect("write");
+        let result = run(file.path(), false, true, false, 32);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn run_directory_rejected() {
+        let dir = tempdir().expect("create dir");
+        let result = run(dir.path(), false, false, false, 100);
+        assert!(matches!(result, Err(CliError::NotAFile(_))));
+    }
 }

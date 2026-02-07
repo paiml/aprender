@@ -827,6 +827,7 @@ fn output_text(report: &DiffReport, show_weights: bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aprender::format::diff::DiffEntry;
     use std::io::Write;
     use tempfile::{tempdir, NamedTempFile};
 
@@ -981,5 +982,952 @@ mod tests {
     fn test_normalize_tensor_name() {
         assert!(normalize_tensor_name("blk.0.attn_q.weight").contains("model.layers.0"));
         assert!(normalize_tensor_name("blk.0.attn_q.weight").contains("self_attn.q_proj"));
+    }
+
+    // ==================== TensorDiffStatus::from_diff_info - exhaustive branch coverage ====================
+
+    #[test]
+    fn test_from_diff_info_transposed_high_ident_ratio() {
+        // Transposed shapes with >99% identical values => Transposed
+        let status = TensorDiffStatus::from_diff_info(0.0, &[10, 20], &[20, 10], 199, 200);
+        assert_eq!(status, TensorDiffStatus::Transposed);
+    }
+
+    #[test]
+    fn test_from_diff_info_transposed_low_ident_ratio_small_max_diff() {
+        // Transposed shapes, low ident ratio, max_diff < 0.1 => MediumDiff
+        let status = TensorDiffStatus::from_diff_info(0.05, &[10, 20], &[20, 10], 10, 200);
+        assert_eq!(status, TensorDiffStatus::MediumDiff);
+    }
+
+    #[test]
+    fn test_from_diff_info_transposed_low_ident_ratio_large_max_diff() {
+        // Transposed shapes, low ident ratio, max_diff >= 0.1 => falls through to value classification
+        // max_diff=0.5 => LargeDiff (0.1 <= 0.5 < 1.0)
+        let status = TensorDiffStatus::from_diff_info(0.5, &[10, 20], &[20, 10], 10, 200);
+        assert_eq!(status, TensorDiffStatus::LargeDiff);
+    }
+
+    #[test]
+    fn test_from_diff_info_transposed_critical_max_diff() {
+        // Transposed shapes, low ident ratio, max_diff >= 1.0 => Critical
+        let status = TensorDiffStatus::from_diff_info(2.0, &[10, 20], &[20, 10], 5, 200);
+        assert_eq!(status, TensorDiffStatus::Critical);
+    }
+
+    #[test]
+    fn test_from_diff_info_incompatible_1d_vs_2d() {
+        // Different dimensionality shapes => Critical
+        let status = TensorDiffStatus::from_diff_info(0.0, &[100], &[10, 10], 100, 100);
+        assert_eq!(status, TensorDiffStatus::Critical);
+    }
+
+    #[test]
+    fn test_from_diff_info_incompatible_3d_shapes() {
+        // 3D shapes that don't match => Critical (is_transpose only for 2D)
+        let status = TensorDiffStatus::from_diff_info(0.0, &[2, 3, 4], &[4, 3, 2], 24, 24);
+        assert_eq!(status, TensorDiffStatus::Critical);
+    }
+
+    #[test]
+    fn test_from_diff_info_boundary_nearly_identical() {
+        // max_diff just below 0.001 => NearlyIdentical
+        let status = TensorDiffStatus::from_diff_info(0.000_999, &[10], &[10], 5, 10);
+        assert_eq!(status, TensorDiffStatus::NearlyIdentical);
+    }
+
+    #[test]
+    fn test_from_diff_info_boundary_small_diff() {
+        // max_diff exactly at 0.001 => SmallDiff (0.001 is NOT < 0.001)
+        let status = TensorDiffStatus::from_diff_info(0.001, &[10], &[10], 5, 10);
+        assert_eq!(status, TensorDiffStatus::SmallDiff);
+    }
+
+    #[test]
+    fn test_from_diff_info_boundary_medium_diff() {
+        // max_diff exactly at 0.01 => MediumDiff (0.01 is NOT < 0.01)
+        let status = TensorDiffStatus::from_diff_info(0.01, &[10], &[10], 5, 10);
+        assert_eq!(status, TensorDiffStatus::MediumDiff);
+    }
+
+    #[test]
+    fn test_from_diff_info_boundary_large_diff() {
+        // max_diff exactly at 0.1 => LargeDiff (0.1 is NOT < 0.1)
+        let status = TensorDiffStatus::from_diff_info(0.1, &[10], &[10], 5, 10);
+        assert_eq!(status, TensorDiffStatus::LargeDiff);
+    }
+
+    #[test]
+    fn test_from_diff_info_boundary_critical() {
+        // max_diff exactly at 1.0 => Critical (1.0 is NOT < 1.0)
+        let status = TensorDiffStatus::from_diff_info(1.0, &[10], &[10], 0, 10);
+        assert_eq!(status, TensorDiffStatus::Critical);
+    }
+
+    #[test]
+    fn test_from_diff_info_same_1d_shape_identical() {
+        // 1D shapes that match, max_diff = 0.0
+        let status = TensorDiffStatus::from_diff_info(0.0, &[256], &[256], 256, 256);
+        assert_eq!(status, TensorDiffStatus::Identical);
+    }
+
+    #[test]
+    fn test_from_diff_info_transposed_exact_boundary_ident_ratio() {
+        // Transposed shapes with exactly 99% identical (should NOT be Transposed - need >0.99)
+        // 99/100 = 0.99, which is NOT > 0.99
+        let status = TensorDiffStatus::from_diff_info(0.0, &[10, 10], &[10, 10], 99, 100);
+        // Same shapes => not transposed, max_diff=0.0 => Identical
+        assert_eq!(status, TensorDiffStatus::Identical);
+    }
+
+    #[test]
+    fn test_from_diff_info_transposed_boundary_ident_ratio_below_threshold() {
+        // Transposed shapes, ident ratio exactly 0.99 (not > 0.99), max_diff = 0.0
+        // 99/100 = 0.99 which is NOT > 0.99 => goes to max_diff check
+        // max_diff=0.0 < 0.1 => MediumDiff
+        let status = TensorDiffStatus::from_diff_info(0.0, &[5, 20], &[20, 5], 99, 100);
+        assert_eq!(status, TensorDiffStatus::MediumDiff);
+    }
+
+    // ==================== TensorDiffStatus::colored_string - all variants ====================
+
+    #[test]
+    fn test_colored_string_identical() {
+        let s = TensorDiffStatus::Identical.colored_string();
+        // colored_string returns a ColoredString; check the underlying text
+        assert_eq!(s.to_string().contains("IDENTICAL"), true);
+    }
+
+    #[test]
+    fn test_colored_string_nearly_identical() {
+        let s = TensorDiffStatus::NearlyIdentical.colored_string();
+        assert!(s.to_string().contains("IDENT"));
+    }
+
+    #[test]
+    fn test_colored_string_small_diff() {
+        let s = TensorDiffStatus::SmallDiff.colored_string();
+        assert!(s.to_string().contains("SMALL"));
+    }
+
+    #[test]
+    fn test_colored_string_medium_diff() {
+        let s = TensorDiffStatus::MediumDiff.colored_string();
+        assert!(s.to_string().contains("MEDIUM"));
+    }
+
+    #[test]
+    fn test_colored_string_large_diff() {
+        let s = TensorDiffStatus::LargeDiff.colored_string();
+        assert!(s.to_string().contains("LARGE"));
+    }
+
+    #[test]
+    fn test_colored_string_transposed() {
+        let s = TensorDiffStatus::Transposed.colored_string();
+        assert!(s.to_string().contains("TRANSPOSED"));
+    }
+
+    #[test]
+    fn test_colored_string_critical() {
+        let s = TensorDiffStatus::Critical.colored_string();
+        assert!(s.to_string().contains("CRITICAL"));
+    }
+
+    // ==================== DiffResultJson::from(&DiffReport) ====================
+
+    #[test]
+    fn test_diff_result_json_from_empty_report() {
+        let report = DiffReport {
+            path1: "model_a.apr".to_string(),
+            path2: "model_b.apr".to_string(),
+            format1: "APR".to_string(),
+            format2: "APR".to_string(),
+            differences: vec![],
+            inspection1: None,
+            inspection2: None,
+        };
+        let json = DiffResultJson::from(&report);
+        assert_eq!(json.file1, "model_a.apr");
+        assert_eq!(json.file2, "model_b.apr");
+        assert_eq!(json.format1, "APR");
+        assert_eq!(json.format2, "APR");
+        assert!(json.identical);
+        assert_eq!(json.difference_count, 0);
+        assert!(json.differences.is_empty());
+    }
+
+    #[test]
+    fn test_diff_result_json_from_report_with_diffs() {
+        let report = DiffReport {
+            path1: "a.gguf".to_string(),
+            path2: "b.safetensors".to_string(),
+            format1: "GGUF".to_string(),
+            format2: "SafeTensors".to_string(),
+            differences: vec![
+                DiffEntry {
+                    field: "tensor_count".to_string(),
+                    value1: "100".to_string(),
+                    value2: "200".to_string(),
+                    category: DiffCategory::Tensor,
+                },
+                DiffEntry {
+                    field: "format_version".to_string(),
+                    value1: "v2".to_string(),
+                    value2: "v3".to_string(),
+                    category: DiffCategory::Format,
+                },
+            ],
+            inspection1: None,
+            inspection2: None,
+        };
+        let json = DiffResultJson::from(&report);
+        assert_eq!(json.file1, "a.gguf");
+        assert_eq!(json.file2, "b.safetensors");
+        assert_eq!(json.format1, "GGUF");
+        assert_eq!(json.format2, "SafeTensors");
+        assert!(!json.identical);
+        assert_eq!(json.difference_count, 2);
+        assert_eq!(json.differences.len(), 2);
+        assert_eq!(json.differences[0].field, "tensor_count");
+        assert_eq!(json.differences[0].file1_value, "100");
+        assert_eq!(json.differences[0].file2_value, "200");
+        assert_eq!(json.differences[0].category, "tensor");
+        assert_eq!(json.differences[1].field, "format_version");
+        assert_eq!(json.differences[1].category, "format");
+    }
+
+    #[test]
+    fn test_diff_result_json_serialization() {
+        let report = DiffReport {
+            path1: "a.apr".to_string(),
+            path2: "b.apr".to_string(),
+            format1: "APR".to_string(),
+            format2: "APR".to_string(),
+            differences: vec![DiffEntry {
+                field: "file_size".to_string(),
+                value1: "1024".to_string(),
+                value2: "2048".to_string(),
+                category: DiffCategory::Size,
+            }],
+            inspection1: None,
+            inspection2: None,
+        };
+        let json_result = DiffResultJson::from(&report);
+        let serialized = serde_json::to_string(&json_result).expect("serialize");
+        assert!(serialized.contains("\"file1\":\"a.apr\""));
+        assert!(serialized.contains("\"identical\":false"));
+        assert!(serialized.contains("\"difference_count\":1"));
+        assert!(serialized.contains("\"file_size\""));
+    }
+
+    // ==================== normalize_tensor_name - all replacement patterns ====================
+
+    #[test]
+    fn test_normalize_tensor_name_attn_k() {
+        let result = normalize_tensor_name("blk.5.attn_k.weight");
+        assert_eq!(result, "model.layers.5.self_attn.k_proj.weight");
+    }
+
+    #[test]
+    fn test_normalize_tensor_name_attn_v() {
+        let result = normalize_tensor_name("blk.3.attn_v.weight");
+        assert_eq!(result, "model.layers.3.self_attn.v_proj.weight");
+    }
+
+    #[test]
+    fn test_normalize_tensor_name_attn_output() {
+        let result = normalize_tensor_name("blk.1.attn_output.weight");
+        assert_eq!(result, "model.layers.1.self_attn.o_proj.weight");
+    }
+
+    #[test]
+    fn test_normalize_tensor_name_ffn_gate() {
+        let result = normalize_tensor_name("blk.0.ffn_gate.weight");
+        assert_eq!(result, "model.layers.0.mlp.gate_proj.weight");
+    }
+
+    #[test]
+    fn test_normalize_tensor_name_ffn_up() {
+        let result = normalize_tensor_name("blk.2.ffn_up.weight");
+        assert_eq!(result, "model.layers.2.mlp.up_proj.weight");
+    }
+
+    #[test]
+    fn test_normalize_tensor_name_ffn_down() {
+        let result = normalize_tensor_name("blk.4.ffn_down.weight");
+        assert_eq!(result, "model.layers.4.mlp.down_proj.weight");
+    }
+
+    #[test]
+    fn test_normalize_tensor_name_attn_norm() {
+        let result = normalize_tensor_name("blk.0.attn_norm.weight");
+        assert_eq!(result, "model.layers.0.input_layernorm.weight");
+    }
+
+    #[test]
+    fn test_normalize_tensor_name_ffn_norm() {
+        let result = normalize_tensor_name("blk.0.ffn_norm.weight");
+        assert_eq!(result, "model.layers.0.post_attention_layernorm.weight");
+    }
+
+    #[test]
+    fn test_normalize_tensor_name_no_changes() {
+        // Already in HF naming convention - should be unchanged
+        let name = "model.layers.0.self_attn.q_proj.weight";
+        assert_eq!(normalize_tensor_name(name), name);
+    }
+
+    #[test]
+    fn test_normalize_tensor_name_empty() {
+        assert_eq!(normalize_tensor_name(""), "");
+    }
+
+    #[test]
+    fn test_normalize_tensor_name_no_prefix() {
+        // No blk. prefix but has the dot-delimited pattern
+        let result = normalize_tensor_name("layer.attn_q.bias");
+        assert_eq!(result, "layer.self_attn.q_proj.bias");
+    }
+
+    // ==================== truncate_path ====================
+
+    #[test]
+    fn test_truncate_path_short() {
+        assert_eq!(truncate_path("short.apr", 20), "short.apr");
+    }
+
+    #[test]
+    fn test_truncate_path_exact_length() {
+        let path = "abcdefghij"; // 10 chars
+        assert_eq!(truncate_path(path, 10), "abcdefghij");
+    }
+
+    #[test]
+    fn test_truncate_path_long() {
+        let path = "/very/long/path/to/some/model/file.apr";
+        let result = truncate_path(path, 20);
+        assert!(result.starts_with("..."));
+        assert_eq!(result.len(), 20);
+        assert!(result.ends_with("file.apr"));
+    }
+
+    #[test]
+    fn test_truncate_path_one_over() {
+        let path = "abcdefghijk"; // 11 chars
+        let result = truncate_path(path, 10);
+        assert!(result.starts_with("..."));
+        assert_eq!(result.len(), 10);
+    }
+
+    // ==================== truncate_str ====================
+
+    #[test]
+    fn test_truncate_str_short() {
+        assert_eq!(truncate_str("hello", 10), "hello");
+    }
+
+    #[test]
+    fn test_truncate_str_exact_length() {
+        assert_eq!(truncate_str("1234567890", 10), "1234567890");
+    }
+
+    #[test]
+    fn test_truncate_str_long() {
+        let result = truncate_str("this is a very long string", 10);
+        assert_eq!(result, "this is...");
+        assert_eq!(result.len(), 10);
+    }
+
+    #[test]
+    fn test_truncate_str_one_over() {
+        let result = truncate_str("12345678901", 10);
+        assert!(result.ends_with("..."));
+        assert_eq!(result.len(), 10);
+    }
+
+    // ==================== compute_tensor_diff_stats ====================
+
+    #[test]
+    fn test_compute_tensor_diff_stats_empty_data() {
+        let stats = compute_tensor_diff_stats("empty", &[0], &[0], &[], &[], false);
+        assert_eq!(stats.status, TensorDiffStatus::Critical);
+        assert_eq!(stats.element_count, 0);
+        assert_eq!(stats.mean_diff, 0.0);
+        assert_eq!(stats.max_diff, 0.0);
+        assert_eq!(stats.rmse, 0.0);
+        assert_eq!(stats.cosine_similarity, 0.0);
+        assert_eq!(stats.name, "empty");
+    }
+
+    #[test]
+    fn test_compute_tensor_diff_stats_large_diff() {
+        let data_a = vec![0.0, 0.0, 0.0, 0.0];
+        let data_b = vec![10.0, 10.0, 10.0, 10.0];
+        let stats = compute_tensor_diff_stats("large", &[4], &[4], &data_a, &data_b, false);
+        assert_eq!(stats.status, TensorDiffStatus::Critical);
+        assert_eq!(stats.max_diff, 10.0);
+        assert_eq!(stats.large_diff_count, 4);
+    }
+
+    #[test]
+    fn test_compute_tensor_diff_stats_medium_diff() {
+        let data_a = vec![1.0, 2.0, 3.0, 4.0];
+        let data_b = vec![1.05, 2.05, 3.05, 4.05];
+        let stats = compute_tensor_diff_stats("med", &[4], &[4], &data_a, &data_b, false);
+        assert_eq!(stats.status, TensorDiffStatus::MediumDiff);
+        assert!(stats.max_diff > 0.01);
+        assert!(stats.max_diff < 0.1);
+    }
+
+    #[test]
+    fn test_compute_tensor_diff_stats_with_nan() {
+        let data_a = vec![1.0, f32::NAN, 3.0];
+        let data_b = vec![1.0, 2.0, 3.0];
+        let stats = compute_tensor_diff_stats("nan_test", &[3], &[3], &data_a, &data_b, false);
+        // NaN values should be counted as large_diff
+        assert!(stats.large_diff_count >= 1);
+        // Non-NaN elements should still be compared
+        assert!(stats.identical_count >= 2);
+    }
+
+    #[test]
+    fn test_compute_tensor_diff_stats_with_inf() {
+        let data_a = vec![1.0, f32::INFINITY, 3.0];
+        let data_b = vec![1.0, 2.0, 3.0];
+        let stats = compute_tensor_diff_stats("inf_test", &[3], &[3], &data_a, &data_b, false);
+        // Inf values should be counted as large_diff
+        assert!(stats.large_diff_count >= 1);
+    }
+
+    #[test]
+    fn test_compute_tensor_diff_stats_with_neg_inf() {
+        let data_a = vec![f32::NEG_INFINITY, 2.0];
+        let data_b = vec![1.0, 2.0];
+        let stats = compute_tensor_diff_stats("neg_inf", &[2], &[2], &data_a, &data_b, false);
+        assert!(stats.large_diff_count >= 1);
+        assert_eq!(stats.identical_count, 1);
+    }
+
+    #[test]
+    fn test_compute_tensor_diff_stats_both_nan() {
+        let data_a = vec![f32::NAN, f32::NAN];
+        let data_b = vec![f32::NAN, f32::NAN];
+        let stats = compute_tensor_diff_stats("both_nan", &[2], &[2], &data_a, &data_b, false);
+        // Both NaN => large_diff (NaN skipped in stats)
+        assert_eq!(stats.large_diff_count, 2);
+        assert_eq!(stats.identical_count, 0);
+    }
+
+    #[test]
+    fn test_compute_tensor_diff_stats_all_zeros() {
+        let data = vec![0.0, 0.0, 0.0, 0.0];
+        let stats = compute_tensor_diff_stats("zeros", &[4], &[4], &data, &data, false);
+        assert_eq!(stats.status, TensorDiffStatus::Identical);
+        assert_eq!(stats.identical_count, 4);
+        // Cosine similarity of zero vectors is 0.0 (division by zero guard)
+        assert_eq!(stats.cosine_similarity, 0.0);
+    }
+
+    #[test]
+    fn test_compute_tensor_diff_stats_cosine_similarity_identical() {
+        let data = vec![1.0, 2.0, 3.0, 4.0];
+        let stats = compute_tensor_diff_stats("cos", &[4], &[4], &data, &data, false);
+        // Identical vectors => cosine_similarity = 1.0
+        assert!((stats.cosine_similarity - 1.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_compute_tensor_diff_stats_cosine_similarity_opposite() {
+        let data_a = vec![1.0, 2.0, 3.0];
+        let data_b = vec![-1.0, -2.0, -3.0];
+        let stats = compute_tensor_diff_stats("opposite", &[3], &[3], &data_a, &data_b, false);
+        // Opposite vectors => cosine_similarity = -1.0
+        assert!((stats.cosine_similarity + 1.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_compute_tensor_diff_stats_different_length_data() {
+        // data_b is shorter than data_a; element_count = min(len_a, len_b)
+        let data_a = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        let data_b = vec![1.0, 2.0, 3.0];
+        let stats = compute_tensor_diff_stats("diff_len", &[5], &[3], &data_a, &data_b, false);
+        assert_eq!(stats.element_count, 3);
+    }
+
+    #[test]
+    fn test_compute_tensor_diff_stats_transpose_aware() {
+        // A is [2, 3] with data [1,2,3,4,5,6]
+        // B is [3, 2] with data = transposed version
+        // A[0,0]=1, A[0,1]=2, A[0,2]=3, A[1,0]=4, A[1,1]=5, A[1,2]=6
+        // B transposed from A: B[0,0]=1, B[0,1]=4, B[1,0]=2, B[1,1]=5, B[2,0]=3, B[2,1]=6
+        let data_a = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+        // B in row-major for shape [3, 2]: [[1,4],[2,5],[3,6]]
+        let data_b = vec![1.0, 4.0, 2.0, 5.0, 3.0, 6.0];
+        let stats =
+            compute_tensor_diff_stats("transpose", &[2, 3], &[3, 2], &data_a, &data_b, true);
+        // With transpose_aware=true, it remaps indices
+        // The function compares A[i] with B[remapped(i)]
+        // Let's just verify it runs and produces a result
+        assert_eq!(stats.element_count, 6);
+        assert_eq!(stats.name, "transpose");
+    }
+
+    #[test]
+    fn test_compute_tensor_diff_stats_transpose_aware_false() {
+        // Same data but transpose_aware=false: linear comparison, shapes differ
+        let data_a = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let data_b = vec![1.0, 4.0, 2.0, 5.0, 3.0, 6.0];
+        let stats =
+            compute_tensor_diff_stats("no_transpose", &[2, 3], &[3, 2], &data_a, &data_b, false);
+        // Without transpose_aware, shapes are transposed so from_diff_info detects Transposed
+        // if ident ratio > 0.99. Let's check: 2 of 6 identical (indices 0 and 4) => 33%
+        // So it won't be Transposed status. max_diff = |4-2| = 2.0 => Critical path likely
+        assert_eq!(stats.element_count, 6);
+    }
+
+    #[test]
+    fn test_compute_tensor_diff_stats_diff_buckets() {
+        // Craft data to hit all diff buckets: identical, small (<0.001), medium (<0.01), large (>=0.01)
+        let data_a = vec![1.0, 2.0, 3.0, 4.0];
+        let data_b = vec![1.0, 2.0005, 3.005, 4.5];
+        let stats = compute_tensor_diff_stats("buckets", &[4], &[4], &data_a, &data_b, false);
+        assert_eq!(stats.identical_count, 1); // 1.0 == 1.0
+        assert_eq!(stats.small_diff_count, 1); // |2.0-2.0005| = 0.0005 < 0.001
+        assert_eq!(stats.medium_diff_count, 1); // |3.0-3.005| = 0.005 in [0.001, 0.01)
+        assert_eq!(stats.large_diff_count, 1); // |4.0-4.5| = 0.5 >= 0.01
+    }
+
+    #[test]
+    fn test_compute_tensor_diff_stats_rmse_and_mean() {
+        let data_a = vec![0.0, 0.0];
+        let data_b = vec![1.0, 1.0];
+        let stats = compute_tensor_diff_stats("rmse", &[2], &[2], &data_a, &data_b, false);
+        assert!((stats.mean_diff - 1.0).abs() < 1e-5);
+        assert!((stats.rmse - 1.0).abs() < 1e-5);
+        assert!((stats.max_diff - 1.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_compute_tensor_diff_stats_shape_stored() {
+        let stats = compute_tensor_diff_stats("shapes", &[2, 3, 4], &[5, 6], &[1.0], &[2.0], false);
+        assert_eq!(stats.shape_a, vec![2, 3, 4]);
+        assert_eq!(stats.shape_b, vec![5, 6]);
+    }
+
+    // ==================== validate_paths - additional coverage ====================
+
+    #[test]
+    fn test_validate_paths_second_is_directory() {
+        let file1 = NamedTempFile::new().expect("create file");
+        let dir = tempdir().expect("create dir");
+        let result = validate_paths(file1.path(), dir.path());
+        assert!(result.is_err());
+        match result {
+            Err(CliError::NotAFile(_)) => {}
+            _ => panic!("Expected NotAFile error"),
+        }
+    }
+
+    #[test]
+    fn test_validate_paths_both_nonexistent() {
+        let result = validate_paths(
+            Path::new("/nonexistent/a.apr"),
+            Path::new("/nonexistent/b.apr"),
+        );
+        assert!(result.is_err());
+        // First path checked first
+        match result {
+            Err(CliError::FileNotFound(p)) => {
+                assert_eq!(p, Path::new("/nonexistent/a.apr"));
+            }
+            _ => panic!("Expected FileNotFound error for first path"),
+        }
+    }
+
+    // ==================== TensorValueStats struct ====================
+
+    #[test]
+    fn test_tensor_value_stats_construction() {
+        let stats = TensorValueStats {
+            name: "test_tensor".to_string(),
+            shape_a: vec![10, 20],
+            shape_b: vec![10, 20],
+            element_count: 200,
+            mean_diff: 0.001,
+            max_diff: 0.005,
+            rmse: 0.002,
+            cosine_similarity: 0.999,
+            identical_count: 150,
+            small_diff_count: 30,
+            medium_diff_count: 15,
+            large_diff_count: 5,
+            status: TensorDiffStatus::SmallDiff,
+        };
+        assert_eq!(stats.name, "test_tensor");
+        assert_eq!(stats.element_count, 200);
+        assert_eq!(stats.status, TensorDiffStatus::SmallDiff);
+    }
+
+    #[test]
+    fn test_tensor_value_stats_serialization() {
+        let stats = TensorValueStats {
+            name: "layer.0.weight".to_string(),
+            shape_a: vec![4, 4],
+            shape_b: vec![4, 4],
+            element_count: 16,
+            mean_diff: 0.0,
+            max_diff: 0.0,
+            rmse: 0.0,
+            cosine_similarity: 1.0,
+            identical_count: 16,
+            small_diff_count: 0,
+            medium_diff_count: 0,
+            large_diff_count: 0,
+            status: TensorDiffStatus::Identical,
+        };
+        let json = serde_json::to_string(&stats).expect("serialize");
+        assert!(json.contains("\"name\":\"layer.0.weight\""));
+        assert!(json.contains("\"element_count\":16"));
+        assert!(json.contains("\"Identical\""));
+    }
+
+    // ==================== TensorDiffStatus serialization ====================
+
+    #[test]
+    fn test_tensor_diff_status_serialize_all_variants() {
+        let variants = vec![
+            (TensorDiffStatus::Identical, "\"Identical\""),
+            (TensorDiffStatus::NearlyIdentical, "\"NearlyIdentical\""),
+            (TensorDiffStatus::SmallDiff, "\"SmallDiff\""),
+            (TensorDiffStatus::MediumDiff, "\"MediumDiff\""),
+            (TensorDiffStatus::LargeDiff, "\"LargeDiff\""),
+            (TensorDiffStatus::Transposed, "\"Transposed\""),
+            (TensorDiffStatus::Critical, "\"Critical\""),
+        ];
+        for (variant, expected) in variants {
+            let json = serde_json::to_string(&variant).expect("serialize");
+            assert_eq!(json, expected);
+        }
+    }
+
+    #[test]
+    fn test_tensor_diff_status_clone_and_copy() {
+        let status = TensorDiffStatus::LargeDiff;
+        let cloned = status.clone();
+        let copied = status;
+        assert_eq!(status, cloned);
+        assert_eq!(status, copied);
+    }
+
+    #[test]
+    fn test_tensor_diff_status_debug() {
+        let debug = format!("{:?}", TensorDiffStatus::Transposed);
+        assert_eq!(debug, "Transposed");
+    }
+
+    // ==================== print_tensor_diff_row - coverage for formatting ====================
+
+    #[test]
+    fn test_print_tensor_diff_row_identical() {
+        let stats = TensorValueStats {
+            name: "token_embd.weight".to_string(),
+            shape_a: vec![100, 64],
+            shape_b: vec![100, 64],
+            element_count: 6400,
+            mean_diff: 0.0,
+            max_diff: 0.0,
+            rmse: 0.0,
+            cosine_similarity: 1.0,
+            identical_count: 6400,
+            small_diff_count: 0,
+            medium_diff_count: 0,
+            large_diff_count: 0,
+            status: TensorDiffStatus::Identical,
+        };
+        // Just ensure it doesn't panic
+        print_tensor_diff_row(&stats);
+    }
+
+    #[test]
+    fn test_print_tensor_diff_row_critical_with_shape_mismatch() {
+        let stats = TensorValueStats {
+            name: "output.weight".to_string(),
+            shape_a: vec![100, 64],
+            shape_b: vec![200, 32],
+            element_count: 6400,
+            mean_diff: 5.0,
+            max_diff: 10.0,
+            rmse: 6.0,
+            cosine_similarity: 0.5,
+            identical_count: 0,
+            small_diff_count: 0,
+            medium_diff_count: 0,
+            large_diff_count: 6400,
+            status: TensorDiffStatus::Critical,
+        };
+        // Exercises the SHAPE MISMATCH branch (non-transpose, non-match)
+        print_tensor_diff_row(&stats);
+    }
+
+    #[test]
+    fn test_print_tensor_diff_row_transposed_shapes() {
+        let stats = TensorValueStats {
+            name: "attn.weight".to_string(),
+            shape_a: vec![64, 128],
+            shape_b: vec![128, 64],
+            element_count: 8192,
+            mean_diff: 0.0,
+            max_diff: 0.0,
+            rmse: 0.0,
+            cosine_similarity: 1.0,
+            identical_count: 8192,
+            small_diff_count: 0,
+            medium_diff_count: 0,
+            large_diff_count: 0,
+            status: TensorDiffStatus::Transposed,
+        };
+        // Exercises the TRANSPOSED branch in shape printing
+        print_tensor_diff_row(&stats);
+    }
+
+    #[test]
+    fn test_print_tensor_diff_row_nearly_identical() {
+        let stats = TensorValueStats {
+            name: "norm.weight".to_string(),
+            shape_a: vec![64],
+            shape_b: vec![64],
+            element_count: 64,
+            mean_diff: 0.000_05,
+            max_diff: 0.000_1,
+            rmse: 0.000_07,
+            cosine_similarity: 0.999_999,
+            identical_count: 32,
+            small_diff_count: 32,
+            medium_diff_count: 0,
+            large_diff_count: 0,
+            status: TensorDiffStatus::NearlyIdentical,
+        };
+        // Exercises the distribution printing path (status != Identical)
+        print_tensor_diff_row(&stats);
+    }
+
+    #[test]
+    fn test_print_tensor_diff_row_medium_diff() {
+        let stats = TensorValueStats {
+            name: "ffn.weight".to_string(),
+            shape_a: vec![32, 32],
+            shape_b: vec![32, 32],
+            element_count: 1024,
+            mean_diff: 0.03,
+            max_diff: 0.08,
+            rmse: 0.04,
+            cosine_similarity: 0.998,
+            identical_count: 100,
+            small_diff_count: 200,
+            medium_diff_count: 500,
+            large_diff_count: 224,
+            status: TensorDiffStatus::MediumDiff,
+        };
+        print_tensor_diff_row(&stats);
+    }
+
+    #[test]
+    fn test_print_tensor_diff_row_large_diff() {
+        let stats = TensorValueStats {
+            name: "lm_head.weight".to_string(),
+            shape_a: vec![50, 50],
+            shape_b: vec![50, 50],
+            element_count: 2500,
+            mean_diff: 0.3,
+            max_diff: 0.9,
+            rmse: 0.4,
+            cosine_similarity: 0.95,
+            identical_count: 0,
+            small_diff_count: 0,
+            medium_diff_count: 500,
+            large_diff_count: 2000,
+            status: TensorDiffStatus::LargeDiff,
+        };
+        print_tensor_diff_row(&stats);
+    }
+
+    #[test]
+    fn test_print_tensor_diff_row_small_diff() {
+        let stats = TensorValueStats {
+            name: "embed.weight".to_string(),
+            shape_a: vec![16, 16],
+            shape_b: vec![16, 16],
+            element_count: 256,
+            mean_diff: 0.003,
+            max_diff: 0.008,
+            rmse: 0.004,
+            cosine_similarity: 0.9999,
+            identical_count: 50,
+            small_diff_count: 150,
+            medium_diff_count: 56,
+            large_diff_count: 0,
+            status: TensorDiffStatus::SmallDiff,
+        };
+        print_tensor_diff_row(&stats);
+    }
+
+    #[test]
+    fn test_print_tensor_diff_row_long_name_truncation() {
+        let long_name = "model.layers.99.self_attn.q_proj.weight.extra.suffix.that.is.very.long";
+        let stats = TensorValueStats {
+            name: long_name.to_string(),
+            shape_a: vec![4],
+            shape_b: vec![4],
+            element_count: 4,
+            mean_diff: 0.0,
+            max_diff: 0.0,
+            rmse: 0.0,
+            cosine_similarity: 1.0,
+            identical_count: 4,
+            small_diff_count: 0,
+            medium_diff_count: 0,
+            large_diff_count: 0,
+            status: TensorDiffStatus::Identical,
+        };
+        // Exercises truncate_str for name > 40 chars
+        print_tensor_diff_row(&stats);
+    }
+
+    #[test]
+    fn test_print_tensor_diff_row_cosine_similarity_ranges() {
+        // Test cosine similarity coloring: > 0.9999
+        let make_stats = |cos: f32| TensorValueStats {
+            name: "t".to_string(),
+            shape_a: vec![4],
+            shape_b: vec![4],
+            element_count: 4,
+            mean_diff: 0.01,
+            max_diff: 0.02,
+            rmse: 0.01,
+            cosine_similarity: cos,
+            identical_count: 0,
+            small_diff_count: 4,
+            medium_diff_count: 0,
+            large_diff_count: 0,
+            status: TensorDiffStatus::SmallDiff,
+        };
+        // > 0.9999 (green)
+        print_tensor_diff_row(&make_stats(0.99999));
+        // > 0.999 (blue)
+        print_tensor_diff_row(&make_stats(0.9995));
+        // > 0.99 (yellow)
+        print_tensor_diff_row(&make_stats(0.995));
+        // <= 0.99 (red)
+        print_tensor_diff_row(&make_stats(0.5));
+    }
+
+    // ==================== DiffEntryJson struct ====================
+
+    #[test]
+    fn test_diff_entry_json_serialization() {
+        let entry = DiffEntryJson {
+            field: "tensor_count".to_string(),
+            file1_value: "100".to_string(),
+            file2_value: "200".to_string(),
+            category: "tensor".to_string(),
+        };
+        let json = serde_json::to_string(&entry).expect("serialize");
+        assert!(json.contains("\"field\":\"tensor_count\""));
+        assert!(json.contains("\"file1_value\":\"100\""));
+        assert!(json.contains("\"file2_value\":\"200\""));
+        assert!(json.contains("\"category\":\"tensor\""));
+    }
+
+    // ==================== DiffResultJson category mapping ====================
+
+    #[test]
+    fn test_diff_result_json_all_categories() {
+        let report = DiffReport {
+            path1: "a".to_string(),
+            path2: "b".to_string(),
+            format1: "APR".to_string(),
+            format2: "GGUF".to_string(),
+            differences: vec![
+                DiffEntry {
+                    field: "f1".to_string(),
+                    value1: "v1".to_string(),
+                    value2: "v2".to_string(),
+                    category: DiffCategory::Format,
+                },
+                DiffEntry {
+                    field: "f2".to_string(),
+                    value1: "v1".to_string(),
+                    value2: "v2".to_string(),
+                    category: DiffCategory::Metadata,
+                },
+                DiffEntry {
+                    field: "f3".to_string(),
+                    value1: "v1".to_string(),
+                    value2: "v2".to_string(),
+                    category: DiffCategory::Tensor,
+                },
+                DiffEntry {
+                    field: "f4".to_string(),
+                    value1: "v1".to_string(),
+                    value2: "v2".to_string(),
+                    category: DiffCategory::Quantization,
+                },
+                DiffEntry {
+                    field: "f5".to_string(),
+                    value1: "v1".to_string(),
+                    value2: "v2".to_string(),
+                    category: DiffCategory::Size,
+                },
+            ],
+            inspection1: None,
+            inspection2: None,
+        };
+        let json = DiffResultJson::from(&report);
+        assert_eq!(json.difference_count, 5);
+        assert_eq!(json.differences[0].category, "format");
+        assert_eq!(json.differences[1].category, "metadata");
+        assert_eq!(json.differences[2].category, "tensor");
+        assert_eq!(json.differences[3].category, "quantization");
+        assert_eq!(json.differences[4].category, "size");
+    }
+
+    // ==================== Integration: compute_tensor_diff_stats + from_diff_info ====================
+
+    #[test]
+    fn test_compute_stats_transposed_identical_values() {
+        // Simulate a tensor that's transposed but values happen to match linearly
+        let data = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let stats = compute_tensor_diff_stats("t", &[2, 3], &[3, 2], &data, &data, false);
+        // All 6 elements identical linearly => ident_ratio = 1.0 > 0.99
+        assert_eq!(stats.status, TensorDiffStatus::Transposed);
+        assert_eq!(stats.identical_count, 6);
+    }
+
+    #[test]
+    fn test_compute_stats_small_diff_boundary() {
+        // max_diff exactly at SmallDiff boundary
+        let data_a = vec![1.0, 2.0];
+        let data_b = vec![1.001, 2.0]; // max_diff = 0.001 exactly
+        let stats = compute_tensor_diff_stats("boundary", &[2], &[2], &data_a, &data_b, false);
+        // 0.001 is NOT < 0.001, so SmallDiff
+        assert_eq!(stats.status, TensorDiffStatus::SmallDiff);
+    }
+
+    #[test]
+    fn test_compute_stats_one_element() {
+        let stats = compute_tensor_diff_stats("single", &[1], &[1], &[42.0], &[42.0], false);
+        assert_eq!(stats.status, TensorDiffStatus::Identical);
+        assert_eq!(stats.element_count, 1);
+        assert_eq!(stats.identical_count, 1);
+        assert!((stats.cosine_similarity - 1.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_compute_stats_one_element_a_only() {
+        // data_b is empty => element_count = min(1, 0) = 0 => early return Critical
+        let stats = compute_tensor_diff_stats("asym", &[1], &[0], &[1.0], &[], false);
+        assert_eq!(stats.status, TensorDiffStatus::Critical);
+        assert_eq!(stats.element_count, 0);
     }
 }

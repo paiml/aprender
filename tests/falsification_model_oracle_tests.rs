@@ -424,7 +424,9 @@ fn falsify_orc_001_registry_provides_config_for_detected_family() {
     assert_eq!(config.vendor, "Alibaba");
     assert!(!config.architectures.is_empty());
     assert!(
-        config.architectures.contains(&"Qwen2ForCausalLM".to_string()),
+        config
+            .architectures
+            .contains(&"Qwen2ForCausalLM".to_string()),
         "FALSIFY-ORC-001: Qwen2 should have Qwen2ForCausalLM architecture"
     );
 }
@@ -753,8 +755,8 @@ fn falsify_cmp_001_no_column_major_type_exists() {
 
     // Verify the only public layout type is RowMajor
     let _ = RowMajor; // This compiles — RowMajor exists
-    // ColumnMajor would be a compile error if uncommented:
-    // let _ = ColumnMajor; // ERROR: not found in this scope
+                      // ColumnMajor would be a compile error if uncommented:
+                      // let _ = ColumnMajor; // ERROR: not found in this scope
 }
 
 // =============================================================================
@@ -935,7 +937,10 @@ fn falsify_bgn_001_registry_from_codegen_matches_yaml() {
     let config = qwen2.config();
 
     // These values come from qwen2.yaml via build.rs codegen
-    assert_eq!(config.tensor_template.embedding, "model.embed_tokens.weight");
+    assert_eq!(
+        config.tensor_template.embedding,
+        "model.embed_tokens.weight"
+    );
     assert_eq!(
         config.tensor_template.lm_head.as_deref(),
         Some("lm_head.weight")
@@ -950,9 +955,7 @@ fn falsify_bgn_001_registry_from_codegen_matches_yaml() {
         .tensor_template
         .per_layer
         .get("q_proj")
-        .is_some_and(|v| v
-            .as_deref()
-            == Some("model.layers.{n}.self_attn.q_proj.weight")));
+        .is_some_and(|v| v.as_deref() == Some("model.layers.{n}.self_attn.q_proj.weight")));
 }
 
 // =============================================================================
@@ -972,9 +975,9 @@ fn falsify_bgn_002_all_families_have_required_fields() {
     let registry = build_default_registry();
 
     for family_name in KNOWN_FAMILIES {
-        let family = registry
-            .get(family_name)
-            .unwrap_or_else(|| panic!("FALSIFY-BGN-002: Family '{family_name}' must be in registry"));
+        let family = registry.get(family_name).unwrap_or_else(|| {
+            panic!("FALSIFY-BGN-002: Family '{family_name}' must be in registry")
+        });
 
         let config = family.config();
 
@@ -1302,11 +1305,7 @@ fn falsify_iter3_yaml_contracts_dir_exists() {
     let yaml_count = std::fs::read_dir(&contracts_dir)
         .expect("read dir")
         .filter_map(|e| e.ok())
-        .filter(|e| {
-            e.path()
-                .extension()
-                .map_or(false, |ext| ext == "yaml")
-        })
+        .filter(|e| e.path().extension().map_or(false, |ext| ext == "yaml"))
         .count();
 
     assert!(
@@ -1462,7 +1461,10 @@ fn falsify_iter4_gqa_families_have_kv_heads_less_than_heads() {
 
         if constraints.attention_type == AttentionType::Gqa {
             let config = family.config();
-            let has_gqa_size = config.size_variants.values().any(|s| s.num_kv_heads < s.num_heads);
+            let has_gqa_size = config
+                .size_variants
+                .values()
+                .any(|s| s.num_kv_heads < s.num_heads);
             assert!(
                 has_gqa_size,
                 "ITER4: {family_name} declares GQA but no size has num_kv_heads < num_heads"
@@ -1600,8 +1602,8 @@ fn falsify_iter4_adversarial_trailing_whitespace_not_detected() {
     let registry = build_default_registry();
 
     let adversarial_names = vec![
-        "model.embed_tokens.weight ",  // trailing space
-        " model.embed_tokens.weight",  // leading space
+        "model.embed_tokens.weight ",               // trailing space
+        " model.embed_tokens.weight",               // leading space
         "model.layers.0.self_attn.q_proj.weight\t", // trailing tab
     ];
 
@@ -2255,12 +2257,23 @@ fn falsify_iter6_param_count_order_of_magnitude() {
             let inter = size_config.intermediate_dim as u64;
 
             let embedding = v * h;
-            let attn = h * (n_heads * head_d) + h * (n_kv * head_d) + h * (n_kv * head_d) + (n_heads * head_d) * h;
+            let attn = h * (n_heads * head_d)
+                + h * (n_kv * head_d)
+                + h * (n_kv * head_d)
+                + (n_heads * head_d) * h;
             let is_gated = matches!(constraints.mlp_type, MlpType::SwiGlu | MlpType::GatedMlp);
-            let ffn = if is_gated { h * inter * 3 } else { h * inter * 2 };
+            let ffn = if is_gated {
+                h * inter * 3
+            } else {
+                h * inter * 2
+            };
             let norms = h * 2;
             let per_layer = attn + ffn + norms;
-            let lm_head = if constraints.tied_embeddings { 0 } else { v * h };
+            let lm_head = if constraints.tied_embeddings {
+                0
+            } else {
+                v * h
+            };
             let computed = embedding + (per_layer * l) + lm_head + h;
 
             // Must be within 3x (generous tolerance for bias terms, etc.)
@@ -2427,9 +2440,17 @@ fn iter7_compute_params(
 
     let embedding = v * h;
     let attn = h * (nh * hd) + h * (nkv * hd) + h * (nkv * hd) + (nh * hd) * h;
-    let attn_bias = if c.has_bias { (nh * hd) + (nkv * hd) + (nkv * hd) + h } else { 0 };
+    let attn_bias = if c.has_bias {
+        (nh * hd) + (nkv * hd) + (nkv * hd) + h
+    } else {
+        0
+    };
     let is_gated = matches!(c.mlp_type, MlpType::SwiGlu | MlpType::GatedMlp);
-    let ffn = if is_gated { h * inter * 3 } else { h * inter * 2 };
+    let ffn = if is_gated {
+        h * inter * 3
+    } else {
+        h * inter * 2
+    };
     let norms = h * 2;
     let per_layer = attn + attn_bias + ffn + norms;
     let lm_head = if c.tied_embeddings { 0 } else { v * h };
@@ -2456,19 +2477,31 @@ fn falsify_iter7_all_computed_values_finite() {
             // GQA ratio
             if nh > 0.0 {
                 let gqa_ratio = nkv / nh;
-                assert!(gqa_ratio.is_finite(), "ITER7: {family_name}/{size_name} gqa_ratio NaN/Inf");
-                assert!((1.0 - gqa_ratio).is_finite(), "ITER7: {family_name}/{size_name} kv_reduction NaN/Inf");
+                assert!(
+                    gqa_ratio.is_finite(),
+                    "ITER7: {family_name}/{size_name} gqa_ratio NaN/Inf"
+                );
+                assert!(
+                    (1.0 - gqa_ratio).is_finite(),
+                    "ITER7: {family_name}/{size_name} kv_reduction NaN/Inf"
+                );
             }
 
             // FFN ratio
             if h > 0.0 {
                 let ffn_ratio = inter / h;
-                assert!(ffn_ratio.is_finite(), "ITER7: {family_name}/{size_name} ffn_ratio NaN/Inf");
+                assert!(
+                    ffn_ratio.is_finite(),
+                    "ITER7: {family_name}/{size_name} ffn_ratio NaN/Inf"
+                );
             }
 
             // RoPE wavelength
             let wl = 2.0 * std::f64::consts::PI * size_config.rope_theta;
-            assert!(wl.is_finite(), "ITER7: {family_name}/{size_name} wavelength NaN/Inf");
+            assert!(
+                wl.is_finite(),
+                "ITER7: {family_name}/{size_name} wavelength NaN/Inf"
+            );
         }
     }
 }
@@ -2646,7 +2679,11 @@ fn falsify_iter7_flops_ffn_dominates_attention() {
 
             // FFN FLOPS per layer
             let is_gated = matches!(constraints.mlp_type, MlpType::SwiGlu | MlpType::GatedMlp);
-            let ffn_per_layer = if is_gated { 2 * h * inter * 3 } else { 2 * h * inter * 2 };
+            let ffn_per_layer = if is_gated {
+                2 * h * inter * 3
+            } else {
+                2 * h * inter * 2
+            };
 
             assert!(
                 ffn_per_layer >= attn_per_layer,
@@ -2739,14 +2776,17 @@ fn falsify_iter7_quant_sizes_strictly_ordered() {
                 continue;
             }
             let p = params as f64;
-            let f16 = p * 2.0;       // 16 bits
-            let q8 = p * 1.0;        // 8 bits
-            let q6k = p * 0.8125;    // 6.5 bits
-            let q4km = p * 0.5625;   // 4.5 bits
+            let f16 = p * 2.0; // 16 bits
+            let q8 = p * 1.0; // 8 bits
+            let q6k = p * 0.8125; // 6.5 bits
+            let q4km = p * 0.5625; // 4.5 bits
 
             assert!(f16 > q8, "ITER7: {family_name}/{size_name} F16 <= Q8");
             assert!(q8 > q6k, "ITER7: {family_name}/{size_name} Q8 <= Q6_K");
-            assert!(q6k > q4km, "ITER7: {family_name}/{size_name} Q6_K <= Q4_K_M");
+            assert!(
+                q6k > q4km,
+                "ITER7: {family_name}/{size_name} Q6_K <= Q4_K_M"
+            );
         }
     }
 }
@@ -2886,17 +2926,23 @@ fn falsify_iter7_gated_mlp_uses_3_matrices() {
             }
 
             let is_gated = matches!(constraints.mlp_type, MlpType::SwiGlu | MlpType::GatedMlp);
-            let ffn_params = if is_gated { h * inter * 3 } else { h * inter * 2 };
+            let ffn_params = if is_gated {
+                h * inter * 3
+            } else {
+                h * inter * 2
+            };
 
             // Gated: gate_proj + up_proj + down_proj = 3 matmuls
             if is_gated {
                 assert_eq!(
-                    ffn_params, h * inter * 3,
+                    ffn_params,
+                    h * inter * 3,
                     "ITER7: {family_name}/{size_name} gated FFN should have 3 weight matrices"
                 );
             } else {
                 assert_eq!(
-                    ffn_params, h * inter * 2,
+                    ffn_params,
+                    h * inter * 2,
                     "ITER7: {family_name}/{size_name} standard FFN should have 2 weight matrices"
                 );
             }
@@ -2964,9 +3010,10 @@ fn falsify_iter7_attention_type_matches_head_config() {
                 }
             }
             AttentionType::Gqa => {
-                let has_gqa_size = config.size_variants.values().any(|sc| {
-                    sc.num_heads > 0 && sc.num_kv_heads < sc.num_heads
-                });
+                let has_gqa_size = config
+                    .size_variants
+                    .values()
+                    .any(|sc| sc.num_heads > 0 && sc.num_kv_heads < sc.num_heads);
                 assert!(
                     has_gqa_size,
                     "ITER7: {family_name} declared GQA but no size has kv_heads < heads"
@@ -3348,9 +3395,7 @@ fn falsify_alg_build_time_constants_exported() {
     // Verify that build.rs exports the new HEAD_DIM and MAX_POSITION_EMBEDDINGS
     // constants alongside the existing ones. This proves the const_assert!
     // enforcement in build.rs has access to these values.
-    use aprender::format::model_family::{
-        QWEN2_0_5B_HIDDEN_DIM, QWEN2_0_5B_NUM_HEADS,
-    };
+    use aprender::format::model_family::{QWEN2_0_5B_HIDDEN_DIM, QWEN2_0_5B_NUM_HEADS};
 
     // The fact that these constants exist and compile proves build.rs
     // emits them. Verify a known value.
@@ -3437,7 +3482,8 @@ fn falsify_alg_008_kv_heads_ordering() {
                 size_config.num_kv_heads <= size_config.num_heads,
                 "FALSIFY-ALG-008: {family_name}/{size_name} has num_kv_heads={} > num_heads={} — \
                  GQA reduces heads, never adds",
-                size_config.num_kv_heads, size_config.num_heads
+                size_config.num_kv_heads,
+                size_config.num_heads
             );
         }
     }
@@ -3519,14 +3565,18 @@ fn falsify_alg_008_gqa_ratio_bounded() {
                 ratio >= 1 && ratio <= 32,
                 "FALSIFY-ALG-008: {family_name}/{size_name} has GQA ratio {} \
                  (num_heads={}/num_kv_heads={}) — expected 1..32",
-                ratio, size_config.num_heads, size_config.num_kv_heads
+                ratio,
+                size_config.num_heads,
+                size_config.num_kv_heads
             );
             // Verify clean division (redundant with ALG-002 but explicit)
             assert_eq!(
-                size_config.num_heads % size_config.num_kv_heads, 0,
+                size_config.num_heads % size_config.num_kv_heads,
+                0,
                 "FALSIFY-ALG-008: {family_name}/{size_name} GQA ratio not clean \
                  (num_heads={} % num_kv_heads={} != 0)",
-                size_config.num_heads, size_config.num_kv_heads
+                size_config.num_heads,
+                size_config.num_kv_heads
             );
         }
     }
@@ -3558,7 +3608,10 @@ fn falsify_alg_003_head_dim_upper_bound() {
                 size_config.head_dim <= 2 * natural,
                 "FALSIFY-ALG-003 (iter10): {family_name}/{size_name} head_dim={} exceeds \
                  2x natural dimension {} (hidden_dim={}/num_heads={})",
-                size_config.head_dim, natural, size_config.hidden_dim, size_config.num_heads
+                size_config.head_dim,
+                natural,
+                size_config.hidden_dim,
+                size_config.num_heads
             );
         }
     }
@@ -3653,6 +3706,9 @@ fn find_project_root() -> std::path::PathBuf {
         if dir.join("Cargo.toml").exists() && dir.join("src").exists() {
             return dir;
         }
-        assert!(dir.pop(), "Could not find project root (looking for Cargo.toml + src/)");
+        assert!(
+            dir.pop(),
+            "Could not find project root (looking for Cargo.toml + src/)"
+        );
     }
 }

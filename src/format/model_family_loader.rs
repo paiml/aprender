@@ -449,13 +449,19 @@ fn parse_size_config(yaml: &YamlValue, family: &str, size: &str) -> Result<Model
             .or_else(|| yaml.get_usize("max_source_positions"))
             .unwrap_or(0),
         head_dim: yaml.get_usize("head_dim").unwrap_or_else(|| {
-            let hidden = yaml.get_usize("hidden_dim")
+            let hidden = yaml
+                .get_usize("hidden_dim")
                 .or_else(|| yaml.get_usize("d_model"))
                 .unwrap_or(0);
-            let heads = yaml.get_usize("num_heads")
+            let heads = yaml
+                .get_usize("num_heads")
                 .or_else(|| yaml.get_usize("encoder_attention_heads"))
                 .unwrap_or(0);
-            if heads > 0 { hidden / heads } else { 0 }
+            if heads > 0 {
+                hidden / heads
+            } else {
+                0
+            }
         }),
         rope_theta: yaml.get_f64("rope_theta").unwrap_or(0.0),
         norm_eps: yaml

@@ -436,10 +436,7 @@ fn generate_rust(families: &[FamilyData]) -> String {
     // Generate per-family constants
     for f in families {
         let upper = f.family.to_uppercase();
-        out.push_str(&format!(
-            "/// {} family display name\n",
-            f.display_name
-        ));
+        out.push_str(&format!("/// {} family display name\n", f.display_name));
         out.push_str(&format!(
             "pub const {upper}_DISPLAY_NAME: &str = \"{}\";\n",
             f.display_name
@@ -453,9 +450,18 @@ fn generate_rust(families: &[FamilyData]) -> String {
         for s in &f.sizes {
             let size_upper = s.name.replace('.', "_").to_uppercase();
             let prefix = format!("{upper}_{size_upper}");
-            out.push_str(&format!("pub const {prefix}_HIDDEN_DIM: usize = {};\n", s.hidden_dim));
-            out.push_str(&format!("pub const {prefix}_NUM_LAYERS: usize = {};\n", s.num_layers));
-            out.push_str(&format!("pub const {prefix}_NUM_HEADS: usize = {};\n", s.num_heads));
+            out.push_str(&format!(
+                "pub const {prefix}_HIDDEN_DIM: usize = {};\n",
+                s.hidden_dim
+            ));
+            out.push_str(&format!(
+                "pub const {prefix}_NUM_LAYERS: usize = {};\n",
+                s.num_layers
+            ));
+            out.push_str(&format!(
+                "pub const {prefix}_NUM_HEADS: usize = {};\n",
+                s.num_heads
+            ));
             out.push_str(&format!(
                 "pub const {prefix}_NUM_KV_HEADS: usize = {};\n",
                 s.num_kv_heads
@@ -464,8 +470,14 @@ fn generate_rust(families: &[FamilyData]) -> String {
                 "pub const {prefix}_INTERMEDIATE_DIM: usize = {};\n",
                 s.intermediate_dim
             ));
-            out.push_str(&format!("pub const {prefix}_VOCAB_SIZE: usize = {};\n", s.vocab_size));
-            out.push_str(&format!("pub const {prefix}_HEAD_DIM: usize = {};\n", s.head_dim));
+            out.push_str(&format!(
+                "pub const {prefix}_VOCAB_SIZE: usize = {};\n",
+                s.vocab_size
+            ));
+            out.push_str(&format!(
+                "pub const {prefix}_HEAD_DIM: usize = {};\n",
+                s.head_dim
+            ));
             out.push_str(&format!(
                 "pub const {prefix}_MAX_POSITION_EMBEDDINGS: usize = {};\n",
                 s.max_position_embeddings
@@ -610,9 +622,7 @@ fn generate_family_registration(f: &FamilyData) -> String {
             .join(", "),
     ));
 
-    out.push_str(
-        "        registry.register(Box::new(DynModelFamily::new(config)));\n    }\n\n",
-    );
+    out.push_str("        registry.register(Box::new(DynModelFamily::new(config)));\n    }\n\n");
 
     out
 }
@@ -639,10 +649,7 @@ fn generate_algebraic_proofs(f: &FamilyData) -> String {
     let mut out = String::new();
     let upper = f.family.to_uppercase();
 
-    out.push_str(&format!(
-        "// ── Algebraic proofs for {} ──\n",
-        f.family
-    ));
+    out.push_str(&format!("// ── Algebraic proofs for {} ──\n", f.family));
 
     for s in &f.sizes {
         let size_upper = s.name.replace('.', "_").to_uppercase();
@@ -736,8 +743,10 @@ fn generate_algebraic_proofs(f: &FamilyData) -> String {
     // FALSIFY-ALG-006: Activation-MLP consistency (Shazeer, 2020)
     // SwiGLU requires SiLU, GeGLU/GatedMlp requires GELU, GeluMlp requires GELU.
     // The match lists VALID combinations — anything else is INVALID.
-    let activation_mlp_valid = match (f.constraints.mlp.as_str(), f.constraints.activation.as_str())
-    {
+    let activation_mlp_valid = match (
+        f.constraints.mlp.as_str(),
+        f.constraints.activation.as_str(),
+    ) {
         ("swiglu", "silu") => true,
         ("gelu_mlp", "gelu") => true,
         ("gated_mlp", "gelu") => true,
@@ -779,12 +788,16 @@ fn generate_algebraic_proofs(f: &FamilyData) -> String {
                 s.rope_theta > 0.0,
                 "PMAT-250: {}/{} has rope_theta={} but positional_encoding=rope \
                  (Su et al., 2024 requires theta > 0)",
-                f.family, s.name, s.rope_theta
+                f.family,
+                s.name,
+                s.rope_theta
             );
             assert!(
                 s.rope_theta.is_finite(),
                 "PMAT-250: {}/{} has non-finite rope_theta={}",
-                f.family, s.name, s.rope_theta
+                f.family,
+                s.name,
+                s.rope_theta
             );
         }
     }
@@ -797,18 +810,24 @@ fn generate_algebraic_proofs(f: &FamilyData) -> String {
             s.norm_eps > 0.0,
             "PMAT-250: {}/{} has norm_eps={} — must be positive \
              (Zhang & Sennrich 2019: RMSNorm requires eps > 0 to prevent division by zero)",
-            f.family, s.name, s.norm_eps
+            f.family,
+            s.name,
+            s.norm_eps
         );
         assert!(
             s.norm_eps < 1.0,
             "PMAT-250: {}/{} has norm_eps={} — must be < 1.0 \
              (values near 1.0 collapse all activations to zero in RMSNorm)",
-            f.family, s.name, s.norm_eps
+            f.family,
+            s.name,
+            s.norm_eps
         );
         assert!(
             s.norm_eps.is_finite(),
             "PMAT-250: {}/{} has non-finite norm_eps={}",
-            f.family, s.name, s.norm_eps
+            f.family,
+            s.name,
+            s.norm_eps
         );
     }
 

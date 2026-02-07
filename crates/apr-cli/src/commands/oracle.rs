@@ -17,6 +17,7 @@ use aprender::format::model_family::{
 use aprender::format::model_family_loader::load_family_registry;
 use aprender::format::rosetta::RosettaStone;
 use serde::Serialize;
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 // ============================================================================
@@ -210,7 +211,8 @@ pub fn compute_param_count(size: &ModelSizeConfig, constraints: &ModelConstraint
     // K: hidden_dim * (num_kv_heads * head_dim)
     // V: hidden_dim * (num_kv_heads * head_dim)
     // O: (num_heads * head_dim) * hidden_dim
-    let attn = h * (n_heads * head_d) + h * (n_kv * head_d) + h * (n_kv * head_d) + (n_heads * head_d) * h;
+    let attn =
+        h * (n_heads * head_d) + h * (n_kv * head_d) + h * (n_kv * head_d) + (n_heads * head_d) * h;
 
     // Bias for attention (if applicable)
     let attn_bias = if constraints.has_bias {
@@ -233,7 +235,11 @@ pub fn compute_param_count(size: &ModelSizeConfig, constraints: &ModelConstraint
     let per_layer = attn + attn_bias + ffn + norms_per_layer;
 
     // LM head: vocab_size * hidden_dim (unless tied to embedding)
-    let lm_head = if constraints.tied_embeddings { 0 } else { v * h };
+    let lm_head = if constraints.tied_embeddings {
+        0
+    } else {
+        v * h
+    };
 
     // Final norm
     let final_norm = h;
@@ -242,7 +248,10 @@ pub fn compute_param_count(size: &ModelSizeConfig, constraints: &ModelConstraint
 }
 
 /// Compute memory estimates for different precisions
-pub fn compute_memory_estimates(size: &ModelSizeConfig, constraints: &ModelConstraints) -> (f64, f64) {
+pub fn compute_memory_estimates(
+    size: &ModelSizeConfig,
+    constraints: &ModelConstraints,
+) -> (f64, f64) {
     let params = compute_param_count(size, constraints);
     let f16_mb = (params as f64 * 2.0) / (1024.0 * 1024.0);
     let q4_mb = (params as f64 * 0.5) / (1024.0 * 1024.0);
@@ -252,17 +261,17 @@ pub fn compute_memory_estimates(size: &ModelSizeConfig, constraints: &ModelConst
 /// Compute KV cache size per token and for 4K context
 pub fn compute_kv_cache(size: &ModelSizeConfig) -> (u64, f64) {
     // KV cache per token: 2 (K+V) * num_layers * num_kv_heads * head_dim * 2 (f16 bytes)
-    let per_token = 2_u64
-        * size.num_layers as u64
-        * size.num_kv_heads as u64
-        * size.head_dim as u64
-        * 2; // f16 = 2 bytes
+    let per_token =
+        2_u64 * size.num_layers as u64 * size.num_kv_heads as u64 * size.head_dim as u64 * 2; // f16 = 2 bytes
     let cache_4k_mb = (per_token as f64 * 4096.0) / (1024.0 * 1024.0);
     (per_token, cache_4k_mb)
 }
 
 /// Compute FFN expansion ratio and explanation
-pub fn compute_ffn_analysis(size: &ModelSizeConfig, constraints: &ModelConstraints) -> (f64, String) {
+pub fn compute_ffn_analysis(
+    size: &ModelSizeConfig,
+    constraints: &ModelConstraints,
+) -> (f64, String) {
     if size.hidden_dim == 0 {
         return (0.0, String::new());
     }
@@ -295,7 +304,10 @@ pub fn compute_rope_analysis(size: &ModelSizeConfig) -> (f64, usize) {
 }
 
 /// Compute approximate FLOPS per token
-pub fn compute_flops_estimate(size: &ModelSizeConfig, constraints: &ModelConstraints) -> (u64, u64) {
+pub fn compute_flops_estimate(
+    size: &ModelSizeConfig,
+    constraints: &ModelConstraints,
+) -> (u64, u64) {
     let h = size.hidden_dim as u64;
     let n_heads = size.num_heads as u64;
     let n_kv = size.num_kv_heads as u64;
@@ -413,9 +425,7 @@ fn fetch_hf_data(repo: &str) -> Result<HuggingFaceData, CliError> {
     let pipeline_tag = api_data
         .as_ref()
         .and_then(|d| d["pipeline_tag"].as_str().map(String::from));
-    let downloads = api_data
-        .as_ref()
-        .and_then(|d| d["downloads"].as_u64());
+    let downloads = api_data.as_ref().and_then(|d| d["downloads"].as_u64());
 
     Ok(HuggingFaceData {
         repo: repo.to_string(),
@@ -462,12 +472,22 @@ pub fn cross_validate(
     type FieldMapping = (&'static str, &'static str, fn(&ModelSizeConfig) -> String);
     let field_mappings: &[FieldMapping] = &[
         ("hidden_size", "hidden_dim", |s| s.hidden_dim.to_string()),
-        ("num_hidden_layers", "num_layers", |s| s.num_layers.to_string()),
-        ("num_attention_heads", "num_heads", |s| s.num_heads.to_string()),
-        ("num_key_value_heads", "num_kv_heads", |s| s.num_kv_heads.to_string()),
-        ("intermediate_size", "intermediate_dim", |s| s.intermediate_dim.to_string()),
+        ("num_hidden_layers", "num_layers", |s| {
+            s.num_layers.to_string()
+        }),
+        ("num_attention_heads", "num_heads", |s| {
+            s.num_heads.to_string()
+        }),
+        ("num_key_value_heads", "num_kv_heads", |s| {
+            s.num_kv_heads.to_string()
+        }),
+        ("intermediate_size", "intermediate_dim", |s| {
+            s.intermediate_dim.to_string()
+        }),
         ("vocab_size", "vocab_size", |s| s.vocab_size.to_string()),
-        ("max_position_embeddings", "max_position_embeddings", |s| s.max_position_embeddings.to_string()),
+        ("max_position_embeddings", "max_position_embeddings", |s| {
+            s.max_position_embeddings.to_string()
+        }),
     ];
 
     for (hf_key, contract_key, getter) in field_mappings {
@@ -482,7 +502,11 @@ pub fn cross_validate(
                 field: (*contract_key).to_string(),
                 contract_value: contract_val.clone(),
                 hf_value: hf_str.clone(),
-                status: if contract_val == hf_str { "match".to_string() } else { "mismatch".to_string() },
+                status: if contract_val == hf_str {
+                    "match".to_string()
+                } else {
+                    "mismatch".to_string()
+                },
             };
             if contract_val == hf_str {
                 matches.push(entry);
@@ -495,7 +519,10 @@ pub fn cross_validate(
     }
 
     // Check rope_theta (float comparison with tolerance)
-    if let Some(hf_theta) = hf_config.get("rope_theta").and_then(serde_json::Value::as_f64) {
+    if let Some(hf_theta) = hf_config
+        .get("rope_theta")
+        .and_then(serde_json::Value::as_f64)
+    {
         let contract_theta = size.rope_theta;
         let status = if (contract_theta - hf_theta).abs() < 1.0 {
             "match"
@@ -905,7 +932,13 @@ pub(crate) fn run(
 ) -> Result<(), CliError> {
     // Mode 3: Contract description (--family)
     if let Some(family) = family_name {
-        return run_family_mode(family, size_filter.map(String::as_str), json_output, verbose, flags);
+        return run_family_mode(
+            family,
+            size_filter.map(String::as_str),
+            json_output,
+            verbose,
+            flags,
+        );
     }
 
     // Require a source for modes 1 and 2
@@ -927,7 +960,14 @@ pub(crate) fn run(
 
     // Mode 1: Local file analysis
     let path = PathBuf::from(source);
-    run_local_mode(&path, show_compliance, show_tensors, json_output, verbose, flags)
+    run_local_mode(
+        &path,
+        show_compliance,
+        show_tensors,
+        json_output,
+        verbose,
+        flags,
+    )
 }
 
 // ============================================================================
@@ -1052,7 +1092,12 @@ fn run_local_mode(
 // Mode 2: HuggingFace API Query (PMAT-245)
 // ============================================================================
 
-fn run_hf_mode(source: &str, json_output: bool, verbose: bool, flags: OracleFlags) -> Result<(), CliError> {
+fn run_hf_mode(
+    source: &str,
+    json_output: bool,
+    verbose: bool,
+    flags: OracleFlags,
+) -> Result<(), CliError> {
     // Parse HF URI → org/repo
     let repo = source
         .strip_prefix("hf://")
@@ -1067,8 +1112,12 @@ fn run_hf_mode(source: &str, json_output: bool, verbose: bool, flags: OracleFlag
 
     // Extract model_type from config.json
     let model_type = hf_data.config_fields["model_type"].as_str();
-    let hidden_size = hf_data.config_fields["hidden_size"].as_u64().map(|v| v as usize);
-    let num_layers = hf_data.config_fields["num_hidden_layers"].as_u64().map(|v| v as usize);
+    let hidden_size = hf_data.config_fields["hidden_size"]
+        .as_u64()
+        .map(|v| v as usize);
+    let num_layers = hf_data.config_fields["num_hidden_layers"]
+        .as_u64()
+        .map(|v| v as usize);
 
     // Detect family from model_type
     let detected_family = model_type.and_then(|mt| registry.detect_from_model_type(mt));
@@ -1113,7 +1162,11 @@ fn run_hf_mode(source: &str, json_output: bool, verbose: bool, flags: OracleFlag
         detected_family.and_then(|family| {
             let size_name = size_variant_info.as_ref().map(|s| s.name.as_str())?;
             let size_config = family.size_config(size_name)?;
-            Some(cross_validate(size_config, family.constraints(), &hf_data.config_fields))
+            Some(cross_validate(
+                size_config,
+                family.constraints(),
+                &hf_data.config_fields,
+            ))
         })
     } else {
         None
@@ -1156,16 +1209,18 @@ fn run_family_mode(
     flags: OracleFlags,
 ) -> Result<(), CliError> {
     let registry = load_registry()?;
-    let family = registry.detect_from_model_type(family_name).ok_or_else(|| {
-        // List known families for helpful error
-        let known: Vec<String> = (0..registry.len())
+    let family = registry
+        .detect_from_model_type(family_name)
+        .ok_or_else(|| {
+            // List known families for helpful error
+            let known: Vec<String> = (0..registry.len())
             .filter_map(|_| None::<String>) // We can't iterate, so list empty
             .collect();
-        let _ = known; // avoid unused
-        CliError::InvalidFormat(format!(
-            "Unknown model family: '{family_name}'. Use tensor names or HF model_type."
-        ))
-    })?;
+            let _ = known; // avoid unused
+            CliError::InvalidFormat(format!(
+                "Unknown model family: '{family_name}'. Use tensor names or HF model_type."
+            ))
+        })?;
 
     let config = family.config();
 
@@ -1181,11 +1236,8 @@ fn run_family_mode(
         });
 
         // Build enhanced sections
-        let (stats, explanation, kernel_compat) = build_enhanced_sections(
-            Some(family),
-            size_filter,
-            flags,
-        );
+        let (stats, explanation, kernel_compat) =
+            build_enhanced_sections(Some(family), size_filter, flags);
 
         let report = ModelOracleReport {
             source: family_name.to_string(),
@@ -1351,9 +1403,7 @@ fn build_size_info(
         num_kv_heads: sc.num_kv_heads,
         intermediate_dim: sc.intermediate_dim,
         vocab_size: sc.vocab_size,
-        expected_tensor_count: family
-            .expected_tensor_count(size_name)
-            .unwrap_or(0),
+        expected_tensor_count: family.expected_tensor_count(size_name).unwrap_or(0),
     }
 }
 
@@ -1425,7 +1475,8 @@ fn build_compliance(
     let expected = expand_tensor_template(&config.tensor_template, config, size);
 
     let actual_set: std::collections::HashSet<&str> = tensor_names.iter().copied().collect();
-    let expected_set: std::collections::HashSet<&str> = expected.iter().map(String::as_str).collect();
+    let expected_set: std::collections::HashSet<&str> =
+        expected.iter().map(String::as_str).collect();
 
     let missing: Vec<String> = expected_set
         .difference(&actual_set)
@@ -1437,9 +1488,7 @@ fn build_compliance(
         .map(|s| (*s).to_string())
         .collect();
 
-    let expected_count = family
-        .expected_tensor_count(size)
-        .unwrap_or(expected.len());
+    let expected_count = family.expected_tensor_count(size).unwrap_or(expected.len());
     let tensor_count_match = tensor_names.len() == expected_count;
 
     ComplianceResult {
@@ -1537,11 +1586,16 @@ fn output_json(report: &ModelOracleReport) -> Result<(), CliError> {
     Ok(())
 }
 
+fn format_text_report(report: &ModelOracleReport) -> String {
+    let mut out = String::new();
+    writeln!(out, "  Source: {}", report.source).ok();
+    writeln!(out, "  Mode: {:?}", report.mode).ok();
+    out
+}
+
 fn output_text(report: &ModelOracleReport, verbose: bool) {
     output::section("Model Oracle Report");
-
-    output::kv("Source", &report.source);
-    output::kv("Mode", format!("{:?}", report.mode));
+    print!("{}", format_text_report(report));
 
     output_text_format(report.format.as_ref());
     output_text_family(report.family.as_ref(), verbose);
@@ -1557,18 +1611,43 @@ fn output_text(report: &ModelOracleReport, verbose: bool) {
     output_text_tensors(report.tensors.as_ref(), verbose);
 }
 
-fn output_text_format(fmt: Option<&FormatInfo>) {
-    let Some(fmt) = fmt else { return };
-    output::kv("Format", &fmt.format_type);
-    output::kv("File Size", output::format_size(fmt.file_size as u64));
-    output::kv("Tensors", fmt.tensor_count);
-    output::kv("Parameters", format_params(fmt.total_params));
+fn format_text_format(fmt: &FormatInfo) -> String {
+    let mut out = String::new();
+    writeln!(out, "  Format: {}", fmt.format_type).ok();
+    writeln!(
+        out,
+        "  File Size: {}",
+        output::format_size(fmt.file_size as u64)
+    )
+    .ok();
+    writeln!(out, "  Tensors: {}", fmt.tensor_count).ok();
+    writeln!(out, "  Parameters: {}", format_params(fmt.total_params)).ok();
     if let Some(ref q) = fmt.quantization {
-        output::kv("Quantization", q);
+        writeln!(out, "  Quantization: {q}").ok();
     }
     if let Some(ref arch) = fmt.architecture {
-        output::kv("Architecture", arch);
+        writeln!(out, "  Architecture: {arch}").ok();
     }
+    out
+}
+
+fn output_text_format(fmt: Option<&FormatInfo>) {
+    let Some(fmt) = fmt else { return };
+    print!("{}", format_text_format(fmt));
+}
+
+fn format_text_family(family: &FamilyInfo, verbose: bool) -> String {
+    let mut out = String::new();
+    writeln!(out).ok();
+    writeln!(out, "  Family: {} ({})", family.name, family.display_name).ok();
+    writeln!(out, "  Vendor: {}", family.vendor).ok();
+    if verbose {
+        writeln!(out, "  Architectures: {}", family.architectures.join(", ")).ok();
+    }
+    if let Some(ref ct) = family.chat_template_format {
+        writeln!(out, "  Chat Template: {ct}").ok();
+    }
+    out
 }
 
 fn output_text_family(family: Option<&FamilyInfo>, verbose: bool) {
@@ -1577,218 +1656,315 @@ fn output_text_family(family: Option<&FamilyInfo>, verbose: bool) {
         output::kv("Family", "UNKNOWN (no matching contract)");
         return;
     };
-    println!();
-    output::kv(
-        "Family",
-        format!("{} ({})", family.name, family.display_name),
-    );
-    output::kv("Vendor", &family.vendor);
-    if verbose {
-        output::kv("Architectures", family.architectures.join(", "));
-    }
-    if let Some(ref ct) = family.chat_template_format {
-        output::kv("Chat Template", ct);
-    }
+    print!("{}", format_text_family(family, verbose));
+}
+
+fn format_text_size(size: &SizeVariantInfo) -> String {
+    let mut out = String::new();
+    writeln!(out).ok();
+    writeln!(
+        out,
+        "  Size: {} (hidden={}, layers={}, heads={}, kv_heads={})",
+        size.parameters, size.hidden_dim, size.num_layers, size.num_heads, size.num_kv_heads
+    )
+    .ok();
+    writeln!(out, "  Intermediate Dim: {}", size.intermediate_dim).ok();
+    writeln!(out, "  Vocab Size: {}", size.vocab_size).ok();
+    writeln!(out, "  Expected Tensors: {}", size.expected_tensor_count).ok();
+    out
 }
 
 fn output_text_size(size: Option<&SizeVariantInfo>) {
     let Some(size) = size else { return };
-    println!();
-    output::kv(
-        "Size",
-        format!(
-            "{} (hidden={}, layers={}, heads={}, kv_heads={})",
-            size.parameters, size.hidden_dim, size.num_layers, size.num_heads, size.num_kv_heads
-        ),
-    );
-    output::kv("Intermediate Dim", size.intermediate_dim);
-    output::kv("Vocab Size", size.vocab_size);
-    output::kv("Expected Tensors", size.expected_tensor_count);
+    print!("{}", format_text_size(size));
 }
 
-fn output_text_constraints(family: Option<&FamilyInfo>) {
-    let Some(family) = family else { return };
-    println!();
-    println!("  Constraints:");
+fn format_text_constraints(family: &FamilyInfo) -> String {
+    let mut out = String::new();
+    writeln!(out).ok();
+    writeln!(out, "  Constraints:").ok();
     let c = &family.constraints;
-    println!(
+    writeln!(
+        out,
         "    Attention: {} | Activation: {} | Norm: {}",
         c.attention, c.activation, c.norm
-    );
-    println!(
+    )
+    .ok();
+    writeln!(
+        out,
         "    Bias: {} | Tied: {} | MLP: {} | Position: {}",
         if c.bias { "yes" } else { "no" },
         if c.tied_embeddings { "yes" } else { "no" },
         c.mlp,
         c.positional_encoding
-    );
+    )
+    .ok();
+    out
+}
+
+fn output_text_constraints(family: Option<&FamilyInfo>) {
+    let Some(family) = family else { return };
+    print!("{}", format_text_constraints(family));
+}
+
+fn format_text_stats(stats: &StatisticalAnalysis) -> String {
+    let mut out = String::new();
+    writeln!(out).ok();
+    writeln!(
+        out,
+        "  GQA Ratio: {:.2} ({:.0}% KV cache reduction)",
+        stats.gqa_ratio,
+        stats.kv_cache_reduction * 100.0
+    )
+    .ok();
+    writeln!(
+        out,
+        "  Model Parameters: {}",
+        format_params(stats.model_params as usize)
+    )
+    .ok();
+    writeln!(out, "  Model Size (F16): {:.1} MB", stats.model_size_f16_mb).ok();
+    writeln!(
+        out,
+        "  Model Size (Q4_K_M): {:.1} MB",
+        stats.model_size_q4_mb
+    )
+    .ok();
+    writeln!(
+        out,
+        "  KV Cache/Token: {} bytes",
+        stats.kv_cache_per_token_bytes
+    )
+    .ok();
+    writeln!(out, "  KV Cache (4K ctx): {:.1} MB", stats.kv_cache_4k_mb).ok();
+    writeln!(out, "  FFN Expansion: {:.2}x", stats.ffn_expansion_ratio).ok();
+    writeln!(out, "  FFN Type: {}", stats.ffn_type_explanation).ok();
+    if stats.rope_max_wavelength > 0.0 {
+        writeln!(out, "  RoPE Wavelength: {:.0}", stats.rope_max_wavelength).ok();
+    }
+    writeln!(out, "  Context Window: {}", stats.effective_context_window).ok();
+    writeln!(
+        out,
+        "  Attn FLOPS/tok: {:.2e}",
+        stats.attention_flops_per_token as f64
+    )
+    .ok();
+    writeln!(
+        out,
+        "  FFN FLOPS/tok: {:.2e}",
+        stats.ffn_flops_per_token as f64
+    )
+    .ok();
+    out
 }
 
 fn output_text_stats(stats: Option<&StatisticalAnalysis>) {
     let Some(stats) = stats else { return };
-    println!();
     output::section("Statistical Analysis");
-    output::kv("GQA Ratio", format!("{:.2} ({:.0}% KV cache reduction)", stats.gqa_ratio, stats.kv_cache_reduction * 100.0));
-    output::kv("Model Parameters", format_params(stats.model_params as usize));
-    output::kv("Model Size (F16)", format!("{:.1} MB", stats.model_size_f16_mb));
-    output::kv("Model Size (Q4_K_M)", format!("{:.1} MB", stats.model_size_q4_mb));
-    output::kv("KV Cache/Token", format!("{} bytes", stats.kv_cache_per_token_bytes));
-    output::kv("KV Cache (4K ctx)", format!("{:.1} MB", stats.kv_cache_4k_mb));
-    output::kv("FFN Expansion", format!("{:.2}x", stats.ffn_expansion_ratio));
-    output::kv("FFN Type", &stats.ffn_type_explanation);
-    if stats.rope_max_wavelength > 0.0 {
-        output::kv("RoPE Wavelength", format!("{:.0}", stats.rope_max_wavelength));
-    }
-    output::kv("Context Window", stats.effective_context_window);
-    output::kv("Attn FLOPS/tok", format!("{:.2e}", stats.attention_flops_per_token as f64));
-    output::kv("FFN FLOPS/tok", format!("{:.2e}", stats.ffn_flops_per_token as f64));
+    print!("{}", format_text_stats(stats));
+}
+
+fn format_text_explanation(expl: &ArchitectureExplanation) -> String {
+    let mut out = String::new();
+    writeln!(out).ok();
+    writeln!(out, "  Attention: {}", expl.attention_explanation).ok();
+    writeln!(out).ok();
+    writeln!(out, "  FFN: {}", expl.ffn_explanation).ok();
+    writeln!(out).ok();
+    writeln!(out, "  Normalization: {}", expl.norm_explanation).ok();
+    writeln!(out).ok();
+    writeln!(out, "  Position: {}", expl.positional_explanation).ok();
+    writeln!(out).ok();
+    writeln!(out, "  Scaling: {}", expl.scaling_analysis).ok();
+    out
 }
 
 fn output_text_explanation(expl: Option<&ArchitectureExplanation>) {
     let Some(expl) = expl else { return };
-    println!();
     output::section("Architecture Explanation");
-    println!();
-    println!("  Attention: {}", expl.attention_explanation);
-    println!();
-    println!("  FFN: {}", expl.ffn_explanation);
-    println!();
-    println!("  Normalization: {}", expl.norm_explanation);
-    println!();
-    println!("  Position: {}", expl.positional_explanation);
-    println!();
-    println!("  Scaling: {}", expl.scaling_analysis);
+    print!("{}", format_text_explanation(expl));
 }
 
-fn output_text_kernels(kern: Option<&KernelCompatibility>) {
-    let Some(kern) = kern else { return };
-    println!();
-    output::section("Kernel Compatibility");
-    output::kv("Attention Kernel", &kern.attention_kernel);
-    output::kv("FFN Kernel", &kern.ffn_kernel);
-
-    println!();
-    println!("  Quantization Support:");
-    println!("    {:<12} {:<10} {:<8} {:<12} Kernel", "Format", "Supported", "BPW", "Size (MB)");
+fn format_text_kernels(kern: &KernelCompatibility) -> String {
+    let mut out = String::new();
+    writeln!(out, "  Attention Kernel: {}", kern.attention_kernel).ok();
+    writeln!(out, "  FFN Kernel: {}", kern.ffn_kernel).ok();
+    writeln!(out).ok();
+    writeln!(out, "  Quantization Support:").ok();
+    writeln!(
+        out,
+        "    {:<12} {:<10} {:<8} {:<12} Kernel",
+        "Format", "Supported", "BPW", "Size (MB)"
+    )
+    .ok();
     for q in &kern.supported_quantizations {
-        println!(
+        writeln!(
+            out,
             "    {:<12} {:<10} {:<8.1} {:<12.1} {}",
             q.format,
             if q.supported { "yes" } else { "no" },
             q.bits_per_weight,
             q.estimated_size_mb,
             q.kernel
-        );
+        )
+        .ok();
     }
-
     if let Some(tps_cpu) = kern.estimated_tps_cpu {
-        output::kv("Est. CPU tok/s (Q4_K_M)", format!("{tps_cpu:.0}"));
+        writeln!(out, "  Est. CPU tok/s (Q4_K_M): {tps_cpu:.0}").ok();
     }
     if let Some(tps_gpu) = kern.estimated_tps_gpu {
-        output::kv("Est. GPU tok/s (Q4_K_M)", format!("{tps_gpu:.0}"));
+        writeln!(out, "  Est. GPU tok/s (Q4_K_M): {tps_gpu:.0}").ok();
     }
-    output::kv("Memory Required (Q4+KV)", format!("{:.1} MB", kern.memory_required_mb));
-
+    writeln!(
+        out,
+        "  Memory Required (Q4+KV): {:.1} MB",
+        kern.memory_required_mb
+    )
+    .ok();
     for note in &kern.notes {
-        println!("    * {note}");
+        writeln!(out, "    * {note}").ok();
     }
+    out
+}
+
+fn output_text_kernels(kern: Option<&KernelCompatibility>) {
+    let Some(kern) = kern else { return };
+    println!();
+    output::section("Kernel Compatibility");
+    print!("{}", format_text_kernels(kern));
+}
+
+fn format_text_cross_validation(cv: &CrossValidation) -> String {
+    let mut out = String::new();
+    if !cv.matches.is_empty() {
+        writeln!(out, "  Matches ({}):", cv.matches.len()).ok();
+        for entry in &cv.matches {
+            writeln!(
+                out,
+                "    [OK] {}: {} == {}",
+                entry.field, entry.contract_value, entry.hf_value
+            )
+            .ok();
+        }
+    }
+    if !cv.mismatches.is_empty() {
+        writeln!(out, "  Mismatches ({}):", cv.mismatches.len()).ok();
+        for entry in &cv.mismatches {
+            writeln!(
+                out,
+                "    [!!] {}: contract={} vs hf={}",
+                entry.field, entry.contract_value, entry.hf_value
+            )
+            .ok();
+        }
+    }
+    if !cv.contract_only.is_empty() {
+        writeln!(out, "  Contract-only: {}", cv.contract_only.join(", ")).ok();
+    }
+    if !cv.hf_only.is_empty() {
+        writeln!(out, "  HF-only: {}", cv.hf_only.join(", ")).ok();
+    }
+    out
 }
 
 fn output_text_cross_validation(cv: Option<&CrossValidation>) {
     let Some(cv) = cv else { return };
     println!();
     output::section("Cross-Validation (Contract vs HF)");
+    print!("{}", format_text_cross_validation(cv));
+}
 
-    if !cv.matches.is_empty() {
-        println!("  Matches ({}):", cv.matches.len());
-        for entry in &cv.matches {
-            println!("    [OK] {}: {} == {}", entry.field, entry.contract_value, entry.hf_value);
-        }
+fn format_text_hf(hf: &HuggingFaceData) -> String {
+    let mut out = String::new();
+    writeln!(out).ok();
+    writeln!(out, "  HF Repo: {}", hf.repo).ok();
+    if let Some(ref mt) = hf.model_type {
+        writeln!(out, "  HF model_type: {mt}").ok();
     }
-    if !cv.mismatches.is_empty() {
-        println!("  Mismatches ({}):", cv.mismatches.len());
-        for entry in &cv.mismatches {
-            println!(
-                "    [!!] {}: contract={} vs hf={}",
-                entry.field, entry.contract_value, entry.hf_value
-            );
-        }
+    if let Some(ref pt) = hf.pipeline_tag {
+        writeln!(out, "  HF pipeline_tag: {pt}").ok();
     }
-    if !cv.contract_only.is_empty() {
-        println!("  Contract-only: {}", cv.contract_only.join(", "));
+    if let Some(dl) = hf.downloads {
+        writeln!(out, "  HF Downloads: {dl}").ok();
     }
-    if !cv.hf_only.is_empty() {
-        println!("  HF-only: {}", cv.hf_only.join(", "));
-    }
+    out
 }
 
 fn output_text_hf(hf: Option<&HuggingFaceData>, verbose: bool) {
     let Some(hf) = hf else { return };
-    if !verbose { return; }
-    println!();
-    output::kv("HF Repo", &hf.repo);
-    if let Some(ref mt) = hf.model_type {
-        output::kv("HF model_type", mt);
-    }
-    if let Some(ref pt) = hf.pipeline_tag {
-        output::kv("HF pipeline_tag", pt);
-    }
-    if let Some(dl) = hf.downloads {
-        output::kv("HF Downloads", format!("{dl}"));
-    }
-}
-
-fn output_text_compliance(compliance: Option<&ComplianceResult>, verbose: bool) {
-    let Some(compliance) = compliance else { return };
-    println!();
-    if compliance.is_compliant {
-        output::kv("Contract", "COMPLIANT");
+    if !verbose {
         return;
     }
-    output::kv("Contract", "NON-COMPLIANT");
+    print!("{}", format_text_hf(hf));
+}
+
+fn format_text_compliance(compliance: &ComplianceResult, verbose: bool) -> String {
+    let mut out = String::new();
+    writeln!(out).ok();
+    if compliance.is_compliant {
+        writeln!(out, "  Contract: COMPLIANT").ok();
+        return out;
+    }
+    writeln!(out, "  Contract: NON-COMPLIANT").ok();
     if !compliance.tensor_count_match {
-        output::kv("Tensor Count", "MISMATCH");
+        writeln!(out, "  Tensor Count: MISMATCH").ok();
     }
     if !compliance.missing_tensors.is_empty() {
-        output::kv(
-            "Missing Tensors",
-            format!("{} tensor(s)", compliance.missing_tensors.len()),
-        );
+        writeln!(
+            out,
+            "  Missing Tensors: {} tensor(s)",
+            compliance.missing_tensors.len()
+        )
+        .ok();
         if verbose {
             for t in &compliance.missing_tensors {
-                println!("    - {t}");
+                writeln!(out, "    - {t}").ok();
             }
         }
     }
     if !compliance.unexpected_tensors.is_empty() && verbose {
-        output::kv(
-            "Unexpected Tensors",
-            format!("{} tensor(s)", compliance.unexpected_tensors.len()),
-        );
+        writeln!(
+            out,
+            "  Unexpected Tensors: {} tensor(s)",
+            compliance.unexpected_tensors.len()
+        )
+        .ok();
         for t in &compliance.unexpected_tensors {
-            println!("    + {t}");
+            writeln!(out, "    + {t}").ok();
         }
     }
+    out
+}
+
+fn output_text_compliance(compliance: Option<&ComplianceResult>, verbose: bool) {
+    let Some(compliance) = compliance else { return };
+    print!("{}", format_text_compliance(compliance, verbose));
+}
+
+fn format_text_certification(cert: &CertificationInfo) -> String {
+    let mut out = String::new();
+    writeln!(out).ok();
+    writeln!(out, "  Certification: {}", cert.status).ok();
+    if let Some(ref pb) = cert.playbook_path {
+        writeln!(out, "  Playbook: {pb}").ok();
+    }
+    out
 }
 
 fn output_text_certification(cert: Option<&CertificationInfo>) {
     let Some(cert) = cert else { return };
-    println!();
-    output::kv("Certification", &cert.status);
-    if let Some(ref pb) = cert.playbook_path {
-        output::kv("Playbook", pb);
-    }
+    print!("{}", format_text_certification(cert));
 }
 
-fn output_text_tensors(tensors: Option<&Vec<TensorComplianceEntry>>, verbose: bool) {
-    let Some(tensors) = tensors else { return };
-    println!();
-    println!("  Tensors ({} total):", tensors.len());
+fn format_text_tensors(tensors: &[TensorComplianceEntry], verbose: bool) -> String {
+    let mut out = String::new();
+    writeln!(out).ok();
+    writeln!(out, "  Tensors ({} total):", tensors.len()).ok();
     let max_show = if verbose { tensors.len() } else { 20 };
     for (i, t) in tensors.iter().enumerate() {
         if i >= max_show && i < tensors.len() - 2 {
             if i == max_show {
-                println!("    ... ({} more) ...", tensors.len() - max_show - 2);
+                writeln!(out, "    ... ({} more) ...", tensors.len() - max_show - 2).ok();
             }
             continue;
         }
@@ -1798,8 +1974,150 @@ fn output_text_tensors(tensors: Option<&Vec<TensorComplianceEntry>>, verbose: bo
             .map(|s| format!("{s:?}"))
             .unwrap_or_default();
         let dtype_str = t.dtype.as_deref().unwrap_or("");
-        println!("    {:<50} {} {}", t.name, dtype_str, shape_str);
+        writeln!(out, "    {:<50} {} {}", t.name, dtype_str, shape_str).ok();
     }
+    out
+}
+
+fn output_text_tensors(tensors: Option<&Vec<TensorComplianceEntry>>, verbose: bool) {
+    let Some(tensors) = tensors else { return };
+    print!("{}", format_text_tensors(tensors, verbose));
+}
+
+/// Format the family description header (config metadata + constraints).
+fn format_family_description_header(config: &ModelFamilyConfig) -> String {
+    let mut out = String::new();
+    writeln!(out, "  Family: {}", config.family).ok();
+    writeln!(out, "  Vendor: {}", config.vendor).ok();
+    writeln!(out, "  Architectures: {}", config.architectures.join(", ")).ok();
+    writeln!(out, "  HF Pattern: {}", config.hf_pattern).ok();
+
+    let c = &config.constraints;
+    writeln!(out).ok();
+    writeln!(out, "  Constraints:").ok();
+    writeln!(
+        out,
+        "    Attention: {} | Activation: {} | Norm: {}",
+        c.attention_type, c.activation, c.norm_type
+    )
+    .ok();
+    writeln!(
+        out,
+        "    Bias: {} | Tied: {} | MLP: {} | Position: {}",
+        if c.has_bias { "yes" } else { "no" },
+        if c.tied_embeddings { "yes" } else { "no" },
+        c.mlp_type,
+        c.positional_encoding
+    )
+    .ok();
+    out
+}
+
+/// Format a single size variant block.
+fn format_family_size_variant(name: &str, sc: &ModelSizeConfig) -> String {
+    let mut out = String::new();
+    writeln!(out).ok();
+    writeln!(out, "  Size Variant: {name} ({})", sc.parameters).ok();
+    writeln!(out, "    hidden_dim: {}", sc.hidden_dim).ok();
+    writeln!(out, "    num_layers: {}", sc.num_layers).ok();
+    writeln!(out, "    num_heads: {}", sc.num_heads).ok();
+    writeln!(out, "    num_kv_heads: {}", sc.num_kv_heads).ok();
+    writeln!(out, "    intermediate_dim: {}", sc.intermediate_dim).ok();
+    writeln!(out, "    vocab_size: {}", sc.vocab_size).ok();
+    writeln!(out, "    head_dim: {}", sc.head_dim).ok();
+    if sc.rope_theta > 0.0 {
+        writeln!(out, "    rope_theta: {}", sc.rope_theta).ok();
+    }
+    writeln!(out, "    norm_eps: {}", sc.norm_eps).ok();
+    out
+}
+
+/// Format per-variant stats summary.
+fn format_family_variant_stats(stats: &StatisticalAnalysis) -> String {
+    let mut out = String::new();
+    writeln!(out).ok();
+    writeln!(
+        out,
+        "    GQA Ratio: {:.2} ({:.0}% KV reduction)",
+        stats.gqa_ratio,
+        stats.kv_cache_reduction * 100.0
+    )
+    .ok();
+    writeln!(
+        out,
+        "    Est. Parameters: {}",
+        format_params(stats.model_params as usize)
+    )
+    .ok();
+    writeln!(
+        out,
+        "    Model Size (F16): {:.1} MB",
+        stats.model_size_f16_mb
+    )
+    .ok();
+    writeln!(out, "    Model Size (Q4): {:.1} MB", stats.model_size_q4_mb).ok();
+    writeln!(out, "    KV Cache (4K): {:.1} MB", stats.kv_cache_4k_mb).ok();
+    writeln!(out, "    FFN Ratio: {:.2}x", stats.ffn_expansion_ratio).ok();
+    out
+}
+
+/// Format per-variant explanation summary.
+fn format_family_variant_explain(expl: &ArchitectureExplanation) -> String {
+    let mut out = String::new();
+    writeln!(out).ok();
+    writeln!(out, "    Attention: {}", expl.attention_explanation).ok();
+    writeln!(out, "    FFN: {}", expl.ffn_explanation).ok();
+    writeln!(out, "    Scaling: {}", expl.scaling_analysis).ok();
+    out
+}
+
+/// Format per-variant kernel summary.
+fn format_family_variant_kernels(kern: &KernelCompatibility) -> String {
+    let mut out = String::new();
+    writeln!(out).ok();
+    writeln!(out, "    Attn Kernel: {}", kern.attention_kernel).ok();
+    writeln!(out, "    FFN Kernel: {}", kern.ffn_kernel).ok();
+    if let Some(tps) = kern.estimated_tps_cpu {
+        writeln!(out, "    Est. CPU tok/s: {tps:.0}").ok();
+    }
+    if let Some(tps) = kern.estimated_tps_gpu {
+        writeln!(out, "    Est. GPU tok/s: {tps:.0}").ok();
+    }
+    writeln!(out, "    Memory (Q4+KV): {:.1} MB", kern.memory_required_mb).ok();
+    out
+}
+
+/// Format family description footer (tensor template, quantizations, chat template).
+fn format_family_description_footer(config: &ModelFamilyConfig, verbose: bool) -> String {
+    let mut out = String::new();
+    if verbose {
+        writeln!(out).ok();
+        writeln!(out, "  Tensor Template:").ok();
+        writeln!(out, "    Embedding: {}", config.tensor_template.embedding).ok();
+        if let Some(ref lm) = config.tensor_template.lm_head {
+            writeln!(out, "    LM Head: {lm}").ok();
+        }
+        if let Some(ref norm) = config.tensor_template.final_norm {
+            writeln!(out, "    Final Norm: {norm}").ok();
+        }
+        writeln!(out, "    Per-layer:").ok();
+        for (role, pattern) in &config.tensor_template.per_layer {
+            if let Some(pat) = pattern {
+                writeln!(out, "      {role}: {pat}").ok();
+            }
+        }
+    }
+    if !config.quantizations.is_empty() {
+        writeln!(out).ok();
+        writeln!(out, "  Quantizations: {}", config.quantizations.join(", ")).ok();
+    }
+    if let Some(ref ct) = config.chat_template {
+        writeln!(out).ok();
+        writeln!(out, "  Chat Template: {}", ct.format).ok();
+        writeln!(out, "    BOS: {}", ct.bos_token).ok();
+        writeln!(out, "    EOS: {}", ct.eos_token).ok();
+    }
+    out
 }
 
 fn output_family_description(
@@ -1810,27 +2128,7 @@ fn output_family_description(
     family: &dyn ModelFamily,
 ) {
     output::section(&format!("{} Family Contract", config.display_name));
-
-    output::kv("Family", &config.family);
-    output::kv("Vendor", &config.vendor);
-    output::kv("Architectures", config.architectures.join(", "));
-    output::kv("HF Pattern", &config.hf_pattern);
-
-    // Constraints
-    let c = &config.constraints;
-    println!();
-    println!("  Constraints:");
-    println!(
-        "    Attention: {} | Activation: {} | Norm: {}",
-        c.attention_type, c.activation, c.norm_type
-    );
-    println!(
-        "    Bias: {} | Tied: {} | MLP: {} | Position: {}",
-        if c.has_bias { "yes" } else { "no" },
-        if c.tied_embeddings { "yes" } else { "no" },
-        c.mlp_type,
-        c.positional_encoding
-    );
+    print!("{}", format_family_description_header(config));
 
     // Size variants
     let variants: Vec<(&String, &ModelSizeConfig)> = if let Some(size) = size_filter {
@@ -1846,54 +2144,23 @@ fn output_family_description(
     };
 
     for (name, sc) in &variants {
-        println!();
-        output::kv("Size Variant", format!("{name} ({})", sc.parameters));
-        output::kv("  hidden_dim", sc.hidden_dim);
-        output::kv("  num_layers", sc.num_layers);
-        output::kv("  num_heads", sc.num_heads);
-        output::kv("  num_kv_heads", sc.num_kv_heads);
-        output::kv("  intermediate_dim", sc.intermediate_dim);
-        output::kv("  vocab_size", sc.vocab_size);
-        output::kv("  head_dim", sc.head_dim);
-        if sc.rope_theta > 0.0 {
-            output::kv("  rope_theta", sc.rope_theta);
-        }
-        output::kv("  norm_eps", sc.norm_eps);
+        print!("{}", format_family_size_variant(name, sc));
 
-        // Enhanced sections per size variant
         if flags.show_stats() || flags.show_explain() || flags.show_kernels() {
             let stats = build_statistical_analysis(sc, family.constraints());
 
             if flags.show_stats() {
-                println!();
-                output::kv("  GQA Ratio", format!("{:.2} ({:.0}% KV reduction)", stats.gqa_ratio, stats.kv_cache_reduction * 100.0));
-                output::kv("  Est. Parameters", format_params(stats.model_params as usize));
-                output::kv("  Model Size (F16)", format!("{:.1} MB", stats.model_size_f16_mb));
-                output::kv("  Model Size (Q4)", format!("{:.1} MB", stats.model_size_q4_mb));
-                output::kv("  KV Cache (4K)", format!("{:.1} MB", stats.kv_cache_4k_mb));
-                output::kv("  FFN Ratio", format!("{:.2}x", stats.ffn_expansion_ratio));
+                print!("{}", format_family_variant_stats(&stats));
             }
 
             if flags.show_explain() {
                 let expl = build_architecture_explanation(sc, family.constraints(), &stats);
-                println!();
-                println!("    Attention: {}", expl.attention_explanation);
-                println!("    FFN: {}", expl.ffn_explanation);
-                println!("    Scaling: {}", expl.scaling_analysis);
+                print!("{}", format_family_variant_explain(&expl));
             }
 
             if flags.show_kernels() {
                 let kern = build_kernel_compatibility(sc, family.constraints(), &stats);
-                println!();
-                output::kv("  Attn Kernel", &kern.attention_kernel);
-                output::kv("  FFN Kernel", &kern.ffn_kernel);
-                if let Some(tps) = kern.estimated_tps_cpu {
-                    output::kv("  Est. CPU tok/s", format!("{tps:.0}"));
-                }
-                if let Some(tps) = kern.estimated_tps_gpu {
-                    output::kv("  Est. GPU tok/s", format!("{tps:.0}"));
-                }
-                output::kv("  Memory (Q4+KV)", format!("{:.1} MB", kern.memory_required_mb));
+                print!("{}", format_family_variant_kernels(&kern));
             }
         }
     }
@@ -1908,38 +2175,7 @@ fn output_family_description(
         output::kv("Available", format!("{available:?}"));
     }
 
-    // Tensor template
-    if verbose {
-        println!();
-        println!("  Tensor Template:");
-        println!("    Embedding: {}", config.tensor_template.embedding);
-        if let Some(ref lm) = config.tensor_template.lm_head {
-            println!("    LM Head: {lm}");
-        }
-        if let Some(ref norm) = config.tensor_template.final_norm {
-            println!("    Final Norm: {norm}");
-        }
-        println!("    Per-layer:");
-        for (role, pattern) in &config.tensor_template.per_layer {
-            if let Some(pat) = pattern {
-                println!("      {role}: {pat}");
-            }
-        }
-    }
-
-    // Quantizations
-    if !config.quantizations.is_empty() {
-        println!();
-        output::kv("Quantizations", config.quantizations.join(", "));
-    }
-
-    // Chat template
-    if let Some(ref ct) = config.chat_template {
-        println!();
-        output::kv("Chat Template", &ct.format);
-        output::kv("  BOS", &ct.bos_token);
-        output::kv("  EOS", &ct.eos_token);
-    }
+    print!("{}", format_family_description_footer(config, verbose));
 }
 
 // ============================================================================
@@ -2306,7 +2542,10 @@ mod tests {
         let constraints = make_test_constraints();
         let (ratio, explanation) = compute_ffn_analysis(&size, &constraints);
         // 8960 / 1536 ≈ 5.83
-        assert!(ratio > 5.0 && ratio < 6.5, "FFN ratio {ratio} out of expected range");
+        assert!(
+            ratio > 5.0 && ratio < 6.5,
+            "FFN ratio {ratio} out of expected range"
+        );
         assert!(explanation.contains("SwiGLU"));
     }
 
@@ -2376,7 +2615,11 @@ mod tests {
         });
 
         let cv = cross_validate(&size, &constraints, &hf_config);
-        assert!(cv.mismatches.is_empty(), "Expected no mismatches, got: {:?}", cv.mismatches);
+        assert!(
+            cv.mismatches.is_empty(),
+            "Expected no mismatches, got: {:?}",
+            cv.mismatches
+        );
         assert!(!cv.matches.is_empty(), "Expected matches");
     }
 
@@ -2472,5 +2715,3384 @@ mod tests {
         assert!(!flags.show_explain());
         assert!(!flags.show_kernels());
         assert!(!flags.show_validate());
+    }
+
+    #[test]
+    fn test_oracle_flags_explain_only() {
+        let flags = OracleFlags {
+            explain: true,
+            ..OracleFlags::default()
+        };
+        assert!(!flags.show_stats());
+        assert!(flags.show_explain());
+        assert!(!flags.show_kernels());
+        assert!(!flags.show_validate());
+    }
+
+    #[test]
+    fn test_oracle_flags_kernels_only() {
+        let flags = OracleFlags {
+            kernels: true,
+            ..OracleFlags::default()
+        };
+        assert!(!flags.show_stats());
+        assert!(!flags.show_explain());
+        assert!(flags.show_kernels());
+        assert!(!flags.show_validate());
+    }
+
+    #[test]
+    fn test_oracle_flags_validate_only() {
+        let flags = OracleFlags {
+            validate: true,
+            ..OracleFlags::default()
+        };
+        assert!(!flags.show_stats());
+        assert!(!flags.show_explain());
+        assert!(!flags.show_kernels());
+        assert!(flags.show_validate());
+    }
+
+    #[test]
+    fn test_oracle_flags_debug() {
+        let flags = OracleFlags::default();
+        let debug = format!("{flags:?}");
+        assert!(debug.contains("OracleFlags"));
+    }
+
+    #[test]
+    fn test_oracle_flags_clone() {
+        let flags = OracleFlags {
+            stats: true,
+            explain: true,
+            kernels: false,
+            validate: false,
+            full: false,
+        };
+        let cloned = flags;
+        assert!(cloned.show_stats());
+        assert!(cloned.show_explain());
+    }
+
+    // ========================================================================
+    // GQA Analysis Edge Cases
+    // ========================================================================
+
+    #[test]
+    fn test_gqa_analysis_zero_heads() {
+        let mut size = make_test_size();
+        size.num_heads = 0;
+        let (ratio, reduction) = compute_gqa_analysis(&size);
+        assert_eq!(ratio, 0.0);
+        assert_eq!(reduction, 0.0);
+    }
+
+    #[test]
+    fn test_gqa_analysis_single_kv_head() {
+        let mut size = make_test_size();
+        size.num_heads = 32;
+        size.num_kv_heads = 1; // MQA-like
+        let (ratio, reduction) = compute_gqa_analysis(&size);
+        assert!((ratio - 1.0 / 32.0).abs() < 0.001);
+        assert!((reduction - 31.0 / 32.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_gqa_analysis_equal_heads() {
+        let mut size = make_test_size();
+        size.num_heads = 32;
+        size.num_kv_heads = 32; // MHA
+        let (ratio, reduction) = compute_gqa_analysis(&size);
+        assert!((ratio - 1.0).abs() < 0.001);
+        assert!(reduction.abs() < 0.001);
+    }
+
+    // ========================================================================
+    // Param Count Edge Cases
+    // ========================================================================
+
+    #[test]
+    fn test_param_count_no_bias() {
+        let size = make_test_size();
+        let mut constraints = make_test_constraints();
+        constraints.has_bias = false;
+        let params_no_bias = compute_param_count(&size, &constraints);
+
+        constraints.has_bias = true;
+        let params_with_bias = compute_param_count(&size, &constraints);
+
+        assert!(
+            params_with_bias > params_no_bias,
+            "Bias should add parameters"
+        );
+    }
+
+    #[test]
+    fn test_param_count_tied_embeddings() {
+        let size = make_test_size();
+        let mut constraints = make_test_constraints();
+        constraints.tied_embeddings = false;
+        let params_untied = compute_param_count(&size, &constraints);
+
+        constraints.tied_embeddings = true;
+        let params_tied = compute_param_count(&size, &constraints);
+
+        // Tied embeddings removes lm_head = vocab_size * hidden_dim
+        let lm_head_params = (size.vocab_size as u64) * (size.hidden_dim as u64);
+        assert_eq!(params_untied - params_tied, lm_head_params);
+    }
+
+    #[test]
+    fn test_param_count_gated_mlp() {
+        let size = make_test_size();
+        let mut constraints = make_test_constraints();
+        constraints.mlp_type = MlpType::GatedMlp;
+        let params_gated = compute_param_count(&size, &constraints);
+
+        constraints.mlp_type = MlpType::SwiGlu;
+        let params_swiglu = compute_param_count(&size, &constraints);
+
+        // Both gated, should have same FFN param count
+        assert_eq!(params_gated, params_swiglu);
+    }
+
+    #[test]
+    fn test_param_count_standard_mlp() {
+        let size = make_test_size();
+        let mut constraints = make_test_constraints();
+        constraints.mlp_type = MlpType::GeluMlp;
+        let params_standard = compute_param_count(&size, &constraints);
+
+        constraints.mlp_type = MlpType::SwiGlu;
+        let params_gated = compute_param_count(&size, &constraints);
+
+        // Standard uses 2 matrices, gated uses 3
+        assert!(
+            params_gated > params_standard,
+            "Gated should have more params"
+        );
+    }
+
+    #[test]
+    fn test_param_count_minimal_model() {
+        let size = ModelSizeConfig {
+            parameters: "tiny".to_string(),
+            hidden_dim: 64,
+            num_layers: 1,
+            num_heads: 2,
+            num_kv_heads: 2,
+            intermediate_dim: 128,
+            vocab_size: 100,
+            max_position_embeddings: 512,
+            head_dim: 32,
+            rope_theta: 10000.0,
+            norm_eps: 1e-5,
+        };
+        let constraints = ModelConstraints {
+            attention_type: AttentionType::Mha,
+            activation: aprender::format::model_family::Activation::Silu,
+            norm_type: NormType::RmsNorm,
+            has_bias: false,
+            tied_embeddings: true,
+            positional_encoding: PositionalEncoding::Rope,
+            mlp_type: MlpType::GeluMlp,
+        };
+        let params = compute_param_count(&size, &constraints);
+        assert!(params > 0, "Even minimal model should have params");
+        // Embedding: 100*64 = 6400, no lm_head (tied), 1 layer with small dims
+        assert!(
+            params < 1_000_000,
+            "Tiny model shouldn't have millions of params"
+        );
+    }
+
+    // ========================================================================
+    // Memory Estimates Edge Cases
+    // ========================================================================
+
+    #[test]
+    fn test_memory_estimates_f16_is_4x_q4() {
+        let size = make_test_size();
+        let constraints = make_test_constraints();
+        let (f16_mb, q4_mb) = compute_memory_estimates(&size, &constraints);
+        // F16 = 2 bytes/param, Q4 = 0.5 bytes/param, ratio = 4
+        assert!(
+            (f16_mb / q4_mb - 4.0).abs() < 0.01,
+            "F16/Q4 ratio should be ~4"
+        );
+    }
+
+    // ========================================================================
+    // KV Cache Edge Cases
+    // ========================================================================
+
+    #[test]
+    fn test_kv_cache_zero_layers() {
+        let mut size = make_test_size();
+        size.num_layers = 0;
+        let (per_token, cache_4k) = compute_kv_cache(&size);
+        assert_eq!(per_token, 0);
+        assert_eq!(cache_4k, 0.0);
+    }
+
+    #[test]
+    fn test_kv_cache_zero_kv_heads() {
+        let mut size = make_test_size();
+        size.num_kv_heads = 0;
+        let (per_token, cache_4k) = compute_kv_cache(&size);
+        assert_eq!(per_token, 0);
+        assert_eq!(cache_4k, 0.0);
+    }
+
+    #[test]
+    fn test_kv_cache_large_context() {
+        let size = make_test_size();
+        let (per_token, cache_4k) = compute_kv_cache(&size);
+        // 4K cache = per_token * 4096 / (1024*1024)
+        let expected_4k = (per_token as f64 * 4096.0) / (1024.0 * 1024.0);
+        assert!((cache_4k - expected_4k).abs() < 0.001);
+    }
+
+    // ========================================================================
+    // FFN Analysis Edge Cases
+    // ========================================================================
+
+    #[test]
+    fn test_ffn_analysis_zero_hidden_dim() {
+        let mut size = make_test_size();
+        size.hidden_dim = 0;
+        let constraints = make_test_constraints();
+        let (ratio, explanation) = compute_ffn_analysis(&size, &constraints);
+        assert_eq!(ratio, 0.0);
+        assert!(explanation.is_empty());
+    }
+
+    #[test]
+    fn test_ffn_analysis_gated_mlp() {
+        let size = make_test_size();
+        let mut constraints = make_test_constraints();
+        constraints.mlp_type = MlpType::GatedMlp;
+        let (ratio, explanation) = compute_ffn_analysis(&size, &constraints);
+        assert!(ratio > 0.0);
+        assert!(explanation.contains("GeGLU"));
+    }
+
+    #[test]
+    fn test_ffn_analysis_gelu_mlp() {
+        let size = make_test_size();
+        let mut constraints = make_test_constraints();
+        constraints.mlp_type = MlpType::GeluMlp;
+        let (ratio, explanation) = compute_ffn_analysis(&size, &constraints);
+        assert!(ratio > 0.0);
+        assert!(explanation.contains("Standard GELU"));
+    }
+
+    // ========================================================================
+    // RoPE Analysis Edge Cases
+    // ========================================================================
+
+    #[test]
+    fn test_rope_analysis_zero_theta() {
+        let mut size = make_test_size();
+        size.rope_theta = 0.0;
+        let (wavelength, ctx) = compute_rope_analysis(&size);
+        assert_eq!(wavelength, 0.0);
+        assert_eq!(ctx, size.max_position_embeddings);
+    }
+
+    #[test]
+    fn test_rope_analysis_standard_theta() {
+        let mut size = make_test_size();
+        size.rope_theta = 10000.0;
+        let (wavelength, _) = compute_rope_analysis(&size);
+        let expected = 2.0 * std::f64::consts::PI * 10000.0;
+        assert!((wavelength - expected).abs() < 1.0);
+    }
+
+    // ========================================================================
+    // FLOPS Estimate Edge Cases
+    // ========================================================================
+
+    #[test]
+    fn test_flops_estimate_standard_mlp() {
+        let size = make_test_size();
+        let mut constraints = make_test_constraints();
+        constraints.mlp_type = MlpType::GeluMlp;
+        let (attn_gelu, ffn_gelu) = compute_flops_estimate(&size, &constraints);
+
+        constraints.mlp_type = MlpType::SwiGlu;
+        let (attn_swiglu, ffn_swiglu) = compute_flops_estimate(&size, &constraints);
+
+        // Attention FLOPS should be the same regardless of MLP type
+        assert_eq!(attn_gelu, attn_swiglu);
+        // Gated has 50% more FFN FLOPS (3 matmuls vs 2)
+        assert_eq!(ffn_swiglu, ffn_gelu * 3 / 2);
+    }
+
+    #[test]
+    fn test_flops_estimate_zero_layers() {
+        let mut size = make_test_size();
+        size.num_layers = 0;
+        let constraints = make_test_constraints();
+        let (attn, ffn) = compute_flops_estimate(&size, &constraints);
+        assert_eq!(attn, 0);
+        assert_eq!(ffn, 0);
+    }
+
+    // ========================================================================
+    // Cross-Validation Extended Tests
+    // ========================================================================
+
+    #[test]
+    fn test_cross_validation_empty_hf_config() {
+        let size = make_test_size();
+        let constraints = make_test_constraints();
+        let hf_config = serde_json::json!({});
+
+        let cv = cross_validate(&size, &constraints, &hf_config);
+        assert!(cv.matches.is_empty());
+        assert!(cv.mismatches.is_empty());
+        // All contract fields are contract_only since HF has none
+        assert!(!cv.contract_only.is_empty());
+    }
+
+    #[test]
+    fn test_cross_validation_rope_theta_approximate() {
+        let mut size = make_test_size();
+        size.rope_theta = 1_000_000.0;
+        let constraints = make_test_constraints();
+        // Within 1.0 absolute tolerance => "match"
+        let hf_config = serde_json::json!({
+            "rope_theta": 1_000_000.5
+        });
+
+        let cv = cross_validate(&size, &constraints, &hf_config);
+        let rope_entry = cv.matches.iter().find(|e| e.field == "rope_theta");
+        assert!(
+            rope_entry.is_some(),
+            "rope_theta should match within tolerance"
+        );
+    }
+
+    #[test]
+    fn test_cross_validation_rope_theta_mismatch() {
+        let mut size = make_test_size();
+        size.rope_theta = 1_000_000.0;
+        let constraints = make_test_constraints();
+        // Way off => "mismatch"
+        let hf_config = serde_json::json!({
+            "rope_theta": 500_000.0
+        });
+
+        let cv = cross_validate(&size, &constraints, &hf_config);
+        let rope_mismatch = cv.mismatches.iter().find(|e| e.field == "rope_theta");
+        assert!(rope_mismatch.is_some(), "rope_theta should mismatch");
+    }
+
+    #[test]
+    fn test_cross_validation_norm_eps_match() {
+        let mut size = make_test_size();
+        size.norm_eps = 1e-6;
+        let constraints = make_test_constraints();
+        let hf_config = serde_json::json!({
+            "rms_norm_eps": 1e-6
+        });
+
+        let cv = cross_validate(&size, &constraints, &hf_config);
+        let eps_entry = cv.matches.iter().find(|e| e.field == "norm_eps");
+        assert!(eps_entry.is_some(), "norm_eps should match");
+    }
+
+    #[test]
+    fn test_cross_validation_norm_eps_layer_norm_variant() {
+        let mut size = make_test_size();
+        size.norm_eps = 1e-5;
+        let constraints = make_test_constraints();
+        // Uses layer_norm_eps key instead of rms_norm_eps
+        let hf_config = serde_json::json!({
+            "layer_norm_eps": 1e-5
+        });
+
+        let cv = cross_validate(&size, &constraints, &hf_config);
+        let eps_entry = cv.matches.iter().find(|e| e.field == "norm_eps");
+        assert!(
+            eps_entry.is_some(),
+            "norm_eps should match via layer_norm_eps key"
+        );
+    }
+
+    #[test]
+    fn test_cross_validation_norm_eps_epsilon_variant() {
+        let mut size = make_test_size();
+        size.norm_eps = 1e-5;
+        let constraints = make_test_constraints();
+        // Uses layer_norm_epsilon key
+        let hf_config = serde_json::json!({
+            "layer_norm_epsilon": 1e-5
+        });
+
+        let cv = cross_validate(&size, &constraints, &hf_config);
+        let eps_entry = cv.matches.iter().find(|e| e.field == "norm_eps");
+        assert!(
+            eps_entry.is_some(),
+            "norm_eps should match via layer_norm_epsilon key"
+        );
+    }
+
+    #[test]
+    fn test_cross_validation_norm_eps_mismatch() {
+        let mut size = make_test_size();
+        size.norm_eps = 1e-6;
+        let constraints = make_test_constraints();
+        let hf_config = serde_json::json!({
+            "rms_norm_eps": 1e-5  // Different
+        });
+
+        let cv = cross_validate(&size, &constraints, &hf_config);
+        let eps_mismatch = cv.mismatches.iter().find(|e| e.field == "norm_eps");
+        assert!(eps_mismatch.is_some(), "norm_eps should mismatch");
+    }
+
+    #[test]
+    fn test_cross_validation_hf_only_interesting_fields() {
+        let size = make_test_size();
+        let constraints = make_test_constraints();
+        let hf_config = serde_json::json!({
+            "rope_scaling": {"type": "dynamic"},
+            "sliding_window": 4096,
+            "attention_dropout": 0.0,
+            "use_cache": true,
+            "tie_word_embeddings": false,
+            "some_other_field": 42
+        });
+
+        let cv = cross_validate(&size, &constraints, &hf_config);
+        // Should find 5 interesting HF-only fields
+        assert!(
+            cv.hf_only.len() >= 5,
+            "Expected at least 5 HF-only fields, got {}",
+            cv.hf_only.len()
+        );
+    }
+
+    #[test]
+    fn test_cross_validation_model_type_info() {
+        let size = make_test_size();
+        let constraints = make_test_constraints();
+        let hf_config = serde_json::json!({
+            "model_type": "qwen2"
+        });
+
+        let cv = cross_validate(&size, &constraints, &hf_config);
+        let model_type_entry = cv.matches.iter().find(|e| e.field == "model_type");
+        assert!(model_type_entry.is_some());
+        assert_eq!(model_type_entry.expect("exists").status, "info");
+    }
+
+    #[test]
+    fn test_cross_validation_hf_string_value() {
+        let size = make_test_size();
+        let constraints = make_test_constraints();
+        // String-valued HF field instead of number
+        let hf_config = serde_json::json!({
+            "hidden_size": "1536"
+        });
+
+        let cv = cross_validate(&size, &constraints, &hf_config);
+        // Should match since both are "1536"
+        let entry = cv.matches.iter().find(|e| e.field == "hidden_dim");
+        assert!(entry.is_some(), "String-valued HF field should match");
+    }
+
+    #[test]
+    fn test_cross_validation_contract_only_fields() {
+        let size = make_test_size();
+        let constraints = make_test_constraints();
+        // HF config missing most fields
+        let hf_config = serde_json::json!({
+            "hidden_size": 1536
+        });
+
+        let cv = cross_validate(&size, &constraints, &hf_config);
+        // Should have several contract_only fields
+        assert!(
+            cv.contract_only.len() >= 5,
+            "Expected many contract-only fields"
+        );
+    }
+
+    // ========================================================================
+    // Architecture Explanation Extended Tests
+    // ========================================================================
+
+    #[test]
+    fn test_architecture_explanation_mha() {
+        let size = make_test_size();
+        let mut constraints = make_test_constraints();
+        constraints.attention_type = AttentionType::Mha;
+        let stats = build_statistical_analysis(&size, &constraints);
+        let expl = build_architecture_explanation(&size, &constraints, &stats);
+
+        assert!(expl.attention_explanation.contains("Multi-Head Attention"));
+        assert!(expl
+            .attention_explanation
+            .contains(&size.num_heads.to_string()));
+    }
+
+    #[test]
+    fn test_architecture_explanation_mqa() {
+        let size = make_test_size();
+        let mut constraints = make_test_constraints();
+        constraints.attention_type = AttentionType::Mqa;
+        let stats = build_statistical_analysis(&size, &constraints);
+        let expl = build_architecture_explanation(&size, &constraints, &stats);
+
+        assert!(expl.attention_explanation.contains("Multi-Query Attention"));
+    }
+
+    #[test]
+    fn test_architecture_explanation_geglu() {
+        let size = make_test_size();
+        let mut constraints = make_test_constraints();
+        constraints.mlp_type = MlpType::GatedMlp;
+        let stats = build_statistical_analysis(&size, &constraints);
+        let expl = build_architecture_explanation(&size, &constraints, &stats);
+
+        assert!(expl.ffn_explanation.contains("GeGLU"));
+    }
+
+    #[test]
+    fn test_architecture_explanation_gelu_mlp() {
+        let size = make_test_size();
+        let mut constraints = make_test_constraints();
+        constraints.mlp_type = MlpType::GeluMlp;
+        let stats = build_statistical_analysis(&size, &constraints);
+        let expl = build_architecture_explanation(&size, &constraints, &stats);
+
+        assert!(expl.ffn_explanation.contains("Standard GELU MLP"));
+    }
+
+    #[test]
+    fn test_architecture_explanation_layer_norm() {
+        let size = make_test_size();
+        let mut constraints = make_test_constraints();
+        constraints.norm_type = NormType::LayerNorm;
+        let stats = build_statistical_analysis(&size, &constraints);
+        let expl = build_architecture_explanation(&size, &constraints, &stats);
+
+        assert!(expl.norm_explanation.contains("LayerNorm"));
+    }
+
+    #[test]
+    fn test_architecture_explanation_absolute_pos() {
+        let size = make_test_size();
+        let mut constraints = make_test_constraints();
+        constraints.positional_encoding = PositionalEncoding::Absolute;
+        let stats = build_statistical_analysis(&size, &constraints);
+        let expl = build_architecture_explanation(&size, &constraints, &stats);
+
+        assert!(expl.positional_explanation.contains("Absolute position"));
+    }
+
+    #[test]
+    fn test_architecture_explanation_alibi_pos() {
+        let size = make_test_size();
+        let mut constraints = make_test_constraints();
+        constraints.positional_encoding = PositionalEncoding::Alibi;
+        let stats = build_statistical_analysis(&size, &constraints);
+        let expl = build_architecture_explanation(&size, &constraints, &stats);
+
+        assert!(expl.positional_explanation.contains("ALiBi"));
+    }
+
+    #[test]
+    fn test_architecture_explanation_relative_pos() {
+        let size = make_test_size();
+        let mut constraints = make_test_constraints();
+        constraints.positional_encoding = PositionalEncoding::Relative;
+        let stats = build_statistical_analysis(&size, &constraints);
+        let expl = build_architecture_explanation(&size, &constraints, &stats);
+
+        assert!(expl.positional_explanation.contains("Relative"));
+    }
+
+    #[test]
+    fn test_architecture_explanation_scaling_analysis() {
+        let size = make_test_size();
+        let constraints = make_test_constraints();
+        let stats = build_statistical_analysis(&size, &constraints);
+        let expl = build_architecture_explanation(&size, &constraints, &stats);
+
+        assert!(expl.scaling_analysis.contains("parameters"));
+        assert!(expl.scaling_analysis.contains("FLOPs"));
+        assert!(expl.scaling_analysis.contains("Chinchilla"));
+    }
+
+    // ========================================================================
+    // Kernel Compatibility Extended Tests
+    // ========================================================================
+
+    #[test]
+    fn test_kernel_compatibility_mha() {
+        let size = make_test_size();
+        let mut constraints = make_test_constraints();
+        constraints.attention_type = AttentionType::Mha;
+        let stats = build_statistical_analysis(&size, &constraints);
+        let kern = build_kernel_compatibility(&size, &constraints, &stats);
+
+        assert!(kern.attention_kernel.contains("MHA"));
+    }
+
+    #[test]
+    fn test_kernel_compatibility_mqa() {
+        let size = make_test_size();
+        let mut constraints = make_test_constraints();
+        constraints.attention_type = AttentionType::Mqa;
+        let stats = build_statistical_analysis(&size, &constraints);
+        let kern = build_kernel_compatibility(&size, &constraints, &stats);
+
+        assert!(kern.attention_kernel.contains("MQA"));
+    }
+
+    #[test]
+    fn test_kernel_compatibility_gelu_mlp() {
+        let size = make_test_size();
+        let mut constraints = make_test_constraints();
+        constraints.mlp_type = MlpType::GeluMlp;
+        let stats = build_statistical_analysis(&size, &constraints);
+        let kern = build_kernel_compatibility(&size, &constraints, &stats);
+
+        assert!(kern.ffn_kernel.contains("standard GELU"));
+    }
+
+    #[test]
+    fn test_kernel_compatibility_geglu() {
+        let size = make_test_size();
+        let mut constraints = make_test_constraints();
+        constraints.mlp_type = MlpType::GatedMlp;
+        let stats = build_statistical_analysis(&size, &constraints);
+        let kern = build_kernel_compatibility(&size, &constraints, &stats);
+
+        assert!(kern.ffn_kernel.contains("GeGLU"));
+    }
+
+    #[test]
+    fn test_kernel_compatibility_no_bias() {
+        let mut size = make_test_size();
+        size.num_kv_heads = size.num_heads; // MHA to remove GQA note
+        let mut constraints = make_test_constraints();
+        constraints.has_bias = false;
+        let stats = build_statistical_analysis(&size, &constraints);
+        let kern = build_kernel_compatibility(&size, &constraints, &stats);
+
+        // No bias note should be absent
+        assert!(!kern.notes.iter().any(|n| n.contains("Bias")));
+    }
+
+    #[test]
+    fn test_kernel_compatibility_with_bias() {
+        let size = make_test_size();
+        let mut constraints = make_test_constraints();
+        constraints.has_bias = true;
+        let stats = build_statistical_analysis(&size, &constraints);
+        let kern = build_kernel_compatibility(&size, &constraints, &stats);
+
+        assert!(kern.notes.iter().any(|n| n.contains("Bias")));
+    }
+
+    #[test]
+    fn test_kernel_compatibility_gqa_note() {
+        let mut size = make_test_size();
+        size.num_heads = 32;
+        size.num_kv_heads = 8;
+        let constraints = make_test_constraints();
+        let stats = build_statistical_analysis(&size, &constraints);
+        let kern = build_kernel_compatibility(&size, &constraints, &stats);
+
+        assert!(kern.notes.iter().any(|n| n.contains("GQA")));
+    }
+
+    #[test]
+    fn test_kernel_compatibility_equal_heads_no_gqa_note() {
+        let mut size = make_test_size();
+        size.num_heads = 12;
+        size.num_kv_heads = 12; // MHA
+        let mut constraints = make_test_constraints();
+        constraints.has_bias = false;
+        let stats = build_statistical_analysis(&size, &constraints);
+        let kern = build_kernel_compatibility(&size, &constraints, &stats);
+
+        // Should only have layout note, no GQA or bias notes
+        assert!(
+            kern.notes.len() == 1,
+            "Expected only layout note, got: {:?}",
+            kern.notes
+        );
+        assert!(kern.notes[0].contains("ROW-MAJOR"));
+    }
+
+    #[test]
+    fn test_kernel_compatibility_quantization_sizes() {
+        let size = make_test_size();
+        let constraints = make_test_constraints();
+        let stats = build_statistical_analysis(&size, &constraints);
+        let kern = build_kernel_compatibility(&size, &constraints, &stats);
+
+        // F16 (16bpw) should be largest, Q4_K_M (4.5bpw) should be smallest
+        let f16_entry = kern
+            .supported_quantizations
+            .iter()
+            .find(|q| q.format == "F16")
+            .expect("F16");
+        let q4_entry = kern
+            .supported_quantizations
+            .iter()
+            .find(|q| q.format == "Q4_K_M")
+            .expect("Q4_K_M");
+        assert!(
+            f16_entry.estimated_size_mb > q4_entry.estimated_size_mb,
+            "F16 ({:.1} MB) should be larger than Q4_K_M ({:.1} MB)",
+            f16_entry.estimated_size_mb,
+            q4_entry.estimated_size_mb
+        );
+
+        // All sizes should be positive
+        for q in &kern.supported_quantizations {
+            assert!(
+                q.estimated_size_mb > 0.0,
+                "{} size should be positive",
+                q.format
+            );
+        }
+    }
+
+    #[test]
+    fn test_kernel_compatibility_tps_estimates() {
+        let size = make_test_size();
+        let constraints = make_test_constraints();
+        let stats = build_statistical_analysis(&size, &constraints);
+        let kern = build_kernel_compatibility(&size, &constraints, &stats);
+
+        let cpu_tps = kern.estimated_tps_cpu.expect("should have CPU estimate");
+        let gpu_tps = kern.estimated_tps_gpu.expect("should have GPU estimate");
+        // GPU should be much faster than CPU (900 GB/s vs 50 GB/s bandwidth)
+        assert!(
+            gpu_tps > cpu_tps * 10.0,
+            "GPU should be >10x faster than CPU"
+        );
+    }
+
+    #[test]
+    fn test_kernel_compatibility_memory_includes_kv() {
+        let size = make_test_size();
+        let constraints = make_test_constraints();
+        let stats = build_statistical_analysis(&size, &constraints);
+        let kern = build_kernel_compatibility(&size, &constraints, &stats);
+
+        // Memory should be > Q4 model size (includes KV cache)
+        assert!(kern.memory_required_mb > stats.model_size_q4_mb);
+    }
+
+    // ========================================================================
+    // format_params Extended Tests
+    // ========================================================================
+
+    #[test]
+    fn test_format_params_boundary_1000() {
+        assert_eq!(format_params(999), "999");
+        assert_eq!(format_params(1000), "1.0K");
+    }
+
+    #[test]
+    fn test_format_params_boundary_1m() {
+        assert_eq!(format_params(999_999), "1000.0K");
+        assert_eq!(format_params(1_000_000), "1.0M");
+    }
+
+    #[test]
+    fn test_format_params_boundary_1b() {
+        assert_eq!(format_params(999_999_999), "1000.0M");
+        assert_eq!(format_params(1_000_000_000), "1.0B");
+    }
+
+    #[test]
+    fn test_format_params_zero() {
+        assert_eq!(format_params(0), "0");
+    }
+
+    // ========================================================================
+    // build_statistical_analysis Integration Tests
+    // ========================================================================
+
+    #[test]
+    fn test_statistical_analysis_with_mha() {
+        let mut size = make_test_size();
+        size.num_kv_heads = size.num_heads;
+        let constraints = make_test_constraints();
+        let stats = build_statistical_analysis(&size, &constraints);
+
+        assert!((stats.gqa_ratio - 1.0).abs() < 0.01);
+        assert!(stats.kv_cache_reduction.abs() < 0.01);
+    }
+
+    #[test]
+    fn test_statistical_analysis_serialization() {
+        let size = make_test_size();
+        let constraints = make_test_constraints();
+        let stats = build_statistical_analysis(&size, &constraints);
+
+        let json = serde_json::to_string_pretty(&stats).expect("serialize");
+        assert!(json.contains("gqa_ratio"));
+        assert!(json.contains("kv_cache_reduction"));
+        assert!(json.contains("model_params"));
+        assert!(json.contains("model_size_f16_mb"));
+        assert!(json.contains("model_size_q4_mb"));
+        assert!(json.contains("kv_cache_per_token_bytes"));
+        assert!(json.contains("kv_cache_4k_mb"));
+        assert!(json.contains("ffn_expansion_ratio"));
+        assert!(json.contains("ffn_type_explanation"));
+        assert!(json.contains("rope_max_wavelength"));
+        assert!(json.contains("effective_context_window"));
+        assert!(json.contains("attention_flops_per_token"));
+        assert!(json.contains("ffn_flops_per_token"));
+    }
+
+    // ========================================================================
+    // Serialization Tests for Report Types
+    // ========================================================================
+
+    #[test]
+    fn test_family_info_serialize() {
+        let fi = FamilyInfo {
+            name: "llama".to_string(),
+            display_name: "LLaMA".to_string(),
+            vendor: "Meta".to_string(),
+            architectures: vec!["LlamaForCausalLM".to_string()],
+            constraints: ConstraintsSummary {
+                attention: "GQA".to_string(),
+                activation: "SiLU".to_string(),
+                norm: "RMSNorm".to_string(),
+                bias: false,
+                tied_embeddings: false,
+                mlp: "SwiGLU".to_string(),
+                positional_encoding: "RoPE".to_string(),
+            },
+            chat_template_format: None,
+        };
+        let json = serde_json::to_string(&fi).expect("serialize");
+        assert!(json.contains("\"name\":\"llama\""));
+        // chat_template_format should be skipped
+        assert!(!json.contains("chat_template_format"));
+    }
+
+    #[test]
+    fn test_size_variant_info_serialize() {
+        let svi = SizeVariantInfo {
+            name: "7b".to_string(),
+            parameters: "7B".to_string(),
+            hidden_dim: 4096,
+            num_layers: 32,
+            num_heads: 32,
+            num_kv_heads: 8,
+            intermediate_dim: 14336,
+            vocab_size: 32000,
+            expected_tensor_count: 291,
+        };
+        let json = serde_json::to_string(&svi).expect("serialize");
+        assert!(json.contains("\"hidden_dim\":4096"));
+        assert!(json.contains("\"expected_tensor_count\":291"));
+    }
+
+    #[test]
+    fn test_format_info_serialize() {
+        let fi = FormatInfo {
+            format_type: "GGUF".to_string(),
+            file_size: 4_000_000_000,
+            tensor_count: 291,
+            total_params: 7_000_000_000,
+            quantization: Some("Q4_K_M".to_string()),
+            architecture: Some("llama".to_string()),
+        };
+        let json = serde_json::to_string(&fi).expect("serialize");
+        assert!(json.contains("\"format_type\":\"GGUF\""));
+        assert!(json.contains("\"quantization\":\"Q4_K_M\""));
+    }
+
+    #[test]
+    fn test_format_info_serialize_no_optional() {
+        let fi = FormatInfo {
+            format_type: "SafeTensors".to_string(),
+            file_size: 2_000_000_000,
+            tensor_count: 200,
+            total_params: 1_500_000_000,
+            quantization: None,
+            architecture: None,
+        };
+        let json = serde_json::to_string(&fi).expect("serialize");
+        assert!(!json.contains("quantization"));
+        assert!(!json.contains("architecture"));
+    }
+
+    #[test]
+    fn test_certification_info_serialize() {
+        let ci = CertificationInfo {
+            status: "PENDING".to_string(),
+            playbook_path: Some("/playbooks/7b.yaml".to_string()),
+        };
+        let json = serde_json::to_string(&ci).expect("serialize");
+        assert!(json.contains("PENDING"));
+        assert!(json.contains("playbook_path"));
+    }
+
+    #[test]
+    fn test_certification_info_no_playbook() {
+        let ci = CertificationInfo {
+            status: "APPROVED".to_string(),
+            playbook_path: None,
+        };
+        let json = serde_json::to_string(&ci).expect("serialize");
+        assert!(!json.contains("playbook_path"));
+    }
+
+    #[test]
+    fn test_cross_validation_entry_serialize() {
+        let entry = CrossValidationEntry {
+            field: "hidden_dim".to_string(),
+            contract_value: "1536".to_string(),
+            hf_value: "1536".to_string(),
+            status: "match".to_string(),
+        };
+        let json = serde_json::to_string(&entry).expect("serialize");
+        assert!(json.contains("\"status\":\"match\""));
+    }
+
+    #[test]
+    fn test_cross_validation_serialize() {
+        let cv = CrossValidation {
+            matches: vec![CrossValidationEntry {
+                field: "hidden_dim".to_string(),
+                contract_value: "1536".to_string(),
+                hf_value: "1536".to_string(),
+                status: "match".to_string(),
+            }],
+            mismatches: vec![],
+            contract_only: vec!["norm_eps=1e-6".to_string()],
+            hf_only: vec!["rope_scaling=dynamic".to_string()],
+        };
+        let json = serde_json::to_string(&cv).expect("serialize");
+        assert!(json.contains("matches"));
+        assert!(json.contains("mismatches"));
+        assert!(json.contains("contract_only"));
+        assert!(json.contains("hf_only"));
+    }
+
+    #[test]
+    fn test_kernel_compatibility_serialize() {
+        let kern = KernelCompatibility {
+            supported_quantizations: vec![QuantizationSupport {
+                format: "Q4_K_M".to_string(),
+                supported: true,
+                kernel: "fused_q4k".to_string(),
+                bits_per_weight: 4.5,
+                estimated_size_mb: 500.0,
+            }],
+            attention_kernel: "GQA fused".to_string(),
+            ffn_kernel: "SwiGLU fused".to_string(),
+            estimated_tps_cpu: Some(100.0),
+            estimated_tps_gpu: Some(1000.0),
+            memory_required_mb: 600.0,
+            notes: vec!["ROW-MAJOR".to_string()],
+        };
+        let json = serde_json::to_string(&kern).expect("serialize");
+        assert!(json.contains("supported_quantizations"));
+        assert!(json.contains("estimated_tps_cpu"));
+    }
+
+    #[test]
+    fn test_kernel_compatibility_no_tps() {
+        let kern = KernelCompatibility {
+            supported_quantizations: vec![],
+            attention_kernel: "none".to_string(),
+            ffn_kernel: "none".to_string(),
+            estimated_tps_cpu: None,
+            estimated_tps_gpu: None,
+            memory_required_mb: 0.0,
+            notes: vec![],
+        };
+        let json = serde_json::to_string(&kern).expect("serialize");
+        assert!(!json.contains("estimated_tps_cpu"));
+        assert!(!json.contains("estimated_tps_gpu"));
+    }
+
+    #[test]
+    fn test_architecture_explanation_serialize() {
+        let expl = ArchitectureExplanation {
+            attention_explanation: "GQA with ratio 0.17".to_string(),
+            ffn_explanation: "SwiGLU gated".to_string(),
+            norm_explanation: "RMSNorm".to_string(),
+            positional_explanation: "RoPE theta=1000000".to_string(),
+            scaling_analysis: "1.5B params".to_string(),
+        };
+        let json = serde_json::to_string(&expl).expect("serialize");
+        assert!(json.contains("attention_explanation"));
+        assert!(json.contains("ffn_explanation"));
+        assert!(json.contains("norm_explanation"));
+        assert!(json.contains("positional_explanation"));
+        assert!(json.contains("scaling_analysis"));
+    }
+
+    #[test]
+    fn test_quantization_support_serialize() {
+        let qs = QuantizationSupport {
+            format: "F16".to_string(),
+            supported: true,
+            kernel: "trueno::f16_matvec".to_string(),
+            bits_per_weight: 16.0,
+            estimated_size_mb: 3000.0,
+        };
+        let json = serde_json::to_string(&qs).expect("serialize");
+        assert!(json.contains("\"format\":\"F16\""));
+        assert!(json.contains("\"supported\":true"));
+    }
+
+    #[test]
+    fn test_huggingface_data_serialize() {
+        let hf = HuggingFaceData {
+            repo: "Qwen/Qwen2.5-1.5B".to_string(),
+            model_type: Some("qwen2".to_string()),
+            pipeline_tag: Some("text-generation".to_string()),
+            downloads: Some(1000),
+            config_fields: serde_json::json!({"hidden_size": 1536}),
+            generation_config: None,
+        };
+        let json = serde_json::to_string(&hf).expect("serialize");
+        assert!(json.contains("\"repo\":\"Qwen/Qwen2.5-1.5B\""));
+        assert!(!json.contains("generation_config"));
+    }
+
+    #[test]
+    fn test_huggingface_data_all_none() {
+        let hf = HuggingFaceData {
+            repo: "test/model".to_string(),
+            model_type: None,
+            pipeline_tag: None,
+            downloads: None,
+            config_fields: serde_json::json!({}),
+            generation_config: None,
+        };
+        let json = serde_json::to_string(&hf).expect("serialize");
+        assert!(!json.contains("model_type"));
+        assert!(!json.contains("pipeline_tag"));
+        assert!(!json.contains("downloads"));
+    }
+
+    // ========================================================================
+    // Report with All Optional Fields Populated
+    // ========================================================================
+
+    #[test]
+    fn test_report_with_all_fields() {
+        let report = ModelOracleReport {
+            source: "test.gguf".to_string(),
+            mode: OracleMode::Local,
+            family: Some(FamilyInfo {
+                name: "qwen2".to_string(),
+                display_name: "Qwen2".to_string(),
+                vendor: "Alibaba".to_string(),
+                architectures: vec!["Qwen2ForCausalLM".to_string()],
+                constraints: ConstraintsSummary {
+                    attention: "GQA".to_string(),
+                    activation: "SiLU".to_string(),
+                    norm: "RMSNorm".to_string(),
+                    bias: true,
+                    tied_embeddings: false,
+                    mlp: "SwiGLU".to_string(),
+                    positional_encoding: "RoPE".to_string(),
+                },
+                chat_template_format: Some("chatml".to_string()),
+            }),
+            size_variant: None,
+            format: None,
+            compliance: Some(ComplianceResult {
+                is_compliant: false,
+                tensor_count_match: false,
+                missing_tensors: vec!["layer.0.attn.q_proj.weight".to_string()],
+                unexpected_tensors: vec!["extra.weight".to_string()],
+            }),
+            certification: Some(CertificationInfo {
+                status: "PENDING".to_string(),
+                playbook_path: Some("/playbooks/1.5b.yaml".to_string()),
+            }),
+            tensors: Some(vec![TensorComplianceEntry {
+                name: "embed.weight".to_string(),
+                present: true,
+                dtype: Some("F16".to_string()),
+                shape: Some(vec![151936, 1536]),
+                note: Some("embedding".to_string()),
+            }]),
+            stats: None,
+            explanation: None,
+            kernel_compatibility: None,
+            cross_validation: Some(CrossValidation {
+                matches: vec![],
+                mismatches: vec![],
+                contract_only: vec![],
+                hf_only: vec![],
+            }),
+            hf_data: None,
+        };
+
+        let json = serde_json::to_string_pretty(&report).expect("serialize");
+        assert!(json.contains("compliance"));
+        assert!(json.contains("certification"));
+        assert!(json.contains("tensors"));
+        assert!(json.contains("cross_validation"));
+    }
+
+    // ========================================================================
+    // OracleMode Tests
+    // ========================================================================
+
+    #[test]
+    fn test_oracle_mode_debug() {
+        let mode = OracleMode::Local;
+        let debug = format!("{mode:?}");
+        assert!(debug.contains("Local"));
+    }
+
+    #[test]
+    fn test_oracle_mode_clone() {
+        let mode = OracleMode::HuggingFace;
+        let cloned = mode.clone();
+        let json = serde_json::to_string(&cloned).expect("serialize");
+        assert_eq!(json, "\"hugging_face\"");
+    }
+
+    // ========================================================================
+    // build_certification Tests
+    // ========================================================================
+
+    #[test]
+    fn test_build_certification_no_cert_config() {
+        use std::collections::HashMap;
+
+        let config = ModelFamilyConfig {
+            family: "test".to_string(),
+            display_name: "Test".to_string(),
+            vendor: "Test".to_string(),
+            architectures: vec![],
+            hf_pattern: String::new(),
+            size_variants: HashMap::new(),
+            constraints: make_test_constraints(),
+            tensor_template: aprender::format::model_family::TensorTemplate {
+                embedding: String::new(),
+                lm_head: None,
+                final_norm: None,
+                per_layer: HashMap::new(),
+            },
+            shape_template: aprender::format::model_family::ShapeTemplate {
+                shapes: HashMap::new(),
+            },
+            quantizations: vec![],
+            chat_template: None,
+            certification: None,
+        };
+
+        let cert = build_certification(&config, Some("7b"));
+        assert!(cert.is_none());
+    }
+
+    #[test]
+    fn test_build_certification_no_size() {
+        use aprender::format::model_family::CertificationConfig;
+        use std::collections::HashMap;
+
+        let config = ModelFamilyConfig {
+            family: "test".to_string(),
+            display_name: "Test".to_string(),
+            vendor: "Test".to_string(),
+            architectures: vec![],
+            hf_pattern: String::new(),
+            size_variants: HashMap::new(),
+            constraints: make_test_constraints(),
+            tensor_template: aprender::format::model_family::TensorTemplate {
+                embedding: String::new(),
+                lm_head: None,
+                final_norm: None,
+                per_layer: HashMap::new(),
+            },
+            shape_template: aprender::format::model_family::ShapeTemplate {
+                shapes: HashMap::new(),
+            },
+            quantizations: vec![],
+            chat_template: None,
+            certification: Some(CertificationConfig {
+                playbook_path: "../playbooks/{size}.yaml".to_string(),
+                csv_family_key: "test".to_string(),
+                size_categories: HashMap::new(),
+            }),
+        };
+
+        let cert = build_certification(&config, None);
+        assert!(cert.is_some());
+        let cert = cert.expect("cert exists");
+        assert!(cert.playbook_path.is_none());
+    }
+
+    // ========================================================================
+    // Tensor Compliance Entry Tests
+    // ========================================================================
+
+    #[test]
+    fn test_tensor_compliance_entry_missing_tensor() {
+        let entry = TensorComplianceEntry {
+            name: "model.layers.0.attn.q_proj.weight".to_string(),
+            present: false,
+            dtype: None,
+            shape: None,
+            note: Some("MISSING".to_string()),
+        };
+        let json = serde_json::to_string(&entry).expect("serialize");
+        assert!(json.contains("\"present\":false"));
+        assert!(json.contains("\"note\":\"MISSING\""));
+        // dtype and shape should be skipped
+        assert!(!json.contains("\"dtype\""));
+        assert!(!json.contains("\"shape\""));
+    }
+
+    // ========================================================================
+    // Constraints Summary Tests
+    // ========================================================================
+
+    #[test]
+    fn test_constraints_summary_serialize() {
+        let cs = ConstraintsSummary {
+            attention: "GQA".to_string(),
+            activation: "SiLU".to_string(),
+            norm: "RMSNorm".to_string(),
+            bias: true,
+            tied_embeddings: false,
+            mlp: "SwiGLU".to_string(),
+            positional_encoding: "RoPE".to_string(),
+        };
+        let json = serde_json::to_string(&cs).expect("serialize");
+        assert!(json.contains("\"bias\":true"));
+        assert!(json.contains("\"tied_embeddings\":false"));
+    }
+
+    // ========================================================================
+    // Additional Coverage Tests
+    // ========================================================================
+
+    #[test]
+    fn test_cross_validation_rope_theta_relative_approximate() {
+        // Test the "approximate" path: abs diff > 1.0 but relative diff < 1%
+        let mut size = make_test_size();
+        size.rope_theta = 100_000.0;
+        let constraints = make_test_constraints();
+        // abs diff = 500 > 1.0, but relative = 500/100000 = 0.5% < 1%
+        let hf_config = serde_json::json!({
+            "rope_theta": 100_500.0
+        });
+
+        let cv = cross_validate(&size, &constraints, &hf_config);
+        let rope_entry = cv.matches.iter().find(|e| e.field == "rope_theta");
+        assert!(
+            rope_entry.is_some(),
+            "rope_theta should approximately match"
+        );
+        assert_eq!(
+            rope_entry.expect("exists").status,
+            "approximate",
+            "Status should be 'approximate'"
+        );
+    }
+
+    #[test]
+    fn test_cross_validation_hf_value_bool() {
+        // Test when HF config has a non-number, non-string value (e.g. bool/object)
+        let size = make_test_size();
+        let constraints = make_test_constraints();
+        let hf_config = serde_json::json!({
+            "hidden_size": true
+        });
+
+        let cv = cross_validate(&size, &constraints, &hf_config);
+        // "true" != "1536" => mismatch
+        let entry = cv.mismatches.iter().find(|e| e.field == "hidden_dim");
+        assert!(
+            entry.is_some(),
+            "bool HF value should mismatch with numeric contract value"
+        );
+    }
+
+    #[test]
+    fn test_cross_validation_hf_value_array() {
+        let size = make_test_size();
+        let constraints = make_test_constraints();
+        let hf_config = serde_json::json!({
+            "hidden_size": [1536]
+        });
+
+        let cv = cross_validate(&size, &constraints, &hf_config);
+        let entry = cv.mismatches.iter().find(|e| e.field == "hidden_dim");
+        assert!(entry.is_some(), "array HF value should mismatch");
+    }
+
+    #[test]
+    fn test_expand_tensor_template_empty() {
+        use std::collections::HashMap;
+
+        let template = aprender::format::model_family::TensorTemplate {
+            embedding: String::new(),
+            lm_head: None,
+            final_norm: None,
+            per_layer: HashMap::new(),
+        };
+        let config = ModelFamilyConfig {
+            family: "test".to_string(),
+            display_name: "Test".to_string(),
+            vendor: "Test".to_string(),
+            architectures: vec![],
+            hf_pattern: String::new(),
+            size_variants: HashMap::new(),
+            constraints: make_test_constraints(),
+            tensor_template: template.clone(),
+            shape_template: aprender::format::model_family::ShapeTemplate {
+                shapes: HashMap::new(),
+            },
+            quantizations: vec![],
+            chat_template: None,
+            certification: None,
+        };
+
+        let names = expand_tensor_template(&template, &config, "7b");
+        assert!(names.is_empty(), "Empty template should produce no names");
+    }
+
+    #[test]
+    fn test_expand_tensor_template_with_globals() {
+        use std::collections::HashMap;
+
+        let template = aprender::format::model_family::TensorTemplate {
+            embedding: "model.embed_tokens.weight".to_string(),
+            lm_head: Some("lm_head.weight".to_string()),
+            final_norm: Some("model.norm.weight".to_string()),
+            per_layer: HashMap::new(),
+        };
+        let config = ModelFamilyConfig {
+            family: "test".to_string(),
+            display_name: "Test".to_string(),
+            vendor: "Test".to_string(),
+            architectures: vec![],
+            hf_pattern: String::new(),
+            size_variants: HashMap::new(),
+            constraints: make_test_constraints(),
+            tensor_template: template.clone(),
+            shape_template: aprender::format::model_family::ShapeTemplate {
+                shapes: HashMap::new(),
+            },
+            quantizations: vec![],
+            chat_template: None,
+            certification: None,
+        };
+
+        let names = expand_tensor_template(&template, &config, "nonexistent_size");
+        assert_eq!(names.len(), 3);
+        assert!(names.contains(&"model.embed_tokens.weight".to_string()));
+        assert!(names.contains(&"lm_head.weight".to_string()));
+        assert!(names.contains(&"model.norm.weight".to_string()));
+    }
+
+    #[test]
+    fn test_expand_tensor_template_with_per_layer() {
+        use std::collections::HashMap;
+
+        let mut per_layer = HashMap::new();
+        per_layer.insert(
+            "q_proj".to_string(),
+            Some("model.layers.{n}.self_attn.q_proj.weight".to_string()),
+        );
+        per_layer.insert(
+            "k_proj".to_string(),
+            Some("model.layers.{n}.self_attn.k_proj.weight".to_string()),
+        );
+
+        let template = aprender::format::model_family::TensorTemplate {
+            embedding: "embed.weight".to_string(),
+            lm_head: None,
+            final_norm: None,
+            per_layer,
+        };
+
+        let mut size_variants = HashMap::new();
+        size_variants.insert(
+            "tiny".to_string(),
+            ModelSizeConfig {
+                parameters: "tiny".to_string(),
+                hidden_dim: 64,
+                num_layers: 2,
+                num_heads: 2,
+                num_kv_heads: 2,
+                intermediate_dim: 128,
+                vocab_size: 100,
+                max_position_embeddings: 512,
+                head_dim: 32,
+                rope_theta: 10000.0,
+                norm_eps: 1e-5,
+            },
+        );
+
+        let config = ModelFamilyConfig {
+            family: "test".to_string(),
+            display_name: "Test".to_string(),
+            vendor: "Test".to_string(),
+            architectures: vec![],
+            hf_pattern: String::new(),
+            size_variants,
+            constraints: make_test_constraints(),
+            tensor_template: template.clone(),
+            shape_template: aprender::format::model_family::ShapeTemplate {
+                shapes: HashMap::new(),
+            },
+            quantizations: vec![],
+            chat_template: None,
+            certification: None,
+        };
+
+        let names = expand_tensor_template(&template, &config, "tiny");
+        // 1 embedding + 2 layers * 2 per-layer tensors = 5
+        assert_eq!(names.len(), 5);
+        assert!(names.contains(&"embed.weight".to_string()));
+        assert!(names.contains(&"model.layers.0.self_attn.q_proj.weight".to_string()));
+        assert!(names.contains(&"model.layers.1.self_attn.q_proj.weight".to_string()));
+        assert!(names.contains(&"model.layers.0.self_attn.k_proj.weight".to_string()));
+        assert!(names.contains(&"model.layers.1.self_attn.k_proj.weight".to_string()));
+    }
+
+    #[test]
+    fn test_expand_tensor_template_per_layer_with_none_value() {
+        use std::collections::HashMap;
+
+        let mut per_layer = HashMap::new();
+        per_layer.insert(
+            "q_proj".to_string(),
+            Some("model.layers.{n}.q.weight".to_string()),
+        );
+        per_layer.insert("bias".to_string(), None); // Optional tensor not present
+
+        let template = aprender::format::model_family::TensorTemplate {
+            embedding: "embed.weight".to_string(),
+            lm_head: None,
+            final_norm: None,
+            per_layer,
+        };
+
+        let mut size_variants = HashMap::new();
+        size_variants.insert(
+            "tiny".to_string(),
+            ModelSizeConfig {
+                parameters: "tiny".to_string(),
+                hidden_dim: 64,
+                num_layers: 1,
+                num_heads: 2,
+                num_kv_heads: 2,
+                intermediate_dim: 128,
+                vocab_size: 100,
+                max_position_embeddings: 512,
+                head_dim: 32,
+                rope_theta: 10000.0,
+                norm_eps: 1e-5,
+            },
+        );
+
+        let config = ModelFamilyConfig {
+            family: "test".to_string(),
+            display_name: "Test".to_string(),
+            vendor: "Test".to_string(),
+            architectures: vec![],
+            hf_pattern: String::new(),
+            size_variants,
+            constraints: make_test_constraints(),
+            tensor_template: template.clone(),
+            shape_template: aprender::format::model_family::ShapeTemplate {
+                shapes: HashMap::new(),
+            },
+            quantizations: vec![],
+            chat_template: None,
+            certification: None,
+        };
+
+        let names = expand_tensor_template(&template, &config, "tiny");
+        // 1 embedding + 1 layer * 1 per-layer (None skipped by flatten) = 2
+        assert_eq!(names.len(), 2);
+        assert!(names.contains(&"embed.weight".to_string()));
+        assert!(names.contains(&"model.layers.0.q.weight".to_string()));
+    }
+
+    #[test]
+    fn test_oracle_flags_combined_stats_and_explain() {
+        let flags = OracleFlags {
+            stats: true,
+            explain: true,
+            kernels: false,
+            validate: false,
+            full: false,
+        };
+        assert!(flags.show_stats());
+        assert!(flags.show_explain());
+        assert!(!flags.show_kernels());
+        assert!(!flags.show_validate());
+    }
+
+    #[test]
+    fn test_oracle_flags_combined_kernels_and_validate() {
+        let flags = OracleFlags {
+            stats: false,
+            explain: false,
+            kernels: true,
+            validate: true,
+            full: false,
+        };
+        assert!(!flags.show_stats());
+        assert!(!flags.show_explain());
+        assert!(flags.show_kernels());
+        assert!(flags.show_validate());
+    }
+
+    #[test]
+    fn test_oracle_flags_full_overrides_individual() {
+        let flags = OracleFlags {
+            stats: false,
+            explain: false,
+            kernels: false,
+            validate: false,
+            full: true,
+        };
+        // full=true should make all show_* true even if individual flags are false
+        assert!(flags.show_stats());
+        assert!(flags.show_explain());
+        assert!(flags.show_kernels());
+        assert!(flags.show_validate());
+    }
+
+    #[test]
+    fn test_oracle_flags_copy_semantics() {
+        let flags = OracleFlags {
+            stats: true,
+            explain: false,
+            kernels: true,
+            validate: false,
+            full: false,
+        };
+        let copied = flags;
+        // After copy, original should still work (Copy trait)
+        assert!(flags.show_stats());
+        assert!(copied.show_stats());
+        assert!(flags.show_kernels());
+        assert!(copied.show_kernels());
+    }
+
+    #[test]
+    fn test_report_all_none_fields_serialize() {
+        let report = ModelOracleReport {
+            source: "minimal.gguf".to_string(),
+            mode: OracleMode::Local,
+            family: None,
+            size_variant: None,
+            format: None,
+            compliance: None,
+            certification: None,
+            tensors: None,
+            stats: None,
+            explanation: None,
+            kernel_compatibility: None,
+            cross_validation: None,
+            hf_data: None,
+        };
+
+        let json = serde_json::to_string_pretty(&report).expect("serialize");
+        assert!(json.contains("\"source\": \"minimal.gguf\""));
+        assert!(json.contains("\"mode\": \"local\""));
+        // All optional fields should be absent due to skip_serializing_if
+        assert!(!json.contains("\"family\""));
+        assert!(!json.contains("\"size_variant\""));
+        assert!(!json.contains("\"format\""));
+        assert!(!json.contains("\"compliance\""));
+        assert!(!json.contains("\"certification\""));
+        assert!(!json.contains("\"tensors\""));
+        assert!(!json.contains("\"stats\""));
+        assert!(!json.contains("\"explanation\""));
+        assert!(!json.contains("\"kernel_compatibility\""));
+        assert!(!json.contains("\"cross_validation\""));
+        assert!(!json.contains("\"hf_data\""));
+    }
+
+    #[test]
+    fn test_huggingface_data_with_generation_config() {
+        let hf = HuggingFaceData {
+            repo: "test/model".to_string(),
+            model_type: Some("llama".to_string()),
+            pipeline_tag: None,
+            downloads: Some(42),
+            config_fields: serde_json::json!({"hidden_size": 4096}),
+            generation_config: Some(serde_json::json!({
+                "temperature": 0.7,
+                "top_p": 0.9,
+                "max_length": 2048
+            })),
+        };
+        let json = serde_json::to_string(&hf).expect("serialize");
+        assert!(json.contains("generation_config"));
+        assert!(json.contains("temperature"));
+        assert!(json.contains("0.7"));
+    }
+
+    #[test]
+    fn test_compute_param_count_embedding_contribution() {
+        // Verify embedding = vocab_size * hidden_dim
+        let size = ModelSizeConfig {
+            parameters: "test".to_string(),
+            hidden_dim: 100,
+            num_layers: 0, // zero layers to isolate embedding
+            num_heads: 1,
+            num_kv_heads: 1,
+            intermediate_dim: 200,
+            vocab_size: 1000,
+            max_position_embeddings: 512,
+            head_dim: 100,
+            rope_theta: 10000.0,
+            norm_eps: 1e-5,
+        };
+        let mut constraints = make_test_constraints();
+        constraints.tied_embeddings = false;
+
+        let params = compute_param_count(&size, &constraints);
+        // embedding (1000*100) + lm_head (1000*100) + final_norm (100) + 0 layers
+        let expected = 1000 * 100 + 1000 * 100 + 100;
+        assert_eq!(params, expected);
+    }
+
+    #[test]
+    fn test_compute_param_count_tied_removes_lm_head() {
+        let size = ModelSizeConfig {
+            parameters: "test".to_string(),
+            hidden_dim: 100,
+            num_layers: 0,
+            num_heads: 1,
+            num_kv_heads: 1,
+            intermediate_dim: 200,
+            vocab_size: 1000,
+            max_position_embeddings: 512,
+            head_dim: 100,
+            rope_theta: 10000.0,
+            norm_eps: 1e-5,
+        };
+        let mut constraints = make_test_constraints();
+        constraints.tied_embeddings = true;
+
+        let params = compute_param_count(&size, &constraints);
+        // embedding (1000*100) + final_norm (100) + 0 layers, no lm_head
+        let expected = 1000 * 100 + 100;
+        assert_eq!(params, expected);
+    }
+
+    #[test]
+    fn test_compute_memory_estimates_ratio() {
+        // F16 = 2 bytes/param, Q4 = 0.5 bytes/param
+        // So F16/Q4 ratio should be exactly 4.0
+        let size = make_test_size();
+        let constraints = make_test_constraints();
+        let (f16_mb, q4_mb) = compute_memory_estimates(&size, &constraints);
+        let ratio = f16_mb / q4_mb;
+        assert!(
+            (ratio - 4.0).abs() < 1e-10,
+            "F16/Q4 ratio should be exactly 4.0, got {ratio}"
+        );
+    }
+
+    #[test]
+    fn test_kv_cache_formula_correctness() {
+        // KV = 2 * L * kv_heads * head_dim * 2(f16)
+        let size = ModelSizeConfig {
+            parameters: "test".to_string(),
+            hidden_dim: 256,
+            num_layers: 4,
+            num_heads: 8,
+            num_kv_heads: 4,
+            intermediate_dim: 512,
+            vocab_size: 100,
+            max_position_embeddings: 2048,
+            head_dim: 32,
+            rope_theta: 10000.0,
+            norm_eps: 1e-5,
+        };
+        let (per_token, _) = compute_kv_cache(&size);
+        let expected: u64 = 2 * 4 * 4 * 32 * 2;
+        assert_eq!(per_token, expected);
+    }
+
+    #[test]
+    fn test_ffn_analysis_swiglu_explanation_contains_ratio() {
+        let mut size = make_test_size();
+        size.hidden_dim = 1000;
+        size.intermediate_dim = 3000;
+        let mut constraints = make_test_constraints();
+        constraints.mlp_type = MlpType::SwiGlu;
+        let (ratio, explanation) = compute_ffn_analysis(&size, &constraints);
+        assert!((ratio - 3.0).abs() < 0.01);
+        assert!(explanation.contains("3.00x"));
+    }
+
+    #[test]
+    fn test_ffn_analysis_gelu_explanation_contains_ratio() {
+        let mut size = make_test_size();
+        size.hidden_dim = 1000;
+        size.intermediate_dim = 4000;
+        let mut constraints = make_test_constraints();
+        constraints.mlp_type = MlpType::GeluMlp;
+        let (ratio, explanation) = compute_ffn_analysis(&size, &constraints);
+        assert!((ratio - 4.0).abs() < 0.01);
+        assert!(explanation.contains("4.00x"));
+    }
+
+    #[test]
+    fn test_rope_analysis_negative_theta() {
+        let mut size = make_test_size();
+        size.rope_theta = -1.0; // Negative should produce 0.0
+        let (wavelength, _) = compute_rope_analysis(&size);
+        assert_eq!(wavelength, 0.0);
+    }
+
+    #[test]
+    fn test_flops_estimate_scales_with_layers() {
+        let mut size = make_test_size();
+        let constraints = make_test_constraints();
+
+        size.num_layers = 10;
+        let (attn_10, ffn_10) = compute_flops_estimate(&size, &constraints);
+
+        size.num_layers = 20;
+        let (attn_20, ffn_20) = compute_flops_estimate(&size, &constraints);
+
+        // Doubling layers should double FLOPS
+        assert_eq!(attn_20, attn_10 * 2);
+        assert_eq!(ffn_20, ffn_10 * 2);
+    }
+
+    #[test]
+    fn test_build_statistical_analysis_zero_rope_theta() {
+        let mut size = make_test_size();
+        size.rope_theta = 0.0;
+        let constraints = make_test_constraints();
+        let stats = build_statistical_analysis(&size, &constraints);
+        assert_eq!(stats.rope_max_wavelength, 0.0);
+    }
+
+    #[test]
+    fn test_build_statistical_analysis_zero_hidden_dim() {
+        let mut size = make_test_size();
+        size.hidden_dim = 0;
+        let constraints = make_test_constraints();
+        let stats = build_statistical_analysis(&size, &constraints);
+        assert_eq!(stats.ffn_expansion_ratio, 0.0);
+        assert!(stats.ffn_type_explanation.is_empty());
+    }
+
+    #[test]
+    fn test_kernel_compatibility_geglu_kernel_string() {
+        let size = make_test_size();
+        let mut constraints = make_test_constraints();
+        constraints.mlp_type = MlpType::GatedMlp;
+        let stats = build_statistical_analysis(&size, &constraints);
+        let kern = build_kernel_compatibility(&size, &constraints, &stats);
+        assert!(kern.ffn_kernel.contains("GeGLU"));
+        assert!(kern.ffn_kernel.contains("row-major"));
+    }
+
+    #[test]
+    fn test_kernel_compatibility_f16_bits_per_weight() {
+        let size = make_test_size();
+        let constraints = make_test_constraints();
+        let stats = build_statistical_analysis(&size, &constraints);
+        let kern = build_kernel_compatibility(&size, &constraints, &stats);
+
+        let f16 = kern
+            .supported_quantizations
+            .iter()
+            .find(|q| q.format == "F16")
+            .expect("F16");
+        assert!((f16.bits_per_weight - 16.0).abs() < 0.001);
+
+        let q8 = kern
+            .supported_quantizations
+            .iter()
+            .find(|q| q.format == "Q8_0")
+            .expect("Q8_0");
+        assert!((q8.bits_per_weight - 8.0).abs() < 0.001);
+
+        let q4 = kern
+            .supported_quantizations
+            .iter()
+            .find(|q| q.format == "Q4_K_M")
+            .expect("Q4_K_M");
+        assert!((q4.bits_per_weight - 4.5).abs() < 0.001);
+
+        let q6 = kern
+            .supported_quantizations
+            .iter()
+            .find(|q| q.format == "Q6_K")
+            .expect("Q6_K");
+        assert!((q6.bits_per_weight - 6.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_kernel_compatibility_row_major_note_always_present() {
+        let size = make_test_size();
+        let constraints = make_test_constraints();
+        let stats = build_statistical_analysis(&size, &constraints);
+        let kern = build_kernel_compatibility(&size, &constraints, &stats);
+        assert!(kern.notes.iter().any(|n| n.contains("ROW-MAJOR")));
+    }
+
+    #[test]
+    fn test_architecture_explanation_gqa_kv_cache_comparison() {
+        let size = make_test_size();
+        let constraints = make_test_constraints();
+        let stats = build_statistical_analysis(&size, &constraints);
+        let expl = build_architecture_explanation(&size, &constraints, &stats);
+        // GQA explanation should mention cache reduction percentage
+        assert!(expl.attention_explanation.contains("reduces KV cache"));
+        assert!(expl.attention_explanation.contains("MB"));
+    }
+
+    #[test]
+    fn test_architecture_explanation_rope_extrapolation() {
+        let size = make_test_size();
+        let constraints = make_test_constraints();
+        let stats = build_statistical_analysis(&size, &constraints);
+        let expl = build_architecture_explanation(&size, &constraints, &stats);
+        // RoPE explanation should mention extrapolation
+        assert!(expl.positional_explanation.contains("YaRN"));
+        let extrapolated = size.max_position_embeddings * 4;
+        assert!(expl
+            .positional_explanation
+            .contains(&extrapolated.to_string()));
+    }
+
+    #[test]
+    fn test_architecture_explanation_chinchilla_tokens() {
+        let size = make_test_size();
+        let constraints = make_test_constraints();
+        let stats = build_statistical_analysis(&size, &constraints);
+        let expl = build_architecture_explanation(&size, &constraints, &stats);
+        assert!(expl.scaling_analysis.contains("Chinchilla"));
+        assert!(expl.scaling_analysis.contains("FLOPs"));
+    }
+
+    #[test]
+    fn test_build_family_info_with_chat_template() {
+        use aprender::format::model_family::*;
+        use std::collections::HashMap;
+
+        let config = ModelFamilyConfig {
+            family: "qwen2".to_string(),
+            display_name: "Qwen2".to_string(),
+            vendor: "Alibaba".to_string(),
+            architectures: vec!["Qwen2ForCausalLM".to_string()],
+            hf_pattern: "Qwen/Qwen2*".to_string(),
+            size_variants: HashMap::new(),
+            constraints: make_test_constraints(),
+            tensor_template: TensorTemplate {
+                embedding: "embed.weight".to_string(),
+                lm_head: None,
+                final_norm: None,
+                per_layer: HashMap::new(),
+            },
+            shape_template: ShapeTemplate {
+                shapes: HashMap::new(),
+            },
+            quantizations: vec![],
+            chat_template: Some(ChatTemplateConfig {
+                format: "chatml".to_string(),
+                template: String::new(),
+                bos_token: "<|im_start|>".to_string(),
+                eos_token: "<|im_end|>".to_string(),
+                special_tokens: HashMap::new(),
+            }),
+            certification: None,
+        };
+
+        let fi = build_family_info(&config);
+        assert_eq!(fi.chat_template_format, Some("chatml".to_string()));
+    }
+
+    #[test]
+    fn test_build_family_info_display_types() {
+        use aprender::format::model_family::*;
+        use std::collections::HashMap;
+
+        let config = ModelFamilyConfig {
+            family: "gpt2".to_string(),
+            display_name: "GPT-2".to_string(),
+            vendor: "OpenAI".to_string(),
+            architectures: vec!["GPT2LMHeadModel".to_string()],
+            hf_pattern: "openai/gpt2*".to_string(),
+            size_variants: HashMap::new(),
+            constraints: ModelConstraints {
+                attention_type: AttentionType::Mha,
+                activation: Activation::Gelu,
+                norm_type: NormType::LayerNorm,
+                has_bias: true,
+                tied_embeddings: true,
+                positional_encoding: PositionalEncoding::Absolute,
+                mlp_type: MlpType::GeluMlp,
+            },
+            tensor_template: TensorTemplate {
+                embedding: "wte.weight".to_string(),
+                lm_head: None,
+                final_norm: None,
+                per_layer: HashMap::new(),
+            },
+            shape_template: ShapeTemplate {
+                shapes: HashMap::new(),
+            },
+            quantizations: vec![],
+            chat_template: None,
+            certification: None,
+        };
+
+        let fi = build_family_info(&config);
+        assert_eq!(fi.constraints.attention, "MHA");
+        assert_eq!(fi.constraints.norm, "LayerNorm");
+        assert_eq!(fi.constraints.mlp, "GELU MLP");
+        assert_eq!(fi.constraints.positional_encoding, "Absolute");
+        assert!(fi.constraints.bias);
+        assert!(fi.constraints.tied_embeddings);
+    }
+
+    #[test]
+    fn test_cross_validation_all_fields_match() {
+        let size = make_test_size();
+        let constraints = make_test_constraints();
+        let hf_config = serde_json::json!({
+            "hidden_size": 1536,
+            "num_hidden_layers": 28,
+            "num_attention_heads": 12,
+            "num_key_value_heads": 2,
+            "intermediate_size": 8960,
+            "vocab_size": 151936,
+            "max_position_embeddings": 32768,
+            "rope_theta": 1000000.0,
+            "rms_norm_eps": 1e-6,
+            "model_type": "qwen2"
+        });
+
+        let cv = cross_validate(&size, &constraints, &hf_config);
+        assert!(cv.mismatches.is_empty());
+        assert!(cv.contract_only.is_empty());
+        // 7 size fields + rope_theta + norm_eps + model_type = 10 matches
+        assert!(
+            cv.matches.len() >= 9,
+            "Expected at least 9 matches, got {}",
+            cv.matches.len()
+        );
+    }
+
+    #[test]
+    fn test_cross_validation_multiple_mismatches() {
+        let size = make_test_size();
+        let constraints = make_test_constraints();
+        let hf_config = serde_json::json!({
+            "hidden_size": 9999,
+            "num_hidden_layers": 99,
+            "num_attention_heads": 99,
+            "num_key_value_heads": 99,
+            "intermediate_size": 9999,
+            "vocab_size": 9999,
+            "max_position_embeddings": 9999
+        });
+
+        let cv = cross_validate(&size, &constraints, &hf_config);
+        assert_eq!(cv.mismatches.len(), 7, "All 7 size fields should mismatch");
+    }
+
+    #[test]
+    fn test_cross_validation_norm_eps_mismatch_value() {
+        let mut size = make_test_size();
+        size.norm_eps = 1e-6;
+        let constraints = make_test_constraints();
+        let hf_config = serde_json::json!({
+            "rms_norm_eps": 1e-5
+        });
+
+        let cv = cross_validate(&size, &constraints, &hf_config);
+        let entry = cv
+            .mismatches
+            .iter()
+            .find(|e| e.field == "norm_eps")
+            .expect("should mismatch");
+        assert_eq!(entry.status, "mismatch");
+    }
+
+    #[test]
+    fn test_format_params_large_values() {
+        assert_eq!(format_params(70_000_000_000), "70.0B");
+        assert_eq!(format_params(175_000_000_000), "175.0B");
+    }
+
+    #[test]
+    fn test_format_params_exact_boundaries() {
+        assert_eq!(format_params(1), "1");
+        assert_eq!(format_params(10), "10");
+        assert_eq!(format_params(100), "100");
+    }
+
+    #[test]
+    fn test_statistical_analysis_complete_field_coverage() {
+        let size = make_test_size();
+        let constraints = make_test_constraints();
+        let stats = build_statistical_analysis(&size, &constraints);
+
+        // Verify specific computed values
+        let (expected_ratio, expected_reduction) = compute_gqa_analysis(&size);
+        assert!((stats.gqa_ratio - expected_ratio).abs() < 1e-10);
+        assert!((stats.kv_cache_reduction - expected_reduction).abs() < 1e-10);
+
+        let expected_params = compute_param_count(&size, &constraints);
+        assert_eq!(stats.model_params, expected_params);
+
+        let (expected_per_token, expected_4k) = compute_kv_cache(&size);
+        assert_eq!(stats.kv_cache_per_token_bytes, expected_per_token);
+        assert!((stats.kv_cache_4k_mb - expected_4k).abs() < 1e-10);
+
+        let (expected_ffn_ratio, _) = compute_ffn_analysis(&size, &constraints);
+        assert!((stats.ffn_expansion_ratio - expected_ffn_ratio).abs() < 1e-10);
+
+        let (expected_wavelength, expected_ctx) = compute_rope_analysis(&size);
+        assert!((stats.rope_max_wavelength - expected_wavelength).abs() < 1e-10);
+        assert_eq!(stats.effective_context_window, expected_ctx);
+
+        let (expected_attn_flops, expected_ffn_flops) = compute_flops_estimate(&size, &constraints);
+        assert_eq!(stats.attention_flops_per_token, expected_attn_flops);
+        assert_eq!(stats.ffn_flops_per_token, expected_ffn_flops);
+    }
+
+    #[test]
+    fn test_build_certification_size_template_replacement() {
+        use aprender::format::model_family::CertificationConfig;
+        use std::collections::HashMap;
+
+        let config = ModelFamilyConfig {
+            family: "test".to_string(),
+            display_name: "Test".to_string(),
+            vendor: "Test".to_string(),
+            architectures: vec![],
+            hf_pattern: String::new(),
+            size_variants: HashMap::new(),
+            constraints: make_test_constraints(),
+            tensor_template: aprender::format::model_family::TensorTemplate {
+                embedding: String::new(),
+                lm_head: None,
+                final_norm: None,
+                per_layer: HashMap::new(),
+            },
+            shape_template: aprender::format::model_family::ShapeTemplate {
+                shapes: HashMap::new(),
+            },
+            quantizations: vec![],
+            chat_template: None,
+            certification: Some(CertificationConfig {
+                playbook_path: "playbooks/{size}/run.yaml".to_string(),
+                csv_family_key: "test".to_string(),
+                size_categories: HashMap::new(),
+            }),
+        };
+
+        let cert = build_certification(&config, Some("13b")).expect("cert exists");
+        assert_eq!(
+            cert.playbook_path,
+            Some("playbooks/13b/run.yaml".to_string())
+        );
+    }
+
+    #[test]
+    fn test_compliance_result_non_compliant_serialize() {
+        let cr = ComplianceResult {
+            is_compliant: false,
+            tensor_count_match: false,
+            missing_tensors: vec![
+                "layer.0.q.weight".to_string(),
+                "layer.0.k.weight".to_string(),
+            ],
+            unexpected_tensors: vec!["extra.bias".to_string()],
+        };
+        let json = serde_json::to_string(&cr).expect("serialize");
+        assert!(json.contains("\"is_compliant\":false"));
+        assert!(json.contains("\"tensor_count_match\":false"));
+        assert!(json.contains("layer.0.q.weight"));
+        assert!(json.contains("extra.bias"));
+    }
+
+    #[test]
+    fn test_kernel_compatibility_memory_calculation() {
+        let size = make_test_size();
+        let constraints = make_test_constraints();
+        let stats = build_statistical_analysis(&size, &constraints);
+        let kern = build_kernel_compatibility(&size, &constraints, &stats);
+
+        // memory_required_mb = Q4 model size + KV cache
+        let q4_size = (stats.model_params as f64 * 0.5625) / (1024.0 * 1024.0);
+        let expected_mem = q4_size + stats.kv_cache_4k_mb;
+        assert!(
+            (kern.memory_required_mb - expected_mem).abs() < 0.01,
+            "Memory should be Q4 model + KV cache"
+        );
+    }
+
+    #[test]
+    fn test_oracle_mode_family_serialize() {
+        let mode = OracleMode::Family;
+        let json = serde_json::to_string(&mode).expect("serialize");
+        assert_eq!(json, "\"family\"");
+    }
+
+    #[test]
+    fn test_cross_validation_entry_debug() {
+        let entry = CrossValidationEntry {
+            field: "hidden_dim".to_string(),
+            contract_value: "1536".to_string(),
+            hf_value: "2048".to_string(),
+            status: "mismatch".to_string(),
+        };
+        let debug = format!("{entry:?}");
+        assert!(debug.contains("CrossValidationEntry"));
+        assert!(debug.contains("hidden_dim"));
+    }
+
+    #[test]
+    fn test_cross_validation_debug() {
+        let cv = CrossValidation {
+            matches: vec![],
+            mismatches: vec![],
+            contract_only: vec![],
+            hf_only: vec![],
+        };
+        let debug = format!("{cv:?}");
+        assert!(debug.contains("CrossValidation"));
+    }
+
+    #[test]
+    fn test_statistical_analysis_debug() {
+        let size = make_test_size();
+        let constraints = make_test_constraints();
+        let stats = build_statistical_analysis(&size, &constraints);
+        let debug = format!("{stats:?}");
+        assert!(debug.contains("StatisticalAnalysis"));
+        assert!(debug.contains("gqa_ratio"));
+    }
+
+    #[test]
+    fn test_architecture_explanation_debug() {
+        let expl = ArchitectureExplanation {
+            attention_explanation: "test".to_string(),
+            ffn_explanation: "test".to_string(),
+            norm_explanation: "test".to_string(),
+            positional_explanation: "test".to_string(),
+            scaling_analysis: "test".to_string(),
+        };
+        let debug = format!("{expl:?}");
+        assert!(debug.contains("ArchitectureExplanation"));
+    }
+
+    #[test]
+    fn test_kernel_compatibility_debug() {
+        let kern = KernelCompatibility {
+            supported_quantizations: vec![],
+            attention_kernel: "test".to_string(),
+            ffn_kernel: "test".to_string(),
+            estimated_tps_cpu: None,
+            estimated_tps_gpu: None,
+            memory_required_mb: 0.0,
+            notes: vec![],
+        };
+        let debug = format!("{kern:?}");
+        assert!(debug.contains("KernelCompatibility"));
+    }
+
+    #[test]
+    fn test_quantization_support_debug() {
+        let qs = QuantizationSupport {
+            format: "Q4_K_M".to_string(),
+            supported: true,
+            kernel: "fused_q4k".to_string(),
+            bits_per_weight: 4.5,
+            estimated_size_mb: 500.0,
+        };
+        let debug = format!("{qs:?}");
+        assert!(debug.contains("QuantizationSupport"));
+    }
+
+    #[test]
+    fn test_huggingface_data_debug() {
+        let hf = HuggingFaceData {
+            repo: "test/model".to_string(),
+            model_type: None,
+            pipeline_tag: None,
+            downloads: None,
+            config_fields: serde_json::json!({}),
+            generation_config: None,
+        };
+        let debug = format!("{hf:?}");
+        assert!(debug.contains("HuggingFaceData"));
+    }
+
+    #[test]
+    fn test_offline_hf_huggingface_prefix_rejected() {
+        let src = "huggingface://Qwen/Qwen2.5-1.5B".to_string();
+        let flags = OracleFlags::default();
+        let result = run(
+            Some(&src),
+            None,
+            None,
+            false,
+            false,
+            false,
+            false,
+            true,
+            flags,
+        );
+        assert!(result.is_err());
+        match result {
+            Err(CliError::NetworkError(msg)) => {
+                assert!(msg.contains("offline"));
+            }
+            other => panic!("Expected NetworkError, got: {other:?}"),
+        }
+    }
+
+    // ========================================================================
+    // Format Function Tests (coverage for output formatting)
+    // ========================================================================
+
+    #[test]
+    fn test_format_text_report_basic() {
+        let report = ModelOracleReport {
+            source: "test.gguf".to_string(),
+            mode: OracleMode::Local,
+            family: None,
+            size_variant: None,
+            format: None,
+            compliance: None,
+            certification: None,
+            tensors: None,
+            stats: None,
+            explanation: None,
+            kernel_compatibility: None,
+            cross_validation: None,
+            hf_data: None,
+        };
+        let out = format_text_report(&report);
+        assert!(out.contains("test.gguf"));
+        assert!(out.contains("Local"));
+    }
+
+    #[test]
+    fn test_format_text_report_hf_mode() {
+        let report = ModelOracleReport {
+            source: "hf://Qwen/Qwen2.5-1.5B".to_string(),
+            mode: OracleMode::HuggingFace,
+            family: None,
+            size_variant: None,
+            format: None,
+            compliance: None,
+            certification: None,
+            tensors: None,
+            stats: None,
+            explanation: None,
+            kernel_compatibility: None,
+            cross_validation: None,
+            hf_data: None,
+        };
+        let out = format_text_report(&report);
+        assert!(out.contains("hf://Qwen/Qwen2.5-1.5B"));
+        assert!(out.contains("HuggingFace"));
+    }
+
+    #[test]
+    fn test_format_text_report_family_mode() {
+        let report = ModelOracleReport {
+            source: "qwen2".to_string(),
+            mode: OracleMode::Family,
+            family: None,
+            size_variant: None,
+            format: None,
+            compliance: None,
+            certification: None,
+            tensors: None,
+            stats: None,
+            explanation: None,
+            kernel_compatibility: None,
+            cross_validation: None,
+            hf_data: None,
+        };
+        let out = format_text_report(&report);
+        assert!(out.contains("qwen2"));
+        assert!(out.contains("Family"));
+    }
+
+    #[test]
+    fn test_format_text_format_basic() {
+        let fmt = FormatInfo {
+            format_type: "GGUF".to_string(),
+            file_size: 4_000_000_000,
+            tensor_count: 291,
+            total_params: 7_000_000_000,
+            quantization: Some("Q4_K_M".to_string()),
+            architecture: Some("LlamaForCausalLM".to_string()),
+        };
+        let out = format_text_format(&fmt);
+        assert!(out.contains("GGUF"));
+        assert!(out.contains("291"));
+        assert!(out.contains("Q4_K_M"));
+        assert!(out.contains("LlamaForCausalLM"));
+        assert!(out.contains("7.0B"));
+    }
+
+    #[test]
+    fn test_format_text_format_no_optionals() {
+        let fmt = FormatInfo {
+            format_type: "SafeTensors".to_string(),
+            file_size: 1_000_000,
+            tensor_count: 100,
+            total_params: 500_000,
+            quantization: None,
+            architecture: None,
+        };
+        let out = format_text_format(&fmt);
+        assert!(out.contains("SafeTensors"));
+        assert!(out.contains("100"));
+        assert!(!out.contains("Quantization"));
+        assert!(!out.contains("Architecture"));
+    }
+
+    #[test]
+    fn test_format_text_format_small_params() {
+        let fmt = FormatInfo {
+            format_type: "APR".to_string(),
+            file_size: 1024,
+            tensor_count: 5,
+            total_params: 500,
+            quantization: None,
+            architecture: None,
+        };
+        let out = format_text_format(&fmt);
+        assert!(out.contains("APR"));
+        assert!(out.contains("500"));
+    }
+
+    #[test]
+    fn test_format_text_family_basic() {
+        let fi = FamilyInfo {
+            name: "qwen2".to_string(),
+            display_name: "Qwen2".to_string(),
+            vendor: "Alibaba".to_string(),
+            architectures: vec!["Qwen2ForCausalLM".to_string()],
+            constraints: ConstraintsSummary {
+                attention: "GQA".to_string(),
+                activation: "SiLU".to_string(),
+                norm: "RMSNorm".to_string(),
+                bias: true,
+                tied_embeddings: false,
+                mlp: "SwiGLU".to_string(),
+                positional_encoding: "RoPE".to_string(),
+            },
+            chat_template_format: Some("chatml".to_string()),
+        };
+        let out = format_text_family(&fi, false);
+        assert!(out.contains("qwen2 (Qwen2)"));
+        assert!(out.contains("Alibaba"));
+        assert!(!out.contains("Qwen2ForCausalLM")); // not verbose
+        assert!(out.contains("chatml"));
+    }
+
+    #[test]
+    fn test_format_text_family_verbose() {
+        let fi = FamilyInfo {
+            name: "llama".to_string(),
+            display_name: "LLaMA".to_string(),
+            vendor: "Meta".to_string(),
+            architectures: vec!["LlamaForCausalLM".to_string(), "LlamaModel".to_string()],
+            constraints: ConstraintsSummary {
+                attention: "GQA".to_string(),
+                activation: "SiLU".to_string(),
+                norm: "RMSNorm".to_string(),
+                bias: false,
+                tied_embeddings: false,
+                mlp: "SwiGLU".to_string(),
+                positional_encoding: "RoPE".to_string(),
+            },
+            chat_template_format: None,
+        };
+        let out = format_text_family(&fi, true);
+        assert!(out.contains("LlamaForCausalLM, LlamaModel"));
+        assert!(!out.contains("Chat Template"));
+    }
+
+    #[test]
+    fn test_format_text_family_no_chat_template() {
+        let fi = FamilyInfo {
+            name: "test".to_string(),
+            display_name: "Test".to_string(),
+            vendor: "TestCo".to_string(),
+            architectures: vec![],
+            constraints: ConstraintsSummary {
+                attention: "MHA".to_string(),
+                activation: "GELU".to_string(),
+                norm: "LayerNorm".to_string(),
+                bias: true,
+                tied_embeddings: true,
+                mlp: "GELU MLP".to_string(),
+                positional_encoding: "Absolute".to_string(),
+            },
+            chat_template_format: None,
+        };
+        let out = format_text_family(&fi, false);
+        assert!(!out.contains("Chat Template"));
+    }
+
+    #[test]
+    fn test_format_text_family_empty_architectures_verbose() {
+        let fi = FamilyInfo {
+            name: "t".to_string(),
+            display_name: "T".to_string(),
+            vendor: "V".to_string(),
+            architectures: vec![],
+            constraints: ConstraintsSummary {
+                attention: "MHA".to_string(),
+                activation: "GELU".to_string(),
+                norm: "LayerNorm".to_string(),
+                bias: false,
+                tied_embeddings: false,
+                mlp: "GELU MLP".to_string(),
+                positional_encoding: "Absolute".to_string(),
+            },
+            chat_template_format: None,
+        };
+        let out = format_text_family(&fi, true);
+        assert!(out.contains("Architectures:"));
+    }
+
+    #[test]
+    fn test_format_text_size_basic() {
+        let svi = SizeVariantInfo {
+            name: "1.5b".to_string(),
+            parameters: "1.5B".to_string(),
+            hidden_dim: 1536,
+            num_layers: 28,
+            num_heads: 12,
+            num_kv_heads: 2,
+            intermediate_dim: 8960,
+            vocab_size: 151936,
+            expected_tensor_count: 339,
+        };
+        let out = format_text_size(&svi);
+        assert!(out.contains("1.5B"));
+        assert!(out.contains("hidden=1536"));
+        assert!(out.contains("layers=28"));
+        assert!(out.contains("heads=12"));
+        assert!(out.contains("kv_heads=2"));
+        assert!(out.contains("8960"));
+        assert!(out.contains("151936"));
+        assert!(out.contains("339"));
+    }
+
+    #[test]
+    fn test_format_text_size_large_model() {
+        let svi = SizeVariantInfo {
+            name: "70b".to_string(),
+            parameters: "70B".to_string(),
+            hidden_dim: 8192,
+            num_layers: 80,
+            num_heads: 64,
+            num_kv_heads: 8,
+            intermediate_dim: 28672,
+            vocab_size: 128256,
+            expected_tensor_count: 723,
+        };
+        let out = format_text_size(&svi);
+        assert!(out.contains("70B"));
+        assert!(out.contains("hidden=8192"));
+        assert!(out.contains("723"));
+    }
+
+    #[test]
+    fn test_format_text_size_minimal() {
+        let svi = SizeVariantInfo {
+            name: "tiny".to_string(),
+            parameters: "10M".to_string(),
+            hidden_dim: 64,
+            num_layers: 2,
+            num_heads: 2,
+            num_kv_heads: 2,
+            intermediate_dim: 128,
+            vocab_size: 100,
+            expected_tensor_count: 20,
+        };
+        let out = format_text_size(&svi);
+        assert!(out.contains("10M"));
+        assert!(out.contains("Intermediate Dim: 128"));
+    }
+
+    #[test]
+    fn test_format_text_constraints_with_bias() {
+        let fi = FamilyInfo {
+            name: "qwen2".to_string(),
+            display_name: "Qwen2".to_string(),
+            vendor: "Alibaba".to_string(),
+            architectures: vec![],
+            constraints: ConstraintsSummary {
+                attention: "GQA".to_string(),
+                activation: "SiLU".to_string(),
+                norm: "RMSNorm".to_string(),
+                bias: true,
+                tied_embeddings: false,
+                mlp: "SwiGLU".to_string(),
+                positional_encoding: "RoPE".to_string(),
+            },
+            chat_template_format: None,
+        };
+        let out = format_text_constraints(&fi);
+        assert!(out.contains("GQA"));
+        assert!(out.contains("SiLU"));
+        assert!(out.contains("RMSNorm"));
+        assert!(out.contains("Bias: yes"));
+        assert!(out.contains("Tied: no"));
+        assert!(out.contains("SwiGLU"));
+        assert!(out.contains("RoPE"));
+    }
+
+    #[test]
+    fn test_format_text_constraints_no_bias_tied() {
+        let fi = FamilyInfo {
+            name: "gpt2".to_string(),
+            display_name: "GPT-2".to_string(),
+            vendor: "OpenAI".to_string(),
+            architectures: vec![],
+            constraints: ConstraintsSummary {
+                attention: "MHA".to_string(),
+                activation: "GELU".to_string(),
+                norm: "LayerNorm".to_string(),
+                bias: false,
+                tied_embeddings: true,
+                mlp: "GELU MLP".to_string(),
+                positional_encoding: "Absolute".to_string(),
+            },
+            chat_template_format: None,
+        };
+        let out = format_text_constraints(&fi);
+        assert!(out.contains("Bias: no"));
+        assert!(out.contains("Tied: yes"));
+        assert!(out.contains("MHA"));
+        assert!(out.contains("LayerNorm"));
+    }
+
+    #[test]
+    fn test_format_text_constraints_header() {
+        let fi = FamilyInfo {
+            name: "t".to_string(),
+            display_name: "T".to_string(),
+            vendor: "V".to_string(),
+            architectures: vec![],
+            constraints: ConstraintsSummary {
+                attention: "MQA".to_string(),
+                activation: "SiLU".to_string(),
+                norm: "RMSNorm".to_string(),
+                bias: false,
+                tied_embeddings: false,
+                mlp: "SwiGLU".to_string(),
+                positional_encoding: "ALiBi".to_string(),
+            },
+            chat_template_format: None,
+        };
+        let out = format_text_constraints(&fi);
+        assert!(out.contains("Constraints:"));
+        assert!(out.contains("MQA"));
+        assert!(out.contains("ALiBi"));
+    }
+
+    #[test]
+    fn test_format_text_stats_basic() {
+        let stats = StatisticalAnalysis {
+            gqa_ratio: 0.167,
+            kv_cache_reduction: 0.833,
+            model_params: 1_500_000_000,
+            model_size_f16_mb: 2861.0,
+            model_size_q4_mb: 715.0,
+            kv_cache_per_token_bytes: 28672,
+            kv_cache_4k_mb: 112.0,
+            ffn_expansion_ratio: 5.83,
+            ffn_type_explanation: "SwiGLU gated".to_string(),
+            rope_max_wavelength: 6283185.0,
+            effective_context_window: 32768,
+            attention_flops_per_token: 100_000_000,
+            ffn_flops_per_token: 200_000_000,
+        };
+        let out = format_text_stats(&stats);
+        assert!(out.contains("0.17"));
+        assert!(out.contains("83%"));
+        assert!(out.contains("1.5B"));
+        assert!(out.contains("2861.0 MB"));
+        assert!(out.contains("715.0 MB"));
+        assert!(out.contains("28672 bytes"));
+        assert!(out.contains("112.0 MB"));
+        assert!(out.contains("5.83x"));
+        assert!(out.contains("SwiGLU gated"));
+        assert!(out.contains("32768"));
+    }
+
+    #[test]
+    fn test_format_text_stats_no_rope() {
+        let stats = StatisticalAnalysis {
+            gqa_ratio: 1.0,
+            kv_cache_reduction: 0.0,
+            model_params: 100_000,
+            model_size_f16_mb: 0.2,
+            model_size_q4_mb: 0.05,
+            kv_cache_per_token_bytes: 100,
+            kv_cache_4k_mb: 0.4,
+            ffn_expansion_ratio: 4.0,
+            ffn_type_explanation: "Standard GELU".to_string(),
+            rope_max_wavelength: 0.0,
+            effective_context_window: 2048,
+            attention_flops_per_token: 1000,
+            ffn_flops_per_token: 2000,
+        };
+        let out = format_text_stats(&stats);
+        assert!(!out.contains("RoPE Wavelength"));
+        assert!(out.contains("Standard GELU"));
+    }
+
+    #[test]
+    fn test_format_text_stats_with_rope() {
+        let stats = StatisticalAnalysis {
+            gqa_ratio: 0.25,
+            kv_cache_reduction: 0.75,
+            model_params: 7_000_000_000,
+            model_size_f16_mb: 13000.0,
+            model_size_q4_mb: 3250.0,
+            kv_cache_per_token_bytes: 65536,
+            kv_cache_4k_mb: 256.0,
+            ffn_expansion_ratio: 3.5,
+            ffn_type_explanation: "SwiGLU".to_string(),
+            rope_max_wavelength: 62831.0,
+            effective_context_window: 131072,
+            attention_flops_per_token: 500_000_000,
+            ffn_flops_per_token: 800_000_000,
+        };
+        let out = format_text_stats(&stats);
+        assert!(out.contains("RoPE Wavelength: 62831"));
+        assert!(out.contains("131072"));
+    }
+
+    #[test]
+    fn test_format_text_stats_flops_format() {
+        let stats = StatisticalAnalysis {
+            gqa_ratio: 0.5,
+            kv_cache_reduction: 0.5,
+            model_params: 1_000_000,
+            model_size_f16_mb: 1.9,
+            model_size_q4_mb: 0.48,
+            kv_cache_per_token_bytes: 512,
+            kv_cache_4k_mb: 2.0,
+            ffn_expansion_ratio: 4.0,
+            ffn_type_explanation: "test".to_string(),
+            rope_max_wavelength: 100.0,
+            effective_context_window: 1024,
+            attention_flops_per_token: 123_456_789,
+            ffn_flops_per_token: 987_654_321,
+        };
+        let out = format_text_stats(&stats);
+        assert!(out.contains("Attn FLOPS/tok:"));
+        assert!(out.contains("FFN FLOPS/tok:"));
+        assert!(out.contains("e"));
+    }
+
+    #[test]
+    fn test_format_text_explanation_basic() {
+        let expl = ArchitectureExplanation {
+            attention_explanation: "GQA with ratio 0.17".to_string(),
+            ffn_explanation: "SwiGLU gated activation".to_string(),
+            norm_explanation: "RMSNorm eps=1e-6".to_string(),
+            positional_explanation: "RoPE theta=1000000".to_string(),
+            scaling_analysis: "1.5B parameters, Chinchilla-optimal".to_string(),
+        };
+        let out = format_text_explanation(&expl);
+        assert!(out.contains("GQA with ratio 0.17"));
+        assert!(out.contains("SwiGLU gated activation"));
+        assert!(out.contains("RMSNorm eps=1e-6"));
+        assert!(out.contains("RoPE theta=1000000"));
+        assert!(out.contains("Chinchilla-optimal"));
+    }
+
+    #[test]
+    fn test_format_text_explanation_sections_labeled() {
+        let expl = ArchitectureExplanation {
+            attention_explanation: "attn".to_string(),
+            ffn_explanation: "ffn".to_string(),
+            norm_explanation: "norm".to_string(),
+            positional_explanation: "pos".to_string(),
+            scaling_analysis: "scale".to_string(),
+        };
+        let out = format_text_explanation(&expl);
+        assert!(out.contains("Attention: attn"));
+        assert!(out.contains("FFN: ffn"));
+        assert!(out.contains("Normalization: norm"));
+        assert!(out.contains("Position: pos"));
+        assert!(out.contains("Scaling: scale"));
+    }
+
+    #[test]
+    fn test_format_text_explanation_empty_strings() {
+        let expl = ArchitectureExplanation {
+            attention_explanation: String::new(),
+            ffn_explanation: String::new(),
+            norm_explanation: String::new(),
+            positional_explanation: String::new(),
+            scaling_analysis: String::new(),
+        };
+        let out = format_text_explanation(&expl);
+        assert!(out.contains("Attention:"));
+        assert!(out.contains("FFN:"));
+    }
+
+    #[test]
+    fn test_format_text_kernels_basic() {
+        let kern = KernelCompatibility {
+            supported_quantizations: vec![
+                QuantizationSupport {
+                    format: "F16".to_string(),
+                    supported: true,
+                    kernel: "trueno::f16_matvec".to_string(),
+                    bits_per_weight: 16.0,
+                    estimated_size_mb: 3000.0,
+                },
+                QuantizationSupport {
+                    format: "Q4_K_M".to_string(),
+                    supported: true,
+                    kernel: "fused_q4k".to_string(),
+                    bits_per_weight: 4.5,
+                    estimated_size_mb: 750.0,
+                },
+            ],
+            attention_kernel: "GQA fused QKV".to_string(),
+            ffn_kernel: "SwiGLU fused".to_string(),
+            estimated_tps_cpu: Some(60.0),
+            estimated_tps_gpu: Some(1200.0),
+            memory_required_mb: 850.0,
+            notes: vec!["ROW-MAJOR layout".to_string(), "GQA: 6:1 ratio".to_string()],
+        };
+        let out = format_text_kernels(&kern);
+        assert!(out.contains("GQA fused QKV"));
+        assert!(out.contains("SwiGLU fused"));
+        assert!(out.contains("F16"));
+        assert!(out.contains("Q4_K_M"));
+        assert!(out.contains("yes"));
+        assert!(out.contains("60"));
+        assert!(out.contains("1200"));
+        assert!(out.contains("850.0 MB"));
+        assert!(out.contains("ROW-MAJOR layout"));
+        assert!(out.contains("GQA: 6:1 ratio"));
+    }
+
+    #[test]
+    fn test_format_text_kernels_no_tps() {
+        let kern = KernelCompatibility {
+            supported_quantizations: vec![],
+            attention_kernel: "MHA standard".to_string(),
+            ffn_kernel: "GELU MLP".to_string(),
+            estimated_tps_cpu: None,
+            estimated_tps_gpu: None,
+            memory_required_mb: 100.0,
+            notes: vec![],
+        };
+        let out = format_text_kernels(&kern);
+        assert!(!out.contains("Est. CPU"));
+        assert!(!out.contains("Est. GPU"));
+        assert!(out.contains("100.0 MB"));
+    }
+
+    #[test]
+    fn test_format_text_kernels_unsupported_quant() {
+        let kern = KernelCompatibility {
+            supported_quantizations: vec![QuantizationSupport {
+                format: "Q2_K".to_string(),
+                supported: false,
+                kernel: "none".to_string(),
+                bits_per_weight: 2.5,
+                estimated_size_mb: 300.0,
+            }],
+            attention_kernel: "test".to_string(),
+            ffn_kernel: "test".to_string(),
+            estimated_tps_cpu: None,
+            estimated_tps_gpu: None,
+            memory_required_mb: 0.0,
+            notes: vec![],
+        };
+        let out = format_text_kernels(&kern);
+        assert!(out.contains("Q2_K"));
+        assert!(out.contains("no"));
+    }
+
+    #[test]
+    fn test_format_text_kernels_header_line() {
+        let kern = KernelCompatibility {
+            supported_quantizations: vec![],
+            attention_kernel: "a".to_string(),
+            ffn_kernel: "f".to_string(),
+            estimated_tps_cpu: None,
+            estimated_tps_gpu: None,
+            memory_required_mb: 0.0,
+            notes: vec![],
+        };
+        let out = format_text_kernels(&kern);
+        assert!(out.contains("Quantization Support:"));
+        assert!(out.contains("Format"));
+        assert!(out.contains("Supported"));
+        assert!(out.contains("BPW"));
+    }
+
+    #[test]
+    fn test_format_text_cross_validation_all_match() {
+        let cv = CrossValidation {
+            matches: vec![
+                CrossValidationEntry {
+                    field: "hidden_dim".to_string(),
+                    contract_value: "1536".to_string(),
+                    hf_value: "1536".to_string(),
+                    status: "match".to_string(),
+                },
+                CrossValidationEntry {
+                    field: "num_layers".to_string(),
+                    contract_value: "28".to_string(),
+                    hf_value: "28".to_string(),
+                    status: "match".to_string(),
+                },
+            ],
+            mismatches: vec![],
+            contract_only: vec![],
+            hf_only: vec![],
+        };
+        let out = format_text_cross_validation(&cv);
+        assert!(out.contains("Matches (2)"));
+        assert!(out.contains("[OK] hidden_dim: 1536 == 1536"));
+        assert!(out.contains("[OK] num_layers: 28 == 28"));
+        assert!(!out.contains("Mismatches"));
+    }
+
+    #[test]
+    fn test_format_text_cross_validation_with_mismatches() {
+        let cv = CrossValidation {
+            matches: vec![],
+            mismatches: vec![CrossValidationEntry {
+                field: "hidden_dim".to_string(),
+                contract_value: "1536".to_string(),
+                hf_value: "2048".to_string(),
+                status: "mismatch".to_string(),
+            }],
+            contract_only: vec!["vocab_size=151936".to_string()],
+            hf_only: vec!["rope_scaling=dynamic".to_string()],
+        };
+        let out = format_text_cross_validation(&cv);
+        assert!(out.contains("Mismatches (1)"));
+        assert!(out.contains("[!!] hidden_dim: contract=1536 vs hf=2048"));
+        assert!(out.contains("Contract-only: vocab_size=151936"));
+        assert!(out.contains("HF-only: rope_scaling=dynamic"));
+    }
+
+    #[test]
+    fn test_format_text_cross_validation_empty() {
+        let cv = CrossValidation {
+            matches: vec![],
+            mismatches: vec![],
+            contract_only: vec![],
+            hf_only: vec![],
+        };
+        let out = format_text_cross_validation(&cv);
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn test_format_text_cross_validation_multiple_contract_only() {
+        let cv = CrossValidation {
+            matches: vec![],
+            mismatches: vec![],
+            contract_only: vec!["a=1".to_string(), "b=2".to_string(), "c=3".to_string()],
+            hf_only: vec![],
+        };
+        let out = format_text_cross_validation(&cv);
+        assert!(out.contains("Contract-only: a=1, b=2, c=3"));
+    }
+
+    #[test]
+    fn test_format_text_hf_all_fields() {
+        let hf = HuggingFaceData {
+            repo: "Qwen/Qwen2.5-1.5B".to_string(),
+            model_type: Some("qwen2".to_string()),
+            pipeline_tag: Some("text-generation".to_string()),
+            downloads: Some(50000),
+            config_fields: serde_json::json!({}),
+            generation_config: None,
+        };
+        let out = format_text_hf(&hf);
+        assert!(out.contains("Qwen/Qwen2.5-1.5B"));
+        assert!(out.contains("qwen2"));
+        assert!(out.contains("text-generation"));
+        assert!(out.contains("50000"));
+    }
+
+    #[test]
+    fn test_format_text_hf_minimal() {
+        let hf = HuggingFaceData {
+            repo: "test/model".to_string(),
+            model_type: None,
+            pipeline_tag: None,
+            downloads: None,
+            config_fields: serde_json::json!({}),
+            generation_config: None,
+        };
+        let out = format_text_hf(&hf);
+        assert!(out.contains("test/model"));
+        assert!(!out.contains("model_type"));
+        assert!(!out.contains("pipeline_tag"));
+        assert!(!out.contains("Downloads"));
+    }
+
+    #[test]
+    fn test_format_text_hf_partial_fields() {
+        let hf = HuggingFaceData {
+            repo: "org/repo".to_string(),
+            model_type: Some("llama".to_string()),
+            pipeline_tag: None,
+            downloads: Some(42),
+            config_fields: serde_json::json!({}),
+            generation_config: None,
+        };
+        let out = format_text_hf(&hf);
+        assert!(out.contains("llama"));
+        assert!(out.contains("42"));
+        assert!(!out.contains("pipeline_tag"));
+    }
+
+    #[test]
+    fn test_format_text_compliance_compliant() {
+        let cr = ComplianceResult {
+            is_compliant: true,
+            tensor_count_match: true,
+            missing_tensors: vec![],
+            unexpected_tensors: vec![],
+        };
+        let out = format_text_compliance(&cr, false);
+        assert!(out.contains("COMPLIANT"));
+        assert!(!out.contains("NON-COMPLIANT"));
+    }
+
+    #[test]
+    fn test_format_text_compliance_non_compliant() {
+        let cr = ComplianceResult {
+            is_compliant: false,
+            tensor_count_match: false,
+            missing_tensors: vec![
+                "layer.0.q.weight".to_string(),
+                "layer.0.k.weight".to_string(),
+            ],
+            unexpected_tensors: vec!["extra.bias".to_string()],
+        };
+        let out = format_text_compliance(&cr, false);
+        assert!(out.contains("NON-COMPLIANT"));
+        assert!(out.contains("MISMATCH"));
+        assert!(out.contains("2 tensor(s)"));
+        assert!(!out.contains("layer.0.q.weight")); // not verbose
+    }
+
+    #[test]
+    fn test_format_text_compliance_non_compliant_verbose() {
+        let cr = ComplianceResult {
+            is_compliant: false,
+            tensor_count_match: false,
+            missing_tensors: vec!["layer.0.q.weight".to_string()],
+            unexpected_tensors: vec!["extra.bias".to_string()],
+        };
+        let out = format_text_compliance(&cr, true);
+        assert!(out.contains("NON-COMPLIANT"));
+        assert!(out.contains("- layer.0.q.weight"));
+        assert!(out.contains("+ extra.bias"));
+        assert!(out.contains("Unexpected Tensors: 1 tensor(s)"));
+    }
+
+    #[test]
+    fn test_format_text_compliance_count_mismatch_only() {
+        let cr = ComplianceResult {
+            is_compliant: false,
+            tensor_count_match: false,
+            missing_tensors: vec![],
+            unexpected_tensors: vec![],
+        };
+        let out = format_text_compliance(&cr, false);
+        assert!(out.contains("NON-COMPLIANT"));
+        assert!(out.contains("MISMATCH"));
+        assert!(!out.contains("Missing"));
+    }
+
+    #[test]
+    fn test_format_text_compliance_unexpected_hidden_not_verbose() {
+        let cr = ComplianceResult {
+            is_compliant: false,
+            tensor_count_match: true,
+            missing_tensors: vec![],
+            unexpected_tensors: vec!["extra.weight".to_string()],
+        };
+        let out = format_text_compliance(&cr, false);
+        assert!(!out.contains("Unexpected")); // not shown when not verbose
+    }
+
+    #[test]
+    fn test_format_text_certification_with_playbook() {
+        let cert = CertificationInfo {
+            status: "PENDING".to_string(),
+            playbook_path: Some("/playbooks/1.5b.yaml".to_string()),
+        };
+        let out = format_text_certification(&cert);
+        assert!(out.contains("PENDING"));
+        assert!(out.contains("/playbooks/1.5b.yaml"));
+    }
+
+    #[test]
+    fn test_format_text_certification_no_playbook() {
+        let cert = CertificationInfo {
+            status: "APPROVED".to_string(),
+            playbook_path: None,
+        };
+        let out = format_text_certification(&cert);
+        assert!(out.contains("APPROVED"));
+        assert!(!out.contains("Playbook"));
+    }
+
+    #[test]
+    fn test_format_text_tensors_few() {
+        let tensors = vec![
+            TensorComplianceEntry {
+                name: "model.embed_tokens.weight".to_string(),
+                present: true,
+                dtype: Some("F16".to_string()),
+                shape: Some(vec![151936, 1536]),
+                note: None,
+            },
+            TensorComplianceEntry {
+                name: "lm_head.weight".to_string(),
+                present: true,
+                dtype: Some("F16".to_string()),
+                shape: Some(vec![151936, 1536]),
+                note: None,
+            },
+        ];
+        let out = format_text_tensors(&tensors, false);
+        assert!(out.contains("Tensors (2 total)"));
+        assert!(out.contains("model.embed_tokens.weight"));
+        assert!(out.contains("lm_head.weight"));
+        assert!(out.contains("F16"));
+        assert!(out.contains("[151936, 1536]"));
+    }
+
+    #[test]
+    fn test_format_text_tensors_truncated() {
+        // Create 25 tensors — should truncate at 20 when not verbose
+        let tensors: Vec<TensorComplianceEntry> = (0..25)
+            .map(|i| TensorComplianceEntry {
+                name: format!("layer.{i}.weight"),
+                present: true,
+                dtype: Some("F16".to_string()),
+                shape: Some(vec![100, 100]),
+                note: None,
+            })
+            .collect();
+        let out = format_text_tensors(&tensors, false);
+        assert!(out.contains("Tensors (25 total)"));
+        assert!(out.contains("... (3 more) ...")); // 25 - 20 - 2 = 3
+        assert!(out.contains("layer.0.weight")); // first shown
+        assert!(out.contains("layer.23.weight")); // last 2 always shown
+        assert!(out.contains("layer.24.weight"));
+    }
+
+    #[test]
+    fn test_format_text_tensors_verbose_all_shown() {
+        let tensors: Vec<TensorComplianceEntry> = (0..25)
+            .map(|i| TensorComplianceEntry {
+                name: format!("layer.{i}.weight"),
+                present: true,
+                dtype: Some("F16".to_string()),
+                shape: Some(vec![100]),
+                note: None,
+            })
+            .collect();
+        let out = format_text_tensors(&tensors, true);
+        assert!(!out.contains("more")); // no truncation in verbose
+        for i in 0..25 {
+            assert!(
+                out.contains(&format!("layer.{i}.weight")),
+                "Missing layer.{i}.weight"
+            );
+        }
+    }
+
+    #[test]
+    fn test_format_text_tensors_no_dtype_no_shape() {
+        let tensors = vec![TensorComplianceEntry {
+            name: "unknown.weight".to_string(),
+            present: false,
+            dtype: None,
+            shape: None,
+            note: Some("MISSING".to_string()),
+        }];
+        let out = format_text_tensors(&tensors, false);
+        assert!(out.contains("unknown.weight"));
+        assert!(out.contains("Tensors (1 total)"));
+    }
+
+    #[test]
+    fn test_format_family_description_header_basic() {
+        use std::collections::HashMap;
+
+        let config = ModelFamilyConfig {
+            family: "qwen2".to_string(),
+            display_name: "Qwen2".to_string(),
+            vendor: "Alibaba".to_string(),
+            architectures: vec!["Qwen2ForCausalLM".to_string()],
+            hf_pattern: "Qwen/Qwen2*".to_string(),
+            size_variants: HashMap::new(),
+            constraints: make_test_constraints(),
+            tensor_template: aprender::format::model_family::TensorTemplate {
+                embedding: String::new(),
+                lm_head: None,
+                final_norm: None,
+                per_layer: HashMap::new(),
+            },
+            shape_template: aprender::format::model_family::ShapeTemplate {
+                shapes: HashMap::new(),
+            },
+            quantizations: vec![],
+            chat_template: None,
+            certification: None,
+        };
+        let out = format_family_description_header(&config);
+        assert!(out.contains("qwen2"));
+        assert!(out.contains("Alibaba"));
+        assert!(out.contains("Qwen2ForCausalLM"));
+        assert!(out.contains("Qwen/Qwen2*"));
+        assert!(out.contains("Constraints:"));
+        assert!(out.contains("GQA"));
+        assert!(out.contains("SiLU"));
+        assert!(out.contains("Bias: yes"));
+    }
+
+    #[test]
+    fn test_format_family_size_variant_basic() {
+        let sc = make_test_size();
+        let out = format_family_size_variant("1.5b", &sc);
+        assert!(out.contains("1.5b (1.5B)"));
+        assert!(out.contains("hidden_dim: 1536"));
+        assert!(out.contains("num_layers: 28"));
+        assert!(out.contains("num_heads: 12"));
+        assert!(out.contains("num_kv_heads: 2"));
+        assert!(out.contains("intermediate_dim: 8960"));
+        assert!(out.contains("vocab_size: 151936"));
+        assert!(out.contains("head_dim: 128"));
+        assert!(out.contains("rope_theta: 1000000"));
+        assert!(out.contains("norm_eps:"));
+    }
+
+    #[test]
+    fn test_format_family_size_variant_no_rope() {
+        let mut sc = make_test_size();
+        sc.rope_theta = 0.0;
+        let out = format_family_size_variant("test", &sc);
+        assert!(!out.contains("rope_theta"));
+    }
+
+    #[test]
+    fn test_format_family_variant_stats_basic() {
+        let size = make_test_size();
+        let constraints = make_test_constraints();
+        let stats = build_statistical_analysis(&size, &constraints);
+        let out = format_family_variant_stats(&stats);
+        assert!(out.contains("GQA Ratio:"));
+        assert!(out.contains("KV reduction"));
+        assert!(out.contains("Est. Parameters:"));
+        assert!(out.contains("Model Size (F16):"));
+        assert!(out.contains("Model Size (Q4):"));
+        assert!(out.contains("KV Cache (4K):"));
+        assert!(out.contains("FFN Ratio:"));
+    }
+
+    #[test]
+    fn test_format_family_variant_explain_basic() {
+        let expl = ArchitectureExplanation {
+            attention_explanation: "GQA attention".to_string(),
+            ffn_explanation: "SwiGLU FFN".to_string(),
+            norm_explanation: "RMSNorm".to_string(),
+            positional_explanation: "RoPE".to_string(),
+            scaling_analysis: "1.5B scaling".to_string(),
+        };
+        let out = format_family_variant_explain(&expl);
+        assert!(out.contains("Attention: GQA attention"));
+        assert!(out.contains("FFN: SwiGLU FFN"));
+        assert!(out.contains("Scaling: 1.5B scaling"));
+    }
+
+    #[test]
+    fn test_format_family_variant_kernels_basic() {
+        let kern = KernelCompatibility {
+            supported_quantizations: vec![],
+            attention_kernel: "GQA fused".to_string(),
+            ffn_kernel: "SwiGLU fused".to_string(),
+            estimated_tps_cpu: Some(55.0),
+            estimated_tps_gpu: Some(1100.0),
+            memory_required_mb: 900.0,
+            notes: vec![],
+        };
+        let out = format_family_variant_kernels(&kern);
+        assert!(out.contains("Attn Kernel: GQA fused"));
+        assert!(out.contains("FFN Kernel: SwiGLU fused"));
+        assert!(out.contains("Est. CPU tok/s: 55"));
+        assert!(out.contains("Est. GPU tok/s: 1100"));
+        assert!(out.contains("900.0 MB"));
+    }
+
+    #[test]
+    fn test_format_family_variant_kernels_no_tps() {
+        let kern = KernelCompatibility {
+            supported_quantizations: vec![],
+            attention_kernel: "test".to_string(),
+            ffn_kernel: "test".to_string(),
+            estimated_tps_cpu: None,
+            estimated_tps_gpu: None,
+            memory_required_mb: 0.0,
+            notes: vec![],
+        };
+        let out = format_family_variant_kernels(&kern);
+        assert!(!out.contains("Est. CPU"));
+        assert!(!out.contains("Est. GPU"));
+    }
+
+    #[test]
+    fn test_format_family_description_footer_verbose() {
+        use aprender::format::model_family::*;
+        use std::collections::HashMap;
+
+        let mut per_layer = HashMap::new();
+        per_layer.insert(
+            "q_proj".to_string(),
+            Some("model.layers.{n}.q_proj.weight".to_string()),
+        );
+
+        let config = ModelFamilyConfig {
+            family: "test".to_string(),
+            display_name: "Test".to_string(),
+            vendor: "Test".to_string(),
+            architectures: vec![],
+            hf_pattern: String::new(),
+            size_variants: HashMap::new(),
+            constraints: make_test_constraints(),
+            tensor_template: TensorTemplate {
+                embedding: "embed.weight".to_string(),
+                lm_head: Some("lm_head.weight".to_string()),
+                final_norm: Some("norm.weight".to_string()),
+                per_layer,
+            },
+            shape_template: ShapeTemplate {
+                shapes: HashMap::new(),
+            },
+            quantizations: vec!["q4_k_m".to_string(), "q6_k".to_string()],
+            chat_template: Some(ChatTemplateConfig {
+                format: "chatml".to_string(),
+                template: String::new(),
+                bos_token: "<|im_start|>".to_string(),
+                eos_token: "<|im_end|>".to_string(),
+                special_tokens: HashMap::new(),
+            }),
+            certification: None,
+        };
+
+        let out = format_family_description_footer(&config, true);
+        assert!(out.contains("Tensor Template:"));
+        assert!(out.contains("Embedding: embed.weight"));
+        assert!(out.contains("LM Head: lm_head.weight"));
+        assert!(out.contains("Final Norm: norm.weight"));
+        assert!(out.contains("Per-layer:"));
+        assert!(out.contains("q_proj: model.layers.{n}.q_proj.weight"));
+        assert!(out.contains("Quantizations: q4_k_m, q6_k"));
+        assert!(out.contains("Chat Template: chatml"));
+        assert!(out.contains("BOS: <|im_start|>"));
+        assert!(out.contains("EOS: <|im_end|>"));
+    }
+
+    #[test]
+    fn test_format_family_description_footer_not_verbose() {
+        use std::collections::HashMap;
+
+        let config = ModelFamilyConfig {
+            family: "test".to_string(),
+            display_name: "Test".to_string(),
+            vendor: "Test".to_string(),
+            architectures: vec![],
+            hf_pattern: String::new(),
+            size_variants: HashMap::new(),
+            constraints: make_test_constraints(),
+            tensor_template: aprender::format::model_family::TensorTemplate {
+                embedding: "embed.weight".to_string(),
+                lm_head: None,
+                final_norm: None,
+                per_layer: HashMap::new(),
+            },
+            shape_template: aprender::format::model_family::ShapeTemplate {
+                shapes: HashMap::new(),
+            },
+            quantizations: vec![],
+            chat_template: None,
+            certification: None,
+        };
+
+        let out = format_family_description_footer(&config, false);
+        assert!(!out.contains("Tensor Template")); // hidden when not verbose
+    }
+
+    #[test]
+    fn test_format_family_description_footer_empty_quantizations() {
+        use std::collections::HashMap;
+
+        let config = ModelFamilyConfig {
+            family: "test".to_string(),
+            display_name: "Test".to_string(),
+            vendor: "Test".to_string(),
+            architectures: vec![],
+            hf_pattern: String::new(),
+            size_variants: HashMap::new(),
+            constraints: make_test_constraints(),
+            tensor_template: aprender::format::model_family::TensorTemplate {
+                embedding: String::new(),
+                lm_head: None,
+                final_norm: None,
+                per_layer: HashMap::new(),
+            },
+            shape_template: aprender::format::model_family::ShapeTemplate {
+                shapes: HashMap::new(),
+            },
+            quantizations: vec![],
+            chat_template: None,
+            certification: None,
+        };
+
+        let out = format_family_description_footer(&config, false);
+        assert!(!out.contains("Quantizations"));
     }
 }

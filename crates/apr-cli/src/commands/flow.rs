@@ -981,4 +981,818 @@ mod tests {
         // Should fail (invalid file) but tests FFN path
         assert!(result.is_err());
     }
+
+    // ========================================================================
+    // FlowComponent FromStr Additional Coverage
+    // ========================================================================
+
+    #[test]
+    fn test_flow_component_from_str_mixed_case_full() {
+        assert_eq!(
+            "FULL".parse::<FlowComponent>().expect("parse"),
+            FlowComponent::Full
+        );
+        assert_eq!(
+            "Full".parse::<FlowComponent>().expect("parse"),
+            FlowComponent::Full
+        );
+        assert_eq!(
+            "ALL".parse::<FlowComponent>().expect("parse"),
+            FlowComponent::Full
+        );
+        assert_eq!(
+            "All".parse::<FlowComponent>().expect("parse"),
+            FlowComponent::Full
+        );
+    }
+
+    #[test]
+    fn test_flow_component_from_str_mixed_case_encoder() {
+        assert_eq!(
+            "ENC".parse::<FlowComponent>().expect("parse"),
+            FlowComponent::Encoder
+        );
+        assert_eq!(
+            "Enc".parse::<FlowComponent>().expect("parse"),
+            FlowComponent::Encoder
+        );
+        assert_eq!(
+            "Encoder".parse::<FlowComponent>().expect("parse"),
+            FlowComponent::Encoder
+        );
+    }
+
+    #[test]
+    fn test_flow_component_from_str_mixed_case_decoder() {
+        assert_eq!(
+            "DEC".parse::<FlowComponent>().expect("parse"),
+            FlowComponent::Decoder
+        );
+        assert_eq!(
+            "Dec".parse::<FlowComponent>().expect("parse"),
+            FlowComponent::Decoder
+        );
+        assert_eq!(
+            "Decoder".parse::<FlowComponent>().expect("parse"),
+            FlowComponent::Decoder
+        );
+        assert_eq!(
+            "DECODER".parse::<FlowComponent>().expect("parse"),
+            FlowComponent::Decoder
+        );
+    }
+
+    #[test]
+    fn test_flow_component_from_str_mixed_case_self_attn() {
+        assert_eq!(
+            "SELF_ATTN".parse::<FlowComponent>().expect("parse"),
+            FlowComponent::SelfAttention
+        );
+        assert_eq!(
+            "Self-Attn".parse::<FlowComponent>().expect("parse"),
+            FlowComponent::SelfAttention
+        );
+        assert_eq!(
+            "SELFATTN".parse::<FlowComponent>().expect("parse"),
+            FlowComponent::SelfAttention
+        );
+        assert_eq!(
+            "Self_Attn".parse::<FlowComponent>().expect("parse"),
+            FlowComponent::SelfAttention
+        );
+    }
+
+    #[test]
+    fn test_flow_component_from_str_mixed_case_cross_attn() {
+        assert_eq!(
+            "CROSS_ATTN".parse::<FlowComponent>().expect("parse"),
+            FlowComponent::CrossAttention
+        );
+        assert_eq!(
+            "CROSS-ATTN".parse::<FlowComponent>().expect("parse"),
+            FlowComponent::CrossAttention
+        );
+        assert_eq!(
+            "CROSSATTN".parse::<FlowComponent>().expect("parse"),
+            FlowComponent::CrossAttention
+        );
+        assert_eq!(
+            "ENCODER_ATTN".parse::<FlowComponent>().expect("parse"),
+            FlowComponent::CrossAttention
+        );
+        assert_eq!(
+            "Encoder_Attn".parse::<FlowComponent>().expect("parse"),
+            FlowComponent::CrossAttention
+        );
+    }
+
+    #[test]
+    fn test_flow_component_from_str_mixed_case_ffn() {
+        assert_eq!(
+            "FFN".parse::<FlowComponent>().expect("parse"),
+            FlowComponent::Ffn
+        );
+        assert_eq!(
+            "MLP".parse::<FlowComponent>().expect("parse"),
+            FlowComponent::Ffn
+        );
+        assert_eq!(
+            "FEEDFORWARD".parse::<FlowComponent>().expect("parse"),
+            FlowComponent::Ffn
+        );
+        assert_eq!(
+            "Mlp".parse::<FlowComponent>().expect("parse"),
+            FlowComponent::Ffn
+        );
+        assert_eq!(
+            "FeedForward".parse::<FlowComponent>().expect("parse"),
+            FlowComponent::Ffn
+        );
+    }
+
+    #[test]
+    fn test_flow_component_from_str_error_message() {
+        let err = "banana".parse::<FlowComponent>().unwrap_err();
+        assert_eq!(err, "Unknown component: banana");
+    }
+
+    #[test]
+    fn test_flow_component_from_str_error_whitespace() {
+        assert!(" full".parse::<FlowComponent>().is_err());
+        assert!("full ".parse::<FlowComponent>().is_err());
+        assert!(" ".parse::<FlowComponent>().is_err());
+    }
+
+    #[test]
+    fn test_flow_component_from_str_error_partial() {
+        assert!("ful".parse::<FlowComponent>().is_err());
+        assert!("encode".parse::<FlowComponent>().is_err());
+        assert!("decode".parse::<FlowComponent>().is_err());
+        assert!("atten".parse::<FlowComponent>().is_err());
+    }
+
+    #[test]
+    fn test_flow_component_copy() {
+        // FlowComponent derives Copy
+        let a = FlowComponent::Full;
+        let b = a; // Copy, not move
+        assert_eq!(a, b); // a is still accessible
+    }
+
+    #[test]
+    fn test_flow_component_all_variants_distinct() {
+        let variants = [
+            FlowComponent::Full,
+            FlowComponent::Encoder,
+            FlowComponent::Decoder,
+            FlowComponent::SelfAttention,
+            FlowComponent::CrossAttention,
+            FlowComponent::Ffn,
+        ];
+        // Every pair of distinct variants should be unequal
+        for i in 0..variants.len() {
+            for j in (i + 1)..variants.len() {
+                assert_ne!(
+                    variants[i], variants[j],
+                    "{:?} should not equal {:?}",
+                    variants[i], variants[j]
+                );
+            }
+        }
+    }
+
+    // ========================================================================
+    // detect_architecture Additional Coverage
+    // ========================================================================
+
+    #[test]
+    fn test_detect_architecture_encoder_decoder_without_cross_attn() {
+        // Has both encoder and decoder, but NO cross_attn
+        // This falls through to the else branch
+        let names = vec![
+            "encoder.layers.0.self_attn.q_proj.weight".to_string(),
+            "decoder.layers.0.self_attn.q_proj.weight".to_string(),
+        ];
+        // No cross_attn -> first condition fails -> encoder_only fails (has_decoder)
+        // -> decoder_only fails (has_encoder) -> unknown
+        assert_eq!(detect_architecture(&names), "unknown");
+    }
+
+    #[test]
+    fn test_detect_architecture_only_cross_attn_no_enc_dec() {
+        // Has cross_attn mention but neither "encoder" nor "decoder" prefix
+        let names = vec!["model.layers.0.cross_attn.q_proj.weight".to_string()];
+        // has_encoder=false, has_decoder=false, has_cross_attn=true
+        // First condition: false (needs all three)
+        // Second: false (no encoder)
+        // Third: false (no decoder)
+        assert_eq!(detect_architecture(&names), "unknown");
+    }
+
+    #[test]
+    fn test_detect_architecture_encoder_attn_keyword() {
+        let names = vec![
+            "encoder.layers.0.weight".to_string(),
+            "decoder.layers.0.weight".to_string(),
+            "decoder.layers.0.encoder_attn.q_proj.weight".to_string(),
+        ];
+        assert_eq!(detect_architecture(&names), "encoder-decoder (Whisper/T5)");
+    }
+
+    #[test]
+    fn test_detect_architecture_single_encoder_tensor() {
+        let names = vec!["encoder.conv1.weight".to_string()];
+        assert_eq!(detect_architecture(&names), "encoder-only (BERT)");
+    }
+
+    #[test]
+    fn test_detect_architecture_single_decoder_tensor() {
+        let names = vec!["decoder.embed_tokens.weight".to_string()];
+        assert_eq!(detect_architecture(&names), "decoder-only (GPT/LLaMA)");
+    }
+
+    #[test]
+    fn test_detect_architecture_llama_style_names() {
+        // LLaMA-style models don't use "encoder"/"decoder" prefixes
+        let names = vec![
+            "model.embed_tokens.weight".to_string(),
+            "model.layers.0.self_attn.q_proj.weight".to_string(),
+            "lm_head.weight".to_string(),
+        ];
+        assert_eq!(detect_architecture(&names), "unknown");
+    }
+
+    #[test]
+    fn test_detect_architecture_gguf_style_names() {
+        // GGUF-style: blk.0.attn_q.weight
+        let names = vec![
+            "token_embd.weight".to_string(),
+            "blk.0.attn_q.weight".to_string(),
+            "blk.0.ffn_gate.weight".to_string(),
+            "output.weight".to_string(),
+        ];
+        assert_eq!(detect_architecture(&names), "unknown");
+    }
+
+    #[test]
+    fn test_detect_architecture_encoder_prefix_in_middle() {
+        // "encoder" must be a prefix (starts_with), not just a substring
+        let names = vec!["some_encoder_layer.weight".to_string()];
+        // starts_with("encoder") is false
+        assert_eq!(detect_architecture(&names), "unknown");
+    }
+
+    #[test]
+    fn test_detect_architecture_decoder_prefix_in_middle() {
+        let names = vec!["pre_decoder.layers.0.weight".to_string()];
+        // starts_with("decoder") is false
+        assert_eq!(detect_architecture(&names), "unknown");
+    }
+
+    // ========================================================================
+    // compute_stats Additional Coverage
+    // ========================================================================
+
+    #[test]
+    fn test_compute_stats_two_values() {
+        let data = [3.0, 7.0];
+        let (min, max, mean, std) = compute_stats(&data);
+        assert_eq!(min, 3.0);
+        assert_eq!(max, 7.0);
+        assert_eq!(mean, 5.0);
+        assert!((std - 2.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_compute_stats_large_values() {
+        let data = [1e6, 2e6, 3e6];
+        let (min, max, mean, _std) = compute_stats(&data);
+        assert_eq!(min, 1e6);
+        assert_eq!(max, 3e6);
+        assert!((mean - 2e6).abs() < 1.0);
+    }
+
+    #[test]
+    fn test_compute_stats_very_small_values() {
+        let data = [1e-7, 2e-7, 3e-7];
+        let (min, max, mean, _std) = compute_stats(&data);
+        assert!((min - 1e-7).abs() < 1e-10);
+        assert!((max - 3e-7).abs() < 1e-10);
+        assert!((mean - 2e-7).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_compute_stats_mixed_sign() {
+        let data = [-100.0, 0.0, 100.0];
+        let (min, max, mean, _std) = compute_stats(&data);
+        assert_eq!(min, -100.0);
+        assert_eq!(max, 100.0);
+        assert!(mean.abs() < 0.001);
+    }
+
+    #[test]
+    fn test_compute_stats_single_negative() {
+        let data = [-42.0];
+        let (min, max, mean, std) = compute_stats(&data);
+        assert_eq!(min, -42.0);
+        assert_eq!(max, -42.0);
+        assert_eq!(mean, -42.0);
+        assert_eq!(std, 0.0);
+    }
+
+    #[test]
+    fn test_compute_stats_single_zero() {
+        let data = [0.0];
+        let (min, max, mean, std) = compute_stats(&data);
+        assert_eq!(min, 0.0);
+        assert_eq!(max, 0.0);
+        assert_eq!(mean, 0.0);
+        assert_eq!(std, 0.0);
+    }
+
+    #[test]
+    fn test_compute_stats_all_zeros() {
+        let data = [0.0, 0.0, 0.0, 0.0, 0.0];
+        let (min, max, mean, std) = compute_stats(&data);
+        assert_eq!(min, 0.0);
+        assert_eq!(max, 0.0);
+        assert_eq!(mean, 0.0);
+        assert_eq!(std, 0.0);
+    }
+
+    #[test]
+    fn test_compute_stats_ascending() {
+        let data: Vec<f32> = (1..=100).map(|i| i as f32).collect();
+        let (min, max, mean, std) = compute_stats(&data);
+        assert_eq!(min, 1.0);
+        assert_eq!(max, 100.0);
+        assert!((mean - 50.5).abs() < 0.01);
+        // std of uniform 1..=100 is ~28.87
+        assert!((std - 28.87).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_compute_stats_descending() {
+        let data: Vec<f32> = (1..=100).rev().map(|i| i as f32).collect();
+        let (min, max, mean, std) = compute_stats(&data);
+        assert_eq!(min, 1.0);
+        assert_eq!(max, 100.0);
+        assert!((mean - 50.5).abs() < 0.01);
+        assert!((std - 28.87).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_compute_stats_typical_weights() {
+        // Simulating typical neural network weight distribution
+        let data = vec![
+            -0.1, 0.05, -0.03, 0.08, -0.07, 0.02, -0.01, 0.04, -0.06, 0.09,
+        ];
+        let (min, max, mean, std) = compute_stats(&data);
+        assert!(min < 0.0);
+        assert!(max > 0.0);
+        assert!(mean.abs() < 0.05); // near zero mean
+        assert!(std > 0.0);
+        assert!(std < 0.2); // small spread
+    }
+
+    #[test]
+    fn test_compute_stats_std_is_non_negative() {
+        // Standard deviation must always be >= 0
+        let test_cases: Vec<Vec<f32>> = vec![
+            vec![1.0, 1.0, 1.0],
+            vec![-1.0, 1.0],
+            vec![0.0],
+            vec![100.0, -100.0],
+        ];
+        for data in &test_cases {
+            let (_, _, _, std) = compute_stats(data);
+            assert!(std >= 0.0, "std must be non-negative, got {std}");
+        }
+    }
+
+    #[test]
+    fn test_compute_stats_mean_is_between_min_and_max() {
+        let data = vec![10.0, 20.0, 30.0, 40.0, 50.0];
+        let (min, max, mean, _std) = compute_stats(&data);
+        assert!(mean >= min, "mean should be >= min");
+        assert!(mean <= max, "mean should be <= max");
+    }
+
+    // ========================================================================
+    // Layer Counting Logic (used in print_encoder_block / print_decoder_block)
+    // ========================================================================
+
+    #[test]
+    fn test_encoder_layer_counting_zero_layers() {
+        let tensor_names: Vec<String> = vec!["output.weight".to_string()];
+        let n_layers = tensor_names
+            .iter()
+            .filter(|n| n.starts_with("encoder.layers."))
+            .filter_map(|n| {
+                n.strip_prefix("encoder.layers.")
+                    .and_then(|s| s.split('.').next())
+                    .and_then(|s| s.parse::<usize>().ok())
+            })
+            .max()
+            .map_or(0, |n| n + 1);
+        assert_eq!(n_layers, 0);
+    }
+
+    #[test]
+    fn test_encoder_layer_counting_single_layer() {
+        let tensor_names = vec![
+            "encoder.layers.0.self_attn.q_proj.weight".to_string(),
+            "encoder.layers.0.self_attn.k_proj.weight".to_string(),
+        ];
+        let n_layers = tensor_names
+            .iter()
+            .filter(|n| n.starts_with("encoder.layers."))
+            .filter_map(|n| {
+                n.strip_prefix("encoder.layers.")
+                    .and_then(|s| s.split('.').next())
+                    .and_then(|s| s.parse::<usize>().ok())
+            })
+            .max()
+            .map_or(0, |n| n + 1);
+        assert_eq!(n_layers, 1);
+    }
+
+    #[test]
+    fn test_encoder_layer_counting_multiple_layers() {
+        let tensor_names = vec![
+            "encoder.layers.0.self_attn.weight".to_string(),
+            "encoder.layers.1.self_attn.weight".to_string(),
+            "encoder.layers.2.self_attn.weight".to_string(),
+            "encoder.layers.3.self_attn.weight".to_string(),
+        ];
+        let n_layers = tensor_names
+            .iter()
+            .filter(|n| n.starts_with("encoder.layers."))
+            .filter_map(|n| {
+                n.strip_prefix("encoder.layers.")
+                    .and_then(|s| s.split('.').next())
+                    .and_then(|s| s.parse::<usize>().ok())
+            })
+            .max()
+            .map_or(0, |n| n + 1);
+        assert_eq!(n_layers, 4);
+    }
+
+    #[test]
+    fn test_encoder_layer_counting_non_contiguous() {
+        // Layers 0, 5 -> max=5, n_layers=6
+        let tensor_names = vec![
+            "encoder.layers.0.weight".to_string(),
+            "encoder.layers.5.weight".to_string(),
+        ];
+        let n_layers = tensor_names
+            .iter()
+            .filter(|n| n.starts_with("encoder.layers."))
+            .filter_map(|n| {
+                n.strip_prefix("encoder.layers.")
+                    .and_then(|s| s.split('.').next())
+                    .and_then(|s| s.parse::<usize>().ok())
+            })
+            .max()
+            .map_or(0, |n| n + 1);
+        assert_eq!(n_layers, 6);
+    }
+
+    #[test]
+    fn test_decoder_layer_counting_zero_layers() {
+        let tensor_names: Vec<String> = vec!["output.weight".to_string()];
+        let n_layers = tensor_names
+            .iter()
+            .filter(|n| n.starts_with("decoder.layers."))
+            .filter_map(|n| {
+                n.strip_prefix("decoder.layers.")
+                    .and_then(|s| s.split('.').next())
+                    .and_then(|s| s.parse::<usize>().ok())
+            })
+            .max()
+            .map_or(0, |n| n + 1);
+        assert_eq!(n_layers, 0);
+    }
+
+    #[test]
+    fn test_decoder_layer_counting_multiple_layers() {
+        let tensor_names = vec![
+            "decoder.layers.0.self_attn.weight".to_string(),
+            "decoder.layers.1.encoder_attn.weight".to_string(),
+            "decoder.layers.2.ffn.weight".to_string(),
+            "decoder.layers.3.self_attn.weight".to_string(),
+            "decoder.layers.3.ffn.weight".to_string(),
+        ];
+        let n_layers = tensor_names
+            .iter()
+            .filter(|n| n.starts_with("decoder.layers."))
+            .filter_map(|n| {
+                n.strip_prefix("decoder.layers.")
+                    .and_then(|s| s.split('.').next())
+                    .and_then(|s| s.parse::<usize>().ok())
+            })
+            .max()
+            .map_or(0, |n| n + 1);
+        assert_eq!(n_layers, 4);
+    }
+
+    #[test]
+    fn test_layer_counting_mixed_encoder_decoder() {
+        let tensor_names = vec![
+            "encoder.layers.0.weight".to_string(),
+            "encoder.layers.1.weight".to_string(),
+            "decoder.layers.0.weight".to_string(),
+            "decoder.layers.1.weight".to_string(),
+            "decoder.layers.2.weight".to_string(),
+        ];
+        let enc_layers = tensor_names
+            .iter()
+            .filter(|n| n.starts_with("encoder.layers."))
+            .filter_map(|n| {
+                n.strip_prefix("encoder.layers.")
+                    .and_then(|s| s.split('.').next())
+                    .and_then(|s| s.parse::<usize>().ok())
+            })
+            .max()
+            .map_or(0, |n| n + 1);
+        let dec_layers = tensor_names
+            .iter()
+            .filter(|n| n.starts_with("decoder.layers."))
+            .filter_map(|n| {
+                n.strip_prefix("decoder.layers.")
+                    .and_then(|s| s.split('.').next())
+                    .and_then(|s| s.parse::<usize>().ok())
+            })
+            .max()
+            .map_or(0, |n| n + 1);
+        assert_eq!(enc_layers, 2);
+        assert_eq!(dec_layers, 3);
+    }
+
+    // ========================================================================
+    // Cross-Attention Layer Filtering Logic
+    // ========================================================================
+
+    #[test]
+    fn test_cross_attn_layer_detection_encoder_attn() {
+        let tensor_names = vec![
+            "decoder.layers.0.encoder_attn.q_proj.weight".to_string(),
+            "decoder.layers.0.encoder_attn.k_proj.weight".to_string(),
+            "decoder.layers.1.encoder_attn.q_proj.weight".to_string(),
+        ];
+        let cross_attn_layers: Vec<_> = tensor_names
+            .iter()
+            .filter(|n| n.contains("encoder_attn") || n.contains("cross_attn"))
+            .filter(|n| n.contains("q_proj.weight"))
+            .collect();
+        assert_eq!(cross_attn_layers.len(), 2);
+    }
+
+    #[test]
+    fn test_cross_attn_layer_detection_cross_attn() {
+        let tensor_names = vec![
+            "decoder.layers.0.cross_attn.q_proj.weight".to_string(),
+            "decoder.layers.0.cross_attn.k_proj.weight".to_string(),
+        ];
+        let cross_attn_layers: Vec<_> = tensor_names
+            .iter()
+            .filter(|n| n.contains("encoder_attn") || n.contains("cross_attn"))
+            .filter(|n| n.contains("q_proj.weight"))
+            .collect();
+        assert_eq!(cross_attn_layers.len(), 1);
+    }
+
+    #[test]
+    fn test_cross_attn_layer_detection_empty() {
+        let tensor_names = vec![
+            "decoder.layers.0.self_attn.q_proj.weight".to_string(),
+            "decoder.layers.0.ffn.fc1.weight".to_string(),
+        ];
+        let cross_attn_layers: Vec<_> = tensor_names
+            .iter()
+            .filter(|n| n.contains("encoder_attn") || n.contains("cross_attn"))
+            .filter(|n| n.contains("q_proj.weight"))
+            .collect();
+        assert!(cross_attn_layers.is_empty());
+    }
+
+    #[test]
+    fn test_cross_attn_layer_filter_applied() {
+        let tensor_names = vec![
+            "decoder.layers.0.encoder_attn.q_proj.weight".to_string(),
+            "decoder.layers.1.encoder_attn.q_proj.weight".to_string(),
+            "decoder.layers.2.encoder_attn.q_proj.weight".to_string(),
+        ];
+        let layer_filter: Option<&str> = Some("layers.1");
+        let filtered: Vec<_> = tensor_names
+            .iter()
+            .filter(|n| n.contains("encoder_attn") || n.contains("cross_attn"))
+            .filter(|n| n.contains("q_proj.weight"))
+            .filter(|n| layer_filter.map_or(true, |f| n.contains(f)))
+            .collect();
+        assert_eq!(filtered.len(), 1);
+        assert!(filtered[0].contains("layers.1"));
+    }
+
+    #[test]
+    fn test_cross_attn_layer_filter_none_matches_all() {
+        let tensor_names = vec![
+            "decoder.layers.0.encoder_attn.q_proj.weight".to_string(),
+            "decoder.layers.1.encoder_attn.q_proj.weight".to_string(),
+        ];
+        let layer_filter: Option<&str> = None;
+        let filtered: Vec<_> = tensor_names
+            .iter()
+            .filter(|n| n.contains("encoder_attn") || n.contains("cross_attn"))
+            .filter(|n| n.contains("q_proj.weight"))
+            .filter(|n| layer_filter.map_or(true, |f| n.contains(f)))
+            .collect();
+        assert_eq!(filtered.len(), 2);
+    }
+
+    #[test]
+    fn test_cross_attn_layer_filter_no_match() {
+        let tensor_names = vec![
+            "decoder.layers.0.encoder_attn.q_proj.weight".to_string(),
+            "decoder.layers.1.encoder_attn.q_proj.weight".to_string(),
+        ];
+        let layer_filter: Option<&str> = Some("layers.99");
+        let filtered: Vec<_> = tensor_names
+            .iter()
+            .filter(|n| n.contains("encoder_attn") || n.contains("cross_attn"))
+            .filter(|n| n.contains("q_proj.weight"))
+            .filter(|n| layer_filter.map_or(true, |f| n.contains(f)))
+            .collect();
+        assert!(filtered.is_empty());
+    }
+
+    // ========================================================================
+    // Q weight name prefix stripping (cross-attention flow)
+    // ========================================================================
+
+    #[test]
+    fn test_strip_q_proj_suffix() {
+        let name = "decoder.layers.0.encoder_attn.q_proj.weight";
+        let prefix = name.strip_suffix(".q_proj.weight").unwrap_or(name);
+        assert_eq!(prefix, "decoder.layers.0.encoder_attn");
+    }
+
+    #[test]
+    fn test_strip_q_proj_suffix_no_match() {
+        let name = "decoder.layers.0.encoder_attn.k_proj.weight";
+        let prefix = name.strip_suffix(".q_proj.weight").unwrap_or(name);
+        // No match -> returns the full name
+        assert_eq!(prefix, name);
+    }
+
+    // ========================================================================
+    // Conv1 detection in encoder block
+    // ========================================================================
+
+    #[test]
+    fn test_conv1_detection_present() {
+        let tensor_names = vec![
+            "encoder.conv1.weight".to_string(),
+            "encoder.conv2.weight".to_string(),
+            "encoder.positional_embedding".to_string(),
+        ];
+        let has_conv1 = tensor_names.iter().any(|n| n.contains("conv1"));
+        assert!(has_conv1);
+    }
+
+    #[test]
+    fn test_conv1_detection_absent() {
+        let tensor_names = vec![
+            "encoder.layers.0.self_attn.weight".to_string(),
+            "encoder.layers.0.ffn.weight".to_string(),
+        ];
+        let has_conv1 = tensor_names.iter().any(|n| n.contains("conv1"));
+        assert!(!has_conv1);
+    }
+
+    // ========================================================================
+    // run() Error Path Tests
+    // ========================================================================
+
+    #[test]
+    fn test_run_nonexistent_path_specific_error_variant() {
+        let result = run(
+            Path::new("/tmp/definitely_does_not_exist_xyz123.apr"),
+            None,
+            FlowComponent::Full,
+            false,
+        );
+        match result {
+            Err(CliError::FileNotFound(p)) => {
+                assert_eq!(p, Path::new("/tmp/definitely_does_not_exist_xyz123.apr"));
+            }
+            other => panic!("Expected FileNotFound, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_run_empty_apr_file() {
+        let file = NamedTempFile::with_suffix(".apr").expect("create temp file");
+        // Empty file should fail with InvalidFormat
+        let result = run(file.path(), None, FlowComponent::Full, false);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_non_apr_extension() {
+        let dir = tempdir().expect("create temp dir");
+        let path = dir.path().join("model.gguf");
+        std::fs::write(&path, b"some data").expect("write");
+        // This file exists but flow command requires APR format
+        let result = run(&path, None, FlowComponent::Full, false);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_all_components_fail_on_invalid() {
+        let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
+        file.write_all(b"invalid").expect("write");
+
+        // All component variants should fail with invalid data
+        let components = [
+            FlowComponent::Full,
+            FlowComponent::Encoder,
+            FlowComponent::Decoder,
+            FlowComponent::SelfAttention,
+            FlowComponent::CrossAttention,
+            FlowComponent::Ffn,
+        ];
+        for comp in &components {
+            let result = run(file.path(), None, *comp, false);
+            assert!(result.is_err(), "Expected error for component {comp:?}");
+        }
+    }
+
+    #[test]
+    fn test_run_verbose_with_layer_filter() {
+        let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
+        file.write_all(b"not valid apr").expect("write");
+
+        let result = run(
+            file.path(),
+            Some("decoder.layers.0"),
+            FlowComponent::CrossAttention,
+            true,
+        );
+        assert!(result.is_err());
+    }
+
+    // ========================================================================
+    // Printing functions (should not panic)
+    // ========================================================================
+
+    #[test]
+    fn test_print_encoder_block_no_conv1_no_layers() {
+        let tensor_names: Vec<String> = vec![];
+        // Should not panic with empty tensor names
+        print_encoder_block(&tensor_names, false);
+    }
+
+    #[test]
+    fn test_print_encoder_block_with_conv1_and_layers() {
+        let tensor_names = vec![
+            "encoder.conv1.weight".to_string(),
+            "encoder.conv2.weight".to_string(),
+            "encoder.layers.0.self_attn.weight".to_string(),
+            "encoder.layers.1.self_attn.weight".to_string(),
+        ];
+        // Should not panic
+        print_encoder_block(&tensor_names, false);
+    }
+
+    #[test]
+    fn test_print_encoder_block_with_conv1_no_layers() {
+        let tensor_names = vec!["encoder.conv1.weight".to_string()];
+        // Has conv1 but no "encoder.layers." tensors -> n_layers = 0
+        print_encoder_block(&tensor_names, false);
+    }
+
+    #[test]
+    fn test_print_decoder_block_no_layers() {
+        let tensor_names: Vec<String> = vec![];
+        print_decoder_block(&tensor_names, false);
+    }
+
+    #[test]
+    fn test_print_decoder_block_with_layers() {
+        let tensor_names = vec![
+            "decoder.layers.0.self_attn.weight".to_string(),
+            "decoder.layers.1.self_attn.weight".to_string(),
+            "decoder.layers.2.self_attn.weight".to_string(),
+        ];
+        print_decoder_block(&tensor_names, false);
+    }
+
+    #[test]
+    fn test_print_decoder_block_many_layers() {
+        let tensor_names: Vec<String> = (0..32)
+            .map(|i| format!("decoder.layers.{i}.self_attn.weight"))
+            .collect();
+        print_decoder_block(&tensor_names, false);
+    }
 }

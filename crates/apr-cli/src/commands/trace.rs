@@ -2131,4 +2131,1126 @@ mod tests {
         // BUG-TRACE-001 FIX: total_params should be computed
         let _ = total_params; // May be 0 for test file
     }
+
+    // ========================================================================
+    // compute_vector_stats: comprehensive tests
+    // ========================================================================
+
+    #[test]
+    fn test_compute_vector_stats_empty() {
+        let stats = compute_vector_stats(&[]);
+        assert_eq!(stats.mean, 0.0);
+        assert_eq!(stats.l2_norm, 0.0);
+        assert_eq!(stats.min, 0.0);
+        assert_eq!(stats.max, 0.0);
+        assert_eq!(stats.nan_count, 0);
+        assert_eq!(stats.inf_count, 0);
+    }
+
+    #[test]
+    fn test_compute_vector_stats_single_value() {
+        let stats = compute_vector_stats(&[5.0]);
+        assert!((stats.mean - 5.0).abs() < 1e-5);
+        assert_eq!(stats.min, 5.0);
+        assert_eq!(stats.max, 5.0);
+    }
+
+    #[test]
+    fn test_compute_vector_stats_basic() {
+        let stats = compute_vector_stats(&[1.0, 2.0, 3.0, 4.0, 5.0]);
+        assert!((stats.mean - 3.0).abs() < 1e-5);
+        assert_eq!(stats.min, 1.0);
+        assert_eq!(stats.max, 5.0);
+    }
+
+    #[test]
+    fn test_compute_vector_stats_negative_values() {
+        let stats = compute_vector_stats(&[-3.0, -1.0, 0.0, 1.0, 3.0]);
+        assert!((stats.mean - 0.0).abs() < 1e-5);
+        assert_eq!(stats.min, -3.0);
+        assert_eq!(stats.max, 3.0);
+    }
+
+    #[test]
+    fn test_compute_vector_stats_with_nan() {
+        let stats = compute_vector_stats(&[1.0, f32::NAN, 3.0]);
+        assert_eq!(stats.nan_count, 1);
+        assert!((stats.mean - 2.0).abs() < 1e-5); // Mean of 1 and 3
+    }
+
+    #[test]
+    fn test_compute_vector_stats_with_inf() {
+        let stats = compute_vector_stats(&[2.0, f32::INFINITY, 4.0]);
+        assert_eq!(stats.inf_count, 1);
+        assert!((stats.mean - 3.0).abs() < 1e-5); // Mean of 2 and 4
+    }
+
+    #[test]
+    fn test_compute_vector_stats_with_neg_inf() {
+        let stats = compute_vector_stats(&[2.0, f32::NEG_INFINITY, 8.0]);
+        assert_eq!(stats.inf_count, 1);
+        assert!((stats.mean - 5.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_compute_vector_stats_all_nan() {
+        let stats = compute_vector_stats(&[f32::NAN, f32::NAN, f32::NAN]);
+        assert_eq!(stats.nan_count, 3);
+        assert_eq!(stats.mean, 0.0);
+        assert_eq!(stats.min, 0.0);
+        assert_eq!(stats.max, 0.0);
+    }
+
+    #[test]
+    fn test_compute_vector_stats_all_inf() {
+        let stats = compute_vector_stats(&[f32::INFINITY, f32::NEG_INFINITY]);
+        assert_eq!(stats.inf_count, 2);
+        assert_eq!(stats.mean, 0.0);
+        assert_eq!(stats.min, 0.0);
+        assert_eq!(stats.max, 0.0);
+    }
+
+    #[test]
+    fn test_compute_vector_stats_l2_norm() {
+        let stats = compute_vector_stats(&[3.0, 4.0]); // sqrt(9+16) = 5
+        assert!((stats.l2_norm - 5.0).abs() < 1e-5);
+    }
+
+    // ========================================================================
+    // is_likely_garbage: comprehensive branch coverage
+    // ========================================================================
+
+    #[test]
+    fn test_is_likely_garbage_empty() {
+        assert!(!is_likely_garbage(""));
+    }
+
+    #[test]
+    fn test_is_likely_garbage_normal_text() {
+        assert!(!is_likely_garbage("The answer is 42."));
+    }
+
+    #[test]
+    fn test_is_likely_garbage_repeated_words() {
+        // More than 50% repeated words
+        assert!(is_likely_garbage("foo foo foo foo foo bar"));
+    }
+
+    #[test]
+    fn test_is_likely_garbage_unicode_replacement() {
+        // High ratio of replacement characters
+        assert!(is_likely_garbage(
+            "\u{FFFD}\u{FFFD}\u{FFFD}\u{FFFD}\u{FFFD}x"
+        ));
+    }
+
+    #[test]
+    fn test_is_likely_garbage_private_use_area() {
+        assert!(is_likely_garbage("\u{E000}\u{E001}\u{E002}\u{E003}x"));
+    }
+
+    #[test]
+    fn test_is_likely_garbage_pattern_random_random() {
+        assert!(is_likely_garbage("some random random text here"));
+    }
+
+    #[test]
+    fn test_is_likely_garbage_pattern_random_underscore() {
+        assert!(is_likely_garbage("random_ stuff"));
+    }
+
+    #[test]
+    fn test_is_likely_garbage_pattern_domain_domain() {
+        assert!(is_likely_garbage("domain domain something"));
+    }
+
+    #[test]
+    fn test_is_likely_garbage_pattern_pandas() {
+        assert!(is_likely_garbage("pandas pandas thing"));
+    }
+
+    #[test]
+    fn test_is_likely_garbage_no_normal_words_no_numbers() {
+        // No common English words, no numbers, >2 words
+        assert!(is_likely_garbage("zyx wvut srqp onml"));
+    }
+
+    #[test]
+    fn test_is_likely_garbage_math_with_numbers() {
+        // Has numbers, so not garbage
+        assert!(!is_likely_garbage("4"));
+    }
+
+    #[test]
+    fn test_is_likely_garbage_with_common_words() {
+        assert!(!is_likely_garbage("the quick brown fox"));
+    }
+
+    #[test]
+    fn test_is_likely_garbage_single_word() {
+        // Only 1 word, too short for repeated word check
+        assert!(!is_likely_garbage("hello"));
+    }
+
+    #[test]
+    fn test_is_likely_garbage_two_words_no_repeat() {
+        // 2 words, no repeats, has normal word
+        assert!(!is_likely_garbage("the answer"));
+    }
+
+    #[test]
+    fn test_is_likely_garbage_pattern_domainuster() {
+        assert!(is_likely_garbage("some domainuster output"));
+    }
+
+    #[test]
+    fn test_is_likely_garbage_pattern_localents() {
+        assert!(is_likely_garbage("localents and stuff"));
+    }
+
+    #[test]
+    fn test_is_likely_garbage_pattern_nunca() {
+        assert!(is_likely_garbage("nunca something"));
+    }
+
+    #[test]
+    fn test_is_likely_garbage_pattern_mult() {
+        assert!(is_likely_garbage("x.mult something"));
+    }
+
+    // ========================================================================
+    // extract_layer_index: all patterns
+    // ========================================================================
+
+    #[test]
+    fn test_extract_layer_index_layers_pattern() {
+        assert_eq!(extract_layer_index("model.layers.5.self_attn"), Some(5));
+    }
+
+    #[test]
+    fn test_extract_layer_index_layer_pattern() {
+        assert_eq!(extract_layer_index("encoder.layer.12.attention"), Some(12));
+    }
+
+    #[test]
+    fn test_extract_layer_index_h_pattern() {
+        assert_eq!(extract_layer_index("h.3.attn.weight"), Some(3));
+    }
+
+    #[test]
+    fn test_extract_layer_index_blk_pattern() {
+        assert_eq!(extract_layer_index("blk.0.ffn_gate.weight"), Some(0));
+    }
+
+    #[test]
+    fn test_extract_layer_index_blocks_pattern() {
+        assert_eq!(extract_layer_index("blocks.7.output"), Some(7));
+    }
+
+    #[test]
+    fn test_extract_layer_index_block_pattern() {
+        assert_eq!(extract_layer_index("block.99.weight"), Some(99));
+    }
+
+    #[test]
+    fn test_extract_layer_index_no_match() {
+        assert_eq!(extract_layer_index("embed_tokens.weight"), None);
+    }
+
+    #[test]
+    fn test_extract_layer_index_no_number() {
+        assert_eq!(extract_layer_index("layers.abc.weight"), None);
+    }
+
+    #[test]
+    fn test_extract_layer_index_large_number() {
+        assert_eq!(
+            extract_layer_index("model.layers.1024.self_attn"),
+            Some(1024)
+        );
+    }
+
+    #[test]
+    fn test_extract_layer_index_zero() {
+        assert_eq!(extract_layer_index("model.layers.0.norm"), Some(0));
+    }
+
+    // ========================================================================
+    // infer_layers_from_tensor_names: comprehensive
+    // ========================================================================
+
+    #[test]
+    fn test_infer_layers_empty() {
+        let layers = infer_layers_from_tensor_names(&[], None);
+        assert!(layers.is_empty());
+    }
+
+    #[test]
+    fn test_infer_layers_with_embedding() {
+        let names = vec!["model.embed_tokens.weight"];
+        let layers = infer_layers_from_tensor_names(&names, None);
+        assert_eq!(layers.len(), 1);
+        assert_eq!(layers[0].name, "embedding");
+    }
+
+    #[test]
+    fn test_infer_layers_with_wte() {
+        let names = vec!["wte.weight"];
+        let layers = infer_layers_from_tensor_names(&names, None);
+        assert_eq!(layers.len(), 1);
+        assert_eq!(layers[0].name, "embedding");
+    }
+
+    #[test]
+    fn test_infer_layers_with_lm_head() {
+        let names = vec!["lm_head.weight"];
+        let layers = infer_layers_from_tensor_names(&names, None);
+        assert_eq!(layers.len(), 1);
+        assert_eq!(layers[0].name, "lm_head");
+    }
+
+    #[test]
+    fn test_infer_layers_with_output_tensor() {
+        let names = vec!["output.weight"];
+        let layers = infer_layers_from_tensor_names(&names, None);
+        assert_eq!(layers.len(), 1);
+        assert_eq!(layers[0].name, "lm_head");
+    }
+
+    #[test]
+    fn test_infer_layers_full_model() {
+        let names = vec![
+            "model.embed_tokens.weight",
+            "model.layers.0.self_attn.q_proj.weight",
+            "model.layers.0.self_attn.k_proj.weight",
+            "model.layers.1.self_attn.q_proj.weight",
+            "model.layers.2.mlp.gate_proj.weight",
+            "lm_head.weight",
+        ];
+        let layers = infer_layers_from_tensor_names(&names, None);
+        // Should have: embedding + 3 transformer blocks + lm_head = 5
+        assert_eq!(layers.len(), 5);
+        assert_eq!(layers[0].name, "embedding");
+        assert_eq!(layers[1].name, "transformer_block_0");
+        assert_eq!(layers[2].name, "transformer_block_1");
+        assert_eq!(layers[3].name, "transformer_block_2");
+        assert_eq!(layers[4].name, "lm_head");
+    }
+
+    #[test]
+    fn test_infer_layers_with_filter_matching() {
+        let names = vec![
+            "model.embed_tokens.weight",
+            "model.layers.0.self_attn.weight",
+            "model.layers.1.self_attn.weight",
+            "lm_head.weight",
+        ];
+        let layers = infer_layers_from_tensor_names(&names, Some("block_1"));
+        // Filter should only include block_1
+        assert!(layers.iter().any(|l| l.name == "transformer_block_1"));
+        // Should not include block_0
+        assert!(!layers.iter().any(|l| l.name == "transformer_block_0"));
+    }
+
+    #[test]
+    fn test_infer_layers_with_filter_embedding() {
+        let names = vec!["model.embed_tokens.weight", "model.layers.0.weight"];
+        let layers = infer_layers_from_tensor_names(&names, Some("embedding"));
+        assert!(layers.iter().any(|l| l.name == "embedding"));
+    }
+
+    #[test]
+    fn test_infer_layers_with_filter_no_match() {
+        let names = vec!["model.layers.0.weight", "model.layers.1.weight"];
+        let layers = infer_layers_from_tensor_names(&names, Some("nonexistent"));
+        assert!(layers.is_empty());
+    }
+
+    #[test]
+    fn test_infer_layers_sorted_indices() {
+        let names = vec![
+            "model.layers.5.weight",
+            "model.layers.0.weight",
+            "model.layers.3.weight",
+        ];
+        let layers = infer_layers_from_tensor_names(&names, None);
+        // BTreeMap ensures sorted order
+        assert_eq!(layers[0].name, "transformer_block_0");
+        assert_eq!(layers[1].name, "transformer_block_3");
+        assert_eq!(layers[2].name, "transformer_block_5");
+    }
+
+    // ========================================================================
+    // create_* helper function tests
+    // ========================================================================
+
+    #[test]
+    fn test_create_embedding_layer() {
+        let layer = create_embedding_layer(768);
+        assert_eq!(layer.name, "embedding");
+        assert_eq!(layer.index, None);
+        assert!(layer.anomalies.is_empty());
+        let output = layer.output_stats.expect("should have output stats");
+        assert_eq!(output.count, 768);
+    }
+
+    #[test]
+    fn test_create_embedding_layer_zero_dim() {
+        let layer = create_embedding_layer(0);
+        let output = layer.output_stats.expect("should have output stats");
+        assert_eq!(output.count, 0);
+    }
+
+    #[test]
+    fn test_create_final_layer_norm() {
+        let layer = create_final_layer_norm();
+        assert_eq!(layer.name, "final_layer_norm");
+        assert_eq!(layer.index, None);
+        assert!(layer.input_stats.is_none());
+        assert!(layer.output_stats.is_none());
+        assert!(layer.weight_stats.is_none());
+        assert!(layer.anomalies.is_empty());
+    }
+
+    #[test]
+    fn test_create_default_layer() {
+        let layer = create_default_layer();
+        assert!(layer.name.contains("not available"));
+        assert_eq!(layer.index, None);
+        assert_eq!(layer.anomalies.len(), 1);
+        assert!(layer.anomalies[0].contains("No layer information"));
+    }
+
+    // ========================================================================
+    // create_transformer_layers tests
+    // ========================================================================
+
+    #[test]
+    fn test_create_transformer_layers_zero() {
+        let layers = create_transformer_layers(0, None);
+        assert!(layers.is_empty());
+    }
+
+    #[test]
+    fn test_create_transformer_layers_basic() {
+        let layers = create_transformer_layers(3, None);
+        assert_eq!(layers.len(), 3);
+        assert_eq!(layers[0].name, "transformer_block_0");
+        assert_eq!(layers[0].index, Some(0));
+        assert_eq!(layers[1].name, "transformer_block_1");
+        assert_eq!(layers[1].index, Some(1));
+        assert_eq!(layers[2].name, "transformer_block_2");
+        assert_eq!(layers[2].index, Some(2));
+    }
+
+    #[test]
+    fn test_create_transformer_layers_with_filter() {
+        let layers = create_transformer_layers(10, Some("block_5"));
+        assert_eq!(layers.len(), 1);
+        assert_eq!(layers[0].name, "transformer_block_5");
+    }
+
+    #[test]
+    fn test_create_transformer_layers_filter_no_match() {
+        let layers = create_transformer_layers(3, Some("nonexistent"));
+        assert!(layers.is_empty());
+    }
+
+    #[test]
+    fn test_create_transformer_layers_filter_multiple_match() {
+        // Filter "block_1" matches "transformer_block_1" and "transformer_block_10" etc.
+        let layers = create_transformer_layers(15, Some("block_1"));
+        // Matches: block_1, block_10, block_11, block_12, block_13, block_14
+        assert!(layers.len() >= 1);
+        assert!(layers.iter().any(|l| l.name == "transformer_block_1"));
+    }
+
+    // ========================================================================
+    // compute_trace_summary tests
+    // ========================================================================
+
+    #[test]
+    fn test_compute_trace_summary_empty() {
+        let summary = compute_trace_summary(&[], 0);
+        assert_eq!(summary.total_layers, 0);
+        assert_eq!(summary.total_parameters, 0);
+        assert_eq!(summary.anomaly_count, 0);
+        assert!(summary.anomalies.is_empty());
+    }
+
+    #[test]
+    fn test_compute_trace_summary_no_anomalies() {
+        let layers = vec![
+            LayerTrace {
+                name: "layer_0".to_string(),
+                index: Some(0),
+                input_stats: None,
+                output_stats: None,
+                weight_stats: None,
+                anomalies: vec![],
+            },
+            LayerTrace {
+                name: "layer_1".to_string(),
+                index: Some(1),
+                input_stats: None,
+                output_stats: None,
+                weight_stats: None,
+                anomalies: vec![],
+            },
+        ];
+        let summary = compute_trace_summary(&layers, 1000);
+        assert_eq!(summary.total_layers, 2);
+        assert_eq!(summary.total_parameters, 1000);
+        assert_eq!(summary.anomaly_count, 0);
+    }
+
+    #[test]
+    fn test_compute_trace_summary_with_anomalies() {
+        let layers = vec![
+            LayerTrace {
+                name: "layer_0".to_string(),
+                index: Some(0),
+                input_stats: None,
+                output_stats: None,
+                weight_stats: None,
+                anomalies: vec!["NaN detected".to_string()],
+            },
+            LayerTrace {
+                name: "layer_1".to_string(),
+                index: Some(1),
+                input_stats: None,
+                output_stats: None,
+                weight_stats: None,
+                anomalies: vec!["Inf detected".to_string(), "Large mean".to_string()],
+            },
+        ];
+        let summary = compute_trace_summary(&layers, 5000);
+        assert_eq!(summary.total_layers, 2);
+        assert_eq!(summary.total_parameters, 5000);
+        assert_eq!(summary.anomaly_count, 3);
+        assert_eq!(summary.anomalies.len(), 3);
+    }
+
+    // ========================================================================
+    // extract_layer_count / extract_model_dimension tests
+    // ========================================================================
+
+    #[test]
+    fn test_extract_layer_count_n_layer() {
+        let mut hp = serde_json::Map::new();
+        hp.insert("n_layer".to_string(), serde_json::json!(32));
+        assert_eq!(extract_layer_count(&hp), 32);
+    }
+
+    #[test]
+    fn test_extract_layer_count_n_layers() {
+        let mut hp = serde_json::Map::new();
+        hp.insert("n_layers".to_string(), serde_json::json!(24));
+        assert_eq!(extract_layer_count(&hp), 24);
+    }
+
+    #[test]
+    fn test_extract_layer_count_missing() {
+        let hp = serde_json::Map::new();
+        assert_eq!(extract_layer_count(&hp), 0);
+    }
+
+    #[test]
+    fn test_extract_layer_count_prefers_n_layer() {
+        let mut hp = serde_json::Map::new();
+        hp.insert("n_layer".to_string(), serde_json::json!(32));
+        hp.insert("n_layers".to_string(), serde_json::json!(24));
+        // n_layer is checked first
+        assert_eq!(extract_layer_count(&hp), 32);
+    }
+
+    #[test]
+    fn test_extract_model_dimension_n_embd() {
+        let mut hp = serde_json::Map::new();
+        hp.insert("n_embd".to_string(), serde_json::json!(768));
+        assert_eq!(extract_model_dimension(&hp), 768);
+    }
+
+    #[test]
+    fn test_extract_model_dimension_d_model() {
+        let mut hp = serde_json::Map::new();
+        hp.insert("d_model".to_string(), serde_json::json!(512));
+        assert_eq!(extract_model_dimension(&hp), 512);
+    }
+
+    #[test]
+    fn test_extract_model_dimension_missing() {
+        let hp = serde_json::Map::new();
+        assert_eq!(extract_model_dimension(&hp), 0);
+    }
+
+    #[test]
+    fn test_extract_model_dimension_prefers_n_embd() {
+        let mut hp = serde_json::Map::new();
+        hp.insert("n_embd".to_string(), serde_json::json!(768));
+        hp.insert("d_model".to_string(), serde_json::json!(512));
+        assert_eq!(extract_model_dimension(&hp), 768);
+    }
+
+    // ========================================================================
+    // extract_layers_from_hyperparameters tests
+    // ========================================================================
+
+    #[test]
+    fn test_extract_layers_from_hyperparameters_basic() {
+        let mut hp = serde_json::Map::new();
+        hp.insert("n_layer".to_string(), serde_json::json!(3));
+        hp.insert("n_embd".to_string(), serde_json::json!(256));
+
+        let layers = extract_layers_from_hyperparameters(&hp, None);
+        // embedding + 3 transformer blocks + final_layer_norm = 5
+        assert_eq!(layers.len(), 5);
+        assert_eq!(layers[0].name, "embedding");
+        assert_eq!(layers[1].name, "transformer_block_0");
+        assert_eq!(layers[2].name, "transformer_block_1");
+        assert_eq!(layers[3].name, "transformer_block_2");
+        assert_eq!(layers[4].name, "final_layer_norm");
+    }
+
+    #[test]
+    fn test_extract_layers_from_hyperparameters_zero_layers() {
+        let mut hp = serde_json::Map::new();
+        hp.insert("n_embd".to_string(), serde_json::json!(256));
+        // no n_layer key → 0 layers
+
+        let layers = extract_layers_from_hyperparameters(&hp, None);
+        // embedding + 0 transformer + final_layer_norm = 2
+        assert_eq!(layers.len(), 2);
+        assert_eq!(layers[0].name, "embedding");
+        assert_eq!(layers[1].name, "final_layer_norm");
+    }
+
+    #[test]
+    fn test_extract_layers_from_hyperparameters_with_filter() {
+        let mut hp = serde_json::Map::new();
+        hp.insert("n_layer".to_string(), serde_json::json!(5));
+        hp.insert("n_embd".to_string(), serde_json::json!(256));
+
+        let layers = extract_layers_from_hyperparameters(&hp, Some("block_3"));
+        // Only transformer_block_3 should match the filter + embedding + final_layer_norm
+        assert!(layers.iter().any(|l| l.name == "transformer_block_3"));
+    }
+
+    // ========================================================================
+    // handle_special_modes tests
+    // ========================================================================
+
+    #[test]
+    fn test_handle_special_modes_interactive() {
+        let path = Path::new("/tmp/model.apr");
+        let result = handle_special_modes(path, None, false, false, true);
+        assert!(result.is_some());
+        assert!(result.expect("should be Some").is_ok());
+    }
+
+    #[test]
+    fn test_handle_special_modes_diff_without_reference() {
+        let path = Path::new("/tmp/model.apr");
+        // diff mode without reference just prints a message and returns None
+        let result = handle_special_modes(path, None, false, true, false);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_handle_special_modes_diff_with_reference() {
+        let path = Path::new("/tmp/model.apr");
+        let ref_path = Path::new("/tmp/ref.apr");
+        // diff mode with reference prints message and returns None (not handled here)
+        let result = handle_special_modes(path, Some(ref_path), false, true, false);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_handle_special_modes_none() {
+        let path = Path::new("/tmp/model.apr");
+        let result = handle_special_modes(path, None, false, false, false);
+        assert!(result.is_none());
+    }
+
+    // ========================================================================
+    // gguf_meta_u32 tests
+    // ========================================================================
+
+    #[test]
+    fn test_gguf_meta_u32_uint32() {
+        use aprender::format::gguf::GgufValue;
+        let mut metadata = BTreeMap::new();
+        metadata.insert("test.count".to_string(), GgufValue::Uint32(42));
+        assert_eq!(gguf_meta_u32(&metadata, "test.count"), Some(42));
+    }
+
+    #[test]
+    fn test_gguf_meta_u32_uint64() {
+        use aprender::format::gguf::GgufValue;
+        let mut metadata = BTreeMap::new();
+        metadata.insert("test.count".to_string(), GgufValue::Uint64(100));
+        assert_eq!(gguf_meta_u32(&metadata, "test.count"), Some(100));
+    }
+
+    #[test]
+    fn test_gguf_meta_u32_int32() {
+        use aprender::format::gguf::GgufValue;
+        let mut metadata = BTreeMap::new();
+        metadata.insert("test.count".to_string(), GgufValue::Int32(55));
+        assert_eq!(gguf_meta_u32(&metadata, "test.count"), Some(55));
+    }
+
+    #[test]
+    fn test_gguf_meta_u32_string_returns_none() {
+        use aprender::format::gguf::GgufValue;
+        let mut metadata = BTreeMap::new();
+        metadata.insert(
+            "test.name".to_string(),
+            GgufValue::String("hello".to_string()),
+        );
+        assert_eq!(gguf_meta_u32(&metadata, "test.name"), None);
+    }
+
+    #[test]
+    fn test_gguf_meta_u32_missing_key() {
+        let metadata: BTreeMap<String, aprender::format::gguf::GgufValue> = BTreeMap::new();
+        assert_eq!(gguf_meta_u32(&metadata, "nonexistent"), None);
+    }
+
+    // ========================================================================
+    // TensorStats::from_slice: additional edge cases
+    // ========================================================================
+
+    #[test]
+    fn test_tensor_stats_all_zeros() {
+        let data = vec![0.0; 100];
+        let stats = TensorStats::from_slice(&data);
+        assert_eq!(stats.count, 100);
+        assert!((stats.mean - 0.0).abs() < 1e-8);
+        assert_eq!(stats.min, 0.0);
+        assert_eq!(stats.max, 0.0);
+        assert_eq!(stats.max_abs, 0.0);
+    }
+
+    #[test]
+    fn test_tensor_stats_all_same_value() {
+        let data = vec![7.0; 50];
+        let stats = TensorStats::from_slice(&data);
+        assert!((stats.mean - 7.0).abs() < 1e-5);
+        assert_eq!(stats.min, 7.0);
+        assert_eq!(stats.max, 7.0);
+    }
+
+    #[test]
+    fn test_tensor_stats_mixed_nan_and_inf() {
+        let data = vec![1.0, f32::NAN, f32::INFINITY, 3.0, f32::NEG_INFINITY];
+        let stats = TensorStats::from_slice(&data);
+        assert_eq!(stats.nan_count, 1);
+        assert_eq!(stats.inf_count, 2);
+        assert_eq!(stats.count, 5);
+        // Mean of [1.0, 3.0] = 2.0
+        assert!((stats.mean - 2.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_tensor_stats_large_values() {
+        let data = vec![1e10, -1e10];
+        let stats = TensorStats::from_slice(&data);
+        assert!((stats.mean - 0.0).abs() < 1.0); // Close to zero
+        assert!(stats.max_abs > 1e9);
+    }
+
+    #[test]
+    fn test_tensor_stats_very_small_values() {
+        let data = vec![1e-10, 2e-10, 3e-10];
+        let stats = TensorStats::from_slice(&data);
+        assert!(stats.mean > 0.0);
+        assert!(stats.mean < 1.0);
+    }
+
+    // ========================================================================
+    // TensorStats::detect_anomalies: additional branches
+    // ========================================================================
+
+    #[test]
+    fn test_anomaly_detection_large_max_abs() {
+        let stats = TensorStats {
+            count: 100,
+            mean: 0.0,
+            std: 1.0,
+            l2_norm: 150.0,
+            min: -150.0,
+            max: 150.0,
+            max_abs: 150.0,
+            nan_count: 0,
+            inf_count: 0,
+        };
+        let anomalies = stats.detect_anomalies("test");
+        assert!(anomalies.iter().any(|a| a.contains("large values")));
+    }
+
+    #[test]
+    fn test_anomaly_detection_multiple_anomalies() {
+        let stats = TensorStats {
+            count: 100,
+            mean: 15.0, // Large mean
+            std: 0.0,   // Zero std
+            l2_norm: 200.0,
+            min: -200.0,
+            max: 200.0,
+            max_abs: 200.0, // Large values
+            nan_count: 5,   // NaN
+            inf_count: 3,   // Inf
+        };
+        let anomalies = stats.detect_anomalies("layer_7");
+        // Should detect NaN, Inf, zero variance, large values, large mean
+        assert!(anomalies.len() >= 4);
+    }
+
+    #[test]
+    fn test_anomaly_detection_single_element_no_zero_std() {
+        // count = 1, std < 1e-8 but count is not > 1, so no zero-variance anomaly
+        let stats = TensorStats {
+            count: 1,
+            mean: 5.0,
+            std: 0.0,
+            l2_norm: 5.0,
+            min: 5.0,
+            max: 5.0,
+            max_abs: 5.0,
+            nan_count: 0,
+            inf_count: 0,
+        };
+        let anomalies = stats.detect_anomalies("test");
+        // Should NOT flag zero-variance for single element
+        assert!(!anomalies.iter().any(|a| a.contains("variance")));
+    }
+
+    #[test]
+    fn test_anomaly_detection_negative_large_mean() {
+        let stats = TensorStats {
+            count: 100,
+            mean: -15.0, // Large negative mean
+            std: 1.0,
+            l2_norm: 100.0,
+            min: -20.0,
+            max: 0.0,
+            max_abs: 20.0,
+            nan_count: 0,
+            inf_count: 0,
+        };
+        let anomalies = stats.detect_anomalies("test");
+        assert!(anomalies.iter().any(|a| a.contains("large mean")));
+    }
+
+    // ========================================================================
+    // validate_path tests
+    // ========================================================================
+
+    #[test]
+    fn test_validate_path_nonexistent() {
+        let result = validate_path(Path::new("/nonexistent/file.apr"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_path_directory() {
+        let dir = tempdir().expect("create temp dir");
+        let result = validate_path(dir.path());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validate_path_valid_file() {
+        let file = NamedTempFile::new().expect("create temp file");
+        let result = validate_path(file.path());
+        assert!(result.is_ok());
+    }
+
+    // ========================================================================
+    // trace_layers: with valid and invalid metadata
+    // ========================================================================
+
+    #[test]
+    fn test_trace_layers_empty_metadata() {
+        let layers = trace_layers(&[], None, false);
+        // Invalid metadata, should return default layer
+        assert_eq!(layers.len(), 1);
+        assert!(layers[0].name.contains("not available"));
+    }
+
+    #[test]
+    fn test_trace_layers_invalid_metadata() {
+        let layers = trace_layers(b"not valid msgpack", None, false);
+        // Should fall back to default layer
+        assert_eq!(layers.len(), 1);
+        assert!(layers[0].name.contains("not available"));
+    }
+
+    #[test]
+    fn test_trace_layers_valid_metadata_no_hyperparameters() {
+        // Valid msgpack but no hyperparameters key
+        let map: BTreeMap<String, serde_json::Value> = BTreeMap::new();
+        let bytes = rmp_serde::to_vec(&map).expect("serialize msgpack");
+        let layers = trace_layers(&bytes, None, false);
+        // No hyperparameters → default layer
+        assert_eq!(layers.len(), 1);
+        assert!(layers[0].name.contains("not available"));
+    }
+
+    #[test]
+    fn test_trace_layers_valid_metadata_with_hyperparameters() {
+        let mut hp = serde_json::Map::new();
+        hp.insert("n_layer".to_string(), serde_json::json!(2));
+        hp.insert("n_embd".to_string(), serde_json::json!(128));
+
+        let mut map: BTreeMap<String, serde_json::Value> = BTreeMap::new();
+        map.insert("hyperparameters".to_string(), serde_json::Value::Object(hp));
+        let bytes = rmp_serde::to_vec(&map).expect("serialize msgpack");
+        let layers = trace_layers(&bytes, None, false);
+        // embedding + 2 transformer blocks + final_layer_norm = 4
+        assert_eq!(layers.len(), 4);
+        assert_eq!(layers[0].name, "embedding");
+        assert_eq!(layers[1].name, "transformer_block_0");
+        assert_eq!(layers[2].name, "transformer_block_1");
+        assert_eq!(layers[3].name, "final_layer_norm");
+    }
+
+    #[test]
+    fn test_trace_layers_with_filter() {
+        let mut hp = serde_json::Map::new();
+        hp.insert("n_layer".to_string(), serde_json::json!(5));
+        hp.insert("n_embd".to_string(), serde_json::json!(256));
+
+        let mut map: BTreeMap<String, serde_json::Value> = BTreeMap::new();
+        map.insert("hyperparameters".to_string(), serde_json::Value::Object(hp));
+        let bytes = rmp_serde::to_vec(&map).expect("serialize msgpack");
+        let layers = trace_layers(&bytes, Some("block_2"), false);
+        // Only block_2 should match the filter
+        assert!(layers.iter().any(|l| l.name == "transformer_block_2"));
+    }
+
+    // ========================================================================
+    // print_stats: smoke test (no crash)
+    // ========================================================================
+
+    #[test]
+    fn test_print_stats_no_panic() {
+        let stats = compute_vector_stats(&[1.0, 2.0, 3.0]);
+        print_stats("  ", &stats);
+    }
+
+    #[test]
+    fn test_print_stats_with_nan_no_panic() {
+        let stats = VectorStats {
+            l2_norm: 5.0,
+            min: 0.0,
+            max: 10.0,
+            mean: 5.0,
+            nan_count: 3,
+            inf_count: 2,
+        };
+        print_stats("  ", &stats);
+    }
+
+    #[test]
+    fn test_print_stats_no_anomalies_no_extra_output() {
+        let stats = VectorStats {
+            l2_norm: 5.0,
+            min: 0.0,
+            max: 10.0,
+            mean: 5.0,
+            nan_count: 0,
+            inf_count: 0,
+        };
+        // Should not panic, and should skip NaN/Inf line
+        print_stats("", &stats);
+    }
+
+    // ========================================================================
+    // LayerTrace: construction with stats
+    // ========================================================================
+
+    #[test]
+    fn test_layer_trace_with_all_stats() {
+        let stats = TensorStats::from_slice(&[1.0, 2.0, 3.0]);
+        let trace = LayerTrace {
+            name: "full_layer".to_string(),
+            index: Some(5),
+            input_stats: Some(stats.clone()),
+            output_stats: Some(stats.clone()),
+            weight_stats: Some(stats),
+            anomalies: vec!["test anomaly".to_string()],
+        };
+        assert!(trace.input_stats.is_some());
+        assert!(trace.output_stats.is_some());
+        assert!(trace.weight_stats.is_some());
+        assert_eq!(trace.anomalies.len(), 1);
+    }
+
+    #[test]
+    fn test_layer_trace_serialize_with_stats() {
+        let stats = TensorStats::from_slice(&[1.0, 2.0, 3.0]);
+        let trace = LayerTrace {
+            name: "layer_with_stats".to_string(),
+            index: Some(0),
+            input_stats: Some(stats.clone()),
+            output_stats: None,
+            weight_stats: None,
+            anomalies: vec!["anomaly1".to_string()],
+        };
+        let json = serde_json::to_string(&trace).expect("serialize");
+        assert!(json.contains("layer_with_stats"));
+        assert!(json.contains("anomaly1"));
+        assert!(json.contains("input_stats"));
+    }
+
+    // ========================================================================
+    // TraceSummary and TraceResult serialization
+    // ========================================================================
+
+    #[test]
+    fn test_trace_summary_serialize() {
+        let summary = TraceSummary {
+            total_layers: 12,
+            total_parameters: 1_000_000,
+            anomaly_count: 2,
+            anomalies: vec![
+                "NaN in layer 3".to_string(),
+                "Large mean in layer 7".to_string(),
+            ],
+        };
+        let json = serde_json::to_string(&summary).expect("serialize");
+        assert!(json.contains("\"total_layers\":12"));
+        assert!(json.contains("\"total_parameters\":1000000"));
+        assert!(json.contains("\"anomaly_count\":2"));
+    }
+
+    // ========================================================================
+    // handle_special_modes: interactive precedence over payload
+    // ========================================================================
+
+    #[test]
+    fn test_handle_special_modes_interactive_takes_precedence() {
+        let path = Path::new("/tmp/model.apr");
+        // Both interactive and payload set - interactive should win (checked first)
+        let result = handle_special_modes(path, None, true, false, true);
+        assert!(result.is_some());
+        assert!(result.expect("should be Some").is_ok());
+    }
+
+    // ========================================================================
+    // GGUF layer filter tests
+    // ========================================================================
+
+    #[test]
+    fn test_run_valid_gguf_with_layer_filter() {
+        let file = build_test_gguf();
+        let result = run(
+            file.path(),
+            Some("block_0"),
+            None,
+            false,
+            false,
+            false,
+            false,
+            false,
+        );
+        assert!(
+            result.is_ok(),
+            "trace on valid GGUF with filter failed: {result:?}"
+        );
+    }
+
+    #[test]
+    fn test_run_valid_gguf_verbose() {
+        let file = build_test_gguf();
+        let result = run(
+            file.path(),
+            None,
+            None,
+            false,
+            true, // verbose
+            false,
+            false,
+            false,
+        );
+        assert!(
+            result.is_ok(),
+            "trace on valid GGUF verbose failed: {result:?}"
+        );
+    }
+
+    #[test]
+    fn test_run_valid_safetensors_with_filter() {
+        let file = build_test_safetensors();
+        let result = run(
+            file.path(),
+            Some("block_0"),
+            None,
+            false,
+            false,
+            false,
+            false,
+            false,
+        );
+        assert!(
+            result.is_ok(),
+            "trace on valid SafeTensors with filter failed: {result:?}"
+        );
+    }
+
+    #[test]
+    fn test_run_valid_safetensors_verbose() {
+        let file = build_test_safetensors();
+        let result = run(
+            file.path(),
+            None,
+            None,
+            false,
+            true, // verbose
+            false,
+            false,
+            false,
+        );
+        assert!(
+            result.is_ok(),
+            "trace on valid SafeTensors verbose failed: {result:?}"
+        );
+    }
+
+    // ========================================================================
+    // GGUF with layer filter returning no matches
+    // ========================================================================
+
+    #[test]
+    fn test_trace_gguf_filter_no_match() {
+        let file = build_test_gguf();
+        let (_, layers, _) =
+            detect_and_trace(file.path(), Some("nonexistent"), false).expect("detect_and_trace");
+        // Should still have at least one layer (default or embedding)
+        assert!(!layers.is_empty());
+    }
+
+    // ========================================================================
+    // is_likely_garbage: mixed cases
+    // ========================================================================
+
+    #[test]
+    fn test_is_likely_garbage_short_two_repeated() {
+        // Only 2 words, repeated check needs len > 2
+        assert!(!is_likely_garbage("foo foo"));
+    }
+
+    #[test]
+    fn test_is_likely_garbage_three_different_unknown() {
+        // 3 different words, none common, no numbers → garbage
+        assert!(is_likely_garbage("xyzzy plugh plover"));
+    }
+
+    #[test]
+    fn test_is_likely_garbage_has_digit_in_text() {
+        // Has number, so the no-normal-words check is skipped
+        assert!(!is_likely_garbage("xyzzy plugh 42"));
+    }
 }

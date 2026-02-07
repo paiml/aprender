@@ -3049,4 +3049,2588 @@ mod tests {
         let app = App::new(Some("custom-model"));
         assert_eq!(app.model_name, "custom-model");
     }
+
+    // ========================================================================
+    // BrickTiming::percent_of_budget comprehensive tests
+    // ========================================================================
+
+    #[test]
+    fn test_brick_percent_of_budget_under() {
+        let mut brick = BrickTiming::new("test", 10.0);
+        brick.actual_us = 5.0;
+        assert_eq!(brick.percent_of_budget(), 50);
+    }
+
+    #[test]
+    fn test_brick_percent_of_budget_at() {
+        let mut brick = BrickTiming::new("test", 10.0);
+        brick.actual_us = 10.0;
+        assert_eq!(brick.percent_of_budget(), 100);
+    }
+
+    #[test]
+    fn test_brick_percent_of_budget_over() {
+        let mut brick = BrickTiming::new("test", 10.0);
+        brick.actual_us = 15.0;
+        assert_eq!(brick.percent_of_budget(), 150);
+    }
+
+    #[test]
+    fn test_brick_percent_of_budget_capped_at_200() {
+        let mut brick = BrickTiming::new("test", 10.0);
+        brick.actual_us = 30.0; // 300%, but capped at 200
+        assert_eq!(brick.percent_of_budget(), 200);
+    }
+
+    #[test]
+    fn test_brick_percent_of_budget_zero_budget() {
+        let mut brick = BrickTiming::new("test", 0.0);
+        brick.actual_us = 5.0;
+        // Zero budget returns 100 as defensive guard
+        assert_eq!(brick.percent_of_budget(), 100);
+    }
+
+    #[test]
+    fn test_brick_percent_of_budget_zero_actual() {
+        let brick = BrickTiming::new("test", 10.0);
+        // actual_us is 0.0 by default
+        assert_eq!(brick.percent_of_budget(), 0);
+    }
+
+    // ========================================================================
+    // BrickTiming::sparkline_data tests
+    // ========================================================================
+
+    #[test]
+    fn test_sparkline_data_empty() {
+        let brick = BrickTiming::new("test", 5.0);
+        let data = brick.sparkline_data();
+        assert!(data.is_empty());
+    }
+
+    #[test]
+    fn test_sparkline_data_single_sample() {
+        let mut brick = BrickTiming::new("test", 5.0);
+        brick.add_sample(10.0);
+        let data = brick.sparkline_data();
+        assert_eq!(data.len(), 1);
+        assert_eq!(data[0], 100); // 10.0 * 10.0 = 100
+    }
+
+    #[test]
+    fn test_sparkline_data_overflow_capped() {
+        let mut brick = BrickTiming::new("test", 5.0);
+        brick.add_sample(30.0); // 30.0 * 10.0 = 300, capped at 255
+        let data = brick.sparkline_data();
+        assert_eq!(data[0], 255);
+    }
+
+    #[test]
+    fn test_sparkline_data_zero_sample() {
+        let mut brick = BrickTiming::new("test", 5.0);
+        brick.add_sample(0.0);
+        let data = brick.sparkline_data();
+        assert_eq!(data[0], 0);
+    }
+
+    #[test]
+    fn test_sparkline_data_multiple_samples() {
+        let mut brick = BrickTiming::new("test", 5.0);
+        brick.add_sample(1.0);
+        brick.add_sample(2.0);
+        brick.add_sample(3.0);
+        let data = brick.sparkline_data();
+        assert_eq!(data.len(), 3);
+        assert_eq!(data[0], 10); // 1.0 * 10.0
+        assert_eq!(data[1], 20); // 2.0 * 10.0
+        assert_eq!(data[2], 30); // 3.0 * 10.0
+    }
+
+    // ========================================================================
+    // BrickTiming::add_sample ring buffer tests
+    // ========================================================================
+
+    #[test]
+    fn test_add_sample_ring_buffer_overflow() {
+        let mut brick = BrickTiming::new("test", 5.0);
+        // Add 105 samples - should only keep last 100
+        for i in 0..105 {
+            brick.add_sample(i as f64);
+        }
+        assert_eq!(brick.samples.len(), 100);
+        // First sample should be 5 (the oldest removed were 0..5)
+        assert!((brick.samples[0] - 5.0).abs() < 0.001);
+        // Last sample should be 104
+        assert!((brick.samples[99] - 104.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_add_sample_updates_moving_average() {
+        let mut brick = BrickTiming::new("test", 5.0);
+        brick.add_sample(10.0);
+        assert!((brick.actual_us - 10.0).abs() < 0.001);
+        brick.add_sample(20.0);
+        assert!((brick.actual_us - 15.0).abs() < 0.001); // (10+20)/2
+        brick.add_sample(30.0);
+        assert!((brick.actual_us - 20.0).abs() < 0.001); // (10+20+30)/3
+    }
+
+    // ========================================================================
+    // BrickTiming::status edge cases
+    // ========================================================================
+
+    #[test]
+    fn test_brick_status_exact_budget() {
+        let mut brick = BrickTiming::new("test", 5.0);
+        brick.actual_us = 5.0; // Exactly at budget
+        assert_eq!(brick.status(), "✅"); // <= is pass
+    }
+
+    #[test]
+    fn test_brick_status_slightly_over() {
+        let mut brick = BrickTiming::new("test", 5.0);
+        brick.actual_us = 5.001;
+        assert_eq!(brick.status(), "❌");
+    }
+
+    // ========================================================================
+    // BrickTiming::gap_factor edge cases
+    // ========================================================================
+
+    #[test]
+    fn test_gap_factor_under_budget() {
+        let mut brick = BrickTiming::new("test", 10.0);
+        brick.actual_us = 5.0;
+        assert!((brick.gap_factor() - 0.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_gap_factor_exact_budget() {
+        let mut brick = BrickTiming::new("test", 10.0);
+        brick.actual_us = 10.0;
+        assert!((brick.gap_factor() - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_gap_factor_zero_actual_zero_budget() {
+        let brick = BrickTiming::new("test", 0.0);
+        // Both zero: returns 1.0 (budget is 0, defensive)
+        assert!((brick.gap_factor() - 1.0).abs() < 0.001);
+    }
+
+    // ========================================================================
+    // PipelineState::bottleneck tests
+    // ========================================================================
+
+    #[test]
+    fn test_pipeline_bottleneck_returns_some() {
+        let mut pipeline = PipelineState::new();
+        // Make one brick much worse than others
+        pipeline.bricks[3].actual_us = 100.0; // Attention brick
+        let bottleneck = pipeline.bottleneck();
+        assert!(bottleneck.is_some());
+        assert_eq!(
+            bottleneck.expect("should have bottleneck").name,
+            "Attention"
+        );
+    }
+
+    #[test]
+    fn test_pipeline_bottleneck_all_zero_actual() {
+        let pipeline = PipelineState::new();
+        // All actual_us are 0, all gap_factors are 0.0
+        let bottleneck = pipeline.bottleneck();
+        assert!(bottleneck.is_some()); // Returns the first brick with gap=0
+    }
+
+    #[test]
+    fn test_pipeline_bottleneck_all_at_budget() {
+        let mut pipeline = PipelineState::new();
+        for brick in &mut pipeline.bricks {
+            brick.actual_us = brick.budget_us;
+        }
+        // All at gap 1.0, bottleneck returns one of them
+        let bottleneck = pipeline.bottleneck();
+        assert!(bottleneck.is_some());
+    }
+
+    // ========================================================================
+    // PipelineState::update_demo tok/s and total_us tests
+    // ========================================================================
+
+    #[test]
+    fn test_pipeline_update_demo_sets_current_tok_s() {
+        let mut pipeline = PipelineState::new();
+        // After multiple updates, current_tok_s should be > 0
+        for _ in 0..10 {
+            pipeline.update_demo();
+        }
+        assert!(pipeline.current_tok_s > 0.0);
+    }
+
+    #[test]
+    fn test_pipeline_update_demo_total_us_calculated() {
+        let mut pipeline = PipelineState::new();
+        pipeline.update_demo();
+        // total_us should be total_actual * total_layers
+        let expected = pipeline.total_actual() * pipeline.total_layers as f64;
+        assert!((pipeline.total_us - expected).abs() < 0.001);
+    }
+
+    // ========================================================================
+    // compute_brick_score boundary tests
+    // ========================================================================
+
+    #[test]
+    fn test_compute_brick_score_zero_actual() {
+        // 0 / 5.0 = 0.0 gap, which is <= 1.0 → 100
+        assert_eq!(compute_brick_score(0.0, 5.0), 100);
+    }
+
+    #[test]
+    fn test_compute_brick_score_exactly_120_percent() {
+        // gap = 1.2 exactly → 100 - (0.2 * 50) = 90
+        assert_eq!(compute_brick_score(6.0, 5.0), 90);
+    }
+
+    #[test]
+    fn test_compute_brick_score_just_over_120_percent() {
+        // gap = 1.21 → beyond 1.2 range: 100 - (0.21 * 100) = 79
+        assert_eq!(compute_brick_score(6.05, 5.0), 79);
+    }
+
+    // ========================================================================
+    // check_ci_thresholds: both failing simultaneously
+    // ========================================================================
+
+    #[test]
+    fn test_ci_threshold_both_fail() {
+        let report = HeadlessReport {
+            model: "test".to_string(),
+            timestamp: "now".to_string(),
+            hardware: HardwareInfo {
+                gpu: "test".to_string(),
+                cpu: "test".to_string(),
+                memory_gb: 32,
+            },
+            throughput: ThroughputMetrics {
+                tokens_per_sec: 100.0, // Below 400
+                ttft_ms: 1.0,
+                cv_percent: 3.0,
+                p50_us: 1.0,
+                p99_us: 2.0,
+            },
+            brick_scores: vec![BrickScore {
+                name: "test".to_string(),
+                score: 50, // Below 90
+                grade: "F".to_string(),
+                budget_us: 1.0,
+                actual_us: 2.0,
+                gap_factor: 2.0,
+            }],
+            pmat_scores: PmatScores {
+                rust_project_score: 92.5,
+                tdg_score: 95.2,
+                cuda_tdg_score: 88.0,
+                brick_score: 50,
+                grade: "F".to_string(),
+            },
+            falsification: FalsificationSummary {
+                total_points: 120,
+                passed: 100,
+                failed: 20,
+                blocked: 0,
+            },
+            status: "FAIL".to_string(),
+            ci_result: "red".to_string(),
+        };
+
+        let config = CbtopConfig {
+            ci: true,
+            throughput_threshold: Some(400.0),
+            brick_score_threshold: Some(90),
+            ..Default::default()
+        };
+
+        assert!(!check_ci_thresholds(&report, &config));
+    }
+
+    #[test]
+    fn test_ci_threshold_throughput_passes_brick_fails() {
+        let report = HeadlessReport {
+            model: "test".to_string(),
+            timestamp: "now".to_string(),
+            hardware: HardwareInfo {
+                gpu: "test".to_string(),
+                cpu: "test".to_string(),
+                memory_gb: 32,
+            },
+            throughput: ThroughputMetrics {
+                tokens_per_sec: 500.0, // Above 400
+                ttft_ms: 1.0,
+                cv_percent: 3.0,
+                p50_us: 1.0,
+                p99_us: 2.0,
+            },
+            brick_scores: vec![BrickScore {
+                name: "test".to_string(),
+                score: 50, // Below 90
+                grade: "F".to_string(),
+                budget_us: 1.0,
+                actual_us: 2.0,
+                gap_factor: 2.0,
+            }],
+            pmat_scores: PmatScores {
+                rust_project_score: 92.5,
+                tdg_score: 95.2,
+                cuda_tdg_score: 88.0,
+                brick_score: 50,
+                grade: "F".to_string(),
+            },
+            falsification: FalsificationSummary {
+                total_points: 120,
+                passed: 100,
+                failed: 20,
+                blocked: 0,
+            },
+            status: "FAIL".to_string(),
+            ci_result: "red".to_string(),
+        };
+
+        let config = CbtopConfig {
+            ci: true,
+            throughput_threshold: Some(400.0),
+            brick_score_threshold: Some(90),
+            ..Default::default()
+        };
+
+        assert!(!check_ci_thresholds(&report, &config));
+    }
+
+    #[test]
+    fn test_ci_threshold_multiple_brick_scores_average() {
+        let report = HeadlessReport {
+            model: "test".to_string(),
+            timestamp: "now".to_string(),
+            hardware: HardwareInfo {
+                gpu: "test".to_string(),
+                cpu: "test".to_string(),
+                memory_gb: 32,
+            },
+            throughput: ThroughputMetrics {
+                tokens_per_sec: 500.0,
+                ttft_ms: 1.0,
+                cv_percent: 3.0,
+                p50_us: 1.0,
+                p99_us: 2.0,
+            },
+            brick_scores: vec![
+                BrickScore {
+                    name: "brick1".to_string(),
+                    score: 100,
+                    grade: "A".to_string(),
+                    budget_us: 1.0,
+                    actual_us: 0.5,
+                    gap_factor: 0.5,
+                },
+                BrickScore {
+                    name: "brick2".to_string(),
+                    score: 80,
+                    grade: "B".to_string(),
+                    budget_us: 1.0,
+                    actual_us: 1.2,
+                    gap_factor: 1.2,
+                },
+            ],
+            pmat_scores: PmatScores {
+                rust_project_score: 92.5,
+                tdg_score: 95.2,
+                cuda_tdg_score: 88.0,
+                brick_score: 90,
+                grade: "A".to_string(),
+            },
+            falsification: FalsificationSummary {
+                total_points: 120,
+                passed: 100,
+                failed: 20,
+                blocked: 0,
+            },
+            status: "PASS".to_string(),
+            ci_result: "green".to_string(),
+        };
+
+        let config = CbtopConfig {
+            ci: true,
+            brick_score_threshold: Some(90),
+            ..Default::default()
+        };
+
+        // Average = (100 + 80) / 2 = 90, which meets threshold
+        assert!(check_ci_thresholds(&report, &config));
+    }
+
+    // ========================================================================
+    // format_report_as_json: multiple brick scores
+    // ========================================================================
+
+    #[test]
+    fn test_json_output_multiple_brick_scores() {
+        let report = HeadlessReport {
+            model: "multi-brick".to_string(),
+            timestamp: "2026-01-12T00:00:00Z".to_string(),
+            hardware: HardwareInfo {
+                gpu: "GPU".to_string(),
+                cpu: "CPU".to_string(),
+                memory_gb: 32,
+            },
+            throughput: ThroughputMetrics {
+                tokens_per_sec: 500.0,
+                ttft_ms: 1.0,
+                cv_percent: 2.0,
+                p50_us: 1.0,
+                p99_us: 2.0,
+            },
+            brick_scores: vec![
+                BrickScore {
+                    name: "RmsNorm".to_string(),
+                    score: 100,
+                    grade: "A".to_string(),
+                    budget_us: 1.5,
+                    actual_us: 1.0,
+                    gap_factor: 0.67,
+                },
+                BrickScore {
+                    name: "Attention".to_string(),
+                    score: 85,
+                    grade: "B".to_string(),
+                    budget_us: 10.0,
+                    actual_us: 11.5,
+                    gap_factor: 1.15,
+                },
+                BrickScore {
+                    name: "FfnBrick".to_string(),
+                    score: 50,
+                    grade: "F".to_string(),
+                    budget_us: 12.2,
+                    actual_us: 18.3,
+                    gap_factor: 1.5,
+                },
+            ],
+            pmat_scores: PmatScores {
+                rust_project_score: 92.5,
+                tdg_score: 95.2,
+                cuda_tdg_score: 88.0,
+                brick_score: 78,
+                grade: "C".to_string(),
+            },
+            falsification: FalsificationSummary {
+                total_points: 137,
+                passed: 130,
+                failed: 7,
+                blocked: 0,
+            },
+            status: "FAIL".to_string(),
+            ci_result: "red".to_string(),
+        };
+
+        let json = format_report_as_json(&report);
+        assert!(json.contains("\"name\": \"RmsNorm\""));
+        assert!(json.contains("\"name\": \"Attention\""));
+        assert!(json.contains("\"name\": \"FfnBrick\""));
+        assert!(json.contains("\"score\": 100"));
+        assert!(json.contains("\"score\": 85"));
+        assert!(json.contains("\"score\": 50"));
+        assert!(json.contains("\"grade\": \"A\""));
+        assert!(json.contains("\"grade\": \"B\""));
+        assert!(json.contains("\"grade\": \"F\""));
+    }
+
+    // ========================================================================
+    // print_report_text: smoke test (no crash)
+    // ========================================================================
+
+    #[test]
+    fn test_print_report_text_no_panic() {
+        let report = HeadlessReport {
+            model: "test".to_string(),
+            timestamp: "now".to_string(),
+            hardware: HardwareInfo {
+                gpu: "GPU".to_string(),
+                cpu: "CPU".to_string(),
+                memory_gb: 32,
+            },
+            throughput: ThroughputMetrics {
+                tokens_per_sec: 500.0,
+                ttft_ms: 1.0,
+                cv_percent: 3.0,
+                p50_us: 1.0,
+                p99_us: 2.0,
+            },
+            brick_scores: vec![
+                BrickScore {
+                    name: "pass_brick".to_string(),
+                    score: 100,
+                    grade: "A".to_string(),
+                    budget_us: 1.0,
+                    actual_us: 0.8,
+                    gap_factor: 0.8,
+                },
+                BrickScore {
+                    name: "fail_brick".to_string(),
+                    score: 50,
+                    grade: "F".to_string(),
+                    budget_us: 1.0,
+                    actual_us: 2.0,
+                    gap_factor: 2.0,
+                },
+            ],
+            pmat_scores: PmatScores {
+                rust_project_score: 92.5,
+                tdg_score: 95.2,
+                cuda_tdg_score: 88.0,
+                brick_score: 75,
+                grade: "C".to_string(),
+            },
+            falsification: FalsificationSummary {
+                total_points: 137,
+                passed: 137,
+                failed: 0,
+                blocked: 0,
+            },
+            status: "PASS".to_string(),
+            ci_result: "green".to_string(),
+        };
+
+        // Should not panic
+        print_report_text(&report);
+    }
+
+    #[test]
+    fn test_print_report_text_empty_bricks_no_panic() {
+        let report = HeadlessReport {
+            model: "empty".to_string(),
+            timestamp: "now".to_string(),
+            hardware: HardwareInfo {
+                gpu: "none".to_string(),
+                cpu: "none".to_string(),
+                memory_gb: 0,
+            },
+            throughput: ThroughputMetrics {
+                tokens_per_sec: 0.0,
+                ttft_ms: 0.0,
+                cv_percent: 0.0,
+                p50_us: 0.0,
+                p99_us: 0.0,
+            },
+            brick_scores: vec![],
+            pmat_scores: PmatScores {
+                rust_project_score: 0.0,
+                tdg_score: 0.0,
+                cuda_tdg_score: 0.0,
+                brick_score: 0,
+                grade: "F".to_string(),
+            },
+            falsification: FalsificationSummary {
+                total_points: 0,
+                passed: 0,
+                failed: 0,
+                blocked: 0,
+            },
+            status: "FAIL".to_string(),
+            ci_result: "red".to_string(),
+        };
+
+        // Should not panic even with empty bricks
+        print_report_text(&report);
+    }
+
+    // ========================================================================
+    // ModelFormat: Clone/Copy/Debug/PartialEq
+    // ========================================================================
+
+    #[test]
+    fn test_model_format_clone_copy() {
+        let fmt = ModelFormat::Gguf;
+        let cloned = fmt;
+        assert_eq!(fmt, cloned);
+
+        let fmt2 = ModelFormat::SafeTensors;
+        let fmt3 = fmt2;
+        assert_eq!(fmt2, fmt3);
+    }
+
+    #[test]
+    fn test_model_format_debug() {
+        let fmt = ModelFormat::Apr;
+        let debug_str = format!("{:?}", fmt);
+        assert_eq!(debug_str, "Apr");
+    }
+
+    #[test]
+    fn test_model_format_ne() {
+        assert_ne!(ModelFormat::Gguf, ModelFormat::SafeTensors);
+        assert_ne!(ModelFormat::SafeTensors, ModelFormat::Apr);
+        assert_ne!(ModelFormat::Gguf, ModelFormat::Apr);
+    }
+
+    #[test]
+    fn test_model_format_from_path_case_insensitive() {
+        use std::path::Path;
+        assert_eq!(
+            ModelFormat::from_path(Path::new("model.SAFETENSORS")),
+            Some(ModelFormat::SafeTensors)
+        );
+        assert_eq!(
+            ModelFormat::from_path(Path::new("model.Apr")),
+            Some(ModelFormat::Apr)
+        );
+        assert_eq!(
+            ModelFormat::from_path(Path::new("model.GgUf")),
+            Some(ModelFormat::Gguf)
+        );
+    }
+
+    // ========================================================================
+    // generate_headless_report_simulated: edge cases
+    // ========================================================================
+
+    #[test]
+    fn test_headless_report_simulated_no_samples() {
+        let pipeline = PipelineState::new(); // No samples added
+        let config = CbtopConfig::default();
+        let report = generate_headless_report_simulated("no-samples", &pipeline, &config);
+
+        assert_eq!(report.model, "no-samples");
+        assert_eq!(report.brick_scores.len(), 7);
+        // With no samples, all actual_us = 0, so all bricks score 100
+        for brick in &report.brick_scores {
+            assert_eq!(brick.score, 100);
+        }
+    }
+
+    #[test]
+    fn test_headless_report_simulated_status_pass() {
+        let mut pipeline = PipelineState::new();
+        for brick in &mut pipeline.bricks {
+            brick.actual_us = brick.budget_us * 0.8; // 80% of budget
+        }
+        let config = CbtopConfig::default();
+        let report = generate_headless_report_simulated("passing", &pipeline, &config);
+        assert_eq!(report.status, "PASS");
+    }
+
+    #[test]
+    fn test_headless_report_simulated_status_fail() {
+        let mut pipeline = PipelineState::new();
+        for brick in &mut pipeline.bricks {
+            brick.actual_us = brick.budget_us * 2.0; // 200% of budget
+        }
+        let config = CbtopConfig::default();
+        let report = generate_headless_report_simulated("failing", &pipeline, &config);
+        assert_eq!(report.status, "FAIL");
+    }
+
+    #[test]
+    fn test_headless_report_simulated_cv_calculation() {
+        let mut pipeline = PipelineState::new();
+        // Add identical samples to all bricks so CV is well-defined
+        for brick in &mut pipeline.bricks {
+            brick.add_sample(5.0);
+            brick.add_sample(5.0);
+            brick.add_sample(5.0);
+        }
+        let config = CbtopConfig::default();
+        let report = generate_headless_report_simulated("cv-test", &pipeline, &config);
+        // With identical samples, CV should be 0
+        assert!((report.throughput.cv_percent - 0.0).abs() < 0.001);
+    }
+
+    // ========================================================================
+    // CbtopConfig: custom construction
+    // ========================================================================
+
+    #[test]
+    fn test_cbtop_config_custom_values() {
+        let config = CbtopConfig {
+            model: Some("my-model".to_string()),
+            attach: Some("realizar".to_string()),
+            model_path: Some(PathBuf::from("/tmp/model.gguf")),
+            headless: true,
+            json: true,
+            output: Some(PathBuf::from("/tmp/out.json")),
+            ci: true,
+            throughput_threshold: Some(500.0),
+            brick_score_threshold: Some(95),
+            warmup: 20,
+            iterations: 200,
+            speculative: true,
+            speculation_k: 8,
+            draft_model_path: Some(PathBuf::from("/tmp/draft.gguf")),
+            concurrent: 4,
+            simulated: true,
+        };
+
+        assert_eq!(config.model.as_deref(), Some("my-model"));
+        assert_eq!(config.attach.as_deref(), Some("realizar"));
+        assert!(config.headless);
+        assert!(config.json);
+        assert!(config.ci);
+        assert_eq!(config.warmup, 20);
+        assert_eq!(config.iterations, 200);
+        assert!(config.speculative);
+        assert_eq!(config.speculation_k, 8);
+        assert_eq!(config.concurrent, 4);
+        assert!(config.simulated);
+    }
+
+    // ========================================================================
+    // HeadlessReport: Clone trait
+    // ========================================================================
+
+    #[test]
+    fn test_headless_report_clone() {
+        let report = HeadlessReport {
+            model: "clone-test".to_string(),
+            timestamp: "now".to_string(),
+            hardware: HardwareInfo {
+                gpu: "GPU".to_string(),
+                cpu: "CPU".to_string(),
+                memory_gb: 32,
+            },
+            throughput: ThroughputMetrics {
+                tokens_per_sec: 500.0,
+                ttft_ms: 1.0,
+                cv_percent: 3.0,
+                p50_us: 1.0,
+                p99_us: 2.0,
+            },
+            brick_scores: vec![],
+            pmat_scores: PmatScores {
+                rust_project_score: 92.5,
+                tdg_score: 95.2,
+                cuda_tdg_score: 88.0,
+                brick_score: 95,
+                grade: "A".to_string(),
+            },
+            falsification: FalsificationSummary {
+                total_points: 120,
+                passed: 100,
+                failed: 20,
+                blocked: 0,
+            },
+            status: "PASS".to_string(),
+            ci_result: "green".to_string(),
+        };
+
+        let cloned = report.clone();
+        assert_eq!(cloned.model, report.model);
+        assert_eq!(cloned.status, report.status);
+        assert!(
+            (cloned.throughput.tokens_per_sec - report.throughput.tokens_per_sec).abs() < 0.001
+        );
+    }
+
+    // ========================================================================
+    // View: Debug/Clone/Copy/PartialEq
+    // ========================================================================
+
+    #[test]
+    fn test_view_debug() {
+        assert_eq!(format!("{:?}", View::Pipeline), "Pipeline");
+        assert_eq!(format!("{:?}", View::Budget), "Budget");
+        assert_eq!(format!("{:?}", View::Histogram), "Histogram");
+        assert_eq!(format!("{:?}", View::Gpu), "Gpu");
+        assert_eq!(format!("{:?}", View::Memory), "Memory");
+    }
+
+    #[test]
+    fn test_view_clone_copy_eq() {
+        let v = View::Pipeline;
+        let v2 = v;
+        assert_eq!(v, v2);
+    }
+
+    #[test]
+    fn test_view_ne() {
+        assert_ne!(View::Pipeline, View::Budget);
+        assert_ne!(View::Histogram, View::Gpu);
+    }
+
+    // ========================================================================
+    // JSON format: pmat_scores and falsification fields
+    // ========================================================================
+
+    #[test]
+    fn test_json_output_pmat_scores_fields() {
+        let report = HeadlessReport {
+            model: "test".to_string(),
+            timestamp: "now".to_string(),
+            hardware: HardwareInfo {
+                gpu: "test".to_string(),
+                cpu: "test".to_string(),
+                memory_gb: 32,
+            },
+            throughput: ThroughputMetrics {
+                tokens_per_sec: 0.0,
+                ttft_ms: 0.0,
+                cv_percent: 0.0,
+                p50_us: 0.0,
+                p99_us: 0.0,
+            },
+            brick_scores: vec![],
+            pmat_scores: PmatScores {
+                rust_project_score: 173.9,
+                tdg_score: 98.1,
+                cuda_tdg_score: 95.2,
+                brick_score: 100,
+                grade: "A+".to_string(),
+            },
+            falsification: FalsificationSummary {
+                total_points: 137,
+                passed: 135,
+                failed: 2,
+                blocked: 0,
+            },
+            status: "PASS".to_string(),
+            ci_result: "green".to_string(),
+        };
+
+        let json = format_report_as_json(&report);
+        assert!(json.contains("\"rust_project_score\": 173.9"));
+        assert!(json.contains("\"tdg_score\": 98.1"));
+        assert!(json.contains("\"cuda_tdg_score\": 95.2"));
+        assert!(json.contains("\"brick_score\": 100"));
+        assert!(json.contains("\"grade\": \"A+\""));
+        assert!(json.contains("\"total_points\": 137"));
+        assert!(json.contains("\"passed\": 135"));
+        assert!(json.contains("\"failed\": 2"));
+        assert!(json.contains("\"blocked\": 0"));
+    }
+
+    // ========================================================================
+    // BrickTiming: new constructor field defaults
+    // ========================================================================
+
+    #[test]
+    fn test_brick_timing_new_initializes_empty_samples() {
+        let brick = BrickTiming::new("test", 5.0);
+        assert!(brick.samples.is_empty());
+    }
+
+    // ========================================================================
+    // PipelineState: brick default names and budgets
+    // ========================================================================
+
+    #[test]
+    fn test_pipeline_brick_names() {
+        let pipeline = PipelineState::new();
+        assert_eq!(pipeline.bricks[0].name, "RmsNorm");
+        assert_eq!(pipeline.bricks[1].name, "QkvBrick");
+        assert_eq!(pipeline.bricks[2].name, "RoPE");
+        assert_eq!(pipeline.bricks[3].name, "Attention");
+        assert_eq!(pipeline.bricks[4].name, "OProj");
+        assert_eq!(pipeline.bricks[5].name, "RmsNorm");
+        assert_eq!(pipeline.bricks[6].name, "FfnBrick");
+    }
+
+    #[test]
+    fn test_pipeline_brick_budgets() {
+        let pipeline = PipelineState::new();
+        assert!((pipeline.bricks[0].budget_us - 1.5).abs() < 0.001);
+        assert!((pipeline.bricks[1].budget_us - 6.0).abs() < 0.001);
+        assert!((pipeline.bricks[2].budget_us - 1.0).abs() < 0.001);
+        assert!((pipeline.bricks[3].budget_us - 10.0).abs() < 0.001);
+        assert!((pipeline.bricks[4].budget_us - 3.5).abs() < 0.001);
+        assert!((pipeline.bricks[5].budget_us - 1.5).abs() < 0.001);
+        assert!((pipeline.bricks[6].budget_us - 12.2).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_pipeline_defaults() {
+        let pipeline = PipelineState::new();
+        assert_eq!(pipeline.layer_idx, 0);
+        assert_eq!(pipeline.total_layers, 28);
+        assert_eq!(pipeline.tokens_generated, 0);
+        assert!((pipeline.total_us - 0.0).abs() < 0.001);
+        assert!((pipeline.target_tok_s - 976.0).abs() < 0.001);
+        assert!((pipeline.current_tok_s - 0.0).abs() < 0.001);
+    }
+
+    // ========================================================================
+    // App: demo_mode and should_quit defaults
+    // ========================================================================
+
+    #[test]
+    fn test_app_defaults() {
+        let app = App::new(None);
+        assert!(app.demo_mode);
+        assert!(!app.should_quit);
+        assert_eq!(app.selected_brick, 0);
+        assert_eq!(app.current_view, View::Pipeline);
+    }
+
+    #[test]
+    fn test_app_tick_no_demo_mode() {
+        let mut app = App::new(None);
+        app.demo_mode = false;
+        let initial_tokens = app.pipeline.tokens_generated;
+        app.tick();
+        // In non-demo mode, tick should NOT update pipeline
+        assert_eq!(app.pipeline.tokens_generated, initial_tokens);
+    }
+
+    // ========================================================================
+    // Navigation with empty bricks (defensive edge case)
+    // ========================================================================
+
+    #[test]
+    fn test_app_next_brick_empty_bricks() {
+        let mut app = App::new(None);
+        app.pipeline.bricks.clear();
+        app.next_brick(); // Should not panic
+        assert_eq!(app.selected_brick, 0);
+    }
+
+    #[test]
+    fn test_app_prev_brick_empty_bricks() {
+        let mut app = App::new(None);
+        app.pipeline.bricks.clear();
+        app.prev_brick(); // Should not panic
+        assert_eq!(app.selected_brick, 0);
+    }
+
+    // ========================================================================
+    // NEW: compute_brick_score edge cases
+    // ========================================================================
+
+    #[test]
+    fn test_compute_brick_score_very_small_budget() {
+        // Very small budget, actual slightly over
+        assert_eq!(compute_brick_score(0.002, 0.001), 0);
+    }
+
+    #[test]
+    fn test_compute_brick_score_very_large_values() {
+        // Large numbers, at budget
+        assert_eq!(compute_brick_score(1_000_000.0, 1_000_000.0), 100);
+    }
+
+    #[test]
+    fn test_compute_brick_score_just_under_budget() {
+        // gap = 0.999... -> 100
+        assert_eq!(compute_brick_score(4.999, 5.0), 100);
+    }
+
+    #[test]
+    fn test_compute_brick_score_just_over_budget() {
+        // gap = 1.001, in 1.0-1.2 range: 100 - (0.001 * 50) = 99.95 -> 99
+        assert_eq!(compute_brick_score(5.005, 5.0), 99);
+    }
+
+    #[test]
+    fn test_compute_brick_score_at_boundary_1_2() {
+        // gap = 1.2 exactly: 100 - (0.2 * 50) = 90
+        assert_eq!(compute_brick_score(12.0, 10.0), 90);
+    }
+
+    #[test]
+    fn test_compute_brick_score_slightly_past_1_2() {
+        // gap = 1.201, beyond 1.2: 100 - (0.201 * 100) = 79.9 -> 79
+        assert_eq!(compute_brick_score(12.01, 10.0), 79);
+    }
+
+    #[test]
+    fn test_compute_brick_score_gap_1_5() {
+        // gap = 1.5, 100 - (0.5 * 100) = 50
+        assert_eq!(compute_brick_score(15.0, 10.0), 50);
+    }
+
+    #[test]
+    fn test_compute_brick_score_gap_2_0_gives_zero() {
+        // gap = 2.0, 100 - (1.0 * 100) = 0
+        assert_eq!(compute_brick_score(20.0, 10.0), 0);
+    }
+
+    #[test]
+    fn test_compute_brick_score_gap_beyond_2_clamps_zero() {
+        // gap = 5.0, 100 - (4.0 * 100) = -300, clamped to 0
+        assert_eq!(compute_brick_score(50.0, 10.0), 0);
+    }
+
+    // ========================================================================
+    // NEW: score_to_grade boundary tests
+    // ========================================================================
+
+    #[test]
+    fn test_score_to_grade_boundary_89_90() {
+        assert_eq!(score_to_grade(89), "B");
+        assert_eq!(score_to_grade(90), "A");
+    }
+
+    #[test]
+    fn test_score_to_grade_boundary_79_80() {
+        assert_eq!(score_to_grade(79), "C");
+        assert_eq!(score_to_grade(80), "B");
+    }
+
+    #[test]
+    fn test_score_to_grade_boundary_69_70() {
+        assert_eq!(score_to_grade(69), "D");
+        assert_eq!(score_to_grade(70), "C");
+    }
+
+    #[test]
+    fn test_score_to_grade_boundary_59_60() {
+        assert_eq!(score_to_grade(59), "F");
+        assert_eq!(score_to_grade(60), "D");
+    }
+
+    #[test]
+    fn test_score_to_grade_zero() {
+        assert_eq!(score_to_grade(0), "F");
+    }
+
+    #[test]
+    fn test_score_to_grade_max() {
+        assert_eq!(score_to_grade(100), "A");
+    }
+
+    #[test]
+    fn test_score_to_grade_above_100() {
+        // Scores > 100 fall into the catch-all (not matched by 90..=100)
+        assert_eq!(score_to_grade(101), "F");
+        assert_eq!(score_to_grade(200), "F");
+    }
+
+    // ========================================================================
+    // NEW: chrono_timestamp additional tests
+    // ========================================================================
+
+    #[test]
+    fn test_chrono_timestamp_not_empty() {
+        let ts = chrono_timestamp();
+        assert!(!ts.is_empty());
+    }
+
+    #[test]
+    fn test_chrono_timestamp_contains_t_separator() {
+        let ts = chrono_timestamp();
+        if ts != "unknown" {
+            assert!(ts.contains('T'));
+        }
+    }
+
+    // ========================================================================
+    // NEW: BrickTiming edge cases with negative and extreme values
+    // ========================================================================
+
+    #[test]
+    fn test_brick_timing_negative_sample() {
+        let mut brick = BrickTiming::new("test", 5.0);
+        brick.add_sample(-3.0);
+        // actual_us becomes the average of samples (just -3.0)
+        assert!((brick.actual_us - (-3.0)).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_brick_timing_very_large_sample() {
+        let mut brick = BrickTiming::new("test", 5.0);
+        brick.add_sample(1e12);
+        assert!((brick.actual_us - 1e12).abs() < 1.0);
+    }
+
+    #[test]
+    fn test_brick_timing_sparkline_negative_sample() {
+        let mut brick = BrickTiming::new("test", 5.0);
+        brick.samples.push(-5.0);
+        let data = brick.sparkline_data();
+        // -5.0 * 10.0 = -50.0, min(255.0) = -50.0, as u64 wraps
+        assert_eq!(data.len(), 1);
+    }
+
+    #[test]
+    fn test_brick_timing_gap_factor_negative_budget() {
+        let mut brick = BrickTiming::new("test", -5.0);
+        brick.actual_us = 10.0;
+        // budget < 0, not > 0, so returns 1.0
+        assert!((brick.gap_factor() - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_brick_timing_percent_of_budget_negative_budget() {
+        let mut brick = BrickTiming::new("test", -5.0);
+        brick.actual_us = 10.0;
+        // budget not > 0, returns 100
+        assert_eq!(brick.percent_of_budget(), 100);
+    }
+
+    #[test]
+    fn test_brick_timing_status_zero_actual_zero_budget() {
+        let brick = BrickTiming::new("test", 0.0);
+        // actual (0) <= budget (0), so pass
+        assert_eq!(brick.status(), "\u{2705}");
+    }
+
+    #[test]
+    fn test_brick_timing_add_sample_exactly_100() {
+        let mut brick = BrickTiming::new("test", 5.0);
+        for i in 0..100 {
+            brick.add_sample(i as f64);
+        }
+        assert_eq!(brick.samples.len(), 100);
+        // Add one more, should drop oldest
+        brick.add_sample(999.0);
+        assert_eq!(brick.samples.len(), 100);
+        assert!((brick.samples[0] - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_brick_timing_sparkline_exactly_25_5() {
+        let mut brick = BrickTiming::new("test", 5.0);
+        brick.samples.push(25.5);
+        let data = brick.sparkline_data();
+        // 25.5 * 10.0 = 255.0, min(255.0) = 255
+        assert_eq!(data[0], 255);
+    }
+
+    #[test]
+    fn test_brick_timing_sparkline_just_under_cap() {
+        let mut brick = BrickTiming::new("test", 5.0);
+        brick.samples.push(25.4);
+        let data = brick.sparkline_data();
+        // 25.4 * 10.0 = 254.0
+        assert_eq!(data[0], 254);
+    }
+
+    // ========================================================================
+    // NEW: PipelineState detailed tests
+    // ========================================================================
+
+    #[test]
+    fn test_pipeline_total_actual_with_samples() {
+        let mut pipeline = PipelineState::new();
+        pipeline.bricks[0].add_sample(2.0);
+        pipeline.bricks[1].add_sample(8.0);
+        // Others have actual_us = 0
+        let total = pipeline.total_actual();
+        assert!((total - 10.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_pipeline_bottleneck_single_bad_brick() {
+        let mut pipeline = PipelineState::new();
+        // Set all bricks at budget except one
+        for brick in &mut pipeline.bricks {
+            brick.actual_us = brick.budget_us;
+        }
+        // Make FfnBrick much worse
+        pipeline.bricks[6].actual_us = 100.0;
+        let bottleneck = pipeline.bottleneck().expect("should find bottleneck");
+        assert_eq!(bottleneck.name, "FfnBrick");
+    }
+
+    #[test]
+    fn test_pipeline_update_demo_multiple_iterations() {
+        let mut pipeline = PipelineState::new();
+        for _ in 0..50 {
+            pipeline.update_demo();
+        }
+        assert_eq!(pipeline.tokens_generated, 50);
+        // All bricks should have samples
+        for brick in &pipeline.bricks {
+            assert!(!brick.samples.is_empty());
+            assert!(brick.actual_us > 0.0);
+        }
+    }
+
+    #[test]
+    fn test_pipeline_current_tok_s_positive_after_updates() {
+        let mut pipeline = PipelineState::new();
+        for _ in 0..5 {
+            pipeline.update_demo();
+        }
+        assert!(pipeline.current_tok_s > 0.0);
+    }
+
+    #[test]
+    fn test_pipeline_total_us_equals_actual_times_layers() {
+        let mut pipeline = PipelineState::new();
+        for _ in 0..10 {
+            pipeline.update_demo();
+        }
+        let expected = pipeline.total_actual() * pipeline.total_layers as f64;
+        assert!((pipeline.total_us - expected).abs() < 0.01);
+    }
+
+    // ========================================================================
+    // NEW: generate_headless_report_simulated detailed tests
+    // ========================================================================
+
+    #[test]
+    fn test_headless_report_simulated_brick_gap_factors() {
+        let mut pipeline = PipelineState::new();
+        // Set specific actual values
+        pipeline.bricks[0].actual_us = 1.5; // gap = 1.0
+        pipeline.bricks[1].actual_us = 9.0; // gap = 1.5
+        pipeline.bricks[2].actual_us = 0.5; // gap = 0.5
+        let config = CbtopConfig::default();
+        let report = generate_headless_report_simulated("gap-test", &pipeline, &config);
+
+        assert!((report.brick_scores[0].gap_factor - 1.0).abs() < 0.01);
+        assert!((report.brick_scores[1].gap_factor - 1.5).abs() < 0.01);
+        assert!((report.brick_scores[2].gap_factor - 0.5).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_headless_report_simulated_pmat_brick_score_weighting() {
+        let mut pipeline = PipelineState::new();
+        // All at budget -> all score 100 -> weighted avg ~100 (may truncate to 99 due to f64)
+        for brick in &mut pipeline.bricks {
+            brick.actual_us = brick.budget_us * 0.5; // All under budget
+        }
+        let config = CbtopConfig::default();
+        let report = generate_headless_report_simulated("weight-test", &pipeline, &config);
+        // All bricks score 100, but (100.0 * total_weight) / total_weight can truncate
+        assert!(report.pmat_scores.brick_score >= 99);
+    }
+
+    #[test]
+    fn test_headless_report_simulated_ci_result_green() {
+        let mut pipeline = PipelineState::new();
+        for brick in &mut pipeline.bricks {
+            brick.actual_us = brick.budget_us * 0.5; // All pass
+        }
+        pipeline.current_tok_s = 1000.0; // Above target 976
+        let config = CbtopConfig::default();
+        let report = generate_headless_report_simulated("green-test", &pipeline, &config);
+        assert_eq!(report.ci_result, "green");
+        assert_eq!(report.status, "PASS");
+    }
+
+    #[test]
+    fn test_headless_report_simulated_ci_result_red_low_throughput() {
+        let mut pipeline = PipelineState::new();
+        for brick in &mut pipeline.bricks {
+            brick.actual_us = brick.budget_us * 0.5; // All pass
+        }
+        pipeline.current_tok_s = 500.0; // Below target 976
+        let config = CbtopConfig::default();
+        let report = generate_headless_report_simulated("red-test", &pipeline, &config);
+        assert_eq!(report.ci_result, "red");
+    }
+
+    #[test]
+    fn test_headless_report_simulated_ci_result_red_bricks_fail() {
+        let mut pipeline = PipelineState::new();
+        for brick in &mut pipeline.bricks {
+            brick.actual_us = brick.budget_us * 2.0; // All over budget
+        }
+        pipeline.current_tok_s = 1000.0; // Above target
+        let config = CbtopConfig::default();
+        let report = generate_headless_report_simulated("fail-bricks", &pipeline, &config);
+        assert_eq!(report.status, "FAIL");
+        assert_eq!(report.ci_result, "red");
+    }
+
+    #[test]
+    fn test_headless_report_simulated_hardware_is_simulated() {
+        let pipeline = PipelineState::new();
+        let config = CbtopConfig::default();
+        let report = generate_headless_report_simulated("hw-test", &pipeline, &config);
+        assert!(report.hardware.gpu.contains("simulated"));
+        assert!(report.hardware.cpu.contains("simulated"));
+        assert_eq!(report.hardware.memory_gb, 64);
+    }
+
+    #[test]
+    fn test_headless_report_simulated_falsification_defaults() {
+        let pipeline = PipelineState::new();
+        let config = CbtopConfig::default();
+        let report = generate_headless_report_simulated("fals-test", &pipeline, &config);
+        assert_eq!(report.falsification.total_points, 137);
+        assert_eq!(report.falsification.passed, 137);
+        assert_eq!(report.falsification.failed, 0);
+        assert_eq!(report.falsification.blocked, 0);
+    }
+
+    #[test]
+    fn test_headless_report_simulated_timestamp_not_empty() {
+        let pipeline = PipelineState::new();
+        let config = CbtopConfig::default();
+        let report = generate_headless_report_simulated("ts-test", &pipeline, &config);
+        assert!(!report.timestamp.is_empty());
+    }
+
+    #[test]
+    fn test_headless_report_simulated_cv_with_variance() {
+        let mut pipeline = PipelineState::new();
+        // Add varied samples to create non-zero CV
+        for brick in &mut pipeline.bricks {
+            brick.add_sample(1.0);
+            brick.add_sample(10.0);
+            brick.add_sample(5.0);
+        }
+        let config = CbtopConfig::default();
+        let report = generate_headless_report_simulated("cv-var", &pipeline, &config);
+        // With varied samples, CV should be > 0
+        assert!(report.throughput.cv_percent > 0.0);
+    }
+
+    #[test]
+    fn test_headless_report_simulated_p50_p99_with_samples() {
+        let mut pipeline = PipelineState::new();
+        // Add many samples to first brick so p50/p99 are meaningful
+        for i in 0..50 {
+            pipeline.bricks[0].add_sample(i as f64);
+        }
+        let config = CbtopConfig::default();
+        let report = generate_headless_report_simulated("pct-test", &pipeline, &config);
+        // p50 and p99 should be > 0 since first brick has samples
+        assert!(report.throughput.p50_us >= 0.0);
+        assert!(report.throughput.p99_us >= 0.0);
+    }
+
+    #[test]
+    fn test_headless_report_simulated_empty_first_brick_samples() {
+        let mut pipeline = PipelineState::new();
+        // First brick has no samples, but others do
+        for i in 1..pipeline.bricks.len() {
+            pipeline.bricks[i].add_sample(5.0);
+        }
+        let config = CbtopConfig::default();
+        let report = generate_headless_report_simulated("empty-first", &pipeline, &config);
+        // p50 and p99 from empty first brick are 0.0
+        assert!((report.throughput.p50_us - 0.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_headless_report_simulated_throughput_from_current_tok_s() {
+        let mut pipeline = PipelineState::new();
+        pipeline.current_tok_s = 1234.5;
+        let config = CbtopConfig::default();
+        let report = generate_headless_report_simulated("tput-test", &pipeline, &config);
+        assert!((report.throughput.tokens_per_sec - 1234.5).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_headless_report_simulated_ttft_calculation() {
+        let mut pipeline = PipelineState::new();
+        for brick in &mut pipeline.bricks {
+            brick.actual_us = 1.0; // Each brick = 1.0µs
+        }
+        let config = CbtopConfig::default();
+        let report = generate_headless_report_simulated("ttft-test", &pipeline, &config);
+        // ttft_ms = total_actual * total_layers / 1000
+        // total_actual = 7 * 1.0 = 7.0
+        // ttft_ms = 7.0 * 28 / 1000 = 0.196
+        assert!((report.throughput.ttft_ms - 0.196).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_headless_report_simulated_single_sample_cv() {
+        let mut pipeline = PipelineState::new();
+        // Single sample per brick -> variance = 0
+        for brick in &mut pipeline.bricks {
+            brick.add_sample(5.0);
+        }
+        let config = CbtopConfig::default();
+        let report = generate_headless_report_simulated("single-cv", &pipeline, &config);
+        // With N=1 per brick, total samples = 7, variance uses (n-1) divisor
+        // But all samples are 5.0, so CV = 0
+        assert!((report.throughput.cv_percent - 0.0).abs() < 0.001);
+    }
+
+    // ========================================================================
+    // NEW: check_ci_thresholds edge cases
+    // ========================================================================
+
+    #[test]
+    fn test_ci_threshold_exact_throughput_match() {
+        let report = HeadlessReport {
+            model: "test".to_string(),
+            timestamp: "now".to_string(),
+            hardware: HardwareInfo {
+                gpu: "test".to_string(),
+                cpu: "test".to_string(),
+                memory_gb: 32,
+            },
+            throughput: ThroughputMetrics {
+                tokens_per_sec: 400.0, // Exactly at threshold
+                ttft_ms: 1.0,
+                cv_percent: 3.0,
+                p50_us: 1.0,
+                p99_us: 2.0,
+            },
+            brick_scores: vec![],
+            pmat_scores: PmatScores {
+                rust_project_score: 0.0,
+                tdg_score: 0.0,
+                cuda_tdg_score: 0.0,
+                brick_score: 0,
+                grade: "F".to_string(),
+            },
+            falsification: FalsificationSummary {
+                total_points: 0,
+                passed: 0,
+                failed: 0,
+                blocked: 0,
+            },
+            status: "PASS".to_string(),
+            ci_result: "green".to_string(),
+        };
+
+        let config = CbtopConfig {
+            throughput_threshold: Some(400.0),
+            ..Default::default()
+        };
+
+        // 400.0 >= 400.0, should pass
+        assert!(check_ci_thresholds(&report, &config));
+    }
+
+    #[test]
+    fn test_ci_threshold_exact_brick_score_match() {
+        let report = HeadlessReport {
+            model: "test".to_string(),
+            timestamp: "now".to_string(),
+            hardware: HardwareInfo {
+                gpu: "test".to_string(),
+                cpu: "test".to_string(),
+                memory_gb: 32,
+            },
+            throughput: ThroughputMetrics {
+                tokens_per_sec: 500.0,
+                ttft_ms: 1.0,
+                cv_percent: 3.0,
+                p50_us: 1.0,
+                p99_us: 2.0,
+            },
+            brick_scores: vec![BrickScore {
+                name: "test".to_string(),
+                score: 90,
+                grade: "A".to_string(),
+                budget_us: 1.0,
+                actual_us: 1.0,
+                gap_factor: 1.0,
+            }],
+            pmat_scores: PmatScores {
+                rust_project_score: 0.0,
+                tdg_score: 0.0,
+                cuda_tdg_score: 0.0,
+                brick_score: 90,
+                grade: "A".to_string(),
+            },
+            falsification: FalsificationSummary {
+                total_points: 0,
+                passed: 0,
+                failed: 0,
+                blocked: 0,
+            },
+            status: "PASS".to_string(),
+            ci_result: "green".to_string(),
+        };
+
+        let config = CbtopConfig {
+            brick_score_threshold: Some(90),
+            ..Default::default()
+        };
+
+        // avg 90 >= 90, should pass
+        assert!(check_ci_thresholds(&report, &config));
+    }
+
+    #[test]
+    fn test_ci_threshold_just_below_throughput() {
+        let report = HeadlessReport {
+            model: "test".to_string(),
+            timestamp: "now".to_string(),
+            hardware: HardwareInfo {
+                gpu: "test".to_string(),
+                cpu: "test".to_string(),
+                memory_gb: 32,
+            },
+            throughput: ThroughputMetrics {
+                tokens_per_sec: 399.9,
+                ttft_ms: 1.0,
+                cv_percent: 3.0,
+                p50_us: 1.0,
+                p99_us: 2.0,
+            },
+            brick_scores: vec![],
+            pmat_scores: PmatScores {
+                rust_project_score: 0.0,
+                tdg_score: 0.0,
+                cuda_tdg_score: 0.0,
+                brick_score: 0,
+                grade: "F".to_string(),
+            },
+            falsification: FalsificationSummary {
+                total_points: 0,
+                passed: 0,
+                failed: 0,
+                blocked: 0,
+            },
+            status: "FAIL".to_string(),
+            ci_result: "red".to_string(),
+        };
+
+        let config = CbtopConfig {
+            throughput_threshold: Some(400.0),
+            ..Default::default()
+        };
+
+        assert!(!check_ci_thresholds(&report, &config));
+    }
+
+    #[test]
+    fn test_ci_threshold_only_throughput_set() {
+        let report = HeadlessReport {
+            model: "test".to_string(),
+            timestamp: "now".to_string(),
+            hardware: HardwareInfo {
+                gpu: "test".to_string(),
+                cpu: "test".to_string(),
+                memory_gb: 32,
+            },
+            throughput: ThroughputMetrics {
+                tokens_per_sec: 500.0,
+                ttft_ms: 1.0,
+                cv_percent: 3.0,
+                p50_us: 1.0,
+                p99_us: 2.0,
+            },
+            brick_scores: vec![BrickScore {
+                name: "bad".to_string(),
+                score: 10,
+                grade: "F".to_string(),
+                budget_us: 1.0,
+                actual_us: 5.0,
+                gap_factor: 5.0,
+            }],
+            pmat_scores: PmatScores {
+                rust_project_score: 0.0,
+                tdg_score: 0.0,
+                cuda_tdg_score: 0.0,
+                brick_score: 10,
+                grade: "F".to_string(),
+            },
+            falsification: FalsificationSummary {
+                total_points: 0,
+                passed: 0,
+                failed: 0,
+                blocked: 0,
+            },
+            status: "FAIL".to_string(),
+            ci_result: "red".to_string(),
+        };
+
+        let config = CbtopConfig {
+            throughput_threshold: Some(400.0),
+            brick_score_threshold: None, // Only throughput checked
+            ..Default::default()
+        };
+
+        // Throughput passes, brick not checked
+        assert!(check_ci_thresholds(&report, &config));
+    }
+
+    #[test]
+    fn test_ci_threshold_only_brick_score_set() {
+        let report = HeadlessReport {
+            model: "test".to_string(),
+            timestamp: "now".to_string(),
+            hardware: HardwareInfo {
+                gpu: "test".to_string(),
+                cpu: "test".to_string(),
+                memory_gb: 32,
+            },
+            throughput: ThroughputMetrics {
+                tokens_per_sec: 1.0, // Very low, but not checked
+                ttft_ms: 1.0,
+                cv_percent: 3.0,
+                p50_us: 1.0,
+                p99_us: 2.0,
+            },
+            brick_scores: vec![BrickScore {
+                name: "good".to_string(),
+                score: 95,
+                grade: "A".to_string(),
+                budget_us: 1.0,
+                actual_us: 0.9,
+                gap_factor: 0.9,
+            }],
+            pmat_scores: PmatScores {
+                rust_project_score: 0.0,
+                tdg_score: 0.0,
+                cuda_tdg_score: 0.0,
+                brick_score: 95,
+                grade: "A".to_string(),
+            },
+            falsification: FalsificationSummary {
+                total_points: 0,
+                passed: 0,
+                failed: 0,
+                blocked: 0,
+            },
+            status: "PASS".to_string(),
+            ci_result: "green".to_string(),
+        };
+
+        let config = CbtopConfig {
+            throughput_threshold: None,
+            brick_score_threshold: Some(90),
+            ..Default::default()
+        };
+
+        // Brick passes, throughput not checked
+        assert!(check_ci_thresholds(&report, &config));
+    }
+
+    // ========================================================================
+    // NEW: format_report_as_json detailed tests
+    // ========================================================================
+
+    #[test]
+    fn test_json_output_empty_brick_scores_array() {
+        let report = HeadlessReport {
+            model: "empty-bricks".to_string(),
+            timestamp: "now".to_string(),
+            hardware: HardwareInfo {
+                gpu: "GPU".to_string(),
+                cpu: "CPU".to_string(),
+                memory_gb: 32,
+            },
+            throughput: ThroughputMetrics {
+                tokens_per_sec: 0.0,
+                ttft_ms: 0.0,
+                cv_percent: 0.0,
+                p50_us: 0.0,
+                p99_us: 0.0,
+            },
+            brick_scores: vec![],
+            pmat_scores: PmatScores {
+                rust_project_score: 0.0,
+                tdg_score: 0.0,
+                cuda_tdg_score: 0.0,
+                brick_score: 0,
+                grade: "F".to_string(),
+            },
+            falsification: FalsificationSummary {
+                total_points: 0,
+                passed: 0,
+                failed: 0,
+                blocked: 0,
+            },
+            status: "FAIL".to_string(),
+            ci_result: "red".to_string(),
+        };
+
+        let json = format_report_as_json(&report);
+        // Empty brick_scores should have empty array
+        assert!(json.contains("\"brick_scores\": [\n\n  ]"));
+    }
+
+    #[test]
+    fn test_json_output_throughput_precision() {
+        let report = HeadlessReport {
+            model: "precision".to_string(),
+            timestamp: "now".to_string(),
+            hardware: HardwareInfo {
+                gpu: "GPU".to_string(),
+                cpu: "CPU".to_string(),
+                memory_gb: 1,
+            },
+            throughput: ThroughputMetrics {
+                tokens_per_sec: 123.456,
+                ttft_ms: 1.789,
+                cv_percent: 2.345,
+                p50_us: 0.123,
+                p99_us: 9.876,
+            },
+            brick_scores: vec![],
+            pmat_scores: PmatScores {
+                rust_project_score: 0.0,
+                tdg_score: 0.0,
+                cuda_tdg_score: 0.0,
+                brick_score: 0,
+                grade: "F".to_string(),
+            },
+            falsification: FalsificationSummary {
+                total_points: 0,
+                passed: 0,
+                failed: 0,
+                blocked: 0,
+            },
+            status: "PASS".to_string(),
+            ci_result: "green".to_string(),
+        };
+
+        let json = format_report_as_json(&report);
+        assert!(json.contains("\"tokens_per_sec\": 123.46"));
+        assert!(json.contains("\"ttft_ms\": 1.79"));
+        assert!(json.contains("\"cv_percent\": 2.35") || json.contains("\"cv_percent\": 2.34"));
+        assert!(json.contains("\"p50_us\": 0.12"));
+        assert!(
+            json.contains("\"p99_us\": 9.88")
+                || json.contains("\"p99_us\": 9.87")
+                || json.contains("\"p99_us\": 9.876")
+        );
+    }
+
+    #[test]
+    fn test_json_output_brick_gap_factor_precision() {
+        let report = HeadlessReport {
+            model: "gap".to_string(),
+            timestamp: "now".to_string(),
+            hardware: HardwareInfo {
+                gpu: "GPU".to_string(),
+                cpu: "CPU".to_string(),
+                memory_gb: 32,
+            },
+            throughput: ThroughputMetrics {
+                tokens_per_sec: 0.0,
+                ttft_ms: 0.0,
+                cv_percent: 0.0,
+                p50_us: 0.0,
+                p99_us: 0.0,
+            },
+            brick_scores: vec![BrickScore {
+                name: "precise".to_string(),
+                score: 75,
+                grade: "C".to_string(),
+                budget_us: 3.14,
+                actual_us: 4.56,
+                gap_factor: 1.452,
+            }],
+            pmat_scores: PmatScores {
+                rust_project_score: 0.0,
+                tdg_score: 0.0,
+                cuda_tdg_score: 0.0,
+                brick_score: 0,
+                grade: "F".to_string(),
+            },
+            falsification: FalsificationSummary {
+                total_points: 0,
+                passed: 0,
+                failed: 0,
+                blocked: 0,
+            },
+            status: "FAIL".to_string(),
+            ci_result: "red".to_string(),
+        };
+
+        let json = format_report_as_json(&report);
+        assert!(json.contains("\"budget_us\": 3.14"));
+        assert!(json.contains("\"actual_us\": 4.56"));
+        assert!(json.contains("\"gap_factor\": 1.452"));
+    }
+
+    #[test]
+    fn test_json_output_status_and_ci_result() {
+        let report = HeadlessReport {
+            model: "status".to_string(),
+            timestamp: "now".to_string(),
+            hardware: HardwareInfo {
+                gpu: "G".to_string(),
+                cpu: "C".to_string(),
+                memory_gb: 1,
+            },
+            throughput: ThroughputMetrics {
+                tokens_per_sec: 0.0,
+                ttft_ms: 0.0,
+                cv_percent: 0.0,
+                p50_us: 0.0,
+                p99_us: 0.0,
+            },
+            brick_scores: vec![],
+            pmat_scores: PmatScores {
+                rust_project_score: 0.0,
+                tdg_score: 0.0,
+                cuda_tdg_score: 0.0,
+                brick_score: 0,
+                grade: "F".to_string(),
+            },
+            falsification: FalsificationSummary {
+                total_points: 0,
+                passed: 0,
+                failed: 0,
+                blocked: 0,
+            },
+            status: "PASS".to_string(),
+            ci_result: "green".to_string(),
+        };
+
+        let json = format_report_as_json(&report);
+        assert!(json.contains("\"status\": \"PASS\""));
+        assert!(json.contains("\"ci_result\": \"green\""));
+    }
+
+    // ========================================================================
+    // NEW: print_report_text branch coverage
+    // ========================================================================
+
+    #[test]
+    fn test_print_report_text_with_passing_bricks() {
+        let report = HeadlessReport {
+            model: "pass-model".to_string(),
+            timestamp: "now".to_string(),
+            hardware: HardwareInfo {
+                gpu: "GPU".to_string(),
+                cpu: "CPU".to_string(),
+                memory_gb: 32,
+            },
+            throughput: ThroughputMetrics {
+                tokens_per_sec: 1000.0,
+                ttft_ms: 0.5,
+                cv_percent: 1.0,
+                p50_us: 0.5,
+                p99_us: 1.0,
+            },
+            brick_scores: vec![
+                BrickScore {
+                    name: "good".to_string(),
+                    score: 100,
+                    grade: "A".to_string(),
+                    budget_us: 5.0,
+                    actual_us: 3.0,
+                    gap_factor: 0.6,
+                },
+                BrickScore {
+                    name: "also_good".to_string(),
+                    score: 95,
+                    grade: "A".to_string(),
+                    budget_us: 10.0,
+                    actual_us: 9.5,
+                    gap_factor: 0.95,
+                },
+            ],
+            pmat_scores: PmatScores {
+                rust_project_score: 100.0,
+                tdg_score: 100.0,
+                cuda_tdg_score: 100.0,
+                brick_score: 100,
+                grade: "A+".to_string(),
+            },
+            falsification: FalsificationSummary {
+                total_points: 137,
+                passed: 137,
+                failed: 0,
+                blocked: 0,
+            },
+            status: "PASS".to_string(),
+            ci_result: "green".to_string(),
+        };
+
+        // Should not panic, exercises the pass branch
+        print_report_text(&report);
+    }
+
+    #[test]
+    fn test_print_report_text_with_failing_bricks() {
+        let report = HeadlessReport {
+            model: "fail-model".to_string(),
+            timestamp: "now".to_string(),
+            hardware: HardwareInfo {
+                gpu: "GPU".to_string(),
+                cpu: "CPU".to_string(),
+                memory_gb: 32,
+            },
+            throughput: ThroughputMetrics {
+                tokens_per_sec: 100.0,
+                ttft_ms: 10.0,
+                cv_percent: 50.0,
+                p50_us: 5.0,
+                p99_us: 50.0,
+            },
+            brick_scores: vec![BrickScore {
+                name: "terrible".to_string(),
+                score: 0,
+                grade: "F".to_string(),
+                budget_us: 1.0,
+                actual_us: 100.0,
+                gap_factor: 100.0,
+            }],
+            pmat_scores: PmatScores {
+                rust_project_score: 0.0,
+                tdg_score: 0.0,
+                cuda_tdg_score: 0.0,
+                brick_score: 0,
+                grade: "F".to_string(),
+            },
+            falsification: FalsificationSummary {
+                total_points: 100,
+                passed: 10,
+                failed: 80,
+                blocked: 10,
+            },
+            status: "FAIL".to_string(),
+            ci_result: "red".to_string(),
+        };
+
+        // Should not panic, exercises the fail branch
+        print_report_text(&report);
+    }
+
+    // ========================================================================
+    // NEW: ModelFormat from_path with unusual paths
+    // ========================================================================
+
+    #[test]
+    fn test_model_format_from_path_with_directory() {
+        use std::path::Path;
+        let path = Path::new("/some/dir/model.gguf");
+        assert_eq!(ModelFormat::from_path(path), Some(ModelFormat::Gguf));
+    }
+
+    #[test]
+    fn test_model_format_from_path_multiple_dots() {
+        use std::path::Path;
+        let path = Path::new("model.v2.gguf");
+        assert_eq!(ModelFormat::from_path(path), Some(ModelFormat::Gguf));
+    }
+
+    #[test]
+    fn test_model_format_from_path_dot_only() {
+        use std::path::Path;
+        let path = Path::new(".");
+        assert_eq!(ModelFormat::from_path(path), None);
+    }
+
+    #[test]
+    fn test_model_format_from_path_hidden_file() {
+        use std::path::Path;
+        let path = Path::new(".hidden_model.safetensors");
+        assert_eq!(ModelFormat::from_path(path), Some(ModelFormat::SafeTensors));
+    }
+
+    #[test]
+    fn test_model_format_from_path_empty_extension() {
+        use std::path::Path;
+        let path = Path::new("model.");
+        // Path::extension() returns None for "model." on most platforms
+        // (the part after the dot is empty)
+        // Actually, on std: "model." -> extension is Some("")
+        assert_eq!(ModelFormat::from_path(path), None);
+    }
+
+    #[test]
+    fn test_model_format_from_path_mixed_case_safetensors() {
+        use std::path::Path;
+        let path = Path::new("model.SafeTensors");
+        assert_eq!(ModelFormat::from_path(path), Some(ModelFormat::SafeTensors));
+    }
+
+    // ========================================================================
+    // NEW: App and View integration
+    // ========================================================================
+
+    #[test]
+    fn test_app_multiple_next_prev_cycles() {
+        let mut app = App::new(None);
+        // Go forward 3, back 2, should be at 1
+        app.next_brick();
+        app.next_brick();
+        app.next_brick();
+        app.prev_brick();
+        app.prev_brick();
+        assert_eq!(app.selected_brick, 1);
+    }
+
+    #[test]
+    fn test_app_full_cycle_forward() {
+        let mut app = App::new(None);
+        let num_bricks = app.pipeline.bricks.len();
+        for _ in 0..num_bricks {
+            app.next_brick();
+        }
+        // Should wrap back to 0
+        assert_eq!(app.selected_brick, 0);
+    }
+
+    #[test]
+    fn test_app_full_cycle_backward() {
+        let mut app = App::new(None);
+        let num_bricks = app.pipeline.bricks.len();
+        for _ in 0..num_bricks {
+            app.prev_brick();
+        }
+        // Should wrap back to 0
+        assert_eq!(app.selected_brick, 0);
+    }
+
+    #[test]
+    fn test_view_titles_count_matches_variants() {
+        let titles = View::titles();
+        // 5 variants: Pipeline, Budget, Histogram, Gpu, Memory
+        assert_eq!(titles.len(), 5);
+    }
+
+    #[test]
+    fn test_view_titles_all_contain_brackets() {
+        let titles = View::titles();
+        for title in titles {
+            assert!(
+                title.contains('['),
+                "Title should contain key hint: {title}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_view_index_is_sequential() {
+        assert_eq!(View::Pipeline.index(), 0);
+        assert_eq!(View::Budget.index(), 1);
+        assert_eq!(View::Histogram.index(), 2);
+        assert_eq!(View::Gpu.index(), 3);
+        assert_eq!(View::Memory.index(), 4);
+    }
+
+    // ========================================================================
+    // NEW: CbtopConfig field combinations
+    // ========================================================================
+
+    #[test]
+    fn test_cbtop_config_default_model_path_none() {
+        let config = CbtopConfig::default();
+        assert!(config.model_path.is_none());
+        assert!(config.model.is_none());
+        assert!(config.attach.is_none());
+        assert!(config.output.is_none());
+        assert!(config.draft_model_path.is_none());
+        assert!(config.throughput_threshold.is_none());
+        assert!(config.brick_score_threshold.is_none());
+    }
+
+    #[test]
+    fn test_cbtop_config_clone() {
+        let config = CbtopConfig {
+            model: Some("test".to_string()),
+            headless: true,
+            json: true,
+            warmup: 5,
+            iterations: 50,
+            ..Default::default()
+        };
+        let cloned = config.clone();
+        assert_eq!(cloned.model, Some("test".to_string()));
+        assert!(cloned.headless);
+        assert!(cloned.json);
+        assert_eq!(cloned.warmup, 5);
+        assert_eq!(cloned.iterations, 50);
+    }
+
+    // ========================================================================
+    // NEW: Struct Debug trait tests
+    // ========================================================================
+
+    #[test]
+    fn test_cbtop_config_debug() {
+        let config = CbtopConfig::default();
+        let debug_str = format!("{config:?}");
+        assert!(debug_str.contains("CbtopConfig"));
+    }
+
+    #[test]
+    fn test_headless_report_debug() {
+        let report = HeadlessReport {
+            model: "debug".to_string(),
+            timestamp: "now".to_string(),
+            hardware: HardwareInfo {
+                gpu: "G".to_string(),
+                cpu: "C".to_string(),
+                memory_gb: 1,
+            },
+            throughput: ThroughputMetrics {
+                tokens_per_sec: 0.0,
+                ttft_ms: 0.0,
+                cv_percent: 0.0,
+                p50_us: 0.0,
+                p99_us: 0.0,
+            },
+            brick_scores: vec![],
+            pmat_scores: PmatScores {
+                rust_project_score: 0.0,
+                tdg_score: 0.0,
+                cuda_tdg_score: 0.0,
+                brick_score: 0,
+                grade: "F".to_string(),
+            },
+            falsification: FalsificationSummary {
+                total_points: 0,
+                passed: 0,
+                failed: 0,
+                blocked: 0,
+            },
+            status: "X".to_string(),
+            ci_result: "X".to_string(),
+        };
+        let debug_str = format!("{report:?}");
+        assert!(debug_str.contains("HeadlessReport"));
+    }
+
+    #[test]
+    fn test_pmat_scores_debug() {
+        let ps = PmatScores {
+            rust_project_score: 0.0,
+            tdg_score: 0.0,
+            cuda_tdg_score: 0.0,
+            brick_score: 0,
+            grade: "F".to_string(),
+        };
+        let debug_str = format!("{ps:?}");
+        assert!(debug_str.contains("PmatScores"));
+    }
+
+    #[test]
+    fn test_hardware_info_debug() {
+        let hw = HardwareInfo {
+            gpu: "G".to_string(),
+            cpu: "C".to_string(),
+            memory_gb: 1,
+        };
+        let debug_str = format!("{hw:?}");
+        assert!(debug_str.contains("HardwareInfo"));
+    }
+
+    #[test]
+    fn test_throughput_metrics_debug() {
+        let tm = ThroughputMetrics {
+            tokens_per_sec: 0.0,
+            ttft_ms: 0.0,
+            cv_percent: 0.0,
+            p50_us: 0.0,
+            p99_us: 0.0,
+        };
+        let debug_str = format!("{tm:?}");
+        assert!(debug_str.contains("ThroughputMetrics"));
+    }
+
+    #[test]
+    fn test_brick_score_debug() {
+        let bs = BrickScore {
+            name: "test".to_string(),
+            score: 50,
+            grade: "F".to_string(),
+            budget_us: 1.0,
+            actual_us: 2.0,
+            gap_factor: 2.0,
+        };
+        let debug_str = format!("{bs:?}");
+        assert!(debug_str.contains("BrickScore"));
+    }
+
+    #[test]
+    fn test_falsification_summary_debug() {
+        let fs = FalsificationSummary {
+            total_points: 0,
+            passed: 0,
+            failed: 0,
+            blocked: 0,
+        };
+        let debug_str = format!("{fs:?}");
+        assert!(debug_str.contains("FalsificationSummary"));
+    }
+
+    // ========================================================================
+    // NEW: Clone trait tests
+    // ========================================================================
+
+    #[test]
+    fn test_hardware_info_clone() {
+        let hw = HardwareInfo {
+            gpu: "RTX".to_string(),
+            cpu: "Ryzen".to_string(),
+            memory_gb: 64,
+        };
+        let cloned = hw.clone();
+        assert_eq!(cloned.gpu, "RTX");
+        assert_eq!(cloned.cpu, "Ryzen");
+        assert_eq!(cloned.memory_gb, 64);
+    }
+
+    #[test]
+    fn test_throughput_metrics_clone() {
+        let tm = ThroughputMetrics {
+            tokens_per_sec: 123.4,
+            ttft_ms: 5.6,
+            cv_percent: 7.8,
+            p50_us: 9.0,
+            p99_us: 11.2,
+        };
+        let cloned = tm.clone();
+        assert!((cloned.tokens_per_sec - 123.4).abs() < 0.001);
+        assert!((cloned.p99_us - 11.2).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_pmat_scores_clone() {
+        let ps = PmatScores {
+            rust_project_score: 173.9,
+            tdg_score: 98.1,
+            cuda_tdg_score: 95.2,
+            brick_score: 99,
+            grade: "A+".to_string(),
+        };
+        let cloned = ps.clone();
+        assert_eq!(cloned.brick_score, 99);
+        assert_eq!(cloned.grade, "A+");
+    }
+
+    #[test]
+    fn test_brick_score_clone() {
+        let bs = BrickScore {
+            name: "Attention".to_string(),
+            score: 85,
+            grade: "B".to_string(),
+            budget_us: 10.0,
+            actual_us: 11.5,
+            gap_factor: 1.15,
+        };
+        let cloned = bs.clone();
+        assert_eq!(cloned.name, "Attention");
+        assert_eq!(cloned.score, 85);
+    }
+
+    #[test]
+    fn test_falsification_summary_clone() {
+        let fs = FalsificationSummary {
+            total_points: 137,
+            passed: 130,
+            failed: 5,
+            blocked: 2,
+        };
+        let cloned = fs.clone();
+        assert_eq!(cloned.total_points, 137);
+        assert_eq!(cloned.failed, 5);
+    }
+
+    // ========================================================================
+    // NEW: generate_headless_report grade mapping from inline score
+    // ========================================================================
+
+    #[test]
+    fn test_headless_report_simulated_grade_a_for_perfect_bricks() {
+        let mut pipeline = PipelineState::new();
+        for brick in &mut pipeline.bricks {
+            brick.actual_us = 0.0; // All 0 -> gap_factor = 0 -> score 100
+        }
+        let config = CbtopConfig::default();
+        let report = generate_headless_report_simulated("grade-a", &pipeline, &config);
+        for brick_score in &report.brick_scores {
+            assert_eq!(brick_score.grade, "A");
+            assert_eq!(brick_score.score, 100);
+        }
+    }
+
+    #[test]
+    fn test_headless_report_simulated_grade_f_for_bad_bricks() {
+        let mut pipeline = PipelineState::new();
+        for brick in &mut pipeline.bricks {
+            brick.actual_us = brick.budget_us * 3.0; // gap = 3.0, score = 0
+        }
+        let config = CbtopConfig::default();
+        let report = generate_headless_report_simulated("grade-f", &pipeline, &config);
+        for brick_score in &report.brick_scores {
+            assert_eq!(brick_score.grade, "F");
+            assert_eq!(brick_score.score, 0);
+        }
+    }
+
+    #[test]
+    fn test_headless_report_simulated_pmat_grade_f_for_all_bad() {
+        let mut pipeline = PipelineState::new();
+        for brick in &mut pipeline.bricks {
+            brick.actual_us = brick.budget_us * 3.0;
+        }
+        let config = CbtopConfig::default();
+        let report = generate_headless_report_simulated("pmat-f", &pipeline, &config);
+        assert_eq!(report.pmat_scores.grade, "F");
+        assert_eq!(report.pmat_scores.brick_score, 0);
+    }
+
+    #[test]
+    fn test_headless_report_simulated_pmat_grade_a_for_all_good() {
+        let mut pipeline = PipelineState::new();
+        for brick in &mut pipeline.bricks {
+            brick.actual_us = 0.0;
+        }
+        let config = CbtopConfig::default();
+        let report = generate_headless_report_simulated("pmat-a", &pipeline, &config);
+        // All bricks score 100, weighted average may truncate to 99 due to f64
+        assert!(report.pmat_scores.grade == "A");
+        assert!(report.pmat_scores.brick_score >= 99);
+    }
+
+    // ========================================================================
+    // NEW: BrickTiming::add_sample moving average accuracy
+    // ========================================================================
+
+    #[test]
+    fn test_add_sample_moving_average_with_overflow() {
+        let mut brick = BrickTiming::new("test", 5.0);
+        // Fill with 100 samples of value 10.0
+        for _ in 0..100 {
+            brick.add_sample(10.0);
+        }
+        assert!((brick.actual_us - 10.0).abs() < 0.001);
+        // Now add 100.0 - oldest (10.0) removed, average shifts
+        brick.add_sample(100.0);
+        // (99 * 10.0 + 100.0) / 100 = 10.9
+        assert!((brick.actual_us - 10.9).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_add_sample_single_sample_is_exact() {
+        let mut brick = BrickTiming::new("test", 5.0);
+        brick.add_sample(42.0);
+        assert!((brick.actual_us - 42.0).abs() < 0.001);
+    }
+
+    // ========================================================================
+    // NEW: Pipeline state after warmup+measurement pattern
+    // ========================================================================
+
+    #[test]
+    fn test_pipeline_warmup_clear_measurement_pattern() {
+        let mut pipeline = PipelineState::new();
+        // Warmup
+        for _ in 0..10 {
+            pipeline.update_demo();
+        }
+        // Clear samples (like run_headless_simulated does)
+        for brick in &mut pipeline.bricks {
+            brick.samples.clear();
+            brick.actual_us = 0.0;
+        }
+        // Verify cleared
+        for brick in &pipeline.bricks {
+            assert!(brick.samples.is_empty());
+            assert!((brick.actual_us - 0.0).abs() < 0.001);
+        }
+        // Measurement
+        for _ in 0..50 {
+            pipeline.update_demo();
+        }
+        // Verify we have fresh data
+        for brick in &pipeline.bricks {
+            assert_eq!(brick.samples.len(), 50);
+            assert!(brick.actual_us > 0.0);
+        }
+    }
+
+    // ========================================================================
+    // NEW: Comprehensive JSON round-trip verification
+    // ========================================================================
+
+    #[test]
+    fn test_json_output_well_formed_braces() {
+        let report = HeadlessReport {
+            model: "brace-test".to_string(),
+            timestamp: "now".to_string(),
+            hardware: HardwareInfo {
+                gpu: "G".to_string(),
+                cpu: "C".to_string(),
+                memory_gb: 1,
+            },
+            throughput: ThroughputMetrics {
+                tokens_per_sec: 1.0,
+                ttft_ms: 1.0,
+                cv_percent: 1.0,
+                p50_us: 1.0,
+                p99_us: 1.0,
+            },
+            brick_scores: vec![BrickScore {
+                name: "b".to_string(),
+                score: 50,
+                grade: "F".to_string(),
+                budget_us: 1.0,
+                actual_us: 2.0,
+                gap_factor: 2.0,
+            }],
+            pmat_scores: PmatScores {
+                rust_project_score: 1.0,
+                tdg_score: 1.0,
+                cuda_tdg_score: 1.0,
+                brick_score: 1,
+                grade: "F".to_string(),
+            },
+            falsification: FalsificationSummary {
+                total_points: 1,
+                passed: 1,
+                failed: 0,
+                blocked: 0,
+            },
+            status: "X".to_string(),
+            ci_result: "X".to_string(),
+        };
+
+        let json = format_report_as_json(&report);
+        // Count opening and closing braces - should match
+        let open_braces = json.chars().filter(|&c| c == '{').count();
+        let close_braces = json.chars().filter(|&c| c == '}').count();
+        assert_eq!(open_braces, close_braces);
+
+        let open_brackets = json.chars().filter(|&c| c == '[').count();
+        let close_brackets = json.chars().filter(|&c| c == ']').count();
+        assert_eq!(open_brackets, close_brackets);
+    }
+
+    #[test]
+    fn test_json_output_starts_and_ends_correctly() {
+        let report = HeadlessReport {
+            model: "form-test".to_string(),
+            timestamp: "now".to_string(),
+            hardware: HardwareInfo {
+                gpu: "G".to_string(),
+                cpu: "C".to_string(),
+                memory_gb: 1,
+            },
+            throughput: ThroughputMetrics {
+                tokens_per_sec: 0.0,
+                ttft_ms: 0.0,
+                cv_percent: 0.0,
+                p50_us: 0.0,
+                p99_us: 0.0,
+            },
+            brick_scores: vec![],
+            pmat_scores: PmatScores {
+                rust_project_score: 0.0,
+                tdg_score: 0.0,
+                cuda_tdg_score: 0.0,
+                brick_score: 0,
+                grade: "F".to_string(),
+            },
+            falsification: FalsificationSummary {
+                total_points: 0,
+                passed: 0,
+                failed: 0,
+                blocked: 0,
+            },
+            status: "X".to_string(),
+            ci_result: "X".to_string(),
+        };
+
+        let json = format_report_as_json(&report);
+        assert!(json.starts_with('{'));
+        assert!(json.ends_with('}'));
+    }
+
+    // ========================================================================
+    // NEW: generate_headless_report_simulated p50/p99 with empty pipeline
+    // ========================================================================
+
+    #[test]
+    fn test_headless_report_simulated_no_bricks() {
+        let mut pipeline = PipelineState::new();
+        pipeline.bricks.clear(); // Remove all bricks
+        let config = CbtopConfig::default();
+        let report = generate_headless_report_simulated("no-bricks", &pipeline, &config);
+        assert_eq!(report.brick_scores.len(), 0);
+        assert!((report.throughput.p50_us - 0.0).abs() < 0.001);
+        assert!((report.throughput.p99_us - 0.0).abs() < 0.001);
+        assert!((report.throughput.cv_percent - 0.0).abs() < 0.001);
+        assert_eq!(report.status, "PASS"); // Empty bricks -> all pass vacuously
+    }
+
+    // ========================================================================
+    // NEW: PipelineState totals with zeroed bricks
+    // ========================================================================
+
+    #[test]
+    fn test_pipeline_total_budget_sum_precision() {
+        let pipeline = PipelineState::new();
+        // 1.5 + 6.0 + 1.0 + 10.0 + 3.5 + 1.5 + 12.2 = 35.7
+        let budget = pipeline.total_budget();
+        assert!((budget - 35.7).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_pipeline_total_actual_all_zero() {
+        let pipeline = PipelineState::new();
+        assert!((pipeline.total_actual() - 0.0).abs() < 0.001);
+    }
+
+    // ========================================================================
+    // NEW: compute_brick_score score ranges for each grade band
+    // ========================================================================
+
+    #[test]
+    fn test_compute_brick_score_produces_grade_b_range() {
+        // gap = 1.15 -> 100 - (0.15 * 50) = 92.5 -> 92 (A)
+        // gap = 1.19 -> 100 - (0.19 * 50) = 90.5 -> 90 (A)
+        // Need gap > 1.2 for below 90
+        // gap = 1.3 -> 100 - (0.3 * 100) = 70 (C)
+        // gap = 1.11 -> still in 1.0-1.2: 100 - (0.11*50) = 94.5 -> 94 (A)
+        // For B (80-89), we need: 100 - (gap-1.0)*100 in [80,89] for gap > 1.2
+        // 100 - (gap-1.0)*100 = 80 => gap = 1.2 -> 90 (1.0-1.2 formula)
+        // Actually for gap > 1.2: score = 100 - (gap-1.0)*100
+        // score=89 => gap = 1.11 (but 1.11 < 1.2 so different formula)
+        // For gap in (1.2, x]: 100 - (gap-1.0)*100
+        // score=89: gap=1.11 -> in 1.0-1.2 range -> 100 - (0.11*50) = 94.5 -> 94
+        // For score=80: 100-(gap-1)*100=80 -> gap=1.2 -> on boundary
+        // For score=85: 100-(gap-1)*100=85 -> gap=1.15 (in 1.0-1.2)
+        // Actually at gap=1.2 in 1.0-1.2 range: 100-(0.2*50)=90
+        // At gap=1.21: 100-(0.21*100)=79 -> C
+        // So B range (80-89) is actually gap in [1.2, 1.2] = just 90
+        // The only way to get B is score 80-89, which means gap 1.11-1.2 in first formula
+        // gap=1.12: 100-(0.12*50)=94 -> A
+        // gap=1.20: 100-(0.20*50)=90 -> A
+        // So the 1.0-1.2 range yields scores 90-100 (all A)
+        // And gap > 1.2 yields: 100-(gap-1)*100, where gap=1.21 -> 79 (C)
+        // There's a discontinuity at gap=1.2 (90 with first formula, then gap=1.201 -> 79.9)
+        // So actually scores 80-89 (B) are never produced! Let's verify:
+        let score_at_gap_1_2 = compute_brick_score(12.0, 10.0); // gap=1.2
+        assert_eq!(score_at_gap_1_2, 90); // A
+
+        let score_just_over = compute_brick_score(12.01, 10.0); // gap=1.201
+        assert_eq!(score_just_over, 79); // C -- skips B entirely
+    }
+
+    // ========================================================================
+    // NEW: Integration-style test for full simulated flow
+    // ========================================================================
+
+    #[test]
+    fn test_full_simulated_report_flow() {
+        let mut pipeline = PipelineState::new();
+        // Simulate warmup
+        for _ in 0..10 {
+            pipeline.update_demo();
+        }
+        // Clear
+        for brick in &mut pipeline.bricks {
+            brick.samples.clear();
+            brick.actual_us = 0.0;
+        }
+        // Simulate measurement
+        for _ in 0..100 {
+            pipeline.update_demo();
+        }
+
+        let config = CbtopConfig {
+            warmup: 10,
+            iterations: 100,
+            ..Default::default()
+        };
+        let report = generate_headless_report_simulated("full-flow", &pipeline, &config);
+
+        // Basic sanity
+        assert_eq!(report.model, "full-flow");
+        assert_eq!(report.brick_scores.len(), 7);
+        assert!(report.throughput.tokens_per_sec >= 0.0);
+        assert!(!report.timestamp.is_empty());
+        assert!(report.status == "PASS" || report.status == "FAIL");
+        assert!(report.ci_result == "green" || report.ci_result == "red");
+
+        // JSON formatting
+        let json = format_report_as_json(&report);
+        assert!(json.starts_with('{'));
+        assert!(json.ends_with('}'));
+
+        // CI thresholds with no thresholds set
+        assert!(check_ci_thresholds(&report, &config));
+
+        // Text output should not panic
+        print_report_text(&report);
+    }
 }

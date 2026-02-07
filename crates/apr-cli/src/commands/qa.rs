@@ -482,10 +482,75 @@ fn run_tensor_contract_gate(path: &Path, config: &QaConfig) -> Result<GateResult
     }
 }
 
+/// Output verification result (PMAT-QA-PROTOCOL-001 §7.4)
+#[derive(Debug, Clone)]
+pub enum OutputVerification {
+    /// Output passed all checks
+    Pass,
+    /// Output failed verification
+    Fail {
+        /// Reason for failure
+        reason: String,
+    },
+}
+
+/// Verify output is correct: not empty, no garbage, contains expected answer
+/// (PMAT-QA-PROTOCOL-001 §7.4)
+///
+/// Order of checks is CRITICAL (fail fast on garbage):
+/// 1. Not empty
+/// 2. No garbage patterns (BEFORE checking answer)
+/// 3. No BPE artifacts
+/// 4. Contains expected answer
+pub fn verify_output(output: &str, test_id: &str, expected_patterns: &[&str]) -> OutputVerification {
+    // Check 1: Not empty
+    if output.trim().is_empty() {
+        return OutputVerification::Fail {
+            reason: format!("{test_id}: Empty output"),
+        };
+    }
+
+    // Check 2: Garbage patterns (fail fast BEFORE checking answer)
+    let garbage_patterns = ["\u{FFFD}", "[UNK]", "akunji", "olumbia"];
+    for pattern in &garbage_patterns {
+        if output.contains(pattern) {
+            return OutputVerification::Fail {
+                reason: format!("{test_id}: Garbage detected: '{pattern}'"),
+            };
+        }
+    }
+
+    // Check 3: BPE artifacts (null bytes, excessive control chars)
+    let null_count = output.bytes().filter(|&b| b == 0).count();
+    if null_count > 0 {
+        return OutputVerification::Fail {
+            reason: format!("{test_id}: {null_count} null bytes detected (BPE artifact)"),
+        };
+    }
+
+    // Check 4: Contains expected answer
+    if !expected_patterns.is_empty() {
+        let found = expected_patterns
+            .iter()
+            .any(|p| output.to_lowercase().contains(&p.to_lowercase()));
+        if !found {
+            return OutputVerification::Fail {
+                reason: format!(
+                    "{test_id}: Expected one of {:?}, got: '{}'",
+                    expected_patterns,
+                    output.chars().take(100).collect::<String>()
+                ),
+            };
+        }
+    }
+
+    OutputVerification::Pass
+}
+
 /// Gate 1: Golden Output Test
 ///
 /// Runs the model with a known prompt and verifies the output contains expected patterns.
-/// This tests correctness - if the model produces garbage, this gate fails.
+/// Uses verify_output() for structured validation (PMAT-QA-PROTOCOL-001 §7.4).
 fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
     let start = Instant::now();
 
@@ -634,21 +699,13 @@ fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
             };
             let _ = (cuda_available, output_tokens); // suppress warnings
 
-            // Check if any expected pattern is present
-            let pattern_found = expected_patterns
-                .iter()
-                .any(|p| output_text.to_lowercase().contains(&p.to_lowercase()));
-
-            if !pattern_found {
+            // Verify output using structured protocol (PMAT-QA-PROTOCOL-001 §7.4)
+            let verification = verify_output(&output_text, "golden_output", expected_patterns);
+            if let OutputVerification::Fail { reason } = verification {
                 let duration = start.elapsed();
                 return Ok(GateResult::failed(
                     "golden_output",
-                    &format!(
-                        "Prompt '{}' output '{}' did not contain any of: {:?}",
-                        prompt,
-                        output_text.chars().take(100).collect::<String>(),
-                        expected_patterns
-                    ),
+                    &reason,
                     None,
                     None,
                     duration,
@@ -2117,5 +2174,2049 @@ mod tests {
             "Skip message must contain 'Skipped'"
         );
         assert!(result.message.len() > 10, "Skip reason must be descriptive");
+    }
+
+    // ========================================================================
+    // GateResult: boundary values and value/threshold interactions
+    // ========================================================================
+
+    /// A gate whose measured value exactly equals the threshold should pass.
+    /// Bug class: using > instead of >= in threshold comparison, causing
+    /// exact-threshold values to fail.
+    #[test]
+    fn gate_result_value_equals_threshold_is_pass() {
+        // When value == threshold, the gate is "passed" (caller constructs it)
+        // This test documents the semantic contract: equality means pass.
+        let result = GateResult::passed(
+            "throughput",
+            "100.0 tok/s >= 100.0 tok/s threshold",
+            Some(100.0),
+            Some(100.0),
+            Duration::from_secs(1),
+        );
+        assert!(result.passed);
+        assert_eq!(result.value, Some(100.0));
+        assert_eq!(result.threshold, Some(100.0));
+    }
+
+    /// A gate with value just below threshold should be failed.
+    /// Bug class: floating-point equality masking near-miss failures.
+    #[test]
+    fn gate_result_value_just_below_threshold_is_fail() {
+        let result = GateResult::failed(
+            "throughput",
+            "99.9 tok/s < 100.0 tok/s",
+            Some(99.9),
+            Some(100.0),
+            Duration::from_secs(1),
+        );
+        assert!(!result.passed);
+        assert!(!result.skipped);
+    }
+
+    /// Zero-duration gate result should be representable.
+    /// Bug class: division by zero in duration_ms calculation.
+    #[test]
+    fn gate_result_zero_duration() {
+        let result = GateResult::passed(
+            "fast_gate",
+            "Sub-millisecond completion",
+            None,
+            None,
+            Duration::from_nanos(0),
+        );
+        assert_eq!(result.duration_ms, 0);
+        assert!(result.passed);
+    }
+
+    /// Very large duration should not overflow u64 milliseconds.
+    /// Bug class: u64 overflow when converting Duration to millis.
+    #[test]
+    fn gate_result_large_duration_no_overflow() {
+        // 1 million seconds = ~11.5 days (extreme but valid)
+        let result = GateResult::passed(
+            "slow_gate",
+            "Long-running test",
+            None,
+            None,
+            Duration::from_secs(1_000_000),
+        );
+        assert_eq!(result.duration_ms, 1_000_000_000);
+    }
+
+    /// Skipped gates must have None for value and threshold.
+    /// Bug class: skipped constructor inadvertently setting default values
+    /// that confuse downstream reporting (e.g., "0.0 vs 0.0 threshold").
+    #[test]
+    fn gate_result_skipped_has_no_metrics() {
+        let result = GateResult::skipped("contract", "Model not found");
+        assert!(result.value.is_none(), "Skipped gate must have no value");
+        assert!(
+            result.threshold.is_none(),
+            "Skipped gate must have no threshold"
+        );
+    }
+
+    /// Failed gate with None value (e.g., infrastructure failure, not metric miss).
+    /// Bug class: downstream code unwrapping value.unwrap() on failure.
+    #[test]
+    fn gate_result_failed_without_value() {
+        let result = GateResult::failed(
+            "golden_output",
+            "Inference engine crashed",
+            None,
+            None,
+            Duration::from_millis(50),
+        );
+        assert!(!result.passed);
+        assert!(result.value.is_none());
+    }
+
+    // ========================================================================
+    // GateResult serialization: JSON round-trip fidelity
+    // ========================================================================
+
+    /// Round-trip: passed gate with all fields must survive JSON serialization.
+    /// Bug class: serde skip_serializing_if dropping fields that should be present.
+    #[test]
+    fn gate_result_json_roundtrip_with_values() {
+        let original = GateResult::passed(
+            "throughput",
+            "150.0 tok/s >= 100.0 tok/s",
+            Some(150.0),
+            Some(100.0),
+            Duration::from_millis(2500),
+        );
+        let json = serde_json::to_string(&original).expect("serialize");
+        let restored: GateResult = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(restored.name, "throughput");
+        assert!(restored.passed);
+        assert!(!restored.skipped);
+        assert_eq!(restored.value, Some(150.0));
+        assert_eq!(restored.threshold, Some(100.0));
+        assert_eq!(restored.duration_ms, 2500);
+    }
+
+    /// Round-trip: skipped gate should preserve skipped=true through JSON.
+    /// Bug class: skipped field defaulting to false on deserialization.
+    #[test]
+    fn gate_result_json_roundtrip_skipped() {
+        let original = GateResult::skipped("gpu_speedup", "No GPU");
+        let json = serde_json::to_string(&original).expect("serialize");
+        let restored: GateResult = serde_json::from_str(&json).expect("deserialize");
+        assert!(restored.skipped, "skipped flag must survive round-trip");
+        assert!(restored.passed, "skipped gates must still show passed=true");
+        assert!(
+            restored.value.is_none(),
+            "value should be None after round-trip"
+        );
+    }
+
+    /// JSON with None value/threshold should omit those fields entirely.
+    /// Bug class: serializing None as null instead of omitting.
+    #[test]
+    fn gate_result_json_omits_none_fields() {
+        let result = GateResult::passed("test", "ok", None, None, Duration::from_secs(1));
+        let json = serde_json::to_string(&result).expect("serialize");
+        assert!(
+            !json.contains("value"),
+            "None value should be omitted from JSON, got: {json}"
+        );
+        assert!(
+            !json.contains("threshold"),
+            "None threshold should be omitted from JSON, got: {json}"
+        );
+    }
+
+    // ========================================================================
+    // QaReport: aggregate pass/fail logic
+    // ========================================================================
+
+    /// A report with all skipped gates should pass (skips never fail).
+    /// Bug class: empty non-skipped gate list treated as failure.
+    #[test]
+    fn qa_report_all_skipped_gates_passes() {
+        let report = QaReport {
+            model: "test.gguf".to_string(),
+            passed: true,
+            gates: vec![
+                GateResult::skipped("golden", "no model"),
+                GateResult::skipped("throughput", "no engine"),
+                GateResult::skipped("ollama", "not available"),
+            ],
+            total_duration_ms: 10,
+            timestamp: "2026-02-06T00:00:00Z".to_string(),
+            summary: "All skipped".to_string(),
+        };
+        assert!(report.passed);
+        assert!(
+            report.gates.iter().all(|g| g.skipped),
+            "All gates should be skipped"
+        );
+        assert!(
+            report.gates.iter().all(|g| g.passed),
+            "All skipped gates should count as passed"
+        );
+    }
+
+    /// A single failed gate should make the entire report fail.
+    /// Bug class: report.passed computed as majority vote instead of all().
+    #[test]
+    fn qa_report_single_failure_taints_report() {
+        let gates = [
+            GateResult::passed("golden", "ok", None, None, Duration::from_secs(1)),
+            GateResult::failed(
+                "throughput",
+                "too slow",
+                Some(5.0),
+                Some(100.0),
+                Duration::from_secs(2),
+            ),
+            GateResult::passed(
+                "contract",
+                "ok",
+                Some(100.0),
+                Some(0.0),
+                Duration::from_secs(1),
+            ),
+        ];
+        let passed = gates.iter().all(|g| g.passed);
+        assert!(!passed, "Single failure must taint the entire report");
+    }
+
+    /// Mixed passed and skipped gates should produce overall pass.
+    /// Bug class: treating skipped as neither-pass-nor-fail, which
+    /// breaks the all() check.
+    #[test]
+    fn qa_report_mixed_pass_and_skip_passes() {
+        let gates = [
+            GateResult::passed("golden", "ok", None, None, Duration::from_secs(1)),
+            GateResult::skipped("ollama", "not available"),
+            GateResult::passed(
+                "contract",
+                "ok",
+                Some(50.0),
+                Some(0.0),
+                Duration::from_secs(1),
+            ),
+            GateResult::skipped("gpu_speedup", "no GPU"),
+        ];
+        let passed = gates.iter().all(|g| g.passed);
+        assert!(passed, "Mix of passed + skipped should be overall pass");
+    }
+
+    /// Failed gates filtering should exclude skipped gates.
+    /// Bug class: counting skipped gates as failures in summary.
+    #[test]
+    fn qa_report_failed_gate_filter_excludes_skipped() {
+        let gates = [
+            GateResult::failed(
+                "throughput",
+                "too slow",
+                Some(1.0),
+                Some(100.0),
+                Duration::from_secs(1),
+            ),
+            GateResult::skipped("ollama", "not running"),
+            GateResult::passed("contract", "ok", None, None, Duration::from_secs(1)),
+        ];
+        let failed_gates: Vec<_> = gates.iter().filter(|g| !g.passed && !g.skipped).collect();
+        assert_eq!(
+            failed_gates.len(),
+            1,
+            "Only non-skipped failures should appear"
+        );
+        assert_eq!(failed_gates[0].name, "throughput");
+    }
+
+    // ========================================================================
+    // QaReport JSON round-trip
+    // ========================================================================
+
+    /// Full report round-trip through JSON preserves all field values.
+    /// Bug class: field ordering or naming mismatch between ser/de.
+    #[test]
+    fn qa_report_json_roundtrip_complete() {
+        let original = QaReport {
+            model: "/path/to/model.gguf".to_string(),
+            passed: false,
+            gates: vec![
+                GateResult::passed(
+                    "contract",
+                    "50 tensors ok",
+                    Some(50.0),
+                    Some(0.0),
+                    Duration::from_millis(100),
+                ),
+                GateResult::failed(
+                    "throughput",
+                    "5 < 100",
+                    Some(5.0),
+                    Some(100.0),
+                    Duration::from_millis(5000),
+                ),
+                GateResult::skipped("ollama", "not installed"),
+            ],
+            total_duration_ms: 5100,
+            timestamp: "2026-02-06T12:00:00Z".to_string(),
+            summary: "Failed gates: throughput".to_string(),
+        };
+
+        let json = serde_json::to_string_pretty(&original).expect("serialize");
+        let restored: QaReport = serde_json::from_str(&json).expect("deserialize");
+
+        assert_eq!(restored.model, original.model);
+        assert_eq!(restored.passed, original.passed);
+        assert_eq!(restored.gates.len(), 3);
+        assert_eq!(restored.total_duration_ms, original.total_duration_ms);
+        assert_eq!(restored.summary, original.summary);
+        // Verify individual gate fidelity
+        assert!(restored.gates[0].passed);
+        assert!(!restored.gates[1].passed);
+        assert!(restored.gates[2].skipped);
+    }
+
+    // ========================================================================
+    // detect_ollama_model_from_path: filename-based model size detection
+    // ========================================================================
+
+    /// Standard filename patterns should detect correct model size.
+    /// Bug class: case-sensitive matching missing lowercase variants.
+    #[test]
+    fn detect_ollama_model_standard_sizes() {
+        let cases = vec![
+            ("/tmp/qwen2-0.5b-instruct-q4_0.gguf", "0.5b"),
+            ("/tmp/qwen2-1.5b-instruct-q4_0.gguf", "1.5b"),
+            ("/tmp/qwen2-7b-instruct-q4_0.gguf", "7b"),
+            ("/tmp/qwen2-14b-instruct-q4_0.gguf", "14b"),
+            ("/tmp/qwen2-32b-instruct-q4_0.gguf", "32b"),
+        ];
+        for (path, expected_size) in cases {
+            let model = detect_ollama_model_from_path(std::path::Path::new(path));
+            let expected = format!("qwen2.5-coder:{expected_size}");
+            assert_eq!(
+                model, expected,
+                "Path '{path}' should detect size '{expected_size}'"
+            );
+        }
+    }
+
+    /// Underscore-separated size variants (e.g., "-0_5b") should be detected.
+    /// Bug class: only matching dot-separated sizes, missing underscore variant.
+    #[test]
+    fn detect_ollama_model_underscore_size() {
+        let model = detect_ollama_model_from_path(std::path::Path::new(
+            "/cache/qwen2.5-coder-0_5b-instruct-q4_k_m.gguf",
+        ));
+        assert!(
+            model.contains("0.5b"),
+            "Underscore-separated size should be detected: {model}"
+        );
+    }
+
+    /// The 3B model size should be detected.
+    /// Bug class: regex matching "3b" inside "32b" or "13b" -- verify specificity.
+    #[test]
+    fn detect_ollama_model_3b_not_confused_with_32b() {
+        let model_3b =
+            detect_ollama_model_from_path(std::path::Path::new("/tmp/qwen2-3b-instruct.gguf"));
+        assert!(
+            model_3b.contains(":3b"),
+            "Should detect 3b, got: {model_3b}"
+        );
+
+        let model_32b =
+            detect_ollama_model_from_path(std::path::Path::new("/tmp/qwen2-32b-instruct.gguf"));
+        assert!(
+            model_32b.contains(":32b"),
+            "Should detect 32b, got: {model_32b}"
+        );
+    }
+
+    /// Hash-named files (no size in name) should fall back to file size.
+    /// Bug class: panic or incorrect default when filename has no size hint.
+    #[test]
+    fn detect_ollama_model_hash_named_file() {
+        // This file doesn't exist, so metadata will fail -> defaults to "7b"
+        let model = detect_ollama_model_from_path(std::path::Path::new(
+            "/tmp/e910cab26ae116eb.converted.gguf",
+        ));
+        assert!(
+            model.contains("qwen2.5-coder:"),
+            "Should produce valid model tag: {model}"
+        );
+    }
+
+    // ========================================================================
+    // QaConfig: field interaction invariants
+    // ========================================================================
+
+    /// Custom config overrides should not affect unrelated fields.
+    /// Bug class: struct update syntax (..) accidentally overriding explicitly set fields.
+    #[test]
+    fn qa_config_partial_override_preserves_defaults() {
+        let config = QaConfig {
+            min_tps: 500.0,
+            skip_golden: true,
+            iterations: 5,
+            ..Default::default()
+        };
+        // Overridden fields
+        assert!((config.min_tps - 500.0).abs() < f64::EPSILON);
+        assert!(config.skip_golden);
+        assert_eq!(config.iterations, 5);
+        // Default fields must be preserved
+        assert!((config.min_speedup - 0.2).abs() < f64::EPSILON);
+        assert!((config.min_gpu_speedup - 2.0).abs() < f64::EPSILON);
+        assert!(!config.skip_throughput);
+        assert!(!config.skip_ollama);
+        assert_eq!(config.warmup, 3);
+        assert_eq!(config.max_tokens, 32);
+        assert!(!config.json);
+    }
+
+    /// skip_contract flag should be independent of other skip flags.
+    /// Bug class: skip flags sharing a single boolean or bitmask.
+    #[test]
+    fn qa_config_skip_flags_are_independent() {
+        let config = QaConfig {
+            skip_golden: true,
+            skip_contract: true,
+            ..Default::default()
+        };
+        assert!(config.skip_golden);
+        assert!(config.skip_contract);
+        assert!(!config.skip_throughput);
+        assert!(!config.skip_ollama);
+        assert!(!config.skip_gpu_speedup);
+        assert!(!config.skip_format_parity);
+    }
+
+    // ========================================================================
+    // print_gate_result: gate name display mapping
+    // ========================================================================
+
+    /// Verify that all known gate names have display names in the printer.
+    /// Bug class: new gate added without updating the display name map,
+    /// causing raw snake_case name to appear in user-facing output.
+    #[test]
+    fn all_gate_names_have_display_mapping() {
+        // These are the canonical gate names used in the QA system
+        let gate_names = [
+            "tensor_contract",
+            "golden_output",
+            "throughput",
+            "ollama_parity",
+            "gpu_speedup",
+            "format_parity",
+        ];
+        for name in &gate_names {
+            // Verify the name is one of the known gates by matching
+            // the same logic as print_gate_result
+            let display = match *name {
+                "tensor_contract" => "Tensor Contract",
+                "golden_output" => "Golden Output",
+                "throughput" => "Throughput",
+                "ollama_parity" => "Ollama Parity",
+                "gpu_speedup" => "GPU Speedup",
+                "format_parity" => "Format Parity",
+                _ => panic!("Unknown gate name without display mapping: {name}"),
+            };
+            assert!(
+                !display.is_empty(),
+                "Display name for '{name}' must not be empty"
+            );
+        }
+    }
+
+    // ========================================================================
+    // print_gate_result: status branching and name fallback
+    // ========================================================================
+
+    /// Unknown gate names should fall through to the raw name (the `_ => &result.name` arm).
+    /// Bug class: match arm panicking on unexpected gate name instead of graceful fallback.
+    #[test]
+    fn print_gate_result_unknown_name_uses_raw_name() {
+        // Exercising `print_gate_result` with an unknown gate name to ensure
+        // the `_ => &result.name` fallback branch is reached without panic.
+        let result = GateResult::passed(
+            "custom_user_gate",
+            "User-defined gate passed",
+            None,
+            None,
+            Duration::from_millis(42),
+        );
+        // This should not panic -- exercises the fallback arm in print_gate_result
+        print_gate_result(&result);
+    }
+
+    /// print_gate_result with a skipped gate exercises the `[SKIP]` branch.
+    #[test]
+    fn print_gate_result_skip_branch() {
+        let result = GateResult::skipped("ollama_parity", "Ollama not available");
+        // Exercises the skipped branch; should not print duration line
+        print_gate_result(&result);
+    }
+
+    /// print_gate_result with a failed gate exercises the `[FAIL]` branch.
+    #[test]
+    fn print_gate_result_fail_branch() {
+        let result = GateResult::failed(
+            "throughput",
+            "5.0 tok/s < 100.0 tok/s threshold",
+            Some(5.0),
+            Some(100.0),
+            Duration::from_millis(3500),
+        );
+        // Exercises the failed branch; should print duration
+        print_gate_result(&result);
+    }
+
+    /// print_gate_result with a passed gate exercises the `[PASS]` branch.
+    #[test]
+    fn print_gate_result_pass_branch() {
+        let result = GateResult::passed(
+            "tensor_contract",
+            "50 tensors passed all PMAT-235 contract gates",
+            Some(50.0),
+            Some(0.0),
+            Duration::from_millis(120),
+        );
+        print_gate_result(&result);
+    }
+
+    /// Exercises every known gate name through print_gate_result to cover
+    /// all match arms in the name-display mapping.
+    #[test]
+    fn print_gate_result_all_known_gate_names() {
+        let known_names = [
+            "tensor_contract",
+            "golden_output",
+            "throughput",
+            "ollama_parity",
+            "gpu_speedup",
+            "format_parity",
+        ];
+        for name in &known_names {
+            let result = GateResult::passed(name, "ok", None, None, Duration::from_millis(1));
+            // Each iteration exercises one arm of the match statement
+            print_gate_result(&result);
+        }
+    }
+
+    // ========================================================================
+    // detect_ollama_model_from_path: extended edge cases
+    // ========================================================================
+
+    /// Case-insensitive detection: uppercase size markers should match.
+    /// Bug class: to_lowercase() not applied before matching.
+    #[test]
+    fn detect_ollama_model_case_insensitive() {
+        let model = detect_ollama_model_from_path(Path::new("/tmp/Qwen2-0.5B-Instruct.gguf"));
+        assert_eq!(
+            model, "qwen2.5-coder:0.5b",
+            "Uppercase '0.5B' should match via to_lowercase"
+        );
+    }
+
+    /// The 1.5b underscore variant (-1_5b) should be detected correctly.
+    #[test]
+    fn detect_ollama_model_1_5b_underscore() {
+        let model =
+            detect_ollama_model_from_path(Path::new("/cache/model-1_5b-instruct-q4_k.gguf"));
+        assert_eq!(model, "qwen2.5-coder:1.5b");
+    }
+
+    /// Path with no filename component (e.g., root path) should not panic.
+    /// Bug class: unwrap() on file_name() returning None.
+    #[test]
+    fn detect_ollama_model_root_path_no_panic() {
+        let model = detect_ollama_model_from_path(Path::new("/"));
+        // Root has no filename, so unwrap_or("") gives empty string, falls to file size heuristic
+        assert!(
+            model.starts_with("qwen2.5-coder:"),
+            "Root path should produce valid model tag: {model}"
+        );
+    }
+
+    /// Path with no extension should still detect size from stem.
+    #[test]
+    fn detect_ollama_model_no_extension() {
+        let model = detect_ollama_model_from_path(Path::new("/tmp/qwen2-7b-instruct"));
+        assert_eq!(model, "qwen2.5-coder:7b");
+    }
+
+    /// Multiple size markers: the first matching branch wins (0.5b checked before 1.5b, etc.)
+    /// Bug class: greedy matching where "3b" matches inside "32b".
+    #[test]
+    fn detect_ollama_model_priority_order() {
+        // "0.5b" is checked first; filename contains both "0.5b" and "7b"
+        let model = detect_ollama_model_from_path(Path::new("/tmp/model-0.5b-vs-7b.gguf"));
+        assert_eq!(
+            model, "qwen2.5-coder:0.5b",
+            "0.5b branch should match before 7b"
+        );
+    }
+
+    /// Filename with "14b" should not match "1.5b" or "4b" (substring confusion).
+    #[test]
+    fn detect_ollama_model_14b_specificity() {
+        let model = detect_ollama_model_from_path(Path::new("/tmp/llama-14b-chat.gguf"));
+        assert_eq!(model, "qwen2.5-coder:14b");
+    }
+
+    /// File size heuristic: a tiny temp file (< 800MB) should map to 0.5b.
+    #[test]
+    fn detect_ollama_model_file_size_heuristic_tiny() {
+        // Create a real temp file with no size hint in name
+        let file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
+        // Temp file is essentially 0 bytes -> 0..=800_000_000 -> "0.5b"
+        let model = detect_ollama_model_from_path(file.path());
+        assert_eq!(
+            model, "qwen2.5-coder:0.5b",
+            "Empty temp file should map to 0.5b via file size heuristic"
+        );
+    }
+
+    // ========================================================================
+    // QaReport: summary generation logic (mirrors run_qa's summary builder)
+    // ========================================================================
+
+    /// Summary for all-passed report should be the standard success message.
+    #[test]
+    fn qa_report_summary_all_passed_message() {
+        let gates = vec![
+            GateResult::passed("golden_output", "ok", None, None, Duration::from_secs(1)),
+            GateResult::passed(
+                "throughput",
+                "150 tok/s",
+                Some(150.0),
+                Some(100.0),
+                Duration::from_secs(2),
+            ),
+        ];
+        let passed = gates.iter().all(|g| g.passed);
+        let summary = if passed {
+            "All QA gates passed".to_string()
+        } else {
+            let failed: Vec<_> = gates
+                .iter()
+                .filter(|g| !g.passed && !g.skipped)
+                .map(|g| g.name.as_str())
+                .collect();
+            format!("Failed gates: {}", failed.join(", "))
+        };
+        assert_eq!(summary, "All QA gates passed");
+    }
+
+    /// Summary for a failed report should list the failed gate names.
+    #[test]
+    fn qa_report_summary_lists_failed_gate_names() {
+        let gates = vec![
+            GateResult::passed("golden_output", "ok", None, None, Duration::from_secs(1)),
+            GateResult::failed(
+                "throughput",
+                "too slow",
+                Some(5.0),
+                Some(100.0),
+                Duration::from_secs(2),
+            ),
+            GateResult::failed(
+                "ollama_parity",
+                "too slow vs ollama",
+                Some(0.1),
+                Some(0.2),
+                Duration::from_secs(3),
+            ),
+            GateResult::skipped("gpu_speedup", "no GPU"),
+        ];
+        let passed = gates.iter().all(|g| g.passed);
+        assert!(!passed);
+        let failed_names: Vec<_> = gates
+            .iter()
+            .filter(|g| !g.passed && !g.skipped)
+            .map(|g| g.name.as_str())
+            .collect();
+        let summary = format!("Failed gates: {}", failed_names.join(", "));
+        assert_eq!(summary, "Failed gates: throughput, ollama_parity");
+    }
+
+    /// Summary for a report where only skipped gates exist (no real failures).
+    #[test]
+    fn qa_report_summary_skipped_only_is_passed() {
+        let gates = vec![
+            GateResult::skipped("golden_output", "no model"),
+            GateResult::skipped("throughput", "no engine"),
+        ];
+        let passed = gates.iter().all(|g| g.passed);
+        assert!(passed, "All-skipped should be passed");
+    }
+
+    // ========================================================================
+    // QaConfig: safetensors_path and combined flag states
+    // ========================================================================
+
+    /// QaConfig with safetensors_path set to Some should preserve the path.
+    #[test]
+    fn qa_config_with_safetensors_path() {
+        let config = QaConfig {
+            safetensors_path: Some(std::path::PathBuf::from("/models/qwen.safetensors")),
+            ..Default::default()
+        };
+        assert_eq!(
+            config.safetensors_path.as_deref(),
+            Some(std::path::Path::new("/models/qwen.safetensors"))
+        );
+    }
+
+    /// QaConfig default has skip_contract = false.
+    /// Bug class: new skip flag defaulting to true, silently disabling a gate.
+    #[test]
+    fn qa_config_default_skip_contract_is_false() {
+        let config = QaConfig::default();
+        assert!(
+            !config.skip_contract,
+            "skip_contract must default to false to ensure tensor validation runs"
+        );
+    }
+
+    /// All skip flags set to true simultaneously.
+    /// Bug class: skip flag interaction causing unexpected behavior.
+    #[test]
+    fn qa_config_all_skips_enabled() {
+        let config = QaConfig {
+            skip_golden: true,
+            skip_throughput: true,
+            skip_ollama: true,
+            skip_gpu_speedup: true,
+            skip_contract: true,
+            skip_format_parity: true,
+            ..Default::default()
+        };
+        assert!(config.skip_golden);
+        assert!(config.skip_throughput);
+        assert!(config.skip_ollama);
+        assert!(config.skip_gpu_speedup);
+        assert!(config.skip_contract);
+        assert!(config.skip_format_parity);
+        // Non-skip fields should be default
+        assert_eq!(config.iterations, 10);
+        assert!((config.min_tps - 100.0).abs() < f64::EPSILON);
+    }
+
+    /// QaConfig with json=true and verbose=true simultaneously.
+    /// Bug class: mutually exclusive flags not being properly independent.
+    #[test]
+    fn qa_config_json_and_verbose_independent() {
+        let config = QaConfig {
+            json: true,
+            verbose: true,
+            ..Default::default()
+        };
+        assert!(config.json);
+        assert!(config.verbose);
+    }
+
+    /// QaConfig with extreme numeric values should not panic.
+    #[test]
+    fn qa_config_extreme_thresholds() {
+        let config = QaConfig {
+            min_tps: f64::MAX,
+            min_speedup: 0.0,
+            min_gpu_speedup: f64::MIN_POSITIVE,
+            iterations: usize::MAX,
+            warmup: 0,
+            max_tokens: 1,
+            ..Default::default()
+        };
+        assert_eq!(config.min_tps, f64::MAX);
+        assert!((config.min_speedup).abs() < f64::EPSILON);
+        assert_eq!(config.iterations, usize::MAX);
+        assert_eq!(config.warmup, 0);
+        assert_eq!(config.max_tokens, 1);
+    }
+
+    // ========================================================================
+    // GateResult: duration conversion edge cases
+    // ========================================================================
+
+    /// Sub-millisecond durations should truncate to 0ms (not round up).
+    /// Bug class: using as_millis() which truncates, vs round() which would round.
+    #[test]
+    fn gate_result_submillisecond_duration_truncates_to_zero() {
+        let result = GateResult::passed(
+            "fast",
+            "blazing fast",
+            None,
+            None,
+            Duration::from_micros(999),
+        );
+        assert_eq!(
+            result.duration_ms, 0,
+            "999 microseconds should truncate to 0ms"
+        );
+    }
+
+    /// Duration at exactly 1ms boundary.
+    #[test]
+    fn gate_result_exact_one_millisecond() {
+        let result = GateResult::passed("gate", "msg", None, None, Duration::from_millis(1));
+        assert_eq!(result.duration_ms, 1);
+    }
+
+    /// Duration from nanoseconds: 1_500_000 ns = 1ms (truncated from 1.5ms).
+    #[test]
+    fn gate_result_nanos_to_millis_truncation() {
+        let result = GateResult::failed("gate", "msg", None, None, Duration::from_nanos(1_500_000));
+        assert_eq!(
+            result.duration_ms, 1,
+            "1.5ms in nanos should truncate to 1ms"
+        );
+    }
+
+    // ========================================================================
+    // GateResult: message format contracts
+    // ========================================================================
+
+    /// Skipped gate message must always be prefixed with "Skipped: ".
+    /// Bug class: changing the format string and breaking downstream parsers.
+    #[test]
+    fn gate_result_skipped_message_format_contract() {
+        let reasons = [
+            "No GPU available",
+            "Ollama not available (start with: ollama serve)",
+            "Requires 'inference' feature",
+            "Non-GGUF format (F32/F16 lacks fused kernels for Ollama parity)",
+            "No --safetensors-path provided",
+            "Skipped by --skip-golden",
+        ];
+        for reason in &reasons {
+            let result = GateResult::skipped("test", reason);
+            assert!(
+                result.message.starts_with("Skipped: "),
+                "Skipped message must start with 'Skipped: ', got: '{}'",
+                result.message
+            );
+            assert!(
+                result.message.ends_with(reason),
+                "Skipped message must end with reason"
+            );
+        }
+    }
+
+    /// Passed gate with value and threshold: values should appear in the struct.
+    #[test]
+    fn gate_result_passed_preserves_value_and_threshold() {
+        let result = GateResult::passed(
+            "throughput",
+            "150.0 tok/s >= 100.0 tok/s",
+            Some(150.5),
+            Some(100.0),
+            Duration::from_secs(1),
+        );
+        assert_eq!(result.value, Some(150.5));
+        assert_eq!(result.threshold, Some(100.0));
+    }
+
+    /// Failed gate with value and threshold: values should appear in the struct.
+    #[test]
+    fn gate_result_failed_preserves_value_and_threshold() {
+        let result = GateResult::failed(
+            "ollama_parity",
+            "0.15x < 0.2x",
+            Some(0.15),
+            Some(0.2),
+            Duration::from_secs(5),
+        );
+        assert_eq!(result.value, Some(0.15));
+        assert_eq!(result.threshold, Some(0.2));
+        assert!(!result.passed);
+    }
+
+    // ========================================================================
+    // GateResult: JSON deserialization edge cases
+    // ========================================================================
+
+    /// Deserializing JSON with explicit null for value/threshold should produce None.
+    /// Bug class: serde treating null as missing vs explicit null differently.
+    #[test]
+    fn gate_result_deserialize_explicit_null_values() {
+        let json = r#"{
+            "name": "throughput",
+            "passed": true,
+            "message": "ok",
+            "value": null,
+            "threshold": null,
+            "duration_ms": 100,
+            "skipped": false
+        }"#;
+        let result: GateResult = serde_json::from_str(json).expect("deserialize with nulls");
+        assert!(result.value.is_none());
+        assert!(result.threshold.is_none());
+    }
+
+    /// Deserializing JSON with missing optional fields (value/threshold omitted).
+    #[test]
+    fn gate_result_deserialize_missing_optional_fields() {
+        let json = r#"{
+            "name": "contract",
+            "passed": false,
+            "message": "validation error",
+            "duration_ms": 50,
+            "skipped": false
+        }"#;
+        let result: GateResult = serde_json::from_str(json).expect("deserialize missing optionals");
+        assert_eq!(result.name, "contract");
+        assert!(!result.passed);
+        assert!(result.value.is_none());
+        assert!(result.threshold.is_none());
+    }
+
+    // ========================================================================
+    // QaReport: empty gates edge case
+    // ========================================================================
+
+    /// A report with zero gates should still be valid and serializable.
+    /// Bug class: division by zero or index-out-of-bounds on empty gate list.
+    #[test]
+    fn qa_report_empty_gates_is_valid() {
+        let report = QaReport {
+            model: "empty.gguf".to_string(),
+            passed: true,
+            gates: vec![],
+            total_duration_ms: 0,
+            timestamp: "2026-02-06T00:00:00Z".to_string(),
+            summary: "No gates run".to_string(),
+        };
+        assert!(report.passed);
+        assert!(report.gates.is_empty());
+        let json = serde_json::to_string(&report).expect("serialize empty report");
+        let restored: QaReport = serde_json::from_str(&json).expect("deserialize empty report");
+        assert!(restored.gates.is_empty());
+    }
+
+    /// A report with many gates (stress test for serialization).
+    #[test]
+    fn qa_report_many_gates_serialization() {
+        let gates: Vec<GateResult> = (0..100)
+            .map(|i| {
+                GateResult::passed(
+                    &format!("gate_{i}"),
+                    &format!("Gate {i} passed"),
+                    Some(i as f64),
+                    Some(0.0),
+                    Duration::from_millis(i as u64),
+                )
+            })
+            .collect();
+        let report = QaReport {
+            model: "stress.gguf".to_string(),
+            passed: true,
+            gates,
+            total_duration_ms: 4950,
+            timestamp: "2026-02-06T00:00:00Z".to_string(),
+            summary: "All passed".to_string(),
+        };
+        let json = serde_json::to_string(&report).expect("serialize many gates");
+        let restored: QaReport = serde_json::from_str(&json).expect("deserialize many gates");
+        assert_eq!(restored.gates.len(), 100);
+    }
+
+    // ========================================================================
+    // detect_ollama_model_from_path: format string contract
+    // ========================================================================
+
+    /// Output format must always be "qwen2.5-coder:{size}".
+    /// Bug class: format string mismatch breaking Ollama API calls.
+    #[test]
+    fn detect_ollama_model_output_format_contract() {
+        let test_paths = [
+            "/tmp/model-0.5b.gguf",
+            "/tmp/model-1.5b.gguf",
+            "/tmp/model-3b.gguf",
+            "/tmp/model-7b.gguf",
+            "/tmp/model-14b.gguf",
+            "/tmp/model-32b.gguf",
+        ];
+        for path in &test_paths {
+            let model = detect_ollama_model_from_path(Path::new(path));
+            assert!(
+                model.starts_with("qwen2.5-coder:"),
+                "Model tag must start with 'qwen2.5-coder:', got: {model}"
+            );
+            let size = model.strip_prefix("qwen2.5-coder:").expect("strip prefix");
+            assert!(
+                ["0.5b", "1.5b", "3b", "7b", "14b", "32b"].contains(&size),
+                "Size must be one of the known sizes, got: {size}"
+            );
+        }
+    }
+
+    /// Empty filename (just a directory path) should not panic.
+    #[test]
+    fn detect_ollama_model_directory_path() {
+        let model = detect_ollama_model_from_path(Path::new("/tmp/models/"));
+        // No filename -> empty string -> falls to file size heuristic -> metadata fails -> "7b"
+        assert!(
+            model.starts_with("qwen2.5-coder:"),
+            "Directory path should produce valid tag: {model}"
+        );
+    }
+
+    // ========================================================================
+    // run_qa summary builder: failed_gates name collection
+    // ========================================================================
+
+    /// Multiple failed gates should all appear in the summary, comma-separated.
+    #[test]
+    fn failed_gates_summary_multiple_failures() {
+        let gates = vec![
+            GateResult::failed("golden_output", "wrong", None, None, Duration::from_secs(1)),
+            GateResult::failed(
+                "throughput",
+                "slow",
+                Some(1.0),
+                Some(100.0),
+                Duration::from_secs(2),
+            ),
+            GateResult::failed(
+                "tensor_contract",
+                "violations",
+                Some(5.0),
+                Some(0.0),
+                Duration::from_secs(1),
+            ),
+            GateResult::skipped("ollama_parity", "not available"),
+            GateResult::passed(
+                "gpu_speedup",
+                "ok",
+                Some(3.0),
+                Some(2.0),
+                Duration::from_secs(4),
+            ),
+        ];
+        let failed_names: Vec<&str> = gates
+            .iter()
+            .filter(|g| !g.passed && !g.skipped)
+            .map(|g| g.name.as_str())
+            .collect();
+        assert_eq!(failed_names.len(), 3);
+        let summary = format!("Failed gates: {}", failed_names.join(", "));
+        assert!(summary.contains("golden_output"));
+        assert!(summary.contains("throughput"));
+        assert!(summary.contains("tensor_contract"));
+        assert!(
+            !summary.contains("ollama_parity"),
+            "Skipped gate should not appear in failures"
+        );
+        assert!(
+            !summary.contains("gpu_speedup"),
+            "Passed gate should not appear in failures"
+        );
+    }
+
+    /// Zero failed gates should not produce a "Failed gates:" summary.
+    #[test]
+    fn failed_gates_summary_no_failures() {
+        let gates = vec![
+            GateResult::passed("golden_output", "ok", None, None, Duration::from_secs(1)),
+            GateResult::skipped("ollama_parity", "not available"),
+        ];
+        let passed = gates.iter().all(|g| g.passed);
+        assert!(passed);
+        let summary = if passed {
+            "All QA gates passed".to_string()
+        } else {
+            unreachable!()
+        };
+        assert_eq!(summary, "All QA gates passed");
+    }
+
+    // ========================================================================
+    // GateResult: NaN and infinity in value/threshold
+    // ========================================================================
+
+    /// NaN values in gate results: the struct itself can hold NaN,
+    /// verifying the value is stored correctly (NaN != NaN by IEEE 754).
+    /// Bug class: accidentally comparing NaN with == and losing the signal.
+    #[test]
+    fn gate_result_nan_value_is_nan() {
+        let result = GateResult::passed(
+            "test",
+            "NaN test",
+            Some(f64::NAN),
+            Some(100.0),
+            Duration::from_secs(1),
+        );
+        assert!(
+            result.value.expect("should have value").is_nan(),
+            "NaN value must be preserved in GateResult"
+        );
+        assert!(
+            !result.value.expect("should have value").is_finite(),
+            "NaN is not finite"
+        );
+    }
+
+    /// Infinity in gate results should be representable.
+    /// Bug class: threshold comparison logic using >= with infinity.
+    #[test]
+    fn gate_result_infinity_value_is_infinite() {
+        let result = GateResult::failed(
+            "test",
+            "Inf test",
+            Some(f64::INFINITY),
+            Some(100.0),
+            Duration::from_secs(1),
+        );
+        assert!(
+            result.value.expect("should have value").is_infinite(),
+            "Infinity must be preserved in GateResult"
+        );
+    }
+
+    /// Negative infinity in threshold should be representable.
+    #[test]
+    fn gate_result_neg_infinity_threshold() {
+        let result = GateResult::passed(
+            "test",
+            "neg inf threshold",
+            Some(0.0),
+            Some(f64::NEG_INFINITY),
+            Duration::from_secs(1),
+        );
+        assert!(result
+            .threshold
+            .expect("should have threshold")
+            .is_infinite());
+    }
+
+    // ========================================================================
+    // QaConfig: clone preserves all fields including PathBuf
+    // ========================================================================
+
+    /// Clone with safetensors_path should deep-copy the PathBuf.
+    #[test]
+    fn qa_config_clone_with_safetensors_path() {
+        let config = QaConfig {
+            safetensors_path: Some(std::path::PathBuf::from("/deep/clone/test.safetensors")),
+            min_tps: 42.0,
+            json: true,
+            verbose: true,
+            ..Default::default()
+        };
+        let cloned = config.clone();
+        assert_eq!(cloned.safetensors_path, config.safetensors_path);
+        assert!((cloned.min_tps - 42.0).abs() < f64::EPSILON);
+        assert!(cloned.json);
+        assert!(cloned.verbose);
+    }
+
+    // ========================================================================
+    // NEW: Contract failure summary truncation logic
+    // ========================================================================
+    // Mirrors the truncation in run_tensor_contract_gate (lines 461-468):
+    //   if failures.len() <= 3: join with "; "
+    //   else: first 3 joined + "; ... and {N-3} more"
+
+    /// Exactly 1 contract failure should display the single failure, no truncation.
+    #[test]
+    fn contract_failure_summary_single_failure() {
+        let failures = vec!["embed_tokens.weight: density below threshold".to_string()];
+        let summary = if failures.len() <= 3 {
+            failures.join("; ")
+        } else {
+            format!(
+                "{}; ... and {} more",
+                failures[..3].join("; "),
+                failures.len() - 3
+            )
+        };
+        assert_eq!(summary, "embed_tokens.weight: density below threshold");
+        assert!(!summary.contains("more"));
+    }
+
+    /// Exactly 3 contract failures should display all without truncation.
+    #[test]
+    fn contract_failure_summary_three_failures_no_truncation() {
+        let failures = vec![
+            "layer.0: NaN detected".to_string(),
+            "layer.1: Inf detected".to_string(),
+            "layer.2: zero density".to_string(),
+        ];
+        let summary = if failures.len() <= 3 {
+            failures.join("; ")
+        } else {
+            format!(
+                "{}; ... and {} more",
+                failures[..3].join("; "),
+                failures.len() - 3
+            )
+        };
+        assert_eq!(
+            summary,
+            "layer.0: NaN detected; layer.1: Inf detected; layer.2: zero density"
+        );
+        assert!(!summary.contains("more"));
+    }
+
+    /// 4 contract failures should truncate: show 3, then "... and 1 more".
+    #[test]
+    fn contract_failure_summary_four_failures_truncates() {
+        let failures = vec![
+            "a: fail".to_string(),
+            "b: fail".to_string(),
+            "c: fail".to_string(),
+            "d: fail".to_string(),
+        ];
+        let summary = if failures.len() <= 3 {
+            failures.join("; ")
+        } else {
+            format!(
+                "{}; ... and {} more",
+                failures[..3].join("; "),
+                failures.len() - 3
+            )
+        };
+        assert!(summary.contains("a: fail; b: fail; c: fail"));
+        assert!(summary.ends_with("; ... and 1 more"));
+    }
+
+    /// 10 contract failures should truncate: show 3, then "... and 7 more".
+    #[test]
+    fn contract_failure_summary_ten_failures_truncates() {
+        let failures: Vec<String> = (0..10).map(|i| format!("tensor_{i}: violation")).collect();
+        let summary = if failures.len() <= 3 {
+            failures.join("; ")
+        } else {
+            format!(
+                "{}; ... and {} more",
+                failures[..3].join("; "),
+                failures.len() - 3
+            )
+        };
+        assert!(summary.contains("tensor_0: violation"));
+        assert!(summary.contains("tensor_1: violation"));
+        assert!(summary.contains("tensor_2: violation"));
+        assert!(summary.ends_with("; ... and 7 more"));
+        assert!(!summary.contains("tensor_3"));
+    }
+
+    /// 0 contract failures should produce empty string (join of empty vec).
+    #[test]
+    fn contract_failure_summary_zero_failures() {
+        let failures: Vec<String> = vec![];
+        let summary = if failures.len() <= 3 {
+            failures.join("; ")
+        } else {
+            format!(
+                "{}; ... and {} more",
+                failures[..3].join("; "),
+                failures.len() - 3
+            )
+        };
+        assert!(summary.is_empty());
+    }
+
+    // ========================================================================
+    // NEW: detect_ollama_model_from_path -- additional edge cases
+    // ========================================================================
+
+    /// Filename with only "3b" (no prefix dash) should still match the 3b branch.
+    #[test]
+    fn detect_ollama_model_3b_standalone() {
+        let model = detect_ollama_model_from_path(Path::new("/tmp/model3b.gguf"));
+        assert_eq!(model, "qwen2.5-coder:3b");
+    }
+
+    /// Filename with dash-prefixed sizes: "-3b" variant.
+    #[test]
+    fn detect_ollama_model_dash_3b() {
+        let model = detect_ollama_model_from_path(Path::new("/tmp/model-3b-chat.gguf"));
+        assert_eq!(model, "qwen2.5-coder:3b");
+    }
+
+    /// Filename with "-7b" variant.
+    #[test]
+    fn detect_ollama_model_dash_7b() {
+        let model = detect_ollama_model_from_path(Path::new("/tmp/llama-7b-q4_k_m.gguf"));
+        assert_eq!(model, "qwen2.5-coder:7b");
+    }
+
+    /// Filename containing "0.5b" with mixed case.
+    #[test]
+    fn detect_ollama_model_mixed_case_0_5b() {
+        let model = detect_ollama_model_from_path(Path::new("/tmp/Qwen2.5-Coder-0.5B-Q4.gguf"));
+        assert_eq!(model, "qwen2.5-coder:0.5b");
+    }
+
+    /// Filename containing "-32b" variant.
+    #[test]
+    fn detect_ollama_model_dash_32b() {
+        let model = detect_ollama_model_from_path(Path::new("/tmp/qwen-32b-instruct.gguf"));
+        assert_eq!(model, "qwen2.5-coder:32b");
+    }
+
+    /// Filename containing "-14b" variant with dash prefix.
+    #[test]
+    fn detect_ollama_model_dash_14b() {
+        let model = detect_ollama_model_from_path(Path::new("/tmp/model-14b.gguf"));
+        assert_eq!(model, "qwen2.5-coder:14b");
+    }
+
+    /// Empty string path (edge case for Path::new("")).
+    #[test]
+    fn detect_ollama_model_empty_string_path() {
+        let model = detect_ollama_model_from_path(Path::new(""));
+        // Empty path -> file_name() returns None on empty -> unwrap_or("") -> file size fallback
+        assert!(
+            model.starts_with("qwen2.5-coder:"),
+            "Empty path should produce valid tag: {model}"
+        );
+    }
+
+    /// Filename that contains multiple size markers: "1.5b" comes before "3b" in check order.
+    #[test]
+    fn detect_ollama_model_1_5b_before_3b() {
+        let model = detect_ollama_model_from_path(Path::new("/tmp/model-1.5b-3b.gguf"));
+        assert_eq!(
+            model, "qwen2.5-coder:1.5b",
+            "1.5b should be matched before 3b in priority order"
+        );
+    }
+
+    /// Filename with underscore-separated 1.5b variant.
+    #[test]
+    fn detect_ollama_model_underscore_1_5b_variant() {
+        let model = detect_ollama_model_from_path(Path::new("/cache/qwen2-1_5b-q4_k.gguf"));
+        assert_eq!(model, "qwen2.5-coder:1.5b");
+    }
+
+    /// Filename containing "-0_5b" (underscore variant of 0.5b).
+    #[test]
+    fn detect_ollama_model_underscore_0_5b() {
+        let model = detect_ollama_model_from_path(Path::new("/tmp/model-0_5b-instruct.gguf"));
+        assert_eq!(model, "qwen2.5-coder:0.5b");
+    }
+
+    // ========================================================================
+    // NEW: GateResult JSON edge cases for skip_serializing_if
+    // ========================================================================
+
+    /// JSON with value present but threshold missing should deserialize correctly.
+    #[test]
+    fn gate_result_json_value_present_threshold_missing() {
+        let json = r#"{
+            "name": "contract",
+            "passed": true,
+            "message": "50 tensors ok",
+            "value": 50.0,
+            "duration_ms": 100,
+            "skipped": false
+        }"#;
+        let result: GateResult = serde_json::from_str(json).expect("deserialize");
+        assert_eq!(result.value, Some(50.0));
+        assert!(result.threshold.is_none());
+    }
+
+    /// JSON with threshold present but value missing should deserialize correctly.
+    #[test]
+    fn gate_result_json_threshold_present_value_missing() {
+        let json = r#"{
+            "name": "throughput",
+            "passed": false,
+            "message": "too slow",
+            "threshold": 100.0,
+            "duration_ms": 5000,
+            "skipped": false
+        }"#;
+        let result: GateResult = serde_json::from_str(json).expect("deserialize");
+        assert!(result.value.is_none());
+        assert_eq!(result.threshold, Some(100.0));
+    }
+
+    /// Serialized JSON for a passed gate with Some(value) should include "value" key.
+    #[test]
+    fn gate_result_json_includes_value_when_some() {
+        let result = GateResult::passed(
+            "throughput",
+            "150 tok/s",
+            Some(150.0),
+            None,
+            Duration::from_secs(1),
+        );
+        let json = serde_json::to_string(&result).expect("serialize");
+        assert!(
+            json.contains("\"value\""),
+            "value should be present: {json}"
+        );
+        assert!(
+            !json.contains("\"threshold\""),
+            "threshold should be omitted when None: {json}"
+        );
+    }
+
+    /// Serialized JSON for a gate with both Some(value) and Some(threshold).
+    #[test]
+    fn gate_result_json_includes_both_value_and_threshold() {
+        let result = GateResult::failed(
+            "ollama_parity",
+            "0.1x < 0.2x",
+            Some(0.1),
+            Some(0.2),
+            Duration::from_secs(10),
+        );
+        let json = serde_json::to_string(&result).expect("serialize");
+        assert!(json.contains("\"value\""));
+        assert!(json.contains("\"threshold\""));
+        assert!(json.contains("0.1"));
+        assert!(json.contains("0.2"));
+    }
+
+    // ========================================================================
+    // NEW: QaReport JSON pretty-print validation
+    // ========================================================================
+
+    /// Pretty-printed JSON report should contain newlines and indentation.
+    #[test]
+    fn qa_report_json_pretty_print_format() {
+        let report = QaReport {
+            model: "test.gguf".to_string(),
+            passed: true,
+            gates: vec![GateResult::passed(
+                "contract",
+                "ok",
+                Some(10.0),
+                Some(0.0),
+                Duration::from_millis(50),
+            )],
+            total_duration_ms: 50,
+            timestamp: "2026-02-07T00:00:00Z".to_string(),
+            summary: "All passed".to_string(),
+        };
+        let json = serde_json::to_string_pretty(&report).expect("pretty serialize");
+        assert!(json.contains('\n'), "Pretty JSON should contain newlines");
+        assert!(
+            json.contains("  "),
+            "Pretty JSON should contain indentation"
+        );
+        assert!(json.contains("\"model\""));
+        assert!(json.contains("\"gates\""));
+        assert!(json.contains("\"summary\""));
+    }
+
+    /// JSON report with unwrap_or_default fallback (mirrors run() line 251).
+    #[test]
+    fn qa_report_json_to_string_pretty_never_panics() {
+        let report = QaReport {
+            model: String::new(),
+            passed: false,
+            gates: vec![
+                GateResult::skipped("a", "skip"),
+                GateResult::failed("b", "fail", Some(f64::NAN), None, Duration::from_secs(0)),
+            ],
+            total_duration_ms: 0,
+            timestamp: String::new(),
+            summary: String::new(),
+        };
+        // This is what run() does: serde_json::to_string_pretty(&report).unwrap_or_default()
+        let json = serde_json::to_string_pretty(&report).unwrap_or_default();
+        // NaN in JSON becomes null (serde_json behavior), but should not panic
+        assert!(!json.is_empty());
+    }
+
+    // ========================================================================
+    // NEW: QaConfig construction from run() parameters (lines 228-244)
+    // ========================================================================
+
+    /// Simulate how run() builds QaConfig from Option parameters.
+    /// unwrap_or defaults should match QaConfig::default() for the three thresholds.
+    #[test]
+    fn run_config_building_none_uses_defaults() {
+        let min_tps: Option<f64> = None;
+        let min_speedup: Option<f64> = None;
+        let min_gpu_speedup: Option<f64> = None;
+        let config = QaConfig {
+            min_tps: min_tps.unwrap_or(100.0),
+            min_speedup: min_speedup.unwrap_or(0.2),
+            min_gpu_speedup: min_gpu_speedup.unwrap_or(2.0),
+            ..Default::default()
+        };
+        assert!((config.min_tps - 100.0).abs() < f64::EPSILON);
+        assert!((config.min_speedup - 0.2).abs() < f64::EPSILON);
+        assert!((config.min_gpu_speedup - 2.0).abs() < f64::EPSILON);
+    }
+
+    /// Simulate how run() builds QaConfig with Some parameters (overrides).
+    #[test]
+    fn run_config_building_some_overrides_defaults() {
+        let min_tps: Option<f64> = Some(50.0);
+        let min_speedup: Option<f64> = Some(1.5);
+        let min_gpu_speedup: Option<f64> = Some(3.0);
+        let config = QaConfig {
+            min_tps: min_tps.unwrap_or(100.0),
+            min_speedup: min_speedup.unwrap_or(0.2),
+            min_gpu_speedup: min_gpu_speedup.unwrap_or(2.0),
+            ..Default::default()
+        };
+        assert!((config.min_tps - 50.0).abs() < f64::EPSILON);
+        assert!((config.min_speedup - 1.5).abs() < f64::EPSILON);
+        assert!((config.min_gpu_speedup - 3.0).abs() < f64::EPSILON);
+    }
+
+    // ========================================================================
+    // NEW: print_gate_result duration formatting (line 1490-1491)
+    // ========================================================================
+
+    /// Verify print_gate_result handles zero duration without division errors.
+    #[test]
+    fn print_gate_result_zero_duration_formatting() {
+        let result = GateResult::passed(
+            "tensor_contract",
+            "0 tensors",
+            Some(0.0),
+            Some(0.0),
+            Duration::from_millis(0),
+        );
+        // Should print "Duration: 0.00s" without panic
+        print_gate_result(&result);
+    }
+
+    /// Verify print_gate_result handles large duration values.
+    #[test]
+    fn print_gate_result_large_duration_formatting() {
+        let result = GateResult::passed(
+            "throughput",
+            "ok",
+            Some(100.0),
+            Some(50.0),
+            Duration::from_secs(3600),
+        );
+        // duration_ms = 3600000, format as 3600000.0/1000.0 = 3600.00s
+        assert_eq!(result.duration_ms, 3_600_000);
+        print_gate_result(&result);
+    }
+
+    /// Verify print_gate_result formats duration_ms correctly for sub-second durations.
+    #[test]
+    fn print_gate_result_subsecond_duration_formatting() {
+        let result = GateResult::passed(
+            "golden_output",
+            "2 cases passed",
+            Some(2.0),
+            Some(2.0),
+            Duration::from_millis(250),
+        );
+        assert_eq!(result.duration_ms, 250);
+        // 250ms / 1000.0 = 0.25s -> should print "Duration: 0.25s"
+        print_gate_result(&result);
+    }
+
+    // ========================================================================
+    // NEW: QaReport with all 6 canonical gates
+    // ========================================================================
+
+    /// Verify a report with all 6 canonical gates can be serialized/deserialized.
+    #[test]
+    fn qa_report_all_six_canonical_gates_roundtrip() {
+        let report = QaReport {
+            model: "/models/qwen2-0.5b-q4_k.gguf".to_string(),
+            passed: false,
+            gates: vec![
+                GateResult::passed(
+                    "tensor_contract",
+                    "50 tensors ok",
+                    Some(50.0),
+                    Some(0.0),
+                    Duration::from_millis(100),
+                ),
+                GateResult::passed(
+                    "golden_output",
+                    "2 test cases passed",
+                    Some(2.0),
+                    Some(2.0),
+                    Duration::from_millis(5000),
+                ),
+                GateResult::failed(
+                    "throughput",
+                    "5 tok/s < 100 tok/s",
+                    Some(5.0),
+                    Some(100.0),
+                    Duration::from_millis(10000),
+                ),
+                GateResult::skipped("ollama_parity", "Ollama not available"),
+                GateResult::skipped("gpu_speedup", "CUDA not available"),
+                GateResult::skipped("format_parity", "No --safetensors-path provided"),
+            ],
+            total_duration_ms: 15100,
+            timestamp: "2026-02-07T12:00:00Z".to_string(),
+            summary: "Failed gates: throughput".to_string(),
+        };
+        let json = serde_json::to_string_pretty(&report).expect("serialize");
+        let restored: QaReport = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(restored.gates.len(), 6);
+        assert!(!restored.passed);
+        // Verify each gate type
+        assert!(restored.gates[0].passed && !restored.gates[0].skipped);
+        assert!(restored.gates[1].passed && !restored.gates[1].skipped);
+        assert!(!restored.gates[2].passed && !restored.gates[2].skipped);
+        assert!(restored.gates[3].skipped);
+        assert!(restored.gates[4].skipped);
+        assert!(restored.gates[5].skipped);
+    }
+
+    // ========================================================================
+    // NEW: GateResult message content validation
+    // ========================================================================
+
+    /// Passed gate message should be stored verbatim.
+    #[test]
+    fn gate_result_passed_message_stored_verbatim() {
+        let msg = "150.0 tok/s >= 100.0 tok/s threshold";
+        let result = GateResult::passed(
+            "throughput",
+            msg,
+            Some(150.0),
+            Some(100.0),
+            Duration::from_secs(1),
+        );
+        assert_eq!(result.message, msg);
+    }
+
+    /// Failed gate message should be stored verbatim.
+    #[test]
+    fn gate_result_failed_message_stored_verbatim() {
+        let msg = "5.0 tok/s < 100.0 tok/s threshold";
+        let result = GateResult::failed(
+            "throughput",
+            msg,
+            Some(5.0),
+            Some(100.0),
+            Duration::from_secs(1),
+        );
+        assert_eq!(result.message, msg);
+    }
+
+    /// Skipped gate message format: "Skipped: {reason}".
+    #[test]
+    fn gate_result_skipped_message_exact_format() {
+        let result = GateResult::skipped("gpu_speedup", "CUDA not available");
+        assert_eq!(result.message, "Skipped: CUDA not available");
+    }
+
+    /// Empty reason for skipped gate should produce "Skipped: ".
+    #[test]
+    fn gate_result_skipped_empty_reason() {
+        let result = GateResult::skipped("test", "");
+        assert_eq!(result.message, "Skipped: ");
+        assert!(result.skipped);
+    }
+
+    /// Empty name for gate result should be stored as empty string.
+    #[test]
+    fn gate_result_empty_name() {
+        let result = GateResult::passed("", "ok", None, None, Duration::from_secs(0));
+        assert_eq!(result.name, "");
+        assert!(result.passed);
+    }
+
+    // ========================================================================
+    // NEW: GateResult negative and zero values
+    // ========================================================================
+
+    /// Negative value in a gate result (e.g., from subtraction error).
+    #[test]
+    fn gate_result_negative_value() {
+        let result = GateResult::failed(
+            "gpu_speedup",
+            "-0.5x slower",
+            Some(-0.5),
+            Some(2.0),
+            Duration::from_secs(1),
+        );
+        assert_eq!(result.value, Some(-0.5));
+        assert!(!result.passed);
+    }
+
+    /// Zero value should be representable.
+    #[test]
+    fn gate_result_zero_value() {
+        let result = GateResult::failed(
+            "throughput",
+            "0 tok/s",
+            Some(0.0),
+            Some(100.0),
+            Duration::from_secs(1),
+        );
+        assert_eq!(result.value, Some(0.0));
+        assert_eq!(result.threshold, Some(100.0));
+    }
+
+    /// Very small positive value (epsilon-level).
+    #[test]
+    fn gate_result_epsilon_value() {
+        let result = GateResult::passed(
+            "throughput",
+            "barely passing",
+            Some(f64::MIN_POSITIVE),
+            Some(0.0),
+            Duration::from_secs(1),
+        );
+        assert_eq!(result.value, Some(f64::MIN_POSITIVE));
+        assert!(result.passed);
+    }
+
+    // ========================================================================
+    // NEW: QaReport timestamp and model path edge cases
+    // ========================================================================
+
+    /// Report with Unicode characters in model path.
+    #[test]
+    fn qa_report_unicode_model_path() {
+        let report = QaReport {
+            model: "/modelos/modelo_espa\u{00f1}ol.gguf".to_string(),
+            passed: true,
+            gates: vec![],
+            total_duration_ms: 0,
+            timestamp: "2026-02-07T00:00:00Z".to_string(),
+            summary: "ok".to_string(),
+        };
+        let json = serde_json::to_string(&report).expect("serialize unicode path");
+        let restored: QaReport = serde_json::from_str(&json).expect("deserialize unicode path");
+        assert!(restored.model.contains("espa\u{00f1}ol"));
+    }
+
+    /// Report with very long model path.
+    #[test]
+    fn qa_report_long_model_path() {
+        let long_path = format!("/very/{}/model.gguf", "deep/".repeat(100));
+        let report = QaReport {
+            model: long_path.clone(),
+            passed: true,
+            gates: vec![],
+            total_duration_ms: 0,
+            timestamp: "2026-02-07T00:00:00Z".to_string(),
+            summary: "ok".to_string(),
+        };
+        let json = serde_json::to_string(&report).expect("serialize long path");
+        let restored: QaReport = serde_json::from_str(&json).expect("deserialize long path");
+        assert_eq!(restored.model, long_path);
+    }
+
+    /// Report with empty model path.
+    #[test]
+    fn qa_report_empty_model_path() {
+        let report = QaReport {
+            model: String::new(),
+            passed: true,
+            gates: vec![],
+            total_duration_ms: 0,
+            timestamp: "2026-02-07T00:00:00Z".to_string(),
+            summary: "ok".to_string(),
+        };
+        let json = serde_json::to_string(&report).expect("serialize empty model");
+        let restored: QaReport = serde_json::from_str(&json).expect("deserialize empty model");
+        assert!(restored.model.is_empty());
+    }
+
+    // ========================================================================
+    // NEW: QaReport aggregate pass/fail with mixed states
+    // ========================================================================
+
+    /// All gates failed: report.passed should be false and all gates listed.
+    #[test]
+    fn qa_report_all_gates_failed() {
+        let gates = vec![
+            GateResult::failed(
+                "tensor_contract",
+                "violations",
+                Some(5.0),
+                Some(0.0),
+                Duration::from_secs(1),
+            ),
+            GateResult::failed(
+                "golden_output",
+                "wrong output",
+                None,
+                None,
+                Duration::from_secs(2),
+            ),
+            GateResult::failed(
+                "throughput",
+                "too slow",
+                Some(1.0),
+                Some(100.0),
+                Duration::from_secs(3),
+            ),
+        ];
+        let passed = gates.iter().all(|g| g.passed);
+        assert!(!passed);
+        let failed_names: Vec<&str> = gates
+            .iter()
+            .filter(|g| !g.passed && !g.skipped)
+            .map(|g| g.name.as_str())
+            .collect();
+        assert_eq!(failed_names.len(), 3);
+        let summary = format!("Failed gates: {}", failed_names.join(", "));
+        assert_eq!(
+            summary,
+            "Failed gates: tensor_contract, golden_output, throughput"
+        );
+    }
+
+    /// Single passed gate among skipped: overall pass.
+    #[test]
+    fn qa_report_single_pass_rest_skipped() {
+        let gates = vec![
+            GateResult::passed(
+                "tensor_contract",
+                "ok",
+                Some(10.0),
+                Some(0.0),
+                Duration::from_secs(1),
+            ),
+            GateResult::skipped("golden_output", "no engine"),
+            GateResult::skipped("throughput", "no engine"),
+            GateResult::skipped("ollama_parity", "not available"),
+            GateResult::skipped("gpu_speedup", "no GPU"),
+            GateResult::skipped("format_parity", "no path"),
+        ];
+        let passed = gates.iter().all(|g| g.passed);
+        assert!(passed);
+    }
+
+    // ========================================================================
+    // NEW: print_gate_result exercises for each known gate display name
+    // ========================================================================
+
+    /// Exercise print_gate_result with "format_parity" gate -- one of the display names.
+    #[test]
+    fn print_gate_result_format_parity_display_name() {
+        let result = GateResult::passed(
+            "format_parity",
+            "GGUF argmax=42 == SafeTensors argmax=42",
+            Some(42.0),
+            Some(42.0),
+            Duration::from_millis(8000),
+        );
+        print_gate_result(&result);
+    }
+
+    /// Exercise print_gate_result with "gpu_speedup" gate in failed state.
+    #[test]
+    fn print_gate_result_gpu_speedup_failed() {
+        let result = GateResult::failed(
+            "gpu_speedup",
+            "GPU 1.2x faster than CPU < 2.0x threshold",
+            Some(1.2),
+            Some(2.0),
+            Duration::from_millis(15000),
+        );
+        print_gate_result(&result);
+    }
+
+    // ========================================================================
+    // NEW: QaConfig with zero and extreme iteration/token values
+    // ========================================================================
+
+    /// Zero iterations and warmup should be representable.
+    #[test]
+    fn qa_config_zero_iterations_and_warmup() {
+        let config = QaConfig {
+            iterations: 0,
+            warmup: 0,
+            max_tokens: 0,
+            ..Default::default()
+        };
+        assert_eq!(config.iterations, 0);
+        assert_eq!(config.warmup, 0);
+        assert_eq!(config.max_tokens, 0);
+    }
+
+    /// Large max_tokens value.
+    #[test]
+    fn qa_config_large_max_tokens() {
+        let config = QaConfig {
+            max_tokens: 1_000_000,
+            ..Default::default()
+        };
+        assert_eq!(config.max_tokens, 1_000_000);
+    }
+
+    // ========================================================================
+    // NEW: GateResult serialization with special f64 values
+    // ========================================================================
+
+    /// Serialize gate with very large value.
+    #[test]
+    fn gate_result_serialize_large_value() {
+        let result = GateResult::passed(
+            "throughput",
+            "very fast",
+            Some(999_999.99),
+            Some(100.0),
+            Duration::from_secs(1),
+        );
+        let json = serde_json::to_string(&result).expect("serialize large value");
+        assert!(json.contains("999999.99"));
+    }
+
+    /// Serialize gate with very small (near-zero) positive value.
+    #[test]
+    fn gate_result_serialize_tiny_value() {
+        let result = GateResult::failed(
+            "throughput",
+            "basically zero",
+            Some(0.000_001),
+            Some(100.0),
+            Duration::from_secs(1),
+        );
+        let json = serde_json::to_string(&result).expect("serialize tiny value");
+        // serde_json will serialize this as something like 1e-6 or 0.000001
+        let restored: GateResult = serde_json::from_str(&json).expect("deserialize tiny value");
+        assert!((restored.value.expect("has value") - 0.000_001).abs() < 1e-10);
+    }
+
+    // ========================================================================
+    // NEW: QaReport JSON deserialize with extra fields (forward compat)
+    // ========================================================================
+
+    /// JSON with extra unknown fields should still deserialize (serde default).
+    #[test]
+    fn qa_report_deserialize_ignores_unknown_fields() {
+        let json = r#"{
+            "model": "test.gguf",
+            "passed": true,
+            "gates": [],
+            "total_duration_ms": 100,
+            "timestamp": "2026-02-07T00:00:00Z",
+            "summary": "ok",
+            "extra_field": "should be ignored",
+            "another_extra": 42
+        }"#;
+        let report: QaReport = serde_json::from_str(json).expect("deserialize with extras");
+        assert_eq!(report.model, "test.gguf");
+        assert!(report.passed);
+    }
+
+    /// GateResult JSON with extra unknown fields should still deserialize.
+    #[test]
+    fn gate_result_deserialize_ignores_unknown_fields() {
+        let json = r#"{
+            "name": "test",
+            "passed": true,
+            "message": "ok",
+            "duration_ms": 100,
+            "skipped": false,
+            "future_field": "v2"
+        }"#;
+        let result: GateResult = serde_json::from_str(json).expect("deserialize with extras");
+        assert_eq!(result.name, "test");
+        assert!(result.passed);
+    }
+
+    // ========================================================================
+    // verify_output Tests (PMAT-QA-PROTOCOL-001 §7.4)
+    // ========================================================================
+
+    #[test]
+    fn verify_output_rejects_empty() {
+        let result = verify_output("", "test-001", &["4"]);
+        assert!(matches!(result, OutputVerification::Fail { .. }));
+        if let OutputVerification::Fail { reason } = result {
+            assert!(reason.contains("Empty"), "Expected 'Empty', got: {reason}");
+        }
+    }
+
+    #[test]
+    fn verify_output_rejects_whitespace_only() {
+        let result = verify_output("   \n\t  ", "test-002", &["4"]);
+        assert!(matches!(result, OutputVerification::Fail { .. }));
+    }
+
+    #[test]
+    fn verify_output_rejects_garbage_fffd() {
+        let result = verify_output("The answer is \u{FFFD}\u{FFFD}", "test-003", &["4"]);
+        assert!(matches!(result, OutputVerification::Fail { .. }));
+        if let OutputVerification::Fail { reason } = result {
+            assert!(
+                reason.contains("Garbage"),
+                "Expected 'Garbage', got: {reason}"
+            );
+        }
+    }
+
+    #[test]
+    fn verify_output_rejects_garbage_unk() {
+        let result = verify_output("Hello [UNK] world", "test-004", &["Hello"]);
+        assert!(matches!(result, OutputVerification::Fail { .. }));
+        if let OutputVerification::Fail { reason } = result {
+            assert!(
+                reason.contains("Garbage"),
+                "Expected 'Garbage', got: {reason}"
+            );
+        }
+    }
+
+    #[test]
+    fn verify_output_rejects_null_bytes() {
+        let result = verify_output("Hello\0World", "test-005", &["Hello"]);
+        assert!(matches!(result, OutputVerification::Fail { .. }));
+        if let OutputVerification::Fail { reason } = result {
+            assert!(
+                reason.contains("null"),
+                "Expected 'null bytes', got: {reason}"
+            );
+        }
+    }
+
+    #[test]
+    fn verify_output_rejects_missing_expected() {
+        let result = verify_output("The answer is five", "test-006", &["4"]);
+        assert!(matches!(result, OutputVerification::Fail { .. }));
+        if let OutputVerification::Fail { reason } = result {
+            assert!(
+                reason.contains("Expected"),
+                "Expected mention of pattern, got: {reason}"
+            );
+        }
+    }
+
+    #[test]
+    fn verify_output_accepts_correct() {
+        let result = verify_output("The answer is 4.", "test-007", &["4"]);
+        assert!(matches!(result, OutputVerification::Pass));
+    }
+
+    #[test]
+    fn verify_output_accepts_any_expected_pattern() {
+        let result = verify_output("Hi there!", "test-008", &["Hello", "Hi", "Hey"]);
+        assert!(matches!(result, OutputVerification::Pass));
+    }
+
+    #[test]
+    fn verify_output_case_insensitive() {
+        let result = verify_output("HELLO WORLD", "test-009", &["hello"]);
+        assert!(matches!(result, OutputVerification::Pass));
+    }
+
+    #[test]
+    fn verify_output_garbage_check_before_answer_check() {
+        // Even though output contains "4", garbage should fail first
+        let result = verify_output("4 [UNK] answer", "test-010", &["4"]);
+        assert!(matches!(result, OutputVerification::Fail { .. }));
+        if let OutputVerification::Fail { reason } = result {
+            assert!(
+                reason.contains("Garbage"),
+                "Garbage check must happen BEFORE answer check, got: {reason}"
+            );
+        }
+    }
+
+    #[test]
+    fn verify_output_no_expected_patterns_passes() {
+        // If no patterns expected, just check for emptiness and garbage
+        let result = verify_output("Some valid output", "test-011", &[]);
+        assert!(matches!(result, OutputVerification::Pass));
     }
 }

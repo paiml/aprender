@@ -19,5 +19,8 @@ mod coverage_functions;
 mod coverage_types;
 mod errors;
 mod gh202_layout;
+mod infer_config;
 mod pmat;
 mod pmat_round19;
+mod pure_functions;
+mod tokenizer_parse;

@@ -247,6 +247,7 @@ safetensors-compare = ["safetensors", "hf-hub-integration", "half"]  # Enable Sa
 rag = ["trueno-rag"]  # Enable RAG pipeline for document-based ML (GH-125)
 inference-monitoring = ["entrenar"]  # Enable inference monitoring and explainability
 gpu = ["trueno/gpu"]  # Enable GPU acceleration via trueno wgpu backend
+model-tests = []  # Enable heavy model/inference tests (requires models/ dir, ollama, GPU)
 cuda = ["trueno/cuda-monitor"]  # Enable CUDA monitoring via trueno-gpu (NVIDIA GPUs)
 cpu-only = []
 showcase-profile = ["renacer"]  # Enable renacer syscall/GPU profiling for showcase benchmarks (PAR-040)

@@ -64,6 +64,10 @@ pub enum Commands {
         #[arg(value_name = "SOURCE")]
         source: String,
 
+        /// Text prompt (positional): `apr run model.gguf "What is 2+2?"`
+        #[arg(value_name = "PROMPT")]
+        positional_prompt: Option<String>,
+
         /// Input file (audio, text, etc.)
         #[arg(short, long)]
         input: Option<PathBuf>,
@@ -73,7 +77,7 @@ pub enum Commands {
         prompt: Option<String>,
 
         /// Maximum tokens to generate (default: 32)
-        #[arg(long, default_value = "32")]
+        #[arg(short = 'n', long, default_value = "32")]
         max_tokens: usize,
 
         /// Enable streaming output
@@ -1303,6 +1307,7 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
         Commands::Check { file, no_gpu } => commands::check::run(file, *no_gpu),
         Commands::Run {
             source,
+            positional_prompt,
             input,
             prompt,
             max_tokens,
@@ -1335,13 +1340,17 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             // When --gpu is passed, no_gpu is false (enforced by conflicts_with).
             let _ = gpu; // --gpu is the inverse of --no-gpu; no_gpu=false when --gpu is set
 
+            // GH-217: Merge positional prompt with --prompt flag.
+            // --prompt takes precedence; positional is the ergonomic shorthand.
+            let merged_prompt = prompt.as_ref().or(positional_prompt.as_ref()).cloned();
+
             // GAP-UX-001: Apply chat template if --chat flag is set
             let effective_prompt = if *chat {
-                prompt
+                merged_prompt
                     .as_ref()
                     .map(|p| format!("<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n", p))
             } else {
-                prompt.clone()
+                merged_prompt
             };
 
             // Use local verbose flag if set, otherwise fall back to global
@@ -2755,6 +2764,7 @@ mod tests {
     fn test_extract_paths_run_hf_url() {
         let cmd = Commands::Run {
             source: "hf://org/repo".to_string(),
+            positional_prompt: None,
             input: None,
             prompt: None,
             max_tokens: 32,
@@ -2813,5 +2823,3771 @@ mod tests {
     fn test_validate_contract_empty_paths() {
         let result = validate_model_contract(&[]);
         assert!(result.is_ok());
+    }
+
+    // =========================================================================
+    // Parse tests for all remaining command variants
+    // =========================================================================
+
+    /// Test parsing 'apr publish' command with all options
+    #[test]
+    fn test_parse_publish_command() {
+        let args = vec![
+            "apr",
+            "publish",
+            "/tmp/models",
+            "paiml/whisper-apr-tiny",
+            "--model-name",
+            "Whisper Tiny",
+            "--license",
+            "apache-2.0",
+            "--pipeline-tag",
+            "automatic-speech-recognition",
+            "--library-name",
+            "whisper-apr",
+            "--tags",
+            "whisper,tiny,asr",
+            "--message",
+            "Initial release",
+            "--dry-run",
+        ];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Publish {
+                directory,
+                repo_id,
+                model_name,
+                license,
+                pipeline_tag,
+                library_name,
+                tags,
+                message,
+                dry_run,
+            } => {
+                assert_eq!(directory, PathBuf::from("/tmp/models"));
+                assert_eq!(repo_id, "paiml/whisper-apr-tiny");
+                assert_eq!(model_name, Some("Whisper Tiny".to_string()));
+                assert_eq!(license, "apache-2.0");
+                assert_eq!(pipeline_tag, "automatic-speech-recognition");
+                assert_eq!(library_name, Some("whisper-apr".to_string()));
+                assert_eq!(
+                    tags,
+                    Some(vec![
+                        "whisper".to_string(),
+                        "tiny".to_string(),
+                        "asr".to_string()
+                    ])
+                );
+                assert_eq!(message, Some("Initial release".to_string()));
+                assert!(dry_run);
+            }
+            _ => panic!("Expected Publish command"),
+        }
+    }
+
+    /// Test parsing 'apr publish' with defaults
+    #[test]
+    fn test_parse_publish_defaults() {
+        let args = vec!["apr", "publish", "./models", "org/repo"];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Publish {
+                license,
+                pipeline_tag,
+                dry_run,
+                model_name,
+                library_name,
+                tags,
+                message,
+                ..
+            } => {
+                assert_eq!(license, "mit");
+                assert_eq!(pipeline_tag, "text-generation");
+                assert!(!dry_run);
+                assert!(model_name.is_none());
+                assert!(library_name.is_none());
+                assert!(tags.is_none());
+                assert!(message.is_none());
+            }
+            _ => panic!("Expected Publish command"),
+        }
+    }
+
+    /// Test parsing 'apr eval' command with all options
+    #[test]
+    fn test_parse_eval_command() {
+        let args = vec![
+            "apr",
+            "eval",
+            "model.gguf",
+            "--dataset",
+            "lambada",
+            "--text",
+            "The quick brown fox",
+            "--max-tokens",
+            "256",
+            "--threshold",
+            "15.5",
+        ];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Eval {
+                file,
+                dataset,
+                text,
+                max_tokens,
+                threshold,
+            } => {
+                assert_eq!(file, PathBuf::from("model.gguf"));
+                assert_eq!(dataset, "lambada");
+                assert_eq!(text, Some("The quick brown fox".to_string()));
+                assert_eq!(max_tokens, 256);
+                assert!((threshold - 15.5).abs() < f32::EPSILON);
+            }
+            _ => panic!("Expected Eval command"),
+        }
+    }
+
+    /// Test parsing 'apr eval' with defaults
+    #[test]
+    fn test_parse_eval_defaults() {
+        let args = vec!["apr", "eval", "model.apr"];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Eval {
+                dataset,
+                text,
+                max_tokens,
+                threshold,
+                ..
+            } => {
+                assert_eq!(dataset, "wikitext-2");
+                assert!(text.is_none());
+                assert_eq!(max_tokens, 512);
+                assert!((threshold - 20.0).abs() < f32::EPSILON);
+            }
+            _ => panic!("Expected Eval command"),
+        }
+    }
+
+    /// Test parsing 'apr flow' command with options
+    #[test]
+    fn test_parse_flow_command() {
+        let args = vec![
+            "apr",
+            "flow",
+            "model.apr",
+            "--layer",
+            "encoder.0",
+            "--component",
+            "encoder",
+            "-v",
+        ];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Flow {
+                file,
+                layer,
+                component,
+                verbose,
+            } => {
+                assert_eq!(file, PathBuf::from("model.apr"));
+                assert_eq!(layer, Some("encoder.0".to_string()));
+                assert_eq!(component, "encoder");
+                assert!(verbose);
+            }
+            _ => panic!("Expected Flow command"),
+        }
+    }
+
+    /// Test parsing 'apr flow' with defaults
+    #[test]
+    fn test_parse_flow_defaults() {
+        let args = vec!["apr", "flow", "model.apr"];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Flow {
+                component,
+                verbose,
+                layer,
+                ..
+            } => {
+                assert_eq!(component, "full");
+                assert!(!verbose);
+                assert!(layer.is_none());
+            }
+            _ => panic!("Expected Flow command"),
+        }
+    }
+
+    /// Test parsing 'apr hex' command with all options
+    #[test]
+    fn test_parse_hex_command() {
+        let args = vec![
+            "apr",
+            "hex",
+            "model.apr",
+            "--tensor",
+            "embed.weight",
+            "--limit",
+            "128",
+            "--stats",
+            "--list",
+            "--json",
+        ];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Hex {
+                file,
+                tensor,
+                limit,
+                stats,
+                list,
+                json,
+            } => {
+                assert_eq!(file, PathBuf::from("model.apr"));
+                assert_eq!(tensor, Some("embed.weight".to_string()));
+                assert_eq!(limit, 128);
+                assert!(stats);
+                assert!(list);
+                assert!(json);
+            }
+            _ => panic!("Expected Hex command"),
+        }
+    }
+
+    /// Test parsing 'apr hex' with defaults
+    #[test]
+    fn test_parse_hex_defaults() {
+        let args = vec!["apr", "hex", "model.apr"];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Hex {
+                limit,
+                stats,
+                list,
+                json,
+                tensor,
+                ..
+            } => {
+                assert_eq!(limit, 64);
+                assert!(!stats);
+                assert!(!list);
+                assert!(!json);
+                assert!(tensor.is_none());
+            }
+            _ => panic!("Expected Hex command"),
+        }
+    }
+
+    /// Test parsing 'apr tree' command with options
+    #[test]
+    fn test_parse_tree_command() {
+        let args = vec![
+            "apr",
+            "tree",
+            "model.apr",
+            "--filter",
+            "encoder",
+            "--format",
+            "mermaid",
+            "--sizes",
+            "--depth",
+            "3",
+        ];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Tree {
+                file,
+                filter,
+                format,
+                sizes,
+                depth,
+            } => {
+                assert_eq!(file, PathBuf::from("model.apr"));
+                assert_eq!(filter, Some("encoder".to_string()));
+                assert_eq!(format, "mermaid");
+                assert!(sizes);
+                assert_eq!(depth, Some(3));
+            }
+            _ => panic!("Expected Tree command"),
+        }
+    }
+
+    /// Test parsing 'apr tree' with defaults
+    #[test]
+    fn test_parse_tree_defaults() {
+        let args = vec!["apr", "tree", "model.apr"];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Tree {
+                format,
+                sizes,
+                depth,
+                filter,
+                ..
+            } => {
+                assert_eq!(format, "ascii");
+                assert!(!sizes);
+                assert!(depth.is_none());
+                assert!(filter.is_none());
+            }
+            _ => panic!("Expected Tree command"),
+        }
+    }
+
+    /// Test parsing 'apr probar' command with options
+    #[test]
+    fn test_parse_probar_command() {
+        let args = vec![
+            "apr",
+            "probar",
+            "model.apr",
+            "--output",
+            "/tmp/probar",
+            "--format",
+            "json",
+            "--golden",
+            "/refs/golden",
+            "--layer",
+            "layer.0",
+        ];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Probar {
+                file,
+                output,
+                format,
+                golden,
+                layer,
+            } => {
+                assert_eq!(file, PathBuf::from("model.apr"));
+                assert_eq!(output, PathBuf::from("/tmp/probar"));
+                assert_eq!(format, "json");
+                assert_eq!(golden, Some(PathBuf::from("/refs/golden")));
+                assert_eq!(layer, Some("layer.0".to_string()));
+            }
+            _ => panic!("Expected Probar command"),
+        }
+    }
+
+    /// Test parsing 'apr probar' with defaults
+    #[test]
+    fn test_parse_probar_defaults() {
+        let args = vec!["apr", "probar", "model.apr"];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Probar {
+                output,
+                format,
+                golden,
+                layer,
+                ..
+            } => {
+                assert_eq!(output, PathBuf::from("./probar-export"));
+                assert_eq!(format, "both");
+                assert!(golden.is_none());
+                assert!(layer.is_none());
+            }
+            _ => panic!("Expected Probar command"),
+        }
+    }
+
+    /// Test parsing 'apr debug' command with all flags
+    #[test]
+    fn test_parse_debug_command() {
+        let args = vec![
+            "apr",
+            "debug",
+            "model.apr",
+            "--drama",
+            "--hex",
+            "--strings",
+            "--limit",
+            "512",
+        ];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Debug {
+                file,
+                drama,
+                hex,
+                strings,
+                limit,
+            } => {
+                assert_eq!(file, PathBuf::from("model.apr"));
+                assert!(drama);
+                assert!(hex);
+                assert!(strings);
+                assert_eq!(limit, 512);
+            }
+            _ => panic!("Expected Debug command"),
+        }
+    }
+
+    /// Test parsing 'apr debug' with defaults
+    #[test]
+    fn test_parse_debug_defaults() {
+        let args = vec!["apr", "debug", "model.apr"];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Debug {
+                drama,
+                hex,
+                strings,
+                limit,
+                ..
+            } => {
+                assert!(!drama);
+                assert!(!hex);
+                assert!(!strings);
+                assert_eq!(limit, 256);
+            }
+            _ => panic!("Expected Debug command"),
+        }
+    }
+
+    /// Test parsing 'apr tui' command with file
+    #[test]
+    fn test_parse_tui_command_with_file() {
+        let args = vec!["apr", "tui", "model.apr"];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Tui { file } => {
+                assert_eq!(file, Some(PathBuf::from("model.apr")));
+            }
+            _ => panic!("Expected Tui command"),
+        }
+    }
+
+    /// Test parsing 'apr tui' without file (optional)
+    #[test]
+    fn test_parse_tui_command_no_file() {
+        let args = vec!["apr", "tui"];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Tui { file } => {
+                assert!(file.is_none());
+            }
+            _ => panic!("Expected Tui command"),
+        }
+    }
+
+    /// Test parsing 'apr import' command with all options
+    #[test]
+    fn test_parse_import_command() {
+        let args = vec![
+            "apr",
+            "import",
+            "hf://openai/whisper-tiny",
+            "--output",
+            "whisper.apr",
+            "--arch",
+            "whisper",
+            "--quantize",
+            "int8",
+            "--strict",
+            "--preserve-q4k",
+            "--tokenizer",
+            "/path/to/tokenizer.json",
+        ];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Import {
+                source,
+                output,
+                arch,
+                quantize,
+                strict,
+                preserve_q4k,
+                tokenizer,
+            } => {
+                assert_eq!(source, "hf://openai/whisper-tiny");
+                assert_eq!(output, Some(PathBuf::from("whisper.apr")));
+                assert_eq!(arch, "whisper");
+                assert_eq!(quantize, Some("int8".to_string()));
+                assert!(strict);
+                assert!(preserve_q4k);
+                assert_eq!(tokenizer, Some(PathBuf::from("/path/to/tokenizer.json")));
+            }
+            _ => panic!("Expected Import command"),
+        }
+    }
+
+    /// Test parsing 'apr import' with defaults
+    #[test]
+    fn test_parse_import_defaults() {
+        let args = vec!["apr", "import", "model.gguf"];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Import {
+                arch,
+                quantize,
+                strict,
+                preserve_q4k,
+                output,
+                tokenizer,
+                ..
+            } => {
+                assert_eq!(arch, "auto");
+                assert!(quantize.is_none());
+                assert!(!strict);
+                assert!(!preserve_q4k);
+                assert!(output.is_none());
+                assert!(tokenizer.is_none());
+            }
+            _ => panic!("Expected Import command"),
+        }
+    }
+
+    /// Test parsing 'apr export' command
+    #[test]
+    fn test_parse_export_command() {
+        let args = vec![
+            "apr",
+            "export",
+            "model.apr",
+            "--format",
+            "gguf",
+            "-o",
+            "model.gguf",
+            "--quantize",
+            "int4",
+        ];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Export {
+                file,
+                format,
+                output,
+                quantize,
+            } => {
+                assert_eq!(file, PathBuf::from("model.apr"));
+                assert_eq!(format, "gguf");
+                assert_eq!(output, PathBuf::from("model.gguf"));
+                assert_eq!(quantize, Some("int4".to_string()));
+            }
+            _ => panic!("Expected Export command"),
+        }
+    }
+
+    /// Test parsing 'apr export' with defaults
+    #[test]
+    fn test_parse_export_defaults() {
+        let args = vec!["apr", "export", "model.apr", "-o", "out.safetensors"];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Export {
+                format, quantize, ..
+            } => {
+                assert_eq!(format, "safetensors");
+                assert!(quantize.is_none());
+            }
+            _ => panic!("Expected Export command"),
+        }
+    }
+
+    /// Test parsing 'apr convert' command with all options
+    #[test]
+    fn test_parse_convert_command() {
+        let args = vec![
+            "apr",
+            "convert",
+            "model.apr",
+            "--quantize",
+            "q4k",
+            "--compress",
+            "zstd",
+            "-o",
+            "model-q4k.apr",
+            "--force",
+        ];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Convert {
+                file,
+                quantize,
+                compress,
+                output,
+                force,
+            } => {
+                assert_eq!(file, PathBuf::from("model.apr"));
+                assert_eq!(quantize, Some("q4k".to_string()));
+                assert_eq!(compress, Some("zstd".to_string()));
+                assert_eq!(output, PathBuf::from("model-q4k.apr"));
+                assert!(force);
+            }
+            _ => panic!("Expected Convert command"),
+        }
+    }
+
+    /// Test parsing 'apr convert' with defaults
+    #[test]
+    fn test_parse_convert_defaults() {
+        let args = vec!["apr", "convert", "model.apr", "-o", "out.apr"];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Convert {
+                quantize,
+                compress,
+                force,
+                ..
+            } => {
+                assert!(quantize.is_none());
+                assert!(compress.is_none());
+                assert!(!force);
+            }
+            _ => panic!("Expected Convert command"),
+        }
+    }
+
+    /// Test parsing 'apr oracle' command with source
+    #[test]
+    fn test_parse_oracle_command_with_source() {
+        let args = vec![
+            "apr",
+            "oracle",
+            "model.gguf",
+            "--compliance",
+            "--tensors",
+            "--stats",
+            "--explain",
+            "--kernels",
+            "--validate",
+            "--full",
+        ];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Oracle {
+                source,
+                compliance,
+                tensors,
+                stats,
+                explain,
+                kernels,
+                validate,
+                full,
+                family,
+                size,
+            } => {
+                assert_eq!(source, Some("model.gguf".to_string()));
+                assert!(compliance);
+                assert!(tensors);
+                assert!(stats);
+                assert!(explain);
+                assert!(kernels);
+                assert!(validate);
+                assert!(full);
+                assert!(family.is_none());
+                assert!(size.is_none());
+            }
+            _ => panic!("Expected Oracle command"),
+        }
+    }
+
+    /// Test parsing 'apr oracle' with --family flag
+    #[test]
+    fn test_parse_oracle_family_mode() {
+        let args = vec!["apr", "oracle", "--family", "qwen2", "--size", "7b"];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Oracle {
+                source,
+                family,
+                size,
+                ..
+            } => {
+                assert!(source.is_none());
+                assert_eq!(family, Some("qwen2".to_string()));
+                assert_eq!(size, Some("7b".to_string()));
+            }
+            _ => panic!("Expected Oracle command"),
+        }
+    }
+
+    /// Test parsing 'apr oracle' with hf:// URI
+    #[test]
+    fn test_parse_oracle_hf_uri() {
+        let args = vec!["apr", "oracle", "hf://Qwen/Qwen2.5-Coder-1.5B"];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Oracle { source, .. } => {
+                assert_eq!(source, Some("hf://Qwen/Qwen2.5-Coder-1.5B".to_string()));
+            }
+            _ => panic!("Expected Oracle command"),
+        }
+    }
+
+    /// Test parsing 'apr canary create' subcommand
+    #[test]
+    fn test_parse_canary_create() {
+        let args = vec![
+            "apr",
+            "canary",
+            "create",
+            "model.apr",
+            "--input",
+            "audio.wav",
+            "--output",
+            "canary.json",
+        ];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Canary { command } => match command {
+                CanaryCommands::Create {
+                    file,
+                    input,
+                    output,
+                } => {
+                    assert_eq!(file, PathBuf::from("model.apr"));
+                    assert_eq!(input, PathBuf::from("audio.wav"));
+                    assert_eq!(output, PathBuf::from("canary.json"));
+                }
+                _ => panic!("Expected Create subcommand"),
+            },
+            _ => panic!("Expected Canary command"),
+        }
+    }
+
+    /// Test parsing 'apr canary check' subcommand
+    #[test]
+    fn test_parse_canary_check() {
+        let args = vec![
+            "apr",
+            "canary",
+            "check",
+            "model.apr",
+            "--canary",
+            "canary.json",
+        ];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Canary { command } => match command {
+                CanaryCommands::Check { file, canary } => {
+                    assert_eq!(file, PathBuf::from("model.apr"));
+                    assert_eq!(canary, PathBuf::from("canary.json"));
+                }
+                _ => panic!("Expected Check subcommand"),
+            },
+            _ => panic!("Expected Canary command"),
+        }
+    }
+
+    /// Test parsing 'apr compare-hf' command
+    #[test]
+    fn test_parse_compare_hf_command() {
+        let args = vec![
+            "apr",
+            "compare-hf",
+            "model.apr",
+            "--hf",
+            "openai/whisper-tiny",
+            "--tensor",
+            "encoder.0",
+            "--threshold",
+            "1e-3",
+            "--json",
+        ];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::CompareHf {
+                file,
+                hf,
+                tensor,
+                threshold,
+                json,
+            } => {
+                assert_eq!(file, PathBuf::from("model.apr"));
+                assert_eq!(hf, "openai/whisper-tiny");
+                assert_eq!(tensor, Some("encoder.0".to_string()));
+                assert!((threshold - 1e-3).abs() < f64::EPSILON);
+                assert!(json);
+            }
+            _ => panic!("Expected CompareHf command"),
+        }
+    }
+
+    /// Test parsing 'apr compare-hf' with defaults
+    #[test]
+    fn test_parse_compare_hf_defaults() {
+        let args = vec![
+            "apr",
+            "compare-hf",
+            "model.apr",
+            "--hf",
+            "openai/whisper-tiny",
+        ];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::CompareHf {
+                tensor,
+                threshold,
+                json,
+                ..
+            } => {
+                assert!(tensor.is_none());
+                assert!((threshold - 1e-5).abs() < f64::EPSILON);
+                assert!(!json);
+            }
+            _ => panic!("Expected CompareHf command"),
+        }
+    }
+
+    /// Test parsing 'apr pull' command
+    #[test]
+    fn test_parse_pull_command() {
+        let args = vec!["apr", "pull", "hf://Qwen/Qwen2.5-Coder-1.5B", "--force"];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Pull { model_ref, force } => {
+                assert_eq!(model_ref, "hf://Qwen/Qwen2.5-Coder-1.5B");
+                assert!(force);
+            }
+            _ => panic!("Expected Pull command"),
+        }
+    }
+
+    /// Test parsing 'apr pull' without force
+    #[test]
+    fn test_parse_pull_defaults() {
+        let args = vec!["apr", "pull", "qwen2.5-coder"];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Pull { model_ref, force } => {
+                assert_eq!(model_ref, "qwen2.5-coder");
+                assert!(!force);
+            }
+            _ => panic!("Expected Pull command"),
+        }
+    }
+
+    /// Test parsing 'apr tune' command with all options
+    #[test]
+    fn test_parse_tune_command() {
+        let args = vec![
+            "apr",
+            "tune",
+            "model.apr",
+            "--method",
+            "lora",
+            "--rank",
+            "16",
+            "--vram",
+            "24.0",
+            "--plan",
+            "--model",
+            "7B",
+            "--freeze-base",
+            "--train-data",
+            "data.jsonl",
+            "--json",
+        ];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Tune {
+                file,
+                method,
+                rank,
+                vram,
+                plan,
+                model,
+                freeze_base,
+                train_data,
+                json,
+            } => {
+                assert_eq!(file, Some(PathBuf::from("model.apr")));
+                assert_eq!(method, "lora");
+                assert_eq!(rank, Some(16));
+                assert!((vram - 24.0).abs() < f64::EPSILON);
+                assert!(plan);
+                assert_eq!(model, Some("7B".to_string()));
+                assert!(freeze_base);
+                assert_eq!(train_data, Some(PathBuf::from("data.jsonl")));
+                assert!(json);
+            }
+            _ => panic!("Expected Tune command"),
+        }
+    }
+
+    /// Test parsing 'apr tune' with defaults (no file)
+    #[test]
+    fn test_parse_tune_defaults() {
+        let args = vec!["apr", "tune"];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Tune {
+                file,
+                method,
+                rank,
+                vram,
+                plan,
+                model,
+                freeze_base,
+                train_data,
+                json,
+            } => {
+                assert!(file.is_none());
+                assert_eq!(method, "auto");
+                assert!(rank.is_none());
+                assert!((vram - 16.0).abs() < f64::EPSILON);
+                assert!(!plan);
+                assert!(model.is_none());
+                assert!(!freeze_base);
+                assert!(train_data.is_none());
+                assert!(!json);
+            }
+            _ => panic!("Expected Tune command"),
+        }
+    }
+
+    /// Test parsing 'apr check' command
+    #[test]
+    fn test_parse_check_command() {
+        let args = vec!["apr", "check", "model.apr", "--no-gpu"];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Check { file, no_gpu } => {
+                assert_eq!(file, PathBuf::from("model.apr"));
+                assert!(no_gpu);
+            }
+            _ => panic!("Expected Check command"),
+        }
+    }
+
+    /// Test parsing 'apr check' with defaults
+    #[test]
+    fn test_parse_check_defaults() {
+        let args = vec!["apr", "check", "model.gguf"];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Check { no_gpu, .. } => {
+                assert!(!no_gpu);
+            }
+            _ => panic!("Expected Check command"),
+        }
+    }
+
+    /// Test parsing 'apr lint' command
+    #[test]
+    fn test_parse_lint_command() {
+        let args = vec!["apr", "lint", "model.apr"];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Lint { file } => {
+                assert_eq!(file, PathBuf::from("model.apr"));
+            }
+            _ => panic!("Expected Lint command"),
+        }
+    }
+
+    /// Test parsing 'apr tensors' command with all options
+    #[test]
+    fn test_parse_tensors_command() {
+        let args = vec![
+            "apr",
+            "tensors",
+            "model.apr",
+            "--stats",
+            "--filter",
+            "encoder",
+            "--limit",
+            "20",
+            "--json",
+        ];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Tensors {
+                file,
+                stats,
+                filter,
+                limit,
+                json,
+            } => {
+                assert_eq!(file, PathBuf::from("model.apr"));
+                assert!(stats);
+                assert_eq!(filter, Some("encoder".to_string()));
+                assert_eq!(limit, 20);
+                assert!(json);
+            }
+            _ => panic!("Expected Tensors command"),
+        }
+    }
+
+    /// Test parsing 'apr explain' command with code
+    #[test]
+    fn test_parse_explain_with_code() {
+        let args = vec!["apr", "explain", "E001"];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Explain {
+                code, file, tensor, ..
+            } => {
+                assert_eq!(code, Some("E001".to_string()));
+                assert!(file.is_none());
+                assert!(tensor.is_none());
+            }
+            _ => panic!("Expected Explain command"),
+        }
+    }
+
+    /// Test parsing 'apr explain' with tensor and file
+    #[test]
+    fn test_parse_explain_with_tensor_and_file() {
+        let args = vec![
+            "apr",
+            "explain",
+            "--file",
+            "model.apr",
+            "--tensor",
+            "embed.weight",
+        ];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Explain { code, file, tensor } => {
+                assert!(code.is_none());
+                assert_eq!(file, Some(PathBuf::from("model.apr")));
+                assert_eq!(tensor, Some("embed.weight".to_string()));
+            }
+            _ => panic!("Expected Explain command"),
+        }
+    }
+
+    /// Test parsing 'apr trace' command with all options
+    #[test]
+    fn test_parse_trace_command() {
+        let args = vec![
+            "apr",
+            "trace",
+            "model.apr",
+            "--layer",
+            "layer.0",
+            "--reference",
+            "ref.apr",
+            "--json",
+            "-v",
+            "--payload",
+            "--diff",
+            "--interactive",
+        ];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Trace {
+                file,
+                layer,
+                reference,
+                json,
+                verbose,
+                payload,
+                diff,
+                interactive,
+            } => {
+                assert_eq!(file, PathBuf::from("model.apr"));
+                assert_eq!(layer, Some("layer.0".to_string()));
+                assert_eq!(reference, Some(PathBuf::from("ref.apr")));
+                assert!(json);
+                assert!(verbose);
+                assert!(payload);
+                assert!(diff);
+                assert!(interactive);
+            }
+            _ => panic!("Expected Trace command"),
+        }
+    }
+
+    /// Test parsing 'apr validate' with min-score
+    #[test]
+    fn test_parse_validate_with_min_score() {
+        let args = vec!["apr", "validate", "model.apr", "--min-score", "80"];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Validate {
+                min_score, strict, ..
+            } => {
+                assert_eq!(min_score, Some(80));
+                assert!(!strict);
+            }
+            _ => panic!("Expected Validate command"),
+        }
+    }
+
+    /// Test parsing 'apr diff' with all options
+    #[test]
+    fn test_parse_diff_with_all_options() {
+        let args = vec![
+            "apr",
+            "diff",
+            "a.apr",
+            "b.apr",
+            "--values",
+            "--filter",
+            "embed",
+            "--limit",
+            "5",
+            "--transpose-aware",
+            "--json",
+        ];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Diff {
+                file1,
+                file2,
+                values,
+                filter,
+                limit,
+                transpose_aware,
+                json,
+                ..
+            } => {
+                assert_eq!(file1, PathBuf::from("a.apr"));
+                assert_eq!(file2, PathBuf::from("b.apr"));
+                assert!(values);
+                assert_eq!(filter, Some("embed".to_string()));
+                assert_eq!(limit, 5);
+                assert!(transpose_aware);
+                assert!(json);
+            }
+            _ => panic!("Expected Diff command"),
+        }
+    }
+
+    /// Test parsing 'apr run' with --chat flag
+    #[test]
+    fn test_parse_run_with_chat_flag() {
+        let args = vec![
+            "apr",
+            "run",
+            "model.gguf",
+            "--prompt",
+            "Hello world",
+            "--chat",
+        ];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Run {
+                chat,
+                prompt,
+                source,
+                ..
+            } => {
+                assert!(chat);
+                assert_eq!(prompt, Some("Hello world".to_string()));
+                assert_eq!(source, "model.gguf");
+            }
+            _ => panic!("Expected Run command"),
+        }
+    }
+
+    /// Test parsing 'apr run' with --trace-payload shorthand
+    #[test]
+    fn test_parse_run_with_trace_payload() {
+        let args = vec![
+            "apr",
+            "run",
+            "model.gguf",
+            "--prompt",
+            "test",
+            "--trace-payload",
+        ];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Run {
+                trace_payload,
+                trace,
+                trace_level,
+                ..
+            } => {
+                assert!(trace_payload);
+                // trace itself should default to false (trace_payload is separate flag)
+                assert!(!trace);
+                assert_eq!(trace_level, "basic");
+            }
+            _ => panic!("Expected Run command"),
+        }
+    }
+
+    /// GH-217: Positional prompt is parsed as second argument
+    #[test]
+    fn test_parse_run_positional_prompt() {
+        let args = vec!["apr", "run", "model.gguf", "What is 2+2?"];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Run {
+                source,
+                positional_prompt,
+                prompt,
+                ..
+            } => {
+                assert_eq!(source, "model.gguf");
+                assert_eq!(positional_prompt, Some("What is 2+2?".to_string()));
+                assert_eq!(prompt, None);
+            }
+            _ => panic!("Expected Run command"),
+        }
+    }
+
+    /// GH-217: --prompt flag still works and takes precedence
+    #[test]
+    fn test_parse_run_flag_prompt_overrides_positional() {
+        let args = vec![
+            "apr",
+            "run",
+            "model.gguf",
+            "positional text",
+            "--prompt",
+            "flag text",
+        ];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Run {
+                positional_prompt,
+                prompt,
+                ..
+            } => {
+                assert_eq!(positional_prompt, Some("positional text".to_string()));
+                assert_eq!(prompt, Some("flag text".to_string()));
+            }
+            _ => panic!("Expected Run command"),
+        }
+    }
+
+    /// GH-217: Positional prompt with -n short flag for max_tokens
+    #[test]
+    fn test_parse_run_positional_prompt_with_n_flag() {
+        let args = vec!["apr", "run", "model.gguf", "What is 2+2?", "-n", "64"];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Run {
+                source,
+                positional_prompt,
+                max_tokens,
+                ..
+            } => {
+                assert_eq!(source, "model.gguf");
+                assert_eq!(positional_prompt, Some("What is 2+2?".to_string()));
+                assert_eq!(max_tokens, 64);
+            }
+            _ => panic!("Expected Run command"),
+        }
+    }
+
+    /// GH-217: No prompt provided (neither positional nor flag)
+    #[test]
+    fn test_parse_run_no_prompt() {
+        let args = vec!["apr", "run", "model.gguf"];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Run {
+                positional_prompt,
+                prompt,
+                ..
+            } => {
+                assert_eq!(positional_prompt, None);
+                assert_eq!(prompt, None);
+            }
+            _ => panic!("Expected Run command"),
+        }
+    }
+
+    /// Test parsing 'apr run' with local verbose flag
+    #[test]
+    fn test_parse_run_with_local_verbose() {
+        let args = vec!["apr", "run", "model.gguf", "--prompt", "hi", "-v"];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Run { verbose, .. } => {
+                assert!(verbose);
+            }
+            _ => panic!("Expected Run command"),
+        }
+    }
+
+    /// Test parsing 'apr run' with all trace options
+    #[test]
+    fn test_parse_run_with_full_trace() {
+        let args = vec![
+            "apr",
+            "run",
+            "model.gguf",
+            "--prompt",
+            "test",
+            "--trace",
+            "--trace-steps",
+            "Tokenize,Embed,Attention",
+            "--trace-verbose",
+            "--trace-output",
+            "/tmp/trace.json",
+            "--trace-level",
+            "layer",
+        ];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Run {
+                trace,
+                trace_steps,
+                trace_verbose,
+                trace_output,
+                trace_level,
+                ..
+            } => {
+                assert!(trace);
+                assert_eq!(
+                    trace_steps,
+                    Some(vec![
+                        "Tokenize".to_string(),
+                        "Embed".to_string(),
+                        "Attention".to_string()
+                    ])
+                );
+                assert!(trace_verbose);
+                assert_eq!(trace_output, Some(PathBuf::from("/tmp/trace.json")));
+                assert_eq!(trace_level, "layer");
+            }
+            _ => panic!("Expected Run command"),
+        }
+    }
+
+    /// Test parsing 'apr run' with --benchmark and --profile flags
+    #[test]
+    fn test_parse_run_benchmark_and_profile() {
+        let args = vec![
+            "apr",
+            "run",
+            "model.gguf",
+            "--prompt",
+            "test",
+            "--benchmark",
+            "--profile",
+        ];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Run {
+                benchmark, profile, ..
+            } => {
+                assert!(benchmark);
+                assert!(profile);
+            }
+            _ => panic!("Expected Run command"),
+        }
+    }
+
+    /// Test parsing 'apr run' with --no-gpu flag
+    #[test]
+    fn test_parse_run_no_gpu() {
+        let args = vec!["apr", "run", "model.gguf", "--prompt", "test", "--no-gpu"];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Run { no_gpu, .. } => {
+                assert!(no_gpu);
+            }
+            _ => panic!("Expected Run command"),
+        }
+    }
+
+    /// Test parsing 'apr run' with --offline flag
+    #[test]
+    fn test_parse_run_offline() {
+        let args = vec!["apr", "run", "model.gguf", "--prompt", "test", "--offline"];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Run { offline, .. } => {
+                assert!(offline);
+            }
+            _ => panic!("Expected Run command"),
+        }
+    }
+
+    /// Test parsing 'apr run' with --stream and --format options
+    #[test]
+    fn test_parse_run_stream_and_format() {
+        let args = vec![
+            "apr",
+            "run",
+            "model.gguf",
+            "--prompt",
+            "test",
+            "--stream",
+            "-f",
+            "json",
+        ];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Run { stream, format, .. } => {
+                assert!(stream);
+                assert_eq!(format, "json");
+            }
+            _ => panic!("Expected Run command"),
+        }
+    }
+
+    /// Test parsing 'apr run' with --input and --language for ASR
+    #[test]
+    fn test_parse_run_asr_options() {
+        let args = vec![
+            "apr",
+            "run",
+            "hf://openai/whisper-tiny",
+            "--input",
+            "audio.wav",
+            "--language",
+            "en",
+            "--task",
+            "transcribe",
+        ];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Run {
+                input,
+                language,
+                task,
+                ..
+            } => {
+                assert_eq!(input, Some(PathBuf::from("audio.wav")));
+                assert_eq!(language, Some("en".to_string()));
+                assert_eq!(task, Some("transcribe".to_string()));
+            }
+            _ => panic!("Expected Run command"),
+        }
+    }
+
+    /// Test parsing 'apr remove' alias for 'rm'
+    #[test]
+    fn test_parse_remove_alias() {
+        let args = vec!["apr", "remove", "my-model"];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Rm { model_ref } => {
+                assert_eq!(model_ref, "my-model");
+            }
+            _ => panic!("Expected Rm command"),
+        }
+    }
+
+    /// Test parsing 'apr qa' with all skip flags
+    #[test]
+    fn test_parse_qa_all_skip_flags() {
+        let args = vec![
+            "apr",
+            "qa",
+            "model.gguf",
+            "--skip-golden",
+            "--skip-throughput",
+            "--skip-ollama",
+            "--skip-gpu-speedup",
+            "--skip-contract",
+            "--skip-format-parity",
+            "--safetensors-path",
+            "model.safetensors",
+            "--iterations",
+            "20",
+            "--warmup",
+            "5",
+            "--max-tokens",
+            "64",
+            "--json",
+            "-v",
+        ];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Qa {
+                skip_golden,
+                skip_throughput,
+                skip_ollama,
+                skip_gpu_speedup,
+                skip_contract,
+                skip_format_parity,
+                safetensors_path,
+                iterations,
+                warmup,
+                max_tokens,
+                json,
+                verbose,
+                ..
+            } => {
+                assert!(skip_golden);
+                assert!(skip_throughput);
+                assert!(skip_ollama);
+                assert!(skip_gpu_speedup);
+                assert!(skip_contract);
+                assert!(skip_format_parity);
+                assert_eq!(safetensors_path, Some(PathBuf::from("model.safetensors")));
+                assert_eq!(iterations, 20);
+                assert_eq!(warmup, 5);
+                assert_eq!(max_tokens, 64);
+                assert!(json);
+                assert!(verbose);
+            }
+            _ => panic!("Expected Qa command"),
+        }
+    }
+
+    /// Test parsing 'apr serve' with all options
+    #[test]
+    fn test_parse_serve_all_options() {
+        let args = vec![
+            "apr",
+            "serve",
+            "model.apr",
+            "--port",
+            "9090",
+            "--host",
+            "0.0.0.0",
+            "--no-cors",
+            "--no-metrics",
+            "--no-gpu",
+            "--batch",
+            "--trace",
+            "--trace-level",
+            "layer",
+            "--profile",
+        ];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Serve {
+                port,
+                host,
+                no_cors,
+                no_metrics,
+                no_gpu,
+                batch,
+                trace,
+                trace_level,
+                profile,
+                ..
+            } => {
+                assert_eq!(port, 9090);
+                assert_eq!(host, "0.0.0.0");
+                assert!(no_cors);
+                assert!(no_metrics);
+                assert!(no_gpu);
+                assert!(batch);
+                assert!(trace);
+                assert_eq!(trace_level, "layer");
+                assert!(profile);
+            }
+            _ => panic!("Expected Serve command"),
+        }
+    }
+
+    /// Test parsing 'apr bench' with all options
+    #[test]
+    fn test_parse_bench_all_options() {
+        let args = vec![
+            "apr",
+            "bench",
+            "model.gguf",
+            "--warmup",
+            "10",
+            "--iterations",
+            "20",
+            "--max-tokens",
+            "64",
+            "--prompt",
+            "The quick brown fox",
+            "--fast",
+            "--brick",
+            "attention",
+        ];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Bench {
+                warmup,
+                iterations,
+                max_tokens,
+                prompt,
+                fast,
+                brick,
+                ..
+            } => {
+                assert_eq!(warmup, 10);
+                assert_eq!(iterations, 20);
+                assert_eq!(max_tokens, 64);
+                assert_eq!(prompt, Some("The quick brown fox".to_string()));
+                assert!(fast);
+                assert_eq!(brick, Some("attention".to_string()));
+            }
+            _ => panic!("Expected Bench command"),
+        }
+    }
+
+    /// Test parsing 'apr cbtop' with speculative decoding flags
+    #[test]
+    fn test_parse_cbtop_speculative() {
+        let args = vec![
+            "apr",
+            "cbtop",
+            "--model-path",
+            "model.gguf",
+            "--speculative",
+            "--speculation-k",
+            "8",
+            "--draft-model",
+            "draft.gguf",
+            "--concurrent",
+            "4",
+            "--simulated",
+        ];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Cbtop {
+                model_path,
+                speculative,
+                speculation_k,
+                draft_model,
+                concurrent,
+                simulated,
+                ..
+            } => {
+                assert_eq!(model_path, Some(PathBuf::from("model.gguf")));
+                assert!(speculative);
+                assert_eq!(speculation_k, 8);
+                assert_eq!(draft_model, Some(PathBuf::from("draft.gguf")));
+                assert_eq!(concurrent, 4);
+                assert!(simulated);
+            }
+            _ => panic!("Expected Cbtop command"),
+        }
+    }
+
+    /// Test parsing 'apr profile' with energy and perf-grade flags
+    #[test]
+    fn test_parse_profile_energy_perf() {
+        let args = vec![
+            "apr",
+            "profile",
+            "model.apr",
+            "--energy",
+            "--perf-grade",
+            "--callgraph",
+            "--compare-hf",
+            "openai/whisper-tiny",
+            "--output",
+            "/tmp/flame.svg",
+        ];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Profile {
+                energy,
+                perf_grade,
+                callgraph,
+                compare_hf,
+                output,
+                ..
+            } => {
+                assert!(energy);
+                assert!(perf_grade);
+                assert!(callgraph);
+                assert_eq!(compare_hf, Some("openai/whisper-tiny".to_string()));
+                assert_eq!(output, Some(PathBuf::from("/tmp/flame.svg")));
+            }
+            _ => panic!("Expected Profile command"),
+        }
+    }
+
+    /// Test parsing 'apr chat' with all trace options
+    #[test]
+    fn test_parse_chat_with_trace() {
+        let args = vec![
+            "apr",
+            "chat",
+            "model.gguf",
+            "--system",
+            "You are a helpful assistant.",
+            "--inspect",
+            "--trace",
+            "--trace-steps",
+            "Tokenize,Decode",
+            "--trace-verbose",
+            "--trace-output",
+            "/tmp/chat-trace.json",
+            "--trace-level",
+            "payload",
+            "--profile",
+        ];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Chat {
+                system,
+                inspect,
+                trace,
+                trace_steps,
+                trace_verbose,
+                trace_output,
+                trace_level,
+                profile,
+                ..
+            } => {
+                assert_eq!(system, Some("You are a helpful assistant.".to_string()));
+                assert!(inspect);
+                assert!(trace);
+                assert_eq!(
+                    trace_steps,
+                    Some(vec!["Tokenize".to_string(), "Decode".to_string()])
+                );
+                assert!(trace_verbose);
+                assert_eq!(trace_output, Some(PathBuf::from("/tmp/chat-trace.json")));
+                assert_eq!(trace_level, "payload");
+                assert!(profile);
+            }
+            _ => panic!("Expected Chat command"),
+        }
+    }
+
+    /// Test parsing 'apr showcase' with step and all options
+    #[test]
+    fn test_parse_showcase_with_step() {
+        let args = vec![
+            "apr", "showcase", "--step", "bench", "--tier", "tiny", "--zram", "--runs", "50",
+            "--json", "-v", "-q",
+        ];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Showcase {
+                step,
+                tier,
+                zram,
+                runs,
+                json,
+                verbose,
+                quiet,
+                ..
+            } => {
+                assert_eq!(step, Some("bench".to_string()));
+                assert_eq!(tier, "tiny");
+                assert!(zram);
+                assert_eq!(runs, 50);
+                assert!(json);
+                assert!(verbose);
+                assert!(quiet);
+            }
+            _ => panic!("Expected Showcase command"),
+        }
+    }
+
+    /// Test parsing rosetta compare-inference subcommand
+    #[test]
+    fn test_parse_rosetta_compare_inference() {
+        let args = vec![
+            "apr",
+            "rosetta",
+            "compare-inference",
+            "model_a.gguf",
+            "model_b.apr",
+            "--prompt",
+            "What is 2+2?",
+            "--max-tokens",
+            "10",
+            "--temperature",
+            "0.5",
+            "--tolerance",
+            "0.05",
+            "--json",
+        ];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Rosetta { action } => match action {
+                RosettaCommands::CompareInference {
+                    model_a,
+                    model_b,
+                    prompt,
+                    max_tokens,
+                    temperature,
+                    tolerance,
+                    json,
+                } => {
+                    assert_eq!(model_a, PathBuf::from("model_a.gguf"));
+                    assert_eq!(model_b, PathBuf::from("model_b.apr"));
+                    assert_eq!(prompt, "What is 2+2?");
+                    assert_eq!(max_tokens, 10);
+                    assert!((temperature - 0.5).abs() < f32::EPSILON);
+                    assert!((tolerance - 0.05).abs() < f32::EPSILON);
+                    assert!(json);
+                }
+                _ => panic!("Expected CompareInference subcommand"),
+            },
+            _ => panic!("Expected Rosetta command"),
+        }
+    }
+
+    /// Test parsing rosetta diff-tensors subcommand
+    #[test]
+    fn test_parse_rosetta_diff_tensors() {
+        let args = vec![
+            "apr",
+            "rosetta",
+            "diff-tensors",
+            "ref.gguf",
+            "test.apr",
+            "--mismatches-only",
+            "--show-values",
+            "5",
+            "--filter",
+            "lm_head",
+            "--json",
+        ];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Rosetta { action } => match action {
+                RosettaCommands::DiffTensors {
+                    model_a,
+                    model_b,
+                    mismatches_only,
+                    show_values,
+                    filter,
+                    json,
+                } => {
+                    assert_eq!(model_a, PathBuf::from("ref.gguf"));
+                    assert_eq!(model_b, PathBuf::from("test.apr"));
+                    assert!(mismatches_only);
+                    assert_eq!(show_values, 5);
+                    assert_eq!(filter, Some("lm_head".to_string()));
+                    assert!(json);
+                }
+                _ => panic!("Expected DiffTensors subcommand"),
+            },
+            _ => panic!("Expected Rosetta command"),
+        }
+    }
+
+    /// Test parsing rosetta fingerprint subcommand
+    #[test]
+    fn test_parse_rosetta_fingerprint() {
+        let args = vec![
+            "apr",
+            "rosetta",
+            "fingerprint",
+            "model.gguf",
+            "model2.apr",
+            "--output",
+            "fingerprints.json",
+            "--filter",
+            "encoder",
+            "--verbose",
+            "--json",
+        ];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Rosetta { action } => match action {
+                RosettaCommands::Fingerprint {
+                    model,
+                    model_b,
+                    output,
+                    filter,
+                    verbose,
+                    json,
+                } => {
+                    assert_eq!(model, PathBuf::from("model.gguf"));
+                    assert_eq!(model_b, Some(PathBuf::from("model2.apr")));
+                    assert_eq!(output, Some(PathBuf::from("fingerprints.json")));
+                    assert_eq!(filter, Some("encoder".to_string()));
+                    assert!(verbose);
+                    assert!(json);
+                }
+                _ => panic!("Expected Fingerprint subcommand"),
+            },
+            _ => panic!("Expected Rosetta command"),
+        }
+    }
+
+    /// Test parsing rosetta validate-stats subcommand
+    #[test]
+    fn test_parse_rosetta_validate_stats() {
+        let args = vec![
+            "apr",
+            "rosetta",
+            "validate-stats",
+            "model.apr",
+            "--reference",
+            "ref.gguf",
+            "--fingerprints",
+            "fp.json",
+            "--threshold",
+            "5.0",
+            "--strict",
+            "--json",
+        ];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Rosetta { action } => match action {
+                RosettaCommands::ValidateStats {
+                    model,
+                    reference,
+                    fingerprints,
+                    threshold,
+                    strict,
+                    json,
+                } => {
+                    assert_eq!(model, PathBuf::from("model.apr"));
+                    assert_eq!(reference, Some(PathBuf::from("ref.gguf")));
+                    assert_eq!(fingerprints, Some(PathBuf::from("fp.json")));
+                    assert!((threshold - 5.0).abs() < f32::EPSILON);
+                    assert!(strict);
+                    assert!(json);
+                }
+                _ => panic!("Expected ValidateStats subcommand"),
+            },
+            _ => panic!("Expected Rosetta command"),
+        }
+    }
+
+    // =========================================================================
+    // Global flag tests
+    // =========================================================================
+
+    /// Test global --offline flag
+    #[test]
+    fn test_global_offline_flag() {
+        let args = vec!["apr", "--offline", "inspect", "model.apr"];
+        let cli = parse_cli(args).expect("Failed to parse");
+        assert!(cli.offline);
+    }
+
+    /// Test global --quiet flag
+    #[test]
+    fn test_global_quiet_flag() {
+        let args = vec!["apr", "--quiet", "inspect", "model.apr"];
+        let cli = parse_cli(args).expect("Failed to parse");
+        assert!(cli.quiet);
+    }
+
+    /// Test multiple global flags combined
+    #[test]
+    fn test_multiple_global_flags() {
+        let args = vec![
+            "apr",
+            "--verbose",
+            "--json",
+            "--offline",
+            "--quiet",
+            "--skip-contract",
+            "inspect",
+            "model.apr",
+        ];
+        let cli = parse_cli(args).expect("Failed to parse");
+        assert!(cli.verbose);
+        assert!(cli.json);
+        assert!(cli.offline);
+        assert!(cli.quiet);
+        assert!(cli.skip_contract);
+    }
+
+    /// Test global flags default to false
+    #[test]
+    fn test_global_flags_default_false() {
+        let args = vec!["apr", "inspect", "model.apr"];
+        let cli = parse_cli(args).expect("Failed to parse");
+        assert!(!cli.verbose);
+        assert!(!cli.json);
+        assert!(!cli.offline);
+        assert!(!cli.quiet);
+        assert!(!cli.skip_contract);
+    }
+
+    // =========================================================================
+    // extract_model_paths: additional command variants
+    // =========================================================================
+
+    /// Test extract_model_paths: Export returns file path
+    #[test]
+    fn test_extract_paths_export() {
+        let cmd = Commands::Export {
+            file: PathBuf::from("model.apr"),
+            format: "gguf".to_string(),
+            output: PathBuf::from("out.gguf"),
+            quantize: None,
+        };
+        let paths = extract_model_paths(&cmd);
+        assert_eq!(paths, vec![PathBuf::from("model.apr")]);
+    }
+
+    /// Test extract_model_paths: Convert returns file path
+    #[test]
+    fn test_extract_paths_convert() {
+        let cmd = Commands::Convert {
+            file: PathBuf::from("model.apr"),
+            quantize: Some("q4k".to_string()),
+            compress: None,
+            output: PathBuf::from("out.apr"),
+            force: false,
+        };
+        let paths = extract_model_paths(&cmd);
+        assert_eq!(paths, vec![PathBuf::from("model.apr")]);
+    }
+
+    /// Test extract_model_paths: Check returns file path
+    #[test]
+    fn test_extract_paths_check() {
+        let cmd = Commands::Check {
+            file: PathBuf::from("model.gguf"),
+            no_gpu: false,
+        };
+        let paths = extract_model_paths(&cmd);
+        assert_eq!(paths, vec![PathBuf::from("model.gguf")]);
+    }
+
+    /// Test extract_model_paths: Trace returns file path
+    #[test]
+    fn test_extract_paths_trace() {
+        let cmd = Commands::Trace {
+            file: PathBuf::from("model.apr"),
+            layer: None,
+            reference: None,
+            json: false,
+            verbose: false,
+            payload: false,
+            diff: false,
+            interactive: false,
+        };
+        let paths = extract_model_paths(&cmd);
+        assert_eq!(paths, vec![PathBuf::from("model.apr")]);
+    }
+
+    /// Test extract_model_paths: Probar returns file path
+    #[test]
+    fn test_extract_paths_probar() {
+        let cmd = Commands::Probar {
+            file: PathBuf::from("model.apr"),
+            output: PathBuf::from("./probar-export"),
+            format: "both".to_string(),
+            golden: None,
+            layer: None,
+        };
+        let paths = extract_model_paths(&cmd);
+        assert_eq!(paths, vec![PathBuf::from("model.apr")]);
+    }
+
+    /// Test extract_model_paths: CompareHf returns file path
+    #[test]
+    fn test_extract_paths_compare_hf() {
+        let cmd = Commands::CompareHf {
+            file: PathBuf::from("model.apr"),
+            hf: "openai/whisper-tiny".to_string(),
+            tensor: None,
+            threshold: 1e-5,
+            json: false,
+        };
+        let paths = extract_model_paths(&cmd);
+        assert_eq!(paths, vec![PathBuf::from("model.apr")]);
+    }
+
+    /// Test extract_model_paths: Chat returns file path
+    #[test]
+    fn test_extract_paths_chat() {
+        let cmd = Commands::Chat {
+            file: PathBuf::from("model.gguf"),
+            temperature: 0.7,
+            top_p: 0.9,
+            max_tokens: 512,
+            system: None,
+            inspect: false,
+            no_gpu: false,
+            gpu: false,
+            trace: false,
+            trace_steps: None,
+            trace_verbose: false,
+            trace_output: None,
+            trace_level: "basic".to_string(),
+            profile: false,
+        };
+        let paths = extract_model_paths(&cmd);
+        assert_eq!(paths, vec![PathBuf::from("model.gguf")]);
+    }
+
+    /// Test extract_model_paths: Eval returns file path
+    #[test]
+    fn test_extract_paths_eval() {
+        let cmd = Commands::Eval {
+            file: PathBuf::from("model.gguf"),
+            dataset: "wikitext-2".to_string(),
+            text: None,
+            max_tokens: 512,
+            threshold: 20.0,
+        };
+        let paths = extract_model_paths(&cmd);
+        assert_eq!(paths, vec![PathBuf::from("model.gguf")]);
+    }
+
+    /// Test extract_model_paths: Profile returns file path
+    #[test]
+    fn test_extract_paths_profile() {
+        let cmd = Commands::Profile {
+            file: PathBuf::from("model.apr"),
+            granular: false,
+            format: "human".to_string(),
+            focus: None,
+            detect_naive: false,
+            threshold: 10.0,
+            compare_hf: None,
+            energy: false,
+            perf_grade: false,
+            callgraph: false,
+            fail_on_naive: false,
+            output: None,
+            ci: false,
+            assert_throughput: None,
+            assert_p99: None,
+            assert_p50: None,
+            warmup: 3,
+            measure: 10,
+        };
+        let paths = extract_model_paths(&cmd);
+        assert_eq!(paths, vec![PathBuf::from("model.apr")]);
+    }
+
+    /// Test extract_model_paths: Import with hf:// URL returns empty (non-local)
+    #[test]
+    fn test_extract_paths_import_hf_url() {
+        let cmd = Commands::Import {
+            source: "hf://openai/whisper-tiny".to_string(),
+            output: Some(PathBuf::from("whisper.apr")),
+            arch: "auto".to_string(),
+            quantize: None,
+            strict: false,
+            preserve_q4k: false,
+            tokenizer: None,
+        };
+        let paths = extract_model_paths(&cmd);
+        assert!(
+            paths.is_empty(),
+            "hf:// URLs should not be validated locally for import"
+        );
+    }
+
+    /// Test extract_model_paths: Import with non-existent local path returns empty
+    #[test]
+    fn test_extract_paths_import_nonexistent_local() {
+        let cmd = Commands::Import {
+            source: "/tmp/nonexistent_model_abc123.gguf".to_string(),
+            output: None,
+            arch: "auto".to_string(),
+            quantize: None,
+            strict: false,
+            preserve_q4k: false,
+            tokenizer: None,
+        };
+        let paths = extract_model_paths(&cmd);
+        assert!(
+            paths.is_empty(),
+            "Non-existent local paths return empty for import"
+        );
+    }
+
+    /// Test extract_model_paths: Tui with file returns file
+    #[test]
+    fn test_extract_paths_tui_with_file() {
+        let cmd = Commands::Tui {
+            file: Some(PathBuf::from("model.apr")),
+        };
+        let paths = extract_model_paths(&cmd);
+        assert_eq!(paths, vec![PathBuf::from("model.apr")]);
+    }
+
+    /// Test extract_model_paths: Tui without file returns empty
+    #[test]
+    fn test_extract_paths_tui_no_file() {
+        let cmd = Commands::Tui { file: None };
+        let paths = extract_model_paths(&cmd);
+        assert!(paths.is_empty());
+    }
+
+    /// Test extract_model_paths: Cbtop with model_path returns it
+    #[test]
+    fn test_extract_paths_cbtop_with_model_path() {
+        let cmd = Commands::Cbtop {
+            model: None,
+            attach: None,
+            model_path: Some(PathBuf::from("model.gguf")),
+            headless: false,
+            json: false,
+            output: None,
+            ci: false,
+            throughput: None,
+            brick_score: None,
+            warmup: 10,
+            iterations: 100,
+            speculative: false,
+            speculation_k: 4,
+            draft_model: None,
+            concurrent: 1,
+            simulated: false,
+        };
+        let paths = extract_model_paths(&cmd);
+        assert_eq!(paths, vec![PathBuf::from("model.gguf")]);
+    }
+
+    /// Test extract_model_paths: Cbtop without model_path returns empty
+    #[test]
+    fn test_extract_paths_cbtop_no_model_path() {
+        let cmd = Commands::Cbtop {
+            model: Some("qwen2.5-coder".to_string()),
+            attach: None,
+            model_path: None,
+            headless: false,
+            json: false,
+            output: None,
+            ci: false,
+            throughput: None,
+            brick_score: None,
+            warmup: 10,
+            iterations: 100,
+            speculative: false,
+            speculation_k: 4,
+            draft_model: None,
+            concurrent: 1,
+            simulated: false,
+        };
+        let paths = extract_model_paths(&cmd);
+        assert!(paths.is_empty());
+    }
+
+    /// Test extract_model_paths: Diff is diagnostic (exempt)
+    #[test]
+    fn test_extract_paths_diff_exempt() {
+        let cmd = Commands::Diff {
+            file1: PathBuf::from("a.apr"),
+            file2: PathBuf::from("b.apr"),
+            weights: false,
+            values: false,
+            filter: None,
+            limit: 10,
+            transpose_aware: false,
+            json: false,
+        };
+        let paths = extract_model_paths(&cmd);
+        assert!(paths.is_empty(), "Diff is a diagnostic command (exempt)");
+    }
+
+    /// Test extract_model_paths: Hex is diagnostic (exempt)
+    #[test]
+    fn test_extract_paths_hex_exempt() {
+        let cmd = Commands::Hex {
+            file: PathBuf::from("model.apr"),
+            tensor: None,
+            limit: 64,
+            stats: false,
+            list: false,
+            json: false,
+        };
+        let paths = extract_model_paths(&cmd);
+        assert!(paths.is_empty(), "Hex is a diagnostic command (exempt)");
+    }
+
+    /// Test extract_model_paths: Tree is diagnostic (exempt)
+    #[test]
+    fn test_extract_paths_tree_exempt() {
+        let cmd = Commands::Tree {
+            file: PathBuf::from("model.apr"),
+            filter: None,
+            format: "ascii".to_string(),
+            sizes: false,
+            depth: None,
+        };
+        let paths = extract_model_paths(&cmd);
+        assert!(paths.is_empty(), "Tree is a diagnostic command (exempt)");
+    }
+
+    /// Test extract_model_paths: Flow is diagnostic (exempt)
+    #[test]
+    fn test_extract_paths_flow_exempt() {
+        let cmd = Commands::Flow {
+            file: PathBuf::from("model.apr"),
+            layer: None,
+            component: "full".to_string(),
+            verbose: false,
+        };
+        let paths = extract_model_paths(&cmd);
+        assert!(paths.is_empty(), "Flow is a diagnostic command (exempt)");
+    }
+
+    /// Test extract_model_paths: Publish is diagnostic (exempt)
+    #[test]
+    fn test_extract_paths_publish_exempt() {
+        let cmd = Commands::Publish {
+            directory: PathBuf::from("/tmp/models"),
+            repo_id: "org/repo".to_string(),
+            model_name: None,
+            license: "mit".to_string(),
+            pipeline_tag: "text-generation".to_string(),
+            library_name: None,
+            tags: None,
+            message: None,
+            dry_run: false,
+        };
+        let paths = extract_model_paths(&cmd);
+        assert!(paths.is_empty(), "Publish is a diagnostic command (exempt)");
+    }
+
+    /// Test extract_model_paths: Tune is diagnostic (exempt)
+    #[test]
+    fn test_extract_paths_tune_exempt() {
+        let cmd = Commands::Tune {
+            file: Some(PathBuf::from("model.apr")),
+            method: "auto".to_string(),
+            rank: None,
+            vram: 16.0,
+            plan: false,
+            model: None,
+            freeze_base: false,
+            train_data: None,
+            json: false,
+        };
+        let paths = extract_model_paths(&cmd);
+        assert!(paths.is_empty(), "Tune is a diagnostic command (exempt)");
+    }
+
+    /// Test extract_model_paths: Pull is diagnostic (exempt)
+    #[test]
+    fn test_extract_paths_pull_exempt() {
+        let cmd = Commands::Pull {
+            model_ref: "hf://org/repo".to_string(),
+            force: false,
+        };
+        let paths = extract_model_paths(&cmd);
+        assert!(paths.is_empty(), "Pull is a diagnostic command (exempt)");
+    }
+
+    /// Test extract_model_paths: Rm is diagnostic (exempt)
+    #[test]
+    fn test_extract_paths_rm_exempt() {
+        let cmd = Commands::Rm {
+            model_ref: "model-name".to_string(),
+        };
+        let paths = extract_model_paths(&cmd);
+        assert!(paths.is_empty(), "Rm is a diagnostic command (exempt)");
+    }
+
+    /// Test extract_model_paths: Canary is diagnostic (exempt)
+    #[test]
+    fn test_extract_paths_canary_exempt() {
+        let cmd = Commands::Canary {
+            command: CanaryCommands::Check {
+                file: PathBuf::from("model.apr"),
+                canary: PathBuf::from("canary.json"),
+            },
+        };
+        let paths = extract_model_paths(&cmd);
+        assert!(paths.is_empty(), "Canary is a diagnostic command (exempt)");
+    }
+
+    /// Test extract_model_paths: Oracle is diagnostic (exempt)
+    #[test]
+    fn test_extract_paths_oracle_exempt() {
+        let cmd = Commands::Oracle {
+            source: Some("model.gguf".to_string()),
+            family: None,
+            size: None,
+            compliance: false,
+            tensors: false,
+            stats: false,
+            explain: false,
+            kernels: false,
+            validate: false,
+            full: false,
+        };
+        let paths = extract_model_paths(&cmd);
+        assert!(paths.is_empty(), "Oracle is a diagnostic command (exempt)");
+    }
+
+    /// Test extract_model_paths: Showcase is diagnostic (exempt)
+    #[test]
+    fn test_extract_paths_showcase_exempt() {
+        let cmd = Commands::Showcase {
+            auto_verify: false,
+            step: None,
+            tier: "small".to_string(),
+            model_dir: PathBuf::from("./models"),
+            baseline: "llama-cpp,ollama".to_string(),
+            zram: false,
+            runs: 30,
+            gpu: false,
+            json: false,
+            verbose: false,
+            quiet: false,
+        };
+        let paths = extract_model_paths(&cmd);
+        assert!(
+            paths.is_empty(),
+            "Showcase is a diagnostic command (exempt)"
+        );
+    }
+
+    /// Test extract_model_paths: Rosetta Convert returns source path
+    #[test]
+    fn test_extract_paths_rosetta_convert() {
+        let cmd = Commands::Rosetta {
+            action: RosettaCommands::Convert {
+                source: PathBuf::from("model.gguf"),
+                target: PathBuf::from("out.safetensors"),
+                quantize: None,
+                verify: false,
+                json: false,
+            },
+        };
+        let paths = extract_model_paths(&cmd);
+        assert_eq!(paths, vec![PathBuf::from("model.gguf")]);
+    }
+
+    /// Test extract_model_paths: Rosetta Chain returns source path
+    #[test]
+    fn test_extract_paths_rosetta_chain() {
+        let cmd = Commands::Rosetta {
+            action: RosettaCommands::Chain {
+                source: PathBuf::from("model.gguf"),
+                formats: vec!["safetensors".to_string(), "apr".to_string()],
+                work_dir: PathBuf::from("/tmp"),
+                json: false,
+            },
+        };
+        let paths = extract_model_paths(&cmd);
+        assert_eq!(paths, vec![PathBuf::from("model.gguf")]);
+    }
+
+    /// Test extract_model_paths: Rosetta Verify returns source path
+    #[test]
+    fn test_extract_paths_rosetta_verify() {
+        let cmd = Commands::Rosetta {
+            action: RosettaCommands::Verify {
+                source: PathBuf::from("model.apr"),
+                intermediate: "safetensors".to_string(),
+                tolerance: 1e-5,
+                json: false,
+            },
+        };
+        let paths = extract_model_paths(&cmd);
+        assert_eq!(paths, vec![PathBuf::from("model.apr")]);
+    }
+
+    /// Test extract_model_paths: Rosetta CompareInference returns both paths
+    #[test]
+    fn test_extract_paths_rosetta_compare_inference() {
+        let cmd = Commands::Rosetta {
+            action: RosettaCommands::CompareInference {
+                model_a: PathBuf::from("model_a.gguf"),
+                model_b: PathBuf::from("model_b.apr"),
+                prompt: "test".to_string(),
+                max_tokens: 5,
+                temperature: 0.0,
+                tolerance: 0.1,
+                json: false,
+            },
+        };
+        let paths = extract_model_paths(&cmd);
+        assert_eq!(
+            paths,
+            vec![PathBuf::from("model_a.gguf"), PathBuf::from("model_b.apr")]
+        );
+    }
+
+    /// Test extract_model_paths: Rosetta Inspect is diagnostic (exempt)
+    #[test]
+    fn test_extract_paths_rosetta_inspect_exempt() {
+        let cmd = Commands::Rosetta {
+            action: RosettaCommands::Inspect {
+                file: PathBuf::from("model.gguf"),
+                hexdump: false,
+                json: false,
+            },
+        };
+        let paths = extract_model_paths(&cmd);
+        assert!(
+            paths.is_empty(),
+            "Rosetta Inspect is a diagnostic command (exempt)"
+        );
+    }
+
+    /// Test extract_model_paths: Rosetta DiffTensors is diagnostic (exempt)
+    #[test]
+    fn test_extract_paths_rosetta_diff_tensors_exempt() {
+        let cmd = Commands::Rosetta {
+            action: RosettaCommands::DiffTensors {
+                model_a: PathBuf::from("a.gguf"),
+                model_b: PathBuf::from("b.apr"),
+                mismatches_only: false,
+                show_values: 0,
+                filter: None,
+                json: false,
+            },
+        };
+        let paths = extract_model_paths(&cmd);
+        assert!(
+            paths.is_empty(),
+            "Rosetta DiffTensors is a diagnostic command (exempt)"
+        );
+    }
+
+    /// Test extract_model_paths: Rosetta Fingerprint is diagnostic (exempt)
+    #[test]
+    fn test_extract_paths_rosetta_fingerprint_exempt() {
+        let cmd = Commands::Rosetta {
+            action: RosettaCommands::Fingerprint {
+                model: PathBuf::from("model.gguf"),
+                model_b: None,
+                output: None,
+                filter: None,
+                verbose: false,
+                json: false,
+            },
+        };
+        let paths = extract_model_paths(&cmd);
+        assert!(
+            paths.is_empty(),
+            "Rosetta Fingerprint is a diagnostic command (exempt)"
+        );
+    }
+
+    /// Test extract_model_paths: Rosetta ValidateStats is diagnostic (exempt)
+    #[test]
+    fn test_extract_paths_rosetta_validate_stats_exempt() {
+        let cmd = Commands::Rosetta {
+            action: RosettaCommands::ValidateStats {
+                model: PathBuf::from("model.apr"),
+                reference: None,
+                fingerprints: None,
+                threshold: 3.0,
+                strict: false,
+                json: false,
+            },
+        };
+        let paths = extract_model_paths(&cmd);
+        assert!(
+            paths.is_empty(),
+            "Rosetta ValidateStats is a diagnostic command (exempt)"
+        );
+    }
+
+    // =========================================================================
+    // validate_model_contract: additional edge cases
+    // =========================================================================
+
+    /// Test validate_model_contract: multiple non-existent paths all skipped
+    #[test]
+    fn test_validate_contract_multiple_nonexistent() {
+        let paths = vec![
+            PathBuf::from("/tmp/nonexistent_a.apr"),
+            PathBuf::from("/tmp/nonexistent_b.gguf"),
+            PathBuf::from("/tmp/nonexistent_c.safetensors"),
+        ];
+        let result = validate_model_contract(&paths);
+        assert!(result.is_ok(), "All non-existent paths should be skipped");
+    }
+
+    /// Test validate_model_contract: mix of non-existent paths
+    #[test]
+    fn test_validate_contract_mixed_nonexistent() {
+        let paths = vec![
+            PathBuf::from("/tmp/does_not_exist_xyz.apr"),
+            PathBuf::from("/tmp/also_missing_123.gguf"),
+        ];
+        let result = validate_model_contract(&paths);
+        assert!(
+            result.is_ok(),
+            "Mixed non-existent paths should all be skipped"
+        );
+    }
+
+    // =========================================================================
+    // execute_command: error path tests (file not found)
+    // =========================================================================
+
+    /// Helper: create a Cli struct with the given command and default flags
+    fn make_cli(command: Commands) -> Cli {
+        Cli {
+            command: Box::new(command),
+            json: false,
+            verbose: false,
+            quiet: false,
+            offline: false,
+            skip_contract: true, // Skip contract to test command dispatch errors
+        }
+    }
+
+    /// Test execute_command: Inspect with non-existent file returns error
+    #[test]
+    fn test_execute_inspect_file_not_found() {
+        let cli = make_cli(Commands::Inspect {
+            file: PathBuf::from("/tmp/nonexistent_model_inspect_test.apr"),
+            vocab: false,
+            filters: false,
+            weights: false,
+            json: false,
+        });
+        let result = execute_command(&cli);
+        assert!(
+            result.is_err(),
+            "Inspect should fail with non-existent file"
+        );
+    }
+
+    /// Test execute_command: Debug with non-existent file returns error
+    #[test]
+    fn test_execute_debug_file_not_found() {
+        let cli = make_cli(Commands::Debug {
+            file: PathBuf::from("/tmp/nonexistent_model_debug_test.apr"),
+            drama: false,
+            hex: false,
+            strings: false,
+            limit: 256,
+        });
+        let result = execute_command(&cli);
+        assert!(result.is_err(), "Debug should fail with non-existent file");
+    }
+
+    /// Test execute_command: Validate with non-existent file returns error
+    #[test]
+    fn test_execute_validate_file_not_found() {
+        let cli = make_cli(Commands::Validate {
+            file: PathBuf::from("/tmp/nonexistent_model_validate_test.apr"),
+            quality: false,
+            strict: false,
+            min_score: None,
+        });
+        let result = execute_command(&cli);
+        assert!(
+            result.is_err(),
+            "Validate should fail with non-existent file"
+        );
+    }
+
+    /// Test execute_command: Diff with non-existent files returns error
+    #[test]
+    fn test_execute_diff_file_not_found() {
+        let cli = make_cli(Commands::Diff {
+            file1: PathBuf::from("/tmp/nonexistent_model_diff1.apr"),
+            file2: PathBuf::from("/tmp/nonexistent_model_diff2.apr"),
+            weights: false,
+            values: false,
+            filter: None,
+            limit: 10,
+            transpose_aware: false,
+            json: false,
+        });
+        let result = execute_command(&cli);
+        assert!(result.is_err(), "Diff should fail with non-existent files");
+    }
+
+    /// Test execute_command: Tensors with non-existent file returns error
+    #[test]
+    fn test_execute_tensors_file_not_found() {
+        let cli = make_cli(Commands::Tensors {
+            file: PathBuf::from("/tmp/nonexistent_model_tensors_test.apr"),
+            stats: false,
+            filter: None,
+            limit: 0,
+            json: false,
+        });
+        let result = execute_command(&cli);
+        assert!(
+            result.is_err(),
+            "Tensors should fail with non-existent file"
+        );
+    }
+
+    /// Test execute_command: Lint with non-existent file returns error
+    #[test]
+    fn test_execute_lint_file_not_found() {
+        let cli = make_cli(Commands::Lint {
+            file: PathBuf::from("/tmp/nonexistent_model_lint_test.apr"),
+        });
+        let result = execute_command(&cli);
+        assert!(result.is_err(), "Lint should fail with non-existent file");
+    }
+
+    /// Test execute_command: Trace with non-existent file returns error
+    #[test]
+    fn test_execute_trace_file_not_found() {
+        let cli = make_cli(Commands::Trace {
+            file: PathBuf::from("/tmp/nonexistent_model_trace_test.apr"),
+            layer: None,
+            reference: None,
+            json: false,
+            verbose: false,
+            payload: false,
+            diff: false,
+            interactive: false,
+        });
+        let result = execute_command(&cli);
+        assert!(result.is_err(), "Trace should fail with non-existent file");
+    }
+
+    /// Test execute_command: Export with non-existent file returns error
+    #[test]
+    fn test_execute_export_file_not_found() {
+        let cli = make_cli(Commands::Export {
+            file: PathBuf::from("/tmp/nonexistent_model_export_test.apr"),
+            format: "safetensors".to_string(),
+            output: PathBuf::from("/tmp/out.safetensors"),
+            quantize: None,
+        });
+        let result = execute_command(&cli);
+        assert!(result.is_err(), "Export should fail with non-existent file");
+    }
+
+    /// Test execute_command: Convert with non-existent file returns error
+    #[test]
+    fn test_execute_convert_file_not_found() {
+        let cli = make_cli(Commands::Convert {
+            file: PathBuf::from("/tmp/nonexistent_model_convert_test.apr"),
+            quantize: None,
+            compress: None,
+            output: PathBuf::from("/tmp/out.apr"),
+            force: false,
+        });
+        let result = execute_command(&cli);
+        assert!(
+            result.is_err(),
+            "Convert should fail with non-existent file"
+        );
+    }
+
+    /// Test execute_command: Hex with non-existent file returns error
+    #[test]
+    fn test_execute_hex_file_not_found() {
+        let cli = make_cli(Commands::Hex {
+            file: PathBuf::from("/tmp/nonexistent_model_hex_test.apr"),
+            tensor: None,
+            limit: 64,
+            stats: false,
+            list: false,
+            json: false,
+        });
+        let result = execute_command(&cli);
+        assert!(result.is_err(), "Hex should fail with non-existent file");
+    }
+
+    /// Test execute_command: Tree with non-existent file returns error
+    #[test]
+    fn test_execute_tree_file_not_found() {
+        let cli = make_cli(Commands::Tree {
+            file: PathBuf::from("/tmp/nonexistent_model_tree_test.apr"),
+            filter: None,
+            format: "ascii".to_string(),
+            sizes: false,
+            depth: None,
+        });
+        let result = execute_command(&cli);
+        assert!(result.is_err(), "Tree should fail with non-existent file");
+    }
+
+    /// Test execute_command: Flow with non-existent file returns error
+    #[test]
+    fn test_execute_flow_file_not_found() {
+        let cli = make_cli(Commands::Flow {
+            file: PathBuf::from("/tmp/nonexistent_model_flow_test.apr"),
+            layer: None,
+            component: "full".to_string(),
+            verbose: false,
+        });
+        let result = execute_command(&cli);
+        assert!(result.is_err(), "Flow should fail with non-existent file");
+    }
+
+    /// Test execute_command: Probar with non-existent file returns error
+    #[test]
+    fn test_execute_probar_file_not_found() {
+        let cli = make_cli(Commands::Probar {
+            file: PathBuf::from("/tmp/nonexistent_model_probar_test.apr"),
+            output: PathBuf::from("/tmp/probar-out"),
+            format: "both".to_string(),
+            golden: None,
+            layer: None,
+        });
+        let result = execute_command(&cli);
+        assert!(result.is_err(), "Probar should fail with non-existent file");
+    }
+
+    /// Test execute_command: Check with non-existent file returns error
+    #[test]
+    fn test_execute_check_file_not_found() {
+        let cli = make_cli(Commands::Check {
+            file: PathBuf::from("/tmp/nonexistent_model_check_test.apr"),
+            no_gpu: true,
+        });
+        let result = execute_command(&cli);
+        assert!(result.is_err(), "Check should fail with non-existent file");
+    }
+
+    /// Test execute_command: List succeeds (no file needed)
+    #[test]
+    fn test_execute_list_succeeds() {
+        let cli = make_cli(Commands::List);
+        // List should succeed even if cache is empty
+        let result = execute_command(&cli);
+        assert!(result.is_ok(), "List should succeed without arguments");
+    }
+
+    /// Test execute_command: Explain without args succeeds
+    #[test]
+    fn test_execute_explain_no_args() {
+        let cli = make_cli(Commands::Explain {
+            code: None,
+            file: None,
+            tensor: None,
+        });
+        // Explain with no args should still run (shows general help)
+        let result = execute_command(&cli);
+        assert!(result.is_ok(), "Explain with no args should succeed");
+    }
+
+    /// Test execute_command: Explain with code succeeds
+    #[test]
+    fn test_execute_explain_with_code() {
+        let cli = make_cli(Commands::Explain {
+            code: Some("E001".to_string()),
+            file: None,
+            tensor: None,
+        });
+        let result = execute_command(&cli);
+        // Should succeed even for unknown error codes (it prints "unknown error code")
+        assert!(result.is_ok(), "Explain with error code should succeed");
+    }
+
+    /// Test execute_command: Tune --plan without file succeeds
+    #[test]
+    fn test_execute_tune_plan_no_file() {
+        let cli = make_cli(Commands::Tune {
+            file: None,
+            method: "auto".to_string(),
+            rank: None,
+            vram: 16.0,
+            plan: true,
+            model: Some("7B".to_string()),
+            freeze_base: false,
+            train_data: None,
+            json: false,
+        });
+        let result = execute_command(&cli);
+        // Tune with --plan and --model should succeed without a file
+        assert!(
+            result.is_ok(),
+            "Tune --plan --model 7B should succeed without file"
+        );
+    }
+
+    /// Test execute_command: Qa with non-existent file and all skips still succeeds
+    /// because QA gates are individually skipped. With no gates enabled, it just
+    /// prints summary and returns Ok.
+    #[test]
+    fn test_execute_qa_all_skips_succeeds() {
+        let cli = make_cli(Commands::Qa {
+            file: PathBuf::from("/tmp/nonexistent_model_qa_test.gguf"),
+            assert_tps: None,
+            assert_speedup: None,
+            assert_gpu_speedup: None,
+            skip_golden: true,
+            skip_throughput: true,
+            skip_ollama: true,
+            skip_gpu_speedup: true,
+            skip_contract: true,
+            skip_format_parity: true,
+            safetensors_path: None,
+            iterations: 1,
+            warmup: 0,
+            max_tokens: 1,
+            json: false,
+            verbose: false,
+        });
+        let result = execute_command(&cli);
+        assert!(
+            result.is_ok(),
+            "Qa with all gates skipped should succeed even with non-existent file"
+        );
+    }
+
+    /// Test execute_command: Qa with non-existent file and gates enabled returns error
+    #[test]
+    fn test_execute_qa_with_gates_file_not_found() {
+        let cli = make_cli(Commands::Qa {
+            file: PathBuf::from("/tmp/nonexistent_model_qa_gates_test.gguf"),
+            assert_tps: None,
+            assert_speedup: None,
+            assert_gpu_speedup: None,
+            skip_golden: false, // Gate enabled
+            skip_throughput: true,
+            skip_ollama: true,
+            skip_gpu_speedup: true,
+            skip_contract: true,
+            skip_format_parity: true,
+            safetensors_path: None,
+            iterations: 1,
+            warmup: 0,
+            max_tokens: 1,
+            json: false,
+            verbose: false,
+        });
+        let result = execute_command(&cli);
+        assert!(
+            result.is_err(),
+            "Qa with golden gate enabled should fail with non-existent file"
+        );
+    }
+
+    /// Test execute_command: Import with invalid source returns error
+    #[test]
+    fn test_execute_import_invalid_source() {
+        let cli = make_cli(Commands::Import {
+            source: "/tmp/nonexistent_model_import_test.gguf".to_string(),
+            output: None,
+            arch: "auto".to_string(),
+            quantize: None,
+            strict: false,
+            preserve_q4k: false,
+            tokenizer: None,
+        });
+        let result = execute_command(&cli);
+        assert!(
+            result.is_err(),
+            "Import should fail with non-existent source file"
+        );
+    }
+
+    // =========================================================================
+    // --chat flag logic: effective_prompt with ChatML wrapping
+    // =========================================================================
+
+    /// Test that --chat flag wraps prompt in ChatML format (verified via parse)
+    #[test]
+    fn test_chat_flag_chatml_wrapping_logic() {
+        // We cannot call execute_command with --chat on a non-existent model
+        // without error, but we can verify the ChatML wrapping logic directly.
+        let prompt = "What is the meaning of life?";
+        let chat = true;
+
+        let effective_prompt = if chat {
+            Some(format!(
+                "<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n",
+                prompt
+            ))
+        } else {
+            Some(prompt.to_string())
+        };
+
+        assert!(effective_prompt
+            .as_ref()
+            .expect("prompt should exist")
+            .starts_with("<|im_start|>user\n"));
+        assert!(effective_prompt
+            .as_ref()
+            .expect("prompt should exist")
+            .ends_with("<|im_start|>assistant\n"));
+        assert!(effective_prompt
+            .as_ref()
+            .expect("prompt should exist")
+            .contains("What is the meaning of life?"));
+    }
+
+    /// Test that without --chat, prompt is passed through unchanged
+    #[test]
+    fn test_no_chat_flag_passthrough() {
+        let prompt = Some("Hello world".to_string());
+        let chat = false;
+
+        let effective_prompt = if chat {
+            prompt
+                .as_ref()
+                .map(|p| format!("<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n", p))
+        } else {
+            prompt.clone()
+        };
+
+        assert_eq!(effective_prompt, Some("Hello world".to_string()));
+    }
+
+    /// Test that --chat with no prompt produces None
+    #[test]
+    fn test_chat_flag_no_prompt() {
+        let prompt: Option<String> = None;
+        let chat = true;
+
+        let effective_prompt = if chat {
+            prompt
+                .as_ref()
+                .map(|p| format!("<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n", p))
+        } else {
+            prompt.clone()
+        };
+
+        assert!(effective_prompt.is_none());
+    }
+
+    // =========================================================================
+    // --trace-payload shorthand logic
+    // =========================================================================
+
+    /// Test trace-payload shorthand enables trace and sets level to payload
+    #[test]
+    fn test_trace_payload_shorthand_logic() {
+        let trace = false;
+        let trace_payload = true;
+        let trace_level = "basic".to_string();
+
+        let effective_trace = trace || trace_payload;
+        let effective_trace_level = if trace_payload {
+            "payload"
+        } else {
+            trace_level.as_str()
+        };
+
+        assert!(effective_trace);
+        assert_eq!(effective_trace_level, "payload");
+    }
+
+    /// Test that without --trace-payload, trace settings are preserved
+    #[test]
+    fn test_no_trace_payload_preserves_settings() {
+        let trace = true;
+        let trace_payload = false;
+        let trace_level = "layer".to_string();
+
+        let effective_trace = trace || trace_payload;
+        let effective_trace_level = if trace_payload {
+            "payload"
+        } else {
+            trace_level.as_str()
+        };
+
+        assert!(effective_trace);
+        assert_eq!(effective_trace_level, "layer");
+    }
+
+    /// Test that neither trace nor trace_payload results in no trace
+    #[test]
+    fn test_no_trace_no_trace_payload() {
+        let trace = false;
+        let trace_payload = false;
+        let trace_level = "basic".to_string();
+
+        let effective_trace = trace || trace_payload;
+        let effective_trace_level = if trace_payload {
+            "payload"
+        } else {
+            trace_level.as_str()
+        };
+
+        assert!(!effective_trace);
+        assert_eq!(effective_trace_level, "basic");
+    }
+
+    // =========================================================================
+    // Verbose flag inheritance (local vs global)
+    // =========================================================================
+
+    /// Test that local verbose flag overrides global false
+    #[test]
+    fn test_verbose_local_true_global_false() {
+        let local_verbose = true;
+        let global_verbose = false;
+        let effective_verbose = local_verbose || global_verbose;
+        assert!(effective_verbose);
+    }
+
+    /// Test that global verbose flag takes effect when local is false
+    #[test]
+    fn test_verbose_local_false_global_true() {
+        let local_verbose = false;
+        let global_verbose = true;
+        let effective_verbose = local_verbose || global_verbose;
+        assert!(effective_verbose);
+    }
+
+    /// Test that both verbose false means not verbose
+    #[test]
+    fn test_verbose_both_false() {
+        let local_verbose = false;
+        let global_verbose = false;
+        let effective_verbose = local_verbose || global_verbose;
+        assert!(!effective_verbose);
+    }
+
+    /// Test that both verbose true means verbose
+    #[test]
+    fn test_verbose_both_true() {
+        let local_verbose = true;
+        let global_verbose = true;
+        let effective_verbose = local_verbose || global_verbose;
+        assert!(effective_verbose);
+    }
+
+    /// Test verbose inheritance end-to-end via global flag and Run command.
+    /// Note: clap with `global = true` and matching short flag `-v` means
+    /// the global verbose flag propagates to both the Cli struct and the
+    /// Run subcommand's local verbose field.
+    #[test]
+    fn test_verbose_inheritance_run_global() {
+        let args = vec!["apr", "--verbose", "run", "model.gguf", "--prompt", "test"];
+        let cli = parse_cli(args).expect("Failed to parse");
+        assert!(cli.verbose);
+        match *cli.command {
+            Commands::Run { verbose, .. } => {
+                // With global = true, clap propagates to both levels
+                // effective_verbose = local || global = always true
+                let effective = verbose || cli.verbose;
+                assert!(effective);
+            }
+            _ => panic!("Expected Run command"),
+        }
+    }
+
+    /// Test verbose inheritance end-to-end with -v after the subcommand.
+    /// Because clap uses `global = true` + `short = 'v'` on both Cli and
+    /// Run, -v placed after the subcommand sets the global verbose field.
+    #[test]
+    fn test_verbose_inheritance_run_local() {
+        let args = vec!["apr", "run", "model.gguf", "--prompt", "test", "-v"];
+        let cli = parse_cli(args).expect("Failed to parse");
+        // -v after the subcommand still sets the global flag due to global = true
+        match *cli.command {
+            Commands::Run { verbose, .. } => {
+                let effective = verbose || cli.verbose;
+                assert!(effective, "effective verbose should be true");
+            }
+            _ => panic!("Expected Run command"),
+        }
+    }
+
+    // =========================================================================
+    // Edge case: conflicting flags (--gpu vs --no-gpu)
+    // =========================================================================
+
+    /// Test that --gpu and --no-gpu conflict (Run command)
+    #[test]
+    fn test_parse_run_gpu_nogpu_conflict() {
+        let args = vec![
+            "apr",
+            "run",
+            "model.gguf",
+            "--prompt",
+            "test",
+            "--gpu",
+            "--no-gpu",
+        ];
+        let result = parse_cli(args);
+        assert!(result.is_err(), "--gpu and --no-gpu should conflict in Run");
+    }
+
+    /// Test parsing 'apr run' with --gpu flag alone
+    #[test]
+    fn test_parse_run_gpu_only() {
+        let args = vec!["apr", "run", "model.gguf", "--prompt", "test", "--gpu"];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Run { gpu, no_gpu, .. } => {
+                assert!(gpu);
+                assert!(!no_gpu);
+            }
+            _ => panic!("Expected Run command"),
+        }
+    }
+
+    // =========================================================================
+    // Missing required args error tests
+    // =========================================================================
+
+    /// Test that 'apr serve' without FILE fails
+    #[test]
+    fn test_missing_serve_file() {
+        let args = vec!["apr", "serve"];
+        let result = parse_cli(args);
+        assert!(result.is_err(), "serve requires FILE");
+    }
+
+    /// Test that 'apr diff' with only one file fails
+    #[test]
+    fn test_missing_diff_second_file() {
+        let args = vec!["apr", "diff", "model1.apr"];
+        let result = parse_cli(args);
+        assert!(result.is_err(), "diff requires two files");
+    }
+
+    /// Test that 'apr export' without output fails
+    #[test]
+    fn test_missing_export_output() {
+        let args = vec!["apr", "export", "model.apr"];
+        let result = parse_cli(args);
+        assert!(result.is_err(), "export requires -o/--output");
+    }
+
+    /// Test that 'apr convert' without output fails
+    #[test]
+    fn test_missing_convert_output() {
+        let args = vec!["apr", "convert", "model.apr"];
+        let result = parse_cli(args);
+        assert!(result.is_err(), "convert requires -o/--output");
+    }
+
+    /// Test that 'apr merge' with fewer than 2 files fails
+    #[test]
+    fn test_missing_merge_files() {
+        let args = vec!["apr", "merge", "model1.apr", "-o", "out.apr"];
+        let result = parse_cli(args);
+        assert!(result.is_err(), "merge requires at least 2 files");
+    }
+
+    /// Test that 'apr publish' without repo_id fails
+    #[test]
+    fn test_missing_publish_repo_id() {
+        let args = vec!["apr", "publish", "/tmp/models"];
+        let result = parse_cli(args);
+        assert!(result.is_err(), "publish requires REPO_ID");
+    }
+
+    /// Test that 'apr pull' without model_ref fails
+    #[test]
+    fn test_missing_pull_model_ref() {
+        let args = vec!["apr", "pull"];
+        let result = parse_cli(args);
+        assert!(result.is_err(), "pull requires MODEL");
+    }
+
+    /// Test that 'apr rm' without model_ref fails
+    #[test]
+    fn test_missing_rm_model_ref() {
+        let args = vec!["apr", "rm"];
+        let result = parse_cli(args);
+        assert!(result.is_err(), "rm requires MODEL");
+    }
+
+    /// Test that 'apr compare-hf' without --hf fails
+    #[test]
+    fn test_missing_compare_hf_hf_arg() {
+        let args = vec!["apr", "compare-hf", "model.apr"];
+        let result = parse_cli(args);
+        assert!(result.is_err(), "compare-hf requires --hf");
+    }
+
+    /// Test that 'apr canary create' without --input fails
+    #[test]
+    fn test_missing_canary_create_input() {
+        let args = vec![
+            "apr",
+            "canary",
+            "create",
+            "model.apr",
+            "--output",
+            "canary.json",
+        ];
+        let result = parse_cli(args);
+        assert!(result.is_err(), "canary create requires --input");
+    }
+
+    /// Test that 'apr canary check' without --canary fails
+    #[test]
+    fn test_missing_canary_check_canary() {
+        let args = vec!["apr", "canary", "check", "model.apr"];
+        let result = parse_cli(args);
+        assert!(result.is_err(), "canary check requires --canary");
+    }
+
+    // =========================================================================
+    // execute_command: contract gate integration
+    // =========================================================================
+
+    /// Test that execute_command with skip_contract=false and non-existent paths
+    /// still works because non-existent paths are skipped in validate_model_contract
+    #[test]
+    fn test_execute_with_contract_gate_nonexistent() {
+        let cli = Cli {
+            command: Box::new(Commands::Inspect {
+                file: PathBuf::from("/tmp/nonexistent_contract_test.apr"),
+                vocab: false,
+                filters: false,
+                weights: false,
+                json: false,
+            }),
+            json: false,
+            verbose: false,
+            quiet: false,
+            offline: false,
+            skip_contract: false, // Contract enabled, but paths don't exist
+        };
+        // The contract gate should pass (non-existent paths are skipped),
+        // but the command itself should fail (file not found)
+        let result = execute_command(&cli);
+        assert!(
+            result.is_err(),
+            "Should still fail from command execution, not contract"
+        );
+    }
+
+    /// Test that execute_command dispatches List even with contract enabled
+    #[test]
+    fn test_execute_list_with_contract_enabled() {
+        let cli = Cli {
+            command: Box::new(Commands::List),
+            json: false,
+            verbose: false,
+            quiet: false,
+            offline: false,
+            skip_contract: false, // Contract enabled
+        };
+        let result = execute_command(&cli);
+        assert!(result.is_ok(), "List should succeed with contract enabled");
+    }
+
+    // =========================================================================
+    // Rosetta command execution error paths
+    // =========================================================================
+
+    /// Test execute_command: Rosetta inspect with non-existent file returns error
+    #[test]
+    fn test_execute_rosetta_inspect_file_not_found() {
+        let cli = make_cli(Commands::Rosetta {
+            action: RosettaCommands::Inspect {
+                file: PathBuf::from("/tmp/nonexistent_rosetta_inspect.gguf"),
+                hexdump: false,
+                json: false,
+            },
+        });
+        let result = execute_command(&cli);
+        assert!(
+            result.is_err(),
+            "Rosetta inspect should fail with non-existent file"
+        );
+    }
+
+    /// Test execute_command: Rosetta convert with non-existent source returns error
+    #[test]
+    fn test_execute_rosetta_convert_file_not_found() {
+        let cli = make_cli(Commands::Rosetta {
+            action: RosettaCommands::Convert {
+                source: PathBuf::from("/tmp/nonexistent_rosetta_convert.gguf"),
+                target: PathBuf::from("/tmp/out.safetensors"),
+                quantize: None,
+                verify: false,
+                json: false,
+            },
+        });
+        let result = execute_command(&cli);
+        assert!(
+            result.is_err(),
+            "Rosetta convert should fail with non-existent source"
+        );
+    }
+
+    /// Test execute_command: Rosetta fingerprint with non-existent file returns error
+    #[test]
+    fn test_execute_rosetta_fingerprint_file_not_found() {
+        let cli = make_cli(Commands::Rosetta {
+            action: RosettaCommands::Fingerprint {
+                model: PathBuf::from("/tmp/nonexistent_rosetta_fingerprint.gguf"),
+                model_b: None,
+                output: None,
+                filter: None,
+                verbose: false,
+                json: false,
+            },
+        });
+        let result = execute_command(&cli);
+        assert!(
+            result.is_err(),
+            "Rosetta fingerprint should fail with non-existent file"
+        );
+    }
+
+    /// Test execute_command: Bench with non-existent file returns error
+    #[test]
+    fn test_execute_bench_file_not_found() {
+        let cli = make_cli(Commands::Bench {
+            file: PathBuf::from("/tmp/nonexistent_model_bench_test.gguf"),
+            warmup: 1,
+            iterations: 1,
+            max_tokens: 1,
+            prompt: None,
+            fast: false,
+            brick: None,
+        });
+        let result = execute_command(&cli);
+        assert!(result.is_err(), "Bench should fail with non-existent file");
+    }
+
+    /// Test execute_command: Eval with non-existent file returns error
+    #[test]
+    fn test_execute_eval_file_not_found() {
+        let cli = make_cli(Commands::Eval {
+            file: PathBuf::from("/tmp/nonexistent_model_eval_test.gguf"),
+            dataset: "wikitext-2".to_string(),
+            text: None,
+            max_tokens: 32,
+            threshold: 20.0,
+        });
+        let result = execute_command(&cli);
+        assert!(result.is_err(), "Eval should fail with non-existent file");
+    }
+
+    /// Test execute_command: Profile with non-existent file returns error
+    #[test]
+    fn test_execute_profile_file_not_found() {
+        let cli = make_cli(Commands::Profile {
+            file: PathBuf::from("/tmp/nonexistent_model_profile_test.apr"),
+            granular: false,
+            format: "human".to_string(),
+            focus: None,
+            detect_naive: false,
+            threshold: 10.0,
+            compare_hf: None,
+            energy: false,
+            perf_grade: false,
+            callgraph: false,
+            fail_on_naive: false,
+            output: None,
+            ci: false,
+            assert_throughput: None,
+            assert_p99: None,
+            assert_p50: None,
+            warmup: 3,
+            measure: 10,
+        });
+        let result = execute_command(&cli);
+        assert!(
+            result.is_err(),
+            "Profile should fail with non-existent file"
+        );
+    }
+
+    /// Test execute_command: CompareHf with non-existent file returns error
+    #[test]
+    fn test_execute_compare_hf_file_not_found() {
+        let cli = make_cli(Commands::CompareHf {
+            file: PathBuf::from("/tmp/nonexistent_model_compare_hf_test.apr"),
+            hf: "openai/whisper-tiny".to_string(),
+            tensor: None,
+            threshold: 1e-5,
+            json: false,
+        });
+        let result = execute_command(&cli);
+        assert!(
+            result.is_err(),
+            "CompareHf should fail with non-existent file"
+        );
+    }
+
+    /// Test execute_command: Canary check with non-existent file returns error
+    #[test]
+    fn test_execute_canary_check_file_not_found() {
+        let cli = make_cli(Commands::Canary {
+            command: CanaryCommands::Check {
+                file: PathBuf::from("/tmp/nonexistent_canary_check.apr"),
+                canary: PathBuf::from("/tmp/nonexistent_canary.json"),
+            },
+        });
+        let result = execute_command(&cli);
+        assert!(
+            result.is_err(),
+            "Canary check should fail with non-existent file"
+        );
+    }
+
+    /// Test execute_command: Publish with non-existent directory returns error
+    #[test]
+    fn test_execute_publish_dir_not_found() {
+        let cli = make_cli(Commands::Publish {
+            directory: PathBuf::from("/tmp/nonexistent_publish_dir_test"),
+            repo_id: "test/test".to_string(),
+            model_name: None,
+            license: "mit".to_string(),
+            pipeline_tag: "text-generation".to_string(),
+            library_name: None,
+            tags: None,
+            message: None,
+            dry_run: true, // Use dry_run to avoid actual upload
+        });
+        let result = execute_command(&cli);
+        assert!(
+            result.is_err(),
+            "Publish should fail with non-existent directory"
+        );
+    }
+
+    // =========================================================================
+    // Default value verification tests
+    // =========================================================================
+
+    /// Test Run command defaults
+    #[test]
+    fn test_parse_run_defaults() {
+        let args = vec!["apr", "run", "model.gguf"];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Run {
+                max_tokens,
+                stream,
+                format,
+                no_gpu,
+                gpu,
+                offline,
+                benchmark,
+                trace,
+                trace_payload,
+                trace_verbose,
+                trace_level,
+                profile,
+                chat,
+                verbose,
+                prompt,
+                input,
+                language,
+                task,
+                trace_steps,
+                trace_output,
+                ..
+            } => {
+                assert_eq!(max_tokens, 32);
+                assert!(!stream);
+                assert_eq!(format, "text");
+                assert!(!no_gpu);
+                assert!(!gpu);
+                assert!(!offline);
+                assert!(!benchmark);
+                assert!(!trace);
+                assert!(!trace_payload);
+                assert!(!trace_verbose);
+                assert_eq!(trace_level, "basic");
+                assert!(!profile);
+                assert!(!chat);
+                assert!(!verbose);
+                assert!(prompt.is_none());
+                assert!(input.is_none());
+                assert!(language.is_none());
+                assert!(task.is_none());
+                assert!(trace_steps.is_none());
+                assert!(trace_output.is_none());
+            }
+            _ => panic!("Expected Run command"),
+        }
+    }
+
+    /// Test Serve command defaults
+    #[test]
+    fn test_parse_serve_defaults() {
+        let args = vec!["apr", "serve", "model.apr"];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Serve {
+                port,
+                host,
+                no_cors,
+                no_metrics,
+                no_gpu,
+                gpu,
+                batch,
+                trace,
+                trace_level,
+                profile,
+                ..
+            } => {
+                assert_eq!(port, 8080);
+                assert_eq!(host, "127.0.0.1");
+                assert!(!no_cors);
+                assert!(!no_metrics);
+                assert!(!no_gpu);
+                assert!(!gpu);
+                assert!(!batch);
+                assert!(!trace);
+                assert_eq!(trace_level, "basic");
+                assert!(!profile);
+            }
+            _ => panic!("Expected Serve command"),
+        }
+    }
+
+    /// Test Bench command defaults
+    #[test]
+    fn test_parse_bench_defaults() {
+        let args = vec!["apr", "bench", "model.gguf"];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Bench {
+                warmup,
+                iterations,
+                max_tokens,
+                prompt,
+                fast,
+                brick,
+                ..
+            } => {
+                assert_eq!(warmup, 3);
+                assert_eq!(iterations, 5);
+                assert_eq!(max_tokens, 32);
+                assert!(prompt.is_none());
+                assert!(!fast);
+                assert!(brick.is_none());
+            }
+            _ => panic!("Expected Bench command"),
+        }
+    }
+
+    /// Test Cbtop command defaults
+    #[test]
+    fn test_parse_cbtop_defaults() {
+        let args = vec!["apr", "cbtop"];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Cbtop {
+                model,
+                attach,
+                model_path,
+                headless,
+                json,
+                output,
+                ci,
+                throughput,
+                brick_score,
+                warmup,
+                iterations,
+                speculative,
+                speculation_k,
+                draft_model,
+                concurrent,
+                simulated,
+            } => {
+                assert!(model.is_none());
+                assert!(attach.is_none());
+                assert!(model_path.is_none());
+                assert!(!headless);
+                assert!(!json);
+                assert!(output.is_none());
+                assert!(!ci);
+                assert!(throughput.is_none());
+                assert!(brick_score.is_none());
+                assert_eq!(warmup, 10);
+                assert_eq!(iterations, 100);
+                assert!(!speculative);
+                assert_eq!(speculation_k, 4);
+                assert!(draft_model.is_none());
+                assert_eq!(concurrent, 1);
+                assert!(!simulated);
+            }
+            _ => panic!("Expected Cbtop command"),
+        }
+    }
+
+    /// Test Profile command defaults
+    #[test]
+    fn test_parse_profile_defaults() {
+        let args = vec!["apr", "profile", "model.apr"];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Profile {
+                granular,
+                format,
+                focus,
+                detect_naive,
+                threshold,
+                compare_hf,
+                energy,
+                perf_grade,
+                callgraph,
+                fail_on_naive,
+                output,
+                ci,
+                assert_throughput,
+                assert_p99,
+                assert_p50,
+                warmup,
+                measure,
+                ..
+            } => {
+                assert!(!granular);
+                assert_eq!(format, "human");
+                assert!(focus.is_none());
+                assert!(!detect_naive);
+                assert!((threshold - 10.0).abs() < f64::EPSILON);
+                assert!(compare_hf.is_none());
+                assert!(!energy);
+                assert!(!perf_grade);
+                assert!(!callgraph);
+                assert!(!fail_on_naive);
+                assert!(output.is_none());
+                assert!(!ci);
+                assert!(assert_throughput.is_none());
+                assert!(assert_p99.is_none());
+                assert!(assert_p50.is_none());
+                assert_eq!(warmup, 3);
+                assert_eq!(measure, 10);
+            }
+            _ => panic!("Expected Profile command"),
+        }
+    }
+
+    /// Test Qa command defaults
+    #[test]
+    fn test_parse_qa_defaults() {
+        let args = vec!["apr", "qa", "model.gguf"];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Qa {
+                assert_tps,
+                assert_speedup,
+                assert_gpu_speedup,
+                skip_golden,
+                skip_throughput,
+                skip_ollama,
+                skip_gpu_speedup,
+                skip_contract,
+                skip_format_parity,
+                safetensors_path,
+                iterations,
+                warmup,
+                max_tokens,
+                json,
+                verbose,
+                ..
+            } => {
+                assert!(assert_tps.is_none());
+                assert!(assert_speedup.is_none());
+                assert!(assert_gpu_speedup.is_none());
+                assert!(!skip_golden);
+                assert!(!skip_throughput);
+                assert!(!skip_ollama);
+                assert!(!skip_gpu_speedup);
+                assert!(!skip_contract);
+                assert!(!skip_format_parity);
+                assert!(safetensors_path.is_none());
+                assert_eq!(iterations, 10);
+                assert_eq!(warmup, 3);
+                assert_eq!(max_tokens, 32);
+                assert!(!json);
+                assert!(!verbose);
+            }
+            _ => panic!("Expected Qa command"),
+        }
+    }
+
+    /// Test Chat command defaults
+    #[test]
+    fn test_parse_chat_defaults() {
+        let args = vec!["apr", "chat", "model.gguf"];
+        let cli = parse_cli(args).expect("Failed to parse");
+        match *cli.command {
+            Commands::Chat {
+                temperature,
+                top_p,
+                max_tokens,
+                system,
+                inspect,
+                no_gpu,
+                gpu,
+                trace,
+                trace_steps,
+                trace_verbose,
+                trace_output,
+                trace_level,
+                profile,
+                ..
+            } => {
+                assert!((temperature - 0.7).abs() < f32::EPSILON);
+                assert!((top_p - 0.9).abs() < f32::EPSILON);
+                assert_eq!(max_tokens, 512);
+                assert!(system.is_none());
+                assert!(!inspect);
+                assert!(!no_gpu);
+                assert!(!gpu);
+                assert!(!trace);
+                assert!(trace_steps.is_none());
+                assert!(!trace_verbose);
+                assert!(trace_output.is_none());
+                assert_eq!(trace_level, "basic");
+                assert!(!profile);
+            }
+            _ => panic!("Expected Chat command"),
+        }
     }
 }

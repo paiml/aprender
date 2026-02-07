@@ -1662,4 +1662,1165 @@ mod tests {
 
         assert!(result.tokens_per_second >= 20.0 && result.tokens_per_second < 50.0);
     }
+
+    // ========================================================================
+    // print_header() Tests
+    // ========================================================================
+
+    #[test]
+    fn test_print_header_default_config() {
+        let config = BenchConfig::default();
+        let path = Path::new("/tmp/model.gguf");
+        // Should not panic; exercises print_header lines 385-394
+        print_header(path, &config);
+    }
+
+    #[test]
+    fn test_print_header_custom_config() {
+        let config = BenchConfig {
+            warmup: 10,
+            iterations: 100,
+            max_tokens: 256,
+            prompt: "Explain quantum computing".to_string(),
+        };
+        let path = Path::new("/models/large-model.safetensors");
+        print_header(path, &config);
+    }
+
+    #[test]
+    fn test_print_header_empty_prompt() {
+        let config = BenchConfig {
+            warmup: 0,
+            iterations: 0,
+            max_tokens: 0,
+            prompt: String::new(),
+        };
+        let path = Path::new("model.apr");
+        print_header(path, &config);
+    }
+
+    #[test]
+    fn test_print_header_unicode_path() {
+        let config = BenchConfig::default();
+        let path = Path::new("/tmp/модель.gguf");
+        print_header(path, &config);
+    }
+
+    // ========================================================================
+    // print_results() Tests - All Grade Branches
+    // ========================================================================
+
+    #[test]
+    fn test_print_results_grade_a_plus() {
+        // A+ grade: >= 100 tok/s
+        let result = BenchResult {
+            total_tokens: 500,
+            total_time: Duration::from_secs(1),
+            tokens_per_second: 150.0,
+            time_to_first_token: Duration::from_millis(5),
+            iteration_times: vec![Duration::from_millis(200); 5],
+            mean_time: Duration::from_millis(200),
+            median_time: Duration::from_millis(200),
+            std_dev: Duration::from_millis(2),
+            passed: true,
+        };
+        // Exercises the A+ branch (>= 100.0) in print_results
+        print_results(&result);
+    }
+
+    #[test]
+    fn test_print_results_grade_a() {
+        // A grade: >= 50 and < 100 tok/s
+        let result = BenchResult {
+            total_tokens: 250,
+            total_time: Duration::from_secs(5),
+            tokens_per_second: 75.0,
+            time_to_first_token: Duration::from_millis(10),
+            iteration_times: vec![Duration::from_secs(1); 5],
+            mean_time: Duration::from_secs(1),
+            median_time: Duration::from_secs(1),
+            std_dev: Duration::from_millis(5),
+            passed: true,
+        };
+        print_results(&result);
+    }
+
+    #[test]
+    fn test_print_results_grade_b() {
+        // B grade: >= 20 and < 50 tok/s
+        let result = BenchResult {
+            total_tokens: 100,
+            total_time: Duration::from_secs(5),
+            tokens_per_second: 35.0,
+            time_to_first_token: Duration::from_millis(20),
+            iteration_times: vec![Duration::from_secs(1); 5],
+            mean_time: Duration::from_secs(1),
+            median_time: Duration::from_secs(1),
+            std_dev: Duration::from_millis(10),
+            passed: true,
+        };
+        print_results(&result);
+    }
+
+    #[test]
+    fn test_print_results_grade_c() {
+        // C grade: >= 10 and < 20 tok/s
+        let result = BenchResult {
+            total_tokens: 50,
+            total_time: Duration::from_secs(5),
+            tokens_per_second: 15.0,
+            time_to_first_token: Duration::from_millis(50),
+            iteration_times: vec![Duration::from_secs(1); 5],
+            mean_time: Duration::from_secs(1),
+            median_time: Duration::from_secs(1),
+            std_dev: Duration::from_millis(20),
+            passed: true,
+        };
+        print_results(&result);
+    }
+
+    #[test]
+    fn test_print_results_grade_f() {
+        // F grade: < 10 tok/s
+        let result = BenchResult {
+            total_tokens: 10,
+            total_time: Duration::from_secs(5),
+            tokens_per_second: 2.0,
+            time_to_first_token: Duration::from_millis(500),
+            iteration_times: vec![Duration::from_secs(1); 5],
+            mean_time: Duration::from_secs(1),
+            median_time: Duration::from_secs(1),
+            std_dev: Duration::from_millis(100),
+            passed: false,
+        };
+        print_results(&result);
+    }
+
+    #[test]
+    fn test_print_results_passed_true() {
+        // Tests the passed=true display path
+        let result = BenchResult {
+            total_tokens: 200,
+            total_time: Duration::from_secs(2),
+            tokens_per_second: 100.0,
+            time_to_first_token: Duration::from_millis(10),
+            iteration_times: vec![Duration::from_millis(400); 5],
+            mean_time: Duration::from_millis(400),
+            median_time: Duration::from_millis(400),
+            std_dev: Duration::from_millis(5),
+            passed: true,
+        };
+        print_results(&result);
+    }
+
+    #[test]
+    fn test_print_results_passed_false() {
+        // Tests the passed=false display path (red output)
+        let result = BenchResult {
+            total_tokens: 5,
+            total_time: Duration::from_secs(10),
+            tokens_per_second: 0.5,
+            time_to_first_token: Duration::from_secs(2),
+            iteration_times: vec![Duration::from_secs(2); 5],
+            mean_time: Duration::from_secs(2),
+            median_time: Duration::from_secs(2),
+            std_dev: Duration::from_millis(200),
+            passed: false,
+        };
+        print_results(&result);
+    }
+
+    #[test]
+    fn test_print_results_exact_boundary_100() {
+        // Exactly 100 tok/s: should be A+
+        let result = BenchResult {
+            total_tokens: 100,
+            total_time: Duration::from_secs(1),
+            tokens_per_second: 100.0,
+            time_to_first_token: Duration::from_millis(10),
+            iteration_times: vec![Duration::from_millis(200); 5],
+            mean_time: Duration::from_millis(200),
+            median_time: Duration::from_millis(200),
+            std_dev: Duration::from_millis(1),
+            passed: true,
+        };
+        print_results(&result);
+    }
+
+    #[test]
+    fn test_print_results_exact_boundary_50() {
+        // Exactly 50 tok/s: should be A (>= 50, not >= 100)
+        let result = BenchResult {
+            total_tokens: 50,
+            total_time: Duration::from_secs(1),
+            tokens_per_second: 50.0,
+            time_to_first_token: Duration::from_millis(20),
+            iteration_times: vec![Duration::from_millis(200); 5],
+            mean_time: Duration::from_millis(200),
+            median_time: Duration::from_millis(200),
+            std_dev: Duration::from_millis(5),
+            passed: true,
+        };
+        print_results(&result);
+    }
+
+    #[test]
+    fn test_print_results_exact_boundary_20() {
+        // Exactly 20 tok/s: should be B
+        let result = BenchResult {
+            total_tokens: 20,
+            total_time: Duration::from_secs(1),
+            tokens_per_second: 20.0,
+            time_to_first_token: Duration::from_millis(50),
+            iteration_times: vec![Duration::from_millis(200); 5],
+            mean_time: Duration::from_millis(200),
+            median_time: Duration::from_millis(200),
+            std_dev: Duration::from_millis(10),
+            passed: true,
+        };
+        print_results(&result);
+    }
+
+    #[test]
+    fn test_print_results_exact_boundary_10() {
+        // Exactly 10 tok/s: should be C
+        let result = BenchResult {
+            total_tokens: 10,
+            total_time: Duration::from_secs(1),
+            tokens_per_second: 10.0,
+            time_to_first_token: Duration::from_millis(100),
+            iteration_times: vec![Duration::from_millis(200); 5],
+            mean_time: Duration::from_millis(200),
+            median_time: Duration::from_millis(200),
+            std_dev: Duration::from_millis(20),
+            passed: true,
+        };
+        print_results(&result);
+    }
+
+    #[test]
+    fn test_print_results_zero_throughput() {
+        let result = BenchResult {
+            total_tokens: 0,
+            total_time: Duration::from_secs(1),
+            tokens_per_second: 0.0,
+            time_to_first_token: Duration::ZERO,
+            iteration_times: vec![Duration::from_millis(200); 5],
+            mean_time: Duration::from_millis(200),
+            median_time: Duration::from_millis(200),
+            std_dev: Duration::ZERO,
+            passed: false,
+        };
+        print_results(&result);
+    }
+
+    #[test]
+    fn test_print_results_very_high_throughput() {
+        let result = BenchResult {
+            total_tokens: 100_000,
+            total_time: Duration::from_millis(100),
+            tokens_per_second: 1_000_000.0,
+            time_to_first_token: Duration::from_nanos(100),
+            iteration_times: vec![Duration::from_millis(20); 5],
+            mean_time: Duration::from_millis(20),
+            median_time: Duration::from_millis(20),
+            std_dev: Duration::from_nanos(500),
+            passed: true,
+        };
+        print_results(&result);
+    }
+
+    #[test]
+    fn test_print_results_subsecond_times() {
+        // Test formatting of sub-millisecond times
+        let result = BenchResult {
+            total_tokens: 50,
+            total_time: Duration::from_micros(500),
+            tokens_per_second: 100_000.0,
+            time_to_first_token: Duration::from_micros(5),
+            iteration_times: vec![Duration::from_micros(100); 5],
+            mean_time: Duration::from_micros(100),
+            median_time: Duration::from_micros(100),
+            std_dev: Duration::from_micros(1),
+            passed: true,
+        };
+        print_results(&result);
+    }
+
+    // ========================================================================
+    // calculate_benchmark_stats() Tests
+    // ========================================================================
+
+    #[cfg(feature = "inference")]
+    #[test]
+    fn test_calculate_stats_uniform_times() {
+        let times = vec![Duration::from_secs(1); 5];
+        let config = BenchConfig {
+            warmup: 1,
+            iterations: 5,
+            max_tokens: 32,
+            prompt: "test".to_string(),
+        };
+        let result =
+            calculate_benchmark_stats(times, 100, Duration::from_millis(50), &config).unwrap();
+
+        assert_eq!(result.total_tokens, 100);
+        assert_eq!(result.total_time, Duration::from_secs(5));
+        // 100 tokens / 5 seconds = 20 tok/s
+        assert!((result.tokens_per_second - 20.0).abs() < 0.01);
+        assert_eq!(result.mean_time, Duration::from_secs(1));
+        assert_eq!(result.median_time, Duration::from_secs(1));
+        // All identical => std_dev == 0
+        assert_eq!(result.std_dev, Duration::ZERO);
+        assert_eq!(result.time_to_first_token, Duration::from_millis(50));
+    }
+
+    #[cfg(feature = "inference")]
+    #[test]
+    fn test_calculate_stats_varying_times() {
+        let times = vec![
+            Duration::from_millis(100),
+            Duration::from_millis(200),
+            Duration::from_millis(300),
+            Duration::from_millis(400),
+            Duration::from_millis(500),
+        ];
+        let config = BenchConfig {
+            warmup: 1,
+            iterations: 5,
+            max_tokens: 32,
+            prompt: "test".to_string(),
+        };
+        let result =
+            calculate_benchmark_stats(times, 50, Duration::from_millis(10), &config).unwrap();
+
+        // Total time = 1500ms = 1.5s
+        assert_eq!(result.total_time, Duration::from_millis(1500));
+        // Mean = 300ms
+        assert_eq!(result.mean_time, Duration::from_millis(300));
+        // Sorted: [100,200,300,400,500], median = index 2 = 300ms
+        assert_eq!(result.median_time, Duration::from_millis(300));
+        // 50 tokens / 1.5s = ~33.33 tok/s
+        assert!((result.tokens_per_second - 33.333).abs() < 0.1);
+        // Std dev: sqrt(mean(sq_diffs)) in ms
+        // diffs: [-200, -100, 0, 100, 200] ms
+        // sq: [40000, 10000, 0, 10000, 40000]
+        // variance = 20000 => std = ~141.4ms
+        let std_ms = result.std_dev.as_secs_f64() * 1000.0;
+        assert!((std_ms - 141.42).abs() < 1.0);
+    }
+
+    #[cfg(feature = "inference")]
+    #[test]
+    fn test_calculate_stats_single_iteration() {
+        let times = vec![Duration::from_millis(500)];
+        let config = BenchConfig {
+            warmup: 0,
+            iterations: 1,
+            max_tokens: 32,
+            prompt: "test".to_string(),
+        };
+        let result =
+            calculate_benchmark_stats(times, 10, Duration::from_millis(50), &config).unwrap();
+
+        assert_eq!(result.total_time, Duration::from_millis(500));
+        assert_eq!(result.mean_time, Duration::from_millis(500));
+        assert_eq!(result.median_time, Duration::from_millis(500));
+        // Single value => std_dev = 0
+        assert_eq!(result.std_dev, Duration::ZERO);
+        // 10 tokens / 0.5s = 20 tok/s
+        assert!((result.tokens_per_second - 20.0).abs() < 0.01);
+    }
+
+    #[cfg(feature = "inference")]
+    #[test]
+    fn test_calculate_stats_passed_threshold_high() {
+        // High throughput should pass (>= 60 tok/s per spec Z5/Z6)
+        let times = vec![Duration::from_millis(100); 5];
+        let config = BenchConfig {
+            warmup: 1,
+            iterations: 5,
+            max_tokens: 32,
+            prompt: "test".to_string(),
+        };
+        // 500 tokens / 0.5s = 1000 tok/s
+        let result =
+            calculate_benchmark_stats(times, 500, Duration::from_millis(5), &config).unwrap();
+
+        assert!(result.passed); // 1000 >= 60
+        assert!(result.tokens_per_second >= 60.0);
+    }
+
+    #[cfg(feature = "inference")]
+    #[test]
+    fn test_calculate_stats_passed_threshold_low() {
+        // Low throughput should fail (< 60 tok/s)
+        let times = vec![Duration::from_secs(2); 5];
+        let config = BenchConfig {
+            warmup: 1,
+            iterations: 5,
+            max_tokens: 32,
+            prompt: "test".to_string(),
+        };
+        // 10 tokens / 10s = 1 tok/s
+        let result =
+            calculate_benchmark_stats(times, 10, Duration::from_millis(200), &config).unwrap();
+
+        assert!(!result.passed); // 1 < 60
+        assert!(result.tokens_per_second < 60.0);
+    }
+
+    #[cfg(feature = "inference")]
+    #[test]
+    fn test_calculate_stats_passed_threshold_exactly_60() {
+        // Exactly at the 60 tok/s threshold
+        let times = vec![Duration::from_secs(1); 5];
+        let config = BenchConfig {
+            warmup: 1,
+            iterations: 5,
+            max_tokens: 32,
+            prompt: "test".to_string(),
+        };
+        // 300 tokens / 5s = 60 tok/s
+        let result =
+            calculate_benchmark_stats(times, 300, Duration::from_millis(10), &config).unwrap();
+
+        assert!(result.passed); // 60 >= 60
+        assert!((result.tokens_per_second - 60.0).abs() < 0.01);
+    }
+
+    #[cfg(feature = "inference")]
+    #[test]
+    fn test_calculate_stats_preserves_iteration_times() {
+        let original_times = vec![
+            Duration::from_millis(100),
+            Duration::from_millis(300),
+            Duration::from_millis(200),
+        ];
+        let config = BenchConfig {
+            warmup: 0,
+            iterations: 3,
+            max_tokens: 32,
+            prompt: "test".to_string(),
+        };
+        let result = calculate_benchmark_stats(
+            original_times.clone(),
+            30,
+            Duration::from_millis(10),
+            &config,
+        )
+        .unwrap();
+
+        // iteration_times should be preserved as-is (not sorted)
+        assert_eq!(result.iteration_times, original_times);
+    }
+
+    #[cfg(feature = "inference")]
+    #[test]
+    fn test_calculate_stats_median_even_count() {
+        // With even count, median picks the index iterations/2
+        let times = vec![
+            Duration::from_millis(100),
+            Duration::from_millis(200),
+            Duration::from_millis(300),
+            Duration::from_millis(400),
+        ];
+        let config = BenchConfig {
+            warmup: 0,
+            iterations: 4,
+            max_tokens: 32,
+            prompt: "test".to_string(),
+        };
+        let result =
+            calculate_benchmark_stats(times, 40, Duration::from_millis(25), &config).unwrap();
+
+        // sorted: [100, 200, 300, 400], index 4/2=2 => 300ms
+        assert_eq!(result.median_time, Duration::from_millis(300));
+    }
+
+    #[cfg(feature = "inference")]
+    #[test]
+    fn test_calculate_stats_unsorted_input() {
+        // Verify median works even when input is not sorted
+        let times = vec![
+            Duration::from_millis(500),
+            Duration::from_millis(100),
+            Duration::from_millis(300),
+        ];
+        let config = BenchConfig {
+            warmup: 0,
+            iterations: 3,
+            max_tokens: 32,
+            prompt: "test".to_string(),
+        };
+        let result =
+            calculate_benchmark_stats(times, 30, Duration::from_millis(10), &config).unwrap();
+
+        // sorted: [100, 300, 500], median index 3/2=1 => 300ms
+        assert_eq!(result.median_time, Duration::from_millis(300));
+    }
+
+    #[cfg(feature = "inference")]
+    #[test]
+    fn test_calculate_stats_very_fast_iterations() {
+        let times = vec![Duration::from_nanos(100); 10];
+        let config = BenchConfig {
+            warmup: 0,
+            iterations: 10,
+            max_tokens: 32,
+            prompt: "test".to_string(),
+        };
+        let result =
+            calculate_benchmark_stats(times, 1000, Duration::from_nanos(10), &config).unwrap();
+
+        // 1000 tokens / 1 microsecond = 1e9 tok/s
+        assert!(result.tokens_per_second > 1e6);
+        assert!(result.passed);
+    }
+
+    #[cfg(feature = "inference")]
+    #[test]
+    fn test_calculate_stats_large_outlier() {
+        let times = vec![
+            Duration::from_millis(100),
+            Duration::from_millis(100),
+            Duration::from_millis(100),
+            Duration::from_millis(100),
+            Duration::from_secs(10), // outlier
+        ];
+        let config = BenchConfig {
+            warmup: 1,
+            iterations: 5,
+            max_tokens: 32,
+            prompt: "test".to_string(),
+        };
+        let result =
+            calculate_benchmark_stats(times, 50, Duration::from_millis(10), &config).unwrap();
+
+        // Total time = 10400ms
+        // Mean = 2080ms
+        // Median: sorted [100, 100, 100, 100, 10000], index 2 = 100ms
+        assert_eq!(result.median_time, Duration::from_millis(100));
+        // Mean should be much larger than median due to outlier
+        assert!(result.mean_time > result.median_time);
+        // Std dev should be large
+        assert!(result.std_dev > Duration::from_secs(1));
+    }
+
+    #[cfg(feature = "inference")]
+    #[test]
+    fn test_calculate_stats_two_iterations() {
+        let times = vec![Duration::from_millis(200), Duration::from_millis(800)];
+        let config = BenchConfig {
+            warmup: 0,
+            iterations: 2,
+            max_tokens: 32,
+            prompt: "test".to_string(),
+        };
+        let result =
+            calculate_benchmark_stats(times, 20, Duration::from_millis(50), &config).unwrap();
+
+        // Mean = 500ms
+        assert_eq!(result.mean_time, Duration::from_millis(500));
+        // Median: sorted [200, 800], index 2/2=1 => 800ms
+        assert_eq!(result.median_time, Duration::from_millis(800));
+        // Std dev: diffs = [-300, 300], sq = [90000, 90000], var = 90000, std = 300ms
+        let std_ms = result.std_dev.as_secs_f64() * 1000.0;
+        assert!((std_ms - 300.0).abs() < 1.0);
+    }
+
+    #[cfg(feature = "inference")]
+    #[test]
+    fn test_calculate_stats_zero_tokens() {
+        let times = vec![Duration::from_millis(100); 3];
+        let config = BenchConfig {
+            warmup: 0,
+            iterations: 3,
+            max_tokens: 32,
+            prompt: "test".to_string(),
+        };
+        let result = calculate_benchmark_stats(times, 0, Duration::ZERO, &config).unwrap();
+
+        assert_eq!(result.total_tokens, 0);
+        // 0 / 0.3 = 0.0
+        assert_eq!(result.tokens_per_second, 0.0);
+        assert!(!result.passed);
+    }
+
+    #[cfg(feature = "inference")]
+    #[test]
+    fn test_calculate_stats_first_token_time_preserved() {
+        let times = vec![Duration::from_millis(100); 3];
+        let config = BenchConfig {
+            warmup: 0,
+            iterations: 3,
+            max_tokens: 32,
+            prompt: "test".to_string(),
+        };
+        let ttft = Duration::from_millis(42);
+        let result = calculate_benchmark_stats(times, 30, ttft, &config).unwrap();
+
+        assert_eq!(result.time_to_first_token, ttft);
+    }
+
+    // ========================================================================
+    // run() Branch Coverage Tests
+    // ========================================================================
+
+    #[test]
+    fn test_run_prompt_none_uses_default() {
+        // When prompt is None, run() should use "What is 2+2?" as default
+        // This exercises the prompt.unwrap_or("What is 2+2?") branch at line 109
+        let mut file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
+        file.write_all(b"fake gguf data").expect("write");
+        let result = run(file.path(), 1, 1, 16, None, false, None);
+        // Will error because it's not a real model, but exercises the None prompt path
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_prompt_some_uses_custom() {
+        // When prompt is Some, run() should use the provided prompt
+        let mut file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
+        file.write_all(b"fake gguf data").expect("write");
+        let result = run(file.path(), 1, 1, 16, Some("Hello world"), false, None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_fast_flag_deprecated() {
+        // fast=true should not change behavior (deprecated parameter)
+        let mut file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
+        file.write_all(b"fake gguf data").expect("write");
+        let result = run(file.path(), 1, 1, 16, None, true, None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_zero_warmup_iterations() {
+        let mut file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
+        file.write_all(b"fake gguf data").expect("write");
+        let result = run(file.path(), 0, 0, 0, None, false, None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_large_max_tokens() {
+        let mut file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
+        file.write_all(b"fake gguf data").expect("write");
+        let result = run(file.path(), 1, 1, 100_000, None, false, None);
+        assert!(result.is_err());
+    }
+
+    // ========================================================================
+    // Brick Name Validation Tests (exercises the match arms in run_brick_benchmark)
+    // ========================================================================
+
+    #[cfg(feature = "inference")]
+    #[test]
+    fn test_brick_name_rms_norm_valid() {
+        let file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
+        // rms_norm is a valid brick name - should not return "Unknown brick" error
+        let result = run(file.path(), 1, 3, 16, None, false, Some("rms_norm"));
+        // Either succeeds or fails with a non-"Unknown brick" error
+        if let Err(e) = &result {
+            let msg = format!("{e}");
+            assert!(!msg.contains("Unknown brick type"));
+        }
+    }
+
+    #[cfg(feature = "inference")]
+    #[test]
+    fn test_brick_name_qkv_valid() {
+        let file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
+        let result = run(file.path(), 1, 3, 16, None, false, Some("qkv"));
+        if let Err(e) = &result {
+            let msg = format!("{e}");
+            assert!(!msg.contains("Unknown brick type"));
+        }
+    }
+
+    #[cfg(feature = "inference")]
+    #[test]
+    fn test_brick_name_rope_valid() {
+        let file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
+        let result = run(file.path(), 1, 3, 16, None, false, Some("rope"));
+        if let Err(e) = &result {
+            let msg = format!("{e}");
+            assert!(!msg.contains("Unknown brick type"));
+        }
+    }
+
+    #[cfg(feature = "inference")]
+    #[test]
+    fn test_brick_name_attn_valid() {
+        let file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
+        let result = run(file.path(), 1, 3, 16, None, false, Some("attn"));
+        if let Err(e) = &result {
+            let msg = format!("{e}");
+            assert!(!msg.contains("Unknown brick type"));
+        }
+    }
+
+    #[cfg(feature = "inference")]
+    #[test]
+    fn test_brick_name_attention_alias_valid() {
+        let file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
+        let result = run(file.path(), 1, 3, 16, None, false, Some("attention"));
+        if let Err(e) = &result {
+            let msg = format!("{e}");
+            assert!(!msg.contains("Unknown brick type"));
+        }
+    }
+
+    #[cfg(feature = "inference")]
+    #[test]
+    fn test_brick_name_o_proj_valid() {
+        let file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
+        let result = run(file.path(), 1, 3, 16, None, false, Some("o_proj"));
+        if let Err(e) = &result {
+            let msg = format!("{e}");
+            assert!(!msg.contains("Unknown brick type"));
+        }
+    }
+
+    #[cfg(feature = "inference")]
+    #[test]
+    fn test_brick_name_ffn_valid() {
+        let file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
+        let result = run(file.path(), 1, 3, 16, None, false, Some("ffn"));
+        if let Err(e) = &result {
+            let msg = format!("{e}");
+            assert!(!msg.contains("Unknown brick type"));
+        }
+    }
+
+    #[cfg(feature = "inference")]
+    #[test]
+    fn test_brick_name_layer_valid() {
+        let file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
+        let result = run(file.path(), 1, 3, 16, None, false, Some("layer"));
+        if let Err(e) = &result {
+            let msg = format!("{e}");
+            assert!(!msg.contains("Unknown brick type"));
+        }
+    }
+
+    #[cfg(feature = "inference")]
+    #[test]
+    fn test_brick_name_unknown_returns_error() {
+        let file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
+        let result = run(file.path(), 1, 3, 16, None, false, Some("unknown_thing"));
+        assert!(result.is_err());
+        let msg = format!("{}", result.unwrap_err());
+        assert!(msg.contains("Unknown brick type"));
+        assert!(msg.contains("unknown_thing"));
+    }
+
+    #[cfg(feature = "inference")]
+    #[test]
+    fn test_brick_name_empty_string_returns_error() {
+        let file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
+        let result = run(file.path(), 1, 3, 16, None, false, Some(""));
+        assert!(result.is_err());
+        let msg = format!("{}", result.unwrap_err());
+        assert!(msg.contains("Unknown brick type"));
+    }
+
+    #[cfg(feature = "inference")]
+    #[test]
+    fn test_brick_name_case_sensitive() {
+        // Brick names are case-sensitive: "RMS_NORM" != "rms_norm"
+        let file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
+        let result = run(file.path(), 1, 3, 16, None, false, Some("RMS_NORM"));
+        assert!(result.is_err());
+        let msg = format!("{}", result.unwrap_err());
+        assert!(msg.contains("Unknown brick type"));
+    }
+
+    // ========================================================================
+    // BenchResult Field Combinations and Edge Cases
+    // ========================================================================
+
+    #[test]
+    fn test_bench_result_all_zero_durations() {
+        let result = BenchResult {
+            total_tokens: 0,
+            total_time: Duration::ZERO,
+            tokens_per_second: 0.0,
+            time_to_first_token: Duration::ZERO,
+            iteration_times: vec![Duration::ZERO; 3],
+            mean_time: Duration::ZERO,
+            median_time: Duration::ZERO,
+            std_dev: Duration::ZERO,
+            passed: false,
+        };
+        assert_eq!(result.total_time, Duration::ZERO);
+        assert_eq!(result.iteration_times.len(), 3);
+        assert!(!result.passed);
+    }
+
+    #[test]
+    fn test_bench_result_max_duration() {
+        let max = Duration::from_secs(u64::MAX / 2);
+        let result = BenchResult {
+            total_tokens: usize::MAX,
+            total_time: max,
+            tokens_per_second: f64::MAX,
+            time_to_first_token: max,
+            iteration_times: vec![max],
+            mean_time: max,
+            median_time: max,
+            std_dev: max,
+            passed: true,
+        };
+        assert_eq!(result.total_tokens, usize::MAX);
+        assert!(result.tokens_per_second.is_finite());
+    }
+
+    #[test]
+    fn test_bench_result_nan_throughput() {
+        let result = BenchResult {
+            total_tokens: 0,
+            total_time: Duration::ZERO,
+            tokens_per_second: f64::NAN,
+            time_to_first_token: Duration::ZERO,
+            iteration_times: vec![],
+            mean_time: Duration::ZERO,
+            median_time: Duration::ZERO,
+            std_dev: Duration::ZERO,
+            passed: false,
+        };
+        assert!(result.tokens_per_second.is_nan());
+    }
+
+    #[test]
+    fn test_bench_result_infinity_throughput() {
+        let result = BenchResult {
+            total_tokens: 100,
+            total_time: Duration::ZERO,
+            tokens_per_second: f64::INFINITY,
+            time_to_first_token: Duration::ZERO,
+            iteration_times: vec![],
+            mean_time: Duration::ZERO,
+            median_time: Duration::ZERO,
+            std_dev: Duration::ZERO,
+            passed: true,
+        };
+        assert!(result.tokens_per_second.is_infinite());
+    }
+
+    #[test]
+    fn test_bench_result_clone_deep_equality() {
+        let result = BenchResult {
+            total_tokens: 42,
+            total_time: Duration::from_millis(1234),
+            tokens_per_second: 34.036,
+            time_to_first_token: Duration::from_millis(56),
+            iteration_times: vec![
+                Duration::from_millis(400),
+                Duration::from_millis(500),
+                Duration::from_millis(334),
+            ],
+            mean_time: Duration::from_millis(411),
+            median_time: Duration::from_millis(400),
+            std_dev: Duration::from_millis(68),
+            passed: true,
+        };
+        let cloned = result.clone();
+        assert_eq!(cloned.total_tokens, result.total_tokens);
+        assert_eq!(cloned.total_time, result.total_time);
+        assert_eq!(cloned.tokens_per_second, result.tokens_per_second);
+        assert_eq!(cloned.time_to_first_token, result.time_to_first_token);
+        assert_eq!(cloned.iteration_times, result.iteration_times);
+        assert_eq!(cloned.mean_time, result.mean_time);
+        assert_eq!(cloned.median_time, result.median_time);
+        assert_eq!(cloned.std_dev, result.std_dev);
+        assert_eq!(cloned.passed, result.passed);
+    }
+
+    #[test]
+    fn test_bench_result_debug_contains_all_fields() {
+        let result = BenchResult {
+            total_tokens: 77,
+            total_time: Duration::from_secs(3),
+            tokens_per_second: 25.667,
+            time_to_first_token: Duration::from_millis(40),
+            iteration_times: vec![Duration::from_secs(1); 3],
+            mean_time: Duration::from_secs(1),
+            median_time: Duration::from_secs(1),
+            std_dev: Duration::from_millis(5),
+            passed: true,
+        };
+        let debug = format!("{result:?}");
+        assert!(debug.contains("total_tokens"));
+        assert!(debug.contains("total_time"));
+        assert!(debug.contains("tokens_per_second"));
+        assert!(debug.contains("time_to_first_token"));
+        assert!(debug.contains("iteration_times"));
+        assert!(debug.contains("mean_time"));
+        assert!(debug.contains("median_time"));
+        assert!(debug.contains("std_dev"));
+        assert!(debug.contains("passed"));
+    }
+
+    // ========================================================================
+    // BenchConfig Exhaustive Field Tests
+    // ========================================================================
+
+    #[test]
+    fn test_bench_config_default_all_fields() {
+        let config = BenchConfig::default();
+        assert_eq!(config.warmup, 3);
+        assert_eq!(config.iterations, 5);
+        assert_eq!(config.max_tokens, 32);
+        assert_eq!(config.prompt, "What is 2+2?");
+    }
+
+    #[test]
+    fn test_bench_config_single_char_prompt() {
+        let config = BenchConfig {
+            warmup: 1,
+            iterations: 1,
+            max_tokens: 1,
+            prompt: "x".to_string(),
+        };
+        assert_eq!(config.prompt.len(), 1);
+    }
+
+    #[test]
+    fn test_bench_config_multiline_prompt() {
+        let config = BenchConfig {
+            warmup: 1,
+            iterations: 1,
+            max_tokens: 64,
+            prompt: "Line 1\nLine 2\nLine 3".to_string(),
+        };
+        assert!(config.prompt.contains('\n'));
+        assert_eq!(config.prompt.lines().count(), 3);
+    }
+
+    #[test]
+    fn test_bench_config_max_values() {
+        let config = BenchConfig {
+            warmup: usize::MAX,
+            iterations: usize::MAX,
+            max_tokens: usize::MAX,
+            prompt: "test".to_string(),
+        };
+        assert_eq!(config.warmup, usize::MAX);
+        assert_eq!(config.iterations, usize::MAX);
+        assert_eq!(config.max_tokens, usize::MAX);
+    }
+
+    // ========================================================================
+    // print_results() Edge Case Formatting Tests
+    // ========================================================================
+
+    #[test]
+    fn test_print_results_just_below_grade_boundaries() {
+        // 99.9 tok/s - should be A, not A+
+        let result = BenchResult {
+            total_tokens: 100,
+            total_time: Duration::from_secs(1),
+            tokens_per_second: 99.9,
+            time_to_first_token: Duration::from_millis(10),
+            iteration_times: vec![Duration::from_millis(200); 5],
+            mean_time: Duration::from_millis(200),
+            median_time: Duration::from_millis(200),
+            std_dev: Duration::from_millis(1),
+            passed: true,
+        };
+        print_results(&result);
+
+        // 49.9 tok/s - should be B, not A
+        let result_b = BenchResult {
+            tokens_per_second: 49.9,
+            passed: true,
+            ..result.clone()
+        };
+        print_results(&result_b);
+
+        // 19.9 tok/s - should be C, not B
+        let result_c = BenchResult {
+            tokens_per_second: 19.9,
+            passed: true,
+            ..result.clone()
+        };
+        print_results(&result_c);
+
+        // 9.9 tok/s - should be F, not C
+        let result_f = BenchResult {
+            tokens_per_second: 9.9,
+            passed: false,
+            ..result
+        };
+        print_results(&result_f);
+    }
+
+    #[test]
+    fn test_print_results_fractional_throughput() {
+        let result = BenchResult {
+            total_tokens: 1,
+            total_time: Duration::from_secs(100),
+            tokens_per_second: 0.01,
+            time_to_first_token: Duration::from_secs(50),
+            iteration_times: vec![Duration::from_secs(20); 5],
+            mean_time: Duration::from_secs(20),
+            median_time: Duration::from_secs(20),
+            std_dev: Duration::from_secs(1),
+            passed: false,
+        };
+        print_results(&result);
+    }
+
+    // ========================================================================
+    // run() with Various File Configurations
+    // ========================================================================
+
+    #[test]
+    fn test_run_gguf_with_valid_magic_but_invalid_content() {
+        // GGUF magic: "GGUF" followed by garbage
+        let mut file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
+        let mut content = vec![0x47, 0x47, 0x55, 0x46]; // "GGUF"
+        content.extend_from_slice(&[0; 100]); // padding
+        file.write_all(&content).expect("write");
+        let result = run(file.path(), 1, 1, 16, None, false, None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_safetensors_with_json_header() {
+        // SafeTensors starts with a JSON length + JSON header
+        let mut file = NamedTempFile::with_suffix(".safetensors").expect("create temp file");
+        let header = b"{\"__metadata__\":{}}";
+        let len = (header.len() as u64).to_le_bytes();
+        let mut content = Vec::new();
+        content.extend_from_slice(&len);
+        content.extend_from_slice(header);
+        file.write_all(&content).expect("write");
+        let result = run(file.path(), 1, 1, 16, None, false, None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_apr_with_magic_but_invalid_content() {
+        let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
+        let mut content = vec![0x41, 0x50, 0x52, 0x32]; // "APR2"
+        content.extend_from_slice(&[0; 200]);
+        file.write_all(&content).expect("write");
+        let result = run(file.path(), 1, 1, 16, None, false, None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_config_construction_from_parameters() {
+        // Verify that run() constructs BenchConfig from its parameters
+        // We test this indirectly: if parameters are passed, print_header shows them
+        let mut file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
+        file.write_all(b"fake data").expect("write");
+
+        // warmup=7, iterations=13, max_tokens=128, prompt=Some("test prompt")
+        let result = run(file.path(), 7, 13, 128, Some("test prompt"), false, None);
+        assert!(result.is_err());
+    }
+
+    // ========================================================================
+    // print_header() with print_results() Integration
+    // ========================================================================
+
+    #[test]
+    fn test_print_header_then_results_workflow() {
+        // Simulates the actual output flow in run()
+        let config = BenchConfig {
+            warmup: 3,
+            iterations: 5,
+            max_tokens: 32,
+            prompt: "What is 2+2?".to_string(),
+        };
+        let path = Path::new("/models/test.gguf");
+        print_header(path, &config);
+
+        let result = BenchResult {
+            total_tokens: 160,
+            total_time: Duration::from_secs(2),
+            tokens_per_second: 80.0,
+            time_to_first_token: Duration::from_millis(25),
+            iteration_times: vec![Duration::from_millis(400); 5],
+            mean_time: Duration::from_millis(400),
+            median_time: Duration::from_millis(400),
+            std_dev: Duration::from_millis(5),
+            passed: true,
+        };
+        print_results(&result);
+    }
+
+    // ========================================================================
+    // calculate_benchmark_stats() Additional Edge Cases
+    // ========================================================================
+
+    #[cfg(feature = "inference")]
+    #[test]
+    fn test_calculate_stats_identical_long_duration() {
+        // All iterations take exactly 10 seconds
+        let times = vec![Duration::from_secs(10); 3];
+        let config = BenchConfig {
+            warmup: 0,
+            iterations: 3,
+            max_tokens: 32,
+            prompt: "test".to_string(),
+        };
+        let result =
+            calculate_benchmark_stats(times, 30, Duration::from_secs(10), &config).unwrap();
+
+        assert_eq!(result.mean_time, Duration::from_secs(10));
+        assert_eq!(result.median_time, Duration::from_secs(10));
+        assert_eq!(result.std_dev, Duration::ZERO);
+        // 30 tokens / 30s = 1 tok/s
+        assert!((result.tokens_per_second - 1.0).abs() < 0.01);
+        assert!(!result.passed); // 1 < 60
+    }
+
+    #[cfg(feature = "inference")]
+    #[test]
+    fn test_calculate_stats_descending_times() {
+        let times = vec![
+            Duration::from_millis(500),
+            Duration::from_millis(400),
+            Duration::from_millis(300),
+            Duration::from_millis(200),
+            Duration::from_millis(100),
+        ];
+        let config = BenchConfig {
+            warmup: 0,
+            iterations: 5,
+            max_tokens: 32,
+            prompt: "test".to_string(),
+        };
+        let result =
+            calculate_benchmark_stats(times, 50, Duration::from_millis(50), &config).unwrap();
+
+        // Total = 1500ms, mean = 300ms
+        assert_eq!(result.mean_time, Duration::from_millis(300));
+        // Sorted: [100,200,300,400,500], median index 2 = 300ms
+        assert_eq!(result.median_time, Duration::from_millis(300));
+    }
+
+    #[cfg(feature = "inference")]
+    #[test]
+    fn test_calculate_stats_high_token_count() {
+        let times = vec![Duration::from_millis(10); 5];
+        let config = BenchConfig {
+            warmup: 0,
+            iterations: 5,
+            max_tokens: 32,
+            prompt: "test".to_string(),
+        };
+        // 10000 tokens in 50ms = 200,000 tok/s
+        let result =
+            calculate_benchmark_stats(times, 10000, Duration::from_millis(1), &config).unwrap();
+
+        assert!(result.tokens_per_second > 100_000.0);
+        assert!(result.passed);
+    }
 }

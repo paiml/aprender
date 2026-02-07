@@ -49,7 +49,8 @@ pub(crate) use import::map_tensor_names;
 pub(crate) use crate::format::validation::{AprValidator, TensorStats};
 #[cfg(test)]
 pub(crate) use import::{
-    compute_std, compute_tensor_stats, validate_single_tensor, TensorAccumulator,
+    compute_std, compute_tensor_stats, parse_tokenizer_json, validate_single_tensor,
+    TensorAccumulator,
 };
 #[cfg(test)]
 pub(crate) use merge::calculate_merge_weights;

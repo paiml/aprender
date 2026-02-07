@@ -2251,4 +2251,1501 @@ mod tests {
             ProfileFocus::Mlp
         ));
     }
+
+    // ========================================================================
+    // filter_results_by_focus Tests
+    // ========================================================================
+
+    fn make_test_results_with_hotspots() -> RealProfileResults {
+        RealProfileResults {
+            model_path: "test.gguf".to_string(),
+            architecture: "llama".to_string(),
+            num_layers: 32,
+            vocab_size: 32000,
+            hidden_dim: 4096,
+            warmup_passes: 3,
+            measure_passes: 10,
+            total_inference_us: 10000.0,
+            throughput_tok_s: 100.0,
+            tokens_per_pass: 10,
+            hotspots: vec![
+                Hotspot {
+                    name: "attention_qkv".to_string(),
+                    time_us: 3000.0,
+                    percent: 30.0,
+                    count: 10,
+                    avg_us: 300.0,
+                    min_us: 280.0,
+                    max_us: 320.0,
+                },
+                Hotspot {
+                    name: "mlp_gate_up".to_string(),
+                    time_us: 2500.0,
+                    percent: 25.0,
+                    count: 10,
+                    avg_us: 250.0,
+                    min_us: 230.0,
+                    max_us: 270.0,
+                },
+                Hotspot {
+                    name: "matmul_q4k".to_string(),
+                    time_us: 2000.0,
+                    percent: 20.0,
+                    count: 10,
+                    avg_us: 200.0,
+                    min_us: 180.0,
+                    max_us: 220.0,
+                },
+                Hotspot {
+                    name: "embedding_lookup".to_string(),
+                    time_us: 1000.0,
+                    percent: 10.0,
+                    count: 10,
+                    avg_us: 100.0,
+                    min_us: 90.0,
+                    max_us: 110.0,
+                },
+                Hotspot {
+                    name: "softmax".to_string(),
+                    time_us: 800.0,
+                    percent: 8.0,
+                    count: 10,
+                    avg_us: 80.0,
+                    min_us: 70.0,
+                    max_us: 90.0,
+                },
+                Hotspot {
+                    name: "ffn_down_proj".to_string(),
+                    time_us: 500.0,
+                    percent: 5.0,
+                    count: 10,
+                    avg_us: 50.0,
+                    min_us: 40.0,
+                    max_us: 60.0,
+                },
+                Hotspot {
+                    name: "lm_head".to_string(),
+                    time_us: 200.0,
+                    percent: 2.0,
+                    count: 10,
+                    avg_us: 20.0,
+                    min_us: 15.0,
+                    max_us: 25.0,
+                },
+                Hotspot {
+                    name: "linear_proj".to_string(),
+                    time_us: 100.0,
+                    percent: 1.0,
+                    count: 10,
+                    avg_us: 10.0,
+                    min_us: 8.0,
+                    max_us: 12.0,
+                },
+                Hotspot {
+                    name: "gemm_f16".to_string(),
+                    time_us: 50.0,
+                    percent: 0.5,
+                    count: 5,
+                    avg_us: 10.0,
+                    min_us: 8.0,
+                    max_us: 12.0,
+                },
+            ],
+            per_layer_us: vec![312.5; 32],
+            is_real_data: true,
+        }
+    }
+
+    #[test]
+    fn test_filter_results_by_focus_all() {
+        let results = make_test_results_with_hotspots();
+        let filtered = filter_results_by_focus(&results, ProfileFocus::All);
+        assert_eq!(filtered.hotspots.len(), results.hotspots.len());
+    }
+
+    #[test]
+    fn test_filter_results_by_focus_attention() {
+        let results = make_test_results_with_hotspots();
+        let filtered = filter_results_by_focus(&results, ProfileFocus::Attention);
+        // Should match: attention_qkv, softmax
+        assert_eq!(
+            filtered.hotspots.len(),
+            2,
+            "Expected 2 attention hotspots, got names: {:?}",
+            filtered
+                .hotspots
+                .iter()
+                .map(|h| &h.name)
+                .collect::<Vec<_>>()
+        );
+        assert!(filtered.hotspots.iter().any(|h| h.name == "attention_qkv"));
+        assert!(filtered.hotspots.iter().any(|h| h.name == "softmax"));
+    }
+
+    #[test]
+    fn test_filter_results_by_focus_mlp() {
+        let results = make_test_results_with_hotspots();
+        let filtered = filter_results_by_focus(&results, ProfileFocus::Mlp);
+        // Should match: mlp_gate_up, ffn_down_proj, gate (in mlp_gate_up)
+        assert!(
+            filtered.hotspots.len() >= 2,
+            "Expected at least 2 MLP hotspots, got names: {:?}",
+            filtered
+                .hotspots
+                .iter()
+                .map(|h| &h.name)
+                .collect::<Vec<_>>()
+        );
+        assert!(filtered.hotspots.iter().any(|h| h.name == "mlp_gate_up"));
+        assert!(filtered.hotspots.iter().any(|h| h.name == "ffn_down_proj"));
+    }
+
+    #[test]
+    fn test_filter_results_by_focus_matmul() {
+        let results = make_test_results_with_hotspots();
+        let filtered = filter_results_by_focus(&results, ProfileFocus::Matmul);
+        // Should match: matmul_q4k, linear_proj, gemm_f16
+        assert!(
+            filtered.hotspots.len() >= 3,
+            "Expected at least 3 matmul hotspots, got names: {:?}",
+            filtered
+                .hotspots
+                .iter()
+                .map(|h| &h.name)
+                .collect::<Vec<_>>()
+        );
+        assert!(filtered.hotspots.iter().any(|h| h.name == "matmul_q4k"));
+        assert!(filtered.hotspots.iter().any(|h| h.name == "linear_proj"));
+        assert!(filtered.hotspots.iter().any(|h| h.name == "gemm_f16"));
+    }
+
+    #[test]
+    fn test_filter_results_by_focus_embedding() {
+        let results = make_test_results_with_hotspots();
+        let filtered = filter_results_by_focus(&results, ProfileFocus::Embedding);
+        // Should match: embedding_lookup, lm_head
+        assert_eq!(
+            filtered.hotspots.len(),
+            2,
+            "Expected 2 embedding hotspots, got names: {:?}",
+            filtered
+                .hotspots
+                .iter()
+                .map(|h| &h.name)
+                .collect::<Vec<_>>()
+        );
+        assert!(filtered
+            .hotspots
+            .iter()
+            .any(|h| h.name == "embedding_lookup"));
+        assert!(filtered.hotspots.iter().any(|h| h.name == "lm_head"));
+    }
+
+    #[test]
+    fn test_filter_results_preserves_metadata() {
+        let results = make_test_results_with_hotspots();
+        let filtered = filter_results_by_focus(&results, ProfileFocus::Attention);
+        // All metadata should be preserved
+        assert_eq!(filtered.model_path, results.model_path);
+        assert_eq!(filtered.architecture, results.architecture);
+        assert_eq!(filtered.num_layers, results.num_layers);
+        assert_eq!(filtered.vocab_size, results.vocab_size);
+        assert_eq!(filtered.hidden_dim, results.hidden_dim);
+        assert_eq!(filtered.warmup_passes, results.warmup_passes);
+        assert_eq!(filtered.measure_passes, results.measure_passes);
+        assert_eq!(filtered.total_inference_us, results.total_inference_us);
+        assert_eq!(filtered.throughput_tok_s, results.throughput_tok_s);
+        assert_eq!(filtered.tokens_per_pass, results.tokens_per_pass);
+        assert_eq!(filtered.per_layer_us.len(), results.per_layer_us.len());
+        assert_eq!(filtered.is_real_data, results.is_real_data);
+    }
+
+    #[test]
+    fn test_filter_results_no_matching_hotspots() {
+        let results = RealProfileResults {
+            model_path: "test.gguf".to_string(),
+            architecture: "llama".to_string(),
+            num_layers: 32,
+            vocab_size: 32000,
+            hidden_dim: 4096,
+            warmup_passes: 3,
+            measure_passes: 10,
+            total_inference_us: 10000.0,
+            throughput_tok_s: 100.0,
+            tokens_per_pass: 10,
+            hotspots: vec![Hotspot {
+                name: "custom_op".to_string(),
+                time_us: 1000.0,
+                percent: 100.0,
+                count: 10,
+                avg_us: 100.0,
+                min_us: 90.0,
+                max_us: 110.0,
+            }],
+            per_layer_us: vec![],
+            is_real_data: true,
+        };
+        // No attention-related hotspots
+        let filtered = filter_results_by_focus(&results, ProfileFocus::Attention);
+        assert!(filtered.hotspots.is_empty());
+    }
+
+    #[test]
+    fn test_filter_results_empty_hotspots() {
+        let results = RealProfileResults {
+            model_path: "test.gguf".to_string(),
+            architecture: "llama".to_string(),
+            num_layers: 4,
+            vocab_size: 1000,
+            hidden_dim: 256,
+            warmup_passes: 1,
+            measure_passes: 1,
+            total_inference_us: 100.0,
+            throughput_tok_s: 10000.0,
+            tokens_per_pass: 1,
+            hotspots: vec![],
+            per_layer_us: vec![],
+            is_real_data: true,
+        };
+        for focus in [
+            ProfileFocus::All,
+            ProfileFocus::Attention,
+            ProfileFocus::Mlp,
+            ProfileFocus::Matmul,
+            ProfileFocus::Embedding,
+        ] {
+            let filtered = filter_results_by_focus(&results, focus);
+            assert!(filtered.hotspots.is_empty());
+        }
+    }
+
+    // ========================================================================
+    // CiProfileReport from_results Extended Tests
+    // ========================================================================
+
+    #[test]
+    fn test_ci_profile_report_all_assertions_combined() {
+        let results = RealProfileResults {
+            model_path: "model.gguf".to_string(),
+            architecture: "llama".to_string(),
+            num_layers: 32,
+            vocab_size: 32000,
+            hidden_dim: 4096,
+            warmup_passes: 3,
+            measure_passes: 10,
+            total_inference_us: 20000.0, // 20ms
+            throughput_tok_s: 200.0,
+            tokens_per_pass: 10,
+            hotspots: vec![],
+            per_layer_us: vec![],
+            is_real_data: true,
+        };
+        let assertions = CiAssertions {
+            min_throughput: Some(100.0),
+            max_p99_ms: Some(50.0),
+            max_p50_ms: Some(30.0),
+            max_memory_mb: None,
+        };
+        let report = CiProfileReport::from_results(&results, &assertions);
+        assert!(report.passed);
+        assert_eq!(report.assertions.len(), 3);
+        assert!(report.assertions.iter().all(|a| a.passed));
+        assert_eq!(report.throughput_tok_s, 200.0);
+        // 20000us / 1000 = 20ms
+        assert!((report.latency_p50_ms - 20.0).abs() < 0.01);
+        assert!((report.latency_p99_ms - 20.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_ci_profile_report_zero_throughput() {
+        let results = RealProfileResults {
+            model_path: "model.gguf".to_string(),
+            architecture: "llama".to_string(),
+            num_layers: 32,
+            vocab_size: 32000,
+            hidden_dim: 4096,
+            warmup_passes: 3,
+            measure_passes: 10,
+            total_inference_us: 0.0,
+            throughput_tok_s: 0.0,
+            tokens_per_pass: 10,
+            hotspots: vec![],
+            per_layer_us: vec![],
+            is_real_data: true,
+        };
+        let assertions = CiAssertions {
+            min_throughput: Some(100.0),
+            ..Default::default()
+        };
+        let report = CiProfileReport::from_results(&results, &assertions);
+        assert!(!report.passed);
+        assert!(!report.assertions[0].passed);
+    }
+
+    #[test]
+    fn test_ci_profile_report_latency_p50_fail() {
+        let results = RealProfileResults {
+            model_path: "model.gguf".to_string(),
+            architecture: "llama".to_string(),
+            num_layers: 32,
+            vocab_size: 32000,
+            hidden_dim: 4096,
+            warmup_passes: 3,
+            measure_passes: 10,
+            total_inference_us: 60000.0, // 60ms
+            throughput_tok_s: 100.0,
+            tokens_per_pass: 10,
+            hotspots: vec![],
+            per_layer_us: vec![],
+            is_real_data: true,
+        };
+        let assertions = CiAssertions {
+            max_p50_ms: Some(50.0), // 60ms > 50ms => fail
+            ..Default::default()
+        };
+        let report = CiProfileReport::from_results(&results, &assertions);
+        assert!(!report.passed);
+        assert_eq!(report.assertions.len(), 1);
+        assert!(!report.assertions[0].passed);
+        assert_eq!(report.assertions[0].name, "latency_p50");
+    }
+
+    #[test]
+    fn test_ci_profile_report_mixed_pass_fail() {
+        let results = RealProfileResults {
+            model_path: "model.gguf".to_string(),
+            architecture: "llama".to_string(),
+            num_layers: 32,
+            vocab_size: 32000,
+            hidden_dim: 4096,
+            warmup_passes: 3,
+            measure_passes: 10,
+            total_inference_us: 30000.0, // 30ms
+            throughput_tok_s: 150.0,
+            tokens_per_pass: 10,
+            hotspots: vec![],
+            per_layer_us: vec![],
+            is_real_data: true,
+        };
+        let assertions = CiAssertions {
+            min_throughput: Some(100.0), // 150 >= 100 => pass
+            max_p99_ms: Some(20.0),      // 30ms > 20ms => fail
+            ..Default::default()
+        };
+        let report = CiProfileReport::from_results(&results, &assertions);
+        assert!(!report.passed); // One failure means overall fail
+        assert_eq!(report.assertions.len(), 2);
+        assert!(report.assertions[0].passed); // throughput passed
+        assert!(!report.assertions[1].passed); // latency failed
+    }
+
+    #[test]
+    fn test_ci_profile_report_assertion_format_strings() {
+        let results = RealProfileResults {
+            model_path: "model.gguf".to_string(),
+            architecture: "llama".to_string(),
+            num_layers: 32,
+            vocab_size: 32000,
+            hidden_dim: 4096,
+            warmup_passes: 3,
+            measure_passes: 10,
+            total_inference_us: 10000.0,
+            throughput_tok_s: 150.0,
+            tokens_per_pass: 10,
+            hotspots: vec![],
+            per_layer_us: vec![],
+            is_real_data: true,
+        };
+        let assertions = CiAssertions {
+            min_throughput: Some(100.0),
+            max_p99_ms: Some(50.0),
+            max_p50_ms: Some(25.0),
+            max_memory_mb: None,
+        };
+        let report = CiProfileReport::from_results(&results, &assertions);
+
+        // Check format of assertion strings
+        let throughput_assertion = &report.assertions[0];
+        assert_eq!(throughput_assertion.name, "throughput");
+        assert!(throughput_assertion.expected.contains("tok/s"));
+        assert!(throughput_assertion.actual.contains("tok/s"));
+
+        let p99_assertion = &report.assertions[1];
+        assert_eq!(p99_assertion.name, "latency_p99");
+        assert!(p99_assertion.expected.contains("ms"));
+        assert!(p99_assertion.actual.contains("ms"));
+
+        let p50_assertion = &report.assertions[2];
+        assert_eq!(p50_assertion.name, "latency_p50");
+        assert!(p50_assertion.expected.contains("ms"));
+    }
+
+    // ========================================================================
+    // DiffBenchmarkReport Tests
+    // ========================================================================
+
+    #[test]
+    fn test_diff_benchmark_report_construction() {
+        let report = DiffBenchmarkReport {
+            model_a: "model_a.gguf".to_string(),
+            model_b: "model_b.gguf".to_string(),
+            throughput_a: 100.0,
+            throughput_b: 150.0,
+            throughput_delta_pct: 50.0,
+            latency_a_ms: 10.0,
+            latency_b_ms: 7.0,
+            latency_delta_pct: -30.0,
+            winner: "Model B (50.0% faster)".to_string(),
+            regressions: vec![],
+            improvements: vec!["Throughput: 50.0% faster".to_string()],
+        };
+        assert_eq!(report.model_a, "model_a.gguf");
+        assert_eq!(report.throughput_delta_pct, 50.0);
+        assert!(report.regressions.is_empty());
+        assert_eq!(report.improvements.len(), 1);
+    }
+
+    #[test]
+    fn test_diff_benchmark_report_debug() {
+        let report = DiffBenchmarkReport {
+            model_a: "a.gguf".to_string(),
+            model_b: "b.gguf".to_string(),
+            throughput_a: 100.0,
+            throughput_b: 90.0,
+            throughput_delta_pct: -10.0,
+            latency_a_ms: 10.0,
+            latency_b_ms: 11.0,
+            latency_delta_pct: 10.0,
+            winner: "Model A".to_string(),
+            regressions: vec!["Throughput regression".to_string()],
+            improvements: vec![],
+        };
+        let debug = format!("{report:?}");
+        assert!(debug.contains("DiffBenchmarkReport"));
+    }
+
+    #[test]
+    fn test_diff_benchmark_report_clone() {
+        let report = DiffBenchmarkReport {
+            model_a: "a.gguf".to_string(),
+            model_b: "b.gguf".to_string(),
+            throughput_a: 100.0,
+            throughput_b: 100.0,
+            throughput_delta_pct: 0.0,
+            latency_a_ms: 10.0,
+            latency_b_ms: 10.0,
+            latency_delta_pct: 0.0,
+            winner: "Tie".to_string(),
+            regressions: vec![],
+            improvements: vec![],
+        };
+        let cloned = report.clone();
+        assert_eq!(cloned.model_a, report.model_a);
+        assert_eq!(cloned.throughput_delta_pct, report.throughput_delta_pct);
+        assert_eq!(cloned.winner, report.winner);
+    }
+
+    #[test]
+    fn test_diff_benchmark_report_with_regressions() {
+        let report = DiffBenchmarkReport {
+            model_a: "baseline.gguf".to_string(),
+            model_b: "candidate.gguf".to_string(),
+            throughput_a: 200.0,
+            throughput_b: 100.0,
+            throughput_delta_pct: -50.0,
+            latency_a_ms: 5.0,
+            latency_b_ms: 10.0,
+            latency_delta_pct: 100.0,
+            winner: "Model A (50.0% faster)".to_string(),
+            regressions: vec![
+                "Throughput: 50.0% slower".to_string(),
+                "Latency: 100.0% slower".to_string(),
+            ],
+            improvements: vec![],
+        };
+        assert_eq!(report.regressions.len(), 2);
+        assert!(report.improvements.is_empty());
+    }
+
+    #[test]
+    fn test_diff_benchmark_report_with_improvements() {
+        let report = DiffBenchmarkReport {
+            model_a: "old.gguf".to_string(),
+            model_b: "new.gguf".to_string(),
+            throughput_a: 50.0,
+            throughput_b: 200.0,
+            throughput_delta_pct: 300.0,
+            latency_a_ms: 20.0,
+            latency_b_ms: 5.0,
+            latency_delta_pct: -75.0,
+            winner: "Model B (300.0% faster)".to_string(),
+            regressions: vec![],
+            improvements: vec![
+                "Throughput: 300.0% faster".to_string(),
+                "Latency: 75.0% faster".to_string(),
+            ],
+        };
+        assert!(report.regressions.is_empty());
+        assert_eq!(report.improvements.len(), 2);
+    }
+
+    // ========================================================================
+    // CiProfileReport print_json Tests
+    // ========================================================================
+
+    #[test]
+    fn test_ci_profile_report_print_json_no_assertions() {
+        // Just verify it doesn't panic
+        let report = CiProfileReport {
+            model_path: "model.gguf".to_string(),
+            passed: true,
+            throughput_tok_s: 100.0,
+            latency_p50_ms: 10.0,
+            latency_p99_ms: 20.0,
+            assertions: vec![],
+        };
+        report.print_json();
+    }
+
+    #[test]
+    fn test_ci_profile_report_print_json_with_assertions() {
+        let report = CiProfileReport {
+            model_path: "model.gguf".to_string(),
+            passed: false,
+            throughput_tok_s: 50.0,
+            latency_p50_ms: 100.0,
+            latency_p99_ms: 200.0,
+            assertions: vec![
+                AssertionResult {
+                    name: "throughput".to_string(),
+                    expected: ">= 100.0 tok/s".to_string(),
+                    actual: "50.0 tok/s".to_string(),
+                    passed: false,
+                },
+                AssertionResult {
+                    name: "latency_p99".to_string(),
+                    expected: "<= 50.0 ms".to_string(),
+                    actual: "200.00 ms".to_string(),
+                    passed: false,
+                },
+            ],
+        };
+        report.print_json();
+    }
+
+    #[test]
+    fn test_ci_profile_report_print_json_single_assertion() {
+        let report = CiProfileReport {
+            model_path: "model.gguf".to_string(),
+            passed: true,
+            throughput_tok_s: 200.0,
+            latency_p50_ms: 5.0,
+            latency_p99_ms: 10.0,
+            assertions: vec![AssertionResult {
+                name: "throughput".to_string(),
+                expected: ">= 100.0 tok/s".to_string(),
+                actual: "200.0 tok/s".to_string(),
+                passed: true,
+            }],
+        };
+        report.print_json();
+    }
+
+    // ========================================================================
+    // CiProfileReport print_human Tests
+    // ========================================================================
+
+    #[test]
+    fn test_ci_profile_report_print_human_passed() {
+        let report = CiProfileReport {
+            model_path: "model.gguf".to_string(),
+            passed: true,
+            throughput_tok_s: 150.0,
+            latency_p50_ms: 10.0,
+            latency_p99_ms: 20.0,
+            assertions: vec![AssertionResult {
+                name: "throughput".to_string(),
+                expected: ">= 100.0 tok/s".to_string(),
+                actual: "150.0 tok/s".to_string(),
+                passed: true,
+            }],
+        };
+        report.print_human();
+    }
+
+    #[test]
+    fn test_ci_profile_report_print_human_failed() {
+        let report = CiProfileReport {
+            model_path: "model.gguf".to_string(),
+            passed: false,
+            throughput_tok_s: 50.0,
+            latency_p50_ms: 100.0,
+            latency_p99_ms: 200.0,
+            assertions: vec![AssertionResult {
+                name: "throughput".to_string(),
+                expected: ">= 100.0 tok/s".to_string(),
+                actual: "50.0 tok/s".to_string(),
+                passed: false,
+            }],
+        };
+        report.print_human();
+    }
+
+    #[test]
+    fn test_ci_profile_report_print_human_no_assertions() {
+        let report = CiProfileReport {
+            model_path: "model.gguf".to_string(),
+            passed: true,
+            throughput_tok_s: 100.0,
+            latency_p50_ms: 10.0,
+            latency_p99_ms: 20.0,
+            assertions: vec![],
+        };
+        report.print_human();
+    }
+
+    // ========================================================================
+    // DiffBenchmarkReport print Tests
+    // ========================================================================
+
+    #[test]
+    fn test_diff_benchmark_report_print_human() {
+        let report = DiffBenchmarkReport {
+            model_a: "a.gguf".to_string(),
+            model_b: "b.gguf".to_string(),
+            throughput_a: 100.0,
+            throughput_b: 150.0,
+            throughput_delta_pct: 50.0,
+            latency_a_ms: 10.0,
+            latency_b_ms: 7.0,
+            latency_delta_pct: -30.0,
+            winner: "Model B".to_string(),
+            regressions: vec![],
+            improvements: vec!["Throughput +50%".to_string()],
+        };
+        report.print_human();
+    }
+
+    #[test]
+    fn test_diff_benchmark_report_print_human_with_regressions() {
+        let report = DiffBenchmarkReport {
+            model_a: "a.gguf".to_string(),
+            model_b: "b.gguf".to_string(),
+            throughput_a: 200.0,
+            throughput_b: 100.0,
+            throughput_delta_pct: -50.0,
+            latency_a_ms: 5.0,
+            latency_b_ms: 10.0,
+            latency_delta_pct: 100.0,
+            winner: "Model A".to_string(),
+            regressions: vec!["Throughput -50%".to_string()],
+            improvements: vec![],
+        };
+        report.print_human();
+    }
+
+    #[test]
+    fn test_diff_benchmark_report_print_json() {
+        let report = DiffBenchmarkReport {
+            model_a: "a.gguf".to_string(),
+            model_b: "b.gguf".to_string(),
+            throughput_a: 100.0,
+            throughput_b: 100.0,
+            throughput_delta_pct: 0.0,
+            latency_a_ms: 10.0,
+            latency_b_ms: 10.0,
+            latency_delta_pct: 0.0,
+            winner: "Tie".to_string(),
+            regressions: vec![],
+            improvements: vec![],
+        };
+        report.print_json();
+    }
+
+    #[test]
+    fn test_diff_benchmark_report_print_json_with_regressions_and_improvements() {
+        let report = DiffBenchmarkReport {
+            model_a: "a.gguf".to_string(),
+            model_b: "b.gguf".to_string(),
+            throughput_a: 100.0,
+            throughput_b: 150.0,
+            throughput_delta_pct: 50.0,
+            latency_a_ms: 5.0,
+            latency_b_ms: 7.0,
+            latency_delta_pct: 40.0,
+            winner: "Mixed".to_string(),
+            regressions: vec!["Latency regression".to_string()],
+            improvements: vec![
+                "Throughput improvement".to_string(),
+                "Memory improvement".to_string(),
+            ],
+        };
+        report.print_json();
+    }
+
+    // ========================================================================
+    // print_human_results Tests
+    // ========================================================================
+
+    #[test]
+    fn test_print_human_results_basic() {
+        let results = RealProfileResults {
+            model_path: "test.gguf".to_string(),
+            architecture: "llama".to_string(),
+            num_layers: 4,
+            vocab_size: 1000,
+            hidden_dim: 256,
+            warmup_passes: 1,
+            measure_passes: 1,
+            total_inference_us: 1000.0,
+            throughput_tok_s: 1000.0,
+            tokens_per_pass: 1,
+            hotspots: vec![Hotspot {
+                name: "forward_pass".to_string(),
+                time_us: 1000.0,
+                percent: 100.0,
+                count: 1,
+                avg_us: 1000.0,
+                min_us: 1000.0,
+                max_us: 1000.0,
+            }],
+            per_layer_us: vec![250.0; 4],
+            is_real_data: true,
+        };
+        let result = print_human_results(&results, false);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_print_human_results_granular() {
+        let results = RealProfileResults {
+            model_path: "test.gguf".to_string(),
+            architecture: "llama".to_string(),
+            num_layers: 4,
+            vocab_size: 1000,
+            hidden_dim: 256,
+            warmup_passes: 1,
+            measure_passes: 1,
+            total_inference_us: 1000.0,
+            throughput_tok_s: 1000.0,
+            tokens_per_pass: 1,
+            hotspots: vec![Hotspot {
+                name: "forward_pass".to_string(),
+                time_us: 1000.0,
+                percent: 100.0,
+                count: 1,
+                avg_us: 1000.0,
+                min_us: 900.0,
+                max_us: 1100.0,
+            }],
+            per_layer_us: vec![250.0; 4],
+            is_real_data: true,
+        };
+        let result = print_human_results(&results, true);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_print_human_results_simulated_data() {
+        let results = RealProfileResults {
+            model_path: "test.gguf".to_string(),
+            architecture: "llama".to_string(),
+            num_layers: 4,
+            vocab_size: 1000,
+            hidden_dim: 256,
+            warmup_passes: 1,
+            measure_passes: 1,
+            total_inference_us: 1000.0,
+            throughput_tok_s: 1000.0,
+            tokens_per_pass: 1,
+            hotspots: vec![],
+            per_layer_us: vec![],
+            is_real_data: false,
+        };
+        let result = print_human_results(&results, false);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_print_human_results_zero_total_time() {
+        let results = RealProfileResults {
+            model_path: "test.gguf".to_string(),
+            architecture: "llama".to_string(),
+            num_layers: 4,
+            vocab_size: 1000,
+            hidden_dim: 256,
+            warmup_passes: 1,
+            measure_passes: 1,
+            total_inference_us: 0.0,
+            throughput_tok_s: 0.0,
+            tokens_per_pass: 0,
+            hotspots: vec![Hotspot {
+                name: "op".to_string(),
+                time_us: 0.0,
+                percent: 0.0,
+                count: 0,
+                avg_us: 0.0,
+                min_us: 0.0,
+                max_us: 0.0,
+            }],
+            per_layer_us: vec![],
+            is_real_data: true,
+        };
+        let result = print_human_results(&results, false);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_print_human_results_many_hotspots() {
+        let hotspots: Vec<Hotspot> = (0..10)
+            .map(|i| Hotspot {
+                name: format!("op_{i}"),
+                time_us: (10 - i) as f64 * 100.0,
+                percent: (10 - i) as f64 * 10.0,
+                count: 10,
+                avg_us: (10 - i) as f64 * 10.0,
+                min_us: (10 - i) as f64 * 8.0,
+                max_us: (10 - i) as f64 * 12.0,
+            })
+            .collect();
+        let results = RealProfileResults {
+            model_path: "test.gguf".to_string(),
+            architecture: "llama".to_string(),
+            num_layers: 4,
+            vocab_size: 1000,
+            hidden_dim: 256,
+            warmup_passes: 1,
+            measure_passes: 10,
+            total_inference_us: 5500.0,
+            throughput_tok_s: 1818.0,
+            tokens_per_pass: 10,
+            hotspots,
+            per_layer_us: vec![1375.0; 4],
+            is_real_data: true,
+        };
+        let result = print_human_results(&results, true);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_print_human_results_granular_zero_max_layer() {
+        let results = RealProfileResults {
+            model_path: "test.gguf".to_string(),
+            architecture: "llama".to_string(),
+            num_layers: 2,
+            vocab_size: 1000,
+            hidden_dim: 256,
+            warmup_passes: 1,
+            measure_passes: 1,
+            total_inference_us: 1000.0,
+            throughput_tok_s: 1000.0,
+            tokens_per_pass: 1,
+            hotspots: vec![],
+            per_layer_us: vec![0.0, 0.0], // Zero layer times
+            is_real_data: true,
+        };
+        let result = print_human_results(&results, true);
+        assert!(result.is_ok());
+    }
+
+    // ========================================================================
+    // print_json_results Tests
+    // ========================================================================
+
+    #[test]
+    fn test_print_json_results_basic() {
+        let results = RealProfileResults {
+            model_path: "test.gguf".to_string(),
+            architecture: "llama".to_string(),
+            num_layers: 4,
+            vocab_size: 1000,
+            hidden_dim: 256,
+            warmup_passes: 1,
+            measure_passes: 1,
+            total_inference_us: 1000.0,
+            throughput_tok_s: 1000.0,
+            tokens_per_pass: 1,
+            hotspots: vec![],
+            per_layer_us: vec![],
+            is_real_data: true,
+        };
+        let result = print_json_results(&results);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_print_json_results_with_hotspots() {
+        let results = RealProfileResults {
+            model_path: "test.gguf".to_string(),
+            architecture: "llama".to_string(),
+            num_layers: 4,
+            vocab_size: 1000,
+            hidden_dim: 256,
+            warmup_passes: 1,
+            measure_passes: 5,
+            total_inference_us: 5000.0,
+            throughput_tok_s: 200.0,
+            tokens_per_pass: 1,
+            hotspots: vec![
+                Hotspot {
+                    name: "op_a".to_string(),
+                    time_us: 3000.0,
+                    percent: 60.0,
+                    count: 5,
+                    avg_us: 600.0,
+                    min_us: 550.0,
+                    max_us: 650.0,
+                },
+                Hotspot {
+                    name: "op_b".to_string(),
+                    time_us: 2000.0,
+                    percent: 40.0,
+                    count: 5,
+                    avg_us: 400.0,
+                    min_us: 350.0,
+                    max_us: 450.0,
+                },
+            ],
+            per_layer_us: vec![1250.0; 4],
+            is_real_data: true,
+        };
+        let result = print_json_results(&results);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_print_json_results_single_hotspot() {
+        let results = RealProfileResults {
+            model_path: "test.gguf".to_string(),
+            architecture: "llama".to_string(),
+            num_layers: 1,
+            vocab_size: 100,
+            hidden_dim: 32,
+            warmup_passes: 0,
+            measure_passes: 1,
+            total_inference_us: 100.0,
+            throughput_tok_s: 10000.0,
+            tokens_per_pass: 1,
+            hotspots: vec![Hotspot {
+                name: "forward".to_string(),
+                time_us: 100.0,
+                percent: 100.0,
+                count: 1,
+                avg_us: 100.0,
+                min_us: 100.0,
+                max_us: 100.0,
+            }],
+            per_layer_us: vec![100.0],
+            is_real_data: true,
+        };
+        let result = print_json_results(&results);
+        assert!(result.is_ok());
+    }
+
+    // ========================================================================
+    // print_flamegraph Tests
+    // ========================================================================
+
+    #[test]
+    fn test_print_flamegraph_stdout() {
+        let results = RealProfileResults {
+            model_path: "test.gguf".to_string(),
+            architecture: "llama".to_string(),
+            num_layers: 4,
+            vocab_size: 1000,
+            hidden_dim: 256,
+            warmup_passes: 1,
+            measure_passes: 1,
+            total_inference_us: 1000.0,
+            throughput_tok_s: 1000.0,
+            tokens_per_pass: 1,
+            hotspots: vec![
+                Hotspot {
+                    name: "op_a".to_string(),
+                    time_us: 600.0,
+                    percent: 60.0,
+                    count: 1,
+                    avg_us: 600.0,
+                    min_us: 600.0,
+                    max_us: 600.0,
+                },
+                Hotspot {
+                    name: "op_b".to_string(),
+                    time_us: 400.0,
+                    percent: 40.0,
+                    count: 1,
+                    avg_us: 400.0,
+                    min_us: 400.0,
+                    max_us: 400.0,
+                },
+            ],
+            per_layer_us: vec![],
+            is_real_data: true,
+        };
+        let result = print_flamegraph(&results, None);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_print_flamegraph_to_file() {
+        let results = RealProfileResults {
+            model_path: "test.gguf".to_string(),
+            architecture: "llama".to_string(),
+            num_layers: 4,
+            vocab_size: 1000,
+            hidden_dim: 256,
+            warmup_passes: 1,
+            measure_passes: 1,
+            total_inference_us: 1000.0,
+            throughput_tok_s: 1000.0,
+            tokens_per_pass: 1,
+            hotspots: vec![Hotspot {
+                name: "forward".to_string(),
+                time_us: 1000.0,
+                percent: 100.0,
+                count: 1,
+                avg_us: 1000.0,
+                min_us: 1000.0,
+                max_us: 1000.0,
+            }],
+            per_layer_us: vec![],
+            is_real_data: true,
+        };
+        let file = NamedTempFile::with_suffix(".svg").expect("create temp file");
+        let result = print_flamegraph(&results, Some(file.path()));
+        assert!(result.is_ok());
+        // Verify file was written
+        let content = std::fs::read_to_string(file.path()).expect("read svg");
+        assert!(content.contains("<svg"));
+        assert!(content.contains("forward"));
+    }
+
+    #[test]
+    fn test_print_flamegraph_empty_hotspots() {
+        let results = RealProfileResults {
+            model_path: "test.gguf".to_string(),
+            architecture: "llama".to_string(),
+            num_layers: 4,
+            vocab_size: 1000,
+            hidden_dim: 256,
+            warmup_passes: 1,
+            measure_passes: 1,
+            total_inference_us: 0.0,
+            throughput_tok_s: 0.0,
+            tokens_per_pass: 0,
+            hotspots: vec![],
+            per_layer_us: vec![],
+            is_real_data: true,
+        };
+        let result = print_flamegraph(&results, None);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_print_flamegraph_zero_total_time() {
+        let results = RealProfileResults {
+            model_path: "test.gguf".to_string(),
+            architecture: "llama".to_string(),
+            num_layers: 4,
+            vocab_size: 1000,
+            hidden_dim: 256,
+            warmup_passes: 1,
+            measure_passes: 1,
+            total_inference_us: 0.0,
+            throughput_tok_s: 0.0,
+            tokens_per_pass: 0,
+            hotspots: vec![Hotspot {
+                name: "op".to_string(),
+                time_us: 0.0,
+                percent: 0.0,
+                count: 0,
+                avg_us: 0.0,
+                min_us: 0.0,
+                max_us: 0.0,
+            }],
+            per_layer_us: vec![],
+            is_real_data: true,
+        };
+        let result = print_flamegraph(&results, None);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_print_flamegraph_invalid_output_path() {
+        let results = RealProfileResults {
+            model_path: "test.gguf".to_string(),
+            architecture: "llama".to_string(),
+            num_layers: 4,
+            vocab_size: 1000,
+            hidden_dim: 256,
+            warmup_passes: 1,
+            measure_passes: 1,
+            total_inference_us: 1000.0,
+            throughput_tok_s: 1000.0,
+            tokens_per_pass: 1,
+            hotspots: vec![],
+            per_layer_us: vec![],
+            is_real_data: true,
+        };
+        let result = print_flamegraph(&results, Some(Path::new("/nonexistent/dir/file.svg")));
+        assert!(result.is_err());
+    }
+
+    // ========================================================================
+    // detect_format Extended Tests
+    // ========================================================================
+
+    #[test]
+    fn test_detect_format_dot_only() {
+        assert_eq!(detect_format(Path::new(".")), "unknown");
+    }
+
+    #[test]
+    fn test_detect_format_multiple_dots() {
+        assert_eq!(detect_format(Path::new("model.v2.gguf")), "gguf");
+        assert_eq!(
+            detect_format(Path::new("model.q4_k_m.safetensors")),
+            "safetensors"
+        );
+    }
+
+    #[test]
+    fn test_detect_format_absolute_paths() {
+        assert_eq!(detect_format(Path::new("/models/latest/model.apr")), "apr");
+        assert_eq!(
+            detect_format(Path::new("/tmp/downloads/model.gguf")),
+            "gguf"
+        );
+    }
+
+    // ========================================================================
+    // Additional Edge Case Tests
+    // ========================================================================
+
+    #[test]
+    fn test_real_profile_results_debug() {
+        let results = RealProfileResults {
+            model_path: "test.gguf".to_string(),
+            architecture: "llama".to_string(),
+            num_layers: 4,
+            vocab_size: 1000,
+            hidden_dim: 256,
+            warmup_passes: 1,
+            measure_passes: 1,
+            total_inference_us: 1000.0,
+            throughput_tok_s: 1000.0,
+            tokens_per_pass: 1,
+            hotspots: vec![],
+            per_layer_us: vec![],
+            is_real_data: true,
+        };
+        let debug = format!("{results:?}");
+        assert!(debug.contains("RealProfileResults"));
+        assert!(debug.contains("test.gguf"));
+    }
+
+    #[test]
+    fn test_real_profile_results_clone() {
+        let results = RealProfileResults {
+            model_path: "test.gguf".to_string(),
+            architecture: "llama".to_string(),
+            num_layers: 4,
+            vocab_size: 1000,
+            hidden_dim: 256,
+            warmup_passes: 1,
+            measure_passes: 1,
+            total_inference_us: 1000.0,
+            throughput_tok_s: 1000.0,
+            tokens_per_pass: 1,
+            hotspots: vec![Hotspot {
+                name: "op".to_string(),
+                time_us: 1000.0,
+                percent: 100.0,
+                count: 1,
+                avg_us: 1000.0,
+                min_us: 1000.0,
+                max_us: 1000.0,
+            }],
+            per_layer_us: vec![250.0; 4],
+            is_real_data: true,
+        };
+        let cloned = results.clone();
+        assert_eq!(cloned.model_path, results.model_path);
+        assert_eq!(cloned.hotspots.len(), results.hotspots.len());
+        assert_eq!(cloned.per_layer_us, results.per_layer_us);
+    }
+
+    // ========================================================================
+    // OutputFormat parse error message Tests
+    // ========================================================================
+
+    #[test]
+    fn test_output_format_error_message() {
+        let err = "invalid".parse::<OutputFormat>().unwrap_err();
+        assert!(err.contains("invalid"));
+    }
+
+    #[test]
+    fn test_profile_focus_error_message() {
+        let err = "invalid".parse::<ProfileFocus>().unwrap_err();
+        assert!(err.contains("invalid"));
+    }
+
+    // ========================================================================
+    // Comprehensive Boundary Tests for CI Report
+    // ========================================================================
+
+    #[test]
+    fn test_ci_profile_report_very_high_throughput() {
+        let results = RealProfileResults {
+            model_path: "fast.gguf".to_string(),
+            architecture: "llama".to_string(),
+            num_layers: 4,
+            vocab_size: 1000,
+            hidden_dim: 256,
+            warmup_passes: 1,
+            measure_passes: 10,
+            total_inference_us: 1.0, // 0.001ms
+            throughput_tok_s: 1_000_000.0,
+            tokens_per_pass: 1,
+            hotspots: vec![],
+            per_layer_us: vec![],
+            is_real_data: true,
+        };
+        let assertions = CiAssertions {
+            min_throughput: Some(100.0),
+            max_p99_ms: Some(1.0),
+            ..Default::default()
+        };
+        let report = CiProfileReport::from_results(&results, &assertions);
+        assert!(report.passed);
+    }
+
+    #[test]
+    fn test_ci_profile_report_very_slow() {
+        let results = RealProfileResults {
+            model_path: "slow.gguf".to_string(),
+            architecture: "llama".to_string(),
+            num_layers: 128,
+            vocab_size: 128000,
+            hidden_dim: 16384,
+            warmup_passes: 1,
+            measure_passes: 1,
+            total_inference_us: 10_000_000.0, // 10 seconds
+            throughput_tok_s: 0.1,
+            tokens_per_pass: 1,
+            hotspots: vec![],
+            per_layer_us: vec![],
+            is_real_data: true,
+        };
+        let assertions = CiAssertions {
+            min_throughput: Some(1.0),
+            max_p99_ms: Some(100.0),
+            max_p50_ms: Some(50.0),
+            max_memory_mb: None,
+        };
+        let report = CiProfileReport::from_results(&results, &assertions);
+        assert!(!report.passed);
+        // All 3 assertions should fail
+        assert_eq!(report.assertions.len(), 3);
+        assert!(report.assertions.iter().all(|a| !a.passed));
+    }
+
+    // ========================================================================
+    // Attention Focus Variant Keywords
+    // ========================================================================
+
+    #[test]
+    fn test_filter_attention_qkv_keyword() {
+        let results = RealProfileResults {
+            model_path: "test.gguf".to_string(),
+            architecture: "llama".to_string(),
+            num_layers: 4,
+            vocab_size: 1000,
+            hidden_dim: 256,
+            warmup_passes: 1,
+            measure_passes: 1,
+            total_inference_us: 1000.0,
+            throughput_tok_s: 1000.0,
+            tokens_per_pass: 1,
+            hotspots: vec![Hotspot {
+                name: "qkv_projection".to_string(),
+                time_us: 500.0,
+                percent: 50.0,
+                count: 1,
+                avg_us: 500.0,
+                min_us: 500.0,
+                max_us: 500.0,
+            }],
+            per_layer_us: vec![],
+            is_real_data: true,
+        };
+        let filtered = filter_results_by_focus(&results, ProfileFocus::Attention);
+        assert_eq!(filtered.hotspots.len(), 1);
+        assert_eq!(filtered.hotspots[0].name, "qkv_projection");
+    }
+
+    #[test]
+    fn test_filter_mlp_up_proj_keyword() {
+        let results = RealProfileResults {
+            model_path: "test.gguf".to_string(),
+            architecture: "llama".to_string(),
+            num_layers: 4,
+            vocab_size: 1000,
+            hidden_dim: 256,
+            warmup_passes: 1,
+            measure_passes: 1,
+            total_inference_us: 1000.0,
+            throughput_tok_s: 1000.0,
+            tokens_per_pass: 1,
+            hotspots: vec![
+                Hotspot {
+                    name: "up_proj".to_string(),
+                    time_us: 300.0,
+                    percent: 30.0,
+                    count: 1,
+                    avg_us: 300.0,
+                    min_us: 300.0,
+                    max_us: 300.0,
+                },
+                Hotspot {
+                    name: "down_proj".to_string(),
+                    time_us: 300.0,
+                    percent: 30.0,
+                    count: 1,
+                    avg_us: 300.0,
+                    min_us: 300.0,
+                    max_us: 300.0,
+                },
+            ],
+            per_layer_us: vec![],
+            is_real_data: true,
+        };
+        let filtered = filter_results_by_focus(&results, ProfileFocus::Mlp);
+        assert_eq!(filtered.hotspots.len(), 2);
+    }
+
+    #[test]
+    fn test_filter_matmul_mm_keyword() {
+        let results = RealProfileResults {
+            model_path: "test.gguf".to_string(),
+            architecture: "llama".to_string(),
+            num_layers: 4,
+            vocab_size: 1000,
+            hidden_dim: 256,
+            warmup_passes: 1,
+            measure_passes: 1,
+            total_inference_us: 1000.0,
+            throughput_tok_s: 1000.0,
+            tokens_per_pass: 1,
+            hotspots: vec![Hotspot {
+                name: "mm_q4k".to_string(),
+                time_us: 500.0,
+                percent: 50.0,
+                count: 1,
+                avg_us: 500.0,
+                min_us: 500.0,
+                max_us: 500.0,
+            }],
+            per_layer_us: vec![],
+            is_real_data: true,
+        };
+        let filtered = filter_results_by_focus(&results, ProfileFocus::Matmul);
+        assert_eq!(filtered.hotspots.len(), 1);
+    }
+
+    #[test]
+    fn test_filter_embedding_vocab_keyword() {
+        let results = RealProfileResults {
+            model_path: "test.gguf".to_string(),
+            architecture: "llama".to_string(),
+            num_layers: 4,
+            vocab_size: 1000,
+            hidden_dim: 256,
+            warmup_passes: 1,
+            measure_passes: 1,
+            total_inference_us: 1000.0,
+            throughput_tok_s: 1000.0,
+            tokens_per_pass: 1,
+            hotspots: vec![Hotspot {
+                name: "vocab_lookup".to_string(),
+                time_us: 200.0,
+                percent: 20.0,
+                count: 1,
+                avg_us: 200.0,
+                min_us: 200.0,
+                max_us: 200.0,
+            }],
+            per_layer_us: vec![],
+            is_real_data: true,
+        };
+        let filtered = filter_results_by_focus(&results, ProfileFocus::Embedding);
+        assert_eq!(filtered.hotspots.len(), 1);
+    }
+
+    // ========================================================================
+    // Case-insensitive hotspot filtering
+    // ========================================================================
+
+    #[test]
+    fn test_filter_case_insensitive() {
+        let results = RealProfileResults {
+            model_path: "test.gguf".to_string(),
+            architecture: "llama".to_string(),
+            num_layers: 4,
+            vocab_size: 1000,
+            hidden_dim: 256,
+            warmup_passes: 1,
+            measure_passes: 1,
+            total_inference_us: 1000.0,
+            throughput_tok_s: 1000.0,
+            tokens_per_pass: 1,
+            hotspots: vec![
+                Hotspot {
+                    name: "ATTENTION_QKV".to_string(),
+                    time_us: 500.0,
+                    percent: 50.0,
+                    count: 1,
+                    avg_us: 500.0,
+                    min_us: 500.0,
+                    max_us: 500.0,
+                },
+                Hotspot {
+                    name: "MATMUL_F16".to_string(),
+                    time_us: 300.0,
+                    percent: 30.0,
+                    count: 1,
+                    avg_us: 300.0,
+                    min_us: 300.0,
+                    max_us: 300.0,
+                },
+                Hotspot {
+                    name: "MLP_Gate".to_string(),
+                    time_us: 200.0,
+                    percent: 20.0,
+                    count: 1,
+                    avg_us: 200.0,
+                    min_us: 200.0,
+                    max_us: 200.0,
+                },
+            ],
+            per_layer_us: vec![],
+            is_real_data: true,
+        };
+
+        // Attention filter should match ATTENTION_QKV (case-insensitive)
+        let attn_filtered = filter_results_by_focus(&results, ProfileFocus::Attention);
+        assert_eq!(attn_filtered.hotspots.len(), 1);
+        assert_eq!(attn_filtered.hotspots[0].name, "ATTENTION_QKV");
+
+        // Matmul filter should match MATMUL_F16
+        let mm_filtered = filter_results_by_focus(&results, ProfileFocus::Matmul);
+        assert_eq!(mm_filtered.hotspots.len(), 1);
+        assert_eq!(mm_filtered.hotspots[0].name, "MATMUL_F16");
+
+        // MLP filter should match MLP_Gate (contains "gate")
+        let mlp_filtered = filter_results_by_focus(&results, ProfileFocus::Mlp);
+        assert_eq!(mlp_filtered.hotspots.len(), 1);
+        assert_eq!(mlp_filtered.hotspots[0].name, "MLP_Gate");
+    }
 }

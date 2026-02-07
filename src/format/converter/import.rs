@@ -663,56 +663,18 @@ pub(crate) fn load_model_config_from_json(model_path: &Path) -> Option<GgufModel
     })
 }
 
-/// Load tokenizer from sibling tokenizer.json file (PMAT-APR-TOK-001)
+/// Parse tokenizer from already-loaded JSON content.
 ///
-/// For SafeTensors models, the tokenizer is stored in a separate tokenizer.json file.
-/// This function reads it and converts to GgufTokenizer format for APR embedding.
+/// Extracted from `load_tokenizer_from_json` for testability. This is the pure
+/// JSON-parsing core that receives parsed JSON values directly, with no filesystem I/O.
 ///
-/// BUG-TOK-002 FIX: Support both HuggingFace layout (tokenizer.json) and
-/// Pacha cache layout ({hash}.tokenizer.json).
-pub(crate) fn load_tokenizer_from_json(model_path: &Path) -> Option<GgufTokenizer> {
-    // Try standard HuggingFace layout: tokenizer.json in same directory
-    let standard_path = model_path.with_file_name("tokenizer.json");
-
-    // Try Pacha cache layout: {hash}.tokenizer.json (same stem as model)
-    let stem = model_path.file_stem()?.to_str()?;
-    // Strip any existing extensions like .converted from the stem
-    let base_stem = stem.split('.').next().unwrap_or(stem);
-    let pacha_path = model_path.with_file_name(format!("{}.tokenizer.json", base_stem));
-
-    // Try both paths
-    eprintln!(
-        "[DEBUG-TOK-PATH] standard_path={}, exists={}",
-        standard_path.display(),
-        standard_path.exists()
-    );
-    eprintln!(
-        "[DEBUG-TOK-PATH] pacha_path={}, exists={}",
-        pacha_path.display(),
-        pacha_path.exists()
-    );
-    let tokenizer_path = if standard_path.exists() {
-        standard_path
-    } else if pacha_path.exists() {
-        eprintln!(
-            "[BUG-TOK-002] Found tokenizer at Pacha cache path: {}",
-            pacha_path.display()
-        );
-        pacha_path
-    } else {
-        eprintln!("[DEBUG-TOK-PATH] No tokenizer found!");
-        return None;
-    };
-
-    let content = fs::read_to_string(&tokenizer_path).ok()?;
-    let json: serde_json::Value = serde_json::from_str(&content).ok()?;
-
-    // BUG-EXPORT-004: Extract FULL vocabulary including added_tokens
-    // HuggingFace tokenizer.json has:
-    // - model.vocab: base vocabulary (e.g., 151643 tokens)
-    // - added_tokens: special tokens (e.g., 22 tokens)
-    // And config.json has vocab_size which may be larger (e.g., 151936 for padding)
-
+/// # Arguments
+/// * `json` - Parsed tokenizer.json content
+/// * `config_json` - Optional parsed config.json content (for `vocab_size`, BOS/EOS)
+pub(crate) fn parse_tokenizer_json(
+    json: &serde_json::Value,
+    config_json: Option<&serde_json::Value>,
+) -> Option<GgufTokenizer> {
     // Step 1: Extract base vocabulary from model.vocab
     let vocab_obj = json.get("model")?.get("vocab")?;
     let vocab_map = vocab_obj.as_object()?;
@@ -735,25 +697,8 @@ pub(crate) fn load_tokenizer_from_json(model_path: &Path) -> Option<GgufTokenize
         }
     }
 
-    // Step 3: Read expected vocab_size from config.json for padding
-    let config_path = tokenizer_path.with_file_name("config.json");
-    let pacha_config_path = tokenizer_path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .map(|s| s.split('.').next().unwrap_or(s))
-        .map(|stem| tokenizer_path.with_file_name(format!("{stem}.config.json")));
-
-    let expected_vocab_size = config_path
-        .exists()
-        .then(|| fs::read_to_string(&config_path).ok())
-        .flatten()
-        .or_else(|| {
-            pacha_config_path
-                .as_ref()
-                .filter(|p| p.exists())
-                .and_then(|p| fs::read_to_string(p).ok())
-        })
-        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+    // Step 3: Get expected vocab_size from config.json for padding
+    let expected_vocab_size = config_json
         .and_then(|cfg| cfg.get("vocab_size").and_then(|v| v.as_u64()))
         .map(|v| v as u32)
         .unwrap_or(0);
@@ -785,33 +730,12 @@ pub(crate) fn load_tokenizer_from_json(model_path: &Path) -> Option<GgufTokenize
     }
 
     // BUG-EXPORT-004: Extract special tokens (BOS/EOS)
-    // PRIORITY 1: Read from sibling config.json (authoritative source)
+    // PRIORITY 1: Read from config.json (authoritative source)
     // PRIORITY 2: Infer from added_tokens in tokenizer.json (fallback)
     let mut bos_token_id = None;
     let mut eos_token_id = None;
 
-    // Try to read from config.json first (same directory)
-    let config_path = tokenizer_path.with_file_name("config.json");
-    let pacha_config_path = tokenizer_path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .map(|s| s.split('.').next().unwrap_or(s))
-        .map(|stem| tokenizer_path.with_file_name(format!("{stem}.config.json")));
-
-    let config_json = config_path
-        .exists()
-        .then(|| fs::read_to_string(&config_path).ok())
-        .flatten()
-        .or_else(|| {
-            pacha_config_path
-                .as_ref()
-                .filter(|p| p.exists())
-                .and_then(|p| fs::read_to_string(p).ok())
-        })
-        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok());
-
-    if let Some(ref cfg) = config_json {
-        // Read BOS/EOS from config.json (authoritative)
+    if let Some(cfg) = config_json {
         bos_token_id = cfg
             .get("bos_token_id")
             .and_then(|v| v.as_u64())
@@ -880,6 +804,73 @@ pub(crate) fn load_tokenizer_from_json(model_path: &Path) -> Option<GgufTokenize
         architecture: None,
         model_name: None,
     })
+}
+
+/// Load tokenizer from sibling tokenizer.json file (PMAT-APR-TOK-001)
+///
+/// For SafeTensors models, the tokenizer is stored in a separate tokenizer.json file.
+/// This function reads it and converts to GgufTokenizer format for APR embedding.
+///
+/// BUG-TOK-002 FIX: Support both HuggingFace layout (tokenizer.json) and
+/// Pacha cache layout ({hash}.tokenizer.json).
+pub(crate) fn load_tokenizer_from_json(model_path: &Path) -> Option<GgufTokenizer> {
+    // Try standard HuggingFace layout: tokenizer.json in same directory
+    let standard_path = model_path.with_file_name("tokenizer.json");
+
+    // Try Pacha cache layout: {hash}.tokenizer.json (same stem as model)
+    let stem = model_path.file_stem()?.to_str()?;
+    // Strip any existing extensions like .converted from the stem
+    let base_stem = stem.split('.').next().unwrap_or(stem);
+    let pacha_path = model_path.with_file_name(format!("{}.tokenizer.json", base_stem));
+
+    // Try both paths
+    eprintln!(
+        "[DEBUG-TOK-PATH] standard_path={}, exists={}",
+        standard_path.display(),
+        standard_path.exists()
+    );
+    eprintln!(
+        "[DEBUG-TOK-PATH] pacha_path={}, exists={}",
+        pacha_path.display(),
+        pacha_path.exists()
+    );
+    let tokenizer_path = if standard_path.exists() {
+        standard_path
+    } else if pacha_path.exists() {
+        eprintln!(
+            "[BUG-TOK-002] Found tokenizer at Pacha cache path: {}",
+            pacha_path.display()
+        );
+        pacha_path
+    } else {
+        eprintln!("[DEBUG-TOK-PATH] No tokenizer found!");
+        return None;
+    };
+
+    let content = fs::read_to_string(&tokenizer_path).ok()?;
+    let json: serde_json::Value = serde_json::from_str(&content).ok()?;
+
+    // Load config.json (try standard path, then Pacha cache path)
+    let config_path = tokenizer_path.with_file_name("config.json");
+    let pacha_config_path = tokenizer_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .map(|s| s.split('.').next().unwrap_or(s))
+        .map(|stem| tokenizer_path.with_file_name(format!("{stem}.config.json")));
+
+    let config_json = config_path
+        .exists()
+        .then(|| fs::read_to_string(&config_path).ok())
+        .flatten()
+        .or_else(|| {
+            pacha_config_path
+                .as_ref()
+                .filter(|p| p.exists())
+                .and_then(|p| fs::read_to_string(p).ok())
+        })
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok());
+
+    parse_tokenizer_json(&json, config_json.as_ref())
 }
 
 /// PMAT-232: Load tokenizer from explicit path (for --tokenizer CLI option)

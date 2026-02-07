@@ -394,7 +394,18 @@ fn ggml_dtype_name(dtype: u32) -> &'static str {
         16 => "IQ2_XXS",
         17 => "IQ2_XS",
         18 => "IQ3_XXS",
+        19 => "IQ1_S",
+        20 => "IQ4_NL",
+        21 => "IQ3_S",
+        22 => "IQ2_S",
+        23 => "IQ4_XS",
+        24 => "I8",
+        25 => "I16",
         26 => "BF16",
+        27 => "I32",
+        28 => "I64",
+        29 => "F64",
+        30 => "IQ1_M",
         _ => "unknown",
     }
 }
@@ -417,7 +428,26 @@ fn ggml_dtype_element_size(dtype: u32) -> f64 {
         14 => 0.8125,            // Q6_K
         15 => 1.0625,            // Q8_K
         26 => 2.0,               // BF16
-        _ => 4.0,                // default assume F32
+        // GGML I-quants (importance matrix quantization)
+        16 => 0.5625, // IQ2_XXS
+        17 => 0.625,  // IQ2_XS
+        18 => 0.6875, // IQ3_XXS
+        19 => 0.4375, // IQ1_S
+        20 => 0.5625, // IQ4_NL
+        21 => 0.4375, // IQ3_S
+        22 => 0.625,  // IQ2_S
+        23 => 0.5,    // IQ4_XS
+        24 => 1.0,    // I8
+        25 => 2.0,    // I16
+        27 => 4.0,    // I32
+        28 => 8.0,    // I64
+        29 => 8.0,    // F64
+        30 => 0.375,  // IQ1_M
+        // Unknown dtype: use F32 size (4 bytes) as conservative estimate.
+        // This is intentional — for size estimation purposes, overestimating
+        // is safer than underestimating. The dtype name function above will
+        // report "unknown" for diagnostics.
+        _ => 4.0,
     }
 }
 

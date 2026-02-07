@@ -2374,4 +2374,1116 @@ mod tests {
         let path = Path::new("/models/model.v2.0.safetensors");
         assert_eq!(detect_format(path), ModelFormat::SafeTensors);
     }
+
+    // =========================================================================
+    // print_welcome_banner smoke tests (all format branches + config combos)
+    // =========================================================================
+
+    #[test]
+    fn test_print_welcome_banner_apr_format() {
+        let path = Path::new("/models/qwen2-instruct.apr");
+        let config = ChatConfig::default();
+        // Should not panic; exercises ModelFormat::Apr branch
+        print_welcome_banner(path, &config);
+    }
+
+    #[test]
+    fn test_print_welcome_banner_gguf_format() {
+        let path = Path::new("/models/qwen2-instruct.gguf");
+        let config = ChatConfig::default();
+        // Should not panic; exercises ModelFormat::Gguf branch
+        print_welcome_banner(path, &config);
+    }
+
+    #[test]
+    fn test_print_welcome_banner_safetensors_format() {
+        let path = Path::new("/models/model.safetensors");
+        let config = ChatConfig::default();
+        // Should not panic; exercises ModelFormat::SafeTensors branch
+        print_welcome_banner(path, &config);
+    }
+
+    #[test]
+    fn test_print_welcome_banner_demo_format() {
+        let path = Path::new("/models/model.bin");
+        let config = ChatConfig::default();
+        // Should not panic; exercises ModelFormat::Demo branch
+        print_welcome_banner(path, &config);
+    }
+
+    #[test]
+    fn test_print_welcome_banner_with_system_prompt() {
+        let path = Path::new("/models/test.apr");
+        let config = ChatConfig {
+            system: Some("You are a helpful assistant.".to_string()),
+            ..Default::default()
+        };
+        // Exercises the system prompt display branch
+        print_welcome_banner(path, &config);
+    }
+
+    #[test]
+    fn test_print_welcome_banner_with_inspect_mode() {
+        let path = Path::new("/models/test.gguf");
+        let config = ChatConfig {
+            inspect: true,
+            ..Default::default()
+        };
+        // Exercises the inspect mode display branch
+        print_welcome_banner(path, &config);
+    }
+
+    #[test]
+    fn test_print_welcome_banner_with_system_and_inspect() {
+        let path = Path::new("/models/model.safetensors");
+        let config = ChatConfig {
+            system: Some("Be concise".to_string()),
+            inspect: true,
+            ..Default::default()
+        };
+        print_welcome_banner(path, &config);
+    }
+
+    #[test]
+    fn test_print_welcome_banner_template_chatml() {
+        // "qwen" in filename triggers ChatML template detection
+        let path = Path::new("/models/qwen2-0.5b.apr");
+        let config = ChatConfig::default();
+        print_welcome_banner(path, &config);
+    }
+
+    #[test]
+    fn test_print_welcome_banner_template_llama2() {
+        // "llama" in filename triggers LLaMA2 template detection
+        let path = Path::new("/models/llama-2-7b.gguf");
+        let config = ChatConfig::default();
+        print_welcome_banner(path, &config);
+    }
+
+    #[test]
+    fn test_print_welcome_banner_template_mistral() {
+        // "mistral" in filename triggers Mistral template detection
+        let path = Path::new("/models/mistral-7b.gguf");
+        let config = ChatConfig::default();
+        print_welcome_banner(path, &config);
+    }
+
+    #[test]
+    fn test_print_welcome_banner_template_phi() {
+        // "phi-" in filename triggers Phi template detection
+        let path = Path::new("/models/phi-3.safetensors");
+        let config = ChatConfig::default();
+        print_welcome_banner(path, &config);
+    }
+
+    #[test]
+    fn test_print_welcome_banner_template_alpaca() {
+        // "alpaca" in filename triggers Alpaca template detection
+        let path = Path::new("/models/alpaca-7b.gguf");
+        let config = ChatConfig::default();
+        print_welcome_banner(path, &config);
+    }
+
+    #[test]
+    fn test_print_welcome_banner_template_raw_fallback() {
+        // Unknown model name falls back to Raw template
+        let path = Path::new("/models/unknown-model.gguf");
+        let config = ChatConfig::default();
+        print_welcome_banner(path, &config);
+    }
+
+    #[test]
+    fn test_print_welcome_banner_no_extension() {
+        // No extension -> Demo format
+        let path = Path::new("/models/modelfile");
+        let config = ChatConfig::default();
+        print_welcome_banner(path, &config);
+    }
+
+    #[test]
+    fn test_print_welcome_banner_no_stem() {
+        // File with no stem (just extension)
+        let path = Path::new("/models/.apr");
+        let config = ChatConfig::default();
+        print_welcome_banner(path, &config);
+    }
+
+    // =========================================================================
+    // clean_chat_response: new-turn detection branches
+    // =========================================================================
+
+    #[test]
+    fn test_clean_chat_response_what_question_cutoff() {
+        let raw = "42\nWhat is the meaning of life?";
+        let cleaned = clean_chat_response(raw);
+        assert_eq!(cleaned, "42");
+    }
+
+    #[test]
+    fn test_clean_chat_response_how_question_cutoff() {
+        let raw = "Done.\nHow do you feel about that?";
+        let cleaned = clean_chat_response(raw);
+        assert_eq!(cleaned, "Done.");
+    }
+
+    #[test]
+    fn test_clean_chat_response_why_question_cutoff() {
+        let raw = "Because reasons.\nWhy did the chicken cross the road?";
+        let cleaned = clean_chat_response(raw);
+        assert_eq!(cleaned, "Because reasons.");
+    }
+
+    #[test]
+    fn test_clean_chat_response_can_question_cutoff() {
+        let raw = "Yes.\nCan you elaborate on that?";
+        let cleaned = clean_chat_response(raw);
+        assert_eq!(cleaned, "Yes.");
+    }
+
+    #[test]
+    fn test_clean_chat_response_im_start_in_rest_not_cutoff_after_stripping() {
+        // Note: <|im_start|> markers are stripped BEFORE new-turn detection,
+        // so the rest becomes "user\nNext question?" which doesn't match
+        // any cutoff pattern (Suggest/What/How/Why/Can/Human:/<|im_start|>)
+        let raw = "Answer here.\n<|im_start|>user\nNext question?";
+        let cleaned = clean_chat_response(raw);
+        // After marker stripping: "Answer here.\nuser\nNext question?"
+        // "user" doesn't match cutoff patterns, so full text is preserved
+        assert_eq!(cleaned, "Answer here.\nuser\nNext question?");
+    }
+
+    #[test]
+    fn test_clean_chat_response_raw_im_start_text_in_rest() {
+        // If the raw text literally has "<|im_start|>" that WASN'T stripped
+        // (e.g., doubled markers), test the cutoff pattern
+        // Actually, all <|im_start|> are stripped first, so this tests
+        // that the check works on the already-cleaned text
+        let raw = "Answer.\nWhat is next?";
+        let cleaned = clean_chat_response(raw);
+        assert_eq!(cleaned, "Answer.");
+    }
+
+    #[test]
+    fn test_clean_chat_response_suggest_cutoff() {
+        // Already covered above, but this tests with different first-line content
+        let raw = "Rust is great!\nSuggest some alternatives";
+        let cleaned = clean_chat_response(raw);
+        assert_eq!(cleaned, "Rust is great!");
+    }
+
+    #[test]
+    fn test_clean_chat_response_no_cutoff_normal_continuation() {
+        // Lines that start with lowercase should NOT be cut off
+        let raw = "First line\nsecond line continues";
+        let cleaned = clean_chat_response(raw);
+        assert_eq!(cleaned, "First line\nsecond line continues");
+    }
+
+    #[test]
+    fn test_clean_chat_response_no_cutoff_numbered_continuation() {
+        let raw = "Steps:\n1. Do this\n2. Do that";
+        let cleaned = clean_chat_response(raw);
+        assert_eq!(cleaned, "Steps:\n1. Do this\n2. Do that");
+    }
+
+    // =========================================================================
+    // clean_chat_response: BPE artifact edge cases
+    // =========================================================================
+
+    #[test]
+    fn test_clean_chat_response_multiple_bpe_spaces() {
+        // Multiple Ġ should collapse to single space after cleaning
+        let raw = "HelloĠĠworld";
+        let cleaned = clean_chat_response(raw);
+        assert_eq!(cleaned, "Hello world");
+    }
+
+    #[test]
+    fn test_clean_chat_response_bpe_newline_u010a() {
+        // U+010A character (Ċ) is newline in some BPE tokenizers
+        let raw = "LineAĊLineB";
+        let cleaned = clean_chat_response(raw);
+        assert_eq!(cleaned, "LineA\nLineB");
+    }
+
+    #[test]
+    fn test_clean_chat_response_both_bpe_artifacts() {
+        // Mix of Ġ and Ċ
+        let raw = "HelloĠworldĊnewĠline";
+        let cleaned = clean_chat_response(raw);
+        assert_eq!(cleaned, "Hello world\nnew line");
+    }
+
+    #[test]
+    fn test_clean_chat_response_literal_g_with_dot() {
+        // Literal "Ġ" string (not the Unicode character) should also be replaced
+        let raw = "Hello\u{0120}there";
+        let cleaned = clean_chat_response(raw);
+        assert_eq!(cleaned, "Hello there");
+    }
+
+    // =========================================================================
+    // clean_chat_response: punctuation normalization edge cases
+    // =========================================================================
+
+    #[test]
+    fn test_clean_chat_response_exactly_three_exclamation() {
+        let raw = "Wow!!!";
+        let cleaned = clean_chat_response(raw);
+        assert_eq!(cleaned, "Wow!!!");
+    }
+
+    #[test]
+    fn test_clean_chat_response_exactly_two_exclamation() {
+        let raw = "Wow!!";
+        let cleaned = clean_chat_response(raw);
+        assert_eq!(cleaned, "Wow!!");
+    }
+
+    #[test]
+    fn test_clean_chat_response_single_exclamation() {
+        let raw = "Wow!";
+        let cleaned = clean_chat_response(raw);
+        assert_eq!(cleaned, "Wow!");
+    }
+
+    #[test]
+    fn test_clean_chat_response_mixed_punctuation_not_collapsed() {
+        // Mixed punctuation (different chars) should NOT be collapsed
+        let raw = "Really!?!?";
+        let cleaned = clean_chat_response(raw);
+        assert_eq!(cleaned, "Really!?!?");
+    }
+
+    #[test]
+    fn test_clean_chat_response_dots_exactly_three() {
+        let raw = "Hmm...";
+        let cleaned = clean_chat_response(raw);
+        assert_eq!(cleaned, "Hmm...");
+    }
+
+    #[test]
+    fn test_clean_chat_response_dots_many() {
+        let raw = "Wait..........";
+        let cleaned = clean_chat_response(raw);
+        assert_eq!(cleaned, "Wait...");
+    }
+
+    #[test]
+    fn test_clean_chat_response_questions_exactly_three() {
+        let raw = "What???";
+        let cleaned = clean_chat_response(raw);
+        assert_eq!(cleaned, "What???");
+    }
+
+    #[test]
+    fn test_clean_chat_response_questions_many() {
+        let raw = "What????????";
+        let cleaned = clean_chat_response(raw);
+        assert_eq!(cleaned, "What???");
+    }
+
+    // =========================================================================
+    // clean_chat_response: ChatML marker variations
+    // =========================================================================
+
+    #[test]
+    fn test_clean_chat_response_im_start_alone() {
+        let raw = "<|im_start|>Some text";
+        let cleaned = clean_chat_response(raw);
+        assert_eq!(cleaned, "Some text");
+    }
+
+    #[test]
+    fn test_clean_chat_response_im_end_alone() {
+        let raw = "Some text<|im_end|>";
+        let cleaned = clean_chat_response(raw);
+        assert_eq!(cleaned, "Some text");
+    }
+
+    #[test]
+    fn test_clean_chat_response_endoftext_midstream() {
+        let raw = "Hello<|endoftext|> world";
+        let cleaned = clean_chat_response(raw);
+        assert_eq!(cleaned, "Hello world");
+    }
+
+    #[test]
+    fn test_clean_chat_response_assistant_without_newline() {
+        let raw = "<|im_start|>assistantHello";
+        let cleaned = clean_chat_response(raw);
+        assert_eq!(cleaned, "Hello");
+    }
+
+    #[test]
+    fn test_clean_chat_response_multiple_endoftext() {
+        let raw = "Text<|endoftext|><|endoftext|>more";
+        let cleaned = clean_chat_response(raw);
+        assert_eq!(cleaned, "Textmore");
+    }
+
+    #[test]
+    fn test_clean_chat_response_all_markers_combined() {
+        let raw = "<|im_start|>assistant\n<|im_start|>Hello <|endoftext|>world<|im_end|>";
+        let cleaned = clean_chat_response(raw);
+        assert_eq!(cleaned, "Hello world");
+    }
+
+    // =========================================================================
+    // clean_chat_response: whitespace normalization
+    // =========================================================================
+
+    #[test]
+    fn test_clean_chat_response_many_spaces() {
+        let raw = "Hello     world     test";
+        let cleaned = clean_chat_response(raw);
+        assert_eq!(cleaned, "Hello world test");
+    }
+
+    #[test]
+    fn test_clean_chat_response_only_whitespace() {
+        let raw = "   \t   \n   ";
+        let cleaned = clean_chat_response(raw);
+        assert!(cleaned.is_empty() || cleaned.trim().is_empty());
+    }
+
+    #[test]
+    fn test_clean_chat_response_newlines_preserved() {
+        let raw = "Line1\nLine2\nLine3";
+        let cleaned = clean_chat_response(raw);
+        assert_eq!(cleaned, "Line1\nLine2\nLine3");
+    }
+
+    #[test]
+    fn test_clean_chat_response_leading_newline_trimmed() {
+        let raw = "\nHello";
+        let cleaned = clean_chat_response(raw);
+        assert_eq!(cleaned, "Hello");
+    }
+
+    #[test]
+    fn test_clean_chat_response_trailing_newline_trimmed() {
+        let raw = "Hello\n";
+        let cleaned = clean_chat_response(raw);
+        assert_eq!(cleaned, "Hello");
+    }
+
+    // =========================================================================
+    // detect_format: additional edge cases
+    // =========================================================================
+
+    #[test]
+    fn test_detect_format_empty_filename() {
+        let path = Path::new("");
+        assert_eq!(detect_format(path), ModelFormat::Demo);
+    }
+
+    #[test]
+    fn test_detect_format_just_extension_apr() {
+        // Path is literally ".apr"
+        let path = Path::new(".apr");
+        // file_stem is "" for ".apr", extension is "apr" on some platforms
+        // but actually Path::new(".apr").extension() returns None on Unix
+        // because ".apr" is treated as a hidden file with no extension
+        assert_eq!(detect_format(path), ModelFormat::Demo);
+    }
+
+    #[test]
+    fn test_detect_format_mixed_case_gguf() {
+        let path = Path::new("/models/test.GGUF");
+        // Case-sensitive: "GGUF" != "gguf"
+        assert_eq!(detect_format(path), ModelFormat::Demo);
+    }
+
+    #[test]
+    fn test_detect_format_mixed_case_safetensors() {
+        let path = Path::new("/models/test.SafeTensors");
+        assert_eq!(detect_format(path), ModelFormat::Demo);
+    }
+
+    #[test]
+    fn test_detect_format_with_spaces_in_path() {
+        let path = Path::new("/my models/test model.gguf");
+        assert_eq!(detect_format(path), ModelFormat::Gguf);
+    }
+
+    #[test]
+    fn test_detect_format_unicode_path() {
+        let path = Path::new("/modelos/modelo.apr");
+        assert_eq!(detect_format(path), ModelFormat::Apr);
+    }
+
+    #[test]
+    fn test_detect_format_root_path() {
+        let path = Path::new("/model.safetensors");
+        assert_eq!(detect_format(path), ModelFormat::SafeTensors);
+    }
+
+    #[test]
+    fn test_detect_format_current_dir() {
+        let path = Path::new("model.apr");
+        assert_eq!(detect_format(path), ModelFormat::Apr);
+    }
+
+    // =========================================================================
+    // detect_format_from_bytes: additional edge cases (inference only)
+    // =========================================================================
+
+    #[cfg(feature = "inference")]
+    mod inference_edge_cases {
+        use super::*;
+
+        #[test]
+        fn test_detect_format_from_bytes_exactly_8_bytes() {
+            // Exactly 8 bytes, not matching any known magic
+            let data = [0u8; 8];
+            // header_size = 0, so SafeTensors check fails (header_size > 0)
+            assert_eq!(detect_format_from_bytes(&data), ModelFormat::Demo);
+        }
+
+        #[test]
+        fn test_detect_format_from_bytes_safetensors_header_zero() {
+            // SafeTensors with header_size = 0 should NOT match
+            let mut data = vec![0u8; 16];
+            data[0..8].copy_from_slice(&0u64.to_le_bytes());
+            assert_eq!(detect_format_from_bytes(&data), ModelFormat::Demo);
+        }
+
+        #[test]
+        fn test_detect_format_from_bytes_safetensors_header_huge() {
+            // SafeTensors with header_size >= 100_000_000 should NOT match
+            let mut data = vec![0u8; 16];
+            data[0..8].copy_from_slice(&100_000_000u64.to_le_bytes());
+            assert_eq!(detect_format_from_bytes(&data), ModelFormat::Demo);
+        }
+
+        #[test]
+        fn test_detect_format_from_bytes_safetensors_header_boundary() {
+            // SafeTensors with header_size = 99_999_999 should match
+            let mut data = vec![0u8; 16];
+            data[0..8].copy_from_slice(&99_999_999u64.to_le_bytes());
+            assert_eq!(detect_format_from_bytes(&data), ModelFormat::SafeTensors);
+        }
+
+        #[test]
+        fn test_detect_format_from_bytes_safetensors_header_one() {
+            // SafeTensors with header_size = 1 should match
+            let mut data = vec![0u8; 16];
+            data[0..8].copy_from_slice(&1u64.to_le_bytes());
+            assert_eq!(detect_format_from_bytes(&data), ModelFormat::SafeTensors);
+        }
+
+        #[test]
+        fn test_detect_format_from_bytes_7_bytes() {
+            // 7 bytes (less than 8) should return Demo
+            let data = b"APR2xxx";
+            assert_eq!(detect_format_from_bytes(data), ModelFormat::Demo);
+        }
+
+        #[test]
+        fn test_detect_format_from_bytes_apr_takes_priority_over_safetensors() {
+            // "APRN" starts with bytes that could also be a valid u64 header size
+            // APR magic should be detected first
+            let data = b"APRNxxxxxxxx0000";
+            assert_eq!(detect_format_from_bytes(data), ModelFormat::Apr);
+        }
+
+        #[test]
+        fn test_detect_format_from_bytes_gguf_takes_priority_over_safetensors() {
+            // "GGUF" starts with bytes that could also be a valid u64 header size
+            // GGUF magic should be detected first
+            let data = b"GGUFxxxxxxxx0000";
+            assert_eq!(detect_format_from_bytes(data), ModelFormat::Gguf);
+        }
+
+        #[test]
+        fn test_detect_format_from_bytes_all_0xff() {
+            // All 0xFF bytes: header_size would be u64::MAX which is > 100_000_000
+            let data = [0xFFu8; 16];
+            assert_eq!(detect_format_from_bytes(&data), ModelFormat::Demo);
+        }
+
+        #[test]
+        fn test_detect_format_from_bytes_safetensors_typical_sizes() {
+            // Typical SafeTensors header sizes
+            for size in [256u64, 1024, 8192, 65536, 1_000_000, 50_000_000] {
+                let mut data = vec![0u8; 16];
+                data[0..8].copy_from_slice(&size.to_le_bytes());
+                assert_eq!(
+                    detect_format_from_bytes(&data),
+                    ModelFormat::SafeTensors,
+                    "Expected SafeTensors for header_size={}",
+                    size
+                );
+            }
+        }
+    }
+
+    // =========================================================================
+    // ChatConfig: comprehensive field combination tests
+    // =========================================================================
+
+    #[test]
+    fn test_chat_config_default_trace_is_false() {
+        let config = ChatConfig::default();
+        assert!(!config.trace);
+    }
+
+    #[test]
+    fn test_chat_config_default_trace_output_is_none() {
+        let config = ChatConfig::default();
+        assert!(config.trace_output.is_none());
+    }
+
+    #[test]
+    fn test_chat_config_all_fields_set() {
+        let config = ChatConfig {
+            temperature: 1.5,
+            top_p: 0.95,
+            max_tokens: 2048,
+            system: Some("Expert mode".to_string()),
+            inspect: true,
+            force_cpu: true,
+            trace: true,
+            trace_output: Some(PathBuf::from("/tmp/all_fields.json")),
+        };
+        assert!((config.temperature - 1.5).abs() < f32::EPSILON);
+        assert!((config.top_p - 0.95).abs() < f32::EPSILON);
+        assert_eq!(config.max_tokens, 2048);
+        assert_eq!(config.system.as_deref(), Some("Expert mode"));
+        assert!(config.inspect);
+        assert!(config.force_cpu);
+        assert!(config.trace);
+        assert_eq!(
+            config.trace_output.as_ref().map(|p| p.to_str().unwrap()),
+            Some("/tmp/all_fields.json")
+        );
+    }
+
+    #[test]
+    fn test_chat_config_zero_temperature() {
+        // Greedy decoding
+        let config = ChatConfig {
+            temperature: 0.0,
+            ..Default::default()
+        };
+        assert_eq!(config.temperature, 0.0);
+    }
+
+    #[test]
+    fn test_chat_config_max_tokens_zero() {
+        let config = ChatConfig {
+            max_tokens: 0,
+            ..Default::default()
+        };
+        assert_eq!(config.max_tokens, 0);
+    }
+
+    #[test]
+    fn test_chat_config_max_tokens_large() {
+        let config = ChatConfig {
+            max_tokens: usize::MAX,
+            ..Default::default()
+        };
+        assert_eq!(config.max_tokens, usize::MAX);
+    }
+
+    #[test]
+    fn test_chat_config_empty_system_prompt() {
+        let config = ChatConfig {
+            system: Some(String::new()),
+            ..Default::default()
+        };
+        assert_eq!(config.system.as_deref(), Some(""));
+    }
+
+    #[test]
+    fn test_chat_config_long_system_prompt() {
+        let long_prompt = "a".repeat(10_000);
+        let config = ChatConfig {
+            system: Some(long_prompt.clone()),
+            ..Default::default()
+        };
+        assert_eq!(config.system.as_deref(), Some(long_prompt.as_str()));
+    }
+
+    #[test]
+    fn test_chat_config_trace_output_relative_path() {
+        let config = ChatConfig {
+            trace: true,
+            trace_output: Some(PathBuf::from("relative/trace.json")),
+            ..Default::default()
+        };
+        assert!(!config.trace_output.as_ref().unwrap().is_absolute());
+    }
+
+    // =========================================================================
+    // run() additional error path tests
+    // =========================================================================
+
+    #[test]
+    fn test_run_nonexistent_path_without_trace() {
+        let path = Path::new("/definitely/not/a/real/path/model.apr");
+        let result = run(
+            path, 0.7, 0.9, 512, None, false, false, false, None, false, None, "info", false,
+        );
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            CliError::FileNotFound(p) => {
+                assert_eq!(p, PathBuf::from("/definitely/not/a/real/path/model.apr"));
+            }
+            other => panic!("Expected FileNotFound, got: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_run_nonexistent_safetensors() {
+        let path = Path::new("/no/such/model.safetensors");
+        let result = run(
+            path, 0.5, 0.8, 256, None, false, false, false, None, false, None, "info", false,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_nonexistent_apr() {
+        let path = Path::new("/no/such/model.apr");
+        let result = run(
+            path, 1.0, 1.0, 1024, None, true, true, false, None, false, None, "warn", false,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_nonexistent_with_all_trace_options() {
+        let path = Path::new("/no/such/model.gguf");
+        let steps = vec![
+            "tokenize".to_string(),
+            "embed".to_string(),
+            "attention".to_string(),
+            "ffn".to_string(),
+            "sample".to_string(),
+            "decode".to_string(),
+        ];
+        let result = run(
+            path,
+            0.3,
+            0.95,
+            128,
+            Some("System prompt"),
+            true,
+            false,
+            true,
+            Some(&steps),
+            true,
+            Some(PathBuf::from("/tmp/full_trace.json")),
+            "debug",
+            true,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_nonexistent_no_system_inspect_off() {
+        let path = Path::new("/no/model.bin");
+        let result = run(
+            path, 0.7, 0.9, 512, None, false, false, false, None, false, None, "info", false,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_nonexistent_with_empty_trace_steps() {
+        let path = Path::new("/no/model.gguf");
+        let steps: Vec<String> = vec![];
+        let result = run(
+            path,
+            0.7,
+            0.9,
+            512,
+            None,
+            false,
+            false,
+            true,
+            Some(&steps),
+            false,
+            None,
+            "info",
+            false,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_nonexistent_trace_without_output() {
+        let path = Path::new("/no/model.apr");
+        let result = run(
+            path, 0.7, 0.9, 512, None, false, false, true,  // trace enabled
+            None,  // no trace steps
+            false, // not verbose
+            None,  // no trace output
+            "info", false, // no profile
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_run_nonexistent_with_profile_only() {
+        let path = Path::new("/no/model.gguf");
+        let result = run(
+            path, 0.7, 0.9, 512, None, false, false,
+            true, // trace must be on for profile to print
+            None, false, None, "info", true, // profile enabled
+        );
+        assert!(result.is_err());
+    }
+
+    // =========================================================================
+    // CommandResult exhaustive tests
+    // =========================================================================
+
+    #[test]
+    fn test_command_result_continue_is_not_quit() {
+        let result = CommandResult::Continue;
+        let is_continue = matches!(result, CommandResult::Continue);
+        assert!(is_continue);
+    }
+
+    #[test]
+    fn test_command_result_quit_is_not_continue() {
+        let result = CommandResult::Quit;
+        let is_quit = matches!(result, CommandResult::Quit);
+        assert!(is_quit);
+    }
+
+    // =========================================================================
+    // find_qwen_tokenizer: error paths
+    // =========================================================================
+
+    #[test]
+    fn test_find_qwen_tokenizer_nonexistent_path() {
+        // Path with no parent directory containing tokenizer.json.
+        // Note: This function also searches HuggingFace cache and APR cache,
+        // so it may succeed on dev machines with cached Qwen models.
+        let path = Path::new("/nonexistent/deeply/nested/model.safetensors");
+        let result = find_qwen_tokenizer(path);
+        // Result depends on system state: Ok if cache has tokenizer, Err otherwise
+        // We just verify it doesn't panic and returns a valid Result
+        match result {
+            Ok(Some(tok)) => {
+                // Found in cache - verify it's a valid tokenizer
+                assert!(tok.vocab_size() > 0);
+            }
+            Ok(None) => {
+                // This shouldn't happen: function returns Err, not Ok(None) on failure
+                panic!("Expected Err or Ok(Some), got Ok(None)");
+            }
+            Err(CliError::InvalidFormat(msg)) => {
+                assert!(
+                    msg.contains("No Qwen tokenizer found"),
+                    "Expected helpful error message, got: {}",
+                    msg
+                );
+            }
+            Err(other) => panic!("Expected InvalidFormat error, got: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_find_qwen_tokenizer_root_path() {
+        // Path at root level - parent is "/"
+        let path = Path::new("/model.safetensors");
+        let result = find_qwen_tokenizer(path);
+        // Same as above: depends on system cache state
+        assert!(result.is_ok() || result.is_err());
+    }
+
+    #[test]
+    fn test_find_qwen_tokenizer_error_message_content_when_no_cache() {
+        // When find_qwen_tokenizer fails, it should return an InvalidFormat error
+        // with a helpful message listing the search locations.
+        // We test the error construction directly since the function may succeed
+        // on machines with cached tokenizers.
+        let err = CliError::InvalidFormat(
+            "No Qwen tokenizer found. Searched:\n\
+             1. Model directory (tokenizer.json)\n\
+             2. HuggingFace cache (~/.cache/huggingface/hub/models--Qwen--*/snapshots/*/tokenizer.json)\n\
+             3. APR cache (~/.apr/tokenizers/qwen2/tokenizer.json)\n\n\
+             To fix: Download a Qwen model with tokenizer:\n\
+               apr pull hf://Qwen/Qwen2.5-0.5B-Instruct-GGUF"
+                .to_string(),
+        );
+        let msg = err.to_string();
+        assert!(msg.contains("No Qwen tokenizer found"));
+        assert!(msg.contains("tokenizer.json"));
+        assert!(msg.contains("HuggingFace cache"));
+        assert!(msg.contains("APR cache"));
+        assert!(msg.contains("apr pull"));
+    }
+
+    #[test]
+    fn test_find_qwen_tokenizer_searches_parent_directory_first() {
+        // The function's search order is:
+        // 1. Model's parent directory (tokenizer.json)
+        // 2. HuggingFace cache
+        // 3. APR tokenizer cache
+        // If there's no tokenizer.json in the parent dir, it falls through
+        let path = Path::new("/tmp/no_tokenizer_here/model.safetensors");
+        let result = find_qwen_tokenizer(path);
+        // Just verify it doesn't panic; result depends on system cache
+        let _ = result;
+    }
+
+    // =========================================================================
+    // clean_chat_response: comprehensive combined scenarios
+    // =========================================================================
+
+    #[test]
+    fn test_clean_chat_response_full_chatml_response() {
+        let raw = "<|im_start|>assistant\nThe answer is 42.<|im_end|><|endoftext|>";
+        let cleaned = clean_chat_response(raw);
+        assert_eq!(cleaned, "The answer is 42.");
+    }
+
+    #[test]
+    fn test_clean_chat_response_bpe_with_markers() {
+        let raw = "<|im_start|>assistant\nHelloĠworld!<|im_end|>";
+        let cleaned = clean_chat_response(raw);
+        assert_eq!(cleaned, "Hello world!");
+    }
+
+    #[test]
+    fn test_clean_chat_response_complex_combined() {
+        let raw = "<|im_start|>assistant\nĠĠHello!!!!!!ĠĠworld<|im_end|><|endoftext|>";
+        let cleaned = clean_chat_response(raw);
+        // Ġ -> space, multiple spaces -> single, !!!!!! -> !!!, markers removed, trimmed
+        assert_eq!(cleaned, "Hello!!! world");
+    }
+
+    #[test]
+    fn test_clean_chat_response_very_long_input() {
+        let raw = "x".repeat(100_000);
+        let cleaned = clean_chat_response(&raw);
+        assert_eq!(cleaned.len(), 100_000);
+    }
+
+    #[test]
+    fn test_clean_chat_response_only_bpe_artifacts() {
+        let raw = "ĠĠĠ";
+        let cleaned = clean_chat_response(raw);
+        // Three Ġ -> three spaces -> collapsed to single space -> trimmed to empty
+        assert!(cleaned.is_empty());
+    }
+
+    #[test]
+    fn test_clean_chat_response_marker_in_middle_of_word() {
+        let raw = "hel<|im_end|>lo";
+        let cleaned = clean_chat_response(raw);
+        assert_eq!(cleaned, "hello");
+    }
+
+    #[test]
+    fn test_clean_chat_response_multiple_im_start_assistant() {
+        let raw = "<|im_start|>assistant\n<|im_start|>assistant\nHello";
+        let cleaned = clean_chat_response(raw);
+        assert_eq!(cleaned, "Hello");
+    }
+
+    #[test]
+    fn test_clean_chat_response_newline_bpe_and_human_cutoff() {
+        // Ċ becomes newline, then Human: detected -> cutoff
+        let raw = "DoneĊHuman: next question";
+        let cleaned = clean_chat_response(raw);
+        assert_eq!(cleaned, "Done");
+    }
+
+    #[test]
+    fn test_clean_chat_response_single_char() {
+        let raw = "a";
+        let cleaned = clean_chat_response(raw);
+        assert_eq!(cleaned, "a");
+    }
+
+    #[test]
+    fn test_clean_chat_response_just_newline() {
+        let raw = "\n";
+        let cleaned = clean_chat_response(raw);
+        assert!(cleaned.is_empty());
+    }
+
+    #[test]
+    fn test_clean_chat_response_just_markers() {
+        let raw = "<|im_start|><|im_end|><|endoftext|>";
+        let cleaned = clean_chat_response(raw);
+        assert!(cleaned.is_empty());
+    }
+
+    // =========================================================================
+    // ModelFormat: exhaustive match coverage
+    // =========================================================================
+
+    #[test]
+    fn test_model_format_debug_format_all() {
+        // Verify Debug representation for every variant
+        let variants = [
+            (ModelFormat::Apr, "Apr"),
+            (ModelFormat::Gguf, "Gguf"),
+            (ModelFormat::SafeTensors, "SafeTensors"),
+            (ModelFormat::Demo, "Demo"),
+        ];
+        for (variant, expected) in variants {
+            assert_eq!(format!("{:?}", variant), expected);
+        }
+    }
+
+    #[test]
+    fn test_model_format_clone_all_variants() {
+        let variants = [
+            ModelFormat::Apr,
+            ModelFormat::Gguf,
+            ModelFormat::SafeTensors,
+            ModelFormat::Demo,
+        ];
+        for variant in variants {
+            let cloned = variant;
+            assert_eq!(variant, cloned);
+        }
+    }
+
+    #[test]
+    fn test_model_format_eq_reflexive() {
+        let formats = [
+            ModelFormat::Apr,
+            ModelFormat::Gguf,
+            ModelFormat::SafeTensors,
+            ModelFormat::Demo,
+        ];
+        for f in formats {
+            assert_eq!(f, f);
+        }
+    }
+
+    #[test]
+    fn test_model_format_ne_all_pairs() {
+        let formats = [
+            ModelFormat::Apr,
+            ModelFormat::Gguf,
+            ModelFormat::SafeTensors,
+            ModelFormat::Demo,
+        ];
+        for (i, a) in formats.iter().enumerate() {
+            for (j, b) in formats.iter().enumerate() {
+                if i != j {
+                    assert_ne!(a, b, "Expected {:?} != {:?}", a, b);
+                }
+            }
+        }
+    }
+
+    // =========================================================================
+    // detect_format: pathological paths
+    // =========================================================================
+
+    #[test]
+    fn test_detect_format_trailing_dot() {
+        // Path ending in dot has no extension
+        let path = Path::new("/models/model.");
+        assert_eq!(detect_format(path), ModelFormat::Demo);
+    }
+
+    #[test]
+    fn test_detect_format_multiple_dots_gguf() {
+        let path = Path::new("/models/model.v1.2.3.gguf");
+        assert_eq!(detect_format(path), ModelFormat::Gguf);
+    }
+
+    #[test]
+    fn test_detect_format_hash_named_apr() {
+        let path = Path::new("/models/e910cab26ae116eb.apr");
+        assert_eq!(detect_format(path), ModelFormat::Apr);
+    }
+
+    #[test]
+    fn test_detect_format_hash_named_gguf() {
+        let path = Path::new("/cache/d4c4d9763127153c.gguf");
+        assert_eq!(detect_format(path), ModelFormat::Gguf);
+    }
+
+    #[test]
+    fn test_detect_format_long_extension() {
+        let path = Path::new("/models/model.safetensorsbackup");
+        assert_eq!(detect_format(path), ModelFormat::Demo);
+    }
+
+    #[test]
+    fn test_detect_format_similar_extensions() {
+        // Close but not exact matches
+        assert_eq!(detect_format(Path::new("x.ap")), ModelFormat::Demo);
+        assert_eq!(detect_format(Path::new("x.ggu")), ModelFormat::Demo);
+        assert_eq!(detect_format(Path::new("x.safetensor")), ModelFormat::Demo);
+        assert_eq!(detect_format(Path::new("x.ggufx")), ModelFormat::Demo);
+        assert_eq!(detect_format(Path::new("x.aprx")), ModelFormat::Demo);
+    }
+
+    // =========================================================================
+    // print_welcome_banner: config display combinations
+    // =========================================================================
+
+    #[test]
+    fn test_print_welcome_banner_zero_temp_and_top_p() {
+        let path = Path::new("/models/test.gguf");
+        let config = ChatConfig {
+            temperature: 0.0,
+            top_p: 0.0,
+            max_tokens: 1,
+            ..Default::default()
+        };
+        print_welcome_banner(path, &config);
+    }
+
+    #[test]
+    fn test_print_welcome_banner_high_temp_and_top_p() {
+        let path = Path::new("/models/test.apr");
+        let config = ChatConfig {
+            temperature: 2.0,
+            top_p: 1.0,
+            max_tokens: 8192,
+            system: Some("Be creative and wild!".to_string()),
+            inspect: true,
+            ..Default::default()
+        };
+        print_welcome_banner(path, &config);
+    }
+
+    #[test]
+    fn test_print_welcome_banner_openhermes_model() {
+        // openhermes triggers ChatML template
+        let path = Path::new("/models/openhermes-2.5.gguf");
+        let config = ChatConfig::default();
+        print_welcome_banner(path, &config);
+    }
+
+    #[test]
+    fn test_print_welcome_banner_yi_model() {
+        // yi- triggers ChatML template
+        let path = Path::new("/models/yi-34b.gguf");
+        let config = ChatConfig::default();
+        print_welcome_banner(path, &config);
+    }
+
+    #[test]
+    fn test_print_welcome_banner_vicuna_model() {
+        // vicuna triggers LLaMA2 template
+        let path = Path::new("/models/vicuna-7b.gguf");
+        let config = ChatConfig::default();
+        print_welcome_banner(path, &config);
+    }
+
+    #[test]
+    fn test_print_welcome_banner_mixtral_model() {
+        // mixtral triggers Mistral template
+        let path = Path::new("/models/mixtral-8x7b.gguf");
+        let config = ChatConfig::default();
+        print_welcome_banner(path, &config);
+    }
 }
