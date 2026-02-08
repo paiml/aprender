@@ -1119,8 +1119,15 @@ fn run_ollama_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
 
         let prompt = "Write a function to check if a number is prime:";
         let prompt_tokens = gguf.encode(prompt).unwrap_or_else(|| vec![151643]);
+        // Use 128 tokens minimum for Ollama parity comparison.
+        // Ollama reports eval_count/eval_duration (decode-only throughput, excludes prefill).
+        // Our measurement includes prefill in every generate_gpu_resident() call.
+        // At 32 tokens, prefill overhead (~0.79s per call) dominates our measurement,
+        // producing an unfair 0.13x ratio. At 128 tokens, prefill amortizes and
+        // the ratio reflects actual decode throughput (~0.31x at 36 vs 116 tok/s).
+        let parity_max_tokens = config.max_tokens.max(128);
         let gen_config = QuantizedGenerateConfig {
-            max_tokens: config.max_tokens,
+            max_tokens: parity_max_tokens,
             temperature: 0.0,
             top_k: 1,
             ..Default::default()
@@ -1579,12 +1586,14 @@ fn measure_ollama_throughput(path: &Path, config: &QaConfig) -> Result<f64> {
     // BUG-QA-001 FIX: Match Ollama model to APR model size for fair comparison
     let model = detect_ollama_model_from_path(path);
 
+    // Match parity gate: use 128 tokens minimum to amortize prefill overhead
+    let parity_max_tokens = config.max_tokens.max(128);
     let request_body = serde_json::json!({
         "model": model,
         "prompt": prompt,
         "stream": false,
         "options": {
-            "num_predict": config.max_tokens,
+            "num_predict": parity_max_tokens,
             "temperature": 0.0
         }
     });
