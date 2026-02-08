@@ -562,6 +562,14 @@ pub fn run_compare_inference(
         );
     }
 
+    // F-GT-002: Check for mixed quantization levels (R3 violation)
+    if let Some(warning) = check_mixed_quant_warning(model_a, model_b) {
+        if !json {
+            println!("{}", warning.yellow());
+            println!();
+        }
+    }
+
     // Run Model A with APR_TRACE_LOGITS to capture logit data
     if !json {
         println!("{}", "Running Model A...".yellow());
@@ -864,6 +872,74 @@ fn print_inference_diagnosis(
     }
 }
 
+/// F-GT-002: Detect quantization level from file path.
+///
+/// Returns a normalized quantization level string for R3 comparison.
+/// SafeTensors are unquantized (BF16/F16/F32), GGUF files contain quant level
+/// in their filename (e.g. Q4_K_M, Q6_K), APR files may have been quantized at import.
+fn detect_quant_level_from_path(path: &Path) -> String {
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+
+    // SafeTensors are always unquantized (BF16/F16/F32)
+    if name.ends_with(".safetensors") {
+        return "unquantized (BF16/F16/F32)".to_string();
+    }
+
+    // GGUF: detect from filename patterns
+    if name.ends_with(".gguf") {
+        for quant in &[
+            "q2_k", "q3_k_s", "q3_k_m", "q3_k_l", "q4_0", "q4_1", "q4_k_s", "q4_k_m", "q4_k",
+            "q5_0", "q5_1", "q5_k_s", "q5_k_m", "q5_k", "q6_k", "q8_0", "f16", "f32",
+        ] {
+            if name.contains(quant) {
+                return quant.to_uppercase();
+            }
+        }
+        return "GGUF (quant unknown)".to_string();
+    }
+
+    // APR: detect from filename patterns (e.g. model-q4k.apr)
+    if name.ends_with(".apr") {
+        for quant in &["q4k", "q6k", "q4_k", "q6_k", "q8_0", "f16", "f32"] {
+            if name.contains(quant) {
+                return quant.to_uppercase();
+            }
+        }
+        return "APR (quant unknown)".to_string();
+    }
+
+    "unknown".to_string()
+}
+
+/// F-GT-002: Check for R3 mixed quantization level violation.
+///
+/// Returns a warning string if the two models have different quantization levels,
+/// which violates the R3 ground truth comparison rule.
+pub(crate) fn check_mixed_quant_warning(model_a: &Path, model_b: &Path) -> Option<String> {
+    let quant_a = detect_quant_level_from_path(model_a);
+    let quant_b = detect_quant_level_from_path(model_b);
+
+    if quant_a != quant_b {
+        Some(format!(
+            "F-GT-002 WARNING: Mixed quantization levels detected (R3 violation)\n  \
+             Model A: {} ({})\n  \
+             Model B: {} ({})\n  \
+             Comparing models at different quantization levels may produce \
+             misleading differences.\n  \
+             For valid comparison, use the same quantization level (R3 rule).",
+            model_a.display(),
+            quant_a,
+            model_b.display(),
+            quant_b,
+        ))
+    } else {
+        None
+    }
+}
+
 /// Run the rosetta diff-tensors subcommand (GH-188)
 ///
 /// Compares tensor dimensions between two models to detect layout mismatches.
@@ -885,6 +961,14 @@ pub fn run_diff_tensors(
     }
 
     let rosetta = RosettaStone::new();
+
+    // F-GT-002: Check for mixed quantization levels (R3 violation)
+    if let Some(warning) = check_mixed_quant_warning(model_a, model_b) {
+        if !json {
+            println!("{}", warning.yellow());
+            println!();
+        }
+    }
 
     // Inspect both models
     let report_a = rosetta
@@ -6932,6 +7016,79 @@ mod tests {
         assert_ne!(
             checksum_a, checksum_b,
             "F-ROSETTA-004: Even 1 ULP change must produce different checksum"
+        );
+    }
+
+    // =========================================================================
+    // F-GT-002: Mixed quantization level warning tests
+    // =========================================================================
+
+    #[test]
+    fn t_f_gt_002_mixed_quant_warning_safetensors_vs_gguf_q4k() {
+        let model_a = Path::new("model.safetensors");
+        let model_b = Path::new("model-q4_k_m.gguf");
+
+        let warning = super::check_mixed_quant_warning(model_a, model_b);
+        assert!(
+            warning.is_some(),
+            "F-GT-002: Must warn when comparing SafeTensors (unquantized) vs GGUF Q4_K_M"
+        );
+        let msg = warning.expect("checked above");
+        assert!(
+            msg.contains("F-GT-002"),
+            "Warning must cite F-GT-002: {msg}"
+        );
+        assert!(
+            msg.contains("mixed quantization") || msg.contains("Mixed quantization"),
+            "Warning must mention mixed quantization: {msg}"
+        );
+    }
+
+    #[test]
+    fn t_f_gt_002_no_warning_same_format() {
+        let model_a = Path::new("model-q4_k.gguf");
+        let model_b = Path::new("other-q4_k.gguf");
+
+        let warning = super::check_mixed_quant_warning(model_a, model_b);
+        assert!(
+            warning.is_none(),
+            "F-GT-002: No warning when both models are Q4_K GGUF"
+        );
+    }
+
+    #[test]
+    fn t_f_gt_002_warning_different_gguf_quants() {
+        let model_a = Path::new("model-q4_k.gguf");
+        let model_b = Path::new("model-q6_k.gguf");
+
+        let warning = super::check_mixed_quant_warning(model_a, model_b);
+        assert!(
+            warning.is_some(),
+            "F-GT-002: Must warn when comparing Q4_K vs Q6_K"
+        );
+    }
+
+    #[test]
+    fn t_f_gt_002_warning_apr_vs_safetensors() {
+        let model_a = Path::new("model-q4k.apr");
+        let model_b = Path::new("model.safetensors");
+
+        let warning = super::check_mixed_quant_warning(model_a, model_b);
+        assert!(
+            warning.is_some(),
+            "F-GT-002: Must warn when comparing APR Q4K vs SafeTensors (unquantized)"
+        );
+    }
+
+    #[test]
+    fn t_f_gt_002_no_warning_both_safetensors() {
+        let model_a = Path::new("model-part1.safetensors");
+        let model_b = Path::new("model-part2.safetensors");
+
+        let warning = super::check_mixed_quant_warning(model_a, model_b);
+        assert!(
+            warning.is_none(),
+            "F-GT-002: No warning when both are SafeTensors (same quant level)"
         );
     }
 }
