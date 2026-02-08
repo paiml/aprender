@@ -1,10 +1,10 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 10.10.0 (Full Stack: apr-cli + aprender + realizar + trueno, Popperian falsified)
-**Status:** Benchmarked (7B all 3 formats measured 2026-02-08; PMAT-232 stride fix + BOS fallback deployed, GPU parity gate architecture-aware, 10 falsification rounds)
+**Version:** 10.11.0 (Full Stack: apr-cli + aprender + realizar + trueno, Popperian falsified)
+**Status:** Benchmarked (7B all 3 formats measured 2026-02-08; PMAT-232 stride fix + BOS fallback deployed, GPU parity gate architecture-aware, 10 falsification rounds + F-GT/F-ROSETTA coverage push)
 **Primary Model:** `Qwen/Qwen2.5-Coder-7B-Instruct`
 **Source Format:** SafeTensors BF16 (HuggingFace, sharded, ~14 GB)
-**Popperian Score:** 119/119 gates passing (100%) — 139 tests, 0 ignored. Gated by `model-tests` feature (`make test-model`)
+**Popperian Score:** 149/163 gates passing (91.4%) — 14 FALSIFIED, 10 blocked/not-tested. Gated by `model-tests` feature (`make test-model`)
 **CLI Surface:** 36 top-level + 10 nested subcommands (46 total)
 **Compile-Time Proofs:** 297 algebraic invariants (zero runtime cost)
 **Author:** PAIML Engineering
@@ -180,8 +180,8 @@ Pre-quantized GGUF (Q4_K_M) --> Convert --> APR
 
 | ID | Prediction | Test | Expected | Status |
 |----|-----------|------|----------|--------|
-| F-GT-001 | Pre-baked GGUF import is rejected | `apr import prebaked.gguf --enforce-provenance` | Exit code != 0 | Blocked: `--enforce-provenance` flag not yet implemented |
-| F-GT-002 | R3 violation detected | Compare APR Q4K output vs SafeTensors BF16 raw (no quant) | Warning: "mixed quant levels" | Not tested (R3 warning mechanism not implemented; both produce correct output "4") |
+| F-GT-001 | Pre-baked GGUF import is rejected | `apr import prebaked.gguf --enforce-provenance` | Exit code != 0 | **Pass** (`--enforce-provenance` flag implemented; rejects `.gguf` and `-GGUF` sources with F-GT-001 error; 4 tests in import.rs) |
+| F-GT-002 | R3 violation detected | Compare APR Q4K output vs SafeTensors BF16 raw (no quant) | Warning: "mixed quant levels" | **Pass** (`check_mixed_quant_warning()` detects mixed quant levels in compare-inference and diff-tensors; 5 tests in rosetta.rs) |
 | F-GT-003 | Provenance chain is auditable | `apr inspect qwen-7b.apr` shows source_format=SafeTensors | Source metadata present | **Pass** (`apr inspect` shows Source Metadata: format=pt, confirming SafeTensors origin) |
 | F-GT-004 | Deterministic output at temp=0 | Run same prompt 5x with temp=0 | 5 identical outputs | **Pass** (5 runs of GGUF with `--chat`, all produced identical "4\nYou are a helpful assistant.\nYou") |
 | F-GT-005 | Tokenizer roundtrip | `apr rosetta compare-inference` tokenization phase | Token sequences match across all 3 formats | **Pass** (all 3 formats produce "4" for "2+2?" prompt; tokenizer loaded from embedded BPE (APR), GGUF metadata, and sibling tokenizer.json (ST)) |
@@ -947,7 +947,7 @@ Conversion halts immediately on: NaN, Inf, dimension mismatch, tensor count mism
 | F-ROSETTA-001 | ST->APR preserves tensor count | `apr tensors` on both, compare count | Identical tensor count | **Pass** (both APR and GGUF: 339 tensors; APR 3.99 GB all Q4_K, GGUF 4.34 GB mixed Q4_K/Q6_K) |
 | F-ROSETTA-002 | SafeTensors->APR->GGUF roundtrip produces valid output | `apr import` ST->APR, `apr export` APR->GGUF, `apr run` GGUF | Correct inference output | **Pass** (PMAT-252 raw passthrough: ST→APR (4.0GB Q4K) → GGUF (4.0GB Q4K) zero-loss, inference outputs "2+2 is 4" — correct math, minor tokenizer rendering artifacts) |
 | F-ROSETTA-003 | Chain command produces valid GGUF | `apr export model.apr --format gguf` then `apr run` on output | Correct inference output | **Pass** (PMAT-252: raw Q4K block passthrough, 339 tensors, 4.0 GiB, weights bit-identical to APR source, inference correct) |
-| F-ROSETTA-004 | Fingerprint detects tensor corruption | Flip 1 byte in APR file, re-fingerprint | Different fingerprint hash | Not tested (APR file now available for testing) |
+| F-ROSETTA-004 | Fingerprint detects tensor corruption | Flip 1 byte in APR file, re-fingerprint | Different fingerprint hash | **Pass** (3 tests: single-byte corruption via sign-bit flip, stability for identical data, small perturbation detection; all use `compute_tensor_stats` checksums) |
 | F-ROSETTA-005 | NaN in source halts conversion | Inject NaN into SafeTensors tensor | Jidoka stop, exit != 0 | **Pass** (compute_tensor_validation NaN detection verified in rosetta) |
 | F-ROSETTA-006 | Vocab size mismatch halts conversion | Modify vocab_size in config.json | Jidoka stop, "vocab size mismatch" | **Pass** (import.rs vocabulary validation verified, PMAT-232) |
 
@@ -1717,6 +1717,14 @@ This section documents bugs found by falsifying the spec itself against the code
 | 61 | `ValidatedGgufMetadata` enforces export metadata (GH-253) | Confirmed: `aprender/src/format/converter/export.rs` with newtype enforcement at export boundary. | OK | Verified — compile enforcement intact. |
 | 62 | `enforce_import_contract()`/`enforce_load_contract()` enforce tensor layout (LAYOUT-001/002) | Confirmed: `aprender/src/format/layout_contract.rs` — mandatory enforcement, contract CANNOT be bypassed. | OK | Verified — compile enforcement intact. |
 | 63 | Realizador non-GPU coverage improvable to 95% | Top 40 coverage gaps are ALL GPU/CUDA code (batched attention, flash decoding, CUDA forward, speculative). Non-GPU code already ~66% covered. **95% target is structurally impossible without GPU hardware.** | P1 | Documented structural limitation. |
+
+**Round 11 (v10.11.0): F-GT and F-ROSETTA coverage push (PMAT-234)**
+
+| # | Claim/Gap | Reality | Severity | Fix |
+|---|-----------|---------|----------|-----|
+| 64 | F-ROSETTA-004 "Not tested" | `compute_tensor_stats` checksum was never tested for corruption detection. The fingerprint mechanism exists but had zero falsification tests. | P1 | 3 tests: single-byte corruption (sign-bit flip), stability for identical data, small perturbation (1 ULP). All pass — checksum correctly detects corruption. |
+| 65 | F-GT-001 "Blocked: --enforce-provenance not implemented" | No mechanism to reject pre-baked GGUF imports for single-provenance testing. Any GGUF file could be imported without tracing back to SafeTensors ground truth. | P1 | `--enforce-provenance` flag on `apr import`: rejects `.gguf` and `-GGUF` hub patterns. 4 tests: GGUF rejected, hub pattern rejected, GGUF allowed without flag, SafeTensors allowed with flag. |
+| 66 | F-GT-002 "Not tested: R3 warning mechanism not implemented" | No detection of mixed quantization levels when comparing models. Comparing Q4K to BF16 produces silently misleading results. | P1 | `check_mixed_quant_warning()` detects quant level from file path. Integrated into `compare-inference` and `diff-tensors`. 5 tests: ST vs GGUF warns, same format no-warn, different GGUF quants warn, APR vs ST warns, both ST no-warn. |
 
 ### 18.2 Claims Verified (Not Falsified)
 
