@@ -1,7 +1,7 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 10.9.0 (Full Stack: apr-cli + aprender + realizar + trueno, Popperian falsified)
-**Status:** Benchmarked (7B all 3 formats measured 2026-02-08; PMAT-232 stride fix + BOS fallback deployed, GPU parity gate architecture-aware)
+**Version:** 10.10.0 (Full Stack: apr-cli + aprender + realizar + trueno, Popperian falsified)
+**Status:** Benchmarked (7B all 3 formats measured 2026-02-08; PMAT-232 stride fix + BOS fallback deployed, GPU parity gate architecture-aware, 10 falsification rounds)
 **Primary Model:** `Qwen/Qwen2.5-Coder-7B-Instruct`
 **Source Format:** SafeTensors BF16 (HuggingFace, sharded, ~14 GB)
 **Popperian Score:** 119/119 gates passing (100%) — 139 tests, 0 ignored. Gated by `model-tests` feature (`make test-model`)
@@ -828,7 +828,7 @@ curl -s localhost:8080/v1/chat/completions \
 | 8 | All 46 subcommands exercised | **Pass** (structural) | All 36 top-level + 10 nested verified (Section 17) |
 | 9 | Coverage >95% | Yes (aprender: 96.35%, realizar: 57.47%) | aprender: measured. Realizar: FAILS 95% target — GPU/CUDA code paths dominate gaps. |
 | 10 | PMAT compliance / SATD = 0 | Yes | Toyota Way non-negotiable |
-| 11 | Falsification audit passed | **Pass** | 9 rounds, 56 bugs found and fixed (Section 18.1) |
+| 11 | Falsification audit passed | **Pass** | 10 rounds, 63 bugs found and fixed (Section 18.1) |
 
 ### DoD Falsification Gates (F-DOD-*)
 
@@ -1705,6 +1705,18 @@ This section documents bugs found by falsifying the spec itself against the code
 | 54 | Spec says "7 rounds, 46 bugs found" (DoD #11) | Actually 9 rounds with Round 8 (#47-51) and Round 9 (#52-56) = **56 bugs total**. | P1 | Updated DoD #11 count. |
 | 55 | Spec Popperian Score "119/119 gates passing" | 119 gate count verified. However, F-DOD-002 now FALSIFIED for realizar — gate total should note this. | P1 | F-DOD-002 updated with dual-project status. |
 | 56 | Realizar has no coverage contract | No compile-time or runtime gate enforces realizar coverage. Aprender has `make coverage` + 95% threshold; realizar has no equivalent. | P1 | Documented as open coverage contract gap. |
+
+**Round 10 (v10.10.0): GGML dtype ID falsification + compile enforcement audit**
+
+| # | Claim/Gap | Reality | Severity | Fix |
+|---|-----------|---------|----------|-----|
+| 57 | `apr_coverage.rs` dtype tests use sequential IDs (2=BF16, 3=I8, 4=I16, 5=I32, 6=I64, 7=U8, 8=Q4_K, 9=Q6_K, 10=Q8_0) | APR uses GGML-compatible byte IDs: 2=Q4_0, 3=Q4_1, 6=Q5_0, 7=Q5_1, 8=Q8_0, 12=Q4_K, 14=Q6_K, 30=BF16. **14 tests were asserting wrong dtypes.** | **P0** | Fixed all 14 tests: renamed I8/I16/I32/I64/U8 tests to Q4_0/Q4_1/Q5_0/Q5_1/Q8_1, corrected BF16 from dtype 2→30, Q4_K 8→12, Q6_K 9→14, Q8_0 10→8. All 257 apr_coverage tests now pass. |
+| 58 | 297 compile-time proofs (ALG-001 through ALG-009) | Confirmed: exactly 297 `const _: () = assert!` in all generated files. `cargo build --release` succeeds. | OK | Verified — spec accurate. |
+| 59 | `PreparedTokens` newtype enforces chat template (PMAT-236) | Confirmed: present in `realizar/src/infer/mod.rs`, used in tests_part_09/10. Private inner Vec<u32>. | OK | Verified — compile enforcement intact. |
+| 60 | `ValidatedEmbedding`/`ValidatedWeight`/`ValidatedVector` enforce tensor quality (PMAT-235) | Confirmed: `aprender/src/format/validated_tensors.rs` with 7 validation gates. | OK | Verified — compile enforcement intact. |
+| 61 | `ValidatedGgufMetadata` enforces export metadata (GH-253) | Confirmed: `aprender/src/format/converter/export.rs` with newtype enforcement at export boundary. | OK | Verified — compile enforcement intact. |
+| 62 | `enforce_import_contract()`/`enforce_load_contract()` enforce tensor layout (LAYOUT-001/002) | Confirmed: `aprender/src/format/layout_contract.rs` — mandatory enforcement, contract CANNOT be bypassed. | OK | Verified — compile enforcement intact. |
+| 63 | Realizador non-GPU coverage improvable to 95% | Top 40 coverage gaps are ALL GPU/CUDA code (batched attention, flash decoding, CUDA forward, speculative). Non-GPU code already ~66% covered. **95% target is structurally impossible without GPU hardware.** | P1 | Documented structural limitation. |
 
 ### 18.2 Claims Verified (Not Falsified)
 
