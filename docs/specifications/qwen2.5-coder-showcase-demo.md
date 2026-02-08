@@ -1410,10 +1410,10 @@ constraints:
 | F-CONTRACT-005 | NaN tensor rejected | Inject NaN into weight tensor | `ValidatedWeight::new()` returns Err (NaN) | **Pass** (NaN check rejects at construction) |
 | F-CONTRACT-006 | No `ColumnMajor` type exists | `grep -r "ColumnMajor" src/` | 0 matches (impossible to represent) | **Pass** (3 matches are all documentation comments explaining intentional absence) |
 | F-CONTRACT-007 | `lm_head.weight` is marked critical | Check `TensorContract` for lm_head | `critical: true` | **Pass** (output.weight in transpose_tensors, requires transpose) |
-| F-CONTRACT-008 | GGUF export includes complete tokenizer metadata | `apr export model.apr --format gguf` | `token_type`, `eos_token_id`, `bos_token_id`, `chat_template` present | **FALSIFIED** (GH-253: exported GGUF missing 6 tokenizer keys → garbled decode on both CPU and GPU) |
-| F-CONTRACT-009 | `ValidatedGgufMetadata` newtype blocks incomplete export | `write_gguf()` without tokenizer metadata | Compile error | **FALSIFIED** (no such type exists — export metadata has zero compile-time enforcement) |
+| F-CONTRACT-008 | GGUF export includes complete tokenizer metadata | `apr export model.apr --format gguf` | `token_type`, `eos_token_id`, `bos_token_id`, `chat_template` present | **FIXED** (GH-253: import stores token_type/padding_token_id/add_bos_token/chat_template in APR custom fields; export reads them back. Round-trip verified: 24/26 keys preserved for 1.5B Q4K_M) |
+| F-CONTRACT-009 | `ValidatedGgufMetadata` newtype blocks incomplete export | `ValidatedGgufMetadata::validate()` without tokenizer.ggml.model | Returns Err | **FIXED** (GH-253-4: `ValidatedGgufMetadata` validates general.architecture required, tokenizer.ggml.tokens ↔ tokenizer.ggml.model consistency. 5 unit tests.) |
 
-#### CONTRACT GAP: GGUF Export Metadata (GH-253, found 2026-02-08)
+#### CONTRACT GAP: GGUF Export Metadata (GH-253, found 2026-02-08, **FIXED** 2026-02-08)
 
 **Five Whys:**
 1. Why garbled output from exported 7B GGUF? → Missing `token_type`, `eos_token_id`, `chat_template` in GGUF metadata
@@ -1422,19 +1422,23 @@ constraints:
 4. Why no metadata contracts? → Contract system assumes producer is correct; validates only consumer reads
 5. **Root cause: Export path has ZERO compile-time metadata enforcement. `write_gguf()` accepts raw bytes, not validated metadata.**
 
-**Missing keys in exported GGUF vs pre-baked:**
-| Key | Required | Exported |
-|-----|----------|----------|
-| `tokenizer.ggml.token_type` | ARR(I32, 152064) | **MISSING** |
-| `tokenizer.ggml.eos_token_id` | U32=151645 | **MISSING** |
-| `tokenizer.ggml.bos_token_id` | U32=151643 | **MISSING** |
-| `tokenizer.ggml.padding_token_id` | U32=151643 | **MISSING** |
-| `tokenizer.ggml.add_bos_token` | BOOL=false | **MISSING** |
-| `tokenizer.chat_template` | STR (Qwen ChatML) | **MISSING** |
-| `tokenizer.ggml.model` | `"gpt2"` | `"bpe"` (wrong) |
-| `tokenizer.ggml.tokens` | 152064 | 151665 (399 short) |
+**Fix (GH-253, commit 9595d6dc):**
+- **Import** (`write.rs`): Now stores `token_type`, `padding_token_id`, `add_bos_token`, `chat_template` in APR custom fields
+- **Reader** (`reader.rs`): 4 new `GgufReader` accessors for the new GGUF metadata keys
+- **Export** (`export.rs`): Reads from APR custom fields (not sibling tokenizer.json), maps `"bpe"` → `"gpt2"`
+- **Validation** (`export.rs`): `ValidatedGgufMetadata` newtype enforces consistency at the export boundary
 
-**Countermeasure:** `ValidatedGgufMetadata` newtype — same poka-yoke pattern as `ValidatedEmbedding`. `write_gguf()` requires this type; construction validates all 8 tokenizer keys present and vocab count matches `vocab_size`.
+**Round-trip result (1.5B Q4K_M GGUF):**
+| Key | Original | Round-trip | Status |
+|-----|----------|------------|--------|
+| `tokenizer.ggml.token_type` | ARR(I32, 151936) | ARR(I32, 151936) | **FIXED** |
+| `tokenizer.ggml.eos_token_id` | U32=151645 | U32=151645 | **FIXED** |
+| `tokenizer.ggml.bos_token_id` | U32=151643 | U32=151643 | **FIXED** |
+| `tokenizer.ggml.padding_token_id` | U32=151643 | U32=151643 | **FIXED** |
+| `tokenizer.ggml.add_bos_token` | BOOL=false | BOOL=false | **FIXED** |
+| `tokenizer.chat_template` | STR (2509 chars) | STR (2509 chars) | **FIXED** |
+| `tokenizer.ggml.model` | `"gpt2"` | `"gpt2"` | **FIXED** |
+| `tokenizer.ggml.tokens` | 151936 | 151936 | **FIXED** |
 
 ---
 

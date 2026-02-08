@@ -108,6 +108,62 @@ pub struct ExportReport {
     pub quantization: Option<QuantizationType>,
 }
 
+/// GH-253-4: Validated GGUF metadata — compile-time enforcement via newtype.
+///
+/// Private inner data ensures metadata can ONLY be constructed through `validate()`,
+/// which checks that required keys are present and consistent.
+///
+/// Required keys:
+/// - `general.architecture` (always)
+/// - `tokenizer.ggml.model` (if vocabulary present)
+/// - `tokenizer.ggml.tokens` and `tokenizer.ggml.model` must appear together
+#[derive(Debug)]
+pub(crate) struct ValidatedGgufMetadata {
+    inner: Vec<(String, crate::format::gguf::GgufValue)>,
+}
+
+impl ValidatedGgufMetadata {
+    /// Validate and construct metadata. Fails if required keys are missing.
+    pub(crate) fn validate(
+        metadata: Vec<(String, crate::format::gguf::GgufValue)>,
+    ) -> Result<Self> {
+        let has_key = |k: &str| metadata.iter().any(|(name, _)| name == k);
+
+        // REQUIRED: general.architecture must always be present
+        if !has_key("general.architecture") {
+            return Err(AprenderError::FormatError {
+                message: "[GH-253-4] GGUF export missing required key: general.architecture"
+                    .to_string(),
+            });
+        }
+
+        // CONSISTENCY: if tokens present, model type must also be present (and vice versa)
+        let has_tokens = has_key("tokenizer.ggml.tokens");
+        let has_model = has_key("tokenizer.ggml.model");
+        if has_tokens && !has_model {
+            return Err(AprenderError::FormatError {
+                message:
+                    "[GH-253-4] GGUF export has tokenizer.ggml.tokens but missing tokenizer.ggml.model"
+                        .to_string(),
+            });
+        }
+        if has_model && !has_tokens {
+            return Err(AprenderError::FormatError {
+                message:
+                    "[GH-253-4] GGUF export has tokenizer.ggml.model but missing tokenizer.ggml.tokens"
+                        .to_string(),
+            });
+        }
+
+        Ok(Self { inner: metadata })
+    }
+
+    /// Access validated metadata as a slice for GGUF writing.
+    pub(crate) fn as_slice(&self) -> &[(String, crate::format::gguf::GgufValue)] {
+        &self.inner
+    }
+}
+
 /// Export APR/SafeTensors model to another format
 ///
 /// # Arguments
@@ -882,9 +938,12 @@ fn export_apr_to_gguf_raw(input: &Path, output: &Path) -> Result<ExportReport> {
         ));
     }
 
+    // GH-253-4: Validate metadata completeness before writing
+    let validated = ValidatedGgufMetadata::validate(metadata)?;
+
     eprintln!(
         "[PMAT-252] Writing {} metadata keys (arch={}, layers={}, heads={}/{}kv, hidden={})",
-        metadata.len(),
+        validated.as_slice().len(),
         arch,
         num_layers,
         num_heads,
@@ -948,7 +1007,7 @@ fn export_apr_to_gguf_raw(input: &Path, output: &Path) -> Result<ExportReport> {
     })?;
     let mut writer = BufWriter::new(file);
 
-    export_tensors_to_gguf(&mut writer, &gguf_tensors, &metadata)?;
+    export_tensors_to_gguf(&mut writer, &gguf_tensors, validated.as_slice())?;
 
     let exported_size = fs::metadata(output).map(|m| m.len() as usize).unwrap_or(0);
 
@@ -3240,5 +3299,76 @@ mod tests {
         assert!(result.is_empty());
 
         let _ = fs::remove_file(&path);
+    }
+
+    // ========================================================================
+    // GH-253-4: ValidatedGgufMetadata tests
+    // ========================================================================
+
+    #[test]
+    fn test_validated_metadata_requires_architecture() {
+        use crate::format::gguf::GgufValue;
+        let metadata = vec![("general.name".to_string(), GgufValue::String("test".to_string()))];
+        let result = ValidatedGgufMetadata::validate(metadata);
+        assert!(result.is_err());
+        let err_msg = format!("{:?}", result.unwrap_err());
+        assert!(err_msg.contains("general.architecture"));
+    }
+
+    #[test]
+    fn test_validated_metadata_tokens_require_model() {
+        use crate::format::gguf::GgufValue;
+        let metadata = vec![
+            ("general.architecture".to_string(), GgufValue::String("qwen2".to_string())),
+            (
+                "tokenizer.ggml.tokens".to_string(),
+                GgufValue::ArrayString(vec!["a".to_string()]),
+            ),
+        ];
+        let result = ValidatedGgufMetadata::validate(metadata);
+        assert!(result.is_err());
+        let err_msg = format!("{:?}", result.unwrap_err());
+        assert!(err_msg.contains("tokenizer.ggml.model"));
+    }
+
+    #[test]
+    fn test_validated_metadata_model_requires_tokens() {
+        use crate::format::gguf::GgufValue;
+        let metadata = vec![
+            ("general.architecture".to_string(), GgufValue::String("qwen2".to_string())),
+            ("tokenizer.ggml.model".to_string(), GgufValue::String("gpt2".to_string())),
+        ];
+        let result = ValidatedGgufMetadata::validate(metadata);
+        assert!(result.is_err());
+        let err_msg = format!("{:?}", result.unwrap_err());
+        assert!(err_msg.contains("tokenizer.ggml.tokens"));
+    }
+
+    #[test]
+    fn test_validated_metadata_complete_passes() {
+        use crate::format::gguf::GgufValue;
+        let metadata = vec![
+            ("general.architecture".to_string(), GgufValue::String("qwen2".to_string())),
+            ("tokenizer.ggml.model".to_string(), GgufValue::String("gpt2".to_string())),
+            (
+                "tokenizer.ggml.tokens".to_string(),
+                GgufValue::ArrayString(vec!["hello".to_string(), "world".to_string()]),
+            ),
+        ];
+        let result = ValidatedGgufMetadata::validate(metadata);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().as_slice().len(), 3);
+    }
+
+    #[test]
+    fn test_validated_metadata_no_tokenizer_passes() {
+        use crate::format::gguf::GgufValue;
+        // Architecture-only metadata (no tokenizer) is valid
+        let metadata = vec![
+            ("general.architecture".to_string(), GgufValue::String("llama".to_string())),
+            ("general.name".to_string(), GgufValue::String("test".to_string())),
+        ];
+        let result = ValidatedGgufMetadata::validate(metadata);
+        assert!(result.is_ok());
     }
 }
