@@ -74,8 +74,8 @@ apr run/chat/serve  <-- PMAT-237 contract gate -> realizar (Section 14) via true
 | APR Q4_K_M | From SafeTensors | CPU (AVX2) | 0.6 tok/s | **Pass** (correct output "4", 57s) |
 | GGUF Q4_K_M | Pre-baked | GPU (RTX 4090) | 33 tok/s | **Pass** (`apr qa` measured, F2-VALIDATION fallback observed in `apr run`) |
 | GGUF Q4_K_M | Pre-baked | CPU (AVX2) | 6 tok/s | **Pass** (`apr qa` measured) |
-| GGUF Q4_K_M | Exported (APR→GGUF) | GPU (RTX 4090) | 20 tok/s | **FALSIFIED** (GH-253: garbled decode — missing tokenizer metadata in export. F2-VALIDATION mismatch.) |
-| GGUF Q4_K_M | Exported (APR→GGUF) | CPU (AVX2) | 6 tok/s | **FALSIFIED** (GH-253: same garbled decode on CPU — confirms tokenizer, not GPU issue) |
+| GGUF Q4_K_M | Exported (APR→GGUF) | GPU (RTX 4090) | 20 tok/s | **FIXED** (GH-253: tokenizer metadata round-trip fixed. F2-VALIDATION still triggers CPU fallback.) |
+| GGUF Q4_K_M | Exported (APR→GGUF) | CPU (AVX2) | 6 tok/s | **FIXED** (GH-253: correct decode verified — "2+2 equals 4" on both 1.5B and 7B round-tripped GGUF) |
 
 **Measured results (2026-02-07):** All 3 formats produce correct inference on CPU. SafeTensors BF16: 0.1 tok/s (unquantized 14GB). APR Q4_K: 0.6 tok/s CPU (4GB, quantized from SafeTensors via `apr import`). GGUF Q4_K_M: 6 tok/s CPU, 33 tok/s GPU (via `apr qa`). APR GPU FALSIFIED: wgpu `create_buffer` rejects 271MB buffer for LM head (152064 vocab × 3584 hidden as Q4K = 271MB > 256MB limit). This is a wgpu backend limitation, not a logic bug. Peak RSS: ~22 GB (APR), ~12.7 GB (SafeTensors). Ollama parity: 0.23x (30 vs 130 tok/s GGUF GPU).
 
