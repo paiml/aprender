@@ -948,6 +948,21 @@ pub enum Commands {
         verbose: bool,
     },
 
+    /// GPU/CPU parity check (PMAT-232: genchi genbutsu — see where GPU diverges)
+    Parity {
+        /// Path to GGUF model file
+        #[arg(value_name = "FILE")]
+        file: PathBuf,
+
+        /// Prompt text (default: "What is 2+2?")
+        #[arg(short, long, default_value = "What is 2+2?")]
+        prompt: String,
+
+        /// Assert parity (exit non-zero on divergence)
+        #[arg(long)]
+        assert: bool,
+    },
+
     /// ML tuning: LoRA/QLoRA configuration and memory planning (GH-176)
     Tune {
         /// Path to model file (optional if using --model)
@@ -1818,6 +1833,12 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             *json || cli.json,
             *verbose || cli.verbose,
         ),
+
+        Commands::Parity {
+            file,
+            prompt,
+            assert,
+        } => commands::parity::run(file, prompt, *assert, cli.verbose),
 
         Commands::Tune {
             file,

@@ -143,6 +143,98 @@ kernel:
   QK_K: 256  # elements per super-block
   note: "Kernel defines shape. Comments describe math. Trust the kernel."
 
+# =============================================================================
+# QUANTIZATION TYPE → KERNEL DISPATCH CONTRACT (PMAT-232)
+# =============================================================================
+#
+# Root cause: `_ =>` catch-alls in GEMV dispatch silently use wrong kernel.
+# This is ALG-006 "vacuous catch-all" applied to runtime dispatch.
+#
+# RULE: Every match on WeightQuantType MUST be EXHAUSTIVE with EXPLICIT arms.
+#       `_ =>` catch-all is FORBIDDEN. Adding a new variant to WeightQuantType
+#       MUST produce a compile error at every dispatch site.
+#
+# ENFORCEMENT: WeightQuantType must derive neither Default nor have a wildcard
+#              match. The Rust compiler enforces exhaustive matching when there
+#              is no `_ =>` arm. This is Poka-Yoke: wrong dispatch is a
+#              compile error, not a runtime bug.
+#
+quant_dispatch:
+  principle: "Each quantization format has ONE correct kernel. No defaults."
+  anti_pattern: "`_ => q4k_gemv_into(...)` — treats unknown formats as Q4K"
+  reference: "ALG-006 vacuous catch-all, PMAT-232 7B GPU garbage"
+
+  # Exhaustive mapping: quant type → GPU kernel function
+  # This is the SOURCE OF TRUTH. Code must match exactly.
+  gpu_dispatch:
+    Q4_0:
+      kernel: "q4_0_gemv_into"
+      block_bytes: 18        # 2 bytes scale + 16 bytes data per 32 elements
+      elements_per_block: 32
+    Q4_1:
+      kernel: "q4_1_gemv_into"
+      block_bytes: 20        # 2 bytes scale + 2 bytes min + 16 bytes data per 32 elements
+      elements_per_block: 32
+    Q5_0:
+      kernel: "q5_0_gemv_into"
+      block_bytes: 22        # 2 bytes scale + 4 bytes high bits + 16 bytes data per 32 elements
+      elements_per_block: 32
+    Q4_K:
+      kernel: "q4k_gemv_into"
+      block_bytes: 144       # per 256-element super-block
+      elements_per_block: 256
+    Q5_K:
+      kernel: "q5k_gemv_into"
+      block_bytes: 176       # per 256-element super-block
+      elements_per_block: 256
+    Q6_K:
+      kernel: "q6k_gemv_into"
+      block_bytes: 210       # per 256-element super-block
+      elements_per_block: 256
+    Q8_0:
+      kernel: "q8_0_gemv_into"
+      block_bytes: 34        # 2 bytes scale + 32 bytes data per 32 elements
+      elements_per_block: 32
+
+  # CPU dispatch (trueno SIMD kernels)
+  cpu_dispatch:
+    Q4_K:
+      kernel: "fused_q4k_parallel_matvec"
+    Q5_K:
+      kernel: "fused_q5k_parallel_matvec"
+    Q6_K:
+      kernel: "fused_q6k_parallel_matvec"
+    Q8_0:
+      kernel: "fused_q8_0_parallel_matvec"
+    Q4_0:
+      kernel: "fused_q4_0_parallel_matvec"
+
+  # Which dispatch sites MUST be exhaustive (no `_ =>`)
+  # Listed by file:function for enforcement auditing
+  dispatch_sites:
+    - file: "realizar/src/cuda/executor/layers/indexed.rs"
+      function: "transformer_layer_workspace_inner"
+      dispatches:
+        - name: "Q projection"
+          must_handle: [Q4_0, Q4_1, Q5_0, Q4_K, Q5_K, Q6_K, Q8_0]
+        - name: "K projection"
+          must_handle: [Q4_0, Q4_1, Q5_0, Q4_K, Q5_K, Q6_K, Q8_0]
+        - name: "V projection"
+          must_handle: [Q4_0, Q4_1, Q5_0, Q4_K, Q5_K, Q6_K, Q8_0]
+        - name: "Output projection"
+          must_handle: [Q4_0, Q4_1, Q5_0, Q4_K, Q5_K, Q6_K, Q8_0]
+        - name: "FFN gate"
+          must_handle: [Q4_0, Q4_1, Q5_0, Q4_K, Q5_K, Q6_K, Q8_0]
+        - name: "FFN up"
+          must_handle: [Q4_0, Q4_1, Q5_0, Q4_K, Q5_K, Q6_K, Q8_0]
+        - name: "FFN down"
+          must_handle: [Q4_0, Q4_1, Q5_0, Q4_K, Q5_K, Q6_K, Q8_0]
+    - file: "realizar/src/cuda/executor/layers/graphed.rs"
+      function: "forward_workspace_captured"
+      dispatches:
+        - name: "LM head"
+          must_handle: [Q4_K, Q6_K]
+
 # Per-tensor specifications
 # Key: tensor logical name
 # Values: gguf_name, apr_name, shapes, transpose rule, kernel info
@@ -473,6 +565,36 @@ falsification_tests:
           );
       }
     if_test_passes: "Contract is BROKEN - crates have divergent validation"
+
+  - id: FALSIFY-007
+    rule: "Quant dispatch exhaustiveness (PMAT-232)"
+    prediction: "It is impossible to add a WeightQuantType variant without updating all dispatch sites"
+    falsification_test: |
+      // WeightQuantType must NOT derive Default and MUST be #[non_exhaustive]
+      // or have exhaustive matches at all dispatch sites.
+      //
+      // If this compiles, the contract is broken:
+      fn falsify_007_no_catch_all() {
+          // grep -c '_ =>' in all dispatch sites listed in quant_dispatch.dispatch_sites
+          // Count MUST be 0. Any `_ =>` in a WeightQuantType match is a contract violation.
+          //
+          // Automated: `cargo clippy -- -W clippy::wildcard_enum_match_arm` on realizar
+          // will flag every `_ =>` on WeightQuantType as a warning.
+      }
+    if_catch_all_exists: "Contract is BROKEN - silent wrong-kernel dispatch possible"
+    reference: "PMAT-232, ALG-006"
+
+  - id: FALSIFY-008
+    rule: "Quant type → kernel correctness"
+    prediction: "Q6K weights dispatched through q4k_gemv_into produce garbage output"
+    falsification_test: |
+      #[test]
+      fn falsify_008_wrong_kernel_detection() {
+          // Load a Q6K weight tensor, dispatch through Q4K kernel
+          // Assert output is NaN or magnitude > 1e6 (garbage)
+          // This MUST produce garbage - if it doesn't, our block formats are wrong
+      }
+    if_test_fails: "Block format assumptions are wrong - Q4K and Q6K are more compatible than expected"
 
 # Toyota Way application notes
 toyota_way_principles:

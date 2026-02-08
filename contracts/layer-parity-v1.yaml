@@ -1,0 +1,297 @@
+# Layer Parity Contract v1.0.0
+# THE SOURCE OF TRUTH for GPU/CPU forward pass equivalence
+#
+# Root Cause (Five Whys - PMAT-232):
+#   1. 7B GPU garbage is hard to debug
+#   2. No automated GPU-vs-CPU parity comparison
+#   3. GPU and CPU are separate implementations with no shared interface
+#   4. No trait enforcing they compute the same output
+#   5. ROOT: No LayerForward abstraction
+#
+# This contract defines the mathematical operations of one transformer
+# layer and requires all backends to produce equivalent results.
+#
+# ENFORCEMENT: `apr parity model.gguf` tool and CI parity tests.
+
+metadata:
+  version: "1.0.0"
+  created: "2026-02-08"
+  author: "PAIML Engineering"
+  description: "GPU/CPU forward pass parity contract"
+  references:
+    - "PMAT-232: 7B GPU garbage output"
+    - "Toyota Way: Five Whys applied to debugging difficulty"
+    - "contracts/tensor-layout-v1.yaml (quant_dispatch section)"
+
+# =============================================================================
+# PROBLEM STATEMENT
+# =============================================================================
+#
+# There are 4 independent forward pass implementations:
+#
+#   1. CPU (trueno SIMD)     : infer/mod.rs → generate_cpu()
+#   2. GPU workspace         : indexed.rs → transformer_layer_workspace_inner()
+#   3. GPU graphed           : graphed.rs → forward_workspace_captured()
+#   4. GPU indexed async     : indexed.rs → transformer_layer_indexed()
+#
+# All 4 MUST compute the same mathematical function:
+#
+#   output = LayerForward(input, weights, position, config)
+#
+# But there is no structural guarantee. Each can silently diverge.
+# PMAT-232 proved this: 7B works on CPU, fails on GPU, and we can't
+# tell WHERE because there's no layer-by-layer comparison tool.
+
+# =============================================================================
+# LAYER FORWARD SPECIFICATION
+# =============================================================================
+#
+# One transformer layer computes (in order):
+#
+#   1. attn_normed = RMSNorm(input, attn_norm_weight, eps)
+#   2. Q = GEMV(q_weight, attn_normed) + q_bias
+#   3. K = GEMV(k_weight, attn_normed) + k_bias
+#   4. V = GEMV(v_weight, attn_normed) + v_bias
+#   5. Q_rope, K_rope = RoPE(Q, K, position, theta)
+#   6. attn_out = Attention(Q_rope, K_rope, V, kv_cache, seq_len)
+#   7. projected = GEMV(o_weight, attn_out)
+#   8. residual1 = input + projected
+#   9. ffn_normed = RMSNorm(residual1, ffn_norm_weight, eps)
+#  10. gate = GEMV(gate_weight, ffn_normed)
+#  11. up = GEMV(up_weight, ffn_normed)
+#  12. ffn_act = SwiGLU(gate, up)
+#  13. ffn_down = GEMV(down_weight, ffn_act)
+#  14. output = residual1 + ffn_down
+#
+# Each step has a defined input/output shape and acceptable tolerance.
+
+layer_steps:
+  - name: "attn_norm"
+    input: "[hidden_dim]"
+    output: "[hidden_dim]"
+    tolerance_abs: 1.0e-4
+    tolerance_rel: 1.0e-3
+
+  - name: "q_proj"
+    input: "[hidden_dim]"
+    output: "[q_dim]"
+    tolerance_abs: 1.0e-3
+    tolerance_rel: 5.0e-3
+    note: "Quantized GEMV has higher tolerance due to dequantization error"
+
+  - name: "k_proj"
+    input: "[hidden_dim]"
+    output: "[kv_dim]"
+    tolerance_abs: 1.0e-3
+    tolerance_rel: 5.0e-3
+
+  - name: "v_proj"
+    input: "[hidden_dim]"
+    output: "[kv_dim]"
+    tolerance_abs: 1.0e-3
+    tolerance_rel: 5.0e-3
+
+  - name: "rope"
+    input: "[q_dim], [kv_dim]"
+    output: "[q_dim], [kv_dim]"
+    tolerance_abs: 1.0e-4
+    tolerance_rel: 1.0e-3
+
+  - name: "attention"
+    input: "[q_dim], kv_cache"
+    output: "[q_dim]"
+    tolerance_abs: 1.0e-3
+    tolerance_rel: 5.0e-3
+
+  - name: "o_proj"
+    input: "[q_dim]"
+    output: "[hidden_dim]"
+    tolerance_abs: 1.0e-3
+    tolerance_rel: 5.0e-3
+
+  - name: "residual1"
+    input: "[hidden_dim], [hidden_dim]"
+    output: "[hidden_dim]"
+    tolerance_abs: 1.0e-4
+    tolerance_rel: 1.0e-3
+
+  - name: "ffn_norm"
+    input: "[hidden_dim]"
+    output: "[hidden_dim]"
+    tolerance_abs: 1.0e-4
+    tolerance_rel: 1.0e-3
+
+  - name: "gate_proj"
+    input: "[hidden_dim]"
+    output: "[intermediate_dim]"
+    tolerance_abs: 1.0e-3
+    tolerance_rel: 5.0e-3
+
+  - name: "up_proj"
+    input: "[hidden_dim]"
+    output: "[intermediate_dim]"
+    tolerance_abs: 1.0e-3
+    tolerance_rel: 5.0e-3
+
+  - name: "swiglu"
+    input: "[intermediate_dim], [intermediate_dim]"
+    output: "[intermediate_dim]"
+    tolerance_abs: 1.0e-3
+    tolerance_rel: 5.0e-3
+
+  - name: "down_proj"
+    input: "[intermediate_dim]"
+    output: "[hidden_dim]"
+    tolerance_abs: 1.0e-3
+    tolerance_rel: 5.0e-3
+
+  - name: "residual2"
+    input: "[hidden_dim], [hidden_dim]"
+    output: "[hidden_dim]"
+    tolerance_abs: 1.0e-4
+    tolerance_rel: 1.0e-3
+
+# =============================================================================
+# PARITY ENFORCEMENT
+# =============================================================================
+
+parity_tool:
+  command: "apr parity model.gguf"
+  description: |
+    Runs ONE token through all backends and compares layer-by-layer.
+    Prints first divergence point with values.
+
+  output_format: |
+    Layer 0: attn_norm   CPU=[0.123, -0.456, ...] GPU=[0.123, -0.456, ...]  OK (max_diff=2.3e-5)
+    Layer 0: q_proj      CPU=[1.234, ...]         GPU=[1.234, ...]          OK (max_diff=1.1e-4)
+    Layer 0: attention   CPU=[0.567, ...]         GPU=[NaN, ...]            FAIL (nan_count=128)
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    DIVERGENCE at Layer 0, step "attention"
+    GPU has 128 NaN values, CPU has 0
+
+  implementation:
+    - "CPU: Use forward_traced() which already captures per-step activations"
+    - "GPU: Add forward_traced_gpu() that captures same per-step activations"
+    - "Compare: diff each step's output within contract tolerances"
+    - "Report: first divergence with values, not just pass/fail"
+
+  ci_integration:
+    - "Run on 0.5B, 1.5B, 7B models"
+    - "Fail CI if any model shows GPU/CPU divergence beyond tolerance"
+    - "Track max_diff over time to detect gradual drift"
+
+# =============================================================================
+# ARCHITECTURAL FIX
+# =============================================================================
+#
+# The 4 separate implementations should share a common abstraction:
+#
+#   trait LayerForward {
+#       fn forward_layer(
+#           &mut self,
+#           input: &[f32],
+#           layer: &BoundLayerWeights,
+#           position: u32,
+#           config: &LayerConfig,
+#       ) -> Result<Vec<f32>>;
+#
+#       fn forward_layer_traced(
+#           &mut self,
+#           input: &[f32],
+#           layer: &BoundLayerWeights,
+#           position: u32,
+#           config: &LayerConfig,
+#       ) -> Result<(Vec<f32>, LayerTrace)>;
+#   }
+#
+# Both CpuBackend and GpuBackend implement LayerForward.
+# The traced variant captures all 14 step outputs for parity comparison.
+#
+# This makes wrong-dispatch bugs a PARITY FAILURE, not a "hypothesis."
+# The tool tells you: "Layer 5 attention output diverges by 1e6."
+# No manual debugging needed.
+
+# =============================================================================
+# LOAD-TIME PARITY GATE (Jidoka — stop-the-line)
+# =============================================================================
+#
+# Just as build.rs refuses to compile if ALG-001 through ALG-009 fail,
+# the parity gate refuses to construct OwnedQuantizedModelCuda if GPU and CPU
+# compute different functions.
+#
+# Location: realizar/src/gguf/cuda/mod.rs::parity_gate()
+# Called by: OwnedQuantizedModelCuda::with_max_seq_len() (the constructor)
+# Runs: ONE BOS token through CPU and GPU, compares via cosine similarity
+# Threshold: cosine ≥ 0.99
+# Bypass: SKIP_PARITY_GATE=1 (for debugging ONLY)
+#
+# Proof chain:
+#   build.rs  → dimensions are mathematically valid (compile-time)
+#   BoundWeight::bind() → correct kernel per quant type (load-time)
+#   parity_gate() → GPU computes same function as CPU (load-time)
+#   PreparedTokens → chat template applied (compile-time)
+#
+# An OwnedQuantizedModelCuda that passes the constructor is PROVEN correct.
+
+parity_gate:
+  location: "realizar/src/gguf/cuda/mod.rs::parity_gate()"
+  called_by: "OwnedQuantizedModelCuda::with_max_seq_len()"
+  token: "BOS (id=1)"
+  metric: "cosine_similarity(cpu_logits, gpu_logits)"
+  threshold: 0.99
+  on_failure: "CudaInitError — model falls back to CPU automatically"
+  bypass: "SKIP_PARITY_GATE=1"
+
+spc_tool:
+  command: "apr parity model.gguf"
+  description: |
+    Statistical Process Control for GPU/CPU inference parity.
+    Runs all prompt tokens through BOTH backends and compares per-position:
+    - Cosine similarity (directional agreement)
+    - KL divergence (distribution distance)
+    - Sigma level (process capability)
+    - Cpk (process capability index)
+    Auto-diagnoses failure patterns using Five Whys methodology.
+
+  metrics:
+    - name: "cosine_similarity"
+      threshold: 0.999
+      description: "Directional agreement between logit vectors"
+    - name: "kl_divergence"
+      threshold: 0.01
+      description: "Distribution distance (softmax)"
+    - name: "sigma_level"
+      threshold: 3.0
+      description: "Process capability (3σ = 99.73% within limits)"
+    - name: "cpk"
+      threshold: 1.33
+      description: "Process capability index"
+    - name: "max_abs_diff"
+      threshold: 1.0
+      description: "Maximum absolute logit difference"
+
+falsification_tests:
+  - id: PARITY-001
+    rule: "GPU and CPU produce equivalent logit outputs"
+    prediction: "For any model, GPU logits match CPU within cosine ≥ 0.999"
+    test: "apr parity model.gguf --assert"
+    if_fails: "GPU implementation has a bug — auto-diagnosis shows root cause"
+
+  - id: PARITY-002
+    rule: "Parity holds across all supported quant types"
+    prediction: "Q4K, Q5K, Q6K, Q8_0, Q4_0, Q5_0, Q4_1 all produce equivalent results"
+    test: "apr parity model.gguf --all-quant-types"
+    if_fails: "Specific quant kernel has a bug"
+
+  - id: PARITY-003
+    rule: "Parity holds for mixed-quantization models"
+    prediction: "Models with Q4K+Q6K (like 7B Q4_K_M) produce equivalent GPU/CPU results"
+    test: "apr parity qwen2.5-coder-7b-instruct-q4_k_m.gguf --assert"
+    if_fails: "Mixed-quant dispatch or dimension handling has a bug"
+    reference: "PMAT-232"
+
+  - id: PARITY-004
+    rule: "Load-time parity gate prevents serving divergent models"
+    prediction: "OwnedQuantizedModelCuda::new() fails if cosine < 0.99"
+    test: "Run 7B model with GPU — should fall back to CPU automatically"
+    if_fails: "Parity gate bypass or threshold too permissive"
