@@ -236,7 +236,7 @@ parity_tool:
 parity_gate:
   location: "realizar/src/gguf/cuda/mod.rs::parity_gate()"
   called_by: "OwnedQuantizedModelCuda::with_max_seq_len()"
-  token: "BOS (id=1)"
+  token: "BOS from config.bos_token_id (architecture-aware, e.g., qwen2=151643, llama=128000, mistral=1)"
   metric: "cosine_similarity(cpu_logits, gpu_logits)"
   threshold: 0.99
   on_failure: "CudaInitError — model falls back to CPU automatically"

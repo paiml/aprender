@@ -2,13 +2,13 @@
 
 ## Project Overview
 
-Aprender is a next-generation machine learning library written in pure Rust. v0.25.1 implements the TOP 10 ML algorithms plus advanced modules (time series, NLP, Bayesian, GLM, graph, audio, format conversion). 9,893 tests with comprehensive quality gates.
+Aprender is a next-generation machine learning library written in pure Rust. v0.25.1 implements the TOP 10 ML algorithms plus advanced modules (time series, NLP, Bayesian, GLM, graph, audio, format conversion). 11,251 tests with comprehensive quality gates.
 
 ## Build Commands
 
 ```bash
 cargo build --release        # Optimized build
-cargo test                   # Full test suite (9893 tests)
+cargo test                   # Full test suite (11251 tests)
 cargo test --lib             # Unit tests only
 cargo fmt --check            # Check formatting
 cargo clippy -- -D warnings  # Strict linting
@@ -19,7 +19,7 @@ make tier1                   # Fast feedback (<1s): fmt, clippy, check
 make tier2                   # Pre-commit (<5s): tests + strict clippy
 make tier3                   # Pre-push (1-5min): full validation + coverage
 make tier4                   # CI/CD: includes pmat analysis
-make coverage                # Coverage report (96.94% achieved, target ≥95%)
+make coverage                # Coverage report (96.35% achieved, target ≥95%)
 ```
 
 ## Debugging: Use apr Tools First (MANDATORY)
@@ -176,10 +176,10 @@ Required: `set -euo pipefail`, no `ls` for iteration, quoted variables, explicit
 
 ## Testing
 
-Target: 60% unit, 30% property, 10% integration. Coverage: 96.94% line (target ≥95%).
+Target: 60% unit, 30% property, 10% integration. Coverage: 96.35% line (target ≥95%).
 
 ```bash
-cargo test                    # All 9893 tests
+cargo test                    # All 11251 tests
 cargo test --lib              # Unit only
 cargo test --test integration # Integration
 cargo test --doc              # Doctests
@@ -234,7 +234,7 @@ apr qa model.gguf --assert-tps 100 --json
 
 ## PMAT Quality Analysis (v2.216.0)
 
-**Scores:** Project 124/134 (A+), TDG 95.2/100 (A+), Coverage 96.94%, Mutation 85.3%
+**Scores:** Project 124/134 (A+), TDG 95.2/100 (A+), Coverage 96.35%, Mutation 85.3%
 **Thresholds:** Coverage ≥95%, Complexity ≤10/fn, SATD 0, TDG ≥95, Mutation ≥85%, 0 unwrap()
 
 ```bash
