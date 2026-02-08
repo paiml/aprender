@@ -246,7 +246,7 @@ tier4: tier3
 #     - commands/eval       : Model evaluation (requires model files)
 #     - commands/canary     : Canary testing
 #     - chaos\.rs           : Chaos testing module
-COVERAGE_EXCLUDE := --ignore-filename-regex='(\.cargo/|trueno|realizar/|entrenar/|fuzz/|golden_traces/|hf_hub/|demo/|test_factory|pacha/|aprender-monte-carlo/src/main|aprender-tsp/src/main|showcase/|aprender-shell/src/main|commands/serve/|commands/cbtop|commands/chat|commands/tui|federation/tui|commands/run\.rs|commands/pull|commands/compare_hf|commands/trace|commands/bench\.rs|commands/eval|commands/canary|chaos\.rs|audio/|format/quantize\.rs|format/signing\.rs|voice/|playback\.rs|commands/hex\.rs|commands/flow\.rs|commands/tree\.rs|commands/showcase/|commands/probar\.rs|federation/|commands/publish\.rs|apr-cli/src/lib\.rs|commands/check\.rs)'
+COVERAGE_EXCLUDE_REGEX := \.cargo/|trueno|realizar/|entrenar/|fuzz/|golden_traces/|hf_hub/|demo/|test_factory|pacha/|aprender-monte-carlo/src/main|aprender-tsp/src/main|showcase/|aprender-shell/src/main|commands/serve/|commands/cbtop|commands/chat|commands/tui|federation/tui|commands/run\.rs|commands/pull|commands/compare_hf|commands/trace|commands/bench\.rs|commands/eval|commands/canary|chaos\.rs|audio/|format/quantize\.rs|format/signing\.rs|voice/|playback\.rs|commands/hex\.rs|commands/flow\.rs|commands/tree\.rs|commands/showcase/|commands/probar\.rs|federation/|commands/publish\.rs|apr-cli/src/lib\.rs|commands/check\.rs
 
 # Coverage threshold (enforced: fail if below)
 COV_THRESHOLD := 95
@@ -262,18 +262,19 @@ coverage: ## Coverage summary + threshold check (warm: ~3min)
 	@# Pre-clean: remove stale profraw files to avoid LLVM version mismatch
 	@COVDIR=$$(cargo llvm-cov show-env 2>/dev/null | grep CARGO_LLVM_COV_TARGET_DIR | sed "s/.*=//"); \
 	if [ -n "$$COVDIR" ]; then find "$$COVDIR" -name '*.profraw' -delete 2>/dev/null || true; fi
+	@mkdir -p target/coverage
+	@printf '%s' '$(COVERAGE_EXCLUDE_REGEX)' > target/coverage/.exclude-re
 	@echo "🧪 Phase 1: Tests with instrumentation (nextest for async test isolation)..."
 	@PROPTEST_CASES=10 QUICKCHECK_TESTS=10 RUST_MIN_STACK=16777216 CARGO_BUILD_JOBS=4 \
 		cargo llvm-cov --no-report nextest \
 		--profile coverage \
 		--no-tests=warn \
 		--workspace \
-		$(COVERAGE_EXCLUDE) \
+		--ignore-filename-regex "$$(cat target/coverage/.exclude-re)" \
 		-E 'not (test(/prop_gbm_expected_value|slow|heavy|h12_|j2_|falsification|chaos|disconnect|benchmark_parity|qwen2_generation|qwen2_golden|qwen2_weight|load_test|spec_checklist_w|spec_checklist_u|verify_audio|g9_roofline/) | binary(/rosetta_dangerous|spec_checklist_q/))' \
 		|| { test -f ~/.cargo/config.toml.bak && mv ~/.cargo/config.toml.bak ~/.cargo/config.toml; exit 1; }
 	@echo "📊 Phase 2: Coverage report (LCOV → lightweight)..."
-	@mkdir -p target/coverage
-	@cargo llvm-cov report --lcov $(COVERAGE_EXCLUDE) 2>/dev/null > target/coverage/lcov.info
+	@cargo llvm-cov report --lcov --ignore-filename-regex "$$(cat target/coverage/.exclude-re)" > target/coverage/lcov.info
 	@# Parse LCOV for line coverage (LH=lines hit, LF=lines found)
 	@LH=$$(awk -F: '/^LH:/{s+=$$2} END{print s+0}' target/coverage/lcov.info); \
 	LF=$$(awk -F: '/^LF:/{s+=$$2} END{print s+0}' target/coverage/lcov.info); \
@@ -296,8 +297,9 @@ coverage-html: ## Generate HTML + LCOV reports from last coverage run
 	@echo "📊 Generating HTML + LCOV reports..."
 	@test -f ~/.cargo/config.toml && mv ~/.cargo/config.toml ~/.cargo/config.toml.bak || true
 	@mkdir -p target/coverage
-	@cargo llvm-cov report --html --output-dir target/coverage/html $(COVERAGE_EXCLUDE)
-	@cargo llvm-cov report --lcov --output-path target/coverage/lcov.info $(COVERAGE_EXCLUDE)
+	@printf '%s' '$(COVERAGE_EXCLUDE_REGEX)' > target/coverage/.exclude-re
+	@cargo llvm-cov report --html --output-dir target/coverage/html --ignore-filename-regex "$$(cat target/coverage/.exclude-re)"
+	@cargo llvm-cov report --lcov --output-path target/coverage/lcov.info --ignore-filename-regex "$$(cat target/coverage/.exclude-re)"
 	@test -f ~/.cargo/config.toml.bak && mv ~/.cargo/config.toml.bak ~/.cargo/config.toml || true
 	@echo "📍 HTML: target/coverage/html/index.html"
 
@@ -308,15 +310,16 @@ coverage-full: ## Full coverage report (all features, CI only)
 	@which cargo-llvm-cov > /dev/null 2>&1 || { cargo install cargo-llvm-cov --locked || exit 1; }
 	@test -f ~/.cargo/config.toml && mv ~/.cargo/config.toml ~/.cargo/config.toml.bak || true
 	@mkdir -p target/coverage
+	@printf '%s' '$(COVERAGE_EXCLUDE_REGEX)' > target/coverage/.exclude-re
 	@PROPTEST_CASES=10 QUICKCHECK_TESTS=10 CARGO_BUILD_JOBS=4 \
 		cargo llvm-cov --no-report nextest --workspace --lib --all-features \
 		--profile coverage --no-tests=warn \
-		$(COVERAGE_EXCLUDE) \
+		--ignore-filename-regex "$$(cat target/coverage/.exclude-re)" \
 		-E 'not test(/prop_gbm_expected_value|slow|heavy|benchmark|h12_|j2_/)'
-	@cargo llvm-cov report --html --output-dir target/coverage/html $(COVERAGE_EXCLUDE)
-	@cargo llvm-cov report --lcov --output-path target/coverage/lcov.info $(COVERAGE_EXCLUDE)
+	@cargo llvm-cov report --html --output-dir target/coverage/html --ignore-filename-regex "$$(cat target/coverage/.exclude-re)"
+	@cargo llvm-cov report --lcov --output-path target/coverage/lcov.info --ignore-filename-regex "$$(cat target/coverage/.exclude-re)"
 	@echo ""
-	@cargo llvm-cov report --summary-only $(COVERAGE_EXCLUDE)
+	@cargo llvm-cov report --summary-only --ignore-filename-regex "$$(cat target/coverage/.exclude-re)"
 	@test -f ~/.cargo/config.toml.bak && mv ~/.cargo/config.toml.bak ~/.cargo/config.toml || true
 
 # Open coverage report in browser
