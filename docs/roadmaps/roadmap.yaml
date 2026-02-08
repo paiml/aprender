@@ -3280,3 +3280,43 @@ roadmap:
   - model-oracle
   - phase-5
   notes: null
+- id: PMAT-231
+  github_issue: null
+  item_type: task
+  title: 'GH-254: Verify F2-VALIDATION BOS fix and update showcase spec FALSIFIED gates'
+  status: inprogress
+  priority: critical
+  assigned_to: null
+  created: 2026-02-08T10:59:25Z
+  updated: 2026-02-08T10:59:29.795202937+00:00
+  spec: null
+  acceptance_criteria:
+  - 'BOS fix pushed to realizar (3670abb). Need to: 1) Verify GPU actually accelerates (>100 tok/s vs 33), 2) Update FALSIFIED gates in showcase spec, 3) Re-measure 1.5B and 7B GPU performance'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - showcase
+  - gpu
+  - kaizen
+  notes: null
+- id: PMAT-232
+  github_issue: null
+  item_type: task
+  title: 'GH-255: 7B GGUF GPU produces garbage output (CPU correct)'
+  status: inprogress
+  priority: critical
+  assigned_to: null
+  created: 2026-02-08T11:09:56Z
+  updated: 2026-02-08T11:11:21.146920795+00:00
+  spec: null
+  acceptance_criteria:
+  - '7B GPU: garbage (''2? son the -"'') vs CPU correct (''2+2 is 4''). 1.5B works on both. apr qa golden test uses CPU only — QA gap. Root cause: likely CUDA kernel dimension issue (7B: hidden=3584 vs 1.5B: hidden=1536). Five Whys needed.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - gpu
+  - inference
+  - defect
+  notes: null
