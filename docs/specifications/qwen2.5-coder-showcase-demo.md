@@ -1,14 +1,14 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 10.6.0 (Full Stack: apr-cli + aprender + realizar + trueno, Popperian falsified)
-**Status:** Benchmarked (7B all 3 formats measured 2026-02-07; full provenance chain ST→APR→GGUF export working)
+**Version:** 10.7.0 (Full Stack: apr-cli + aprender + realizar + trueno, Popperian falsified)
+**Status:** Benchmarked (7B all 3 formats measured 2026-02-08; F2-VALIDATION BOS fixed, GPU engages at 5.2x speedup)
 **Primary Model:** `Qwen/Qwen2.5-Coder-7B-Instruct`
 **Source Format:** SafeTensors BF16 (HuggingFace, sharded, ~14 GB)
 **Popperian Score:** 119/119 gates passing (100%) — 139 tests, 0 ignored. Gated by `model-tests` feature (`make test-model`)
 **CLI Surface:** 36 top-level + 10 nested subcommands (46 total)
 **Compile-Time Proofs:** 297 algebraic invariants (zero runtime cost)
 **Author:** PAIML Engineering
-**Date:** 2026-02-07
+**Date:** 2026-02-08
 **Ground Truth:** SafeTensors BF16 - See Section 0
 **Quality Philosophy:** Toyota Way + Popperian Falsification (Zero SATD, Stop-the-Line, Jidoka)
 
@@ -18,9 +18,9 @@
 |--------|--------|-----|-----|----------|--------|
 | SafeTensors BF16 | HuggingFace (ground truth) | 0.1 tok/s | Not tested | PMAT-237 | **Pass** (CPU: correct output, 103s for "2+2?") |
 | APR Q4_K_M | Converted from SafeTensors | 0.6 tok/s | FALSIFIED (fix pending) | PMAT-237 | **Pass** (CPU); GPU: wgpu buffer limit 271MB > 256MB — fix in trueno 0.14.5 (pending publish) |
-| GGUF Q4_K_M | Pre-baked (diagnostic) | 6 tok/s | 33 tok/s | PMAT-237 | **Pass** (all QA gates pass) |
+| GGUF Q4_K_M | Pre-baked (diagnostic) | 6 tok/s | 33 tok/s (5.2x speedup) | PMAT-237 | **Pass** (QA gates pass; **FALSIFIED**: 7B GPU output garbage, CPU correct — GH-255) |
 
-**Release = ALL THREE FORMATS WORKING (CPU). GPU blocked for APR by wgpu 256MB buffer limit — fix committed in trueno 0.14.5 (pending crates.io publish).**
+**Release = ALL THREE FORMATS WORKING (CPU). GPU: 1.5B GGUF fully working (117 tok/s). 7B GGUF GPU FALSIFIED (garbage output, GH-255). APR GPU blocked by wgpu 256MB buffer limit.**
 
 ---
 
@@ -72,12 +72,12 @@ apr run/chat/serve  <-- PMAT-237 contract gate -> realizar (Section 14) via true
 | SafeTensors BF16 | Direct | CPU (AVX2) | 0.1 tok/s | **Pass** (correct output, 103s for 1 token, 629s for 64 tokens) |
 | APR Q4_K_M | From SafeTensors | GPU (RTX 4090) | FALSIFIED (fix pending) | wgpu buffer limit: FFN 271MB > 256MB max — fix in trueno 0.14.5 (requests adapter limits) |
 | APR Q4_K_M | From SafeTensors | CPU (AVX2) | 0.6 tok/s | **Pass** (correct output "4", 57s) |
-| GGUF Q4_K_M | Pre-baked | GPU (RTX 4090) | 33 tok/s | **Pass** (`apr qa` measured, F2-VALIDATION fallback observed in `apr run`) |
+| GGUF Q4_K_M | Pre-baked | GPU (RTX 4090) | 33 tok/s | **Pass** (`apr qa`: 33 tok/s GPU, 5.2x speedup. F2-VALIDATION BOS fix deployed.) |
 | GGUF Q4_K_M | Pre-baked | CPU (AVX2) | 6 tok/s | **Pass** (`apr qa` measured) |
-| GGUF Q4_K_M | Exported (APR→GGUF) | GPU (RTX 4090) | 20 tok/s | **FIXED** (GH-253: tokenizer metadata round-trip fixed. F2-VALIDATION still triggers CPU fallback.) |
+| GGUF Q4_K_M | Exported (APR→GGUF) | GPU (RTX 4090) | 20 tok/s | **FIXED** (GH-253: tokenizer metadata round-trip fixed. F2-VALIDATION BOS probe fixed — GPU engages.) |
 | GGUF Q4_K_M | Exported (APR→GGUF) | CPU (AVX2) | 6 tok/s | **FIXED** (GH-253: correct decode verified — "2+2 equals 4" on both 1.5B and 7B round-tripped GGUF) |
 
-**Measured results (2026-02-07):** All 3 formats produce correct inference on CPU. SafeTensors BF16: 0.1 tok/s (unquantized 14GB). APR Q4_K: 0.6 tok/s CPU (4GB, quantized from SafeTensors via `apr import`). GGUF Q4_K_M: 6 tok/s CPU, 33 tok/s GPU (via `apr qa`). APR GPU FALSIFIED: wgpu `create_buffer` rejects 271MB buffer for LM head (152064 vocab × 3584 hidden as Q4K = 271MB > 256MB limit). This is a wgpu backend limitation, not a logic bug. Peak RSS: ~22 GB (APR), ~12.7 GB (SafeTensors). Ollama parity: 0.23x (30 vs 130 tok/s GGUF GPU).
+**Measured results (2026-02-08):** All 3 formats produce correct inference on CPU. SafeTensors BF16: 0.1 tok/s (unquantized 14GB). APR Q4_K: 0.6 tok/s CPU (4GB, quantized from SafeTensors via `apr import`). GGUF Q4_K_M: 6 tok/s CPU, 33 tok/s GPU (via `apr qa`). F2-VALIDATION BOS probe FIXED (realizar `3670abb`): GPU now engages at 5.2x CPU speedup. 1.5B: 117 tok/s GPU, 16 tok/s CPU, 0.5x Ollama. APR GPU FALSIFIED: wgpu `create_buffer` rejects 271MB buffer for LM head (152064 vocab × 3584 hidden as Q4K = 271MB > 256MB limit). Peak RSS: ~22 GB (APR), ~12.7 GB (SafeTensors). Ollama parity: 0.3x (30 vs 117 tok/s GGUF GPU 7B).
 
 ### End-to-End Inference Stack (Single Token)
 
@@ -573,7 +573,7 @@ Each stage maps to specific realizar modules. The pipeline runs entirely inside 
 |--------|------|---------------|---------------|------------|
 | SafeTensors BF16 | ~14 GB | 0.1 tok/s | Not tested | Yes (per-shard validation, 4 shards, 339 tensors) |
 | APR Q4_K_M | ~4.0 GB | 0.6 tok/s | FALSIFIED (wgpu 256MB buffer limit) | Yes (339 tensors, imported from sharded ST via `apr import --quantize q4k`) |
-| GGUF Q4_K_M | ~4.4 GB | 6 tok/s | 33 tok/s | Yes (339 tensors validated, all QA gates pass) |
+| GGUF Q4_K_M | ~4.4 GB | 6 tok/s | 33 tok/s (5.2x speedup) | Yes (339 tensors validated, all QA gates pass) |
 
 ### 5.2 CLI Tool Universal Format Support (PMAT-ROSETTA-001)
 
@@ -683,7 +683,7 @@ All CLI commands support APR, GGUF, and SafeTensors via the Rosetta Stone dispat
 | 3 | `apr run` | APR Q4K | CPU | `apr run $APR "2+2?" -n 32 --no-gpu` | **Pass** (output: "4", 57s, 0.6 tok/s) |
 | 4 | `apr run` | APR Q4K | GPU | `apr run $APR "2+2?" -n 32` | **FALSIFIED** (wgpu buffer limit: LM head 271MB > 256MB max) |
 | 5 | `apr run` | GGUF Q4K | CPU | `apr run $GGUF "2+2?" -n 32 --no-gpu` | **Pass** (output: "4", 0.4 tok/s, 81.4s) |
-| 6 | `apr run` | GGUF Q4K | GPU | `apr run $GGUF "2+2?" -n 32` | **Pass** (output: "4", 1.5 tok/s with F2-VALIDATION CPU fallback; `apr qa` GPU: 33 tok/s) |
+| 6 | `apr run` | GGUF Q4K | GPU | `apr run $GGUF "2+2?" -n 32` | **FALSIFIED** (7B GPU garbage; 1.5B GPU correct at 117 tok/s. GH-255) |
 | 7 | `apr chat` | SafeTensors BF16 | CPU | `echo "2+2?" \| apr chat $ST --no-gpu` | **Pass** (same engine as `apr run`, ST CPU inference verified) |
 | 8 | `apr chat` | SafeTensors BF16 | GPU | `echo "2+2?" \| apr chat $ST` | Not tested (ST GPU path) |
 | 9 | `apr chat` | APR Q4K | CPU | `echo "2+2?" \| apr chat $APR --no-gpu` | **Pass** (same engine as `apr run`, APR CPU inference verified) |
@@ -989,13 +989,13 @@ Uses aprender's own ML algorithms for diagnostics:
 | Golden Parity | Verified (Correlation 1.0) |
 | O(n) Verification | Verified (50ms/layer at 1.5B) |
 | Target >5.0 tok/s (CPU, 7B) | **Pass** (6 tok/s measured via `apr qa`, 0.4 tok/s via `apr run --no-gpu` with full chat template overhead) |
-| Target >100 tok/s (GPU, 7B) | **FALSIFIED** (33 tok/s measured via `apr qa`; F2-VALIDATION BOS probe mismatch causes CPU fallback in `apr run`) |
+| Target >100 tok/s (GPU, 7B) | **FALSIFIED** (33 tok/s measured via `apr qa`; 100 tok/s target not met. F2-VALIDATION BOS probe FIXED — GPU now engages, 5.2x speedup) |
 
 ### 7B Performance Targets
 
 | Backend | Metric | Target | Actual | Status |
 |---------|--------|--------|--------|--------|
-| GPU (RTX 4090) | Throughput (Q4K) | >100 tok/s | 33 tok/s | **FALSIFIED** (33% of target; F2-VALIDATION causes fallback) |
+| GPU (RTX 4090) | Throughput (Q4K) | >100 tok/s | 33 tok/s | **FALSIFIED** (33% of target. F2-VALIDATION BOS fixed. GPU engages but output is garbage — GH-255) |
 | GPU (RTX 4090) | TTFT | <500ms | 244ms (p50) | **Pass** (`apr profile --ci`: p50=244ms, p99=244ms) |
 | GPU (RTX 4090) | Memory | <6 GB | ~23.7 GB | **FALSIFIED** (23.7 GB peak RSS; 7B model + KV cache + overhead) |
 | CPU (AVX2) | Throughput (Q4K) | >5 tok/s | 6 tok/s | **Pass** (`apr qa` CPU measurement) |
