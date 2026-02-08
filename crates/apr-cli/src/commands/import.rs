@@ -19,7 +19,24 @@ pub(crate) fn run(
     strict: bool,
     preserve_q4k: bool,
     tokenizer: Option<&PathBuf>,
+    enforce_provenance: bool,
 ) -> Result<()> {
+    // F-GT-001: Enforce provenance chain — reject pre-baked GGUF imports.
+    // Only SafeTensors sources are allowed when provenance enforcement is on.
+    if enforce_provenance {
+        let is_gguf_source = source.ends_with(".gguf")
+            || source.contains("-GGUF")
+            || source.contains("-gguf");
+        if is_gguf_source {
+            return Err(CliError::ValidationFailed(
+                "F-GT-001: --enforce-provenance rejects GGUF imports. \
+                 Use SafeTensors as the canonical source format for single-provenance testing. \
+                 See Section 0 of qwen2.5-coder-showcase-demo.md for rationale."
+                    .to_string(),
+            ));
+        }
+    }
+
     // GH-169: Derive output path from source if not provided
     let output_path = match output {
         Some(p) => p.to_path_buf(),
@@ -398,6 +415,7 @@ mod tests {
             false,
             false,
             None, // tokenizer
+            false, // enforce_provenance
         );
 
         assert!(result.is_err());
@@ -421,6 +439,7 @@ mod tests {
             false,
             false,
             None, // tokenizer
+            false, // enforce_provenance
         );
 
         // Will fail at network stage, not architecture parsing
@@ -438,6 +457,7 @@ mod tests {
             false,
             false,
             None, // tokenizer
+            false, // enforce_provenance
         );
 
         // Will fail at network stage, not architecture parsing
@@ -455,6 +475,7 @@ mod tests {
             false,
             false,
             None, // tokenizer
+            false, // enforce_provenance
         );
 
         // Will fail at network stage, not architecture parsing
@@ -472,6 +493,7 @@ mod tests {
             false,
             false,
             None, // tokenizer
+            false, // enforce_provenance
         );
 
         // Will fail at network stage, not architecture parsing
@@ -489,6 +511,7 @@ mod tests {
             false,
             false,
             None, // tokenizer
+            false, // enforce_provenance
         );
 
         // Will fail at network stage, not architecture parsing
@@ -506,6 +529,7 @@ mod tests {
             false,
             false,
             None, // tokenizer
+            false, // enforce_provenance
         );
 
         // Will fail at network stage, not quantize parsing
@@ -523,6 +547,7 @@ mod tests {
             true, // force
             false,
             None, // tokenizer
+            false, // enforce_provenance
         );
 
         // Will fail at network stage
@@ -540,9 +565,106 @@ mod tests {
             false,
             false,
             None,
+            false, // enforce_provenance
         );
 
         assert!(result.is_err());
+    }
+
+    // =========================================================================
+    // F-GT-001: --enforce-provenance tests
+    // =========================================================================
+
+    #[test]
+    fn t_f_gt_001_enforce_provenance_rejects_gguf_source() {
+        let result = run(
+            "model.gguf",
+            Some(Path::new("output.apr")),
+            None,
+            None,
+            false,
+            false,
+            None,
+            true, // enforce_provenance = ON
+        );
+        assert!(result.is_err());
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(
+            err_msg.contains("F-GT-001"),
+            "Error must cite F-GT-001 gate: {err_msg}"
+        );
+        assert!(
+            err_msg.contains("provenance"),
+            "Error must mention provenance: {err_msg}"
+        );
+    }
+
+    #[test]
+    fn t_f_gt_001_enforce_provenance_rejects_gguf_hub_pattern() {
+        // Hub-style paths with -GGUF suffix should also be rejected
+        let result = run(
+            "hf://TheBloke/Qwen2.5-Coder-7B-GGUF",
+            Some(Path::new("output.apr")),
+            None,
+            None,
+            false,
+            false,
+            None,
+            true, // enforce_provenance = ON
+        );
+        assert!(result.is_err());
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(
+            err_msg.contains("F-GT-001"),
+            "Error must cite F-GT-001 gate: {err_msg}"
+        );
+    }
+
+    #[test]
+    fn t_f_gt_001_no_provenance_allows_gguf() {
+        // Without --enforce-provenance, GGUF should NOT be rejected
+        // (it will fail for other reasons like file not found, but NOT F-GT-001)
+        let result = run(
+            "model.gguf",
+            Some(Path::new("output.apr")),
+            None,
+            None,
+            false,
+            false,
+            None,
+            false, // enforce_provenance = OFF
+        );
+        // Should fail (file doesn't exist) but NOT with F-GT-001
+        if let Err(e) = &result {
+            let err_msg = format!("{e}");
+            assert!(
+                !err_msg.contains("F-GT-001"),
+                "Without --enforce-provenance, F-GT-001 must not trigger: {err_msg}"
+            );
+        }
+    }
+
+    #[test]
+    fn t_f_gt_001_enforce_provenance_allows_safetensors() {
+        // SafeTensors source should pass provenance check (fail later for file not found)
+        let result = run(
+            "model.safetensors",
+            Some(Path::new("output.apr")),
+            None,
+            None,
+            false,
+            false,
+            None,
+            true, // enforce_provenance = ON
+        );
+        // Should fail (file doesn't exist) but NOT with F-GT-001
+        if let Err(e) = &result {
+            let err_msg = format!("{e}");
+            assert!(
+                !err_msg.contains("F-GT-001"),
+                "SafeTensors must pass provenance check: {err_msg}"
+            );
+        }
     }
 
     // =========================================================================

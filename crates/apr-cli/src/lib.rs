@@ -435,6 +435,11 @@ pub enum Commands {
         /// Required if the GGUF has no embedded tokenizer vocabulary.
         #[arg(long)]
         tokenizer: Option<PathBuf>,
+
+        /// F-GT-001: Enforce provenance chain. Rejects pre-baked GGUF imports
+        /// (only SafeTensors sources allowed). Ensures single-provenance testing.
+        #[arg(long)]
+        enforce_provenance: bool,
     },
 
     /// Download and cache model from HuggingFace (Ollama-like UX)
@@ -1514,6 +1519,7 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             strict,
             preserve_q4k,
             tokenizer,
+            enforce_provenance,
         } => import::run(
             source,
             output.as_deref(),
@@ -1522,6 +1528,7 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             *strict,
             *preserve_q4k,
             tokenizer.as_ref(),
+            *enforce_provenance,
         ),
         Commands::Pull { model_ref, force } => pull::run(model_ref, *force),
         Commands::List => pull::list(),
@@ -3324,6 +3331,7 @@ mod tests {
                 strict,
                 preserve_q4k,
                 tokenizer,
+                enforce_provenance,
             } => {
                 assert_eq!(source, "hf://openai/whisper-tiny");
                 assert_eq!(output, Some(PathBuf::from("whisper.apr")));
@@ -3332,6 +3340,7 @@ mod tests {
                 assert!(strict);
                 assert!(preserve_q4k);
                 assert_eq!(tokenizer, Some(PathBuf::from("/path/to/tokenizer.json")));
+                assert!(!enforce_provenance);
             }
             _ => panic!("Expected Import command"),
         }
@@ -4967,6 +4976,7 @@ mod tests {
             strict: false,
             preserve_q4k: false,
             tokenizer: None,
+            enforce_provenance: false,
         };
         let paths = extract_model_paths(&cmd);
         assert!(
@@ -4986,6 +4996,7 @@ mod tests {
             strict: false,
             preserve_q4k: false,
             tokenizer: None,
+            enforce_provenance: false,
         };
         let paths = extract_model_paths(&cmd);
         assert!(
@@ -5755,6 +5766,7 @@ mod tests {
             strict: false,
             preserve_q4k: false,
             tokenizer: None,
+            enforce_provenance: false,
         });
         let result = execute_command(&cli);
         assert!(
