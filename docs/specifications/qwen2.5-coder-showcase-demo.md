@@ -77,7 +77,7 @@ apr run/chat/serve  <-- PMAT-237 contract gate -> realizar (Section 14) via true
 | GGUF Q4_K_M | Exported (APR→GGUF) | GPU (RTX 4090) | 20 tok/s | **FIXED** (GH-253: tokenizer metadata round-trip fixed. F2-VALIDATION BOS probe fixed — GPU engages.) |
 | GGUF Q4_K_M | Exported (APR→GGUF) | CPU (AVX2) | 6 tok/s | **FIXED** (GH-253: correct decode verified — "2+2 equals 4" on both 1.5B and 7B round-tripped GGUF) |
 
-**Measured results (2026-02-08):** All 3 formats produce correct inference on CPU AND GPU. SafeTensors BF16: 0.1 tok/s CPU (unquantized 14GB). APR Q4_K: 0.6 tok/s CPU, 8.82s GPU (4GB, quantized from SafeTensors). GGUF Q4_K_M: 6 tok/s CPU, decode ~36 tok/s GPU (e2e 19-32 depending on seq len; per-call overhead ~0.79s). APR GPU fix: routed Q4K through proven CUDA pipeline via `OwnedQuantizedModel::from_apr()` instead of broken wgpu F32 adapter. RTX 4090 bandwidth utilization: 16% (vs Ollama 51%). 1.5B: 117 tok/s GPU.
+**Measured results (2026-02-08):** All 3 formats produce correct inference on CPU AND GPU. SafeTensors BF16: 0.1 tok/s CPU (unquantized 14GB). APR Q4_K: 0.6 tok/s CPU, 8.82s GPU (4GB, quantized from SafeTensors). GGUF Q4_K_M: 6 tok/s CPU, decode 40 tok/s GPU (25ms/token, 28 layers). Prefill: 510ms for 20 tokens (serial 25ms each — batched prefill would reduce to ~25ms). Ollama parity: 0.22x at 128 tokens. RTX 4090 bandwidth utilization: 16% (vs Ollama 51%). 1.5B: 117 tok/s GPU.
 
 ### End-to-End Inference Stack (Single Token)
 
@@ -989,14 +989,14 @@ Uses aprender's own ML algorithms for diagnostics:
 | Golden Parity | Verified (Correlation 1.0) |
 | O(n) Verification | Verified (50ms/layer at 1.5B) |
 | Target >5.0 tok/s (CPU, 7B) | **Pass** (6 tok/s measured via `apr qa`, 0.4 tok/s via `apr run --no-gpu` with full chat template overhead) |
-| Target >100 tok/s (GPU, 7B) | **FALSIFIED** (decode ~36 tok/s, end-to-end 19-32 tok/s depending on sequence length. Per-call overhead ~0.79s. Theoretical max ~227 tok/s (bandwidth-bound). 16% utilization vs Ollama's 51%. Gap requires fused kernels + flash attention in trueno-gpu.) |
+| Target >100 tok/s (GPU, 7B) | **FALSIFIED** (decode 40 tok/s = 25ms/token. Prefill: 510ms/20 tokens = serial 25ms each. Theoretical max ~227 tok/s. 16% utilization. #1 optimization: batched prefill. #2: fused kernels + flash attention in trueno-gpu.) |
 
 ### 7B Performance Targets
 
 | Backend | Metric | Target | Actual | Status |
 |---------|--------|--------|--------|--------|
-| GPU (RTX 4090) | Throughput (Q4K) | >100 tok/s | decode ~36 tok/s, e2e 19-32 tok/s | **FALSIFIED** (36% of target. Decode rate ~36 tok/s amortized over long sequences. Per-call overhead ~0.79s from KV cache init + prefill. RTX 4090 at 16% bandwidth utilization vs Ollama's 51%. Needs fused kernels + flash attention.) |
-| GPU (RTX 4090) | TTFT | <500ms | 244ms (p50) | **Pass** (`apr profile --ci`: p50=244ms, p99=244ms) |
+| GPU (RTX 4090) | Throughput (Q4K) | >100 tok/s | decode 40 tok/s (25ms/token) | **FALSIFIED** (40% of target. Per-token decode: 25ms × 28 layers. Prefill: 510ms for 20 tokens (serial, 25ms/token). RTX 4090 at 16% bandwidth utilization. #1 optimization: batched prefill (20×→1× forward pass). #2: fused kernels.) |
+| GPU (RTX 4090) | TTFT | <500ms | 510ms (20 tok), 244ms (10 tok) | **Marginal** (traced: prefill = 25ms/token serial. ChatML templates add ~15 tokens → 375ms+ base. Short prompts pass; longer prompts exceed. Batched prefill would fix.) |
 | GPU (RTX 4090) | Memory | <6 GB | 15.7 GB APR, 17.1 GB GGUF | **FALSIFIED** (re-measured: APR=15.7 GB, GGUF=17.1 GB. CUDA pipeline memory, not format-specific. 6 GB target unrealistic for 7B.) |
 | CPU (AVX2) | Throughput (Q4K) | >5 tok/s | 6 tok/s | **Pass** (`apr qa` CPU measurement) |
 | CPU (AVX2) | TTFT | <5000ms | ~2500ms | **Pass** (estimated from 0.4 tok/s first-token timing) |
