@@ -35,8 +35,9 @@ use std::path::Path;
 #[cfg(feature = "hf-hub-integration")]
 pub use crate::format::converter_types::parse_import_error;
 pub use crate::format::converter_types::{
-    detect_sharded_model, Architecture, ImportError, ImportOptions, QuantizationType, ShardedIndex,
-    Source, TensorExpectation, ValidationConfig,
+    detect_sharded_model, Architecture, DequantizedTensors, ImportError, ImportOptions,
+    NativeF32Tensors, QuantizationType, ShardedIndex, Source, TensorExpectation, TensorProvenance,
+    ValidationConfig,
 };
 
 // PMAT-197: Import functions moved to import.rs that are used elsewhere
@@ -330,8 +331,11 @@ pub fn apr_convert<P: AsRef<Path>>(
     }
 
     // Step 2b: Apply other quantization types (Fp16, Int8, Int4)
+    // DOUBLE-QUANT-001: apr_convert always loads from file → NativeF32Tensors is safe here.
+    // The raw Q4K passthrough path (GH-181) above already handles quantized GGUF sources.
     let tensors = if let Some(quant_type) = &options.quantize {
-        quantize_tensors(&tensors, quant_type)?
+        let native = NativeF32Tensors::new(tensors);
+        quantize_tensors(&native, quant_type)?.into_inner()
     } else {
         tensors
     };
@@ -410,6 +414,45 @@ pub(crate) fn load_model_tensors(path: &Path) -> Result<BTreeMap<String, (Vec<f3
         "safetensors" => load_safetensors_tensors(path),
         "apr" => load_apr_tensors_f32(path),
         "gguf" => load_gguf_tensors_f32(path),
+        other => Err(AprenderError::FormatError {
+            message: format!("Unsupported format for conversion: .{other}"),
+        }),
+    }
+}
+
+/// Load tensors with provenance tracking (DOUBLE-QUANT-001).
+///
+/// Returns `TensorProvenance::Native` for SafeTensors and unquantized APR sources,
+/// `TensorProvenance::Dequantized` for GGUF and quantized APR sources.
+/// This enables compile-time prevention of double quantization.
+pub(crate) fn load_model_tensors_provenance(path: &Path) -> Result<TensorProvenance> {
+    let extension = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+
+    match extension {
+        "safetensors" => {
+            let tensors = load_safetensors_tensors(path)?;
+            Ok(TensorProvenance::Native(NativeF32Tensors::new(tensors)))
+        }
+        "apr" => {
+            // Check if source has quantized tensors
+            if let Some(quant) = export::detect_apr_quantization(path) {
+                let tensors = load_apr_tensors_f32(path)?;
+                Ok(TensorProvenance::Dequantized(DequantizedTensors::new(
+                    tensors, quant,
+                )))
+            } else {
+                let tensors = load_apr_tensors_f32(path)?;
+                Ok(TensorProvenance::Native(NativeF32Tensors::new(tensors)))
+            }
+        }
+        "gguf" => {
+            // GGUF models are always quantized (Q4K, Q6K, etc.)
+            let tensors = load_gguf_tensors_f32(path)?;
+            Ok(TensorProvenance::Dequantized(DequantizedTensors::new(
+                tensors,
+                QuantizationType::Q4K,
+            )))
+        }
         other => Err(AprenderError::FormatError {
             message: format!("Unsupported format for conversion: .{other}"),
         }),
@@ -642,19 +685,23 @@ pub(crate) fn calculate_tensor_size(tensors: &BTreeMap<String, (Vec<f32>, Vec<us
     tensors.values().map(|(data, _)| data.len() * 4).sum()
 }
 
-/// Apply quantization to tensors
+/// Apply quantization to tensors.
+///
+/// DOUBLE-QUANT-001: Only accepts `NativeF32Tensors` (natively F32 sources).
+/// Passing `DequantizedTensors` is a compile error, preventing the lossy
+/// Q4K→F32→Q4K double quantization that destroyed weight fidelity (PMAT-252).
 ///
 /// BUG-EXPORT-004 FIX: Embedding tensors are SKIPPED from quantization.
 /// Embeddings are lookup tables with small values that would round to zero
 /// under global-scale Int4/Int8 quantization (78% of values become zero).
 /// They are kept in F32 and exported as F32 in GGUF.
 pub(crate) fn quantize_tensors(
-    tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+    tensors: &NativeF32Tensors,
     quant_type: &QuantizationType,
-) -> Result<BTreeMap<String, (Vec<f32>, Vec<usize>)>> {
+) -> Result<NativeF32Tensors> {
     let mut result = BTreeMap::new();
 
-    for (name, (data, shape)) in tensors {
+    for (name, (data, shape)) in tensors.as_ref() {
         // BUG-EXPORT-004: Skip quantization for embedding tensors
         // Embeddings have small values (-0.3 to 0.2) that would mostly round to 0
         // under global-scale Int4 quantization (scale=0.042, values<0.021 → 0)
@@ -682,7 +729,7 @@ pub(crate) fn quantize_tensors(
         result.insert(name.clone(), (quantized_data, shape.clone()));
     }
 
-    Ok(result)
+    Ok(NativeF32Tensors::new(result))
 }
 
 // NOTE: dequantize_q4_k_to_f32 moved to trueno-quant crate (Toyota Way consolidation)

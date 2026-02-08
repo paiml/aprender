@@ -6,6 +6,7 @@
 use crate::error::{AprenderError, Result};
 use crate::format::validation::TensorStats;
 use crate::format::Compression;
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 // ============================================================================
@@ -369,6 +370,109 @@ pub enum QuantizationType {
     /// Achieves ~7x memory bandwidth improvement over F32
     Q4K,
 }
+
+// ============================================================================
+// DOUBLE-QUANT-001: Compile-Time Double Quantization Prevention
+// ============================================================================
+
+/// F32 tensors that were NATIVELY F32 (e.g., SafeTensors F32/BF16 sources).
+///
+/// This is the ONLY type that `quantize_tensors()` accepts.
+/// Constructed from sources known to be unquantized (SafeTensors, F32 APR files).
+///
+/// There is intentionally NO `From<DequantizedTensors> for NativeF32Tensors` —
+/// attempting to pass dequantized tensors to `quantize_tensors()` is a compile error.
+#[derive(Debug)]
+pub struct NativeF32Tensors(BTreeMap<String, (Vec<f32>, Vec<usize>)>);
+
+impl NativeF32Tensors {
+    /// Wrap a tensor map as natively F32.
+    #[must_use]
+    pub fn new(map: BTreeMap<String, (Vec<f32>, Vec<usize>)>) -> Self {
+        Self(map)
+    }
+
+    /// Consume the wrapper and return the inner map.
+    #[must_use]
+    pub fn into_inner(self) -> BTreeMap<String, (Vec<f32>, Vec<usize>)> {
+        self.0
+    }
+}
+
+impl AsRef<BTreeMap<String, (Vec<f32>, Vec<usize>)>> for NativeF32Tensors {
+    fn as_ref(&self) -> &BTreeMap<String, (Vec<f32>, Vec<usize>)> {
+        &self.0
+    }
+}
+
+/// F32 tensors that were DEQUANTIZED from a quantized format (Q4K, Q6K, etc.).
+///
+/// CANNOT be passed to `quantize_tensors()` — compile error.
+/// Re-quantizing dequantized data is a lossy double quantization that destroys
+/// weight fidelity (PMAT-252).
+#[derive(Debug)]
+pub struct DequantizedTensors {
+    tensors: BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+    /// The original quantization format these tensors came from.
+    pub original_quant: QuantizationType,
+}
+
+impl DequantizedTensors {
+    /// Wrap a tensor map as dequantized from the given quantization type.
+    #[must_use]
+    pub fn new(map: BTreeMap<String, (Vec<f32>, Vec<usize>)>, quant: QuantizationType) -> Self {
+        Self {
+            tensors: map,
+            original_quant: quant,
+        }
+    }
+
+    /// Consume the wrapper and return the inner map.
+    #[must_use]
+    pub fn into_inner(self) -> BTreeMap<String, (Vec<f32>, Vec<usize>)> {
+        self.tensors
+    }
+}
+
+impl AsRef<BTreeMap<String, (Vec<f32>, Vec<usize>)>> for DequantizedTensors {
+    fn as_ref(&self) -> &BTreeMap<String, (Vec<f32>, Vec<usize>)> {
+        &self.tensors
+    }
+}
+
+/// Tensor provenance: either natively F32 or dequantized from quantized format.
+///
+/// Used by export/convert pipelines to enforce compile-time safety against
+/// double quantization (DOUBLE-QUANT-001).
+#[derive(Debug)]
+pub enum TensorProvenance {
+    /// Tensors that are natively F32 — safe to quantize.
+    Native(NativeF32Tensors),
+    /// Tensors dequantized from a quantized format — must NOT be re-quantized.
+    Dequantized(DequantizedTensors),
+}
+
+impl TensorProvenance {
+    /// Get a read-only reference to the underlying tensor map.
+    #[must_use]
+    pub fn as_map(&self) -> &BTreeMap<String, (Vec<f32>, Vec<usize>)> {
+        match self {
+            Self::Native(n) => n.as_ref(),
+            Self::Dequantized(d) => d.as_ref(),
+        }
+    }
+
+    /// Consume the provenance wrapper and return the inner map.
+    #[must_use]
+    pub fn into_map(self) -> BTreeMap<String, (Vec<f32>, Vec<usize>)> {
+        match self {
+            Self::Native(n) => n.into_inner(),
+            Self::Dequantized(d) => d.into_inner(),
+        }
+    }
+}
+
+// ============================================================================
 
 /// Options for the import pipeline
 #[derive(Debug, Clone)]

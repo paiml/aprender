@@ -643,7 +643,9 @@ mod tests_quantization {
         let mut tensors = BTreeMap::new();
         tensors.insert("test".to_string(), (vec![1.0f32, -1.0, 0.5], vec![3]));
 
-        let result = quantize_tensors(&tensors, &QuantizationType::Int8).unwrap();
+        let native = NativeF32Tensors::new(tensors);
+        let result = quantize_tensors(&native, &QuantizationType::Int8).unwrap();
+        let result = result.as_ref();
 
         assert_eq!(result.len(), 1);
         assert!(result.contains_key("test"));

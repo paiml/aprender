@@ -1050,7 +1050,9 @@ fn test_quantize_tensors_skips_embeddings() {
         (weight_data.clone(), vec![16, 16]),
     );
 
-    let result = quantize_tensors(&tensors, &QuantizationType::Int4).expect("quantize");
+    let native = NativeF32Tensors::new(tensors);
+    let result = quantize_tensors(&native, &QuantizationType::Int4).expect("quantize");
+    let result = result.as_ref();
 
     // Embedding should be unchanged (skipped)
     let (embed_q, _) = result.get("model.embed_tokens.weight").expect("embed");
@@ -1083,7 +1085,9 @@ fn test_quantize_tensors_skips_all_embedding_variants() {
         (data.clone(), vec![8, 8]),
     );
 
-    let result = quantize_tensors(&tensors, &QuantizationType::Int8).expect("quantize");
+    let native = NativeF32Tensors::new(tensors);
+    let result = quantize_tensors(&native, &QuantizationType::Int8).expect("quantize");
+    let result = result.as_ref();
 
     for name in [
         "embed_tokens.weight",
@@ -1133,6 +1137,73 @@ fn test_apr_converter_builder_chain() {
     assert!(debug.contains("Qwen2"));
     assert!(debug.contains("Int8"));
 }
+
+// ============================================================================
+// DOUBLE-QUANT-001: Compile-time double quantization prevention
+// ============================================================================
+
+#[test]
+fn test_double_quant_001_native_tensors_accepted() {
+    // NativeF32Tensors should be accepted by quantize_tensors
+    let mut map = BTreeMap::new();
+    map.insert("w".to_string(), (vec![1.0_f32, 2.0, 3.0], vec![3]));
+    let native = NativeF32Tensors::new(map);
+    let result = quantize_tensors(&native, &QuantizationType::Int8);
+    assert!(result.is_ok(), "native tensors should be quantizable");
+}
+
+#[test]
+fn test_double_quant_001_dequantized_type_exists() {
+    // Verify DequantizedTensors can be constructed (but NOT passed to quantize_tensors)
+    let map = BTreeMap::new();
+    let deq = DequantizedTensors::new(map, QuantizationType::Q4K);
+    assert_eq!(deq.original_quant, QuantizationType::Q4K);
+    // The following would NOT compile — compile-time enforcement:
+    // quantize_tensors(&deq, &QuantizationType::Int8);
+}
+
+#[test]
+fn test_double_quant_001_provenance_native_variant() {
+    let mut map = BTreeMap::new();
+    map.insert("w".to_string(), (vec![1.0_f32], vec![1]));
+    let native = NativeF32Tensors::new(map);
+    let prov = TensorProvenance::Native(native);
+    assert_eq!(prov.as_map().len(), 1);
+    let inner = prov.into_map();
+    assert!(inner.contains_key("w"));
+}
+
+#[test]
+fn test_double_quant_001_provenance_dequantized_variant() {
+    let mut map = BTreeMap::new();
+    map.insert("w".to_string(), (vec![1.0_f32], vec![1]));
+    let deq = DequantizedTensors::new(map, QuantizationType::Q4K);
+    let prov = TensorProvenance::Dequantized(deq);
+    assert_eq!(prov.as_map().len(), 1);
+    let inner = prov.into_map();
+    assert!(inner.contains_key("w"));
+}
+
+#[test]
+fn test_double_quant_001_native_into_inner_roundtrip() {
+    let mut map = BTreeMap::new();
+    map.insert("t".to_string(), (vec![42.0_f32], vec![1]));
+    let native = NativeF32Tensors::new(map);
+    let inner = native.into_inner();
+    assert_eq!(inner["t"].0, vec![42.0_f32]);
+}
+
+#[test]
+fn test_double_quant_001_dequantized_into_inner_roundtrip() {
+    let mut map = BTreeMap::new();
+    map.insert("t".to_string(), (vec![42.0_f32], vec![1]));
+    let deq = DequantizedTensors::new(map, QuantizationType::Fp16);
+    assert_eq!(deq.original_quant, QuantizationType::Fp16);
+    let inner = deq.into_inner();
+    assert_eq!(inner["t"].0, vec![42.0_f32]);
+}
+
+// ============================================================================
 
 #[test]
 fn test_apr_converter_convert_without_source_fails() {

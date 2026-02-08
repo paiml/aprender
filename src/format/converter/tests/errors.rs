@@ -815,7 +815,9 @@ mod tests_import_errors {
             ),
         );
 
-        let result = quantize_tensors(&tensors, &QuantizationType::Q4K).unwrap();
+        let native = NativeF32Tensors::new(tensors);
+        let result = quantize_tensors(&native, &QuantizationType::Q4K).unwrap();
+        let result = result.as_ref();
 
         assert_eq!(result.len(), 1);
         assert!(result.contains_key("test"));
@@ -1050,24 +1052,27 @@ mod tests_import_errors {
     fn test_quantize_tensors_fp16() {
         let mut tensors = BTreeMap::new();
         tensors.insert("w".to_string(), (vec![1.0, 2.0, 3.0], vec![3]));
-        let result = quantize_tensors(&tensors, &QuantizationType::Fp16).expect("quantize");
-        assert!(result.contains_key("w"));
+        let native = NativeF32Tensors::new(tensors);
+        let result = quantize_tensors(&native, &QuantizationType::Fp16).expect("quantize");
+        assert!(result.as_ref().contains_key("w"));
     }
 
     #[test]
     fn test_quantize_tensors_int8() {
         let mut tensors = BTreeMap::new();
         tensors.insert("w".to_string(), (vec![1.0, -1.0, 0.5], vec![3]));
-        let result = quantize_tensors(&tensors, &QuantizationType::Int8).expect("quantize");
-        assert!(result.contains_key("w"));
+        let native = NativeF32Tensors::new(tensors);
+        let result = quantize_tensors(&native, &QuantizationType::Int8).expect("quantize");
+        assert!(result.as_ref().contains_key("w"));
     }
 
     #[test]
     fn test_quantize_tensors_int4() {
         let mut tensors = BTreeMap::new();
         tensors.insert("w".to_string(), (vec![0.5, -0.5, 0.0], vec![3]));
-        let result = quantize_tensors(&tensors, &QuantizationType::Int4).expect("quantize");
-        assert!(result.contains_key("w"));
+        let native = NativeF32Tensors::new(tensors);
+        let result = quantize_tensors(&native, &QuantizationType::Int4).expect("quantize");
+        assert!(result.as_ref().contains_key("w"));
     }
 
     #[test]

@@ -601,9 +601,11 @@ fn test_quantize_tensors_skips_embeddings() {
         (vec![1.0, 2.0, 3.0, 4.0], vec![2, 2]),
     );
 
-    let result = quantize_tensors(&tensors, &QuantizationType::Int8);
+    let native = NativeF32Tensors::new(tensors);
+    let result = quantize_tensors(&native, &QuantizationType::Int8);
     assert!(result.is_ok());
     let quantized = result.expect("quantize should succeed");
+    let quantized = quantized.as_ref();
 
     // Embedding should be unchanged (F32 preserved)
     let embed = &quantized["model.embed_tokens.weight"].0;
@@ -625,7 +627,8 @@ fn test_quantize_tensors_fp16() {
         "some.weight".to_string(),
         (vec![1.0, -1.0, 0.5, 0.0], vec![2, 2]),
     );
-    let result = quantize_tensors(&tensors, &QuantizationType::Fp16);
+    let native = NativeF32Tensors::new(tensors);
+    let result = quantize_tensors(&native, &QuantizationType::Fp16);
     assert!(result.is_ok());
 }
 
@@ -636,7 +639,8 @@ fn test_quantize_tensors_int4() {
         "some.weight".to_string(),
         (vec![1.0, -1.0, 0.5, 0.0], vec![2, 2]),
     );
-    let result = quantize_tensors(&tensors, &QuantizationType::Int4);
+    let native = NativeF32Tensors::new(tensors);
+    let result = quantize_tensors(&native, &QuantizationType::Int4);
     assert!(result.is_ok());
 }
 
@@ -647,10 +651,11 @@ fn test_quantize_tensors_skips_token_embd() {
         "token_embd.weight".to_string(),
         (vec![0.01, 0.02, 0.03, 0.04], vec![2, 2]),
     );
-    let result = quantize_tensors(&tensors, &QuantizationType::Int4);
+    let native = NativeF32Tensors::new(tensors);
+    let result = quantize_tensors(&native, &QuantizationType::Int4);
     assert!(result.is_ok());
     let quantized = result.expect("quantize should succeed");
-    let embed = &quantized["token_embd.weight"].0;
+    let embed = &quantized.as_ref()["token_embd.weight"].0;
     assert!(
         (embed[0] - 0.01).abs() < 1e-6,
         "token_embd should not be quantized"
@@ -664,10 +669,11 @@ fn test_quantize_tensors_skips_wte() {
         "wte.weight".to_string(),
         (vec![0.01, 0.02, 0.03, 0.04], vec![2, 2]),
     );
-    let result = quantize_tensors(&tensors, &QuantizationType::Int8);
+    let native = NativeF32Tensors::new(tensors);
+    let result = quantize_tensors(&native, &QuantizationType::Int8);
     assert!(result.is_ok());
     let quantized = result.expect("quantize should succeed");
-    let embed = &quantized["wte.weight"].0;
+    let embed = &quantized.as_ref()["wte.weight"].0;
     assert!(
         (embed[0] - 0.01).abs() < 1e-6,
         "wte should not be quantized"
@@ -681,10 +687,11 @@ fn test_quantize_tensors_skips_word_embeddings() {
         "word_embeddings.weight".to_string(),
         (vec![0.01, 0.02], vec![1, 2]),
     );
-    let result = quantize_tensors(&tensors, &QuantizationType::Fp16);
+    let native = NativeF32Tensors::new(tensors);
+    let result = quantize_tensors(&native, &QuantizationType::Fp16);
     assert!(result.is_ok());
     let quantized = result.expect("quantize should succeed");
-    let embed = &quantized["word_embeddings.weight"].0;
+    let embed = &quantized.as_ref()["word_embeddings.weight"].0;
     assert!(
         (embed[0] - 0.01).abs() < 1e-6,
         "word_embeddings should not be quantized"
