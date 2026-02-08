@@ -6845,4 +6845,93 @@ mod tests {
         assert_eq!(opts.preserve_metadata, cloned.preserve_metadata);
         assert_eq!(opts.add_provenance, cloned.add_provenance);
     }
+
+    // ========================================================================
+    // F-ROSETTA-004: Fingerprint detects tensor corruption
+    // Flip 1 byte in tensor data → checksum must differ
+    // ========================================================================
+
+    #[test]
+    fn t_f_rosetta_004_fingerprint_detects_single_byte_corruption() {
+        // Create realistic tensor data (weight-like values)
+        let original: Vec<f32> = (0..1000)
+            .map(|i| ((i as f32) * 0.00314159 - 1.5).sin() * 0.02)
+            .collect();
+
+        // Compute baseline fingerprint
+        let (mean_a, std_a, min_a, max_a, _, _, _, _, _, _, _, _, checksum_a) =
+            compute_tensor_stats(&original);
+
+        // Corrupt exactly 1 float value (flip a bit in byte representation)
+        let mut corrupted = original.clone();
+        // Flip the sign bit of element 500 (significant change)
+        let bits = corrupted[500].to_bits() ^ 0x8000_0000;
+        corrupted[500] = f32::from_bits(bits);
+
+        // Compute corrupted fingerprint
+        let (mean_b, std_b, min_b, max_b, _, _, _, _, _, _, _, _, checksum_b) =
+            compute_tensor_stats(&corrupted);
+
+        // PRIMARY ASSERTION: checksum MUST differ
+        assert_ne!(
+            checksum_a, checksum_b,
+            "F-ROSETTA-004: Checksum must detect single-byte corruption"
+        );
+
+        // SECONDARY: at least one stat must differ (mean, std, min, or max)
+        let stats_differ = (mean_a - mean_b).abs() > 1e-10
+            || (std_a - std_b).abs() > 1e-10
+            || (min_a - min_b).abs() > 1e-10
+            || (max_a - max_b).abs() > 1e-10;
+        assert!(
+            stats_differ,
+            "F-ROSETTA-004: At least one stat must differ after corruption"
+        );
+    }
+
+    #[test]
+    fn t_f_rosetta_004_fingerprint_stable_for_identical_data() {
+        let data: Vec<f32> = (0..500)
+            .map(|i| ((i as f32) * 0.007 - 1.75).cos() * 0.1)
+            .collect();
+
+        let (mean_a, std_a, _, _, _, _, _, _, _, _, _, _, checksum_a) =
+            compute_tensor_stats(&data);
+        let (mean_b, std_b, _, _, _, _, _, _, _, _, _, _, checksum_b) =
+            compute_tensor_stats(&data);
+
+        assert_eq!(
+            checksum_a, checksum_b,
+            "Identical data must produce identical checksums"
+        );
+        assert!(
+            (mean_a - mean_b).abs() < f32::EPSILON,
+            "Identical data must produce identical means"
+        );
+        assert!(
+            (std_a - std_b).abs() < f32::EPSILON,
+            "Identical data must produce identical stds"
+        );
+    }
+
+    #[test]
+    fn t_f_rosetta_004_fingerprint_detects_small_perturbation() {
+        // Even a tiny perturbation (1 ULP change) must be detected by checksum
+        let original: Vec<f32> = (0..100)
+            .map(|i| (i as f32) * 0.01)
+            .collect();
+
+        let mut perturbed = original.clone();
+        // Add 1 ULP (unit of least precision) to element 50
+        let bits = perturbed[50].to_bits() + 1;
+        perturbed[50] = f32::from_bits(bits);
+
+        let (_, _, _, _, _, _, _, _, _, _, _, _, checksum_a) = compute_tensor_stats(&original);
+        let (_, _, _, _, _, _, _, _, _, _, _, _, checksum_b) = compute_tensor_stats(&perturbed);
+
+        assert_ne!(
+            checksum_a, checksum_b,
+            "F-ROSETTA-004: Even 1 ULP change must produce different checksum"
+        );
+    }
 }
