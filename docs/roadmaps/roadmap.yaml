@@ -3320,3 +3320,36 @@ roadmap:
   - inference
   - defect
   notes: null
+- id: PMAT-233
+  github_issue: null
+  item_type: task
+  title: 'PMAT-260: Investigate 23.7 GB RSS for 7B Q4K (4 GB on disk) — 6x model size'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-02-08T14:54:39Z
+  updated: 2026-02-08T14:54:43.951709339+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Falsified: F-PERF GPU/CPU memory <6 GB shows 23.7 GB. 4 GB Q4K model using 6x memory suggests unnecessary copies or leaks. Similar pattern to GH-199 where model was cloned twice.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-234
+  github_issue: null
+  item_type: task
+  title: 'PMAT-234: F-GT-001 enforce-provenance flag + F-GT-002 mixed quant warning'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-02-08T15:09:13Z
+  updated: 2026-02-08T15:09:17.130946832+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
