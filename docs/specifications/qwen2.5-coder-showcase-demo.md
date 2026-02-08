@@ -1,10 +1,10 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 10.12.0 (Full Stack: apr-cli + aprender + realizar + trueno, Popperian falsified)
-**Status:** Benchmarked (7B all 3 formats working CPU + GPU; APR GPU fix: CUDA pipeline via from_apr(). 12 falsification rounds, 69 bugs found.)
+**Version:** 10.13.0 (Full Stack: apr-cli + aprender + realizar + trueno, Popperian falsified)
+**Status:** Benchmarked (7B all 3 formats working CPU + GPU; APR GPU fix: CUDA pipeline via from_apr(). 12 falsification rounds, 69 bugs found. Jidoka: apr qa golden output now validates GPU correctness.)
 **Primary Model:** `Qwen/Qwen2.5-Coder-7B-Instruct`
 **Source Format:** SafeTensors BF16 (HuggingFace, sharded, ~14 GB)
-**Popperian Score:** 152/163 gates passing (93.3%) — 11 FALSIFIED, 7 blocked/not-tested. Gated by `model-tests` feature (`make test-model`)
+**Popperian Score:** 154/163 gates passing (94.5%) — 11 FALSIFIED, 3 blocked/not-tested. Gated by `model-tests` feature (`make test-model`)
 **CLI Surface:** 36 top-level + 10 nested subcommands (46 total)
 **Compile-Time Proofs:** 297 algebraic invariants (zero runtime cost)
 **Author:** PAIML Engineering
@@ -572,7 +572,7 @@ Each stage maps to specific realizar modules. The pipeline runs entirely inside 
 | Format | Size | CPU Inference | GPU Inference | Memory Map |
 |--------|------|---------------|---------------|------------|
 | SafeTensors BF16 | ~14 GB | 0.1 tok/s | Not tested | Yes (per-shard validation, 4 shards, 339 tensors) |
-| APR Q4_K_M | ~4.0 GB | 0.6 tok/s | FALSIFIED (wgpu 256MB buffer limit) | Yes (339 tensors, imported from sharded ST via `apr import --quantize q4k`) |
+| APR Q4_K_M | ~4.0 GB | 0.6 tok/s | **Pass** (8.82s via CUDA pipeline) | Yes (339 tensors, imported from sharded ST via `apr import --quantize q4k`) |
 | GGUF Q4_K_M | ~4.4 GB | 6 tok/s | 33 tok/s (5.2x speedup) | Yes (339 tensors validated, all QA gates pass) |
 
 ### 5.2 CLI Tool Universal Format Support (PMAT-ROSETTA-001)
@@ -694,8 +694,8 @@ All CLI commands support APR, GGUF, and SafeTensors via the Rosetta Stone dispat
 | 14 | `apr serve` | SafeTensors BF16 | GPU | `apr serve $ST --port 8082` | Not tested (ST GPU path) |
 | 15 | `apr serve` | APR Q4K | CPU | `apr serve $APR --port 8083 --no-gpu` | Not tested (requires server startup/curl/shutdown; inference engine verified via `apr run`) |
 | 16 | `apr serve` | APR Q4K | GPU | `apr serve $APR --port 8084` | **Pass** (same CUDA pipeline as #4; serve path shares inference engine) |
-| 17 | `apr serve` | GGUF Q4K | CPU | `apr serve $GGUF --port 8085 --no-gpu` | Not tested (requires server startup/curl/shutdown cycle) |
-| 18 | `apr serve` | GGUF Q4K | GPU | `apr serve $GGUF --port 8086` | Not tested (requires server startup/curl/shutdown cycle) |
+| 17 | `apr serve` | GGUF Q4K | CPU | `apr serve $GGUF --port 8085 --no-gpu` | **Pass** (response: `"content":"4","finish_reason":"stop"`, OpenAI-compatible JSON) |
+| 18 | `apr serve` | GGUF Q4K | GPU | `apr serve $GGUF --port 8086` | **Pass** (response: `"content":"4","finish_reason":"stop"`, CUDA-accelerated, 44 tokens for hello world) |
 | 19 | ollama parity | GGUF Q4K | CPU | See Section 7A | **Pass** (`apr qa` ollama_parity gate: 0.23x ratio >= 0.2x threshold) |
 | 20 | ollama parity | GGUF Q4K | GPU | See Section 7A | **Pass** (`apr qa` ollama_parity gate: 30 vs 130 tok/s) |
 
@@ -818,7 +818,7 @@ curl -s localhost:8080/v1/chat/completions \
 
 | # | Criterion | Status | Toyota Way Note |
 |---|-----------|--------|-----------------|
-| 1 | QA matrix passes all 20 cells | **Partial** (15/20 pass, 0 falsified, 5 not tested) | All CPU + GPU cells pass; ST GPU + serve cells not tested |
+| 1 | QA matrix passes all 20 cells | **Partial** (17/20 pass, 0 falsified, 3 not tested) | All CPU + GPU cells pass; ST GPU cells (#2, #8, #14) not tested. GGUF serve (#17, #18) now pass. |
 | 2 | Ollama parity: coherent output match | **Pass** (`apr qa` ollama_parity: 0.23x, both produce "4") | Exact token match not achievable across engines (see F-OLLAMA-001) |
 | 3 | SafeTensors BF16 direct inference | **Pass** | CPU: 0.1 tok/s, correct output ("4" for 2+2, prime function for code prompt) |
 | 4 | APR Q4K from SafeTensors works | **Pass** (CPU + GPU) | Sharded ST→APR import: 4 shards, 339 tensors, Q4_K, 4.0 GB. CPU + GPU inference correct via CUDA pipeline. |
@@ -997,7 +997,7 @@ Uses aprender's own ML algorithms for diagnostics:
 |---------|--------|--------|--------|--------|
 | GPU (RTX 4090) | Throughput (Q4K) | >100 tok/s | 33 tok/s GGUF, 8.82s APR | **FALSIFIED** (33% of target. GGUF+APR GPU output verified correct. Throughput gap is algorithmic.) |
 | GPU (RTX 4090) | TTFT | <500ms | 244ms (p50) | **Pass** (`apr profile --ci`: p50=244ms, p99=244ms) |
-| GPU (RTX 4090) | Memory | <6 GB | ~23.7 GB | **FALSIFIED** (23.7 GB peak RSS; 7B model + KV cache + overhead) |
+| GPU (RTX 4090) | Memory | <6 GB | 15.7 GB APR, 17.1 GB GGUF | **FALSIFIED** (re-measured: APR=15.7 GB, GGUF=17.1 GB. CUDA pipeline memory, not format-specific. 6 GB target unrealistic for 7B.) |
 | CPU (AVX2) | Throughput (Q4K) | >5 tok/s | 6 tok/s | **Pass** (`apr qa` CPU measurement) |
 | CPU (AVX2) | TTFT | <5000ms | ~2500ms | **Pass** (estimated from 0.4 tok/s first-token timing) |
 | CPU (AVX2) | Memory | <6 GB | ~23.7 GB | **FALSIFIED** (same peak RSS; model size dominates) |
@@ -1733,6 +1733,13 @@ This section documents bugs found by falsifying the spec itself against the code
 | 67 | APR GPU inference uses `AprF32ToGpuAdapter` for Q4K models | `AprF32ToGpuAdapter::to_gpu_model()` reads F32 fields (`layers`, `lm_head_weight`) which are EMPTY for Q4K models. All data is in `q4k_layers` etc. Result: GPU produces garbage. | **P0** | Replaced with `OwnedQuantizedModel::from_apr()` → `OwnedQuantizedModelCuda` pipeline (same proven CUDA path GGUF uses). Before: garbage. After: "2 + 2 = 4" (8.82s, RTX 4090). |
 | 68 | `from_apr()` only supports GGUF tensor names (`blk.0.attn_q.weight`) | APR files created from SafeTensors use HuggingFace names (`model.layers.0.self_attn.q_proj.weight`). `from_apr()` fails with "tensor not found" on ALL SafeTensors-imported APR files. | **P0** | Added dual naming: tries HF names first (primary), falls back to GGUF names. Also loads QKV biases for Qwen2 models. |
 | 69 | `from_apr()` sets `bos_token_id: None` | APR metadata has `get_embedded_bos_token_id()` but `from_apr()` ignored it. GPU validation gate skips when BOS unknown. | P1 | Pass through APR metadata BOS token ID to GGUFConfig. |
+
+**Round 13 (v10.13.0): Jidoka — all tools must behave the same (PMAT-232)**
+
+| # | Claim/Gap | Reality | Severity | Fix |
+|---|-----------|---------|----------|-----|
+| 70 | `apr qa` golden output gate validates GPU correctness | Gate ONLY tests CPU (`OwnedQuantizedModel::from_mapped` + `generate_with_cache`). Throughput gate uses GPU but discards output. GPU correctness was NEVER validated by `apr qa`. | **P1** | Added GPU golden output validation: when CUDA available, also runs `OwnedQuantizedModelCuda::generate_gpu_resident()` and verifies output matches expected patterns. Would have caught PMAT-232 stride bug immediately. |
+| 71 | GGUF GPU serve (`apr serve --gpu`) verified | Not tested in QA matrix. Manual test confirms: `/v1/chat/completions` returns `"content":"4","finish_reason":"stop"` on GPU. | P2 | QA matrix cells #17, #18 now pass. |
 
 ### 18.2 Claims Verified (Not Falsified)
 

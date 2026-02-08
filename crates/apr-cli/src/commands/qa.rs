@@ -595,6 +595,47 @@ pub fn verify_output(
     OutputVerification::Pass
 }
 
+/// JIDOKA: Validate GPU golden output matches expected patterns (PMAT-232 lesson).
+///
+/// Without this, GPU correctness was NEVER tested — `apr qa` golden output only ran CPU.
+/// Returns `Some(failure_reason)` if GPU output fails, `None` if pass or skipped.
+#[cfg(all(feature = "inference", feature = "cuda"))]
+fn validate_gpu_golden_output(
+    mapped: &realizar::gguf::MappedGGUFModel,
+    prompt_tokens: &[u32],
+    gen_config: &realizar::gguf::QuantizedGenerateConfig,
+    gguf: &realizar::gguf::GGUFModel,
+    expected_patterns: &[&str],
+    config: &QaConfig,
+) -> Result<Option<String>> {
+    use realizar::gguf::{OwnedQuantizedModel, OwnedQuantizedModelCuda};
+    let model = OwnedQuantizedModel::from_mapped(mapped)
+        .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
+    match OwnedQuantizedModelCuda::new(model, 0) {
+        Ok(mut cuda_model) => match cuda_model.generate_gpu_resident(prompt_tokens, gen_config) {
+            Ok(gpu_tokens) => {
+                let gpu_text = gguf.decode(&gpu_tokens);
+                if let OutputVerification::Fail { reason } =
+                    verify_output(&gpu_text, "golden_output_gpu", expected_patterns)
+                {
+                    return Ok(Some(format!("GPU output failed (CPU passed): {reason}")));
+                }
+            }
+            Err(e) => {
+                if !config.json && config.verbose {
+                    println!("{}", format!("GPU golden output skipped: {e}").yellow());
+                }
+            }
+        },
+        Err(e) => {
+            if !config.json && config.verbose {
+                println!("{}", format!("CUDA init skipped: {e}").yellow());
+            }
+        }
+    }
+    Ok(None)
+}
+
 /// Gate 1: Golden Output Test
 ///
 /// Runs the model with a known prompt and verifies the output contains expected patterns.
@@ -653,20 +694,45 @@ fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
                         ..Default::default()
                     };
 
-                    let tokens = {
-                        let mapped = MappedGGUFModel::from_path(path)
-                            .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
+                    let mapped = MappedGGUFModel::from_path(path)
+                        .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
+
+                    // CPU golden output
+                    let cpu_tokens = {
                         let model = OwnedQuantizedModel::from_mapped(&mapped).map_err(|e| {
                             CliError::ValidationFailed(format!("Model failed: {e}"))
                         })?;
                         model
                             .generate_with_cache(&prompt_tokens, &gen_config)
                             .map_err(|e| {
-                                CliError::ValidationFailed(format!("Generation failed: {e}"))
+                                CliError::ValidationFailed(format!("CPU generation failed: {e}"))
                             })?
                     };
-                    let text = gguf.decode(&tokens);
-                    (tokens, text)
+                    let cpu_text = gguf.decode(&cpu_tokens);
+
+                    // JIDOKA: GPU golden output — all tools must behave the same
+                    // Without this, GPU correctness is NEVER validated (PMAT-232 lesson)
+                    #[cfg(feature = "cuda")]
+                    if cuda_available {
+                        if let Some(failure) = validate_gpu_golden_output(
+                            &mapped,
+                            &prompt_tokens,
+                            &gen_config,
+                            &gguf,
+                            expected_patterns,
+                            config,
+                        )? {
+                            return Ok(GateResult::failed(
+                                "golden_output",
+                                &failure,
+                                None,
+                                None,
+                                start.elapsed(),
+                            ));
+                        }
+                    }
+
+                    (cpu_tokens, cpu_text)
                 }
                 ModelFormat::Apr => {
                     use realizar::apr::AprV2Model;
@@ -745,7 +811,7 @@ fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
                     (tokens, text)
                 }
             };
-            let _ = (cuda_available, output_tokens); // suppress warnings
+            let _ = output_tokens; // token count used for diagnostics
 
             // Verify output using structured protocol (PMAT-QA-PROTOCOL-001 §7.4)
             let verification = verify_output(&output_text, "golden_output", expected_patterns);

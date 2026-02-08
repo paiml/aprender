@@ -156,8 +156,8 @@ alsa = { version = "0.9", optional = true }  # ALSA bindings for Linux audio cap
 rayon = { version = "1.10", optional = true }
 
 # Core compute primitives - SIMD-accelerated tensor operations
-# v0.14.3 fixes WASM compilation (hostname crate gated for native-only)
-trueno = "0.14.3"
+# v0.14.5: wgpu adapter limits fix (buffer >256MB for 7B+ models)
+trueno = { version = "0.14.5", path = "../trueno" }
 
 # K-quantization formats (Q4_K, Q5_K, Q6_K) - Toyota Way: ONE source of truth
 # Path dependency until published to crates.io
