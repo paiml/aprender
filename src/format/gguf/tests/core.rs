@@ -965,6 +965,7 @@ fn test_gguf_tokenizer_has_vocabulary_false() {
         eos_token_id: None,
         architecture: None,
         model_name: None,
+        ..Default::default()
     };
     assert!(!tokenizer.has_vocabulary());
 }
@@ -979,6 +980,7 @@ fn test_gguf_tokenizer_has_vocabulary_true() {
         eos_token_id: None,
         architecture: None,
         model_name: None,
+        ..Default::default()
     };
     assert!(tokenizer.has_vocabulary());
 }
@@ -993,6 +995,7 @@ fn test_gguf_tokenizer_vocab_size() {
         eos_token_id: Some(2),
         architecture: Some("llama".into()),
         model_name: Some("Test Model".into()),
+        ..Default::default()
     };
     assert_eq!(tokenizer.vocab_size(), 3);
     assert!(format!("{tokenizer:?}").contains("GgufTokenizer"));
@@ -1028,6 +1031,7 @@ fn test_gguf_load_result_debug() {
             eos_token_id: None,
             architecture: None,
             model_name: None,
+            ..Default::default()
         },
         model_config: GgufModelConfig {
             architecture: None,
@@ -1068,6 +1072,7 @@ fn test_gguf_raw_load_result_debug() {
             eos_token_id: None,
             architecture: None,
             model_name: None,
+            ..Default::default()
         },
         model_config: GgufModelConfig {
             architecture: None,

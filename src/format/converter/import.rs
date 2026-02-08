@@ -822,6 +822,7 @@ pub(crate) fn parse_tokenizer_json(
         eos_token_id,
         architecture: None,
         model_name: None,
+        ..Default::default()
     })
 }
 
@@ -1033,6 +1034,7 @@ pub(crate) fn load_tokenizer_from_explicit_path(tokenizer_path: &Path) -> Option
         eos_token_id,
         architecture: None,
         model_name: None,
+        ..Default::default()
     })
 }
 

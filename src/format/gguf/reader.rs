@@ -698,6 +698,57 @@ impl GgufReader {
         }
     }
 
+    // ========================================================================
+    // GH-253: Tokenizer metadata accessors for GGUF export round-trip
+    // ========================================================================
+
+    /// Get per-token type array (tokenizer.ggml.token_type)
+    /// Values: 1=normal, 2=unknown, 3=control/special, 4=user_defined, etc.
+    #[must_use]
+    pub fn token_type(&self) -> Option<Vec<i32>> {
+        if let Some(GgufValue::ArrayInt32(types)) = self.metadata.get("tokenizer.ggml.token_type") {
+            if types.is_empty() {
+                None
+            } else {
+                Some(types.clone())
+            }
+        } else {
+            None
+        }
+    }
+
+    /// Get padding token ID (tokenizer.ggml.padding_token_id)
+    #[must_use]
+    pub fn padding_token_id(&self) -> Option<u32> {
+        if let Some(GgufValue::Uint32(id)) =
+            self.metadata.get("tokenizer.ggml.padding_token_id")
+        {
+            Some(*id)
+        } else {
+            None
+        }
+    }
+
+    /// Get add_bos_token flag (tokenizer.ggml.add_bos_token)
+    #[must_use]
+    pub fn add_bos_token(&self) -> Option<bool> {
+        if let Some(GgufValue::Bool(v)) = self.metadata.get("tokenizer.ggml.add_bos_token") {
+            Some(*v)
+        } else {
+            None
+        }
+    }
+
+    /// Get chat template (tokenizer.chat_template)
+    #[must_use]
+    pub fn chat_template(&self) -> Option<String> {
+        if let Some(GgufValue::String(tmpl)) = self.metadata.get("tokenizer.chat_template") {
+            Some(tmpl.clone())
+        } else {
+            None
+        }
+    }
+
     /// Extract a tensor as F32 data (dequantizing if needed)
     pub fn get_tensor_f32(&self, name: &str) -> Result<(Vec<f32>, Vec<usize>)> {
         let meta = self

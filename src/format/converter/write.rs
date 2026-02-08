@@ -453,6 +453,36 @@ pub(crate) fn write_apr_file_raw(
                 serde_json::Value::Array(merges_array),
             );
         }
+        // GH-253: Store additional tokenizer metadata for GGUF export round-trip
+        if !tok.token_type.is_empty() {
+            let type_array: Vec<serde_json::Value> = tok
+                .token_type
+                .iter()
+                .map(|&t| serde_json::Value::Number(serde_json::Number::from(t)))
+                .collect();
+            custom.insert(
+                "tokenizer.token_type".to_string(),
+                serde_json::Value::Array(type_array),
+            );
+        }
+        if let Some(pad_id) = tok.padding_token_id {
+            custom.insert(
+                "tokenizer.padding_token_id".to_string(),
+                serde_json::Value::Number(serde_json::Number::from(pad_id)),
+            );
+        }
+        if let Some(add_bos) = tok.add_bos_token {
+            custom.insert(
+                "tokenizer.add_bos_token".to_string(),
+                serde_json::Value::Bool(add_bos),
+            );
+        }
+        if let Some(ref tmpl) = tok.chat_template {
+            custom.insert(
+                "tokenizer.chat_template".to_string(),
+                serde_json::Value::String(tmpl.clone()),
+            );
+        }
     }
 
     // Add model config if available
@@ -554,7 +584,8 @@ pub(crate) fn write_apr_file_raw(
         param_count,
         quantization: None, // Q4_K stored as raw dtype, not quantization metadata
         sharding: None,
-        chat_template: None,
+        // GH-253: Propagate chat_template from tokenizer for GGUF round-trip
+        chat_template: tokenizer.and_then(|t| t.chat_template.clone()),
         chat_format: None,
         special_tokens: None,
         architecture: model_config.and_then(|c| c.architecture.clone()),

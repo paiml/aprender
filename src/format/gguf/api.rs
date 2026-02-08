@@ -30,6 +30,14 @@ pub struct GgufTokenizer {
     pub architecture: Option<String>,
     /// Model name from metadata
     pub model_name: Option<String>,
+    /// GH-253: Per-token type array (1=normal, 3=special, etc.)
+    pub token_type: Vec<i32>,
+    /// GH-253: Padding token ID
+    pub padding_token_id: Option<u32>,
+    /// GH-253: Whether to add BOS token
+    pub add_bos_token: Option<bool>,
+    /// GH-253: Chat template (Jinja2 format)
+    pub chat_template: Option<String>,
 }
 
 impl GgufTokenizer {
@@ -104,6 +112,7 @@ pub fn load_gguf_with_tokenizer<P: AsRef<Path>>(path: P) -> Result<GgufLoadResul
         eos_token_id: reader.eos_token_id(),
         architecture: reader.architecture(),
         model_name: reader.model_name(),
+        ..Default::default()
     };
 
     // PMAT-114: Infer rope_type from architecture
@@ -171,6 +180,8 @@ pub fn load_gguf_raw<P: AsRef<Path>>(path: P) -> Result<GgufRawLoadResult> {
     }
 
     // PMAT-171: Extract both vocabulary and BPE merges for standalone APR encoding
+    // GH-253: Also extract token_type, padding_token_id, add_bos_token, chat_template
+    // for GGUF→APR→GGUF round-trip fidelity
     let tokenizer = GgufTokenizer {
         vocabulary: reader.vocabulary().unwrap_or_else(Vec::new),
         merges: reader.merges().unwrap_or_else(Vec::new),
@@ -179,6 +190,10 @@ pub fn load_gguf_raw<P: AsRef<Path>>(path: P) -> Result<GgufRawLoadResult> {
         eos_token_id: reader.eos_token_id(),
         architecture: reader.architecture(),
         model_name: reader.model_name(),
+        token_type: reader.token_type().unwrap_or_default(),
+        padding_token_id: reader.padding_token_id(),
+        add_bos_token: reader.add_bos_token(),
+        chat_template: reader.chat_template(),
     };
 
     // PMAT-114: Infer rope_type from architecture
@@ -605,6 +620,7 @@ mod tests {
             eos_token_id: Some(2),
             architecture: Some("llama".to_string()),
             model_name: Some("test".to_string()),
+            ..Default::default()
         };
 
         let cloned = tokenizer.clone();

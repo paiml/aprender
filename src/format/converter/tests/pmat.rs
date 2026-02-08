@@ -443,6 +443,7 @@ mod tests_gh185_tokenizer_merges {
             eos_token_id: Some(2),
             architecture: Some("qwen2".to_string()),
             model_name: Some("test".to_string()),
+            ..Default::default()
         };
 
         // Verify merges are not empty (the core of the bug)
@@ -461,6 +462,7 @@ mod tests_gh185_tokenizer_merges {
             eos_token_id: None,
             architecture: None,
             model_name: None,
+            ..Default::default()
         };
 
         assert!(tok.merges.is_empty(), "WordPiece has no BPE merges");

@@ -757,42 +757,129 @@ fn export_apr_to_gguf_raw(input: &Path, output: &Path) -> Result<ExportReport> {
         ),
     ];
 
-    // Load tokenizer metadata (same as export_to_gguf)
-    let tokenizer = super::import::load_tokenizer_from_json(input);
-    if let Some(ref tok) = tokenizer {
-        let model_type = tok.model_type.as_deref().unwrap_or("gpt2");
-        metadata.push((
-            "tokenizer.ggml.model".to_string(),
-            GgufValue::String(model_type.to_lowercase()),
-        ));
-        metadata.push((
-            "tokenizer.ggml.pre".to_string(),
-            GgufValue::String(arch.to_string()),
-        ));
-        if let Some(bos) = tok.bos_token_id {
+    // GH-253: Read tokenizer data from APR embedded custom fields (NOT sibling files).
+    // GGUF→APR import stores vocab, merges, token_type, BOS/EOS/pad IDs, and chat_template
+    // in APR custom fields. Export reads them back for lossless GGUF round-trip.
+    let custom = &apr_metadata.custom;
+
+    // Tokenizer model type: "gpt2" for byte-level BPE (Qwen, GPT-2), "llama" for SentencePiece
+    // GH-253-3: APR stores raw model_type from GGUF which may be "bpe" — map to "gpt2"
+    let raw_model_type = custom
+        .get("tokenizer.model")
+        .and_then(|v| v.as_str())
+        .unwrap_or("gpt2");
+    let model_type = match raw_model_type {
+        "bpe" => "gpt2", // byte-level BPE uses "gpt2" in GGUF, not "bpe"
+        other => other,
+    };
+    metadata.push((
+        "tokenizer.ggml.model".to_string(),
+        GgufValue::String(model_type.to_string()),
+    ));
+    metadata.push((
+        "tokenizer.ggml.pre".to_string(),
+        GgufValue::String(arch.to_string()),
+    ));
+
+    // Vocabulary: read from APR custom field "tokenizer.vocabulary"
+    if let Some(vocab_val) = custom.get("tokenizer.vocabulary") {
+        if let Some(vocab_arr) = vocab_val.as_array() {
+            let tokens: Vec<String> = vocab_arr
+                .iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect();
+            if !tokens.is_empty() {
+                metadata.push((
+                    "tokenizer.ggml.tokens".to_string(),
+                    GgufValue::ArrayString(tokens),
+                ));
+            }
+        }
+    }
+
+    // BPE merges
+    if let Some(merges_val) = custom.get("tokenizer.merges") {
+        if let Some(merges_arr) = merges_val.as_array() {
+            let merges: Vec<String> = merges_arr
+                .iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect();
+            if !merges.is_empty() {
+                metadata.push((
+                    "tokenizer.ggml.merges".to_string(),
+                    GgufValue::ArrayString(merges),
+                ));
+            }
+        }
+    }
+
+    // BOS token ID
+    if let Some(bos_val) = custom.get("tokenizer.bos_token_id") {
+        if let Some(bos) = bos_val.as_u64() {
             metadata.push((
                 "tokenizer.ggml.bos_token_id".to_string(),
-                GgufValue::Uint32(bos),
+                GgufValue::Uint32(bos as u32),
             ));
         }
-        if let Some(eos) = tok.eos_token_id {
+    }
+
+    // EOS token ID
+    if let Some(eos_val) = custom.get("tokenizer.eos_token_id") {
+        if let Some(eos) = eos_val.as_u64() {
             metadata.push((
                 "tokenizer.ggml.eos_token_id".to_string(),
-                GgufValue::Uint32(eos),
+                GgufValue::Uint32(eos as u32),
             ));
         }
-        if !tok.vocabulary.is_empty() {
+    }
+
+    // GH-253-1: Token type array (per-token: 1=normal, 3=special, etc.)
+    if let Some(tt_val) = custom.get("tokenizer.token_type") {
+        if let Some(tt_arr) = tt_val.as_array() {
+            let types: Vec<i32> = tt_arr
+                .iter()
+                .filter_map(|v| v.as_i64().map(|n| n as i32))
+                .collect();
+            if !types.is_empty() {
+                metadata.push((
+                    "tokenizer.ggml.token_type".to_string(),
+                    GgufValue::ArrayInt32(types),
+                ));
+            }
+        }
+    }
+
+    // GH-253-1: Padding token ID
+    if let Some(pad_val) = custom.get("tokenizer.padding_token_id") {
+        if let Some(pad) = pad_val.as_u64() {
             metadata.push((
-                "tokenizer.ggml.tokens".to_string(),
-                GgufValue::ArrayString(tok.vocabulary.clone()),
+                "tokenizer.ggml.padding_token_id".to_string(),
+                GgufValue::Uint32(pad as u32),
             ));
         }
-        if !tok.merges.is_empty() {
+    }
+
+    // GH-253-1: add_bos_token flag
+    if let Some(add_bos_val) = custom.get("tokenizer.add_bos_token") {
+        if let Some(add_bos) = add_bos_val.as_bool() {
             metadata.push((
-                "tokenizer.ggml.merges".to_string(),
-                GgufValue::ArrayString(tok.merges.clone()),
+                "tokenizer.ggml.add_bos_token".to_string(),
+                GgufValue::Bool(add_bos),
             ));
         }
+    }
+
+    // GH-253-1: Chat template (Jinja2)
+    // Check APR metadata chat_template field first, then custom field
+    let chat_tmpl = apr_metadata
+        .chat_template
+        .as_deref()
+        .or_else(|| custom.get("tokenizer.chat_template").and_then(|v| v.as_str()));
+    if let Some(tmpl) = chat_tmpl {
+        metadata.push((
+            "tokenizer.chat_template".to_string(),
+            GgufValue::String(tmpl.to_string()),
+        ));
     }
 
     eprintln!(

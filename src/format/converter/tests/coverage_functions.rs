@@ -337,6 +337,7 @@ mod tests_write_import_lint {
             eos_token_id: None,
             architecture: None,
             model_name: None,
+            ..Default::default()
         };
         assert!(tok.has_vocabulary());
         assert_eq!(tok.vocab_size(), 2);
@@ -353,6 +354,7 @@ mod tests_write_import_lint {
             eos_token_id: Some(2),
             architecture: Some("llama".to_string()),
             model_name: Some("test".to_string()),
+            ..Default::default()
         };
         assert_eq!(tok.merges.len(), 3);
         assert_eq!(tok.bos_token_id, Some(1));
@@ -596,6 +598,7 @@ mod tests_write_functions {
             eos_token_id: Some(3),
             architecture: Some("llama".to_string()),
             model_name: Some("pygmy".to_string()),
+            ..Default::default()
         };
 
         let options = ImportOptions::default();

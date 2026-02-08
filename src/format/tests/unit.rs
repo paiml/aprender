@@ -2080,6 +2080,7 @@ fn test_gguf_tokenizer_with_all_fields() {
         eos_token_id: Some(1),
         architecture: Some("llama".to_string()),
         model_name: Some("test-model".to_string()),
+        ..Default::default()
     };
     assert_eq!(tok.vocab_size(), 3);
     assert!(tok.has_vocabulary());
@@ -2098,6 +2099,7 @@ fn test_gguf_tokenizer_clone() {
         eos_token_id: Some(50256),
         architecture: None,
         model_name: None,
+        ..Default::default()
     };
     let cloned = tok.clone();
     assert_eq!(cloned.vocabulary, tok.vocabulary);
