@@ -18,9 +18,9 @@ pub mod federation;
 // Commands are crate-private, used internally by execute_command
 use commands::{
     bench, canary, canary::CanaryCommands, cbtop, chat, compare_hf, convert, debug, diff, eval,
-    explain, export, flow, hex, import, inspect, lint, merge, oracle, probar, profile, publish,
-    pull, qa, rosetta, rosetta::RosettaCommands, run, serve, showcase, tensors, trace, tree, tui,
-    tune, validate,
+    explain, export, flow, hex, import, inspect, lint, merge, oracle, probar, profile,
+    ptx_explain, publish, pull, qa, rosetta, rosetta::RosettaCommands, run, serve, showcase,
+    tensors, trace, tree, tui, tune, validate,
 };
 
 /// apr - APR Model Operations Tool
@@ -1044,6 +1044,34 @@ pub enum Commands {
         prefill: bool,
     },
 
+    /// PTX analysis and bug detection (trueno-explain: register pressure, roofline, 15+ bug detectors)
+    #[command(name = "ptx")]
+    Ptx {
+        /// Path to a PTX source file
+        #[arg(value_name = "FILE")]
+        file: Option<PathBuf>,
+
+        /// Analyze a named kernel from trueno-gpu
+        #[arg(long, short)]
+        kernel: Option<String>,
+
+        /// Strict mode (no performance whitelist)
+        #[arg(long)]
+        strict: bool,
+
+        /// Show only bug analysis (skip register/memory/roofline)
+        #[arg(long)]
+        bugs: bool,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+
+        /// Verbose output (include PTX source listing)
+        #[arg(short, long)]
+        verbose: bool,
+    },
+
     /// ML tuning: LoRA/QLoRA configuration and memory planning (GH-176)
     Tune {
         /// Path to model file (optional if using --model)
@@ -1982,6 +2010,22 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             *json || cli.json,
             *verbose || cli.verbose,
             *prefill,
+        ),
+
+        Commands::Ptx {
+            file,
+            kernel,
+            strict,
+            bugs,
+            json,
+            verbose,
+        } => ptx_explain::run(
+            file.as_deref(),
+            kernel.as_deref(),
+            *strict,
+            *bugs,
+            *json || cli.json,
+            *verbose || cli.verbose,
         ),
 
         Commands::Tune {

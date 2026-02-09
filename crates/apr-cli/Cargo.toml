@@ -132,6 +132,9 @@ trueno-zram-core = { version = "0.2", optional = true }
 # GH-162 FIX: Use local path until fix is published to crates.io
 pacha = { path = "../../../pacha", default-features = false, features = ["remote"] }
 
+# PTX analysis and bug detection (trueno-explain: PtxAnalyzer + PtxBugAnalyzer)
+trueno-explain = "0.2.2"
+
 # ML tuning: LoRA/QLoRA configuration and memory planning (GH-176, PMAT-184)
 entrenar-lora = { path = "../../../entrenar/crates/entrenar-lora" }
 half = "2.4.1"
