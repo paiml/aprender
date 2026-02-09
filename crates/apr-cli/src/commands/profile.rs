@@ -364,7 +364,7 @@ impl std::fmt::Display for PerfGrade {
 }
 
 /// Profile results from real inference
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub(crate) struct RealProfileResults {
     model_path: String,
     architecture: String,
@@ -385,6 +385,48 @@ pub(crate) struct RealProfileResults {
     category_summary: Option<CategorySummary>,
     /// Backend used (cpu, cuda, etc.)
     backend: String,
+    /// Real percentile latencies from multi-pass measurement
+    latency_p50_ms: f64,
+    latency_p95_ms: f64,
+    latency_p99_ms: f64,
+    latency_min_ms: f64,
+    latency_max_ms: f64,
+    /// Prefill throughput (tok/s) — separate from decode
+    prefill_tok_s: f64,
+    /// Decode throughput (tok/s) — the primary metric for Ollama comparison
+    decode_tok_s: f64,
+    /// Total tokens generated across all measurement passes
+    total_tokens_generated: usize,
+}
+
+/// Ollama baseline measurement
+#[derive(Debug, Clone)]
+struct OllamaBaseline {
+    /// Ollama decode throughput (tok/s)
+    decode_tok_s: f64,
+    /// Ollama prefill throughput (tok/s)
+    prefill_tok_s: f64,
+    /// Model name used
+    model_name: String,
+}
+
+/// Compute percentile from sorted values
+fn percentile(sorted: &[f64], p: f64) -> f64 {
+    if sorted.is_empty() {
+        return 0.0;
+    }
+    if sorted.len() == 1 {
+        return sorted[0];
+    }
+    let idx = (p / 100.0) * (sorted.len() - 1) as f64;
+    let lower = idx.floor() as usize;
+    let upper = idx.ceil() as usize;
+    let frac = idx - lower as f64;
+    if upper >= sorted.len() {
+        sorted[sorted.len() - 1]
+    } else {
+        sorted[lower] * (1.0 - frac) + sorted[upper] * frac
+    }
 }
 
 /// Detect model format from extension
@@ -413,6 +455,9 @@ pub(crate) fn run(
     _callgraph: bool,
     _fail_on_naive: bool,
     output_path: Option<&Path>,
+    tokens: usize,
+    ollama: bool,
+    no_gpu: bool,
 ) -> Result<(), CliError> {
     // Validate file exists
     if !path.exists() {
@@ -433,11 +478,24 @@ pub(crate) fn run(
         OutputFormat::Flamegraph => {}
     }
 
-    // Profile with REAL inference
+    // Profile with REAL inference — try GPU first, fall back to CPU
     let start = Instant::now();
 
     #[cfg(feature = "inference")]
-    let mut results = profile_real_inference(path, 3, 10)?;
+    let mut results = if no_gpu {
+        profile_real_inference_cpu(path, 3, 10)?
+    } else {
+        // Try GPU generation profiling first (full token generation, not just forward pass)
+        match profile_gpu_generation(path, tokens, 3, 10) {
+            Ok(r) => r,
+            Err(_) => {
+                if matches!(format, OutputFormat::Human) {
+                    output::warn("GPU profiling unavailable, falling back to CPU per-op profiling");
+                }
+                profile_real_inference_cpu(path, 3, 10)?
+            }
+        }
+    };
 
     #[cfg(not(feature = "inference"))]
     let mut results = {
@@ -465,10 +523,23 @@ pub(crate) fn run(
         println!();
     }
 
+    // Ollama comparison (if requested)
+    let ollama_baseline = if ollama && matches!(format, OutputFormat::Human) {
+        run_ollama_comparison(path, tokens)
+    } else {
+        None
+    };
+
     // Output results based on format
     match format {
         OutputFormat::Human => {
             print_human_results(&filtered_results, granular, perf_grade, detect_naive)?;
+
+            // Ollama parity report
+            if let Some(ref baseline) = ollama_baseline {
+                print_ollama_comparison(&filtered_results, baseline);
+            }
+
             println!();
             println!(
                 "{}",
@@ -508,7 +579,7 @@ pub(crate) fn run_ci(
     }
 
     #[cfg(feature = "inference")]
-    let results = profile_real_inference(path, warmup, measure)?;
+    let results = profile_real_inference_cpu(path, warmup, measure)?;
 
     #[cfg(not(feature = "inference"))]
     {
@@ -707,7 +778,7 @@ pub(crate) fn run_diff_benchmark(
     // Profile model A
     output::kv("Profiling Model A", model_a.display());
     #[cfg(feature = "inference")]
-    let results_a = profile_real_inference(model_a, warmup, measure)?;
+    let results_a = profile_real_inference_cpu(model_a, warmup, measure)?;
 
     #[cfg(not(feature = "inference"))]
     return Err(CliError::ValidationFailed(
@@ -717,7 +788,7 @@ pub(crate) fn run_diff_benchmark(
     // Profile model B
     output::kv("Profiling Model B", model_b.display());
     #[cfg(feature = "inference")]
-    let results_b = profile_real_inference(model_b, warmup, measure)?;
+    let results_b = profile_real_inference_cpu(model_b, warmup, measure)?;
 
     // Calculate deltas
     let throughput_delta = if results_a.throughput_tok_s > 0.0 {
@@ -874,12 +945,20 @@ fn filter_results_by_focus(
         roofline: results.roofline.clone(),
         category_summary: results.category_summary.clone(),
         backend: results.backend.clone(),
+        latency_p50_ms: results.latency_p50_ms,
+        latency_p95_ms: results.latency_p95_ms,
+        latency_p99_ms: results.latency_p99_ms,
+        latency_min_ms: results.latency_min_ms,
+        latency_max_ms: results.latency_max_ms,
+        prefill_tok_s: results.prefill_tok_s,
+        decode_tok_s: results.decode_tok_s,
+        total_tokens_generated: results.total_tokens_generated,
     }
 }
 
-/// Profile model using REAL inference passes
+/// Profile model using REAL inference passes (CPU per-operation path)
 #[cfg(feature = "inference")]
-fn profile_real_inference(
+fn profile_real_inference_cpu(
     path: &Path,
     warmup_passes: usize,
     measure_passes: usize,
@@ -894,6 +973,374 @@ fn profile_real_inference(
             "Unsupported format: {format}"
         ))),
     }
+}
+
+/// Profile GPU token generation with full decode loop
+///
+/// This is the KEY profiling path — it measures what users actually care about:
+/// - Full token generation (prefill + decode)
+/// - Per-token decode latency with real percentiles (p50, p95, p99)
+/// - Prefill vs decode throughput separated
+///
+/// References:
+/// - Williams et al. (2009) "Roofline: An Insightful Visual Performance Model"
+/// - Pope et al. (2023) "Efficiently Scaling Transformer Inference"
+#[cfg(feature = "inference")]
+fn profile_gpu_generation(
+    path: &Path,
+    tokens_per_pass: usize,
+    warmup_passes: usize,
+    measure_passes: usize,
+) -> Result<RealProfileResults, CliError> {
+    use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel, QuantizedGenerateConfig};
+
+    let format = detect_format(path);
+
+    // Currently GPU generation profiling only for GGUF (primary format)
+    if format != "gguf" {
+        return Err(CliError::ValidationFailed(format!(
+            "GPU generation profiling requires GGUF format (got {format})"
+        )));
+    }
+
+    println!("{}", "Loading model for GPU generation profiling...".dimmed());
+    let mapped = MappedGGUFModel::from_path(path)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to load GGUF: {e}")))?;
+
+    let architecture = mapped.model.architecture().unwrap_or("unknown").to_string();
+    let model = OwnedQuantizedModel::from_mapped(&mapped)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to create model: {e}")))?;
+
+    let num_layers = model.config.num_layers;
+    let vocab_size = model.config.vocab_size;
+    let hidden_dim = model.config.hidden_dim;
+
+    // Try GPU path
+    let mut cuda_model = match realizar::gguf::OwnedQuantizedModelCuda::new(model, 0) {
+        Ok(m) => m,
+        Err(e) => {
+            return Err(CliError::ValidationFailed(format!(
+                "CUDA init failed: {e}"
+            )));
+        }
+    };
+
+    // Test prompt: "The meaning of life is" — enough tokens for meaningful prefill
+    let test_tokens: Vec<u32> = vec![791, 7438, 315, 2324, 374]; // "The meaning of life is"
+
+    let gen_config = QuantizedGenerateConfig {
+        max_tokens: tokens_per_pass,
+        temperature: 0.0, // Greedy for deterministic profiling
+        top_k: 1,
+        stop_tokens: vec![],
+        trace: false,
+    };
+
+    // Warmup passes
+    println!(
+        "{}",
+        format!("GPU warmup: {} passes x {} tokens...", warmup_passes, tokens_per_pass).dimmed()
+    );
+    for _ in 0..warmup_passes {
+        let _ = cuda_model.generate_gpu_resident(&test_tokens, &gen_config);
+    }
+
+    // Measurement passes — collect per-token timing
+    println!(
+        "{}",
+        format!(
+            "GPU measurement: {} passes x {} tokens...",
+            measure_passes, tokens_per_pass
+        )
+        .dimmed()
+    );
+
+    let mut per_pass_decode_times: Vec<f64> = Vec::new(); // ms per pass (decode only)
+    let mut per_pass_prefill_times: Vec<f64> = Vec::new(); // ms per pass (prefill only)
+    let mut per_pass_total_times: Vec<f64> = Vec::new(); // ms per pass (total)
+    let mut total_tokens_generated: usize = 0;
+
+    for pass in 0..measure_passes {
+        let total_start = Instant::now();
+
+        // Time prefill separately by generating just 1 token first
+        let prefill_start = Instant::now();
+        let prefill_config = QuantizedGenerateConfig {
+            max_tokens: 1,
+            temperature: 0.0,
+            top_k: 1,
+            stop_tokens: vec![],
+            trace: false,
+        };
+        let _ = cuda_model.generate_gpu_resident(&test_tokens, &prefill_config);
+        let prefill_ms = prefill_start.elapsed().as_secs_f64() * 1000.0;
+        per_pass_prefill_times.push(prefill_ms);
+
+        // Now time full generation (includes prefill again — we subtract)
+        let gen_start = Instant::now();
+        let result = cuda_model.generate_gpu_resident(&test_tokens, &gen_config);
+        let gen_ms = gen_start.elapsed().as_secs_f64() * 1000.0;
+
+        let total_ms = total_start.elapsed().as_secs_f64() * 1000.0;
+        per_pass_total_times.push(total_ms);
+
+        if let Ok(ref tokens) = result {
+            let generated = tokens.len().saturating_sub(test_tokens.len());
+            total_tokens_generated += generated;
+
+            // Decode time = total generation time - prefill time (estimated)
+            // Better: decode_ms = gen_ms - (prefill portion)
+            // Since gen includes its own prefill, decode = gen_ms - prefill_ms
+            let decode_ms = (gen_ms - prefill_ms).max(0.1);
+            per_pass_decode_times.push(decode_ms);
+
+            if pass == 0 {
+                println!(
+                    "{}",
+                    format!(
+                        "  Pass 0: {} tokens in {:.1}ms (prefill: {:.1}ms, decode: {:.1}ms = {:.1} tok/s)",
+                        generated,
+                        gen_ms,
+                        prefill_ms,
+                        decode_ms,
+                        generated as f64 / (decode_ms / 1000.0)
+                    )
+                    .dimmed()
+                );
+            }
+        }
+    }
+
+    // Compute real percentile latencies from per-pass decode times
+    let mut sorted_decode = per_pass_decode_times.clone();
+    sorted_decode.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+
+    let p50 = percentile(&sorted_decode, 50.0);
+    let p95 = percentile(&sorted_decode, 95.0);
+    let p99 = percentile(&sorted_decode, 99.0);
+    let lat_min = sorted_decode.first().copied().unwrap_or(0.0);
+    let lat_max = sorted_decode.last().copied().unwrap_or(0.0);
+
+    // Compute throughput
+    let avg_decode_ms = if per_pass_decode_times.is_empty() {
+        0.0
+    } else {
+        per_pass_decode_times.iter().sum::<f64>() / per_pass_decode_times.len() as f64
+    };
+    let tokens_per_decode = if measure_passes > 0 {
+        total_tokens_generated / measure_passes
+    } else {
+        0
+    };
+    let decode_tok_s = if avg_decode_ms > 0.0 {
+        tokens_per_decode as f64 / (avg_decode_ms / 1000.0)
+    } else {
+        0.0
+    };
+
+    let avg_prefill_ms = if per_pass_prefill_times.is_empty() {
+        0.0
+    } else {
+        per_pass_prefill_times.iter().sum::<f64>() / per_pass_prefill_times.len() as f64
+    };
+    let prefill_tok_s = if avg_prefill_ms > 0.0 {
+        test_tokens.len() as f64 / (avg_prefill_ms / 1000.0)
+    } else {
+        0.0
+    };
+
+    let avg_total_ms = if per_pass_total_times.is_empty() {
+        0.0
+    } else {
+        per_pass_total_times.iter().sum::<f64>() / per_pass_total_times.len() as f64
+    };
+
+    Ok(RealProfileResults {
+        model_path: path.display().to_string(),
+        architecture,
+        num_layers,
+        vocab_size,
+        hidden_dim,
+        warmup_passes,
+        measure_passes,
+        total_inference_us: avg_total_ms * 1000.0,
+        throughput_tok_s: decode_tok_s, // Primary metric = decode throughput
+        tokens_per_pass: tokens_per_decode,
+        hotspots: vec![], // GPU path doesn't give per-op breakdown (yet)
+        per_layer_us: vec![],
+        is_real_data: true,
+        roofline: None,
+        category_summary: None,
+        backend: "cuda".to_string(),
+        latency_p50_ms: p50,
+        latency_p95_ms: p95,
+        latency_p99_ms: p99,
+        latency_min_ms: lat_min,
+        latency_max_ms: lat_max,
+        prefill_tok_s,
+        decode_tok_s,
+        total_tokens_generated,
+    })
+}
+
+/// Run Ollama and collect baseline performance
+fn run_ollama_comparison(path: &Path, tokens: usize) -> Option<OllamaBaseline> {
+    // Determine model name from path
+    let filename = path
+        .file_stem()
+        .and_then(|f| f.to_str())
+        .unwrap_or("unknown");
+
+    // Map common filenames to Ollama model names
+    let ollama_model = if filename.contains("qwen2.5-coder-7b") {
+        "qwen2.5-coder:7b"
+    } else if filename.contains("qwen2.5-coder-1.5b") {
+        "qwen2.5-coder:1.5b"
+    } else if filename.contains("TinyLlama") || filename.contains("tinyllama") {
+        "tinyllama"
+    } else {
+        // Can't auto-detect — skip
+        output::warn(&format!(
+            "Cannot auto-detect Ollama model name for '{}'. Use known model files.",
+            filename
+        ));
+        return None;
+    };
+
+    println!(
+        "{}",
+        format!("Running Ollama baseline: {} ({} tokens)...", ollama_model, tokens).dimmed()
+    );
+
+    // Run ollama with --verbose to get timing stats
+    // Use a prompt that generates many tokens for accurate eval rate measurement
+    let result = std::process::Command::new("ollama")
+        .args(["run", ollama_model, "--verbose", "Write a short essay about the history of computing in exactly 128 words."])
+        .output();
+
+    match result {
+        Ok(output) => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+
+            // Parse eval rate from Ollama output
+            // IMPORTANT: "prompt eval rate:" also contains "eval rate:", so
+            // we must match decode line as "eval rate:" but NOT "prompt eval rate:"
+            let decode_tok_s = stderr
+                .lines()
+                .find(|l| l.contains("eval rate:") && !l.contains("prompt eval rate:"))
+                .and_then(|l| {
+                    l.split_whitespace()
+                        .find(|w| w.parse::<f64>().is_ok())
+                        .and_then(|w| w.parse::<f64>().ok())
+                })
+                .unwrap_or(0.0);
+
+            let prefill_tok_s = stderr
+                .lines()
+                .find(|l| l.contains("prompt eval rate:"))
+                .and_then(|l| {
+                    l.split_whitespace()
+                        .find(|w| w.parse::<f64>().is_ok())
+                        .and_then(|w| w.parse::<f64>().ok())
+                })
+                .unwrap_or(0.0);
+
+            if decode_tok_s > 0.0 {
+                Some(OllamaBaseline {
+                    decode_tok_s,
+                    prefill_tok_s,
+                    model_name: ollama_model.to_string(),
+                })
+            } else {
+                output::warn("Failed to parse Ollama output. Is Ollama running?");
+                None
+            }
+        }
+        Err(e) => {
+            output::warn(&format!("Ollama not available: {e}"));
+            None
+        }
+    }
+}
+
+/// Print Ollama comparison report
+fn print_ollama_comparison(results: &RealProfileResults, baseline: &OllamaBaseline) {
+    println!();
+    output::subheader("Ollama Parity Report");
+    println!();
+
+    let parity_ratio = if baseline.decode_tok_s > 0.0 {
+        results.decode_tok_s / baseline.decode_tok_s
+    } else {
+        0.0
+    };
+
+    // Grade based on Ollama parity
+    // C = parity (1.0x), A = 2.0x, F = <0.5x
+    let grade = if parity_ratio >= 2.0 {
+        ("A+", "Excellent — 2x+ Ollama", "green")
+    } else if parity_ratio >= 1.5 {
+        ("A", "Great — 1.5x+ Ollama", "green")
+    } else if parity_ratio >= 1.0 {
+        ("B", "Good — Ollama parity achieved", "cyan")
+    } else if parity_ratio >= 0.75 {
+        ("C", "Passing — within 75% of Ollama", "yellow")
+    } else if parity_ratio >= 0.5 {
+        ("D", "Below parity — 50-75% of Ollama", "yellow")
+    } else {
+        ("F", "Critical — less than 50% of Ollama", "red")
+    };
+
+    println!(
+        "  {} ({})",
+        baseline.model_name.cyan(),
+        results.backend.to_uppercase()
+    );
+    println!();
+    println!("  ┌────────────┬──────────────┬──────────────┬───────────┐");
+    println!("  │ Metric     │ apr          │ Ollama       │ Ratio     │");
+    println!("  ├────────────┼──────────────┼──────────────┼───────────┤");
+
+    // Decode throughput
+    let decode_ratio_str = format!("{:.2}x", parity_ratio);
+    println!(
+        "  │ Decode     │ {:>8.1} t/s │ {:>8.1} t/s │ {:>9} │",
+        results.decode_tok_s, baseline.decode_tok_s, decode_ratio_str
+    );
+
+    // Prefill throughput
+    if baseline.prefill_tok_s > 0.0 && results.prefill_tok_s > 0.0 {
+        let prefill_ratio = results.prefill_tok_s / baseline.prefill_tok_s;
+        println!(
+            "  │ Prefill    │ {:>8.1} t/s │ {:>8.1} t/s │ {:>8.2}x │",
+            results.prefill_tok_s, baseline.prefill_tok_s, prefill_ratio
+        );
+    }
+
+    println!("  └────────────┴──────────────┴──────────────┴───────────┘");
+    println!();
+
+    println!(
+        "  Grade: {} — {}",
+        grade.0.bold(),
+        grade.1
+    );
+    println!(
+        "  Parity: {:.1}% of Ollama decode throughput",
+        parity_ratio * 100.0
+    );
+    println!();
+
+    // Citations for methodology
+    println!("  {}", "Methodology:".dimmed());
+    println!(
+        "  {}",
+        "  Pope et al. (2023) 'Efficiently Scaling Transformer Inference'".dimmed()
+    );
+    println!(
+        "  {}",
+        "  Williams et al. (2009) 'Roofline: An Insightful Visual Performance Model'".dimmed()
+    );
 }
 
 // ============================================================================
@@ -997,11 +1444,25 @@ fn compute_category_summary(hotspots: &[Hotspot]) -> CategorySummary {
 fn compute_roofline(
     results: &RealProfileResults,
 ) -> RooflineAnalysis {
-    let hw = trueno::hardware::HardwareCapability::detect();
+    let is_gpu = results.backend == "cuda";
 
-    let peak_compute = hw.cpu.peak_gflops;
-    let peak_bw = hw.cpu.memory_bw_gbps;
-    let ai_threshold = hw.roofline.cpu_arithmetic_intensity;
+    // Hardware detection: use GPU specs for CUDA, CPU specs for CPU
+    let (peak_compute, peak_bw, ai_threshold, hardware_model) = if is_gpu {
+        // GPU roofline: detect via CUDA device properties or use known specs
+        // RTX 4090: 82.6 TFLOPS FP32, 1008 GB/s GDDR6X
+        // RTX 3090: 35.6 TFLOPS FP32, 936 GB/s GDDR6X
+        // For Q4K decode (int4 dequant + FP16/FP32 GEMV), effective AI is very low
+        let gpu_info = detect_gpu_hardware();
+        (gpu_info.0, gpu_info.1, gpu_info.2, gpu_info.3)
+    } else {
+        let hw = trueno::hardware::HardwareCapability::detect();
+        (
+            hw.cpu.peak_gflops,
+            hw.cpu.memory_bw_gbps,
+            hw.roofline.cpu_arithmetic_intensity,
+            format!("{} {} ({} cores, {})", hw.cpu.vendor, hw.cpu.model, hw.cpu.cores, hw.cpu.simd.bits()),
+        )
+    };
 
     // Estimate FLOPs for one forward pass:
     // Dominant: matmul = 2 * M * N * K per matmul
@@ -1021,7 +1482,14 @@ fn compute_roofline(
     let bytes_lm_head = hidden * vocab * 0.5;
     let total_bytes = bytes_per_layer * layers + bytes_lm_head;
 
-    let inference_sec = results.total_inference_us / 1_000_000.0;
+    // For GPU: use per-token decode time, not total inference (which includes prefill overhead)
+    let inference_sec = if is_gpu && results.decode_tok_s > 0.0 {
+        // Per-token time = 1/decode_tok_s (more accurate for GPU roofline)
+        1.0 / results.decode_tok_s
+    } else {
+        results.total_inference_us / 1_000_000.0
+    };
+
     let achieved_gflops = if inference_sec > 0.0 {
         (total_flops / 1e9) / inference_sec
     } else {
@@ -1067,8 +1535,48 @@ fn compute_roofline(
         ai_threshold,
         bottleneck: bottleneck.to_string(),
         backend: results.backend.clone(),
-        hardware_model: format!("{} {} ({} cores, {})", hw.cpu.vendor, hw.cpu.model, hw.cpu.cores, hw.cpu.simd.bits()),
+        hardware_model,
     }
+}
+
+/// Detect GPU hardware specs for roofline analysis
+/// Returns (peak_tflops_as_gflops, peak_bw_gbps, ai_threshold, model_name)
+fn detect_gpu_hardware() -> (f64, f64, f64, String) {
+    // Try reading from CUDA device properties via nvidia-smi
+    if let Ok(output) = std::process::Command::new("nvidia-smi")
+        .args(["--query-gpu=name,memory.total,clocks.max.sm,clocks.max.mem", "--format=csv,noheader,nounits"])
+        .output()
+    {
+        if output.status.success() {
+            let info = String::from_utf8_lossy(&output.stdout);
+            if let Some(line) = info.lines().next() {
+                let parts: Vec<&str> = line.split(", ").collect();
+                if parts.len() >= 2 {
+                    let gpu_name = parts[0].trim().to_string();
+
+                    // Match known GPU specs (peak BW is most important for decode)
+                    let (peak_gflops, peak_bw, ai_thresh) = match gpu_name.as_str() {
+                        n if n.contains("4090") => (82_580.0, 1008.0, 82.0),
+                        n if n.contains("4080") => (48_740.0, 716.8, 68.0),
+                        n if n.contains("4070") => (29_150.0, 504.2, 57.8),
+                        n if n.contains("3090") => (35_580.0, 936.0, 38.0),
+                        n if n.contains("3080") => (29_770.0, 760.0, 39.2),
+                        n if n.contains("A100") => (19_500.0, 2039.0, 9.6),
+                        n if n.contains("H100") => (51_200.0, 3350.0, 15.3),
+                        _ => {
+                            // Fallback: estimate from memory total
+                            // Most consumer GPUs: ~500-1000 GB/s, ~20-80 TFLOPS
+                            (30_000.0, 800.0, 37.5)
+                        }
+                    };
+                    return (peak_gflops, peak_bw, ai_thresh, gpu_name);
+                }
+            }
+        }
+    }
+
+    // Fallback: generic CUDA GPU
+    (30_000.0, 800.0, 37.5, "CUDA GPU (unknown)".to_string())
 }
 
 /// Profile SafeTensors model — converts to GGUF path for per-op profiling
@@ -1232,6 +1740,16 @@ fn profile_gguf_real(
     // Compute category summary
     let category_summary = compute_category_summary(&hotspots);
 
+    // Compute real percentiles from forward times
+    let mut sorted_times: Vec<f64> = forward_times.iter().map(|t| t / 1000.0).collect(); // us -> ms
+    sorted_times.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+
+    let tps = if avg_us > 0.0 {
+        (tokens_per_pass as f64 / avg_us) * 1_000_000.0
+    } else {
+        0.0
+    };
+
     Ok(RealProfileResults {
         model_path: path.display().to_string(),
         architecture,
@@ -1241,11 +1759,7 @@ fn profile_gguf_real(
         warmup_passes,
         measure_passes,
         total_inference_us: avg_us,
-        throughput_tok_s: if avg_us > 0.0 {
-            (tokens_per_pass as f64 / avg_us) * 1_000_000.0
-        } else {
-            0.0
-        },
+        throughput_tok_s: tps,
         tokens_per_pass,
         hotspots,
         per_layer_us,
@@ -1253,6 +1767,14 @@ fn profile_gguf_real(
         roofline: None,
         category_summary: Some(category_summary),
         backend: "cpu".to_string(),
+        latency_p50_ms: percentile(&sorted_times, 50.0),
+        latency_p95_ms: percentile(&sorted_times, 95.0),
+        latency_p99_ms: percentile(&sorted_times, 99.0),
+        latency_min_ms: sorted_times.first().copied().unwrap_or(0.0),
+        latency_max_ms: sorted_times.last().copied().unwrap_or(0.0),
+        prefill_tok_s: 0.0, // CPU path doesn't separate prefill/decode
+        decode_tok_s: tps,
+        total_tokens_generated: tokens_per_pass * measure_passes,
     })
 }
 
@@ -1335,6 +1857,15 @@ fn profile_apr_real(
         .copied()
         .fold(f64::NEG_INFINITY, f64::max);
 
+    let mut sorted_times: Vec<f64> = forward_times.iter().map(|t| t / 1000.0).collect();
+    sorted_times.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+
+    let tps = if avg_us > 0.0 {
+        (tokens_per_pass as f64 / avg_us) * 1_000_000.0
+    } else {
+        0.0
+    };
+
     Ok(RealProfileResults {
         model_path: path.display().to_string(),
         architecture: "apr".to_string(),
@@ -1344,11 +1875,7 @@ fn profile_apr_real(
         warmup_passes,
         measure_passes,
         total_inference_us: avg_us,
-        throughput_tok_s: if avg_us > 0.0 {
-            (tokens_per_pass as f64 / avg_us) * 1_000_000.0
-        } else {
-            0.0
-        },
+        throughput_tok_s: tps,
         tokens_per_pass,
         hotspots: vec![Hotspot {
             name: "forward_pass".to_string(),
@@ -1367,6 +1894,14 @@ fn profile_apr_real(
         roofline: None,
         category_summary: None,
         backend: "cpu".to_string(),
+        latency_p50_ms: percentile(&sorted_times, 50.0),
+        latency_p95_ms: percentile(&sorted_times, 95.0),
+        latency_p99_ms: percentile(&sorted_times, 99.0),
+        latency_min_ms: sorted_times.first().copied().unwrap_or(0.0),
+        latency_max_ms: sorted_times.last().copied().unwrap_or(0.0),
+        prefill_tok_s: 0.0,
+        decode_tok_s: tps,
+        total_tokens_generated: tokens_per_pass * measure_passes,
     })
 }
 
@@ -1602,6 +2137,40 @@ fn print_human_results(
         if !found_naive {
             println!("  {} No obvious naive implementations detected", output::badge_pass("OK"));
         }
+        println!();
+    }
+
+    // ── GPU Decode/Prefill Split ──
+    if results.decode_tok_s > 0.0 || results.prefill_tok_s > 0.0 {
+        output::subheader("Generation Performance");
+        println!();
+
+        println!(
+            "{}",
+            output::kv_table(&[
+                ("Decode throughput", format!("{:.1} tok/s", results.decode_tok_s)),
+                ("Prefill throughput", format!("{:.1} tok/s", results.prefill_tok_s)),
+                ("Tokens generated", format!("{}", results.total_tokens_generated)),
+            ])
+        );
+        println!();
+    }
+
+    // ── Latency Percentiles ──
+    if results.latency_p50_ms > 0.0 {
+        output::subheader("Latency Distribution (decode pass)");
+        println!();
+
+        println!(
+            "{}",
+            output::kv_table(&[
+                ("p50 (median)", format!("{:.1} ms", results.latency_p50_ms)),
+                ("p95", format!("{:.1} ms", results.latency_p95_ms)),
+                ("p99", format!("{:.1} ms", results.latency_p99_ms)),
+                ("min", format!("{:.1} ms", results.latency_min_ms)),
+                ("max", format!("{:.1} ms", results.latency_max_ms)),
+            ])
+        );
         println!();
     }
 
@@ -2066,6 +2635,7 @@ mod tests {
             roofline: None,
             category_summary: None,
             backend: "cpu".to_string(),
+            ..Default::default()
         };
         let assertions = CiAssertions::default();
         let report = CiProfileReport::from_results(&results, &assertions);
@@ -2092,6 +2662,7 @@ mod tests {
             roofline: None,
             category_summary: None,
             backend: "cpu".to_string(),
+            ..Default::default()
         };
         let assertions = CiAssertions {
             min_throughput: Some(100.0),
@@ -2122,6 +2693,7 @@ mod tests {
             roofline: None,
             category_summary: None,
             backend: "cpu".to_string(),
+            ..Default::default()
         };
         let assertions = CiAssertions {
             min_throughput: Some(100.0),
@@ -2151,6 +2723,7 @@ mod tests {
             roofline: None,
             category_summary: None,
             backend: "cpu".to_string(),
+            ..Default::default()
         };
         let assertions = CiAssertions {
             max_p50_ms: Some(50.0),
@@ -2212,6 +2785,9 @@ mod tests {
             false, // callgraph
             false, // fail_on_naive
             None,  // output_path
+            32,    // tokens
+            false, // ollama
+            true,  // no_gpu
         );
         assert!(result.is_err());
     }
@@ -2234,6 +2810,9 @@ mod tests {
             false,
             false,
             None,
+            32,
+            false,
+            true,
         );
         // Should fail (invalid GGUF or feature disabled)
         assert!(result.is_err());
@@ -2257,6 +2836,9 @@ mod tests {
             false,
             false,
             None,
+            32,
+            false,
+            true,
         );
         // Should fail (invalid file)
         assert!(result.is_err());
@@ -2280,6 +2862,9 @@ mod tests {
             false,
             false,
             None,
+            32,
+            false,
+            true,
         );
         // Should fail (invalid file)
         assert!(result.is_err());
@@ -2303,6 +2888,9 @@ mod tests {
             false,
             false,
             None,
+            32,
+            false,
+            true,
         );
         // Should fail (invalid file) but tests focus path
         assert!(result.is_err());
@@ -2326,6 +2914,9 @@ mod tests {
             false,
             false,
             None,
+            32,
+            false,
+            true,
         );
         // Should fail (invalid file) but tests focus path
         assert!(result.is_err());
@@ -2539,6 +3130,7 @@ mod tests {
             roofline: None,
             category_summary: None,
             backend: "cpu".to_string(),
+            ..Default::default()
         };
         assert_eq!(results.model_path, "test.gguf");
         assert_eq!(results.architecture, "llama");
@@ -2590,6 +3182,7 @@ mod tests {
             roofline: None,
             category_summary: None,
             backend: "cpu".to_string(),
+            ..Default::default()
         };
         assert_eq!(results.hotspots.len(), 2);
         assert_eq!(results.per_layer_us.len(), 32);
@@ -2614,6 +3207,7 @@ mod tests {
             roofline: None,
             category_summary: None,
             backend: "cpu".to_string(),
+            ..Default::default()
         };
         assert!(!results.is_real_data);
     }
@@ -2682,6 +3276,7 @@ mod tests {
             roofline: None,
             category_summary: None,
             backend: "cpu".to_string(),
+            ..Default::default()
         };
         let assertions = CiAssertions {
             min_throughput: Some(100.0), // Will fail
@@ -2714,6 +3309,7 @@ mod tests {
             roofline: None,
             category_summary: None,
             backend: "cpu".to_string(),
+            ..Default::default()
         };
         let assertions = CiAssertions {
             min_throughput: Some(100.0), // Exactly at threshold
@@ -2900,6 +3496,7 @@ mod tests {
             roofline: None,
             category_summary: None,
             backend: "cpu".to_string(),
+            ..Default::default()
         }
     }
 
@@ -3037,6 +3634,7 @@ mod tests {
             roofline: None,
             category_summary: None,
             backend: "cpu".to_string(),
+            ..Default::default()
         };
         // No attention-related hotspots
         let filtered = filter_results_by_focus(&results, ProfileFocus::Attention);
@@ -3062,6 +3660,7 @@ mod tests {
             roofline: None,
             category_summary: None,
             backend: "cpu".to_string(),
+            ..Default::default()
         };
         for focus in [
             ProfileFocus::All,
@@ -3098,6 +3697,7 @@ mod tests {
             roofline: None,
             category_summary: None,
             backend: "cpu".to_string(),
+            ..Default::default()
         };
         let assertions = CiAssertions {
             min_throughput: Some(100.0),
@@ -3134,6 +3734,7 @@ mod tests {
             roofline: None,
             category_summary: None,
             backend: "cpu".to_string(),
+            ..Default::default()
         };
         let assertions = CiAssertions {
             min_throughput: Some(100.0),
@@ -3163,6 +3764,7 @@ mod tests {
             roofline: None,
             category_summary: None,
             backend: "cpu".to_string(),
+            ..Default::default()
         };
         let assertions = CiAssertions {
             max_p50_ms: Some(50.0), // 60ms > 50ms => fail
@@ -3194,6 +3796,7 @@ mod tests {
             roofline: None,
             category_summary: None,
             backend: "cpu".to_string(),
+            ..Default::default()
         };
         let assertions = CiAssertions {
             min_throughput: Some(100.0), // 150 >= 100 => pass
@@ -3226,6 +3829,7 @@ mod tests {
             roofline: None,
             category_summary: None,
             backend: "cpu".to_string(),
+            ..Default::default()
         };
         let assertions = CiAssertions {
             min_throughput: Some(100.0),
@@ -3588,6 +4192,7 @@ mod tests {
             roofline: None,
             category_summary: None,
             backend: "cpu".to_string(),
+            ..Default::default()
         };
         let result = print_human_results(&results, false, false, false);
         assert!(result.is_ok());
@@ -3623,6 +4228,7 @@ mod tests {
             roofline: None,
             category_summary: None,
             backend: "cpu".to_string(),
+            ..Default::default()
         };
         let result = print_human_results(&results, true, false, false);
         assert!(result.is_ok());
@@ -3647,6 +4253,7 @@ mod tests {
             roofline: None,
             category_summary: None,
             backend: "cpu".to_string(),
+            ..Default::default()
         };
         let result = print_human_results(&results, false, false, false);
         assert!(result.is_ok());
@@ -3682,6 +4289,7 @@ mod tests {
             roofline: None,
             category_summary: None,
             backend: "cpu".to_string(),
+            ..Default::default()
         };
         let result = print_human_results(&results, false, false, false);
         assert!(result.is_ok());
@@ -3720,6 +4328,7 @@ mod tests {
             roofline: None,
             category_summary: None,
             backend: "cpu".to_string(),
+            ..Default::default()
         };
         let result = print_human_results(&results, true, false, false);
         assert!(result.is_ok());
@@ -3744,6 +4353,7 @@ mod tests {
             roofline: None,
             category_summary: None,
             backend: "cpu".to_string(),
+            ..Default::default()
         };
         let result = print_human_results(&results, true, false, false);
         assert!(result.is_ok());
@@ -3772,6 +4382,7 @@ mod tests {
             roofline: None,
             category_summary: None,
             backend: "cpu".to_string(),
+            ..Default::default()
         };
         let result = print_json_results(&results);
         assert!(result.is_ok());
@@ -3821,6 +4432,7 @@ mod tests {
             roofline: None,
             category_summary: None,
             backend: "cpu".to_string(),
+            ..Default::default()
         };
         let result = print_json_results(&results);
         assert!(result.is_ok());
@@ -3856,6 +4468,7 @@ mod tests {
             roofline: None,
             category_summary: None,
             backend: "cpu".to_string(),
+            ..Default::default()
         };
         let result = print_json_results(&results);
         assert!(result.is_ok());
@@ -3909,6 +4522,7 @@ mod tests {
             roofline: None,
             category_summary: None,
             backend: "cpu".to_string(),
+            ..Default::default()
         };
         let result = print_flamegraph(&results, None);
         assert!(result.is_ok());
@@ -3944,6 +4558,7 @@ mod tests {
             roofline: None,
             category_summary: None,
             backend: "cpu".to_string(),
+            ..Default::default()
         };
         let file = NamedTempFile::with_suffix(".svg").expect("create temp file");
         let result = print_flamegraph(&results, Some(file.path()));
@@ -3973,6 +4588,7 @@ mod tests {
             roofline: None,
             category_summary: None,
             backend: "cpu".to_string(),
+            ..Default::default()
         };
         let result = print_flamegraph(&results, None);
         assert!(result.is_ok());
@@ -4008,6 +4624,7 @@ mod tests {
             roofline: None,
             category_summary: None,
             backend: "cpu".to_string(),
+            ..Default::default()
         };
         let result = print_flamegraph(&results, None);
         assert!(result.is_ok());
@@ -4032,6 +4649,7 @@ mod tests {
             roofline: None,
             category_summary: None,
             backend: "cpu".to_string(),
+            ..Default::default()
         };
         let result = print_flamegraph(&results, Some(Path::new("/nonexistent/dir/file.svg")));
         assert!(result.is_err());
@@ -4087,6 +4705,7 @@ mod tests {
             roofline: None,
             category_summary: None,
             backend: "cpu".to_string(),
+            ..Default::default()
         };
         let debug = format!("{results:?}");
         assert!(debug.contains("RealProfileResults"));
@@ -4123,6 +4742,7 @@ mod tests {
             roofline: None,
             category_summary: None,
             backend: "cpu".to_string(),
+            ..Default::default()
         };
         let cloned = results.clone();
         assert_eq!(cloned.model_path, results.model_path);
@@ -4169,6 +4789,7 @@ mod tests {
             roofline: None,
             category_summary: None,
             backend: "cpu".to_string(),
+            ..Default::default()
         };
         let assertions = CiAssertions {
             min_throughput: Some(100.0),
@@ -4198,6 +4819,7 @@ mod tests {
             roofline: None,
             category_summary: None,
             backend: "cpu".to_string(),
+            ..Default::default()
         };
         let assertions = CiAssertions {
             min_throughput: Some(1.0),
@@ -4246,6 +4868,7 @@ mod tests {
             roofline: None,
             category_summary: None,
             backend: "cpu".to_string(),
+            ..Default::default()
         };
         let filtered = filter_results_by_focus(&results, ProfileFocus::Attention);
         assert_eq!(filtered.hotspots.len(), 1);
@@ -4296,6 +4919,7 @@ mod tests {
             roofline: None,
             category_summary: None,
             backend: "cpu".to_string(),
+            ..Default::default()
         };
         let filtered = filter_results_by_focus(&results, ProfileFocus::Mlp);
         assert_eq!(filtered.hotspots.len(), 2);
@@ -4331,6 +4955,7 @@ mod tests {
             roofline: None,
             category_summary: None,
             backend: "cpu".to_string(),
+            ..Default::default()
         };
         let filtered = filter_results_by_focus(&results, ProfileFocus::Matmul);
         assert_eq!(filtered.hotspots.len(), 1);
@@ -4366,6 +4991,7 @@ mod tests {
             roofline: None,
             category_summary: None,
             backend: "cpu".to_string(),
+            ..Default::default()
         };
         let filtered = filter_results_by_focus(&results, ProfileFocus::Embedding);
         assert_eq!(filtered.hotspots.len(), 1);
@@ -4431,6 +5057,7 @@ mod tests {
             roofline: None,
             category_summary: None,
             backend: "cpu".to_string(),
+            ..Default::default()
         };
 
         // Attention filter should match ATTENTION_QKV (case-insensitive)

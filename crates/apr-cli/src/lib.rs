@@ -4,7 +4,7 @@
 //! Exports CLI structures for testing and reuse.
 
 use clap::{Parser, Subcommand};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 mod commands;
 pub mod error;
@@ -876,7 +876,7 @@ pub enum Commands {
         #[arg(long)]
         energy: bool,
 
-        /// Compute performance grade
+        /// Compute performance grade (vs Ollama baseline)
         #[arg(long)]
         perf_grade: bool,
 
@@ -916,6 +916,18 @@ pub enum Commands {
         /// Measurement passes (default: 10)
         #[arg(long, default_value = "10")]
         measure: usize,
+
+        /// Number of tokens to generate per measurement pass (default: 32)
+        #[arg(long, default_value = "32")]
+        tokens: usize,
+
+        /// Compare against Ollama baseline (runs ollama for comparison)
+        #[arg(long)]
+        ollama: bool,
+
+        /// Disable GPU (force CPU-only profiling)
+        #[arg(long)]
+        no_gpu: bool,
     },
 
     /// Falsifiable QA checklist for model releases
@@ -1378,6 +1390,64 @@ fn validate_shard_manifest(
     Ok(())
 }
 
+/// Dispatch `apr run` — extracted to reduce cognitive complexity of `execute_command`
+#[allow(clippy::too_many_arguments)]
+fn dispatch_run(
+    source: &str,
+    positional_prompt: Option<&String>,
+    input: Option<&Path>,
+    prompt: Option<&String>,
+    max_tokens: usize,
+    stream: bool,
+    language: Option<&str>,
+    task: Option<&str>,
+    format: &str,
+    no_gpu: bool,
+    offline: bool,
+    benchmark: bool,
+    verbose: bool,
+    trace: bool,
+    trace_payload: bool,
+    trace_steps: Option<&[String]>,
+    trace_verbose: bool,
+    trace_output: Option<PathBuf>,
+    trace_level: &str,
+    profile: bool,
+    chat: bool,
+) -> Result<(), CliError> {
+    let effective_trace = trace || trace_payload;
+    let effective_trace_level = if trace_payload { "payload" } else { trace_level };
+    let merged_prompt = prompt.or(positional_prompt).cloned();
+    let effective_prompt = if chat {
+        merged_prompt
+            .as_ref()
+            .map(|p| format!("<|im_start|>user\n{p}<|im_end|>\n<|im_start|>assistant\n"))
+    } else {
+        merged_prompt
+    };
+
+    run::run(
+        source,
+        input,
+        effective_prompt.as_deref(),
+        max_tokens,
+        stream,
+        language,
+        task,
+        format,
+        no_gpu,
+        offline,
+        benchmark,
+        verbose,
+        effective_trace,
+        trace_steps,
+        trace_verbose,
+        trace_output,
+        effective_trace_level,
+        profile,
+    )
+}
+
 /// Execute the CLI command and return the result.
 #[allow(clippy::too_many_lines)]
 pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
@@ -1400,7 +1470,7 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             task,
             format,
             no_gpu,
-            gpu,
+            gpu: _,
             offline,
             benchmark,
             trace,
@@ -1412,55 +1482,14 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             profile,
             chat,
             verbose,
-        } => {
-            // Handle --trace-payload shorthand (enables trace + sets level to payload)
-            let effective_trace = *trace || *trace_payload;
-            let effective_trace_level = if *trace_payload {
-                "payload"
-            } else {
-                trace_level.as_str()
-            };
-            // GH-196: --gpu forces GPU, --no-gpu disables GPU.
-            // When --gpu is passed, no_gpu is false (enforced by conflicts_with).
-            let _ = gpu; // --gpu is the inverse of --no-gpu; no_gpu=false when --gpu is set
-
-            // GH-217: Merge positional prompt with --prompt flag.
-            // --prompt takes precedence; positional is the ergonomic shorthand.
-            let merged_prompt = prompt.as_ref().or(positional_prompt.as_ref()).cloned();
-
-            // GAP-UX-001: Apply chat template if --chat flag is set
-            let effective_prompt = if *chat {
-                merged_prompt
-                    .as_ref()
-                    .map(|p| format!("<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n", p))
-            } else {
-                merged_prompt
-            };
-
-            // Use local verbose flag if set, otherwise fall back to global
-            let effective_verbose = *verbose || cli.verbose;
-
-            run::run(
-                source,
-                input.as_deref(),
-                effective_prompt.as_deref(),
-                *max_tokens,
-                *stream,
-                language.as_deref(),
-                task.as_deref(),
-                format,
-                *no_gpu,
-                *offline,
-                *benchmark,
-                effective_verbose,
-                effective_trace,
-                trace_steps.as_deref(),
-                *trace_verbose,
-                trace_output.clone(),
-                effective_trace_level,
-                *profile,
-            )
-        }
+        } => dispatch_run(
+            source, positional_prompt.as_ref(), input.as_deref(),
+            prompt.as_ref(), *max_tokens, *stream, language.as_deref(),
+            task.as_deref(), format, *no_gpu, *offline, *benchmark,
+            *verbose || cli.verbose, *trace, *trace_payload, trace_steps.as_deref(),
+            *trace_verbose, trace_output.clone(), trace_level.as_str(),
+            *profile, *chat,
+        ),
 
         Commands::Serve {
             file,
@@ -1847,6 +1876,9 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             assert_p50,
             warmup,
             measure,
+            tokens,
+            ollama,
+            no_gpu,
         } => {
             let output_format = format.parse().unwrap_or(profile::OutputFormat::Human);
 
@@ -1885,6 +1917,9 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
                     *callgraph,
                     *fail_on_naive,
                     output.as_deref(),
+                    *tokens,
+                    *ollama,
+                    *no_gpu,
                 )
             }
         }
@@ -5072,6 +5107,9 @@ mod tests {
             assert_p50: None,
             warmup: 3,
             measure: 10,
+            tokens: 32,
+            ollama: false,
+            no_gpu: false,
         };
         let paths = extract_model_paths(&cmd);
         assert_eq!(paths, vec![PathBuf::from("model.apr")]);
@@ -6401,6 +6439,9 @@ mod tests {
             assert_p50: None,
             warmup: 3,
             measure: 10,
+            tokens: 32,
+            ollama: false,
+            no_gpu: false,
         });
         let result = execute_command(&cli);
         assert!(
