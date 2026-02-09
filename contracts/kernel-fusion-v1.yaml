@@ -1,0 +1,231 @@
+# Kernel Fusion Contract v1.0.0
+# THE SOURCE OF TRUTH for GPU kernel fusion decisions
+#
+# STATUS: Authoritative - every fusion decision MUST be documented here
+# SPEC: docs/specifications/qwen2.5-coder-showcase-demo.md Section 11.7
+# CONSUMERS:
+#   - realizar/src/cuda/executor/layers/indexed.rs (transformer layer dispatch)
+#   - realizar/src/cuda/executor/layers/graphed.rs (CUDA graph capture)
+#   - trueno-gpu/src/kernels/quantize/fused.rs (fused kernel implementations)
+#   - trueno-gpu/src/kernels/elementwise/swiglu.rs (SwiGLU kernels)
+#   - crates/apr-cli/src/commands/qa.rs (F-FUSION-001 QA gate)
+#
+# ENFORCEMENT: realizar MUST validate fusion config at executor construction.
+# Code comments alone are NOT sufficient documentation for fusion decisions.
+#
+# WHY THIS CONTRACT EXISTS (Five-Whys, 2026-02-09):
+#   Why 1: Why is decode 80.6 tok/s (0.64x Ollama)?
+#   → FFN launches 5 separate kernels per layer × 28 layers
+#   Why 2: Why 5 separate FFN kernels when a fused kernel EXISTS?
+#   → FusedRmsNormGateUpSwigluQ4KKernel exists but is never called
+#   Why 3: Why was it never wired in?
+#   → Was tried (PAR-077), found 3x slower, but decision not enforced
+#   Why 4: Why is there no enforcement?
+#   → Fusion decisions lived only in code comments, not contracts
+#   Why 5: ROOT CAUSE — No Poka-Yoke for kernel fusion opportunities
+#   → FIX: This contract + compile-time enforcement
+
+metadata:
+  version: "1.0.0"
+  created: "2026-02-09"
+  author: "PAIML Engineering"
+  description: "Kernel fusion decision contract with Poka-Yoke enforcement"
+  lessons_learned:
+    - "PAR-077: Fused RMSNorm+Gate+Up+SwiGLU was 3x slower (shared memory overhead)"
+    - "Code comments are not contracts — decisions must be falsifiable"
+    - "L2 cache naturally serves input reuse for small vectors (6KB input vs 15MB weights)"
+    - "llama.cpp uses DP4A + Q8_1 pre-quantization, not just fusion"
+
+# =============================================================================
+# THEORETICAL FOUNDATION
+# =============================================================================
+#
+# 1. Toyota Production System — Poka-Yoke (mistake-proofing)
+#    Citation: Shingo, S. (1986). Zero Quality Control. Productivity Press.
+#    Principle: "Make it impossible to do wrong"
+#    Application: Fusion decisions enforced at executor construction
+#
+# 2. Roofline Model — Memory/compute bound classification
+#    Citation: Williams, S., Waterman, A., Patterson, D. (2009).
+#              "Roofline: An Insightful Visual Performance Model"
+#              Communications of the ACM, 52(4), 65-76.
+#    Principle: Kernel fusion only helps when launch overhead > compute time
+#    Application: Q4K GEMV is memory-bound (AI ≈ 4); fusion saves memory traffic
+#
+# 3. CUDA Graph Replay — Launch overhead elimination
+#    Citation: NVIDIA (2023). CUDA Programming Guide, §3.2.8.7.3
+#    Principle: Graph replay eliminates kernel launch overhead
+#    Application: Under graph, fusion benefit = memory traffic savings only
+#
+# =============================================================================
+
+# =============================================================================
+# FUSION DECISION REGISTRY
+# =============================================================================
+# Each entry documents a kernel fusion opportunity and its status.
+# Status: ACTIVE (used in production), BLOCKED (tried, slower), PLANNED, REJECTED
+#
+# RULE: Any fused kernel in trueno-gpu MUST have a corresponding entry here.
+# If a kernel exists but has no entry, the build MUST fail (Poka-Yoke).
+
+fusion_decisions:
+
+  # -------------------------------------------------------------------------
+  # ACTIVE fusions (currently used in production inference)
+  # -------------------------------------------------------------------------
+
+  swiglu_fused:
+    id: "FUSION-001"
+    status: "ACTIVE"
+    description: "Fused SiLU activation + element-wise multiply"
+    kernels:
+      fused: "FusedSwigluKernel (trueno-gpu/src/kernels/elementwise/swiglu.rs)"
+      replaces:
+        - "SiluKernel (trueno-gpu/src/kernels/elementwise/activations.rs)"
+        - "ElementwiseMulKernel (trueno-gpu/src/kernels/elementwise/activations.rs)"
+    call_site: "realizar/src/cuda/executor/layers/indexed.rs:1411"
+    saves_per_layer: 1  # 1 fewer kernel launch, 1 fewer intermediate buffer read/write
+    saves_per_token_28L: 28  # 28 layers × 1 launch
+    memory_saved_bytes: 75776  # intermediate_dim × 4 bytes (18944 × 4 for 7B)
+    benchmark:
+      model: "qwen2.5-coder-7b-instruct-q4_k_m"
+      unfused_tok_s: null  # Not benchmarked separately (already fused)
+      fused_tok_s: null
+      decision_date: "2026-02-04"
+    falsification: "Replacing fused_swiglu_into with separate SiLU + Mul must be slower"
+
+  batched_swiglu:
+    id: "FUSION-002"
+    status: "ACTIVE"
+    description: "Batched SwiGLU for prefill (M sequences in parallel)"
+    kernels:
+      fused: "BatchedSwigluKernel (trueno-gpu/src/kernels/elementwise/swiglu.rs)"
+      replaces:
+        - "M × FusedSwigluKernel invocations"
+    call_site: "realizar/src/cuda/executor/layers/prefill.rs"
+    benchmark:
+      model: "qwen2.5-coder-7b-instruct-q4_k_m"
+      prefill_tok_s: 290  # Batched prefill throughput
+      decision_date: "2026-02-08"
+
+  # -------------------------------------------------------------------------
+  # BLOCKED fusions (tried, found slower — MUST remain documented)
+  # -------------------------------------------------------------------------
+
+  rmsnorm_gate_up_swiglu_fused_q4k:
+    id: "FUSION-003"
+    status: "BLOCKED"
+    description: "Fused RMSNorm + Gate Q4K GEMV + Up Q4K GEMV + SwiGLU"
+    kernels:
+      fused: "FusedRmsNormGateUpSwigluQ4KKernel (trueno-gpu/src/kernels/quantize/fused.rs)"
+      replaces:
+        - "RmsNormKernel"
+        - "Q4K Gate GEMV (MWV)"
+        - "Q4K Up GEMV (MWV)"
+        - "FusedSwigluKernel"
+    call_site: "NOT WIRED — see PAR-077"
+    saves_per_layer: 3  # 4 kernels → 1
+    saves_per_token_28L: 84  # 28 layers × 3 launches
+    blocking_reason: |
+      PAR-077: Measured 3x SLOWER than unfused path.
+      Root cause: Input vector is 6KB (hidden_dim=3584 × 4B), weights are 15MB per projection.
+      Weights dominate by 2500x. The fused kernel loads input into shared memory (14KB)
+      and uses barrier synchronization, but L2 cache naturally serves input reuse
+      between separate gate/up kernels WITHOUT the shared memory + barrier overhead.
+      The fused kernel uses 256 threads (8 warps) per output element, while the MWV
+      kernel uses 3 warps with better memory coalescing.
+    benchmark:
+      model: "qwen2.5-coder-7b-instruct-q4_k_m"
+      unfused_tok_s: 80.6
+      fused_tok_s: 26.9  # ~3x slower
+      decision_date: "2026-02-08"
+      gpu: "RTX 4090"
+    revisit_conditions:
+      - "Shared memory > 96KB per SM (Blackwell+)"
+      - "Input vector > 32KB (hidden_dim > 8192)"
+      - "MWV kernel rewritten to use shared memory"
+    falsification: |
+      Re-benchmark annually or when GPU architecture changes.
+      If fused becomes within 10% of unfused, switch to fused.
+
+  # -------------------------------------------------------------------------
+  # PLANNED fusions (identified but not yet implemented)
+  # -------------------------------------------------------------------------
+
+  dp4a_q8_1_input_quantization:
+    id: "FUSION-004"
+    status: "PLANNED"
+    description: "Pre-quantize input to Q8_1, use DP4A hardware INT8 dot products"
+    reference: "llama.cpp vecdotq.cuh:461 — vec_dot_q4_K_q8_1_impl_vmmq()"
+    expected_speedup: "1.5-2x (hardware INT8 dot product vs f32 dequant+accumulate)"
+    implementation_notes: |
+      llama.cpp quantizes f32 input → Q8_1 format once per token, then uses
+      dp4a.u32.s32 hardware instructions for ALL GEMV operations.
+      This amortizes the quantization cost across 10 GEMVs per layer.
+      Our MWV kernel currently dequantizes Q4K weights to f32 and accumulates in f32.
+    blocking_reason: "Requires new Q8_1 quantization kernel + MWV rewrite"
+    priority: "P0 — biggest remaining performance opportunity"
+
+  gate_up_interleaved_weights:
+    id: "FUSION-005"
+    status: "PLANNED"
+    description: "Interleave gate+up weight rows for single-pass GEMV"
+    reference: "llama.cpp mmvq.cu:311 — GGML_GLU_OP_SWIGLU"
+    expected_speedup: "1.1-1.3x (single weight read for gate+up)"
+    implementation_notes: |
+      llama.cpp interleaves gate and up weight rows so one GEMV kernel
+      reads both projections and applies SwiGLU output-side.
+      Requires weight layout transformation at model load time.
+    blocking_reason: "Requires weight interleaving at GGUF load + new kernel"
+    priority: "P1 — moderate impact, complex implementation"
+
+# =============================================================================
+# ENFORCEMENT RULES
+# =============================================================================
+
+enforcement:
+  # Rule 1: Every fused kernel in trueno-gpu MUST have a fusion_decisions entry
+  kernel_registry_complete:
+    description: "No orphaned fused kernels (kernel exists but decision undocumented)"
+    check: "scan trueno-gpu/src/kernels/ for Kernel impls, verify each has entry"
+    severity: "ERROR"
+
+  # Rule 2: BLOCKED decisions must have benchmarks
+  blocked_must_benchmark:
+    description: "BLOCKED fusions must include measured tok/s for fused AND unfused"
+    check: "all BLOCKED entries have non-null benchmark.unfused_tok_s and benchmark.fused_tok_s"
+    severity: "ERROR"
+
+  # Rule 3: ACTIVE fusions must be actually called
+  active_must_be_called:
+    description: "ACTIVE fusions must have a call_site that actually executes"
+    check: "call_site file:line exists and contains the kernel dispatch"
+    severity: "ERROR"
+
+  # Rule 4: No fusion decisions in code comments only
+  no_comment_only_decisions:
+    description: "Fusion decisions MUST be in this contract, not just code comments"
+    check: "grep for 'fused.*BLOCKED\\|fused.*slower\\|fusion.*disabled' in realizar/"
+    severity: "WARNING"
+
+  # Rule 5: Re-evaluation schedule
+  revisit_schedule:
+    description: "BLOCKED decisions must be re-evaluated per revisit_conditions"
+    check: "All BLOCKED entries have non-empty revisit_conditions"
+    severity: "WARNING"
+
+# =============================================================================
+# QA GATE DEFINITION
+# =============================================================================
+
+qa_gate:
+  id: "F-FUSION-001"
+  name: "Kernel Fusion Contract"
+  description: "Validates kernel fusion decisions are documented and enforced"
+  checks:
+    - "All fused kernels in trueno-gpu have contract entries"
+    - "All ACTIVE fusions have valid call sites"
+    - "All BLOCKED fusions have benchmark data"
+    - "No orphaned fusion decisions (contract entry but kernel deleted)"
+  pass_criteria: "All checks pass"
+  falsification: "Introduce an undocumented fused kernel — gate must catch it"
