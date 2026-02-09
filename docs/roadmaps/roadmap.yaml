@@ -3353,3 +3353,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: GH-219
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-219'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-02-09T15:48:15.332094603+00:00
+  updated: 2026-02-09T15:48:15.332094603+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

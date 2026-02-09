@@ -1448,7 +1448,8 @@ fn classify_operation_category(name: &str) -> String {
         // GPU brick names (from indexed.rs start_brick_timer calls)
         "QKV" | "RoPE" | "RopeEmbedding" | "Attention" | "OProj" => "Attention".to_string(),
         "FFNGateUp" | "SwiGLU" | "FFNDown" => "FFN".to_string(),
-        "RmsNorm1" | "RmsNorm2" => "Norm".to_string(),
+        "RmsNorm1" | "RmsNorm2" | "OutputNorm" => "Norm".to_string(),
+        "LmHead" => "FFN".to_string(), // LM head is a GEMV (same category as FFN projections)
         "Residual1" | "Residual2" => "Other".to_string(),
         // CPU brick names (legacy)
         "QkvProjection" | "AttentionScore" | "AttentionSoftmax" | "AttentionOutput"
