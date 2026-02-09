@@ -1,7 +1,7 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
 **Version:** 10.19.0 (Full Stack: apr-cli + aprender + realizar + trueno, Popperian falsified)
-**Status:** Performance Sprint (7B all 3 formats working CPU + GPU. 18 falsification rounds, 92+ bugs found. Round 18: World-class profiling + Ollama parity sprint. Current: 36 tok/s decode = 0.31x Ollama. Target: 1.0x parity (C grade), 2.0x stretch (A grade). Bottleneck: 14% memory bandwidth utilization on RTX 4090.)
+**Status:** Performance Sprint (7B all 3 formats working CPU + GPU. 18 falsification rounds, 98 bugs found. Round 18: World-class profiling + Ollama parity sprint. Measured: 80.6 tok/s decode = 0.64x Ollama (Grade D). Prefill: 153.4 tok/s = 3.32x Ollama. Target: 1.0x parity (C grade), 2.0x stretch (A grade). BW utilization: 25.2% of 1008 GB/s.)
 **Primary Model:** `Qwen/Qwen2.5-Coder-7B-Instruct`
 **Source Format:** SafeTensors BF16 (HuggingFace, sharded, ~14 GB)
 **Popperian Score:** 177/189 gates passing (93.7%) — 14 FALSIFIED, 0 blocked/not-tested. 145 falsification gates, 22 sections. Gated by `model-tests` feature (`make test-model`)
@@ -37,10 +37,11 @@
 The Qwen2.5-Coder Showcase demonstrates the unified inference architecture across three model formats (SafeTensors, APR, GGUF) with CPU and GPU backends, using a single model with a single provenance chain. The full stack is exercised end-to-end: **apr-cli** (47 subcommands) → **aprender** (contract validation, 297 compile-time proofs) → **realizar** (inference: two-phase generation with batched prefill, PagedAttention KV cache, 8 sampling algorithms + penalty modifiers, GQA attention, OpenAI-compatible API, PTX parity validation) → **trueno** (SIMD/GPU compute: 9 backend tiers, 95 CUDA kernels, 6 batched kernel variants with KernelParity trait, Jidoka quality gates). 145 falsification gates across 22 sections.
 
 **v10.19.0 Focus: Ollama Performance Parity Sprint**
-- **Current:** 36 tok/s GPU decode (0.31x Ollama) — Grade F
-- **Target:** 122 tok/s (1.0x parity, Grade C) → 244 tok/s (2.0x, Grade A)
-- **Method:** Dogfood `apr profile`, identify bottlenecks via roofline analysis, fix kernel launch overhead and memory bandwidth utilization
-- **Bottleneck analysis:** 14% of RTX 4090's 1008 GB/s bandwidth utilized. Ollama (llama.cpp) achieves ~48%. Gap: kernel launch overhead, memory copy inefficiency, suboptimal CUDA graph capture
+- **Current (measured 2026-02-09):** 80.6 tok/s GPU decode (0.64x Ollama 125.7 tok/s) — Grade D
+- **Prefill: 153.4 tok/s (3.32x FASTER than Ollama 46.2 tok/s)** — Batched prefill is world-class
+- **Target:** 125.7 tok/s (1.0x parity, Grade C) → 251 tok/s (2.0x, Grade A)
+- **Method:** Dogfood `apr profile`, identify bottlenecks via roofline analysis, optimize decode path
+- **Bottleneck:** 25.2% of RTX 4090's 1008 GB/s bandwidth (Ollama ~50%). Decode gap: 1.56x. CUDA graph already captured but decode still suboptimal.
 - **Grading system:** F (<50% Ollama) → D (50-75%) → C (75-100% = parity) → B (100-150%) → A (150-200%) → A+ (200%+)
 
 **Toyota Way + Popperian Philosophy:**
@@ -79,7 +80,7 @@ apr run/chat/serve  <-- PMAT-237 contract gate -> realizar (Section 14) via true
 | SafeTensors BF16 | Direct | CPU (AVX2) | 0.1 tok/s | **Pass** (correct output, 103s for 1 token, 629s for 64 tokens) |
 | APR Q4_K_M | From SafeTensors | GPU (RTX 4090) | **Pass** (8.82s) | **FIXED**: Routed through CUDA pipeline via `OwnedQuantizedModel::from_apr()`. Previous wgpu F32 adapter skipped Q4K data. |
 | APR Q4_K_M | From SafeTensors | CPU (AVX2) | 0.6 tok/s | **Pass** (correct output "4", 57s) |
-| GGUF Q4_K_M | Pre-baked | GPU (RTX 4090) | ~36 tok/s decode | **Pass** (`apr qa`: 35.8 tok/s, 0.31x Ollama (38 vs 122), 4.4x GPU speedup. Batched prefill: 314ms for 91 tokens (was 2.57s serial). PTX parity: 6/6 kernel pairs.) |
+| GGUF Q4_K_M | Pre-baked | GPU (RTX 4090) | 80.6 tok/s decode | **Pass** (`apr profile`: 80.6 tok/s decode (0.64x Ollama 125.7), prefill 153.4 tok/s (3.32x Ollama). 25.2% BW utilization. CUDA graph decode. PTX parity: 6/6 kernel pairs.) |
 | GGUF Q4_K_M | Pre-baked | CPU (AVX2) | 8 tok/s | **Pass** (`apr qa`: 8 tok/s CPU, 339 tensors validated) |
 | GGUF Q4_K_M | Exported (APR→GGUF) | GPU (RTX 4090) | 20 tok/s | **FIXED** (GH-253: tokenizer metadata round-trip fixed. F2-VALIDATION BOS probe fixed — GPU engages.) |
 | GGUF Q4_K_M | Exported (APR→GGUF) | CPU (AVX2) | 6 tok/s | **FIXED** (GH-253: correct decode verified — "2+2 equals 4" on both 1.5B and 7B round-tripped GGUF) |
@@ -2069,7 +2070,7 @@ This section documents bugs found by falsifying the spec itself against the code
 
 | # | Claim/Gap | Reality | Severity | Fix |
 |---|-----------|---------|----------|-----|
-| 93 | GPU decode is 36 tok/s (0.31x Ollama) | Measured: 36 tok/s vs Ollama 122 tok/s on identical hardware (RTX 4090) and model (7B Q4K). 14% bandwidth utilization vs Ollama ~48%. Root cause: excessive kernel launch overhead, no CUDA graph for decode loop, per-token CPU-GPU synchronization. | **P0** | Performance sprint: CUDA graph decode path, fused dequant+GEMV kernels, eliminate per-token sync points. Target: 1.0x Ollama (122 tok/s). |
+| 93 | GPU decode was 36 tok/s (0.31x Ollama) | **RE-MEASURED 2026-02-09: 80.6 tok/s decode (0.64x Ollama 125.7).** 25.2% BW utilization. Prefill: 153.4 tok/s (3.32x Ollama). Previous measurement was stale (pre-batched-prefill, fewer warmup passes). CUDA graph decode IS captured. Remaining gap: decode kernel efficiency (each token ~12.4ms, Ollama ~8ms). | **P0** | Optimize per-token decode: investigate kernel occupancy, memory access patterns, fused operations. Target: 125.7 tok/s (1.0x). |
 | 94 | `apr profile` is world-class | Profiling tool reports numbers but lacks: (a) per-CUDA-kernel timing via CUDA events, (b) memory bandwidth achieved vs peak per kernel, (c) kernel launch overhead measurement, (d) flame chart visualization, (e) automatic bottleneck identification with fix suggestions. Compare to Nsight Compute which provides all of these. | **P1** | Enhance `apr profile` with CUDA event timing, bandwidth efficiency per operation, kernel launch overhead tracking, and actionable optimization suggestions based on roofline position. |
 | 95 | Ollama parity grading system exists | Grade computation exists but: (a) C grade starts at 75% not 100% (Ollama parity should be C = passing), (b) no automatic Ollama comparison in `apr qa`, (c) no grade history tracking for regression detection. | **P1** | Update grading: F (<50%) → D (50-75%) → C (75-100% = Ollama parity) → B (100-150%) → A (150-200%) → A+ (200%+). Add `apr qa` Ollama parity gate. |
 | 96 | GPU profiling has per-kernel breakdown | `profile_gpu_generation()` returns `hotspots: vec![]` (line 1169). Zero per-operation data for GPU path. CPU path has BrickProfiler but GPU is opaque. | **P0** | Add CUDA event timing around each kernel launch in `forward_gpu_incremental()`. Report per-kernel time, memory bandwidth achieved, and arithmetic intensity. |
