@@ -16,7 +16,7 @@
 //! let group1 = vec![2.3, 2.5, 2.7, 2.9, 3.1];
 //! let group2 = vec![3.2, 3.4, 3.6, 3.8, 4.0];
 //!
-//! let result = ttest_ind(&group1, &group2, true).unwrap();
+//! let result = ttest_ind(&group1, &group2, true).expect("valid t-test inputs");
 //! println!("t-statistic: {:.4}, p-value: {:.4}", result.statistic, result.pvalue);
 //! ```
 

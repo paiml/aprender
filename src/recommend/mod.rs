@@ -20,7 +20,7 @@
 //! recommender.add_item("doc3", "machine learning applications");
 //!
 //! // Get recommendations for similar items
-//! let recommendations = recommender.recommend("doc1", 2).unwrap();
+//! let recommendations = recommender.recommend("doc1", 2).expect("item exists");
 //!
 //! assert_eq!(recommendations.len(), 2);
 //! // doc3 should be most similar (shares "machine learning")

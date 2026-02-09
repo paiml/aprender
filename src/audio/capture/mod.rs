@@ -783,7 +783,7 @@ pub enum MockSignal {
 /// });
 ///
 /// let mut buffer = vec![0.0f32; 160];
-/// let n = mock.read(&mut buffer).unwrap();
+/// let n = mock.read(&mut buffer).expect("mock read always succeeds");
 /// assert_eq!(n, 160);
 /// assert!(buffer[0].abs() <= 0.5); // Amplitude bounded
 /// ```

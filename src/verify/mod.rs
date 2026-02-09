@@ -19,7 +19,7 @@
 //!         .tolerance(Tolerance::percent(5.0))
 //!         .build_stage()
 //!     .build()
-//!     .unwrap();
+//!     .expect("valid pipeline config");
 //!
 //! let result = pipeline.verify(&input_data);
 //! assert!(result.all_passed());

@@ -17,11 +17,11 @@
 //!
 //! // Create a simple instance
 //! let coords = vec![(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)];
-//! let instance = TspInstance::from_coords("square", coords).unwrap();
+//! let instance = TspInstance::from_coords("square", coords).expect("valid coordinates");
 //!
 //! // Solve with ACO
 //! let mut solver = AcoSolver::new().with_seed(42);
-//! let solution = solver.solve(&instance, Budget::Iterations(100)).unwrap();
+//! let solution = solver.solve(&instance, Budget::Iterations(100)).expect("solver converges");
 //!
 //! println!("Tour length: {:.2}", solution.length);
 //! ```

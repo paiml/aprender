@@ -17,7 +17,7 @@
 //!
 //! let layer = Linear::new(512, 256);
 //! let importance = MagnitudeImportance::l2();
-//! let scores = importance.compute(&layer, None).unwrap();
+//! let scores = importance.compute(&layer, None).expect("valid layer weights");
 //!
 //! println!("Importance stats: min={}, max={}", scores.stats.min, scores.stats.max);
 //! ```

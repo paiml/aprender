@@ -24,7 +24,7 @@ use std::path::Path;
 ///
 /// assert!(sanitize_prefix("").is_err());
 /// assert!(sanitize_prefix("git status").is_ok());
-/// assert_eq!(sanitize_prefix("git \0status").unwrap(), "git status");
+/// assert_eq!(sanitize_prefix("git \0status").expect("valid after sanitize"), "git status");
 /// ```
 pub fn sanitize_prefix(input: &str) -> Result<String, ShellError> {
     // Remove null bytes (security)

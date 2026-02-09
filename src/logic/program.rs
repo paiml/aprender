@@ -20,7 +20,7 @@
 //!     .build();
 //!
 //! let results = program.forward();
-//! let grandparent = results.get("grandparent").unwrap();
+//! let grandparent = results.get("grandparent").expect("grandparent rule was defined");
 //! assert_eq!(grandparent[0][2], 1.0); // Alice is grandparent of Charlie
 //! ```
 

@@ -333,7 +333,7 @@ pub(crate) async fn safetensors_chat_completions_handler(
                     .into_response();
             }
             let msgs: Vec<ChatMessage> = messages
-                .unwrap()
+                .expect("messages presence checked above")
                 .iter()
                 .filter_map(|m| {
                     Some(ChatMessage {
