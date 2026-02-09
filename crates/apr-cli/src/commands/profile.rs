@@ -91,6 +91,12 @@ struct Hotspot {
     avg_us: f64,
     min_us: f64,
     max_us: f64,
+    /// Roofline bottleneck classification (None = not computed)
+    bottleneck: Option<String>,
+    /// Hardware efficiency percentage (0-100)
+    efficiency_pct: Option<f64>,
+    /// BrickId category (Attention, FFN, Norm, Other)
+    category: Option<String>,
 }
 
 // ============================================================================
@@ -267,6 +273,96 @@ impl CiProfileReport {
     }
 }
 
+/// Roofline analysis results
+#[derive(Debug, Clone, Default)]
+pub(crate) struct RooflineAnalysis {
+    /// Hardware peak compute (GFLOPS for CPU, TFLOPS for GPU)
+    pub peak_compute: f64,
+    /// Peak memory bandwidth (GB/s)
+    pub peak_bandwidth_gbps: f64,
+    /// Achieved compute (GFLOPS)
+    pub achieved_gflops: f64,
+    /// Achieved bandwidth (GB/s)
+    pub achieved_bandwidth_gbps: f64,
+    /// Compute efficiency (0-100%)
+    pub compute_efficiency_pct: f64,
+    /// Memory efficiency (0-100%)
+    pub memory_efficiency_pct: f64,
+    /// Overall arithmetic intensity (FLOPs / bytes)
+    pub arithmetic_intensity: f64,
+    /// Threshold AI for this hardware
+    pub ai_threshold: f64,
+    /// Whether workload is memory or compute bound
+    pub bottleneck: String,
+    /// Backend name (CPU/CUDA) — used in JSON output format
+    #[allow(dead_code)]
+    pub backend: String,
+    /// Hardware model name
+    pub hardware_model: String,
+}
+
+/// Category time summary
+#[derive(Debug, Clone, Default)]
+#[allow(clippy::struct_field_names)]
+pub(crate) struct CategorySummary {
+    pub attention_pct: f64,
+    pub ffn_pct: f64,
+    pub norm_pct: f64,
+    pub other_pct: f64,
+}
+
+/// Performance grade (A-F)
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum PerfGrade {
+    A,
+    B,
+    C,
+    D,
+    F,
+}
+
+impl PerfGrade {
+    fn from_efficiency(pct: f64) -> Self {
+        if pct >= 50.0 {
+            Self::A
+        } else if pct >= 30.0 {
+            Self::B
+        } else if pct >= 15.0 {
+            Self::C
+        } else if pct >= 5.0 {
+            Self::D
+        } else {
+            Self::F
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::A => "A",
+            Self::B => "B",
+            Self::C => "C",
+            Self::D => "D",
+            Self::F => "F",
+        }
+    }
+
+    fn description(self) -> &'static str {
+        match self {
+            Self::A => "Excellent — near hardware peak",
+            Self::B => "Good — reasonable utilization",
+            Self::C => "Fair — room for improvement",
+            Self::D => "Poor — significant optimization needed",
+            Self::F => "Critical — likely using wrong backend or naive implementation",
+        }
+    }
+}
+
+impl std::fmt::Display for PerfGrade {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.label())
+    }
+}
+
 /// Profile results from real inference
 #[derive(Debug, Clone)]
 pub(crate) struct RealProfileResults {
@@ -283,6 +379,12 @@ pub(crate) struct RealProfileResults {
     hotspots: Vec<Hotspot>,
     per_layer_us: Vec<f64>,
     is_real_data: bool,
+    /// Roofline analysis (None = not computed)
+    roofline: Option<RooflineAnalysis>,
+    /// Category time summary
+    category_summary: Option<CategorySummary>,
+    /// Backend used (cpu, cuda, etc.)
+    backend: String,
 }
 
 /// Detect model format from extension
@@ -303,11 +405,11 @@ pub(crate) fn run(
     granular: bool,
     format: OutputFormat,
     focus: ProfileFocus,
-    _detect_naive: bool,
+    detect_naive: bool,
     _naive_threshold: f64,
     _compare_hf: Option<&str>,
     _energy: bool,
-    _perf_grade: bool,
+    perf_grade: bool,
     _callgraph: bool,
     _fail_on_naive: bool,
     output_path: Option<&Path>,
@@ -321,7 +423,7 @@ pub(crate) fn run(
 
     match format {
         OutputFormat::Human => {
-            output::section("apr profile (PMAT-112: Real Telemetry)");
+            output::section("apr profile (Real Per-Operation Telemetry)");
             println!();
             output::kv("Model", path.display());
             output::kv("Format", format_str);
@@ -335,10 +437,10 @@ pub(crate) fn run(
     let start = Instant::now();
 
     #[cfg(feature = "inference")]
-    let results = profile_real_inference(path, 3, 10)?;
+    let mut results = profile_real_inference(path, 3, 10)?;
 
     #[cfg(not(feature = "inference"))]
-    let results = {
+    let mut results = {
         output::warn("Inference feature not enabled. Cannot run real profiling.");
         output::warn("Build with: cargo build --features inference");
         return Err(CliError::ValidationFailed(
@@ -347,6 +449,12 @@ pub(crate) fn run(
     };
 
     let profile_time = start.elapsed();
+
+    // Compute roofline analysis
+    #[cfg(feature = "inference")]
+    {
+        results.roofline = Some(compute_roofline(&results));
+    }
 
     // GH-173: Apply focus filtering to results (PMAT-182)
     let filtered_results = filter_results_by_focus(&results, focus);
@@ -360,7 +468,7 @@ pub(crate) fn run(
     // Output results based on format
     match format {
         OutputFormat::Human => {
-            print_human_results(&filtered_results, granular)?;
+            print_human_results(&filtered_results, granular, perf_grade, detect_naive)?;
             println!();
             println!(
                 "{}",
@@ -763,6 +871,9 @@ fn filter_results_by_focus(
         hotspots: filtered_hotspots,
         per_layer_us: results.per_layer_us.clone(),
         is_real_data: results.is_real_data,
+        roofline: results.roofline.clone(),
+        category_summary: results.category_summary.clone(),
+        backend: results.backend.clone(),
     }
 }
 
@@ -778,17 +889,212 @@ fn profile_real_inference(
     match format {
         "gguf" => profile_gguf_real(path, warmup_passes, measure_passes),
         "apr" => profile_apr_real(path, warmup_passes, measure_passes),
-        "safetensors" => {
-            output::warn("SafeTensors profiling requires APR conversion.");
-            output::warn("Use: apr convert model.safetensors -o model.apr");
-            Err(CliError::ValidationFailed(
-                "SafeTensors profiling not directly supported. Convert to APR first.".to_string(),
-            ))
-        }
+        "safetensors" => profile_safetensors_real(path, warmup_passes, measure_passes),
         _ => Err(CliError::ValidationFailed(format!(
             "Unsupported format: {format}"
         ))),
     }
+}
+
+// ============================================================================
+// Roofline & Classification Helpers
+// ============================================================================
+
+/// Classify an operation into BrickId category (Attention, FFN, Norm, Other)
+fn classify_operation_category(name: &str) -> String {
+    match name {
+        "QkvProjection" | "RopeEmbedding" | "AttentionScore" | "AttentionSoftmax"
+        | "AttentionOutput" | "OutputProjection" => "Attention".to_string(),
+        "GateProjection" | "UpProjection" | "Activation" | "DownProjection" => "FFN".to_string(),
+        "RmsNorm" | "LayerNorm" => "Norm".to_string(),
+        _ => "Other".to_string(),
+    }
+}
+
+/// Classify operation bottleneck (Memory vs Compute bound)
+///
+/// Q4K decode-time matmul is overwhelmingly memory-bandwidth limited:
+/// AI = 2*N / (N/2 bytes_per_weight) = ~4, threshold ~82 for GPU, ~10 for CPU.
+/// Only softmax and activation are compute-bound (element-wise).
+fn classify_operation_bottleneck(name: &str) -> String {
+    match name {
+        "AttentionSoftmax" | "Activation" | "RopeEmbedding" => "COMPUTE".to_string(),
+        _ => "MEMORY".to_string(), // MatMul, Norm, Embedding, LmHead all memory-bound
+    }
+}
+
+/// Build real per-layer timing from profiler report's per_layer data
+#[cfg(feature = "inference")]
+fn build_per_layer_timing(
+    report: &realizar::brick::ProfileReport,
+    num_layers: usize,
+) -> Vec<f64> {
+    if num_layers == 0 {
+        return vec![];
+    }
+
+    // Sum per-layer entries from all per-layer-aware operations
+    let mut layer_times = vec![0.0_f64; num_layers];
+    for stats in report.operations.values() {
+        // Each operation's per_layer vec has one entry per call
+        // For N layers × M passes, the entries alternate:
+        //   layer0_pass0, layer0_pass1, ..., layer1_pass0, ...
+        // But BrickProfiler just appends in order.
+        // The most useful view: divide entries across layers
+        if stats.per_layer.len() >= num_layers {
+            // Distribute entries evenly across layers
+            let entries_per_layer = stats.per_layer.len() / num_layers;
+            if entries_per_layer > 0 {
+                for (layer_idx, time) in layer_times.iter_mut().enumerate() {
+                    let start = layer_idx * entries_per_layer;
+                    let end = start + entries_per_layer;
+                    let layer_total: f64 = stats.per_layer[start..end.min(stats.per_layer.len())]
+                        .iter()
+                        .sum();
+                    *time += layer_total / entries_per_layer as f64; // Average across passes
+                }
+            }
+        }
+    }
+    layer_times
+}
+
+/// Compute category time summary from hotspots
+fn compute_category_summary(hotspots: &[Hotspot]) -> CategorySummary {
+    let total: f64 = hotspots.iter().map(|h| h.time_us).sum();
+    if total <= 0.0 {
+        return CategorySummary::default();
+    }
+
+    let mut attn = 0.0_f64;
+    let mut ffn = 0.0_f64;
+    let mut norm = 0.0_f64;
+    let mut other = 0.0_f64;
+
+    for h in hotspots {
+        let cat = match h.category.as_deref() {
+            Some(c) => c.to_string(),
+            None => classify_operation_category(&h.name),
+        };
+        match cat.as_str() {
+            "Attention" => attn += h.time_us,
+            "FFN" => ffn += h.time_us,
+            "Norm" => norm += h.time_us,
+            _ => other += h.time_us,
+        }
+    }
+
+    CategorySummary {
+        attention_pct: (attn / total) * 100.0,
+        ffn_pct: (ffn / total) * 100.0,
+        norm_pct: (norm / total) * 100.0,
+        other_pct: (other / total) * 100.0,
+    }
+}
+
+/// Compute roofline analysis using trueno hardware detection
+#[cfg(feature = "inference")]
+fn compute_roofline(
+    results: &RealProfileResults,
+) -> RooflineAnalysis {
+    let hw = trueno::hardware::HardwareCapability::detect();
+
+    let peak_compute = hw.cpu.peak_gflops;
+    let peak_bw = hw.cpu.memory_bw_gbps;
+    let ai_threshold = hw.roofline.cpu_arithmetic_intensity;
+
+    // Estimate FLOPs for one forward pass:
+    // Dominant: matmul = 2 * M * N * K per matmul
+    // For Q4K, each weight element is ~0.5 bytes, so bytes >> FLOPs → memory bound
+    let hidden = results.hidden_dim as f64;
+    let vocab = results.vocab_size as f64;
+    let layers = results.num_layers as f64;
+
+    // Per-layer FLOPs: QKV(2*h*3h) + OutProj(2*h*h) + Gate(2*h*4h) + Up(2*h*4h) + Down(2*h*4h)
+    // = 2h² * (3 + 1 + 4 + 4 + 4) = 32h²
+    let flops_per_layer = 32.0 * hidden * hidden;
+    let flops_lm_head = 2.0 * hidden * vocab;
+    let total_flops = flops_per_layer * layers + flops_lm_head;
+
+    // Bytes transferred (Q4K = 0.5 bytes per weight element)
+    let bytes_per_layer = 16.0 * hidden * hidden * 0.5; // all matmul weights
+    let bytes_lm_head = hidden * vocab * 0.5;
+    let total_bytes = bytes_per_layer * layers + bytes_lm_head;
+
+    let inference_sec = results.total_inference_us / 1_000_000.0;
+    let achieved_gflops = if inference_sec > 0.0 {
+        (total_flops / 1e9) / inference_sec
+    } else {
+        0.0
+    };
+    let achieved_bw = if inference_sec > 0.0 {
+        (total_bytes / 1e9) / inference_sec
+    } else {
+        0.0
+    };
+
+    let ai = if total_bytes > 0.0 {
+        total_flops / total_bytes
+    } else {
+        0.0
+    };
+
+    let compute_eff = if peak_compute > 0.0 {
+        (achieved_gflops / peak_compute) * 100.0
+    } else {
+        0.0
+    };
+    let memory_eff = if peak_bw > 0.0 {
+        (achieved_bw / peak_bw) * 100.0
+    } else {
+        0.0
+    };
+
+    let bottleneck = if ai < ai_threshold {
+        "MEMORY BOUND"
+    } else {
+        "COMPUTE BOUND"
+    };
+
+    RooflineAnalysis {
+        peak_compute,
+        peak_bandwidth_gbps: peak_bw,
+        achieved_gflops,
+        achieved_bandwidth_gbps: achieved_bw,
+        compute_efficiency_pct: compute_eff,
+        memory_efficiency_pct: memory_eff,
+        arithmetic_intensity: ai,
+        ai_threshold,
+        bottleneck: bottleneck.to_string(),
+        backend: results.backend.clone(),
+        hardware_model: format!("{} {} ({} cores, {})", hw.cpu.vendor, hw.cpu.model, hw.cpu.cores, hw.cpu.simd.bits()),
+    }
+}
+
+/// Profile SafeTensors model — converts to GGUF path for per-op profiling
+#[cfg(feature = "inference")]
+fn profile_safetensors_real(
+    path: &Path,
+    _warmup_passes: usize,
+    _measure_passes: usize,
+) -> Result<RealProfileResults, CliError> {
+    // SafeTensors models need import to GGUF/APR for per-operation profiling.
+    // Check if there's a sibling .gguf file to use instead.
+    let gguf_path = path.with_extension("gguf");
+    if gguf_path.exists() {
+        output::info(&format!(
+            "Found sibling GGUF: {}. Profiling that instead.",
+            gguf_path.display()
+        ));
+        return profile_gguf_real(&gguf_path, _warmup_passes, _measure_passes);
+    }
+
+    output::warn("SafeTensors per-operation profiling requires GGUF format.");
+    output::info("Convert first: apr import model.safetensors -o model.gguf");
+    output::info("Then: apr profile model.gguf");
+    Err(CliError::ValidationFailed(
+        "SafeTensors per-op profiling not yet supported. Use GGUF format for full profiling.".to_string(),
+    ))
 }
 
 /// Profile GGUF model with real inference
@@ -834,10 +1140,10 @@ fn profile_gguf_real(
         let _ = model.generate(&test_tokens, &gen_config);
     }
 
-    // Measurement passes with profiler
+    // Measurement passes with per-operation profiler
     println!(
         "{}",
-        format!("Running {} measurement passes...", measure_passes).dimmed()
+        format!("Running {} measurement passes (per-op instrumented)...", measure_passes).dimmed()
     );
 
     let mut profiler = BrickProfiler::new();
@@ -849,22 +1155,16 @@ fn profile_gguf_real(
     profiler.start_inference();
 
     for _ in 0..measure_passes {
-        // Profile the complete forward pass
         let pass_start = Instant::now();
 
-        profiler.start("forward_pass");
-        let logits = model.forward(&test_tokens);
-        profiler.stop("forward_pass");
+        // Use forward_profiled() for real per-operation timing
+        let logits = model.forward_profiled(&test_tokens, &mut profiler);
 
-        // Also record raw timing
         let pass_time = pass_start.elapsed().as_secs_f64() * 1_000_000.0;
         forward_times.push(pass_time);
 
-        // Validate output if successful
+        // Validate output
         if let Ok(ref logits) = logits {
-            profiler.record("logits_validation", 0.1); // Minimal overhead
-
-            // Check for NaN/Inf (PMAT-112 requirement)
             let has_nan = logits.iter().any(|x| x.is_nan());
             let has_inf = logits.iter().any(|x| x.is_infinite());
 
@@ -892,22 +1192,29 @@ fn profile_gguf_real(
         .copied()
         .fold(f64::NEG_INFINITY, f64::max);
 
-    // Build hotspots from profiler report
+    // Build hotspots from profiler report with roofline classification
     let mut hotspots: Vec<Hotspot> = report
         .operations
         .iter()
-        .map(|(name, stats)| Hotspot {
-            name: name.clone(),
-            time_us: stats.total_us,
-            percent: if report.total_inference_us > 0.0 {
-                (stats.total_us / report.total_inference_us) * 100.0
-            } else {
-                0.0
-            },
-            count: stats.count,
-            avg_us: stats.avg_us,
-            min_us: stats.min_us,
-            max_us: stats.max_us,
+        .map(|(name, stats)| {
+            let category = classify_operation_category(name);
+            let bottleneck = classify_operation_bottleneck(name);
+            Hotspot {
+                name: name.clone(),
+                time_us: stats.total_us,
+                percent: if report.total_inference_us > 0.0 {
+                    (stats.total_us / report.total_inference_us) * 100.0
+                } else {
+                    0.0
+                },
+                count: stats.count,
+                avg_us: stats.avg_us,
+                min_us: stats.min_us,
+                max_us: stats.max_us,
+                bottleneck: Some(bottleneck),
+                efficiency_pct: None, // Computed later with hardware info
+                category: Some(category),
+            }
         })
         .collect();
 
@@ -918,8 +1225,12 @@ fn profile_gguf_real(
             .unwrap_or(std::cmp::Ordering::Equal)
     });
 
-    // Estimate per-layer timing (forward_pass / num_layers)
-    let per_layer_us: Vec<f64> = vec![avg_us / num_layers as f64; num_layers];
+    // Build real per-layer timing from profiler report's per_layer data
+    // Each operation records per_layer entries — sum across all ops per layer
+    let per_layer_us = build_per_layer_timing(&report, num_layers);
+
+    // Compute category summary
+    let category_summary = compute_category_summary(&hotspots);
 
     Ok(RealProfileResults {
         model_path: path.display().to_string(),
@@ -939,6 +1250,9 @@ fn profile_gguf_real(
         hotspots,
         per_layer_us,
         is_real_data: report.is_real_data,
+        roofline: None,
+        category_summary: Some(category_summary),
+        backend: "cpu".to_string(),
     })
 }
 
@@ -1044,39 +1358,51 @@ fn profile_apr_real(
             avg_us,
             min_us,
             max_us,
+            bottleneck: None,
+            efficiency_pct: None,
+            category: Some("Other".to_string()),
         }],
         per_layer_us: vec![avg_us / num_layers as f64; num_layers],
         is_real_data: true,
+        roofline: None,
+        category_summary: None,
+        backend: "cpu".to_string(),
     })
 }
 
-/// Print human-readable results
-fn print_human_results(results: &RealProfileResults, granular: bool) -> Result<(), CliError> {
-    // Model info
-    output::header("Model Profile");
+/// Print human-readable results with per-operation hotspots, category bars, and roofline
+fn print_human_results(
+    results: &RealProfileResults,
+    granular: bool,
+    show_perf_grade: bool,
+    detect_naive: bool,
+) -> Result<(), CliError> {
+    // Model info header
+    let backend_str = results.backend.to_uppercase();
     println!(
         "{}",
         output::kv_table(&[
-            ("Architecture", results.architecture.clone()),
-            ("Layers", results.num_layers.to_string()),
-            ("Hidden dim", output::count_fmt(results.hidden_dim)),
-            ("Vocab size", output::count_fmt(results.vocab_size)),
-            ("Warmup passes", results.warmup_passes.to_string()),
-            ("Measure passes", results.measure_passes.to_string()),
+            ("Architecture", format!("{} ({} layers, hidden={}, vocab={})",
+                results.architecture, results.num_layers,
+                output::count_fmt(results.hidden_dim),
+                output::count_fmt(results.vocab_size))),
+            ("Backend", backend_str),
+            ("Warmup", format!("{} passes", results.warmup_passes)),
+            ("Measure", format!("{} passes", results.measure_passes)),
         ])
     );
     println!();
 
-    // Real data indicator
+    // Real data badge
     if results.is_real_data {
-        println!("  {}", output::badge_pass("REAL TELEMETRY (not simulated)"));
+        println!("  {}", output::badge_pass("REAL PER-OPERATION TELEMETRY"));
     } else {
         println!("  {}", output::badge_warn("SIMULATED DATA (inference disabled)"));
     }
     println!();
 
-    // Hotspot analysis
-    output::subheader("Hotspot Analysis");
+    // ── Per-Operation Hotspots ──
+    output::subheader("Per-Operation Hotspots");
     println!();
 
     let total_time = results.hotspots.iter().map(|h| h.time_us).sum::<f64>();
@@ -1089,17 +1415,23 @@ fn print_human_results(results: &RealProfileResults, granular: bool) -> Result<(
             0.0
         };
         let bar = output::progress_bar(percent as usize, 100, 20);
+        let bottleneck_str = hotspot
+            .bottleneck
+            .as_deref()
+            .unwrap_or("-");
         let mut row = vec![
             format!("#{}", i + 1),
             hotspot.name.clone(),
-            format!("{:.1}µs", hotspot.avg_us),
+            format!("{:.0}µs", hotspot.time_us),
             format!("{:.1}%", percent),
+            format!("{}", hotspot.count),
+            bottleneck_str.to_string(),
             bar,
         ];
         if granular {
             row.push(format!(
-                "n={}, min={:.1}µs, max={:.1}µs",
-                hotspot.count, hotspot.min_us, hotspot.max_us
+                "avg={:.1}µs, min={:.1}µs, max={:.1}µs",
+                hotspot.avg_us, hotspot.min_us, hotspot.max_us
             ));
         }
         hotspot_rows.push(row);
@@ -1109,7 +1441,7 @@ fn print_human_results(results: &RealProfileResults, granular: bool) -> Result<(
         println!(
             "{}",
             output::table(
-                &["#", "Component", "Avg", "%", "Bar", "Detail"],
+                &["#", "Operation", "Time", "%", "Calls", "Bottleneck", "Bar", "Detail"],
                 &hotspot_rows,
             )
         );
@@ -1117,19 +1449,56 @@ fn print_human_results(results: &RealProfileResults, granular: bool) -> Result<(
         println!(
             "{}",
             output::table(
-                &["#", "Component", "Avg", "%", "Bar"],
+                &["#", "Operation", "Time", "%", "Calls", "Bottleneck", "Bar"],
                 &hotspot_rows,
             )
         );
     }
     println!();
 
-    // Per-layer breakdown (if granular)
+    // ── Category Summary ──
+    if let Some(ref cat) = results.category_summary {
+        output::subheader("Category Summary");
+        println!();
+
+        let bar_width = 40;
+        let attn_bar = "█".repeat(((cat.attention_pct / 100.0) * bar_width as f64) as usize);
+        let ffn_bar = "█".repeat(((cat.ffn_pct / 100.0) * bar_width as f64) as usize);
+        let norm_bar = "█".repeat(((cat.norm_pct / 100.0) * bar_width as f64) as usize);
+        let other_bar = "█".repeat(((cat.other_pct / 100.0) * bar_width as f64) as usize);
+
+        println!("  Attention: {:5.1}%  {}", cat.attention_pct, attn_bar.cyan());
+        println!("  FFN:       {:5.1}%  {}", cat.ffn_pct, ffn_bar.green());
+        println!("  Norm:      {:5.1}%  {}", cat.norm_pct, norm_bar.yellow());
+        println!("  Other:     {:5.1}%  {}", cat.other_pct, other_bar.dimmed());
+        println!();
+    }
+
+    // ── Per-Layer Timing (real, not estimated) ──
     if granular && !results.per_layer_us.is_empty() {
-        output::subheader("Per-Layer Timing (estimated)");
+        output::subheader("Per-Layer Timing (real)");
         println!();
 
         let max_layer_time = results.per_layer_us.iter().copied().fold(0.0f64, f64::max);
+        let min_layer_time = results.per_layer_us.iter().copied().fold(f64::INFINITY, f64::min);
+
+        // Show variation indicator — if all same, it's fake (divided)
+        if max_layer_time > 0.0 && min_layer_time > 0.0 {
+            let cv = (max_layer_time - min_layer_time) / ((max_layer_time + min_layer_time) / 2.0);
+            if cv < 0.01 {
+                println!(
+                    "  {}",
+                    output::badge_warn("WARNING: Per-layer timing shows zero variance (may be estimated)")
+                );
+            } else {
+                println!(
+                    "  {} (CV={:.1}%)",
+                    output::badge_pass("Real per-layer timing verified"),
+                    cv * 100.0
+                );
+            }
+            println!();
+        }
 
         let mut layer_rows: Vec<Vec<String>> = Vec::new();
         for (i, &time_us) in results.per_layer_us.iter().enumerate() {
@@ -1151,7 +1520,92 @@ fn print_human_results(results: &RealProfileResults, granular: bool) -> Result<(
         println!();
     }
 
-    // Summary
+    // ── Roofline Analysis ──
+    if let Some(ref roofline) = results.roofline {
+        output::subheader("Roofline Analysis");
+        println!();
+        println!(
+            "  Hardware:       {} (peak {:.1} GFLOPS, {:.1} GB/s)",
+            roofline.hardware_model, roofline.peak_compute, roofline.peak_bandwidth_gbps
+        );
+        println!(
+            "  Achieved:       {:.1} GFLOPS, {:.1} GB/s",
+            roofline.achieved_gflops, roofline.achieved_bandwidth_gbps
+        );
+        println!(
+            "  Compute eff:    {:.1}%",
+            roofline.compute_efficiency_pct
+        );
+        println!(
+            "  Memory eff:     {:.1}%",
+            roofline.memory_efficiency_pct
+        );
+        println!(
+            "  Arithmetic int: {:.2} (threshold={:.1})",
+            roofline.arithmetic_intensity, roofline.ai_threshold
+        );
+        println!(
+            "  {}",
+            if roofline.bottleneck == "MEMORY BOUND" {
+                output::badge_info(&roofline.bottleneck)
+            } else {
+                output::badge_warn(&roofline.bottleneck)
+            }
+        );
+        println!();
+
+        // Recommendation
+        if roofline.bottleneck == "MEMORY BOUND" {
+            output::info("Decode is memory-bandwidth limited. Matmul operations transfer");
+            output::info("more bytes than FLOPs computed. Focus on memory access patterns.");
+        }
+        println!();
+    }
+
+    // ── Perf Grade ──
+    if show_perf_grade {
+        let eff = results
+            .roofline
+            .as_ref()
+            .map_or(0.0, |r| r.memory_efficiency_pct.max(r.compute_efficiency_pct));
+        let grade = PerfGrade::from_efficiency(eff);
+        output::subheader("Performance Grade");
+        println!();
+        println!(
+            "  Grade: {}  —  {}",
+            grade.label().bold(),
+            grade.description()
+        );
+        println!("  Efficiency: {:.1}%", eff);
+        println!();
+    }
+
+    // ── Detect Naive ──
+    if detect_naive {
+        output::subheader("Naive Implementation Detection");
+        println!();
+        let mut found_naive = false;
+        for h in &results.hotspots {
+            // Flag operations that are disproportionately slow
+            // A naive (scalar) implementation would be ~4-16x slower than SIMD
+            if h.count > 0 && h.avg_us > results.total_inference_us * 0.5 {
+                println!(
+                    "  {} {} takes {:.1}% of total time ({:.0}µs avg) — check for scalar fallback",
+                    output::badge_warn("NAIVE?"),
+                    h.name,
+                    h.percent,
+                    h.avg_us
+                );
+                found_naive = true;
+            }
+        }
+        if !found_naive {
+            println!("  {} No obvious naive implementations detected", output::badge_pass("OK"));
+        }
+        println!();
+    }
+
+    // ── Summary ──
     output::subheader("Summary");
     println!();
     output::metric(
@@ -1161,6 +1615,7 @@ fn print_human_results(results: &RealProfileResults, granular: bool) -> Result<(
     );
     output::metric("Throughput", format!("{:.2}", results.throughput_tok_s), "tok/s");
     output::metric("Tokens per pass", results.tokens_per_pass, "");
+    output::metric("Operations profiled", results.hotspots.len(), "");
     println!();
 
     Ok(())
@@ -1608,6 +2063,9 @@ mod tests {
             hotspots: vec![],
             per_layer_us: vec![],
             is_real_data: true,
+            roofline: None,
+            category_summary: None,
+            backend: "cpu".to_string(),
         };
         let assertions = CiAssertions::default();
         let report = CiProfileReport::from_results(&results, &assertions);
@@ -1631,6 +2089,9 @@ mod tests {
             hotspots: vec![],
             per_layer_us: vec![],
             is_real_data: true,
+            roofline: None,
+            category_summary: None,
+            backend: "cpu".to_string(),
         };
         let assertions = CiAssertions {
             min_throughput: Some(100.0),
@@ -1658,6 +2119,9 @@ mod tests {
             hotspots: vec![],
             per_layer_us: vec![],
             is_real_data: true,
+            roofline: None,
+            category_summary: None,
+            backend: "cpu".to_string(),
         };
         let assertions = CiAssertions {
             min_throughput: Some(100.0),
@@ -1684,6 +2148,9 @@ mod tests {
             hotspots: vec![],
             per_layer_us: vec![],
             is_real_data: true,
+            roofline: None,
+            category_summary: None,
+            backend: "cpu".to_string(),
         };
         let assertions = CiAssertions {
             max_p50_ms: Some(50.0),
@@ -1986,6 +2453,9 @@ mod tests {
             avg_us: 100.0,
             min_us: 80.0,
             max_us: 120.0,
+            bottleneck: None,
+            efficiency_pct: None,
+            category: None,
         };
         let debug = format!("{:?}", hotspot);
         assert!(debug.contains("Hotspot"));
@@ -2002,6 +2472,9 @@ mod tests {
             avg_us: 100.0,
             min_us: 90.0,
             max_us: 110.0,
+            bottleneck: None,
+            efficiency_pct: None,
+            category: None,
         };
         let cloned = hotspot.clone();
         assert_eq!(cloned.name, hotspot.name);
@@ -2018,6 +2491,9 @@ mod tests {
             avg_us: 0.0,
             min_us: 0.0,
             max_us: 0.0,
+            bottleneck: None,
+            efficiency_pct: None,
+            category: None,
         };
         assert_eq!(hotspot.count, 0);
         assert_eq!(hotspot.avg_us, 0.0);
@@ -2033,6 +2509,9 @@ mod tests {
             avg_us: 100.0,
             min_us: 10.0,
             max_us: 500.0, // High max vs avg
+            bottleneck: None,
+            efficiency_pct: None,
+            category: None,
         };
         assert!(hotspot.max_us > hotspot.avg_us * 4.0);
     }
@@ -2057,6 +2536,9 @@ mod tests {
             hotspots: vec![],
             per_layer_us: vec![],
             is_real_data: true,
+            roofline: None,
+            category_summary: None,
+            backend: "cpu".to_string(),
         };
         assert_eq!(results.model_path, "test.gguf");
         assert_eq!(results.architecture, "llama");
@@ -2074,6 +2556,9 @@ mod tests {
                 avg_us: 500.0,
                 min_us: 450.0,
                 max_us: 550.0,
+                bottleneck: None,
+                efficiency_pct: None,
+                category: None,
             },
             Hotspot {
                 name: "attention".to_string(),
@@ -2083,6 +2568,9 @@ mod tests {
                 avg_us: 300.0,
                 min_us: 280.0,
                 max_us: 320.0,
+                bottleneck: None,
+                efficiency_pct: None,
+                category: None,
             },
         ];
         let results = RealProfileResults {
@@ -2099,6 +2587,9 @@ mod tests {
             hotspots,
             per_layer_us: vec![100.0; 32],
             is_real_data: true,
+            roofline: None,
+            category_summary: None,
+            backend: "cpu".to_string(),
         };
         assert_eq!(results.hotspots.len(), 2);
         assert_eq!(results.per_layer_us.len(), 32);
@@ -2120,6 +2611,9 @@ mod tests {
             hotspots: vec![],
             per_layer_us: vec![],
             is_real_data: false,
+            roofline: None,
+            category_summary: None,
+            backend: "cpu".to_string(),
         };
         assert!(!results.is_real_data);
     }
@@ -2185,6 +2679,9 @@ mod tests {
             hotspots: vec![],
             per_layer_us: vec![],
             is_real_data: true,
+            roofline: None,
+            category_summary: None,
+            backend: "cpu".to_string(),
         };
         let assertions = CiAssertions {
             min_throughput: Some(100.0), // Will fail
@@ -2214,6 +2711,9 @@ mod tests {
             hotspots: vec![],
             per_layer_us: vec![],
             is_real_data: true,
+            roofline: None,
+            category_summary: None,
+            backend: "cpu".to_string(),
         };
         let assertions = CiAssertions {
             min_throughput: Some(100.0), // Exactly at threshold
@@ -2294,6 +2794,9 @@ mod tests {
                     avg_us: 300.0,
                     min_us: 280.0,
                     max_us: 320.0,
+                    bottleneck: None,
+                    efficiency_pct: None,
+                    category: None,
                 },
                 Hotspot {
                     name: "mlp_gate_up".to_string(),
@@ -2303,6 +2806,9 @@ mod tests {
                     avg_us: 250.0,
                     min_us: 230.0,
                     max_us: 270.0,
+                    bottleneck: None,
+                    efficiency_pct: None,
+                    category: None,
                 },
                 Hotspot {
                     name: "matmul_q4k".to_string(),
@@ -2312,6 +2818,9 @@ mod tests {
                     avg_us: 200.0,
                     min_us: 180.0,
                     max_us: 220.0,
+                    bottleneck: None,
+                    efficiency_pct: None,
+                    category: None,
                 },
                 Hotspot {
                     name: "embedding_lookup".to_string(),
@@ -2321,6 +2830,9 @@ mod tests {
                     avg_us: 100.0,
                     min_us: 90.0,
                     max_us: 110.0,
+                    bottleneck: None,
+                    efficiency_pct: None,
+                    category: None,
                 },
                 Hotspot {
                     name: "softmax".to_string(),
@@ -2330,6 +2842,9 @@ mod tests {
                     avg_us: 80.0,
                     min_us: 70.0,
                     max_us: 90.0,
+                    bottleneck: None,
+                    efficiency_pct: None,
+                    category: None,
                 },
                 Hotspot {
                     name: "ffn_down_proj".to_string(),
@@ -2339,6 +2854,9 @@ mod tests {
                     avg_us: 50.0,
                     min_us: 40.0,
                     max_us: 60.0,
+                    bottleneck: None,
+                    efficiency_pct: None,
+                    category: None,
                 },
                 Hotspot {
                     name: "lm_head".to_string(),
@@ -2348,6 +2866,9 @@ mod tests {
                     avg_us: 20.0,
                     min_us: 15.0,
                     max_us: 25.0,
+                    bottleneck: None,
+                    efficiency_pct: None,
+                    category: None,
                 },
                 Hotspot {
                     name: "linear_proj".to_string(),
@@ -2357,6 +2878,9 @@ mod tests {
                     avg_us: 10.0,
                     min_us: 8.0,
                     max_us: 12.0,
+                    bottleneck: None,
+                    efficiency_pct: None,
+                    category: None,
                 },
                 Hotspot {
                     name: "gemm_f16".to_string(),
@@ -2366,10 +2890,16 @@ mod tests {
                     avg_us: 10.0,
                     min_us: 8.0,
                     max_us: 12.0,
+                    bottleneck: None,
+                    efficiency_pct: None,
+                    category: None,
                 },
             ],
             per_layer_us: vec![312.5; 32],
             is_real_data: true,
+            roofline: None,
+            category_summary: None,
+            backend: "cpu".to_string(),
         }
     }
 
@@ -2498,9 +3028,15 @@ mod tests {
                 avg_us: 100.0,
                 min_us: 90.0,
                 max_us: 110.0,
+                bottleneck: None,
+                efficiency_pct: None,
+                category: None,
             }],
             per_layer_us: vec![],
             is_real_data: true,
+            roofline: None,
+            category_summary: None,
+            backend: "cpu".to_string(),
         };
         // No attention-related hotspots
         let filtered = filter_results_by_focus(&results, ProfileFocus::Attention);
@@ -2523,6 +3059,9 @@ mod tests {
             hotspots: vec![],
             per_layer_us: vec![],
             is_real_data: true,
+            roofline: None,
+            category_summary: None,
+            backend: "cpu".to_string(),
         };
         for focus in [
             ProfileFocus::All,
@@ -2556,6 +3095,9 @@ mod tests {
             hotspots: vec![],
             per_layer_us: vec![],
             is_real_data: true,
+            roofline: None,
+            category_summary: None,
+            backend: "cpu".to_string(),
         };
         let assertions = CiAssertions {
             min_throughput: Some(100.0),
@@ -2589,6 +3131,9 @@ mod tests {
             hotspots: vec![],
             per_layer_us: vec![],
             is_real_data: true,
+            roofline: None,
+            category_summary: None,
+            backend: "cpu".to_string(),
         };
         let assertions = CiAssertions {
             min_throughput: Some(100.0),
@@ -2615,6 +3160,9 @@ mod tests {
             hotspots: vec![],
             per_layer_us: vec![],
             is_real_data: true,
+            roofline: None,
+            category_summary: None,
+            backend: "cpu".to_string(),
         };
         let assertions = CiAssertions {
             max_p50_ms: Some(50.0), // 60ms > 50ms => fail
@@ -2643,6 +3191,9 @@ mod tests {
             hotspots: vec![],
             per_layer_us: vec![],
             is_real_data: true,
+            roofline: None,
+            category_summary: None,
+            backend: "cpu".to_string(),
         };
         let assertions = CiAssertions {
             min_throughput: Some(100.0), // 150 >= 100 => pass
@@ -2672,6 +3223,9 @@ mod tests {
             hotspots: vec![],
             per_layer_us: vec![],
             is_real_data: true,
+            roofline: None,
+            category_summary: None,
+            backend: "cpu".to_string(),
         };
         let assertions = CiAssertions {
             min_throughput: Some(100.0),
@@ -3025,11 +3579,17 @@ mod tests {
                 avg_us: 1000.0,
                 min_us: 1000.0,
                 max_us: 1000.0,
+                bottleneck: None,
+                efficiency_pct: None,
+                category: None,
             }],
             per_layer_us: vec![250.0; 4],
             is_real_data: true,
+            roofline: None,
+            category_summary: None,
+            backend: "cpu".to_string(),
         };
-        let result = print_human_results(&results, false);
+        let result = print_human_results(&results, false, false, false);
         assert!(result.is_ok());
     }
 
@@ -3054,11 +3614,17 @@ mod tests {
                 avg_us: 1000.0,
                 min_us: 900.0,
                 max_us: 1100.0,
+                bottleneck: None,
+                efficiency_pct: None,
+                category: None,
             }],
             per_layer_us: vec![250.0; 4],
             is_real_data: true,
+            roofline: None,
+            category_summary: None,
+            backend: "cpu".to_string(),
         };
-        let result = print_human_results(&results, true);
+        let result = print_human_results(&results, true, false, false);
         assert!(result.is_ok());
     }
 
@@ -3078,8 +3644,11 @@ mod tests {
             hotspots: vec![],
             per_layer_us: vec![],
             is_real_data: false,
+            roofline: None,
+            category_summary: None,
+            backend: "cpu".to_string(),
         };
-        let result = print_human_results(&results, false);
+        let result = print_human_results(&results, false, false, false);
         assert!(result.is_ok());
     }
 
@@ -3104,11 +3673,17 @@ mod tests {
                 avg_us: 0.0,
                 min_us: 0.0,
                 max_us: 0.0,
+                bottleneck: None,
+                efficiency_pct: None,
+                category: None,
             }],
             per_layer_us: vec![],
             is_real_data: true,
+            roofline: None,
+            category_summary: None,
+            backend: "cpu".to_string(),
         };
-        let result = print_human_results(&results, false);
+        let result = print_human_results(&results, false, false, false);
         assert!(result.is_ok());
     }
 
@@ -3123,6 +3698,9 @@ mod tests {
                 avg_us: (10 - i) as f64 * 10.0,
                 min_us: (10 - i) as f64 * 8.0,
                 max_us: (10 - i) as f64 * 12.0,
+                bottleneck: None,
+                efficiency_pct: None,
+                category: None,
             })
             .collect();
         let results = RealProfileResults {
@@ -3139,8 +3717,11 @@ mod tests {
             hotspots,
             per_layer_us: vec![1375.0; 4],
             is_real_data: true,
+            roofline: None,
+            category_summary: None,
+            backend: "cpu".to_string(),
         };
-        let result = print_human_results(&results, true);
+        let result = print_human_results(&results, true, false, false);
         assert!(result.is_ok());
     }
 
@@ -3160,8 +3741,11 @@ mod tests {
             hotspots: vec![],
             per_layer_us: vec![0.0, 0.0], // Zero layer times
             is_real_data: true,
+            roofline: None,
+            category_summary: None,
+            backend: "cpu".to_string(),
         };
-        let result = print_human_results(&results, true);
+        let result = print_human_results(&results, true, false, false);
         assert!(result.is_ok());
     }
 
@@ -3185,6 +3769,9 @@ mod tests {
             hotspots: vec![],
             per_layer_us: vec![],
             is_real_data: true,
+            roofline: None,
+            category_summary: None,
+            backend: "cpu".to_string(),
         };
         let result = print_json_results(&results);
         assert!(result.is_ok());
@@ -3212,6 +3799,9 @@ mod tests {
                     avg_us: 600.0,
                     min_us: 550.0,
                     max_us: 650.0,
+                    bottleneck: None,
+                    efficiency_pct: None,
+                    category: None,
                 },
                 Hotspot {
                     name: "op_b".to_string(),
@@ -3221,10 +3811,16 @@ mod tests {
                     avg_us: 400.0,
                     min_us: 350.0,
                     max_us: 450.0,
+                    bottleneck: None,
+                    efficiency_pct: None,
+                    category: None,
                 },
             ],
             per_layer_us: vec![1250.0; 4],
             is_real_data: true,
+            roofline: None,
+            category_summary: None,
+            backend: "cpu".to_string(),
         };
         let result = print_json_results(&results);
         assert!(result.is_ok());
@@ -3251,9 +3847,15 @@ mod tests {
                 avg_us: 100.0,
                 min_us: 100.0,
                 max_us: 100.0,
+                bottleneck: None,
+                efficiency_pct: None,
+                category: None,
             }],
             per_layer_us: vec![100.0],
             is_real_data: true,
+            roofline: None,
+            category_summary: None,
+            backend: "cpu".to_string(),
         };
         let result = print_json_results(&results);
         assert!(result.is_ok());
@@ -3285,6 +3887,9 @@ mod tests {
                     avg_us: 600.0,
                     min_us: 600.0,
                     max_us: 600.0,
+                    bottleneck: None,
+                    efficiency_pct: None,
+                    category: None,
                 },
                 Hotspot {
                     name: "op_b".to_string(),
@@ -3294,10 +3899,16 @@ mod tests {
                     avg_us: 400.0,
                     min_us: 400.0,
                     max_us: 400.0,
+                    bottleneck: None,
+                    efficiency_pct: None,
+                    category: None,
                 },
             ],
             per_layer_us: vec![],
             is_real_data: true,
+            roofline: None,
+            category_summary: None,
+            backend: "cpu".to_string(),
         };
         let result = print_flamegraph(&results, None);
         assert!(result.is_ok());
@@ -3324,9 +3935,15 @@ mod tests {
                 avg_us: 1000.0,
                 min_us: 1000.0,
                 max_us: 1000.0,
+                bottleneck: None,
+                efficiency_pct: None,
+                category: None,
             }],
             per_layer_us: vec![],
             is_real_data: true,
+            roofline: None,
+            category_summary: None,
+            backend: "cpu".to_string(),
         };
         let file = NamedTempFile::with_suffix(".svg").expect("create temp file");
         let result = print_flamegraph(&results, Some(file.path()));
@@ -3353,6 +3970,9 @@ mod tests {
             hotspots: vec![],
             per_layer_us: vec![],
             is_real_data: true,
+            roofline: None,
+            category_summary: None,
+            backend: "cpu".to_string(),
         };
         let result = print_flamegraph(&results, None);
         assert!(result.is_ok());
@@ -3379,9 +3999,15 @@ mod tests {
                 avg_us: 0.0,
                 min_us: 0.0,
                 max_us: 0.0,
+                bottleneck: None,
+                efficiency_pct: None,
+                category: None,
             }],
             per_layer_us: vec![],
             is_real_data: true,
+            roofline: None,
+            category_summary: None,
+            backend: "cpu".to_string(),
         };
         let result = print_flamegraph(&results, None);
         assert!(result.is_ok());
@@ -3403,6 +4029,9 @@ mod tests {
             hotspots: vec![],
             per_layer_us: vec![],
             is_real_data: true,
+            roofline: None,
+            category_summary: None,
+            backend: "cpu".to_string(),
         };
         let result = print_flamegraph(&results, Some(Path::new("/nonexistent/dir/file.svg")));
         assert!(result.is_err());
@@ -3455,6 +4084,9 @@ mod tests {
             hotspots: vec![],
             per_layer_us: vec![],
             is_real_data: true,
+            roofline: None,
+            category_summary: None,
+            backend: "cpu".to_string(),
         };
         let debug = format!("{results:?}");
         assert!(debug.contains("RealProfileResults"));
@@ -3482,9 +4114,15 @@ mod tests {
                 avg_us: 1000.0,
                 min_us: 1000.0,
                 max_us: 1000.0,
+                bottleneck: None,
+                efficiency_pct: None,
+                category: None,
             }],
             per_layer_us: vec![250.0; 4],
             is_real_data: true,
+            roofline: None,
+            category_summary: None,
+            backend: "cpu".to_string(),
         };
         let cloned = results.clone();
         assert_eq!(cloned.model_path, results.model_path);
@@ -3528,6 +4166,9 @@ mod tests {
             hotspots: vec![],
             per_layer_us: vec![],
             is_real_data: true,
+            roofline: None,
+            category_summary: None,
+            backend: "cpu".to_string(),
         };
         let assertions = CiAssertions {
             min_throughput: Some(100.0),
@@ -3554,6 +4195,9 @@ mod tests {
             hotspots: vec![],
             per_layer_us: vec![],
             is_real_data: true,
+            roofline: None,
+            category_summary: None,
+            backend: "cpu".to_string(),
         };
         let assertions = CiAssertions {
             min_throughput: Some(1.0),
@@ -3593,9 +4237,15 @@ mod tests {
                 avg_us: 500.0,
                 min_us: 500.0,
                 max_us: 500.0,
+                bottleneck: None,
+                efficiency_pct: None,
+                category: None,
             }],
             per_layer_us: vec![],
             is_real_data: true,
+            roofline: None,
+            category_summary: None,
+            backend: "cpu".to_string(),
         };
         let filtered = filter_results_by_focus(&results, ProfileFocus::Attention);
         assert_eq!(filtered.hotspots.len(), 1);
@@ -3624,6 +4274,9 @@ mod tests {
                     avg_us: 300.0,
                     min_us: 300.0,
                     max_us: 300.0,
+                    bottleneck: None,
+                    efficiency_pct: None,
+                    category: None,
                 },
                 Hotspot {
                     name: "down_proj".to_string(),
@@ -3633,10 +4286,16 @@ mod tests {
                     avg_us: 300.0,
                     min_us: 300.0,
                     max_us: 300.0,
+                    bottleneck: None,
+                    efficiency_pct: None,
+                    category: None,
                 },
             ],
             per_layer_us: vec![],
             is_real_data: true,
+            roofline: None,
+            category_summary: None,
+            backend: "cpu".to_string(),
         };
         let filtered = filter_results_by_focus(&results, ProfileFocus::Mlp);
         assert_eq!(filtered.hotspots.len(), 2);
@@ -3663,9 +4322,15 @@ mod tests {
                 avg_us: 500.0,
                 min_us: 500.0,
                 max_us: 500.0,
+                bottleneck: None,
+                efficiency_pct: None,
+                category: None,
             }],
             per_layer_us: vec![],
             is_real_data: true,
+            roofline: None,
+            category_summary: None,
+            backend: "cpu".to_string(),
         };
         let filtered = filter_results_by_focus(&results, ProfileFocus::Matmul);
         assert_eq!(filtered.hotspots.len(), 1);
@@ -3692,9 +4357,15 @@ mod tests {
                 avg_us: 200.0,
                 min_us: 200.0,
                 max_us: 200.0,
+                bottleneck: None,
+                efficiency_pct: None,
+                category: None,
             }],
             per_layer_us: vec![],
             is_real_data: true,
+            roofline: None,
+            category_summary: None,
+            backend: "cpu".to_string(),
         };
         let filtered = filter_results_by_focus(&results, ProfileFocus::Embedding);
         assert_eq!(filtered.hotspots.len(), 1);
@@ -3726,6 +4397,9 @@ mod tests {
                     avg_us: 500.0,
                     min_us: 500.0,
                     max_us: 500.0,
+                    bottleneck: None,
+                    efficiency_pct: None,
+                    category: None,
                 },
                 Hotspot {
                     name: "MATMUL_F16".to_string(),
@@ -3735,6 +4409,9 @@ mod tests {
                     avg_us: 300.0,
                     min_us: 300.0,
                     max_us: 300.0,
+                    bottleneck: None,
+                    efficiency_pct: None,
+                    category: None,
                 },
                 Hotspot {
                     name: "MLP_Gate".to_string(),
@@ -3744,10 +4421,16 @@ mod tests {
                     avg_us: 200.0,
                     min_us: 200.0,
                     max_us: 200.0,
+                    bottleneck: None,
+                    efficiency_pct: None,
+                    category: None,
                 },
             ],
             per_layer_us: vec![],
             is_real_data: true,
+            roofline: None,
+            category_summary: None,
+            backend: "cpu".to_string(),
         };
 
         // Attention filter should match ATTENTION_QKV (case-insensitive)

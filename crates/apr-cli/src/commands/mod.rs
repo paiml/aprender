@@ -27,6 +27,7 @@ pub(crate) mod oracle;
 pub(crate) mod probar;
 pub(crate) mod parity;
 pub(crate) mod profile;
+pub(crate) mod ptx_map;
 pub(crate) mod publish;
 pub(crate) mod pull;
 pub(crate) mod qa;

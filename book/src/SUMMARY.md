@@ -286,6 +286,7 @@
 - [Case Study: QA Falsification Protocol](./examples/qa-falsification.md)
 - [Case Study: Qwen2.5-Coder QA Playbook](./examples/qwen-qa-playbook.md)
 - [Case Study: PTX Parity Validation (GH-219)](./examples/ptx-parity-validation.md)
+- [Case Study: Hex Forensics — Binary Model Inspection](./examples/hex-forensics.md)
 
 # Sprint-Based Development
 
