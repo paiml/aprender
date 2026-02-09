@@ -1,10 +1,10 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 10.18.0 (Full Stack: apr-cli + aprender + realizar + trueno, Popperian falsified)
-**Status:** Benchmarked (7B all 3 formats working CPU + GPU; APR GPU fix: CUDA pipeline via from_apr(). 17 falsification rounds, 92 bugs found. Jidoka: apr qa golden output validates GPU correctness. Full QA matrix: 18/20 pass, 3 FALSIFIED structural. ALL `apr qa` gates pass. Batched prefill: 8.2x speedup. PTX parity: 6/6 kernel pairs validated. Hex forensics: format-aware binary inspection. Model profiling: real per-operation telemetry with roofline analysis.)
+**Version:** 10.19.0 (Full Stack: apr-cli + aprender + realizar + trueno, Popperian falsified)
+**Status:** Performance Sprint (7B all 3 formats working CPU + GPU. 18 falsification rounds, 92+ bugs found. Round 18: World-class profiling + Ollama parity sprint. Current: 36 tok/s decode = 0.31x Ollama. Target: 1.0x parity (C grade), 2.0x stretch (A grade). Bottleneck: 14% memory bandwidth utilization on RTX 4090.)
 **Primary Model:** `Qwen/Qwen2.5-Coder-7B-Instruct`
 **Source Format:** SafeTensors BF16 (HuggingFace, sharded, ~14 GB)
-**Popperian Score:** 177/183 gates passing (96.7%) — 14 FALSIFIED, 0 blocked/not-tested. 139 falsification gates, 21 sections. Gated by `model-tests` feature (`make test-model`)
+**Popperian Score:** 177/189 gates passing (93.7%) — 14 FALSIFIED, 0 blocked/not-tested. 145 falsification gates, 22 sections. Gated by `model-tests` feature (`make test-model`)
 **CLI Surface:** 37 top-level + 10 nested subcommands (47 total)
 **Compile-Time Proofs:** 297 algebraic invariants (zero runtime cost)
 **Author:** PAIML Engineering
@@ -34,7 +34,14 @@
 
 ## Executive Summary
 
-The Qwen2.5-Coder Showcase demonstrates the unified inference architecture across three model formats (SafeTensors, APR, GGUF) with CPU and GPU backends, using a single model with a single provenance chain. The full stack is exercised end-to-end: **apr-cli** (47 subcommands) → **aprender** (contract validation, 297 compile-time proofs) → **realizar** (inference: two-phase generation with batched prefill, PagedAttention KV cache, 8 sampling algorithms + penalty modifiers, GQA attention, OpenAI-compatible API, PTX parity validation) → **trueno** (SIMD/GPU compute: 9 backend tiers, 95 CUDA kernels, 6 batched kernel variants with KernelParity trait, Jidoka quality gates). 127 falsification gates across 19 sections.
+The Qwen2.5-Coder Showcase demonstrates the unified inference architecture across three model formats (SafeTensors, APR, GGUF) with CPU and GPU backends, using a single model with a single provenance chain. The full stack is exercised end-to-end: **apr-cli** (47 subcommands) → **aprender** (contract validation, 297 compile-time proofs) → **realizar** (inference: two-phase generation with batched prefill, PagedAttention KV cache, 8 sampling algorithms + penalty modifiers, GQA attention, OpenAI-compatible API, PTX parity validation) → **trueno** (SIMD/GPU compute: 9 backend tiers, 95 CUDA kernels, 6 batched kernel variants with KernelParity trait, Jidoka quality gates). 145 falsification gates across 22 sections.
+
+**v10.19.0 Focus: Ollama Performance Parity Sprint**
+- **Current:** 36 tok/s GPU decode (0.31x Ollama) — Grade F
+- **Target:** 122 tok/s (1.0x parity, Grade C) → 244 tok/s (2.0x, Grade A)
+- **Method:** Dogfood `apr profile`, identify bottlenecks via roofline analysis, fix kernel launch overhead and memory bandwidth utilization
+- **Bottleneck analysis:** 14% of RTX 4090's 1008 GB/s bandwidth utilized. Ollama (llama.cpp) achieves ~48%. Gap: kernel launch overhead, memory copy inefficiency, suboptimal CUDA graph capture
+- **Grading system:** F (<50% Ollama) → D (50-75%) → C (75-100% = parity) → B (100-150%) → A (150-200%) → A+ (200%+)
 
 **Toyota Way + Popperian Philosophy:**
 - **Zero SATD:** No TODO/FIXME/HACK in production code. Technical debt is a defect.
@@ -1076,6 +1083,83 @@ Format-aware binary forensics tool that understands GGUF, APR, and SafeTensors i
 | F-PROFILE-004 | --detect-naive flags scalar fallback | `apr profile model.gguf --detect-naive` | Operations below threshold flagged | **Pass** (flags operations taking >50% of total time) |
 | F-PROFILE-005 | Perf grade reflects efficiency | `apr profile model.gguf --perf-grade` | >50% efficiency → A, <10% → D/F | **Pass** (letter grade A-F based on max(compute_eff, memory_eff)) |
 | F-PROFILE-006 | SafeTensors profiling gives actionable error | `apr profile model.safetensors` | Clear error with conversion instructions | **Pass** (suggests `apr import` + GGUF path, checks for sibling .gguf) |
+| F-PROFILE-007 | GPU per-kernel timing is real (not opaque) | `apr profile model.gguf` on GPU | Shows per-kernel time for QKV, attention, FFN, etc. | **FALSIFIED** (GPU path returns `hotspots: vec![]` — zero per-kernel data) |
+| F-PROFILE-008 | Memory bandwidth utilization per kernel | `apr profile model.gguf --granular` | Shows achieved GB/s per operation vs peak | **FALSIFIED** (only aggregate bandwidth computed, not per-kernel) |
+| F-PROFILE-009 | Kernel launch overhead measured | `apr profile model.gguf` | Reports total kernel launch overhead as % of decode time | **FALSIFIED** (no kernel launch timing exists) |
+| F-PROFILE-010 | Ollama parity grade in `apr qa` | `apr qa model.gguf` | Reports Ollama parity ratio and letter grade | **FALSIFIED** (Ollama comparison only in `apr profile --ollama`, not in `apr qa`) |
+| F-PROFILE-011 | Cross-format performance comparison | `apr profile model.apr --compare model.gguf` | Side-by-side decode tok/s for APR vs GGUF | **FALSIFIED** (no cross-format comparison exists) |
+| F-PROFILE-012 | Bandwidth utilization > 40% (Ollama parity) | `apr profile model.gguf` roofline | Memory efficiency > 40% | **FALSIFIED** (14% achieved, target 40-50% for Ollama parity) |
+
+### 11.7 Performance Sprint: Ollama Parity Analysis (v10.19.0)
+
+**Problem:** 36 tok/s decode on RTX 4090 vs Ollama 122 tok/s = 0.31x parity. This is a **Grade F** result.
+
+**Theoretical Analysis (Williams et al., 2009):**
+```
+RTX 4090 Memory Bandwidth: 1008 GB/s
+7B Q4K Model Size: ~4.0 GB (all weight matrices loaded per token)
+Theoretical Max Decode: 1008 / 4.0 ≈ 252 tok/s
+
+Ollama (llama.cpp):  122 tok/s = 48% of theoretical max
+Our current:          36 tok/s = 14% of theoretical max
+Gap factor:           3.4x
+```
+
+**Root Cause Analysis (Five-Whys):**
+
+1. **Why 14% BW utilization?** → Per-token decode time is 28ms but should be ~4ms
+2. **Why 28ms per token?** → Each token requires 28 layer forward passes, each with multiple kernel launches
+3. **Why are kernel launches slow?** → No CUDA graph capture for decode loop; each kernel launch has ~10μs CPU overhead
+4. **Why no CUDA graphs?** → `forward_gpu_incremental()` dispatches kernels individually via `cuLaunchKernel`
+5. **Root cause:** Missing CUDA graph replay optimization for the decode path. llama.cpp captures the entire decode forward pass as a single graph.
+
+**Optimization Targets (ranked by expected impact):**
+
+| Priority | Optimization | Expected Speedup | Effort | Reference |
+|----------|-------------|-----------------|--------|-----------|
+| P0 | CUDA graph capture for decode loop | 2-3x | Medium | Yu et al. (2023) "ORCA: A Distributed Serving System" |
+| P0 | Eliminate per-token CPU-GPU sync | 1.5-2x | Low | Pope et al. (2023) "Efficiently Scaling Transformer Inference" |
+| P1 | Fused dequant+GEMV kernel (Q4K) | 1.2-1.5x | High | Dettmers et al. (2022) "LLM.int8()" |
+| P1 | Persistent kernel for attention | 1.1-1.3x | Medium | Dao (2023) "FlashAttention-2" |
+| P2 | Custom memory allocator (pool) | 1.05-1.1x | Low | Kwon et al. (2023) "PagedAttention" |
+| P2 | Kernel launch batching | 1.1-1.2x | Medium | NVIDIA (2024) "CUDA Best Practices Guide" |
+
+**Ollama Parity Grading System:**
+
+| Grade | Ratio | Description | Criteria |
+|-------|-------|-------------|----------|
+| A+ | ≥2.0x | World-class — exceeds Ollama by 2x+ | Cutting-edge optimizations |
+| A | 1.5-2.0x | Excellent — significantly faster than Ollama | CUDA graphs + fused kernels |
+| B | 1.0-1.5x | Good — Ollama parity achieved | Graph capture + sync elimination |
+| C | 0.75-1.0x | Passing — within 75% of Ollama | Basic optimizations shipped |
+| D | 0.5-0.75x | Below parity — needs work | Some optimizations |
+| F | <0.5x | Critical — fundamental bottleneck | **Current state (0.31x)** |
+
+**Measurement Protocol (Curtsinger & Berger, 2013):**
+- Minimum 10 measurement passes after 3 warmup passes
+- Report: mean, p50, p95, p99, min, max, CV%
+- Separate prefill and decode phases (Pope et al., 2023)
+- Compare decode-only throughput (Ollama reports `eval_count/eval_duration`)
+- Token count: minimum 128 for stable measurement
+- Temperature: 0 for deterministic reproducibility
+
+**Cross-Modality Requirements:**
+
+| Modality | Metric | Target | Measurement |
+|----------|--------|--------|-------------|
+| `apr run` | Decode tok/s | ≥122 (Ollama) | `apr profile model.gguf --tokens 128` |
+| `apr chat` | TTFT (time to first token) | <200ms | `apr chat model.gguf --profile` |
+| `apr chat` | Inter-token latency | <10ms | p95 measured over conversation |
+| `apr serve` | Request latency p50 | <100ms | `wrk` or `hey` load testing |
+| `apr serve` | Request latency p99 | <500ms | Under 10 concurrent requests |
+| `apr serve` | Streaming TTFT | <200ms | Server-sent events timing |
+
+**Peer-Reviewed Citations for Performance Sprint:**
+- Pope, R., et al. (2023). "Efficiently Scaling Transformer Inference." *MLSys*.
+- Aminabadi, R. Y., et al. (2022). "DeepSpeed Inference: Enabling Efficient Inference of Transformer Models at Unprecedented Scale." *SC*.
+- Yu, G.-I., et al. (2022). "Orca: A Distributed Serving System for Transformer-Based Generative Models." *OSDI*.
+- Agrawal, A., et al. (2024). "Sarathi: Efficient LLM Inference by Piggybacking Decodes with Chunked Prefills." *arXiv:2308.16369*.
+- Sheng, Y., et al. (2023). "FlexGen: High-Throughput Generative Inference of Large Language Models with a Single GPU." *ICML*.
 
 ---
 
@@ -1099,7 +1183,7 @@ Format-aware binary forensics tool that understands GGUF, APR, and SafeTensors i
 
 | Backend | Metric | Target | Actual | Status |
 |---------|--------|--------|--------|--------|
-| GPU (RTX 4090) | Throughput (Q4K) | >100 tok/s | decode 36 tok/s (28ms/token) | **FALSIFIED** (36% of target. Per-token decode: 28ms × 28 layers. Prefill: 314ms batched for 91 tokens (was 2.57s serial, 8.2x improvement). Ollama parity: 0.31x. Next: fused decode kernels.) |
+| GPU (RTX 4090) | Throughput (Q4K) | >122 tok/s (Ollama parity) | decode 36 tok/s (28ms/token) | **FALSIFIED** (29% of target. Per-token decode: 28ms × 28 layers. Prefill: 314ms batched. Ollama: 122 tok/s. Root cause: 14% BW utilization. Theoretical max: 252 tok/s. Stretch goal: 244 tok/s (2x Ollama). See §11.7 Performance Sprint.) |
 | GPU (RTX 4090) | TTFT | <500ms | 314ms (91 tok), ~50ms (10 tok) | **Pass** (batched prefill shipped: 314ms for 91-token prompt including ChatML overhead. Short prompts: ~50ms. Long prompts: proportional to length but 8.2x faster than serial.) |
 | GPU (RTX 4090) | Memory | <6 GB | 15.7 GB APR, 17.1 GB GGUF | **FALSIFIED** (re-measured: APR=15.7 GB, GGUF=17.1 GB. CUDA pipeline memory, not format-specific. 6 GB target unrealistic for 7B.) |
 | CPU (AVX2) | Throughput (Q4K) | >5 tok/s | 6 tok/s | **Pass** (`apr qa` CPU measurement) |
@@ -1981,6 +2065,17 @@ This section documents bugs found by falsifying the spec itself against the code
 | 91 | Roofline analysis computed | Help text claims "Roofline analysis" but `compute_roofline()` returned `RooflineAnalysis::default()`. No FLOPs, no bandwidth, no classification. | **P1** | `compute_roofline()` uses `trueno::hardware::HardwareCapability::detect()` for peak GFLOPS/bandwidth. Computes arithmetic intensity from Q4K model dimensions. Classifies as MEMORY vs COMPUTE bound. |
 | 92 | p50/p99 are real percentiles | Both set to `avg_us` — same value. `fn compute_percentile()` returns the mean, not a sorted-array percentile. | **P2** | Per-operation timing now uses `BrickProfiler::OpStats` with real min/max/avg from multiple passes. p50/p99 via sorted iteration. |
 
+**Round 18 (v10.19.0): Ollama parity sprint — world-class profiling + performance optimization**
+
+| # | Claim/Gap | Reality | Severity | Fix |
+|---|-----------|---------|----------|-----|
+| 93 | GPU decode is 36 tok/s (0.31x Ollama) | Measured: 36 tok/s vs Ollama 122 tok/s on identical hardware (RTX 4090) and model (7B Q4K). 14% bandwidth utilization vs Ollama ~48%. Root cause: excessive kernel launch overhead, no CUDA graph for decode loop, per-token CPU-GPU synchronization. | **P0** | Performance sprint: CUDA graph decode path, fused dequant+GEMV kernels, eliminate per-token sync points. Target: 1.0x Ollama (122 tok/s). |
+| 94 | `apr profile` is world-class | Profiling tool reports numbers but lacks: (a) per-CUDA-kernel timing via CUDA events, (b) memory bandwidth achieved vs peak per kernel, (c) kernel launch overhead measurement, (d) flame chart visualization, (e) automatic bottleneck identification with fix suggestions. Compare to Nsight Compute which provides all of these. | **P1** | Enhance `apr profile` with CUDA event timing, bandwidth efficiency per operation, kernel launch overhead tracking, and actionable optimization suggestions based on roofline position. |
+| 95 | Ollama parity grading system exists | Grade computation exists but: (a) C grade starts at 75% not 100% (Ollama parity should be C = passing), (b) no automatic Ollama comparison in `apr qa`, (c) no grade history tracking for regression detection. | **P1** | Update grading: F (<50%) → D (50-75%) → C (75-100% = Ollama parity) → B (100-150%) → A (150-200%) → A+ (200%+). Add `apr qa` Ollama parity gate. |
+| 96 | GPU profiling has per-kernel breakdown | `profile_gpu_generation()` returns `hotspots: vec![]` (line 1169). Zero per-operation data for GPU path. CPU path has BrickProfiler but GPU is opaque. | **P0** | Add CUDA event timing around each kernel launch in `forward_gpu_incremental()`. Report per-kernel time, memory bandwidth achieved, and arithmetic intensity. |
+| 97 | All modalities profiled (run/chat/serve) | Only `apr run` path profiled. `apr chat` and `apr serve` have zero performance instrumentation. Cannot verify TTFT or streaming latency for interactive use cases. | **P1** | Add `--profile` flag to `apr chat` (measures TTFT + inter-token latency) and `apr serve` (measures request latency p50/p95/p99). |
+| 98 | APR format GPU inference competitive | APR Q4K achieves "8.82s" for generation but no tok/s breakdown. GGUF has 36 tok/s decode. No APR vs GGUF performance comparison in profile output. | **P1** | Add cross-format performance comparison: `apr profile model.apr --compare model.gguf`. Report decode tok/s for both formats side-by-side. |
+
 ### 18.2 Claims Verified (Not Falsified)
 
 **Round 1:**
@@ -2205,14 +2300,15 @@ total_bytes = num_superblocks * 144
 | 10. Rosetta Conversion | F-ROSETTA-* | 6 | 5 |
 | 11. ML Diagnostics | F-DIAG-* | 5 | 5 |
 | **11.5. Hex Forensics** | **F-HEX-*** | **6** | **5** |
-| **11.6. Model Profiling** | **F-PROFILE-*** | **6** | **5** |
+| **11.6. Model Profiling** | **F-PROFILE-*** | **12** | **5** |
+| **11.7. Performance Sprint** | **(in F-PROFILE-*)** | **(included above)** | **-** |
 | 12. Performance | F-PERF-* | 7 | 5 |
 | **13. Trueno Compute** | **F-TRUENO-*** | **12** | **5** |
 | 14. Realizar Inference | F-REALIZE-* | 13 | 5 |
 | 15. Contract Model | F-CONTRACT-* | 7 | 5 |
 | 16. Provability | F-PROVE-* | 7 | 5 |
 | 17. CLI Surface | F-SURFACE-* | 5 | 5 |
-| **Total** | | **139** | **105** |
+| **Total** | | **145** | **110** |
 
 ---
 
@@ -2248,3 +2344,15 @@ total_bytes = num_superblocks * 144
 20. Curtsinger, C., & Berger, E. D. (2013). "STABILIZER: Statistically Sound Performance Evaluation." *ASPLOS*, 219–228.
 21. Sigelman, B. H., et al. (2010). "Dapper, a Large-Scale Distributed Systems Tracing Infrastructure." *Google Technical Report*.
 22. Sambasivan, R. R., et al. (2011). "Diagnosing Performance Changes by Comparing Request Flows." *NSDI*, 43–56.
+
+### LLM Inference Optimization (Round 18+)
+
+23. Pope, R., et al. (2023). "Efficiently Scaling Transformer Inference." *MLSys*.
+24. Aminabadi, R. Y., et al. (2022). "DeepSpeed Inference: Enabling Efficient Inference of Transformer Models at Unprecedented Scale." *SC*.
+25. Yu, G.-I., et al. (2022). "Orca: A Distributed Serving System for Transformer-Based Generative Models." *OSDI*.
+26. Agrawal, A., et al. (2024). "Sarathi: Efficient LLM Inference by Piggybacking Decodes with Chunked Prefills." *arXiv:2308.16369*.
+27. Sheng, Y., et al. (2023). "FlexGen: High-Throughput Generative Inference of Large Language Models with a Single GPU." *ICML*.
+28. Dettmers, T., et al. (2022). "LLM.int8(): 8-bit Matrix Multiplication for Transformers at Scale." *NeurIPS*.
+29. Dao, T. (2023). "FlashAttention-2: Faster Attention with Better Parallelism and Work Partitioning." *arXiv:2307.08691*.
+30. NVIDIA (2024). "CUDA C++ Best Practices Guide." NVIDIA Developer Documentation.
+31. Mace, J., Roelke, R., & Fonseca, R. (2015). "Pivot Tracing: Dynamic Causal Monitoring for Distributed Systems." *SOSP*.
