@@ -628,9 +628,9 @@ pub enum Commands {
         json: bool,
     },
 
-    /// Hex dump tensor data
+    /// Format-aware binary forensics (10X better than xxd)
     Hex {
-        /// Path to .apr model file
+        /// Path to model file (APR, GGUF, or SafeTensors)
         #[arg(value_name = "FILE")]
         file: PathBuf,
 
@@ -638,7 +638,7 @@ pub enum Commands {
         #[arg(long)]
         tensor: Option<String>,
 
-        /// Limit bytes to display
+        /// Limit bytes/values to display
         #[arg(long, default_value = "64")]
         limit: usize,
 
@@ -653,6 +653,38 @@ pub enum Commands {
         /// Output as JSON
         #[arg(long)]
         json: bool,
+
+        /// Annotated file header (magic, version, tensor count, metadata)
+        #[arg(long)]
+        header: bool,
+
+        /// Q4K/Q6K/Q8_0 super-block structure with field annotations
+        #[arg(long)]
+        blocks: bool,
+
+        /// Value histogram + entropy + kurtosis analysis
+        #[arg(long)]
+        distribution: bool,
+
+        /// Layout contract verification overlay per tensor
+        #[arg(long)]
+        contract: bool,
+
+        /// Per-region byte entropy analysis
+        #[arg(long)]
+        entropy: bool,
+
+        /// Raw bytes (like xxd but format-aware, with ASCII column)
+        #[arg(long)]
+        raw: bool,
+
+        /// Start at byte offset (supports 0x prefix for hex)
+        #[arg(long, default_value = "0")]
+        offset: String,
+
+        /// Bytes per row for raw output (default: 16)
+        #[arg(long, default_value = "16")]
+        width: usize,
     },
 
     /// Model architecture tree view
@@ -970,6 +1002,34 @@ pub enum Commands {
         /// Assert parity (exit non-zero on divergence)
         #[arg(long)]
         assert: bool,
+    },
+
+    /// Model-to-PTX source mapping (Mieruka: make GPU kernel dispatch visible)
+    #[command(name = "ptx-map")]
+    PtxMap {
+        /// Path to GGUF model file
+        #[arg(value_name = "FILE")]
+        file: PathBuf,
+
+        /// Filter to specific kernel (e.g., --kernel Q4KGemv)
+        #[arg(long)]
+        kernel: Option<String>,
+
+        /// Reverse lookup: kernel name -> which layers/steps use it
+        #[arg(long)]
+        reverse: Option<String>,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+
+        /// Full PTX snippets and detailed analysis
+        #[arg(short, long)]
+        verbose: bool,
+
+        /// Show batched prefill kernel variants instead of decode
+        #[arg(long)]
+        prefill: bool,
     },
 
     /// ML tuning: LoRA/QLoRA configuration and memory planning (GH-176)
@@ -1650,14 +1710,34 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             stats,
             list,
             json,
-        } => hex::run(
-            file,
-            tensor.as_deref(),
-            *limit,
-            *stats,
-            *list,
-            *json || cli.json,
-        ),
+            header,
+            blocks,
+            distribution,
+            contract,
+            entropy,
+            raw,
+            offset,
+            width,
+        } => {
+            let parsed_offset = hex::parse_hex_offset(offset)
+                .map_err(CliError::InvalidFormat)?;
+            hex::run(&hex::HexOptions {
+                file: file.clone(),
+                tensor: tensor.clone(),
+                limit: *limit,
+                stats: *stats,
+                list: *list,
+                json: *json || cli.json,
+                header: *header,
+                blocks: *blocks,
+                distribution: *distribution,
+                contract: *contract,
+                entropy: *entropy,
+                raw: *raw,
+                offset: parsed_offset,
+                width: *width,
+            })
+        }
 
         Commands::Tree {
             file,
@@ -1852,6 +1932,22 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             prompt,
             assert,
         } => commands::parity::run(file, prompt, *assert, cli.verbose),
+
+        Commands::PtxMap {
+            file,
+            kernel,
+            reverse,
+            json,
+            verbose,
+            prefill,
+        } => commands::ptx_map::run(
+            file,
+            kernel.as_deref(),
+            reverse.as_deref(),
+            *json || cli.json,
+            *verbose || cli.verbose,
+            *prefill,
+        ),
 
         Commands::Tune {
             file,
@@ -2734,6 +2830,14 @@ mod tests {
                 stats: false,
                 list: false,
                 json: false,
+                header: false,
+                blocks: false,
+                distribution: false,
+                contract: false,
+                entropy: false,
+                raw: false,
+                offset: "0".to_string(),
+                width: 16,
             },
             Commands::Tree {
                 file: PathBuf::from("m.apr"),
@@ -3081,6 +3185,7 @@ mod tests {
                 stats,
                 list,
                 json,
+                ..
             } => {
                 assert_eq!(file, PathBuf::from("model.apr"));
                 assert_eq!(tensor, Some("embed.weight".to_string()));
@@ -5107,6 +5212,14 @@ mod tests {
             stats: false,
             list: false,
             json: false,
+            header: false,
+            blocks: false,
+            distribution: false,
+            contract: false,
+            entropy: false,
+            raw: false,
+            offset: "0".to_string(),
+            width: 16,
         };
         let paths = extract_model_paths(&cmd);
         assert!(paths.is_empty(), "Hex is a diagnostic command (exempt)");
@@ -5590,6 +5703,14 @@ mod tests {
             stats: false,
             list: false,
             json: false,
+            header: false,
+            blocks: false,
+            distribution: false,
+            contract: false,
+            entropy: false,
+            raw: false,
+            offset: String::new(),
+            width: 16,
         });
         let result = execute_command(&cli);
         assert!(result.is_err(), "Hex should fail with non-existent file");
