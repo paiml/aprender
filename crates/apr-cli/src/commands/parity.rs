@@ -120,6 +120,7 @@ enum Verdict {
     FailNan,
 }
 
+#[allow(clippy::trivially_copy_pass_by_ref)]
 impl Verdict {
     fn symbol(&self) -> String {
         match self {
@@ -176,9 +177,7 @@ fn auto_diagnose(metrics: &[SpcMetrics], hidden_dim: usize, num_heads: usize, kv
     );
 
     // Pattern 1: Position 0 fails → core layer computation, NOT KV cache
-    let pos0_fails = metrics
-        .first()
-        .is_some_and(|m| m.verdict().is_fail());
+    let pos0_fails = metrics.first().is_some_and(|m| m.verdict().is_fail());
 
     // Pattern 2: Divergence grows with position → KV cache accumulation error
     let diffs: Vec<f32> = metrics.iter().map(|m| m.max_abs_diff).collect();
@@ -217,9 +216,8 @@ fn auto_diagnose(metrics: &[SpcMetrics], hidden_dim: usize, num_heads: usize, kv
 
     if pos0_fails {
         eprintln!(
-            "  {} {}",
+            "  {} Position 0 diverges — bug is in CORE LAYER computation",
             "WHY 1:".red().bold(),
-            "Position 0 diverges — bug is in CORE LAYER computation"
         );
         eprintln!(
             "         {}",
@@ -242,17 +240,15 @@ fn auto_diagnose(metrics: &[SpcMetrics], hidden_dim: usize, num_heads: usize, kv
         );
     } else if high_cos_wrong_argmax {
         eprintln!(
-            "  {} {}",
+            "  {} Logit DIRECTION matches but MAGNITUDE differs — scaling/normalization bug",
             "WHY 2:".yellow().bold(),
-            "Logit DIRECTION matches but MAGNITUDE differs — scaling/normalization bug"
         );
     }
 
     if all_fail && pos0_fails {
         eprintln!(
-            "  {} {}",
+            "  {} ALL positions fail from pos 0 — systematic error in GPU forward pass",
             "WHY 3:".red().bold(),
-            "ALL positions fail from pos 0 — systematic error in GPU forward pass"
         );
         eprintln!(
             "         {}",
@@ -260,16 +256,20 @@ fn auto_diagnose(metrics: &[SpcMetrics], hidden_dim: usize, num_heads: usize, kv
         );
     } else if growing {
         eprintln!(
-            "  {} {}",
+            "  {} Divergence GROWS with position — error accumulates through KV cache",
             "WHY 3:".yellow().bold(),
-            "Divergence GROWS with position — error accumulates through KV cache"
         );
     }
 
     // Dimension-specific diagnosis
     if catastrophic && pos0_fails {
         eprintln!();
-        eprintln!("{}", "  Likely root causes (ranked by probability):".cyan().bold());
+        eprintln!(
+            "{}",
+            "  Likely root causes (ranked by probability):"
+                .cyan()
+                .bold()
+        );
         eprintln!(
             "    {} Workspace buffer sized for wrong hidden_dim (expected {})",
             "1.".white().bold(),
@@ -413,9 +413,7 @@ fn print_footer() {
 
 /// Divergence bar visualization
 fn format_diff(diff: f32) -> String {
-    if diff < 0.01 {
-        format!("{:>8.4}", diff).green().to_string()
-    } else if diff < 0.1 {
+    if diff < 0.1 {
         format!("{:>8.4}", diff).green().to_string()
     } else if diff < TOLERANCE_ABS {
         format!("{:>8.4}", diff).yellow().to_string()
@@ -495,10 +493,9 @@ fn print_summary(metrics: &[SpcMetrics]) {
         .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
         .unwrap_or(0.0);
     let avg_sigma: f64 = metrics.iter().map(|m| m.sigma_level).sum::<f64>() / n as f64;
-    let avg_cpk: f64 = metrics.iter().map(|m| m.cpk()).sum::<f64>() / n as f64;
+    let avg_cpk: f64 = metrics.iter().map(SpcMetrics::cpk).sum::<f64>() / n as f64;
 
-    let avg_oos: f64 =
-        metrics.iter().map(|m| m.out_of_spec_count).sum::<usize>() as f64 / n as f64;
+    let avg_oos: f64 = metrics.iter().map(|m| m.out_of_spec_count).sum::<usize>() as f64 / n as f64;
     let avg_vocab = metrics.iter().map(|m| m.vocab_size).sum::<usize>() as f64 / n as f64;
     let ppm = if avg_vocab > 0.0 {
         (avg_oos / avg_vocab) * 1_000_000.0
@@ -513,10 +510,7 @@ fn print_summary(metrics: &[SpcMetrics]) {
             .cyan()
             .bold()
     );
-    eprintln!(
-        "{}",
-        "  STATISTICAL PROCESS CONTROL SUMMARY".cyan().bold()
-    );
+    eprintln!("{}", "  STATISTICAL PROCESS CONTROL SUMMARY".cyan().bold());
     eprintln!(
         "{}",
         "══════════════════════════════════════════════════════════════════════"
@@ -549,19 +543,45 @@ fn print_summary(metrics: &[SpcMetrics]) {
     } else {
         format!("{ppm:.0} PPM").red().bold().to_string()
     };
-    eprintln!("  Defect rate:        {} (logits outside tolerance)", ppm_str);
+    eprintln!(
+        "  Defect rate:        {} (logits outside tolerance)",
+        ppm_str
+    );
 
     // Key metrics
     eprintln!();
-    eprintln!("  {} {}", "Cosine similarity:".white().bold(), format_metric_range(avg_cos, min_cos, COSINE_SIM_MIN, true));
-    eprintln!("  {} {}", "KL divergence:    ".white().bold(), format_metric_single(avg_kl, KL_DIV_MAX, false));
-    eprintln!("  {} {}", "Max abs diff:     ".white().bold(), format_metric_single(max_diff as f64, TOLERANCE_ABS as f64, false));
-    eprintln!("  {} {}", "Sigma level:      ".white().bold(), format_sigma_summary(avg_sigma));
-    eprintln!("  {} {}", "Cpk:              ".white().bold(), format_cpk(avg_cpk));
+    eprintln!(
+        "  {} {}",
+        "Cosine similarity:".white().bold(),
+        format_metric_range(avg_cos, min_cos, COSINE_SIM_MIN, true)
+    );
+    eprintln!(
+        "  {} {}",
+        "KL divergence:    ".white().bold(),
+        format_metric_single(avg_kl, KL_DIV_MAX, false)
+    );
+    eprintln!(
+        "  {} {}",
+        "Max abs diff:     ".white().bold(),
+        format_metric_single(max_diff as f64, TOLERANCE_ABS as f64, false)
+    );
+    eprintln!(
+        "  {} {}",
+        "Sigma level:      ".white().bold(),
+        format_sigma_summary(avg_sigma)
+    );
+    eprintln!(
+        "  {} {}",
+        "Cpk:              ".white().bold(),
+        format_cpk(avg_cpk)
+    );
 
     // Control limits legend
     eprintln!();
-    eprintln!("{}", "  Control limits (from layer-parity-v1.yaml):".dimmed());
+    eprintln!(
+        "{}",
+        "  Control limits (from layer-parity-v1.yaml):".dimmed()
+    );
     eprintln!(
         "    {} cosine ≥ {:.3}  {} KL div ≤ {:.3}  {} |diff| ≤ {:.1}  {} σ ≥ {:.0}  {} Cpk ≥ 1.33",
         "USL:".dimmed(),
@@ -695,7 +715,12 @@ fn format_cpk(cpk: f64) -> String {
             "< 1.33".red()
         )
     } else {
-        format!("{} ({} {})", s.red().bold(), "incapable", "VIOLATED".red().bold())
+        format!(
+            "{} ({} {})",
+            s.red().bold(),
+            "incapable",
+            "VIOLATED".red().bold()
+        )
     }
 }
 
@@ -815,17 +840,17 @@ fn cosine_sim(a: &[f32], b: &[f32]) -> f32 {
 /// KL divergence: D_KL(P || Q) where P=softmax(cpu), Q=softmax(gpu)
 fn kl_div_softmax(cpu_logits: &[f32], gpu_logits: &[f32]) -> f64 {
     // Numerically stable softmax
-    let cpu_max = cpu_logits
-        .iter()
-        .copied()
-        .fold(f32::NEG_INFINITY, f32::max);
-    let gpu_max = gpu_logits
-        .iter()
-        .copied()
-        .fold(f32::NEG_INFINITY, f32::max);
+    let cpu_max = cpu_logits.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+    let gpu_max = gpu_logits.iter().copied().fold(f32::NEG_INFINITY, f32::max);
 
-    let cpu_exp: Vec<f64> = cpu_logits.iter().map(|x| ((*x - cpu_max) as f64).exp()).collect();
-    let gpu_exp: Vec<f64> = gpu_logits.iter().map(|x| ((*x - gpu_max) as f64).exp()).collect();
+    let cpu_exp: Vec<f64> = cpu_logits
+        .iter()
+        .map(|x| ((*x - cpu_max) as f64).exp())
+        .collect();
+    let gpu_exp: Vec<f64> = gpu_logits
+        .iter()
+        .map(|x| ((*x - gpu_max) as f64).exp())
+        .collect();
 
     let cpu_sum: f64 = cpu_exp.iter().sum();
     let gpu_sum: f64 = gpu_exp.iter().sum();
@@ -885,10 +910,7 @@ pub fn run(file: &Path, prompt: &str, assert: bool, verbose: bool) -> Result<()>
     let mapped = MappedGGUFModel::from_path(file)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to map model: {e}")))?;
 
-    let tokens = mapped
-        .model
-        .encode(prompt)
-        .unwrap_or_else(|| vec![1u32]);
+    let tokens = mapped.model.encode(prompt).unwrap_or_else(|| vec![1u32]);
 
     let model = OwnedQuantizedModel::from_mapped(&mapped)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to create model: {e}")))?;
@@ -897,10 +919,18 @@ pub fn run(file: &Path, prompt: &str, assert: bool, verbose: bool) -> Result<()>
     let hidden_dim = config.hidden_dim;
     let num_heads = config.num_heads;
     let kv_heads = config.num_kv_heads;
-    let head_dim = if num_heads > 0 { hidden_dim / num_heads } else { 0 };
+    let head_dim = if num_heads > 0 {
+        hidden_dim / num_heads
+    } else {
+        0
+    };
     let kv_dim = kv_heads * head_dim;
     let num_layers = config.num_layers;
-    let gqa_ratio = if kv_heads > 0 { num_heads / kv_heads } else { 0 };
+    let gqa_ratio = if kv_heads > 0 {
+        num_heads / kv_heads
+    } else {
+        0
+    };
 
     eprintln!();
     eprintln!("  {} {}", "Model:".white().bold(), file.display());
@@ -914,7 +944,13 @@ pub fn run(file: &Path, prompt: &str, assert: bool, verbose: bool) -> Result<()>
     eprintln!(
         "  {} hidden={} heads={} kv_heads={} head_dim={} GQA={} layers={} vocab={}",
         "Arch:".white().bold(),
-        hidden_dim, num_heads, kv_heads, head_dim, gqa_ratio, num_layers, config.vocab_size,
+        hidden_dim,
+        num_heads,
+        kv_heads,
+        head_dim,
+        gqa_ratio,
+        num_layers,
+        config.vocab_size,
     );
 
     let mut cuda_model = OwnedQuantizedModelCuda::new(model, 0)

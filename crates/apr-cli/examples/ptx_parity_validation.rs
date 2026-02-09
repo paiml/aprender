@@ -141,15 +141,9 @@ fn print_report(report: &PtxParityReport, dims: &KernelDimensions) {
         return;
     }
 
-    println!(
-        "  ┌──────────────────────────────────┬──────────┬──────────────────┐"
-    );
-    println!(
-        "  │ Kernel Pair                      │ Status   │ Dispatch         │"
-    );
-    println!(
-        "  ├──────────────────────────────────┼──────────┼──────────────────┤"
-    );
+    println!("  ┌──────────────────────────────────┬──────────┬──────────────────┐");
+    println!("  │ Kernel Pair                      │ Status   │ Dispatch         │");
+    println!("  ├──────────────────────────────────┼──────────┼──────────────────┤");
 
     for result in &report.results {
         let status = if result.passed {
@@ -165,28 +159,17 @@ fn print_report(report: &PtxParityReport, dims: &KernelDimensions) {
 
         // Show violations if any
         for violation in &result.violations {
-            println!(
-                "  │   \x1b[31m{:<72}\x1b[0m │",
-                truncate(violation, 72)
-            );
+            println!("  │   \x1b[31m{:<72}\x1b[0m │", truncate(violation, 72));
         }
     }
 
-    println!(
-        "  └──────────────────────────────────┴──────────┴──────────────────┘"
-    );
+    println!("  └──────────────────────────────────┴──────────┴──────────────────┘");
     println!();
 
     if report.all_passed() {
-        println!(
-            "  \x1b[32m{}\x1b[0m",
-            report.summary()
-        );
+        println!("  \x1b[32m{}\x1b[0m", report.summary());
     } else {
-        println!(
-            "  \x1b[31m{}\x1b[0m",
-            report.summary()
-        );
+        println!("  \x1b[31m{}\x1b[0m", report.summary());
     }
     println!();
 }

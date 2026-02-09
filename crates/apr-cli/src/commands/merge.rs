@@ -173,7 +173,11 @@ fn display_report(report: &MergeReport) {
         ("Strategy", format!("{:?}", report.strategy)),
     ];
     if let Some(ref weights) = report.weights_used {
-        let w_str = weights.iter().map(|w| format!("{w:.3}")).collect::<Vec<_>>().join(", ");
+        let w_str = weights
+            .iter()
+            .map(|w| format!("{w:.3}"))
+            .collect::<Vec<_>>()
+            .join(", ");
         pairs.push(("Weights used", w_str));
     }
 

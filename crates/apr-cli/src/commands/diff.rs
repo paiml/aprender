@@ -774,10 +774,17 @@ fn output_text(report: &DiffReport, show_weights: bool) {
     println!();
 
     if report.is_identical() {
-        println!("  {}", output::badge_pass("Models are IDENTICAL in structure and metadata"));
+        println!(
+            "  {}",
+            output::badge_pass("Models are IDENTICAL in structure and metadata")
+        );
     } else {
         let count = report.diff_count();
-        println!("  {} {} differences found", output::badge_warn("DIFF"), count);
+        println!(
+            "  {} {} differences found",
+            output::badge_warn("DIFF"),
+            count
+        );
         println!();
 
         // Build diff table

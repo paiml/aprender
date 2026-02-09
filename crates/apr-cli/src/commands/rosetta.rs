@@ -889,7 +889,7 @@ fn detect_quant_level_from_path(path: &Path) -> String {
     }
 
     // GGUF: detect from filename patterns
-    if name.ends_with(".gguf") {
+    if name.to_ascii_lowercase().ends_with(".gguf") {
         for quant in &[
             "q2_k", "q3_k_s", "q3_k_m", "q3_k_l", "q4_0", "q4_1", "q4_k_s", "q4_k_m", "q4_k",
             "q5_0", "q5_1", "q5_k_s", "q5_k_m", "q5_k", "q6_k", "q8_0", "f16", "f32",
@@ -902,7 +902,7 @@ fn detect_quant_level_from_path(path: &Path) -> String {
     }
 
     // APR: detect from filename patterns (e.g. model-q4k.apr)
-    if name.ends_with(".apr") {
+    if name.to_ascii_lowercase().ends_with(".apr") {
         for quant in &["q4k", "q6k", "q4_k", "q6_k", "q8_0", "f16", "f32"] {
             if name.contains(quant) {
                 return quant.to_uppercase();
@@ -922,7 +922,9 @@ pub(crate) fn check_mixed_quant_warning(model_a: &Path, model_b: &Path) -> Optio
     let quant_a = detect_quant_level_from_path(model_a);
     let quant_b = detect_quant_level_from_path(model_b);
 
-    if quant_a != quant_b {
+    if quant_a == quant_b {
+        None
+    } else {
         Some(format!(
             "F-GT-002 WARNING: Mixed quantization levels detected (R3 violation)\n  \
              Model A: {} ({})\n  \
@@ -935,8 +937,6 @@ pub(crate) fn check_mixed_quant_warning(model_a: &Path, model_b: &Path) -> Optio
             model_b.display(),
             quant_b,
         ))
-    } else {
-        None
     }
 }
 
@@ -2689,7 +2689,10 @@ fn print_inspection_report(report: &InspectionReport, hexdump: bool) {
             ]);
         }
     }
-    println!("{}", output::table(&["Name", "DType", "Shape", "Size"], &rows));
+    println!(
+        "{}",
+        output::table(&["Name", "DType", "Shape", "Size"], &rows)
+    );
 
     if hexdump {
         output::subheader("Hexdump (first 64 bytes)");
@@ -6979,10 +6982,8 @@ mod tests {
             .map(|i| ((i as f32) * 0.007 - 1.75).cos() * 0.1)
             .collect();
 
-        let (mean_a, std_a, _, _, _, _, _, _, _, _, _, _, checksum_a) =
-            compute_tensor_stats(&data);
-        let (mean_b, std_b, _, _, _, _, _, _, _, _, _, _, checksum_b) =
-            compute_tensor_stats(&data);
+        let (mean_a, std_a, _, _, _, _, _, _, _, _, _, _, checksum_a) = compute_tensor_stats(&data);
+        let (mean_b, std_b, _, _, _, _, _, _, _, _, _, _, checksum_b) = compute_tensor_stats(&data);
 
         assert_eq!(
             checksum_a, checksum_b,
@@ -7001,9 +7002,7 @@ mod tests {
     #[test]
     fn t_f_rosetta_004_fingerprint_detects_small_perturbation() {
         // Even a tiny perturbation (1 ULP change) must be detected by checksum
-        let original: Vec<f32> = (0..100)
-            .map(|i| (i as f32) * 0.01)
-            .collect();
+        let original: Vec<f32> = (0..100).map(|i| (i as f32) * 0.01).collect();
 
         let mut perturbed = original.clone();
         // Add 1 ULP (unit of least precision) to element 50

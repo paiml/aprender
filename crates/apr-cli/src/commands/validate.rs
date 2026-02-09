@@ -74,10 +74,7 @@ fn run_apr_validation(
 
 /// GGUF/SafeTensors validation via RosettaStone (physics constraints)
 fn run_rosetta_validation(path: &Path, format: FormatType, quality: bool) -> Result<(), CliError> {
-    output::header(&format!(
-        "Validate: {} (Rosetta Stone)",
-        format
-    ));
+    output::header(&format!("Validate: {} (Rosetta Stone)", format));
 
     let rosetta = RosettaStone::new();
     let report = rosetta
@@ -246,11 +243,7 @@ fn print_quality_assessment(report: &ValidationReport) {
         let score = report.category_scores.get(cat).copied().unwrap_or(0);
         let max = 25;
         let bar = output::progress_bar(score as usize, max as usize, 20);
-        rows.push(vec![
-            (*name).to_string(),
-            format!("{score}/{max}"),
-            bar,
-        ]);
+        rows.push(vec![(*name).to_string(), format!("{score}/{max}"), bar]);
     }
     println!(
         "{}",

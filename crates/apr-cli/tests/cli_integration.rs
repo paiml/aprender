@@ -438,7 +438,7 @@ fn test_gh122_hex_help() {
         .args(["hex", "--help"])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Hex"))
+        .stdout(predicate::str::contains("forensics"))
         .stdout(predicate::str::contains("tensor"));
 }
 

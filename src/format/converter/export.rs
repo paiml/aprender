@@ -927,10 +927,11 @@ fn export_apr_to_gguf_raw(input: &Path, output: &Path) -> Result<ExportReport> {
 
     // GH-253-1: Chat template (Jinja2)
     // Check APR metadata chat_template field first, then custom field
-    let chat_tmpl = apr_metadata
-        .chat_template
-        .as_deref()
-        .or_else(|| custom.get("tokenizer.chat_template").and_then(|v| v.as_str()));
+    let chat_tmpl = apr_metadata.chat_template.as_deref().or_else(|| {
+        custom
+            .get("tokenizer.chat_template")
+            .and_then(|v| v.as_str())
+    });
     if let Some(tmpl) = chat_tmpl {
         metadata.push((
             "tokenizer.chat_template".to_string(),
@@ -3308,7 +3309,10 @@ mod tests {
     #[test]
     fn test_validated_metadata_requires_architecture() {
         use crate::format::gguf::GgufValue;
-        let metadata = vec![("general.name".to_string(), GgufValue::String("test".to_string()))];
+        let metadata = vec![(
+            "general.name".to_string(),
+            GgufValue::String("test".to_string()),
+        )];
         let result = ValidatedGgufMetadata::validate(metadata);
         assert!(result.is_err());
         let err_msg = format!("{:?}", result.unwrap_err());
@@ -3319,7 +3323,10 @@ mod tests {
     fn test_validated_metadata_tokens_require_model() {
         use crate::format::gguf::GgufValue;
         let metadata = vec![
-            ("general.architecture".to_string(), GgufValue::String("qwen2".to_string())),
+            (
+                "general.architecture".to_string(),
+                GgufValue::String("qwen2".to_string()),
+            ),
             (
                 "tokenizer.ggml.tokens".to_string(),
                 GgufValue::ArrayString(vec!["a".to_string()]),
@@ -3335,8 +3342,14 @@ mod tests {
     fn test_validated_metadata_model_requires_tokens() {
         use crate::format::gguf::GgufValue;
         let metadata = vec![
-            ("general.architecture".to_string(), GgufValue::String("qwen2".to_string())),
-            ("tokenizer.ggml.model".to_string(), GgufValue::String("gpt2".to_string())),
+            (
+                "general.architecture".to_string(),
+                GgufValue::String("qwen2".to_string()),
+            ),
+            (
+                "tokenizer.ggml.model".to_string(),
+                GgufValue::String("gpt2".to_string()),
+            ),
         ];
         let result = ValidatedGgufMetadata::validate(metadata);
         assert!(result.is_err());
@@ -3348,8 +3361,14 @@ mod tests {
     fn test_validated_metadata_complete_passes() {
         use crate::format::gguf::GgufValue;
         let metadata = vec![
-            ("general.architecture".to_string(), GgufValue::String("qwen2".to_string())),
-            ("tokenizer.ggml.model".to_string(), GgufValue::String("gpt2".to_string())),
+            (
+                "general.architecture".to_string(),
+                GgufValue::String("qwen2".to_string()),
+            ),
+            (
+                "tokenizer.ggml.model".to_string(),
+                GgufValue::String("gpt2".to_string()),
+            ),
             (
                 "tokenizer.ggml.tokens".to_string(),
                 GgufValue::ArrayString(vec!["hello".to_string(), "world".to_string()]),
@@ -3365,8 +3384,14 @@ mod tests {
         use crate::format::gguf::GgufValue;
         // Architecture-only metadata (no tokenizer) is valid
         let metadata = vec![
-            ("general.architecture".to_string(), GgufValue::String("llama".to_string())),
-            ("general.name".to_string(), GgufValue::String("test".to_string())),
+            (
+                "general.architecture".to_string(),
+                GgufValue::String("llama".to_string()),
+            ),
+            (
+                "general.name".to_string(),
+                GgufValue::String("test".to_string()),
+            ),
         ];
         let result = ValidatedGgufMetadata::validate(metadata);
         assert!(result.is_ok());

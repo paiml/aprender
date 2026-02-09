@@ -235,7 +235,12 @@ mod tests {
         let gt = GroundTruth::from_slice_with_shape(&data, vec![2, 3]);
         assert_eq!(gt.shape(), &[2, 3]);
         assert!(gt.has_data());
-        assert_eq!(gt.data().unwrap().len(), 6);
+        assert_eq!(
+            gt.data()
+                .expect("data should be present for slice-constructed GroundTruth")
+                .len(),
+            6
+        );
     }
 
     #[test]
@@ -251,7 +256,11 @@ mod tests {
         let data = vec![1.0, 2.0, 3.0];
         let gt = GroundTruth::from_slice(&data);
         assert!(gt.data().is_some());
-        assert_eq!(gt.data().unwrap(), &[1.0, 2.0, 3.0]);
+        assert_eq!(
+            gt.data()
+                .expect("data should be present for slice-constructed GroundTruth"),
+            &[1.0, 2.0, 3.0]
+        );
     }
 
     #[test]
@@ -277,16 +286,17 @@ mod tests {
     #[test]
     fn test_from_bin_file() {
         use std::io::Write;
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("tempdir creation should succeed");
         let path = dir.path().join("test.bin");
         let data: Vec<f32> = vec![1.0, 2.0, 3.0, 4.0, 5.0];
         let bytes: Vec<u8> = data.iter().flat_map(|f| f.to_le_bytes()).collect();
         std::fs::File::create(&path)
-            .unwrap()
+            .expect("test file creation should succeed")
             .write_all(&bytes)
-            .unwrap();
+            .expect("test file write should succeed");
 
-        let gt = GroundTruth::from_bin_file(&path).unwrap();
+        let gt = GroundTruth::from_bin_file(&path)
+            .expect("from_bin_file should parse valid binary data");
         assert!((gt.mean() - 3.0).abs() < 1e-6);
         assert!(gt.has_data());
     }
@@ -300,15 +310,16 @@ mod tests {
     #[test]
     fn test_from_json_file() {
         use std::io::Write;
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("tempdir creation should succeed");
         let path = dir.path().join("test.json");
         let json = r#"{"mean": 0.5, "std": 1.2, "min": -0.1, "max": 2.0}"#;
         std::fs::File::create(&path)
-            .unwrap()
+            .expect("test file creation should succeed")
             .write_all(json.as_bytes())
-            .unwrap();
+            .expect("test file write should succeed");
 
-        let gt = GroundTruth::from_json_file(&path).unwrap();
+        let gt =
+            GroundTruth::from_json_file(&path).expect("from_json_file should parse valid JSON");
         assert!((gt.mean() - 0.5).abs() < 1e-6);
         assert!((gt.std() - 1.2).abs() < 1e-6);
         assert!((gt.min() - (-0.1)).abs() < 1e-6);
@@ -318,15 +329,16 @@ mod tests {
     #[test]
     fn test_from_json_file_partial() {
         use std::io::Write;
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("tempdir creation should succeed");
         let path = dir.path().join("partial.json");
         let json = r#"{"mean": 0.5, "std": 1.2}"#;
         std::fs::File::create(&path)
-            .unwrap()
+            .expect("test file creation should succeed")
             .write_all(json.as_bytes())
-            .unwrap();
+            .expect("test file write should succeed");
 
-        let gt = GroundTruth::from_json_file(&path).unwrap();
+        let gt = GroundTruth::from_json_file(&path)
+            .expect("from_json_file should parse partial JSON with defaults");
         assert!((gt.mean() - 0.5).abs() < 1e-6);
         assert!(gt.min().is_infinite()); // Default
         assert!(gt.max().is_infinite()); // Default
@@ -341,13 +353,13 @@ mod tests {
     #[test]
     fn test_from_json_file_missing_key() {
         use std::io::Write;
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("tempdir creation should succeed");
         let path = dir.path().join("missing.json");
         let json = r#"{"std": 1.2}"#; // Missing "mean"
         std::fs::File::create(&path)
-            .unwrap()
+            .expect("test file creation should succeed")
             .write_all(json.as_bytes())
-            .unwrap();
+            .expect("test file write should succeed");
 
         let result = GroundTruth::from_json_file(&path);
         assert!(result.is_err());
@@ -356,13 +368,13 @@ mod tests {
     #[test]
     fn test_from_json_file_invalid_value() {
         use std::io::Write;
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("tempdir creation should succeed");
         let path = dir.path().join("invalid.json");
         let json = r#"{"mean": "not_a_number", "std": 1.2}"#;
         std::fs::File::create(&path)
-            .unwrap()
+            .expect("test file creation should succeed")
             .write_all(json.as_bytes())
-            .unwrap();
+            .expect("test file write should succeed");
 
         let result = GroundTruth::from_json_file(&path);
         assert!(result.is_err());

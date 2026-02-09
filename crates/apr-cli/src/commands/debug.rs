@@ -107,7 +107,10 @@ fn run_basic_mode(path: &Path, file_size: u64, info: &HeaderInfo) {
 
     output::header(&format!(
         "{}: APR v{}.{} {}",
-        filename, info.version.0, info.version.1, format_model_type(info.model_type)
+        filename,
+        info.version.0,
+        info.version.1,
+        format_model_type(info.model_type)
     ));
 
     let magic_status = if info.magic_valid {

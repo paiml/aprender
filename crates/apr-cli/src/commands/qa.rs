@@ -422,12 +422,8 @@ fn run_qa(path: &Path, config: &QaConfig) -> Result<QaReport> {
                     "ptx_parity" => "PTX Parity",
                     _ => &g.name,
                 };
-                let measured = g
-                    .value
-                    .map_or("—".to_string(), |v| format!("{v:.2}"));
-                let threshold = g
-                    .threshold
-                    .map_or("—".to_string(), |v| format!("{v:.2}"));
+                let measured = g.value.map_or("—".to_string(), |v| format!("{v:.2}"));
+                let threshold = g.threshold.map_or("—".to_string(), |v| format!("{v:.2}"));
                 vec![
                     name.to_string(),
                     badge,
@@ -1742,10 +1738,8 @@ fn run_ptx_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
         }
 
         // Load model config to get dimensions
-        let mapped = realizar::gguf::MappedGGUFModel::from_path(
-            path.to_str().unwrap_or_default(),
-        )
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to load GGUF: {e}")))?;
+        let mapped = realizar::gguf::MappedGGUFModel::from_path(path.to_str().unwrap_or_default())
+            .map_err(|e| CliError::ValidationFailed(format!("Failed to load GGUF: {e}")))?;
 
         let model_config = realizar::gguf::GGUFConfig::from_gguf(&mapped.model)
             .map_err(|e| CliError::ValidationFailed(format!("Failed to read config: {e}")))?;

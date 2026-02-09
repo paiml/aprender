@@ -185,7 +185,9 @@ fn entropy_demo() {
     );
 
     // Two alternating values — entropy 1.0
-    let alternating: Vec<u8> = (0..4096).map(|i| if i % 2 == 0 { 0xAA } else { 0x55 }).collect();
+    let alternating: Vec<u8> = (0..4096)
+        .map(|i| if i % 2 == 0 { 0xAA } else { 0x55 })
+        .collect();
     println!(
         "  Alternating AA/55:   {:.4} bits  ← Low: patterned data",
         compute_byte_entropy(&alternating)
@@ -233,12 +235,22 @@ fn distribution_demo() {
 
     let n = weights.len() as f64;
     let mean: f64 = weights.iter().map(|x| *x as f64).sum::<f64>() / n;
-    let variance: f64 = weights.iter().map(|x| (*x as f64 - mean).powi(2)).sum::<f64>() / n;
+    let variance: f64 = weights
+        .iter()
+        .map(|x| (*x as f64 - mean).powi(2))
+        .sum::<f64>()
+        / n;
     let std = variance.sqrt();
-    let skewness: f64 =
-        weights.iter().map(|x| ((*x as f64 - mean) / std).powi(3)).sum::<f64>() / n;
-    let kurtosis: f64 =
-        weights.iter().map(|x| ((*x as f64 - mean) / std).powi(4)).sum::<f64>() / n;
+    let skewness: f64 = weights
+        .iter()
+        .map(|x| ((*x as f64 - mean) / std).powi(3))
+        .sum::<f64>()
+        / n;
+    let kurtosis: f64 = weights
+        .iter()
+        .map(|x| ((*x as f64 - mean) / std).powi(4))
+        .sum::<f64>()
+        / n;
 
     let min = weights.iter().cloned().fold(f32::INFINITY, f32::min);
     let max = weights.iter().cloned().fold(f32::NEG_INFINITY, f32::max);

@@ -230,7 +230,9 @@ mod tests {
 
     #[test]
     fn test_builder_creates_pipeline() {
-        let pipeline = Pipeline::builder("test").build().unwrap();
+        let pipeline = Pipeline::builder("test")
+            .build()
+            .expect("pipeline build should succeed");
         assert_eq!(pipeline.name(), "test");
     }
 
@@ -261,7 +263,7 @@ mod tests {
             .stage("third")
             .build_stage()
             .build()
-            .unwrap();
+            .expect("pipeline with unique stage names should build");
 
         let names: Vec<_> = pipeline.stages().iter().map(|s| s.name()).collect();
         assert_eq!(names, vec!["first", "second", "third"]);
@@ -279,7 +281,7 @@ mod tests {
             .tolerance(Tolerance::percent(10.0))
             .build_stage()
             .build()
-            .unwrap();
+            .expect("pipeline build should succeed for verify_all_pass");
 
         let report = pipeline.verify(|name| {
             Some(GroundTruth::from_stats(
@@ -302,7 +304,7 @@ mod tests {
             .ground_truth_stats(0.0, 1.0)
             .build_stage()
             .build()
-            .unwrap();
+            .expect("pipeline build should succeed for verify_stops_on_failure");
 
         let report = pipeline.verify(|name| {
             if name == "a" {
@@ -333,7 +335,7 @@ mod tests {
             .build_stage()
             .continue_on_failure()
             .build()
-            .unwrap();
+            .expect("pipeline build should succeed for continue_on_failure");
 
         let report = pipeline.verify(|name| {
             if name == "a" {
@@ -355,11 +357,11 @@ mod tests {
             .ground_truth_stats(0.0, 1.0)
             .build_stage()
             .build()
-            .unwrap();
+            .expect("pipeline build should succeed for get_stage_found");
 
         let stage = pipeline.get_stage("mel");
         assert!(stage.is_some());
-        assert_eq!(stage.unwrap().name(), "mel");
+        assert_eq!(stage.expect("stage 'mel' should exist").name(), "mel");
     }
 
     #[test]
@@ -368,7 +370,7 @@ mod tests {
             .stage("mel")
             .build_stage()
             .build()
-            .unwrap();
+            .expect("pipeline build should succeed for get_stage_not_found");
 
         let stage = pipeline.get_stage("nonexistent");
         assert!(stage.is_none());
@@ -382,10 +384,12 @@ mod tests {
             .tolerance(Tolerance::percent(10.0))
             .build_stage()
             .build()
-            .unwrap();
+            .expect("pipeline build should succeed for verify_stage_success");
 
         let output = GroundTruth::from_stats(0.05, 1.02);
-        let result = pipeline.verify_stage("mel", &output).unwrap();
+        let result = pipeline
+            .verify_stage("mel", &output)
+            .expect("verify_stage should find 'mel' stage");
         assert!(result.status().is_passed());
     }
 
@@ -395,7 +399,7 @@ mod tests {
             .stage("mel")
             .build_stage()
             .build()
-            .unwrap();
+            .expect("pipeline build should succeed for verify_stage_not_found");
 
         let output = GroundTruth::from_stats(0.0, 1.0);
         let result = pipeline.verify_stage("nonexistent", &output);
@@ -433,11 +437,14 @@ mod tests {
             .ground_truth(gt)
             .build_stage()
             .build()
-            .unwrap();
+            .expect("pipeline build should succeed for ground_truth test");
 
-        let stage = pipeline.get_stage("mel").unwrap();
+        let stage = pipeline.get_stage("mel").expect("stage 'mel' should exist");
         assert!(stage.ground_truth().is_some());
-        assert!(stage.ground_truth().unwrap().has_data());
+        assert!(stage
+            .ground_truth()
+            .expect("ground truth should be set for 'mel' stage")
+            .has_data());
     }
 
     #[test]
@@ -447,11 +454,14 @@ mod tests {
             .description("Mel spectrogram computation")
             .build_stage()
             .build()
-            .unwrap();
+            .expect("pipeline build should succeed for description test");
 
-        let stage = pipeline.get_stage("mel").unwrap();
+        let stage = pipeline.get_stage("mel").expect("stage 'mel' should exist");
         assert!(stage.description().is_some());
-        assert!(stage.description().unwrap().contains("Mel"));
+        assert!(stage
+            .description()
+            .expect("description should be set for 'mel' stage")
+            .contains("Mel"));
     }
 
     #[test]
@@ -461,7 +471,7 @@ mod tests {
             .ground_truth_stats(0.0, 1.0)
             .build_stage()
             .build()
-            .unwrap();
+            .expect("pipeline build should succeed for verify_with_none_output");
 
         let report = pipeline.verify(|_| None);
         let results = report.results();

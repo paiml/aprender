@@ -1504,14 +1504,15 @@ fn output_text(
         };
 
         if verbose {
-            let weight_info = layer.weight_stats.as_ref().map_or(
-                String::from("-"),
-                |s| format!("{} params, mean={:.4}, std={:.4}", s.count, s.mean, s.std),
-            );
-            let output_info = layer.output_stats.as_ref().map_or(
-                String::from("-"),
-                |s| format!("mean={:.4}, std={:.4}, [{:.4}, {:.4}]", s.mean, s.std, s.min, s.max),
-            );
+            let weight_info = layer.weight_stats.as_ref().map_or(String::from("-"), |s| {
+                format!("{} params, mean={:.4}, std={:.4}", s.count, s.mean, s.std)
+            });
+            let output_info = layer.output_stats.as_ref().map_or(String::from("-"), |s| {
+                format!(
+                    "mean={:.4}, std={:.4}, [{:.4}, {:.4}]",
+                    s.mean, s.std, s.min, s.max
+                )
+            });
             rows.push(vec![
                 idx_str,
                 layer.name.clone(),
@@ -1527,16 +1528,10 @@ fn output_text(
     if verbose {
         println!(
             "{}",
-            output::table(
-                &["#", "Layer", "Weights", "Output", "Anomalies"],
-                &rows,
-            )
+            output::table(&["#", "Layer", "Weights", "Output", "Anomalies"], &rows,)
         );
     } else {
-        println!(
-            "{}",
-            output::table(&["#", "Layer", "Anomalies"], &rows)
-        );
+        println!("{}", output::table(&["#", "Layer", "Anomalies"], &rows));
     }
 }
 

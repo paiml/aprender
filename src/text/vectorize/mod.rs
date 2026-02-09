@@ -27,7 +27,7 @@
 //! let mut vectorizer = CountVectorizer::new()
 //!     .with_tokenizer(Box::new(WhitespaceTokenizer::new()));
 //!
-//! let matrix = vectorizer.fit_transform(&documents).unwrap();
+//! let matrix = vectorizer.fit_transform(&documents).expect("vectorization should succeed");
 //! // matrix shape: (2 documents, vocabulary_size features)
 //! ```
 
@@ -55,7 +55,7 @@ use std::hash::{Hash, Hasher};
 /// let mut vectorizer = CountVectorizer::new()
 ///     .with_tokenizer(Box::new(WhitespaceTokenizer::new()));
 ///
-/// let matrix = vectorizer.fit_transform(&docs).unwrap();
+/// let matrix = vectorizer.fit_transform(&docs).expect("fit_transform should succeed");
 /// assert_eq!(matrix.n_rows(), 3);  // 3 documents
 /// assert_eq!(matrix.n_cols(), 3);  // 3 unique words
 /// ```
@@ -230,7 +230,7 @@ impl CountVectorizer {
     /// let mut vectorizer = CountVectorizer::new()
     ///     .with_tokenizer(Box::new(WhitespaceTokenizer::new()));
     ///
-    /// let matrix = vectorizer.fit_transform(&docs).unwrap();
+    /// let matrix = vectorizer.fit_transform(&docs).expect("fit_transform should succeed");
     /// assert_eq!(matrix.n_rows(), 2);
     /// ```
     pub fn fit_transform<S: AsRef<str>>(
@@ -257,7 +257,7 @@ impl CountVectorizer {
     /// let mut vectorizer = CountVectorizer::new()
     ///     .with_tokenizer(Box::new(WhitespaceTokenizer::new()));
     ///
-    /// vectorizer.fit(&docs).unwrap();
+    /// vectorizer.fit(&docs).expect("fit should succeed");
     /// assert_eq!(vectorizer.vocabulary_size(), 2);
     /// ```
     pub fn fit<S: AsRef<str>>(&mut self, documents: &[S]) -> Result<(), AprenderError> {
@@ -363,8 +363,8 @@ impl CountVectorizer {
     /// let mut vectorizer = CountVectorizer::new()
     ///     .with_tokenizer(Box::new(WhitespaceTokenizer::new()));
     ///
-    /// vectorizer.fit(&docs).unwrap();
-    /// let matrix = vectorizer.transform(&docs).unwrap();
+    /// vectorizer.fit(&docs).expect("fit should succeed");
+    /// let matrix = vectorizer.transform(&docs).expect("transform should succeed");
     /// assert_eq!(matrix.n_rows(), 1);
     /// ```
     pub fn transform<S: AsRef<str>>(&self, documents: &[S]) -> Result<Matrix<f64>, AprenderError> {
@@ -438,7 +438,7 @@ impl CountVectorizer {
     /// let mut vectorizer = CountVectorizer::new()
     ///     .with_tokenizer(Box::new(WhitespaceTokenizer::new()));
     ///
-    /// vectorizer.fit(&docs).unwrap();
+    /// vectorizer.fit(&docs).expect("fit should succeed");
     /// let vocab = vectorizer.vocabulary();
     /// assert!(vocab.contains_key("hello"));
     /// assert!(vocab.contains_key("world"));
@@ -460,7 +460,7 @@ impl CountVectorizer {
     /// let mut vectorizer = CountVectorizer::new()
     ///     .with_tokenizer(Box::new(WhitespaceTokenizer::new()));
     ///
-    /// vectorizer.fit(&docs).unwrap();
+    /// vectorizer.fit(&docs).expect("fit should succeed");
     /// assert_eq!(vectorizer.vocabulary_size(), 3);
     /// ```
     #[must_use]
@@ -502,7 +502,7 @@ impl Default for CountVectorizer {
 /// let mut vectorizer = TfidfVectorizer::new()
 ///     .with_tokenizer(Box::new(WhitespaceTokenizer::new()));
 ///
-/// let matrix = vectorizer.fit_transform(&docs).unwrap();
+/// let matrix = vectorizer.fit_transform(&docs).expect("fit_transform should succeed");
 /// assert_eq!(matrix.n_rows(), 2);  // 2 documents
 /// ```
 #[allow(missing_debug_implementations)]
@@ -654,7 +654,7 @@ impl TfidfVectorizer {
     /// let mut vectorizer = TfidfVectorizer::new()
     ///     .with_tokenizer(Box::new(WhitespaceTokenizer::new()));
     ///
-    /// let matrix = vectorizer.fit_transform(&docs).unwrap();
+    /// let matrix = vectorizer.fit_transform(&docs).expect("fit_transform should succeed");
     /// assert_eq!(matrix.n_rows(), 3);
     /// ```
     pub fn fit_transform<S: AsRef<str>>(
@@ -681,7 +681,7 @@ impl TfidfVectorizer {
     /// let mut vectorizer = TfidfVectorizer::new()
     ///     .with_tokenizer(Box::new(WhitespaceTokenizer::new()));
     ///
-    /// vectorizer.fit(&docs).unwrap();
+    /// vectorizer.fit(&docs).expect("fit should succeed");
     /// assert_eq!(vectorizer.vocabulary_size(), 2);
     /// ```
     pub fn fit<S: AsRef<str>>(&mut self, documents: &[S]) -> Result<(), AprenderError> {
@@ -736,8 +736,8 @@ impl TfidfVectorizer {
     /// let mut vectorizer = TfidfVectorizer::new()
     ///     .with_tokenizer(Box::new(WhitespaceTokenizer::new()));
     ///
-    /// vectorizer.fit(&docs).unwrap();
-    /// let matrix = vectorizer.transform(&docs).unwrap();
+    /// vectorizer.fit(&docs).expect("fit should succeed");
+    /// let matrix = vectorizer.transform(&docs).expect("transform should succeed");
     /// assert_eq!(matrix.n_rows(), 1);
     /// ```
     pub fn transform<S: AsRef<str>>(&self, documents: &[S]) -> Result<Matrix<f64>, AprenderError> {
@@ -785,7 +785,7 @@ impl TfidfVectorizer {
     /// let mut vectorizer = TfidfVectorizer::new()
     ///     .with_tokenizer(Box::new(WhitespaceTokenizer::new()));
     ///
-    /// vectorizer.fit(&docs).unwrap();
+    /// vectorizer.fit(&docs).expect("fit should succeed");
     /// let vocab = vectorizer.vocabulary();
     /// assert!(vocab.contains_key("hello"));
     /// ```
@@ -806,7 +806,7 @@ impl TfidfVectorizer {
     /// let mut vectorizer = TfidfVectorizer::new()
     ///     .with_tokenizer(Box::new(WhitespaceTokenizer::new()));
     ///
-    /// vectorizer.fit(&docs).unwrap();
+    /// vectorizer.fit(&docs).expect("fit should succeed");
     /// assert_eq!(vectorizer.vocabulary_size(), 3);
     /// ```
     #[must_use]
@@ -826,7 +826,7 @@ impl TfidfVectorizer {
     /// let mut vectorizer = TfidfVectorizer::new()
     ///     .with_tokenizer(Box::new(WhitespaceTokenizer::new()));
     ///
-    /// vectorizer.fit(&docs).unwrap();
+    /// vectorizer.fit(&docs).expect("fit should succeed");
     /// assert_eq!(vectorizer.idf_values().len(), 3);  // 3 unique words
     /// ```
     #[must_use]
@@ -887,7 +887,7 @@ fn strip_accents_unicode(text: &str) -> String {
 /// let vectorizer = HashingVectorizer::new(1000)
 ///     .with_tokenizer(Box::new(WhitespaceTokenizer::new()));
 ///
-/// let matrix = vectorizer.transform(&docs).unwrap();
+/// let matrix = vectorizer.transform(&docs).expect("transform should succeed");
 /// assert_eq!(matrix.n_rows(), 2);
 /// assert_eq!(matrix.n_cols(), 1000);
 /// ```

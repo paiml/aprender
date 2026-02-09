@@ -164,7 +164,11 @@ fn run_apr(opts: &HexOptions) -> Result<(), CliError> {
     let filtered: Vec<&AprTensorDescriptor> = reader
         .tensors
         .iter()
-        .filter(|t| opts.tensor.as_ref().map_or(true, |f| t.name.contains(f.as_str())))
+        .filter(|t| {
+            opts.tensor
+                .as_ref()
+                .map_or(true, |f| t.name.contains(f.as_str()))
+        })
         .collect();
 
     if filtered.is_empty() {
@@ -195,12 +199,18 @@ fn run_apr(opts: &HexOptions) -> Result<(), CliError> {
     }
 
     if opts.contract {
-        println!("{}", output::badge_info("Layout contract not applicable for APR files (use with GGUF)"));
+        println!(
+            "{}",
+            output::badge_info("Layout contract not applicable for APR files (use with GGUF)")
+        );
         return Ok(());
     }
 
     if opts.blocks {
-        println!("{}", output::badge_info("Block view requires GGUF quantized tensors"));
+        println!(
+            "{}",
+            output::badge_info("Block view requires GGUF quantized tensors")
+        );
         return Ok(());
     }
 
@@ -275,7 +285,11 @@ fn run_gguf(opts: &HexOptions, bytes: &[u8]) -> Result<(), CliError> {
     let filtered: Vec<&GgufTensorEntry> = info
         .tensors
         .iter()
-        .filter(|t| opts.tensor.as_ref().map_or(true, |f| t.name.contains(f.as_str())))
+        .filter(|t| {
+            opts.tensor
+                .as_ref()
+                .map_or(true, |f| t.name.contains(f.as_str()))
+        })
         .collect();
 
     if opts.list {
@@ -355,7 +369,11 @@ fn print_gguf_tensor_hex(
     println!("{}: {}", "Tensor".bold(), tensor.name.cyan());
     println!("{}", "═".repeat(70).dimmed());
 
-    let dims_str: Vec<String> = tensor.dims.iter().map(std::string::ToString::to_string).collect();
+    let dims_str: Vec<String> = tensor
+        .dims
+        .iter()
+        .map(std::string::ToString::to_string)
+        .collect();
     let num_elements: u64 = tensor.dims.iter().product();
     println!(
         "{}: [{}] = {} elements",
@@ -412,7 +430,11 @@ fn list_gguf_tensors(
     } else {
         println!("{}", "Tensors:".bold());
         for tensor in &filtered {
-            let dims_str: Vec<String> = tensor.dims.iter().map(std::string::ToString::to_string).collect();
+            let dims_str: Vec<String> = tensor
+                .dims
+                .iter()
+                .map(std::string::ToString::to_string)
+                .collect();
             println!(
                 "  {} {} {}",
                 tensor.name.cyan(),
@@ -420,10 +442,7 @@ fn list_gguf_tensors(
                 format!("[{}]", dims_str.join(", ")).dimmed()
             );
         }
-        println!(
-            "\n{} tensors total",
-            filtered.len().to_string().cyan()
-        );
+        println!("\n{} tensors total", filtered.len().to_string().cyan());
     }
     Ok(())
 }
@@ -520,15 +539,12 @@ fn run_safetensors(opts: &HexOptions, bytes: &[u8]) -> Result<(), CliError> {
     let header: serde_json::Value = serde_json::from_str(header_json)
         .map_err(|e| CliError::InvalidFormat(format!("Invalid SafeTensors JSON: {e}")))?;
 
-    let tensor_map = header
-        .as_object()
-        .ok_or_else(|| CliError::InvalidFormat("SafeTensors header is not a JSON object".to_string()))?;
+    let tensor_map = header.as_object().ok_or_else(|| {
+        CliError::InvalidFormat("SafeTensors header is not a JSON object".to_string())
+    })?;
 
     // Count tensors (exclude __metadata__)
-    let tensor_names: Vec<&String> = tensor_map
-        .keys()
-        .filter(|k| *k != "__metadata__")
-        .collect();
+    let tensor_names: Vec<&String> = tensor_map.keys().filter(|k| *k != "__metadata__").collect();
 
     output::header(&format!(
         "SafeTensors Binary Forensics: {}",
@@ -537,20 +553,13 @@ fn run_safetensors(opts: &HexOptions, bytes: &[u8]) -> Result<(), CliError> {
     output::metric("Tensors", output::count_fmt(tensor_names.len()), "");
     output::metric("Header size", output::format_size(header_len as u64), "");
     output::metric("File size", output::format_size(bytes.len() as u64), "");
-    output::metric(
-        "Data offset",
-        format!("0x{:X}", 8 + header_len),
-        "",
-    );
+    output::metric("Data offset", format!("0x{:X}", 8 + header_len), "");
 
     if opts.list {
         println!("\n{}", "Tensors:".bold());
         for name in &tensor_names {
             if let Some(info) = tensor_map.get(name.as_str()) {
-                let dtype = info
-                    .get("dtype")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("?");
+                let dtype = info.get("dtype").and_then(|v| v.as_str()).unwrap_or("?");
                 let shape = info
                     .get("shape")
                     .and_then(|v| v.as_array())
@@ -562,18 +571,10 @@ fn run_safetensors(opts: &HexOptions, bytes: &[u8]) -> Result<(), CliError> {
                             .join(", ")
                     })
                     .unwrap_or_default();
-                println!(
-                    "  {} {} [{}]",
-                    name,
-                    output::dtype_color(dtype),
-                    shape
-                );
+                println!("  {} {} [{}]", name, output::dtype_color(dtype), shape);
             }
         }
-        println!(
-            "\n{} tensors total",
-            tensor_names.len().to_string().cyan()
-        );
+        println!("\n{} tensors total", tensor_names.len().to_string().cyan());
         return Ok(());
     }
 
@@ -620,8 +621,7 @@ fn run_safetensors(opts: &HexOptions, bytes: &[u8]) -> Result<(), CliError> {
                     .filter_map(|v| v.as_u64())
                     .map(|d| d.to_string())
                     .collect();
-                let num_elements: u64 =
-                    shape.iter().filter_map(|v| v.as_u64()).product();
+                let num_elements: u64 = shape.iter().filter_map(|v| v.as_u64()).product();
                 println!(
                     "{}: [{}] = {} elements",
                     "Shape".bold(),
@@ -688,7 +688,15 @@ fn print_gguf_file_header(bytes: &[u8]) {
         return;
     }
 
-    print_annotated_field(0, &bytes[0..4], "magic", &format!("\"{}\"", std::str::from_utf8(&bytes[0..4]).unwrap_or("????")));
+    print_annotated_field(
+        0,
+        &bytes[0..4],
+        "magic",
+        &format!(
+            "\"{}\"",
+            std::str::from_utf8(&bytes[0..4]).unwrap_or("????")
+        ),
+    );
 
     let version = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
     print_annotated_field(4, &bytes[4..8], "version", &version.to_string());
@@ -696,7 +704,12 @@ fn print_gguf_file_header(bytes: &[u8]) {
     let tensor_count = u64::from_le_bytes([
         bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15],
     ]);
-    print_annotated_field(8, &bytes[8..16], "tensor_count", &output::count_fmt(tensor_count as usize));
+    print_annotated_field(
+        8,
+        &bytes[8..16],
+        "tensor_count",
+        &output::count_fmt(tensor_count as usize),
+    );
 
     let metadata_kv_count = u64::from_le_bytes([
         bytes[16], bytes[17], bytes[18], bytes[19], bytes[20], bytes[21], bytes[22], bytes[23],
@@ -729,7 +742,12 @@ fn print_apr_file_header(bytes: &[u8]) {
         let metadata_size = u64::from_le_bytes([
             bytes[12], bytes[13], bytes[14], bytes[15], bytes[16], bytes[17], bytes[18], bytes[19],
         ]);
-        print_annotated_field(12, &bytes[12..20], "metadata_size", &output::format_size(metadata_size));
+        print_annotated_field(
+            12,
+            &bytes[12..20],
+            "metadata_size",
+            &output::format_size(metadata_size),
+        );
     }
 }
 
@@ -742,7 +760,12 @@ fn print_safetensors_file_header(bytes: &[u8]) {
     let header_len = u64::from_le_bytes([
         bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
     ]);
-    print_annotated_field(0, &bytes[0..8], "header_length", &format!("{header_len} bytes"));
+    print_annotated_field(
+        0,
+        &bytes[0..8],
+        "header_length",
+        &format!("{header_len} bytes"),
+    );
 
     let header_end = (8 + header_len as usize).min(bytes.len());
     let preview_end = header_end.min(8 + 200); // Show first 200 chars of JSON
@@ -844,7 +867,11 @@ fn print_tensor_blocks(
     byte_offset: usize,
 ) -> Result<(), CliError> {
     let dtype_name = ggml_dtype_name(tensor.dtype);
-    let dims_str: Vec<String> = tensor.dims.iter().map(std::string::ToString::to_string).collect();
+    let dims_str: Vec<String> = tensor
+        .dims
+        .iter()
+        .map(std::string::ToString::to_string)
+        .collect();
 
     output::header(&format!(
         "Block View: {} ({}, [{}])",
@@ -860,9 +887,7 @@ fn print_tensor_blocks(
         _ => {
             println!(
                 "  {}",
-                output::badge_info(&format!(
-                    "Block view not applicable for dtype {dtype_name}"
-                ))
+                output::badge_info(&format!("Block view not applicable for dtype {dtype_name}"))
             );
         }
     }
@@ -873,7 +898,10 @@ fn print_q4k_blocks(file_bytes: &[u8], base_offset: usize, count: usize) {
     for block_idx in 0..count {
         let offset = base_offset + block_idx * Q4K_BLOCK_SIZE;
         if offset + Q4K_BLOCK_SIZE > file_bytes.len() {
-            println!("  {} Block #{block_idx} exceeds file bounds", "Warn:".yellow());
+            println!(
+                "  {} Block #{block_idx} exceeds file bounds",
+                "Warn:".yellow()
+            );
             break;
         }
         let block = &file_bytes[offset..offset + Q4K_BLOCK_SIZE];
@@ -890,7 +918,12 @@ fn print_q4k_blocks(file_bytes: &[u8], base_offset: usize, count: usize) {
         print_annotated_field(2, &block[2..4], "dmin", &format!("{dmin:.5} (f16)"));
 
         print_annotated_field(4, &block[4..16], "scales[0-11]", "12 sub-block scales");
-        print_annotated_field(16, &block[16..Q4K_BLOCK_SIZE], "qs[0-127]", "4-bit packed (256 values)");
+        print_annotated_field(
+            16,
+            &block[16..Q4K_BLOCK_SIZE],
+            "qs[0-127]",
+            "4-bit packed (256 values)",
+        );
     }
 }
 
@@ -898,7 +931,10 @@ fn print_q6k_blocks(file_bytes: &[u8], base_offset: usize, count: usize) {
     for block_idx in 0..count {
         let offset = base_offset + block_idx * Q6K_BLOCK_SIZE;
         if offset + Q6K_BLOCK_SIZE > file_bytes.len() {
-            println!("  {} Block #{block_idx} exceeds file bounds", "Warn:".yellow());
+            println!(
+                "  {} Block #{block_idx} exceeds file bounds",
+                "Warn:".yellow()
+            );
             break;
         }
         let block = &file_bytes[offset..offset + Q6K_BLOCK_SIZE];
@@ -908,8 +944,18 @@ fn print_q6k_blocks(file_bytes: &[u8], base_offset: usize, count: usize) {
             format!("Q6_K Super-Block #{block_idx}").cyan().bold()
         );
 
-        print_annotated_field(0, &block[0..128], "ql[0-127]", "low 4 bits (256 values, 2/byte)");
-        print_annotated_field(128, &block[128..192], "qh[0-63]", "high 2 bits (256 values, 4/byte)");
+        print_annotated_field(
+            0,
+            &block[0..128],
+            "ql[0-127]",
+            "low 4 bits (256 values, 2/byte)",
+        );
+        print_annotated_field(
+            128,
+            &block[128..192],
+            "qh[0-63]",
+            "high 2 bits (256 values, 4/byte)",
+        );
         print_annotated_field(192, &block[192..208], "scales[0-15]", "16 sub-block scales");
 
         let d = f16_to_f32(u16::from_le_bytes([block[208], block[209]]));
@@ -921,7 +967,10 @@ fn print_q8_0_blocks(file_bytes: &[u8], base_offset: usize, count: usize) {
     for block_idx in 0..count {
         let offset = base_offset + block_idx * Q8_0_BLOCK_SIZE;
         if offset + Q8_0_BLOCK_SIZE > file_bytes.len() {
-            println!("  {} Block #{block_idx} exceeds file bounds", "Warn:".yellow());
+            println!(
+                "  {} Block #{block_idx} exceeds file bounds",
+                "Warn:".yellow()
+            );
             break;
         }
         let block = &file_bytes[offset..offset + Q8_0_BLOCK_SIZE];
@@ -933,7 +982,12 @@ fn print_q8_0_blocks(file_bytes: &[u8], base_offset: usize, count: usize) {
 
         let scale = f16_to_f32(u16::from_le_bytes([block[0], block[1]]));
         print_annotated_field(0, &block[0..2], "scale", &format!("{scale:.5} (f16)"));
-        print_annotated_field(2, &block[2..Q8_0_BLOCK_SIZE], "quants[0-31]", "i8 values [-128..127]");
+        print_annotated_field(
+            2,
+            &block[2..Q8_0_BLOCK_SIZE],
+            "quants[0-31]",
+            "i8 values [-128..127]",
+        );
     }
 }
 
@@ -1197,7 +1251,10 @@ fn compute_byte_entropy(bytes: &[u8]) -> f64 {
 }
 
 fn print_entropy_analysis(bytes: &[u8], format: FileFormat) {
-    output::header(&format!("Byte Entropy Analysis ({})", format_display_name(format)));
+    output::header(&format!(
+        "Byte Entropy Analysis ({})",
+        format_display_name(format)
+    ));
 
     if bytes.is_empty() {
         println!("  {}", "Empty file".dimmed());
@@ -1205,7 +1262,11 @@ fn print_entropy_analysis(bytes: &[u8], format: FileFormat) {
     }
 
     let total_entropy = compute_byte_entropy(bytes);
-    output::metric("Total entropy", format!("{total_entropy:.4} bits"), "(0.0 = uniform, 8.0 = random)");
+    output::metric(
+        "Total entropy",
+        format!("{total_entropy:.4} bits"),
+        "(0.0 = uniform, 8.0 = random)",
+    );
     output::metric("File size", output::format_size(bytes.len() as u64), "");
 
     // Expected entropy ranges by format
@@ -1267,9 +1328,7 @@ fn print_entropy_analysis(bytes: &[u8], format: FileFormat) {
                 anomalous_regions.len()
             );
             for (off, e) in anomalous_regions.iter().take(5) {
-                println!(
-                    "    0x{off:08X}: entropy={e:.4} (possible all-zeros or padding)"
-                );
+                println!("    0x{off:08X}: entropy={e:.4} (possible all-zeros or padding)");
             }
             if anomalous_regions.len() > 5 {
                 println!("    ... and {} more", anomalous_regions.len() - 5);
@@ -1324,7 +1383,11 @@ fn print_contract_overlay(info: &GgufInfo) {
 
     println!();
     output::metric("Mapped tensors", output::count_fmt(pass_count), "");
-    output::metric("Unmapped tensors", output::count_fmt(miss_count), "(norm weights, etc.)");
+    output::metric(
+        "Unmapped tensors",
+        output::count_fmt(miss_count),
+        "(norm weights, etc.)",
+    );
     output::metric("Total", output::count_fmt(info.tensors.len()), "");
 }
 
@@ -1415,7 +1478,8 @@ pub(crate) fn parse_hex_offset(s: &str) -> Result<usize, String> {
     if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
         usize::from_str_radix(hex, 16).map_err(|e| format!("Invalid hex offset: {e}"))
     } else {
-        s.parse::<usize>().map_err(|e| format!("Invalid offset: {e}"))
+        s.parse::<usize>()
+            .map_err(|e| format!("Invalid offset: {e}"))
     }
 }
 
@@ -2213,7 +2277,13 @@ mod tests {
 
     #[test]
     fn test_print_tensor_header_basic() {
-        let desc = make_descriptor("model.layers.0.weight", vec![768, 3072], "F32", 0, 768 * 3072 * 4);
+        let desc = make_descriptor(
+            "model.layers.0.weight",
+            vec![768, 3072],
+            "F32",
+            0,
+            768 * 3072 * 4,
+        );
         print_tensor_header(&desc);
     }
 
@@ -2231,7 +2301,13 @@ mod tests {
 
     #[test]
     fn test_print_tensor_header_large_offset() {
-        let desc = make_descriptor("lm_head.weight", vec![32000, 4096], "F16", 0xFFFF_FFFF, 32000 * 4096 * 2);
+        let desc = make_descriptor(
+            "lm_head.weight",
+            vec![32000, 4096],
+            "F16",
+            0xFFFF_FFFF,
+            32000 * 4096 * 2,
+        );
         print_tensor_header(&desc);
     }
 
@@ -2450,7 +2526,8 @@ mod tests {
     #[test]
     fn test_run_invalid_apr_file() {
         let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
-        file.write_all(b"APRN\x00\x00\x00\x00not valid").expect("write");
+        file.write_all(b"APRN\x00\x00\x00\x00not valid")
+            .expect("write");
         let opts = make_opts(file.path());
         let result = run(&opts);
         assert!(result.is_err());
@@ -2459,7 +2536,8 @@ mod tests {
     #[test]
     fn test_run_unknown_format() {
         let mut file = NamedTempFile::with_suffix(".bin").expect("create temp file");
-        file.write_all(b"\x00\x00\x00\x00\x00\x00\x00\x00\x00").expect("write");
+        file.write_all(b"\x00\x00\x00\x00\x00\x00\x00\x00\x00")
+            .expect("write");
         let opts = make_opts(file.path());
         let result = run(&opts);
         assert!(result.is_err());
@@ -2468,7 +2546,8 @@ mod tests {
     #[test]
     fn test_run_with_tensor_filter() {
         let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
-        file.write_all(b"APRN\x00\x00\x00\x00not valid data").expect("write");
+        file.write_all(b"APRN\x00\x00\x00\x00not valid data")
+            .expect("write");
         let mut opts = make_opts(file.path());
         opts.tensor = Some("encoder".to_string());
         let result = run(&opts);
@@ -2505,7 +2584,8 @@ mod tests {
     #[test]
     fn test_run_header_mode_apr() {
         let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
-        file.write_all(b"APRN\x02\x00\x00\x00\x00\x00\x00\x00").expect("write");
+        file.write_all(b"APRN\x02\x00\x00\x00\x00\x00\x00\x00")
+            .expect("write");
         file.write_all(&[0u8; 20]).expect("write");
         let mut opts = make_opts(file.path());
         opts.header = true;

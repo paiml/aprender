@@ -18,9 +18,9 @@ pub mod federation;
 // Commands are crate-private, used internally by execute_command
 use commands::{
     bench, canary, canary::CanaryCommands, cbtop, chat, compare_hf, convert, debug, diff, eval,
-    explain, export, flow, hex, import, inspect, lint, merge, oracle, probar, profile,
-    ptx_explain, publish, pull, qa, rosetta, rosetta::RosettaCommands, run, serve, showcase,
-    tensors, trace, tree, tui, tune, validate,
+    explain, export, flow, hex, import, inspect, lint, merge, oracle, probar, profile, ptx_explain,
+    publish, pull, qa, rosetta, rosetta::RosettaCommands, run, serve, showcase, tensors, trace,
+    tree, tui, tune, validate,
 };
 
 /// apr - APR Model Operations Tool
@@ -1444,7 +1444,11 @@ fn dispatch_run(
     chat: bool,
 ) -> Result<(), CliError> {
     let effective_trace = trace || trace_payload;
-    let effective_trace_level = if trace_payload { "payload" } else { trace_level };
+    let effective_trace_level = if trace_payload {
+        "payload"
+    } else {
+        trace_level
+    };
     let merged_prompt = prompt.or(positional_prompt).cloned();
     let effective_prompt = if chat {
         merged_prompt
@@ -1511,12 +1515,27 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             chat,
             verbose,
         } => dispatch_run(
-            source, positional_prompt.as_ref(), input.as_deref(),
-            prompt.as_ref(), *max_tokens, *stream, language.as_deref(),
-            task.as_deref(), format, *no_gpu, *offline, *benchmark,
-            *verbose || cli.verbose, *trace, *trace_payload, trace_steps.as_deref(),
-            *trace_verbose, trace_output.clone(), trace_level.as_str(),
-            *profile, *chat,
+            source,
+            positional_prompt.as_ref(),
+            input.as_deref(),
+            prompt.as_ref(),
+            *max_tokens,
+            *stream,
+            language.as_deref(),
+            task.as_deref(),
+            format,
+            *no_gpu,
+            *offline,
+            *benchmark,
+            *verbose || cli.verbose,
+            *trace,
+            *trace_payload,
+            trace_steps.as_deref(),
+            *trace_verbose,
+            trace_output.clone(),
+            trace_level.as_str(),
+            *profile,
+            *chat,
         ),
 
         Commands::Serve {
@@ -1776,8 +1795,7 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             offset,
             width,
         } => {
-            let parsed_offset = hex::parse_hex_offset(offset)
-                .map_err(CliError::InvalidFormat)?;
+            let parsed_offset = hex::parse_hex_offset(offset).map_err(CliError::InvalidFormat)?;
             hex::run(&hex::HexOptions {
                 file: file.clone(),
                 tensor: tensor.clone(),

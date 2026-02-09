@@ -242,25 +242,32 @@ impl CiProfileReport {
     /// Print CI report as JSON
     pub fn print_json(&self) {
         let mut json = String::from("{\n");
-        writeln!(json, "  \"model\": \"{}\",", self.model_path).unwrap();
-        writeln!(json, "  \"passed\": {},", self.passed).unwrap();
+        writeln!(json, "  \"model\": \"{}\",", self.model_path)
+            .expect("write to String is infallible");
+        writeln!(json, "  \"passed\": {},", self.passed).expect("write to String is infallible");
         json.push_str("  \"metrics\": {\n");
         writeln!(
             json,
             "    \"throughput_tok_s\": {:.2},",
             self.throughput_tok_s
         )
-        .unwrap();
-        writeln!(json, "    \"latency_p50_ms\": {:.2},", self.latency_p50_ms).unwrap();
-        writeln!(json, "    \"latency_p99_ms\": {:.2}", self.latency_p99_ms).unwrap();
+        .expect("write to String is infallible");
+        writeln!(json, "    \"latency_p50_ms\": {:.2},", self.latency_p50_ms)
+            .expect("write to String is infallible");
+        writeln!(json, "    \"latency_p99_ms\": {:.2}", self.latency_p99_ms)
+            .expect("write to String is infallible");
         json.push_str("  },\n");
         json.push_str("  \"assertions\": [\n");
         for (i, assertion) in self.assertions.iter().enumerate() {
             json.push_str("    {\n");
-            writeln!(json, "      \"name\": \"{}\",", assertion.name).unwrap();
-            writeln!(json, "      \"expected\": \"{}\",", assertion.expected).unwrap();
-            writeln!(json, "      \"actual\": \"{}\",", assertion.actual).unwrap();
-            writeln!(json, "      \"passed\": {}", assertion.passed).unwrap();
+            writeln!(json, "      \"name\": \"{}\",", assertion.name)
+                .expect("write to String is infallible");
+            writeln!(json, "      \"expected\": \"{}\",", assertion.expected)
+                .expect("write to String is infallible");
+            writeln!(json, "      \"actual\": \"{}\",", assertion.actual)
+                .expect("write to String is infallible");
+            writeln!(json, "      \"passed\": {}", assertion.passed)
+                .expect("write to String is infallible");
             if i < self.assertions.len() - 1 {
                 json.push_str("    },\n");
             } else {
@@ -700,43 +707,48 @@ impl DiffBenchmarkReport {
     /// Print JSON diff report
     pub fn print_json(&self) {
         let mut json = String::from("{\n");
-        writeln!(json, "  \"model_a\": \"{}\",", self.model_a).unwrap();
-        writeln!(json, "  \"model_b\": \"{}\",", self.model_b).unwrap();
+        writeln!(json, "  \"model_a\": \"{}\",", self.model_a)
+            .expect("write to String is infallible");
+        writeln!(json, "  \"model_b\": \"{}\",", self.model_b)
+            .expect("write to String is infallible");
         json.push_str("  \"metrics\": {\n");
         writeln!(
             json,
             "    \"throughput_a_tok_s\": {:.2},",
             self.throughput_a
         )
-        .unwrap();
+        .expect("write to String is infallible");
         writeln!(
             json,
             "    \"throughput_b_tok_s\": {:.2},",
             self.throughput_b
         )
-        .unwrap();
+        .expect("write to String is infallible");
         writeln!(
             json,
             "    \"throughput_delta_pct\": {:.2},",
             self.throughput_delta_pct
         )
-        .unwrap();
-        writeln!(json, "    \"latency_a_ms\": {:.2},", self.latency_a_ms).unwrap();
-        writeln!(json, "    \"latency_b_ms\": {:.2},", self.latency_b_ms).unwrap();
+        .expect("write to String is infallible");
+        writeln!(json, "    \"latency_a_ms\": {:.2},", self.latency_a_ms)
+            .expect("write to String is infallible");
+        writeln!(json, "    \"latency_b_ms\": {:.2},", self.latency_b_ms)
+            .expect("write to String is infallible");
         writeln!(
             json,
             "    \"latency_delta_pct\": {:.2}",
             self.latency_delta_pct
         )
-        .unwrap();
+        .expect("write to String is infallible");
         json.push_str("  },\n");
-        writeln!(json, "  \"winner\": \"{}\",", self.winner).unwrap();
+        writeln!(json, "  \"winner\": \"{}\",", self.winner)
+            .expect("write to String is infallible");
         json.push_str("  \"regressions\": [");
         for (i, r) in self.regressions.iter().enumerate() {
             if i > 0 {
                 json.push_str(", ");
             }
-            write!(json, "\"{}\"", r).unwrap();
+            write!(json, "\"{}\"", r).expect("write to String is infallible");
         }
         json.push_str("],\n");
         json.push_str("  \"improvements\": [");
@@ -744,7 +756,7 @@ impl DiffBenchmarkReport {
             if i > 0 {
                 json.push_str(", ");
             }
-            write!(json, "\"{}\"", imp).unwrap();
+            write!(json, "\"{}\"", imp).expect("write to String is infallible");
         }
         json.push_str("]\n");
         json.push_str("}\n");
@@ -1003,7 +1015,10 @@ fn profile_gpu_generation(
         )));
     }
 
-    println!("{}", "Loading model for GPU generation profiling...".dimmed());
+    println!(
+        "{}",
+        "Loading model for GPU generation profiling...".dimmed()
+    );
     let mapped = MappedGGUFModel::from_path(path)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to load GGUF: {e}")))?;
 
@@ -1019,9 +1034,7 @@ fn profile_gpu_generation(
     let mut cuda_model = match realizar::gguf::OwnedQuantizedModelCuda::new(model, 0) {
         Ok(m) => m,
         Err(e) => {
-            return Err(CliError::ValidationFailed(format!(
-                "CUDA init failed: {e}"
-            )));
+            return Err(CliError::ValidationFailed(format!("CUDA init failed: {e}")));
         }
     };
 
@@ -1039,7 +1052,11 @@ fn profile_gpu_generation(
     // Warmup passes
     println!(
         "{}",
-        format!("GPU warmup: {} passes x {} tokens...", warmup_passes, tokens_per_pass).dimmed()
+        format!(
+            "GPU warmup: {} passes x {} tokens...",
+            warmup_passes, tokens_per_pass
+        )
+        .dimmed()
     );
     for _ in 0..warmup_passes {
         let _ = cuda_model.generate_gpu_resident(&test_tokens, &gen_config);
@@ -1301,13 +1318,22 @@ fn run_ollama_comparison(path: &Path, tokens: usize) -> Option<OllamaBaseline> {
 
     println!(
         "{}",
-        format!("Running Ollama baseline: {} ({} tokens)...", ollama_model, tokens).dimmed()
+        format!(
+            "Running Ollama baseline: {} ({} tokens)...",
+            ollama_model, tokens
+        )
+        .dimmed()
     );
 
     // Run ollama with --verbose to get timing stats
     // Use a prompt that generates many tokens for accurate eval rate measurement
     let result = std::process::Command::new("ollama")
-        .args(["run", ollama_model, "--verbose", "Write a short essay about the history of computing in exactly 128 words."])
+        .args([
+            "run",
+            ollama_model,
+            "--verbose",
+            "Write a short essay about the history of computing in exactly 128 words.",
+        ])
         .output();
 
     match result {
@@ -1412,11 +1438,7 @@ fn print_ollama_comparison(results: &RealProfileResults, baseline: &OllamaBaseli
     println!("  └────────────┴──────────────┴──────────────┴───────────┘");
     println!();
 
-    println!(
-        "  Grade: {} — {}",
-        grade.0.bold(),
-        grade.1
-    );
+    println!("  Grade: {} — {}", grade.0.bold(), grade.1);
     println!(
         "  Parity: {:.1}% of Ollama decode throughput",
         parity_ratio * 100.0
@@ -1478,10 +1500,7 @@ fn classify_operation_bottleneck(name: &str) -> String {
 
 /// Build real per-layer timing from profiler report's per_layer data
 #[cfg(feature = "inference")]
-fn build_per_layer_timing(
-    report: &realizar::brick::ProfileReport,
-    num_layers: usize,
-) -> Vec<f64> {
+fn build_per_layer_timing(report: &realizar::brick::ProfileReport, num_layers: usize) -> Vec<f64> {
     if num_layers == 0 {
         return vec![];
     }
@@ -1547,9 +1566,7 @@ fn compute_category_summary(hotspots: &[Hotspot]) -> CategorySummary {
 
 /// Compute roofline analysis using trueno hardware detection
 #[cfg(feature = "inference")]
-fn compute_roofline(
-    results: &RealProfileResults,
-) -> RooflineAnalysis {
+fn compute_roofline(results: &RealProfileResults) -> RooflineAnalysis {
     let is_gpu = results.backend == "cuda";
 
     // Hardware detection: use GPU specs for CUDA, CPU specs for CPU
@@ -1566,7 +1583,13 @@ fn compute_roofline(
             hw.cpu.peak_gflops,
             hw.cpu.memory_bw_gbps,
             hw.roofline.cpu_arithmetic_intensity,
-            format!("{} {} ({} cores, {})", hw.cpu.vendor, hw.cpu.model, hw.cpu.cores, hw.cpu.simd.bits()),
+            format!(
+                "{} {} ({} cores, {})",
+                hw.cpu.vendor,
+                hw.cpu.model,
+                hw.cpu.cores,
+                hw.cpu.simd.bits()
+            ),
         )
     };
 
@@ -1650,7 +1673,10 @@ fn compute_roofline(
 fn detect_gpu_hardware() -> (f64, f64, f64, String) {
     // Try reading from CUDA device properties via nvidia-smi
     if let Ok(output) = std::process::Command::new("nvidia-smi")
-        .args(["--query-gpu=name,memory.total,clocks.max.sm,clocks.max.mem", "--format=csv,noheader,nounits"])
+        .args([
+            "--query-gpu=name,memory.total,clocks.max.sm,clocks.max.mem",
+            "--format=csv,noheader,nounits",
+        ])
         .output()
     {
         if output.status.success() {
@@ -1707,7 +1733,8 @@ fn profile_safetensors_real(
     output::info("Convert first: apr import model.safetensors -o model.gguf");
     output::info("Then: apr profile model.gguf");
     Err(CliError::ValidationFailed(
-        "SafeTensors per-op profiling not yet supported. Use GGUF format for full profiling.".to_string(),
+        "SafeTensors per-op profiling not yet supported. Use GGUF format for full profiling."
+            .to_string(),
     ))
 }
 
@@ -1757,7 +1784,11 @@ fn profile_gguf_real(
     // Measurement passes with per-operation profiler
     println!(
         "{}",
-        format!("Running {} measurement passes (per-op instrumented)...", measure_passes).dimmed()
+        format!(
+            "Running {} measurement passes (per-op instrumented)...",
+            measure_passes
+        )
+        .dimmed()
     );
 
     let mut profiler = BrickProfiler::new();
@@ -2023,10 +2054,16 @@ fn print_human_results(
     println!(
         "{}",
         output::kv_table(&[
-            ("Architecture", format!("{} ({} layers, hidden={}, vocab={})",
-                results.architecture, results.num_layers,
-                output::count_fmt(results.hidden_dim),
-                output::count_fmt(results.vocab_size))),
+            (
+                "Architecture",
+                format!(
+                    "{} ({} layers, hidden={}, vocab={})",
+                    results.architecture,
+                    results.num_layers,
+                    output::count_fmt(results.hidden_dim),
+                    output::count_fmt(results.vocab_size)
+                )
+            ),
             ("Backend", backend_str),
             ("Warmup", format!("{} passes", results.warmup_passes)),
             ("Measure", format!("{} passes", results.measure_passes)),
@@ -2038,7 +2075,10 @@ fn print_human_results(
     if results.is_real_data {
         println!("  {}", output::badge_pass("REAL PER-OPERATION TELEMETRY"));
     } else {
-        println!("  {}", output::badge_warn("SIMULATED DATA (inference disabled)"));
+        println!(
+            "  {}",
+            output::badge_warn("SIMULATED DATA (inference disabled)")
+        );
     }
     println!();
 
@@ -2056,10 +2096,7 @@ fn print_human_results(
             0.0
         };
         let bar = output::progress_bar(percent as usize, 100, 20);
-        let bottleneck_str = hotspot
-            .bottleneck
-            .as_deref()
-            .unwrap_or("-");
+        let bottleneck_str = hotspot.bottleneck.as_deref().unwrap_or("-");
         let mut row = vec![
             format!("#{}", i + 1),
             hotspot.name.clone(),
@@ -2082,7 +2119,16 @@ fn print_human_results(
         println!(
             "{}",
             output::table(
-                &["#", "Operation", "Time", "%", "Calls", "Bottleneck", "Bar", "Detail"],
+                &[
+                    "#",
+                    "Operation",
+                    "Time",
+                    "%",
+                    "Calls",
+                    "Bottleneck",
+                    "Bar",
+                    "Detail"
+                ],
                 &hotspot_rows,
             )
         );
@@ -2108,10 +2154,18 @@ fn print_human_results(
         let norm_bar = "█".repeat(((cat.norm_pct / 100.0) * bar_width as f64) as usize);
         let other_bar = "█".repeat(((cat.other_pct / 100.0) * bar_width as f64) as usize);
 
-        println!("  Attention: {:5.1}%  {}", cat.attention_pct, attn_bar.cyan());
+        println!(
+            "  Attention: {:5.1}%  {}",
+            cat.attention_pct,
+            attn_bar.cyan()
+        );
         println!("  FFN:       {:5.1}%  {}", cat.ffn_pct, ffn_bar.green());
         println!("  Norm:      {:5.1}%  {}", cat.norm_pct, norm_bar.yellow());
-        println!("  Other:     {:5.1}%  {}", cat.other_pct, other_bar.dimmed());
+        println!(
+            "  Other:     {:5.1}%  {}",
+            cat.other_pct,
+            other_bar.dimmed()
+        );
         println!();
     }
 
@@ -2121,7 +2175,11 @@ fn print_human_results(
         println!();
 
         let max_layer_time = results.per_layer_us.iter().copied().fold(0.0f64, f64::max);
-        let min_layer_time = results.per_layer_us.iter().copied().fold(f64::INFINITY, f64::min);
+        let min_layer_time = results
+            .per_layer_us
+            .iter()
+            .copied()
+            .fold(f64::INFINITY, f64::min);
 
         // Show variation indicator — if all same, it's fake (divided)
         if max_layer_time > 0.0 && min_layer_time > 0.0 {
@@ -2129,7 +2187,9 @@ fn print_human_results(
             if cv < 0.01 {
                 println!(
                     "  {}",
-                    output::badge_warn("WARNING: Per-layer timing shows zero variance (may be estimated)")
+                    output::badge_warn(
+                        "WARNING: Per-layer timing shows zero variance (may be estimated)"
+                    )
                 );
             } else {
                 println!(
@@ -2154,10 +2214,7 @@ fn print_human_results(
                 output::progress_bar(bar_width, 100, 30),
             ]);
         }
-        println!(
-            "{}",
-            output::table(&["Layer", "Time", "Bar"], &layer_rows)
-        );
+        println!("{}", output::table(&["Layer", "Time", "Bar"], &layer_rows));
         println!();
     }
 
@@ -2173,14 +2230,8 @@ fn print_human_results(
             "  Achieved:       {:.1} GFLOPS, {:.1} GB/s",
             roofline.achieved_gflops, roofline.achieved_bandwidth_gbps
         );
-        println!(
-            "  Compute eff:    {:.1}%",
-            roofline.compute_efficiency_pct
-        );
-        println!(
-            "  Memory eff:     {:.1}%",
-            roofline.memory_efficiency_pct
-        );
+        println!("  Compute eff:    {:.1}%", roofline.compute_efficiency_pct);
+        println!("  Memory eff:     {:.1}%", roofline.memory_efficiency_pct);
         println!(
             "  Arithmetic int: {:.2} (threshold={:.1})",
             roofline.arithmetic_intensity, roofline.ai_threshold
@@ -2205,10 +2256,9 @@ fn print_human_results(
 
     // ── Perf Grade ──
     if show_perf_grade {
-        let eff = results
-            .roofline
-            .as_ref()
-            .map_or(0.0, |r| r.memory_efficiency_pct.max(r.compute_efficiency_pct));
+        let eff = results.roofline.as_ref().map_or(0.0, |r| {
+            r.memory_efficiency_pct.max(r.compute_efficiency_pct)
+        });
         let grade = PerfGrade::from_efficiency(eff);
         output::subheader("Performance Grade");
         println!();
@@ -2241,7 +2291,10 @@ fn print_human_results(
             }
         }
         if !found_naive {
-            println!("  {} No obvious naive implementations detected", output::badge_pass("OK"));
+            println!(
+                "  {} No obvious naive implementations detected",
+                output::badge_pass("OK")
+            );
         }
         println!();
     }
@@ -2254,9 +2307,18 @@ fn print_human_results(
         println!(
             "{}",
             output::kv_table(&[
-                ("Decode throughput", format!("{:.1} tok/s", results.decode_tok_s)),
-                ("Prefill throughput", format!("{:.1} tok/s", results.prefill_tok_s)),
-                ("Tokens generated", format!("{}", results.total_tokens_generated)),
+                (
+                    "Decode throughput",
+                    format!("{:.1} tok/s", results.decode_tok_s)
+                ),
+                (
+                    "Prefill throughput",
+                    format!("{:.1} tok/s", results.prefill_tok_s)
+                ),
+                (
+                    "Tokens generated",
+                    format!("{}", results.total_tokens_generated)
+                ),
             ])
         );
         println!();
@@ -2285,10 +2347,18 @@ fn print_human_results(
     println!();
     output::metric(
         "Avg forward pass",
-        format!("{:.1}µs ({:.2}ms)", results.total_inference_us, results.total_inference_us / 1000.0),
+        format!(
+            "{:.1}µs ({:.2}ms)",
+            results.total_inference_us,
+            results.total_inference_us / 1000.0
+        ),
         "",
     );
-    output::metric("Throughput", format!("{:.2}", results.throughput_tok_s), "tok/s");
+    output::metric(
+        "Throughput",
+        format!("{:.2}", results.throughput_tok_s),
+        "tok/s",
+    );
     output::metric("Tokens per pass", results.tokens_per_pass, "");
     output::metric("Operations profiled", results.hotspots.len(), "");
     println!();
@@ -2299,38 +2369,52 @@ fn print_human_results(
 /// Print JSON output
 fn print_json_results(results: &RealProfileResults) -> Result<(), CliError> {
     let mut json = String::from("{\n");
-    writeln!(json, "  \"model\": \"{}\",", results.model_path).unwrap();
-    writeln!(json, "  \"architecture\": \"{}\",", results.architecture).unwrap();
-    writeln!(json, "  \"num_layers\": {},", results.num_layers).unwrap();
-    writeln!(json, "  \"vocab_size\": {},", results.vocab_size).unwrap();
-    writeln!(json, "  \"hidden_dim\": {},", results.hidden_dim).unwrap();
-    writeln!(json, "  \"is_real_data\": {},", results.is_real_data).unwrap();
+    writeln!(json, "  \"model\": \"{}\",", results.model_path)
+        .expect("write to String is infallible");
+    writeln!(json, "  \"architecture\": \"{}\",", results.architecture)
+        .expect("write to String is infallible");
+    writeln!(json, "  \"num_layers\": {},", results.num_layers)
+        .expect("write to String is infallible");
+    writeln!(json, "  \"vocab_size\": {},", results.vocab_size)
+        .expect("write to String is infallible");
+    writeln!(json, "  \"hidden_dim\": {},", results.hidden_dim)
+        .expect("write to String is infallible");
+    writeln!(json, "  \"is_real_data\": {},", results.is_real_data)
+        .expect("write to String is infallible");
     json.push_str("  \"timing\": {\n");
-    writeln!(json, "    \"warmup_passes\": {},", results.warmup_passes).unwrap();
-    writeln!(json, "    \"measure_passes\": {},", results.measure_passes).unwrap();
+    writeln!(json, "    \"warmup_passes\": {},", results.warmup_passes)
+        .expect("write to String is infallible");
+    writeln!(json, "    \"measure_passes\": {},", results.measure_passes)
+        .expect("write to String is infallible");
     writeln!(
         json,
         "    \"avg_inference_us\": {:.2},",
         results.total_inference_us
     )
-    .unwrap();
+    .expect("write to String is infallible");
     writeln!(
         json,
         "    \"throughput_tok_s\": {:.2}",
         results.throughput_tok_s
     )
-    .unwrap();
+    .expect("write to String is infallible");
     json.push_str("  },\n");
 
     json.push_str("  \"hotspots\": [\n");
     for (i, hotspot) in results.hotspots.iter().enumerate() {
         json.push_str("    {\n");
-        writeln!(json, "      \"name\": \"{}\",", hotspot.name).unwrap();
-        writeln!(json, "      \"total_us\": {:.2},", hotspot.time_us).unwrap();
-        writeln!(json, "      \"avg_us\": {:.2},", hotspot.avg_us).unwrap();
-        writeln!(json, "      \"min_us\": {:.2},", hotspot.min_us).unwrap();
-        writeln!(json, "      \"max_us\": {:.2},", hotspot.max_us).unwrap();
-        writeln!(json, "      \"count\": {}", hotspot.count).unwrap();
+        writeln!(json, "      \"name\": \"{}\",", hotspot.name)
+            .expect("write to String is infallible");
+        writeln!(json, "      \"total_us\": {:.2},", hotspot.time_us)
+            .expect("write to String is infallible");
+        writeln!(json, "      \"avg_us\": {:.2},", hotspot.avg_us)
+            .expect("write to String is infallible");
+        writeln!(json, "      \"min_us\": {:.2},", hotspot.min_us)
+            .expect("write to String is infallible");
+        writeln!(json, "      \"max_us\": {:.2},", hotspot.max_us)
+            .expect("write to String is infallible");
+        writeln!(json, "      \"count\": {}", hotspot.count)
+            .expect("write to String is infallible");
         if i < results.hotspots.len() - 1 {
             json.push_str("    },\n");
         } else {
@@ -2344,7 +2428,7 @@ fn print_json_results(results: &RealProfileResults) -> Result<(), CliError> {
         if i > 0 {
             json.push_str(", ");
         }
-        write!(json, "{:.2}", time).unwrap();
+        write!(json, "{:.2}", time).expect("write to String is infallible");
     }
     json.push_str("]\n");
 
@@ -2394,7 +2478,7 @@ fn print_flamegraph(
         writeln!(
             svg,
             "  <rect x=\"{x:.1}\" y=\"{y:.1}\" width=\"{width:.1}\" height=\"{height:.1}\" fill=\"{color}\" class=\"frame\"/>"
-        ).unwrap();
+        ).expect("write to String is infallible");
         writeln!(
             svg,
             "  <text x=\"{:.1}\" y=\"{:.1}\" class=\"label\">{} ({:.1}%)</text>",
@@ -2403,7 +2487,7 @@ fn print_flamegraph(
             hotspot.name,
             percent
         )
-        .unwrap();
+        .expect("write to String is infallible");
 
         y -= height + 2.0;
     }

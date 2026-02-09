@@ -24,7 +24,7 @@ pub(crate) fn run(
     // F-GT-001: Enforce provenance chain — reject pre-baked GGUF imports.
     // Only SafeTensors sources are allowed when provenance enforcement is on.
     if enforce_provenance {
-        let is_gguf_source = source.ends_with(".gguf")
+        let is_gguf_source = source.to_ascii_lowercase().ends_with(".gguf")
             || source.contains("-GGUF")
             || source.contains("-gguf");
         if is_gguf_source {
@@ -76,7 +76,8 @@ pub(crate) fn run(
     let source_desc = match &parsed_source {
         Source::HuggingFace { org, repo, file } => {
             let base = format!("hf://{org}/{repo}");
-            file.as_ref().map_or(base.clone(), |f| format!("{base}/{f}"))
+            file.as_ref()
+                .map_or(base.clone(), |f| format!("{base}/{f}"))
         }
         Source::Local(path) => path.display().to_string(),
         Source::Url(url) => url.clone(),
@@ -414,7 +415,7 @@ mod tests {
             None,
             false,
             false,
-            None, // tokenizer
+            None,  // tokenizer
             false, // enforce_provenance
         );
 
@@ -438,7 +439,7 @@ mod tests {
             None,
             false,
             false,
-            None, // tokenizer
+            None,  // tokenizer
             false, // enforce_provenance
         );
 
@@ -456,7 +457,7 @@ mod tests {
             None,
             false,
             false,
-            None, // tokenizer
+            None,  // tokenizer
             false, // enforce_provenance
         );
 
@@ -474,7 +475,7 @@ mod tests {
             None,
             false,
             false,
-            None, // tokenizer
+            None,  // tokenizer
             false, // enforce_provenance
         );
 
@@ -492,7 +493,7 @@ mod tests {
             None,
             false,
             false,
-            None, // tokenizer
+            None,  // tokenizer
             false, // enforce_provenance
         );
 
@@ -510,7 +511,7 @@ mod tests {
             None,
             false,
             false,
-            None, // tokenizer
+            None,  // tokenizer
             false, // enforce_provenance
         );
 
@@ -528,7 +529,7 @@ mod tests {
             Some("int8"),
             false,
             false,
-            None, // tokenizer
+            None,  // tokenizer
             false, // enforce_provenance
         );
 
@@ -546,7 +547,7 @@ mod tests {
             None,
             true, // force
             false,
-            None, // tokenizer
+            None,  // tokenizer
             false, // enforce_provenance
         );
 

@@ -16,10 +16,10 @@
 //!     2.0, 1.0, 0.0, 0.0, 0.0,
 //!     0.0, 0.0, 2.0, 1.0, 0.0,
 //!     1.0, 0.0, 0.0, 1.0, 2.0,
-//! ]).unwrap();
+//! ]).expect("matrix creation should succeed");
 //!
 //! let mut lda = LatentDirichletAllocation::new(2);  // 2 topics
-//! lda.fit(&dtm, 10).unwrap();  // 10 iterations
+//! lda.fit(&dtm, 10).expect("fit should succeed");  // 10 iterations
 //! ```
 
 use crate::primitives::Matrix;
@@ -41,10 +41,10 @@ use crate::AprenderError;
 /// let dtm = Matrix::from_vec(2, 3, vec![
 ///     1.0, 2.0, 0.0,
 ///     0.0, 1.0, 2.0,
-/// ]).unwrap();
+/// ]).expect("matrix creation should succeed");
 ///
 /// let mut lda = LatentDirichletAllocation::new(2);
-/// lda.fit(&dtm, 5).unwrap();
+/// lda.fit(&dtm, 5).expect("fit should succeed");
 /// ```
 #[derive(Debug)]
 pub struct LatentDirichletAllocation {
@@ -115,10 +115,10 @@ impl LatentDirichletAllocation {
     /// let dtm = Matrix::from_vec(2, 3, vec![
     ///     1.0, 2.0, 0.0,
     ///     0.0, 1.0, 2.0,
-    /// ]).unwrap();
+    /// ]).expect("matrix creation should succeed");
     ///
     /// let mut lda = LatentDirichletAllocation::new(2);
-    /// lda.fit(&dtm, 10).unwrap();
+    /// lda.fit(&dtm, 10).expect("fit should succeed");
     /// ```
     pub fn fit(&mut self, dtm: &Matrix<f64>, max_iter: usize) -> Result<(), AprenderError> {
         let n_docs = dtm.n_rows();
@@ -222,12 +222,12 @@ impl LatentDirichletAllocation {
     /// let dtm = Matrix::from_vec(2, 3, vec![
     ///     1.0, 2.0, 0.0,
     ///     0.0, 1.0, 2.0,
-    /// ]).unwrap();
+    /// ]).expect("matrix creation should succeed");
     ///
     /// let mut lda = LatentDirichletAllocation::new(2);
-    /// lda.fit(&dtm, 5).unwrap();
+    /// lda.fit(&dtm, 5).expect("fit should succeed");
     ///
-    /// let doc_topics = lda.document_topics().unwrap();
+    /// let doc_topics = lda.document_topics().expect("model should be fitted");
     /// assert_eq!(doc_topics.n_rows(), 2);  // 2 documents
     /// assert_eq!(doc_topics.n_cols(), 2);  // 2 topics
     /// ```

@@ -98,9 +98,7 @@ fn source_location(kernel_name: &str) -> &'static str {
         "Q4KGemvKernel" | "BatchedQ4KGemvKernel" | "TensorCoreQ4KGemmKernel" => {
             "trueno-gpu/src/kernels/quantize/q4k/"
         }
-        "Q6KGemvKernel" | "BatchedQ6KGemvKernel" => {
-            "trueno-gpu/src/kernels/quantize/q6k.rs"
-        }
+        "Q6KGemvKernel" | "BatchedQ6KGemvKernel" => "trueno-gpu/src/kernels/quantize/q6k.rs",
         "RopeKernel" | "BatchedRopeKernel" => "trueno-gpu/src/kernels/rope.rs",
         "IncrementalAttentionKernel" | "AttentionKernel" => {
             "trueno-gpu/src/kernels/attention/mod.rs"
@@ -349,9 +347,7 @@ fn extract_model_info(model_path: &Path) -> Result<ModelInfo> {
             f.read_exact(&mut buf).ok()?;
             Some(buf.to_vec())
         })
-        .ok_or_else(|| {
-            CliError::FileNotFound(model_path.to_path_buf())
-        })?;
+        .ok_or_else(|| CliError::FileNotFound(model_path.to_path_buf()))?;
 
     let fmt = detect_format(&magic)
         .map_err(|e| CliError::InvalidFormat(format!("Cannot detect format: {e}")))?;
@@ -361,10 +357,9 @@ fn extract_model_info(model_path: &Path) -> Result<ModelInfo> {
         ));
     }
 
-    let mapped = realizar::gguf::MappedGGUFModel::from_path(
-        model_path.to_str().unwrap_or_default(),
-    )
-    .map_err(|e| CliError::ValidationFailed(format!("Failed to load GGUF: {e}")))?;
+    let mapped =
+        realizar::gguf::MappedGGUFModel::from_path(model_path.to_str().unwrap_or_default())
+            .map_err(|e| CliError::ValidationFailed(format!("Failed to load GGUF: {e}")))?;
 
     let config = realizar::gguf::GGUFConfig::from_gguf(&mapped.model)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to read config: {e}")))?;
@@ -408,7 +403,9 @@ fn extract_model_info(model_path: &Path) -> Result<ModelInfo> {
 
 /// Print table header
 fn print_table_header() {
-    println!("  #   Kernel                             Role             Shape                  Source");
+    println!(
+        "  #   Kernel                             Role             Shape                  Source"
+    );
     println!("  --- ---------------------------------- ---------------- ---------------------- --------------------------------------------");
 }
 
@@ -425,10 +422,7 @@ fn format_shared(bytes: u32) -> String {
 }
 
 /// Print the kernel table
-fn print_kernel_table(
-    steps: &[KernelStep],
-    kernel_filter: Option<&str>,
-) {
+fn print_kernel_table(steps: &[KernelStep], kernel_filter: Option<&str>) {
     print_table_header();
 
     for step in steps {
@@ -473,21 +467,23 @@ fn print_reverse_lookup(steps: &[KernelStep], kernel_name: &str, info: &ModelInf
         .collect();
 
     if matching.is_empty() {
-        println!("  No kernel matching '{}' found in the forward pass.", kernel_name);
+        println!(
+            "  No kernel matching '{}' found in the forward pass.",
+            kernel_name
+        );
         return;
     }
 
     println!("  Reverse lookup: '{}'\n", kernel_name);
-    println!(
-        "  {:<3} {:<8} {:<20}",
-        "#", "Role", "Shape"
-    );
+    println!("  {:<3} {:<8} {:<20}", "#", "Role", "Shape");
     println!("  {:-<3} {:-<8} {:-<20}", "", "", "");
 
     for step in &matching {
         println!(
             "  {:<3} {:<8} {:<20}",
-            step.index, step.role, truncate_shape(&step.shape, 20)
+            step.index,
+            step.role,
+            truncate_shape(&step.shape, 20)
         );
     }
 
@@ -510,7 +506,10 @@ fn print_json(steps: &[KernelStep], info: &ModelInfo, prefill: bool) {
     println!("  \"num_heads\": {},", info.num_heads);
     println!("  \"num_kv_heads\": {},", info.num_kv_heads);
     println!("  \"head_dim\": {},", info.head_dim);
-    println!("  \"mode\": \"{}\",", if prefill { "prefill" } else { "decode" });
+    println!(
+        "  \"mode\": \"{}\",",
+        if prefill { "prefill" } else { "decode" }
+    );
     println!("  \"kernels_per_layer\": {},", steps.len());
     let total = steps.len() * info.num_layers + 2; // +2 for final norm + lm_head
     println!("  \"total_launches\": {},", total);
@@ -572,10 +571,19 @@ pub fn run(
         let mode = if prefill { "Prefill" } else { "Decode" };
         println!(
             "\nModel: {} ({})\n  {} layers, hidden={}, intermediate={}, heads={}, head_dim={}\n",
-            info.name, info.quant, info.num_layers, info.hidden_dim,
-            info.intermediate_dim, info.num_heads, info.head_dim
+            info.name,
+            info.quant,
+            info.num_layers,
+            info.hidden_dim,
+            info.intermediate_dim,
+            info.num_heads,
+            info.head_dim
         );
-        println!("{} Kernel Sequence (per transformer layer, {} launches):\n", mode, steps.len());
+        println!(
+            "{} Kernel Sequence (per transformer layer, {} launches):\n",
+            mode,
+            steps.len()
+        );
 
         print_kernel_table(&steps, kernel_filter);
 

@@ -720,9 +720,7 @@ impl GgufReader {
     /// Get padding token ID (tokenizer.ggml.padding_token_id)
     #[must_use]
     pub fn padding_token_id(&self) -> Option<u32> {
-        if let Some(GgufValue::Uint32(id)) =
-            self.metadata.get("tokenizer.ggml.padding_token_id")
-        {
+        if let Some(GgufValue::Uint32(id)) = self.metadata.get("tokenizer.ggml.padding_token_id") {
             Some(*id)
         } else {
             None

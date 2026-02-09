@@ -104,7 +104,11 @@ pub(crate) fn run(
                     ("Tensors", output::count_fmt(report.tensor_count)),
                     (
                         "Reduction",
-                        format!("{} ({:.2}x)", report.reduction_percent(), report.reduction_ratio),
+                        format!(
+                            "{} ({:.2}x)",
+                            report.reduction_percent(),
+                            report.reduction_ratio
+                        ),
                     ),
                 ])
             );

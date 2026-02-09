@@ -84,11 +84,7 @@ fn display_report(report: &LintReport) {
     let mut rows: Vec<Vec<String>> = Vec::new();
     for issue in &report.issues {
         let badge = level_badge(issue.level);
-        let suggestion = issue
-            .suggestion
-            .as_deref()
-            .unwrap_or("")
-            .to_string();
+        let suggestion = issue.suggestion.as_deref().unwrap_or("").to_string();
         rows.push(vec![
             badge,
             issue.category.name().to_string(),

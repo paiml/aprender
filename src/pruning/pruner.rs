@@ -428,10 +428,13 @@ mod tests {
         let pruner = MagnitudePruner::new();
         let module = MockModule::new(&[1.0, 2.0, 3.0, 4.0], &[4]);
 
-        let scores = pruner.importance().compute(&module, None).unwrap();
+        let scores = pruner
+            .importance()
+            .compute(&module, None)
+            .expect("importance computation should succeed for valid module");
         let mask = pruner
             .generate_mask(&scores, 0.5, SparsityPattern::Unstructured)
-            .unwrap();
+            .expect("unstructured mask generation should succeed");
 
         assert!((mask.sparsity() - 0.5).abs() < 1e-6);
     }
@@ -441,10 +444,13 @@ mod tests {
         let pruner = MagnitudePruner::new();
         let module = MockModule::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], &[8]);
 
-        let scores = pruner.importance().compute(&module, None).unwrap();
+        let scores = pruner
+            .importance()
+            .compute(&module, None)
+            .expect("importance computation should succeed for valid module");
         let mask = pruner
             .generate_mask(&scores, 0.5, SparsityPattern::NM { n: 2, m: 4 })
-            .unwrap();
+            .expect("N:M mask generation should succeed");
 
         // 2:4 = 50% sparsity
         assert!((mask.sparsity() - 0.5).abs() < 1e-6);
@@ -458,11 +464,16 @@ mod tests {
         let pruner = MagnitudePruner::new();
         let mut module = MockModule::new(&[1.0, 2.0, 3.0, 4.0], &[4]);
 
-        let scores = pruner.importance().compute(&module, None).unwrap();
+        let scores = pruner
+            .importance()
+            .compute(&module, None)
+            .expect("importance computation should succeed");
         let mask = pruner
             .generate_mask(&scores, 0.5, SparsityPattern::Unstructured)
-            .unwrap();
-        let result = pruner.apply_mask(&mut module, &mask).unwrap();
+            .expect("unstructured mask generation should succeed");
+        let result = pruner
+            .apply_mask(&mut module, &mask)
+            .expect("mask application should succeed");
 
         assert!((result.achieved_sparsity - 0.5).abs() < 1e-6);
         assert_eq!(result.parameters_pruned, 2);
@@ -484,7 +495,7 @@ mod tests {
             SparsityPattern::Unstructured,
             None,
         )
-        .unwrap();
+        .expect("prune_module should succeed for valid inputs");
 
         assert!((result.achieved_sparsity - 0.5).abs() < 1e-6);
     }
@@ -524,11 +535,16 @@ mod tests {
         let pruner = MagnitudePruner::new();
         let mut module = MockModule::new(&[1.0, 2.0, 3.0, 4.0], &[4]);
 
-        let scores = pruner.importance().compute(&module, None).unwrap();
+        let scores = pruner
+            .importance()
+            .compute(&module, None)
+            .expect("importance computation should succeed");
         let mask = pruner
             .generate_mask(&scores, 1.0, SparsityPattern::Unstructured)
-            .unwrap();
-        let result = pruner.apply_mask(&mut module, &mask).unwrap();
+            .expect("full sparsity mask generation should succeed");
+        let result = pruner
+            .apply_mask(&mut module, &mask)
+            .expect("mask application should succeed");
 
         assert!((result.achieved_sparsity - 1.0).abs() < 1e-6);
     }
@@ -541,11 +557,16 @@ mod tests {
         let pruner = MagnitudePruner::new();
         let mut module = MockModule::new(&[1.0, 2.0, 3.0, 4.0], &[4]);
 
-        let scores = pruner.importance().compute(&module, None).unwrap();
+        let scores = pruner
+            .importance()
+            .compute(&module, None)
+            .expect("importance computation should succeed");
         let mask = pruner
             .generate_mask(&scores, 0.0, SparsityPattern::Unstructured)
-            .unwrap();
-        let result = pruner.apply_mask(&mut module, &mask).unwrap();
+            .expect("zero sparsity mask generation should succeed");
+        let result = pruner
+            .apply_mask(&mut module, &mask)
+            .expect("mask application should succeed");
 
         // Should keep all weights
         assert!((result.achieved_sparsity - 0.0).abs() < 1e-6);
@@ -580,7 +601,7 @@ mod tests {
 
         let mask = pruner
             .generate_mask(&scores, 0.5, SparsityPattern::Row)
-            .unwrap();
+            .expect("row mask generation should succeed");
         assert!((mask.sparsity() - 0.5).abs() < 1e-6);
     }
 
@@ -594,7 +615,7 @@ mod tests {
 
         let mask = pruner
             .generate_mask(&scores, 0.5, SparsityPattern::Column)
-            .unwrap();
+            .expect("column mask generation should succeed");
         assert!((mask.sparsity() - 0.5).abs() < 1e-6);
     }
 
@@ -628,7 +649,7 @@ mod tests {
 
         let mask = pruner
             .generate_mask(&scores, 0.5, SparsityPattern::NM { n: 2, m: 4 })
-            .unwrap();
+            .expect("N:M mask generation should succeed");
         assert!((mask.sparsity() - 0.5).abs() < 1e-6);
     }
 
@@ -640,7 +661,7 @@ mod tests {
 
         let mask = pruner
             .generate_mask(&scores, 0.5, SparsityPattern::Unstructured)
-            .unwrap();
+            .expect("unstructured mask generation should succeed");
         assert!((mask.sparsity() - 0.5).abs() < 1e-6);
     }
 
@@ -653,9 +674,12 @@ mod tests {
         let mut module = MockModule::new(&[1.0, 2.0, 3.0, 4.0], &[4]);
 
         let mask_tensor = Tensor::new(&[1.0, 0.0, 1.0, 0.0], &[4]);
-        let mask = SparsityMask::new(mask_tensor, SparsityPattern::Unstructured).unwrap();
+        let mask = SparsityMask::new(mask_tensor, SparsityPattern::Unstructured)
+            .expect("mask creation should succeed for valid tensor");
 
-        let result = pruner.apply_mask(&mut module, &mask).unwrap();
+        let result = pruner
+            .apply_mask(&mut module, &mask)
+            .expect("mask application should succeed");
         assert_eq!(result.parameters_pruned, 2);
         assert_eq!(result.total_parameters, 4);
     }
@@ -678,7 +702,8 @@ mod tests {
         let pruner = WandaPruner::new("layer0");
         let mut module = EmptyModule;
         let mask_tensor = Tensor::new(&[1.0], &[1]);
-        let mask = SparsityMask::new(mask_tensor, SparsityPattern::Unstructured).unwrap();
+        let mask = SparsityMask::new(mask_tensor, SparsityPattern::Unstructured)
+            .expect("mask creation should succeed for valid tensor");
 
         let result = pruner.apply_mask(&mut module, &mask);
         assert!(result.is_err());
@@ -692,10 +717,13 @@ mod tests {
         let pruner = MagnitudePruner::new();
         let module = MockModule::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
 
-        let scores = pruner.importance().compute(&module, None).unwrap();
+        let scores = pruner
+            .importance()
+            .compute(&module, None)
+            .expect("importance computation should succeed");
         let mask = pruner
             .generate_mask(&scores, 0.5, SparsityPattern::Row)
-            .unwrap();
+            .expect("row mask generation should succeed");
         assert!((mask.sparsity() - 0.5).abs() < 1e-6);
     }
 
@@ -704,10 +732,13 @@ mod tests {
         let pruner = MagnitudePruner::new();
         let module = MockModule::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
 
-        let scores = pruner.importance().compute(&module, None).unwrap();
+        let scores = pruner
+            .importance()
+            .compute(&module, None)
+            .expect("importance computation should succeed");
         let mask = pruner
             .generate_mask(&scores, 0.5, SparsityPattern::Column)
-            .unwrap();
+            .expect("column mask generation should succeed");
         assert!((mask.sparsity() - 0.5).abs() < 1e-6);
     }
 
@@ -716,7 +747,10 @@ mod tests {
         let pruner = MagnitudePruner::new();
         let module = MockModule::new(&[1.0, 2.0, 3.0, 4.0], &[2, 2]);
 
-        let scores = pruner.importance().compute(&module, None).unwrap();
+        let scores = pruner
+            .importance()
+            .compute(&module, None)
+            .expect("importance computation should succeed");
         let result = pruner.generate_mask(
             &scores,
             0.5,
@@ -749,7 +783,8 @@ mod tests {
         let pruner = MagnitudePruner::new();
         let mut module = EmptyModule;
         let mask_tensor = Tensor::new(&[1.0], &[1]);
-        let mask = SparsityMask::new(mask_tensor, SparsityPattern::Unstructured).unwrap();
+        let mask = SparsityMask::new(mask_tensor, SparsityPattern::Unstructured)
+            .expect("mask creation should succeed for valid tensor");
 
         let result = pruner.apply_mask(&mut module, &mask);
         assert!(result.is_err());
