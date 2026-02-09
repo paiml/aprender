@@ -1155,7 +1155,39 @@ fn profile_gpu_generation(
         per_pass_total_times.iter().sum::<f64>() / per_pass_total_times.len() as f64
     };
 
-    Ok(RealProfileResults {
+    // ========================================================================
+    // PAR-PROFILE: BrickProfiler pass — per-operation GPU timing breakdown
+    // Disable CUDA graph to get individual kernel timing via stream sync.
+    // This adds overhead (~2x slower) but gives exact per-brick measurements.
+    // ========================================================================
+    println!(
+        "{}",
+        "Per-operation profiling pass (no CUDA graph)...".dimmed()
+    );
+
+    // SKIP_CUDA_GRAPH is checked per-call (not cached in OnceLock)
+    std::env::set_var("SKIP_CUDA_GRAPH", "1");
+    cuda_model.clear_decode_graph();
+    cuda_model.enable_profiling();
+    cuda_model.reset_profiler();
+
+    // Run profiling pass with enough tokens for stable per-op breakdown
+    let profile_tokens = 16;
+    let profile_config = QuantizedGenerateConfig {
+        max_tokens: profile_tokens,
+        temperature: 0.0,
+        top_k: 1,
+        stop_tokens: vec![],
+        trace: false,
+    };
+    let _ = cuda_model.generate_gpu_resident(&test_tokens, &profile_config);
+
+    // Extract per-operation hotspots from BrickProfiler
+    let hotspots = extract_gpu_hotspots(&cuda_model, num_layers);
+    let category_summary = Some(compute_category_summary(&hotspots));
+
+    // Compute roofline with the real results
+    let mut results = RealProfileResults {
         model_path: path.display().to_string(),
         architecture,
         num_layers,
@@ -1164,13 +1196,13 @@ fn profile_gpu_generation(
         warmup_passes,
         measure_passes,
         total_inference_us: avg_total_ms * 1000.0,
-        throughput_tok_s: decode_tok_s, // Primary metric = decode throughput
+        throughput_tok_s: decode_tok_s,
         tokens_per_pass: tokens_per_decode,
-        hotspots: vec![], // GPU path doesn't give per-op breakdown (yet)
+        hotspots,
         per_layer_us: vec![],
         is_real_data: true,
         roofline: None,
-        category_summary: None,
+        category_summary,
         backend: "cuda".to_string(),
         latency_p50_ms: p50,
         latency_p95_ms: p95,
@@ -1180,7 +1212,67 @@ fn profile_gpu_generation(
         prefill_tok_s,
         decode_tok_s,
         total_tokens_generated,
-    })
+    };
+
+    // Compute roofline analysis
+    results.roofline = Some(compute_roofline(&results));
+
+    // Restore CUDA graph env
+    std::env::remove_var("SKIP_CUDA_GRAPH");
+
+    Ok(results)
+}
+
+/// Extract per-operation GPU hotspots from BrickProfiler after a profiling pass.
+///
+/// Converts trueno `BrickStats` into our `Hotspot` format with category
+/// classification, bottleneck analysis, and time breakdown.
+#[cfg(feature = "inference")]
+fn extract_gpu_hotspots(
+    cuda_model: &realizar::gguf::OwnedQuantizedModelCuda,
+    _num_layers: usize,
+) -> Vec<Hotspot> {
+    let profiler = cuda_model.profiler();
+    let total_ns = profiler.total_ns();
+
+    let mut hotspots: Vec<Hotspot> = profiler
+        .all_brick_stats()
+        .map(|stats| {
+            let total_us = stats.total_ns as f64 / 1000.0;
+            let pct = if total_ns > 0 {
+                100.0 * stats.total_ns as f64 / total_ns as f64
+            } else {
+                0.0
+            };
+            let avg_us = if stats.count > 0 {
+                total_us / stats.count as f64
+            } else {
+                0.0
+            };
+
+            Hotspot {
+                name: stats.name.clone(),
+                time_us: total_us,
+                percent: pct,
+                count: stats.count as usize,
+                avg_us,
+                min_us: stats.min_us(),
+                max_us: stats.max_us(),
+                bottleneck: Some(classify_operation_bottleneck(&stats.name)),
+                efficiency_pct: None,
+                category: Some(classify_operation_category(&stats.name)),
+            }
+        })
+        .collect();
+
+    // Sort by total time descending (hottest first)
+    hotspots.sort_by(|a, b| {
+        b.time_us
+            .partial_cmp(&a.time_us)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    hotspots
 }
 
 /// Run Ollama and collect baseline performance
@@ -1348,10 +1440,19 @@ fn print_ollama_comparison(results: &RealProfileResults, baseline: &OllamaBaseli
 // ============================================================================
 
 /// Classify an operation into BrickId category (Attention, FFN, Norm, Other)
+///
+/// Supports both GPU brick names (QKV, RoPE, Attention, OProj) and
+/// CPU brick names (QkvProjection, RopeEmbedding, etc.)
 fn classify_operation_category(name: &str) -> String {
     match name {
-        "QkvProjection" | "RopeEmbedding" | "AttentionScore" | "AttentionSoftmax"
-        | "AttentionOutput" | "OutputProjection" => "Attention".to_string(),
+        // GPU brick names (from indexed.rs start_brick_timer calls)
+        "QKV" | "RoPE" | "RopeEmbedding" | "Attention" | "OProj" => "Attention".to_string(),
+        "FFNGateUp" | "SwiGLU" | "FFNDown" => "FFN".to_string(),
+        "RmsNorm1" | "RmsNorm2" => "Norm".to_string(),
+        "Residual1" | "Residual2" => "Other".to_string(),
+        // CPU brick names (legacy)
+        "QkvProjection" | "AttentionScore" | "AttentionSoftmax" | "AttentionOutput"
+        | "OutputProjection" => "Attention".to_string(),
         "GateProjection" | "UpProjection" | "Activation" | "DownProjection" => "FFN".to_string(),
         "RmsNorm" | "LayerNorm" => "Norm".to_string(),
         _ => "Other".to_string(),
@@ -1365,8 +1466,12 @@ fn classify_operation_category(name: &str) -> String {
 /// Only softmax and activation are compute-bound (element-wise).
 fn classify_operation_bottleneck(name: &str) -> String {
     match name {
-        "AttentionSoftmax" | "Activation" | "RopeEmbedding" => "COMPUTE".to_string(),
-        _ => "MEMORY".to_string(), // MatMul, Norm, Embedding, LmHead all memory-bound
+        // Element-wise ops: compute-bound (low memory traffic, high FLOP/byte)
+        "SwiGLU" | "Activation" | "RoPE" | "RopeEmbedding" | "AttentionSoftmax" => {
+            "COMPUTE".to_string()
+        }
+        // Everything else: memory-bound (weight/KV reads dominate)
+        _ => "MEMORY".to_string(),
     }
 }
 
