@@ -31,6 +31,12 @@
 //!    - Falsifiable: If argmax differs, cross-format parity is BROKEN
 //!    - Cornerstone of architecture's logical validity
 //!
+//! 6. **PTX Parity Test** (GH-219, F-PTX-001)
+//!    - Validate batched GPU kernels maintain structural parity with single-vector references
+//!    - Checks: batch dispatch mechanism, u64 shared memory addressing, dispatch strategy
+//!    - Falsifiable: If any of 6 kernel pairs fails structural validation, test fails
+//!    - Toyota Way: Poka-Yoke - error-proof PTX generation at compile time
+//!
 //! # Usage
 //!
 //! ```bash
@@ -81,6 +87,8 @@ pub struct QaConfig {
     pub skip_contract: bool,
     /// Skip cross-format parity test (F-QUAL-032)
     pub skip_format_parity: bool,
+    /// Skip PTX parity validation (GH-219, F-PTX-001)
+    pub skip_ptx_parity: bool,
     /// SafeTensors model path for cross-format parity (F-QUAL-032)
     pub safetensors_path: Option<std::path::PathBuf>,
     /// Number of benchmark iterations
@@ -107,6 +115,7 @@ impl Default for QaConfig {
             skip_gpu_speedup: false,
             skip_contract: false,
             skip_format_parity: false,
+            skip_ptx_parity: false,
             safetensors_path: None,
             iterations: 10,
             warmup: 3,
@@ -218,6 +227,7 @@ pub fn run(
     skip_gpu_speedup: bool,
     skip_contract: bool,
     skip_format_parity: bool,
+    skip_ptx_parity: bool,
     safetensors_path: Option<std::path::PathBuf>,
     iterations: usize,
     warmup: usize,
@@ -235,6 +245,7 @@ pub fn run(
         skip_gpu_speedup,
         skip_contract,
         skip_format_parity,
+        skip_ptx_parity,
         safetensors_path,
         iterations,
         warmup,
@@ -365,6 +376,17 @@ fn run_qa(path: &Path, config: &QaConfig) -> Result<QaReport> {
     }
     gates.push(format_parity_result);
 
+    // Gate 6: PTX Parity Validation (GH-219, F-PTX-001)
+    let ptx_parity_result = if config.skip_ptx_parity {
+        GateResult::skipped("ptx_parity", "Skipped by --skip-ptx-parity")
+    } else {
+        run_ptx_parity_gate(path, config)?
+    };
+    if !config.json {
+        print_gate_result(&ptx_parity_result);
+    }
+    gates.push(ptx_parity_result);
+
     let total_duration = start.elapsed();
     let passed = gates.iter().all(|g| g.passed);
     let failed_gates: Vec<_> = gates.iter().filter(|g| !g.passed && !g.skipped).collect();
@@ -397,6 +419,7 @@ fn run_qa(path: &Path, config: &QaConfig) -> Result<QaReport> {
                     "ollama_parity" => "Ollama Parity",
                     "gpu_speedup" => "GPU Speedup",
                     "format_parity" => "Format Parity",
+                    "ptx_parity" => "PTX Parity",
                     _ => &g.name,
                 };
                 let measured = g
@@ -1660,6 +1683,7 @@ fn print_gate_result(result: &GateResult) {
         "ollama_parity" => "Ollama Parity",
         "gpu_speedup" => "GPU Speedup",
         "format_parity" => "Format Parity",
+        "ptx_parity" => "PTX Parity",
         _ => &result.name,
     };
 
@@ -1677,6 +1701,108 @@ fn print_gate_result(result: &GateResult) {
         );
     }
     println!();
+}
+
+/// Gate 6: PTX Parity Validation (GH-219, F-PTX-001)
+///
+/// Validates that all 6 batched GPU kernels maintain structural parity with their
+/// single-vector references. This catches compile-time PTX generation bugs like:
+/// - Missing batch dispatch mechanism (no ctaid.y or m_dim)
+/// - u64 shared memory addressing (should use u32 for portability)
+/// - Wrong dispatch strategy for kernel type
+///
+/// Toyota Way: Poka-Yoke - error-proof PTX at generation time, not at runtime.
+fn run_ptx_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
+    let start = Instant::now();
+
+    if !config.json && config.verbose {
+        println!("{}", "Running PTX parity validation...".yellow());
+    }
+
+    // Extract model dimensions from GGUF metadata
+    #[cfg(feature = "inference")]
+    {
+        use realizar::format::{detect_format, ModelFormat};
+        use realizar::ptx_parity::{validate_all_kernel_pairs, KernelDimensions};
+
+        // Only run for GGUF models (PTX kernels are for quantized inference)
+        // Read only first 8 bytes (not the entire multi-GB file)
+        let magic = std::fs::File::open(path).ok().and_then(|mut f| {
+            use std::io::Read;
+            let mut buf = [0u8; 8];
+            f.read_exact(&mut buf).ok()?;
+            Some(buf.to_vec())
+        });
+        let fmt = magic.and_then(|m| detect_format(&m).ok());
+        if fmt != Some(ModelFormat::Gguf) {
+            return Ok(GateResult::skipped(
+                "ptx_parity",
+                "Non-GGUF format (PTX kernels only apply to quantized inference)",
+            ));
+        }
+
+        // Load model config to get dimensions
+        let mapped = realizar::gguf::MappedGGUFModel::from_path(
+            path.to_str().unwrap_or_default(),
+        )
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to load GGUF: {e}")))?;
+
+        let model_config = realizar::gguf::GGUFConfig::from_gguf(&mapped.model)
+            .map_err(|e| CliError::ValidationFailed(format!("Failed to read config: {e}")))?;
+
+        let dims = KernelDimensions {
+            hidden_dim: model_config.hidden_dim as u32,
+            intermediate_dim: model_config.intermediate_dim as u32,
+            num_heads: model_config.num_heads as u32,
+            head_dim: (model_config.hidden_dim / model_config.num_heads) as u32,
+            rope_theta: model_config.rope_theta,
+            epsilon: model_config.eps,
+        };
+
+        let report = validate_all_kernel_pairs(&dims);
+        let duration = start.elapsed();
+
+        if report.all_passed() {
+            Ok(GateResult::passed(
+                "ptx_parity",
+                &report.summary(),
+                Some(report.passed as f64),
+                Some(report.total as f64),
+                duration,
+            ))
+        } else {
+            // Show violations in verbose mode
+            if !config.json && config.verbose {
+                for result in &report.results {
+                    if !result.passed {
+                        println!(
+                            "  {} {} ({}): {}",
+                            "FAIL".red(),
+                            result.name,
+                            result.dispatch_strategy,
+                            result.violations.join("; ")
+                        );
+                    }
+                }
+            }
+            Ok(GateResult::failed(
+                "ptx_parity",
+                &report.summary(),
+                Some(report.passed as f64),
+                Some(report.total as f64),
+                duration,
+            ))
+        }
+    }
+
+    #[cfg(not(feature = "inference"))]
+    {
+        let _ = (path, config, start);
+        Ok(GateResult::skipped(
+            "ptx_parity",
+            "Requires inference feature",
+        ))
+    }
 }
 
 #[cfg(test)]
@@ -1994,6 +2120,7 @@ mod tests {
             false,
             false,
             false,
+            false,
             None,
             10,
             3,
@@ -2014,6 +2141,7 @@ mod tests {
             None,
             None,
             None,
+            false,
             false,
             false,
             false,
@@ -2047,6 +2175,7 @@ mod tests {
             false,
             false,
             false,
+            false,
             None,
             5,
             2,
@@ -2074,6 +2203,7 @@ mod tests {
             true, // skip_gpu_speedup
             true, // skip_contract
             true, // skip_format_parity
+            true, // skip_ptx_parity
             None,
             10,
             3,
@@ -2101,6 +2231,7 @@ mod tests {
             false,
             false,
             false,
+            false,
             None,
             10,
             3,
@@ -2122,6 +2253,7 @@ mod tests {
             None,
             None,
             None,
+            false,
             false,
             false,
             false,
@@ -2156,6 +2288,7 @@ mod tests {
             false,
             false,
             false,
+            false,
             Some(st_file.path().to_path_buf()), // safetensors path
             10,
             3,
@@ -2177,6 +2310,7 @@ mod tests {
             None,
             None,
             None,
+            false,
             false,
             false,
             false,

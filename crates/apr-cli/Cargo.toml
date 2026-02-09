@@ -152,6 +152,10 @@ required-features = ["inference"]
 name = "gpu_chat_inference"
 required-features = ["inference", "cuda"]
 
+[[example]]
+name = "ptx_parity_validation"
+required-features = ["inference"]
+
 [dev-dependencies]
 assert_cmd = "2.0"
 predicates = "3.1"

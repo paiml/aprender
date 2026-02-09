@@ -928,6 +928,10 @@ pub enum Commands {
         #[arg(long)]
         skip_format_parity: bool,
 
+        /// Skip PTX parity validation (GH-219)
+        #[arg(long)]
+        skip_ptx_parity: bool,
+
         /// SafeTensors model path for cross-format parity test (F-QUAL-032)
         #[arg(long, value_name = "PATH")]
         safetensors_path: Option<PathBuf>,
@@ -1816,6 +1820,7 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             skip_gpu_speedup,
             skip_contract,
             skip_format_parity,
+            skip_ptx_parity,
             safetensors_path,
             iterations,
             warmup,
@@ -1833,6 +1838,7 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             *skip_gpu_speedup,
             *skip_contract,
             *skip_format_parity,
+            *skip_ptx_parity,
             safetensors_path.clone(),
             *iterations,
             *warmup,
@@ -2713,6 +2719,7 @@ mod tests {
                 skip_gpu_speedup: false,
                 skip_contract: false,
                 skip_format_parity: false,
+                skip_ptx_parity: false,
                 safetensors_path: None,
                 iterations: 10,
                 warmup: 3,
@@ -5713,6 +5720,7 @@ mod tests {
             skip_gpu_speedup: true,
             skip_contract: true,
             skip_format_parity: true,
+            skip_ptx_parity: true,
             safetensors_path: None,
             iterations: 1,
             warmup: 0,
@@ -5741,6 +5749,7 @@ mod tests {
             skip_gpu_speedup: true,
             skip_contract: true,
             skip_format_parity: true,
+            skip_ptx_parity: true,
             safetensors_path: None,
             iterations: 1,
             warmup: 0,
