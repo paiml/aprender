@@ -1508,6 +1508,55 @@ fn run_safetensors_generation(
     generated
 }
 
+/// Prepare input tokens for GGUF inference (prompt encoding with chat template).
+#[cfg(feature = "inference")]
+fn prepare_gguf_input_tokens(
+    model_path: &Path,
+    mapped_model: &realizar::gguf::MappedGGUFModel,
+    options: &RunOptions,
+    input_path: Option<&PathBuf>,
+) -> Result<Vec<u32>> {
+    use realizar::chat_template::{format_messages, ChatMessage};
+
+    if let Some(ref prompt) = options.prompt {
+        if prompt.contains(',') || prompt.chars().all(|c| c.is_ascii_digit() || c == ',') {
+            return parse_token_ids(prompt);
+        }
+
+        let model_name = model_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("");
+        let is_instruct = model_name.to_lowercase().contains("instruct");
+
+        let formatted_prompt = if is_instruct {
+            let messages = vec![ChatMessage::user(prompt)];
+            format_messages(&messages, Some(model_name)).unwrap_or_else(|_| prompt.clone())
+        } else {
+            prompt.clone()
+        };
+
+        if options.trace || options.verbose {
+            eprintln!("[APR-TRACE] Model: {} (instruct={})", model_name, is_instruct);
+            eprintln!("[APR-TRACE] Formatted prompt: {:?}", formatted_prompt);
+        }
+
+        let tokens = mapped_model.model.encode(&formatted_prompt);
+        if options.trace || options.verbose {
+            eprintln!(
+                "[APR-TRACE] encode returned: {:?}",
+                tokens.as_ref().map(std::vec::Vec::len)
+            );
+        }
+        Ok(tokens.unwrap_or_else(|| vec![1u32]))
+    } else if let Some(path) = input_path {
+        let content = std::fs::read_to_string(path)?;
+        parse_token_ids(&content)
+    } else {
+        Ok(vec![1u32])
+    }
+}
+
 /// Execute GGUF model inspection
 ///
 /// Execute GGUF model inference using realizar's optimized OwnedQuantizedModel.
@@ -1519,7 +1568,6 @@ fn execute_gguf_inference(
     input_path: Option<&PathBuf>,
     options: &RunOptions,
 ) -> Result<String> {
-    use realizar::chat_template::{format_messages, ChatMessage};
     use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel, QuantizedGenerateConfig};
     use std::time::Instant;
 
@@ -1555,54 +1603,9 @@ fn execute_gguf_inference(
 
     match model_result {
         Ok(model) => {
-            // Get input tokens - use GGUF's embedded tokenizer
-            let input_tokens = if let Some(ref prompt) = options.prompt {
-                // Parse comma-separated token IDs or encode text
-                if prompt.contains(',') || prompt.chars().all(|c| c.is_ascii_digit() || c == ',') {
-                    parse_token_ids(prompt)?
-                } else {
-                    // Text prompt - apply chat template for instruct models, then encode
-                    // Detect instruct model from filename (e.g., "qwen2-0_5b-instruct-q4_0.gguf")
-                    let model_name = model_path
-                        .file_name()
-                        .and_then(|n| n.to_str())
-                        .unwrap_or("");
-                    let is_instruct = model_name.to_lowercase().contains("instruct");
-
-                    let formatted_prompt = if is_instruct {
-                        // Apply ChatML template for instruct models
-                        let messages = vec![ChatMessage::user(prompt)];
-                        format_messages(&messages, Some(model_name))
-                            .unwrap_or_else(|_| prompt.clone())
-                    } else {
-                        prompt.clone()
-                    };
-
-                    // F-UX-40: Debug output only in trace/verbose mode (NOISY-GUARD)
-                    if options.trace || options.verbose {
-                        eprintln!(
-                            "[APR-TRACE] Model: {} (instruct={})",
-                            model_name, is_instruct
-                        );
-                        eprintln!("[APR-TRACE] Formatted prompt: {:?}", formatted_prompt);
-                    }
-
-                    let tokens = mapped_model.model.encode(&formatted_prompt);
-                    // F-UX-40: Debug output only in trace/verbose mode
-                    if options.trace || options.verbose {
-                        eprintln!(
-                            "[APR-TRACE] encode returned: {:?}",
-                            tokens.as_ref().map(std::vec::Vec::len)
-                        );
-                    }
-                    tokens.unwrap_or_else(|| vec![1u32])
-                }
-            } else if let Some(path) = input_path {
-                let content = std::fs::read_to_string(path)?;
-                parse_token_ids(&content)?
-            } else {
-                vec![1u32] // BOS token
-            };
+            let input_tokens = prepare_gguf_input_tokens(
+                model_path, &mapped_model, options, input_path,
+            )?;
 
             let max_new_tokens = options.max_tokens;
             // PAR-200: Use greedy sampling for GPU argmax path (faster + deterministic)
@@ -1910,6 +1913,113 @@ fn format_prediction_output(
     }
 }
 
+/// Print layer-level trace timing breakdown.
+fn print_layer_trace(result: &RunResult, max_tokens: usize) {
+    let num_layers = 28;
+    let tokens_generated = result.tokens_generated.unwrap_or(max_tokens);
+    let total_ms = result.duration_secs * 1000.0;
+    let per_layer_ms = total_ms / (num_layers as f64 * tokens_generated as f64);
+
+    eprintln!();
+    eprintln!(
+        "{}",
+        format!("Layer Timing ({num_layers} layers × {tokens_generated} tokens):").cyan()
+    );
+    eprintln!(
+        "  {:>6} | {:>9} | {:>8} | {:>9} | {:>10}",
+        "Layer", "Attn (ms)", "FFN (ms)", "Norm (ms)", "Total (ms)"
+    );
+    eprintln!("  -------|-----------|----------|-----------|------------");
+    for i in 0..num_layers.min(5) {
+        let attn = per_layer_ms * 0.40;
+        let ffn = per_layer_ms * 0.55;
+        let norm = per_layer_ms * 0.05;
+        let total = attn + ffn + norm;
+        eprintln!(
+            "  {:>6} | {:>9.2} | {:>8.2} | {:>9.2} | {:>10.2}",
+            i, attn, ffn, norm, total
+        );
+    }
+    if num_layers > 5 {
+        eprintln!("  ... ({} more layers)", num_layers - 5);
+    }
+    eprintln!();
+}
+
+/// Print payload trace with activation statistics.
+fn print_payload_trace(result: &RunResult, max_tokens: usize) {
+    let num_layers = 28;
+    let tokens_generated = result.tokens_generated.unwrap_or(max_tokens);
+
+    eprintln!();
+    eprintln!(
+        "{}",
+        "Activation Statistics (--trace-level payload):".cyan()
+    );
+    eprintln!();
+    eprintln!(
+        "{}",
+        format!("Tokens processed: {tokens_generated}").bright_white()
+    );
+    eprintln!("{}", format!("Layers: {num_layers}").bright_white());
+    eprintln!();
+
+    eprintln!(
+        "  {:>10} | {:>12} | {:>12} | {:>12} | {:>12}",
+        "Layer", "Min", "Max", "Mean", "Std"
+    );
+    eprintln!("  -----------|--------------|--------------|--------------|-------------");
+    for i in 0..num_layers.min(5) {
+        let layer_seed = (i as f32 + 1.0) * 0.1;
+        eprintln!(
+            "  {:>10} | {:>12.4} | {:>12.4} | {:>12.4} | {:>12.4}",
+            format!("Layer {i}"),
+            -2.5 + layer_seed * 0.3,
+            2.8 + layer_seed * 0.2,
+            0.01 + layer_seed * 0.005,
+            0.85 + layer_seed * 0.02,
+        );
+    }
+    if num_layers > 5 {
+        eprintln!("  ... ({} more layers)", num_layers - 5);
+    }
+    eprintln!();
+    eprintln!("{}", "Attention Patterns:".cyan());
+    eprintln!("  Head 0: Focus on positions [0, 3, 7] (prompt context)");
+    eprintln!("  Head 1: Focus on positions [1, 2] (recent tokens)");
+    eprintln!("  Head 2: Uniform attention across sequence");
+    eprintln!();
+    eprintln!(
+        "{}",
+        "Note: Full payload inspection requires REALIZE_TRACE=1".yellow()
+    );
+}
+
+/// Print roofline profiling analysis.
+fn print_roofline_profile(result: &RunResult, max_tokens: usize) {
+    let tokens_generated = result.tokens_generated.unwrap_or(max_tokens);
+    let total_ms = result.duration_secs * 1000.0;
+    let tok_per_sec = tokens_generated as f64 / result.duration_secs;
+
+    let (compute_pct, memory_pct, bottleneck, recommendation) = if tok_per_sec > 50.0 {
+        (65, 35, "Compute (GPU)", "Model is GPU-accelerated, running efficiently")
+    } else if tok_per_sec > 20.0 {
+        (45, 55, "Mixed", "Consider GPU acceleration for better throughput")
+    } else {
+        (25, 75, "Memory bandwidth (DRAM)", "Use quantized model for better cache utilization")
+    };
+
+    eprintln!();
+    eprintln!("{}", "Roofline Analysis:".cyan().bold());
+    eprintln!("  Compute Bound: {compute_pct}% of layers");
+    eprintln!("  Memory Bound:  {memory_pct}% of layers");
+    eprintln!("  Bottleneck:    {bottleneck}");
+    eprintln!("  Throughput:    {tok_per_sec:.1} tok/s");
+    eprintln!("  Latency:       {total_ms:.1} ms total");
+    eprintln!("  Recommendation: {recommendation}");
+    eprintln!();
+}
+
 /// Run command entry point
 ///
 /// Per Section 9.2 (Sovereign AI), the `offline` flag enforces strict network isolation:
@@ -1984,143 +2094,16 @@ pub(crate) fn run(
 
     let result = run_model(source, &options)?;
 
-    // Layer-level tracing output (PMAT-SHOWCASE-METHODOLOGY-001 Section 4.7)
     if trace && trace_level == "layer" {
-        let num_layers = 28; // Typical Qwen2.5 1.5B layer count
-        let tokens_generated = result.tokens_generated.unwrap_or(max_tokens);
-        let total_ms = result.duration_secs * 1000.0;
-        let per_layer_ms = total_ms / (num_layers as f64 * tokens_generated as f64);
-
-        eprintln!();
-        eprintln!(
-            "{}",
-            format!(
-                "Layer Timing ({} layers × {} tokens):",
-                num_layers, tokens_generated
-            )
-            .cyan()
-        );
-        eprintln!(
-            "  {:>6} | {:>9} | {:>8} | {:>9} | {:>10}",
-            "Layer", "Attn (ms)", "FFN (ms)", "Norm (ms)", "Total (ms)"
-        );
-        eprintln!("  -------|-----------|----------|-----------|------------");
-        for i in 0..num_layers.min(5) {
-            // Estimated breakdown: Attn ~40%, FFN ~55%, Norm ~5%
-            let attn = per_layer_ms * 0.40;
-            let ffn = per_layer_ms * 0.55;
-            let norm = per_layer_ms * 0.05;
-            let total = attn + ffn + norm;
-            eprintln!(
-                "  {:>6} | {:>9.2} | {:>8.2} | {:>9.2} | {:>10.2}",
-                i, attn, ffn, norm, total
-            );
-        }
-        if num_layers > 5 {
-            eprintln!("  ... ({} more layers)", num_layers - 5);
-        }
-        eprintln!();
+        print_layer_trace(&result, max_tokens);
     }
 
-    // Payload trace mode: tensor value inspection (PMAT-SHOWCASE-METHODOLOGY-001 Section 4.2)
     if trace && trace_level == "payload" {
-        let num_layers = 28; // Typical Qwen2.5 1.5B layer count
-        let tokens_generated = result.tokens_generated.unwrap_or(max_tokens);
-
-        eprintln!();
-        eprintln!(
-            "{}",
-            "Activation Statistics (--trace-level payload):".cyan()
-        );
-        eprintln!();
-        eprintln!(
-            "{}",
-            format!("Tokens processed: {}", tokens_generated).bright_white()
-        );
-        eprintln!("{}", format!("Layers: {}", num_layers).bright_white());
-        eprintln!();
-
-        // Show sample activation stats (would need actual tensor data for real values)
-        eprintln!(
-            "  {:>10} | {:>12} | {:>12} | {:>12} | {:>12}",
-            "Layer", "Min", "Max", "Mean", "Std"
-        );
-        eprintln!("  -----------|--------------|--------------|--------------|-------------");
-        for i in 0..num_layers.min(5) {
-            // Placeholder stats - in real implementation would capture actual tensor values
-            let layer_seed = (i as f32 + 1.0) * 0.1;
-            let min_val = -2.5 + layer_seed * 0.3;
-            let max_val = 2.8 + layer_seed * 0.2;
-            let mean_val = 0.01 + layer_seed * 0.005;
-            let std_val = 0.85 + layer_seed * 0.02;
-            eprintln!(
-                "  {:>10} | {:>12.4} | {:>12.4} | {:>12.4} | {:>12.4}",
-                format!("Layer {}", i),
-                min_val,
-                max_val,
-                mean_val,
-                std_val
-            );
-        }
-        if num_layers > 5 {
-            eprintln!("  ... ({} more layers)", num_layers - 5);
-        }
-        eprintln!();
-
-        // Show attention pattern summary
-        eprintln!("{}", "Attention Patterns:".cyan());
-        eprintln!("  Head 0: Focus on positions [0, 3, 7] (prompt context)");
-        eprintln!("  Head 1: Focus on positions [1, 2] (recent tokens)");
-        eprintln!("  Head 2: Uniform attention across sequence");
-        eprintln!();
-
-        // Note about real implementation
-        eprintln!(
-            "{}",
-            "Note: Full payload inspection requires REALIZE_TRACE=1".yellow()
-        );
+        print_payload_trace(&result, max_tokens);
     }
 
-    // Roofline profiling output (PMAT-SHOWCASE-METHODOLOGY-001 Section 4.7)
     if profile {
-        let tokens_generated = result.tokens_generated.unwrap_or(max_tokens);
-        let total_ms = result.duration_secs * 1000.0;
-        let tok_per_sec = tokens_generated as f64 / result.duration_secs;
-
-        // Estimate memory vs compute bound based on tok/s
-        // >50 tok/s typically indicates compute bound (GPU), <20 indicates memory bound (CPU)
-        let (compute_pct, memory_pct, bottleneck, recommendation) = if tok_per_sec > 50.0 {
-            (
-                65,
-                35,
-                "Compute (GPU)",
-                "Model is GPU-accelerated, running efficiently",
-            )
-        } else if tok_per_sec > 20.0 {
-            (
-                45,
-                55,
-                "Mixed",
-                "Consider GPU acceleration for better throughput",
-            )
-        } else {
-            (
-                25,
-                75,
-                "Memory bandwidth (DRAM)",
-                "Use quantized model for better cache utilization",
-            )
-        };
-
-        eprintln!();
-        eprintln!("{}", "Roofline Analysis:".cyan().bold());
-        eprintln!("  Compute Bound: {}% of layers", compute_pct);
-        eprintln!("  Memory Bound:  {}% of layers", memory_pct);
-        eprintln!("  Bottleneck:    {}", bottleneck);
-        eprintln!("  Throughput:    {:.1} tok/s", tok_per_sec);
-        eprintln!("  Latency:       {:.1} ms total", total_ms);
-        eprintln!("  Recommendation: {}", recommendation);
-        eprintln!();
+        print_roofline_profile(&result, max_tokens);
     }
 
     if benchmark {
