@@ -321,16 +321,9 @@ pub fn diarize(
 }
 
 /// Simple agglomerative clustering for speaker embeddings
-fn cluster_embeddings(embeddings: &[Vec<f32>], config: &DiarizationConfig) -> Vec<usize> {
+/// Compute pairwise cosine similarity matrix.
+fn pairwise_similarity_matrix(embeddings: &[Vec<f32>]) -> Vec<Vec<f32>> {
     let n = embeddings.len();
-    if n == 0 {
-        return vec![];
-    }
-
-    // Each segment starts as its own cluster
-    let mut labels: Vec<usize> = (0..n).collect();
-
-    // Compute pairwise similarities
     let mut similarities = vec![vec![0.0f32; n]; n];
     for i in 0..n {
         for j in i + 1..n {
@@ -339,71 +332,75 @@ fn cluster_embeddings(embeddings: &[Vec<f32>], config: &DiarizationConfig) -> Ve
             similarities[j][i] = sim;
         }
     }
+    similarities
+}
 
-    // Merge clusters until threshold or max_speakers reached
-    loop {
-        // Find most similar pair of different clusters
-        let mut best_sim = 0.0f32;
-        let mut best_pair = None;
-
-        for i in 0..n {
-            for j in i + 1..n {
-                if labels[i] != labels[j] && similarities[i][j] > best_sim {
-                    best_sim = similarities[i][j];
-                    best_pair = Some((labels[i], labels[j]));
-                }
+/// Find the most similar pair of segments belonging to different clusters.
+fn find_best_cluster_pair(
+    labels: &[usize],
+    similarities: &[Vec<f32>],
+) -> (f32, Option<(usize, usize)>) {
+    let mut best_sim = 0.0f32;
+    let mut best_pair = None;
+    for i in 0..labels.len() {
+        for j in i + 1..labels.len() {
+            if labels[i] != labels[j] && similarities[i][j] > best_sim {
+                best_sim = similarities[i][j];
+                best_pair = Some((labels[i], labels[j]));
             }
-        }
-
-        // Stop if no pair above threshold
-        if best_sim < config.clustering_threshold {
-            break;
-        }
-
-        // Check max_speakers constraint
-        let current_clusters: std::collections::HashSet<_> = labels.iter().collect();
-        if let Some(max) = config.max_speakers {
-            if current_clusters.len() <= max {
-                break;
-            }
-        }
-
-        // Merge clusters
-        if let Some((cluster_a, cluster_b)) = best_pair {
-            let target = cluster_a.min(cluster_b);
-            let source = cluster_a.max(cluster_b);
-            for label in &mut labels {
-                if *label == source {
-                    *label = target;
-                }
-            }
-        } else {
-            break;
         }
     }
+    (best_sim, best_pair)
+}
 
-    // Renumber clusters to be contiguous (0, 1, 2, ...)
-    let unique_labels: Vec<usize> = {
-        let mut v: Vec<_> = labels
-            .iter()
-            .copied()
-            .collect::<std::collections::HashSet<_>>()
-            .into_iter()
-            .collect();
-        v.sort_unstable();
-        v
-    };
-
-    let label_map: std::collections::HashMap<usize, usize> = unique_labels
+/// Renumber cluster labels to be contiguous (0, 1, 2, ...).
+fn renumber_clusters(labels: &[usize]) -> Vec<usize> {
+    let mut unique: Vec<_> = labels
+        .iter()
+        .copied()
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect();
+    unique.sort_unstable();
+    let map: std::collections::HashMap<usize, usize> = unique
         .into_iter()
         .enumerate()
         .map(|(new, old)| (old, new))
         .collect();
+    labels.iter().map(|l| *map.get(l).unwrap_or(l)).collect()
+}
 
-    labels
-        .iter()
-        .map(|l| *label_map.get(l).unwrap_or(l))
-        .collect()
+fn cluster_embeddings(embeddings: &[Vec<f32>], config: &DiarizationConfig) -> Vec<usize> {
+    let n = embeddings.len();
+    if n == 0 {
+        return vec![];
+    }
+
+    let mut labels: Vec<usize> = (0..n).collect();
+    let similarities = pairwise_similarity_matrix(embeddings);
+
+    loop {
+        let (best_sim, best_pair) = find_best_cluster_pair(&labels, &similarities);
+
+        if best_sim < config.clustering_threshold {
+            break;
+        }
+
+        let current_clusters: std::collections::HashSet<_> = labels.iter().collect();
+        if config.max_speakers.is_some_and(|max| current_clusters.len() <= max) {
+            break;
+        }
+
+        let Some((cluster_a, cluster_b)) = best_pair else { break };
+        let (target, source) = (cluster_a.min(cluster_b), cluster_a.max(cluster_b));
+        for label in &mut labels {
+            if *label == source {
+                *label = target;
+            }
+        }
+    }
+
+    renumber_clusters(&labels)
 }
 
 /// Compute cosine similarity between two vectors
