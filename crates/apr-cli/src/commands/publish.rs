@@ -17,20 +17,11 @@ use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 
-/// Execute the publish command
-pub fn execute(
+/// Validate publish inputs: repo ID format, directory exists, model files found.
+fn validate_publish_inputs(
     directory: &Path,
     repo_id: &str,
-    model_name: Option<&str>,
-    license: &str,
-    pipeline_tag: &str,
-    library_name: Option<&str>,
-    tags: &[String],
-    commit_message: Option<&str>,
-    dry_run: bool,
-    verbose: bool,
-) -> Result<(), CliError> {
-    // Validate repo ID format
+) -> Result<Vec<std::path::PathBuf>, CliError> {
     if !repo_id.contains('/') || repo_id.split('/').count() != 2 {
         return Err(CliError::ValidationFailed(format!(
             "Invalid repo ID '{}'. Expected format: org/repo-name",
@@ -38,12 +29,10 @@ pub fn execute(
         )));
     }
 
-    // Check directory exists
     if !directory.exists() {
         return Err(CliError::FileNotFound(directory.to_path_buf()));
     }
 
-    // Find model files in directory
     let files = find_model_files(directory)?;
     if files.is_empty() {
         return Err(CliError::ValidationFailed(format!(
@@ -52,71 +41,20 @@ pub fn execute(
         )));
     }
 
-    if verbose {
-        println!("Found {} model files:", files.len());
-        for f in &files {
-            println!("  - {}", f.display());
-        }
-    }
+    Ok(files)
+}
 
-    // Generate model card
-    let model_card = generate_model_card(
-        repo_id,
-        model_name,
-        license,
-        pipeline_tag,
-        library_name,
-        tags,
-        &files,
-    );
-
-    let readme_content = model_card.to_huggingface_extended(pipeline_tag, library_name, tags);
-
-    if dry_run {
-        println!("=== DRY RUN: Would publish to {} ===\n", repo_id);
-        println!("Files to upload:");
-        for f in &files {
-            let size = fs::metadata(f).map(|m| m.len()).unwrap_or(0);
-            println!("  - {} ({:.1} MB)", f.display(), size as f64 / 1_000_000.0);
-        }
-        println!("\nGenerated README.md:\n");
-        println!("{}", readme_content);
-        println!("\n=== DRY RUN COMPLETE ===");
-        return Ok(());
-    }
-
-    // Create HF Hub client (reads HF_TOKEN from env)
-    let client = HfHubClient::new().map_err(|e| {
-        CliError::ValidationFailed(format!("Failed to create HF Hub client: {}", e))
-    })?;
-
-    if !client.is_authenticated() {
-        return Err(CliError::ValidationFailed(
-            "HF_TOKEN environment variable not set. Set it with: export HF_TOKEN=hf_...".into(),
-        ));
-    }
-
-    // Upload files to HuggingFace
-    let commit_msg = commit_message.unwrap_or("Upload via apr-cli publish");
-
-    println!("Publishing to https://huggingface.co/{}", repo_id);
-
-    // Calculate total size for progress
-    let mut total_size: u64 = 0;
-    for file in &files {
-        total_size += fs::metadata(file).map(|m| m.len()).unwrap_or(0);
-    }
-    total_size += readme_content.len() as u64;
-
-    println!(
-        "Total upload size: {:.1} MB",
-        total_size as f64 / 1_000_000.0
-    );
-
-    // Progress callback
-    let verbose_flag = verbose;
+/// Upload model files and README to HuggingFace Hub.
+fn upload_to_hub(
+    client: &HfHubClient,
+    repo_id: &str,
+    files: &[std::path::PathBuf],
+    readme_content: &str,
+    commit_msg: &str,
+    verbose: bool,
+) -> Result<(), CliError> {
     let progress_callback: Arc<dyn Fn(UploadProgress) + Send + Sync> = Arc::new(move |progress| {
-        if verbose_flag {
+        if verbose {
             println!(
                 "  [{}/{}] {} ({:.1}%)",
                 progress.files_completed + 1,
@@ -127,8 +65,7 @@ pub fn execute(
         }
     });
 
-    // Upload all files using native Rust implementation (APR-PUB-001 fix)
-    for file in &files {
+    for file in files {
         let filename = file
             .file_name()
             .ok_or_else(|| CliError::ValidationFailed("Invalid file path".into()))?
@@ -154,10 +91,9 @@ pub fn execute(
 
         client
             .push_to_hub(repo_id, &file_data, options)
-            .map_err(|e| CliError::NetworkError(format!("Upload failed: {}", e)))?;
+            .map_err(|e| CliError::NetworkError(format!("Upload failed: {e}")))?;
     }
 
-    // Upload README.md
     if verbose {
         println!("Uploading README.md...");
     }
@@ -165,14 +101,81 @@ pub fn execute(
     let readme_options = PushOptions::new()
         .with_filename("README.md")
         .with_commit_message(commit_msg)
-        .with_create_repo(false); // Repo already created
+        .with_create_repo(false);
 
     client
         .push_to_hub(repo_id, readme_content.as_bytes(), readme_options)
-        .map_err(|e| CliError::NetworkError(format!("README upload failed: {}", e)))?;
+        .map_err(|e| CliError::NetworkError(format!("README upload failed: {e}")))?;
+
+    Ok(())
+}
+
+/// Execute the publish command
+pub fn execute(
+    directory: &Path,
+    repo_id: &str,
+    model_name: Option<&str>,
+    license: &str,
+    pipeline_tag: &str,
+    library_name: Option<&str>,
+    tags: &[String],
+    commit_message: Option<&str>,
+    dry_run: bool,
+    verbose: bool,
+) -> Result<(), CliError> {
+    let files = validate_publish_inputs(directory, repo_id)?;
+
+    if verbose {
+        println!("Found {} model files:", files.len());
+        for f in &files {
+            println!("  - {}", f.display());
+        }
+    }
+
+    let model_card = generate_model_card(
+        repo_id, model_name, license, pipeline_tag, library_name, tags, &files,
+    );
+    let readme_content = model_card.to_huggingface_extended(pipeline_tag, library_name, tags);
+
+    if dry_run {
+        println!("=== DRY RUN: Would publish to {} ===\n", repo_id);
+        println!("Files to upload:");
+        for f in &files {
+            let size = fs::metadata(f).map(|m| m.len()).unwrap_or(0);
+            println!("  - {} ({:.1} MB)", f.display(), size as f64 / 1_000_000.0);
+        }
+        println!("\nGenerated README.md:\n");
+        println!("{}", readme_content);
+        println!("\n=== DRY RUN COMPLETE ===");
+        return Ok(());
+    }
+
+    let client = HfHubClient::new().map_err(|e| {
+        CliError::ValidationFailed(format!("Failed to create HF Hub client: {e}"))
+    })?;
+
+    if !client.is_authenticated() {
+        return Err(CliError::ValidationFailed(
+            "HF_TOKEN environment variable not set. Set it with: export HF_TOKEN=hf_...".into(),
+        ));
+    }
+
+    let commit_msg = commit_message.unwrap_or("Upload via apr-cli publish");
+
+    println!("Publishing to https://huggingface.co/{}", repo_id);
+    let total_size: u64 = files
+        .iter()
+        .map(|f| fs::metadata(f).map(|m| m.len()).unwrap_or(0))
+        .sum::<u64>()
+        + readme_content.len() as u64;
+    println!(
+        "Total upload size: {:.1} MB",
+        total_size as f64 / 1_000_000.0
+    );
+
+    upload_to_hub(&client, repo_id, &files, &readme_content, commit_msg, verbose)?;
 
     println!("\n✓ Published to https://huggingface.co/{}", repo_id);
-
     Ok(())
 }
 
