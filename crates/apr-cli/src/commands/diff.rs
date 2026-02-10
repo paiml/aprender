@@ -205,6 +205,8 @@ pub(crate) fn run(
 // Tensor Value Comparison
 // ============================================================================
 
+// serde_json::json!() macro uses infallible unwrap internally
+#[allow(clippy::disallowed_methods)]
 fn run_tensor_value_diff(
     path1: &Path,
     path2: &Path,

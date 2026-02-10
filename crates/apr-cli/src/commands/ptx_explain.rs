@@ -186,6 +186,8 @@ fn run_human(ptx: &str, strict: bool, bugs_only: bool, verbose: bool) -> Result<
 }
 
 /// JSON output for PTX analysis.
+// serde_json::json!() macro uses infallible unwrap internally
+#[allow(clippy::disallowed_methods)]
 fn run_json(ptx: &str, strict: bool, bugs_only: bool) -> Result<()> {
     use trueno_explain::analyzer::Analyzer;
 

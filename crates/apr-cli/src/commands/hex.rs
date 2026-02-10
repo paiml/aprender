@@ -408,6 +408,8 @@ fn print_gguf_tensor_hex(
     Ok(())
 }
 
+// serde_json::json!() macro uses infallible unwrap internally
+#[allow(clippy::disallowed_methods)]
 fn list_gguf_tensors(
     tensors: &[GgufTensorEntry],
     filter: Option<&str>,

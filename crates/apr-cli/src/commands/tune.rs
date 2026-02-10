@@ -55,6 +55,8 @@ impl From<TuneMethod> for Method {
 
 /// Run the tune command
 #[allow(clippy::too_many_arguments)]
+// serde_json::json!() macro uses infallible unwrap internally
+#[allow(clippy::disallowed_methods)]
 pub fn run(
     model_path: Option<&Path>,
     method: TuneMethod,

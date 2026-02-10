@@ -71,6 +71,7 @@ pub(crate) fn start_realizar_server(model_path: &Path, config: &ServerConfig) ->
 /// Supports both transformer inference (generate) and metadata inspection.
 /// GPU acceleration available via --gpu flag.
 #[cfg(feature = "inference")]
+#[allow(clippy::disallowed_methods)] // serde_json::json!() macro uses infallible unwrap internally
 fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
     use axum::{
         extract::State,
@@ -681,6 +682,7 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
 /// Start APR server with GPU acceleration
 /// PMAT-098: Updated to use BPE tokenizer for proper encoding
 #[cfg(all(feature = "inference", feature = "cuda"))]
+#[allow(clippy::disallowed_methods)] // serde_json::json!() macro uses infallible unwrap internally
 fn start_apr_server_gpu(
     model_path: &Path,
     model: realizar::apr::AprModel,

@@ -340,6 +340,8 @@ pub fn run_convert(
 }
 
 /// Run the rosetta chain subcommand
+// serde_json::json!() macro uses infallible unwrap internally
+#[allow(clippy::disallowed_methods)]
 pub fn run_chain(source: &Path, formats: &[String], work_dir: &Path, json: bool) -> Result<()> {
     if !source.exists() {
         return Err(CliError::FileNotFound(source.to_path_buf()));

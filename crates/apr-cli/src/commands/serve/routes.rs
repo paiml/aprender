@@ -95,6 +95,8 @@ pub fn create_router(state: Arc<ServerState>) -> axum::Router {
     }
 
     // Handler: POST /predict (IC01-IC15)
+    // serde_json::json!() macro uses infallible unwrap internally
+    #[allow(clippy::disallowed_methods)]
     async fn predict_handler(
         State(state): State<Arc<ServerState>>,
         body: axum::body::Bytes,
