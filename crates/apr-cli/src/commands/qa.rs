@@ -630,6 +630,77 @@ fn validate_gpu_golden_output(
     Ok(None)
 }
 
+/// Run golden output test for APR format models
+#[cfg(feature = "inference")]
+fn golden_output_apr(
+    path: &Path,
+    prompt: &str,
+    max_tokens: usize,
+) -> Result<(Vec<u32>, String)> {
+    use realizar::apr::AprV2Model;
+    use realizar::apr_transformer::{AprTransformer, GenerateConfig};
+
+    let apr_model = AprV2Model::load(path)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to load APR: {e}")))?;
+    let tokenizer = apr_model.load_embedded_bpe_tokenizer().ok_or_else(|| {
+        CliError::ValidationFailed("APR missing embedded tokenizer".to_string())
+    })?;
+    let transformer = AprTransformer::from_apr_file(path)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to load APR transformer: {e}")))?;
+
+    let prompt_tokens = tokenizer.encode(prompt);
+    let gen_config = GenerateConfig {
+        max_tokens,
+        temperature: 0.0,
+        top_k: 1,
+        ..Default::default()
+    };
+
+    let tokens = transformer
+        .generate_with_cache(&prompt_tokens, &gen_config)
+        .map_err(|e| CliError::ValidationFailed(format!("Generation failed: {e}")))?;
+    let text = tokenizer.decode(&tokens);
+    Ok((tokens, text))
+}
+
+/// Run golden output test for SafeTensors format models. Returns None if tokenizer missing.
+#[cfg(feature = "inference")]
+fn golden_output_safetensors(
+    path: &Path,
+    prompt: &str,
+    max_tokens: usize,
+) -> Result<Option<(Vec<u32>, String)>> {
+    use aprender::text::bpe::{load_from_json, BpeTokenizer};
+    use realizar::safetensors_infer::SafetensorsToAprConverter;
+
+    let tokenizer_path = realizar::safetensors::find_sibling_file(path, "tokenizer.json");
+    let tokenizer: Option<BpeTokenizer> = tokenizer_path
+        .as_ref()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|json| load_from_json(&json).ok());
+
+    let Some(tokenizer) = tokenizer else {
+        return Ok(None);
+    };
+
+    let transformer = SafetensorsToAprConverter::convert(path)
+        .map_err(|e| CliError::ValidationFailed(format!("SafeTensors convert failed: {e}")))?;
+
+    let prompt_tokens = tokenizer.encode(prompt);
+    let gen_config = realizar::apr_transformer::GenerateConfig {
+        max_tokens,
+        temperature: 0.0,
+        top_k: 1,
+        ..Default::default()
+    };
+
+    let tokens = transformer
+        .generate_with_cache(&prompt_tokens, &gen_config)
+        .map_err(|e| CliError::ValidationFailed(format!("Generation failed: {e}")))?;
+    let text = tokenizer.decode(&tokens);
+    Ok(Some((tokens, text)))
+}
+
 /// Gate 1: Golden Output Test
 ///
 /// Runs the model with a known prompt and verifies the output contains expected patterns.
@@ -729,80 +800,18 @@ fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
                     (cpu_tokens, cpu_text)
                 }
                 ModelFormat::Apr => {
-                    use realizar::apr::AprV2Model;
-                    use realizar::apr_transformer::{AprTransformer, GenerateConfig};
-
-                    // Load APR model and get embedded tokenizer
-                    let apr_model = AprV2Model::load(path).map_err(|e| {
-                        CliError::ValidationFailed(format!("Failed to load APR: {e}"))
-                    })?;
-                    let tokenizer = apr_model.load_embedded_bpe_tokenizer().ok_or_else(|| {
-                        CliError::ValidationFailed("APR missing embedded tokenizer".to_string())
-                    })?;
-
-                    let transformer = AprTransformer::from_apr_file(path).map_err(|e| {
-                        CliError::ValidationFailed(format!("Failed to load APR transformer: {e}"))
-                    })?;
-
-                    let prompt_tokens = tokenizer.encode(prompt);
-
-                    let gen_config = GenerateConfig {
-                        max_tokens: config.max_tokens,
-                        temperature: 0.0,
-                        top_k: 1,
-                        ..Default::default()
-                    };
-
-                    let tokens = transformer
-                        .generate_with_cache(&prompt_tokens, &gen_config)
-                        .map_err(|e| {
-                            CliError::ValidationFailed(format!("Generation failed: {e}"))
-                        })?;
-
-                    let text = tokenizer.decode(&tokens);
-                    (tokens, text)
+                    golden_output_apr(path, prompt, config.max_tokens)?
                 }
                 ModelFormat::SafeTensors => {
-                    use aprender::text::bpe::{load_from_json, BpeTokenizer};
-                    use realizar::safetensors_infer::SafetensorsToAprConverter;
-
-                    // PMAT-238 FIX: Use find_sibling_file for pacha hash-prefixed paths
-                    // (e.g., d71534cb948e32eb.tokenizer.json, not just tokenizer.json)
-                    let tokenizer_path =
-                        realizar::safetensors::find_sibling_file(path, "tokenizer.json");
-                    let tokenizer: Option<BpeTokenizer> = tokenizer_path
-                        .as_ref()
-                        .and_then(|p| std::fs::read_to_string(p).ok())
-                        .and_then(|json| load_from_json(&json).ok());
-
-                    let Some(tokenizer) = tokenizer else {
-                        return Ok(GateResult::skipped(
-                            "golden_output",
-                            "SafeTensors: tokenizer.json not found in model directory",
-                        ));
-                    };
-
-                    let transformer = SafetensorsToAprConverter::convert(path).map_err(|e| {
-                        CliError::ValidationFailed(format!("SafeTensors convert failed: {e}"))
-                    })?;
-
-                    let prompt_tokens = tokenizer.encode(prompt);
-
-                    let gen_config = realizar::apr_transformer::GenerateConfig {
-                        max_tokens: config.max_tokens,
-                        temperature: 0.0,
-                        top_k: 1,
-                        ..Default::default()
-                    };
-
-                    let tokens = transformer
-                        .generate_with_cache(&prompt_tokens, &gen_config)
-                        .map_err(|e| {
-                            CliError::ValidationFailed(format!("Generation failed: {e}"))
-                        })?;
-
-                    let text = tokenizer.decode(&tokens);
-                    (tokens, text)
+                    match golden_output_safetensors(path, prompt, config.max_tokens)? {
+                        Some(result) => result,
+                        None => {
+                            return Ok(GateResult::skipped(
+                                "golden_output",
+                                "SafeTensors: tokenizer.json not found in model directory",
+                            ));
+                        }
+                    }
                 }
             };
             let _ = output_tokens; // token count used for diagnostics
