@@ -23,7 +23,7 @@ fn main() {
     let circuit_breaker = Arc::new(CircuitBreaker::default());
 
     // Register some sample models
-    let rt = tokio::runtime::Runtime::new().unwrap();
+    let rt = tokio::runtime::Runtime::new().expect("TUI setup");
     rt.block_on(async {
         // Register whisper model on two nodes
         catalog
@@ -156,10 +156,10 @@ fn main() {
 
         // Render frame
         let backend = TestBackend::new(80, 24);
-        let mut terminal = Terminal::new(backend).unwrap();
+        let mut terminal = Terminal::new(backend).expect("TUI setup");
         terminal
             .draw(|f| render_federation_dashboard(f, &app))
-            .unwrap();
+            .expect("TUI setup");
 
         // Print the buffer
         let buffer = terminal.backend().buffer();

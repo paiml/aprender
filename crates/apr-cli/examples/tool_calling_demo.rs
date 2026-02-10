@@ -149,7 +149,7 @@ fn main() {
     };
 
     println!("Request:");
-    println!("{}\n", serde_json::to_string_pretty(&request).unwrap());
+    println!("{}\n", serde_json::to_string_pretty(&request).expect("JSON serialization"));
 
     // Example response with tool call
     let example_response = ChatResponse {
@@ -175,7 +175,7 @@ fn main() {
     println!("Example Response (with tool call):");
     println!(
         "{}\n",
-        serde_json::to_string_pretty(&example_response).unwrap()
+        serde_json::to_string_pretty(&example_response).expect("JSON serialization")
     );
 
     // Show multi-turn conversation with tool result
@@ -221,7 +221,7 @@ fn main() {
     println!("Follow-up request with tool result:");
     println!(
         "{}\n",
-        serde_json::to_string_pretty(&follow_up_request).unwrap()
+        serde_json::to_string_pretty(&follow_up_request).expect("JSON serialization")
     );
 
     println!("---");

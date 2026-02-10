@@ -234,16 +234,16 @@ fn benchmark_serialization(c: &mut Criterion) {
     // Benchmark save (using serde_json for in-memory)
     group.bench_function("serialize_json", |b| {
         b.iter(|| {
-            let json = serde_json::to_vec(black_box(&model)).unwrap();
+            let json = serde_json::to_vec(black_box(&model)).expect("bench setup");
             black_box(json)
         })
     });
 
     // Benchmark load from JSON
-    let json = serde_json::to_vec(&model).unwrap();
+    let json = serde_json::to_vec(&model).expect("bench setup");
     group.bench_function("deserialize_json", |b| {
         b.iter(|| {
-            let loaded: MarkovModel = serde_json::from_slice(black_box(&json)).unwrap();
+            let loaded: MarkovModel = serde_json::from_slice(black_box(&json)).expect("bench setup");
             black_box(loaded)
         })
     });
@@ -251,19 +251,19 @@ fn benchmark_serialization(c: &mut Criterion) {
     // Benchmark file save
     group.bench_function("save_file", |b| {
         b.iter(|| {
-            let tmp = NamedTempFile::new().unwrap();
-            model.save(tmp.path()).unwrap();
+            let tmp = NamedTempFile::new().expect("bench setup");
+            model.save(tmp.path()).expect("bench setup");
             black_box(tmp)
         })
     });
 
     // Benchmark file load
-    let tmp = NamedTempFile::new().unwrap();
-    model.save(tmp.path()).unwrap();
+    let tmp = NamedTempFile::new().expect("bench setup");
+    model.save(tmp.path()).expect("bench setup");
     let path = tmp.path().to_owned();
     group.bench_function("load_file", |b| {
         b.iter(|| {
-            let loaded = MarkovModel::load(black_box(&path)).unwrap();
+            let loaded = MarkovModel::load(black_box(&path)).expect("bench setup");
             black_box(loaded)
         })
     });

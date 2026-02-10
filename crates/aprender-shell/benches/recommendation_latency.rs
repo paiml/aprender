@@ -217,14 +217,14 @@ fn bench_cold_start(c: &mut Criterion) {
     let mut model = MarkovModel::new(3);
     model.train(&cmds);
 
-    let tmp = NamedTempFile::new().unwrap();
-    model.save(tmp.path()).unwrap();
+    let tmp = NamedTempFile::new().expect("bench setup");
+    model.save(tmp.path()).expect("bench setup");
     let model_path = tmp.path().to_owned();
 
     // Benchmark load + suggest
     group.bench_function("load_and_suggest", |bencher| {
         bencher.iter(|| {
-            let loaded = MarkovModel::load(black_box(&model_path)).unwrap();
+            let loaded = MarkovModel::load(black_box(&model_path)).expect("bench setup");
             let suggestions = loaded.suggest("git ", 5);
             black_box(suggestions)
         });
@@ -248,19 +248,19 @@ fn bench_serialization(c: &mut Criterion) {
     model.train(&cmds);
 
     // JSON serialization (for export)
-    let json_bytes = serde_json::to_vec(&model).unwrap();
+    let json_bytes = serde_json::to_vec(&model).expect("bench setup");
     group.throughput(Throughput::Bytes(json_bytes.len() as u64));
 
     group.bench_function("serialize_json", |bencher| {
         bencher.iter(|| {
-            let bytes = serde_json::to_vec(black_box(&model)).unwrap();
+            let bytes = serde_json::to_vec(black_box(&model)).expect("bench setup");
             black_box(bytes)
         });
     });
 
     group.bench_function("deserialize_json", |bencher| {
         bencher.iter(|| {
-            let loaded: MarkovModel = serde_json::from_slice(black_box(&json_bytes)).unwrap();
+            let loaded: MarkovModel = serde_json::from_slice(black_box(&json_bytes)).expect("bench setup");
             black_box(loaded)
         });
     });
