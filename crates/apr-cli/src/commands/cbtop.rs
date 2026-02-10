@@ -649,7 +649,6 @@ fn run_headless_apr(
 /// - Reports real hardware info from CUDA context
 #[cfg(feature = "inference")]
 fn run_headless_real(config: CbtopConfig) -> Result<()> {
-    use realizar::brick::{benchmark_brick, BenchmarkConfig, QkvBrick, RmsNormBrick};
     use realizar::cuda::CudaExecutor;
     use realizar::gguf::{
         MappedGGUFModel, OwnedQuantizedModel, OwnedQuantizedModelCuda, QuantizedGenerateConfig,
@@ -729,30 +728,7 @@ fn run_headless_real(config: CbtopConfig) -> Result<()> {
     eprintln!("cbtop: CUDA graphs DISABLED for per-brick profiling (PAR-073)");
     eprintln!();
 
-    // PAR-099: Load draft model if provided
-    let mut draft_cuda_model = if let Some(ref draft_path) = config.draft_model_path {
-        eprintln!("cbtop: Loading draft model (PAR-099)...");
-        let draft_load_start = Instant::now();
-
-        let draft_mapped = MappedGGUFModel::from_path(draft_path)
-            .map_err(|e| CliError::ValidationFailed(format!("Failed to map draft model: {e}")))?;
-
-        let draft_model = OwnedQuantizedModel::from_mapped(&draft_mapped).map_err(|e| {
-            CliError::ValidationFailed(format!("Failed to create draft model: {e}"))
-        })?;
-
-        let draft_cuda = OwnedQuantizedModelCuda::new(draft_model, 0)
-            .map_err(|e| CliError::ValidationFailed(format!("Failed to init draft CUDA: {e}")))?;
-
-        let draft_load_time = draft_load_start.elapsed();
-        eprintln!(
-            "cbtop: Draft model loaded in {:.2}s",
-            draft_load_time.as_secs_f32()
-        );
-        Some(draft_cuda)
-    } else {
-        None
-    };
+    let mut draft_cuda_model = load_draft_model(&config)?;
 
     // Get model dimensions for brick benchmarks (via GGUFModel)
     let hidden_dim = mapped.model.embedding_dim().unwrap_or(896);
@@ -810,109 +786,19 @@ fn run_headless_real(config: CbtopConfig) -> Result<()> {
     eprintln!();
 
     // Phase 2: Measure throughput
-    let mode_str = if config.concurrent > 1 {
-        format!("batch (concurrent={})", config.concurrent)
-    } else if config.speculative && draft_cuda_model.is_some() {
-        format!("speculative with draft (k={})", config.speculation_k)
-    } else if config.speculative {
-        format!("speculative self (k={})", config.speculation_k)
-    } else {
-        "standard".to_string()
-    };
+    let mode_str = describe_measurement_mode(&config, draft_cuda_model.is_some());
     eprintln!(
         "cbtop: Measuring throughput ({} iterations, {} mode)...",
         config.iterations, mode_str
     );
-    let mut total_tokens = 0usize;
-    let mut latencies_us: Vec<f64> = Vec::with_capacity(config.iterations);
-
-    // PAR-103: Concurrent batch mode for aggregate throughput measurement
-    if config.concurrent > 1 {
-        // Pre-cache weights with proper naming for batched GEMV
-        eprintln!("cbtop: PAR-103 Pre-caching weights for batch mode...");
-        let cache_bytes = cuda_model
-            .pre_cache_weights_for_batch()
-            .map_err(|e| CliError::ValidationFailed(format!("Failed to pre-cache weights: {e}")))?;
-        eprintln!(
-            "cbtop: PAR-103 Cached {:.1} MB of weights",
-            cache_bytes as f64 / 1024.0 / 1024.0
-        );
-
-        eprintln!(
-            "cbtop: PAR-103 Batch mode - {} concurrent tokens per forward",
-            config.concurrent
-        );
-        // Create batch of token IDs (simulating concurrent requests at same position)
-        let batch_tokens: Vec<u32> = (0..config.concurrent)
-            .map(|_| prompt_tokens.last().copied().unwrap_or(0))
-            .collect();
-
-        for i in 0..config.iterations {
-            let iter_start = Instant::now();
-
-            // Use CUDA forward pass - processes sequence of tokens
-            let result = cuda_model.forward_cuda(&batch_tokens);
-
-            match result {
-                Ok(_logits) => {
-                    // Each forward processes config.concurrent tokens
-                    total_tokens += config.concurrent;
-                    let iter_us = iter_start.elapsed().as_micros() as f64;
-                    latencies_us.push(iter_us);
-                }
-                Err(e) => {
-                    eprintln!("\ncbtop: Batch forward error: {e}");
-                    return Err(CliError::ValidationFailed(format!(
-                        "Batch forward failed: {e}"
-                    )));
-                }
-            }
-            eprint!("\r  Iteration {}/{}", i + 1, config.iterations);
-        }
+    let (total_tokens, latencies_us) = if config.concurrent > 1 {
+        measure_batch_throughput(&config, &mut cuda_model, &prompt_tokens)?
     } else {
-        // Standard single-token mode
-        for i in 0..config.iterations {
-            let iter_start = Instant::now();
-
-            // PAR-099/100: Use speculative decoding if flag is set
-            let result = if config.speculative {
-                if let Some(ref mut draft) = draft_cuda_model {
-                    // PAR-099: Use draft model for fast token generation
-                    cuda_model.generate_speculative_with_draft(
-                        draft,
-                        &prompt_tokens,
-                        &gen_config,
-                        config.speculation_k,
-                    )
-                } else {
-                    // PAR-100: Self-speculative (same model, baseline)
-                    cuda_model.generate_speculative_cuda(
-                        &prompt_tokens,
-                        &gen_config,
-                        config.speculation_k,
-                    )
-                }
-            } else {
-                cuda_model.generate_gpu_resident(&prompt_tokens, &gen_config)
-            };
-
-            match result {
-                Ok(output) => {
-                    let tokens_generated = output.len().saturating_sub(prompt_tokens.len());
-                    total_tokens += tokens_generated;
-                    let iter_us = iter_start.elapsed().as_micros() as f64;
-                    latencies_us.push(iter_us);
-                }
-                Err(e) => {
-                    eprintln!("\ncbtop: Generation error: {e}");
-                    return Err(CliError::ValidationFailed(format!(
-                        "Generation failed: {e}"
-                    )));
-                }
-            }
-            eprint!("\r  Iteration {}/{}", i + 1, config.iterations);
-        }
-    }
+        measure_standard_throughput(
+            &config, &mut cuda_model, &mut draft_cuda_model,
+            &prompt_tokens, &gen_config,
+        )?
+    };
     eprintln!();
 
     let total_time_us: f64 = latencies_us.iter().sum();
@@ -938,7 +824,144 @@ fn run_headless_real(config: CbtopConfig) -> Result<()> {
     let profiler_summary = cuda_model.profiler_summary();
     eprintln!("{}", profiler_summary);
 
-    // Print individual brick stats if available
+    print_profiler_brick_stats(&cuda_model);
+    eprintln!();
+
+    let brick_reports = benchmark_bricks(
+        &config, hidden_dim, num_heads, num_kv_heads, head_dim,
+        measured_per_layer_us, tokens_per_sec, num_layers,
+    );
+
+    // Calculate CV from latencies
+    let mean_latency = latencies_us.iter().sum::<f64>() / latencies_us.len() as f64;
+    let variance = latencies_us
+        .iter()
+        .map(|x| (x - mean_latency).powi(2))
+        .sum::<f64>()
+        / latencies_us.len() as f64;
+    let std_dev = variance.sqrt();
+    let cv_percent = (std_dev / mean_latency) * 100.0;
+
+    // PMAT-PERF-009: Renacer BrickTracer escalation for anomaly detection
+    #[cfg(feature = "visualization")]
+    check_renacer_escalation(tokens_per_sec, cv_percent);
+
+    let gpu_name = cuda_model.device_name().to_string();
+    build_and_output_report(
+        &config, &model_name, &gpu_name, tokens_per_sec, cv_percent,
+        &latencies_us, brick_reports,
+    )
+}
+
+#[cfg(feature = "inference")]
+fn describe_measurement_mode(config: &CbtopConfig, has_draft: bool) -> String {
+    if config.concurrent > 1 {
+        format!("batch (concurrent={})", config.concurrent)
+    } else if config.speculative && has_draft {
+        format!("speculative with draft (k={})", config.speculation_k)
+    } else if config.speculative {
+        format!("speculative self (k={})", config.speculation_k)
+    } else {
+        "standard".to_string()
+    }
+}
+
+/// PAR-103: Concurrent batch mode for aggregate throughput measurement.
+#[cfg(feature = "inference")]
+fn measure_batch_throughput(
+    config: &CbtopConfig,
+    cuda_model: &mut realizar::gguf::OwnedQuantizedModelCuda,
+    prompt_tokens: &[u32],
+) -> Result<(usize, Vec<f64>)> {
+    eprintln!("cbtop: PAR-103 Pre-caching weights for batch mode...");
+    let cache_bytes = cuda_model
+        .pre_cache_weights_for_batch()
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to pre-cache weights: {e}")))?;
+    eprintln!(
+        "cbtop: PAR-103 Cached {:.1} MB of weights",
+        cache_bytes as f64 / 1024.0 / 1024.0
+    );
+    eprintln!(
+        "cbtop: PAR-103 Batch mode - {} concurrent tokens per forward",
+        config.concurrent
+    );
+
+    let batch_tokens: Vec<u32> = (0..config.concurrent)
+        .map(|_| prompt_tokens.last().copied().unwrap_or(0))
+        .collect();
+
+    let mut total_tokens = 0usize;
+    let mut latencies_us = Vec::with_capacity(config.iterations);
+
+    for i in 0..config.iterations {
+        let iter_start = Instant::now();
+        let result = cuda_model.forward_cuda(&batch_tokens);
+        match result {
+            Ok(_logits) => {
+                total_tokens += config.concurrent;
+                latencies_us.push(iter_start.elapsed().as_micros() as f64);
+            }
+            Err(e) => {
+                eprintln!("\ncbtop: Batch forward error: {e}");
+                return Err(CliError::ValidationFailed(format!(
+                    "Batch forward failed: {e}"
+                )));
+            }
+        }
+        eprint!("\r  Iteration {}/{}", i + 1, config.iterations);
+    }
+    Ok((total_tokens, latencies_us))
+}
+
+/// Standard single-token generation measurement (with optional speculative decoding).
+#[cfg(feature = "inference")]
+fn measure_standard_throughput(
+    config: &CbtopConfig,
+    cuda_model: &mut realizar::gguf::OwnedQuantizedModelCuda,
+    draft_cuda_model: &mut Option<realizar::gguf::OwnedQuantizedModelCuda>,
+    prompt_tokens: &[u32],
+    gen_config: &realizar::gguf::QuantizedGenerateConfig,
+) -> Result<(usize, Vec<f64>)> {
+    let mut total_tokens = 0usize;
+    let mut latencies_us = Vec::with_capacity(config.iterations);
+
+    for i in 0..config.iterations {
+        let iter_start = Instant::now();
+        let result = if config.speculative {
+            if let Some(ref mut draft) = draft_cuda_model {
+                cuda_model.generate_speculative_with_draft(
+                    draft, prompt_tokens, gen_config, config.speculation_k,
+                )
+            } else {
+                cuda_model.generate_speculative_cuda(
+                    prompt_tokens, gen_config, config.speculation_k,
+                )
+            }
+        } else {
+            cuda_model.generate_gpu_resident(prompt_tokens, gen_config)
+        };
+
+        match result {
+            Ok(output) => {
+                let tokens_generated = output.len().saturating_sub(prompt_tokens.len());
+                total_tokens += tokens_generated;
+                latencies_us.push(iter_start.elapsed().as_micros() as f64);
+            }
+            Err(e) => {
+                eprintln!("\ncbtop: Generation error: {e}");
+                return Err(CliError::ValidationFailed(format!(
+                    "Generation failed: {e}"
+                )));
+            }
+        }
+        eprint!("\r  Iteration {}/{}", i + 1, config.iterations);
+    }
+    Ok((total_tokens, latencies_us))
+}
+
+/// Print per-brick timing from the BrickProfiler.
+#[cfg(feature = "inference")]
+fn print_profiler_brick_stats(cuda_model: &realizar::gguf::OwnedQuantizedModelCuda) {
     let profiler = cuda_model.profiler();
     #[allow(deprecated)]
     let all_stats = profiler.all_stats();
@@ -958,297 +981,186 @@ fn run_headless_real(config: CbtopConfig) -> Result<()> {
             );
         }
     }
-    eprintln!();
+}
 
-    // Phase 3: Benchmark individual bricks
-    // NOTE: These are DERIVED from total throughput, not directly measured per-kernel
-    // True per-kernel profiling requires CUDA events (future enhancement)
+/// PMAT-PERF-009: Renacer BrickTracer escalation for anomaly detection.
+/// Per Mace et al. (2015): Only trace when anomalies detected to avoid overhead.
+#[cfg(all(feature = "inference", feature = "visualization"))]
+fn check_renacer_escalation(tokens_per_sec: f64, cv_percent: f64) {
+    use renacer::brick_tracer::{BrickEscalationThresholds, BrickTracer};
+
+    let thresholds = BrickEscalationThresholds::default();
+    let efficiency = tokens_per_sec / 976.0 * 100.0;
+
+    if cv_percent > thresholds.cv_percent || efficiency < thresholds.efficiency_percent {
+        eprintln!();
+        eprintln!(
+            "cbtop: Anomaly detected (CV: {:.1}%, efficiency: {:.1}%) - escalating to renacer",
+            cv_percent, efficiency
+        );
+        eprintln!(
+            "  Threshold: CV > {:.1}% or efficiency < {:.1}%",
+            thresholds.cv_percent, thresholds.efficiency_percent
+        );
+        let _tracer = BrickTracer::new_local();
+        let reason = if cv_percent > thresholds.cv_percent
+            && efficiency < thresholds.efficiency_percent
+        {
+            "cv_and_efficiency"
+        } else if cv_percent > thresholds.cv_percent {
+            "cv_exceeded"
+        } else {
+            "efficiency_low"
+        };
+        eprintln!("  BrickTracer: Enabled for syscall breakdown");
+        eprintln!("  Escalation reason: {reason}");
+        eprintln!();
+    }
+}
+
+/// Load optional draft model for speculative decoding.
+#[cfg(feature = "inference")]
+fn load_draft_model(config: &CbtopConfig) -> Result<Option<realizar::gguf::OwnedQuantizedModelCuda>> {
+    use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel, OwnedQuantizedModelCuda};
+
+    let Some(ref draft_path) = config.draft_model_path else { return Ok(None) };
+    eprintln!("cbtop: Loading draft model (PAR-099)...");
+    let draft_load_start = Instant::now();
+    let draft_mapped = MappedGGUFModel::from_path(draft_path)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to map draft model: {e}")))?;
+    let draft_model = OwnedQuantizedModel::from_mapped(&draft_mapped)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to create draft model: {e}")))?;
+    let draft_cuda = OwnedQuantizedModelCuda::new(draft_model, 0)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to init draft CUDA: {e}")))?;
+    eprintln!("cbtop: Draft model loaded in {:.2}s", draft_load_start.elapsed().as_secs_f32());
+    Ok(Some(draft_cuda))
+}
+
+/// Create a derived brick score from measured layer time.
+fn derived_brick_score(name: &str, budget: f64, measured_per_layer_us: f64, fraction: f64) -> BrickScore {
+    let derived_us = measured_per_layer_us * fraction;
+    let score = compute_brick_score(derived_us, budget);
+    eprintln!("  {name}: {derived_us:.2}µs (budget: {budget}µs)");
+    BrickScore {
+        name: name.to_string(), score, grade: score_to_grade(score),
+        budget_us: budget, actual_us: derived_us, gap_factor: derived_us / budget,
+    }
+}
+
+/// Benchmark RmsNorm brick and return score.
+#[cfg(feature = "inference")]
+fn bench_rmsnorm_brick(hidden_dim: usize, bench_config: &realizar::brick::BenchmarkConfig, label: &str) -> BrickScore {
+    use realizar::brick::{benchmark_brick, RmsNormBrick};
+    let brick = RmsNormBrick::new(vec![1.0; hidden_dim], 1e-5);
+    let input: Vec<f32> = vec![1.0; hidden_dim];
+    let report = benchmark_brick(&brick, || {
+        let start = Instant::now();
+        let _ = brick.run(&input);
+        start.elapsed().as_nanos() as f64 / 1000.0
+    }, bench_config);
+    let score = compute_brick_score(report.mean_us, 1.5);
+    eprintln!("  {label}: {:.2}µs (budget: 1.5µs)", report.mean_us);
+    BrickScore {
+        name: "RmsNorm".to_string(), score, grade: score_to_grade(score),
+        budget_us: 1.5, actual_us: report.mean_us, gap_factor: report.mean_us / 1.5,
+    }
+}
+
+/// Benchmark individual bricks and return scores.
+#[cfg(feature = "inference")]
+#[allow(clippy::too_many_arguments)]
+fn benchmark_bricks(
+    config: &CbtopConfig,
+    hidden_dim: usize,
+    num_heads: usize,
+    num_kv_heads: usize,
+    head_dim: usize,
+    measured_per_layer_us: f64,
+    tokens_per_sec: f64,
+    num_layers: usize,
+) -> Vec<BrickScore> {
+    use realizar::brick::{BenchmarkConfig, QkvBrick};
+
     eprintln!("cbtop: Brick timing estimates (* = derived from throughput)...");
-
     let bench_config = BenchmarkConfig {
         warmup: config.warmup.min(10),
         samples: config.iterations.min(100),
         max_cv: 0.05,
     };
 
-    // Brick reports - mix of CPU-measured and derived from throughput
-    // * suffix indicates derived values
-    let mut brick_reports: Vec<BrickScore> = Vec::new();
+    let mut reports: Vec<BrickScore> = Vec::new();
+    reports.push(bench_rmsnorm_brick(hidden_dim, &bench_config, "RmsNorm"));
 
-    // RmsNorm brick
-    {
-        let brick = RmsNormBrick::new(vec![1.0; hidden_dim], 1e-5);
-        let input: Vec<f32> = vec![1.0; hidden_dim];
-        let report = benchmark_brick(
-            &brick,
-            || {
-                let start = Instant::now();
-                let _ = brick.run(&input);
-                start.elapsed().as_nanos() as f64 / 1000.0
-            },
-            &bench_config,
-        );
-        let score = compute_brick_score(report.mean_us, 1.5);
-        brick_reports.push(BrickScore {
-            name: "RmsNorm".to_string(),
-            score,
-            grade: score_to_grade(score),
-            budget_us: 1.5,
-            actual_us: report.mean_us,
-            gap_factor: report.mean_us / 1.5,
-        });
-        eprintln!("  RmsNorm: {:.2}µs (budget: 1.5µs)", report.mean_us);
-    }
+    let _brick = QkvBrick::new(hidden_dim, hidden_dim, num_heads * head_dim, num_kv_heads * head_dim);
+    reports.push(derived_brick_score("QkvBrick*", 6.0, measured_per_layer_us, 6.0 / 35.7));
+    reports.push(derived_brick_score("RoPE*", 1.0, measured_per_layer_us, 1.0 / 35.7));
 
-    // QkvBrick - derived from measured layer time
-    {
-        let _brick = QkvBrick::new(
-            hidden_dim,
-            hidden_dim,
-            num_heads * head_dim,
-            num_kv_heads * head_dim,
-        );
-        // Use proportional timing based on measured layer time
-        let qkv_budget_fraction = 6.0 / 35.7;
-        let derived_us = measured_per_layer_us * qkv_budget_fraction;
-        let score = compute_brick_score(derived_us, 6.0);
-        brick_reports.push(BrickScore {
-            name: "QkvBrick*".to_string(),
-            score,
-            grade: score_to_grade(score),
-            budget_us: 6.0,
-            actual_us: derived_us,
-            gap_factor: derived_us / 6.0,
-        });
-        eprintln!("  QkvBrick*: {:.2}µs (budget: 6.0µs)", derived_us);
-    }
+    let measured_layer_us = 1_000_000.0 / tokens_per_sec / num_layers as f64;
+    let attn_us = measured_layer_us * (10.0 / 35.7);
+    let score = compute_brick_score(attn_us, 10.0);
+    reports.push(BrickScore {
+        name: "Attention*".to_string(), score, grade: score_to_grade(score),
+        budget_us: 10.0, actual_us: attn_us, gap_factor: attn_us / 10.0,
+    });
+    eprintln!("  Attention*: {attn_us:.2}µs (budget: 10.0µs) [* = derived from total throughput]");
 
-    // RoPE brick - derived from measured layer time
-    {
-        let rope_budget_fraction = 1.0 / 35.7;
-        let derived_us = measured_per_layer_us * rope_budget_fraction;
-        let score = compute_brick_score(derived_us, 1.0);
-        brick_reports.push(BrickScore {
-            name: "RoPE*".to_string(),
-            score,
-            grade: score_to_grade(score),
-            budget_us: 1.0,
-            actual_us: derived_us,
-            gap_factor: derived_us / 1.0,
-        });
-        eprintln!("  RoPE*: {:.2}µs (budget: 1.0µs)", derived_us);
-    }
-
-    // Attention - calculate from measured throughput and layer budget proportion
-    // P0: This is DERIVED from total throughput, not directly measured per-kernel
-    // For true per-kernel profiling, use CUDA events (requires trueno-gpu enhancement)
-    {
-        // Total layer budget = 35.7µs (sum of all brick budgets)
-        // Measured layer time = 1_000_000 / tokens_per_sec / num_layers
-        let measured_layer_us = 1_000_000.0 / tokens_per_sec / num_layers as f64;
-        // Proportionally attribute time to attention based on budget fraction
-        let attn_budget_fraction = 10.0 / 35.7;
-        let attn_us = measured_layer_us * attn_budget_fraction;
-        let score = compute_brick_score(attn_us, 10.0);
-        brick_reports.push(BrickScore {
-            name: "Attention*".to_string(), // * = derived from throughput
-            score,
-            grade: score_to_grade(score),
-            budget_us: 10.0,
-            actual_us: attn_us,
-            gap_factor: attn_us / 10.0,
-        });
-        eprintln!(
-            "  Attention*: {:.2}µs (budget: 10.0µs) [* = derived from total throughput]",
-            attn_us
-        );
-    }
-
-    // OProj brick - derived from measured layer time
-    {
-        let oproj_budget_fraction = 3.5 / 35.7;
-        let derived_us = measured_per_layer_us * oproj_budget_fraction;
-        let score = compute_brick_score(derived_us, 3.5);
-        brick_reports.push(BrickScore {
-            name: "OProj*".to_string(),
-            score,
-            grade: score_to_grade(score),
-            budget_us: 3.5,
-            actual_us: derived_us,
-            gap_factor: derived_us / 3.5,
-        });
-        eprintln!("  OProj*: {:.2}µs (budget: 3.5µs)", derived_us);
-    }
-
-    // Second RmsNorm (post-attention)
-    {
-        let brick = RmsNormBrick::new(vec![1.0; hidden_dim], 1e-5);
-        let input: Vec<f32> = vec![1.0; hidden_dim];
-        let report = benchmark_brick(
-            &brick,
-            || {
-                let start = Instant::now();
-                let _ = brick.run(&input);
-                start.elapsed().as_nanos() as f64 / 1000.0
-            },
-            &bench_config,
-        );
-        let score = compute_brick_score(report.mean_us, 1.5);
-        brick_reports.push(BrickScore {
-            name: "RmsNorm".to_string(),
-            score,
-            grade: score_to_grade(score),
-            budget_us: 1.5,
-            actual_us: report.mean_us,
-            gap_factor: report.mean_us / 1.5,
-        });
-        eprintln!("  RmsNorm (2): {:.2}µs (budget: 1.5µs)", report.mean_us);
-    }
-
-    // FfnBrick - derived from measured layer time
-    {
-        let ffn_budget_fraction = 12.2 / 35.7;
-        let derived_us = measured_per_layer_us * ffn_budget_fraction;
-        let score = compute_brick_score(derived_us, 12.2);
-        brick_reports.push(BrickScore {
-            name: "FfnBrick*".to_string(),
-            score,
-            grade: score_to_grade(score),
-            budget_us: 12.2,
-            actual_us: derived_us,
-            gap_factor: derived_us / 12.2,
-        });
-        eprintln!("  FfnBrick*: {:.2}µs (budget: 12.2µs)", derived_us);
-    }
+    reports.push(derived_brick_score("OProj*", 3.5, measured_per_layer_us, 3.5 / 35.7));
+    reports.push(bench_rmsnorm_brick(hidden_dim, &bench_config, "RmsNorm (2)"));
+    reports.push(derived_brick_score("FfnBrick*", 12.2, measured_per_layer_us, 12.2 / 35.7));
 
     eprintln!();
+    reports
+}
 
-    // Calculate CV from latencies
-    let mean_latency = latencies_us.iter().sum::<f64>() / latencies_us.len() as f64;
-    let variance = latencies_us
-        .iter()
-        .map(|x| (x - mean_latency).powi(2))
-        .sum::<f64>()
-        / latencies_us.len() as f64;
-    let std_dev = variance.sqrt();
-    let cv_percent = (std_dev / mean_latency) * 100.0;
+/// Build headless report and output it.
+#[cfg(feature = "inference")]
+#[allow(clippy::too_many_arguments)]
+fn build_and_output_report(
+    config: &CbtopConfig,
+    model_name: &str,
+    gpu_name: &str,
+    tokens_per_sec: f64,
+    cv_percent: f64,
+    latencies_us: &[f64],
+    brick_reports: Vec<BrickScore>,
+) -> Result<()> {
+    let mut sorted = latencies_us.to_vec();
+    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let p50 = sorted[sorted.len() / 2];
+    let p99 = sorted[(sorted.len() as f64 * 0.99) as usize];
 
-    // PMAT-PERF-009: Renacer BrickTracer escalation for anomaly detection
-    // Per Mace et al. (2015): Only trace when anomalies detected to avoid overhead
-    #[cfg(feature = "visualization")]
-    {
-        use renacer::brick_tracer::{BrickEscalationThresholds, BrickTracer};
-
-        let thresholds = BrickEscalationThresholds::default();
-        let efficiency = tokens_per_sec / 976.0 * 100.0; // 976 tok/s = 100% target
-
-        if cv_percent > thresholds.cv_percent || efficiency < thresholds.efficiency_percent {
-            eprintln!();
-            eprintln!(
-                "cbtop: Anomaly detected (CV: {:.1}%, efficiency: {:.1}%) - escalating to renacer",
-                cv_percent, efficiency
-            );
-            eprintln!(
-                "  Threshold: CV > {:.1}% or efficiency < {:.1}%",
-                thresholds.cv_percent, thresholds.efficiency_percent
-            );
-
-            // Create BrickTracer for deep syscall analysis (no OTLP needed for local)
-            let _tracer = BrickTracer::new_local();
-            {
-                eprintln!("  BrickTracer: Enabled for syscall breakdown");
-                eprintln!(
-                    "  Escalation reason: {}",
-                    if cv_percent > thresholds.cv_percent
-                        && efficiency < thresholds.efficiency_percent
-                    {
-                        "cv_and_efficiency"
-                    } else if cv_percent > thresholds.cv_percent {
-                        "cv_exceeded"
-                    } else {
-                        "efficiency_low"
-                    }
-                );
-            }
-            eprintln!();
-        }
-    }
-
-    // Calculate percentiles
-    let mut sorted_latencies = latencies_us.clone();
-    sorted_latencies.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    let p50 = sorted_latencies[sorted_latencies.len() / 2];
-    let p99 = sorted_latencies[(sorted_latencies.len() as f64 * 0.99) as usize];
-
-    // Calculate PMAT brick score
-    let pmat_brick_score = {
-        let weights = [1.5, 6.0, 1.0, 10.0, 3.5, 1.5, 12.2];
-        let weighted_sum: f64 = brick_reports
-            .iter()
-            .zip(weights.iter())
-            .map(|(b, w)| b.score as f64 * w)
-            .sum();
-        let total_weight: f64 = weights.iter().sum();
-        (weighted_sum / total_weight) as u32
-    };
+    let weights = [1.5, 6.0, 1.0, 10.0, 3.5, 1.5, 12.2];
+    let weighted_sum: f64 = brick_reports.iter().zip(weights.iter()).map(|(b, w)| b.score as f64 * w).sum();
+    let total_weight: f64 = weights.iter().sum();
+    let pmat_brick_score = (weighted_sum / total_weight) as u32;
 
     let all_pass = brick_reports.iter().all(|b| b.gap_factor <= 1.0);
-    let target_tok_s = 976.0; // 2x baseline
+    let target_tok_s = 976.0;
     let status = if all_pass { "PASS" } else { "FAIL" };
-    let ci_result = if all_pass && tokens_per_sec >= target_tok_s {
-        "green"
-    } else {
-        "red"
-    };
-
-    // Build report with real data
-    // Get GPU name from cuda_model
-    let gpu_name = cuda_model.device_name().to_string();
+    let ci_result = if all_pass && tokens_per_sec >= target_tok_s { "green" } else { "red" };
 
     let report = HeadlessReport {
-        model: model_name.clone(),
+        model: model_name.to_string(),
         timestamp: chrono_timestamp(),
-        hardware: HardwareInfo {
-            gpu: gpu_name,
-            cpu: get_cpu_info(),
-            memory_gb: get_memory_gb(),
-        },
-        throughput: ThroughputMetrics {
-            tokens_per_sec,
-            ttft_ms: p50 / 1000.0, // Approximate TTFT from p50
-            cv_percent,
-            p50_us: p50,
-            p99_us: p99,
-        },
+        hardware: HardwareInfo { gpu: gpu_name.to_string(), cpu: get_cpu_info(), memory_gb: get_memory_gb() },
+        throughput: ThroughputMetrics { tokens_per_sec, ttft_ms: p50 / 1000.0, cv_percent, p50_us: p50, p99_us: p99 },
         brick_scores: brick_reports,
         pmat_scores: PmatScores {
-            rust_project_score: 173.9, // Current aprender score (173.9/159)
-            tdg_score: 98.1,           // Current TDG score
-            cuda_tdg_score: 95.2,
-            brick_score: pmat_brick_score,
-            grade: score_to_grade(pmat_brick_score),
+            rust_project_score: 173.9, tdg_score: 98.1, cuda_tdg_score: 95.2,
+            brick_score: pmat_brick_score, grade: score_to_grade(pmat_brick_score),
         },
-        falsification: FalsificationSummary {
-            total_points: 137, // F001-F105 + M001-M020 + O001-O009 + R001
-            passed: 137,
-            failed: 0,
-            blocked: 0,
-        },
+        falsification: FalsificationSummary { total_points: 137, passed: 137, failed: 0, blocked: 0 },
         status: status.to_string(),
         ci_result: ci_result.to_string(),
     };
 
-    // Check CI thresholds
-    let ci_passed = check_ci_thresholds(&report, &config);
+    let ci_passed = check_ci_thresholds(&report, config);
 
-    // Output results
     if config.json {
         let json_output = format_report_as_json(&report);
-
         if let Some(ref path) = config.output {
-            std::fs::write(path, &json_output).map_err(|e| {
-                CliError::ValidationFailed(format!("Failed to write output file: {e}"))
-            })?;
+            std::fs::write(path, &json_output)
+                .map_err(|e| CliError::ValidationFailed(format!("Failed to write output file: {e}")))?;
             eprintln!("cbtop: Results written to {}", path.display());
         } else {
             println!("{json_output}");
@@ -1259,11 +1171,8 @@ fn run_headless_real(config: CbtopConfig) -> Result<()> {
 
     if config.ci && !ci_passed {
         eprintln!("cbtop: CI thresholds not met!");
-        return Err(CliError::ValidationFailed(
-            "CI thresholds not met".to_string(),
-        ));
+        return Err(CliError::ValidationFailed("CI thresholds not met".to_string()));
     }
-
     Ok(())
 }
 
@@ -1697,11 +1606,8 @@ fn run_tui(model: Option<&str>, _attach: Option<&str>) -> Result<()> {
 
 fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> {
     loop {
-        // Update state
         app.tick();
-
-        terminal
-            .draw(|f| ui(f, app))
+        terminal.draw(|f| ui(f, app))
             .map_err(|e| CliError::ValidationFailed(format!("Failed to draw: {e}")))?;
 
         if event::poll(std::time::Duration::from_millis(100))
@@ -1710,26 +1616,28 @@ fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: &mut A
             if let Event::Key(key) = event::read()
                 .map_err(|e| CliError::ValidationFailed(format!("Event read error: {e}")))?
             {
-                if key.kind == KeyEventKind::Press {
-                    match key.code {
-                        KeyCode::Char('q') | KeyCode::Esc => app.should_quit = true,
-                        KeyCode::Char('p') => app.current_view = View::Pipeline,
-                        KeyCode::Char('b') => app.current_view = View::Budget,
-                        KeyCode::Char('h') => app.current_view = View::Histogram,
-                        KeyCode::Char('g') => app.current_view = View::Gpu,
-                        KeyCode::Char('m') => app.current_view = View::Memory,
-                        KeyCode::Down | KeyCode::Char('j') => app.next_brick(),
-                        KeyCode::Up | KeyCode::Char('k') => app.prev_brick(),
-                        KeyCode::Enter => {} // Drill into brick (future)
-                        _ => {}
-                    }
-                }
+                handle_cbtop_key(key, app);
             }
         }
 
         if app.should_quit {
             return Ok(());
         }
+    }
+}
+
+fn handle_cbtop_key(key: crossterm::event::KeyEvent, app: &mut App) {
+    if key.kind != KeyEventKind::Press { return; }
+    match key.code {
+        KeyCode::Char('q') | KeyCode::Esc => app.should_quit = true,
+        KeyCode::Char('p') => app.current_view = View::Pipeline,
+        KeyCode::Char('b') => app.current_view = View::Budget,
+        KeyCode::Char('h') => app.current_view = View::Histogram,
+        KeyCode::Char('g') => app.current_view = View::Gpu,
+        KeyCode::Char('m') => app.current_view = View::Memory,
+        KeyCode::Down | KeyCode::Char('j') => app.next_brick(),
+        KeyCode::Up | KeyCode::Char('k') => app.prev_brick(),
+        _ => {}
     }
 }
 

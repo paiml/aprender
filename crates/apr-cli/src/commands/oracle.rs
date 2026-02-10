@@ -518,106 +518,96 @@ pub fn cross_validate(
         }
     }
 
-    // Check rope_theta (float comparison with tolerance)
-    if let Some(hf_theta) = hf_config
-        .get("rope_theta")
-        .and_then(serde_json::Value::as_f64)
-    {
-        let contract_theta = size.rope_theta;
-        let status = if (contract_theta - hf_theta).abs() < 1.0 {
-            "match"
-        } else if (contract_theta - hf_theta).abs() / hf_theta.max(1.0) < 0.01 {
-            "approximate"
-        } else {
-            "mismatch"
-        };
-        let entry = CrossValidationEntry {
-            field: "rope_theta".to_string(),
-            contract_value: format!("{contract_theta}"),
-            hf_value: format!("{hf_theta}"),
-            status: status.to_string(),
-        };
-        if status == "mismatch" {
-            mismatches.push(entry);
-        } else {
-            matches.push(entry);
-        }
-    }
-
-    // Check norm_eps (float comparison)
-    let hf_eps = hf_config
-        .get("rms_norm_eps")
-        .or_else(|| hf_config.get("layer_norm_eps"))
-        .or_else(|| hf_config.get("layer_norm_epsilon"))
-        .and_then(serde_json::Value::as_f64);
-    if let Some(hf_eps_val) = hf_eps {
-        let contract_eps = size.norm_eps;
-        let status = if (contract_eps - hf_eps_val).abs() < 1e-12 {
-            "match"
-        } else {
-            "mismatch"
-        };
-        let entry = CrossValidationEntry {
-            field: "norm_eps".to_string(),
-            contract_value: format!("{contract_eps:.1e}"),
-            hf_value: format!("{hf_eps_val:.1e}"),
-            status: status.to_string(),
-        };
-        if status == "mismatch" {
-            mismatches.push(entry);
-        } else {
-            matches.push(entry);
-        }
-    }
-
-    // Check model_type vs family constraints
-    if let Some(hf_model_type) = hf_config["model_type"].as_str() {
-        let entry = CrossValidationEntry {
-            field: "model_type".to_string(),
-            contract_value: format!("{:?}", constraints.attention_type),
-            hf_value: hf_model_type.to_string(),
-            status: "info".to_string(),
-        };
-        matches.push(entry);
-    }
-
-    // Find HF fields we don't track
-    let tracked_hf_fields = [
-        "hidden_size",
-        "num_hidden_layers",
-        "num_attention_heads",
-        "num_key_value_heads",
-        "intermediate_size",
-        "vocab_size",
-        "max_position_embeddings",
-        "rope_theta",
-        "rms_norm_eps",
-        "layer_norm_eps",
-        "layer_norm_epsilon",
-        "model_type",
-    ];
-    if let Some(obj) = hf_config.as_object() {
-        for key in obj.keys() {
-            if !tracked_hf_fields.contains(&key.as_str()) {
-                let interesting = [
-                    "rope_scaling",
-                    "sliding_window",
-                    "attention_dropout",
-                    "use_cache",
-                    "tie_word_embeddings",
-                ];
-                if interesting.contains(&key.as_str()) {
-                    hf_only.push(format!("{key}={}", obj[key]));
-                }
-            }
-        }
-    }
+    cross_validate_rope_theta(size, hf_config, &mut matches, &mut mismatches);
+    cross_validate_norm_eps(size, hf_config, &mut matches, &mut mismatches);
+    cross_validate_model_type(constraints, hf_config, &mut matches);
+    collect_untracked_hf_fields(hf_config, &mut hf_only);
 
     CrossValidation {
         matches,
         mismatches,
         contract_only,
         hf_only,
+    }
+}
+
+fn cross_validate_rope_theta(
+    size: &ModelSizeConfig,
+    hf_config: &serde_json::Value,
+    matches: &mut Vec<CrossValidationEntry>,
+    mismatches: &mut Vec<CrossValidationEntry>,
+) {
+    let Some(hf_theta) = hf_config.get("rope_theta").and_then(serde_json::Value::as_f64) else { return };
+    let contract_theta = size.rope_theta;
+    let status = if (contract_theta - hf_theta).abs() < 1.0 {
+        "match"
+    } else if (contract_theta - hf_theta).abs() / hf_theta.max(1.0) < 0.01 {
+        "approximate"
+    } else {
+        "mismatch"
+    };
+    let entry = CrossValidationEntry {
+        field: "rope_theta".to_string(),
+        contract_value: format!("{contract_theta}"),
+        hf_value: format!("{hf_theta}"),
+        status: status.to_string(),
+    };
+    if status == "mismatch" { mismatches.push(entry); } else { matches.push(entry); }
+}
+
+fn cross_validate_norm_eps(
+    size: &ModelSizeConfig,
+    hf_config: &serde_json::Value,
+    matches: &mut Vec<CrossValidationEntry>,
+    mismatches: &mut Vec<CrossValidationEntry>,
+) {
+    let hf_eps = hf_config.get("rms_norm_eps")
+        .or_else(|| hf_config.get("layer_norm_eps"))
+        .or_else(|| hf_config.get("layer_norm_epsilon"))
+        .and_then(serde_json::Value::as_f64);
+    let Some(hf_eps_val) = hf_eps else { return };
+    let contract_eps = size.norm_eps;
+    let status = if (contract_eps - hf_eps_val).abs() < 1e-12 { "match" } else { "mismatch" };
+    let entry = CrossValidationEntry {
+        field: "norm_eps".to_string(),
+        contract_value: format!("{contract_eps:.1e}"),
+        hf_value: format!("{hf_eps_val:.1e}"),
+        status: status.to_string(),
+    };
+    if status == "mismatch" { mismatches.push(entry); } else { matches.push(entry); }
+}
+
+fn cross_validate_model_type(
+    constraints: &ModelConstraints,
+    hf_config: &serde_json::Value,
+    matches: &mut Vec<CrossValidationEntry>,
+) {
+    if let Some(hf_model_type) = hf_config["model_type"].as_str() {
+        matches.push(CrossValidationEntry {
+            field: "model_type".to_string(),
+            contract_value: format!("{:?}", constraints.attention_type),
+            hf_value: hf_model_type.to_string(),
+            status: "info".to_string(),
+        });
+    }
+}
+
+fn collect_untracked_hf_fields(hf_config: &serde_json::Value, hf_only: &mut Vec<String>) {
+    const TRACKED: &[&str] = &[
+        "hidden_size", "num_hidden_layers", "num_attention_heads",
+        "num_key_value_heads", "intermediate_size", "vocab_size",
+        "max_position_embeddings", "rope_theta", "rms_norm_eps",
+        "layer_norm_eps", "layer_norm_epsilon", "model_type",
+    ];
+    const INTERESTING: &[&str] = &[
+        "rope_scaling", "sliding_window", "attention_dropout",
+        "use_cache", "tie_word_embeddings",
+    ];
+    let Some(obj) = hf_config.as_object() else { return };
+    for key in obj.keys() {
+        if !TRACKED.contains(&key.as_str()) && INTERESTING.contains(&key.as_str()) {
+            hf_only.push(format!("{key}={}", obj[key]));
+        }
     }
 }
 
@@ -1323,44 +1313,32 @@ fn build_enhanced_sections(
 
 /// Load the family registry from contracts/ directory.
 /// Searches for contracts relative to the executable, then falls back to CWD.
-fn load_registry() -> Result<FamilyRegistry, CliError> {
-    // Try contracts/ relative to CWD first
-    let cwd_contracts = PathBuf::from("contracts");
-    if cwd_contracts.join("model-families").exists() {
-        return load_family_registry(&cwd_contracts)
-            .map_err(|e| CliError::Aprender(format!("Failed to load family contracts: {e}")));
-    }
+fn contracts_candidate_paths() -> Vec<PathBuf> {
+    let mut candidates = vec![PathBuf::from("contracts")];
 
-    // Try relative to executable
     if let Ok(exe_path) = std::env::current_exe() {
         if let Some(exe_dir) = exe_path.parent() {
-            let exe_contracts = exe_dir.join("contracts");
-            if exe_contracts.join("model-families").exists() {
-                return load_family_registry(&exe_contracts).map_err(|e| {
-                    CliError::Aprender(format!("Failed to load family contracts: {e}"))
-                });
-            }
-            // Try one level up (for cargo run scenarios)
+            candidates.push(exe_dir.join("contracts"));
             if let Some(parent) = exe_dir.parent() {
-                let parent_contracts = parent.join("contracts");
-                if parent_contracts.join("model-families").exists() {
-                    return load_family_registry(&parent_contracts).map_err(|e| {
-                        CliError::Aprender(format!("Failed to load family contracts: {e}"))
-                    });
-                }
+                candidates.push(parent.join("contracts"));
             }
         }
     }
 
-    // Try workspace root (common in dev)
     for ancestor in [".", "..", "../..", "../../.."] {
-        let contracts = PathBuf::from(ancestor).join("contracts");
-        if contracts.join("model-families").exists() {
-            return load_family_registry(&contracts)
+        candidates.push(PathBuf::from(ancestor).join("contracts"));
+    }
+
+    candidates
+}
+
+fn load_registry() -> Result<FamilyRegistry, CliError> {
+    for candidate in contracts_candidate_paths() {
+        if candidate.join("model-families").exists() {
+            return load_family_registry(&candidate)
                 .map_err(|e| CliError::Aprender(format!("Failed to load family contracts: {e}")));
         }
     }
-
     // Return empty registry rather than error — graceful degradation
     Ok(FamilyRegistry::new())
 }
