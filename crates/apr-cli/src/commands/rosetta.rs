@@ -10,7 +10,7 @@
 use crate::error::{CliError, Result};
 use crate::output;
 use aprender::format::rosetta::{
-    ConversionOptions, ConversionPath, FormatType, InspectionReport, RosettaStone,
+    ConversionOptions, ConversionPath, FormatType, InspectionReport, RosettaStone, TensorInfo,
     VerificationReport,
 };
 use clap::Subcommand;
@@ -1178,6 +1178,83 @@ fn print_diff_text_summary(
     );
 }
 
+/// Compare a single tensor pair and accumulate mismatches.
+#[allow(clippy::too_many_arguments)]
+fn diff_tensor_pair(
+    name: &str,
+    tensor_a: Option<&TensorInfo>,
+    tensor_b: Option<&TensorInfo>,
+    mismatches_only: bool,
+    json: bool,
+    layout_mismatches: &mut Vec<(String, Vec<usize>, Vec<usize>)>,
+    missing_in_a: &mut Vec<(String, Vec<usize>)>,
+    missing_in_b: &mut Vec<(String, Vec<usize>)>,
+) {
+    let separator =
+        "╠──────────────────────────────────────────────────────────────────────────────╣".cyan();
+    match (tensor_a, tensor_b) {
+        (Some(a), Some(b)) => {
+            let dims_match = a.shape == b.shape;
+            let is_transposed = is_transposed_dims(&a.shape, &b.shape);
+
+            if !dims_match || !mismatches_only {
+                if !json {
+                    let status = if dims_match {
+                        "✓".green()
+                    } else if is_transposed {
+                        "⚠️".yellow()
+                    } else {
+                        "✗".red()
+                    };
+                    println!("║ {} {:<72} ║", status, name);
+                    println!(
+                        "║   A: {:?} {:>20} {:>15} bytes    ║",
+                        a.shape, a.dtype, a.size_bytes
+                    );
+                    println!(
+                        "║   B: {:?} {:>20} {:>15} bytes    ║",
+                        b.shape, b.dtype, b.size_bytes
+                    );
+                    if is_transposed {
+                        println!(
+                            "║   {} ║",
+                            "LAYOUT MISMATCH: Dimensions are transposed! Likely GGML convention."
+                                .red()
+                                .bold()
+                        );
+                        println!(
+                            "║   {} ║",
+                            "FIX: Transpose this tensor during load OR use row-major kernel"
+                                .yellow()
+                        );
+                    }
+                    println!("{separator}");
+                }
+                if is_transposed {
+                    layout_mismatches.push((name.to_string(), a.shape.clone(), b.shape.clone()));
+                }
+            }
+        }
+        (Some(a), None) => {
+            missing_in_b.push((name.to_string(), a.shape.clone()));
+            if !mismatches_only && !json {
+                println!("║ {} {:<72} ║", "−".red(), name);
+                println!("║   A: {:?} (missing in B){}║", a.shape, " ".repeat(40));
+                println!("{separator}");
+            }
+        }
+        (None, Some(b)) => {
+            missing_in_a.push((name.to_string(), b.shape.clone()));
+            if !mismatches_only && !json {
+                println!("║ {} {:<72} ║", "+".green(), name);
+                println!("║   B: {:?} (missing in A){}║", b.shape, " ".repeat(40));
+                println!("{separator}");
+            }
+        }
+        (None, None) => {}
+    }
+}
+
 pub fn run_diff_tensors(
     model_a: &Path,
     model_b: &Path,
@@ -1249,83 +1326,16 @@ pub fn run_diff_tensors(
     for name in &filtered_names {
         let tensor_a = tensors_a.get(*name);
         let tensor_b = tensors_b.get(*name);
-
-        match (tensor_a, tensor_b) {
-            (Some(a), Some(b)) => {
-                let dims_match = a.shape == b.shape;
-                let is_transposed = is_transposed_dims(&a.shape, &b.shape);
-
-                if !dims_match || !mismatches_only {
-                    if !json {
-                        let status = if dims_match {
-                            "✓".green()
-                        } else if is_transposed {
-                            "⚠️".yellow()
-                        } else {
-                            "✗".red()
-                        };
-
-                        println!("║ {} {:<72} ║", status, name);
-                        println!(
-                            "║   A: {:?} {:>20} {:>15} bytes    ║",
-                            a.shape, a.dtype, a.size_bytes
-                        );
-                        println!(
-                            "║   B: {:?} {:>20} {:>15} bytes    ║",
-                            b.shape, b.dtype, b.size_bytes
-                        );
-
-                        if is_transposed {
-                            println!(
-                                "║   {} ║",
-                                "LAYOUT MISMATCH: Dimensions are transposed! Likely GGML convention."
-                                    .red()
-                                    .bold()
-                            );
-                            println!(
-                                "║   {} ║",
-                                "FIX: Transpose this tensor during load OR use row-major kernel"
-                                    .yellow()
-                            );
-                        }
-                        println!(
-                            "{}",
-                            "╠──────────────────────────────────────────────────────────────────────────────╣"
-                                .cyan()
-                        );
-                    }
-
-                    if is_transposed {
-                        layout_mismatches.push(((*name).clone(), a.shape.clone(), b.shape.clone()));
-                    }
-                }
-            }
-            (Some(a), None) => {
-                missing_in_b.push(((*name).clone(), a.shape.clone()));
-                if !mismatches_only && !json {
-                    println!("║ {} {:<72} ║", "−".red(), name);
-                    println!("║   A: {:?} (missing in B){}║", a.shape, " ".repeat(40));
-                    println!(
-                        "{}",
-                        "╠──────────────────────────────────────────────────────────────────────────────╣"
-                            .cyan()
-                    );
-                }
-            }
-            (None, Some(b)) => {
-                missing_in_a.push(((*name).clone(), b.shape.clone()));
-                if !mismatches_only && !json {
-                    println!("║ {} {:<72} ║", "+".green(), name);
-                    println!("║   B: {:?} (missing in A){}║", b.shape, " ".repeat(40));
-                    println!(
-                        "{}",
-                        "╠──────────────────────────────────────────────────────────────────────────────╣"
-                            .cyan()
-                    );
-                }
-            }
-            (None, None) => {} // shouldn't happen
-        }
+        diff_tensor_pair(
+            name,
+            tensor_a.copied(),
+            tensor_b.copied(),
+            mismatches_only,
+            json,
+            &mut layout_mismatches,
+            &mut missing_in_a,
+            &mut missing_in_b,
+        );
     }
 
     // Summary
@@ -2530,72 +2540,13 @@ struct InferenceResult {
 }
 
 /// Run a model and capture output
-fn run_model_with_logits(
-    model_path: &Path,
-    prompt: &str,
-    max_tokens: usize,
-    temperature: f32,
-) -> Result<InferenceResult> {
-    use std::process::{Command, Stdio};
-
-    // Determine which command to use based on file extension
-    let ext = model_path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("");
-
-    // GH-188: Use realizar for both GGUF and APR files for consistent comparison
-    // Use simple text format for clean output that's easy to compare
-    let realizar_path = std::env::var("REALIZAR_PATH").unwrap_or_else(|_| "realizar".to_string());
-    let output = Command::new(&realizar_path)
-        .arg("run")
-        .arg(model_path)
-        .arg(prompt)
-        .arg("--max-tokens")
-        .arg(max_tokens.to_string())
-        .arg("--temperature")
-        .arg(temperature.to_string())
-        .arg("--format")
-        .arg("text")
-        .env("NO_COLOR", "1")
-        .env("TERM", "dumb")
-        .env("REALIZE_DEBUG", "1") // Enable debug for APR load tracing
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to run realizar: {e}")))?;
-
-    let (stdout_text, stderr_text) = (
-        String::from_utf8_lossy(&output.stdout).to_string(),
-        String::from_utf8_lossy(&output.stderr).to_string(),
-    );
-
-    // GH-188 DEBUG: Log what we captured for diagnosis
-    if std::env::var("ROSETTA_DEBUG").is_ok() {
-        eprintln!("[ROSETTA] Model: {}", model_path.display());
-        eprintln!("[ROSETTA] Exit code: {:?}", output.status.code());
-        eprintln!(
-            "[ROSETTA] STDOUT ({} bytes): {:?}",
-            stdout_text.len(),
-            &stdout_text[..stdout_text.len().min(200)]
-        );
-        eprintln!(
-            "[ROSETTA] STDERR ({} bytes): {:?}",
-            stderr_text.len(),
-            &stderr_text[..stderr_text.len().min(200)]
-        );
-    }
-
-    // Combine stdout and stderr for parsing (trace goes to both)
-    let combined = format!("{}\n{}", stdout_text, stderr_text);
-
+/// Parse PMAT-113-F trace lines for selected tokens, logits, and top-5 predictions.
+fn parse_trace_lines(combined: &str) -> (Vec<u32>, Vec<f32>, Vec<Vec<u32>>) {
     let mut tokens = Vec::new();
     let mut logits = Vec::new();
     let mut top5 = Vec::new();
 
-    // Parse PMAT-113-F trace lines
     for line in combined.lines() {
-        // Handle "Selected token: X (logit: Y)" lines
         if line.contains("Selected token:") {
             if let Some(token_part) = line.split("Selected token:").nth(1) {
                 let trimmed = token_part.trim();
@@ -2614,35 +2565,29 @@ fn run_model_with_logits(
                 }
             }
         }
-        // Handle "Top 5 tokens:" lines
         if line.contains("Top 5 tokens:") {
             if let Some(top5_part) = line.split("Top 5 tokens:").nth(1) {
-                let mut current_top5 = Vec::new();
-                for pair in top5_part.split("),") {
-                    if let Some(open_paren) = pair.find('(') {
-                        let inner = &pair[open_paren + 1..];
-                        if let Some(comma) = inner.find(',') {
-                            if let Ok(token_id) = inner[..comma].trim().parse::<u32>() {
-                                current_top5.push(token_id);
-                            }
-                        }
-                    }
-                }
+                let current_top5: Vec<u32> = top5_part
+                    .split("),")
+                    .filter_map(|pair| {
+                        let inner = &pair[pair.find('(')? + 1..];
+                        inner[..inner.find(',')?].trim().parse().ok()
+                    })
+                    .collect();
                 if !current_top5.is_empty() {
                     top5.push(current_top5);
                 }
             }
         }
     }
+    (tokens, logits, top5)
+}
 
-    // GH-188: Extract output text - without --verbose, stdout is just the generated text
-    // Filter out debug/trace lines, spinners, and noise
-    let output_text = strip_ansi(&stdout_text)
+/// Extract clean output text from realizar stdout, stripping noise and debug lines.
+fn extract_clean_output(stdout_text: &str) -> String {
+    strip_ansi(stdout_text)
         .chars()
-        .filter(|c| {
-            // Remove spinner characters
-            !matches!(c, '⠋' | '⠙' | '⠹' | '⠸' | '⠼' | '⠴' | '⠦' | '⠧' | '⠇' | '⠏')
-        })
+        .filter(|c| !matches!(c, '⠋' | '⠙' | '⠹' | '⠸' | '⠼' | '⠴' | '⠦' | '⠧' | '⠇' | '⠏'))
         .collect::<String>()
         .lines()
         .filter(|l| {
@@ -2661,8 +2606,59 @@ fn run_model_with_logits(
         .collect::<Vec<_>>()
         .join(" ")
         .trim()
-        .to_string();
-    let _ = ext; // Suppress unused warning
+        .to_string()
+}
+
+fn run_model_with_logits(
+    model_path: &Path,
+    prompt: &str,
+    max_tokens: usize,
+    temperature: f32,
+) -> Result<InferenceResult> {
+    use std::process::{Command, Stdio};
+
+    let realizar_path = std::env::var("REALIZAR_PATH").unwrap_or_else(|_| "realizar".to_string());
+    let output = Command::new(&realizar_path)
+        .arg("run")
+        .arg(model_path)
+        .arg(prompt)
+        .arg("--max-tokens")
+        .arg(max_tokens.to_string())
+        .arg("--temperature")
+        .arg(temperature.to_string())
+        .arg("--format")
+        .arg("text")
+        .env("NO_COLOR", "1")
+        .env("TERM", "dumb")
+        .env("REALIZE_DEBUG", "1")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to run realizar: {e}")))?;
+
+    let (stdout_text, stderr_text) = (
+        String::from_utf8_lossy(&output.stdout).to_string(),
+        String::from_utf8_lossy(&output.stderr).to_string(),
+    );
+
+    if std::env::var("ROSETTA_DEBUG").is_ok() {
+        eprintln!("[ROSETTA] Model: {}", model_path.display());
+        eprintln!("[ROSETTA] Exit code: {:?}", output.status.code());
+        eprintln!(
+            "[ROSETTA] STDOUT ({} bytes): {:?}",
+            stdout_text.len(),
+            &stdout_text[..stdout_text.len().min(200)]
+        );
+        eprintln!(
+            "[ROSETTA] STDERR ({} bytes): {:?}",
+            stderr_text.len(),
+            &stderr_text[..stderr_text.len().min(200)]
+        );
+    }
+
+    let combined = format!("{}\n{}", stdout_text, stderr_text);
+    let (tokens, logits, top5) = parse_trace_lines(&combined);
+    let output_text = extract_clean_output(&stdout_text);
 
     Ok(InferenceResult {
         tokens,
