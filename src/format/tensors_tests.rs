@@ -281,7 +281,7 @@ fn test_compute_stats_normal_values() {
     compute_tensor_stats(&mut info, &data);
 
     assert_eq!(info.mean, Some(2.5));
-    assert!(info.std.unwrap() > 1.0 && info.std.unwrap() < 1.2);
+    assert!(info.std.expect("test value") > 1.0 && info.std.expect("test value") < 1.2);
     assert_eq!(info.min, Some(1.0));
     assert_eq!(info.max, Some(4.0));
     assert_eq!(info.nan_count, Some(0));
@@ -495,7 +495,7 @@ fn test_list_tensors_gguf_magic_detection() {
     let result = list_tensors_from_bytes(&data, TensorListOptions::default());
     // Should succeed with 0 tensors (valid but empty GGUF)
     assert!(result.is_ok(), "Valid empty GGUF should parse: {result:?}");
-    let result = result.unwrap();
+    let result = result.expect("test value");
     assert_eq!(result.tensor_count, 0);
     assert!(result.format_version.contains("GGUF"));
 }
@@ -1023,7 +1023,7 @@ fn test_safetensors_with_stats() {
     assert_eq!(result.tensor_count, 1);
     let t = &result.tensors[0];
     assert!(t.mean.is_some());
-    assert!((t.mean.unwrap() - 2.5).abs() < 0.01);
+    assert!((t.mean.expect("test value") - 2.5).abs() < 0.01);
 }
 
 #[test]
@@ -1092,7 +1092,7 @@ fn test_list_tensors_v1_empty_metadata() {
     data.extend_from_slice(metadata);
     let result = super::list_tensors_v1(&data, TensorListOptions::default());
     assert!(result.is_ok());
-    assert_eq!(result.unwrap().tensor_count, 0);
+    assert_eq!(result.expect("test value").tensor_count, 0);
 }
 
 // ====================================================================
@@ -1355,7 +1355,7 @@ fn test_compute_stats_mixed_nan_inf_valid() {
     assert_eq!(info.nan_count, Some(1));
     assert_eq!(info.inf_count, Some(2));
     // Mean from valid values: (1.0 + 3.0) / 2 = 2.0
-    assert!((info.mean.unwrap() - 2.0).abs() < 0.01);
+    assert!((info.mean.expect("test value") - 2.0).abs() < 0.01);
     assert_eq!(info.min, Some(1.0));
     assert_eq!(info.max, Some(3.0));
 }
@@ -1378,7 +1378,7 @@ fn test_compute_stats_negative_values() {
     assert_eq!(info.mean, Some(0.0));
     assert_eq!(info.min, Some(-3.0));
     assert_eq!(info.max, Some(3.0));
-    assert!(info.std.unwrap() > 0.0);
+    assert!(info.std.expect("test value") > 0.0);
 }
 
 // ====================================================================
