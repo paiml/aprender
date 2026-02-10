@@ -1,10 +1,10 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 10.25.0 (Full Stack: apr-cli + aprender + realizar + trueno, Popperian falsified)
-**Status:** ALL THREE PROJECTS A+ + ZERO SATD (7B all 3 formats working CPU + GPU. 24 falsification rounds, 120 bugs found. Round 24: Zero SATD across all 3 projects (36 violations eliminated) + F-PROFILE-010 fixed (Ollama parity letter grade). Measured: 80.6 tok/s decode = 0.64x Ollama (Grade D). Prefill: 153.4 tok/s = 3.32x Ollama. Project Scores: aprender A+ (105%), realizar A+ (99.9%), trueno A+ (100.9%). Coverage: 96.35%. SATD: 0/0/0.)
+**Version:** 10.26.0 (Full Stack: apr-cli + aprender + realizar + trueno, Popperian falsified)
+**Status:** ALL THREE PROJECTS A+ + ZERO SATD (7B all 3 formats working CPU + GPU. 25 falsification rounds, 122 bugs found. Round 25: Complexity reduction — max cyclomatic 39→32 via handler/inference refactoring. Extracted 5 helpers: load_apr_model_state, run_apr_cpu_inference, prepare_apr_input_tokens, setup_apr_tracer, format_apr_inference_output. Top hotspot eliminated. Project Scores: aprender A+ (105%), realizar A+ (99.9%), trueno A+ (100.9%). Coverage: 96.35%. SATD: 0/0/0.)
 **Primary Model:** `Qwen/Qwen2.5-Coder-7B-Instruct`
 **Source Format:** SafeTensors BF16 (HuggingFace, sharded, ~14 GB)
-**Popperian Score:** 192/206 gates passing (93.2%) — 12 FALSIFIED, 0 blocked/not-tested. 158 falsification gates, 25 sections. Gated by `model-tests` feature (`make test-model`)
+**Popperian Score:** 192/208 gates passing (92.3%) — 12 FALSIFIED, 0 blocked/not-tested. 158 falsification gates, 25 sections. Gated by `model-tests` feature (`make test-model`)
 **CLI Surface:** 38 top-level + 10 nested subcommands (48 total)
 **Compile-Time Proofs:** 297 algebraic invariants (zero runtime cost)
 **Author:** PAIML Engineering
@@ -36,7 +36,7 @@
 
 The Qwen2.5-Coder Showcase demonstrates the unified inference architecture across three model formats (SafeTensors, APR, GGUF) with CPU and GPU backends, using a single model with a single provenance chain. The full stack is exercised end-to-end: **apr-cli** (48 subcommands) → **aprender** (contract validation, 297 compile-time proofs) → **realizar** (inference: two-phase generation with batched prefill, PagedAttention KV cache, 8 sampling algorithms + penalty modifiers, GQA attention, OpenAI-compatible API, PTX parity validation) → **trueno** (SIMD/GPU compute: 9 backend tiers, 95 CUDA kernels, 6 batched kernel variants with KernelParity trait, Jidoka quality gates). 158 falsification gates across 25 sections.
 
-**v10.25.0 Focus: Zero SATD + F-PROFILE-010 + Ollama Performance Parity Sprint**
+**v10.26.0 Focus: Complexity Reduction + Ollama Performance Parity Sprint**
 - **Current (measured 2026-02-09):** 80.6 tok/s GPU decode (0.64x Ollama 125.7 tok/s) — Grade D
 - **Prefill: 153.4 tok/s (3.32x FASTER than Ollama 46.2 tok/s)** — Batched prefill is world-class
 - **Target:** 125.7 tok/s (1.0x parity, Grade C) → 251 tok/s (2.0x, Grade A)
@@ -2204,6 +2204,13 @@ This section documents bugs found by falsifying the spec itself against the code
 | 118 | realizar has zero SATD violations | 8 SATD violations: 5 High (SafeTensors bug, PMAT-216 fix, use-after-free, BUG: prefix), 3 Low. | **P1** | Reworded all 8 comments: removed bug tracker references, replaced defect language with factual descriptions. 8 → 0 SATD. |
 | 119 | trueno has zero SATD violations | 28 SATD violations across 20 files: 11 High (bug references, TODO markers), 1 Medium, 16 Low (slow, temporary, broken). | **P1** | Reworded all 28 comments + extracted `ptx_instruction_color()` to reduce cognitive complexity. 28 → 0 SATD. |
 | 120 | `apr qa` reports Ollama parity letter grade | F-PROFILE-010: Gate output showed ratio only (e.g., "0.64x Ollama") but no letter grade. Spec defines grading: F/D/C/B/A/A+. | **P2** | Added `ollama_parity_grade()` function with `#[cfg(feature = "inference")]`. Output now: "0.64x Ollama (81 vs 126 tok/s) Grade D". Boundary test covers all 6 grades. |
+
+**Round 25 (v10.26.0): Complexity reduction — max cyclomatic 39 → 32**
+
+| # | Claim/Gap | Reality | Severity | Fix |
+|---|-----------|---------|----------|-----|
+| 121 | `start_apr_server` is maintainable | Cyclomatic complexity 39 (was #1 hotspot). 600+ lines with duplicated inference logic between `/v1/completions` and `/v1/chat/completions`. | **P2** | Extracted `load_apr_model_state()`, `run_apr_cpu_inference()`, `AprServerState`/`AprInferenceOutput` types. Eliminated ~110 lines of duplication. Complexity dropped below reporting threshold. |
+| 122 | `execute_apr_inference` is maintainable | Cyclomatic complexity 32 (was #1 after fixing #121). Input parsing, tracing, and output formatting all inline in one 279-line function. | **P2** | Extracted `prepare_apr_input_tokens()`, `setup_apr_tracer()`, `format_apr_inference_output()`. Complexity dropped below reporting threshold. Max project cyclomatic: 39 → 32. |
 
 ### 18.2 Claims Verified (Not Falsified)
 
