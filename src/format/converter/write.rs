@@ -324,6 +324,243 @@ pub(crate) fn write_apr_file(
     Ok(())
 }
 
+/// Resolve tied embeddings by synthesizing lm_head.weight from embed_tokens.weight
+/// when the model doesn't have an output/lm_head weight (GH-202).
+///
+/// Returns the (possibly modified) tensor map and whether tied embeddings were detected.
+fn resolve_tied_embeddings(
+    tensors: &BTreeMap<String, GgufRawTensor>,
+) -> (BTreeMap<String, GgufRawTensor>, bool) {
+    let original_has_lm_head = tensors
+        .keys()
+        .any(|k| k == "lm_head.weight" || k == "output.weight");
+    let mut result = tensors.clone();
+    if !original_has_lm_head {
+        let embed_key = result
+            .keys()
+            .find(|k| k.contains("embed_tokens.weight") || *k == "token_embd.weight")
+            .cloned();
+        if let Some(embed_name) = embed_key {
+            if let Some(embed_tensor) = result.get(&embed_name).cloned() {
+                eprintln!(
+                    "[GH-202] Synthesizing lm_head.weight from {} (tied embeddings)",
+                    embed_name
+                );
+                result.insert("lm_head.weight".to_string(), embed_tensor);
+            }
+        }
+    }
+    let has_tied = !original_has_lm_head && result.contains_key("lm_head.weight");
+    (result, has_tied)
+}
+
+/// Insert tokenizer metadata into the custom metadata map (PMAT-171).
+fn insert_tokenizer_metadata(
+    tok: &GgufTokenizer,
+    custom: &mut std::collections::HashMap<String, serde_json::Value>,
+) {
+    if !tok.vocabulary.is_empty() {
+        let vocab_array: Vec<serde_json::Value> = tok
+            .vocabulary
+            .iter()
+            .map(|s| serde_json::Value::String(s.clone()))
+            .collect();
+        custom.insert(
+            "tokenizer.vocabulary".to_string(),
+            serde_json::Value::Array(vocab_array),
+        );
+        custom.insert(
+            "tokenizer.vocab_size".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(tok.vocabulary.len())),
+        );
+    }
+    if let Some(model_type) = &tok.model_type {
+        custom.insert(
+            "tokenizer.model".to_string(),
+            serde_json::Value::String(model_type.clone()),
+        );
+    }
+    if let Some(bos) = tok.bos_token_id {
+        custom.insert(
+            "tokenizer.bos_token_id".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(bos)),
+        );
+    }
+    if let Some(eos) = tok.eos_token_id {
+        custom.insert(
+            "tokenizer.eos_token_id".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(eos)),
+        );
+    }
+    // GH-185 FIX: Embed BPE merge rules for standalone APR encoding
+    if !tok.merges.is_empty() {
+        eprintln!(
+            "[GH-185] Embedding {} BPE merge rules into APR metadata",
+            tok.merges.len()
+        );
+        let merges_array: Vec<serde_json::Value> = tok
+            .merges
+            .iter()
+            .map(|s| serde_json::Value::String(s.clone()))
+            .collect();
+        custom.insert(
+            "tokenizer.merges".to_string(),
+            serde_json::Value::Array(merges_array),
+        );
+    }
+    // GH-253: Store additional tokenizer metadata for GGUF export round-trip
+    if !tok.token_type.is_empty() {
+        let type_array: Vec<serde_json::Value> = tok
+            .token_type
+            .iter()
+            .map(|&t| serde_json::Value::Number(serde_json::Number::from(t)))
+            .collect();
+        custom.insert(
+            "tokenizer.token_type".to_string(),
+            serde_json::Value::Array(type_array),
+        );
+    }
+    if let Some(pad_id) = tok.padding_token_id {
+        custom.insert(
+            "tokenizer.padding_token_id".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(pad_id)),
+        );
+    }
+    if let Some(add_bos) = tok.add_bos_token {
+        custom.insert(
+            "tokenizer.add_bos_token".to_string(),
+            serde_json::Value::Bool(add_bos),
+        );
+    }
+    if let Some(ref tmpl) = tok.chat_template {
+        custom.insert(
+            "tokenizer.chat_template".to_string(),
+            serde_json::Value::String(tmpl.clone()),
+        );
+    }
+}
+
+/// Insert model config metadata into the custom metadata map.
+fn insert_model_config_metadata(
+    cfg: &GgufModelConfig,
+    custom: &mut std::collections::HashMap<String, serde_json::Value>,
+) {
+    if let Some(arch) = &cfg.architecture {
+        custom.insert(
+            "model.architecture".to_string(),
+            serde_json::Value::String(arch.clone()),
+        );
+    }
+    if let Some(hidden_size) = cfg.hidden_size {
+        custom.insert(
+            "model.hidden_size".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(hidden_size)),
+        );
+    }
+    if let Some(num_layers) = cfg.num_layers {
+        custom.insert(
+            "model.num_layers".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(num_layers)),
+        );
+    }
+    if let Some(num_heads) = cfg.num_heads {
+        custom.insert(
+            "model.num_heads".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(num_heads)),
+        );
+    }
+    if let Some(num_kv_heads) = cfg.num_kv_heads {
+        custom.insert(
+            "model.num_kv_heads".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(num_kv_heads)),
+        );
+    }
+    if let Some(vocab_size) = cfg.vocab_size {
+        custom.insert(
+            "model.vocab_size".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(vocab_size)),
+        );
+    }
+    if let Some(intermediate_size) = cfg.intermediate_size {
+        custom.insert(
+            "model.intermediate_size".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(intermediate_size)),
+        );
+    }
+    if let Some(max_pos) = cfg.max_position_embeddings {
+        custom.insert(
+            "model.max_position_embeddings".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(max_pos)),
+        );
+    }
+    if let Some(rope_theta) = cfg.rope_theta {
+        custom.insert(
+            "model.rope_theta".to_string(),
+            serde_json::Value::Number(
+                serde_json::Number::from_f64(f64::from(rope_theta))
+                    .unwrap_or_else(|| serde_json::Number::from(10000u64)),
+            ),
+        );
+    }
+    if let Some(rms_eps) = cfg.rms_norm_eps {
+        custom.insert(
+            "model.rms_norm_eps".to_string(),
+            serde_json::Value::Number(
+                serde_json::Number::from_f64(f64::from(rms_eps))
+                    .unwrap_or_else(|| serde_json::Number::from(0u64)),
+            ),
+        );
+    }
+    // PMAT-114: Write rope_type for correct RoPE style
+    if let Some(rope_type) = cfg.rope_type {
+        custom.insert(
+            "model.rope_type".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(rope_type)),
+        );
+    }
+}
+
+/// Map GGUF dtype code to APR `TensorDType`, or return an error for unsupported formats.
+///
+/// Supported passthrough: F32 (0), F16 (1), Q4_K (12), Q6_K (14).
+/// All other dtypes fail with a clear error directing users to `apr convert`.
+fn map_gguf_dtype(dtype: u32, tensor_name: &str) -> Result<TensorDType> {
+    match dtype {
+        0 => Ok(TensorDType::F32),
+        1 => Ok(TensorDType::F16),
+        12 => Ok(TensorDType::Q4K),
+        14 => Ok(TensorDType::Q6K),
+        2 | 3 | 6 | 8 | 13 => {
+            let (dtype_name, suggestion) = match dtype {
+                2 => ("Q4_0", "q4_k"),
+                3 => ("Q4_1", "q4_k"),
+                6 => ("Q5_0", "q6_k"),
+                8 => ("Q8_0", "q6_k"),
+                _ => ("Q5_K", "q6_k"),
+            };
+            Err(AprenderError::FormatError {
+                message: format!(
+                    "GGUF tensor '{tensor_name}' uses {dtype_name} quantization which APR cannot \
+                     represent exactly. Import requires exact format preservation. \
+                     Use `apr convert --quantize {suggestion}` to convert to a supported format."
+                ),
+            })
+        }
+        7 | 9 => Err(AprenderError::FormatError {
+            message: format!(
+                "GGUF dtype {dtype} (Q5_1/Q8_1) for tensor '{tensor_name}' not yet supported. \
+                 Cannot store raw bytes - would violate LAYOUT-002 mandate."
+            ),
+        }),
+        _ => Err(AprenderError::FormatError {
+            message: format!(
+                "Unsupported GGUF dtype {dtype} for tensor '{tensor_name}'. \
+                 Cannot store raw bytes - would violate LAYOUT-002 mandate."
+            ),
+        }),
+    }
+}
+
 /// Write APR file from raw quantized GGUF tensors (preserves Q4_K/Q6_K exactly)
 ///
 /// PMAT-103: This function preserves the original GGUF quantization format,
@@ -336,37 +573,7 @@ pub(crate) fn write_apr_file_raw(
     model_config: Option<&GgufModelConfig>,
 ) -> Result<()> {
     // GH-202: Handle tied embeddings (common in Qwen2.5, LLaMA, etc.)
-    // Many models share embed_tokens.weight with lm_head.weight to reduce parameters.
-    // GGUF omits output.weight when tied, but realizar's AprTransformer expects
-    // lm_head.weight to exist. Clone the embedding tensor as lm_head.weight.
-    // NOTE: Check for BOTH lm_head.weight AND output.weight - the APR loader
-    // checks both names, so if output.weight exists we must NOT synthesize a
-    // wrong lm_head.weight from token_embd.weight.
-    let original_has_lm_head = tensors
-        .keys()
-        .any(|k| k == "lm_head.weight" || k == "output.weight");
-    let tensors = {
-        let mut result = tensors.clone();
-        if !original_has_lm_head {
-            let embed_key = result
-                .keys()
-                .find(|k| k.contains("embed_tokens.weight") || *k == "token_embd.weight")
-                .cloned();
-            if let Some(embed_name) = embed_key {
-                if let Some(embed_tensor) = result.get(&embed_name).cloned() {
-                    eprintln!(
-                        "[GH-202] Synthesizing lm_head.weight from {} (tied embeddings)",
-                        embed_name
-                    );
-                    result.insert("lm_head.weight".to_string(), embed_tensor);
-                }
-            }
-        }
-        result
-    };
-
-    // ROSETTA-003: Track tied embeddings for round-trip export fidelity
-    let has_tied_embeddings = !original_has_lm_head && tensors.contains_key("lm_head.weight");
+    let (tensors, has_tied_embeddings) = resolve_tied_embeddings(tensors);
 
     // Calculate total parameter count (approximate - based on shapes)
     let param_count: u64 = tensors
@@ -401,165 +608,14 @@ pub(crate) fn write_apr_file_raw(
         serde_json::Value::Object(tensor_shapes),
     );
 
-    // Add tokenizer data if available (PMAT-171: embed vocabulary for standalone APR files)
+    // Add tokenizer data if available (PMAT-171)
     if let Some(tok) = tokenizer {
-        if !tok.vocabulary.is_empty() {
-            let vocab_array: Vec<serde_json::Value> = tok
-                .vocabulary
-                .iter()
-                .map(|s| serde_json::Value::String(s.clone()))
-                .collect();
-            custom.insert(
-                "tokenizer.vocabulary".to_string(),
-                serde_json::Value::Array(vocab_array),
-            );
-            custom.insert(
-                "tokenizer.vocab_size".to_string(),
-                serde_json::Value::Number(serde_json::Number::from(tok.vocabulary.len())),
-            );
-        }
-        if let Some(model_type) = &tok.model_type {
-            custom.insert(
-                "tokenizer.model".to_string(),
-                serde_json::Value::String(model_type.clone()),
-            );
-        }
-        if let Some(bos) = tok.bos_token_id {
-            custom.insert(
-                "tokenizer.bos_token_id".to_string(),
-                serde_json::Value::Number(serde_json::Number::from(bos)),
-            );
-        }
-        if let Some(eos) = tok.eos_token_id {
-            custom.insert(
-                "tokenizer.eos_token_id".to_string(),
-                serde_json::Value::Number(serde_json::Number::from(eos)),
-            );
-        }
-        // GH-185 FIX: Embed BPE merge rules for standalone APR encoding
-        // Without merges, the tokenizer cannot properly encode input text
-        if !tok.merges.is_empty() {
-            eprintln!(
-                "[GH-185] Embedding {} BPE merge rules into APR metadata",
-                tok.merges.len()
-            );
-            let merges_array: Vec<serde_json::Value> = tok
-                .merges
-                .iter()
-                .map(|s| serde_json::Value::String(s.clone()))
-                .collect();
-            custom.insert(
-                "tokenizer.merges".to_string(),
-                serde_json::Value::Array(merges_array),
-            );
-        }
-        // GH-253: Store additional tokenizer metadata for GGUF export round-trip
-        if !tok.token_type.is_empty() {
-            let type_array: Vec<serde_json::Value> = tok
-                .token_type
-                .iter()
-                .map(|&t| serde_json::Value::Number(serde_json::Number::from(t)))
-                .collect();
-            custom.insert(
-                "tokenizer.token_type".to_string(),
-                serde_json::Value::Array(type_array),
-            );
-        }
-        if let Some(pad_id) = tok.padding_token_id {
-            custom.insert(
-                "tokenizer.padding_token_id".to_string(),
-                serde_json::Value::Number(serde_json::Number::from(pad_id)),
-            );
-        }
-        if let Some(add_bos) = tok.add_bos_token {
-            custom.insert(
-                "tokenizer.add_bos_token".to_string(),
-                serde_json::Value::Bool(add_bos),
-            );
-        }
-        if let Some(ref tmpl) = tok.chat_template {
-            custom.insert(
-                "tokenizer.chat_template".to_string(),
-                serde_json::Value::String(tmpl.clone()),
-            );
-        }
+        insert_tokenizer_metadata(tok, &mut custom);
     }
 
     // Add model config if available
     if let Some(cfg) = model_config {
-        if let Some(arch) = &cfg.architecture {
-            custom.insert(
-                "model.architecture".to_string(),
-                serde_json::Value::String(arch.clone()),
-            );
-        }
-        if let Some(hidden_size) = cfg.hidden_size {
-            custom.insert(
-                "model.hidden_size".to_string(),
-                serde_json::Value::Number(serde_json::Number::from(hidden_size)),
-            );
-        }
-        if let Some(num_layers) = cfg.num_layers {
-            custom.insert(
-                "model.num_layers".to_string(),
-                serde_json::Value::Number(serde_json::Number::from(num_layers)),
-            );
-        }
-        if let Some(num_heads) = cfg.num_heads {
-            custom.insert(
-                "model.num_heads".to_string(),
-                serde_json::Value::Number(serde_json::Number::from(num_heads)),
-            );
-        }
-        if let Some(num_kv_heads) = cfg.num_kv_heads {
-            custom.insert(
-                "model.num_kv_heads".to_string(),
-                serde_json::Value::Number(serde_json::Number::from(num_kv_heads)),
-            );
-        }
-        if let Some(vocab_size) = cfg.vocab_size {
-            custom.insert(
-                "model.vocab_size".to_string(),
-                serde_json::Value::Number(serde_json::Number::from(vocab_size)),
-            );
-        }
-        if let Some(intermediate_size) = cfg.intermediate_size {
-            custom.insert(
-                "model.intermediate_size".to_string(),
-                serde_json::Value::Number(serde_json::Number::from(intermediate_size)),
-            );
-        }
-        if let Some(max_pos) = cfg.max_position_embeddings {
-            custom.insert(
-                "model.max_position_embeddings".to_string(),
-                serde_json::Value::Number(serde_json::Number::from(max_pos)),
-            );
-        }
-        if let Some(rope_theta) = cfg.rope_theta {
-            custom.insert(
-                "model.rope_theta".to_string(),
-                serde_json::Value::Number(
-                    serde_json::Number::from_f64(f64::from(rope_theta))
-                        .unwrap_or_else(|| serde_json::Number::from(10000u64)),
-                ),
-            );
-        }
-        if let Some(rms_eps) = cfg.rms_norm_eps {
-            custom.insert(
-                "model.rms_norm_eps".to_string(),
-                serde_json::Value::Number(
-                    serde_json::Number::from_f64(f64::from(rms_eps))
-                        .unwrap_or_else(|| serde_json::Number::from(0u64)),
-                ),
-            );
-        }
-        // PMAT-114: Write rope_type for correct RoPE style
-        if let Some(rope_type) = cfg.rope_type {
-            custom.insert(
-                "model.rope_type".to_string(),
-                serde_json::Value::Number(serde_json::Number::from(rope_type)),
-            );
-        }
+        insert_model_config_metadata(cfg, &mut custom);
     }
 
     // ROSETTA-003: Record tied embeddings for round-trip export fidelity
@@ -605,135 +661,12 @@ pub(crate) fn write_apr_file_raw(
     // Create APR writer
     let mut writer = AprV2Writer::new(metadata);
 
-    // Add all tensors with their native quantization format
-    // PMAT-222 FIX: Reverse 2D tensor shapes from GGML [ne0, ne1] to standard [ne1, ne0]
-    // GGML uses column-major convention: ne[0] is contiguous in memory.
-    // This means GGML [ne0, ne1] in column-major = [ne1, ne0] in row-major.
-    // The DATA layout is identical - only shape metadata needs swapping.
-    // Realizaer's GGUF loader does `dims.reverse()` for the same reason.
-    let mut dtype_counts: std::collections::HashMap<u32, usize> = std::collections::HashMap::new();
+    // GH-202/GH-208: Add tensors with native quantization format.
+    // Shape is ALREADY in APR format after enforce_import_contract().
+    // GGML data layout is row-major when shape is reversed — no transpose needed.
     for (name, tensor) in tensors {
-        *dtype_counts.entry(tensor.dtype).or_insert(0) += 1;
-
-        // Calculate element count (kept for future use/debugging)
-        let _num_elements: usize = tensor.shape.iter().product();
-
-        // GH-202 FIX: Process tensor based on dtype
-        // CRITICAL LAYOUT INSIGHT: GGML data layout data[i0 + i1*ne0] is IDENTICAL
-        // to C row-major data[row*cols + col] when shape is reversed [ne1, ne0].
-        // NO data transpose is needed - only shape reversal.
-        //
-        // For quantized formats (Q4K/Q6K), the super-block layout in GGML already
-        // has ne0 elements contiguous per "row", which IS row-major block layout.
-        // Raw bytes can be used directly with reversed shape.
-        //
-        // For legacy quant formats (Q4_0/Q4_1/Q5_0/Q8_0): FAIL with clear error.
-        // Import = passthrough only. Use `apr convert` for format transformation.
-        //
-        // GH-208: Shape is ALREADY in APR format after enforce_import_contract().
-        // Do NOT reverse again - that was causing double-reversal bug.
-        let apr_shape = tensor.shape.clone();
-
-        match tensor.dtype {
-            0 => {
-                // F32 - GH-202 FIX: Data is already row-major, just reverse shape
-                writer.add_tensor(name, TensorDType::F32, apr_shape, tensor.data.clone());
-            }
-            1 => {
-                // F16 - GH-202 FIX: Data is already row-major, just reverse shape
-                writer.add_tensor(name, TensorDType::F16, apr_shape, tensor.data.clone());
-            }
-            12 => {
-                // Q4_K - GH-202 FIX: Raw Q4K bytes are already row-major block layout
-                // Each "row" (ne1 index) has ceil(ne0/256) contiguous super-blocks.
-                // Just reverse the shape metadata.
-                writer.add_tensor(name, TensorDType::Q4K, apr_shape, tensor.data.clone());
-            }
-            13 => {
-                // Q5_K - NOT SUPPORTED for passthrough import
-                return Err(AprenderError::FormatError {
-                    message: format!(
-                        "GGUF tensor '{}' uses Q5_K quantization which APR cannot represent exactly. \
-                         Import requires exact format preservation. \
-                         Use `apr convert --quantize q6_k` to convert to a supported format.",
-                        name
-                    ),
-                });
-            }
-            14 => {
-                // Q6_K - GH-202 FIX: Raw Q6K bytes are already row-major block layout
-                // Same as Q4K - just reverse shape metadata.
-                writer.add_tensor(name, TensorDType::Q6K, apr_shape, tensor.data.clone());
-            }
-            2 => {
-                // Q4_0 - NOT SUPPORTED for passthrough import
-                return Err(AprenderError::FormatError {
-                    message: format!(
-                        "GGUF tensor '{}' uses Q4_0 quantization which APR cannot represent exactly. \
-                         Import requires exact format preservation. \
-                         Use `apr convert --quantize q4_k` to convert to a supported format.",
-                        name
-                    ),
-                });
-            }
-            3 => {
-                // Q4_1 - NOT SUPPORTED for passthrough import
-                return Err(AprenderError::FormatError {
-                    message: format!(
-                        "GGUF tensor '{}' uses Q4_1 quantization which APR cannot represent exactly. \
-                         Import requires exact format preservation. \
-                         Use `apr convert --quantize q4_k` to convert to a supported format.",
-                        name
-                    ),
-                });
-            }
-            6 => {
-                // Q5_0 - NOT SUPPORTED for passthrough import
-                // Use `apr convert` to transform to a supported format
-                return Err(AprenderError::FormatError {
-                    message: format!(
-                        "GGUF tensor '{}' uses Q5_0 quantization which APR cannot represent exactly. \
-                         Import requires exact format preservation. \
-                         Use `apr convert --quantize q6_k` to convert to a supported format.",
-                        name
-                    ),
-                });
-            }
-            8 => {
-                // Q8_0 - NOT SUPPORTED for passthrough import
-                // Use `apr convert` to transform to a supported format
-                return Err(AprenderError::FormatError {
-                    message: format!(
-                        "GGUF tensor '{}' uses Q8_0 quantization which APR cannot represent exactly. \
-                         Import requires exact format preservation. \
-                         Use `apr convert --quantize q6_k` to convert to a supported format.",
-                        name
-                    ),
-                });
-            }
-            7 | 9 => {
-                // Q5_1/Q8_1 - BUG-LAYOUT-003 FIX: Fail instead of silently corrupting
-                // Writing column-major quantized bytes as F32 violates LAYOUT-002
-                return Err(AprenderError::FormatError {
-                    message: format!(
-                        "GGUF dtype {} (Q5_1/Q8_1) for tensor '{}' not yet supported. \
-                         Cannot store raw bytes - would violate LAYOUT-002 mandate.",
-                        tensor.dtype, name
-                    ),
-                });
-            }
-            _ => {
-                // BUG-LAYOUT-003 FIX: Fail instead of silently corrupting
-                // Unknown dtypes cannot be safely converted
-                return Err(AprenderError::FormatError {
-                    message: format!(
-                        "Unsupported GGUF dtype {} for tensor '{}'. \
-                         Cannot store raw bytes - would violate LAYOUT-002 mandate.",
-                        tensor.dtype, name
-                    ),
-                });
-            }
-        }
+        let apr_dtype = map_gguf_dtype(tensor.dtype, &name)?;
+        writer.add_tensor(name, apr_dtype, tensor.shape.clone(), tensor.data.clone());
     }
 
     // Write to file
