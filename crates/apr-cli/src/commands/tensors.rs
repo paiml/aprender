@@ -152,6 +152,52 @@ fn output_json(result: &TensorListResult) {
     }
 }
 
+/// Format an optional f64 stat value, handling NaN.
+fn format_stat(value: Option<f32>) -> String {
+    match value {
+        Some(v) if v.is_nan() => "NaN".to_string(),
+        Some(v) => format!("{v:.4}"),
+        None => "—".to_string(),
+    }
+}
+
+/// Build a tensor row with optional stat columns, collecting anomaly warnings.
+fn build_tensor_row(
+    tensor: &TensorInfo,
+    show_stats: bool,
+    anomaly_warnings: &mut Vec<String>,
+) -> Vec<String> {
+    let mut row = vec![
+        tensor.name.clone(),
+        format!("{:?}", tensor.shape),
+        tensor.dtype.clone(),
+        format_size(tensor.size_bytes as u64),
+    ];
+
+    if show_stats {
+        let range_str = match (tensor.min, tensor.max) {
+            (Some(min), Some(max)) => format!("[{min:.4}, {max:.4}]"),
+            _ => "—".to_string(),
+        };
+        row.extend(vec![format_stat(tensor.mean), format_stat(tensor.std), range_str]);
+
+        if tensor.nan_count.is_some_and(|c| c > 0) {
+            anomaly_warnings.push(format!(
+                "  {} {}: {} NaN values (spec H8 violation)",
+                "✗".red().bold(), tensor.name, tensor.nan_count.unwrap_or(0)
+            ));
+        }
+        if tensor.inf_count.is_some_and(|c| c > 0) {
+            anomaly_warnings.push(format!(
+                "  {} {}: {} Inf values",
+                "⚠".yellow().bold(), tensor.name, tensor.inf_count.unwrap_or(0)
+            ));
+        }
+    }
+
+    row
+}
+
 fn output_text(result: &TensorListResult, show_stats: bool) {
     output::header(&format!("Tensors: {}", result.file));
 
@@ -160,7 +206,6 @@ fn output_text(result: &TensorListResult, show_stats: bool) {
         return;
     }
 
-    // Summary table
     let summary = vec![
         ("Format", result.format_version.clone()),
         ("Tensors", output::count_fmt(result.tensor_count)),
@@ -168,78 +213,24 @@ fn output_text(result: &TensorListResult, show_stats: bool) {
     ];
     println!("{}", output::kv_table(&summary));
 
-    // Collect dtype distribution
     let mut dtype_counts: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
     for tensor in &result.tensors {
         *dtype_counts.entry(&tensor.dtype).or_insert(0) += 1;
     }
-    let dominant_dtype = dtype_counts
-        .iter()
-        .max_by_key(|(_, c)| **c)
-        .map_or("unknown", |(dt, _)| *dt);
+    let dominant_dtype = dtype_counts.iter().max_by_key(|(_, c)| **c).map_or("unknown", |(dt, _)| *dt);
 
-    // Build tensor table
     let mut headers: Vec<&str> = vec!["Name", "Shape", "DType", "Size"];
     if show_stats {
         headers.extend(&["Mean", "Std", "Range"]);
     }
 
-    let mut rows: Vec<Vec<String>> = Vec::new();
     let mut anomaly_warnings: Vec<String> = Vec::new();
-
-    for tensor in &result.tensors {
-        let shape_str = format!("{:?}", tensor.shape);
-        let dtype_str = tensor.dtype.clone();
-        let size_str = format_size(tensor.size_bytes as u64);
-
-        let mut row = vec![tensor.name.clone(), shape_str, dtype_str, size_str];
-
-        if show_stats {
-            let mean_str = match tensor.mean {
-                Some(m) if m.is_nan() => "NaN".to_string(),
-                Some(m) => format!("{m:.4}"),
-                None => "—".to_string(),
-            };
-            let std_str = match tensor.std {
-                Some(s) if s.is_nan() => "NaN".to_string(),
-                Some(s) => format!("{s:.4}"),
-                None => "—".to_string(),
-            };
-            let range_str = match (tensor.min, tensor.max) {
-                (Some(min), Some(max)) => format!("[{min:.4}, {max:.4}]"),
-                _ => "—".to_string(),
-            };
-            row.extend(vec![mean_str, std_str, range_str]);
-
-            // Collect anomaly warnings
-            if let Some(nan_count) = tensor.nan_count {
-                if nan_count > 0 {
-                    anomaly_warnings.push(format!(
-                        "  {} {}: {} NaN values (spec H8 violation)",
-                        "✗".red().bold(),
-                        tensor.name,
-                        nan_count
-                    ));
-                }
-            }
-            if let Some(inf_count) = tensor.inf_count {
-                if inf_count > 0 {
-                    anomaly_warnings.push(format!(
-                        "  {} {}: {} Inf values",
-                        "⚠".yellow().bold(),
-                        tensor.name,
-                        inf_count
-                    ));
-                }
-            }
-        }
-
-        rows.push(row);
-    }
+    let rows: Vec<Vec<String>> = result.tensors.iter()
+        .map(|t| build_tensor_row(t, show_stats, &mut anomaly_warnings))
+        .collect();
 
     println!("{}", output::table(&headers, &rows));
 
-    // Print anomaly warnings below the table
     if !anomaly_warnings.is_empty() {
         output::subheader("Anomalies");
         for w in &anomaly_warnings {
@@ -247,7 +238,6 @@ fn output_text(result: &TensorListResult, show_stats: bool) {
         }
     }
 
-    // Summary line
     println!(
         "\n  {} {} {} {}",
         output::count_fmt(result.tensor_count).white().bold(),
