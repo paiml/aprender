@@ -1,10 +1,10 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 10.33.0 (Full Stack: apr-cli + aprender + realizar + trueno, Popperian falsified)
-**Status:** ALL THREE PROJECTS A+ + ZERO SATD (7B all 3 formats working CPU + GPU. 33 falsification rounds, 157 bugs found. Round 33: deep complexity reduction — lib.rs execute_command split into 3 dispatch functions (cognitive 38→~16), check.rs run_real_checks_apr/gguf (33/31→~12) via shared tensor check helpers, validate_model_contract flattened. Max cyclomatic 33→23. Project Scores: aprender A+ (105%), realizar A+ (99.9%), trueno A+ (100.9%). Coverage: 96.35%. SATD: 0/0/0.)
+**Version:** 10.34.0 (Full Stack: apr-cli + aprender + realizar + trueno, Popperian falsified)
+**Status:** ALL THREE PROJECTS A+ + ZERO SATD (7B all 3 formats working CPU + GPU. 34 falsification rounds, 170 bugs found. Round 34: deep complexity reduction across export.rs, routes.rs, handlers.rs, publish.rs. export.rs: decomposed apr_export (cog 42→6), export_to_gguf (cog 21→5), extract_apr_tokenizer_for_gguf (cog 32→8), infer_vocab_hidden (cog 39→8), infer_tokenizer_json (cog 38→6). routes.rs: all handlers extracted to module level (cog 34→2). handlers.rs: start_apr_server (cog 32→8), start_gguf_server (cog 32→8), start_apr_server_gpu (cog 34→5). publish.rs: execute (cyc 21→10). Max cyclomatic: 25 (down from 33). TDG: 96.9/100 A+. Project Score: 166.9/159 (105%). Coverage: 96.35%. SATD: 0/0/0.)
 **Primary Model:** `Qwen/Qwen2.5-Coder-7B-Instruct`
 **Source Format:** SafeTensors BF16 (HuggingFace, sharded, ~14 GB)
-**Popperian Score:** 207/223 gates passing (92.8%) — 8 FALSIFIED, 0 blocked/not-tested. 166 falsification gates, 25 sections. 33 rounds, 157 bugs. Gated by `model-tests` feature (`make test-model`)
+**Popperian Score:** 207/223 gates passing (92.8%) — 8 FALSIFIED, 0 blocked/not-tested. 166 falsification gates, 25 sections. 34 rounds, 170 bugs. Gated by `model-tests` feature (`make test-model`)
 **CLI Surface:** 38 top-level + 10 nested subcommands (48 total)
 **Compile-Time Proofs:** 297 algebraic invariants (zero runtime cost)
 **Author:** PAIML Engineering
@@ -2286,6 +2286,24 @@ This section documents bugs found by falsifying the spec itself against the code
 | 155 | run_real_checks_apr has cyclomatic 33 | 10 stages built push-by-push with repeated tensor name matching patterns | **P1** | Extracted `tensor_check_stage()`, `any_name_contains()`, `all_groups_match()`, `check_apr_logits()`, `check_apr_sampler()`. Return Vec directly. Cyclomatic 33→~12. |
 | 156 | run_real_checks_gguf has cyclomatic 31 | Same pattern as APR: 10 stages push-by-push with GGUF tensor iteration | **P1** | Reused APR helpers after extracting tensor names to `Vec<&str>`. Extracted `check_gguf_lm_head()`. Cyclomatic 31→~12. |
 | 157 | Probar/Tree/Flow/Tune had inline blocks in match arms | `format.parse()` calls wrapped in `{ let x = ...; module::run(x, ...) }` blocks | **P3** | Inlined parse calls directly into function arguments, eliminating block nesting. |
+
+**Round 34 (v10.34.0): Deep complexity reduction — export.rs, routes.rs, handlers.rs, publish.rs**
+
+| # | Claim/Gap | Reality | Severity | Fix |
+|---|-----------|---------|----------|-----|
+| 158 | export_to_gguf has cognitive 21 | Inline config resolution with nested fallback chains | **P2** | Extracted `GgufExportConfig`, `resolve_gguf_config()`, `build_gguf_config_metadata()`, `build_tokenizer_gguf_metadata()`. |
+| 159 | apr_export has cognitive 42 | 6 phases mixed in single function: validate, passthrough, prepare, warn, quantize, dispatch | **P1** | Extracted `validate_export_inputs()`, `try_raw_gguf_passthrough()`, `prepare_tensors_for_export()`, `warn_contract_violations()`, `apply_export_quantization()`, `dispatch_export()`. Cognitive 42→6. |
+| 160 | extract_apr_tokenizer_for_gguf has cognitive 32 | 7 nested `if let Some / if let Some` patterns for vocabulary, merges, token IDs, etc. | **P1** | Extracted `push_string_array()`, `push_u32_field()`, `push_i32_array()` helpers. Cognitive 32→8. |
+| 161 | infer_vocab_hidden has cognitive 39 | 3 sequential for-loops searching tensors for shapes | **P2** | Extracted `find_2d_tensor_shape()` helper. 3 for-loops → 3 `find_map` calls. |
+| 162 | infer_tokenizer_json has cognitive 38 | 5-level nesting for APR custom field extraction | **P2** | Flattened with early-return + `extract_apr_tokenizer_hint()` using Option chaining. |
+| 163 | create_router has cognitive 34 (routes.rs) | 8 handler functions nested inside `create_router` | **P1** | Moved all handlers + middleware to module level. Extracted `generate_streaming()`, `generate_non_streaming()`, `log_generate_request()`. Cognitive 34→2. |
+| 164 | start_apr_server_gpu has cyclomatic 23 (370 lines) | Inline struct definitions + 2 massive closure handlers with duplicated tokenize/generate/decode logic | **P1** | Extracted `encode_prompt()`, `decode_tokens()`, `run_gpu_generation()`, `handle_gpu_completion()`, `handle_gpu_chat_completion()`, `build_gpu_router()`, `format_chatml()`, `compute_tok_per_sec()`, `generate_request_id()`. 370→~30 lines. |
+| 165 | start_apr_server has cognitive 32 | Same closure-handler pattern as GPU version with ChatML formatting inline | **P1** | Extracted `build_apr_cpu_router()`, `handle_apr_cpu_completion()`, `handle_apr_cpu_chat_completion()`. Reused `format_chatml()` and `compute_tok_per_sec()`. |
+| 166 | start_gguf_server has cognitive 32 | Nested `#[cfg(feature = "cuda")]` blocks with match-in-match for CUDA init | **P1** | Extracted `start_gguf_server_cuda()`, `extract_gguf_vocab()`, `preload_gpu_weights()`, `run_server_async()`. |
+| 167 | publish execute has cyclomatic 21 | Validation + dry run + upload all mixed in single function | **P2** | Extracted `validate_publish_inputs()` and `upload_to_hub()`. Cyclomatic 21→10. |
+| 168 | `&Option<String>` in dispatch_hex (clippy ref_option) | Handler parameter used `&Option<String>` instead of `Option<&str>` | **P3** | Changed to `Option<&str>` with `.as_deref()` at call site. |
+| 169 | `manual_let_else` in validate_shard_index | Used `let parent = match ... { Some(p) => p, None => return }` instead of `let-else` | **P3** | Changed to `let Some(parent) = path.parent() else { return Ok(()) }`. |
+| 170 | `manual_contains` in check.rs | Used `names.iter().any(|n| *n == "output.weight")` instead of `names.contains()` | **P3** | Changed to `names.contains(&"output.weight")`. |
 
 ### 18.2 Claims Verified (Not Falsified)
 
