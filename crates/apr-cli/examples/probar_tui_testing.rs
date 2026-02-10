@@ -368,7 +368,7 @@ fn create_test_app() -> FederationApp {
     let circuit_breaker = Arc::new(CircuitBreaker::default());
 
     // Register sample models
-    let rt = tokio::runtime::Runtime::new().unwrap();
+    let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
     rt.block_on(async {
         catalog
             .register(
