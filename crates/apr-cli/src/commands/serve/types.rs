@@ -386,64 +386,60 @@ pub(super) fn format_tools_prompt(tools: &[Tool]) -> String {
 
 /// Parse model output to detect tool calls
 pub(super) fn parse_tool_calls(output: &str) -> Option<Vec<ToolCall>> {
-    // Look for JSON tool call pattern in output
     let output_trimmed = output.trim();
 
-    // Try to parse as JSON with tool_call field
+    // Try to parse entire output as JSON with tool_call field
     if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(output_trimmed) {
-        if let Some(tool_call) = parsed.get("tool_call") {
-            let name = tool_call.get("name")?.as_str()?;
-            let arguments = tool_call.get("arguments")?;
-
-            return Some(vec![ToolCall {
-                id: format!("call_{}", uuid_simple()),
-                tool_type: "function".to_string(),
-                function: FunctionCall {
-                    name: name.to_string(),
-                    arguments: arguments.to_string(),
-                },
-            }]);
+        if let Some(call) = extract_tool_call(&parsed) {
+            return Some(vec![call]);
         }
     }
 
-    // Also check for embedded JSON in text
-    if let Some(start) = output_trimmed.find(r#"{"tool_call""#) {
-        let json_part = &output_trimmed[start..];
-        // Find matching closing brace
-        let mut depth = 0;
-        let mut end = 0;
-        for (i, c) in json_part.chars().enumerate() {
-            match c {
-                '{' => depth += 1,
-                '}' => {
-                    depth -= 1;
-                    if depth == 0 {
-                        end = i + 1;
-                        break;
-                    }
-                }
-                _ => {}
-            }
-        }
-        if end > 0 {
-            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&json_part[..end]) {
-                if let Some(tool_call) = parsed.get("tool_call") {
-                    let name = tool_call.get("name").and_then(|n| n.as_str())?;
-                    let arguments = tool_call.get("arguments")?;
-
-                    return Some(vec![ToolCall {
-                        id: format!("call_{}", uuid_simple()),
-                        tool_type: "function".to_string(),
-                        function: FunctionCall {
-                            name: name.to_string(),
-                            arguments: arguments.to_string(),
-                        },
-                    }]);
-                }
+    // Check for embedded JSON in text
+    if let Some(json_str) = find_embedded_tool_json(output_trimmed) {
+        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&json_str) {
+            if let Some(call) = extract_tool_call(&parsed) {
+                return Some(vec![call]);
             }
         }
     }
 
+    None
+}
+
+/// Extract a ToolCall from a parsed JSON value containing a "tool_call" field.
+fn extract_tool_call(parsed: &serde_json::Value) -> Option<ToolCall> {
+    let tool_call = parsed.get("tool_call")?;
+    let name = tool_call.get("name")?.as_str()?;
+    let arguments = tool_call.get("arguments")?;
+
+    Some(ToolCall {
+        id: format!("call_{}", uuid_simple()),
+        tool_type: "function".to_string(),
+        function: FunctionCall {
+            name: name.to_string(),
+            arguments: arguments.to_string(),
+        },
+    })
+}
+
+/// Find embedded `{"tool_call"...}` JSON in text, returning the balanced JSON substring.
+fn find_embedded_tool_json(text: &str) -> Option<String> {
+    let start = text.find(r#"{"tool_call""#)?;
+    let json_part = &text[start..];
+    let mut depth = 0;
+    for (i, c) in json_part.char_indices() {
+        match c {
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(json_part[..=i].to_string());
+                }
+            }
+            _ => {}
+        }
+    }
     None
 }
 
