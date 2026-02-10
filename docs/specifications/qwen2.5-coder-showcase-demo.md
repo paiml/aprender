@@ -1,10 +1,10 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 10.32.0 (Full Stack: apr-cli + aprender + realizar + trueno, Popperian falsified)
-**Status:** ALL THREE PROJECTS A+ + ZERO SATD (7B all 3 formats working CPU + GPU. 32 falsification rounds, 149 bugs found. Rounds 31-32: deep complexity reduction across 6 files — import.rs (39→~10), reader.rs (27→~15), pull.rs (25→~12), rosetta.rs (27→~10, 26→~15), run.rs (26→~12, 25→~18). Max cyclomatic 39→21 (excl. CLI dispatch). Project Scores: aprender A+ (105%), realizar A+ (99.9%), trueno A+ (100.9%). Coverage: 96.35%. SATD: 0/0/0.)
+**Version:** 10.33.0 (Full Stack: apr-cli + aprender + realizar + trueno, Popperian falsified)
+**Status:** ALL THREE PROJECTS A+ + ZERO SATD (7B all 3 formats working CPU + GPU. 33 falsification rounds, 157 bugs found. Round 33: deep complexity reduction — lib.rs execute_command split into 3 dispatch functions (cognitive 38→~16), check.rs run_real_checks_apr/gguf (33/31→~12) via shared tensor check helpers, validate_model_contract flattened. Max cyclomatic 33→23. Project Scores: aprender A+ (105%), realizar A+ (99.9%), trueno A+ (100.9%). Coverage: 96.35%. SATD: 0/0/0.)
 **Primary Model:** `Qwen/Qwen2.5-Coder-7B-Instruct`
 **Source Format:** SafeTensors BF16 (HuggingFace, sharded, ~14 GB)
-**Popperian Score:** 199/215 gates passing (92.6%) — 8 FALSIFIED, 0 blocked/not-tested. 158 falsification gates, 25 sections. 32 rounds, 149 bugs. Gated by `model-tests` feature (`make test-model`)
+**Popperian Score:** 207/223 gates passing (92.8%) — 8 FALSIFIED, 0 blocked/not-tested. 166 falsification gates, 25 sections. 33 rounds, 157 bugs. Gated by `model-tests` feature (`make test-model`)
 **CLI Surface:** 38 top-level + 10 nested subcommands (48 total)
 **Compile-Time Proofs:** 297 algebraic invariants (zero runtime cost)
 **Author:** PAIML Engineering
@@ -34,7 +34,7 @@
 
 ## Executive Summary
 
-The Qwen2.5-Coder Showcase demonstrates the unified inference architecture across three model formats (SafeTensors, APR, GGUF) with CPU and GPU backends, using a single model with a single provenance chain. The full stack is exercised end-to-end: **apr-cli** (48 subcommands) → **aprender** (contract validation, 297 compile-time proofs) → **realizar** (inference: two-phase generation with batched prefill, PagedAttention KV cache, 8 sampling algorithms + penalty modifiers, GQA attention, OpenAI-compatible API, PTX parity validation) → **trueno** (SIMD/GPU compute: 9 backend tiers, 95 CUDA kernels, 6 batched kernel variants with KernelParity trait, Jidoka quality gates). 158 falsification gates across 25 sections.
+The Qwen2.5-Coder Showcase demonstrates the unified inference architecture across three model formats (SafeTensors, APR, GGUF) with CPU and GPU backends, using a single model with a single provenance chain. The full stack is exercised end-to-end: **apr-cli** (48 subcommands) → **aprender** (contract validation, 297 compile-time proofs) → **realizar** (inference: two-phase generation with batched prefill, PagedAttention KV cache, 8 sampling algorithms + penalty modifiers, GQA attention, OpenAI-compatible API, PTX parity validation) → **trueno** (SIMD/GPU compute: 9 backend tiers, 95 CUDA kernels, 6 batched kernel variants with KernelParity trait, Jidoka quality gates). 166 falsification gates across 25 sections.
 
 **v10.26.0 Focus: Complexity Reduction + Ollama Performance Parity Sprint**
 - **Current (measured 2026-02-09):** 80.6 tok/s GPU decode (0.64x Ollama 125.7 tok/s) — Grade D
@@ -2273,6 +2273,19 @@ This section documents bugs found by falsifying the spec itself against the code
 | 147 | execute_gguf_inference has cyclomatic 25 | Input token preparation with chat template inline | **P3** | Extracted `prepare_gguf_input_tokens()`. Cyclomatic 25→~18. |
 | 148 | load_safetensors_tokenizer has cyclomatic 25 | Special token merging inline | **P3** | Extracted `merge_special_tokens_into_vocab()`. Cyclomatic 25→~15. |
 | 149 | infer_model_config has cyclomatic 27 | Vocab/hidden/layer inference inline | **P3** | Extracted `infer_hidden_size()`, `infer_num_layers()`, `infer_vocab_size()`. Cyclomatic 27→~12. |
+
+**Round 33 (v10.33.0): Complexity reduction — lib.rs, check.rs (dispatch splitting + tensor check helpers)**
+
+| # | Claim/Gap | Reality | Severity | Fix |
+|---|-----------|---------|----------|-----|
+| 150 | execute_command has cognitive 38 (threshold 25) | 30+ match arms in single function; pre-commit hook blocked | **P1** | Split into `dispatch_core_command()` (20 arms) + `dispatch_extended_command()` (17 arms) + `execute_command()` (contract validation). Cognitive 38→~16. |
+| 151 | Rosetta match nested 95 lines inside execute_command | 8 Rosetta subcommands dispatched inline with `cli.json` merging | **P2** | Extracted `dispatch_rosetta(action, global_json)`. |
+| 152 | Serve config constructed inline in execute_command | 12-field `ServerConfig` struct built inside match arm adds nesting | **P3** | Extracted `dispatch_serve()` with all config fields as parameters. |
+| 153 | Hex options parsed inline in execute_command | `parse_hex_offset` + 14-field `HexOptions` constructed in match arm | **P3** | Extracted `dispatch_hex()` with `Option<&str>` tensor (clippy ref_option fix). |
+| 154 | validate_model_contract has cognitive 30 | 3-level nesting: `for` → `if ends_with` → `if let parent` → `if manifest.exists()` | **P2** | Extracted `validate_shard_index()` and `validate_single_model()`. Early-return via `let-else`. |
+| 155 | run_real_checks_apr has cyclomatic 33 | 10 stages built push-by-push with repeated tensor name matching patterns | **P1** | Extracted `tensor_check_stage()`, `any_name_contains()`, `all_groups_match()`, `check_apr_logits()`, `check_apr_sampler()`. Return Vec directly. Cyclomatic 33→~12. |
+| 156 | run_real_checks_gguf has cyclomatic 31 | Same pattern as APR: 10 stages push-by-push with GGUF tensor iteration | **P1** | Reused APR helpers after extracting tensor names to `Vec<&str>`. Extracted `check_gguf_lm_head()`. Cyclomatic 31→~12. |
+| 157 | Probar/Tree/Flow/Tune had inline blocks in match arms | `format.parse()` calls wrapped in `{ let x = ...; module::run(x, ...) }` blocks | **P3** | Inlined parse calls directly into function arguments, eliminating block nesting. |
 
 ### 18.2 Claims Verified (Not Falsified)
 
