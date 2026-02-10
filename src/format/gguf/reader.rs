@@ -145,147 +145,76 @@ fn read_metadata_array(data: &[u8], offset: usize) -> Result<(GgufValue, usize)>
 }
 
 /// Read a metadata value and return (value, bytes_consumed)
+/// Ensure `n` bytes are available at `offset`, returning a format error with `type_name` if not.
+fn ensure_bytes(data: &[u8], offset: usize, n: usize, type_name: &str) -> Result<()> {
+    if offset + n > data.len() {
+        return Err(AprenderError::FormatError {
+            message: format!("Unexpected EOF reading {type_name}"),
+        });
+    }
+    Ok(())
+}
+
+/// Read a little-endian i16 from `data` at `offset`.
+fn read_i16_le(data: &[u8], offset: usize) -> Result<i16> {
+    ensure_bytes(data, offset, 2, "Int16")?;
+    Ok(i16::from_le_bytes([data[offset], data[offset + 1]]))
+}
+
+/// Read a little-endian i32 from `data` at `offset`.
+fn read_i32_le(data: &[u8], offset: usize) -> Result<i32> {
+    ensure_bytes(data, offset, 4, "Int32")?;
+    Ok(i32::from_le_bytes([
+        data[offset], data[offset + 1], data[offset + 2], data[offset + 3],
+    ]))
+}
+
+/// Read a little-endian f32 from `data` at `offset`.
+fn read_f32_le(data: &[u8], offset: usize) -> Result<f32> {
+    ensure_bytes(data, offset, 4, "Float32")?;
+    Ok(f32::from_le_bytes([
+        data[offset], data[offset + 1], data[offset + 2], data[offset + 3],
+    ]))
+}
+
+/// Read a little-endian i64 from `data` at `offset`.
+fn read_i64_le(data: &[u8], offset: usize) -> Result<i64> {
+    ensure_bytes(data, offset, 8, "Int64")?;
+    Ok(i64::from_le_bytes([
+        data[offset], data[offset + 1], data[offset + 2], data[offset + 3],
+        data[offset + 4], data[offset + 5], data[offset + 6], data[offset + 7],
+    ]))
+}
+
+/// Read a little-endian f64 from `data` at `offset`.
+fn read_f64_le(data: &[u8], offset: usize) -> Result<f64> {
+    ensure_bytes(data, offset, 8, "Float64")?;
+    Ok(f64::from_le_bytes([
+        data[offset], data[offset + 1], data[offset + 2], data[offset + 3],
+        data[offset + 4], data[offset + 5], data[offset + 6], data[offset + 7],
+    ]))
+}
+
 pub(crate) fn read_metadata_value(
     data: &[u8],
     offset: usize,
     value_type: u32,
 ) -> Result<(GgufValue, usize)> {
     match value_type {
-        0 => {
-            // Uint8
-            if offset >= data.len() {
-                return Err(AprenderError::FormatError {
-                    message: "Unexpected EOF reading Uint8".to_string(),
-                });
-            }
-            Ok((GgufValue::Uint8(data[offset]), 1))
-        }
-        1 => {
-            // Int8
-            if offset >= data.len() {
-                return Err(AprenderError::FormatError {
-                    message: "Unexpected EOF reading Int8".to_string(),
-                });
-            }
-            Ok((GgufValue::Int8(data[offset] as i8), 1))
-        }
-        2 => {
-            // Uint16
-            if offset + 2 > data.len() {
-                return Err(AprenderError::FormatError {
-                    message: "Unexpected EOF reading Uint16".to_string(),
-                });
-            }
-            let v = u16::from_le_bytes([data[offset], data[offset + 1]]);
-            Ok((GgufValue::Uint16(v), 2))
-        }
-        3 => {
-            // Int16
-            if offset + 2 > data.len() {
-                return Err(AprenderError::FormatError {
-                    message: "Unexpected EOF reading Int16".to_string(),
-                });
-            }
-            let v = i16::from_le_bytes([data[offset], data[offset + 1]]);
-            Ok((GgufValue::Int16(v), 2))
-        }
-        4 => {
-            // Uint32
-            let v = read_u32(data, offset)?;
-            Ok((GgufValue::Uint32(v), 4))
-        }
-        5 => {
-            // Int32
-            if offset + 4 > data.len() {
-                return Err(AprenderError::FormatError {
-                    message: "Unexpected EOF reading Int32".to_string(),
-                });
-            }
-            let v = i32::from_le_bytes([
-                data[offset],
-                data[offset + 1],
-                data[offset + 2],
-                data[offset + 3],
-            ]);
-            Ok((GgufValue::Int32(v), 4))
-        }
-        6 => {
-            // Float32
-            if offset + 4 > data.len() {
-                return Err(AprenderError::FormatError {
-                    message: "Unexpected EOF reading Float32".to_string(),
-                });
-            }
-            let v = f32::from_le_bytes([
-                data[offset],
-                data[offset + 1],
-                data[offset + 2],
-                data[offset + 3],
-            ]);
-            Ok((GgufValue::Float32(v), 4))
-        }
-        7 => {
-            // Bool
-            if offset >= data.len() {
-                return Err(AprenderError::FormatError {
-                    message: "Unexpected EOF reading Bool".to_string(),
-                });
-            }
-            Ok((GgufValue::Bool(data[offset] != 0), 1))
-        }
-        8 => {
-            // String
-            let (s, len) = read_string(data, offset)?;
-            Ok((GgufValue::String(s), len))
-        }
+        0 => { ensure_bytes(data, offset, 1, "Uint8")?; Ok((GgufValue::Uint8(data[offset]), 1)) }
+        1 => { ensure_bytes(data, offset, 1, "Int8")?; Ok((GgufValue::Int8(data[offset] as i8), 1)) }
+        2 => { ensure_bytes(data, offset, 2, "Uint16")?; Ok((GgufValue::Uint16(u16::from_le_bytes([data[offset], data[offset + 1]])), 2)) }
+        3 => Ok((GgufValue::Int16(read_i16_le(data, offset)?), 2)),
+        4 => Ok((GgufValue::Uint32(read_u32(data, offset)?), 4)),
+        5 => Ok((GgufValue::Int32(read_i32_le(data, offset)?), 4)),
+        6 => Ok((GgufValue::Float32(read_f32_le(data, offset)?), 4)),
+        7 => { ensure_bytes(data, offset, 1, "Bool")?; Ok((GgufValue::Bool(data[offset] != 0), 1)) }
+        8 => { let (s, len) = read_string(data, offset)?; Ok((GgufValue::String(s), len)) }
         9 => read_metadata_array(data, offset),
-        10 => {
-            // Uint64
-            let v = read_u64(data, offset)?;
-            Ok((GgufValue::Uint64(v), 8))
-        }
-        11 => {
-            // Int64
-            if offset + 8 > data.len() {
-                return Err(AprenderError::FormatError {
-                    message: "Unexpected EOF reading Int64".to_string(),
-                });
-            }
-            let v = i64::from_le_bytes([
-                data[offset],
-                data[offset + 1],
-                data[offset + 2],
-                data[offset + 3],
-                data[offset + 4],
-                data[offset + 5],
-                data[offset + 6],
-                data[offset + 7],
-            ]);
-            Ok((GgufValue::Int64(v), 8))
-        }
-        12 => {
-            // Float64
-            if offset + 8 > data.len() {
-                return Err(AprenderError::FormatError {
-                    message: "Unexpected EOF reading Float64".to_string(),
-                });
-            }
-            let v = f64::from_le_bytes([
-                data[offset],
-                data[offset + 1],
-                data[offset + 2],
-                data[offset + 3],
-                data[offset + 4],
-                data[offset + 5],
-                data[offset + 6],
-                data[offset + 7],
-            ]);
-            Ok((GgufValue::Float64(v), 8))
-        }
-        _ => {
-            // Unknown type - skip 4 bytes
-            Ok((GgufValue::Uint32(0), 4))
-        }
+        10 => Ok((GgufValue::Uint64(read_u64(data, offset)?), 8)),
+        11 => Ok((GgufValue::Int64(read_i64_le(data, offset)?), 8)),
+        12 => Ok((GgufValue::Float64(read_f64_le(data, offset)?), 8)),
+        _ => Ok((GgufValue::Uint32(0), 4)),
     }
 }
 

@@ -167,100 +167,82 @@ fn detect_format(path: &Path) -> ModelFormat {
     }
 }
 
-/// PMAT-109: Find Qwen tokenizer from multiple standard locations
-///
-/// Search order:
-/// 1. Model's parent directory (tokenizer.json)
-/// 2. HuggingFace cache (~/.cache/huggingface/hub/models--Qwen--*/snapshots/*/tokenizer.json)
-/// 3. APR tokenizer cache (~/.apr/tokenizers/qwen2/tokenizer.json)
+/// Try loading a tokenizer from a specific path, printing success/failure.
+fn try_load_tokenizer(
+    path: &Path,
+    label: &str,
+) -> Option<Qwen2BpeTokenizer> {
+    match Qwen2BpeTokenizer::from_file(path) {
+        Ok(tok) => {
+            println!(
+                "{} {} ({})",
+                format!("Loaded tokenizer{label}:").green(),
+                path.display(),
+                format!("{} tokens", tok.vocab_size()).dimmed()
+            );
+            Some(tok)
+        }
+        Err(e) => {
+            println!(
+                "{} {}",
+                format!("Warning: Failed to load tokenizer{label}:").yellow(),
+                e
+            );
+            None
+        }
+    }
+}
+
+/// Search HuggingFace cache for Qwen tokenizer.json files.
+fn search_hf_cache_tokenizer(hf_cache: &Path) -> Option<Qwen2BpeTokenizer> {
+    let entries = std::fs::read_dir(hf_cache).ok()?;
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        if !name.to_string_lossy().starts_with("models--Qwen") {
+            continue;
+        }
+        let snapshots_dir = entry.path().join("snapshots");
+        let snapshots = std::fs::read_dir(&snapshots_dir).ok()?;
+        for snapshot in snapshots.flatten() {
+            let tokenizer_path = snapshot.path().join("tokenizer.json");
+            if tokenizer_path.exists() {
+                if let Some(tok) = try_load_tokenizer(&tokenizer_path, " from HuggingFace cache") {
+                    return Some(tok);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Try to load tokenizer from a path if it exists.
+fn try_tokenizer_at(path: &Path, label: &str) -> Option<Qwen2BpeTokenizer> {
+    if path.exists() { try_load_tokenizer(path, label) } else { None }
+}
+
+/// PMAT-109: Find Qwen tokenizer from model dir, HF cache, or APR cache.
 fn find_qwen_tokenizer(model_path: &Path) -> Result<Option<Qwen2BpeTokenizer>, CliError> {
-    // 1. Check model's parent directory first
-    if let Some(parent) = model_path.parent() {
-        let tokenizer_path = parent.join("tokenizer.json");
-        if tokenizer_path.exists() {
-            match Qwen2BpeTokenizer::from_file(&tokenizer_path) {
-                Ok(tok) => {
-                    println!(
-                        "{} {} ({})",
-                        "Loaded tokenizer:".green(),
-                        tokenizer_path.display(),
-                        format!("{} tokens", tok.vocab_size()).dimmed()
-                    );
-                    return Ok(Some(tok));
-                }
-                Err(e) => {
-                    println!(
-                        "{} {}",
-                        "Warning: Failed to load tokenizer from model dir:".yellow(),
-                        e
-                    );
-                }
-            }
-        }
+    // 1. Model's parent directory
+    if let Some(tok) = model_path
+        .parent()
+        .and_then(|p| try_tokenizer_at(&p.join("tokenizer.json"), ""))
+    {
+        return Ok(Some(tok));
     }
 
-    // 2. Search HuggingFace cache for Qwen tokenizers
+    // 2. HuggingFace + APR caches
     if let Some(home) = dirs::home_dir() {
-        let hf_cache = home.join(".cache/huggingface/hub");
-        if hf_cache.exists() {
-            // Look for Qwen model directories
-            if let Ok(entries) = std::fs::read_dir(&hf_cache) {
-                for entry in entries.flatten() {
-                    let name = entry.file_name();
-                    let name_str = name.to_string_lossy();
-                    // Match Qwen model directories (Qwen, Qwen2, Qwen2.5, etc.)
-                    if name_str.starts_with("models--Qwen") {
-                        let snapshots_dir = entry.path().join("snapshots");
-                        if snapshots_dir.exists() {
-                            if let Ok(snapshots) = std::fs::read_dir(&snapshots_dir) {
-                                for snapshot in snapshots.flatten() {
-                                    let tokenizer_path = snapshot.path().join("tokenizer.json");
-                                    if tokenizer_path.exists() {
-                                        if let Ok(tok) =
-                                            Qwen2BpeTokenizer::from_file(&tokenizer_path)
-                                        {
-                                            println!(
-                                                "{} {} ({})",
-                                                "Loaded tokenizer from HuggingFace cache:".green(),
-                                                tokenizer_path.display(),
-                                                format!("{} tokens", tok.vocab_size()).dimmed()
-                                            );
-                                            return Ok(Some(tok));
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+        if let Some(tok) = search_hf_cache_tokenizer(&home.join(".cache/huggingface/hub")) {
+            return Ok(Some(tok));
         }
-
-        // 3. Check APR tokenizer cache
-        let apr_tokenizer = home.join(".apr/tokenizers/qwen2/tokenizer.json");
-        if apr_tokenizer.exists() {
-            match Qwen2BpeTokenizer::from_file(&apr_tokenizer) {
-                Ok(tok) => {
-                    println!(
-                        "{} {} ({})",
-                        "Loaded tokenizer from APR cache:".green(),
-                        apr_tokenizer.display(),
-                        format!("{} tokens", tok.vocab_size()).dimmed()
-                    );
-                    return Ok(Some(tok));
-                }
-                Err(e) => {
-                    println!(
-                        "{} {}",
-                        "Warning: Failed to load tokenizer from APR cache:".yellow(),
-                        e
-                    );
-                }
-            }
+        if let Some(tok) = try_tokenizer_at(
+            &home.join(".apr/tokenizers/qwen2/tokenizer.json"),
+            " from APR cache",
+        ) {
+            return Ok(Some(tok));
         }
     }
 
-    // No tokenizer found - provide helpful error message
     Err(CliError::InvalidFormat(
         "No Qwen tokenizer found. Searched:\n\
          1. Model directory (tokenizer.json)\n\
@@ -272,48 +254,14 @@ fn find_qwen_tokenizer(model_path: &Path) -> Result<Option<Qwen2BpeTokenizer>, C
     ))
 }
 
-/// Clean ChatML markers and artifacts from model response
-///
-/// Strips (F-PIPE-166b compliance):
-/// - <|im_start|>assistant, <|im_end|>, <|im_start|>, etc.
-/// - GPT-2/BPE tokenizer artifacts (Ġ = U+0120 = space prefix)
-/// - Repeated punctuation (!!!, ???, etc.)
-/// - Leading/trailing whitespace
-/// - Repeated newlines
-fn clean_chat_response(raw: &str) -> String {
-    let mut cleaned = raw.to_string();
-
-    // Remove ChatML markers
-    let markers = [
-        "<|im_start|>assistant\n",
-        "<|im_start|>assistant",
-        "<|im_end|>",
-        "<|im_start|>",
-        "<|endoftext|>",
-    ];
-    for marker in markers {
-        cleaned = cleaned.replace(marker, "");
-    }
-
-    // F-PIPE-166b: Clean GPT-2/BPE tokenizer artifacts
-    // Ġ (U+0120) represents a space before a token in GPT-2 BPE encoding
-    cleaned = cleaned.replace('\u{0120}', " ");
-    // Ċ (U+010A) represents newline in some BPE tokenizers
-    cleaned = cleaned.replace('\u{010A}', "\n");
-    // Other common BPE artifacts
-    cleaned = cleaned.replace("Ġ", " "); // In case it's literal "Ġ" string
-    cleaned = cleaned.replace("Ċ", "\n"); // In case it's literal "Ċ" string
-
-    // F-PIPE-166b: Normalize repeated punctuation (e.g., "!!!" -> "!")
-    // Use a simple loop to avoid regex dependency
+/// Normalize repeated punctuation (max 3 repeats of `!`, `?`, `.`).
+fn normalize_repeated_punctuation(s: &str) -> String {
     let mut prev_char = '\0';
     let mut repeat_count = 0;
-    let mut result = String::with_capacity(cleaned.len());
-
-    for c in cleaned.chars() {
-        if c == prev_char && (c == '!' || c == '?' || c == '.') {
+    let mut result = String::with_capacity(s.len());
+    for c in s.chars() {
+        if c == prev_char && matches!(c, '!' | '?' | '.') {
             repeat_count += 1;
-            // Allow at most 3 repeated punctuation marks
             if repeat_count < 3 {
                 result.push(c);
             }
@@ -323,30 +271,51 @@ fn clean_chat_response(raw: &str) -> String {
         }
         prev_char = c;
     }
-    cleaned = result;
+    result
+}
 
-    // Normalize multiple spaces to single space
+/// Check if text looks like the start of a new conversational turn.
+fn looks_like_new_turn(text: &str) -> bool {
+    text.starts_with("Suggest")
+        || text.starts_with("What")
+        || text.starts_with("How")
+        || text.starts_with("Why")
+        || text.starts_with("Can")
+        || text.starts_with("Human:")
+        || text.contains("<|im_start|>")
+}
+
+/// Clean ChatML markers and artifacts from model response (F-PIPE-166b).
+fn clean_chat_response(raw: &str) -> String {
+    let mut cleaned = raw.to_string();
+
+    // Remove ChatML markers
+    for marker in &[
+        "<|im_start|>assistant\n", "<|im_start|>assistant",
+        "<|im_end|>", "<|im_start|>", "<|endoftext|>",
+    ] {
+        cleaned = cleaned.replace(marker, "");
+    }
+
+    // F-PIPE-166b: Clean GPT-2/BPE tokenizer artifacts
+    cleaned = cleaned.replace('\u{0120}', " ");
+    cleaned = cleaned.replace('\u{010A}', "\n");
+    cleaned = cleaned.replace("Ġ", " ");
+    cleaned = cleaned.replace("Ċ", "\n");
+
+    cleaned = normalize_repeated_punctuation(&cleaned);
+
     while cleaned.contains("  ") {
         cleaned = cleaned.replace("  ", " ");
     }
 
-    // Trim and normalize whitespace
     let trimmed = cleaned.trim();
 
-    // Stop at first line if it looks like the model started a new turn
-    // (e.g., "4\nSuggest a fun way..." -> just "4")
+    // Stop at first line if the model started a new turn
     if let Some(first_newline) = trimmed.find('\n') {
         let first_line = trimmed[..first_newline].trim();
         let rest = trimmed[first_newline..].trim();
-        // If rest looks like a new question/topic, just return first line
-        if rest.starts_with("Suggest")
-            || rest.starts_with("What")
-            || rest.starts_with("How")
-            || rest.starts_with("Why")
-            || rest.starts_with("Can")
-            || rest.starts_with("Human:")
-            || rest.contains("<|im_start|>")
-        {
+        if looks_like_new_turn(rest) {
             return first_line.to_string();
         }
     }
@@ -1519,53 +1488,44 @@ impl ChatSession {
 // REPL implementation with inference feature
 // =============================================================================
 
+/// Read one line of user input. Returns `None` on EOF, `Some("")` for empty, `Some(text)` otherwise.
+fn read_repl_line() -> Result<Option<String>, CliError> {
+    print!("{}", "You: ".green().bold());
+    io::stdout().flush()?;
+    let mut input = String::new();
+    if io::stdin().read_line(&mut input)? == 0 {
+        println!();
+        return Ok(None);
+    }
+    Ok(Some(input.trim().to_string()))
+}
+
+/// Generate a response, update history, and print (inference mode).
+#[cfg(feature = "inference")]
+fn generate_and_print(session: &mut ChatSession, input: &str, config: &ChatConfig) {
+    let response = session.generate(input, config);
+    session.add_to_history("user", input);
+    session.add_to_history("assistant", &response);
+    println!("{} {}", "Assistant:".blue().bold(), response);
+    if config.inspect {
+        print_inspection_info_inference(session);
+    }
+    println!();
+}
+
 #[cfg(feature = "inference")]
 fn run_repl(path: &Path, config: &ChatConfig) -> Result<(), CliError> {
     let mut session = ChatSession::new(path)?;
 
-    loop {
-        // Print prompt
-        print!("{}", "You: ".green().bold());
-        io::stdout().flush()?;
-
-        // Read input
-        let mut input = String::new();
-        if io::stdin().read_line(&mut input)? == 0 {
-            // EOF (Ctrl+D)
-            println!();
-            break;
-        }
-
-        let input = input.trim();
-
-        // Handle empty input
-        if input.is_empty() {
-            continue;
-        }
-
-        // Handle commands
+    while let Some(input) = read_repl_line()? {
+        if input.is_empty() { continue; }
         if input.starts_with('/') {
-            match handle_command_inference(input, &mut session)? {
+            match handle_command_inference(&input, &mut session)? {
                 CommandResult::Continue => continue,
                 CommandResult::Quit => break,
             }
         }
-
-        // Generate response using realizar inference engine (Y13/Y14)
-        let response = session.generate(input, config);
-
-        // Add to history
-        session.add_to_history("user", input);
-        session.add_to_history("assistant", &response);
-
-        // Print response
-        println!("{} {}", "Assistant:".blue().bold(), response);
-
-        if config.inspect {
-            print_inspection_info_inference(&session);
-        }
-
-        println!();
+        generate_and_print(&mut session, &input, config);
     }
 
     println!("{}", "Goodbye!".cyan());
@@ -1635,53 +1595,32 @@ fn print_inspection_info_inference(session: &ChatSession) {
 fn run_repl(path: &Path, config: &ChatConfig) -> Result<(), CliError> {
     let mut session = ChatSession::new(path)?;
 
-    loop {
-        // Print prompt
-        print!("{}", "You: ".green().bold());
-        io::stdout().flush()?;
-
-        // Read input
-        let mut input = String::new();
-        if io::stdin().read_line(&mut input)? == 0 {
-            // EOF (Ctrl+D)
-            println!();
-            break;
-        }
-
-        let input = input.trim();
-
-        // Handle empty input
-        if input.is_empty() {
-            continue;
-        }
-
-        // Handle commands
+    while let Some(input) = read_repl_line()? {
+        if input.is_empty() { continue; }
         if input.starts_with('/') {
-            match handle_command(input, &mut session.history)? {
+            match handle_command(&input, &mut session.history)? {
                 CommandResult::Continue => continue,
                 CommandResult::Quit => break,
             }
         }
-
-        // Generate response using real model inference
-        let response = session.generate(input, config);
-
-        // Add to history
-        session.history.push(format!("user: {input}"));
-        session.history.push(format!("assistant: {response}"));
-
-        // Print response
-        println!("{} {}", "Assistant:".blue().bold(), response);
-
-        if config.inspect {
-            print_inspection_info(&session);
-        }
-
-        println!();
+        generate_and_print_fallback(&mut session, &input, config);
     }
 
     println!("{}", "Goodbye!".cyan());
     Ok(())
+}
+
+/// Generate a response, update history, and print (fallback mode).
+#[cfg(not(feature = "inference"))]
+fn generate_and_print_fallback(session: &mut ChatSession, input: &str, config: &ChatConfig) {
+    let response = session.generate(input, config);
+    session.history.push(format!("user: {input}"));
+    session.history.push(format!("assistant: {response}"));
+    println!("{} {}", "Assistant:".blue().bold(), response);
+    if config.inspect {
+        print_inspection_info(session);
+    }
+    println!();
 }
 
 enum CommandResult {
