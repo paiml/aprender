@@ -1,10 +1,10 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 10.35.0 (Full Stack: apr-cli + aprender + realizar + trueno, Popperian falsified)
-**Status:** ALL THREE PROJECTS A+ + ZERO SATD (7B all 3 formats working CPU + GPU. 35 falsification rounds, 178 bugs found. Round 35: rosetta.rs deep complexity reduction — 8 functions decomposed. load_tensor_data_direct (cyc 23→5), run_validate_stats (cyc 25→8), run_compare_inference (cyc 24→8), parse_trace_lines (cog 50→6), print_fingerprint_diff (cog 40→8), diff_tensor_pair (cog 31→12), run_fingerprint (cog 27→10), detect_quant_level_from_path (cog 27→5). Max cyclomatic: 21 (down from 25). TDG: 96.9/100 A+. Project Score: A+. Coverage: 96.35%. SATD: 0/0/0.)
+**Version:** 10.36.0 (Full Stack: apr-cli + aprender + realizar + trueno, Popperian falsified)
+**Status:** ALL THREE PROJECTS A+ + ZERO SATD (7B all 3 formats working CPU + GPU. 36 falsification rounds, 190 bugs found. Round 36: cross-module complexity reduction — 12 functions decomposed across 6 files. qa.rs: 5 functions (run_throughput_gate, run_golden_output_gate, run_ollama_parity_gate, run_gpu_speedup_gate, run_qa), safetensors.rs: merge_special_tokens_into_vocab, chat.rs: 3 functions (find_qwen_tokenizer, clean_chat_response, run_repl), reader.rs: read_metadata_value, merge.rs: merge::run, diarization.rs: cluster_embeddings. 15 helpers extracted. TDG: 96.9/100 A+. Project Score: A+. Coverage: 96.35%. SATD: 0/0/0.)
 **Primary Model:** `Qwen/Qwen2.5-Coder-7B-Instruct`
 **Source Format:** SafeTensors BF16 (HuggingFace, sharded, ~14 GB)
-**Popperian Score:** 207/223 gates passing (92.8%) — 8 FALSIFIED, 0 blocked/not-tested. 166 falsification gates, 25 sections. 35 rounds, 178 bugs. Gated by `model-tests` feature (`make test-model`)
+**Popperian Score:** 207/223 gates passing (92.8%) — 8 FALSIFIED, 0 blocked/not-tested. 166 falsification gates, 25 sections. 36 rounds, 190 bugs. Gated by `model-tests` feature (`make test-model`)
 **CLI Surface:** 38 top-level + 10 nested subcommands (48 total)
 **Compile-Time Proofs:** 297 algebraic invariants (zero runtime cost)
 **Author:** PAIML Engineering
@@ -2317,6 +2317,23 @@ This section documents bugs found by falsifying the spec itself against the code
 | 176 | diff_tensor_pair has cognitive 31 | Nested match arms with 3 branches each containing conditional text output | **P2** | Extracted `print_both_present()` for the `(Some, Some)` case. Cognitive 31→12. |
 | 177 | run_fingerprint has cognitive 27 | Banner printing, diff-vs-single branching, and file output all in main function | **P2** | Extracted `print_fingerprint_banner()` and `run_fingerprint_body()`. Cognitive 27→10. |
 | 178 | detect_quant_level_from_path has cognitive 27 | Nested `for` loops inside `if` blocks for pattern matching, plus `ends_with` on lowercased string triggers clippy `case_sensitive_file_extension_comparisons` | **P2** | Extracted `match_quant_pattern()` helper with `find()`. Replaced `ends_with` with `Path::extension()` match. Cognitive 27→5. |
+
+**Round 36 (v10.36.0): Cross-module complexity reduction — 12 functions decomposed across 6 files (chat.rs, reader.rs, merge.rs, diarization.rs, qa.rs, safetensors.rs)**
+
+| # | Claim/Gap | Reality | Severity | Fix |
+|---|-----------|---------|----------|-----|
+| 179 | find_qwen_tokenizer has cognitive 85 | 5-level nested `if let` chains across HF cache, sibling dirs, and fallback paths — highest cognitive in entire codebase | **P0** | Extracted `try_load_tokenizer()`, `search_hf_cache_tokenizer()`, `try_tokenizer_at()`. Cognitive 85→8. |
+| 180 | clean_chat_response has cognitive 32 | Inline regex-like character scanning for repeated punctuation and turn detection | **P1** | Extracted `normalize_repeated_punctuation()` and `looks_like_new_turn()`. Cognitive 32→10. |
+| 181 | run_repl (both variants) has cognitive 34 | `loop` with nested `match` for readline + generation, duplicated across inference/non-inference `#[cfg]` | **P1** | Extracted `read_repl_line()`, `generate_and_print()`, `generate_and_print_fallback()`. Used `while let` pattern. Cognitive 34→8. |
+| 182 | read_metadata_value has cognitive 52 | 13-arm match with per-arm bounds checking and byte manipulation, each arm 5-10 lines | **P1** | Extracted `ensure_bytes()`, `read_i16_le()`, `read_i32_le()`, `read_f32_le()`, `read_i64_le()`, `read_f64_le()`. Collapsed arms to one-liners. Cognitive 52→8. |
+| 183 | merge::run has cognitive 45 | Weight validation, strategy parsing, and user-facing output all in single function | **P1** | Extracted `validate_merge_weights()` and `validate_weight_values()`. Cognitive 45→10. |
+| 184 | cluster_embeddings has cognitive 46 | HAC clustering with inline pairwise similarity computation, merge logic, and cluster renumbering | **P1** | Extracted `pairwise_similarity_matrix()`, `find_best_cluster_pair()`, `renumber_clusters()`. Cognitive 46→12. |
+| 185 | run_throughput_gate has cognitive 37 | 3-arm format match (GGUF/APR/SafeTensors) with inline model loading, tokenization, and measurement | **P1** | Extracted `throughput_gguf()`, `throughput_apr()`, `throughput_safetensors()`, `throughput_for_format()`. Cognitive 37→8. |
+| 186 | run_golden_output_gate has cognitive 54 | Per-test-case loop with format dispatch, GPU parity check, and output verification all inline | **P1** | Extracted `golden_test_cases()`, `generate_golden_for_format()`, `validate_golden_test_case()`. Cognitive 54→15. |
+| 187 | run_ollama_parity_gate has cognitive 32 | Inline GPU/CPU throughput measurement loops duplicating `measure_generate_throughput` logic | **P1** | Extracted `measure_our_gguf_tps()` reusing `measure_generate_throughput`. Cognitive 32→10. |
+| 188 | run_gpu_speedup_gate has cognitive 25 | Duplicate CPU and GPU measurement blocks each with inline warmup/measure loops | **P2** | Extracted `measure_gpu_cpu_tps()` reusing `measure_generate_throughput`. Cognitive 25→10. |
+| 189 | run_qa has cognitive 26 | Gate dispatch, format detection, and 50-line summary display all in single orchestration function | **P2** | Extracted `print_qa_summary()`, `gate_display_name()`, `is_gguf_format()`. Cognitive 26→12. |
+| 190 | merge_special_tokens_into_vocab has cognitive 34 | Nested `if let` chains for JSON value extraction and BOS/EOS classification | **P1** | Extracted `parse_special_token()` and `classify_bos_eos()`. Used iterator pipeline with `inspect()`. Cognitive 34→10. |
 
 ### 18.2 Claims Verified (Not Falsified)
 
