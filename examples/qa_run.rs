@@ -846,7 +846,11 @@ fn run_serve_test(
 
     // Find an available port
     let port = TcpListener::bind("127.0.0.1:0")
-        .map(|l| l.local_addr().expect("bound listener must have local addr").port())
+        .map(|l| {
+            l.local_addr()
+                .expect("bound listener must have local addr")
+                .port()
+        })
         .unwrap_or(18080);
 
     let port_str = port.to_string();
@@ -1118,13 +1122,19 @@ fn contains_as_word(haystack: &str, needle: &str) -> bool {
 
         // Check left boundary: start of string OR non-alphanumeric
         let left_ok = abs_pos == 0 || {
-            let prev_char = haystack[..abs_pos].chars().last().expect("non-empty prefix must have a last char");
+            let prev_char = haystack[..abs_pos]
+                .chars()
+                .last()
+                .expect("non-empty prefix must have a last char");
             !prev_char.is_alphanumeric()
         };
 
         // Check right boundary: end of string OR non-alphanumeric
         let right_ok = end_pos >= haystack.len() || {
-            let next_char = haystack[end_pos..].chars().next().expect("non-empty suffix must have a next char");
+            let next_char = haystack[end_pos..]
+                .chars()
+                .next()
+                .expect("non-empty suffix must have a next char");
             !next_char.is_alphanumeric()
         };
 
@@ -2024,7 +2034,12 @@ fn run_ollama_comparison(config: &Config) -> bool {
     // Check if ollama is available
     let ollama_check = Command::new("which").arg("ollama").output();
 
-    if ollama_check.is_err() || !ollama_check.expect("ollama check already verified as Ok").status.success() {
+    if ollama_check.is_err()
+        || !ollama_check
+            .expect("ollama check already verified as Ok")
+            .status
+            .success()
+    {
         println!(
             "{}[SKIP]{} Ollama not installed - skipping parity test",
             YELLOW, NC
@@ -2038,7 +2053,12 @@ fn run_ollama_comparison(config: &Config) -> bool {
         .stderr(Stdio::null())
         .output();
 
-    if model_check.is_err() || !model_check.expect("model check already verified as Ok").status.success() {
+    if model_check.is_err()
+        || !model_check
+            .expect("model check already verified as Ok")
+            .status
+            .success()
+    {
         println!(
             "{}[SKIP]{} Ollama model {} not available",
             YELLOW, NC, OLLAMA_MODEL

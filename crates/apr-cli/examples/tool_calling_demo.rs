@@ -149,7 +149,10 @@ fn main() {
     };
 
     println!("Request:");
-    println!("{}\n", serde_json::to_string_pretty(&request).expect("JSON serialization"));
+    println!(
+        "{}\n",
+        serde_json::to_string_pretty(&request).expect("JSON serialization")
+    );
 
     // Example response with tool call
     let example_response = ChatResponse {

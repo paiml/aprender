@@ -260,7 +260,8 @@ fn bench_serialization(c: &mut Criterion) {
 
     group.bench_function("deserialize_json", |bencher| {
         bencher.iter(|| {
-            let loaded: MarkovModel = serde_json::from_slice(black_box(&json_bytes)).expect("bench setup");
+            let loaded: MarkovModel =
+                serde_json::from_slice(black_box(&json_bytes)).expect("bench setup");
             black_box(loaded)
         });
     });

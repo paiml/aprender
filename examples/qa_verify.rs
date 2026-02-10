@@ -396,17 +396,35 @@ fn main() {
             println!("{}--- Mandatory Gates ---{}", CYAN, NC);
         }
         results.push(test_unit_tests());
-        results.last().expect("results should not be empty after push").print(config.json);
+        results
+            .last()
+            .expect("results should not be empty after push")
+            .print(config.json);
         results.push(test_count());
-        results.last().expect("results should not be empty after push").print(config.json);
+        results
+            .last()
+            .expect("results should not be empty after push")
+            .print(config.json);
         results.push(test_examples_build());
-        results.last().expect("results should not be empty after push").print(config.json);
+        results
+            .last()
+            .expect("results should not be empty after push")
+            .print(config.json);
         results.push(test_clippy());
-        results.last().expect("results should not be empty after push").print(config.json);
+        results
+            .last()
+            .expect("results should not be empty after push")
+            .print(config.json);
         results.push(test_format());
-        results.last().expect("results should not be empty after push").print(config.json);
+        results
+            .last()
+            .expect("results should not be empty after push")
+            .print(config.json);
         results.push(test_docs());
-        results.last().expect("results should not be empty after push").print(config.json);
+        results
+            .last()
+            .expect("results should not be empty after push")
+            .print(config.json);
     }
 
     // Section 2: Mathematical Correctness (4 points)
@@ -416,13 +434,25 @@ fn main() {
             println!("{}--- Mathematical Correctness ---{}", CYAN, NC);
         }
         results.push(test_math_monte_carlo());
-        results.last().expect("results should not be empty after push").print(config.json);
+        results
+            .last()
+            .expect("results should not be empty after push")
+            .print(config.json);
         results.push(test_math_statistics());
-        results.last().expect("results should not be empty after push").print(config.json);
+        results
+            .last()
+            .expect("results should not be empty after push")
+            .print(config.json);
         results.push(test_math_ml());
-        results.last().expect("results should not be empty after push").print(config.json);
+        results
+            .last()
+            .expect("results should not be empty after push")
+            .print(config.json);
         results.push(test_math_optimization());
-        results.last().expect("results should not be empty after push").print(config.json);
+        results
+            .last()
+            .expect("results should not be empty after push")
+            .print(config.json);
     }
 
     let elapsed = start.elapsed().as_secs_f64();

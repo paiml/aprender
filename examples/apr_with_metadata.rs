@@ -114,7 +114,9 @@ fn main() -> Result<(), String> {
     // Read mel filterbank
     println!("\n--- Mel Filterbank ---");
     let filterbank = reader.read_tensor_f32("audio.mel_filterbank")?;
-    let audio_config = reader.get_metadata("audio").expect("audio metadata should be present");
+    let audio_config = reader
+        .get_metadata("audio")
+        .expect("audio metadata should be present");
     let n_mels = audio_config["n_mels"].as_u64().unwrap_or(80) as usize;
     let n_freqs = filterbank.len() / n_mels;
 

@@ -1022,7 +1022,10 @@ fn test_f_disp_01_magic_vs_extension() {
         "F-DISP-01: GGUF should be detected by magic bytes, not extension"
     );
     assert!(
-        result.expect("test harness value").format_version.contains("GGUF"),
+        result
+            .expect("test harness value")
+            .format_version
+            .contains("GGUF"),
         "F-DISP-01: Should detect as GGUF format"
     );
 }

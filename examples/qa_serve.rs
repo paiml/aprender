@@ -818,54 +818,105 @@ fn main() {
 
     // Run all tests
     results.push(test_health(&config));
-    results.last().expect("results should not be empty after push").print();
+    results
+        .last()
+        .expect("results should not be empty after push")
+        .print();
     results.push(test_compute_mode(&config));
-    results.last().expect("results should not be empty after push").print();
+    results
+        .last()
+        .expect("results should not be empty after push")
+        .print();
     results.push(test_valid_json(&config));
-    results.last().expect("results should not be empty after push").print();
+    results
+        .last()
+        .expect("results should not be empty after push")
+        .print();
     results.push(test_openai_structure(&config));
-    results.last().expect("results should not be empty after push").print();
+    results
+        .last()
+        .expect("results should not be empty after push")
+        .print();
     results.push(test_non_empty_content(&config));
-    results.last().expect("results should not be empty after push").print();
+    results
+        .last()
+        .expect("results should not be empty after push")
+        .print();
     results.push(test_no_token_artifacts(&config));
-    results.last().expect("results should not be empty after push").print();
+    results
+        .last()
+        .expect("results should not be empty after push")
+        .print();
     results.push(test_no_bpe_artifacts(&config));
-    results.last().expect("results should not be empty after push").print();
+    results
+        .last()
+        .expect("results should not be empty after push")
+        .print();
     results.push(test_streaming_format(&config));
-    results.last().expect("results should not be empty after push").print();
+    results
+        .last()
+        .expect("results should not be empty after push")
+        .print();
     results.push(test_stream_termination(&config));
-    results.last().expect("results should not be empty after push").print();
+    results
+        .last()
+        .expect("results should not be empty after push")
+        .print();
     results.push(test_determinism(&config));
-    results.last().expect("results should not be empty after push").print();
+    results
+        .last()
+        .expect("results should not be empty after push")
+        .print();
     results.push(test_malformed_json(&config));
-    results.last().expect("results should not be empty after push").print();
+    results
+        .last()
+        .expect("results should not be empty after push")
+        .print();
     results.push(test_coherency(&config));
-    results.last().expect("results should not be empty after push").print();
+    results
+        .last()
+        .expect("results should not be empty after push")
+        .print();
     results.push(test_no_multi_turn_loop(&config));
-    results.last().expect("results should not be empty after push").print();
+    results
+        .last()
+        .expect("results should not be empty after push")
+        .print();
     results.push(test_trace_level(
         &config,
         "brick",
         "P030",
         "Trace Brick Level",
     ));
-    results.last().expect("results should not be empty after push").print();
+    results
+        .last()
+        .expect("results should not be empty after push")
+        .print();
     results.push(test_trace_level(
         &config,
         "step",
         "P031",
         "Trace Step Level",
     ));
-    results.last().expect("results should not be empty after push").print();
+    results
+        .last()
+        .expect("results should not be empty after push")
+        .print();
     results.push(test_trace_level(
         &config,
         "layer",
         "P032",
         "Trace Layer Level",
     ));
-    results.last().expect("results should not be empty after push").print();
+    results
+        .last()
+        .expect("results should not be empty after push")
+        .print();
     results.push(test_default_suppression(&config));
-    results.last().expect("results should not be empty after push").print();
+    results
+        .last()
+        .expect("results should not be empty after push")
+        .print();
 
     let elapsed = start.elapsed();
     println!();

@@ -243,7 +243,8 @@ fn benchmark_serialization(c: &mut Criterion) {
     let json = serde_json::to_vec(&model).expect("bench setup");
     group.bench_function("deserialize_json", |b| {
         b.iter(|| {
-            let loaded: MarkovModel = serde_json::from_slice(black_box(&json)).expect("bench setup");
+            let loaded: MarkovModel =
+                serde_json::from_slice(black_box(&json)).expect("bench setup");
             black_box(loaded)
         })
     });

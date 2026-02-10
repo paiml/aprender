@@ -73,13 +73,18 @@ fn embedded_data_demo() {
 
     println!(
         "\nFeature Names: {:?}",
-        iris_data.feature_names.as_ref().expect("feature names were set")
+        iris_data
+            .feature_names
+            .as_ref()
+            .expect("feature names were set")
     );
 
     println!("\nSample Data:");
     for i in 0..iris_data.n_samples() {
         let row = iris_data.get_row(i).expect("row index should be in range");
-        let target = iris_data.get_target(i).expect("target index should be in range");
+        let target = iris_data
+            .get_target(i)
+            .expect("target index should be in range");
         let species = match target as u8 {
             0 => "setosa",
             1 => "versicolor",

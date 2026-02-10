@@ -1454,10 +1454,7 @@ fn dispatch_cbtop(
                 Some(PathBuf::from(m)),
             )
         } else {
-            (
-                Some(m.to_string()),
-                model_path.map(PathBuf::from),
-            )
+            (Some(m.to_string()), model_path.map(PathBuf::from))
         }
     } else {
         (None, model_path.map(PathBuf::from))
