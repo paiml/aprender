@@ -1091,6 +1091,27 @@ fn run_throughput_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
     }
 }
 
+/// Compute Ollama parity letter grade from speedup ratio.
+///
+/// Grading system (from showcase spec §Executive Summary):
+/// F (<50% Ollama) → D (50-75%) → C (75-100% = parity) → B (100-150%) → A (150-200%) → A+ (200%+)
+#[cfg(feature = "inference")]
+fn ollama_parity_grade(ratio: f64) -> &'static str {
+    if ratio >= 2.0 {
+        "A+"
+    } else if ratio >= 1.5 {
+        "A"
+    } else if ratio >= 1.0 {
+        "B"
+    } else if ratio >= 0.75 {
+        "C"
+    } else if ratio >= 0.5 {
+        "D"
+    } else {
+        "F"
+    }
+}
+
 /// Gate 3: Ollama Parity Test
 ///
 /// Compares performance against Ollama baseline (if available).
@@ -1197,13 +1218,14 @@ fn run_ollama_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
         };
 
         let speedup = our_tps / ollama_tps;
+        let grade = ollama_parity_grade(speedup);
         let duration = start.elapsed();
 
         if speedup >= config.min_speedup {
             Ok(GateResult::passed(
                 "ollama_parity",
                 &format!(
-                    "{:.1}x Ollama ({:.0} vs {:.0} tok/s) >= {:.1}x threshold",
+                    "{:.1}x Ollama ({:.0} vs {:.0} tok/s) Grade {grade} >= {:.1}x threshold",
                     speedup, our_tps, ollama_tps, config.min_speedup
                 ),
                 Some(speedup),
@@ -1214,7 +1236,7 @@ fn run_ollama_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
             Ok(GateResult::failed(
                 "ollama_parity",
                 &format!(
-                    "{:.2}x Ollama ({:.0} vs {:.0} tok/s) < {:.1}x threshold",
+                    "{:.2}x Ollama ({:.0} vs {:.0} tok/s) Grade {grade} < {:.1}x threshold",
                     speedup, our_tps, ollama_tps, config.min_speedup
                 ),
                 Some(speedup),
@@ -4474,5 +4496,34 @@ mod tests {
         // If no patterns expected, just check for emptiness and garbage
         let result = verify_output("Some valid output", "test-011", &[]);
         assert!(matches!(result, OutputVerification::Pass));
+    }
+
+    // ========================================================================
+    // Ollama Parity Grade Tests (F-PROFILE-010)
+    // ========================================================================
+
+    #[cfg(feature = "inference")]
+    #[test]
+    fn ollama_parity_grade_boundaries() {
+        // Grade F: <50% Ollama
+        assert_eq!(ollama_parity_grade(0.0), "F");
+        assert_eq!(ollama_parity_grade(0.3), "F");
+        assert_eq!(ollama_parity_grade(0.49), "F");
+        // Grade D: 50-75%
+        assert_eq!(ollama_parity_grade(0.5), "D");
+        assert_eq!(ollama_parity_grade(0.64), "D");
+        assert_eq!(ollama_parity_grade(0.74), "D");
+        // Grade C: 75-100% (parity)
+        assert_eq!(ollama_parity_grade(0.75), "C");
+        assert_eq!(ollama_parity_grade(0.99), "C");
+        // Grade B: 100-150%
+        assert_eq!(ollama_parity_grade(1.0), "B");
+        assert_eq!(ollama_parity_grade(1.49), "B");
+        // Grade A: 150-200%
+        assert_eq!(ollama_parity_grade(1.5), "A");
+        assert_eq!(ollama_parity_grade(1.99), "A");
+        // Grade A+: 200%+
+        assert_eq!(ollama_parity_grade(2.0), "A+");
+        assert_eq!(ollama_parity_grade(3.5), "A+");
     }
 }
