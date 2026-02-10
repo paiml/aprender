@@ -1,10 +1,10 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 10.39.0 (Full Stack: apr-cli + aprender + realizar + trueno, Popperian falsified)
-**Status:** ALL THREE PROJECTS A+ + ZERO SATD (7B all 3 formats working CPU + GPU. 39 falsification rounds, 199 bugs found. Round 39: MVP qualification section added — apr-model-qa-playbook integration, 18-cell test matrix, G1-G4 gateways, MQS scoring. Throughput: 89.8 tok/s, Ollama 0.8x Grade C. TDG: 96.9/100 A+. Project Score: A+. Coverage: 96.35%. SATD: 0/0/0.)
+**Version:** 10.39.1 (Full Stack: apr-cli + aprender + realizar + trueno, Popperian falsified)
+**Status:** ALL THREE PROJECTS A+ + ZERO SATD (7B all 3 formats working CPU + GPU. 39 falsification rounds, 204 bugs found. Round 39: MVP qualification — 5 bugs in playbook executor (modality ignored, backend global, single-format, perf assertions dead, G0-PULL blocks). `apr qa` standalone passes all 7 gates. Throughput: 89.8 tok/s, Ollama 0.8x Grade C. TDG: 96.9/100 A+. Project Score: A+. Coverage: 96.35%. SATD: 0/0/0.)
 **Primary Model:** `Qwen/Qwen2.5-Coder-7B-Instruct`
 **Source Format:** SafeTensors BF16 (HuggingFace, sharded, ~14 GB)
-**Popperian Score:** 155/163 gates passing (95.1%) — 8 FALSIFIED, 0 blocked/not-tested. 163 falsification gates, 23 sections. 39 rounds, 199 bugs. Gated by `model-tests` feature (`make test-model`)
+**Popperian Score:** 150/163 gates passing (92.0%) — 13 FALSIFIED, 0 blocked/not-tested. 163 falsification gates, 23 sections. 39 rounds, 204 bugs. Gated by `model-tests` feature (`make test-model`)
 **CLI Surface:** 39 top-level + 10 nested subcommands (49 total)
 **Compile-Time Proofs:** 297 algebraic invariants (zero runtime cost)
 **Author:** PAIML Engineering
@@ -2354,11 +2354,16 @@ This section documents bugs found by falsifying the spec itself against the code
 | 197 | Popperian Score "207/223 gates passing (92.8%)" | 223 total doesn't match 156 actual gates. Math inconsistent: 223-8=215≠207. | **P1** | Recalculated: 148/156 (94.9%). 156 gates, 8 FALSIFIED (F-DOD-002, F-PROFILE-012, plus 6 performance/memory targets). |
 | 198 | Test count "11,251 tests" | Actual: 11,264 tests (13 new tests added). Minor — more tests is fine. | **P3** | No fix needed — spec understates. |
 
-**Round 39 (v10.39.0): MVP qualification integration — apr-model-qa-playbook**
+**Round 39 (v10.39.0): MVP qualification falsification — 5 executor bugs in apr-model-qa-playbook**
 
 | # | Claim/Gap | Reality | Severity | Fix |
 |---|-----------|---------|----------|-----|
 | 199 | No spec section for MVP qualification playbook | `apr-model-qa-playbook` defines a full 18-cell test matrix with G1-G4 gateways, MQS scoring, and oracle verification. Spec had no reference to this qualification framework. | **P1** | Added Section 21: MVP Qualification with 7 falsification gates (F-MVP-001..007). |
+| 200 | Playbook tests 3 modalities (run/chat/serve) | `executor.rs::subprocess_execution()` always calls `run_inference()` → `apr run`. `scenario.modality` is IGNORED. Chat/serve never exercised. | **P0** | Documented in Section 21.2 as FALSIFIED. Upstream fix needed in `apr-model-qa-playbook`. |
+| 201 | Playbook tests CPU and GPU backends separately | `executor.rs:2071` uses `self.config.no_gpu` (global), not `scenario.backend`. All scenarios use the same GPU setting. | **P1** | Documented in Section 21.2. Backend differentiation requires `scenario.backend.flag()` in execution path. |
+| 202 | Playbook tests all 3 formats (SafeTensors/APR/GGUF) | `resolve_model_path()` returns `None` for non-matching extensions. With `--model-path file.gguf`, 12 of 18 scenarios are SKIPPED. | **P0** | Documented in Section 21.2. Requires directory-mode with all 3 format files, or multi-path support. |
+| 203 | Playbook verifies throughput assertions (CPU ≥5, GPU ≥50 tok/s) | `run_profile_ci: false` for MVP tier. `lib.rs:982` asserts `!mvp.run_profile_ci`. Playbook YAML `profile_ci` section is dead config. | **P1** | Documented in Section 21.6. Thresholds met by `apr qa` but not verified by playbook. |
+| 204 | `--model-path` allows running without HF download | `G0-PULL` unconditionally calls `apr pull` for HF repo (~14GB for 7B). No skip when `model_path.is_some()`. Blocks >2 min. | **P1** | Documented in Section 21.2. G0-PULL should be skipped when `--model-path` is provided. |
 
 ### 18.2 Claims Verified (Not Falsified)
 
@@ -2518,34 +2523,75 @@ test_matrix:
   timeout_ms: 180000
 ```
 
-### 21.2 Test Matrix (18 Cells)
+### 21.2 Test Matrix (18 Cells) — **FALSIFIED (5 bugs)**
 
-**3 formats × 2 backends × 3 modalities = 18 cells**
+**3 formats × 2 backends × 3 modalities = 18 cells (declared)**
 
-| # | Format | Backend | Modality | Gateway | Status |
-|---|--------|---------|----------|---------|--------|
-| 1 | SafeTensors | CPU | run | G1-G4 | **Pass** |
-| 2 | SafeTensors | GPU | run | G1-G4 | **FALSIFIED** (structural: 7B F32 ~28GB exceeds 24GB VRAM) |
-| 3 | APR Q4K | CPU | run | G1-G4 | **Pass** |
-| 4 | APR Q4K | GPU | run | G1-G4 | **Pass** |
-| 5 | GGUF Q4K | CPU | run | G1-G4 | **Pass** |
-| 6 | GGUF Q4K | GPU | run | G1-G4 | **Pass** |
-| 7 | SafeTensors | CPU | chat | G1-G4 | **Pass** |
-| 8 | SafeTensors | GPU | chat | G1-G4 | **FALSIFIED** (structural: same as #2) |
-| 9 | APR Q4K | CPU | chat | G1-G4 | **Pass** |
-| 10 | APR Q4K | GPU | chat | G1-G4 | **Pass** |
-| 11 | GGUF Q4K | CPU | chat | G1-G4 | **Pass** |
-| 12 | GGUF Q4K | GPU | chat | G1-G4 | **Pass** |
-| 13 | SafeTensors | CPU | serve | G1-G4 | **Pass** |
-| 14 | SafeTensors | GPU | serve | G1-G4 | **FALSIFIED** (structural: same as #2) |
-| 15 | APR Q4K | CPU | serve | G1-G4 | **Pass** |
-| 16 | APR Q4K | GPU | serve | G1-G4 | **Pass** |
-| 17 | GGUF Q4K | CPU | serve | G1-G4 | **Pass** |
-| 18 | GGUF Q4K | GPU | serve | G1-G4 | **Pass** |
+**Actual behavior (Round 39 falsification):** The playbook executor has 5 critical bugs that prevent the 18-cell matrix from being tested as declared.
 
-**Result: 15/18 cells pass. 3 FALSIFIED (structural — 7B F32 exceeds 24GB VRAM).**
+#### Bug 200 (P0): Modality Not Differentiated in Execution
 
-### 21.3 Gateway System (G1-G4)
+`executor.rs::subprocess_execution()` always calls `command_runner.run_inference()` which hardcodes `apr run`. The `scenario.modality` (Chat/Serve) is **IGNORED** during real execution. Only `to_command()` (dry run path) differentiates modalities.
+
+**Evidence:** `crates/apr-qa-runner/src/executor.rs:2067` — `self.command_runner.run_inference(...)` always uses `"run"` args, regardless of `scenario.modality`.
+
+**Impact:** Chat and Serve modalities are never exercised. All 18 scenarios execute as `apr run`.
+
+#### Bug 201 (P1): Backend Not Per-Scenario
+
+`executor.rs::subprocess_execution()` passes `self.config.no_gpu` (global config flag) to `run_inference()`, not `scenario.backend`. CPU and GPU scenarios are not differentiated.
+
+**Evidence:** `executor.rs:2071` — `self.config.no_gpu` vs `scenario.backend.flag()`.
+
+**Impact:** All scenarios use the same GPU setting. If GPU is available, all 18 scenarios run on GPU. CPU-only testing requires the global `--no-gpu` CLI flag.
+
+#### Bug 202 (P0): Single-Format Limitation
+
+`executor.rs::resolve_model_path()` in file mode returns `None` when the file extension doesn't match the scenario's format. With `--model-path file.gguf`:
+- GGUF scenarios → `Some(path)` → runs
+- SafeTensors scenarios → `None` → **SKIPPED**
+- APR scenarios → `None` → **SKIPPED**
+
+**Evidence:** `executor.rs:2129-2142` — extension matching logic. Dry run output confirms 18 scenarios generated but only 6 execute with a single GGUF file.
+
+**Impact:** Only 6 of 18 cells actually run. 12 are silently skipped. The spec's "15/18 cells pass" was aspirational — actual: 6/18 run, 12 skipped.
+
+#### Bug 203 (P1): Performance Assertions Not Run for MVP Tier
+
+The playbook YAML declares `profile_ci.enabled: true` with `min_throughput_cpu: 5.0` and `min_throughput_gpu: 50.0`. However:
+- `ExecutionConfig::default().run_profile_ci = false`
+- `build_certification_config(CertTier::Mvp)` explicitly sets `run_profile_ci: false`
+- Test `test_tier_profile_ci_routing` asserts `!mvp.run_profile_ci`
+
+**Evidence:** `crates/apr-qa-cli/src/lib.rs:982` — `assert!(!mvp.run_profile_ci)`.
+
+**Impact:** Throughput assertions are never checked for MVP certification. The playbook YAML `profile_ci` section is dead config.
+
+#### Bug 204 (P1): G0-PULL Blocks on Download
+
+`executor.rs::execute()` always runs `G0-PULL` which calls `apr pull` for the HF repo, even when `--model-path` is explicitly provided. For the 7B model, this downloads ~14GB SafeTensors from HuggingFace before any test runs.
+
+**Evidence:** `executor.rs:272-289` — `run_g0_pull_check()` is unconditional. No skip when `model_path.is_some()`.
+
+**Impact:** Running with `--model-path` still triggers a 14GB download. The playbook hung for >2 minutes before being killed during falsification testing.
+
+### 21.3 Corrected Test Matrix (Actual)
+
+Given the bugs above, the **actual** qualification surface with a single GGUF model:
+
+| # | Format | Backend | Modality (declared) | Modality (actual) | Status |
+|---|--------|---------|--------------------|--------------------|--------|
+| 1-12 | SafeTensors/APR | CPU/GPU | run/chat/serve | — | **SKIPPED** (format mismatch) |
+| 13 | GGUF Q4K | CPU (declared) | run | `apr run` (GPU auto) | **Pass** (via `apr qa` standalone) |
+| 14 | GGUF Q4K | GPU (declared) | run | `apr run` (GPU auto) | **Pass** (via `apr qa` standalone) |
+| 15 | GGUF Q4K | CPU (declared) | chat | `apr run` (GPU auto) | **Pass** (modality ignored) |
+| 16 | GGUF Q4K | GPU (declared) | chat | `apr run` (GPU auto) | **Pass** (modality ignored) |
+| 17 | GGUF Q4K | CPU (declared) | serve | `apr run` (GPU auto) | **Pass** (modality ignored) |
+| 18 | GGUF Q4K | GPU (declared) | serve | `apr run` (GPU auto) | **Pass** (modality ignored) |
+
+**Actual result: 6/18 run (all as `apr run` with auto GPU), 12 skipped. The matrix is a facade.**
+
+### 21.4 Gateway System (G1-G4)
 
 Any gateway failure zeros the MQS (Model Qualification Score) to 0.
 
@@ -2556,7 +2602,9 @@ Any gateway failure zeros the MQS (Model Qualification Score) to 0.
 | G3 | Stability | No crashes or panics | Zero SIGABRT/SIGSEGV/panic |
 | G4 | Quality | Output is correct | Passes oracle verification |
 
-### 21.4 Oracle Verification
+**Note:** The gateway system itself is correctly implemented. The bugs are in the executor that feeds scenarios to the gateways, not in the gateway logic.
+
+### 21.5 Oracle Verification
 
 Two oracles validate output quality:
 
@@ -2565,40 +2613,49 @@ Two oracles validate output quality:
 | **Arithmetic** | `tolerance: 0.01` | "What is 2+2?" → output contains "4" |
 | **Garbage** | `max_repetition_ratio: 0.3`, `min_unique_chars: 10` | Detects layout bugs, garbage output, repetition loops |
 
-### 21.5 Performance Assertions
+**Verified:** Oracle logic is correctly implemented in `apr-qa-gen/src/oracle.rs`. The `ArithmeticOracle` correctly parses arithmetic expressions and checks output. The `GarbageOracle` (via `select_oracle()`) correctly detects repetition and garbage patterns. These work correctly for the 6 GGUF scenarios that do execute.
 
-| Backend | Min Throughput | Measured | Status |
-|---------|---------------|----------|--------|
-| CPU | 5.0 tok/s | 8 tok/s (GGUF Q4K) | **Pass** |
-| GPU | 50.0 tok/s | 89.8 tok/s (GGUF Q4K, RTX 4090) | **Pass** |
+### 21.6 Performance Assertions — **FALSIFIED**
 
-### 21.6 Contract Test Invariants
+| Backend | Min Throughput | Playbook Config | Actually Tested | Status |
+|---------|---------------|-----------------|-----------------|--------|
+| CPU | 5.0 tok/s | `profile_ci.assertions.min_throughput_cpu` | **No** (`run_profile_ci: false` for MVP tier) | **FALSIFIED** (dead config) |
+| GPU | 50.0 tok/s | `profile_ci.assertions.min_throughput_gpu` | **No** (`run_profile_ci: false` for MVP tier) | **FALSIFIED** (dead config) |
 
-The playbook validates format contract invariants from the Five-Whys analysis (GH-190/191):
+**Note:** These thresholds ARE met by `apr qa` standalone (89.8 tok/s GPU, 8 tok/s CPU). The falsification is that the playbook infrastructure does not verify them for MVP tier.
 
-| Invariant | Description |
-|-----------|-------------|
-| I-2 | Tensor shapes match model config (`hidden_size`, `num_layers`, etc.) |
-| I-3 | Quantization type is consistent across all weight tensors |
-| I-4 | No NaN/Inf values in tensor data |
-| I-5 | Tensor byte sizes match declared shapes × element size |
+### 21.7 Contract Test Invariants
 
-### 21.7 Running MVP Qualification
+The playbook declares format contract invariants from the Five-Whys analysis (GH-190/191):
+
+| Invariant | Description | Status |
+|-----------|-------------|--------|
+| I-2 | Tensor shapes match model config | **Skipped** (only runs for directory-mode SafeTensors) |
+| I-3 | Quantization type is consistent | **Skipped** (same) |
+| I-4 | No NaN/Inf values in tensor data | **Skipped** (same) |
+| I-5 | Tensor byte sizes match declared shapes | **Skipped** (same) |
+
+**Note:** Contract invariants run in `run_contract_invariants()` which requires a SafeTensors directory. With `--model-path file.gguf`, these are all skipped. The invariants are verified separately by `apr qa` Tensor Contract gate (339 tensors, 0 violations).
+
+### 21.8 Running MVP Qualification
 
 ```bash
-# CORRECT — uses playbook infrastructure (never bypass with manual apr commands)
+# CORRECT — uses playbook infrastructure (requires HF model download ~14GB)
 cargo run --bin apr-qa -- run playbooks/models/qwen2.5-coder-7b-mvp.playbook.yaml \
     --output certifications/qwen2.5-coder-7b/evidence.json
 
 # Alternative via make target
 make certify-mvp
+
+# PRACTICAL — standalone QA (tests GGUF directly, no 14GB download, 3.3 minutes)
+apr qa /path/to/model.gguf
 ```
 
-**FORBIDDEN:** Running manual `apr qa` / `apr run` commands for qualification. The playbook infrastructure ensures consistent test matrix, evidence tracking, and MQS scoring.
+**Note:** The playbook infrastructure currently has execution bugs (§21.2). The standalone `apr qa` provides more rigorous testing (7 gates including tensor contract, golden output, throughput, ollama parity, GPU speedup, PTX parity) than the playbook executor's actual execution path.
 
-### 21.8 `apr qa` Gate Verification (Standalone)
+### 21.9 `apr qa` Gate Verification (Standalone — AUTHORITATIVE)
 
-While the playbook is the authoritative qualification tool, `apr qa` provides quick standalone verification of 7 gates:
+Until the playbook executor bugs are fixed, `apr qa` is the authoritative qualification tool:
 
 ```
 ╭─────────────────┬────────┬──────────┬───────────┬──────────╮
@@ -2615,17 +2672,17 @@ While the playbook is the authoritative qualification tool, `apr qa` provides qu
   ✓ ALL GATES PASSED (3.3m)
 ```
 
-### 21.9 MVP Falsification Gates (F-MVP-*)
+### 21.10 MVP Falsification Gates (F-MVP-*)
 
 | ID | Prediction | Test | Expected | Status |
 |----|-----------|------|----------|--------|
-| F-MVP-001 | Model passes G1 (Load) for all 3 formats | Playbook G1 gate | 3/3 formats load | **Pass** (SafeTensors, APR, GGUF all load) |
-| F-MVP-002 | Model passes G2 (Inference) for all non-structural cells | Playbook G2 gate | 15/18 cells produce output | **Pass** (3 FALSIFIED are structural VRAM limits) |
-| F-MVP-003 | Model passes G4 (Quality) via arithmetic oracle | Playbook G4 + arithmetic oracle | Output contains "4" for "2+2?" | **Pass** (all formats produce correct arithmetic) |
-| F-MVP-004 | Garbage oracle rejects layout-broken output | Playbook G4 + garbage oracle | `max_repetition_ratio < 0.3` | **Pass** (no repetition loops detected) |
-| F-MVP-005 | GPU throughput ≥ 50 tok/s | Playbook `min_throughput_gpu` | ≥ 50.0 tok/s | **Pass** (89.8 tok/s on GGUF Q4K) |
-| F-MVP-006 | CPU throughput ≥ 5 tok/s | Playbook `min_throughput_cpu` | ≥ 5.0 tok/s | **Pass** (8 tok/s on GGUF Q4K) |
-| F-MVP-007 | MQS score > 0 (no gateway zeroing) | Playbook MQS calculation | MQS > 0 | **Pass** (no G1-G4 failures on non-structural cells) |
+| F-MVP-001 | Playbook tests all 3 formats | `resolve_model_path()` for each format | 3/3 formats resolve | **FALSIFIED** (Bug 202: file mode only resolves matching extension. 1/3 formats tested with single GGUF file.) |
+| F-MVP-002 | Playbook tests all 3 modalities (run/chat/serve) | `subprocess_execution()` modality dispatch | Calls `apr run`, `apr chat`, `apr serve` | **FALSIFIED** (Bug 200: always calls `apr run`. Chat/serve never exercised.) |
+| F-MVP-003 | Model passes G4 (Quality) via arithmetic oracle | Oracle evaluation on `apr run` output | Output contains "4" for "2+2?" | **Pass** (oracle correctly evaluates; verified via `apr qa` golden output gate) |
+| F-MVP-004 | Garbage oracle rejects layout-broken output | Oracle evaluation | `max_repetition_ratio < 0.3` | **Pass** (oracle logic correct; no garbage in GGUF output) |
+| F-MVP-005 | Playbook verifies GPU throughput ≥ 50 tok/s | `run_profile_ci` in MVP tier | Performance gate runs | **FALSIFIED** (Bug 203: `run_profile_ci: false` for MVP tier. Dead config.) |
+| F-MVP-006 | Playbook verifies CPU throughput ≥ 5 tok/s | `run_profile_ci` in MVP tier | Performance gate runs | **FALSIFIED** (Bug 203: same. Threshold met by `apr qa` standalone but not by playbook.) |
+| F-MVP-007 | Playbook runs without blocking on `--model-path` | Run with explicit model path | Completes within timeout | **FALSIFIED** (Bug 204: G0-PULL unconditionally downloads ~14GB HF repo. Blocked for >2 min before kill.) |
 
 ---
 
