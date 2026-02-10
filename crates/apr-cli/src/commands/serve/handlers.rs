@@ -66,25 +66,100 @@ pub(crate) fn start_realizar_server(model_path: &Path, config: &ServerConfig) ->
 // APR server handlers
 // ============================================================================
 
-/// Start APR v2 model server with full inference support
-///
-/// Supports both transformer inference (generate) and metadata inspection.
-/// GPU acceleration available via --gpu flag.
+/// Shared state for APR server endpoints (extracted from inline struct)
 #[cfg(feature = "inference")]
-#[allow(clippy::disallowed_methods)] // serde_json::json!() macro uses infallible unwrap internally
-fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
-    use axum::{
-        extract::State,
-        http::StatusCode,
-        response::IntoResponse,
-        routing::{get, post},
-        Json, Router,
-    };
-    use realizar::apr::AprModel;
-    use serde::{Deserialize, Serialize};
-    use std::sync::Mutex;
+#[derive(Clone)]
+struct AprServerState {
+    transformer: Option<Arc<std::sync::Mutex<realizar::apr_transformer::AprTransformer>>>,
+    model_type: String,
+    architecture: String,
+    is_transformer: bool,
+    tokenizer: Option<SafeTensorsTokenizerInfo>,
+}
 
-    // Load APR model
+/// Output from a successful APR inference run
+#[cfg(feature = "inference")]
+struct AprInferenceOutput {
+    text: String,
+    tokens_generated: usize,
+    gen_duration: std::time::Duration,
+    input_token_count: usize,
+}
+
+/// Run the tokenize → generate → decode pipeline for APR CPU inference.
+///
+/// Both `/v1/completions` and `/v1/chat/completions` use this shared path,
+/// eliminating the duplicated inference logic that inflated cyclomatic complexity.
+#[cfg(feature = "inference")]
+fn run_apr_cpu_inference(
+    state: &AprServerState,
+    prompt: &str,
+    max_tokens: usize,
+    temperature: f32,
+) -> std::result::Result<AprInferenceOutput, String> {
+    let transformer = state
+        .transformer
+        .as_ref()
+        .ok_or("Transformer not loaded, inference not supported")?;
+
+    // Tokenize (BPE or character-level fallback)
+    let input_tokens: Vec<u32> = match &state.tokenizer {
+        Some(tok) => tok.tokenizer.encode(prompt),
+        None => prompt.chars().map(|c| c as u32).collect(),
+    };
+    let input_token_count = input_tokens.len();
+
+    let gen_config = realizar::apr_transformer::GenerateConfig {
+        max_tokens,
+        temperature,
+        top_p: 0.9,
+        top_k: 0,
+        repetition_penalty: 1.0,
+        trace: false,
+    };
+
+    let gen_start = Instant::now();
+    let output_tokens = {
+        let t = transformer.lock().map_err(|_| {
+            "Transformer state corrupted (lock poisoned). Please restart the server.".to_string()
+        })?;
+        t.generate_with_cache(&input_tokens, &gen_config)
+            .map_err(|e| format!("Generate failed: {e}"))?
+    };
+    let gen_duration = gen_start.elapsed();
+
+    // Extract new tokens
+    let new_tokens = if output_tokens.len() > input_tokens.len() {
+        &output_tokens[input_tokens.len()..]
+    } else {
+        &output_tokens[..]
+    };
+
+    // Decode (BPE or character-level fallback)
+    let text = match &state.tokenizer {
+        Some(tok) => tok.tokenizer.decode(new_tokens).unwrap_or_default(),
+        None => new_tokens
+            .iter()
+            .filter_map(|&t| char::from_u32(t))
+            .collect(),
+    };
+
+    Ok(AprInferenceOutput {
+        text,
+        tokens_generated: new_tokens.len(),
+        gen_duration,
+        input_token_count,
+    })
+}
+
+/// Load APR model, tokenizer, and transformer into shared server state.
+#[cfg(feature = "inference")]
+fn load_apr_model_state(
+    model_path: &Path,
+    config: &ServerConfig,
+) -> Result<AprServerState> {
+    use realizar::apr::AprModel;
+
     println!("{}", "Loading APR v2 model...".dimmed());
     let model = AprModel::load(model_path)
         .map_err(|e| CliError::ModelLoadFailed(format!("Failed to load APR v2 model: {e}")))?;
@@ -119,8 +194,7 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
         );
     }
 
-    // Load tokenizer if available - prefer BPE tokenizer from tokenizer.json
-    // PMAT-098: Use proper BPE tokenizer (same as SafeTensors path)
+    // Load tokenizer
     let tokenizer_json_path = model_path.with_file_name("tokenizer.json");
     let bpe_tokenizer = if tokenizer_json_path.exists() {
         load_safetensors_tokenizer(&tokenizer_json_path)
@@ -128,8 +202,7 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
         None
     };
 
-    let has_tokenizer = bpe_tokenizer.is_some();
-    if has_tokenizer {
+    if bpe_tokenizer.is_some() {
         println!("{}", "BPE tokenizer loaded from tokenizer.json".green());
     } else {
         println!(
@@ -138,38 +211,24 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
         );
     }
 
-    // Determine GPU vs CPU mode
-    // PMAT-099: APR GPU path currently has tensor name mismatches with AprV2ModelCuda
-    // For now, force CPU for APR until GPU path is fixed
+    // GPU check (APR GPU path not yet ready)
     let use_gpu = config.gpu && !config.no_gpu;
 
     #[cfg(feature = "cuda")]
     if use_gpu && is_transformer {
-        // PMAT-099: Disable GPU for APR until AprV2ModelCuda tensor name mapping is fixed
-        // The AprTransformer CPU path uses correct tensor names from APR metadata
-        // but AprV2ModelCuda expects different names (model.layers vs blk)
         println!(
             "{}",
             "Note: APR GPU path disabled (PMAT-099 - tensor name mapping WIP)".yellow()
         );
         println!("{}", "Using CPU path for APR inference".dimmed());
-        // Fall through to CPU path instead of:
-        // return start_apr_server_gpu(model_path, model, config, bpe_tokenizer);
     }
 
-    // CPU path
+    #[cfg(not(feature = "cuda"))]
+    let _ = use_gpu;
+
     println!("{}", "Using CPU inference".dimmed());
 
-    // Create tokio runtime
-    let runtime = tokio::runtime::Runtime::new()
-        .map_err(|e| CliError::InferenceFailed(format!("Failed to create runtime: {e}")))?;
-
-    let bind_addr = config.bind_addr();
-    let model_path_clone = model_path.to_path_buf();
-
-    // PMAT-098: Load transformer once and share across requests
-    // Previous code reloaded model on every request causing ~0.01 tok/s
-    // Now we load once using AprTransformer for efficient inference
+    // Load transformer
     let transformer = if is_transformer {
         match realizar::apr_transformer::AprTransformer::from_apr_file(model_path) {
             Ok(t) => {
@@ -181,7 +240,7 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
                     )
                     .cyan()
                 );
-                Some(Arc::new(Mutex::new(t)))
+                Some(Arc::new(std::sync::Mutex::new(t)))
             }
             Err(e) => {
                 println!(
@@ -195,24 +254,40 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
         None
     };
 
-    // Shared state for inference (model loaded once, not per-request)
-    // PMAT-098: Use BPE tokenizer for proper encoding
-    #[derive(Clone)]
-    struct AprState {
-        transformer: Option<Arc<Mutex<realizar::apr_transformer::AprTransformer>>>,
-        model_type: String,
-        architecture: String,
-        is_transformer: bool,
-        tokenizer: Option<SafeTensorsTokenizerInfo>,
-    }
-
-    let state = AprState {
+    Ok(AprServerState {
         transformer,
-        model_type: model_type.clone(),
-        architecture: architecture.clone(),
+        model_type,
+        architecture,
         is_transformer,
         tokenizer: bpe_tokenizer,
+    })
+}
+
+/// Start APR v2 model server with full inference support
+///
+/// Supports both transformer inference (generate) and metadata inspection.
+/// GPU acceleration available via --gpu flag.
+#[cfg(feature = "inference")]
+#[allow(clippy::disallowed_methods)] // serde_json::json!() macro uses infallible unwrap internally
+fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
+    use axum::{
+        http::StatusCode,
+        response::IntoResponse,
+        routing::{get, post},
+        Json, Router,
     };
+    use serde::{Deserialize, Serialize};
+    use std::sync::Mutex;
+
+    // Load model, tokenizer, and transformer via extracted helper
+    let state = load_apr_model_state(model_path, config)?;
+    let is_transformer = state.is_transformer;
+
+    // Create tokio runtime
+    let runtime = tokio::runtime::Runtime::new()
+        .map_err(|e| CliError::InferenceFailed(format!("Failed to create runtime: {e}")))?;
+
+    let bind_addr = config.bind_addr();
 
     #[derive(Clone, Serialize)]
     struct HealthResponse {
@@ -269,7 +344,6 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
                 post(move |Json(req): Json<CompletionRequest>| {
                     let state = state_for_completions.clone();
                     async move {
-                        // PMAT-189: Handle mutex lock poisoning gracefully (Jidoka)
                         let s = match state.lock() {
                             Ok(guard) => guard.clone(),
                             Err(_poisoned) => {
@@ -283,122 +357,33 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
                             }
                         };
 
-                        // PMAT-098: Use shared transformer (no reload per request)
-                        let transformer = match &s.transformer {
-                            Some(t) => t.clone(),
-                            None => {
-                                return (
-                                    StatusCode::BAD_REQUEST,
-                                    Json(serde_json::json!({
-                                        "error": "Transformer not loaded, inference not supported"
-                                    })),
-                                )
-                                    .into_response();
-                            }
-                        };
-
-                        let start = Instant::now();
-
-                        // PMAT-098: Use BPE tokenizer for proper encoding
-                        let input_tokens: Vec<u32> = if let Some(ref tok) = s.tokenizer {
-                            tok.tokenizer.encode(&req.prompt)
-                        } else {
-                            // Fallback: character-level
-                            req.prompt.chars().map(|c| c as u32).collect()
-                        };
-
-                        let eos_id = match &s.tokenizer {
-                            Some(tok) => tok.eos_token_id.unwrap_or(2),
-                            _ => 2,
-                        };
-
-                        // PMAT-103 FIX: Use generate_with_cache for O(n) generation
-                        // Previous code used generate() which calls forward() on ALL tokens each step = O(n²)
-                        // generate_with_cache() uses KV cache for incremental generation = O(n)
-                        let gen_start = Instant::now();
                         let max_tokens = req.max_tokens.min(128);
-
-                        let gen_config = realizar::apr_transformer::GenerateConfig {
+                        match run_apr_cpu_inference(
+                            &s,
+                            &req.prompt,
                             max_tokens,
-                            temperature: req.temperature.unwrap_or(0.0),
-                            top_p: 0.9,
-                            top_k: 0,
-                            repetition_penalty: 1.0,
-                            trace: false,
-                        };
-
-                        let output_tokens = {
-                            // PMAT-189: Handle transformer lock poisoning gracefully
-                            let t = match transformer.lock() {
-                                Ok(guard) => guard,
-                                Err(_poisoned) => {
-                                    return (
-                                        StatusCode::INTERNAL_SERVER_ERROR,
-                                        Json(serde_json::json!({
-                                            "error": "Transformer state corrupted (lock poisoned). Please restart the server."
-                                        })),
-                                    )
-                                        .into_response();
-                                }
-                            };
-                            match t.generate_with_cache(&input_tokens, &gen_config) {
-                                Ok(tokens) => tokens,
-                                Err(e) => {
-                                    return (
-                                        StatusCode::INTERNAL_SERVER_ERROR,
-                                        Json(serde_json::json!({"error": format!("Generate failed: {e}")})),
-                                    )
-                                        .into_response();
-                                }
+                            req.temperature.unwrap_or(0.0),
+                        ) {
+                            Ok(out) => {
+                                let tok_per_sec = if out.gen_duration.as_secs_f64() > 0.0 {
+                                    out.tokens_generated as f64 / out.gen_duration.as_secs_f64()
+                                } else {
+                                    0.0
+                                };
+                                Json(CompletionResponse {
+                                    text: out.text,
+                                    tokens_generated: out.tokens_generated,
+                                    latency_ms: out.gen_duration.as_millis() as u64,
+                                    tok_per_sec,
+                                })
+                                .into_response()
                             }
-                        };
-                        let gen_time = gen_start.elapsed();
-
-                        // Decode output
-                        let new_tokens = if output_tokens.len() > input_tokens.len() {
-                            &output_tokens[input_tokens.len()..]
-                        } else {
-                            &output_tokens[..]
-                        };
-
-                        // PMAT-099: Debug logging for token decoding
-                        eprintln!("[APR DEBUG] Generated {} total tokens, {} new tokens", output_tokens.len(), new_tokens.len());
-                        eprintln!("[APR DEBUG] New token IDs: {:?}", &new_tokens[..new_tokens.len().min(20)]);
-
-                        // PMAT-098: Use BPE tokenizer for proper decoding
-                        let text = if let Some(ref tok) = s.tokenizer {
-                            match tok.tokenizer.decode(new_tokens) {
-                                Ok(decoded) => {
-                                    eprintln!("[APR DEBUG] Decoded text: {:?}", decoded);
-                                    decoded
-                                }
-                                Err(e) => {
-                                    eprintln!("[APR DEBUG] Decode error: {e}");
-                                    String::new()
-                                }
-                            }
-                        } else {
-                            // Fallback: interpret as char codes
-                            let fallback: String = new_tokens.iter().filter_map(|&t| char::from_u32(t)).collect();
-                            eprintln!("[APR DEBUG] Fallback decode: {:?}", fallback);
-                            fallback
-                        };
-
-                        let tokens_generated = new_tokens.len();
-                        let latency_ms = start.elapsed().as_millis() as u64;
-                        let tok_per_sec = if gen_time.as_secs_f64() > 0.0 {
-                            tokens_generated as f64 / gen_time.as_secs_f64()
-                        } else {
-                            0.0
-                        };
-
-                        Json(CompletionResponse {
-                            text,
-                            tokens_generated,
-                            latency_ms,
-                            tok_per_sec,
-                        })
-                        .into_response()
+                            Err(e) => (
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                Json(serde_json::json!({"error": e})),
+                            )
+                                .into_response(),
+                        }
                     }
                 }),
             )
@@ -412,13 +397,11 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
                             use axum::response::sse::{Event, Sse};
                             use futures_util::stream;
 
-                            // F-TRACE-001/002/003: Parse X-Trace-Level header
                             let trace_level = headers
                                 .get("X-Trace-Level")
                                 .and_then(|v| v.to_str().ok())
                                 .map(str::to_lowercase);
 
-                            // PMAT-189: Handle mutex lock poisoning gracefully (Jidoka)
                             let s = match state.lock() {
                                 Ok(guard) => guard.clone(),
                                 Err(_poisoned) => {
@@ -429,24 +412,13 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
                                 }
                             };
 
-                            // PMAT-098: Use shared transformer (no reload per request)
-                            let transformer = match &s.transformer {
-                                Some(t) => t.clone(),
-                                None => {
-                                    return axum::Json(serde_json::json!({
-                                        "error": "Transformer not loaded, inference not supported"
-                                    }))
-                                    .into_response();
-                                }
-                            };
-
-                            // Extract messages from request
+                            // Extract messages and format as ChatML
                             let messages = req.get("messages").and_then(|m| m.as_array());
                             let stream_mode = req.get("stream").and_then(serde_json::Value::as_bool).unwrap_or(false);
                             let max_tokens = req.get("max_tokens").and_then(serde_json::Value::as_u64).unwrap_or(32) as usize;
+                            let temperature = req.get("temperature").and_then(serde_json::Value::as_f64).unwrap_or(0.0) as f32;
 
                             let prompt = if let Some(msgs) = messages {
-                                // Format as ChatML
                                 let mut prompt = String::new();
                                 for msg in msgs {
                                     let role = msg.get("role").and_then(|r| r.as_str()).unwrap_or("user");
@@ -460,96 +432,21 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
                             };
 
                             let start = Instant::now();
-
-                            // PMAT-098: Use BPE tokenizer for proper encoding
-                            let input_tokens: Vec<u32> = if let Some(ref tok) = s.tokenizer {
-                                tok.tokenizer.encode(&prompt)
-                            } else {
-                                // Fallback: character-level
-                                prompt.chars().map(|c| c as u32).collect()
-                            };
-
-                            let eos_id = match &s.tokenizer {
-                                Some(tok) => tok.eos_token_id.unwrap_or(151645),
-                                _ => 151645, // ChatML end token
-                            };
-
-                            // PMAT-103 FIX: Use generate_with_cache for O(n) generation
-                            // Previous code used generate() which calls forward() on ALL tokens each step = O(n²)
-                            // generate_with_cache() uses KV cache for incremental generation = O(n)
-                            let gen_start = Instant::now();
                             let max_tokens = max_tokens.min(256);
-                            let temperature = req.get("temperature").and_then(serde_json::Value::as_f64).unwrap_or(0.0) as f32;
 
-                            let gen_config = realizar::apr_transformer::GenerateConfig {
-                                max_tokens,
-                                temperature,
-                                top_p: 0.9,
-                                top_k: 0,
-                                repetition_penalty: 1.0,
-                                trace: false,
-                            };
-
-                            let output_tokens = {
-                                // PMAT-189: Handle transformer lock poisoning gracefully
-                                let t = match transformer.lock() {
-                                    Ok(guard) => guard,
-                                    Err(_poisoned) => {
-                                        return axum::Json(serde_json::json!({
-                                            "error": "Transformer state corrupted (lock poisoned). Please restart the server."
-                                        }))
-                                            .into_response();
-                                    }
-                                };
-                                match t.generate_with_cache(&input_tokens, &gen_config) {
-                                    Ok(tokens) => tokens,
-                                    Err(e) => {
-                                        return axum::Json(serde_json::json!({"error": format!("Generate failed: {e}")}))
-                                            .into_response();
-                                    }
+                            let out = match run_apr_cpu_inference(&s, &prompt, max_tokens, temperature) {
+                                Ok(out) => out,
+                                Err(e) => {
+                                    return axum::Json(serde_json::json!({"error": e})).into_response();
                                 }
                             };
-                            let elapsed = gen_start.elapsed();
 
-                            // Decode output
-                            let new_tokens = if output_tokens.len() > input_tokens.len() {
-                                &output_tokens[input_tokens.len()..]
-                            } else {
-                                &output_tokens[..]
-                            };
-
-                            // PMAT-099: Debug logging for token decoding
-                            eprintln!("[APR CHAT DEBUG] Input tokens: {}, Output tokens: {}, New tokens: {}",
-                                input_tokens.len(), output_tokens.len(), new_tokens.len());
-                            eprintln!("[APR CHAT DEBUG] New token IDs: {:?}", &new_tokens[..new_tokens.len().min(20)]);
-
-                            // PMAT-098: Use BPE tokenizer for proper decoding
-                            let output_text = if let Some(ref tok) = s.tokenizer {
-                                match tok.tokenizer.decode(new_tokens) {
-                                    Ok(decoded) => {
-                                        eprintln!("[APR CHAT DEBUG] Decoded text: {:?}", decoded);
-                                        decoded
-                                    }
-                                    Err(e) => {
-                                        eprintln!("[APR CHAT DEBUG] Decode error: {e}");
-                                        String::new()
-                                    }
-                                }
-                            } else {
-                                // Fallback: interpret as char codes
-                                let fallback: String = new_tokens.iter().filter_map(|&t| char::from_u32(t)).collect();
-                                eprintln!("[APR CHAT DEBUG] Fallback decode: {:?}", fallback);
-                                fallback
-                            };
-
-                            let tokens_generated = new_tokens.len();
-                            let tok_per_sec = if elapsed.as_secs_f64() > 0.0 {
-                                tokens_generated as f64 / elapsed.as_secs_f64()
+                            let tok_per_sec = if out.gen_duration.as_secs_f64() > 0.0 {
+                                out.tokens_generated as f64 / out.gen_duration.as_secs_f64()
                             } else {
                                 0.0
                             };
 
-                            // Generate unique ID
                             let request_id = format!(
                                 "chatcmpl-{}-{}",
                                 std::time::SystemTime::now()
@@ -565,7 +462,6 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
                                 .as_secs();
 
                             if stream_mode {
-                                // SSE streaming response (PAR-302) with [DONE] marker (F-HTTP-011)
                                 let response = serde_json::json!({
                                     "id": request_id,
                                     "object": "chat.completion.chunk",
@@ -573,28 +469,24 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
                                     "model": "apr",
                                     "choices": [{
                                         "index": 0,
-                                        "delta": {"role": "assistant", "content": output_text},
+                                        "delta": {"role": "assistant", "content": out.text},
                                         "finish_reason": "stop"
                                     }]
                                 });
 
-                                // Send data event followed by [DONE] marker per OpenAI SSE spec
                                 let events = vec![
                                     Ok::<_, std::convert::Infallible>(Event::default().data(response.to_string())),
                                     Ok::<_, std::convert::Infallible>(Event::default().data("[DONE]")),
                                 ];
-                                let stream = stream::iter(events);
-                                Sse::new(stream).into_response()
+                                Sse::new(stream::iter(events)).into_response()
                             } else {
-                                // Non-streaming response with trace support (F-TRACE-001/002/003)
                                 let latency_ms = start.elapsed().as_millis() as u64;
 
-                                // Build trace data based on X-Trace-Level header
                                 let trace_data = serde_json::json!({
                                     "total_time_us": latency_ms * 1000,
-                                    "prompt_tokens": input_tokens.len(),
-                                    "completion_tokens": tokens_generated,
-                                    "layers": 28  // Fixed for now
+                                    "prompt_tokens": out.input_token_count,
+                                    "completion_tokens": out.tokens_generated,
+                                    "layers": 28
                                 });
 
                                 let mut response = serde_json::json!({
@@ -604,13 +496,13 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
                                     "model": "apr",
                                     "choices": [{
                                         "index": 0,
-                                        "message": {"role": "assistant", "content": output_text},
+                                        "message": {"role": "assistant", "content": out.text},
                                         "finish_reason": "stop"
                                     }],
                                     "usage": {
-                                        "prompt_tokens": input_tokens.len(),
-                                        "completion_tokens": tokens_generated,
-                                        "total_tokens": input_tokens.len() + tokens_generated
+                                        "prompt_tokens": out.input_token_count,
+                                        "completion_tokens": out.tokens_generated,
+                                        "total_tokens": out.input_token_count + out.tokens_generated
                                     },
                                     "_apr_metrics": {
                                         "latency_ms": latency_ms,
@@ -618,7 +510,6 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
                                     }
                                 });
 
-                                // Add trace fields based on X-Trace-Level header
                                 if let Some(ref level) = trace_level {
                                     if let Some(obj) = response.as_object_mut() {
                                         match level.as_str() {
