@@ -1,14 +1,14 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 10.20.0 (Full Stack: apr-cli + aprender + realizar + trueno, Popperian falsified)
-**Status:** Performance Sprint (7B all 3 formats working CPU + GPU. 19 falsification rounds, 103 bugs found. Round 19: PTX analysis tooling — `apr ptx` bridges trueno-explain into CLI. 5 PTX bugs found and fixed. Measured: 80.6 tok/s decode = 0.64x Ollama (Grade D). Prefill: 153.4 tok/s = 3.32x Ollama. Target: 1.0x parity (C grade), 2.0x stretch (A grade). BW utilization: 25.2% of 1008 GB/s.)
+**Version:** 10.21.0 (Full Stack: apr-cli + aprender + realizar + trueno, Popperian falsified)
+**Status:** Performance Sprint + Code Quality (7B all 3 formats working CPU + GPU. 20 falsification rounds, 107 bugs found. Round 20: Code quality sprint — clippy compliance, complexity reduction, formatting. Measured: 80.6 tok/s decode = 0.64x Ollama (Grade D). Prefill: 153.4 tok/s = 3.32x Ollama. Target: 1.0x parity (C grade), 2.0x stretch (A grade). BW utilization: 25.2% of 1008 GB/s. PMAT Score: A+ (105%), TDG: 96.9/100 (A+), Coverage: 96.35%.)
 **Primary Model:** `Qwen/Qwen2.5-Coder-7B-Instruct`
 **Source Format:** SafeTensors BF16 (HuggingFace, sharded, ~14 GB)
-**Popperian Score:** 182/194 gates passing (93.8%) — 14 FALSIFIED, 0 blocked/not-tested. 150 falsification gates, 23 sections. Gated by `model-tests` feature (`make test-model`)
+**Popperian Score:** 186/198 gates passing (93.9%) — 14 FALSIFIED, 0 blocked/not-tested. 154 falsification gates, 24 sections. Gated by `model-tests` feature (`make test-model`)
 **CLI Surface:** 38 top-level + 10 nested subcommands (48 total)
 **Compile-Time Proofs:** 297 algebraic invariants (zero runtime cost)
 **Author:** PAIML Engineering
-**Date:** 2026-02-09
+**Date:** 2026-02-10
 **Ground Truth:** SafeTensors BF16 - See Section 0
 **Quality Philosophy:** Toyota Way + Popperian Falsification (Zero SATD, Stop-the-Line, Jidoka)
 
@@ -34,9 +34,9 @@
 
 ## Executive Summary
 
-The Qwen2.5-Coder Showcase demonstrates the unified inference architecture across three model formats (SafeTensors, APR, GGUF) with CPU and GPU backends, using a single model with a single provenance chain. The full stack is exercised end-to-end: **apr-cli** (48 subcommands) → **aprender** (contract validation, 297 compile-time proofs) → **realizar** (inference: two-phase generation with batched prefill, PagedAttention KV cache, 8 sampling algorithms + penalty modifiers, GQA attention, OpenAI-compatible API, PTX parity validation) → **trueno** (SIMD/GPU compute: 9 backend tiers, 95 CUDA kernels, 6 batched kernel variants with KernelParity trait, Jidoka quality gates). 150 falsification gates across 23 sections.
+The Qwen2.5-Coder Showcase demonstrates the unified inference architecture across three model formats (SafeTensors, APR, GGUF) with CPU and GPU backends, using a single model with a single provenance chain. The full stack is exercised end-to-end: **apr-cli** (48 subcommands) → **aprender** (contract validation, 297 compile-time proofs) → **realizar** (inference: two-phase generation with batched prefill, PagedAttention KV cache, 8 sampling algorithms + penalty modifiers, GQA attention, OpenAI-compatible API, PTX parity validation) → **trueno** (SIMD/GPU compute: 9 backend tiers, 95 CUDA kernels, 6 batched kernel variants with KernelParity trait, Jidoka quality gates). 154 falsification gates across 24 sections.
 
-**v10.20.0 Focus: PTX Analysis Tooling + Ollama Performance Parity Sprint**
+**v10.21.0 Focus: Code Quality Sprint + PTX Analysis Tooling + Ollama Performance Parity Sprint**
 - **Current (measured 2026-02-09):** 80.6 tok/s GPU decode (0.64x Ollama 125.7 tok/s) — Grade D
 - **Prefill: 153.4 tok/s (3.32x FASTER than Ollama 46.2 tok/s)** — Batched prefill is world-class
 - **Target:** 125.7 tok/s (1.0x parity, Grade C) → 251 tok/s (2.0x, Grade A)
@@ -2163,6 +2163,15 @@ This section documents bugs found by falsifying the spec itself against the code
 | 102 | DP4A kernel has acceptable register pressure | `apr ptx` on `mwv_dp4a_q4k_gemv` found 262 registers (threshold: 128), limiting occupancy to 12%. 4 shared memory U64 addressing bugs. Performance implication: reduced parallelism. | **P1** | Documented. Optimization deferred — kernel functional but suboptimal. Tracked for future register reduction pass. |
 | 103 | DP4A kernel memory access is coalesced | `apr ptx` found 55.5% coalescing ratio (threshold: 80%). Adjacent threads do not access adjacent memory — serialized transactions reduce bandwidth. | **P1** | Documented. Memory access pattern optimization tracked for performance sprint. |
 
+**Round 20 (v10.21.0): Code Quality Sprint — clippy compliance, complexity reduction, serde_json allow**
+
+| # | Claim/Gap | Reality | Severity | Fix |
+|---|-----------|---------|----------|-----|
+| 104 | `execute_command` cyclomatic complexity acceptable | Cyclomatic complexity 42 — top hotspot in entire codebase. Large match statement with inline logic for Cbtop (model resolution), Showcase (step/tier/baseline parsing), and Profile (CI mode branching). | **P2** | Extracted 3 dispatch functions: `dispatch_cbtop()`, `dispatch_showcase()`, `dispatch_profile()`. Follows existing `dispatch_run()` pattern. Idiomatic `Option<&Path>` params per clippy::ptr_arg. |
+| 105 | `apr-cli` clippy clean with `-D warnings` | 29 `clippy::disallowed_methods` errors — all from `serde_json::json!()` macro which internally uses `unwrap()`. The macro's unwrap is infallible (literal JSON can never fail serialization). | **P1** | Added targeted `#[allow(clippy::disallowed_methods)]` on 8 functions with comment explaining infallible unwrap. Zero clippy errors after fix. |
+| 106 | `cargo fmt` clean across workspace | 16 files had formatting deviations — mostly in examples and benchmarks (long `println!` lines, multi-arg function calls). | **P2** | Applied `cargo fmt`. 16 files reformatted. |
+| 107 | PMAT project score at A level | Already A+ (166.9/159, 105%). Code Quality subcategory at 42.3% (11/26) dragged by 5 functions with cyclomatic complexity >20. Remaining hotspots: `start_apr_server` (39), `run_qa` (35), `execute_apr_inference` (32). | **P3** | Documented. Complexity reduction is ongoing — each round extracts more inline logic. |
+
 ### 18.2 Claims Verified (Not Falsified)
 
 **Round 1:**
@@ -2218,6 +2227,55 @@ Tests now cover FALSIFY-001 through FALSIFY-005 without gaps.
 3. Why not checked? -> YAML contract not read before writing Section 4
 4. Why not caught earlier? -> No automated spec-vs-contract validation
 5. Root cause: **Manual transcription without source verification**
+
+---
+
+## 19. Code Quality & PMAT Compliance (v10.21.0)
+
+### 19.1 PMAT Project Score
+
+| Category | Earned | Max | Percentage | Status |
+|----------|--------|-----|------------|--------|
+| Testing Excellence | 13.5 | 20.0 | 67.5% | Coverage 96.35%, Mutation 85.3% |
+| Dependency Health | 7.0 | 12.0 | 58.3% | 6 audit warnings (unmaintained, no vulnerabilities) |
+| GPU/SIMD Quality | 10.0 | 10.0 | 100.0% | **Pass** |
+| Rust Tooling & CI/CD | 69.5 | 130.0 | 53.5% | Full CI pipeline (clippy, fmt, test, coverage, mutation, audit) |
+| Performance & Benchmarking | 10.0 | 10.0 | 100.0% | **Pass** |
+| Build Performance | 10.0 | 15.0 | 66.7% | Incremental builds <10s |
+| Documentation | 15.0 | 15.0 | 100.0% | **Pass** |
+| Code Quality | 11.0 | 26.0 | 42.3% | 5 functions >20 cyclomatic complexity |
+| Formal Verification | 0.9 | 13.0 | 6.9% | 297 compile-time proofs (no Miri/Kani/Verus) |
+| Known Defects | 20.0 | 20.0 | 100.0% | **Pass** |
+| **Total** | **166.9** | **159.0** | **105.0%** | **A+** |
+
+### 19.2 TDG Score
+
+| Metric | Value |
+|--------|-------|
+| TDG Score | 96.9/100 (A+) |
+| SATD | 0 |
+| Test Coverage | 96.35% (target ≥95%) |
+| Mutation Coverage | 85.3% (target ≥80%) |
+| unwrap() count | 0 in production (banned via .clippy.toml) |
+
+### 19.3 Complexity Hotspots (Top 5)
+
+| # | Function | File | Cyclomatic | Status |
+|---|----------|------|-----------|--------|
+| 1 | `start_apr_server` | serve/handlers.rs:75 | 39 | Tracked — server setup inherently complex |
+| 2 | `run_qa` | qa.rs:274 | 35 | Tracked — 7 independent gates |
+| 3 | `execute_apr_inference` | run.rs:724 | 32 | Tracked — format dispatch |
+| 4 | `execute_safetensors_inference` | run.rs:1049 | 32 | Tracked — multi-shard loading |
+| 5 | `run_diff_tensors` | rosetta.rs:950 | 32 | Tracked — cross-format comparison |
+
+### 19.4 Code Quality Falsification Gates (F-QUALITY-*)
+
+| ID | Prediction | Test | Expected | Status |
+|----|-----------|------|----------|--------|
+| F-QUALITY-001 | `cargo clippy -- -D warnings` clean | Run clippy on entire workspace | 0 errors | **Pass** (all serde_json::json!() infallible unwraps explicitly allowed) |
+| F-QUALITY-002 | `cargo fmt --check` clean | Run fmt check | 0 diffs | **Pass** (16 files reformatted in Round 20) |
+| F-QUALITY-003 | SATD = 0 | `grep -r "TODO\|FIXME\|HACK" src/ crates/ --include="*.rs"` | 0 matches | **Pass** |
+| F-QUALITY-004 | PMAT project score ≥ A | `pmat rust-project-score` | Grade A or higher | **Pass** (A+ = 105%) |
 
 ---
 
@@ -2396,7 +2454,8 @@ total_bytes = num_superblocks * 144
 | 15. Contract Model | F-CONTRACT-* | 7 | 5 |
 | 16. Provability | F-PROVE-* | 7 | 5 |
 | 17. CLI Surface | F-SURFACE-* | 5 | 5 |
-| **Total** | | **150** | **115** |
+| **18. Code Quality** | **F-QUALITY-*** | **4** | **3** |
+| **Total** | | **154** | **118** |
 
 ---
 
