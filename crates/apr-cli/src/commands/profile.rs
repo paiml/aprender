@@ -545,30 +545,39 @@ pub(crate) fn run(
         None
     };
 
-    // Output results based on format
+    print_profile_output(
+        format, &filtered_results, granular, perf_grade, detect_naive,
+        ollama_baseline.as_ref(), output_path, profile_time,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn print_profile_output(
+    format: OutputFormat,
+    results: &RealProfileResults,
+    granular: bool,
+    perf_grade: bool,
+    detect_naive: bool,
+    ollama_baseline: Option<&OllamaBaseline>,
+    output_path: Option<&Path>,
+    profile_time: std::time::Duration,
+) -> Result<(), CliError> {
     match format {
         OutputFormat::Human => {
-            print_human_results(&filtered_results, granular, perf_grade, detect_naive)?;
-
-            // Ollama parity report
-            if let Some(ref baseline) = ollama_baseline {
-                print_ollama_comparison(&filtered_results, baseline);
+            print_human_results(results, granular, perf_grade, detect_naive)?;
+            if let Some(baseline) = ollama_baseline {
+                print_ollama_comparison(results, baseline);
             }
-
             println!();
-            println!(
-                "{}",
-                format!("Profile completed in {:.2}s", profile_time.as_secs_f64()).dimmed()
-            );
+            println!("{}", format!("Profile completed in {:.2}s", profile_time.as_secs_f64()).dimmed());
         }
         OutputFormat::Json => {
-            print_json_results(&filtered_results)?;
+            print_json_results(results)?;
         }
         OutputFormat::Flamegraph => {
-            print_flamegraph(&filtered_results, output_path)?;
+            print_flamegraph(results, output_path)?;
         }
     }
-
     Ok(())
 }
 
@@ -1766,43 +1775,47 @@ fn compute_roofline(results: &RealProfileResults) -> RooflineAnalysis {
 
 /// Detect GPU hardware specs for roofline analysis
 /// Returns (peak_tflops_as_gflops, peak_bw_gbps, ai_threshold, model_name)
-fn detect_gpu_hardware() -> (f64, f64, f64, String) {
-    // Try reading from CUDA device properties via nvidia-smi
-    if let Ok(output) = std::process::Command::new("nvidia-smi")
+/// Look up known GPU specs (peak GFLOPS, peak BW GB/s, AI threshold) by name.
+fn gpu_specs_by_name(name: &str) -> (f64, f64, f64) {
+    match name {
+        n if n.contains("4090") => (82_580.0, 1008.0, 82.0),
+        n if n.contains("4080") => (48_740.0, 716.8, 68.0),
+        n if n.contains("4070") => (29_150.0, 504.2, 57.8),
+        n if n.contains("3090") => (35_580.0, 936.0, 38.0),
+        n if n.contains("3080") => (29_770.0, 760.0, 39.2),
+        n if n.contains("A100") => (19_500.0, 2039.0, 9.6),
+        n if n.contains("H100") => (51_200.0, 3350.0, 15.3),
+        _ => (30_000.0, 800.0, 37.5),
+    }
+}
+
+/// Parse nvidia-smi output to extract GPU name. Returns None if unavailable.
+fn query_nvidia_smi_gpu_name() -> Option<String> {
+    let output = std::process::Command::new("nvidia-smi")
         .args([
             "--query-gpu=name,memory.total,clocks.max.sm,clocks.max.mem",
             "--format=csv,noheader,nounits",
         ])
         .output()
-    {
-        if output.status.success() {
-            let info = String::from_utf8_lossy(&output.stdout);
-            if let Some(line) = info.lines().next() {
-                let parts: Vec<&str> = line.split(", ").collect();
-                if parts.len() >= 2 {
-                    let gpu_name = parts[0].trim().to_string();
-
-                    // Match known GPU specs (peak BW is most important for decode)
-                    let (peak_gflops, peak_bw, ai_thresh) = match gpu_name.as_str() {
-                        n if n.contains("4090") => (82_580.0, 1008.0, 82.0),
-                        n if n.contains("4080") => (48_740.0, 716.8, 68.0),
-                        n if n.contains("4070") => (29_150.0, 504.2, 57.8),
-                        n if n.contains("3090") => (35_580.0, 936.0, 38.0),
-                        n if n.contains("3080") => (29_770.0, 760.0, 39.2),
-                        n if n.contains("A100") => (19_500.0, 2039.0, 9.6),
-                        n if n.contains("H100") => (51_200.0, 3350.0, 15.3),
-                        _ => {
-                            // Fallback: estimate from memory total
-                            // Most consumer GPUs: ~500-1000 GB/s, ~20-80 TFLOPS
-                            (30_000.0, 800.0, 37.5)
-                        }
-                    };
-                    return (peak_gflops, peak_bw, ai_thresh, gpu_name);
-                }
-            }
-        }
+        .ok()?;
+    if !output.status.success() {
+        return None;
     }
+    let info = String::from_utf8_lossy(&output.stdout);
+    let line = info.lines().next()?;
+    let parts: Vec<&str> = line.split(", ").collect();
+    if parts.len() >= 2 {
+        Some(parts[0].trim().to_string())
+    } else {
+        None
+    }
+}
 
+fn detect_gpu_hardware() -> (f64, f64, f64, String) {
+    if let Some(gpu_name) = query_nvidia_smi_gpu_name() {
+        let (peak_gflops, peak_bw, ai_thresh) = gpu_specs_by_name(&gpu_name);
+        return (peak_gflops, peak_bw, ai_thresh, gpu_name);
+    }
     // Fallback: generic CUDA GPU
     (30_000.0, 800.0, 37.5, "CUDA GPU (unknown)".to_string())
 }
@@ -2153,8 +2166,21 @@ fn print_human_results(
     show_perf_grade: bool,
     detect_naive: bool,
 ) -> Result<(), CliError> {
-    // Model info header
-    let backend_str = results.backend.to_uppercase();
+    print_profile_model_header(results);
+    print_hotspot_table(results, granular);
+    print_category_summary(results);
+    print_kernel_launch_overhead(results);
+    print_per_layer_timing(results, granular);
+    print_roofline_section(results);
+    print_perf_grade_section(results, show_perf_grade);
+    print_naive_detection(results, detect_naive);
+    print_generation_performance(results);
+    print_latency_percentiles(results);
+    print_profile_summary(results);
+    Ok(())
+}
+
+fn print_profile_model_header(results: &RealProfileResults) {
     println!(
         "{}",
         output::kv_table(&[
@@ -2162,348 +2188,201 @@ fn print_human_results(
                 "Architecture",
                 format!(
                     "{} ({} layers, hidden={}, vocab={})",
-                    results.architecture,
-                    results.num_layers,
+                    results.architecture, results.num_layers,
                     output::count_fmt(results.hidden_dim),
                     output::count_fmt(results.vocab_size)
                 )
             ),
-            ("Backend", backend_str),
+            ("Backend", results.backend.to_uppercase()),
             ("Warmup", format!("{} passes", results.warmup_passes)),
             ("Measure", format!("{} passes", results.measure_passes)),
         ])
     );
     println!();
-
-    // Real data badge
     if results.is_real_data {
         println!("  {}", output::badge_pass("REAL PER-OPERATION TELEMETRY"));
     } else {
-        println!(
-            "  {}",
-            output::badge_warn("SIMULATED DATA (inference disabled)")
-        );
+        println!("  {}", output::badge_warn("SIMULATED DATA (inference disabled)"));
     }
     println!();
+}
 
-    // ── Per-Operation Hotspots ──
+fn print_hotspot_table(results: &RealProfileResults, granular: bool) {
     output::subheader("Per-Operation Hotspots");
     println!();
 
     let total_time = results.hotspots.iter().map(|h| h.time_us).sum::<f64>();
-
-    let mut hotspot_rows: Vec<Vec<String>> = Vec::new();
+    let mut rows: Vec<Vec<String>> = Vec::new();
     for (i, hotspot) in results.hotspots.iter().enumerate() {
-        let percent = if total_time > 0.0 {
-            (hotspot.time_us / total_time) * 100.0
-        } else {
-            0.0
-        };
+        let percent = if total_time > 0.0 { (hotspot.time_us / total_time) * 100.0 } else { 0.0 };
         let bar = output::progress_bar(percent as usize, 100, 20);
         let bottleneck_str = hotspot.bottleneck.as_deref().unwrap_or("-");
         let mut row = vec![
-            format!("#{}", i + 1),
-            hotspot.name.clone(),
-            format!("{:.0}µs", hotspot.time_us),
-            format!("{:.1}%", percent),
-            format!("{}", hotspot.count),
-            bottleneck_str.to_string(),
-            bar,
+            format!("#{}", i + 1), hotspot.name.clone(),
+            format!("{:.0}µs", hotspot.time_us), format!("{:.1}%", percent),
+            format!("{}", hotspot.count), bottleneck_str.to_string(), bar,
         ];
         if granular {
-            // F-PROFILE-008: Include bandwidth in detail column
-            let bw_str = hotspot
-                .bandwidth_gbs
-                .map(|bw| format!(", bw={:.1}GB/s", bw))
-                .unwrap_or_default();
-            let eff_str = hotspot
-                .efficiency_pct
-                .map(|e| format!(", eff={:.0}%", e))
-                .unwrap_or_default();
+            let bw_str = hotspot.bandwidth_gbs.map(|bw| format!(", bw={:.1}GB/s", bw)).unwrap_or_default();
+            let eff_str = hotspot.efficiency_pct.map(|e| format!(", eff={:.0}%", e)).unwrap_or_default();
             row.push(format!(
                 "avg={:.1}µs, min={:.1}µs, max={:.1}µs{}{}",
                 hotspot.avg_us, hotspot.min_us, hotspot.max_us, bw_str, eff_str
             ));
         }
-        hotspot_rows.push(row);
+        rows.push(row);
     }
 
-    if granular {
-        println!(
-            "{}",
-            output::table(
-                &[
-                    "#",
-                    "Operation",
-                    "Time",
-                    "%",
-                    "Calls",
-                    "Bottleneck",
-                    "Bar",
-                    "Detail"
-                ],
-                &hotspot_rows,
-            )
-        );
+    let headers: &[&str] = if granular {
+        &["#", "Operation", "Time", "%", "Calls", "Bottleneck", "Bar", "Detail"]
     } else {
-        println!(
-            "{}",
-            output::table(
-                &["#", "Operation", "Time", "%", "Calls", "Bottleneck", "Bar"],
-                &hotspot_rows,
-            )
-        );
-    }
+        &["#", "Operation", "Time", "%", "Calls", "Bottleneck", "Bar"]
+    };
+    println!("{}", output::table(headers, &rows));
+    println!();
+}
+
+fn print_category_summary(results: &RealProfileResults) {
+    let Some(ref cat) = results.category_summary else { return };
+    output::subheader("Category Summary");
+    println!();
+    let bw = 40;
+    let bar = |pct: f64| "█".repeat(((pct / 100.0) * bw as f64) as usize);
+    println!("  Attention: {:5.1}%  {}", cat.attention_pct, bar(cat.attention_pct).cyan());
+    println!("  FFN:       {:5.1}%  {}", cat.ffn_pct, bar(cat.ffn_pct).green());
+    println!("  Norm:      {:5.1}%  {}", cat.norm_pct, bar(cat.norm_pct).yellow());
+    println!("  Other:     {:5.1}%  {}", cat.other_pct, bar(cat.other_pct).dimmed());
+    println!();
+}
+
+fn print_kernel_launch_overhead(results: &RealProfileResults) {
+    if results.kernel_launch_overhead_us <= 0.0 { return; }
+    output::subheader("Kernel Launch Overhead (F-PROFILE-009)");
+    println!();
+    println!("  Overhead: {:.0}µs ({:.1}% of decode time)",
+        results.kernel_launch_overhead_us, results.kernel_launch_overhead_pct);
+    let msg = if results.kernel_launch_overhead_pct > 20.0 {
+        "WARNING: >20% overhead — consider kernel fusion".red()
+    } else if results.kernel_launch_overhead_pct > 10.0 {
+        "NOTE: 10-20% overhead — moderate, may benefit from CUDA graph".yellow()
+    } else {
+        "OK: <10% overhead — launch latency is not a bottleneck".green()
+    };
+    println!("  {msg}");
+    println!();
+}
+
+fn print_per_layer_timing(results: &RealProfileResults, granular: bool) {
+    if !granular || results.per_layer_us.is_empty() { return; }
+    output::subheader("Per-Layer Timing (real)");
     println!();
 
-    // ── Category Summary ──
-    if let Some(ref cat) = results.category_summary {
-        output::subheader("Category Summary");
-        println!();
-
-        let bar_width = 40;
-        let attn_bar = "█".repeat(((cat.attention_pct / 100.0) * bar_width as f64) as usize);
-        let ffn_bar = "█".repeat(((cat.ffn_pct / 100.0) * bar_width as f64) as usize);
-        let norm_bar = "█".repeat(((cat.norm_pct / 100.0) * bar_width as f64) as usize);
-        let other_bar = "█".repeat(((cat.other_pct / 100.0) * bar_width as f64) as usize);
-
-        println!(
-            "  Attention: {:5.1}%  {}",
-            cat.attention_pct,
-            attn_bar.cyan()
-        );
-        println!("  FFN:       {:5.1}%  {}", cat.ffn_pct, ffn_bar.green());
-        println!("  Norm:      {:5.1}%  {}", cat.norm_pct, norm_bar.yellow());
-        println!(
-            "  Other:     {:5.1}%  {}",
-            cat.other_pct,
-            other_bar.dimmed()
-        );
-        println!();
-    }
-
-    // ── F-PROFILE-009: Kernel Launch Overhead ──
-    if results.kernel_launch_overhead_us > 0.0 {
-        output::subheader("Kernel Launch Overhead (F-PROFILE-009)");
-        println!();
-        println!(
-            "  Overhead: {:.0}µs ({:.1}% of decode time)",
-            results.kernel_launch_overhead_us, results.kernel_launch_overhead_pct
-        );
-        if results.kernel_launch_overhead_pct > 20.0 {
-            println!(
-                "  {}",
-                "WARNING: >20% overhead — consider kernel fusion".red()
-            );
-        } else if results.kernel_launch_overhead_pct > 10.0 {
-            println!(
-                "  {}",
-                "NOTE: 10-20% overhead — moderate, may benefit from CUDA graph".yellow()
-            );
+    let max_t = results.per_layer_us.iter().copied().fold(0.0f64, f64::max);
+    let min_t = results.per_layer_us.iter().copied().fold(f64::INFINITY, f64::min);
+    if max_t > 0.0 && min_t > 0.0 {
+        let cv = (max_t - min_t) / ((max_t + min_t) / 2.0);
+        if cv < 0.01 {
+            println!("  {}", output::badge_warn("WARNING: Per-layer timing shows zero variance (may be estimated)"));
         } else {
-            println!(
-                "  {}",
-                "OK: <10% overhead — launch latency is not a bottleneck".green()
-            );
+            println!("  {} (CV={:.1}%)", output::badge_pass("Real per-layer timing verified"), cv * 100.0);
         }
         println!();
     }
 
-    // ── Per-Layer Timing (real, not estimated) ──
-    if granular && !results.per_layer_us.is_empty() {
-        output::subheader("Per-Layer Timing (real)");
-        println!();
+    let rows: Vec<Vec<String>> = results.per_layer_us.iter().enumerate().map(|(i, &t)| {
+        let bw = if max_t > 0.0 { ((t / max_t) * 100.0) as usize } else { 0 };
+        vec![format!("Layer {i}"), format!("{t:.1}µs"), output::progress_bar(bw, 100, 30)]
+    }).collect();
+    println!("{}", output::table(&["Layer", "Time", "Bar"], &rows));
+    println!();
+}
 
-        let max_layer_time = results.per_layer_us.iter().copied().fold(0.0f64, f64::max);
-        let min_layer_time = results
-            .per_layer_us
-            .iter()
-            .copied()
-            .fold(f64::INFINITY, f64::min);
+fn print_roofline_section(results: &RealProfileResults) {
+    let Some(ref r) = results.roofline else { return };
+    output::subheader("Roofline Analysis");
+    println!();
+    println!("  Hardware:       {} (peak {:.1} GFLOPS, {:.1} GB/s)", r.hardware_model, r.peak_compute, r.peak_bandwidth_gbps);
+    println!("  Achieved:       {:.1} GFLOPS, {:.1} GB/s", r.achieved_gflops, r.achieved_bandwidth_gbps);
+    println!("  Compute eff:    {:.1}%", r.compute_efficiency_pct);
+    println!("  Memory eff:     {:.1}%", r.memory_efficiency_pct);
+    println!("  Arithmetic int: {:.2} (threshold={:.1})", r.arithmetic_intensity, r.ai_threshold);
+    println!("  {}", if r.bottleneck == "MEMORY BOUND" {
+        output::badge_info(&r.bottleneck)
+    } else {
+        output::badge_warn(&r.bottleneck)
+    });
+    println!();
+    if r.bottleneck == "MEMORY BOUND" {
+        output::info("Decode is memory-bandwidth limited. Matmul operations transfer");
+        output::info("more bytes than FLOPs computed. Focus on memory access patterns.");
+    }
+    println!();
+}
 
-        // Show variation indicator — if all same, it's fake (divided)
-        if max_layer_time > 0.0 && min_layer_time > 0.0 {
-            let cv = (max_layer_time - min_layer_time) / ((max_layer_time + min_layer_time) / 2.0);
-            if cv < 0.01 {
-                println!(
-                    "  {}",
-                    output::badge_warn(
-                        "WARNING: Per-layer timing shows zero variance (may be estimated)"
-                    )
-                );
-            } else {
-                println!(
-                    "  {} (CV={:.1}%)",
-                    output::badge_pass("Real per-layer timing verified"),
-                    cv * 100.0
-                );
-            }
-            println!();
+fn print_perf_grade_section(results: &RealProfileResults, show: bool) {
+    if !show { return; }
+    let eff = results.roofline.as_ref().map_or(0.0, |r| r.memory_efficiency_pct.max(r.compute_efficiency_pct));
+    let grade = PerfGrade::from_efficiency(eff);
+    output::subheader("Performance Grade");
+    println!();
+    println!("  Grade: {}  —  {}", grade.label().bold(), grade.description());
+    println!("  Efficiency: {:.1}%", eff);
+    println!();
+}
+
+fn print_naive_detection(results: &RealProfileResults, detect: bool) {
+    if !detect { return; }
+    output::subheader("Naive Implementation Detection");
+    println!();
+    let mut found = false;
+    for h in &results.hotspots {
+        if h.count > 0 && h.avg_us > results.total_inference_us * 0.5 {
+            println!("  {} {} takes {:.1}% of total time ({:.0}µs avg) — check for scalar fallback",
+                output::badge_warn("NAIVE?"), h.name, h.percent, h.avg_us);
+            found = true;
         }
-
-        let mut layer_rows: Vec<Vec<String>> = Vec::new();
-        for (i, &time_us) in results.per_layer_us.iter().enumerate() {
-            let bar_width = if max_layer_time > 0.0 {
-                ((time_us / max_layer_time) * 100.0) as usize
-            } else {
-                0
-            };
-            layer_rows.push(vec![
-                format!("Layer {i}"),
-                format!("{time_us:.1}µs"),
-                output::progress_bar(bar_width, 100, 30),
-            ]);
-        }
-        println!("{}", output::table(&["Layer", "Time", "Bar"], &layer_rows));
-        println!();
     }
-
-    // ── Roofline Analysis ──
-    if let Some(ref roofline) = results.roofline {
-        output::subheader("Roofline Analysis");
-        println!();
-        println!(
-            "  Hardware:       {} (peak {:.1} GFLOPS, {:.1} GB/s)",
-            roofline.hardware_model, roofline.peak_compute, roofline.peak_bandwidth_gbps
-        );
-        println!(
-            "  Achieved:       {:.1} GFLOPS, {:.1} GB/s",
-            roofline.achieved_gflops, roofline.achieved_bandwidth_gbps
-        );
-        println!("  Compute eff:    {:.1}%", roofline.compute_efficiency_pct);
-        println!("  Memory eff:     {:.1}%", roofline.memory_efficiency_pct);
-        println!(
-            "  Arithmetic int: {:.2} (threshold={:.1})",
-            roofline.arithmetic_intensity, roofline.ai_threshold
-        );
-        println!(
-            "  {}",
-            if roofline.bottleneck == "MEMORY BOUND" {
-                output::badge_info(&roofline.bottleneck)
-            } else {
-                output::badge_warn(&roofline.bottleneck)
-            }
-        );
-        println!();
-
-        // Recommendation
-        if roofline.bottleneck == "MEMORY BOUND" {
-            output::info("Decode is memory-bandwidth limited. Matmul operations transfer");
-            output::info("more bytes than FLOPs computed. Focus on memory access patterns.");
-        }
-        println!();
+    if !found {
+        println!("  {} No obvious naive implementations detected", output::badge_pass("OK"));
     }
+    println!();
+}
 
-    // ── Perf Grade ──
-    if show_perf_grade {
-        let eff = results.roofline.as_ref().map_or(0.0, |r| {
-            r.memory_efficiency_pct.max(r.compute_efficiency_pct)
-        });
-        let grade = PerfGrade::from_efficiency(eff);
-        output::subheader("Performance Grade");
-        println!();
-        println!(
-            "  Grade: {}  —  {}",
-            grade.label().bold(),
-            grade.description()
-        );
-        println!("  Efficiency: {:.1}%", eff);
-        println!();
-    }
+fn print_generation_performance(results: &RealProfileResults) {
+    if results.decode_tok_s <= 0.0 && results.prefill_tok_s <= 0.0 { return; }
+    output::subheader("Generation Performance");
+    println!();
+    println!("{}", output::kv_table(&[
+        ("Decode throughput", format!("{:.1} tok/s", results.decode_tok_s)),
+        ("Prefill throughput", format!("{:.1} tok/s", results.prefill_tok_s)),
+        ("Tokens generated", format!("{}", results.total_tokens_generated)),
+    ]));
+    println!();
+}
 
-    // ── Detect Naive ──
-    if detect_naive {
-        output::subheader("Naive Implementation Detection");
-        println!();
-        let mut found_naive = false;
-        for h in &results.hotspots {
-            // Flag operations consuming >50% of total inference time
-            // A scalar (non-SIMD) path is typically 4-16x less efficient
-            if h.count > 0 && h.avg_us > results.total_inference_us * 0.5 {
-                println!(
-                    "  {} {} takes {:.1}% of total time ({:.0}µs avg) — check for scalar fallback",
-                    output::badge_warn("NAIVE?"),
-                    h.name,
-                    h.percent,
-                    h.avg_us
-                );
-                found_naive = true;
-            }
-        }
-        if !found_naive {
-            println!(
-                "  {} No obvious naive implementations detected",
-                output::badge_pass("OK")
-            );
-        }
-        println!();
-    }
+fn print_latency_percentiles(results: &RealProfileResults) {
+    if results.latency_p50_ms <= 0.0 { return; }
+    output::subheader("Latency Distribution (decode pass)");
+    println!();
+    println!("{}", output::kv_table(&[
+        ("p50 (median)", format!("{:.1} ms", results.latency_p50_ms)),
+        ("p95", format!("{:.1} ms", results.latency_p95_ms)),
+        ("p99", format!("{:.1} ms", results.latency_p99_ms)),
+        ("min", format!("{:.1} ms", results.latency_min_ms)),
+        ("max", format!("{:.1} ms", results.latency_max_ms)),
+    ]));
+    println!();
+}
 
-    // ── GPU Decode/Prefill Split ──
-    if results.decode_tok_s > 0.0 || results.prefill_tok_s > 0.0 {
-        output::subheader("Generation Performance");
-        println!();
-
-        println!(
-            "{}",
-            output::kv_table(&[
-                (
-                    "Decode throughput",
-                    format!("{:.1} tok/s", results.decode_tok_s)
-                ),
-                (
-                    "Prefill throughput",
-                    format!("{:.1} tok/s", results.prefill_tok_s)
-                ),
-                (
-                    "Tokens generated",
-                    format!("{}", results.total_tokens_generated)
-                ),
-            ])
-        );
-        println!();
-    }
-
-    // ── Latency Percentiles ──
-    if results.latency_p50_ms > 0.0 {
-        output::subheader("Latency Distribution (decode pass)");
-        println!();
-
-        println!(
-            "{}",
-            output::kv_table(&[
-                ("p50 (median)", format!("{:.1} ms", results.latency_p50_ms)),
-                ("p95", format!("{:.1} ms", results.latency_p95_ms)),
-                ("p99", format!("{:.1} ms", results.latency_p99_ms)),
-                ("min", format!("{:.1} ms", results.latency_min_ms)),
-                ("max", format!("{:.1} ms", results.latency_max_ms)),
-            ])
-        );
-        println!();
-    }
-
-    // ── Summary ──
+fn print_profile_summary(results: &RealProfileResults) {
     output::subheader("Summary");
     println!();
-    output::metric(
-        "Avg forward pass",
-        format!(
-            "{:.1}µs ({:.2}ms)",
-            results.total_inference_us,
-            results.total_inference_us / 1000.0
-        ),
-        "",
-    );
-    output::metric(
-        "Throughput",
-        format!("{:.2}", results.throughput_tok_s),
-        "tok/s",
-    );
+    output::metric("Avg forward pass",
+        format!("{:.1}µs ({:.2}ms)", results.total_inference_us, results.total_inference_us / 1000.0), "");
+    output::metric("Throughput", format!("{:.2}", results.throughput_tok_s), "tok/s");
     output::metric("Tokens per pass", results.tokens_per_pass, "");
     output::metric("Operations profiled", results.hotspots.len(), "");
     println!();
-
-    Ok(())
 }
 
 /// Print JSON output
