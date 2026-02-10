@@ -928,6 +928,10 @@ pub enum Commands {
         /// Disable GPU (force CPU-only profiling)
         #[arg(long)]
         no_gpu: bool,
+
+        /// Compare against another model format (F-PROFILE-011)
+        #[arg(long, value_name = "FILE")]
+        compare: Option<PathBuf>,
     },
 
     /// Falsifiable QA checklist for model releases
@@ -1577,6 +1581,7 @@ fn dispatch_profile(
     tokens: usize,
     ollama: bool,
     no_gpu: bool,
+    compare: Option<&Path>,
 ) -> Result<(), CliError> {
     let output_format = format.parse().unwrap_or(profile::OutputFormat::Human);
 
@@ -1595,6 +1600,9 @@ fn dispatch_profile(
             }
             Err(e) => Err(e),
         }
+    } else if let Some(compare_path) = compare {
+        // F-PROFILE-011: Cross-format performance comparison
+        profile::run_cross_format_comparison(file, compare_path, warmup, measure, tokens, no_gpu)
     } else {
         let profile_focus = focus
             .and_then(|f| f.parse().ok())
@@ -2102,6 +2110,7 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             tokens,
             ollama,
             no_gpu,
+            compare,
         } => dispatch_profile(
             file,
             *granular,
@@ -2124,6 +2133,7 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             *tokens,
             *ollama,
             *no_gpu,
+            compare.as_deref(),
         ),
 
         Commands::Qa {
@@ -5283,6 +5293,7 @@ mod tests {
             tokens: 32,
             ollama: false,
             no_gpu: false,
+            compare: None,
         };
         let paths = extract_model_paths(&cmd);
         assert_eq!(paths, vec![PathBuf::from("model.apr")]);
@@ -6615,6 +6626,7 @@ mod tests {
             tokens: 32,
             ollama: false,
             no_gpu: false,
+            compare: None,
         });
         let result = execute_command(&cli);
         assert!(

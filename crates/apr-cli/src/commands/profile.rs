@@ -2509,6 +2509,146 @@ fn print_flamegraph(
     Ok(())
 }
 
+// ============================================================================
+// Cross-format performance comparison (F-PROFILE-011)
+// ============================================================================
+
+/// Run side-by-side performance comparison between two model formats.
+///
+/// Profiles both models using real inference passes, then prints a table
+/// comparing decode tok/s, prefill tok/s, and latency percentiles.
+///
+/// Usage: `apr profile model.apr --compare model.gguf`
+#[cfg(feature = "inference")]
+pub(crate) fn run_cross_format_comparison(
+    path_a: &Path,
+    path_b: &Path,
+    warmup: usize,
+    measure: usize,
+    tokens: usize,
+    no_gpu: bool,
+) -> Result<(), CliError> {
+    let format_a = detect_format(path_a);
+    let format_b = detect_format(path_b);
+
+    println!(
+        "\n{}",
+        format!(
+            "Cross-Format Comparison: {} ({}) vs {} ({})",
+            path_a.file_name().and_then(|f| f.to_str()).unwrap_or("?"),
+            format_a.to_uppercase(),
+            path_b.file_name().and_then(|f| f.to_str()).unwrap_or("?"),
+            format_b.to_uppercase(),
+        )
+        .cyan()
+        .bold()
+    );
+    println!("{}", "=".repeat(60));
+
+    // Profile first model
+    println!(
+        "\n{}",
+        format!("[1/2] Profiling {} ({})...", path_a.display(), format_a).dimmed()
+    );
+    let results_a = if !no_gpu {
+        profile_gpu_or_cpu(path_a, warmup, measure, tokens)
+    } else {
+        profile_real_inference_cpu(path_a, warmup, measure)
+    }?;
+
+    // Profile second model
+    println!(
+        "\n{}",
+        format!("[2/2] Profiling {} ({})...", path_b.display(), format_b).dimmed()
+    );
+    let results_b = if !no_gpu {
+        profile_gpu_or_cpu(path_b, warmup, measure, tokens)
+    } else {
+        profile_real_inference_cpu(path_b, warmup, measure)
+    }?;
+
+    // Print comparison table
+    println!("\n{}", "Performance Comparison".green().bold());
+    println!("{}", "-".repeat(60));
+    println!(
+        "{:<24} {:>15} {:>15}",
+        "Metric",
+        format!("{} ({})", format_a.to_uppercase(), results_a.backend),
+        format!("{} ({})", format_b.to_uppercase(), results_b.backend),
+    );
+    println!("{}", "-".repeat(60));
+
+    print_comparison_row("Decode (tok/s)", results_a.decode_tok_s, results_b.decode_tok_s);
+    print_comparison_row("Prefill (tok/s)", results_a.prefill_tok_s, results_b.prefill_tok_s);
+    print_comparison_row(
+        "Throughput (tok/s)",
+        results_a.throughput_tok_s,
+        results_b.throughput_tok_s,
+    );
+    print_comparison_row("Latency p50 (ms)", results_a.latency_p50_ms, results_b.latency_p50_ms);
+    print_comparison_row("Latency p99 (ms)", results_a.latency_p99_ms, results_b.latency_p99_ms);
+    println!("{}", "-".repeat(60));
+
+    // Summary
+    let decode_ratio = if results_b.decode_tok_s > 0.0 {
+        results_a.decode_tok_s / results_b.decode_tok_s
+    } else {
+        0.0
+    };
+    let throughput_ratio = if results_b.throughput_tok_s > 0.0 {
+        results_a.throughput_tok_s / results_b.throughput_tok_s
+    } else {
+        0.0
+    };
+
+    println!(
+        "\n{} is {:.2}x decode, {:.2}x throughput vs {}",
+        format_a.to_uppercase(),
+        decode_ratio,
+        throughput_ratio,
+        format_b.to_uppercase(),
+    );
+
+    Ok(())
+}
+
+/// Try GPU profiling first, fall back to CPU if unavailable.
+#[cfg(feature = "inference")]
+fn profile_gpu_or_cpu(
+    path: &Path,
+    warmup: usize,
+    measure: usize,
+    tokens: usize,
+) -> Result<RealProfileResults, CliError> {
+    #[cfg(feature = "cuda")]
+    {
+        match profile_gpu_generation(path, warmup, measure, tokens) {
+            Ok(r) => return Ok(r),
+            Err(_) => {
+                output::info("GPU profiling unavailable, falling back to CPU");
+            }
+        }
+    }
+    let _ = tokens; // Unused in CPU-only builds
+    profile_real_inference_cpu(path, warmup, measure)
+}
+
+/// Print a comparison row with color-coded values.
+fn print_comparison_row(label: &str, value_a: f64, value_b: f64) {
+    let a_str = if value_a > 0.0 {
+        format!("{value_a:.1}")
+    } else {
+        "N/A".to_string()
+    };
+    let b_str = if value_b > 0.0 {
+        format!("{value_b:.1}")
+    } else {
+        "N/A".to_string()
+    };
+
+    println!("{:<24} {:>15} {:>15}", label, a_str, b_str);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -5264,5 +5404,51 @@ mod tests {
         let mlp_filtered = filter_results_by_focus(&results, ProfileFocus::Mlp);
         assert_eq!(mlp_filtered.hotspots.len(), 1);
         assert_eq!(mlp_filtered.hotspots[0].name, "MLP_Gate");
+    }
+
+    // ================================================================
+    // F-PROFILE-011: Cross-format comparison tests
+    // ================================================================
+
+    #[test]
+    fn test_detect_format_gguf() {
+        assert_eq!(detect_format(Path::new("model.gguf")), "gguf");
+    }
+
+    #[test]
+    fn test_detect_format_apr() {
+        assert_eq!(detect_format(Path::new("model.apr")), "apr");
+    }
+
+    #[test]
+    fn test_detect_format_safetensors() {
+        assert_eq!(detect_format(Path::new("weights.safetensors")), "safetensors");
+    }
+
+    #[test]
+    fn test_detect_format_bin_and_txt() {
+        assert_eq!(detect_format(Path::new("data.bin")), "pytorch");
+        assert_eq!(detect_format(Path::new("data.txt")), "unknown");
+    }
+
+    #[test]
+    fn test_print_comparison_row_does_not_panic() {
+        // Smoke test: ensure formatting works for various values
+        print_comparison_row("Test metric", 100.5, 200.3);
+        print_comparison_row("Zero case", 0.0, 100.0);
+        print_comparison_row("Both zero", 0.0, 0.0);
+    }
+
+    #[test]
+    fn test_cross_format_comparison_nonexistent_files() {
+        let result = run_cross_format_comparison(
+            Path::new("/tmp/nonexistent_a.gguf"),
+            Path::new("/tmp/nonexistent_b.apr"),
+            1,
+            1,
+            8,
+            true,
+        );
+        assert!(result.is_err(), "Should fail with nonexistent files");
     }
 }
