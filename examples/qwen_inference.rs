@@ -161,40 +161,42 @@ fn main() {
 }
 
 /// Load tokenizer from common locations
+/// Try to load a tokenizer from a direct file path.
+fn try_tokenizer_file(path: &std::path::Path) -> Option<BpeTokenizer> {
+    let json = std::fs::read_to_string(path).ok()?;
+    let tokenizer = load_from_json(&json).ok()?;
+    println!("Tokenizer: {}", path.display());
+    Some(tokenizer)
+}
+
+/// Search a directory's children for tokenizer.json.
+fn search_dir_for_tokenizer(dir: &std::path::Path) -> Option<BpeTokenizer> {
+    let entries = std::fs::read_dir(dir).ok()?;
+    for entry in entries.flatten() {
+        let path = entry.path().join("tokenizer.json");
+        if let Some(tok) = try_tokenizer_file(&path) {
+            return Some(tok);
+        }
+    }
+    None
+}
+
 fn load_tokenizer() -> Option<BpeTokenizer> {
     let candidates = [
-        // Custom cache location
         home_dir().map(|h| h.join(".cache/qwen2/tokenizer.json")),
-        // HuggingFace cache
         home_dir()
             .map(|h| h.join(".cache/huggingface/hub/models--Qwen--Qwen2-0.5B-Instruct/snapshots")),
     ];
 
     for candidate in candidates.iter().flatten() {
-        // Direct file
-        if candidate.exists() && candidate.is_file() {
-            if let Ok(json) = std::fs::read_to_string(candidate) {
-                if let Ok(tokenizer) = load_from_json(&json) {
-                    println!("Tokenizer: {}", candidate.display());
-                    return Some(tokenizer);
-                }
+        if candidate.is_file() {
+            if let Some(tok) = try_tokenizer_file(candidate) {
+                return Some(tok);
             }
         }
-
-        // Check in snapshot subdirectories
         if candidate.is_dir() {
-            if let Ok(entries) = std::fs::read_dir(candidate) {
-                for entry in entries.flatten() {
-                    let path = entry.path().join("tokenizer.json");
-                    if path.exists() {
-                        if let Ok(json) = std::fs::read_to_string(&path) {
-                            if let Ok(tokenizer) = load_from_json(&json) {
-                                println!("Tokenizer: {}", path.display());
-                                return Some(tokenizer);
-                            }
-                        }
-                    }
-                }
+            if let Some(tok) = search_dir_for_tokenizer(candidate) {
+                return Some(tok);
             }
         }
     }
@@ -202,35 +204,34 @@ fn load_tokenizer() -> Option<BpeTokenizer> {
     None
 }
 
+/// Search a directory's children for model.safetensors.
+fn search_dir_for_weights(dir: &std::path::Path) -> Option<std::path::PathBuf> {
+    let entries = std::fs::read_dir(dir).ok()?;
+    for entry in entries.flatten() {
+        let path = entry.path().join("model.safetensors");
+        if path.exists() {
+            return Some(path);
+        }
+    }
+    None
+}
+
 /// Find model weights in common locations
 fn find_model_weights() -> Option<std::path::PathBuf> {
     let candidates = [
-        // HuggingFace cache (Linux)
         home_dir()
             .map(|h| h.join(".cache/huggingface/hub/models--Qwen--Qwen2-0.5B-Instruct/snapshots")),
-        // Custom download location
         home_dir().map(|h| h.join(".cache/qwen2-0.5b")),
-        // Current directory
         Some(std::path::PathBuf::from(".")),
     ];
 
     for candidate in candidates.iter().flatten() {
-        // Check for direct model.safetensors
         let direct = candidate.join("model.safetensors");
         if direct.exists() {
             return Some(direct);
         }
-
-        // Check in snapshot subdirectories
-        if candidate.is_dir() {
-            if let Ok(entries) = std::fs::read_dir(candidate) {
-                for entry in entries.flatten() {
-                    let path = entry.path().join("model.safetensors");
-                    if path.exists() {
-                        return Some(path);
-                    }
-                }
-            }
+        if let Some(found) = search_dir_for_weights(candidate) {
+            return Some(found);
         }
     }
 
