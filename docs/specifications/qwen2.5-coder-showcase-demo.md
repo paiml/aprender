@@ -1,10 +1,10 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 10.34.0 (Full Stack: apr-cli + aprender + realizar + trueno, Popperian falsified)
-**Status:** ALL THREE PROJECTS A+ + ZERO SATD (7B all 3 formats working CPU + GPU. 34 falsification rounds, 170 bugs found. Round 34: deep complexity reduction across export.rs, routes.rs, handlers.rs, publish.rs. export.rs: decomposed apr_export (cog 42→6), export_to_gguf (cog 21→5), extract_apr_tokenizer_for_gguf (cog 32→8), infer_vocab_hidden (cog 39→8), infer_tokenizer_json (cog 38→6). routes.rs: all handlers extracted to module level (cog 34→2). handlers.rs: start_apr_server (cog 32→8), start_gguf_server (cog 32→8), start_apr_server_gpu (cog 34→5). publish.rs: execute (cyc 21→10). Max cyclomatic: 25 (down from 33). TDG: 96.9/100 A+. Project Score: 166.9/159 (105%). Coverage: 96.35%. SATD: 0/0/0.)
+**Version:** 10.35.0 (Full Stack: apr-cli + aprender + realizar + trueno, Popperian falsified)
+**Status:** ALL THREE PROJECTS A+ + ZERO SATD (7B all 3 formats working CPU + GPU. 35 falsification rounds, 178 bugs found. Round 35: rosetta.rs deep complexity reduction — 8 functions decomposed. load_tensor_data_direct (cyc 23→5), run_validate_stats (cyc 25→8), run_compare_inference (cyc 24→8), parse_trace_lines (cog 50→6), print_fingerprint_diff (cog 40→8), diff_tensor_pair (cog 31→12), run_fingerprint (cog 27→10), detect_quant_level_from_path (cog 27→5). Max cyclomatic: 21 (down from 25). TDG: 96.9/100 A+. Project Score: A+. Coverage: 96.35%. SATD: 0/0/0.)
 **Primary Model:** `Qwen/Qwen2.5-Coder-7B-Instruct`
 **Source Format:** SafeTensors BF16 (HuggingFace, sharded, ~14 GB)
-**Popperian Score:** 207/223 gates passing (92.8%) — 8 FALSIFIED, 0 blocked/not-tested. 166 falsification gates, 25 sections. 34 rounds, 170 bugs. Gated by `model-tests` feature (`make test-model`)
+**Popperian Score:** 207/223 gates passing (92.8%) — 8 FALSIFIED, 0 blocked/not-tested. 166 falsification gates, 25 sections. 35 rounds, 178 bugs. Gated by `model-tests` feature (`make test-model`)
 **CLI Surface:** 38 top-level + 10 nested subcommands (48 total)
 **Compile-Time Proofs:** 297 algebraic invariants (zero runtime cost)
 **Author:** PAIML Engineering
@@ -2304,6 +2304,19 @@ This section documents bugs found by falsifying the spec itself against the code
 | 168 | `&Option<String>` in dispatch_hex (clippy ref_option) | Handler parameter used `&Option<String>` instead of `Option<&str>` | **P3** | Changed to `Option<&str>` with `.as_deref()` at call site. |
 | 169 | `manual_let_else` in validate_shard_index | Used `let parent = match ... { Some(p) => p, None => return }` instead of `let-else` | **P3** | Changed to `let Some(parent) = path.parent() else { return Ok(()) }`. |
 | 170 | `manual_contains` in check.rs | Used `names.iter().any(|n| *n == "output.weight")` instead of `names.contains()` | **P3** | Changed to `names.contains(&"output.weight")`. |
+
+**Round 35 (v10.35.0): rosetta.rs deep complexity reduction — 8 functions decomposed**
+
+| # | Claim/Gap | Reality | Severity | Fix |
+|---|-----------|---------|----------|-----|
+| 171 | load_tensor_data_direct has cyclomatic 23 | Single 200-line function with 3 format-specific code paths (GGUF/SafeTensors/APR) all inlined | **P1** | Extracted `load_gguf_tensors_direct()`, `load_safetensors_tensors_direct()`, `load_apr_tensors_direct()`, `parse_apr_tensor_entry()`, `dequantize_by_dtype()`, `read_u64_le()`. Cyclomatic 23→5. |
+| 172 | run_validate_stats has cyclomatic 25 | Reference resolution, anomaly detection, and both JSON/text output all mixed in single function | **P1** | Extracted `resolve_reference_fingerprints()`, `print_validate_stats_json()`, `print_validate_stats_text()`. Cyclomatic 25→8. |
+| 173 | run_compare_inference has cyclomatic 24 | Token-by-token comparison loop with inline table rendering and tolerance validation | **P1** | Extracted `count_token_mismatches()`, `print_token_comparison_table()`, `validate_match_tolerance()`. Cyclomatic 24→8. |
+| 174 | parse_trace_lines has cognitive 50 | 6-level nested `if let` chains for parsing "Selected token:" and "Top 5 tokens:" lines | **P1** | Extracted `parse_selected_token()` and `parse_top5_line()` with Option-chaining. Cognitive 50→6. |
+| 175 | print_fingerprint_diff has cognitive 40 | Per-tensor comparison, anomaly detection, text rendering, and JSON summary all in single function | **P1** | Extracted `fingerprint_anomaly()`, `print_diff_row()`, `print_diff_summary()`. Used `let-else` for early continue. Cognitive 40→8. |
+| 176 | diff_tensor_pair has cognitive 31 | Nested match arms with 3 branches each containing conditional text output | **P2** | Extracted `print_both_present()` for the `(Some, Some)` case. Cognitive 31→12. |
+| 177 | run_fingerprint has cognitive 27 | Banner printing, diff-vs-single branching, and file output all in main function | **P2** | Extracted `print_fingerprint_banner()` and `run_fingerprint_body()`. Cognitive 27→10. |
+| 178 | detect_quant_level_from_path has cognitive 27 | Nested `for` loops inside `if` blocks for pattern matching, plus `ends_with` on lowercased string triggers clippy `case_sensitive_file_extension_comparisons` | **P2** | Extracted `match_quant_pattern()` helper with `find()`. Replaced `ends_with` with `Path::extension()` match. Cognitive 27→5. |
 
 ### 18.2 Claims Verified (Not Falsified)
 
