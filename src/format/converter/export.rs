@@ -711,35 +711,12 @@ fn export_to_gguf(
     export_tensors_to_gguf(&mut writer, &gguf_tensors, &metadata)
 }
 
-/// PMAT-252: Raw block passthrough for APR→GGUF export.
-///
-/// Reads raw tensor bytes directly from APR file (Q4K super-blocks, F32 vectors,
-/// etc.) and writes them to GGUF without any dequantization/requantization.
-/// This is LOSSLESS for quantized data — zero quality degradation.
-///
-/// The key insight: APR and GGUF both store Q4K blocks in the same binary format
-/// (256-element super-blocks, 144 bytes each). The only differences are:
-/// 1. Tensor names (HF convention in APR → GGML convention in GGUF)
-/// 2. Shape representation (APR [rows, cols] → GGUF [ne0=cols, ne1=rows])
-/// 3. File-level metadata (APR header → GGUF KV pairs)
-fn export_apr_to_gguf_raw(input: &Path, output: &Path) -> Result<ExportReport> {
-    use crate::format::gguf::{export_tensors_to_gguf, GgmlType, GgufTensor, GgufValue};
-    use crate::format::v2::{AprV2Reader, TensorDType};
-    use std::fs::File;
-    use std::io::BufWriter;
+/// Build GGUF architecture metadata from APR model metadata
+fn build_gguf_arch_metadata(
+    apr_metadata: &crate::format::v2::AprV2Metadata,
+) -> Vec<(String, crate::format::gguf::GgufValue)> {
+    use crate::format::gguf::GgufValue;
 
-    let data = fs::read(input).map_err(|e| AprenderError::FormatError {
-        message: format!("Failed to read APR file: {e}"),
-    })?;
-    let original_size = data.len();
-
-    let reader = AprV2Reader::from_bytes(&data).map_err(|e| AprenderError::FormatError {
-        message: format!("Failed to parse APR file: {e:?}"),
-    })?;
-
-    let apr_metadata = reader.metadata().clone();
-
-    // Build GGUF metadata (same logic as export_to_gguf but from APR metadata directly)
     let arch = apr_metadata.architecture.as_deref().unwrap_or("qwen2");
     let hidden_size = apr_metadata.hidden_size.unwrap_or(4096);
     let num_layers = apr_metadata.num_layers.unwrap_or(32);
@@ -760,7 +737,7 @@ fn export_apr_to_gguf_raw(input: &Path, output: &Path) -> Result<ExportReport> {
         .clone()
         .unwrap_or_else(|| "model".to_string());
 
-    let mut metadata = vec![
+    vec![
         (
             "general.architecture".to_string(),
             GgufValue::String(arch.to_string()),
@@ -811,12 +788,18 @@ fn export_apr_to_gguf_raw(input: &Path, output: &Path) -> Result<ExportReport> {
             format!("{arch}.vocab_size"),
             GgufValue::Uint32(vocab_size as u32),
         ),
-    ];
+    ]
+}
 
-    // GH-253: Read tokenizer data from APR embedded custom fields (NOT sibling files).
-    // GGUF→APR import stores vocab, merges, token_type, BOS/EOS/pad IDs, and chat_template
-    // in APR custom fields. Export reads them back for lossless GGUF round-trip.
+/// Extract tokenizer metadata from APR custom fields for GGUF export (GH-253)
+fn extract_apr_tokenizer_for_gguf(
+    apr_metadata: &crate::format::v2::AprV2Metadata,
+) -> Vec<(String, crate::format::gguf::GgufValue)> {
+    use crate::format::gguf::GgufValue;
+
+    let mut entries = Vec::new();
     let custom = &apr_metadata.custom;
+    let arch = apr_metadata.architecture.as_deref().unwrap_or("qwen2");
 
     // Tokenizer model type: "gpt2" for byte-level BPE (Qwen, GPT-2), "llama" for SentencePiece
     // GH-253-3: APR stores raw model_type from GGUF which may be "bpe" — map to "gpt2"
@@ -825,19 +808,19 @@ fn export_apr_to_gguf_raw(input: &Path, output: &Path) -> Result<ExportReport> {
         .and_then(|v| v.as_str())
         .unwrap_or("gpt2");
     let model_type = match raw_model_type {
-        "bpe" => "gpt2", // byte-level BPE uses "gpt2" in GGUF, not "bpe"
+        "bpe" => "gpt2",
         other => other,
     };
-    metadata.push((
+    entries.push((
         "tokenizer.ggml.model".to_string(),
         GgufValue::String(model_type.to_string()),
     ));
-    metadata.push((
+    entries.push((
         "tokenizer.ggml.pre".to_string(),
         GgufValue::String(arch.to_string()),
     ));
 
-    // Vocabulary: read from APR custom field "tokenizer.vocabulary"
+    // Vocabulary
     if let Some(vocab_val) = custom.get("tokenizer.vocabulary") {
         if let Some(vocab_arr) = vocab_val.as_array() {
             let tokens: Vec<String> = vocab_arr
@@ -845,7 +828,7 @@ fn export_apr_to_gguf_raw(input: &Path, output: &Path) -> Result<ExportReport> {
                 .filter_map(|v| v.as_str().map(String::from))
                 .collect();
             if !tokens.is_empty() {
-                metadata.push((
+                entries.push((
                     "tokenizer.ggml.tokens".to_string(),
                     GgufValue::ArrayString(tokens),
                 ));
@@ -861,7 +844,7 @@ fn export_apr_to_gguf_raw(input: &Path, output: &Path) -> Result<ExportReport> {
                 .filter_map(|v| v.as_str().map(String::from))
                 .collect();
             if !merges.is_empty() {
-                metadata.push((
+                entries.push((
                     "tokenizer.ggml.merges".to_string(),
                     GgufValue::ArrayString(merges),
                 ));
@@ -872,7 +855,7 @@ fn export_apr_to_gguf_raw(input: &Path, output: &Path) -> Result<ExportReport> {
     // BOS token ID
     if let Some(bos_val) = custom.get("tokenizer.bos_token_id") {
         if let Some(bos) = bos_val.as_u64() {
-            metadata.push((
+            entries.push((
                 "tokenizer.ggml.bos_token_id".to_string(),
                 GgufValue::Uint32(bos as u32),
             ));
@@ -882,14 +865,14 @@ fn export_apr_to_gguf_raw(input: &Path, output: &Path) -> Result<ExportReport> {
     // EOS token ID
     if let Some(eos_val) = custom.get("tokenizer.eos_token_id") {
         if let Some(eos) = eos_val.as_u64() {
-            metadata.push((
+            entries.push((
                 "tokenizer.ggml.eos_token_id".to_string(),
                 GgufValue::Uint32(eos as u32),
             ));
         }
     }
 
-    // GH-253-1: Token type array (per-token: 1=normal, 3=special, etc.)
+    // GH-253-1: Token type array
     if let Some(tt_val) = custom.get("tokenizer.token_type") {
         if let Some(tt_arr) = tt_val.as_array() {
             let types: Vec<i32> = tt_arr
@@ -897,7 +880,7 @@ fn export_apr_to_gguf_raw(input: &Path, output: &Path) -> Result<ExportReport> {
                 .filter_map(|v| v.as_i64().map(|n| n as i32))
                 .collect();
             if !types.is_empty() {
-                metadata.push((
+                entries.push((
                     "tokenizer.ggml.token_type".to_string(),
                     GgufValue::ArrayInt32(types),
                 ));
@@ -908,7 +891,7 @@ fn export_apr_to_gguf_raw(input: &Path, output: &Path) -> Result<ExportReport> {
     // GH-253-1: Padding token ID
     if let Some(pad_val) = custom.get("tokenizer.padding_token_id") {
         if let Some(pad) = pad_val.as_u64() {
-            metadata.push((
+            entries.push((
                 "tokenizer.ggml.padding_token_id".to_string(),
                 GgufValue::Uint32(pad as u32),
             ));
@@ -918,7 +901,7 @@ fn export_apr_to_gguf_raw(input: &Path, output: &Path) -> Result<ExportReport> {
     // GH-253-1: add_bos_token flag
     if let Some(add_bos_val) = custom.get("tokenizer.add_bos_token") {
         if let Some(add_bos) = add_bos_val.as_bool() {
-            metadata.push((
+            entries.push((
                 "tokenizer.ggml.add_bos_token".to_string(),
                 GgufValue::Bool(add_bos),
             ));
@@ -926,18 +909,58 @@ fn export_apr_to_gguf_raw(input: &Path, output: &Path) -> Result<ExportReport> {
     }
 
     // GH-253-1: Chat template (Jinja2)
-    // Check APR metadata chat_template field first, then custom field
     let chat_tmpl = apr_metadata.chat_template.as_deref().or_else(|| {
         custom
             .get("tokenizer.chat_template")
             .and_then(|v| v.as_str())
     });
     if let Some(tmpl) = chat_tmpl {
-        metadata.push((
+        entries.push((
             "tokenizer.chat_template".to_string(),
             GgufValue::String(tmpl.to_string()),
         ));
     }
+
+    entries
+}
+
+/// PMAT-252: Raw block passthrough for APR→GGUF export.
+///
+/// Reads raw tensor bytes directly from APR file (Q4K super-blocks, F32 vectors,
+/// etc.) and writes them to GGUF without any dequantization/requantization.
+/// This is LOSSLESS for quantized data — zero quality degradation.
+///
+/// The key insight: APR and GGUF both store Q4K blocks in the same binary format
+/// (256-element super-blocks, 144 bytes each). The only differences are:
+/// 1. Tensor names (HF convention in APR → GGML convention in GGUF)
+/// 2. Shape representation (APR [rows, cols] → GGUF [ne0=cols, ne1=rows])
+/// 3. File-level metadata (APR header → GGUF KV pairs)
+fn export_apr_to_gguf_raw(input: &Path, output: &Path) -> Result<ExportReport> {
+    use crate::format::gguf::{export_tensors_to_gguf, GgmlType, GgufTensor};
+    use crate::format::v2::{AprV2Reader, TensorDType};
+    use std::fs::File;
+    use std::io::BufWriter;
+
+    let data = fs::read(input).map_err(|e| AprenderError::FormatError {
+        message: format!("Failed to read APR file: {e}"),
+    })?;
+    let original_size = data.len();
+
+    let reader = AprV2Reader::from_bytes(&data).map_err(|e| AprenderError::FormatError {
+        message: format!("Failed to parse APR file: {e:?}"),
+    })?;
+
+    let apr_metadata = reader.metadata().clone();
+
+    let arch = apr_metadata.architecture.as_deref().unwrap_or("qwen2");
+    let num_layers = apr_metadata.num_layers.unwrap_or(32);
+    let num_heads = apr_metadata.num_heads.unwrap_or(32);
+    let num_kv_heads = apr_metadata.num_kv_heads.unwrap_or(num_heads);
+    let hidden_size = apr_metadata.hidden_size.unwrap_or(4096);
+
+    // Build metadata from architecture config + tokenizer custom fields
+    let mut metadata = build_gguf_arch_metadata(&apr_metadata);
+    metadata.extend(extract_apr_tokenizer_for_gguf(&apr_metadata));
 
     // GH-253-4: Validate metadata completeness before writing
     let validated = ValidatedGgufMetadata::validate(metadata)?;

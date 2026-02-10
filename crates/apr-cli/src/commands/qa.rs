@@ -841,6 +841,35 @@ fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
     }
 }
 
+/// Run warmup+measure loop for throughput benchmarking.
+///
+/// Calls `generate_fn` for `warmup` iterations (discarding results), then
+/// measures `iterations` runs to compute tokens per second.
+#[cfg(feature = "inference")]
+fn measure_generate_throughput(
+    warmup: usize,
+    iterations: usize,
+    prompt_len: usize,
+    overall_start: Instant,
+    mut generate_fn: impl FnMut() -> Vec<u32>,
+) -> (f64, Duration) {
+    for _ in 0..warmup {
+        let _ = generate_fn();
+    }
+
+    let mut total_tokens = 0usize;
+    let measure_start = Instant::now();
+    for _ in 0..iterations {
+        let output = generate_fn();
+        total_tokens += output.len().saturating_sub(prompt_len);
+    }
+    let measure_time = measure_start.elapsed();
+    (
+        total_tokens as f64 / measure_time.as_secs_f64(),
+        overall_start.elapsed(),
+    )
+}
+
 /// Gate 2: Throughput Falsification
 ///
 /// Runs a benchmark and asserts minimum tokens per second.
@@ -895,22 +924,12 @@ fn run_throughput_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
                         CliError::ValidationFailed(format!("CUDA init failed: {e}"))
                     })?;
 
-                    for _ in 0..config.warmup {
-                        let _ = cuda_model.generate_gpu_resident(&prompt_tokens, &gen_config);
-                    }
-
-                    let mut total_tokens = 0usize;
-                    let measure_start = Instant::now();
-                    for _ in 0..config.iterations {
-                        let output = cuda_model
-                            .generate_gpu_resident(&prompt_tokens, &gen_config)
-                            .unwrap_or_default();
-                        total_tokens += output.len().saturating_sub(prompt_tokens.len());
-                    }
-                    let measure_time = measure_start.elapsed();
-                    (
-                        total_tokens as f64 / measure_time.as_secs_f64(),
-                        start.elapsed(),
+                    measure_generate_throughput(
+                        config.warmup,
+                        config.iterations,
+                        prompt_tokens.len(),
+                        start,
+                        || cuda_model.generate_gpu_resident(&prompt_tokens, &gen_config).unwrap_or_default(),
                     )
                 } else {
                     let mapped = MappedGGUFModel::from_path(path)
@@ -918,22 +937,12 @@ fn run_throughput_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
                     let model = OwnedQuantizedModel::from_mapped(&mapped)
                         .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
 
-                    for _ in 0..config.warmup {
-                        let _ = model.generate_with_cache(&prompt_tokens, &gen_config);
-                    }
-
-                    let mut total_tokens = 0usize;
-                    let measure_start = Instant::now();
-                    for _ in 0..config.iterations {
-                        let output = model
-                            .generate_with_cache(&prompt_tokens, &gen_config)
-                            .unwrap_or_default();
-                        total_tokens += output.len().saturating_sub(prompt_tokens.len());
-                    }
-                    let measure_time = measure_start.elapsed();
-                    (
-                        total_tokens as f64 / measure_time.as_secs_f64(),
-                        start.elapsed(),
+                    measure_generate_throughput(
+                        config.warmup,
+                        config.iterations,
+                        prompt_tokens.len(),
+                        start,
+                        || model.generate_with_cache(&prompt_tokens, &gen_config).unwrap_or_default(),
                     )
                 }
             }
@@ -958,23 +967,12 @@ fn run_throughput_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
                     ..Default::default()
                 };
 
-                // Warmup
-                for _ in 0..config.warmup {
-                    let _ = transformer.generate_with_cache(&prompt_tokens, &gen_config);
-                }
-
-                let mut total_tokens = 0usize;
-                let measure_start = Instant::now();
-                for _ in 0..config.iterations {
-                    let output = transformer
-                        .generate_with_cache(&prompt_tokens, &gen_config)
-                        .unwrap_or_default();
-                    total_tokens += output.len().saturating_sub(prompt_tokens.len());
-                }
-                let measure_time = measure_start.elapsed();
-                (
-                    total_tokens as f64 / measure_time.as_secs_f64(),
-                    start.elapsed(),
+                measure_generate_throughput(
+                    config.warmup,
+                    config.iterations,
+                    prompt_tokens.len(),
+                    start,
+                    || transformer.generate_with_cache(&prompt_tokens, &gen_config).unwrap_or_default(),
                 )
             }
             ModelFormat::SafeTensors => {
@@ -1008,23 +1006,12 @@ fn run_throughput_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
                     ..Default::default()
                 };
 
-                // Warmup
-                for _ in 0..config.warmup {
-                    let _ = transformer.generate_with_cache(&prompt_tokens, &gen_config);
-                }
-
-                let mut total_tokens = 0usize;
-                let measure_start = Instant::now();
-                for _ in 0..config.iterations {
-                    let output = transformer
-                        .generate_with_cache(&prompt_tokens, &gen_config)
-                        .unwrap_or_default();
-                    total_tokens += output.len().saturating_sub(prompt_tokens.len());
-                }
-                let measure_time = measure_start.elapsed();
-                (
-                    total_tokens as f64 / measure_time.as_secs_f64(),
-                    start.elapsed(),
+                measure_generate_throughput(
+                    config.warmup,
+                    config.iterations,
+                    prompt_tokens.len(),
+                    start,
+                    || transformer.generate_with_cache(&prompt_tokens, &gen_config).unwrap_or_default(),
                 )
             }
         };

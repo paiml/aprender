@@ -29,6 +29,101 @@ use std::path::Path;
 // High-level API
 // ============================================================================
 
+/// Resolve tied embeddings for F32 tensor maps (PMAT-100).
+///
+/// If lm_head.weight is missing but embed_tokens exists, synthesizes lm_head from embed_tokens.
+/// Returns (possibly modified tensor map, whether tied embeddings were detected).
+fn resolve_f32_tied_embeddings(
+    tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+) -> (BTreeMap<String, (Vec<f32>, Vec<usize>)>, bool) {
+    let mut result = tensors.clone();
+    let has_lm_head = tensors.keys().any(|k| k == "lm_head.weight");
+    if !has_lm_head {
+        let embed_key = tensors
+            .keys()
+            .find(|k| k.contains("embed_tokens.weight") || *k == "token_embd.weight")
+            .cloned();
+        if let Some(embed_name) = embed_key {
+            if let Some((embed_data, embed_shape)) = tensors.get(&embed_name) {
+                result.insert(
+                    "lm_head.weight".to_string(),
+                    (embed_data.clone(), embed_shape.clone()),
+                );
+            }
+        }
+    }
+    let has_tied = !has_lm_head && result.contains_key("lm_head.weight");
+    (result, has_tied)
+}
+
+/// Insert tokenizer metadata into APR custom fields for F32 tensor import path.
+fn insert_f32_tokenizer_metadata(
+    tok: &GgufTokenizer,
+    custom: &mut std::collections::HashMap<String, serde_json::Value>,
+) {
+    if !tok.vocabulary.is_empty() {
+        let vocab_array: Vec<serde_json::Value> = tok
+            .vocabulary
+            .iter()
+            .map(|s| serde_json::Value::String(s.clone()))
+            .collect();
+        custom.insert(
+            "tokenizer.vocabulary".to_string(),
+            serde_json::Value::Array(vocab_array),
+        );
+        custom.insert(
+            "tokenizer.vocab_size".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(tok.vocabulary.len())),
+        );
+    }
+    if let Some(ref model_type) = tok.model_type {
+        custom.insert(
+            "tokenizer.model_type".to_string(),
+            serde_json::Value::String(model_type.clone()),
+        );
+    }
+    if let Some(bos) = tok.bos_token_id {
+        custom.insert(
+            "tokenizer.bos_token_id".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(bos)),
+        );
+    }
+    if let Some(eos) = tok.eos_token_id {
+        custom.insert(
+            "tokenizer.eos_token_id".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(eos)),
+        );
+    }
+    if let Some(ref arch) = tok.architecture {
+        custom.insert(
+            "tokenizer.architecture".to_string(),
+            serde_json::Value::String(arch.clone()),
+        );
+    }
+    if let Some(ref name) = tok.model_name {
+        custom.insert(
+            "tokenizer.model_name".to_string(),
+            serde_json::Value::String(name.clone()),
+        );
+    }
+    // PMAT-221 FIX: Embed BPE merge rules for SafeTensors path
+    if !tok.merges.is_empty() {
+        eprintln!(
+            "[PMAT-221] Embedding {} BPE merge rules into APR metadata (SafeTensors path)",
+            tok.merges.len()
+        );
+        let merges_array: Vec<serde_json::Value> = tok
+            .merges
+            .iter()
+            .map(|s| serde_json::Value::String(s.clone()))
+            .collect();
+        custom.insert(
+            "tokenizer.merges".to_string(),
+            serde_json::Value::Array(merges_array),
+        );
+    }
+}
+
 /// Write tensors to native APR format
 ///
 /// PMAT-223: `user_metadata` preserves arbitrary user metadata from SafeTensors `__metadata__`
@@ -47,46 +142,13 @@ pub(crate) fn write_apr_file(
     user_metadata: &UserMetadata,
 ) -> Result<()> {
     // PMAT-100: Handle tied embeddings (common in Qwen, LLaMA, etc.)
-    // Many models share embed_tokens.weight with lm_head.weight to reduce parameters.
-    // HuggingFace SafeTensors omits lm_head.weight when tied, but realizar's
-    // AprTransformer::from_apr_bytes expects lm_head.weight to exist.
-    // Solution: If lm_head.weight is missing but embed_tokens exists, copy it.
-    // Do this FIRST so param_count and tensor_shapes include it.
-    let tensors_with_lm_head: BTreeMap<String, (Vec<f32>, Vec<usize>)> = {
-        let mut result = tensors.clone();
-        let has_lm_head = tensors.keys().any(|k| k == "lm_head.weight");
-        if !has_lm_head {
-            // Try to find embed_tokens.weight (may have different prefixes)
-            let embed_key = tensors
-                .keys()
-                .find(|k| k.contains("embed_tokens.weight") || *k == "token_embd.weight")
-                .cloned();
-            if let Some(embed_name) = embed_key {
-                if let Some((embed_data, embed_shape)) = tensors.get(&embed_name) {
-                    // For tied embeddings, lm_head shares weight with embed_tokens
-                    // embed_tokens: [vocab_size, hidden_dim]
-                    // lm_head: [vocab_size, hidden_dim] (same shape for realizar)
-                    result.insert(
-                        "lm_head.weight".to_string(),
-                        (embed_data.clone(), embed_shape.clone()),
-                    );
-                }
-            }
-        }
-        result
-    };
+    let (tensors_with_lm_head, has_tied_embeddings) =
+        resolve_f32_tied_embeddings(tensors);
 
-    // Calculate total parameter count (includes lm_head if added)
     let param_count: u64 = tensors_with_lm_head
         .values()
         .map(|(data, _)| data.len() as u64)
         .sum();
-
-    // ROSETTA-003: Track tied embeddings for round-trip export fidelity.
-    // If we synthesized lm_head from embed_tokens, flag it so export paths
-    // can remove the duplicate and restore the original tied structure.
-    let has_tied_embeddings = !tensors.keys().any(|k| k == "lm_head.weight")
-        && tensors_with_lm_head.contains_key("lm_head.weight");
 
     // Build tensor_shapes map for metadata (used by `apr tensors` command)
     // ROSETTA-003: Store all tensors individually (no QKV fusion)
@@ -127,70 +189,7 @@ pub(crate) fn write_apr_file(
 
     // Add tokenizer data if available (CRITICAL for GGUF import)
     if let Some(tok) = tokenizer {
-        if !tok.vocabulary.is_empty() {
-            // Store vocabulary as JSON array
-            let vocab_array: Vec<serde_json::Value> = tok
-                .vocabulary
-                .iter()
-                .map(|s| serde_json::Value::String(s.clone()))
-                .collect();
-            custom.insert(
-                "tokenizer.vocabulary".to_string(),
-                serde_json::Value::Array(vocab_array),
-            );
-            custom.insert(
-                "tokenizer.vocab_size".to_string(),
-                serde_json::Value::Number(serde_json::Number::from(tok.vocabulary.len())),
-            );
-        }
-        if let Some(ref model_type) = tok.model_type {
-            custom.insert(
-                "tokenizer.model_type".to_string(),
-                serde_json::Value::String(model_type.clone()),
-            );
-        }
-        if let Some(bos) = tok.bos_token_id {
-            custom.insert(
-                "tokenizer.bos_token_id".to_string(),
-                serde_json::Value::Number(serde_json::Number::from(bos)),
-            );
-        }
-        if let Some(eos) = tok.eos_token_id {
-            custom.insert(
-                "tokenizer.eos_token_id".to_string(),
-                serde_json::Value::Number(serde_json::Number::from(eos)),
-            );
-        }
-        if let Some(ref arch) = tok.architecture {
-            custom.insert(
-                "tokenizer.architecture".to_string(),
-                serde_json::Value::String(arch.clone()),
-            );
-        }
-        if let Some(ref name) = tok.model_name {
-            custom.insert(
-                "tokenizer.model_name".to_string(),
-                serde_json::Value::String(name.clone()),
-            );
-        }
-        // PMAT-221 FIX: Embed BPE merge rules for SafeTensors path
-        // This was missing, causing SafeTensors→APR to produce garbage output
-        // because the tokenizer couldn't properly encode input text without merges
-        if !tok.merges.is_empty() {
-            eprintln!(
-                "[PMAT-221] Embedding {} BPE merge rules into APR metadata (SafeTensors path)",
-                tok.merges.len()
-            );
-            let merges_array: Vec<serde_json::Value> = tok
-                .merges
-                .iter()
-                .map(|s| serde_json::Value::String(s.clone()))
-                .collect();
-            custom.insert(
-                "tokenizer.merges".to_string(),
-                serde_json::Value::Array(merges_array),
-            );
-        }
+        insert_f32_tokenizer_metadata(tok, &mut custom);
     }
 
     // Extract transformer config from model_config (CRITICAL for inference)
