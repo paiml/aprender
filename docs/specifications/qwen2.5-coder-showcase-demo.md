@@ -1,7 +1,7 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 10.29.0 (Full Stack: apr-cli + aprender + realizar + trueno, Popperian falsified)
-**Status:** ALL THREE PROJECTS A+ + ZERO SATD (7B all 3 formats working CPU + GPU. 28 falsification rounds, 128 bugs found. Round 27: complexity reduction (showcase, routes, rosetta, run, 5 files, max cyc 32→31). Round 28: F-PROFILE-007/008/009 GPU per-kernel profiling (bandwidth estimation, launch overhead). Project Scores: aprender A+ (105%), realizar A+ (99.9%), trueno A+ (100.9%). Coverage: 96.35%. SATD: 0/0/0.)
+**Version:** 10.30.0 (Full Stack: apr-cli + aprender + realizar + trueno, Popperian falsified)
+**Status:** ALL THREE PROJECTS A+ + ZERO SATD (7B all 3 formats working CPU + GPU. 30 falsification rounds, 138 bugs found. Rounds 29-30: complexity reduction across 7 files — export, write, qa, serve, rosetta, validation. Max cyclomatic 31→27. Project Scores: aprender A+ (105%), realizar A+ (99.9%), trueno A+ (100.9%). Coverage: 96.35%. SATD: 0/0/0.)
 **Primary Model:** `Qwen/Qwen2.5-Coder-7B-Instruct`
 **Source Format:** SafeTensors BF16 (HuggingFace, sharded, ~14 GB)
 **Popperian Score:** 199/215 gates passing (92.6%) — 8 FALSIFIED, 0 blocked/not-tested. 158 falsification gates, 25 sections. Gated by `model-tests` feature (`make test-model`)
@@ -2235,6 +2235,23 @@ This section documents bugs found by falsifying the spec itself against the code
 | 129 | F-PROFILE-007: GPU per-kernel timing exists | BrickProfiler pass already extracts per-op hotspots (`extract_gpu_hotspots`). Spec was stale — listed as FALSIFIED but code was implemented. | **P2** | Verified existing implementation: `enable_profiling()`, `reset_profiler()`, profiling pass with `SKIP_CUDA_GRAPH=1`, `all_brick_stats()` extraction. Gate updated to Pass. |
 | 130 | F-PROFILE-008: No per-kernel bandwidth estimation | `efficiency_pct: None` for all GPU hotspots. No data movement estimation per operation. | **P2** | Added `estimate_kernel_data_bytes()` (Q4K weight size estimation by op name + model dims), `bandwidth_gbs` and `data_bytes_per_call` fields on Hotspot, efficiency_pct vs RTX 4090 peak. 5 tests. |
 | 131 | F-PROFILE-009: No kernel launch overhead measurement | No way to see overhead from CUDA kernel launches as % of decode time. | **P2** | Added `compute_kernel_launch_overhead()`: gap between sum(kernel_times) and wall time. New fields on RealProfileResults. Color-coded display section. 2 tests. |
+
+**Round 29 (v10.30.0): Complexity reduction — validation, export, write, qa**
+
+| # | Claim/Gap | Reality | Severity | Fix |
+|---|-----------|---------|----------|-----|
+| 132 | validate_falsification has cyclomatic 31 | Monolithic function with step validation, benchmark checks, and result reporting inline | **P3** | Extracted `validate_steps()`, `validate_benchmark()`, `report_failures()`. Cyclomatic 31→~15. |
+| 133 | export_apr_to_gguf_raw has cyclomatic 31 | 300-line function builds metadata, tokenizer, and tensors all inline | **P3** | Extracted `build_gguf_arch_metadata()` and `extract_apr_tokenizer_for_gguf()`. Cyclomatic 31→~15. |
+| 134 | write_apr_file has cyclomatic 31 | Tied embeddings and tokenizer serialization inline | **P3** | Extracted `resolve_f32_tied_embeddings()` and `insert_f32_tokenizer_metadata()`. Cyclomatic 31→~18. |
+| 135 | run_throughput_gate has cyclomatic 28 | 4x duplicated warmup+measure loop (GPU, CPU, APR, SafeTensors) | **P3** | Extracted `measure_generate_throughput()` closure-based helper eliminating all 4 duplications. |
+
+**Round 30 (v10.30.0): Complexity reduction — apr_export, safetensors handler, rosetta**
+
+| # | Claim/Gap | Reality | Severity | Fix |
+|---|-----------|---------|----------|-----|
+| 136 | apr_export has cyclomatic 28 | SafeTensors export with companion files inline in main export function | **P3** | Extracted `export_safetensors_with_companions()`. Cyclomatic 28→21. |
+| 137 | safetensors_chat_completions_handler has cyclomatic 27 | Request parsing fallback and ChatML prompt building inline in handler | **P3** | Extracted `parse_chat_completion_request()` and `build_chatml_prompt()`. Cyclomatic 27→~15. |
+| 138 | run_compare_inference has cyclomatic 30 | Header printing, JSON output, and token validation inline | **P3** | Extracted `print_compare_header()`, `print_compare_json()`, `validate_captured_tokens()`. Cyclomatic 30→~18. |
 
 ### 18.2 Claims Verified (Not Falsified)
 
