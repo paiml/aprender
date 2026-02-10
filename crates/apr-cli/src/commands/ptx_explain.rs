@@ -242,8 +242,7 @@ fn generate_kernel_ptx(name: &str) -> Result<String> {
     // trueno-gpu is available via realizar's re-export
     let _name_lower = name.to_lowercase();
 
-    // For now, only file-based analysis is supported.
-    // TODO: Wire trueno-gpu kernel builders when inference feature is enabled.
+    // Only file-based analysis is supported; kernel-name lookup requires a PTX file path.
     Err(crate::error::CliError::Aprender(format!(
         "Kernel generation not yet supported for '{}'. Use a PTX file instead.\n\
          Hint: Run with DP4A_Q4K=1 to dump failing PTX to /tmp/failing_ptx.txt",

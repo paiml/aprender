@@ -222,7 +222,7 @@ impl ValidatedEmbedding {
         let stats = TensorStats::compute(&data);
 
         // Gate 2: Density validation (F-DATA-QUALITY-001)
-        // This catches the PMAT-234 bug (94.5% zeros)
+        // Rejects tensors with >80% zeros (corrupt offset or uninitialized data)
         if stats.zero_pct() > Self::MAX_ZERO_PCT {
             return Err(ContractValidationError {
                 tensor_name: name.to_string(),
@@ -579,7 +579,7 @@ impl ValidatedVector {
 // =============================================================================
 //
 // Per Popper (1959), these tests attempt to DISPROVE the contract works.
-// If any test passes when it should fail, the contract is broken.
+// If any test passes when it should fail, the contract has a logic error.
 
 #[cfg(test)]
 mod tests {

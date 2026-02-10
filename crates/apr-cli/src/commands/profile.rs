@@ -2277,8 +2277,8 @@ fn print_human_results(
         println!();
         let mut found_naive = false;
         for h in &results.hotspots {
-            // Flag operations that are disproportionately slow
-            // A naive (scalar) implementation would be ~4-16x slower than SIMD
+            // Flag operations consuming >50% of total inference time
+            // A scalar (non-SIMD) path is typically 4-16x less efficient
             if h.count > 0 && h.avg_us > results.total_inference_us * 0.5 {
                 println!(
                     "  {} {} takes {:.1}% of total time ({:.0}µs avg) — check for scalar fallback",

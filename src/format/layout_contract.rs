@@ -621,10 +621,10 @@ pub fn enforce_import_contract(
 
         // CRITICAL: Data transpose is NEVER needed for GGUF import
         // GGUF data layout data[i0 + i1*ne0] for shape [ne0, ne1] is:
-        //   - i0 is the fast (contiguous) dimension
-        //   - i1 is the slow dimension
+        //   - i0 is the contiguous (inner) dimension
+        //   - i1 is the strided (outer) dimension
         // This is IDENTICAL to row-major [ne1, ne0] layout.
-        // The GH-187 "fix" that added transpose was WRONG and caused GH-208.
+        // Data transpose is never correct here — the layout is already row-major.
         let needs_data_transpose = false;
 
         (apr_shape, needs_data_transpose)

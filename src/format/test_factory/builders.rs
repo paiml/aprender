@@ -1198,8 +1198,7 @@ pub fn build_pygmy_apr_gguf_names_with_config(config: GgufPygmyConfig) -> Vec<u8
     // LM head (output projection)
     if config.weight_tying {
         // Weight tying: NO separate output.weight tensor
-        // realizaer must use token_embd.weight (transposed) for lm_head
-        // This is the GH-194 bug scenario
+        // realizar must use token_embd.weight (transposed) for lm_head
     } else {
         // No weight tying: separate output.weight tensor
         let lm_head_data: Vec<f32> = (0..config.vocab_size * config.hidden_size)

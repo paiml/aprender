@@ -786,12 +786,10 @@ fn run_headless_real(config: CbtopConfig) -> Result<()> {
         )
     })?;
 
-    // Greedy sampling (temp=0) uses GPU argmax path for 150,000x reduced data transfer
-    // (4 bytes vs 600KB per token). Temperature sampling requires CPU top-k.
     let gen_config = QuantizedGenerateConfig {
         max_tokens: 32,
-        temperature: 0.0, // Greedy sampling - uses GPU argmax (4 bytes vs 600KB)
-        top_k: 1,         // Forces greedy path
+        temperature: 0.0,
+        top_k: 1,
         ..Default::default()
     };
 

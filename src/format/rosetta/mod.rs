@@ -1119,9 +1119,9 @@ impl RosettaStone {
             failures.push("[F-DATA-QUALITY-001] All values are zero (uninitialized?)".to_string());
         }
 
-        // PMAT-235: Density gate (F-DATA-QUALITY-001)
-        // Embedding tensors: >50% zeros is suspicious (catches PMAT-234 offset bug)
-        // Weight tensors: >80% zeros is suspicious
+        // Density gate (F-DATA-QUALITY-001)
+        // Embedding tensors: >50% zeros indicates corrupt offset loading
+        // Weight tensors: >80% zeros indicates uninitialized or zeroed memory
         let zero_pct = if element_count > 0 {
             100.0 * zero_count as f32 / element_count as f32
         } else {
