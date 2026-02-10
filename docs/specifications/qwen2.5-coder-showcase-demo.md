@@ -1,10 +1,10 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 10.21.0 (Full Stack: apr-cli + aprender + realizar + trueno, Popperian falsified)
-**Status:** Performance Sprint + Code Quality (7B all 3 formats working CPU + GPU. 20 falsification rounds, 107 bugs found. Round 20: Code quality sprint — clippy compliance, complexity reduction, formatting. Measured: 80.6 tok/s decode = 0.64x Ollama (Grade D). Prefill: 153.4 tok/s = 3.32x Ollama. Target: 1.0x parity (C grade), 2.0x stretch (A grade). BW utilization: 25.2% of 1008 GB/s. PMAT Score: A+ (105%), TDG: 96.9/100 (A+), Coverage: 96.35%.)
+**Version:** 10.22.0 (Full Stack: apr-cli + aprender + realizar + trueno, Popperian falsified)
+**Status:** Performance Sprint + Code Quality (7B all 3 formats working CPU + GPU. 21 falsification rounds, 111 bugs found. Round 21: Cross-project quality — trueno K-quant refactoring, MSRV bump, .clippy.toml ban. Measured: 80.6 tok/s decode = 0.64x Ollama (Grade D). Prefill: 153.4 tok/s = 3.32x Ollama. Target: 1.0x parity (C grade), 2.0x stretch (A grade). BW utilization: 25.2% of 1008 GB/s. Project Scores: aprender A+ (105%), realizar A (93.6%), trueno A- (85.2%). Coverage: 96.35%.)
 **Primary Model:** `Qwen/Qwen2.5-Coder-7B-Instruct`
 **Source Format:** SafeTensors BF16 (HuggingFace, sharded, ~14 GB)
-**Popperian Score:** 186/198 gates passing (93.9%) — 14 FALSIFIED, 0 blocked/not-tested. 154 falsification gates, 24 sections. Gated by `model-tests` feature (`make test-model`)
+**Popperian Score:** 190/206 gates passing (92.2%) — 14 FALSIFIED, 0 blocked/not-tested. 158 falsification gates, 25 sections. Gated by `model-tests` feature (`make test-model`)
 **CLI Surface:** 38 top-level + 10 nested subcommands (48 total)
 **Compile-Time Proofs:** 297 algebraic invariants (zero runtime cost)
 **Author:** PAIML Engineering
@@ -34,9 +34,9 @@
 
 ## Executive Summary
 
-The Qwen2.5-Coder Showcase demonstrates the unified inference architecture across three model formats (SafeTensors, APR, GGUF) with CPU and GPU backends, using a single model with a single provenance chain. The full stack is exercised end-to-end: **apr-cli** (48 subcommands) → **aprender** (contract validation, 297 compile-time proofs) → **realizar** (inference: two-phase generation with batched prefill, PagedAttention KV cache, 8 sampling algorithms + penalty modifiers, GQA attention, OpenAI-compatible API, PTX parity validation) → **trueno** (SIMD/GPU compute: 9 backend tiers, 95 CUDA kernels, 6 batched kernel variants with KernelParity trait, Jidoka quality gates). 154 falsification gates across 24 sections.
+The Qwen2.5-Coder Showcase demonstrates the unified inference architecture across three model formats (SafeTensors, APR, GGUF) with CPU and GPU backends, using a single model with a single provenance chain. The full stack is exercised end-to-end: **apr-cli** (48 subcommands) → **aprender** (contract validation, 297 compile-time proofs) → **realizar** (inference: two-phase generation with batched prefill, PagedAttention KV cache, 8 sampling algorithms + penalty modifiers, GQA attention, OpenAI-compatible API, PTX parity validation) → **trueno** (SIMD/GPU compute: 9 backend tiers, 95 CUDA kernels, 6 batched kernel variants with KernelParity trait, Jidoka quality gates). 158 falsification gates across 25 sections.
 
-**v10.21.0 Focus: Code Quality Sprint + PTX Analysis Tooling + Ollama Performance Parity Sprint**
+**v10.22.0 Focus: Cross-Project Quality + PTX Analysis Tooling + Ollama Performance Parity Sprint**
 - **Current (measured 2026-02-09):** 80.6 tok/s GPU decode (0.64x Ollama 125.7 tok/s) — Grade D
 - **Prefill: 153.4 tok/s (3.32x FASTER than Ollama 46.2 tok/s)** — Batched prefill is world-class
 - **Target:** 125.7 tok/s (1.0x parity, Grade C) → 251 tok/s (2.0x, Grade A)
@@ -2172,6 +2172,15 @@ This section documents bugs found by falsifying the spec itself against the code
 | 106 | `cargo fmt` clean across workspace | 16 files had formatting deviations — mostly in examples and benchmarks (long `println!` lines, multi-arg function calls). | **P2** | Applied `cargo fmt`. 16 files reformatted. |
 | 107 | PMAT project score at A level | Already A+ (166.9/159, 105%). Code Quality subcategory at 42.3% (11/26) dragged by 5 functions with cyclomatic complexity >20. Remaining hotspots: `start_apr_server` (39), `run_qa` (35), `execute_apr_inference` (32). | **P3** | Documented. Complexity reduction is ongoing — each round extracts more inline logic. |
 
+**Round 21 (v10.22.0): Cross-Project Quality — trueno K-quant refactoring, MSRV bump, .clippy.toml**
+
+| # | Claim/Gap | Reality | Severity | Fix |
+|---|-----------|---------|----------|-----|
+| 108 | trueno-quant quantization functions have manageable complexity | `quantize_q4_k` cognitive 32, `quantize_q5_k` cognitive 38, `quantize_q6_k` cognitive 28, `dequantize_q4_k_to_f32` cognitive 28 — all exceeded threshold of 25. Pre-commit hook blocked commits. | **P2** | Extracted 12 shared helpers: `compute_sub_block_stats()`, `compute_global_scales()`, `write_kquant_header()`, `quantize_one()`, `pack_q5k_high_bits()`, `pack_q5k_low_nibbles()`, `compute_q6k_scales()`, `quantize_q6k_values()`, `pack_q6k_bits()`, `sanitize_f16_scale()`, `unpack_q4k_scales()`, `dequantize_q4k_block()`. All functions now under threshold. |
+| 109 | trueno MSRV 1.75 is compatible with codebase | Code uses `is_multiple_of` (1.87+), `is_none_or` (1.82+), `midpoint` (1.89+) — 117 clippy incompatible_msrv warnings. | **P2** | Bumped MSRV from 1.75 to 1.89. 117 warnings eliminated. Zero clippy warnings on main crate. |
+| 110 | trueno has .clippy.toml unwrap() ban | No `.clippy.toml` existed — no enforcement of unwrap() ban. 125+ unwrap() calls in production code (Cloudflare-class defect risk). | **P1** | Created `.clippy.toml` with `disallowed-methods` for `Option::unwrap` and `Result::unwrap`, cognitive complexity threshold 25. |
+| 111 | trueno formatting is clean | 55 files had formatting deviations — mostly in SIMD kernels, PTX builder, CUDA edge crate, test files. | **P2** | Applied `cargo fmt`. 55 files reformatted. |
+
 ### 18.2 Claims Verified (Not Falsified)
 
 **Round 1:**
@@ -2276,6 +2285,29 @@ Tests now cover FALSIFY-001 through FALSIFY-005 without gaps.
 | F-QUALITY-002 | `cargo fmt --check` clean | Run fmt check | 0 diffs | **Pass** (16 files reformatted in Round 20) |
 | F-QUALITY-003 | SATD = 0 | `grep -r "TODO\|FIXME\|HACK" src/ crates/ --include="*.rs"` | 0 matches | **Pass** |
 | F-QUALITY-004 | PMAT project score ≥ A | `pmat rust-project-score` | Grade A or higher | **Pass** (A+ = 105%) |
+
+---
+
+## 20. Cross-Project Quality (Sovereign Stack)
+
+All projects in the Sovereign AI Stack must maintain quality standards. Round 21 extended quality enforcement from aprender to trueno and realizar.
+
+### 20.1 Project Score Matrix
+
+| Project | Score | Grade | Key Issues |
+|---------|-------|-------|------------|
+| **aprender** | 166.9/159 | **A+** (105%) | Code Quality 42.3% (complexity hotspots) |
+| **realizar** | 148.9/159 | **A** (93.6%) | Known Defects 75%, Tooling 44.2% |
+| **trueno** | 135.4/159 | **A-** (85.2%) | Tooling 35.4%, Code Quality 34.6%, 125 unwrap() |
+
+### 20.2 Cross-Project Falsification Gates (F-XPROJ-*)
+
+| ID | Prediction | Test | Expected | Status |
+|----|-----------|------|----------|--------|
+| F-XPROJ-001 | All projects ≥ A grade | `pmat rust-project-score` in each project | Grade A or higher | **FALSIFIED** (trueno: A- at 85.2%. Needs ~8 more points for A.) |
+| F-XPROJ-002 | All projects format-clean | `cargo fmt --check` in each project | 0 diffs | **Pass** (all 3 projects clean after Round 21) |
+| F-XPROJ-003 | All projects have .clippy.toml | Check file existence | File exists | **Pass** (trueno .clippy.toml created in Round 21) |
+| F-XPROJ-004 | realizar unused import fixed | `cargo check -p realizar 2>&1 \| grep warning` | 0 warnings | **Pass** (cfg-gated `use` in convert.rs) |
 
 ---
 
@@ -2455,7 +2487,8 @@ total_bytes = num_superblocks * 144
 | 16. Provability | F-PROVE-* | 7 | 5 |
 | 17. CLI Surface | F-SURFACE-* | 5 | 5 |
 | **18. Code Quality** | **F-QUALITY-*** | **4** | **3** |
-| **Total** | | **154** | **118** |
+| **19. Cross-Project** | **F-XPROJ-*** | **4** | **3** |
+| **Total** | | **158** | **121** |
 
 ---
 
