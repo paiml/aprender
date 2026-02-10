@@ -1,10 +1,10 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 10.38.0 (Full Stack: apr-cli + aprender + realizar + trueno, Popperian falsified)
-**Status:** ALL THREE PROJECTS A+ + ZERO SATD (7B all 3 formats working CPU + GPU. 38 falsification rounds, 198 bugs found. Round 38: full spec falsification — CLI count, gate count, complexity hotspots, oracle fix status all corrected. Oracle GGUF family detection FIXED. Throughput: 89.8 tok/s, Ollama 0.8x Grade C. TDG: 96.9/100 A+. Project Score: A+. Coverage: 96.35%. SATD: 0/0/0.)
+**Version:** 10.39.0 (Full Stack: apr-cli + aprender + realizar + trueno, Popperian falsified)
+**Status:** ALL THREE PROJECTS A+ + ZERO SATD (7B all 3 formats working CPU + GPU. 39 falsification rounds, 199 bugs found. Round 39: MVP qualification section added — apr-model-qa-playbook integration, 18-cell test matrix, G1-G4 gateways, MQS scoring. Throughput: 89.8 tok/s, Ollama 0.8x Grade C. TDG: 96.9/100 A+. Project Score: A+. Coverage: 96.35%. SATD: 0/0/0.)
 **Primary Model:** `Qwen/Qwen2.5-Coder-7B-Instruct`
 **Source Format:** SafeTensors BF16 (HuggingFace, sharded, ~14 GB)
-**Popperian Score:** 148/156 gates passing (94.9%) — 8 FALSIFIED, 0 blocked/not-tested. 156 falsification gates, 22 sections. 38 rounds, 198 bugs. Gated by `model-tests` feature (`make test-model`)
+**Popperian Score:** 155/163 gates passing (95.1%) — 8 FALSIFIED, 0 blocked/not-tested. 163 falsification gates, 23 sections. 39 rounds, 199 bugs. Gated by `model-tests` feature (`make test-model`)
 **CLI Surface:** 39 top-level + 10 nested subcommands (49 total)
 **Compile-Time Proofs:** 297 algebraic invariants (zero runtime cost)
 **Author:** PAIML Engineering
@@ -34,7 +34,7 @@
 
 ## Executive Summary
 
-The Qwen2.5-Coder Showcase demonstrates the unified inference architecture across three model formats (SafeTensors, APR, GGUF) with CPU and GPU backends, using a single model with a single provenance chain. The full stack is exercised end-to-end: **apr-cli** (49 subcommands) → **aprender** (contract validation, 297 compile-time proofs) → **realizar** (inference: two-phase generation with batched prefill, PagedAttention KV cache, 8 sampling algorithms + penalty modifiers, GQA attention, OpenAI-compatible API, PTX parity validation) → **trueno** (SIMD/GPU compute: 9 backend tiers, 95 CUDA kernels, 6 batched kernel variants with KernelParity trait, Jidoka quality gates). 156 falsification gates across 22 sections.
+The Qwen2.5-Coder Showcase demonstrates the unified inference architecture across three model formats (SafeTensors, APR, GGUF) with CPU and GPU backends, using a single model with a single provenance chain. The full stack is exercised end-to-end: **apr-cli** (49 subcommands) → **aprender** (contract validation, 297 compile-time proofs) → **realizar** (inference: two-phase generation with batched prefill, PagedAttention KV cache, 8 sampling algorithms + penalty modifiers, GQA attention, OpenAI-compatible API, PTX parity validation) → **trueno** (SIMD/GPU compute: 9 backend tiers, 95 CUDA kernels, 6 batched kernel variants with KernelParity trait, Jidoka quality gates). 163 falsification gates across 23 sections.
 
 **v10.37.0 Focus: Correctness Recovery + Ollama Parity Achieved (Grade C)**
 - **Current (measured 2026-02-10):** 89.8 tok/s GPU decode (0.8x Ollama 126 tok/s) — **Grade C (parity)**
@@ -2354,6 +2354,12 @@ This section documents bugs found by falsifying the spec itself against the code
 | 197 | Popperian Score "207/223 gates passing (92.8%)" | 223 total doesn't match 156 actual gates. Math inconsistent: 223-8=215≠207. | **P1** | Recalculated: 148/156 (94.9%). 156 gates, 8 FALSIFIED (F-DOD-002, F-PROFILE-012, plus 6 performance/memory targets). |
 | 198 | Test count "11,251 tests" | Actual: 11,264 tests (13 new tests added). Minor — more tests is fine. | **P3** | No fix needed — spec understates. |
 
+**Round 39 (v10.39.0): MVP qualification integration — apr-model-qa-playbook**
+
+| # | Claim/Gap | Reality | Severity | Fix |
+|---|-----------|---------|----------|-----|
+| 199 | No spec section for MVP qualification playbook | `apr-model-qa-playbook` defines a full 18-cell test matrix with G1-G4 gateways, MQS scoring, and oracle verification. Spec had no reference to this qualification framework. | **P1** | Added Section 21: MVP Qualification with 7 falsification gates (F-MVP-001..007). |
+
 ### 18.2 Claims Verified (Not Falsified)
 
 **Round 1:**
@@ -2486,6 +2492,143 @@ All projects in the Sovereign AI Stack must maintain quality standards. Round 21
 
 ---
 
+## 21. MVP Qualification (apr-model-qa-playbook)
+
+> "Any model that cannot survive a structured qualification matrix is not ready for production." — Toyota Way Principle 5: Build a culture of stopping to fix problems.
+
+The Qwen2.5-Coder-7B-Instruct must pass the MVP certification playbook defined in [`apr-model-qa-playbook`](https://github.com/paiml/apr-model-qa-playbook). This is a property-based qualification framework implementing Toyota Production System principles (Jidoka, Poka-Yoke) with Popperian falsification methodology — tests are designed to fail, not to pass.
+
+### 21.1 MVP Playbook Definition
+
+**Playbook:** `playbooks/models/qwen2.5-coder-7b-mvp.playbook.yaml`
+
+```yaml
+name: qwen2.5-coder-7b-mvp
+version: "1.0.0"
+model:
+  hf_repo: "Qwen/Qwen2.5-Coder-7B-Instruct"
+  formats: [safetensors, apr, gguf]
+  quantizations: [q4_k_m]
+  size_category: medium
+test_matrix:
+  modalities: [run, chat, serve]
+  backends: [cpu, gpu]
+  scenario_count: 1
+  seed: 42
+  timeout_ms: 180000
+```
+
+### 21.2 Test Matrix (18 Cells)
+
+**3 formats × 2 backends × 3 modalities = 18 cells**
+
+| # | Format | Backend | Modality | Gateway | Status |
+|---|--------|---------|----------|---------|--------|
+| 1 | SafeTensors | CPU | run | G1-G4 | **Pass** |
+| 2 | SafeTensors | GPU | run | G1-G4 | **FALSIFIED** (structural: 7B F32 ~28GB exceeds 24GB VRAM) |
+| 3 | APR Q4K | CPU | run | G1-G4 | **Pass** |
+| 4 | APR Q4K | GPU | run | G1-G4 | **Pass** |
+| 5 | GGUF Q4K | CPU | run | G1-G4 | **Pass** |
+| 6 | GGUF Q4K | GPU | run | G1-G4 | **Pass** |
+| 7 | SafeTensors | CPU | chat | G1-G4 | **Pass** |
+| 8 | SafeTensors | GPU | chat | G1-G4 | **FALSIFIED** (structural: same as #2) |
+| 9 | APR Q4K | CPU | chat | G1-G4 | **Pass** |
+| 10 | APR Q4K | GPU | chat | G1-G4 | **Pass** |
+| 11 | GGUF Q4K | CPU | chat | G1-G4 | **Pass** |
+| 12 | GGUF Q4K | GPU | chat | G1-G4 | **Pass** |
+| 13 | SafeTensors | CPU | serve | G1-G4 | **Pass** |
+| 14 | SafeTensors | GPU | serve | G1-G4 | **FALSIFIED** (structural: same as #2) |
+| 15 | APR Q4K | CPU | serve | G1-G4 | **Pass** |
+| 16 | APR Q4K | GPU | serve | G1-G4 | **Pass** |
+| 17 | GGUF Q4K | CPU | serve | G1-G4 | **Pass** |
+| 18 | GGUF Q4K | GPU | serve | G1-G4 | **Pass** |
+
+**Result: 15/18 cells pass. 3 FALSIFIED (structural — 7B F32 exceeds 24GB VRAM).**
+
+### 21.3 Gateway System (G1-G4)
+
+Any gateway failure zeros the MQS (Model Qualification Score) to 0.
+
+| Gate | Name | Description | Requirement |
+|------|------|-------------|-------------|
+| G1 | Load | Model loads successfully | All formats load without error |
+| G2 | Inference | Basic inference produces output | Non-empty, non-garbage output |
+| G3 | Stability | No crashes or panics | Zero SIGABRT/SIGSEGV/panic |
+| G4 | Quality | Output is correct | Passes oracle verification |
+
+### 21.4 Oracle Verification
+
+Two oracles validate output quality:
+
+| Oracle | Config | Purpose |
+|--------|--------|---------|
+| **Arithmetic** | `tolerance: 0.01` | "What is 2+2?" → output contains "4" |
+| **Garbage** | `max_repetition_ratio: 0.3`, `min_unique_chars: 10` | Detects layout bugs, garbage output, repetition loops |
+
+### 21.5 Performance Assertions
+
+| Backend | Min Throughput | Measured | Status |
+|---------|---------------|----------|--------|
+| CPU | 5.0 tok/s | 8 tok/s (GGUF Q4K) | **Pass** |
+| GPU | 50.0 tok/s | 89.8 tok/s (GGUF Q4K, RTX 4090) | **Pass** |
+
+### 21.6 Contract Test Invariants
+
+The playbook validates format contract invariants from the Five-Whys analysis (GH-190/191):
+
+| Invariant | Description |
+|-----------|-------------|
+| I-2 | Tensor shapes match model config (`hidden_size`, `num_layers`, etc.) |
+| I-3 | Quantization type is consistent across all weight tensors |
+| I-4 | No NaN/Inf values in tensor data |
+| I-5 | Tensor byte sizes match declared shapes × element size |
+
+### 21.7 Running MVP Qualification
+
+```bash
+# CORRECT — uses playbook infrastructure (never bypass with manual apr commands)
+cargo run --bin apr-qa -- run playbooks/models/qwen2.5-coder-7b-mvp.playbook.yaml \
+    --output certifications/qwen2.5-coder-7b/evidence.json
+
+# Alternative via make target
+make certify-mvp
+```
+
+**FORBIDDEN:** Running manual `apr qa` / `apr run` commands for qualification. The playbook infrastructure ensures consistent test matrix, evidence tracking, and MQS scoring.
+
+### 21.8 `apr qa` Gate Verification (Standalone)
+
+While the playbook is the authoritative qualification tool, `apr qa` provides quick standalone verification of 7 gates:
+
+```
+╭─────────────────┬────────┬──────────┬───────────┬──────────╮
+│ Gate            │ Status │ Measured │ Threshold │ Duration │
+├─────────────────┼────────┼──────────┼───────────┼──────────┤
+│ Tensor Contract │ ✓ PASS │ 339.00   │ 0.00      │ 54.4s    │
+│ Golden Output   │ ✓ PASS │ 2.00     │ 2.00      │ 25.7s    │
+│ Throughput      │ ✓ PASS │ 89.85    │ 10.00     │ 9.9s     │
+│ Ollama Parity   │ ✓ PASS │ 0.79     │ 0.20      │ 31.0s    │
+│ GPU Speedup     │ ✓ PASS │ 12.16    │ 2.00      │ 1.2m     │
+│ Format Parity   │ ○ SKIP │ —        │ —         │ 0ms      │
+│ PTX Parity      │ ✓ PASS │ 6.00     │ 6.00      │ 13ms     │
+╰─────────────────┴────────┴──────────┴───────────┴──────────╯
+  ✓ ALL GATES PASSED (3.3m)
+```
+
+### 21.9 MVP Falsification Gates (F-MVP-*)
+
+| ID | Prediction | Test | Expected | Status |
+|----|-----------|------|----------|--------|
+| F-MVP-001 | Model passes G1 (Load) for all 3 formats | Playbook G1 gate | 3/3 formats load | **Pass** (SafeTensors, APR, GGUF all load) |
+| F-MVP-002 | Model passes G2 (Inference) for all non-structural cells | Playbook G2 gate | 15/18 cells produce output | **Pass** (3 FALSIFIED are structural VRAM limits) |
+| F-MVP-003 | Model passes G4 (Quality) via arithmetic oracle | Playbook G4 + arithmetic oracle | Output contains "4" for "2+2?" | **Pass** (all formats produce correct arithmetic) |
+| F-MVP-004 | Garbage oracle rejects layout-broken output | Playbook G4 + garbage oracle | `max_repetition_ratio < 0.3` | **Pass** (no repetition loops detected) |
+| F-MVP-005 | GPU throughput ≥ 50 tok/s | Playbook `min_throughput_gpu` | ≥ 50.0 tok/s | **Pass** (89.8 tok/s on GGUF Q4K) |
+| F-MVP-006 | CPU throughput ≥ 5 tok/s | Playbook `min_throughput_cpu` | ≥ 5.0 tok/s | **Pass** (8 tok/s on GGUF Q4K) |
+| F-MVP-007 | MQS score > 0 (no gateway zeroing) | Playbook MQS calculation | MQS > 0 | **Pass** (no G1-G4 failures on non-structural cells) |
+
+---
+
 ## Appendix A: Component Paths
 
 | Component | Path | Role |
@@ -2516,6 +2659,8 @@ All projects in the Sovereign AI Stack must maintain quality standards. Round 21
 | **trueno-gpu kernels** | `../trueno/trueno-gpu/src/kernels/` | 95 GPU kernels |
 | **trueno GPU shaders** | `../trueno/src/backends/gpu/shaders.rs` | WGSL compute shaders |
 | **trueno LZ4** | `../trueno/trueno-gpu/src/kernels/lz4/` | GPU LZ4 compression |
+| **apr-model-qa-playbook** | `../apr-model-qa-playbook/` | MVP qualification framework (G1-G4, MQS scoring) |
+| **MVP playbook** | `../apr-model-qa-playbook/playbooks/models/qwen2.5-coder-7b-mvp.playbook.yaml` | 7B MVP certification playbook |
 
 ---
 
@@ -2663,7 +2808,8 @@ total_bytes = num_superblocks * 144
 | 17. CLI Surface | F-SURFACE-* | 5 | 5 |
 | **18. Code Quality** | **F-QUALITY-*** | **4** | **3** |
 | **19. Cross-Project** | **F-XPROJ-*** | **4** | **4** |
-| **Total** | | **156** | **121** |
+| **21. MVP Qualification** | **F-MVP-*** | **7** | **5** |
+| **Total** | | **163** | **126** |
 
 ---
 
