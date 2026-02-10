@@ -97,6 +97,10 @@ struct Hotspot {
     efficiency_pct: Option<f64>,
     /// BrickId category (Attention, FFN, Norm, Other)
     category: Option<String>,
+    /// Achieved memory bandwidth (GB/s) — F-PROFILE-008
+    bandwidth_gbs: Option<f64>,
+    /// Estimated data moved per invocation (bytes) — F-PROFILE-008
+    data_bytes_per_call: Option<u64>,
 }
 
 // ============================================================================
@@ -404,6 +408,10 @@ pub(crate) struct RealProfileResults {
     decode_tok_s: f64,
     /// Total tokens generated across all measurement passes
     total_tokens_generated: usize,
+    /// Kernel launch overhead as % of decode time (F-PROFILE-009)
+    kernel_launch_overhead_pct: f64,
+    /// Kernel launch overhead in microseconds (F-PROFILE-009)
+    kernel_launch_overhead_us: f64,
 }
 
 /// Ollama baseline measurement
@@ -965,6 +973,8 @@ fn filter_results_by_focus(
         prefill_tok_s: results.prefill_tok_s,
         decode_tok_s: results.decode_tok_s,
         total_tokens_generated: results.total_tokens_generated,
+        kernel_launch_overhead_pct: results.kernel_launch_overhead_pct,
+        kernel_launch_overhead_us: results.kernel_launch_overhead_us,
     }
 }
 
@@ -1200,8 +1210,13 @@ fn profile_gpu_generation(
     let _ = cuda_model.generate_gpu_resident(&test_tokens, &profile_config);
 
     // Extract per-operation hotspots from BrickProfiler
-    let hotspots = extract_gpu_hotspots(&cuda_model, num_layers);
+    let hotspots = extract_gpu_hotspots(&cuda_model, num_layers, hidden_dim, vocab_size);
     let category_summary = Some(compute_category_summary(&hotspots));
+
+    // F-PROFILE-009: Compute kernel launch overhead
+    let total_decode_us = avg_decode_ms * 1000.0;
+    let (launch_overhead_us, launch_overhead_pct) =
+        compute_kernel_launch_overhead(&hotspots, total_decode_us);
 
     // Compute roofline with the real results
     let mut results = RealProfileResults {
@@ -1229,6 +1244,8 @@ fn profile_gpu_generation(
         prefill_tok_s,
         decode_tok_s,
         total_tokens_generated,
+        kernel_launch_overhead_pct: launch_overhead_pct,
+        kernel_launch_overhead_us: launch_overhead_us,
     };
 
     // Compute roofline analysis
@@ -1240,14 +1257,62 @@ fn profile_gpu_generation(
     Ok(results)
 }
 
+/// Estimate data bytes moved per kernel invocation based on operation name and model dims.
+///
+/// For memory-bandwidth-bound kernels (GEMV, RMSNorm), the data movement is dominated
+/// by reading the weight matrix. We estimate conservatively: read weights + read/write activations.
+#[cfg(feature = "inference")]
+fn estimate_kernel_data_bytes(name: &str, hidden_dim: usize, vocab_size: usize) -> Option<u64> {
+    let name_lower = name.to_lowercase();
+    // Q4K: 0.5625 bytes/element (144 bytes per 256-element super-block)
+    let q4k_bytes_per_elem: f64 = 144.0 / 256.0;
+    // Activation read/write: hidden_dim * 4 bytes (f32) in + hidden_dim * 4 out
+    let activation_rw = (hidden_dim * 8) as u64;
+
+    if name_lower.contains("q_proj") || name_lower.contains("k_proj") || name_lower.contains("v_proj") {
+        // QKV projection: read weight [hidden, head_dim], read input, write output
+        let weight_bytes = (hidden_dim as f64 * hidden_dim as f64 * q4k_bytes_per_elem) as u64;
+        Some(weight_bytes + activation_rw)
+    } else if name_lower.contains("o_proj") || name_lower.contains("out_proj") {
+        let weight_bytes = (hidden_dim as f64 * hidden_dim as f64 * q4k_bytes_per_elem) as u64;
+        Some(weight_bytes + activation_rw)
+    } else if name_lower.contains("gate_proj") || name_lower.contains("up_proj") {
+        // FFN gate/up: [hidden, intermediate] where intermediate ≈ 4*hidden for Qwen2
+        let intermediate = hidden_dim * 4; // approximate
+        let weight_bytes = (hidden_dim as f64 * intermediate as f64 * q4k_bytes_per_elem) as u64;
+        Some(weight_bytes + activation_rw)
+    } else if name_lower.contains("down_proj") {
+        let intermediate = hidden_dim * 4;
+        let weight_bytes = (intermediate as f64 * hidden_dim as f64 * q4k_bytes_per_elem) as u64;
+        Some(weight_bytes + activation_rw)
+    } else if name_lower.contains("lm_head") || name_lower.contains("output") {
+        let weight_bytes = (hidden_dim as f64 * vocab_size as f64 * q4k_bytes_per_elem) as u64;
+        Some(weight_bytes + (vocab_size * 4) as u64 + (hidden_dim * 4) as u64)
+    } else if name_lower.contains("rmsnorm") || name_lower.contains("layernorm") {
+        // Norm: read + write activation, read weight (small)
+        Some(activation_rw + (hidden_dim * 4) as u64)
+    } else if name_lower.contains("rope") || name_lower.contains("rotary") {
+        Some(activation_rw)
+    } else if name_lower.contains("softmax") || name_lower.contains("attention") {
+        // Attention score: approximate as hidden_dim^2 / num_heads read/write
+        Some(activation_rw * 2)
+    } else if name_lower.contains("embed") {
+        Some((hidden_dim * 4) as u64) // Single embedding lookup
+    } else {
+        None // Unknown operation
+    }
+}
+
 /// Extract per-operation GPU hotspots from BrickProfiler after a profiling pass.
 ///
 /// Converts trueno `BrickStats` into our `Hotspot` format with category
-/// classification, bottleneck analysis, and time breakdown.
+/// classification, bottleneck analysis, bandwidth estimation, and time breakdown.
 #[cfg(feature = "inference")]
 fn extract_gpu_hotspots(
     cuda_model: &realizar::gguf::OwnedQuantizedModelCuda,
     _num_layers: usize,
+    hidden_dim: usize,
+    vocab_size: usize,
 ) -> Vec<Hotspot> {
     let profiler = cuda_model.profiler();
     let total_ns = profiler.total_ns();
@@ -1267,6 +1332,17 @@ fn extract_gpu_hotspots(
                 0.0
             };
 
+            // F-PROFILE-008: Estimate per-kernel bandwidth
+            let data_bytes = estimate_kernel_data_bytes(&stats.name, hidden_dim, vocab_size);
+            let bandwidth = data_bytes.and_then(|bytes| {
+                if avg_us > 0.0 {
+                    // GB/s = bytes / (µs * 1e-6) / 1e9 = bytes / (µs * 1e3)
+                    Some(bytes as f64 / (avg_us * 1000.0))
+                } else {
+                    None
+                }
+            });
+
             Hotspot {
                 name: stats.name.clone(),
                 time_us: total_us,
@@ -1276,8 +1352,10 @@ fn extract_gpu_hotspots(
                 min_us: stats.min_us(),
                 max_us: stats.max_us(),
                 bottleneck: Some(classify_operation_bottleneck(&stats.name)),
-                efficiency_pct: None,
+                efficiency_pct: bandwidth.map(|bw| (bw / 1008.0 * 100.0).min(100.0)), // RTX 4090 peak: 1008 GB/s
                 category: Some(classify_operation_category(&stats.name)),
+                bandwidth_gbs: bandwidth,
+                data_bytes_per_call: data_bytes,
             }
         })
         .collect();
@@ -1290,6 +1368,24 @@ fn extract_gpu_hotspots(
     });
 
     hotspots
+}
+
+/// Compute kernel launch overhead from profiler data (F-PROFILE-009).
+///
+/// Returns (total_launch_overhead_us, launch_overhead_percent_of_decode).
+/// Launch overhead is estimated as the gap between sum of kernel times and total wall time.
+#[cfg(feature = "inference")]
+fn compute_kernel_launch_overhead(hotspots: &[Hotspot], total_decode_us: f64) -> (f64, f64) {
+    let sum_kernel_us: f64 = hotspots.iter().map(|h| h.time_us).sum();
+    // Launch overhead = total decode time - sum of kernel compute time
+    // This includes: CUDA launch latency, memory allocation, synchronization
+    let overhead_us = (total_decode_us - sum_kernel_us).max(0.0);
+    let overhead_pct = if total_decode_us > 0.0 {
+        overhead_us / total_decode_us * 100.0
+    } else {
+        0.0
+    };
+    (overhead_us, overhead_pct)
 }
 
 /// Run Ollama and collect baseline performance
@@ -1859,6 +1955,8 @@ fn profile_gguf_real(
                 bottleneck: Some(bottleneck),
                 efficiency_pct: None, // Computed later with hardware info
                 category: Some(category),
+                bandwidth_gbs: None,
+                data_bytes_per_call: None,
             }
         })
         .collect();
@@ -1912,6 +2010,8 @@ fn profile_gguf_real(
         prefill_tok_s: 0.0, // CPU path doesn't separate prefill/decode
         decode_tok_s: tps,
         total_tokens_generated: tokens_per_pass * measure_passes,
+        kernel_launch_overhead_pct: 0.0, // CPU path: no kernel launches
+        kernel_launch_overhead_us: 0.0,
     })
 }
 
@@ -2025,6 +2125,8 @@ fn profile_apr_real(
             bottleneck: None,
             efficiency_pct: None,
             category: Some("Other".to_string()),
+            bandwidth_gbs: None,
+            data_bytes_per_call: None,
         }],
         per_layer_us: vec![avg_us / num_layers as f64; num_layers],
         is_real_data: true,
@@ -2039,6 +2141,8 @@ fn profile_apr_real(
         prefill_tok_s: 0.0,
         decode_tok_s: tps,
         total_tokens_generated: tokens_per_pass * measure_passes,
+        kernel_launch_overhead_pct: 0.0, // APR CPU: no kernel launches
+        kernel_launch_overhead_us: 0.0,
     })
 }
 
@@ -2107,9 +2211,18 @@ fn print_human_results(
             bar,
         ];
         if granular {
+            // F-PROFILE-008: Include bandwidth in detail column
+            let bw_str = hotspot
+                .bandwidth_gbs
+                .map(|bw| format!(", bw={:.1}GB/s", bw))
+                .unwrap_or_default();
+            let eff_str = hotspot
+                .efficiency_pct
+                .map(|e| format!(", eff={:.0}%", e))
+                .unwrap_or_default();
             row.push(format!(
-                "avg={:.1}µs, min={:.1}µs, max={:.1}µs",
-                hotspot.avg_us, hotspot.min_us, hotspot.max_us
+                "avg={:.1}µs, min={:.1}µs, max={:.1}µs{}{}",
+                hotspot.avg_us, hotspot.min_us, hotspot.max_us, bw_str, eff_str
             ));
         }
         hotspot_rows.push(row);
@@ -2166,6 +2279,33 @@ fn print_human_results(
             cat.other_pct,
             other_bar.dimmed()
         );
+        println!();
+    }
+
+    // ── F-PROFILE-009: Kernel Launch Overhead ──
+    if results.kernel_launch_overhead_us > 0.0 {
+        output::subheader("Kernel Launch Overhead (F-PROFILE-009)");
+        println!();
+        println!(
+            "  Overhead: {:.0}µs ({:.1}% of decode time)",
+            results.kernel_launch_overhead_us, results.kernel_launch_overhead_pct
+        );
+        if results.kernel_launch_overhead_pct > 20.0 {
+            println!(
+                "  {}",
+                "WARNING: >20% overhead — consider kernel fusion".red()
+            );
+        } else if results.kernel_launch_overhead_pct > 10.0 {
+            println!(
+                "  {}",
+                "NOTE: 10-20% overhead — moderate, may benefit from CUDA graph".yellow()
+            );
+        } else {
+            println!(
+                "  {}",
+                "OK: <10% overhead — launch latency is not a bottleneck".green()
+            );
+        }
         println!();
     }
 
@@ -3377,6 +3517,8 @@ mod tests {
             bottleneck: None,
             efficiency_pct: None,
             category: None,
+            bandwidth_gbs: None,
+            data_bytes_per_call: None,
         };
         let debug = format!("{:?}", hotspot);
         assert!(debug.contains("Hotspot"));
@@ -3396,6 +3538,8 @@ mod tests {
             bottleneck: None,
             efficiency_pct: None,
             category: None,
+            bandwidth_gbs: None,
+            data_bytes_per_call: None,
         };
         let cloned = hotspot.clone();
         assert_eq!(cloned.name, hotspot.name);
@@ -3415,6 +3559,8 @@ mod tests {
             bottleneck: None,
             efficiency_pct: None,
             category: None,
+            bandwidth_gbs: None,
+            data_bytes_per_call: None,
         };
         assert_eq!(hotspot.count, 0);
         assert_eq!(hotspot.avg_us, 0.0);
@@ -3433,6 +3579,8 @@ mod tests {
             bottleneck: None,
             efficiency_pct: None,
             category: None,
+            bandwidth_gbs: None,
+            data_bytes_per_call: None,
         };
         assert!(hotspot.max_us > hotspot.avg_us * 4.0);
     }
@@ -3481,6 +3629,8 @@ mod tests {
                 bottleneck: None,
                 efficiency_pct: None,
                 category: None,
+                bandwidth_gbs: None,
+                data_bytes_per_call: None,
             },
             Hotspot {
                 name: "attention".to_string(),
@@ -3493,6 +3643,8 @@ mod tests {
                 bottleneck: None,
                 efficiency_pct: None,
                 category: None,
+                bandwidth_gbs: None,
+                data_bytes_per_call: None,
             },
         ];
         let results = RealProfileResults {
@@ -3723,6 +3875,8 @@ mod tests {
                     bottleneck: None,
                     efficiency_pct: None,
                     category: None,
+                    bandwidth_gbs: None,
+                    data_bytes_per_call: None,
                 },
                 Hotspot {
                     name: "mlp_gate_up".to_string(),
@@ -3735,6 +3889,8 @@ mod tests {
                     bottleneck: None,
                     efficiency_pct: None,
                     category: None,
+                    bandwidth_gbs: None,
+                    data_bytes_per_call: None,
                 },
                 Hotspot {
                     name: "matmul_q4k".to_string(),
@@ -3747,6 +3903,8 @@ mod tests {
                     bottleneck: None,
                     efficiency_pct: None,
                     category: None,
+                    bandwidth_gbs: None,
+                    data_bytes_per_call: None,
                 },
                 Hotspot {
                     name: "embedding_lookup".to_string(),
@@ -3759,6 +3917,8 @@ mod tests {
                     bottleneck: None,
                     efficiency_pct: None,
                     category: None,
+                    bandwidth_gbs: None,
+                    data_bytes_per_call: None,
                 },
                 Hotspot {
                     name: "softmax".to_string(),
@@ -3771,6 +3931,8 @@ mod tests {
                     bottleneck: None,
                     efficiency_pct: None,
                     category: None,
+                    bandwidth_gbs: None,
+                    data_bytes_per_call: None,
                 },
                 Hotspot {
                     name: "ffn_down_proj".to_string(),
@@ -3783,6 +3945,8 @@ mod tests {
                     bottleneck: None,
                     efficiency_pct: None,
                     category: None,
+                    bandwidth_gbs: None,
+                    data_bytes_per_call: None,
                 },
                 Hotspot {
                     name: "lm_head".to_string(),
@@ -3795,6 +3959,8 @@ mod tests {
                     bottleneck: None,
                     efficiency_pct: None,
                     category: None,
+                    bandwidth_gbs: None,
+                    data_bytes_per_call: None,
                 },
                 Hotspot {
                     name: "linear_proj".to_string(),
@@ -3807,6 +3973,8 @@ mod tests {
                     bottleneck: None,
                     efficiency_pct: None,
                     category: None,
+                    bandwidth_gbs: None,
+                    data_bytes_per_call: None,
                 },
                 Hotspot {
                     name: "gemm_f16".to_string(),
@@ -3819,6 +3987,8 @@ mod tests {
                     bottleneck: None,
                     efficiency_pct: None,
                     category: None,
+                    bandwidth_gbs: None,
+                    data_bytes_per_call: None,
                 },
             ],
             per_layer_us: vec![312.5; 32],
@@ -3958,6 +4128,8 @@ mod tests {
                 bottleneck: None,
                 efficiency_pct: None,
                 category: None,
+                bandwidth_gbs: None,
+                data_bytes_per_call: None,
             }],
             per_layer_us: vec![],
             is_real_data: true,
@@ -4516,6 +4688,8 @@ mod tests {
                 bottleneck: None,
                 efficiency_pct: None,
                 category: None,
+                bandwidth_gbs: None,
+                data_bytes_per_call: None,
             }],
             per_layer_us: vec![250.0; 4],
             is_real_data: true,
@@ -4552,6 +4726,8 @@ mod tests {
                 bottleneck: None,
                 efficiency_pct: None,
                 category: None,
+                bandwidth_gbs: None,
+                data_bytes_per_call: None,
             }],
             per_layer_us: vec![250.0; 4],
             is_real_data: true,
@@ -4613,6 +4789,8 @@ mod tests {
                 bottleneck: None,
                 efficiency_pct: None,
                 category: None,
+                bandwidth_gbs: None,
+                data_bytes_per_call: None,
             }],
             per_layer_us: vec![],
             is_real_data: true,
@@ -4639,6 +4817,8 @@ mod tests {
                 bottleneck: None,
                 efficiency_pct: None,
                 category: None,
+                bandwidth_gbs: None,
+                data_bytes_per_call: None,
             })
             .collect();
         let results = RealProfileResults {
@@ -4743,6 +4923,8 @@ mod tests {
                     bottleneck: None,
                     efficiency_pct: None,
                     category: None,
+                    bandwidth_gbs: None,
+                    data_bytes_per_call: None,
                 },
                 Hotspot {
                     name: "op_b".to_string(),
@@ -4755,6 +4937,8 @@ mod tests {
                     bottleneck: None,
                     efficiency_pct: None,
                     category: None,
+                    bandwidth_gbs: None,
+                    data_bytes_per_call: None,
                 },
             ],
             per_layer_us: vec![1250.0; 4],
@@ -4792,6 +4976,8 @@ mod tests {
                 bottleneck: None,
                 efficiency_pct: None,
                 category: None,
+                bandwidth_gbs: None,
+                data_bytes_per_call: None,
             }],
             per_layer_us: vec![100.0],
             is_real_data: true,
@@ -4833,6 +5019,8 @@ mod tests {
                     bottleneck: None,
                     efficiency_pct: None,
                     category: None,
+                    bandwidth_gbs: None,
+                    data_bytes_per_call: None,
                 },
                 Hotspot {
                     name: "op_b".to_string(),
@@ -4845,6 +5033,8 @@ mod tests {
                     bottleneck: None,
                     efficiency_pct: None,
                     category: None,
+                    bandwidth_gbs: None,
+                    data_bytes_per_call: None,
                 },
             ],
             per_layer_us: vec![],
@@ -4882,6 +5072,8 @@ mod tests {
                 bottleneck: None,
                 efficiency_pct: None,
                 category: None,
+                bandwidth_gbs: None,
+                data_bytes_per_call: None,
             }],
             per_layer_us: vec![],
             is_real_data: true,
@@ -4948,6 +5140,8 @@ mod tests {
                 bottleneck: None,
                 efficiency_pct: None,
                 category: None,
+                bandwidth_gbs: None,
+                data_bytes_per_call: None,
             }],
             per_layer_us: vec![],
             is_real_data: true,
@@ -5066,6 +5260,8 @@ mod tests {
                 bottleneck: None,
                 efficiency_pct: None,
                 category: None,
+                bandwidth_gbs: None,
+                data_bytes_per_call: None,
             }],
             per_layer_us: vec![250.0; 4],
             is_real_data: true,
@@ -5192,6 +5388,8 @@ mod tests {
                 bottleneck: None,
                 efficiency_pct: None,
                 category: None,
+                bandwidth_gbs: None,
+                data_bytes_per_call: None,
             }],
             per_layer_us: vec![],
             is_real_data: true,
@@ -5230,6 +5428,8 @@ mod tests {
                     bottleneck: None,
                     efficiency_pct: None,
                     category: None,
+                    bandwidth_gbs: None,
+                    data_bytes_per_call: None,
                 },
                 Hotspot {
                     name: "down_proj".to_string(),
@@ -5242,6 +5442,8 @@ mod tests {
                     bottleneck: None,
                     efficiency_pct: None,
                     category: None,
+                    bandwidth_gbs: None,
+                    data_bytes_per_call: None,
                 },
             ],
             per_layer_us: vec![],
@@ -5279,6 +5481,8 @@ mod tests {
                 bottleneck: None,
                 efficiency_pct: None,
                 category: None,
+                bandwidth_gbs: None,
+                data_bytes_per_call: None,
             }],
             per_layer_us: vec![],
             is_real_data: true,
@@ -5315,6 +5519,8 @@ mod tests {
                 bottleneck: None,
                 efficiency_pct: None,
                 category: None,
+                bandwidth_gbs: None,
+                data_bytes_per_call: None,
             }],
             per_layer_us: vec![],
             is_real_data: true,
@@ -5356,6 +5562,8 @@ mod tests {
                     bottleneck: None,
                     efficiency_pct: None,
                     category: None,
+                    bandwidth_gbs: None,
+                    data_bytes_per_call: None,
                 },
                 Hotspot {
                     name: "MATMUL_F16".to_string(),
@@ -5368,6 +5576,8 @@ mod tests {
                     bottleneck: None,
                     efficiency_pct: None,
                     category: None,
+                    bandwidth_gbs: None,
+                    data_bytes_per_call: None,
                 },
                 Hotspot {
                     name: "MLP_Gate".to_string(),
@@ -5380,6 +5590,8 @@ mod tests {
                     bottleneck: None,
                     efficiency_pct: None,
                     category: None,
+                    bandwidth_gbs: None,
+                    data_bytes_per_call: None,
                 },
             ],
             per_layer_us: vec![],
@@ -5450,5 +5662,154 @@ mod tests {
             true,
         );
         assert!(result.is_err(), "Should fail with nonexistent files");
+    }
+
+    // ========================================================================
+    // F-PROFILE-007/008/009: Per-Kernel Profiling Tests
+    // ========================================================================
+
+    #[test]
+    fn test_estimate_kernel_data_bytes_q_proj() {
+        let bytes = estimate_kernel_data_bytes("q_proj", 4096, 151936);
+        assert!(bytes.is_some());
+        let b = bytes.expect("q_proj should have data estimate");
+        // Q4K weight: 4096*4096 * 0.5625 ≈ 9.4M, plus activation RW
+        assert!(b > 9_000_000, "Q_proj should move >9MB: got {b}");
+        assert!(b < 20_000_000, "Q_proj should move <20MB: got {b}");
+    }
+
+    #[test]
+    fn test_estimate_kernel_data_bytes_gate_proj() {
+        let bytes = estimate_kernel_data_bytes("gate_proj", 4096, 151936);
+        assert!(bytes.is_some());
+        let b = bytes.expect("gate_proj should have data estimate");
+        // FFN gate: 4096 * (4096*4) * 0.5625 ≈ 37.7M, plus activation RW
+        assert!(b > 30_000_000, "gate_proj should move >30MB: got {b}");
+    }
+
+    #[test]
+    fn test_estimate_kernel_data_bytes_lm_head() {
+        let bytes = estimate_kernel_data_bytes("lm_head", 4096, 151936);
+        assert!(bytes.is_some());
+        let b = bytes.expect("lm_head should have data estimate");
+        // LM head: 4096*151936 * 0.5625 ≈ 350M
+        assert!(b > 300_000_000, "lm_head should move >300MB: got {b}");
+    }
+
+    #[test]
+    fn test_estimate_kernel_data_bytes_rmsnorm() {
+        let bytes = estimate_kernel_data_bytes("rmsnorm", 4096, 151936);
+        assert!(bytes.is_some());
+        let b = bytes.expect("rmsnorm should have data estimate");
+        // Norm: activation RW (4096*8) + weight (4096*4) ≈ 48KB
+        assert!(b > 40_000, "rmsnorm should move >40KB: got {b}");
+        assert!(b < 200_000, "rmsnorm should move <200KB: got {b}");
+    }
+
+    #[test]
+    fn test_estimate_kernel_data_bytes_unknown() {
+        let bytes = estimate_kernel_data_bytes("random_op_xyz", 4096, 151936);
+        assert!(bytes.is_none(), "Unknown ops should return None");
+    }
+
+    #[test]
+    fn test_compute_kernel_launch_overhead_basic() {
+        let hotspots = vec![
+            Hotspot {
+                name: "q_proj".to_string(),
+                time_us: 500.0,
+                percent: 50.0,
+                count: 10,
+                avg_us: 50.0,
+                min_us: 45.0,
+                max_us: 55.0,
+                bottleneck: None,
+                efficiency_pct: None,
+                category: None,
+                bandwidth_gbs: None,
+                data_bytes_per_call: None,
+            },
+            Hotspot {
+                name: "k_proj".to_string(),
+                time_us: 300.0,
+                percent: 30.0,
+                count: 10,
+                avg_us: 30.0,
+                min_us: 25.0,
+                max_us: 35.0,
+                bottleneck: None,
+                efficiency_pct: None,
+                category: None,
+                bandwidth_gbs: None,
+                data_bytes_per_call: None,
+            },
+        ];
+        // Total kernel time = 800µs, total decode = 1000µs → 200µs overhead = 20%
+        let (overhead_us, overhead_pct) = compute_kernel_launch_overhead(&hotspots, 1000.0);
+        assert!(
+            (overhead_us - 200.0).abs() < 1.0,
+            "Expected ~200µs overhead, got {overhead_us}"
+        );
+        assert!(
+            (overhead_pct - 20.0).abs() < 1.0,
+            "Expected ~20% overhead, got {overhead_pct}"
+        );
+    }
+
+    #[test]
+    fn test_compute_kernel_launch_overhead_zero_decode() {
+        let hotspots = vec![];
+        let (overhead_us, overhead_pct) = compute_kernel_launch_overhead(&hotspots, 0.0);
+        assert!(
+            overhead_us.abs() < 0.001,
+            "Zero decode should yield zero overhead"
+        );
+        assert!(
+            overhead_pct.abs() < 0.001,
+            "Zero decode should yield zero percent"
+        );
+    }
+
+    #[test]
+    fn test_hotspot_bandwidth_fields() {
+        let h = Hotspot {
+            name: "test".to_string(),
+            time_us: 100.0,
+            percent: 50.0,
+            count: 5,
+            avg_us: 20.0,
+            min_us: 15.0,
+            max_us: 25.0,
+            bottleneck: None,
+            efficiency_pct: Some(45.0),
+            category: Some("FFN".to_string()),
+            bandwidth_gbs: Some(500.0),
+            data_bytes_per_call: Some(10_000_000),
+        };
+        assert!(
+            (h.bandwidth_gbs.expect("should have bw") - 500.0).abs() < 0.1,
+            "Bandwidth should be preserved"
+        );
+        assert_eq!(
+            h.data_bytes_per_call.expect("should have data bytes"),
+            10_000_000
+        );
+    }
+
+    #[test]
+    fn test_real_profile_results_has_launch_overhead() {
+        let results = RealProfileResults {
+            kernel_launch_overhead_pct: 15.0,
+            kernel_launch_overhead_us: 1500.0,
+            ..Default::default()
+        };
+        assert!(
+            (results.kernel_launch_overhead_pct - 15.0).abs() < 0.01,
+            "Launch overhead percent preserved"
+        );
+        assert!(
+            (results.kernel_launch_overhead_us - 1500.0).abs() < 0.01,
+            "Launch overhead µs preserved"
+        );
     }
 }
