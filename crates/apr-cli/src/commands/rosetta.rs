@@ -648,82 +648,12 @@ pub fn run_compare_inference(
 
     let result_b = run_model_with_logits(model_b, prompt, max_tokens, temperature)?;
 
-    // Compare results
     let total_tokens = result_a.tokens.len().min(result_b.tokens.len());
-    let mut mismatches = 0;
-
-    if !json {
-        println!(
-            "{}",
-            "╠══════════════════════════════════════════════════════════════════════════════╣"
-                .cyan()
-        );
-        println!(
-            "{}",
-            "║                           TOKEN-BY-TOKEN COMPARISON                           ║"
-                .cyan()
-        );
-        println!(
-            "{}",
-            "╠───────┬─────────────────────────────────┬────────────────────────────────┬───╣"
-                .cyan()
-        );
-        println!(
-            "{}",
-            "║ Pos   │ Model A (top-1)                 │ Model B (top-1)                │ Δ ║"
-                .cyan()
-        );
-        println!(
-            "{}",
-            "╠───────┼─────────────────────────────────┼────────────────────────────────┼───╣"
-                .cyan()
-        );
-    }
-
-    for i in 0..total_tokens {
-        let token_a = result_a.tokens.get(i).copied().unwrap_or(0);
-        let token_b = result_b.tokens.get(i).copied().unwrap_or(0);
-
-        let logit_a = result_a.logits.get(i).copied().unwrap_or(0.0);
-        let logit_b = result_b.logits.get(i).copied().unwrap_or(0.0);
-
-        let matches = token_a == token_b;
-        if !matches {
-            mismatches += 1;
-        }
-
-        let status = if matches { "✓" } else { "✗" };
-        let status_colored = if matches {
-            status.green()
-        } else {
-            status.red()
-        };
-
-        if !json {
-            println!(
-                "║ {:<5} │ token={:<5} logit={:<12.2} │ token={:<5} logit={:<11.2} │ {} ║",
-                i, token_a, logit_a, token_b, logit_b, status_colored
-            );
-
-            // Show top-5 if mismatch
-            if !matches {
-                if let Some(top5_a) = result_a.top5.get(i) {
-                    println!(
-                        "║       │ Top-5: {:<24} │{:<32} │   ║",
-                        format!("{:?}", top5_a),
-                        ""
-                    );
-                }
-                if let Some(top5_b) = result_b.top5.get(i) {
-                    println!(
-                        "║       │{:<33} │ Top-5: {:<23} │   ║",
-                        "",
-                        format!("{:?}", top5_b)
-                    );
-                }
-            }
-        }
-    }
+    let mismatches = if json {
+        count_token_mismatches(&result_a, &result_b, total_tokens)
+    } else {
+        print_token_comparison_table(&result_a, &result_b, total_tokens)
+    };
 
     if json {
         print_compare_json(
@@ -742,7 +672,6 @@ pub fn run_compare_inference(
             "╠══════════════════════════════════════════════════════════════════════════════╣"
                 .cyan()
         );
-
         print_inference_diagnosis(
             total_tokens,
             mismatches,
@@ -752,11 +681,104 @@ pub fn run_compare_inference(
         );
     }
 
-    // GH-188 FIX: Fail if no tokens were captured (tracing broken or inference failed)
     if total_tokens == 0 {
         validate_captured_tokens(&result_a.output_text, &result_b.output_text)?;
     }
 
+    validate_match_tolerance(mismatches, total_tokens, tolerance)
+}
+
+/// Count token mismatches between two inference results (no output).
+fn count_token_mismatches(
+    result_a: &InferenceResult,
+    result_b: &InferenceResult,
+    total_tokens: usize,
+) -> usize {
+    (0..total_tokens)
+        .filter(|&i| {
+            result_a.tokens.get(i).copied().unwrap_or(0)
+                != result_b.tokens.get(i).copied().unwrap_or(0)
+        })
+        .count()
+}
+
+/// Print token-by-token comparison table and return mismatch count.
+fn print_token_comparison_table(
+    result_a: &InferenceResult,
+    result_b: &InferenceResult,
+    total_tokens: usize,
+) -> usize {
+    println!(
+        "{}",
+        "╠══════════════════════════════════════════════════════════════════════════════╣"
+            .cyan()
+    );
+    println!(
+        "{}",
+        "║                           TOKEN-BY-TOKEN COMPARISON                           ║"
+            .cyan()
+    );
+    println!(
+        "{}",
+        "╠───────┬─────────────────────────────────┬────────────────────────────────┬───╣"
+            .cyan()
+    );
+    println!(
+        "{}",
+        "║ Pos   │ Model A (top-1)                 │ Model B (top-1)                │ Δ ║"
+            .cyan()
+    );
+    println!(
+        "{}",
+        "╠───────┼─────────────────────────────────┼────────────────────────────────┼───╣"
+            .cyan()
+    );
+
+    let mut mismatches = 0;
+    for i in 0..total_tokens {
+        let token_a = result_a.tokens.get(i).copied().unwrap_or(0);
+        let token_b = result_b.tokens.get(i).copied().unwrap_or(0);
+        let logit_a = result_a.logits.get(i).copied().unwrap_or(0.0);
+        let logit_b = result_b.logits.get(i).copied().unwrap_or(0.0);
+
+        let matches = token_a == token_b;
+        if !matches {
+            mismatches += 1;
+        }
+
+        let status_colored = if matches {
+            "✓".green()
+        } else {
+            "✗".red()
+        };
+
+        println!(
+            "║ {:<5} │ token={:<5} logit={:<12.2} │ token={:<5} logit={:<11.2} │ {} ║",
+            i, token_a, logit_a, token_b, logit_b, status_colored
+        );
+
+        if !matches {
+            if let Some(top5_a) = result_a.top5.get(i) {
+                println!(
+                    "║       │ Top-5: {:<24} │{:<32} │   ║",
+                    format!("{:?}", top5_a),
+                    ""
+                );
+            }
+            if let Some(top5_b) = result_b.top5.get(i) {
+                println!(
+                    "║       │{:<33} │ Top-5: {:<23} │   ║",
+                    "",
+                    format!("{:?}", top5_b)
+                );
+            }
+        }
+    }
+    mismatches
+}
+
+/// Validate that match rate meets tolerance threshold.
+fn validate_match_tolerance(mismatches: usize, total_tokens: usize, tolerance: f32) -> Result<()> {
     if mismatches > 0 {
         let match_rate = 1.0 - (mismatches as f32 / total_tokens.max(1) as f32);
         if match_rate < (1.0 - tolerance) {
@@ -769,7 +791,6 @@ pub fn run_compare_inference(
             )));
         }
     }
-
     Ok(())
 }
 
@@ -913,41 +934,38 @@ fn print_inference_diagnosis(
 /// Returns a normalized quantization level string for R3 comparison.
 /// SafeTensors are unquantized (BF16/F16/F32), GGUF files contain quant level
 /// in their filename (e.g. Q4_K_M, Q6_K), APR files may have been quantized at import.
+/// Match a filename against a list of quantization patterns.
+fn match_quant_pattern(name: &str, patterns: &[&str]) -> Option<String> {
+    patterns.iter().find(|q| name.contains(**q)).map(|q| q.to_uppercase())
+}
+
 fn detect_quant_level_from_path(path: &Path) -> String {
     let name = path
         .file_name()
         .map(|n| n.to_string_lossy().to_lowercase())
         .unwrap_or_default();
 
-    // SafeTensors are always unquantized (BF16/F16/F32)
-    if name.ends_with(".safetensors") {
-        return "unquantized (BF16/F16/F32)".to_string();
-    }
+    let ext = path.extension().map(std::ffi::OsStr::to_ascii_lowercase);
+    let ext_str = ext.as_deref().and_then(|e| e.to_str()).unwrap_or("");
 
-    // GGUF: detect from filename patterns
-    if name.to_ascii_lowercase().ends_with(".gguf") {
-        for quant in &[
-            "q2_k", "q3_k_s", "q3_k_m", "q3_k_l", "q4_0", "q4_1", "q4_k_s", "q4_k_m", "q4_k",
-            "q5_0", "q5_1", "q5_k_s", "q5_k_m", "q5_k", "q6_k", "q8_0", "f16", "f32",
-        ] {
-            if name.contains(quant) {
-                return quant.to_uppercase();
-            }
+    match ext_str {
+        "safetensors" => "unquantized (BF16/F16/F32)".to_string(),
+        "gguf" => {
+            let patterns = &[
+                "q2_k", "q3_k_s", "q3_k_m", "q3_k_l", "q4_0", "q4_1", "q4_k_s", "q4_k_m",
+                "q4_k", "q5_0", "q5_1", "q5_k_s", "q5_k_m", "q5_k", "q6_k", "q8_0", "f16",
+                "f32",
+            ];
+            match_quant_pattern(&name, patterns)
+                .unwrap_or_else(|| "GGUF (quant unknown)".to_string())
         }
-        return "GGUF (quant unknown)".to_string();
-    }
-
-    // APR: detect from filename patterns (e.g. model-q4k.apr)
-    if name.to_ascii_lowercase().ends_with(".apr") {
-        for quant in &["q4k", "q6k", "q4_k", "q6_k", "q8_0", "f16", "f32"] {
-            if name.contains(quant) {
-                return quant.to_uppercase();
-            }
+        "apr" => {
+            let patterns = &["q4k", "q6k", "q4_k", "q6_k", "q8_0", "f16", "f32"];
+            match_quant_pattern(&name, patterns)
+                .unwrap_or_else(|| "APR (quant unknown)".to_string())
         }
-        return "APR (quant unknown)".to_string();
+        _ => "unknown".to_string(),
     }
-
-    "unknown".to_string()
 }
 
 /// F-GT-002: Check for R3 mixed quantization level violation.
@@ -1180,6 +1198,47 @@ fn print_diff_text_summary(
 
 /// Compare a single tensor pair and accumulate mismatches.
 #[allow(clippy::too_many_arguments)]
+/// Print the text comparison for two tensors that are both present.
+fn print_both_present(
+    name: &str,
+    a: &TensorInfo,
+    b: &TensorInfo,
+    dims_match: bool,
+    is_transposed: bool,
+) {
+    let separator =
+        "╠──────────────────────────────────────────────────────────────────────────────╣".cyan();
+    let status = if dims_match {
+        "✓".green()
+    } else if is_transposed {
+        "⚠️".yellow()
+    } else {
+        "✗".red()
+    };
+    println!("║ {} {:<72} ║", status, name);
+    println!(
+        "║   A: {:?} {:>20} {:>15} bytes    ║",
+        a.shape, a.dtype, a.size_bytes
+    );
+    println!(
+        "║   B: {:?} {:>20} {:>15} bytes    ║",
+        b.shape, b.dtype, b.size_bytes
+    );
+    if is_transposed {
+        println!(
+            "║   {} ║",
+            "LAYOUT MISMATCH: Dimensions are transposed! Likely GGML convention."
+                .red()
+                .bold()
+        );
+        println!(
+            "║   {} ║",
+            "FIX: Transpose this tensor during load OR use row-major kernel".yellow()
+        );
+    }
+    println!("{separator}");
+}
+
 fn diff_tensor_pair(
     name: &str,
     tensor_a: Option<&TensorInfo>,
@@ -1196,39 +1255,9 @@ fn diff_tensor_pair(
         (Some(a), Some(b)) => {
             let dims_match = a.shape == b.shape;
             let is_transposed = is_transposed_dims(&a.shape, &b.shape);
-
             if !dims_match || !mismatches_only {
                 if !json {
-                    let status = if dims_match {
-                        "✓".green()
-                    } else if is_transposed {
-                        "⚠️".yellow()
-                    } else {
-                        "✗".red()
-                    };
-                    println!("║ {} {:<72} ║", status, name);
-                    println!(
-                        "║   A: {:?} {:>20} {:>15} bytes    ║",
-                        a.shape, a.dtype, a.size_bytes
-                    );
-                    println!(
-                        "║   B: {:?} {:>20} {:>15} bytes    ║",
-                        b.shape, b.dtype, b.size_bytes
-                    );
-                    if is_transposed {
-                        println!(
-                            "║   {} ║",
-                            "LAYOUT MISMATCH: Dimensions are transposed! Likely GGML convention."
-                                .red()
-                                .bold()
-                        );
-                        println!(
-                            "║   {} ║",
-                            "FIX: Transpose this tensor during load OR use row-major kernel"
-                                .yellow()
-                        );
-                    }
-                    println!("{separator}");
+                    print_both_present(name, a, b, dims_match, is_transposed);
                 }
                 if is_transposed {
                     layout_mismatches.push((name.to_string(), a.shape.clone(), b.shape.clone()));
@@ -1398,6 +1427,61 @@ pub fn run_diff_tensors(
 ///
 /// Computes statistical fingerprints for all tensors in a model.
 /// Fingerprints include: mean, std, min, max, percentiles, nan/inf counts.
+/// Print the fingerprint banner header (text mode).
+fn print_fingerprint_banner(model: &Path) {
+    println!(
+        "{}",
+        "╔══════════════════════════════════════════════════════════════════════════════╗".cyan()
+    );
+    println!(
+        "{}",
+        "║           TENSOR STATISTICAL FINGERPRINTS (PMAT-201, JAX-STAT-001)          ║".cyan()
+    );
+    println!(
+        "{}",
+        "╠══════════════════════════════════════════════════════════════════════════════╣".cyan()
+    );
+    println!(
+        "║ Model: {:<69} ║",
+        truncate_path(model.display().to_string(), 69)
+    );
+}
+
+/// Run fingerprint comparison or single-model output.
+fn run_fingerprint_body(
+    fingerprints_a: &[TensorFingerprint],
+    model_b: Option<&Path>,
+    filter: Option<&str>,
+    verbose: bool,
+    json: bool,
+) -> Result<()> {
+    let Some(model_b_path) = model_b else {
+        if !json {
+            println!(
+                "{}",
+                "╠══════════════════════════════════════════════════════════════════════════════╣".cyan()
+            );
+        }
+        return print_fingerprints(fingerprints_a, verbose, json);
+    };
+
+    if !model_b_path.exists() {
+        return Err(CliError::FileNotFound(model_b_path.to_path_buf()));
+    }
+    if !json {
+        println!(
+            "║ Compare: {:<67} ║",
+            truncate_path(model_b_path.display().to_string(), 67)
+        );
+        println!(
+            "{}",
+            "╠══════════════════════════════════════════════════════════════════════════════╣".cyan()
+        );
+    }
+    let fingerprints_b = compute_fingerprints(model_b_path, filter)?;
+    print_fingerprint_diff(fingerprints_a, &fingerprints_b, verbose, json)
+}
+
 pub fn run_fingerprint(
     model: &Path,
     model_b: Option<&Path>,
@@ -1411,63 +1495,12 @@ pub fn run_fingerprint(
     }
 
     if !json {
-        println!(
-            "{}",
-            "╔══════════════════════════════════════════════════════════════════════════════╗"
-                .cyan()
-        );
-        println!(
-            "{}",
-            "║           TENSOR STATISTICAL FINGERPRINTS (PMAT-201, JAX-STAT-001)          ║"
-                .cyan()
-        );
-        println!(
-            "{}",
-            "╠══════════════════════════════════════════════════════════════════════════════╣"
-                .cyan()
-        );
-        println!(
-            "║ Model: {:<69} ║",
-            truncate_path(model.display().to_string(), 69)
-        );
+        print_fingerprint_banner(model);
     }
 
-    // Compute fingerprints for model A
     let fingerprints_a = compute_fingerprints(model, filter)?;
+    run_fingerprint_body(&fingerprints_a, model_b, filter, verbose, json)?;
 
-    if let Some(model_b_path) = model_b {
-        // Diff mode: compare two models
-        if !model_b_path.exists() {
-            return Err(CliError::FileNotFound(model_b_path.to_path_buf()));
-        }
-
-        if !json {
-            println!(
-                "║ Compare: {:<67} ║",
-                truncate_path(model_b_path.display().to_string(), 67)
-            );
-            println!(
-                "{}",
-                "╠══════════════════════════════════════════════════════════════════════════════╣"
-                    .cyan()
-            );
-        }
-
-        let fingerprints_b = compute_fingerprints(model_b_path, filter)?;
-        print_fingerprint_diff(&fingerprints_a, &fingerprints_b, verbose, json)?;
-    } else {
-        // Single model mode: just output fingerprints
-        if !json {
-            println!(
-                "{}",
-                "╠══════════════════════════════════════════════════════════════════════════════╣"
-                    .cyan()
-            );
-        }
-        print_fingerprints(&fingerprints_a, verbose, json)?;
-    }
-
-    // Output to file if requested
     if let Some(output_path) = output {
         let json_content = fingerprints_to_json(&fingerprints_a);
         std::fs::write(output_path, json_content).map_err(|e| {
@@ -1481,8 +1514,7 @@ pub fn run_fingerprint(
     if !json {
         println!(
             "{}",
-            "╚══════════════════════════════════════════════════════════════════════════════╝"
-                .cyan()
+            "╚══════════════════════════════════════════════════════════════════════════════╝".cyan()
         );
     }
 
@@ -1492,6 +1524,113 @@ pub fn run_fingerprint(
 /// Run the rosetta validate-stats subcommand (PMAT-202)
 ///
 /// Validates tensor statistics against a reference model or stored fingerprints.
+/// Resolve reference fingerprints from either a reference model or a fingerprints file.
+fn resolve_reference_fingerprints(
+    reference: Option<&Path>,
+    fingerprints_file: Option<&Path>,
+    json: bool,
+) -> Result<Vec<TensorFingerprint>> {
+    if let Some(ref_path) = reference {
+        if !ref_path.exists() {
+            return Err(CliError::FileNotFound(ref_path.to_path_buf()));
+        }
+        if !json {
+            println!(
+                "║ Reference: {:<65} ║",
+                truncate_path(ref_path.display().to_string(), 65)
+            );
+        }
+        compute_fingerprints(ref_path, None)
+    } else if let Some(fp_path) = fingerprints_file {
+        if !fp_path.exists() {
+            return Err(CliError::FileNotFound(fp_path.to_path_buf()));
+        }
+        if !json {
+            println!(
+                "║ Fingerprints: {:<62} ║",
+                truncate_path(fp_path.display().to_string(), 62)
+            );
+        }
+        load_fingerprints_from_json(fp_path)
+    } else {
+        unreachable!()
+    }
+}
+
+/// Print validation anomalies as JSON.
+fn print_validate_stats_json(
+    model: &Path,
+    threshold: f32,
+    strict: bool,
+    total_tensors: usize,
+    anomalies: &[StatisticalAnomaly],
+) {
+    println!("{{");
+    println!("  \"model\": \"{}\",", model.display());
+    println!("  \"threshold\": {},", threshold);
+    println!("  \"strict\": {},", strict);
+    println!("  \"total_tensors\": {},", total_tensors);
+    println!("  \"anomalies\": {},", anomalies.len());
+    if !anomalies.is_empty() {
+        println!("  \"anomaly_details\": [");
+        for (i, anomaly) in anomalies.iter().enumerate() {
+            let comma = if i < anomalies.len() - 1 { "," } else { "" };
+            println!(
+                "    {{\"tensor\": \"{}\", \"field\": \"{}\", \"expected\": {:.6}, \"actual\": {:.6}, \"deviation\": {:.2}}}{}",
+                anomaly.tensor, anomaly.field, anomaly.expected, anomaly.actual, anomaly.deviation_sigma, comma
+            );
+        }
+        println!("  ],");
+    }
+    println!("  \"passed\": {}", anomalies.is_empty());
+    println!("}}");
+}
+
+/// Print validation anomalies as formatted text.
+fn print_validate_stats_text(anomalies: &[StatisticalAnomaly]) {
+    if anomalies.is_empty() {
+        println!(
+            "║ {} ║",
+            "✓ All tensors within expected statistical bounds"
+                .green()
+                .bold()
+        );
+    } else {
+        println!(
+            "║ {} ║",
+            format!("✗ {} STATISTICAL ANOMALIES DETECTED", anomalies.len())
+                .red()
+                .bold()
+        );
+        println!(
+            "{}",
+            "╠──────────────────────────────────────────────────────────────────────────────╣"
+                .cyan()
+        );
+
+        for anomaly in anomalies {
+            let severity = if anomaly.deviation_sigma > 10.0 {
+                "CRITICAL".red().bold()
+            } else if anomaly.deviation_sigma > 5.0 {
+                "WARNING".yellow()
+            } else {
+                "INFO".white()
+            };
+
+            println!("║ {} {} ║", severity, anomaly.tensor);
+            println!(
+                "║   {}: expected={:.6}, actual={:.6}, deviation={:.1}σ ║",
+                anomaly.field, anomaly.expected, anomaly.actual, anomaly.deviation_sigma
+            );
+        }
+    }
+    println!(
+        "{}",
+        "╚══════════════════════════════════════════════════════════════════════════════╝"
+            .cyan()
+    );
+}
+
 pub fn run_validate_stats(
     model: &Path,
     reference: Option<&Path>,
@@ -1537,35 +1676,8 @@ pub fn run_validate_stats(
         );
     }
 
-    // Compute actual fingerprints
     let actual = compute_fingerprints(model, None)?;
-
-    // Get reference fingerprints
-    let reference_fps = if let Some(ref_path) = reference {
-        if !ref_path.exists() {
-            return Err(CliError::FileNotFound(ref_path.to_path_buf()));
-        }
-        if !json {
-            println!(
-                "║ Reference: {:<65} ║",
-                truncate_path(ref_path.display().to_string(), 65)
-            );
-        }
-        compute_fingerprints(ref_path, None)?
-    } else if let Some(fp_path) = fingerprints_file {
-        if !fp_path.exists() {
-            return Err(CliError::FileNotFound(fp_path.to_path_buf()));
-        }
-        if !json {
-            println!(
-                "║ Fingerprints: {:<62} ║",
-                truncate_path(fp_path.display().to_string(), 62)
-            );
-        }
-        load_fingerprints_from_json(fp_path)?
-    } else {
-        unreachable!()
-    };
+    let reference_fps = resolve_reference_fingerprints(reference, fingerprints_file, json)?;
 
     if !json {
         println!(
@@ -1575,74 +1687,14 @@ pub fn run_validate_stats(
         );
     }
 
-    // Validate and collect anomalies
     let anomalies = validate_fingerprints(&actual, &reference_fps, threshold, strict);
 
     if json {
-        println!("{{");
-        println!("  \"model\": \"{}\",", model.display());
-        println!("  \"threshold\": {},", threshold);
-        println!("  \"strict\": {},", strict);
-        println!("  \"total_tensors\": {},", actual.len());
-        println!("  \"anomalies\": {},", anomalies.len());
-        if !anomalies.is_empty() {
-            println!("  \"anomaly_details\": [");
-            for (i, anomaly) in anomalies.iter().enumerate() {
-                let comma = if i < anomalies.len() - 1 { "," } else { "" };
-                println!(
-                    "    {{\"tensor\": \"{}\", \"field\": \"{}\", \"expected\": {:.6}, \"actual\": {:.6}, \"deviation\": {:.2}}}{}",
-                    anomaly.tensor, anomaly.field, anomaly.expected, anomaly.actual, anomaly.deviation_sigma, comma
-                );
-            }
-            println!("  ],");
-        }
-        println!("  \"passed\": {}", anomalies.is_empty());
-        println!("}}");
+        print_validate_stats_json(model, threshold, strict, actual.len(), &anomalies);
     } else {
-        if anomalies.is_empty() {
-            println!(
-                "║ {} ║",
-                "✓ All tensors within expected statistical bounds"
-                    .green()
-                    .bold()
-            );
-        } else {
-            println!(
-                "║ {} ║",
-                format!("✗ {} STATISTICAL ANOMALIES DETECTED", anomalies.len())
-                    .red()
-                    .bold()
-            );
-            println!(
-                "{}",
-                "╠──────────────────────────────────────────────────────────────────────────────╣"
-                    .cyan()
-            );
-
-            for anomaly in &anomalies {
-                let severity = if anomaly.deviation_sigma > 10.0 {
-                    "CRITICAL".red().bold()
-                } else if anomaly.deviation_sigma > 5.0 {
-                    "WARNING".yellow()
-                } else {
-                    "INFO".white()
-                };
-
-                println!("║ {} {} ║", severity, anomaly.tensor);
-                println!(
-                    "║   {}: expected={:.6}, actual={:.6}, deviation={:.1}σ ║",
-                    anomaly.field, anomaly.expected, anomaly.actual, anomaly.deviation_sigma
-                );
-            }
-        }
-        println!(
-            "{}",
-            "╚══════════════════════════════════════════════════════════════════════════════╝"
-                .cyan()
-        );
+        print_validate_stats_text(&anomalies);
     }
 
-    // Fail if anomalies found
     if !anomalies.is_empty() {
         let critical_count = anomalies
             .iter()
@@ -1786,163 +1838,143 @@ fn load_tensor_data(model_path: &Path) -> Option<std::collections::HashMap<Strin
 }
 
 /// Direct tensor loading via aprender format module
-fn load_tensor_data_direct(
+/// Read a u64 from little-endian bytes at a given position.
+fn read_u64_le(data: &[u8], pos: usize) -> Option<u64> {
+    let bytes: [u8; 8] = data.get(pos..pos + 8)?.try_into().ok()?;
+    Some(u64::from_le_bytes(bytes))
+}
+
+/// Load GGUF tensors as dequantized f32 maps.
+fn load_gguf_tensors_direct(
     model_path: &Path,
 ) -> Option<std::collections::HashMap<String, Vec<f32>>> {
     use aprender::format::gguf::GgufReader;
+    let reader = GgufReader::from_file(model_path).ok()?;
+    let mut tensor_map = std::collections::HashMap::new();
+    for tensor_meta in &reader.tensors {
+        if let Ok((values, _shape)) = reader.get_tensor_f32(&tensor_meta.name) {
+            tensor_map.insert(tensor_meta.name.clone(), values);
+        }
+    }
+    Some(tensor_map)
+}
 
-    let ext = model_path.extension()?.to_str()?;
+/// Load SafeTensors tensors as dequantized f32 maps.
+fn load_safetensors_tensors_direct(
+    model_path: &Path,
+) -> Option<std::collections::HashMap<String, Vec<f32>>> {
+    use aprender::serialization::safetensors::MappedSafeTensors;
+    let mapped = MappedSafeTensors::open(model_path).ok()?;
+    let mut tensor_map = std::collections::HashMap::new();
+    for name in mapped.tensor_names() {
+        if let Ok(values) = mapped.get_tensor(name) {
+            tensor_map.insert((*name).to_string(), values);
+        }
+    }
+    Some(tensor_map)
+}
+
+/// Load APR tensors as dequantized f32 maps (PMAT-201).
+fn load_apr_tensors_direct(
+    model_path: &Path,
+) -> Option<std::collections::HashMap<String, Vec<f32>>> {
+    let data = std::fs::read(model_path).ok()?;
+    if data.len() < 40 || data[0..4] != *b"APR\0" {
+        return None;
+    }
+
+    let tensor_count =
+        u32::from_le_bytes(data[8..12].try_into().ok()?) as usize;
+    let tensor_index_offset = read_u64_le(&data, 24)? as usize;
+    let data_offset = read_u64_le(&data, 32)? as usize;
 
     let mut tensor_map = std::collections::HashMap::new();
+    let mut pos = tensor_index_offset;
 
-    match ext.to_lowercase().as_str() {
-        "gguf" => {
-            // Use GgufReader::from_file which handles mmap internally
-            let reader = GgufReader::from_file(model_path).ok()?;
+    for _ in 0..tensor_count {
+        let Some((name, dtype, dims, offset, size, new_pos)) =
+            parse_apr_tensor_entry(&data, pos)
+        else {
+            break;
+        };
+        pos = new_pos;
 
-            // Iterate over tensor metadata (reader.tensors is a Vec<GgufTensorMeta>)
-            for tensor_meta in &reader.tensors {
-                // Use get_tensor_f32 to dequantize and get values
-                if let Ok((values, _shape)) = reader.get_tensor_f32(&tensor_meta.name) {
-                    tensor_map.insert(tensor_meta.name.clone(), values);
-                }
-            }
+        let tensor_start = data_offset + offset;
+        let tensor_end = tensor_start + size;
+        if tensor_end > data.len() {
+            continue;
         }
-        "apr" => {
-            // PMAT-201 FIX: Load APR tensors directly
-            let data = std::fs::read(model_path).ok()?;
-            if data.len() < 40 {
-                return None;
-            }
 
-            // Parse APR v2 header
-            let magic = &data[0..4];
-            if magic != b"APR\0" {
-                return None;
-            }
-
-            let tensor_count = u32::from_le_bytes([data[8], data[9], data[10], data[11]]) as usize;
-            let tensor_index_offset = u64::from_le_bytes([
-                data[24], data[25], data[26], data[27], data[28], data[29], data[30], data[31],
-            ]) as usize;
-            let data_offset = u64::from_le_bytes([
-                data[32], data[33], data[34], data[35], data[36], data[37], data[38], data[39],
-            ]) as usize;
-
-            // Parse tensor index
-            let mut pos = tensor_index_offset;
-            for _ in 0..tensor_count {
-                if pos + 2 > data.len() {
-                    break;
-                }
-                let name_len = u16::from_le_bytes([data[pos], data[pos + 1]]) as usize;
-                pos += 2;
-
-                if pos + name_len > data.len() {
-                    break;
-                }
-                let name = String::from_utf8_lossy(&data[pos..pos + name_len]).to_string();
-                pos += name_len;
-
-                if pos + 2 > data.len() {
-                    break;
-                }
-                let dtype = data[pos];
-                pos += 1;
-                let ndim = data[pos] as usize;
-                pos += 1;
-
-                let mut dims = Vec::with_capacity(ndim);
-                for _ in 0..ndim {
-                    if pos + 8 > data.len() {
-                        break;
-                    }
-                    let dim = u64::from_le_bytes([
-                        data[pos],
-                        data[pos + 1],
-                        data[pos + 2],
-                        data[pos + 3],
-                        data[pos + 4],
-                        data[pos + 5],
-                        data[pos + 6],
-                        data[pos + 7],
-                    ]) as usize;
-                    dims.push(dim);
-                    pos += 8;
-                }
-
-                if pos + 16 > data.len() {
-                    break;
-                }
-                let offset = u64::from_le_bytes([
-                    data[pos],
-                    data[pos + 1],
-                    data[pos + 2],
-                    data[pos + 3],
-                    data[pos + 4],
-                    data[pos + 5],
-                    data[pos + 6],
-                    data[pos + 7],
-                ]) as usize;
-                pos += 8;
-                let size = u64::from_le_bytes([
-                    data[pos],
-                    data[pos + 1],
-                    data[pos + 2],
-                    data[pos + 3],
-                    data[pos + 4],
-                    data[pos + 5],
-                    data[pos + 6],
-                    data[pos + 7],
-                ]) as usize;
-                pos += 8;
-
-                // Load tensor data
-                let tensor_start = data_offset + offset;
-                let tensor_end = tensor_start + size;
-                if tensor_end > data.len() {
-                    continue;
-                }
-                let tensor_bytes = &data[tensor_start..tensor_end];
-
-                // Dequantize based on dtype
-                let values: Vec<f32> = match dtype {
-                    0 => {
-                        // F32 - direct read
-                        tensor_bytes
-                            .chunks_exact(4)
-                            .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-                            .collect()
-                    }
-                    12 => {
-                        // Q4_K - dequantize
-                        let num_elements: usize = dims.iter().product();
-                        dequantize_q4k_for_stats(tensor_bytes, num_elements)
-                    }
-                    14 => {
-                        // Q6_K - dequantize
-                        let num_elements: usize = dims.iter().product();
-                        dequantize_q6k_for_stats(tensor_bytes, num_elements)
-                    }
-                    _ => continue, // Skip unknown dtypes
-                };
-
-                tensor_map.insert(name, values);
-            }
-        }
-        "safetensors" => {
-            // PMAT-203 FIX: Implement SafeTensors tensor loading for fingerprints
-            use aprender::serialization::safetensors::MappedSafeTensors;
-
-            let mapped = MappedSafeTensors::open(model_path).ok()?;
-            for name in mapped.tensor_names() {
-                if let Ok(values) = mapped.get_tensor(name) {
-                    tensor_map.insert((*name).to_string(), values);
-                }
-            }
-        }
-        _ => return None,
+        let values = dequantize_by_dtype(dtype, &data[tensor_start..tensor_end], &dims);
+        let Some(values) = values else { continue };
+        tensor_map.insert(name, values);
     }
+
+    Some(tensor_map)
+}
+
+/// Parse a single APR tensor index entry, returning (name, dtype, dims, offset, size, new_pos).
+fn parse_apr_tensor_entry(
+    data: &[u8],
+    mut pos: usize,
+) -> Option<(String, u8, Vec<usize>, usize, usize, usize)> {
+    let name_len = u16::from_le_bytes(data.get(pos..pos + 2)?.try_into().ok()?) as usize;
+    pos += 2;
+
+    let name = String::from_utf8_lossy(data.get(pos..pos + name_len)?).to_string();
+    pos += name_len;
+
+    let dtype = *data.get(pos)?;
+    pos += 1;
+    let ndim = *data.get(pos)? as usize;
+    pos += 1;
+
+    let mut dims = Vec::with_capacity(ndim);
+    for _ in 0..ndim {
+        dims.push(read_u64_le(data, pos)? as usize);
+        pos += 8;
+    }
+
+    let offset = read_u64_le(data, pos)? as usize;
+    pos += 8;
+    let size = read_u64_le(data, pos)? as usize;
+    pos += 8;
+
+    Some((name, dtype, dims, offset, size, pos))
+}
+
+/// Dequantize tensor bytes to f32 based on APR dtype code.
+fn dequantize_by_dtype(dtype: u8, bytes: &[u8], dims: &[usize]) -> Option<Vec<f32>> {
+    match dtype {
+        0 => Some(
+            bytes
+                .chunks_exact(4)
+                .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+                .collect(),
+        ),
+        12 => {
+            let num_elements: usize = dims.iter().product();
+            Some(dequantize_q4k_for_stats(bytes, num_elements))
+        }
+        14 => {
+            let num_elements: usize = dims.iter().product();
+            Some(dequantize_q6k_for_stats(bytes, num_elements))
+        }
+        _ => None,
+    }
+}
+
+fn load_tensor_data_direct(
+    model_path: &Path,
+) -> Option<std::collections::HashMap<String, Vec<f32>>> {
+    let ext = model_path.extension()?.to_str()?;
+
+    let tensor_map = match ext.to_lowercase().as_str() {
+        "gguf" => load_gguf_tensors_direct(model_path)?,
+        "apr" => load_apr_tensors_direct(model_path)?,
+        "safetensors" => load_safetensors_tensors_direct(model_path)?,
+        _ => return None,
+    };
 
     if tensor_map.is_empty() {
         None
@@ -2203,6 +2235,61 @@ fn print_fingerprints(fingerprints: &[TensorFingerprint], verbose: bool, json: b
 }
 
 /// Print fingerprint diff between two models
+/// Compute normalized mean diff and detect anomalies between two fingerprints.
+fn fingerprint_anomaly(
+    fp_a: &TensorFingerprint,
+    fp_b: &TensorFingerprint,
+) -> (f32, bool) {
+    let mean_diff = if fp_a.std > 1e-10 {
+        (fp_a.mean - fp_b.mean).abs() / fp_a.std
+    } else {
+        (fp_a.mean - fp_b.mean).abs()
+    };
+    let has_anomaly = mean_diff > 3.0
+        || fp_a.nan_count != fp_b.nan_count
+        || fp_a.inf_count != fp_b.inf_count;
+    (mean_diff, has_anomaly)
+}
+
+/// Print a single tensor comparison row (text mode).
+fn print_diff_row(fp_a: &TensorFingerprint, fp_b: &TensorFingerprint, mean_diff: f32, has_anomaly: bool) {
+    let status = if has_anomaly { "⚠️".yellow() } else { "✓".green() };
+    println!("║ {} {:<72} ║", status, truncate_path(fp_a.name.clone(), 72));
+    println!(
+        "║   A: mean={:>10.6} std={:>10.6} nan={} inf={} ║",
+        fp_a.mean, fp_a.std, fp_a.nan_count, fp_a.inf_count
+    );
+    println!(
+        "║   B: mean={:>10.6} std={:>10.6} nan={} inf={} ║",
+        fp_b.mean, fp_b.std, fp_b.nan_count, fp_b.inf_count
+    );
+    if has_anomaly {
+        println!("║   {} mean_diff={:.2}σ ║", "ANOMALY:".red().bold(), mean_diff);
+    }
+    println!(
+        "{}",
+        "╠──────────────────────────────────────────────────────────────────────────────╣".cyan()
+    );
+}
+
+/// Print the diff summary (JSON or text).
+fn print_diff_summary(total: usize, anomalies: &[StatisticalAnomaly], json: bool) {
+    if json {
+        println!("{{");
+        println!("  \"total_tensors\": {},", total);
+        println!("  \"anomalies\": {},", anomalies.len());
+        println!("  \"passed\": {}", anomalies.is_empty());
+        println!("}}");
+    } else if anomalies.is_empty() {
+        println!("║ {} ║", "✓ No statistical anomalies detected".green().bold());
+    } else {
+        println!(
+            "║ {} ║",
+            format!("✗ {} ANOMALIES DETECTED", anomalies.len()).red().bold()
+        );
+    }
+}
+
 fn print_fingerprint_diff(
     fps_a: &[TensorFingerprint],
     fps_b: &[TensorFingerprint],
@@ -2220,106 +2307,43 @@ fn print_fingerprint_diff(
     if !json {
         println!(
             "{}",
-            "║                              FINGERPRINT DIFF                                ║"
-                .yellow()
+            "║                              FINGERPRINT DIFF                                ║".yellow()
         );
         println!(
             "{}",
-            "╠──────────────────────────────────────────────────────────────────────────────╣"
-                .cyan()
+            "╠──────────────────────────────────────────────────────────────────────────────╣".cyan()
         );
     }
 
     for fp_a in fps_a {
-        // GH-202: Use normalized name for cross-format lookup
         let norm_name_a = normalize_tensor_name(&fp_a.name);
-        if let Some(fp_b) = map_b.get(&norm_name_a) {
-            // Check for significant differences
-            let mean_diff = if fp_a.std > 1e-10 {
-                (fp_a.mean - fp_b.mean).abs() / fp_a.std
-            } else {
-                (fp_a.mean - fp_b.mean).abs()
-            };
-
-            let has_anomaly = mean_diff > 3.0
-                || fp_a.nan_count != fp_b.nan_count
-                || fp_a.inf_count != fp_b.inf_count;
-
-            if has_anomaly || verbose {
-                let status = if has_anomaly {
-                    "⚠️".yellow()
-                } else {
-                    "✓".green()
-                };
-
-                if !json {
-                    println!(
-                        "║ {} {:<72} ║",
-                        status,
-                        truncate_path(fp_a.name.clone(), 72)
-                    );
-                    println!(
-                        "║   A: mean={:>10.6} std={:>10.6} nan={} inf={} ║",
-                        fp_a.mean, fp_a.std, fp_a.nan_count, fp_a.inf_count
-                    );
-                    println!(
-                        "║   B: mean={:>10.6} std={:>10.6} nan={} inf={} ║",
-                        fp_b.mean, fp_b.std, fp_b.nan_count, fp_b.inf_count
-                    );
-                    if has_anomaly {
-                        println!(
-                            "║   {} mean_diff={:.2}σ ║",
-                            "ANOMALY:".red().bold(),
-                            mean_diff
-                        );
-                    }
-                    println!(
-                        "{}",
-                        "╠──────────────────────────────────────────────────────────────────────────────╣"
-                            .cyan()
-                    );
-                }
-
-                if has_anomaly {
-                    anomalies.push(StatisticalAnomaly {
-                        tensor: fp_a.name.clone(),
-                        field: "mean".to_string(),
-                        expected: fp_a.mean,
-                        actual: fp_b.mean,
-                        deviation_sigma: mean_diff,
-                    });
-                }
+        let Some(fp_b) = map_b.get(&norm_name_a) else {
+            if !json {
+                println!("║ {} {:<72} ║", "−".red(), truncate_path(fp_a.name.clone(), 72));
+                println!("║   Missing in Model B ║");
             }
-        } else if !json {
-            println!(
-                "║ {} {:<72} ║",
-                "−".red(),
-                truncate_path(fp_a.name.clone(), 72)
-            );
-            println!("║   Missing in Model B ║");
+            continue;
+        };
+
+        let (mean_diff, has_anomaly) = fingerprint_anomaly(fp_a, fp_b);
+
+        if has_anomaly || verbose {
+            if !json {
+                print_diff_row(fp_a, fp_b, mean_diff, has_anomaly);
+            }
+            if has_anomaly {
+                anomalies.push(StatisticalAnomaly {
+                    tensor: fp_a.name.clone(),
+                    field: "mean".to_string(),
+                    expected: fp_a.mean,
+                    actual: fp_b.mean,
+                    deviation_sigma: mean_diff,
+                });
+            }
         }
     }
 
-    if json {
-        println!("{{");
-        println!("  \"total_tensors\": {},", fps_a.len());
-        println!("  \"anomalies\": {},", anomalies.len());
-        println!("  \"passed\": {}", anomalies.is_empty());
-        println!("}}");
-    } else if anomalies.is_empty() {
-        println!(
-            "║ {} ║",
-            "✓ No statistical anomalies detected".green().bold()
-        );
-    } else {
-        println!(
-            "║ {} ║",
-            format!("✗ {} ANOMALIES DETECTED", anomalies.len())
-                .red()
-                .bold()
-        );
-    }
-
+    print_diff_summary(fps_a.len(), &anomalies, json);
     Ok(())
 }
 
@@ -2541,43 +2565,46 @@ struct InferenceResult {
 
 /// Run a model and capture output
 /// Parse PMAT-113-F trace lines for selected tokens, logits, and top-5 predictions.
+/// Parse a "Selected token:" line into (token_id, logit).
+fn parse_selected_token(line: &str) -> Option<(u32, Option<f32>)> {
+    let token_part = line.split("Selected token:").nth(1)?.trim();
+    let paren_pos = token_part.find(" (")?;
+    let token_id = token_part[..paren_pos].parse::<u32>().ok()?;
+    let logit = token_part.find("logit:").and_then(|start| {
+        let logit_str = &token_part[start + 6..];
+        let end = logit_str.find(')')?;
+        logit_str[..end].trim().parse::<f32>().ok()
+    });
+    Some((token_id, logit))
+}
+
+/// Parse a "Top 5 tokens:" line into a vector of token IDs.
+fn parse_top5_line(line: &str) -> Option<Vec<u32>> {
+    let top5_part = line.split("Top 5 tokens:").nth(1)?;
+    let ids: Vec<u32> = top5_part
+        .split("),")
+        .filter_map(|pair| {
+            let inner = &pair[pair.find('(')? + 1..];
+            inner[..inner.find(',')?].trim().parse().ok()
+        })
+        .collect();
+    if ids.is_empty() { None } else { Some(ids) }
+}
+
 fn parse_trace_lines(combined: &str) -> (Vec<u32>, Vec<f32>, Vec<Vec<u32>>) {
     let mut tokens = Vec::new();
     let mut logits = Vec::new();
     let mut top5 = Vec::new();
 
     for line in combined.lines() {
-        if line.contains("Selected token:") {
-            if let Some(token_part) = line.split("Selected token:").nth(1) {
-                let trimmed = token_part.trim();
-                if let Some(paren_pos) = trimmed.find(" (") {
-                    if let Ok(token_id) = trimmed[..paren_pos].parse::<u32>() {
-                        tokens.push(token_id);
-                    }
-                    if let Some(logit_start) = trimmed.find("logit:") {
-                        let logit_str = &trimmed[logit_start + 6..];
-                        if let Some(end) = logit_str.find(')') {
-                            if let Ok(logit) = logit_str[..end].trim().parse::<f32>() {
-                                logits.push(logit);
-                            }
-                        }
-                    }
-                }
+        if let Some((token_id, logit)) = parse_selected_token(line) {
+            tokens.push(token_id);
+            if let Some(l) = logit {
+                logits.push(l);
             }
         }
-        if line.contains("Top 5 tokens:") {
-            if let Some(top5_part) = line.split("Top 5 tokens:").nth(1) {
-                let current_top5: Vec<u32> = top5_part
-                    .split("),")
-                    .filter_map(|pair| {
-                        let inner = &pair[pair.find('(')? + 1..];
-                        inner[..inner.find(',')?].trim().parse().ok()
-                    })
-                    .collect();
-                if !current_top5.is_empty() {
-                    top5.push(current_top5);
-                }
-            }
+        if let Some(ids) = parse_top5_line(line) {
+            top5.push(ids);
         }
     }
     (tokens, logits, top5)
