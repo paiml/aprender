@@ -263,297 +263,57 @@ fn load_apr_model_state(
     })
 }
 
-/// Start APR v2 model server with full inference support
-///
-/// Supports both transformer inference (generate) and metadata inspection.
-/// GPU acceleration available via --gpu flag.
 #[cfg(feature = "inference")]
-#[allow(clippy::disallowed_methods)] // serde_json::json!() macro uses infallible unwrap internally
-fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
-    use axum::{
-        http::StatusCode,
-        response::IntoResponse,
-        routing::{get, post},
-        Json, Router,
-    };
-    use serde::{Deserialize, Serialize};
-    use std::sync::Mutex;
+#[derive(Clone, serde::Serialize)]
+struct AprHealthResponse {
+    status: String,
+    model_type: String,
+    architecture: String,
+    inference_enabled: bool,
+    compute_mode: String,
+}
 
-    // Load model, tokenizer, and transformer via extracted helper
+#[cfg(feature = "inference")]
+#[derive(serde::Deserialize)]
+struct AprCompletionRequest {
+    prompt: String,
+    #[serde(default = "default_max_tokens_apr")]
+    max_tokens: usize,
+    #[serde(default)]
+    temperature: Option<f32>,
+}
+
+#[cfg(feature = "inference")]
+fn default_max_tokens_apr() -> usize {
+    32
+}
+
+#[cfg(feature = "inference")]
+#[derive(serde::Serialize)]
+struct AprCompletionResponse {
+    text: String,
+    tokens_generated: usize,
+    latency_ms: u64,
+    tok_per_sec: f64,
+}
+
+fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
     let state = load_apr_model_state(model_path, config)?;
     let is_transformer = state.is_transformer;
 
-    // Create tokio runtime
     let runtime = tokio::runtime::Runtime::new()
         .map_err(|e| CliError::InferenceFailed(format!("Failed to create runtime: {e}")))?;
 
     let bind_addr = config.bind_addr();
 
-    #[derive(Clone, Serialize)]
-    struct HealthResponse {
-        status: String,
-        model_type: String,
-        architecture: String,
-        inference_enabled: bool,
-        compute_mode: String,
-    }
-
-    #[derive(Deserialize)]
-    struct CompletionRequest {
-        prompt: String,
-        #[serde(default = "default_max_tokens")]
-        max_tokens: usize,
-        #[serde(default)]
-        temperature: Option<f32>,
-    }
-
-    fn default_max_tokens() -> usize {
-        32
-    }
-
-    #[derive(Serialize)]
-    struct CompletionResponse {
-        text: String,
-        tokens_generated: usize,
-        latency_ms: u64,
-        tok_per_sec: f64,
-    }
-
     runtime.block_on(async move {
-        let state_for_health = state.clone();
-        let state_for_completions = Arc::new(Mutex::new(state.clone()));
-
-        let app = Router::new()
-            .route(
-                "/health",
-                get(move || {
-                    let s = state_for_health.clone();
-                    async move {
-                        Json(HealthResponse {
-                            status: "healthy".to_string(),
-                            model_type: s.model_type.clone(),
-                            architecture: s.architecture.clone(),
-                            inference_enabled: s.is_transformer,
-                            compute_mode: "cpu".to_string(),
-                        })
-                    }
-                }),
-            )
-            .route(
-                "/v1/completions",
-                post(move |Json(req): Json<CompletionRequest>| {
-                    let state = state_for_completions.clone();
-                    async move {
-                        let s = match state.lock() {
-                            Ok(guard) => guard.clone(),
-                            Err(_poisoned) => {
-                                return (
-                                    StatusCode::INTERNAL_SERVER_ERROR,
-                                    Json(serde_json::json!({
-                                        "error": "Server state corrupted (lock poisoned). Please restart the server."
-                                    })),
-                                )
-                                    .into_response();
-                            }
-                        };
-
-                        let max_tokens = req.max_tokens.min(128);
-                        match run_apr_cpu_inference(
-                            &s,
-                            &req.prompt,
-                            max_tokens,
-                            req.temperature.unwrap_or(0.0),
-                        ) {
-                            Ok(out) => {
-                                let tok_per_sec = if out.gen_duration.as_secs_f64() > 0.0 {
-                                    out.tokens_generated as f64 / out.gen_duration.as_secs_f64()
-                                } else {
-                                    0.0
-                                };
-                                Json(CompletionResponse {
-                                    text: out.text,
-                                    tokens_generated: out.tokens_generated,
-                                    latency_ms: out.gen_duration.as_millis() as u64,
-                                    tok_per_sec,
-                                })
-                                .into_response()
-                            }
-                            Err(e) => (
-                                StatusCode::INTERNAL_SERVER_ERROR,
-                                Json(serde_json::json!({"error": e})),
-                            )
-                                .into_response(),
-                        }
-                    }
-                }),
-            )
-            .route(
-                "/v1/chat/completions",
-                {
-                    let state_for_chat = Arc::new(Mutex::new(state.clone()));
-                    post(move |headers: axum::http::HeaderMap, Json(req): Json<serde_json::Value>| {
-                        let state = state_for_chat.clone();
-                        async move {
-                            use axum::response::sse::{Event, Sse};
-                            use futures_util::stream;
-
-                            let trace_level = headers
-                                .get("X-Trace-Level")
-                                .and_then(|v| v.to_str().ok())
-                                .map(str::to_lowercase);
-
-                            let s = match state.lock() {
-                                Ok(guard) => guard.clone(),
-                                Err(_poisoned) => {
-                                    return axum::Json(serde_json::json!({
-                                        "error": "Server state corrupted (lock poisoned). Please restart the server."
-                                    }))
-                                    .into_response();
-                                }
-                            };
-
-                            // Extract messages and format as ChatML
-                            let messages = req.get("messages").and_then(|m| m.as_array());
-                            let stream_mode = req.get("stream").and_then(serde_json::Value::as_bool).unwrap_or(false);
-                            let max_tokens = req.get("max_tokens").and_then(serde_json::Value::as_u64).unwrap_or(32) as usize;
-                            let temperature = req.get("temperature").and_then(serde_json::Value::as_f64).unwrap_or(0.0) as f32;
-
-                            let prompt = if let Some(msgs) = messages {
-                                let mut prompt = String::new();
-                                for msg in msgs {
-                                    let role = msg.get("role").and_then(|r| r.as_str()).unwrap_or("user");
-                                    let content = msg.get("content").and_then(|c| c.as_str()).unwrap_or("");
-                                    write!(prompt, "<|im_start|>{}\n{}<|im_end|>\n", role, content).expect("write to String cannot fail");
-                                }
-                                prompt.push_str("<|im_start|>assistant\n");
-                                prompt
-                            } else {
-                                return axum::Json(serde_json::json!({"error": "Missing messages"})).into_response();
-                            };
-
-                            let start = Instant::now();
-                            let max_tokens = max_tokens.min(256);
-
-                            let out = match run_apr_cpu_inference(&s, &prompt, max_tokens, temperature) {
-                                Ok(out) => out,
-                                Err(e) => {
-                                    return axum::Json(serde_json::json!({"error": e})).into_response();
-                                }
-                            };
-
-                            let tok_per_sec = if out.gen_duration.as_secs_f64() > 0.0 {
-                                out.tokens_generated as f64 / out.gen_duration.as_secs_f64()
-                            } else {
-                                0.0
-                            };
-
-                            let request_id = format!(
-                                "chatcmpl-{}-{}",
-                                std::time::SystemTime::now()
-                                    .duration_since(std::time::UNIX_EPOCH)
-                                    .unwrap_or_default()
-                                    .as_nanos(),
-                                std::process::id()
-                            );
-
-                            let created = std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .unwrap_or_default()
-                                .as_secs();
-
-                            if stream_mode {
-                                let response = serde_json::json!({
-                                    "id": request_id,
-                                    "object": "chat.completion.chunk",
-                                    "created": created,
-                                    "model": "apr",
-                                    "choices": [{
-                                        "index": 0,
-                                        "delta": {"role": "assistant", "content": out.text},
-                                        "finish_reason": "stop"
-                                    }]
-                                });
-
-                                let events = vec![
-                                    Ok::<_, std::convert::Infallible>(Event::default().data(response.to_string())),
-                                    Ok::<_, std::convert::Infallible>(Event::default().data("[DONE]")),
-                                ];
-                                Sse::new(stream::iter(events)).into_response()
-                            } else {
-                                let latency_ms = start.elapsed().as_millis() as u64;
-
-                                let trace_data = serde_json::json!({
-                                    "total_time_us": latency_ms * 1000,
-                                    "prompt_tokens": out.input_token_count,
-                                    "completion_tokens": out.tokens_generated,
-                                    "layers": 28
-                                });
-
-                                let mut response = serde_json::json!({
-                                    "id": request_id,
-                                    "object": "chat.completion",
-                                    "created": created,
-                                    "model": "apr",
-                                    "choices": [{
-                                        "index": 0,
-                                        "message": {"role": "assistant", "content": out.text},
-                                        "finish_reason": "stop"
-                                    }],
-                                    "usage": {
-                                        "prompt_tokens": out.input_token_count,
-                                        "completion_tokens": out.tokens_generated,
-                                        "total_tokens": out.input_token_count + out.tokens_generated
-                                    },
-                                    "_apr_metrics": {
-                                        "latency_ms": latency_ms,
-                                        "tok_per_sec": tok_per_sec
-                                    }
-                                });
-
-                                if let Some(ref level) = trace_level {
-                                    if let Some(obj) = response.as_object_mut() {
-                                        match level.as_str() {
-                                            "brick" => { obj.insert("brick_trace".to_string(), trace_data); }
-                                            "step" => { obj.insert("step_trace".to_string(), trace_data); }
-                                            "layer" => { obj.insert("layer_trace".to_string(), trace_data); }
-                                            _ => {}
-                                        }
-                                    }
-                                }
-
-                                axum::Json(response).into_response()
-                            }
-                        }
-                    })
-                },
-            )
-            .route(
-                "/",
-                get(|| async { "APR v2 Inference Server - POST /v1/completions, /v1/chat/completions" }),
-            );
+        let app = build_apr_cpu_router(state);
 
         let listener = tokio::net::TcpListener::bind(&bind_addr)
             .await
             .map_err(|e| CliError::InferenceFailed(format!("Failed to bind: {e}")))?;
 
-        println!();
-        println!(
-            "{}",
-            format!("APR Inference Server listening on http://{}", bind_addr)
-                .green()
-                .bold()
-        );
-        println!();
-        println!("{}", "Endpoints:".cyan());
-        println!("  GET  /health              - Health check");
-        println!("  POST /v1/completions      - Text generation");
-        println!("  POST /v1/chat/completions - Chat completions (PAR-302)");
-        println!();
-        println!(
-            "{}",
-            format!("Mode: CPU | Transformer: {}", is_transformer).dimmed()
-        );
-        println!("{}", "Press Ctrl+C to stop".dimmed());
+        print_apr_cpu_banner(&bind_addr, is_transformer);
 
         axum::serve(listener, app)
             .with_graceful_shutdown(shutdown_signal())
@@ -566,6 +326,232 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
     })
 }
 
+/// Build the axum Router for APR CPU inference.
+#[cfg(feature = "inference")]
+#[allow(clippy::disallowed_methods)] // serde_json::json!() macro uses infallible unwrap
+fn build_apr_cpu_router(state: AprServerState) -> axum::Router {
+    use axum::{
+        http::StatusCode,
+        response::IntoResponse,
+        routing::{get, post},
+        Json, Router,
+    };
+    use std::sync::Mutex;
+
+    let state_for_health = state.clone();
+    let state_for_completions = Arc::new(Mutex::new(state.clone()));
+    let state_for_chat = Arc::new(Mutex::new(state));
+
+    Router::new()
+        .route(
+            "/health",
+            get(move || {
+                let s = state_for_health.clone();
+                async move {
+                    Json(AprHealthResponse {
+                        status: "healthy".to_string(),
+                        model_type: s.model_type.clone(),
+                        architecture: s.architecture.clone(),
+                        inference_enabled: s.is_transformer,
+                        compute_mode: "cpu".to_string(),
+                    })
+                }
+            }),
+        )
+        .route(
+            "/v1/completions",
+            post(move |Json(req): Json<AprCompletionRequest>| {
+                let state = state_for_completions.clone();
+                async move { handle_apr_cpu_completion(&state, &req).into_response() }
+            }),
+        )
+        .route(
+            "/v1/chat/completions",
+            post(
+                move |headers: axum::http::HeaderMap,
+                      Json(req): Json<serde_json::Value>| {
+                    let state = state_for_chat.clone();
+                    async move {
+                        handle_apr_cpu_chat_completion(&state, &headers, &req).into_response()
+                    }
+                },
+            ),
+        )
+        .route(
+            "/",
+            get(|| async {
+                "APR v2 Inference Server - POST /v1/completions, /v1/chat/completions"
+            }),
+        )
+}
+
+/// Handle POST /v1/completions for APR CPU inference.
+#[cfg(feature = "inference")]
+#[allow(clippy::disallowed_methods)]
+fn handle_apr_cpu_completion(
+    state: &std::sync::Mutex<AprServerState>,
+    req: &AprCompletionRequest,
+) -> axum::response::Response {
+    use axum::{http::StatusCode, response::IntoResponse, Json};
+
+    let s = match state.lock() {
+        Ok(guard) => guard.clone(),
+        Err(_poisoned) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "error": "Server state corrupted (lock poisoned). Please restart the server."
+                })),
+            )
+                .into_response();
+        }
+    };
+
+    let max_tokens = req.max_tokens.min(128);
+    match run_apr_cpu_inference(&s, &req.prompt, max_tokens, req.temperature.unwrap_or(0.0)) {
+        Ok(out) => Json(AprCompletionResponse {
+            text: out.text,
+            tokens_generated: out.tokens_generated,
+            latency_ms: out.gen_duration.as_millis() as u64,
+            tok_per_sec: compute_tok_per_sec(out.tokens_generated, out.gen_duration),
+        })
+        .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": e})),
+        )
+            .into_response(),
+    }
+}
+
+/// Handle POST /v1/chat/completions for APR CPU inference (PAR-302).
+#[cfg(feature = "inference")]
+#[allow(clippy::disallowed_methods)]
+fn handle_apr_cpu_chat_completion(
+    state: &std::sync::Mutex<AprServerState>,
+    headers: &axum::http::HeaderMap,
+    req: &serde_json::Value,
+) -> axum::response::Response {
+    use axum::{
+        response::{
+            sse::{Event, Sse},
+            IntoResponse,
+        },
+        Json,
+    };
+    use futures_util::stream;
+
+    let trace_level = headers
+        .get("X-Trace-Level")
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_lowercase);
+
+    let s = match state.lock() {
+        Ok(guard) => guard.clone(),
+        Err(_poisoned) => {
+            return Json(serde_json::json!({
+                "error": "Server state corrupted (lock poisoned). Please restart the server."
+            }))
+            .into_response();
+        }
+    };
+
+    let messages = req.get("messages").and_then(|m| m.as_array());
+    let stream_mode = req
+        .get("stream")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+    let max_tokens = req
+        .get("max_tokens")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(32) as usize;
+    let temperature = req
+        .get("temperature")
+        .and_then(serde_json::Value::as_f64)
+        .unwrap_or(0.0) as f32;
+
+    let Some(msgs) = messages else {
+        return Json(serde_json::json!({"error": "Missing messages"})).into_response();
+    };
+
+    let prompt = format_chatml(msgs);
+    let start = Instant::now();
+
+    let out = match run_apr_cpu_inference(&s, &prompt, max_tokens.min(256), temperature) {
+        Ok(out) => out,
+        Err(e) => return Json(serde_json::json!({"error": e})).into_response(),
+    };
+
+    let tok_per_sec = compute_tok_per_sec(out.tokens_generated, out.gen_duration);
+    let request_id = generate_request_id();
+    let created = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    if stream_mode {
+        let response = serde_json::json!({
+            "id": request_id, "object": "chat.completion.chunk", "created": created, "model": "apr",
+            "choices": [{"index": 0, "delta": {"role": "assistant", "content": out.text}, "finish_reason": "stop"}]
+        });
+        let events = vec![
+            Ok::<_, std::convert::Infallible>(Event::default().data(response.to_string())),
+            Ok::<_, std::convert::Infallible>(Event::default().data("[DONE]")),
+        ];
+        return Sse::new(stream::iter(events)).into_response();
+    }
+
+    let latency_ms = start.elapsed().as_millis() as u64;
+    let mut response = serde_json::json!({
+        "id": request_id, "object": "chat.completion", "created": created, "model": "apr",
+        "choices": [{"index": 0, "message": {"role": "assistant", "content": out.text}, "finish_reason": "stop"}],
+        "usage": {"prompt_tokens": out.input_token_count, "completion_tokens": out.tokens_generated, "total_tokens": out.input_token_count + out.tokens_generated},
+        "_apr_metrics": {"latency_ms": latency_ms, "tok_per_sec": tok_per_sec}
+    });
+
+    if let Some(ref level) = trace_level {
+        let trace_data = serde_json::json!({
+            "total_time_us": latency_ms * 1000, "prompt_tokens": out.input_token_count,
+            "completion_tokens": out.tokens_generated, "layers": 28
+        });
+        if let Some(obj) = response.as_object_mut() {
+            let key = match level.as_str() {
+                "brick" => Some("brick_trace"),
+                "step" => Some("step_trace"),
+                "layer" => Some("layer_trace"),
+                _ => None,
+            };
+            if let Some(key) = key {
+                obj.insert(key.to_string(), trace_data);
+            }
+        }
+    }
+
+    Json(response).into_response()
+}
+
+/// Print APR CPU server startup banner.
+fn print_apr_cpu_banner(bind_addr: &str, is_transformer: bool) {
+    println!();
+    println!(
+        "{}",
+        format!("APR Inference Server listening on http://{bind_addr}")
+            .green()
+            .bold()
+    );
+    println!();
+    println!("{}", "Endpoints:".cyan());
+    println!("  GET  /health              - Health check");
+    println!("  POST /v1/completions      - Text generation");
+    println!("  POST /v1/chat/completions - Chat completions (PAR-302)");
+    println!();
+    println!(
+        "{}",
+        format!("Mode: CPU | Transformer: {is_transformer}").dimmed()
+    );
+    println!("{}", "Press Ctrl+C to stop".dimmed());
+}
+
 // ============================================================================
 // APR GPU server handler
 // ============================================================================
@@ -574,6 +560,114 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
 /// PMAT-098: Updated to use BPE tokenizer for proper encoding
 #[cfg(all(feature = "inference", feature = "cuda"))]
 #[allow(clippy::disallowed_methods)] // serde_json::json!() macro uses infallible unwrap internally
+/// Encode a prompt using BPE tokenizer or char fallback (PMAT-098).
+fn encode_prompt(tok: Option<&SafeTensorsTokenizerInfo>, prompt: &str) -> Vec<u32> {
+    match tok {
+        Some(tok) => tok.tokenizer.encode(prompt),
+        None => prompt.chars().map(|c| c as u32).collect(),
+    }
+}
+
+/// Get EOS token ID from tokenizer info or use provided default.
+fn eos_token_id(tok: Option<&SafeTensorsTokenizerInfo>, default: u32) -> u32 {
+    tok.and_then(|t| t.eos_token_id).unwrap_or(default)
+}
+
+/// Run GPU generation with lock poisoning handling (PMAT-189).
+#[cfg(feature = "inference")]
+fn run_gpu_generation(
+    cuda: &std::sync::Mutex<realizar::apr::AprV2ModelCuda>,
+    input_tokens: &[u32],
+    max_tokens: usize,
+    eos_id: u32,
+) -> std::result::Result<Vec<u32>, String> {
+    use realizar::apr::AprModel;
+    let mut model = cuda
+        .lock()
+        .map_err(|_| "GPU model state corrupted (lock poisoned). Please restart the server.".to_string())?;
+    model
+        .generate_cuda(input_tokens, max_tokens, eos_id)
+        .map_err(|e| format!("GPU generation failed: {e}"))
+}
+
+/// Decode output tokens using BPE tokenizer or char fallback (PMAT-098).
+fn decode_tokens(tok: Option<&SafeTensorsTokenizerInfo>, tokens: &[u32]) -> String {
+    match tok {
+        Some(tok) => tok.tokenizer.decode(tokens).unwrap_or_default(),
+        None => tokens.iter().filter_map(|&t| char::from_u32(t)).collect(),
+    }
+}
+
+/// Slice new tokens from output (tokens after input prefix).
+fn extract_new_tokens(output: &[u32], input_len: usize) -> &[u32] {
+    if output.len() > input_len {
+        &output[input_len..]
+    } else {
+        output
+    }
+}
+
+/// Compute tokens/second from count and duration.
+fn compute_tok_per_sec(count: usize, elapsed: std::time::Duration) -> f64 {
+    let secs = elapsed.as_secs_f64();
+    if secs > 0.0 {
+        count as f64 / secs
+    } else {
+        0.0
+    }
+}
+
+/// Generate unique request ID for OpenAI-compatible responses.
+fn generate_request_id() -> String {
+    format!(
+        "chatcmpl-{}-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos(),
+        std::process::id()
+    )
+}
+
+/// Format chat messages as ChatML prompt.
+fn format_chatml(messages: &[serde_json::Value]) -> String {
+    let mut prompt = String::new();
+    for msg in messages {
+        let role = msg.get("role").and_then(|r| r.as_str()).unwrap_or("user");
+        let content = msg
+            .get("content")
+            .and_then(|c| c.as_str())
+            .unwrap_or("");
+        write!(prompt, "<|im_start|>{role}\n{content}<|im_end|>\n")
+            .expect("write to String cannot fail");
+    }
+    prompt.push_str("<|im_start|>assistant\n");
+    prompt
+}
+
+#[cfg(feature = "inference")]
+#[derive(serde::Deserialize)]
+struct GpuCompletionRequest {
+    prompt: String,
+    #[serde(default = "default_max_tokens_gpu")]
+    max_tokens: usize,
+}
+
+#[cfg(feature = "inference")]
+fn default_max_tokens_gpu() -> usize {
+    32
+}
+
+#[cfg(feature = "inference")]
+#[derive(serde::Serialize)]
+struct GpuCompletionResponse {
+    text: String,
+    tokens_generated: usize,
+    latency_ms: u64,
+    tok_per_sec: f64,
+}
+
+#[cfg(feature = "inference")]
 fn start_apr_server_gpu(
     model_path: &Path,
     model: realizar::apr::AprModel,
@@ -581,17 +675,14 @@ fn start_apr_server_gpu(
     tokenizer: Option<SafeTensorsTokenizerInfo>,
 ) -> Result<()> {
     use axum::{
-        extract::State,
         http::StatusCode,
         response::IntoResponse,
         routing::{get, post},
         Json, Router,
     };
     use realizar::apr::AprV2ModelCuda;
-    use serde::{Deserialize, Serialize};
     use std::sync::Mutex;
 
-    // Initialize CUDA model
     println!("{}", "Initializing CUDA...".dimmed());
     let cuda_model = AprV2ModelCuda::new(model, 0)
         .map_err(|e| CliError::InferenceFailed(format!("CUDA init failed: {e}")))?;
@@ -610,329 +701,17 @@ fn start_apr_server_gpu(
         .map_err(|e| CliError::InferenceFailed(format!("Failed to create runtime: {e}")))?;
 
     let bind_addr = config.bind_addr();
-    let model_path_clone = model_path.to_path_buf();
-
-    #[derive(Deserialize)]
-    struct CompletionRequest {
-        prompt: String,
-        #[serde(default = "default_max_tokens_gpu")]
-        max_tokens: usize,
-    }
-
-    fn default_max_tokens_gpu() -> usize {
-        32
-    }
-
-    #[derive(Serialize)]
-    struct CompletionResponse {
-        text: String,
-        tokens_generated: usize,
-        latency_ms: u64,
-        tok_per_sec: f64,
-    }
-
-    // Wrap CUDA model in Arc<Mutex> for shared access
-    // PMAT-098: Use BPE tokenizer for proper encoding
     let cuda_model = Arc::new(Mutex::new(cuda_model));
     let tokenizer = Arc::new(tokenizer);
-    let model_path_arc = Arc::new(model_path_clone);
 
     runtime.block_on(async move {
-        let cuda_for_completions = cuda_model.clone();
-        let tok_for_completions = tokenizer.clone();
-        let path_for_completions = model_path_arc.clone();
-
-        let app = Router::new()
-            .route(
-                "/health",
-                get(|| async {
-                    Json(serde_json::json!({
-                        "status": "healthy",
-                        "gpu": true
-                    }))
-                }),
-            )
-            .route(
-                "/v1/completions",
-                post(move |Json(req): Json<CompletionRequest>| {
-                    let cuda = cuda_for_completions.clone();
-                    let tok_info = tok_for_completions.clone();
-                    let model_path = path_for_completions.clone();
-                    async move {
-                        use realizar::apr::AprModel;
-
-                        let start = Instant::now();
-
-                        // PMAT-098: Use BPE tokenizer for proper encoding
-                        let input_tokens: Vec<u32> = match tok_info.as_ref() {
-                            Some(tok) => tok.tokenizer.encode(&req.prompt),
-                            None => req.prompt.chars().map(|c| c as u32).collect(),
-                        };
-
-                        let eos_id = match tok_info.as_ref() {
-                            Some(tok) => tok.eos_token_id.unwrap_or(2),
-                            _ => 2,
-                        };
-
-                        // Generate on GPU
-                        let gen_start = Instant::now();
-                        let max_tokens = req.max_tokens.min(128);
-                        let output_tokens = {
-                            // PMAT-189: Handle CUDA model lock poisoning gracefully
-                            let mut model = match cuda.lock() {
-                                Ok(guard) => guard,
-                                Err(_poisoned) => {
-                                    return (
-                                        StatusCode::INTERNAL_SERVER_ERROR,
-                                        Json(serde_json::json!({
-                                            "error": "GPU model state corrupted (lock poisoned). Please restart the server."
-                                        })),
-                                    )
-                                        .into_response();
-                                }
-                            };
-                            match model.generate_cuda(
-                                &input_tokens,
-                                max_tokens,
-                                eos_id,
-                            ) {
-                                Ok(t) => t,
-                                Err(e) => {
-                                    return (
-                                        StatusCode::INTERNAL_SERVER_ERROR,
-                                        Json(serde_json::json!({"error": format!("GPU generation failed: {e}")})),
-                                    )
-                                        .into_response();
-                                }
-                            }
-                        };
-                        let gen_time = gen_start.elapsed();
-
-                        // Decode
-                        let new_tokens = if output_tokens.len() > input_tokens.len() {
-                            &output_tokens[input_tokens.len()..]
-                        } else {
-                            &output_tokens[..]
-                        };
-
-                        // PMAT-098: Use BPE tokenizer for proper decoding
-                        let text = match tok_info.as_ref() {
-                            Some(tok) => tok.tokenizer.decode(new_tokens).unwrap_or_else(|_| String::new()),
-                            None => new_tokens.iter().filter_map(|&t| char::from_u32(t)).collect::<String>(),
-                        };
-
-                        let tokens_generated = new_tokens.len();
-                        let latency_ms = start.elapsed().as_millis() as u64;
-                        let tok_per_sec = if gen_time.as_secs_f64() > 0.0 {
-                            tokens_generated as f64 / gen_time.as_secs_f64()
-                        } else {
-                            0.0
-                        };
-
-                        Json(CompletionResponse {
-                            text,
-                            tokens_generated,
-                            latency_ms,
-                            tok_per_sec,
-                        })
-                        .into_response()
-                    }
-                }),
-            )
-            .route(
-                "/v1/chat/completions",
-                {
-                    let cuda_for_chat = cuda_model.clone();
-                    let tok_for_chat = tokenizer.clone();
-                    let path_for_chat = model_path_arc.clone();
-                    post(move |Json(req): Json<serde_json::Value>| {
-                        let cuda = cuda_for_chat.clone();
-                        let tok_info = tok_for_chat.clone();
-                        let model_path = path_for_chat.clone();
-                        async move {
-                            use axum::response::sse::{Event, Sse};
-                            use futures_util::stream;
-                            use realizar::apr::AprModel;
-
-                            // Extract messages from request
-                            let messages = req.get("messages").and_then(|m| m.as_array());
-                            let stream_mode = req.get("stream").and_then(serde_json::Value::as_bool).unwrap_or(false);
-                            let max_tokens = req.get("max_tokens").and_then(serde_json::Value::as_u64).unwrap_or(32) as usize;
-
-                            let prompt = if let Some(msgs) = messages {
-                                // Format as ChatML
-                                let mut prompt = String::new();
-                                for msg in msgs {
-                                    let role = msg.get("role").and_then(|r| r.as_str()).unwrap_or("user");
-                                    let content = msg.get("content").and_then(|c| c.as_str()).unwrap_or("");
-                                    write!(prompt, "<|im_start|>{}\n{}<|im_end|>\n", role, content).expect("write to String cannot fail");
-                                }
-                                prompt.push_str("<|im_start|>assistant\n");
-                                prompt
-                            } else {
-                                return axum::Json(serde_json::json!({"error": "Missing messages"})).into_response();
-                            };
-
-                            let start = Instant::now();
-
-                            // Encode prompt
-                            // PMAT-098: Use BPE tokenizer for proper encoding
-                            let input_tokens: Vec<u32> = match tok_info.as_ref() {
-                                Some(tok) => tok.tokenizer.encode(&prompt),
-                                None => prompt.chars().map(|c| c as u32).collect(),
-                            };
-
-                            let eos_id = match tok_info.as_ref() {
-                                Some(tok) => tok.eos_token_id.unwrap_or(151645),
-                                _ => 151645, // ChatML end token
-                            };
-
-                            // Generate on GPU
-                            let gen_start = Instant::now();
-                            let max_tokens = max_tokens.min(256);
-                            let output_tokens = {
-                                // PMAT-189: Handle CUDA model lock poisoning gracefully
-                                let mut model = match cuda.lock() {
-                                    Ok(guard) => guard,
-                                    Err(_poisoned) => {
-                                        return axum::Json(serde_json::json!({
-                                            "error": "GPU model state corrupted (lock poisoned). Please restart the server."
-                                        }))
-                                            .into_response();
-                                    }
-                                };
-                                match model.generate_cuda(&input_tokens, max_tokens, eos_id) {
-                                    Ok(t) => t,
-                                    Err(e) => {
-                                        return axum::Json(serde_json::json!({"error": format!("GPU generation failed: {e}")}))
-                                            .into_response();
-                                    }
-                                }
-                            };
-                            let elapsed = gen_start.elapsed();
-
-                            // Decode
-                            let new_tokens = if output_tokens.len() > input_tokens.len() {
-                                &output_tokens[input_tokens.len()..]
-                            } else {
-                                &output_tokens[..]
-                            };
-
-                            // PMAT-099: Debug logging for GPU token decoding
-                            eprintln!("[APR GPU CHAT DEBUG] Input tokens: {}, Output tokens: {}, New tokens: {}",
-                                input_tokens.len(), output_tokens.len(), new_tokens.len());
-                            eprintln!("[APR GPU CHAT DEBUG] New token IDs: {:?}", &new_tokens[..new_tokens.len().min(20)]);
-
-                            // PMAT-098: Use BPE tokenizer for proper decoding
-                            let output_text = match tok_info.as_ref() {
-                                Some(tok) => match tok.tokenizer.decode(new_tokens) {
-                                    Ok(decoded) => {
-                                        eprintln!("[APR GPU CHAT DEBUG] Decoded text: {:?}", decoded);
-                                        decoded
-                                    }
-                                    Err(e) => {
-                                        eprintln!("[APR GPU CHAT DEBUG] Decode error: {e}");
-                                        String::new()
-                                    }
-                                },
-                                None => {
-                                    let fallback: String = new_tokens.iter().filter_map(|&t| char::from_u32(t)).collect();
-                                    eprintln!("[APR GPU CHAT DEBUG] Fallback decode (no tokenizer): {:?}", fallback);
-                                    fallback
-                                }
-                            };
-
-                            let tokens_generated = new_tokens.len();
-                            let tok_per_sec = if elapsed.as_secs_f64() > 0.0 {
-                                tokens_generated as f64 / elapsed.as_secs_f64()
-                            } else {
-                                0.0
-                            };
-
-                            // Generate unique ID
-                            let request_id = format!(
-                                "chatcmpl-{}-{}",
-                                std::time::SystemTime::now()
-                                    .duration_since(std::time::UNIX_EPOCH)
-                                    .unwrap_or_default()
-                                    .as_nanos(),
-                                std::process::id()
-                            );
-
-                            let created = std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .unwrap_or_default()
-                                .as_secs();
-
-                            if stream_mode {
-                                // SSE streaming response (PAR-302)
-                                let response = serde_json::json!({
-                                    "id": request_id,
-                                    "object": "chat.completion.chunk",
-                                    "created": created,
-                                    "model": "apr-gpu",
-                                    "choices": [{
-                                        "index": 0,
-                                        "delta": {"role": "assistant", "content": output_text},
-                                        "finish_reason": "stop"
-                                    }]
-                                });
-
-                                let stream = stream::once(async move {
-                                    Ok::<_, std::convert::Infallible>(Event::default().data(response.to_string()))
-                                });
-                                Sse::new(stream).into_response()
-                            } else {
-                                // Non-streaming response
-                                axum::Json(serde_json::json!({
-                                    "id": request_id,
-                                    "object": "chat.completion",
-                                    "created": created,
-                                    "model": "apr-gpu",
-                                    "choices": [{
-                                        "index": 0,
-                                        "message": {"role": "assistant", "content": output_text},
-                                        "finish_reason": "stop"
-                                    }],
-                                    "usage": {
-                                        "prompt_tokens": input_tokens.len(),
-                                        "completion_tokens": tokens_generated,
-                                        "total_tokens": input_tokens.len() + tokens_generated
-                                    },
-                                    "_apr_metrics": {
-                                        "latency_ms": start.elapsed().as_millis(),
-                                        "tok_per_sec": tok_per_sec
-                                    }
-                                }))
-                                .into_response()
-                            }
-                        }
-                    })
-                },
-            )
-            .route(
-                "/",
-                get(|| async { "APR v2 GPU Inference Server - POST /v1/completions, /v1/chat/completions" }),
-            );
+        let app = build_gpu_router(cuda_model, tokenizer);
 
         let listener = tokio::net::TcpListener::bind(&bind_addr)
             .await
             .map_err(|e| CliError::InferenceFailed(format!("Failed to bind: {e}")))?;
 
-        println!();
-        println!(
-            "{}",
-            format!("APR GPU Inference Server listening on http://{}", bind_addr)
-                .green()
-                .bold()
-        );
-        println!();
-        println!("{}", "Endpoints:".cyan());
-        println!("  GET  /health              - Health check");
-        println!("  POST /v1/completions      - GPU text generation");
-        println!("  POST /v1/chat/completions - GPU chat completions (PAR-302)");
-        println!();
-        println!("{}", "Press Ctrl+C to stop".dimmed());
+        print_gpu_server_banner(&bind_addr);
 
         axum::serve(listener, app)
             .with_graceful_shutdown(shutdown_signal())
@@ -943,6 +722,204 @@ fn start_apr_server_gpu(
         println!("{}", "Server stopped".yellow());
         Ok(())
     })
+}
+
+/// Build the axum Router for GPU inference endpoints.
+#[cfg(feature = "inference")]
+#[allow(clippy::disallowed_methods)] // serde_json::json!() uses infallible unwrap
+fn build_gpu_router(
+    cuda_model: Arc<std::sync::Mutex<realizar::apr::AprV2ModelCuda>>,
+    tokenizer: Arc<Option<SafeTensorsTokenizerInfo>>,
+) -> axum::Router {
+    use axum::{
+        http::StatusCode,
+        response::IntoResponse,
+        routing::{get, post},
+        Json, Router,
+    };
+
+    let cuda_for_completions = cuda_model.clone();
+    let tok_for_completions = tokenizer.clone();
+    let cuda_for_chat = cuda_model;
+    let tok_for_chat = tokenizer;
+
+    Router::new()
+        .route(
+            "/health",
+            get(|| async {
+                Json(serde_json::json!({"status": "healthy", "gpu": true}))
+            }),
+        )
+        .route(
+            "/v1/completions",
+            post(move |Json(req): Json<GpuCompletionRequest>| {
+                let cuda = cuda_for_completions.clone();
+                let tok_info = tok_for_completions.clone();
+                async move {
+                    handle_gpu_completion(&cuda, tok_info.as_ref().as_ref(), &req)
+                        .into_response()
+                }
+            }),
+        )
+        .route(
+            "/v1/chat/completions",
+            post(move |Json(req): Json<serde_json::Value>| {
+                let cuda = cuda_for_chat.clone();
+                let tok_info = tok_for_chat.clone();
+                async move {
+                    handle_gpu_chat_completion(&cuda, tok_info.as_ref().as_ref(), &req)
+                        .into_response()
+                }
+            }),
+        )
+        .route(
+            "/",
+            get(|| async {
+                "APR v2 GPU Inference Server - POST /v1/completions, /v1/chat/completions"
+            }),
+        )
+}
+
+/// Handle POST /v1/completions for GPU inference.
+#[cfg(feature = "inference")]
+#[allow(clippy::disallowed_methods)] // serde_json::json!() uses infallible unwrap
+fn handle_gpu_completion(
+    cuda: &std::sync::Mutex<realizar::apr::AprV2ModelCuda>,
+    tok_info: Option<&SafeTensorsTokenizerInfo>,
+    req: &GpuCompletionRequest,
+) -> axum::response::Response {
+    use axum::{http::StatusCode, response::IntoResponse, Json};
+
+    let start = Instant::now();
+    let input_tokens = encode_prompt(tok_info, &req.prompt);
+    let eos_id = eos_token_id(tok_info, 2);
+
+    let gen_start = Instant::now();
+    let output_tokens = match run_gpu_generation(cuda, &input_tokens, req.max_tokens.min(128), eos_id) {
+        Ok(t) => t,
+        Err(e) => {
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e})))
+                .into_response();
+        }
+    };
+    let gen_time = gen_start.elapsed();
+
+    let new_tokens = extract_new_tokens(&output_tokens, input_tokens.len());
+    let text = decode_tokens(tok_info, new_tokens);
+
+    Json(GpuCompletionResponse {
+        text,
+        tokens_generated: new_tokens.len(),
+        latency_ms: start.elapsed().as_millis() as u64,
+        tok_per_sec: compute_tok_per_sec(new_tokens.len(), gen_time),
+    })
+    .into_response()
+}
+
+/// Handle POST /v1/chat/completions for GPU inference (PAR-302).
+#[cfg(feature = "inference")]
+#[allow(clippy::disallowed_methods)] // serde_json::json!() uses infallible unwrap
+fn handle_gpu_chat_completion(
+    cuda: &std::sync::Mutex<realizar::apr::AprV2ModelCuda>,
+    tok_info: Option<&SafeTensorsTokenizerInfo>,
+    req: &serde_json::Value,
+) -> axum::response::Response {
+    use axum::{
+        response::{sse::{Event, Sse}, IntoResponse},
+        Json,
+    };
+    use futures_util::stream;
+
+    let messages = req.get("messages").and_then(|m| m.as_array());
+    let stream_mode = req
+        .get("stream")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+    let max_tokens = req
+        .get("max_tokens")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(32) as usize;
+
+    let Some(msgs) = messages else {
+        return Json(serde_json::json!({"error": "Missing messages"})).into_response();
+    };
+
+    let prompt = format_chatml(msgs);
+    let start = Instant::now();
+    let input_tokens = encode_prompt(tok_info, &prompt);
+    let eos_id = eos_token_id(tok_info, 151_645);
+
+    let gen_start = Instant::now();
+    let output_tokens = match run_gpu_generation(cuda, &input_tokens, max_tokens.min(256), eos_id)
+    {
+        Ok(t) => t,
+        Err(e) => return Json(serde_json::json!({"error": e})).into_response(),
+    };
+    let elapsed = gen_start.elapsed();
+
+    let new_tokens = extract_new_tokens(&output_tokens, input_tokens.len());
+    eprintln!(
+        "[APR GPU CHAT DEBUG] Input tokens: {}, Output tokens: {}, New tokens: {}",
+        input_tokens.len(),
+        output_tokens.len(),
+        new_tokens.len()
+    );
+
+    let output_text = decode_tokens(tok_info, new_tokens);
+    let tokens_generated = new_tokens.len();
+    let tok_per_sec = compute_tok_per_sec(tokens_generated, elapsed);
+    let request_id = generate_request_id();
+    let created = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    if stream_mode {
+        let response = serde_json::json!({
+            "id": request_id,
+            "object": "chat.completion.chunk",
+            "created": created,
+            "model": "apr-gpu",
+            "choices": [{"index": 0, "delta": {"role": "assistant", "content": output_text}, "finish_reason": "stop"}]
+        });
+        let stream = stream::once(async move {
+            Ok::<_, std::convert::Infallible>(Event::default().data(response.to_string()))
+        });
+        Sse::new(stream).into_response()
+    } else {
+        Json(serde_json::json!({
+            "id": request_id,
+            "object": "chat.completion",
+            "created": created,
+            "model": "apr-gpu",
+            "choices": [{"index": 0, "message": {"role": "assistant", "content": output_text}, "finish_reason": "stop"}],
+            "usage": {
+                "prompt_tokens": input_tokens.len(),
+                "completion_tokens": tokens_generated,
+                "total_tokens": input_tokens.len() + tokens_generated
+            },
+            "_apr_metrics": {"latency_ms": start.elapsed().as_millis(), "tok_per_sec": tok_per_sec}
+        }))
+        .into_response()
+    }
+}
+
+/// Print GPU server startup banner.
+fn print_gpu_server_banner(bind_addr: &str) {
+    println!();
+    println!(
+        "{}",
+        format!("APR GPU Inference Server listening on http://{bind_addr}")
+            .green()
+            .bold()
+    );
+    println!();
+    println!("{}", "Endpoints:".cyan());
+    println!("  GET  /health              - Health check");
+    println!("  POST /v1/completions      - GPU text generation");
+    println!("  POST /v1/chat/completions - GPU chat completions (PAR-302)");
+    println!();
+    println!("{}", "Press Ctrl+C to stop".dimmed());
 }
 
 // ============================================================================
@@ -956,26 +933,22 @@ fn start_apr_server_gpu(
 /// With --gpu --batch flags: 800+ tok/s (2.8x Ollama) via batched GPU inference.
 #[cfg(feature = "inference")]
 fn start_gguf_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
-    use realizar::api::{create_router, AppState};
     use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel};
 
-    // Load GGUF model via mmap
     println!("{}", "Loading GGUF model (mmap)...".dimmed());
     let mapped_model = MappedGGUFModel::from_path(model_path)
         .map_err(|e| CliError::ModelLoadFailed(format!("Failed to load GGUF: {e}")))?;
 
-    let tensor_count = mapped_model.model.tensors.len();
-    let metadata_count = mapped_model.model.metadata.len();
     println!(
         "{}",
         format!(
             "GGUF loaded: {} tensors, {} metadata entries",
-            tensor_count, metadata_count
+            mapped_model.model.tensors.len(),
+            mapped_model.model.metadata.len()
         )
         .dimmed()
     );
 
-    // Create quantized model for inference (Ollama-parity performance)
     println!("{}", "Building quantized inference model...".dimmed());
     let quantized_model = OwnedQuantizedModel::from_mapped(&mapped_model)
         .map_err(|e| CliError::ModelLoadFailed(format!("Failed to build quantized model: {e}")))?;
@@ -991,123 +964,132 @@ fn start_gguf_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
         .green()
     );
 
-    // Extract vocabulary from GGUF for proper token encoding/decoding
-    let vocab = mapped_model.model.vocabulary().unwrap_or_else(|| {
-        eprintln!("Warning: No vocabulary in GGUF, using placeholder tokens");
-        (0..quantized_model.config.vocab_size)
-            .map(|i| format!("token{i}"))
-            .collect()
-    });
+    let vocab = extract_gguf_vocab(&mapped_model, quantized_model.config.vocab_size);
 
-    // GPU batched inference path (2X+ Ollama performance)
     #[cfg(feature = "cuda")]
     if config.gpu && config.batch {
         return start_gguf_server_gpu_batched(quantized_model, vocab, config);
     }
 
-    // GPU optimized path (--gpu flag) - Uses OwnedQuantizedModelCuda for 755+ tok/s (2.6x Ollama)
-    // PAR-111: Pre-uploads weights and uses batched workspaces for maximum throughput
     #[cfg(feature = "cuda")]
     if config.gpu && !config.no_gpu {
-        use realizar::gguf::OwnedQuantizedModelCuda;
-
-        println!(
-            "{}",
-            "Enabling optimized CUDA acceleration (PAR-111)...".cyan()
-        );
-
-        // Create CUDA-optimized model wrapper (this initializes GPU KV cache)
-        match OwnedQuantizedModelCuda::new(quantized_model, 0) {
-            Ok(mut cuda_model) => {
-                // Pre-upload all weights to GPU for maximum performance
-                println!("  Initializing GPU on device 0...");
-                match cuda_model.preload_weights_gpu() {
-                    Ok(bytes) => {
-                        println!(
-                            "{}",
-                            format!("  Pre-uploaded {} MB weights to GPU", bytes / (1024 * 1024))
-                                .green()
-                        );
-                    }
-                    Err(e) => {
-                        eprintln!(
-                            "{}",
-                            format!("  Warning: Weight preload failed, using on-demand: {e}")
-                                .yellow()
-                        );
-                    }
-                }
-
-                println!("{}", "CUDA optimized model ready".green());
-
-                let state = AppState::with_cuda_model_and_vocab(cuda_model, vocab)
-                    .map_err(|e| CliError::InferenceFailed(format!("Failed to create state: {e}")))?
-                    .with_verbose(config.verbose); // GH-152: Pass verbose flag
-
-                let app = create_router(state);
-
-                let runtime = tokio::runtime::Runtime::new().map_err(|e| {
-                    CliError::InferenceFailed(format!("Failed to create runtime: {e}"))
-                })?;
-
-                let bind_addr = config.bind_addr();
-
-                return runtime.block_on(async move {
-                    let listener = tokio::net::TcpListener::bind(&bind_addr)
-                        .await
-                        .map_err(|e| CliError::InferenceFailed(format!("Failed to bind: {e}")))?;
-
-                    println!();
-                    println!(
-                        "{}",
-                        format!("CUDA-optimized server listening on http://{}", bind_addr)
-                            .green()
-                            .bold()
-                    );
-                    println!();
-                    println!("{}", "Performance: 755+ tok/s (2.6x Ollama)".yellow());
-                    println!();
-                    println!("{}", "Endpoints:".cyan());
-                    println!("  GET  /health              - Health check");
-                    println!("  GET  /metrics             - Prometheus metrics");
-                    println!("  POST /generate            - Text generation");
-                    println!("  POST /v1/completions      - OpenAI-compatible");
-                    println!("  POST /v1/chat/completions - Chat completions");
-                    println!();
-                    println!("{}", "Press Ctrl+C to stop".dimmed());
-
-                    axum::serve(listener, app)
-                        .with_graceful_shutdown(shutdown_signal())
-                        .await
-                        .map_err(|e| CliError::InferenceFailed(format!("Server error: {e}")))?;
-
-                    Ok(())
-                });
-            }
-            Err(e) => {
-                eprintln!(
-                    "{}",
-                    format!("CUDA init failed, falling back to CPU: {e}").yellow()
-                );
-                // Fall through to CPU path - rebuild the model since we consumed it
-            }
-        }
-        // Rebuild quantized model for CPU fallback if CUDA failed
-        let quantized_model = OwnedQuantizedModel::from_mapped(&mapped_model).map_err(|e| {
-            CliError::ModelLoadFailed(format!("Failed to rebuild quantized model: {e}"))
-        })?;
-        let vocab = mapped_model.model.vocabulary().unwrap_or_else(|| {
-            (0..quantized_model.config.vocab_size)
-                .map(|i| format!("token{i}"))
-                .collect()
-        });
-        // Run CPU server with rebuilt model
-        return run_cpu_server(quantized_model, vocab, config);
+        return start_gguf_server_cuda(quantized_model, vocab, &mapped_model, config);
     }
 
-    // CPU path (default - when not using GPU or cuda feature disabled)
-    // Create realizar AppState with full inference capabilities and real vocab
     run_cpu_server(quantized_model, vocab, config)
+}
+
+/// Extract vocabulary from GGUF model, falling back to placeholder tokens.
+fn extract_gguf_vocab(
+    mapped_model: &realizar::gguf::MappedGGUFModel,
+    vocab_size: usize,
+) -> Vec<String> {
+    mapped_model.model.vocabulary().unwrap_or_else(|| {
+        eprintln!("Warning: No vocabulary in GGUF, using placeholder tokens");
+        (0..vocab_size).map(|i| format!("token{i}")).collect()
+    })
+}
+
+/// Start GGUF server with CUDA acceleration (PAR-111).
+#[cfg(all(feature = "inference", feature = "cuda"))]
+fn start_gguf_server_cuda(
+    quantized_model: realizar::gguf::OwnedQuantizedModel,
+    vocab: Vec<String>,
+    mapped_model: &realizar::gguf::MappedGGUFModel,
+    config: &ServerConfig,
+) -> Result<()> {
+    use realizar::api::{create_router, AppState};
+    use realizar::gguf::{OwnedQuantizedModel, OwnedQuantizedModelCuda};
+
+    println!(
+        "{}",
+        "Enabling optimized CUDA acceleration (PAR-111)...".cyan()
+    );
+
+    match OwnedQuantizedModelCuda::new(quantized_model, 0) {
+        Ok(mut cuda_model) => {
+            preload_gpu_weights(&mut cuda_model);
+            println!("{}", "CUDA optimized model ready".green());
+
+            let state = AppState::with_cuda_model_and_vocab(cuda_model, vocab)
+                .map_err(|e| CliError::InferenceFailed(format!("Failed to create state: {e}")))?
+                .with_verbose(config.verbose);
+
+            let app = create_router(state);
+            run_server_async(app, &config.bind_addr(), "CUDA-optimized")
+        }
+        Err(e) => {
+            eprintln!(
+                "{}",
+                format!("CUDA init failed, falling back to CPU: {e}").yellow()
+            );
+            let quantized_model = OwnedQuantizedModel::from_mapped(mapped_model).map_err(|e| {
+                CliError::ModelLoadFailed(format!("Failed to rebuild quantized model: {e}"))
+            })?;
+            let vocab = extract_gguf_vocab(mapped_model, quantized_model.config.vocab_size);
+            run_cpu_server(quantized_model, vocab, config)
+        }
+    }
+}
+
+/// Pre-upload model weights to GPU for maximum performance.
+#[cfg(all(feature = "inference", feature = "cuda"))]
+fn preload_gpu_weights(cuda_model: &mut realizar::gguf::OwnedQuantizedModelCuda) {
+    println!("  Initializing GPU on device 0...");
+    match cuda_model.preload_weights_gpu() {
+        Ok(bytes) => {
+            println!(
+                "{}",
+                format!("  Pre-uploaded {} MB weights to GPU", bytes / (1024 * 1024)).green()
+            );
+        }
+        Err(e) => {
+            eprintln!(
+                "{}",
+                format!("  Warning: Weight preload failed, using on-demand: {e}").yellow()
+            );
+        }
+    }
+}
+
+/// Run an axum server with graceful shutdown and standard banner.
+#[cfg(feature = "inference")]
+fn run_server_async(app: axum::Router, bind_addr: &str, label: &str) -> Result<()> {
+    let runtime = tokio::runtime::Runtime::new()
+        .map_err(|e| CliError::InferenceFailed(format!("Failed to create runtime: {e}")))?;
+
+    let bind_addr = bind_addr.to_string();
+    let label = label.to_string();
+
+    runtime.block_on(async move {
+        let listener = tokio::net::TcpListener::bind(&bind_addr)
+            .await
+            .map_err(|e| CliError::InferenceFailed(format!("Failed to bind: {e}")))?;
+
+        println!();
+        println!(
+            "{}",
+            format!("{label} server listening on http://{bind_addr}")
+                .green()
+                .bold()
+        );
+        println!();
+        println!("{}", "Endpoints:".cyan());
+        println!("  GET  /health              - Health check");
+        println!("  GET  /metrics             - Prometheus metrics");
+        println!("  POST /generate            - Text generation");
+        println!("  POST /v1/completions      - OpenAI-compatible");
+        println!("  POST /v1/chat/completions - Chat completions");
+        println!();
+        println!("{}", "Press Ctrl+C to stop".dimmed());
+
+        axum::serve(listener, app)
+            .with_graceful_shutdown(shutdown_signal())
+            .await
+            .map_err(|e| CliError::InferenceFailed(format!("Server error: {e}")))?;
+
+        Ok(())
+    })
 }
 
 /// Run the CPU inference server
