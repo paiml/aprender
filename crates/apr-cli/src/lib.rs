@@ -1345,33 +1345,48 @@ fn validate_model_contract(paths: &[PathBuf]) -> Result<(), CliError> {
         if !path.exists() {
             continue; // Let the subcommand handle FileNotFound
         }
-        // GH-213: For sharded index.json, validate shard integrity via manifest
         if path.to_string_lossy().ends_with(".safetensors.index.json") {
-            if let Some(parent) = path.parent() {
-                let manifest_path = parent.join(".apr-manifest.json");
-                if manifest_path.exists() {
-                    validate_shard_manifest(&manifest_path, parent)?;
-                }
-            }
-            continue; // Skip RosettaStone (index.json is not a model file)
+            validate_shard_index(path)?;
+            continue;
         }
-        let report = rosetta.validate(path).map_err(|e| {
-            CliError::ValidationFailed(format!(
-                "Contract validation failed for {}: {e}",
-                path.display()
-            ))
-        })?;
-        if !report.is_valid {
-            let violation_count: usize = report.tensors.iter().map(|t| t.failures.len()).sum();
-            return Err(CliError::ValidationFailed(format!(
-                "PMAT-237 CONTRACT VIOLATION: {} has {} violations in {} tensors. \
-                 Use 'apr qa {}' for details. Use --skip-contract to bypass.",
-                path.display(),
-                violation_count,
-                report.failed_tensor_count,
-                path.display(),
-            )));
-        }
+        validate_single_model(&rosetta, path)?;
+    }
+    Ok(())
+}
+
+/// GH-213: For sharded index.json, validate shard integrity via manifest.
+fn validate_shard_index(path: &Path) -> Result<(), CliError> {
+    let Some(parent) = path.parent() else {
+        return Ok(());
+    };
+    let manifest_path = parent.join(".apr-manifest.json");
+    if manifest_path.exists() {
+        validate_shard_manifest(&manifest_path, parent)?;
+    }
+    Ok(())
+}
+
+/// Validate a single model file against the tensor layout contract.
+fn validate_single_model(
+    rosetta: &aprender::format::rosetta::RosettaStone,
+    path: &Path,
+) -> Result<(), CliError> {
+    let report = rosetta.validate(path).map_err(|e| {
+        CliError::ValidationFailed(format!(
+            "Contract validation failed for {}: {e}",
+            path.display()
+        ))
+    })?;
+    if !report.is_valid {
+        let violation_count: usize = report.tensors.iter().map(|t| t.failures.len()).sum();
+        return Err(CliError::ValidationFailed(format!(
+            "PMAT-237 CONTRACT VIOLATION: {} has {} violations in {} tensors. \
+             Use 'apr qa {}' for details. Use --skip-contract to bypass.",
+            path.display(),
+            violation_count,
+            report.failed_tensor_count,
+            path.display(),
+        )));
     }
     Ok(())
 }
@@ -1689,8 +1704,177 @@ fn dispatch_run(
     )
 }
 
+/// Build server config and launch serve.
+#[allow(clippy::too_many_arguments)]
+fn dispatch_serve(
+    file: &Path,
+    port: u16,
+    host: &str,
+    no_cors: bool,
+    no_metrics: bool,
+    no_gpu: bool,
+    gpu: bool,
+    batch: bool,
+    trace: bool,
+    trace_level: &str,
+    profile: bool,
+    verbose: bool,
+) -> Result<(), CliError> {
+    let config = serve::ServerConfig {
+        port,
+        host: host.to_owned(),
+        cors: !no_cors,
+        metrics: !no_metrics,
+        no_gpu,
+        gpu,
+        batch,
+        trace,
+        trace_level: trace_level.to_owned(),
+        profile,
+        verbose,
+        ..Default::default()
+    };
+    serve::run(file, &config)
+}
+
+/// Parse hex offset and run hex inspection.
+#[allow(clippy::too_many_arguments)]
+fn dispatch_hex(
+    file: &Path,
+    tensor: Option<&str>,
+    limit: usize,
+    stats: bool,
+    list: bool,
+    json: bool,
+    header: bool,
+    blocks: bool,
+    distribution: bool,
+    contract: bool,
+    entropy: bool,
+    raw: bool,
+    offset: &str,
+    width: usize,
+) -> Result<(), CliError> {
+    let parsed_offset = hex::parse_hex_offset(offset).map_err(CliError::InvalidFormat)?;
+    hex::run(&hex::HexOptions {
+        file: file.to_path_buf(),
+        tensor: tensor.map(String::from),
+        limit,
+        stats,
+        list,
+        json,
+        header,
+        blocks,
+        distribution,
+        contract,
+        entropy,
+        raw,
+        offset: parsed_offset,
+        width,
+    })
+}
+
+/// Dispatch a rosetta subcommand.
+fn dispatch_rosetta(action: &RosettaCommands, global_json: bool) -> Result<(), CliError> {
+    match action {
+        RosettaCommands::Inspect {
+            file,
+            hexdump,
+            json,
+        } => rosetta::run_inspect(file, *hexdump, *json || global_json),
+        RosettaCommands::Convert {
+            source,
+            target,
+            quantize,
+            verify,
+            json,
+            tokenizer,
+        } => rosetta::run_convert(
+            source,
+            target,
+            quantize.as_deref(),
+            *verify,
+            *json || global_json,
+            tokenizer.as_deref(),
+        ),
+        RosettaCommands::Chain {
+            source,
+            formats,
+            work_dir,
+            json,
+        } => rosetta::run_chain(source, formats, work_dir, *json || global_json),
+        RosettaCommands::Verify {
+            source,
+            intermediate,
+            tolerance,
+            json,
+        } => rosetta::run_verify(source, intermediate, *tolerance, *json || global_json),
+        RosettaCommands::CompareInference {
+            model_a,
+            model_b,
+            prompt,
+            max_tokens,
+            temperature,
+            tolerance,
+            json,
+        } => rosetta::run_compare_inference(
+            model_a,
+            model_b,
+            prompt,
+            *max_tokens,
+            *temperature,
+            *tolerance,
+            *json || global_json,
+        ),
+        RosettaCommands::DiffTensors {
+            model_a,
+            model_b,
+            mismatches_only,
+            show_values,
+            filter,
+            json,
+        } => rosetta::run_diff_tensors(
+            model_a,
+            model_b,
+            *mismatches_only,
+            *show_values,
+            filter.as_deref(),
+            *json || global_json,
+        ),
+        RosettaCommands::Fingerprint {
+            model,
+            model_b,
+            output,
+            filter,
+            verbose,
+            json,
+        } => rosetta::run_fingerprint(
+            model,
+            model_b.as_ref().map(std::path::PathBuf::as_path),
+            output.as_ref().map(std::path::PathBuf::as_path),
+            filter.as_deref(),
+            *verbose,
+            *json || global_json,
+        ),
+        RosettaCommands::ValidateStats {
+            model,
+            reference,
+            fingerprints,
+            threshold,
+            strict,
+            json,
+        } => rosetta::run_validate_stats(
+            model,
+            reference.as_ref().map(std::path::PathBuf::as_path),
+            fingerprints.as_ref().map(std::path::PathBuf::as_path),
+            *threshold,
+            *strict,
+            *json || global_json,
+        ),
+    }
+}
+
 /// Execute the CLI command and return the result.
-#[allow(clippy::too_many_lines)]
 pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
     // PMAT-237: Contract gate — refuse to operate on corrupt models
     if !cli.skip_contract {
@@ -1698,7 +1882,14 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
         validate_model_contract(&paths)?;
     }
 
-    match cli.command.as_ref() {
+    dispatch_core_command(cli)
+        .unwrap_or_else(|| dispatch_extended_command(cli))
+}
+
+/// Dispatch core commands (run, serve, inspection, format operations).
+#[allow(clippy::too_many_lines)]
+fn dispatch_core_command(cli: &Cli) -> Option<Result<(), CliError>> {
+    Some(match cli.command.as_ref() {
         Commands::Check { file, no_gpu } => commands::check::run(file, *no_gpu),
         Commands::Run {
             source,
@@ -1759,24 +1950,10 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             trace,
             trace_level,
             profile,
-        } => {
-            // GH-152: Wire global verbose flag to server config for request/response logging
-            let config = serve::ServerConfig {
-                port: *port,
-                host: host.clone(),
-                cors: !no_cors,
-                metrics: !no_metrics,
-                no_gpu: *no_gpu,
-                gpu: *gpu,
-                batch: *batch,
-                trace: *trace,
-                trace_level: trace_level.clone(),
-                profile: *profile,
-                verbose: cli.verbose,
-                ..Default::default()
-            };
-            serve::run(file, &config)
-        }
+        } => dispatch_serve(
+            file, *port, host, *no_cors, *no_metrics, *no_gpu, *gpu, *batch, *trace,
+            trace_level, *profile, cli.verbose,
+        ),
 
         Commands::Inspect {
             file,
@@ -1902,7 +2079,14 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             weights,
         } => merge::run(files, strategy, output, weights.clone()),
         Commands::Tui { file } => tui::run(file.clone()),
+        _ => return None,
+    })
+}
 
+/// Dispatch extended commands (analysis, profiling, QA, benchmarks).
+#[allow(clippy::too_many_lines)]
+fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
+    match cli.command.as_ref() {
         Commands::Cbtop {
             model,
             attach,
@@ -1945,16 +2129,13 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             format,
             golden,
             layer,
-        } => {
-            let export_format = format.parse().unwrap_or(probar::ExportFormat::Both);
-            probar::run(
-                file,
-                output,
-                export_format,
-                golden.as_deref(),
-                layer.as_deref(),
-            )
-        }
+        } => probar::run(
+            file,
+            output,
+            format.parse().unwrap_or(probar::ExportFormat::Both),
+            golden.as_deref(),
+            layer.as_deref(),
+        ),
 
         Commands::CompareHf {
             file,
@@ -1979,25 +2160,10 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             raw,
             offset,
             width,
-        } => {
-            let parsed_offset = hex::parse_hex_offset(offset).map_err(CliError::InvalidFormat)?;
-            hex::run(&hex::HexOptions {
-                file: file.clone(),
-                tensor: tensor.clone(),
-                limit: *limit,
-                stats: *stats,
-                list: *list,
-                json: *json || cli.json,
-                header: *header,
-                blocks: *blocks,
-                distribution: *distribution,
-                contract: *contract,
-                entropy: *entropy,
-                raw: *raw,
-                offset: parsed_offset,
-                width: *width,
-            })
-        }
+        } => dispatch_hex(
+            file, tensor.as_deref(), *limit, *stats, *list, *json || cli.json, *header,
+            *blocks, *distribution, *contract, *entropy, *raw, offset, *width,
+        ),
 
         Commands::Tree {
             file,
@@ -2005,25 +2171,25 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             format,
             sizes,
             depth,
-        } => {
-            let tree_format = format.parse().unwrap_or(tree::TreeFormat::Ascii);
-            tree::run(file, filter.as_deref(), tree_format, *sizes, *depth)
-        }
+        } => tree::run(
+            file,
+            filter.as_deref(),
+            format.parse().unwrap_or(tree::TreeFormat::Ascii),
+            *sizes,
+            *depth,
+        ),
 
         Commands::Flow {
             file,
             layer,
             component,
             verbose,
-        } => {
-            let flow_component = component.parse().unwrap_or(flow::FlowComponent::Full);
-            flow::run(
-                file,
-                layer.as_deref(),
-                flow_component,
-                *verbose || cli.verbose,
-            )
-        }
+        } => flow::run(
+            file,
+            layer.as_deref(),
+            component.parse().unwrap_or(flow::FlowComponent::Full),
+            *verbose || cli.verbose,
+        ),
 
         Commands::Chat {
             file,
@@ -2222,20 +2388,17 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             freeze_base,
             train_data,
             json,
-        } => {
-            let tune_method = method.parse().unwrap_or(tune::TuneMethod::Auto);
-            tune::run(
-                file.as_deref(),
-                tune_method,
-                *rank,
-                *vram,
-                *plan,
-                model.as_deref(),
-                *freeze_base,
-                train_data.as_deref(),
-                *json || cli.json,
-            )
-        }
+        } => tune::run(
+            file.as_deref(),
+            method.parse().unwrap_or(tune::TuneMethod::Auto),
+            *rank,
+            *vram,
+            *plan,
+            model.as_deref(),
+            *freeze_base,
+            train_data.as_deref(),
+            *json || cli.json,
+        ),
 
         Commands::Showcase {
             auto_verify,
@@ -2263,102 +2426,7 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             *quiet,
         ),
 
-        Commands::Rosetta { action } => match action {
-            RosettaCommands::Inspect {
-                file,
-                hexdump,
-                json,
-            } => rosetta::run_inspect(file, *hexdump, *json || cli.json),
-            RosettaCommands::Convert {
-                source,
-                target,
-                quantize,
-                verify,
-                json,
-                tokenizer,
-            } => rosetta::run_convert(
-                source,
-                target,
-                quantize.as_deref(),
-                *verify,
-                *json || cli.json,
-                tokenizer.as_deref(),
-            ),
-            RosettaCommands::Chain {
-                source,
-                formats,
-                work_dir,
-                json,
-            } => rosetta::run_chain(source, formats, work_dir, *json || cli.json),
-            RosettaCommands::Verify {
-                source,
-                intermediate,
-                tolerance,
-                json,
-            } => rosetta::run_verify(source, intermediate, *tolerance, *json || cli.json),
-            RosettaCommands::CompareInference {
-                model_a,
-                model_b,
-                prompt,
-                max_tokens,
-                temperature,
-                tolerance,
-                json,
-            } => rosetta::run_compare_inference(
-                model_a,
-                model_b,
-                prompt,
-                *max_tokens,
-                *temperature,
-                *tolerance,
-                *json || cli.json,
-            ),
-            RosettaCommands::DiffTensors {
-                model_a,
-                model_b,
-                mismatches_only,
-                show_values,
-                filter,
-                json,
-            } => rosetta::run_diff_tensors(
-                model_a,
-                model_b,
-                *mismatches_only,
-                *show_values,
-                filter.as_deref(),
-                *json || cli.json,
-            ),
-            RosettaCommands::Fingerprint {
-                model,
-                model_b,
-                output,
-                filter,
-                verbose,
-                json,
-            } => rosetta::run_fingerprint(
-                model,
-                model_b.as_ref().map(std::path::PathBuf::as_path),
-                output.as_ref().map(std::path::PathBuf::as_path),
-                filter.as_deref(),
-                *verbose,
-                *json || cli.json,
-            ),
-            RosettaCommands::ValidateStats {
-                model,
-                reference,
-                fingerprints,
-                threshold,
-                strict,
-                json,
-            } => rosetta::run_validate_stats(
-                model,
-                reference.as_ref().map(std::path::PathBuf::as_path),
-                fingerprints.as_ref().map(std::path::PathBuf::as_path),
-                *threshold,
-                *strict,
-                *json || cli.json,
-            ),
-        },
+        Commands::Rosetta { action } => dispatch_rosetta(action, cli.json),
 
         Commands::Publish {
             directory,
@@ -2411,6 +2479,9 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
                 full: *full,
             },
         ),
+
+        // All other commands handled by dispatch_core_command
+        _ => unreachable!("dispatch_core_command handles all remaining variants"),
     }
 }
 
