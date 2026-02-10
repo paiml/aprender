@@ -1,10 +1,10 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 10.27.0 (Full Stack: apr-cli + aprender + realizar + trueno, Popperian falsified)
-**Status:** ALL THREE PROJECTS A+ + ZERO SATD (7B all 3 formats working CPU + GPU. 26 falsification rounds, 123 bugs found. Round 26: F-PROFILE-011 cross-format comparison implemented (--compare flag). Max cyclomatic 39→32. Project Scores: aprender A+ (105%), realizar A+ (99.9%), trueno A+ (100.9%). Coverage: 96.35%. SATD: 0/0/0.)
+**Version:** 10.29.0 (Full Stack: apr-cli + aprender + realizar + trueno, Popperian falsified)
+**Status:** ALL THREE PROJECTS A+ + ZERO SATD (7B all 3 formats working CPU + GPU. 28 falsification rounds, 128 bugs found. Round 27: complexity reduction (showcase, routes, rosetta, run, 5 files, max cyc 32→31). Round 28: F-PROFILE-007/008/009 GPU per-kernel profiling (bandwidth estimation, launch overhead). Project Scores: aprender A+ (105%), realizar A+ (99.9%), trueno A+ (100.9%). Coverage: 96.35%. SATD: 0/0/0.)
 **Primary Model:** `Qwen/Qwen2.5-Coder-7B-Instruct`
 **Source Format:** SafeTensors BF16 (HuggingFace, sharded, ~14 GB)
-**Popperian Score:** 194/209 gates passing (92.8%) — 11 FALSIFIED, 0 blocked/not-tested. 158 falsification gates, 25 sections. Gated by `model-tests` feature (`make test-model`)
+**Popperian Score:** 199/215 gates passing (92.6%) — 8 FALSIFIED, 0 blocked/not-tested. 158 falsification gates, 25 sections. Gated by `model-tests` feature (`make test-model`)
 **CLI Surface:** 38 top-level + 10 nested subcommands (48 total)
 **Compile-Time Proofs:** 297 algebraic invariants (zero runtime cost)
 **Author:** PAIML Engineering
@@ -1091,9 +1091,9 @@ Format-aware binary forensics tool that understands GGUF, APR, and SafeTensors i
 | F-PROFILE-004 | --detect-naive flags scalar fallback | `apr profile model.gguf --detect-naive` | Operations below threshold flagged | **Pass** (flags operations taking >50% of total time) |
 | F-PROFILE-005 | Perf grade reflects efficiency | `apr profile model.gguf --perf-grade` | >50% efficiency → A, <10% → D/F | **Pass** (letter grade A-F based on max(compute_eff, memory_eff)) |
 | F-PROFILE-006 | SafeTensors profiling gives actionable error | `apr profile model.safetensors` | Clear error with conversion instructions | **Pass** (suggests `apr import` + GGUF path, checks for sibling .gguf) |
-| F-PROFILE-007 | GPU per-kernel timing is real (not opaque) | `apr profile model.gguf` on GPU | Shows per-kernel time for QKV, attention, FFN, etc. | **FALSIFIED** (GPU path returns `hotspots: vec![]` — zero per-kernel data) |
-| F-PROFILE-008 | Memory bandwidth utilization per kernel | `apr profile model.gguf --granular` | Shows achieved GB/s per operation vs peak | **FALSIFIED** (only aggregate bandwidth computed, not per-kernel) |
-| F-PROFILE-009 | Kernel launch overhead measured | `apr profile model.gguf` | Reports total kernel launch overhead as % of decode time | **FALSIFIED** (no kernel launch timing exists) |
+| F-PROFILE-007 | GPU per-kernel timing is real (not opaque) | `apr profile model.gguf` on GPU | Shows per-kernel time for QKV, attention, FFN, etc. | **Pass** (BrickProfiler pass extracts per-op timing via `extract_gpu_hotspots()`. Shows name, time_us, percent, count, min/max/avg, bottleneck classification, and category.) |
+| F-PROFILE-008 | Memory bandwidth utilization per kernel | `apr profile model.gguf --granular` | Shows achieved GB/s per operation vs peak | **Pass** (`estimate_kernel_data_bytes()` computes data movement per kernel. `bandwidth_gbs` and `efficiency_pct` fields. Granular detail column shows `bw=X.XGB/s, eff=X%` vs RTX 4090 peak 1008 GB/s. 5 tests.) |
+| F-PROFILE-009 | Kernel launch overhead measured | `apr profile model.gguf` | Reports total kernel launch overhead as % of decode time | **Pass** (`compute_kernel_launch_overhead()` computes gap between sum(kernel_times) and wall time. `kernel_launch_overhead_pct/us` fields. Color-coded display: green <10%, yellow 10-20%, red >20%. 2 tests.) |
 | F-PROFILE-010 | Ollama parity grade in `apr qa` | `apr qa model.gguf` | Reports Ollama parity ratio and letter grade | **Pass** (`ollama_parity_grade()` computes F/D/C/B/A/A+ from speedup ratio. Gate output: "0.64x Ollama (81 vs 126 tok/s) Grade D". Round 24 fix.) |
 | F-PROFILE-011 | Cross-format performance comparison | `apr profile model.apr --compare model.gguf` | Side-by-side decode tok/s for APR vs GGUF | **Pass** (`run_cross_format_comparison()` profiles both models via `profile_gpu_or_cpu()` fallback, prints formatted table with decode/prefill/throughput/latency. 6 tests. Round 25 fix.) |
 | F-PROFILE-012 | Bandwidth utilization > 40% (Ollama parity) | `apr profile model.gguf` roofline | Memory efficiency > 40% | **FALSIFIED** (14% achieved, target 40-50% for Ollama parity) |
@@ -2217,6 +2217,24 @@ This section documents bugs found by falsifying the spec itself against the code
 | # | Claim/Gap | Reality | Severity | Fix |
 |---|-----------|---------|----------|-----|
 | 123 | `apr profile --compare` supports cross-format comparison | F-PROFILE-011: No cross-format comparison existed. Spec defined `apr profile model.apr --compare model.gguf` with side-by-side decode tok/s output. | **P2** | Implemented `run_cross_format_comparison()` with `profile_gpu_or_cpu()` fallback, formatted comparison table (decode/prefill/throughput/latency), ratio summary. Added `--compare` CLI flag. 6 new tests. F-PROFILE-011 → Pass. |
+
+**Round 27 (v10.28.0): Complexity reduction — 5 files refactored**
+
+| # | Claim/Gap | Reality | Severity | Fix |
+|---|-----------|---------|----------|-----|
+| 124 | showcase/mod.rs `run` function cyclomatic 18 | Duplicated step lists (All and auto_verify identical), monolithic step dispatch. | **P3** | Extracted `all_steps()`, `print_available_steps()`, `execute_step()`. Dropped from #1 hotspot to below reporting threshold. |
+| 125 | serve/routes.rs `create_router` cyclomatic 17 | Repeated body size validation and JSON parsing across predict/generate/transcribe handlers. | **P3** | Extracted `validate_and_parse<T>()` generic helper. Reduced from 17→16. |
+| 126 | rosetta.rs `run_diff_tensors` cyclomatic 32 | 360-line monolithic function with header printing, JSON output, text summary all inline. | **P2** | Extracted `print_diff_header()`, `print_diff_json_summary()`, `print_diff_text_summary()`. Dropped off top hotspot list. |
+| 127 | run.rs `execute_safetensors_inference` cyclomatic 32 | Metadata fallback, input token prep, tracer setup all inline in 280-line function. | **P2** | Extracted `build_safetensors_metadata_output()`, `prepare_safetensors_input_tokens()`, `setup_safetensors_tracer()`. Dropped off top hotspot list. |
+| 128 | profile.rs `!no_gpu` unnecessary boolean negation | Clippy `unnecessary_boolean_not` warnings in cross-format comparison (Round 26 code). | **P3** | Swapped if/else branches: `if no_gpu { cpu } else { gpu }`. |
+
+**Round 28 (v10.29.0): F-PROFILE-007/008/009 GPU per-kernel profiling**
+
+| # | Claim/Gap | Reality | Severity | Fix |
+|---|-----------|---------|----------|-----|
+| 129 | F-PROFILE-007: GPU per-kernel timing exists | BrickProfiler pass already extracts per-op hotspots (`extract_gpu_hotspots`). Spec was stale — listed as FALSIFIED but code was implemented. | **P2** | Verified existing implementation: `enable_profiling()`, `reset_profiler()`, profiling pass with `SKIP_CUDA_GRAPH=1`, `all_brick_stats()` extraction. Gate updated to Pass. |
+| 130 | F-PROFILE-008: No per-kernel bandwidth estimation | `efficiency_pct: None` for all GPU hotspots. No data movement estimation per operation. | **P2** | Added `estimate_kernel_data_bytes()` (Q4K weight size estimation by op name + model dims), `bandwidth_gbs` and `data_bytes_per_call` fields on Hotspot, efficiency_pct vs RTX 4090 peak. 5 tests. |
+| 131 | F-PROFILE-009: No kernel launch overhead measurement | No way to see overhead from CUDA kernel launches as % of decode time. | **P2** | Added `compute_kernel_launch_overhead()`: gap between sum(kernel_times) and wall time. New fields on RealProfileResults. Color-coded display section. 2 tests. |
 
 ### 18.2 Claims Verified (Not Falsified)
 
