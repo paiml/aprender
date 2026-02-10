@@ -1,10 +1,10 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 10.30.0 (Full Stack: apr-cli + aprender + realizar + trueno, Popperian falsified)
-**Status:** ALL THREE PROJECTS A+ + ZERO SATD (7B all 3 formats working CPU + GPU. 30 falsification rounds, 138 bugs found. Rounds 29-30: complexity reduction across 7 files — export, write, qa, serve, rosetta, validation. Max cyclomatic 31→27. Project Scores: aprender A+ (105%), realizar A+ (99.9%), trueno A+ (100.9%). Coverage: 96.35%. SATD: 0/0/0.)
+**Version:** 10.32.0 (Full Stack: apr-cli + aprender + realizar + trueno, Popperian falsified)
+**Status:** ALL THREE PROJECTS A+ + ZERO SATD (7B all 3 formats working CPU + GPU. 32 falsification rounds, 149 bugs found. Rounds 31-32: deep complexity reduction across 6 files — import.rs (39→~10), reader.rs (27→~15), pull.rs (25→~12), rosetta.rs (27→~10, 26→~15), run.rs (26→~12, 25→~18). Max cyclomatic 39→21 (excl. CLI dispatch). Project Scores: aprender A+ (105%), realizar A+ (99.9%), trueno A+ (100.9%). Coverage: 96.35%. SATD: 0/0/0.)
 **Primary Model:** `Qwen/Qwen2.5-Coder-7B-Instruct`
 **Source Format:** SafeTensors BF16 (HuggingFace, sharded, ~14 GB)
-**Popperian Score:** 199/215 gates passing (92.6%) — 8 FALSIFIED, 0 blocked/not-tested. 158 falsification gates, 25 sections. Gated by `model-tests` feature (`make test-model`)
+**Popperian Score:** 199/215 gates passing (92.6%) — 8 FALSIFIED, 0 blocked/not-tested. 158 falsification gates, 25 sections. 32 rounds, 149 bugs. Gated by `model-tests` feature (`make test-model`)
 **CLI Surface:** 38 top-level + 10 nested subcommands (48 total)
 **Compile-Time Proofs:** 297 algebraic invariants (zero runtime cost)
 **Author:** PAIML Engineering
@@ -2252,6 +2252,27 @@ This section documents bugs found by falsifying the spec itself against the code
 | 136 | apr_export has cyclomatic 28 | SafeTensors export with companion files inline in main export function | **P3** | Extracted `export_safetensors_with_companions()`. Cyclomatic 28→21. |
 | 137 | safetensors_chat_completions_handler has cyclomatic 27 | Request parsing fallback and ChatML prompt building inline in handler | **P3** | Extracted `parse_chat_completion_request()` and `build_chatml_prompt()`. Cyclomatic 27→~15. |
 | 138 | run_compare_inference has cyclomatic 30 | Header printing, JSON output, and token validation inline | **P3** | Extracted `print_compare_header()`, `print_compare_json()`, `validate_captured_tokens()`. Cyclomatic 30→~18. |
+
+**Round 31 (v10.31.0): Deep complexity reduction — import.rs, reader.rs, pull.rs, qa.rs**
+
+| # | Claim/Gap | Reality | Severity | Fix |
+|---|-----------|---------|----------|-----|
+| 139 | infer_model_config_from_tensors has cyclomatic 39 | Monolithic 200-line function: vocab/hidden inference, layer counting, head counts, architecture detection all inline | **P2** | Extracted 6 helpers: `infer_embedding_dims()`, `count_transformer_layers()`, `find_projection_dim()`, `infer_head_counts()`, `infer_intermediate_size_from_tensors()`, `infer_architecture_from_names()`. Cyclomatic 39→~10. |
+| 140 | load_tokenizer_from_explicit_path has cyclomatic 28 | Duplicated config.json loading, inline vocab building, BOS/EOS fallback inference | **P3** | Extracted `load_sibling_config()`, `build_vocab_vector()`, `infer_bos_eos_from_added_tokens()`. Cyclomatic 28→~15. |
+| 141 | read_metadata_value has cyclomatic 27 | Array parsing (type 9) nested inside scalar match arms | **P3** | Extracted `read_metadata_array()` for all array element type dispatch. Cyclomatic 27→~15. |
+| 142 | resolve_hf_model has cyclomatic 25 | URI normalization, GGUF priority, sharded download, SafeTensors fallback all inline | **P3** | Extracted `normalize_hf_uri()`, `select_best_gguf()`, `resolve_sharded_safetensors()`, `find_safetensors_file()`. Cyclomatic 25→~12. |
+| 143 | run_golden_output_gate has cyclomatic 22 | APR and SafeTensors golden output paths duplicated inline | **P3** | Extracted `golden_output_apr()` and `golden_output_safetensors()`. Cyclomatic 22→~12. |
+
+**Round 32 (v10.32.0): Complexity reduction — rosetta.rs, run.rs**
+
+| # | Claim/Gap | Reality | Severity | Fix |
+|---|-----------|---------|----------|-----|
+| 144 | run_model_with_logits has cyclomatic 27 | Trace line parsing and output text filtering inline in inference function | **P3** | Extracted `parse_trace_lines()` and `extract_clean_output()`. Cyclomatic 27→~10. |
+| 145 | run_diff_tensors has cyclomatic 26 | Per-tensor comparison with layout/missing tracking inline in for loop | **P3** | Extracted `diff_tensor_pair()` for per-tensor comparison. Cyclomatic 26→~15. |
+| 146 | run (entry point) has cyclomatic 26 | Layer trace, payload trace, and roofline profile all inline | **P3** | Extracted `print_layer_trace()`, `print_payload_trace()`, `print_roofline_profile()`. Cyclomatic 26→~12. |
+| 147 | execute_gguf_inference has cyclomatic 25 | Input token preparation with chat template inline | **P3** | Extracted `prepare_gguf_input_tokens()`. Cyclomatic 25→~18. |
+| 148 | load_safetensors_tokenizer has cyclomatic 25 | Special token merging inline | **P3** | Extracted `merge_special_tokens_into_vocab()`. Cyclomatic 25→~15. |
+| 149 | infer_model_config has cyclomatic 27 | Vocab/hidden/layer inference inline | **P3** | Extracted `infer_hidden_size()`, `infer_num_layers()`, `infer_vocab_size()`. Cyclomatic 27→~12. |
 
 ### 18.2 Claims Verified (Not Falsified)
 
