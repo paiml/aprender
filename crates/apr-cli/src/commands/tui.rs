@@ -251,26 +251,32 @@ fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: &mut A
             if let Event::Key(key) = event::read()
                 .map_err(|e| CliError::ValidationFailed(format!("Event read error: {e}")))?
             {
-                if key.kind == KeyEventKind::Press {
-                    match key.code {
-                        KeyCode::Char('q') | KeyCode::Esc => app.should_quit = true,
-                        KeyCode::Tab => app.next_tab(),
-                        KeyCode::BackTab => app.prev_tab(),
-                        KeyCode::Char('1') => app.current_tab = Tab::Overview,
-                        KeyCode::Char('2') => app.current_tab = Tab::Tensors,
-                        KeyCode::Char('3') => app.current_tab = Tab::Stats,
-                        KeyCode::Char('?') => app.current_tab = Tab::Help,
-                        KeyCode::Down | KeyCode::Char('j') => app.select_next_tensor(),
-                        KeyCode::Up | KeyCode::Char('k') => app.select_prev_tensor(),
-                        _ => {}
-                    }
-                }
+                handle_key_event(app, key);
             }
         }
 
         if app.should_quit {
             return Ok(());
         }
+    }
+}
+
+/// Handle a single key event.
+fn handle_key_event(app: &mut App, key: event::KeyEvent) {
+    if key.kind != KeyEventKind::Press {
+        return;
+    }
+    match key.code {
+        KeyCode::Char('q') | KeyCode::Esc => app.should_quit = true,
+        KeyCode::Tab => app.next_tab(),
+        KeyCode::BackTab => app.prev_tab(),
+        KeyCode::Char('1') => app.current_tab = Tab::Overview,
+        KeyCode::Char('2') => app.current_tab = Tab::Tensors,
+        KeyCode::Char('3') => app.current_tab = Tab::Stats,
+        KeyCode::Char('?') => app.current_tab = Tab::Help,
+        KeyCode::Down | KeyCode::Char('j') => app.select_next_tensor(),
+        KeyCode::Up | KeyCode::Char('k') => app.select_prev_tensor(),
+        _ => {}
     }
 }
 

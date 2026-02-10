@@ -57,23 +57,9 @@ fn analyze_ptx(ptx: &str) -> PtxStats {
     for line in ptx.lines() {
         let trimmed = line.trim();
         if trimmed.starts_with(".reg") {
-            // .reg .f32 %f<24>; → 24 registers
-            if let Some(angle) = trimmed.rfind('<') {
-                if let Some(end) = trimmed.rfind('>') {
-                    if let Ok(n) = trimmed[angle + 1..end].parse::<u32>() {
-                        registers += n;
-                    }
-                }
-            }
+            registers += parse_angle_bracket_count(trimmed);
         } else if trimmed.contains(".shared") && trimmed.contains(".align") {
-            // .shared .align 4 .b8 shmem[256]; → 256 bytes
-            if let Some(bracket) = trimmed.rfind('[') {
-                if let Some(end) = trimmed.rfind(']') {
-                    if let Ok(n) = trimmed[bracket + 1..end].parse::<u32>() {
-                        shared_bytes += n;
-                    }
-                }
-            }
+            shared_bytes += parse_bracket_count(trimmed);
         } else if trimmed.starts_with("ld.global") {
             global_loads += 1;
         } else if trimmed.starts_with("st.global") {
@@ -87,6 +73,22 @@ fn analyze_ptx(ptx: &str) -> PtxStats {
         global_loads,
         global_stores,
     }
+}
+
+/// Parse register count from `.reg .f32 %f<24>;` → 24.
+#[cfg(test)]
+fn parse_angle_bracket_count(line: &str) -> u32 {
+    let Some(start) = line.rfind('<') else { return 0 };
+    let Some(end) = line.rfind('>') else { return 0 };
+    line[start + 1..end].parse().unwrap_or(0)
+}
+
+/// Parse byte count from `.shared .align 4 .b8 shmem[256];` → 256.
+#[cfg(test)]
+fn parse_bracket_count(line: &str) -> u32 {
+    let Some(start) = line.rfind('[') else { return 0 };
+    let Some(end) = line.rfind(']') else { return 0 };
+    line[start + 1..end].parse().unwrap_or(0)
 }
 
 /// Source location table for kernel types

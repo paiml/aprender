@@ -31,23 +31,15 @@ pub(crate) fn is_valid_magic(magic: &[u8]) -> bool {
 /// Get format name from magic bytes
 /// BUG-PROBAR-001 FIX: Now returns correct name for GGUF format
 pub(crate) fn format_name(magic: &[u8]) -> &'static str {
-    if magic.len() >= 4 {
-        if magic[..4] == MAGIC_APRN {
-            return "APRN (aprender v1)";
-        }
-        if magic[..4] == MAGIC_APR1 {
-            return "APR1 (whisper.apr)";
-        }
-        if magic[..4] == MAGIC_APR2 {
-            return "APR2 (aprender v2)";
-        }
-        if magic[..4] == MAGIC_APR0 {
-            return "APR v2 (ONE TRUE format)";
-        }
-        if magic[..4] == MAGIC_GGUF {
-            return "GGUF (llama.cpp)";
-        }
+    if magic.len() < 4 {
+        return "Unknown";
     }
+    let m = &magic[..4];
+    if m == MAGIC_APRN { return "APRN (aprender v1)"; }
+    if m == MAGIC_APR1 { return "APR1 (whisper.apr)"; }
+    if m == MAGIC_APR2 { return "APR2 (aprender v2)"; }
+    if m == MAGIC_APR0 { return "APR v2 (ONE TRUE format)"; }
+    if m == MAGIC_GGUF { return "GGUF (llama.cpp)"; }
     "Unknown"
 }
 
