@@ -992,8 +992,17 @@ fn run_local_mode(
     // Collect tensor names for family detection
     let tensor_names: Vec<&str> = report.tensors.iter().map(|t| t.name.as_str()).collect();
 
-    // Detect family
-    let detected_family = registry.detect_family(&tensor_names);
+    // Detect family — try tensor names first (SafeTensors), then GGUF architecture metadata
+    let detected_family = registry
+        .detect_family(&tensor_names)
+        .or_else(|| {
+            // GGUF uses different tensor naming (blk.0.attn_q vs model.layers.0.self_attn.q_proj).
+            // Fall back to GGUF architecture metadata (e.g., "qwen2" → Qwen2 family).
+            report
+                .architecture
+                .as_deref()
+                .and_then(|arch| registry.detect_from_model_type(arch))
+        });
 
     // Build format info
     let format_info = FormatInfo {
