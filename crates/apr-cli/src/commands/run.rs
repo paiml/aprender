@@ -789,35 +789,7 @@ fn execute_apr_inference(
             }
         };
 
-        // Get input tokens
-        let input_tokens = if let Some(ref prompt) = options.prompt {
-            // Parse comma-separated token IDs or encode text
-            if prompt.contains(',') || prompt.chars().all(|c| c.is_ascii_digit() || c == ',') {
-                parse_token_ids(prompt)?
-            } else {
-                // Text prompt - encode using tokenizer
-                if let Some(tokens) = AprModel::encode_text(model_path, prompt) {
-                    eprintln!(
-                        "{}",
-                        format!("Encoded {} chars to {} tokens", prompt.len(), tokens.len())
-                            .dimmed()
-                    );
-                    tokens
-                } else {
-                    eprintln!(
-                        "{}",
-                        "Warning: No tokenizer found. Using BOS token.".yellow()
-                    );
-                    vec![1u32] // BOS token fallback
-                }
-            }
-        } else if let Some(path) = input_path {
-            let content = std::fs::read_to_string(path)?;
-            parse_token_ids(&content)?
-        } else {
-            // Default: just use token ID 1 (BOS)
-            vec![1u32]
-        };
+        let input_tokens = prepare_apr_input_tokens(model_path, options.prompt.as_deref(), input_path)?;
 
         let max_new_tokens = options.max_tokens;
 
@@ -837,39 +809,7 @@ fn execute_apr_inference(
             .dimmed()
         );
 
-        // Setup tracing if enabled (APR-TRACE-001)
-        let mut tracer = if options.trace {
-            use realizar::{InferenceTracer, ModelInfo, TraceConfig};
-
-            let mut trace_config = TraceConfig::enabled();
-            trace_config.verbose = options.trace_verbose;
-            options.trace_output.clone_into(&mut trace_config.output);
-            if let Some(ref steps) = options.trace_steps {
-                trace_config.steps = TraceConfig::parse_steps(&steps.join(","));
-            }
-
-            let mut t = InferenceTracer::new(trace_config);
-            t.set_model_info(ModelInfo {
-                name: format!("APR Model ({})", architecture),
-                num_layers: model.metadata().num_layers.unwrap_or(0),
-                hidden_dim: model.metadata().hidden_size.unwrap_or(0),
-                vocab_size,
-                num_heads: model.metadata().num_heads.unwrap_or(0),
-                quant_type: None,
-            });
-
-            // Trace ENCODE step
-            t.start_step(realizar::TraceStep::Tokenize);
-            t.trace_encode(
-                options.prompt.as_deref().unwrap_or(""),
-                &input_tokens,
-                vocab_size,
-            );
-
-            Some(t)
-        } else {
-            None
-        };
+        let mut tracer = setup_apr_tracer(options, &architecture, &model, vocab_size, &input_tokens);
 
         // Run generation (GPU or CPU path)
         let infer_start = Instant::now();
@@ -924,53 +864,14 @@ fn execute_apr_inference(
             }
         }
 
-        let new_tokens = output_tokens.len() - input_tokens.len();
-        let tokens_per_sec = if infer_time.as_secs_f64() > 0.0 {
-            new_tokens as f64 / infer_time.as_secs_f64()
-        } else {
-            0.0
-        };
-
-        let mut output = format!(
-            "APR v2 Transformer Generation\n\
-             Architecture: {}\n\
-             Vocab size: {}\n\
-             Input tokens: {:?}\n\
-             Generated tokens: {} new ({} total)\n\
-             Generation time: {:.2}ms ({:.1} tok/s)\n\n",
-            architecture,
+        return Ok(format_apr_inference_output(
+            &architecture,
             vocab_size,
-            input_tokens,
-            new_tokens,
-            output_tokens.len(),
-            infer_time.as_secs_f64() * 1000.0,
-            tokens_per_sec
-        );
-
-        // Decode and show output text if tokenizer available
-        if let Some(v) = vocab {
-            let generated_tokens = &output_tokens[input_tokens.len()..];
-            let decoded_text = AprModel::decode_tokens(v, generated_tokens);
-            output.push_str("Generated text:\n");
-            output.push_str(&format!("  {}\n\n", decoded_text));
-        }
-
-        output.push_str("Output tokens:\n");
-        output.push_str(&format!("  {:?}\n", output_tokens));
-
-        // Show which tokens were generated (new ones)
-        if new_tokens > 0 {
-            output.push_str("\nGenerated token IDs:\n  ");
-            for (i, &tok) in output_tokens.iter().skip(input_tokens.len()).enumerate() {
-                if i > 0 {
-                    output.push_str(", ");
-                }
-                output.push_str(&format!("{}", tok));
-            }
-            output.push('\n');
-        }
-
-        return Ok(output);
+            &input_tokens,
+            &output_tokens,
+            infer_time,
+            vocab,
+        ));
     }
 
     // Fallback: display metadata for non-transformer models
@@ -1021,6 +922,141 @@ fn parse_token_ids(input: &str) -> Result<Vec<u32>> {
             })
             .collect()
     }
+}
+
+/// Setup inference tracer if tracing is enabled (APR-TRACE-001).
+#[cfg(feature = "inference")]
+fn setup_apr_tracer(
+    options: &RunOptions,
+    architecture: &str,
+    model: &realizar::apr::AprModel,
+    vocab_size: usize,
+    input_tokens: &[u32],
+) -> Option<realizar::InferenceTracer> {
+    if !options.trace {
+        return None;
+    }
+    use realizar::{InferenceTracer, ModelInfo, TraceConfig};
+
+    let mut trace_config = TraceConfig::enabled();
+    trace_config.verbose = options.trace_verbose;
+    options.trace_output.clone_into(&mut trace_config.output);
+    if let Some(ref steps) = options.trace_steps {
+        trace_config.steps = TraceConfig::parse_steps(&steps.join(","));
+    }
+
+    let mut t = InferenceTracer::new(trace_config);
+    t.set_model_info(ModelInfo {
+        name: format!("APR Model ({architecture})"),
+        num_layers: model.metadata().num_layers.unwrap_or(0),
+        hidden_dim: model.metadata().hidden_size.unwrap_or(0),
+        vocab_size,
+        num_heads: model.metadata().num_heads.unwrap_or(0),
+        quant_type: None,
+    });
+
+    t.start_step(realizar::TraceStep::Tokenize);
+    t.trace_encode(
+        options.prompt.as_deref().unwrap_or(""),
+        input_tokens,
+        vocab_size,
+    );
+
+    Some(t)
+}
+
+/// Format the output string for APR transformer inference results.
+#[cfg(feature = "inference")]
+fn format_apr_inference_output(
+    architecture: &str,
+    vocab_size: usize,
+    input_tokens: &[u32],
+    output_tokens: &[u32],
+    infer_time: std::time::Duration,
+    vocab: Option<&[String]>,
+) -> String {
+    use realizar::apr::AprModel;
+    use std::fmt::Write;
+
+    let new_tokens = output_tokens.len().saturating_sub(input_tokens.len());
+    let tokens_per_sec = if infer_time.as_secs_f64() > 0.0 {
+        new_tokens as f64 / infer_time.as_secs_f64()
+    } else {
+        0.0
+    };
+
+    let mut output = format!(
+        "APR v2 Transformer Generation\n\
+         Architecture: {architecture}\n\
+         Vocab size: {vocab_size}\n\
+         Input tokens: {input_tokens:?}\n\
+         Generated tokens: {new_tokens} new ({} total)\n\
+         Generation time: {:.2}ms ({tokens_per_sec:.1} tok/s)\n\n",
+        output_tokens.len(),
+        infer_time.as_secs_f64() * 1000.0,
+    );
+
+    if let Some(v) = vocab {
+        let generated_tokens = &output_tokens[input_tokens.len()..];
+        let decoded_text = AprModel::decode_tokens(v, generated_tokens);
+        output.push_str("Generated text:\n");
+        output.push_str(&format!("  {decoded_text}\n\n"));
+    }
+
+    output.push_str("Output tokens:\n");
+    output.push_str(&format!("  {output_tokens:?}\n"));
+
+    if new_tokens > 0 {
+        output.push_str("\nGenerated token IDs:\n  ");
+        for (i, &tok) in output_tokens.iter().skip(input_tokens.len()).enumerate() {
+            if i > 0 {
+                output.push_str(", ");
+            }
+            write!(output, "{tok}").expect("write to String cannot fail");
+        }
+        output.push('\n');
+    }
+
+    output
+}
+
+/// Prepare input tokens from prompt text, file, or default BOS token.
+///
+/// Handles three input sources: text prompt (encode via tokenizer or parse IDs),
+/// file path (parse token IDs from file), or default (BOS token).
+#[cfg(feature = "inference")]
+fn prepare_apr_input_tokens(
+    model_path: &Path,
+    prompt: Option<&str>,
+    input_path: Option<&PathBuf>,
+) -> Result<Vec<u32>> {
+    use realizar::apr::AprModel;
+
+    if let Some(prompt) = prompt {
+        if prompt.contains(',') || prompt.chars().all(|c| c.is_ascii_digit() || c == ',') {
+            return parse_token_ids(prompt);
+        }
+        // Text prompt — encode using tokenizer
+        if let Some(tokens) = AprModel::encode_text(model_path, prompt) {
+            eprintln!(
+                "{}",
+                format!("Encoded {} chars to {} tokens", prompt.len(), tokens.len()).dimmed()
+            );
+            return Ok(tokens);
+        }
+        eprintln!(
+            "{}",
+            "Warning: No tokenizer found. Using BOS token.".yellow()
+        );
+        return Ok(vec![1u32]);
+    }
+
+    if let Some(path) = input_path {
+        let content = std::fs::read_to_string(path)?;
+        return parse_token_ids(&content);
+    }
+
+    Ok(vec![1u32]) // Default: BOS token
 }
 
 /// Clean model output by stripping ChatML markers and extra tokens
