@@ -309,91 +309,86 @@ pub(crate) fn load_safetensors_tokenizer(path: &Path) -> Option<SafeTensorsToken
     })
 }
 
-/// SafeTensors chat completions handler (PAR-301, GH-160 Tool Calling)
+/// Parse a chat completion request from raw JSON, with fallback for backwards compatibility (GH-160)
 #[cfg(feature = "inference")]
-pub(crate) async fn safetensors_chat_completions_handler(
-    axum::extract::State(state): axum::extract::State<SafeTensorsState>,
-    axum::Json(request): axum::Json<serde_json::Value>,
-) -> axum::response::Response {
+#[allow(clippy::result_large_err)]
+fn parse_chat_completion_request(
+    request: &serde_json::Value,
+) -> std::result::Result<ChatCompletionRequest, axum::response::Response> {
     use axum::http::StatusCode;
-    use axum::response::{sse::Event, IntoResponse, Sse};
-    use futures_util::stream;
+    use axum::response::IntoResponse;
 
-    // Parse request - try structured first, fallback to raw JSON (GH-160)
-    let parsed_request: ChatCompletionRequest = match serde_json::from_value(request.clone()) {
-        Ok(req) => req,
-        Err(_) => {
-            // Fallback: extract from raw JSON for backwards compatibility
-            let messages = request.get("messages").and_then(|m| m.as_array());
-            if messages.is_none() {
-                return (
-                    StatusCode::BAD_REQUEST,
-                    axum::Json(serde_json::json!({"error": "Missing messages field"})),
-                )
-                    .into_response();
-            }
-            let msgs: Vec<ChatMessage> = messages
-                .expect("messages presence checked above")
-                .iter()
-                .filter_map(|m| {
-                    Some(ChatMessage {
-                        role: m.get("role")?.as_str()?.to_string(),
-                        content: m.get("content").and_then(|c| c.as_str()).map(String::from),
-                        tool_calls: None,
-                        tool_call_id: m
-                            .get("tool_call_id")
-                            .and_then(|t| t.as_str())
-                            .map(String::from),
-                        name: m.get("name").and_then(|n| n.as_str()).map(String::from),
-                    })
-                })
-                .collect();
-            ChatCompletionRequest {
-                model: request
-                    .get("model")
-                    .and_then(|m| m.as_str())
-                    .unwrap_or("default")
-                    .to_string(),
-                messages: msgs,
-                tools: request
-                    .get("tools")
-                    .and_then(|t| serde_json::from_value(t.clone()).ok()),
-                tool_choice: request
-                    .get("tool_choice")
-                    .and_then(|t| serde_json::from_value(t.clone()).ok()),
-                max_tokens: request
-                    .get("max_tokens")
-                    .and_then(|m| m.as_u64())
-                    .map(|v| v as u32),
-                stream: request
-                    .get("stream")
-                    .and_then(|s| s.as_bool())
-                    .unwrap_or(false),
-                temperature: request
-                    .get("temperature")
-                    .and_then(|t| t.as_f64())
-                    .map(|v| v as f32),
-                top_p: request
-                    .get("top_p")
-                    .and_then(|t| t.as_f64())
-                    .map(|v| v as f32),
-            }
-        }
-    };
+    if let Ok(req) = serde_json::from_value::<ChatCompletionRequest>(request.clone()) {
+        return Ok(req);
+    }
 
-    let max_tokens = parsed_request.max_tokens.unwrap_or(50) as usize;
-    let stream_mode = parsed_request.stream;
-    let has_tools = parsed_request.tools.as_ref().is_some_and(|t| !t.is_empty());
+    // Fallback: extract from raw JSON
+    let messages = request.get("messages").and_then(|m| m.as_array());
+    if messages.is_none() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            axum::Json(serde_json::json!({"error": "Missing messages field"})),
+        )
+            .into_response());
+    }
+    let msgs: Vec<ChatMessage> = messages
+        .expect("messages presence checked above")
+        .iter()
+        .filter_map(|m| {
+            Some(ChatMessage {
+                role: m.get("role")?.as_str()?.to_string(),
+                content: m.get("content").and_then(|c| c.as_str()).map(String::from),
+                tool_calls: None,
+                tool_call_id: m
+                    .get("tool_call_id")
+                    .and_then(|t| t.as_str())
+                    .map(String::from),
+                name: m.get("name").and_then(|n| n.as_str()).map(String::from),
+            })
+        })
+        .collect();
+    Ok(ChatCompletionRequest {
+        model: request
+            .get("model")
+            .and_then(|m| m.as_str())
+            .unwrap_or("default")
+            .to_string(),
+        messages: msgs,
+        tools: request
+            .get("tools")
+            .and_then(|t| serde_json::from_value(t.clone()).ok()),
+        tool_choice: request
+            .get("tool_choice")
+            .and_then(|t| serde_json::from_value(t.clone()).ok()),
+        max_tokens: request
+            .get("max_tokens")
+            .and_then(|m| m.as_u64())
+            .map(|v| v as u32),
+        stream: request
+            .get("stream")
+            .and_then(|s| s.as_bool())
+            .unwrap_or(false),
+        temperature: request
+            .get("temperature")
+            .and_then(|t| t.as_f64())
+            .map(|v| v as f32),
+        top_p: request
+            .get("top_p")
+            .and_then(|t| t.as_f64())
+            .map(|v| v as f32),
+    })
+}
 
-    // Build prompt from messages (ChatML format)
+/// Build a ChatML-formatted prompt from a parsed chat completion request (GH-160)
+#[cfg(feature = "inference")]
+fn build_chatml_prompt(request: &ChatCompletionRequest, has_tools: bool) -> String {
     let mut prompt = String::new();
 
-    // Add system message with tools if present (GH-160)
+    // Add system message with tools if present
     if has_tools {
         let tools_prompt =
-            super::types::format_tools_prompt(parsed_request.tools.as_deref().unwrap_or(&[]));
-        // Insert tools description in system message or create one
-        let has_system = parsed_request.messages.iter().any(|m| m.role == "system");
+            super::types::format_tools_prompt(request.tools.as_deref().unwrap_or(&[]));
+        let has_system = request.messages.iter().any(|m| m.role == "system");
         if !has_system {
             prompt.push_str("<|im_start|>system\n");
             prompt.push_str("You are a helpful assistant.");
@@ -402,29 +397,26 @@ pub(crate) async fn safetensors_chat_completions_handler(
         }
     }
 
-    for msg in &parsed_request.messages {
+    for msg in &request.messages {
         prompt.push_str(&format!("<|im_start|>{}\n", msg.role));
 
-        // Handle tool messages (responses to tool calls)
         if msg.role == "tool" {
             if let Some(ref tool_call_id) = msg.tool_call_id {
                 prompt.push_str(&format!("[Tool Result for {}]\n", tool_call_id));
             }
         }
 
-        // Add tools prompt to system message
         if msg.role == "system" && has_tools {
             if let Some(ref content) = msg.content {
                 prompt.push_str(content);
             }
             prompt.push_str(&super::types::format_tools_prompt(
-                parsed_request.tools.as_deref().unwrap_or(&[]),
+                request.tools.as_deref().unwrap_or(&[]),
             ));
         } else if let Some(ref content) = msg.content {
             prompt.push_str(content);
         }
 
-        // Add tool calls made by assistant
         if let Some(ref tool_calls) = msg.tool_calls {
             for tc in tool_calls {
                 prompt.push_str(&format!(
@@ -437,6 +429,31 @@ pub(crate) async fn safetensors_chat_completions_handler(
         prompt.push_str("<|im_end|>\n");
     }
     prompt.push_str("<|im_start|>assistant\n");
+    prompt
+}
+
+/// SafeTensors chat completions handler (PAR-301, GH-160 Tool Calling)
+#[cfg(feature = "inference")]
+pub(crate) async fn safetensors_chat_completions_handler(
+    axum::extract::State(state): axum::extract::State<SafeTensorsState>,
+    axum::Json(request): axum::Json<serde_json::Value>,
+) -> axum::response::Response {
+    use axum::http::StatusCode;
+    use axum::response::{sse::Event, IntoResponse, Sse};
+    use futures_util::stream;
+
+    // Parse request - try structured first, fallback to raw JSON (GH-160)
+    let parsed_request = match parse_chat_completion_request(&request) {
+        Ok(req) => req,
+        Err(resp) => return resp,
+    };
+
+    let max_tokens = parsed_request.max_tokens.unwrap_or(50) as usize;
+    let stream_mode = parsed_request.stream;
+    let has_tools = parsed_request.tools.as_ref().is_some_and(|t| !t.is_empty());
+
+    // Build prompt from messages (ChatML format)
+    let prompt = build_chatml_prompt(&parsed_request, has_tools);
 
     // Get transformer
     let transformer = match &state.transformer {

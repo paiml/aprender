@@ -308,47 +308,12 @@ pub fn apr_export<P: AsRef<Path>>(
     // Export to target format
     match options.format {
         ExportFormat::SafeTensors => {
-            // PMAT-223: Extract user metadata from APR custom field for round-trip
-            let user_metadata = extract_user_metadata(input_path);
-            if user_metadata.is_empty() {
-                save_safetensors(output_path, &tensors).map_err(|e| {
-                    AprenderError::FormatError {
-                        message: format!("Failed to export to SafeTensors: {e}"),
-                    }
-                })?;
-            } else {
-                eprintln!(
-                    "[PMAT-223] Restoring {} user metadata key(s) to SafeTensors __metadata__",
-                    user_metadata.len()
-                );
-                save_safetensors_with_metadata(output_path, &tensors, &user_metadata).map_err(
-                    |e| AprenderError::FormatError {
-                        message: format!("Failed to export to SafeTensors: {e}"),
-                    },
-                )?;
-            }
-
-            // GH-182: Write companion files alongside SafeTensors
-            let output_dir = output_path.parent().unwrap_or(Path::new("."));
-
-            if options.include_config {
-                let config = infer_model_config(&tensors);
-                let config_path = output_dir.join("config.json");
-                if let Err(e) = fs::write(&config_path, config) {
-                    eprintln!("[GH-182] Warning: Failed to write config.json: {e}");
-                }
-            }
-
-            if options.include_tokenizer {
-                // Try to extract tokenizer from APR input if available
-                let tokenizer_json = infer_tokenizer_json(input_path);
-                if !tokenizer_json.is_empty() {
-                    let tokenizer_path = output_dir.join("tokenizer.json");
-                    if let Err(e) = fs::write(&tokenizer_path, &tokenizer_json) {
-                        eprintln!("[GH-182] Warning: Failed to write tokenizer.json: {e}");
-                    }
-                }
-            }
+            export_safetensors_with_companions(
+                &tensors,
+                input_path,
+                output_path,
+                &options,
+            )?;
         }
         ExportFormat::Gguf => {
             export_to_gguf(&tensors, output_path, input_path, options.quantize.as_ref())?;
@@ -375,6 +340,55 @@ pub fn apr_export<P: AsRef<Path>>(
         format: options.format,
         quantization: options.quantize,
     })
+}
+
+/// Export to SafeTensors with optional companion files (config.json, tokenizer.json)
+fn export_safetensors_with_companions(
+    tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+    input_path: &Path,
+    output_path: &Path,
+    options: &ExportOptions,
+) -> Result<()> {
+    // PMAT-223: Extract user metadata from APR custom field for round-trip
+    let user_metadata = extract_user_metadata(input_path);
+    if user_metadata.is_empty() {
+        save_safetensors(output_path, tensors).map_err(|e| AprenderError::FormatError {
+            message: format!("Failed to export to SafeTensors: {e}"),
+        })?;
+    } else {
+        eprintln!(
+            "[PMAT-223] Restoring {} user metadata key(s) to SafeTensors __metadata__",
+            user_metadata.len()
+        );
+        save_safetensors_with_metadata(output_path, tensors, &user_metadata).map_err(|e| {
+            AprenderError::FormatError {
+                message: format!("Failed to export to SafeTensors: {e}"),
+            }
+        })?;
+    }
+
+    // GH-182: Write companion files alongside SafeTensors
+    let output_dir = output_path.parent().unwrap_or(Path::new("."));
+
+    if options.include_config {
+        let config = infer_model_config(tensors);
+        let config_path = output_dir.join("config.json");
+        if let Err(e) = fs::write(&config_path, config) {
+            eprintln!("[GH-182] Warning: Failed to write config.json: {e}");
+        }
+    }
+
+    if options.include_tokenizer {
+        let tokenizer_json = infer_tokenizer_json(input_path);
+        if !tokenizer_json.is_empty() {
+            let tokenizer_path = output_dir.join("tokenizer.json");
+            if let Err(e) = fs::write(&tokenizer_path, &tokenizer_json) {
+                eprintln!("[GH-182] Warning: Failed to write tokenizer.json: {e}");
+            }
+        }
+    }
+
+    Ok(())
 }
 
 /// Export tensors to GGUF format (GGUF-EXPORT-001 fix)
