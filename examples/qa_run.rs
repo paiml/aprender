@@ -846,7 +846,7 @@ fn run_serve_test(
 
     // Find an available port
     let port = TcpListener::bind("127.0.0.1:0")
-        .map(|l| l.local_addr().unwrap().port())
+        .map(|l| l.local_addr().expect("bound listener must have local addr").port())
         .unwrap_or(18080);
 
     let port_str = port.to_string();
@@ -1118,13 +1118,13 @@ fn contains_as_word(haystack: &str, needle: &str) -> bool {
 
         // Check left boundary: start of string OR non-alphanumeric
         let left_ok = abs_pos == 0 || {
-            let prev_char = haystack[..abs_pos].chars().last().unwrap();
+            let prev_char = haystack[..abs_pos].chars().last().expect("non-empty prefix must have a last char");
             !prev_char.is_alphanumeric()
         };
 
         // Check right boundary: end of string OR non-alphanumeric
         let right_ok = end_pos >= haystack.len() || {
-            let next_char = haystack[end_pos..].chars().next().unwrap();
+            let next_char = haystack[end_pos..].chars().next().expect("non-empty suffix must have a next char");
             !next_char.is_alphanumeric()
         };
 
@@ -1627,168 +1627,123 @@ fn print_help() {
     println!("    cargo run --example qa_run -- --with-ollama");
 }
 
+/// Parsed CLI arguments for the QA run matrix
+struct ParsedArgs {
+    config: Config,
+    run_matrix: bool,
+    run_full_matrix: bool,
+    single_backend: Option<Backend>,
+    single_format: Option<Format>,
+    single_modality: Option<Modality>,
+    legacy_model: Option<PathBuf>,
+    show_help: bool,
+}
+
+fn parse_args(args: &[String]) -> ParsedArgs {
+    let mut parsed = ParsedArgs {
+        config: Config::default(),
+        run_matrix: false,
+        run_full_matrix: false,
+        single_backend: None,
+        single_format: None,
+        single_modality: None,
+        legacy_model: None,
+        show_help: false,
+    };
+
+    let mut i = 1;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--matrix" => parsed.run_matrix = true,
+            "--full-matrix" => parsed.run_full_matrix = true,
+            "--with-ollama" => parsed.config.with_ollama = true,
+            "--verbose" | "-v" => parsed.config.verbose = true,
+            "--help" | "-h" => parsed.show_help = true,
+            flag => {
+                if let Some(val) = args.get(i + 1) {
+                    parse_flag_with_value(flag, val, &mut parsed);
+                    i += 1; // extra increment for value
+                }
+            }
+        }
+        i += 1;
+    }
+
+    parsed
+}
+
+fn parse_flag_with_value(flag: &str, val: &str, parsed: &mut ParsedArgs) {
+    match flag {
+        "--modality" => {
+            parsed.single_modality = match val {
+                "run" => Some(Modality::Run),
+                "chat" => Some(Modality::Chat),
+                "serve" => Some(Modality::Serve),
+                _ => None,
+            };
+        }
+        "--backend" => {
+            parsed.single_backend = match val {
+                "cpu" => Some(Backend::Cpu),
+                "gpu" => Some(Backend::Gpu),
+                _ => None,
+            };
+        }
+        "--format" => {
+            parsed.single_format = match val {
+                "gguf" => Some(Format::Gguf),
+                "safetensors" => Some(Format::SafeTensors),
+                "apr" => Some(Format::Apr),
+                _ => None,
+            };
+        }
+        "--trace-level" => {
+            parsed.config.trace_level = match val {
+                "brick" => TraceLevel::Brick,
+                "step" => TraceLevel::Step,
+                "layer" => TraceLevel::Layer,
+                "profile" => TraceLevel::Profile,
+                _ => TraceLevel::None,
+            };
+        }
+        "--class" => {
+            parsed.config.test_class = match val {
+                "quantized" | "a" | "A" => TestClass::Quantized,
+                "full-precision" | "fp" | "b" | "B" => TestClass::FullPrecision,
+                "all" | "both" => TestClass::All,
+                _ => TestClass::Quantized,
+            };
+        }
+        "--gguf" => parsed.config.gguf_model = val.to_string(),
+        "--safetensors" => parsed.config.safetensors_model = val.to_string(),
+        "--apr" => parsed.config.apr_model = val.to_string(),
+        "--model" => parsed.legacy_model = Some(PathBuf::from(val)),
+        "--min-cpu-tps" => parsed.config.min_cpu_tps = val.parse().unwrap_or(8.0),
+        "--min-gpu-tps" => parsed.config.min_gpu_tps = val.parse().unwrap_or(100.0),
+        "--min-gpu-tps-f32" => parsed.config.min_gpu_tps_float32 = val.parse().unwrap_or(40.0),
+        _ => {}
+    }
+}
+
 fn main() {
     // Set up SIGINT handler for graceful shutdown (PMAT-098-PF: zombie mitigation)
     setup_signal_handler();
 
     let args: Vec<String> = env::args().collect();
-    let mut config = Config::default();
+    let ParsedArgs {
+        config,
+        run_matrix,
+        run_full_matrix,
+        single_backend,
+        single_format,
+        single_modality,
+        legacy_model,
+        show_help,
+    } = parse_args(&args);
 
-    let mut run_matrix = false;
-    let mut run_full_matrix = false; // 21-cell modality × format × trace matrix
-    let mut single_backend: Option<Backend> = None;
-    let mut single_format: Option<Format> = None;
-    let mut single_modality: Option<Modality> = None;
-    let mut legacy_model: Option<PathBuf> = None;
-
-    let mut i = 1;
-    while i < args.len() {
-        match args[i].as_str() {
-            "--matrix" => {
-                run_matrix = true;
-                i += 1;
-            }
-            "--full-matrix" => {
-                run_full_matrix = true;
-                i += 1;
-            }
-            "--modality" => {
-                if i + 1 < args.len() {
-                    single_modality = match args[i + 1].as_str() {
-                        "run" => Some(Modality::Run),
-                        "chat" => Some(Modality::Chat),
-                        "serve" => Some(Modality::Serve),
-                        _ => None,
-                    };
-                    i += 2;
-                } else {
-                    i += 1;
-                }
-            }
-            "--backend" => {
-                if i + 1 < args.len() {
-                    single_backend = match args[i + 1].as_str() {
-                        "cpu" => Some(Backend::Cpu),
-                        "gpu" => Some(Backend::Gpu),
-                        _ => None,
-                    };
-                    i += 2;
-                } else {
-                    i += 1;
-                }
-            }
-            "--format" => {
-                if i + 1 < args.len() {
-                    single_format = match args[i + 1].as_str() {
-                        "gguf" => Some(Format::Gguf),
-                        "safetensors" => Some(Format::SafeTensors),
-                        "apr" => Some(Format::Apr),
-                        _ => None,
-                    };
-                    i += 2;
-                } else {
-                    i += 1;
-                }
-            }
-            "--trace-level" => {
-                if i + 1 < args.len() {
-                    config.trace_level = match args[i + 1].as_str() {
-                        "brick" => TraceLevel::Brick,
-                        "step" => TraceLevel::Step,
-                        "layer" => TraceLevel::Layer,
-                        "profile" => TraceLevel::Profile,
-                        _ => TraceLevel::None,
-                    };
-                    i += 2;
-                } else {
-                    i += 1;
-                }
-            }
-            "--gguf" => {
-                if i + 1 < args.len() {
-                    config.gguf_model = args[i + 1].clone();
-                    i += 2;
-                } else {
-                    i += 1;
-                }
-            }
-            "--safetensors" => {
-                if i + 1 < args.len() {
-                    config.safetensors_model = args[i + 1].clone();
-                    i += 2;
-                } else {
-                    i += 1;
-                }
-            }
-            "--apr" => {
-                if i + 1 < args.len() {
-                    config.apr_model = args[i + 1].clone();
-                    i += 2;
-                } else {
-                    i += 1;
-                }
-            }
-            "--model" => {
-                if i + 1 < args.len() {
-                    legacy_model = Some(PathBuf::from(&args[i + 1]));
-                    i += 2;
-                } else {
-                    i += 1;
-                }
-            }
-            "--min-cpu-tps" => {
-                if i + 1 < args.len() {
-                    config.min_cpu_tps = args[i + 1].parse().unwrap_or(8.0);
-                    i += 2;
-                } else {
-                    i += 1;
-                }
-            }
-            "--min-gpu-tps" => {
-                if i + 1 < args.len() {
-                    config.min_gpu_tps = args[i + 1].parse().unwrap_or(100.0);
-                    i += 2;
-                } else {
-                    i += 1;
-                }
-            }
-            "--min-gpu-tps-f32" => {
-                if i + 1 < args.len() {
-                    config.min_gpu_tps_float32 = args[i + 1].parse().unwrap_or(40.0);
-                    i += 2;
-                } else {
-                    i += 1;
-                }
-            }
-            "--class" => {
-                if i + 1 < args.len() {
-                    config.test_class = match args[i + 1].as_str() {
-                        "quantized" | "a" | "A" => TestClass::Quantized,
-                        "full-precision" | "fp" | "b" | "B" => TestClass::FullPrecision,
-                        "all" | "both" => TestClass::All,
-                        _ => TestClass::Quantized,
-                    };
-                    i += 2;
-                } else {
-                    i += 1;
-                }
-            }
-            "--with-ollama" => {
-                config.with_ollama = true;
-                i += 1;
-            }
-            "--verbose" | "-v" => {
-                config.verbose = true;
-                i += 1;
-            }
-            "--help" | "-h" => {
-                print_help();
-                return;
-            }
-            _ => {
-                i += 1;
-            }
-        }
+    if show_help {
+        print_help();
+        return;
     }
 
     // Header
@@ -2069,7 +2024,7 @@ fn run_ollama_comparison(config: &Config) -> bool {
     // Check if ollama is available
     let ollama_check = Command::new("which").arg("ollama").output();
 
-    if ollama_check.is_err() || !ollama_check.unwrap().status.success() {
+    if ollama_check.is_err() || !ollama_check.expect("ollama check already verified as Ok").status.success() {
         println!(
             "{}[SKIP]{} Ollama not installed - skipping parity test",
             YELLOW, NC
@@ -2083,7 +2038,7 @@ fn run_ollama_comparison(config: &Config) -> bool {
         .stderr(Stdio::null())
         .output();
 
-    if model_check.is_err() || !model_check.unwrap().status.success() {
+    if model_check.is_err() || !model_check.expect("model check already verified as Ok").status.success() {
         println!(
             "{}[SKIP]{} Ollama model {} not available",
             YELLOW, NC, OLLAMA_MODEL
