@@ -150,6 +150,82 @@ pub(crate) fn run(
 }
 
 /// GGUF/SafeTensors inspect via RosettaStone
+/// Print rosetta inspection report as JSON.
+fn output_rosetta_json(
+    path: &Path,
+    report: &aprender::format::rosetta::InspectionReport,
+) {
+    let mut json_map = serde_json::Map::new();
+    json_map.insert("file".to_string(), serde_json::Value::String(path.display().to_string()));
+    json_map.insert("format".to_string(), serde_json::Value::String(report.format.to_string()));
+    json_map.insert("file_size".to_string(), serde_json::Value::Number(serde_json::Number::from(report.file_size)));
+    json_map.insert("total_params".to_string(), serde_json::Value::Number(serde_json::Number::from(report.total_params)));
+    if let Some(ref arch) = report.architecture {
+        json_map.insert("architecture".to_string(), serde_json::Value::String(arch.clone()));
+    }
+    if let Some(ref quant) = report.quantization {
+        json_map.insert("quantization".to_string(), serde_json::Value::String(quant.clone()));
+    }
+    json_map.insert("tensor_count".to_string(), serde_json::Value::Number(serde_json::Number::from(report.tensors.len())));
+    let metadata: serde_json::Value = report.metadata.iter()
+        .map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone())))
+        .collect::<serde_json::Map<_, _>>()
+        .into();
+    json_map.insert("metadata".to_string(), metadata);
+
+    if let Ok(json) = serde_json::to_string_pretty(&json_map) {
+        println!("{json}");
+    }
+}
+
+/// Print rosetta inspection report as rich text.
+fn output_rosetta_text(report: &aprender::format::rosetta::InspectionReport) {
+    output::header("Rosetta Stone Inspection");
+
+    let mut pairs: Vec<(&str, String)> = vec![
+        ("Format", report.format.to_string()),
+        ("File Size", output::format_size(report.file_size as u64)),
+        ("Parameters", output::count_fmt(report.total_params)),
+    ];
+    if let Some(ref arch) = report.architecture {
+        pairs.push(("Architecture", arch.clone()));
+    }
+    if let Some(ref quant) = report.quantization {
+        pairs.push(("Quantization", quant.clone()));
+    }
+    println!("{}", output::kv_table(&pairs));
+
+    if !report.metadata.is_empty() {
+        output::subheader(&format!("Metadata ({} keys)", report.metadata.len()));
+        let meta_pairs: Vec<(&str, String)> = report.metadata.iter()
+            .map(|(k, v)| {
+                let display_v = if v.len() > 60 { format!("{}...", &v[..60]) } else { v.clone() };
+                (k.as_str(), display_v)
+            })
+            .collect();
+        println!("{}", output::kv_table(&meta_pairs));
+    }
+
+    output::subheader(&format!("Tensors ({} total)", report.tensors.len()));
+    let mut rows: Vec<Vec<String>> = Vec::new();
+    for (i, t) in report.tensors.iter().enumerate() {
+        if i < 10 || i >= report.tensors.len().saturating_sub(2) {
+            rows.push(vec![
+                t.name.clone(),
+                format!("{}", output::dtype_color(&t.dtype)),
+                format!("{:?}", t.shape),
+                output::format_size(t.size_bytes as u64),
+            ]);
+        } else if i == 10 {
+            rows.push(vec![
+                format!("... {} more ...", report.tensors.len().saturating_sub(12)),
+                String::new(), String::new(), String::new(),
+            ]);
+        }
+    }
+    println!("{}", output::table(&["Name", "DType", "Shape", "Size"], &rows));
+}
+
 fn run_rosetta_inspect(path: &Path, json_output: bool) -> Result<(), CliError> {
     use aprender::format::rosetta::RosettaStone;
 
@@ -159,110 +235,9 @@ fn run_rosetta_inspect(path: &Path, json_output: bool) -> Result<(), CliError> {
         .map_err(|e| CliError::InvalidFormat(format!("Inspection failed: {e}")))?;
 
     if json_output {
-        // Serialize InspectionReport as JSON
-        let mut json_map = serde_json::Map::new();
-        json_map.insert(
-            "file".to_string(),
-            serde_json::Value::String(path.display().to_string()),
-        );
-        json_map.insert(
-            "format".to_string(),
-            serde_json::Value::String(report.format.to_string()),
-        );
-        json_map.insert(
-            "file_size".to_string(),
-            serde_json::Value::Number(serde_json::Number::from(report.file_size)),
-        );
-        json_map.insert(
-            "total_params".to_string(),
-            serde_json::Value::Number(serde_json::Number::from(report.total_params)),
-        );
-        if let Some(ref arch) = report.architecture {
-            json_map.insert(
-                "architecture".to_string(),
-                serde_json::Value::String(arch.clone()),
-            );
-        }
-        if let Some(ref quant) = report.quantization {
-            json_map.insert(
-                "quantization".to_string(),
-                serde_json::Value::String(quant.clone()),
-            );
-        }
-        json_map.insert(
-            "tensor_count".to_string(),
-            serde_json::Value::Number(serde_json::Number::from(report.tensors.len())),
-        );
-        let metadata: serde_json::Value = report
-            .metadata
-            .iter()
-            .map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone())))
-            .collect::<serde_json::Map<_, _>>()
-            .into();
-        json_map.insert("metadata".to_string(), metadata);
-
-        if let Ok(json) = serde_json::to_string_pretty(&json_map) {
-            println!("{json}");
-        }
+        output_rosetta_json(path, &report);
     } else {
-        // Rich formatted output for GGUF/SafeTensors
-        output::header("Rosetta Stone Inspection");
-
-        let mut pairs: Vec<(&str, String)> = vec![
-            ("Format", report.format.to_string()),
-            ("File Size", output::format_size(report.file_size as u64)),
-            ("Parameters", output::count_fmt(report.total_params)),
-        ];
-        if let Some(ref arch) = report.architecture {
-            pairs.push(("Architecture", arch.clone()));
-        }
-        if let Some(ref quant) = report.quantization {
-            pairs.push(("Quantization", quant.clone()));
-        }
-        println!("{}", output::kv_table(&pairs));
-
-        // Metadata
-        if !report.metadata.is_empty() {
-            output::subheader(&format!("Metadata ({} keys)", report.metadata.len()));
-            let meta_pairs: Vec<(&str, String)> = report
-                .metadata
-                .iter()
-                .map(|(k, v)| {
-                    let display_v = if v.len() > 60 {
-                        format!("{}...", &v[..60])
-                    } else {
-                        v.clone()
-                    };
-                    (k.as_str(), display_v)
-                })
-                .collect();
-            println!("{}", output::kv_table(&meta_pairs));
-        }
-
-        // Tensors summary
-        output::subheader(&format!("Tensors ({} total)", report.tensors.len()));
-        let mut rows: Vec<Vec<String>> = Vec::new();
-        for (i, t) in report.tensors.iter().enumerate() {
-            if i < 10 || i >= report.tensors.len().saturating_sub(2) {
-                rows.push(vec![
-                    t.name.clone(),
-                    format!("{}", output::dtype_color(&t.dtype)),
-                    format!("{:?}", t.shape),
-                    output::format_size(t.size_bytes as u64),
-                ]);
-            } else if i == 10 {
-                rows.push(vec![
-                    format!("... {} more ...", report.tensors.len().saturating_sub(12)),
-                    String::new(),
-                    String::new(),
-                    String::new(),
-                ]);
-            }
-        }
-        println!(
-            "{}",
-            output::table(&["Name", "DType", "Shape", "Size"], &rows)
-        );
+        output_rosetta_text(&report);
     }
 
     Ok(())
@@ -565,68 +540,64 @@ fn output_architecture(metadata: &MetadataInfo) {
     }
 }
 
-fn output_metadata_text(metadata: &MetadataInfo) {
-    // General metadata
-    if let Some(name) = &metadata.name {
-        output::kv("Name", name);
+/// Print chat template section if present.
+fn output_chat_template_info(metadata: &MetadataInfo) {
+    if metadata.chat_template.is_none() && metadata.chat_format.is_none() {
+        return;
     }
-    if let Some(model_type) = &metadata.model_type {
-        output::kv("Model Type", model_type);
+    println!("\n  Chat Template:");
+    if let Some(format) = &metadata.chat_format {
+        println!("    Format: {format}");
     }
-    if let Some(desc) = &metadata.description {
-        output::kv("Description", desc);
+    if let Some(template) = &metadata.chat_template {
+        let display_template = if template.len() > 100 {
+            format!("{}... ({} chars)", &template[..100], template.len())
+        } else {
+            template.clone()
+        };
+        println!("    Template: {display_template}");
     }
-    if let Some(author) = &metadata.author {
-        output::kv("Author", author);
+    if let Some(tokens) = &metadata.special_tokens {
+        print_json_object("    Special Tokens:", tokens, "      ");
     }
-    if let Some(source) = &metadata.source {
-        output::kv("Source", source);
-    }
-    if let Some(fmt) = &metadata.original_format {
-        output::kv("Original Format", fmt);
-    }
-    if let Some(created) = &metadata.created_at {
-        output::kv("Created", created);
-    }
+}
 
-    // Chat template info
-    if metadata.chat_template.is_some() || metadata.chat_format.is_some() {
-        println!("\n  Chat Template:");
-        if let Some(format) = &metadata.chat_format {
-            println!("    Format: {format}");
-        }
-        if let Some(template) = &metadata.chat_template {
-            let display_template = if template.len() > 100 {
-                format!("{}... ({} chars)", &template[..100], template.len())
+/// Print a JSON object's non-null key-value pairs.
+fn print_json_object(header: &str, value: &serde_json::Value, indent: &str) {
+    println!("{header}");
+    let Some(obj) = value.as_object() else { return };
+    for (k, v) in obj {
+        if !v.is_null() {
+            if let Some(s) = v.as_str() {
+                println!("{indent}{k}: {s}");
             } else {
-                template.clone()
-            };
-            println!("    Template: {display_template}");
-        }
-        if let Some(tokens) = &metadata.special_tokens {
-            println!("    Special Tokens:");
-            if let Some(obj) = tokens.as_object() {
-                for (k, v) in obj {
-                    if !v.is_null() {
-                        println!("      {k}: {v}");
-                    }
-                }
+                println!("{indent}{k}: {v}");
             }
         }
     }
+}
 
-    // Source metadata (PMAT-223)
-    if let Some(source_meta) = &metadata.source_metadata {
-        println!("\n  Source Metadata (PMAT-223):");
-        if let Some(obj) = source_meta.as_object() {
-            for (k, v) in obj {
-                if let Some(s) = v.as_str() {
-                    println!("    {k}: {s}");
-                } else {
-                    println!("    {k}: {v}");
-                }
-            }
+fn output_metadata_text(metadata: &MetadataInfo) {
+    // General metadata fields
+    let fields: &[(&str, &Option<String>)] = &[
+        ("Name", &metadata.name),
+        ("Model Type", &metadata.model_type),
+        ("Description", &metadata.description),
+        ("Author", &metadata.author),
+        ("Source", &metadata.source),
+        ("Original Format", &metadata.original_format),
+        ("Created", &metadata.created_at),
+    ];
+    for (label, value) in fields {
+        if let Some(v) = value {
+            output::kv(label, v);
         }
+    }
+
+    output_chat_template_info(metadata);
+
+    if let Some(source_meta) = &metadata.source_metadata {
+        print_json_object("\n  Source Metadata (PMAT-223):", source_meta, "    ");
     }
 }
 

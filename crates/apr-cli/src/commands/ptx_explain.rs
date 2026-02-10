@@ -40,96 +40,96 @@ pub(crate) fn run(
 }
 
 /// Human-readable PTX analysis output.
+/// Print PTX analysis report (registers, memory, roofline, muda warnings).
+fn print_ptx_analysis_report(
+    report: &trueno_explain::analyzer::AnalysisReport,
+    ptx: &str,
+    verbose: bool,
+) {
+    println!("\x1b[1;36m=== PTX Analysis: {} ===\x1b[0m\n", report.name);
+
+    println!("\x1b[1mRegisters:\x1b[0m");
+    println!(
+        "  f32: {}  f64: {}  b32: {}  b64: {}  pred: {}",
+        report.registers.f32_regs, report.registers.f64_regs,
+        report.registers.b32_regs, report.registers.b64_regs, report.registers.pred_regs,
+    );
+    println!("  Total: {}  Estimated occupancy: {:.0}%\n", report.registers.total(), report.estimated_occupancy * 100.0);
+
+    println!("\x1b[1mMemory:\x1b[0m");
+    println!("  Global loads: {}  Global stores: {}", report.memory.global_loads, report.memory.global_stores);
+    println!("  Shared loads: {}  Shared stores: {}", report.memory.shared_loads, report.memory.shared_stores);
+    println!("  Coalescing ratio: {:.1}%\n", report.memory.coalesced_ratio * 100.0);
+
+    println!("\x1b[1mRoofline:\x1b[0m");
+    println!("  Instructions: {}", report.instruction_count);
+    println!("  Arithmetic intensity: {:.2} FLOP/byte", report.roofline.arithmetic_intensity);
+    println!("  Bottleneck: {}\n", if report.roofline.memory_bound { "MEMORY-BOUND" } else { "COMPUTE-BOUND" });
+
+    if !report.warnings.is_empty() {
+        println!("\x1b[1;33mMuda (Waste) Warnings:\x1b[0m");
+        for w in &report.warnings {
+            println!("  [{:?}] {}", w.muda_type, w.description);
+            println!("    Impact: {}", w.impact);
+            if let Some(suggestion) = &w.suggestion {
+                println!("    Fix: {suggestion}");
+            }
+        }
+        println!();
+    }
+
+    if verbose {
+        println!("\x1b[1mPTX Source:\x1b[0m");
+        for (i, line) in ptx.lines().enumerate() {
+            println!("  {:4} | {line}", i + 1);
+        }
+        println!();
+    }
+}
+
+/// Print PTX bug analysis report.
+fn print_ptx_bug_report(bug_report: &trueno_explain::PtxBugReport) {
+    let color = if bug_report.bugs.is_empty() { "32" } else { "31" };
+    let name_suffix = bug_report.kernel_name.as_ref().map_or(String::new(), |n| format!(": {n}"));
+    println!("\x1b[1;{color}m=== PTX Bug Analysis{name_suffix} ===\x1b[0m");
+    println!("  Lines analyzed: {}", bug_report.lines_analyzed);
+    println!("  Strict mode: {}", bug_report.strict_mode);
+    println!("  Bugs found: {}\n", bug_report.bugs.len());
+
+    if bug_report.bugs.is_empty() {
+        println!("  \x1b[32mNo bugs detected.\x1b[0m");
+        return;
+    }
+
+    for bug in &bug_report.bugs {
+        let severity_color = match bug.class.severity() {
+            trueno_explain::BugSeverity::Critical => "31",
+            trueno_explain::BugSeverity::High => "33",
+            trueno_explain::BugSeverity::Medium => "35",
+            trueno_explain::BugSeverity::FalsePositive => "36",
+        };
+        println!("  \x1b[{severity_color}m[{:?}]\x1b[0m Line {}: {}", bug.class, bug.line, bug.message);
+        if !bug.instruction.is_empty() {
+            println!("    Instruction: {}", bug.instruction);
+        }
+        if let Some(fix) = &bug.fix {
+            println!("    Fix: {fix}");
+        }
+        println!();
+    }
+}
+
 fn run_human(ptx: &str, strict: bool, bugs_only: bool, verbose: bool) -> Result<()> {
     use trueno_explain::analyzer::Analyzer;
 
     if !bugs_only {
-        // Run PtxAnalyzer for register/memory/roofline analysis
         let analyzer = trueno_explain::PtxAnalyzer::new();
         match analyzer.analyze(ptx) {
-            Ok(report) => {
-                println!("\x1b[1;36m=== PTX Analysis: {} ===\x1b[0m", report.name);
-                println!();
-
-                // Register usage
-                println!("\x1b[1mRegisters:\x1b[0m");
-                println!(
-                    "  f32: {}  f64: {}  b32: {}  b64: {}  pred: {}",
-                    report.registers.f32_regs,
-                    report.registers.f64_regs,
-                    report.registers.b32_regs,
-                    report.registers.b64_regs,
-                    report.registers.pred_regs,
-                );
-                println!(
-                    "  Total: {}  Estimated occupancy: {:.0}%",
-                    report.registers.total(),
-                    report.estimated_occupancy * 100.0,
-                );
-                println!();
-
-                // Memory patterns
-                println!("\x1b[1mMemory:\x1b[0m");
-                println!(
-                    "  Global loads: {}  Global stores: {}",
-                    report.memory.global_loads, report.memory.global_stores
-                );
-                println!(
-                    "  Shared loads: {}  Shared stores: {}",
-                    report.memory.shared_loads, report.memory.shared_stores
-                );
-                println!(
-                    "  Coalescing ratio: {:.1}%",
-                    report.memory.coalesced_ratio * 100.0
-                );
-                println!();
-
-                // Roofline
-                println!("\x1b[1mRoofline:\x1b[0m");
-                println!("  Instructions: {}", report.instruction_count);
-                println!(
-                    "  Arithmetic intensity: {:.2} FLOP/byte",
-                    report.roofline.arithmetic_intensity
-                );
-                println!(
-                    "  Bottleneck: {}",
-                    if report.roofline.memory_bound {
-                        "MEMORY-BOUND"
-                    } else {
-                        "COMPUTE-BOUND"
-                    }
-                );
-                println!();
-
-                // Muda warnings
-                if !report.warnings.is_empty() {
-                    println!("\x1b[1;33mMuda (Waste) Warnings:\x1b[0m");
-                    for w in &report.warnings {
-                        println!("  [{:?}] {}", w.muda_type, w.description);
-                        println!("    Impact: {}", w.impact);
-                        if let Some(suggestion) = &w.suggestion {
-                            println!("    Fix: {suggestion}");
-                        }
-                    }
-                    println!();
-                }
-
-                if verbose {
-                    // Show PTX source with line numbers
-                    println!("\x1b[1mPTX Source:\x1b[0m");
-                    for (i, line) in ptx.lines().enumerate() {
-                        println!("  {:4} | {line}", i + 1);
-                    }
-                    println!();
-                }
-            }
-            Err(e) => {
-                eprintln!("PTX analysis error: {e}");
-            }
+            Ok(report) => print_ptx_analysis_report(&report, ptx, verbose),
+            Err(e) => eprintln!("PTX analysis error: {e}"),
         }
     }
 
-    // Run PtxBugAnalyzer
     let bug_analyzer = if strict {
         trueno_explain::PtxBugAnalyzer::strict()
     } else {
@@ -137,49 +137,8 @@ fn run_human(ptx: &str, strict: bool, bugs_only: bool, verbose: bool) -> Result<
     };
 
     let bug_report = bug_analyzer.analyze(ptx);
-
     if bugs_only || !bug_report.bugs.is_empty() {
-        println!(
-            "\x1b[1;{}m=== PTX Bug Analysis{} ===\x1b[0m",
-            if bug_report.bugs.is_empty() {
-                "32"
-            } else {
-                "31"
-            },
-            if let Some(name) = &bug_report.kernel_name {
-                format!(": {name}")
-            } else {
-                String::new()
-            },
-        );
-        println!("  Lines analyzed: {}", bug_report.lines_analyzed);
-        println!("  Strict mode: {}", bug_report.strict_mode);
-        println!("  Bugs found: {}", bug_report.bugs.len());
-        println!();
-
-        if bug_report.bugs.is_empty() {
-            println!("  \x1b[32mNo bugs detected.\x1b[0m");
-        } else {
-            for bug in &bug_report.bugs {
-                let severity_color = match bug.class.severity() {
-                    trueno_explain::BugSeverity::Critical => "31",
-                    trueno_explain::BugSeverity::High => "33",
-                    trueno_explain::BugSeverity::Medium => "35",
-                    trueno_explain::BugSeverity::FalsePositive => "36",
-                };
-                println!(
-                    "  \x1b[{severity_color}m[{:?}]\x1b[0m Line {}: {}",
-                    bug.class, bug.line, bug.message
-                );
-                if !bug.instruction.is_empty() {
-                    println!("    Instruction: {}", bug.instruction);
-                }
-                if let Some(fix) = &bug.fix {
-                    println!("    Fix: {fix}");
-                }
-                println!();
-            }
-        }
+        print_ptx_bug_report(&bug_report);
     }
 
     Ok(())
