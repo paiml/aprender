@@ -1105,54 +1105,35 @@ fn hf_to_gguf_name(name: &str) -> String {
 // GH-182: COMPANION FILE HELPERS
 // ============================================================================
 
-/// Infer model config.json from tensor shapes (GH-182, GH-193)
-///
-/// Creates a HuggingFace-compatible config.json based on tensor analysis.
-/// GH-193: Now includes all required fields for SafeTensors inference:
-/// - num_attention_heads, intermediate_size, max_position_embeddings, etc.
-fn infer_model_config(tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>) -> String {
-    // GH-197 FIX: Track inference failures for diagnostics
-    let mut inference_warnings: Vec<String> = Vec::new();
-
-    // Infer hidden_size from embedding or first layer weight
-    // BUG-EXPORT-001 FIX: GGUF and HuggingFace have different embedding layouts:
-    //   - HuggingFace: [vocab_size, hidden_size]
-    //   - GGUF: Can be [hidden_size, vocab_size] (transposed)
-    // For LLMs: vocab_size >> hidden_size (32k-150k vs 512-8192), so pick the smaller dim
-    let (hidden_size, hidden_inferred) = tensors
+/// Infer hidden_size from embedding tensor (BUG-EXPORT-001: pick smaller dim)
+fn infer_hidden_size(
+    tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+) -> (usize, bool) {
+    tensors
         .iter()
         .find(|(name, _)| name.contains("embed_tokens") || name.contains("token_embd"))
         .map(|(name, (_, shape))| {
             let dim = if shape.len() >= 2 {
-                // Pick the smaller dimension (hidden_size is always << vocab_size)
-                let dim0 = shape[0];
-                let dim1 = shape[1];
-                let inferred = dim0.min(dim1);
+                let inferred = shape[0].min(shape[1]);
                 eprintln!(
                     "[GH-197] Inferred hidden_size={inferred} from tensor '{name}' \
                      (shape={shape:?}, picked smaller dim)"
                 );
                 inferred
             } else {
-                // 1D tensor - use as-is
                 shape.last().copied().unwrap_or(4096)
             };
             (dim, true)
         })
-        .unwrap_or_else(|| {
-            inference_warnings.push(
-                "hidden_size: No embed_tokens/token_embd tensor found, defaulting to 4096"
-                    .to_string(),
-            );
-            (4096, false)
-        });
+        .unwrap_or((4096, false))
+}
 
-    // Count layers by looking for layer patterns
-    let layer_numbers: Vec<usize> = tensors
+/// Count transformer layers from tensor name patterns
+fn infer_num_layers(tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>) -> usize {
+    let max_layer: Option<usize> = tensors
         .keys()
         .filter_map(|name| {
             if name.contains("layers.") || name.contains("blk.") {
-                // Extract layer number from "layers.N." or "blk.N."
                 let parts: Vec<&str> = name.split(&['.', '_'][..]).collect();
                 for (i, part) in parts.iter().enumerate() {
                     if (*part == "layers" || *part == "blk") && i + 1 < parts.len() {
@@ -1162,33 +1143,31 @@ fn infer_model_config(tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>) -> Str
             }
             None
         })
-        .collect();
+        .max();
 
-    let num_layers = if let Some(&max_layer) = layer_numbers.iter().max() {
-        let count = max_layer + 1;
-        eprintln!("[GH-197] Inferred num_layers={count} from layer indices 0..{max_layer}");
+    if let Some(max) = max_layer {
+        let count = max + 1;
+        eprintln!("[GH-197] Inferred num_layers={count} from layer indices 0..{max}");
         count
     } else {
-        inference_warnings
-            .push("num_layers: No layers.N/blk.N tensors found, defaulting to 12".to_string());
         12
-    };
+    }
+}
 
-    // Infer vocab_size from lm_head, output weight, or embedding tensor
-    // BUG-EXPORT-001 FIX: Use larger dimension (vocab_size >> hidden_size)
-    // Also check embedding tensor since GGUF often uses weight tying
-    let (vocab_size, vocab_inferred) = tensors
+/// Infer vocab_size from lm_head, output, or embedding tensor (BUG-EXPORT-001: pick larger dim)
+fn infer_vocab_size(
+    tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+) -> (usize, bool) {
+    tensors
         .iter()
         .find(|(name, _)| name.contains("lm_head") || name.contains("output.weight"))
         .or_else(|| {
-            // Fallback: use embedding tensor (GGUF weight tying)
             tensors
                 .iter()
                 .find(|(name, _)| name.contains("embed_tokens") || name.contains("token_embd"))
         })
         .map(|(name, (_, shape))| {
             let dim = if shape.len() >= 2 {
-                // Pick the larger dimension (vocab_size is always >> hidden_size)
                 let inferred = shape[0].max(shape[1]);
                 eprintln!(
                     "[GH-197] Inferred vocab_size={inferred} from tensor '{name}' \
@@ -1200,24 +1179,21 @@ fn infer_model_config(tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>) -> Str
             };
             (dim, true)
         })
-        .unwrap_or_else(|| {
-            inference_warnings.push(
-                "vocab_size: No lm_head/output/embed tensor found, defaulting to 32000".to_string(),
-            );
-            (32000, false)
-        });
+        .unwrap_or((32000, false))
+}
 
-    // GH-197 FIX: Sanity validation - vocab_size should be >> hidden_size for LLMs
+/// Infer model config.json from tensor shapes (GH-182, GH-193)
+fn infer_model_config(tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>) -> String {
+    let (hidden_size, hidden_inferred) = infer_hidden_size(tensors);
+    let num_layers = infer_num_layers(tensors);
+    let (vocab_size, vocab_inferred) = infer_vocab_size(tensors);
+
+    // GH-197 FIX: Sanity validation
     if vocab_inferred && hidden_inferred && vocab_size < hidden_size {
         eprintln!(
             "[GH-197] WARNING: vocab_size ({vocab_size}) < hidden_size ({hidden_size}). \
              This is unusual for LLMs - dimensions may be swapped!"
         );
-    }
-
-    // Print all inference warnings
-    for warning in &inference_warnings {
-        eprintln!("[GH-197] WARNING: {warning}");
     }
 
     // GH-193: Infer num_attention_heads from attention Q/K/V weights
