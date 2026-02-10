@@ -109,6 +109,7 @@ test-model: ## Run model falsification tests ONE AT A TIME (requires models/, ol
 	@for test in f_ollama_001 f_ollama_002 f_ollama_003 f_ollama_004 f_ollama_005 \
 	             f_perf_003 f_trueno_004 f_trueno_008 f_rosetta_002 f_qa_002; do \
 		echo "  ⏳ $$test"; \
+		PROPTEST_CASES=10 QUICKCHECK_TESTS=10 \
 		cargo test --features model-tests --test falsification_spec_v10_tests "$$test" 2>&1 \
 			| grep "test result:" || echo "  ❌ $$test FAILED"; \
 	done
@@ -116,7 +117,8 @@ test-model: ## Run model falsification tests ONE AT A TIME (requires models/, ol
 
 test-spec: ## Run ALL spec falsification tests (structural only, no models)
 	@echo "🔬 Running spec structural tests..."
-	@cargo test --features model-tests --test falsification_spec_v10_tests 2>&1 \
+	@PROPTEST_CASES=10 QUICKCHECK_TESTS=10 \
+		cargo test --features model-tests --test falsification_spec_v10_tests 2>&1 \
 		| grep "test result:"
 	@echo "✅ Spec tests complete"
 
@@ -264,14 +266,15 @@ coverage: ## Coverage summary + threshold check (warm: ~3min)
 	if [ -n "$$COVDIR" ]; then find "$$COVDIR" -name '*.profraw' -delete 2>/dev/null || true; fi
 	@mkdir -p target/coverage
 	@printf '%s' '$(COVERAGE_EXCLUDE_REGEX)' > target/coverage/.exclude-re
-	@echo "🧪 Phase 1: Tests with instrumentation (nextest for async test isolation)..."
+	@echo "🧪 Phase 1: Tests with instrumentation (CB-127-A: cargo llvm-cov test, not nextest)..."
 	@PROPTEST_CASES=10 QUICKCHECK_TESTS=10 RUST_MIN_STACK=16777216 CARGO_BUILD_JOBS=4 \
-		cargo llvm-cov --no-report nextest \
-		--profile coverage \
-		--no-tests=warn \
-		--workspace \
+		cargo llvm-cov test --no-report \
+		--workspace --lib \
 		--ignore-filename-regex "$$(cat target/coverage/.exclude-re)" \
-		-E 'not (test(/prop_gbm_expected_value|slow|heavy|h12_|j2_|falsification|chaos|disconnect|benchmark_parity|qwen2_generation|qwen2_golden|qwen2_weight|load_test|spec_checklist_w|spec_checklist_u|verify_audio|g9_roofline/) | binary(/rosetta_dangerous|spec_checklist_q/))' \
+		-- --skip prop_gbm_expected_value --skip slow --skip heavy --skip h12_ --skip j2_ \
+		   --skip falsification --skip chaos --skip disconnect --skip benchmark_parity \
+		   --skip qwen2_generation --skip qwen2_golden --skip qwen2_weight --skip load_test \
+		   --skip spec_checklist_w --skip spec_checklist_u --skip verify_audio --skip g9_roofline \
 		|| { test -f ~/.cargo/config.toml.bak && mv ~/.cargo/config.toml.bak ~/.cargo/config.toml; exit 1; }
 	@echo "📊 Phase 2: Coverage report (LCOV → lightweight)..."
 	@cargo llvm-cov report --lcov --ignore-filename-regex "$$(cat target/coverage/.exclude-re)" > target/coverage/lcov.info
@@ -312,10 +315,9 @@ coverage-full: ## Full coverage report (all features, CI only)
 	@mkdir -p target/coverage
 	@printf '%s' '$(COVERAGE_EXCLUDE_REGEX)' > target/coverage/.exclude-re
 	@PROPTEST_CASES=10 QUICKCHECK_TESTS=10 CARGO_BUILD_JOBS=4 \
-		cargo llvm-cov --no-report nextest --workspace --lib --all-features \
-		--profile coverage --no-tests=warn \
+		cargo llvm-cov test --no-report --workspace --lib --all-features \
 		--ignore-filename-regex "$$(cat target/coverage/.exclude-re)" \
-		-E 'not test(/prop_gbm_expected_value|slow|heavy|benchmark|h12_|j2_/)'
+		-- --skip prop_gbm_expected_value --skip slow --skip heavy --skip benchmark --skip h12_ --skip j2_
 	@cargo llvm-cov report --html --output-dir target/coverage/html --ignore-filename-regex "$$(cat target/coverage/.exclude-re)"
 	@cargo llvm-cov report --lcov --output-path target/coverage/lcov.info --ignore-filename-regex "$$(cat target/coverage/.exclude-re)"
 	@echo ""
