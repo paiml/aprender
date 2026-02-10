@@ -63,7 +63,7 @@ impl TestMarkovModel {
             .filter(|(cmd, _)| cmd.starts_with(prefix))
             .map(|(cmd, count)| (cmd.clone(), *count as f64 / total as f64))
             .collect();
-        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        results.sort_by(|a, b| b.1.partial_cmp(&a.1).expect("suggestion scores should be comparable"));
         results.truncate(5);
         results
     }

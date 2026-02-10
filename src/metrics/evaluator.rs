@@ -152,14 +152,14 @@ impl ComparisonResult {
 /// use aprender::linear_model::LinearRegression;
 /// use aprender::primitives::{Matrix, Vector};
 ///
-/// let x = Matrix::from_vec(10, 1, (0..10).map(|i| i as f32).collect()).unwrap();
+/// let x = Matrix::from_vec(10, 1, (0..10).map(|i| i as f32).collect()).expect("valid matrix dims");
 /// let y = Vector::from_slice(&[1.0, 3.0, 5.0, 7.0, 9.0, 11.0, 13.0, 15.0, 17.0, 19.0]);
 ///
 /// let evaluator = ModelEvaluator::new(TaskType::Regression)
 ///     .with_cv_folds(3);
 ///
 /// let mut model = LinearRegression::new();
-/// let result = evaluator.evaluate(&mut model, "LinReg", &x, &y).unwrap();
+/// let result = evaluator.evaluate(&mut model, "LinReg", &x, &y).expect("evaluation should succeed");
 /// assert!(result.mean_score > 0.9);
 /// ```
 #[derive(Debug)]

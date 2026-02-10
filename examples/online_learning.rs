@@ -78,7 +78,7 @@ fn online_linear_regression_demo() {
     println!("{}", "-".repeat(50));
 
     for (i, (x, y)) in samples.iter().enumerate() {
-        let loss = model.partial_fit(x, &[*y], None).unwrap();
+        let loss = model.partial_fit(x, &[*y], None).expect("partial_fit should succeed");
         println!(
             "{:>6} {:>8.1} {:>8.1} {:>10.1} {:>12.4}",
             i + 1,
@@ -92,7 +92,7 @@ fn online_linear_regression_demo() {
     // Train more to converge
     for _ in 0..200 {
         for (x, y) in &samples {
-            model.partial_fit(x, &[*y], None).unwrap();
+            model.partial_fit(x, &[*y], None).expect("convergence training partial_fit should succeed");
         }
     }
 
@@ -104,8 +104,8 @@ fn online_linear_regression_demo() {
 
     // Test predictions
     println!("\nPredictions:");
-    let pred1 = model.predict_one(&[1.0, 1.0]).unwrap();
-    let pred2 = model.predict_one(&[2.0, 2.0]).unwrap();
+    let pred1 = model.predict_one(&[1.0, 1.0]).expect("predict_one should succeed for valid input");
+    let pred2 = model.predict_one(&[2.0, 2.0]).expect("predict_one should succeed for valid input");
     println!("  f(1, 1) = {:.2} (expected: 6.0)", pred1);
     println!("  f(2, 2) = {:.2} (expected: 11.0)", pred2);
     println!();
@@ -134,7 +134,7 @@ fn online_logistic_regression_demo() {
     // Train multiple passes
     for _ in 0..100 {
         for (x, y) in &samples {
-            model.partial_fit(x, &[*y], None).unwrap();
+            model.partial_fit(x, &[*y], None).expect("logistic partial_fit should succeed");
         }
     }
 
@@ -143,7 +143,7 @@ fn online_logistic_regression_demo() {
     println!("{}", "-".repeat(45));
 
     for (x, _) in &samples {
-        let prob = model.predict_proba_one(x).unwrap();
+        let prob = model.predict_proba_one(x).expect("predict_proba_one should succeed");
         let class = if prob > 0.5 { 1 } else { 0 };
         println!("{:>8.1} {:>8.1} {:>10.3} {:>12}", x[0], x[1], prob, class);
     }
@@ -367,7 +367,7 @@ fn knowledge_distillation_demo() {
 
     let distill_loss = loss
         .compute(&student_logits, &teacher_logits, &hard_labels)
-        .unwrap();
+        .expect("distillation loss computation should succeed");
     println!("\nDistillation loss: {:.4}", distill_loss);
     println!("  (alpha=0.7: 70% KL divergence + 30% cross-entropy)");
     println!();
@@ -412,7 +412,7 @@ fn retrain_orchestrator_demo() {
 
         let result = orchestrator
             .observe(&features, &target, &prediction)
-            .unwrap();
+            .expect("orchestrator observe should succeed");
         println!(
             "{:>6} {:>10.1} {:>12.1} {:>10?}",
             i + 1,
@@ -430,7 +430,7 @@ fn retrain_orchestrator_demo() {
 
         let result = orchestrator
             .observe(&features, &target, &prediction)
-            .unwrap();
+            .expect("orchestrator observe should succeed during drift");
         if i == 5 || i == 14 || matches!(result, ObserveResult::Retrained | ObserveResult::Warning)
         {
             println!(

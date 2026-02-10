@@ -168,7 +168,7 @@ fn greedy_tsp(distances: &[Vec<f64>]) -> Vec<usize> {
     visited[0] = true;
 
     while tour.len() < n {
-        let current = *tour.last().unwrap();
+        let current = *tour.last().expect("tour should never be empty");
         let mut best_next = 0;
         let mut best_dist = f64::INFINITY;
 

@@ -30,7 +30,7 @@
 //! rec.add_item("ml_practice", "practical machine learning guide");
 //!
 //! // Get similar items
-//! let similar = rec.recommend("ml_intro", 2).unwrap();
+//! let similar = rec.recommend("ml_intro", 2).expect("recommend should succeed");
 //!
 //! assert_eq!(similar.len(), 2);
 //! // Should recommend ml_practice (shares "machine learning")
@@ -170,7 +170,7 @@ impl ContentRecommender {
     /// rec.add_item("b", "deep learning");
     /// rec.add_item("c", "machine intelligence");
     ///
-    /// let similar = rec.recommend("a", 2).unwrap();
+    /// let similar = rec.recommend("a", 2).expect("recommend should succeed");
     /// assert_eq!(similar.len(), 2);
     /// ```
     pub fn recommend(&self, item_id: &str, k: usize) -> Result<Vec<(String, f64)>, AprenderError> {

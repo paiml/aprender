@@ -41,12 +41,12 @@ fn contains_as_word(haystack: &str, needle: &str) -> bool {
         let end_pos = abs_pos + needle.len();
 
         let left_ok = abs_pos == 0 || {
-            let prev_char = haystack[..abs_pos].chars().last().unwrap();
+            let prev_char = haystack[..abs_pos].chars().last().expect("non-empty prefix must have a last char");
             !prev_char.is_alphanumeric()
         };
 
         let right_ok = end_pos >= haystack.len() || {
-            let next_char = haystack[end_pos..].chars().next().unwrap();
+            let next_char = haystack[end_pos..].chars().next().expect("non-empty suffix must have a next char");
             !next_char.is_alphanumeric()
         };
 

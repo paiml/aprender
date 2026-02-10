@@ -502,22 +502,22 @@ fn main() {
     println!();
 
     results.push(test_model_exists(&model));
-    results.last().unwrap().print();
+    results.last().expect("results should not be empty after push").print();
 
     results.push(test_correct_answer(&config, &model));
-    results.last().unwrap().print();
+    results.last().expect("results should not be empty after push").print();
 
     results.push(test_no_garbage(&config, &model));
-    results.last().unwrap().print();
+    results.last().expect("results should not be empty after push").print();
 
     results.push(test_no_bpe_artifacts(&config, &model));
-    results.last().unwrap().print();
+    results.last().expect("results should not be empty after push").print();
 
     results.push(test_performance_cpu(&config, &model));
-    results.last().unwrap().print();
+    results.last().expect("results should not be empty after push").print();
 
     results.push(test_performance_gpu(&config, &model));
-    results.last().unwrap().print();
+    results.last().expect("results should not be empty after push").print();
 
     print_summary(&results);
 

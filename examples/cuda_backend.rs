@@ -187,7 +187,7 @@ fn demonstrate_custom_configs() {
     println!("   - Verification: {:?}", cuda_paranoid.verification);
     println!(
         "   - Max Memory: {} GB",
-        cuda_paranoid.max_memory_bytes.unwrap() / (1024 * 1024 * 1024)
+        cuda_paranoid.max_memory_bytes.expect("max memory was configured") / (1024 * 1024 * 1024)
     );
     println!();
 
@@ -215,7 +215,7 @@ fn demonstrate_custom_configs() {
     println!("   - Verification: {:?}", embedded.verification);
     println!(
         "   - Max Memory: {} KB",
-        embedded.max_memory_bytes.unwrap() / 1024
+        embedded.max_memory_bytes.expect("embedded max memory was configured") / 1024
     );
     println!();
 
@@ -227,6 +227,6 @@ fn demonstrate_custom_configs() {
     println!("   - Streaming: {}", wasm.streaming);
     println!(
         "   - Max Memory: {} MB",
-        wasm.max_memory_bytes.unwrap() / (1024 * 1024)
+        wasm.max_memory_bytes.expect("WASM max memory was configured") / (1024 * 1024)
     );
 }

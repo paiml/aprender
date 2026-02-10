@@ -21,7 +21,7 @@
 //!
 //! // Compute mel spectrogram
 //! let audio = vec![0.0f32; 16000]; // 1 second at 16kHz
-//! let mel_spec = filterbank.compute(&audio).unwrap();
+//! let mel_spec = filterbank.compute(&audio).expect("mel computation should succeed");
 //! ```
 //!
 //! # References

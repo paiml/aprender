@@ -186,7 +186,7 @@ fn create_demo_model_v2(dir: &Path) -> Result<std::path::PathBuf, String> {
 fn print_cli_commands(model_path: &Path, model_v2_path: &Path) {
     let model = model_path.display();
     let model_v2 = model_v2_path.display();
-    let demo_dir = model_path.parent().unwrap().display();
+    let demo_dir = model_path.parent().expect("model path should have a parent directory").display();
 
     println!("Build the CLI first:");
     println!("  cargo build -p apr-cli\n");
