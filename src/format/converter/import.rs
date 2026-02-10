@@ -893,6 +893,59 @@ pub(crate) fn load_tokenizer_from_json(model_path: &Path) -> Option<GgufTokenize
     parse_tokenizer_json(&json, config_json.as_ref())
 }
 
+/// Load sibling config.json from the same directory as a given file.
+fn load_sibling_config(path: &Path) -> Option<serde_json::Value> {
+    let config_path = path.with_file_name("config.json");
+    config_path
+        .exists()
+        .then(|| fs::read_to_string(&config_path).ok())
+        .flatten()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+}
+
+/// Build vocabulary vector from token-to-id map, padded to expected vocab size.
+fn build_vocab_vector(
+    token_to_id: &std::collections::BTreeMap<u32, String>,
+    expected_vocab_size: u32,
+) -> Vec<String> {
+    let max_id = token_to_id.keys().max().copied().unwrap_or(0);
+    let final_size = (expected_vocab_size.max(max_id + 1)) as usize;
+    let mut vocabulary: Vec<String> = vec!["<unk>".to_string(); final_size];
+    for (id, token) in token_to_id {
+        if (*id as usize) < vocabulary.len() {
+            vocabulary[*id as usize] = token.clone();
+        }
+    }
+    vocabulary
+}
+
+/// Infer BOS/EOS token IDs from added_tokens array by name heuristics.
+fn infer_bos_eos_from_added_tokens(
+    added_tokens: &[serde_json::Value],
+    mut bos: Option<u32>,
+    mut eos: Option<u32>,
+) -> (Option<u32>, Option<u32>) {
+    for token in added_tokens {
+        let content = token.get("content").and_then(|v| v.as_str());
+        let id = token.get("id").and_then(|v| v.as_u64()).map(|v| v as u32);
+        if let (Some(content), Some(id)) = (content, id) {
+            if bos.is_none()
+                && (content.contains("bos")
+                    || content == "<s>"
+                    || content == "<|startoftext|>")
+            {
+                bos = Some(id);
+            }
+            if eos.is_none()
+                && (content.contains("eos") || content == "</s>" || content == "<|eot_id|>")
+            {
+                eos = Some(id);
+            }
+        }
+    }
+    (bos, eos)
+}
+
 /// PMAT-232: Load tokenizer from explicit path (for --tokenizer CLI option)
 ///
 /// Unlike `load_tokenizer_from_json` which searches for tokenizer.json in standard locations,
@@ -910,17 +963,14 @@ pub(crate) fn load_tokenizer_from_explicit_path(tokenizer_path: &Path) -> Option
     let content = fs::read_to_string(tokenizer_path).ok()?;
     let json: serde_json::Value = serde_json::from_str(&content).ok()?;
 
-    // Extract vocabulary from model.vocab
     let vocab_obj = json.get("model")?.get("vocab")?;
     let vocab_map = vocab_obj.as_object()?;
 
-    // Build vocab map (token -> id) from base vocab
     let mut token_to_id: std::collections::BTreeMap<u32, String> = vocab_map
         .iter()
         .filter_map(|(token, id)| Some((id.as_u64()? as u32, token.clone())))
         .collect();
 
-    // Add special tokens from added_tokens
     if let Some(added) = json.get("added_tokens").and_then(|v| v.as_array()) {
         for token in added {
             if let (Some(content), Some(id)) = (
@@ -932,26 +982,14 @@ pub(crate) fn load_tokenizer_from_explicit_path(tokenizer_path: &Path) -> Option
         }
     }
 
-    // Read expected vocab_size from sibling config.json
-    let config_path = tokenizer_path.with_file_name("config.json");
-    let expected_vocab_size = config_path
-        .exists()
-        .then(|| fs::read_to_string(&config_path).ok())
-        .flatten()
-        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+    let sibling_config = load_sibling_config(tokenizer_path);
+    let expected_vocab_size = sibling_config
+        .as_ref()
         .and_then(|cfg| cfg.get("vocab_size").and_then(|v| v.as_u64()))
         .map(|v| v as u32)
         .unwrap_or(0);
 
-    // Build vocabulary vector
-    let max_id = token_to_id.keys().max().copied().unwrap_or(0);
-    let final_size = (expected_vocab_size.max(max_id + 1)) as usize;
-    let mut vocabulary: Vec<String> = vec!["<unk>".to_string(); final_size];
-    for (id, token) in &token_to_id {
-        if (*id as usize) < vocabulary.len() {
-            vocabulary[*id as usize] = token.clone();
-        }
-    }
+    let vocabulary = build_vocab_vector(&token_to_id, expected_vocab_size);
 
     eprintln!(
         "[PMAT-232] External tokenizer loaded: {} vocab tokens from {}",
@@ -963,52 +1001,22 @@ pub(crate) fn load_tokenizer_from_explicit_path(tokenizer_path: &Path) -> Option
         return None;
     }
 
-    // Extract BOS/EOS from config.json
-    let mut bos_token_id = None;
-    let mut eos_token_id = None;
+    let mut bos_token_id = sibling_config
+        .as_ref()
+        .and_then(|cfg| cfg.get("bos_token_id").and_then(|v| v.as_u64()))
+        .map(|v| v as u32);
+    let mut eos_token_id = sibling_config
+        .as_ref()
+        .and_then(|cfg| cfg.get("eos_token_id").and_then(|v| v.as_u64()))
+        .map(|v| v as u32);
 
-    if let Some(cfg) = config_path
-        .exists()
-        .then(|| fs::read_to_string(&config_path).ok())
-        .flatten()
-        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
-    {
-        bos_token_id = cfg
-            .get("bos_token_id")
-            .and_then(|v| v.as_u64())
-            .map(|v| v as u32);
-        eos_token_id = cfg
-            .get("eos_token_id")
-            .and_then(|v| v.as_u64())
-            .map(|v| v as u32);
-    }
-
-    // Fallback: infer from added_tokens
     if bos_token_id.is_none() || eos_token_id.is_none() {
         if let Some(added_tokens) = json.get("added_tokens").and_then(|v| v.as_array()) {
-            for token in added_tokens {
-                let content = token.get("content").and_then(|v| v.as_str());
-                let id = token.get("id").and_then(|v| v.as_u64()).map(|v| v as u32);
-
-                if let (Some(content), Some(id)) = (content, id) {
-                    if bos_token_id.is_none()
-                        && (content.contains("bos")
-                            || content == "<s>"
-                            || content == "<|startoftext|>")
-                    {
-                        bos_token_id = Some(id);
-                    }
-                    if eos_token_id.is_none()
-                        && (content.contains("eos") || content == "</s>" || content == "<|eot_id|>")
-                    {
-                        eos_token_id = Some(id);
-                    }
-                }
-            }
+            (bos_token_id, eos_token_id) =
+                infer_bos_eos_from_added_tokens(added_tokens, bos_token_id, eos_token_id);
         }
     }
 
-    // Extract model type and merge rules
     let model_type = json
         .get("model")
         .and_then(|m| m.get("type"))
@@ -1038,21 +1046,13 @@ pub(crate) fn load_tokenizer_from_explicit_path(tokenizer_path: &Path) -> Option
     })
 }
 
-/// Infer model config from tensor shapes (for SafeTensors which has no metadata)
+/// Infer vocab_size and hidden_size from embedding tensor shape.
 ///
-/// GH-165 FIX: Now handles both HuggingFace and GGUF tensor naming conventions:
-/// - HuggingFace: model.layers.N.self_attn.q_proj.weight, embed_tokens.weight
-/// - GGUF: blk.N.attn_q.weight, token_embd.weight
-pub(crate) fn infer_model_config_from_tensors(
+/// GH-165 FIX: Handles both shape orders (HF: `[vocab, hidden]`, GGUF: `[hidden, vocab]`).
+fn infer_embedding_dims(
     tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
-) -> Option<GgufModelConfig> {
-    // Try to find embedding tensor to get vocab_size and hidden_size
-    // Supports both HuggingFace (embed_tokens, wte) and GGUF (token_embd) naming
-    // GH-165 FIX: Handle both shape orders:
-    //   - HuggingFace: [vocab_size, hidden_size] (vocab first, larger)
-    //   - GGUF: [hidden_size, vocab_size] (hidden first, smaller)
-    // We detect by checking which dimension is larger (vocab_size >> hidden_size typically)
-    let (vocab_size, hidden_size) = tensors
+) -> Option<(usize, usize)> {
+    tensors
         .iter()
         .find(|(name, _)| {
             name.contains("embed_tokens")
@@ -1062,41 +1062,35 @@ pub(crate) fn infer_model_config_from_tensors(
         })
         .and_then(|(_, (_, shape))| {
             if shape.len() == 2 {
-                // Vocab size is typically much larger than hidden_size (e.g., 151936 vs 896)
-                // Detect order by comparing dimensions
                 let (dim0, dim1) = (shape[0], shape[1]);
                 if dim0 > dim1 {
-                    // [vocab_size, hidden_size] - HuggingFace order
-                    Some((dim0, dim1))
+                    Some((dim0, dim1)) // [vocab_size, hidden_size] - HuggingFace
                 } else {
-                    // [hidden_size, vocab_size] - GGUF order
-                    Some((dim1, dim0))
+                    Some((dim1, dim0)) // [hidden_size, vocab_size] - GGUF
                 }
             } else {
                 None
             }
-        })?;
+        })
+}
 
-    // Count transformer layers
-    // Supports HuggingFace (layers.N., h.N., blocks.N.) and GGUF (blk.N.)
-    let num_layers = tensors
+/// Count transformer layers from tensor names (supports HF and GGUF naming).
+fn count_transformer_layers(tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>) -> usize {
+    tensors
         .keys()
         .filter_map(|name| {
-            // Match patterns like "layers.N." or "h.N." or "blocks.N." or "blk.N."
-            // GGUF uses "blk.N." pattern
             if let Some(start) = name.find("blk.") {
-                let rest = &name[start + 4..]; // Skip "blk."
+                let rest = &name[start + 4..];
                 if let Some(end) = rest.find('.') {
                     if let Ok(n) = rest[..end].parse::<usize>() {
                         return Some(n);
                     }
                 }
             }
-            // HuggingFace patterns
             let patterns = [
-                (name.find("layers."), 7), // "layers." is 7 chars
-                (name.find("h."), 2),      // "h." is 2 chars
-                (name.find("blocks."), 7), // "blocks." is 7 chars
+                (name.find("layers."), 7),
+                (name.find("h."), 2),
+                (name.find("blocks."), 7),
             ];
             for (pos, skip_len) in patterns {
                 if let Some(start) = pos {
@@ -1112,126 +1106,121 @@ pub(crate) fn infer_model_config_from_tensors(
         })
         .max()
         .map(|n| n + 1)
-        .unwrap_or(0);
+        .unwrap_or(0)
+}
 
-    // BUG-EXPORT-004 FIX: Infer num_heads correctly using KV projection for GQA models
-    //
-    // For GQA models like Qwen2:
-    // - q_proj: [q_dim, hidden_size] where q_dim = num_heads * head_dim
-    // - k_proj: [kv_dim, hidden_size] where kv_dim = num_kv_heads * head_dim
-    //
-    // We can compute head_dim = kv_dim / num_kv_heads, then num_heads = q_dim / head_dim
-    // Common num_kv_heads values: 2, 4, 8 (for efficient GQA)
-
-    // First, get KV projection dimension
-    let kv_dim = tensors
+/// Find the smaller dimension of a 2D projection tensor matching any of the given name patterns.
+fn find_projection_dim(
+    tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+    name_patterns: &[&str],
+) -> Option<usize> {
+    tensors
         .iter()
-        .find(|(name, _)| {
-            name.contains("k_proj.weight")
-                || name.contains("key.weight")
-                || name.contains("attn_k.weight") // GGUF naming
-        })
+        .find(|(name, _)| name_patterns.iter().any(|p| name.contains(p)))
         .and_then(|(_, (_, shape))| {
             if shape.len() == 2 {
-                // k_proj shape is [kv_dim, hidden_size] or [hidden_size, kv_dim]
-                // kv_dim is typically smaller (GQA) or equal (MHA) to hidden_size
                 Some(shape[0].min(shape[1]))
             } else {
                 None
             }
-        });
-
-    // Get Q projection dimension
-    let q_dim = tensors
-        .iter()
-        .find(|(name, _)| {
-            name.contains("q_proj.weight")
-                || name.contains("query.weight")
-                || name.contains("attn_q.weight") // GGUF naming
         })
-        .and_then(|(_, (_, shape))| {
-            if shape.len() == 2 {
-                // q_proj shape is [q_dim, hidden_size] - q_dim typically equals hidden_size
-                Some(shape[0].min(shape[1]))
-            } else {
-                None
-            }
-        });
+}
 
-    // Infer num_heads and num_kv_heads from Q and KV projection shapes
-    let (num_heads, inferred_num_kv_heads) = match (q_dim, kv_dim) {
+/// Infer num_heads and num_kv_heads from Q and KV projection dimensions.
+///
+/// BUG-EXPORT-004 FIX: Correctly handles GQA models where `kv_dim < q_dim`.
+fn infer_head_counts(
+    q_dim: Option<usize>,
+    kv_dim: Option<usize>,
+    hidden_size: usize,
+) -> (Option<usize>, Option<usize>) {
+    match (q_dim, kv_dim) {
         (Some(q), Some(kv)) if kv < q => {
-            // GQA model: kv_dim < q_dim
-            // Derive from common head_dims rather than guessing n_kv
-            let mut result = (None, None);
+            // GQA model: derive from common head_dims
             for head_dim in [64, 128, 96, 80] {
                 if kv % head_dim == 0 && q % head_dim == 0 {
                     let n_kv = kv / head_dim;
                     let n_heads = q / head_dim;
                     if n_heads >= n_kv && n_kv > 0 {
-                        result = (Some(n_heads), Some(n_kv));
-                        break;
+                        return (Some(n_heads), Some(n_kv));
                     }
                 }
             }
-            result
+            (None, None)
         }
         (Some(q), _) if q == hidden_size => {
-            // MHA model: q_dim == hidden_size, kv_dim likely equal
-            let mut result = (None, None);
+            // MHA model: q_dim == hidden_size
             for head_dim in [64, 128, 96, 80] {
                 if hidden_size % head_dim == 0 {
                     let n_heads = hidden_size / head_dim;
-                    result = (Some(n_heads), Some(n_heads)); // MHA: same as num_heads
-                    break;
+                    return (Some(n_heads), Some(n_heads));
                 }
             }
-            result
+            (None, None)
         }
         _ => (None, None),
-    };
+    }
+}
 
-    // Try to get intermediate_size from gate/up projection
-    // Supports HuggingFace (gate_proj, up_proj) and GGUF (ffn_gate, ffn_up)
-    // GH-165 FIX: Handle both shape orders (intermediate_size > hidden_size typically)
-    let intermediate_size = tensors
+/// Infer intermediate_size from gate/up projection tensor.
+///
+/// GH-165 FIX: Takes larger dimension since intermediate_size > hidden_size.
+fn infer_intermediate_size_from_tensors(
+    tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+) -> Option<usize> {
+    tensors
         .iter()
         .find(|(name, _)| {
             name.contains("gate_proj")
                 || name.contains("up_proj")
                 || name.contains("fc1")
-                || name.contains("ffn_gate") // GGUF naming
-                || name.contains("ffn_up") // GGUF naming
+                || name.contains("ffn_gate")
+                || name.contains("ffn_up")
         })
         .and_then(|(_, (_, shape))| {
             if shape.len() == 2 {
-                // intermediate_size is typically 4x hidden_size, so take the larger dimension
                 Some(shape[0].max(shape[1]))
             } else {
                 None
             }
-        });
+        })
+}
 
-    // Infer architecture from tensor naming patterns
-    // Supports both HuggingFace and GGUF naming conventions
-    let architecture = if tensors.keys().any(|k| k.contains("model.layers")) {
-        Some("qwen2".to_string()) // or llama
+/// Infer architecture string from tensor naming conventions.
+fn infer_architecture_from_names(tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>) -> Option<String> {
+    if tensors.keys().any(|k| k.contains("model.layers")) {
+        Some("qwen2".to_string())
     } else if tensors.keys().any(|k| k.contains("transformer.h")) {
         Some("gpt2".to_string())
     } else if tensors.keys().any(|k| k.contains("blk.")) {
-        Some("qwen2".to_string()) // GGUF models (likely qwen2 or llama variant)
+        Some("qwen2".to_string())
     } else {
         Some("unknown".to_string())
-    };
+    }
+}
 
-    // BUG-EXPORT-004: Use the already-inferred num_kv_heads from earlier KV dimension analysis
-    // This is more accurate because it was computed together with num_heads using consistent head_dim
-    let num_kv_heads = inferred_num_kv_heads.or(num_heads); // Fall back to MHA if inference fails
+/// Infer model config from tensor shapes (for SafeTensors which has no metadata)
+///
+/// GH-165 FIX: Now handles both HuggingFace and GGUF tensor naming conventions:
+/// - HuggingFace: model.layers.N.self_attn.q_proj.weight, embed_tokens.weight
+/// - GGUF: blk.N.attn_q.weight, token_embd.weight
+pub(crate) fn infer_model_config_from_tensors(
+    tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+) -> Option<GgufModelConfig> {
+    let (vocab_size, hidden_size) = infer_embedding_dims(tensors)?;
+    let num_layers = count_transformer_layers(tensors);
 
-    // PMAT-114: Infer rope_type from architecture
+    let kv_dim = find_projection_dim(tensors, &["k_proj.weight", "key.weight", "attn_k.weight"]);
+    let q_dim = find_projection_dim(tensors, &["q_proj.weight", "query.weight", "attn_q.weight"]);
+    let (num_heads, inferred_num_kv_heads) = infer_head_counts(q_dim, kv_dim, hidden_size);
+
+    let intermediate_size = infer_intermediate_size_from_tensors(tensors);
+    let architecture = infer_architecture_from_names(tensors);
+
+    let num_kv_heads = inferred_num_kv_heads.or(num_heads);
     let rope_type = match architecture.as_deref() {
-        Some("qwen2" | "qwen2.5" | "qwen") => Some(2), // NEOX style
-        _ => Some(0),                                  // Default to NORM style
+        Some("qwen2" | "qwen2.5" | "qwen") => Some(2),
+        _ => Some(0),
     };
 
     Some(GgufModelConfig {
@@ -1239,12 +1228,12 @@ pub(crate) fn infer_model_config_from_tensors(
         hidden_size: Some(hidden_size),
         num_layers: Some(num_layers),
         num_heads,
-        num_kv_heads, // PMAT-107: Now correctly inferred for GQA models
+        num_kv_heads,
         vocab_size: Some(vocab_size),
         intermediate_size,
-        max_position_embeddings: Some(4096), // Default
-        rope_theta: Some(10000.0),           // Default
-        rms_norm_eps: Some(1e-6),            // Default
+        max_position_embeddings: Some(4096),
+        rope_theta: Some(10000.0),
+        rms_norm_eps: Some(1e-6),
         rope_type,
     })
 }
