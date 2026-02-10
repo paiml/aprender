@@ -196,70 +196,109 @@ fn run_sharded(org: &str, repo: &str, shard_files: &[String], force: bool) -> Re
     let mut file_checksums: HashMap<String, FileChecksum> = HashMap::new();
     let total_shards = shard_files.len();
     for (i, shard_file) in shard_files.iter().enumerate() {
-        let shard_path = cache_dir.join(shard_file);
-
-        if !force && shard_path.exists() {
-            // GH-213: On cache hit, verify file size against manifest
-            if let Some(ref manifest) = existing_manifest {
-                if let Some(expected) = manifest.files.get(shard_file.as_str()) {
-                    let actual_size = std::fs::metadata(&shard_path).map(|m| m.len()).unwrap_or(0);
-                    if actual_size == expected.size {
-                        // Carry forward existing checksum
-                        file_checksums.insert(
-                            shard_file.clone(),
-                            FileChecksum {
-                                size: expected.size,
-                                blake3: expected.blake3.clone(),
-                            },
-                        );
-                        println!(
-                            "  {} [{}/{}] {} (cached, verified)",
-                            "✓".green(),
-                            i + 1,
-                            total_shards,
-                            shard_file
-                        );
-                        continue;
-                    }
-                    println!(
-                        "  {} [{}/{}] {} (size mismatch: {} vs {} bytes, re-downloading)",
-                        "⚠".yellow(),
-                        i + 1,
-                        total_shards,
-                        shard_file,
-                        actual_size,
-                        expected.size
-                    );
-                    // Fall through to re-download
-                }
-            } else {
-                println!(
-                    "  {} [{}/{}] {} (cached)",
-                    "✓".green(),
-                    i + 1,
-                    total_shards,
-                    shard_file
-                );
-                continue;
-            }
-        }
-
-        let shard_url = format!("{base_url}/{shard_file}");
-        print!(
-            "  {} [{}/{}] {}...",
-            "↓".yellow(),
-            i + 1,
+        download_or_verify_shard(
+            &cache_dir,
+            &base_url,
+            shard_file,
+            i,
             total_shards,
-            shard_file
-        );
-        io::stdout().flush().ok();
-
-        let checksum = download_file_with_progress(&shard_url, &shard_path)?;
-        file_checksums.insert(shard_file.clone(), checksum);
-        println!(" {}", "done".green());
+            force,
+            existing_manifest.as_ref(),
+            &mut file_checksums,
+        )?;
     }
 
-    // Download companion files (tokenizer.json, config.json, tokenizer_config.json)
+    download_companion_files(&cache_dir, &base_url, force)?;
+    write_shard_manifest(&manifest_path, org, repo, file_checksums)?;
+
+    println!();
+    println!("{} Downloaded successfully", "✓".green());
+    println!("  Path: {}", index_path.display().to_string().green());
+    println!("  Shards: {}", total_shards.to_string().yellow());
+
+    println!();
+    println!("{}", "Usage:".cyan().bold());
+    println!("  apr run {}", index_path.display());
+    println!("  apr serve {}", index_path.display());
+
+    Ok(())
+}
+
+/// Download or verify a single shard file, updating the checksum map.
+fn download_or_verify_shard(
+    cache_dir: &Path,
+    base_url: &str,
+    shard_file: &str,
+    index: usize,
+    total: usize,
+    force: bool,
+    existing_manifest: Option<&ShardManifest>,
+    checksums: &mut HashMap<String, FileChecksum>,
+) -> Result<()> {
+    let shard_path = cache_dir.join(shard_file);
+
+    if !force && shard_path.exists() {
+        if let Some(manifest) = existing_manifest {
+            if let Some(expected) = manifest.files.get(shard_file) {
+                let actual_size = std::fs::metadata(&shard_path).map(|m| m.len()).unwrap_or(0);
+                if actual_size == expected.size {
+                    checksums.insert(
+                        shard_file.to_string(),
+                        FileChecksum {
+                            size: expected.size,
+                            blake3: expected.blake3.clone(),
+                        },
+                    );
+                    println!(
+                        "  {} [{}/{}] {} (cached, verified)",
+                        "✓".green(),
+                        index + 1,
+                        total,
+                        shard_file
+                    );
+                    return Ok(());
+                }
+                println!(
+                    "  {} [{}/{}] {} (size mismatch: {} vs {} bytes, re-downloading)",
+                    "⚠".yellow(),
+                    index + 1,
+                    total,
+                    shard_file,
+                    actual_size,
+                    expected.size
+                );
+                // Fall through to re-download
+            }
+        } else {
+            println!(
+                "  {} [{}/{}] {} (cached)",
+                "✓".green(),
+                index + 1,
+                total,
+                shard_file
+            );
+            return Ok(());
+        }
+    }
+
+    let shard_url = format!("{base_url}/{shard_file}");
+    print!(
+        "  {} [{}/{}] {}...",
+        "↓".yellow(),
+        index + 1,
+        total,
+        shard_file
+    );
+    io::stdout().flush().ok();
+
+    let checksum = download_file_with_progress(&shard_url, &shard_path)?;
+    checksums.insert(shard_file.to_string(), checksum);
+    println!(" {}", "done".green());
+    Ok(())
+}
+
+/// Download companion files (tokenizer.json, config.json, tokenizer_config.json) for sharded models.
+fn download_companion_files(cache_dir: &Path, base_url: &str, force: bool) -> Result<()> {
     let companions = [
         ("tokenizer.json", true),
         ("config.json", true),
@@ -283,31 +322,29 @@ fn run_sharded(org: &str, repo: &str, shard_files: &[String], force: bool) -> Re
             Err(_) => println!("  {} {} (not available, optional)", "⚠".yellow(), filename),
         }
     }
+    Ok(())
+}
 
-    // GH-213: Write shard manifest with checksums
-    if !file_checksums.is_empty() {
-        let manifest = ShardManifest {
-            version: 1,
-            repo: format!("{org}/{repo}"),
-            files: file_checksums,
-        };
-        let manifest_json = serde_json::to_string_pretty(&manifest).map_err(|e| {
-            CliError::ValidationFailed(format!("Failed to serialize manifest: {e}"))
-        })?;
-        std::fs::write(&manifest_path, manifest_json)?;
-        println!("  {} .apr-manifest.json (integrity checksums)", "✓".green());
+/// Write shard manifest with BLAKE3 checksums for integrity verification.
+fn write_shard_manifest(
+    manifest_path: &Path,
+    org: &str,
+    repo: &str,
+    file_checksums: HashMap<String, FileChecksum>,
+) -> Result<()> {
+    if file_checksums.is_empty() {
+        return Ok(());
     }
-
-    println!();
-    println!("{} Downloaded successfully", "✓".green());
-    println!("  Path: {}", index_path.display().to_string().green());
-    println!("  Shards: {}", total_shards.to_string().yellow());
-
-    println!();
-    println!("{}", "Usage:".cyan().bold());
-    println!("  apr run {}", index_path.display());
-    println!("  apr serve {}", index_path.display());
-
+    let manifest = ShardManifest {
+        version: 1,
+        repo: format!("{org}/{repo}"),
+        files: file_checksums,
+    };
+    let manifest_json = serde_json::to_string_pretty(&manifest).map_err(|e| {
+        CliError::ValidationFailed(format!("Failed to serialize manifest: {e}"))
+    })?;
+    std::fs::write(manifest_path, manifest_json)?;
+    println!("  {} .apr-manifest.json (integrity checksums)", "✓".green());
     Ok(())
 }
 
@@ -712,48 +749,42 @@ fn resolve_hf_model(uri: &str) -> Result<ResolvedModel> {
 /// GH-213: Extract unique shard filenames from index.json weight_map, sorted for deterministic order.
 ///
 /// Format: `{"metadata": {...}, "weight_map": {"tensor.name": "model-00001-of-00006.safetensors", ...}}`
-fn extract_shard_files_from_index(json: &str) -> Vec<String> {
-    let mut files = HashSet::new();
-
-    if let Some(weight_map_start) = json.find("\"weight_map\"") {
-        let after_key = &json[weight_map_start..];
-        if let Some(brace_start) = after_key.find('{') {
-            let content = &after_key[brace_start + 1..];
-            // Find matching closing brace
-            let mut depth = 1;
-            let mut end_pos = 0;
-            for (i, c) in content.char_indices() {
-                match c {
-                    '{' => depth += 1,
-                    '}' => {
-                        depth -= 1;
-                        if depth == 0 {
-                            end_pos = i;
-                            break;
-                        }
-                    }
-                    _ => {}
-                }
-            }
-
-            let entries = &content[..end_pos];
-
-            // Extract shard filenames (values in key:value pairs)
-            for part in entries.split(',') {
-                if let Some(colon_pos) = part.rfind(':') {
-                    let value = part[colon_pos + 1..].trim();
-                    let filename =
-                        value.trim_matches(|c| c == '"' || c == ' ' || c == '\n' || c == '\r');
-                    if filename.ends_with(".safetensors") && !filename.is_empty() {
-                        files.insert(filename.to_string());
-                    }
-                }
-            }
+/// Find the content of a brace-delimited section, handling nesting.
+fn find_brace_content(text: &str) -> Option<&str> {
+    let start = text.find('{')?;
+    let content = &text[start + 1..];
+    let mut depth = 1usize;
+    for (i, c) in content.char_indices() {
+        match c {
+            '{' => depth += 1,
+            '}' if depth == 1 => return Some(&content[..i]),
+            '}' => depth -= 1,
+            _ => {}
         }
     }
+    None
+}
 
-    // Sort for deterministic download order (model-00001, model-00002, ...)
-    let mut sorted: Vec<String> = files.into_iter().collect();
+/// Extract a shard filename from a "key": "value" pair.
+fn extract_shard_filename(kv_pair: &str) -> Option<String> {
+    let colon_pos = kv_pair.rfind(':')?;
+    let value = kv_pair[colon_pos + 1..].trim();
+    let filename = value.trim_matches(|c: char| c == '"' || c.is_whitespace());
+    if filename.ends_with(".safetensors") && !filename.is_empty() {
+        Some(filename.to_string())
+    } else {
+        None
+    }
+}
+
+fn extract_shard_files_from_index(json: &str) -> Vec<String> {
+    let Some(weight_map_start) = json.find("\"weight_map\"") else {
+        return Vec::new();
+    };
+    let Some(entries) = find_brace_content(&json[weight_map_start..]) else {
+        return Vec::new();
+    };
+    let mut sorted: Vec<String> = entries.split(',').filter_map(extract_shard_filename).collect::<HashSet<_>>().into_iter().collect();
     sorted.sort();
     sorted
 }
