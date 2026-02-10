@@ -3369,3 +3369,20 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-235
+  github_issue: null
+  item_type: task
+  title: 'PMAT-PROFILE-A: Formal verification + code quality for A score'
+  status: inprogress
+  priority: critical
+  assigned_to: null
+  created: 2026-02-10T08:37:32Z
+  updated: 2026-02-10T08:37:36.612982404+00:00
+  spec: null
+  acceptance_criteria:
+  - Improve Formal Verification 0.9->8+, Code Quality 11->20+, Rust Tooling 69.5->100+
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

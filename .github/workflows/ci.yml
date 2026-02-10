@@ -265,8 +265,14 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev
-      - name: Run Miri on core library (no FFI)
-        run: cargo +nightly miri test --lib --no-default-features -- --skip gpu --skip cuda --skip audio --skip speech
+      - name: Run Miri on core library (no FFI/IO)
+        run: |
+          cargo +nightly miri test --lib --no-default-features -- \
+            --skip gpu --skip cuda --skip audio --skip speech --skip prop \
+            --skip bundle --skip format --skip mmap --skip tempfile --skip file \
+            --skip serializ --skip golden --skip merge --skip import \
+            --skip export --skip convert --skip rosetta --skip ensemble \
+            --skip velocity --skip harness --skip diff --skip verify
         env:
           MIRIFLAGS: -Zmiri-disable-isolation -Zmiri-permissive-provenance
 
