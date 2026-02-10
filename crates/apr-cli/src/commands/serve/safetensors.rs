@@ -222,6 +222,49 @@ pub(crate) fn start_safetensors_server(model_path: &Path, config: &ServerConfig)
 /// PMAT-093: Proper BPE tokenization is critical for SafeTensors inference.
 /// Without merge rules, tokenization produces wrong tokens causing garbage output.
 #[cfg(feature = "inference")]
+/// Extract special tokens from tokenizer JSON added_tokens, merge them into vocab,
+/// and detect BOS/EOS token IDs (PMAT-099)
+fn merge_special_tokens_into_vocab(
+    added_tokens: Option<&Vec<serde_json::Value>>,
+    vocab: &mut Vec<String>,
+) -> (Option<u32>, Option<u32>) {
+    let mut bos_token_id = None;
+    let mut eos_token_id = None;
+    let mut special_tokens: Vec<(u32, String)> = Vec::new();
+
+    if let Some(tokens) = added_tokens {
+        for token in tokens {
+            let content = token.get("content").and_then(|v| v.as_str());
+            let id = token.get("id").and_then(|v| v.as_u64()).map(|v| v as u32);
+
+            if let (Some(content), Some(id)) = (content, id) {
+                special_tokens.push((id, content.to_string()));
+
+                if content.contains("bos") || content == "<s>" {
+                    bos_token_id = Some(id);
+                }
+                if content.contains("eos") || content == "</s>" || content.contains("im_end") {
+                    eos_token_id = Some(id);
+                }
+            }
+        }
+    }
+
+    if !special_tokens.is_empty() {
+        let max_special_id = special_tokens.iter().map(|(id, _)| *id).max().unwrap_or(0);
+        if max_special_id as usize >= vocab.len() {
+            vocab.resize(max_special_id as usize + 1, "<unused>".to_string());
+        }
+        for (id, content) in special_tokens {
+            if (id as usize) < vocab.len() {
+                vocab[id as usize] = content;
+            }
+        }
+    }
+
+    (bos_token_id, eos_token_id)
+}
+
 pub(crate) fn load_safetensors_tokenizer(path: &Path) -> Option<SafeTensorsTokenizerInfo> {
     let content = std::fs::read_to_string(path).ok()?;
     let json: serde_json::Value = serde_json::from_str(&content).ok()?;
@@ -256,47 +299,11 @@ pub(crate) fn load_safetensors_tokenizer(path: &Path) -> Option<SafeTensorsToken
         })
         .collect();
 
-    // Extract special tokens and add them to vocabulary
-    // PMAT-099: added_tokens must be included in vocab for decode to work
+    // Extract special tokens and merge them into vocabulary (PMAT-099)
     let added_tokens = json.get("added_tokens").and_then(|v| v.as_array());
-    let mut bos_token_id = None;
-    let mut eos_token_id = None;
-    let mut special_tokens: Vec<(u32, String)> = Vec::new();
-
-    if let Some(tokens) = added_tokens {
-        for token in tokens {
-            let content = token.get("content").and_then(|v| v.as_str());
-            let id = token.get("id").and_then(|v| v.as_u64()).map(|v| v as u32);
-
-            if let (Some(content), Some(id)) = (content, id) {
-                special_tokens.push((id, content.to_string()));
-
-                if content.contains("bos") || content == "<s>" {
-                    bos_token_id = Some(id);
-                }
-                if content.contains("eos") || content == "</s>" || content.contains("im_end") {
-                    eos_token_id = Some(id);
-                }
-            }
-        }
-    }
-
-    // Extend vocab to include special tokens at their proper IDs
-    // PMAT-099: Special tokens often have IDs beyond base vocab (e.g., 151643+)
     let mut vocab = vocab;
-    if !special_tokens.is_empty() {
-        let max_special_id = special_tokens.iter().map(|(id, _)| *id).max().unwrap_or(0);
-        if max_special_id as usize >= vocab.len() {
-            // Resize vocab to fit all special tokens
-            vocab.resize(max_special_id as usize + 1, "<unused>".to_string());
-        }
-        // Insert special tokens at their IDs
-        for (id, content) in special_tokens {
-            if (id as usize) < vocab.len() {
-                vocab[id as usize] = content;
-            }
-        }
-    }
+    let (bos_token_id, eos_token_id) =
+        merge_special_tokens_into_vocab(added_tokens, &mut vocab);
 
     // Create BPE tokenizer with vocab and merge rules
     let tokenizer = realizar::tokenizer::BPETokenizer::new(vocab.clone(), merges, "<unk>").ok()?;
