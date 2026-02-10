@@ -270,6 +270,27 @@ pub fn run(
     Ok(())
 }
 
+/// Dispatch a single QA gate: skip if flagged, otherwise run, then print and collect.
+fn dispatch_gate(
+    gates: &mut Vec<GateResult>,
+    json: bool,
+    skip: bool,
+    name: &str,
+    skip_reason: &str,
+    runner: impl FnOnce() -> Result<GateResult>,
+) -> Result<()> {
+    let result = if skip {
+        GateResult::skipped(name, skip_reason)
+    } else {
+        runner()?
+    };
+    if !json {
+        print_gate_result(&result);
+    }
+    gates.push(result);
+    Ok(())
+}
+
 /// Run all QA gates and produce a report
 fn run_qa(path: &Path, config: &QaConfig) -> Result<QaReport> {
     let start = Instant::now();
@@ -286,106 +307,60 @@ fn run_qa(path: &Path, config: &QaConfig) -> Result<QaReport> {
     }
 
     // Gate 0: Tensor Contract Validation (PMAT-235)
-    let contract_result = if config.skip_contract {
-        GateResult::skipped("tensor_contract", "Skipped by --skip-contract")
-    } else {
-        run_tensor_contract_gate(path, config)?
-    };
-    if !config.json {
-        print_gate_result(&contract_result);
-    }
-    gates.push(contract_result);
+    dispatch_gate(&mut gates, config.json, config.skip_contract, "tensor_contract", "Skipped by --skip-contract", || {
+        run_tensor_contract_gate(path, config)
+    })?;
 
     // Gate 1: Golden Output Test (Correctness)
-    let golden_result = if config.skip_golden {
-        GateResult::skipped("golden_output", "Skipped by --skip-golden")
-    } else {
-        run_golden_output_gate(path, config)?
-    };
-    if !config.json {
-        print_gate_result(&golden_result);
-    }
-    gates.push(golden_result);
+    dispatch_gate(&mut gates, config.json, config.skip_golden, "golden_output", "Skipped by --skip-golden", || {
+        run_golden_output_gate(path, config)
+    })?;
 
     // Gate 2: Throughput Falsification (Performance)
-    let throughput_result = if config.skip_throughput {
-        GateResult::skipped("throughput", "Skipped by --skip-throughput")
-    } else {
-        run_throughput_gate(path, config)?
-    };
-    if !config.json {
-        print_gate_result(&throughput_result);
-    }
-    gates.push(throughput_result);
+    dispatch_gate(&mut gates, config.json, config.skip_throughput, "throughput", "Skipped by --skip-throughput", || {
+        run_throughput_gate(path, config)
+    })?;
 
-    // Gate 3: Ollama Parity Test (GGUF only — F32/F16 lacks fused kernels for meaningful comparison)
-    let ollama_result = if config.skip_ollama {
-        GateResult::skipped("ollama_parity", "Skipped by --skip-ollama")
-    } else {
+    // Gate 3: Ollama Parity (GGUF only)
+    dispatch_gate(&mut gates, config.json, config.skip_ollama, "ollama_parity", "Skipped by --skip-ollama", || {
         #[cfg(feature = "inference")]
         {
             use realizar::format::{detect_format, ModelFormat};
             let magic = std::fs::read(path).ok().and_then(|b| {
-                if b.len() >= 8 {
-                    Some(b[..8].to_vec())
-                } else {
-                    None
-                }
+                if b.len() >= 8 { Some(b[..8].to_vec()) } else { None }
             });
             let fmt = magic.and_then(|m| detect_format(&m).ok());
             if fmt == Some(ModelFormat::Gguf) {
-                run_ollama_parity_gate(path, config)?
+                run_ollama_parity_gate(path, config)
             } else {
-                GateResult::skipped(
+                Ok(GateResult::skipped(
                     "ollama_parity",
                     "Non-GGUF format (F32/F16 lacks fused kernels for Ollama parity)",
-                )
+                ))
             }
         }
         #[cfg(not(feature = "inference"))]
         {
-            run_ollama_parity_gate(path, config)?
+            run_ollama_parity_gate(path, config)
         }
-    };
-    if !config.json {
-        print_gate_result(&ollama_result);
-    }
-    gates.push(ollama_result);
+    })?;
 
     // Gate 4: GPU vs CPU Speedup (F-PERF-042)
-    let gpu_speedup_result = if config.skip_gpu_speedup {
-        GateResult::skipped("gpu_speedup", "Skipped by --skip-gpu-speedup")
-    } else {
-        run_gpu_speedup_gate(path, config)?
-    };
-    if !config.json {
-        print_gate_result(&gpu_speedup_result);
-    }
-    gates.push(gpu_speedup_result);
+    dispatch_gate(&mut gates, config.json, config.skip_gpu_speedup, "gpu_speedup", "Skipped by --skip-gpu-speedup", || {
+        run_gpu_speedup_gate(path, config)
+    })?;
 
     // Gate 5: Cross-Format Parity (F-QUAL-032)
-    let format_parity_result = if config.skip_format_parity {
-        GateResult::skipped("format_parity", "Skipped by --skip-format-parity")
-    } else if config.safetensors_path.is_none() {
-        GateResult::skipped("format_parity", "No --safetensors-path provided")
-    } else {
-        run_format_parity_gate(path, config)?
-    };
-    if !config.json {
-        print_gate_result(&format_parity_result);
-    }
-    gates.push(format_parity_result);
+    let skip_format = config.skip_format_parity || config.safetensors_path.is_none();
+    let format_skip_reason = if config.skip_format_parity { "Skipped by --skip-format-parity" } else { "No --safetensors-path provided" };
+    dispatch_gate(&mut gates, config.json, skip_format, "format_parity", format_skip_reason, || {
+        run_format_parity_gate(path, config)
+    })?;
 
-    // Gate 6: PTX Parity Validation (GH-219, F-PTX-001)
-    let ptx_parity_result = if config.skip_ptx_parity {
-        GateResult::skipped("ptx_parity", "Skipped by --skip-ptx-parity")
-    } else {
-        run_ptx_parity_gate(path, config)?
-    };
-    if !config.json {
-        print_gate_result(&ptx_parity_result);
-    }
-    gates.push(ptx_parity_result);
+    // Gate 6: PTX Parity Validation (F-PTX-001)
+    dispatch_gate(&mut gates, config.json, config.skip_ptx_parity, "ptx_parity", "Skipped by --skip-ptx-parity", || {
+        run_ptx_parity_gate(path, config)
+    })?;
 
     let total_duration = start.elapsed();
     let passed = gates.iter().all(|g| g.passed);
