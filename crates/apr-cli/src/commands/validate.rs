@@ -5,7 +5,7 @@
 
 use crate::error::CliError;
 use crate::output;
-use aprender::format::rosetta::{FormatType, RosettaStone};
+use aprender::format::rosetta::{FormatType, RosettaStone, ValidationReport as RosettaValidationReport};
 use aprender::format::validation::{AprValidator, Category, CheckStatus, ValidationReport};
 use colored::Colorize;
 use std::fs;
@@ -107,57 +107,7 @@ fn run_rosetta_validation(path: &Path, format: FormatType, quality: bool) -> Res
     println!("{}", report.summary());
 
     if quality {
-        println!();
-        println!(
-            "{}",
-            "=== Physics Constraints (APR-SPEC 10.9) ===".cyan().bold()
-        );
-        println!("  Total NaN:  {}", report.total_nan_count);
-        println!("  Total Inf:  {}", report.total_inf_count);
-        println!("  All-zeros:  {}", report.all_zero_tensors.len());
-        println!("  Duration:   {} ms", report.duration_ms);
-
-        // PMAT-235: Contract gate breakdown
-        let all_failures: Vec<(&str, &str)> = report
-            .tensors
-            .iter()
-            .flat_map(|t| {
-                t.failures
-                    .iter()
-                    .map(move |f| (t.name.as_str(), f.as_str()))
-            })
-            .collect();
-
-        if all_failures.is_empty() {
-            println!();
-            println!(
-                "  {} All tensors pass PMAT-235 contract gates",
-                "[OK]".green()
-            );
-        } else {
-            println!();
-            println!("{}", "=== PMAT-235 Contract Violations ===".red().bold());
-            // Group by rule ID
-            let mut by_rule: std::collections::BTreeMap<&str, Vec<&str>> =
-                std::collections::BTreeMap::new();
-            for (tensor_name, failure) in &all_failures {
-                let rule_id = if failure.starts_with('[') {
-                    failure.find(']').map_or("UNKNOWN", |end| &failure[1..end])
-                } else {
-                    "UNKNOWN"
-                };
-                by_rule.entry(rule_id).or_default().push(tensor_name);
-            }
-            for (rule, tensors) in &by_rule {
-                println!("  {} {} tensor(s) failed", rule.red(), tensors.len());
-                for name in tensors.iter().take(5) {
-                    println!("    - {}", name);
-                }
-                if tensors.len() > 5 {
-                    println!("    ... and {} more", tensors.len() - 5);
-                }
-            }
-        }
+        print_quality_constraints(&report);
     }
 
     if report.is_valid {
@@ -167,6 +117,64 @@ fn run_rosetta_validation(path: &Path, format: FormatType, quality: bool) -> Res
             "{} tensors failed validation",
             report.failed_tensor_count
         )))
+    }
+}
+
+/// Print physics constraints and PMAT-235 contract gate breakdown.
+fn print_quality_constraints(report: &RosettaValidationReport) {
+    println!();
+    println!(
+        "{}",
+        "=== Physics Constraints (APR-SPEC 10.9) ===".cyan().bold()
+    );
+    println!("  Total NaN:  {}", report.total_nan_count);
+    println!("  Total Inf:  {}", report.total_inf_count);
+    println!("  All-zeros:  {}", report.all_zero_tensors.len());
+    println!("  Duration:   {} ms", report.duration_ms);
+
+    let all_failures: Vec<(&str, &str)> = report
+        .tensors
+        .iter()
+        .flat_map(|t| {
+            t.failures
+                .iter()
+                .map(move |f| (t.name.as_str(), f.as_str()))
+        })
+        .collect();
+
+    if all_failures.is_empty() {
+        println!();
+        println!(
+            "  {} All tensors pass PMAT-235 contract gates",
+            "[OK]".green()
+        );
+    } else {
+        print_contract_violations(&all_failures);
+    }
+}
+
+/// Print PMAT-235 contract violations grouped by rule ID.
+fn print_contract_violations(failures: &[(&str, &str)]) {
+    println!();
+    println!("{}", "=== PMAT-235 Contract Violations ===".red().bold());
+    let mut by_rule: std::collections::BTreeMap<&str, Vec<&str>> =
+        std::collections::BTreeMap::new();
+    for (tensor_name, failure) in failures {
+        let rule_id = if failure.starts_with('[') {
+            failure.find(']').map_or("UNKNOWN", |end| &failure[1..end])
+        } else {
+            "UNKNOWN"
+        };
+        by_rule.entry(rule_id).or_default().push(tensor_name);
+    }
+    for (rule, tensors) in &by_rule {
+        println!("  {} {} tensor(s) failed", rule.red(), tensors.len());
+        for name in tensors.iter().take(5) {
+            println!("    - {}", name);
+        }
+        if tensors.len() > 5 {
+            println!("    ... and {} more", tensors.len() - 5);
+        }
     }
 }
 

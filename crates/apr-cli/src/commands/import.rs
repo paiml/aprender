@@ -21,21 +21,7 @@ pub(crate) fn run(
     tokenizer: Option<&PathBuf>,
     enforce_provenance: bool,
 ) -> Result<()> {
-    // F-GT-001: Enforce provenance chain — reject pre-baked GGUF imports.
-    // Only SafeTensors sources are allowed when provenance enforcement is on.
-    if enforce_provenance {
-        let is_gguf_source = source.to_ascii_lowercase().ends_with(".gguf")
-            || source.contains("-GGUF")
-            || source.contains("-gguf");
-        if is_gguf_source {
-            return Err(CliError::ValidationFailed(
-                "F-GT-001: --enforce-provenance rejects GGUF imports. \
-                 Use SafeTensors as the canonical source format for single-provenance testing. \
-                 See Section 0 of qwen2.5-coder-showcase-demo.md for rationale."
-                    .to_string(),
-            ));
-        }
-    }
+    check_provenance(source, enforce_provenance)?;
 
     // GH-169: Derive output path from source if not provided
     let output_path = match output {
@@ -73,15 +59,7 @@ pub(crate) fn run(
 
     output::header("APR Import Pipeline");
 
-    let source_desc = match &parsed_source {
-        Source::HuggingFace { org, repo, file } => {
-            let base = format!("hf://{org}/{repo}");
-            file.as_ref()
-                .map_or(base.clone(), |f| format!("{base}/{f}"))
-        }
-        Source::Local(path) => path.display().to_string(),
-        Source::Url(url) => url.clone(),
-    };
+    let source_desc = describe_source(&parsed_source);
 
     println!(
         "{}",
@@ -93,19 +71,7 @@ pub(crate) fn run(
     println!();
 
     // Build import options
-    let architecture = match arch {
-        Some("whisper") => Architecture::Whisper,
-        Some("llama") => Architecture::Llama,
-        Some("bert") => Architecture::Bert,
-        Some("qwen2") => Architecture::Qwen2,
-        Some("auto") | None => Architecture::Auto,
-        Some(other) => {
-            return Err(CliError::ValidationFailed(format!(
-                "Unknown architecture: {other}. Supported: whisper, llama, bert, qwen2, auto"
-            )));
-        }
-    };
-
+    let architecture = parse_architecture(arch)?;
     let options = ImportOptions {
         architecture,
         validation: if strict {
@@ -120,6 +86,61 @@ pub(crate) fn run(
         tokenizer_path: tokenizer.cloned(),
     };
 
+    print_import_config(&options);
+
+    // Run import pipeline
+    output::pipeline_stage("Importing", output::StageStatus::Running);
+    print_import_result(apr_import(source, output, options))
+}
+
+/// F-GT-001: Enforce provenance chain — reject pre-baked GGUF imports.
+fn check_provenance(source: &str, enforce: bool) -> Result<()> {
+    if !enforce {
+        return Ok(());
+    }
+    let is_gguf = source.to_ascii_lowercase().ends_with(".gguf")
+        || source.contains("-GGUF")
+        || source.contains("-gguf");
+    if is_gguf {
+        return Err(CliError::ValidationFailed(
+            "F-GT-001: --enforce-provenance rejects GGUF imports. \
+             Use SafeTensors as the canonical source format for single-provenance testing. \
+             See Section 0 of qwen2.5-coder-showcase-demo.md for rationale."
+                .to_string(),
+        ));
+    }
+    Ok(())
+}
+
+/// Describe a parsed source for display.
+fn describe_source(source: &Source) -> String {
+    match source {
+        Source::HuggingFace { org, repo, file } => {
+            let base = format!("hf://{org}/{repo}");
+            file.as_ref()
+                .map_or(base.clone(), |f| format!("{base}/{f}"))
+        }
+        Source::Local(path) => path.display().to_string(),
+        Source::Url(url) => url.clone(),
+    }
+}
+
+/// Parse architecture string into Architecture enum.
+fn parse_architecture(arch: Option<&str>) -> Result<Architecture> {
+    match arch {
+        Some("whisper") => Ok(Architecture::Whisper),
+        Some("llama") => Ok(Architecture::Llama),
+        Some("bert") => Ok(Architecture::Bert),
+        Some("qwen2") => Ok(Architecture::Qwen2),
+        Some("auto") | None => Ok(Architecture::Auto),
+        Some(other) => Err(CliError::ValidationFailed(format!(
+            "Unknown architecture: {other}. Supported: whisper, llama, bert, qwen2, auto"
+        ))),
+    }
+}
+
+/// Print import configuration.
+fn print_import_config(options: &ImportOptions) {
     let mut config_pairs: Vec<(&str, String)> = vec![
         ("Architecture", format!("{:?}", options.architecture)),
         ("Validation", format!("{:?}", options.validation)),
@@ -129,11 +150,13 @@ pub(crate) fn run(
     }
     println!("{}", output::kv_table(&config_pairs));
     println!();
+}
 
-    // Run import pipeline
-    output::pipeline_stage("Importing", output::StageStatus::Running);
-
-    match apr_import(source, output, options) {
+/// Print import result with validation report.
+fn print_import_result(
+    result: std::result::Result<aprender::format::ValidationReport, aprender::error::AprenderError>,
+) -> Result<()> {
+    match result {
         Ok(report) => {
             println!();
             output::subheader("Validation Report");

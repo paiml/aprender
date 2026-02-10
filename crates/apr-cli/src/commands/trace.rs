@@ -473,222 +473,34 @@ fn run_traced_inference_apr(path: &Path) -> Result<(), CliError> {
     // Try to load as AprTransformer for layer-by-layer tracing
     match AprTransformer::from_apr_file(path) {
         Ok(transformer) => {
-            // Use forward_traced for layer-by-layer statistics
             println!("{}", "FORWARD PASS (with layer tracing):".green().bold());
             let trace = transformer
                 .forward_traced(&test_tokens)
                 .map_err(|e| CliError::InferenceFailed(format!("Forward pass failed: {e}")))?;
 
-            // Embedding stats
             println!();
             println!("{}", "EMBEDDING:".cyan().bold());
             print_activation_stats_colored("  ", &trace.embed_stats);
 
-            // Layer-by-layer stats with colors
-            println!();
-            println!("{}", "LAYER-BY-LAYER ACTIVATIONS:".cyan().bold());
-            println!(
-                "{}",
-                "  Legend: std>100=RED, std>50=YELLOW, std>10=BLUE, else=GREEN".dimmed()
-            );
-            println!();
+            print_layer_activations(&trace.layer_activations);
 
-            let total_layers = trace.layer_activations.len();
-            for layer in &trace.layer_activations {
-                // Color layer header based on position (gradient from cyan to magenta)
-                let layer_header = format!("Layer {:>2}/{}", layer.layer_idx, total_layers);
-                let header_colored = match layer.layer_idx % 6 {
-                    0 => layer_header.cyan().bold(),
-                    1 => layer_header.blue().bold(),
-                    2 => layer_header.magenta().bold(),
-                    3 => layer_header.purple().bold(),
-                    4 => layer_header.bright_blue().bold(),
-                    _ => layer_header.bright_cyan().bold(),
-                };
-
-                // Check for anomalies at this layer
-                let has_nan = layer.attn_norm_stats.nan_count > 0
-                    || layer.qkv_stats.nan_count > 0
-                    || layer.attn_out_stats.nan_count > 0
-                    || layer.ffn_norm_stats.nan_count > 0
-                    || layer.ffn_out_stats.nan_count > 0
-                    || layer.output_stats.nan_count > 0;
-                let has_inf = layer.attn_norm_stats.inf_count > 0
-                    || layer.qkv_stats.inf_count > 0
-                    || layer.attn_out_stats.inf_count > 0
-                    || layer.ffn_norm_stats.inf_count > 0
-                    || layer.ffn_out_stats.inf_count > 0
-                    || layer.output_stats.inf_count > 0;
-
-                // Status indicator
-                let status = if has_nan || has_inf {
-                    "ANOMALY".red().bold()
-                } else if layer.output_stats.std_dev > 100.0 {
-                    "HIGH-VAR".yellow().bold()
-                } else {
-                    "OK".green()
-                };
-
-                println!("  {} [{}]", header_colored, status);
-
-                // Print each stage with color-coded std_dev
-                print_stage_stats("    attn_norm", &layer.attn_norm_stats);
-                print_stage_stats("    qkv      ", &layer.qkv_stats);
-                print_stage_stats("    attn_out ", &layer.attn_out_stats);
-                print_stage_stats("    ffn_norm ", &layer.ffn_norm_stats);
-                print_stage_stats("    ffn_out  ", &layer.ffn_out_stats);
-                print_stage_stats("    output   ", &layer.output_stats);
-
-                // Early exit if critical anomalies detected
-                if has_nan || has_inf {
-                    println!();
-                    println!(
-                        "{}",
-                        "    CRITICAL: NaN/Inf detected - numerical instability!"
-                            .red()
-                            .bold()
-                    );
-                    println!("{}", "    Possible causes:".red());
-                    println!("{}", "      - Weight overflow during dequantization".red());
-                    println!(
-                        "{}",
-                        "      - Attention score explosion (missing scaling)".red()
-                    );
-                    println!("{}", "      - RoPE frequency miscalculation".red());
-                    println!();
-                    break;
-                }
-                println!();
-            }
-
-            // Final norm stats
             println!();
             println!("{}", "FINAL LAYER NORM:".cyan().bold());
             print_activation_stats("  ", &trace.final_norm_stats);
 
-            // Logits
-            let logits = &trace.logits;
-            let logit_stats = compute_vector_stats(logits);
-            println!();
-            println!("{}", "LM_HEAD output:".green().bold());
-            println!("  Vocab size: {}", logits.len());
-            print_stats("  ", &logit_stats);
-
-            // Top 5 predictions
-            println!();
-            println!("{}", "Top 5 predictions:".green().bold());
-            let mut indexed: Vec<(usize, f32)> = logits.iter().copied().enumerate().collect();
-            indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-            for (i, (token_id, logit)) in indexed.iter().take(5).enumerate() {
-                println!("  {}. token_id={}, logit={:.4}", i + 1, token_id, logit);
-            }
-
-            // Summary analysis
-            println!();
-            println!("{}", "TRACE SUMMARY:".white().bold());
-
-            // Find layers with highest variance
-            let mut max_std_layer = 0;
-            let mut max_std_value = 0.0f32;
-            let mut high_var_count = 0;
-            let mut total_nan = 0;
-            let mut total_inf = 0;
-
-            for layer in &trace.layer_activations {
-                if layer.output_stats.std_dev > max_std_value {
-                    max_std_value = layer.output_stats.std_dev;
-                    max_std_layer = layer.layer_idx;
-                }
-                if layer.output_stats.std_dev > 50.0 {
-                    high_var_count += 1;
-                }
-                total_nan += layer.output_stats.nan_count;
-                total_inf += layer.output_stats.inf_count;
-            }
-
-            if total_nan > 0 || total_inf > 0 {
-                println!(
-                    "  {}",
-                    format!(
-                        "CRITICAL: {} NaN, {} Inf values detected!",
-                        total_nan, total_inf
-                    )
-                    .red()
-                    .bold()
-                );
-                println!("  {}", "Model weights or computation is corrupted.".red());
-            } else if high_var_count > 0 {
-                println!(
-                    "  {}",
-                    format!("WARNING: {} layers with std > 50", high_var_count).yellow()
-                );
-                println!(
-                    "  Peak variance at layer {} (std={:.2})",
-                    max_std_layer, max_std_value
-                );
-                if max_std_value > 100.0 {
-                    println!(
-                        "  {}",
-                        "High variance may indicate attention explosion or weight issues.".yellow()
-                    );
-                }
-            } else {
-                println!(
-                    "  {}",
-                    "All layers have reasonable variance (std < 50)".green()
-                );
-            }
-
-            // Logit range analysis
-            let logit_range = logit_stats.max - logit_stats.min;
-            if logit_range < 1.0 {
-                println!(
-                    "  {}",
-                    format!("WARNING: Logit range too narrow ({:.4})", logit_range).yellow()
-                );
-                println!(
-                    "  {}",
-                    "Model may not have learned meaningful patterns.".yellow()
-                );
-            } else if logit_range > 100.0 {
-                println!(
-                    "  {}",
-                    format!("WARNING: Logit range very wide ({:.4})", logit_range).yellow()
-                );
-            } else {
-                println!(
-                    "  Logit range: {:.2} {}",
-                    logit_range,
-                    "(reasonable)".green()
-                );
-            }
+            print_logit_predictions(&trace.logits);
+            print_trace_summary(&trace.layer_activations, &trace.logits);
         }
         Err(e) => {
-            // Fall back to AprV2Model forward if AprTransformer fails
             eprintln!(
                 "{}",
                 format!("Note: AprTransformer failed ({e}), using AprV2Model").yellow()
             );
-            println!("{}", "FORWARD PASS:".green().bold());
             let logits = model
                 .forward(&test_tokens)
                 .map_err(|e| CliError::InferenceFailed(format!("Forward pass failed: {e}")))?;
 
-            // Compute statistics on output logits
-            let logit_stats = compute_vector_stats(&logits);
-            println!();
-            println!("{}", "LM_HEAD output:".green().bold());
-            println!("  Vocab size: {}", logits.len());
-            print_stats("  ", &logit_stats);
-
-            // Top 5 predictions
-            println!();
-            println!("{}", "Top 5 predictions:".green().bold());
-            let mut indexed: Vec<(usize, f32)> = logits.iter().copied().enumerate().collect();
-            indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-            for (i, (token_id, logit)) in indexed.iter().take(5).enumerate() {
-                println!("  {}. token_id={}, logit={:.4}", i + 1, token_id, logit);
-            }
+            print_logit_predictions(&logits);
 
             println!();
             println!("{}", "NOTE:".cyan().bold());
@@ -698,6 +510,199 @@ fn run_traced_inference_apr(path: &Path) -> Result<(), CliError> {
     }
 
     Ok(())
+}
+
+/// Print layer-by-layer activation stats with anomaly detection.
+#[cfg(feature = "inference")]
+fn print_layer_activations(layers: &[realizar::apr_transformer::LayerActivation]) {
+    use colored::Colorize;
+
+    println!();
+    println!("{}", "LAYER-BY-LAYER ACTIVATIONS:".cyan().bold());
+    println!(
+        "{}",
+        "  Legend: std>100=RED, std>50=YELLOW, std>10=BLUE, else=GREEN".dimmed()
+    );
+    println!();
+
+    let total_layers = layers.len();
+    for layer in layers {
+        let layer_header = format!("Layer {:>2}/{}", layer.layer_idx, total_layers);
+        let header_colored = match layer.layer_idx % 6 {
+            0 => layer_header.cyan().bold(),
+            1 => layer_header.blue().bold(),
+            2 => layer_header.magenta().bold(),
+            3 => layer_header.purple().bold(),
+            4 => layer_header.bright_blue().bold(),
+            _ => layer_header.bright_cyan().bold(),
+        };
+
+        let has_nan = layer_has_nan(layer);
+        let has_inf = layer_has_inf(layer);
+
+        let status = if has_nan || has_inf {
+            "ANOMALY".red().bold()
+        } else if layer.output_stats.std_dev > 100.0 {
+            "HIGH-VAR".yellow().bold()
+        } else {
+            "OK".green()
+        };
+
+        println!("  {} [{}]", header_colored, status);
+
+        print_stage_stats("    attn_norm", &layer.attn_norm_stats);
+        print_stage_stats("    qkv      ", &layer.qkv_stats);
+        print_stage_stats("    attn_out ", &layer.attn_out_stats);
+        print_stage_stats("    ffn_norm ", &layer.ffn_norm_stats);
+        print_stage_stats("    ffn_out  ", &layer.ffn_out_stats);
+        print_stage_stats("    output   ", &layer.output_stats);
+
+        if has_nan || has_inf {
+            println!();
+            println!(
+                "{}",
+                "    CRITICAL: NaN/Inf detected - numerical instability!"
+                    .red()
+                    .bold()
+            );
+            println!("{}", "    Possible causes:".red());
+            println!("{}", "      - Weight overflow during dequantization".red());
+            println!(
+                "{}",
+                "      - Attention score explosion (missing scaling)".red()
+            );
+            println!("{}", "      - RoPE frequency miscalculation".red());
+            println!();
+            break;
+        }
+        println!();
+    }
+}
+
+/// Check if a layer has any NaN values.
+#[cfg(feature = "inference")]
+fn layer_has_nan(layer: &realizar::apr_transformer::LayerActivation) -> bool {
+    layer.attn_norm_stats.nan_count > 0
+        || layer.qkv_stats.nan_count > 0
+        || layer.attn_out_stats.nan_count > 0
+        || layer.ffn_norm_stats.nan_count > 0
+        || layer.ffn_out_stats.nan_count > 0
+        || layer.output_stats.nan_count > 0
+}
+
+/// Check if a layer has any Inf values.
+#[cfg(feature = "inference")]
+fn layer_has_inf(layer: &realizar::apr_transformer::LayerActivation) -> bool {
+    layer.attn_norm_stats.inf_count > 0
+        || layer.qkv_stats.inf_count > 0
+        || layer.attn_out_stats.inf_count > 0
+        || layer.ffn_norm_stats.inf_count > 0
+        || layer.ffn_out_stats.inf_count > 0
+        || layer.output_stats.inf_count > 0
+}
+
+/// Print logit predictions with top-5 tokens.
+#[cfg(feature = "inference")]
+fn print_logit_predictions(logits: &[f32]) {
+    use colored::Colorize;
+
+    let logit_stats = compute_vector_stats(logits);
+    println!();
+    println!("{}", "LM_HEAD output:".green().bold());
+    println!("  Vocab size: {}", logits.len());
+    print_stats("  ", &logit_stats);
+
+    println!();
+    println!("{}", "Top 5 predictions:".green().bold());
+    let mut indexed: Vec<(usize, f32)> = logits.iter().copied().enumerate().collect();
+    indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    for (i, (token_id, logit)) in indexed.iter().take(5).enumerate() {
+        println!("  {}. token_id={}, logit={:.4}", i + 1, token_id, logit);
+    }
+}
+
+/// Print trace summary analysis (variance, NaN/Inf, logit range).
+#[cfg(feature = "inference")]
+fn print_trace_summary(
+    layers: &[realizar::apr_transformer::LayerActivation],
+    logits: &[f32],
+) {
+    use colored::Colorize;
+
+    println!();
+    println!("{}", "TRACE SUMMARY:".white().bold());
+
+    let mut max_std_layer = 0;
+    let mut max_std_value = 0.0f32;
+    let mut high_var_count = 0;
+    let mut total_nan = 0;
+    let mut total_inf = 0;
+
+    for layer in layers {
+        if layer.output_stats.std_dev > max_std_value {
+            max_std_value = layer.output_stats.std_dev;
+            max_std_layer = layer.layer_idx;
+        }
+        if layer.output_stats.std_dev > 50.0 {
+            high_var_count += 1;
+        }
+        total_nan += layer.output_stats.nan_count;
+        total_inf += layer.output_stats.inf_count;
+    }
+
+    if total_nan > 0 || total_inf > 0 {
+        println!(
+            "  {}",
+            format!("CRITICAL: {} NaN, {} Inf values detected!", total_nan, total_inf)
+                .red()
+                .bold()
+        );
+        println!("  {}", "Model weights or computation is corrupted.".red());
+    } else if high_var_count > 0 {
+        println!(
+            "  {}",
+            format!("WARNING: {} layers with std > 50", high_var_count).yellow()
+        );
+        println!(
+            "  Peak variance at layer {} (std={:.2})",
+            max_std_layer, max_std_value
+        );
+        if max_std_value > 100.0 {
+            println!(
+                "  {}",
+                "High variance may indicate attention explosion or weight issues.".yellow()
+            );
+        }
+    } else {
+        println!(
+            "  {}",
+            "All layers have reasonable variance (std < 50)".green()
+        );
+    }
+
+    let logit_stats = compute_vector_stats(logits);
+    let logit_range = logit_stats.max - logit_stats.min;
+    if logit_range < 1.0 {
+        println!(
+            "  {}",
+            format!("WARNING: Logit range too narrow ({:.4})", logit_range).yellow()
+        );
+        println!(
+            "  {}",
+            "Model may not have learned meaningful patterns.".yellow()
+        );
+    } else if logit_range > 100.0 {
+        println!(
+            "  {}",
+            format!("WARNING: Logit range very wide ({:.4})", logit_range).yellow()
+        );
+    } else {
+        println!(
+            "  Logit range: {:.2} {}",
+            logit_range,
+            "(reasonable)".green()
+        );
+    }
 }
 
 /// Stub for APR inference when inference feature is disabled
@@ -872,73 +877,54 @@ fn is_likely_garbage(text: &str) -> bool {
         return false;
     }
 
-    // Count suspicious patterns
     let text_lower = text.to_lowercase();
     let words: Vec<&str> = text_lower.split_whitespace().collect();
 
-    // Check for repeated words (common in garbage output)
-    let mut repeated = 0;
-    for i in 1..words.len() {
-        if words[i] == words[i - 1] {
-            repeated += 1;
-        }
-    }
-
-    // More than 50% repeated words is suspicious
-    if words.len() > 2 && repeated * 2 > words.len() {
+    if has_repeated_words(&words) || has_unusual_chars(text) || has_garbage_pattern(&text_lower) {
         return true;
     }
 
-    // Check for high ratio of unusual characters
-    let unusual_chars = text
+    let has_normal_words = ["the", "is", "are", "and", "to", "of", "in", "that", "it", "for"]
+        .iter()
+        .any(|w| text_lower.contains(w));
+    let has_numbers = text.chars().any(|c| c.is_ascii_digit());
+
+    !has_numbers && !has_normal_words && words.len() > 2
+}
+
+/// Check if more than 50% of words are consecutive repeats.
+fn has_repeated_words(words: &[&str]) -> bool {
+    if words.len() <= 2 {
+        return false;
+    }
+    let repeated = words.windows(2).filter(|w| w[0] == w[1]).count();
+    repeated * 2 > words.len()
+}
+
+/// Check if more than 1/3 of characters are unusual Unicode (replacement, PUA, etc).
+fn has_unusual_chars(text: &str) -> bool {
+    let total = text.chars().count();
+    if total == 0 {
+        return false;
+    }
+    let unusual = text
         .chars()
         .filter(|c| {
-            // Unicode replacement character or private use area
             *c == '\u{FFFD}'
                 || ('\u{E000}'..='\u{F8FF}').contains(c)
                 || ('\u{20000}'..='\u{2FFFF}').contains(c)
         })
         .count();
+    unusual * 3 > total
+}
 
-    if unusual_chars * 3 > text.chars().count() {
-        return true;
-    }
-
-    // Check for common garbage patterns
-    let garbage_patterns = [
-        "random random",
-        "random_",
-        "domain domain",
-        "domainuster",
-        "pandas pandas",
-        "olumbia",
-        "localents",
-        "nunca",
-        ".mult",
+/// Check for known garbage output patterns.
+fn has_garbage_pattern(text_lower: &str) -> bool {
+    const GARBAGE_PATTERNS: &[&str] = &[
+        "random random", "random_", "domain domain", "domainuster",
+        "pandas pandas", "olumbia", "localents", "nunca", ".mult",
     ];
-
-    for pattern in garbage_patterns {
-        if text_lower.contains(pattern) {
-            return true;
-        }
-    }
-
-    // Check for nonsensical word combinations (no real sentence structure)
-    // If output doesn't contain common words and has weird fragments, it's garbage
-    let has_normal_words = [
-        "the", "is", "are", "and", "to", "of", "in", "that", "it", "for",
-    ]
-    .iter()
-    .any(|w| text_lower.contains(w));
-
-    let has_numbers = text.chars().any(|c| c.is_ascii_digit());
-
-    // If answering a math question and no numbers in output, likely garbage
-    if !has_numbers && !has_normal_words && words.len() > 2 {
-        return true;
-    }
-
-    false
+    GARBAGE_PATTERNS.iter().any(|p| text_lower.contains(p))
 }
 
 /// Traced inference for SafeTensors models
@@ -1211,49 +1197,39 @@ fn infer_layers_from_tensor_names(
     let mut layers = Vec::new();
 
     if has_embedding {
-        let embedding = LayerTrace {
-            name: "embedding".to_string(),
-            index: None,
-            input_stats: None,
-            output_stats: None,
-            weight_stats: None,
-            anomalies: vec![],
-        };
-        if layer_filter.is_none() || layer_filter.is_some_and(|f| "embedding".contains(f)) {
-            layers.push(embedding);
-        }
+        maybe_push_layer(&mut layers, "embedding", None, layer_filter);
     }
 
     for &idx in layer_indices.keys() {
-        let layer_name = format!("transformer_block_{idx}");
-        if layer_filter.is_some_and(|f| !layer_name.contains(f)) {
-            continue;
-        }
-        layers.push(LayerTrace {
-            name: layer_name,
-            index: Some(idx),
-            input_stats: None,
-            output_stats: None,
-            weight_stats: None,
-            anomalies: vec![],
-        });
+        let name = format!("transformer_block_{idx}");
+        maybe_push_layer(&mut layers, &name, Some(idx), layer_filter);
     }
 
     if has_lm_head {
-        let lm_head = LayerTrace {
-            name: "lm_head".to_string(),
-            index: None,
-            input_stats: None,
-            output_stats: None,
-            weight_stats: None,
-            anomalies: vec![],
-        };
-        if layer_filter.is_none() || layer_filter.is_some_and(|f| "lm_head".contains(f)) {
-            layers.push(lm_head);
-        }
+        maybe_push_layer(&mut layers, "lm_head", None, layer_filter);
     }
 
     layers
+}
+
+/// Push a layer trace if it passes the optional filter.
+fn maybe_push_layer(
+    layers: &mut Vec<LayerTrace>,
+    name: &str,
+    index: Option<usize>,
+    filter: Option<&str>,
+) {
+    if filter.is_some_and(|f| !name.contains(f)) {
+        return;
+    }
+    layers.push(LayerTrace {
+        name: name.to_string(),
+        index,
+        input_stats: None,
+        output_stats: None,
+        weight_stats: None,
+        anomalies: vec![],
+    });
 }
 
 /// Extract layer index from tensor name patterns.
