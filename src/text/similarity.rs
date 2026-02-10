@@ -14,7 +14,7 @@
 //! let v1 = Vector::from_slice(&[1.0, 2.0, 3.0]);
 //! let v2 = Vector::from_slice(&[2.0, 3.0, 4.0]);
 //!
-//! let similarity = cosine_similarity(&v1, &v2).unwrap();
+//! let similarity = cosine_similarity(&v1, &v2).expect("cosine similarity should succeed");
 //! println!("Cosine similarity: {:.3}", similarity);
 //! ```
 
@@ -48,7 +48,7 @@ use crate::AprenderError;
 /// let v1 = Vector::from_slice(&[1.0, 2.0, 3.0]);
 /// let v2 = Vector::from_slice(&[2.0, 3.0, 4.0]);
 ///
-/// let sim = cosine_similarity(&v1, &v2).unwrap();
+/// let sim = cosine_similarity(&v1, &v2).expect("cosine similarity should succeed");
 /// assert!(sim > 0.9); // Very similar
 /// ```
 pub fn cosine_similarity(a: &Vector<f64>, b: &Vector<f64>) -> Result<f64, AprenderError> {
@@ -106,7 +106,7 @@ pub fn cosine_similarity(a: &Vector<f64>, b: &Vector<f64>) -> Result<f64, Aprend
 /// let tokens1 = vec!["the", "cat", "sat"];
 /// let tokens2 = vec!["the", "dog", "sat"];
 ///
-/// let sim = jaccard_similarity(&tokens1, &tokens2).unwrap();
+/// let sim = jaccard_similarity(&tokens1, &tokens2).expect("jaccard similarity should succeed");
 /// assert!((sim - 0.5).abs() < 0.01); // 2 common / 4 total = 0.5
 /// ```
 pub fn jaccard_similarity<S: AsRef<str>>(a: &[S], b: &[S]) -> Result<f64, AprenderError> {
@@ -152,7 +152,7 @@ pub fn jaccard_similarity<S: AsRef<str>>(a: &[S], b: &[S]) -> Result<f64, Aprend
 /// ```
 /// use aprender::text::similarity::edit_distance;
 ///
-/// let dist = edit_distance("kitten", "sitting").unwrap();
+/// let dist = edit_distance("kitten", "sitting").expect("edit distance should succeed");
 /// assert_eq!(dist, 3); // 3 edits: k->s, e->i, +g
 /// ```
 pub fn edit_distance(a: &str, b: &str) -> Result<usize, AprenderError> {
@@ -216,7 +216,7 @@ pub fn edit_distance(a: &str, b: &str) -> Result<usize, AprenderError> {
 /// ```
 /// use aprender::text::similarity::edit_distance_similarity;
 ///
-/// let sim = edit_distance_similarity("kitten", "sitting").unwrap();
+/// let sim = edit_distance_similarity("kitten", "sitting").expect("edit distance similarity should succeed");
 /// assert!(sim > 0.5); // Somewhat similar
 /// ```
 pub fn edit_distance_similarity(a: &str, b: &str) -> Result<f64, AprenderError> {
@@ -251,7 +251,7 @@ pub fn edit_distance_similarity(a: &str, b: &str) -> Result<f64, AprenderError> 
 ///     Vector::from_slice(&[0.0, 1.0, 0.0]),
 /// ];
 ///
-/// let similarities = pairwise_cosine_similarity(&docs).unwrap();
+/// let similarities = pairwise_cosine_similarity(&docs).expect("pairwise cosine similarity should succeed");
 /// assert_eq!(similarities.len(), 3); // 3 documents
 /// assert_eq!(similarities[0].len(), 3); // 3 similarities per doc
 /// ```
@@ -320,7 +320,7 @@ pub fn pairwise_cosine_similarity(vectors: &[Vector<f64>]) -> Result<Vec<Vec<f64
 ///     Vector::from_slice(&[1.0, 2.0, 2.9]),  // Very similar
 /// ];
 ///
-/// let top = top_k_similar(&query, &docs, 2).unwrap();
+/// let top = top_k_similar(&query, &docs, 2).expect("top_k_similar should succeed");
 /// assert_eq!(top.len(), 2);
 /// assert_eq!(top[0].0, 2); // Doc 2 is most similar
 /// ```

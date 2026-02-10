@@ -15,15 +15,15 @@ use crate::primitives::{Matrix, Vector};
 /// use aprender::prelude::*;
 ///
 /// // Create training data: y = 2x + 1
-/// let x_train = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).unwrap();
+/// let x_train = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).expect("valid matrix dimensions");
 /// let y_train = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
 ///
 /// // Test data
-/// let x_test = Matrix::from_vec(2, 1, vec![5.0, 6.0]).unwrap();
+/// let x_test = Matrix::from_vec(2, 1, vec![5.0, 6.0]).expect("valid matrix dimensions");
 /// let y_test = Vector::from_slice(&[11.0, 13.0]);
 ///
 /// let mut model = LinearRegression::new();
-/// model.fit(&x_train, &y_train).unwrap();
+/// model.fit(&x_train, &y_train).expect("linear regression fit should succeed");
 /// let predictions = model.predict(&x_test);
 /// let score = model.score(&x_test, &y_test);
 /// assert!(score > 0.99);
@@ -54,10 +54,10 @@ pub trait Estimator {
 /// let data = Matrix::from_vec(6, 2, vec![
 ///     0.0, 0.0, 0.1, 0.1, 0.2, 0.0,  // Cluster 1
 ///     10.0, 10.0, 10.1, 10.1, 10.0, 10.2,  // Cluster 2
-/// ]).unwrap();
+/// ]).expect("valid matrix dimensions");
 ///
 /// let mut kmeans = KMeans::new(2).with_random_state(42);
-/// kmeans.fit(&data).unwrap();
+/// kmeans.fit(&data).expect("kmeans fit should succeed");
 /// let labels = kmeans.predict(&data);
 /// assert_eq!(labels.len(), 6);
 /// ```

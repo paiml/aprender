@@ -141,7 +141,7 @@ impl std::fmt::Debug for Sequential {
 ///     let mut out = x.clone();
 ///     for i in 0..layers.len() {
 ///         let residual = out.clone();
-///         out = layers.get(i).unwrap().forward(&out);
+///         out = layers.get(i).expect("layer index in bounds").forward(&out);
 ///         out = out.add(&residual);  // residual connection
 ///     }
 ///     out
@@ -269,9 +269,9 @@ impl std::fmt::Debug for ModuleList {
 ///     .insert("classifier", Linear::new(256, 10));
 ///
 /// let x = Tensor::randn(&[32, 784]);
-/// let encoded = modules.get("encoder").unwrap().forward(&x);
-/// let decoded = modules.get("decoder").unwrap().forward(&encoded);
-/// let logits = modules.get("classifier").unwrap().forward(&encoded);
+/// let encoded = modules.get("encoder").expect("encoder module exists").forward(&x);
+/// let decoded = modules.get("decoder").expect("decoder module exists").forward(&encoded);
+/// let logits = modules.get("classifier").expect("classifier module exists").forward(&encoded);
 /// ```
 pub struct ModuleDict {
     modules: HashMap<String, Box<dyn Module>>,

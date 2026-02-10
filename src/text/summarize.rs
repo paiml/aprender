@@ -13,7 +13,7 @@
 //! let text = "First sentence. Second sentence. Third sentence.";
 //! let summarizer = TextSummarizer::new(SummarizationMethod::TfIdf, 2);
 //!
-//! let summary = summarizer.summarize(text).unwrap();
+//! let summary = summarizer.summarize(text).expect("summarize should succeed");
 //! assert_eq!(summary.len(), 2);  // Top 2 sentences
 //! ```
 
@@ -45,7 +45,7 @@ pub enum SummarizationMethod {
 ///             Deep learning is a subset of machine learning.";
 ///
 /// let summarizer = TextSummarizer::new(SummarizationMethod::TfIdf, 2);
-/// let summary = summarizer.summarize(text).unwrap();
+/// let summary = summarizer.summarize(text).expect("summarize should succeed");
 ///
 /// assert_eq!(summary.len(), 2);
 /// ```
@@ -138,7 +138,7 @@ impl TextSummarizer {
     ///             Third detail. Fourth major finding.";
     ///
     /// let summarizer = TextSummarizer::new(SummarizationMethod::TfIdf, 2);
-    /// let summary = summarizer.summarize(text).unwrap();
+    /// let summary = summarizer.summarize(text).expect("summarize should succeed");
     ///
     /// assert!(summary.len() <= 2);
     /// ```

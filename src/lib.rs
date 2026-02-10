@@ -14,12 +14,12 @@
 //!     2.0,
 //!     3.0,
 //!     4.0,
-//! ]).unwrap();
+//! ]).expect("valid matrix dimensions");
 //! let y = Vector::from_slice(&[3.0, 5.0, 7.0, 9.0]);
 //!
 //! // Train linear regression
 //! let mut model = LinearRegression::new();
-//! model.fit(&x, &y).unwrap();
+//! model.fit(&x, &y).expect("linear regression fit should succeed");
 //!
 //! // Make predictions
 //! let predictions = model.predict(&x);

@@ -11,7 +11,7 @@
 //! use aprender::text::sentiment::SentimentAnalyzer;
 //!
 //! let analyzer = SentimentAnalyzer::default();
-//! let score = analyzer.score("This movie is great and wonderful!").unwrap();
+//! let score = analyzer.score("This movie is great and wonderful!").expect("score should succeed");
 //!
 //! println!("Sentiment: {:.3}", score);  // Positive score > 0
 //! ```
@@ -43,11 +43,11 @@ pub enum Polarity {
 /// let analyzer = SentimentAnalyzer::default();
 ///
 /// // Positive text
-/// let score = analyzer.score("amazing wonderful great").unwrap();
+/// let score = analyzer.score("amazing wonderful great").expect("score should succeed");
 /// assert!(score > 0.0);
 ///
 /// // Negative text
-/// let score = analyzer.score("terrible awful horrible").unwrap();
+/// let score = analyzer.score("terrible awful horrible").expect("score should succeed");
 /// assert!(score < 0.0);
 /// ```
 #[derive(Debug)]
@@ -137,10 +137,10 @@ impl SentimentAnalyzer {
     ///
     /// let analyzer = SentimentAnalyzer::default();
     ///
-    /// let score = analyzer.score("I love this amazing product!").unwrap();
+    /// let score = analyzer.score("I love this amazing product!").expect("score should succeed");
     /// assert!(score > 0.0);  // Positive
     ///
-    /// let score = analyzer.score("This is terrible and awful.").unwrap();
+    /// let score = analyzer.score("This is terrible and awful.").expect("score should succeed");
     /// assert!(score < 0.0);  // Negative
     /// ```
     pub fn score(&self, text: &str) -> Result<f64, AprenderError> {
@@ -185,10 +185,10 @@ impl SentimentAnalyzer {
     ///
     /// let analyzer = SentimentAnalyzer::default();
     ///
-    /// let polarity = analyzer.classify("I love this!").unwrap();
+    /// let polarity = analyzer.classify("I love this!").expect("classify should succeed");
     /// assert_eq!(polarity, Polarity::Positive);
     ///
-    /// let polarity = analyzer.classify("This is terrible.").unwrap();
+    /// let polarity = analyzer.classify("This is terrible.").expect("classify should succeed");
     /// assert_eq!(polarity, Polarity::Negative);
     /// ```
     pub fn classify(&self, text: &str) -> Result<Polarity, AprenderError> {

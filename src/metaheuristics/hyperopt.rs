@@ -18,8 +18,8 @@
 //!
 //! // Define objective (returns loss to minimize)
 //! let objective = |params: &HyperparameterSet| -> f64 {
-//!     let lr = params.get_real("learning_rate").unwrap();
-//!     let reg = params.get_real("regularization").unwrap();
+//!     let lr = params.get_real("learning_rate").expect("learning_rate parameter should exist");
+//!     let reg = params.get_real("regularization").expect("regularization parameter should exist");
 //!     // Simulated validation loss
 //!     (lr - 0.01).powi(2) + (reg - 0.001).powi(2)
 //! };

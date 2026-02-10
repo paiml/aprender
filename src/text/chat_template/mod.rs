@@ -26,7 +26,7 @@
 //! let messages = vec![
 //!     ChatMessage::new("user", "Hello!"),
 //! ];
-//! let formatted = template.format_conversation(&messages).unwrap();
+//! let formatted = template.format_conversation(&messages).expect("format conversation should succeed");
 //! assert!(formatted.contains("<|im_start|>user"));
 //! ```
 //!
@@ -416,7 +416,7 @@ impl ChatTemplateEngine for HuggingFaceTemplate {
 ///
 /// let template = ChatMLTemplate::new();
 /// let messages = vec![ChatMessage::user("Hello!")];
-/// let output = template.format_conversation(&messages).unwrap();
+/// let output = template.format_conversation(&messages).expect("format conversation should succeed");
 /// assert!(output.contains("<|im_start|>user\nHello!<|im_end|>"));
 /// ```
 #[derive(Debug, Clone)]
@@ -512,7 +512,7 @@ impl ChatTemplateEngine for ChatMLTemplate {
 ///
 /// let template = Llama2Template::new();
 /// let messages = vec![ChatMessage::user("Hello!")];
-/// let output = template.format_conversation(&messages).unwrap();
+/// let output = template.format_conversation(&messages).expect("format conversation should succeed");
 /// assert!(output.contains("[INST]"));
 /// ```
 #[derive(Debug, Clone)]
@@ -722,7 +722,7 @@ impl ChatTemplateEngine for MistralTemplate {
 ///
 /// let template = PhiTemplate::new();
 /// let messages = vec![ChatMessage::user("Hello!")];
-/// let output = template.format_conversation(&messages).unwrap();
+/// let output = template.format_conversation(&messages).expect("format conversation should succeed");
 /// assert!(output.contains("Instruct:"));
 /// ```
 #[derive(Debug, Clone)]
@@ -817,7 +817,7 @@ impl ChatTemplateEngine for PhiTemplate {
 ///
 /// let template = AlpacaTemplate::new();
 /// let messages = vec![ChatMessage::user("Hello!")];
-/// let output = template.format_conversation(&messages).unwrap();
+/// let output = template.format_conversation(&messages).expect("format conversation should succeed");
 /// assert!(output.contains("### Instruction:"));
 /// ```
 #[derive(Debug, Clone)]

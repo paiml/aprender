@@ -119,7 +119,7 @@ impl BetaBinomial {
     /// use aprender::bayesian::BetaBinomial;
     ///
     /// // Strong prior belief: 80% success rate based on 100 trials
-    /// let prior = BetaBinomial::new(80.0, 20.0).unwrap();
+    /// let prior = BetaBinomial::new(80.0, 20.0).expect("valid alpha and beta parameters");
     /// assert!((prior.posterior_mean() - 0.8).abs() < 0.01);
     /// ```
     pub fn new(alpha: f32, beta: f32) -> Result<Self> {
@@ -213,11 +213,11 @@ impl BetaBinomial {
     /// ```
     /// use aprender::bayesian::BetaBinomial;
     ///
-    /// let mut model = BetaBinomial::new(2.0, 2.0).unwrap();
+    /// let mut model = BetaBinomial::new(2.0, 2.0).expect("valid alpha and beta parameters");
     /// model.update(7, 10);
     ///
     /// // Posterior is Beta(9, 5), mode = (9-1)/(9+5-2) = 8/12
-    /// let mode = model.posterior_mode().unwrap();
+    /// let mode = model.posterior_mode().expect("mode exists when alpha > 1 and beta > 1");
     /// assert!((mode - 8.0/12.0).abs() < 1e-6);
     /// ```
     #[must_use]
@@ -298,7 +298,7 @@ impl BetaBinomial {
     /// let mut model = BetaBinomial::uniform();
     /// model.update(7, 10);
     ///
-    /// let (lower, upper) = model.credible_interval(0.95).unwrap();
+    /// let (lower, upper) = model.credible_interval(0.95).expect("valid confidence level");
     /// assert!(lower < 0.6667 && 0.6667 < upper);
     /// assert!(upper - lower < 0.55);  // Reasonably narrow after 10 trials
     /// ```
@@ -420,7 +420,7 @@ impl GammaPoisson {
     /// use aprender::bayesian::GammaPoisson;
     ///
     /// // Prior belief: 50 events in 10 intervals (rate = 5)
-    /// let prior = GammaPoisson::new(50.0, 10.0).unwrap();
+    /// let prior = GammaPoisson::new(50.0, 10.0).expect("valid alpha and beta parameters");
     /// assert!((prior.posterior_mean() - 5.0).abs() < 0.01);
     /// ```
     pub fn new(alpha: f32, beta: f32) -> Result<Self> {
@@ -514,10 +514,10 @@ impl GammaPoisson {
     /// ```
     /// use aprender::bayesian::GammaPoisson;
     ///
-    /// let mut model = GammaPoisson::new(2.0, 1.0).unwrap();
+    /// let mut model = GammaPoisson::new(2.0, 1.0).expect("valid alpha and beta parameters");
     /// model.update(&[3, 5, 4, 6, 2]);
     ///
-    /// let mode = model.posterior_mode().unwrap();
+    /// let mode = model.posterior_mode().expect("mode exists when alpha > 1");
     /// assert!((mode - (22.0 - 1.0)/6.0).abs() < 0.01);
     /// ```
     #[must_use]
@@ -594,7 +594,7 @@ impl GammaPoisson {
     /// let mut model = GammaPoisson::noninformative();
     /// model.update(&[3, 5, 4, 6, 2]);
     ///
-    /// let (lower, upper) = model.credible_interval(0.95).unwrap();
+    /// let (lower, upper) = model.credible_interval(0.95).expect("valid confidence level");
     /// assert!(lower < 4.0 && 4.0 < upper);
     /// ```
     pub fn credible_interval(&self, confidence: f32) -> Result<(f32, f32)> {
@@ -723,7 +723,7 @@ impl NormalInverseGamma {
     /// use aprender::bayesian::NormalInverseGamma;
     ///
     /// // Prior belief: mean ≈ 5.0, variance ≈ 1.0, moderate confidence
-    /// let prior = NormalInverseGamma::new(5.0, 10.0, 5.0, 5.0).unwrap();
+    /// let prior = NormalInverseGamma::new(5.0, 10.0, 5.0, 5.0).expect("valid prior parameters");
     /// assert_eq!(prior.mu(), 5.0);
     /// ```
     pub fn new(mu: f32, kappa: f32, alpha: f32, beta: f32) -> Result<Self> {
@@ -845,7 +845,7 @@ impl NormalInverseGamma {
     /// let mut model = NormalInverseGamma::noninformative();
     /// model.update(&[4.2, 5.8, 6.1, 4.5, 5.0]);
     ///
-    /// let mean_var = model.posterior_mean_variance().unwrap();
+    /// let mean_var = model.posterior_mean_variance().expect("mean variance exists when alpha > 1");
     /// assert!(mean_var > 0.0);
     /// ```
     #[must_use]
@@ -874,7 +874,7 @@ impl NormalInverseGamma {
     /// let mut model = NormalInverseGamma::noninformative();
     /// model.update(&[4.2, 5.8, 6.1, 4.5, 5.0]);
     ///
-    /// let var_mu = model.posterior_variance_mu().unwrap();
+    /// let var_mu = model.posterior_variance_mu().expect("variance of mu exists when alpha > 1");
     /// assert!(var_mu > 0.0); // Positive uncertainty
     /// ```
     #[must_use]
@@ -927,7 +927,7 @@ impl NormalInverseGamma {
     /// let mut model = NormalInverseGamma::noninformative();
     /// model.update(&[4.2, 5.8, 6.1, 4.5, 5.0]);
     ///
-    /// let (lower, upper) = model.credible_interval_mu(0.95).unwrap();
+    /// let (lower, upper) = model.credible_interval_mu(0.95).expect("valid confidence level with alpha > 1");
     /// assert!(lower < 5.1 && 5.1 < upper);
     /// ```
     pub fn credible_interval_mu(&self, confidence: f32) -> Result<(f32, f32)> {
@@ -1062,7 +1062,7 @@ impl DirichletMultinomial {
     /// use aprender::bayesian::DirichletMultinomial;
     ///
     /// // Prior belief: category probabilities [0.5, 0.3, 0.2] with 10 pseudo-counts
-    /// let prior = DirichletMultinomial::new(vec![5.0, 3.0, 2.0]).unwrap();
+    /// let prior = DirichletMultinomial::new(vec![5.0, 3.0, 2.0]).expect("valid concentration parameters");
     /// let mean = prior.posterior_mean();
     /// assert!((mean[0] - 0.5).abs() < 0.01);
     /// ```
@@ -1171,10 +1171,10 @@ impl DirichletMultinomial {
     /// ```
     /// use aprender::bayesian::DirichletMultinomial;
     ///
-    /// let mut model = DirichletMultinomial::new(vec![2.0, 2.0, 2.0]).unwrap();
+    /// let mut model = DirichletMultinomial::new(vec![2.0, 2.0, 2.0]).expect("valid concentration parameters");
     /// model.update(&[10, 5, 3]);
     ///
-    /// let mode = model.posterior_mode().unwrap();
+    /// let mode = model.posterior_mode().expect("mode exists when all alphas > 1");
     /// assert!((mode[0] - 11.0/21.0).abs() < 0.01); // (12-1)/(24-3)
     /// ```
     #[must_use]
@@ -1259,7 +1259,7 @@ impl DirichletMultinomial {
     /// let mut model = DirichletMultinomial::uniform(3);
     /// model.update(&[10, 5, 3]);
     ///
-    /// let intervals = model.credible_intervals(0.95).unwrap();
+    /// let intervals = model.credible_intervals(0.95).expect("valid confidence level");
     /// let mean = model.posterior_mean();
     ///
     /// // Mean should be within interval for each category

@@ -116,11 +116,11 @@ pub fn should_use_parallel(size: usize) -> bool {
 ///
 /// // After computing gradients
 /// let gradients = vec![0.1, 0.2, 0.3];
-/// guard.check_gradients(&gradients).unwrap();
+/// guard.check_gradients(&gradients).expect("gradients should be finite");
 ///
 /// // After weight update
 /// let weights = vec![1.0, 2.0, 3.0];
-/// guard.check_weights(&weights).unwrap();
+/// guard.check_weights(&weights).expect("weights should be finite");
 /// ```
 #[derive(Debug, Clone)]
 pub struct TrainingGuard {

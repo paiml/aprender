@@ -203,10 +203,10 @@ impl BayesianLinearRegression {
     ///
     /// let mut model = BayesianLinearRegression::new(2);
     ///
-    /// let x = Matrix::from_vec(3, 2, vec![1.0, 1.0, 1.0, 2.0, 1.0, 3.0]).unwrap();
+    /// let x = Matrix::from_vec(3, 2, vec![1.0, 1.0, 1.0, 2.0, 1.0, 3.0]).expect("valid matrix dimensions");
     /// let y = Vector::from_vec(vec![2.0, 3.0, 4.0]);
     ///
-    /// model.fit(&x, &y).unwrap();
+    /// model.fit(&x, &y).expect("fit should succeed with valid data");
     /// assert!(model.posterior_mean().is_some());
     /// ```
     pub fn fit(&mut self, x: &Matrix<f32>, y: &Vector<f32>) -> Result<()> {
@@ -314,7 +314,7 @@ impl BayesianLinearRegression {
     /// # Example
     ///
     /// ```ignore
-    /// let predictions = model.predict(&x_test).unwrap();
+    /// let predictions = model.predict(&x_test).expect("prediction should succeed after fitting");
     /// ```
     pub fn predict(&self, x_test: &Matrix<f32>) -> Result<Vector<f32>> {
         let posterior_mean = self.posterior_mean.as_ref().ok_or_else(|| {
@@ -351,7 +351,7 @@ impl BayesianLinearRegression {
     /// # Example
     ///
     /// ```ignore
-    /// let log_lik = model.log_likelihood(&x_train, &y_train).unwrap();
+    /// let log_lik = model.log_likelihood(&x_train, &y_train).expect("log-likelihood should succeed after fitting");
     /// ```
     pub fn log_likelihood(&self, x: &Matrix<f32>, y: &Vector<f32>) -> Result<f32> {
         let posterior_mean = self.posterior_mean.as_ref().ok_or_else(|| {
@@ -419,7 +419,7 @@ impl BayesianLinearRegression {
     /// # Example
     ///
     /// ```ignore
-    /// let bic = model.bic(&x_train, &y_train).unwrap();
+    /// let bic = model.bic(&x_train, &y_train).expect("BIC should succeed after fitting");
     /// ```
     pub fn bic(&self, x: &Matrix<f32>, y: &Vector<f32>) -> Result<f32> {
         let log_lik = self.log_likelihood(x, y)?;
@@ -450,7 +450,7 @@ impl BayesianLinearRegression {
     /// # Example
     ///
     /// ```ignore
-    /// let aic = model.aic(&x_train, &y_train).unwrap();
+    /// let aic = model.aic(&x_train, &y_train).expect("AIC should succeed after fitting");
     /// ```
     pub fn aic(&self, x: &Matrix<f32>, y: &Vector<f32>) -> Result<f32> {
         let log_lik = self.log_likelihood(x, y)?;

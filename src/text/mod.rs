@@ -28,7 +28,7 @@
 //! use aprender::text::Tokenizer;
 //!
 //! let tokenizer = WhitespaceTokenizer::new();
-//! let tokens = tokenizer.tokenize("Hello, world! This is aprender.").unwrap();
+//! let tokens = tokenizer.tokenize("Hello, world! This is aprender.").expect("tokenize should succeed");
 //! assert_eq!(tokens, vec!["Hello,", "world!", "This", "is", "aprender."]);
 //! ```
 //!
@@ -72,7 +72,7 @@ use crate::AprenderError;
 /// use aprender::text::{Tokenizer, tokenize::WhitespaceTokenizer};
 ///
 /// let tokenizer = WhitespaceTokenizer::new();
-/// let tokens = tokenizer.tokenize("Hello world").unwrap();
+/// let tokens = tokenizer.tokenize("Hello world").expect("tokenize should succeed");
 /// assert_eq!(tokens, vec!["Hello", "world"]);
 /// ```
 pub trait Tokenizer {
@@ -94,7 +94,7 @@ pub trait Tokenizer {
     ///
     /// let tokenizer = WhitespaceTokenizer::new();
     /// assert_eq!(
-    ///     tokenizer.tokenize("foo bar").unwrap(),
+    ///     tokenizer.tokenize("foo bar").expect("tokenize should succeed"),
     ///     vec!["foo", "bar"]
     /// );
     /// ```

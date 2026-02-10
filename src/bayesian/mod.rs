@@ -33,7 +33,7 @@
 //! assert!((mean - 0.6667).abs() < 0.001);
 //!
 //! // 95% credible interval
-//! let (lower, upper) = model.credible_interval(0.95).unwrap();
+//! let (lower, upper) = model.credible_interval(0.95).expect("valid confidence level");
 //! assert!(lower < mean && mean < upper);
 //!
 //! // Predict next trial
@@ -56,7 +56,7 @@
 //! assert!((mean - 4.0).abs() < 0.5);
 //!
 //! // 95% credible interval for rate
-//! let (lower, upper) = model.credible_interval(0.95).unwrap();
+//! let (lower, upper) = model.credible_interval(0.95).expect("valid confidence level");
 //! assert!(lower < mean && mean < upper);
 //! ```
 //!
@@ -66,7 +66,7 @@
 //! use aprender::bayesian::NormalInverseGamma;
 //!
 //! // Prior: weakly informative for both mean and variance
-//! let mut model = NormalInverseGamma::new(0.0, 1.0, 3.0, 2.0).unwrap();
+//! let mut model = NormalInverseGamma::new(0.0, 1.0, 3.0, 2.0).expect("valid prior parameters");
 //!
 //! // Observe continuous data
 //! model.update(&[4.2, 5.8, 6.1, 4.5, 5.0]);
@@ -76,11 +76,11 @@
 //! assert!((mean_mu - 4.3).abs() < 0.3);
 //!
 //! // Posterior mean of σ² (variance)
-//! let mean_var = model.posterior_mean_variance().unwrap();
+//! let mean_var = model.posterior_mean_variance().expect("mean variance exists when alpha > 1");
 //! assert!(mean_var > 0.0);
 //!
 //! // 95% credible interval for μ
-//! let (lower, upper) = model.credible_interval_mu(0.95).unwrap();
+//! let (lower, upper) = model.credible_interval_mu(0.95).expect("valid confidence level with alpha > 1");
 //! assert!(lower < mean_mu && mean_mu < upper);
 //! ```
 //!
@@ -105,7 +105,7 @@
 //! assert!((probs.iter().sum::<f32>() - 1.0).abs() < 1e-6);
 //!
 //! // 95% credible intervals for each category
-//! let intervals = model.credible_intervals(0.95).unwrap();
+//! let intervals = model.credible_intervals(0.95).expect("valid confidence level");
 //! for i in 0..3 {
 //!     assert!(intervals[i].0 < probs[i] && probs[i] < intervals[i].1);
 //! }

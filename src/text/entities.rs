@@ -16,7 +16,7 @@
 //! let extractor = EntityExtractor::new();
 //! let text = "Contact john@example.com or visit https://example.com";
 //!
-//! let entities = extractor.extract(text).unwrap();
+//! let entities = extractor.extract(text).expect("extract should succeed");
 //! assert!(!entities.emails.is_empty());
 //! assert!(!entities.urls.is_empty());
 //! ```
@@ -95,7 +95,7 @@ impl Default for Entities {
 /// let extractor = EntityExtractor::new();
 /// let text = "Email me at test@example.com or call 555-123-4567";
 ///
-/// let entities = extractor.extract(text).unwrap();
+/// let entities = extractor.extract(text).expect("extract should succeed");
 /// assert_eq!(entities.emails.len(), 1);
 /// assert_eq!(entities.phone_numbers.len(), 1);
 /// ```
@@ -151,7 +151,7 @@ impl EntityExtractor {
     /// let extractor = EntityExtractor::new();
     /// let text = "Visit https://example.com or email info@example.com";
     ///
-    /// let entities = extractor.extract(text).unwrap();
+    /// let entities = extractor.extract(text).expect("extract should succeed");
     /// assert!(!entities.urls.is_empty());
     /// assert!(!entities.emails.is_empty());
     /// ```

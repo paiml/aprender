@@ -29,8 +29,8 @@
 //!
 //! // Overdispersed count data - use Negative Binomial
 //! let mut model = GLM::new(Family::NegativeBinomial).with_dispersion(0.5);
-//! model.fit(&x, &y).unwrap();
-//! let predictions = model.predict(&x_test).unwrap();
+//! model.fit(&x, &y).expect("GLM fit should succeed");
+//! let predictions = model.predict(&x_test).expect("GLM predict should succeed");
 //! ```
 
 use crate::error::{AprenderError, Result};

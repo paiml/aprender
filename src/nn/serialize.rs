@@ -16,7 +16,7 @@
 //!     .add(Linear::new(256, 10));
 //!
 //! // Save model weights
-//! save_model(&model, "model.safetensors").unwrap();
+//! save_model(&model, "model.safetensors").expect("save model");
 //!
 //! // Load weights into a new model
 //! let mut new_model = Sequential::new()
@@ -24,8 +24,8 @@
 //!     .add(ReLU::new())
 //!     .add(Linear::new(256, 10));
 //!
-//! let state = load_state_dict("model.safetensors").unwrap();
-//! load_into_model(&mut new_model, &state).unwrap();
+//! let state = load_state_dict("model.safetensors").expect("load state dict");
+//! load_into_model(&mut new_model, &state).expect("load into model");
 //! ```
 
 use std::collections::BTreeMap;
@@ -131,7 +131,7 @@ pub fn load_state_dict_into<M: Module + ?Sized>(
 ///
 /// ```ignore
 /// let model = Linear::new(10, 5);
-/// save_model(&model, "linear.safetensors").unwrap();
+/// save_model(&model, "linear.safetensors").expect("save model");
 /// ```
 pub fn save_model<M: Module + ?Sized, P: AsRef<Path>>(module: &M, path: P) -> Result<(), String> {
     let state = state_dict(module, "");
@@ -173,7 +173,7 @@ pub fn load_state_dict<P: AsRef<Path>>(path: P) -> Result<StateDict, String> {
 ///
 /// ```ignore
 /// let mut model = Linear::new(10, 5);
-/// load_model(&mut model, "linear.safetensors").unwrap();
+/// load_model(&mut model, "linear.safetensors").expect("load model");
 /// ```
 pub fn load_model<M: Module + ?Sized, P: AsRef<Path>>(
     module: &mut M,

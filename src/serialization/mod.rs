@@ -25,16 +25,16 @@
 //! use aprender::primitives::{Matrix, Vector};
 //! use aprender::traits::Estimator;
 //!
-//! # let x = Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).unwrap();
+//! # let x = Matrix::from_vec(3, 1, vec![1.0, 2.0, 3.0]).expect("valid matrix dimensions");
 //! # let y = Vector::from_vec(vec![2.0, 3.0, 4.0]);
 //! let mut model = LinearRegression::new();
-//! model.fit(&x, &y).unwrap();
+//! model.fit(&x, &y).expect("linear regression fit should succeed");
 //!
 //! // Save to SafeTensors
-//! model.save_safetensors("model.safetensors").unwrap();
+//! model.save_safetensors("model.safetensors").expect("save safetensors should succeed");
 //!
 //! // Load from SafeTensors
-//! let loaded = LinearRegression::load_safetensors("model.safetensors").unwrap();
+//! let loaded = LinearRegression::load_safetensors("model.safetensors").expect("load safetensors should succeed");
 //! # std::fs::remove_file("model.safetensors").ok();
 //! ```
 //!
@@ -48,9 +48,9 @@
 //! writer.set_metadata("vocab", json!(["hello", "world"]));
 //! writer.add_tensor_f32("weights", vec![2, 2], &[1.0, 2.0, 3.0, 4.0]);
 //!
-//! let bytes = writer.to_bytes().unwrap();
-//! let reader = AprReader::from_bytes(bytes).unwrap();
-//! assert_eq!(reader.get_metadata("model_type").unwrap(), "whisper-tiny");
+//! let bytes = writer.to_bytes().expect("APR writer to_bytes should succeed");
+//! let reader = AprReader::from_bytes(bytes).expect("APR reader from_bytes should succeed");
+//! assert_eq!(reader.get_metadata("model_type").expect("model_type metadata should exist"), "whisper-tiny");
 //! ```
 
 pub mod apr;

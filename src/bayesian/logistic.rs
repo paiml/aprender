@@ -30,10 +30,10 @@ use crate::primitives::{Matrix, Vector};
 /// use aprender::primitives::{Matrix, Vector};
 ///
 /// let mut model = BayesianLogisticRegression::new(1.0); // precision = 1.0
-/// model.fit(&x_train, &y_train).unwrap();
+/// model.fit(&x_train, &y_train).expect("fit should succeed with valid data");
 ///
-/// let probas = model.predict_proba(&x_test).unwrap();
-/// let (lower, upper) = model.predict_proba_interval(&x_test, 0.95).unwrap();
+/// let probas = model.predict_proba(&x_test).expect("prediction should succeed after fitting");
+/// let (lower, upper) = model.predict_proba_interval(&x_test, 0.95).expect("interval prediction should succeed after fitting");
 /// ```
 #[derive(Debug, Clone)]
 pub struct BayesianLogisticRegression {

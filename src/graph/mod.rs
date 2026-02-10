@@ -11,7 +11,7 @@
 //! # Examples
 //!
 //! ```
-//! use aprender::graph::Graph;
+//! use aprender::graph::{Graph, GraphCentrality};
 //!
 //! let g = Graph::from_edges(&[(0, 1), (1, 2), (2, 0)], false);
 //!
@@ -810,13 +810,13 @@ impl Graph {
     /// let g = Graph::from_edges(&edges, false);
     ///
     /// // Shortest path from 0 to 3
-    /// let path = g.shortest_path(0, 3).unwrap();
+    /// let path = g.shortest_path(0, 3).expect("path from 0 to 3 should exist");
     /// assert_eq!(path.len(), 2); // 0 -> 3 (direct edge)
     /// assert_eq!(path[0], 0);
     /// assert_eq!(path[1], 3);
     ///
     /// // Path 0 to 2
-    /// let path = g.shortest_path(0, 2).unwrap();
+    /// let path = g.shortest_path(0, 2).expect("path from 0 to 2 should exist");
     /// assert!(path.len() <= 3); // Either 0->1->2 or 0->3->2
     /// ```
     #[must_use]
@@ -899,7 +899,7 @@ impl Graph {
     /// use aprender::graph::Graph;
     ///
     /// let g = Graph::from_weighted_edges(&[(0, 1, 1.0), (1, 2, 2.0), (0, 2, 5.0)], false);
-    /// let (path, dist) = g.dijkstra(0, 2).unwrap();
+    /// let (path, dist) = g.dijkstra(0, 2).expect("dijkstra path should exist");
     /// assert_eq!(dist, 3.0); // 0->1->2 is shorter than 0->2
     /// ```
     #[must_use]
@@ -1095,7 +1095,7 @@ impl Graph {
     /// // Manhattan distance heuristic (example)
     /// let heuristic = |node: usize| (3 - node) as f64;
     ///
-    /// let path = g.a_star(0, 3, heuristic).unwrap();
+    /// let path = g.a_star(0, 3, heuristic).expect("a_star path should exist");
     /// assert_eq!(path, vec![0, 1, 2, 3]);
     /// ```
     pub fn a_star<F>(&self, source: NodeId, target: NodeId, heuristic: F) -> Option<Vec<NodeId>>

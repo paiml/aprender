@@ -250,12 +250,12 @@ impl LatentDirichletAllocation {
     /// let dtm = Matrix::from_vec(2, 3, vec![
     ///     1.0, 2.0, 0.0,
     ///     0.0, 1.0, 2.0,
-    /// ]).unwrap();
+    /// ]).expect("matrix creation should succeed");
     ///
     /// let mut lda = LatentDirichletAllocation::new(2);
-    /// lda.fit(&dtm, 5).unwrap();
+    /// lda.fit(&dtm, 5).expect("fit should succeed");
     ///
-    /// let topic_words = lda.topic_words().unwrap();
+    /// let topic_words = lda.topic_words().expect("model should be fitted");
     /// assert_eq!(topic_words.n_rows(), 2);  // 2 topics
     /// assert_eq!(topic_words.n_cols(), 3);  // 3 terms
     /// ```
@@ -281,13 +281,13 @@ impl LatentDirichletAllocation {
     /// let dtm = Matrix::from_vec(2, 3, vec![
     ///     2.0, 1.0, 0.0,
     ///     0.0, 1.0, 2.0,
-    /// ]).unwrap();
+    /// ]).expect("matrix creation should succeed");
     ///
     /// let mut lda = LatentDirichletAllocation::new(2);
-    /// lda.fit(&dtm, 5).unwrap();
+    /// lda.fit(&dtm, 5).expect("fit should succeed");
     ///
     /// let vocab = vec!["word1".to_string(), "word2".to_string(), "word3".to_string()];
-    /// let top_words = lda.top_words(&vocab, 2).unwrap();
+    /// let top_words = lda.top_words(&vocab, 2).expect("top_words should succeed");
     /// assert_eq!(top_words.len(), 2);  // 2 topics
     /// ```
     pub fn top_words(
