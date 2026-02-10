@@ -508,6 +508,101 @@ pub fn run_verify(source: &Path, intermediate: &str, tolerance: f32, json: bool)
     Ok(())
 }
 
+/// Print the header box for inference comparison report
+fn print_compare_header(model_a: &Path, model_b: &Path, prompt: &str) {
+    println!(
+        "{}",
+        "╔══════════════════════════════════════════════════════════════════════════════╗"
+            .cyan()
+    );
+    println!(
+        "{}",
+        "║                     INFERENCE COMPARISON REPORT (PMAT-114)                   ║"
+            .cyan()
+    );
+    println!(
+        "{}",
+        "╠══════════════════════════════════════════════════════════════════════════════╣"
+            .cyan()
+    );
+    println!(
+        "║ Model A: {:<66} ║",
+        truncate_path(model_a.display().to_string(), 66)
+    );
+    println!(
+        "║ Model B: {:<66} ║",
+        truncate_path(model_b.display().to_string(), 66)
+    );
+    println!(
+        "║ Prompt: {:?}{} ║",
+        prompt,
+        " ".repeat(59_usize.saturating_sub(prompt.len()))
+    );
+    println!(
+        "{}",
+        "╠══════════════════════════════════════════════════════════════════════════════╣"
+            .cyan()
+    );
+}
+
+/// Print JSON output for inference comparison
+#[allow(clippy::too_many_arguments)]
+fn print_compare_json(
+    model_a: &Path,
+    model_b: &Path,
+    prompt: &str,
+    total_tokens: usize,
+    mismatches: usize,
+    tolerance: f32,
+    text_a: &str,
+    text_b: &str,
+) {
+    let match_rate = if total_tokens > 0 {
+        1.0 - (mismatches as f64 / total_tokens as f64)
+    } else {
+        0.0
+    };
+
+    println!("{{");
+    println!("  \"model_a\": \"{}\",", model_a.display());
+    println!("  \"model_b\": \"{}\",", model_b.display());
+    println!("  \"prompt\": {:?},", prompt);
+    println!("  \"total_tokens\": {},", total_tokens);
+    println!("  \"mismatches\": {},", mismatches);
+    println!("  \"match_rate\": {:.4},", match_rate);
+    println!("  \"text_a\": {:?},", text_a);
+    println!("  \"text_b\": {:?},", text_b);
+    println!(
+        "  \"passed\": {}",
+        mismatches == 0 || (1.0 - match_rate as f32) <= tolerance
+    );
+    println!("}}");
+}
+
+/// Validate that tokens were captured from both models (GH-188)
+fn validate_captured_tokens(text_a: &str, text_b: &str) -> Result<()> {
+    let a_empty = text_a.is_empty() || text_a.contains("tok/s");
+    let b_empty = text_b.is_empty() || text_b.contains("tok/s");
+
+    if a_empty && b_empty {
+        return Err(CliError::ValidationFailed(
+            "TRACING BROKEN: No tokens captured from either model. Check APR_TRACE_LOGITS parsing."
+                .to_string(),
+        ));
+    } else if a_empty {
+        return Err(CliError::ValidationFailed(format!(
+            "Model A produced no output. Model B: {:?}",
+            text_b
+        )));
+    } else if b_empty {
+        return Err(CliError::ValidationFailed(format!(
+            "Model B produced no output. Model A: {:?}",
+            text_a
+        )));
+    }
+    Ok(())
+}
+
 /// Run the rosetta compare-inference subcommand (PMAT-114)
 ///
 /// Compare inference outputs between two models to debug parity issues.
@@ -529,39 +624,7 @@ pub fn run_compare_inference(
     }
 
     if !json {
-        println!(
-            "{}",
-            "╔══════════════════════════════════════════════════════════════════════════════╗"
-                .cyan()
-        );
-        println!(
-            "{}",
-            "║                     INFERENCE COMPARISON REPORT (PMAT-114)                   ║"
-                .cyan()
-        );
-        println!(
-            "{}",
-            "╠══════════════════════════════════════════════════════════════════════════════╣"
-                .cyan()
-        );
-        println!(
-            "║ Model A: {:<66} ║",
-            truncate_path(model_a.display().to_string(), 66)
-        );
-        println!(
-            "║ Model B: {:<66} ║",
-            truncate_path(model_b.display().to_string(), 66)
-        );
-        println!(
-            "║ Prompt: {:?}{} ║",
-            prompt,
-            " ".repeat(59_usize.saturating_sub(prompt.len()))
-        );
-        println!(
-            "{}",
-            "╠══════════════════════════════════════════════════════════════════════════════╣"
-                .cyan()
-        );
+        print_compare_header(model_a, model_b, prompt);
     }
 
     // F-GT-002: Check for mixed quantization levels (R3 violation)
@@ -663,27 +726,16 @@ pub fn run_compare_inference(
     }
 
     if json {
-        // JSON output
-        let match_rate = if total_tokens > 0 {
-            1.0 - (mismatches as f64 / total_tokens as f64)
-        } else {
-            0.0
-        };
-
-        println!("{{");
-        println!("  \"model_a\": \"{}\",", model_a.display());
-        println!("  \"model_b\": \"{}\",", model_b.display());
-        println!("  \"prompt\": {:?},", prompt);
-        println!("  \"total_tokens\": {},", total_tokens);
-        println!("  \"mismatches\": {},", mismatches);
-        println!("  \"match_rate\": {:.4},", match_rate);
-        println!("  \"text_a\": {:?},", result_a.output_text);
-        println!("  \"text_b\": {:?},", result_b.output_text);
-        println!(
-            "  \"passed\": {}",
-            mismatches == 0 || (1.0 - match_rate as f32) <= tolerance
+        print_compare_json(
+            model_a,
+            model_b,
+            prompt,
+            total_tokens,
+            mismatches,
+            tolerance,
+            &result_a.output_text,
+            &result_b.output_text,
         );
-        println!("}}");
     } else {
         println!(
             "{}",
@@ -702,25 +754,7 @@ pub fn run_compare_inference(
 
     // GH-188 FIX: Fail if no tokens were captured (tracing broken or inference failed)
     if total_tokens == 0 {
-        // Check if we have output text even without token traces
-        let a_empty = result_a.output_text.is_empty() || result_a.output_text.contains("tok/s");
-        let b_empty = result_b.output_text.is_empty() || result_b.output_text.contains("tok/s");
-
-        if a_empty && b_empty {
-            return Err(CliError::ValidationFailed(
-                "TRACING BROKEN: No tokens captured from either model. Check APR_TRACE_LOGITS parsing.".to_string()
-            ));
-        } else if a_empty {
-            return Err(CliError::ValidationFailed(format!(
-                "Model A produced no output. Model B: {:?}",
-                result_b.output_text
-            )));
-        } else if b_empty {
-            return Err(CliError::ValidationFailed(format!(
-                "Model B produced no output. Model A: {:?}",
-                result_a.output_text
-            )));
-        }
+        validate_captured_tokens(&result_a.output_text, &result_b.output_text)?;
     }
 
     if mismatches > 0 {
