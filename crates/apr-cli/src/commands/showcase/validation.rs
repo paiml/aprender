@@ -95,83 +95,31 @@ pub(super) fn print_summary(results: &ShowcaseResults, _config: &ShowcaseConfig)
     }
 }
 
-pub(super) fn validate_falsification(
+/// Check step completion and collect failures (Points 1-40)
+fn validate_steps(
     results: &ShowcaseResults,
-    config: &ShowcaseConfig,
-) -> Result<()> {
+    is_full_run: bool,
+    requested_step: Option<ShowcaseStep>,
+) -> Vec<String> {
+    let mut failures = Vec::new();
+    let checks: &[(ShowcaseStep, bool, &str)] = &[
+        (ShowcaseStep::Import, results.import, "Point 1: Import step failed"),
+        (ShowcaseStep::GgufInference, results.gguf_inference, "Point 11: GGUF inference step failed"),
+        (ShowcaseStep::Convert, results.convert, "Point 21: APR conversion step failed"),
+        (ShowcaseStep::AprInference, results.apr_inference, "Point 31: APR inference step failed"),
+    ];
+    for &(step, passed, msg) in checks {
+        if (is_full_run || matches!(requested_step, Some(s) if s == step)) && !passed {
+            failures.push(msg.to_string());
+        }
+    }
+    failures
+}
+
+/// Validate benchmark performance requirements (Points 41-50)
+fn validate_benchmark(bench: &BenchmarkComparison) -> Vec<String> {
     let mut failures = Vec::new();
 
-    // Determine which steps were requested
-    let is_full_run = config.auto_verify || matches!(config.step, Some(ShowcaseStep::All));
-    let requested_step = config.step;
-
-    // For single-step runs (not auto-verify or --step all), skip validation of other steps
-    // CUDA demo, ZRAM demo, and Brick demo are standalone demos that pass on their own
-    let is_standalone_demo = matches!(
-        requested_step,
-        Some(ShowcaseStep::CudaDemo | ShowcaseStep::ZramDemo | ShowcaseStep::BrickDemo)
-    );
-
-    if is_standalone_demo {
-        // Standalone demos pass without requiring full pipeline
-        println!();
-        println!(
-            "{}",
-            "═══ Demo Complete (standalone mode) ═══".green().bold()
-        );
-        return Ok(());
-    }
-
-    // Check step completion (Points 1-40) - only for full runs
-    if (is_full_run || matches!(requested_step, Some(ShowcaseStep::Import))) && !results.import {
-        failures.push("Point 1: Import step failed".to_string());
-    }
-    if (is_full_run || matches!(requested_step, Some(ShowcaseStep::GgufInference)))
-        && !results.gguf_inference
-    {
-        failures.push("Point 11: GGUF inference step failed".to_string());
-    }
-    if (is_full_run || matches!(requested_step, Some(ShowcaseStep::Convert))) && !results.convert {
-        failures.push("Point 21: APR conversion step failed".to_string());
-    }
-    if (is_full_run || matches!(requested_step, Some(ShowcaseStep::AprInference)))
-        && !results.apr_inference
-    {
-        failures.push("Point 31: APR inference step failed".to_string());
-    }
-
-    // Point 41+: Benchmark required only for full runs or explicit bench step
-    if !is_full_run && !matches!(requested_step, Some(ShowcaseStep::Benchmark)) {
-        // Skip benchmark validation for single non-benchmark steps
-        if failures.is_empty() {
-            println!();
-            println!("{}", "═══ Step Complete ═══".green().bold());
-            return Ok(());
-        }
-    }
-
-    let Some(ref bench) = results.benchmark else {
-        if is_full_run || matches!(requested_step, Some(ShowcaseStep::Benchmark)) {
-            failures
-                .push("Benchmark data missing - required for performance validation".to_string());
-        }
-        if !failures.is_empty() {
-            println!();
-            println!("{}", "═══ Falsification Failures ═══".red().bold());
-            for failure in &failures {
-                println!("  {} {}", "✗".red(), failure);
-            }
-            return Err(CliError::ValidationFailed(format!(
-                "{} falsification point(s) failed",
-                failures.len()
-            )));
-        }
-        println!();
-        println!("{}", "═══ Step Complete ═══".green().bold());
-        return Ok(());
-    };
-
-    // Points 41-42: 25% speedup requirement
     if let Some(speedup) = bench.speedup_vs_llama {
         if speedup < 25.0 {
             failures.push(format!(
@@ -180,7 +128,6 @@ pub(super) fn validate_falsification(
             ));
         }
     }
-
     if let Some(speedup) = bench.speedup_vs_ollama {
         if speedup < 25.0 {
             failures.push(format!(
@@ -190,7 +137,6 @@ pub(super) fn validate_falsification(
         }
     }
 
-    // Point 49: Coefficient of variation <5%
     let cv = if bench.apr_tps > 0.0 {
         (bench.apr_tps_stddev / bench.apr_tps) * 100.0
     } else {
@@ -203,31 +149,68 @@ pub(super) fn validate_falsification(
         ));
     }
 
-    // Point 50: Minimum 30 runs
     if bench.runs < 30 {
         failures.push(format!(
             "Point 50: Only {} benchmark runs, required ≥30",
             bench.runs
         ));
     }
+    failures
+}
 
-    if !failures.is_empty() {
+/// Report failures and return error, or print success message
+fn report_failures(failures: &[String], success_msg: &str) -> Result<()> {
+    if failures.is_empty() {
         println!();
-        println!("{}", "═══ Falsification Failures ═══".red().bold());
-        for failure in &failures {
-            println!("  {} {}", "✗".red(), failure);
-        }
-        return Err(CliError::ValidationFailed(format!(
-            "{} falsification point(s) failed",
-            failures.len()
-        )));
+        println!("{}", success_msg.green().bold());
+        return Ok(());
+    }
+    println!();
+    println!("{}", "═══ Falsification Failures ═══".red().bold());
+    for failure in failures {
+        println!("  {} {}", "✗".red(), failure);
+    }
+    Err(CliError::ValidationFailed(format!(
+        "{} falsification point(s) failed",
+        failures.len()
+    )))
+}
+
+pub(super) fn validate_falsification(
+    results: &ShowcaseResults,
+    config: &ShowcaseConfig,
+) -> Result<()> {
+    let is_full_run = config.auto_verify || matches!(config.step, Some(ShowcaseStep::All));
+    let requested_step = config.step;
+
+    // Standalone demos pass without requiring full pipeline
+    if matches!(
+        requested_step,
+        Some(ShowcaseStep::CudaDemo | ShowcaseStep::ZramDemo | ShowcaseStep::BrickDemo)
+    ) {
+        println!();
+        println!(
+            "{}",
+            "═══ Demo Complete (standalone mode) ═══".green().bold()
+        );
+        return Ok(());
     }
 
-    println!();
-    println!(
-        "{}",
-        "═══ All Falsification Points Passed ═══".green().bold()
-    );
+    let mut failures = validate_steps(results, is_full_run, requested_step);
 
-    Ok(())
+    // Skip benchmark validation for single non-benchmark steps
+    if !is_full_run && !matches!(requested_step, Some(ShowcaseStep::Benchmark)) {
+        return report_failures(&failures, "═══ Step Complete ═══");
+    }
+
+    let Some(ref bench) = results.benchmark else {
+        if is_full_run || matches!(requested_step, Some(ShowcaseStep::Benchmark)) {
+            failures
+                .push("Benchmark data missing - required for performance validation".to_string());
+        }
+        return report_failures(&failures, "═══ Step Complete ═══");
+    };
+
+    failures.extend(validate_benchmark(bench));
+    report_failures(&failures, "═══ All Falsification Points Passed ═══")
 }
