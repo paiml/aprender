@@ -1022,7 +1022,7 @@ fn test_f_disp_01_magic_vs_extension() {
         "F-DISP-01: GGUF should be detected by magic bytes, not extension"
     );
     assert!(
-        result.unwrap().format_version.contains("GGUF"),
+        result.expect("test harness value").format_version.contains("GGUF"),
         "F-DISP-01: Should detect as GGUF format"
     );
 }
@@ -1098,7 +1098,7 @@ fn test_f_disp_04_cross_format_linting() {
     // Lint should trigger GGUF-specific warnings
     let result = lint_model_file(file.path());
     assert!(result.is_ok(), "F-DISP-04: Lint should not crash on GGUF");
-    let report = result.unwrap();
+    let report = result.expect("test harness value");
     assert!(
         report.warn_count > 0,
         "F-DISP-04: GGUF without metadata should trigger warnings"
@@ -1140,7 +1140,7 @@ fn test_f_data_01_nan_propagation() {
     let rosetta = RosettaStone::default();
     let result = rosetta.validate(file.path());
     assert!(result.is_ok(), "F-DATA-01: Validation should not crash");
-    let report = result.unwrap();
+    let report = result.expect("test harness value");
     assert!(
         report.total_nan_count > 0,
         "F-DATA-01: NaN should be detected and reported"
@@ -1184,7 +1184,7 @@ fn test_f_data_02_all_zeros_alarm() {
     let rosetta = RosettaStone::default();
     let result = rosetta.validate(file.path());
     assert!(result.is_ok(), "F-DATA-02: Validation should not crash");
-    let report = result.unwrap();
+    let report = result.expect("test harness value");
 
     // DEFECT-002 FIX VERIFICATION: All-zeros should now be detected
     assert!(
@@ -1223,7 +1223,7 @@ fn test_f_tps_02_mmap_verification() {
     );
 
     // Verify format detected correctly (mmap path would work)
-    let info = result.unwrap();
+    let info = result.expect("test harness value");
     assert!(
         info.format_version.contains("SafeTensors"),
         "F-TPS-02: Should detect SafeTensors format via mmap path"
@@ -1272,7 +1272,7 @@ fn test_f_infer_config_realistic_dimensions() {
         "Inference must succeed with realistic dims"
     );
 
-    let config = config.unwrap();
+    let config = config.expect("test harness value");
     assert_eq!(config.hidden_size, Some(128));
     assert_eq!(config.vocab_size, Some(256));
     assert_eq!(config.num_heads, Some(2), "128/64 head_dim = 2 heads");
