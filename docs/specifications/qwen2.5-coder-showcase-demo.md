@@ -1,7 +1,7 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 10.23.0 (Full Stack: apr-cli + aprender + realizar + trueno, Popperian falsified)
-**Status:** Performance Sprint + Code Quality (7B all 3 formats working CPU + GPU. 22 falsification rounds, 115 bugs found. Round 22: trueno A+ achievement — benchmark workflow, docs.rs metadata, unwrap→expect, encoder refactoring, CI expansion. Measured: 80.6 tok/s decode = 0.64x Ollama (Grade D). Prefill: 153.4 tok/s = 3.32x Ollama. Target: 1.0x parity (C grade), 2.0x stretch (A grade). BW utilization: 25.2% of 1008 GB/s. Project Scores: aprender A+ (105%), realizar A (93.6%), trueno A+ (100.9%). Coverage: 96.35%.)
+**Version:** 10.24.0 (Full Stack: apr-cli + aprender + realizar + trueno, Popperian falsified)
+**Status:** ALL THREE PROJECTS A+ (7B all 3 formats working CPU + GPU. 23 falsification rounds, 116 bugs found. Round 23: realizar A+ — docs.rs metadata + .cargo/config.toml. Measured: 80.6 tok/s decode = 0.64x Ollama (Grade D). Prefill: 153.4 tok/s = 3.32x Ollama. Target: 1.0x parity (C grade), 2.0x stretch (A grade). BW utilization: 25.2% of 1008 GB/s. Project Scores: aprender A+ (105%), realizar A+ (99.9%), trueno A+ (100.9%). Coverage: 96.35%.)
 **Primary Model:** `Qwen/Qwen2.5-Coder-7B-Instruct`
 **Source Format:** SafeTensors BF16 (HuggingFace, sharded, ~14 GB)
 **Popperian Score:** 191/206 gates passing (92.7%) — 13 FALSIFIED, 0 blocked/not-tested. 158 falsification gates, 25 sections. Gated by `model-tests` feature (`make test-model`)
@@ -36,7 +36,7 @@
 
 The Qwen2.5-Coder Showcase demonstrates the unified inference architecture across three model formats (SafeTensors, APR, GGUF) with CPU and GPU backends, using a single model with a single provenance chain. The full stack is exercised end-to-end: **apr-cli** (48 subcommands) → **aprender** (contract validation, 297 compile-time proofs) → **realizar** (inference: two-phase generation with batched prefill, PagedAttention KV cache, 8 sampling algorithms + penalty modifiers, GQA attention, OpenAI-compatible API, PTX parity validation) → **trueno** (SIMD/GPU compute: 9 backend tiers, 95 CUDA kernels, 6 batched kernel variants with KernelParity trait, Jidoka quality gates). 158 falsification gates across 25 sections.
 
-**v10.23.0 Focus: trueno A+ Achievement + Cross-Project Quality + Ollama Performance Parity Sprint**
+**v10.24.0 Focus: ALL THREE PROJECTS A+ + Ollama Performance Parity Sprint**
 - **Current (measured 2026-02-09):** 80.6 tok/s GPU decode (0.64x Ollama 125.7 tok/s) — Grade D
 - **Prefill: 153.4 tok/s (3.32x FASTER than Ollama 46.2 tok/s)** — Batched prefill is world-class
 - **Target:** 125.7 tok/s (1.0x parity, Grade C) → 251 tok/s (2.0x, Grade A)
@@ -2190,6 +2190,12 @@ This section documents bugs found by falsifying the spec itself against the code
 | 114 | trueno unwrap() count is acceptable | 125 production unwrap() calls (P0 Cloudflare-class risk). Fixed 42 across trueno-explain (23), cbtop (27), trueno-gpu (2) — count reduced to 83. | **P1** | Replaced `unwrap()` with `expect()` with descriptive messages across 3 subcrates. |
 | 115 | `forward_encoder_block_gpu` complexity is manageable | Cyclomatic complexity 34 — 8 inline debug blocks with identical `peek_host()` + stats pattern. | **P2** | Extracted `debug_gpu_stats()` and `debug_gpu_weight()` helpers. Cyclomatic reduced to ~12. |
 
+**Round 23 (v10.24.0): ALL THREE PROJECTS A+ — realizar docs.rs metadata + .cargo/config.toml**
+
+| # | Claim/Gap | Reality | Severity | Fix |
+|---|-----------|---------|----------|-----|
+| 116 | realizar has docs.rs metadata | No `[package.metadata.docs.rs]` section in Cargo.toml. Missing +10 documentation points. Score stuck at 148.9/159 (A). | **P2** | Added `[package.metadata.docs.rs]` with `all-features = true` and `--generate-link-to-definition`. Score: 148.9 → 158.9/159 (A+). |
+
 ### 18.2 Claims Verified (Not Falsified)
 
 **Round 1:**
@@ -2306,7 +2312,7 @@ All projects in the Sovereign AI Stack must maintain quality standards. Round 21
 | Project | Score | Grade | Key Issues |
 |---------|-------|-------|------------|
 | **aprender** | 166.9/159 | **A+** (105%) | Code Quality 42.3% (complexity hotspots) |
-| **realizar** | 148.9/159 | **A** (93.6%) | Known Defects 75%, Tooling 44.2% |
+| **realizar** | 158.9/159 | **A+** (99.9%) | Known Defects 75%, Tooling 51.9%. Round 23: +10 docs.rs metadata, +.cargo/config.toml |
 | **trueno** | 160.4/159 | **A+** (100.9%) | Enabled benchmark.yml (+6 CI), docs.rs metadata (+10), unwrap→expect (125→83), encoder refactoring (cyclomatic 34→12), CI 6 jobs |
 
 ### 20.2 Cross-Project Falsification Gates (F-XPROJ-*)
