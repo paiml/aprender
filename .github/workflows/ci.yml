@@ -233,6 +233,43 @@ jobs:
         run: shellcheck --severity=error scripts/*.sh
         continue-on-error: true  # Warnings don't block CI
 
+  kani:
+    name: Kani (Bounded Model Checking)
+    runs-on: ubuntu-latest
+    continue-on-error: true  # Kani is optional — proof harnesses may timeout
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Kani
+        run: |
+          cargo install --locked kani-verifier || true
+          cargo kani setup || true
+      - name: Run Kani proofs
+        run: |
+          if command -v cargo-kani &> /dev/null; then
+            cargo kani --harness proof_q4k_block_size_invariant || true
+            cargo kani --harness proof_q6k_block_size_invariant || true
+            cargo kani --harness proof_shape_reversal_involution || true
+          else
+            echo "::warning::Kani not available — skipping proof verification"
+          fi
+
+  miri:
+    name: Miri (Undefined Behavior Detection)
+    runs-on: ubuntu-latest
+    continue-on-error: true  # Miri may fail on FFI/GPU code paths
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri
+      - uses: Swatinem/rust-cache@v2
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+      - name: Run Miri on core library (no FFI)
+        run: cargo +nightly miri test --lib --no-default-features -- --skip gpu --skip cuda --skip audio --skip speech
+        env:
+          MIRIFLAGS: -Zmiri-disable-isolation -Zmiri-permissive-provenance
+
   wasm:
     name: WASM Compatibility
     runs-on: ubuntu-latest

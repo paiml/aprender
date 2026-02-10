@@ -1,19 +1,6 @@
 # Clippy Configuration for Aprender
 # Enforces Toyota Way quality standards
 
-# Disallow dangerous methods that can cause panics
-# NOTE: Temporarily disabled for CI - see GH-41 for unwrap() remediation plan
-# Uncomment when unwrap() elimination is complete
-# disallowed-methods = [
-#     # unwrap() can panic and crash the process (Cloudflare 2025-11-18 class defect)
-#     { path = "core::option::Option::unwrap", reason = "Use .expect() with descriptive message or proper error handling with ?. See GH-41." },
-#     { path = "core::result::Result::unwrap", reason = "Use .expect() with descriptive message or proper error handling with ?. See GH-41." },
-#
-#     # Other panic-inducing methods
-#     { path = "core::option::Option::unwrap_or_default", reason = "Use .unwrap_or() or .unwrap_or_else() to make the default explicit." },
-#     { path = "core::result::Result::unwrap_err", reason = "Use .expect_err() with descriptive message or proper error handling." },
-# ]
-
 # Additional lint configuration
 # Cognitive complexity threshold (Toyota Way: ≤15)
 cognitive-complexity-threshold = 15
@@ -26,6 +13,16 @@ allowed-idents-below-min-chars = ["x", "y", "i", "j", "k", "n", "m", "a", "b", "
 
 # Minimum identifier length (allow single chars for math)
 min-ident-chars-threshold = 1
+
+# Disallow dangerous methods that can cause panics
+# GH-41: unwrap() elimination complete — enforcement enabled
+[[disallowed-methods]]
+path = "core::option::Option::unwrap"
+reason = "Use .expect() with descriptive message or proper error handling with ?. See GH-41."
+
+[[disallowed-methods]]
+path = "core::result::Result::unwrap"
+reason = "Use .expect() with descriptive message or proper error handling with ?. See GH-41."
 
 # LAYOUT-001: Column-major kernel bans (PMAT-243)
 # APR is exclusively row-major. Column-major kernels produce garbage output.

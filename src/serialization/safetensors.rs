@@ -201,6 +201,7 @@ pub fn save_safetensors_with_metadata<P: AsRef<Path>>(
         let data_size = data.len() * 4;
         let end_offset = current_offset + data_size;
 
+        #[allow(clippy::disallowed_methods)] // serde_json::json! macro uses unwrap() internally
         let tensor_meta = serde_json::json!({
             "dtype": "F32",
             "shape": shape,
