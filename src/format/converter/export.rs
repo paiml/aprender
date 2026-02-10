@@ -202,14 +202,40 @@ pub fn apr_export<P: AsRef<Path>>(
     let input_path = input.as_ref();
     let output_path = output.as_ref();
 
-    // Validate input exists
+    validate_export_inputs(input_path, &options)?;
+
+    // PMAT-252: For APR→GGUF with quantized source, use raw block passthrough
+    if let Some(report) = try_raw_gguf_passthrough(input_path, output_path, &options)? {
+        return Ok(report);
+    }
+
+    let provenance = load_model_tensors_provenance(input_path)?;
+    let original_size = calculate_tensor_size(provenance.as_map());
+    let tensors = provenance.into_map();
+
+    let tensors = prepare_tensors_for_export(tensors, input_path, &options);
+    warn_contract_violations(&tensors);
+    let tensors = apply_export_quantization(tensors, input_path, &options)?;
+
+    dispatch_export(&tensors, input_path, output_path, &options)?;
+
+    let exported_size = fs::metadata(output_path).map(|m| m.len() as usize).unwrap_or(0);
+    Ok(ExportReport {
+        original_size,
+        exported_size,
+        tensor_count: tensors.len(),
+        format: options.format,
+        quantization: options.quantize,
+    })
+}
+
+/// Validate export inputs (file exists, format supported).
+fn validate_export_inputs(input_path: &Path, options: &ExportOptions) -> Result<()> {
     if !input_path.exists() {
         return Err(AprenderError::FormatError {
             message: format!("Input file not found: {}", input_path.display()),
         });
     }
-
-    // Check if format is supported
     if !options.format.is_supported() {
         return Err(AprenderError::FormatError {
             message: format!(
@@ -218,128 +244,103 @@ pub fn apr_export<P: AsRef<Path>>(
             ),
         });
     }
+    Ok(())
+}
 
-    // PMAT-252: For APR→GGUF with quantized source, use raw block passthrough
-    // to avoid lossy double quantization (Q4K→F32→Q4K).
-    if options.format == ExportFormat::Gguf
-        && options.quantize.is_none()
-        && input_path.extension().and_then(|e| e.to_str()) == Some("apr")
+/// PMAT-252: Try raw block passthrough for quantized APR→GGUF.
+fn try_raw_gguf_passthrough(
+    input_path: &Path,
+    output_path: &Path,
+    options: &ExportOptions,
+) -> Result<Option<ExportReport>> {
+    if options.format != ExportFormat::Gguf
+        || options.quantize.is_some()
+        || input_path.extension().and_then(|e| e.to_str()) != Some("apr")
     {
-        if let Some(detected) = detect_apr_quantization(input_path) {
-            eprintln!(
-                "[PMAT-252] Raw passthrough: detected {:?} in APR source. Copying blocks directly (zero loss).",
-                detected
-            );
-            let report = export_apr_to_gguf_raw(input_path, output_path)?;
-            return Ok(report);
-        }
+        return Ok(None);
     }
+    match detect_apr_quantization(input_path) {
+        Some(detected) => {
+            eprintln!(
+                "[PMAT-252] Raw passthrough: detected {detected:?} in APR source. Copying blocks directly (zero loss)."
+            );
+            export_apr_to_gguf_raw(input_path, output_path).map(Some)
+        }
+        None => Ok(None),
+    }
+}
 
-    // DOUBLE-QUANT-001: Load with provenance tracking to prevent double quantization.
-    let provenance = load_model_tensors_provenance(input_path)?;
-    let original_size = calculate_tensor_size(provenance.as_map());
-
-    // Consume provenance into raw map for downstream processing.
-    let tensors = provenance.into_map();
-
-    // GH-200: Map GGUF tensor names to HF canonical format before export.
-    // GGUF uses names like "blk.0.attn_q.weight" but SafeTensors/HF expects
-    // "model.layers.0.self_attn.q_proj.weight". Without this, exported
-    // SafeTensors files have wrong names and fail inference.
+/// Prepare tensors: name mapping, QKV unfusing, lm_head removal.
+fn prepare_tensors_for_export(
+    tensors: BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+    input_path: &Path,
+    options: &ExportOptions,
+) -> BTreeMap<String, (Vec<f32>, Vec<usize>)> {
+    // GH-200: Map GGUF names to HF canonical format
     let tensors = if input_path.extension().and_then(|e| e.to_str()) == Some("gguf") {
-        let arch = detect_gguf_architecture(input_path);
-        map_tensor_names(&tensors, arch)
+        map_tensor_names(&tensors, detect_gguf_architecture(input_path))
     } else {
         tensors
     };
-
-    // ROSETTA-003: Unfuse legacy QKV tensors for lossless round-trip export.
-    // Old APR files (pre-ROSETTA-003) fused Q/K/V into qkv_proj for realizar.
-    // New APR files store separate Q/K/V. This handles both.
     let tensors = unfuse_qkv_tensors(tensors, input_path);
-
-    // ROSETTA-003: Remove synthesized lm_head for SafeTensors export (tied embeddings).
-    // HuggingFace convention omits lm_head.weight when tied to embed_tokens.
-    let tensors = if options.format == ExportFormat::SafeTensors {
+    if options.format == ExportFormat::SafeTensors {
         remove_tied_lm_head(tensors, input_path)
     } else {
         tensors
-    };
+    }
+}
 
-    // ENFORCE CONTRACT (P0 - contracts/tensor-layout-v1.yaml)
-    // Validate tensors before export to catch any corrupted APR files.
+/// Log contract violations (non-fatal).
+fn warn_contract_violations(tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>) {
     let layout_contract = contract();
-    // Infer vocab_size and hidden_dim from tensors
-    let (vocab_size, hidden_dim) = infer_vocab_hidden(&tensors);
-    if vocab_size > 0 && hidden_dim > 0 {
-        for (name, (_data, shape)) in &tensors {
-            if let Err(e) = layout_contract.validate_apr_shape(name, shape, vocab_size, hidden_dim)
-            {
-                eprintln!(
-                    "[CONTRACT-VIOLATION] Export validation failed for {}: {}",
-                    name, e
-                );
-                // Don't hard fail on export - log the warning
-            }
+    let (vocab_size, hidden_dim) = infer_vocab_hidden(tensors);
+    if vocab_size == 0 || hidden_dim == 0 {
+        return;
+    }
+    for (name, (_data, shape)) in tensors {
+        if let Err(e) = layout_contract.validate_apr_shape(name, shape, vocab_size, hidden_dim) {
+            eprintln!("[CONTRACT-VIOLATION] Export validation failed for {name}: {e}");
         }
     }
+}
 
-    // DOUBLE-QUANT-001: Apply quantization only to natively F32 tensors.
-    // Attempting to quantize dequantized tensors is rejected at compile time
-    // (quantize_tensors only accepts NativeF32Tensors), but we also need a
-    // runtime check here since we've already destructured the provenance above.
-    let tensors = if let Some(ref quant_type) = options.quantize {
-        // Re-check provenance by re-loading (the provenance was consumed by into_map above).
-        // This is cheap since we only read the header, not the tensor data.
-        if let Some(detected) = detect_apr_quantization(input_path) {
-            return Err(AprenderError::FormatError {
-                message: format!(
-                    "DOUBLE-QUANT-001: Cannot re-quantize to {quant_type:?}: source is already \
-                     {detected:?}. Remove --quantize flag to use raw passthrough."
-                ),
-            });
-        }
-        let native = NativeF32Tensors::new(tensors);
-        quantize_tensors(&native, quant_type)?.into_inner()
-    } else {
-        tensors
+/// DOUBLE-QUANT-001: Apply quantization only to natively F32 tensors.
+fn apply_export_quantization(
+    tensors: BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+    input_path: &Path,
+    options: &ExportOptions,
+) -> Result<BTreeMap<String, (Vec<f32>, Vec<usize>)>> {
+    let Some(ref quant_type) = options.quantize else {
+        return Ok(tensors);
     };
+    if let Some(detected) = detect_apr_quantization(input_path) {
+        return Err(AprenderError::FormatError {
+            message: format!(
+                "DOUBLE-QUANT-001: Cannot re-quantize to {quant_type:?}: source is already \
+                 {detected:?}. Remove --quantize flag to use raw passthrough."
+            ),
+        });
+    }
+    let native = NativeF32Tensors::new(tensors);
+    Ok(quantize_tensors(&native, quant_type)?.into_inner())
+}
 
-    // Export to target format
+/// Dispatch to format-specific export.
+fn dispatch_export(
+    tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+    input_path: &Path,
+    output_path: &Path,
+    options: &ExportOptions,
+) -> Result<()> {
     match options.format {
         ExportFormat::SafeTensors => {
-            export_safetensors_with_companions(
-                &tensors,
-                input_path,
-                output_path,
-                &options,
-            )?;
+            export_safetensors_with_companions(tensors, input_path, output_path, options)
         }
-        ExportFormat::Gguf => {
-            export_to_gguf(&tensors, output_path, input_path, options.quantize.as_ref())?;
-        }
-        ExportFormat::Onnx | ExportFormat::TorchScript => {
-            return Err(AprenderError::FormatError {
-                message: format!("Export format {:?} is not yet implemented", options.format),
-            });
-        }
+        ExportFormat::Gguf => export_to_gguf(tensors, output_path, input_path, options.quantize.as_ref()),
+        ExportFormat::Onnx | ExportFormat::TorchScript => Err(AprenderError::FormatError {
+            message: format!("Export format {:?} is not yet implemented", options.format),
+        }),
     }
-
-    // Get exported file size
-    let exported_size = fs::metadata(output_path)
-        .map(|m| m.len() as usize)
-        .unwrap_or(0);
-
-    // BUG-EXPORT-003 FIX: Report actual exported tensor count, not original.
-    // After unfuse_qkv_tensors (increases count) and remove_tied_lm_head
-    // (decreases count for SafeTensors), the count may differ from original.
-    Ok(ExportReport {
-        original_size,
-        exported_size,
-        tensor_count: tensors.len(),
-        format: options.format,
-        quantization: options.quantize,
-    })
 }
 
 /// Export to SafeTensors with optional companion files (config.json, tokenizer.json)
@@ -401,217 +402,142 @@ fn export_safetensors_with_companions(
 ///
 /// BUG-EXPORT-004 FIX: Now includes tokenizer metadata for realizar inference.
 /// Without BOS/EOS token IDs, the model produces empty output.
+/// Resolved GGUF export configuration (APR metadata with inferred fallbacks).
+struct GgufExportConfig {
+    arch: String,
+    hidden_size: usize,
+    num_layers: usize,
+    num_heads: usize,
+    num_kv_heads: usize,
+    vocab_size: usize,
+    intermediate_size: usize,
+    max_pos: usize,
+    rope_theta: f32,
+    rms_norm_eps: f32,
+    head_dim: usize,
+    model_name: String,
+}
+
+/// Resolve GGUF export config from APR metadata + inferred fallbacks.
+fn resolve_gguf_config(
+    apr_metadata: Option<&crate::format::v2::AprV2Metadata>,
+    inferred: Option<&crate::format::gguf::GgufModelConfig>,
+) -> GgufExportConfig {
+    /// Resolve a field: APR metadata → inferred → default.
+    fn resolve<T: Copy>(
+        apr: Option<&crate::format::v2::AprV2Metadata>,
+        inf: Option<&crate::format::gguf::GgufModelConfig>,
+        apr_f: impl Fn(&crate::format::v2::AprV2Metadata) -> Option<T>,
+        inf_f: impl Fn(&crate::format::gguf::GgufModelConfig) -> Option<T>,
+        default: T,
+    ) -> T {
+        apr.and_then(&apr_f).or_else(|| inf.and_then(&inf_f)).unwrap_or(default)
+    }
+
+    let num_heads = resolve(apr_metadata, inferred, |m| m.num_heads, |c| c.num_heads, 32);
+    let hidden_size = resolve(apr_metadata, inferred, |m| m.hidden_size, |c| c.hidden_size, 4096);
+
+    GgufExportConfig {
+        arch: apr_metadata
+            .and_then(|m| m.architecture.clone())
+            .or_else(|| inferred.and_then(|c| c.architecture.clone()))
+            .unwrap_or_else(|| "qwen2".to_string()),
+        hidden_size,
+        num_layers: resolve(apr_metadata, inferred, |m| m.num_layers, |c| c.num_layers, 32),
+        num_heads,
+        num_kv_heads: resolve(apr_metadata, inferred, |m| m.num_kv_heads, |c| c.num_kv_heads, num_heads),
+        vocab_size: resolve(apr_metadata, inferred, |m| m.vocab_size, |c| c.vocab_size, 32000),
+        intermediate_size: resolve(apr_metadata, inferred, |m| m.intermediate_size, |c| c.intermediate_size, 11008),
+        max_pos: apr_metadata.and_then(|m| m.max_position_embeddings).unwrap_or(32768),
+        rope_theta: apr_metadata.and_then(|m| m.rope_theta).unwrap_or(1_000_000.0),
+        rms_norm_eps: apr_metadata.and_then(|m| m.rms_norm_eps).unwrap_or(1e-6),
+        head_dim: if num_heads > 0 { hidden_size / num_heads } else { 128 },
+        model_name: apr_metadata.and_then(|m| m.name.clone()).unwrap_or_else(|| "model".to_string()),
+    }
+}
+
+/// Build GGUF architecture metadata KV pairs from resolved config.
+fn build_gguf_config_metadata(cfg: &GgufExportConfig) -> Vec<(String, crate::format::gguf::GgufValue)> {
+    use crate::format::gguf::GgufValue;
+    let arch = &cfg.arch;
+    vec![
+        ("general.architecture".to_string(), GgufValue::String(arch.clone())),
+        ("general.name".to_string(), GgufValue::String(cfg.model_name.clone())),
+        ("general.quantization_version".to_string(), GgufValue::Uint32(2)),
+        ("general.file_type".to_string(), GgufValue::Uint32(0)),
+        (format!("{arch}.context_length"), GgufValue::Uint32(cfg.max_pos as u32)),
+        (format!("{arch}.embedding_length"), GgufValue::Uint32(cfg.hidden_size as u32)),
+        (format!("{arch}.block_count"), GgufValue::Uint32(cfg.num_layers as u32)),
+        (format!("{arch}.feed_forward_length"), GgufValue::Uint32(cfg.intermediate_size as u32)),
+        (format!("{arch}.attention.head_count"), GgufValue::Uint32(cfg.num_heads as u32)),
+        (format!("{arch}.attention.head_count_kv"), GgufValue::Uint32(cfg.num_kv_heads as u32)),
+        (format!("{arch}.attention.layer_norm_rms_epsilon"), GgufValue::Float32(cfg.rms_norm_eps)),
+        (format!("{arch}.rope.dimension_count"), GgufValue::Uint32(cfg.head_dim as u32)),
+        (format!("{arch}.rope.freq_base"), GgufValue::Float32(cfg.rope_theta)),
+        (format!("{arch}.vocab_size"), GgufValue::Uint32(cfg.vocab_size as u32)),
+    ]
+}
+
+/// Build tokenizer metadata KV pairs for GGUF export.
+fn build_tokenizer_gguf_metadata(
+    tokenizer: &crate::format::gguf::GgufTokenizer,
+    arch: &str,
+) -> Vec<(String, crate::format::gguf::GgufValue)> {
+    use crate::format::gguf::GgufValue;
+    let mut metadata = Vec::new();
+    let model_type = tokenizer.model_type.as_deref().unwrap_or("gpt2");
+
+    metadata.push(("tokenizer.ggml.model".to_string(), GgufValue::String(model_type.to_lowercase())));
+    metadata.push(("tokenizer.ggml.pre".to_string(), GgufValue::String(arch.to_string())));
+
+    if let Some(bos) = tokenizer.bos_token_id {
+        metadata.push(("tokenizer.ggml.bos_token_id".to_string(), GgufValue::Uint32(bos)));
+    }
+    if let Some(eos) = tokenizer.eos_token_id {
+        metadata.push(("tokenizer.ggml.eos_token_id".to_string(), GgufValue::Uint32(eos)));
+    }
+    if !tokenizer.vocabulary.is_empty() {
+        metadata.push(("tokenizer.ggml.tokens".to_string(), GgufValue::ArrayString(tokenizer.vocabulary.clone())));
+        eprintln!(
+            "[BUG-EXPORT-004] Added tokenizer metadata: model={}, vocab_size={}, bos={:?}, eos={:?}",
+            model_type, tokenizer.vocabulary.len(), tokenizer.bos_token_id, tokenizer.eos_token_id
+        );
+    }
+    if !tokenizer.merges.is_empty() {
+        metadata.push(("tokenizer.ggml.merges".to_string(), GgufValue::ArrayString(tokenizer.merges.clone())));
+    }
+    metadata
+}
+
 fn export_to_gguf(
     tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
     output: &Path,
     input: &Path,
     quantize: Option<&QuantizationType>,
 ) -> Result<()> {
-    use crate::format::gguf::{export_tensors_to_gguf, GgmlType, GgufTensor, GgufValue};
+    use crate::format::gguf::{export_tensors_to_gguf, GgmlType, GgufTensor};
     use crate::format::v2::AprV2Reader;
     use std::fs::File;
     use std::io::BufWriter;
 
-    // BUG-EXPORT-004: Load tokenizer from sibling tokenizer.json for GGUF metadata
-    eprintln!(
-        "[DEBUG-TOK] Looking for tokenizer near: {}",
-        input.display()
-    );
+    eprintln!("[DEBUG-TOK] Looking for tokenizer near: {}", input.display());
     let tokenizer = super::import::load_tokenizer_from_json(input);
     eprintln!("[DEBUG-TOK] Tokenizer loaded: {}", tokenizer.is_some());
 
-    // GGUF-EXPORT-001: Read APR metadata for GGUF KV pairs
     let apr_metadata = if input.extension().and_then(|e| e.to_str()) == Some("apr") {
-        let data = fs::read(input).ok();
-        data.and_then(|d| AprV2Reader::from_bytes(&d).ok())
+        fs::read(input)
+            .ok()
+            .and_then(|d| AprV2Reader::from_bytes(&d).ok())
             .map(|r| r.metadata().clone())
     } else {
         None
     };
-
-    // GGUF-EXPORT-001: Infer config from tensors as fallback
     let inferred = super::import::infer_model_config_from_tensors(tensors);
+    let cfg = resolve_gguf_config(apr_metadata.as_ref(), inferred.as_ref());
 
-    let arch = apr_metadata
-        .as_ref()
-        .and_then(|m| m.architecture.as_deref())
-        .or(inferred.as_ref().and_then(|c| c.architecture.as_deref()))
-        .unwrap_or("qwen2");
-
-    let hidden_size = apr_metadata
-        .as_ref()
-        .and_then(|m| m.hidden_size)
-        .or(inferred.as_ref().and_then(|c| c.hidden_size))
-        .unwrap_or(4096);
-
-    let num_layers = apr_metadata
-        .as_ref()
-        .and_then(|m| m.num_layers)
-        .or(inferred.as_ref().and_then(|c| c.num_layers))
-        .unwrap_or(32);
-
-    let num_heads = apr_metadata
-        .as_ref()
-        .and_then(|m| m.num_heads)
-        .or(inferred.as_ref().and_then(|c| c.num_heads))
-        .unwrap_or(32);
-
-    let num_kv_heads = apr_metadata
-        .as_ref()
-        .and_then(|m| m.num_kv_heads)
-        .or(inferred.as_ref().and_then(|c| c.num_kv_heads))
-        .unwrap_or(num_heads);
-
-    let vocab_size = apr_metadata
-        .as_ref()
-        .and_then(|m| m.vocab_size)
-        .or(inferred.as_ref().and_then(|c| c.vocab_size))
-        .unwrap_or(32000);
-
-    let intermediate_size = apr_metadata
-        .as_ref()
-        .and_then(|m| m.intermediate_size)
-        .or(inferred.as_ref().and_then(|c| c.intermediate_size))
-        .unwrap_or(11008);
-
-    let max_pos = apr_metadata
-        .as_ref()
-        .and_then(|m| m.max_position_embeddings)
-        .unwrap_or(32768);
-
-    let rope_theta = apr_metadata
-        .as_ref()
-        .and_then(|m| m.rope_theta)
-        .unwrap_or(1_000_000.0);
-
-    let rms_norm_eps = apr_metadata
-        .as_ref()
-        .and_then(|m| m.rms_norm_eps)
-        .unwrap_or(1e-6);
-
-    let head_dim = if num_heads > 0 {
-        hidden_size / num_heads
-    } else {
-        128
-    };
-
-    let model_name = apr_metadata
-        .as_ref()
-        .and_then(|m| m.name.clone())
-        .unwrap_or_else(|| "model".to_string());
-
-    // Build GGUF metadata KV pairs
-    let metadata = vec![
-        (
-            "general.architecture".to_string(),
-            GgufValue::String(arch.to_string()),
-        ),
-        ("general.name".to_string(), GgufValue::String(model_name)),
-        (
-            "general.quantization_version".to_string(),
-            GgufValue::Uint32(2),
-        ),
-        (
-            "general.file_type".to_string(),
-            GgufValue::Uint32(0), // F32
-        ),
-        (
-            format!("{arch}.context_length"),
-            GgufValue::Uint32(max_pos as u32),
-        ),
-        (
-            format!("{arch}.embedding_length"),
-            GgufValue::Uint32(hidden_size as u32),
-        ),
-        (
-            format!("{arch}.block_count"),
-            GgufValue::Uint32(num_layers as u32),
-        ),
-        (
-            format!("{arch}.feed_forward_length"),
-            GgufValue::Uint32(intermediate_size as u32),
-        ),
-        (
-            format!("{arch}.attention.head_count"),
-            GgufValue::Uint32(num_heads as u32),
-        ),
-        (
-            format!("{arch}.attention.head_count_kv"),
-            GgufValue::Uint32(num_kv_heads as u32),
-        ),
-        (
-            format!("{arch}.attention.layer_norm_rms_epsilon"),
-            GgufValue::Float32(rms_norm_eps),
-        ),
-        (
-            format!("{arch}.rope.dimension_count"),
-            GgufValue::Uint32(head_dim as u32),
-        ),
-        (
-            format!("{arch}.rope.freq_base"),
-            GgufValue::Float32(rope_theta),
-        ),
-        (
-            format!("{arch}.vocab_size"),
-            GgufValue::Uint32(vocab_size as u32),
-        ),
-    ];
-
-    // BUG-EXPORT-004: Add tokenizer metadata for realizar inference
-    // Without BOS/EOS tokens, realizar can't properly tokenize/detokenize
-    let mut metadata = metadata; // Make mutable for tokenizer additions
+    let mut metadata = build_gguf_config_metadata(&cfg);
     if let Some(ref tok) = tokenizer {
-        // Add tokenizer model type (gpt2 for BPE models like Qwen)
-        let model_type = tok.model_type.as_deref().unwrap_or("gpt2");
-        metadata.push((
-            "tokenizer.ggml.model".to_string(),
-            GgufValue::String(model_type.to_lowercase()),
-        ));
-
-        // Add pre-tokenizer type (qwen2 for Qwen models)
-        metadata.push((
-            "tokenizer.ggml.pre".to_string(),
-            GgufValue::String(arch.to_string()),
-        ));
-
-        // Add BOS token ID (critical for inference)
-        if let Some(bos) = tok.bos_token_id {
-            metadata.push((
-                "tokenizer.ggml.bos_token_id".to_string(),
-                GgufValue::Uint32(bos),
-            ));
-        }
-
-        // Add EOS token ID (critical for knowing when to stop)
-        if let Some(eos) = tok.eos_token_id {
-            metadata.push((
-                "tokenizer.ggml.eos_token_id".to_string(),
-                GgufValue::Uint32(eos),
-            ));
-        }
-
-        // Add vocabulary (required for tokenization)
-        if !tok.vocabulary.is_empty() {
-            metadata.push((
-                "tokenizer.ggml.tokens".to_string(),
-                GgufValue::ArrayString(tok.vocabulary.clone()),
-            ));
-            eprintln!(
-                "[BUG-EXPORT-004] Added tokenizer metadata: model={}, vocab_size={}, bos={:?}, eos={:?}",
-                model_type,
-                tok.vocabulary.len(),
-                tok.bos_token_id,
-                tok.eos_token_id
-            );
-        }
-
-        // Add merges if available (for BPE tokenization)
-        if !tok.merges.is_empty() {
-            metadata.push((
-                "tokenizer.ggml.merges".to_string(),
-                GgufValue::ArrayString(tok.merges.clone()),
-            ));
-        }
+        metadata.extend(build_tokenizer_gguf_metadata(tok, &cfg.arch));
     } else {
         eprintln!(
             "[BUG-EXPORT-004] Warning: No tokenizer.json found near {}, GGUF may lack tokenizer metadata",
@@ -621,12 +547,7 @@ fn export_to_gguf(
 
     eprintln!(
         "[GGUF-EXPORT-001] Writing {} metadata keys (arch={}, layers={}, heads={}/{}kv, hidden={})",
-        metadata.len(),
-        arch,
-        num_layers,
-        num_heads,
-        num_kv_heads,
-        hidden_size
+        metadata.len(), cfg.arch, cfg.num_layers, cfg.num_heads, cfg.num_kv_heads, cfg.hidden_size
     );
 
     // GGUF-EXPORT-001: Map tensor names from HF convention to GGUF convention
@@ -805,6 +726,54 @@ fn build_gguf_arch_metadata(
     ]
 }
 
+/// Push a string array from APR custom fields to GGUF entries.
+fn push_string_array(
+    entries: &mut Vec<(String, crate::format::gguf::GgufValue)>,
+    custom: &std::collections::HashMap<String, serde_json::Value>,
+    src_key: &str,
+    gguf_key: &str,
+) {
+    let arr = custom.get(src_key).and_then(|v| v.as_array());
+    let Some(arr) = arr else { return };
+    let strings: Vec<String> = arr
+        .iter()
+        .filter_map(|v| v.as_str().map(String::from))
+        .collect();
+    if !strings.is_empty() {
+        entries.push((gguf_key.to_string(), crate::format::gguf::GgufValue::ArrayString(strings)));
+    }
+}
+
+/// Push a u32 value from APR custom fields to GGUF entries.
+fn push_u32_field(
+    entries: &mut Vec<(String, crate::format::gguf::GgufValue)>,
+    custom: &std::collections::HashMap<String, serde_json::Value>,
+    src_key: &str,
+    gguf_key: &str,
+) {
+    if let Some(val) = custom.get(src_key).and_then(|v| v.as_u64()) {
+        entries.push((gguf_key.to_string(), crate::format::gguf::GgufValue::Uint32(val as u32)));
+    }
+}
+
+/// Push an i32 array from APR custom fields to GGUF entries.
+fn push_i32_array(
+    entries: &mut Vec<(String, crate::format::gguf::GgufValue)>,
+    custom: &std::collections::HashMap<String, serde_json::Value>,
+    src_key: &str,
+    gguf_key: &str,
+) {
+    let arr = custom.get(src_key).and_then(|v| v.as_array());
+    let Some(arr) = arr else { return };
+    let types: Vec<i32> = arr
+        .iter()
+        .filter_map(|v| v.as_i64().map(|n| n as i32))
+        .collect();
+    if !types.is_empty() {
+        entries.push((gguf_key.to_string(), crate::format::gguf::GgufValue::ArrayInt32(types)));
+    }
+}
+
 /// Extract tokenizer metadata from APR custom fields for GGUF export (GH-253)
 fn extract_apr_tokenizer_for_gguf(
     apr_metadata: &crate::format::v2::AprV2Metadata,
@@ -834,92 +803,19 @@ fn extract_apr_tokenizer_for_gguf(
         GgufValue::String(arch.to_string()),
     ));
 
-    // Vocabulary
-    if let Some(vocab_val) = custom.get("tokenizer.vocabulary") {
-        if let Some(vocab_arr) = vocab_val.as_array() {
-            let tokens: Vec<String> = vocab_arr
-                .iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect();
-            if !tokens.is_empty() {
-                entries.push((
-                    "tokenizer.ggml.tokens".to_string(),
-                    GgufValue::ArrayString(tokens),
-                ));
-            }
-        }
-    }
-
-    // BPE merges
-    if let Some(merges_val) = custom.get("tokenizer.merges") {
-        if let Some(merges_arr) = merges_val.as_array() {
-            let merges: Vec<String> = merges_arr
-                .iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect();
-            if !merges.is_empty() {
-                entries.push((
-                    "tokenizer.ggml.merges".to_string(),
-                    GgufValue::ArrayString(merges),
-                ));
-            }
-        }
-    }
-
-    // BOS token ID
-    if let Some(bos_val) = custom.get("tokenizer.bos_token_id") {
-        if let Some(bos) = bos_val.as_u64() {
-            entries.push((
-                "tokenizer.ggml.bos_token_id".to_string(),
-                GgufValue::Uint32(bos as u32),
-            ));
-        }
-    }
-
-    // EOS token ID
-    if let Some(eos_val) = custom.get("tokenizer.eos_token_id") {
-        if let Some(eos) = eos_val.as_u64() {
-            entries.push((
-                "tokenizer.ggml.eos_token_id".to_string(),
-                GgufValue::Uint32(eos as u32),
-            ));
-        }
-    }
-
-    // GH-253-1: Token type array
-    if let Some(tt_val) = custom.get("tokenizer.token_type") {
-        if let Some(tt_arr) = tt_val.as_array() {
-            let types: Vec<i32> = tt_arr
-                .iter()
-                .filter_map(|v| v.as_i64().map(|n| n as i32))
-                .collect();
-            if !types.is_empty() {
-                entries.push((
-                    "tokenizer.ggml.token_type".to_string(),
-                    GgufValue::ArrayInt32(types),
-                ));
-            }
-        }
-    }
-
-    // GH-253-1: Padding token ID
-    if let Some(pad_val) = custom.get("tokenizer.padding_token_id") {
-        if let Some(pad) = pad_val.as_u64() {
-            entries.push((
-                "tokenizer.ggml.padding_token_id".to_string(),
-                GgufValue::Uint32(pad as u32),
-            ));
-        }
-    }
+    push_string_array(&mut entries, custom, "tokenizer.vocabulary", "tokenizer.ggml.tokens");
+    push_string_array(&mut entries, custom, "tokenizer.merges", "tokenizer.ggml.merges");
+    push_u32_field(&mut entries, custom, "tokenizer.bos_token_id", "tokenizer.ggml.bos_token_id");
+    push_u32_field(&mut entries, custom, "tokenizer.eos_token_id", "tokenizer.ggml.eos_token_id");
+    push_i32_array(&mut entries, custom, "tokenizer.token_type", "tokenizer.ggml.token_type");
+    push_u32_field(&mut entries, custom, "tokenizer.padding_token_id", "tokenizer.ggml.padding_token_id");
 
     // GH-253-1: add_bos_token flag
-    if let Some(add_bos_val) = custom.get("tokenizer.add_bos_token") {
-        if let Some(add_bos) = add_bos_val.as_bool() {
-            entries.push((
-                "tokenizer.ggml.add_bos_token".to_string(),
-                GgufValue::Bool(add_bos),
-            ));
-        }
+    if let Some(add_bos) = custom.get("tokenizer.add_bos_token").and_then(|v| v.as_bool()) {
+        entries.push((
+            "tokenizer.ggml.add_bos_token".to_string(),
+            GgufValue::Bool(add_bos),
+        ));
     }
 
     // GH-253-1: Chat template (Jinja2)
@@ -1297,43 +1193,29 @@ fn infer_model_config(tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>) -> Str
 /// If the input is APR format with embedded tokenizer, extract it.
 /// Otherwise return empty string.
 fn infer_tokenizer_json(input_path: &Path) -> String {
-    let extension = input_path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("");
-
-    if extension == "apr" {
-        // Try to read APR metadata which may contain tokenizer
-        if let Ok(data) = fs::read(input_path) {
-            if data.len() > 44 {
-                // Check for embedded tokenizer in APR metadata
-                // APR format: header (44 bytes) + metadata (JSON) + tensors
-                // Look for "tokenizer" in metadata section
-                let metadata_start = 44;
-                if let Some(metadata_end) = data[metadata_start..]
-                    .windows(4)
-                    .position(|w| w == b"}\n\n\n" || w == b"}\r\n\r")
-                    .map(|p| metadata_start + p + 1)
-                {
-                    if let Ok(metadata_str) =
-                        std::str::from_utf8(&data[metadata_start..metadata_end])
-                    {
-                        // Check if tokenizer data is embedded
-                        if metadata_str.contains("\"tokenizer\"")
-                            || metadata_str.contains("\"vocabulary\"")
-                        {
-                            // For now, return a minimal tokenizer.json
-                            // In production, we'd extract the actual vocabulary
-                            return r#"{"version": "1.0", "model": {"type": "BPE"}}"#.to_string();
-                        }
-                    }
-                }
-            }
-        }
+    if input_path.extension().and_then(|e| e.to_str()) != Some("apr") {
+        return String::new();
     }
+    extract_apr_tokenizer_hint(input_path).unwrap_or_default()
+}
 
-    // Return empty if no tokenizer found
-    String::new()
+/// Try to extract tokenizer hint from APR metadata section.
+fn extract_apr_tokenizer_hint(input_path: &Path) -> Option<String> {
+    let data = fs::read(input_path).ok()?;
+    if data.len() <= 44 {
+        return None;
+    }
+    let metadata_start = 44;
+    let metadata_end = data[metadata_start..]
+        .windows(4)
+        .position(|w| w == b"}\n\n\n" || w == b"}\r\n\r")
+        .map(|p| metadata_start + p + 1)?;
+    let metadata_str = std::str::from_utf8(&data[metadata_start..metadata_end]).ok()?;
+    if metadata_str.contains("\"tokenizer\"") || metadata_str.contains("\"vocabulary\"") {
+        Some(r#"{"version": "1.0", "model": {"type": "BPE"}}"#.to_string())
+    } else {
+        None
+    }
 }
 
 /// ROSETTA-003: Read APR v2 metadata from file.
@@ -1578,43 +1460,32 @@ fn detect_gguf_architecture(path: &Path) -> Architecture {
 
 /// Infer vocab_size and hidden_dim from tensor shapes.
 ///
+/// Find the first 2D tensor matching any of the given name patterns.
+fn find_2d_tensor_shape<'a>(
+    tensors: &'a BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+    patterns: &[&str],
+) -> Option<&'a [usize]> {
+    tensors.iter().find_map(|(name, (_, shape))| {
+        if shape.len() == 2 && patterns.iter().any(|p| name.contains(p)) {
+            Some(shape.as_slice())
+        } else {
+            None
+        }
+    })
+}
+
 /// Used for contract validation during export.
 fn infer_vocab_hidden(tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>) -> (usize, usize) {
-    let mut vocab_size = 0;
-    let mut hidden_dim = 0;
-
-    // Try embedding first (most reliable)
-    for (name, (_, shape)) in tensors {
-        if (name.contains("embed_tokens") || name.contains("token_embd")) && shape.len() == 2 {
-            // Embedding shape: [vocab_size, hidden_dim]
-            vocab_size = shape[0];
-            hidden_dim = shape[1];
-            break;
-        }
+    // Try embedding, then lm_head for [vocab_size, hidden_dim]
+    if let Some(shape) = find_2d_tensor_shape(tensors, &["embed_tokens", "token_embd"]) {
+        return (shape[0], shape[1]);
     }
-
-    // Fallback to lm_head
-    if vocab_size == 0 {
-        for (name, (_, shape)) in tensors {
-            if (name.contains("lm_head") || name.contains("output.weight")) && shape.len() == 2 {
-                vocab_size = shape[0];
-                hidden_dim = shape[1];
-                break;
-            }
-        }
+    if let Some(shape) = find_2d_tensor_shape(tensors, &["lm_head", "output.weight"]) {
+        return (shape[0], shape[1]);
     }
-
-    // Fallback to layer weights for hidden_dim
-    if hidden_dim == 0 {
-        for (name, (_, shape)) in tensors {
-            if name.contains("q_proj") && shape.len() == 2 {
-                hidden_dim = shape[1];
-                break;
-            }
-        }
-    }
-
-    (vocab_size, hidden_dim)
+    // Fallback: get hidden_dim from q_proj
+    let hidden = find_2d_tensor_shape(tensors, &["q_proj"]).map_or(0, |s| s[1]);
+    (0, hidden)
 }
 
 #[cfg(test)]
