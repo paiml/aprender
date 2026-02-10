@@ -292,6 +292,79 @@ fn dispatch_gate(
 }
 
 /// Run all QA gates and produce a report
+/// Human-readable gate name for display.
+fn gate_display_name(name: &str) -> &str {
+    match name {
+        "tensor_contract" => "Tensor Contract",
+        "golden_output" => "Golden Output",
+        "throughput" => "Throughput",
+        "ollama_parity" => "Ollama Parity",
+        "gpu_speedup" => "GPU Speedup",
+        "format_parity" => "Format Parity",
+        "ptx_parity" => "PTX Parity",
+        other => other,
+    }
+}
+
+/// Print the QA summary table and pass/fail badges.
+fn print_qa_summary(gates: &[GateResult], passed: bool, total_duration: Duration) {
+    output::header("QA Summary");
+
+    let gate_rows: Vec<Vec<String>> = gates
+        .iter()
+        .map(|g| {
+            let badge = if g.skipped {
+                output::badge_skip("SKIP")
+            } else if g.passed {
+                output::badge_pass("PASS")
+            } else {
+                output::badge_fail("FAIL")
+            };
+            let measured = g.value.map_or("—".to_string(), |v| format!("{v:.2}"));
+            let threshold = g.threshold.map_or("—".to_string(), |v| format!("{v:.2}"));
+            vec![
+                gate_display_name(&g.name).to_string(),
+                badge,
+                measured,
+                threshold,
+                output::duration_fmt(g.duration_ms),
+            ]
+        })
+        .collect();
+    println!("{}", output::table(
+        &["Gate", "Status", "Measured", "Threshold", "Duration"],
+        &gate_rows,
+    ));
+
+    println!();
+    if passed {
+        println!("  {}", output::badge_pass("ALL GATES PASSED"));
+    } else {
+        println!("  {}", output::badge_fail("GATES FAILED"));
+        for gate in gates.iter().filter(|g| !g.passed && !g.skipped) {
+            println!("    {} {}", "✗".red(), gate.name);
+        }
+    }
+    output::metric("Total Duration", output::duration_fmt(total_duration.as_millis() as u64), "");
+}
+
+/// Check if model is GGUF format (for Ollama parity gate).
+fn is_gguf_format(path: &Path) -> bool {
+    #[cfg(feature = "inference")]
+    {
+        use realizar::format::{detect_format, ModelFormat};
+        let magic = std::fs::read(path).ok().and_then(|b| {
+            if b.len() >= 8 { Some(b[..8].to_vec()) } else { None }
+        });
+        magic.and_then(|m| detect_format(&m).ok()) == Some(ModelFormat::Gguf)
+    }
+    #[cfg(not(feature = "inference"))]
+    {
+        let _ = path;
+        false
+    }
+}
+
 fn run_qa(path: &Path, config: &QaConfig) -> Result<QaReport> {
     let start = Instant::now();
     let mut gates = Vec::new();
@@ -306,130 +379,46 @@ fn run_qa(path: &Path, config: &QaConfig) -> Result<QaReport> {
         println!("{}", output::kv_table(&config_pairs));
     }
 
-    // Gate 0: Tensor Contract Validation (PMAT-235)
     dispatch_gate(&mut gates, config.json, config.skip_contract, "tensor_contract", "Skipped by --skip-contract", || {
         run_tensor_contract_gate(path, config)
     })?;
-
-    // Gate 1: Golden Output Test (Correctness)
     dispatch_gate(&mut gates, config.json, config.skip_golden, "golden_output", "Skipped by --skip-golden", || {
         run_golden_output_gate(path, config)
     })?;
-
-    // Gate 2: Throughput Falsification (Performance)
     dispatch_gate(&mut gates, config.json, config.skip_throughput, "throughput", "Skipped by --skip-throughput", || {
         run_throughput_gate(path, config)
     })?;
-
-    // Gate 3: Ollama Parity (GGUF only)
     dispatch_gate(&mut gates, config.json, config.skip_ollama, "ollama_parity", "Skipped by --skip-ollama", || {
-        #[cfg(feature = "inference")]
-        {
-            use realizar::format::{detect_format, ModelFormat};
-            let magic = std::fs::read(path).ok().and_then(|b| {
-                if b.len() >= 8 { Some(b[..8].to_vec()) } else { None }
-            });
-            let fmt = magic.and_then(|m| detect_format(&m).ok());
-            if fmt == Some(ModelFormat::Gguf) {
-                run_ollama_parity_gate(path, config)
-            } else {
-                Ok(GateResult::skipped(
-                    "ollama_parity",
-                    "Non-GGUF format (F32/F16 lacks fused kernels for Ollama parity)",
-                ))
-            }
-        }
-        #[cfg(not(feature = "inference"))]
-        {
+        if is_gguf_format(path) {
             run_ollama_parity_gate(path, config)
+        } else {
+            Ok(GateResult::skipped("ollama_parity", "Non-GGUF format (F32/F16 lacks fused kernels for Ollama parity)"))
         }
     })?;
-
-    // Gate 4: GPU vs CPU Speedup (F-PERF-042)
     dispatch_gate(&mut gates, config.json, config.skip_gpu_speedup, "gpu_speedup", "Skipped by --skip-gpu-speedup", || {
         run_gpu_speedup_gate(path, config)
     })?;
 
-    // Gate 5: Cross-Format Parity (F-QUAL-032)
     let skip_format = config.skip_format_parity || config.safetensors_path.is_none();
     let format_skip_reason = if config.skip_format_parity { "Skipped by --skip-format-parity" } else { "No --safetensors-path provided" };
     dispatch_gate(&mut gates, config.json, skip_format, "format_parity", format_skip_reason, || {
         run_format_parity_gate(path, config)
     })?;
-
-    // Gate 6: PTX Parity Validation (F-PTX-001)
     dispatch_gate(&mut gates, config.json, config.skip_ptx_parity, "ptx_parity", "Skipped by --skip-ptx-parity", || {
         run_ptx_parity_gate(path, config)
     })?;
 
     let total_duration = start.elapsed();
     let passed = gates.iter().all(|g| g.passed);
-    let failed_gates: Vec<_> = gates.iter().filter(|g| !g.passed && !g.skipped).collect();
-
     let summary = if passed {
         "All QA gates passed".to_string()
     } else {
-        let names: Vec<_> = failed_gates.iter().map(|g| g.name.as_str()).collect();
+        let names: Vec<_> = gates.iter().filter(|g| !g.passed && !g.skipped).map(|g| g.name.as_str()).collect();
         format!("Failed gates: {}", names.join(", "))
     };
 
     if !config.json {
-        output::header("QA Summary");
-
-        // Summary table
-        let gate_rows: Vec<Vec<String>> = gates
-            .iter()
-            .map(|g| {
-                let badge = if g.skipped {
-                    output::badge_skip("SKIP")
-                } else if g.passed {
-                    output::badge_pass("PASS")
-                } else {
-                    output::badge_fail("FAIL")
-                };
-                let name = match g.name.as_str() {
-                    "tensor_contract" => "Tensor Contract",
-                    "golden_output" => "Golden Output",
-                    "throughput" => "Throughput",
-                    "ollama_parity" => "Ollama Parity",
-                    "gpu_speedup" => "GPU Speedup",
-                    "format_parity" => "Format Parity",
-                    "ptx_parity" => "PTX Parity",
-                    _ => &g.name,
-                };
-                let measured = g.value.map_or("—".to_string(), |v| format!("{v:.2}"));
-                let threshold = g.threshold.map_or("—".to_string(), |v| format!("{v:.2}"));
-                vec![
-                    name.to_string(),
-                    badge,
-                    measured,
-                    threshold,
-                    output::duration_fmt(g.duration_ms),
-                ]
-            })
-            .collect();
-        println!(
-            "{}",
-            output::table(
-                &["Gate", "Status", "Measured", "Threshold", "Duration"],
-                &gate_rows
-            )
-        );
-
-        println!();
-        if passed {
-            println!("  {}", output::badge_pass("ALL GATES PASSED"));
-        } else {
-            println!("  {}", output::badge_fail("GATES FAILED"));
-            for gate in &failed_gates {
-                println!("    {} {}", "✗".red(), gate.name);
-            }
-        }
-        output::metric(
-            "Total Duration",
-            output::duration_fmt(total_duration.as_millis() as u64),
-            "",
-        );
+        print_qa_summary(&gates, passed, total_duration);
     }
 
     Ok(QaReport {
@@ -701,20 +690,39 @@ fn golden_output_safetensors(
     Ok(Some((tokens, text)))
 }
 
+/// Run golden output CPU generation for GGUF format.
+#[cfg(feature = "inference")]
+fn golden_output_gguf_cpu(
+    mapped: &realizar::gguf::MappedGGUFModel,
+    gguf: &realizar::gguf::GGUFModel,
+    prompt: &str,
+    max_tokens: usize,
+) -> Result<(Vec<u32>, String)> {
+    use realizar::gguf::{OwnedQuantizedModel, QuantizedGenerateConfig};
+
+    let prompt_tokens = gguf.encode(prompt).unwrap_or_else(|| vec![151643, 9707]);
+    let gen_config = QuantizedGenerateConfig {
+        max_tokens,
+        temperature: 0.0,
+        top_k: 1,
+        ..Default::default()
+    };
+    let model = OwnedQuantizedModel::from_mapped(mapped)
+        .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
+    let tokens = model
+        .generate_with_cache(&prompt_tokens, &gen_config)
+        .map_err(|e| CliError::ValidationFailed(format!("CPU generation failed: {e}")))?;
+    let text = gguf.decode(&tokens);
+    Ok((tokens, text))
+}
+
 /// Gate 1: Golden Output Test
 ///
 /// Runs the model with a known prompt and verifies the output contains expected patterns.
 /// Uses verify_output() for structured validation (PMAT-QA-PROTOCOL-001 §7.4).
-fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
-    let start = Instant::now();
-
-    if !config.json && config.verbose {
-        println!("{}", "Running golden output test...".yellow());
-    }
-
-    // Golden test: Use ChatML format for instruct models
-    // Raw prompt would make model explain, ChatML makes it respond directly
-    let test_cases = vec![
+/// Golden test cases: ChatML prompt + expected output patterns.
+fn golden_test_cases() -> Vec<(&'static str, Vec<&'static str>)> {
+    vec![
         (
             "<|im_start|>user\nWhat is 2+2?<|im_end|>\n<|im_start|>assistant\n",
             vec!["4"],
@@ -723,130 +731,120 @@ fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
             "<|im_start|>user\nHello<|im_end|>\n<|im_start|>assistant\n",
             vec!["Hello", "Hi", "hey", "hello", "!"],
         ),
-    ];
+    ]
+}
+
+/// Generate output for a single test case based on model format.
+#[cfg(feature = "inference")]
+fn generate_golden_for_format(
+    path: &Path,
+    prompt: &str,
+    max_tokens: usize,
+    format: realizar::format::ModelFormat,
+    mapped: &realizar::gguf::MappedGGUFModel,
+    gguf_model: &realizar::gguf::GGUFModel,
+) -> Result<Option<(Vec<u32>, String)>> {
+    use realizar::format::ModelFormat;
+
+    match format {
+        ModelFormat::Gguf => Ok(Some(golden_output_gguf_cpu(mapped, gguf_model, prompt, max_tokens)?)),
+        ModelFormat::Apr => Ok(Some(golden_output_apr(path, prompt, max_tokens)?)),
+        ModelFormat::SafeTensors => golden_output_safetensors(path, prompt, max_tokens),
+    }
+}
+
+/// Validate a single golden test case: generate output, check GPU parity, verify patterns.
+///
+/// Returns `Ok(None)` on success, `Ok(Some(GateResult))` on failure/skip.
+#[cfg(feature = "inference")]
+fn validate_golden_test_case(
+    path: &Path,
+    prompt: &str,
+    expected_patterns: &[&str],
+    config: &QaConfig,
+    format: realizar::format::ModelFormat,
+    mapped: &realizar::gguf::MappedGGUFModel,
+    gguf_model: &realizar::gguf::GGUFModel,
+    cuda_available: bool,
+    start: Instant,
+) -> Result<Option<GateResult>> {
+    use realizar::format::ModelFormat;
+
+    let Some((_, output_text)) = generate_golden_for_format(
+        path, prompt, config.max_tokens, format, mapped, gguf_model,
+    )? else {
+        return Ok(Some(GateResult::skipped("golden_output", "SafeTensors: tokenizer.json not found")));
+    };
+
+    #[cfg(feature = "cuda")]
+    if cuda_available && format == ModelFormat::Gguf {
+        use realizar::gguf::QuantizedGenerateConfig;
+        let prompt_tokens = gguf_model.encode(prompt).unwrap_or_else(|| vec![151643, 9707]);
+        let gen_config = QuantizedGenerateConfig {
+            max_tokens: config.max_tokens, temperature: 0.0, top_k: 1, ..Default::default()
+        };
+        if let Some(failure) = validate_gpu_golden_output(
+            mapped, &prompt_tokens, &gen_config, gguf_model, expected_patterns, config,
+        )? {
+            return Ok(Some(GateResult::failed("golden_output", &failure, None, None, start.elapsed())));
+        }
+    }
+    #[cfg(not(feature = "cuda"))]
+    let _ = cuda_available;
+
+    if let OutputVerification::Fail { reason } = verify_output(&output_text, "golden_output", expected_patterns) {
+        return Ok(Some(GateResult::failed("golden_output", &reason, None, None, start.elapsed())));
+    }
+
+    Ok(None)
+}
+
+fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
+    let start = Instant::now();
+
+    if !config.json && config.verbose {
+        println!("{}", "Running golden output test...".yellow());
+    }
+
+    let test_cases = golden_test_cases();
 
     #[cfg(feature = "inference")]
     {
         use realizar::cuda::CudaExecutor;
-        use realizar::format::{detect_format, ModelFormat};
-        use realizar::gguf::{
-            GGUFModel, MappedGGUFModel, OwnedQuantizedModel, QuantizedGenerateConfig,
-        };
+        use realizar::format::detect_format;
+        use realizar::gguf::{GGUFModel, MappedGGUFModel};
 
-        // Check if CUDA available
         let cuda_available = CudaExecutor::is_available() && CudaExecutor::num_devices() > 0;
-
-        // Read and parse model
         let model_bytes = std::fs::read(path)
             .map_err(|e| CliError::ValidationFailed(format!("Failed to read model: {e}")))?;
-
         let format = detect_format(&model_bytes[..8.min(model_bytes.len())])
             .map_err(|e| CliError::ValidationFailed(format!("Failed to detect format: {e}")))?;
+        let mapped = MappedGGUFModel::from_path(path)
+            .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
+        let gguf_model = GGUFModel::from_bytes(&model_bytes)
+            .map_err(|e| CliError::ValidationFailed(format!("Failed to parse GGUF: {e}")))?;
 
-        // Test each golden case - support both GGUF and APR formats
         for (prompt, expected_patterns) in &test_cases {
-            let (output_tokens, output_text) = match format {
-                ModelFormat::Gguf => {
-                    let gguf = GGUFModel::from_bytes(&model_bytes).map_err(|e| {
-                        CliError::ValidationFailed(format!("Failed to parse GGUF: {e}"))
-                    })?;
-                    let prompt_tokens = gguf.encode(prompt).unwrap_or_else(|| vec![151643, 9707]);
-
-                    let gen_config = QuantizedGenerateConfig {
-                        max_tokens: config.max_tokens,
-                        temperature: 0.0,
-                        top_k: 1,
-                        ..Default::default()
-                    };
-
-                    let mapped = MappedGGUFModel::from_path(path)
-                        .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
-
-                    // CPU golden output
-                    let cpu_tokens = {
-                        let model = OwnedQuantizedModel::from_mapped(&mapped).map_err(|e| {
-                            CliError::ValidationFailed(format!("Model failed: {e}"))
-                        })?;
-                        model
-                            .generate_with_cache(&prompt_tokens, &gen_config)
-                            .map_err(|e| {
-                                CliError::ValidationFailed(format!("CPU generation failed: {e}"))
-                            })?
-                    };
-                    let cpu_text = gguf.decode(&cpu_tokens);
-
-                    // JIDOKA: GPU golden output — all tools must behave the same
-                    // Without this, GPU correctness is NEVER validated (PMAT-232 lesson)
-                    #[cfg(feature = "cuda")]
-                    if cuda_available {
-                        if let Some(failure) = validate_gpu_golden_output(
-                            &mapped,
-                            &prompt_tokens,
-                            &gen_config,
-                            &gguf,
-                            expected_patterns,
-                            config,
-                        )? {
-                            return Ok(GateResult::failed(
-                                "golden_output",
-                                &failure,
-                                None,
-                                None,
-                                start.elapsed(),
-                            ));
-                        }
-                    }
-
-                    (cpu_tokens, cpu_text)
-                }
-                ModelFormat::Apr => {
-                    golden_output_apr(path, prompt, config.max_tokens)?
-                }
-                ModelFormat::SafeTensors => {
-                    match golden_output_safetensors(path, prompt, config.max_tokens)? {
-                        Some(result) => result,
-                        None => {
-                            return Ok(GateResult::skipped(
-                                "golden_output",
-                                "SafeTensors: tokenizer.json not found in model directory",
-                            ));
-                        }
-                    }
-                }
-            };
-            let _ = output_tokens; // token count used for diagnostics
-
-            // Verify output using structured protocol (PMAT-QA-PROTOCOL-001 §7.4)
-            let verification = verify_output(&output_text, "golden_output", expected_patterns);
-            if let OutputVerification::Fail { reason } = verification {
-                let duration = start.elapsed();
-                return Ok(GateResult::failed(
-                    "golden_output",
-                    &reason,
-                    None,
-                    None,
-                    duration,
-                ));
+            if let Some(result) = validate_golden_test_case(
+                path, prompt, expected_patterns, config, format, &mapped, &gguf_model, cuda_available, start,
+            )? {
+                return Ok(result);
             }
         }
 
-        let duration = start.elapsed();
         Ok(GateResult::passed(
             "golden_output",
             &format!("{} golden test cases passed", test_cases.len()),
             Some(test_cases.len() as f64),
             Some(test_cases.len() as f64),
-            duration,
+            start.elapsed(),
         ))
     }
 
     #[cfg(not(feature = "inference"))]
     {
         let _ = (path, config, test_cases);
-        Ok(GateResult::skipped(
-            "golden_output",
-            "Requires 'inference' feature",
-        ))
+        Ok(GateResult::skipped("golden_output", "Requires 'inference' feature"))
     }
 }
 
@@ -879,6 +877,136 @@ fn measure_generate_throughput(
     )
 }
 
+/// Measure throughput for a GGUF model (GPU or CPU path).
+#[cfg(feature = "inference")]
+fn throughput_gguf(
+    path: &Path,
+    model_bytes: &[u8],
+    config: &QaConfig,
+    cuda_available: bool,
+    start: Instant,
+    prompt: &str,
+) -> Result<(f64, Duration)> {
+    use realizar::gguf::{
+        GGUFModel, MappedGGUFModel, OwnedQuantizedModel, OwnedQuantizedModelCuda,
+        QuantizedGenerateConfig,
+    };
+
+    let gguf = GGUFModel::from_bytes(model_bytes)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to parse GGUF: {e}")))?;
+    let prompt_tokens = gguf.encode(prompt).unwrap_or_else(|| vec![151643, 9707]);
+    let gen_config = QuantizedGenerateConfig {
+        max_tokens: config.max_tokens,
+        temperature: 0.0,
+        top_k: 1,
+        ..Default::default()
+    };
+
+    let mapped = MappedGGUFModel::from_path(path)
+        .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
+    let model = OwnedQuantizedModel::from_mapped(&mapped)
+        .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
+
+    if cuda_available {
+        let mut cuda_model = OwnedQuantizedModelCuda::new(model, 0)
+            .map_err(|e| CliError::ValidationFailed(format!("CUDA init failed: {e}")))?;
+        Ok(measure_generate_throughput(
+            config.warmup, config.iterations, prompt_tokens.len(), start,
+            || cuda_model.generate_gpu_resident(&prompt_tokens, &gen_config).unwrap_or_default(),
+        ))
+    } else {
+        Ok(measure_generate_throughput(
+            config.warmup, config.iterations, prompt_tokens.len(), start,
+            || model.generate_with_cache(&prompt_tokens, &gen_config).unwrap_or_default(),
+        ))
+    }
+}
+
+/// Measure throughput for an APR model.
+#[cfg(feature = "inference")]
+fn throughput_apr(
+    path: &Path,
+    config: &QaConfig,
+    start: Instant,
+    prompt: &str,
+) -> Result<(f64, Duration)> {
+    use realizar::apr::AprV2Model;
+    use realizar::apr_transformer::{AprTransformer, GenerateConfig};
+
+    let apr_model = AprV2Model::load(path)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to load APR: {e}")))?;
+    let tokenizer = apr_model.load_embedded_bpe_tokenizer().ok_or_else(|| {
+        CliError::ValidationFailed("APR missing embedded tokenizer".to_string())
+    })?;
+    let transformer = AprTransformer::from_apr_file(path)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to load APR transformer: {e}")))?;
+
+    let prompt_tokens = tokenizer.encode(prompt);
+    let gen_config = GenerateConfig {
+        max_tokens: config.max_tokens, temperature: 0.0, top_k: 1, ..Default::default()
+    };
+
+    Ok(measure_generate_throughput(
+        config.warmup, config.iterations, prompt_tokens.len(), start,
+        || transformer.generate_with_cache(&prompt_tokens, &gen_config).unwrap_or_default(),
+    ))
+}
+
+/// Measure throughput for a SafeTensors model.
+#[cfg(feature = "inference")]
+fn throughput_safetensors(
+    path: &Path,
+    config: &QaConfig,
+    start: Instant,
+    prompt: &str,
+) -> Result<Option<(f64, Duration)>> {
+    use aprender::text::bpe::{load_from_json, BpeTokenizer};
+    use realizar::safetensors_infer::SafetensorsToAprConverter;
+
+    let tokenizer_path = realizar::safetensors::find_sibling_file(path, "tokenizer.json");
+    let tokenizer: Option<BpeTokenizer> = tokenizer_path
+        .as_ref()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|json| load_from_json(&json).ok());
+
+    let Some(tokenizer) = tokenizer else {
+        return Ok(None);
+    };
+
+    let transformer = SafetensorsToAprConverter::convert(path)
+        .map_err(|e| CliError::ValidationFailed(format!("SafeTensors convert failed: {e}")))?;
+
+    let prompt_tokens = tokenizer.encode(prompt);
+    let gen_config = realizar::apr_transformer::GenerateConfig {
+        max_tokens: config.max_tokens, temperature: 0.0, top_k: 1, ..Default::default()
+    };
+
+    Ok(Some(measure_generate_throughput(
+        config.warmup, config.iterations, prompt_tokens.len(), start,
+        || transformer.generate_with_cache(&prompt_tokens, &gen_config).unwrap_or_default(),
+    )))
+}
+
+/// Dispatch throughput measurement to the correct format handler.
+#[cfg(feature = "inference")]
+fn throughput_for_format(
+    path: &Path,
+    model_bytes: &[u8],
+    format: realizar::format::ModelFormat,
+    prompt: &str,
+    config: &QaConfig,
+    cuda_available: bool,
+    start: Instant,
+) -> Result<Option<(f64, Duration)>> {
+    use realizar::format::ModelFormat;
+
+    match format {
+        ModelFormat::Gguf => throughput_gguf(path, model_bytes, config, cuda_available, start, prompt).map(Some),
+        ModelFormat::Apr => throughput_apr(path, config, start, prompt).map(Some),
+        ModelFormat::SafeTensors => throughput_safetensors(path, config, start, prompt),
+    }
+}
+
 /// Gate 2: Throughput Falsification
 ///
 /// Runs a benchmark and asserts minimum tokens per second.
@@ -894,10 +1022,6 @@ fn run_throughput_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
     {
         use realizar::cuda::CudaExecutor;
         use realizar::format::{detect_format, ModelFormat};
-        use realizar::gguf::{
-            GGUFModel, MappedGGUFModel, OwnedQuantizedModel, OwnedQuantizedModelCuda,
-            QuantizedGenerateConfig,
-        };
 
         let cuda_available = CudaExecutor::is_available() && CudaExecutor::num_devices() > 0;
 
@@ -908,123 +1032,13 @@ fn run_throughput_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
             .map_err(|e| CliError::ValidationFailed(format!("Failed to detect format: {e}")))?;
 
         let prompt = "Write a hello world program in Python:";
-
-        // Measure throughput based on format
-        let (tps, duration) = match format {
-            ModelFormat::Gguf => {
-                let gguf = GGUFModel::from_bytes(&model_bytes).map_err(|e| {
-                    CliError::ValidationFailed(format!("Failed to parse GGUF: {e}"))
-                })?;
-                let prompt_tokens = gguf.encode(prompt).unwrap_or_else(|| vec![151643, 9707]);
-
-                let gen_config = QuantizedGenerateConfig {
-                    max_tokens: config.max_tokens,
-                    temperature: 0.0,
-                    top_k: 1,
-                    ..Default::default()
-                };
-
-                if cuda_available {
-                    let mapped = MappedGGUFModel::from_path(path)
-                        .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
-                    let model = OwnedQuantizedModel::from_mapped(&mapped)
-                        .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
-                    let mut cuda_model = OwnedQuantizedModelCuda::new(model, 0).map_err(|e| {
-                        CliError::ValidationFailed(format!("CUDA init failed: {e}"))
-                    })?;
-
-                    measure_generate_throughput(
-                        config.warmup,
-                        config.iterations,
-                        prompt_tokens.len(),
-                        start,
-                        || cuda_model.generate_gpu_resident(&prompt_tokens, &gen_config).unwrap_or_default(),
-                    )
-                } else {
-                    let mapped = MappedGGUFModel::from_path(path)
-                        .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
-                    let model = OwnedQuantizedModel::from_mapped(&mapped)
-                        .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
-
-                    measure_generate_throughput(
-                        config.warmup,
-                        config.iterations,
-                        prompt_tokens.len(),
-                        start,
-                        || model.generate_with_cache(&prompt_tokens, &gen_config).unwrap_or_default(),
-                    )
-                }
-            }
-            ModelFormat::Apr => {
-                use realizar::apr::AprV2Model;
-                use realizar::apr_transformer::{AprTransformer, GenerateConfig};
-
-                let apr_model = AprV2Model::load(path)
-                    .map_err(|e| CliError::ValidationFailed(format!("Failed to load APR: {e}")))?;
-                let tokenizer = apr_model.load_embedded_bpe_tokenizer().ok_or_else(|| {
-                    CliError::ValidationFailed("APR missing embedded tokenizer".to_string())
-                })?;
-                let transformer = AprTransformer::from_apr_file(path).map_err(|e| {
-                    CliError::ValidationFailed(format!("Failed to load APR transformer: {e}"))
-                })?;
-
-                let prompt_tokens = tokenizer.encode(prompt);
-                let gen_config = GenerateConfig {
-                    max_tokens: config.max_tokens,
-                    temperature: 0.0,
-                    top_k: 1,
-                    ..Default::default()
-                };
-
-                measure_generate_throughput(
-                    config.warmup,
-                    config.iterations,
-                    prompt_tokens.len(),
-                    start,
-                    || transformer.generate_with_cache(&prompt_tokens, &gen_config).unwrap_or_default(),
-                )
-            }
-            ModelFormat::SafeTensors => {
-                use aprender::text::bpe::{load_from_json, BpeTokenizer};
-                use realizar::safetensors_infer::SafetensorsToAprConverter;
-
-                // PMAT-238 FIX: Use find_sibling_file for pacha hash-prefixed paths
-                let tokenizer_path =
-                    realizar::safetensors::find_sibling_file(path, "tokenizer.json");
-                let tokenizer: Option<BpeTokenizer> = tokenizer_path
-                    .as_ref()
-                    .and_then(|p| std::fs::read_to_string(p).ok())
-                    .and_then(|json| load_from_json(&json).ok());
-
-                let Some(tokenizer) = tokenizer else {
-                    return Ok(GateResult::skipped(
-                        "throughput",
-                        "SafeTensors: tokenizer.json not found in model directory",
-                    ));
-                };
-
-                let transformer = SafetensorsToAprConverter::convert(path).map_err(|e| {
-                    CliError::ValidationFailed(format!("SafeTensors convert failed: {e}"))
-                })?;
-
-                let prompt_tokens = tokenizer.encode(prompt);
-                let gen_config = realizar::apr_transformer::GenerateConfig {
-                    max_tokens: config.max_tokens,
-                    temperature: 0.0,
-                    top_k: 1,
-                    ..Default::default()
-                };
-
-                measure_generate_throughput(
-                    config.warmup,
-                    config.iterations,
-                    prompt_tokens.len(),
-                    start,
-                    || transformer.generate_with_cache(&prompt_tokens, &gen_config).unwrap_or_default(),
-                )
-            }
+        let Some((tps, duration)) = throughput_for_format(
+            path, &model_bytes, format, prompt, config, cuda_available, start,
+        )? else {
+            return Ok(GateResult::skipped(
+                "throughput", "SafeTensors: tokenizer.json not found in model directory",
+            ));
         };
-        let _ = cuda_available; // suppress warning
 
         // Format-aware thresholds: quantized GGUF on GPU is ~100x faster than F32 CPU.
         // Comparing unquantized F32 models against a quantized GPU target is meaningless.
@@ -1087,6 +1101,55 @@ fn ollama_parity_grade(ratio: f64) -> &'static str {
 ///
 /// Compares performance against Ollama baseline (if available).
 /// This is falsifiable - if speedup < target, test fails.
+/// Measure our GGUF throughput for Ollama parity comparison.
+///
+/// Uses 128-token minimum to amortize prefill overhead — Ollama reports
+/// decode-only throughput (eval_count/eval_duration), so short runs
+/// unfairly penalize our measurement.
+#[cfg(feature = "inference")]
+fn measure_our_gguf_tps(path: &Path, config: &QaConfig) -> Result<f64> {
+    use realizar::gguf::{
+        GGUFModel, MappedGGUFModel, OwnedQuantizedModel, OwnedQuantizedModelCuda,
+        QuantizedGenerateConfig,
+    };
+
+    let model_bytes = std::fs::read(path)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to read model: {e}")))?;
+    let gguf = GGUFModel::from_bytes(&model_bytes)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to parse GGUF: {e}")))?;
+
+    let prompt = "Write a function to check if a number is prime:";
+    let prompt_tokens = gguf.encode(prompt).unwrap_or_else(|| vec![151643]);
+    let parity_max_tokens = config.max_tokens.max(128);
+    let gen_config = QuantizedGenerateConfig {
+        max_tokens: parity_max_tokens, temperature: 0.0, top_k: 1, ..Default::default()
+    };
+
+    let cuda_available = realizar::cuda::CudaExecutor::is_available()
+        && realizar::cuda::CudaExecutor::num_devices() > 0;
+
+    let mapped = MappedGGUFModel::from_path(path)
+        .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
+    let model = OwnedQuantizedModel::from_mapped(&mapped)
+        .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
+
+    if cuda_available {
+        let mut cuda_model = OwnedQuantizedModelCuda::new(model, 0)
+            .map_err(|e| CliError::ValidationFailed(format!("CUDA init failed: {e}")))?;
+        let (tps, _) = measure_generate_throughput(
+            config.warmup, config.iterations, prompt_tokens.len(), Instant::now(),
+            || cuda_model.generate_gpu_resident(&prompt_tokens, &gen_config).unwrap_or_default(),
+        );
+        Ok(tps)
+    } else {
+        let (tps, _) = measure_generate_throughput(
+            config.warmup, config.iterations, prompt_tokens.len(), Instant::now(),
+            || model.generate_with_cache(&prompt_tokens, &gen_config).unwrap_or_default(),
+        );
+        Ok(tps)
+    }
+}
+
 fn run_ollama_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
     let start = Instant::now();
 
@@ -1094,100 +1157,21 @@ fn run_ollama_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
         println!("{}", "Running Ollama parity test...".yellow());
     }
 
-    // Check if Ollama is running by trying to connect
-    let ollama_available = check_ollama_available();
-
-    if !ollama_available {
+    if !check_ollama_available() {
         return Ok(GateResult::skipped(
-            "ollama_parity",
-            "Ollama not available (start with: ollama serve)",
+            "ollama_parity", "Ollama not available (start with: ollama serve)",
         ));
     }
 
     #[cfg(feature = "inference")]
     {
-        use realizar::cuda::CudaExecutor;
-        use realizar::gguf::{
-            GGUFModel, MappedGGUFModel, OwnedQuantizedModel, OwnedQuantizedModelCuda,
-            QuantizedGenerateConfig,
-        };
-
-        // This gate only runs for GGUF (non-GGUF skipped at call site)
         let ollama_tps = measure_ollama_throughput(path, config)?;
 
         if ollama_tps <= 0.0 {
-            return Ok(GateResult::skipped(
-                "ollama_parity",
-                "Could not measure Ollama throughput",
-            ));
+            return Ok(GateResult::skipped("ollama_parity", "Could not measure Ollama throughput"));
         }
 
-        // Measure our GGUF throughput
-        let model_bytes = std::fs::read(path)
-            .map_err(|e| CliError::ValidationFailed(format!("Failed to read model: {e}")))?;
-        let gguf = GGUFModel::from_bytes(&model_bytes)
-            .map_err(|e| CliError::ValidationFailed(format!("Failed to parse GGUF: {e}")))?;
-
-        let prompt = "Write a function to check if a number is prime:";
-        let prompt_tokens = gguf.encode(prompt).unwrap_or_else(|| vec![151643]);
-        // Use 128 tokens minimum for Ollama parity comparison.
-        // Ollama reports eval_count/eval_duration (decode-only throughput, excludes prefill).
-        // Our measurement includes prefill in every generate_gpu_resident() call.
-        // At 32 tokens, prefill overhead (~0.79s per call) dominates our measurement,
-        // producing an unfair 0.13x ratio. At 128 tokens, prefill amortizes and
-        // the ratio reflects actual decode throughput (~0.31x at 36 vs 116 tok/s).
-        let parity_max_tokens = config.max_tokens.max(128);
-        let gen_config = QuantizedGenerateConfig {
-            max_tokens: parity_max_tokens,
-            temperature: 0.0,
-            top_k: 1,
-            ..Default::default()
-        };
-
-        let cuda_available = CudaExecutor::is_available() && CudaExecutor::num_devices() > 0;
-
-        let our_tps = if cuda_available {
-            let mapped = MappedGGUFModel::from_path(path)
-                .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
-            let model = OwnedQuantizedModel::from_mapped(&mapped)
-                .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
-            let mut cuda_model = OwnedQuantizedModelCuda::new(model, 0)
-                .map_err(|e| CliError::ValidationFailed(format!("CUDA init failed: {e}")))?;
-
-            for _ in 0..config.warmup {
-                let _ = cuda_model.generate_gpu_resident(&prompt_tokens, &gen_config);
-            }
-
-            let mut total_tokens = 0usize;
-            let measure_start = Instant::now();
-            for _ in 0..config.iterations {
-                let output = cuda_model
-                    .generate_gpu_resident(&prompt_tokens, &gen_config)
-                    .unwrap_or_default();
-                total_tokens += output.len().saturating_sub(prompt_tokens.len());
-            }
-            total_tokens as f64 / measure_start.elapsed().as_secs_f64()
-        } else {
-            let mapped = MappedGGUFModel::from_path(path)
-                .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
-            let model = OwnedQuantizedModel::from_mapped(&mapped)
-                .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
-
-            for _ in 0..config.warmup {
-                let _ = model.generate_with_cache(&prompt_tokens, &gen_config);
-            }
-
-            let mut total_tokens = 0usize;
-            let measure_start = Instant::now();
-            for _ in 0..config.iterations {
-                let output = model
-                    .generate_with_cache(&prompt_tokens, &gen_config)
-                    .unwrap_or_default();
-                total_tokens += output.len().saturating_sub(prompt_tokens.len());
-            }
-            total_tokens as f64 / measure_start.elapsed().as_secs_f64()
-        };
-
+        let our_tps = measure_our_gguf_tps(path, config)?;
         let speedup = our_tps / ollama_tps;
         let grade = ollama_parity_grade(speedup);
         let duration = start.elapsed();
@@ -1195,24 +1179,16 @@ fn run_ollama_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
         if speedup >= config.min_speedup {
             Ok(GateResult::passed(
                 "ollama_parity",
-                &format!(
-                    "{:.1}x Ollama ({:.0} vs {:.0} tok/s) Grade {grade} >= {:.1}x threshold",
-                    speedup, our_tps, ollama_tps, config.min_speedup
-                ),
-                Some(speedup),
-                Some(config.min_speedup),
-                duration,
+                &format!("{:.1}x Ollama ({:.0} vs {:.0} tok/s) Grade {grade} >= {:.1}x threshold",
+                    speedup, our_tps, ollama_tps, config.min_speedup),
+                Some(speedup), Some(config.min_speedup), duration,
             ))
         } else {
             Ok(GateResult::failed(
                 "ollama_parity",
-                &format!(
-                    "{:.2}x Ollama ({:.0} vs {:.0} tok/s) Grade {grade} < {:.1}x threshold",
-                    speedup, our_tps, ollama_tps, config.min_speedup
-                ),
-                Some(speedup),
-                Some(config.min_speedup),
-                duration,
+                &format!("{:.2}x Ollama ({:.0} vs {:.0} tok/s) Grade {grade} < {:.1}x threshold",
+                    speedup, our_tps, ollama_tps, config.min_speedup),
+                Some(speedup), Some(config.min_speedup), duration,
             ))
         }
     }
@@ -1220,10 +1196,7 @@ fn run_ollama_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
     #[cfg(not(feature = "inference"))]
     {
         let _ = (path, config);
-        Ok(GateResult::skipped(
-            "ollama_parity",
-            "Requires 'inference' feature",
-        ))
+        Ok(GateResult::skipped("ollama_parity", "Requires 'inference' feature"))
     }
 }
 
@@ -1233,6 +1206,53 @@ fn run_ollama_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
 /// This is falsifiable - if GPU speedup < threshold, test fails.
 ///
 /// Toyota Way: Genchi Genbutsu - Go and see for yourself. Measure real performance.
+/// Measure GPU and CPU throughput for a GGUF model, returning (cpu_tps, gpu_tps).
+#[cfg(feature = "inference")]
+fn measure_gpu_cpu_tps(
+    path: &Path,
+    config: &QaConfig,
+) -> Result<(f64, f64)> {
+    use realizar::gguf::{
+        GGUFModel, MappedGGUFModel, OwnedQuantizedModel, OwnedQuantizedModelCuda,
+        QuantizedGenerateConfig,
+    };
+
+    let model_bytes = std::fs::read(path)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to read model: {e}")))?;
+    let gguf = GGUFModel::from_bytes(&model_bytes)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to parse GGUF: {e}")))?;
+
+    let prompt = "Write a function to calculate factorial:";
+    let prompt_tokens = gguf.encode(prompt).unwrap_or_else(|| vec![151643]);
+    let gen_config = QuantizedGenerateConfig {
+        max_tokens: config.max_tokens, temperature: 0.0, top_k: 1, ..Default::default()
+    };
+
+    // CPU throughput
+    let mapped = MappedGGUFModel::from_path(path)
+        .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
+    let model = OwnedQuantizedModel::from_mapped(&mapped)
+        .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
+    let (cpu_tps, _) = measure_generate_throughput(
+        config.warmup, config.iterations, prompt_tokens.len(), Instant::now(),
+        || model.generate_with_cache(&prompt_tokens, &gen_config).unwrap_or_default(),
+    );
+
+    // GPU throughput
+    let mapped2 = MappedGGUFModel::from_path(path)
+        .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
+    let model2 = OwnedQuantizedModel::from_mapped(&mapped2)
+        .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
+    let mut cuda_model = OwnedQuantizedModelCuda::new(model2, 0)
+        .map_err(|e| CliError::ValidationFailed(format!("CUDA init failed: {e}")))?;
+    let (gpu_tps, _) = measure_generate_throughput(
+        config.warmup, config.iterations, prompt_tokens.len(), Instant::now(),
+        || cuda_model.generate_gpu_resident(&prompt_tokens, &gen_config).unwrap_or_default(),
+    );
+
+    Ok((cpu_tps, gpu_tps))
+}
+
 fn run_gpu_speedup_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
     let start = Instant::now();
 
@@ -1244,110 +1264,25 @@ fn run_gpu_speedup_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
     {
         use realizar::cuda::CudaExecutor;
         use realizar::format::{detect_format, ModelFormat};
-        use realizar::gguf::{
-            GGUFModel, MappedGGUFModel, OwnedQuantizedModel, OwnedQuantizedModelCuda,
-            QuantizedGenerateConfig,
-        };
 
-        // Check if CUDA available
         let cuda_available = CudaExecutor::is_available() && CudaExecutor::num_devices() > 0;
-
         if !cuda_available {
-            return Ok(GateResult::skipped(
-                "gpu_speedup",
-                "CUDA not available - cannot compare GPU vs CPU",
-            ));
+            return Ok(GateResult::skipped("gpu_speedup", "CUDA not available - cannot compare GPU vs CPU"));
         }
 
         let model_bytes = std::fs::read(path)
             .map_err(|e| CliError::ValidationFailed(format!("Failed to read model: {e}")))?;
-
         let format = detect_format(&model_bytes[..8.min(model_bytes.len())])
             .map_err(|e| CliError::ValidationFailed(format!("Failed to detect format: {e}")))?;
-
         if format != ModelFormat::Gguf {
-            return Ok(GateResult::skipped(
-                "gpu_speedup",
-                "Only GGUF format supported",
-            ));
+            return Ok(GateResult::skipped("gpu_speedup", "Only GGUF format supported"));
         }
 
-        let gguf = GGUFModel::from_bytes(&model_bytes)
-            .map_err(|e| CliError::ValidationFailed(format!("Failed to parse GGUF: {e}")))?;
-
-        let prompt = "Write a function to calculate factorial:";
-        let prompt_tokens = gguf.encode(prompt).unwrap_or_else(|| vec![151643]);
-
-        let gen_config = QuantizedGenerateConfig {
-            max_tokens: config.max_tokens,
-            temperature: 0.0,
-            top_k: 1,
-            ..Default::default()
-        };
-
-        // Measure CPU throughput
-        let cpu_tps = {
-            let mapped = MappedGGUFModel::from_path(path)
-                .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
-            let model = OwnedQuantizedModel::from_mapped(&mapped)
-                .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
-
-            // Warmup
-            for _ in 0..config.warmup {
-                let _ = model.generate_with_cache(&prompt_tokens, &gen_config);
-            }
-
-            let mut total_tokens = 0usize;
-            let measure_start = Instant::now();
-
-            for _ in 0..config.iterations {
-                let output = model
-                    .generate_with_cache(&prompt_tokens, &gen_config)
-                    .unwrap_or_default();
-                total_tokens += output.len().saturating_sub(prompt_tokens.len());
-            }
-
-            total_tokens as f64 / measure_start.elapsed().as_secs_f64()
-        };
-
-        // Measure GPU throughput
-        let gpu_tps = {
-            let mapped = MappedGGUFModel::from_path(path)
-                .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
-            let model = OwnedQuantizedModel::from_mapped(&mapped)
-                .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
-            let mut cuda_model = OwnedQuantizedModelCuda::new(model, 0)
-                .map_err(|e| CliError::ValidationFailed(format!("CUDA init failed: {e}")))?;
-
-            // Warmup
-            for _ in 0..config.warmup {
-                let _ = cuda_model.generate_gpu_resident(&prompt_tokens, &gen_config);
-            }
-
-            let mut total_tokens = 0usize;
-            let measure_start = Instant::now();
-
-            for _ in 0..config.iterations {
-                let output = cuda_model
-                    .generate_gpu_resident(&prompt_tokens, &gen_config)
-                    .unwrap_or_default();
-                total_tokens += output.len().saturating_sub(prompt_tokens.len());
-            }
-
-            total_tokens as f64 / measure_start.elapsed().as_secs_f64()
-        };
-
+        let (cpu_tps, gpu_tps) = measure_gpu_cpu_tps(path, config)?;
         let duration = start.elapsed();
 
-        // Calculate speedup
         if cpu_tps <= 0.0 {
-            return Ok(GateResult::failed(
-                "gpu_speedup",
-                "CPU throughput was zero - cannot calculate speedup",
-                None,
-                None,
-                duration,
-            ));
+            return Ok(GateResult::failed("gpu_speedup", "CPU throughput was zero - cannot calculate speedup", None, None, duration));
         }
 
         let speedup = gpu_tps / cpu_tps;
@@ -1355,24 +1290,16 @@ fn run_gpu_speedup_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
         if speedup >= config.min_gpu_speedup {
             Ok(GateResult::passed(
                 "gpu_speedup",
-                &format!(
-                    "GPU {:.1}x faster than CPU ({:.0} vs {:.0} tok/s) >= {:.1}x threshold",
-                    speedup, gpu_tps, cpu_tps, config.min_gpu_speedup
-                ),
-                Some(speedup),
-                Some(config.min_gpu_speedup),
-                duration,
+                &format!("GPU {:.1}x faster than CPU ({:.0} vs {:.0} tok/s) >= {:.1}x threshold",
+                    speedup, gpu_tps, cpu_tps, config.min_gpu_speedup),
+                Some(speedup), Some(config.min_gpu_speedup), duration,
             ))
         } else {
             Ok(GateResult::failed(
                 "gpu_speedup",
-                &format!(
-                    "GPU {:.2}x faster than CPU ({:.0} vs {:.0} tok/s) < {:.1}x threshold",
-                    speedup, gpu_tps, cpu_tps, config.min_gpu_speedup
-                ),
-                Some(speedup),
-                Some(config.min_gpu_speedup),
-                duration,
+                &format!("GPU {:.2}x faster than CPU ({:.0} vs {:.0} tok/s) < {:.1}x threshold",
+                    speedup, gpu_tps, cpu_tps, config.min_gpu_speedup),
+                Some(speedup), Some(config.min_gpu_speedup), duration,
             ))
         }
     }
@@ -1380,10 +1307,7 @@ fn run_gpu_speedup_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
     #[cfg(not(feature = "inference"))]
     {
         let _ = (path, config);
-        Ok(GateResult::skipped(
-            "gpu_speedup",
-            "Requires 'inference' feature",
-        ))
+        Ok(GateResult::skipped("gpu_speedup", "Requires 'inference' feature"))
     }
 }
 

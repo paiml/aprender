@@ -224,41 +224,46 @@ pub(crate) fn start_safetensors_server(model_path: &Path, config: &ServerConfig)
 #[cfg(feature = "inference")]
 /// Extract special tokens from tokenizer JSON added_tokens, merge them into vocab,
 /// and detect BOS/EOS token IDs (PMAT-099)
+/// Parse a single added_token JSON entry into (id, content).
+fn parse_special_token(token: &serde_json::Value) -> Option<(u32, String)> {
+    let content = token.get("content")?.as_str()?;
+    let id = token.get("id")?.as_u64()? as u32;
+    Some((id, content.to_string()))
+}
+
+/// Classify BOS/EOS from token content string.
+fn classify_bos_eos(content: &str) -> (bool, bool) {
+    let is_bos = content.contains("bos") || content == "<s>";
+    let is_eos = content.contains("eos") || content == "</s>" || content.contains("im_end");
+    (is_bos, is_eos)
+}
+
 fn merge_special_tokens_into_vocab(
     added_tokens: Option<&Vec<serde_json::Value>>,
     vocab: &mut Vec<String>,
 ) -> (Option<u32>, Option<u32>) {
     let mut bos_token_id = None;
     let mut eos_token_id = None;
-    let mut special_tokens: Vec<(u32, String)> = Vec::new();
 
-    if let Some(tokens) = added_tokens {
-        for token in tokens {
-            let content = token.get("content").and_then(|v| v.as_str());
-            let id = token.get("id").and_then(|v| v.as_u64()).map(|v| v as u32);
+    let tokens: Vec<(u32, String)> = added_tokens
+        .into_iter()
+        .flatten()
+        .filter_map(parse_special_token)
+        .inspect(|(id, content)| {
+            let (is_bos, is_eos) = classify_bos_eos(content);
+            if is_bos { bos_token_id = Some(*id); }
+            if is_eos { eos_token_id = Some(*id); }
+        })
+        .collect();
 
-            if let (Some(content), Some(id)) = (content, id) {
-                special_tokens.push((id, content.to_string()));
-
-                if content.contains("bos") || content == "<s>" {
-                    bos_token_id = Some(id);
-                }
-                if content.contains("eos") || content == "</s>" || content.contains("im_end") {
-                    eos_token_id = Some(id);
-                }
-            }
+    if let Some(max_id) = tokens.iter().map(|(id, _)| *id).max() {
+        if max_id as usize >= vocab.len() {
+            vocab.resize(max_id as usize + 1, "<unused>".to_string());
         }
     }
-
-    if !special_tokens.is_empty() {
-        let max_special_id = special_tokens.iter().map(|(id, _)| *id).max().unwrap_or(0);
-        if max_special_id as usize >= vocab.len() {
-            vocab.resize(max_special_id as usize + 1, "<unused>".to_string());
-        }
-        for (id, content) in special_tokens {
-            if (id as usize) < vocab.len() {
-                vocab[id as usize] = content;
-            }
+    for (id, content) in tokens {
+        if (id as usize) < vocab.len() {
+            vocab[id as usize] = content;
         }
     }
 
