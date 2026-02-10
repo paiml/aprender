@@ -94,6 +94,37 @@ pub fn create_router(state: Arc<ServerState>) -> axum::Router {
         )
     }
 
+    /// Validate request body size and parse JSON (EH01, EH05).
+    /// Returns parsed value on success, or error response on failure.
+    #[allow(clippy::result_large_err)]
+    fn validate_and_parse<T: serde::de::DeserializeOwned>(
+        body: &[u8],
+        metrics: &super::types::ServerMetrics,
+    ) -> std::result::Result<T, Response> {
+        if body.len() > MAX_REQUEST_SIZE {
+            metrics.record_client_error();
+            return Err((
+                StatusCode::PAYLOAD_TOO_LARGE,
+                Json(ErrorResponse::new(
+                    "payload_too_large",
+                    "Request body too large",
+                )),
+            )
+                .into_response());
+        }
+        serde_json::from_slice(body).map_err(|e| {
+            metrics.record_client_error();
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse::new(
+                    "invalid_json",
+                    format!("Invalid JSON: {e}"),
+                )),
+            )
+                .into_response()
+        })
+    }
+
     // Handler: POST /predict (IC01-IC15)
     // serde_json::json!() macro uses infallible unwrap internally
     #[allow(clippy::disallowed_methods)]
@@ -103,34 +134,11 @@ pub fn create_router(state: Arc<ServerState>) -> axum::Router {
     ) -> impl IntoResponse {
         let start = Instant::now();
 
-        // EH05: Check body size
-        if body.len() > MAX_REQUEST_SIZE {
-            state.metrics.record_client_error();
-            return (
-                StatusCode::PAYLOAD_TOO_LARGE,
-                Json(ErrorResponse::new(
-                    "payload_too_large",
-                    "Request body too large",
-                )),
-            )
-                .into_response();
-        }
-
-        // EH01: 400 for invalid JSON
-        let request: serde_json::Value = match serde_json::from_slice(&body) {
-            Ok(v) => v,
-            Err(e) => {
-                state.metrics.record_client_error();
-                return (
-                    StatusCode::BAD_REQUEST,
-                    Json(ErrorResponse::new(
-                        "invalid_json",
-                        format!("Invalid JSON: {e}"),
-                    )),
-                )
-                    .into_response();
-            }
-        };
+        let request: serde_json::Value =
+            match validate_and_parse(&body, &state.metrics) {
+                Ok(v) => v,
+                Err(resp) => return resp,
+            };
 
         // EH02: 400 for missing required fields
         if request.get("inputs").is_none() {
@@ -167,33 +175,9 @@ pub fn create_router(state: Arc<ServerState>) -> axum::Router {
     ) -> Response {
         let start = Instant::now();
 
-        // EH05: Check body size
-        if body.len() > MAX_REQUEST_SIZE {
-            state.metrics.record_client_error();
-            return (
-                StatusCode::PAYLOAD_TOO_LARGE,
-                Json(ErrorResponse::new(
-                    "payload_too_large",
-                    "Request body too large",
-                )),
-            )
-                .into_response();
-        }
-
-        // EH01: 400 for invalid JSON
-        let request: GenerateRequest = match serde_json::from_slice(&body) {
+        let request: GenerateRequest = match validate_and_parse(&body, &state.metrics) {
             Ok(v) => v,
-            Err(e) => {
-                state.metrics.record_client_error();
-                return (
-                    StatusCode::BAD_REQUEST,
-                    Json(ErrorResponse::new(
-                        "invalid_json",
-                        format!("Invalid JSON: {e}"),
-                    )),
-                )
-                    .into_response();
-            }
+            Err(resp) => return resp,
         };
 
         // GH-152: Verbose request logging
@@ -288,7 +272,7 @@ pub fn create_router(state: Arc<ServerState>) -> axum::Router {
     ) -> impl IntoResponse {
         let start = Instant::now();
 
-        // EH05: Check body size
+        // Validate body size (EH05)
         if body.len() > MAX_REQUEST_SIZE {
             state.metrics.record_client_error();
             return (

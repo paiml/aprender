@@ -2550,10 +2550,10 @@ pub(crate) fn run_cross_format_comparison(
         "\n{}",
         format!("[1/2] Profiling {} ({})...", path_a.display(), format_a).dimmed()
     );
-    let results_a = if !no_gpu {
-        profile_gpu_or_cpu(path_a, warmup, measure, tokens)
-    } else {
+    let results_a = if no_gpu {
         profile_real_inference_cpu(path_a, warmup, measure)
+    } else {
+        profile_gpu_or_cpu(path_a, warmup, measure, tokens)
     }?;
 
     // Profile second model
@@ -2561,10 +2561,10 @@ pub(crate) fn run_cross_format_comparison(
         "\n{}",
         format!("[2/2] Profiling {} ({})...", path_b.display(), format_b).dimmed()
     );
-    let results_b = if !no_gpu {
-        profile_gpu_or_cpu(path_b, warmup, measure, tokens)
-    } else {
+    let results_b = if no_gpu {
         profile_real_inference_cpu(path_b, warmup, measure)
+    } else {
+        profile_gpu_or_cpu(path_b, warmup, measure, tokens)
     }?;
 
     // Print comparison table

@@ -947,6 +947,203 @@ pub(crate) fn check_mixed_quant_warning(model_a: &Path, model_b: &Path) -> Optio
 /// Compares tensor dimensions between two models to detect layout mismatches.
 /// GGML stores weights as [in_dim, out_dim] but most ML code expects [out_dim, in_dim].
 /// This mismatch causes garbage output (PAD token floods).
+/// Print the diff report header box
+fn print_diff_header(model_a: &Path, model_b: &Path, count_a: usize, count_b: usize) {
+    println!(
+        "{}",
+        "╔══════════════════════════════════════════════════════════════════════════════╗"
+            .cyan()
+    );
+    println!(
+        "{}",
+        "║               TENSOR DIFF REPORT (GH-188: Layout Mismatch Detection)        ║"
+            .cyan()
+    );
+    println!(
+        "{}",
+        "╠══════════════════════════════════════════════════════════════════════════════╣"
+            .cyan()
+    );
+    println!(
+        "║ Model A: {:<66} ║",
+        truncate_path(model_a.display().to_string(), 66)
+    );
+    println!(
+        "║ Model B: {:<66} ║",
+        truncate_path(model_b.display().to_string(), 66)
+    );
+    println!(
+        "{}",
+        "╠══════════════════════════════════════════════════════════════════════════════╣"
+            .cyan()
+    );
+
+    let count_match = count_a == count_b;
+    let count_status = if count_match {
+        "✓".green()
+    } else {
+        "✗".red()
+    };
+    println!(
+        "║ {} Tensor Count: A={:<5} B={:<5} {}║",
+        count_status,
+        count_a,
+        count_b,
+        if count_match {
+            "                                  ".to_string()
+        } else {
+            format!(
+                "MISSING {} TENSORS!",
+                (count_a as i64 - count_b as i64).abs()
+            )
+            .red()
+            .bold()
+            .to_string()
+        }
+    );
+    println!(
+        "{}",
+        "╠══════════════════════════════════════════════════════════════════════════════╣"
+            .cyan()
+    );
+    println!(
+        "{}",
+        "║ GGML Convention: [in_dim, out_dim] - needs transpose for standard matmul     ║"
+            .yellow()
+    );
+    println!(
+        "{}",
+        "║ Standard Conv:   [out_dim, in_dim] - expected by most ML code                ║"
+            .yellow()
+    );
+    println!(
+        "{}",
+        "╠══════════════════════════════════════════════════════════════════════════════╣"
+            .cyan()
+    );
+}
+
+/// Print diff summary in JSON format
+fn print_diff_json_summary(
+    model_a: &Path,
+    model_b: &Path,
+    tensors_a_len: usize,
+    tensors_b_len: usize,
+    layout_mismatches: &[(String, Vec<usize>, Vec<usize>)],
+    missing_in_a: &[(String, Vec<usize>)],
+    missing_in_b: &[(String, Vec<usize>)],
+) {
+    println!("{{");
+    println!("  \"model_a\": \"{}\",", model_a.display());
+    println!("  \"model_b\": \"{}\",", model_b.display());
+    println!("  \"tensors_a\": {},", tensors_a_len);
+    println!("  \"tensors_b\": {},", tensors_b_len);
+    println!("  \"layout_mismatches\": {},", layout_mismatches.len());
+    println!("  \"missing_in_a\": {},", missing_in_a.len());
+    println!("  \"missing_in_b\": {},", missing_in_b.len());
+    if !layout_mismatches.is_empty() {
+        println!("  \"mismatched_tensors\": [");
+        for (i, (name, shape_a, shape_b)) in layout_mismatches.iter().enumerate() {
+            let comma = if i < layout_mismatches.len() - 1 {
+                ","
+            } else {
+                ""
+            };
+            println!(
+                "    {{\"name\": \"{}\", \"shape_a\": {:?}, \"shape_b\": {:?}}}{}",
+                name, shape_a, shape_b, comma
+            );
+        }
+        println!("  ],");
+    }
+    println!(
+        "  \"diagnosis\": \"{}\"",
+        if layout_mismatches.is_empty() {
+            "No layout mismatches detected"
+        } else {
+            "LAYOUT MISMATCH: Some tensors have transposed dimensions (GGML convention)"
+        }
+    );
+    println!("}}");
+}
+
+/// Print diff summary in text format with diagnosis
+fn print_diff_text_summary(
+    tensors_a_len: usize,
+    tensors_b_len: usize,
+    layout_mismatches: &[(String, Vec<usize>, Vec<usize>)],
+    missing_in_a: &[(String, Vec<usize>)],
+    missing_in_b: &[(String, Vec<usize>)],
+) {
+    println!(
+        "{}",
+        "║                                 SUMMARY                                       ║"
+            .cyan()
+    );
+    println!(
+        "{}",
+        "╠══════════════════════════════════════════════════════════════════════════════╣"
+            .cyan()
+    );
+    println!("║ Tensors in A: {:<62} ║", tensors_a_len);
+    println!("║ Tensors in B: {:<62} ║", tensors_b_len);
+    println!(
+        "║ Layout mismatches: {:<56} ║",
+        format!("{}", layout_mismatches.len()).red().bold()
+    );
+    println!("║ Missing in A: {:<62} ║", missing_in_a.len());
+    println!("║ Missing in B: {:<62} ║", missing_in_b.len());
+    println!(
+        "{}",
+        "╠══════════════════════════════════════════════════════════════════════════════╣"
+            .cyan()
+    );
+
+    if layout_mismatches.is_empty() {
+        println!("║ {} ║", "No layout mismatches detected".green().bold());
+    } else {
+        println!(
+            "{}",
+            "║                              DIAGNOSIS                                       ║"
+                .red()
+                .bold()
+        );
+        println!(
+            "{}",
+            "╠══════════════════════════════════════════════════════════════════════════════╣"
+                .cyan()
+        );
+        println!("║ {} ║", "LAYOUT MISMATCH DETECTED!".red().bold());
+        println!("║ Tensors with transposed dimensions found. This causes garbage output. ║");
+        println!("║  ║");
+        println!("║ Root Cause: GGML stores weights as [in_dim, out_dim] ║");
+        println!("║              Standard ML expects [out_dim, in_dim] ║");
+        println!("║  ║");
+        println!("║ {} ║", "Fix Options:".yellow().bold());
+        println!("║   1. Transpose tensor data during APR load ║");
+        println!("║   2. Use row-major kernels that expect GGML layout ║");
+        println!("║   3. Store layout convention in APR metadata ║");
+        println!(
+            "{}",
+            "╠══════════════════════════════════════════════════════════════════════════════╣"
+                .cyan()
+        );
+        println!(
+            "║ Mismatched tensors:                                                          ║"
+        );
+        for (name, shape_a, shape_b) in layout_mismatches {
+            println!("║   {} ║", name);
+            println!("║     A: {:?} → B: {:?} ║", shape_a, shape_b);
+        }
+    }
+
+    println!(
+        "{}",
+        "╚══════════════════════════════════════════════════════════════════════════════╝"
+            .cyan()
+    );
+}
+
 pub fn run_diff_tensors(
     model_a: &Path,
     model_b: &Path,
@@ -1012,81 +1209,7 @@ pub fn run_diff_tensors(
     let mut missing_in_b = Vec::new();
 
     if !json {
-        println!(
-            "{}",
-            "╔══════════════════════════════════════════════════════════════════════════════╗"
-                .cyan()
-        );
-        println!(
-            "{}",
-            "║               TENSOR DIFF REPORT (GH-188: Layout Mismatch Detection)        ║"
-                .cyan()
-        );
-        println!(
-            "{}",
-            "╠══════════════════════════════════════════════════════════════════════════════╣"
-                .cyan()
-        );
-        println!(
-            "║ Model A: {:<66} ║",
-            truncate_path(model_a.display().to_string(), 66)
-        );
-        println!(
-            "║ Model B: {:<66} ║",
-            truncate_path(model_b.display().to_string(), 66)
-        );
-        println!(
-            "{}",
-            "╠══════════════════════════════════════════════════════════════════════════════╣"
-                .cyan()
-        );
-
-        // GH-188: Show tensor count comparison FIRST - missing tensors is critical!
-        let count_a = report_a.tensors.len();
-        let count_b = report_b.tensors.len();
-        let count_match = count_a == count_b;
-        let count_status = if count_match {
-            "✓".green()
-        } else {
-            "✗".red()
-        };
-        println!(
-            "║ {} Tensor Count: A={:<5} B={:<5} {}║",
-            count_status,
-            count_a,
-            count_b,
-            if count_match {
-                "                                  ".to_string()
-            } else {
-                format!(
-                    "MISSING {} TENSORS!",
-                    (count_a as i64 - count_b as i64).abs()
-                )
-                .red()
-                .bold()
-                .to_string()
-            }
-        );
-        println!(
-            "{}",
-            "╠══════════════════════════════════════════════════════════════════════════════╣"
-                .cyan()
-        );
-        println!(
-            "{}",
-            "║ GGML Convention: [in_dim, out_dim] - needs transpose for standard matmul     ║"
-                .yellow()
-        );
-        println!(
-            "{}",
-            "║ Standard Conv:   [out_dim, in_dim] - expected by most ML code                ║"
-                .yellow()
-        );
-        println!(
-            "{}",
-            "╠══════════════════════════════════════════════════════════════════════════════╣"
-                .cyan()
-        );
+        print_diff_header(model_a, model_b, report_a.tensors.len(), report_b.tensors.len());
     }
 
     for name in &filtered_names {
@@ -1173,105 +1296,22 @@ pub fn run_diff_tensors(
 
     // Summary
     if json {
-        println!("{{");
-        println!("  \"model_a\": \"{}\",", model_a.display());
-        println!("  \"model_b\": \"{}\",", model_b.display());
-        println!("  \"tensors_a\": {},", tensors_a.len());
-        println!("  \"tensors_b\": {},", tensors_b.len());
-        println!("  \"layout_mismatches\": {},", layout_mismatches.len());
-        println!("  \"missing_in_a\": {},", missing_in_a.len());
-        println!("  \"missing_in_b\": {},", missing_in_b.len());
-        if !layout_mismatches.is_empty() {
-            println!("  \"mismatched_tensors\": [");
-            for (i, (name, shape_a, shape_b)) in layout_mismatches.iter().enumerate() {
-                let comma = if i < layout_mismatches.len() - 1 {
-                    ","
-                } else {
-                    ""
-                };
-                println!(
-                    "    {{\"name\": \"{}\", \"shape_a\": {:?}, \"shape_b\": {:?}}}{}",
-                    name, shape_a, shape_b, comma
-                );
-            }
-            println!("  ],");
-        }
-        println!(
-            "  \"diagnosis\": \"{}\"",
-            if layout_mismatches.is_empty() {
-                "No layout mismatches detected"
-            } else {
-                "LAYOUT MISMATCH: Some tensors have transposed dimensions (GGML convention)"
-            }
+        print_diff_json_summary(
+            model_a,
+            model_b,
+            tensors_a.len(),
+            tensors_b.len(),
+            &layout_mismatches,
+            &missing_in_a,
+            &missing_in_b,
         );
-        println!("}}");
     } else {
-        println!(
-            "{}",
-            "║                                 SUMMARY                                       ║"
-                .cyan()
-        );
-        println!(
-            "{}",
-            "╠══════════════════════════════════════════════════════════════════════════════╣"
-                .cyan()
-        );
-        println!("║ Tensors in A: {:<62} ║", tensors_a.len());
-        println!("║ Tensors in B: {:<62} ║", tensors_b.len());
-        println!(
-            "║ Layout mismatches: {:<56} ║",
-            format!("{}", layout_mismatches.len()).red().bold()
-        );
-        println!("║ Missing in A: {:<62} ║", missing_in_a.len());
-        println!("║ Missing in B: {:<62} ║", missing_in_b.len());
-        println!(
-            "{}",
-            "╠══════════════════════════════════════════════════════════════════════════════╣"
-                .cyan()
-        );
-
-        if layout_mismatches.is_empty() {
-            println!("║ {} ║", "No layout mismatches detected".green().bold());
-        } else {
-            println!(
-                "{}",
-                "║                              DIAGNOSIS                                       ║"
-                    .red()
-                    .bold()
-            );
-            println!(
-                "{}",
-                "╠══════════════════════════════════════════════════════════════════════════════╣"
-                    .cyan()
-            );
-            println!("║ {} ║", "LAYOUT MISMATCH DETECTED!".red().bold());
-            println!("║ Tensors with transposed dimensions found. This causes garbage output. ║");
-            println!("║  ║");
-            println!("║ Root Cause: GGML stores weights as [in_dim, out_dim] ║");
-            println!("║              Standard ML expects [out_dim, in_dim] ║");
-            println!("║  ║");
-            println!("║ {} ║", "Fix Options:".yellow().bold());
-            println!("║   1. Transpose tensor data during APR load ║");
-            println!("║   2. Use row-major kernels that expect GGML layout ║");
-            println!("║   3. Store layout convention in APR metadata ║");
-            println!(
-                "{}",
-                "╠══════════════════════════════════════════════════════════════════════════════╣"
-                    .cyan()
-            );
-            println!(
-                "║ Mismatched tensors:                                                          ║"
-            );
-            for (name, shape_a, shape_b) in &layout_mismatches {
-                println!("║   {} ║", name);
-                println!("║     A: {:?} → B: {:?} ║", shape_a, shape_b);
-            }
-        }
-
-        println!(
-            "{}",
-            "╚══════════════════════════════════════════════════════════════════════════════╝"
-                .cyan()
+        print_diff_text_summary(
+            tensors_a.len(),
+            tensors_b.len(),
+            &layout_mismatches,
+            &missing_in_a,
+            &missing_in_b,
         );
     }
 

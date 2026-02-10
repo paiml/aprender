@@ -1079,9 +1079,145 @@ fn clean_model_output(raw: &str) -> String {
 
 /// Execute SafeTensors model inference
 ///
-/// Uses realizar's safetensors support for transformer model generation with tracing.
-/// Loads sibling config.json and tokenizer.json for full inference capability.
+/// Build metadata-only output when config or tokenizer is missing
 #[cfg(feature = "inference")]
+fn build_safetensors_metadata_output(
+    model_path: &Path,
+    st_model: &realizar::safetensors::SafetensorsModel,
+    tensor_count: usize,
+    load_time: std::time::Duration,
+    has_config: bool,
+    has_vocab: bool,
+    tracer: &mut Option<realizar::InferenceTracer>,
+) -> String {
+    let tensor_names: Vec<&str> = st_model.tensor_names();
+    let mut output = format!(
+        "SafeTensors Model (metadata only)\n\
+         Model: {}\n\
+         Tensors: {}\n\
+         Load time: {:.2}ms\n\n",
+        model_path.display(),
+        tensor_count,
+        load_time.as_secs_f64() * 1000.0
+    );
+
+    if !has_config {
+        output.push_str("Note: No config.json found - cannot run inference.\n");
+        output.push_str("      Place config.json in the same directory as the model.\n\n");
+        if let Some(ref mut t) = tracer {
+            t.record_execution_failed("Initialization Failure", "Missing config.json");
+        }
+    }
+    if !has_vocab {
+        output.push_str("Note: No tokenizer.json found - cannot encode/decode text.\n");
+        output.push_str("      Place tokenizer.json in the same directory as the model.\n\n");
+    }
+
+    output.push_str("Tensor names (first 15):\n");
+    for (i, name) in tensor_names.iter().take(15).enumerate() {
+        if let Some(info) = st_model.get_tensor_info(name) {
+            output.push_str(&format!(
+                "  {}. {} ({:?}, {:?})\n",
+                i + 1,
+                name,
+                info.dtype,
+                info.shape
+            ));
+        }
+    }
+
+    if tensor_names.len() > 15 {
+        output.push_str(&format!("  ... and {} more\n", tensor_names.len() - 15));
+    }
+
+    if let Some(ref mut t) = tracer {
+        if let Err(e) = t.write_output() {
+            eprintln!("Warning: Failed to write trace output: {e}");
+        }
+    }
+
+    output
+}
+
+/// Prepare input tokens for SafeTensors inference
+#[cfg(feature = "inference")]
+fn prepare_safetensors_input_tokens(
+    model_path: &Path,
+    prompt: Option<&str>,
+    input_path: Option<&PathBuf>,
+    vocab_size: usize,
+    tracer: &mut Option<realizar::InferenceTracer>,
+) -> Result<Vec<u32>> {
+    use realizar::apr::AprModel;
+
+    if let Some(prompt) = prompt {
+        if prompt.contains(',') || prompt.chars().all(|c| c.is_ascii_digit() || c == ',') {
+            return parse_token_ids(prompt);
+        }
+        // Text prompt - encode using tokenizer
+        if let Some(tokens) = AprModel::encode_text(model_path, prompt) {
+            eprintln!(
+                "{}",
+                format!("Encoded {} chars to {} tokens", prompt.len(), tokens.len()).dimmed()
+            );
+            if let Some(ref mut t) = tracer {
+                t.start_step(realizar::TraceStep::Tokenize);
+                t.trace_encode(prompt, &tokens, vocab_size);
+            }
+            return Ok(tokens);
+        }
+        eprintln!(
+            "{}",
+            "Warning: No tokenizer found. Using BOS token.".yellow()
+        );
+        return Ok(vec![1u32]);
+    }
+    if let Some(path) = input_path {
+        let content = std::fs::read_to_string(path)?;
+        return parse_token_ids(&content);
+    }
+    Ok(vec![1u32])
+}
+
+/// Setup tracing for SafeTensors inference
+#[cfg(feature = "inference")]
+fn setup_safetensors_tracer(
+    options: &RunOptions,
+    config: Option<&realizar::safetensors::SafetensorsConfig>,
+    num_layers: usize,
+    hidden_size: usize,
+    vocab_size: usize,
+    num_heads: usize,
+) -> Option<realizar::InferenceTracer> {
+    if !options.trace {
+        return None;
+    }
+    use realizar::{InferenceTracer, ModelInfo, TraceConfig};
+
+    let mut trace_config = TraceConfig::enabled();
+    trace_config.verbose = options.trace_verbose;
+    options.trace_output.clone_into(&mut trace_config.output);
+    if let Some(ref steps) = options.trace_steps {
+        trace_config.steps = TraceConfig::parse_steps(&steps.join(","));
+    }
+
+    let mut t = InferenceTracer::new(trace_config);
+    t.set_model_info(ModelInfo {
+        name: format!(
+            "SafeTensors Model ({})",
+            config
+                .map(realizar::SafetensorsConfig::architecture)
+                .unwrap_or_else(|| "unknown".to_string())
+        ),
+        num_layers,
+        hidden_dim: hidden_size,
+        vocab_size,
+        num_heads,
+        quant_type: None,
+    });
+    Some(t)
+}
+
 fn execute_safetensors_inference(
     model_path: &Path,
     input_path: Option<&PathBuf>,
@@ -1155,125 +1291,34 @@ fn execute_safetensors_inference(
         }
     };
 
-    // Setup tracing if enabled (APR-TRACE-001)
-    let mut tracer = if options.trace {
-        use realizar::{InferenceTracer, ModelInfo, TraceConfig};
+    let mut tracer = setup_safetensors_tracer(
+        options,
+        config.as_ref(),
+        num_layers,
+        hidden_size,
+        vocab_size,
+        num_heads,
+    );
 
-        let mut trace_config = TraceConfig::enabled();
-        trace_config.verbose = options.trace_verbose;
-        options.trace_output.clone_into(&mut trace_config.output);
-        if let Some(ref steps) = options.trace_steps {
-            trace_config.steps = TraceConfig::parse_steps(&steps.join(","));
-        }
-
-        let mut t = InferenceTracer::new(trace_config);
-        t.set_model_info(ModelInfo {
-            name: format!(
-                "SafeTensors Model ({})",
-                config
-                    .as_ref()
-                    .map(realizar::SafetensorsConfig::architecture)
-                    .unwrap_or_else(|| "unknown".to_string())
-            ),
-            num_layers,
-            hidden_dim: hidden_size,
-            vocab_size,
-            num_heads,
-            quant_type: None,
-        });
-        Some(t)
-    } else {
-        None
-    };
-
-    // Get input tokens
-    let input_tokens = if let Some(ref prompt) = options.prompt {
-        // Parse comma-separated token IDs or encode text
-        if prompt.contains(',') || prompt.chars().all(|c| c.is_ascii_digit() || c == ',') {
-            parse_token_ids(prompt)?
-        } else {
-            // Text prompt - encode using tokenizer
-            if let Some(tokens) = AprModel::encode_text(model_path, prompt) {
-                eprintln!(
-                    "{}",
-                    format!("Encoded {} chars to {} tokens", prompt.len(), tokens.len()).dimmed()
-                );
-
-                // Trace ENCODE step
-                if let Some(ref mut t) = tracer {
-                    t.start_step(realizar::TraceStep::Tokenize);
-                    t.trace_encode(prompt, &tokens, vocab_size);
-                }
-
-                tokens
-            } else {
-                eprintln!(
-                    "{}",
-                    "Warning: No tokenizer found. Using BOS token.".yellow()
-                );
-                vec![1u32] // BOS token fallback
-            }
-        }
-    } else if let Some(path) = input_path {
-        let content = std::fs::read_to_string(path)?;
-        parse_token_ids(&content)?
-    } else {
-        // Default: just use token ID 1 (BOS)
-        vec![1u32]
-    };
+    let input_tokens = prepare_safetensors_input_tokens(
+        model_path,
+        options.prompt.as_deref(),
+        input_path,
+        vocab_size,
+        &mut tracer,
+    )?;
 
     // Check if we have config for inference
     if config.is_none() || vocab.is_none() {
-        // Fallback: display metadata only (no generation without config/tokenizer)
-        let tensor_names: Vec<&str> = st_model.tensor_names();
-        let mut output = format!(
-            "SafeTensors Model (metadata only)\n\
-             Model: {}\n\
-             Tensors: {}\n\
-             Load time: {:.2}ms\n\n",
-            model_path.display(),
+        return Ok(build_safetensors_metadata_output(
+            model_path,
+            &st_model,
             tensor_count,
-            load_time.as_secs_f64() * 1000.0
-        );
-
-        if config.is_none() {
-            output.push_str("Note: No config.json found - cannot run inference.\n");
-            output.push_str("      Place config.json in the same directory as the model.\n\n");
-            // F-JID-01 + F-AWS-05: Emit ExecutionFailed event with error and cause
-            if let Some(ref mut t) = tracer {
-                t.record_execution_failed("Initialization Failure", "Missing config.json");
-            }
-        }
-        if vocab.is_none() {
-            output.push_str("Note: No tokenizer.json found - cannot encode/decode text.\n");
-            output.push_str("      Place tokenizer.json in the same directory as the model.\n\n");
-        }
-
-        output.push_str("Tensor names (first 15):\n");
-        for (i, name) in tensor_names.iter().take(15).enumerate() {
-            if let Some(info) = st_model.get_tensor_info(name) {
-                output.push_str(&format!(
-                    "  {}. {} ({:?}, {:?})\n",
-                    i + 1,
-                    name,
-                    info.dtype,
-                    info.shape
-                ));
-            }
-        }
-
-        if tensor_names.len() > 15 {
-            output.push_str(&format!("  ... and {} more\n", tensor_names.len() - 15));
-        }
-
-        // Output trace if enabled
-        if let Some(ref mut t) = tracer {
-            if let Err(e) = t.write_output() {
-                eprintln!("Warning: Failed to write trace output: {e}");
-            }
-        }
-
-        return Ok(output);
+            load_time,
+            config.is_some(),
+            vocab.is_some(),
+            &mut tracer,
+        ));
     }
 
     // We have both config and tokenizer - run generation
