@@ -572,28 +572,80 @@ fn extract_hf_repo(uri: &str) -> Option<String> {
 /// - Repos with `model.safetensors.index.json` (sharded SafeTensors, typically 3B+ models)
 ///
 /// Priority for GGUF auto-detection: Q4_K_M > Q4_K_S > Q4_0 > Q8_0 > any
-fn resolve_hf_model(uri: &str) -> Result<ResolvedModel> {
-    // GH-213: Normalize bare "org/repo" to "hf://org/repo"
-    // Detects patterns like "Qwen/Qwen2.5-Coder-3B-Instruct" (no scheme, no extension,
-    // exactly one slash separating org/repo, optionally with a filename after second slash)
-    let uri = if !uri.contains("://") && !uri.starts_with('/') && !uri.starts_with('.') {
+/// GH-213: Normalize bare "org/repo" to "hf://org/repo".
+fn normalize_hf_uri(uri: &str) -> String {
+    if !uri.contains("://") && !uri.starts_with('/') && !uri.starts_with('.') {
         let parts: Vec<&str> = uri.split('/').collect();
         if parts.len() >= 2 && !parts[0].is_empty() && !parts[1].is_empty() {
-            format!("hf://{uri}")
-        } else {
-            uri.to_string()
+            return format!("hf://{uri}");
         }
-    } else {
-        uri.to_string()
-    };
+    }
+    uri.to_string()
+}
+
+/// Select best GGUF file by quantization priority (Q4_K_M > Q4_K_S > Q4_0 > Q8_0 > first).
+fn select_best_gguf(gguf_files: &[&str], org: &str, repo: &str) -> ResolvedModel {
+    let quantization_priority = ["q4_k_m", "q4_k_s", "q4_0", "q8_0"];
+    for quant in quantization_priority {
+        if let Some(file) = gguf_files.iter().find(|f| f.to_lowercase().contains(quant)) {
+            return ResolvedModel::SingleFile(format!("hf://{org}/{repo}/{file}"));
+        }
+    }
+    ResolvedModel::SingleFile(format!("hf://{org}/{repo}/{}", gguf_files[0]))
+}
+
+/// Download and parse sharded SafeTensors index, returning shard filenames.
+fn resolve_sharded_safetensors(org: &str, repo: &str) -> Result<ResolvedModel> {
+    let index_url = format!(
+        "https://huggingface.co/{org}/{repo}/resolve/main/model.safetensors.index.json"
+    );
+    let index_response = ureq::get(&index_url)
+        .call()
+        .map_err(|e| CliError::NetworkError(format!("Failed to download model index: {e}")))?;
+
+    let mut index_body = Vec::new();
+    index_response
+        .into_reader()
+        .read_to_end(&mut index_body)
+        .map_err(|e| CliError::NetworkError(format!("Failed to read model index: {e}")))?;
+
+    let index_json = String::from_utf8_lossy(&index_body);
+    let shard_files = extract_shard_files_from_index(&index_json);
+
+    if shard_files.is_empty() {
+        return Err(CliError::ValidationFailed(format!(
+            "Sharded model index for {org}/{repo} contains no shard files"
+        )));
+    }
+
+    Ok(ResolvedModel::Sharded {
+        org: org.to_string(),
+        repo: repo.to_string(),
+        shard_files,
+    })
+}
+
+/// Find a SafeTensors file in the repo file list, returning it as a resolved model.
+fn find_safetensors_file(filenames: &[&str], org: &str, repo: &str) -> Option<ResolvedModel> {
+    if filenames.iter().any(|f| f.to_lowercase() == "model.safetensors") {
+        return Some(ResolvedModel::SingleFile(format!(
+            "hf://{org}/{repo}/model.safetensors"
+        )));
+    }
+    filenames
+        .iter()
+        .find(|f| f.to_lowercase().ends_with(".safetensors"))
+        .map(|file| ResolvedModel::SingleFile(format!("hf://{org}/{repo}/{file}")))
+}
+
+fn resolve_hf_model(uri: &str) -> Result<ResolvedModel> {
+    let uri = normalize_hf_uri(uri);
     let uri = uri.as_str();
 
-    // If not a HuggingFace URI, return unchanged as single file
     if !uri.starts_with("hf://") {
         return Ok(ResolvedModel::SingleFile(uri.to_string()));
     }
 
-    // If already has a known model extension, return unchanged
     let has_model_ext = std::path::Path::new(uri).extension().is_some_and(|ext| {
         ext.eq_ignore_ascii_case("gguf")
             || ext.eq_ignore_ascii_case("safetensors")
@@ -604,32 +656,27 @@ fn resolve_hf_model(uri: &str) -> Result<ResolvedModel> {
         return Ok(ResolvedModel::SingleFile(uri.to_string()));
     }
 
-    // Parse org/repo from URI
     let path = uri.strip_prefix("hf://").unwrap_or(uri);
     let parts: Vec<&str> = path.split('/').collect();
 
     if parts.len() < 2 {
         return Err(CliError::ValidationFailed(format!(
-            "Invalid HuggingFace URI: {}. Expected hf://org/repo or hf://org/repo/file.gguf",
-            uri
+            "Invalid HuggingFace URI: {uri}. Expected hf://org/repo or hf://org/repo/file.gguf"
         )));
     }
 
     let org = parts[0];
     let repo = parts[1];
 
-    // Query HuggingFace API for repo files
-    let api_url = format!("https://huggingface.co/api/models/{}/{}", org, repo);
-
+    let api_url = format!("https://huggingface.co/api/models/{org}/{repo}");
     let response = ureq::get(&api_url)
         .call()
-        .map_err(|e| CliError::NetworkError(format!("Failed to query HuggingFace API: {}", e)))?;
+        .map_err(|e| CliError::NetworkError(format!("Failed to query HuggingFace API: {e}")))?;
 
     let body: serde_json::Value = response.into_json().map_err(|e| {
-        CliError::ValidationFailed(format!("Failed to parse HuggingFace response: {}", e))
+        CliError::ValidationFailed(format!("Failed to parse HuggingFace response: {e}"))
     })?;
 
-    // Extract siblings (files) from response
     let siblings = body["siblings"]
         .as_array()
         .ok_or_else(|| CliError::ValidationFailed("No files found in repository".to_string()))?;
@@ -639,7 +686,6 @@ fn resolve_hf_model(uri: &str) -> Result<ResolvedModel> {
         .filter_map(|s| s["rfilename"].as_str())
         .collect();
 
-    // Find GGUF files
     let gguf_files: Vec<&str> = filenames
         .iter()
         .copied()
@@ -647,87 +693,19 @@ fn resolve_hf_model(uri: &str) -> Result<ResolvedModel> {
         .collect();
 
     if !gguf_files.is_empty() {
-        // Priority: Q4_K_M > Q4_K_S > Q4_0 > Q8_0 > any
-        let quantization_priority = ["q4_k_m", "q4_k_s", "q4_0", "q8_0"];
-
-        for quant in quantization_priority {
-            if let Some(file) = gguf_files.iter().find(|f| f.to_lowercase().contains(quant)) {
-                return Ok(ResolvedModel::SingleFile(format!(
-                    "hf://{}/{}/{}",
-                    org, repo, file
-                )));
-            }
-        }
-
-        // Fallback to first GGUF file
-        return Ok(ResolvedModel::SingleFile(format!(
-            "hf://{}/{}/{}",
-            org, repo, gguf_files[0]
-        )));
+        return Ok(select_best_gguf(&gguf_files, org, repo));
     }
 
-    // GH-213: Check for sharded SafeTensors (model.safetensors.index.json)
-    let has_index = filenames.contains(&"model.safetensors.index.json");
-
-    if has_index {
-        // Download and parse index.json to get shard filenames
-        let index_url = format!(
-            "https://huggingface.co/{}/{}/resolve/main/model.safetensors.index.json",
-            org, repo
-        );
-        let index_response = ureq::get(&index_url)
-            .call()
-            .map_err(|e| CliError::NetworkError(format!("Failed to download model index: {e}")))?;
-
-        let mut index_body = Vec::new();
-        index_response
-            .into_reader()
-            .read_to_end(&mut index_body)
-            .map_err(|e| CliError::NetworkError(format!("Failed to read model index: {e}")))?;
-
-        let index_json = String::from_utf8_lossy(&index_body);
-        let shard_files = extract_shard_files_from_index(&index_json);
-
-        if shard_files.is_empty() {
-            return Err(CliError::ValidationFailed(format!(
-                "Sharded model index for {}/{} contains no shard files",
-                org, repo
-            )));
-        }
-
-        return Ok(ResolvedModel::Sharded {
-            org: org.to_string(),
-            repo: repo.to_string(),
-            shard_files,
-        });
+    if filenames.contains(&"model.safetensors.index.json") {
+        return resolve_sharded_safetensors(org, repo);
     }
 
-    // Fall back to single model.safetensors
-    let has_single_st = filenames
-        .iter()
-        .any(|f| f.to_lowercase() == "model.safetensors");
-
-    if has_single_st {
-        return Ok(ResolvedModel::SingleFile(format!(
-            "hf://{}/{}/model.safetensors",
-            org, repo
-        )));
-    }
-
-    // Last resort: any .safetensors file
-    if let Some(file) = filenames
-        .iter()
-        .find(|f| f.to_lowercase().ends_with(".safetensors"))
-    {
-        return Ok(ResolvedModel::SingleFile(format!(
-            "hf://{}/{}/{}",
-            org, repo, file
-        )));
+    if let Some(model) = find_safetensors_file(&filenames, org, repo) {
+        return Ok(model);
     }
 
     Err(CliError::ValidationFailed(format!(
-        "No .gguf or .safetensors files found in {}/{}",
-        org, repo
+        "No .gguf or .safetensors files found in {org}/{repo}"
     )))
 }
 

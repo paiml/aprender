@@ -79,6 +79,71 @@ pub(crate) fn read_string(data: &[u8], offset: usize) -> Result<(String, usize)>
     Ok((s, 8 + len))
 }
 
+/// Read a GGUF array value (type 9) and return (value, bytes_consumed).
+fn read_metadata_array(data: &[u8], offset: usize) -> Result<(GgufValue, usize)> {
+    let elem_type = read_u32(data, offset)?;
+    let count = read_u64(data, offset + 4)? as usize;
+    let mut consumed = 12; // type (4) + count (8)
+
+    match elem_type {
+        8 => {
+            let mut strings = Vec::with_capacity(count);
+            for _ in 0..count {
+                let (s, len) = read_string(data, offset + consumed)?;
+                strings.push(s);
+                consumed += len;
+            }
+            Ok((GgufValue::ArrayString(strings), consumed))
+        }
+        4 => {
+            let mut values = Vec::with_capacity(count);
+            for _ in 0..count {
+                values.push(read_u32(data, offset + consumed)?);
+                consumed += 4;
+            }
+            Ok((GgufValue::ArrayUint32(values), consumed))
+        }
+        5 => {
+            let mut values = Vec::with_capacity(count);
+            for _ in 0..count {
+                let v = i32::from_le_bytes([
+                    data[offset + consumed],
+                    data[offset + consumed + 1],
+                    data[offset + consumed + 2],
+                    data[offset + consumed + 3],
+                ]);
+                values.push(v);
+                consumed += 4;
+            }
+            Ok((GgufValue::ArrayInt32(values), consumed))
+        }
+        6 => {
+            let mut values = Vec::with_capacity(count);
+            for _ in 0..count {
+                let v = f32::from_le_bytes([
+                    data[offset + consumed],
+                    data[offset + consumed + 1],
+                    data[offset + consumed + 2],
+                    data[offset + consumed + 3],
+                ]);
+                values.push(v);
+                consumed += 4;
+            }
+            Ok((GgufValue::ArrayFloat32(values), consumed))
+        }
+        _ => {
+            let elem_size = match elem_type {
+                0..=1 | 7 => 1,
+                2..=3 => 2,
+                10..=12 => 8,
+                _ => 4,
+            };
+            consumed += count * elem_size;
+            Ok((GgufValue::ArrayUint32(vec![]), consumed))
+        }
+    }
+}
+
 /// Read a metadata value and return (value, bytes_consumed)
 pub(crate) fn read_metadata_value(
     data: &[u8],
@@ -173,71 +238,7 @@ pub(crate) fn read_metadata_value(
             let (s, len) = read_string(data, offset)?;
             Ok((GgufValue::String(s), len))
         }
-        9 => {
-            // Array - read element type and count, then elements
-            let elem_type = read_u32(data, offset)?;
-            let count = read_u64(data, offset + 4)? as usize;
-            let mut consumed = 12; // type (4) + count (8)
-
-            // For tokenizer vocabulary, we need string arrays
-            if elem_type == 8 {
-                // Array of strings
-                let mut strings = Vec::with_capacity(count);
-                for _ in 0..count {
-                    let (s, len) = read_string(data, offset + consumed)?;
-                    strings.push(s);
-                    consumed += len;
-                }
-                Ok((GgufValue::ArrayString(strings), consumed))
-            } else if elem_type == 4 {
-                // Array of Uint32
-                let mut values = Vec::with_capacity(count);
-                for _ in 0..count {
-                    values.push(read_u32(data, offset + consumed)?);
-                    consumed += 4;
-                }
-                Ok((GgufValue::ArrayUint32(values), consumed))
-            } else if elem_type == 5 {
-                // Array of Int32
-                let mut values = Vec::with_capacity(count);
-                for _ in 0..count {
-                    let v = i32::from_le_bytes([
-                        data[offset + consumed],
-                        data[offset + consumed + 1],
-                        data[offset + consumed + 2],
-                        data[offset + consumed + 3],
-                    ]);
-                    values.push(v);
-                    consumed += 4;
-                }
-                Ok((GgufValue::ArrayInt32(values), consumed))
-            } else if elem_type == 6 {
-                // Array of Float32
-                let mut values = Vec::with_capacity(count);
-                for _ in 0..count {
-                    let v = f32::from_le_bytes([
-                        data[offset + consumed],
-                        data[offset + consumed + 1],
-                        data[offset + consumed + 2],
-                        data[offset + consumed + 3],
-                    ]);
-                    values.push(v);
-                    consumed += 4;
-                }
-                Ok((GgufValue::ArrayFloat32(values), consumed))
-            } else {
-                // For other array types, compute size and skip
-                let elem_size = match elem_type {
-                    0..=1 | 7 => 1, // Uint8, Int8, Bool
-                    2..=3 => 2,     // Uint16, Int16
-                    10..=12 => 8,   // Uint64, Int64, Float64
-                    _ => 4,         // Default
-                };
-                consumed += count * elem_size;
-                // Return empty array (we don't need these types for tokenizer)
-                Ok((GgufValue::ArrayUint32(vec![]), consumed))
-            }
-        }
+        9 => read_metadata_array(data, offset),
         10 => {
             // Uint64
             let v = read_u64(data, offset)?;
