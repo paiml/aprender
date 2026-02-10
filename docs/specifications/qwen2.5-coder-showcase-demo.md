@@ -1,10 +1,10 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 10.26.0 (Full Stack: apr-cli + aprender + realizar + trueno, Popperian falsified)
-**Status:** ALL THREE PROJECTS A+ + ZERO SATD (7B all 3 formats working CPU + GPU. 25 falsification rounds, 122 bugs found. Round 25: Complexity reduction — max cyclomatic 39→32 via handler/inference refactoring. Extracted 5 helpers: load_apr_model_state, run_apr_cpu_inference, prepare_apr_input_tokens, setup_apr_tracer, format_apr_inference_output. Top hotspot eliminated. Project Scores: aprender A+ (105%), realizar A+ (99.9%), trueno A+ (100.9%). Coverage: 96.35%. SATD: 0/0/0.)
+**Version:** 10.27.0 (Full Stack: apr-cli + aprender + realizar + trueno, Popperian falsified)
+**Status:** ALL THREE PROJECTS A+ + ZERO SATD (7B all 3 formats working CPU + GPU. 26 falsification rounds, 123 bugs found. Round 26: F-PROFILE-011 cross-format comparison implemented (--compare flag). Max cyclomatic 39→32. Project Scores: aprender A+ (105%), realizar A+ (99.9%), trueno A+ (100.9%). Coverage: 96.35%. SATD: 0/0/0.)
 **Primary Model:** `Qwen/Qwen2.5-Coder-7B-Instruct`
 **Source Format:** SafeTensors BF16 (HuggingFace, sharded, ~14 GB)
-**Popperian Score:** 192/208 gates passing (92.3%) — 12 FALSIFIED, 0 blocked/not-tested. 158 falsification gates, 25 sections. Gated by `model-tests` feature (`make test-model`)
+**Popperian Score:** 194/209 gates passing (92.8%) — 11 FALSIFIED, 0 blocked/not-tested. 158 falsification gates, 25 sections. Gated by `model-tests` feature (`make test-model`)
 **CLI Surface:** 38 top-level + 10 nested subcommands (48 total)
 **Compile-Time Proofs:** 297 algebraic invariants (zero runtime cost)
 **Author:** PAIML Engineering
@@ -1095,7 +1095,7 @@ Format-aware binary forensics tool that understands GGUF, APR, and SafeTensors i
 | F-PROFILE-008 | Memory bandwidth utilization per kernel | `apr profile model.gguf --granular` | Shows achieved GB/s per operation vs peak | **FALSIFIED** (only aggregate bandwidth computed, not per-kernel) |
 | F-PROFILE-009 | Kernel launch overhead measured | `apr profile model.gguf` | Reports total kernel launch overhead as % of decode time | **FALSIFIED** (no kernel launch timing exists) |
 | F-PROFILE-010 | Ollama parity grade in `apr qa` | `apr qa model.gguf` | Reports Ollama parity ratio and letter grade | **Pass** (`ollama_parity_grade()` computes F/D/C/B/A/A+ from speedup ratio. Gate output: "0.64x Ollama (81 vs 126 tok/s) Grade D". Round 24 fix.) |
-| F-PROFILE-011 | Cross-format performance comparison | `apr profile model.apr --compare model.gguf` | Side-by-side decode tok/s for APR vs GGUF | **FALSIFIED** (no cross-format comparison exists) |
+| F-PROFILE-011 | Cross-format performance comparison | `apr profile model.apr --compare model.gguf` | Side-by-side decode tok/s for APR vs GGUF | **Pass** (`run_cross_format_comparison()` profiles both models via `profile_gpu_or_cpu()` fallback, prints formatted table with decode/prefill/throughput/latency. 6 tests. Round 25 fix.) |
 | F-PROFILE-012 | Bandwidth utilization > 40% (Ollama parity) | `apr profile model.gguf` roofline | Memory efficiency > 40% | **FALSIFIED** (14% achieved, target 40-50% for Ollama parity) |
 
 ### 11.7 Performance Sprint: Ollama Parity Analysis (v10.19.0)
@@ -2211,6 +2211,12 @@ This section documents bugs found by falsifying the spec itself against the code
 |---|-----------|---------|----------|-----|
 | 121 | `start_apr_server` is maintainable | Cyclomatic complexity 39 (was #1 hotspot). 600+ lines with duplicated inference logic between `/v1/completions` and `/v1/chat/completions`. | **P2** | Extracted `load_apr_model_state()`, `run_apr_cpu_inference()`, `AprServerState`/`AprInferenceOutput` types. Eliminated ~110 lines of duplication. Complexity dropped below reporting threshold. |
 | 122 | `execute_apr_inference` is maintainable | Cyclomatic complexity 32 (was #1 after fixing #121). Input parsing, tracing, and output formatting all inline in one 279-line function. | **P2** | Extracted `prepare_apr_input_tokens()`, `setup_apr_tracer()`, `format_apr_inference_output()`. Complexity dropped below reporting threshold. Max project cyclomatic: 39 → 32. |
+
+**Round 26 (v10.27.0): F-PROFILE-011 cross-format performance comparison**
+
+| # | Claim/Gap | Reality | Severity | Fix |
+|---|-----------|---------|----------|-----|
+| 123 | `apr profile --compare` supports cross-format comparison | F-PROFILE-011: No cross-format comparison existed. Spec defined `apr profile model.apr --compare model.gguf` with side-by-side decode tok/s output. | **P2** | Implemented `run_cross_format_comparison()` with `profile_gpu_or_cpu()` fallback, formatted comparison table (decode/prefill/throughput/latency), ratio summary. Added `--compare` CLI flag. 6 new tests. F-PROFILE-011 → Pass. |
 
 ### 18.2 Claims Verified (Not Falsified)
 
