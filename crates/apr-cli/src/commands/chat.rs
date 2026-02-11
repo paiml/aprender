@@ -584,7 +584,48 @@ mod realizar_chat {
                             .to_string(),
                     }
                 }
-                ModelFormat::SafeTensors | ModelFormat::Apr => {
+                ModelFormat::Apr => {
+                    // GH-222: Read architecture from APR v2 metadata (stored during import)
+                    // Standalone APR files have no sibling config.json, so directory-name
+                    // fallback produces garbage. APR metadata stores architecture directly.
+                    let mut arch = String::from("unknown");
+                    if let Ok(reader) = aprender::format::v2::AprV2Reader::from_bytes(&model_bytes)
+                    {
+                        if let Some(apr_arch) = &reader.metadata().architecture {
+                            if !apr_arch.is_empty() {
+                                arch.clone_from(apr_arch);
+                            }
+                        }
+                    }
+                    // Fallback: config.json in parent directory
+                    if arch == "unknown" {
+                        if let Some(parent) = path.parent() {
+                            let config_path = parent.join("config.json");
+                            if config_path.exists() {
+                                if let Ok(json) = std::fs::read_to_string(&config_path) {
+                                    if let Ok(v) =
+                                        serde_json::from_str::<serde_json::Value>(&json)
+                                    {
+                                        if let Some(model_type) = v["model_type"].as_str() {
+                                            arch = model_type.to_lowercase();
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    // Fallback: parent directory name
+                    if arch == "unknown" {
+                        arch = path
+                            .parent()
+                            .and_then(|p| p.file_name())
+                            .and_then(|s| s.to_str())
+                            .unwrap_or("unknown")
+                            .to_string();
+                    }
+                    arch
+                }
+                ModelFormat::SafeTensors => {
                     // PMAT-120: Read config.json for architecture detection
                     // Five-Whys: "model.safetensors" filename doesn't indicate architecture
                     // Root cause: detect_format_from_name("model") returns Raw template

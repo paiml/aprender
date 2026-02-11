@@ -1,6 +1,6 @@
 [package]
 name = "apr-cli"
-version = "0.2.12"
+version = "0.2.13"
 edition = "2021"
 rust-version = "1.70"
 authors = ["Noah Gift <noah@paiml.com>"]
@@ -129,14 +129,13 @@ trueno-viz = { version = "0.1.19", optional = true, default-features = false, fe
 trueno-zram-core = { version = "0.2", optional = true }
 
 # Model registry and caching (Ollama-like model management)
-# GH-162 FIX: Use local path until fix is published to crates.io
-pacha = { path = "../../../pacha", default-features = false, features = ["remote"] }
+pacha = { path = "../../../pacha", version = "0.2.4", default-features = false, features = ["remote"] }
 
 # PTX analysis and bug detection (trueno-explain: PtxAnalyzer + PtxBugAnalyzer)
 trueno-explain = "0.2.2"
 
 # ML tuning: LoRA/QLoRA configuration and memory planning (GH-176, PMAT-184)
-entrenar-lora = { path = "../../../entrenar/crates/entrenar-lora" }
+entrenar-lora = { path = "../../../entrenar/crates/entrenar-lora", version = "0.2.0" }
 half = "2.4.1"
 
 [[example]]

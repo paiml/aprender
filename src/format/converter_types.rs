@@ -53,7 +53,25 @@ impl Source {
         let org = parts[0].to_string();
         let repo = parts[1].to_string();
         let file = if parts.len() > 2 {
-            Some(parts[2..].join("/"))
+            let joined = parts[2..].join("/");
+            // GH-221: Strip HuggingFace web URL path components.
+            // Users copy URLs like hf://org/repo/resolve/main/file.safetensors
+            // or hf://org/repo/blob/main/file.safetensors from the browser.
+            let cleaned = joined
+                .strip_prefix("resolve/main/")
+                .or_else(|| joined.strip_prefix("blob/main/"))
+                .unwrap_or(&joined);
+            // Also handle bare "resolve/main" or "blob/main" (no trailing slash, no file)
+            let cleaned = if cleaned == "resolve/main" || cleaned == "blob/main" {
+                ""
+            } else {
+                cleaned
+            };
+            if cleaned.is_empty() {
+                None
+            } else {
+                Some(cleaned.to_string())
+            }
         } else {
             None
         };
@@ -833,5 +851,120 @@ pub fn detect_sharded_model(dir: &std::path::Path, base_name: &str) -> Option<Pa
         Some(index_path)
     } else {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_hf_parse_resolve_main_stripped() {
+        // GH-221: Users copy URLs with /resolve/main/ from HuggingFace browser
+        let src = Source::parse("hf://Qwen/Qwen2.5-1.5B-Instruct/resolve/main/model.safetensors")
+            .expect("should parse");
+        match src {
+            Source::HuggingFace { org, repo, file } => {
+                assert_eq!(org, "Qwen");
+                assert_eq!(repo, "Qwen2.5-1.5B-Instruct");
+                assert_eq!(file, Some("model.safetensors".to_string()));
+            }
+            _ => panic!("expected HuggingFace variant"),
+        }
+    }
+
+    #[test]
+    fn test_hf_parse_blob_main_stripped() {
+        let src = Source::parse("hf://Qwen/Qwen2.5-1.5B-Instruct/blob/main/model.safetensors")
+            .expect("should parse");
+        match src {
+            Source::HuggingFace { org, repo, file } => {
+                assert_eq!(org, "Qwen");
+                assert_eq!(repo, "Qwen2.5-1.5B-Instruct");
+                assert_eq!(file, Some("model.safetensors".to_string()));
+            }
+            _ => panic!("expected HuggingFace variant"),
+        }
+    }
+
+    #[test]
+    fn test_hf_parse_direct_file_unchanged() {
+        let src = Source::parse("hf://Qwen/Qwen2.5-1.5B-Instruct/model.safetensors")
+            .expect("should parse");
+        match src {
+            Source::HuggingFace { org, repo, file } => {
+                assert_eq!(org, "Qwen");
+                assert_eq!(repo, "Qwen2.5-1.5B-Instruct");
+                assert_eq!(file, Some("model.safetensors".to_string()));
+            }
+            _ => panic!("expected HuggingFace variant"),
+        }
+    }
+
+    #[test]
+    fn test_hf_parse_no_file() {
+        let src = Source::parse("hf://Qwen/Qwen2.5-1.5B-Instruct").expect("should parse");
+        match src {
+            Source::HuggingFace { org, repo, file } => {
+                assert_eq!(org, "Qwen");
+                assert_eq!(repo, "Qwen2.5-1.5B-Instruct");
+                assert_eq!(file, None);
+            }
+            _ => panic!("expected HuggingFace variant"),
+        }
+    }
+
+    #[test]
+    fn test_hf_parse_nested_path_preserved() {
+        // Paths that don't start with resolve/main/ or blob/main/ are preserved
+        let src = Source::parse("hf://org/repo/subdir/model.safetensors").expect("should parse");
+        match src {
+            Source::HuggingFace { file, .. } => {
+                assert_eq!(file, Some("subdir/model.safetensors".to_string()));
+            }
+            _ => panic!("expected HuggingFace variant"),
+        }
+    }
+
+    #[test]
+    fn test_hf_parse_resolve_main_no_trailing_slash() {
+        // Edge case: hf://org/repo/resolve/main (no file, no trailing slash)
+        let src =
+            Source::parse("hf://Qwen/Qwen2.5-1.5B-Instruct/resolve/main").expect("should parse");
+        match src {
+            Source::HuggingFace { org, repo, file } => {
+                assert_eq!(org, "Qwen");
+                assert_eq!(repo, "Qwen2.5-1.5B-Instruct");
+                assert_eq!(file, None);
+            }
+            _ => panic!("expected HuggingFace variant"),
+        }
+    }
+
+    #[test]
+    fn test_hf_parse_blob_main_no_trailing_slash() {
+        let src =
+            Source::parse("hf://Qwen/Qwen2.5-1.5B-Instruct/blob/main").expect("should parse");
+        match src {
+            Source::HuggingFace { file, .. } => {
+                assert_eq!(file, None);
+            }
+            _ => panic!("expected HuggingFace variant"),
+        }
+    }
+
+    #[test]
+    fn test_hf_parse_resolve_main_nested_file() {
+        // resolve/main/ with nested subdir path
+        let src = Source::parse(
+            "hf://Qwen/Qwen2.5-1.5B-Instruct/resolve/main/sub/model.safetensors",
+        )
+        .expect("should parse");
+        match src {
+            Source::HuggingFace { file, .. } => {
+                assert_eq!(file, Some("sub/model.safetensors".to_string()));
+            }
+            _ => panic!("expected HuggingFace variant"),
+        }
     }
 }

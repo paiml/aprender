@@ -29,7 +29,7 @@ use commands::{
 /// Toyota Way: Genchi Genbutsu - Go and see the actual data.
 #[derive(Parser, Debug)]
 #[command(name = "apr")]
-#[command(author, version, about, long_about = None)]
+#[command(author, version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("APR_GIT_SHA"), ")"), about, long_about = None)]
 #[command(propagate_version = true)]
 pub struct Cli {
     #[command(subcommand)]
