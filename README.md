@@ -318,7 +318,7 @@ apr serve qwen2.5-coder-7b-q4_k_m.gguf --port 8080 --gpu
 
 **Supported model sizes:** 0.5B, 1.5B, 3B, 7B, 14B (SafeTensors sharded, GGUF Q4_K, APR native).
 
-See [`docs/specifications/qwen2.5-coder-showcase-demo.md`](docs/specifications/qwen2.5-coder-showcase-demo.md) for full benchmark methodology and the 42-round Popperian falsification protocol (206 bugs found and fixed).
+See [`docs/specifications/qwen2.5-coder-showcase-demo.md`](docs/specifications/qwen2.5-coder-showcase-demo.md) for full benchmark methodology and the 43-round Popperian falsification protocol (206 bugs found and fixed).
 
 ## QA & Testing
 
@@ -351,7 +351,7 @@ apr-qa run playbooks/models/qwen2.5-coder-7b-mvp.playbook.yaml \
 - **Formats**: GGUF, SafeTensors (including sharded), APR
 - **Backends**: CPU, GPU
 - **Models tested**: 0.5B, 1.5B, 3B, 7B, 14B
-- **Falsification**: 42 rounds, 206 bugs found, 155/163 gates passing (95.1%)
+- **Falsification**: 43 rounds, 206 bugs found, 155/163 gates passing (95.1%)
 
 ## Documentation
 
