@@ -117,10 +117,7 @@ impl ContentRecommender {
         let vocab_size_before = self.idf.len();
 
         // Tokenize
-        let tokens = self
-            .tokenizer
-            .tokenize(&content)
-            .unwrap_or_else(|_| Vec::new());
+        let tokens: Vec<String> = self.tokenizer.tokenize(&content).unwrap_or_default();
 
         // Get unique terms for IDF update
         let unique_terms: Vec<String> = tokens
@@ -246,10 +243,7 @@ impl ContentRecommender {
 
         // Re-vectorize and re-add all items
         for (item_id, content) in &self.item_content {
-            let tokens = self
-                .tokenizer
-                .tokenize(content)
-                .unwrap_or_else(|_| Vec::new());
+            let tokens: Vec<String> = self.tokenizer.tokenize(content).unwrap_or_default();
             let tfidf_vec = self.compute_tfidf(&tokens);
             self.hnsw.add(item_id.clone(), tfidf_vec);
         }

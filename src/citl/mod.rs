@@ -303,7 +303,7 @@ impl CITLBuilder {
         })?;
 
         let pattern_library = if let Some(path) = self.pattern_library_path {
-            PatternLibrary::load(&path).unwrap_or_else(|_| PatternLibrary::new())
+            PatternLibrary::load(&path).unwrap_or_default()
         } else {
             PatternLibrary::new()
         };
