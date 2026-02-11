@@ -130,6 +130,14 @@ documentation = "https://docs.rs/aprender"
 readme = "README.md"
 keywords = ["machine-learning", "classification", "clustering", "statistics", "graph-algorithms"]
 categories = ["science", "algorithms"]
+exclude = [
+    ".pmat/",
+    "tokenizer.json",
+    "defect-report-*.json",
+    "trace_*.json",
+    "docs/specifications/",
+    "docs/roadmaps/",
+]
 
 [lints]
 workspace = true
