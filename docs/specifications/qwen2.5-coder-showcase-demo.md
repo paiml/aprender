@@ -1,15 +1,15 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 10.43.0 (Full Stack: apr-cli + aprender + realizar + trueno, Popperian falsified)
-**Status:** ALL THREE PROJECTS A+ + ZERO SATD (7B all 3 formats working CPU + GPU. 43 falsification rounds, 206 bugs found. Round 43: Full 5-model MVP playbook reverification (0.5B–14B). All SafeTensors serve scenarios PASS for 0.5B–7B (CPU+GPU). 14B serve timeout is structural (56GB F32). Sharded serve fix (Bug 205) confirmed working for 3B and 7B. 11,251 tests, 3,796 apr-cli tests. `apr qa` all 7 gates pass. TDG: 96.9/100 A+. Project Score: A+. Coverage: 96.35%. SATD: 0/0/0.)
+**Version:** 10.44.0 (Full Stack: apr-cli + aprender + realizar + trueno + batuta, Popperian falsified)
+**Status:** ALL THREE PROJECTS A+ + ZERO SATD (7B all 3 formats working CPU + GPU. 44 falsification rounds, 209 bugs found. Round 44: GH-220/221/222 CLI UX fixes + batuta GH-25 stack release fix. 11,251 tests, 3,796 apr-cli tests. `apr qa` all 7 gates pass. TDG: 96.9/100 A+. Project Score: A+. Coverage: 96.35%. SATD: 0/0/0.)
 **Primary Model:** `Qwen/Qwen2.5-Coder-7B-Instruct`
 **Supported Models:** Qwen2.5-Coder 0.5B, 1.5B, 3B, 7B (all sizes)
 **Source Format:** SafeTensors BF16 (HuggingFace, sharded, ~14 GB for 7B)
-**Popperian Score:** 155/163 gates passing (95.1%) — 8 FALSIFIED, 0 blocked/not-tested. 163 falsification gates, 23 sections. 43 rounds, 206 bugs. Gated by `model-tests` feature (`make test-model`)
+**Popperian Score:** 155/163 gates passing (95.1%) — 8 FALSIFIED, 0 blocked/not-tested. 163 falsification gates, 23 sections. 44 rounds, 209 bugs. Gated by `model-tests` feature (`make test-model`)
 **CLI Surface:** 39 top-level + 10 nested subcommands (49 total)
 **Compile-Time Proofs:** 297 algebraic invariants (zero runtime cost)
 **Author:** PAIML Engineering
-**Date:** 2026-02-11 (Round 43)
+**Date:** 2026-02-11 (Round 44)
 **Ground Truth:** SafeTensors BF16 - See Section 0
 **Quality Philosophy:** Toyota Way + Popperian Falsification (Zero SATD, Stop-the-Line, Jidoka)
 
@@ -2419,6 +2419,22 @@ Full reverification of all 5 Qwen2.5-Coder sizes (0.5B, 1.5B, 3B, 7B, 14B) throu
 - **Self-referencing symlink bug**: Playbook executor `prepare_model_workspace()` creates self-referencing symlinks when `--model-path` points to the workspace directory (line 2644: `symlink(source_file, st_link)` where `source_file == st_link`). Workaround: pass resolved source paths (APR/pacha cache), not workspace symlinks.
 - **14B serve timeouts**: Structural — 56GB F32 model takes >120s to load. Run and chat work (get more time). Not a code bug.
 - **GGUF chat/serve failures**: All from missing tokenizer in converted GGUF (weights-only conversion). Known limitation.
+- **No new FALSIFIED gates**: 155/163 gates still pass (95.1%)
+
+**Round 44 (v10.44.0): GH-220/221/222 CLI UX fixes + batuta GH-25 stack release fix**
+
+Three user-reported CLI bugs fixed (reported by @alfredodeza), plus a cross-project fix in batuta's stack release orchestrator. 3 bugs in apr-cli/aprender, 1 bug in batuta = 209 total.
+
+| # | Issue | Description | Root Cause | Fix |
+|---|-------|-------------|------------|-----|
+| 207 | GH-220 | `apr --version` shows only `0.2.12`, no git SHA | No build-time SHA capture | `crates/apr-cli/build.rs` captures `git rev-parse --short HEAD`. Output: `apr 0.2.13 (b4d08145)`. Falls back to `(unknown)` on crates.io install. |
+| 208 | GH-221 | `apr import hf://…/resolve/main/model.safetensors` → 404 | `parse_hf()` treats `resolve/main/` as part of filename | Strip `resolve/main/` and `blob/main/` prefixes from `hf://` URI path. Falsification caught edge case: bare `resolve/main` (no trailing slash). 8 unit tests. |
+| 209 | GH-222 | `apr chat model.apr` produces garbage (wrong chat template) | Standalone APR files have no sibling `config.json`; directory-name fallback returns `"models"` → Raw template instead of ChatML | Read architecture from APR v2 metadata (`"architecture":"qwen2"`) before config.json fallback. Split `SafeTensors|Apr` into separate match arms. |
+| — | batuta GH-25 | `batuta stack release` fails with "Circular dependency detected" | `from_workspace()` added edges from ALL resolved PAIML packages, not just workspace members. `trueno → aprender` (optional dep) created false cycle. | Filter second pass by `metadata.workspace_members`. Non-workspace PAIML crates remain as nodes but don't contribute edges. Fixed in batuta 0.6.4. |
+
+- **Falsification**: GH-221 falsification caught bare `resolve/main` edge case (no trailing slash). GH-222 verified APR metadata contains `"architecture":"qwen2"` via `dd | strings` on real model file.
+- **Published**: aprender 0.25.3, apr-cli 0.2.13, entrenar-common 0.2.0, entrenar-lora 0.2.0, batuta 0.6.4 — all to crates.io
+- **Installed**: `cargo install apr-cli` → `apr 0.2.13 (unknown)`, `cargo install batuta` → `batuta 0.6.4`
 - **No new FALSIFIED gates**: 155/163 gates still pass (95.1%)
 
 ### 18.2 Claims Verified (Not Falsified)
