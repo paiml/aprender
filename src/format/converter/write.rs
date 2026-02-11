@@ -142,8 +142,7 @@ pub(crate) fn write_apr_file(
     user_metadata: &UserMetadata,
 ) -> Result<()> {
     // PMAT-100: Handle tied embeddings (common in Qwen, LLaMA, etc.)
-    let (tensors_with_lm_head, has_tied_embeddings) =
-        resolve_f32_tied_embeddings(tensors);
+    let (tensors_with_lm_head, has_tied_embeddings) = resolve_f32_tied_embeddings(tensors);
 
     let param_count: u64 = tensors_with_lm_head
         .values()

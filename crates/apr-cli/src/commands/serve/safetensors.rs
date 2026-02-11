@@ -237,8 +237,9 @@ pub(crate) fn start_sharded_safetensors_server(
     use std::sync::{Arc, Mutex};
 
     // Load sharded model from index.json
-    let sharded = ShardedSafeTensorsModel::load_from_index(model_path)
-        .map_err(|e| CliError::ModelLoadFailed(format!("Failed to load sharded SafeTensors: {e}")))?;
+    let sharded = ShardedSafeTensorsModel::load_from_index(model_path).map_err(|e| {
+        CliError::ModelLoadFailed(format!("Failed to load sharded SafeTensors: {e}"))
+    })?;
 
     println!(
         "{}",
@@ -432,8 +433,12 @@ fn merge_special_tokens_into_vocab(
         .filter_map(parse_special_token)
         .inspect(|(id, content)| {
             let (is_bos, is_eos) = classify_bos_eos(content);
-            if is_bos { bos_token_id = Some(*id); }
-            if is_eos { eos_token_id = Some(*id); }
+            if is_bos {
+                bos_token_id = Some(*id);
+            }
+            if is_eos {
+                eos_token_id = Some(*id);
+            }
         })
         .collect();
 
@@ -488,8 +493,7 @@ pub(crate) fn load_safetensors_tokenizer(path: &Path) -> Option<SafeTensorsToken
     // Extract special tokens and merge them into vocabulary (PMAT-099)
     let added_tokens = json.get("added_tokens").and_then(|v| v.as_array());
     let mut vocab = vocab;
-    let (bos_token_id, eos_token_id) =
-        merge_special_tokens_into_vocab(added_tokens, &mut vocab);
+    let (bos_token_id, eos_token_id) = merge_special_tokens_into_vocab(added_tokens, &mut vocab);
 
     // Create BPE tokenizer with vocab and merge rules
     let tokenizer = realizar::tokenizer::BPETokenizer::new(vocab.clone(), merges, "<unk>").ok()?;

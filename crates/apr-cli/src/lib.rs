@@ -1882,8 +1882,7 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
         validate_model_contract(&paths)?;
     }
 
-    dispatch_core_command(cli)
-        .unwrap_or_else(|| dispatch_extended_command(cli))
+    dispatch_core_command(cli).unwrap_or_else(|| dispatch_extended_command(cli))
 }
 
 /// Dispatch core commands (run, serve, inspection, format operations).
@@ -1951,8 +1950,18 @@ fn dispatch_core_command(cli: &Cli) -> Option<Result<(), CliError>> {
             trace_level,
             profile,
         } => dispatch_serve(
-            file, *port, host, *no_cors, *no_metrics, *no_gpu, *gpu, *batch, *trace,
-            trace_level, *profile, cli.verbose,
+            file,
+            *port,
+            host,
+            *no_cors,
+            *no_metrics,
+            *no_gpu,
+            *gpu,
+            *batch,
+            *trace,
+            trace_level,
+            *profile,
+            cli.verbose,
         ),
 
         Commands::Inspect {
@@ -2161,8 +2170,20 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
             offset,
             width,
         } => dispatch_hex(
-            file, tensor.as_deref(), *limit, *stats, *list, *json || cli.json, *header,
-            *blocks, *distribution, *contract, *entropy, *raw, offset, *width,
+            file,
+            tensor.as_deref(),
+            *limit,
+            *stats,
+            *list,
+            *json || cli.json,
+            *header,
+            *blocks,
+            *distribution,
+            *contract,
+            *entropy,
+            *raw,
+            offset,
+            *width,
         ),
 
         Commands::Tree {

@@ -5,7 +5,9 @@
 
 use crate::error::CliError;
 use crate::output;
-use aprender::format::rosetta::{FormatType, RosettaStone, ValidationReport as RosettaValidationReport};
+use aprender::format::rosetta::{
+    FormatType, RosettaStone, ValidationReport as RosettaValidationReport,
+};
 use aprender::format::validation::{AprValidator, Category, CheckStatus, ValidationReport};
 use colored::Colorize;
 use std::fs;

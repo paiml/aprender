@@ -930,9 +930,7 @@ fn infer_bos_eos_from_added_tokens(
         let id = token.get("id").and_then(|v| v.as_u64()).map(|v| v as u32);
         if let (Some(content), Some(id)) = (content, id) {
             if bos.is_none()
-                && (content.contains("bos")
-                    || content == "<s>"
-                    || content == "<|startoftext|>")
+                && (content.contains("bos") || content == "<s>" || content == "<|startoftext|>")
             {
                 bos = Some(id);
             }
@@ -1187,7 +1185,9 @@ fn infer_intermediate_size_from_tensors(
 }
 
 /// Infer architecture string from tensor naming conventions.
-fn infer_architecture_from_names(tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>) -> Option<String> {
+fn infer_architecture_from_names(
+    tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+) -> Option<String> {
     if tensors.keys().any(|k| k.contains("model.layers")) {
         Some("qwen2".to_string())
     } else if tensors.keys().any(|k| k.contains("transformer.h")) {

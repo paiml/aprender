@@ -623,10 +623,7 @@ fn print_logit_predictions(logits: &[f32]) {
 
 /// Print trace summary analysis (variance, NaN/Inf, logit range).
 #[cfg(feature = "inference")]
-fn print_trace_summary(
-    layers: &[realizar::apr_transformer::LayerActivation],
-    logits: &[f32],
-) {
+fn print_trace_summary(layers: &[realizar::apr_transformer::LayerActivation], logits: &[f32]) {
     use colored::Colorize;
 
     println!();
@@ -653,9 +650,12 @@ fn print_trace_summary(
     if total_nan > 0 || total_inf > 0 {
         println!(
             "  {}",
-            format!("CRITICAL: {} NaN, {} Inf values detected!", total_nan, total_inf)
-                .red()
-                .bold()
+            format!(
+                "CRITICAL: {} NaN, {} Inf values detected!",
+                total_nan, total_inf
+            )
+            .red()
+            .bold()
         );
         println!("  {}", "Model weights or computation is corrupted.".red());
     } else if high_var_count > 0 {
@@ -884,9 +884,11 @@ fn is_likely_garbage(text: &str) -> bool {
         return true;
     }
 
-    let has_normal_words = ["the", "is", "are", "and", "to", "of", "in", "that", "it", "for"]
-        .iter()
-        .any(|w| text_lower.contains(w));
+    let has_normal_words = [
+        "the", "is", "are", "and", "to", "of", "in", "that", "it", "for",
+    ]
+    .iter()
+    .any(|w| text_lower.contains(w));
     let has_numbers = text.chars().any(|c| c.is_ascii_digit());
 
     !has_numbers && !has_normal_words && words.len() > 2
@@ -921,8 +923,15 @@ fn has_unusual_chars(text: &str) -> bool {
 /// Check for known garbage output patterns.
 fn has_garbage_pattern(text_lower: &str) -> bool {
     const GARBAGE_PATTERNS: &[&str] = &[
-        "random random", "random_", "domain domain", "domainuster",
-        "pandas pandas", "olumbia", "localents", "nunca", ".mult",
+        "random random",
+        "random_",
+        "domain domain",
+        "domainuster",
+        "pandas pandas",
+        "olumbia",
+        "localents",
+        "nunca",
+        ".mult",
     ];
     GARBAGE_PATTERNS.iter().any(|p| text_lower.contains(p))
 }

@@ -58,12 +58,14 @@ fn validate_weight_values(w: &[f32], file_count: usize) -> Result<()> {
     for (i, &weight) in w.iter().enumerate() {
         if weight < 0.0 {
             return Err(CliError::ValidationFailed(format!(
-                "Weight {} is negative ({weight:.3}). All weights must be >= 0.", i + 1
+                "Weight {} is negative ({weight:.3}). All weights must be >= 0.",
+                i + 1
             )));
         }
         if !weight.is_finite() {
             return Err(CliError::ValidationFailed(format!(
-                "Weight {} is not a valid number ({weight:.3}). Use finite values.", i + 1
+                "Weight {} is not a valid number ({weight:.3}). Use finite values.",
+                i + 1
             )));
         }
     }

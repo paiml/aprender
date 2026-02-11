@@ -296,9 +296,25 @@ fn run_tensor_value_diff(
     }
 
     if json_output {
-        print_diff_json(path1, path2, &results, identical_count, transposed_count, critical_count, large_count, medium_count);
+        print_diff_json(
+            path1,
+            path2,
+            &results,
+            identical_count,
+            transposed_count,
+            critical_count,
+            large_count,
+            medium_count,
+        );
     } else {
-        print_diff_summary(&results, identical_count, transposed_count, critical_count, large_count, medium_count);
+        print_diff_summary(
+            &results,
+            identical_count,
+            transposed_count,
+            critical_count,
+            large_count,
+            medium_count,
+        );
     }
 
     Ok(())
@@ -307,16 +323,32 @@ fn run_tensor_value_diff(
 /// Print the diff box header.
 fn print_diff_header(path1: &Path, path2: &Path) {
     let sep = "╠══════════════════════════════════════════════════════════════════════════════╣";
-    println!("{}", "╔══════════════════════════════════════════════════════════════════════════════╗".cyan());
-    println!("{}", "║           TENSOR VALUE DIFF (Statistical Comparison)                         ║".cyan());
+    println!(
+        "{}",
+        "╔══════════════════════════════════════════════════════════════════════════════╗".cyan()
+    );
+    println!(
+        "{}",
+        "║           TENSOR VALUE DIFF (Statistical Comparison)                         ║".cyan()
+    );
     println!("{}", sep.cyan());
-    println!("║ Model A: {:<66} ║", truncate_path(&path1.display().to_string(), 66));
-    println!("║ Model B: {:<66} ║", truncate_path(&path2.display().to_string(), 66));
+    println!(
+        "║ Model A: {:<66} ║",
+        truncate_path(&path1.display().to_string(), 66)
+    );
+    println!(
+        "║ Model B: {:<66} ║",
+        truncate_path(&path2.display().to_string(), 66)
+    );
     println!("{}", sep.cyan());
     println!(
         "║ Legend: {} {} {} {} {} {} ║",
-        "IDENTICAL".green().bold(), "~IDENT".green(), "SMALL".blue(),
-        "MEDIUM".yellow(), "LARGE".red(), "CRITICAL".red().bold()
+        "IDENTICAL".green().bold(),
+        "~IDENT".green(),
+        "SMALL".blue(),
+        "MEDIUM".yellow(),
+        "LARGE".red(),
+        "CRITICAL".red().bold()
     );
     println!("{}", sep.cyan());
 }
@@ -325,8 +357,14 @@ fn print_diff_header(path1: &Path, path2: &Path) {
 // serde_json::json!() macro uses infallible unwrap internally
 #[allow(clippy::disallowed_methods, clippy::too_many_arguments)]
 fn print_diff_json(
-    path1: &Path, path2: &Path, results: &[TensorValueStats],
-    identical: usize, transposed: usize, critical: usize, large: usize, medium: usize,
+    path1: &Path,
+    path2: &Path,
+    results: &[TensorValueStats],
+    identical: usize,
+    transposed: usize,
+    critical: usize,
+    large: usize,
+    medium: usize,
 ) {
     let json = serde_json::json!({
         "model_a": path1.display().to_string(),
@@ -339,74 +377,167 @@ fn print_diff_json(
         "medium_count": medium,
         "results": results,
     });
-    println!("{}", serde_json::to_string_pretty(&json).unwrap_or_default());
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&json).unwrap_or_default()
+    );
 }
 
 /// Print diff summary with diagnosis.
 #[allow(clippy::too_many_arguments)]
 fn print_diff_summary(
     results: &[TensorValueStats],
-    identical: usize, transposed: usize, critical: usize, large: usize, medium: usize,
+    identical: usize,
+    transposed: usize,
+    critical: usize,
+    large: usize,
+    medium: usize,
 ) {
     let sep = "╠══════════════════════════════════════════════════════════════════════════════╣";
     println!("{}", sep.cyan());
-    println!("{}", "║                              SUMMARY                                          ║".cyan().bold());
+    println!(
+        "{}",
+        "║                              SUMMARY                                          ║"
+            .cyan()
+            .bold()
+    );
     println!("{}", sep.cyan());
     println!("║ Tensors compared: {:<58} ║", results.len());
-    println!("║ Identical: {:<65} ║", format!("{identical}").green().to_string());
-    println!("║ Transposed (layout diff): {:<50} ║",
-        if transposed > 0 { format!("{transposed}").cyan().to_string() } else { "0".dimmed().to_string() });
-    println!("║ Critical differences: {:<54} ║",
-        if critical > 0 { format!("{critical}").red().bold().to_string() } else { "0".green().to_string() });
-    println!("║ Large differences: {:<57} ║",
-        if large > 0 { format!("{large}").red().to_string() } else { "0".green().to_string() });
-    println!("║ Medium differences: {:<56} ║",
-        if medium > 0 { format!("{medium}").yellow().to_string() } else { "0".green().to_string() });
+    println!(
+        "║ Identical: {:<65} ║",
+        format!("{identical}").green().to_string()
+    );
+    println!(
+        "║ Transposed (layout diff): {:<50} ║",
+        if transposed > 0 {
+            format!("{transposed}").cyan().to_string()
+        } else {
+            "0".dimmed().to_string()
+        }
+    );
+    println!(
+        "║ Critical differences: {:<54} ║",
+        if critical > 0 {
+            format!("{critical}").red().bold().to_string()
+        } else {
+            "0".green().to_string()
+        }
+    );
+    println!(
+        "║ Large differences: {:<57} ║",
+        if large > 0 {
+            format!("{large}").red().to_string()
+        } else {
+            "0".green().to_string()
+        }
+    );
+    println!(
+        "║ Medium differences: {:<56} ║",
+        if medium > 0 {
+            format!("{medium}").yellow().to_string()
+        } else {
+            "0".green().to_string()
+        }
+    );
 
     println!("{}", sep.cyan());
     print_diff_diagnosis(results, identical, transposed, critical, large, medium);
-    println!("{}", "╚══════════════════════════════════════════════════════════════════════════════╝".cyan());
+    println!(
+        "{}",
+        "╚══════════════════════════════════════════════════════════════════════════════╝".cyan()
+    );
 }
 
 /// Print the diagnosis section of the diff summary.
 fn print_diff_diagnosis(
     results: &[TensorValueStats],
-    identical: usize, transposed: usize, critical: usize, large: usize, medium: usize,
+    identical: usize,
+    transposed: usize,
+    critical: usize,
+    large: usize,
+    medium: usize,
 ) {
     if critical > 0 {
-        println!("║ {} ║", "DIAGNOSIS: Critical value differences detected!".red().bold());
+        println!(
+            "║ {} ║",
+            "DIAGNOSIS: Critical value differences detected!"
+                .red()
+                .bold()
+        );
         println!("║ {:<75} ║", "Possible causes:".yellow());
-        println!("║ {:<75} ║", "  - Different quantization/dequantization algorithms");
-        println!("║ {:<75} ║", "  - Tensor layout mismatch (row-major vs column-major)");
+        println!(
+            "║ {:<75} ║",
+            "  - Different quantization/dequantization algorithms"
+        );
+        println!(
+            "║ {:<75} ║",
+            "  - Tensor layout mismatch (row-major vs column-major)"
+        );
         println!("║ {:<75} ║", "  - Corrupted weights during conversion");
     } else if large > 0 {
-        println!("║ {} ║", "DIAGNOSIS: Large value differences - may affect inference quality".yellow().bold());
-        let transposed_with_diffs = results.iter().filter(|r| {
-            let is_t = r.shape_a.len() == 2 && r.shape_b.len() == 2
-                && r.shape_a[0] == r.shape_b[1] && r.shape_a[1] == r.shape_b[0];
-            is_t && r.status != TensorDiffStatus::Transposed
-        }).count();
+        println!(
+            "║ {} ║",
+            "DIAGNOSIS: Large value differences - may affect inference quality"
+                .yellow()
+                .bold()
+        );
+        let transposed_with_diffs = results
+            .iter()
+            .filter(|r| {
+                let is_t = r.shape_a.len() == 2
+                    && r.shape_b.len() == 2
+                    && r.shape_a[0] == r.shape_b[1]
+                    && r.shape_a[1] == r.shape_b[0];
+                is_t && r.status != TensorDiffStatus::Transposed
+            })
+            .count();
         if transposed_with_diffs > 0 {
-            println!("║ {:<75} ║", "NOTE: Differences in transposed tensors may be expected when".cyan());
-            println!("║ {:<75} ║", "comparing GGUF (col-major) to APR (row-major) linearly.".cyan());
+            println!(
+                "║ {:<75} ║",
+                "NOTE: Differences in transposed tensors may be expected when".cyan()
+            );
+            println!(
+                "║ {:<75} ║",
+                "comparing GGUF (col-major) to APR (row-major) linearly.".cyan()
+            );
         }
     } else if medium > 0 {
-        println!("║ {} ║", "DIAGNOSIS: Medium differences - likely acceptable quantization variance".blue());
+        println!(
+            "║ {} ║",
+            "DIAGNOSIS: Medium differences - likely acceptable quantization variance".blue()
+        );
     } else if transposed > 0 && identical > 0 {
-        println!("║ {} ║", "DIAGNOSIS: Values identical, shapes transposed (format layout diff)".cyan().bold());
+        println!(
+            "║ {} ║",
+            "DIAGNOSIS: Values identical, shapes transposed (format layout diff)"
+                .cyan()
+                .bold()
+        );
     } else {
-        println!("║ {} ║", "DIAGNOSIS: Tensors are nearly identical".green().bold());
+        println!(
+            "║ {} ║",
+            "DIAGNOSIS: Tensors are nearly identical".green().bold()
+        );
     }
 }
 
 /// Look up element in data_b at the transposed position corresponding to index `i` in data_a.
-fn lookup_transposed_element(data_b: &[f32], shape_a: &[usize], shape_b: &[usize], i: usize) -> Option<f32> {
+fn lookup_transposed_element(
+    data_b: &[f32],
+    shape_a: &[usize],
+    shape_b: &[usize],
+    i: usize,
+) -> Option<f32> {
     let cols_a = shape_a[1];
     let row = i / cols_a;
     let col = i % cols_a;
     let cols_b = shape_b[1];
     let j = row * cols_b + col;
-    if j < data_b.len() { Some(data_b[j]) } else { None }
+    if j < data_b.len() {
+        Some(data_b[j])
+    } else {
+        None
+    }
 }
 
 /// Classify a diff value into identical/small/medium/large buckets.
@@ -445,9 +576,16 @@ struct DiffAccumulator {
 impl DiffAccumulator {
     fn new() -> Self {
         Self {
-            sum_diff: 0.0, sum_sq_diff: 0.0, max_diff: 0.0,
-            dot_product: 0.0, norm_a: 0.0, norm_b: 0.0,
-            identical_count: 0, small_diff_count: 0, medium_diff_count: 0, large_diff_count: 0,
+            sum_diff: 0.0,
+            sum_sq_diff: 0.0,
+            max_diff: 0.0,
+            dot_product: 0.0,
+            norm_a: 0.0,
+            norm_b: 0.0,
+            identical_count: 0,
+            small_diff_count: 0,
+            medium_diff_count: 0,
+            large_diff_count: 0,
         }
     }
 
@@ -464,12 +602,21 @@ impl DiffAccumulator {
         self.dot_product += (a as f64) * (b as f64);
         self.norm_a += (a as f64) * (a as f64);
         self.norm_b += (b as f64) * (b as f64);
-        classify_diff(diff, &mut self.identical_count, &mut self.small_diff_count,
-            &mut self.medium_diff_count, &mut self.large_diff_count);
+        classify_diff(
+            diff,
+            &mut self.identical_count,
+            &mut self.small_diff_count,
+            &mut self.medium_diff_count,
+            &mut self.large_diff_count,
+        );
     }
 
-    fn mean_diff(&self, n: usize) -> f32 { (self.sum_diff / n as f64) as f32 }
-    fn rmse(&self, n: usize) -> f32 { ((self.sum_sq_diff / n as f64).sqrt()) as f32 }
+    fn mean_diff(&self, n: usize) -> f32 {
+        (self.sum_diff / n as f64) as f32
+    }
+    fn rmse(&self, n: usize) -> f32 {
+        ((self.sum_sq_diff / n as f64).sqrt()) as f32
+    }
 
     fn cosine_similarity(&self) -> f32 {
         if self.norm_a > 0.0 && self.norm_b > 0.0 {
@@ -487,8 +634,14 @@ fn empty_tensor_stats(name: &str, shape_a: &[usize], shape_b: &[usize]) -> Tenso
         shape_a: shape_a.to_vec(),
         shape_b: shape_b.to_vec(),
         element_count: 0,
-        mean_diff: 0.0, max_diff: 0.0, rmse: 0.0, cosine_similarity: 0.0,
-        identical_count: 0, small_diff_count: 0, medium_diff_count: 0, large_diff_count: 0,
+        mean_diff: 0.0,
+        max_diff: 0.0,
+        rmse: 0.0,
+        cosine_similarity: 0.0,
+        identical_count: 0,
+        small_diff_count: 0,
+        medium_diff_count: 0,
+        large_diff_count: 0,
         status: TensorDiffStatus::Critical,
     }
 }
@@ -527,7 +680,11 @@ fn compute_tensor_diff_stats(
     }
 
     let status = TensorDiffStatus::from_diff_info(
-        acc.max_diff, shape_a, shape_b, acc.identical_count, element_count,
+        acc.max_diff,
+        shape_a,
+        shape_b,
+        acc.identical_count,
+        element_count,
     );
 
     TensorValueStats {

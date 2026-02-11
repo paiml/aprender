@@ -219,7 +219,9 @@ pub fn apr_export<P: AsRef<Path>>(
 
     dispatch_export(&tensors, input_path, output_path, &options)?;
 
-    let exported_size = fs::metadata(output_path).map(|m| m.len() as usize).unwrap_or(0);
+    let exported_size = fs::metadata(output_path)
+        .map(|m| m.len() as usize)
+        .unwrap_or(0);
     Ok(ExportReport {
         original_size,
         exported_size,
@@ -336,7 +338,9 @@ fn dispatch_export(
         ExportFormat::SafeTensors => {
             export_safetensors_with_companions(tensors, input_path, output_path, options)
         }
-        ExportFormat::Gguf => export_to_gguf(tensors, output_path, input_path, options.quantize.as_ref()),
+        ExportFormat::Gguf => {
+            export_to_gguf(tensors, output_path, input_path, options.quantize.as_ref())
+        }
         ExportFormat::Onnx | ExportFormat::TorchScript => Err(AprenderError::FormatError {
             message: format!("Export format {:?} is not yet implemented", options.format),
         }),
@@ -431,11 +435,19 @@ fn resolve_gguf_config(
         inf_f: impl Fn(&crate::format::gguf::GgufModelConfig) -> Option<T>,
         default: T,
     ) -> T {
-        apr.and_then(&apr_f).or_else(|| inf.and_then(&inf_f)).unwrap_or(default)
+        apr.and_then(&apr_f)
+            .or_else(|| inf.and_then(&inf_f))
+            .unwrap_or(default)
     }
 
     let num_heads = resolve(apr_metadata, inferred, |m| m.num_heads, |c| c.num_heads, 32);
-    let hidden_size = resolve(apr_metadata, inferred, |m| m.hidden_size, |c| c.hidden_size, 4096);
+    let hidden_size = resolve(
+        apr_metadata,
+        inferred,
+        |m| m.hidden_size,
+        |c| c.hidden_size,
+        4096,
+    );
 
     GgufExportConfig {
         arch: apr_metadata
@@ -443,38 +455,113 @@ fn resolve_gguf_config(
             .or_else(|| inferred.and_then(|c| c.architecture.clone()))
             .unwrap_or_else(|| "qwen2".to_string()),
         hidden_size,
-        num_layers: resolve(apr_metadata, inferred, |m| m.num_layers, |c| c.num_layers, 32),
+        num_layers: resolve(
+            apr_metadata,
+            inferred,
+            |m| m.num_layers,
+            |c| c.num_layers,
+            32,
+        ),
         num_heads,
-        num_kv_heads: resolve(apr_metadata, inferred, |m| m.num_kv_heads, |c| c.num_kv_heads, num_heads),
-        vocab_size: resolve(apr_metadata, inferred, |m| m.vocab_size, |c| c.vocab_size, 32000),
-        intermediate_size: resolve(apr_metadata, inferred, |m| m.intermediate_size, |c| c.intermediate_size, 11008),
-        max_pos: apr_metadata.and_then(|m| m.max_position_embeddings).unwrap_or(32768),
-        rope_theta: apr_metadata.and_then(|m| m.rope_theta).unwrap_or(1_000_000.0),
+        num_kv_heads: resolve(
+            apr_metadata,
+            inferred,
+            |m| m.num_kv_heads,
+            |c| c.num_kv_heads,
+            num_heads,
+        ),
+        vocab_size: resolve(
+            apr_metadata,
+            inferred,
+            |m| m.vocab_size,
+            |c| c.vocab_size,
+            32000,
+        ),
+        intermediate_size: resolve(
+            apr_metadata,
+            inferred,
+            |m| m.intermediate_size,
+            |c| c.intermediate_size,
+            11008,
+        ),
+        max_pos: apr_metadata
+            .and_then(|m| m.max_position_embeddings)
+            .unwrap_or(32768),
+        rope_theta: apr_metadata
+            .and_then(|m| m.rope_theta)
+            .unwrap_or(1_000_000.0),
         rms_norm_eps: apr_metadata.and_then(|m| m.rms_norm_eps).unwrap_or(1e-6),
-        head_dim: if num_heads > 0 { hidden_size / num_heads } else { 128 },
-        model_name: apr_metadata.and_then(|m| m.name.clone()).unwrap_or_else(|| "model".to_string()),
+        head_dim: if num_heads > 0 {
+            hidden_size / num_heads
+        } else {
+            128
+        },
+        model_name: apr_metadata
+            .and_then(|m| m.name.clone())
+            .unwrap_or_else(|| "model".to_string()),
     }
 }
 
 /// Build GGUF architecture metadata KV pairs from resolved config.
-fn build_gguf_config_metadata(cfg: &GgufExportConfig) -> Vec<(String, crate::format::gguf::GgufValue)> {
+fn build_gguf_config_metadata(
+    cfg: &GgufExportConfig,
+) -> Vec<(String, crate::format::gguf::GgufValue)> {
     use crate::format::gguf::GgufValue;
     let arch = &cfg.arch;
     vec![
-        ("general.architecture".to_string(), GgufValue::String(arch.clone())),
-        ("general.name".to_string(), GgufValue::String(cfg.model_name.clone())),
-        ("general.quantization_version".to_string(), GgufValue::Uint32(2)),
+        (
+            "general.architecture".to_string(),
+            GgufValue::String(arch.clone()),
+        ),
+        (
+            "general.name".to_string(),
+            GgufValue::String(cfg.model_name.clone()),
+        ),
+        (
+            "general.quantization_version".to_string(),
+            GgufValue::Uint32(2),
+        ),
         ("general.file_type".to_string(), GgufValue::Uint32(0)),
-        (format!("{arch}.context_length"), GgufValue::Uint32(cfg.max_pos as u32)),
-        (format!("{arch}.embedding_length"), GgufValue::Uint32(cfg.hidden_size as u32)),
-        (format!("{arch}.block_count"), GgufValue::Uint32(cfg.num_layers as u32)),
-        (format!("{arch}.feed_forward_length"), GgufValue::Uint32(cfg.intermediate_size as u32)),
-        (format!("{arch}.attention.head_count"), GgufValue::Uint32(cfg.num_heads as u32)),
-        (format!("{arch}.attention.head_count_kv"), GgufValue::Uint32(cfg.num_kv_heads as u32)),
-        (format!("{arch}.attention.layer_norm_rms_epsilon"), GgufValue::Float32(cfg.rms_norm_eps)),
-        (format!("{arch}.rope.dimension_count"), GgufValue::Uint32(cfg.head_dim as u32)),
-        (format!("{arch}.rope.freq_base"), GgufValue::Float32(cfg.rope_theta)),
-        (format!("{arch}.vocab_size"), GgufValue::Uint32(cfg.vocab_size as u32)),
+        (
+            format!("{arch}.context_length"),
+            GgufValue::Uint32(cfg.max_pos as u32),
+        ),
+        (
+            format!("{arch}.embedding_length"),
+            GgufValue::Uint32(cfg.hidden_size as u32),
+        ),
+        (
+            format!("{arch}.block_count"),
+            GgufValue::Uint32(cfg.num_layers as u32),
+        ),
+        (
+            format!("{arch}.feed_forward_length"),
+            GgufValue::Uint32(cfg.intermediate_size as u32),
+        ),
+        (
+            format!("{arch}.attention.head_count"),
+            GgufValue::Uint32(cfg.num_heads as u32),
+        ),
+        (
+            format!("{arch}.attention.head_count_kv"),
+            GgufValue::Uint32(cfg.num_kv_heads as u32),
+        ),
+        (
+            format!("{arch}.attention.layer_norm_rms_epsilon"),
+            GgufValue::Float32(cfg.rms_norm_eps),
+        ),
+        (
+            format!("{arch}.rope.dimension_count"),
+            GgufValue::Uint32(cfg.head_dim as u32),
+        ),
+        (
+            format!("{arch}.rope.freq_base"),
+            GgufValue::Float32(cfg.rope_theta),
+        ),
+        (
+            format!("{arch}.vocab_size"),
+            GgufValue::Uint32(cfg.vocab_size as u32),
+        ),
     ]
 }
 
@@ -487,24 +574,42 @@ fn build_tokenizer_gguf_metadata(
     let mut metadata = Vec::new();
     let model_type = tokenizer.model_type.as_deref().unwrap_or("gpt2");
 
-    metadata.push(("tokenizer.ggml.model".to_string(), GgufValue::String(model_type.to_lowercase())));
-    metadata.push(("tokenizer.ggml.pre".to_string(), GgufValue::String(arch.to_string())));
+    metadata.push((
+        "tokenizer.ggml.model".to_string(),
+        GgufValue::String(model_type.to_lowercase()),
+    ));
+    metadata.push((
+        "tokenizer.ggml.pre".to_string(),
+        GgufValue::String(arch.to_string()),
+    ));
 
     if let Some(bos) = tokenizer.bos_token_id {
-        metadata.push(("tokenizer.ggml.bos_token_id".to_string(), GgufValue::Uint32(bos)));
+        metadata.push((
+            "tokenizer.ggml.bos_token_id".to_string(),
+            GgufValue::Uint32(bos),
+        ));
     }
     if let Some(eos) = tokenizer.eos_token_id {
-        metadata.push(("tokenizer.ggml.eos_token_id".to_string(), GgufValue::Uint32(eos)));
+        metadata.push((
+            "tokenizer.ggml.eos_token_id".to_string(),
+            GgufValue::Uint32(eos),
+        ));
     }
     if !tokenizer.vocabulary.is_empty() {
-        metadata.push(("tokenizer.ggml.tokens".to_string(), GgufValue::ArrayString(tokenizer.vocabulary.clone())));
+        metadata.push((
+            "tokenizer.ggml.tokens".to_string(),
+            GgufValue::ArrayString(tokenizer.vocabulary.clone()),
+        ));
         eprintln!(
             "[BUG-EXPORT-004] Added tokenizer metadata: model={}, vocab_size={}, bos={:?}, eos={:?}",
             model_type, tokenizer.vocabulary.len(), tokenizer.bos_token_id, tokenizer.eos_token_id
         );
     }
     if !tokenizer.merges.is_empty() {
-        metadata.push(("tokenizer.ggml.merges".to_string(), GgufValue::ArrayString(tokenizer.merges.clone())));
+        metadata.push((
+            "tokenizer.ggml.merges".to_string(),
+            GgufValue::ArrayString(tokenizer.merges.clone()),
+        ));
     }
     metadata
 }
@@ -520,7 +625,10 @@ fn export_to_gguf(
     use std::fs::File;
     use std::io::BufWriter;
 
-    eprintln!("[DEBUG-TOK] Looking for tokenizer near: {}", input.display());
+    eprintln!(
+        "[DEBUG-TOK] Looking for tokenizer near: {}",
+        input.display()
+    );
     let tokenizer = super::import::load_tokenizer_from_json(input);
     eprintln!("[DEBUG-TOK] Tokenizer loaded: {}", tokenizer.is_some());
 
@@ -547,7 +655,12 @@ fn export_to_gguf(
 
     eprintln!(
         "[GGUF-EXPORT-001] Writing {} metadata keys (arch={}, layers={}, heads={}/{}kv, hidden={})",
-        metadata.len(), cfg.arch, cfg.num_layers, cfg.num_heads, cfg.num_kv_heads, cfg.hidden_size
+        metadata.len(),
+        cfg.arch,
+        cfg.num_layers,
+        cfg.num_heads,
+        cfg.num_kv_heads,
+        cfg.hidden_size
     );
 
     // GGUF-EXPORT-001: Map tensor names from HF convention to GGUF convention
@@ -740,7 +853,10 @@ fn push_string_array(
         .filter_map(|v| v.as_str().map(String::from))
         .collect();
     if !strings.is_empty() {
-        entries.push((gguf_key.to_string(), crate::format::gguf::GgufValue::ArrayString(strings)));
+        entries.push((
+            gguf_key.to_string(),
+            crate::format::gguf::GgufValue::ArrayString(strings),
+        ));
     }
 }
 
@@ -752,7 +868,10 @@ fn push_u32_field(
     gguf_key: &str,
 ) {
     if let Some(val) = custom.get(src_key).and_then(|v| v.as_u64()) {
-        entries.push((gguf_key.to_string(), crate::format::gguf::GgufValue::Uint32(val as u32)));
+        entries.push((
+            gguf_key.to_string(),
+            crate::format::gguf::GgufValue::Uint32(val as u32),
+        ));
     }
 }
 
@@ -770,7 +889,10 @@ fn push_i32_array(
         .filter_map(|v| v.as_i64().map(|n| n as i32))
         .collect();
     if !types.is_empty() {
-        entries.push((gguf_key.to_string(), crate::format::gguf::GgufValue::ArrayInt32(types)));
+        entries.push((
+            gguf_key.to_string(),
+            crate::format::gguf::GgufValue::ArrayInt32(types),
+        ));
     }
 }
 
@@ -803,15 +925,48 @@ fn extract_apr_tokenizer_for_gguf(
         GgufValue::String(arch.to_string()),
     ));
 
-    push_string_array(&mut entries, custom, "tokenizer.vocabulary", "tokenizer.ggml.tokens");
-    push_string_array(&mut entries, custom, "tokenizer.merges", "tokenizer.ggml.merges");
-    push_u32_field(&mut entries, custom, "tokenizer.bos_token_id", "tokenizer.ggml.bos_token_id");
-    push_u32_field(&mut entries, custom, "tokenizer.eos_token_id", "tokenizer.ggml.eos_token_id");
-    push_i32_array(&mut entries, custom, "tokenizer.token_type", "tokenizer.ggml.token_type");
-    push_u32_field(&mut entries, custom, "tokenizer.padding_token_id", "tokenizer.ggml.padding_token_id");
+    push_string_array(
+        &mut entries,
+        custom,
+        "tokenizer.vocabulary",
+        "tokenizer.ggml.tokens",
+    );
+    push_string_array(
+        &mut entries,
+        custom,
+        "tokenizer.merges",
+        "tokenizer.ggml.merges",
+    );
+    push_u32_field(
+        &mut entries,
+        custom,
+        "tokenizer.bos_token_id",
+        "tokenizer.ggml.bos_token_id",
+    );
+    push_u32_field(
+        &mut entries,
+        custom,
+        "tokenizer.eos_token_id",
+        "tokenizer.ggml.eos_token_id",
+    );
+    push_i32_array(
+        &mut entries,
+        custom,
+        "tokenizer.token_type",
+        "tokenizer.ggml.token_type",
+    );
+    push_u32_field(
+        &mut entries,
+        custom,
+        "tokenizer.padding_token_id",
+        "tokenizer.ggml.padding_token_id",
+    );
 
     // GH-253-1: add_bos_token flag
-    if let Some(add_bos) = custom.get("tokenizer.add_bos_token").and_then(|v| v.as_bool()) {
+    if let Some(add_bos) = custom
+        .get("tokenizer.add_bos_token")
+        .and_then(|v| v.as_bool())
+    {
         entries.push((
             "tokenizer.ggml.add_bos_token".to_string(),
             GgufValue::Bool(add_bos),
@@ -1002,9 +1157,7 @@ fn hf_to_gguf_name(name: &str) -> String {
 // ============================================================================
 
 /// Infer hidden_size from embedding tensor (BUG-EXPORT-001: pick smaller dim)
-fn infer_hidden_size(
-    tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
-) -> (usize, bool) {
+fn infer_hidden_size(tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>) -> (usize, bool) {
     tensors
         .iter()
         .find(|(name, _)| name.contains("embed_tokens") || name.contains("token_embd"))
@@ -1051,9 +1204,7 @@ fn infer_num_layers(tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>) -> usize
 }
 
 /// Infer vocab_size from lm_head, output, or embedding tensor (BUG-EXPORT-001: pick larger dim)
-fn infer_vocab_size(
-    tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
-) -> (usize, bool) {
+fn infer_vocab_size(tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>) -> (usize, bool) {
     tensors
         .iter()
         .find(|(name, _)| name.contains("lm_head") || name.contains("output.weight"))

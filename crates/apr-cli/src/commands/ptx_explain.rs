@@ -51,20 +51,46 @@ fn print_ptx_analysis_report(
     println!("\x1b[1mRegisters:\x1b[0m");
     println!(
         "  f32: {}  f64: {}  b32: {}  b64: {}  pred: {}",
-        report.registers.f32_regs, report.registers.f64_regs,
-        report.registers.b32_regs, report.registers.b64_regs, report.registers.pred_regs,
+        report.registers.f32_regs,
+        report.registers.f64_regs,
+        report.registers.b32_regs,
+        report.registers.b64_regs,
+        report.registers.pred_regs,
     );
-    println!("  Total: {}  Estimated occupancy: {:.0}%\n", report.registers.total(), report.estimated_occupancy * 100.0);
+    println!(
+        "  Total: {}  Estimated occupancy: {:.0}%\n",
+        report.registers.total(),
+        report.estimated_occupancy * 100.0
+    );
 
     println!("\x1b[1mMemory:\x1b[0m");
-    println!("  Global loads: {}  Global stores: {}", report.memory.global_loads, report.memory.global_stores);
-    println!("  Shared loads: {}  Shared stores: {}", report.memory.shared_loads, report.memory.shared_stores);
-    println!("  Coalescing ratio: {:.1}%\n", report.memory.coalesced_ratio * 100.0);
+    println!(
+        "  Global loads: {}  Global stores: {}",
+        report.memory.global_loads, report.memory.global_stores
+    );
+    println!(
+        "  Shared loads: {}  Shared stores: {}",
+        report.memory.shared_loads, report.memory.shared_stores
+    );
+    println!(
+        "  Coalescing ratio: {:.1}%\n",
+        report.memory.coalesced_ratio * 100.0
+    );
 
     println!("\x1b[1mRoofline:\x1b[0m");
     println!("  Instructions: {}", report.instruction_count);
-    println!("  Arithmetic intensity: {:.2} FLOP/byte", report.roofline.arithmetic_intensity);
-    println!("  Bottleneck: {}\n", if report.roofline.memory_bound { "MEMORY-BOUND" } else { "COMPUTE-BOUND" });
+    println!(
+        "  Arithmetic intensity: {:.2} FLOP/byte",
+        report.roofline.arithmetic_intensity
+    );
+    println!(
+        "  Bottleneck: {}\n",
+        if report.roofline.memory_bound {
+            "MEMORY-BOUND"
+        } else {
+            "COMPUTE-BOUND"
+        }
+    );
 
     if !report.warnings.is_empty() {
         println!("\x1b[1;33mMuda (Waste) Warnings:\x1b[0m");
@@ -89,8 +115,15 @@ fn print_ptx_analysis_report(
 
 /// Print PTX bug analysis report.
 fn print_ptx_bug_report(bug_report: &trueno_explain::PtxBugReport) {
-    let color = if bug_report.bugs.is_empty() { "32" } else { "31" };
-    let name_suffix = bug_report.kernel_name.as_ref().map_or(String::new(), |n| format!(": {n}"));
+    let color = if bug_report.bugs.is_empty() {
+        "32"
+    } else {
+        "31"
+    };
+    let name_suffix = bug_report
+        .kernel_name
+        .as_ref()
+        .map_or(String::new(), |n| format!(": {n}"));
     println!("\x1b[1;{color}m=== PTX Bug Analysis{name_suffix} ===\x1b[0m");
     println!("  Lines analyzed: {}", bug_report.lines_analyzed);
     println!("  Strict mode: {}", bug_report.strict_mode);
@@ -108,7 +141,10 @@ fn print_ptx_bug_report(bug_report: &trueno_explain::PtxBugReport) {
             trueno_explain::BugSeverity::Medium => "35",
             trueno_explain::BugSeverity::FalsePositive => "36",
         };
-        println!("  \x1b[{severity_color}m[{:?}]\x1b[0m Line {}: {}", bug.class, bug.line, bug.message);
+        println!(
+            "  \x1b[{severity_color}m[{:?}]\x1b[0m Line {}: {}",
+            bug.class, bug.line, bug.message
+        );
         if !bug.instruction.is_empty() {
             println!("    Instruction: {}", bug.instruction);
         }

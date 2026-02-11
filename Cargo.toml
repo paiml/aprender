@@ -161,7 +161,7 @@ trueno = { version = "0.14.5", path = "../trueno" }
 
 # K-quantization formats (Q4_K, Q5_K, Q6_K) - Toyota Way: ONE source of truth
 # Path dependency until published to crates.io
-trueno-quant = { path = "../trueno/crates/trueno-quant" }
+trueno-quant = { version = "0.1", path = "../trueno/crates/trueno-quant" }
 
 # RAG pipeline for document-based ML (optional, GH-125)
 trueno-rag = { version = "0.1.10", optional = true }

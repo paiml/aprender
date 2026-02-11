@@ -187,11 +187,17 @@ fn run_apr(opts: &HexOptions) -> Result<(), CliError> {
         return print_apr_distributions(&reader, &filtered);
     }
     if opts.contract {
-        println!("{}", output::badge_info("Layout contract not applicable for APR files (use with GGUF)"));
+        println!(
+            "{}",
+            output::badge_info("Layout contract not applicable for APR files (use with GGUF)")
+        );
         return Ok(());
     }
     if opts.blocks {
-        println!("{}", output::badge_info("Block view requires GGUF quantized tensors"));
+        println!(
+            "{}",
+            output::badge_info("Block view requires GGUF quantized tensors")
+        );
         return Ok(());
     }
 
@@ -209,7 +215,10 @@ fn print_empty_filter(json: bool) -> Result<(), CliError> {
     Ok(())
 }
 
-fn print_apr_distributions(reader: &AprReader, filtered: &[&AprTensorDescriptor]) -> Result<(), CliError> {
+fn print_apr_distributions(
+    reader: &AprReader,
+    filtered: &[&AprTensorDescriptor],
+) -> Result<(), CliError> {
     for tensor in filtered {
         if let Ok(data) = reader.read_tensor_f32(&tensor.name) {
             println!("{}: {}", "Distribution".bold(), tensor.name.cyan());
@@ -328,7 +337,11 @@ fn run_gguf(opts: &HexOptions, bytes: &[u8]) -> Result<(), CliError> {
     Ok(())
 }
 
-fn print_gguf_blocks(filtered: &[&GgufTensorEntry], bytes: &[u8], info: &GgufInfo) -> Result<(), CliError> {
+fn print_gguf_blocks(
+    filtered: &[&GgufTensorEntry],
+    bytes: &[u8],
+    info: &GgufInfo,
+) -> Result<(), CliError> {
     if filtered.is_empty() {
         println!("{}", "No tensors match the filter pattern".yellow());
         return Ok(());
@@ -363,7 +376,11 @@ fn print_gguf_summary(path: &Path, info: &GgufInfo, bytes: &[u8]) {
     output::header(&format!("GGUF Binary Forensics: {}", path.display()));
     output::metric("Format", format!("GGUF v{}", info.version), "");
     output::metric("Tensors", output::count_fmt(info.tensor_count as usize), "");
-    output::metric("Metadata", output::count_fmt(info.metadata_kv_count as usize), "KV pairs");
+    output::metric(
+        "Metadata",
+        output::count_fmt(info.metadata_kv_count as usize),
+        "KV pairs",
+    );
     output::metric("Data offset", format!("0x{:X}", info.data_offset), "");
     output::metric("File size", output::format_size(bytes.len() as u64), "");
 }
@@ -533,13 +550,17 @@ struct SafeTensorsHeader {
 
 fn parse_safetensors_header(bytes: &[u8]) -> Result<SafeTensorsHeader, CliError> {
     if bytes.len() < 9 {
-        return Err(CliError::InvalidFormat("SafeTensors file too small".to_string()));
+        return Err(CliError::InvalidFormat(
+            "SafeTensors file too small".to_string(),
+        ));
     }
     let header_len = u64::from_le_bytes([
         bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
     ]) as usize;
     if 8 + header_len > bytes.len() {
-        return Err(CliError::InvalidFormat("SafeTensors header length exceeds file size".to_string()));
+        return Err(CliError::InvalidFormat(
+            "SafeTensors header length exceeds file size".to_string(),
+        ));
     }
     let header_json = std::str::from_utf8(&bytes[8..8 + header_len])
         .map_err(|e| CliError::InvalidFormat(format!("Invalid SafeTensors header UTF-8: {e}")))?;
@@ -559,7 +580,10 @@ fn run_safetensors(opts: &HexOptions, bytes: &[u8]) -> Result<(), CliError> {
 
     let tensor_names: Vec<&String> = tensor_map.keys().filter(|k| *k != "__metadata__").collect();
 
-    output::header(&format!("SafeTensors Binary Forensics: {}", opts.file.display()));
+    output::header(&format!(
+        "SafeTensors Binary Forensics: {}",
+        opts.file.display()
+    ));
     output::metric("Tensors", output::count_fmt(tensor_names.len()), "");
     output::metric("Header size", output::format_size(header_len as u64), "");
     output::metric("File size", output::format_size(bytes.len() as u64), "");
@@ -569,11 +593,17 @@ fn run_safetensors(opts: &HexOptions, bytes: &[u8]) -> Result<(), CliError> {
         return list_safetensor_names(&tensor_names, tensor_map);
     }
     if opts.contract {
-        println!("{}", output::badge_info("Layout contract not applicable for SafeTensors"));
+        println!(
+            "{}",
+            output::badge_info("Layout contract not applicable for SafeTensors")
+        );
         return Ok(());
     }
     if opts.blocks {
-        println!("{}", output::badge_info("Block view not applicable for SafeTensors (no quantization)"));
+        println!(
+            "{}",
+            output::badge_info("Block view not applicable for SafeTensors (no quantization)")
+        );
         return Ok(());
     }
 
@@ -606,9 +636,17 @@ fn list_safetensor_names(
     for name in names {
         if let Some(info) = tensor_map.get(name.as_str()) {
             let dtype = info.get("dtype").and_then(|v| v.as_str()).unwrap_or("?");
-            let shape = info.get("shape").and_then(|v| v.as_array()).map(|a| {
-                a.iter().filter_map(|v| v.as_u64()).map(|d| d.to_string()).collect::<Vec<_>>().join(", ")
-            }).unwrap_or_default();
+            let shape = info
+                .get("shape")
+                .and_then(|v| v.as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|v| v.as_u64())
+                        .map(|d| d.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                })
+                .unwrap_or_default();
             println!("  {} {} [{}]", name, output::dtype_color(dtype), shape);
         }
     }
@@ -630,28 +668,52 @@ fn print_safetensor_entry(
     let (Some(dtype), Some(shape), Some(offsets)) = (
         info.get("dtype").and_then(serde_json::Value::as_str),
         info.get("shape").and_then(serde_json::Value::as_array),
-        info.get("data_offsets").and_then(serde_json::Value::as_array),
-    ) else { return };
+        info.get("data_offsets")
+            .and_then(serde_json::Value::as_array),
+    ) else {
+        return;
+    };
 
-    let shape_str: Vec<String> = shape.iter().filter_map(serde_json::Value::as_u64).map(|d| d.to_string()).collect();
+    let shape_str: Vec<String> = shape
+        .iter()
+        .filter_map(serde_json::Value::as_u64)
+        .map(|d| d.to_string())
+        .collect();
     let num_elements: u64 = shape.iter().filter_map(serde_json::Value::as_u64).product();
-    println!("{}: [{}] = {} elements", "Shape".bold(), shape_str.join(", "), output::count_fmt(num_elements as usize).green());
+    println!(
+        "{}: [{}] = {} elements",
+        "Shape".bold(),
+        shape_str.join(", "),
+        output::count_fmt(num_elements as usize).green()
+    );
     println!("{}: {}", "Dtype".bold(), output::dtype_color(dtype));
 
     let (Some(start), Some(end)) = (
         offsets.first().and_then(serde_json::Value::as_u64),
         offsets.get(1).and_then(serde_json::Value::as_u64),
-    ) else { return };
+    ) else {
+        return;
+    };
 
     let abs_start = 8 + header_len + start as usize;
     let abs_end = 8 + header_len + end as usize;
-    println!("{}: 0x{:X}..0x{:X} ({} bytes)", "Offset".bold(), abs_start, abs_end, output::format_size(end - start));
+    println!(
+        "{}: 0x{:X}..0x{:X} ({} bytes)",
+        "Offset".bold(),
+        abs_start,
+        abs_end,
+        output::format_size(end - start)
+    );
 
     if dtype == "F32" && abs_end <= bytes.len() {
         let tensor_bytes = &bytes[abs_start..abs_end];
-        let f32_data: Vec<f32> = tensor_bytes.chunks_exact(4)
-            .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect();
-        if opts.stats { print_tensor_stats(&f32_data); }
+        let f32_data: Vec<f32> = tensor_bytes
+            .chunks_exact(4)
+            .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+            .collect();
+        if opts.stats {
+            print_tensor_stats(&f32_data);
+        }
         if opts.distribution {
             let analysis = compute_distribution(&f32_data);
             print_distribution(&analysis);
@@ -815,13 +877,17 @@ fn print_raw_hex_row(addr: usize, chunk: &[u8], width: usize) {
 
     // Hex bytes with midpoint separator
     for (j, &b) in chunk.iter().enumerate() {
-        if j == width / 2 && width >= 8 { print!(" "); }
+        if j == width / 2 && width >= 8 {
+            print!(" ");
+        }
         print!("{}", format!("{b:02X} ").yellow());
     }
     // Pad short rows
     let missing = width - chunk.len();
     for j in 0..missing {
-        if chunk.len() + j == width / 2 && width >= 8 { print!(" "); }
+        if chunk.len() + j == width / 2 && width >= 8 {
+            print!(" ");
+        }
         print!("   ");
     }
 
@@ -834,7 +900,9 @@ fn print_raw_hex_row(addr: usize, chunk: &[u8], width: usize) {
             print!("{}", ".".dimmed());
         }
     }
-    for _ in 0..missing { print!(" "); }
+    for _ in 0..missing {
+        print!(" ");
+    }
     println!("|");
 }
 
@@ -1011,13 +1079,26 @@ struct ValueScan {
 
 fn scan_values(data: &[f32]) -> ValueScan {
     let mut s = ValueScan {
-        nan_count: 0, inf_count: 0, zero_count: 0,
-        min: f32::INFINITY, max: f32::NEG_INFINITY, sum: 0.0, valid_count: 0,
+        nan_count: 0,
+        inf_count: 0,
+        zero_count: 0,
+        min: f32::INFINITY,
+        max: f32::NEG_INFINITY,
+        sum: 0.0,
+        valid_count: 0,
     };
     for &x in data {
-        if x.is_nan() { s.nan_count += 1; continue; }
-        if x.is_infinite() { s.inf_count += 1; continue; }
-        if x == 0.0 { s.zero_count += 1; }
+        if x.is_nan() {
+            s.nan_count += 1;
+            continue;
+        }
+        if x.is_infinite() {
+            s.inf_count += 1;
+            continue;
+        }
+        if x == 0.0 {
+            s.zero_count += 1;
+        }
         s.min = s.min.min(x);
         s.max = s.max.max(x);
         s.sum += f64::from(x);
@@ -1030,7 +1111,9 @@ fn scan_values(data: &[f32]) -> ValueScan {
 fn compute_moments(data: &[f32], mean: f64, valid_count: usize) -> (f64, f64, f64) {
     let (mut m2, mut m3, mut m4) = (0.0_f64, 0.0_f64, 0.0_f64);
     for &x in data {
-        if x.is_nan() || x.is_infinite() { continue; }
+        if x.is_nan() || x.is_infinite() {
+            continue;
+        }
         let d = f64::from(x) - mean;
         let d2 = d * d;
         m2 += d2;
@@ -1039,45 +1122,87 @@ fn compute_moments(data: &[f32], mean: f64, valid_count: usize) -> (f64, f64, f6
     }
     let variance = m2 / valid_count as f64;
     let std = variance.sqrt();
-    let skewness = if std > 0.0 { (m3 / valid_count as f64) / (std * std * std) } else { 0.0 };
-    let kurtosis = if std > 0.0 { (m4 / valid_count as f64) / (variance * variance) } else { 0.0 };
+    let skewness = if std > 0.0 {
+        (m3 / valid_count as f64) / (std * std * std)
+    } else {
+        0.0
+    };
+    let kurtosis = if std > 0.0 {
+        (m4 / valid_count as f64) / (variance * variance)
+    } else {
+        0.0
+    };
     (std, skewness, kurtosis)
 }
 
 /// Build histogram bins for valid (non-NaN, non-Inf) values.
-fn build_histogram(data: &[f32], min: f32, max: f32, num_bins: usize, valid_count: usize) -> (Vec<(f64, f64, usize)>, f64) {
+fn build_histogram(
+    data: &[f32],
+    min: f32,
+    max: f32,
+    num_bins: usize,
+    valid_count: usize,
+) -> (Vec<(f64, f64, usize)>, f64) {
     let range = f64::from(max) - f64::from(min);
-    let bin_width = if range > 0.0 { range / num_bins as f64 } else { 1.0 };
+    let bin_width = if range > 0.0 {
+        range / num_bins as f64
+    } else {
+        1.0
+    };
     let mut bins = vec![0usize; num_bins];
     for &x in data {
-        if x.is_nan() || x.is_infinite() { continue; }
+        if x.is_nan() || x.is_infinite() {
+            continue;
+        }
         let idx = (((f64::from(x) - f64::from(min)) / bin_width) as usize).min(num_bins - 1);
         bins[idx] += 1;
     }
-    let histogram: Vec<(f64, f64, usize)> = bins.iter().enumerate().map(|(i, &count)| {
-        let start = f64::from(min) + i as f64 * bin_width;
-        (start, start + bin_width, count)
-    }).collect();
-    let entropy: f64 = histogram.iter().filter(|(_, _, c)| *c > 0).map(|(_, _, c)| {
-        let p = *c as f64 / valid_count as f64;
-        -p * p.log2()
-    }).sum();
+    let histogram: Vec<(f64, f64, usize)> = bins
+        .iter()
+        .enumerate()
+        .map(|(i, &count)| {
+            let start = f64::from(min) + i as f64 * bin_width;
+            (start, start + bin_width, count)
+        })
+        .collect();
+    let entropy: f64 = histogram
+        .iter()
+        .filter(|(_, _, c)| *c > 0)
+        .map(|(_, _, c)| {
+            let p = *c as f64 / valid_count as f64;
+            -p * p.log2()
+        })
+        .sum();
     (histogram, entropy)
 }
 
 fn empty_distribution(total: usize, scan: &ValueScan) -> DistributionAnalysis {
     DistributionAnalysis {
-        histogram: Vec::new(), total, entropy: 0.0, kurtosis: 0.0, skewness: 0.0,
-        nan_count: scan.nan_count, inf_count: scan.inf_count, zero_count: scan.zero_count,
-        min: 0.0, max: 0.0, mean: 0.0, std: 0.0,
+        histogram: Vec::new(),
+        total,
+        entropy: 0.0,
+        kurtosis: 0.0,
+        skewness: 0.0,
+        nan_count: scan.nan_count,
+        inf_count: scan.inf_count,
+        zero_count: scan.zero_count,
+        min: 0.0,
+        max: 0.0,
+        mean: 0.0,
+        std: 0.0,
     }
 }
 
 fn compute_distribution(data: &[f32]) -> DistributionAnalysis {
     if data.is_empty() {
         let empty_scan = ValueScan {
-            nan_count: 0, inf_count: 0, zero_count: 0,
-            min: f32::INFINITY, max: f32::NEG_INFINITY, sum: 0.0, valid_count: 0,
+            nan_count: 0,
+            inf_count: 0,
+            zero_count: 0,
+            min: f32::INFINITY,
+            max: f32::NEG_INFINITY,
+            sum: 0.0,
+            valid_count: 0,
         };
         return empty_distribution(0, &empty_scan);
     }
@@ -1092,9 +1217,18 @@ fn compute_distribution(data: &[f32]) -> DistributionAnalysis {
     let (histogram, entropy) = build_histogram(data, scan.min, scan.max, 10, scan.valid_count);
 
     DistributionAnalysis {
-        histogram, total: data.len(), entropy, kurtosis, skewness,
-        nan_count: scan.nan_count, inf_count: scan.inf_count, zero_count: scan.zero_count,
-        min: scan.min, max: scan.max, mean, std,
+        histogram,
+        total: data.len(),
+        entropy,
+        kurtosis,
+        skewness,
+        nan_count: scan.nan_count,
+        inf_count: scan.inf_count,
+        zero_count: scan.zero_count,
+        min: scan.min,
+        max: scan.max,
+        mean,
+        std,
     }
 }
 

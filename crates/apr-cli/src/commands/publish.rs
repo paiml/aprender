@@ -133,7 +133,13 @@ pub fn execute(
     }
 
     let model_card = generate_model_card(
-        repo_id, model_name, license, pipeline_tag, library_name, tags, &files,
+        repo_id,
+        model_name,
+        license,
+        pipeline_tag,
+        library_name,
+        tags,
+        &files,
     );
     let readme_content = model_card.to_huggingface_extended(pipeline_tag, library_name, tags);
 
@@ -150,9 +156,8 @@ pub fn execute(
         return Ok(());
     }
 
-    let client = HfHubClient::new().map_err(|e| {
-        CliError::ValidationFailed(format!("Failed to create HF Hub client: {e}"))
-    })?;
+    let client = HfHubClient::new()
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to create HF Hub client: {e}")))?;
 
     if !client.is_authenticated() {
         return Err(CliError::ValidationFailed(
@@ -173,7 +178,14 @@ pub fn execute(
         total_size as f64 / 1_000_000.0
     );
 
-    upload_to_hub(&client, repo_id, &files, &readme_content, commit_msg, verbose)?;
+    upload_to_hub(
+        &client,
+        repo_id,
+        &files,
+        &readme_content,
+        commit_msg,
+        verbose,
+    )?;
 
     println!("\n✓ Published to https://huggingface.co/{}", repo_id);
     Ok(())

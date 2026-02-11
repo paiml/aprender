@@ -537,7 +537,12 @@ fn cross_validate_rope_theta(
     matches: &mut Vec<CrossValidationEntry>,
     mismatches: &mut Vec<CrossValidationEntry>,
 ) {
-    let Some(hf_theta) = hf_config.get("rope_theta").and_then(serde_json::Value::as_f64) else { return };
+    let Some(hf_theta) = hf_config
+        .get("rope_theta")
+        .and_then(serde_json::Value::as_f64)
+    else {
+        return;
+    };
     let contract_theta = size.rope_theta;
     let status = if (contract_theta - hf_theta).abs() < 1.0 {
         "match"
@@ -552,7 +557,11 @@ fn cross_validate_rope_theta(
         hf_value: format!("{hf_theta}"),
         status: status.to_string(),
     };
-    if status == "mismatch" { mismatches.push(entry); } else { matches.push(entry); }
+    if status == "mismatch" {
+        mismatches.push(entry);
+    } else {
+        matches.push(entry);
+    }
 }
 
 fn cross_validate_norm_eps(
@@ -561,20 +570,29 @@ fn cross_validate_norm_eps(
     matches: &mut Vec<CrossValidationEntry>,
     mismatches: &mut Vec<CrossValidationEntry>,
 ) {
-    let hf_eps = hf_config.get("rms_norm_eps")
+    let hf_eps = hf_config
+        .get("rms_norm_eps")
         .or_else(|| hf_config.get("layer_norm_eps"))
         .or_else(|| hf_config.get("layer_norm_epsilon"))
         .and_then(serde_json::Value::as_f64);
     let Some(hf_eps_val) = hf_eps else { return };
     let contract_eps = size.norm_eps;
-    let status = if (contract_eps - hf_eps_val).abs() < 1e-12 { "match" } else { "mismatch" };
+    let status = if (contract_eps - hf_eps_val).abs() < 1e-12 {
+        "match"
+    } else {
+        "mismatch"
+    };
     let entry = CrossValidationEntry {
         field: "norm_eps".to_string(),
         contract_value: format!("{contract_eps:.1e}"),
         hf_value: format!("{hf_eps_val:.1e}"),
         status: status.to_string(),
     };
-    if status == "mismatch" { mismatches.push(entry); } else { matches.push(entry); }
+    if status == "mismatch" {
+        mismatches.push(entry);
+    } else {
+        matches.push(entry);
+    }
 }
 
 fn cross_validate_model_type(
@@ -594,16 +612,29 @@ fn cross_validate_model_type(
 
 fn collect_untracked_hf_fields(hf_config: &serde_json::Value, hf_only: &mut Vec<String>) {
     const TRACKED: &[&str] = &[
-        "hidden_size", "num_hidden_layers", "num_attention_heads",
-        "num_key_value_heads", "intermediate_size", "vocab_size",
-        "max_position_embeddings", "rope_theta", "rms_norm_eps",
-        "layer_norm_eps", "layer_norm_epsilon", "model_type",
+        "hidden_size",
+        "num_hidden_layers",
+        "num_attention_heads",
+        "num_key_value_heads",
+        "intermediate_size",
+        "vocab_size",
+        "max_position_embeddings",
+        "rope_theta",
+        "rms_norm_eps",
+        "layer_norm_eps",
+        "layer_norm_epsilon",
+        "model_type",
     ];
     const INTERESTING: &[&str] = &[
-        "rope_scaling", "sliding_window", "attention_dropout",
-        "use_cache", "tie_word_embeddings",
+        "rope_scaling",
+        "sliding_window",
+        "attention_dropout",
+        "use_cache",
+        "tie_word_embeddings",
     ];
-    let Some(obj) = hf_config.as_object() else { return };
+    let Some(obj) = hf_config.as_object() else {
+        return;
+    };
     for key in obj.keys() {
         if !TRACKED.contains(&key.as_str()) && INTERESTING.contains(&key.as_str()) {
             hf_only.push(format!("{key}={}", obj[key]));
@@ -993,16 +1024,14 @@ fn run_local_mode(
     let tensor_names: Vec<&str> = report.tensors.iter().map(|t| t.name.as_str()).collect();
 
     // Detect family — try tensor names first (SafeTensors), then GGUF architecture metadata
-    let detected_family = registry
-        .detect_family(&tensor_names)
-        .or_else(|| {
-            // GGUF uses different tensor naming (blk.0.attn_q vs model.layers.0.self_attn.q_proj).
-            // Fall back to GGUF architecture metadata (e.g., "qwen2" → Qwen2 family).
-            report
-                .architecture
-                .as_deref()
-                .and_then(|arch| registry.detect_from_model_type(arch))
-        });
+    let detected_family = registry.detect_family(&tensor_names).or_else(|| {
+        // GGUF uses different tensor naming (blk.0.attn_q vs model.layers.0.self_attn.q_proj).
+        // Fall back to GGUF architecture metadata (e.g., "qwen2" → Qwen2 family).
+        report
+            .architecture
+            .as_deref()
+            .and_then(|arch| registry.detect_from_model_type(arch))
+    });
 
     // Build format info
     let format_info = FormatInfo {

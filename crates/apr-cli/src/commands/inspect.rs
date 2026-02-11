@@ -151,23 +151,43 @@ pub(crate) fn run(
 
 /// GGUF/SafeTensors inspect via RosettaStone
 /// Print rosetta inspection report as JSON.
-fn output_rosetta_json(
-    path: &Path,
-    report: &aprender::format::rosetta::InspectionReport,
-) {
+fn output_rosetta_json(path: &Path, report: &aprender::format::rosetta::InspectionReport) {
     let mut json_map = serde_json::Map::new();
-    json_map.insert("file".to_string(), serde_json::Value::String(path.display().to_string()));
-    json_map.insert("format".to_string(), serde_json::Value::String(report.format.to_string()));
-    json_map.insert("file_size".to_string(), serde_json::Value::Number(serde_json::Number::from(report.file_size)));
-    json_map.insert("total_params".to_string(), serde_json::Value::Number(serde_json::Number::from(report.total_params)));
+    json_map.insert(
+        "file".to_string(),
+        serde_json::Value::String(path.display().to_string()),
+    );
+    json_map.insert(
+        "format".to_string(),
+        serde_json::Value::String(report.format.to_string()),
+    );
+    json_map.insert(
+        "file_size".to_string(),
+        serde_json::Value::Number(serde_json::Number::from(report.file_size)),
+    );
+    json_map.insert(
+        "total_params".to_string(),
+        serde_json::Value::Number(serde_json::Number::from(report.total_params)),
+    );
     if let Some(ref arch) = report.architecture {
-        json_map.insert("architecture".to_string(), serde_json::Value::String(arch.clone()));
+        json_map.insert(
+            "architecture".to_string(),
+            serde_json::Value::String(arch.clone()),
+        );
     }
     if let Some(ref quant) = report.quantization {
-        json_map.insert("quantization".to_string(), serde_json::Value::String(quant.clone()));
+        json_map.insert(
+            "quantization".to_string(),
+            serde_json::Value::String(quant.clone()),
+        );
     }
-    json_map.insert("tensor_count".to_string(), serde_json::Value::Number(serde_json::Number::from(report.tensors.len())));
-    let metadata: serde_json::Value = report.metadata.iter()
+    json_map.insert(
+        "tensor_count".to_string(),
+        serde_json::Value::Number(serde_json::Number::from(report.tensors.len())),
+    );
+    let metadata: serde_json::Value = report
+        .metadata
+        .iter()
         .map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone())))
         .collect::<serde_json::Map<_, _>>()
         .into();
@@ -197,9 +217,15 @@ fn output_rosetta_text(report: &aprender::format::rosetta::InspectionReport) {
 
     if !report.metadata.is_empty() {
         output::subheader(&format!("Metadata ({} keys)", report.metadata.len()));
-        let meta_pairs: Vec<(&str, String)> = report.metadata.iter()
+        let meta_pairs: Vec<(&str, String)> = report
+            .metadata
+            .iter()
             .map(|(k, v)| {
-                let display_v = if v.len() > 60 { format!("{}...", &v[..60]) } else { v.clone() };
+                let display_v = if v.len() > 60 {
+                    format!("{}...", &v[..60])
+                } else {
+                    v.clone()
+                };
                 (k.as_str(), display_v)
             })
             .collect();
@@ -219,11 +245,16 @@ fn output_rosetta_text(report: &aprender::format::rosetta::InspectionReport) {
         } else if i == 10 {
             rows.push(vec![
                 format!("... {} more ...", report.tensors.len().saturating_sub(12)),
-                String::new(), String::new(), String::new(),
+                String::new(),
+                String::new(),
+                String::new(),
             ]);
         }
     }
-    println!("{}", output::table(&["Name", "DType", "Shape", "Size"], &rows));
+    println!(
+        "{}",
+        output::table(&["Name", "DType", "Shape", "Size"], &rows)
+    );
 }
 
 fn run_rosetta_inspect(path: &Path, json_output: bool) -> Result<(), CliError> {

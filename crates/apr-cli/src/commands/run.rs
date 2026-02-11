@@ -280,11 +280,15 @@ fn resolve_model(source: &ModelSource, _force: bool, offline: bool) -> Result<Pa
 fn find_model_file_in_dir(dir: &Path, file: Option<&str>) -> Option<PathBuf> {
     if let Some(filename) = file {
         let path = dir.join(filename);
-        if path.exists() { return Some(path); }
+        if path.exists() {
+            return Some(path);
+        }
     } else {
         for name in &["model.safetensors", "pytorch_model.bin", "model.apr"] {
             let path = dir.join(name);
-            if path.exists() { return Some(path); }
+            if path.exists() {
+                return Some(path);
+            }
         }
     }
     None
@@ -292,8 +296,13 @@ fn find_model_file_in_dir(dir: &Path, file: Option<&str>) -> Option<PathBuf> {
 
 /// Search HuggingFace hub cache snapshots for a model.
 fn find_in_hf_cache(org: &str, repo: &str, file: Option<&str>) -> Option<PathBuf> {
-    let hf_cache = dirs::home_dir()?.join(".cache").join("huggingface").join("hub");
-    let snapshots_dir = hf_cache.join(format!("models--{org}--{repo}")).join("snapshots");
+    let hf_cache = dirs::home_dir()?
+        .join(".cache")
+        .join("huggingface")
+        .join("hub");
+    let snapshots_dir = hf_cache
+        .join(format!("models--{org}--{repo}"))
+        .join("snapshots");
     let entries = std::fs::read_dir(&snapshots_dir).ok()?;
     for entry in entries.flatten() {
         if let Some(found) = find_model_file_in_dir(&entry.path(), file) {
@@ -305,15 +314,26 @@ fn find_in_hf_cache(org: &str, repo: &str, file: Option<&str>) -> Option<PathBuf
 
 /// Search APR cache for a model.
 fn find_in_apr_cache(org: &str, repo: &str, file: Option<&str>) -> Option<PathBuf> {
-    let apr_cache = dirs::home_dir()?.join(".apr").join("cache").join("hf").join(org).join(repo);
-    if !apr_cache.exists() { return None; }
+    let apr_cache = dirs::home_dir()?
+        .join(".apr")
+        .join("cache")
+        .join("hf")
+        .join(org)
+        .join(repo);
+    if !apr_cache.exists() {
+        return None;
+    }
     if let Some(filename) = file {
         let path = apr_cache.join(filename);
-        if path.exists() { return Some(path); }
+        if path.exists() {
+            return Some(path);
+        }
     } else {
         for ext in &["apr", "safetensors", "gguf"] {
             let path = apr_cache.join(format!("model.{ext}"));
-            if path.exists() { return Some(path); }
+            if path.exists() {
+                return Some(path);
+            }
         }
     }
     None
@@ -494,7 +514,10 @@ fn extract_shard_files(json: &str) -> HashSet<String> {
     let Some(entries) = find_brace_content(&json[weight_map_start..]) else {
         return HashSet::new();
     };
-    entries.split(',').filter_map(extract_shard_filename).collect()
+    entries
+        .split(',')
+        .filter_map(extract_shard_filename)
+        .collect()
 }
 
 /// Download model from arbitrary URL
@@ -774,7 +797,8 @@ fn execute_apr_inference(
             }
         };
 
-        let input_tokens = prepare_apr_input_tokens(model_path, options.prompt.as_deref(), input_path)?;
+        let input_tokens =
+            prepare_apr_input_tokens(model_path, options.prompt.as_deref(), input_path)?;
 
         let max_new_tokens = options.max_tokens;
 
@@ -794,7 +818,8 @@ fn execute_apr_inference(
             .dimmed()
         );
 
-        let mut tracer = setup_apr_tracer(options, &architecture, &model, vocab_size, &input_tokens);
+        let mut tracer =
+            setup_apr_tracer(options, &architecture, &model, vocab_size, &input_tokens);
 
         // Run generation (GPU or CPU path)
         let infer_start = Instant::now();
@@ -832,14 +857,29 @@ fn execute_apr_inference(
         };
         let infer_time = infer_start.elapsed();
 
-        trace_apr_decode_steps(&mut tracer, &output_tokens[input_tokens.len()..], vocab, vocab_size);
+        trace_apr_decode_steps(
+            &mut tracer,
+            &output_tokens[input_tokens.len()..],
+            vocab,
+            vocab_size,
+        );
 
         return Ok(format_apr_inference_output(
-            &architecture, vocab_size, &input_tokens, &output_tokens, infer_time, vocab,
+            &architecture,
+            vocab_size,
+            &input_tokens,
+            &output_tokens,
+            infer_time,
+            vocab,
         ));
     }
 
-    Ok(format_non_transformer_output(&model, &model_type, &architecture, load_time))
+    Ok(format_non_transformer_output(
+        &model,
+        &model_type,
+        &architecture,
+        load_time,
+    ))
 }
 
 /// Trace DECODE steps for each generated token (APR-TRACE-001).
@@ -874,7 +914,10 @@ fn format_non_transformer_output(
     let tensor_names = model.tensor_names();
     let mut output = format!(
         "APR v2 Model: {}\nArchitecture: {}\nTensors: {}\nLoad time: {:.2}ms\n\n",
-        model_type, architecture, model.tensor_count(), load_time.as_secs_f64() * 1000.0
+        model_type,
+        architecture,
+        model.tensor_count(),
+        load_time.as_secs_f64() * 1000.0
     );
     output.push_str("Available tensors:\n");
     for name in tensor_names.iter().take(20) {
@@ -1522,7 +1565,10 @@ fn prepare_gguf_input_tokens(
         };
 
         if options.trace || options.verbose {
-            eprintln!("[APR-TRACE] Model: {} (instruct={})", model_name, is_instruct);
+            eprintln!(
+                "[APR-TRACE] Model: {} (instruct={})",
+                model_name, is_instruct
+            );
             eprintln!("[APR-TRACE] Formatted prompt: {:?}", formatted_prompt);
         }
 
@@ -1588,9 +1634,8 @@ fn execute_gguf_inference(
 
     match model_result {
         Ok(model) => {
-            let input_tokens = prepare_gguf_input_tokens(
-                model_path, &mapped_model, options, input_path,
-            )?;
+            let input_tokens =
+                prepare_gguf_input_tokens(model_path, &mapped_model, options, input_path)?;
 
             let max_new_tokens = options.max_tokens;
             // PAR-200: Use greedy sampling for GPU argmax path (faster + deterministic)
@@ -1732,8 +1777,8 @@ fn traced_generate(
     if trace_enabled {
         let opts = trace_options.expect("trace_options must be Some when trace_enabled");
         let tracer = setup_gguf_tracer(opts, model_name, config);
-        let result = generate_fn()
-            .map_err(|e| CliError::InferenceFailed(format!("{error_label}: {e}")))?;
+        let result =
+            generate_fn().map_err(|e| CliError::InferenceFailed(format!("{error_label}: {e}")))?;
         if let Err(e) = tracer.write_output() {
             eprintln!("Warning: Failed to write trace output: {e}");
         }
@@ -1777,10 +1822,16 @@ fn run_gguf_generate(
         let config = cuda_model.model().config.clone();
         let tokens = traced_generate(
             || cuda_model.generate_gpu_resident(input_tokens, gen_config),
-            trace_options, "GGUF Model (GPU)", &config, "GPU generation failed",
+            trace_options,
+            "GGUF Model (GPU)",
+            &config,
+            "GPU generation failed",
         )?;
 
-        return Ok(GgufGenerateResult { tokens, inference_ms: infer_start.elapsed().as_secs_f64() * 1000.0 });
+        return Ok(GgufGenerateResult {
+            tokens,
+            inference_ms: infer_start.elapsed().as_secs_f64() * 1000.0,
+        });
     }
 
     #[allow(unused_variables)]
@@ -1789,10 +1840,16 @@ fn run_gguf_generate(
     let config = model.config.clone();
     let tokens = traced_generate(
         || model.generate_with_cache(input_tokens, gen_config),
-        trace_options, "GGUF Model", &config, "Generation failed",
+        trace_options,
+        "GGUF Model",
+        &config,
+        "Generation failed",
     )?;
 
-    Ok(GgufGenerateResult { tokens, inference_ms: infer_start.elapsed().as_secs_f64() * 1000.0 })
+    Ok(GgufGenerateResult {
+        tokens,
+        inference_ms: infer_start.elapsed().as_secs_f64() * 1000.0,
+    })
 }
 
 /// Parse input features from file or stdin
@@ -1947,11 +2004,26 @@ fn print_roofline_profile(result: &RunResult, max_tokens: usize) {
     let tok_per_sec = tokens_generated as f64 / result.duration_secs;
 
     let (compute_pct, memory_pct, bottleneck, recommendation) = if tok_per_sec > 50.0 {
-        (65, 35, "Compute (GPU)", "Model is GPU-accelerated, running efficiently")
+        (
+            65,
+            35,
+            "Compute (GPU)",
+            "Model is GPU-accelerated, running efficiently",
+        )
     } else if tok_per_sec > 20.0 {
-        (45, 55, "Mixed", "Consider GPU acceleration for better throughput")
+        (
+            45,
+            55,
+            "Mixed",
+            "Consider GPU acceleration for better throughput",
+        )
     } else {
-        (25, 75, "Memory bandwidth (DRAM)", "Use quantized model for better cache utilization")
+        (
+            25,
+            75,
+            "Memory bandwidth (DRAM)",
+            "Use quantized model for better cache utilization",
+        )
     };
 
     eprintln!();
@@ -2005,7 +2077,13 @@ pub(crate) fn run(
 
     // Setup trace config if tracing enabled (APR-TRACE-001)
     if trace {
-        print_trace_config(trace_level, trace_steps, trace_verbose, trace_output.as_ref(), profile);
+        print_trace_config(
+            trace_level,
+            trace_steps,
+            trace_verbose,
+            trace_output.as_ref(),
+            profile,
+        );
     }
 
     let options = RunOptions {
@@ -2038,7 +2116,14 @@ pub(crate) fn run(
         print_roofline_profile(&result, max_tokens);
     }
 
-    print_run_output(&result, source, output_format, max_tokens, benchmark, stream)?;
+    print_run_output(
+        &result,
+        source,
+        output_format,
+        max_tokens,
+        benchmark,
+        stream,
+    )?;
 
     Ok(())
 }

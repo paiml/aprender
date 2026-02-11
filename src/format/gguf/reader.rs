@@ -165,7 +165,10 @@ fn read_i16_le(data: &[u8], offset: usize) -> Result<i16> {
 fn read_i32_le(data: &[u8], offset: usize) -> Result<i32> {
     ensure_bytes(data, offset, 4, "Int32")?;
     Ok(i32::from_le_bytes([
-        data[offset], data[offset + 1], data[offset + 2], data[offset + 3],
+        data[offset],
+        data[offset + 1],
+        data[offset + 2],
+        data[offset + 3],
     ]))
 }
 
@@ -173,7 +176,10 @@ fn read_i32_le(data: &[u8], offset: usize) -> Result<i32> {
 fn read_f32_le(data: &[u8], offset: usize) -> Result<f32> {
     ensure_bytes(data, offset, 4, "Float32")?;
     Ok(f32::from_le_bytes([
-        data[offset], data[offset + 1], data[offset + 2], data[offset + 3],
+        data[offset],
+        data[offset + 1],
+        data[offset + 2],
+        data[offset + 3],
     ]))
 }
 
@@ -181,8 +187,14 @@ fn read_f32_le(data: &[u8], offset: usize) -> Result<f32> {
 fn read_i64_le(data: &[u8], offset: usize) -> Result<i64> {
     ensure_bytes(data, offset, 8, "Int64")?;
     Ok(i64::from_le_bytes([
-        data[offset], data[offset + 1], data[offset + 2], data[offset + 3],
-        data[offset + 4], data[offset + 5], data[offset + 6], data[offset + 7],
+        data[offset],
+        data[offset + 1],
+        data[offset + 2],
+        data[offset + 3],
+        data[offset + 4],
+        data[offset + 5],
+        data[offset + 6],
+        data[offset + 7],
     ]))
 }
 
@@ -190,8 +202,14 @@ fn read_i64_le(data: &[u8], offset: usize) -> Result<i64> {
 fn read_f64_le(data: &[u8], offset: usize) -> Result<f64> {
     ensure_bytes(data, offset, 8, "Float64")?;
     Ok(f64::from_le_bytes([
-        data[offset], data[offset + 1], data[offset + 2], data[offset + 3],
-        data[offset + 4], data[offset + 5], data[offset + 6], data[offset + 7],
+        data[offset],
+        data[offset + 1],
+        data[offset + 2],
+        data[offset + 3],
+        data[offset + 4],
+        data[offset + 5],
+        data[offset + 6],
+        data[offset + 7],
     ]))
 }
 
@@ -201,15 +219,33 @@ pub(crate) fn read_metadata_value(
     value_type: u32,
 ) -> Result<(GgufValue, usize)> {
     match value_type {
-        0 => { ensure_bytes(data, offset, 1, "Uint8")?; Ok((GgufValue::Uint8(data[offset]), 1)) }
-        1 => { ensure_bytes(data, offset, 1, "Int8")?; Ok((GgufValue::Int8(data[offset] as i8), 1)) }
-        2 => { ensure_bytes(data, offset, 2, "Uint16")?; Ok((GgufValue::Uint16(u16::from_le_bytes([data[offset], data[offset + 1]])), 2)) }
+        0 => {
+            ensure_bytes(data, offset, 1, "Uint8")?;
+            Ok((GgufValue::Uint8(data[offset]), 1))
+        }
+        1 => {
+            ensure_bytes(data, offset, 1, "Int8")?;
+            Ok((GgufValue::Int8(data[offset] as i8), 1))
+        }
+        2 => {
+            ensure_bytes(data, offset, 2, "Uint16")?;
+            Ok((
+                GgufValue::Uint16(u16::from_le_bytes([data[offset], data[offset + 1]])),
+                2,
+            ))
+        }
         3 => Ok((GgufValue::Int16(read_i16_le(data, offset)?), 2)),
         4 => Ok((GgufValue::Uint32(read_u32(data, offset)?), 4)),
         5 => Ok((GgufValue::Int32(read_i32_le(data, offset)?), 4)),
         6 => Ok((GgufValue::Float32(read_f32_le(data, offset)?), 4)),
-        7 => { ensure_bytes(data, offset, 1, "Bool")?; Ok((GgufValue::Bool(data[offset] != 0), 1)) }
-        8 => { let (s, len) = read_string(data, offset)?; Ok((GgufValue::String(s), len)) }
+        7 => {
+            ensure_bytes(data, offset, 1, "Bool")?;
+            Ok((GgufValue::Bool(data[offset] != 0), 1))
+        }
+        8 => {
+            let (s, len) = read_string(data, offset)?;
+            Ok((GgufValue::String(s), len))
+        }
         9 => read_metadata_array(data, offset),
         10 => Ok((GgufValue::Uint64(read_u64(data, offset)?), 8)),
         11 => Ok((GgufValue::Int64(read_i64_le(data, offset)?), 8)),

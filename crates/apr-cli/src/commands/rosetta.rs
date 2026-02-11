@@ -512,18 +512,15 @@ pub fn run_verify(source: &Path, intermediate: &str, tolerance: f32, json: bool)
 fn print_compare_header(model_a: &Path, model_b: &Path, prompt: &str) {
     println!(
         "{}",
-        "╔══════════════════════════════════════════════════════════════════════════════╗"
-            .cyan()
+        "╔══════════════════════════════════════════════════════════════════════════════╗".cyan()
     );
     println!(
         "{}",
-        "║                     INFERENCE COMPARISON REPORT (PMAT-114)                   ║"
-            .cyan()
+        "║                     INFERENCE COMPARISON REPORT (PMAT-114)                   ║".cyan()
     );
     println!(
         "{}",
-        "╠══════════════════════════════════════════════════════════════════════════════╣"
-            .cyan()
+        "╠══════════════════════════════════════════════════════════════════════════════╣".cyan()
     );
     println!(
         "║ Model A: {:<66} ║",
@@ -540,8 +537,7 @@ fn print_compare_header(model_a: &Path, model_b: &Path, prompt: &str) {
     );
     println!(
         "{}",
-        "╠══════════════════════════════════════════════════════════════════════════════╣"
-            .cyan()
+        "╠══════════════════════════════════════════════════════════════════════════════╣".cyan()
     );
 }
 
@@ -710,28 +706,23 @@ fn print_token_comparison_table(
 ) -> usize {
     println!(
         "{}",
-        "╠══════════════════════════════════════════════════════════════════════════════╣"
-            .cyan()
+        "╠══════════════════════════════════════════════════════════════════════════════╣".cyan()
     );
     println!(
         "{}",
-        "║                           TOKEN-BY-TOKEN COMPARISON                           ║"
-            .cyan()
+        "║                           TOKEN-BY-TOKEN COMPARISON                           ║".cyan()
     );
     println!(
         "{}",
-        "╠───────┬─────────────────────────────────┬────────────────────────────────┬───╣"
-            .cyan()
+        "╠───────┬─────────────────────────────────┬────────────────────────────────┬───╣".cyan()
     );
     println!(
         "{}",
-        "║ Pos   │ Model A (top-1)                 │ Model B (top-1)                │ Δ ║"
-            .cyan()
+        "║ Pos   │ Model A (top-1)                 │ Model B (top-1)                │ Δ ║".cyan()
     );
     println!(
         "{}",
-        "╠───────┼─────────────────────────────────┼────────────────────────────────┼───╣"
-            .cyan()
+        "╠───────┼─────────────────────────────────┼────────────────────────────────┼───╣".cyan()
     );
 
     let mut mismatches = 0;
@@ -746,11 +737,7 @@ fn print_token_comparison_table(
             mismatches += 1;
         }
 
-        let status_colored = if matches {
-            "✓".green()
-        } else {
-            "✗".red()
-        };
+        let status_colored = if matches { "✓".green() } else { "✗".red() };
 
         println!(
             "║ {:<5} │ token={:<5} logit={:<12.2} │ token={:<5} logit={:<11.2} │ {} ║",
@@ -936,7 +923,10 @@ fn print_inference_diagnosis(
 /// in their filename (e.g. Q4_K_M, Q6_K), APR files may have been quantized at import.
 /// Match a filename against a list of quantization patterns.
 fn match_quant_pattern(name: &str, patterns: &[&str]) -> Option<String> {
-    patterns.iter().find(|q| name.contains(**q)).map(|q| q.to_uppercase())
+    patterns
+        .iter()
+        .find(|q| name.contains(**q))
+        .map(|q| q.to_uppercase())
 }
 
 fn detect_quant_level_from_path(path: &Path) -> String {
@@ -952,9 +942,8 @@ fn detect_quant_level_from_path(path: &Path) -> String {
         "safetensors" => "unquantized (BF16/F16/F32)".to_string(),
         "gguf" => {
             let patterns = &[
-                "q2_k", "q3_k_s", "q3_k_m", "q3_k_l", "q4_0", "q4_1", "q4_k_s", "q4_k_m",
-                "q4_k", "q5_0", "q5_1", "q5_k_s", "q5_k_m", "q5_k", "q6_k", "q8_0", "f16",
-                "f32",
+                "q2_k", "q3_k_s", "q3_k_m", "q3_k_l", "q4_0", "q4_1", "q4_k_s", "q4_k_m", "q4_k",
+                "q5_0", "q5_1", "q5_k_s", "q5_k_m", "q5_k", "q6_k", "q8_0", "f16", "f32",
             ];
             match_quant_pattern(&name, patterns)
                 .unwrap_or_else(|| "GGUF (quant unknown)".to_string())
@@ -1003,18 +992,15 @@ pub(crate) fn check_mixed_quant_warning(model_a: &Path, model_b: &Path) -> Optio
 fn print_diff_header(model_a: &Path, model_b: &Path, count_a: usize, count_b: usize) {
     println!(
         "{}",
-        "╔══════════════════════════════════════════════════════════════════════════════╗"
-            .cyan()
+        "╔══════════════════════════════════════════════════════════════════════════════╗".cyan()
     );
     println!(
         "{}",
-        "║               TENSOR DIFF REPORT (GH-188: Layout Mismatch Detection)        ║"
-            .cyan()
+        "║               TENSOR DIFF REPORT (GH-188: Layout Mismatch Detection)        ║".cyan()
     );
     println!(
         "{}",
-        "╠══════════════════════════════════════════════════════════════════════════════╣"
-            .cyan()
+        "╠══════════════════════════════════════════════════════════════════════════════╣".cyan()
     );
     println!(
         "║ Model A: {:<66} ║",
@@ -1026,8 +1012,7 @@ fn print_diff_header(model_a: &Path, model_b: &Path, count_a: usize, count_b: us
     );
     println!(
         "{}",
-        "╠══════════════════════════════════════════════════════════════════════════════╣"
-            .cyan()
+        "╠══════════════════════════════════════════════════════════════════════════════╣".cyan()
     );
 
     let count_match = count_a == count_b;
@@ -1055,23 +1040,19 @@ fn print_diff_header(model_a: &Path, model_b: &Path, count_a: usize, count_b: us
     );
     println!(
         "{}",
-        "╠══════════════════════════════════════════════════════════════════════════════╣"
-            .cyan()
+        "╠══════════════════════════════════════════════════════════════════════════════╣".cyan()
     );
     println!(
         "{}",
-        "║ GGML Convention: [in_dim, out_dim] - needs transpose for standard matmul     ║"
-            .yellow()
+        "║ GGML Convention: [in_dim, out_dim] - needs transpose for standard matmul     ║".yellow()
     );
     println!(
         "{}",
-        "║ Standard Conv:   [out_dim, in_dim] - expected by most ML code                ║"
-            .yellow()
+        "║ Standard Conv:   [out_dim, in_dim] - expected by most ML code                ║".yellow()
     );
     println!(
         "{}",
-        "╠══════════════════════════════════════════════════════════════════════════════╣"
-            .cyan()
+        "╠══════════════════════════════════════════════════════════════════════════════╣".cyan()
     );
 }
 
@@ -1129,13 +1110,11 @@ fn print_diff_text_summary(
 ) {
     println!(
         "{}",
-        "║                                 SUMMARY                                       ║"
-            .cyan()
+        "║                                 SUMMARY                                       ║".cyan()
     );
     println!(
         "{}",
-        "╠══════════════════════════════════════════════════════════════════════════════╣"
-            .cyan()
+        "╠══════════════════════════════════════════════════════════════════════════════╣".cyan()
     );
     println!("║ Tensors in A: {:<62} ║", tensors_a_len);
     println!("║ Tensors in B: {:<62} ║", tensors_b_len);
@@ -1147,8 +1126,7 @@ fn print_diff_text_summary(
     println!("║ Missing in B: {:<62} ║", missing_in_b.len());
     println!(
         "{}",
-        "╠══════════════════════════════════════════════════════════════════════════════╣"
-            .cyan()
+        "╠══════════════════════════════════════════════════════════════════════════════╣".cyan()
     );
 
     if layout_mismatches.is_empty() {
@@ -1191,8 +1169,7 @@ fn print_diff_text_summary(
 
     println!(
         "{}",
-        "╚══════════════════════════════════════════════════════════════════════════════╝"
-            .cyan()
+        "╚══════════════════════════════════════════════════════════════════════════════╝".cyan()
     );
 }
 
@@ -1349,7 +1326,12 @@ pub fn run_diff_tensors(
     let mut missing_in_b = Vec::new();
 
     if !json {
-        print_diff_header(model_a, model_b, report_a.tensors.len(), report_b.tensors.len());
+        print_diff_header(
+            model_a,
+            model_b,
+            report_a.tensors.len(),
+            report_b.tensors.len(),
+        );
     }
 
     for name in &filtered_names {
@@ -1459,7 +1441,8 @@ fn run_fingerprint_body(
         if !json {
             println!(
                 "{}",
-                "╠══════════════════════════════════════════════════════════════════════════════╣".cyan()
+                "╠══════════════════════════════════════════════════════════════════════════════╣"
+                    .cyan()
             );
         }
         return print_fingerprints(fingerprints_a, verbose, json);
@@ -1475,7 +1458,8 @@ fn run_fingerprint_body(
         );
         println!(
             "{}",
-            "╠══════════════════════════════════════════════════════════════════════════════╣".cyan()
+            "╠══════════════════════════════════════════════════════════════════════════════╣"
+                .cyan()
         );
     }
     let fingerprints_b = compute_fingerprints(model_b_path, filter)?;
@@ -1514,7 +1498,8 @@ pub fn run_fingerprint(
     if !json {
         println!(
             "{}",
-            "╚══════════════════════════════════════════════════════════════════════════════╝".cyan()
+            "╚══════════════════════════════════════════════════════════════════════════════╝"
+                .cyan()
         );
     }
 
@@ -1626,8 +1611,7 @@ fn print_validate_stats_text(anomalies: &[StatisticalAnomaly]) {
     }
     println!(
         "{}",
-        "╚══════════════════════════════════════════════════════════════════════════════╝"
-            .cyan()
+        "╚══════════════════════════════════════════════════════════════════════════════╝".cyan()
     );
 }
 
@@ -1883,8 +1867,7 @@ fn load_apr_tensors_direct(
         return None;
     }
 
-    let tensor_count =
-        u32::from_le_bytes(data[8..12].try_into().ok()?) as usize;
+    let tensor_count = u32::from_le_bytes(data[8..12].try_into().ok()?) as usize;
     let tensor_index_offset = read_u64_le(&data, 24)? as usize;
     let data_offset = read_u64_le(&data, 32)? as usize;
 
@@ -1892,8 +1875,7 @@ fn load_apr_tensors_direct(
     let mut pos = tensor_index_offset;
 
     for _ in 0..tensor_count {
-        let Some((name, dtype, dims, offset, size, new_pos)) =
-            parse_apr_tensor_entry(&data, pos)
+        let Some((name, dtype, dims, offset, size, new_pos)) = parse_apr_tensor_entry(&data, pos)
         else {
             break;
         };
@@ -2236,25 +2218,34 @@ fn print_fingerprints(fingerprints: &[TensorFingerprint], verbose: bool, json: b
 
 /// Print fingerprint diff between two models
 /// Compute normalized mean diff and detect anomalies between two fingerprints.
-fn fingerprint_anomaly(
-    fp_a: &TensorFingerprint,
-    fp_b: &TensorFingerprint,
-) -> (f32, bool) {
+fn fingerprint_anomaly(fp_a: &TensorFingerprint, fp_b: &TensorFingerprint) -> (f32, bool) {
     let mean_diff = if fp_a.std > 1e-10 {
         (fp_a.mean - fp_b.mean).abs() / fp_a.std
     } else {
         (fp_a.mean - fp_b.mean).abs()
     };
-    let has_anomaly = mean_diff > 3.0
-        || fp_a.nan_count != fp_b.nan_count
-        || fp_a.inf_count != fp_b.inf_count;
+    let has_anomaly =
+        mean_diff > 3.0 || fp_a.nan_count != fp_b.nan_count || fp_a.inf_count != fp_b.inf_count;
     (mean_diff, has_anomaly)
 }
 
 /// Print a single tensor comparison row (text mode).
-fn print_diff_row(fp_a: &TensorFingerprint, fp_b: &TensorFingerprint, mean_diff: f32, has_anomaly: bool) {
-    let status = if has_anomaly { "⚠️".yellow() } else { "✓".green() };
-    println!("║ {} {:<72} ║", status, truncate_path(fp_a.name.clone(), 72));
+fn print_diff_row(
+    fp_a: &TensorFingerprint,
+    fp_b: &TensorFingerprint,
+    mean_diff: f32,
+    has_anomaly: bool,
+) {
+    let status = if has_anomaly {
+        "⚠️".yellow()
+    } else {
+        "✓".green()
+    };
+    println!(
+        "║ {} {:<72} ║",
+        status,
+        truncate_path(fp_a.name.clone(), 72)
+    );
     println!(
         "║   A: mean={:>10.6} std={:>10.6} nan={} inf={} ║",
         fp_a.mean, fp_a.std, fp_a.nan_count, fp_a.inf_count
@@ -2264,7 +2255,11 @@ fn print_diff_row(fp_a: &TensorFingerprint, fp_b: &TensorFingerprint, mean_diff:
         fp_b.mean, fp_b.std, fp_b.nan_count, fp_b.inf_count
     );
     if has_anomaly {
-        println!("║   {} mean_diff={:.2}σ ║", "ANOMALY:".red().bold(), mean_diff);
+        println!(
+            "║   {} mean_diff={:.2}σ ║",
+            "ANOMALY:".red().bold(),
+            mean_diff
+        );
     }
     println!(
         "{}",
@@ -2281,11 +2276,16 @@ fn print_diff_summary(total: usize, anomalies: &[StatisticalAnomaly], json: bool
         println!("  \"passed\": {}", anomalies.is_empty());
         println!("}}");
     } else if anomalies.is_empty() {
-        println!("║ {} ║", "✓ No statistical anomalies detected".green().bold());
+        println!(
+            "║ {} ║",
+            "✓ No statistical anomalies detected".green().bold()
+        );
     } else {
         println!(
             "║ {} ║",
-            format!("✗ {} ANOMALIES DETECTED", anomalies.len()).red().bold()
+            format!("✗ {} ANOMALIES DETECTED", anomalies.len())
+                .red()
+                .bold()
         );
     }
 }
@@ -2307,11 +2307,13 @@ fn print_fingerprint_diff(
     if !json {
         println!(
             "{}",
-            "║                              FINGERPRINT DIFF                                ║".yellow()
+            "║                              FINGERPRINT DIFF                                ║"
+                .yellow()
         );
         println!(
             "{}",
-            "╠──────────────────────────────────────────────────────────────────────────────╣".cyan()
+            "╠──────────────────────────────────────────────────────────────────────────────╣"
+                .cyan()
         );
     }
 
@@ -2319,7 +2321,11 @@ fn print_fingerprint_diff(
         let norm_name_a = normalize_tensor_name(&fp_a.name);
         let Some(fp_b) = map_b.get(&norm_name_a) else {
             if !json {
-                println!("║ {} {:<72} ║", "−".red(), truncate_path(fp_a.name.clone(), 72));
+                println!(
+                    "║ {} {:<72} ║",
+                    "−".red(),
+                    truncate_path(fp_a.name.clone(), 72)
+                );
                 println!("║   Missing in Model B ║");
             }
             continue;
@@ -2588,7 +2594,11 @@ fn parse_top5_line(line: &str) -> Option<Vec<u32>> {
             inner[..inner.find(',')?].trim().parse().ok()
         })
         .collect();
-    if ids.is_empty() { None } else { Some(ids) }
+    if ids.is_empty() {
+        None
+    } else {
+        Some(ids)
+    }
 }
 
 fn parse_trace_lines(combined: &str) -> (Vec<u32>, Vec<f32>, Vec<Vec<u32>>) {

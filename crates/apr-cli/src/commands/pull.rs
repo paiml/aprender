@@ -340,9 +340,8 @@ fn write_shard_manifest(
         repo: format!("{org}/{repo}"),
         files: file_checksums,
     };
-    let manifest_json = serde_json::to_string_pretty(&manifest).map_err(|e| {
-        CliError::ValidationFailed(format!("Failed to serialize manifest: {e}"))
-    })?;
+    let manifest_json = serde_json::to_string_pretty(&manifest)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to serialize manifest: {e}")))?;
     std::fs::write(manifest_path, manifest_json)?;
     println!("  {} .apr-manifest.json (integrity checksums)", "✓".green());
     Ok(())
@@ -633,9 +632,8 @@ fn select_best_gguf(gguf_files: &[&str], org: &str, repo: &str) -> ResolvedModel
 
 /// Download and parse sharded SafeTensors index, returning shard filenames.
 fn resolve_sharded_safetensors(org: &str, repo: &str) -> Result<ResolvedModel> {
-    let index_url = format!(
-        "https://huggingface.co/{org}/{repo}/resolve/main/model.safetensors.index.json"
-    );
+    let index_url =
+        format!("https://huggingface.co/{org}/{repo}/resolve/main/model.safetensors.index.json");
     let index_response = ureq::get(&index_url)
         .call()
         .map_err(|e| CliError::NetworkError(format!("Failed to download model index: {e}")))?;
@@ -664,7 +662,10 @@ fn resolve_sharded_safetensors(org: &str, repo: &str) -> Result<ResolvedModel> {
 
 /// Find a SafeTensors file in the repo file list, returning it as a resolved model.
 fn find_safetensors_file(filenames: &[&str], org: &str, repo: &str) -> Option<ResolvedModel> {
-    if filenames.iter().any(|f| f.to_lowercase() == "model.safetensors") {
+    if filenames
+        .iter()
+        .any(|f| f.to_lowercase() == "model.safetensors")
+    {
         return Some(ResolvedModel::SingleFile(format!(
             "hf://{org}/{repo}/model.safetensors"
         )));
@@ -784,7 +785,12 @@ fn extract_shard_files_from_index(json: &str) -> Vec<String> {
     let Some(entries) = find_brace_content(&json[weight_map_start..]) else {
         return Vec::new();
     };
-    let mut sorted: Vec<String> = entries.split(',').filter_map(extract_shard_filename).collect::<HashSet<_>>().into_iter().collect();
+    let mut sorted: Vec<String> = entries
+        .split(',')
+        .filter_map(extract_shard_filename)
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect();
     sorted.sort();
     sorted
 }

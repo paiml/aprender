@@ -179,18 +179,26 @@ fn build_tensor_row(
             (Some(min), Some(max)) => format!("[{min:.4}, {max:.4}]"),
             _ => "—".to_string(),
         };
-        row.extend(vec![format_stat(tensor.mean), format_stat(tensor.std), range_str]);
+        row.extend(vec![
+            format_stat(tensor.mean),
+            format_stat(tensor.std),
+            range_str,
+        ]);
 
         if tensor.nan_count.is_some_and(|c| c > 0) {
             anomaly_warnings.push(format!(
                 "  {} {}: {} NaN values (spec H8 violation)",
-                "✗".red().bold(), tensor.name, tensor.nan_count.unwrap_or(0)
+                "✗".red().bold(),
+                tensor.name,
+                tensor.nan_count.unwrap_or(0)
             ));
         }
         if tensor.inf_count.is_some_and(|c| c > 0) {
             anomaly_warnings.push(format!(
                 "  {} {}: {} Inf values",
-                "⚠".yellow().bold(), tensor.name, tensor.inf_count.unwrap_or(0)
+                "⚠".yellow().bold(),
+                tensor.name,
+                tensor.inf_count.unwrap_or(0)
             ));
         }
     }
@@ -217,7 +225,10 @@ fn output_text(result: &TensorListResult, show_stats: bool) {
     for tensor in &result.tensors {
         *dtype_counts.entry(&tensor.dtype).or_insert(0) += 1;
     }
-    let dominant_dtype = dtype_counts.iter().max_by_key(|(_, c)| **c).map_or("unknown", |(dt, _)| *dt);
+    let dominant_dtype = dtype_counts
+        .iter()
+        .max_by_key(|(_, c)| **c)
+        .map_or("unknown", |(dt, _)| *dt);
 
     let mut headers: Vec<&str> = vec!["Name", "Shape", "DType", "Size"];
     if show_stats {
@@ -225,7 +236,9 @@ fn output_text(result: &TensorListResult, show_stats: bool) {
     }
 
     let mut anomaly_warnings: Vec<String> = Vec::new();
-    let rows: Vec<Vec<String>> = result.tensors.iter()
+    let rows: Vec<Vec<String>> = result
+        .tensors
+        .iter()
         .map(|t| build_tensor_row(t, show_stats, &mut anomaly_warnings))
         .collect();
 

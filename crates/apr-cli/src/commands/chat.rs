@@ -168,10 +168,7 @@ fn detect_format(path: &Path) -> ModelFormat {
 }
 
 /// Try loading a tokenizer from a specific path, printing success/failure.
-fn try_load_tokenizer(
-    path: &Path,
-    label: &str,
-) -> Option<Qwen2BpeTokenizer> {
+fn try_load_tokenizer(path: &Path, label: &str) -> Option<Qwen2BpeTokenizer> {
     match Qwen2BpeTokenizer::from_file(path) {
         Ok(tok) => {
             println!(
@@ -217,7 +214,11 @@ fn search_hf_cache_tokenizer(hf_cache: &Path) -> Option<Qwen2BpeTokenizer> {
 
 /// Try to load tokenizer from a path if it exists.
 fn try_tokenizer_at(path: &Path, label: &str) -> Option<Qwen2BpeTokenizer> {
-    if path.exists() { try_load_tokenizer(path, label) } else { None }
+    if path.exists() {
+        try_load_tokenizer(path, label)
+    } else {
+        None
+    }
 }
 
 /// PMAT-109: Find Qwen tokenizer from model dir, HF cache, or APR cache.
@@ -291,8 +292,11 @@ fn clean_chat_response(raw: &str) -> String {
 
     // Remove ChatML markers
     for marker in &[
-        "<|im_start|>assistant\n", "<|im_start|>assistant",
-        "<|im_end|>", "<|im_start|>", "<|endoftext|>",
+        "<|im_start|>assistant\n",
+        "<|im_start|>assistant",
+        "<|im_end|>",
+        "<|im_start|>",
+        "<|endoftext|>",
     ] {
         cleaned = cleaned.replace(marker, "");
     }
@@ -1518,7 +1522,9 @@ fn run_repl(path: &Path, config: &ChatConfig) -> Result<(), CliError> {
     let mut session = ChatSession::new(path)?;
 
     while let Some(input) = read_repl_line()? {
-        if input.is_empty() { continue; }
+        if input.is_empty() {
+            continue;
+        }
         if input.starts_with('/') {
             match handle_command_inference(&input, &mut session)? {
                 CommandResult::Continue => continue,
@@ -1596,7 +1602,9 @@ fn run_repl(path: &Path, config: &ChatConfig) -> Result<(), CliError> {
     let mut session = ChatSession::new(path)?;
 
     while let Some(input) = read_repl_line()? {
-        if input.is_empty() { continue; }
+        if input.is_empty() {
+            continue;
+        }
         if input.starts_with('/') {
             match handle_command(&input, &mut session.history)? {
                 CommandResult::Continue => continue,

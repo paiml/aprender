@@ -165,10 +165,7 @@ fn run_apr_cpu_inference(
 
 /// Load APR model, tokenizer, and transformer into shared server state.
 #[cfg(feature = "inference")]
-fn load_apr_model_state(
-    model_path: &Path,
-    config: &ServerConfig,
-) -> Result<AprServerState> {
+fn load_apr_model_state(model_path: &Path, config: &ServerConfig) -> Result<AprServerState> {
     use realizar::apr::AprModel;
 
     println!("{}", "Loading APR v2 model...".dimmed());
@@ -593,9 +590,9 @@ fn run_gpu_generation(
     eos_id: u32,
 ) -> std::result::Result<Vec<u32>, String> {
     use realizar::apr::AprModel;
-    let mut model = cuda
-        .lock()
-        .map_err(|_| "GPU model state corrupted (lock poisoned). Please restart the server.".to_string())?;
+    let mut model = cuda.lock().map_err(|_| {
+        "GPU model state corrupted (lock poisoned). Please restart the server.".to_string()
+    })?;
     model
         .generate_cuda(input_tokens, max_tokens, eos_id)
         .map_err(|e| format!("GPU generation failed: {e}"))
@@ -645,10 +642,7 @@ fn format_chatml(messages: &[serde_json::Value]) -> String {
     let mut prompt = String::new();
     for msg in messages {
         let role = msg.get("role").and_then(|r| r.as_str()).unwrap_or("user");
-        let content = msg
-            .get("content")
-            .and_then(|c| c.as_str())
-            .unwrap_or("");
+        let content = msg.get("content").and_then(|c| c.as_str()).unwrap_or("");
         write!(prompt, "<|im_start|>{role}\n{content}<|im_end|>\n")
             .expect("write to String cannot fail");
     }
@@ -757,9 +751,7 @@ fn build_gpu_router(
     Router::new()
         .route(
             "/health",
-            get(|| async {
-                Json(serde_json::json!({"status": "healthy", "gpu": true}))
-            }),
+            get(|| async { Json(serde_json::json!({"status": "healthy", "gpu": true})) }),
         )
         .route(
             "/v1/completions",
@@ -767,8 +759,7 @@ fn build_gpu_router(
                 let cuda = cuda_for_completions.clone();
                 let tok_info = tok_for_completions.clone();
                 async move {
-                    handle_gpu_completion(&cuda, tok_info.as_ref().as_ref(), &req)
-                        .into_response()
+                    handle_gpu_completion(&cuda, tok_info.as_ref().as_ref(), &req).into_response()
                 }
             }),
         )
@@ -806,13 +797,17 @@ fn handle_gpu_completion(
     let eos_id = eos_token_id(tok_info, 2);
 
     let gen_start = Instant::now();
-    let output_tokens = match run_gpu_generation(cuda, &input_tokens, req.max_tokens.min(128), eos_id) {
-        Ok(t) => t,
-        Err(e) => {
-            return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": e})))
-                .into_response();
-        }
-    };
+    let output_tokens =
+        match run_gpu_generation(cuda, &input_tokens, req.max_tokens.min(128), eos_id) {
+            Ok(t) => t,
+            Err(e) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({"error": e})),
+                )
+                    .into_response();
+            }
+        };
     let gen_time = gen_start.elapsed();
 
     let new_tokens = extract_new_tokens(&output_tokens, input_tokens.len());
@@ -836,7 +831,10 @@ fn handle_gpu_chat_completion(
     req: &serde_json::Value,
 ) -> axum::response::Response {
     use axum::{
-        response::{sse::{Event, Sse}, IntoResponse},
+        response::{
+            sse::{Event, Sse},
+            IntoResponse,
+        },
         Json,
     };
     use futures_util::stream;
@@ -861,8 +859,7 @@ fn handle_gpu_chat_completion(
     let eos_id = eos_token_id(tok_info, 151_645);
 
     let gen_start = Instant::now();
-    let output_tokens = match run_gpu_generation(cuda, &input_tokens, max_tokens.min(256), eos_id)
-    {
+    let output_tokens = match run_gpu_generation(cuda, &input_tokens, max_tokens.min(256), eos_id) {
         Ok(t) => t,
         Err(e) => return Json(serde_json::json!({"error": e})).into_response(),
     };

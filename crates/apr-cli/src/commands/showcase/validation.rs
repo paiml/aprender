@@ -103,10 +103,26 @@ fn validate_steps(
 ) -> Vec<String> {
     let mut failures = Vec::new();
     let checks: &[(ShowcaseStep, bool, &str)] = &[
-        (ShowcaseStep::Import, results.import, "Point 1: Import step failed"),
-        (ShowcaseStep::GgufInference, results.gguf_inference, "Point 11: GGUF inference step failed"),
-        (ShowcaseStep::Convert, results.convert, "Point 21: APR conversion step failed"),
-        (ShowcaseStep::AprInference, results.apr_inference, "Point 31: APR inference step failed"),
+        (
+            ShowcaseStep::Import,
+            results.import,
+            "Point 1: Import step failed",
+        ),
+        (
+            ShowcaseStep::GgufInference,
+            results.gguf_inference,
+            "Point 11: GGUF inference step failed",
+        ),
+        (
+            ShowcaseStep::Convert,
+            results.convert,
+            "Point 21: APR conversion step failed",
+        ),
+        (
+            ShowcaseStep::AprInference,
+            results.apr_inference,
+            "Point 31: APR inference step failed",
+        ),
     ];
     for &(step, passed, msg) in checks {
         if (is_full_run || matches!(requested_step, Some(s) if s == step)) && !passed {

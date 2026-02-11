@@ -114,9 +114,7 @@ fn tensor_check_stage(
 /// Check if any name in the list matches any of the given substrings.
 #[cfg(feature = "inference")]
 fn any_name_contains(names: &[&str], patterns: &[&str]) -> bool {
-    names
-        .iter()
-        .any(|n| patterns.iter().any(|p| n.contains(p)))
+    names.iter().any(|n| patterns.iter().any(|p| n.contains(p)))
 }
 
 /// Check if all pattern groups have at least one match (AND of OR groups).
@@ -194,8 +192,7 @@ fn run_real_checks_apr(path: &Path) -> Result<Vec<StageResult>, CliError> {
 
     let has_embed = any_name_contains(&names, &["emb", "wte", "token_embd"]);
     let has_rope = any_name_contains(&names, &["rope", "rotary"]);
-    let has_lm_head = any_name_contains(&names, &["lm_head"])
-        || names.contains(&"output.weight");
+    let has_lm_head = any_name_contains(&names, &["lm_head"]) || names.contains(&"output.weight");
 
     let test_tokens = vec![1u32, 2];
     let forward_ok = model.forward(&test_tokens).is_ok();
@@ -207,33 +204,81 @@ fn run_real_checks_apr(path: &Path) -> Result<Vec<StageResult>, CliError> {
             passed: forward_ok,
             details: Some(format!("tokens={test_tokens:?}")),
         },
-        tensor_check_stage("Embedding", "Numbers → vectors", has_embed, "Found embedding tensor", "Missing embedding tensor"),
+        tensor_check_stage(
+            "Embedding",
+            "Numbers → vectors",
+            has_embed,
+            "Found embedding tensor",
+            "Missing embedding tensor",
+        ),
         StageResult {
             name: "Positional Encoding",
             eli5: "\"You are word #3\"",
             passed: true,
-            details: Some(if has_rope { "RoPE tensors found" } else { "RoPE computed inline" }.to_string()),
+            details: Some(
+                if has_rope {
+                    "RoPE tensors found"
+                } else {
+                    "RoPE computed inline"
+                }
+                .to_string(),
+            ),
         },
-        tensor_check_stage("Q/K/V Projection", "Make 3 question copies",
-            all_groups_match(&names, &[&["q_proj", "attn_q"], &["k_proj", "attn_k"], &["v_proj", "attn_v"]]),
-            "Q/K/V found", "Missing Q/K/V"),
-        tensor_check_stage("Attention Scores", "\"Who to look at?\"",
+        tensor_check_stage(
+            "Q/K/V Projection",
+            "Make 3 question copies",
+            all_groups_match(
+                &names,
+                &[
+                    &["q_proj", "attn_q"],
+                    &["k_proj", "attn_k"],
+                    &["v_proj", "attn_v"],
+                ],
+            ),
+            "Q/K/V found",
+            "Missing Q/K/V",
+        ),
+        tensor_check_stage(
+            "Attention Scores",
+            "\"Who to look at?\"",
             any_name_contains(&names, &["o_proj", "attn_output"]),
-            "Attention output found", "Missing attention output"),
-        tensor_check_stage("Feed-Forward (MLP)", "\"Think about it\"",
-            all_groups_match(&names, &[&["gate_proj", "ffn_gate"], &["up_proj", "ffn_up"], &["down_proj", "ffn_down"]]),
-            "MLP found", "Missing MLP"),
+            "Attention output found",
+            "Missing attention output",
+        ),
+        tensor_check_stage(
+            "Feed-Forward (MLP)",
+            "\"Think about it\"",
+            all_groups_match(
+                &names,
+                &[
+                    &["gate_proj", "ffn_gate"],
+                    &["up_proj", "ffn_up"],
+                    &["down_proj", "ffn_down"],
+                ],
+            ),
+            "MLP found",
+            "Missing MLP",
+        ),
         StageResult {
             name: "Layer Norm",
             eli5: "Keep numbers stable",
-            passed: all_groups_match(&names, &[&["input_layernorm", "attn_norm"], &["post_attention_layernorm", "ffn_norm"]]) && num_layers > 0,
+            passed: all_groups_match(
+                &names,
+                &[
+                    &["input_layernorm", "attn_norm"],
+                    &["post_attention_layernorm", "ffn_norm"],
+                ],
+            ) && num_layers > 0,
             details: Some(format!("{num_layers} layers")),
         },
         StageResult {
             name: "LM Head",
             eli5: "Vector → vocab scores",
             passed: has_lm_head || has_embed,
-            details: Some(format!("vocab_size={vocab_size}{}", if has_lm_head { "" } else { " (tied)" })),
+            details: Some(format!(
+                "vocab_size={vocab_size}{}",
+                if has_lm_head { "" } else { " (tied)" }
+            )),
         },
         check_apr_logits(&model),
         check_apr_sampler(&model),
@@ -275,40 +320,75 @@ fn run_real_checks_gguf(path: &Path, _no_gpu: bool) -> Result<Vec<StageResult>, 
     let model = OwnedQuantizedModel::from_mapped(&mapped)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to create model: {e}")))?;
 
-    let names: Vec<&str> = mapped.model.tensors.iter().map(|t| t.name.as_str()).collect();
+    let names: Vec<&str> = mapped
+        .model
+        .tensors
+        .iter()
+        .map(|t| t.name.as_str())
+        .collect();
     let rope_theta = mapped.model.rope_freq_base().unwrap_or(10000.0);
     let has_embed = any_name_contains(&names, &["token_embd", "embed_tokens"]);
 
     Ok(vec![
         check_tokenizer_real(&model),
-        tensor_check_stage("Embedding", "Numbers → vectors", has_embed, "Found embedding tensor", "Missing embedding tensor"),
+        tensor_check_stage(
+            "Embedding",
+            "Numbers → vectors",
+            has_embed,
+            "Found embedding tensor",
+            "Missing embedding tensor",
+        ),
         StageResult {
             name: "Positional Encoding",
             eli5: "\"You are word #3\"",
             passed: rope_theta > 1.0,
             details: Some(format!("rope_theta={rope_theta:.1}")),
         },
-        tensor_check_stage("Q/K/V Projection", "Make 3 question copies",
-            all_groups_match(&names, &[
-                &["blk.0.attn_q", "layers.0.self_attn.q_proj"],
-                &["blk.0.attn_k", "layers.0.self_attn.k_proj"],
-                &["blk.0.attn_v", "layers.0.self_attn.v_proj"],
-            ]),
-            "Q/K/V tensors found", "Missing Q/K/V tensors"),
-        tensor_check_stage("Attention Scores", "\"Who to look at?\"",
+        tensor_check_stage(
+            "Q/K/V Projection",
+            "Make 3 question copies",
+            all_groups_match(
+                &names,
+                &[
+                    &["blk.0.attn_q", "layers.0.self_attn.q_proj"],
+                    &["blk.0.attn_k", "layers.0.self_attn.k_proj"],
+                    &["blk.0.attn_v", "layers.0.self_attn.v_proj"],
+                ],
+            ),
+            "Q/K/V tensors found",
+            "Missing Q/K/V tensors",
+        ),
+        tensor_check_stage(
+            "Attention Scores",
+            "\"Who to look at?\"",
             any_name_contains(&names, &["attn_output", "o_proj"]),
-            "Attention output tensor found", "Missing attention output tensor"),
-        tensor_check_stage("Feed-Forward (MLP)", "\"Think about it\"",
-            all_groups_match(&names, &[
-                &["ffn_gate", "gate_proj"], &["ffn_up", "up_proj"], &["ffn_down", "down_proj"],
-            ]),
-            "MLP tensors found", "Missing MLP tensors"),
+            "Attention output tensor found",
+            "Missing attention output tensor",
+        ),
+        tensor_check_stage(
+            "Feed-Forward (MLP)",
+            "\"Think about it\"",
+            all_groups_match(
+                &names,
+                &[
+                    &["ffn_gate", "gate_proj"],
+                    &["ffn_up", "up_proj"],
+                    &["ffn_down", "down_proj"],
+                ],
+            ),
+            "MLP tensors found",
+            "Missing MLP tensors",
+        ),
         StageResult {
             name: "Layer Norm",
             eli5: "Keep numbers stable",
-            passed: all_groups_match(&names, &[
-                &["attn_norm", "input_layernorm"], &["ffn_norm", "post_attention_layernorm"],
-            ]) && model.config.num_layers > 0,
+            passed: all_groups_match(
+                &names,
+                &[
+                    &["attn_norm", "input_layernorm"],
+                    &["ffn_norm", "post_attention_layernorm"],
+                ],
+            ) && model.config.num_layers > 0,
             details: Some(format!("{} layers", model.config.num_layers)),
         },
         check_gguf_lm_head(&mapped, model.config.vocab_size),

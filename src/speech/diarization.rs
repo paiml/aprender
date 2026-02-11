@@ -387,11 +387,16 @@ fn cluster_embeddings(embeddings: &[Vec<f32>], config: &DiarizationConfig) -> Ve
         }
 
         let current_clusters: std::collections::HashSet<_> = labels.iter().collect();
-        if config.max_speakers.is_some_and(|max| current_clusters.len() <= max) {
+        if config
+            .max_speakers
+            .is_some_and(|max| current_clusters.len() <= max)
+        {
             break;
         }
 
-        let Some((cluster_a, cluster_b)) = best_pair else { break };
+        let Some((cluster_a, cluster_b)) = best_pair else {
+            break;
+        };
         let (target, source) = (cluster_a.min(cluster_b), cluster_a.max(cluster_b));
         for label in &mut labels {
             if *label == source {
