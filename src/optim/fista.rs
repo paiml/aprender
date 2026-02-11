@@ -190,7 +190,7 @@ impl FISTA {
 
 impl Optimizer for FISTA {
     fn step(&mut self, _params: &mut Vector<f32>, _gradients: &Vector<f32>) {
-        unimplemented!(
+        panic!(
             "FISTA does not support stochastic updates (step). Use minimize() for batch optimization with proximal operators."
         )
     }

@@ -204,7 +204,7 @@ impl LBFGS {
 
 impl Optimizer for LBFGS {
     fn step(&mut self, _params: &mut Vector<f32>, _gradients: &Vector<f32>) {
-        unimplemented!(
+        panic!(
             "L-BFGS does not support stochastic updates (step). Use minimize() for batch optimization."
         )
     }

@@ -150,7 +150,7 @@ impl DampedNewton {
 
 impl Optimizer for DampedNewton {
     fn step(&mut self, _params: &mut Vector<f32>, _gradients: &Vector<f32>) {
-        unimplemented!(
+        panic!(
             "Damped Newton does not support stochastic updates (step). Use minimize() for batch optimization."
         )
     }

@@ -560,7 +560,7 @@ pub trait Optimizer {
         F: Fn(&Vector<f32>) -> f32,
         G: Fn(&Vector<f32>) -> Vector<f32>,
     {
-        unimplemented!(
+        panic!(
             "{} does not support batch optimization (minimize). Use step() for stochastic updates.",
             std::any::type_name::<Self>()
         )

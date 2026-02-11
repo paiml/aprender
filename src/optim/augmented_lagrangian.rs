@@ -290,7 +290,7 @@ impl AugmentedLagrangian {
 
 impl Optimizer for AugmentedLagrangian {
     fn step(&mut self, _params: &mut Vector<f32>, _gradients: &Vector<f32>) {
-        unimplemented!(
+        panic!(
             "Augmented Lagrangian does not support stochastic updates (step). Use minimize_equality() for constrained optimization."
         )
     }

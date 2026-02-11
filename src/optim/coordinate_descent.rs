@@ -253,7 +253,7 @@ impl CoordinateDescent {
 
 impl Optimizer for CoordinateDescent {
     fn step(&mut self, _params: &mut Vector<f32>, _gradients: &Vector<f32>) {
-        unimplemented!(
+        panic!(
             "Coordinate Descent does not support stochastic updates (step). Use minimize() with coordinate update function."
         )
     }

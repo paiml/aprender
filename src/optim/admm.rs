@@ -346,7 +346,7 @@ impl ADMM {
 
 impl Optimizer for ADMM {
     fn step(&mut self, _params: &mut Vector<f32>, _gradients: &Vector<f32>) {
-        unimplemented!(
+        panic!(
             "ADMM does not support stochastic updates (step). Use minimize_consensus() with x-minimizer and z-minimizer functions."
         )
     }
