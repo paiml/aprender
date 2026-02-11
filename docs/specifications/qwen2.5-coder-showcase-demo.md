@@ -1,15 +1,15 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 10.44.0 (Full Stack: apr-cli + aprender + realizar + trueno + batuta, Popperian falsified)
-**Status:** ALL THREE PROJECTS A+ + ZERO SATD (7B all 3 formats working CPU + GPU. 44 falsification rounds, 209 bugs found. Round 44: GH-220/221/222 CLI UX fixes + batuta GH-25 stack release fix. 11,251 tests, 3,796 apr-cli tests. `apr qa` all 7 gates pass. TDG: 96.9/100 A+. Project Score: A+. Coverage: 96.35%. SATD: 0/0/0.)
+**Version:** 10.45.0 (Full Stack: apr-cli + aprender + realizar + trueno + batuta, Popperian falsified)
+**Status:** ALL THREE PROJECTS A+ + ZERO SATD (7B all 3 formats working CPU + GPU. 45 falsification rounds, 210 bugs found. Round 45: Bug 210 — architecture-specific rope_theta + metadata plausibility gate (GH-222 deep fix). 11,259 tests, 3,796 apr-cli tests. `apr qa` all 8 gates pass. TDG: 96.9/100 A+. Project Score: A+. Coverage: 96.35%. SATD: 0/0/0.)
 **Primary Model:** `Qwen/Qwen2.5-Coder-7B-Instruct`
 **Supported Models:** Qwen2.5-Coder 0.5B, 1.5B, 3B, 7B (all sizes)
 **Source Format:** SafeTensors BF16 (HuggingFace, sharded, ~14 GB for 7B)
-**Popperian Score:** 155/163 gates passing (95.1%) — 8 FALSIFIED, 0 blocked/not-tested. 163 falsification gates, 23 sections. 44 rounds, 209 bugs. Gated by `model-tests` feature (`make test-model`)
+**Popperian Score:** 156/164 gates passing (95.1%) — 8 FALSIFIED, 0 blocked/not-tested. 164 falsification gates, 23 sections. 45 rounds, 210 bugs. Gated by `model-tests` feature (`make test-model`)
 **CLI Surface:** 39 top-level + 10 nested subcommands (49 total)
 **Compile-Time Proofs:** 297 algebraic invariants (zero runtime cost)
 **Author:** PAIML Engineering
-**Date:** 2026-02-11 (Round 44)
+**Date:** 2026-02-11 (Round 45)
 **Ground Truth:** SafeTensors BF16 - See Section 0
 **Quality Philosophy:** Toyota Way + Popperian Falsification (Zero SATD, Stop-the-Line, Jidoka)
 
@@ -35,9 +35,9 @@
 
 ## Executive Summary
 
-The Qwen2.5-Coder Showcase demonstrates the unified inference architecture across three model formats (SafeTensors, APR, GGUF) with CPU and GPU backends, using a single model with a single provenance chain. The full stack is exercised end-to-end: **apr-cli** (49 subcommands) → **aprender** (contract validation, 297 compile-time proofs) → **realizar** (inference: two-phase generation with batched prefill, PagedAttention KV cache, 8 sampling algorithms + penalty modifiers, GQA attention, OpenAI-compatible API, PTX parity validation) → **trueno** (SIMD/GPU compute: 9 backend tiers, 95 CUDA kernels, 6 batched kernel variants with KernelParity trait, Jidoka quality gates). 163 falsification gates across 23 sections.
+The Qwen2.5-Coder Showcase demonstrates the unified inference architecture across three model formats (SafeTensors, APR, GGUF) with CPU and GPU backends, using a single model with a single provenance chain. The full stack is exercised end-to-end: **apr-cli** (49 subcommands) → **aprender** (contract validation, 297 compile-time proofs) → **realizar** (inference: two-phase generation with batched prefill, PagedAttention KV cache, 8 sampling algorithms + penalty modifiers, GQA attention, OpenAI-compatible API, PTX parity validation) → **trueno** (SIMD/GPU compute: 9 backend tiers, 95 CUDA kernels, 6 batched kernel variants with KernelParity trait, Jidoka quality gates). 164 falsification gates across 23 sections.
 
-**v10.43.0 Focus: Full MVP Playbook Reverification (5 Models)**
+**v10.45.0 Focus: Bug 210 — Architecture-Specific rope_theta + Metadata Plausibility Gate**
 - **Current (measured 2026-02-11):** 67.8 tok/s GPU decode (0.6x Ollama 125 tok/s) — **Grade D** (regressed from 89.8 tok/s, see Bug 206)
 - **Batched prefill DISABLED:** Regression discovered — `BatchedQ4KGemvKernel` dequant diverges from `MwvQ4KGemv` after PAR-082-V2 kernel changes. Serial prefill is now default. Set `BATCHED_PREFILL=1` to re-enable.
 - **Target:** 125.7 tok/s (1.0x exact parity, Grade C) → 251 tok/s (2.0x, Grade A)
@@ -769,6 +769,7 @@ pub fn verify_output(output: &str, test_id: &str, expected_patterns: &[&str]) ->
 | F-QA-005 | `apr qa` returns machine-readable results | `apr qa qwen-7b.apr --json` | Valid JSON with pass/fail per cell | **Pass** (qa.rs: json:bool field + serde_json output) |
 | F-QA-006 | `apr showcase` runs automated demo | `apr showcase qwen-7b.gguf` | End-to-end demo completes with report | **Pass** (showcase/mod.rs: run() + validate_falsification() verified) |
 | F-QA-007 | PTX parity gate validates 6 kernel pairs | `apr qa model.gguf --verbose` Gate 6 | 6/6 kernel pairs pass, <50ms | **Pass** (`apr qa` PTX Parity: 6/6 PASS in 13ms. Detects GGUF format, extracts model dims, validates all batched kernels.) |
+| F-QA-008 | Metadata plausibility gate catches wrong rope_theta | `apr qa model.safetensors` | 4 checks pass, Bug 210 signature detected | **Pass** (`apr qa` Metadata Plausibility: 4/4 checks pass. Cross-validates arch vs rope_theta, max_pos, rms_norm_eps. Reads config.json for SafeTensors. Catches qwen2+10000.0 signature.) |
 
 ---
 
@@ -2419,7 +2420,7 @@ Full reverification of all 5 Qwen2.5-Coder sizes (0.5B, 1.5B, 3B, 7B, 14B) throu
 - **Self-referencing symlink bug**: Playbook executor `prepare_model_workspace()` creates self-referencing symlinks when `--model-path` points to the workspace directory (line 2644: `symlink(source_file, st_link)` where `source_file == st_link`). Workaround: pass resolved source paths (APR/pacha cache), not workspace symlinks.
 - **14B serve timeouts**: Structural — 56GB F32 model takes >120s to load. Run and chat work (get more time). Not a code bug.
 - **GGUF chat/serve failures**: All from missing tokenizer in converted GGUF (weights-only conversion). Known limitation.
-- **No new FALSIFIED gates**: 155/163 gates still pass (95.1%)
+- **No new FALSIFIED gates**: 156/164 gates still pass (95.1%)
 
 **Round 44 (v10.44.0): GH-220/221/222 CLI UX fixes + batuta GH-25 stack release fix**
 
@@ -2435,7 +2436,22 @@ Three user-reported CLI bugs fixed (reported by @alfredodeza), plus a cross-proj
 - **Falsification**: GH-221 falsification caught bare `resolve/main` edge case (no trailing slash). GH-222 verified APR metadata contains `"architecture":"qwen2"` via `dd | strings` on real model file.
 - **Published**: aprender 0.25.3, apr-cli 0.2.13, entrenar-common 0.2.0, entrenar-lora 0.2.0, batuta 0.6.4 — all to crates.io
 - **Installed**: `cargo install apr-cli` → `apr 0.2.13 (unknown)`, `cargo install batuta` → `batuta 0.6.4`
-- **No new FALSIFIED gates**: 155/163 gates still pass (95.1%)
+- **No new FALSIFIED gates**: 156/164 gates still pass (95.1%)
+
+**Round 45 (v10.45.0): Bug 210 — architecture-specific rope_theta + metadata plausibility gate (GH-222 deep fix)**
+
+Five-whys root cause analysis of GH-222 revealed the Round 44 fix (Bug 209) only addressed the chat template detection (Raw→ChatML), not the deeper metadata corruption. SafeTensors import without `config.json` hardcoded `rope_theta=10000.0` for ALL architectures — Qwen2 requires `1000000.0`, a 100x error that breaks positional encoding and produces garbage.
+
+| # | Claim/Gap | Reality | Severity | Fix |
+|---|-----------|---------|----------|-----|
+| 210 | SafeTensors import without `config.json` produces correct metadata | `infer_model_config_from_tensors()` hardcodes `rope_theta=10000.0` regardless of detected architecture. Qwen2 requires `1000000.0`. Also: `infer_architecture_from_names()` labels ALL `model.layers` models as "qwen2" (LLaMA, Mistral misidentified). No metadata validation gate exists in `apr qa`/`apr validate`/import pipeline. Dead `layer_*` weight caching in realizar wastes ~5GB GPU memory. | **P0** | 7 fixes: (1) Architecture inference via `q_proj.bias` — Qwen2 has attention bias, LLaMA/Mistral don't. (2) Architecture-specific rope_theta defaults: qwen2→1M, llama→500K, generic→10K. (3) Warning when `config.json` missing during SafeTensors import. (4) New metadata plausibility QA gate (F-QA-008): 4 checks — rope_theta per-arch range, max_pos [128,1M], rms_norm_eps (0,0.01], Bug 210 signature (qwen2+theta=10000). SafeTensors reads sibling `config.json`. `--skip-metadata` flag. (5) Dead `layer_*` weight caching removed in realizar (~5GB GPU memory saved). (6) 6 regression tests in `regression_never_again.rs`. (7) `extract_model_metadata()` handles GGUF, APR, and SafeTensors formats. |
+
+- **Five-whys root cause**: Garbage output → Wrong rope_theta → Hardcoded default ignores architecture → No metadata plausibility gate → Validation framework tensor-centric, metadata-blind → Spec never tests bare SafeTensors import
+- **New falsification gate**: F-QA-008 (metadata plausibility) — 4 checks pass on real Qwen2.5 SafeTensors and GGUF models
+- **Verified**: `apr qa model.safetensors` → Metadata Plausibility: PASS (arch=qwen2, rope_theta=1000000, max_pos=32768)
+- **Published**: aprender 0.25.4, apr-cli 0.2.14, realizar 0.6.13 — all to crates.io
+- **Test counts**: aprender 11,259 (lib), apr-cli 3,796 (lib), regression 51 = 15,106 total
+- **Gate count**: 156/164 passing (95.1%) — 1 new gate (F-QA-008), 0 new FALSIFIED
 
 ### 18.2 Claims Verified (Not Falsified)
 
@@ -2753,20 +2769,21 @@ apr qa /path/to/model.gguf
 
 ### 21.9 `apr qa` Gate Verification (Standalone)
 
-`apr qa` provides deep single-model validation with 7 gates:
+`apr qa` provides deep single-model validation with 8 gates:
 
 ```
-╭─────────────────┬────────┬──────────┬───────────┬──────────╮
-│ Gate            │ Status │ Measured │ Threshold │ Duration │
-├─────────────────┼────────┼──────────┼───────────┼──────────┤
-│ Tensor Contract │ ✓ PASS │ 339.00   │ 0.00      │ 54.2s    │
-│ Golden Output   │ ✓ PASS │ 2.00     │ 2.00      │ 27.7s    │
-│ Throughput      │ ✓ PASS │ 67.80    │ 10.00     │ 11.7s    │
-│ Ollama Parity   │ ✓ PASS │ 0.59     │ 0.20      │ 34.0s    │
-│ GPU Speedup     │ ✓ PASS │ 8.25     │ 2.00      │ 1.2m     │
-│ Format Parity   │ ○ SKIP │ —        │ —         │ 0ms      │
-│ PTX Parity      │ ✓ PASS │ 6.00     │ 6.00      │ 14ms     │
-╰─────────────────┴────────┴──────────┴───────────┴──────────╯
+╭──────────────────────────┬────────┬──────────┬───────────┬──────────╮
+│ Gate                     │ Status │ Measured │ Threshold │ Duration │
+├──────────────────────────┼────────┼──────────┼───────────┼──────────┤
+│ Tensor Contract          │ ✓ PASS │ 339.00   │ 0.00      │ 54.2s    │
+│ Metadata Plausibility    │ ✓ PASS │ 4.00     │ 0.00      │ 440ms    │
+│ Golden Output            │ ✓ PASS │ 2.00     │ 2.00      │ 27.7s    │
+│ Throughput               │ ✓ PASS │ 67.80    │ 10.00     │ 11.7s    │
+│ Ollama Parity            │ ✓ PASS │ 0.59     │ 0.20      │ 34.0s    │
+│ GPU Speedup              │ ✓ PASS │ 8.25     │ 2.00      │ 1.2m     │
+│ Format Parity            │ ○ SKIP │ —        │ —         │ 0ms      │
+│ PTX Parity               │ ✓ PASS │ 6.00     │ 6.00      │ 14ms     │
+╰──────────────────────────┴────────┴──────────┴───────────┴──────────╯
   ✓ ALL GATES PASSED (3.4m)
 ```
 
@@ -2945,7 +2962,7 @@ total_bytes = num_superblocks * 144
 | 4. Model Spec | F-MODEL-* | 6 | 5 |
 | 5. Format Support | F-FMT-* | 5 | 5 |
 | 6. Checklist | F-CHECKLIST-* | 5 | 5 |
-| 7. QA Testing | F-QA-* | 7 | 5 |
+| 7. QA Testing | F-QA-* | 8 | 5 |
 | 7A. Ollama Parity | F-OLLAMA-* | 5 | 5 |
 | 8. Definition of Done | F-DOD-* | 5 | 5 |
 | 9. Layout Safety | F-LAYOUT-* | 6 | 5 |
@@ -2964,7 +2981,7 @@ total_bytes = num_superblocks * 144
 | **18. Code Quality** | **F-QUALITY-*** | **4** | **3** |
 | **19. Cross-Project** | **F-XPROJ-*** | **4** | **4** |
 | **21. MVP Qualification** | **F-MVP-*** | **7** | **7** |
-| **Total** | | **163** | **126** |
+| **Total** | | **164** | **126** |
 
 ---
 
