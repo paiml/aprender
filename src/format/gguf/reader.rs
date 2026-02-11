@@ -1525,7 +1525,7 @@ mod tests {
         // n_dims = MAX_DIMS + 1 = 17
         data.extend_from_slice(&(MAX_DIMS + 1).to_le_bytes());
         // Provide enough dummy dim data
-        for _ in 0..(MAX_DIMS + 1) {
+        for _ in 0..=MAX_DIMS {
             data.extend_from_slice(&1u64.to_le_bytes());
         }
         data.extend_from_slice(&0u32.to_le_bytes()); // dtype

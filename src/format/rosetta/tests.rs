@@ -2525,7 +2525,7 @@ fn p052b_from_extension_directory_with_candidate() {
 }
 
 /// P053b: from_extension with a directory containing multiple candidate model files
-/// The code returns the first found candidate from ["model.gguf", "model.apr", "model.safetensors"]
+/// The code returns the first found candidate from `[model.gguf, model.apr, model.safetensors]`
 #[test]
 fn p053b_from_extension_directory_with_multiple_candidates() {
     let temp_dir = std::env::temp_dir().join("rosetta_test_dir_p053b");
