@@ -611,10 +611,7 @@ pub(super) fn split_regression_data_by_indices(
     }
 
     let subset_matrix = crate::primitives::Matrix::from_vec(n_subset, n_features, subset_data)
-        .unwrap_or_else(|_| {
-            crate::primitives::Matrix::from_vec(0, n_features, vec![])
-                .expect("empty matrix creation should succeed")
-        });
+        .expect("subset data length matches n_subset * n_features");
 
     (subset_matrix, subset_labels)
 }

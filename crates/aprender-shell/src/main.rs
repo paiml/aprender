@@ -2567,10 +2567,7 @@ fn cmd_daemon(
             }
         };
 
-        let mut reader = BufReader::new(stream.try_clone().unwrap_or_else(|_| {
-            eprintln!("⚠️  Failed to clone stream");
-            stream.try_clone().expect("clone")
-        }));
+        let mut reader = BufReader::new(stream.try_clone().expect("clone stream for reader"));
 
         let mut line = String::new();
         if reader.read_line(&mut line).is_err() {

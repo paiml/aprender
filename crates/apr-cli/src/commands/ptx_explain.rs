@@ -225,7 +225,7 @@ fn run_json(ptx: &str, strict: bool, bugs_only: bool) -> Result<()> {
     println!(
         "{}",
         serde_json::to_string_pretty(&serde_json::Value::Object(output))
-            .unwrap_or_else(|_| "{}".to_string())
+            .unwrap_or_default()
     );
 
     Ok(())
