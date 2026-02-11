@@ -185,9 +185,8 @@ impl SGD {
 
 impl Optimizer for SGD {
     fn step(&mut self) {
-        // We need to get mutable access to the tensors through the global graph
-        // For now, this is a placeholder that demonstrates the pattern
-        // In practice, users will call update_param directly with their tensors
+        // SGD step marks the optimizer as initialized.
+        // Parameter updates happen via update_param() with individual tensors.
         self.initialized = true;
     }
 

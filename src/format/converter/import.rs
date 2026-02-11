@@ -843,17 +843,6 @@ pub(crate) fn load_tokenizer_from_json(model_path: &Path) -> Option<GgufTokenize
     let base_stem = stem.split('.').next().unwrap_or(stem);
     let pacha_path = model_path.with_file_name(format!("{}.tokenizer.json", base_stem));
 
-    // Try both paths
-    eprintln!(
-        "[DEBUG-TOK-PATH] standard_path={}, exists={}",
-        standard_path.display(),
-        standard_path.exists()
-    );
-    eprintln!(
-        "[DEBUG-TOK-PATH] pacha_path={}, exists={}",
-        pacha_path.display(),
-        pacha_path.exists()
-    );
     let tokenizer_path = if standard_path.exists() {
         standard_path
     } else if pacha_path.exists() {
@@ -863,7 +852,6 @@ pub(crate) fn load_tokenizer_from_json(model_path: &Path) -> Option<GgufTokenize
         );
         pacha_path
     } else {
-        eprintln!("[DEBUG-TOK-PATH] No tokenizer found!");
         return None;
     };
 

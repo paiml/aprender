@@ -457,31 +457,13 @@ pub fn export_tensors_to_gguf<W: Write>(
     }
 
     // Write tensor data
-    // DEBUG: Track tensor writes - with unique ID to verify binary
-    eprintln!(
-        "[DEBUG-GGUF-WRITE-V2] Starting tensor writes for {} tensors",
-        tensors.len()
-    );
-    static WRITE_DEBUG: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-    let mut total_bytes_written: usize = 0;
     for tensor in tensors {
-        let write_count = WRITE_DEBUG.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        if write_count < 5 {
-            eprintln!(
-                "[DEBUG-WRITE-V2] '{}': writing {} bytes (dtype={:?})",
-                tensor.name,
-                tensor.data.len(),
-                tensor.dtype
-            );
-        }
-        total_bytes_written += tensor.data.len();
         writer
             .write_all(&tensor.data)
             .map_err(|e| AprenderError::Io(io::Error::new(e.kind(), e.to_string())))?;
 
         // Pad to alignment
         let data_padding = padding_for_alignment(tensor.data.len(), GGUF_DEFAULT_ALIGNMENT);
-        total_bytes_written += data_padding;
         for _ in 0..data_padding {
             writer
                 .write_all(&[0u8])
@@ -489,10 +471,6 @@ pub fn export_tensors_to_gguf<W: Write>(
         }
     }
 
-    eprintln!(
-        "[DEBUG-GGUF-WRITE-V2] Total tensor data bytes written: {}",
-        total_bytes_written
-    );
     Ok(())
 }
 

@@ -625,12 +625,7 @@ fn export_to_gguf(
     use std::fs::File;
     use std::io::BufWriter;
 
-    eprintln!(
-        "[DEBUG-TOK] Looking for tokenizer near: {}",
-        input.display()
-    );
     let tokenizer = super::import::load_tokenizer_from_json(input);
-    eprintln!("[DEBUG-TOK] Tokenizer loaded: {}", tokenizer.is_some());
 
     let apr_metadata = if input.extension().and_then(|e| e.to_str()) == Some("apr") {
         fs::read(input)
