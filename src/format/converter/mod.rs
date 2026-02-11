@@ -202,11 +202,6 @@ pub fn apr_convert<P: AsRef<Path>>(
         .and_then(|e| e.to_str())
         .unwrap_or("");
 
-    eprintln!(
-        "[DEBUG apr_convert] input: {:?}, extension: {:?}",
-        input_path, extension
-    );
-
     // GH-181 FIX: Preserve Q4_K_M block alignment by using raw byte pass-through
     // When source is already Q4K quantized GGUF and target is Q4K, skip dequant→requant
     if extension == "gguf" && options.quantize == Some(QuantizationType::Q4K) {
