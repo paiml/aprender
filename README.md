@@ -38,9 +38,10 @@ Aprender provides implementations of classical machine learning algorithms optim
 
 - **Pure Rust** — Zero C/C++ dependencies, memory-safe, thread-safe by default
 - **SIMD Acceleration** — Vectorized operations via [trueno](https://github.com/paiml/trueno) backend
+- **GPU Inference** — CUDA-accelerated inference via [realizar](https://github.com/paiml/realizar) (89.8 tok/s 7B, 851 tok/s 1.5B)
+- **Multi-Format** — Native `.apr`, SafeTensors (single + sharded), and GGUF support
 - **WebAssembly Ready** — Compile to WASM for browser and edge deployment
-- **Native Model Format** — `.apr` format with encryption, signatures, and zero-copy loading
-- **Interoperability** — Export to SafeTensors and GGUF formats
+- **11,251 Tests** — 96.35% coverage, zero SATD, TDG 96.9/100 A+
 
 ## Installation
 
@@ -55,7 +56,7 @@ aprender = "0.25"
 
 ```toml
 [dependencies]
-aprender = { version = "0.13", features = ["format-encryption", "hf-hub-integration"] }
+aprender = { version = "0.25", features = ["format-encryption", "hf-hub-integration"] }
 ```
 
 | Feature | Description |
@@ -282,52 +283,75 @@ apr publish ./model-dir/ org/model-name --license mit
 
 ## Showcase: Qwen2.5-Coder Inference
 
-The `apr` CLI achieves **2.93x Ollama** performance on Qwen2.5-Coder-1.5B with GPU acceleration:
+Multi-model inference across Qwen2.5-Coder 0.5B, 1.5B, 3B, 7B, and 14B — all formats (SafeTensors, GGUF, APR), both CPU and GPU:
 
 ```bash
+# Run any model (auto-downloads if needed)
+apr run hf://Qwen/Qwen2.5-Coder-7B-Instruct --prompt "Write hello world in Rust"
+
+# Sharded SafeTensors supported (3B+)
+apr serve /path/to/model.safetensors.index.json --port 8080
+
 # Interactive chat
 apr chat qwen2.5-coder-1.5b-q4_k_m.gguf
 
-# Single-shot generation
-apr run qwen2.5-coder-1.5b-q4_k_m.gguf --prompt "Write hello world in Rust"
-
 # Production server (OpenAI-compatible API)
-apr serve qwen2.5-coder-1.5b-q4_k_m.gguf --port 8080
+apr serve qwen2.5-coder-7b-q4_k_m.gguf --port 8080 --gpu
 ```
 
-### Benchmark Results (2026-01-18)
+### Benchmark Results (2026-02-10)
+
+**7B Q4_K_M on RTX 4090:**
+
+| Mode | Throughput | vs Ollama | Status |
+|------|------------|-----------|--------|
+| GPU Decode | **89.8 tok/s** | **0.8x** (Grade C) | Pass |
+| CPU (GGUF) | 8 tok/s | — | Pass |
+
+**1.5B Q4_K_M on RTX 4090:**
 
 | Mode | Throughput | vs Ollama | Status |
 |------|------------|-----------|--------|
 | GPU Batched (M=16) | **851.8 tok/s** | **2.93x** | Pass |
-| GPU Batched (M=8) | 770.0 tok/s | 2.65x | Pass |
 | GPU Single | 120.1 tok/s | 1.0x | Pass |
 | CPU | 25.3 tok/s | 1.69x | Pass |
 
-See [`docs/specifications/qwen2.5-coder-showcase-demo.md`](docs/specifications/qwen2.5-coder-showcase-demo.md) for full benchmark methodology.
+**Supported model sizes:** 0.5B, 1.5B, 3B, 7B, 14B (SafeTensors sharded, GGUF Q4_K, APR native).
+
+See [`docs/specifications/qwen2.5-coder-showcase-demo.md`](docs/specifications/qwen2.5-coder-showcase-demo.md) for full benchmark methodology and the 41-round Popperian falsification protocol (205 bugs found and fixed).
 
 ## QA & Testing
 
 The project includes comprehensive QA infrastructure for model validation:
 
 ```bash
-# Run full 21-cell QA matrix (modality × format × backend)
-cargo run --example qa_run -- --full-matrix
+# Run 7-gate QA suite on any model
+apr qa model.gguf
 
-# Run QA falsification suite (Popperian methodology)
-cargo run --example qa_falsify
+# QA with throughput assertions
+apr qa model.gguf --assert-tps 100 --json
 
-# Single modality test with Ollama comparison
-cargo run --example qa_run -- --modality serve --backend cpu --format gguf --with-ollama
+# MVP playbook testing (18-cell matrix: 3 formats × 2 backends × 3 modalities)
+cd apr-model-qa-playbook
+apr-qa run playbooks/models/qwen2.5-coder-7b-mvp.playbook.yaml \
+  --model-path /path/to/model.safetensors.index.json
 ```
+
+**QA Gates (7 falsifiable gates):**
+1. Tensor contract validation
+2. Golden output verification
+3. Throughput measurement
+4. Ollama parity comparison
+5. GPU speedup verification
+6. Format parity (SafeTensors vs GGUF vs APR)
+7. PTX parity (GPU kernel correctness)
 
 **QA Matrix Coverage:**
 - **Modalities**: `run`, `chat`, `serve`
-- **Formats**: GGUF, SafeTensors, APR
+- **Formats**: GGUF, SafeTensors (including sharded), APR
 - **Backends**: CPU, GPU
-- **Features**: Hang detection (60s), garbage output detection, answer verification
-
-See [`examples/qa_run.rs`](examples/qa_run.rs) and [`examples/qa_falsify.rs`](examples/qa_falsify.rs) for implementation.
+- **Models tested**: 0.5B, 1.5B, 3B, 7B, 14B
+- **Falsification**: 41 rounds, 205 bugs found, 155/163 gates passing (95.1%)
 
 ## Documentation
 

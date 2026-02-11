@@ -287,6 +287,7 @@
 - [Case Study: Qwen2.5-Coder QA Playbook](./examples/qwen-qa-playbook.md)
 - [Case Study: PTX Parity Validation (GH-219)](./examples/ptx-parity-validation.md)
 - [Case Study: Hex Forensics — Binary Model Inspection](./examples/hex-forensics.md)
+- [Case Study: Sharded SafeTensors Serving (GH-213)](./examples/sharded-safetensors-serve.md)
 
 # Sprint-Based Development
 
