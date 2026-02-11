@@ -29,6 +29,17 @@ pub(crate) fn start_realizar_server(model_path: &Path, config: &ServerConfig) ->
     use realizar::format::{detect_format, ModelFormat};
     use std::io::Read;
 
+    // GH-213: Detect sharded SafeTensors index.json BEFORE reading file bytes.
+    // The index.json is a small JSON file that maps tensor names to shard files.
+    // Reading it as binary triggers "header too large" DOS protection.
+    let path_str = model_path.to_string_lossy();
+    if path_str.ends_with(".safetensors.index.json") {
+        println!();
+        println!("Detected format: Sharded SafeTensors (index.json)");
+        println!("{}", "Starting sharded SafeTensors server...".cyan());
+        return super::safetensors::start_sharded_safetensors_server(model_path, config);
+    }
+
     // Read only 8 bytes for format detection (avoid loading entire file)
     let mut file = std::fs::File::open(model_path)?;
     let mut magic = [0u8; 8];
