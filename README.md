@@ -38,7 +38,7 @@ Aprender provides implementations of classical machine learning algorithms optim
 
 - **Pure Rust** — Zero C/C++ dependencies, memory-safe, thread-safe by default
 - **SIMD Acceleration** — Vectorized operations via [trueno](https://github.com/paiml/trueno) backend
-- **GPU Inference** — CUDA-accelerated inference via [realizar](https://github.com/paiml/realizar) (89.8 tok/s 7B, 851 tok/s 1.5B)
+- **GPU Inference** — CUDA-accelerated inference via [realizar](https://github.com/paiml/realizar) (67.8 tok/s 7B, 851 tok/s 1.5B)
 - **Multi-Format** — Native `.apr`, SafeTensors (single + sharded), and GGUF support
 - **WebAssembly Ready** — Compile to WASM for browser and edge deployment
 - **11,251 Tests** — 96.35% coverage, zero SATD, TDG 96.9/100 A+
@@ -299,13 +299,13 @@ apr chat qwen2.5-coder-1.5b-q4_k_m.gguf
 apr serve qwen2.5-coder-7b-q4_k_m.gguf --port 8080 --gpu
 ```
 
-### Benchmark Results (2026-02-10)
+### Benchmark Results (2026-02-11)
 
 **7B Q4_K_M on RTX 4090:**
 
 | Mode | Throughput | vs Ollama | Status |
 |------|------------|-----------|--------|
-| GPU Decode | **89.8 tok/s** | **0.8x** (Grade C) | Pass |
+| GPU Decode | **67.8 tok/s** | **0.6x** (Grade D) | Pass |
 | CPU (GGUF) | 8 tok/s | — | Pass |
 
 **1.5B Q4_K_M on RTX 4090:**
@@ -318,7 +318,7 @@ apr serve qwen2.5-coder-7b-q4_k_m.gguf --port 8080 --gpu
 
 **Supported model sizes:** 0.5B, 1.5B, 3B, 7B, 14B (SafeTensors sharded, GGUF Q4_K, APR native).
 
-See [`docs/specifications/qwen2.5-coder-showcase-demo.md`](docs/specifications/qwen2.5-coder-showcase-demo.md) for full benchmark methodology and the 41-round Popperian falsification protocol (205 bugs found and fixed).
+See [`docs/specifications/qwen2.5-coder-showcase-demo.md`](docs/specifications/qwen2.5-coder-showcase-demo.md) for full benchmark methodology and the 42-round Popperian falsification protocol (206 bugs found and fixed).
 
 ## QA & Testing
 
@@ -351,7 +351,7 @@ apr-qa run playbooks/models/qwen2.5-coder-7b-mvp.playbook.yaml \
 - **Formats**: GGUF, SafeTensors (including sharded), APR
 - **Backends**: CPU, GPU
 - **Models tested**: 0.5B, 1.5B, 3B, 7B, 14B
-- **Falsification**: 41 rounds, 205 bugs found, 155/163 gates passing (95.1%)
+- **Falsification**: 42 rounds, 206 bugs found, 155/163 gates passing (95.1%)
 
 ## Documentation
 

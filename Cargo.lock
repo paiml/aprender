@@ -2186,7 +2186,7 @@ dependencies = [
 
 [[package]]
 name = "entrenar"
-version = "0.5.8"
+version = "0.5.9"
 dependencies = [
  "aprender 0.25.0",
  "bytemuck",
@@ -2228,7 +2228,7 @@ name = "entrenar-lora"
 version = "0.2.0"
 dependencies = [
  "clap",
- "entrenar 0.5.8",
+ "entrenar 0.5.9",
  "entrenar-common",
  "serde",
  "serde_json",
@@ -5088,7 +5088,7 @@ dependencies = [
 
 [[package]]
 name = "realizar"
-version = "0.6.11"
+version = "0.6.12"
 dependencies = [
  "anyhow",
  "aprender 0.25.2",

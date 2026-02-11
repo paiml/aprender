@@ -1,15 +1,15 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 10.41.0 (Full Stack: apr-cli + aprender + realizar + trueno, Popperian falsified)
-**Status:** ALL THREE PROJECTS A+ + ZERO SATD (7B all 3 formats working CPU + GPU. 41 falsification rounds, 205 bugs found. Round 41: Sharded SafeTensors serve support — `apr serve` now handles `.safetensors.index.json` (GH-213). 3B MVP serve scenarios unblocked. Playbook 18-cell matrix fully operational. `apr qa` standalone passes all 7 gates. Throughput: 89.8 tok/s, Ollama 0.8x Grade C. TDG: 96.9/100 A+. Project Score: A+. Coverage: 96.35%. SATD: 0/0/0.)
+**Version:** 10.42.0 (Full Stack: apr-cli + aprender + realizar + trueno, Popperian falsified)
+**Status:** ALL THREE PROJECTS A+ + ZERO SATD (7B all 3 formats working CPU + GPU. 42 falsification rounds, 206 bugs found. Round 42: GPU throughput regression falsified — spec claimed 89.8 tok/s but re-measurement shows 67.8 tok/s (25% drop). Ollama parity downgraded C→D (0.6x). All QA gates still PASS. 11,251 tests, 3,796 apr-cli tests. `apr qa` all 7 gates pass. TDG: 96.9/100 A+. Project Score: A+. Coverage: 96.35%. SATD: 0/0/0.)
 **Primary Model:** `Qwen/Qwen2.5-Coder-7B-Instruct`
 **Supported Models:** Qwen2.5-Coder 0.5B, 1.5B, 3B, 7B (all sizes)
 **Source Format:** SafeTensors BF16 (HuggingFace, sharded, ~14 GB for 7B)
-**Popperian Score:** 155/163 gates passing (95.1%) — 8 FALSIFIED, 0 blocked/not-tested. 163 falsification gates, 23 sections. 41 rounds, 205 bugs. Gated by `model-tests` feature (`make test-model`)
+**Popperian Score:** 155/163 gates passing (95.1%) — 8 FALSIFIED, 0 blocked/not-tested. 163 falsification gates, 23 sections. 42 rounds, 206 bugs. Gated by `model-tests` feature (`make test-model`)
 **CLI Surface:** 39 top-level + 10 nested subcommands (49 total)
 **Compile-Time Proofs:** 297 algebraic invariants (zero runtime cost)
 **Author:** PAIML Engineering
-**Date:** 2026-02-10 (Round 41)
+**Date:** 2026-02-11 (Round 42)
 **Ground Truth:** SafeTensors BF16 - See Section 0
 **Quality Philosophy:** Toyota Way + Popperian Falsification (Zero SATD, Stop-the-Line, Jidoka)
 
@@ -19,9 +19,9 @@
 |--------|--------|-----|-----|----------|--------|
 | SafeTensors BF16 | HuggingFace (ground truth) | 0.1 tok/s | **FALSIFIED** (VRAM) | PMAT-237 | **Pass** (CPU). GPU: 7B F32 ~28GB exceeds 24GB VRAM — structural limitation, requires quantization. |
 | APR Q4_K_M | Converted from SafeTensors | 0.6 tok/s | **Pass** (8.82s) | PMAT-237 | **Pass** (CPU + GPU). Routed through CUDA pipeline via `OwnedQuantizedModel::from_apr()`. |
-| GGUF Q4_K_M | Pre-baked (diagnostic) | 8 tok/s | 89.8 tok/s (12.2x speedup) | PMAT-237 | **Pass** (QA gates pass. MWV Q4K GEMV: 89.8 tok/s decode. Batched prefill disabled — serial default. Ollama parity 0.8x Grade C.) |
+| GGUF Q4_K_M | Pre-baked (diagnostic) | 8 tok/s | 67.8 tok/s (8.0x speedup) | PMAT-237 | **Pass** (QA gates pass. MWV Q4K GEMV: 67.8 tok/s decode. Batched prefill disabled — serial default. Ollama parity 0.6x Grade D.) |
 
-**Release = ALL THREE FORMATS WORKING (CPU + GPU). GPU: GGUF 89.8 tok/s, APR 8.82s (RTX 4090). MWV Q4K GEMV decode. Serial prefill default (batched disabled pending kernel fix). Ollama parity 0.8x Grade C.**
+**Release = ALL THREE FORMATS WORKING (CPU + GPU). GPU: GGUF 67.8 tok/s, APR 8.82s (RTX 4090). MWV Q4K GEMV decode. Serial prefill default (batched disabled pending kernel fix). Ollama parity 0.6x Grade D.**
 
 ---
 
@@ -37,12 +37,12 @@
 
 The Qwen2.5-Coder Showcase demonstrates the unified inference architecture across three model formats (SafeTensors, APR, GGUF) with CPU and GPU backends, using a single model with a single provenance chain. The full stack is exercised end-to-end: **apr-cli** (49 subcommands) → **aprender** (contract validation, 297 compile-time proofs) → **realizar** (inference: two-phase generation with batched prefill, PagedAttention KV cache, 8 sampling algorithms + penalty modifiers, GQA attention, OpenAI-compatible API, PTX parity validation) → **trueno** (SIMD/GPU compute: 9 backend tiers, 95 CUDA kernels, 6 batched kernel variants with KernelParity trait, Jidoka quality gates). 163 falsification gates across 23 sections.
 
-**v10.37.0 Focus: Correctness Recovery + Ollama Parity Achieved (Grade C)**
-- **Current (measured 2026-02-10):** 89.8 tok/s GPU decode (0.8x Ollama 126 tok/s) — **Grade C (parity)**
+**v10.42.0 Focus: Correctness Recovery + Ollama Parity (Grade D)**
+- **Current (measured 2026-02-11):** 67.8 tok/s GPU decode (0.6x Ollama 125 tok/s) — **Grade D** (regressed from 89.8 tok/s, see Bug 206)
 - **Batched prefill DISABLED:** Regression discovered — `BatchedQ4KGemvKernel` dequant diverges from `MwvQ4KGemv` after PAR-082-V2 kernel changes. Serial prefill is now default. Set `BATCHED_PREFILL=1` to re-enable.
 - **Target:** 125.7 tok/s (1.0x exact parity, Grade C) → 251 tok/s (2.0x, Grade A)
 - **Method:** Dogfood `apr profile`, identify bottlenecks via roofline analysis, optimize decode path
-- **Bottleneck:** ~35% of RTX 4090's 1008 GB/s bandwidth. Decode: 89.8 tok/s. CUDA graph captured.
+- **Bottleneck:** ~24% of RTX 4090's 1008 GB/s bandwidth. Decode: 67.8 tok/s. CUDA graph captured.
 - **Grading system:** F (<50% Ollama) → D (50-75%) → C (75-100% = parity) → B (100-150%) → A (150-200%) → A+ (200%+)
 
 **Toyota Way + Popperian Philosophy:**
@@ -81,12 +81,12 @@ apr run/chat/serve  <-- PMAT-237 contract gate -> realizar (Section 14) via true
 | SafeTensors BF16 | Direct | CPU (AVX2) | 0.1 tok/s | **Pass** (correct output, 103s for 1 token, 629s for 64 tokens) |
 | APR Q4_K_M | From SafeTensors | GPU (RTX 4090) | **Pass** (8.82s) | **FIXED**: Routed through CUDA pipeline via `OwnedQuantizedModel::from_apr()`. Previous wgpu F32 adapter skipped Q4K data. |
 | APR Q4_K_M | From SafeTensors | CPU (AVX2) | 0.6 tok/s | **Pass** (correct output "4", 57s) |
-| GGUF Q4_K_M | Pre-baked | GPU (RTX 4090) | 89.8 tok/s decode | **Pass** (`apr qa`: 89.8 tok/s decode (0.8x Ollama 126 tok/s, Grade C). Serial prefill default. CUDA graph decode. PTX parity: 6/6 kernel pairs.) |
-| GGUF Q4_K_M | Pre-baked | CPU (AVX2) | 8 tok/s | **Pass** (`apr qa`: 8 tok/s CPU, 339 tensors validated, 12.2x GPU speedup) |
+| GGUF Q4_K_M | Pre-baked | GPU (RTX 4090) | 67.8 tok/s decode | **Pass** (`apr qa`: 67.8 tok/s decode (0.6x Ollama 125 tok/s, Grade D). Serial prefill default. CUDA graph decode. PTX parity: 6/6 kernel pairs. Regressed from 89.8 — see Bug 206.) |
+| GGUF Q4_K_M | Pre-baked | CPU (AVX2) | 8 tok/s | **Pass** (`apr qa`: 8 tok/s CPU, 339 tensors validated, 8.0x GPU speedup) |
 | GGUF Q4_K_M | Exported (APR→GGUF) | GPU (RTX 4090) | 20 tok/s | **FIXED** (GH-253: tokenizer metadata round-trip fixed. F2-VALIDATION BOS probe fixed — GPU engages.) |
 | GGUF Q4_K_M | Exported (APR→GGUF) | CPU (AVX2) | 6 tok/s | **FIXED** (GH-253: correct decode verified — "2+2 equals 4" on both 1.5B and 7B round-tripped GGUF) |
 
-**Measured results (2026-02-10):** All 3 formats produce correct inference on CPU AND GPU. SafeTensors BF16: 0.1 tok/s CPU (unquantized 14GB). APR Q4_K: 0.6 tok/s CPU, 8.82s GPU (4GB, quantized from SafeTensors). GGUF Q4_K_M: 8 tok/s CPU, **89.8 tok/s GPU** (MWV Q4K GEMV decode, serial prefill). **Ollama parity: 0.8x Grade C** (89.8 vs ~126 tok/s). GPU speedup: 12.2x. **Batched prefill disabled** — regression found (BatchedQ4KGemvKernel dequant diverges from MwvQ4KGemv). Serial prefill default; `BATCHED_PREFILL=1` to re-enable. PTX parity: 6/6 kernel pairs validated (13ms). `apr qa`: ALL GATES PASS (tensor contract, golden output, throughput, Ollama parity, GPU speedup, PTX parity).
+**Measured results (2026-02-11):** All 3 formats produce correct inference on CPU AND GPU. SafeTensors BF16: 0.1 tok/s CPU (unquantized 14GB). APR Q4_K: 0.6 tok/s CPU, 8.82s GPU (4GB, quantized from SafeTensors). GGUF Q4_K_M: 8 tok/s CPU, **67.8 tok/s GPU** (MWV Q4K GEMV decode, serial prefill). **Ollama parity: 0.6x Grade D** (67.8 vs ~125 tok/s). GPU speedup: 8.0x. **Throughput regressed from 89.8 tok/s (Round 41) to 67.8 tok/s (Round 42) — Bug 206.** Possible causes: realizar 0.6.12 changes, CUDA thermal conditions, or measurement variance. **Batched prefill disabled** — regression found (BatchedQ4KGemvKernel dequant diverges from MwvQ4KGemv). Serial prefill default; `BATCHED_PREFILL=1` to re-enable. PTX parity: 6/6 kernel pairs validated (14ms). `apr qa`: ALL GATES PASS (tensor contract, golden output, throughput, Ollama parity, GPU speedup, PTX parity).
 
 ### End-to-End Inference Stack (Single Token)
 
@@ -832,7 +832,7 @@ curl -s localhost:8080/v1/chat/completions \
 | ID | Prediction | Test | Expected | Status |
 |----|-----------|------|----------|--------|
 | F-OLLAMA-001 | Token-level parity at temp=0 | diff APR vs ollama output | 0 diff lines | **Pass** (both produce coherent, non-garbage output; exact token parity not achievable across engines) |
-| F-OLLAMA-002 | APR throughput >= 20% of ollama | `apr qa` ollama parity gate | Ratio >= 0.2 | **Pass** (7B: 0.31x = 38 vs 122 tok/s. 1.5B: 0.49x = 133 vs 269 tok/s. Batched prefill improved amortized throughput.) |
+| F-OLLAMA-002 | APR throughput >= 20% of ollama | `apr qa` ollama parity gate | Ratio >= 0.2 | **Pass** (7B: 0.59x = 74 vs 125 tok/s, measured Round 42. 1.5B: 0.49x = 133 vs 269 tok/s.) |
 | F-OLLAMA-003 | TTFT within 2x of ollama | First token latency comparison | APR TTFT <= 2 * ollama TTFT | **Pass** (APR 6ms vs ollama 20ms — APR 3x faster) |
 | F-OLLAMA-004 | API response content matches | Compare `/v1/chat/completions` vs `/api/chat` | Same content string | **Pass** (`apr serve` and ollama both produce coherent responses) |
 | F-OLLAMA-005 | Same GGUF file loadable by both | ollama create from our exported GGUF | Success (no format errors) | **Pass** (ollama create + apr validate both succeed on same GGUF) |
@@ -1095,7 +1095,7 @@ Format-aware binary forensics tool that understands GGUF, APR, and SafeTensors i
 | F-PROFILE-007 | GPU per-kernel timing is real (not opaque) | `apr profile model.gguf` on GPU | Shows per-kernel time for QKV, attention, FFN, etc. | **Pass** (BrickProfiler pass extracts per-op timing via `extract_gpu_hotspots()`. Shows name, time_us, percent, count, min/max/avg, bottleneck classification, and category.) |
 | F-PROFILE-008 | Memory bandwidth utilization per kernel | `apr profile model.gguf --granular` | Shows achieved GB/s per operation vs peak | **Pass** (`estimate_kernel_data_bytes()` computes data movement per kernel. `bandwidth_gbs` and `efficiency_pct` fields. Granular detail column shows `bw=X.XGB/s, eff=X%` vs RTX 4090 peak 1008 GB/s. 5 tests.) |
 | F-PROFILE-009 | Kernel launch overhead measured | `apr profile model.gguf` | Reports total kernel launch overhead as % of decode time | **Pass** (`compute_kernel_launch_overhead()` computes gap between sum(kernel_times) and wall time. `kernel_launch_overhead_pct/us` fields. Color-coded display: green <10%, yellow 10-20%, red >20%. 2 tests.) |
-| F-PROFILE-010 | Ollama parity grade in `apr qa` | `apr qa model.gguf` | Reports Ollama parity ratio and letter grade | **Pass** (`ollama_parity_grade()` computes F/D/C/B/A/A+ from speedup ratio. Gate output: "0.64x Ollama (81 vs 126 tok/s) Grade D". Round 24 fix.) |
+| F-PROFILE-010 | Ollama parity grade in `apr qa` | `apr qa model.gguf` | Reports Ollama parity ratio and letter grade | **Pass** (`ollama_parity_grade()` computes F/D/C/B/A/A+ from speedup ratio. Gate output: "0.6x Ollama (74 vs 125 tok/s) Grade D". Measured Round 42.) |
 | F-PROFILE-011 | Cross-format performance comparison | `apr profile model.apr --compare model.gguf` | Side-by-side decode tok/s for APR vs GGUF | **Pass** (`run_cross_format_comparison()` profiles both models via `profile_gpu_or_cpu()` fallback, prints formatted table with decode/prefill/throughput/latency. 6 tests. Round 25 fix.) |
 | F-PROFILE-012 | Bandwidth utilization > 40% (Ollama parity) | `apr profile model.gguf` roofline | Memory efficiency > 40% | **FALSIFIED** (14% achieved, target 40-50% for Ollama parity) |
 
@@ -1205,7 +1205,7 @@ Gap factor:           3.4x
 |----|-----------|------|----------|--------|
 | F-PERF-001 | KV cache is O(n) not O(n^2) | `apr profile` with 10 vs 100 tokens | Time ratio < 15x (not 100x) | **Pass** (`apr profile` on GGUF produces roofline output) |
 | F-PERF-002 | Fused Q4K kernel matches reference | `matmul_q4k_f32(W, x)` vs `matmul(dequant(W), x)` | Max diff < 1e-3 | **Pass** (trueno Q4K matmul kernel exists) |
-| F-PERF-003 | GPU throughput > CPU throughput | `apr bench --fast` GPU vs `CUDA_VISIBLE_DEVICES=""` CPU | GPU tok/s > CPU tok/s | **Pass** (GPU 121 tok/s vs CPU 2.8 tok/s = 43x speedup) |
+| F-PERF-003 | GPU throughput > CPU throughput | `apr bench --fast` GPU vs `CUDA_VISIBLE_DEVICES=""` CPU | GPU tok/s > CPU tok/s | **Pass** (GPU 68 tok/s vs CPU 8 tok/s = 8.0x speedup, measured Round 42) |
 | F-PERF-004 | `apr profile --ci` fails on threshold violation | `apr profile --ci --assert-throughput 999999` | Exit code 1 | **Pass** (profile.rs has CI threshold + ValidationFailed logic) |
 | F-PERF-005 | `apr bench` produces stable measurements | Run 10 iterations | Coefficient of variation < 20% | **Pass** (`apr bench` on GGUF produces output) |
 | F-PERF-006 | `apr eval` perplexity is finite and reasonable | `apr eval qwen-7b.gguf --dataset wikitext` | PPL < 20, not NaN/Inf | **Pass** (`apr eval` on GGUF produces perplexity output) |
@@ -2390,6 +2390,19 @@ All 5 bugs from Round 39 have been fixed in `apr-model-qa-playbook`. The 18-cell
 - **Key files**: `handlers.rs` (early detection), `safetensors.rs` (new `start_sharded_safetensors_server()`)
 - **3B MVP serve scenarios**: Previously timed out due to crash; now routed through sharded loading path
 
+**Round 42 (v10.42.0): GPU throughput regression falsified — spec claims stale**
+
+| # | Claim/Gap | Reality | Severity | Fix |
+|---|-----------|---------|----------|-----|
+| 206 | Spec claims 89.8 tok/s GPU decode, 0.8x Ollama Grade C, 12.2x GPU speedup | Re-measurement (2 runs, `apr qa --json`) shows 67.8 tok/s (25% lower), 0.6x Ollama Grade D, 8.0x GPU speedup. All QA gates still PASS (thresholds: 10 tok/s, 0.2x Ollama, 2.0x speedup). Possible causes: realizar 0.6.11→0.6.12 code changes, CUDA thermal conditions during sustained testing, or measurement variance under system load. | **P2** | Spec updated to reflect measured values. Performance still above all gate thresholds. Root cause investigation needed — profile decode path for regression vs measurement artifact. |
+
+- **Bug 206 FALSIFIED**: Spec performance claims no longer reproducible. Throughput: 89.8 → 67.8 tok/s. Ollama: 0.8x Grade C → 0.6x Grade D. GPU speedup: 12.2x → 8.0x.
+- **All QA gates still PASS**: Generous thresholds (10 tok/s, 0.2x Ollama, 2.0x speedup) absorb the regression
+- **Verification**: `apr qa --json` run twice with consistent results (66.9, 67.8 tok/s)
+- **Other gates**: 11,251 aprender tests pass, 3,796 apr-cli tests pass, `cargo fmt` clean, `cargo clippy` clean, 339/339 tensor contract, PTX parity 6/6
+- **No new FALSIFIED gates**: All 155 passing gates still pass. The 8 previously FALSIFIED gates remain FALSIFIED (structural).
+- **Test count verified**: aprender 11,251 + apr-cli 3,796 = 15,047 total
+
 ### 18.2 Claims Verified (Not Falsified)
 
 **Round 1:**
@@ -2650,7 +2663,7 @@ Two oracles validate output quality:
 | Backend | Min Throughput | Playbook Config | Actually Tested | Status |
 |---------|---------------|-----------------|-----------------|--------|
 | CPU | 5.0 tok/s | `profile_ci.assertions.min_throughput_cpu` | **Yes** (`run_profile_ci: true` for MVP tier) | **Pass** (8 tok/s CPU) |
-| GPU | 50.0 tok/s | `profile_ci.assertions.min_throughput_gpu` | **Yes** (`run_profile_ci: true` for MVP tier) | **Pass** (89.8 tok/s GPU) |
+| GPU | 50.0 tok/s | `profile_ci.assertions.min_throughput_gpu` | **Yes** (`run_profile_ci: true` for MVP tier) | **Pass** (67.8 tok/s GPU) |
 
 Bug 203 fix: `build_certification_config(CertTier::Mvp)` now sets `run_profile_ci: true`. Performance assertions are verified for all tiers MVP and above.
 
@@ -2697,15 +2710,15 @@ apr qa /path/to/model.gguf
 ╭─────────────────┬────────┬──────────┬───────────┬──────────╮
 │ Gate            │ Status │ Measured │ Threshold │ Duration │
 ├─────────────────┼────────┼──────────┼───────────┼──────────┤
-│ Tensor Contract │ ✓ PASS │ 339.00   │ 0.00      │ 54.4s    │
-│ Golden Output   │ ✓ PASS │ 2.00     │ 2.00      │ 25.7s    │
-│ Throughput      │ ✓ PASS │ 89.85    │ 10.00     │ 9.9s     │
-│ Ollama Parity   │ ✓ PASS │ 0.79     │ 0.20      │ 31.0s    │
-│ GPU Speedup     │ ✓ PASS │ 12.16    │ 2.00      │ 1.2m     │
+│ Tensor Contract │ ✓ PASS │ 339.00   │ 0.00      │ 54.2s    │
+│ Golden Output   │ ✓ PASS │ 2.00     │ 2.00      │ 27.7s    │
+│ Throughput      │ ✓ PASS │ 67.80    │ 10.00     │ 11.7s    │
+│ Ollama Parity   │ ✓ PASS │ 0.59     │ 0.20      │ 34.0s    │
+│ GPU Speedup     │ ✓ PASS │ 8.25     │ 2.00      │ 1.2m     │
 │ Format Parity   │ ○ SKIP │ —        │ —         │ 0ms      │
-│ PTX Parity      │ ✓ PASS │ 6.00     │ 6.00      │ 13ms     │
+│ PTX Parity      │ ✓ PASS │ 6.00     │ 6.00      │ 14ms     │
 ╰─────────────────┴────────┴──────────┴───────────┴──────────╯
-  ✓ ALL GATES PASSED (3.3m)
+  ✓ ALL GATES PASSED (3.4m)
 ```
 
 ### 21.10 MVP Falsification Gates (F-MVP-*)
@@ -2716,7 +2729,7 @@ apr qa /path/to/model.gguf
 | F-MVP-002 | Playbook tests all 3 modalities (run/chat/serve) | `subprocess_execution()` modality dispatch | Calls `apr run`, `apr chat`, `apr serve` | **Pass** (Round 40: Bug 200 FIXED — dispatches by `scenario.modality` to correct CommandRunner method) |
 | F-MVP-003 | Model passes G4 (Quality) via arithmetic oracle | Oracle evaluation on `apr run` output | Output contains "4" for "2+2?" | **Pass** (oracle correctly evaluates; verified via `apr qa` golden output gate) |
 | F-MVP-004 | Garbage oracle rejects layout-broken output | Oracle evaluation | `max_repetition_ratio < 0.3` | **Pass** (oracle logic correct; no garbage in GGUF output) |
-| F-MVP-005 | Playbook verifies GPU throughput ≥ 50 tok/s | `run_profile_ci` in MVP tier | Performance gate runs | **Pass** (Round 40: Bug 203 FIXED — `run_profile_ci: true` for MVP tier. 89.8 tok/s meets threshold.) |
+| F-MVP-005 | Playbook verifies GPU throughput ≥ 50 tok/s | `run_profile_ci` in MVP tier | Performance gate runs | **Pass** (Round 40: Bug 203 FIXED — `run_profile_ci: true` for MVP tier. 67.8 tok/s meets threshold.) |
 | F-MVP-006 | Playbook verifies CPU throughput ≥ 5 tok/s | `run_profile_ci` in MVP tier | Performance gate runs | **Pass** (Round 40: Bug 203 FIXED — 8 tok/s meets threshold.) |
 | F-MVP-007 | Playbook runs without blocking on `--model-path` | Run with explicit model path | Completes within timeout | **Pass** (Round 40: Bug 204 FIXED — G0-PULL skipped when `--model-path` provided. No download.) |
 
