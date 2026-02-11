@@ -1185,15 +1185,34 @@ fn infer_intermediate_size_from_tensors(
 }
 
 /// Infer architecture string from tensor naming conventions.
+///
+/// Bug 210 (GH-222): Previously assumed ALL `model.layers` models were "qwen2" — wrong.
+/// LLaMA, Mistral, Phi all use `model.layers`. Now uses Qwen2-specific signals:
+/// - Qwen2 has attention bias (`self_attn.q_proj.bias`) — LLaMA/Mistral do not.
+/// - Qwen2 sometimes has fused `qkv_proj.weight`.
 fn infer_architecture_from_names(
     tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
 ) -> Option<String> {
-    if tensors.keys().any(|k| k.contains("model.layers")) {
-        Some("qwen2".to_string())
-    } else if tensors.keys().any(|k| k.contains("transformer.h")) {
+    let has_model_layers = tensors.keys().any(|k| k.contains("model.layers"));
+    let has_transformer_h = tensors.keys().any(|k| k.contains("transformer.h"));
+    let has_blk = tensors.keys().any(|k| k.contains("blk."));
+
+    if has_model_layers {
+        // Distinguish Qwen2 from LLaMA/Mistral by attention bias presence
+        let has_attn_bias = tensors
+            .keys()
+            .any(|k| k.contains("self_attn.q_proj.bias"));
+        let has_fused_qkv = tensors.keys().any(|k| k.contains("qkv_proj.weight"));
+        if has_attn_bias || has_fused_qkv {
+            Some("qwen2".to_string())
+        } else {
+            Some("llama".to_string())
+        }
+    } else if has_transformer_h {
         Some("gpt2".to_string())
-    } else if tensors.keys().any(|k| k.contains("blk.")) {
-        Some("qwen2".to_string())
+    } else if has_blk {
+        // GGUF naming — cannot reliably distinguish architectures
+        Some("unknown".to_string())
     } else {
         Some("unknown".to_string())
     }
@@ -1223,6 +1242,20 @@ pub(crate) fn infer_model_config_from_tensors(
         _ => Some(0),
     };
 
+    // Bug 210 (GH-222): Architecture-specific defaults for rope_theta and max_position_embeddings.
+    // Hardcoded 10000.0 was correct for LLaMA 1/2 but 100x wrong for Qwen2 (1M).
+    let rope_theta = match architecture.as_deref() {
+        Some("qwen2" | "qwen2.5" | "qwen") => Some(1_000_000.0f32),
+        Some("llama") => Some(500_000.0), // LLaMA 3 default; LLaMA 2 was 10000 but 500K is safer
+        _ => Some(10_000.0),
+    };
+
+    let max_position_embeddings = match architecture.as_deref() {
+        Some("qwen2" | "qwen2.5" | "qwen") => Some(32768),
+        Some("llama") => Some(8192),
+        _ => Some(4096),
+    };
+
     Some(GgufModelConfig {
         architecture,
         hidden_size: Some(hidden_size),
@@ -1231,8 +1264,8 @@ pub(crate) fn infer_model_config_from_tensors(
         num_kv_heads,
         vocab_size: Some(vocab_size),
         intermediate_size,
-        max_position_embeddings: Some(4096),
-        rope_theta: Some(10000.0),
+        max_position_embeddings,
+        rope_theta,
         rms_norm_eps: Some(1e-6),
         rope_type,
     })
@@ -1259,8 +1292,28 @@ pub(crate) fn load_source_tensors(
             let st_result = load_safetensors_with_f16_passthrough(path)?;
             // PMAT-098: Read config.json if available (CRITICAL for correct inference)
             // Fall back to shape inference only if config.json is missing
-            let model_config = load_model_config_from_json(path)
-                .or_else(|| infer_model_config_from_tensors(&st_result.tensors));
+            let config_from_json = load_model_config_from_json(path);
+            let config_json_found = config_from_json.is_some();
+            let model_config =
+                config_from_json.or_else(|| infer_model_config_from_tensors(&st_result.tensors));
+
+            // Bug 210 (GH-222): Warn loudly when config.json is missing — inferred
+            // hyperparameters (rope_theta, max_position_embeddings) may be wrong.
+            if !config_json_found {
+                let config_path = path.with_file_name("config.json");
+                eprintln!(
+                    "[WARNING] config.json not found at {}",
+                    config_path.display()
+                );
+                eprintln!(
+                    "[WARNING] Model config inferred from tensor shapes. \
+                     rope_theta and other params may be wrong."
+                );
+                eprintln!(
+                    "[WARNING] For best results, download config.json alongside your model file."
+                );
+            }
+
             // PMAT-APR-TOK-001: Load tokenizer from sibling tokenizer.json for APR embedding
             let tokenizer = load_tokenizer_from_json(path);
             Ok(SourceLoadResult {
@@ -1373,8 +1426,27 @@ pub(crate) fn load_sharded_safetensors(
     // Load config.json and tokenizer.json from the same directory as index
     // Use a dummy file path in the base directory so sibling lookup works
     let sibling_path = base_dir.join("model.safetensors.index.json");
-    let model_config = load_model_config_from_json(&sibling_path)
-        .or_else(|| infer_model_config_from_tensors(&merged_tensors));
+    let config_from_json = load_model_config_from_json(&sibling_path);
+    let config_json_found = config_from_json.is_some();
+    let model_config =
+        config_from_json.or_else(|| infer_model_config_from_tensors(&merged_tensors));
+
+    // Bug 210 (GH-222): Warn loudly when config.json is missing for sharded models too.
+    if !config_json_found {
+        let config_path = base_dir.join("config.json");
+        eprintln!(
+            "[WARNING] config.json not found at {}",
+            config_path.display()
+        );
+        eprintln!(
+            "[WARNING] Model config inferred from tensor shapes. \
+             rope_theta and other params may be wrong."
+        );
+        eprintln!(
+            "[WARNING] For best results, download config.json alongside your model shards."
+        );
+    }
+
     let tokenizer = load_tokenizer_from_json(&sibling_path);
 
     Ok(SourceLoadResult {

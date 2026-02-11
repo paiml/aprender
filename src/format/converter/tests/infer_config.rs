@@ -41,6 +41,11 @@ fn test_infer_config_huggingface_naming() {
             format!("model.layers.{i}.self_attn.q_proj.weight"),
             dummy_tensor(vec![128, 128]),
         );
+        // Bug 210: Qwen2 has attention bias — distinguishes from LLaMA/Mistral
+        tensors.insert(
+            format!("model.layers.{i}.self_attn.q_proj.bias"),
+            dummy_tensor(vec![128]),
+        );
         tensors.insert(
             format!("model.layers.{i}.self_attn.k_proj.weight"),
             dummy_tensor(vec![128, 128]),
@@ -93,10 +98,12 @@ fn test_infer_config_gguf_naming() {
     assert_eq!(config.hidden_size, Some(64));
     assert_eq!(config.num_layers, Some(2));
     assert_eq!(config.intermediate_size, Some(256));
+    // Bug 210: blk. naming is shared by many architectures (GGUF convention)
+    // Cannot reliably detect specific architecture from blk. alone
     assert_eq!(
         config.architecture.as_deref(),
-        Some("qwen2"),
-        "blk. pattern should detect qwen2"
+        Some("unknown"),
+        "blk. pattern should detect unknown (ambiguous GGUF naming)"
     );
 }
 
@@ -255,9 +262,14 @@ fn test_infer_config_rope_type_qwen() {
         "model.layers.0.self_attn.q_proj.weight".to_string(),
         dummy_tensor(vec![128, 128]),
     );
+    // Bug 210: Qwen2 detected by attention bias presence
+    tensors.insert(
+        "model.layers.0.self_attn.q_proj.bias".to_string(),
+        dummy_tensor(vec![128]),
+    );
 
     let config = infer_model_config_from_tensors(&tensors).expect("config should be Some");
-    // model.layers -> qwen2 -> rope_type=2 (NEOX)
+    // q_proj.bias -> qwen2 -> rope_type=2 (NEOX)
     assert_eq!(config.rope_type, Some(2), "qwen2 should have rope_type=2");
 }
 

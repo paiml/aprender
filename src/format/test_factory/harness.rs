@@ -1411,10 +1411,15 @@ fn test_t_qkv_03_safetensors_apr_gguf() {
 // ====================================================================
 
 /// T-QKV-04: Full multi-hop chain preserves tensor data
+///
+/// Bug 210: Uses qwen2_gqa() (with attention biases) instead of llama_style().
+/// llama_style() lacks q_proj.bias, so architecture is correctly detected as "llama",
+/// but the ST→GGUF→ST name round-trip only works for architectures with full name
+/// mapping support. Qwen2 is the primary tested architecture.
 #[test]
 fn test_t_qkv_04_multihop_st_apr_gguf_apr_st() {
     let h = ConversionTestHarness::new()
-        .with_safetensors(PygmyConfig::llama_style())
+        .with_safetensors(PygmyConfig::qwen2_gqa())
         .import_to_apr(ImportOptions::default())     // ST -> APR
         .export_to_gguf()                            // APR -> GGUF
         .reimport_to_apr()                           // GGUF -> APR

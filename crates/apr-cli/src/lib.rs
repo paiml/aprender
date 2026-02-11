@@ -12,6 +12,11 @@ mod output;
 
 pub use error::CliError;
 
+// Public re-exports for integration tests
+pub mod qa_types {
+    pub use crate::commands::qa::{GateResult, QaReport, SystemInfo};
+}
+
 #[cfg(feature = "inference")]
 pub mod federation;
 
@@ -1003,6 +1008,26 @@ pub enum Commands {
         /// Verbose output
         #[arg(short, long)]
         verbose: bool,
+
+        /// Minimum number of gates that must execute (fail if fewer)
+        #[arg(long, value_name = "N")]
+        min_executed: Option<usize>,
+
+        /// Previous QA report for regression detection
+        #[arg(long, value_name = "FILE")]
+        previous_report: Option<PathBuf>,
+
+        /// Maximum allowed performance regression ratio (default: 0.10 = 10%)
+        #[arg(long, value_name = "RATIO")]
+        regression_threshold: Option<f64>,
+
+        /// Skip GPU state isolation test
+        #[arg(long)]
+        skip_gpu_state: bool,
+
+        /// Skip metadata plausibility validation (Bug 210, GH-222)
+        #[arg(long)]
+        skip_metadata: bool,
     },
 
     /// GPU/CPU parity check (PMAT-232: genchi genbutsu — see where GPU diverges)
@@ -2341,6 +2366,11 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
             max_tokens,
             json,
             verbose,
+            min_executed,
+            previous_report,
+            regression_threshold,
+            skip_gpu_state,
+            skip_metadata,
         } => qa::run(
             file,
             *assert_tps,
@@ -2359,6 +2389,11 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
             *max_tokens,
             *json || cli.json,
             *verbose || cli.verbose,
+            *min_executed,
+            previous_report.clone(),
+            *regression_threshold,
+            *skip_gpu_state,
+            *skip_metadata,
         ),
 
         Commands::Parity {
@@ -3132,6 +3167,11 @@ mod tests {
                 max_tokens: 32,
                 json: false,
                 verbose: false,
+                min_executed: None,
+                previous_report: None,
+                regression_threshold: None,
+                skip_gpu_state: false,
+                skip_metadata: false,
             },
             Commands::Hex {
                 file: PathBuf::from("m.apr"),
@@ -6162,6 +6202,11 @@ mod tests {
             max_tokens: 1,
             json: false,
             verbose: false,
+            min_executed: None,
+            previous_report: None,
+            regression_threshold: None,
+            skip_gpu_state: false,
+            skip_metadata: true,
         });
         let result = execute_command(&cli);
         assert!(
@@ -6191,6 +6236,11 @@ mod tests {
             max_tokens: 1,
             json: false,
             verbose: false,
+            min_executed: None,
+            previous_report: None,
+            regression_threshold: None,
+            skip_gpu_state: false,
+            skip_metadata: true,
         });
         let result = execute_command(&cli);
         assert!(

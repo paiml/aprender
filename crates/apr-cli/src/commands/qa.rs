@@ -101,6 +101,16 @@ pub struct QaConfig {
     pub json: bool,
     /// Verbose output
     pub verbose: bool,
+    /// Minimum number of gates that must execute (not be skipped)
+    pub min_executed: Option<usize>,
+    /// Path to previous QA report for regression comparison
+    pub previous_report: Option<std::path::PathBuf>,
+    /// Maximum allowed performance regression (0.10 = 10%)
+    pub regression_threshold: f64,
+    /// Skip GPU state isolation test
+    pub skip_gpu_state: bool,
+    /// Skip metadata plausibility validation (Bug 210, GH-222)
+    pub skip_metadata: bool,
 }
 
 impl Default for QaConfig {
@@ -122,6 +132,11 @@ impl Default for QaConfig {
             max_tokens: 32,
             json: false,
             verbose: false,
+            min_executed: None,
+            previous_report: None,
+            regression_threshold: 0.10,
+            skip_gpu_state: false,
+            skip_metadata: false,
         }
     }
 }
@@ -197,6 +212,59 @@ impl GateResult {
     }
 }
 
+/// System information captured during QA run
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SystemInfo {
+    /// CPU model name
+    pub cpu_model: String,
+    /// GPU model name (if available)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gpu_model: Option<String>,
+    /// GPU driver version (if available)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gpu_driver: Option<String>,
+}
+
+impl SystemInfo {
+    fn capture() -> Self {
+        let cpu_model = std::fs::read_to_string("/proc/cpuinfo")
+            .ok()
+            .and_then(|s| {
+                s.lines()
+                    .find(|l| l.starts_with("model name"))
+                    .and_then(|l| l.split(':').nth(1))
+                    .map(|s| s.trim().to_string())
+            })
+            .unwrap_or_else(|| "unknown".to_string());
+
+        let (gpu_model, gpu_driver) = Self::detect_gpu();
+
+        Self {
+            cpu_model,
+            gpu_model,
+            gpu_driver,
+        }
+    }
+
+    fn detect_gpu() -> (Option<String>, Option<String>) {
+        let output = std::process::Command::new("nvidia-smi")
+            .args(["--query-gpu=name,driver_version", "--format=csv,noheader"])
+            .output()
+            .ok();
+        if let Some(out) = output {
+            if out.status.success() {
+                let text = String::from_utf8_lossy(&out.stdout);
+                let parts: Vec<&str> = text.trim().splitn(2, ',').collect();
+                return (
+                    parts.first().map(|s| s.trim().to_string()),
+                    parts.get(1).map(|s| s.trim().to_string()),
+                );
+            }
+        }
+        (None, None)
+    }
+}
+
 /// Full QA report
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QaReport {
@@ -206,12 +274,21 @@ pub struct QaReport {
     pub passed: bool,
     /// Individual gate results
     pub gates: Vec<GateResult>,
+    /// Number of gates that actually executed (not skipped)
+    #[serde(default)]
+    pub gates_executed: usize,
+    /// Number of gates that were skipped
+    #[serde(default)]
+    pub gates_skipped: usize,
     /// Total duration
     pub total_duration_ms: u64,
     /// Timestamp (ISO 8601)
     pub timestamp: String,
     /// Summary message
     pub summary: String,
+    /// System information
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub system_info: Option<SystemInfo>,
 }
 
 /// Run the QA command
@@ -234,6 +311,11 @@ pub fn run(
     max_tokens: usize,
     json: bool,
     verbose: bool,
+    min_executed: Option<usize>,
+    previous_report: Option<std::path::PathBuf>,
+    regression_threshold: Option<f64>,
+    skip_gpu_state: bool,
+    skip_metadata: bool,
 ) -> Result<()> {
     let config = QaConfig {
         min_tps: min_tps.unwrap_or(100.0),
@@ -252,6 +334,11 @@ pub fn run(
         max_tokens,
         json,
         verbose,
+        min_executed,
+        previous_report,
+        regression_threshold: regression_threshold.unwrap_or(0.10),
+        skip_gpu_state,
+        skip_metadata,
     };
 
     let report = run_qa(path, &config)?;
@@ -302,6 +389,9 @@ fn gate_display_name(name: &str) -> &str {
         "gpu_speedup" => "GPU Speedup",
         "format_parity" => "Format Parity",
         "ptx_parity" => "PTX Parity",
+        "gpu_state_isolation" => "GPU State Isolation",
+        "performance_regression" => "Perf Regression",
+        "metadata_plausibility" => "Metadata Plausibility",
         other => other,
     }
 }
@@ -401,6 +491,14 @@ fn run_qa(path: &Path, config: &QaConfig) -> Result<QaReport> {
     dispatch_gate(
         &mut gates,
         config.json,
+        config.skip_metadata,
+        "metadata_plausibility",
+        "Skipped by --skip-metadata",
+        || run_metadata_plausibility_gate(path, config),
+    )?;
+    dispatch_gate(
+        &mut gates,
+        config.json,
         config.skip_golden,
         "golden_output",
         "Skipped by --skip-golden",
@@ -462,18 +560,79 @@ fn run_qa(path: &Path, config: &QaConfig) -> Result<QaReport> {
         "Skipped by --skip-ptx-parity",
         || run_ptx_parity_gate(path, config),
     )?;
+    dispatch_gate(
+        &mut gates,
+        config.json,
+        config.skip_gpu_state,
+        "gpu_state_isolation",
+        "Skipped by --skip-gpu-state",
+        || run_gpu_state_isolation_gate(path, config),
+    )?;
+
+    // Gate 9: Performance regression detection (when --previous-report provided)
+    // Note: Cannot use dispatch_gate here because run_performance_regression_gate
+    // needs to read `gates` (immutable borrow) while dispatch_gate mutably borrows it.
+    let regression_result = if config.previous_report.is_none() {
+        GateResult::skipped("performance_regression", "No --previous-report provided")
+    } else {
+        run_performance_regression_gate(&gates, config)?
+    };
+    if !config.json {
+        print_gate_result(&regression_result);
+    }
+    gates.push(regression_result);
 
     let total_duration = start.elapsed();
-    let passed = gates.iter().all(|g| g.passed);
+    let gates_executed = gates.iter().filter(|g| !g.skipped).count();
+    let gates_skipped = gates.iter().filter(|g| g.skipped).count();
+
+    // JIDOKA: Warn when >50% skipped — QA is not rigorous
+    if !config.json && gates_skipped > gates_executed {
+        println!(
+            "  {} {} of {} gates SKIPPED — QA not rigorous",
+            "WARN".yellow().bold(),
+            gates_skipped,
+            gates_skipped + gates_executed
+        );
+    }
+
+    let mut passed = gates.iter().all(|g| g.passed);
+
+    // Enforce --min-executed: fail if fewer than N gates actually ran
+    if let Some(min) = config.min_executed {
+        if gates_executed < min {
+            if !config.json {
+                println!(
+                    "  {} Only {} gates executed, minimum required: {}",
+                    "FAIL".red().bold(),
+                    gates_executed,
+                    min,
+                );
+            }
+            passed = false;
+        }
+    }
+
     let summary = if passed {
-        "All QA gates passed".to_string()
+        format!(
+            "All QA gates passed ({} executed, {} skipped)",
+            gates_executed, gates_skipped
+        )
     } else {
         let names: Vec<_> = gates
             .iter()
             .filter(|g| !g.passed && !g.skipped)
             .map(|g| g.name.as_str())
             .collect();
-        format!("Failed gates: {}", names.join(", "))
+        if names.is_empty() && !passed {
+            format!(
+                "Insufficient gate execution: {} < {} minimum",
+                gates_executed,
+                config.min_executed.unwrap_or(0)
+            )
+        } else {
+            format!("Failed gates: {}", names.join(", "))
+        }
     };
 
     if !config.json {
@@ -484,9 +643,12 @@ fn run_qa(path: &Path, config: &QaConfig) -> Result<QaReport> {
         model: path.display().to_string(),
         passed,
         gates,
+        gates_executed,
+        gates_skipped,
         total_duration_ms: total_duration.as_millis() as u64,
         timestamp: chrono::Utc::now().to_rfc3339(),
         summary,
+        system_info: Some(SystemInfo::capture()),
     })
 }
 
@@ -566,6 +728,282 @@ fn run_tensor_contract_gate(path: &Path, config: &QaConfig) -> Result<GateResult
             duration,
         ))
     }
+}
+
+/// Gate 1: Metadata Plausibility Validation (Bug 210, GH-222)
+///
+/// Validates that model hyperparameters (rope_theta, max_position_embeddings, rms_norm_eps)
+/// fall within known plausible ranges for the detected architecture family.
+///
+/// This gate catches the root cause of GH-222: importing SafeTensors without config.json
+/// silently stored rope_theta=10000.0 for Qwen2, which should be 1000000.0.
+fn run_metadata_plausibility_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
+    let start = Instant::now();
+
+    if !config.json && config.verbose {
+        println!(
+            "{}",
+            "Running metadata plausibility validation (Bug 210)...".yellow()
+        );
+    }
+
+    // Extract metadata from the model file
+    let data = std::fs::read(path)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to read model: {e}")))?;
+
+    if data.len() < 4 {
+        let duration = start.elapsed();
+        return Ok(GateResult::failed(
+            "metadata_plausibility",
+            "File too small for metadata extraction",
+            None,
+            None,
+            duration,
+        ));
+    }
+
+    let (architecture, rope_theta, max_pos, rms_norm_eps) = extract_model_metadata(&data, path)?;
+
+    let mut violations: Vec<String> = Vec::new();
+    let mut checks_passed = 0usize;
+
+    check_rope_theta(architecture.as_deref(), rope_theta, &data, &mut violations, &mut checks_passed);
+    check_max_position_embeddings(max_pos, &mut violations, &mut checks_passed);
+    check_rms_norm_eps(rms_norm_eps, &mut violations, &mut checks_passed);
+    check_arch_theta_cross_validation(architecture.as_ref(), rope_theta, &mut violations, &mut checks_passed);
+
+    let duration = start.elapsed();
+
+    if violations.is_empty() {
+        Ok(GateResult::passed(
+            "metadata_plausibility",
+            &format!(
+                "{checks_passed} metadata checks passed (arch={}, rope_theta={}, max_pos={})",
+                architecture.as_deref().unwrap_or("unknown"),
+                rope_theta.map_or("none".to_string(), |t| format!("{t}")),
+                max_pos.map_or("none".to_string(), |p| format!("{p}")),
+            ),
+            Some(checks_passed as f64),
+            Some(0.0),
+            duration,
+        ))
+    } else {
+        Ok(GateResult::failed(
+            "metadata_plausibility",
+            &format!(
+                "{} metadata violation(s): {}",
+                violations.len(),
+                violations.join("; ")
+            ),
+            Some(violations.len() as f64),
+            Some(0.0),
+            duration,
+        ))
+    }
+}
+
+/// Check rope_theta plausibility per architecture family.
+fn check_rope_theta(
+    arch: Option<&str>,
+    rope_theta: Option<f32>,
+    data: &[u8],
+    violations: &mut Vec<String>,
+    checks_passed: &mut usize,
+) {
+    if let Some(theta) = rope_theta {
+        let theta_f64 = f64::from(theta);
+        match arch {
+            Some("qwen2" | "qwen2.5" | "qwen") => {
+                if theta_f64 < 100_000.0 {
+                    violations.push(format!(
+                        "rope_theta={theta} for qwen2 — expected ~1000000.0 \
+                         (100x too low, will produce garbage)"
+                    ));
+                } else {
+                    *checks_passed += 1;
+                }
+            }
+            Some("llama" | "llama2" | "llama3") => {
+                if (1000.0..=10_000_000.0).contains(&theta_f64) {
+                    *checks_passed += 1;
+                } else {
+                    violations.push(format!(
+                        "rope_theta={theta} for llama — expected 10000-500000"
+                    ));
+                }
+            }
+            _ => {
+                if (100.0..=100_000_000.0).contains(&theta_f64) {
+                    *checks_passed += 1;
+                } else {
+                    violations.push(format!(
+                        "rope_theta={theta} outside plausible range [100, 100M]"
+                    ));
+                }
+            }
+        }
+    } else {
+        let magic = &data[0..4];
+        if magic == b"GGUF" {
+            *checks_passed += 1;
+        } else {
+            violations.push("rope_theta missing from APR metadata".to_string());
+        }
+    }
+}
+
+/// Check max_position_embeddings is within plausible range.
+fn check_max_position_embeddings(
+    max_pos: Option<usize>,
+    violations: &mut Vec<String>,
+    checks_passed: &mut usize,
+) {
+    if let Some(val) = max_pos {
+        if (128..=1_048_576).contains(&val) {
+            *checks_passed += 1;
+        } else {
+            violations.push(format!(
+                "max_position_embeddings={val} outside plausible range [128, 1M]"
+            ));
+        }
+    } else {
+        *checks_passed += 1;
+    }
+}
+
+/// Check rms_norm_eps is within plausible range.
+fn check_rms_norm_eps(
+    rms_norm_eps: Option<f32>,
+    violations: &mut Vec<String>,
+    checks_passed: &mut usize,
+) {
+    if let Some(eps) = rms_norm_eps {
+        let eps_f64 = f64::from(eps);
+        if eps_f64 <= 0.0 || eps_f64 > 0.01 {
+            violations.push(format!(
+                "rms_norm_eps={eps} outside plausible range (0, 0.01]"
+            ));
+        } else {
+            *checks_passed += 1;
+        }
+    } else {
+        *checks_passed += 1;
+    }
+}
+
+/// Cross-validate architecture against rope_theta (Bug 210 signature detection).
+fn check_arch_theta_cross_validation(
+    architecture: Option<&String>,
+    rope_theta: Option<f32>,
+    violations: &mut Vec<String>,
+    checks_passed: &mut usize,
+) {
+    if let (Some(arch), Some(theta)) = (architecture, rope_theta) {
+        let theta_f64 = f64::from(theta);
+        let suspicious = matches!(arch.as_str(), "qwen2" | "qwen2.5" | "qwen")
+            && (theta_f64 - 10000.0).abs() < 1.0;
+        if suspicious {
+            violations.push(format!(
+                "CRITICAL: {arch} with rope_theta=10000.0 — \
+                 likely missing config.json (Bug 210)"
+            ));
+        } else {
+            *checks_passed += 1;
+        }
+    } else {
+        *checks_passed += 1;
+    }
+}
+
+/// Metadata extracted from model file for plausibility validation.
+type ModelMetadata = (Option<String>, Option<f32>, Option<usize>, Option<f32>);
+
+/// Extract model metadata from file bytes (GGUF, APR, or SafeTensors format).
+fn extract_model_metadata(
+    data: &[u8],
+    path: &Path,
+) -> Result<ModelMetadata> {
+    let magic = &data[0..4];
+
+    if magic == b"GGUF" {
+        // GGUF format: use GgufReader
+        let reader = aprender::format::gguf::reader::GgufReader::from_bytes(data.to_vec())
+            .map_err(|e| CliError::ValidationFailed(format!("GGUF parse failed: {e}")))?;
+        let arch = reader.architecture();
+        let rope_theta = reader.rope_theta();
+        let max_pos = reader.context_length();
+        let rms_norm_eps = reader.rms_norm_eps();
+        Ok((arch, rope_theta, max_pos, rms_norm_eps))
+    } else if &magic[0..3] == b"APR" || magic == b"APRN" {
+        // APR format: parse v2 header + JSON metadata
+        use aprender::format::v2::AprV2Reader;
+        let reader = AprV2Reader::from_bytes(data)
+            .map_err(|e| CliError::ValidationFailed(format!("APR parse failed: {e}")))?;
+        let meta = reader.metadata();
+        let _ = path;
+        Ok((
+            meta.architecture.clone(),
+            meta.rope_theta,
+            meta.max_position_embeddings,
+            meta.rms_norm_eps,
+        ))
+    } else {
+        // SafeTensors or unknown format: try to load config.json from sibling
+        let config_path = path.with_file_name("config.json");
+        if config_path.exists() {
+            // Read architecture and rope_theta from HF config.json
+            let config_str = std::fs::read_to_string(&config_path)
+                .map_err(|e| CliError::ValidationFailed(format!("config.json read failed: {e}")))?;
+            let arch = extract_json_string(&config_str, "model_type");
+            let rope_theta = extract_json_f32(&config_str, "rope_theta");
+            let max_pos = extract_json_usize(&config_str, "max_position_embeddings");
+            let rms_norm_eps = extract_json_f32(&config_str, "rms_norm_eps");
+            Ok((arch, rope_theta, max_pos, rms_norm_eps))
+        } else {
+            // No config.json — return None for all fields (gate will note the gap)
+            Ok((None, None, None, None))
+        }
+    }
+}
+
+/// Extract a string value from JSON by key (simple parser, no serde dependency).
+fn extract_json_string(json: &str, key: &str) -> Option<String> {
+    let pattern = format!("\"{key}\"");
+    let idx = json.find(&pattern)?;
+    let after_key = &json[idx + pattern.len()..];
+    // Skip whitespace and colon
+    let after_colon = after_key.find(':').map(|i| &after_key[i + 1..])?;
+    let trimmed = after_colon.trim_start();
+    if trimmed.starts_with('"') {
+        let start = 1;
+        let end = trimmed[start..].find('"')?;
+        Some(trimmed[start..start + end].to_string())
+    } else {
+        None
+    }
+}
+
+/// Extract an f32 value from JSON by key.
+fn extract_json_f32(json: &str, key: &str) -> Option<f32> {
+    let pattern = format!("\"{key}\"");
+    let idx = json.find(&pattern)?;
+    let after_key = &json[idx + pattern.len()..];
+    let after_colon = after_key.find(':').map(|i| &after_key[i + 1..])?;
+    let trimmed = after_colon.trim_start();
+    // Parse until next comma, brace, or whitespace
+    let end = trimmed.find([',', '}', '\n'])?;
+    trimmed[..end].trim().parse::<f32>().ok()
+}
+
+/// Extract a usize value from JSON by key.
+fn extract_json_usize(json: &str, key: &str) -> Option<usize> {
+    let pattern = format!("\"{key}\"");
+    let idx = json.find(&pattern)?;
+    let after_key = &json[idx + pattern.len()..];
+    let after_colon = after_key.find(':').map(|i| &after_key[i + 1..])?;
+    let trimmed = after_colon.trim_start();
+    let end = trimmed.find([',', '}', '\n'])?;
+    trimmed[..end].trim().parse::<usize>().ok()
 }
 
 /// Output verification result (PMAT-QA-PROTOCOL-001 §7.4)
@@ -1797,16 +2235,7 @@ fn print_gate_result(result: &GateResult) {
         output::badge_fail("FAIL")
     };
 
-    let name = match result.name.as_str() {
-        "tensor_contract" => "Tensor Contract",
-        "golden_output" => "Golden Output",
-        "throughput" => "Throughput",
-        "ollama_parity" => "Ollama Parity",
-        "gpu_speedup" => "GPU Speedup",
-        "format_parity" => "Format Parity",
-        "ptx_parity" => "PTX Parity",
-        _ => &result.name,
-    };
+    let name = gate_display_name(&result.name);
 
     println!(
         "  {} {} {}",
@@ -1920,6 +2349,222 @@ fn run_ptx_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
         Ok(GateResult::skipped(
             "ptx_parity",
             "Requires inference feature",
+        ))
+    }
+}
+
+/// Gate 8: GPU State Isolation Test
+///
+/// Verifies that GPU state (KV cache, CUDA graphs, position buffers) is properly
+/// isolated between generations. Catches PMAT-PREFILL-FIX class bugs where stale
+/// state from a previous generation leaks into the next.
+///
+/// Protocol:
+/// 1. Generate with prompt A → output_A
+/// 2. Reset KV cache
+/// 3. Generate with prompt B → output_B
+/// 4. Reset KV cache
+/// 5. Generate with prompt A again → output_A2
+/// 6. Assert: output_A == output_A2 (state isolation)
+/// 7. Assert: output_A != output_B (model is functional)
+fn run_gpu_state_isolation_gate(path: &Path, _config: &QaConfig) -> Result<GateResult> {
+    let start = Instant::now();
+
+    #[cfg(all(feature = "inference", feature = "cuda"))]
+    {
+        use realizar::cuda::CudaExecutor;
+        use realizar::format::{detect_format, ModelFormat};
+        use realizar::gguf::{
+            GGUFModel, MappedGGUFModel, OwnedQuantizedModel, OwnedQuantizedModelCuda,
+            QuantizedGenerateConfig,
+        };
+
+        let cuda_available = CudaExecutor::is_available() && CudaExecutor::num_devices() > 0;
+        if !cuda_available {
+            return Ok(GateResult::skipped(
+                "gpu_state_isolation",
+                "CUDA not available",
+            ));
+        }
+
+        let magic = std::fs::File::open(path).ok().and_then(|mut f| {
+            use std::io::Read;
+            let mut buf = [0u8; 8];
+            f.read_exact(&mut buf).ok()?;
+            Some(buf.to_vec())
+        });
+        let fmt = magic.and_then(|m| detect_format(&m).ok());
+        if fmt != Some(ModelFormat::Gguf) {
+            return Ok(GateResult::skipped(
+                "gpu_state_isolation",
+                "Only GGUF format supported for GPU state isolation",
+            ));
+        }
+
+        let model_bytes = std::fs::read(path)
+            .map_err(|e| CliError::ValidationFailed(format!("Failed to read model: {e}")))?;
+        let gguf = GGUFModel::from_bytes(&model_bytes)
+            .map_err(|e| CliError::ValidationFailed(format!("Failed to parse GGUF: {e}")))?;
+
+        let prompt_a = "<|im_start|>user\nWhat is 2+2?<|im_end|>\n<|im_start|>assistant\n";
+        let prompt_b = "<|im_start|>user\nWrite hello world in Python<|im_end|>\n<|im_start|>assistant\n";
+
+        let tokens_a = gguf.encode(prompt_a).unwrap_or_else(|| vec![151643, 9707]);
+        let tokens_b = gguf.encode(prompt_b).unwrap_or_else(|| vec![151643, 1234]);
+
+        let gen_config = QuantizedGenerateConfig {
+            max_tokens: 16,
+            temperature: 0.0,
+            top_k: 1,
+            ..Default::default()
+        };
+
+        let mapped = MappedGGUFModel::from_path(path)
+            .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
+        let model = OwnedQuantizedModel::from_mapped(&mapped)
+            .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
+        let mut cuda_model = OwnedQuantizedModelCuda::new(model, 0)
+            .map_err(|e| CliError::ValidationFailed(format!("CUDA init failed: {e}")))?;
+
+        // Generation 1: prompt A
+        let output_a = cuda_model
+            .generate_gpu_resident(&tokens_a, &gen_config)
+            .map_err(|e| CliError::ValidationFailed(format!("Gen 1 failed: {e}")))?;
+
+        // Generation 2: prompt B
+        let output_b = cuda_model
+            .generate_gpu_resident(&tokens_b, &gen_config)
+            .map_err(|e| CliError::ValidationFailed(format!("Gen 2 failed: {e}")))?;
+
+        // Generation 3: prompt A again (must match generation 1)
+        let output_a2 = cuda_model
+            .generate_gpu_resident(&tokens_a, &gen_config)
+            .map_err(|e| CliError::ValidationFailed(format!("Gen 3 failed: {e}")))?;
+
+        let duration = start.elapsed();
+
+        // State isolation: same prompt must produce same output
+        if output_a != output_a2 {
+            let text_a = gguf.decode(&output_a);
+            let text_a2 = gguf.decode(&output_a2);
+            return Ok(GateResult::failed(
+                "gpu_state_isolation",
+                &format!(
+                    "State leak: prompt A produced different output on retry. \
+                     First: '{}', Retry: '{}'",
+                    text_a.chars().take(50).collect::<String>(),
+                    text_a2.chars().take(50).collect::<String>()
+                ),
+                None,
+                None,
+                duration,
+            ));
+        }
+
+        // Model is functional: different prompts produce different output
+        if output_a == output_b {
+            return Ok(GateResult::failed(
+                "gpu_state_isolation",
+                "Model stuck: same output for different prompts (GPU state not functional)",
+                None,
+                None,
+                duration,
+            ));
+        }
+
+        Ok(GateResult::passed(
+            "gpu_state_isolation",
+            "GPU state properly isolated: 3 generations, deterministic replay confirmed",
+            Some(3.0),
+            Some(3.0),
+            duration,
+        ))
+    }
+
+    #[cfg(not(all(feature = "inference", feature = "cuda")))]
+    {
+        let _ = (path, config);
+        Ok(GateResult::skipped(
+            "gpu_state_isolation",
+            "Requires inference+cuda features",
+        ))
+    }
+}
+
+/// Gate 9: Performance Regression Detection
+///
+/// Compares current gate results against a previous QA report to detect
+/// performance regressions. Catches Bug 206 class issues where metrics
+/// silently degrade between rounds.
+fn run_performance_regression_gate(
+    current_gates: &[GateResult],
+    config: &QaConfig,
+) -> Result<GateResult> {
+    let start = Instant::now();
+
+    let Some(prev_path) = &config.previous_report else {
+        return Ok(GateResult::skipped(
+            "performance_regression",
+            "No previous report provided",
+        ));
+    };
+
+    let prev_json = std::fs::read_to_string(prev_path).map_err(|e| {
+        CliError::ValidationFailed(format!("Failed to read previous report: {e}"))
+    })?;
+
+    let prev_report: QaReport = serde_json::from_str(&prev_json).map_err(|e| {
+        CliError::ValidationFailed(format!("Failed to parse previous report: {e}"))
+    })?;
+
+    let threshold = config.regression_threshold;
+    let mut regressions = Vec::new();
+
+    // Compare metrics for gates that have numeric values in both reports
+    let comparable_gates = ["throughput", "ollama_parity", "gpu_speedup"];
+    for gate_name in &comparable_gates {
+        let prev_gate = prev_report.gates.iter().find(|g| g.name == *gate_name);
+        let curr_gate = current_gates.iter().find(|g| g.name == *gate_name);
+
+        if let (Some(prev), Some(curr)) = (prev_gate, curr_gate) {
+            if let (Some(prev_val), Some(curr_val)) = (prev.value, curr.value) {
+                if prev_val > 0.0 && !prev.skipped && !curr.skipped {
+                    let regression = (prev_val - curr_val) / prev_val;
+                    if regression > threshold {
+                        regressions.push(format!(
+                            "{}: {:.1} -> {:.1} ({:.0}% regression)",
+                            gate_name,
+                            prev_val,
+                            curr_val,
+                            regression * 100.0
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    let duration = start.elapsed();
+
+    if regressions.is_empty() {
+        Ok(GateResult::passed(
+            "performance_regression",
+            &format!(
+                "No regressions >{:.0}% vs {}",
+                threshold * 100.0,
+                prev_path.display()
+            ),
+            Some(0.0),
+            Some(threshold),
+            duration,
+        ))
+    } else {
+        Ok(GateResult::failed(
+            "performance_regression",
+            &format!("Regressions detected: {}", regressions.join("; ")),
+            Some(regressions.len() as f64),
+            Some(0.0),
+            duration,
         ))
     }
 }
@@ -2129,6 +2774,9 @@ mod tests {
             total_duration_ms: 5000,
             timestamp: "2026-01-15T00:00:00Z".to_string(),
             summary: "All gates passed".to_string(),
+            gates_executed: 0,
+            gates_skipped: 0,
+            system_info: None,
         };
 
         let json = serde_json::to_string(&report).expect("serialization failed");
@@ -2166,6 +2814,9 @@ mod tests {
             total_duration_ms: 5000,
             timestamp: "2026-01-15T00:00:00Z".to_string(),
             summary: "1 gate failed".to_string(),
+            gates_executed: 0,
+            gates_skipped: 0,
+            system_info: None,
         };
         assert!(!report.passed);
         assert_eq!(report.gates.len(), 1);
@@ -2190,6 +2841,9 @@ mod tests {
             total_duration_ms: 3000,
             timestamp: "2026-01-15T00:00:00Z".to_string(),
             summary: "All passed".to_string(),
+            gates_executed: 0,
+            gates_skipped: 0,
+            system_info: None,
         };
         assert_eq!(report.gates.len(), 3);
     }
@@ -2203,6 +2857,9 @@ mod tests {
             total_duration_ms: 1000,
             timestamp: "2026-01-15T00:00:00Z".to_string(),
             summary: "ok".to_string(),
+            gates_executed: 0,
+            gates_skipped: 0,
+            system_info: None,
         };
         let cloned = report.clone();
         assert_eq!(cloned.model, report.model);
@@ -2217,6 +2874,9 @@ mod tests {
             total_duration_ms: 1000,
             timestamp: "now".to_string(),
             summary: "ok".to_string(),
+            gates_executed: 0,
+            gates_skipped: 0,
+            system_info: None,
         };
         let debug = format!("{report:?}");
         assert!(debug.contains("QaReport"));
@@ -2246,6 +2906,15 @@ mod tests {
             32,
             false,
             false,
+            None,
+
+            None,
+
+            None,
+
+            false,
+
+            false,
         );
         assert!(result.is_err());
     }
@@ -2272,6 +2941,15 @@ mod tests {
             3,
             32,
             false,
+            false,
+            None,
+
+            None,
+
+            None,
+
+            false,
+
             false,
         );
         // Should fail (invalid GGUF)
@@ -2301,6 +2979,15 @@ mod tests {
             16,
             false,
             false,
+            None,
+
+            None,
+
+            None,
+
+            false,
+
+            false,
         );
         // Should fail (invalid file)
         assert!(result.is_err());
@@ -2329,6 +3016,15 @@ mod tests {
             32,
             false,
             false,
+            None,
+
+            None,
+
+            None,
+
+            true, // skip_gpu_state
+
+            true, // skip_metadata
         );
         // When all gates are skipped, the QA passes (skipped gates don't fail)
         assert!(result.is_ok());
@@ -2356,6 +3052,15 @@ mod tests {
             3,
             32,
             true, // json output
+            false,
+            None,
+
+            None,
+
+            None,
+
+            false,
+
             false,
         );
         // Should fail (invalid file)
@@ -2385,6 +3090,15 @@ mod tests {
             32,
             false,
             true, // verbose
+            None,
+
+            None,
+
+            None,
+
+            false,
+
+            false,
         );
         // Should fail (invalid file)
         assert!(result.is_err());
@@ -2414,6 +3128,15 @@ mod tests {
             32,
             false,
             false,
+            None,
+
+            None,
+
+            None,
+
+            false,
+
+            false,
         );
         // Should fail (invalid files)
         assert!(result.is_err());
@@ -2441,6 +3164,15 @@ mod tests {
             0, // no warmup
             8, // small max tokens
             false,
+            false,
+            None,
+
+            None,
+
+            None,
+
+            false,
+
             false,
         );
         // Should fail (invalid file)
@@ -2728,6 +3460,9 @@ mod tests {
             total_duration_ms: 10,
             timestamp: "2026-02-06T00:00:00Z".to_string(),
             summary: "All skipped".to_string(),
+            gates_executed: 0,
+            gates_skipped: 0,
+            system_info: None,
         };
         assert!(report.passed);
         assert!(
@@ -2841,6 +3576,9 @@ mod tests {
             total_duration_ms: 5100,
             timestamp: "2026-02-06T12:00:00Z".to_string(),
             summary: "Failed gates: throughput".to_string(),
+            gates_executed: 0,
+            gates_skipped: 0,
+            system_info: None,
         };
 
         let json = serde_json::to_string_pretty(&original).expect("serialize");
@@ -3468,6 +4206,9 @@ mod tests {
             total_duration_ms: 0,
             timestamp: "2026-02-06T00:00:00Z".to_string(),
             summary: "No gates run".to_string(),
+            gates_executed: 0,
+            gates_skipped: 0,
+            system_info: None,
         };
         assert!(report.passed);
         assert!(report.gates.is_empty());
@@ -3497,6 +4238,9 @@ mod tests {
             total_duration_ms: 4950,
             timestamp: "2026-02-06T00:00:00Z".to_string(),
             summary: "All passed".to_string(),
+            gates_executed: 0,
+            gates_skipped: 0,
+            system_info: None,
         };
         let json = serde_json::to_string(&report).expect("serialize many gates");
         let restored: QaReport = serde_json::from_str(&json).expect("deserialize many gates");
@@ -3974,6 +4718,9 @@ mod tests {
             total_duration_ms: 50,
             timestamp: "2026-02-07T00:00:00Z".to_string(),
             summary: "All passed".to_string(),
+            gates_executed: 0,
+            gates_skipped: 0,
+            system_info: None,
         };
         let json = serde_json::to_string_pretty(&report).expect("pretty serialize");
         assert!(json.contains('\n'), "Pretty JSON should contain newlines");
@@ -3999,6 +4746,9 @@ mod tests {
             total_duration_ms: 0,
             timestamp: String::new(),
             summary: String::new(),
+            gates_executed: 0,
+            gates_skipped: 0,
+            system_info: None,
         };
         // This is what run() does: serde_json::to_string_pretty(&report).unwrap_or_default()
         let json = serde_json::to_string_pretty(&report).unwrap_or_default();
@@ -4132,6 +4882,9 @@ mod tests {
             total_duration_ms: 15100,
             timestamp: "2026-02-07T12:00:00Z".to_string(),
             summary: "Failed gates: throughput".to_string(),
+            gates_executed: 0,
+            gates_skipped: 0,
+            system_info: None,
         };
         let json = serde_json::to_string_pretty(&report).expect("serialize");
         let restored: QaReport = serde_json::from_str(&json).expect("deserialize");
@@ -4261,6 +5014,9 @@ mod tests {
             total_duration_ms: 0,
             timestamp: "2026-02-07T00:00:00Z".to_string(),
             summary: "ok".to_string(),
+            gates_executed: 0,
+            gates_skipped: 0,
+            system_info: None,
         };
         let json = serde_json::to_string(&report).expect("serialize unicode path");
         let restored: QaReport = serde_json::from_str(&json).expect("deserialize unicode path");
@@ -4278,6 +5034,9 @@ mod tests {
             total_duration_ms: 0,
             timestamp: "2026-02-07T00:00:00Z".to_string(),
             summary: "ok".to_string(),
+            gates_executed: 0,
+            gates_skipped: 0,
+            system_info: None,
         };
         let json = serde_json::to_string(&report).expect("serialize long path");
         let restored: QaReport = serde_json::from_str(&json).expect("deserialize long path");
@@ -4294,6 +5053,9 @@ mod tests {
             total_duration_ms: 0,
             timestamp: "2026-02-07T00:00:00Z".to_string(),
             summary: "ok".to_string(),
+            gates_executed: 0,
+            gates_skipped: 0,
+            system_info: None,
         };
         let json = serde_json::to_string(&report).expect("serialize empty model");
         let restored: QaReport = serde_json::from_str(&json).expect("deserialize empty model");

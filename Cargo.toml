@@ -1,5 +1,6 @@
 [workspace]
 members = [".", "crates/aprender-shell", "crates/aprender-tsp", "crates/aprender-monte-carlo", "crates/apr-cli"]
+exclude = ["fuzz"]
 
 [workspace.lints.rust]
 # Safety
@@ -119,7 +120,7 @@ semicolon_if_nothing_returned = "allow"  # Style preference
 
 [package]
 name = "aprender"
-version = "0.25.3"
+version = "0.25.4"
 edition = "2021"
 rust-version = "1.70"
 authors = ["Noah Gift <noah@paiml.com>"]
