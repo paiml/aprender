@@ -33,7 +33,7 @@
 
 ## Executive Summary
 
-The Qwen2.5-Coder Showcase demonstrates the unified inference architecture across three model formats (SafeTensors, APR, GGUF) with CPU and GPU backends, using a single model with a single provenance chain. The full stack is exercised end-to-end: **apr-cli** (49 subcommands) → **aprender** (contract validation, 297 compile-time proofs) → **realizar** (inference: two-phase generation with batched prefill, PagedAttention KV cache, 8 sampling algorithms + penalty modifiers, GQA attention, OpenAI-compatible API, PTX parity validation) → **trueno** (SIMD/GPU compute: 9 backend tiers, 95 CUDA kernels, 6 batched kernel variants with KernelParity trait, Jidoka quality gates). 164 falsification gates across 23 sections.
+The Qwen2.5-Coder Showcase demonstrates the unified inference architecture across three model formats (SafeTensors, APR, GGUF) with CPU and GPU backends, using a single model with a single provenance chain. The full stack is exercised end-to-end: **apr-cli** (49 subcommands) → **aprender** (contract validation, 297 compile-time proofs) → **realizar** (inference: two-phase generation with batched prefill, PagedAttention KV cache, 8 sampling algorithms + penalty modifiers, GQA attention, OpenAI-compatible API, PTX parity validation) → **trueno** (SIMD/GPU compute: 9 backend tiers, 95 CUDA kernels, 6 batched kernel variants with KernelParity trait, Jidoka quality gates). 168 falsification gates across 23 sections.
 
 **Current State (measured 2026-02-11):** 67.8 tok/s GPU decode (0.6x Ollama 125 tok/s) — **Grade D**. Batched prefill DISABLED (regression). Target: 125.7 tok/s (1.0x parity). Bottleneck: ~24% of RTX 4090's 1008 GB/s bandwidth.
 
@@ -260,7 +260,7 @@ apr rosetta fingerprint qwen-7b.apr              # Per-tensor statistical finger
 | ID | Prediction | Status |
 |----|-----------|--------|
 | F-CLI-001 | All 39 top-level commands parse | **Pass** |
-| F-CLI-002 | All 10 rosetta subcommands parse | **Pass** |
+| F-CLI-002 | All 10 nested subcommands parse (8 rosetta + 2 canary) | **Pass** |
 | F-CLI-003 | Unknown command rejected | **Pass** |
 | F-CLI-004 | `--skip-contract` is global flag | **Pass** |
 | F-CLI-005 | Action commands gated, diagnostics exempt (20 gated, 29 exempt) | **Pass** |
@@ -338,7 +338,7 @@ All CLI commands support APR, GGUF, and SafeTensors via `FormatType::from_magic(
 
 ## 6. 300-Point Falsification Checklist
 
-> 250+ / 300 points passing. Sections: Basic Commands (20/20), GGUF (20/20), Jidoka (20/20), GPU (24/25), Correctness (48/50).
+> 244 / 300 points passing. Sections: Basic Commands (20/20), GGUF (20/20), Jidoka (20/20), GPU (24/25), Correctness (48/50).
 > See [`checklist-300-point.md`](qwen2.5-coder-showcase-archive/checklist-300-point.md) for full breakdown + 5 falsification gates.
 
 ---
@@ -515,6 +515,8 @@ use crate::quantize::fused_q4k_parallel_matvec;
 Source of truth: `contracts/model-families/qwen2.yaml`
 
 ```yaml
+# Excerpt — full contract includes all size variants, tensor_template, shape_template,
+# quantizations, chat_template, and certification sections.
 family: qwen2
 size_variants:
   7b:
@@ -524,13 +526,18 @@ size_variants:
     num_kv_heads: 4
     intermediate_dim: 18944
     vocab_size: 152064
+    max_position_embeddings: 131072
     head_dim: 128
     rope_theta: 1000000.0
+    rms_norm_eps: 0.000001
 constraints:
   attention_type: gqa
   activation: silu
   mlp_type: swiglu
   norm_type: rmsnorm
+  has_bias: true
+  tied_embeddings: false
+  positional_encoding: rope
 ```
 
 ### 15.5 Contract Falsification Gates (F-CONTRACT-*)
@@ -638,10 +645,10 @@ Three rounds found 8 bugs: tautological guards, vacuous catch-all, zero KV heads
 
 | # | Function | File | Cyclomatic |
 |---|----------|------|-----------|
-| 1 | `apr_export` | export.rs | 19 |
-| 2 | `run_real_checks_apr` | check.rs | 18 |
-| 3 | `convert` | convert.rs | 17 |
-| 4 | `pruning_magnitude` (example) | examples/ | 16 |
+| 1 | `write_apr_file` | write.rs | 19 |
+| 2 | `main` (example) | logic_family_tree.rs | 14 |
+| 3 | `insert_model_config_metadata` | write.rs | 12 |
+| 4 | `load_from_json` | bpe/mod.rs | 11 |
 
 **Max cyclomatic: 19** (down from 39 in v10.26.0). Median: 9.0.
 
@@ -736,13 +743,13 @@ Three rounds found 8 bugs: tautological guards, vacuous catch-all, zero KV heads
 | 13. Trueno Compute | F-TRUENO-* | 12 |
 | 13.11. PTX Analysis | F-PTX-EXPLAIN-* | 5 |
 | 14. Realizar Inference | F-REALIZE-* | 13 |
-| 15. Contract Model | F-CONTRACT-* | 7 |
+| 15. Contract Model | F-CONTRACT-* | 9 |
 | 16. Provability | F-PROVE-* | 7 |
 | 17. CLI Surface | F-SURFACE-* | 5 |
 | 18. Code Quality | F-QUALITY-* | 4 |
 | 19. Cross-Project | F-XPROJ-* | 4 |
 | 21. MVP Qualification | F-MVP-* | 7 |
-| **Total** | | **164** |
+| **Total** | | **168** |
 
 ---
 

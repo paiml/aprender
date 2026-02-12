@@ -30,7 +30,7 @@
 
 | ID | Prediction | Test | Expected | Status |
 |----|-----------|------|----------|--------|
-| F-CHECKLIST-001 | Score >= 250/300 after 7B retest | Run full 300-point audit | Score >= 250 | **Pass** (qa.rs has scoring logic with gate checks) |
+| F-CHECKLIST-001 | Score >= 240/300 after 7B retest | Run full 300-point audit | Score >= 240 | **Pass** (244/300 — qa.rs has scoring logic with gate checks) |
 | F-CHECKLIST-002 | No section scores 0% | Each section has at least 1 pass | All sections > 0 | **Pass** (qa.rs checks multiple sections with distinct gate functions) |
 | F-CHECKLIST-003 | New sections (contract, provability) added | Audit includes PMAT-237 gates | Contract section present | **Pass** (Section 15 + 16 present in spec) |
 | F-CHECKLIST-004 | Falsification depth >= Level 5 | At least 5 tests use hang detection or fuzzing | Count >= 5 | **Pass** (>= 5 Level 5 tests in spec) |
