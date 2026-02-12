@@ -3386,3 +3386,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: Round-49-falsification
+  github_issue: null
+  item_type: task
+  title: 'New task: Round-49-falsification'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-02-12T22:56:33.321235350+00:00
+  updated: 2026-02-12T22:56:33.321235350+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
