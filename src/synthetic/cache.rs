@@ -94,11 +94,11 @@ impl<T> CacheEntry<T> {
 /// let config = SyntheticConfig::default();
 ///
 /// // First call generates and caches
-/// let result1 = cache.get_or_generate(&seeds, &config, &gen).expect("failed");
+/// let result1 = cache.get_or_generate(&seeds, &config, &gen).expect("cache get_or_generate should succeed");
 /// assert_eq!(result1, &[2, 4, 6]);
 ///
 /// // Second call returns cached result
-/// let result2 = cache.get_or_generate(&seeds, &config, &gen).expect("failed");
+/// let result2 = cache.get_or_generate(&seeds, &config, &gen).expect("cached result should be available");
 /// assert_eq!(result1, result2);
 /// ```
 #[derive(Debug)]

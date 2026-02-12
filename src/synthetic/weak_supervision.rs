@@ -249,7 +249,7 @@ impl WeakSupervisionConfig {
 ///
 /// let samples = vec!["short".to_string(), "this is a longer string".to_string()];
 /// let config = SyntheticConfig::default();
-/// let labeled = gen.generate(&samples, &config).expect("failed");
+/// let labeled = gen.generate(&samples, &config).expect("weak supervision generation should succeed");
 /// ```
 pub struct WeakSupervisionGenerator<T> {
     /// Labeling functions.
