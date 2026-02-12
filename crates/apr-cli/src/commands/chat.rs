@@ -465,6 +465,20 @@ mod realizar_chat {
         llama_tokenizer: Option<LlamaTokenizer>,
         /// Qwen2 BPE tokenizer (for SafeTensors/APR format)
         qwen_tokenizer: Option<Qwen2BpeTokenizer>,
+        /// GH-224: Cached GGUF mmap model (for tokenizer encode/decode across messages)
+        cached_gguf_mapped: Option<realizar::gguf::MappedGGUFModel>,
+        /// GH-224: Cached GGUF CUDA model (avoids re-uploading weights per message)
+        #[cfg(feature = "cuda")]
+        cached_gguf_cuda: Option<realizar::gguf::OwnedQuantizedModelCuda>,
+        /// GH-224: Cached APR CUDA model (avoids re-uploading weights per message)
+        #[cfg(feature = "cuda")]
+        cached_apr_cuda: Option<realizar::apr::AprV2ModelCuda>,
+        /// GH-224: Cached SafeTensors CUDA model (avoids re-loading per message)
+        #[cfg(feature = "cuda")]
+        cached_safetensors_cuda: Option<realizar::safetensors_cuda::SafeTensorsCudaModel>,
+        /// GH-224: Whether CUDA init was attempted and failed (skip retries)
+        #[cfg(feature = "cuda")]
+        cuda_init_failed: bool,
     }
 
     impl ChatSession {
@@ -682,15 +696,153 @@ mod realizar_chat {
                 template_name.cyan()
             );
 
+            // GH-224: Eagerly initialize GPU models during "Loading model..." phase
+            // This moves the ~8s VRAM upload from first generate() to session init.
+            let model_path_buf = path.to_path_buf();
+
+            // GGUF: cache MappedGGUFModel (for tokenizer) + OwnedQuantizedModelCuda
+            let mut cached_gguf_mapped = None;
+            #[cfg(feature = "cuda")]
+            let mut cached_gguf_cuda = None;
+            #[cfg(feature = "cuda")]
+            let mut cuda_init_failed = false;
+
+            if format == ModelFormat::Gguf {
+                match realizar::gguf::MappedGGUFModel::from_path(&model_path_buf) {
+                    Ok(mapped) => {
+                        #[cfg(feature = "cuda")]
+                        {
+                            use realizar::gguf::{OwnedQuantizedModel, OwnedQuantizedModelCuda};
+                            if OwnedQuantizedModelCuda::is_available() {
+                                match OwnedQuantizedModel::from_mapped(&mapped) {
+                                    Ok(owned) => match OwnedQuantizedModelCuda::new(owned, 0) {
+                                        Ok(cuda_model) => {
+                                            println!(
+                                                "{}",
+                                                format!(
+                                                    "[GGUF CUDA: {} ({} MB VRAM) — pre-cached]",
+                                                    cuda_model.device_name(),
+                                                    cuda_model.vram_mb()
+                                                )
+                                                .bright_green()
+                                            );
+                                            cached_gguf_cuda = Some(cuda_model);
+                                        }
+                                        Err(e) => {
+                                            println!(
+                                                "{}",
+                                                format!(
+                                                    "[GGUF CUDA init failed: {}, will use CPU]",
+                                                    e
+                                                )
+                                                .yellow()
+                                            );
+                                            cuda_init_failed = true;
+                                        }
+                                    },
+                                    Err(e) => {
+                                        eprintln!("[GGUF model parse failed: {}, will use CPU]", e);
+                                        cuda_init_failed = true;
+                                    }
+                                }
+                            }
+                        }
+                        cached_gguf_mapped = Some(mapped);
+                    }
+                    Err(e) => {
+                        eprintln!("[GGUF mmap failed: {}, will mmap per message]", e);
+                    }
+                }
+            }
+
+            // APR: cache AprV2ModelCuda
+            #[cfg(feature = "cuda")]
+            let mut cached_apr_cuda = None;
+            #[cfg(feature = "cuda")]
+            if format == ModelFormat::Apr {
+                use realizar::apr::{AprV2Model, AprV2ModelCuda};
+                if AprV2ModelCuda::is_available() {
+                    match AprV2Model::from_bytes(model_bytes.clone()) {
+                        Ok(apr_model) => match AprV2ModelCuda::new(apr_model, 0) {
+                            Ok(cuda_model) => {
+                                println!(
+                                    "{}",
+                                    format!(
+                                        "[APR CUDA: {} ({} MB VRAM) — pre-cached]",
+                                        cuda_model.device_name(),
+                                        cuda_model.vram_mb()
+                                    )
+                                    .bright_green()
+                                );
+                                cached_apr_cuda = Some(cuda_model);
+                            }
+                            Err(e) => {
+                                eprintln!("[APR CUDA init failed: {}, will use CPU]", e);
+                                cuda_init_failed = true;
+                            }
+                        },
+                        Err(e) => {
+                            eprintln!("[APR model parse failed: {}, will use CPU]", e);
+                            cuda_init_failed = true;
+                        }
+                    }
+                }
+            }
+
+            // SafeTensors: cache SafeTensorsCudaModel
+            #[cfg(feature = "cuda")]
+            let mut cached_safetensors_cuda = None;
+            #[cfg(feature = "cuda")]
+            if format == ModelFormat::SafeTensors {
+                use realizar::safetensors_cuda::SafeTensorsCudaModel;
+                match SafeTensorsCudaModel::load(&model_path_buf, 0) {
+                    Ok(cuda_model) => {
+                        println!(
+                            "{}",
+                            format!(
+                                "[SafeTensors CUDA: {} ({} MB VRAM) — pre-cached]",
+                                cuda_model.device_name(),
+                                cuda_model.vram_mb()
+                            )
+                            .bright_green()
+                        );
+                        cached_safetensors_cuda = Some(cuda_model);
+                    }
+                    Err(e) => {
+                        let err_msg = format!("{e}");
+                        if err_msg.contains("VRAM") {
+                            eprintln!(
+                                "  {} {}",
+                                "[BUG-214]".yellow(),
+                                "SafeTensors F32 exceeds GPU VRAM. Will use CPU.".yellow()
+                            );
+                            cuda_init_failed = true;
+                        } else {
+                            eprintln!("[SafeTensors CUDA init failed: {}, will use CPU]", e);
+                            cuda_init_failed = true;
+                        }
+                    }
+                }
+            }
+
             Ok(Self {
                 model_bytes,
-                model_path: path.to_path_buf(),
+                model_path: model_path_buf,
                 format,
                 history: Vec::new(),
                 chat_template,
                 template_format,
                 llama_tokenizer,
                 qwen_tokenizer,
+                cached_gguf_mapped,
+                #[cfg(feature = "cuda")]
+                cached_gguf_cuda,
+                #[cfg(feature = "cuda")]
+                cached_apr_cuda,
+                #[cfg(feature = "cuda")]
+                cached_safetensors_cuda,
+                #[cfg(feature = "cuda")]
+                cuda_init_failed,
             })
         }
 
@@ -828,17 +980,24 @@ mod realizar_chat {
         /// - <|im_end|> (should be 151645)
         /// - <|endoftext|> (should be 151643)
         ///
-        /// This function uses the GGUF's embedded tokenizer for both encode and decode.
+        /// GH-224: Uses cached MappedGGUFModel and OwnedQuantizedModelCuda to avoid
+        /// re-mmapping and re-uploading weights to VRAM on every message.
         fn generate_gguf_with_prompt(
-            &self,
+            &mut self,
             prompt: &str,
             config: &ChatConfig,
         ) -> Result<String, String> {
             use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel, QuantizedGenerateConfig};
 
-            // Load GGUF model with mmap
-            let mapped = MappedGGUFModel::from_path(&self.model_path)
-                .map_err(|e| format!("Failed to mmap GGUF: {e}"))?;
+            // GH-224: Use cached MappedGGUFModel for tokenizer, fall back to fresh mmap
+            let fresh_mapped;
+            let mapped = if let Some(ref m) = self.cached_gguf_mapped {
+                m
+            } else {
+                fresh_mapped = MappedGGUFModel::from_path(&self.model_path)
+                    .map_err(|e| format!("Failed to mmap GGUF: {e}"))?;
+                &fresh_mapped
+            };
 
             // Encode prompt using GGUF's embedded tokenizer (correct special token IDs)
             let prompt_tokens = mapped
@@ -854,7 +1013,6 @@ mod realizar_chat {
                     prompt_len,
                     &prompt_tokens[..prompt_len.min(50)]
                 );
-                // Decode tokens to verify they're correct
                 let decoded = mapped.model.decode(&prompt_tokens);
                 eprintln!(
                     "[APR-TRACE] Decoded: {:?}",
@@ -862,97 +1020,47 @@ mod realizar_chat {
                 );
             }
 
-            let model = OwnedQuantizedModel::from_mapped(&mapped)
-                .map_err(|e| format!("Failed to create GGUF model: {e}"))?;
-
-            let practical_max = config.max_tokens;
-
-            // ChatML stop tokens for Qwen2/ChatML models
             let gen_config = QuantizedGenerateConfig {
-                max_tokens: practical_max,
+                max_tokens: config.max_tokens,
                 temperature: config.temperature,
                 top_k: 40,
                 stop_tokens: vec![151645, 151643], // <|im_end|>, <|endoftext|>
-                trace: config.trace,               // PMAT-TRACE-GGUF-001: Pass trace flag
+                trace: config.trace,
             };
 
-            // Try CUDA GPU path first
+            // GH-224: Try cached CUDA model first (no re-upload)
             #[cfg(feature = "cuda")]
-            if !config.force_cpu {
-                use realizar::gguf::OwnedQuantizedModelCuda;
-                if OwnedQuantizedModelCuda::is_available() {
-                    let num_layers = model.config.num_layers;
-                    let is_gqa = model.config.num_kv_heads < model.config.num_heads;
-                    let gqa_note = if is_gqa {
-                        format!(" (GQA: {} kv_heads)", model.config.num_kv_heads)
+            if !config.force_cpu && !self.cuda_init_failed {
+                if let Some(ref mut cuda_model) = self.cached_gguf_cuda {
+                    let output_tokens = cuda_model
+                        .generate_gpu_resident(&prompt_tokens, &gen_config)
+                        .map_err(|e| format!("CUDA generate failed: {e}"))?;
+
+                    let new_tokens = if output_tokens.len() > prompt_len {
+                        &output_tokens[prompt_len..]
                     } else {
-                        String::new()
+                        &output_tokens[..]
                     };
 
-                    match OwnedQuantizedModelCuda::new(model, 0) {
-                        Ok(mut cuda_model) => {
-                            let gpu_name = cuda_model.device_name().to_string();
-                            let vram_mb = cuda_model.vram_mb();
-                            println!(
-                                "{}",
-                                format!(
-                                    "[GGUF CUDA: {} ({} MB VRAM), {} layers, {} tokens{}]",
-                                    gpu_name, vram_mb, num_layers, practical_max, gqa_note
-                                )
-                                .bright_green()
-                            );
-
-                            // APR-TRACE-001: Force logits path for debugging
-                            let debug_gen_config = realizar::gguf::QuantizedGenerateConfig {
-                                max_tokens: gen_config.max_tokens,
-                                temperature: 0.01, // Near-zero but forces logits path
-                                top_k: 10,         // Get top-10 for debugging
-                                stop_tokens: gen_config.stop_tokens.clone(),
-                                trace: config.trace, // PMAT-TRACE-GGUF-001: Pass trace flag
-                            };
-
-                            let output_tokens = cuda_model
-                                .generate_gpu_resident(&prompt_tokens, &debug_gen_config)
-                                .map_err(|e| format!("CUDA generate failed: {e}"))?;
-
-                            // Extract new tokens and decode with GGUF tokenizer
-                            let new_tokens = if output_tokens.len() > prompt_len {
-                                &output_tokens[prompt_len..]
-                            } else {
-                                &output_tokens[..]
-                            };
-
-                            // APR-TRACE-001: Debug generated tokens
-                            if config.trace {
-                                eprintln!(
-                                    "[APR-TRACE] Generated {} new tokens: {:?}",
-                                    new_tokens.len(),
-                                    &new_tokens[..new_tokens.len().min(50)]
-                                );
-
-                                // Decode each token individually for trace diagnostics
-                                for (i, &tok) in new_tokens.iter().take(20).enumerate() {
-                                    let decoded = mapped.model.decode(&[tok]);
-                                    eprintln!("[APR-TRACE] Token {}: {} -> {:?}", i, tok, decoded);
-                                }
-                            }
-
-                            return Ok(mapped.model.decode(new_tokens));
-                        }
-                        Err(e) => {
-                            println!(
-                                "{}",
-                                format!("[CUDA init failed: {}, falling back to CPU]", e).yellow()
-                            );
-                            // Fall through to CPU path - need to recreate model
+                    if config.trace {
+                        eprintln!(
+                            "[APR-TRACE] Generated {} new tokens: {:?}",
+                            new_tokens.len(),
+                            &new_tokens[..new_tokens.len().min(50)]
+                        );
+                        for (i, &tok) in new_tokens.iter().take(20).enumerate() {
+                            let decoded = mapped.model.decode(&[tok]);
+                            eprintln!("[APR-TRACE] Token {}: {} -> {:?}", i, tok, decoded);
                         }
                     }
+
+                    return Ok(mapped.model.decode(new_tokens));
                 }
             }
 
-            // CPU path - recreate model since CUDA may have consumed it
-            let model = OwnedQuantizedModel::from_mapped(&mapped)
-                .map_err(|e| format!("Failed to recreate model: {e}"))?;
+            // CPU path — create fresh OwnedQuantizedModel from cached or fresh mapped
+            let model = OwnedQuantizedModel::from_mapped(mapped)
+                .map_err(|e| format!("Failed to create GGUF model: {e}"))?;
 
             // APR-TRACE-001: Use traced generation when --trace is enabled
             let output_tokens = if config.trace {
@@ -975,17 +1083,12 @@ mod realizar_chat {
                     quant_type: None,
                 });
 
-                // Create decode closure for tracing
-                let _decode_fn = |token_id: u32| -> String { mapped.model.decode(&[token_id]) };
-
-                // APR-TRACE-001: CPU traced generation not yet implemented
                 eprintln!("Warning: CPU traced generation not implemented, using non-traced path");
 
                 let result = model
                     .generate_with_cache(&prompt_tokens, &gen_config)
                     .map_err(|e| format!("GGUF generate failed: {e}"))?;
 
-                // Output partial trace
                 if let Err(e) = tracer.write_output() {
                     eprintln!("Warning: Failed to write trace output: {e}");
                 }
@@ -997,7 +1100,6 @@ mod realizar_chat {
                     .map_err(|e| format!("GGUF generate failed: {e}"))?
             };
 
-            // Extract new tokens and decode with GGUF tokenizer
             let new_tokens = if output_tokens.len() > prompt_len {
                 &output_tokens[prompt_len..]
             } else {
@@ -1008,44 +1110,22 @@ mod realizar_chat {
             Ok(decoded)
         }
 
-        fn generate_apr(&self, prompt: &[u32], config: &ChatConfig) -> Result<Vec<u32>, String> {
+        fn generate_apr(
+            &mut self,
+            prompt: &[u32],
+            config: &ChatConfig,
+        ) -> Result<Vec<u32>, String> {
             // PMAT-181: Extract EOS token from APR metadata (fixes GH-170)
-            // Root cause: Different models have different EOS tokens, hardcoded 151645 was wrong
-            // Five-Whys: WHY hang? → WHY no output? → WHY immediate EOS? → Mismatch with model's actual EOS
             let eos_token_id = self.extract_apr_eos_token().unwrap_or(151645);
 
-            // PMAT-110: APR CUDA now works with KV cache (fixed in realizar)
-            // Try GPU path first if not force_cpu
-
+            // GH-224: Try cached CUDA model first (no re-upload per message)
             #[cfg(feature = "cuda")]
-            if !config.force_cpu {
-                use realizar::apr::{AprV2Model, AprV2ModelCuda};
-
-                if AprV2ModelCuda::is_available() {
-                    // First create AprV2Model from bytes, then wrap with CUDA
-                    match AprV2Model::from_bytes(self.model_bytes.clone()) {
-                        Ok(apr_model) => {
-                            match AprV2ModelCuda::new(apr_model, 0) {
-                                Ok(mut cuda_model) => {
-                                    let gpu_name = cuda_model.device_name().to_string();
-                                    let vram_mb = cuda_model.vram_mb();
-                                    eprintln!("[APR CUDA: {} ({} MB VRAM)]", gpu_name, vram_mb);
-
-                                    // PMAT-181: Use EOS token from model metadata
-                                    let max_tokens = config.max_tokens;
-                                    return cuda_model
-                                        .generate_cuda_with_cache(prompt, max_tokens, eos_token_id)
-                                        .map_err(|e| format!("APR CUDA generate failed: {e}"));
-                                }
-                                Err(e) => {
-                                    eprintln!("[APR CUDA init failed: {}, using CPU]", e);
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            eprintln!("[APR model load failed: {}, using CPU]", e);
-                        }
-                    }
+            if !config.force_cpu && !self.cuda_init_failed {
+                if let Some(ref mut cuda_model) = self.cached_apr_cuda {
+                    let max_tokens = config.max_tokens;
+                    return cuda_model
+                        .generate_cuda_with_cache(prompt, max_tokens, eos_token_id)
+                        .map_err(|e| format!("APR CUDA generate failed: {e}"));
                 }
             }
 
@@ -1055,7 +1135,6 @@ mod realizar_chat {
             let transformer = AprTransformer::from_apr_bytes(&self.model_bytes)
                 .map_err(|e| format!("Failed to load APR transformer: {e}"))?;
 
-            // Use generate_with_cache for O(n) KV-cached generation (not O(n²) forward)
             let gen_config = GenerateConfig {
                 max_tokens: config.max_tokens,
                 temperature: config.temperature,
@@ -1200,78 +1279,36 @@ mod realizar_chat {
             prompt: &[u32],
             config: &ChatConfig,
         ) -> Result<Vec<u32>, String> {
-            // PMAT-116: GPU path for SafeTensors (direct H2D loading, no APR conversion)
-            // Bug 214: Falls back to CPU when VRAM insufficient (e.g. 7B F32 > 24GB)
+            // GH-224: Try cached CUDA model first (no re-loading per message)
             #[cfg(feature = "cuda")]
-            if !config.force_cpu {
-                use realizar::safetensors_cuda::SafeTensorsCudaModel;
+            if !config.force_cpu && !self.cuda_init_failed {
+                if let Some(ref mut cuda_model) = self.cached_safetensors_cuda {
+                    let eos_id = 151645u32; // Qwen2 EOS token
 
-                // Load SafeTensors directly to GPU (PMAT-116)
-                // This avoids APR conversion overhead and achieves GGUF parity
-                match SafeTensorsCudaModel::load(&self.model_path, 0) {
-                    Ok(mut cuda_model) => {
+                    let tokens = cuda_model
+                        .generate(prompt, config.max_tokens, eos_id)
+                        .map_err(|e| format!("SafeTensors CUDA generate failed: {e}"))?;
+
+                    if config.trace {
+                        let new_tokens = &tokens[prompt.len()..];
                         eprintln!(
-                            "  {} {} ({}MB VRAM)",
-                            "GPU:".green(),
-                            cuda_model.device_name(),
-                            cuda_model.vram_mb()
+                            "[APR-TRACE] SafeTensors GPU generated {} tokens: {:?}",
+                            new_tokens.len(),
+                            &new_tokens[..new_tokens.len().min(20)]
                         );
-
-                        // Use EOS token from config or default to Qwen2 EOS
-                        let eos_id = 151645u32; // Qwen2 EOS token
-
-                        // Generate with GPU acceleration
-                        let tokens = cuda_model
-                            .generate(prompt, config.max_tokens, eos_id)
-                            .map_err(|e| format!("SafeTensors CUDA generate failed: {e}"))?;
-
-                        // PMAT-120 DEBUG: Log generated token IDs
-                        if config.trace {
-                            let new_tokens = &tokens[prompt.len()..];
-                            eprintln!(
-                                "[APR-TRACE] SafeTensors GPU generated {} tokens: {:?}",
-                                new_tokens.len(),
-                                &new_tokens[..new_tokens.len().min(20)]
-                            );
-                        }
-
-                        // Return only generated tokens (skip prompt)
-                        return Ok(tokens[prompt.len()..].to_vec());
                     }
-                    Err(e) => {
-                        let err_msg = format!("{e}");
-                        if err_msg.contains("Insufficient VRAM") || err_msg.contains("VRAM") {
-                            eprintln!(
-                                "  {} {}",
-                                "[BUG-214]".yellow(),
-                                "SafeTensors F32 exceeds GPU VRAM. Falling back to CPU inference."
-                                    .yellow()
-                            );
-                            eprintln!(
-                                "  {} For GPU inference, convert to GGUF Q4K first: \
-                                 apr convert model.safetensors model.gguf --quantize q4k",
-                                "Tip:".cyan()
-                            );
-                            // Fall through to CPU path below
-                        } else {
-                            return Err(format!("SafeTensors CUDA load failed: {e}"));
-                        }
-                    }
+
+                    return Ok(tokens[prompt.len()..].to_vec());
                 }
             }
 
             // CPU path: Use realizar's SafeTensors inference via AprTransformer
-            // PMAT-108 FIX: Use realizar's SafeTensors inference, not aprender's training model
-            // The old path used Qwen2Model.generate() which is 0.3 tok/s (training code)
-            // The new path uses AprTransformer via SafetensorsToAprConverter for 25+ tok/s
             use realizar::apr_transformer::GenerateConfig;
             use realizar::safetensors_infer::SafetensorsToAprConverter;
 
-            // Convert SafeTensors to AprTransformer (optimized inference engine)
             let transformer = SafetensorsToAprConverter::convert(&self.model_path)
                 .map_err(|e| format!("SafeTensors conversion failed: {e}"))?;
 
-            // Use KV-cached generation for O(n) instead of O(n²)
             let gen_config = GenerateConfig {
                 max_tokens: config.max_tokens,
                 temperature: config.temperature,
