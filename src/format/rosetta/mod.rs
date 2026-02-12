@@ -60,6 +60,13 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
+/// Bug 212: Check if a path is a sharded SafeTensors index file.
+fn is_sharded_index(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|n| n.ends_with(".index.json"))
+}
+
 // ============================================================================
 // Format Types
 // ============================================================================
@@ -671,6 +678,11 @@ impl RosettaStone {
     pub fn inspect<P: AsRef<Path>>(&self, path: P) -> Result<InspectionReport> {
         let path = path.as_ref();
 
+        // Bug 212: Detect sharded SafeTensors index files early
+        if is_sharded_index(path) {
+            return self.inspect_sharded_safetensors(path);
+        }
+
         // Detect format from magic bytes first, fall back to extension
         let format = FormatType::from_magic(path).or_else(|_| FormatType::from_extension(path))?;
 
@@ -729,6 +741,27 @@ impl RosettaStone {
         let opts = options.unwrap_or_else(|| self.options.clone());
 
         let start = std::time::Instant::now();
+
+        // Bug 212: Detect sharded SafeTensors index files early
+        if is_sharded_index(source) {
+            let target_format = FormatType::from_extension(target)?;
+            let source_inspection = self.inspect_sharded_safetensors(source)?;
+
+            self.convert_sharded(source, target, target_format, &opts)?;
+
+            let target_inspection = self.inspect(target)?;
+            let duration_ms = start.elapsed().as_millis() as u64;
+
+            return Ok(ConversionReport {
+                path: ConversionPath::direct(FormatType::SafeTensors, target_format),
+                source_inspection,
+                target_inspection,
+                warnings: Vec::new(),
+                duration_ms,
+                modified_tensors: Vec::new(),
+                dropped_tensors: Vec::new(),
+            });
+        }
 
         // Detect formats
         let source_format =
@@ -1326,6 +1359,125 @@ impl RosettaStone {
         })
     }
 
+    /// Bug 212: Inspect a sharded SafeTensors model via its index.json.
+    /// Iterates shard files and aggregates tensor metadata.
+    fn inspect_sharded_safetensors(&self, index_path: &Path) -> Result<InspectionReport> {
+        use crate::format::sharded::ShardIndex;
+        use crate::serialization::safetensors::{MappedSafeTensors, TensorMetadata};
+
+        let content =
+            std::fs::read_to_string(index_path).map_err(|e| AprenderError::FormatError {
+                message: format!("Failed to read shard index {}: {e}", index_path.display()),
+            })?;
+        let index = ShardIndex::from_json(&content)?;
+
+        let base_dir = index_path.parent().ok_or_else(|| AprenderError::FormatError {
+            message: format!(
+                "Cannot determine parent directory of {}",
+                index_path.display()
+            ),
+        })?;
+
+        let mut tensors = Vec::new();
+        let mut total_params: usize = 0;
+        let mut total_file_size: usize = 0;
+
+        for shard_file in index.shard_files() {
+            let shard_path = base_dir.join(shard_file);
+            if !shard_path.exists() {
+                continue;
+            }
+
+            total_file_size += std::fs::metadata(&shard_path)
+                .map(|m| m.len() as usize)
+                .unwrap_or(0);
+
+            let mapped =
+                MappedSafeTensors::open(&shard_path).map_err(|e| AprenderError::FormatError {
+                    message: format!("SafeTensors open failed for shard {shard_file}: {e}"),
+                })?;
+
+            for name in mapped.tensor_names() {
+                if let Some(info) = mapped.get_metadata(name) {
+                    let info: &TensorMetadata = info;
+                    let shape: Vec<usize> = info.shape.clone();
+                    let params: usize = shape.iter().product();
+                    total_params += params;
+                    let data_len = info.data_offsets[1] - info.data_offsets[0];
+
+                    tensors.push(TensorInfo {
+                        name: name.to_string(),
+                        dtype: info.dtype.clone(),
+                        shape,
+                        size_bytes: data_len,
+                        stats: None,
+                    });
+                }
+            }
+        }
+
+        Ok(InspectionReport {
+            format: FormatType::SafeTensors,
+            file_size: total_file_size,
+            metadata: BTreeMap::from([(
+                "shards".to_string(),
+                index.shard_count().to_string(),
+            )]),
+            tensors,
+            total_params,
+            quantization: None,
+            architecture: None,
+        })
+    }
+
+    /// Bug 212: Convert a sharded SafeTensors model to any target format.
+    /// Routes through import (sharded ST → APR) then converts APR → target.
+    fn convert_sharded(
+        &self,
+        source: &Path,
+        target: &Path,
+        target_format: FormatType,
+        opts: &ConversionOptions,
+    ) -> Result<()> {
+        use crate::format::converter::{apr_import, ImportOptions};
+
+        let source_str = source.to_string_lossy();
+        let effective_tokenizer = opts.tokenizer_path.clone().or_else(|| {
+            let sibling = source.with_file_name("tokenizer.json");
+            if sibling.exists() {
+                Some(sibling)
+            } else {
+                None
+            }
+        });
+        let import_opts = ImportOptions {
+            tokenizer_path: effective_tokenizer,
+            allow_no_config: true, // Sharded models may have config.json; let import warn
+            ..ImportOptions::default()
+        };
+
+        if target_format == FormatType::Apr {
+            // Direct: sharded ST → APR via import
+            eprintln!(
+                "[BUG-212] Converting sharded SafeTensors → APR: {}",
+                source.display()
+            );
+            apr_import(&source_str, target, import_opts)?;
+        } else {
+            // Two-step: sharded ST → temp APR → target
+            let temp_apr = std::env::temp_dir().join("rosetta_sharded_temp.apr");
+            eprintln!(
+                "[BUG-212] Converting sharded SafeTensors → {} (via temp APR): {}",
+                target_format, source.display()
+            );
+            apr_import(&source_str, &temp_apr, import_opts)?;
+            self.convert_internal(&temp_apr, target, FormatType::Apr, target_format, opts)?;
+            let _ = std::fs::remove_file(&temp_apr);
+        }
+
+        Ok(())
+    }
+
     #[allow(clippy::self_only_used_in_recursion)] // Self is needed for recursive convert calls
     fn convert_internal(
         &self,
@@ -1368,6 +1520,7 @@ impl RosettaStone {
                 });
                 let import_opts = ImportOptions {
                     tokenizer_path: effective_tokenizer,
+                    allow_no_config: true,
                     ..ImportOptions::default()
                 };
                 apr_import(&source_str, target, import_opts)?;

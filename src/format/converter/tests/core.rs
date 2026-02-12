@@ -339,7 +339,10 @@ mod tests_conversion {
     fn test_convert_valid_safetensors() {
         let h = ConversionTestHarness::new()
             .with_safetensors(PygmyConfig::llama_style())
-            .import_to_apr(ImportOptions::default());
+            .import_to_apr(ImportOptions {
+                allow_no_config: true,
+                ..ImportOptions::default()
+            });
 
         // Verify the output APR has correct tensor data
         h.verify_apr().assert_passed();
@@ -365,6 +368,7 @@ mod tests_conversion {
             architecture: Architecture::Llama,
             validation: ValidationConfig::Strict,
             strict: true,
+            allow_no_config: true,
             ..Default::default()
         };
         let result = apr_import(&input.to_string_lossy(), &output, options);
@@ -398,6 +402,7 @@ mod tests_conversion {
 
         let options = ImportOptions {
             validation: ValidationConfig::Strict,
+            allow_no_config: true,
             ..Default::default()
         };
         let result = apr_import(&input.to_string_lossy(), &output, options);
@@ -423,7 +428,14 @@ mod tests_conversion {
         );
         create_test_safetensors(&input, &tensors);
 
-        let result = apr_import(&input.to_string_lossy(), &output, ImportOptions::default());
+        let result = apr_import(
+            &input.to_string_lossy(),
+            &output,
+            ImportOptions {
+                allow_no_config: true,
+                ..ImportOptions::default()
+            },
+        );
 
         assert!(result.is_err(), "NaN should fail validation");
         let err = result.unwrap_err().to_string();
@@ -439,7 +451,10 @@ mod tests_conversion {
         let result = apr_import(
             &nonexistent.to_string_lossy(),
             &output,
-            ImportOptions::default(),
+            ImportOptions {
+                allow_no_config: true,
+                ..ImportOptions::default()
+            },
         );
         assert!(result.is_err(), "Nonexistent file should fail");
         let err = result.unwrap_err().to_string();
@@ -457,7 +472,14 @@ mod tests_conversion {
         let output = dir.path().join("out.apr");
         fs::write(&input, b"test").expect("Failed to create test file");
 
-        let result = apr_import(&input.to_string_lossy(), &output, ImportOptions::default());
+        let result = apr_import(
+            &input.to_string_lossy(),
+            &output,
+            ImportOptions {
+                allow_no_config: true,
+                ..ImportOptions::default()
+            },
+        );
         assert!(result.is_err(), "Unsupported format should fail");
         let err = result.unwrap_err().to_string();
         assert!(
@@ -488,6 +510,7 @@ mod tests_conversion {
 
         let options = ImportOptions {
             architecture: Architecture::Whisper,
+            allow_no_config: true,
             ..Default::default()
         };
         let result = apr_import(&input.to_string_lossy(), &output, options);
@@ -905,6 +928,7 @@ mod tests_gh196_roundtrip {
             .with_safetensors(PygmyConfig::llama_style())
             .import_to_apr(ImportOptions {
                 architecture: Architecture::Auto,
+                allow_no_config: true,
                 ..Default::default()
             });
 
@@ -929,6 +953,7 @@ mod tests_gh196_roundtrip {
             architecture: Architecture::Auto,
             validation: ValidationConfig::Strict,
             strict: true,
+            allow_no_config: true,
             ..Default::default()
         });
 
@@ -943,7 +968,10 @@ mod tests_gh196_roundtrip {
     fn test_gh196_default_permissive() {
         let h = ConversionTestHarness::new().with_safetensors(PygmyConfig::default());
 
-        let result = h.try_import_to_apr(ImportOptions::default());
+        let result = h.try_import_to_apr(ImportOptions {
+            allow_no_config: true,
+            ..ImportOptions::default()
+        });
 
         assert!(
             result.is_ok(),
@@ -957,7 +985,10 @@ mod tests_gh196_roundtrip {
     fn test_gh196_tensor_data_preserved() {
         let h = ConversionTestHarness::new()
             .with_safetensors(PygmyConfig::default())
-            .import_to_apr(ImportOptions::default());
+            .import_to_apr(ImportOptions {
+                allow_no_config: true,
+                ..ImportOptions::default()
+            });
 
         let result = h.verify_apr();
         result.assert_passed();
@@ -988,6 +1019,7 @@ mod tests_gh196_roundtrip {
             .with_safetensors(PygmyConfig::llama_style())
             .import_to_apr(ImportOptions {
                 architecture: Architecture::Llama,
+                allow_no_config: true,
                 ..Default::default()
             });
 
@@ -1026,7 +1058,10 @@ mod tests_rosetta003_gqa_roundtrip {
     fn test_rosetta003_gqa_no_fusion_in_apr() {
         let h = ConversionTestHarness::new()
             .with_safetensors(PygmyConfig::qwen2_gqa())
-            .import_to_apr(ImportOptions::default());
+            .import_to_apr(ImportOptions {
+                allow_no_config: true,
+                ..ImportOptions::default()
+            });
 
         let output = h.output_path().expect("output exists");
         let data = fs::read(output).expect("read output");
@@ -1067,7 +1102,10 @@ mod tests_rosetta003_gqa_roundtrip {
 
         let h = ConversionTestHarness::new()
             .with_safetensors(config)
-            .import_to_apr(ImportOptions::default());
+            .import_to_apr(ImportOptions {
+                allow_no_config: true,
+                ..ImportOptions::default()
+            });
 
         let output = h.output_path().expect("output exists");
         let data = fs::read(output).expect("read output");
@@ -1112,7 +1150,10 @@ mod tests_rosetta003_gqa_roundtrip {
 
         let h = ConversionTestHarness::new()
             .with_safetensors(config)
-            .import_to_apr(ImportOptions::default());
+            .import_to_apr(ImportOptions {
+                allow_no_config: true,
+                ..ImportOptions::default()
+            });
 
         let output = h.output_path().expect("output exists");
         let data = fs::read(output).expect("read output");
@@ -1149,7 +1190,10 @@ mod tests_rosetta003_gqa_roundtrip {
 
         let h = ConversionTestHarness::new()
             .with_safetensors(config)
-            .import_to_apr(ImportOptions::default());
+            .import_to_apr(ImportOptions {
+                allow_no_config: true,
+                ..ImportOptions::default()
+            });
 
         let output = h.output_path().expect("output exists");
         let data = fs::read(output).expect("read output");
@@ -1176,7 +1220,10 @@ mod tests_rosetta003_gqa_roundtrip {
 
         let h = ConversionTestHarness::new()
             .with_safetensors(config)
-            .import_to_apr(ImportOptions::default());
+            .import_to_apr(ImportOptions {
+                allow_no_config: true,
+                ..ImportOptions::default()
+            });
 
         let output = h.output_path().expect("output exists");
         let data = fs::read(output).expect("read output");
@@ -1301,7 +1348,10 @@ mod tests_rosetta003_gqa_roundtrip {
 
         let h = ConversionTestHarness::new()
             .with_safetensors(config)
-            .import_to_apr(ImportOptions::default());
+            .import_to_apr(ImportOptions {
+                allow_no_config: true,
+                ..ImportOptions::default()
+            });
 
         let output = h.output_path().expect("output exists");
         let data = fs::read(output).expect("read output");

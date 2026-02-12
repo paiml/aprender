@@ -1888,6 +1888,7 @@ fn t_gh194_01_safetensors_apr_preserves_tensor_count() {
         &apr_path,
         ImportOptions {
             architecture: Architecture::Auto,
+            allow_no_config: true,
             ..Default::default()
         },
     );
@@ -3176,4 +3177,55 @@ fn p089_compute_validation_healthy_data() {
     assert!(tv.min < tv.max);
     assert!(tv.std > 0.0);
     assert!(tv.failures.is_empty());
+}
+
+// ========================================================================
+// Bug 212: Sharded SafeTensors detection
+// ========================================================================
+
+#[test]
+fn test_bug_212_is_sharded_index_positive() {
+    use super::is_sharded_index;
+    use std::path::Path;
+
+    assert!(is_sharded_index(Path::new(
+        "model.safetensors.index.json"
+    )));
+    assert!(is_sharded_index(Path::new(
+        "/path/to/model.safetensors.index.json"
+    )));
+    assert!(is_sharded_index(Path::new(
+        "some.other.index.json"
+    )));
+}
+
+#[test]
+fn test_bug_212_is_sharded_index_negative() {
+    use super::is_sharded_index;
+    use std::path::Path;
+
+    assert!(!is_sharded_index(Path::new("model.safetensors")));
+    assert!(!is_sharded_index(Path::new("model.gguf")));
+    assert!(!is_sharded_index(Path::new("config.json")));
+    assert!(!is_sharded_index(Path::new("tokenizer.json")));
+}
+
+#[test]
+fn test_bug_212_inspect_sharded_nonexistent() {
+    let rosetta = RosettaStone::new();
+    let result = rosetta.inspect("/tmp/nonexistent_sharded_model.safetensors.index.json");
+    // Should fail because the file doesn't exist
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_bug_212_convert_sharded_nonexistent() {
+    let rosetta = RosettaStone::new();
+    let result = rosetta.convert(
+        "/tmp/nonexistent_sharded_model.safetensors.index.json",
+        "/tmp/output.apr",
+        None,
+    );
+    // Should fail because the source doesn't exist
+    assert!(result.is_err());
 }

@@ -37,6 +37,7 @@ mod tests {
         // Write APR file
         let options = ImportOptions {
             architecture: Architecture::Qwen2, // Verified arch
+            allow_no_config: true,
             ..Default::default()
         };
 
@@ -95,6 +96,7 @@ mod tests {
         let options_strict = ImportOptions {
             architecture: Architecture::Bert,
             strict: true,
+            allow_no_config: true,
             ..Default::default()
         };
 
@@ -108,6 +110,7 @@ mod tests {
         // Default (permissive) mode allows unverified architectures with warning
         let options_permissive = ImportOptions {
             architecture: Architecture::Bert,
+            allow_no_config: true,
             ..Default::default()
         };
 

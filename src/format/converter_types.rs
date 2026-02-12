@@ -512,6 +512,10 @@ pub struct ImportOptions {
     /// PMAT-232: External tokenizer.json path for weights-only GGUF files.
     /// If the GGUF has no embedded tokenizer, this file will be used instead.
     pub tokenizer_path: Option<std::path::PathBuf>,
+    /// GH-223: Allow import without config.json. By default, SafeTensors import
+    /// errors when config.json is missing (inferred hyperparameters like rope_theta
+    /// may be wrong). Pass `--allow-no-config` to proceed with warnings only.
+    pub allow_no_config: bool,
 }
 
 impl Default for ImportOptions {
@@ -524,6 +528,7 @@ impl Default for ImportOptions {
             strict: false,
             cache: true,
             tokenizer_path: None,
+            allow_no_config: false,
         }
     }
 }

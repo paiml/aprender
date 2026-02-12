@@ -445,6 +445,12 @@ pub enum Commands {
         /// (only SafeTensors sources allowed). Ensures single-provenance testing.
         #[arg(long)]
         enforce_provenance: bool,
+
+        /// GH-223: Allow import without config.json (default: error).
+        /// Without config.json, hyperparameters like rope_theta are inferred from
+        /// tensor shapes and may be wrong, producing garbage output.
+        #[arg(long)]
+        allow_no_config: bool,
     },
 
     /// Download and cache model from HuggingFace (Ollama-like UX)
@@ -2080,6 +2086,7 @@ fn dispatch_core_command(cli: &Cli) -> Option<Result<(), CliError>> {
             preserve_q4k,
             tokenizer,
             enforce_provenance,
+            allow_no_config,
         } => import::run(
             source,
             output.as_deref(),
@@ -2089,6 +2096,7 @@ fn dispatch_core_command(cli: &Cli) -> Option<Result<(), CliError>> {
             *preserve_q4k,
             tokenizer.as_ref(),
             *enforce_provenance,
+            *allow_no_config,
         ),
         Commands::Pull { model_ref, force } => pull::run(model_ref, *force),
         Commands::List => pull::list(),
@@ -3794,6 +3802,7 @@ mod tests {
                 preserve_q4k,
                 tokenizer,
                 enforce_provenance,
+                allow_no_config,
             } => {
                 assert_eq!(source, "hf://openai/whisper-tiny");
                 assert_eq!(output, Some(PathBuf::from("whisper.apr")));
@@ -3803,6 +3812,7 @@ mod tests {
                 assert!(preserve_q4k);
                 assert_eq!(tokenizer, Some(PathBuf::from("/path/to/tokenizer.json")));
                 assert!(!enforce_provenance);
+                assert!(!allow_no_config);
             }
             _ => panic!("Expected Import command"),
         }
@@ -5443,6 +5453,7 @@ mod tests {
             preserve_q4k: false,
             tokenizer: None,
             enforce_provenance: false,
+            allow_no_config: false,
         };
         let paths = extract_model_paths(&cmd);
         assert!(
@@ -5463,6 +5474,7 @@ mod tests {
             preserve_q4k: false,
             tokenizer: None,
             enforce_provenance: false,
+            allow_no_config: false,
         };
         let paths = extract_model_paths(&cmd);
         assert!(
@@ -6261,6 +6273,7 @@ mod tests {
             preserve_q4k: false,
             tokenizer: None,
             enforce_provenance: false,
+            allow_no_config: false,
         });
         let result = execute_command(&cli);
         assert!(

@@ -20,6 +20,7 @@ pub(crate) fn run(
     preserve_q4k: bool,
     tokenizer: Option<&PathBuf>,
     enforce_provenance: bool,
+    allow_no_config: bool,
 ) -> Result<()> {
     check_provenance(source, enforce_provenance)?;
 
@@ -84,6 +85,7 @@ pub(crate) fn run(
         strict,
         cache: true,
         tokenizer_path: tokenizer.cloned(),
+        allow_no_config,
     };
 
     print_import_config(&options);
@@ -440,6 +442,7 @@ mod tests {
             false,
             None,  // tokenizer
             false, // enforce_provenance
+            false, // allow_no_config
         );
 
         assert!(result.is_err());
@@ -464,6 +467,7 @@ mod tests {
             false,
             None,  // tokenizer
             false, // enforce_provenance
+            false, // allow_no_config
         );
 
         // Will fail at network stage, not architecture parsing
@@ -482,6 +486,7 @@ mod tests {
             false,
             None,  // tokenizer
             false, // enforce_provenance
+            false, // allow_no_config
         );
 
         // Will fail at network stage, not architecture parsing
@@ -500,6 +505,7 @@ mod tests {
             false,
             None,  // tokenizer
             false, // enforce_provenance
+            false, // allow_no_config
         );
 
         // Will fail at network stage, not architecture parsing
@@ -518,6 +524,7 @@ mod tests {
             false,
             None,  // tokenizer
             false, // enforce_provenance
+            false, // allow_no_config
         );
 
         // Will fail at network stage, not architecture parsing
@@ -536,6 +543,7 @@ mod tests {
             false,
             None,  // tokenizer
             false, // enforce_provenance
+            false, // allow_no_config
         );
 
         // Will fail at network stage, not architecture parsing
@@ -554,6 +562,7 @@ mod tests {
             false,
             None,  // tokenizer
             false, // enforce_provenance
+            false, // allow_no_config
         );
 
         // Will fail at network stage, not quantize parsing
@@ -572,6 +581,7 @@ mod tests {
             false,
             None,  // tokenizer
             false, // enforce_provenance
+            false, // allow_no_config
         );
 
         // Will fail at network stage
@@ -590,6 +600,7 @@ mod tests {
             false,
             None,
             false, // enforce_provenance
+            false, // allow_no_config
         );
 
         assert!(result.is_err());
@@ -609,7 +620,8 @@ mod tests {
             false,
             false,
             None,
-            true, // enforce_provenance = ON
+            true,  // enforce_provenance = ON
+            false, // allow_no_config
         );
         assert!(result.is_err());
         let err_msg = format!("{}", result.unwrap_err());
@@ -634,7 +646,8 @@ mod tests {
             false,
             false,
             None,
-            true, // enforce_provenance = ON
+            true,  // enforce_provenance = ON
+            false, // allow_no_config
         );
         assert!(result.is_err());
         let err_msg = format!("{}", result.unwrap_err());
@@ -657,6 +670,7 @@ mod tests {
             false,
             None,
             false, // enforce_provenance = OFF
+            false, // allow_no_config
         );
         // Should fail (file doesn't exist) but NOT with F-GT-001
         if let Err(e) = &result {
@@ -679,7 +693,8 @@ mod tests {
             false,
             false,
             None,
-            true, // enforce_provenance = ON
+            true,  // enforce_provenance = ON
+            false, // allow_no_config
         );
         // Should fail (file doesn't exist) but NOT with F-GT-001
         if let Err(e) = &result {

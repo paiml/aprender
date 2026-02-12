@@ -332,6 +332,7 @@ mod tests_coverage_boost {
             strict: true,
             cache: false,
             tokenizer_path: None,
+            allow_no_config: true,
         };
         assert!(opts.quantize.is_some());
         assert!(opts.compress.is_some());
@@ -700,6 +701,7 @@ mod tests_coverage_boost {
         let mut validator = AprValidator::new();
         let mut errors = Vec::new();
         let mut options = ImportOptions::default();
+        options.allow_no_config = true;
         // Use Basic validation which is less strict
         options.validation = ValidationConfig::Basic;
 
@@ -715,6 +717,7 @@ mod tests_coverage_boost {
         let mut validator = AprValidator::new();
         let mut errors = Vec::new();
         let mut options = ImportOptions::default();
+        options.allow_no_config = true;
         options.validation = ValidationConfig::Strict;
 
         validate_single_tensor("test.weight", &data, &options, &mut validator, &mut errors);
@@ -729,6 +732,7 @@ mod tests_coverage_boost {
         let mut validator = AprValidator::new();
         let mut errors = Vec::new();
         let mut options = ImportOptions::default();
+        options.allow_no_config = true;
         options.validation = ValidationConfig::None;
 
         validate_single_tensor("test.weight", &data, &options, &mut validator, &mut errors);

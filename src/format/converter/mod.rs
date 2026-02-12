@@ -232,6 +232,7 @@ pub fn apr_convert<P: AsRef<Path>>(
                 // Write APR file with raw quantized tensors (preserves block alignment)
                 let import_opts = ImportOptions {
                     architecture: Architecture::Qwen2,
+                    allow_no_config: true,
                     ..Default::default()
                 };
                 write_apr_file_raw(

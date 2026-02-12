@@ -1285,21 +1285,36 @@ pub(crate) fn load_source_tensors(
             let model_config =
                 config_from_json.or_else(|| infer_model_config_from_tensors(&st_result.tensors));
 
-            // Bug 210 (GH-222): Warn loudly when config.json is missing — inferred
-            // hyperparameters (rope_theta, max_position_embeddings) may be wrong.
+            // GH-223: Error when config.json is missing (was warning-only before).
+            // config.json is critical for rope_theta, max_position_embeddings, etc.
+            // Inferred values are often wrong (e.g. Qwen2 rope_theta 10000 vs 1000000).
             if !config_json_found {
                 let config_path = path.with_file_name("config.json");
-                eprintln!(
-                    "[WARNING] config.json not found at {}",
-                    config_path.display()
-                );
-                eprintln!(
-                    "[WARNING] Model config inferred from tensor shapes. \
-                     rope_theta and other params may be wrong."
-                );
-                eprintln!(
-                    "[WARNING] For best results, download config.json alongside your model file."
-                );
+                if options.allow_no_config {
+                    eprintln!(
+                        "[WARNING] config.json not found at {}",
+                        config_path.display()
+                    );
+                    eprintln!(
+                        "[WARNING] Model config inferred from tensor shapes. \
+                         rope_theta and other params may be wrong."
+                    );
+                    eprintln!(
+                        "[WARNING] Proceeding anyway (--allow-no-config). \
+                         For best results, download config.json alongside your model file."
+                    );
+                } else {
+                    return Err(AprenderError::FormatError {
+                        message: format!(
+                            "config.json not found at {}. This file is required for correct \
+                             model hyperparameters (rope_theta, max_position_embeddings, etc.). \
+                             Download config.json alongside your model file, or pass \
+                             --allow-no-config to proceed with inferred values (may produce \
+                             garbage output).",
+                            config_path.display()
+                        ),
+                    });
+                }
             }
 
             // PMAT-APR-TOK-001: Load tokenizer from sibling tokenizer.json for APR embedding
@@ -1346,7 +1361,7 @@ pub(crate) fn load_source_tensors(
 /// and merges results into a single `SourceLoadResult`.
 pub(crate) fn load_sharded_safetensors(
     index_path: &Path,
-    _options: &ImportOptions,
+    options: &ImportOptions,
 ) -> Result<SourceLoadResult> {
     let content = fs::read_to_string(index_path).map_err(|e| AprenderError::FormatError {
         message: format!("Failed to read shard index {}: {e}", index_path.display()),
@@ -1419,20 +1434,34 @@ pub(crate) fn load_sharded_safetensors(
     let model_config =
         config_from_json.or_else(|| infer_model_config_from_tensors(&merged_tensors));
 
-    // Bug 210 (GH-222): Warn loudly when config.json is missing for sharded models too.
+    // GH-223: Error when config.json is missing for sharded models too.
     if !config_json_found {
         let config_path = base_dir.join("config.json");
-        eprintln!(
-            "[WARNING] config.json not found at {}",
-            config_path.display()
-        );
-        eprintln!(
-            "[WARNING] Model config inferred from tensor shapes. \
-             rope_theta and other params may be wrong."
-        );
-        eprintln!(
-            "[WARNING] For best results, download config.json alongside your model shards."
-        );
+        if options.allow_no_config {
+            eprintln!(
+                "[WARNING] config.json not found at {}",
+                config_path.display()
+            );
+            eprintln!(
+                "[WARNING] Model config inferred from tensor shapes. \
+                 rope_theta and other params may be wrong."
+            );
+            eprintln!(
+                "[WARNING] Proceeding anyway (--allow-no-config). \
+                 For best results, download config.json alongside your model shards."
+            );
+        } else {
+            return Err(AprenderError::FormatError {
+                message: format!(
+                    "config.json not found at {}. This file is required for correct \
+                     model hyperparameters (rope_theta, max_position_embeddings, etc.). \
+                     Download config.json alongside your model shards, or pass \
+                     --allow-no-config to proceed with inferred values (may produce \
+                     garbage output).",
+                    config_path.display()
+                ),
+            });
+        }
     }
 
     let tokenizer = load_tokenizer_from_json(&sibling_path);

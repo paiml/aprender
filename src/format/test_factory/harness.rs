@@ -316,6 +316,7 @@ impl ConversionTestHarness {
 
         let options = ImportOptions {
             tokenizer_path: Some(tokenizer_path),
+            allow_no_config: true,
             ..ImportOptions::default()
         };
         let result = apr_import(&input_str, &output, options);
@@ -513,7 +514,10 @@ impl ConversionTestHarness {
     pub(crate) fn assert_import_ok(config: PygmyConfig) {
         let h = Self::new()
             .with_safetensors(config)
-            .import_to_apr(ImportOptions::default());
+            .import_to_apr(ImportOptions {
+                allow_no_config: true,
+                ..ImportOptions::default()
+            });
         h.verify_apr().assert_passed();
     }
 
@@ -521,7 +525,10 @@ impl ConversionTestHarness {
     pub(crate) fn assert_roundtrip_ok(config: PygmyConfig) {
         let h = Self::new()
             .with_safetensors(config)
-            .import_to_apr(ImportOptions::default())
+            .import_to_apr(ImportOptions {
+                allow_no_config: true,
+                ..ImportOptions::default()
+            })
             .export_to_safetensors();
         h.verify_safetensors().assert_passed();
     }
@@ -693,7 +700,10 @@ fn test_harness_with_apr_writes_file() {
 fn test_harness_import_produces_output() {
     let h = ConversionTestHarness::new()
         .with_safetensors(PygmyConfig::default())
-        .import_to_apr(ImportOptions::default());
+        .import_to_apr(ImportOptions {
+            allow_no_config: true,
+            ..ImportOptions::default()
+        });
     assert!(h.output_path().is_some());
     assert!(h.output_path().expect("output").exists());
 }
@@ -732,7 +742,10 @@ fn test_harness_assert_roundtrip_ok_minimal() {
 fn test_harness_verify_apr_checks_shapes() {
     let h = ConversionTestHarness::new()
         .with_safetensors(PygmyConfig::default())
-        .import_to_apr(ImportOptions::default());
+        .import_to_apr(ImportOptions {
+            allow_no_config: true,
+            ..ImportOptions::default()
+        });
     let result = h.verify_apr();
     assert!(result.passed(), "Default import should verify cleanly");
 }
@@ -758,7 +771,10 @@ fn test_f_har_01_corruption_detected() {
     // 1. Create valid APR via harness
     let h = ConversionTestHarness::new()
         .with_safetensors(PygmyConfig::default())
-        .import_to_apr(ImportOptions::default());
+        .import_to_apr(ImportOptions {
+            allow_no_config: true,
+            ..ImportOptions::default()
+        });
 
     let output_path = h.output_path().expect("output exists");
 
@@ -820,6 +836,7 @@ fn test_f_har_03_strict_embedding_only() {
     // Strict mode with embedding-only config should FAIL
     let mut options = ImportOptions::default();
     options.strict = true;
+    options.allow_no_config = true;
 
     let h = ConversionTestHarness::new().with_safetensors(config);
 
@@ -874,7 +891,10 @@ fn test_f_conv_01_bit_flipping_detected() {
 
     let h = ConversionTestHarness::new()
         .with_safetensors(PygmyConfig::default())
-        .import_to_apr(ImportOptions::default());
+        .import_to_apr(ImportOptions {
+            allow_no_config: true,
+            ..ImportOptions::default()
+        });
 
     let output_path = h.output_path().expect("output exists");
 
@@ -967,6 +987,7 @@ fn test_f_conv_04_strict_missing_norm() {
 
     let mut options = ImportOptions::default();
     options.strict = true;
+    options.allow_no_config = true;
 
     let h = ConversionTestHarness::new().with_safetensors(config);
     let result = h.try_import_to_apr(options);
@@ -1307,7 +1328,10 @@ fn test_f_harness_gguf_export_realistic_dims() {
 
     let h = ConversionTestHarness::new()
         .with_safetensors(PygmyConfig::realistic())
-        .import_to_apr(ImportOptions::default())
+        .import_to_apr(ImportOptions {
+            allow_no_config: true,
+            ..ImportOptions::default()
+        })
         .export_to_gguf();
 
     let gguf_path = h.output_path().expect("GGUF output exists");
@@ -1338,7 +1362,10 @@ fn test_t_qkv_02_name_set_equality_apr() {
     // Standard import -- names should match exactly
     let h = ConversionTestHarness::new()
         .with_safetensors(PygmyConfig::llama_style())
-        .import_to_apr(ImportOptions::default());
+        .import_to_apr(ImportOptions {
+            allow_no_config: true,
+            ..ImportOptions::default()
+        });
     let result = h.verify_apr();
     assert!(
         result.passed(),
@@ -1354,7 +1381,10 @@ fn test_t_qkv_02_name_set_equality_roundtrip() {
     // Full round-trip -- names should survive ST->APR->ST
     let h = ConversionTestHarness::new()
         .with_safetensors(PygmyConfig::qwen2_gqa())
-        .import_to_apr(ImportOptions::default())
+        .import_to_apr(ImportOptions {
+            allow_no_config: true,
+            ..ImportOptions::default()
+        })
         .export_to_safetensors();
     let result = h.verify_safetensors();
     assert!(
@@ -1376,7 +1406,10 @@ fn test_t_qkv_03_safetensors_apr_gguf() {
 
     let h = ConversionTestHarness::new()
         .with_safetensors(PygmyConfig::qwen2_gqa())
-        .import_to_apr(ImportOptions::default())
+        .import_to_apr(ImportOptions {
+            allow_no_config: true,
+            ..ImportOptions::default()
+        })
         .export_to_gguf();
 
     let gguf_path = h.output_path().expect("GGUF output exists");
@@ -1420,7 +1453,10 @@ fn test_t_qkv_03_safetensors_apr_gguf() {
 fn test_t_qkv_04_multihop_st_apr_gguf_apr_st() {
     let h = ConversionTestHarness::new()
         .with_safetensors(PygmyConfig::qwen2_gqa())
-        .import_to_apr(ImportOptions::default())     // ST -> APR
+        .import_to_apr(ImportOptions {
+            allow_no_config: true,
+            ..ImportOptions::default()
+        })                                           // ST -> APR
         .export_to_gguf()                            // APR -> GGUF
         .reimport_to_apr()                           // GGUF -> APR
         .export_to_safetensors(); // APR -> ST

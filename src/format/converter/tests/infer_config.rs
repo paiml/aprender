@@ -509,7 +509,10 @@ fn test_tensor_accumulator_safe_min_max() {
 #[test]
 fn test_validate_single_tensor_no_errors() {
     let data = vec![0.1, 0.2, 0.3];
-    let options = ImportOptions::default();
+    let options = ImportOptions {
+        allow_no_config: true,
+        ..ImportOptions::default()
+    };
     let mut validator = AprValidator::new();
     let mut errors = Vec::new();
 
@@ -523,6 +526,7 @@ fn test_validate_single_tensor_with_nan_strict() {
     let options = ImportOptions {
         strict: true,
         validation: ValidationConfig::Strict,
+        allow_no_config: true,
         ..Default::default()
     };
     let mut validator = AprValidator::new();

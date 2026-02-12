@@ -135,7 +135,10 @@ fn test_load_sharded_safetensors_basic() {
         ],
     );
 
-    let options = ImportOptions::default();
+    let options = ImportOptions {
+        allow_no_config: true,
+        ..ImportOptions::default()
+    };
     let result = import::load_sharded_safetensors(&index_path, &options);
     assert!(result.is_ok(), "Sharded load should succeed: {result:?}");
 
@@ -183,7 +186,10 @@ fn test_load_sharded_safetensors_multiple_tensors_per_shard() {
         ],
     );
 
-    let options = ImportOptions::default();
+    let options = ImportOptions {
+        allow_no_config: true,
+        ..ImportOptions::default()
+    };
     let result = import::load_sharded_safetensors(&index_path, &options).expect("load sharded");
     assert_eq!(result.tensors.len(), 2);
     assert!(result.tensors.contains_key("embed.weight"));
@@ -201,7 +207,10 @@ fn test_load_sharded_missing_shard_error() {
         &[("layer.0.weight", "model-00001-of-00001.safetensors")],
     );
 
-    let options = ImportOptions::default();
+    let options = ImportOptions {
+        allow_no_config: true,
+        ..ImportOptions::default()
+    };
     let result = import::load_sharded_safetensors(&index_path, &options);
     assert!(result.is_err(), "Missing shard should error");
     let err = result.unwrap_err().to_string();
@@ -219,7 +228,10 @@ fn test_load_sharded_empty_index_error() {
     let index_path = dir.path().join("model.safetensors.index.json");
     std::fs::write(&index_path, r#"{"weight_map": {}}"#).expect("write index");
 
-    let options = ImportOptions::default();
+    let options = ImportOptions {
+        allow_no_config: true,
+        ..ImportOptions::default()
+    };
     let result = import::load_sharded_safetensors(&index_path, &options);
     assert!(result.is_err(), "Empty index should error");
     let err = result.unwrap_err().to_string();
@@ -246,7 +258,10 @@ fn test_load_source_tensors_routes_index_json() {
         &[("test.bias", "model-00001-of-00001.safetensors")],
     );
 
-    let options = ImportOptions::default();
+    let options = ImportOptions {
+        allow_no_config: true,
+        ..ImportOptions::default()
+    };
     let result = import::load_source_tensors(&index_path, &options);
     assert!(
         result.is_ok(),
@@ -263,7 +278,10 @@ fn test_load_source_tensors_regular_json_still_errors() {
     let json_path = dir.path().join("config.json");
     std::fs::write(&json_path, r#"{"key": "value"}"#).expect("write json");
 
-    let options = ImportOptions::default();
+    let options = ImportOptions {
+        allow_no_config: true,
+        ..ImportOptions::default()
+    };
     let result = import::load_source_tensors(&json_path, &options);
     assert!(
         result.is_err(),

@@ -1,15 +1,15 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 10.45.0 (Full Stack: apr-cli + aprender + realizar + trueno + batuta, Popperian falsified)
-**Status:** ALL THREE PROJECTS A+ + ZERO SATD (7B all 3 formats working CPU + GPU. 45 falsification rounds, 210 bugs found. Round 45: Bug 210 — architecture-specific rope_theta + metadata plausibility gate (GH-222 deep fix). 11,259 tests, 3,796 apr-cli tests. `apr qa` all 8 gates pass. TDG: 96.9/100 A+. Project Score: A+. Coverage: 96.35%. SATD: 0/0/0.)
+**Version:** 10.46.0 (Full Stack: apr-cli + aprender + realizar + trueno + batuta, Popperian falsified)
+**Status:** ALL THREE PROJECTS A+ + ZERO SATD (7B all 3 formats working CPU + GPU. 46 falsification rounds, 214 bugs found. Round 46: Bugs 211-214 + GH-223 — GGUF tokenizer fallback, sharded conversion, config.json enforcement, GPU VRAM fallback. 11,267+ tests, 3,796 apr-cli tests. `apr qa` all 8 gates pass. TDG: 96.9/100 A+. Project Score: A+. Coverage: 96.35%. SATD: 0/0/0.)
 **Primary Model:** `Qwen/Qwen2.5-Coder-7B-Instruct`
 **Supported Models:** Qwen2.5-Coder 0.5B, 1.5B, 3B, 7B (all sizes)
 **Source Format:** SafeTensors BF16 (HuggingFace, sharded, ~14 GB for 7B)
-**Popperian Score:** 156/164 gates passing (95.1%) — 8 FALSIFIED, 0 blocked/not-tested. 164 falsification gates, 23 sections. 45 rounds, 210 bugs. Gated by `model-tests` feature (`make test-model`)
+**Popperian Score:** 160/168 gates passing (95.2%) — 8 FALSIFIED, 0 blocked/not-tested. 168 falsification gates, 23 sections. 46 rounds, 214 bugs. Gated by `model-tests` feature (`make test-model`)
 **CLI Surface:** 39 top-level + 10 nested subcommands (49 total)
 **Compile-Time Proofs:** 297 algebraic invariants (zero runtime cost)
 **Author:** PAIML Engineering
-**Date:** 2026-02-11 (Round 45)
+**Date:** 2026-02-12 (Round 46)
 **Ground Truth:** SafeTensors BF16 - See Section 0
 **Quality Philosophy:** Toyota Way + Popperian Falsification (Zero SATD, Stop-the-Line, Jidoka)
 
@@ -2452,6 +2452,21 @@ Five-whys root cause analysis of GH-222 revealed the Round 44 fix (Bug 209) only
 - **Published**: aprender 0.25.4, apr-cli 0.2.14, realizar 0.6.13 — all to crates.io
 - **Test counts**: aprender 11,259 (lib), apr-cli 3,796 (lib), regression 51 = 15,106 total
 - **Gate count**: 156/164 passing (95.1%) — 1 new gate (F-QA-008), 0 new FALSIFIED
+
+**Round 46 (v10.46.0): Bugs 211-214 + GH-223 — MVP Scenario Pass Rate Push**
+
+Four bugs fixed to improve MVP playbook pass rates. All address systematic failures across the 5-model sweep (0.5B, 1.5B, 3B, 7B, 14B).
+
+| # | Claim/Gap | Reality | Severity | Fix |
+|---|-----------|---------|----------|-----|
+| 211 | GGUF export from APR includes tokenizer | `export_to_gguf()` only loads tokenizer from sibling `tokenizer.json`. When input is APR with embedded tokenizer but no sibling JSON, GGUF output lacks `tokenizer.ggml.*` keys. | **P1** | After tokenizer.json warning, fallback to `extract_apr_tokenizer_for_gguf()` from APR metadata. Raw passthrough path already had this — general path didn't. |
+| 212 | Sharded SafeTensors can be converted via RosettaStone | `FormatType::from_extension()` doesn't recognize `.index.json`. `convert()` calls `from_magic()` which reads JSON bytes (not SafeTensors magic). `load_sharded_safetensors()` exists but only wired to direct import. | **P1** | Added `is_sharded_index()` detection in `inspect()` and `convert()`. New `inspect_sharded_safetensors()` aggregates across shards. New `convert_sharded()` routes through import (ST→APR) then converts APR→target. |
+| 213 | APR contract I-4/I-5 metadata propagates through conversion chain | Metadata chain (config.json→APR→GGUF) already works via `resolve_gguf_config()`. Failures stem from missing tokenizer (Bug 211) and missing config.json (GH-223). | **P2** | Verified chain integrity. Added regression tests for `resolve_gguf_config()` round-trip. Root cause confirmed: Bug 211 + GH-223 fix the I-4/I-5 failures. |
+| 214 | SafeTensors GPU inference gracefully handles VRAM overflow | `SafeTensorsCudaModel::load()` returns hard error when VRAM insufficient. Chat command propagates error instead of falling back to CPU. | **P1** | Chat command now catches VRAM errors and falls back to CPU inference with actionable warning (suggests `apr convert model.safetensors model.gguf --quantize q4k` for GPU). |
+
+- **GH-223 (user-reported)**: `apr import` now errors (not warns) when `config.json` is missing for SafeTensors. New `--allow-no-config` flag overrides. Without config.json, rope_theta/max_position_embeddings are inferred and often wrong.
+- **New falsification gates**: 4 new gates (F-BUG-211, F-BUG-212, F-BUG-213, F-BUG-214)
+- **Gate count**: 160/168 passing (95.2%) — 4 new gates, 0 new FALSIFIED
 
 ### 18.2 Claims Verified (Not Falsified)
 

@@ -1205,42 +1205,63 @@ mod realizar_chat {
             config: &ChatConfig,
         ) -> Result<Vec<u32>, String> {
             // PMAT-116: GPU path for SafeTensors (direct H2D loading, no APR conversion)
+            // Bug 214: Falls back to CPU when VRAM insufficient (e.g. 7B F32 > 24GB)
             #[cfg(feature = "cuda")]
             if !config.force_cpu {
                 use realizar::safetensors_cuda::SafeTensorsCudaModel;
 
                 // Load SafeTensors directly to GPU (PMAT-116)
                 // This avoids APR conversion overhead and achieves GGUF parity
-                let mut cuda_model = SafeTensorsCudaModel::load(&self.model_path, 0)
-                    .map_err(|e| format!("SafeTensors CUDA load failed: {e}"))?;
+                match SafeTensorsCudaModel::load(&self.model_path, 0) {
+                    Ok(mut cuda_model) => {
+                        eprintln!(
+                            "  {} {} ({}MB VRAM)",
+                            "GPU:".green(),
+                            cuda_model.device_name(),
+                            cuda_model.vram_mb()
+                        );
 
-                eprintln!(
-                    "  {} {} ({}MB VRAM)",
-                    "GPU:".green(),
-                    cuda_model.device_name(),
-                    cuda_model.vram_mb()
-                );
+                        // Use EOS token from config or default to Qwen2 EOS
+                        let eos_id = 151645u32; // Qwen2 EOS token
 
-                // Use EOS token from config or default to Qwen2 EOS
-                let eos_id = 151645u32; // Qwen2 EOS token
+                        // Generate with GPU acceleration
+                        let tokens = cuda_model
+                            .generate(prompt, config.max_tokens, eos_id)
+                            .map_err(|e| format!("SafeTensors CUDA generate failed: {e}"))?;
 
-                // Generate with GPU acceleration
-                let tokens = cuda_model
-                    .generate(prompt, config.max_tokens, eos_id)
-                    .map_err(|e| format!("SafeTensors CUDA generate failed: {e}"))?;
+                        // PMAT-120 DEBUG: Log generated token IDs
+                        if config.trace {
+                            let new_tokens = &tokens[prompt.len()..];
+                            eprintln!(
+                                "[APR-TRACE] SafeTensors GPU generated {} tokens: {:?}",
+                                new_tokens.len(),
+                                &new_tokens[..new_tokens.len().min(20)]
+                            );
+                        }
 
-                // PMAT-120 DEBUG: Log generated token IDs
-                if config.trace {
-                    let new_tokens = &tokens[prompt.len()..];
-                    eprintln!(
-                        "[APR-TRACE] SafeTensors GPU generated {} tokens: {:?}",
-                        new_tokens.len(),
-                        &new_tokens[..new_tokens.len().min(20)]
-                    );
+                        // Return only generated tokens (skip prompt)
+                        return Ok(tokens[prompt.len()..].to_vec());
+                    }
+                    Err(e) => {
+                        let err_msg = format!("{e}");
+                        if err_msg.contains("Insufficient VRAM") || err_msg.contains("VRAM") {
+                            eprintln!(
+                                "  {} {}",
+                                "[BUG-214]".yellow(),
+                                "SafeTensors F32 exceeds GPU VRAM. Falling back to CPU inference."
+                                    .yellow()
+                            );
+                            eprintln!(
+                                "  {} For GPU inference, convert to GGUF Q4K first: \
+                                 apr convert model.safetensors model.gguf --quantize q4k",
+                                "Tip:".cyan()
+                            );
+                            // Fall through to CPU path below
+                        } else {
+                            return Err(format!("SafeTensors CUDA load failed: {e}"));
+                        }
+                    }
                 }
-
-                // Return only generated tokens (skip prompt)
-                return Ok(tokens[prompt.len()..].to_vec());
             }
 
             // CPU path: Use realizar's SafeTensors inference via AprTransformer

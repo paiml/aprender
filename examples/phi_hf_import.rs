@@ -73,6 +73,7 @@ fn main() {
         strict: false,
         cache: true,
         tokenizer_path: None,
+        allow_no_config: false,
     };
 
     println!("Architecture: {:?}", options.architecture);

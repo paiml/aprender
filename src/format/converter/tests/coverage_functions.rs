@@ -555,7 +555,10 @@ mod tests_write_functions {
             (vec![0.1, 0.2, 0.3, 0.4], vec![2, 2]),
         );
 
-        let options = ImportOptions::default();
+        let options = ImportOptions {
+            allow_no_config: true,
+            ..ImportOptions::default()
+        };
         let empty_f16: BTreeMap<String, (Vec<u8>, Vec<usize>)> = BTreeMap::new();
         let result = write_apr_file(
             &tensors,
@@ -601,7 +604,10 @@ mod tests_write_functions {
             ..Default::default()
         };
 
-        let options = ImportOptions::default();
+        let options = ImportOptions {
+            allow_no_config: true,
+            ..ImportOptions::default()
+        };
         let empty_f16: BTreeMap<String, (Vec<u8>, Vec<usize>)> = BTreeMap::new();
         let result = write_apr_file(
             &tensors,
@@ -656,7 +662,10 @@ mod tests_write_functions {
             rope_type: Some(0),
         };
 
-        let options = ImportOptions::default();
+        let options = ImportOptions {
+            allow_no_config: true,
+            ..ImportOptions::default()
+        };
         let empty_f16: BTreeMap<String, (Vec<u8>, Vec<usize>)> = BTreeMap::new();
         let result = write_apr_file(
             &tensors,
@@ -685,7 +694,10 @@ mod tests_write_functions {
             (vec![0.1, 0.2, 0.3, 0.4], vec![2, 2]),
         );
 
-        let mut options = ImportOptions::default();
+        let mut options = ImportOptions {
+            allow_no_config: true,
+            ..ImportOptions::default()
+        };
         options.quantize = Some(QuantizationType::Fp16);
 
         let empty_f16: BTreeMap<String, (Vec<u8>, Vec<usize>)> = BTreeMap::new();
@@ -712,7 +724,10 @@ mod tests_write_functions {
             (vec![0.1, 0.2, 0.3, 0.4], vec![2, 2]),
         );
 
-        let mut options = ImportOptions::default();
+        let mut options = ImportOptions {
+            allow_no_config: true,
+            ..ImportOptions::default()
+        };
         options.quantize = Some(QuantizationType::Int8);
 
         let empty_f16: BTreeMap<String, (Vec<u8>, Vec<usize>)> = BTreeMap::new();
@@ -741,7 +756,10 @@ mod tests_write_functions {
             (vec![0.1, 0.2, 0.3, 0.4], vec![2, 2]),
         );
 
-        let options = ImportOptions::default();
+        let options = ImportOptions {
+            allow_no_config: true,
+            ..ImportOptions::default()
+        };
         let empty_f16: BTreeMap<String, (Vec<u8>, Vec<usize>)> = BTreeMap::new();
         let result = write_apr_file(
             &tensors,
@@ -805,7 +823,10 @@ mod tests_write_functions {
             rope_type: Some(0),
         };
 
-        let options = ImportOptions::default();
+        let options = ImportOptions {
+            allow_no_config: true,
+            ..ImportOptions::default()
+        };
         let empty_f16: BTreeMap<String, (Vec<u8>, Vec<usize>)> = BTreeMap::new();
         let result = write_apr_file(
             &tensors,
@@ -843,7 +864,10 @@ mod tests_write_functions {
         fs::write(&st_path, &st_data).expect("Write F16 SafeTensors");
 
         // Import with default options (should use F16 passthrough)
-        let mut options = ImportOptions::default();
+        let mut options = ImportOptions {
+            allow_no_config: true,
+            ..ImportOptions::default()
+        };
         options.architecture = Architecture::Qwen2;
 
         let result = apr_import(st_path.to_str().unwrap(), &apr_path, options);
@@ -896,7 +920,10 @@ mod tests_write_functions {
         let original_len = original_bytes.len();
 
         // Import with F16 passthrough
-        let mut options = ImportOptions::default();
+        let mut options = ImportOptions {
+            allow_no_config: true,
+            ..ImportOptions::default()
+        };
         options.architecture = Architecture::Qwen2;
 
         let result = apr_import(st_path.to_str().unwrap(), &apr_path, options);

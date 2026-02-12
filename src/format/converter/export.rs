@@ -646,6 +646,17 @@ fn export_to_gguf(
             "[BUG-EXPORT-004] Warning: No tokenizer.json found near {}, GGUF may lack tokenizer metadata",
             input.display()
         );
+        // Bug 211: Fallback — extract tokenizer from APR metadata when no tokenizer.json
+        if let Some(ref apr_meta) = apr_metadata {
+            let apr_tok_entries = extract_apr_tokenizer_for_gguf(apr_meta);
+            if !apr_tok_entries.is_empty() {
+                eprintln!(
+                    "[BUG-211] Extracted {} tokenizer entries from APR metadata",
+                    apr_tok_entries.len()
+                );
+                metadata.extend(apr_tok_entries);
+            }
+        }
     }
 
     eprintln!(
@@ -3425,5 +3436,101 @@ mod tests {
         ];
         let result = ValidatedGgufMetadata::validate(metadata);
         assert!(result.is_ok());
+    }
+
+    // ========================================================================
+    // Bug 211: GGUF export tokenizer fallback from APR metadata
+    // ========================================================================
+
+    #[test]
+    fn test_bug_211_extract_apr_tokenizer_for_gguf_with_vocab() {
+        use crate::format::v2::AprV2Metadata;
+        let mut meta = AprV2Metadata::default();
+        meta.architecture = Some("qwen2".to_string());
+        meta.custom.insert(
+            "tokenizer.vocabulary".to_string(),
+            serde_json::json!(["hello", "world", "<|im_start|>"]),
+        );
+        meta.custom.insert(
+            "tokenizer.merges".to_string(),
+            serde_json::json!(["h e", "l l"]),
+        );
+        meta.custom.insert(
+            "tokenizer.bos_token_id".to_string(),
+            serde_json::json!(1),
+        );
+        meta.custom.insert(
+            "tokenizer.eos_token_id".to_string(),
+            serde_json::json!(2),
+        );
+
+        let entries = extract_apr_tokenizer_for_gguf(&meta);
+        // Should have at least: model, pre, tokens, merges, bos, eos
+        assert!(
+            entries.len() >= 6,
+            "Expected >= 6 tokenizer entries, got {}",
+            entries.len()
+        );
+
+        let keys: Vec<&str> = entries.iter().map(|(k, _)| k.as_str()).collect();
+        assert!(keys.contains(&"tokenizer.ggml.tokens"));
+        assert!(keys.contains(&"tokenizer.ggml.merges"));
+        assert!(keys.contains(&"tokenizer.ggml.model"));
+        assert!(keys.contains(&"tokenizer.ggml.bos_token_id"));
+        assert!(keys.contains(&"tokenizer.ggml.eos_token_id"));
+    }
+
+    #[test]
+    fn test_bug_211_extract_apr_tokenizer_for_gguf_empty() {
+        use crate::format::v2::AprV2Metadata;
+        let meta = AprV2Metadata::default();
+        let entries = extract_apr_tokenizer_for_gguf(&meta);
+        // Should still have model and pre even without vocab
+        assert!(entries.len() >= 2);
+    }
+
+    // ========================================================================
+    // Bug 213: APR metadata → GGUF config round-trip
+    // ========================================================================
+
+    #[test]
+    fn test_bug_213_resolve_gguf_config_from_apr_metadata() {
+        use crate::format::v2::AprV2Metadata;
+
+        let mut meta = AprV2Metadata::default();
+        meta.architecture = Some("qwen2".to_string());
+        meta.hidden_size = Some(1536);
+        meta.num_layers = Some(28);
+        meta.num_heads = Some(12);
+        meta.num_kv_heads = Some(2);
+        meta.vocab_size = Some(151936);
+        meta.intermediate_size = Some(8960);
+        meta.max_position_embeddings = Some(32768);
+        meta.rope_theta = Some(1_000_000.0);
+        meta.rms_norm_eps = Some(1e-6);
+
+        let cfg = resolve_gguf_config(Some(&meta), None);
+
+        assert_eq!(cfg.arch, "qwen2");
+        assert_eq!(cfg.hidden_size, 1536);
+        assert_eq!(cfg.num_layers, 28);
+        assert_eq!(cfg.num_heads, 12);
+        assert_eq!(cfg.num_kv_heads, 2);
+        assert_eq!(cfg.vocab_size, 151936);
+        assert_eq!(cfg.intermediate_size, 8960);
+        assert_eq!(cfg.max_pos, 32768);
+        assert!((cfg.rope_theta - 1_000_000.0).abs() < 1.0);
+        assert!((cfg.rms_norm_eps - 1e-6).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_bug_213_resolve_gguf_config_defaults_without_metadata() {
+        let cfg = resolve_gguf_config(None, None);
+
+        // Should use hardcoded defaults
+        assert_eq!(cfg.arch, "qwen2");
+        assert_eq!(cfg.hidden_size, 4096);
+        assert_eq!(cfg.num_layers, 32);
+        assert_eq!(cfg.num_heads, 32);
     }
 }
