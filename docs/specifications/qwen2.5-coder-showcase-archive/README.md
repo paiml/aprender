@@ -2,13 +2,32 @@
 
 This directory contains archived content from the Qwen2.5-Coder Showcase specification.
 The main spec (`../qwen2.5-coder-showcase-demo.md`) was condensed from ~9,162 lines to ~1,600 lines (v9),
-then rewritten to ~950 lines (v10) with single-model focus (7B). All displaced content preserved here.
+then rewritten to ~950 lines (v10) with single-model focus (7B), then slimmed to ~780 lines (v10.46.0).
+All displaced content preserved here.
 
 **No content was lost.** All archived sections are preserved here with original line references.
 Duplicate sections (lines 4738-4923 duplicating Round 10 protocols, lines 4924-4992 duplicating Appendix H)
 were identified and intentionally omitted.
 
 ## Table of Contents
+
+### v10.46.0 Archive (current-state sections moved from main spec)
+
+| File | Description | Lines |
+|------|-------------|-------|
+| [checklist-300-point.md](checklist-300-point.md) | Section 6: 300-Point Falsification Checklist (passing/incomplete sections, 5 F-CHECKLIST gates) | ~37 |
+| [ollama-parity-protocol.md](ollama-parity-protocol.md) | Section 7A: Ollama Parity Protocol (prerequisites, 3 test procedures, 5 F-OLLAMA gates) | ~68 |
+| [rosetta-conversion.md](rosetta-conversion.md) | Section 10: Rosetta Format Conversion (canonical import path, 3 primary paths, 6 F-ROSETTA gates) | ~69 |
+| [rosetta-diagnostics.md](rosetta-diagnostics.md) | Section 11: Rosetta ML Diagnostics + Hex Forensics + Model Profiling + Performance Sprint (23 gates) | ~195 |
+| [performance-protocol.md](performance-protocol.md) | Section 12: Performance Falsification Protocol (KV Cache, 7B targets, 7 F-PERF gates) | ~46 |
+| [trueno-compute-layer.md](trueno-compute-layer.md) | Section 13: Trueno Compute Layer (95 kernels, 9 backends, CUDA, WGSL, PTX analysis, 17 gates) | ~299 |
+| [realizar-architecture.md](realizar-architecture.md) | Section 14: Realizar Inference Architecture (two-phase gen, KV cache, GQA, sampling, API, 13 gates) | ~184 |
+| [cli-surface-verification.md](cli-surface-verification.md) | Section 17: Full CLI Surface Area Verification (49 commands registry, 5 F-SURFACE gates) | ~76 |
+| [self-falsification-rounds.md](self-falsification-rounds.md) | Section 18: Spec Self-Falsification Audit (46 rounds, 214 bugs, Five-Whys methodology) | ~569 |
+| [mvp-qualification.md](mvp-qualification.md) | Section 21: MVP Qualification (18-cell matrix, G1-G4 gateways, oracle verification, 7 F-MVP gates) | ~219 |
+| [appendices-b-through-g.md](appendices-b-through-g.md) | Appendices B-G: PMAT tickets, open issues, Q4_K spec, SafeTensors spec | ~116 |
+
+### Historical archive (pre-v10 content)
 
 | File | Description | Original Lines | Lines |
 |------|-------------|----------------|-------|
@@ -28,7 +47,7 @@ were identified and intentionally omitted.
 | [popperian-advanced-protocols.md](popperian-advanced-protocols.md) | Appendix F: Advanced falsification protocols (Bold Conjectures) | 8065-8136 | ~76 |
 | [v9-1.5b-results.md](v9-1.5b-results.md) | v9 1.5B-era results: Section 12.1 diff tracing, QA playbook, UX table, resolved issues | v9.30.0 | ~430 |
 
-**Total archived: ~7,897 lines**
+**Total archived: ~9,775 lines** (~1,878 new + ~7,897 historical)
 
 ## Removed Duplicates
 
