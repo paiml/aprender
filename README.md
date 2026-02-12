@@ -362,6 +362,7 @@ apr-qa run playbooks/models/qwen2.5-coder-7b-mvp.playbook.yaml \
 | Examples | [`examples/`](examples/) |
 | APR Format Spec | [`docs/specifications/APR-SPEC.md`](docs/specifications/APR-SPEC.md) |
 | QA Protocol | [`docs/specifications/qa-showcase-methodology.md`](docs/specifications/qa-showcase-methodology.md) |
+🤖 [Coursera Hugging Face AI Development Specialization](https://www.coursera.org/specializations/hugging-face-ai-development) - Build Production AI systems with Hugging Face in Pure Rust
 
 ## Contributing
 
