@@ -2,13 +2,13 @@
 
 ## Project Overview
 
-Aprender is a next-generation machine learning library written in pure Rust. v0.25.4 implements the TOP 10 ML algorithms plus advanced modules (time series, NLP, Bayesian, GLM, graph, audio, format conversion). 11,259 tests with comprehensive quality gates.
+Aprender is a next-generation machine learning library written in pure Rust. v0.25.5 implements the TOP 10 ML algorithms plus advanced modules (time series, NLP, Bayesian, GLM, graph, audio, format conversion). 11,230 tests with comprehensive quality gates.
 
 ## Build Commands
 
 ```bash
 cargo build --release        # Optimized build
-cargo test                   # Full test suite (11259 tests)
+cargo test                   # Full test suite (11230 tests)
 cargo test --lib             # Unit tests only
 cargo fmt --check            # Check formatting
 cargo clippy -- -D warnings  # Strict linting
@@ -179,7 +179,7 @@ Required: `set -euo pipefail`, no `ls` for iteration, quoted variables, explicit
 Target: 60% unit, 30% property, 10% integration. Coverage: 96.35% line (target ≥95%).
 
 ```bash
-cargo test                    # All 11259 tests
+cargo test                    # All 11230 tests
 cargo test --lib              # Unit only
 cargo test --test integration # Integration
 cargo test --doc              # Doctests

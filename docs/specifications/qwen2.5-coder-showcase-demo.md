@@ -1,15 +1,15 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 10.48.0 (Full Stack: apr-cli + aprender + realizar + trueno + batuta, Popperian falsified)
-**Status:** ALL THREE PROJECTS A+ + ZERO SATD (7B all 3 formats working CPU + GPU. 48 falsification rounds, 221 bugs found. Round 48: GH-224 — eager GPU model caching eliminates ~8s per-message delay. Round 47: spec slimming, 6 spec bugs, Qwen2Model deletion. 11,230+ tests, 3,796 apr-cli tests. `apr qa` all 8 gates pass. TDG: 96.9/100 A+. Project Score: A+. Coverage: 96.35%. SATD: 0/0/0.)
+**Version:** 10.49.0 (Full Stack: apr-cli + aprender + realizar + trueno + batuta, Popperian falsified)
+**Status:** ALL THREE PROJECTS A+ + ZERO SATD (7B all 3 formats working CPU + GPU. 49 falsification rounds, 225 bugs found. Round 49: CUDA kernel count 95→98, sampling algorithm consistency, CLAUDE.md stale data. Round 48: GH-224 — eager GPU model caching. 11,230+ tests, 3,796 apr-cli tests. `apr qa` all 8 gates pass. TDG: 96.9/100 A+. Project Score: A+. Coverage: 96.35%. SATD: 0/0/0.)
 **Primary Model:** `Qwen/Qwen2.5-Coder-7B-Instruct`
 **Supported Models:** Qwen2.5-Coder 0.5B, 1.5B, 3B, 7B (all sizes)
 **Source Format:** SafeTensors BF16 (HuggingFace, sharded, ~14 GB for 7B)
-**Popperian Score:** 160/168 gates passing (95.2%) — 8 FALSIFIED, 0 blocked/not-tested. 168 falsification gates, 23 sections. 48 rounds, 221 bugs. Gated by `model-tests` feature (`make test-model`)
+**Popperian Score:** 160/168 gates passing (95.2%) — 8 FALSIFIED, 0 blocked/not-tested. 168 falsification gates, 23 sections. 49 rounds, 225 bugs. Gated by `model-tests` feature (`make test-model`)
 **CLI Surface:** 39 top-level + 10 nested subcommands (49 total)
 **Compile-Time Proofs:** 297 algebraic invariants (zero runtime cost)
 **Author:** PAIML Engineering
-**Date:** 2026-02-12 (Round 48)
+**Date:** 2026-02-12 (Round 49)
 **Ground Truth:** SafeTensors BF16 - See Section 0
 **Quality Philosophy:** Toyota Way + Popperian Falsification (Zero SATD, Stop-the-Line, Jidoka)
 
@@ -33,7 +33,7 @@
 
 ## Executive Summary
 
-The Qwen2.5-Coder Showcase demonstrates the unified inference architecture across three model formats (SafeTensors, APR, GGUF) with CPU and GPU backends, using a single model with a single provenance chain. The full stack is exercised end-to-end: **apr-cli** (49 subcommands) → **aprender** (contract validation, 297 compile-time proofs) → **realizar** (inference: two-phase generation with batched prefill, PagedAttention KV cache, 8 sampling algorithms + penalty modifiers, GQA attention, OpenAI-compatible API, PTX parity validation) → **trueno** (SIMD/GPU compute: 9 backend tiers, 95 CUDA kernels, 6 batched kernel variants with KernelParity trait, Jidoka quality gates). 168 falsification gates across 23 sections.
+The Qwen2.5-Coder Showcase demonstrates the unified inference architecture across three model formats (SafeTensors, APR, GGUF) with CPU and GPU backends, using a single model with a single provenance chain. The full stack is exercised end-to-end: **apr-cli** (49 subcommands) → **aprender** (contract validation, 297 compile-time proofs) → **realizar** (inference: two-phase generation with batched prefill, PagedAttention KV cache, 8 sampling algorithms + penalty modifiers, GQA attention, OpenAI-compatible API, PTX parity validation) → **trueno** (SIMD/GPU compute: 9 backend tiers, 98 CUDA kernels, 6 batched kernel variants with KernelParity trait, Jidoka quality gates). 168 falsification gates across 23 sections.
 
 **Current State (measured 2026-02-11):** 67.8 tok/s GPU decode (0.6x Ollama 125 tok/s) — **Grade D**. Batched prefill DISABLED (regression). Target: 125.7 tok/s (1.0x parity). Bottleneck: ~24% of RTX 4090's 1008 GB/s bandwidth.
 
@@ -141,7 +141,7 @@ SafeTensors is the canonical ground truth: original HuggingFace export, full pre
 | GPU Dispatch | No | Primary (wgpu + optional CUDA) | No | CUDA PTX |
 | Chat Templates | No | Primary (Jinja2-compatible) | No | No |
 | HTTP Server | No | Primary (OpenAI-compatible) | Calls | No |
-| Sampling | No | Primary (9 algorithms) | No | No |
+| Sampling | No | Primary (8 strategies + penalty modifiers) | No | No |
 | CLI Interface | No | Has own (13 commands) | Primary (49 commands) | No |
 | Contract Enforcement | Primary | Validates | Gate | No |
 
@@ -285,7 +285,7 @@ Each stage maps to specific realizar modules. The pipeline runs entirely inside 
 | 7   | Layer Norm          | Keep numbers stable      | Yes  | inference/norm.rs (RMSNorm)        |
 | 8   | LM Head             | Vector -> vocab scores    | Yes  | layers/model.rs (lm_head proj)     |
 | 9   | Logits -> Probs      | Scores -> percentages     | Yes  | inference/simd.rs (softmax)        |
-| 10  | Sampler/Decode      | Pick word, return        | Yes  | generate/sampler.rs (9 algorithms) |
+| 10  | Sampler/Decode      | Pick word, return        | Yes  | generate/sampler.rs (8 strategies + penalty modifiers) |
 +-----+---------------------+--------------------------+------+------------------------------------+
 ```
 
@@ -399,7 +399,7 @@ All CLI commands support APR, GGUF, and SafeTensors via `FormatType::from_magic(
 | 8 | All 49 subcommands exercised | **Pass** |
 | 9 | Coverage >95% | **Yes** (aprender: 96.35%. Realizar: 57.47% — FAILS target) |
 | 10 | PMAT compliance / SATD = 0 | **Yes** |
-| 11 | Falsification audit passed | **Pass** (48 rounds, 221 bugs) |
+| 11 | Falsification audit passed | **Pass** (49 rounds, 225 bugs) |
 
 ---
 
@@ -468,7 +468,7 @@ use crate::quantize::fused_q4k_parallel_matvec;
 
 ## 13. Trueno Compute Layer
 
-> 95 CUDA kernels, 9 backend tiers, quantization (Q4K/Q5K/Q6K), Jidoka quality gates, WGSL GPU shaders, LZ4 compression, PTX dataflow diagnostics, PTX source mapping (`apr ptx-map`), PTX analysis & bug detection (`apr ptx`). 17 falsification gates (F-TRUENO-001..012, F-PTX-EXPLAIN-001..005).
+> 98 CUDA kernels, 9 backend tiers, quantization (Q4K/Q5K/Q6K), Jidoka quality gates, WGSL GPU shaders, LZ4 compression, PTX dataflow diagnostics, PTX source mapping (`apr ptx-map`), PTX analysis & bug detection (`apr ptx`). 17 falsification gates (F-TRUENO-001..012, F-PTX-EXPLAIN-001..005).
 > See [`trueno-compute-layer.md`](qwen2.5-coder-showcase-archive/trueno-compute-layer.md) for full details.
 
 ---
@@ -608,8 +608,8 @@ Three rounds found 8 bugs: tautological guards, vacuous catch-all, zero KV heads
 
 ## 18. Spec Self-Falsification Audit
 
-> 48 rounds of adversarial self-falsification found 221 bugs. Round 1-48 detailed writeups with Five-Whys root cause analysis. Methodology: extract testable claims, compare against code/YAML, report discrepancies, fix spec (not code).
-> See [`self-falsification-rounds.md`](qwen2.5-coder-showcase-archive/self-falsification-rounds.md) for all 48 rounds and 221 bugs.
+> 49 rounds of adversarial self-falsification found 225 bugs. Round 1-49 detailed writeups with Five-Whys root cause analysis. Methodology: extract testable claims, compare against code/YAML, report discrepancies, fix spec (not code).
+> See [`self-falsification-rounds.md`](qwen2.5-coder-showcase-archive/self-falsification-rounds.md) for all 49 rounds and 225 bugs.
 
 ---
 
@@ -697,7 +697,7 @@ Three rounds found 8 bugs: tautological guards, vacuous catch-all, zero KV heads
 |-----------|------|------|
 | aprender | `src/` | ML Library, .apr Format |
 | realizar | `../realizar` | Inference Engine |
-| trueno | `../trueno` | Compute Kernels (95 CUDA, SIMD) |
+| trueno | `../trueno` | Compute Kernels (98 CUDA, SIMD) |
 | apr-cli | `crates/apr-cli` | CLI Interface (49 commands) |
 | contracts | `contracts/model-families/` | YAML model contracts |
 | layout contract | `src/format/layout_contract.rs` | Tensor layout enforcement |

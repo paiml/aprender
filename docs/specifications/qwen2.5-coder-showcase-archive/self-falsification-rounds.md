@@ -597,3 +597,21 @@ Tests now cover FALSIFY-001 through FALSIFY-005 without gaps.
 5. Root cause: **Manual transcription without source verification**
 
 ---
+
+**Round 49 (v10.49.0): Full codebase audit — CUDA kernels, sampling, CLAUDE.md stale data**
+
+| # | Claim (v10.48.0) | Reality | Severity | Fix |
+|---|-----------------|---------|----------|-----|
+| 222 | Spec: "95 CUDA kernels" (exec summary, Section 13, Appendix A) | `grep "pub struct.*Kernel" trueno-gpu/src/kernels/` finds **98** structs | P1 | Fixed to 98 throughout |
+| 223 | Spec line 144,288: "9 algorithms" (sampling) | 6 Sampler trait impls + BeamSearch + penalty modifiers — "8 strategies + penalty modifiers" is the claim in Section 14 | P1 | Normalized to "8 strategies + penalty modifiers" everywhere |
+| 224 | CLAUDE.md: "v0.25.4" | Cargo.toml has `version = "0.25.5"` | P1 | Fixed to v0.25.5 |
+| 225 | CLAUDE.md: "11,259 tests" / "11259 tests" | `cargo test --lib` shows **11,230** passed | P1 | Fixed to 11,230 |
+
+**Five-Whys for Bug #222 (CUDA kernel count 95 vs 98):**
+1. Why did the spec say 95? → Counted in Round 2 (v10.3.0)
+2. Why was it 95 then? → That was the count at v10.3.0
+3. Why wasn't it updated? → New kernels added in Rounds 40-48 (batched prefill, fused, dp4a)
+4. Why didn't falsification catch it? → Previous rounds focused on functional/correctness bugs, not quantity audits
+5. Root cause: **Numeric claims not re-measured after kernel additions**
+
+---
