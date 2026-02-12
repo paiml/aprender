@@ -20,8 +20,6 @@
 
 use crate::error::{CliError, Result};
 use crate::output;
-use aprender::demo::Qwen2Config;
-use aprender::models::Qwen2Model;
 use colored::Colorize;
 use std::path::Path;
 use std::time::Instant;
@@ -136,99 +134,32 @@ fn run_evaluation(path: &Path, config: &EvalConfig) -> Result<EvalResult> {
     let is_apr = path.extension().is_some_and(|e| e == "apr");
     let is_gguf = path.extension().is_some_and(|e| e == "gguf");
 
-    // PMAT-128: Route GGUF to realizar's inference engine
+    // Route GGUF to realizar's inference engine (PMAT-128)
     if is_gguf {
         return run_gguf_evaluation(path, config);
     }
 
-    // Create model config
-    let model_config = if is_safetensors || is_apr {
-        Qwen2Config::qwen2_0_5b_instruct()
-    } else {
-        // Demo config for testing
-        Qwen2Config {
-            hidden_size: 64,
-            num_attention_heads: 4,
-            num_kv_heads: 2,
-            num_layers: 2,
-            vocab_size: 1000,
-            max_seq_len: 512,
-            intermediate_size: 256,
-            rope_theta: 10000.0,
-        }
-    };
-
-    println!("{}", "Loading model...".yellow());
-    let start = Instant::now();
-
-    let mut model = if is_safetensors || is_apr {
-        Qwen2Model::new_uninitialized(&model_config)
-    } else {
-        Qwen2Model::new(&model_config)
-    };
-
-    // Load weights
-    if is_apr {
-        let count = model
-            .load_from_apr(path)
-            .map_err(|e| CliError::ValidationFailed(format!("Failed to load APR: {e}")))?;
-        println!("{} {} tensors", "Loaded".green(), count);
-    } else if is_safetensors {
-        let count = model
-            .load_from_safetensors(path)
-            .map_err(|e| CliError::ValidationFailed(format!("Failed to load SafeTensors: {e}")))?;
-        println!("{} {} tensors", "Loaded".green(), count);
-    }
-
-    model.eval();
-    let load_time = start.elapsed();
-    println!(
-        "{} in {:.2}s",
-        "Model ready".green(),
-        load_time.as_secs_f32()
-    );
-    println!();
-
-    // Get evaluation text
-    let eval_text = get_eval_text(config)?;
-    println!(
-        "{}",
-        format!("Evaluating on {} characters...", eval_text.len()).yellow()
-    );
-
-    // Tokenize using aprender's BPE tokenizer
-    use aprender::text::bpe::Qwen2BpeTokenizer;
-    let tokenizer = Qwen2BpeTokenizer::new();
-    let tokens = tokenizer.encode(&eval_text);
-
-    // Limit tokens
-    let tokens: Vec<u32> = if tokens.len() > config.max_tokens {
-        tokens[..config.max_tokens].to_vec()
-    } else {
-        tokens
-    };
-
-    if tokens.len() < 2 {
+    // Realizar-first architecture: all inference goes through realizar.
+    // SafeTensors/APR models must be converted to GGUF for evaluation.
+    if is_safetensors {
         return Err(CliError::ValidationFailed(
-            "Need at least 2 tokens for perplexity calculation".to_string(),
+            "SafeTensors evaluation requires GGUF format. Convert first: \
+             apr convert model.safetensors -o model.gguf"
+                .to_string(),
+        ));
+    }
+    if is_apr {
+        return Err(CliError::ValidationFailed(
+            "APR evaluation requires GGUF format. Convert first: \
+             apr export model.apr --format gguf -o model.gguf"
+                .to_string(),
         ));
     }
 
-    // Calculate perplexity
-    let eval_start = Instant::now();
-    let (perplexity, cross_entropy) = calculate_perplexity(&mut model, &tokens)?;
-    let eval_time = eval_start.elapsed();
-
-    let passed = perplexity <= config.threshold;
-
-    Ok(EvalResult {
-        perplexity,
-        cross_entropy,
-        tokens_evaluated: tokens.len(),
-        eval_time_secs: eval_time.as_secs_f32(),
-        passed,
-        threshold: config.threshold,
-    })
+    Err(CliError::ValidationFailed(format!(
+        "Unsupported format for eval: {}. Use GGUF format.",
+        path.display()
+    )))
 }
 
 /// Get evaluation text based on dataset
@@ -381,71 +312,6 @@ fn calculate_gguf_perplexity(
             let log_prob = logits[target_idx] as f64 - log_sum_exp;
             total_log_prob += log_prob;
             count += 1;
-        }
-    }
-
-    if count == 0 {
-        return Err(CliError::ValidationFailed(
-            "No valid tokens for perplexity calculation".to_string(),
-        ));
-    }
-
-    let cross_entropy = (-total_log_prob / count as f64) as f32;
-    let perplexity = cross_entropy.exp();
-
-    Ok((perplexity, cross_entropy))
-}
-
-/// Calculate perplexity using the model
-fn calculate_perplexity(model: &mut Qwen2Model, tokens: &[u32]) -> Result<(f32, f32)> {
-    let vocab_size = model.config().vocab_size;
-    let mut total_log_prob = 0.0f64;
-    let mut count = 0usize;
-
-    // Process in chunks for efficiency
-    let chunk_size = 64;
-
-    for start in (0..tokens.len().saturating_sub(1)).step_by(chunk_size) {
-        let end = (start + chunk_size).min(tokens.len() - 1);
-        let input_tokens = &tokens[start..=end];
-
-        if input_tokens.len() < 2 {
-            continue;
-        }
-
-        // Forward pass
-        let position_ids: Vec<usize> = (0..input_tokens.len()).collect();
-        let logits = model.forward(input_tokens, &position_ids);
-        let logits_data = logits.data();
-
-        // Calculate log probabilities for each position
-        for (pos, &next_token) in tokens[start + 1..=end].iter().enumerate() {
-            let logit_start = pos * vocab_size;
-            let logit_end = (pos + 1) * vocab_size;
-
-            if logit_end > logits_data.len() {
-                continue;
-            }
-
-            let position_logits = &logits_data[logit_start..logit_end];
-
-            // Compute log softmax
-            let max_logit = position_logits
-                .iter()
-                .fold(f32::NEG_INFINITY, |a, &b| a.max(b));
-            let log_sum_exp: f64 = position_logits
-                .iter()
-                .map(|&l| ((l - max_logit) as f64).exp())
-                .sum::<f64>()
-                .ln()
-                + max_logit as f64;
-
-            let next_token_idx = next_token as usize;
-            if next_token_idx < vocab_size {
-                let log_prob = position_logits[next_token_idx] as f64 - log_sum_exp;
-                total_log_prob += log_prob;
-                count += 1;
-            }
         }
     }
 

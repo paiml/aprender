@@ -9,9 +9,7 @@
 
 use aprender::autograd::Tensor;
 use aprender::demo::Qwen2Config;
-use aprender::models::Qwen2Model;
 use aprender::nn::Module;
-use aprender::text::bpe::Qwen2BpeTokenizer;
 
 // ============================================================================
 // Section G: Code Quality (15 points)
@@ -97,45 +95,6 @@ fn verify_golden_trace_infrastructure() {
 // Section G Additional: Code Quality Tests
 // ============================================================================
 
-/// G1: Coverage helper - test exercising multiple code paths
-#[test]
-fn g1_coverage_multiple_paths() {
-    let config = Qwen2Config {
-        hidden_size: 64,
-        num_attention_heads: 4,
-        num_kv_heads: 2,
-        num_layers: 2,
-        vocab_size: 100,
-        max_seq_len: 128,
-        intermediate_size: 256,
-        rope_theta: 10000.0,
-    };
-
-    // Test model in different modes
-    let mut model = Qwen2Model::new(&config);
-
-    // Training mode (default)
-    let input1 = vec![1u32, 2, 3];
-    let pos1: Vec<usize> = (0..3).collect();
-    let _ = model.forward(&input1, &pos1);
-
-    // Eval mode
-    model.eval();
-    let _ = model.forward(&input1, &pos1);
-
-    // Different sequence lengths
-    let input2 = vec![1u32];
-    let pos2: Vec<usize> = (0..1).collect();
-    let _ = model.forward(&input2, &pos2);
-
-    let input3 = vec![1u32, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-    let pos3: Vec<usize> = (0..10).collect();
-    let _ = model.forward(&input3, &pos3);
-
-    // All paths exercised without panic = pass
-    assert!(true, "G1: Multiple code paths exercised successfully");
-}
-
 /// Verify Tensor operations work correctly
 #[test]
 fn tensor_operations_correctness() {
@@ -182,10 +141,6 @@ fn numerical_stability_edge_cases() {
         "NaN with mixed values"
     );
 }
-
-// ============================================================================
-// Section G Additional: Code Quality Tests (G4-G10)
-// ============================================================================
 
 /// G4: Native I/O abstraction verification
 #[test]
@@ -237,41 +192,6 @@ fn g6_native_error_types() {
     assert!(
         !apr_err.to_string().is_empty(),
         "G6: APR errors have messages"
-    );
-}
-
-/// G7: No stub detection (AST-level would need external tool)
-#[test]
-fn g7_no_stub_responses() {
-    // Verify generation doesn't use canned responses
-    let config = Qwen2Config {
-        hidden_size: 64,
-        num_attention_heads: 4,
-        num_kv_heads: 2,
-        num_layers: 1,
-        vocab_size: 100,
-        max_seq_len: 32,
-        intermediate_size: 128,
-        rope_theta: 10000.0,
-    };
-
-    let mut model = Qwen2Model::new(&config);
-    model.eval();
-
-    // Different inputs should produce different outputs
-    let output1 = model.generate(&[1, 2, 3], 5, 0.0, 1.0);
-    let output2 = model.generate(&[10, 20, 30], 5, 0.0, 1.0);
-
-    // At minimum, the generated portions should differ
-    // (with different seeds/inputs)
-    let gen1 = &output1[3..];
-    let gen2 = &output2[3..];
-
-    // Note: With temp=0.0, outputs are deterministic per input
-    // Different inputs should yield different outputs
-    assert!(
-        gen1 != gen2 || output1[..3] != output2[..3],
-        "G7: Different inputs should influence output"
     );
 }
 

@@ -24,12 +24,12 @@
 //! use aprender::demo::Qwen2Config;
 //!
 //! let config = Qwen2Config::qwen2_0_5b_instruct();
-//! let mut model = Qwen2Model::new(&config);
-//!
-//! let input_ids = vec![1u32, 2, 3, 4, 5];
-//! let position_ids: Vec<usize> = (0..5).collect();
-//! let logits = model.forward(&input_ids, &position_ids);
+//! let model = Qwen2Model::new(&config);
+//! assert_eq!(model.num_layers(), 24);
 //! ```
+//!
+//! **Note:** Inference (`forward`/`generate`) is handled exclusively by `realizar`.
+//! This module provides model construction, weight loading, and introspection only.
 //!
 //! # References
 //!
@@ -276,38 +276,6 @@ impl Qwen2DecoderLayer {
         add_tensors(&residual, &mlp_output)
     }
 
-    /// Forward pass with detailed profiling output.
-    #[must_use]
-    pub fn forward_profiled(
-        &self,
-        hidden_states: &Tensor,
-        _position_ids: &[usize],
-        _rope: &RotaryPositionEmbedding,
-        _attention_mask: Option<&Tensor>,
-    ) -> (Tensor, std::time::Duration, std::time::Duration) {
-        use std::time::Instant;
-
-        // Self-attention with pre-norm
-        let residual = hidden_states.clone();
-        let hidden = self.input_layernorm.forward(hidden_states);
-
-        let attn_start = Instant::now();
-        let (attn_output, _attn_weights) = self.self_attn.forward_self(&hidden, None);
-        let attn_time = attn_start.elapsed();
-
-        let hidden = add_tensors(&residual, &attn_output);
-
-        // MLP with pre-norm
-        let residual = hidden.clone();
-        let hidden = self.post_attention_layernorm.forward(&hidden);
-
-        let mlp_start = Instant::now();
-        let mlp_output = self.mlp.forward(&hidden);
-        let mlp_time = mlp_start.elapsed();
-
-        (add_tensors(&residual, &mlp_output), attn_time, mlp_time)
-    }
-
     /// Get mutable reference to self-attention layer.
     pub fn self_attn_mut(&mut self) -> &mut GroupedQueryAttention {
         &mut self.self_attn
@@ -384,7 +352,8 @@ pub struct Qwen2Model {
     norm: RMSNorm,
     /// Language model head [`hidden_size`, `vocab_size`]
     lm_head: Linear,
-    /// Rotary position embeddings
+    /// Rotary position embeddings (used by realizar for inference)
+    #[allow(dead_code)]
     rope: RotaryPositionEmbedding,
     /// Model configuration
     config: Qwen2Config,
@@ -392,12 +361,6 @@ pub struct Qwen2Model {
     kv_cache: Option<KVCache>,
     /// Training mode flag
     training: bool,
-    /// Cached causal mask to avoid per-token allocations
-    cached_causal_mask: Option<Tensor>,
-    /// Buffer for mask data to avoid Vec allocations
-    cached_mask_data: Vec<f32>,
-    /// Buffer for embedding data to avoid Vec allocations
-    cached_embed_data: Vec<f32>,
 }
 
 impl Qwen2Model {
@@ -423,9 +386,6 @@ impl Qwen2Model {
             config: config.clone(),
             kv_cache: None,
             training: false,
-            cached_causal_mask: None,
-            cached_mask_data: Vec::new(),
-            cached_embed_data: Vec::new(),
         }
     }
 
@@ -451,257 +411,7 @@ impl Qwen2Model {
             config: config.clone(),
             kv_cache: None,
             training: false,
-            cached_causal_mask: None,
-            cached_mask_data: Vec::new(),
-            cached_embed_data: Vec::new(),
         }
-    }
-
-    /// Forward pass through the model.
-    ///
-    /// # Arguments
-    ///
-    /// * `input_ids` - Token IDs \[`seq_len`\]
-    /// * `position_ids` - Position indices \[`seq_len`\]
-    ///
-    /// # Returns
-    ///
-    /// Logits tensor [1, `seq_len`, `vocab_size`]
-    pub fn forward(&mut self, input_ids: &[u32], position_ids: &[usize]) -> Tensor {
-        // Embed tokens (re-use buffer)
-        let seq_len = input_ids.len();
-        if self.cached_embed_data.len() < seq_len * self.config.hidden_size {
-            self.cached_embed_data = vec![0.0f32; seq_len * self.config.hidden_size];
-        }
-        self.embed_tokens
-            .forward_into(input_ids, &mut self.cached_embed_data);
-        let mut hidden = Tensor::new(
-            &self.cached_embed_data[..seq_len * self.config.hidden_size],
-            &[1, seq_len, self.config.hidden_size],
-        );
-
-        // Generate causal mask (re-use if size matches)
-        if self
-            .cached_causal_mask
-            .as_ref()
-            .map_or(true, |m| m.shape()[0] != seq_len)
-        {
-            if self.cached_mask_data.len() < seq_len * seq_len {
-                self.cached_mask_data = vec![0.0f32; seq_len * seq_len];
-            }
-            generate_causal_mask_into(seq_len, &mut self.cached_mask_data);
-            self.cached_causal_mask = Some(Tensor::new(
-                &self.cached_mask_data[..seq_len * seq_len],
-                &[seq_len, seq_len],
-            ));
-        }
-        let attention_mask = self
-            .cached_causal_mask
-            .as_ref()
-            .expect("causal mask must be initialized before forward pass");
-
-        // Pass through decoder layers
-        for layer in &self.layers {
-            hidden = layer.forward(&hidden, position_ids, &self.rope, Some(attention_mask));
-        }
-
-        // Final normalization
-        hidden = self.norm.forward(&hidden);
-
-        // Project to vocabulary
-        self.lm_head.forward(&hidden)
-    }
-
-    /// Forward with detailed profiling output.
-    /// Prints timing breakdown for each component.
-    pub fn forward_profiled(&mut self, input_ids: &[u32], position_ids: &[usize]) -> Tensor {
-        use std::time::Instant;
-
-        let total_start = Instant::now();
-
-        // Embed tokens (re-use buffer)
-        let embed_start = Instant::now();
-        let seq_len = input_ids.len();
-        if self.cached_embed_data.len() < seq_len * self.config.hidden_size {
-            self.cached_embed_data = vec![0.0f32; seq_len * self.config.hidden_size];
-        }
-        self.embed_tokens
-            .forward_into(input_ids, &mut self.cached_embed_data);
-        let mut hidden = Tensor::new(
-            &self.cached_embed_data[..seq_len * self.config.hidden_size],
-            &[1, seq_len, self.config.hidden_size],
-        );
-        let embed_time = embed_start.elapsed();
-
-        // Generate causal mask (re-use if size matches)
-        if self
-            .cached_causal_mask
-            .as_ref()
-            .map_or(true, |m| m.shape()[0] != seq_len)
-        {
-            if self.cached_mask_data.len() < seq_len * seq_len {
-                self.cached_mask_data = vec![0.0f32; seq_len * seq_len];
-            }
-            generate_causal_mask_into(seq_len, &mut self.cached_mask_data);
-            self.cached_causal_mask = Some(Tensor::new(
-                &self.cached_mask_data[..seq_len * seq_len],
-                &[seq_len, seq_len],
-            ));
-        }
-        let attention_mask = self
-            .cached_causal_mask
-            .as_ref()
-            .expect("causal mask must be initialized before profiled forward pass");
-
-        // Pass through decoder layers with profiling
-        let mut total_attn = std::time::Duration::ZERO;
-        let mut total_mlp = std::time::Duration::ZERO;
-
-        let layers_start = Instant::now();
-        for layer in &self.layers {
-            let (output, attn_time, mlp_time) =
-                layer.forward_profiled(&hidden, position_ids, &self.rope, Some(attention_mask));
-            hidden = output;
-            total_attn += attn_time;
-            total_mlp += mlp_time;
-        }
-        let layers_time = layers_start.elapsed();
-
-        // Final normalization
-        let norm_start = Instant::now();
-        hidden = self.norm.forward(&hidden);
-        let norm_time = norm_start.elapsed();
-
-        // Project to vocabulary
-        let lm_head_start = Instant::now();
-        let output = self.lm_head.forward(&hidden);
-        let lm_head_time = lm_head_start.elapsed();
-
-        let total_time = total_start.elapsed();
-
-        // Print profiling results
-        eprintln!("\n=== Forward Pass Profile (seq_len={seq_len}) ===");
-        eprintln!(
-            "  Embedding:     {:>8.2}ms ({:>5.1}%)",
-            embed_time.as_secs_f64() * 1000.0,
-            embed_time.as_secs_f64() / total_time.as_secs_f64() * 100.0
-        );
-        eprintln!(
-            "  Layers total:  {:>8.2}ms ({:>5.1}%)",
-            layers_time.as_secs_f64() * 1000.0,
-            layers_time.as_secs_f64() / total_time.as_secs_f64() * 100.0
-        );
-        eprintln!(
-            "    - Attention: {:>8.2}ms ({:>5.1}%)",
-            total_attn.as_secs_f64() * 1000.0,
-            total_attn.as_secs_f64() / total_time.as_secs_f64() * 100.0
-        );
-        eprintln!(
-            "    - MLP:       {:>8.2}ms ({:>5.1}%)",
-            total_mlp.as_secs_f64() * 1000.0,
-            total_mlp.as_secs_f64() / total_time.as_secs_f64() * 100.0
-        );
-        eprintln!(
-            "  Final norm:    {:>8.2}ms ({:>5.1}%)",
-            norm_time.as_secs_f64() * 1000.0,
-            norm_time.as_secs_f64() / total_time.as_secs_f64() * 100.0
-        );
-        eprintln!(
-            "  LM head:       {:>8.2}ms ({:>5.1}%)",
-            lm_head_time.as_secs_f64() * 1000.0,
-            lm_head_time.as_secs_f64() / total_time.as_secs_f64() * 100.0
-        );
-        eprintln!(
-            "  TOTAL:         {:>8.2}ms",
-            total_time.as_secs_f64() * 1000.0
-        );
-        eprintln!("==========================================\n");
-
-        output
-    }
-
-    /// Generate tokens autoregressively.
-    ///
-    /// # Arguments
-    ///
-    /// * `prompt_ids` - Initial prompt token IDs
-    /// * `max_new_tokens` - Maximum number of tokens to generate
-    /// * `temperature` - Sampling temperature (0 = greedy)
-    /// * `top_p` - Nucleus sampling threshold
-    ///
-    /// # Returns
-    ///
-    /// Complete sequence including prompt and generated tokens.
-    pub fn generate(
-        &mut self,
-        prompt_ids: &[u32],
-        max_new_tokens: usize,
-        temperature: f32,
-        _top_p: f32,
-    ) -> Vec<u32> {
-        self.generate_internal(prompt_ids, max_new_tokens, temperature, false)
-    }
-
-    /// Generate with profiling output (prints timing breakdown).
-    pub fn generate_profiled(
-        &mut self,
-        prompt_ids: &[u32],
-        max_new_tokens: usize,
-        temperature: f32,
-    ) -> Vec<u32> {
-        self.generate_internal(prompt_ids, max_new_tokens, temperature, true)
-    }
-
-    fn generate_internal(
-        &mut self,
-        prompt_ids: &[u32],
-        max_new_tokens: usize,
-        temperature: f32,
-        profile: bool,
-    ) -> Vec<u32> {
-        let mut output_ids = Vec::with_capacity(prompt_ids.len() + max_new_tokens);
-        output_ids.extend_from_slice(prompt_ids);
-
-        // Pre-allocate position_ids buffer
-        let mut position_ids = Vec::with_capacity(prompt_ids.len() + max_new_tokens);
-
-        for i in 0..max_new_tokens {
-            // Update position IDs for current sequence length
-            position_ids.clear();
-            for p in 0..output_ids.len() {
-                position_ids.push(p);
-            }
-
-            // Only profile first token to avoid spam
-            let logits = if profile && i == 0 {
-                self.forward_profiled(&output_ids, &position_ids)
-            } else {
-                self.forward(&output_ids, &position_ids)
-            };
-
-            // Get last token logits
-            let vocab_size = self.config.vocab_size;
-            let last_pos = output_ids.len() - 1;
-            let logits_slice = &logits.data()[last_pos * vocab_size..(last_pos + 1) * vocab_size];
-
-            // Sample next token
-            let next_token = if temperature == 0.0 {
-                // Greedy
-                argmax(logits_slice) as u32
-            } else {
-                // Temperature sampling
-                sample_with_temperature(logits_slice, temperature)
-            };
-
-            // Check for EOS
-            if next_token == 151645 || next_token == 151644 {
-                break;
-            }
-
-            output_ids.push(next_token);
-        }
-
-        output_ids
     }
 
     /// Get model configuration.
@@ -1162,55 +872,6 @@ fn add_tensors(a: &Tensor, b: &Tensor) -> Tensor {
     a.add(b)
 }
 
-/// Generate causal attention mask into a pre-allocated buffer.
-fn generate_causal_mask_into(size: usize, data: &mut [f32]) {
-    for i in 0..size {
-        for j in 0..size {
-            if j > i {
-                data[i * size + j] = f32::NEG_INFINITY;
-            } else {
-                data[i * size + j] = 0.0;
-            }
-        }
-    }
-}
-
-/// Find index of maximum value.
-fn argmax(slice: &[f32]) -> usize {
-    slice
-        .iter()
-        .enumerate()
-        .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-        .map_or(0, |(i, _)| i)
-}
-
-/// Sample from logits with temperature.
-fn sample_with_temperature(logits: &[f32], temperature: f32) -> u32 {
-    use rand::Rng;
-
-    // Apply temperature
-    let scaled: Vec<f32> = logits.iter().map(|&l| l / temperature).collect();
-
-    // Softmax
-    let max_val = scaled.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b));
-    let exp_vals: Vec<f32> = scaled.iter().map(|&v| (v - max_val).exp()).collect();
-    let sum: f32 = exp_vals.iter().sum();
-    let probs: Vec<f32> = exp_vals.iter().map(|&v| v / sum).collect();
-
-    // Sample
-    let mut rng = rand::thread_rng();
-    let r: f32 = rng.gen();
-    let mut cumsum = 0.0;
-
-    for (i, &p) in probs.iter().enumerate() {
-        cumsum += p;
-        if r < cumsum {
-            return i as u32;
-        }
-    }
-
-    (probs.len() - 1) as u32
-}
 
 #[cfg(test)]
 mod tests;

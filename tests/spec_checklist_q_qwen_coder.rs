@@ -7,11 +7,8 @@
 
 #![allow(unused_imports)]
 
-use aprender::autograd::Tensor;
 use aprender::demo::Qwen2Config;
 use aprender::models::Qwen2Model;
-use aprender::nn::Module;
-use aprender::text::bpe::Qwen2BpeTokenizer;
 
 // ============================================================================
 // Section Q: Qwen2.5-Coder North Star (10 points)
@@ -52,35 +49,6 @@ fn q1_qwen25_coder_imports() {
     assert!(
         mapped.contains("self_attn.q_proj.weight"),
         "Q1: Qwen2 architecture maps tensor names"
-    );
-}
-
-/// Q2: Model generates valid Rust code
-/// Falsification: Output contains only gibberish
-#[test]
-fn q2_generates_valid_code() {
-    // Verify model can generate structured output
-    let config = Qwen2Config {
-        hidden_size: 64,
-        num_attention_heads: 4,
-        num_kv_heads: 2,
-        num_layers: 1,
-        vocab_size: 1000,
-        max_seq_len: 64,
-        intermediate_size: 128,
-        rope_theta: 10000.0,
-    };
-
-    let mut model = Qwen2Model::new(&config);
-    model.eval();
-
-    // Model should produce token output
-    let input = vec![1u32, 2, 3];
-    let output = model.generate(&input, 5, 0.0, 1.0);
-
-    assert!(
-        output.len() >= input.len(),
-        "Q2: Model should generate tokens"
     );
 }
 

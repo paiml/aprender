@@ -39,11 +39,7 @@ use std::io::{self, Write};
 use std::path::Path;
 use std::time::Instant;
 
-// Fallback imports when inference feature is disabled
-#[cfg(not(feature = "inference"))]
-use aprender::demo::Qwen2Config;
-#[cfg(not(feature = "inference"))]
-use aprender::models::Qwen2Model;
+// No fallback imports — inference feature is required for chat
 
 /// Chat configuration options
 pub(crate) struct ChatConfig {
@@ -1326,227 +1322,23 @@ use realizar_chat::ChatSession;
 // Fallback ChatSession without realizar (demo mode only)
 // =============================================================================
 
+/// Fallback ChatSession stub when inference feature is disabled.
+/// Chat requires realizar for inference — aprender is training only.
 #[cfg(not(feature = "inference"))]
-struct ChatSession {
-    model: Qwen2Model,
-    tokenizer: Qwen2BpeTokenizer,
-    history: Vec<String>,
-}
+struct ChatSession;
 
 #[cfg(not(feature = "inference"))]
 impl ChatSession {
-    fn new(path: &Path) -> Result<Self, CliError> {
-        println!("{}", "Loading model...".cyan());
-        let start = Instant::now();
-
-        let format = detect_format(path);
-
-        // Use full config for real weights, tiny config for demo
-        let config = match format {
-            ModelFormat::Apr | ModelFormat::Gguf | ModelFormat::SafeTensors => {
-                // Full Qwen2-0.5B config - mmap loading won't OOM
-                Qwen2Config::qwen2_0_5b_instruct()
-            }
-            ModelFormat::Demo => {
-                // Tiny demo config (~50MB RAM)
-                Qwen2Config {
-                    hidden_size: 64,
-                    num_attention_heads: 4,
-                    num_kv_heads: 2,
-                    num_layers: 2,
-                    vocab_size: 1000,
-                    max_seq_len: 512,
-                    intermediate_size: 256,
-                    rope_theta: 10000.0,
-                }
-            }
-        };
-
-        // Use uninitialized model for APR/SafeTensors to avoid OOM
-        // Per Native Library Mandate: placeholder tensors = ~1KB vs ~2.5GB
-        let mut model = match format {
-            ModelFormat::Apr | ModelFormat::Gguf | ModelFormat::SafeTensors => {
-                Qwen2Model::new_uninitialized(&config)
-            }
-            ModelFormat::Demo => Qwen2Model::new(&config),
-        };
-
-        // Load weights using mmap (Native Library Mandate - zero-copy)
-        // Per Spec §2.4: Random weight fallbacks are FORBIDDEN
-        match format {
-            ModelFormat::Apr => {
-                // Native APR v2 format (preferred)
-                let count = model.load_from_apr(path).map_err(|e| {
-                    CliError::ValidationFailed(format!(
-                        "Failed to load APR weights (random fallback FORBIDDEN per spec): {e}"
-                    ))
-                })?;
-                println!(
-                    "{} {}",
-                    "Loaded".green(),
-                    format!("{count} tensors via APR mmap")
-                );
-            }
-            ModelFormat::Gguf => {
-                // GGUF requires inference feature
-                return Err(CliError::ValidationFailed(
-                    "GGUF format requires --features inference. Rebuild with: cargo build --features inference".to_string()
-                ));
-            }
-            ModelFormat::SafeTensors => {
-                // SafeTensors format (also uses mmap)
-                let count = model.load_from_safetensors(path).map_err(|e| {
-                    CliError::ValidationFailed(format!(
-                        "Failed to load SafeTensors weights (random fallback FORBIDDEN per spec): {e}"
-                    ))
-                })?;
-                println!(
-                    "{} {}",
-                    "Loaded".green(),
-                    format!("{count} tensors via mmap")
-                );
-            }
-            ModelFormat::Demo => {
-                // Demo mode: tiny model with random weights for testing only
-                println!(
-                    "{}",
-                    "Using randomly initialized weights (demo mode only)".yellow()
-                );
-            }
-        }
-
-        model.eval();
-        let elapsed = start.elapsed();
-        println!("{} {:.2}s", "Model ready in".green(), elapsed.as_secs_f32());
-
-        // Load tokenizer from same directory as model
-        let tokenizer = Self::load_tokenizer(path);
-
-        Ok(Self {
-            model,
-            tokenizer,
-            history: Vec::new(),
-        })
+    fn new(_path: &Path) -> Result<Self, CliError> {
+        Err(CliError::ValidationFailed(
+            "Chat requires the 'inference' feature (realizar). Rebuild with: \
+             cargo install --path crates/apr-cli --features inference"
+                .to_string(),
+        ))
     }
 
-    /// Load tokenizer from model directory
-    fn load_tokenizer(model_path: &Path) -> Qwen2BpeTokenizer {
-        // Try to find tokenizer.json in same directory as model
-        if let Some(parent) = model_path.parent() {
-            let tokenizer_path = parent.join("tokenizer.json");
-            if tokenizer_path.exists() {
-                match Qwen2BpeTokenizer::from_file(&tokenizer_path) {
-                    Ok(tok) => {
-                        println!(
-                            "{} {} ({})",
-                            "Loaded tokenizer:".green(),
-                            tokenizer_path.display(),
-                            format!("{} tokens", tok.vocab_size()).dimmed()
-                        );
-                        return tok;
-                    }
-                    Err(e) => {
-                        eprintln!("{} {}", "Warning: Failed to load tokenizer:".yellow(), e);
-                    }
-                }
-            }
-        }
-
-        // Fallback to basic byte-level tokenizer
-        eprintln!(
-            "{}",
-            "Using basic byte-level tokenizer (download tokenizer.json for better results)"
-                .yellow()
-        );
-        Qwen2BpeTokenizer::new()
-    }
-
-    fn generate(&mut self, user_input: &str, config: &ChatConfig) -> String {
-        // Build conversation with chat template
-        let mut messages: Vec<(&str, &str)> = Vec::new();
-
-        // Add system prompt if configured
-        if let Some(ref system) = config.system {
-            messages.push(("system", system.as_str()));
-        }
-
-        // Add history
-        for msg in &self.history {
-            if let Some(content) = msg.strip_prefix("user: ") {
-                messages.push(("user", content));
-            } else if let Some(content) = msg.strip_prefix("assistant: ") {
-                messages.push(("assistant", content));
-            }
-        }
-
-        // Add current user message
-        messages.push(("user", user_input));
-
-        // Format conversation
-        let prompt = self
-            .tokenizer
-            .format_conversation(&messages.iter().map(|(r, c)| (*r, *c)).collect::<Vec<_>>());
-
-        // Encode prompt (using byte-level encoding since we don't have full vocab loaded)
-        let input_ids = self.tokenizer.encode(&prompt);
-
-        // Limit prompt length
-        let max_prompt = 256;
-        let input_ids: Vec<u32> = if input_ids.len() > max_prompt {
-            input_ids[input_ids.len() - max_prompt..].to_vec()
-        } else {
-            input_ids
-        };
-
-        // Generate (use profiled version in inspect mode)
-        let start = Instant::now();
-        let output_ids = if config.inspect {
-            self.model.generate_profiled(
-                &input_ids,
-                config.max_tokens, // Limit for speed
-                config.temperature,
-            )
-        } else {
-            self.model.generate(
-                &input_ids,
-                config.max_tokens, // Limit for speed
-                config.temperature,
-                config.top_p,
-            )
-        };
-        let gen_time = start.elapsed();
-
-        // Decode only the generated tokens
-        let new_tokens = &output_ids[input_ids.len()..];
-        let response = self.tokenizer.decode(new_tokens);
-
-        // Print generation stats if inspect mode
-        if config.inspect {
-            let tokens_per_sec = new_tokens.len() as f32 / gen_time.as_secs_f32();
-            println!(
-                "{}",
-                format!(
-                    "[{} tokens in {:.2}s = {:.1} tok/s]",
-                    new_tokens.len(),
-                    gen_time.as_secs_f32(),
-                    tokens_per_sec
-                )
-                .dimmed()
-            );
-
-            // Get logits for the last position to show top-k candidates
-            if !output_ids.is_empty() {
-                let position_ids: Vec<usize> = (0..output_ids.len()).collect();
-                let logits = self.model.forward(&output_ids, &position_ids);
-                let logits_data = logits.data();
-                let vocab_size = self.model.config().vocab_size;
-                let last_pos = output_ids.len() - 1;
-                let last_logits = &logits_data[last_pos * vocab_size..(last_pos + 1) * vocab_size];
-                print_top_k(last_logits, &self.tokenizer, 5);
-            }
-        }
-
-        response
+    fn generate(&mut self, _user_input: &str, _config: &ChatConfig) -> String {
+        unreachable!("ChatSession::new always returns Err without inference feature")
     }
 }
 

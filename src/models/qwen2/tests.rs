@@ -3,13 +3,6 @@
 
 use super::*;
 
-/// Generate causal attention mask as a Tensor (for tests).
-fn generate_causal_mask(size: usize) -> Tensor {
-    let mut data = vec![0.0f32; size * size];
-    generate_causal_mask_into(size, &mut data);
-    Tensor::new(&data, &[size, size])
-}
-
 fn create_tiny_config() -> Qwen2Config {
     Qwen2Config {
         hidden_size: 64,
@@ -67,33 +60,6 @@ fn test_qwen2_model_creation() {
 }
 
 #[test]
-fn test_qwen2_model_forward_shape() {
-    let config = create_tiny_config();
-    let mut model = Qwen2Model::new(&config);
-
-    let input_ids = vec![1u32, 2, 3, 4, 5];
-    let position_ids: Vec<usize> = (0..5).collect();
-    let logits = model.forward(&input_ids, &position_ids);
-
-    assert_eq!(logits.shape(), &[1, 5, config.vocab_size]);
-}
-
-#[test]
-fn test_qwen2_model_deterministic() {
-    let config = create_tiny_config();
-    let mut model = Qwen2Model::new(&config);
-    model.eval();
-
-    let input_ids = vec![1u32, 2, 3];
-    let position_ids: Vec<usize> = (0..3).collect();
-
-    let logits1 = model.forward(&input_ids, &position_ids);
-    let logits2 = model.forward(&input_ids, &position_ids);
-
-    assert_eq!(logits1.data(), logits2.data());
-}
-
-#[test]
 fn test_silu_activation() {
     // SiLU(x) = x * sigmoid(x)
     // At x=0: SiLU(0) = 0 * 0.5 = 0
@@ -104,32 +70,6 @@ fn test_silu_activation() {
     assert!((data[0] - 0.0).abs() < 1e-5); // SiLU(0) = 0
     assert!(data[1] > 0.5); // SiLU(1) ≈ 0.731
     assert!(data[2] < 0.0); // SiLU(-1) ≈ -0.269 (negative!)
-}
-
-#[test]
-fn test_causal_mask() {
-    let mask = generate_causal_mask(4);
-
-    assert_eq!(mask.shape(), &[4, 4]);
-
-    // Check upper triangle is -inf
-    assert!(mask.data()[1].is_infinite()); // [0, 1]
-    assert!(mask.data()[2].is_infinite()); // [0, 2]
-    assert!(mask.data()[3].is_infinite()); // [0, 3]
-
-    // Check diagonal and below is 0
-    assert_eq!(mask.data()[0], 0.0); // [0, 0]
-    assert_eq!(mask.data()[4], 0.0); // [1, 0]
-    assert_eq!(mask.data()[5], 0.0); // [1, 1]
-}
-
-#[test]
-fn test_argmax() {
-    let slice = [1.0_f32, 5.0, 2.0, 3.0];
-    assert_eq!(argmax(&slice), 1);
-
-    let slice2 = [0.0_f32, -1.0, -2.0];
-    assert_eq!(argmax(&slice2), 0);
 }
 
 // ========== Additional Coverage Tests ==========
@@ -333,72 +273,6 @@ fn test_qwen2_model_mut_accessors() {
 }
 
 #[test]
-fn test_qwen2_model_generate_greedy() {
-    let config = create_tiny_config();
-    let mut model = Qwen2Model::new(&config);
-    model.eval();
-
-    let prompt = vec![1u32, 2, 3];
-    // Generate with temperature=0 (greedy)
-    let output = model.generate(&prompt, 2, 0.0, 1.0);
-
-    // Should have prompt + new tokens
-    assert!(output.len() >= prompt.len());
-    assert!(output.len() <= prompt.len() + 2);
-    // Prompt should be preserved
-    assert_eq!(&output[..3], &[1, 2, 3]);
-}
-
-#[test]
-fn test_qwen2_model_generate_with_temperature() {
-    let config = create_tiny_config();
-    let mut model = Qwen2Model::new(&config);
-    model.eval();
-
-    let prompt = vec![1u32, 2, 3];
-    // Generate with temperature > 0
-    let output = model.generate(&prompt, 2, 0.8, 1.0);
-
-    assert!(output.len() >= prompt.len());
-}
-
-#[test]
-fn test_sample_with_temperature() {
-    let logits = vec![10.0f32, 1.0, 0.0, -1.0];
-
-    // With low temperature, should mostly pick index 0
-    let mut count_0 = 0;
-    for _ in 0..10 {
-        let sample = sample_with_temperature(&logits, 0.1);
-        if sample == 0 {
-            count_0 += 1;
-        }
-    }
-    // With temperature 0.1, should heavily favor index 0
-    assert!(count_0 >= 5, "Expected mostly 0s, got {count_0}/10");
-}
-
-#[test]
-fn test_sample_with_high_temperature() {
-    let logits = vec![1.0f32, 1.0, 1.0, 1.0];
-
-    // With uniform logits, all indices should be possible
-    let mut seen = [false; 4];
-    for _ in 0..100 {
-        let sample = sample_with_temperature(&logits, 1.0) as usize;
-        if sample < 4 {
-            seen[sample] = true;
-        }
-    }
-    // Should see at least some variety
-    let variety = seen.iter().filter(|&&x| x).count();
-    assert!(
-        variety >= 2,
-        "Expected variety, but only saw {variety} different values"
-    );
-}
-
-#[test]
 fn test_elementwise_mul() {
     let a = Tensor::new(&[1.0, 2.0, 3.0], &[3]);
     let b = Tensor::new(&[2.0, 3.0, 4.0], &[3]);
@@ -412,26 +286,6 @@ fn test_add_tensors() {
     let b = Tensor::new(&[4.0, 5.0, 6.0], &[3]);
     let c = add_tensors(&a, &b);
     assert_eq!(c.data(), &[5.0, 7.0, 9.0]);
-}
-
-#[test]
-fn test_argmax_empty() {
-    let slice: [f32; 0] = [];
-    // Should return 0 for empty slice
-    assert_eq!(argmax(&slice), 0);
-}
-
-#[test]
-fn test_argmax_single() {
-    let slice = [42.0f32];
-    assert_eq!(argmax(&slice), 0);
-}
-
-#[test]
-fn test_causal_mask_size_1() {
-    let mask = generate_causal_mask(1);
-    assert_eq!(mask.shape(), &[1, 1]);
-    assert_eq!(mask.data()[0], 0.0);
 }
 
 #[test]
@@ -722,144 +576,9 @@ fn s6_embedding_shape() {
     println!("S6 PASSED: Embedding shape correct");
 }
 
-/// S11: Logits shape matches vocab
-/// FALSIFICATION: Output shape != [1, seq_len, vocab_size]
-#[test]
-fn s11_logits_shape() {
-    let config = create_tiny_config();
-    let mut model = Qwen2Model::new(&config);
-
-    let input_ids = vec![1u32, 2, 3];
-    let position_ids: Vec<usize> = (0..3).collect();
-    let logits = model.forward(&input_ids, &position_ids);
-
-    assert_eq!(
-        logits.shape(),
-        &[1, 3, config.vocab_size],
-        "FALSIFIED S11: Logits shape {:?} != expected [1, 3, {}]",
-        logits.shape(),
-        config.vocab_size
-    );
-
-    println!("S11 PASSED: Logits shape matches vocab");
-}
-
-/// S12: Logits are finite (no NaN/Inf)
-/// FALSIFICATION: Any NaN or Inf in output
-#[test]
-fn s12_logits_finite() {
-    let config = create_tiny_config();
-    let mut model = Qwen2Model::new(&config);
-
-    let input_ids = vec![1u32, 2, 3];
-    let position_ids: Vec<usize> = (0..3).collect();
-    let logits = model.forward(&input_ids, &position_ids);
-
-    let has_nan = logits.data().iter().any(|x| x.is_nan());
-    let has_inf = logits.data().iter().any(|x| x.is_infinite());
-
-    assert!(!has_nan, "FALSIFIED S12: Logits contain NaN values");
-    assert!(!has_inf, "FALSIFIED S12: Logits contain Inf values");
-
-    println!("S12 PASSED: All logits are finite");
-}
-
-/// S14: Top-1 token is deterministic (temp=0)
-/// FALSIFICATION: Same input produces different outputs
-#[test]
-fn s14_deterministic_generation() {
-    let config = create_tiny_config();
-    let mut model = Qwen2Model::new(&config);
-
-    let input_ids = vec![1u32, 2, 3];
-
-    // Generate twice with temperature=0 (greedy)
-    let output1 = model.generate(&input_ids, 5, 0.0, 0.9);
-    let output2 = model.generate(&input_ids, 5, 0.0, 0.9);
-
-    assert_eq!(
-        output1, output2,
-        "FALSIFIED S14: Different outputs for same input with temp=0.\n  Run 1: {:?}\n  Run 2: {:?}",
-        output1, output2
-    );
-
-    println!("S14 PASSED: Generation is deterministic at temp=0");
-}
-
-/// S20: Response length <= max_new_tokens
-/// FALSIFICATION: Output exceeds requested length
-#[test]
-fn s20_length_control() {
-    let config = create_tiny_config();
-    let mut model = Qwen2Model::new(&config);
-
-    let input_ids = vec![1u32, 2, 3];
-    let max_new_tokens = 10;
-
-    let output = model.generate(&input_ids, max_new_tokens, 0.7, 0.9);
-    let new_tokens = output.len() - input_ids.len();
-
-    assert!(
-        new_tokens <= max_new_tokens,
-        "FALSIFIED S20: Generated {} tokens > max {}",
-        new_tokens,
-        max_new_tokens
-    );
-
-    println!(
-        "S20 PASSED: Generated {} <= {} tokens",
-        new_tokens, max_new_tokens
-    );
-}
-
 // =========================================================================
 // Coverage Extension Tests
 // =========================================================================
-
-#[test]
-fn test_forward_profiled() {
-    let config = create_tiny_config();
-    let mut model = Qwen2Model::new(&config);
-    model.eval();
-
-    let input_ids = vec![1u32, 2, 3];
-    let position_ids: Vec<usize> = (0..3).collect();
-
-    // forward_profiled prints to stderr but returns same shape as forward
-    let logits = model.forward_profiled(&input_ids, &position_ids);
-    assert_eq!(logits.shape(), &[1, 3, config.vocab_size]);
-}
-
-#[test]
-fn test_generate_profiled() {
-    let config = create_tiny_config();
-    let mut model = Qwen2Model::new(&config);
-    model.eval();
-
-    let prompt = vec![1u32, 2, 3];
-    // generate_profiled should work the same as generate but with profiling
-    let output = model.generate_profiled(&prompt, 2, 0.5);
-
-    assert!(output.len() >= prompt.len());
-    assert_eq!(&output[..3], &[1, 2, 3]);
-}
-
-#[test]
-fn test_decoder_layer_forward_profiled() {
-    let config = create_tiny_config();
-    let layer = Qwen2DecoderLayer::new(&config);
-    let rope = RotaryPositionEmbedding::with_base(16, 128, 10000.0);
-
-    let hidden = Tensor::ones(&[1, 5, 64]);
-    let position_ids: Vec<usize> = (0..5).collect();
-
-    let (output, attn_time, mlp_time) = layer.forward_profiled(&hidden, &position_ids, &rope, None);
-
-    assert_eq!(output.shape(), &[1, 5, 64]);
-    // Verify timing values are returned (they're always valid Durations)
-    let _ = attn_time.as_secs_f64();
-    let _ = mlp_time.as_secs_f64();
-}
 
 #[test]
 fn test_from_safetensors_error_path() {
@@ -899,65 +618,6 @@ fn test_load_from_safetensors_error_path() {
 }
 
 #[test]
-fn test_forward_with_larger_sequence() {
-    let config = create_tiny_config();
-    let mut model = Qwen2Model::new(&config);
-    model.eval();
-
-    // Test with longer sequence to cover buffer reallocation paths
-    let input_ids: Vec<u32> = (0..20).map(|i| i as u32).collect();
-    let position_ids: Vec<usize> = (0..20).collect();
-
-    let logits = model.forward(&input_ids, &position_ids);
-    assert_eq!(logits.shape(), &[1, 20, config.vocab_size]);
-
-    // Run again with same size (should reuse cached buffers)
-    let logits2 = model.forward(&input_ids, &position_ids);
-    assert_eq!(logits2.shape(), &[1, 20, config.vocab_size]);
-}
-
-#[test]
-fn test_forward_different_sequence_lengths() {
-    let config = create_tiny_config();
-    let mut model = Qwen2Model::new(&config);
-
-    // First call with length 5
-    let input1 = vec![1u32, 2, 3, 4, 5];
-    let pos1: Vec<usize> = (0..5).collect();
-    let logits1 = model.forward(&input1, &pos1);
-    assert_eq!(logits1.shape(), &[1, 5, config.vocab_size]);
-
-    // Second call with length 10 (should trigger buffer reallocation)
-    let input2: Vec<u32> = (0..10).map(|i| i as u32).collect();
-    let pos2: Vec<usize> = (0..10).collect();
-    let logits2 = model.forward(&input2, &pos2);
-    assert_eq!(logits2.shape(), &[1, 10, config.vocab_size]);
-
-    // Third call with length 3 (smaller, reuses existing buffer)
-    let input3 = vec![1u32, 2, 3];
-    let pos3: Vec<usize> = (0..3).collect();
-    let logits3 = model.forward(&input3, &pos3);
-    assert_eq!(logits3.shape(), &[1, 3, config.vocab_size]);
-}
-
-#[test]
-fn test_causal_mask_into() {
-    let mut data = vec![0.0f32; 9];
-    generate_causal_mask_into(3, &mut data);
-
-    // Check pattern: lower triangle + diagonal = 0, upper triangle = -inf
-    assert_eq!(data[0], 0.0); // [0,0]
-    assert!(data[1].is_infinite() && data[1] < 0.0); // [0,1]
-    assert!(data[2].is_infinite() && data[2] < 0.0); // [0,2]
-    assert_eq!(data[3], 0.0); // [1,0]
-    assert_eq!(data[4], 0.0); // [1,1]
-    assert!(data[5].is_infinite() && data[5] < 0.0); // [1,2]
-    assert_eq!(data[6], 0.0); // [2,0]
-    assert_eq!(data[7], 0.0); // [2,1]
-    assert_eq!(data[8], 0.0); // [2,2]
-}
-
-#[test]
 fn test_embedding_forward_into() {
     let emb = Embedding::new(100, 8);
     let input = vec![0u32, 1, 2];
@@ -988,80 +648,12 @@ fn test_silu_large_values() {
 }
 
 #[test]
-fn test_generate_eos_token() {
-    // Test that generation stops at EOS token
-    // Note: This is hard to test without controlling model output,
-    // but we can verify the EOS check logic is executed
-    let config = create_tiny_config();
-    let mut model = Qwen2Model::new(&config);
-
-    let prompt = vec![1u32];
-    // Generate with temperature to get various tokens
-    let output = model.generate(&prompt, 100, 0.0, 0.9);
-
-    // Should not exceed max_new_tokens
-    assert!(output.len() <= 101);
-}
-
-#[test]
-fn test_sample_temperature_edge_cases() {
-    // Test with very high temperature (uniform distribution)
-    let logits = vec![0.0f32; 10];
-    let sample = sample_with_temperature(&logits, 100.0);
-    assert!(sample < 10, "Sample should be valid index");
-
-    // Test with single logit
-    let single = vec![1.0f32];
-    let sample = sample_with_temperature(&single, 1.0);
-    assert_eq!(sample, 0);
-}
-
-#[test]
-fn test_argmax_with_nan() {
-    // Test argmax behavior with NaN values
-    let slice = [1.0f32, f32::NAN, 0.5];
-    let idx = argmax(&slice);
-    // NaN comparisons are tricky - implementation specific
-    // Just verify it returns a valid index
-    assert!(idx < 3);
-}
-
-#[test]
 fn test_model_lm_head_accessor() {
     let config = create_tiny_config();
     let model = Qwen2Model::new(&config);
     let lm_head = model.lm_head();
     // Verify we can access the lm_head
     assert!(lm_head.weight().shape().len() > 0);
-}
-
-#[test]
-fn test_generate_single_token() {
-    let config = create_tiny_config();
-    let mut model = Qwen2Model::new(&config);
-
-    let prompt = vec![1u32];
-    // Generate just 1 token
-    let output = model.generate(&prompt, 1, 0.0, 0.9);
-
-    assert!(output.len() >= 1);
-    assert!(output.len() <= 2);
-}
-
-#[test]
-fn test_forward_profiled_multiple_calls() {
-    let config = create_tiny_config();
-    let mut model = Qwen2Model::new(&config);
-
-    // Multiple profiled calls to ensure timing accumulation works
-    let input_ids = vec![1u32, 2, 3, 4, 5];
-    let position_ids: Vec<usize> = (0..5).collect();
-
-    let logits1 = model.forward_profiled(&input_ids, &position_ids);
-    let logits2 = model.forward_profiled(&input_ids, &position_ids);
-
-    // Results should be deterministic
-    assert_eq!(logits1.data(), logits2.data());
 }
 
 #[test]
@@ -1132,30 +724,18 @@ fn test_decoder_layer_with_attention_mask() {
     let hidden = Tensor::ones(&[1, 5, 64]);
     let position_ids: Vec<usize> = (0..5).collect();
 
-    // Create attention mask
-    let mask = generate_causal_mask(5);
+    // Create causal attention mask inline (lower triangle + diagonal = 0, upper = -inf)
+    let size = 5;
+    let mut mask_data = vec![0.0f32; size * size];
+    for row in 0..size {
+        for col in (row + 1)..size {
+            mask_data[row * size + col] = f32::NEG_INFINITY;
+        }
+    }
+    let mask = Tensor::new(&mask_data, &[size, size]);
 
     let output = layer.forward(&hidden, &position_ids, &rope, Some(&mask));
     assert_eq!(output.shape(), &[1, 5, 64]);
-}
-
-#[test]
-fn test_decoder_layer_profiled_with_mask() {
-    let config = create_tiny_config();
-    let layer = Qwen2DecoderLayer::new(&config);
-    let rope = RotaryPositionEmbedding::with_base(16, 128, 10000.0);
-
-    let hidden = Tensor::ones(&[1, 3, 64]);
-    let position_ids: Vec<usize> = (0..3).collect();
-    let mask = generate_causal_mask(3);
-
-    let (output, attn_time, mlp_time) =
-        layer.forward_profiled(&hidden, &position_ids, &rope, Some(&mask));
-
-    assert_eq!(output.shape(), &[1, 3, 64]);
-    // Times should be positive
-    assert!(attn_time.as_nanos() > 0);
-    assert!(mlp_time.as_nanos() > 0);
 }
 
 // =========================================================================
@@ -1212,89 +792,6 @@ fn test_mlp_swiglu_computation() {
 }
 
 #[test]
-fn test_generate_with_zero_max_tokens() {
-    let config = create_tiny_config();
-    let mut model = Qwen2Model::new(&config);
-
-    let prompt = vec![1u32, 2, 3];
-    // Generate 0 new tokens
-    let output = model.generate(&prompt, 0, 0.0, 0.9);
-
-    // Should return just the prompt
-    assert_eq!(output, prompt);
-}
-
-#[test]
-fn test_forward_single_token() {
-    let config = create_tiny_config();
-    let mut model = Qwen2Model::new(&config);
-
-    let input_ids = vec![1u32];
-    let position_ids = vec![0usize];
-    let logits = model.forward(&input_ids, &position_ids);
-
-    assert_eq!(logits.shape(), &[1, 1, config.vocab_size]);
-}
-
-#[test]
-fn test_forward_profiled_prints_output() {
-    // Verify forward_profiled produces output to stderr
-    // We can't easily capture stderr in unit tests, but we can verify
-    // the function completes without panic
-    let config = create_tiny_config();
-    let mut model = Qwen2Model::new(&config);
-
-    let input_ids = vec![1u32, 2];
-    let position_ids = vec![0usize, 1];
-
-    // This should print profiling info to stderr
-    let logits = model.forward_profiled(&input_ids, &position_ids);
-    assert_eq!(logits.shape(), &[1, 2, config.vocab_size]);
-}
-
-#[test]
-fn test_sample_with_very_low_temperature() {
-    // Very low temperature should behave like greedy
-    let logits = vec![10.0f32, 1.0, 0.0, -1.0];
-
-    let mut count_0 = 0;
-    for _ in 0..20 {
-        let sample = sample_with_temperature(&logits, 0.01);
-        if sample == 0 {
-            count_0 += 1;
-        }
-    }
-    // With temp 0.01, should almost always pick index 0
-    assert!(count_0 >= 18, "Expected mostly 0s, got {count_0}/20");
-}
-
-#[test]
-fn test_generate_profiled_with_greedy() {
-    let config = create_tiny_config();
-    let mut model = Qwen2Model::new(&config);
-
-    let prompt = vec![1u32];
-    // Generate with temperature=0 (greedy) + profiling
-    // Note: generate_profiled doesn't take top_p, uses temperature only
-    let output = model.generate_profiled(&prompt, 3, 0.0);
-
-    assert!(output.len() >= prompt.len());
-    assert!(output.len() <= prompt.len() + 3);
-}
-
-#[test]
-fn test_causal_mask_large() {
-    // Test larger mask to verify loop coverage
-    let mask = generate_causal_mask(10);
-    assert_eq!(mask.shape(), &[10, 10]);
-
-    // Spot check some values
-    assert_eq!(mask.data()[0], 0.0); // [0,0]
-    assert!(mask.data()[9].is_infinite()); // [0,9]
-    assert_eq!(mask.data()[99], 0.0); // [9,9]
-}
-
-#[test]
 fn test_model_config_accessor() {
     let config = create_tiny_config();
     let model = Qwen2Model::new(&config);
@@ -1315,21 +812,6 @@ fn test_layer_accessor_all_layers() {
         let layer = model.layer_mut(i);
         assert!(layer.is_some(), "Layer {} should exist", i);
     }
-}
-
-#[test]
-fn test_argmax_negative_values() {
-    let slice = [-5.0f32, -1.0, -10.0, -2.0];
-    // argmax should find -1.0 at index 1
-    assert_eq!(argmax(&slice), 1);
-}
-
-#[test]
-fn test_argmax_all_same() {
-    let slice = [3.0f32, 3.0, 3.0];
-    // All equal - returns some valid index (max_by behavior)
-    let idx = argmax(&slice);
-    assert!(idx < 3, "Should return valid index");
 }
 
 #[test]
@@ -1363,24 +845,6 @@ fn test_decoder_layer_residual_connection() {
 }
 
 #[test]
-fn test_multiple_generate_calls() {
-    let config = create_tiny_config();
-    let mut model = Qwen2Model::new(&config);
-
-    // Multiple generate calls should work independently
-    let prompt1 = vec![1u32];
-    let prompt2 = vec![2u32, 3];
-
-    let output1 = model.generate(&prompt1, 2, 0.0, 0.9);
-    let output2 = model.generate(&prompt2, 2, 0.0, 0.9);
-
-    assert!(output1.len() >= 1);
-    assert!(output2.len() >= 2);
-    // Different prompts should potentially give different outputs
-    // (though with random init, might be same)
-}
-
-#[test]
 fn test_silu_zero() {
     let x = Tensor::new(&[0.0], &[1]);
     let y = silu(&x);
@@ -1402,19 +866,6 @@ fn test_elementwise_mul_zeros() {
     let zeros = Tensor::new(&[0.0, 0.0, 0.0], &[3]);
     let c = elementwise_mul(&a, &zeros);
     assert_eq!(c.data(), &[0.0, 0.0, 0.0]);
-}
-
-#[test]
-fn test_generate_internal_profile_branch() {
-    // Test the profile=true branch in generate_internal
-    let config = create_tiny_config();
-    let mut model = Qwen2Model::new(&config);
-
-    let prompt = vec![1u32];
-    // generate_profiled should trigger profile branch
-    let output = model.generate_profiled(&prompt, 3, 0.5);
-
-    assert!(output.len() >= 1);
 }
 
 #[test]
