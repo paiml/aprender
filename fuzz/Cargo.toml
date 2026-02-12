@@ -7,6 +7,9 @@ edition = "2021"
 [package.metadata]
 cargo-fuzz = true
 
+# Required: prevent cargo from inheriting parent workspace
+[workspace]
+
 [dependencies]
 libfuzzer-sys = "0.4"
 
@@ -16,6 +19,55 @@ path = ".."
 [[bin]]
 name = "fuzz_target_1"
 path = "fuzz_targets/fuzz_target_1.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_hf_uri"
+path = "fuzz_targets/fuzz_hf_uri.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_gguf_header"
+path = "fuzz_targets/fuzz_gguf_header.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_sharded_index"
+path = "fuzz_targets/fuzz_sharded_index.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_format_detection"
+path = "fuzz_targets/fuzz_format_detection.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_chat_template_detect"
+path = "fuzz_targets/fuzz_chat_template_detect.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_tensor_name_map"
+path = "fuzz_targets/fuzz_tensor_name_map.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_apr_metadata"
+path = "fuzz_targets/fuzz_apr_metadata.rs"
 test = false
 doc = false
 bench = false
