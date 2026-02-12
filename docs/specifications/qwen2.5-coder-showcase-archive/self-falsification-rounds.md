@@ -510,6 +510,36 @@ Four bugs fixed to improve MVP playbook pass rates. All address systematic failu
 - **New falsification gates**: 4 new gates (F-BUG-211, F-BUG-212, F-BUG-213, F-BUG-214)
 - **Gate count**: 160/168 passing (95.2%) — 4 new gates, 0 new FALSIFIED
 
+**Round 47 (v10.47.0): Spec slimming + codebase audit + Qwen2Model deletion**
+
+Three-part round: (1) spec slimmed from 3,046 to 780 lines (11 sections archived), (2) 6 spec bugs found by falsifying the slimmed spec, (3) `Qwen2Model` forward/generate methods deleted to enforce realizar-first architecture.
+
+| # | Claim/Gap | Reality | Severity | Fix |
+|---|-----------|---------|----------|-----|
+| 215 | Gate count consistent across spec | Header said "168", Appendix H summed to 166, Contract section said 7 (actual: 9) | P1 | Reconciled all three to 168 (Contract: 9 gates) |
+| 216 | F-CLI-002: "All 10 rosetta subcommands parse" | Only 8 rosetta + 2 canary = 10 nested (not "10 rosetta") | P1 | Fixed description to "8 rosetta + 2 canary" |
+| 217 | Section 6: Checklist "250+" | Actual score is 244/300 | P1 | Fixed to "244/300" |
+| 218 | Section 15.4: YAML excerpt incomplete | Missing max_position_embeddings, rms_norm_eps, has_bias, tied_embeddings, positional_encoding | P2 | Added missing fields, marked as excerpt |
+| 219 | Section 19.3: Complexity hotspot #1 is `apr_export` | `write_apr_file` (19) replaced `apr_export` after refactoring | P2 | Updated hotspot table |
+| 220 | `Qwen2Model` has `forward()`/`generate()` methods | Violates realizar-first architecture mandate. aprender is training-only. | **P0** | Deleted forward, generate, forward_profiled, generate_profiled, argmax, sample_with_temperature, generate_causal_mask_into. Deleted 5 example/test files. Cleaned 10 spec_checklist tests (removed 93 tests). 4,749 lines deleted. |
+
+- **Spec slimming**: 11 sections archived to `qwen2.5-coder-showcase-archive/`. Linked from main spec via `> See [archive.md]` references.
+- **Qwen2Model deletion**: 20 files changed, 46 insertions, 4,749 deletions. 11,230 tests pass after cleanup.
+- **No new falsification gates**: 160/168 gates still pass (95.2%)
+
+**Round 48 (v10.48.0): GH-224 — Eager GPU model caching in `apr chat`**
+
+User-reported bug (GH-224, @alfredodeza): `apr chat` takes ~8 seconds per response with APR format. Root cause: `ChatSession` recreated GPU models (uploading 5-6 GB of weights to VRAM) on **every `generate()` call** instead of once at session init. Affects all three format paths (GGUF, APR, SafeTensors).
+
+| # | Claim/Gap | Reality | Severity | Fix |
+|---|-----------|---------|----------|-----|
+| 221 | `apr chat` responds quickly after model loading | GPU weights re-uploaded to VRAM on every message (~8s delay). Pre-cache messages appear AFTER first prompt, not during "Loading model..." phase. | **P0** | Added 5 cached fields to `ChatSession`: `cached_gguf_mapped`, `cached_gguf_cuda`, `cached_apr_cuda`, `cached_safetensors_cuda`, `cuda_init_failed`. Eagerly initialize GPU models in `new()` during "Loading model..." phase. All three `generate_*` methods check cached model first. |
+
+- **Five-whys root cause**: Slow chat -> GPU weights uploaded per message -> No model caching -> `generate()` creates fresh model each call -> Session struct only stores raw bytes -> Design assumed model creation is cheap (it's not for GPU)
+- **Verified**: GGUF 1.5B Q4K: `[GGUF CUDA: NVIDIA GeForce RTX 4090 (24045 MB VRAM) — pre-cached]` appears during loading, first response instant. APR 1.5B: `[APR CUDA: ... — pre-cached]` during loading.
+- **Test counts**: aprender 11,230 (lib), apr-cli 3,796 (lib)
+- **No new falsification gates**: 160/168 gates still pass (95.2%)
+
 ### 18.2 Claims Verified (Not Falsified)
 
 **Round 1:**

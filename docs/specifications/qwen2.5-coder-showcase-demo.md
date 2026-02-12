@@ -1,15 +1,15 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 10.46.0 (Full Stack: apr-cli + aprender + realizar + trueno + batuta, Popperian falsified)
-**Status:** ALL THREE PROJECTS A+ + ZERO SATD (7B all 3 formats working CPU + GPU. 46 falsification rounds, 214 bugs found. Round 46: Bugs 211-214 + GH-223 — GGUF tokenizer fallback, sharded conversion, config.json enforcement, GPU VRAM fallback. 11,267+ tests, 3,796 apr-cli tests. `apr qa` all 8 gates pass. TDG: 96.9/100 A+. Project Score: A+. Coverage: 96.35%. SATD: 0/0/0.)
+**Version:** 10.48.0 (Full Stack: apr-cli + aprender + realizar + trueno + batuta, Popperian falsified)
+**Status:** ALL THREE PROJECTS A+ + ZERO SATD (7B all 3 formats working CPU + GPU. 48 falsification rounds, 221 bugs found. Round 48: GH-224 — eager GPU model caching eliminates ~8s per-message delay. Round 47: spec slimming, 6 spec bugs, Qwen2Model deletion. 11,230+ tests, 3,796 apr-cli tests. `apr qa` all 8 gates pass. TDG: 96.9/100 A+. Project Score: A+. Coverage: 96.35%. SATD: 0/0/0.)
 **Primary Model:** `Qwen/Qwen2.5-Coder-7B-Instruct`
 **Supported Models:** Qwen2.5-Coder 0.5B, 1.5B, 3B, 7B (all sizes)
 **Source Format:** SafeTensors BF16 (HuggingFace, sharded, ~14 GB for 7B)
-**Popperian Score:** 160/168 gates passing (95.2%) — 8 FALSIFIED, 0 blocked/not-tested. 168 falsification gates, 23 sections. 46 rounds, 214 bugs. Gated by `model-tests` feature (`make test-model`)
+**Popperian Score:** 160/168 gates passing (95.2%) — 8 FALSIFIED, 0 blocked/not-tested. 168 falsification gates, 23 sections. 48 rounds, 221 bugs. Gated by `model-tests` feature (`make test-model`)
 **CLI Surface:** 39 top-level + 10 nested subcommands (49 total)
 **Compile-Time Proofs:** 297 algebraic invariants (zero runtime cost)
 **Author:** PAIML Engineering
-**Date:** 2026-02-12 (Round 46)
+**Date:** 2026-02-12 (Round 48)
 **Ground Truth:** SafeTensors BF16 - See Section 0
 **Quality Philosophy:** Toyota Way + Popperian Falsification (Zero SATD, Stop-the-Line, Jidoka)
 
@@ -399,7 +399,7 @@ All CLI commands support APR, GGUF, and SafeTensors via `FormatType::from_magic(
 | 8 | All 49 subcommands exercised | **Pass** |
 | 9 | Coverage >95% | **Yes** (aprender: 96.35%. Realizar: 57.47% — FAILS target) |
 | 10 | PMAT compliance / SATD = 0 | **Yes** |
-| 11 | Falsification audit passed | **Pass** (46 rounds, 214 bugs) |
+| 11 | Falsification audit passed | **Pass** (48 rounds, 221 bugs) |
 
 ---
 
@@ -608,8 +608,8 @@ Three rounds found 8 bugs: tautological guards, vacuous catch-all, zero KV heads
 
 ## 18. Spec Self-Falsification Audit
 
-> 46 rounds of adversarial self-falsification found 214 bugs. Round 1-46 detailed writeups with Five-Whys root cause analysis. Methodology: extract testable claims, compare against code/YAML, report discrepancies, fix spec (not code).
-> See [`self-falsification-rounds.md`](qwen2.5-coder-showcase-archive/self-falsification-rounds.md) for all 46 rounds and 214 bugs.
+> 48 rounds of adversarial self-falsification found 221 bugs. Round 1-48 detailed writeups with Five-Whys root cause analysis. Methodology: extract testable claims, compare against code/YAML, report discrepancies, fix spec (not code).
+> See [`self-falsification-rounds.md`](qwen2.5-coder-showcase-archive/self-falsification-rounds.md) for all 48 rounds and 221 bugs.
 
 ---
 
