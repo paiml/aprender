@@ -948,8 +948,7 @@ mod tests {
 
     #[test]
     fn test_hf_parse_blob_main_no_trailing_slash() {
-        let src =
-            Source::parse("hf://Qwen/Qwen2.5-1.5B-Instruct/blob/main").expect("should parse");
+        let src = Source::parse("hf://Qwen/Qwen2.5-1.5B-Instruct/blob/main").expect("should parse");
         match src {
             Source::HuggingFace { file, .. } => {
                 assert_eq!(file, None);
@@ -961,10 +960,9 @@ mod tests {
     #[test]
     fn test_hf_parse_resolve_main_nested_file() {
         // resolve/main/ with nested subdir path
-        let src = Source::parse(
-            "hf://Qwen/Qwen2.5-1.5B-Instruct/resolve/main/sub/model.safetensors",
-        )
-        .expect("should parse");
+        let src =
+            Source::parse("hf://Qwen/Qwen2.5-1.5B-Instruct/resolve/main/sub/model.safetensors")
+                .expect("should parse");
         match src {
             Source::HuggingFace { file, .. } => {
                 assert_eq!(file, Some("sub/model.safetensors".to_string()));

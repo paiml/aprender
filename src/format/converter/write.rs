@@ -124,34 +124,19 @@ fn insert_f32_tokenizer_metadata(
     }
 }
 
-/// Write tensors to native APR format
+/// Build the custom metadata map for the F32 tensor import path.
 ///
-/// PMAT-223: `user_metadata` preserves arbitrary user metadata from SafeTensors `__metadata__`
-/// section through the conversion pipeline. Stored under `"source_metadata"` in APR custom field.
-///
-/// GH-205: `f16_raw_tensors` contains raw F16 bytes for passthrough. When a tensor appears
-/// in both `tensors` (as F32) and `f16_raw_tensors` (raw bytes), the raw bytes are preferred
-/// to avoid precision loss from F16→F32→F16 conversion.
-pub(crate) fn write_apr_file(
+/// Combines tensor shapes, user metadata, tied-embedding flags, and tokenizer data
+/// into the `custom` field used by `AprV2Metadata`.
+fn build_f32_custom_metadata(
     tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
-    f16_raw_tensors: &BTreeMap<String, (Vec<u8>, Vec<usize>)>,
-    output: &Path,
-    options: &ImportOptions,
-    tokenizer: Option<&GgufTokenizer>,
-    model_config: Option<&GgufModelConfig>,
     user_metadata: &UserMetadata,
-) -> Result<()> {
-    // PMAT-100: Handle tied embeddings (common in Qwen, LLaMA, etc.)
-    let (tensors_with_lm_head, has_tied_embeddings) = resolve_f32_tied_embeddings(tensors);
-
-    let param_count: u64 = tensors_with_lm_head
-        .values()
-        .map(|(data, _)| data.len() as u64)
-        .sum();
-
+    has_tied_embeddings: bool,
+    tokenizer: Option<&GgufTokenizer>,
+) -> std::collections::HashMap<String, serde_json::Value> {
     // Build tensor_shapes map for metadata (used by `apr tensors` command)
     // ROSETTA-003: Store all tensors individually (no QKV fusion)
-    let tensor_shapes: serde_json::Map<String, serde_json::Value> = tensors_with_lm_head
+    let tensor_shapes: serde_json::Map<String, serde_json::Value> = tensors
         .iter()
         .map(|(name, (_, shape))| {
             let shape_array: Vec<serde_json::Value> = shape
@@ -162,7 +147,6 @@ pub(crate) fn write_apr_file(
         })
         .collect();
 
-    // Create metadata with architecture info and tensor shapes
     let mut custom = std::collections::HashMap::new();
     custom.insert(
         "tensor_shapes".to_string(),
@@ -191,121 +175,61 @@ pub(crate) fn write_apr_file(
         insert_f32_tokenizer_metadata(tok, &mut custom);
     }
 
-    // Extract transformer config from model_config (CRITICAL for inference)
-    let (
-        architecture,
-        hidden_size,
-        num_layers,
-        num_heads,
-        num_kv_heads,
-        vocab_size,
-        intermediate_size,
-        max_position_embeddings,
-        rope_theta,
-        rope_type,
-        rms_norm_eps,
-    ) = if let Some(cfg) = model_config {
-        (
-            cfg.architecture.clone(),
-            cfg.hidden_size,
-            cfg.num_layers,
-            cfg.num_heads,
-            cfg.num_kv_heads,
-            cfg.vocab_size,
-            cfg.intermediate_size,
-            cfg.max_position_embeddings,
-            cfg.rope_theta,
-            cfg.rope_type,
-            cfg.rms_norm_eps,
-        )
-    } else {
-        (
-            None, None, None, None, None, None, None, None, None, None, None,
-        )
-    };
+    custom
+}
 
-    let metadata = AprV2Metadata {
-        model_type: format!("{:?}", options.architecture),
-        name: Some(
-            output
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("model")
-                .to_string(),
-        ),
-        param_count,
-        custom,
-        // Transformer config (CRITICAL for realizar inference)
-        architecture,
-        hidden_size,
-        num_layers,
-        num_heads,
-        num_kv_heads,
-        vocab_size,
-        intermediate_size,
-        max_position_embeddings,
-        rope_theta,
-        rope_type,
-        rms_norm_eps,
-        ..Default::default()
-    };
+/// Add a single F32 tensor (or its F16 passthrough) to the APR writer.
+///
+/// GH-205: If the tensor exists in `f16_raw_tensors`, raw F16 bytes are used
+/// directly to avoid precision loss. Returns `true` if F16 passthrough was used.
+fn add_f32_tensor_to_writer(
+    writer: &mut AprV2Writer,
+    name: &str,
+    data: &[f32],
+    shape: &[usize],
+    f16_raw_tensors: &BTreeMap<String, (Vec<u8>, Vec<usize>)>,
+    quantize: Option<QuantizationType>,
+) -> bool {
+    // GH-205: Check if we have raw F16 bytes for this tensor
+    if let Some((f16_bytes, f16_shape)) = f16_raw_tensors.get(name) {
+        writer.add_tensor(name, TensorDType::F16, f16_shape.clone(), f16_bytes.clone());
+        return true;
+    }
 
-    // Create APR writer
-    let mut writer = AprV2Writer::new(metadata);
+    // Determine if tensor should skip quantization
+    // - Biases are too small and precision-sensitive
+    // - LayerNorm/RMSNorm weights are critical for numerical stability
+    // - Small tensors (<1024 elements) don't benefit from quantization
+    let should_skip_quant = name.contains("bias")
+        || name.contains("layernorm")
+        || name.contains("layer_norm")
+        || name.contains("norm.weight")
+        || data.len() < 1024;
 
-    // ROSETTA-003: Write all tensors individually (no QKV fusion).
-    // Q, K, V are stored as separate tensors. Fusion happens at runtime in realizar.
-    //
-    // GH-205: F16 passthrough - if a tensor has raw F16 bytes, use those directly
-    // to avoid precision loss from F16→F32→F16 conversion.
-    let mut f16_passthrough_count = 0usize;
-    for (name, (data, shape)) in &tensors_with_lm_head {
-        // GH-205: Check if we have raw F16 bytes for this tensor
-        if let Some((f16_bytes, f16_shape)) = f16_raw_tensors.get(name) {
-            // Use raw F16 bytes directly (passthrough)
-            writer.add_tensor(name, TensorDType::F16, f16_shape.clone(), f16_bytes.clone());
-            f16_passthrough_count += 1;
-            continue;
+    match quantize {
+        Some(QuantizationType::Fp16) => {
+            writer.add_f16_tensor(name, shape.to_vec(), data);
         }
-
-        // Determine if tensor should skip quantization
-        // - Biases are too small and precision-sensitive
-        // - LayerNorm/RMSNorm weights are critical for numerical stability
-        // - Small tensors (<1024 elements) don't benefit from quantization
-        let should_skip_quant = name.contains("bias")
-            || name.contains("layernorm")
-            || name.contains("layer_norm")
-            || name.contains("norm.weight")
-            || data.len() < 1024;
-
-        match options.quantize {
-            Some(QuantizationType::Fp16) => {
-                writer.add_f16_tensor(name, shape.clone(), data);
-            }
-            Some(QuantizationType::Int8) if !should_skip_quant => {
-                writer.add_q8_tensor(name, shape.clone(), data);
-            }
-            Some(QuantizationType::Int4) if !should_skip_quant => {
-                writer.add_q4_tensor(name, shape.clone(), data);
-            }
-            Some(QuantizationType::Q4K) if !should_skip_quant => {
-                let q4k_bytes = quantize_q4_k(data);
-                writer.add_q4k_raw_tensor(name, shape.clone(), q4k_bytes);
-            }
-            _ => {
-                writer.add_f32_tensor(name, shape.clone(), data);
-            }
+        Some(QuantizationType::Int8) if !should_skip_quant => {
+            writer.add_q8_tensor(name, shape.to_vec(), data);
+        }
+        Some(QuantizationType::Int4) if !should_skip_quant => {
+            writer.add_q4_tensor(name, shape.to_vec(), data);
+        }
+        Some(QuantizationType::Q4K) if !should_skip_quant => {
+            let q4k_bytes = quantize_q4_k(data);
+            writer.add_q4k_raw_tensor(name, shape.to_vec(), q4k_bytes);
+        }
+        _ => {
+            writer.add_f32_tensor(name, shape.to_vec(), data);
         }
     }
 
-    if f16_passthrough_count > 0 {
-        eprintln!(
-            "[GH-205] F16 passthrough: {} tensors written as raw F16 (no precision loss)",
-            f16_passthrough_count
-        );
-    }
+    false
+}
 
-    // Write to file
+/// Serialize an `AprV2Writer` and write the resulting bytes to a file.
+fn flush_writer_to_file(mut writer: AprV2Writer, output: &Path) -> Result<()> {
     let bytes = writer.write().map_err(|e| AprenderError::FormatError {
         message: format!("Failed to serialize APR format: {e}"),
     })?;
@@ -320,6 +244,94 @@ pub(crate) fn write_apr_file(
         })?;
 
     Ok(())
+}
+
+/// Write tensors to native APR format
+///
+/// PMAT-223: `user_metadata` preserves arbitrary user metadata from SafeTensors `__metadata__`
+/// section through the conversion pipeline. Stored under `"source_metadata"` in APR custom field.
+///
+/// GH-205: `f16_raw_tensors` contains raw F16 bytes for passthrough. When a tensor appears
+/// in both `tensors` (as F32) and `f16_raw_tensors` (raw bytes), the raw bytes are preferred
+/// to avoid precision loss from F16→F32→F16 conversion.
+pub(crate) fn write_apr_file(
+    tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+    f16_raw_tensors: &BTreeMap<String, (Vec<u8>, Vec<usize>)>,
+    output: &Path,
+    options: &ImportOptions,
+    tokenizer: Option<&GgufTokenizer>,
+    model_config: Option<&GgufModelConfig>,
+    user_metadata: &UserMetadata,
+) -> Result<()> {
+    // PMAT-100: Handle tied embeddings (common in Qwen, LLaMA, etc.)
+    let (tensors_with_lm_head, has_tied_embeddings) = resolve_f32_tied_embeddings(tensors);
+
+    let param_count: u64 = tensors_with_lm_head
+        .values()
+        .map(|(data, _)| data.len() as u64)
+        .sum();
+
+    let custom = build_f32_custom_metadata(
+        &tensors_with_lm_head,
+        user_metadata,
+        has_tied_embeddings,
+        tokenizer,
+    );
+
+    // Extract transformer config from model_config (CRITICAL for inference)
+    let metadata = AprV2Metadata {
+        model_type: format!("{:?}", options.architecture),
+        name: Some(
+            output
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("model")
+                .to_string(),
+        ),
+        param_count,
+        custom,
+        // Transformer config (CRITICAL for realizar inference)
+        architecture: model_config.and_then(|c| c.architecture.clone()),
+        hidden_size: model_config.and_then(|c| c.hidden_size),
+        num_layers: model_config.and_then(|c| c.num_layers),
+        num_heads: model_config.and_then(|c| c.num_heads),
+        num_kv_heads: model_config.and_then(|c| c.num_kv_heads),
+        vocab_size: model_config.and_then(|c| c.vocab_size),
+        intermediate_size: model_config.and_then(|c| c.intermediate_size),
+        max_position_embeddings: model_config.and_then(|c| c.max_position_embeddings),
+        rope_theta: model_config.and_then(|c| c.rope_theta),
+        rope_type: model_config.and_then(|c| c.rope_type),
+        rms_norm_eps: model_config.and_then(|c| c.rms_norm_eps),
+        ..Default::default()
+    };
+
+    // Create APR writer and add tensors
+    // ROSETTA-003: Write all tensors individually (no QKV fusion).
+    // Q, K, V are stored as separate tensors. Fusion happens at runtime in realizar.
+    let mut writer = AprV2Writer::new(metadata);
+
+    let mut f16_passthrough_count = 0usize;
+    for (name, (data, shape)) in &tensors_with_lm_head {
+        if add_f32_tensor_to_writer(
+            &mut writer,
+            name,
+            data,
+            shape,
+            f16_raw_tensors,
+            options.quantize,
+        ) {
+            f16_passthrough_count += 1;
+        }
+    }
+
+    if f16_passthrough_count > 0 {
+        eprintln!(
+            "[GH-205] F16 passthrough: {} tensors written as raw F16 (no precision loss)",
+            f16_passthrough_count
+        );
+    }
+
+    flush_writer_to_file(writer, output)
 }
 
 /// Resolve tied embeddings by synthesizing lm_head.weight from embed_tokens.weight

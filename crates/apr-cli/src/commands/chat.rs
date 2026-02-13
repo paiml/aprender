@@ -613,8 +613,7 @@ mod realizar_chat {
                             let config_path = parent.join("config.json");
                             if config_path.exists() {
                                 if let Ok(json) = std::fs::read_to_string(&config_path) {
-                                    if let Ok(v) =
-                                        serde_json::from_str::<serde_json::Value>(&json)
+                                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&json)
                                     {
                                         if let Some(model_type) = v["model_type"].as_str() {
                                             arch = model_type.to_lowercase();

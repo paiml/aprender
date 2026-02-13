@@ -437,42 +437,61 @@ fn check_layout_contract(report: &mut LintReport, info: &ModelLintInfo) {
 
     let layout = contract();
     for tensor in &info.tensors {
-        // Check if this tensor is in the contract
-        if let Some(tc) = layout.get_apr_contract(&tensor.name) {
-            // Validate shape for critical tensors
-            if tc.is_critical && !tensor.shape.is_empty() {
-                if let Err(e) =
-                    layout.validate_apr_shape(&tensor.name, &tensor.shape, vocab_size, hidden_dim)
-                {
-                    report.add_issue(
-                        LintIssue::layout_error(format!("F-LAYOUT-CONTRACT-002 violation: {}", e))
-                            .with_suggestion(format!(
-                                "Expected shape {} per contract",
-                                tc.apr_shape_formula
-                            )),
-                    );
-                }
-            }
+        let Some(tc) = layout.get_apr_contract(&tensor.name) else {
+            continue;
+        };
 
-            // Check for 2D tensors that should be transposed
-            if tc.should_transpose && tensor.shape.len() == 2 {
-                // Validate shape dimensions make sense
-                let (dim0, _dim1) = (tensor.shape[0], tensor.shape[1]);
+        validate_critical_tensor_shape(report, &layout, tc, tensor, vocab_size, hidden_dim);
+        validate_transpose_dimensions(report, tc, tensor, vocab_size);
+    }
+}
 
-                // For lm_head specifically, dim0 should be vocab_size
-                if tensor.name.contains("lm_head") && dim0 != vocab_size {
-                    report.add_issue(
-                        LintIssue::layout_warn(format!(
-                            "lm_head.weight shape[0]={} but expected vocab_size={}",
-                            dim0, vocab_size
-                        ))
-                        .with_suggestion(
-                            "Shape should be [vocab_size, hidden_dim] after transpose",
-                        ),
-                    );
-                }
-            }
-        }
+/// Validate shape of a critical tensor against the layout contract.
+fn validate_critical_tensor_shape(
+    report: &mut LintReport,
+    layout: &crate::format::layout_contract::LayoutContract,
+    tc: &crate::format::layout_contract::TensorContract,
+    tensor: &TensorLintInfo,
+    vocab_size: usize,
+    hidden_dim: usize,
+) {
+    if !tc.is_critical || tensor.shape.is_empty() {
+        return;
+    }
+
+    if let Err(e) = layout.validate_apr_shape(&tensor.name, &tensor.shape, vocab_size, hidden_dim) {
+        report.add_issue(
+            LintIssue::layout_error(format!("F-LAYOUT-CONTRACT-002 violation: {}", e))
+                .with_suggestion(format!(
+                    "Expected shape {} per contract",
+                    tc.apr_shape_formula
+                )),
+        );
+    }
+}
+
+/// Validate that a 2D tensor requiring transpose has correct dimensions.
+fn validate_transpose_dimensions(
+    report: &mut LintReport,
+    tc: &crate::format::layout_contract::TensorContract,
+    tensor: &TensorLintInfo,
+    vocab_size: usize,
+) {
+    if !tc.should_transpose || tensor.shape.len() != 2 {
+        return;
+    }
+
+    let dim0 = tensor.shape[0];
+
+    // For lm_head specifically, dim0 should be vocab_size
+    if tensor.name.contains("lm_head") && dim0 != vocab_size {
+        report.add_issue(
+            LintIssue::layout_warn(format!(
+                "lm_head.weight shape[0]={} but expected vocab_size={}",
+                dim0, vocab_size
+            ))
+            .with_suggestion("Shape should be [vocab_size, hidden_dim] after transpose"),
+        );
     }
 }
 
@@ -612,53 +631,64 @@ fn lint_safetensors_file(path: &Path) -> Result<LintReport> {
 
     let mut info = ModelLintInfo::default();
 
-    // SafeTensors doesn't have rich metadata by default
-    info.has_license = false;
-    info.has_model_card = false;
-    info.has_provenance = false;
-
-    // Check the file-level __metadata__ if accessible via raw header parse
     let data = std::fs::read(path)?;
-    if data.len() >= 8 {
-        let header_len = u64::from_le_bytes(data[0..8].try_into().unwrap_or([0u8; 8])) as usize;
-        if data.len() >= 8 + header_len {
-            if let Ok(header) =
-                serde_json::from_slice::<serde_json::Value>(&data[8..8 + header_len])
-            {
-                if let Some(meta) = header.get("__metadata__").and_then(|v| v.as_object()) {
-                    info.has_license = meta.contains_key("license");
-                    info.has_model_card =
-                        meta.contains_key("description") || meta.contains_key("model_card");
-                    info.has_provenance =
-                        meta.contains_key("author") || meta.contains_key("source");
-                }
-            }
-        }
-    }
-
-    // Build tensor lint info
-    for name in mapped.tensor_names() {
-        if let Some(meta) = mapped.get_metadata(name) {
-            let size_bytes = meta.data_offsets[1] - meta.data_offsets[0];
-            let shape: Vec<usize> = meta.shape.clone();
-
-            // Extract vocab_size and hidden_dim from lm_head
-            if name.contains("lm_head") && shape.len() == 2 {
-                info.vocab_size = Some(shape[0]);
-                info.hidden_dim = Some(shape[1]);
-            }
-
-            info.tensors.push(TensorLintInfo {
-                name: name.to_string(),
-                size_bytes,
-                alignment: 0, // SafeTensors doesn't guarantee alignment
-                is_compressed: false,
-                shape,
-            });
-        }
-    }
+    extract_safetensors_metadata(&data, &mut info);
+    collect_safetensors_tensors(&mapped, &mut info);
 
     Ok(lint_model(&info))
+}
+
+/// Extract metadata flags from the SafeTensors `__metadata__` header section.
+fn extract_safetensors_metadata(data: &[u8], info: &mut ModelLintInfo) {
+    if data.len() < 8 {
+        return;
+    }
+
+    let header_len = u64::from_le_bytes(data[0..8].try_into().unwrap_or([0u8; 8])) as usize;
+    if data.len() < 8 + header_len {
+        return;
+    }
+
+    let Ok(header) = serde_json::from_slice::<serde_json::Value>(&data[8..8 + header_len]) else {
+        return;
+    };
+
+    let Some(meta) = header.get("__metadata__").and_then(|v| v.as_object()) else {
+        return;
+    };
+
+    info.has_license = meta.contains_key("license");
+    info.has_model_card = meta.contains_key("description") || meta.contains_key("model_card");
+    info.has_provenance = meta.contains_key("author") || meta.contains_key("source");
+}
+
+/// Build tensor lint info from a mapped SafeTensors file, extracting model dimensions.
+fn collect_safetensors_tensors(
+    mapped: &crate::serialization::safetensors::MappedSafeTensors,
+    info: &mut ModelLintInfo,
+) {
+    for name in mapped.tensor_names() {
+        let Some(meta) = mapped.get_metadata(name) else {
+            continue;
+        };
+
+        let size_bytes = meta.data_offsets[1] - meta.data_offsets[0];
+        let shape: Vec<usize> = meta.shape.clone();
+
+        // Extract vocab_size and hidden_dim from lm_head
+        if name.contains("lm_head") && shape.len() == 2 {
+            info.vocab_size = Some(shape[0]);
+            info.hidden_dim = Some(shape[1]);
+        }
+
+        info.tensors.push(TensorLintInfo {
+            name: name.to_string(),
+            size_bytes,
+            alignment: 0, // SafeTensors doesn't guarantee alignment
+            is_compressed: false,
+            shape,
+        });
+    }
 }
 
 /// Lint an APR file from disk (supports both v1 and v2 formats)

@@ -20,17 +20,30 @@ fn stress_max_tokens_one() {
     let model_path = match std::env::var("TEST_MODEL_PATH") {
         Ok(p) => std::path::PathBuf::from(p),
         Err(_) => {
-            eprintln!("FALSIFICATION-SKIP: gate=stress_max_tokens_one reason=TEST_MODEL_PATH not set");
+            eprintln!(
+                "FALSIFICATION-SKIP: gate=stress_max_tokens_one reason=TEST_MODEL_PATH not set"
+            );
             return;
         }
     };
 
     let output = std::process::Command::new("cargo")
-        .args(["run", "--bin", "apr", "--features", "inference", "--",
-               "run", &model_path.to_string_lossy(),
-               "--prompt", "Hello",
-               "--max-tokens", "1",
-               "--temperature", "0"])
+        .args([
+            "run",
+            "--bin",
+            "apr",
+            "--features",
+            "inference",
+            "--",
+            "run",
+            &model_path.to_string_lossy(),
+            "--prompt",
+            "Hello",
+            "--max-tokens",
+            "1",
+            "--temperature",
+            "0",
+        ])
         .output()
         .expect("max_tokens=1 generation");
 
@@ -59,11 +72,22 @@ fn stress_single_token_prompt() {
     };
 
     let output = std::process::Command::new("cargo")
-        .args(["run", "--bin", "apr", "--features", "inference", "--",
-               "run", &model_path.to_string_lossy(),
-               "--prompt", "Hi",
-               "--max-tokens", "8",
-               "--temperature", "0"])
+        .args([
+            "run",
+            "--bin",
+            "apr",
+            "--features",
+            "inference",
+            "--",
+            "run",
+            &model_path.to_string_lossy(),
+            "--prompt",
+            "Hi",
+            "--max-tokens",
+            "8",
+            "--temperature",
+            "0",
+        ])
         .output()
         .expect("single token prompt generation");
 
@@ -88,11 +112,22 @@ fn stress_long_prompt_no_panic() {
     let long_prompt = "The quick brown fox jumps over the lazy dog. ".repeat(50);
 
     let output = std::process::Command::new("cargo")
-        .args(["run", "--bin", "apr", "--features", "inference", "--",
-               "run", &model_path.to_string_lossy(),
-               "--prompt", &long_prompt,
-               "--max-tokens", "8",
-               "--temperature", "0"])
+        .args([
+            "run",
+            "--bin",
+            "apr",
+            "--features",
+            "inference",
+            "--",
+            "run",
+            &model_path.to_string_lossy(),
+            "--prompt",
+            &long_prompt,
+            "--max-tokens",
+            "8",
+            "--temperature",
+            "0",
+        ])
         .output()
         .expect("long prompt generation");
 
@@ -124,11 +159,22 @@ fn stress_20_sequential_generations() {
     let mut outputs = Vec::new();
     for i in 0..20 {
         let output = std::process::Command::new("cargo")
-            .args(["run", "--bin", "apr", "--features", "inference", "--",
-                   "run", &model_path.to_string_lossy(),
-                   "--prompt", &format!("The number {} is", i + 1),
-                   "--max-tokens", "4",
-                   "--temperature", "0"])
+            .args([
+                "run",
+                "--bin",
+                "apr",
+                "--features",
+                "inference",
+                "--",
+                "run",
+                &model_path.to_string_lossy(),
+                "--prompt",
+                &format!("The number {} is", i + 1),
+                "--max-tokens",
+                "4",
+                "--temperature",
+                "0",
+            ])
             .output()
             .unwrap_or_else(|_| panic!("Generation {i} failed to execute"));
 
@@ -160,23 +206,36 @@ fn stress_serve_health_check() {
     let model_path = match std::env::var("TEST_MODEL_PATH") {
         Ok(p) => std::path::PathBuf::from(p),
         Err(_) => {
-            eprintln!("FALSIFICATION-SKIP: gate=stress_serve_health_check reason=TEST_MODEL_PATH not set");
+            eprintln!(
+                "FALSIFICATION-SKIP: gate=stress_serve_health_check reason=TEST_MODEL_PATH not set"
+            );
             return;
         }
     };
 
     // Start server in background
     let mut child = match std::process::Command::new("cargo")
-        .args(["run", "--bin", "apr", "--features", "inference", "--",
-               "serve", &model_path.to_string_lossy(),
-               "--port", "18901"])
+        .args([
+            "run",
+            "--bin",
+            "apr",
+            "--features",
+            "inference",
+            "--",
+            "serve",
+            &model_path.to_string_lossy(),
+            "--port",
+            "18901",
+        ])
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()
     {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("FALSIFICATION-SKIP: gate=stress_serve_health_check reason=spawn failed: {e}");
+            eprintln!(
+                "FALSIFICATION-SKIP: gate=stress_serve_health_check reason=spawn failed: {e}"
+            );
             return;
         }
     };
@@ -186,8 +245,14 @@ fn stress_serve_health_check() {
 
     // Health check
     let health = std::process::Command::new("curl")
-        .args(["-s", "-o", "/dev/null", "-w", "%{http_code}",
-               "http://localhost:18901/health"])
+        .args([
+            "-s",
+            "-o",
+            "/dev/null",
+            "-w",
+            "%{http_code}",
+            "http://localhost:18901/health",
+        ])
         .output();
 
     // Kill server
@@ -215,9 +280,12 @@ fn stress_chat_50_messages() {
     let mut messages = Vec::new();
     for i in 0..50 {
         if i % 2 == 0 {
-            messages.push(aprender::text::chat_template::ChatMessage::user(
-                format!("Question {}: What is {}+{}?", i / 2 + 1, i, i + 1),
-            ));
+            messages.push(aprender::text::chat_template::ChatMessage::user(format!(
+                "Question {}: What is {}+{}?",
+                i / 2 + 1,
+                i,
+                i + 1
+            )));
         } else {
             messages.push(aprender::text::chat_template::ChatMessage::assistant(
                 format!("The answer is {}.", i + (i + 1)),
@@ -239,9 +307,9 @@ fn stress_chat_50_messages() {
 fn stress_chat_large_message() {
     let template = aprender::text::chat_template::auto_detect_template("qwen2.5-coder");
     let large_content = "x".repeat(100_000);
-    let messages = vec![
-        aprender::text::chat_template::ChatMessage::user(large_content),
-    ];
+    let messages = vec![aprender::text::chat_template::ChatMessage::user(
+        large_content,
+    )];
     let formatted = template.format_conversation(&messages).expect("format");
     assert!(formatted.len() > 100_000, "Large message must be preserved");
 }
@@ -255,16 +323,19 @@ fn stress_chat_empty_messages() {
         aprender::text::chat_template::ChatMessage::assistant(String::new()),
     ];
     let formatted = template.format_conversation(&messages).expect("format");
-    assert!(!formatted.is_empty(), "Empty messages must still format with template markers");
+    assert!(
+        !formatted.is_empty(),
+        "Empty messages must still format with template markers"
+    );
 }
 
 /// Chat with only system message
 #[test]
 fn stress_chat_system_only() {
     let template = aprender::text::chat_template::auto_detect_template("qwen2.5-coder");
-    let messages = vec![
-        aprender::text::chat_template::ChatMessage::system("You are helpful.".to_string()),
-    ];
+    let messages = vec![aprender::text::chat_template::ChatMessage::system(
+        "You are helpful.".to_string(),
+    )];
     let formatted = template.format_conversation(&messages).expect("format");
     assert!(!formatted.is_empty(), "System-only message must format");
 }
@@ -302,5 +373,8 @@ fn stress_consecutive_user_messages() {
         aprender::text::chat_template::ChatMessage::user("Third question".to_string()),
     ];
     let formatted = template.format_conversation(&messages).expect("format");
-    assert!(!formatted.is_empty(), "Consecutive user messages must format");
+    assert!(
+        !formatted.is_empty(),
+        "Consecutive user messages must format"
+    );
 }

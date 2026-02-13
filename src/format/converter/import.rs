@@ -59,45 +59,14 @@ pub fn apr_import<P: AsRef<Path>>(
     }
 
     // PMAT-224: Warn about unverified architectures before proceeding
-    let effective_arch = if options.architecture == Architecture::Auto {
-        // Try to infer from model config
+    let effective_arch = infer_architecture(
+        &options.architecture,
         load_result
             .model_config
             .as_ref()
-            .and_then(|cfg| cfg.architecture.as_ref())
-            .and_then(|arch_str| match arch_str.to_lowercase().as_str() {
-                "qwen2" | "qwen" | "qwen2.5" => Some(Architecture::Qwen2),
-                "llama" | "llama2" | "llama3" => Some(Architecture::Llama),
-                "whisper" => Some(Architecture::Whisper),
-                "bert" => Some(Architecture::Bert),
-                _ => None,
-            })
-            .unwrap_or(Architecture::Auto)
-    } else {
-        options.architecture
-    };
-
-    if !effective_arch.is_inference_verified() {
-        eprintln!(
-            "[PMAT-224] WARNING: Architecture '{}' has not been verified for inference.",
-            effective_arch.display_name()
-        );
-        eprintln!(
-            "[PMAT-224] The imported APR file may not produce correct output with `apr run`."
-        );
-        eprintln!(
-            "[PMAT-224] Verified architectures: Qwen2, LLaMA. Use --strict to reject unverified."
-        );
-        if options.strict {
-            return Err(AprenderError::FormatError {
-                message: format!(
-                    "Architecture '{}' is not verified for inference (--strict mode). \
-                     Remove --strict to import anyway, or specify --arch qwen2/llama.",
-                    effective_arch.display_name()
-                ),
-            });
-        }
-    }
+            .and_then(|c| c.architecture.as_deref()),
+    );
+    warn_unverified_architecture(&effective_arch, options.strict)?;
 
     // Step 3: Map tensor names to canonical APR names
     let mapped_tensors = map_tensor_names(&load_result.tensors, effective_arch);
@@ -126,32 +95,13 @@ pub fn apr_import<P: AsRef<Path>>(
         .and_then(|c| c.hidden_size)
         .unwrap_or(0);
 
-    if vocab_size > 0 && hidden_dim > 0 {
-        for (name, (_data, shape)) in &mapped_tensors {
-            if let Err(e) = layout_contract.validate_apr_shape(name, shape, vocab_size, hidden_dim)
-            {
-                eprintln!(
-                    "[CONTRACT-VIOLATION] {}: {} (see contracts/tensor-layout-v1.yaml)",
-                    name, e
-                );
-                if options.strict {
-                    return Err(AprenderError::FormatError {
-                        message: format!("Contract violation: {e}"),
-                    });
-                }
-            }
-        }
-        eprintln!(
-            "[CONTRACT] Validated {} tensors against tensor-layout-v1.yaml (vocab={}, hidden={})",
-            mapped_tensors.len(),
-            vocab_size,
-            hidden_dim
-        );
-    } else {
-        eprintln!(
-            "[CONTRACT] WARNING: Cannot validate contract - missing vocab_size or hidden_dim"
-        );
-    }
+    validate_contract_f32(
+        &layout_contract,
+        &mapped_tensors,
+        vocab_size,
+        hidden_dim,
+        options.strict,
+    )?;
 
     // Step 5: Validate tensors (inline validation)
     let validation_result = validate_tensors(&mapped_tensors, &options)?;
@@ -186,112 +136,24 @@ pub(crate) fn apr_import_gguf_raw(
     let raw_result = load_gguf_raw(gguf_path)?;
 
     // PMAT-232: Validate tokenizer data before import
-    // GGUF files without embedded vocabulary cannot produce working APR files.
-    // The APR format requires vocabulary+merges for text encoding/decoding.
-    //
-    // If GGUF has no tokenizer but --tokenizer was provided, load from external file.
-    let effective_tokenizer = if raw_result.tokenizer.vocabulary.is_empty() {
-        // Try external tokenizer if provided
-        if let Some(ref tokenizer_path) = options.tokenizer_path {
-            eprintln!(
-                "[PMAT-232] GGUF has no embedded tokenizer, trying external: {}",
-                tokenizer_path.display()
-            );
-            match load_tokenizer_from_explicit_path(tokenizer_path) {
-                Some(tok) => {
-                    eprintln!(
-                        "[PMAT-232] External tokenizer loaded: {} vocab tokens, {} merge rules",
-                        tok.vocabulary.len(),
-                        tok.merges.len()
-                    );
-                    tok
-                }
-                None => {
-                    let msg = format!(
-                        "Failed to load external tokenizer from '{}'. \
-                         Ensure the file is a valid HuggingFace tokenizer.json.",
-                        tokenizer_path.display()
-                    );
-                    eprintln!("[PMAT-232] ERROR: {}", msg);
-                    return Err(AprenderError::FormatError { message: msg });
-                }
-            }
-        } else {
-            let msg = format!(
-                "GGUF file '{}' has no embedded tokenizer vocabulary. \
-                 This is a 'weights-only' GGUF that cannot produce a working APR file. \
-                 Solutions: (1) Use a GGUF with embedded tokenizer, or \
-                 (2) Provide --tokenizer /path/to/tokenizer.json, or \
-                 (3) Use SafeTensors format with sibling tokenizer.json, or \
-                 (4) Import from HuggingFace source: apr import hf://ORG/REPO -o model.apr",
-                gguf_path.display()
-            );
-            eprintln!("[PMAT-232] ERROR: {}", msg);
-            return Err(AprenderError::FormatError { message: msg });
-        }
-    } else {
-        // GGUF has embedded tokenizer
-        if raw_result.tokenizer.merges.is_empty() {
-            eprintln!(
-                "[PMAT-232] WARNING: GGUF file has vocabulary but no BPE merges. \
-                 Text encoding may fail for multi-character tokens. \
-                 Consider using a GGUF with embedded tokenizer.ggml.merges."
-            );
-        } else {
-            eprintln!(
-                "[PMAT-232] Tokenizer validated: {} vocab tokens, {} merge rules",
-                raw_result.tokenizer.vocabulary.len(),
-                raw_result.tokenizer.merges.len()
-            );
-        }
-        raw_result.tokenizer.clone()
-    };
+    let effective_tokenizer = resolve_gguf_tokenizer(
+        &raw_result.tokenizer,
+        gguf_path,
+        options.tokenizer_path.as_deref(),
+    )?;
 
     // PMAT-222: Auto-detect architecture from GGUF model config
-    // This ensures proper tensor name mapping (GGUF→HF convention)
-    // Critical for format parity: GGUF uses blk.N.attn_q, APR uses layers.N.self_attn.q_proj
-    let effective_arch = if options.architecture == Architecture::Auto {
-        // Detect from model config
-        raw_result
-            .model_config
-            .architecture
-            .as_ref()
-            .and_then(|arch_str| match arch_str.to_lowercase().as_str() {
-                "qwen2" | "qwen" => Some(Architecture::Qwen2),
-                "llama" | "llama2" | "llama3" => Some(Architecture::Llama),
-                "whisper" => Some(Architecture::Whisper),
-                "bert" => Some(Architecture::Bert),
-                _ => None,
-            })
-            .unwrap_or(Architecture::Auto)
-    } else {
-        options.architecture.clone()
-    };
-
+    let effective_arch = infer_architecture(
+        &options.architecture,
+        raw_result.model_config.architecture.as_deref(),
+    );
     if effective_arch != Architecture::Auto {
         eprintln!(
             "[PMAT-222] Auto-detected architecture: {:?} (tensor names will be mapped)",
             effective_arch
         );
     }
-
-    // PMAT-224: Warn about unverified architectures
-    if !effective_arch.is_inference_verified() {
-        eprintln!(
-            "[PMAT-224] WARNING: Architecture '{}' has not been verified for inference.",
-            effective_arch.display_name()
-        );
-        eprintln!("[PMAT-224] Verified architectures: Qwen2, LLaMA. Use --strict to reject.");
-        if options.strict {
-            return Err(AprenderError::FormatError {
-                message: format!(
-                    "Architecture '{}' is not verified for inference (--strict mode). \
-                     Remove --strict to import anyway, or specify --arch qwen2/llama.",
-                    effective_arch.display_name()
-                ),
-            });
-        }
-    }
+    warn_unverified_architecture(&effective_arch, options.strict)?;
 
     // Map tensor names to APR canonical format using detected architecture
     let mapped_tensors: BTreeMap<String, GgufRawTensor> = raw_result
@@ -373,95 +235,247 @@ pub(crate) fn apr_import_gguf_raw(
 /// Resolve a source to a local file path
 pub(crate) fn resolve_source(source: &Source, cache: bool) -> Result<PathBuf> {
     match source {
-        Source::Local(path) => {
-            if !path.exists() {
-                // GH-129: Use ImportError for actionable message
-                let err = ImportError::NotFound {
-                    resource: path.display().to_string(),
-                    status: 0, // Local file, not HTTP
-                };
-                return Err(AprenderError::from(err));
+        Source::Local(path) => resolve_local_source(path),
+        Source::HuggingFace { org, repo, file } => {
+            resolve_hf_source(org, repo, file.as_ref(), cache)
+        }
+        Source::Url(url) => resolve_url_source(url),
+    }
+}
+
+/// Resolve a local file or directory to a model path.
+fn resolve_local_source(path: &Path) -> Result<PathBuf> {
+    if !path.exists() {
+        // GH-129: Use ImportError for actionable message
+        let err = ImportError::NotFound {
+            resource: path.display().to_string(),
+            status: 0, // Local file, not HTTP
+        };
+        return Err(AprenderError::from(err));
+    }
+    // GH-218: Handle sharded SafeTensors directories
+    if path.is_dir() {
+        return resolve_local_directory(path);
+    }
+    Ok(path.to_path_buf())
+}
+
+/// Resolve a local directory to the best model file within it.
+fn resolve_local_directory(path: &Path) -> Result<PathBuf> {
+    let index = path.join("model.safetensors.index.json");
+    if index.exists() {
+        return Ok(index);
+    }
+    let single = path.join("model.safetensors");
+    if single.exists() {
+        return Ok(single);
+    }
+    Err(AprenderError::FormatError {
+        message: format!(
+            "Directory {} contains no model.safetensors.index.json or model.safetensors",
+            path.display()
+        ),
+    })
+}
+
+/// Resolve a HuggingFace source by checking cache and optionally downloading.
+fn resolve_hf_source(org: &str, repo: &str, file: Option<&String>, cache: bool) -> Result<PathBuf> {
+    // PMAT-168: Smart default filename based on repo type
+    let filename = file.map(String::as_str).unwrap_or_else(|| {
+        // Detect GGUF repos by name convention
+        if repo.to_lowercase().contains("gguf") {
+            // Try common GGUF naming patterns
+            // e.g., Qwen2.5-Coder-1.5B-Instruct-GGUF -> qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
+            "model.gguf" // We'll try multiple patterns in find_in_cache
+        } else {
+            "model.safetensors"
+        }
+    });
+
+    // Check standard cache locations first
+    if cache {
+        if let Some(path) = find_hf_in_cache(org, repo, file, filename) {
+            return Ok(path);
+        }
+    }
+
+    // Try to download using hf-hub if feature is enabled (GH-129: proper error handling)
+    #[cfg(feature = "hf-hub-integration")]
+    {
+        let repo_id = format!("{org}/{repo}");
+        // Return the result directly without explicit return statements
+        download_from_hf(&repo_id, filename)
+    }
+
+    // Only reach here if hf-hub-integration feature is disabled
+    #[cfg(not(feature = "hf-hub-integration"))]
+    Err(AprenderError::FormatError {
+        message: format!(
+            "HuggingFace model not found in cache. Download manually:\n\
+             huggingface-cli download {org}/{repo} {filename}\n\
+             Or provide a local path to the SafeTensors/GGUF file.",
+        ),
+    })
+}
+
+/// Search HuggingFace cache for a model file, trying GGUF patterns if applicable.
+fn find_hf_in_cache(
+    org: &str,
+    repo: &str,
+    file: Option<&String>,
+    filename: &str,
+) -> Option<PathBuf> {
+    // PMAT-168: Try multiple common filenames for GGUF repos
+    if repo.to_lowercase().contains("gguf") && file.is_none() {
+        let base_name = repo
+            .to_lowercase()
+            .replace("-gguf", "")
+            .replace("_gguf", "");
+        let gguf_patterns = [
+            format!("{base_name}-q4_k_m.gguf"),
+            format!("{base_name}-q4_k.gguf"),
+            format!("{base_name}-q8_0.gguf"),
+            "model.gguf".to_string(),
+        ];
+        for pattern in &gguf_patterns {
+            if let Some(path) = find_in_cache(org, repo, pattern) {
+                return Some(path);
             }
-            // GH-218: Handle sharded SafeTensors directories
-            if path.is_dir() {
-                let index = path.join("model.safetensors.index.json");
-                if index.exists() {
-                    return Ok(index);
-                }
-                let single = path.join("model.safetensors");
-                if single.exists() {
-                    return Ok(single);
-                }
+        }
+    }
+    find_in_cache(org, repo, filename)
+}
+
+/// Resolve a URL source (not yet implemented).
+fn resolve_url_source(url: &str) -> Result<PathBuf> {
+    Err(AprenderError::FormatError {
+        message: format!("URL download not yet implemented: {url}"),
+    })
+}
+
+/// Infer architecture from user option or model config string.
+fn infer_architecture(user_arch: &Architecture, config_arch: Option<&str>) -> Architecture {
+    if *user_arch != Architecture::Auto {
+        return user_arch.clone();
+    }
+    config_arch
+        .and_then(|arch_str| match arch_str.to_lowercase().as_str() {
+            "qwen2" | "qwen" | "qwen2.5" => Some(Architecture::Qwen2),
+            "llama" | "llama2" | "llama3" => Some(Architecture::Llama),
+            "whisper" => Some(Architecture::Whisper),
+            "bert" => Some(Architecture::Bert),
+            _ => None,
+        })
+        .unwrap_or(Architecture::Auto)
+}
+
+/// Emit warnings for unverified architectures; error in strict mode.
+fn warn_unverified_architecture(arch: &Architecture, strict: bool) -> Result<()> {
+    if arch.is_inference_verified() {
+        return Ok(());
+    }
+    eprintln!(
+        "[PMAT-224] WARNING: Architecture '{}' has not been verified for inference.",
+        arch.display_name()
+    );
+    eprintln!(
+        "[PMAT-224] Verified architectures: Qwen2, LLaMA. Use --strict to reject unverified."
+    );
+    if strict {
+        return Err(AprenderError::FormatError {
+            message: format!(
+                "Architecture '{}' is not verified for inference (--strict mode). \
+                 Remove --strict to import anyway, or specify --arch qwen2/llama.",
+                arch.display_name()
+            ),
+        });
+    }
+    Ok(())
+}
+
+/// Validate F32 tensors against layout contract.
+fn validate_contract_f32(
+    layout: &crate::format::layout_contract::LayoutContract,
+    tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+    vocab_size: usize,
+    hidden_dim: usize,
+    strict: bool,
+) -> Result<()> {
+    if vocab_size == 0 || hidden_dim == 0 {
+        eprintln!(
+            "[CONTRACT] WARNING: Cannot validate contract - missing vocab_size or hidden_dim"
+        );
+        return Ok(());
+    }
+    for (name, (_data, shape)) in tensors {
+        if let Err(e) = layout.validate_apr_shape(name, shape, vocab_size, hidden_dim) {
+            eprintln!(
+                "[CONTRACT-VIOLATION] {}: {} (see contracts/tensor-layout-v1.yaml)",
+                name, e
+            );
+            if strict {
                 return Err(AprenderError::FormatError {
-                    message: format!(
-                        "Directory {} contains no model.safetensors.index.json or model.safetensors",
-                        path.display()
-                    ),
+                    message: format!("Contract violation: {e}"),
                 });
             }
-            Ok(path.clone())
         }
-        Source::HuggingFace { org, repo, file } => {
-            // PMAT-168: Smart default filename based on repo type
-            let filename = file.as_deref().unwrap_or_else(|| {
-                // Detect GGUF repos by name convention
-                if repo.to_lowercase().contains("gguf") {
-                    // Try common GGUF naming patterns
-                    // e.g., Qwen2.5-Coder-1.5B-Instruct-GGUF -> qwen2.5-coder-1.5b-instruct-q4_k_m.gguf
-                    "model.gguf" // We'll try multiple patterns in find_in_cache
-                } else {
-                    "model.safetensors"
-                }
-            });
-
-            // Check standard cache locations first
-            if cache {
-                // PMAT-168: Try multiple common filenames for GGUF repos
-                if repo.to_lowercase().contains("gguf") && file.is_none() {
-                    // Try common GGUF naming patterns
-                    let base_name = repo
-                        .to_lowercase()
-                        .replace("-gguf", "")
-                        .replace("_gguf", "");
-                    let gguf_patterns = [
-                        format!("{}-q4_k_m.gguf", base_name),
-                        format!("{}-q4_k.gguf", base_name),
-                        format!("{}-q8_0.gguf", base_name),
-                        "model.gguf".to_string(),
-                    ];
-                    for pattern in &gguf_patterns {
-                        if let Some(path) = find_in_cache(org, repo, pattern) {
-                            return Ok(path);
-                        }
-                    }
-                }
-                if let Some(path) = find_in_cache(org, repo, filename) {
-                    return Ok(path);
-                }
-            }
-
-            // Try to download using hf-hub if feature is enabled (GH-129: proper error handling)
-            #[cfg(feature = "hf-hub-integration")]
-            {
-                let repo_id = format!("{org}/{repo}");
-                // Return the result directly without explicit return statements
-                download_from_hf(&repo_id, filename)
-            }
-
-            // Only reach here if hf-hub-integration feature is disabled
-            #[cfg(not(feature = "hf-hub-integration"))]
-            Err(AprenderError::FormatError {
-                message: format!(
-                    "HuggingFace model not found in cache. Download manually:\n\
-                     huggingface-cli download {org}/{repo} {filename}\n\
-                     Or provide a local path to the SafeTensors/GGUF file.",
-                ),
-            })
-        }
-        Source::Url(url) => Err(AprenderError::FormatError {
-            message: format!("URL download not yet implemented: {url}"),
-        }),
     }
+    eprintln!(
+        "[CONTRACT] Validated {} tensors against tensor-layout-v1.yaml (vocab={}, hidden={})",
+        tensors.len(),
+        vocab_size,
+        hidden_dim
+    );
+    Ok(())
+}
+
+/// Resolve GGUF tokenizer: use embedded, external, or error.
+fn resolve_gguf_tokenizer(
+    embedded: &GgufTokenizer,
+    gguf_path: &Path,
+    external_path: Option<&Path>,
+) -> Result<GgufTokenizer> {
+    if !embedded.vocabulary.is_empty() {
+        if embedded.merges.is_empty() {
+            eprintln!(
+                "[PMAT-232] WARNING: GGUF file has vocabulary but no BPE merges. \
+                 Text encoding may fail for multi-character tokens."
+            );
+        } else {
+            eprintln!(
+                "[PMAT-232] Tokenizer validated: {} vocab tokens, {} merge rules",
+                embedded.vocabulary.len(),
+                embedded.merges.len()
+            );
+        }
+        return Ok(embedded.clone());
+    }
+    // No embedded tokenizer — try external
+    if let Some(tokenizer_path) = external_path {
+        eprintln!(
+            "[PMAT-232] GGUF has no embedded tokenizer, trying external: {}",
+            tokenizer_path.display()
+        );
+        return load_tokenizer_from_explicit_path(tokenizer_path).ok_or_else(|| {
+            AprenderError::FormatError {
+                message: format!(
+                    "Failed to load external tokenizer from '{}'. \
+                     Ensure the file is a valid HuggingFace tokenizer.json.",
+                    tokenizer_path.display()
+                ),
+            }
+        });
+    }
+    Err(AprenderError::FormatError {
+        message: format!(
+            "GGUF file '{}' has no embedded tokenizer vocabulary. \
+             Solutions: (1) Use a GGUF with embedded tokenizer, or \
+             (2) Provide --tokenizer /path/to/tokenizer.json, or \
+             (3) Use SafeTensors format with sibling tokenizer.json, or \
+             (4) Import from HuggingFace source: apr import hf://ORG/REPO -o model.apr",
+            gguf_path.display()
+        ),
+    })
 }
 
 /// Get XDG cache directory or fallback.
@@ -694,52 +708,27 @@ pub(crate) fn parse_tokenizer_json(
     json: &serde_json::Value,
     config_json: Option<&serde_json::Value>,
 ) -> Option<GgufTokenizer> {
-    // Step 1: Extract base vocabulary from model.vocab
-    let vocab_obj = json.get("model")?.get("vocab")?;
-    let vocab_map = vocab_obj.as_object()?;
+    // Step 1: Build token-to-id map from model.vocab + added_tokens
+    let (token_to_id, base_vocab_len) = parse_vocab_from_model(json)?;
 
-    // Build vocab map (token -> id) from base vocab
-    let mut token_to_id: std::collections::BTreeMap<u32, String> = vocab_map
-        .iter()
-        .filter_map(|(token, id)| Some((id.as_u64()? as u32, token.clone())))
-        .collect();
+    let added_count = json
+        .get("added_tokens")
+        .and_then(|v| v.as_array())
+        .map(|a| a.len())
+        .unwrap_or(0);
 
-    // Step 2: Add special tokens from added_tokens
-    if let Some(added) = json.get("added_tokens").and_then(|v| v.as_array()) {
-        for token in added {
-            if let (Some(content), Some(id)) = (
-                token.get("content").and_then(|v| v.as_str()),
-                token.get("id").and_then(|v| v.as_u64()),
-            ) {
-                token_to_id.insert(id as u32, content.to_string());
-            }
-        }
-    }
-
-    // Step 3: Get expected vocab_size from config.json for padding
+    // Step 2: Build padded vocabulary vector
     let expected_vocab_size = config_json
         .and_then(|cfg| cfg.get("vocab_size").and_then(|v| v.as_u64()))
         .map(|v| v as u32)
         .unwrap_or(0);
 
-    // Step 4: Build vocabulary vector, padding with <unk> for missing IDs
-    let max_id = token_to_id.keys().max().copied().unwrap_or(0);
-    let final_size = (expected_vocab_size.max(max_id + 1)) as usize;
-
-    let mut vocabulary: Vec<String> = vec!["<unk>".to_string(); final_size];
-    for (id, token) in token_to_id {
-        if (id as usize) < vocabulary.len() {
-            vocabulary[id as usize] = token;
-        }
-    }
+    let vocabulary = build_vocab_vector(&token_to_id, expected_vocab_size);
 
     eprintln!(
         "[BUG-EXPORT-004] Vocab: base={}, added={}, expected={}, final={}",
-        vocab_map.len(),
-        json.get("added_tokens")
-            .and_then(|v| v.as_array())
-            .map(|a| a.len())
-            .unwrap_or(0),
+        base_vocab_len,
+        added_count,
         expected_vocab_size,
         vocabulary.len()
     );
@@ -748,71 +737,17 @@ pub(crate) fn parse_tokenizer_json(
         return None;
     }
 
-    // BUG-EXPORT-004: Extract special tokens (BOS/EOS)
-    // PRIORITY 1: Read from config.json (authoritative source)
-    // PRIORITY 2: Infer from added_tokens in tokenizer.json (fallback)
-    let mut bos_token_id = None;
-    let mut eos_token_id = None;
+    // Step 3: Extract BOS/EOS special token IDs
+    let (bos_token_id, eos_token_id) = parse_special_tokens(json, config_json);
 
-    if let Some(cfg) = config_json {
-        bos_token_id = cfg
-            .get("bos_token_id")
-            .and_then(|v| v.as_u64())
-            .map(|v| v as u32);
-        eos_token_id = cfg
-            .get("eos_token_id")
-            .and_then(|v| v.as_u64())
-            .map(|v| v as u32);
-        eprintln!(
-            "[BUG-EXPORT-004] Read BOS/EOS from config.json: bos={:?}, eos={:?}",
-            bos_token_id, eos_token_id
-        );
-    }
-
-    // Fallback: infer from added_tokens (less reliable)
-    if bos_token_id.is_none() || eos_token_id.is_none() {
-        if let Some(added_tokens) = json.get("added_tokens").and_then(|v| v.as_array()) {
-            for token in added_tokens {
-                let content = token.get("content").and_then(|v| v.as_str());
-                let id = token.get("id").and_then(|v| v.as_u64()).map(|v| v as u32);
-
-                if let (Some(content), Some(id)) = (content, id) {
-                    // Common BOS/EOS token patterns
-                    if bos_token_id.is_none()
-                        && (content.contains("bos")
-                            || content == "<s>"
-                            || content == "<|startoftext|>")
-                    {
-                        bos_token_id = Some(id);
-                    }
-                    if eos_token_id.is_none()
-                        && (content.contains("eos") || content == "</s>" || content == "<|eot_id|>")
-                    {
-                        eos_token_id = Some(id);
-                    }
-                }
-            }
-        }
-    }
-
-    // Try to get model type from tokenizer.json
+    // Step 4: Extract model type and merge rules
     let model_type = json
         .get("model")
         .and_then(|m| m.get("type"))
         .and_then(|t| t.as_str())
         .map(String::from);
 
-    // PMAT-171: Extract BPE merge rules for encoding
-    let merges = json
-        .get("model")
-        .and_then(|m| m.get("merges"))
-        .and_then(|m| m.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect()
-        })
-        .unwrap_or_default();
+    let merges = parse_merges(json);
 
     Some(GgufTokenizer {
         vocabulary,
@@ -824,6 +759,85 @@ pub(crate) fn parse_tokenizer_json(
         model_name: None,
         ..Default::default()
     })
+}
+
+/// Build a token-to-id map from the base vocabulary in `model.vocab`, then overlay
+/// any entries from the `added_tokens` array.
+///
+/// Returns `(token_to_id_map, base_vocab_len)` or `None` if `model.vocab` is missing.
+fn parse_vocab_from_model(
+    json: &serde_json::Value,
+) -> Option<(std::collections::BTreeMap<u32, String>, usize)> {
+    let vocab_obj = json.get("model")?.get("vocab")?;
+    let vocab_map = vocab_obj.as_object()?;
+    let base_vocab_len = vocab_map.len();
+
+    let mut token_to_id: std::collections::BTreeMap<u32, String> = vocab_map
+        .iter()
+        .filter_map(|(token, id)| Some((id.as_u64()? as u32, token.clone())))
+        .collect();
+
+    if let Some(added) = json.get("added_tokens").and_then(|v| v.as_array()) {
+        for token in added {
+            if let (Some(content), Some(id)) = (
+                token.get("content").and_then(|v| v.as_str()),
+                token.get("id").and_then(|v| v.as_u64()),
+            ) {
+                token_to_id.insert(id as u32, content.to_string());
+            }
+        }
+    }
+
+    Some((token_to_id, base_vocab_len))
+}
+
+/// Extract BOS/EOS token IDs.
+///
+/// BUG-EXPORT-004: Priority 1 is config.json (authoritative). Priority 2 is
+/// inferring from `added_tokens` patterns in tokenizer.json (fallback via
+/// `infer_bos_eos_from_added_tokens`).
+fn parse_special_tokens(
+    json: &serde_json::Value,
+    config_json: Option<&serde_json::Value>,
+) -> (Option<u32>, Option<u32>) {
+    let mut bos_token_id = config_json
+        .and_then(|cfg| cfg.get("bos_token_id"))
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32);
+    let mut eos_token_id = config_json
+        .and_then(|cfg| cfg.get("eos_token_id"))
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32);
+
+    if config_json.is_some() && (bos_token_id.is_some() || eos_token_id.is_some()) {
+        eprintln!(
+            "[BUG-EXPORT-004] Read BOS/EOS from config.json: bos={:?}, eos={:?}",
+            bos_token_id, eos_token_id
+        );
+    }
+
+    // Fallback: infer from added_tokens (less reliable)
+    if bos_token_id.is_none() || eos_token_id.is_none() {
+        if let Some(added_tokens) = json.get("added_tokens").and_then(|v| v.as_array()) {
+            (bos_token_id, eos_token_id) =
+                infer_bos_eos_from_added_tokens(added_tokens, bos_token_id, eos_token_id);
+        }
+    }
+
+    (bos_token_id, eos_token_id)
+}
+
+/// Extract BPE merge rules from `model.merges` (PMAT-171).
+fn parse_merges(json: &serde_json::Value) -> Vec<String> {
+    json.get("model")
+        .and_then(|m| m.get("merges"))
+        .and_then(|m| m.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 /// Load tokenizer from sibling tokenizer.json file (PMAT-APR-TOK-001)
@@ -916,20 +930,25 @@ fn infer_bos_eos_from_added_tokens(
     for token in added_tokens {
         let content = token.get("content").and_then(|v| v.as_str());
         let id = token.get("id").and_then(|v| v.as_u64()).map(|v| v as u32);
-        if let (Some(content), Some(id)) = (content, id) {
-            if bos.is_none()
-                && (content.contains("bos") || content == "<s>" || content == "<|startoftext|>")
-            {
-                bos = Some(id);
-            }
-            if eos.is_none()
-                && (content.contains("eos") || content == "</s>" || content == "<|eot_id|>")
-            {
-                eos = Some(id);
-            }
+        let (Some(content), Some(id)) = (content, id) else {
+            continue;
+        };
+        if bos.is_none() && is_bos_token(content) {
+            bos = Some(id);
+        }
+        if eos.is_none() && is_eos_token(content) {
+            eos = Some(id);
         }
     }
     (bos, eos)
+}
+
+fn is_bos_token(content: &str) -> bool {
+    content.contains("bos") || content == "<s>" || content == "<|startoftext|>"
+}
+
+fn is_eos_token(content: &str) -> bool {
+    content.contains("eos") || content == "</s>" || content == "<|eot_id|>"
 }
 
 /// PMAT-232: Load tokenizer from explicit path (for --tokenizer CLI option)
@@ -1121,31 +1140,37 @@ fn infer_head_counts(
     hidden_size: usize,
 ) -> (Option<usize>, Option<usize>) {
     match (q_dim, kv_dim) {
-        (Some(q), Some(kv)) if kv < q => {
-            // GQA model: derive from common head_dims
-            for head_dim in [64, 128, 96, 80] {
-                if kv % head_dim == 0 && q % head_dim == 0 {
-                    let n_kv = kv / head_dim;
-                    let n_heads = q / head_dim;
-                    if n_heads >= n_kv && n_kv > 0 {
-                        return (Some(n_heads), Some(n_kv));
-                    }
-                }
-            }
-            (None, None)
-        }
-        (Some(q), _) if q == hidden_size => {
-            // MHA model: q_dim == hidden_size
-            for head_dim in [64, 128, 96, 80] {
-                if hidden_size % head_dim == 0 {
-                    let n_heads = hidden_size / head_dim;
-                    return (Some(n_heads), Some(n_heads));
-                }
-            }
-            (None, None)
-        }
+        (Some(q), Some(kv)) if kv < q => infer_gqa_heads(q, kv),
+        (Some(q), _) if q == hidden_size => infer_mha_heads(hidden_size),
         _ => (None, None),
     }
+}
+
+/// GQA model: derive head counts from common head dimensions.
+fn infer_gqa_heads(q: usize, kv: usize) -> (Option<usize>, Option<usize>) {
+    const HEAD_DIMS: [usize; 4] = [64, 128, 96, 80];
+    for head_dim in HEAD_DIMS {
+        if kv % head_dim == 0 && q % head_dim == 0 {
+            let n_kv = kv / head_dim;
+            let n_heads = q / head_dim;
+            if n_heads >= n_kv && n_kv > 0 {
+                return (Some(n_heads), Some(n_kv));
+            }
+        }
+    }
+    (None, None)
+}
+
+/// MHA model: q_dim == hidden_size, heads share same dimension.
+fn infer_mha_heads(hidden_size: usize) -> (Option<usize>, Option<usize>) {
+    const HEAD_DIMS: [usize; 4] = [64, 128, 96, 80];
+    for head_dim in HEAD_DIMS {
+        if hidden_size % head_dim == 0 {
+            let n_heads = hidden_size / head_dim;
+            return (Some(n_heads), Some(n_heads));
+        }
+    }
+    (None, None)
 }
 
 /// Infer intermediate_size from gate/up projection tensor.
@@ -1187,9 +1212,7 @@ fn infer_architecture_from_names(
 
     if has_model_layers {
         // Distinguish Qwen2 from LLaMA/Mistral by attention bias presence
-        let has_attn_bias = tensors
-            .keys()
-            .any(|k| k.contains("self_attn.q_proj.bias"));
+        let has_attn_bias = tensors.keys().any(|k| k.contains("self_attn.q_proj.bias"));
         let has_fused_qkv = tensors.keys().any(|k| k.contains("qkv_proj.weight"));
         if has_attn_bias || has_fused_qkv {
             Some("qwen2".to_string())
@@ -1230,7 +1253,7 @@ pub(crate) fn infer_model_config_from_tensors(
         _ => Some(0),
     };
 
-    // Bug 210 (GH-222): Architecture-specific defaults for rope_theta and max_position_embeddings.
+    // Architecture-specific rope_theta defaults (GH-222, resolved).
     // Hardcoded 10000.0 was correct for LLaMA 1/2 but 100x wrong for Qwen2 (1M).
     let rope_theta = match architecture.as_deref() {
         Some("qwen2" | "qwen2.5" | "qwen") => Some(1_000_000.0f32),

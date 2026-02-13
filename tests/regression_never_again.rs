@@ -29,10 +29,7 @@ fn regression_bug_208_shape_reversal_2d() {
 fn regression_bug_208_no_transpose_1d() {
     use aprender::format::layout_contract::enforce_import_contract;
     let (shape, transposed) = enforce_import_contract("output_norm.weight", &[1536], 151936, 1536);
-    assert!(
-        !transposed,
-        "Bug 208: 1D tensors must NOT be transposed"
-    );
+    assert!(!transposed, "Bug 208: 1D tensors must NOT be transposed");
     assert_eq!(shape, vec![1536], "Bug 208: 1D shape must be unchanged");
 }
 
@@ -42,7 +39,10 @@ fn regression_layout_001_embedding_contract() {
     let result = std::panic::catch_unwind(|| {
         enforce_embedding_contract(151936 * 1536, 151936, 1536);
     });
-    assert!(result.is_ok(), "LAYOUT-001: Embedding contract must not panic");
+    assert!(
+        result.is_ok(),
+        "LAYOUT-001: Embedding contract must not panic"
+    );
 }
 
 #[test]
@@ -135,7 +135,10 @@ fn regression_bug_222_non_qwen_template_not_empty() {
     let template = auto_detect_template("llama3");
     let messages = vec![ChatMessage::user("Hello")];
     let result = template.format_conversation(&messages).unwrap();
-    assert!(!result.is_empty(), "Bug 222: Template output must not be empty");
+    assert!(
+        !result.is_empty(),
+        "Bug 222: Template output must not be empty"
+    );
 }
 
 #[test]
@@ -174,12 +177,18 @@ fn regression_format_detect_safetensors_magic() {
     // SafeTensors has no magic bytes — from_magic falls back to extension
     let result = aprender::format::rosetta::FormatType::from_magic(file.path());
     // With .bin extension, magic detection won't identify SafeTensors
-    assert!(result.is_err(), "SafeTensors without .safetensors ext is unrecognizable by magic");
-    // But from_extension with .safetensors works
-    let by_ext = aprender::format::rosetta::FormatType::from_extension(
-        std::path::Path::new("model.safetensors"),
+    assert!(
+        result.is_err(),
+        "SafeTensors without .safetensors ext is unrecognizable by magic"
     );
-    assert_eq!(by_ext.unwrap(), aprender::format::rosetta::FormatType::SafeTensors);
+    // But from_extension with .safetensors works
+    let by_ext = aprender::format::rosetta::FormatType::from_extension(std::path::Path::new(
+        "model.safetensors",
+    ));
+    assert_eq!(
+        by_ext.unwrap(),
+        aprender::format::rosetta::FormatType::SafeTensors
+    );
 }
 
 #[test]
@@ -207,7 +216,10 @@ fn regression_pmat_236_template_not_empty() {
     let template = auto_detect_template("qwen2.5-coder");
     let messages = vec![ChatMessage::user("Test")];
     let result = template.format_conversation(&messages).unwrap();
-    assert!(!result.trim().is_empty(), "PMAT-236: Template output must never be empty");
+    assert!(
+        !result.trim().is_empty(),
+        "PMAT-236: Template output must never be empty"
+    );
 }
 
 #[test]
@@ -219,8 +231,14 @@ fn regression_pmat_237_no_silent_skip() {
         ChatMessage::user("Hi"),
     ];
     let result = template.format_conversation(&messages).unwrap();
-    assert!(result.contains("helpful assistant"), "PMAT-237: System message must not be silently skipped");
-    assert!(result.contains("Hi"), "PMAT-237: User message must not be silently skipped");
+    assert!(
+        result.contains("helpful assistant"),
+        "PMAT-237: System message must not be silently skipped"
+    );
+    assert!(
+        result.contains("Hi"),
+        "PMAT-237: User message must not be silently skipped"
+    );
 }
 
 #[test]
@@ -364,7 +382,10 @@ fn regression_pmat_235_weight_size_mismatch() {
     use aprender::format::validated_tensors::ValidatedWeight;
     let data = vec![1.0f32; 10];
     let result = ValidatedWeight::new(data, 3, 4, "test");
-    assert!(result.is_err(), "PMAT-235: Must reject size mismatch (10 != 3*4)");
+    assert!(
+        result.is_err(),
+        "PMAT-235: Must reject size mismatch (10 != 3*4)"
+    );
 }
 
 #[test]
@@ -372,7 +393,10 @@ fn regression_pmat_235_weight_correct_size() {
     use aprender::format::validated_tensors::ValidatedWeight;
     let data = vec![1.0f32; 12];
     let result = ValidatedWeight::new(data, 3, 4, "test");
-    assert!(result.is_ok(), "PMAT-235: Must accept correct size (12 == 3*4)");
+    assert!(
+        result.is_ok(),
+        "PMAT-235: Must accept correct size (12 == 3*4)"
+    );
 }
 
 #[test]
@@ -380,7 +404,10 @@ fn regression_pmat_235_embedding_size_mismatch() {
     use aprender::format::validated_tensors::ValidatedEmbedding;
     let data = vec![0.1f32; 5];
     let result = ValidatedEmbedding::new(data, 2, 3);
-    assert!(result.is_err(), "PMAT-235: Must reject embedding size mismatch");
+    assert!(
+        result.is_err(),
+        "PMAT-235: Must reject embedding size mismatch"
+    );
 }
 
 // =============================================================================
@@ -537,9 +564,9 @@ fn regression_bug_210_rope_theta_plausibility_ranges() {
     // Known architecture rope_theta values
     let known_values: Vec<(&str, f64)> = vec![
         ("qwen2", 1_000_000.0),
-        ("llama", 10_000.0),   // LLaMA 1/2
-        ("llama", 500_000.0),  // LLaMA 3
-        ("gpt2", 10_000.0),    // GPT-2
+        ("llama", 10_000.0),  // LLaMA 1/2
+        ("llama", 500_000.0), // LLaMA 3
+        ("gpt2", 10_000.0),   // GPT-2
     ];
 
     for (arch, theta) in known_values {

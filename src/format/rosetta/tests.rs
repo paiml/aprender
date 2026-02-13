@@ -3188,15 +3188,11 @@ fn test_bug_212_is_sharded_index_positive() {
     use super::is_sharded_index;
     use std::path::Path;
 
-    assert!(is_sharded_index(Path::new(
-        "model.safetensors.index.json"
-    )));
+    assert!(is_sharded_index(Path::new("model.safetensors.index.json")));
     assert!(is_sharded_index(Path::new(
         "/path/to/model.safetensors.index.json"
     )));
-    assert!(is_sharded_index(Path::new(
-        "some.other.index.json"
-    )));
+    assert!(is_sharded_index(Path::new("some.other.index.json")));
 }
 
 #[test]

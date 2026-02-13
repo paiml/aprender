@@ -872,6 +872,5 @@ fn add_tensors(a: &Tensor, b: &Tensor) -> Tensor {
     a.add(b)
 }
 
-
 #[cfg(test)]
 mod tests;

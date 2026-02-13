@@ -169,6 +169,142 @@ impl Default for ConvertOptions {
     }
 }
 
+/// GH-181: Attempt Q4K raw byte pass-through for GGUF sources already quantized as Q4K.
+///
+/// When the source GGUF contains Q4_K/Q5_K/Q6_K tensors and the target is Q4K,
+/// we skip the lossy dequant->requant round-trip and copy raw bytes directly.
+/// Returns `Ok(Some(report))` on success, `Ok(None)` if pass-through is not applicable.
+fn try_gguf_q4k_passthrough(
+    input_path: &Path,
+    output_path: &Path,
+    options: &ConvertOptions,
+) -> Result<Option<ConvertReport>> {
+    let raw_result = match load_gguf_raw(input_path) {
+        Ok(r) => r,
+        Err(_) => return Ok(None),
+    };
+
+    // Check if source contains Q4_K tensors (dtype 12, 13, 14 = Q4_K, Q5_K, Q6_K)
+    let has_q4k = raw_result
+        .tensors
+        .values()
+        .any(|t| t.dtype == 12 || t.dtype == 13 || t.dtype == 14);
+
+    if !has_q4k {
+        return Ok(None);
+    }
+
+    eprintln!("[GH-181] Detected Q4K source, using raw byte pass-through");
+
+    // Map tensor names to APR canonical format (GH-190 fix: bare names)
+    let mapped_tensors: BTreeMap<String, GgufRawTensor> = raw_result
+        .tensors
+        .into_iter()
+        .map(|(name, tensor)| {
+            let mapped_name = Architecture::Qwen2.map_name(&name);
+            (mapped_name, tensor)
+        })
+        .collect();
+
+    let original_size: usize = mapped_tensors.values().map(|t| t.data.len()).sum();
+    let original_count = mapped_tensors.len();
+
+    // Write APR file with raw quantized tensors (preserves block alignment)
+    let import_opts = ImportOptions {
+        architecture: Architecture::Qwen2,
+        allow_no_config: true,
+        ..Default::default()
+    };
+    write_apr_file_raw(
+        &mapped_tensors,
+        output_path,
+        &import_opts,
+        Some(&raw_result.tokenizer),
+        Some(&raw_result.model_config),
+    )?;
+
+    Ok(Some(ConvertReport::build(
+        original_size,
+        output_path,
+        original_count,
+        options.quantize,
+        options.compress,
+    )))
+}
+
+/// F-REGR-231 / PMAT-113: Extract GGUF model config and tokenizer.
+///
+/// For GGUF inputs, loads the full config to preserve rope_type (Qwen2.5 requires
+/// rope_type=2 NEOX style) and extracts the tokenizer for APR embedding.
+/// Returns `(None, None)` if loading fails so callers can fall back to inference.
+fn extract_gguf_config(input_path: &Path) -> (Option<GgufModelConfig>, Option<GgufTokenizer>) {
+    match load_gguf_with_tokenizer(input_path) {
+        Ok(result) => {
+            eprintln!(
+                "[PMAT-113] Extracted tokenizer with {} vocabulary tokens",
+                result.tokenizer.vocabulary.len()
+            );
+            (Some(result.model_config), Some(result.tokenizer))
+        }
+        Err(_) => (None, None),
+    }
+}
+
+/// PMAT-205 / GH-190: Map GGUF tensor names to APR canonical format.
+///
+/// GGUF uses names like "blk.0.attn_q.weight" but APR loaders expect
+/// bare names like "layers.0.self_attn.q_proj.weight" (no "model." prefix).
+fn apply_gguf_name_mapping(
+    tensors: BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+) -> BTreeMap<String, (Vec<f32>, Vec<usize>)> {
+    eprintln!(
+        "[PMAT-205] Mapping {} GGUF tensor names to APR canonical format...",
+        tensors.len()
+    );
+    let mapped = map_tensor_names(&tensors, Architecture::Qwen2);
+    for (i, name) in mapped.keys().take(5).enumerate() {
+        eprintln!("[PMAT-205]   {}: {}", i, name);
+    }
+    mapped
+}
+
+/// Apply optional quantization (Fp16, Int8, Int4) to loaded tensors.
+///
+/// DOUBLE-QUANT-001: Wraps tensors in `NativeF32Tensors` (safe because
+/// `apr_convert` always loads from file; the raw Q4K passthrough handles
+/// quantized GGUF sources separately).
+fn apply_quantization(
+    tensors: BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+    quant_type: &QuantizationType,
+) -> Result<BTreeMap<String, (Vec<f32>, Vec<usize>)>> {
+    let native = NativeF32Tensors::new(tensors);
+    Ok(quantize_tensors(&native, quant_type)?.into_inner())
+}
+
+/// Save tensors to output, using GGUF config if available for metadata fidelity.
+///
+/// F-REGR-231: Preserves rope_type and other GGUF metadata.
+/// PMAT-113: Embeds tokenizer for standalone APR inference.
+fn save_output(
+    tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+    output_path: &Path,
+    compression: Option<Compression>,
+    gguf_config: Option<&GgufModelConfig>,
+    gguf_tokenizer: Option<&GgufTokenizer>,
+) -> Result<()> {
+    if let Some(config) = gguf_config {
+        save_model_tensors_with_gguf_config_and_tokenizer(
+            tensors,
+            output_path,
+            compression,
+            config,
+            gguf_tokenizer,
+        )
+    } else {
+        save_model_tensors(tensors, output_path, compression)
+    }
+}
+
 /// Convert a model with quantization and/or compression
 ///
 /// # Arguments
@@ -201,82 +337,18 @@ pub fn apr_convert<P: AsRef<Path>>(
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("");
+    let is_gguf = extension == "gguf";
 
-    // GH-181 FIX: Preserve Q4_K_M block alignment by using raw byte pass-through
-    // When source is already Q4K quantized GGUF and target is Q4K, skip dequant→requant
-    if extension == "gguf" && options.quantize == Some(QuantizationType::Q4K) {
-        if let Ok(raw_result) = load_gguf_raw(input_path) {
-            // Check if source contains Q4_K tensors (dtype 12)
-            let has_q4k = raw_result
-                .tensors
-                .values()
-                .any(|t| t.dtype == 12 || t.dtype == 13 || t.dtype == 14); // Q4_K, Q5_K, Q6_K
-
-            if has_q4k {
-                eprintln!("[GH-181] Detected Q4K source, using raw byte pass-through");
-
-                // Map tensor names to APR canonical format (GH-190 fix: bare names)
-                let mapped_tensors: BTreeMap<String, GgufRawTensor> = raw_result
-                    .tensors
-                    .into_iter()
-                    .map(|(name, tensor)| {
-                        let mapped_name = Architecture::Qwen2.map_name(&name);
-                        (mapped_name, tensor)
-                    })
-                    .collect();
-
-                // Calculate original size from raw bytes
-                let original_size: usize = mapped_tensors.values().map(|t| t.data.len()).sum();
-                let original_count = mapped_tensors.len();
-
-                // Write APR file with raw quantized tensors (preserves block alignment)
-                let import_opts = ImportOptions {
-                    architecture: Architecture::Qwen2,
-                    allow_no_config: true,
-                    ..Default::default()
-                };
-                write_apr_file_raw(
-                    &mapped_tensors,
-                    output_path,
-                    &import_opts,
-                    Some(&raw_result.tokenizer),
-                    Some(&raw_result.model_config),
-                )?;
-
-                let converted_size = fs::metadata(output_path)
-                    .map(|m| m.len() as usize)
-                    .unwrap_or(0);
-
-                return Ok(ConvertReport {
-                    original_size,
-                    converted_size,
-                    tensor_count: original_count,
-                    quantization: options.quantize,
-                    compression: options.compress,
-                    reduction_ratio: if converted_size > 0 {
-                        original_size as f64 / converted_size as f64
-                    } else {
-                        0.0
-                    },
-                });
-            }
+    // GH-181: Q4K GGUF pass-through (skip dequant->requant for already-quantized sources)
+    if is_gguf && options.quantize == Some(QuantizationType::Q4K) {
+        if let Some(report) = try_gguf_q4k_passthrough(input_path, output_path, &options)? {
+            return Ok(report);
         }
     }
 
-    // F-REGR-231 FIX: For GGUF input, load with full config to preserve rope_type
-    // Qwen2.5 models require rope_type=2 (NEOX style), not default 0 (NORM style)
-    // PMAT-113 FIX: Also preserve tokenizer for APR embedding
-    let (gguf_config, gguf_tokenizer) = if extension == "gguf" {
-        match load_gguf_with_tokenizer(input_path) {
-            Ok(result) => {
-                eprintln!(
-                    "[PMAT-113] Extracted tokenizer with {} vocabulary tokens",
-                    result.tokenizer.vocabulary.len()
-                );
-                (Some(result.model_config), Some(result.tokenizer))
-            }
-            Err(_) => (None, None), // Fall back to inference if GGUF loading fails
-        }
+    // F-REGR-231 / PMAT-113: Extract GGUF config and tokenizer for metadata fidelity
+    let (gguf_config, gguf_tokenizer) = if is_gguf {
+        extract_gguf_config(input_path)
     } else {
         (None, None)
     };
@@ -286,20 +358,9 @@ pub fn apr_convert<P: AsRef<Path>>(
     let original_size = calculate_tensor_size(&tensors);
     let original_count = tensors.len();
 
-    // Step 1b: Map GGUF tensor names to APR canonical format (PMAT-205 fix / GH-190)
-    // GGUF uses names like "blk.0.attn_q.weight" but APR loaders expect
-    // bare names like "layers.0.self_attn.q_proj.weight" (no "model." prefix)
-    let tensors = if extension == "gguf" {
-        eprintln!(
-            "[PMAT-205] Mapping {} GGUF tensor names to APR canonical format...",
-            tensors.len()
-        );
-        let mapped = map_tensor_names(&tensors, Architecture::Qwen2);
-        // Debug: show a few mapped names
-        for (i, name) in mapped.keys().take(5).enumerate() {
-            eprintln!("[PMAT-205]   {}: {}", i, name);
-        }
-        mapped
+    // Step 1b: PMAT-205 / GH-190: Map GGUF tensor names to APR canonical format
+    let tensors = if is_gguf {
+        apply_gguf_name_mapping(tensors)
     } else {
         tensors
     };
@@ -307,66 +368,38 @@ pub fn apr_convert<P: AsRef<Path>>(
     // Step 2: Handle Q4K specially - store raw Q4K bytes in APR format
     if options.quantize == Some(QuantizationType::Q4K) {
         save_model_tensors_q4k(&tensors, output_path)?;
-
-        let converted_size = fs::metadata(output_path)
-            .map(|m| m.len() as usize)
-            .unwrap_or(0);
-
-        return Ok(ConvertReport {
+        return Ok(ConvertReport::build(
             original_size,
-            converted_size,
-            tensor_count: original_count,
-            quantization: options.quantize,
-            compression: options.compress,
-            reduction_ratio: if converted_size > 0 {
-                original_size as f64 / converted_size as f64
-            } else {
-                0.0
-            },
-        });
+            output_path,
+            original_count,
+            options.quantize,
+            options.compress,
+        ));
     }
 
     // Step 2b: Apply other quantization types (Fp16, Int8, Int4)
-    // DOUBLE-QUANT-001: apr_convert always loads from file → NativeF32Tensors is safe here.
-    // The raw Q4K passthrough path (GH-181) above already handles quantized GGUF sources.
-    let tensors = if let Some(quant_type) = &options.quantize {
-        let native = NativeF32Tensors::new(tensors);
-        quantize_tensors(&native, quant_type)?.into_inner()
-    } else {
-        tensors
+    let tensors = match options.quantize {
+        Some(ref quant_type) => apply_quantization(tensors, quant_type)?,
+        None => tensors,
     };
 
-    // Step 3: Save output with GGUF config if available (F-REGR-231 fix)
-    // PMAT-113 FIX: Also embed tokenizer for standalone APR inference
-    if let Some(ref config) = gguf_config {
-        save_model_tensors_with_gguf_config_and_tokenizer(
-            &tensors,
-            output_path,
-            options.compress,
-            config,
-            gguf_tokenizer.as_ref(),
-        )?;
-    } else {
-        save_model_tensors(&tensors, output_path, options.compress)?;
-    }
+    // Step 3: Save output with GGUF config if available
+    save_output(
+        &tensors,
+        output_path,
+        options.compress,
+        gguf_config.as_ref(),
+        gguf_tokenizer.as_ref(),
+    )?;
 
-    // Step 4: Calculate stats
-    let converted_size = fs::metadata(output_path)
-        .map(|m| m.len() as usize)
-        .unwrap_or(0);
-
-    Ok(ConvertReport {
+    // Step 4: Build report
+    Ok(ConvertReport::build(
         original_size,
-        converted_size,
-        tensor_count: original_count,
-        quantization: options.quantize,
-        compression: options.compress,
-        reduction_ratio: if converted_size > 0 {
-            original_size as f64 / converted_size as f64
-        } else {
-            0.0
-        },
-    })
+        output_path,
+        original_count,
+        options.quantize,
+        options.compress,
+    ))
 }
 
 /// Report from model conversion
@@ -387,6 +420,32 @@ pub struct ConvertReport {
 }
 
 impl ConvertReport {
+    /// Build a report, computing the reduction ratio from original/converted sizes
+    fn build(
+        original_size: usize,
+        output_path: &Path,
+        tensor_count: usize,
+        quantization: Option<QuantizationType>,
+        compression: Option<Compression>,
+    ) -> Self {
+        let converted_size = fs::metadata(output_path)
+            .map(|m| m.len() as usize)
+            .unwrap_or(0);
+        let reduction_ratio = if converted_size > 0 {
+            original_size as f64 / converted_size as f64
+        } else {
+            0.0
+        };
+        Self {
+            original_size,
+            converted_size,
+            tensor_count,
+            quantization,
+            compression,
+            reduction_ratio,
+        }
+    }
+
     /// Format reduction as percentage string
     #[must_use]
     pub fn reduction_percent(&self) -> String {
@@ -1143,65 +1202,87 @@ fn save_model_tensors_with_gguf_config_and_tokenizer(
     })
 }
 
-/// Save model tensors with Q4K quantization in APR format
+/// Inferred model configuration from tensor shapes for Q4K quantization.
 ///
-/// Selectively quantizes large weight tensors while keeping biases and norms as F32.
-/// Uses APR format with proper Q4K dtype for GPU-accelerated inference.
-fn save_model_tensors_q4k(
-    tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
-    output: &Path,
-) -> Result<()> {
-    use std::io::Write as IoWrite;
+/// Used by `save_model_tensors_q4k` to populate APR metadata fields.
+struct InferredQ4kConfig {
+    hidden_size: Option<usize>,
+    num_layers: Option<usize>,
+    num_kv_heads: Option<usize>,
+    vocab_size: Option<usize>,
+    intermediate_size: Option<usize>,
+    num_heads: Option<usize>,
+}
 
-    // Infer model configuration from tensor shapes
-    let mut hidden_size: Option<usize> = None;
-    let mut num_layers: Option<usize> = None;
-    let mut num_kv_heads: Option<usize> = None;
-    let mut vocab_size: Option<usize> = None;
-    let mut intermediate_size: Option<usize> = None;
-    let mut num_heads: Option<usize> = None;
+/// Infer model configuration from tensor names and shapes.
+///
+/// Scans the tensor map for well-known naming patterns (norm weights, embeddings,
+/// layer indices, projection matrices, gate projections) and extracts architecture
+/// dimensions. Assumes `head_dim=64` for head-count inference.
+fn infer_q4k_config(tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>) -> InferredQ4kConfig {
+    let mut cfg = InferredQ4kConfig {
+        hidden_size: None,
+        num_layers: None,
+        num_kv_heads: None,
+        vocab_size: None,
+        intermediate_size: None,
+        num_heads: None,
+    };
 
     for (name, (_, shape)) in tensors {
-        // Infer hidden_size from norm weights (1D tensor of hidden_dim)
-        if name.contains("input_layernorm.weight") && shape.len() == 1 {
-            hidden_size = Some(shape[0]);
-        }
-        // Infer vocab_size from embedding [vocab_size, hidden_dim]
-        if name.contains("embed_tokens.weight") && shape.len() == 2 {
-            vocab_size = Some(shape[0]);
-            if hidden_size.is_none() {
-                hidden_size = Some(shape[1]);
-            }
-        }
-        // Count layers
-        if let Some(idx) = name.strip_prefix("model.layers.") {
-            if let Some(layer_num) = idx.split('.').next().and_then(|s| s.parse::<usize>().ok()) {
-                num_layers = Some(num_layers.map_or(layer_num + 1, |n| n.max(layer_num + 1)));
-            }
-        }
-        // Infer kv_heads from k_proj shape [kv_dim, hidden_dim]
-        if name.contains("k_proj.weight") && shape.len() == 2 && hidden_size.is_some() {
-            // kv_dim = shape[0], hidden_dim = shape[1]
-            // num_kv_heads = kv_dim / head_dim where head_dim = hidden_dim / num_heads
-            // For Qwen2-0.5B: kv_dim=128, hidden_dim=896, head_dim=64, num_kv_heads=2
-            num_kv_heads = Some(shape[0] / 64); // Assume head_dim=64 for now
-        }
-        // Infer num_heads from q_proj shape [q_dim, hidden_dim]
-        if name.contains("q_proj.weight") && shape.len() == 2 {
-            // q_dim = hidden_dim for standard attention
-            // num_heads = hidden_dim / head_dim = hidden_dim / 64
-            num_heads = Some(shape[0] / 64);
-        }
-        // Infer intermediate_size from gate_proj [intermediate, hidden]
-        if name.contains("gate_proj.weight") && shape.len() == 2 {
-            intermediate_size = Some(shape[0]);
-        }
+        infer_q4k_single_tensor(&mut cfg, name, shape);
     }
 
-    // Create APR metadata
-    let param_count: u64 = tensors.values().map(|(data, _)| data.len() as u64).sum();
+    cfg
+}
 
-    let metadata = AprV2Metadata {
+/// Update inferred config from a single tensor's name and shape.
+fn infer_q4k_single_tensor(cfg: &mut InferredQ4kConfig, name: &str, shape: &[usize]) {
+    // Infer hidden_size from norm weights (1D tensor of hidden_dim)
+    if name.contains("input_layernorm.weight") && shape.len() == 1 {
+        cfg.hidden_size = Some(shape[0]);
+    }
+    // Infer vocab_size from embedding [vocab_size, hidden_dim]
+    if name.contains("embed_tokens.weight") && shape.len() == 2 {
+        cfg.vocab_size = Some(shape[0]);
+        if cfg.hidden_size.is_none() {
+            cfg.hidden_size = Some(shape[1]);
+        }
+    }
+    // Count layers
+    if let Some(idx) = name.strip_prefix("model.layers.") {
+        if let Some(layer_num) = idx.split('.').next().and_then(|s| s.parse::<usize>().ok()) {
+            cfg.num_layers = Some(
+                cfg.num_layers
+                    .map_or(layer_num + 1, |n| n.max(layer_num + 1)),
+            );
+        }
+    }
+    // Infer kv_heads from k_proj shape [kv_dim, hidden_dim]
+    if name.contains("k_proj.weight") && shape.len() == 2 && cfg.hidden_size.is_some() {
+        // kv_dim = shape[0], hidden_dim = shape[1]
+        // num_kv_heads = kv_dim / head_dim where head_dim = hidden_dim / num_heads
+        // For Qwen2-0.5B: kv_dim=128, hidden_dim=896, head_dim=64, num_kv_heads=2
+        cfg.num_kv_heads = Some(shape[0] / 64); // Assume head_dim=64 for now
+    }
+    // Infer num_heads from q_proj shape [q_dim, hidden_dim]
+    if name.contains("q_proj.weight") && shape.len() == 2 {
+        // q_dim = hidden_dim for standard attention
+        // num_heads = hidden_dim / head_dim = hidden_dim / 64
+        cfg.num_heads = Some(shape[0] / 64);
+    }
+    // Infer intermediate_size from gate_proj [intermediate, hidden]
+    if name.contains("gate_proj.weight") && shape.len() == 2 {
+        cfg.intermediate_size = Some(shape[0]);
+    }
+}
+
+/// Build APR v2 metadata for a Q4K-quantized model.
+///
+/// Populates architecture fields from the inferred config and sets Qwen2-specific
+/// defaults for RoPE, norm epsilon, and position embeddings.
+fn build_q4k_metadata(cfg: &InferredQ4kConfig, param_count: u64) -> AprV2Metadata {
+    AprV2Metadata {
         model_type: "qwen2".to_string(),
         name: Some("Quantized Model".to_string()),
         description: Some("Q4K quantized from SafeTensors".to_string()),
@@ -1224,46 +1305,37 @@ fn save_model_tensors_q4k(
         chat_format: None,
         special_tokens: None,
         architecture: Some("qwen2".to_string()),
-        hidden_size,
-        num_layers,
-        num_heads,
-        num_kv_heads,
-        vocab_size,
-        intermediate_size,
+        hidden_size: cfg.hidden_size,
+        num_layers: cfg.num_layers,
+        num_heads: cfg.num_heads,
+        num_kv_heads: cfg.num_kv_heads,
+        vocab_size: cfg.vocab_size,
+        intermediate_size: cfg.intermediate_size,
         max_position_embeddings: Some(32768), // Default for Qwen2
         rope_theta: Some(1000000.0),          // Default for Qwen2
         rope_type: Some(2),                   // NEOX style for Qwen2 (PMAT-114)
         rms_norm_eps: Some(1e-6),             // Default for Qwen2
         custom: std::collections::HashMap::new(),
-    };
-
-    let mut writer = AprV2Writer::new(metadata);
-
-    // Add tensors, selectively quantizing to Q4K
-    // GH-202 FIX: Use quantize_q4_k_matrix for 2D tensors to ensure proper
-    // row-aligned block layout. quantize_q4_k treats data as flat, which
-    // produces wrong block boundaries when row width != multiple of 256.
-    for (name, (data, shape)) in tensors {
-        // Skip quantization for small tensors (biases, norms, scales)
-        // and for 1D tensors which are typically biases/norms
-        let should_quantize = shape.len() >= 2
-            && data.len() >= 256  // Minimum size for Q4K (one super-block)
-            && !name.contains("bias")
-            && !name.contains("norm")
-            && !name.contains("scale")
-            && !name.contains("embed"); // Keep embeddings as F32 for now
-
-        if should_quantize {
-            // GH-202 FIX: Use matrix-aware quantization for proper row padding
-            let q4k_bytes = quantize_q4_k_matrix(data, shape);
-            writer.add_q4k_raw_tensor(name, shape.clone(), q4k_bytes);
-        } else {
-            // Keep as F32
-            writer.add_f32_tensor(name, shape.clone(), data);
-        }
     }
+}
 
-    // Write to file
+/// Determine whether a tensor should be quantized to Q4K.
+///
+/// Returns `true` for large (>= 256 elements) multi-dimensional weight tensors,
+/// excluding biases, norms, scales, and embeddings which are kept as F32.
+fn should_quantize_tensor(name: &str, shape: &[usize], data_len: usize) -> bool {
+    shape.len() >= 2
+        && data_len >= 256 // Minimum size for Q4K (one super-block)
+        && !name.contains("bias")
+        && !name.contains("norm")
+        && !name.contains("scale")
+        && !name.contains("embed") // Keep embeddings as F32 for now
+}
+
+/// Serialize APR writer output and write the resulting bytes to a file.
+fn write_q4k_apr_file(mut writer: AprV2Writer, output: &Path) -> Result<()> {
+    use std::io::Write as IoWrite;
+
     let bytes = writer.write().map_err(|e| AprenderError::FormatError {
         message: format!("Failed to serialize APR format: {e}"),
     })?;
@@ -1275,9 +1347,38 @@ fn save_model_tensors_q4k(
     file.write_all(&bytes)
         .map_err(|e| AprenderError::FormatError {
             message: format!("Failed to write APR file: {e}"),
-        })?;
+        })
+}
 
-    Ok(())
+/// Save model tensors with Q4K quantization in APR format
+///
+/// Selectively quantizes large weight tensors while keeping biases and norms as F32.
+/// Uses APR format with proper Q4K dtype for GPU-accelerated inference.
+fn save_model_tensors_q4k(
+    tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+    output: &Path,
+) -> Result<()> {
+    let cfg = infer_q4k_config(tensors);
+    let param_count: u64 = tensors.values().map(|(data, _)| data.len() as u64).sum();
+    let metadata = build_q4k_metadata(&cfg, param_count);
+    let mut writer = AprV2Writer::new(metadata);
+
+    // Add tensors, selectively quantizing to Q4K
+    // GH-202 FIX: Use quantize_q4_k_matrix for 2D tensors to ensure proper
+    // row-aligned block layout. quantize_q4_k treats data as flat, which
+    // produces wrong block boundaries when row width != multiple of 256.
+    for (name, (data, shape)) in tensors {
+        if should_quantize_tensor(name, shape, data.len()) {
+            // GH-202 FIX: Use matrix-aware quantization for proper row padding
+            let q4k_bytes = quantize_q4_k_matrix(data, shape);
+            writer.add_q4k_raw_tensor(name, shape.clone(), q4k_bytes);
+        } else {
+            // Keep as F32
+            writer.add_f32_tensor(name, shape.clone(), data);
+        }
+    }
+
+    write_q4k_apr_file(writer, output)
 }
 
 // ============================================================================

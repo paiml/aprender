@@ -514,8 +514,10 @@ fn list_tensors_gguf(data: &[u8], options: TensorListOptions) -> Result<TensorLi
 // SafeTensors Format Support (PMAT-ROSETTA-001)
 // ============================================================================
 
-/// List tensors from SafeTensors file bytes by parsing the JSON header
-fn list_tensors_safetensors(data: &[u8], options: TensorListOptions) -> Result<TensorListResult> {
+/// Parse and validate the SafeTensors JSON header, returning the parsed header
+/// as a `serde_json::Value` (guaranteed to be an object) and the byte offset
+/// where tensor data begins.
+fn parse_safetensors_header(data: &[u8]) -> Result<(serde_json::Value, usize)> {
     if data.len() < 8 {
         return Err(AprenderError::FormatError {
             message: "SafeTensors file too small".to_string(),
@@ -543,13 +545,106 @@ fn list_tensors_safetensors(data: &[u8], options: TensorListOptions) -> Result<T
             message: format!("Failed to parse SafeTensors JSON header: {e}"),
         })?;
 
-    let obj = header
-        .as_object()
-        .ok_or_else(|| AprenderError::FormatError {
+    if !header.is_object() {
+        return Err(AprenderError::FormatError {
             message: "SafeTensors header is not a JSON object".to_string(),
-        })?;
+        });
+    }
 
     let data_start = 8 + header_len;
+    Ok((header, data_start))
+}
+
+/// Extract a `TensorInfo` from a SafeTensors JSON tensor entry.
+/// Returns the info and the relative byte offsets `(start, end)` within the
+/// data section (if present in the entry).
+fn extract_safetensors_tensor_info(
+    name: &str,
+    value: &serde_json::Value,
+) -> (TensorInfo, Option<(usize, usize)>) {
+    let dtype = value
+        .get("dtype")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown")
+        .to_string();
+
+    let shape: Vec<usize> = value
+        .get("shape")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_u64().map(|n| n as usize))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let relative_offsets = value
+        .get("data_offsets")
+        .and_then(|v| v.as_array())
+        .and_then(|arr| {
+            let start = arr.first()?.as_u64()? as usize;
+            let end = arr.get(1)?.as_u64()? as usize;
+            Some((start, end))
+        });
+
+    let size_bytes = relative_offsets
+        .map(|(start, end)| end - start)
+        .unwrap_or(0);
+
+    let info = TensorInfo {
+        name: name.to_string(),
+        shape,
+        dtype,
+        size_bytes,
+        mean: None,
+        std: None,
+        min: None,
+        max: None,
+        nan_count: None,
+        inf_count: None,
+    };
+
+    (info, relative_offsets)
+}
+
+/// Compute and populate stats on a `TensorInfo` from its SafeTensors byte
+/// range. `data` is the full file buffer; `data_start` is the byte offset
+/// where the tensor data section begins; `relative_offsets` are
+/// `(start, end)` relative to that section.
+fn populate_safetensors_stats(
+    info: &mut TensorInfo,
+    data: &[u8],
+    data_start: usize,
+    relative_offsets: (usize, usize),
+) {
+    let (start, end) = relative_offsets;
+    let abs_start = data_start + start;
+    let abs_end = data_start + end;
+    if abs_end > data.len() {
+        return;
+    }
+    let tensor_bytes = &data[abs_start..abs_end];
+    let f32_data = safetensors_bytes_to_f32(tensor_bytes, &info.dtype);
+    compute_tensor_stats(info, &f32_data);
+}
+
+/// Check whether a tensor name passes the optional filter pattern.
+fn matches_filter(name: &str, filter: Option<&String>) -> bool {
+    match filter {
+        Some(pattern) => name.contains(pattern.as_str()),
+        None => true,
+    }
+}
+
+/// List tensors from SafeTensors file bytes by parsing the JSON header
+fn list_tensors_safetensors(data: &[u8], options: TensorListOptions) -> Result<TensorListResult> {
+    let (header, data_start) = parse_safetensors_header(data)?;
+
+    // Safety: parse_safetensors_header validated this is an object
+    let obj = header
+        .as_object()
+        .expect("parse_safetensors_header guarantees object");
+
     let mut tensors = Vec::new();
     let mut total_size = 0usize;
     let mut total_matching = 0usize;
@@ -560,75 +655,26 @@ fn list_tensors_safetensors(data: &[u8], options: TensorListOptions) -> Result<T
     tensor_entries.sort_by_key(|(k, _)| *k);
 
     for (name, value) in tensor_entries {
-        // Apply filter
-        if let Some(ref pattern) = options.filter {
-            if !name.contains(pattern.as_str()) {
-                continue;
-            }
+        if !matches_filter(name, options.filter.as_ref()) {
+            continue;
         }
 
-        let dtype = value
-            .get("dtype")
-            .and_then(|v| v.as_str())
-            .unwrap_or("unknown")
-            .to_string();
+        let (mut info, relative_offsets) = extract_safetensors_tensor_info(name, value);
 
-        let shape: Vec<usize> = value
-            .get("shape")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| v.as_u64().map(|n| n as usize))
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        let offsets = value.get("data_offsets").and_then(|v| v.as_array());
-        let size_bytes = offsets
-            .and_then(|arr| {
-                let start = arr.first()?.as_u64()? as usize;
-                let end = arr.get(1)?.as_u64()? as usize;
-                Some(end - start)
-            })
-            .unwrap_or(0);
-
-        total_size += size_bytes;
+        total_size += info.size_bytes;
         total_matching += 1;
 
-        // Only collect details up to the limit
-        if tensors.len() < options.limit {
-            let mut info = TensorInfo {
-                name: name.clone(),
-                shape: shape.clone(),
-                dtype,
-                size_bytes,
-                mean: None,
-                std: None,
-                min: None,
-                max: None,
-                nan_count: None,
-                inf_count: None,
-            };
-
-            if options.compute_stats {
-                if let Some(arr) = offsets {
-                    if let (Some(start), Some(end)) = (
-                        arr.first().and_then(|v| v.as_u64()),
-                        arr.get(1).and_then(|v| v.as_u64()),
-                    ) {
-                        let abs_start = data_start + start as usize;
-                        let abs_end = data_start + end as usize;
-                        if abs_end <= data.len() {
-                            let tensor_bytes = &data[abs_start..abs_end];
-                            let f32_data = safetensors_bytes_to_f32(tensor_bytes, &info.dtype);
-                            compute_tensor_stats(&mut info, &f32_data);
-                        }
-                    }
-                }
-            }
-
-            tensors.push(info);
+        if tensors.len() >= options.limit {
+            continue;
         }
+
+        if options.compute_stats {
+            if let Some(offsets) = relative_offsets {
+                populate_safetensors_stats(&mut info, data, data_start, offsets);
+            }
+        }
+
+        tensors.push(info);
     }
 
     Ok(TensorListResult {

@@ -502,6 +502,106 @@ fn build_cross_format_map(
     map
 }
 
+/// GH-202 FIX: Check if two tensor shapes are compatible across formats.
+/// GGUF uses [in, out] while APR uses [out, in], so transposed 2D shapes are equivalent.
+fn shapes_are_compatible(shape1: &[usize], shape2: &[usize]) -> bool {
+    shape1 == shape2
+        || (shape1.len() == 2
+            && shape2.len() == 2
+            && shape1[0] == shape2[1]
+            && shape1[1] == shape2[0])
+}
+
+/// Compare shapes of two matched tensors and push a diff if incompatible.
+fn compare_tensor_shapes(
+    tensor1: &crate::format::rosetta::TensorInfo,
+    tensor2: &crate::format::rosetta::TensorInfo,
+    diffs: &mut Vec<DiffEntry>,
+) {
+    if !shapes_are_compatible(&tensor1.shape, &tensor2.shape) {
+        diffs.push(DiffEntry {
+            field: format!("tensor.{}.shape", tensor1.name),
+            value1: format!("{:?}", tensor1.shape),
+            value2: format!("{:?} (mapped: {})", tensor2.shape, tensor2.name),
+            category: DiffCategory::Tensor,
+        });
+    }
+}
+
+/// Compare dtypes of two matched tensors, allowing compatible quantization variants.
+/// GH-202 FIX: Show normalized dtype names for readability.
+fn compare_tensor_dtypes(
+    tensor1: &crate::format::rosetta::TensorInfo,
+    tensor2: &crate::format::rosetta::TensorInfo,
+    diffs: &mut Vec<DiffEntry>,
+) {
+    let dtypes_compatible =
+        tensor1.dtype == tensor2.dtype || is_compatible_quant(&tensor1.dtype, &tensor2.dtype);
+
+    if !dtypes_compatible {
+        diffs.push(DiffEntry {
+            field: format!("tensor.{}.dtype", tensor1.name),
+            value1: normalize_dtype(&tensor1.dtype),
+            value2: normalize_dtype(&tensor2.dtype),
+            category: DiffCategory::Tensor,
+        });
+    }
+}
+
+/// Look up a tensor by name in a cross-format map, trying direct match then mapped name.
+fn find_tensor_in_map<'a>(
+    name: &str,
+    map: &'a std::collections::HashMap<String, &'a crate::format::rosetta::TensorInfo>,
+) -> Option<&'a crate::format::rosetta::TensorInfo> {
+    map.get(name).copied().or_else(|| {
+        let (mapped, _) = map_gguf_to_apr_name(name);
+        map.get(&mapped).copied()
+    })
+}
+
+/// Report a tensor that exists in only one model.
+fn report_missing_tensor(
+    name: &str,
+    shape: &[usize],
+    dtype: &str,
+    present_in_first: bool,
+    diffs: &mut Vec<DiffEntry>,
+) {
+    let (v1, v2) = if present_in_first {
+        (format!("{shape:?} {dtype}"), "(missing)".to_string())
+    } else {
+        ("(missing)".to_string(), format!("{shape:?} {dtype}"))
+    };
+    diffs.push(DiffEntry {
+        field: format!("tensor.{name}"),
+        value1: v1,
+        value2: v2,
+        category: DiffCategory::Tensor,
+    });
+}
+
+/// Collect tensors only in model 2 that were not matched during the forward pass.
+fn collect_unmatched_from_t2(
+    t2: &[crate::format::rosetta::TensorInfo],
+    matched_t2: &std::collections::HashSet<&str>,
+    map1: &std::collections::HashMap<String, &crate::format::rosetta::TensorInfo>,
+    matches_filter: &dyn Fn(&str) -> bool,
+    diffs: &mut Vec<DiffEntry>,
+) {
+    for tensor2 in t2 {
+        if !matches_filter(&tensor2.name) {
+            continue;
+        }
+        if matched_t2.contains(tensor2.name.as_str()) {
+            continue;
+        }
+        let can_match = find_tensor_in_map(&tensor2.name, map1).is_some();
+        if !can_match {
+            report_missing_tensor(&tensor2.name, &tensor2.shape, &tensor2.dtype, false, diffs);
+        }
+    }
+}
+
 /// Compare tensor lists with cross-format name mapping (GH-202 FIX)
 fn compare_tensors(
     t1: &[crate::format::rosetta::TensorInfo],
@@ -526,11 +626,10 @@ fn compare_tensors(
 
     // Filter function
     let matches_filter = |name: &str| -> bool {
-        if let Some(ref pattern) = options.tensor_filter {
-            name.contains(pattern)
-        } else {
-            true
-        }
+        options
+            .tensor_filter
+            .as_ref()
+            .map_or(true, |pattern| name.contains(pattern.as_str()))
     };
 
     // Track which tensors in t2 have been matched
@@ -542,87 +641,22 @@ fn compare_tensors(
             continue;
         }
 
-        // GH-202 FIX: Try direct name match first, then mapped name
-        let tensor2_opt = map2.get(&tensor1.name).or_else(|| {
-            let (mapped, _) = map_gguf_to_apr_name(&tensor1.name);
-            map2.get(&mapped)
-        });
+        let Some(tensor2) = find_tensor_in_map(&tensor1.name, &map2) else {
+            report_missing_tensor(&tensor1.name, &tensor1.shape, &tensor1.dtype, true, diffs);
+            continue;
+        };
 
-        match tensor2_opt {
-            Some(tensor2) => {
-                matched_t2.insert(&tensor2.name);
+        matched_t2.insert(&tensor2.name);
+        compare_tensor_shapes(tensor1, tensor2, diffs);
+        compare_tensor_dtypes(tensor1, tensor2, diffs);
 
-                // GH-202 FIX: For cross-format comparison, shapes may be transposed
-                // GGUF [in, out] vs APR [out, in] - check if shapes are transpose of each other
-                let shapes_compatible = tensor1.shape == tensor2.shape
-                    || (tensor1.shape.len() == 2
-                        && tensor2.shape.len() == 2
-                        && tensor1.shape[0] == tensor2.shape[1]
-                        && tensor1.shape[1] == tensor2.shape[0]);
-
-                if !shapes_compatible {
-                    diffs.push(DiffEntry {
-                        field: format!("tensor.{}.shape", tensor1.name),
-                        value1: format!("{:?}", tensor1.shape),
-                        value2: format!("{:?} (mapped: {})", tensor2.shape, tensor2.name),
-                        category: DiffCategory::Tensor,
-                    });
-                }
-
-                // Compare dtypes (allow Q5_0 ≈ Q6K as compatible quantization)
-                let dtypes_compatible = tensor1.dtype == tensor2.dtype
-                    || is_compatible_quant(&tensor1.dtype, &tensor2.dtype);
-
-                if !dtypes_compatible {
-                    // GH-202 FIX: Show normalized dtype names for readability
-                    diffs.push(DiffEntry {
-                        field: format!("tensor.{}.dtype", tensor1.name),
-                        value1: normalize_dtype(&tensor1.dtype),
-                        value2: normalize_dtype(&tensor2.dtype),
-                        category: DiffCategory::Tensor,
-                    });
-                }
-
-                // Compare stats if enabled
-                if options.compare_stats {
-                    compare_tensor_stats(tensor1, tensor2, diffs);
-                }
-            }
-            None => {
-                // Tensor only in model 1
-                diffs.push(DiffEntry {
-                    field: format!("tensor.{}", tensor1.name),
-                    value1: format!("{:?} {}", tensor1.shape, tensor1.dtype),
-                    value2: "(missing)".to_string(),
-                    category: DiffCategory::Tensor,
-                });
-            }
+        if options.compare_stats {
+            compare_tensor_stats(tensor1, tensor2, diffs);
         }
     }
 
     // Check for tensors only in model 2 (not matched via name mapping)
-    for tensor2 in t2 {
-        if !matches_filter(&tensor2.name) {
-            continue;
-        }
-
-        if !matched_t2.contains(tensor2.name.as_str()) {
-            // Check if it can be matched via reverse mapping
-            let can_match = map1.contains_key(&tensor2.name) || {
-                let (mapped, _) = map_gguf_to_apr_name(&tensor2.name);
-                map1.contains_key(&mapped)
-            };
-
-            if !can_match {
-                diffs.push(DiffEntry {
-                    field: format!("tensor.{}", tensor2.name),
-                    value1: "(missing)".to_string(),
-                    value2: format!("{:?} {}", tensor2.shape, tensor2.dtype),
-                    category: DiffCategory::Tensor,
-                });
-            }
-        }
-    }
+    collect_unmatched_from_t2(t2, &matched_t2, &map1, &matches_filter, diffs);
 }
 
 /// GH-202 FIX: Normalize GGUF numeric dtype to string name

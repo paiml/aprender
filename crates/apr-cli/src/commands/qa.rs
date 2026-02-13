@@ -538,12 +538,7 @@ fn run_qa(path: &Path, config: &QaConfig) -> Result<QaReport> {
         || run_gpu_speedup_gate(path, config),
     )?;
 
-    let skip_format = config.skip_format_parity || config.safetensors_path.is_none();
-    let format_skip_reason = if config.skip_format_parity {
-        "Skipped by --skip-format-parity"
-    } else {
-        "No --safetensors-path provided"
-    };
+    let (skip_format, format_skip_reason) = format_parity_skip_status(config);
     dispatch_gate(
         &mut gates,
         config.json,
@@ -570,71 +565,60 @@ fn run_qa(path: &Path, config: &QaConfig) -> Result<QaReport> {
     )?;
 
     // Gate 9: Performance regression detection (when --previous-report provided)
-    // Note: Cannot use dispatch_gate here because run_performance_regression_gate
-    // needs to read `gates` (immutable borrow) while dispatch_gate mutably borrows it.
+    dispatch_regression_gate(&mut gates, config)?;
+
+    finalize_qa_report(path, &start, gates, config)
+}
+
+/// Determine skip status for format parity gate.
+fn format_parity_skip_status(config: &QaConfig) -> (bool, &str) {
+    if config.skip_format_parity {
+        (true, "Skipped by --skip-format-parity")
+    } else if config.safetensors_path.is_none() {
+        (true, "No --safetensors-path provided")
+    } else {
+        (false, "")
+    }
+}
+
+/// Run the performance regression gate (needs read access to existing gates).
+fn dispatch_regression_gate(gates: &mut Vec<GateResult>, config: &QaConfig) -> Result<()> {
     let regression_result = if config.previous_report.is_none() {
         GateResult::skipped("performance_regression", "No --previous-report provided")
     } else {
-        run_performance_regression_gate(&gates, config)?
+        run_performance_regression_gate(gates, config)?
     };
     if !config.json {
         print_gate_result(&regression_result);
     }
     gates.push(regression_result);
+    Ok(())
+}
 
+/// Finalize the QA report: count gates, check thresholds, print summary.
+fn finalize_qa_report(
+    path: &Path,
+    start: &Instant,
+    gates: Vec<GateResult>,
+    config: &QaConfig,
+) -> Result<QaReport> {
     let total_duration = start.elapsed();
     let gates_executed = gates.iter().filter(|g| !g.skipped).count();
     let gates_skipped = gates.iter().filter(|g| g.skipped).count();
 
-    // JIDOKA: Warn when >50% skipped — QA is not rigorous
-    if !config.json && gates_skipped > gates_executed {
+    warn_excessive_skips(config.json, gates_executed, gates_skipped);
+
+    let mut passed = gates.iter().all(|g| g.passed);
+    if !check_min_executed(config, gates_executed, &mut passed) && !config.json {
         println!(
-            "  {} {} of {} gates SKIPPED — QA not rigorous",
-            "WARN".yellow().bold(),
-            gates_skipped,
-            gates_skipped + gates_executed
+            "  {} Only {} gates executed, minimum required: {}",
+            "FAIL".red().bold(),
+            gates_executed,
+            config.min_executed.unwrap_or(0),
         );
     }
 
-    let mut passed = gates.iter().all(|g| g.passed);
-
-    // Enforce --min-executed: fail if fewer than N gates actually ran
-    if let Some(min) = config.min_executed {
-        if gates_executed < min {
-            if !config.json {
-                println!(
-                    "  {} Only {} gates executed, minimum required: {}",
-                    "FAIL".red().bold(),
-                    gates_executed,
-                    min,
-                );
-            }
-            passed = false;
-        }
-    }
-
-    let summary = if passed {
-        format!(
-            "All QA gates passed ({} executed, {} skipped)",
-            gates_executed, gates_skipped
-        )
-    } else {
-        let names: Vec<_> = gates
-            .iter()
-            .filter(|g| !g.passed && !g.skipped)
-            .map(|g| g.name.as_str())
-            .collect();
-        if names.is_empty() && !passed {
-            format!(
-                "Insufficient gate execution: {} < {} minimum",
-                gates_executed,
-                config.min_executed.unwrap_or(0)
-            )
-        } else {
-            format!("Failed gates: {}", names.join(", "))
-        }
-    };
-
+    let summary = build_qa_summary(&gates, passed, gates_executed, gates_skipped, config);
     if !config.json {
         print_qa_summary(&gates, passed, total_duration);
     }
@@ -650,6 +634,62 @@ fn run_qa(path: &Path, config: &QaConfig) -> Result<QaReport> {
         summary,
         system_info: Some(SystemInfo::capture()),
     })
+}
+
+/// JIDOKA: Warn when >50% gates are skipped.
+fn warn_excessive_skips(json: bool, executed: usize, skipped: usize) {
+    if !json && skipped > executed {
+        println!(
+            "  {} {} of {} gates SKIPPED — QA not rigorous",
+            "WARN".yellow().bold(),
+            skipped,
+            skipped + executed
+        );
+    }
+}
+
+/// Check --min-executed constraint. Returns true if constraint is satisfied.
+fn check_min_executed(config: &QaConfig, gates_executed: usize, passed: &mut bool) -> bool {
+    let Some(min) = config.min_executed else {
+        return true;
+    };
+    if gates_executed >= min {
+        return true;
+    }
+    *passed = false;
+    false
+}
+
+/// Build the QA summary message.
+fn build_qa_summary(
+    gates: &[GateResult],
+    passed: bool,
+    gates_executed: usize,
+    gates_skipped: usize,
+    config: &QaConfig,
+) -> String {
+    if passed {
+        return format!(
+            "All QA gates passed ({} executed, {} skipped)",
+            gates_executed, gates_skipped
+        );
+    }
+
+    let names: Vec<_> = gates
+        .iter()
+        .filter(|g| !g.passed && !g.skipped)
+        .map(|g| g.name.as_str())
+        .collect();
+
+    if names.is_empty() {
+        format!(
+            "Insufficient gate execution: {} < {} minimum",
+            gates_executed,
+            config.min_executed.unwrap_or(0)
+        )
+    } else {
+        format!("Failed gates: {}", names.join(", "))
+    }
 }
 
 /// Gate 0: Tensor Contract Validation (PMAT-235)
@@ -767,10 +807,21 @@ fn run_metadata_plausibility_gate(path: &Path, config: &QaConfig) -> Result<Gate
     let mut violations: Vec<String> = Vec::new();
     let mut checks_passed = 0usize;
 
-    check_rope_theta(architecture.as_deref(), rope_theta, &data, &mut violations, &mut checks_passed);
+    check_rope_theta(
+        architecture.as_deref(),
+        rope_theta,
+        &data,
+        &mut violations,
+        &mut checks_passed,
+    );
     check_max_position_embeddings(max_pos, &mut violations, &mut checks_passed);
     check_rms_norm_eps(rms_norm_eps, &mut violations, &mut checks_passed);
-    check_arch_theta_cross_validation(architecture.as_ref(), rope_theta, &mut violations, &mut checks_passed);
+    check_arch_theta_cross_validation(
+        architecture.as_ref(),
+        rope_theta,
+        &mut violations,
+        &mut checks_passed,
+    );
 
     let duration = start.elapsed();
 
@@ -919,10 +970,7 @@ fn check_arch_theta_cross_validation(
 type ModelMetadata = (Option<String>, Option<f32>, Option<usize>, Option<f32>);
 
 /// Extract model metadata from file bytes (GGUF, APR, or SafeTensors format).
-fn extract_model_metadata(
-    data: &[u8],
-    path: &Path,
-) -> Result<ModelMetadata> {
+fn extract_model_metadata(data: &[u8], path: &Path) -> Result<ModelMetadata> {
     let magic = &data[0..4];
 
     if magic == b"GGUF" {
@@ -2407,7 +2455,8 @@ fn run_gpu_state_isolation_gate(path: &Path, _config: &QaConfig) -> Result<GateR
             .map_err(|e| CliError::ValidationFailed(format!("Failed to parse GGUF: {e}")))?;
 
         let prompt_a = "<|im_start|>user\nWhat is 2+2?<|im_end|>\n<|im_start|>assistant\n";
-        let prompt_b = "<|im_start|>user\nWrite hello world in Python<|im_end|>\n<|im_start|>assistant\n";
+        let prompt_b =
+            "<|im_start|>user\nWrite hello world in Python<|im_end|>\n<|im_start|>assistant\n";
 
         let tokens_a = gguf.encode(prompt_a).unwrap_or_else(|| vec![151643, 9707]);
         let tokens_b = gguf.encode(prompt_b).unwrap_or_else(|| vec![151643, 1234]);
@@ -2509,13 +2558,11 @@ fn run_performance_regression_gate(
         ));
     };
 
-    let prev_json = std::fs::read_to_string(prev_path).map_err(|e| {
-        CliError::ValidationFailed(format!("Failed to read previous report: {e}"))
-    })?;
+    let prev_json = std::fs::read_to_string(prev_path)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to read previous report: {e}")))?;
 
-    let prev_report: QaReport = serde_json::from_str(&prev_json).map_err(|e| {
-        CliError::ValidationFailed(format!("Failed to parse previous report: {e}"))
-    })?;
+    let prev_report: QaReport = serde_json::from_str(&prev_json)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to parse previous report: {e}")))?;
 
     let threshold = config.regression_threshold;
     let mut regressions = Vec::new();
@@ -2526,21 +2573,8 @@ fn run_performance_regression_gate(
         let prev_gate = prev_report.gates.iter().find(|g| g.name == *gate_name);
         let curr_gate = current_gates.iter().find(|g| g.name == *gate_name);
 
-        if let (Some(prev), Some(curr)) = (prev_gate, curr_gate) {
-            if let (Some(prev_val), Some(curr_val)) = (prev.value, curr.value) {
-                if prev_val > 0.0 && !prev.skipped && !curr.skipped {
-                    let regression = (prev_val - curr_val) / prev_val;
-                    if regression > threshold {
-                        regressions.push(format!(
-                            "{}: {:.1} -> {:.1} ({:.0}% regression)",
-                            gate_name,
-                            prev_val,
-                            curr_val,
-                            regression * 100.0
-                        ));
-                    }
-                }
-            }
+        if let Some(msg) = detect_regression(prev_gate, curr_gate, gate_name, threshold) {
+            regressions.push(msg);
         }
     }
 
@@ -2567,6 +2601,28 @@ fn run_performance_regression_gate(
             duration,
         ))
     }
+}
+
+/// Compare a single gate's value between previous and current reports for regression.
+fn detect_regression(
+    prev: Option<&GateResult>,
+    curr: Option<&GateResult>,
+    name: &str,
+    threshold: f64,
+) -> Option<String> {
+    let (prev, curr) = (prev?, curr?);
+    let (prev_val, curr_val) = (prev.value?, curr.value?);
+    if prev_val <= 0.0 || prev.skipped || curr.skipped {
+        return None;
+    }
+    let regression = (prev_val - curr_val) / prev_val;
+    if regression <= threshold {
+        return None;
+    }
+    Some(format!(
+        "{name}: {prev_val:.1} -> {curr_val:.1} ({:.0}% regression)",
+        regression * 100.0
+    ))
 }
 
 #[cfg(test)]
@@ -2907,13 +2963,9 @@ mod tests {
             false,
             false,
             None,
-
             None,
-
             None,
-
             false,
-
             false,
         );
         assert!(result.is_err());
@@ -2943,13 +2995,9 @@ mod tests {
             false,
             false,
             None,
-
             None,
-
             None,
-
             false,
-
             false,
         );
         // Should fail (invalid GGUF)
@@ -2980,13 +3028,9 @@ mod tests {
             false,
             false,
             None,
-
             None,
-
             None,
-
             false,
-
             false,
         );
         // Should fail (invalid file)
@@ -3017,13 +3061,9 @@ mod tests {
             false,
             false,
             None,
-
             None,
-
             None,
-
             true, // skip_gpu_state
-
             true, // skip_metadata
         );
         // When all gates are skipped, the QA passes (skipped gates don't fail)
@@ -3054,13 +3094,9 @@ mod tests {
             true, // json output
             false,
             None,
-
             None,
-
             None,
-
             false,
-
             false,
         );
         // Should fail (invalid file)
@@ -3091,13 +3127,9 @@ mod tests {
             false,
             true, // verbose
             None,
-
             None,
-
             None,
-
             false,
-
             false,
         );
         // Should fail (invalid file)
@@ -3129,13 +3161,9 @@ mod tests {
             false,
             false,
             None,
-
             None,
-
             None,
-
             false,
-
             false,
         );
         // Should fail (invalid files)
@@ -3166,13 +3194,9 @@ mod tests {
             false,
             false,
             None,
-
             None,
-
             None,
-
             false,
-
             false,
         );
         // Should fail (invalid file)

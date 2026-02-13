@@ -26,20 +26,42 @@ fn gpu_state_sequential_determinism() {
 
     // Use apr CLI to generate twice with same prompt and temperature=0
     let output1 = std::process::Command::new("cargo")
-        .args(["run", "--bin", "apr", "--features", "inference", "--",
-               "run", &model_path.to_string_lossy(),
-               "--prompt", "What is 2+2?",
-               "--max-tokens", "16",
-               "--temperature", "0"])
+        .args([
+            "run",
+            "--bin",
+            "apr",
+            "--features",
+            "inference",
+            "--",
+            "run",
+            &model_path.to_string_lossy(),
+            "--prompt",
+            "What is 2+2?",
+            "--max-tokens",
+            "16",
+            "--temperature",
+            "0",
+        ])
         .output()
         .expect("first generation");
 
     let output2 = std::process::Command::new("cargo")
-        .args(["run", "--bin", "apr", "--features", "inference", "--",
-               "run", &model_path.to_string_lossy(),
-               "--prompt", "What is 2+2?",
-               "--max-tokens", "16",
-               "--temperature", "0"])
+        .args([
+            "run",
+            "--bin",
+            "apr",
+            "--features",
+            "inference",
+            "--",
+            "run",
+            &model_path.to_string_lossy(),
+            "--prompt",
+            "What is 2+2?",
+            "--max-tokens",
+            "16",
+            "--temperature",
+            "0",
+        ])
         .output()
         .expect("second generation");
 
@@ -67,20 +89,42 @@ fn gpu_state_different_prompts_produce_different_output() {
     };
 
     let output1 = std::process::Command::new("cargo")
-        .args(["run", "--bin", "apr", "--features", "inference", "--",
-               "run", &model_path.to_string_lossy(),
-               "--prompt", "What is the capital of France?",
-               "--max-tokens", "16",
-               "--temperature", "0"])
+        .args([
+            "run",
+            "--bin",
+            "apr",
+            "--features",
+            "inference",
+            "--",
+            "run",
+            &model_path.to_string_lossy(),
+            "--prompt",
+            "What is the capital of France?",
+            "--max-tokens",
+            "16",
+            "--temperature",
+            "0",
+        ])
         .output()
         .expect("prompt A generation");
 
     let output2 = std::process::Command::new("cargo")
-        .args(["run", "--bin", "apr", "--features", "inference", "--",
-               "run", &model_path.to_string_lossy(),
-               "--prompt", "Write a haiku about rust programming",
-               "--max-tokens", "16",
-               "--temperature", "0"])
+        .args([
+            "run",
+            "--bin",
+            "apr",
+            "--features",
+            "inference",
+            "--",
+            "run",
+            &model_path.to_string_lossy(),
+            "--prompt",
+            "Write a haiku about rust programming",
+            "--max-tokens",
+            "16",
+            "--temperature",
+            "0",
+        ])
         .output()
         .expect("prompt B generation");
 
@@ -103,18 +147,31 @@ fn gpu_state_no_memory_leak_10_generations() {
     let model_path = match std::env::var("TEST_MODEL_PATH") {
         Ok(p) => std::path::PathBuf::from(p),
         Err(_) => {
-            eprintln!("FALSIFICATION-SKIP: gate=gpu_state_no_memory_leak reason=TEST_MODEL_PATH not set");
+            eprintln!(
+                "FALSIFICATION-SKIP: gate=gpu_state_no_memory_leak reason=TEST_MODEL_PATH not set"
+            );
             return;
         }
     };
 
     for i in 0..10 {
         let output = std::process::Command::new("cargo")
-            .args(["run", "--bin", "apr", "--features", "inference", "--",
-                   "run", &model_path.to_string_lossy(),
-                   "--prompt", &format!("Count to {}", i + 1),
-                   "--max-tokens", "8",
-                   "--temperature", "0"])
+            .args([
+                "run",
+                "--bin",
+                "apr",
+                "--features",
+                "inference",
+                "--",
+                "run",
+                &model_path.to_string_lossy(),
+                "--prompt",
+                &format!("Count to {}", i + 1),
+                "--max-tokens",
+                "8",
+                "--temperature",
+                "0",
+            ])
             .output()
             .unwrap_or_else(|_| panic!("Generation {i} failed"));
 
@@ -136,17 +193,30 @@ fn gpu_state_kv_cache_reset_produces_output() {
     let model_path = match std::env::var("TEST_MODEL_PATH") {
         Ok(p) => std::path::PathBuf::from(p),
         Err(_) => {
-            eprintln!("FALSIFICATION-SKIP: gate=gpu_state_kv_cache_reset reason=TEST_MODEL_PATH not set");
+            eprintln!(
+                "FALSIFICATION-SKIP: gate=gpu_state_kv_cache_reset reason=TEST_MODEL_PATH not set"
+            );
             return;
         }
     };
 
     let output = std::process::Command::new("cargo")
-        .args(["run", "--bin", "apr", "--features", "inference", "--",
-               "run", &model_path.to_string_lossy(),
-               "--prompt", "Hello",
-               "--max-tokens", "4",
-               "--temperature", "0"])
+        .args([
+            "run",
+            "--bin",
+            "apr",
+            "--features",
+            "inference",
+            "--",
+            "run",
+            &model_path.to_string_lossy(),
+            "--prompt",
+            "Hello",
+            "--max-tokens",
+            "4",
+            "--temperature",
+            "0",
+        ])
         .output()
         .expect("generation after implicit KV reset");
 
@@ -167,15 +237,25 @@ fn gpu_state_qa_gate_exists() {
     let model_path = match std::env::var("TEST_MODEL_PATH") {
         Ok(p) => std::path::PathBuf::from(p),
         Err(_) => {
-            eprintln!("FALSIFICATION-SKIP: gate=gpu_state_qa_gate_exists reason=TEST_MODEL_PATH not set");
+            eprintln!(
+                "FALSIFICATION-SKIP: gate=gpu_state_qa_gate_exists reason=TEST_MODEL_PATH not set"
+            );
             return;
         }
     };
 
     let output = std::process::Command::new("cargo")
-        .args(["run", "--bin", "apr", "--features", "inference", "--",
-               "qa", &model_path.to_string_lossy(),
-               "--json"])
+        .args([
+            "run",
+            "--bin",
+            "apr",
+            "--features",
+            "inference",
+            "--",
+            "qa",
+            &model_path.to_string_lossy(),
+            "--json",
+        ])
         .output()
         .expect("apr qa --json");
 

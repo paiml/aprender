@@ -639,25 +639,13 @@ fn export_to_gguf(
     let cfg = resolve_gguf_config(apr_metadata.as_ref(), inferred.as_ref());
 
     let mut metadata = build_gguf_config_metadata(&cfg);
-    if let Some(ref tok) = tokenizer {
-        metadata.extend(build_tokenizer_gguf_metadata(tok, &cfg.arch));
-    } else {
-        eprintln!(
-            "[BUG-EXPORT-004] Warning: No tokenizer.json found near {}, GGUF may lack tokenizer metadata",
-            input.display()
-        );
-        // Bug 211: Fallback — extract tokenizer from APR metadata when no tokenizer.json
-        if let Some(ref apr_meta) = apr_metadata {
-            let apr_tok_entries = extract_apr_tokenizer_for_gguf(apr_meta);
-            if !apr_tok_entries.is_empty() {
-                eprintln!(
-                    "[BUG-211] Extracted {} tokenizer entries from APR metadata",
-                    apr_tok_entries.len()
-                );
-                metadata.extend(apr_tok_entries);
-            }
-        }
-    }
+    append_tokenizer_to_metadata(
+        &mut metadata,
+        tokenizer.as_ref(),
+        apr_metadata.as_ref(),
+        &cfg.arch,
+        input,
+    );
 
     eprintln!(
         "[GGUF-EXPORT-001] Writing {} metadata keys (arch={}, layers={}, heads={}/{}kv, hidden={})",
@@ -731,28 +719,8 @@ fn export_to_gguf(
     let mut gguf_tensors = gguf_tensors;
 
     if use_q4k && !has_lm_head {
-        if let Some(embed_data) = tensors
-            .iter()
-            .find(|(name, _)| name.contains("embed_tokens") || name.contains("token_embedding"))
-        {
-            let (_, (data, shape)) = embed_data;
-            if shape.len() == 2 && data.len() >= 256 {
-                eprintln!(
-                    "[BUG-4-FIX] Creating Q4K output.weight from embedding for tied embeddings"
-                );
-
-                // GH-202 FIX: No transpose needed. Quantize with GGUF shape.
-                let gguf_shape_usize = vec![shape[1], shape[0]]; // [ne0=cols, ne1=rows]
-                let q4k_bytes = super::quantize_q4_k_matrix(data, &gguf_shape_usize);
-                let gguf_shape = vec![shape[1] as u64, shape[0] as u64];
-
-                gguf_tensors.push(GgufTensor {
-                    name: "output.weight".to_string(),
-                    shape: gguf_shape,
-                    dtype: GgmlType::Q4K,
-                    data: q4k_bytes,
-                });
-            }
+        if let Some(tied) = build_tied_output_weight(tensors) {
+            gguf_tensors.push(tied);
         }
     }
 
@@ -763,6 +731,66 @@ fn export_to_gguf(
     let mut writer = BufWriter::new(file);
 
     export_tensors_to_gguf(&mut writer, &gguf_tensors, &metadata)
+}
+
+/// Append tokenizer metadata to GGUF metadata, preferring tokenizer.json over APR fallback.
+fn append_tokenizer_to_metadata(
+    metadata: &mut Vec<(String, crate::format::gguf::GgufValue)>,
+    tokenizer: Option<&crate::format::gguf::GgufTokenizer>,
+    apr_metadata: Option<&crate::format::v2::AprV2Metadata>,
+    arch: &str,
+    input: &Path,
+) {
+    if let Some(tok) = tokenizer {
+        metadata.extend(build_tokenizer_gguf_metadata(tok, arch));
+        return;
+    }
+
+    eprintln!(
+        "[BUG-EXPORT-004] Warning: No tokenizer.json found near {}, GGUF may lack tokenizer metadata",
+        input.display()
+    );
+
+    // GH-211: Fallback — extract tokenizer from APR metadata when no tokenizer.json
+    let Some(apr_meta) = apr_metadata else {
+        return;
+    };
+    let apr_tok_entries = extract_apr_tokenizer_for_gguf(apr_meta);
+    if !apr_tok_entries.is_empty() {
+        eprintln!(
+            "[GH-211] Extracted {} tokenizer entries from APR metadata",
+            apr_tok_entries.len()
+        );
+        metadata.extend(apr_tok_entries);
+    }
+}
+
+/// Build a Q4K output.weight tensor from embedding data for tied-embedding models (BUG-4).
+fn build_tied_output_weight(
+    tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+) -> Option<crate::format::gguf::GgufTensor> {
+    use crate::format::gguf::{GgmlType, GgufTensor};
+
+    let (_, (data, shape)) = tensors
+        .iter()
+        .find(|(name, _)| name.contains("embed_tokens") || name.contains("token_embedding"))?;
+
+    if shape.len() != 2 || data.len() < 256 {
+        return None;
+    }
+
+    eprintln!("[BUG-4-FIX] Creating Q4K output.weight from embedding for tied embeddings");
+
+    let gguf_shape_usize = vec![shape[1], shape[0]]; // [ne0=cols, ne1=rows]
+    let q4k_bytes = super::quantize_q4_k_matrix(data, &gguf_shape_usize);
+    let gguf_shape = vec![shape[1] as u64, shape[0] as u64];
+
+    Some(GgufTensor {
+        name: "output.weight".to_string(),
+        shape: gguf_shape,
+        dtype: GgmlType::Q4K,
+        data: q4k_bytes,
+    })
 }
 
 /// Build GGUF architecture metadata from APR model metadata
@@ -3455,14 +3483,10 @@ mod tests {
             "tokenizer.merges".to_string(),
             serde_json::json!(["h e", "l l"]),
         );
-        meta.custom.insert(
-            "tokenizer.bos_token_id".to_string(),
-            serde_json::json!(1),
-        );
-        meta.custom.insert(
-            "tokenizer.eos_token_id".to_string(),
-            serde_json::json!(2),
-        );
+        meta.custom
+            .insert("tokenizer.bos_token_id".to_string(), serde_json::json!(1));
+        meta.custom
+            .insert("tokenizer.eos_token_id".to_string(), serde_json::json!(2));
 
         let entries = extract_apr_tokenizer_for_gguf(&meta);
         // Should have at least: model, pre, tokens, merges, bos, eos

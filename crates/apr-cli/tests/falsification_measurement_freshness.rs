@@ -142,9 +142,9 @@ fn measurement_regression_detection_exact_threshold() {
 fn measurement_regression_detection_multiple_gates() {
     // Test with multiple gates, only one regressing
     let gates = vec![
-        ("throughput", 100.0_f64, 95.0_f64),   // 5% drop — ok
-        ("ollama_parity", 0.8, 0.6),            // 25% drop — FLAGGED
-        ("gpu_speedup", 12.0, 11.5),            // 4% drop — ok
+        ("throughput", 100.0_f64, 95.0_f64), // 5% drop — ok
+        ("ollama_parity", 0.8, 0.6),         // 25% drop — FLAGGED
+        ("gpu_speedup", 12.0, 11.5),         // 4% drop — ok
     ];
 
     let threshold = 0.10;
@@ -235,8 +235,7 @@ fn measurement_gate_accounting_consistency() {
         "summary": "test"
     }"#;
 
-    let report: apr_cli::qa_types::QaReport =
-        serde_json::from_str(json).expect("deserialize");
+    let report: apr_cli::qa_types::QaReport = serde_json::from_str(json).expect("deserialize");
 
     assert_eq!(report.gates_executed, 2);
     assert_eq!(report.gates_skipped, 2);
@@ -253,10 +252,7 @@ fn measurement_min_executed_scenario() {
     let gates_executed = 2;
     let min_executed = 5;
     let passed = gates_executed >= min_executed;
-    assert!(
-        !passed,
-        "min_executed=5 with only 2 gates should fail"
-    );
+    assert!(!passed, "min_executed=5 with only 2 gates should fail");
 }
 
 #[test]

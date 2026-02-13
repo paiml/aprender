@@ -678,7 +678,7 @@ impl RosettaStone {
     pub fn inspect<P: AsRef<Path>>(&self, path: P) -> Result<InspectionReport> {
         let path = path.as_ref();
 
-        // Bug 212: Detect sharded SafeTensors index files early
+        // Sharded SafeTensors index detection (GH-212, resolved)
         if is_sharded_index(path) {
             return self.inspect_sharded_safetensors(path);
         }
@@ -742,7 +742,7 @@ impl RosettaStone {
 
         let start = std::time::Instant::now();
 
-        // Bug 212: Detect sharded SafeTensors index files early
+        // Sharded SafeTensors index detection (GH-212, resolved)
         if is_sharded_index(source) {
             let target_format = FormatType::from_extension(target)?;
             let source_inspection = self.inspect_sharded_safetensors(source)?;
@@ -1371,12 +1371,14 @@ impl RosettaStone {
             })?;
         let index = ShardIndex::from_json(&content)?;
 
-        let base_dir = index_path.parent().ok_or_else(|| AprenderError::FormatError {
-            message: format!(
-                "Cannot determine parent directory of {}",
-                index_path.display()
-            ),
-        })?;
+        let base_dir = index_path
+            .parent()
+            .ok_or_else(|| AprenderError::FormatError {
+                message: format!(
+                    "Cannot determine parent directory of {}",
+                    index_path.display()
+                ),
+            })?;
 
         let mut tensors = Vec::new();
         let mut total_params: usize = 0;
@@ -1419,10 +1421,7 @@ impl RosettaStone {
         Ok(InspectionReport {
             format: FormatType::SafeTensors,
             file_size: total_file_size,
-            metadata: BTreeMap::from([(
-                "shards".to_string(),
-                index.shard_count().to_string(),
-            )]),
+            metadata: BTreeMap::from([("shards".to_string(), index.shard_count().to_string())]),
             tensors,
             total_params,
             quantization: None,
@@ -1464,11 +1463,12 @@ impl RosettaStone {
             );
             apr_import(&source_str, target, import_opts)?;
         } else {
-            // Two-step: sharded ST → temp APR → target
+            // Sharded ST conversion via intermediate APR
             let temp_apr = std::env::temp_dir().join("rosetta_sharded_temp.apr");
             eprintln!(
                 "[BUG-212] Converting sharded SafeTensors → {} (via temp APR): {}",
-                target_format, source.display()
+                target_format,
+                source.display()
             );
             apr_import(&source_str, &temp_apr, import_opts)?;
             self.convert_internal(&temp_apr, target, FormatType::Apr, target_format, opts)?;

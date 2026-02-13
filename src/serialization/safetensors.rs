@@ -466,32 +466,40 @@ fn parse_metadata(
     let raw_metadata: serde_json::Value =
         serde_json::from_str(metadata_str).map_err(|e| format!("JSON parsing failed: {e}"))?;
 
+    let serde_json::Value::Object(map) = raw_metadata else {
+        return Ok((SafeTensorsMetadata::new(), UserMetadata::new()));
+    };
+
     let mut metadata = SafeTensorsMetadata::new();
     let mut user_metadata = UserMetadata::new();
 
-    if let serde_json::Value::Object(map) = raw_metadata {
-        for (key, value) in map {
-            if key == "__metadata__" {
-                // PMAT-223: Extract user metadata instead of discarding it
-                if let serde_json::Value::Object(meta_map) = value {
-                    for (mk, mv) in meta_map {
-                        if let serde_json::Value::String(s) = mv {
-                            user_metadata.insert(mk, s);
-                        }
-                    }
-                }
-                continue;
-            }
-            if key.starts_with("__") {
-                continue;
-            }
-            if let Ok(tensor_meta) = serde_json::from_value::<TensorMetadata>(value) {
-                metadata.insert(key, tensor_meta);
-            }
+    for (key, value) in map {
+        if key == "__metadata__" {
+            // PMAT-223: Extract user metadata instead of discarding it
+            extract_user_metadata(value, &mut user_metadata);
+            continue;
+        }
+        if key.starts_with("__") {
+            continue;
+        }
+        if let Ok(tensor_meta) = serde_json::from_value::<TensorMetadata>(value) {
+            metadata.insert(key, tensor_meta);
         }
     }
 
     Ok((metadata, user_metadata))
+}
+
+/// Extracts string key-value pairs from a `__metadata__` JSON object into `UserMetadata`.
+fn extract_user_metadata(value: serde_json::Value, user_metadata: &mut UserMetadata) {
+    let serde_json::Value::Object(meta_map) = value else {
+        return;
+    };
+    for (mk, mv) in meta_map {
+        if let serde_json::Value::String(s) = mv {
+            user_metadata.insert(mk, s);
+        }
+    }
 }
 
 /// Extracts a tensor from raw `SafeTensors` data.

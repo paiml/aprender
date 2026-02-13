@@ -108,8 +108,7 @@ fn edge_format_detection_directory_path() {
 
 #[test]
 fn edge_format_detection_double_extension() {
-    let result =
-        aprender::format::rosetta::FormatType::from_extension(Path::new("model.tar.gguf"));
+    let result = aprender::format::rosetta::FormatType::from_extension(Path::new("model.tar.gguf"));
     assert_eq!(result.unwrap(), aprender::format::rosetta::FormatType::Gguf);
 }
 
@@ -169,7 +168,10 @@ fn edge_safetensors_valid_magic_pattern() {
     // Even with .safetensors extension, magic detection may not identify it
     // (SafeTensors starts with u64 header length, not a fixed magic)
     let by_ext = aprender::format::rosetta::FormatType::from_extension(file.path());
-    assert_eq!(by_ext.unwrap(), aprender::format::rosetta::FormatType::SafeTensors);
+    assert_eq!(
+        by_ext.unwrap(),
+        aprender::format::rosetta::FormatType::SafeTensors
+    );
     // from_magic should at least not panic
     let _ = result;
 }
@@ -471,8 +473,7 @@ fn edge_source_parse_hf_prefix() {
 
 #[test]
 fn edge_source_parse_local_path() {
-    let result =
-        aprender::format::converter_types::Source::parse("/path/to/model.safetensors");
+    let result = aprender::format::converter_types::Source::parse("/path/to/model.safetensors");
     assert!(result.is_ok(), "Local path should parse");
     assert!(matches!(
         result.unwrap(),
@@ -482,9 +483,7 @@ fn edge_source_parse_local_path() {
 
 #[test]
 fn edge_source_parse_https_url() {
-    let result = aprender::format::converter_types::Source::parse(
-        "https://example.com/model.gguf",
-    );
+    let result = aprender::format::converter_types::Source::parse("https://example.com/model.gguf");
     assert!(result.is_ok(), "HTTPS URL should parse");
     assert!(matches!(
         result.unwrap(),

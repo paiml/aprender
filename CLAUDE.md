@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Aprender is a next-generation machine learning library written in pure Rust. v0.25.5 implements the TOP 10 ML algorithms plus advanced modules (time series, NLP, Bayesian, GLM, graph, audio, format conversion). 11,230 tests with comprehensive quality gates.
+Aprender is a next-generation machine learning library written in pure Rust. v0.25.7 implements the TOP 10 ML algorithms plus advanced modules (time series, NLP, Bayesian, GLM, graph, audio, format conversion). 11,230 tests with comprehensive quality gates.
 
 ## Build Commands
 
