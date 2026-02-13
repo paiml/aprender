@@ -1212,11 +1212,11 @@ fn test_gh237_q8_density_violation_detected() {
     let metadata = AprV2Metadata::new("test");
     let mut writer = AprV2Writer::new(metadata);
 
-    // Data that's >80% zeros will trigger the density assertion.
-    // With 2048 elements (≥1024 threshold), we need >1638 zeros.
+    // Data that's >99% zeros will trigger the density assertion (catches packing bugs).
+    // With 2048 elements (≥1024 threshold), we need >2028 zeros.
+    // Set only 5 values to non-zero (~99.8% zeros).
     let mut data = vec![0.0f32; 2048];
-    // Set ~10% to non-zero values (204 of 2048), leaving ~90% zeros
-    for (i, val) in data.iter_mut().enumerate().take(204) {
+    for (i, val) in data.iter_mut().enumerate().take(5) {
         *val = 1.0 + i as f32;
     }
     writer.add_q8_tensor("bad.weight", vec![64, 32], &data);

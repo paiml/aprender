@@ -1093,17 +1093,18 @@ impl AprV2Writer {
             element_count
         );
 
-        // CONTRACT: dequantized data must not be >80% zeros (F-DATA-QUALITY-001)
+        // CONTRACT: dequantized data must not be >99% zeros (F-DATA-QUALITY-001)
         // Catches packing bugs that produce all-zeros at write time, not read time.
-        // Only enforced for large tensors (≥1024 elements) — small tensors may
-        // legitimately be sparse and don't benefit from quantization anyway.
+        // Threshold is 99% (not 80%) because Q4K→F32→Q8 re-quantization legitimately
+        // produces 80-95% zeros from dequantized sparse data. True packing bugs produce
+        // ~100% zeros. Only enforced for large tensors (≥1024 elements).
         #[allow(clippy::naive_bytecount)] // No bytecount crate dependency
         if element_count >= 1024 {
             let zero_count = bytes[4..].iter().filter(|&&b| b == 0).count();
             let zero_pct = zero_count as f64 / element_count as f64;
             assert!(
-                zero_pct <= 0.80,
-                "Q8 DENSITY VIOLATION: tensor '{}' has {:.1}% zeros (threshold 80%)",
+                zero_pct <= 0.99,
+                "Q8 DENSITY VIOLATION: tensor '{}' has {:.1}% zeros (threshold 99%)",
                 name,
                 zero_pct * 100.0
             );
@@ -1179,8 +1180,9 @@ impl AprV2Writer {
             expected_blocks
         );
 
-        // CONTRACT: dequantized data must not be >80% zeros (F-DATA-QUALITY-001)
+        // CONTRACT: dequantized data must not be >99% zeros (F-DATA-QUALITY-001)
         // For Q4, nibble value 8 (0x08) represents zero (signed 0 = unsigned 8).
+        // Threshold is 99% — same rationale as Q8 density check.
         // Only enforced for large tensors (≥1024 elements).
         if element_count >= 1024 {
             let mut zero_nibbles = 0usize;
@@ -1205,8 +1207,8 @@ impl AprV2Writer {
             if total_nibbles > 0 {
                 let zero_pct = zero_nibbles as f64 / total_nibbles as f64;
                 assert!(
-                    zero_pct <= 0.80,
-                    "Q4 DENSITY VIOLATION: tensor '{}' has {:.1}% zeros (threshold 80%)",
+                    zero_pct <= 0.99,
+                    "Q4 DENSITY VIOLATION: tensor '{}' has {:.1}% zeros (threshold 99%)",
                     name,
                     zero_pct * 100.0
                 );
