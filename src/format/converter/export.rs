@@ -214,7 +214,7 @@ pub fn apr_export<P: AsRef<Path>>(
     let tensors = provenance.into_map();
 
     let tensors = prepare_tensors_for_export(tensors, input_path, &options);
-    warn_contract_violations(&tensors);
+    enforce_contract_violations(&tensors)?;
     let tensors = apply_export_quantization(tensors, input_path, &options)?;
 
     dispatch_export(&tensors, input_path, output_path, &options)?;
@@ -292,17 +292,32 @@ fn prepare_tensors_for_export(
     }
 }
 
-/// Log contract violations (non-fatal).
-fn warn_contract_violations(tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>) {
+/// GH-237: Validate tensor shapes against layout contract, returning error on violations.
+///
+/// Previously this was advisory (eprintln only). Now violations are collected and
+/// returned as an error to prevent corrupt data from being written to disk.
+fn enforce_contract_violations(tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>) -> Result<()> {
     let layout_contract = contract();
     let (vocab_size, hidden_dim) = infer_vocab_hidden(tensors);
     if vocab_size == 0 || hidden_dim == 0 {
-        return;
+        return Ok(());
     }
+    let mut violations = Vec::new();
     for (name, (_data, shape)) in tensors {
         if let Err(e) = layout_contract.validate_apr_shape(name, shape, vocab_size, hidden_dim) {
-            eprintln!("[CONTRACT-VIOLATION] Export validation failed for {name}: {e}");
+            violations.push(format!("{name}: {e}"));
         }
+    }
+    if violations.is_empty() {
+        Ok(())
+    } else {
+        Err(AprenderError::FormatError {
+            message: format!(
+                "[CONTRACT-VIOLATION] Export validation failed for {} tensor(s):\n  {}",
+                violations.len(),
+                violations.join("\n  ")
+            ),
+        })
     }
 }
 
@@ -695,7 +710,8 @@ fn export_to_gguf(
             // GH-202 FIX: No data transpose needed. Data is row-major in APR,
             // and GGML's layout with reversed shape is identical.
             let (dtype, bytes) =
-                if use_q4k && shape.len() == 2 && data.len() >= 256 && !is_embedding && !is_lm_head {
+                if use_q4k && shape.len() == 2 && data.len() >= 256 && !is_embedding && !is_lm_head
+                {
                     // Quantize row-major F32 to Q4K using GGUF shape [ne0, ne1]
                     // quantize_q4_k_matrix processes per-row with ne0 elements per row
                     let gguf_shape_usize = vec![shape[1], shape[0]]; // [ne0=cols, ne1=rows]
@@ -801,7 +817,21 @@ fn build_gguf_arch_metadata(
 ) -> Vec<(String, crate::format::gguf::GgufValue)> {
     use crate::format::gguf::GgufValue;
 
-    let arch = apr_metadata.architecture.as_deref().unwrap_or("qwen2");
+    // GH-236: Check architecture, then model_type, before defaulting to "qwen2".
+    // A GPT-2 APR imported without architecture metadata would otherwise write
+    // "qwen2.embedding_length" instead of "gpt2.embedding_length".
+    let arch = apr_metadata
+        .architecture
+        .as_deref()
+        .or_else(|| {
+            let mt = &apr_metadata.model_type;
+            if mt.is_empty() || mt == "unknown" {
+                None
+            } else {
+                Some(mt.as_str())
+            }
+        })
+        .unwrap_or("qwen2");
     let hidden_size = apr_metadata.hidden_size.unwrap_or(4096);
     let num_layers = apr_metadata.num_layers.unwrap_or(32);
     let num_heads = apr_metadata.num_heads.unwrap_or(32);
@@ -940,7 +970,19 @@ fn extract_apr_tokenizer_for_gguf(
 
     let mut entries = Vec::new();
     let custom = &apr_metadata.custom;
-    let arch = apr_metadata.architecture.as_deref().unwrap_or("qwen2");
+    // GH-236: Check model_type before defaulting to "qwen2"
+    let arch = apr_metadata
+        .architecture
+        .as_deref()
+        .or_else(|| {
+            let mt = &apr_metadata.model_type;
+            if mt.is_empty() || mt == "unknown" {
+                None
+            } else {
+                Some(mt.as_str())
+            }
+        })
+        .unwrap_or("qwen2");
 
     // Tokenizer model type: "gpt2" for byte-level BPE (Qwen, GPT-2), "llama" for SentencePiece
     // GH-253-3: APR stores raw model_type from GGUF which may be "bpe" — map to "gpt2"
@@ -1053,7 +1095,19 @@ fn export_apr_to_gguf_raw(input: &Path, output: &Path) -> Result<ExportReport> {
 
     let apr_metadata = reader.metadata().clone();
 
-    let arch = apr_metadata.architecture.as_deref().unwrap_or("qwen2");
+    // GH-236: Check model_type before defaulting to "qwen2"
+    let arch = apr_metadata
+        .architecture
+        .as_deref()
+        .or_else(|| {
+            let mt = &apr_metadata.model_type;
+            if mt.is_empty() || mt == "unknown" {
+                None
+            } else {
+                Some(mt.as_str())
+            }
+        })
+        .unwrap_or("qwen2");
     let num_layers = apr_metadata.num_layers.unwrap_or(32);
     let num_heads = apr_metadata.num_heads.unwrap_or(32);
     let num_kv_heads = apr_metadata.num_kv_heads.unwrap_or(num_heads);

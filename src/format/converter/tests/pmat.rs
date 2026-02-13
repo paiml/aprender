@@ -269,7 +269,7 @@ mod tests_gh165_apr_config_metadata {
         let apr_path = temp_dir.join("test_gh165.apr");
 
         // Use the save function that should embed config
-        let result = save_model_tensors_with_config(&tensors, &apr_path, None);
+        let result = save_model_tensors_with_config(&tensors, &apr_path, None, None);
         assert!(result.is_ok(), "Failed to save APR: {:?}", result);
 
         // Verify file exists

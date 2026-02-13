@@ -1167,7 +1167,11 @@ impl RosettaStone {
             || name_lower.contains("position_embedding");
         // GH-234: lm_head has similar value distribution to embeddings (especially weight-tied)
         let is_lm_head = name_lower.contains("lm_head") || name_lower == "output.weight";
-        let density_threshold = if is_embedding || is_lm_head { 50.0 } else { 80.0 };
+        let density_threshold = if is_embedding || is_lm_head {
+            50.0
+        } else {
+            80.0
+        };
         if zero_pct > density_threshold && zero_count < element_count {
             failures.push(format!(
                 "[F-DATA-QUALITY-001] DENSITY: {zero_pct:.1}% zeros (max {density_threshold}%)"

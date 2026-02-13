@@ -273,6 +273,7 @@ fn apply_gguf_name_mapping(
 /// DOUBLE-QUANT-001: Wraps tensors in `NativeF32Tensors` (safe because
 /// `apr_convert` always loads from file; the raw Q4K passthrough handles
 /// quantized GGUF sources separately).
+#[allow(dead_code)] // GH-237: Replaced by direct writer dispatch in save functions
 fn apply_quantization(
     tensors: BTreeMap<String, (Vec<f32>, Vec<usize>)>,
     quant_type: &QuantizationType,
@@ -291,6 +292,7 @@ fn save_output(
     compression: Option<Compression>,
     gguf_config: Option<&GgufModelConfig>,
     gguf_tokenizer: Option<&GgufTokenizer>,
+    quantize: Option<QuantizationType>,
 ) -> Result<()> {
     if let Some(config) = gguf_config {
         save_model_tensors_with_gguf_config_and_tokenizer(
@@ -299,9 +301,10 @@ fn save_output(
             compression,
             config,
             gguf_tokenizer,
+            quantize,
         )
     } else {
-        save_model_tensors(tensors, output_path, compression)
+        save_model_tensors(tensors, output_path, compression, quantize)
     }
 }
 
@@ -377,11 +380,11 @@ pub fn apr_convert<P: AsRef<Path>>(
         ));
     }
 
-    // Step 2b: Apply other quantization types (Fp16, Int8, Int4)
-    let tensors = match options.quantize {
-        Some(ref quant_type) => apply_quantization(tensors, quant_type)?,
-        None => tensors,
-    };
+    // Step 2b: Quantization is applied during save via writer dispatch (GH-237)
+    // Previously, apply_quantization() did a round-trip simulation (quantize→dequantize
+    // to f32) and save functions always called add_f32_tensor(). Now quantization type
+    // is passed through to save functions which call add_q8_tensor/add_q4_tensor/
+    // add_f16_tensor directly, producing real packed bytes.
 
     // Step 3: Save output with GGUF config if available
     save_output(
@@ -390,6 +393,7 @@ pub fn apr_convert<P: AsRef<Path>>(
         options.compress,
         gguf_config.as_ref(),
         gguf_tokenizer.as_ref(),
+        options.quantize,
     )?;
 
     // Step 4: Build report
@@ -980,6 +984,58 @@ fn needs_transpose(name: &str, shape: &[usize]) -> bool {
     weight_patterns.iter().any(|pattern| name.contains(pattern))
 }
 
+/// GH-237: Write a tensor to the APR writer with correct dtype dispatch.
+///
+/// Applies skip logic for sensitive tensors (embeddings, bias, norm, lm_head)
+/// and dispatches to `add_q8_tensor`/`add_q4_tensor`/`add_f16_tensor` for real
+/// packing instead of always writing F32.
+fn add_tensor_with_quantization(
+    writer: &mut AprV2Writer,
+    name: &str,
+    shape: &[usize],
+    data: &[f32],
+    quantize: Option<QuantizationType>,
+) {
+    // Skip quantization for sensitive tensors:
+    // - Embeddings lose lookup precision (GH-231/232)
+    // - Biases are too small and precision-sensitive
+    // - LayerNorm/RMSNorm weights are critical for numerical stability
+    // - lm_head has same small-value distribution as embeddings (GH-234)
+    // - Small tensors (<1024 elements) don't benefit from quantization
+    let should_skip = name.contains("embed_tokens")
+        || name.contains("token_embd")
+        || name.contains("wte")
+        || name.contains("wpe")
+        || name.contains("word_embeddings")
+        || name.contains("position_embedding")
+        || name.contains("lm_head")
+        || name == "output.weight"
+        || name.contains("bias")
+        || name.contains("layernorm")
+        || name.contains("layer_norm")
+        || name.contains("norm.weight")
+        || data.len() < 1024;
+
+    match quantize {
+        Some(QuantizationType::Fp16) => {
+            writer.add_f16_tensor(name, shape.to_vec(), data);
+        }
+        Some(QuantizationType::Int8) if !should_skip => {
+            writer.add_q8_tensor(name, shape.to_vec(), data);
+        }
+        Some(QuantizationType::Int4) if !should_skip => {
+            writer.add_q4_tensor(name, shape.to_vec(), data);
+        }
+        Some(QuantizationType::Q4K) if !should_skip => {
+            let q4k_bytes = quantize_q4_k(data);
+            writer.add_q4k_raw_tensor(name, shape.to_vec(), q4k_bytes);
+        }
+        _ => {
+            writer.add_f32_tensor(name, shape.to_vec(), data);
+        }
+    }
+}
+
 /// Save model tensors with optional compression
 ///
 /// Note: For .apr output, use save_model_tensors_with_config() instead to embed metadata.
@@ -987,11 +1043,12 @@ fn save_model_tensors(
     tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
     output: &Path,
     compression: Option<Compression>,
+    quantize: Option<QuantizationType>,
 ) -> Result<()> {
     // GH-165 FIX: If output is .apr, use APR format with embedded config
     let extension = output.extension().and_then(|e| e.to_str()).unwrap_or("");
     if extension == "apr" {
-        return save_model_tensors_with_config(tensors, output, compression);
+        return save_model_tensors_with_config(tensors, output, compression, quantize);
     }
 
     // For non-APR output (e.g., .safetensors), use plain SafeTensors
@@ -1009,6 +1066,7 @@ fn save_model_tensors_with_config(
     tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
     output: &Path,
     _compression: Option<Compression>,
+    quantize: Option<QuantizationType>,
 ) -> Result<()> {
     // Try to infer model configuration from tensor shapes
     let config = infer_model_config_from_tensors(tensors);
@@ -1027,10 +1085,10 @@ fn save_model_tensors_with_config(
         metadata.intermediate_size = cfg.intermediate_size;
     }
 
-    // Create writer and add all tensors
+    // GH-237: Create writer and add tensors with correct dtype dispatch
     let mut writer = AprV2Writer::new(metadata);
     for (name, (data, shape)) in tensors {
-        writer.add_f32_tensor(name, shape.clone(), data);
+        add_tensor_with_quantization(&mut writer, name, shape, data, quantize);
     }
 
     // Write to file
@@ -1058,6 +1116,7 @@ fn save_model_tensors_with_gguf_config(
     output: &Path,
     _compression: Option<Compression>,
     gguf_config: &GgufModelConfig,
+    quantize: Option<QuantizationType>,
 ) -> Result<()> {
     // Build AprV2Metadata with GGUF config (not inferred from tensor shapes)
     let mut metadata = AprV2Metadata::new(gguf_config.architecture.as_deref().unwrap_or("qwen2"));
@@ -1081,10 +1140,10 @@ fn save_model_tensors_with_gguf_config(
     metadata.rope_type = gguf_config.rope_type;
     metadata.rms_norm_eps = gguf_config.rms_norm_eps;
 
-    // Create writer and add all tensors
+    // GH-237: Create writer and add tensors with correct dtype dispatch
     let mut writer = AprV2Writer::new(metadata);
     for (name, (data, shape)) in tensors {
-        writer.add_f32_tensor(name, shape.clone(), data);
+        add_tensor_with_quantization(&mut writer, name, shape, data, quantize);
     }
 
     // Write to file
@@ -1107,6 +1166,7 @@ fn save_model_tensors_with_gguf_config_and_tokenizer(
     _compression: Option<Compression>,
     gguf_config: &GgufModelConfig,
     tokenizer: Option<&GgufTokenizer>,
+    quantize: Option<QuantizationType>,
 ) -> Result<()> {
     // Build AprV2Metadata with GGUF config (not inferred from tensor shapes)
     let mut metadata = AprV2Metadata::new(gguf_config.architecture.as_deref().unwrap_or("qwen2"));
@@ -1190,10 +1250,10 @@ fn save_model_tensors_with_gguf_config_and_tokenizer(
         }
     }
 
-    // Create writer and add all tensors
+    // GH-237: Create writer and add tensors with correct dtype dispatch
     let mut writer = AprV2Writer::new(metadata);
     for (name, (data, shape)) in tensors {
-        writer.add_f32_tensor(name, shape.clone(), data);
+        add_tensor_with_quantization(&mut writer, name, shape, data, quantize);
     }
 
     // Write to file

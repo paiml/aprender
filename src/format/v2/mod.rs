@@ -1062,6 +1062,7 @@ impl AprV2Writer {
     /// Total size: 4 + n bytes (vs 4n for f32)
     /// Compression ratio: ~4x
     pub fn add_q8_tensor(&mut self, name: impl Into<String>, shape: Vec<usize>, data: &[f32]) {
+        let name = name.into();
         if data.is_empty() {
             self.add_tensor(name, TensorDType::Q8, shape, Vec::new());
             return;
@@ -1080,6 +1081,34 @@ impl AprV2Writer {
             bytes.push(q as u8);
         }
 
+        // CONTRACT: Q8 byte count must be scale(4) + element_count(N)
+        let element_count: usize = shape.iter().product();
+        assert_eq!(
+            bytes.len(),
+            4 + element_count,
+            "Q8 CONTRACT VIOLATION: tensor '{}' packed {} bytes, expected {} (4 + {})",
+            name,
+            bytes.len(),
+            4 + element_count,
+            element_count
+        );
+
+        // CONTRACT: dequantized data must not be >80% zeros (F-DATA-QUALITY-001)
+        // Catches packing bugs that produce all-zeros at write time, not read time.
+        // Only enforced for large tensors (≥1024 elements) — small tensors may
+        // legitimately be sparse and don't benefit from quantization anyway.
+        #[allow(clippy::naive_bytecount)] // No bytecount crate dependency
+        if element_count >= 1024 {
+            let zero_count = bytes[4..].iter().filter(|&&b| b == 0).count();
+            let zero_pct = zero_count as f64 / element_count as f64;
+            assert!(
+                zero_pct <= 0.80,
+                "Q8 DENSITY VIOLATION: tensor '{}' has {:.1}% zeros (threshold 80%)",
+                name,
+                zero_pct * 100.0
+            );
+        }
+
         self.add_tensor(name, TensorDType::Q8, shape, bytes);
     }
 
@@ -1093,6 +1122,7 @@ impl AprV2Writer {
     pub fn add_q4_tensor(&mut self, name: impl Into<String>, shape: Vec<usize>, data: &[f32]) {
         const BLOCK_SIZE: usize = 32;
 
+        let name = name.into();
         if data.is_empty() {
             self.add_tensor(name, TensorDType::Q4, shape, Vec::new());
             return;
@@ -1134,6 +1164,53 @@ impl AprV2Writer {
 
             // Write all 16 bytes (zero-padded for partial blocks)
             bytes.extend_from_slice(&packed_buf);
+        }
+
+        // CONTRACT: Q4 byte count must be num_blocks * 18
+        let element_count: usize = shape.iter().product();
+        let expected_blocks = (element_count + 31) / 32;
+        assert_eq!(
+            bytes.len(),
+            expected_blocks * 18,
+            "Q4 CONTRACT VIOLATION: tensor '{}' packed {} bytes, expected {} ({} blocks * 18)",
+            name,
+            bytes.len(),
+            expected_blocks * 18,
+            expected_blocks
+        );
+
+        // CONTRACT: dequantized data must not be >80% zeros (F-DATA-QUALITY-001)
+        // For Q4, nibble value 8 (0x08) represents zero (signed 0 = unsigned 8).
+        // Only enforced for large tensors (≥1024 elements).
+        if element_count >= 1024 {
+            let mut zero_nibbles = 0usize;
+            let mut total_nibbles = 0usize;
+            for block_idx in 0..num_blocks {
+                let block_offset = block_idx * 18 + 2; // skip 2-byte scale
+                let block_elem_count =
+                    BLOCK_SIZE.min(element_count.saturating_sub(block_idx * BLOCK_SIZE));
+                for i in 0..block_elem_count {
+                    let byte = bytes[block_offset + i / 2];
+                    let nibble = if i % 2 == 0 {
+                        byte & 0x0F
+                    } else {
+                        (byte >> 4) & 0x0F
+                    };
+                    if nibble == 8 {
+                        zero_nibbles += 1;
+                    }
+                    total_nibbles += 1;
+                }
+            }
+            if total_nibbles > 0 {
+                let zero_pct = zero_nibbles as f64 / total_nibbles as f64;
+                assert!(
+                    zero_pct <= 0.80,
+                    "Q4 DENSITY VIOLATION: tensor '{}' has {:.1}% zeros (threshold 80%)",
+                    name,
+                    zero_pct * 100.0
+                );
+            }
         }
 
         self.add_tensor(name, TensorDType::Q4, shape, bytes);
