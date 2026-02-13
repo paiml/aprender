@@ -69,7 +69,12 @@ pub fn apr_import<P: AsRef<Path>>(
     warn_unverified_architecture(&effective_arch, options.strict)?;
 
     // Step 3: Map tensor names to canonical APR names
-    let mapped_tensors = map_tensor_names(&load_result.tensors, effective_arch);
+    let mut mapped_tensors = map_tensor_names(&load_result.tensors, effective_arch);
+
+    // GH-233: Split fused QKV tensors for GPT-2 after name mapping
+    if effective_arch == Architecture::Gpt2 {
+        Architecture::split_gpt2_fused_qkv(&mut mapped_tensors);
+    }
 
     // GH-205: Also map F16 raw tensor names for passthrough
     let mapped_f16_raw: BTreeMap<String, (Vec<u8>, Vec<usize>)> = load_result
@@ -364,6 +369,7 @@ fn infer_architecture(user_arch: &Architecture, config_arch: Option<&str>) -> Ar
             "llama" | "llama2" | "llama3" => Some(Architecture::Llama),
             "whisper" => Some(Architecture::Whisper),
             "bert" => Some(Architecture::Bert),
+            "gpt2" => Some(Architecture::Gpt2),
             _ => None,
         })
         .unwrap_or(Architecture::Auto)

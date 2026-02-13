@@ -1,15 +1,15 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 10.49.0 (Full Stack: apr-cli + aprender + realizar + trueno + batuta, Popperian falsified)
-**Status:** ALL THREE PROJECTS A+ + ZERO SATD (7B all 3 formats working CPU + GPU. 49 falsification rounds, 225 bugs found. Round 49: CUDA kernel count 95→98, sampling algorithm consistency, CLAUDE.md stale data. Round 48: GH-224 — eager GPU model caching. 11,230+ tests, 3,796 apr-cli tests. `apr qa` all 8 gates pass. TDG: 96.9/100 A+. Project Score: A+. Coverage: 96.35%. SATD: 0/0/0.)
+**Version:** 10.50.0 (Full Stack: apr-cli + aprender + realizar + trueno + batuta, Popperian falsified)
+**Status:** ALL THREE PROJECTS A+ + ZERO SATD (7B all 3 formats working CPU + GPU. 50 falsification rounds, 228 bugs found. Round 50: GH-231 embedding quantization skip, GH-232 tied embedding resolver for GPT-2, GH-233 GPT-2 architecture support + density threshold fix. Round 49: CUDA kernel count 95→98, sampling algorithm consistency, CLAUDE.md stale data. 11,230+ tests, 3,796 apr-cli tests. `apr qa` all 8 gates pass. TDG: 96.9/100 A+. Project Score: A+. Coverage: 96.35%. SATD: 0/0/0.)
 **Primary Model:** `Qwen/Qwen2.5-Coder-7B-Instruct`
 **Supported Models:** Qwen2.5-Coder 0.5B, 1.5B, 3B, 7B (all sizes)
 **Source Format:** SafeTensors BF16 (HuggingFace, sharded, ~14 GB for 7B)
-**Popperian Score:** 160/168 gates passing (95.2%) — 8 FALSIFIED, 0 blocked/not-tested. 168 falsification gates, 23 sections. 49 rounds, 225 bugs. Gated by `model-tests` feature (`make test-model`)
+**Popperian Score:** 160/168 gates passing (95.2%) — 8 FALSIFIED, 0 blocked/not-tested. 168 falsification gates, 23 sections. 50 rounds, 228 bugs. Gated by `model-tests` feature (`make test-model`)
 **CLI Surface:** 39 top-level + 10 nested subcommands (49 total)
 **Compile-Time Proofs:** 297 algebraic invariants (zero runtime cost)
 **Author:** PAIML Engineering
-**Date:** 2026-02-12 (Round 49)
+**Date:** 2026-02-13 (Round 50)
 **Ground Truth:** SafeTensors BF16 - See Section 0
 **Quality Philosophy:** Toyota Way + Popperian Falsification (Zero SATD, Stop-the-Line, Jidoka)
 

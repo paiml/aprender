@@ -1161,7 +1161,10 @@ impl RosettaStone {
             0.0
         };
         let name_lower = name.to_lowercase();
-        let is_embedding = name_lower.contains("embed");
+        let is_embedding = name_lower.contains("embed")
+            || name_lower.contains("wte")
+            || name_lower.contains("wpe")
+            || name_lower.contains("position_embedding");
         let density_threshold = if is_embedding { 50.0 } else { 80.0 };
         if zero_pct > density_threshold && zero_count < element_count {
             failures.push(format!(

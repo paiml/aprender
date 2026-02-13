@@ -41,7 +41,9 @@ fn resolve_f32_tied_embeddings(
     if !has_lm_head {
         let embed_key = tensors
             .keys()
-            .find(|k| k.contains("embed_tokens.weight") || *k == "token_embd.weight")
+            .find(|k| {
+                k.contains("embed_tokens.weight") || *k == "token_embd.weight" || *k == "wte.weight"
+            })
             .cloned();
         if let Some(embed_name) = embed_key {
             if let Some((embed_data, embed_shape)) = tensors.get(&embed_name) {
@@ -197,10 +199,19 @@ fn add_f32_tensor_to_writer(
     }
 
     // Determine if tensor should skip quantization
+    // - Embeddings lose lookup precision when quantized (GH-231/232)
     // - Biases are too small and precision-sensitive
     // - LayerNorm/RMSNorm weights are critical for numerical stability
     // - Small tensors (<1024 elements) don't benefit from quantization
-    let should_skip_quant = name.contains("bias")
+    let is_embedding = name.contains("embed_tokens")
+        || name.contains("token_embd")
+        || name.contains("wte")
+        || name.contains("wpe")
+        || name.contains("word_embeddings")
+        || name.contains("position_embedding");
+
+    let should_skip_quant = is_embedding
+        || name.contains("bias")
         || name.contains("layernorm")
         || name.contains("layer_norm")
         || name.contains("norm.weight")
@@ -348,7 +359,9 @@ fn resolve_tied_embeddings(
     if !original_has_lm_head {
         let embed_key = result
             .keys()
-            .find(|k| k.contains("embed_tokens.weight") || *k == "token_embd.weight")
+            .find(|k| {
+                k.contains("embed_tokens.weight") || *k == "token_embd.weight" || *k == "wte.weight"
+            })
             .cloned();
         if let Some(embed_name) = embed_key {
             if let Some(embed_tensor) = result.get(&embed_name).cloned() {

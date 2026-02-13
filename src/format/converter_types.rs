@@ -109,6 +109,8 @@ pub enum Architecture {
     Bert,
     /// Alibaba Qwen2 (includes Qwen2.5, `QwenCoder`)
     Qwen2,
+    /// `OpenAI` GPT-2
+    Gpt2,
 }
 
 impl Architecture {
@@ -121,6 +123,7 @@ impl Architecture {
             Self::Llama => Self::llama_map_name(source_name),
             Self::Bert => Self::bert_map_name(source_name),
             Self::Qwen2 => Self::qwen2_map_name(source_name),
+            Self::Gpt2 => Self::gpt2_map_name(source_name),
         }
     }
 
@@ -142,6 +145,7 @@ impl Architecture {
             Self::Llama => "LLaMA",
             Self::Bert => "BERT",
             Self::Qwen2 => "Qwen2",
+            Self::Gpt2 => "GPT-2",
         }
     }
 
@@ -213,6 +217,123 @@ impl Architecture {
             "output.weight" => "lm_head.weight".to_string(),
             "output_norm.weight" => "model.norm.weight".to_string(),
             _ => name.to_string(), // Preserve unknown names
+        }
+    }
+
+    /// GH-233: Map GPT-2 tensor names to APR canonical format.
+    ///
+    /// GPT-2 uses `transformer.h.N.*` naming. The fused `c_attn` tensor is
+    /// preserved here and split by `split_gpt2_fused_qkv()` after mapping.
+    fn gpt2_map_name(name: &str) -> String {
+        // Handle layer-specific tensors (transformer.h.N.*)
+        if let Some(rest) = name.strip_prefix("transformer.h.") {
+            if let Some(dot_pos) = rest.find('.') {
+                let layer_num = &rest[..dot_pos];
+                let suffix = &rest[dot_pos + 1..];
+
+                let apr_suffix = match suffix {
+                    "ln_1.weight" => "input_layernorm.weight",
+                    "ln_1.bias" => "input_layernorm.bias",
+                    "ln_2.weight" => "post_attention_layernorm.weight",
+                    "ln_2.bias" => "post_attention_layernorm.bias",
+                    "attn.c_attn.weight" => "self_attn.c_attn.weight",
+                    "attn.c_attn.bias" => "self_attn.c_attn.bias",
+                    "attn.c_proj.weight" => "self_attn.o_proj.weight",
+                    "attn.c_proj.bias" => "self_attn.o_proj.bias",
+                    "mlp.c_fc.weight" => "mlp.up_proj.weight",
+                    "mlp.c_fc.bias" => "mlp.up_proj.bias",
+                    "mlp.c_proj.weight" => "mlp.down_proj.weight",
+                    "mlp.c_proj.bias" => "mlp.down_proj.bias",
+                    other => other,
+                };
+
+                return format!("model.layers.{layer_num}.{apr_suffix}");
+            }
+        }
+
+        // Non-layer tensors
+        match name {
+            "wte.weight" => "model.embed_tokens.weight".to_string(),
+            "wpe.weight" => "model.position_embedding.weight".to_string(),
+            "ln_f.weight" => "model.norm.weight".to_string(),
+            "ln_f.bias" => "model.norm.bias".to_string(),
+            _ => name.to_string(),
+        }
+    }
+
+    /// GH-233: Split GPT-2 fused QKV tensors into separate Q, K, V projections.
+    ///
+    /// GPT-2's `c_attn` has shape `[3*hidden, hidden]` — split dim 0 into 3 equal parts.
+    /// Call this AFTER `map_tensor_names()` when architecture is `Gpt2`.
+    pub fn split_gpt2_fused_qkv(tensors: &mut BTreeMap<String, (Vec<f32>, Vec<usize>)>) {
+        // Collect fused c_attn tensor names
+        let fused_keys: Vec<String> = tensors
+            .keys()
+            .filter(|k| k.contains("self_attn.c_attn."))
+            .cloned()
+            .collect();
+
+        for fused_name in fused_keys {
+            let (data, shape) = match tensors.remove(&fused_name) {
+                Some(v) => v,
+                None => continue,
+            };
+
+            let is_bias = fused_name
+                .rsplit_once('.')
+                .is_some_and(|(_, ext)| ext.eq_ignore_ascii_case("bias"));
+
+            if is_bias {
+                // Bias: 1D tensor of shape [3*hidden] — split into 3 equal parts
+                if data.len() % 3 != 0 {
+                    // Can't split evenly, put it back
+                    tensors.insert(fused_name, (data, shape));
+                    continue;
+                }
+                let chunk = data.len() / 3;
+                let base = fused_name.replace("self_attn.c_attn.bias", "");
+
+                tensors.insert(
+                    format!("{base}self_attn.q_proj.bias"),
+                    (data[..chunk].to_vec(), vec![chunk]),
+                );
+                tensors.insert(
+                    format!("{base}self_attn.k_proj.bias"),
+                    (data[chunk..2 * chunk].to_vec(), vec![chunk]),
+                );
+                tensors.insert(
+                    format!("{base}self_attn.v_proj.bias"),
+                    (data[2 * chunk..].to_vec(), vec![chunk]),
+                );
+            } else {
+                // Weight: 2D tensor of shape [3*hidden, hidden] — split dim 0
+                if shape.len() != 2 || shape[0] % 3 != 0 {
+                    tensors.insert(fused_name, (data, shape));
+                    continue;
+                }
+                let rows_per_proj = shape[0] / 3;
+                let cols = shape[1];
+                let chunk = rows_per_proj * cols;
+                let base = fused_name.replace("self_attn.c_attn.weight", "");
+
+                tensors.insert(
+                    format!("{base}self_attn.q_proj.weight"),
+                    (data[..chunk].to_vec(), vec![rows_per_proj, cols]),
+                );
+                tensors.insert(
+                    format!("{base}self_attn.k_proj.weight"),
+                    (data[chunk..2 * chunk].to_vec(), vec![rows_per_proj, cols]),
+                );
+                tensors.insert(
+                    format!("{base}self_attn.v_proj.weight"),
+                    (data[2 * chunk..].to_vec(), vec![rows_per_proj, cols]),
+                );
+            }
+
+            eprintln!(
+                "[GH-233] Split fused c_attn tensor: {} → q_proj + k_proj + v_proj",
+                fused_name
+            );
         }
     }
 }
