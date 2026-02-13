@@ -157,6 +157,27 @@ impl Architecture {
         }
     }
 
+    /// Parse a `model_type` string (from config.json or GGUF metadata) into an Architecture.
+    ///
+    /// Returns None for unrecognized types. Centralizes the mapping used by
+    /// `infer_architecture()` (import.rs) and `detect_gguf_architecture()` (export.rs).
+    #[must_use]
+    pub fn from_model_type(model_type: &str) -> Option<Self> {
+        match model_type.to_lowercase().as_str() {
+            "qwen2" | "qwen" | "qwen2.5" => Some(Self::Qwen2),
+            "qwen3" => Some(Self::Qwen3),
+            "llama" | "llama2" | "llama3" => Some(Self::Llama),
+            "whisper" => Some(Self::Whisper),
+            "bert" => Some(Self::Bert),
+            "gpt2" => Some(Self::Gpt2),
+            "phi" | "phi3" | "phi4" => Some(Self::Phi),
+            // LLaMA derivatives
+            "smollm" | "smollm2" | "granite" | "granite3" | "nemotron" | "mistral" | "gemma"
+            | "gemma2" | "gemma3" => Some(Self::Llama),
+            _ => None,
+        }
+    }
+
     fn auto_map_name(name: &str) -> String {
         // PMAT-099: Preserve original tensor names for AprTransformer compatibility
         // AprTransformer::from_apr_bytes expects model.* prefixes for HuggingFace models

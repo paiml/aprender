@@ -364,22 +364,7 @@ fn infer_architecture(user_arch: &Architecture, config_arch: Option<&str>) -> Ar
         return user_arch.clone();
     }
     config_arch
-        .and_then(|arch_str| match arch_str.to_lowercase().as_str() {
-            "qwen2" | "qwen" | "qwen2.5" => Some(Architecture::Qwen2),
-            "qwen3" => Some(Architecture::Qwen3),
-            "llama" | "llama2" | "llama3" => Some(Architecture::Llama),
-            "whisper" => Some(Architecture::Whisper),
-            "bert" => Some(Architecture::Bert),
-            "gpt2" => Some(Architecture::Gpt2),
-            "phi" | "phi3" | "phi4" => Some(Architecture::Phi),
-            // LLaMA derivatives: SmolLM2, Granite, Nemotron, Mistral, Gemma
-            "smollm" | "smollm2" => Some(Architecture::Llama),
-            "granite" | "granite3" => Some(Architecture::Llama),
-            "nemotron" => Some(Architecture::Llama),
-            "mistral" => Some(Architecture::Llama),
-            "gemma" | "gemma2" | "gemma3" => Some(Architecture::Llama),
-            _ => None,
-        })
+        .and_then(Architecture::from_model_type)
         .unwrap_or(Architecture::Auto)
 }
 
