@@ -681,7 +681,9 @@ fn export_to_gguf(
         .map(|(name, (data, shape))| {
             let gguf_name = hf_to_gguf_name(name);
 
+            // GH-234: lm_head must also skip quantization (same all-zeros bug as embeddings)
             let is_embedding = gguf_name == "token_embd.weight" || name.contains("embed_tokens");
+            let is_lm_head = gguf_name == "output.weight" || name.contains("lm_head");
 
             // Reverse shape for GGUF: [rows, cols] → [ne0=cols, ne1=rows]
             let gguf_shape = if shape.len() == 2 {
@@ -693,7 +695,7 @@ fn export_to_gguf(
             // GH-202 FIX: No data transpose needed. Data is row-major in APR,
             // and GGML's layout with reversed shape is identical.
             let (dtype, bytes) =
-                if use_q4k && shape.len() == 2 && data.len() >= 256 && !is_embedding {
+                if use_q4k && shape.len() == 2 && data.len() >= 256 && !is_embedding && !is_lm_head {
                     // Quantize row-major F32 to Q4K using GGUF shape [ne0, ne1]
                     // quantize_q4_k_matrix processes per-row with ne0 elements per row
                     let gguf_shape_usize = vec![shape[1], shape[0]]; // [ne0=cols, ne1=rows]
@@ -1631,6 +1633,9 @@ pub(crate) fn detect_apr_quantization(apr_path: &Path) -> Option<QuantizationTyp
 }
 
 /// Detect GGUF model architecture for tensor name mapping (GH-200).
+/// GH-236: Added GPT-2 recognition — was falling through to Qwen2 default,
+/// causing metadata key mismatch (writes "qwen2.embedding_length" but reader
+/// looks for "gpt2.embedding_length") → hidden_dim=0 on reimport.
 fn detect_gguf_architecture(path: &Path) -> Architecture {
     GgufReader::from_file(path)
         .ok()
@@ -1638,6 +1643,7 @@ fn detect_gguf_architecture(path: &Path) -> Architecture {
         .map(|a| match a.to_lowercase().as_str() {
             "qwen2" | "qwen" => Architecture::Qwen2,
             "llama" => Architecture::Llama,
+            "gpt2" => Architecture::Gpt2,
             _ => Architecture::Qwen2, // Safe default: most GGUF models use same mapping
         })
         .unwrap_or(Architecture::Qwen2)

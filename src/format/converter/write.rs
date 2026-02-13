@@ -210,7 +210,13 @@ fn add_f32_tensor_to_writer(
         || name.contains("word_embeddings")
         || name.contains("position_embedding");
 
+    // GH-234: lm_head.weight must skip quantization — same 4:1 packing / all-zeros bug
+    // as embeddings (GH-231/232). lm_head maps hidden→vocab, has same small-value
+    // distribution as embeddings (especially when weight-tied).
+    let is_lm_head = name.contains("lm_head") || name == "output.weight";
+
     let should_skip_quant = is_embedding
+        || is_lm_head
         || name.contains("bias")
         || name.contains("layernorm")
         || name.contains("layer_norm")

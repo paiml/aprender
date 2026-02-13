@@ -765,8 +765,12 @@ pub(crate) fn quantize_tensors(
             || name.contains("wte")  // GPT-style
             || name.contains("word_embeddings"); // BERT-style
 
-        let quantized_data = if is_embedding {
-            // Keep embeddings in original F32 - no quantization
+        // GH-234: lm_head.weight has same small-value distribution as embeddings
+        // (especially when weight-tied). Quantization causes 4:1 packing / all-zeros.
+        let is_lm_head = name.contains("lm_head") || name == "output.weight";
+
+        let quantized_data = if is_embedding || is_lm_head {
+            // Keep embeddings and lm_head in original F32 - no quantization
             data.clone()
         } else {
             match quant_type {

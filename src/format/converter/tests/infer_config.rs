@@ -985,3 +985,133 @@ fn test_infer_config_defaults() {
     assert_eq!(config.rope_theta, Some(10000.0));
     assert_eq!(config.rms_norm_eps, Some(1e-6));
 }
+
+// ============================================================================
+// GH-234: lm_head.weight must skip quantization
+// ============================================================================
+
+#[test]
+fn test_gh234_quantize_tensors_skips_lm_head() {
+    let mut tensors = BTreeMap::new();
+    tensors.insert(
+        "lm_head.weight".to_string(),
+        (vec![0.01, 0.02, 0.03, 0.04], vec![2, 2]),
+    );
+    tensors.insert(
+        "model.layers.0.self_attn.q_proj.weight".to_string(),
+        (vec![1.0, 2.0, 3.0, 4.0], vec![2, 2]),
+    );
+
+    let native = NativeF32Tensors::new(tensors);
+    let result = quantize_tensors(&native, &QuantizationType::Int8);
+    assert!(result.is_ok());
+    let quantized = result.expect("quantize should succeed");
+    let quantized = quantized.as_ref();
+
+    // lm_head should be unchanged (F32 preserved) — GH-234
+    let lm_head = &quantized["lm_head.weight"].0;
+    assert!(
+        (lm_head[0] - 0.01).abs() < 1e-6,
+        "GH-234: lm_head.weight must NOT be quantized, got {}",
+        lm_head[0]
+    );
+}
+
+#[test]
+fn test_gh234_quantize_tensors_skips_output_weight() {
+    // GGUF naming: output.weight is the lm_head equivalent
+    let mut tensors = BTreeMap::new();
+    tensors.insert(
+        "output.weight".to_string(),
+        (vec![0.01, 0.02, 0.03, 0.04], vec![2, 2]),
+    );
+
+    let native = NativeF32Tensors::new(tensors);
+    let result = quantize_tensors(&native, &QuantizationType::Int4);
+    assert!(result.is_ok());
+    let quantized = result.expect("quantize should succeed");
+    let lm_head = &quantized.as_ref()["output.weight"].0;
+    assert!(
+        (lm_head[0] - 0.01).abs() < 1e-6,
+        "GH-234: output.weight (GGUF lm_head) must NOT be quantized"
+    );
+}
+
+// ============================================================================
+// GH-235: GPT-2 config.json uses n_embd, not hidden_size
+// ============================================================================
+
+#[test]
+fn test_gh235_load_config_gpt2_n_embd_field() {
+    // Simulate GPT-2 config.json with n_embd instead of hidden_size
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
+    let model_path = temp_dir.path().join("model.safetensors");
+    let config_path = temp_dir.path().join("config.json");
+
+    // Write GPT-2 style config.json
+    std::fs::write(
+        &config_path,
+        r#"{
+            "model_type": "gpt2",
+            "n_embd": 768,
+            "n_head": 12,
+            "n_layer": 12,
+            "n_positions": 1024,
+            "vocab_size": 50257
+        }"#,
+    )
+    .expect("write config");
+
+    let config = import::load_model_config_from_json(&model_path);
+    assert!(config.is_some(), "GH-235: Should parse GPT-2 config.json");
+    let config = config.expect("config");
+
+    assert_eq!(
+        config.hidden_size,
+        Some(768),
+        "GH-235: n_embd=768 must map to hidden_size=768, not head_dim"
+    );
+    assert_eq!(config.num_heads, Some(12), "GH-235: n_head must map");
+    assert_eq!(config.num_layers, Some(12), "GH-235: n_layer must map");
+    assert_eq!(
+        config.max_position_embeddings,
+        Some(1024),
+        "GH-235: n_positions must map"
+    );
+    assert_eq!(config.vocab_size, Some(50257));
+    assert_eq!(
+        config.architecture.as_deref(),
+        Some("gpt2"),
+        "GH-235: model_type should be gpt2"
+    );
+}
+
+#[test]
+fn test_gh235_load_config_gpt2_n_inner_fallback() {
+    // GPT-2 without n_inner should default to 4 * n_embd
+    let temp_dir = tempfile::tempdir().expect("create temp dir");
+    let model_path = temp_dir.path().join("model.safetensors");
+    let config_path = temp_dir.path().join("config.json");
+
+    std::fs::write(
+        &config_path,
+        r#"{
+            "model_type": "gpt2",
+            "n_embd": 768,
+            "n_head": 12,
+            "n_layer": 12,
+            "vocab_size": 50257
+        }"#,
+    )
+    .expect("write config");
+
+    let config = import::load_model_config_from_json(&model_path);
+    assert!(config.is_some());
+    let config = config.expect("config");
+
+    assert_eq!(
+        config.intermediate_size,
+        Some(3072),
+        "GH-235: GPT-2 intermediate_size should default to 4 * n_embd = 3072"
+    );
+}
