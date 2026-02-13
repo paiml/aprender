@@ -268,19 +268,9 @@ fn apply_gguf_name_mapping(
     mapped
 }
 
-/// Apply optional quantization (Fp16, Int8, Int4) to loaded tensors.
-///
-/// DOUBLE-QUANT-001: Wraps tensors in `NativeF32Tensors` (safe because
-/// `apr_convert` always loads from file; the raw Q4K passthrough handles
-/// quantized GGUF sources separately).
-#[allow(dead_code)] // GH-237: Replaced by direct writer dispatch in save functions
-fn apply_quantization(
-    tensors: BTreeMap<String, (Vec<f32>, Vec<usize>)>,
-    quant_type: &QuantizationType,
-) -> Result<BTreeMap<String, (Vec<f32>, Vec<usize>)>> {
-    let native = NativeF32Tensors::new(tensors);
-    Ok(quantize_tensors(&native, quant_type)?.into_inner())
-}
+// GH-237: apply_quantization removed — convert path now dispatches through
+// add_tensor_with_quantization() for real packing. Export path uses
+// quantize_tensors() directly in apply_export_quantization (export.rs).
 
 /// Save tensors to output, using GGUF config if available for metadata fidelity.
 ///
@@ -984,11 +974,41 @@ fn needs_transpose(name: &str, shape: &[usize]) -> bool {
     weight_patterns.iter().any(|pattern| name.contains(pattern))
 }
 
+/// GH-237: Should this tensor skip quantization?
+///
+/// Returns true for tensors where quantization causes quality loss:
+/// - Embeddings lose lookup precision (GH-231/232)
+/// - Biases are too small and precision-sensitive
+/// - LayerNorm/RMSNorm weights are critical for numerical stability
+/// - lm_head has same small-value distribution as embeddings (GH-234)
+/// - Small tensors (<1024 elements) don't benefit from quantization
+///
+/// Used by both the convert path (`add_tensor_with_quantization`) and the
+/// import path (`add_f32_tensor_to_writer` in write.rs).
+pub(super) fn should_skip_quantization(name: &str, element_count: usize) -> bool {
+    let is_embedding = name.contains("embed_tokens")
+        || name.contains("token_embd")
+        || name.contains("wte")
+        || name.contains("wpe")
+        || name.contains("word_embeddings")
+        || name.contains("position_embedding");
+
+    let is_lm_head = name.contains("lm_head") || name == "output.weight";
+
+    is_embedding
+        || is_lm_head
+        || name.contains("bias")
+        || name.contains("layernorm")
+        || name.contains("layer_norm")
+        || name.contains("norm.weight")
+        || element_count < 1024
+}
+
 /// GH-237: Write a tensor to the APR writer with correct dtype dispatch.
 ///
-/// Applies skip logic for sensitive tensors (embeddings, bias, norm, lm_head)
-/// and dispatches to `add_q8_tensor`/`add_q4_tensor`/`add_f16_tensor` for real
-/// packing instead of always writing F32.
+/// Applies skip logic for sensitive tensors and dispatches to the correct
+/// packing method (`add_q8_tensor`/`add_q4_tensor`/`add_f16_tensor`)
+/// instead of always writing F32.
 fn add_tensor_with_quantization(
     writer: &mut AprV2Writer,
     name: &str,
@@ -996,25 +1016,7 @@ fn add_tensor_with_quantization(
     data: &[f32],
     quantize: Option<QuantizationType>,
 ) {
-    // Skip quantization for sensitive tensors:
-    // - Embeddings lose lookup precision (GH-231/232)
-    // - Biases are too small and precision-sensitive
-    // - LayerNorm/RMSNorm weights are critical for numerical stability
-    // - lm_head has same small-value distribution as embeddings (GH-234)
-    // - Small tensors (<1024 elements) don't benefit from quantization
-    let should_skip = name.contains("embed_tokens")
-        || name.contains("token_embd")
-        || name.contains("wte")
-        || name.contains("wpe")
-        || name.contains("word_embeddings")
-        || name.contains("position_embedding")
-        || name.contains("lm_head")
-        || name == "output.weight"
-        || name.contains("bias")
-        || name.contains("layernorm")
-        || name.contains("layer_norm")
-        || name.contains("norm.weight")
-        || data.len() < 1024;
+    let should_skip = should_skip_quantization(name, data.len());
 
     match quantize {
         Some(QuantizationType::Fp16) => {
@@ -1101,60 +1103,9 @@ fn save_model_tensors_with_config(
     })
 }
 
-/// Save model tensors to APR format with GGUF model config (F-REGR-231 fix)
-///
-/// This function preserves critical GGUF metadata including:
-/// - rope_type: RoPE style (0=NORM, 2=NEOX) - CRITICAL for Qwen2.5 models
-/// - rope_theta: Position encoding frequency
-/// - rms_norm_eps: RMS normalization epsilon
-/// - All other model dimensions from GGUF
-///
-/// Without this, APR defaults to rope_type=0 which produces garbage for Qwen2.5.
-#[allow(dead_code)] // Superseded by save_model_tensors_with_gguf_config_and_tokenizer
-fn save_model_tensors_with_gguf_config(
-    tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
-    output: &Path,
-    _compression: Option<Compression>,
-    gguf_config: &GgufModelConfig,
-    quantize: Option<QuantizationType>,
-) -> Result<()> {
-    // Build AprV2Metadata with GGUF config (not inferred from tensor shapes)
-    let mut metadata = AprV2Metadata::new(gguf_config.architecture.as_deref().unwrap_or("qwen2"));
-    metadata.original_format = Some("gguf".to_string());
-    metadata.model_type = gguf_config
-        .architecture
-        .clone()
-        .unwrap_or_else(|| "qwen2".to_string());
-
-    // Copy all GGUF config fields to APR metadata
-    metadata.hidden_size = gguf_config.hidden_size;
-    metadata.num_layers = gguf_config.num_layers;
-    metadata.num_heads = gguf_config.num_heads;
-    metadata.num_kv_heads = gguf_config.num_kv_heads;
-    metadata.vocab_size = gguf_config.vocab_size;
-    metadata.intermediate_size = gguf_config.intermediate_size;
-    metadata.max_position_embeddings = gguf_config.max_position_embeddings;
-
-    // F-REGR-231 FIX: These fields are CRITICAL for correct inference
-    metadata.rope_theta = gguf_config.rope_theta;
-    metadata.rope_type = gguf_config.rope_type;
-    metadata.rms_norm_eps = gguf_config.rms_norm_eps;
-
-    // GH-237: Create writer and add tensors with correct dtype dispatch
-    let mut writer = AprV2Writer::new(metadata);
-    for (name, (data, shape)) in tensors {
-        add_tensor_with_quantization(&mut writer, name, shape, data, quantize);
-    }
-
-    // Write to file
-    let apr_bytes = writer.write().map_err(|e| AprenderError::FormatError {
-        message: format!("Failed to write APR format: {e}"),
-    })?;
-
-    fs::write(output, apr_bytes).map_err(|e| AprenderError::FormatError {
-        message: format!("Failed to write output file: {e}"),
-    })
-}
+// GH-237: save_model_tensors_with_gguf_config removed — superseded by
+// save_model_tensors_with_gguf_config_and_tokenizer which extends it with
+// tokenizer embedding for standalone APR inference (PMAT-113).
 
 /// Save model tensors to APR format with GGUF config AND tokenizer (PMAT-113 fix)
 ///

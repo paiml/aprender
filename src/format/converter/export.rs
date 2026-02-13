@@ -23,6 +23,26 @@ use super::{
 // GGML data layout is C row-major with reversed shape [ne0, ne1].
 // No data transposition is needed for GGUF export — only shape reversal.
 
+/// GH-236: Resolve architecture name from APR metadata.
+///
+/// Checks `architecture` field first, then falls back to `model_type` (for models
+/// imported without explicit architecture, e.g. GPT-2 from SafeTensors), then
+/// defaults to "qwen2" as the most common architecture.
+fn resolve_architecture(apr_metadata: &crate::format::v2::AprV2Metadata) -> &str {
+    apr_metadata
+        .architecture
+        .as_deref()
+        .or_else(|| {
+            let mt = &apr_metadata.model_type;
+            if mt.is_empty() || mt == "unknown" {
+                None
+            } else {
+                Some(mt.as_str())
+            }
+        })
+        .unwrap_or("qwen2")
+}
+
 /// Export format options
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExportFormat {
@@ -817,21 +837,7 @@ fn build_gguf_arch_metadata(
 ) -> Vec<(String, crate::format::gguf::GgufValue)> {
     use crate::format::gguf::GgufValue;
 
-    // GH-236: Check architecture, then model_type, before defaulting to "qwen2".
-    // A GPT-2 APR imported without architecture metadata would otherwise write
-    // "qwen2.embedding_length" instead of "gpt2.embedding_length".
-    let arch = apr_metadata
-        .architecture
-        .as_deref()
-        .or_else(|| {
-            let mt = &apr_metadata.model_type;
-            if mt.is_empty() || mt == "unknown" {
-                None
-            } else {
-                Some(mt.as_str())
-            }
-        })
-        .unwrap_or("qwen2");
+    let arch = resolve_architecture(apr_metadata);
     let hidden_size = apr_metadata.hidden_size.unwrap_or(4096);
     let num_layers = apr_metadata.num_layers.unwrap_or(32);
     let num_heads = apr_metadata.num_heads.unwrap_or(32);
@@ -970,19 +976,7 @@ fn extract_apr_tokenizer_for_gguf(
 
     let mut entries = Vec::new();
     let custom = &apr_metadata.custom;
-    // GH-236: Check model_type before defaulting to "qwen2"
-    let arch = apr_metadata
-        .architecture
-        .as_deref()
-        .or_else(|| {
-            let mt = &apr_metadata.model_type;
-            if mt.is_empty() || mt == "unknown" {
-                None
-            } else {
-                Some(mt.as_str())
-            }
-        })
-        .unwrap_or("qwen2");
+    let arch = resolve_architecture(apr_metadata);
 
     // Tokenizer model type: "gpt2" for byte-level BPE (Qwen, GPT-2), "llama" for SentencePiece
     // GH-253-3: APR stores raw model_type from GGUF which may be "bpe" — map to "gpt2"
@@ -1095,19 +1089,7 @@ fn export_apr_to_gguf_raw(input: &Path, output: &Path) -> Result<ExportReport> {
 
     let apr_metadata = reader.metadata().clone();
 
-    // GH-236: Check model_type before defaulting to "qwen2"
-    let arch = apr_metadata
-        .architecture
-        .as_deref()
-        .or_else(|| {
-            let mt = &apr_metadata.model_type;
-            if mt.is_empty() || mt == "unknown" {
-                None
-            } else {
-                Some(mt.as_str())
-            }
-        })
-        .unwrap_or("qwen2");
+    let arch = resolve_architecture(&apr_metadata);
     let num_layers = apr_metadata.num_layers.unwrap_or(32);
     let num_heads = apr_metadata.num_heads.unwrap_or(32);
     let num_kv_heads = apr_metadata.num_kv_heads.unwrap_or(num_heads);

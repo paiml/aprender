@@ -198,30 +198,7 @@ fn add_f32_tensor_to_writer(
         return true;
     }
 
-    // Determine if tensor should skip quantization
-    // - Embeddings lose lookup precision when quantized (GH-231/232)
-    // - Biases are too small and precision-sensitive
-    // - LayerNorm/RMSNorm weights are critical for numerical stability
-    // - Small tensors (<1024 elements) don't benefit from quantization
-    let is_embedding = name.contains("embed_tokens")
-        || name.contains("token_embd")
-        || name.contains("wte")
-        || name.contains("wpe")
-        || name.contains("word_embeddings")
-        || name.contains("position_embedding");
-
-    // GH-234: lm_head.weight must skip quantization — same 4:1 packing / all-zeros bug
-    // as embeddings (GH-231/232). lm_head maps hidden→vocab, has same small-value
-    // distribution as embeddings (especially when weight-tied).
-    let is_lm_head = name.contains("lm_head") || name == "output.weight";
-
-    let should_skip_quant = is_embedding
-        || is_lm_head
-        || name.contains("bias")
-        || name.contains("layernorm")
-        || name.contains("layer_norm")
-        || name.contains("norm.weight")
-        || data.len() < 1024;
+    let should_skip_quant = super::should_skip_quantization(name, data.len());
 
     match quantize {
         Some(QuantizationType::Fp16) => {
