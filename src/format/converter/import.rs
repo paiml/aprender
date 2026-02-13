@@ -1273,7 +1273,7 @@ pub(crate) fn infer_model_config_from_tensors(
     let num_kv_heads = inferred_num_kv_heads.or(num_heads);
     let rope_type = match architecture.as_deref() {
         Some("qwen2" | "qwen2.5" | "qwen" | "qwen3") => Some(2), // NEOX style
-        Some("phi" | "phi3" | "phi4") => Some(2),                 // Phi also uses NEOX
+        Some("phi" | "phi3" | "phi4") => Some(2),                // Phi also uses NEOX
         _ => Some(0),
     };
 
@@ -1281,7 +1281,7 @@ pub(crate) fn infer_model_config_from_tensors(
     // Hardcoded 10000.0 was correct for LLaMA 1/2 but 100x wrong for Qwen2 (1M).
     let rope_theta = match architecture.as_deref() {
         Some("qwen2" | "qwen2.5" | "qwen" | "qwen3") => Some(1_000_000.0f32),
-        Some("llama") => Some(500_000.0),  // LLaMA 3 default
+        Some("llama") => Some(500_000.0), // LLaMA 3 default
         Some("phi" | "phi3" | "phi4") => Some(10_000.0),
         _ => Some(10_000.0),
     };
