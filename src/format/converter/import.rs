@@ -366,10 +366,18 @@ fn infer_architecture(user_arch: &Architecture, config_arch: Option<&str>) -> Ar
     config_arch
         .and_then(|arch_str| match arch_str.to_lowercase().as_str() {
             "qwen2" | "qwen" | "qwen2.5" => Some(Architecture::Qwen2),
+            "qwen3" => Some(Architecture::Qwen3),
             "llama" | "llama2" | "llama3" => Some(Architecture::Llama),
             "whisper" => Some(Architecture::Whisper),
             "bert" => Some(Architecture::Bert),
             "gpt2" => Some(Architecture::Gpt2),
+            "phi" | "phi3" | "phi4" => Some(Architecture::Phi),
+            // LLaMA derivatives: SmolLM2, Granite, Nemotron, Mistral, Gemma
+            "smollm" | "smollm2" => Some(Architecture::Llama),
+            "granite" | "granite3" => Some(Architecture::Llama),
+            "nemotron" => Some(Architecture::Llama),
+            "mistral" => Some(Architecture::Llama),
+            "gemma" | "gemma2" | "gemma3" => Some(Architecture::Llama),
             _ => None,
         })
         .unwrap_or(Architecture::Auto)
@@ -689,10 +697,11 @@ pub(crate) fn load_model_config_from_json(model_path: &Path) -> Option<GgufModel
         .map(ToString::to_string);
 
     // PMAT-114: Infer rope_type from architecture
-    // Qwen2/Qwen2.5 models use NEOX-style RoPE (type 2)
+    // Qwen2/Qwen2.5/Qwen3 and Phi models use NEOX-style RoPE (type 2)
     let rope_type = match architecture.as_deref() {
-        Some("qwen2" | "qwen2.5" | "qwen") => Some(2), // NEOX style
-        _ => Some(0),                                  // Default to NORM style
+        Some("qwen2" | "qwen2.5" | "qwen" | "qwen3") => Some(2),
+        Some("phi" | "phi3" | "phi4") => Some(2),
+        _ => Some(0),
     };
 
     Some(GgufModelConfig {
@@ -1263,21 +1272,24 @@ pub(crate) fn infer_model_config_from_tensors(
 
     let num_kv_heads = inferred_num_kv_heads.or(num_heads);
     let rope_type = match architecture.as_deref() {
-        Some("qwen2" | "qwen2.5" | "qwen") => Some(2),
+        Some("qwen2" | "qwen2.5" | "qwen" | "qwen3") => Some(2), // NEOX style
+        Some("phi" | "phi3" | "phi4") => Some(2),                 // Phi also uses NEOX
         _ => Some(0),
     };
 
     // Architecture-specific rope_theta defaults (GH-222, resolved).
     // Hardcoded 10000.0 was correct for LLaMA 1/2 but 100x wrong for Qwen2 (1M).
     let rope_theta = match architecture.as_deref() {
-        Some("qwen2" | "qwen2.5" | "qwen") => Some(1_000_000.0f32),
-        Some("llama") => Some(500_000.0), // LLaMA 3 default; LLaMA 2 was 10000 but 500K is safer
+        Some("qwen2" | "qwen2.5" | "qwen" | "qwen3") => Some(1_000_000.0f32),
+        Some("llama") => Some(500_000.0),  // LLaMA 3 default
+        Some("phi" | "phi3" | "phi4") => Some(10_000.0),
         _ => Some(10_000.0),
     };
 
     let max_position_embeddings = match architecture.as_deref() {
-        Some("qwen2" | "qwen2.5" | "qwen") => Some(32768),
+        Some("qwen2" | "qwen2.5" | "qwen" | "qwen3") => Some(32768),
         Some("llama") => Some(8192),
+        Some("phi" | "phi3" | "phi4") => Some(4096),
         _ => Some(4096),
     };
 

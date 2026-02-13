@@ -1678,8 +1678,14 @@ fn detect_gguf_architecture(path: &Path) -> Architecture {
         .and_then(|r| r.architecture())
         .map(|a| match a.to_lowercase().as_str() {
             "qwen2" | "qwen" => Architecture::Qwen2,
+            "qwen3" => Architecture::Qwen3,
             "llama" => Architecture::Llama,
             "gpt2" => Architecture::Gpt2,
+            "phi" | "phi3" | "phi4" => Architecture::Phi,
+            // LLaMA derivatives
+            "smollm" | "smollm2" | "granite" | "nemotron" | "mistral" | "gemma" => {
+                Architecture::Llama
+            }
             _ => Architecture::Qwen2, // Safe default: most GGUF models use same mapping
         })
         .unwrap_or(Architecture::Qwen2)

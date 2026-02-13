@@ -9,6 +9,9 @@
 //!   apr pull TheBloke/Llama-2-7B-GGUF   # Will auto-detect quant
 
 use crate::error::{CliError, Result};
+use aprender::format::{
+    apr_export, apr_import, ExportFormat, ExportOptions, ImportOptions, ValidationConfig,
+};
 use colored::Colorize;
 use pacha::fetcher::{FetchConfig, ModelFetcher};
 use pacha::format::ModelFormat;
@@ -94,6 +97,8 @@ fn run_single_file(model_ref: &str, force: bool) -> Result<()> {
         // GH-198: Ensure companion files exist for cached SafeTensors models
         if matches!(result.format, ModelFormat::SafeTensors(_)) {
             fetch_safetensors_companions(&result.path, &result.resolved_uri)?;
+            // GH-211: Convert to APR + GGUF for full QA qualification
+            convert_safetensors_formats(&result.path)?;
         }
 
         println!();
@@ -138,6 +143,8 @@ fn run_single_file(model_ref: &str, force: bool) -> Result<()> {
     // GH-198: Download companion files for SafeTensors models
     if matches!(result.format, ModelFormat::SafeTensors(_)) {
         fetch_safetensors_companions(&result.path, &result.resolved_uri)?;
+        // GH-211: Convert to APR + GGUF for full QA qualification
+        convert_safetensors_formats(&result.path)?;
     }
 
     println!();
@@ -215,6 +222,9 @@ fn run_sharded(org: &str, repo: &str, shard_files: &[String], force: bool) -> Re
     println!("{} Downloaded successfully", "✓".green());
     println!("  Path: {}", index_path.display().to_string().green());
     println!("  Shards: {}", total_shards.to_string().yellow());
+
+    // GH-211: Convert sharded SafeTensors to APR + GGUF for full QA qualification
+    convert_safetensors_formats(&index_path)?;
 
     println!();
     println!("{}", "Usage:".cyan().bold());
@@ -580,6 +590,94 @@ fn fetch_safetensors_companions(model_path: &Path, resolved_uri: &str) -> Result
     Ok(())
 }
 
+/// GH-211: Convert a SafeTensors model to APR and GGUF formats for full QA qualification.
+///
+/// After download, produces sibling `.apr` and `.gguf` files so that all MVP
+/// test matrix cells (SafeTensors/APR/GGUF × run/chat/serve) can execute.
+fn convert_safetensors_formats(safetensors_path: &Path) -> Result<()> {
+    println!();
+    println!("{}", "Converting formats...".yellow());
+
+    // Derive output paths from the SafeTensors path
+    let apr_path = safetensors_path.with_extension("apr");
+    let gguf_path = safetensors_path.with_extension("gguf");
+
+    // Step 1: SafeTensors → APR
+    if apr_path.exists() {
+        println!(
+            "  {} {} (already exists)",
+            "✓".green(),
+            apr_path.file_name().unwrap_or_default().to_string_lossy()
+        );
+    } else {
+        let source = safetensors_path.to_string_lossy().to_string();
+        let options = ImportOptions {
+            architecture: aprender::format::Architecture::Auto,
+            validation: ValidationConfig::Basic,
+            quantize: None,
+            compress: None,
+            strict: false,
+            cache: false,
+            tokenizer_path: None,
+            allow_no_config: true,
+        };
+        match apr_import(&source, &apr_path, options) {
+            Ok(_report) => {
+                println!(
+                    "  {} {} (SafeTensors → APR)",
+                    "✓".green(),
+                    apr_path.file_name().unwrap_or_default().to_string_lossy()
+                );
+            }
+            Err(e) => {
+                eprintln!(
+                    "  {} APR conversion failed: {} (non-fatal)",
+                    "⚠".yellow(),
+                    e
+                );
+            }
+        }
+    }
+
+    // Step 2: APR → GGUF (requires APR to exist)
+    if gguf_path.exists() {
+        println!(
+            "  {} {} (already exists)",
+            "✓".green(),
+            gguf_path.file_name().unwrap_or_default().to_string_lossy()
+        );
+    } else if apr_path.exists() {
+        let options = ExportOptions {
+            format: ExportFormat::Gguf,
+            quantize: None,
+            ..Default::default()
+        };
+        match apr_export(&apr_path, &gguf_path, options) {
+            Ok(_report) => {
+                println!(
+                    "  {} {} (APR → GGUF)",
+                    "✓".green(),
+                    gguf_path.file_name().unwrap_or_default().to_string_lossy()
+                );
+            }
+            Err(e) => {
+                eprintln!(
+                    "  {} GGUF conversion failed: {} (non-fatal)",
+                    "⚠".yellow(),
+                    e
+                );
+            }
+        }
+    } else {
+        eprintln!(
+            "  {} GGUF conversion skipped (APR not available)",
+            "⚠".yellow()
+        );
+    }
+
+    Ok(())
+}
+
 /// Extract HuggingFace repo ID from a resolved URI.
 ///
 /// Examples:
@@ -634,7 +732,7 @@ fn select_best_gguf(gguf_files: &[&str], org: &str, repo: &str) -> ResolvedModel
 fn resolve_sharded_safetensors(org: &str, repo: &str) -> Result<ResolvedModel> {
     let index_url =
         format!("https://huggingface.co/{org}/{repo}/resolve/main/model.safetensors.index.json");
-    let index_response = ureq::get(&index_url)
+    let index_response = hf_get(&index_url)
         .call()
         .map_err(|e| CliError::NetworkError(format!("Failed to download model index: {e}")))?;
 
@@ -707,7 +805,7 @@ fn resolve_hf_model(uri: &str) -> Result<ResolvedModel> {
     let repo = parts[1];
 
     let api_url = format!("https://huggingface.co/api/models/{org}/{repo}");
-    let response = ureq::get(&api_url)
+    let response = hf_get(&api_url)
         .call()
         .map_err(|e| CliError::NetworkError(format!("Failed to query HuggingFace API: {e}")))?;
 
@@ -795,9 +893,51 @@ fn extract_shard_files_from_index(json: &str) -> Vec<String> {
     sorted
 }
 
-/// Download a file from URL to local path (no progress)
+fn home_dir() -> Option<std::path::PathBuf> {
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(std::path::PathBuf::from)
+}
+
+/// GH-229: Resolve HuggingFace auth token for gated models.
+///
+/// Priority: HF_TOKEN env var → ~/.huggingface/token file → ~/.cache/huggingface/token
+fn resolve_hf_token() -> Option<String> {
+    // Priority 1: Environment variable
+    if let Ok(token) = std::env::var("HF_TOKEN") {
+        if !token.is_empty() {
+            return Some(token);
+        }
+    }
+    // Priority 2: HuggingFace CLI token file
+    if let Some(home) = home_dir() {
+        for path in [
+            home.join(".huggingface/token"),
+            home.join(".cache/huggingface/token"),
+        ] {
+            if let Ok(token) = std::fs::read_to_string(&path) {
+                let token = token.trim().to_string();
+                if !token.is_empty() {
+                    return Some(token);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Build an authenticated ureq request if HF token is available.
+fn hf_get(url: &str) -> ureq::Request {
+    let req = ureq::get(url);
+    if let Some(token) = resolve_hf_token() {
+        req.set("Authorization", &format!("Bearer {token}"))
+    } else {
+        req
+    }
+}
+
 fn download_file(url: &str, path: &Path) -> Result<()> {
-    let response = ureq::get(url)
+    let response = hf_get(url)
         .call()
         .map_err(|e| CliError::NetworkError(format!("Download failed: {e}")))?;
 
@@ -813,7 +953,7 @@ fn download_file(url: &str, path: &Path) -> Result<()> {
 /// Returns a `FileChecksum` with the downloaded size and BLAKE3 hash.
 /// Verifies that downloaded bytes match Content-Length when available.
 fn download_file_with_progress(url: &str, path: &Path) -> Result<FileChecksum> {
-    let response = ureq::get(url)
+    let response = hf_get(url)
         .call()
         .map_err(|e| CliError::NetworkError(format!("Download failed: {e}")))?;
 

@@ -60,6 +60,36 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
+/// GH-187: Bug classification for common format conversion failures.
+///
+/// Used in validation and differential tracing to quickly identify the
+/// category of failure without manual tensor inspection.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BugClassification {
+    /// Embedding tensor stored as [hidden, vocab] instead of [vocab, hidden]
+    EmbeddingTransposed,
+    /// Weight tensor has all zeros — packing bug or uninitialized memory
+    WeightAllZeros,
+    /// Tensor shape doesn't match expected dimensions for the architecture
+    ShapeMismatch,
+    /// NaN/Inf values in tensor data — numerical instability
+    NumericalCorruption,
+    /// Tensor dtype doesn't match what the loader expects
+    DtypeMismatch,
+}
+
+impl fmt::Display for BugClassification {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::EmbeddingTransposed => write!(f, "EMBEDDING_TRANSPOSED"),
+            Self::WeightAllZeros => write!(f, "WEIGHT_ALL_ZEROS"),
+            Self::ShapeMismatch => write!(f, "SHAPE_MISMATCH"),
+            Self::NumericalCorruption => write!(f, "NUMERICAL_CORRUPTION"),
+            Self::DtypeMismatch => write!(f, "DTYPE_MISMATCH"),
+        }
+    }
+}
+
 /// Bug 212: Check if a path is a sharded SafeTensors index file.
 fn is_sharded_index(path: &Path) -> bool {
     path.file_name()
@@ -1032,6 +1062,40 @@ impl RosettaStone {
         let reader = AprV2Reader::from_bytes(&data).map_err(|e| AprenderError::FormatError {
             message: format!("APR parse failed: {e}"),
         })?;
+
+        // GH-187: Log embedding tensor shapes for transposition detection
+        let meta = reader.metadata();
+        let hidden_size = meta.hidden_size.unwrap_or(0);
+        let vocab_size = meta.vocab_size.unwrap_or(0);
+        for name in reader.tensor_names() {
+            let name_lower = name.to_lowercase();
+            let is_embedding = name_lower.contains("embed")
+                || name_lower.contains("wte")
+                || name_lower.contains("wpe")
+                || name_lower.contains("lm_head")
+                || name_lower == "output.weight";
+            if is_embedding {
+                if let Some(entry) = reader.get_tensor(name) {
+                    eprintln!(
+                        "[GH-187] Embedding '{}': shape={:?}, dtype={:?}",
+                        name, entry.shape, entry.dtype
+                    );
+                    // Detect transposition: if shape is [hidden, vocab] instead of [vocab, hidden]
+                    if entry.shape.len() == 2
+                        && hidden_size > 0
+                        && vocab_size > 0
+                        && entry.shape[0] == hidden_size
+                        && entry.shape[1] == vocab_size
+                    {
+                        eprintln!(
+                            "[GH-187] WARNING: '{}' may be transposed — shape [{}, {}] \
+                             looks like [hidden, vocab] instead of [vocab, hidden]",
+                            name, entry.shape[0], entry.shape[1]
+                        );
+                    }
+                }
+            }
+        }
 
         let mut tensors = Vec::new();
         let mut total_nan = 0;

@@ -103,14 +103,18 @@ pub enum Architecture {
     Auto,
     /// `OpenAI` Whisper
     Whisper,
-    /// Meta `LLaMA`
+    /// Meta `LLaMA` (also SmolLM2, Granite, Nemotron derivatives)
     Llama,
     /// Google BERT
     Bert,
     /// Alibaba Qwen2 (includes Qwen2.5, `QwenCoder`)
     Qwen2,
+    /// Alibaba Qwen3
+    Qwen3,
     /// `OpenAI` GPT-2
     Gpt2,
+    /// Microsoft Phi (Phi-3, Phi-4)
+    Phi,
 }
 
 impl Architecture {
@@ -123,7 +127,9 @@ impl Architecture {
             Self::Llama => Self::llama_map_name(source_name),
             Self::Bert => Self::bert_map_name(source_name),
             Self::Qwen2 => Self::qwen2_map_name(source_name),
+            Self::Qwen3 => Self::qwen2_map_name(source_name), // Qwen3 uses same GGUF naming as Qwen2
             Self::Gpt2 => Self::gpt2_map_name(source_name),
+            Self::Phi => Self::llama_map_name(source_name), // Phi uses HuggingFace model.layers naming
         }
     }
 
@@ -133,7 +139,7 @@ impl Architecture {
     /// and confirmed realizar inference compatibility.
     #[must_use]
     pub fn is_inference_verified(&self) -> bool {
-        matches!(self, Self::Qwen2 | Self::Llama)
+        matches!(self, Self::Qwen2 | Self::Qwen3 | Self::Llama | Self::Phi)
     }
 
     /// PMAT-224: Get a human-readable name for warning messages.
@@ -145,7 +151,9 @@ impl Architecture {
             Self::Llama => "LLaMA",
             Self::Bert => "BERT",
             Self::Qwen2 => "Qwen2",
+            Self::Qwen3 => "Qwen3",
             Self::Gpt2 => "GPT-2",
+            Self::Phi => "Phi",
         }
     }
 
