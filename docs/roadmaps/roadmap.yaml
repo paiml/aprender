@@ -3406,11 +3406,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'New task: GH-234/235/236: lm_head quantization skip, GPT-2 hidden_dim metadata, GGUF export architecture'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-02-13T16:11:43.916543161+00:00
-  updated: 2026-02-13T16:11:43.916543161+00:00
+  updated: 2026-02-13T16:31:40.698212085+00:00
   spec: null
   acceptance_criteria: []
   phases: []
