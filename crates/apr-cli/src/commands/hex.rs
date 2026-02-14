@@ -14,7 +14,9 @@
 
 use crate::error::CliError;
 use crate::output;
-use aprender::serialization::apr::{AprReader, AprTensorDescriptor};
+#[cfg(test)]
+use aprender::format::v2::TensorDType;
+use aprender::format::v2::{AprV2Reader, TensorIndexEntry};
 use colored::Colorize;
 use std::path::{Path, PathBuf};
 
@@ -154,21 +156,27 @@ pub(crate) fn run(opts: &HexOptions) -> Result<(), CliError> {
 }
 
 // ============================================================================
-// APR mode (backward compatible)
+// APR mode (v2 only — v1 removed)
 // ============================================================================
 
 fn run_apr(opts: &HexOptions) -> Result<(), CliError> {
-    let reader = AprReader::open(&opts.file)
+    let data = std::fs::read(&opts.file)
+        .map_err(|e| CliError::InvalidFormat(format!("Failed to read file: {e}")))?;
+
+    let reader = AprV2Reader::from_bytes(&data)
         .map_err(|e| CliError::InvalidFormat(format!("Failed to read APR: {e}")))?;
 
-    let filtered: Vec<&AprTensorDescriptor> = reader
-        .tensors
+    let tensor_names = reader.tensor_names();
+
+    // Apply filter
+    let filtered: Vec<&str> = tensor_names
         .iter()
-        .filter(|t| {
+        .filter(|name| {
             opts.tensor
                 .as_ref()
-                .map_or(true, |f| t.name.contains(f.as_str()))
+                .map_or(true, |f| name.contains(f.as_str()))
         })
+        .copied()
         .collect();
 
     if filtered.is_empty() {
@@ -176,15 +184,15 @@ fn run_apr(opts: &HexOptions) -> Result<(), CliError> {
     }
 
     if opts.list {
-        return list_tensors(&filtered, opts.json);
+        return list_tensors_v2(&reader, &filtered, opts.json);
     }
 
     if opts.json {
-        return output_json(&reader, &filtered, opts.limit, opts.stats);
+        return output_json_v2(&reader, &filtered, opts.limit, opts.stats);
     }
 
     if opts.distribution {
-        return print_apr_distributions(&reader, &filtered);
+        return print_apr_distributions_v2(&reader, &filtered);
     }
     if opts.contract {
         println!(
@@ -201,11 +209,27 @@ fn run_apr(opts: &HexOptions) -> Result<(), CliError> {
         return Ok(());
     }
 
-    for tensor in &filtered {
-        print_tensor_hex(&reader, tensor, opts.limit, opts.stats)?;
+    print_apr_hex_dump(&reader, &filtered, opts.limit, opts.stats);
+    Ok(())
+}
+
+/// Print hex dump for each APR tensor
+fn print_apr_hex_dump(reader: &AprV2Reader, names: &[&str], limit: usize, show_stats: bool) {
+    for name in names {
+        if let Some(entry) = reader.get_tensor(name) {
+            print_tensor_header_v2(entry);
+        }
+        if let Some(raw_data) = reader.get_tensor_data(name) {
+            if show_stats {
+                if let Some(f32_data) = reader.get_tensor_as_f32(name) {
+                    print_tensor_stats(&f32_data);
+                }
+            }
+            let byte_limit = if limit == 0 { raw_data.len() } else { limit.min(raw_data.len()) };
+            print_raw_hex(raw_data, 0, byte_limit, 16);
+        }
         println!();
     }
-    Ok(())
 }
 
 fn print_empty_filter(json: bool) -> Result<(), CliError> {
@@ -215,13 +239,13 @@ fn print_empty_filter(json: bool) -> Result<(), CliError> {
     Ok(())
 }
 
-fn print_apr_distributions(
-    reader: &AprReader,
-    filtered: &[&AprTensorDescriptor],
+fn print_apr_distributions_v2(
+    reader: &AprV2Reader,
+    filtered: &[&str],
 ) -> Result<(), CliError> {
-    for tensor in filtered {
-        if let Ok(data) = reader.read_tensor_f32(&tensor.name) {
-            println!("{}: {}", "Distribution".bold(), tensor.name.cyan());
+    for name in filtered {
+        if let Some(data) = reader.get_tensor_as_f32(name) {
+            println!("{}: {}", "Distribution".bold(), name.cyan());
             let analysis = compute_distribution(&data);
             print_distribution(&analysis);
             println!();
@@ -1563,15 +1587,14 @@ pub(crate) fn parse_hex_offset(s: &str) -> Result<usize, String> {
 // Preserved helpers (APR tensor display)
 // ============================================================================
 
-/// List tensor names only
+/// List tensor names (v2 reader)
 #[allow(clippy::unnecessary_wraps)]
 #[allow(clippy::disallowed_methods)]
-fn list_tensors(tensors: &[&AprTensorDescriptor], json_output: bool) -> Result<(), CliError> {
+fn list_tensors_v2(reader: &AprV2Reader, filtered: &[&str], json_output: bool) -> Result<(), CliError> {
     if json_output {
-        let names: Vec<&str> = tensors.iter().map(|t| t.name.as_str()).collect();
         let json = serde_json::json!({
-            "tensors": names,
-            "count": tensors.len()
+            "tensors": filtered,
+            "count": filtered.len()
         });
         println!(
             "{}",
@@ -1579,38 +1602,48 @@ fn list_tensors(tensors: &[&AprTensorDescriptor], json_output: bool) -> Result<(
         );
     } else {
         println!("{}", "Tensors:".bold());
-        for tensor in tensors {
-            println!("  {}", tensor.name);
+        for name in filtered {
+            if let Some(entry) = reader.get_tensor(name) {
+                println!(
+                    "  {}: {:?} ({} bytes, dtype={:?})",
+                    name.cyan(),
+                    entry.shape,
+                    entry.size,
+                    entry.dtype
+                );
+            } else {
+                println!("  {}", name);
+            }
         }
-        println!("\n{} tensors total", tensors.len().to_string().cyan());
+        println!("\n{} tensors total", filtered.len().to_string().cyan());
     }
     Ok(())
 }
 
-/// Print tensor header information
-fn print_tensor_header(tensor: &AprTensorDescriptor) {
+/// Print tensor header information (v2 reader)
+fn print_tensor_header_v2(entry: &TensorIndexEntry) {
     println!("{}", "═".repeat(70));
-    println!("{}: {}", "Tensor".bold(), tensor.name.cyan());
+    println!("{}: {}", "Tensor".bold(), entry.name.cyan());
     println!("{}", "═".repeat(70));
 
-    let num_elements: usize = tensor.shape.iter().product();
+    let num_elements: usize = entry.shape.iter().product();
     println!(
         "{}: {:?} = {} elements",
         "Shape".bold(),
-        tensor.shape,
+        entry.shape,
         num_elements.to_string().green()
     );
-    println!("{}: {}", "Dtype".bold(), tensor.dtype);
+    println!("{}: {:?}", "Dtype".bold(), entry.dtype);
     println!(
         "{}: 0x{:08X} ({} bytes)",
         "Offset".bold(),
-        tensor.offset,
-        tensor.offset
+        entry.offset,
+        entry.offset
     );
     println!(
         "{}: {} bytes",
         "Size".bold(),
-        tensor.size.to_string().yellow()
+        entry.size.to_string().yellow()
     );
 }
 
@@ -1695,27 +1728,7 @@ fn print_hex_dump(data: &[f32], limit: usize) {
     }
 }
 
-/// Print hex dump for a single tensor
-fn print_tensor_hex(
-    reader: &AprReader,
-    tensor: &AprTensorDescriptor,
-    limit: usize,
-    show_stats: bool,
-) -> Result<(), CliError> {
-    print_tensor_header(tensor);
-
-    let data = reader
-        .read_tensor_f32(&tensor.name)
-        .map_err(|e| CliError::InvalidFormat(format!("Failed to read tensor: {e}")))?;
-
-    if show_stats {
-        print_tensor_stats(&data);
-    }
-
-    print_hex_dump(&data, limit);
-
-    Ok(())
-}
+// print_tensor_hex removed — v2 path uses inline hex dump in run_apr()
 
 /// Compute basic statistics
 fn compute_stats(data: &[f32]) -> (f32, f32, f32, f32) {
@@ -1749,12 +1762,12 @@ fn compute_stats(data: &[f32]) -> (f32, f32, f32, f32) {
     (min, max, mean, std)
 }
 
-/// Output as JSON
+/// Output as JSON (v2 reader)
 #[allow(clippy::unnecessary_wraps)]
 #[allow(clippy::disallowed_methods)]
-fn output_json(
-    reader: &AprReader,
-    tensors: &[&AprTensorDescriptor],
+fn output_json_v2(
+    reader: &AprV2Reader,
+    filtered: &[&str],
     limit: usize,
     show_stats: bool,
 ) -> Result<(), CliError> {
@@ -1765,15 +1778,15 @@ fn output_json(
         name: String,
         shape: Vec<usize>,
         dtype: String,
-        offset: usize,
-        size_bytes: usize,
+        offset: u64,
+        size_bytes: u64,
         #[serde(skip_serializing_if = "Option::is_none")]
-        stats: Option<TensorStats>,
+        stats: Option<TensorStatsJson>,
         sample_values: Vec<f32>,
     }
 
     #[derive(Serialize)]
-    struct TensorStats {
+    struct TensorStatsJson {
         min: f32,
         max: f32,
         mean: f32,
@@ -1782,12 +1795,13 @@ fn output_json(
 
     let mut results = Vec::new();
 
-    for tensor in tensors {
-        let data = reader.read_tensor_f32(&tensor.name).ok();
+    for name in filtered {
+        let entry = reader.get_tensor(name);
+        let data = reader.get_tensor_as_f32(name);
         let stats = if show_stats {
             data.as_ref().map(|d| {
                 let (min, max, mean, std) = compute_stats(d);
-                TensorStats {
+                TensorStatsJson {
                     min,
                     max,
                     mean,
@@ -1798,20 +1812,22 @@ fn output_json(
             None
         };
 
-        let sample_values = data
+        let sample_values: Vec<f32> = data
             .as_ref()
             .map(|d| d.iter().take(limit).copied().collect())
             .unwrap_or_default();
 
-        results.push(TensorDump {
-            name: tensor.name.clone(),
-            shape: tensor.shape.clone(),
-            dtype: tensor.dtype.clone(),
-            offset: tensor.offset,
-            size_bytes: tensor.size,
-            stats,
-            sample_values,
-        });
+        if let Some(e) = entry {
+            results.push(TensorDump {
+                name: e.name.clone(),
+                shape: e.shape.clone(),
+                dtype: format!("{:?}", e.dtype),
+                offset: e.offset,
+                size_bytes: e.size,
+                stats,
+                sample_values,
+            });
+        }
     }
 
     if let Ok(json) = serde_json::to_string_pretty(&results) {
@@ -2335,68 +2351,62 @@ mod tests {
     // print_tensor_header tests (preserved)
     // ========================================================================
 
-    fn make_descriptor(
+    fn make_entry(
         name: &str,
         shape: Vec<usize>,
-        dtype: &str,
-        offset: usize,
-        size: usize,
-    ) -> AprTensorDescriptor {
-        AprTensorDescriptor {
-            name: name.to_string(),
-            dtype: dtype.to_string(),
-            shape,
-            offset,
-            size,
-        }
+        dtype: TensorDType,
+        offset: u64,
+        size: u64,
+    ) -> TensorIndexEntry {
+        TensorIndexEntry::new(name, dtype, shape, offset, size)
     }
 
     #[test]
     fn test_print_tensor_header_basic() {
-        let desc = make_descriptor(
+        let entry = make_entry(
             "model.layers.0.weight",
             vec![768, 3072],
-            "F32",
+            TensorDType::F32,
             0,
-            768 * 3072 * 4,
+            (768 * 3072 * 4) as u64,
         );
-        print_tensor_header(&desc);
+        print_tensor_header_v2(&entry);
     }
 
     #[test]
     fn test_print_tensor_header_empty_shape() {
-        let desc = make_descriptor("scalar_param", vec![], "F32", 0, 4);
-        print_tensor_header(&desc);
+        let entry = make_entry("scalar_param", vec![], TensorDType::F32, 0, 4);
+        print_tensor_header_v2(&entry);
     }
 
     #[test]
     fn test_print_tensor_header_single_dim() {
-        let desc = make_descriptor("bias", vec![512], "F32", 1024, 512 * 4);
-        print_tensor_header(&desc);
+        let entry = make_entry("bias", vec![512], TensorDType::F32, 1024, 512 * 4);
+        print_tensor_header_v2(&entry);
     }
 
     #[test]
     fn test_print_tensor_header_large_offset() {
-        let desc = make_descriptor(
+        let entry = make_entry(
             "lm_head.weight",
             vec![32000, 4096],
-            "F16",
+            TensorDType::F16,
             0xFFFF_FFFF,
             32000 * 4096 * 2,
         );
-        print_tensor_header(&desc);
+        print_tensor_header_v2(&entry);
     }
 
     #[test]
     fn test_print_tensor_header_zero_size() {
-        let desc = make_descriptor("empty", vec![0], "F32", 0, 0);
-        print_tensor_header(&desc);
+        let entry = make_entry("empty", vec![0], TensorDType::F32, 0, 0);
+        print_tensor_header_v2(&entry);
     }
 
     #[test]
     fn test_print_tensor_header_3d_shape() {
-        let desc = make_descriptor("conv.weight", vec![64, 3, 3], "F32", 512, 64 * 3 * 3 * 4);
-        print_tensor_header(&desc);
+        let entry = make_entry("conv.weight", vec![64, 3, 3], TensorDType::F32, 512, (64 * 3 * 3 * 4) as u64);
+        print_tensor_header_v2(&entry);
     }
 
     // ========================================================================
@@ -2538,44 +2548,7 @@ mod tests {
         print_tensor_stats(&data);
     }
 
-    // ========================================================================
-    // list_tensors tests (preserved)
-    // ========================================================================
-
-    #[test]
-    fn test_list_tensors_text_mode_single() {
-        let desc = make_descriptor("weight", vec![10, 20], "F32", 0, 800);
-        let tensors: Vec<&AprTensorDescriptor> = vec![&desc];
-        assert!(list_tensors(&tensors, false).is_ok());
-    }
-
-    #[test]
-    fn test_list_tensors_text_mode_multiple() {
-        let d1 = make_descriptor("layer.0.weight", vec![512, 512], "F32", 0, 512 * 512 * 4);
-        let d2 = make_descriptor("layer.0.bias", vec![512], "F32", 512 * 512 * 4, 512 * 4);
-        let d3 = make_descriptor("layer.1.weight", vec![512, 256], "F32", 0, 512 * 256 * 4);
-        let tensors: Vec<&AprTensorDescriptor> = vec![&d1, &d2, &d3];
-        assert!(list_tensors(&tensors, false).is_ok());
-    }
-
-    #[test]
-    fn test_list_tensors_json_mode() {
-        let desc = make_descriptor("weight", vec![10, 20], "F32", 0, 800);
-        let tensors: Vec<&AprTensorDescriptor> = vec![&desc];
-        assert!(list_tensors(&tensors, true).is_ok());
-    }
-
-    #[test]
-    fn test_list_tensors_empty() {
-        let tensors: Vec<&AprTensorDescriptor> = vec![];
-        assert!(list_tensors(&tensors, false).is_ok());
-    }
-
-    #[test]
-    fn test_list_tensors_empty_json() {
-        let tensors: Vec<&AprTensorDescriptor> = vec![];
-        assert!(list_tensors(&tensors, true).is_ok());
-    }
+    // list_tensors_v2 tests require a real AprV2Reader — tested via integration tests
 
     // ========================================================================
     // Run command tests (updated for HexOptions)

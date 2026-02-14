@@ -288,6 +288,19 @@ pub struct RouteScores {
     pub total: f64,
 }
 
+impl Default for RouteScores {
+    fn default() -> Self {
+        Self {
+            latency_score: 0.5,
+            throughput_score: 0.5,
+            cost_score: 0.5,
+            locality_score: 0.5,
+            health_score: 1.0,
+            total: 0.5,
+        }
+    }
+}
+
 /// Gateway - the main entry point for federation requests
 pub trait GatewayTrait: Send + Sync {
     /// Execute an inference request through the federation

@@ -1832,31 +1832,82 @@ fn detect_gpu_hardware() -> (f64, f64, f64, String) {
     (30_000.0, 800.0, 37.5, "CUDA GPU (unknown)".to_string())
 }
 
-/// Profile SafeTensors model — converts to GGUF path for per-op profiling
+/// Profile SafeTensors model — tries sibling GGUF/APR, falls back to static analysis
 #[cfg(feature = "inference")]
 fn profile_safetensors_real(
     path: &Path,
-    _warmup_passes: usize,
-    _measure_passes: usize,
+    warmup_passes: usize,
+    measure_passes: usize,
 ) -> Result<RealProfileResults, CliError> {
-    // SafeTensors models need import to GGUF/APR for per-operation profiling.
-    // Check if there's a sibling .gguf file to use instead.
+    // Check sibling GGUF/APR for real inference profiling
     let gguf_path = path.with_extension("gguf");
     if gguf_path.exists() {
         output::info(&format!(
             "Found sibling GGUF: {}. Profiling that instead.",
             gguf_path.display()
         ));
-        return profile_gguf_real(&gguf_path, _warmup_passes, _measure_passes);
+        return profile_gguf_real(&gguf_path, warmup_passes, measure_passes);
+    }
+    let apr_path = path.with_extension("apr");
+    if apr_path.exists() {
+        output::info(&format!(
+            "Found sibling APR: {}. Profiling that instead.",
+            apr_path.display()
+        ));
+        return profile_apr_real(&apr_path, warmup_passes, measure_passes);
     }
 
-    output::warn("SafeTensors per-operation profiling requires GGUF format.");
-    output::info("Convert first: apr import model.safetensors -o model.gguf");
-    output::info("Then: apr profile model.gguf");
-    Err(CliError::ValidationFailed(
-        "SafeTensors per-op profiling not yet supported. Use GGUF format for full profiling."
-            .to_string(),
-    ))
+    // Static analysis fallback via Rosetta Stone
+    output::info("SafeTensors: running static analysis profile (no inference engine needed)");
+    let rosetta = aprender::format::rosetta::RosettaStone::new();
+    let report = rosetta
+        .inspect(path)
+        .map_err(|e| CliError::InvalidFormat(format!("Inspection failed: {e}")))?;
+
+    let num_layers = report
+        .tensors
+        .iter()
+        .filter(|t| t.name.contains("self_attn.q_proj"))
+        .count();
+    let vocab_size = report
+        .tensors
+        .iter()
+        .find(|t| t.name.contains("embed_tokens"))
+        .map_or(0, |t| t.shape.first().copied().unwrap_or(0));
+    let hidden_dim = report
+        .tensors
+        .iter()
+        .find(|t| t.name.contains("embed_tokens"))
+        .map_or(0, |t| t.shape.last().copied().unwrap_or(0));
+
+    Ok(RealProfileResults {
+        model_path: path.display().to_string(),
+        architecture: report.architecture.unwrap_or_else(|| "unknown".to_string()),
+        num_layers,
+        vocab_size,
+        hidden_dim,
+        warmup_passes: 0,
+        measure_passes: 0,
+        total_inference_us: 0.0,
+        throughput_tok_s: 0.0,
+        tokens_per_pass: 0,
+        hotspots: vec![],
+        per_layer_us: vec![],
+        is_real_data: false,
+        roofline: None,
+        category_summary: None,
+        backend: "static_analysis".to_string(),
+        latency_p50_ms: 0.0,
+        latency_p95_ms: 0.0,
+        latency_p99_ms: 0.0,
+        latency_min_ms: 0.0,
+        latency_max_ms: 0.0,
+        prefill_tok_s: 0.0,
+        decode_tok_s: 0.0,
+        total_tokens_generated: 0,
+        kernel_launch_overhead_pct: 0.0,
+        kernel_launch_overhead_us: 0.0,
+    })
 }
 
 /// Profile GGUF model with real inference

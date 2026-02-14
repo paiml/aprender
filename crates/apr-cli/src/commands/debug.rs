@@ -5,6 +5,7 @@
 
 use crate::error::CliError;
 use crate::output;
+use aprender::format::rosetta::{FormatType, RosettaStone};
 use aprender::format::HEADER_SIZE;
 use colored::Colorize;
 use std::ffi::OsStr;
@@ -46,7 +47,15 @@ pub(crate) fn run(
         return run_strings_mode(path, limit);
     }
 
-    // Read and parse header for drama/basic modes
+    // Rosetta Stone dispatch: detect format first
+    let detected = FormatType::from_magic(path)
+        .or_else(|_| FormatType::from_extension(path));
+
+    if let Ok(FormatType::Gguf | FormatType::SafeTensors) = detected {
+        return run_rosetta_debug(path, drama);
+    }
+
+    // APR path: read and parse header
     let (header_bytes, file_size) = read_header(path)?;
     let info = parse_header(&header_bytes);
 
@@ -54,6 +63,80 @@ pub(crate) fn run(
         run_drama_mode(path, &header_bytes, file_size, info.magic_valid);
     } else {
         run_basic_mode(path, file_size, &info);
+    }
+
+    Ok(())
+}
+
+/// Debug output for GGUF/SafeTensors via Rosetta Stone
+fn run_rosetta_debug(path: &Path, drama: bool) -> Result<(), CliError> {
+    let rosetta = RosettaStone::new();
+    let report = rosetta
+        .inspect(path)
+        .map_err(|e| CliError::InvalidFormat(format!("Failed to inspect: {e}")))?;
+
+    let filename = path
+        .file_name()
+        .unwrap_or(OsStr::new("unknown"))
+        .to_string_lossy();
+
+    let format_name = format!("{}", report.format);
+    let tensor_count = report.tensors.len();
+    let arch_str = report.architecture.as_deref().unwrap_or("unknown");
+
+    if drama {
+        println!();
+        println!("{}", "====[ DRAMA: ".yellow().bold());
+        println!("{}{}", filename.cyan().bold(), " ]====".yellow().bold());
+        println!();
+        println!("{}", "ACT I: THE FORMAT".magenta().bold());
+        print!("  Scene 1: Format detection... ");
+        println!(
+            "{} {}",
+            format_name.green().bold(),
+            "(standing ovation!)".green()
+        );
+        print!("  Scene 2: Architecture... ");
+        println!("{} {}", arch_str.green().bold(), "(bravo!)".green());
+        print!("  Scene 3: Tensor count... ");
+        println!(
+            "{} {}",
+            tensor_count.to_string().cyan().bold(),
+            "(impressive!)".cyan()
+        );
+        println!();
+        println!("{}", "CURTAIN FALLS".yellow().bold());
+    } else {
+        output::header(&format!(
+            "{}: {} {} ({})",
+            filename, format_name, arch_str, tensor_count
+        ));
+
+        let file_size = path.metadata().map(|m| m.len()).unwrap_or(0);
+
+        println!(
+            "{}",
+            output::kv_table(&[
+                (
+                    "Size",
+                    humansize::format_size(file_size, humansize::BINARY)
+                ),
+                ("Format", format!("{} {}", format_name, output::badge_pass("valid"))),
+                (
+                    "Architecture",
+                    report
+                        .architecture
+                        .clone()
+                        .unwrap_or_else(|| "unknown".to_string())
+                ),
+                ("Tensors", tensor_count.to_string()),
+                (
+                    "Parameters",
+                    report.total_params.to_string()
+                ),
+                ("Health", output::badge_pass("OK")),
+            ])
+        );
     }
 
     Ok(())

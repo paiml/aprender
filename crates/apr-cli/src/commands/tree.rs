@@ -10,7 +10,7 @@
 //!   apr tree model.apr --format mermaid
 
 use crate::error::CliError;
-use aprender::serialization::apr::AprReader;
+use aprender::format::rosetta::RosettaStone;
 use colored::Colorize;
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -82,6 +82,47 @@ impl TreeNode {
     }
 }
 
+/// Collect tensors from Rosetta Stone inspection report into tree
+fn build_tree_from_rosetta(
+    report: &aprender::format::rosetta::InspectionReport,
+    filter: Option<&str>,
+) -> TreeNode {
+    let mut root = TreeNode::new("model", "");
+    for tensor in &report.tensors {
+        if let Some(f) = filter {
+            if !tensor.name.contains(f) {
+                continue;
+            }
+        }
+        insert_tensor(&mut root, &tensor.name, &tensor.shape, tensor.size_bytes);
+    }
+    root
+}
+
+/// Insert a single tensor into the tree
+fn insert_tensor(root: &mut TreeNode, name: &str, shape: &[usize], size: usize) {
+    let parts: Vec<&str> = name.split('.').collect();
+    let mut current = root;
+
+    for (i, part) in parts.iter().enumerate() {
+        let path = parts[..=i].join(".");
+
+        if !current.children.contains_key(*part) {
+            current
+                .children
+                .insert((*part).to_string(), TreeNode::new(part, &path));
+        }
+
+        current = current.children.get_mut(*part).expect("just inserted");
+
+        if i == parts.len() - 1 {
+            current.is_leaf = true;
+            current.shape = Some(shape.to_vec());
+            current.size_bytes = size;
+        }
+    }
+}
+
 /// Run the tree command
 pub(crate) fn run(
     apr_path: &Path,
@@ -94,43 +135,12 @@ pub(crate) fn run(
         return Err(CliError::FileNotFound(apr_path.to_path_buf()));
     }
 
-    let reader = AprReader::open(apr_path)
-        .map_err(|e| CliError::InvalidFormat(format!("Failed to read APR: {e}")))?;
-
-    // Build tree from tensor names
-    let mut root = TreeNode::new("model", "");
-
-    for tensor in &reader.tensors {
-        // Apply filter
-        if let Some(f) = filter {
-            if !tensor.name.contains(f) {
-                continue;
-            }
-        }
-
-        // Parse path and build tree
-        let parts: Vec<&str> = tensor.name.split('.').collect();
-        let mut current = &mut root;
-
-        for (i, part) in parts.iter().enumerate() {
-            let path = parts[..=i].join(".");
-
-            if !current.children.contains_key(*part) {
-                current
-                    .children
-                    .insert((*part).to_string(), TreeNode::new(part, &path));
-            }
-
-            current = current.children.get_mut(*part).expect("just inserted");
-
-            // If last part, this is a leaf
-            if i == parts.len() - 1 {
-                current.is_leaf = true;
-                current.shape = Some(tensor.shape.clone());
-                current.size_bytes = tensor.size;
-            }
-        }
-    }
+    // All formats go through Rosetta Stone (handles GGUF, SafeTensors, APR v2)
+    let rosetta = RosettaStone::new();
+    let report = rosetta
+        .inspect(apr_path)
+        .map_err(|e| CliError::InvalidFormat(format!("Failed to inspect: {e}")))?;
+    let root = build_tree_from_rosetta(&report, filter);
 
     // Output based on format
     match format {
