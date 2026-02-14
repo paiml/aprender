@@ -1276,21 +1276,30 @@ fn golden_test_cases() -> Vec<(&'static str, Vec<&'static str>)> {
 }
 
 /// Generate output for a single test case based on model format.
+/// GH-239: GGUF objects are Optional — only provided when format is GGUF.
 #[cfg(feature = "inference")]
 fn generate_golden_for_format(
     path: &Path,
     prompt: &str,
     max_tokens: usize,
     format: realizar::format::ModelFormat,
-    mapped: &realizar::gguf::MappedGGUFModel,
-    gguf_model: &realizar::gguf::GGUFModel,
+    mapped: Option<&realizar::gguf::MappedGGUFModel>,
+    gguf_model: Option<&realizar::gguf::GGUFModel>,
 ) -> Result<Option<(Vec<u32>, String)>> {
     use realizar::format::ModelFormat;
 
     match format {
-        ModelFormat::Gguf => Ok(Some(golden_output_gguf_cpu(
-            mapped, gguf_model, prompt, max_tokens,
-        )?)),
+        ModelFormat::Gguf => {
+            let mapped = mapped.ok_or_else(|| {
+                CliError::ValidationFailed("GGUF mapped model required".to_string())
+            })?;
+            let gguf_model = gguf_model.ok_or_else(|| {
+                CliError::ValidationFailed("GGUF model required".to_string())
+            })?;
+            Ok(Some(golden_output_gguf_cpu(
+                mapped, gguf_model, prompt, max_tokens,
+            )?))
+        }
         ModelFormat::Apr => Ok(Some(golden_output_apr(path, prompt, max_tokens)?)),
         ModelFormat::SafeTensors => golden_output_safetensors(path, prompt, max_tokens),
     }
@@ -1306,8 +1315,8 @@ fn validate_golden_test_case(
     expected_patterns: &[&str],
     config: &QaConfig,
     format: realizar::format::ModelFormat,
-    mapped: &realizar::gguf::MappedGGUFModel,
-    gguf_model: &realizar::gguf::GGUFModel,
+    mapped: Option<&realizar::gguf::MappedGGUFModel>,
+    gguf_model: Option<&realizar::gguf::GGUFModel>,
     cuda_available: bool,
     start: Instant,
 ) -> Result<Option<GateResult>> {
@@ -1325,7 +1334,10 @@ fn validate_golden_test_case(
     #[cfg(feature = "cuda")]
     if cuda_available && format == ModelFormat::Gguf {
         use realizar::gguf::QuantizedGenerateConfig;
-        let prompt_tokens = gguf_model
+        // Safe: format==Gguf guarantees these are Some
+        let gguf_ref = gguf_model.expect("GGUF model required for GPU golden output");
+        let mapped_ref = mapped.expect("GGUF mapped model required for GPU golden output");
+        let prompt_tokens = gguf_ref
             .encode(prompt)
             .unwrap_or_else(|| vec![151643, 9707]);
         let gen_config = QuantizedGenerateConfig {
@@ -1335,10 +1347,10 @@ fn validate_golden_test_case(
             ..Default::default()
         };
         if let Some(failure) = validate_gpu_golden_output(
-            mapped,
+            mapped_ref,
             &prompt_tokens,
             &gen_config,
-            gguf_model,
+            gguf_ref,
             expected_patterns,
             config,
         )? {
@@ -1381,7 +1393,7 @@ fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
     #[cfg(feature = "inference")]
     {
         use realizar::cuda::CudaExecutor;
-        use realizar::format::detect_format;
+        use realizar::format::{detect_format, ModelFormat};
         use realizar::gguf::{GGUFModel, MappedGGUFModel};
 
         let cuda_available = CudaExecutor::is_available() && CudaExecutor::num_devices() > 0;
@@ -1389,10 +1401,17 @@ fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
             .map_err(|e| CliError::ValidationFailed(format!("Failed to read model: {e}")))?;
         let format = detect_format(&model_bytes[..8.min(model_bytes.len())])
             .map_err(|e| CliError::ValidationFailed(format!("Failed to detect format: {e}")))?;
-        let mapped = MappedGGUFModel::from_path(path)
-            .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
-        let gguf_model = GGUFModel::from_bytes(&model_bytes)
-            .map_err(|e| CliError::ValidationFailed(format!("Failed to parse GGUF: {e}")))?;
+
+        // GH-239: Only create GGUF objects when format is actually GGUF
+        let (mapped, gguf_model) = if format == ModelFormat::Gguf {
+            let m = MappedGGUFModel::from_path(path)
+                .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
+            let g = GGUFModel::from_bytes(&model_bytes)
+                .map_err(|e| CliError::ValidationFailed(format!("Failed to parse GGUF: {e}")))?;
+            (Some(m), Some(g))
+        } else {
+            (None, None)
+        };
 
         for (prompt, expected_patterns) in &test_cases {
             if let Some(result) = validate_golden_test_case(
@@ -1401,8 +1420,8 @@ fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
                 expected_patterns,
                 config,
                 format,
-                &mapped,
-                &gguf_model,
+                mapped.as_ref(),
+                gguf_model.as_ref(),
                 cuda_available,
                 start,
             )? {
