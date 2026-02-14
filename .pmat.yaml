@@ -1,0 +1,9 @@
+# PMAT project configuration
+# See: https://github.com/paiml/paiml-mcp-agent-toolkit/issues/203
+suppressions:
+  - reason: "ML model config fields (eos_token, bos_token, etc.) are not secrets"
+    rules:
+      - CB-954
+    paths:
+      - "contracts/"
+      - "docs/roadmaps/"

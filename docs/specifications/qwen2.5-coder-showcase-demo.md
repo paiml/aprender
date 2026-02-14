@@ -13,6 +13,8 @@
 **Ground Truth:** SafeTensors BF16 - See Section 0
 **Quality Philosophy:** Toyota Way + Popperian Falsification (Zero SATD, Stop-the-Line, Jidoka)
 
+## Overview
+
 ### Release Criteria (v10.1 — 7B Single Provenance + Contract Gate)
 
 | Format | Source | CPU | GPU | Status |
