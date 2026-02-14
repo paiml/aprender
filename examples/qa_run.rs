@@ -827,6 +827,34 @@ fn run_chat_test(
     }
 }
 
+/// Poll server health endpoint until ready or timeout (PMAT-QA-PROTOCOL-001 §7.4)
+fn wait_for_server_ready(server_guard: &mut ProcessGuard, port: u16) -> Result<(), String> {
+    let start = Instant::now();
+    let server_timeout = Duration::from_secs(30);
+    let health_url = format!("http://127.0.0.1:{port}/health");
+
+    loop {
+        if start.elapsed() >= server_timeout {
+            return Err("Server startup timeout (30s)".to_string());
+        }
+        if let Some(child) = server_guard.child_mut() {
+            if let Ok(Some(status)) = child.try_wait() {
+                return Err(format!("Server exited early: {status}"));
+            }
+        }
+        let health_check = Command::new("curl")
+            .args(["-s", "-o", "/dev/null", "-w", "%{http_code}", &health_url])
+            .output();
+        if let Ok(output) = health_check {
+            let code = String::from_utf8_lossy(&output.stdout);
+            if code.trim() == "200" {
+                return Ok(());
+            }
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+}
+
 /// Run `apr serve` test with HTTP request (PMAT-QA-PROTOCOL-001 §7.4)
 ///
 /// 1. Start apr serve on a random port
@@ -887,37 +915,7 @@ fn run_serve_test(
     };
 
     // Wait for server to be ready (poll health endpoint)
-    let start = Instant::now();
-    let server_timeout = Duration::from_secs(30);
-    let health_url = format!("http://127.0.0.1:{}/health", port);
-
-    loop {
-        if start.elapsed() >= server_timeout {
-            // ProcessGuard::drop will kill the server
-            return Err("Server startup timeout (30s)".to_string());
-        }
-
-        // Check if server crashed
-        if let Some(child) = server_guard.child_mut() {
-            if let Ok(Some(status)) = child.try_wait() {
-                return Err(format!("Server exited early: {}", status));
-            }
-        }
-
-        // Try health check
-        let health_check = Command::new("curl")
-            .args(["-s", "-o", "/dev/null", "-w", "%{http_code}", &health_url])
-            .output();
-
-        if let Ok(output) = health_check {
-            let code = String::from_utf8_lossy(&output.stdout);
-            if code.trim() == "200" {
-                break; // Server ready
-            }
-        }
-
-        std::thread::sleep(Duration::from_millis(500));
-    }
+    wait_for_server_ready(&mut server_guard, port)?;
 
     // Build request body
     let body = format!(
@@ -1013,22 +1011,45 @@ fn run_modality_test(
     }
 }
 
+/// Strip ANSI escape sequences from a string (e.g., \x1b[1;32m → "")
+fn strip_ansi(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c == '\x1b' {
+            // Skip ESC [ ... m sequences
+            if chars.next() == Some('[') {
+                for c2 in chars.by_ref() {
+                    if c2.is_ascii_alphabetic() {
+                        break;
+                    }
+                }
+            }
+        } else {
+            result.push(c);
+        }
+    }
+    result
+}
+
 /// Extract just the model output from apr run output (between "Output:" and "Completed in")
 /// This filters out compilation warnings, paths, and timing info that might contain false positives.
+/// Handles ANSI color codes in output (e.g., \x1b[1;32mOutput:\x1b[0m)
 fn extract_output(raw: &str) -> String {
     let lines: Vec<&str> = raw.lines().collect();
     let mut in_output = false;
     let mut content = Vec::new();
     for line in lines {
-        if line.starts_with("Output:") {
+        let clean = strip_ansi(line);
+        if clean.starts_with("Output:") {
             in_output = true;
             continue;
         }
-        if line.starts_with("Completed in ") {
+        if clean.starts_with("Completed in ") {
             break;
         }
         if in_output {
-            content.push(line);
+            content.push(strip_ansi(line));
         }
     }
     content.join("\n").trim().to_string()
@@ -1151,251 +1172,111 @@ fn contains_as_word(haystack: &str, needle: &str) -> bool {
     false
 }
 
+/// Convert VerifyResult to TestResult for a named test
+fn verify_to_test(name: &'static str, max_points: u32, result: VerifyResult) -> TestResult {
+    match result {
+        VerifyResult::Pass(_) => TestResult::pass(name, max_points, "Clean output".to_string()),
+        VerifyResult::FailEmpty => TestResult::fail(name, max_points, "Empty output".to_string()),
+        VerifyResult::FailGarbage(p) => TestResult::fail(name, max_points, format!("GARBAGE: '{p}'")),
+        VerifyResult::FailBpeArtifact(c) => TestResult::fail(name, max_points, format!("BPE artifact: '{c}'")),
+        VerifyResult::FailMissingAnswer(msg) => TestResult::fail(name, max_points, msg),
+    }
+}
+
+/// Run output verification test: run model, extract output, verify quality
+fn run_verify_test(
+    config: &Config, cell: &MatrixCell, name: &'static str, max_points: u32,
+    prompt: &str, max_tokens: u32, expected: Option<&str>,
+) -> TestResult {
+    match run_modality_test(config, cell, prompt, max_tokens) {
+        Ok(raw) => verify_to_test(name, max_points, verify_output(&extract_output(&raw), expected)),
+        Err(e) => TestResult::fail(name, max_points, e),
+    }
+}
+
+/// Run performance test: measure tok/s against threshold
+fn run_perf_test(config: &Config, cell: &MatrixCell) -> TestResult {
+    let perf_start = Instant::now();
+    match run_modality_test(config, cell, "Count from 1 to 20.", 50) {
+        Ok(output) => {
+            let elapsed = perf_start.elapsed().as_secs_f64();
+            let tokens_est = (output.split_whitespace().count() as f64 * 1.3).max(10.0);
+            let tps = tokens_est / elapsed;
+            let base_target = match (cell.backend, cell.format) {
+                (Backend::Cpu, _) => config.min_cpu_tps,
+                (Backend::Gpu, Format::SafeTensors) => config.min_gpu_tps_float32,
+                (Backend::Gpu, _) => config.min_gpu_tps,
+            };
+            let target = match cell.modality {
+                Modality::Run => base_target,
+                Modality::Chat | Modality::Serve => base_target * 0.5,
+            };
+            if tps >= target {
+                TestResult::pass("Performance", 3, format!("{tps:.1} tok/s >= {target:.1}"))
+            } else {
+                TestResult::fail("Performance", 3, format!("{tps:.1} tok/s < {target:.1}"))
+            }
+        }
+        Err(e) => TestResult::fail("Performance", 3, e),
+    }
+}
+
 /// Run all tests for a single matrix cell
 /// Dispatches to run_modality_test for Chat/Serve modalities (PMAT-QA-PROTOCOL-001 §7.4)
 fn run_cell_tests(config: &Config, cell: &MatrixCell) -> CellResult {
     let start = Instant::now();
     let mut tests = Vec::new();
 
-    // Skip GPU tests if no GPU
     if cell.backend == Backend::Gpu && !gpu_available() {
-        tests.push(TestResult::skip(
-            "All Tests",
-            15,
-            "No GPU available".to_string(),
-        ));
-        return CellResult {
-            cell: cell.clone(),
-            tests,
-            total_points: 0,
-            max_points: 15,
-            elapsed: start.elapsed(),
-        };
+        tests.push(TestResult::skip("All Tests", 15, "No GPU available".to_string()));
+        return CellResult { cell: cell.clone(), tests, total_points: 0, max_points: 15, elapsed: start.elapsed() };
     }
 
     // Test 1: Model loads (2 points)
-    // Uses run_modality_test to dispatch based on modality (Run/Chat/Serve)
-    match run_modality_test(
-        config,
-        cell,
-        "What is 2+2? Answer with just the number.",
-        10,
-    ) {
-        Ok(_) => tests.push(TestResult::pass(
-            "Model Load",
-            2,
-            format!("{} via {:?}", cell.model_uri, cell.modality),
-        )),
+    match run_modality_test(config, cell, "What is 2+2? Answer with just the number.", 10) {
+        Ok(_) => tests.push(TestResult::pass("Model Load", 2, format!("{} via {:?}", cell.model_uri, cell.modality))),
         Err(e) => {
             tests.push(TestResult::fail("Model Load", 2, e));
-            return CellResult {
-                cell: cell.clone(),
-                tests,
-                total_points: 0,
-                max_points: 15,
-                elapsed: start.elapsed(),
-            };
+            return CellResult { cell: cell.clone(), tests, total_points: 0, max_points: 15, elapsed: start.elapsed() };
         }
     }
 
-    // Test 2: Correct output with full verification (3 points)
-    // Uses verify_output which checks: empty, garbage, BPE, then answer
-    // (PMAT-QA-PROTOCOL-001 §7.5)
-    match run_modality_test(
-        config,
-        cell,
-        "What is 2+2? Answer with just the number.",
-        10,
-    ) {
-        Ok(raw_output) => {
-            let output = extract_output(&raw_output);
-            match verify_output(&output, Some("4")) {
-                VerifyResult::Pass(_) => {
-                    tests.push(TestResult::pass(
-                        "Correct Output",
-                        3,
-                        "Contains '4', no garbage".to_string(),
-                    ));
-                }
-                VerifyResult::FailEmpty => {
-                    tests.push(TestResult::fail(
-                        "Correct Output",
-                        3,
-                        "Empty output".to_string(),
-                    ));
-                }
-                VerifyResult::FailGarbage(pattern) => {
-                    tests.push(TestResult::fail(
-                        "Correct Output",
-                        3,
-                        format!("GARBAGE: '{}'", pattern),
-                    ));
-                }
-                VerifyResult::FailBpeArtifact(c) => {
-                    tests.push(TestResult::fail(
-                        "Correct Output",
-                        3,
-                        format!("BPE artifact: '{}'", c),
-                    ));
-                }
-                VerifyResult::FailMissingAnswer(msg) => {
-                    tests.push(TestResult::fail("Correct Output", 3, msg));
-                }
-            }
-        }
-        Err(e) => tests.push(TestResult::fail("Correct Output", 3, e)),
-    }
+    // Test 2: Correct output (3 points)
+    tests.push(run_verify_test(config, cell, "Correct Output", 3, "What is 2+2? Answer with just the number.", 10, Some("4")));
 
-    // Test 3: No garbage on "hello" prompt (3 points)
-    // Separate test to catch garbage that might not appear in math answers
+    // Test 3: No garbage (3 points)
+    tests.push(run_verify_test(config, cell, "No Garbage", 3, "Say hello.", 20, None));
+
+    // Test 4: No BPE artifacts (2 points)
     match run_modality_test(config, cell, "Say hello.", 20) {
-        Ok(raw_output) => {
-            let output = extract_output(&raw_output);
-            match verify_output(&output, None) {
-                VerifyResult::Pass(_) => {
-                    tests.push(TestResult::pass(
-                        "No Garbage",
-                        3,
-                        "Clean output".to_string(),
-                    ));
-                }
-                VerifyResult::FailEmpty => {
-                    tests.push(TestResult::fail(
-                        "No Garbage",
-                        3,
-                        "Empty output".to_string(),
-                    ));
-                }
-                VerifyResult::FailGarbage(pattern) => {
-                    tests.push(TestResult::fail(
-                        "No Garbage",
-                        3,
-                        format!("GARBAGE: '{}'", pattern),
-                    ));
-                }
-                VerifyResult::FailBpeArtifact(c) => {
-                    tests.push(TestResult::fail(
-                        "No Garbage",
-                        3,
-                        format!("BPE artifact: '{}'", c),
-                    ));
-                }
-                VerifyResult::FailMissingAnswer(_) => {
-                    // No expected answer for this test
-                    tests.push(TestResult::pass(
-                        "No Garbage",
-                        3,
-                        "Clean output".to_string(),
-                    ));
-                }
-            }
-        }
-        Err(e) => tests.push(TestResult::fail("No Garbage", 3, e)),
-    }
-
-    // Test 4: No BPE artifacts (2 points) - redundant but kept for compatibility
-    // verify_output already checks this, but explicit test for reporting
-    match run_modality_test(config, cell, "Say hello.", 20) {
-        Ok(raw_output) => {
-            let output = extract_output(&raw_output);
+        Ok(raw) => {
+            let output = extract_output(&raw);
             let has_bpe = BPE_ARTIFACTS.iter().any(|&c| output.contains(c));
-            if has_bpe {
-                tests.push(TestResult::fail(
-                    "No BPE Artifacts",
-                    2,
-                    "Ġ/Ċ/ĉ detected".to_string(),
-                ));
+            tests.push(if has_bpe {
+                TestResult::fail("No BPE Artifacts", 2, "Ġ/Ċ/ĉ detected".to_string())
             } else {
-                tests.push(TestResult::pass(
-                    "No BPE Artifacts",
-                    2,
-                    "Clean tokens".to_string(),
-                ));
-            }
+                TestResult::pass("No BPE Artifacts", 2, "Clean tokens".to_string())
+            });
         }
         Err(e) => tests.push(TestResult::fail("No BPE Artifacts", 2, e)),
     }
 
     // Test 5: Trace works (2 points)
-    // Create a cell variant with trace enabled for this specific test
-    let trace_cell = MatrixCell {
-        id: cell.id.clone(),
-        modality: cell.modality,
-        backend: cell.backend,
-        format: cell.format,
-        model_uri: cell.model_uri.clone(),
-        with_trace: true,
-    };
+    let trace_cell = MatrixCell { with_trace: true, ..cell.clone() };
     match run_modality_test(config, &trace_cell, "Hi", 5) {
-        Ok(_) => tests.push(TestResult::pass(
-            "Trace Works",
-            2,
-            format!("{:?} + trace accepted", cell.modality),
-        )),
-        Err(e) => {
-            if e.contains("not supported") || e.contains("trace") {
-                tests.push(TestResult::skip(
-                    "Trace Works",
-                    2,
-                    format!("Trace not supported for {:?}", cell.modality),
-                ));
-            } else {
-                tests.push(TestResult::fail("Trace Works", 2, e));
-            }
+        Ok(_) => tests.push(TestResult::pass("Trace Works", 2, format!("{:?} + trace accepted", cell.modality))),
+        Err(e) if e.contains("not supported") || e.contains("trace") => {
+            tests.push(TestResult::skip("Trace Works", 2, format!("Trace not supported for {:?}", cell.modality)));
         }
+        Err(e) => tests.push(TestResult::fail("Trace Works", 2, e)),
     }
 
     // Test 6: Performance (3 points)
-    // Note: Performance test uses Run modality for consistent measurement
-    // Chat/Serve have overhead that would skew tok/s numbers unfairly
-    let perf_start = Instant::now();
-    match run_modality_test(config, cell, "Count from 1 to 20.", 50) {
-        Ok(output) => {
-            let elapsed = perf_start.elapsed().as_secs_f64();
-            let words = output.split_whitespace().count();
-            let tokens_est = (words as f64 * 1.3).max(10.0);
-            let tps = tokens_est / elapsed;
-            // Use format-specific threshold: SafeTensors (float32) is memory-bound
-            // and slower than quantized formats (GGUF, APR). Refs: GH-157
-            // Also adjust for modality overhead
-            let base_target = match (cell.backend, cell.format) {
-                (Backend::Cpu, _) => config.min_cpu_tps,
-                (Backend::Gpu, Format::SafeTensors) => config.min_gpu_tps_float32,
-                (Backend::Gpu, _) => config.min_gpu_tps,
-            };
-            // Chat/Serve have startup overhead, reduce target by 50%
-            let target = match cell.modality {
-                Modality::Run => base_target,
-                Modality::Chat | Modality::Serve => base_target * 0.5,
-            };
-
-            if tps >= target {
-                tests.push(TestResult::pass(
-                    "Performance",
-                    3,
-                    format!("{:.1} tok/s >= {:.1}", tps, target),
-                ));
-            } else {
-                tests.push(TestResult::fail(
-                    "Performance",
-                    3,
-                    format!("{:.1} tok/s < {:.1}", tps, target),
-                ));
-            }
-        }
-        Err(e) => tests.push(TestResult::fail("Performance", 3, e)),
-    }
+    tests.push(run_perf_test(config, cell));
 
     let total: u32 = tests.iter().map(|t| t.points).sum();
     let max: u32 = tests.iter().map(|t| t.max_points).sum();
-
-    CellResult {
-        cell: cell.clone(),
-        tests,
-        total_points: total,
-        max_points: max,
-        elapsed: start.elapsed(),
-    }
+    CellResult { cell: cell.clone(), tests, total_points: total, max_points: max, elapsed: start.elapsed() }
 }
 
 fn print_cell_result(result: &CellResult) {
@@ -1735,23 +1616,123 @@ fn parse_flag_with_value(flag: &str, val: &str, parsed: &mut ParsedArgs) {
     }
 }
 
+/// Resolve model URI for a given format from config
+fn model_for_format(config: &Config, format: Format) -> String {
+    match format {
+        Format::Gguf => config.gguf_model.clone(),
+        Format::SafeTensors => config.safetensors_model.clone(),
+        Format::Apr => config.apr_model.clone(),
+    }
+}
+
+/// Build matrix cells based on parsed CLI arguments (PMAT-SHOWCASE-METHODOLOGY-001)
+fn build_cells(config: &Config, parsed: &ParsedArgs) -> Vec<MatrixCell> {
+    if parsed.run_full_matrix {
+        return build_full_matrix_cells(config);
+    }
+    if parsed.run_matrix {
+        return build_standard_matrix_cells(config);
+    }
+    if let (Some(modality), Some(backend), Some(format)) =
+        (parsed.single_modality, parsed.single_backend, parsed.single_format)
+    {
+        let model = model_for_format(config, format);
+        return vec![MatrixCell::new("S1", backend, format, model).with_modality(modality)];
+    }
+    if let (Some(backend), Some(format)) = (parsed.single_backend, parsed.single_format) {
+        let model = model_for_format(config, format);
+        return vec![MatrixCell::new("S1", backend, format, model)];
+    }
+    if let Some(ref model_path) = parsed.legacy_model {
+        return build_legacy_cells(model_path);
+    }
+    println!(
+        "{}No mode specified. Use --matrix, --backend + --format, or --model{}",
+        YELLOW, NC
+    );
+    println!();
+    print_help();
+    std::process::exit(2);
+}
+
+/// Build full 21-cell matrix (3 modalities × 3 formats × trace variants)
+fn build_full_matrix_cells(config: &Config) -> Vec<MatrixCell> {
+    let mut cells = Vec::new();
+    let mut id = 1;
+    for modality in [Modality::Run, Modality::Chat, Modality::Serve] {
+        for format in [Format::Gguf, Format::SafeTensors, Format::Apr] {
+            let model = model_for_format(config, format);
+            cells.push(
+                MatrixCell::new(&format!("F{id:02}"), Backend::Cpu, format, model.clone())
+                    .with_modality(modality),
+            );
+            id += 1;
+            cells.push(
+                MatrixCell::new(&format!("F{id:02}"), Backend::Cpu, format, model.clone())
+                    .with_modality(modality)
+                    .with_trace(true),
+            );
+            id += 1;
+            if format == Format::Gguf {
+                cells.push(
+                    MatrixCell::new(&format!("F{id:02}"), Backend::Gpu, format, model)
+                        .with_modality(modality),
+                );
+                id += 1;
+            }
+        }
+    }
+    println!(
+        "{}FULL MATRIX: {} cells (modality × format × trace){}\n",
+        MAGENTA,
+        cells.len(),
+        NC
+    );
+    cells
+}
+
+/// Build standard matrix cells (Class A quantized + Class B full precision)
+fn build_standard_matrix_cells(config: &Config) -> Vec<MatrixCell> {
+    let mut cells = Vec::new();
+    if config.test_class.includes_quantized() {
+        cells.push(MatrixCell::new("A1", Backend::Cpu, Format::Gguf, config.gguf_model.clone()));
+        cells.push(MatrixCell::new("A2", Backend::Cpu, Format::Apr, config.apr_model.clone()));
+        cells.push(MatrixCell::new("A3", Backend::Gpu, Format::Gguf, config.gguf_model.clone()));
+        cells.push(MatrixCell::new("A4", Backend::Gpu, Format::Apr, config.apr_model.clone()));
+    }
+    if config.test_class.includes_full_precision() {
+        cells.push(MatrixCell::new("B1", Backend::Cpu, Format::SafeTensors, config.safetensors_model.clone()));
+        cells.push(MatrixCell::new("B2", Backend::Cpu, Format::Apr, config.apr_model.clone()));
+        cells.push(MatrixCell::new("B3", Backend::Gpu, Format::SafeTensors, config.safetensors_model.clone()));
+        cells.push(MatrixCell::new("B4", Backend::Gpu, Format::Apr, config.apr_model.clone()));
+    }
+    cells
+}
+
+/// Build cells for legacy --model flag
+fn build_legacy_cells(model_path: &PathBuf) -> Vec<MatrixCell> {
+    let model = model_path.to_string_lossy().to_string();
+    let format = if model_path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("gguf")) {
+        Format::Gguf
+    } else if model_path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("safetensors")) {
+        Format::SafeTensors
+    } else {
+        Format::Apr
+    };
+    vec![
+        MatrixCell::new("L1", Backend::Cpu, format, model.clone()),
+        MatrixCell::new("L2", Backend::Gpu, format, model),
+    ]
+}
+
 fn main() {
     // Set up SIGINT handler for graceful shutdown (PMAT-098-PF: zombie mitigation)
     setup_signal_handler();
 
     let args: Vec<String> = env::args().collect();
-    let ParsedArgs {
-        config,
-        run_matrix,
-        run_full_matrix,
-        single_backend,
-        single_format,
-        single_modality,
-        legacy_model,
-        show_help,
-    } = parse_args(&args);
+    let parsed = parse_args(&args);
 
-    if show_help {
+    if parsed.show_help {
         print_help();
         return;
     }
@@ -1776,167 +1757,8 @@ fn main() {
     );
     println!();
 
-    // Build cells to test - using HuggingFace URIs (apr downloads automatically)
-    // Cell selection based on test_class (PMAT-SHOWCASE-METHODOLOGY-001)
-    let cells: Vec<MatrixCell> = if run_full_matrix {
-        // Full 21-cell matrix: 3 modalities × 3 formats × (2 CPU configs + 1 GPU for GGUF only)
-        // Per modality: GGUF(3) + SafeTensors(2) + APR(2) = 7 cells
-        // Total: 3 modalities × 7 = 21 cells (PMAT-QA-PROTOCOL-001 §7.4)
-        let mut cells = Vec::new();
-        let mut id = 1;
-
-        for modality in [Modality::Run, Modality::Chat, Modality::Serve] {
-            for format in [Format::Gguf, Format::SafeTensors, Format::Apr] {
-                let model = match format {
-                    Format::Gguf => config.gguf_model.clone(),
-                    Format::SafeTensors => config.safetensors_model.clone(),
-                    Format::Apr => config.apr_model.clone(),
-                };
-
-                // CPU without trace
-                cells.push(
-                    MatrixCell::new(&format!("F{:02}", id), Backend::Cpu, format, model.clone())
-                        .with_modality(modality),
-                );
-                id += 1;
-
-                // CPU with trace
-                cells.push(
-                    MatrixCell::new(&format!("F{:02}", id), Backend::Cpu, format, model.clone())
-                        .with_modality(modality)
-                        .with_trace(true),
-                );
-                id += 1;
-
-                // GPU without trace (skip SafeTensors/APR GPU - PMAT-106 blocker)
-                if format == Format::Gguf {
-                    cells.push(
-                        MatrixCell::new(&format!("F{:02}", id), Backend::Gpu, format, model)
-                            .with_modality(modality),
-                    );
-                    id += 1;
-                }
-            }
-        }
-
-        println!(
-            "{}FULL MATRIX: {} cells (modality × format × trace){}\n",
-            MAGENTA,
-            cells.len(),
-            NC
-        );
-        cells
-    } else if run_matrix {
-        let mut cells = Vec::new();
-
-        // Class A: Quantized (GGUF Q4_K, APR Q4_K converted from GGUF)
-        if config.test_class.includes_quantized() {
-            // A1, A2: CPU × GGUF, CPU × APR (from GGUF)
-            cells.push(MatrixCell::new(
-                "A1",
-                Backend::Cpu,
-                Format::Gguf,
-                config.gguf_model.clone(),
-            ));
-            cells.push(MatrixCell::new(
-                "A2",
-                Backend::Cpu,
-                Format::Apr,
-                config.apr_model.clone(),
-            ));
-            // A3, A4: GPU × GGUF, GPU × APR (from GGUF)
-            cells.push(MatrixCell::new(
-                "A3",
-                Backend::Gpu,
-                Format::Gguf,
-                config.gguf_model.clone(),
-            ));
-            cells.push(MatrixCell::new(
-                "A4",
-                Backend::Gpu,
-                Format::Apr,
-                config.apr_model.clone(),
-            ));
-        }
-
-        // Class B: Full Precision (SafeTensors F32, APR F32 converted from SafeTensors)
-        if config.test_class.includes_full_precision() {
-            // B1, B2: CPU × SafeTensors, CPU × APR (from SafeTensors)
-            cells.push(MatrixCell::new(
-                "B1",
-                Backend::Cpu,
-                Format::SafeTensors,
-                config.safetensors_model.clone(),
-            ));
-            cells.push(MatrixCell::new(
-                "B2",
-                Backend::Cpu,
-                Format::Apr,
-                config.apr_model.clone(),
-            ));
-            // B3, B4: GPU × SafeTensors, GPU × APR (from SafeTensors)
-            cells.push(MatrixCell::new(
-                "B3",
-                Backend::Gpu,
-                Format::SafeTensors,
-                config.safetensors_model.clone(),
-            ));
-            cells.push(MatrixCell::new(
-                "B4",
-                Backend::Gpu,
-                Format::Apr,
-                config.apr_model.clone(),
-            ));
-        }
-
-        cells
-    } else if let (Some(modality), Some(backend), Some(format)) =
-        (single_modality, single_backend, single_format)
-    {
-        // Single cell with modality
-        let model = match format {
-            Format::Gguf => config.gguf_model.clone(),
-            Format::SafeTensors => config.safetensors_model.clone(),
-            Format::Apr => config.apr_model.clone(),
-        };
-        vec![MatrixCell::new("S1", backend, format, model).with_modality(modality)]
-    } else if let (Some(backend), Some(format)) = (single_backend, single_format) {
-        // Single cell
-        let model = match format {
-            Format::Gguf => config.gguf_model.clone(),
-            Format::SafeTensors => config.safetensors_model.clone(),
-            Format::Apr => config.apr_model.clone(),
-        };
-        vec![MatrixCell::new("S1", backend, format, model)]
-    } else if let Some(model_path) = legacy_model {
-        // Legacy single model mode
-        let model = model_path.to_string_lossy().to_string();
-        let format = if model_path
-            .extension()
-            .is_some_and(|ext| ext.eq_ignore_ascii_case("gguf"))
-        {
-            Format::Gguf
-        } else if model_path
-            .extension()
-            .is_some_and(|ext| ext.eq_ignore_ascii_case("safetensors"))
-        {
-            Format::SafeTensors
-        } else {
-            Format::Apr
-        };
-        vec![
-            MatrixCell::new("L1", Backend::Cpu, format, model.clone()),
-            MatrixCell::new("L2", Backend::Gpu, format, model),
-        ]
-    } else {
-        println!(
-            "{}No mode specified. Use --matrix, --backend + --format, or --model{}",
-            YELLOW, NC
-        );
-        println!();
-        print_help();
-        std::process::exit(2);
-    };
+    let cells = build_cells(&parsed.config, &parsed);
+    let config = parsed.config;
 
     // Show what we're testing
     println!("{}Testing {} cell(s):{}", CYAN, cells.len(), NC);
