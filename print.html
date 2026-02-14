@@ -3226,8 +3226,8 @@ fn falsify_001_embedding_rejects_all_zeros() {
 <p><strong>See also:</strong></p>
 <ul>
 <li><a href="toyota-way/../methodology/what-is-extreme-tdd.html">What is EXTREME TDD?</a></li>
-<li><a href="toyota-way/../../examples/poka_yoke_validation.rs">Poka-Yoke Validation Example</a></li>
-<li><a href="toyota-way/../../contracts/tensor-layout-v1.yaml">Contract Specification</a></li>
+<li><a href="toyota-way/../../../examples/poka_yoke_validation.rs">Poka-Yoke Validation Example</a></li>
+<li><a href="toyota-way/../../../contracts/tensor-layout-v1.yaml">Contract Specification</a></li>
 </ul>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="pdca-cycle"><a class="header" href="#pdca-cycle">Pdca Cycle</a></h1>
 <p>📝 <strong>This chapter is under construction.</strong></p>
@@ -21160,7 +21160,9 @@ fn main() {
 <h2 id="see-also-10"><a class="header" href="#see-also-10">See Also</a></h2>
 <ul>
 <li><a href="examples/./graph-algorithms-comprehensive.html">Graph Algorithms</a> - General graph analysis</li>
-<li><a href="examples/../api/gnn.html">GNN Module</a> - GCN, GAT, GIN layers</li>
+</ul>
+<!-- GNN Module API reference not yet written -->
+<ul>
 <li><a href="examples/./text-preprocessing.html">Text Processing</a> - NLP for code comments</li>
 </ul>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="kmeans-clustering"><a class="header" href="#kmeans-clustering">Kmeans Clustering</a></h1>
@@ -38617,7 +38619,7 @@ fn train(data: &amp;[f32], epochs: usize) -&gt; Result&lt;Vec&lt;f32&gt;&gt; {
 </div>
 <h2 id="see-also-18"><a class="header" href="#see-also-18">See Also</a></h2>
 <ul>
-<li><a href="examples/../../docs/specifications/include-latest-trueno-features.html">Trueno Ecosystem Integration Spec</a></li>
+<li><a href="examples/../../../docs/specifications/include-latest-trueno-features.html">Trueno Ecosystem Integration Spec</a></li>
 <li><a href="examples/./pipeline-verification.html">Case Study: Pipeline Verification</a></li>
 <li><a href="examples/./poka-yoke-validation.html">Case Study: Poka-Yoke Validation</a></li>
 <li><a href="examples/../toyota-way/jidoka.html">Toyota Way: Jidoka</a></li>
@@ -40655,7 +40657,7 @@ let response = gateway.infer(&amp;request).await?;</code></pre>
 <ul>
 <li><a href="examples/./federation-gateway.html">Federation Gateway</a></li>
 <li><a href="examples/./federation-routing.html">Federation Routing Policies</a></li>
-<li><a href="examples/../formats/apr.html">APR Model Format</a></li>
+<li>APR Model Format (see <code>docs/specifications/APR-SPEC.md</code>)</li>
 </ul>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="case-study-federation-gateway"><a class="header" href="#case-study-federation-gateway">Case Study: Federation Gateway</a></h1>
 <p>The Federation Gateway provides enterprise-grade model routing across distributed infrastructure. This case study demonstrates building a fault-tolerant, policy-based routing system using Extreme TDD principles.</p>
@@ -44333,10 +44335,7 @@ Memory savings:
 </tbody></table>
 </div>
 <h2 id="see-also-23"><a class="header" href="#see-also-23">See Also</a></h2>
-<ul>
-<li><a href="examples/../ml-fundamentals/profiling.html">Performance Profiling</a></li>
-<li><a href="examples/../ml-fundamentals/quantization.html">Quantization Guide</a></li>
-</ul>
+<!-- Performance Profiling and Quantization Guide chapters not yet written -->
 <div style="break-before: page; page-break-before: always;"></div><h1 id="showcase-benchmark"><a class="header" href="#showcase-benchmark">Showcase Benchmark</a></h1>
 <p>This example demonstrates the Qwen2.5-Coder showcase benchmark harness for measuring inference performance against baselines like Ollama and llama.cpp.</p>
 <h2 id="-showcase-complete-2026-01-18"><a class="header" href="#-showcase-complete-2026-01-18">🏆 SHOWCASE COMPLETE (2026-01-18)</a></h2>
@@ -44388,7 +44387,7 @@ cargo run --release --example showcase_benchmark
 </ul>
 <h2 id="see-also-24"><a class="header" href="#see-also-24">See Also</a></h2>
 <ul>
-<li><a href="examples/../../specifications/qwen2.5-coder-showcase-demo.html">Qwen2.5-Coder Showcase Spec</a></li>
+<li><a href="examples/../../../docs/specifications/qwen2.5-coder-showcase-demo.html">Qwen2.5-Coder Showcase Spec</a></li>
 <li><a href="examples/./bench-comparison.html">Benchmark Comparison</a></li>
 </ul>
 <div style="break-before: page; page-break-before: always;"></div><h1 id="case-study-qa-falsification-protocol-pmat-098"><a class="header" href="#case-study-qa-falsification-protocol-pmat-098">Case Study: QA Falsification Protocol (PMAT-098)</a></h1>
@@ -44672,7 +44671,7 @@ cargo build --release
 <h2 id="references-53"><a class="header" href="#references-53">References</a></h2>
 <ul>
 <li><a href="https://github.com/paiml/apr-model-qa-playbook/blob/main/docs/specifications/apr-playbook-spec.md">apr-model-qa-playbook Specification</a></li>
-<li><a href="examples/../../docs/specifications/qwen2.5-coder-showcase-demo.html">Qwen2.5-Coder Showcase Demo</a></li>
+<li><a href="examples/../../../docs/specifications/qwen2.5-coder-showcase-demo.html">Qwen2.5-Coder Showcase Demo</a></li>
 <li>Karl Popper, &quot;The Logic of Scientific Discovery&quot; (1934)</li>
 <li>Toyota Production System: Jidoka + Poka-Yoke</li>
 </ul>
@@ -45011,7 +45010,7 @@ if path_str.ends_with(&quot;.safetensors.index.json&quot;) {
 </ol>
 <h2 id="related-1"><a class="header" href="#related-1">Related</a></h2>
 <ul>
-<li><strong>Bug 205</strong> in the <a href="examples/../../docs/specifications/qwen2.5-coder-showcase-demo.html">showcase spec</a></li>
+<li><strong>Bug 205</strong> in the <a href="examples/../../../docs/specifications/qwen2.5-coder-showcase-demo.html">showcase spec</a></li>
 <li><code>realizar/src/infer/mod.rs:1379</code> — reference sharded inference implementation</li>
 <li><code>realizar/src/safetensors/mod.rs</code> — <code>ShardedSafeTensorsModel</code> API</li>
 </ul>
