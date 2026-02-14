@@ -1,15 +1,15 @@
 # Qwen2.5-Coder Showcase: Unified Inference Architecture
 
-**Version:** 10.51.0 (Full Stack: apr-cli + aprender + realizar + trueno + batuta, Popperian falsified)
-**Status:** ALL THREE PROJECTS A+ + ZERO SATD (7B all 3 formats working CPU + GPU. 51 falsification rounds, 244 bugs found. Round 51: validate --json ANSI fix, 12 spec text corrections (stale perf numbers, gate counts, consistency). Round 50: GH-231 embedding quantization skip, GH-232 tied embedding resolver for GPT-2, GH-233 GPT-2 architecture support + density threshold fix. 11,230+ tests, 3,796 apr-cli tests. `apr qa` all 10 gates pass. TDG: 96.9/100 A+. Project Score: A+. Coverage: 96.35%. SATD: 0/0/0.)
+**Version:** 10.52.0 (Full Stack: apr-cli + aprender + realizar + trueno + batuta, Popperian falsified)
+**Status:** ALL THREE PROJECTS A+ + ZERO SATD (7B all 3 formats working CPU + GPU. 52 falsification rounds, 244 bugs found. Round 52: GH-250/254 bench --json clean stdout, run --json tokens field, GPU→CPU fallback for APR Q8. Round 51: validate --json ANSI fix, 12 spec text corrections. 11,244 tests, 3,760 apr-cli tests. `apr qa` all 10 gates pass. TDG: 96.9/100 A+. Project Score: A+. Coverage: 96.35%. SATD: 0/0/0.)
 **Primary Model:** `Qwen/Qwen2.5-Coder-7B-Instruct`
 **Supported Models:** Qwen2.5-Coder 0.5B, 1.5B, 3B, 7B (all sizes)
 **Source Format:** SafeTensors BF16 (HuggingFace, sharded, ~14 GB for 7B)
-**Popperian Score:** 160/168 gates passing (95.2%) — 8 FALSIFIED, 0 blocked/not-tested. 168 falsification gates, 23 sections. 51 rounds, 244 bugs. Gated by `model-tests` feature (`make test-model`)
+**Popperian Score:** 160/168 gates passing (95.2%) — 8 FALSIFIED, 0 blocked/not-tested. 168 falsification gates, 25 sections. 52 rounds, 244 bugs. Gated by `model-tests` feature (`make test-model`)
 **CLI Surface:** 39 top-level + 10 nested subcommands (49 total)
 **Compile-Time Proofs:** 297 algebraic invariants (zero runtime cost)
 **Author:** PAIML Engineering
-**Date:** 2026-02-14 (Round 51)
+**Date:** 2026-02-15 (Round 52)
 **Ground Truth:** SafeTensors BF16 - See Section 0
 **Quality Philosophy:** Toyota Way + Popperian Falsification (Zero SATD, Stop-the-Line, Jidoka)
 
@@ -33,7 +33,7 @@
 
 ## Executive Summary
 
-The Qwen2.5-Coder Showcase demonstrates the unified inference architecture across three model formats (SafeTensors, APR, GGUF) with CPU and GPU backends, using a single model with a single provenance chain. The full stack is exercised end-to-end: **apr-cli** (49 subcommands) → **aprender** (contract validation, 297 compile-time proofs) → **realizar** (inference: two-phase generation with batched prefill, PagedAttention KV cache, 8 sampling algorithms + penalty modifiers, GQA attention, OpenAI-compatible API, PTX parity validation) → **trueno** (SIMD/GPU compute: 9 backend tiers, 97 CUDA kernels, 6 batched kernel variants with KernelParity trait, Jidoka quality gates). 168 falsification gates across 23 sections.
+The Qwen2.5-Coder Showcase demonstrates the unified inference architecture across three model formats (SafeTensors, APR, GGUF) with CPU and GPU backends, using a single model with a single provenance chain. The full stack is exercised end-to-end: **apr-cli** (49 subcommands) → **aprender** (contract validation, 297 compile-time proofs) → **realizar** (inference: two-phase generation with batched prefill, PagedAttention KV cache, 8 sampling algorithms + penalty modifiers, GQA attention, OpenAI-compatible API, PTX parity validation) → **trueno** (SIMD/GPU compute: 9 backend tiers, 97 CUDA kernels, 6 batched kernel variants with KernelParity trait, Jidoka quality gates). 168 falsification gates across 25 sections.
 
 **Current State (measured 2026-02-14):** 90.5 tok/s GPU decode (5.6x Ollama) — **Grade A+**. Batched prefill DISABLED (regression). Bottleneck: ~24% of RTX 4090's 1008 GB/s bandwidth.
 
