@@ -14,8 +14,7 @@ fn test_derive_output_path_hf_repo() {
 #[test]
 fn test_derive_output_path_hf_with_file() {
     let result =
-        derive_output_path("hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/model-q4k.gguf")
-            .unwrap();
+        derive_output_path("hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF/model-q4k.gguf").unwrap();
     assert_eq!(result, PathBuf::from("model-q4k.apr"));
 }
 

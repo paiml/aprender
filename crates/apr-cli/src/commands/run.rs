@@ -2173,7 +2173,10 @@ fn print_run_output(
             "inference_time_ms": result.duration_secs * 1000.0,
             "cached": result.cached,
         });
-        println!("{}", serde_json::to_string_pretty(&json).unwrap_or_default());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json).unwrap_or_default()
+        );
         return Ok(());
     }
 

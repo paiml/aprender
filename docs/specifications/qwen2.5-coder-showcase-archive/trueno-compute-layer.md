@@ -224,6 +224,8 @@ apr ptx-map model.gguf --json
 
 **Total launches:** 12 kernels/layer × 28 layers + 2 (final norm + lm_head) = 338 per token (7B Q4K).
 
+> **Note:** For Q4K quantized weights, single-token decode dispatches GEMV kernels (`Q4KGemvKernel`/`MwvQ4KGemvKernel`) rather than GEMM. The table above shows the structural kernel types; actual dispatch depends on batch size and quantization format.
+
 **Prefill mode** (`--prefill`): Replaces decode kernels with batched variants (`BatchedRmsNormKernel`, `BatchedQ4KGemvKernel`, etc.) for parallel token processing.
 
 **PTX parity integration:** When CUDA is available, includes `validate_all_kernel_pairs()` summary (6/6 kernel pairs).

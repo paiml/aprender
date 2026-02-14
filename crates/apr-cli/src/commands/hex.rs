@@ -225,7 +225,11 @@ fn print_apr_hex_dump(reader: &AprV2Reader, names: &[&str], limit: usize, show_s
                     print_tensor_stats(&f32_data);
                 }
             }
-            let byte_limit = if limit == 0 { raw_data.len() } else { limit.min(raw_data.len()) };
+            let byte_limit = if limit == 0 {
+                raw_data.len()
+            } else {
+                limit.min(raw_data.len())
+            };
             print_raw_hex(raw_data, 0, byte_limit, 16);
         }
         println!();
@@ -239,10 +243,7 @@ fn print_empty_filter(json: bool) -> Result<(), CliError> {
     Ok(())
 }
 
-fn print_apr_distributions_v2(
-    reader: &AprV2Reader,
-    filtered: &[&str],
-) -> Result<(), CliError> {
+fn print_apr_distributions_v2(reader: &AprV2Reader, filtered: &[&str]) -> Result<(), CliError> {
     for name in filtered {
         if let Some(data) = reader.get_tensor_as_f32(name) {
             println!("{}: {}", "Distribution".bold(), name.cyan());
@@ -1590,7 +1591,11 @@ pub(crate) fn parse_hex_offset(s: &str) -> Result<usize, String> {
 /// List tensor names (v2 reader)
 #[allow(clippy::unnecessary_wraps)]
 #[allow(clippy::disallowed_methods)]
-fn list_tensors_v2(reader: &AprV2Reader, filtered: &[&str], json_output: bool) -> Result<(), CliError> {
+fn list_tensors_v2(
+    reader: &AprV2Reader,
+    filtered: &[&str],
+    json_output: bool,
+) -> Result<(), CliError> {
     if json_output {
         let json = serde_json::json!({
             "tensors": filtered,
@@ -2405,7 +2410,13 @@ mod tests {
 
     #[test]
     fn test_print_tensor_header_3d_shape() {
-        let entry = make_entry("conv.weight", vec![64, 3, 3], TensorDType::F32, 512, (64 * 3 * 3 * 4) as u64);
+        let entry = make_entry(
+            "conv.weight",
+            vec![64, 3, 3],
+            TensorDType::F32,
+            512,
+            (64 * 3 * 3 * 4) as u64,
+        );
         print_tensor_header_v2(&entry);
     }
 

@@ -106,8 +106,8 @@ fn test_negative_binomial_validation() {
 #[test]
 fn test_gamma_regression() {
     // Simulated positive continuous data
-    let x = Matrix::from_vec(8, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0])
-        .expect("Valid matrix");
+    let x =
+        Matrix::from_vec(8, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]).expect("Valid matrix");
     let y = Vector::from_vec(vec![2.0, 1.5, 1.2, 1.0, 0.9, 0.8, 0.75, 0.7]);
 
     let mut model = GLM::new(Family::Gamma); // Use default max_iter (1000)
@@ -192,8 +192,8 @@ fn test_binomial_invalid_response() {
 /// Test: Dimension mismatch in fit
 #[test]
 fn test_fit_dimension_mismatch() {
-    let x = Matrix::from_vec(4, 2, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0])
-        .expect("Valid matrix");
+    let x =
+        Matrix::from_vec(4, 2, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]).expect("Valid matrix");
     let y = Vector::from_vec(vec![1.0, 2.0]); // Wrong size!
 
     let mut model = GLM::new(Family::Poisson);

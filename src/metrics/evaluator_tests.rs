@@ -29,8 +29,7 @@ fn test_model_result_single_score() {
 
 #[test]
 fn test_evaluator_regression() {
-    let x =
-        Matrix::from_vec(12, 1, (0..12).map(|i| i as f32).collect()).expect("valid dimensions");
+    let x = Matrix::from_vec(12, 1, (0..12).map(|i| i as f32).collect()).expect("valid dimensions");
     let y = Vector::from_slice(&[
         1.0, 3.0, 5.0, 7.0, 9.0, 11.0, 13.0, 15.0, 17.0, 19.0, 21.0, 23.0,
     ]);

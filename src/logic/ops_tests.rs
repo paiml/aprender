@@ -351,8 +351,7 @@ fn test_apply_nonlinearity_with_temperature() {
 #[test]
 fn test_apply_nonlinearity_with_temperature_boolean_attention() {
     let tensor = vec![vec![0.1, 0.5, 0.3]];
-    let result =
-        apply_nonlinearity_with_temperature(&tensor, Nonlinearity::BooleanAttention, 2.0);
+    let result = apply_nonlinearity_with_temperature(&tensor, Nonlinearity::BooleanAttention, 2.0);
 
     // Temperature doesn't affect argmax
     assert_eq!(result[0][0], 0.0);
@@ -379,8 +378,7 @@ fn test_apply_nonlinearity_with_mask_boolean_attention() {
     let tensor = vec![vec![0.5, 0.9, 0.7]]; // argmax would be 1
     let mask = vec![vec![false, true, false]]; // Mask out index 1
 
-    let result =
-        apply_nonlinearity_with_mask(&tensor, Nonlinearity::BooleanAttention, Some(&mask));
+    let result = apply_nonlinearity_with_mask(&tensor, Nonlinearity::BooleanAttention, Some(&mask));
 
     // Index 1 is masked, so argmax should be index 2
     assert_eq!(result[0][0], 0.0);

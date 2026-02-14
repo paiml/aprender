@@ -74,8 +74,8 @@ fn test_cg_beta_formulas() {
 
 #[test]
 fn test_cg_restart_interval() {
-    let optimizer = ConjugateGradient::new(100, 1e-5, CGBetaFormula::PolakRibiere)
-        .with_restart_interval(10);
+    let optimizer =
+        ConjugateGradient::new(100, 1e-5, CGBetaFormula::PolakRibiere).with_restart_interval(10);
     assert_eq!(optimizer.restart_interval, 10);
 
     // Run optimization with restart interval
@@ -379,8 +379,7 @@ fn test_cg_norm() {
 
     // Large initial gradient to ensure norm is calculated
     let f = |x: &Vector<f32>| (x[0] - 100.0).powi(2) + (x[1] - 200.0).powi(2);
-    let grad =
-        |x: &Vector<f32>| Vector::from_slice(&[2.0 * (x[0] - 100.0), 2.0 * (x[1] - 200.0)]);
+    let grad = |x: &Vector<f32>| Vector::from_slice(&[2.0 * (x[0] - 100.0), 2.0 * (x[1] - 200.0)]);
 
     let x0 = Vector::from_slice(&[0.0, 0.0]);
     let result = optimizer.minimize(f, grad, x0);
@@ -401,8 +400,8 @@ fn test_cg_with_restart_interval_zero() {
 #[test]
 fn test_cg_restart_interval_1() {
     // Restart every single iteration forces steepest descent behavior
-    let mut optimizer = ConjugateGradient::new(100, 1e-5, CGBetaFormula::FletcherReeves)
-        .with_restart_interval(1);
+    let mut optimizer =
+        ConjugateGradient::new(100, 1e-5, CGBetaFormula::FletcherReeves).with_restart_interval(1);
 
     let f = |x: &Vector<f32>| x[0] * x[0] + x[1] * x[1];
     let grad = |x: &Vector<f32>| Vector::from_slice(&[2.0 * x[0], 2.0 * x[1]]);

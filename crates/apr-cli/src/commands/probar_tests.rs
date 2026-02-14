@@ -820,8 +820,8 @@ fn test_export_png_meta_json_contents() {
 
     export_png(&layers, output_dir.path()).expect("export png");
 
-    let meta_content = fs::read_to_string(output_dir.path().join("layer_007_ffn.meta.json"))
-        .expect("read meta");
+    let meta_content =
+        fs::read_to_string(output_dir.path().join("layer_007_ffn.meta.json")).expect("read meta");
     let meta: serde_json::Value = serde_json::from_str(&meta_content).expect("parse meta json");
 
     assert_eq!(meta["name"], "ffn");
@@ -1018,8 +1018,7 @@ fn test_export_by_format_both_creates_all() {
         golden_reference: None,
     };
 
-    export_by_format(ExportFormat::Both, &manifest, &layers, output_dir.path())
-        .expect("export");
+    export_by_format(ExportFormat::Both, &manifest, &layers, output_dir.path()).expect("export");
 
     assert!(output_dir.path().join("manifest.json").exists());
     assert!(output_dir.path().join("layer_000_y.pgm").exists());
@@ -1275,8 +1274,7 @@ fn test_generate_diff_invalid_golden_json() {
     let golden_dir = tempdir().expect("golden dir");
     let output_dir = tempdir().expect("output dir");
 
-    fs::write(golden_dir.path().join("manifest.json"), "not valid json")
-        .expect("write bad json");
+    fs::write(golden_dir.path().join("manifest.json"), "not valid json").expect("write bad json");
 
     let current = ProbarManifest {
         source_model: "c.apr".to_string(),

@@ -8,13 +8,12 @@ fn test_auto_tuner_basic() {
         .add(RF::NEstimators, 10..100)
         .add(RF::MaxDepth, 2..10);
 
-    let result =
-        AutoTuner::new(RandomSearch::new(10).with_seed(42)).maximize(&space, |trial| {
-            let n = trial.get_usize(&RF::NEstimators).unwrap_or(50);
-            let d = trial.get_usize(&RF::MaxDepth).unwrap_or(5);
-            // Simple objective: prefer more trees and moderate depth
-            (n as f64 / 100.0) + (1.0 - (d as f64 - 5.0).abs() / 5.0)
-        });
+    let result = AutoTuner::new(RandomSearch::new(10).with_seed(42)).maximize(&space, |trial| {
+        let n = trial.get_usize(&RF::NEstimators).unwrap_or(50);
+        let d = trial.get_usize(&RF::MaxDepth).unwrap_or(5);
+        // Simple objective: prefer more trees and moderate depth
+        (n as f64 / 100.0) + (1.0 - (d as f64 - 5.0).abs() / 5.0)
+    });
 
     assert_eq!(result.n_trials, 10);
     assert!(result.best_score > 0.0);
@@ -81,11 +80,10 @@ fn test_callbacks() {
 fn test_minimize() {
     let space: SearchSpace<RF> = SearchSpace::new().add(RF::NEstimators, 10..100);
 
-    let result =
-        AutoTuner::new(RandomSearch::new(10).with_seed(42)).minimize(&space, |trial| {
-            let n = trial.get_usize(&RF::NEstimators).unwrap_or(50);
-            n as f64 // minimize number of estimators
-        });
+    let result = AutoTuner::new(RandomSearch::new(10).with_seed(42)).minimize(&space, |trial| {
+        let n = trial.get_usize(&RF::NEstimators).unwrap_or(50);
+        n as f64 // minimize number of estimators
+    });
 
     assert_eq!(result.n_trials, 10);
     // Best score should be negative (since minimize negates)
@@ -366,10 +364,9 @@ fn test_auto_tuner_best_trial_tracking() {
     let space: SearchSpace<RF> = SearchSpace::new().add(RF::NEstimators, 10..100);
 
     // Objective increases with estimators
-    let result = AutoTuner::new(RandomSearch::new(20).with_seed(42))
-        .maximize(&space, |trial| {
-            trial.get_usize(&RF::NEstimators).unwrap_or(50) as f64
-        });
+    let result = AutoTuner::new(RandomSearch::new(20).with_seed(42)).maximize(&space, |trial| {
+        trial.get_usize(&RF::NEstimators).unwrap_or(50) as f64
+    });
 
     // Best trial should have the highest n_estimators
     assert!(result.best_score >= 10.0);
@@ -639,10 +636,9 @@ fn test_minimize_selects_lowest() {
     let space: SearchSpace<RF> = SearchSpace::new().add(RF::NEstimators, 10..100);
 
     // Minimize: n_estimators value (lower is better)
-    let result = AutoTuner::new(RandomSearch::new(20).with_seed(42))
-        .minimize(&space, |trial| {
-            trial.get_usize(&RF::NEstimators).unwrap_or(50) as f64
-        });
+    let result = AutoTuner::new(RandomSearch::new(20).with_seed(42)).minimize(&space, |trial| {
+        trial.get_usize(&RF::NEstimators).unwrap_or(50) as f64
+    });
 
     assert_eq!(result.n_trials, 20);
     // The best_score is negated internally, so it's negative of the actual minimum

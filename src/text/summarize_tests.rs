@@ -76,8 +76,7 @@ fn test_with_damping_factor() {
     let text = "First sentence about topic. Second sentence about topic. \
                 Third sentence different. Fourth sentence topic again.";
 
-    let summarizer =
-        TextSummarizer::new(SummarizationMethod::TextRank, 2).with_damping_factor(0.5);
+    let summarizer = TextSummarizer::new(SummarizationMethod::TextRank, 2).with_damping_factor(0.5);
     let summary = summarizer.summarize(text).expect("should succeed");
     assert_eq!(summary.len(), 2);
 }
@@ -87,8 +86,7 @@ fn test_with_max_iterations() {
     let text = "Alpha beta gamma. Delta epsilon zeta. \
                 Eta theta iota. Kappa lambda mu.";
 
-    let summarizer =
-        TextSummarizer::new(SummarizationMethod::TextRank, 2).with_max_iterations(5);
+    let summarizer = TextSummarizer::new(SummarizationMethod::TextRank, 2).with_max_iterations(5);
     let summary = summarizer.summarize(text).expect("should succeed");
     assert_eq!(summary.len(), 2);
 }

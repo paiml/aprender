@@ -23,9 +23,8 @@ fn test_edge_case_behavior() {
 
 #[test]
 fn test_nan_handling_fn() {
-    let predict = |input: &[f32]| -> Result<Vec<f32>, String> {
-        Ok(input.iter().map(|x| x * 2.0).collect())
-    };
+    let predict =
+        |input: &[f32]| -> Result<Vec<f32>, String> { Ok(input.iter().map(|x| x * 2.0).collect()) };
 
     let result = test_nan_handling(predict);
     assert!(result.passed);
@@ -48,9 +47,8 @@ fn test_nan_handling_with_error_fn() {
 
 #[test]
 fn test_inf_handling_fn() {
-    let predict = |input: &[f32]| -> Result<Vec<f32>, String> {
-        Ok(input.iter().map(|x| x * 2.0).collect())
-    };
+    let predict =
+        |input: &[f32]| -> Result<Vec<f32>, String> { Ok(input.iter().map(|x| x * 2.0).collect()) };
 
     let result = test_inf_handling(predict);
     assert!(result.passed);
@@ -72,9 +70,8 @@ fn test_empty_handling_fn() {
 
 #[test]
 fn test_zero_handling_fn() {
-    let predict = |input: &[f32]| -> Result<Vec<f32>, String> {
-        Ok(input.iter().map(|x| x * 2.0).collect())
-    };
+    let predict =
+        |input: &[f32]| -> Result<Vec<f32>, String> { Ok(input.iter().map(|x| x * 2.0).collect()) };
 
     let result = test_zero_handling(predict);
     assert!(result.passed);
@@ -930,9 +927,8 @@ fn test_empty_handling_error_path() {
 
 #[test]
 fn test_zero_handling_error_path() {
-    let predict = |_input: &[f32]| -> Result<Vec<f32>, String> {
-        Err("Zero vector rejected".to_string())
-    };
+    let predict =
+        |_input: &[f32]| -> Result<Vec<f32>, String> { Err("Zero vector rejected".to_string()) };
 
     let result = test_zero_handling(predict);
     assert!(result.passed); // Error is acceptable

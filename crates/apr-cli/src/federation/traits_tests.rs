@@ -31,8 +31,7 @@ fn test_circuit_state() {
 
 #[test]
 fn test_federation_builder() {
-    let builder =
-        FederationBuilder::new().with_load_balance(LoadBalanceStrategy::LeastConnections);
+    let builder = FederationBuilder::new().with_load_balance(LoadBalanceStrategy::LeastConnections);
 
     assert!(matches!(
         builder.load_balance,

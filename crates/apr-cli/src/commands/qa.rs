@@ -1293,9 +1293,8 @@ fn generate_golden_for_format(
             let mapped = mapped.ok_or_else(|| {
                 CliError::ValidationFailed("GGUF mapped model required".to_string())
             })?;
-            let gguf_model = gguf_model.ok_or_else(|| {
-                CliError::ValidationFailed("GGUF model required".to_string())
-            })?;
+            let gguf_model = gguf_model
+                .ok_or_else(|| CliError::ValidationFailed("GGUF model required".to_string()))?;
             Ok(Some(golden_output_gguf_cpu(
                 mapped, gguf_model, prompt, max_tokens,
             )?))

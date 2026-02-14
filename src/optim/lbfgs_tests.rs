@@ -138,8 +138,7 @@ fn test_lbfgs_history_overflow() {
     // Use m=2, run long enough to overflow history
     let mut optimizer = LBFGS::new(50, 1e-8, 2);
 
-    let f =
-        |x: &Vector<f32>| (x[0] - 1.0).powi(2) + (x[1] - 2.0).powi(2) + (x[2] - 3.0).powi(2);
+    let f = |x: &Vector<f32>| (x[0] - 1.0).powi(2) + (x[1] - 2.0).powi(2) + (x[2] - 3.0).powi(2);
     let grad = |x: &Vector<f32>| {
         Vector::from_slice(&[2.0 * (x[0] - 1.0), 2.0 * (x[1] - 2.0), 2.0 * (x[2] - 3.0)])
     };

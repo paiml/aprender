@@ -149,8 +149,7 @@ fn test_save_safetensors_no_max_depth() {
 
 #[test]
 fn test_load_safetensors_nonexistent() {
-    let result =
-        DecisionTreeClassifier::load_safetensors("/tmp/aprender_nonexistent.safetensors");
+    let result = DecisionTreeClassifier::load_safetensors("/tmp/aprender_nonexistent.safetensors");
     assert!(result.is_err());
 }
 

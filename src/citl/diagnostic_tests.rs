@@ -63,8 +63,7 @@ fn test_severity_is_fatal() {
 fn test_diagnostic_new() {
     let code = ErrorCode::new("E0308", ErrorCategory::TypeMismatch, Difficulty::Easy);
     let span = SourceSpan::single_line("test.rs", 10, 5, 20);
-    let diag =
-        CompilerDiagnostic::new(code, DiagnosticSeverity::Error, "mismatched types", span);
+    let diag = CompilerDiagnostic::new(code, DiagnosticSeverity::Error, "mismatched types", span);
 
     assert_eq!(diag.code.code, "E0308");
     assert_eq!(diag.message, "mismatched types");
@@ -76,10 +75,9 @@ fn test_diagnostic_new() {
 fn test_diagnostic_with_types() {
     let code = ErrorCode::new("E0308", ErrorCategory::TypeMismatch, Difficulty::Easy);
     let span = SourceSpan::single_line("test.rs", 10, 5, 20);
-    let diag =
-        CompilerDiagnostic::new(code, DiagnosticSeverity::Error, "mismatched types", span)
-            .with_expected(TypeInfo::new("String"))
-            .with_found(TypeInfo::new("&str"));
+    let diag = CompilerDiagnostic::new(code, DiagnosticSeverity::Error, "mismatched types", span)
+        .with_expected(TypeInfo::new("String"))
+        .with_found(TypeInfo::new("&str"));
 
     assert!(diag.is_type_error());
     assert_eq!(
@@ -101,9 +99,8 @@ fn test_diagnostic_with_suggestions() {
         SuggestionApplicability::MachineApplicable,
         CodeReplacement::new(span.clone(), "value.to_string()"),
     );
-    let diag =
-        CompilerDiagnostic::new(code, DiagnosticSeverity::Error, "mismatched types", span)
-            .with_suggestion(suggestion);
+    let diag = CompilerDiagnostic::new(code, DiagnosticSeverity::Error, "mismatched types", span)
+        .with_suggestion(suggestion);
 
     assert!(diag.has_suggestions());
     assert_eq!(diag.machine_applicable_suggestions().len(), 1);
@@ -114,9 +111,8 @@ fn test_diagnostic_with_label() {
     let code = ErrorCode::new("E0308", ErrorCategory::TypeMismatch, Difficulty::Easy);
     let span = SourceSpan::single_line("test.rs", 10, 5, 20);
     let label = DiagnosticLabel::primary("expected `String`", span.clone());
-    let diag =
-        CompilerDiagnostic::new(code, DiagnosticSeverity::Error, "mismatched types", span)
-            .with_label(label);
+    let diag = CompilerDiagnostic::new(code, DiagnosticSeverity::Error, "mismatched types", span)
+        .with_label(label);
 
     assert_eq!(diag.labels.len(), 1);
     assert!(diag.labels[0].primary);
@@ -126,9 +122,8 @@ fn test_diagnostic_with_label() {
 fn test_diagnostic_with_note() {
     let code = ErrorCode::new("E0308", ErrorCategory::TypeMismatch, Difficulty::Easy);
     let span = SourceSpan::single_line("test.rs", 10, 5, 20);
-    let diag =
-        CompilerDiagnostic::new(code, DiagnosticSeverity::Error, "mismatched types", span)
-            .with_note("help: consider using `.to_string()`");
+    let diag = CompilerDiagnostic::new(code, DiagnosticSeverity::Error, "mismatched types", span)
+        .with_note("help: consider using `.to_string()`");
 
     assert_eq!(diag.notes.len(), 1);
 }

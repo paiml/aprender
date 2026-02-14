@@ -19,6 +19,7 @@ pub(crate) fn run(
     quality: bool,
     strict: bool,
     min_score: Option<u8>,
+    json: bool,
 ) -> Result<(), CliError> {
     // BUG-VALIDATE-001 FIX: Validate min_score is in valid range [0, 100]
     if let Some(score) = min_score {
@@ -31,7 +32,9 @@ pub(crate) fn run(
     }
 
     validate_path(path)?;
-    println!("Validating {}...\n", path.display());
+    if !json {
+        println!("Validating {}...\n", path.display());
+    }
 
     // Detect format via magic bytes (Rosetta Stone dispatch)
     let format = FormatType::from_magic(path)
@@ -39,8 +42,10 @@ pub(crate) fn run(
         .map_err(|e| CliError::InvalidFormat(format!("Cannot detect format: {e}")))?;
 
     match format {
-        FormatType::Apr => run_apr_validation(path, quality, strict, min_score),
-        FormatType::Gguf | FormatType::SafeTensors => run_rosetta_validation(path, format, quality),
+        FormatType::Apr => run_apr_validation(path, quality, strict, min_score, json),
+        FormatType::Gguf | FormatType::SafeTensors => {
+            run_rosetta_validation(path, format, quality, json)
+        }
     }
 }
 
@@ -50,10 +55,15 @@ fn run_apr_validation(
     quality: bool,
     strict: bool,
     min_score: Option<u8>,
+    json: bool,
 ) -> Result<(), CliError> {
     let data = fs::read(path)?;
     let mut validator = AprValidator::new();
     let report = validator.validate_bytes(&data);
+
+    if json {
+        return print_apr_validation_json(path, report, strict, min_score);
+    }
 
     print_check_results(report);
     print_summary(report, strict)?;
@@ -75,13 +85,22 @@ fn run_apr_validation(
 }
 
 /// GGUF/SafeTensors validation via RosettaStone (physics constraints)
-fn run_rosetta_validation(path: &Path, format: FormatType, quality: bool) -> Result<(), CliError> {
-    output::header(&format!("Validate: {} (Rosetta Stone)", format));
-
+fn run_rosetta_validation(
+    path: &Path,
+    format: FormatType,
+    quality: bool,
+    json: bool,
+) -> Result<(), CliError> {
     let rosetta = RosettaStone::new();
     let report = rosetta
         .validate(path)
         .map_err(|e| CliError::ValidationFailed(format!("Validation failed: {e}")))?;
+
+    if json {
+        return print_rosetta_validation_json(path, &report);
+    }
+
+    output::header(&format!("Validate: {} (Rosetta Stone)", format));
 
     // Print per-tensor results as table
     let mut rows: Vec<Vec<String>> = Vec::new();
@@ -178,6 +197,57 @@ fn print_contract_violations(failures: &[(&str, &str)]) {
             println!("    ... and {} more", tensors.len() - 5);
         }
     }
+}
+
+/// Print APR validation report as JSON (GH-240: clean machine-parseable output).
+fn print_apr_validation_json(
+    path: &Path,
+    report: &ValidationReport,
+    _strict: bool,
+    min_score: Option<u8>,
+) -> Result<(), CliError> {
+    let passed = report.failed_checks().is_empty()
+        && min_score.map_or(true, |min| report.total_score >= min);
+    println!("{{");
+    println!("  \"model\": \"{}\",", path.display());
+    println!("  \"format\": \"apr\",");
+    println!("  \"total_score\": {},", report.total_score);
+    println!("  \"grade\": \"{}\",", report.grade());
+    println!("  \"checks\": {},", report.checks.len());
+    println!("  \"failed\": {},", report.failed_checks().len());
+    println!("  \"passed\": {}", passed);
+    println!("}}");
+    if !passed {
+        return Err(CliError::ValidationFailed(format!(
+            "Score {}/100",
+            report.total_score
+        )));
+    }
+    Ok(())
+}
+
+/// Print Rosetta validation report as JSON (GH-240: clean machine-parseable output).
+fn print_rosetta_validation_json(
+    path: &Path,
+    report: &RosettaValidationReport,
+) -> Result<(), CliError> {
+    println!("{{");
+    println!("  \"model\": \"{}\",", path.display());
+    println!("  \"format\": \"rosetta\",");
+    println!("  \"total_tensors\": {},", report.tensor_count);
+    println!("  \"failed_tensors\": {},", report.failed_tensor_count);
+    println!("  \"total_nan\": {},", report.total_nan_count);
+    println!("  \"total_inf\": {},", report.total_inf_count);
+    println!("  \"duration_ms\": {},", report.duration_ms);
+    println!("  \"passed\": {}", report.is_valid);
+    println!("}}");
+    if !report.is_valid {
+        return Err(CliError::ValidationFailed(format!(
+            "{} tensors failed validation",
+            report.failed_tensor_count
+        )));
+    }
+    Ok(())
 }
 
 fn validate_path(path: &Path) -> Result<(), CliError> {

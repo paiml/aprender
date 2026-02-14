@@ -220,9 +220,7 @@ fn test_andon_config_builder() {
 
     assert!(!config.enabled);
     assert!((config.rejection_threshold - 0.85).abs() < f32::EPSILON);
-    assert!(
-        (config.quality_baseline.expect("baseline should be set") - 0.7).abs() < f32::EPSILON
-    );
+    assert!((config.quality_baseline.expect("baseline should be set") - 0.7).abs() < f32::EPSILON);
     assert!((config.diversity_minimum - 0.2).abs() < f32::EPSILON);
 }
 
@@ -234,9 +232,7 @@ fn test_andon_config_clamping() {
         .with_diversity_minimum(2.0);
 
     assert!((config.rejection_threshold - 1.0).abs() < f32::EPSILON);
-    assert!(
-        (config.quality_baseline.expect("baseline should be set") - 0.0).abs() < f32::EPSILON
-    );
+    assert!((config.quality_baseline.expect("baseline should be set") - 0.0).abs() < f32::EPSILON);
     assert!((config.diversity_minimum - 1.0).abs() < f32::EPSILON);
 }
 

@@ -230,18 +230,29 @@ fn run_json(ptx: &str, strict: bool, bugs_only: bool) -> Result<()> {
     Ok(())
 }
 
-/// Generate PTX for a named kernel from trueno-gpu.
+/// Generate PTX for a named kernel from trueno-gpu via realizar.
+///
+/// Uses Qwen2 7B dimensions by default (hidden=3584, intermediate=18944,
+/// heads=28, head_dim=128). These can be overridden with a model file.
 fn generate_kernel_ptx(name: &str) -> Result<String> {
-    // Known kernel patterns — generate PTX from trueno-gpu builders
-    // trueno-gpu is available via realizar's re-export
-    let _name_lower = name.to_lowercase();
+    use realizar::ptx_parity::{generate_named_kernel_ptx, KernelDimensions};
 
-    // Only file-based analysis is supported; kernel-name lookup requires a PTX file path.
-    Err(crate::error::CliError::Aprender(format!(
-        "Kernel generation not yet supported for '{}'. Use a PTX file instead.\n\
-         Hint: Run with DP4A_Q4K=1 to dump failing PTX to /tmp/failing_ptx.txt",
-        name
-    )))
+    // Default: Qwen2.5-Coder-7B-Instruct dimensions
+    let dims = KernelDimensions {
+        hidden_dim: 3584,
+        intermediate_dim: 18944,
+        num_heads: 28,
+        head_dim: 128,
+        rope_theta: 1_000_000.0,
+        epsilon: 1e-6,
+    };
+
+    let (_label, ptx) = generate_named_kernel_ptx(name, &dims).map_err(|e| {
+        crate::error::CliError::Aprender(format!(
+            "{e}\nHint: Run with DP4A_Q4K=1 to dump failing PTX to /tmp/failing_ptx.txt"
+        ))
+    })?;
+    Ok(ptx)
 }
 
 #[cfg(test)]

@@ -47,8 +47,7 @@ fn test_cov_empty() {
 #[test]
 fn test_cov_matrix_simple() {
     // 3 samples, 2 features
-    let data =
-        Matrix::from_vec(3, 2, vec![1.0, 2.0, 2.0, 4.0, 3.0, 6.0]).expect("Valid matrix");
+    let data = Matrix::from_vec(3, 2, vec![1.0, 2.0, 2.0, 4.0, 3.0, 6.0]).expect("Valid matrix");
 
     let cov_mat = cov_matrix(&data).expect("Should compute covariance matrix");
 
@@ -112,8 +111,8 @@ fn test_corr_zero_variance() {
 #[test]
 fn test_corr_matrix_simple() {
     // 4 samples, 2 features
-    let data = Matrix::from_vec(4, 2, vec![1.0, 2.0, 2.0, 4.0, 3.0, 6.0, 4.0, 8.0])
-        .expect("Valid matrix");
+    let data =
+        Matrix::from_vec(4, 2, vec![1.0, 2.0, 2.0, 4.0, 3.0, 6.0, 4.0, 8.0]).expect("Valid matrix");
 
     let corr_mat = corr_matrix(&data).expect("Should compute correlation matrix");
 
@@ -134,8 +133,7 @@ fn test_corr_matrix_simple() {
 #[test]
 fn test_corr_matrix_independent() {
     // 3 samples, 2 independent features
-    let data =
-        Matrix::from_vec(3, 2, vec![1.0, 1.0, 2.0, 1.0, 3.0, 1.0]).expect("Valid matrix");
+    let data = Matrix::from_vec(3, 2, vec![1.0, 1.0, 2.0, 1.0, 3.0, 1.0]).expect("Valid matrix");
 
     let result = corr_matrix(&data);
     // Second feature has zero variance
@@ -217,8 +215,7 @@ fn test_corr_matrix_empty() {
     // test with a valid but single-row matrix where we cannot compute variance
     // meaningfully. Let's trigger the n==0||p==0 path differently.
     // Instead, just test with a constant-feature matrix for the zero-variance path.
-    let data =
-        Matrix::from_vec(3, 2, vec![1.0, 5.0, 2.0, 5.0, 3.0, 5.0]).expect("Valid matrix");
+    let data = Matrix::from_vec(3, 2, vec![1.0, 5.0, 2.0, 5.0, 3.0, 5.0]).expect("Valid matrix");
     let result = corr_matrix(&data);
     // Feature 1 (column index 1) has zero variance
     assert!(result.is_err());
@@ -270,8 +267,8 @@ fn test_cov_matrix_single_sample() {
 #[test]
 fn test_corr_matrix_negative_correlation() {
     // Feature 1 increases, feature 2 decreases
-    let data = Matrix::from_vec(4, 2, vec![1.0, 8.0, 2.0, 6.0, 3.0, 4.0, 4.0, 2.0])
-        .expect("Valid matrix");
+    let data =
+        Matrix::from_vec(4, 2, vec![1.0, 8.0, 2.0, 6.0, 3.0, 4.0, 4.0, 2.0]).expect("Valid matrix");
     let corr_mat = corr_matrix(&data).expect("Should compute correlation matrix");
     // Off-diagonal should be negative (inverse relationship)
     assert!(

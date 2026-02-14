@@ -72,8 +72,7 @@ fn test_generate_batched_single_batch() {
     let seeds = vec![1, 2, 3];
     let config = SyntheticConfig::default();
 
-    let result =
-        generate_batched(&gen, &seeds, &config, 100).expect("batched generation failed");
+    let result = generate_batched(&gen, &seeds, &config, 100).expect("batched generation failed");
     assert_eq!(result, vec![2, 4, 6]);
 }
 

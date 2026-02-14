@@ -1999,8 +1999,7 @@ fn test_extract_json_field_real_ollama_response() {
     assert_eq!(eval_count, Some(25.0));
     let eval_duration = super::benchmark::extract_json_field(json, "eval_duration");
     assert_eq!(eval_duration, Some(900_000_000.0));
-    let prompt_eval_duration =
-        super::benchmark::extract_json_field(json, "prompt_eval_duration");
+    let prompt_eval_duration = super::benchmark::extract_json_field(json, "prompt_eval_duration");
     assert_eq!(prompt_eval_duration, Some(200_000_000.0));
 }
 

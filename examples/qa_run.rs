@@ -1177,19 +1177,32 @@ fn verify_to_test(name: &'static str, max_points: u32, result: VerifyResult) -> 
     match result {
         VerifyResult::Pass(_) => TestResult::pass(name, max_points, "Clean output".to_string()),
         VerifyResult::FailEmpty => TestResult::fail(name, max_points, "Empty output".to_string()),
-        VerifyResult::FailGarbage(p) => TestResult::fail(name, max_points, format!("GARBAGE: '{p}'")),
-        VerifyResult::FailBpeArtifact(c) => TestResult::fail(name, max_points, format!("BPE artifact: '{c}'")),
+        VerifyResult::FailGarbage(p) => {
+            TestResult::fail(name, max_points, format!("GARBAGE: '{p}'"))
+        }
+        VerifyResult::FailBpeArtifact(c) => {
+            TestResult::fail(name, max_points, format!("BPE artifact: '{c}'"))
+        }
         VerifyResult::FailMissingAnswer(msg) => TestResult::fail(name, max_points, msg),
     }
 }
 
 /// Run output verification test: run model, extract output, verify quality
 fn run_verify_test(
-    config: &Config, cell: &MatrixCell, name: &'static str, max_points: u32,
-    prompt: &str, max_tokens: u32, expected: Option<&str>,
+    config: &Config,
+    cell: &MatrixCell,
+    name: &'static str,
+    max_points: u32,
+    prompt: &str,
+    max_tokens: u32,
+    expected: Option<&str>,
 ) -> TestResult {
     match run_modality_test(config, cell, prompt, max_tokens) {
-        Ok(raw) => verify_to_test(name, max_points, verify_output(&extract_output(&raw), expected)),
+        Ok(raw) => verify_to_test(
+            name,
+            max_points,
+            verify_output(&extract_output(&raw), expected),
+        ),
         Err(e) => TestResult::fail(name, max_points, e),
     }
 }
@@ -1228,24 +1241,65 @@ fn run_cell_tests(config: &Config, cell: &MatrixCell) -> CellResult {
     let mut tests = Vec::new();
 
     if cell.backend == Backend::Gpu && !gpu_available() {
-        tests.push(TestResult::skip("All Tests", 15, "No GPU available".to_string()));
-        return CellResult { cell: cell.clone(), tests, total_points: 0, max_points: 15, elapsed: start.elapsed() };
+        tests.push(TestResult::skip(
+            "All Tests",
+            15,
+            "No GPU available".to_string(),
+        ));
+        return CellResult {
+            cell: cell.clone(),
+            tests,
+            total_points: 0,
+            max_points: 15,
+            elapsed: start.elapsed(),
+        };
     }
 
     // Test 1: Model loads (2 points)
-    match run_modality_test(config, cell, "What is 2+2? Answer with just the number.", 10) {
-        Ok(_) => tests.push(TestResult::pass("Model Load", 2, format!("{} via {:?}", cell.model_uri, cell.modality))),
+    match run_modality_test(
+        config,
+        cell,
+        "What is 2+2? Answer with just the number.",
+        10,
+    ) {
+        Ok(_) => tests.push(TestResult::pass(
+            "Model Load",
+            2,
+            format!("{} via {:?}", cell.model_uri, cell.modality),
+        )),
         Err(e) => {
             tests.push(TestResult::fail("Model Load", 2, e));
-            return CellResult { cell: cell.clone(), tests, total_points: 0, max_points: 15, elapsed: start.elapsed() };
+            return CellResult {
+                cell: cell.clone(),
+                tests,
+                total_points: 0,
+                max_points: 15,
+                elapsed: start.elapsed(),
+            };
         }
     }
 
     // Test 2: Correct output (3 points)
-    tests.push(run_verify_test(config, cell, "Correct Output", 3, "What is 2+2? Answer with just the number.", 10, Some("4")));
+    tests.push(run_verify_test(
+        config,
+        cell,
+        "Correct Output",
+        3,
+        "What is 2+2? Answer with just the number.",
+        10,
+        Some("4"),
+    ));
 
     // Test 3: No garbage (3 points)
-    tests.push(run_verify_test(config, cell, "No Garbage", 3, "Say hello.", 20, None));
+    tests.push(run_verify_test(
+        config,
+        cell,
+        "No Garbage",
+        3,
+        "Say hello.",
+        20,
+        None,
+    ));
 
     // Test 4: No BPE artifacts (2 points)
     match run_modality_test(config, cell, "Say hello.", 20) {
@@ -1262,11 +1316,22 @@ fn run_cell_tests(config: &Config, cell: &MatrixCell) -> CellResult {
     }
 
     // Test 5: Trace works (2 points)
-    let trace_cell = MatrixCell { with_trace: true, ..cell.clone() };
+    let trace_cell = MatrixCell {
+        with_trace: true,
+        ..cell.clone()
+    };
     match run_modality_test(config, &trace_cell, "Hi", 5) {
-        Ok(_) => tests.push(TestResult::pass("Trace Works", 2, format!("{:?} + trace accepted", cell.modality))),
+        Ok(_) => tests.push(TestResult::pass(
+            "Trace Works",
+            2,
+            format!("{:?} + trace accepted", cell.modality),
+        )),
         Err(e) if e.contains("not supported") || e.contains("trace") => {
-            tests.push(TestResult::skip("Trace Works", 2, format!("Trace not supported for {:?}", cell.modality)));
+            tests.push(TestResult::skip(
+                "Trace Works",
+                2,
+                format!("Trace not supported for {:?}", cell.modality),
+            ));
         }
         Err(e) => tests.push(TestResult::fail("Trace Works", 2, e)),
     }
@@ -1276,7 +1341,13 @@ fn run_cell_tests(config: &Config, cell: &MatrixCell) -> CellResult {
 
     let total: u32 = tests.iter().map(|t| t.points).sum();
     let max: u32 = tests.iter().map(|t| t.max_points).sum();
-    CellResult { cell: cell.clone(), tests, total_points: total, max_points: max, elapsed: start.elapsed() }
+    CellResult {
+        cell: cell.clone(),
+        tests,
+        total_points: total,
+        max_points: max,
+        elapsed: start.elapsed(),
+    }
 }
 
 fn print_cell_result(result: &CellResult) {
@@ -1633,9 +1704,11 @@ fn build_cells(config: &Config, parsed: &ParsedArgs) -> Vec<MatrixCell> {
     if parsed.run_matrix {
         return build_standard_matrix_cells(config);
     }
-    if let (Some(modality), Some(backend), Some(format)) =
-        (parsed.single_modality, parsed.single_backend, parsed.single_format)
-    {
+    if let (Some(modality), Some(backend), Some(format)) = (
+        parsed.single_modality,
+        parsed.single_backend,
+        parsed.single_format,
+    ) {
         let model = model_for_format(config, format);
         return vec![MatrixCell::new("S1", backend, format, model).with_modality(modality)];
     }
@@ -1695,16 +1768,56 @@ fn build_full_matrix_cells(config: &Config) -> Vec<MatrixCell> {
 fn build_standard_matrix_cells(config: &Config) -> Vec<MatrixCell> {
     let mut cells = Vec::new();
     if config.test_class.includes_quantized() {
-        cells.push(MatrixCell::new("A1", Backend::Cpu, Format::Gguf, config.gguf_model.clone()));
-        cells.push(MatrixCell::new("A2", Backend::Cpu, Format::Apr, config.apr_model.clone()));
-        cells.push(MatrixCell::new("A3", Backend::Gpu, Format::Gguf, config.gguf_model.clone()));
-        cells.push(MatrixCell::new("A4", Backend::Gpu, Format::Apr, config.apr_model.clone()));
+        cells.push(MatrixCell::new(
+            "A1",
+            Backend::Cpu,
+            Format::Gguf,
+            config.gguf_model.clone(),
+        ));
+        cells.push(MatrixCell::new(
+            "A2",
+            Backend::Cpu,
+            Format::Apr,
+            config.apr_model.clone(),
+        ));
+        cells.push(MatrixCell::new(
+            "A3",
+            Backend::Gpu,
+            Format::Gguf,
+            config.gguf_model.clone(),
+        ));
+        cells.push(MatrixCell::new(
+            "A4",
+            Backend::Gpu,
+            Format::Apr,
+            config.apr_model.clone(),
+        ));
     }
     if config.test_class.includes_full_precision() {
-        cells.push(MatrixCell::new("B1", Backend::Cpu, Format::SafeTensors, config.safetensors_model.clone()));
-        cells.push(MatrixCell::new("B2", Backend::Cpu, Format::Apr, config.apr_model.clone()));
-        cells.push(MatrixCell::new("B3", Backend::Gpu, Format::SafeTensors, config.safetensors_model.clone()));
-        cells.push(MatrixCell::new("B4", Backend::Gpu, Format::Apr, config.apr_model.clone()));
+        cells.push(MatrixCell::new(
+            "B1",
+            Backend::Cpu,
+            Format::SafeTensors,
+            config.safetensors_model.clone(),
+        ));
+        cells.push(MatrixCell::new(
+            "B2",
+            Backend::Cpu,
+            Format::Apr,
+            config.apr_model.clone(),
+        ));
+        cells.push(MatrixCell::new(
+            "B3",
+            Backend::Gpu,
+            Format::SafeTensors,
+            config.safetensors_model.clone(),
+        ));
+        cells.push(MatrixCell::new(
+            "B4",
+            Backend::Gpu,
+            Format::Apr,
+            config.apr_model.clone(),
+        ));
     }
     cells
 }
@@ -1712,9 +1825,15 @@ fn build_standard_matrix_cells(config: &Config) -> Vec<MatrixCell> {
 /// Build cells for legacy --model flag
 fn build_legacy_cells(model_path: &PathBuf) -> Vec<MatrixCell> {
     let model = model_path.to_string_lossy().to_string();
-    let format = if model_path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("gguf")) {
+    let format = if model_path
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("gguf"))
+    {
         Format::Gguf
-    } else if model_path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case("safetensors")) {
+    } else if model_path
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("safetensors"))
+    {
         Format::SafeTensors
     } else {
         Format::Apr

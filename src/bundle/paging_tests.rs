@@ -162,8 +162,7 @@ fn test_paged_bundle_clear_cache() {
 fn test_paged_bundle_prefetch_hint() {
     let temp = create_test_bundle(&[("model1", vec![1, 2, 3])]);
 
-    let mut bundle =
-        PagedBundle::open(temp.path(), PagingConfig::new()).expect("Failed to open");
+    let mut bundle = PagedBundle::open(temp.path(), PagingConfig::new()).expect("Failed to open");
 
     // Pre-fetch
     bundle.prefetch_hint("model1").expect("Prefetch failed");
@@ -264,8 +263,7 @@ fn test_eviction_strategy_lfu() {
 fn test_paged_bundle_get_metadata() {
     let temp = create_test_bundle(&[("model1", vec![1, 2, 3])]);
 
-    let bundle =
-        PagedBundle::open(temp.path(), PagingConfig::default()).expect("Failed to open");
+    let bundle = PagedBundle::open(temp.path(), PagingConfig::default()).expect("Failed to open");
 
     let metadata = bundle.get_metadata("model1");
     assert!(metadata.is_some());
@@ -295,8 +293,7 @@ fn test_paged_bundle_config() {
 fn test_paged_bundle_debug_impl() {
     let temp = create_test_bundle(&[("model1", vec![1, 2, 3])]);
 
-    let bundle =
-        PagedBundle::open(temp.path(), PagingConfig::default()).expect("Failed to open");
+    let bundle = PagedBundle::open(temp.path(), PagingConfig::default()).expect("Failed to open");
 
     let debug_str = format!("{:?}", bundle);
     assert!(debug_str.contains("PagedBundle"));
@@ -322,8 +319,7 @@ fn test_evict_nonexistent_model() {
 fn test_prefetch_hint_nonexistent_model() {
     let temp = create_test_bundle(&[("model1", vec![1, 2, 3])]);
 
-    let mut bundle =
-        PagedBundle::open(temp.path(), PagingConfig::new()).expect("Failed to open");
+    let mut bundle = PagedBundle::open(temp.path(), PagingConfig::new()).expect("Failed to open");
 
     // Prefetch hint for non-existent model should succeed (no-op)
     let result = bundle.prefetch_hint("nonexistent");
@@ -335,8 +331,7 @@ fn test_prefetch_hint_nonexistent_model() {
 fn test_prefetch_hint_already_cached() {
     let temp = create_test_bundle(&[("model1", vec![1, 2, 3])]);
 
-    let mut bundle =
-        PagedBundle::open(temp.path(), PagingConfig::new()).expect("Failed to open");
+    let mut bundle = PagedBundle::open(temp.path(), PagingConfig::new()).expect("Failed to open");
 
     // Load model first
     let _ = bundle.get_model("model1").expect("Failed");
@@ -419,8 +414,7 @@ fn test_cache_hit_updates_lru() {
 fn test_model_names() {
     let temp = create_test_bundle(&[("alpha", vec![1]), ("beta", vec![2]), ("gamma", vec![3])]);
 
-    let bundle =
-        PagedBundle::open(temp.path(), PagingConfig::default()).expect("Failed to open");
+    let bundle = PagedBundle::open(temp.path(), PagingConfig::default()).expect("Failed to open");
 
     let names = bundle.model_names();
     assert_eq!(names.len(), 3);

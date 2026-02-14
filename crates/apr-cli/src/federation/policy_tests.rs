@@ -368,8 +368,8 @@ fn test_privacy_policy_restricted_region() {
 
 #[test]
 fn test_privacy_policy_public_request_any_region() {
-    let policy = PrivacyPolicy::default()
-        .with_region(RegionId("us-west".to_string()), PrivacyLevel::Public);
+    let policy =
+        PrivacyPolicy::default().with_region(RegionId("us-west".to_string()), PrivacyLevel::Public);
 
     let mut request = mock_request();
     request.qos.privacy = PrivacyLevel::Public;
@@ -669,11 +669,7 @@ fn test_route_scores_default() {
 // Helper mock with custom region for privacy testing
 // =========================================================================
 
-fn mock_candidate_in_region(
-    region: &str,
-    latency_ms: u64,
-    health_score: f64,
-) -> RouteCandidate {
+fn mock_candidate_in_region(region: &str, latency_ms: u64, health_score: f64) -> RouteCandidate {
     RouteCandidate {
         target: RouteTarget {
             node_id: NodeId("node1".to_string()),

@@ -2020,7 +2020,7 @@ fn dispatch_core_command(cli: &Cli) -> Option<Result<(), CliError>> {
             quality,
             strict,
             min_score,
-        } => validate::run(file, *quality, *strict, *min_score),
+        } => validate::run(file, *quality, *strict, *min_score, cli.json),
 
         Commands::Diff {
             file1,

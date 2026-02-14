@@ -353,9 +353,7 @@ fn test_run_create_invalid_model() {
 fn test_run_check_model_not_found() {
     let mut canary = NamedTempFile::with_suffix(".json").expect("create canary");
     canary
-        .write_all(
-            br#"{"model_name": "test", "tensor_count": 0, "tensors": {}, "created_at": ""}"#,
-        )
+        .write_all(br#"{"model_name": "test", "tensor_count": 0, "tensors": {}, "created_at": ""}"#)
         .expect("write");
 
     let cmd = CanaryCommands::Check {
@@ -401,8 +399,7 @@ fn test_run_check_invalid_canary() {
 #[test]
 fn test_validate_paths_exist_model_missing() {
     let canary = NamedTempFile::with_suffix(".json").expect("create canary");
-    let result =
-        validate_paths_exist(Path::new("/nonexistent/model.safetensors"), canary.path());
+    let result = validate_paths_exist(Path::new("/nonexistent/model.safetensors"), canary.path());
     assert!(result.is_err());
 }
 

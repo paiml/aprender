@@ -393,9 +393,7 @@ impl Architecture {
 
             if is_bias {
                 // Bias: 1D shape [3*hidden] — split bytes into 3 equal parts
-                if tensor.data.len() % 3 != 0
-                    || tensor.shape.len() != 1
-                    || tensor.shape[0] % 3 != 0
+                if tensor.data.len() % 3 != 0 || tensor.shape.len() != 1 || tensor.shape[0] % 3 != 0
                 {
                     tensors.insert(fused_name, tensor);
                     continue;
@@ -430,9 +428,7 @@ impl Architecture {
                 );
             } else {
                 // Weight: 2D shape [3*hidden, hidden] — split dim 0
-                if tensor.shape.len() != 2
-                    || tensor.shape[0] % 3 != 0
-                    || tensor.data.len() % 3 != 0
+                if tensor.shape.len() != 2 || tensor.shape[0] % 3 != 0 || tensor.data.len() % 3 != 0
                 {
                     tensors.insert(fused_name, tensor);
                     continue;

@@ -33,7 +33,7 @@ EOF
 ```bash
 # APR output
 apr run qwen-7b.gguf "Write a Python function to check if a number is prime." \
-    --max-tokens 64 --temperature 0 > /tmp/apr-output.txt
+    --max-tokens 64 > /tmp/apr-output.txt
 
 # Ollama output
 ollama run qwen7b-apr "Write a Python function to check if a number is prime." \

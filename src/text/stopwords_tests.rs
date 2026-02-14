@@ -125,8 +125,8 @@ fn test_punctuation_handling() {
 fn test_mixed_content() {
     let filter = StopWordsFilter::english();
     let tokens = vec![
-        "I", "love", "machine", "learning", "and", "neural", "networks", "because", "they",
-        "are", "powerful",
+        "I", "love", "machine", "learning", "and", "neural", "networks", "because", "they", "are",
+        "powerful",
     ];
     let filtered = filter.filter(&tokens).expect("filter should succeed");
     assert_eq!(

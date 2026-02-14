@@ -540,8 +540,7 @@ fn m8_negative_sampling_discrimination() {
 
     // After training with negative sampling, positive scores should be higher
     // For this test, we verify the loss computation mechanism works
-    let avg_loss: f64 =
-        contrastive_losses.iter().sum::<f64>() / contrastive_losses.len() as f64;
+    let avg_loss: f64 = contrastive_losses.iter().sum::<f64>() / contrastive_losses.len() as f64;
 
     // The loss should be computable (not NaN)
     assert!(avg_loss.is_finite(), "Contrastive loss should be finite");
@@ -683,11 +682,8 @@ fn m10_symbolic_constraints_llm_outputs() {
     let constraint_mask = vec![vec![false, true, false, true, false, true, false, true]];
 
     // Apply constraint via masked attention
-    let constrained_logits = apply_nonlinearity_with_mask(
-        &raw_logits,
-        Nonlinearity::Softmax,
-        Some(&constraint_mask),
-    );
+    let constrained_logits =
+        apply_nonlinearity_with_mask(&raw_logits, Nonlinearity::Softmax, Some(&constraint_mask));
 
     // Verify: masked positions have near-zero probability
     assert!(

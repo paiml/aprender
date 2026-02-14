@@ -24,8 +24,7 @@ fn test_builder_pattern() {
 #[test]
 fn test_fit_simple() {
     // Linearly separable data: y = 1 if x > 0, else 0
-    let x =
-        Matrix::from_vec(6, 1, vec![-2.0, -1.0, -0.5, 0.5, 1.0, 2.0]).expect("Valid matrix");
+    let x = Matrix::from_vec(6, 1, vec![-2.0, -1.0, -0.5, 0.5, 1.0, 2.0]).expect("Valid matrix");
     let y = Vector::from_vec(vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
 
     let mut model = BayesianLogisticRegression::new(0.1);
@@ -102,8 +101,8 @@ fn test_predict() {
 /// Test: Dimension mismatch in fit
 #[test]
 fn test_fit_dimension_mismatch() {
-    let x = Matrix::from_vec(4, 2, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0])
-        .expect("Valid matrix");
+    let x =
+        Matrix::from_vec(4, 2, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]).expect("Valid matrix");
     let y = Vector::from_vec(vec![0.0, 1.0]); // Wrong size!
 
     let mut model = BayesianLogisticRegression::new(1.0);
@@ -143,8 +142,8 @@ fn test_predict_not_fitted() {
 /// Test: Predict with dimension mismatch
 #[test]
 fn test_predict_dimension_mismatch() {
-    let x = Matrix::from_vec(4, 2, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0])
-        .expect("Valid matrix");
+    let x =
+        Matrix::from_vec(4, 2, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]).expect("Valid matrix");
     let y = Vector::from_vec(vec![0.0, 0.0, 1.0, 1.0]);
 
     let mut model = BayesianLogisticRegression::new(1.0);
@@ -162,8 +161,7 @@ fn test_predict_dimension_mismatch() {
 /// Test: MAP estimate converges
 #[test]
 fn test_map_convergence() {
-    let x =
-        Matrix::from_vec(6, 1, vec![-2.0, -1.0, -0.5, 0.5, 1.0, 2.0]).expect("Valid matrix");
+    let x = Matrix::from_vec(6, 1, vec![-2.0, -1.0, -0.5, 0.5, 1.0, 2.0]).expect("Valid matrix");
     let y = Vector::from_vec(vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
 
     let mut model = BayesianLogisticRegression::new(0.1)
@@ -177,8 +175,7 @@ fn test_map_convergence() {
 /// Test: Non-convergence with low max_iter
 #[test]
 fn test_map_non_convergence() {
-    let x =
-        Matrix::from_vec(6, 1, vec![-2.0, -1.0, -0.5, 0.5, 1.0, 2.0]).expect("Valid matrix");
+    let x = Matrix::from_vec(6, 1, vec![-2.0, -1.0, -0.5, 0.5, 1.0, 2.0]).expect("Valid matrix");
     let y = Vector::from_vec(vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
 
     let mut model = BayesianLogisticRegression::new(0.1)
@@ -194,8 +191,7 @@ fn test_map_non_convergence() {
 /// Test: Predict probabilities with credible intervals
 #[test]
 fn test_predict_proba_interval() {
-    let x =
-        Matrix::from_vec(6, 1, vec![-2.0, -1.0, -0.5, 0.5, 1.0, 2.0]).expect("Valid matrix");
+    let x = Matrix::from_vec(6, 1, vec![-2.0, -1.0, -0.5, 0.5, 1.0, 2.0]).expect("Valid matrix");
     let y = Vector::from_vec(vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
 
     let mut model = BayesianLogisticRegression::new(0.1);
@@ -290,8 +286,7 @@ fn test_sigmoid_extreme_values() {
 
 #[test]
 fn test_prior_precision_effects() {
-    let x =
-        Matrix::from_vec(6, 1, vec![-2.0, -1.0, -0.5, 0.5, 1.0, 2.0]).expect("Valid matrix");
+    let x = Matrix::from_vec(6, 1, vec![-2.0, -1.0, -0.5, 0.5, 1.0, 2.0]).expect("Valid matrix");
     let y = Vector::from_vec(vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
 
     // Medium prior precision = moderate regularization
@@ -335,8 +330,8 @@ fn test_multiple_features() {
 
 #[test]
 fn test_predict_interval_dimension_mismatch() {
-    let x = Matrix::from_vec(4, 2, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0])
-        .expect("Valid matrix");
+    let x =
+        Matrix::from_vec(4, 2, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]).expect("Valid matrix");
     let y = Vector::from_vec(vec![0.0, 0.0, 1.0, 1.0]);
 
     let mut model = BayesianLogisticRegression::new(1.0);
@@ -351,8 +346,7 @@ fn test_predict_interval_dimension_mismatch() {
 
 #[test]
 fn test_predict_returns_labels() {
-    let x =
-        Matrix::from_vec(6, 1, vec![-2.0, -1.0, -0.5, 0.5, 1.0, 2.0]).expect("Valid matrix");
+    let x = Matrix::from_vec(6, 1, vec![-2.0, -1.0, -0.5, 0.5, 1.0, 2.0]).expect("Valid matrix");
     let y = Vector::from_vec(vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
 
     let mut model = BayesianLogisticRegression::new(0.1);
@@ -373,8 +367,7 @@ fn test_predict_returns_labels() {
 
 #[test]
 fn test_wide_credible_interval() {
-    let x =
-        Matrix::from_vec(6, 1, vec![-2.0, -1.0, -0.5, 0.5, 1.0, 2.0]).expect("Valid matrix");
+    let x = Matrix::from_vec(6, 1, vec![-2.0, -1.0, -0.5, 0.5, 1.0, 2.0]).expect("Valid matrix");
     let y = Vector::from_vec(vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
 
     let mut model = BayesianLogisticRegression::new(0.1);

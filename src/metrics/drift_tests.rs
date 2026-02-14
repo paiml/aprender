@@ -70,10 +70,10 @@ fn test_detector_insufficient_samples() {
 
 #[test]
 fn test_detector_multivariate() {
-    let reference = Matrix::from_vec(50, 2, (0..100).map(|i| i as f32).collect())
-        .expect("valid dimensions");
-    let current = Matrix::from_vec(50, 2, (0..100).map(|i| i as f32).collect())
-        .expect("valid dimensions");
+    let reference =
+        Matrix::from_vec(50, 2, (0..100).map(|i| i as f32).collect()).expect("valid dimensions");
+    let current =
+        Matrix::from_vec(50, 2, (0..100).map(|i| i as f32).collect()).expect("valid dimensions");
 
     let detector = DriftDetector::new(DriftConfig::default().with_min_samples(10));
     let (overall, feature_statuses) = detector.detect_multivariate(&reference, &current);

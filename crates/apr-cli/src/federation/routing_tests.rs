@@ -648,8 +648,8 @@ async fn test_get_candidates_with_rejected() {
             .with_region(RegionId("us-west".to_string()), PrivacyLevel::Public),
     );
 
-    let router = Router::new(RouterConfig::default(), catalog, health, circuit_breaker)
-        .with_policy(policy);
+    let router =
+        Router::new(RouterConfig::default(), catalog, health, circuit_breaker).with_policy(policy);
 
     // Request requires Confidential, but us-west is Public
     let request = InferenceRequest {

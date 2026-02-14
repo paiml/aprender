@@ -48,8 +48,7 @@ pub(crate) fn run(
     }
 
     // Rosetta Stone dispatch: detect format first
-    let detected = FormatType::from_magic(path)
-        .or_else(|_| FormatType::from_extension(path));
+    let detected = FormatType::from_magic(path).or_else(|_| FormatType::from_extension(path));
 
     if let Ok(FormatType::Gguf | FormatType::SafeTensors) = detected {
         return run_rosetta_debug(path, drama);
@@ -117,11 +116,11 @@ fn run_rosetta_debug(path: &Path, drama: bool) -> Result<(), CliError> {
         println!(
             "{}",
             output::kv_table(&[
+                ("Size", humansize::format_size(file_size, humansize::BINARY)),
                 (
-                    "Size",
-                    humansize::format_size(file_size, humansize::BINARY)
+                    "Format",
+                    format!("{} {}", format_name, output::badge_pass("valid"))
                 ),
-                ("Format", format!("{} {}", format_name, output::badge_pass("valid"))),
                 (
                     "Architecture",
                     report
@@ -130,10 +129,7 @@ fn run_rosetta_debug(path: &Path, drama: bool) -> Result<(), CliError> {
                         .unwrap_or_else(|| "unknown".to_string())
                 ),
                 ("Tensors", tensor_count.to_string()),
-                (
-                    "Parameters",
-                    report.total_params.to_string()
-                ),
+                ("Parameters", report.total_params.to_string()),
                 ("Health", output::badge_pass("OK")),
             ])
         );

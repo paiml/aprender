@@ -1366,8 +1366,7 @@ fn test_parse_tool_calls_valid_json() {
 
 #[test]
 fn test_parse_tool_calls_embedded_in_text() {
-    let output =
-        r#"Let me help. {"tool_call": {"name": "search", "arguments": {"q": "rust"}}}"#;
+    let output = r#"Let me help. {"tool_call": {"name": "search", "arguments": {"q": "rust"}}}"#;
     let calls = parse_tool_calls(output).unwrap();
     assert_eq!(calls[0].function.name, "search");
 }

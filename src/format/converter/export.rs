@@ -716,7 +716,7 @@ fn export_to_gguf(
         .map(|(name, (data, shape))| {
             let gguf_name = hf_to_gguf_name(name);
 
-            // GH-234: lm_head must also skip quantization (same all-zeros bug as embeddings)
+            // lm_head and embeddings skip quantization — keep F32 to preserve full precision
             let is_embedding = gguf_name == "token_embd.weight" || name.contains("embed_tokens");
             let is_lm_head = gguf_name == "output.weight" || name.contains("lm_head");
 

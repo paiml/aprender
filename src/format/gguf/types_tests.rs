@@ -458,8 +458,7 @@ fn test_write_metadata_kv_uint32() {
 #[test]
 fn test_write_metadata_kv_string() {
     let mut buf = Vec::new();
-    write_metadata_kv(&mut buf, "arch", &GgufValue::String("llama".to_string()))
-        .expect("write kv");
+    write_metadata_kv(&mut buf, "arch", &GgufValue::String("llama".to_string())).expect("write kv");
 
     // Key: length (8) + "arch" (4)
     assert_eq!(&buf[0..8], &4u64.to_le_bytes());
@@ -504,13 +503,11 @@ fn test_write_metadata_kv_all_scalar_types() {
 #[test]
 fn test_write_metadata_kv_arrays() {
     let mut buf = Vec::new();
-    write_metadata_kv(&mut buf, "ids", &GgufValue::ArrayUint32(vec![1, 2, 3]))
-        .expect("write kv");
+    write_metadata_kv(&mut buf, "ids", &GgufValue::ArrayUint32(vec![1, 2, 3])).expect("write kv");
     assert!(!buf.is_empty());
 
     let mut buf = Vec::new();
-    write_metadata_kv(&mut buf, "vals", &GgufValue::ArrayInt32(vec![-1, 0, 1]))
-        .expect("write kv");
+    write_metadata_kv(&mut buf, "vals", &GgufValue::ArrayInt32(vec![-1, 0, 1])).expect("write kv");
     assert!(!buf.is_empty());
 
     let mut buf = Vec::new();

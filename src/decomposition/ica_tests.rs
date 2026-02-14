@@ -7,8 +7,8 @@ fn test_ica_basic() {
         10,
         2,
         vec![
-            1.0, 2.0, 2.0, 1.0, 3.0, 4.0, 4.0, 3.0, 5.0, 6.0, 1.5, 2.5, 2.5, 1.5, 3.5, 4.5,
-            4.5, 3.5, 5.5, 6.5,
+            1.0, 2.0, 2.0, 1.0, 3.0, 4.0, 4.0, 3.0, 5.0, 6.0, 1.5, 2.5, 2.5, 1.5, 3.5, 4.5, 4.5,
+            3.5, 5.5, 6.5,
         ],
     )
     .expect("Valid matrix");
@@ -35,8 +35,7 @@ fn test_ica_invalid_n_components() {
 #[test]
 fn test_ica_transform_not_fitted() {
     let ica = ICA::new(2);
-    let data =
-        Matrix::from_vec(3, 2, vec![1.0, 2.0, 2.0, 3.0, 3.0, 4.0]).expect("Valid matrix");
+    let data = Matrix::from_vec(3, 2, vec![1.0, 2.0, 2.0, 3.0, 3.0, 4.0]).expect("Valid matrix");
 
     let result = ica.transform(&data);
     assert!(result.is_err());
@@ -84,8 +83,7 @@ fn test_ica_with_options() {
 
 #[test]
 fn test_center_data() {
-    let data =
-        Matrix::from_vec(3, 2, vec![1.0, 2.0, 2.0, 4.0, 3.0, 6.0]).expect("Valid matrix");
+    let data = Matrix::from_vec(3, 2, vec![1.0, 2.0, 2.0, 4.0, 3.0, 6.0]).expect("Valid matrix");
 
     let (centered, mean) = ICA::center_data(&data).expect("Should center");
 
@@ -109,8 +107,7 @@ fn test_power_iteration() {
     // Simple 2x2 matrix with known eigenvalues
     let matrix = Matrix::from_vec(2, 2, vec![3.0, 1.0, 1.0, 3.0]).expect("Valid matrix");
 
-    let (eigenvalue, eigenvector) =
-        ICA::power_iteration(&matrix, 100).expect("Should converge");
+    let (eigenvalue, eigenvector) = ICA::power_iteration(&matrix, 100).expect("Should converge");
 
     // Largest eigenvalue should be 4.0
     assert!((eigenvalue - 4.0).abs() < 0.1, "Eigenvalue should be ~4.0");
@@ -187,8 +184,8 @@ fn test_ica_whitening() {
         10,
         2,
         vec![
-            1.0, 2.0, 2.0, 1.0, 3.0, 4.0, 4.0, 3.0, 5.0, 6.0, 1.5, 2.5, 2.5, 1.5, 3.5, 4.5,
-            4.5, 3.5, 5.5, 6.5,
+            1.0, 2.0, 2.0, 1.0, 3.0, 4.0, 4.0, 3.0, 5.0, 6.0, 1.5, 2.5, 2.5, 1.5, 3.5, 4.5, 4.5,
+            3.5, 5.5, 6.5,
         ],
     )
     .expect("Valid matrix");
@@ -217,8 +214,7 @@ fn test_ica_eigen_decomposition() {
 
 #[test]
 fn test_ica_eigen_decomposition_non_square() {
-    let matrix =
-        Matrix::from_vec(2, 3, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]).expect("Valid matrix");
+    let matrix = Matrix::from_vec(2, 3, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]).expect("Valid matrix");
 
     let result = ICA::eigen_decomposition(&matrix, 2);
     assert!(result.is_err());
@@ -250,8 +246,8 @@ fn test_ica_fit_then_transform_new_data() {
         10,
         2,
         vec![
-            1.0, 2.0, 2.0, 1.0, 3.0, 4.0, 4.0, 3.0, 5.0, 6.0, 1.5, 2.5, 2.5, 1.5, 3.5, 4.5,
-            4.5, 3.5, 5.5, 6.5,
+            1.0, 2.0, 2.0, 1.0, 3.0, 4.0, 4.0, 3.0, 5.0, 6.0, 1.5, 2.5, 2.5, 1.5, 3.5, 4.5, 4.5,
+            3.5, 5.5, 6.5,
         ],
     )
     .expect("Valid matrix");
@@ -260,9 +256,8 @@ fn test_ica_fit_then_transform_new_data() {
     ica.fit(&training_data).expect("Should fit");
 
     // Transform different data with same shape
-    let new_data =
-        Matrix::from_vec(5, 2, vec![2.0, 3.0, 3.0, 2.0, 4.0, 5.0, 5.0, 4.0, 6.0, 7.0])
-            .expect("Valid matrix");
+    let new_data = Matrix::from_vec(5, 2, vec![2.0, 3.0, 3.0, 2.0, 4.0, 5.0, 5.0, 4.0, 6.0, 7.0])
+        .expect("Valid matrix");
 
     let transformed = ica.transform(&new_data).expect("Should transform");
     assert_eq!(transformed.n_rows(), 5);
@@ -278,9 +273,8 @@ fn test_ica_3d_data() {
         3,
         vec![
             1.0, 5.0, 2.0, // More variance between columns
-            4.0, 2.0, 6.0, 3.0, 7.0, 1.0, 6.0, 3.0, 4.0, 2.0, 8.0, 5.0, 5.0, 1.0, 3.0, 1.5,
-            6.0, 2.5, 4.5, 2.5, 5.5, 3.5, 6.5, 1.5, 5.5, 4.5, 4.5, 2.5, 7.5, 6.5, 6.5, 1.5,
-            3.5,
+            4.0, 2.0, 6.0, 3.0, 7.0, 1.0, 6.0, 3.0, 4.0, 2.0, 8.0, 5.0, 5.0, 1.0, 3.0, 1.5, 6.0,
+            2.5, 4.5, 2.5, 5.5, 3.5, 6.5, 1.5, 5.5, 4.5, 4.5, 2.5, 7.5, 6.5, 6.5, 1.5, 3.5,
         ],
     )
     .expect("Valid matrix");

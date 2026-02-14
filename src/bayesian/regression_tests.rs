@@ -57,8 +57,7 @@ fn test_fit_simple_linear() {
     use crate::primitives::{Matrix, Vector};
 
     // Simple linear relationship through origin: y = 2x
-    let x =
-        Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0]).expect("Valid matrix dimensions");
+    let x = Matrix::from_vec(5, 1, vec![1.0, 2.0, 3.0, 4.0, 5.0]).expect("Valid matrix dimensions");
     let y = Vector::from_vec(vec![2.0, 4.0, 6.0, 8.0, 10.0]);
 
     let mut model = BayesianLinearRegression::new(1);
@@ -346,16 +345,15 @@ fn test_predict_feature_count_mismatch() {
     use crate::primitives::{Matrix, Vector};
 
     // Train the model
-    let x_train = Matrix::from_vec(4, 2, vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0])
-        .expect("Valid matrix");
+    let x_train =
+        Matrix::from_vec(4, 2, vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0]).expect("Valid matrix");
     let y_train = Vector::from_vec(vec![2.0, 4.0, 6.0, 8.0]);
 
     let mut model = BayesianLinearRegression::new(2);
     model.fit(&x_train, &y_train).expect("Fit should succeed");
 
     // Predict with wrong number of features
-    let x_test =
-        Matrix::from_vec(2, 3, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]).expect("Valid matrix");
+    let x_test = Matrix::from_vec(2, 3, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]).expect("Valid matrix");
     let result = model.predict(&x_test);
 
     assert!(result.is_err());
@@ -375,8 +373,8 @@ fn test_log_likelihood_feature_mismatch() {
     model.fit(&x_train, &y_train).expect("Fit should succeed");
 
     // Compute log-likelihood with wrong feature count
-    let x_wrong = Matrix::from_vec(4, 2, vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0])
-        .expect("Valid matrix");
+    let x_wrong =
+        Matrix::from_vec(4, 2, vec![1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0]).expect("Valid matrix");
     let y_wrong = Vector::from_vec(vec![2.0, 4.0, 6.0, 8.0]);
 
     let result = model.log_likelihood(&x_wrong, &y_wrong);
