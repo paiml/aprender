@@ -59,8 +59,8 @@ constraints:
   attention_type: gqa
   activation: silu
   norm_type: rmsnorm
-  has_bias: false
-  tied_embeddings: false
+  has_bias: "false"
+  tied_embeddings: "false"
   positional_encoding: rope
   mlp_type: swiglu
 

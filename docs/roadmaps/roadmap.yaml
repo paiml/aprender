@@ -1,5 +1,5 @@
 roadmap_version: '1.0'
-github_enabled: true
+github_enabled: "true"
 github_repo: paiml/aprender
 roadmap:
 - id: GH-9
@@ -3481,4 +3481,61 @@ roadmap:
   subtasks: []
   estimated_effort: null
   labels: []
+  notes: null
+- id: PMAT-244
+  github_issue: null
+  item_type: task
+  title: Split 3 files >2000 lines for File Health compliance
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-02-14T18:13:10Z
+  updated: 2026-02-14T18:13:10Z
+  spec: null
+  acceptance_criteria:
+  - rosetta.rs (7202), lib.rs (7148), oracle.rs (6114) need splitting
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - comply
+  - file-health
+  notes: null
+- id: PMAT-245
+  github_issue: null
+  item_type: task
+  title: Fix CB-500 string byte indexing warnings
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-02-14T18:13:12Z
+  updated: 2026-02-14T18:13:12Z
+  spec: null
+  acceptance_criteria:
+  - 319 CB-506 warnings for &str[n..m] byte indexing that can panic on non-ASCII
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - comply
+  - cb-500
+  notes: null
+- id: PMAT-246
+  github_issue: null
+  item_type: task
+  title: Fix CB-900 broken markdown links in book
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-02-14T18:13:13Z
+  updated: 2026-02-14T18:13:13Z
+  spec: null
+  acceptance_criteria:
+  - 24 broken internal links in book/ and docs/
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - comply
+  - cb-900
   notes: null

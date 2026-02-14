@@ -131,15 +131,15 @@ impl AprReader {
         }
 
         // Check for APR2 (compressed) format first
-        if data[0..4] == APR_MAGIC_COMPRESSED {
+        let magic = data.get(0..4).ok_or("File too short for magic")?;
+        if magic == APR_MAGIC_COMPRESSED {
             return Self::from_bytes_compressed(&data);
         }
 
         // Check for APR1 (uncompressed) format
-        if data[0..4] != APR_MAGIC {
+        if magic != APR_MAGIC {
             return Err(format!(
-                "Invalid magic: expected APR1 or APR2, got {:?}",
-                &data[0..4]
+                "Invalid magic: expected APR1 or APR2, got {magic:?}",
             ));
         }
 
@@ -157,7 +157,7 @@ impl AprReader {
             .ok_or_else(|| format!("Unknown compression type: {compression_byte}"))?;
 
         let uncompressed_len = u32::from_le_bytes([data[5], data[6], data[7], data[8]]) as usize;
-        let compressed_payload = &data[9..];
+        let compressed_payload = data.get(9..).ok_or("APR2 file too short for payload")?;
 
         // Decompress based on algorithm
         let decompressed =
@@ -194,10 +194,10 @@ impl AprReader {
     /// Parse uncompressed APR1 format
     fn from_bytes_uncompressed(data: Vec<u8>) -> Result<Self, String> {
         // Validate APR1 magic
-        if data[0..4] != APR_MAGIC {
+        let magic = data.get(0..4).ok_or("File too short for magic")?;
+        if magic != APR_MAGIC {
             return Err(format!(
-                "Invalid magic: expected APR1, got {:?}",
-                &data[0..4]
+                "Invalid magic: expected APR1, got {magic:?}",
             ));
         }
 

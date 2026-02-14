@@ -903,7 +903,7 @@ Each of the 10 placeholder chapters (currently 9-17 lines) needs expansion to 30
 ### 5.2 Integration with ML Fundamentals
 
 Each case study must:
-1. **Reference theory chapter**: "See [Linear Regression Theory](../ml-fundamentals/linear-regression-theory.md) for mathematical foundations"
+1. **Reference theory chapter**: "See Linear Regression Theory for mathematical foundations"
 2. **Show TDD workflow**: RED-GREEN-REFACTOR cycle
 3. **Include doc status block**: Validated examples
 4. **Link to test file**: `tests/book/case_linear_regression.rs`
@@ -921,8 +921,8 @@ Each case study must:
 ## Prerequisites
 
 Before this case study, read:
-- [Linear Regression Theory](../ml-fundamentals/linear-regression-theory.md) - Mathematical foundations
-- [RED-GREEN-REFACTOR Cycle](../methodology/red-green-refactor.md) - TDD methodology
+- Linear Regression Theory - Mathematical foundations
+- RED-GREEN-REFACTOR Cycle - TDD methodology
 
 ---
 
@@ -934,7 +934,7 @@ Build a linear regression model from scratch using the RED-GREEN-REFACTOR cycle.
 
 [Brief summary from theory chapter]
 
-For full derivations, see [Linear Regression Theory](../ml-fundamentals/linear-regression-theory.md).
+For full derivations, see Linear Regression Theory.
 
 ## RED Phase: Failing Tests
 
@@ -960,8 +960,8 @@ For full derivations, see [Linear Regression Theory](../ml-fundamentals/linear-r
 
 ## See Also
 
-- [Regularized Regression](./regularized-regression.md) - Preventing overfitting
-- [Regression Metrics](../ml-fundamentals/regression-metrics.md) - Evaluation theory
+- Regularized Regression - Preventing overfitting
+- Regression Metrics - Evaluation theory
 ```
 
 ---

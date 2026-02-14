@@ -69,7 +69,7 @@ jobs:
 
       - name: Check for outdated dependencies
         run: cargo outdated --exit-code 1
-        continue-on-error: true
+        continue-on-error: "true"
 
       - name: Generate outdated summary
         if: always()

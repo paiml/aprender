@@ -151,6 +151,6 @@ apr-qa report output/evidence.json -o output/ --formats all --model "Qwen/Qwen2.
 ## References
 
 - [apr-model-qa-playbook Specification](https://github.com/paiml/apr-model-qa-playbook/blob/main/docs/specifications/apr-playbook-spec.md)
-- [Qwen2.5-Coder Showcase Demo](../../docs/specifications/qwen2.5-coder-showcase-demo.md)
+- [Qwen2.5-Coder Showcase Demo](../../../docs/specifications/qwen2.5-coder-showcase-demo.md)
 - Karl Popper, "The Logic of Scientific Discovery" (1934)
 - Toyota Production System: Jidoka + Poka-Yoke

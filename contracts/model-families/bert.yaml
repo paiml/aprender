@@ -31,8 +31,8 @@ constraints:
   attention_type: mha
   activation: gelu
   norm_type: layernorm
-  has_bias: true
-  tied_embeddings: true
+  has_bias: "true"
+  tied_embeddings: "true"
   positional_encoding: absolute
   mlp_type: gelu_mlp
 

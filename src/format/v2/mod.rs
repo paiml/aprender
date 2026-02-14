@@ -478,7 +478,7 @@ impl AprV2Header {
         let checksum = u32::from_le_bytes([buf[40], buf[41], buf[42], buf[43]]);
 
         let mut reserved = [0u8; 20];
-        reserved.copy_from_slice(&buf[44..64]);
+        reserved.copy_from_slice(buf.get(44..64).unwrap_or(&[0u8; 20]));
 
         Ok(Self {
             magic,
@@ -501,8 +501,8 @@ impl AprV2Header {
         // Exclude checksum field (bytes 40-43) from calculation
         // Concatenate the two regions and compute CRC32
         let mut data = Vec::with_capacity(60);
-        data.extend_from_slice(&bytes[0..40]);
-        data.extend_from_slice(&bytes[44..64]);
+        data.extend_from_slice(bytes.get(0..40).unwrap_or(&[]));
+        data.extend_from_slice(bytes.get(44..64).unwrap_or(&[]));
         crc32(&data)
     }
 

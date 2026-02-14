@@ -63,6 +63,6 @@ The 14B timeouts are a resource limitation (56GB F32 model exceeds the 120s serv
 
 ## Related
 
-- **Bug 205** in the [showcase spec](../../docs/specifications/qwen2.5-coder-showcase-demo.md)
+- **Bug 205** in the [showcase spec](../../../docs/specifications/qwen2.5-coder-showcase-demo.md)
 - `realizar/src/infer/mod.rs:1379` — reference sharded inference implementation
 - `realizar/src/safetensors/mod.rs` — `ShardedSafeTensorsModel` API

@@ -244,7 +244,7 @@ tensors:
     apr_name: "model.embed_tokens.weight"
     gguf_shape: "[hidden, vocab]"
     apr_shape: "[vocab, hidden]"
-    transpose: true
+    transpose: "true"
     kernel: "lookup (row = token embedding, not matmul)"
     validation: "shape[0] == vocab_size AND shape[1] == hidden_dim"
 
@@ -253,12 +253,12 @@ tensors:
     apr_name: "lm_head.weight"
     gguf_shape: "[hidden, vocab]"
     apr_shape: "[vocab, hidden]"
-    transpose: true
+    transpose: "true"
     kernel: "matmul_q*k_rowmajor(W, x, vocab_size, hidden_dim)"
     kernel_out_dim: vocab_size
     kernel_in_dim: hidden_dim
     validation: "shape[0] == vocab_size AND shape[1] == hidden_dim"
-    critical: true
+    critical: "true"
     note: "GH-202 root cause - wrong shape caused [PAD] garbage output"
 
   q_proj:
@@ -266,7 +266,7 @@ tensors:
     apr_name: "model.layers.{n}.self_attn.q_proj.weight"
     gguf_shape: "[hidden, heads*head_dim]"
     apr_shape: "[heads*head_dim, hidden]"
-    transpose: true
+    transpose: "true"
     kernel: "matmul_q*k_rowmajor(W, x, num_heads*head_dim, hidden_dim)"
     kernel_out_dim: "num_heads * head_dim"
     kernel_in_dim: hidden_dim
@@ -276,7 +276,7 @@ tensors:
     apr_name: "model.layers.{n}.self_attn.k_proj.weight"
     gguf_shape: "[hidden, kv_heads*head_dim]"
     apr_shape: "[kv_heads*head_dim, hidden]"
-    transpose: true
+    transpose: "true"
     kernel: "matmul_q*k_rowmajor(W, x, num_kv_heads*head_dim, hidden_dim)"
     kernel_out_dim: "num_kv_heads * head_dim"
     kernel_in_dim: hidden_dim
@@ -286,7 +286,7 @@ tensors:
     apr_name: "model.layers.{n}.self_attn.v_proj.weight"
     gguf_shape: "[hidden, kv_heads*head_dim]"
     apr_shape: "[kv_heads*head_dim, hidden]"
-    transpose: true
+    transpose: "true"
     kernel: "matmul_q*k_rowmajor(W, x, num_kv_heads*head_dim, hidden_dim)"
     kernel_out_dim: "num_kv_heads * head_dim"
     kernel_in_dim: hidden_dim
@@ -296,7 +296,7 @@ tensors:
     apr_name: "model.layers.{n}.self_attn.o_proj.weight"
     gguf_shape: "[heads*head_dim, hidden]"
     apr_shape: "[hidden, heads*head_dim]"
-    transpose: true
+    transpose: "true"
     kernel: "matmul_q*k_rowmajor(W, x, hidden_dim, num_heads*head_dim)"
     kernel_out_dim: hidden_dim
     kernel_in_dim: "num_heads * head_dim"
@@ -306,7 +306,7 @@ tensors:
     apr_name: "model.layers.{n}.mlp.gate_proj.weight"
     gguf_shape: "[hidden, intermediate]"
     apr_shape: "[intermediate, hidden]"
-    transpose: true
+    transpose: "true"
     kernel: "matmul_q*k_rowmajor(W, x, intermediate_dim, hidden_dim)"
     kernel_out_dim: intermediate_dim
     kernel_in_dim: hidden_dim
@@ -316,7 +316,7 @@ tensors:
     apr_name: "model.layers.{n}.mlp.up_proj.weight"
     gguf_shape: "[hidden, intermediate]"
     apr_shape: "[intermediate, hidden]"
-    transpose: true
+    transpose: "true"
     kernel: "matmul_q*k_rowmajor(W, x, intermediate_dim, hidden_dim)"
     kernel_out_dim: intermediate_dim
     kernel_in_dim: hidden_dim
@@ -326,7 +326,7 @@ tensors:
     apr_name: "model.layers.{n}.mlp.down_proj.weight"
     gguf_shape: "[intermediate, hidden]"
     apr_shape: "[hidden, intermediate]"
-    transpose: true
+    transpose: "true"
     kernel: "matmul_q*k_rowmajor(W, x, hidden_dim, intermediate_dim)"
     kernel_out_dim: hidden_dim
     kernel_in_dim: intermediate_dim
@@ -336,7 +336,7 @@ tensors:
     apr_name: "model.layers.{n}.input_layernorm.weight"
     gguf_shape: "[hidden]"
     apr_shape: "[hidden]"
-    transpose: false
+    transpose: "false"
     kernel: "element-wise multiply"
 
   post_attention_layernorm:
@@ -344,7 +344,7 @@ tensors:
     apr_name: "model.layers.{n}.post_attention_layernorm.weight"
     gguf_shape: "[hidden]"
     apr_shape: "[hidden]"
-    transpose: false
+    transpose: "false"
     kernel: "element-wise multiply"
 
   final_norm:
@@ -352,7 +352,7 @@ tensors:
     apr_name: "model.norm.weight"
     gguf_shape: "[hidden]"
     apr_shape: "[hidden]"
-    transpose: false
+    transpose: "false"
     kernel: "element-wise multiply"
 
 # Validation rules for automated testing
@@ -367,7 +367,7 @@ validation_rules:
     name: "lm_head shape matches kernel expectation"
     description: "lm_head.apr_shape[0] == vocab_size AND lm_head.apr_shape[1] == hidden_dim"
     severity: P0
-    critical: true
+    critical: "true"
     reference: "GH-202"
 
   - id: F-LAYOUT-CONTRACT-003
@@ -384,7 +384,7 @@ validation_rules:
     name: "No garbage output from lm_head"
     description: "Inference does not produce [PAD] tokens repeatedly"
     severity: P0
-    critical: true
+    critical: "true"
     reference: "GH-202"
 
 # Semantic validation rules (PMAT-234)
@@ -399,19 +399,19 @@ semantic_validation:
 
   # NaN/Inf gates - reject tensors with invalid values
   numeric:
-    allow_nan: false
-    allow_inf: false
+    allow_nan: "false"
+    allow_inf: "false"
     note: "NaN/Inf in weights = training diverged or corrupt file"
 
   # Distribution gates - reject tensors with degenerate distributions
   distribution:
     min_l2_norm: 1.0e-6           # L2 ~0 means tensor is effectively empty
-    require_variation: true       # All values identical = constant tensor
+    require_variation: "true"       # All values identical = constant tensor
     note: "Degenerate distributions indicate corrupt or placeholder data"
 
   # Spot check gates - sample tokens to verify data is distributed
   spot_check:
-    enabled: true
+    enabled: "true"
     sample_percentiles: [10, 50, 90]  # Check tokens at 10%, 50%, 90% of vocab
     min_token_l2: 1.0e-6              # Each sampled token must have non-zero embedding
     note: "Catches offset bugs where data is shifted (e.g., first 94.5% zeros)"
@@ -421,7 +421,7 @@ validation_rules_semantic:
     name: "Embedding density check"
     description: "Embedding tensor must have <50% zero values"
     severity: P0
-    critical: true
+    critical: "true"
     reference: "PMAT-234"
     enforcement:
       - "aprender/src/format/layout_contract.rs:enforce_semantic_validation()"
@@ -431,7 +431,7 @@ validation_rules_semantic:
     name: "No NaN or Inf values"
     description: "All tensor values must be finite"
     severity: P0
-    critical: true
+    critical: "true"
     enforcement:
       - "aprender/src/format/layout_contract.rs:enforce_semantic_validation()"
       - "realizar/src/safetensors/validation.rs:validate_*()"
@@ -448,7 +448,7 @@ validation_rules_semantic:
     name: "Spot check token embeddings"
     description: "Sampled tokens at 10%/50%/90% must have non-zero embeddings"
     severity: P0
-    critical: true
+    critical: "true"
     reference: "PMAT-234"
     note: "Catches the 94.5% leading zeros bug"
     enforcement:

@@ -13,11 +13,11 @@ on:
     inputs:
       throughput_threshold:
         description: 'Minimum throughput (tok/s)'
-        required: false
+        required: "false"
         default: '100'
       brick_score_threshold:
         description: 'Minimum brick score (0-100)'
-        required: false
+        required: "false"
         default: '80'
 
   # Run on PR for showcase-related changes

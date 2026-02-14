@@ -263,7 +263,7 @@ fn train(data: &[f32], epochs: usize) -> Result<Vec<f32>> {
 
 ## See Also
 
-- [Trueno Ecosystem Integration Spec](../../docs/specifications/include-latest-trueno-features.md)
+- [Trueno Ecosystem Integration Spec](../../../docs/specifications/include-latest-trueno-features.md)
 - [Case Study: Pipeline Verification](./pipeline-verification.md)
 - [Case Study: Poka-Yoke Validation](./poka-yoke-validation.md)
 - [Toyota Way: Jidoka](../toyota-way/jidoka.md)

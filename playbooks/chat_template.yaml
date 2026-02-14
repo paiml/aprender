@@ -51,7 +51,7 @@ machine:
     complete:
       id: "complete"
       description: "Conversation formatted successfully"
-      final_state: true
+      final_state: "true"
       invariants:
         - description: "Output is non-empty"
           condition: "engine.output.len() > 0"
@@ -59,7 +59,7 @@ machine:
     error:
       id: "error"
       description: "Error encountered during processing"
-      final_state: true
+      final_state: "true"
       invariants:
         - description: "Error is recorded"
           condition: "engine.error.is_some()"
@@ -199,7 +199,7 @@ performance:
 
 # Determinism Requirements
 determinism:
-  enabled: true
+  enabled: "true"
   iterations: 3
   description: "Same input must produce identical output"
 
@@ -217,9 +217,9 @@ assertions:
 
   output:
     - var: "formatted_output"
-      not_empty: true
+      not_empty: "true"
     - var: "errors"
-      empty: true  # For valid inputs
+      empty: "true"  # For valid inputs
 
 # Test Scenarios
 scenarios:
@@ -330,7 +330,7 @@ scenarios:
 
 # Probador Integration
 probador:
-  enabled: true
+  enabled: "true"
   test_file: "tests/book/case_studies/chat_template_usage.rs"
   coverage_report: "target/coverage/chat_template.json"
   visual_snapshots:

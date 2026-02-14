@@ -271,5 +271,5 @@ Output:
 ## See Also
 
 - [Graph Algorithms](./graph-algorithms-comprehensive.md) - General graph analysis
-- [GNN Module](../api/gnn.md) - GCN, GAT, GIN layers
+<!-- GNN Module API reference not yet written -->
 - [Text Processing](./text-preprocessing.md) - NLP for code comments

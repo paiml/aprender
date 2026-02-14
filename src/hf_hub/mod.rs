@@ -748,7 +748,7 @@ impl HfHubClient {
         eprintln!(
             "[LFS] Preupload request (size={}, sha256={}...)",
             file_size,
-            &sha256[..16]
+            sha256.get(..16).unwrap_or(&sha256)
         );
 
         let preupload_resp = match ureq::post(&preupload_url)

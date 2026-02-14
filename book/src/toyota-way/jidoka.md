@@ -169,5 +169,5 @@ Output:
 
 **See also:**
 - [What is EXTREME TDD?](../methodology/what-is-extreme-tdd.md)
-- [Poka-Yoke Validation Example](../../examples/poka_yoke_validation.rs)
-- [Contract Specification](../../contracts/tensor-layout-v1.yaml)
+- [Poka-Yoke Validation Example](../../../examples/poka_yoke_validation.rs)
+- [Contract Specification](../../../contracts/tensor-layout-v1.yaml)

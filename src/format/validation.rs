@@ -331,7 +331,7 @@ impl AprHeader {
         }
 
         let mut magic = [0u8; 4];
-        magic.copy_from_slice(&bytes[0..4]);
+        magic.copy_from_slice(bytes.get(0..4).unwrap_or(&[0u8; 4]));
 
         Ok(Self {
             magic,
@@ -520,7 +520,7 @@ impl AprValidator {
 
         // GH-178: Detect format and validate version accordingly
         if data.len() >= 4 {
-            let magic = &data[0..4];
+            let magic = data.get(0..4).unwrap_or(&[]);
             if magic == b"GGUF" {
                 // GGUF format - check version at bytes 4-7 (u32 LE)
                 self.check_gguf_version(data);
@@ -586,8 +586,7 @@ impl AprValidator {
     /// - APR: `APR\0` (0x41 0x50 0x52 0x00)
     /// - GGUF: `GGUF` (0x47 0x47 0x55 0x46 = [71, 71, 85, 70])
     fn check_magic(&mut self, data: &[u8]) {
-        let status = if data.len() >= 4 {
-            let magic = &data[0..4];
+        let status = if let Some(magic) = data.get(0..4) {
             if magic == b"APR\0" {
                 CheckStatus::Pass
             } else if magic == b"GGUF" {

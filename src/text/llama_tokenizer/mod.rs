@@ -493,7 +493,7 @@ impl LlamaTokenizer {
         }
 
         // Verify magic
-        if &data[0..4] != b"GGUF" {
+        if data.get(0..4) != Some(b"GGUF".as_slice()) {
             return Err(AprenderError::FormatError {
                 message: "Invalid GGUF magic".to_string(),
             });

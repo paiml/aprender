@@ -6,7 +6,7 @@ on:
     inputs:
       reason:
         description: 'Reason for running benchmarks'
-        required: false
+        required: "false"
         default: 'Manual benchmark run'
 
   # Run on PR for performance-sensitive changes
@@ -42,7 +42,7 @@ jobs:
         run: |
           echo "Running benchmarks..."
           cargo bench --no-fail-fast 2>&1 | tee benchmark-output.txt
-        continue-on-error: true
+        continue-on-error: "true"
 
       - name: Generate benchmark summary
         if: always()

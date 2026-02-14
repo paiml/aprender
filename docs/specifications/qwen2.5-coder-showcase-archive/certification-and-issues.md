@@ -126,9 +126,9 @@ but passed them directly to `apr run` without resolving to format-specific files
 | GH-5 | FlashAttention shared memory overflow when tile_kv < head_dim | P0 | ✅ FIXED | 2026-02-05 |
 | BUG-F16-001 | F16 SafeTensors→APR 95% diff (F16→F32→F16 precision loss) | P0 | ✅ FIXED | 2026-02-05 |
 | BUG-F16-002 | F16→F32 conversion overflow (`exp - 15` underflows when exp < 15) | P1 | ✅ FIXED | 2026-02-05 |
-| [GH-191](docs/tickets/GH-191-APR-QUANTIZATION-DATA-LOSS.md) | APR dtype byte mapping mismatch | P0 | ✅ FIXED | PMAT-223 |
-| [GH-190](docs/tickets/GH-190-GGUF-APR-CONVERSION-GARBAGE-OUTPUT.md) | GGUF→APR tensor name mismatch | P0 | ✅ FIXED | PMAT-205 |
-| [GH-189](docs/tickets/GH-189-APR-CHAT-SPECIAL-TOKENS.md) | APR chat special tokens not atomic | P0 | ✅ FIXED | PMAT-206 |
+| GH-191 | APR dtype byte mapping mismatch | P0 | ✅ FIXED | PMAT-223 |
+| GH-190 | GGUF→APR tensor name mismatch | P0 | ✅ FIXED | PMAT-205 |
+| GH-189 | APR chat special tokens not atomic | P0 | ✅ FIXED | PMAT-206 |
 | [#188](https://github.com/paiml/aprender/issues/188) | Rosetta differential tracing | P1 | ✅ FIXED | PMAT-200 |
 | [#186](https://github.com/paiml/aprender/issues/186) | APR Q4_K PAD token garbage | P0 | ✅ FIXED | PMAT-196 |
 | [#185](https://github.com/paiml/aprender/issues/185) | APR missing embedded tokenizer | P0 | ✅ FIXED | PMAT-195 |

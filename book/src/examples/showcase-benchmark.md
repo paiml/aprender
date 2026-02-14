@@ -59,5 +59,5 @@ The `showcase_benchmark` example implements:
 
 ## See Also
 
-- [Qwen2.5-Coder Showcase Spec](../../specifications/qwen2.5-coder-showcase-demo.md)
+- [Qwen2.5-Coder Showcase Spec](../../../docs/specifications/qwen2.5-coder-showcase-demo.md)
 - [Benchmark Comparison](./bench-comparison.md)

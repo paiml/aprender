@@ -376,11 +376,11 @@ fn extract_json_string(json: &str, key: &str) -> Option<String> {
         return None;
     }
 
-    // Find closing quote
-    let rest = &rest[1..];
+    // Find closing quote (safe: starts_with('"') guarantees byte 0 is '"' = ASCII)
+    let rest = rest.get(1..)?;
     let end = rest.find('"')?;
 
-    Some(rest[..end].to_string())
+    Some(rest.get(..end)?.to_string())
 }
 
 #[cfg(test)]

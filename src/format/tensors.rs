@@ -183,13 +183,17 @@ pub fn list_tensors_from_bytes(
     }
 
     // Detect format from magic bytes (Rosetta Stone dispatch)
-    if data.len() >= 4 && &data[0..4] == b"GGUF" {
+    if data.get(0..4) == Some(b"GGUF") {
         return list_tensors_gguf(data, options);
     }
 
     if data.len() >= 10 {
-        let header_len = u64::from_le_bytes(data[0..8].try_into().unwrap_or([0u8; 8]));
-        if header_len < 100_000_000 && &data[8..10] == b"{\"" {
+        let header_len = u64::from_le_bytes(
+            data.get(0..8)
+                .and_then(|s| s.try_into().ok())
+                .unwrap_or([0u8; 8]),
+        );
+        if header_len < 100_000_000 && data.get(8..10) == Some(b"{\"") {
             return list_tensors_safetensors(data, options);
         }
     }

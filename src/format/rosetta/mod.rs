@@ -185,7 +185,7 @@ impl FormatType {
             })?;
 
         // GGUF magic: "GGUF" (0x46554747 little-endian)
-        if &magic[0..4] == b"GGUF" {
+        if magic.get(0..4) == Some(b"GGUF") {
             return Ok(Self::Gguf);
         }
 
@@ -203,7 +203,7 @@ impl FormatType {
         }
 
         // APR magic: "APR\0" (v1) or "APR2" (v2)
-        if &magic[0..3] == b"APR" {
+        if magic.get(0..3) == Some(b"APR") {
             return Ok(Self::Apr);
         }
 
@@ -391,7 +391,12 @@ impl fmt::Display for InspectionReport {
         for (k, v) in &self.metadata {
             // Truncate long values
             let display_v = if v.len() > 60 {
-                format!("{}...", &v[..60])
+                // Use char-boundary-safe truncation
+                let truncated = match v.get(..60) {
+                    Some(s) => s,
+                    None => v.as_str(),
+                };
+                format!("{truncated}...")
             } else {
                 v.clone()
             };

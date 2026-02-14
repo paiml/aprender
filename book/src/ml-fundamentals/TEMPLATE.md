@@ -173,7 +173,7 @@ mod properties {
 
 ## Real-World Application
 
-**Case Study Reference**: See [Case Study: Name](../examples/case-study.md) for complete implementation.
+**Case Study Reference**: <!-- TODO: Add case study link when chapter is written -->
 
 **Key Takeaways**:
 1. [Lesson learned from case study]
@@ -193,8 +193,9 @@ mod properties {
 
 ### Related Chapters
 
-- [Previous Topic](./previous-topic.md) - Foundation for this chapter
-- [Next Topic](./next-topic.md) - Builds on this chapter
+<!-- TODO: Update these links when adjacent chapters are written -->
+- Previous Topic - Foundation for this chapter
+- Next Topic - Builds on this chapter
 
 ---
 
@@ -222,6 +223,7 @@ mod properties {
 
 ---
 
-**Next Chapter**: [Next Topic](./next-topic.md)
+<!-- TODO: Update navigation links when adjacent chapters are written -->
+**Next Chapter**: Next Topic
 
-**Previous Chapter**: [Previous Topic](./previous-topic.md)
+**Previous Chapter**: Previous Topic

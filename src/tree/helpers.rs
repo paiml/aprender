@@ -180,7 +180,7 @@ pub(super) fn get_sorted_unique_values(x: &[f32]) -> Vec<f32> {
     let mut prev_val = x[sorted_indices[0]];
     unique_values.push(prev_val);
 
-    for &idx in &sorted_indices[1..] {
+    for &idx in sorted_indices.get(1..).unwrap_or(&[]) {
         if (x[idx] - prev_val).abs() > 1e-10 {
             unique_values.push(x[idx]);
             prev_val = x[idx];

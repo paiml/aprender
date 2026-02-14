@@ -28,5 +28,4 @@ cargo run --release --example bench_comparison
 
 ## See Also
 
-- [Performance Profiling](../ml-fundamentals/profiling.md)
-- [Quantization Guide](../ml-fundamentals/quantization.md)
+<!-- Performance Profiling and Quantization Guide chapters not yet written -->

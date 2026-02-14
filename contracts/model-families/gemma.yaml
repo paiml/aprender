@@ -36,8 +36,8 @@ constraints:
   attention_type: gqa
   activation: gelu
   norm_type: rmsnorm
-  has_bias: false
-  tied_embeddings: true
+  has_bias: "false"
+  tied_embeddings: "true"
   positional_encoding: rope
   mlp_type: gated_mlp
 

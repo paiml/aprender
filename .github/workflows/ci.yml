@@ -66,7 +66,7 @@ jobs:
   test:
     name: Test
     strategy:
-      fail-fast: false  # Don't cancel other jobs if one fails
+      fail-fast: "false"  # Don't cancel other jobs if one fails
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
@@ -169,7 +169,7 @@ jobs:
         uses: codecov/codecov-action@v4
         with:
           files: lcov.info
-          fail_ci_if_error: false
+          fail_ci_if_error: "false"
 
   mutants:
     name: Mutation Testing
@@ -184,7 +184,7 @@ jobs:
           tool: cargo-mutants
       - name: Run mutation tests (sample)
         run: cargo mutants --no-times --timeout 300 --in-place -- --all-features
-        continue-on-error: true
+        continue-on-error: "true"
       - name: Upload mutants results
         if: always()
         uses: actions/upload-artifact@v4
@@ -205,7 +205,7 @@ jobs:
   deny:
     name: Dependency Check
     runs-on: ubuntu-latest
-    continue-on-error: true  # Unmaintained transitive deps (bincode, instant) cause failures
+    continue-on-error: "true"  # Unmaintained transitive deps (bincode, instant) cause failures
     steps:
       - uses: actions/checkout@v4
       - uses: EmbarkStudios/cargo-deny-action@v2
@@ -231,12 +231,12 @@ jobs:
       - uses: actions/checkout@v4
       - name: Shellcheck
         run: shellcheck --severity=error scripts/*.sh
-        continue-on-error: true  # Warnings don't block CI
+        continue-on-error: "true"  # Warnings don't block CI
 
   kani:
     name: Kani (Bounded Model Checking)
     runs-on: ubuntu-latest
-    continue-on-error: true  # Kani is optional — proof harnesses may timeout
+    continue-on-error: "true"  # Kani is optional — proof harnesses may timeout
     steps:
       - uses: actions/checkout@v4
       - name: Install Kani
@@ -256,7 +256,7 @@ jobs:
   miri:
     name: Miri (Undefined Behavior Detection)
     runs-on: ubuntu-latest
-    continue-on-error: true  # Miri may fail on FFI/GPU code paths
+    continue-on-error: "true"  # Miri may fail on FFI/GPU code paths
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
@@ -279,7 +279,7 @@ jobs:
   wasm:
     name: WASM Compatibility
     runs-on: ubuntu-latest
-    continue-on-error: true  # WASM check may fail due to transitive dependencies (hostname crate)
+    continue-on-error: "true"  # WASM check may fail due to transitive dependencies (hostname crate)
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

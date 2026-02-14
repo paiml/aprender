@@ -285,7 +285,7 @@ routing_policies:
 load_balance_strategies:
   - id: "least_latency"
     description: "Route to fastest responding node"
-    default: true
+    default: "true"
 
   - id: "round_robin"
     description: "Distribute evenly across nodes"

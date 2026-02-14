@@ -49,7 +49,7 @@ impl BundleFormat {
     /// Validate magic bytes.
     #[must_use]
     pub fn validate_magic(bytes: &[u8]) -> bool {
-        bytes.len() >= 8 && &bytes[0..8] == BUNDLE_MAGIC
+        bytes.len() >= 8 && bytes.get(0..8) == Some(BUNDLE_MAGIC)
     }
 
     /// Extract version from header.
