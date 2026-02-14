@@ -1,1 +1,1937 @@
+warning[duplicate]: found 2 duplicate entries for crate 'getrandom'
+    ┌─ /home/noah/src/aprender/Cargo.lock:154:1
+    │  
+154 │ ╭ getrandom 0.2.17 registry+https://github.com/rust-lang/crates.io-index
+155 │ │ getrandom 0.3.4 registry+https://github.com/rust-lang/crates.io-index
+    │ ╰─────────────────────────────────────────────────────────────────────┘ lock entries
+    │  
+    ├ getrandom v0.2.17
+      ├── aprender v0.24.1
+      │   ├── renacer v0.9.8
+      │   │   └── (dev) aprender v0.25.7
+      │   └── trueno-graph v0.1.11
+      │       └── renacer v0.9.8 (*)
+      ├── aprender v0.25.7 (*)
+      ├── const-random-macro v0.1.16
+      │   └── const-random v0.1.18
+      │       └── ahash v0.8.12
+      │           ├── arrow-array v54.3.1
+      │           │   ├── arrow v54.2.1
+      │           │   │   ├── trueno-db v0.3.11
+      │           │   │   │   ├── renacer v0.9.8 (*)
+      │           │   │   │   └── trueno-graph v0.1.11 (*)
+      │           │   │   └── trueno-graph v0.1.11 (*)
+      │           │   ├── arrow-arith v54.3.1
+      │           │   │   └── arrow v54.2.1 (*)
+      │           │   ├── arrow-cast v54.3.1
+      │           │   │   ├── arrow v54.2.1 (*)
+      │           │   │   ├── arrow-csv v54.3.1
+      │           │   │   │   └── arrow v54.2.1 (*)
+      │           │   │   ├── arrow-json v54.3.1
+      │           │   │   │   └── arrow v54.2.1 (*)
+      │           │   │   └── parquet v54.2.0
+      │           │   │       ├── trueno-db v0.3.11 (*)
+      │           │   │       └── trueno-graph v0.1.11 (*)
+      │           │   ├── arrow-csv v54.3.1 (*)
+      │           │   ├── arrow-ipc v54.2.1
+      │           │   │   ├── arrow v54.2.1 (*)
+      │           │   │   └── parquet v54.2.0 (*)
+      │           │   ├── arrow-json v54.3.1 (*)
+      │           │   ├── arrow-ord v54.2.1
+      │           │   │   └── arrow v54.2.1 (*)
+      │           │   ├── arrow-row v54.2.1
+      │           │   │   └── arrow v54.2.1 (*)
+      │           │   ├── arrow-select v54.3.1
+      │           │   │   ├── arrow v54.2.1 (*)
+      │           │   │   ├── arrow-cast v54.3.1 (*)
+      │           │   │   ├── arrow-ord v54.2.1 (*)
+      │           │   │   ├── arrow-string v54.2.1
+      │           │   │   │   └── arrow v54.2.1 (*)
+      │           │   │   └── parquet v54.2.0 (*)
+      │           │   ├── arrow-string v54.2.1 (*)
+      │           │   └── parquet v54.2.0 (*)
+      │           ├── arrow-select v54.3.1 (*)
+      │           └── parquet v54.2.0 (*)
+      ├── rand_core v0.6.4
+      │   ├── crypto-common v0.1.7
+      │   │   ├── aead v0.5.2
+      │   │   │   └── aes-gcm v0.10.3
+      │   │   │       └── aprender v0.25.7 (*)
+      │   │   ├── cipher v0.4.4
+      │   │   │   ├── aes v0.8.4
+      │   │   │   │   └── aes-gcm v0.10.3 (*)
+      │   │   │   ├── aes-gcm v0.10.3 (*)
+      │   │   │   └── ctr v0.9.2
+      │   │   │       └── aes-gcm v0.10.3 (*)
+      │   │   ├── digest v0.10.7
+      │   │   │   ├── blake2 v0.10.6
+      │   │   │   │   └── argon2 v0.5.3
+      │   │   │   │       └── aprender v0.25.7 (*)
+      │   │   │   ├── hmac v0.12.1
+      │   │   │   │   └── hkdf v0.12.4
+      │   │   │   │       └── aprender v0.25.7 (*)
+      │   │   │   └── sha2 v0.10.9
+      │   │   │       ├── aprender v0.25.7 (*)
+      │   │   │       ├── jugar-probar v0.5.1
+      │   │   │       │   └── (dev) aprender v0.25.7 (*)
+      │   │   │       └── renacer v0.9.8 (*)
+      │   │   └── universal-hash v0.5.1
+      │   │       └── polyval v0.6.2
+      │   │           └── ghash v0.5.1
+      │   │               └── aes-gcm v0.10.3 (*)
+      │   ├── password-hash v0.5.0
+      │   │   └── argon2 v0.5.3 (*)
+      │   ├── rand v0.8.5
+      │   │   ├── aprender v0.24.1 (*)
+      │   │   ├── aprender v0.25.7 (*)
+      │   │   └── renacer v0.9.8 (*)
+      │   ├── rand_chacha v0.3.1
+      │   │   ├── aprender v0.24.1 (*)
+      │   │   ├── aprender v0.25.7 (*)
+      │   │   └── rand v0.8.5 (*)
+      │   └── x25519-dalek v2.0.1
+      │       └── aprender v0.25.7 (*)
+      ├── redox_users v0.4.6
+      │   └── dirs-sys v0.4.1
+      │       └── dirs v5.0.1
+      │           └── trueno-viz v0.1.20
+      │               └── renacer v0.9.8 (*)
+      ├── redox_users v0.5.2
+      │   └── dirs-sys v0.5.0
+      │       └── dirs v6.0.0
+      │           ├── aprender v0.25.7 (*)
+      │           └── hf-hub v0.4.3
+      │               └── aprender v0.25.7 (*)
+      └── ring v0.17.14
+          ├── rustls v0.23.36
+          │   └── ureq v2.12.1
+          │       ├── aprender v0.25.7 (*)
+          │       └── hf-hub v0.4.3 (*)
+          └── rustls-webpki v0.103.9
+              └── rustls v0.23.36 (*)
+    ├ getrandom v0.3.4
+      ├── ahash v0.8.12
+      │   ├── arrow-array v54.3.1
+      │   │   ├── arrow v54.2.1
+      │   │   │   ├── trueno-db v0.3.11
+      │   │   │   │   ├── renacer v0.9.8
+      │   │   │   │   │   └── (dev) aprender v0.25.7
+      │   │   │   │   └── trueno-graph v0.1.11
+      │   │   │   │       └── renacer v0.9.8 (*)
+      │   │   │   └── trueno-graph v0.1.11 (*)
+      │   │   ├── arrow-arith v54.3.1
+      │   │   │   └── arrow v54.2.1 (*)
+      │   │   ├── arrow-cast v54.3.1
+      │   │   │   ├── arrow v54.2.1 (*)
+      │   │   │   ├── arrow-csv v54.3.1
+      │   │   │   │   └── arrow v54.2.1 (*)
+      │   │   │   ├── arrow-json v54.3.1
+      │   │   │   │   └── arrow v54.2.1 (*)
+      │   │   │   └── parquet v54.2.0
+      │   │   │       ├── trueno-db v0.3.11 (*)
+      │   │   │       └── trueno-graph v0.1.11 (*)
+      │   │   ├── arrow-csv v54.3.1 (*)
+      │   │   ├── arrow-ipc v54.2.1
+      │   │   │   ├── arrow v54.2.1 (*)
+      │   │   │   └── parquet v54.2.0 (*)
+      │   │   ├── arrow-json v54.3.1 (*)
+      │   │   ├── arrow-ord v54.2.1
+      │   │   │   └── arrow v54.2.1 (*)
+      │   │   ├── arrow-row v54.2.1
+      │   │   │   └── arrow v54.2.1 (*)
+      │   │   ├── arrow-select v54.3.1
+      │   │   │   ├── arrow v54.2.1 (*)
+      │   │   │   ├── arrow-cast v54.3.1 (*)
+      │   │   │   ├── arrow-ord v54.2.1 (*)
+      │   │   │   ├── arrow-string v54.2.1
+      │   │   │   │   └── arrow v54.2.1 (*)
+      │   │   │   └── parquet v54.2.0 (*)
+      │   │   ├── arrow-string v54.2.1 (*)
+      │   │   └── parquet v54.2.0 (*)
+      │   ├── arrow-select v54.3.1 (*)
+      │   └── parquet v54.2.0 (*)
+      ├── jobserver v0.1.34
+      │   └── cc v1.2.10
+      │       ├── (build) iana-time-zone-haiku v0.1.2
+      │       │   └── iana-time-zone v0.1.64
+      │       │       └── chrono v0.4.43
+      │       │           ├── arrow-arith v54.3.1 (*)
+      │       │           ├── arrow-array v54.3.1 (*)
+      │       │           ├── arrow-cast v54.3.1 (*)
+      │       │           ├── arrow-csv v54.3.1 (*)
+      │       │           ├── arrow-json v54.3.1 (*)
+      │       │           ├── jugar-probar v0.5.1
+      │       │           │   └── (dev) aprender v0.25.7 (*)
+      │       │           ├── parquet v54.2.0 (*)
+      │       │           ├── trueno v0.13.0
+      │       │           │   ├── aprender v0.24.1
+      │       │           │   │   ├── renacer v0.9.8 (*)
+      │       │           │   │   └── trueno-graph v0.1.11 (*)
+      │       │           │   ├── renacer v0.9.8 (*)
+      │       │           │   ├── trueno-db v0.3.11 (*)
+      │       │           │   ├── trueno-graph v0.1.11 (*)
+      │       │           │   └── trueno-viz v0.1.20
+      │       │           │       └── renacer v0.9.8 (*)
+      │       │           ├── trueno v0.14.5
+      │       │           │   └── aprender v0.25.7 (*)
+      │       │           └── trueno-db v0.3.11 (*)
+      │       ├── (build) libfuzzer-sys v0.4.10
+      │       │   └── rav1e v0.8.1
+      │       │       └── ravif v0.12.0
+      │       │           └── image v0.25.9
+      │       │               └── jugar-probar v0.5.1 (*)
+      │       ├── (build) ring v0.17.14
+      │       │   ├── rustls v0.23.36
+      │       │   │   └── ureq v2.12.1
+      │       │   │       ├── aprender v0.25.7 (*)
+      │       │   │       └── hf-hub v0.4.3
+      │       │   │           └── aprender v0.25.7 (*)
+      │       │   └── rustls-webpki v0.103.9
+      │       │       └── rustls v0.23.36 (*)
+      │       └── (build) zstd-sys v2.0.13+zstd.1.5.6
+      │           ├── parquet v54.2.0 (*)
+      │           └── zstd-safe v7.2.1
+      │               └── zstd v0.13.3
+      │                   ├── aprender v0.25.7 (*)
+      │                   └── parquet v54.2.0 (*)
+      ├── rand_core v0.9.5
+      │   ├── rand v0.9.2
+      │   │   ├── hf-hub v0.4.3 (*)
+      │   │   ├── opentelemetry_sdk v0.31.0
+      │   │   │   ├── opentelemetry-otlp v0.31.0
+      │   │   │   │   └── renacer v0.9.8 (*)
+      │   │   │   ├── opentelemetry-proto v0.31.0
+      │   │   │   │   └── opentelemetry-otlp v0.31.0 (*)
+      │   │   │   └── renacer v0.9.8 (*)
+      │   │   ├── proptest v1.9.0
+      │   │   │   └── (dev) aprender v0.25.7 (*)
+      │   │   └── rav1e v0.8.1 (*)
+      │   ├── rand_chacha v0.9.0
+      │   │   ├── proptest v1.9.0 (*)
+      │   │   ├── rand v0.9.2 (*)
+      │   │   └── rav1e v0.8.1 (*)
+      │   └── rand_xorshift v0.4.0
+      │       └── proptest v1.9.0 (*)
+      ├── tempfile v3.24.0
+      │   ├── (dev) aprender v0.25.7 (*)
+      │   ├── proptest v1.9.0 (*)
+      │   └── rusty-fork v0.3.1
+      │       └── proptest v1.9.0 (*)
+      └── uuid v1.19.0
+          └── jugar-probar v0.5.1 (*)
+
+warning[duplicate]: found 2 duplicate entries for crate 'rand'
+    ┌─ /home/noah/src/aprender/Cargo.lock:312:1
+    │  
+312 │ ╭ rand 0.8.5 registry+https://github.com/rust-lang/crates.io-index
+313 │ │ rand 0.9.2 registry+https://github.com/rust-lang/crates.io-index
+    │ ╰────────────────────────────────────────────────────────────────┘ lock entries
+    │  
+    ├ rand v0.8.5
+      ├── aprender v0.24.1
+      │   ├── renacer v0.9.8
+      │   │   └── (dev) aprender v0.25.7
+      │   └── trueno-graph v0.1.11
+      │       └── renacer v0.9.8 (*)
+      ├── aprender v0.25.7 (*)
+      └── renacer v0.9.8 (*)
+    ├ rand v0.9.2
+      ├── hf-hub v0.4.3
+      │   └── aprender v0.25.7
+      ├── opentelemetry_sdk v0.31.0
+      │   ├── opentelemetry-otlp v0.31.0
+      │   │   └── renacer v0.9.8
+      │   │       └── (dev) aprender v0.25.7 (*)
+      │   ├── opentelemetry-proto v0.31.0
+      │   │   └── opentelemetry-otlp v0.31.0 (*)
+      │   └── renacer v0.9.8 (*)
+      ├── proptest v1.9.0
+      │   └── (dev) aprender v0.25.7 (*)
+      └── rav1e v0.8.1
+          └── ravif v0.12.0
+              └── image v0.25.9
+                  └── jugar-probar v0.5.1
+                      └── (dev) aprender v0.25.7 (*)
+
+warning[duplicate]: found 2 duplicate entries for crate 'rand_chacha'
+    ┌─ /home/noah/src/aprender/Cargo.lock:314:1
+    │  
+314 │ ╭ rand_chacha 0.3.1 registry+https://github.com/rust-lang/crates.io-index
+315 │ │ rand_chacha 0.9.0 registry+https://github.com/rust-lang/crates.io-index
+    │ ╰───────────────────────────────────────────────────────────────────────┘ lock entries
+    │  
+    ├ rand_chacha v0.3.1
+      ├── aprender v0.24.1
+      │   ├── renacer v0.9.8
+      │   │   └── (dev) aprender v0.25.7
+      │   └── trueno-graph v0.1.11
+      │       └── renacer v0.9.8 (*)
+      ├── aprender v0.25.7 (*)
+      └── rand v0.8.5
+          ├── aprender v0.24.1 (*)
+          ├── aprender v0.25.7 (*)
+          └── renacer v0.9.8 (*)
+    ├ rand_chacha v0.9.0
+      ├── proptest v1.9.0
+      │   └── (dev) aprender v0.25.7
+      ├── rand v0.9.2
+      │   ├── hf-hub v0.4.3
+      │   │   └── aprender v0.25.7 (*)
+      │   ├── opentelemetry_sdk v0.31.0
+      │   │   ├── opentelemetry-otlp v0.31.0
+      │   │   │   └── renacer v0.9.8
+      │   │   │       └── (dev) aprender v0.25.7 (*)
+      │   │   ├── opentelemetry-proto v0.31.0
+      │   │   │   └── opentelemetry-otlp v0.31.0 (*)
+      │   │   └── renacer v0.9.8 (*)
+      │   ├── proptest v1.9.0 (*)
+      │   └── rav1e v0.8.1
+      │       └── ravif v0.12.0
+      │           └── image v0.25.9
+      │               └── jugar-probar v0.5.1
+      │                   └── (dev) aprender v0.25.7 (*)
+      └── rav1e v0.8.1 (*)
+
+warning[duplicate]: found 2 duplicate entries for crate 'rand_core'
+    ┌─ /home/noah/src/aprender/Cargo.lock:316:1
+    │  
+316 │ ╭ rand_core 0.6.4 registry+https://github.com/rust-lang/crates.io-index
+317 │ │ rand_core 0.9.5 registry+https://github.com/rust-lang/crates.io-index
+    │ ╰─────────────────────────────────────────────────────────────────────┘ lock entries
+    │  
+    ├ rand_core v0.6.4
+      ├── crypto-common v0.1.7
+      │   ├── aead v0.5.2
+      │   │   └── aes-gcm v0.10.3
+      │   │       └── aprender v0.25.7
+      │   ├── cipher v0.4.4
+      │   │   ├── aes v0.8.4
+      │   │   │   └── aes-gcm v0.10.3 (*)
+      │   │   ├── aes-gcm v0.10.3 (*)
+      │   │   └── ctr v0.9.2
+      │   │       └── aes-gcm v0.10.3 (*)
+      │   ├── digest v0.10.7
+      │   │   ├── blake2 v0.10.6
+      │   │   │   └── argon2 v0.5.3
+      │   │   │       └── aprender v0.25.7 (*)
+      │   │   ├── hmac v0.12.1
+      │   │   │   └── hkdf v0.12.4
+      │   │   │       └── aprender v0.25.7 (*)
+      │   │   └── sha2 v0.10.9
+      │   │       ├── aprender v0.25.7 (*)
+      │   │       ├── jugar-probar v0.5.1
+      │   │       │   └── (dev) aprender v0.25.7 (*)
+      │   │       └── renacer v0.9.8
+      │   │           └── (dev) aprender v0.25.7 (*)
+      │   └── universal-hash v0.5.1
+      │       └── polyval v0.6.2
+      │           └── ghash v0.5.1
+      │               └── aes-gcm v0.10.3 (*)
+      ├── password-hash v0.5.0
+      │   └── argon2 v0.5.3 (*)
+      ├── rand v0.8.5
+      │   ├── aprender v0.24.1
+      │   │   ├── renacer v0.9.8 (*)
+      │   │   └── trueno-graph v0.1.11
+      │   │       └── renacer v0.9.8 (*)
+      │   ├── aprender v0.25.7 (*)
+      │   └── renacer v0.9.8 (*)
+      ├── rand_chacha v0.3.1
+      │   ├── aprender v0.24.1 (*)
+      │   ├── aprender v0.25.7 (*)
+      │   └── rand v0.8.5 (*)
+      └── x25519-dalek v2.0.1
+          └── aprender v0.25.7 (*)
+    ├ rand_core v0.9.5
+      ├── rand v0.9.2
+      │   ├── hf-hub v0.4.3
+      │   │   └── aprender v0.25.7
+      │   ├── opentelemetry_sdk v0.31.0
+      │   │   ├── opentelemetry-otlp v0.31.0
+      │   │   │   └── renacer v0.9.8
+      │   │   │       └── (dev) aprender v0.25.7 (*)
+      │   │   ├── opentelemetry-proto v0.31.0
+      │   │   │   └── opentelemetry-otlp v0.31.0 (*)
+      │   │   └── renacer v0.9.8 (*)
+      │   ├── proptest v1.9.0
+      │   │   └── (dev) aprender v0.25.7 (*)
+      │   └── rav1e v0.8.1
+      │       └── ravif v0.12.0
+      │           └── image v0.25.9
+      │               └── jugar-probar v0.5.1
+      │                   └── (dev) aprender v0.25.7 (*)
+      ├── rand_chacha v0.9.0
+      │   ├── proptest v1.9.0 (*)
+      │   ├── rand v0.9.2 (*)
+      │   └── rav1e v0.8.1 (*)
+      └── rand_xorshift v0.4.0
+          └── proptest v1.9.0 (*)
+
+warning[duplicate]: found 4 duplicate entries for crate 'windows-sys'
+    ┌─ /home/noah/src/aprender/Cargo.lock:470:1
+    │  
+470 │ ╭ windows-sys 0.52.0 registry+https://github.com/rust-lang/crates.io-index
+471 │ │ windows-sys 0.59.0 registry+https://github.com/rust-lang/crates.io-index
+472 │ │ windows-sys 0.60.2 registry+https://github.com/rust-lang/crates.io-index
+473 │ │ windows-sys 0.61.2 registry+https://github.com/rust-lang/crates.io-index
+    │ ╰────────────────────────────────────────────────────────────────────────┘ lock entries
+    │  
+    ├ windows-sys v0.52.0
+      ├── notify v7.0.0
+      │   └── jugar-probar v0.5.1
+      │       └── (dev) aprender v0.25.7
+      └── ring v0.17.14
+          ├── rustls v0.23.36
+          │   └── ureq v2.12.1
+          │       ├── aprender v0.25.7 (*)
+          │       └── hf-hub v0.4.3
+          │           └── aprender v0.25.7 (*)
+          └── rustls-webpki v0.103.9
+              └── rustls v0.23.36 (*)
+    ├ windows-sys v0.59.0
+      ├── console v0.15.11
+      │   └── indicatif v0.17.11
+      │       └── hf-hub v0.4.3
+      │           └── aprender v0.25.7
+      └── rustix v0.38.44
+          └── crossterm v0.28.1
+              ├── jugar-probar v0.5.1
+              │   └── (dev) aprender v0.25.7 (*)
+              ├── ratatui v0.29.0
+              │   ├── jugar-probar v0.5.1 (*)
+              │   ├── renacer v0.9.8
+              │   │   └── (dev) aprender v0.25.7 (*)
+              │   └── trueno-viz v0.1.20
+              │       └── renacer v0.9.8 (*)
+              ├── renacer v0.9.8 (*)
+              └── trueno-viz v0.1.20 (*)
+    ├ windows-sys v0.60.2
+      ├── hf-hub v0.4.3
+      │   └── aprender v0.25.7
+      └── socket2 v0.6.1
+          ├── hyper-util v0.1.19
+          │   ├── hyper-timeout v0.5.2
+          │   │   └── tonic v0.14.2
+          │   │       ├── opentelemetry-otlp v0.31.0
+          │   │       │   └── renacer v0.9.8
+          │   │       │       └── (dev) aprender v0.25.7 (*)
+          │   │       ├── opentelemetry-proto v0.31.0
+          │   │       │   └── opentelemetry-otlp v0.31.0 (*)
+          │   │       └── tonic-prost v0.14.2
+          │   │           └── opentelemetry-proto v0.31.0 (*)
+          │   ├── reqwest v0.12.28
+          │   │   ├── opentelemetry-http v0.31.0
+          │   │   │   └── opentelemetry-otlp v0.31.0 (*)
+          │   │   └── opentelemetry-otlp v0.31.0 (*)
+          │   └── tonic v0.14.2 (*)
+          └── tokio v1.49.0
+              ├── h2 v0.4.13
+              │   └── hyper v1.8.1
+              │       ├── hyper-timeout v0.5.2 (*)
+              │       ├── hyper-util v0.1.19 (*)
+              │       ├── reqwest v0.12.28 (*)
+              │       └── tonic v0.14.2 (*)
+              ├── hyper v1.8.1 (*)
+              ├── hyper-timeout v0.5.2 (*)
+              ├── hyper-util v0.1.19 (*)
+              ├── opentelemetry-otlp v0.31.0 (*)
+              ├── opentelemetry_sdk v0.31.0
+              │   ├── opentelemetry-otlp v0.31.0 (*)
+              │   ├── opentelemetry-proto v0.31.0 (*)
+              │   └── renacer v0.9.8 (*)
+              ├── renacer v0.9.8 (*)
+              ├── reqwest v0.12.28 (*)
+              ├── tokio-stream v0.1.18
+              │   ├── opentelemetry_sdk v0.31.0 (*)
+              │   └── tonic v0.14.2 (*)
+              ├── tokio-util v0.7.18
+              │   └── h2 v0.4.13 (*)
+              ├── tonic v0.14.2 (*)
+              ├── tower v0.5.3
+              │   ├── reqwest v0.12.28 (*)
+              │   ├── tonic v0.14.2 (*)
+              │   └── tower-http v0.6.8
+              │       └── reqwest v0.12.28 (*)
+              ├── trueno-db v0.3.11
+              │   ├── renacer v0.9.8 (*)
+              │   └── trueno-graph v0.1.11
+              │       └── renacer v0.9.8 (*)
+              └── trueno-graph v0.1.11 (*)
+    ├ windows-sys v0.61.2
+      ├── anstyle-query v1.1.5
+      │   └── anstream v0.6.21
+      │       └── clap_builder v4.5.54
+      │           └── clap v4.5.54
+      │               ├── criterion v0.5.1
+      │               │   └── (dev) aprender v0.25.7
+      │               └── renacer v0.9.8
+      │                   └── (dev) aprender v0.25.7 (*)
+      ├── anstyle-wincon v3.0.11
+      │   └── anstream v0.6.21 (*)
+      ├── ctrlc v3.5.1
+      │   └── (dev) aprender v0.25.7 (*)
+      ├── dirs-sys v0.5.0
+      │   └── dirs v6.0.0
+      │       ├── aprender v0.25.7 (*)
+      │       └── hf-hub v0.4.3
+      │           └── aprender v0.25.7 (*)
+      ├── errno v0.3.14
+      │   ├── rustix v0.38.44
+      │   │   └── crossterm v0.28.1
+      │   │       ├── jugar-probar v0.5.1
+      │   │       │   └── (dev) aprender v0.25.7 (*)
+      │   │       ├── ratatui v0.29.0
+      │   │       │   ├── jugar-probar v0.5.1 (*)
+      │   │       │   ├── renacer v0.9.8 (*)
+      │   │       │   └── trueno-viz v0.1.20
+      │   │       │       └── renacer v0.9.8 (*)
+      │   │       ├── renacer v0.9.8 (*)
+      │   │       └── trueno-viz v0.1.20 (*)
+      │   ├── rustix v1.1.3
+      │   │   └── tempfile v3.24.0
+      │   │       ├── (dev) aprender v0.25.7 (*)
+      │   │       ├── proptest v1.9.0
+      │   │       │   └── (dev) aprender v0.25.7 (*)
+      │   │       └── rusty-fork v0.3.1
+      │   │           └── proptest v1.9.0 (*)
+      │   └── signal-hook-registry v1.4.8
+      │       ├── signal-hook v0.3.18
+      │       │   ├── crossterm v0.28.1 (*)
+      │       │   └── signal-hook-mio v0.2.5
+      │       │       └── crossterm v0.28.1 (*)
+      │       └── tokio v1.49.0
+      │           ├── h2 v0.4.13
+      │           │   └── hyper v1.8.1
+      │           │       ├── hyper-timeout v0.5.2
+      │           │       │   └── tonic v0.14.2
+      │           │       │       ├── opentelemetry-otlp v0.31.0
+      │           │       │       │   └── renacer v0.9.8 (*)
+      │           │       │       ├── opentelemetry-proto v0.31.0
+      │           │       │       │   └── opentelemetry-otlp v0.31.0 (*)
+      │           │       │       └── tonic-prost v0.14.2
+      │           │       │           └── opentelemetry-proto v0.31.0 (*)
+      │           │       ├── hyper-util v0.1.19
+      │           │       │   ├── hyper-timeout v0.5.2 (*)
+      │           │       │   ├── reqwest v0.12.28
+      │           │       │   │   ├── opentelemetry-http v0.31.0
+      │           │       │   │   │   └── opentelemetry-otlp v0.31.0 (*)
+      │           │       │   │   └── opentelemetry-otlp v0.31.0 (*)
+      │           │       │   └── tonic v0.14.2 (*)
+      │           │       ├── reqwest v0.12.28 (*)
+      │           │       └── tonic v0.14.2 (*)
+      │           ├── hyper v1.8.1 (*)
+      │           ├── hyper-timeout v0.5.2 (*)
+      │           ├── hyper-util v0.1.19 (*)
+      │           ├── opentelemetry-otlp v0.31.0 (*)
+      │           ├── opentelemetry_sdk v0.31.0
+      │           │   ├── opentelemetry-otlp v0.31.0 (*)
+      │           │   ├── opentelemetry-proto v0.31.0 (*)
+      │           │   └── renacer v0.9.8 (*)
+      │           ├── renacer v0.9.8 (*)
+      │           ├── reqwest v0.12.28 (*)
+      │           ├── tokio-stream v0.1.18
+      │           │   ├── opentelemetry_sdk v0.31.0 (*)
+      │           │   └── tonic v0.14.2 (*)
+      │           ├── tokio-util v0.7.18
+      │           │   └── h2 v0.4.13 (*)
+      │           ├── tonic v0.14.2 (*)
+      │           ├── tower v0.5.3
+      │           │   ├── reqwest v0.12.28 (*)
+      │           │   ├── tonic v0.14.2 (*)
+      │           │   └── tower-http v0.6.8
+      │           │       └── reqwest v0.12.28 (*)
+      │           ├── trueno-db v0.3.11
+      │           │   ├── renacer v0.9.8 (*)
+      │           │   └── trueno-graph v0.1.11
+      │           │       └── renacer v0.9.8 (*)
+      │           └── trueno-graph v0.1.11 (*)
+      ├── is-terminal v0.4.17
+      │   └── criterion v0.5.1 (*)
+      ├── mio v1.1.1
+      │   ├── crossterm v0.28.1 (*)
+      │   ├── notify v7.0.0
+      │   │   └── jugar-probar v0.5.1 (*)
+      │   ├── signal-hook-mio v0.2.5 (*)
+      │   └── tokio v1.49.0 (*)
+      ├── nu-ansi-term v0.50.3
+      │   └── tracing-subscriber v0.3.22
+      │       ├── jugar-probar v0.5.1 (*)
+      │       ├── renacer v0.9.8 (*)
+      │       └── trueno-db v0.3.11 (*)
+      ├── rustix v1.1.3 (*)
+      ├── tempfile v3.24.0 (*)
+      ├── tokio v1.49.0 (*)
+      └── winapi-util v0.1.11
+          ├── same-file v1.0.6
+          │   └── walkdir v2.5.0
+          │       ├── criterion v0.5.1 (*)
+          │       └── notify v7.0.0 (*)
+          └── walkdir v2.5.0 (*)
+
+warning[duplicate]: found 2 duplicate entries for crate 'windows-targets'
+    ┌─ /home/noah/src/aprender/Cargo.lock:475:1
+    │  
+475 │ ╭ windows-targets 0.52.6 registry+https://github.com/rust-lang/crates.io-index
+476 │ │ windows-targets 0.53.5 registry+https://github.com/rust-lang/crates.io-index
+    │ ╰────────────────────────────────────────────────────────────────────────────┘ lock entries
+    │  
+    ├ windows-targets v0.52.6
+      ├── windows-core v0.58.0
+      │   └── iana-time-zone v0.1.64
+      │       └── chrono v0.4.43
+      │           ├── arrow-arith v54.3.1
+      │           │   └── arrow v54.2.1
+      │           │       ├── trueno-db v0.3.11
+      │           │       │   ├── renacer v0.9.8
+      │           │       │   │   └── (dev) aprender v0.25.7
+      │           │       │   └── trueno-graph v0.1.11
+      │           │       │       └── renacer v0.9.8 (*)
+      │           │       └── trueno-graph v0.1.11 (*)
+      │           ├── arrow-array v54.3.1
+      │           │   ├── arrow v54.2.1 (*)
+      │           │   ├── arrow-arith v54.3.1 (*)
+      │           │   ├── arrow-cast v54.3.1
+      │           │   │   ├── arrow v54.2.1 (*)
+      │           │   │   ├── arrow-csv v54.3.1
+      │           │   │   │   └── arrow v54.2.1 (*)
+      │           │   │   ├── arrow-json v54.3.1
+      │           │   │   │   └── arrow v54.2.1 (*)
+      │           │   │   └── parquet v54.2.0
+      │           │   │       ├── trueno-db v0.3.11 (*)
+      │           │   │       └── trueno-graph v0.1.11 (*)
+      │           │   ├── arrow-csv v54.3.1 (*)
+      │           │   ├── arrow-ipc v54.2.1
+      │           │   │   ├── arrow v54.2.1 (*)
+      │           │   │   └── parquet v54.2.0 (*)
+      │           │   ├── arrow-json v54.3.1 (*)
+      │           │   ├── arrow-ord v54.2.1
+      │           │   │   └── arrow v54.2.1 (*)
+      │           │   ├── arrow-row v54.2.1
+      │           │   │   └── arrow v54.2.1 (*)
+      │           │   ├── arrow-select v54.3.1
+      │           │   │   ├── arrow v54.2.1 (*)
+      │           │   │   ├── arrow-cast v54.3.1 (*)
+      │           │   │   ├── arrow-ord v54.2.1 (*)
+      │           │   │   ├── arrow-string v54.2.1
+      │           │   │   │   └── arrow v54.2.1 (*)
+      │           │   │   └── parquet v54.2.0 (*)
+      │           │   ├── arrow-string v54.2.1 (*)
+      │           │   └── parquet v54.2.0 (*)
+      │           ├── arrow-cast v54.3.1 (*)
+      │           ├── arrow-csv v54.3.1 (*)
+      │           ├── arrow-json v54.3.1 (*)
+      │           ├── jugar-probar v0.5.1
+      │           │   └── (dev) aprender v0.25.7 (*)
+      │           ├── parquet v54.2.0 (*)
+      │           ├── trueno v0.13.0
+      │           │   ├── aprender v0.24.1
+      │           │   │   ├── renacer v0.9.8 (*)
+      │           │   │   └── trueno-graph v0.1.11 (*)
+      │           │   ├── renacer v0.9.8 (*)
+      │           │   ├── trueno-db v0.3.11 (*)
+      │           │   ├── trueno-graph v0.1.11 (*)
+      │           │   └── trueno-viz v0.1.20
+      │           │       └── renacer v0.9.8 (*)
+      │           ├── trueno v0.14.5
+      │           │   └── aprender v0.25.7 (*)
+      │           └── trueno-db v0.3.11 (*)
+      ├── windows-result v0.2.0
+      │   ├── windows-core v0.58.0 (*)
+      │   └── windows-strings v0.1.0
+      │       └── windows-core v0.58.0 (*)
+      ├── windows-strings v0.1.0 (*)
+      ├── windows-sys v0.52.0
+      │   ├── notify v7.0.0
+      │   │   └── jugar-probar v0.5.1 (*)
+      │   └── ring v0.17.14
+      │       ├── rustls v0.23.36
+      │       │   └── ureq v2.12.1
+      │       │       ├── aprender v0.25.7 (*)
+      │       │       └── hf-hub v0.4.3
+      │       │           └── aprender v0.25.7 (*)
+      │       └── rustls-webpki v0.103.9
+      │           └── rustls v0.23.36 (*)
+      └── windows-sys v0.59.0
+          ├── console v0.15.11
+          │   └── indicatif v0.17.11
+          │       └── hf-hub v0.4.3 (*)
+          └── rustix v0.38.44
+              └── crossterm v0.28.1
+                  ├── jugar-probar v0.5.1 (*)
+                  ├── ratatui v0.29.0
+                  │   ├── jugar-probar v0.5.1 (*)
+                  │   ├── renacer v0.9.8 (*)
+                  │   └── trueno-viz v0.1.20 (*)
+                  ├── renacer v0.9.8 (*)
+                  └── trueno-viz v0.1.20 (*)
+    ├ windows-targets v0.53.5
+      └── windows-sys v0.60.2
+          ├── hf-hub v0.4.3
+          │   └── aprender v0.25.7
+          └── socket2 v0.6.1
+              ├── hyper-util v0.1.19
+              │   ├── hyper-timeout v0.5.2
+              │   │   └── tonic v0.14.2
+              │   │       ├── opentelemetry-otlp v0.31.0
+              │   │       │   └── renacer v0.9.8
+              │   │       │       └── (dev) aprender v0.25.7 (*)
+              │   │       ├── opentelemetry-proto v0.31.0
+              │   │       │   └── opentelemetry-otlp v0.31.0 (*)
+              │   │       └── tonic-prost v0.14.2
+              │   │           └── opentelemetry-proto v0.31.0 (*)
+              │   ├── reqwest v0.12.28
+              │   │   ├── opentelemetry-http v0.31.0
+              │   │   │   └── opentelemetry-otlp v0.31.0 (*)
+              │   │   └── opentelemetry-otlp v0.31.0 (*)
+              │   └── tonic v0.14.2 (*)
+              └── tokio v1.49.0
+                  ├── h2 v0.4.13
+                  │   └── hyper v1.8.1
+                  │       ├── hyper-timeout v0.5.2 (*)
+                  │       ├── hyper-util v0.1.19 (*)
+                  │       ├── reqwest v0.12.28 (*)
+                  │       └── tonic v0.14.2 (*)
+                  ├── hyper v1.8.1 (*)
+                  ├── hyper-timeout v0.5.2 (*)
+                  ├── hyper-util v0.1.19 (*)
+                  ├── opentelemetry-otlp v0.31.0 (*)
+                  ├── opentelemetry_sdk v0.31.0
+                  │   ├── opentelemetry-otlp v0.31.0 (*)
+                  │   ├── opentelemetry-proto v0.31.0 (*)
+                  │   └── renacer v0.9.8 (*)
+                  ├── renacer v0.9.8 (*)
+                  ├── reqwest v0.12.28 (*)
+                  ├── tokio-stream v0.1.18
+                  │   ├── opentelemetry_sdk v0.31.0 (*)
+                  │   └── tonic v0.14.2 (*)
+                  ├── tokio-util v0.7.18
+                  │   └── h2 v0.4.13 (*)
+                  ├── tonic v0.14.2 (*)
+                  ├── tower v0.5.3
+                  │   ├── reqwest v0.12.28 (*)
+                  │   ├── tonic v0.14.2 (*)
+                  │   └── tower-http v0.6.8
+                  │       └── reqwest v0.12.28 (*)
+                  ├── trueno-db v0.3.11
+                  │   ├── renacer v0.9.8 (*)
+                  │   └── trueno-graph v0.1.11
+                  │       └── renacer v0.9.8 (*)
+                  └── trueno-graph v0.1.11 (*)
+
+warning[duplicate]: found 2 duplicate entries for crate 'windows_aarch64_gnullvm'
+    ┌─ /home/noah/src/aprender/Cargo.lock:478:1
+    │  
+478 │ ╭ windows_aarch64_gnullvm 0.52.6 registry+https://github.com/rust-lang/crates.io-index
+479 │ │ windows_aarch64_gnullvm 0.53.1 registry+https://github.com/rust-lang/crates.io-index
+    │ ╰────────────────────────────────────────────────────────────────────────────────────┘ lock entries
+    │  
+    ├ windows_aarch64_gnullvm v0.52.6
+      └── windows-targets v0.52.6
+          ├── windows-core v0.58.0
+          │   └── iana-time-zone v0.1.64
+          │       └── chrono v0.4.43
+          │           ├── arrow-arith v54.3.1
+          │           │   └── arrow v54.2.1
+          │           │       ├── trueno-db v0.3.11
+          │           │       │   ├── renacer v0.9.8
+          │           │       │   │   └── (dev) aprender v0.25.7
+          │           │       │   └── trueno-graph v0.1.11
+          │           │       │       └── renacer v0.9.8 (*)
+          │           │       └── trueno-graph v0.1.11 (*)
+          │           ├── arrow-array v54.3.1
+          │           │   ├── arrow v54.2.1 (*)
+          │           │   ├── arrow-arith v54.3.1 (*)
+          │           │   ├── arrow-cast v54.3.1
+          │           │   │   ├── arrow v54.2.1 (*)
+          │           │   │   ├── arrow-csv v54.3.1
+          │           │   │   │   └── arrow v54.2.1 (*)
+          │           │   │   ├── arrow-json v54.3.1
+          │           │   │   │   └── arrow v54.2.1 (*)
+          │           │   │   └── parquet v54.2.0
+          │           │   │       ├── trueno-db v0.3.11 (*)
+          │           │   │       └── trueno-graph v0.1.11 (*)
+          │           │   ├── arrow-csv v54.3.1 (*)
+          │           │   ├── arrow-ipc v54.2.1
+          │           │   │   ├── arrow v54.2.1 (*)
+          │           │   │   └── parquet v54.2.0 (*)
+          │           │   ├── arrow-json v54.3.1 (*)
+          │           │   ├── arrow-ord v54.2.1
+          │           │   │   └── arrow v54.2.1 (*)
+          │           │   ├── arrow-row v54.2.1
+          │           │   │   └── arrow v54.2.1 (*)
+          │           │   ├── arrow-select v54.3.1
+          │           │   │   ├── arrow v54.2.1 (*)
+          │           │   │   ├── arrow-cast v54.3.1 (*)
+          │           │   │   ├── arrow-ord v54.2.1 (*)
+          │           │   │   ├── arrow-string v54.2.1
+          │           │   │   │   └── arrow v54.2.1 (*)
+          │           │   │   └── parquet v54.2.0 (*)
+          │           │   ├── arrow-string v54.2.1 (*)
+          │           │   └── parquet v54.2.0 (*)
+          │           ├── arrow-cast v54.3.1 (*)
+          │           ├── arrow-csv v54.3.1 (*)
+          │           ├── arrow-json v54.3.1 (*)
+          │           ├── jugar-probar v0.5.1
+          │           │   └── (dev) aprender v0.25.7 (*)
+          │           ├── parquet v54.2.0 (*)
+          │           ├── trueno v0.13.0
+          │           │   ├── aprender v0.24.1
+          │           │   │   ├── renacer v0.9.8 (*)
+          │           │   │   └── trueno-graph v0.1.11 (*)
+          │           │   ├── renacer v0.9.8 (*)
+          │           │   ├── trueno-db v0.3.11 (*)
+          │           │   ├── trueno-graph v0.1.11 (*)
+          │           │   └── trueno-viz v0.1.20
+          │           │       └── renacer v0.9.8 (*)
+          │           ├── trueno v0.14.5
+          │           │   └── aprender v0.25.7 (*)
+          │           └── trueno-db v0.3.11 (*)
+          ├── windows-result v0.2.0
+          │   ├── windows-core v0.58.0 (*)
+          │   └── windows-strings v0.1.0
+          │       └── windows-core v0.58.0 (*)
+          ├── windows-strings v0.1.0 (*)
+          ├── windows-sys v0.52.0
+          │   ├── notify v7.0.0
+          │   │   └── jugar-probar v0.5.1 (*)
+          │   └── ring v0.17.14
+          │       ├── rustls v0.23.36
+          │       │   └── ureq v2.12.1
+          │       │       ├── aprender v0.25.7 (*)
+          │       │       └── hf-hub v0.4.3
+          │       │           └── aprender v0.25.7 (*)
+          │       └── rustls-webpki v0.103.9
+          │           └── rustls v0.23.36 (*)
+          └── windows-sys v0.59.0
+              ├── console v0.15.11
+              │   └── indicatif v0.17.11
+              │       └── hf-hub v0.4.3 (*)
+              └── rustix v0.38.44
+                  └── crossterm v0.28.1
+                      ├── jugar-probar v0.5.1 (*)
+                      ├── ratatui v0.29.0
+                      │   ├── jugar-probar v0.5.1 (*)
+                      │   ├── renacer v0.9.8 (*)
+                      │   └── trueno-viz v0.1.20 (*)
+                      ├── renacer v0.9.8 (*)
+                      └── trueno-viz v0.1.20 (*)
+    ├ windows_aarch64_gnullvm v0.53.1
+      └── windows-targets v0.53.5
+          └── windows-sys v0.60.2
+              ├── hf-hub v0.4.3
+              │   └── aprender v0.25.7
+              └── socket2 v0.6.1
+                  ├── hyper-util v0.1.19
+                  │   ├── hyper-timeout v0.5.2
+                  │   │   └── tonic v0.14.2
+                  │   │       ├── opentelemetry-otlp v0.31.0
+                  │   │       │   └── renacer v0.9.8
+                  │   │       │       └── (dev) aprender v0.25.7 (*)
+                  │   │       ├── opentelemetry-proto v0.31.0
+                  │   │       │   └── opentelemetry-otlp v0.31.0 (*)
+                  │   │       └── tonic-prost v0.14.2
+                  │   │           └── opentelemetry-proto v0.31.0 (*)
+                  │   ├── reqwest v0.12.28
+                  │   │   ├── opentelemetry-http v0.31.0
+                  │   │   │   └── opentelemetry-otlp v0.31.0 (*)
+                  │   │   └── opentelemetry-otlp v0.31.0 (*)
+                  │   └── tonic v0.14.2 (*)
+                  └── tokio v1.49.0
+                      ├── h2 v0.4.13
+                      │   └── hyper v1.8.1
+                      │       ├── hyper-timeout v0.5.2 (*)
+                      │       ├── hyper-util v0.1.19 (*)
+                      │       ├── reqwest v0.12.28 (*)
+                      │       └── tonic v0.14.2 (*)
+                      ├── hyper v1.8.1 (*)
+                      ├── hyper-timeout v0.5.2 (*)
+                      ├── hyper-util v0.1.19 (*)
+                      ├── opentelemetry-otlp v0.31.0 (*)
+                      ├── opentelemetry_sdk v0.31.0
+                      │   ├── opentelemetry-otlp v0.31.0 (*)
+                      │   ├── opentelemetry-proto v0.31.0 (*)
+                      │   └── renacer v0.9.8 (*)
+                      ├── renacer v0.9.8 (*)
+                      ├── reqwest v0.12.28 (*)
+                      ├── tokio-stream v0.1.18
+                      │   ├── opentelemetry_sdk v0.31.0 (*)
+                      │   └── tonic v0.14.2 (*)
+                      ├── tokio-util v0.7.18
+                      │   └── h2 v0.4.13 (*)
+                      ├── tonic v0.14.2 (*)
+                      ├── tower v0.5.3
+                      │   ├── reqwest v0.12.28 (*)
+                      │   ├── tonic v0.14.2 (*)
+                      │   └── tower-http v0.6.8
+                      │       └── reqwest v0.12.28 (*)
+                      ├── trueno-db v0.3.11
+                      │   ├── renacer v0.9.8 (*)
+                      │   └── trueno-graph v0.1.11
+                      │       └── renacer v0.9.8 (*)
+                      └── trueno-graph v0.1.11 (*)
+
+warning[duplicate]: found 2 duplicate entries for crate 'windows_aarch64_msvc'
+    ┌─ /home/noah/src/aprender/Cargo.lock:481:1
+    │  
+481 │ ╭ windows_aarch64_msvc 0.52.6 registry+https://github.com/rust-lang/crates.io-index
+482 │ │ windows_aarch64_msvc 0.53.1 registry+https://github.com/rust-lang/crates.io-index
+    │ ╰─────────────────────────────────────────────────────────────────────────────────┘ lock entries
+    │  
+    ├ windows_aarch64_msvc v0.52.6
+      └── windows-targets v0.52.6
+          ├── windows-core v0.58.0
+          │   └── iana-time-zone v0.1.64
+          │       └── chrono v0.4.43
+          │           ├── arrow-arith v54.3.1
+          │           │   └── arrow v54.2.1
+          │           │       ├── trueno-db v0.3.11
+          │           │       │   ├── renacer v0.9.8
+          │           │       │   │   └── (dev) aprender v0.25.7
+          │           │       │   └── trueno-graph v0.1.11
+          │           │       │       └── renacer v0.9.8 (*)
+          │           │       └── trueno-graph v0.1.11 (*)
+          │           ├── arrow-array v54.3.1
+          │           │   ├── arrow v54.2.1 (*)
+          │           │   ├── arrow-arith v54.3.1 (*)
+          │           │   ├── arrow-cast v54.3.1
+          │           │   │   ├── arrow v54.2.1 (*)
+          │           │   │   ├── arrow-csv v54.3.1
+          │           │   │   │   └── arrow v54.2.1 (*)
+          │           │   │   ├── arrow-json v54.3.1
+          │           │   │   │   └── arrow v54.2.1 (*)
+          │           │   │   └── parquet v54.2.0
+          │           │   │       ├── trueno-db v0.3.11 (*)
+          │           │   │       └── trueno-graph v0.1.11 (*)
+          │           │   ├── arrow-csv v54.3.1 (*)
+          │           │   ├── arrow-ipc v54.2.1
+          │           │   │   ├── arrow v54.2.1 (*)
+          │           │   │   └── parquet v54.2.0 (*)
+          │           │   ├── arrow-json v54.3.1 (*)
+          │           │   ├── arrow-ord v54.2.1
+          │           │   │   └── arrow v54.2.1 (*)
+          │           │   ├── arrow-row v54.2.1
+          │           │   │   └── arrow v54.2.1 (*)
+          │           │   ├── arrow-select v54.3.1
+          │           │   │   ├── arrow v54.2.1 (*)
+          │           │   │   ├── arrow-cast v54.3.1 (*)
+          │           │   │   ├── arrow-ord v54.2.1 (*)
+          │           │   │   ├── arrow-string v54.2.1
+          │           │   │   │   └── arrow v54.2.1 (*)
+          │           │   │   └── parquet v54.2.0 (*)
+          │           │   ├── arrow-string v54.2.1 (*)
+          │           │   └── parquet v54.2.0 (*)
+          │           ├── arrow-cast v54.3.1 (*)
+          │           ├── arrow-csv v54.3.1 (*)
+          │           ├── arrow-json v54.3.1 (*)
+          │           ├── jugar-probar v0.5.1
+          │           │   └── (dev) aprender v0.25.7 (*)
+          │           ├── parquet v54.2.0 (*)
+          │           ├── trueno v0.13.0
+          │           │   ├── aprender v0.24.1
+          │           │   │   ├── renacer v0.9.8 (*)
+          │           │   │   └── trueno-graph v0.1.11 (*)
+          │           │   ├── renacer v0.9.8 (*)
+          │           │   ├── trueno-db v0.3.11 (*)
+          │           │   ├── trueno-graph v0.1.11 (*)
+          │           │   └── trueno-viz v0.1.20
+          │           │       └── renacer v0.9.8 (*)
+          │           ├── trueno v0.14.5
+          │           │   └── aprender v0.25.7 (*)
+          │           └── trueno-db v0.3.11 (*)
+          ├── windows-result v0.2.0
+          │   ├── windows-core v0.58.0 (*)
+          │   └── windows-strings v0.1.0
+          │       └── windows-core v0.58.0 (*)
+          ├── windows-strings v0.1.0 (*)
+          ├── windows-sys v0.52.0
+          │   ├── notify v7.0.0
+          │   │   └── jugar-probar v0.5.1 (*)
+          │   └── ring v0.17.14
+          │       ├── rustls v0.23.36
+          │       │   └── ureq v2.12.1
+          │       │       ├── aprender v0.25.7 (*)
+          │       │       └── hf-hub v0.4.3
+          │       │           └── aprender v0.25.7 (*)
+          │       └── rustls-webpki v0.103.9
+          │           └── rustls v0.23.36 (*)
+          └── windows-sys v0.59.0
+              ├── console v0.15.11
+              │   └── indicatif v0.17.11
+              │       └── hf-hub v0.4.3 (*)
+              └── rustix v0.38.44
+                  └── crossterm v0.28.1
+                      ├── jugar-probar v0.5.1 (*)
+                      ├── ratatui v0.29.0
+                      │   ├── jugar-probar v0.5.1 (*)
+                      │   ├── renacer v0.9.8 (*)
+                      │   └── trueno-viz v0.1.20 (*)
+                      ├── renacer v0.9.8 (*)
+                      └── trueno-viz v0.1.20 (*)
+    ├ windows_aarch64_msvc v0.53.1
+      └── windows-targets v0.53.5
+          └── windows-sys v0.60.2
+              ├── hf-hub v0.4.3
+              │   └── aprender v0.25.7
+              └── socket2 v0.6.1
+                  ├── hyper-util v0.1.19
+                  │   ├── hyper-timeout v0.5.2
+                  │   │   └── tonic v0.14.2
+                  │   │       ├── opentelemetry-otlp v0.31.0
+                  │   │       │   └── renacer v0.9.8
+                  │   │       │       └── (dev) aprender v0.25.7 (*)
+                  │   │       ├── opentelemetry-proto v0.31.0
+                  │   │       │   └── opentelemetry-otlp v0.31.0 (*)
+                  │   │       └── tonic-prost v0.14.2
+                  │   │           └── opentelemetry-proto v0.31.0 (*)
+                  │   ├── reqwest v0.12.28
+                  │   │   ├── opentelemetry-http v0.31.0
+                  │   │   │   └── opentelemetry-otlp v0.31.0 (*)
+                  │   │   └── opentelemetry-otlp v0.31.0 (*)
+                  │   └── tonic v0.14.2 (*)
+                  └── tokio v1.49.0
+                      ├── h2 v0.4.13
+                      │   └── hyper v1.8.1
+                      │       ├── hyper-timeout v0.5.2 (*)
+                      │       ├── hyper-util v0.1.19 (*)
+                      │       ├── reqwest v0.12.28 (*)
+                      │       └── tonic v0.14.2 (*)
+                      ├── hyper v1.8.1 (*)
+                      ├── hyper-timeout v0.5.2 (*)
+                      ├── hyper-util v0.1.19 (*)
+                      ├── opentelemetry-otlp v0.31.0 (*)
+                      ├── opentelemetry_sdk v0.31.0
+                      │   ├── opentelemetry-otlp v0.31.0 (*)
+                      │   ├── opentelemetry-proto v0.31.0 (*)
+                      │   └── renacer v0.9.8 (*)
+                      ├── renacer v0.9.8 (*)
+                      ├── reqwest v0.12.28 (*)
+                      ├── tokio-stream v0.1.18
+                      │   ├── opentelemetry_sdk v0.31.0 (*)
+                      │   └── tonic v0.14.2 (*)
+                      ├── tokio-util v0.7.18
+                      │   └── h2 v0.4.13 (*)
+                      ├── tonic v0.14.2 (*)
+                      ├── tower v0.5.3
+                      │   ├── reqwest v0.12.28 (*)
+                      │   ├── tonic v0.14.2 (*)
+                      │   └── tower-http v0.6.8
+                      │       └── reqwest v0.12.28 (*)
+                      ├── trueno-db v0.3.11
+                      │   ├── renacer v0.9.8 (*)
+                      │   └── trueno-graph v0.1.11
+                      │       └── renacer v0.9.8 (*)
+                      └── trueno-graph v0.1.11 (*)
+
+warning[duplicate]: found 2 duplicate entries for crate 'windows_i686_gnu'
+    ┌─ /home/noah/src/aprender/Cargo.lock:484:1
+    │  
+484 │ ╭ windows_i686_gnu 0.52.6 registry+https://github.com/rust-lang/crates.io-index
+485 │ │ windows_i686_gnu 0.53.1 registry+https://github.com/rust-lang/crates.io-index
+    │ ╰─────────────────────────────────────────────────────────────────────────────┘ lock entries
+    │  
+    ├ windows_i686_gnu v0.52.6
+      └── windows-targets v0.52.6
+          ├── windows-core v0.58.0
+          │   └── iana-time-zone v0.1.64
+          │       └── chrono v0.4.43
+          │           ├── arrow-arith v54.3.1
+          │           │   └── arrow v54.2.1
+          │           │       ├── trueno-db v0.3.11
+          │           │       │   ├── renacer v0.9.8
+          │           │       │   │   └── (dev) aprender v0.25.7
+          │           │       │   └── trueno-graph v0.1.11
+          │           │       │       └── renacer v0.9.8 (*)
+          │           │       └── trueno-graph v0.1.11 (*)
+          │           ├── arrow-array v54.3.1
+          │           │   ├── arrow v54.2.1 (*)
+          │           │   ├── arrow-arith v54.3.1 (*)
+          │           │   ├── arrow-cast v54.3.1
+          │           │   │   ├── arrow v54.2.1 (*)
+          │           │   │   ├── arrow-csv v54.3.1
+          │           │   │   │   └── arrow v54.2.1 (*)
+          │           │   │   ├── arrow-json v54.3.1
+          │           │   │   │   └── arrow v54.2.1 (*)
+          │           │   │   └── parquet v54.2.0
+          │           │   │       ├── trueno-db v0.3.11 (*)
+          │           │   │       └── trueno-graph v0.1.11 (*)
+          │           │   ├── arrow-csv v54.3.1 (*)
+          │           │   ├── arrow-ipc v54.2.1
+          │           │   │   ├── arrow v54.2.1 (*)
+          │           │   │   └── parquet v54.2.0 (*)
+          │           │   ├── arrow-json v54.3.1 (*)
+          │           │   ├── arrow-ord v54.2.1
+          │           │   │   └── arrow v54.2.1 (*)
+          │           │   ├── arrow-row v54.2.1
+          │           │   │   └── arrow v54.2.1 (*)
+          │           │   ├── arrow-select v54.3.1
+          │           │   │   ├── arrow v54.2.1 (*)
+          │           │   │   ├── arrow-cast v54.3.1 (*)
+          │           │   │   ├── arrow-ord v54.2.1 (*)
+          │           │   │   ├── arrow-string v54.2.1
+          │           │   │   │   └── arrow v54.2.1 (*)
+          │           │   │   └── parquet v54.2.0 (*)
+          │           │   ├── arrow-string v54.2.1 (*)
+          │           │   └── parquet v54.2.0 (*)
+          │           ├── arrow-cast v54.3.1 (*)
+          │           ├── arrow-csv v54.3.1 (*)
+          │           ├── arrow-json v54.3.1 (*)
+          │           ├── jugar-probar v0.5.1
+          │           │   └── (dev) aprender v0.25.7 (*)
+          │           ├── parquet v54.2.0 (*)
+          │           ├── trueno v0.13.0
+          │           │   ├── aprender v0.24.1
+          │           │   │   ├── renacer v0.9.8 (*)
+          │           │   │   └── trueno-graph v0.1.11 (*)
+          │           │   ├── renacer v0.9.8 (*)
+          │           │   ├── trueno-db v0.3.11 (*)
+          │           │   ├── trueno-graph v0.1.11 (*)
+          │           │   └── trueno-viz v0.1.20
+          │           │       └── renacer v0.9.8 (*)
+          │           ├── trueno v0.14.5
+          │           │   └── aprender v0.25.7 (*)
+          │           └── trueno-db v0.3.11 (*)
+          ├── windows-result v0.2.0
+          │   ├── windows-core v0.58.0 (*)
+          │   └── windows-strings v0.1.0
+          │       └── windows-core v0.58.0 (*)
+          ├── windows-strings v0.1.0 (*)
+          ├── windows-sys v0.52.0
+          │   ├── notify v7.0.0
+          │   │   └── jugar-probar v0.5.1 (*)
+          │   └── ring v0.17.14
+          │       ├── rustls v0.23.36
+          │       │   └── ureq v2.12.1
+          │       │       ├── aprender v0.25.7 (*)
+          │       │       └── hf-hub v0.4.3
+          │       │           └── aprender v0.25.7 (*)
+          │       └── rustls-webpki v0.103.9
+          │           └── rustls v0.23.36 (*)
+          └── windows-sys v0.59.0
+              ├── console v0.15.11
+              │   └── indicatif v0.17.11
+              │       └── hf-hub v0.4.3 (*)
+              └── rustix v0.38.44
+                  └── crossterm v0.28.1
+                      ├── jugar-probar v0.5.1 (*)
+                      ├── ratatui v0.29.0
+                      │   ├── jugar-probar v0.5.1 (*)
+                      │   ├── renacer v0.9.8 (*)
+                      │   └── trueno-viz v0.1.20 (*)
+                      ├── renacer v0.9.8 (*)
+                      └── trueno-viz v0.1.20 (*)
+    ├ windows_i686_gnu v0.53.1
+      └── windows-targets v0.53.5
+          └── windows-sys v0.60.2
+              ├── hf-hub v0.4.3
+              │   └── aprender v0.25.7
+              └── socket2 v0.6.1
+                  ├── hyper-util v0.1.19
+                  │   ├── hyper-timeout v0.5.2
+                  │   │   └── tonic v0.14.2
+                  │   │       ├── opentelemetry-otlp v0.31.0
+                  │   │       │   └── renacer v0.9.8
+                  │   │       │       └── (dev) aprender v0.25.7 (*)
+                  │   │       ├── opentelemetry-proto v0.31.0
+                  │   │       │   └── opentelemetry-otlp v0.31.0 (*)
+                  │   │       └── tonic-prost v0.14.2
+                  │   │           └── opentelemetry-proto v0.31.0 (*)
+                  │   ├── reqwest v0.12.28
+                  │   │   ├── opentelemetry-http v0.31.0
+                  │   │   │   └── opentelemetry-otlp v0.31.0 (*)
+                  │   │   └── opentelemetry-otlp v0.31.0 (*)
+                  │   └── tonic v0.14.2 (*)
+                  └── tokio v1.49.0
+                      ├── h2 v0.4.13
+                      │   └── hyper v1.8.1
+                      │       ├── hyper-timeout v0.5.2 (*)
+                      │       ├── hyper-util v0.1.19 (*)
+                      │       ├── reqwest v0.12.28 (*)
+                      │       └── tonic v0.14.2 (*)
+                      ├── hyper v1.8.1 (*)
+                      ├── hyper-timeout v0.5.2 (*)
+                      ├── hyper-util v0.1.19 (*)
+                      ├── opentelemetry-otlp v0.31.0 (*)
+                      ├── opentelemetry_sdk v0.31.0
+                      │   ├── opentelemetry-otlp v0.31.0 (*)
+                      │   ├── opentelemetry-proto v0.31.0 (*)
+                      │   └── renacer v0.9.8 (*)
+                      ├── renacer v0.9.8 (*)
+                      ├── reqwest v0.12.28 (*)
+                      ├── tokio-stream v0.1.18
+                      │   ├── opentelemetry_sdk v0.31.0 (*)
+                      │   └── tonic v0.14.2 (*)
+                      ├── tokio-util v0.7.18
+                      │   └── h2 v0.4.13 (*)
+                      ├── tonic v0.14.2 (*)
+                      ├── tower v0.5.3
+                      │   ├── reqwest v0.12.28 (*)
+                      │   ├── tonic v0.14.2 (*)
+                      │   └── tower-http v0.6.8
+                      │       └── reqwest v0.12.28 (*)
+                      ├── trueno-db v0.3.11
+                      │   ├── renacer v0.9.8 (*)
+                      │   └── trueno-graph v0.1.11
+                      │       └── renacer v0.9.8 (*)
+                      └── trueno-graph v0.1.11 (*)
+
+warning[duplicate]: found 2 duplicate entries for crate 'windows_i686_gnullvm'
+    ┌─ /home/noah/src/aprender/Cargo.lock:486:1
+    │  
+486 │ ╭ windows_i686_gnullvm 0.52.6 registry+https://github.com/rust-lang/crates.io-index
+487 │ │ windows_i686_gnullvm 0.53.1 registry+https://github.com/rust-lang/crates.io-index
+    │ ╰─────────────────────────────────────────────────────────────────────────────────┘ lock entries
+    │  
+    ├ windows_i686_gnullvm v0.52.6
+      └── windows-targets v0.52.6
+          ├── windows-core v0.58.0
+          │   └── iana-time-zone v0.1.64
+          │       └── chrono v0.4.43
+          │           ├── arrow-arith v54.3.1
+          │           │   └── arrow v54.2.1
+          │           │       ├── trueno-db v0.3.11
+          │           │       │   ├── renacer v0.9.8
+          │           │       │   │   └── (dev) aprender v0.25.7
+          │           │       │   └── trueno-graph v0.1.11
+          │           │       │       └── renacer v0.9.8 (*)
+          │           │       └── trueno-graph v0.1.11 (*)
+          │           ├── arrow-array v54.3.1
+          │           │   ├── arrow v54.2.1 (*)
+          │           │   ├── arrow-arith v54.3.1 (*)
+          │           │   ├── arrow-cast v54.3.1
+          │           │   │   ├── arrow v54.2.1 (*)
+          │           │   │   ├── arrow-csv v54.3.1
+          │           │   │   │   └── arrow v54.2.1 (*)
+          │           │   │   ├── arrow-json v54.3.1
+          │           │   │   │   └── arrow v54.2.1 (*)
+          │           │   │   └── parquet v54.2.0
+          │           │   │       ├── trueno-db v0.3.11 (*)
+          │           │   │       └── trueno-graph v0.1.11 (*)
+          │           │   ├── arrow-csv v54.3.1 (*)
+          │           │   ├── arrow-ipc v54.2.1
+          │           │   │   ├── arrow v54.2.1 (*)
+          │           │   │   └── parquet v54.2.0 (*)
+          │           │   ├── arrow-json v54.3.1 (*)
+          │           │   ├── arrow-ord v54.2.1
+          │           │   │   └── arrow v54.2.1 (*)
+          │           │   ├── arrow-row v54.2.1
+          │           │   │   └── arrow v54.2.1 (*)
+          │           │   ├── arrow-select v54.3.1
+          │           │   │   ├── arrow v54.2.1 (*)
+          │           │   │   ├── arrow-cast v54.3.1 (*)
+          │           │   │   ├── arrow-ord v54.2.1 (*)
+          │           │   │   ├── arrow-string v54.2.1
+          │           │   │   │   └── arrow v54.2.1 (*)
+          │           │   │   └── parquet v54.2.0 (*)
+          │           │   ├── arrow-string v54.2.1 (*)
+          │           │   └── parquet v54.2.0 (*)
+          │           ├── arrow-cast v54.3.1 (*)
+          │           ├── arrow-csv v54.3.1 (*)
+          │           ├── arrow-json v54.3.1 (*)
+          │           ├── jugar-probar v0.5.1
+          │           │   └── (dev) aprender v0.25.7 (*)
+          │           ├── parquet v54.2.0 (*)
+          │           ├── trueno v0.13.0
+          │           │   ├── aprender v0.24.1
+          │           │   │   ├── renacer v0.9.8 (*)
+          │           │   │   └── trueno-graph v0.1.11 (*)
+          │           │   ├── renacer v0.9.8 (*)
+          │           │   ├── trueno-db v0.3.11 (*)
+          │           │   ├── trueno-graph v0.1.11 (*)
+          │           │   └── trueno-viz v0.1.20
+          │           │       └── renacer v0.9.8 (*)
+          │           ├── trueno v0.14.5
+          │           │   └── aprender v0.25.7 (*)
+          │           └── trueno-db v0.3.11 (*)
+          ├── windows-result v0.2.0
+          │   ├── windows-core v0.58.0 (*)
+          │   └── windows-strings v0.1.0
+          │       └── windows-core v0.58.0 (*)
+          ├── windows-strings v0.1.0 (*)
+          ├── windows-sys v0.52.0
+          │   ├── notify v7.0.0
+          │   │   └── jugar-probar v0.5.1 (*)
+          │   └── ring v0.17.14
+          │       ├── rustls v0.23.36
+          │       │   └── ureq v2.12.1
+          │       │       ├── aprender v0.25.7 (*)
+          │       │       └── hf-hub v0.4.3
+          │       │           └── aprender v0.25.7 (*)
+          │       └── rustls-webpki v0.103.9
+          │           └── rustls v0.23.36 (*)
+          └── windows-sys v0.59.0
+              ├── console v0.15.11
+              │   └── indicatif v0.17.11
+              │       └── hf-hub v0.4.3 (*)
+              └── rustix v0.38.44
+                  └── crossterm v0.28.1
+                      ├── jugar-probar v0.5.1 (*)
+                      ├── ratatui v0.29.0
+                      │   ├── jugar-probar v0.5.1 (*)
+                      │   ├── renacer v0.9.8 (*)
+                      │   └── trueno-viz v0.1.20 (*)
+                      ├── renacer v0.9.8 (*)
+                      └── trueno-viz v0.1.20 (*)
+    ├ windows_i686_gnullvm v0.53.1
+      └── windows-targets v0.53.5
+          └── windows-sys v0.60.2
+              ├── hf-hub v0.4.3
+              │   └── aprender v0.25.7
+              └── socket2 v0.6.1
+                  ├── hyper-util v0.1.19
+                  │   ├── hyper-timeout v0.5.2
+                  │   │   └── tonic v0.14.2
+                  │   │       ├── opentelemetry-otlp v0.31.0
+                  │   │       │   └── renacer v0.9.8
+                  │   │       │       └── (dev) aprender v0.25.7 (*)
+                  │   │       ├── opentelemetry-proto v0.31.0
+                  │   │       │   └── opentelemetry-otlp v0.31.0 (*)
+                  │   │       └── tonic-prost v0.14.2
+                  │   │           └── opentelemetry-proto v0.31.0 (*)
+                  │   ├── reqwest v0.12.28
+                  │   │   ├── opentelemetry-http v0.31.0
+                  │   │   │   └── opentelemetry-otlp v0.31.0 (*)
+                  │   │   └── opentelemetry-otlp v0.31.0 (*)
+                  │   └── tonic v0.14.2 (*)
+                  └── tokio v1.49.0
+                      ├── h2 v0.4.13
+                      │   └── hyper v1.8.1
+                      │       ├── hyper-timeout v0.5.2 (*)
+                      │       ├── hyper-util v0.1.19 (*)
+                      │       ├── reqwest v0.12.28 (*)
+                      │       └── tonic v0.14.2 (*)
+                      ├── hyper v1.8.1 (*)
+                      ├── hyper-timeout v0.5.2 (*)
+                      ├── hyper-util v0.1.19 (*)
+                      ├── opentelemetry-otlp v0.31.0 (*)
+                      ├── opentelemetry_sdk v0.31.0
+                      │   ├── opentelemetry-otlp v0.31.0 (*)
+                      │   ├── opentelemetry-proto v0.31.0 (*)
+                      │   └── renacer v0.9.8 (*)
+                      ├── renacer v0.9.8 (*)
+                      ├── reqwest v0.12.28 (*)
+                      ├── tokio-stream v0.1.18
+                      │   ├── opentelemetry_sdk v0.31.0 (*)
+                      │   └── tonic v0.14.2 (*)
+                      ├── tokio-util v0.7.18
+                      │   └── h2 v0.4.13 (*)
+                      ├── tonic v0.14.2 (*)
+                      ├── tower v0.5.3
+                      │   ├── reqwest v0.12.28 (*)
+                      │   ├── tonic v0.14.2 (*)
+                      │   └── tower-http v0.6.8
+                      │       └── reqwest v0.12.28 (*)
+                      ├── trueno-db v0.3.11
+                      │   ├── renacer v0.9.8 (*)
+                      │   └── trueno-graph v0.1.11
+                      │       └── renacer v0.9.8 (*)
+                      └── trueno-graph v0.1.11 (*)
+
+warning[duplicate]: found 2 duplicate entries for crate 'windows_i686_msvc'
+    ┌─ /home/noah/src/aprender/Cargo.lock:489:1
+    │  
+489 │ ╭ windows_i686_msvc 0.52.6 registry+https://github.com/rust-lang/crates.io-index
+490 │ │ windows_i686_msvc 0.53.1 registry+https://github.com/rust-lang/crates.io-index
+    │ ╰──────────────────────────────────────────────────────────────────────────────┘ lock entries
+    │  
+    ├ windows_i686_msvc v0.52.6
+      └── windows-targets v0.52.6
+          ├── windows-core v0.58.0
+          │   └── iana-time-zone v0.1.64
+          │       └── chrono v0.4.43
+          │           ├── arrow-arith v54.3.1
+          │           │   └── arrow v54.2.1
+          │           │       ├── trueno-db v0.3.11
+          │           │       │   ├── renacer v0.9.8
+          │           │       │   │   └── (dev) aprender v0.25.7
+          │           │       │   └── trueno-graph v0.1.11
+          │           │       │       └── renacer v0.9.8 (*)
+          │           │       └── trueno-graph v0.1.11 (*)
+          │           ├── arrow-array v54.3.1
+          │           │   ├── arrow v54.2.1 (*)
+          │           │   ├── arrow-arith v54.3.1 (*)
+          │           │   ├── arrow-cast v54.3.1
+          │           │   │   ├── arrow v54.2.1 (*)
+          │           │   │   ├── arrow-csv v54.3.1
+          │           │   │   │   └── arrow v54.2.1 (*)
+          │           │   │   ├── arrow-json v54.3.1
+          │           │   │   │   └── arrow v54.2.1 (*)
+          │           │   │   └── parquet v54.2.0
+          │           │   │       ├── trueno-db v0.3.11 (*)
+          │           │   │       └── trueno-graph v0.1.11 (*)
+          │           │   ├── arrow-csv v54.3.1 (*)
+          │           │   ├── arrow-ipc v54.2.1
+          │           │   │   ├── arrow v54.2.1 (*)
+          │           │   │   └── parquet v54.2.0 (*)
+          │           │   ├── arrow-json v54.3.1 (*)
+          │           │   ├── arrow-ord v54.2.1
+          │           │   │   └── arrow v54.2.1 (*)
+          │           │   ├── arrow-row v54.2.1
+          │           │   │   └── arrow v54.2.1 (*)
+          │           │   ├── arrow-select v54.3.1
+          │           │   │   ├── arrow v54.2.1 (*)
+          │           │   │   ├── arrow-cast v54.3.1 (*)
+          │           │   │   ├── arrow-ord v54.2.1 (*)
+          │           │   │   ├── arrow-string v54.2.1
+          │           │   │   │   └── arrow v54.2.1 (*)
+          │           │   │   └── parquet v54.2.0 (*)
+          │           │   ├── arrow-string v54.2.1 (*)
+          │           │   └── parquet v54.2.0 (*)
+          │           ├── arrow-cast v54.3.1 (*)
+          │           ├── arrow-csv v54.3.1 (*)
+          │           ├── arrow-json v54.3.1 (*)
+          │           ├── jugar-probar v0.5.1
+          │           │   └── (dev) aprender v0.25.7 (*)
+          │           ├── parquet v54.2.0 (*)
+          │           ├── trueno v0.13.0
+          │           │   ├── aprender v0.24.1
+          │           │   │   ├── renacer v0.9.8 (*)
+          │           │   │   └── trueno-graph v0.1.11 (*)
+          │           │   ├── renacer v0.9.8 (*)
+          │           │   ├── trueno-db v0.3.11 (*)
+          │           │   ├── trueno-graph v0.1.11 (*)
+          │           │   └── trueno-viz v0.1.20
+          │           │       └── renacer v0.9.8 (*)
+          │           ├── trueno v0.14.5
+          │           │   └── aprender v0.25.7 (*)
+          │           └── trueno-db v0.3.11 (*)
+          ├── windows-result v0.2.0
+          │   ├── windows-core v0.58.0 (*)
+          │   └── windows-strings v0.1.0
+          │       └── windows-core v0.58.0 (*)
+          ├── windows-strings v0.1.0 (*)
+          ├── windows-sys v0.52.0
+          │   ├── notify v7.0.0
+          │   │   └── jugar-probar v0.5.1 (*)
+          │   └── ring v0.17.14
+          │       ├── rustls v0.23.36
+          │       │   └── ureq v2.12.1
+          │       │       ├── aprender v0.25.7 (*)
+          │       │       └── hf-hub v0.4.3
+          │       │           └── aprender v0.25.7 (*)
+          │       └── rustls-webpki v0.103.9
+          │           └── rustls v0.23.36 (*)
+          └── windows-sys v0.59.0
+              ├── console v0.15.11
+              │   └── indicatif v0.17.11
+              │       └── hf-hub v0.4.3 (*)
+              └── rustix v0.38.44
+                  └── crossterm v0.28.1
+                      ├── jugar-probar v0.5.1 (*)
+                      ├── ratatui v0.29.0
+                      │   ├── jugar-probar v0.5.1 (*)
+                      │   ├── renacer v0.9.8 (*)
+                      │   └── trueno-viz v0.1.20 (*)
+                      ├── renacer v0.9.8 (*)
+                      └── trueno-viz v0.1.20 (*)
+    ├ windows_i686_msvc v0.53.1
+      └── windows-targets v0.53.5
+          └── windows-sys v0.60.2
+              ├── hf-hub v0.4.3
+              │   └── aprender v0.25.7
+              └── socket2 v0.6.1
+                  ├── hyper-util v0.1.19
+                  │   ├── hyper-timeout v0.5.2
+                  │   │   └── tonic v0.14.2
+                  │   │       ├── opentelemetry-otlp v0.31.0
+                  │   │       │   └── renacer v0.9.8
+                  │   │       │       └── (dev) aprender v0.25.7 (*)
+                  │   │       ├── opentelemetry-proto v0.31.0
+                  │   │       │   └── opentelemetry-otlp v0.31.0 (*)
+                  │   │       └── tonic-prost v0.14.2
+                  │   │           └── opentelemetry-proto v0.31.0 (*)
+                  │   ├── reqwest v0.12.28
+                  │   │   ├── opentelemetry-http v0.31.0
+                  │   │   │   └── opentelemetry-otlp v0.31.0 (*)
+                  │   │   └── opentelemetry-otlp v0.31.0 (*)
+                  │   └── tonic v0.14.2 (*)
+                  └── tokio v1.49.0
+                      ├── h2 v0.4.13
+                      │   └── hyper v1.8.1
+                      │       ├── hyper-timeout v0.5.2 (*)
+                      │       ├── hyper-util v0.1.19 (*)
+                      │       ├── reqwest v0.12.28 (*)
+                      │       └── tonic v0.14.2 (*)
+                      ├── hyper v1.8.1 (*)
+                      ├── hyper-timeout v0.5.2 (*)
+                      ├── hyper-util v0.1.19 (*)
+                      ├── opentelemetry-otlp v0.31.0 (*)
+                      ├── opentelemetry_sdk v0.31.0
+                      │   ├── opentelemetry-otlp v0.31.0 (*)
+                      │   ├── opentelemetry-proto v0.31.0 (*)
+                      │   └── renacer v0.9.8 (*)
+                      ├── renacer v0.9.8 (*)
+                      ├── reqwest v0.12.28 (*)
+                      ├── tokio-stream v0.1.18
+                      │   ├── opentelemetry_sdk v0.31.0 (*)
+                      │   └── tonic v0.14.2 (*)
+                      ├── tokio-util v0.7.18
+                      │   └── h2 v0.4.13 (*)
+                      ├── tonic v0.14.2 (*)
+                      ├── tower v0.5.3
+                      │   ├── reqwest v0.12.28 (*)
+                      │   ├── tonic v0.14.2 (*)
+                      │   └── tower-http v0.6.8
+                      │       └── reqwest v0.12.28 (*)
+                      ├── trueno-db v0.3.11
+                      │   ├── renacer v0.9.8 (*)
+                      │   └── trueno-graph v0.1.11
+                      │       └── renacer v0.9.8 (*)
+                      └── trueno-graph v0.1.11 (*)
+
+warning[duplicate]: found 2 duplicate entries for crate 'windows_x86_64_gnu'
+    ┌─ /home/noah/src/aprender/Cargo.lock:492:1
+    │  
+492 │ ╭ windows_x86_64_gnu 0.52.6 registry+https://github.com/rust-lang/crates.io-index
+493 │ │ windows_x86_64_gnu 0.53.1 registry+https://github.com/rust-lang/crates.io-index
+    │ ╰───────────────────────────────────────────────────────────────────────────────┘ lock entries
+    │  
+    ├ windows_x86_64_gnu v0.52.6
+      └── windows-targets v0.52.6
+          ├── windows-core v0.58.0
+          │   └── iana-time-zone v0.1.64
+          │       └── chrono v0.4.43
+          │           ├── arrow-arith v54.3.1
+          │           │   └── arrow v54.2.1
+          │           │       ├── trueno-db v0.3.11
+          │           │       │   ├── renacer v0.9.8
+          │           │       │   │   └── (dev) aprender v0.25.7
+          │           │       │   └── trueno-graph v0.1.11
+          │           │       │       └── renacer v0.9.8 (*)
+          │           │       └── trueno-graph v0.1.11 (*)
+          │           ├── arrow-array v54.3.1
+          │           │   ├── arrow v54.2.1 (*)
+          │           │   ├── arrow-arith v54.3.1 (*)
+          │           │   ├── arrow-cast v54.3.1
+          │           │   │   ├── arrow v54.2.1 (*)
+          │           │   │   ├── arrow-csv v54.3.1
+          │           │   │   │   └── arrow v54.2.1 (*)
+          │           │   │   ├── arrow-json v54.3.1
+          │           │   │   │   └── arrow v54.2.1 (*)
+          │           │   │   └── parquet v54.2.0
+          │           │   │       ├── trueno-db v0.3.11 (*)
+          │           │   │       └── trueno-graph v0.1.11 (*)
+          │           │   ├── arrow-csv v54.3.1 (*)
+          │           │   ├── arrow-ipc v54.2.1
+          │           │   │   ├── arrow v54.2.1 (*)
+          │           │   │   └── parquet v54.2.0 (*)
+          │           │   ├── arrow-json v54.3.1 (*)
+          │           │   ├── arrow-ord v54.2.1
+          │           │   │   └── arrow v54.2.1 (*)
+          │           │   ├── arrow-row v54.2.1
+          │           │   │   └── arrow v54.2.1 (*)
+          │           │   ├── arrow-select v54.3.1
+          │           │   │   ├── arrow v54.2.1 (*)
+          │           │   │   ├── arrow-cast v54.3.1 (*)
+          │           │   │   ├── arrow-ord v54.2.1 (*)
+          │           │   │   ├── arrow-string v54.2.1
+          │           │   │   │   └── arrow v54.2.1 (*)
+          │           │   │   └── parquet v54.2.0 (*)
+          │           │   ├── arrow-string v54.2.1 (*)
+          │           │   └── parquet v54.2.0 (*)
+          │           ├── arrow-cast v54.3.1 (*)
+          │           ├── arrow-csv v54.3.1 (*)
+          │           ├── arrow-json v54.3.1 (*)
+          │           ├── jugar-probar v0.5.1
+          │           │   └── (dev) aprender v0.25.7 (*)
+          │           ├── parquet v54.2.0 (*)
+          │           ├── trueno v0.13.0
+          │           │   ├── aprender v0.24.1
+          │           │   │   ├── renacer v0.9.8 (*)
+          │           │   │   └── trueno-graph v0.1.11 (*)
+          │           │   ├── renacer v0.9.8 (*)
+          │           │   ├── trueno-db v0.3.11 (*)
+          │           │   ├── trueno-graph v0.1.11 (*)
+          │           │   └── trueno-viz v0.1.20
+          │           │       └── renacer v0.9.8 (*)
+          │           ├── trueno v0.14.5
+          │           │   └── aprender v0.25.7 (*)
+          │           └── trueno-db v0.3.11 (*)
+          ├── windows-result v0.2.0
+          │   ├── windows-core v0.58.0 (*)
+          │   └── windows-strings v0.1.0
+          │       └── windows-core v0.58.0 (*)
+          ├── windows-strings v0.1.0 (*)
+          ├── windows-sys v0.52.0
+          │   ├── notify v7.0.0
+          │   │   └── jugar-probar v0.5.1 (*)
+          │   └── ring v0.17.14
+          │       ├── rustls v0.23.36
+          │       │   └── ureq v2.12.1
+          │       │       ├── aprender v0.25.7 (*)
+          │       │       └── hf-hub v0.4.3
+          │       │           └── aprender v0.25.7 (*)
+          │       └── rustls-webpki v0.103.9
+          │           └── rustls v0.23.36 (*)
+          └── windows-sys v0.59.0
+              ├── console v0.15.11
+              │   └── indicatif v0.17.11
+              │       └── hf-hub v0.4.3 (*)
+              └── rustix v0.38.44
+                  └── crossterm v0.28.1
+                      ├── jugar-probar v0.5.1 (*)
+                      ├── ratatui v0.29.0
+                      │   ├── jugar-probar v0.5.1 (*)
+                      │   ├── renacer v0.9.8 (*)
+                      │   └── trueno-viz v0.1.20 (*)
+                      ├── renacer v0.9.8 (*)
+                      └── trueno-viz v0.1.20 (*)
+    ├ windows_x86_64_gnu v0.53.1
+      └── windows-targets v0.53.5
+          └── windows-sys v0.60.2
+              ├── hf-hub v0.4.3
+              │   └── aprender v0.25.7
+              └── socket2 v0.6.1
+                  ├── hyper-util v0.1.19
+                  │   ├── hyper-timeout v0.5.2
+                  │   │   └── tonic v0.14.2
+                  │   │       ├── opentelemetry-otlp v0.31.0
+                  │   │       │   └── renacer v0.9.8
+                  │   │       │       └── (dev) aprender v0.25.7 (*)
+                  │   │       ├── opentelemetry-proto v0.31.0
+                  │   │       │   └── opentelemetry-otlp v0.31.0 (*)
+                  │   │       └── tonic-prost v0.14.2
+                  │   │           └── opentelemetry-proto v0.31.0 (*)
+                  │   ├── reqwest v0.12.28
+                  │   │   ├── opentelemetry-http v0.31.0
+                  │   │   │   └── opentelemetry-otlp v0.31.0 (*)
+                  │   │   └── opentelemetry-otlp v0.31.0 (*)
+                  │   └── tonic v0.14.2 (*)
+                  └── tokio v1.49.0
+                      ├── h2 v0.4.13
+                      │   └── hyper v1.8.1
+                      │       ├── hyper-timeout v0.5.2 (*)
+                      │       ├── hyper-util v0.1.19 (*)
+                      │       ├── reqwest v0.12.28 (*)
+                      │       └── tonic v0.14.2 (*)
+                      ├── hyper v1.8.1 (*)
+                      ├── hyper-timeout v0.5.2 (*)
+                      ├── hyper-util v0.1.19 (*)
+                      ├── opentelemetry-otlp v0.31.0 (*)
+                      ├── opentelemetry_sdk v0.31.0
+                      │   ├── opentelemetry-otlp v0.31.0 (*)
+                      │   ├── opentelemetry-proto v0.31.0 (*)
+                      │   └── renacer v0.9.8 (*)
+                      ├── renacer v0.9.8 (*)
+                      ├── reqwest v0.12.28 (*)
+                      ├── tokio-stream v0.1.18
+                      │   ├── opentelemetry_sdk v0.31.0 (*)
+                      │   └── tonic v0.14.2 (*)
+                      ├── tokio-util v0.7.18
+                      │   └── h2 v0.4.13 (*)
+                      ├── tonic v0.14.2 (*)
+                      ├── tower v0.5.3
+                      │   ├── reqwest v0.12.28 (*)
+                      │   ├── tonic v0.14.2 (*)
+                      │   └── tower-http v0.6.8
+                      │       └── reqwest v0.12.28 (*)
+                      ├── trueno-db v0.3.11
+                      │   ├── renacer v0.9.8 (*)
+                      │   └── trueno-graph v0.1.11
+                      │       └── renacer v0.9.8 (*)
+                      └── trueno-graph v0.1.11 (*)
+
+warning[duplicate]: found 2 duplicate entries for crate 'windows_x86_64_gnullvm'
+    ┌─ /home/noah/src/aprender/Cargo.lock:495:1
+    │  
+495 │ ╭ windows_x86_64_gnullvm 0.52.6 registry+https://github.com/rust-lang/crates.io-index
+496 │ │ windows_x86_64_gnullvm 0.53.1 registry+https://github.com/rust-lang/crates.io-index
+    │ ╰───────────────────────────────────────────────────────────────────────────────────┘ lock entries
+    │  
+    ├ windows_x86_64_gnullvm v0.52.6
+      └── windows-targets v0.52.6
+          ├── windows-core v0.58.0
+          │   └── iana-time-zone v0.1.64
+          │       └── chrono v0.4.43
+          │           ├── arrow-arith v54.3.1
+          │           │   └── arrow v54.2.1
+          │           │       ├── trueno-db v0.3.11
+          │           │       │   ├── renacer v0.9.8
+          │           │       │   │   └── (dev) aprender v0.25.7
+          │           │       │   └── trueno-graph v0.1.11
+          │           │       │       └── renacer v0.9.8 (*)
+          │           │       └── trueno-graph v0.1.11 (*)
+          │           ├── arrow-array v54.3.1
+          │           │   ├── arrow v54.2.1 (*)
+          │           │   ├── arrow-arith v54.3.1 (*)
+          │           │   ├── arrow-cast v54.3.1
+          │           │   │   ├── arrow v54.2.1 (*)
+          │           │   │   ├── arrow-csv v54.3.1
+          │           │   │   │   └── arrow v54.2.1 (*)
+          │           │   │   ├── arrow-json v54.3.1
+          │           │   │   │   └── arrow v54.2.1 (*)
+          │           │   │   └── parquet v54.2.0
+          │           │   │       ├── trueno-db v0.3.11 (*)
+          │           │   │       └── trueno-graph v0.1.11 (*)
+          │           │   ├── arrow-csv v54.3.1 (*)
+          │           │   ├── arrow-ipc v54.2.1
+          │           │   │   ├── arrow v54.2.1 (*)
+          │           │   │   └── parquet v54.2.0 (*)
+          │           │   ├── arrow-json v54.3.1 (*)
+          │           │   ├── arrow-ord v54.2.1
+          │           │   │   └── arrow v54.2.1 (*)
+          │           │   ├── arrow-row v54.2.1
+          │           │   │   └── arrow v54.2.1 (*)
+          │           │   ├── arrow-select v54.3.1
+          │           │   │   ├── arrow v54.2.1 (*)
+          │           │   │   ├── arrow-cast v54.3.1 (*)
+          │           │   │   ├── arrow-ord v54.2.1 (*)
+          │           │   │   ├── arrow-string v54.2.1
+          │           │   │   │   └── arrow v54.2.1 (*)
+          │           │   │   └── parquet v54.2.0 (*)
+          │           │   ├── arrow-string v54.2.1 (*)
+          │           │   └── parquet v54.2.0 (*)
+          │           ├── arrow-cast v54.3.1 (*)
+          │           ├── arrow-csv v54.3.1 (*)
+          │           ├── arrow-json v54.3.1 (*)
+          │           ├── jugar-probar v0.5.1
+          │           │   └── (dev) aprender v0.25.7 (*)
+          │           ├── parquet v54.2.0 (*)
+          │           ├── trueno v0.13.0
+          │           │   ├── aprender v0.24.1
+          │           │   │   ├── renacer v0.9.8 (*)
+          │           │   │   └── trueno-graph v0.1.11 (*)
+          │           │   ├── renacer v0.9.8 (*)
+          │           │   ├── trueno-db v0.3.11 (*)
+          │           │   ├── trueno-graph v0.1.11 (*)
+          │           │   └── trueno-viz v0.1.20
+          │           │       └── renacer v0.9.8 (*)
+          │           ├── trueno v0.14.5
+          │           │   └── aprender v0.25.7 (*)
+          │           └── trueno-db v0.3.11 (*)
+          ├── windows-result v0.2.0
+          │   ├── windows-core v0.58.0 (*)
+          │   └── windows-strings v0.1.0
+          │       └── windows-core v0.58.0 (*)
+          ├── windows-strings v0.1.0 (*)
+          ├── windows-sys v0.52.0
+          │   ├── notify v7.0.0
+          │   │   └── jugar-probar v0.5.1 (*)
+          │   └── ring v0.17.14
+          │       ├── rustls v0.23.36
+          │       │   └── ureq v2.12.1
+          │       │       ├── aprender v0.25.7 (*)
+          │       │       └── hf-hub v0.4.3
+          │       │           └── aprender v0.25.7 (*)
+          │       └── rustls-webpki v0.103.9
+          │           └── rustls v0.23.36 (*)
+          └── windows-sys v0.59.0
+              ├── console v0.15.11
+              │   └── indicatif v0.17.11
+              │       └── hf-hub v0.4.3 (*)
+              └── rustix v0.38.44
+                  └── crossterm v0.28.1
+                      ├── jugar-probar v0.5.1 (*)
+                      ├── ratatui v0.29.0
+                      │   ├── jugar-probar v0.5.1 (*)
+                      │   ├── renacer v0.9.8 (*)
+                      │   └── trueno-viz v0.1.20 (*)
+                      ├── renacer v0.9.8 (*)
+                      └── trueno-viz v0.1.20 (*)
+    ├ windows_x86_64_gnullvm v0.53.1
+      └── windows-targets v0.53.5
+          └── windows-sys v0.60.2
+              ├── hf-hub v0.4.3
+              │   └── aprender v0.25.7
+              └── socket2 v0.6.1
+                  ├── hyper-util v0.1.19
+                  │   ├── hyper-timeout v0.5.2
+                  │   │   └── tonic v0.14.2
+                  │   │       ├── opentelemetry-otlp v0.31.0
+                  │   │       │   └── renacer v0.9.8
+                  │   │       │       └── (dev) aprender v0.25.7 (*)
+                  │   │       ├── opentelemetry-proto v0.31.0
+                  │   │       │   └── opentelemetry-otlp v0.31.0 (*)
+                  │   │       └── tonic-prost v0.14.2
+                  │   │           └── opentelemetry-proto v0.31.0 (*)
+                  │   ├── reqwest v0.12.28
+                  │   │   ├── opentelemetry-http v0.31.0
+                  │   │   │   └── opentelemetry-otlp v0.31.0 (*)
+                  │   │   └── opentelemetry-otlp v0.31.0 (*)
+                  │   └── tonic v0.14.2 (*)
+                  └── tokio v1.49.0
+                      ├── h2 v0.4.13
+                      │   └── hyper v1.8.1
+                      │       ├── hyper-timeout v0.5.2 (*)
+                      │       ├── hyper-util v0.1.19 (*)
+                      │       ├── reqwest v0.12.28 (*)
+                      │       └── tonic v0.14.2 (*)
+                      ├── hyper v1.8.1 (*)
+                      ├── hyper-timeout v0.5.2 (*)
+                      ├── hyper-util v0.1.19 (*)
+                      ├── opentelemetry-otlp v0.31.0 (*)
+                      ├── opentelemetry_sdk v0.31.0
+                      │   ├── opentelemetry-otlp v0.31.0 (*)
+                      │   ├── opentelemetry-proto v0.31.0 (*)
+                      │   └── renacer v0.9.8 (*)
+                      ├── renacer v0.9.8 (*)
+                      ├── reqwest v0.12.28 (*)
+                      ├── tokio-stream v0.1.18
+                      │   ├── opentelemetry_sdk v0.31.0 (*)
+                      │   └── tonic v0.14.2 (*)
+                      ├── tokio-util v0.7.18
+                      │   └── h2 v0.4.13 (*)
+                      ├── tonic v0.14.2 (*)
+                      ├── tower v0.5.3
+                      │   ├── reqwest v0.12.28 (*)
+                      │   ├── tonic v0.14.2 (*)
+                      │   └── tower-http v0.6.8
+                      │       └── reqwest v0.12.28 (*)
+                      ├── trueno-db v0.3.11
+                      │   ├── renacer v0.9.8 (*)
+                      │   └── trueno-graph v0.1.11
+                      │       └── renacer v0.9.8 (*)
+                      └── trueno-graph v0.1.11 (*)
+
+warning[duplicate]: found 2 duplicate entries for crate 'windows_x86_64_msvc'
+    ┌─ /home/noah/src/aprender/Cargo.lock:498:1
+    │  
+498 │ ╭ windows_x86_64_msvc 0.52.6 registry+https://github.com/rust-lang/crates.io-index
+499 │ │ windows_x86_64_msvc 0.53.1 registry+https://github.com/rust-lang/crates.io-index
+    │ ╰────────────────────────────────────────────────────────────────────────────────┘ lock entries
+    │  
+    ├ windows_x86_64_msvc v0.52.6
+      └── windows-targets v0.52.6
+          ├── windows-core v0.58.0
+          │   └── iana-time-zone v0.1.64
+          │       └── chrono v0.4.43
+          │           ├── arrow-arith v54.3.1
+          │           │   └── arrow v54.2.1
+          │           │       ├── trueno-db v0.3.11
+          │           │       │   ├── renacer v0.9.8
+          │           │       │   │   └── (dev) aprender v0.25.7
+          │           │       │   └── trueno-graph v0.1.11
+          │           │       │       └── renacer v0.9.8 (*)
+          │           │       └── trueno-graph v0.1.11 (*)
+          │           ├── arrow-array v54.3.1
+          │           │   ├── arrow v54.2.1 (*)
+          │           │   ├── arrow-arith v54.3.1 (*)
+          │           │   ├── arrow-cast v54.3.1
+          │           │   │   ├── arrow v54.2.1 (*)
+          │           │   │   ├── arrow-csv v54.3.1
+          │           │   │   │   └── arrow v54.2.1 (*)
+          │           │   │   ├── arrow-json v54.3.1
+          │           │   │   │   └── arrow v54.2.1 (*)
+          │           │   │   └── parquet v54.2.0
+          │           │   │       ├── trueno-db v0.3.11 (*)
+          │           │   │       └── trueno-graph v0.1.11 (*)
+          │           │   ├── arrow-csv v54.3.1 (*)
+          │           │   ├── arrow-ipc v54.2.1
+          │           │   │   ├── arrow v54.2.1 (*)
+          │           │   │   └── parquet v54.2.0 (*)
+          │           │   ├── arrow-json v54.3.1 (*)
+          │           │   ├── arrow-ord v54.2.1
+          │           │   │   └── arrow v54.2.1 (*)
+          │           │   ├── arrow-row v54.2.1
+          │           │   │   └── arrow v54.2.1 (*)
+          │           │   ├── arrow-select v54.3.1
+          │           │   │   ├── arrow v54.2.1 (*)
+          │           │   │   ├── arrow-cast v54.3.1 (*)
+          │           │   │   ├── arrow-ord v54.2.1 (*)
+          │           │   │   ├── arrow-string v54.2.1
+          │           │   │   │   └── arrow v54.2.1 (*)
+          │           │   │   └── parquet v54.2.0 (*)
+          │           │   ├── arrow-string v54.2.1 (*)
+          │           │   └── parquet v54.2.0 (*)
+          │           ├── arrow-cast v54.3.1 (*)
+          │           ├── arrow-csv v54.3.1 (*)
+          │           ├── arrow-json v54.3.1 (*)
+          │           ├── jugar-probar v0.5.1
+          │           │   └── (dev) aprender v0.25.7 (*)
+          │           ├── parquet v54.2.0 (*)
+          │           ├── trueno v0.13.0
+          │           │   ├── aprender v0.24.1
+          │           │   │   ├── renacer v0.9.8 (*)
+          │           │   │   └── trueno-graph v0.1.11 (*)
+          │           │   ├── renacer v0.9.8 (*)
+          │           │   ├── trueno-db v0.3.11 (*)
+          │           │   ├── trueno-graph v0.1.11 (*)
+          │           │   └── trueno-viz v0.1.20
+          │           │       └── renacer v0.9.8 (*)
+          │           ├── trueno v0.14.5
+          │           │   └── aprender v0.25.7 (*)
+          │           └── trueno-db v0.3.11 (*)
+          ├── windows-result v0.2.0
+          │   ├── windows-core v0.58.0 (*)
+          │   └── windows-strings v0.1.0
+          │       └── windows-core v0.58.0 (*)
+          ├── windows-strings v0.1.0 (*)
+          ├── windows-sys v0.52.0
+          │   ├── notify v7.0.0
+          │   │   └── jugar-probar v0.5.1 (*)
+          │   └── ring v0.17.14
+          │       ├── rustls v0.23.36
+          │       │   └── ureq v2.12.1
+          │       │       ├── aprender v0.25.7 (*)
+          │       │       └── hf-hub v0.4.3
+          │       │           └── aprender v0.25.7 (*)
+          │       └── rustls-webpki v0.103.9
+          │           └── rustls v0.23.36 (*)
+          └── windows-sys v0.59.0
+              ├── console v0.15.11
+              │   └── indicatif v0.17.11
+              │       └── hf-hub v0.4.3 (*)
+              └── rustix v0.38.44
+                  └── crossterm v0.28.1
+                      ├── jugar-probar v0.5.1 (*)
+                      ├── ratatui v0.29.0
+                      │   ├── jugar-probar v0.5.1 (*)
+                      │   ├── renacer v0.9.8 (*)
+                      │   └── trueno-viz v0.1.20 (*)
+                      ├── renacer v0.9.8 (*)
+                      └── trueno-viz v0.1.20 (*)
+    ├ windows_x86_64_msvc v0.53.1
+      └── windows-targets v0.53.5
+          └── windows-sys v0.60.2
+              ├── hf-hub v0.4.3
+              │   └── aprender v0.25.7
+              └── socket2 v0.6.1
+                  ├── hyper-util v0.1.19
+                  │   ├── hyper-timeout v0.5.2
+                  │   │   └── tonic v0.14.2
+                  │   │       ├── opentelemetry-otlp v0.31.0
+                  │   │       │   └── renacer v0.9.8
+                  │   │       │       └── (dev) aprender v0.25.7 (*)
+                  │   │       ├── opentelemetry-proto v0.31.0
+                  │   │       │   └── opentelemetry-otlp v0.31.0 (*)
+                  │   │       └── tonic-prost v0.14.2
+                  │   │           └── opentelemetry-proto v0.31.0 (*)
+                  │   ├── reqwest v0.12.28
+                  │   │   ├── opentelemetry-http v0.31.0
+                  │   │   │   └── opentelemetry-otlp v0.31.0 (*)
+                  │   │   └── opentelemetry-otlp v0.31.0 (*)
+                  │   └── tonic v0.14.2 (*)
+                  └── tokio v1.49.0
+                      ├── h2 v0.4.13
+                      │   └── hyper v1.8.1
+                      │       ├── hyper-timeout v0.5.2 (*)
+                      │       ├── hyper-util v0.1.19 (*)
+                      │       ├── reqwest v0.12.28 (*)
+                      │       └── tonic v0.14.2 (*)
+                      ├── hyper v1.8.1 (*)
+                      ├── hyper-timeout v0.5.2 (*)
+                      ├── hyper-util v0.1.19 (*)
+                      ├── opentelemetry-otlp v0.31.0 (*)
+                      ├── opentelemetry_sdk v0.31.0
+                      │   ├── opentelemetry-otlp v0.31.0 (*)
+                      │   ├── opentelemetry-proto v0.31.0 (*)
+                      │   └── renacer v0.9.8 (*)
+                      ├── renacer v0.9.8 (*)
+                      ├── reqwest v0.12.28 (*)
+                      ├── tokio-stream v0.1.18
+                      │   ├── opentelemetry_sdk v0.31.0 (*)
+                      │   └── tonic v0.14.2 (*)
+                      ├── tokio-util v0.7.18
+                      │   └── h2 v0.4.13 (*)
+                      ├── tonic v0.14.2 (*)
+                      ├── tower v0.5.3
+                      │   ├── reqwest v0.12.28 (*)
+                      │   ├── tonic v0.14.2 (*)
+                      │   └── tower-http v0.6.8
+                      │       └── reqwest v0.12.28 (*)
+                      ├── trueno-db v0.3.11
+                      │   ├── renacer v0.9.8 (*)
+                      │   └── trueno-graph v0.1.11
+                      │       └── renacer v0.9.8 (*)
+                      └── trueno-graph v0.1.11 (*)
+
 advisories ok, bans ok, licenses ok, sources ok
