@@ -210,9 +210,12 @@ fn print_apr_validation_json(
 ) -> Result<(), CliError> {
     let passed = report.failed_checks().is_empty()
         && min_score.map_or(true, |min| report.total_score >= min);
+    // GH-251: Only include executed checks (PASS/FAIL) — SKIP/WARN are not actionable
+    // and cause parity checker false positives
     let checks_json: Vec<serde_json::Value> = report
         .checks
         .iter()
+        .filter(|c| matches!(&c.status, CheckStatus::Pass | CheckStatus::Fail(_)))
         .map(|c| {
             let (status, detail) = match &c.status {
                 CheckStatus::Pass => ("PASS", String::new()),

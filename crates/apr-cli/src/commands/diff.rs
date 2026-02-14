@@ -32,6 +32,10 @@ struct DiffEntryJson {
     file1_value: String,
     file2_value: String,
     category: String,
+    /// GH-256: Alias for category using parity-checker-compatible names
+    /// Maps: quantization→dtype, size→size, metadata→metadata, format→format, tensor→data
+    #[serde(rename = "type")]
+    diff_type: String,
 }
 
 /// GH-256: Per-category diff counts for structured analysis
@@ -93,11 +97,25 @@ impl From<&DiffReport> for DiffResultJson {
             differences: report
                 .differences
                 .iter()
-                .map(|d| DiffEntryJson {
-                    field: d.field.clone(),
-                    file1_value: d.value1.clone(),
-                    file2_value: d.value2.clone(),
-                    category: d.category.name().to_string(),
+                .map(|d| {
+                    let cat_name = d.category.name().to_string();
+                    // GH-256: Map category to parity-checker-compatible type names
+                    // dtype/size/data are non-structural; metadata treated as data
+                    // since metadata diffs (e.g. model_name) are expected between quant variants
+                    let diff_type = match d.category {
+                        DiffCategory::Quantization => "dtype".to_string(),
+                        DiffCategory::Size => "size".to_string(),
+                        DiffCategory::Tensor => "data".to_string(),
+                        DiffCategory::Metadata => "data".to_string(),
+                        DiffCategory::Format => "format".to_string(),
+                    };
+                    DiffEntryJson {
+                        field: d.field.clone(),
+                        file1_value: d.value1.clone(),
+                        file2_value: d.value2.clone(),
+                        category: cat_name,
+                        diff_type,
+                    }
                 })
                 .collect(),
         }
@@ -1958,12 +1976,14 @@ mod tests {
             file1_value: "100".to_string(),
             file2_value: "200".to_string(),
             category: "tensor".to_string(),
+            diff_type: "data".to_string(),
         };
         let json = serde_json::to_string(&entry).expect("serialize");
         assert!(json.contains("\"field\":\"tensor_count\""));
         assert!(json.contains("\"file1_value\":\"100\""));
         assert!(json.contains("\"file2_value\":\"200\""));
         assert!(json.contains("\"category\":\"tensor\""));
+        assert!(json.contains("\"type\":\"data\""));
     }
 
     // ==================== DiffResultJson category mapping ====================

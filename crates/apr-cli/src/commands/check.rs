@@ -28,9 +28,11 @@ struct StageResult {
 }
 
 /// Run the 10-stage pipeline self-test with REAL validation
-pub(crate) fn run(path: &Path, no_gpu: bool) -> Result<(), CliError> {
-    output::section("Model Self-Test (PMAT-112: Real Validation)");
-    println!("Model: {}\n", path.display().to_string().cyan());
+pub(crate) fn run(path: &Path, no_gpu: bool, json: bool) -> Result<(), CliError> {
+    if !json {
+        output::section("Model Self-Test (PMAT-112: Real Validation)");
+        println!("Model: {}\n", path.display().to_string().cyan());
+    }
 
     #[cfg(feature = "inference")]
     let results = run_real_checks(path, no_gpu)?;
@@ -38,8 +40,10 @@ pub(crate) fn run(path: &Path, no_gpu: bool) -> Result<(), CliError> {
     #[cfg(not(feature = "inference"))]
     let results = {
         let _ = no_gpu;
-        output::warn("Inference feature not enabled. Cannot run real validation.");
-        output::warn("Build with: cargo build --features inference");
+        if !json {
+            output::warn("Inference feature not enabled. Cannot run real validation.");
+            output::warn("Build with: cargo build --features inference");
+        }
         vec![StageResult {
             name: "N/A",
             eli5: "Requires inference",
@@ -48,10 +52,15 @@ pub(crate) fn run(path: &Path, no_gpu: bool) -> Result<(), CliError> {
         }]
     };
 
-    print_results_table(&results);
-
     let passed_count = results.iter().filter(|r| r.passed).count();
     let total_count = results.len();
+
+    // GH-253: JSON output for parity checker
+    if json {
+        return print_json(&results, path, passed_count, total_count);
+    }
+
+    print_results_table(&results);
 
     if passed_count == total_count {
         println!(
@@ -78,6 +87,43 @@ pub(crate) fn run(path: &Path, no_gpu: bool) -> Result<(), CliError> {
             "Model self-test failed".to_string(),
         ))
     }
+}
+
+/// GH-253: Print check results as JSON for parity checker
+// serde_json::json!() macro uses infallible unwrap internally
+#[allow(clippy::disallowed_methods)]
+fn print_json(
+    results: &[StageResult],
+    path: &Path,
+    passed_count: usize,
+    total_count: usize,
+) -> Result<(), CliError> {
+    let stages_json: Vec<serde_json::Value> = results
+        .iter()
+        .map(|r| {
+            serde_json::json!({
+                "name": r.name,
+                "status": if r.passed { "PASS" } else { "FAIL" },
+                "details": r.details.as_deref().unwrap_or(""),
+            })
+        })
+        .collect();
+
+    let output = serde_json::json!({
+        "model": path.display().to_string(),
+        "stages": stages_json,
+        "passed": passed_count,
+        "total": total_count,
+        "all_passed": passed_count == total_count,
+    });
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&output).unwrap_or_default()
+    );
+
+    // GH-253: In JSON mode, always exit 0 so parity checker can parse the output.
+    // The "all_passed" and individual stage statuses convey success/failure.
+    Ok(())
 }
 
 /// Run REAL validation checks (PMAT-112)
@@ -665,7 +711,7 @@ mod tests {
 
     #[test]
     fn test_run_file_not_found() {
-        let result = run(Path::new("/nonexistent/model.gguf"), false);
+        let result = run(Path::new("/nonexistent/model.gguf"), false, false);
         assert!(result.is_err());
     }
 
@@ -674,7 +720,7 @@ mod tests {
         let mut file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
         file.write_all(b"not a valid gguf file").expect("write");
 
-        let result = run(file.path(), false);
+        let result = run(file.path(), false, false);
         // Should fail (invalid GGUF or feature disabled)
         assert!(result.is_err());
     }
@@ -684,7 +730,7 @@ mod tests {
         let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
         file.write_all(b"not a valid apr file").expect("write");
 
-        let result = run(file.path(), false);
+        let result = run(file.path(), false, false);
         // Should fail (invalid APR or feature disabled)
         assert!(result.is_err());
     }
@@ -694,7 +740,7 @@ mod tests {
         let mut file = NamedTempFile::with_suffix(".bin").expect("create temp file");
         file.write_all(b"binary data").expect("write");
 
-        let result = run(file.path(), false);
+        let result = run(file.path(), false, false);
         // Should fail (unsupported format or feature disabled)
         assert!(result.is_err());
     }
@@ -704,7 +750,7 @@ mod tests {
         let mut file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
         file.write_all(b"not valid").expect("write");
 
-        let result = run(file.path(), true); // no_gpu = true
+        let result = run(file.path(), true, false); // no_gpu = true
                                              // Should fail (invalid file)
         assert!(result.is_err());
     }
@@ -712,7 +758,7 @@ mod tests {
     #[test]
     fn test_run_is_directory() {
         let dir = tempdir().expect("create temp dir");
-        let result = run(dir.path(), false);
+        let result = run(dir.path(), false, false);
         // Should fail (is a directory)
         assert!(result.is_err());
     }
@@ -722,7 +768,7 @@ mod tests {
         let mut file = NamedTempFile::with_suffix(".safetensors").expect("create temp file");
         file.write_all(b"not valid safetensors").expect("write");
 
-        let result = run(file.path(), false);
+        let result = run(file.path(), false, false);
         // Should fail (unsupported format or feature disabled)
         assert!(result.is_err());
     }
@@ -1147,7 +1193,7 @@ mod tests {
     fn test_run_empty_file_gguf() {
         let file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
         // Empty file should fail
-        let result = run(file.path(), false);
+        let result = run(file.path(), false, false);
         assert!(result.is_err());
     }
 
@@ -1155,7 +1201,7 @@ mod tests {
     fn test_run_empty_file_apr() {
         let file = NamedTempFile::with_suffix(".apr").expect("create temp file");
         // Empty file should fail
-        let result = run(file.path(), false);
+        let result = run(file.path(), false, false);
         assert!(result.is_err());
     }
 
@@ -1164,7 +1210,7 @@ mod tests {
         let dir = tempdir().expect("create temp dir");
         let path = dir.path().join("modelfile");
         std::fs::write(&path, b"some data").expect("write");
-        let result = run(&path, false);
+        let result = run(&path, false, false);
         // No extension -> unsupported format or feature disabled
         assert!(result.is_err());
     }
@@ -1174,7 +1220,7 @@ mod tests {
         let dir = tempdir().expect("create temp dir");
         let path = dir.path().join("model.GGUF");
         std::fs::write(&path, b"not valid gguf").expect("write");
-        let result = run(&path, false);
+        let result = run(&path, false, false);
         // Should attempt GGUF parsing (lowercased) but fail due to invalid content
         assert!(result.is_err());
     }
@@ -1184,7 +1230,7 @@ mod tests {
         let dir = tempdir().expect("create temp dir");
         let path = dir.path().join("model.Apr");
         std::fs::write(&path, b"not valid apr").expect("write");
-        let result = run(&path, false);
+        let result = run(&path, false, false);
         assert!(result.is_err());
     }
 
@@ -1193,7 +1239,7 @@ mod tests {
         let dir = tempdir().expect("create temp dir");
         let path = dir.path().join("model.txt");
         std::fs::write(&path, b"text data").expect("write");
-        let result = run(&path, false);
+        let result = run(&path, false, false);
         assert!(result.is_err());
     }
 
@@ -1202,7 +1248,7 @@ mod tests {
         let dir = tempdir().expect("create temp dir");
         let path = dir.path().join("config.json");
         std::fs::write(&path, b"{}").expect("write");
-        let result = run(&path, false);
+        let result = run(&path, false, false);
         assert!(result.is_err());
     }
 

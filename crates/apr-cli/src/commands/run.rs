@@ -187,6 +187,8 @@ pub(crate) struct RunResult {
     pub tok_per_sec: Option<f64>,
     /// Whether GPU was used (GH-250)
     pub used_gpu: Option<bool>,
+    /// GH-250: Generated token IDs for parity checking
+    pub generated_tokens: Option<Vec<u32>>,
 }
 
 /// Run the model on input
@@ -226,6 +228,7 @@ pub(crate) fn run_model(source: &str, options: &RunOptions) -> Result<RunResult>
         tokens_generated,
         tok_per_sec: output.tok_per_sec,
         used_gpu: output.used_gpu,
+        generated_tokens: output.generated_tokens,
     })
 }
 
@@ -616,6 +619,8 @@ struct InferenceOutput {
     inference_ms: Option<f64>,
     tok_per_sec: Option<f64>,
     used_gpu: Option<bool>,
+    /// GH-250: Generated token IDs for parity checking
+    generated_tokens: Option<Vec<u32>>,
 }
 
 /// Execute inference on model
@@ -661,6 +666,7 @@ fn execute_inference(
             inference_ms: None,
             tok_per_sec: None,
             used_gpu: None,
+            generated_tokens: None,
         })
     }
 }
@@ -727,13 +733,19 @@ fn execute_with_realizar(
     }
 
     // BUG-RUN-001 FIX: Return actual token count from realizar instead of word approximation
-    // GH-250: Include tok_per_sec and GPU usage for JSON output
+    // GH-250: Include tok_per_sec, GPU usage, and generated token IDs for JSON output
+    let generated_tokens = if result.tokens.len() > result.input_token_count {
+        Some(result.tokens[result.input_token_count..].to_vec())
+    } else {
+        Some(Vec::new())
+    };
     Ok(InferenceOutput {
         text: result.text,
         tokens_generated: Some(result.generated_token_count),
         inference_ms: Some(result.inference_ms),
         tok_per_sec: Some(result.tok_per_sec),
         used_gpu: Some(result.used_gpu),
+        generated_tokens,
     })
 }
 
@@ -2188,9 +2200,12 @@ fn print_run_output(
                 0.0
             }
         });
+        // GH-250: Include generated token IDs for parity checking
+        let tokens_json = result.generated_tokens.as_deref().unwrap_or(&[]);
         let json = serde_json::json!({
             "model": source,
             "text": result.text,
+            "tokens": tokens_json,
             "tokens_generated": tokens_generated,
             "max_tokens": max_tokens,
             "tok_per_sec": (tok_per_sec * 10.0).round() / 10.0,
@@ -2756,6 +2771,7 @@ mod tests {
             tokens_generated: Some(5),
             tok_per_sec: None,
             used_gpu: None,
+            generated_tokens: None,
         };
         let _debug = format!("{:?}", result);
         assert_eq!(result.tokens_generated, Some(5));
@@ -2906,6 +2922,7 @@ mod tests {
             tokens_generated: None,
             tok_per_sec: None,
             used_gpu: None,
+            generated_tokens: None,
         };
         let cloned = result.clone();
         assert_eq!(result.text, cloned.text);
@@ -3832,6 +3849,7 @@ mod tests {
             tokens_generated: None,
             tok_per_sec: None,
             used_gpu: None,
+            generated_tokens: None,
         };
         let result_zero = RunResult {
             text: String::new(),
@@ -3840,6 +3858,7 @@ mod tests {
             tokens_generated: Some(0),
             tok_per_sec: None,
             used_gpu: None,
+            generated_tokens: None,
         };
         assert_ne!(
             result_none.tokens_generated, result_zero.tokens_generated,
@@ -3858,6 +3877,7 @@ mod tests {
             tokens_generated: Some(42),
             tok_per_sec: Some(100.0),
             used_gpu: Some(true),
+            generated_tokens: Some(vec![10, 20, 30]),
         };
         assert_eq!(result.text, "output");
         assert!((result.duration_secs - 1.234).abs() < f64::EPSILON);
@@ -4044,6 +4064,7 @@ mod tests {
             inference_ms: Some(10.0),
             tok_per_sec: Some(500.0),
             used_gpu: Some(false),
+            generated_tokens: Some(vec![1, 2, 3, 4, 5]),
         };
         assert_eq!(output.text, "hello");
         assert_eq!(output.tokens_generated, Some(5));
@@ -4059,6 +4080,7 @@ mod tests {
             inference_ms: None,
             tok_per_sec: None,
             used_gpu: None,
+            generated_tokens: None,
         };
         assert!(output.tokens_generated.is_none());
         assert!(output.inference_ms.is_none());

@@ -1202,6 +1202,10 @@ pub enum Commands {
         /// Disable GPU acceleration
         #[arg(long)]
         no_gpu: bool,
+
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
     },
 
     /// Rosetta Stone - Universal model format converter (PMAT-ROSETTA-001)
@@ -1920,7 +1924,11 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
 #[allow(clippy::too_many_lines)]
 fn dispatch_core_command(cli: &Cli) -> Option<Result<(), CliError>> {
     Some(match cli.command.as_ref() {
-        Commands::Check { file, no_gpu } => commands::check::run(file, *no_gpu),
+        Commands::Check {
+            file,
+            no_gpu,
+            json,
+        } => commands::check::run(file, *no_gpu, *json),
         Commands::Run {
             source,
             positional_prompt,
@@ -2298,6 +2306,7 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
             prompt.as_deref(),
             *fast,
             brick.as_deref(),
+            cli.json,
         ),
 
         Commands::Eval {
@@ -4257,7 +4266,7 @@ mod tests {
         let args = vec!["apr", "check", "model.apr", "--no-gpu"];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Check { file, no_gpu } => {
+            Commands::Check { file, no_gpu, .. } => {
                 assert_eq!(file, PathBuf::from("model.apr"));
                 assert!(no_gpu);
             }
@@ -5330,6 +5339,7 @@ mod tests {
         let cmd = Commands::Check {
             file: PathBuf::from("model.gguf"),
             no_gpu: false,
+            json: false,
         };
         let paths = extract_model_paths(&cmd);
         assert_eq!(paths, vec![PathBuf::from("model.gguf")]);
@@ -6136,6 +6146,7 @@ mod tests {
         let cli = make_cli(Commands::Check {
             file: PathBuf::from("/tmp/nonexistent_model_check_test.apr"),
             no_gpu: true,
+            json: false,
         });
         let result = execute_command(&cli);
         assert!(result.is_err(), "Check should fail with non-existent file");

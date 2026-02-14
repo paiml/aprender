@@ -37,6 +37,8 @@ struct BenchConfig {
     pub max_tokens: usize,
     /// Test prompt
     pub prompt: String,
+    /// GH-254: Suppress status output (JSON mode)
+    pub quiet: bool,
 }
 
 impl Default for BenchConfig {
@@ -46,6 +48,7 @@ impl Default for BenchConfig {
             iterations: 5,
             max_tokens: 32,
             prompt: "What is 2+2?".to_string(),
+            quiet: false,
         }
     }
 }
@@ -86,6 +89,7 @@ pub(crate) fn run(
     prompt: Option<&str>,
     _fast: bool, // Deprecated: always uses fast path now
     brick: Option<&str>,
+    json: bool,
 ) -> Result<()> {
     // If --brick is specified, run brick-specific benchmark
     if let Some(brick_name) = brick {
@@ -107,15 +111,20 @@ pub(crate) fn run(
         iterations,
         max_tokens,
         prompt: prompt.unwrap_or("What is 2+2?").to_string(),
+        quiet: json,
     };
 
-    print_header(path, &config);
+    if !json {
+        print_header(path, &config);
+    }
 
     // Always use realizar for production-quality benchmarks
     #[cfg(feature = "inference")]
     let result = {
-        println!("{}", "Using realizar inference engine".cyan());
-        println!();
+        if !json {
+            println!("{}", "Using realizar inference engine".cyan());
+            println!();
+        }
         run_realizar_benchmark(path, &config)?
     };
 
@@ -125,6 +134,11 @@ pub(crate) fn run(
             "Benchmark requires the 'inference' feature. Build with: cargo build --features inference".to_string()
         ));
     };
+
+    // GH-254: JSON output mode — always exit 0 with results in JSON body
+    if json {
+        return print_bench_json(path, &result);
+    }
 
     // Print results
     print_results(&result);
@@ -140,6 +154,30 @@ pub(crate) fn run(
         )));
     }
 
+    Ok(())
+}
+
+/// GH-254: Print benchmark results as JSON (machine-parseable output).
+/// Always exits 0 — failure info is in the JSON body.
+// serde_json::json!() macro uses infallible unwrap internally
+#[allow(clippy::disallowed_methods)]
+fn print_bench_json(path: &Path, result: &BenchResult) -> Result<()> {
+    let output = serde_json::json!({
+        "model": path.display().to_string(),
+        "tokens_per_second": (result.tokens_per_second * 10.0).round() / 10.0,
+        "total_tokens": result.total_tokens,
+        "total_time_ms": result.total_time.as_secs_f64() * 1000.0,
+        "time_to_first_token_ms": result.time_to_first_token.as_secs_f64() * 1000.0,
+        "iterations": result.iteration_times.len(),
+        "mean_time_ms": result.mean_time.as_secs_f64() * 1000.0,
+        "median_time_ms": result.median_time.as_secs_f64() * 1000.0,
+        "std_dev_ms": result.std_dev.as_secs_f64() * 1000.0,
+        "passed": result.passed,
+    });
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&output).unwrap_or_default()
+    );
     Ok(())
 }
 
@@ -472,24 +510,28 @@ fn run_realizar_benchmark(path: &Path, config: &BenchConfig) -> Result<BenchResu
     let format = detect_format(&header_bytes[..8.min(header_bytes.len())])
         .map_err(|e| CliError::ValidationFailed(format!("Failed to detect format: {e}")))?;
 
-    println!("{} {}", "Format:".cyan().bold(), format.to_string().green());
+    if !config.quiet {
+        eprintln!("{} {}", "Format:".cyan().bold(), format.to_string().green());
+    }
 
     // Check CUDA availability (only used for GGUF currently)
     let cuda_available = CudaExecutor::is_available();
     let cuda_devices = CudaExecutor::num_devices();
 
-    if cuda_available && cuda_devices > 0 {
-        println!(
-            "{} {} GPU(s) detected",
-            "CUDA:".cyan().bold(),
-            cuda_devices.to_string().green()
-        );
-    } else {
-        println!(
-            "{} {}",
-            "CUDA:".cyan().bold(),
-            "Not available (CPU mode)".yellow()
-        );
+    if !config.quiet {
+        if cuda_available && cuda_devices > 0 {
+            eprintln!(
+                "{} {} GPU(s) detected",
+                "CUDA:".cyan().bold(),
+                cuda_devices.to_string().green()
+            );
+        } else {
+            eprintln!(
+                "{} {}",
+                "CUDA:".cyan().bold(),
+                "Not available (CPU mode)".yellow()
+            );
+        }
     }
 
     // Route to format-specific benchmark
@@ -507,7 +549,9 @@ fn run_realizar_benchmark(path: &Path, config: &BenchConfig) -> Result<BenchResu
 fn run_gguf_benchmark(path: &Path, config: &BenchConfig, use_cuda: bool) -> Result<BenchResult> {
     use realizar::gguf::{GGUFModel, QuantizedGenerateConfig};
 
-    println!("{}", "Loading GGUF model...".yellow());
+    if !config.quiet {
+        eprintln!("{}", "Loading GGUF model...".yellow());
+    }
     let start = Instant::now();
 
     // Load model for tokenization
@@ -551,10 +595,23 @@ fn run_apr_benchmark(path: &Path, config: &BenchConfig, use_cuda: bool) -> Resul
     use realizar::apr_transformer::{AprTransformer, GenerateConfig};
 
     if use_cuda {
-        return run_apr_cuda_benchmark(path, config);
+        // GH-254: If GPU generates 0 tokens (e.g. APR Q8 not supported on CUDA),
+        // fall back to CPU benchmark transparently
+        let result = run_apr_cuda_benchmark(path, config)?;
+        if result.total_tokens > 0 {
+            return Ok(result);
+        }
+        if !config.quiet {
+            eprintln!(
+                "{}",
+                "GPU generated 0 tokens, falling back to CPU...".yellow()
+            );
+        }
     }
 
-    println!("{}", "Loading APR model (CPU)...".yellow());
+    if !config.quiet {
+        eprintln!("{}", "Loading APR model (CPU)...".yellow());
+    }
     let start = Instant::now();
 
     // Load APR model as AprTransformer for KV cache support
@@ -562,12 +619,14 @@ fn run_apr_benchmark(path: &Path, config: &BenchConfig, use_cuda: bool) -> Resul
         .map_err(|e| CliError::ValidationFailed(format!("Failed to load APR: {e}")))?;
 
     let load_time = start.elapsed();
-    println!(
-        "{} in {:.2}s",
-        "Model ready".green(),
-        load_time.as_secs_f32()
-    );
-    println!();
+    if !config.quiet {
+        eprintln!(
+            "{} in {:.2}s",
+            "Model ready".green(),
+            load_time.as_secs_f32()
+        );
+        eprintln!();
+    }
 
     // Try to get tokenizer from sibling file
     let prompt_tokens: Vec<u32> = if let Some(tokenizer) =
@@ -602,17 +661,25 @@ fn run_apr_benchmark(path: &Path, config: &BenchConfig, use_cuda: bool) -> Resul
     };
 
     // Warmup - uses KV cache for O(n) complexity
-    println!("{}", "Running warmup...".yellow());
+    if !config.quiet {
+        eprintln!("{}", "Running warmup...".yellow());
+    }
     for i in 0..config.warmup {
         let _ = transformer.generate_with_cache(&prompt_tokens, &gen_config);
-        print!("  Warmup {}/{}\r", i + 1, config.warmup);
-        std::io::Write::flush(&mut std::io::stdout()).ok();
+        if !config.quiet {
+            eprint!("  Warmup {}/{}\r", i + 1, config.warmup);
+            std::io::Write::flush(&mut std::io::stderr()).ok();
+        }
     }
-    println!("  Warmup complete        ");
-    println!();
+    if !config.quiet {
+        eprintln!("  Warmup complete        ");
+        eprintln!();
+    }
 
     // Measurement - uses KV cache for O(n) complexity
-    println!("{}", "Running benchmark...".yellow());
+    if !config.quiet {
+        eprintln!("{}", "Running benchmark...".yellow());
+    }
     let mut iteration_times = Vec::with_capacity(config.iterations);
     let mut total_tokens = 0usize;
     let mut first_token_time = Duration::ZERO;
@@ -638,16 +705,20 @@ fn run_apr_benchmark(path: &Path, config: &BenchConfig, use_cuda: bool) -> Resul
             }
         }
 
-        print!(
-            "  Iteration {}/{}: {} tokens in {:.2}s\r",
-            i + 1,
-            config.iterations,
-            tokens_generated,
-            iter_time.as_secs_f32()
-        );
-        std::io::Write::flush(&mut std::io::stdout()).ok();
+        if !config.quiet {
+            eprint!(
+                "  Iteration {}/{}: {} tokens in {:.2}s\r",
+                i + 1,
+                config.iterations,
+                tokens_generated,
+                iter_time.as_secs_f32()
+            );
+            std::io::Write::flush(&mut std::io::stderr()).ok();
+        }
     }
-    println!();
+    if !config.quiet {
+        eprintln!();
+    }
 
     // GH-254: If generation produced 0 new tokens, fall back to forward-pass throughput
     // This counts prompt tokens processed per iteration instead
@@ -659,7 +730,9 @@ fn run_apr_benchmark(path: &Path, config: &BenchConfig, use_cuda: bool) -> Resul
         );
         total_tokens = config.iterations * prompt_tokens.len();
     }
-    println!();
+    if !config.quiet {
+        eprintln!();
+    }
 
     calculate_benchmark_stats(iteration_times, total_tokens, first_token_time, config)
 }
@@ -669,7 +742,9 @@ fn run_apr_benchmark(path: &Path, config: &BenchConfig, use_cuda: bool) -> Resul
 fn run_apr_cuda_benchmark(path: &Path, config: &BenchConfig) -> Result<BenchResult> {
     use realizar::apr::{AprV2Model, AprV2ModelCuda};
 
-    println!("{}", "Loading APR model (GPU)...".yellow());
+    if !config.quiet {
+        eprintln!("{}", "Loading APR model (GPU)...".yellow());
+    }
     let start = Instant::now();
 
     // First load APR model (CPU), then wrap with CUDA
@@ -706,29 +781,39 @@ fn run_apr_cuda_benchmark(path: &Path, config: &BenchConfig) -> Result<BenchResu
     let eos_token: u32 = 151645;
 
     let load_time = start.elapsed();
-    println!(
-        "{} in {:.2}s ({} tensors, GPU device 0)",
-        "Model ready".green(),
-        load_time.as_secs_f32(),
-        tensor_count
-    );
-    println!();
+    if !config.quiet {
+        eprintln!(
+            "{} in {:.2}s ({} tensors, GPU device 0)",
+            "Model ready".green(),
+            load_time.as_secs_f32(),
+            tensor_count
+        );
+        eprintln!();
+    }
 
     // Warmup - use cached version for proper KV cache usage
-    println!("{}", "Running warmup (GPU)...".yellow());
+    if !config.quiet {
+        eprintln!("{}", "Running warmup (GPU)...".yellow());
+    }
     for i in 0..config.warmup {
         // Reset KV cache position for each iteration
         model.reset_kv_cache();
         let _ =
             model.generate_cuda_with_cache(&prompt_tokens, config.max_tokens.min(16), eos_token);
-        print!("  Warmup {}/{}\r", i + 1, config.warmup);
-        std::io::Write::flush(&mut std::io::stdout()).ok();
+        if !config.quiet {
+            eprint!("  Warmup {}/{}\r", i + 1, config.warmup);
+            std::io::Write::flush(&mut std::io::stderr()).ok();
+        }
     }
-    println!("  Warmup complete        ");
-    println!();
+    if !config.quiet {
+        eprintln!("  Warmup complete        ");
+        eprintln!();
+    }
 
     // Measurement - use cached version for O(n) instead of O(n²)
-    println!("{}", "Running benchmark (GPU)...".yellow());
+    if !config.quiet {
+        eprintln!("{}", "Running benchmark (GPU)...".yellow());
+    }
     let mut iteration_times = Vec::with_capacity(config.iterations);
     let mut total_tokens = 0usize;
     let mut first_token_time = Duration::ZERO;
@@ -752,17 +837,21 @@ fn run_apr_cuda_benchmark(path: &Path, config: &BenchConfig) -> Result<BenchResu
                 Duration::from_secs_f64(iter_time.as_secs_f64() / tokens_generated.max(1) as f64);
         }
 
-        print!(
-            "  Iteration {}/{}: {} tokens in {:.2}s\r",
-            i + 1,
-            config.iterations,
-            tokens_generated,
-            iter_time.as_secs_f32()
-        );
-        std::io::Write::flush(&mut std::io::stdout()).ok();
+        if !config.quiet {
+            eprint!(
+                "  Iteration {}/{}: {} tokens in {:.2}s\r",
+                i + 1,
+                config.iterations,
+                tokens_generated,
+                iter_time.as_secs_f32()
+            );
+            std::io::Write::flush(&mut std::io::stderr()).ok();
+        }
     }
-    println!();
-    println!();
+    if !config.quiet {
+        eprintln!();
+        eprintln!();
+    }
 
     calculate_benchmark_stats(iteration_times, total_tokens, first_token_time, config)
 }
@@ -782,7 +871,9 @@ fn run_safetensors_benchmark(
         return run_safetensors_cuda_benchmark(path, config);
     }
 
-    println!("{}", "Loading SafeTensors model (CPU)...".yellow());
+    if !config.quiet {
+        eprintln!("{}", "Loading SafeTensors model (CPU)...".yellow());
+    }
     let start = Instant::now();
 
     // Convert SafeTensors to AprTransformer
@@ -790,12 +881,14 @@ fn run_safetensors_benchmark(
         .map_err(|e| CliError::ValidationFailed(format!("Failed to load SafeTensors: {e}")))?;
 
     let load_time = start.elapsed();
-    println!(
-        "{} in {:.2}s",
-        "Model ready".green(),
-        load_time.as_secs_f32()
-    );
-    println!();
+    if !config.quiet {
+        eprintln!(
+            "{} in {:.2}s",
+            "Model ready".green(),
+            load_time.as_secs_f32()
+        );
+        eprintln!();
+    }
 
     // Try to load tokenizer from sibling tokenizer.json file
     let prompt_tokens: Vec<u32> = if let Some(tokenizer) =
@@ -808,17 +901,25 @@ fn run_safetensors_benchmark(
     };
 
     // Warmup
-    println!("{}", "Running warmup...".yellow());
+    if !config.quiet {
+        eprintln!("{}", "Running warmup...".yellow());
+    }
     for i in 0..config.warmup {
         let _ = transformer.forward(&prompt_tokens);
-        print!("  Warmup {}/{}\r", i + 1, config.warmup);
-        std::io::Write::flush(&mut std::io::stdout()).ok();
+        if !config.quiet {
+            eprint!("  Warmup {}/{}\r", i + 1, config.warmup);
+            std::io::Write::flush(&mut std::io::stderr()).ok();
+        }
     }
-    println!("  Warmup complete        ");
-    println!();
+    if !config.quiet {
+        eprintln!("  Warmup complete        ");
+        eprintln!();
+    }
 
     // Measurement (forward pass only - no generation for SafeTensors)
-    println!("{}", "Running benchmark (forward pass)...".yellow());
+    if !config.quiet {
+        eprintln!("{}", "Running benchmark (forward pass)...".yellow());
+    }
     let mut iteration_times = Vec::with_capacity(config.iterations);
     let total_tokens = config.iterations * prompt_tokens.len();
 
@@ -830,17 +931,21 @@ fn run_safetensors_benchmark(
         let iter_time = iter_start.elapsed();
         iteration_times.push(iter_time);
 
-        print!(
-            "  Iteration {}/{}: {:.2}s\r",
-            i + 1,
-            config.iterations,
-            iter_time.as_secs_f32()
-        );
-        std::io::Write::flush(&mut std::io::stdout()).ok();
+        if !config.quiet {
+            eprint!(
+                "  Iteration {}/{}: {:.2}s\r",
+                i + 1,
+                config.iterations,
+                iter_time.as_secs_f32()
+            );
+            std::io::Write::flush(&mut std::io::stderr()).ok();
+        }
     }
     let first_token_time = iteration_times.first().copied().unwrap_or(Duration::ZERO);
-    println!();
-    println!();
+    if !config.quiet {
+        eprintln!();
+        eprintln!();
+    }
 
     calculate_benchmark_stats(iteration_times, total_tokens, first_token_time, config)
 }
@@ -852,7 +957,9 @@ fn run_safetensors_cuda_benchmark(path: &Path, config: &BenchConfig) -> Result<B
     use realizar::apr::AprV2Model;
     use realizar::safetensors_cuda::SafeTensorsCudaModel;
 
-    println!("{}", "Loading SafeTensors model (GPU)...".yellow());
+    if !config.quiet {
+        eprintln!("{}", "Loading SafeTensors model (GPU)...".yellow());
+    }
     let start = Instant::now();
 
     // Load SafeTensors directly to GPU (PMAT-116)
@@ -873,26 +980,36 @@ fn run_safetensors_cuda_benchmark(path: &Path, config: &BenchConfig) -> Result<B
     let eos_token: u32 = 151645;
 
     let load_time = start.elapsed();
-    println!(
-        "{} in {:.2}s (GPU device 0)",
-        "Model ready".green(),
-        load_time.as_secs_f32()
-    );
-    println!();
+    if !config.quiet {
+        eprintln!(
+            "{} in {:.2}s (GPU device 0)",
+            "Model ready".green(),
+            load_time.as_secs_f32()
+        );
+        eprintln!();
+    }
 
     // Warmup - reset KV cache for each iteration
-    println!("{}", "Running warmup (GPU)...".yellow());
+    if !config.quiet {
+        eprintln!("{}", "Running warmup (GPU)...".yellow());
+    }
     for i in 0..config.warmup {
         model.reset_kv_cache();
         let _ = model.generate(&prompt_tokens, config.max_tokens.min(16), eos_token);
-        print!("  Warmup {}/{}\r", i + 1, config.warmup);
-        std::io::Write::flush(&mut std::io::stdout()).ok();
+        if !config.quiet {
+            eprint!("  Warmup {}/{}\r", i + 1, config.warmup);
+            std::io::Write::flush(&mut std::io::stderr()).ok();
+        }
     }
-    println!("  Warmup complete        ");
-    println!();
+    if !config.quiet {
+        eprintln!("  Warmup complete        ");
+        eprintln!();
+    }
 
     // Measurement - reset KV cache for each iteration
-    println!("{}", "Running benchmark (GPU)...".yellow());
+    if !config.quiet {
+        eprintln!("{}", "Running benchmark (GPU)...".yellow());
+    }
     let mut iteration_times = Vec::with_capacity(config.iterations);
     let mut total_tokens = 0usize;
     let mut first_token_time = Duration::ZERO;
@@ -915,17 +1032,21 @@ fn run_safetensors_cuda_benchmark(path: &Path, config: &BenchConfig) -> Result<B
                 Duration::from_secs_f64(iter_time.as_secs_f64() / tokens_generated.max(1) as f64);
         }
 
-        print!(
-            "  Iteration {}/{}: {} tokens in {:.2}s\r",
-            i + 1,
-            config.iterations,
-            tokens_generated,
-            iter_time.as_secs_f32()
-        );
-        std::io::Write::flush(&mut std::io::stdout()).ok();
+        if !config.quiet {
+            eprint!(
+                "  Iteration {}/{}: {} tokens in {:.2}s\r",
+                i + 1,
+                config.iterations,
+                tokens_generated,
+                iter_time.as_secs_f32()
+            );
+            std::io::Write::flush(&mut std::io::stderr()).ok();
+        }
     }
-    println!();
-    println!();
+    if !config.quiet {
+        eprintln!();
+        eprintln!();
+    }
 
     calculate_benchmark_stats(iteration_times, total_tokens, first_token_time, config)
 }
@@ -943,7 +1064,9 @@ fn run_cuda_benchmark(
 ) -> Result<BenchResult> {
     use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel, OwnedQuantizedModelCuda};
 
-    println!("{}", "Initializing CUDA model...".cyan());
+    if !config.quiet {
+        eprintln!("{}", "Initializing CUDA model...".cyan());
+    }
 
     // Create MappedGGUFModel from path (memory-mapped for efficiency)
     let mapped = MappedGGUFModel::from_path(model_path)
@@ -958,15 +1081,19 @@ fn run_cuda_benchmark(
         .map_err(|e| CliError::ValidationFailed(format!("Failed to initialize CUDA: {e}")))?;
 
     let load_time = start.elapsed();
-    println!(
-        "{} in {:.2}s (GPU device 0)",
-        "Model ready".green(),
-        load_time.as_secs_f32()
-    );
-    println!();
+    if !config.quiet {
+        eprintln!(
+            "{} in {:.2}s (GPU device 0)",
+            "Model ready".green(),
+            load_time.as_secs_f32()
+        );
+        eprintln!();
+    }
 
     // Warmup with CUDA
-    println!("{}", "Running warmup (GPU)...".yellow());
+    if !config.quiet {
+        eprintln!("{}", "Running warmup (GPU)...".yellow());
+    }
     for i in 0..config.warmup {
         // Try GPU-resident path for better performance
         match cuda_model.generate_gpu_resident(prompt_tokens, gen_config) {
@@ -978,14 +1105,20 @@ fn run_cuda_benchmark(
                 )));
             }
         }
-        print!("  Warmup {}/{}\r", i + 1, config.warmup);
-        std::io::Write::flush(&mut std::io::stdout()).ok();
+        if !config.quiet {
+            eprint!("  Warmup {}/{}\r", i + 1, config.warmup);
+            std::io::Write::flush(&mut std::io::stderr()).ok();
+        }
     }
-    println!("  Warmup complete        ");
-    println!();
+    if !config.quiet {
+        eprintln!("  Warmup complete        ");
+        eprintln!();
+    }
 
     // Measurement with CUDA
-    println!("{}", "Running benchmark (GPU)...".yellow());
+    if !config.quiet {
+        eprintln!("{}", "Running benchmark (GPU)...".yellow());
+    }
     let mut iteration_times = Vec::with_capacity(config.iterations);
     let mut total_tokens = 0usize;
     let mut first_token_time = Duration::ZERO;
@@ -1014,17 +1147,21 @@ fn run_cuda_benchmark(
                 Duration::from_secs_f64(iter_time.as_secs_f64() / tokens_generated.max(1) as f64);
         }
 
-        print!(
-            "  Iteration {}/{}: {} tokens in {:.2}s\r",
-            i + 1,
-            config.iterations,
-            tokens_generated,
-            iter_time.as_secs_f32()
-        );
-        std::io::Write::flush(&mut std::io::stdout()).ok();
+        if !config.quiet {
+            eprint!(
+                "  Iteration {}/{}: {} tokens in {:.2}s\r",
+                i + 1,
+                config.iterations,
+                tokens_generated,
+                iter_time.as_secs_f32()
+            );
+            std::io::Write::flush(&mut std::io::stderr()).ok();
+        }
     }
-    println!();
-    println!();
+    if !config.quiet {
+        eprintln!();
+        eprintln!();
+    }
 
     calculate_benchmark_stats(iteration_times, total_tokens, first_token_time, config)
 }
@@ -1047,25 +1184,35 @@ fn run_cpu_benchmark(
         .map_err(|e| CliError::ValidationFailed(format!("Failed to create model: {e}")))?;
 
     let load_time = start.elapsed();
-    println!(
-        "{} in {:.2}s (CPU)",
-        "Model ready".green(),
-        load_time.as_secs_f32()
-    );
-    println!();
+    if !config.quiet {
+        eprintln!(
+            "{} in {:.2}s (CPU)",
+            "Model ready".green(),
+            load_time.as_secs_f32()
+        );
+        eprintln!();
+    }
 
     // Warmup
-    println!("{}", "Running warmup (CPU)...".yellow());
+    if !config.quiet {
+        eprintln!("{}", "Running warmup (CPU)...".yellow());
+    }
     for i in 0..config.warmup {
         let _ = model.generate_with_cache(prompt_tokens, gen_config);
-        print!("  Warmup {}/{}\r", i + 1, config.warmup);
-        std::io::Write::flush(&mut std::io::stdout()).ok();
+        if !config.quiet {
+            eprint!("  Warmup {}/{}\r", i + 1, config.warmup);
+            std::io::Write::flush(&mut std::io::stderr()).ok();
+        }
     }
-    println!("  Warmup complete        ");
-    println!();
+    if !config.quiet {
+        eprintln!("  Warmup complete        ");
+        eprintln!();
+    }
 
     // Measurement
-    println!("{}", "Running benchmark (CPU)...".yellow());
+    if !config.quiet {
+        eprintln!("{}", "Running benchmark (CPU)...".yellow());
+    }
     let mut iteration_times = Vec::with_capacity(config.iterations);
     let mut total_tokens = 0usize;
     let mut first_token_time = Duration::ZERO;
@@ -1087,17 +1234,21 @@ fn run_cpu_benchmark(
                 Duration::from_secs_f64(iter_time.as_secs_f64() / tokens_generated.max(1) as f64);
         }
 
-        print!(
-            "  Iteration {}/{}: {} tokens in {:.2}s\r",
-            i + 1,
-            config.iterations,
-            tokens_generated,
-            iter_time.as_secs_f32()
-        );
-        std::io::Write::flush(&mut std::io::stdout()).ok();
+        if !config.quiet {
+            eprint!(
+                "  Iteration {}/{}: {} tokens in {:.2}s\r",
+                i + 1,
+                config.iterations,
+                tokens_generated,
+                iter_time.as_secs_f32()
+            );
+            std::io::Write::flush(&mut std::io::stderr()).ok();
+        }
     }
-    println!();
-    println!();
+    if !config.quiet {
+        eprintln!();
+        eprintln!();
+    }
 
     calculate_benchmark_stats(iteration_times, total_tokens, first_token_time, config)
 }
@@ -1181,6 +1332,7 @@ mod tests {
             iterations: 10,
             max_tokens: 64,
             prompt: "Custom prompt".to_string(),
+            quiet: false,
         };
         assert_eq!(config.warmup, 5);
         assert_eq!(config.iterations, 10);
@@ -1297,6 +1449,7 @@ mod tests {
             None,  // prompt
             false, // fast
             None,  // brick
+            false, // json
         );
         // Should fail - file doesn't exist
         assert!(result.is_err());
@@ -1313,6 +1466,7 @@ mod tests {
             None,  // prompt
             false, // fast
             None,  // brick
+            false, // json
         );
         // Should fail - it's a directory not a file
         assert!(result.is_err());
@@ -1330,6 +1484,7 @@ mod tests {
             None,                      // prompt
             false,                     // fast
             Some("invalid_brick_xyz"), // invalid brick name
+            false,                     // json
         );
         // Should fail - either no inference feature or invalid brick
         assert!(result.is_err());
@@ -1347,6 +1502,7 @@ mod tests {
             Some("Custom test prompt"),
             false, // fast
             None,  // brick
+            false, // json
         );
         // Will fail since it's not a real model, but tests the path
         assert!(result.is_err());
@@ -1357,13 +1513,13 @@ mod tests {
         // Test .apr extension
         let mut file_apr = NamedTempFile::with_suffix(".apr").expect("create temp file");
         file_apr.write_all(b"not a real apr").expect("write");
-        let result = run(file_apr.path(), 1, 1, 16, None, false, None);
+        let result = run(file_apr.path(), 1, 1, 16, None, false, None, false);
         assert!(result.is_err()); // Will fail - invalid format
 
         // Test .safetensors extension
         let mut file_st = NamedTempFile::with_suffix(".safetensors").expect("create temp file");
         file_st.write_all(b"not a real safetensors").expect("write");
-        let result = run(file_st.path(), 1, 1, 16, None, false, None);
+        let result = run(file_st.path(), 1, 1, 16, None, false, None, false);
         assert!(result.is_err()); // Will fail - invalid format
     }
 
@@ -1376,7 +1532,7 @@ mod tests {
     fn test_brick_benchmark_rms_norm() {
         // Create a dummy file
         let file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
-        let _result = run(file.path(), 1, 1, 16, None, false, Some("rms_norm"));
+        let _result = run(file.path(), 1, 1, 16, None, false, Some("rms_norm"), false);
         // May pass or fail depending on implementation, but should not panic
         // The important thing is the brick name is recognized
     }
@@ -1393,6 +1549,7 @@ mod tests {
             None,
             false,
             Some("nonexistent_brick"),
+            false,
         );
         assert!(result.is_err());
         // Error message should mention unknown brick type
@@ -1409,6 +1566,7 @@ mod tests {
             iterations: 0,
             max_tokens: 0,
             prompt: String::new(),
+            quiet: false,
         };
         assert_eq!(config.warmup, 0);
         assert_eq!(config.iterations, 0);
@@ -1423,6 +1581,7 @@ mod tests {
             iterations: 10000,
             max_tokens: 4096,
             prompt: "x".repeat(10000),
+            quiet: false,
         };
         assert_eq!(config.warmup, 1000);
         assert_eq!(config.iterations, 10000);
@@ -1437,6 +1596,7 @@ mod tests {
             iterations: 1,
             max_tokens: 32,
             prompt: "日本語テスト 🎉 émojis".to_string(),
+            quiet: false,
         };
         assert!(config.prompt.contains('日'));
         assert!(config.prompt.contains('🎉'));
@@ -1547,7 +1707,7 @@ mod tests {
     fn test_run_empty_file() {
         let file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
         // File is empty - should fail validation
-        let result = run(file.path(), 1, 1, 16, None, false, None);
+        let result = run(file.path(), 1, 1, 16, None, false, None, false);
         assert!(result.is_err());
     }
 
@@ -1555,7 +1715,7 @@ mod tests {
     fn test_run_unknown_extension() {
         let mut file = NamedTempFile::with_suffix(".xyz").expect("create temp file");
         file.write_all(b"some content").expect("write");
-        let result = run(file.path(), 1, 1, 16, None, false, None);
+        let result = run(file.path(), 1, 1, 16, None, false, None, false);
         assert!(result.is_err());
     }
 
@@ -1563,7 +1723,7 @@ mod tests {
     fn test_run_no_extension() {
         let mut file = NamedTempFile::new().expect("create temp file");
         file.write_all(b"some content").expect("write");
-        let result = run(file.path(), 1, 1, 16, None, false, None);
+        let result = run(file.path(), 1, 1, 16, None, false, None, false);
         assert!(result.is_err());
     }
 
@@ -1702,6 +1862,7 @@ mod tests {
             iterations: 100,
             max_tokens: 256,
             prompt: "Explain quantum computing".to_string(),
+            quiet: false,
         };
         let path = Path::new("/models/large-model.safetensors");
         print_header(path, &config);
@@ -1714,6 +1875,7 @@ mod tests {
             iterations: 0,
             max_tokens: 0,
             prompt: String::new(),
+            quiet: false,
         };
         let path = Path::new("model.apr");
         print_header(path, &config);
@@ -1980,6 +2142,7 @@ mod tests {
             iterations: 5,
             max_tokens: 32,
             prompt: "test".to_string(),
+            quiet: false,
         };
         let result =
             calculate_benchmark_stats(times, 100, Duration::from_millis(50), &config).unwrap();
@@ -2010,6 +2173,7 @@ mod tests {
             iterations: 5,
             max_tokens: 32,
             prompt: "test".to_string(),
+            quiet: false,
         };
         let result =
             calculate_benchmark_stats(times, 50, Duration::from_millis(10), &config).unwrap();
@@ -2039,6 +2203,7 @@ mod tests {
             iterations: 1,
             max_tokens: 32,
             prompt: "test".to_string(),
+            quiet: false,
         };
         let result =
             calculate_benchmark_stats(times, 10, Duration::from_millis(50), &config).unwrap();
@@ -2062,6 +2227,7 @@ mod tests {
             iterations: 5,
             max_tokens: 32,
             prompt: "test".to_string(),
+            quiet: false,
         };
         // 500 tokens / 0.5s = 1000 tok/s
         let result =
@@ -2081,6 +2247,7 @@ mod tests {
             iterations: 5,
             max_tokens: 32,
             prompt: "test".to_string(),
+            quiet: false,
         };
         // 10 tokens / 10s = 1 tok/s
         let result =
@@ -2100,6 +2267,7 @@ mod tests {
             iterations: 5,
             max_tokens: 32,
             prompt: "test".to_string(),
+            quiet: false,
         };
         // 300 tokens / 5s = 60 tok/s
         let result =
@@ -2122,6 +2290,7 @@ mod tests {
             iterations: 3,
             max_tokens: 32,
             prompt: "test".to_string(),
+            quiet: false,
         };
         let result = calculate_benchmark_stats(
             original_times.clone(),
@@ -2150,6 +2319,7 @@ mod tests {
             iterations: 4,
             max_tokens: 32,
             prompt: "test".to_string(),
+            quiet: false,
         };
         let result =
             calculate_benchmark_stats(times, 40, Duration::from_millis(25), &config).unwrap();
@@ -2172,6 +2342,7 @@ mod tests {
             iterations: 3,
             max_tokens: 32,
             prompt: "test".to_string(),
+            quiet: false,
         };
         let result =
             calculate_benchmark_stats(times, 30, Duration::from_millis(10), &config).unwrap();
@@ -2189,6 +2360,7 @@ mod tests {
             iterations: 10,
             max_tokens: 32,
             prompt: "test".to_string(),
+            quiet: false,
         };
         let result =
             calculate_benchmark_stats(times, 1000, Duration::from_nanos(10), &config).unwrap();
@@ -2213,6 +2385,7 @@ mod tests {
             iterations: 5,
             max_tokens: 32,
             prompt: "test".to_string(),
+            quiet: false,
         };
         let result =
             calculate_benchmark_stats(times, 50, Duration::from_millis(10), &config).unwrap();
@@ -2236,6 +2409,7 @@ mod tests {
             iterations: 2,
             max_tokens: 32,
             prompt: "test".to_string(),
+            quiet: false,
         };
         let result =
             calculate_benchmark_stats(times, 20, Duration::from_millis(50), &config).unwrap();
@@ -2258,6 +2432,7 @@ mod tests {
             iterations: 3,
             max_tokens: 32,
             prompt: "test".to_string(),
+            quiet: false,
         };
         let result = calculate_benchmark_stats(times, 0, Duration::ZERO, &config).unwrap();
 
@@ -2276,6 +2451,7 @@ mod tests {
             iterations: 3,
             max_tokens: 32,
             prompt: "test".to_string(),
+            quiet: false,
         };
         let ttft = Duration::from_millis(42);
         let result = calculate_benchmark_stats(times, 30, ttft, &config).unwrap();
@@ -2293,7 +2469,7 @@ mod tests {
         // This exercises the prompt.unwrap_or("What is 2+2?") branch at line 109
         let mut file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
         file.write_all(b"fake gguf data").expect("write");
-        let result = run(file.path(), 1, 1, 16, None, false, None);
+        let result = run(file.path(), 1, 1, 16, None, false, None, false);
         // Will error because it's not a real model, but exercises the None prompt path
         assert!(result.is_err());
     }
@@ -2303,7 +2479,7 @@ mod tests {
         // When prompt is Some, run() should use the provided prompt
         let mut file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
         file.write_all(b"fake gguf data").expect("write");
-        let result = run(file.path(), 1, 1, 16, Some("Hello world"), false, None);
+        let result = run(file.path(), 1, 1, 16, Some("Hello world"), false, None, false);
         assert!(result.is_err());
     }
 
@@ -2312,7 +2488,7 @@ mod tests {
         // fast=true should not change behavior (deprecated parameter)
         let mut file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
         file.write_all(b"fake gguf data").expect("write");
-        let result = run(file.path(), 1, 1, 16, None, true, None);
+        let result = run(file.path(), 1, 1, 16, None, true, None, false);
         assert!(result.is_err());
     }
 
@@ -2320,7 +2496,7 @@ mod tests {
     fn test_run_zero_warmup_iterations() {
         let mut file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
         file.write_all(b"fake gguf data").expect("write");
-        let result = run(file.path(), 0, 0, 0, None, false, None);
+        let result = run(file.path(), 0, 0, 0, None, false, None, false);
         assert!(result.is_err());
     }
 
@@ -2328,7 +2504,7 @@ mod tests {
     fn test_run_large_max_tokens() {
         let mut file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
         file.write_all(b"fake gguf data").expect("write");
-        let result = run(file.path(), 1, 1, 100_000, None, false, None);
+        let result = run(file.path(), 1, 1, 100_000, None, false, None, false);
         assert!(result.is_err());
     }
 
@@ -2341,7 +2517,7 @@ mod tests {
     fn test_brick_name_rms_norm_valid() {
         let file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
         // rms_norm is a valid brick name - should not return "Unknown brick" error
-        let result = run(file.path(), 1, 3, 16, None, false, Some("rms_norm"));
+        let result = run(file.path(), 1, 3, 16, None, false, Some("rms_norm"), false);
         // Either succeeds or fails with a non-"Unknown brick" error
         if let Err(e) = &result {
             let msg = format!("{e}");
@@ -2353,7 +2529,7 @@ mod tests {
     #[test]
     fn test_brick_name_qkv_valid() {
         let file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
-        let result = run(file.path(), 1, 3, 16, None, false, Some("qkv"));
+        let result = run(file.path(), 1, 3, 16, None, false, Some("qkv"), false);
         if let Err(e) = &result {
             let msg = format!("{e}");
             assert!(!msg.contains("Unknown brick type"));
@@ -2364,7 +2540,7 @@ mod tests {
     #[test]
     fn test_brick_name_rope_valid() {
         let file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
-        let result = run(file.path(), 1, 3, 16, None, false, Some("rope"));
+        let result = run(file.path(), 1, 3, 16, None, false, Some("rope"), false);
         if let Err(e) = &result {
             let msg = format!("{e}");
             assert!(!msg.contains("Unknown brick type"));
@@ -2375,7 +2551,7 @@ mod tests {
     #[test]
     fn test_brick_name_attn_valid() {
         let file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
-        let result = run(file.path(), 1, 3, 16, None, false, Some("attn"));
+        let result = run(file.path(), 1, 3, 16, None, false, Some("attn"), false);
         if let Err(e) = &result {
             let msg = format!("{e}");
             assert!(!msg.contains("Unknown brick type"));
@@ -2386,7 +2562,7 @@ mod tests {
     #[test]
     fn test_brick_name_attention_alias_valid() {
         let file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
-        let result = run(file.path(), 1, 3, 16, None, false, Some("attention"));
+        let result = run(file.path(), 1, 3, 16, None, false, Some("attention"), false);
         if let Err(e) = &result {
             let msg = format!("{e}");
             assert!(!msg.contains("Unknown brick type"));
@@ -2397,7 +2573,7 @@ mod tests {
     #[test]
     fn test_brick_name_o_proj_valid() {
         let file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
-        let result = run(file.path(), 1, 3, 16, None, false, Some("o_proj"));
+        let result = run(file.path(), 1, 3, 16, None, false, Some("o_proj"), false);
         if let Err(e) = &result {
             let msg = format!("{e}");
             assert!(!msg.contains("Unknown brick type"));
@@ -2408,7 +2584,7 @@ mod tests {
     #[test]
     fn test_brick_name_ffn_valid() {
         let file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
-        let result = run(file.path(), 1, 3, 16, None, false, Some("ffn"));
+        let result = run(file.path(), 1, 3, 16, None, false, Some("ffn"), false);
         if let Err(e) = &result {
             let msg = format!("{e}");
             assert!(!msg.contains("Unknown brick type"));
@@ -2419,7 +2595,7 @@ mod tests {
     #[test]
     fn test_brick_name_layer_valid() {
         let file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
-        let result = run(file.path(), 1, 3, 16, None, false, Some("layer"));
+        let result = run(file.path(), 1, 3, 16, None, false, Some("layer"), false);
         if let Err(e) = &result {
             let msg = format!("{e}");
             assert!(!msg.contains("Unknown brick type"));
@@ -2430,7 +2606,7 @@ mod tests {
     #[test]
     fn test_brick_name_unknown_returns_error() {
         let file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
-        let result = run(file.path(), 1, 3, 16, None, false, Some("unknown_thing"));
+        let result = run(file.path(), 1, 3, 16, None, false, Some("unknown_thing"), false);
         assert!(result.is_err());
         let msg = format!("{}", result.unwrap_err());
         assert!(msg.contains("Unknown brick type"));
@@ -2441,7 +2617,7 @@ mod tests {
     #[test]
     fn test_brick_name_empty_string_returns_error() {
         let file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
-        let result = run(file.path(), 1, 3, 16, None, false, Some(""));
+        let result = run(file.path(), 1, 3, 16, None, false, Some(""), false);
         assert!(result.is_err());
         let msg = format!("{}", result.unwrap_err());
         assert!(msg.contains("Unknown brick type"));
@@ -2452,7 +2628,7 @@ mod tests {
     fn test_brick_name_case_sensitive() {
         // Brick names are case-sensitive: "RMS_NORM" != "rms_norm"
         let file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
-        let result = run(file.path(), 1, 3, 16, None, false, Some("RMS_NORM"));
+        let result = run(file.path(), 1, 3, 16, None, false, Some("RMS_NORM"), false);
         assert!(result.is_err());
         let msg = format!("{}", result.unwrap_err());
         assert!(msg.contains("Unknown brick type"));
@@ -2604,6 +2780,7 @@ mod tests {
             iterations: 1,
             max_tokens: 1,
             prompt: "x".to_string(),
+            quiet: false,
         };
         assert_eq!(config.prompt.len(), 1);
     }
@@ -2615,6 +2792,7 @@ mod tests {
             iterations: 1,
             max_tokens: 64,
             prompt: "Line 1\nLine 2\nLine 3".to_string(),
+            quiet: false,
         };
         assert!(config.prompt.contains('\n'));
         assert_eq!(config.prompt.lines().count(), 3);
@@ -2627,6 +2805,7 @@ mod tests {
             iterations: usize::MAX,
             max_tokens: usize::MAX,
             prompt: "test".to_string(),
+            quiet: false,
         };
         assert_eq!(config.warmup, usize::MAX);
         assert_eq!(config.iterations, usize::MAX);
@@ -2705,7 +2884,7 @@ mod tests {
         let mut content = vec![0x47, 0x47, 0x55, 0x46]; // "GGUF"
         content.extend_from_slice(&[0; 100]); // padding
         file.write_all(&content).expect("write");
-        let result = run(file.path(), 1, 1, 16, None, false, None);
+        let result = run(file.path(), 1, 1, 16, None, false, None, false);
         assert!(result.is_err());
     }
 
@@ -2719,7 +2898,7 @@ mod tests {
         content.extend_from_slice(&len);
         content.extend_from_slice(header);
         file.write_all(&content).expect("write");
-        let result = run(file.path(), 1, 1, 16, None, false, None);
+        let result = run(file.path(), 1, 1, 16, None, false, None, false);
         assert!(result.is_err());
     }
 
@@ -2729,7 +2908,7 @@ mod tests {
         let mut content = vec![0x41, 0x50, 0x52, 0x32]; // "APR2"
         content.extend_from_slice(&[0; 200]);
         file.write_all(&content).expect("write");
-        let result = run(file.path(), 1, 1, 16, None, false, None);
+        let result = run(file.path(), 1, 1, 16, None, false, None, false);
         assert!(result.is_err());
     }
 
@@ -2741,7 +2920,7 @@ mod tests {
         file.write_all(b"fake data").expect("write");
 
         // warmup=7, iterations=13, max_tokens=128, prompt=Some("test prompt")
-        let result = run(file.path(), 7, 13, 128, Some("test prompt"), false, None);
+        let result = run(file.path(), 7, 13, 128, Some("test prompt"), false, None, false);
         assert!(result.is_err());
     }
 
@@ -2757,6 +2936,7 @@ mod tests {
             iterations: 5,
             max_tokens: 32,
             prompt: "What is 2+2?".to_string(),
+            quiet: false,
         };
         let path = Path::new("/models/test.gguf");
         print_header(path, &config);
@@ -2789,6 +2969,7 @@ mod tests {
             iterations: 3,
             max_tokens: 32,
             prompt: "test".to_string(),
+            quiet: false,
         };
         let result =
             calculate_benchmark_stats(times, 30, Duration::from_secs(10), &config).unwrap();
@@ -2816,6 +2997,7 @@ mod tests {
             iterations: 5,
             max_tokens: 32,
             prompt: "test".to_string(),
+            quiet: false,
         };
         let result =
             calculate_benchmark_stats(times, 50, Duration::from_millis(50), &config).unwrap();
@@ -2835,6 +3017,7 @@ mod tests {
             iterations: 5,
             max_tokens: 32,
             prompt: "test".to_string(),
+            quiet: false,
         };
         // 10000 tokens in 50ms = 200,000 tok/s
         let result =

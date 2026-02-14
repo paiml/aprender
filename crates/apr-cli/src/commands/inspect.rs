@@ -25,6 +25,21 @@ struct InspectResult {
     tensor_count: u32,
     size_bytes: u64,
     checksum_valid: bool,
+    /// GH-249: Top-level architecture field for parity checker compatibility
+    #[serde(skip_serializing_if = "Option::is_none")]
+    architecture: Option<String>,
+    /// GH-249: Top-level num_layers for parity checker compatibility
+    #[serde(skip_serializing_if = "Option::is_none")]
+    num_layers: Option<usize>,
+    /// GH-249: Top-level num_heads for parity checker compatibility
+    #[serde(skip_serializing_if = "Option::is_none")]
+    num_heads: Option<usize>,
+    /// GH-249: Top-level hidden_size for parity checker compatibility
+    #[serde(skip_serializing_if = "Option::is_none")]
+    hidden_size: Option<usize>,
+    /// GH-249: Top-level vocab_size for parity checker compatibility
+    #[serde(skip_serializing_if = "Option::is_none")]
+    vocab_size: Option<usize>,
     flags: FlagsInfo,
     metadata: MetadataInfo,
 }
@@ -414,6 +429,12 @@ fn read_metadata(reader: &mut BufReader<File>, header: &HeaderData) -> MetadataI
 
 fn output_json(path: &Path, file_size: u64, header: &HeaderData, metadata: MetadataInfo) {
     let (v_maj, v_min) = header.version;
+    // GH-249: Promote key metadata fields to top level for parity checker compatibility
+    let architecture = metadata.architecture.clone();
+    let num_layers = metadata.num_layers;
+    let num_heads = metadata.num_heads;
+    let hidden_size = metadata.hidden_size;
+    let vocab_size = metadata.vocab_size;
     let result = InspectResult {
         file: path.display().to_string(),
         valid: true,
@@ -422,6 +443,11 @@ fn output_json(path: &Path, file_size: u64, header: &HeaderData, metadata: Metad
         tensor_count: header.tensor_count,
         size_bytes: file_size,
         checksum_valid: header.checksum_valid,
+        architecture,
+        num_layers,
+        num_heads,
+        hidden_size,
+        vocab_size,
         flags: flags_from_header(header),
         metadata,
     };
@@ -995,6 +1021,11 @@ mod tests {
             tensor_count: 291,
             size_bytes: 1024 * 1024,
             checksum_valid: true,
+            architecture: None,
+            num_layers: None,
+            num_heads: None,
+            hidden_size: None,
+            vocab_size: None,
             flags: FlagsInfo {
                 lz4_compressed: false,
                 zstd_compressed: false,
