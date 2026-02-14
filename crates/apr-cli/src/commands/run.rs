@@ -2063,17 +2063,20 @@ pub(crate) fn run(
     trace_level: &str,
     profile: bool,
 ) -> Result<()> {
-    if offline {
-        println!("{}", "=== APR Run (OFFLINE MODE) ===".cyan().bold());
-        eprintln!(
-            "{}",
-            "Network access disabled. Only local/cached models allowed.".yellow()
-        );
-    } else {
-        println!("{}", "=== APR Run ===".cyan().bold());
+    // GH-240: Suppress header/source in JSON mode for clean machine-parseable output
+    if output_format != "json" {
+        if offline {
+            println!("{}", "=== APR Run (OFFLINE MODE) ===".cyan().bold());
+            eprintln!(
+                "{}",
+                "Network access disabled. Only local/cached models allowed.".yellow()
+            );
+        } else {
+            println!("{}", "=== APR Run ===".cyan().bold());
+        }
+        println!();
+        println!("Source: {source}");
     }
-    println!();
-    println!("Source: {source}");
 
     // Setup trace config if tracing enabled (APR-TRACE-001)
     if trace {
