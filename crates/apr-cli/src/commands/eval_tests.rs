@@ -291,7 +291,7 @@ fn test_sample_lambada_content() {
 
 #[test]
 fn test_run_unknown_dataset() {
-    let result = run(Path::new("test.apr"), "invalid_dataset", None, None, None);
+    let result = run(Path::new("test.apr"), "invalid_dataset", None, None, None, false);
 
     assert!(result.is_err());
     match result {
@@ -310,6 +310,7 @@ fn test_run_file_not_found() {
         None,
         None,
         None,
+        false,
     );
 
     // Will fail because file doesn't exist
@@ -324,6 +325,7 @@ fn test_run_custom_without_text() {
         None, // Missing text for custom dataset
         None,
         None,
+        false,
     );
 
     // Will fail at validation or file loading
@@ -660,6 +662,7 @@ fn test_run_with_max_tokens() {
         None,
         Some(128),
         None,
+        false,
     );
     assert!(result.is_err());
 }
@@ -672,6 +675,7 @@ fn test_run_with_threshold() {
         None,
         None,
         Some(5.0),
+        false,
     );
     assert!(result.is_err());
 }
@@ -685,6 +689,7 @@ fn test_run_custom_with_text() {
         Some("test input text"),
         None,
         None,
+        false,
     );
     assert!(result.is_err());
 }

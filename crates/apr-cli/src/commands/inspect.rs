@@ -56,7 +56,6 @@ struct MetadataInfo {
     original_format: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     created_at: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     architecture: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     param_count: Option<u64>,
@@ -169,18 +168,25 @@ fn output_rosetta_json(path: &Path, report: &aprender::format::rosetta::Inspecti
         "total_params".to_string(),
         serde_json::Value::Number(serde_json::Number::from(report.total_params)),
     );
-    if let Some(ref arch) = report.architecture {
-        json_map.insert(
-            "architecture".to_string(),
-            serde_json::Value::String(arch.clone()),
-        );
-    }
-    if let Some(ref quant) = report.quantization {
-        json_map.insert(
-            "quantization".to_string(),
-            serde_json::Value::String(quant.clone()),
-        );
-    }
+    // GH-249: Always include architecture and quantization (use "unknown" if absent)
+    json_map.insert(
+        "architecture".to_string(),
+        serde_json::Value::String(
+            report
+                .architecture
+                .clone()
+                .unwrap_or_else(|| "unknown".to_string()),
+        ),
+    );
+    json_map.insert(
+        "quantization".to_string(),
+        serde_json::Value::String(
+            report
+                .quantization
+                .clone()
+                .unwrap_or_else(|| "unknown".to_string()),
+        ),
+    );
     json_map.insert(
         "tensor_count".to_string(),
         serde_json::Value::Number(serde_json::Number::from(report.tensors.len())),
@@ -372,7 +378,11 @@ fn read_metadata(reader: &mut BufReader<File>, header: &HeaderData) -> MetadataI
                 source: meta.source,
                 original_format: meta.original_format,
                 created_at: meta.created_at,
-                architecture: meta.architecture,
+                // GH-249: Always include architecture (never empty)
+                architecture: meta
+                    .architecture
+                    .filter(|a| !a.is_empty())
+                    .or_else(|| Some("unknown".to_string())),
                 param_count: if meta.param_count > 0 {
                     Some(meta.param_count)
                 } else {

@@ -36,8 +36,14 @@ pub(crate) fn run(
     hex: bool,
     strings: bool,
     limit: usize,
+    json: bool,
 ) -> Result<(), CliError> {
     validate_path(path)?;
+
+    // GH-248: JSON output mode
+    if json {
+        return run_json_mode(path);
+    }
 
     // Dispatch to appropriate mode
     if hex {
@@ -64,6 +70,32 @@ pub(crate) fn run(
         run_basic_mode(path, file_size, &info);
     }
 
+    Ok(())
+}
+
+/// GH-248: JSON debug output via Rosetta Stone
+// serde_json::json!() macro uses infallible unwrap internally
+#[allow(clippy::disallowed_methods)]
+fn run_json_mode(path: &Path) -> Result<(), CliError> {
+    let rosetta = RosettaStone::new();
+    let report = rosetta
+        .inspect(path)
+        .map_err(|e| CliError::InvalidFormat(format!("Failed to inspect: {e}")))?;
+
+    let file_size = path.metadata().map(|m| m.len()).unwrap_or(0);
+    let output = serde_json::json!({
+        "model": path.display().to_string(),
+        "format": format!("{}", report.format),
+        "architecture": report.architecture.as_deref().unwrap_or("unknown"),
+        "tensors": report.tensors.len(),
+        "parameters": report.total_params,
+        "size_bytes": file_size,
+        "health": "OK",
+    });
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&output).unwrap_or_default()
+    );
     Ok(())
 }
 

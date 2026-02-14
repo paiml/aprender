@@ -539,11 +539,14 @@ fn compare_tensor_dtypes(
         tensor1.dtype == tensor2.dtype || is_compatible_quant(&tensor1.dtype, &tensor2.dtype);
 
     if !dtypes_compatible {
+        // GH-256: Categorize dtype diffs as Quantization, not Tensor.
+        // This lets consumers distinguish structural issues (missing/extra tensors,
+        // shape mismatches) from expected dtype differences (int4 vs int8).
         diffs.push(DiffEntry {
             field: format!("tensor.{}.dtype", tensor1.name),
             value1: normalize_dtype(&tensor1.dtype),
             value2: normalize_dtype(&tensor2.dtype),
-            category: DiffCategory::Tensor,
+            category: DiffCategory::Quantization,
         });
     }
 }

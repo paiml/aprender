@@ -29,14 +29,14 @@ pub(crate) fn run(file: &Path) -> Result<()> {
     // Display results
     display_report(&report);
 
-    // Return success/failure based on lint result
-    if report.passed() {
-        Ok(())
-    } else {
+    // GH-252: Only fail on errors, not warnings. Warnings are advisory.
+    if report.error_count > 0 {
         Err(CliError::ValidationFailed(format!(
-            "Lint failed with {} warning(s) and {} error(s)",
-            report.warn_count, report.error_count
+            "Lint failed with {} error(s) and {} warning(s)",
+            report.error_count, report.warn_count
         )))
+    } else {
+        Ok(())
     }
 }
 

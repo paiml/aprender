@@ -34,6 +34,16 @@ struct DiffEntryJson {
     category: String,
 }
 
+/// GH-256: Per-category diff counts for structured analysis
+#[derive(Serialize)]
+struct CategoryCounts {
+    format: usize,
+    metadata: usize,
+    tensor: usize,
+    quantization: usize,
+    size: usize,
+}
+
 /// Diff result for JSON output
 #[derive(Serialize)]
 struct DiffResultJson {
@@ -43,11 +53,28 @@ struct DiffResultJson {
     format2: String,
     identical: bool,
     difference_count: usize,
+    /// GH-256: Structural diffs exclude quantization and size (expected for int4 vs int8)
+    structural_diffs: usize,
+    /// GH-256: Per-category breakdown
+    category_counts: CategoryCounts,
     differences: Vec<DiffEntryJson>,
 }
 
 impl From<&DiffReport> for DiffResultJson {
     fn from(report: &DiffReport) -> Self {
+        let format_count = report.differences_by_category(DiffCategory::Format).len();
+        let metadata_count = report
+            .differences_by_category(DiffCategory::Metadata)
+            .len();
+        let tensor_count = report.differences_by_category(DiffCategory::Tensor).len();
+        let quant_count = report
+            .differences_by_category(DiffCategory::Quantization)
+            .len();
+        let size_count = report.differences_by_category(DiffCategory::Size).len();
+
+        // GH-256: Structural = format + metadata + tensor (excludes quantization + size)
+        let structural_diffs = format_count + metadata_count + tensor_count;
+
         Self {
             file1: report.path1.clone(),
             file2: report.path2.clone(),
@@ -55,6 +82,14 @@ impl From<&DiffReport> for DiffResultJson {
             format2: report.format2.clone(),
             identical: report.is_identical(),
             difference_count: report.diff_count(),
+            structural_diffs,
+            category_counts: CategoryCounts {
+                format: format_count,
+                metadata: metadata_count,
+                tensor: tensor_count,
+                quantization: quant_count,
+                size: size_count,
+            },
             differences: report
                 .differences
                 .iter()

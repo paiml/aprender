@@ -87,6 +87,7 @@ pub(crate) fn run(
     text: Option<&str>,
     max_tokens: Option<usize>,
     threshold: Option<f32>,
+    json: bool,
 ) -> Result<()> {
     let dataset_enum: Dataset = dataset
         .parse()
@@ -99,10 +100,17 @@ pub(crate) fn run(
         threshold: threshold.unwrap_or(20.0), // Per spec H13: PPL > 20 indicates garbage
     };
 
-    print_header(path, &config);
+    if !json {
+        print_header(path, &config);
+    }
 
     // Run evaluation
     let result = run_evaluation(path, &config)?;
+
+    // GH-248: JSON output mode
+    if json {
+        return print_json_results(path, &config, &result);
+    }
 
     // Print results
     print_results(&result);
@@ -115,6 +123,33 @@ pub(crate) fn run(
         )));
     }
 
+    Ok(())
+}
+
+/// GH-248: JSON output mode for eval results
+// serde_json::json!() macro uses infallible unwrap internally
+#[allow(clippy::disallowed_methods)]
+fn print_json_results(path: &Path, config: &EvalConfig, result: &EvalResult) -> Result<()> {
+    let output = serde_json::json!({
+        "model": path.display().to_string(),
+        "dataset": format!("{:?}", config.dataset),
+        "perplexity": result.perplexity,
+        "cross_entropy": result.cross_entropy,
+        "tokens_evaluated": result.tokens_evaluated,
+        "eval_time_secs": result.eval_time_secs,
+        "threshold": result.threshold,
+        "passed": result.passed,
+    });
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&output).unwrap_or_default()
+    );
+    if !result.passed {
+        return Err(CliError::ValidationFailed(format!(
+            "Perplexity {:.2} exceeds threshold {:.2} (spec H13)",
+            result.perplexity, result.threshold
+        )));
+    }
     Ok(())
 }
 

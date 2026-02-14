@@ -183,6 +183,10 @@ pub(crate) struct RunResult {
     pub cached: bool,
     /// Number of tokens generated (for benchmark mode)
     pub tokens_generated: Option<usize>,
+    /// Tokens per second from inference engine (GH-250)
+    pub tok_per_sec: Option<f64>,
+    /// Whether GPU was used (GH-250)
+    pub used_gpu: Option<bool>,
 }
 
 /// Run the model on input
@@ -220,6 +224,8 @@ pub(crate) fn run_model(source: &str, options: &RunOptions) -> Result<RunResult>
         duration_secs: duration.as_secs_f64(),
         cached: matches!(model_source, ModelSource::Local(_)) || model_source.cache_path().exists(),
         tokens_generated,
+        tok_per_sec: output.tok_per_sec,
+        used_gpu: output.used_gpu,
     })
 }
 
@@ -603,10 +609,13 @@ fn glob_first(pattern: &Path) -> Option<PathBuf> {
 
 /// Inference output with text and metrics
 /// BUG-RUN-001 FIX: Return actual token count from inference engine
+/// GH-250: Enhanced with tok_per_sec and used_gpu for JSON output
 struct InferenceOutput {
     text: String,
     tokens_generated: Option<usize>,
     inference_ms: Option<f64>,
+    tok_per_sec: Option<f64>,
+    used_gpu: Option<bool>,
 }
 
 /// Execute inference on model
@@ -650,6 +659,8 @@ fn execute_inference(
             ),
             tokens_generated: None,
             inference_ms: None,
+            tok_per_sec: None,
+            used_gpu: None,
         })
     }
 }
@@ -716,10 +727,13 @@ fn execute_with_realizar(
     }
 
     // BUG-RUN-001 FIX: Return actual token count from realizar instead of word approximation
+    // GH-250: Include tok_per_sec and GPU usage for JSON output
     Ok(InferenceOutput {
         text: result.text,
         tokens_generated: Some(result.generated_token_count),
         inference_ms: Some(result.inference_ms),
+        tok_per_sec: Some(result.tok_per_sec),
+        used_gpu: Some(result.used_gpu),
     })
 }
 
@@ -2164,13 +2178,24 @@ fn print_run_output(
     benchmark: bool,
     stream: bool,
 ) -> Result<()> {
-    // GH-240: JSON output mode
+    // GH-240/GH-250: JSON output mode with accurate token counts
     if output_format == "json" && !benchmark {
+        let tokens_generated = result.tokens_generated.unwrap_or(0);
+        let tok_per_sec = result.tok_per_sec.unwrap_or_else(|| {
+            if result.duration_secs > 0.0 {
+                tokens_generated as f64 / result.duration_secs
+            } else {
+                0.0
+            }
+        });
         let json = serde_json::json!({
             "model": source,
             "text": result.text,
-            "tokens_generated": result.tokens_generated.unwrap_or(0),
-            "inference_time_ms": result.duration_secs * 1000.0,
+            "tokens_generated": tokens_generated,
+            "max_tokens": max_tokens,
+            "tok_per_sec": (tok_per_sec * 10.0).round() / 10.0,
+            "inference_time_ms": (result.duration_secs * 1000.0 * 100.0).round() / 100.0,
+            "used_gpu": result.used_gpu.unwrap_or(false),
             "cached": result.cached,
         });
         println!(
@@ -2729,6 +2754,8 @@ mod tests {
             duration_secs: 0.1,
             cached: true,
             tokens_generated: Some(5),
+            tok_per_sec: None,
+            used_gpu: None,
         };
         let _debug = format!("{:?}", result);
         assert_eq!(result.tokens_generated, Some(5));
@@ -2877,6 +2904,8 @@ mod tests {
             duration_secs: 1.0,
             cached: false,
             tokens_generated: None,
+            tok_per_sec: None,
+            used_gpu: None,
         };
         let cloned = result.clone();
         assert_eq!(result.text, cloned.text);
@@ -3801,12 +3830,16 @@ mod tests {
             duration_secs: 0.0,
             cached: false,
             tokens_generated: None,
+            tok_per_sec: None,
+            used_gpu: None,
         };
         let result_zero = RunResult {
             text: String::new(),
             duration_secs: 0.0,
             cached: false,
             tokens_generated: Some(0),
+            tok_per_sec: None,
+            used_gpu: None,
         };
         assert_ne!(
             result_none.tokens_generated, result_zero.tokens_generated,
@@ -3823,6 +3856,8 @@ mod tests {
             duration_secs: 1.234,
             cached: true,
             tokens_generated: Some(42),
+            tok_per_sec: Some(100.0),
+            used_gpu: Some(true),
         };
         assert_eq!(result.text, "output");
         assert!((result.duration_secs - 1.234).abs() < f64::EPSILON);
@@ -4007,6 +4042,8 @@ mod tests {
             text: "hello".to_string(),
             tokens_generated: Some(5),
             inference_ms: Some(10.0),
+            tok_per_sec: Some(500.0),
+            used_gpu: Some(false),
         };
         assert_eq!(output.text, "hello");
         assert_eq!(output.tokens_generated, Some(5));
@@ -4020,6 +4057,8 @@ mod tests {
             text: "result".to_string(),
             tokens_generated: None,
             inference_ms: None,
+            tok_per_sec: None,
+            used_gpu: None,
         };
         assert!(output.tokens_generated.is_none());
         assert!(output.inference_ms.is_none());

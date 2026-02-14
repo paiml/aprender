@@ -199,7 +199,9 @@ fn print_contract_violations(failures: &[(&str, &str)]) {
     }
 }
 
-/// Print APR validation report as JSON (GH-240: clean machine-parseable output).
+/// Print APR validation report as JSON (GH-240/GH-251: machine-parseable output).
+// serde_json::json!() macro uses infallible unwrap internally
+#[allow(clippy::disallowed_methods)]
 fn print_apr_validation_json(
     path: &Path,
     report: &ValidationReport,
@@ -208,15 +210,39 @@ fn print_apr_validation_json(
 ) -> Result<(), CliError> {
     let passed = report.failed_checks().is_empty()
         && min_score.map_or(true, |min| report.total_score >= min);
-    println!("{{");
-    println!("  \"model\": \"{}\",", path.display());
-    println!("  \"format\": \"apr\",");
-    println!("  \"total_score\": {},", report.total_score);
-    println!("  \"grade\": \"{}\",", report.grade());
-    println!("  \"checks\": {},", report.checks.len());
-    println!("  \"failed\": {},", report.failed_checks().len());
-    println!("  \"passed\": {}", passed);
-    println!("}}");
+    let checks_json: Vec<serde_json::Value> = report
+        .checks
+        .iter()
+        .map(|c| {
+            let (status, detail) = match &c.status {
+                CheckStatus::Pass => ("PASS", String::new()),
+                CheckStatus::Fail(r) => ("FAIL", r.clone()),
+                CheckStatus::Warn(r) => ("WARN", r.clone()),
+                CheckStatus::Skip(r) => ("SKIP", r.clone()),
+            };
+            serde_json::json!({
+                "id": c.id,
+                "name": c.name,
+                "status": status,
+                "detail": detail,
+                "points": c.points,
+            })
+        })
+        .collect();
+    let output = serde_json::json!({
+        "model": path.display().to_string(),
+        "format": "apr",
+        "total_score": report.total_score,
+        "grade": report.grade(),
+        "checks": checks_json,
+        "total_checks": report.checks.len(),
+        "failed": report.failed_checks().len(),
+        "passed": passed,
+    });
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&output).unwrap_or_default()
+    );
     if !passed {
         return Err(CliError::ValidationFailed(format!(
             "Score {}/100",

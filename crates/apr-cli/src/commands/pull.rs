@@ -358,15 +358,43 @@ fn write_shard_manifest(
 }
 
 /// List cached models
-pub fn list() -> Result<()> {
-    println!("{}", "=== Cached Models ===".cyan().bold());
-    println!();
-
+// serde_json::json!() macro uses infallible unwrap internally
+#[allow(clippy::disallowed_methods)]
+pub fn list(json: bool) -> Result<()> {
     let fetcher = ModelFetcher::new().map_err(|e| {
         CliError::ValidationFailed(format!("Failed to initialize model fetcher: {e}"))
     })?;
 
     let models = fetcher.list();
+
+    // GH-248: JSON output mode
+    if json {
+        let models_json: Vec<serde_json::Value> = models
+            .iter()
+            .map(|m| {
+                serde_json::json!({
+                    "name": m.name,
+                    "size_bytes": m.size_bytes,
+                    "format": format!("{:?}", m.format),
+                    "path": m.path.display().to_string(),
+                })
+            })
+            .collect();
+        let stats = fetcher.stats();
+        let output = serde_json::json!({
+            "models": models_json,
+            "total": models.len(),
+            "total_size_bytes": stats.total_size_bytes,
+        });
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&output).unwrap_or_default()
+        );
+        return Ok(());
+    }
+
+    println!("{}", "=== Cached Models ===".cyan().bold());
+    println!();
 
     if models.is_empty() {
         println!("{}", "No cached models found.".dimmed());

@@ -1250,7 +1250,11 @@ fn infer_architecture_from_names(
     tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
 ) -> Option<String> {
     let has_model_layers = tensors.keys().any(|k| k.contains("model.layers"));
-    let has_transformer_h = tensors.keys().any(|k| k.contains("transformer.h"));
+    // GH-255: SafeTensors GPT-2 uses "h.N.*" without "transformer." prefix
+    let has_transformer_h = tensors.keys().any(|k| k.contains("transformer.h"))
+        || tensors
+            .keys()
+            .any(|k| k.starts_with("h.") && k.contains(".attn."));
     let has_blk = tensors.keys().any(|k| k.contains("blk."));
 
     if has_model_layers {

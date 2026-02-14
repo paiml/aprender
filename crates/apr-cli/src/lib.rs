@@ -2013,7 +2013,7 @@ fn dispatch_core_command(cli: &Cli) -> Option<Result<(), CliError>> {
             hex,
             strings,
             limit,
-        } => debug::run(file, *drama, *hex, *strings, *limit),
+        } => debug::run(file, *drama, *hex, *strings, *limit, cli.json),
 
         Commands::Validate {
             file,
@@ -2103,7 +2103,7 @@ fn dispatch_core_command(cli: &Cli) -> Option<Result<(), CliError>> {
             *allow_no_config,
         ),
         Commands::Pull { model_ref, force } => pull::run(model_ref, *force),
-        Commands::List => pull::list(),
+        Commands::List => pull::list(cli.json),
         Commands::Rm { model_ref } => pull::remove(model_ref),
         Commands::Convert {
             file,
@@ -2229,13 +2229,15 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
             format,
             sizes,
             depth,
-        } => tree::run(
-            file,
-            filter.as_deref(),
-            format.parse().unwrap_or(tree::TreeFormat::Ascii),
-            *sizes,
-            *depth,
-        ),
+        } => {
+            // GH-248: Global --json flag overrides tree format
+            let tree_format = if cli.json {
+                tree::TreeFormat::Json
+            } else {
+                format.parse().unwrap_or(tree::TreeFormat::Ascii)
+            };
+            tree::run(file, filter.as_deref(), tree_format, *sizes, *depth)
+        }
 
         Commands::Flow {
             file,
@@ -2310,6 +2312,7 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
             text.as_deref(),
             Some(*max_tokens),
             Some(*threshold),
+            cli.json,
         ),
 
         Commands::Profile {

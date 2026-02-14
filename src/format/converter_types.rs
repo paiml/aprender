@@ -254,8 +254,12 @@ impl Architecture {
     /// GPT-2 uses `transformer.h.N.*` naming. The fused `c_attn` tensor is
     /// preserved here and split by `split_gpt2_fused_qkv()` after mapping.
     fn gpt2_map_name(name: &str) -> String {
-        // Handle layer-specific tensors (transformer.h.N.*)
-        if let Some(rest) = name.strip_prefix("transformer.h.") {
+        // GH-255: Handle both "transformer.h.N.*" (PyTorch) and "h.N.*" (SafeTensors) patterns
+        let layer_rest = name
+            .strip_prefix("transformer.h.")
+            .or_else(|| name.strip_prefix("h."));
+
+        if let Some(rest) = layer_rest {
             if let Some(dot_pos) = rest.find('.') {
                 let layer_num = &rest[..dot_pos];
                 let suffix = &rest[dot_pos + 1..];
@@ -280,8 +284,9 @@ impl Architecture {
             }
         }
 
-        // Non-layer tensors
-        match name {
+        // Non-layer tensors: handle with/without "transformer." prefix
+        let base_name = name.strip_prefix("transformer.").unwrap_or(name);
+        match base_name {
             "wte.weight" => "model.embed_tokens.weight".to_string(),
             "wpe.weight" => "model.position_embedding.weight".to_string(),
             "ln_f.weight" => "model.norm.weight".to_string(),
@@ -290,9 +295,10 @@ impl Architecture {
         }
     }
 
-    /// GH-233: Split GPT-2 fused QKV tensors into separate Q, K, V projections.
+    /// GH-233/GH-255: Split GPT-2 fused QKV tensors into separate Q, K, V projections.
     ///
-    /// GPT-2's `c_attn` has shape `[3*hidden, hidden]` — split dim 0 into 3 equal parts.
+    /// GPT-2's `c_attn` can have shape `[hidden, 3*hidden]` (SafeTensors/HF) or
+    /// `[3*hidden, hidden]` (GGUF). Detects fused dimension automatically.
     /// Call this AFTER `map_tensor_names()` when architecture is `Gpt2`.
     pub fn split_gpt2_fused_qkv(tensors: &mut BTreeMap<String, (Vec<f32>, Vec<usize>)>) {
         // Collect fused c_attn tensor names
@@ -335,28 +341,74 @@ impl Architecture {
                     (data[2 * chunk..].to_vec(), vec![chunk]),
                 );
             } else {
-                // Weight: 2D tensor of shape [3*hidden, hidden] — split dim 0
-                if shape.len() != 2 || shape[0] % 3 != 0 {
+                // Weight: 2D tensor — detect fused dimension
+                // SafeTensors/HF: [hidden, 3*hidden] → split columns (dim 1)
+                // GGUF:           [3*hidden, hidden] → split rows (dim 0)
+                if shape.len() != 2 {
                     tensors.insert(fused_name, (data, shape));
                     continue;
                 }
-                let rows_per_proj = shape[0] / 3;
-                let cols = shape[1];
-                let chunk = rows_per_proj * cols;
+
                 let base = fused_name.replace("self_attn.c_attn.weight", "");
 
-                tensors.insert(
-                    format!("{base}self_attn.q_proj.weight"),
-                    (data[..chunk].to_vec(), vec![rows_per_proj, cols]),
-                );
-                tensors.insert(
-                    format!("{base}self_attn.k_proj.weight"),
-                    (data[chunk..2 * chunk].to_vec(), vec![rows_per_proj, cols]),
-                );
-                tensors.insert(
-                    format!("{base}self_attn.v_proj.weight"),
-                    (data[2 * chunk..].to_vec(), vec![rows_per_proj, cols]),
-                );
+                if shape[1] == 3 * shape[0] {
+                    // GH-255: SafeTensors shape [hidden, 3*hidden] — split columns
+                    let rows = shape[0];
+                    let cols_per_proj = shape[0]; // hidden
+                    let total_cols = shape[1]; // 3*hidden
+
+                    let mut q_data = Vec::with_capacity(rows * cols_per_proj);
+                    let mut k_data = Vec::with_capacity(rows * cols_per_proj);
+                    let mut v_data = Vec::with_capacity(rows * cols_per_proj);
+
+                    for row in 0..rows {
+                        let row_start = row * total_cols;
+                        q_data.extend_from_slice(
+                            &data[row_start..row_start + cols_per_proj],
+                        );
+                        k_data.extend_from_slice(
+                            &data[row_start + cols_per_proj..row_start + 2 * cols_per_proj],
+                        );
+                        v_data.extend_from_slice(
+                            &data[row_start + 2 * cols_per_proj..row_start + total_cols],
+                        );
+                    }
+
+                    tensors.insert(
+                        format!("{base}self_attn.q_proj.weight"),
+                        (q_data, vec![rows, cols_per_proj]),
+                    );
+                    tensors.insert(
+                        format!("{base}self_attn.k_proj.weight"),
+                        (k_data, vec![rows, cols_per_proj]),
+                    );
+                    tensors.insert(
+                        format!("{base}self_attn.v_proj.weight"),
+                        (v_data, vec![rows, cols_per_proj]),
+                    );
+                } else if shape[0] % 3 == 0 {
+                    // Original path: [3*hidden, hidden] — split rows (dim 0)
+                    let rows_per_proj = shape[0] / 3;
+                    let cols = shape[1];
+                    let chunk = rows_per_proj * cols;
+
+                    tensors.insert(
+                        format!("{base}self_attn.q_proj.weight"),
+                        (data[..chunk].to_vec(), vec![rows_per_proj, cols]),
+                    );
+                    tensors.insert(
+                        format!("{base}self_attn.k_proj.weight"),
+                        (data[chunk..2 * chunk].to_vec(), vec![rows_per_proj, cols]),
+                    );
+                    tensors.insert(
+                        format!("{base}self_attn.v_proj.weight"),
+                        (data[2 * chunk..].to_vec(), vec![rows_per_proj, cols]),
+                    );
+                } else {
+                    // Can't split — put it back
+                    tensors.insert(fused_name, (data, shape));
+                    continue;
+                }
             }
 
             eprintln!(
