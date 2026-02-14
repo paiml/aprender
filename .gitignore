@@ -46,12 +46,15 @@ models/
 .pmat/bug-hunter-cache/
 .pmat/dead-code-cache.json
 .pmat/metrics/
+.pmat/context.db
 .pmat/context.idx/
 .pmat/workspace.idx/
 .pmat/deps-cache.json
 .pmat-qa/
 .pmat-work/
 **/.pmat/dead-code-cache.json
+**/.pmat/context.db
+**/.pmat/context.idx/
 
 # Generated exports
 probar-export/

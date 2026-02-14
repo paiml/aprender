@@ -1383,11 +1383,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'New task: docs/specifications/qwen2.5-coder-showcase-demo.md'
-  status: completed
+  status: inprogress
   priority: medium
   assigned_to: null
   created: 2026-01-08T17:11:08.672007318+00:00
-  updated: 2026-01-08T17:17:13.458191789+00:00
+  updated: 2026-02-14T11:35:14.734392410+00:00
   spec: null
   acceptance_criteria: []
   phases: []
@@ -3411,6 +3411,22 @@ roadmap:
   assigned_to: null
   created: 2026-02-13T16:11:43.916543161+00:00
   updated: 2026-02-13T16:31:40.698212085+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-237
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-237'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-02-13T16:38:26.474586084+00:00
+  updated: 2026-02-13T16:38:26.474586084+00:00
   spec: null
   acceptance_criteria: []
   phases: []
