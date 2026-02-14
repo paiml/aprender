@@ -4,5 +4,5 @@ comply:
       files: ["contracts/**", "docs/roadmaps/**"]
       reason: "ML model config fields (eos_token, bos_token, embed_tokens) are not secrets — see paiml/paiml-mcp-agent-toolkit#203"
     - rules: ["CB-1000", "CB-1002", "CB-1007"]
-      files: ["models/**", "crates/apr-cli/models/**"]
+      files: ["models", "models/**", "crates/apr-cli/models", "crates/apr-cli/models/**"]
       reason: "Local model cache directories are gitignored — model cards and tokenizers managed by upstream (HF Hub)"
