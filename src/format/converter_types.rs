@@ -365,6 +365,115 @@ impl Architecture {
             );
         }
     }
+
+    /// GH-241: Split GPT-2 fused QKV tensors (raw/quantized version).
+    ///
+    /// Like `split_gpt2_fused_qkv()` but works with raw quantized bytes
+    /// (`GgufRawTensor`) instead of f32 data. Splits by dividing raw bytes
+    /// into 3 equal parts — valid because GGUF row-major storage means
+    /// each projection's quantization blocks are contiguous.
+    pub fn split_gpt2_fused_qkv_raw(
+        tensors: &mut BTreeMap<String, crate::format::gguf::GgufRawTensor>,
+    ) {
+        let fused_keys: Vec<String> = tensors
+            .keys()
+            .filter(|k| k.contains("self_attn.c_attn."))
+            .cloned()
+            .collect();
+
+        for fused_name in fused_keys {
+            let tensor = match tensors.remove(&fused_name) {
+                Some(v) => v,
+                None => continue,
+            };
+
+            let is_bias = fused_name
+                .rsplit_once('.')
+                .is_some_and(|(_, ext)| ext.eq_ignore_ascii_case("bias"));
+
+            if is_bias {
+                // Bias: 1D shape [3*hidden] — split bytes into 3 equal parts
+                if tensor.data.len() % 3 != 0
+                    || tensor.shape.len() != 1
+                    || tensor.shape[0] % 3 != 0
+                {
+                    tensors.insert(fused_name, tensor);
+                    continue;
+                }
+                let byte_chunk = tensor.data.len() / 3;
+                let elem_chunk = tensor.shape[0] / 3;
+                let base = fused_name.replace("self_attn.c_attn.bias", "");
+
+                tensors.insert(
+                    format!("{base}self_attn.q_proj.bias"),
+                    crate::format::gguf::GgufRawTensor {
+                        data: tensor.data[..byte_chunk].to_vec(),
+                        shape: vec![elem_chunk],
+                        dtype: tensor.dtype,
+                    },
+                );
+                tensors.insert(
+                    format!("{base}self_attn.k_proj.bias"),
+                    crate::format::gguf::GgufRawTensor {
+                        data: tensor.data[byte_chunk..2 * byte_chunk].to_vec(),
+                        shape: vec![elem_chunk],
+                        dtype: tensor.dtype,
+                    },
+                );
+                tensors.insert(
+                    format!("{base}self_attn.v_proj.bias"),
+                    crate::format::gguf::GgufRawTensor {
+                        data: tensor.data[2 * byte_chunk..].to_vec(),
+                        shape: vec![elem_chunk],
+                        dtype: tensor.dtype,
+                    },
+                );
+            } else {
+                // Weight: 2D shape [3*hidden, hidden] — split dim 0
+                if tensor.shape.len() != 2
+                    || tensor.shape[0] % 3 != 0
+                    || tensor.data.len() % 3 != 0
+                {
+                    tensors.insert(fused_name, tensor);
+                    continue;
+                }
+                let rows_per_proj = tensor.shape[0] / 3;
+                let cols = tensor.shape[1];
+                let byte_chunk = tensor.data.len() / 3;
+                let base = fused_name.replace("self_attn.c_attn.weight", "");
+
+                tensors.insert(
+                    format!("{base}self_attn.q_proj.weight"),
+                    crate::format::gguf::GgufRawTensor {
+                        data: tensor.data[..byte_chunk].to_vec(),
+                        shape: vec![rows_per_proj, cols],
+                        dtype: tensor.dtype,
+                    },
+                );
+                tensors.insert(
+                    format!("{base}self_attn.k_proj.weight"),
+                    crate::format::gguf::GgufRawTensor {
+                        data: tensor.data[byte_chunk..2 * byte_chunk].to_vec(),
+                        shape: vec![rows_per_proj, cols],
+                        dtype: tensor.dtype,
+                    },
+                );
+                tensors.insert(
+                    format!("{base}self_attn.v_proj.weight"),
+                    crate::format::gguf::GgufRawTensor {
+                        data: tensor.data[2 * byte_chunk..].to_vec(),
+                        shape: vec![rows_per_proj, cols],
+                        dtype: tensor.dtype,
+                    },
+                );
+            }
+
+            eprintln!(
+                "[GH-241] Split fused c_attn tensor (raw): {} → q_proj + k_proj + v_proj",
+                fused_name
+            );
+        }
+    }
 }
 
 // ============================================================================

@@ -134,30 +134,19 @@ fn run_evaluation(path: &Path, config: &EvalConfig) -> Result<EvalResult> {
     let is_apr = path.extension().is_some_and(|e| e == "apr");
     let is_gguf = path.extension().is_some_and(|e| e == "gguf");
 
-    // Route GGUF to realizar's inference engine (PMAT-128)
+    // GH-242: All 3 formats supported via realizar inference engine
     if is_gguf {
         return run_gguf_evaluation(path, config);
     }
-
-    // Realizar-first architecture: all inference goes through realizar.
-    // SafeTensors/APR models must be converted to GGUF for evaluation.
-    if is_safetensors {
-        return Err(CliError::ValidationFailed(
-            "SafeTensors evaluation requires GGUF format. Convert first: \
-             apr convert model.safetensors -o model.gguf"
-                .to_string(),
-        ));
-    }
     if is_apr {
-        return Err(CliError::ValidationFailed(
-            "APR evaluation requires GGUF format. Convert first: \
-             apr export model.apr --format gguf -o model.gguf"
-                .to_string(),
-        ));
+        return run_apr_evaluation(path, config);
+    }
+    if is_safetensors {
+        return run_safetensors_evaluation(path, config);
     }
 
     Err(CliError::ValidationFailed(format!(
-        "Unsupported format for eval: {}. Use GGUF format.",
+        "Unsupported format for eval: {}. Supported: .gguf, .apr, .safetensors",
         path.display()
     )))
 }
@@ -262,10 +251,215 @@ fn run_gguf_evaluation(path: &Path, config: &EvalConfig) -> Result<EvalResult> {
 #[cfg(not(feature = "inference"))]
 fn run_gguf_evaluation(_path: &Path, _config: &EvalConfig) -> Result<EvalResult> {
     Err(CliError::ValidationFailed(
-        "GGUF evaluation requires 'inference' feature. Rebuild with: \
+        "Evaluation requires 'inference' feature. Rebuild with: \
          cargo install --path crates/apr-cli --features inference"
             .to_string(),
     ))
+}
+
+/// GH-242: APR evaluation using realizar's AprTransformer
+#[cfg(feature = "inference")]
+fn run_apr_evaluation(path: &Path, config: &EvalConfig) -> Result<EvalResult> {
+    use realizar::apr_transformer::{AprKVCache, AprTransformer};
+
+    println!("{}", "Loading APR model (realizar)...".yellow());
+    let start = Instant::now();
+
+    let transformer = AprTransformer::from_apr_file(path)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to load APR: {e}")))?;
+
+    let load_time = start.elapsed();
+    println!(
+        "{} in {:.2}s ({} layers, vocab_size={})",
+        "Model ready".green(),
+        load_time.as_secs_f32(),
+        transformer.config.num_layers,
+        transformer.config.vocab_size
+    );
+    println!();
+
+    let eval_text = get_eval_text(config)?;
+    let tokens = tokenize_for_eval(path, &eval_text)?;
+    let tokens: Vec<u32> = if tokens.len() > config.max_tokens {
+        tokens[..config.max_tokens].to_vec()
+    } else {
+        tokens
+    };
+    validate_token_count(&tokens)?;
+
+    println!(
+        "{}",
+        format!("Calculating perplexity on {} tokens...", tokens.len()).yellow()
+    );
+
+    let eval_start = Instant::now();
+    let vocab_size = transformer.config.vocab_size;
+    let mut cache = AprKVCache::new(&transformer.config);
+    let (perplexity, cross_entropy) =
+        calculate_apr_perplexity(&transformer, &mut cache, &tokens, vocab_size)?;
+    let eval_time = eval_start.elapsed();
+
+    let passed = perplexity <= config.threshold;
+    Ok(EvalResult {
+        perplexity,
+        cross_entropy,
+        tokens_evaluated: tokens.len(),
+        eval_time_secs: eval_time.as_secs_f32(),
+        passed,
+        threshold: config.threshold,
+    })
+}
+
+#[cfg(not(feature = "inference"))]
+fn run_apr_evaluation(_path: &Path, _config: &EvalConfig) -> Result<EvalResult> {
+    Err(CliError::ValidationFailed(
+        "Evaluation requires 'inference' feature. Rebuild with: \
+         cargo install --path crates/apr-cli --features inference"
+            .to_string(),
+    ))
+}
+
+/// GH-242: SafeTensors evaluation using realizar's SafeTensors→AprTransformer path
+#[cfg(feature = "inference")]
+fn run_safetensors_evaluation(path: &Path, config: &EvalConfig) -> Result<EvalResult> {
+    use realizar::apr_transformer::AprKVCache;
+    use realizar::safetensors_infer::SafetensorsToAprConverter;
+
+    println!("{}", "Loading SafeTensors model (realizar)...".yellow());
+    let start = Instant::now();
+
+    let transformer = SafetensorsToAprConverter::convert(path)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to load SafeTensors: {e}")))?;
+
+    let load_time = start.elapsed();
+    println!(
+        "{} in {:.2}s ({} layers, vocab_size={})",
+        "Model ready".green(),
+        load_time.as_secs_f32(),
+        transformer.config.num_layers,
+        transformer.config.vocab_size
+    );
+    println!();
+
+    let eval_text = get_eval_text(config)?;
+    let tokens = tokenize_for_eval(path, &eval_text)?;
+    let tokens: Vec<u32> = if tokens.len() > config.max_tokens {
+        tokens[..config.max_tokens].to_vec()
+    } else {
+        tokens
+    };
+    validate_token_count(&tokens)?;
+
+    println!(
+        "{}",
+        format!("Calculating perplexity on {} tokens...", tokens.len()).yellow()
+    );
+
+    let eval_start = Instant::now();
+    let vocab_size = transformer.config.vocab_size;
+    let mut cache = AprKVCache::new(&transformer.config);
+    let (perplexity, cross_entropy) =
+        calculate_apr_perplexity(&transformer, &mut cache, &tokens, vocab_size)?;
+    let eval_time = eval_start.elapsed();
+
+    let passed = perplexity <= config.threshold;
+    Ok(EvalResult {
+        perplexity,
+        cross_entropy,
+        tokens_evaluated: tokens.len(),
+        eval_time_secs: eval_time.as_secs_f32(),
+        passed,
+        threshold: config.threshold,
+    })
+}
+
+#[cfg(not(feature = "inference"))]
+fn run_safetensors_evaluation(_path: &Path, _config: &EvalConfig) -> Result<EvalResult> {
+    Err(CliError::ValidationFailed(
+        "Evaluation requires 'inference' feature. Rebuild with: \
+         cargo install --path crates/apr-cli --features inference"
+            .to_string(),
+    ))
+}
+
+/// GH-242: Tokenize text for evaluation
+#[cfg(feature = "inference")]
+fn tokenize_for_eval(model_path: &Path, text: &str) -> Result<Vec<u32>> {
+    use realizar::apr::AprV2Model;
+
+    // Try tokenizer.json in same directory (uses realizar's BpeTokenizer)
+    if let Some(tokenizer) = AprV2Model::load_tokenizer(model_path) {
+        let tokens = tokenizer.encode(text);
+        if !tokens.is_empty() {
+            return Ok(tokens);
+        }
+    }
+
+    // Try encode_text which searches additional paths
+    if let Some(tokens) = AprV2Model::encode_text(model_path, text) {
+        if !tokens.is_empty() {
+            return Ok(tokens);
+        }
+    }
+
+    Err(CliError::ValidationFailed(
+        "No tokenizer found. Place tokenizer.json next to model file.".to_string(),
+    ))
+}
+
+fn validate_token_count(tokens: &[u32]) -> Result<()> {
+    if tokens.len() < 2 {
+        return Err(CliError::ValidationFailed(
+            "Need at least 2 tokens for perplexity calculation".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+/// GH-242: Calculate perplexity using AprTransformer forward pass
+#[cfg(feature = "inference")]
+fn calculate_apr_perplexity(
+    transformer: &realizar::apr_transformer::AprTransformer,
+    cache: &mut realizar::apr_transformer::AprKVCache,
+    tokens: &[u32],
+    vocab_size: usize,
+) -> Result<(f32, f32)> {
+    let mut total_log_prob = 0.0f64;
+    let mut count = 0usize;
+
+    for (pos, window) in tokens.windows(2).enumerate() {
+        let input_token = window[0];
+        let target_token = window[1];
+
+        let logits = transformer
+            .forward_with_cache(input_token, cache, pos)
+            .map_err(|e| CliError::ValidationFailed(format!("Forward pass failed: {e}")))?;
+
+        let max_logit = logits.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b));
+        let log_sum_exp: f64 = logits
+            .iter()
+            .map(|&l| ((l - max_logit) as f64).exp())
+            .sum::<f64>()
+            .ln()
+            + max_logit as f64;
+
+        let target_idx = target_token as usize;
+        if target_idx < vocab_size {
+            let log_prob = logits[target_idx] as f64 - log_sum_exp;
+            total_log_prob += log_prob;
+            count += 1;
+        }
+    }
+
+    if count == 0 {
+        return Err(CliError::ValidationFailed(
+            "No valid tokens for perplexity calculation".to_string(),
+        ));
+    }
+
+    let cross_entropy = (-total_log_prob / count as f64) as f32;
+    let perplexity = cross_entropy.exp();
+    Ok((perplexity, cross_entropy))
 }
 
 /// PMAT-128: Calculate perplexity using realizar's GGUF inference

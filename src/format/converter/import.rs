@@ -161,7 +161,7 @@ pub(crate) fn apr_import_gguf_raw(
     warn_unverified_architecture(&effective_arch, options.strict)?;
 
     // Map tensor names to APR canonical format using detected architecture
-    let mapped_tensors: BTreeMap<String, GgufRawTensor> = raw_result
+    let mut mapped_tensors: BTreeMap<String, GgufRawTensor> = raw_result
         .tensors
         .into_iter()
         .map(|(name, tensor)| {
@@ -169,6 +169,11 @@ pub(crate) fn apr_import_gguf_raw(
             (mapped_name, tensor)
         })
         .collect();
+
+    // GH-241: Split fused QKV tensors for GPT-2 (raw/quantized version)
+    if effective_arch == Architecture::Gpt2 {
+        Architecture::split_gpt2_fused_qkv_raw(&mut mapped_tensors);
+    }
 
     // MANDATORY CONTRACT ENFORCEMENT (GH-208)
     // The contract is NOT A SUGGESTION - it is the SOURCE OF TRUTH.
