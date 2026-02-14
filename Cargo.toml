@@ -132,12 +132,20 @@ readme = "README.md"
 keywords = ["machine-learning", "classification", "clustering", "statistics", "graph-algorithms"]
 categories = ["science", "algorithms"]
 exclude = [
+    "target/",
+    "*.profraw",
+    "*.profdata",
+    ".vscode/",
+    ".idea/",
     ".pmat/",
+    "proptest-regressions/",
     "tokenizer.json",
     "defect-report-*.json",
     "trace_*.json",
     "docs/specifications/",
     "docs/roadmaps/",
+    "fuzz/",
+    "models/",
 ]
 
 [lints]
