@@ -3434,3 +3434,35 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: docs/specifications/qwen2.5-coder-showcase.md
+  github_issue: null
+  item_type: task
+  title: 'New task: docs/specifications/qwen2.5-coder-showcase.md'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-02-14T14:19:31.830927419+00:00
+  updated: 2026-02-14T14:19:31.830927419+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-242
+  github_issue: 242
+  item_type: task
+  title: apr eval rejects APR format + GGUF fused_matmul type error
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-02-14T14:28:36.727595105+00:00
+  updated: 2026-02-14T14:28:36.727595105+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
