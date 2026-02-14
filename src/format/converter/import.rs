@@ -865,6 +865,19 @@ pub(crate) fn load_tokenizer_from_json(model_path: &Path) -> Option<GgufTokenize
     let base_stem = stem.split('.').next().unwrap_or(stem);
     let pacha_path = model_path.with_file_name(format!("{}.tokenizer.json", base_stem));
 
+    // GH-226: Also check parent directory and sibling subdirectories.
+    // QA workspace layout: safetensors/, apr/, gguf/ are siblings under a model dir,
+    // with tokenizer.json in the safetensors/ subdirectory. When exporting APR→GGUF,
+    // the input APR is at apr/model.apr but tokenizer.json is at ../safetensors/tokenizer.json.
+    let parent_path = model_path
+        .parent()
+        .and_then(|p| p.parent())
+        .map(|p| p.join("tokenizer.json"));
+    let safetensors_sibling_path = model_path
+        .parent()
+        .and_then(|p| p.parent())
+        .map(|p| p.join("safetensors").join("tokenizer.json"));
+
     let tokenizer_path = if standard_path.exists() {
         standard_path
     } else if pacha_path.exists() {
@@ -873,6 +886,23 @@ pub(crate) fn load_tokenizer_from_json(model_path: &Path) -> Option<GgufTokenize
             pacha_path.display()
         );
         pacha_path
+    } else if parent_path.as_ref().is_some_and(|p| p.exists()) {
+        let p = parent_path.expect("checked above");
+        eprintln!(
+            "[GH-226] Found tokenizer in parent directory: {}",
+            p.display()
+        );
+        p
+    } else if safetensors_sibling_path
+        .as_ref()
+        .is_some_and(|p| p.exists())
+    {
+        let p = safetensors_sibling_path.expect("checked above");
+        eprintln!(
+            "[GH-226] Found tokenizer in sibling safetensors/: {}",
+            p.display()
+        );
+        p
     } else {
         return None;
     };

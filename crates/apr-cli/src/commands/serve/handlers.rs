@@ -988,13 +988,24 @@ fn start_gguf_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
 }
 
 /// Extract vocabulary from GGUF model, falling back to placeholder tokens.
+///
+/// GH-226: When the GGUF lacks `tokenizer.ggml.tokens` metadata, the placeholder
+/// vocabulary must include `<unk>` so that `BPETokenizer::new` can find it.
+/// Without this, the serve path fails with "Unknown token '<unk>' not in vocabulary"
+/// and the server exits before binding — causing "Server failed to become ready".
 fn extract_gguf_vocab(
     mapped_model: &realizar::gguf::MappedGGUFModel,
     vocab_size: usize,
 ) -> Vec<String> {
     mapped_model.model.vocabulary().unwrap_or_else(|| {
         eprintln!("Warning: No vocabulary in GGUF, using placeholder tokens");
-        (0..vocab_size).map(|i| format!("token{i}")).collect()
+        let mut vocab: Vec<String> = (0..vocab_size).map(|i| format!("token{i}")).collect();
+        // GH-226: Ensure <unk> is present for BPETokenizer compatibility.
+        // Use slot 0 (standard convention for unknown token).
+        if !vocab.is_empty() {
+            vocab[0] = "<unk>".to_string();
+        }
+        vocab
     })
 }
 
