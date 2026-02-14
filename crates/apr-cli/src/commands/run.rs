@@ -2161,6 +2161,19 @@ fn print_run_output(
     benchmark: bool,
     stream: bool,
 ) -> Result<()> {
+    // GH-240: JSON output mode
+    if output_format == "json" && !benchmark {
+        let json = serde_json::json!({
+            "model": source,
+            "text": result.text,
+            "tokens_generated": result.tokens_generated.unwrap_or(0),
+            "inference_time_ms": result.duration_secs * 1000.0,
+            "cached": result.cached,
+        });
+        println!("{}", serde_json::to_string_pretty(&json).unwrap_or_default());
+        return Ok(());
+    }
+
     if benchmark {
         print_benchmark_results(result, source, output_format, max_tokens);
     } else if stream {
