@@ -705,6 +705,30 @@ impl RosettaStone {
         Self { options }
     }
 
+    /// GH-249: Infer architecture from tensor naming patterns when metadata is absent.
+    fn infer_architecture_from_tensors(tensors: &[TensorInfo]) -> Option<String> {
+        let names: Vec<&str> = tensors.iter().map(|t| t.name.as_str()).collect();
+        let has = |pat: &str| names.iter().any(|n| n.contains(pat));
+
+        // GPT-2: uses c_attn, c_proj, c_fc (Conv1D-style naming)
+        if has("c_attn") || has("attn.c_proj") {
+            return Some("gpt2".to_string());
+        }
+        // Qwen2: uses q_proj.bias (LLaMA doesn't have bias on Q/K/V)
+        if has("q_proj") && has("q_proj.bias") {
+            return Some("qwen2".to_string());
+        }
+        // LLaMA/SmolLM: uses q_proj without bias, gate_proj
+        if has("q_proj") && has("gate_proj") {
+            return Some("llama".to_string());
+        }
+        // Generic transformer fallback
+        if has("self_attn") || has("attention") {
+            return Some("transformer".to_string());
+        }
+        None
+    }
+
     /// Inspect a model file (Genchi Genbutsu - go and see)
     ///
     /// # Errors
@@ -1375,6 +1399,9 @@ impl RosettaStone {
             }
         }
 
+        // GH-249: Infer architecture from tensor names for SafeTensors
+        let architecture = Self::infer_architecture_from_tensors(&tensors);
+
         Ok(InspectionReport {
             format: FormatType::SafeTensors,
             file_size,
@@ -1382,7 +1409,7 @@ impl RosettaStone {
             tensors,
             total_params,
             quantization: None,
-            architecture: None,
+            architecture,
         })
     }
 
@@ -1426,6 +1453,13 @@ impl RosettaStone {
             }
         }
 
+        // GH-249: Infer architecture from tensor names when metadata is empty
+        let architecture = meta
+            .architecture
+            .clone()
+            .filter(|a| !a.is_empty())
+            .or_else(|| Self::infer_architecture_from_tensors(&tensors));
+
         Ok(InspectionReport {
             format: FormatType::Apr,
             file_size,
@@ -1433,7 +1467,7 @@ impl RosettaStone {
             tensors,
             total_params,
             quantization: meta.quantization.as_ref().map(|q| q.quant_type.clone()),
-            architecture: meta.architecture.clone(),
+            architecture,
         })
     }
 

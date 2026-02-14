@@ -252,21 +252,49 @@ fn print_apr_validation_json(
     Ok(())
 }
 
-/// Print Rosetta validation report as JSON (GH-240: clean machine-parseable output).
+/// Print Rosetta validation report as JSON (GH-240/GH-251: machine-parseable output).
+// serde_json::json!() macro uses infallible unwrap internally
+#[allow(clippy::disallowed_methods)]
 fn print_rosetta_validation_json(
     path: &Path,
     report: &RosettaValidationReport,
 ) -> Result<(), CliError> {
-    println!("{{");
-    println!("  \"model\": \"{}\",", path.display());
-    println!("  \"format\": \"rosetta\",");
-    println!("  \"total_tensors\": {},", report.tensor_count);
-    println!("  \"failed_tensors\": {},", report.failed_tensor_count);
-    println!("  \"total_nan\": {},", report.total_nan_count);
-    println!("  \"total_inf\": {},", report.total_inf_count);
-    println!("  \"duration_ms\": {},", report.duration_ms);
-    println!("  \"passed\": {}", report.is_valid);
-    println!("}}");
+    // GH-251: Include individual tensor checks as a list (same schema as APR path)
+    let checks_json: Vec<serde_json::Value> = report
+        .tensors
+        .iter()
+        .map(|tv| {
+            let status = if tv.is_valid { "PASS" } else { "FAIL" };
+            let detail = if tv.failures.is_empty() {
+                String::new()
+            } else {
+                tv.failures.join("; ")
+            };
+            serde_json::json!({
+                "name": tv.name,
+                "status": status,
+                "detail": detail,
+            })
+        })
+        .collect();
+
+    let output = serde_json::json!({
+        "model": path.display().to_string(),
+        "format": "rosetta",
+        "total_tensors": report.tensor_count,
+        "failed_tensors": report.failed_tensor_count,
+        "total_nan": report.total_nan_count,
+        "total_inf": report.total_inf_count,
+        "duration_ms": report.duration_ms,
+        "checks": checks_json,
+        "total_checks": report.tensor_count,
+        "failed": report.failed_tensor_count,
+        "passed": report.is_valid,
+    });
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&output).unwrap_or_default()
+    );
     if !report.is_valid {
         return Err(CliError::ValidationFailed(format!(
             "{} tensors failed validation",

@@ -5114,7 +5114,7 @@ dependencies = [
  "tower 0.4.13",
  "tracing",
  "trueno 0.14.5",
- "trueno-gpu 0.4.17",
+ "trueno-gpu",
  "trueno-quant",
  "uuid",
 ]
@@ -6550,7 +6550,7 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.18",
  "toml",
- "trueno-gpu 0.4.17",
+ "trueno-gpu",
  "wgpu",
 ]
 
@@ -6597,7 +6597,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.18",
- "trueno-gpu 0.4.17 (registry+https://github.com/rust-lang/crates.io-index)",
+ "trueno-gpu",
 ]
 
 [[package]]
@@ -6605,15 +6605,6 @@ name = "trueno-gpu"
 version = "0.4.17"
 dependencies = [
  "libloading",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "trueno-gpu"
-version = "0.4.17"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bbbe0098cf538c9e7ad0f5ed67dcfe9b04913a800b8e6839270ec6805840c959"
-dependencies = [
  "thiserror 2.0.18",
 ]
 

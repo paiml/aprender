@@ -513,17 +513,24 @@ fn shapes_are_compatible(shape1: &[usize], shape2: &[usize]) -> bool {
 }
 
 /// Compare shapes of two matched tensors and push a diff if incompatible.
+/// GH-256: Shape diffs between tensors with different dtypes are categorized as
+/// Quantization (not Tensor/structural), since quantization changes physical shape.
 fn compare_tensor_shapes(
     tensor1: &crate::format::rosetta::TensorInfo,
     tensor2: &crate::format::rosetta::TensorInfo,
     diffs: &mut Vec<DiffEntry>,
 ) {
     if !shapes_are_compatible(&tensor1.shape, &tensor2.shape) {
+        let category = if tensor1.dtype != tensor2.dtype {
+            DiffCategory::Quantization
+        } else {
+            DiffCategory::Tensor
+        };
         diffs.push(DiffEntry {
             field: format!("tensor.{}.shape", tensor1.name),
             value1: format!("{:?}", tensor1.shape),
             value2: format!("{:?} (mapped: {})", tensor2.shape, tensor2.name),
-            category: DiffCategory::Tensor,
+            category,
         });
     }
 }

@@ -105,7 +105,7 @@ pub(crate) fn run(
     }
 
     // Run evaluation
-    let result = run_evaluation(path, &config)?;
+    let result = run_evaluation(path, &config, json)?;
 
     // GH-248: JSON output mode
     if json {
@@ -163,7 +163,7 @@ fn print_header(path: &Path, config: &EvalConfig) {
     println!();
 }
 
-fn run_evaluation(path: &Path, config: &EvalConfig) -> Result<EvalResult> {
+fn run_evaluation(path: &Path, config: &EvalConfig, json: bool) -> Result<EvalResult> {
     // Detect format
     let is_safetensors = path.extension().is_some_and(|e| e == "safetensors");
     let is_apr = path.extension().is_some_and(|e| e == "apr");
@@ -171,13 +171,13 @@ fn run_evaluation(path: &Path, config: &EvalConfig) -> Result<EvalResult> {
 
     // GH-242: All 3 formats supported via realizar inference engine
     if is_gguf {
-        return run_gguf_evaluation(path, config);
+        return run_gguf_evaluation(path, config, json);
     }
     if is_apr {
-        return run_apr_evaluation(path, config);
+        return run_apr_evaluation(path, config, json);
     }
     if is_safetensors {
-        return run_safetensors_evaluation(path, config);
+        return run_safetensors_evaluation(path, config, json);
     }
 
     Err(CliError::ValidationFailed(format!(
@@ -210,10 +210,17 @@ fn get_eval_text(config: &EvalConfig) -> Result<String> {
 /// uninitialized weights. Now uses realizar's `OwnedQuantizedModel` which
 /// properly loads GGUF weights.
 #[cfg(feature = "inference")]
-fn run_gguf_evaluation(path: &Path, config: &EvalConfig) -> Result<EvalResult> {
+fn run_gguf_evaluation(path: &Path, config: &EvalConfig, json: bool) -> Result<EvalResult> {
     use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel};
 
-    println!("{}", "Loading GGUF model (realizar)...".yellow());
+    // GH-257: Progress to stderr when --json, so stdout is clean JSON
+    macro_rules! progress {
+        ($($arg:tt)*) => {
+            if json { eprintln!($($arg)*); } else { println!($($arg)*); }
+        };
+    }
+
+    progress!("{}", "Loading GGUF model (realizar)...".yellow());
     let start = Instant::now();
 
     // Load GGUF via mmap
@@ -225,18 +232,18 @@ fn run_gguf_evaluation(path: &Path, config: &EvalConfig) -> Result<EvalResult> {
         .map_err(|e| CliError::ValidationFailed(format!("Failed to parse GGUF: {e}")))?;
 
     let load_time = start.elapsed();
-    println!(
+    progress!(
         "{} in {:.2}s ({} layers, vocab_size={})",
         "Model ready".green(),
         load_time.as_secs_f32(),
         model.config.num_layers,
         model.config.vocab_size
     );
-    println!();
+    progress!();
 
     // Get evaluation text
     let eval_text = get_eval_text(config)?;
-    println!(
+    progress!(
         "{}",
         format!("Evaluating on {} characters...", eval_text.len()).yellow()
     );
@@ -260,7 +267,7 @@ fn run_gguf_evaluation(path: &Path, config: &EvalConfig) -> Result<EvalResult> {
         ));
     }
 
-    println!(
+    progress!(
         "{}",
         format!("Calculating perplexity on {} tokens...", tokens.len()).yellow()
     );
@@ -284,7 +291,7 @@ fn run_gguf_evaluation(path: &Path, config: &EvalConfig) -> Result<EvalResult> {
 
 /// PMAT-128: Fallback for non-inference builds
 #[cfg(not(feature = "inference"))]
-fn run_gguf_evaluation(_path: &Path, _config: &EvalConfig) -> Result<EvalResult> {
+fn run_gguf_evaluation(_path: &Path, _config: &EvalConfig, _json: bool) -> Result<EvalResult> {
     Err(CliError::ValidationFailed(
         "Evaluation requires 'inference' feature. Rebuild with: \
          cargo install --path crates/apr-cli --features inference"
@@ -294,24 +301,30 @@ fn run_gguf_evaluation(_path: &Path, _config: &EvalConfig) -> Result<EvalResult>
 
 /// GH-242: APR evaluation using realizar's AprTransformer
 #[cfg(feature = "inference")]
-fn run_apr_evaluation(path: &Path, config: &EvalConfig) -> Result<EvalResult> {
+fn run_apr_evaluation(path: &Path, config: &EvalConfig, json: bool) -> Result<EvalResult> {
     use realizar::apr_transformer::{AprKVCache, AprTransformer};
 
-    println!("{}", "Loading APR model (realizar)...".yellow());
+    macro_rules! progress {
+        ($($arg:tt)*) => {
+            if json { eprintln!($($arg)*); } else { println!($($arg)*); }
+        };
+    }
+
+    progress!("{}", "Loading APR model (realizar)...".yellow());
     let start = Instant::now();
 
     let transformer = AprTransformer::from_apr_file(path)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to load APR: {e}")))?;
 
     let load_time = start.elapsed();
-    println!(
+    progress!(
         "{} in {:.2}s ({} layers, vocab_size={})",
         "Model ready".green(),
         load_time.as_secs_f32(),
         transformer.config.num_layers,
         transformer.config.vocab_size
     );
-    println!();
+    progress!();
 
     let eval_text = get_eval_text(config)?;
     let tokens = tokenize_for_eval(path, &eval_text)?;
@@ -322,7 +335,7 @@ fn run_apr_evaluation(path: &Path, config: &EvalConfig) -> Result<EvalResult> {
     };
     validate_token_count(&tokens)?;
 
-    println!(
+    progress!(
         "{}",
         format!("Calculating perplexity on {} tokens...", tokens.len()).yellow()
     );
@@ -346,7 +359,7 @@ fn run_apr_evaluation(path: &Path, config: &EvalConfig) -> Result<EvalResult> {
 }
 
 #[cfg(not(feature = "inference"))]
-fn run_apr_evaluation(_path: &Path, _config: &EvalConfig) -> Result<EvalResult> {
+fn run_apr_evaluation(_path: &Path, _config: &EvalConfig, _json: bool) -> Result<EvalResult> {
     Err(CliError::ValidationFailed(
         "Evaluation requires 'inference' feature. Rebuild with: \
          cargo install --path crates/apr-cli --features inference"
@@ -356,25 +369,31 @@ fn run_apr_evaluation(_path: &Path, _config: &EvalConfig) -> Result<EvalResult> 
 
 /// GH-242: SafeTensors evaluation using realizar's SafeTensors→AprTransformer path
 #[cfg(feature = "inference")]
-fn run_safetensors_evaluation(path: &Path, config: &EvalConfig) -> Result<EvalResult> {
+fn run_safetensors_evaluation(path: &Path, config: &EvalConfig, json: bool) -> Result<EvalResult> {
     use realizar::apr_transformer::AprKVCache;
     use realizar::safetensors_infer::SafetensorsToAprConverter;
 
-    println!("{}", "Loading SafeTensors model (realizar)...".yellow());
+    macro_rules! progress {
+        ($($arg:tt)*) => {
+            if json { eprintln!($($arg)*); } else { println!($($arg)*); }
+        };
+    }
+
+    progress!("{}", "Loading SafeTensors model (realizar)...".yellow());
     let start = Instant::now();
 
     let transformer = SafetensorsToAprConverter::convert(path)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to load SafeTensors: {e}")))?;
 
     let load_time = start.elapsed();
-    println!(
+    progress!(
         "{} in {:.2}s ({} layers, vocab_size={})",
         "Model ready".green(),
         load_time.as_secs_f32(),
         transformer.config.num_layers,
         transformer.config.vocab_size
     );
-    println!();
+    progress!();
 
     let eval_text = get_eval_text(config)?;
     let tokens = tokenize_for_eval(path, &eval_text)?;
@@ -385,7 +404,7 @@ fn run_safetensors_evaluation(path: &Path, config: &EvalConfig) -> Result<EvalRe
     };
     validate_token_count(&tokens)?;
 
-    println!(
+    progress!(
         "{}",
         format!("Calculating perplexity on {} tokens...", tokens.len()).yellow()
     );
@@ -409,7 +428,7 @@ fn run_safetensors_evaluation(path: &Path, config: &EvalConfig) -> Result<EvalRe
 }
 
 #[cfg(not(feature = "inference"))]
-fn run_safetensors_evaluation(_path: &Path, _config: &EvalConfig) -> Result<EvalResult> {
+fn run_safetensors_evaluation(_path: &Path, _config: &EvalConfig, _json: bool) -> Result<EvalResult> {
     Err(CliError::ValidationFailed(
         "Evaluation requires 'inference' feature. Rebuild with: \
          cargo install --path crates/apr-cli --features inference"

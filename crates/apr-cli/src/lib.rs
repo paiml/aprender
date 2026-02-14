@@ -2070,7 +2070,7 @@ fn dispatch_core_command(cli: &Cli) -> Option<Result<(), CliError>> {
             *interactive,
         ),
 
-        Commands::Lint { file } => lint::run(file),
+        Commands::Lint { file } => lint::run(file, cli.json),
         Commands::Explain { code, file, tensor } => {
             explain::run(code.clone(), file.clone(), tensor.clone())
         }

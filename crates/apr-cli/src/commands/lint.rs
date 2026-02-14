@@ -13,23 +13,69 @@ use colored::Colorize;
 use std::path::Path;
 
 /// Run the lint command
-pub(crate) fn run(file: &Path) -> Result<()> {
+pub(crate) fn run(file: &Path, json: bool) -> Result<()> {
     // Validate input exists
     if !file.exists() {
         return Err(CliError::FileNotFound(file.to_path_buf()));
+    }
+
+    // Run lint (auto-detects APR, GGUF, SafeTensors via Rosetta Stone)
+    let report = lint_model_file(file).map_err(|e| CliError::ValidationFailed(e.to_string()))?;
+
+    // GH-257: JSON output mode
+    if json {
+        return print_json_report(file, &report);
     }
 
     output::header("Model Lint");
     println!("  Checking: {}", file.display().to_string().cyan());
     println!();
 
-    // Run lint (auto-detects APR, GGUF, SafeTensors via Rosetta Stone)
-    let report = lint_model_file(file).map_err(|e| CliError::ValidationFailed(e.to_string()))?;
-
     // Display results
     display_report(&report);
 
     // GH-252: Only fail on errors, not warnings. Warnings are advisory.
+    if report.error_count > 0 {
+        Err(CliError::ValidationFailed(format!(
+            "Lint failed with {} error(s) and {} warning(s)",
+            report.error_count, report.warn_count
+        )))
+    } else {
+        Ok(())
+    }
+}
+
+/// GH-257: JSON output for lint results
+#[allow(clippy::disallowed_methods)]
+fn print_json_report(file: &Path, report: &LintReport) -> Result<()> {
+    let issues: Vec<serde_json::Value> = report
+        .issues
+        .iter()
+        .map(|issue| {
+            serde_json::json!({
+                "level": format!("{}", issue.level),
+                "category": issue.category.name(),
+                "message": issue.message,
+                "suggestion": issue.suggestion,
+            })
+        })
+        .collect();
+
+    let output_json = serde_json::json!({
+        "model": file.display().to_string(),
+        "passed": report.error_count == 0,
+        "error_count": report.error_count,
+        "warn_count": report.warn_count,
+        "info_count": report.info_count,
+        "total_issues": report.total_issues(),
+        "issues": issues,
+    });
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&output_json).unwrap_or_default()
+    );
+
+    // GH-252: Only fail on errors, not warnings
     if report.error_count > 0 {
         Err(CliError::ValidationFailed(format!(
             "Lint failed with {} error(s) and {} warning(s)",
@@ -188,7 +234,7 @@ mod tests {
 
     #[test]
     fn test_run_file_not_found() {
-        let result = run(std::path::Path::new("/nonexistent/model.apr"));
+        let result = run(std::path::Path::new("/nonexistent/model.apr"), false);
         assert!(result.is_err());
         match result {
             Err(CliError::FileNotFound(path)) => {
@@ -205,7 +251,7 @@ mod tests {
         file.write_all(b"not a valid APR file")
             .expect("write to temp file");
 
-        let result = run(file.path());
+        let result = run(file.path(), false);
         // Should return error since it's not a valid APR file
         assert!(result.is_err());
     }

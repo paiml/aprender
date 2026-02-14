@@ -329,3 +329,4 @@ debug = true  # Enable debug info for flamegraph/profiling
 # PMAT-088: Override realizar with local version for clean_chat_output fix
 [patch.crates-io]
 realizar = { path = "../realizar" }
+trueno-gpu = { path = "../trueno/trueno-gpu" }
