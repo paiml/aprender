@@ -564,29 +564,97 @@ fn run_qa(path: &Path, config: &QaConfig) -> Result<QaReport> {
         || run_gpu_state_isolation_gate(path, config),
     )?;
 
-    // Gate 9: Performance regression detection (when --previous-report provided)
-    dispatch_regression_gate(&mut gates, config)?;
+    // Gate 9: Performance regression detection (auto-discovers previous report)
+    dispatch_regression_gate(path, &mut gates, config)?;
 
-    finalize_qa_report(path, &start, gates, config)
+    let report = finalize_qa_report(path, &start, gates, config)?;
+
+    // P0-QA-001: Save report to cache for future regression comparison
+    save_qa_report_to_cache(path, &report);
+
+    Ok(report)
 }
 
 /// Determine skip status for format parity gate.
+/// P0-QA-001: Gates must never silently skip. Only explicit --skip flags skip.
 fn format_parity_skip_status(config: &QaConfig) -> (bool, &str) {
     if config.skip_format_parity {
         (true, "Skipped by --skip-format-parity")
-    } else if config.safetensors_path.is_none() {
-        (true, "No --safetensors-path provided")
     } else {
         (false, "")
     }
 }
 
-/// Run the performance regression gate (needs read access to existing gates).
-fn dispatch_regression_gate(gates: &mut Vec<GateResult>, config: &QaConfig) -> Result<()> {
-    let regression_result = if config.previous_report.is_none() {
-        GateResult::skipped("performance_regression", "No --previous-report provided")
+/// P0-QA-001: Auto-discover previous QA report for regression comparison.
+///
+/// Reports are saved to `~/.cache/apr/qa-reports/{model-basename}.json` after each run.
+/// On subsequent runs, the previous report is auto-loaded for comparison.
+fn auto_discover_previous_report(model_path: &Path) -> Option<std::path::PathBuf> {
+    let cache_dir = dirs::home_dir()?.join(".cache/apr/qa-reports");
+    let basename = model_path.file_stem()?.to_str()?;
+    let report_path = cache_dir.join(format!("{basename}.json"));
+    if report_path.exists() {
+        Some(report_path)
     } else {
+        None
+    }
+}
+
+/// Save QA report to cache for future regression comparison.
+fn save_qa_report_to_cache(model_path: &Path, report: &QaReport) {
+    let Some(home) = dirs::home_dir() else {
+        return;
+    };
+    let cache_dir = home.join(".cache/apr/qa-reports");
+    if std::fs::create_dir_all(&cache_dir).is_err() {
+        return;
+    }
+    let Some(basename) = model_path.file_stem().and_then(|s| s.to_str()) else {
+        return;
+    };
+    let report_path = cache_dir.join(format!("{basename}.json"));
+    if let Ok(json) = serde_json::to_string_pretty(report) {
+        let _ = std::fs::write(&report_path, json);
+    }
+}
+
+/// Run the performance regression gate (needs read access to existing gates).
+/// P0-QA-001: Never skip — auto-discover previous report or establish baseline.
+fn dispatch_regression_gate(
+    model_path: &Path,
+    gates: &mut Vec<GateResult>,
+    config: &QaConfig,
+) -> Result<()> {
+    let regression_result = if let Some(ref _prev) = config.previous_report {
         run_performance_regression_gate(gates, config)?
+    } else {
+        // Auto-discover previous report from cache
+        match auto_discover_previous_report(model_path) {
+            Some(prev_path) => {
+                if !config.json {
+                    println!(
+                        "  {} Auto-discovered previous report: {}",
+                        "INFO".cyan(),
+                        prev_path.display()
+                    );
+                }
+                let auto_config = QaConfig {
+                    previous_report: Some(prev_path),
+                    ..config.clone()
+                };
+                run_performance_regression_gate(gates, &auto_config)?
+            }
+            None => {
+                // First run — establish baseline (PASS, not skip)
+                GateResult::passed(
+                    "performance_regression",
+                    "First run — baseline established (saved for future comparison)",
+                    Some(0.0),
+                    Some(config.regression_threshold),
+                    Duration::from_millis(0),
+                )
+            }
+        }
     };
     if !config.json {
         print_gate_result(&regression_result);
@@ -2026,6 +2094,104 @@ fn run_gpu_speedup_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
 /// Gate 5: Cross-Format Parity Test (F-QUAL-032)
 ///
 /// Compares argmax output between GGUF and SafeTensors for the same model.
+/// P0-QA-001: Auto-discover SafeTensors model for format parity gate.
+///
+/// Search strategy (in order):
+/// 1. Sibling directory of GGUF file (same name but .safetensors)
+/// 2. Sibling subdirectories containing .safetensors files
+/// 3. HuggingFace cache (~/.cache/huggingface/hub/models--*)
+///
+/// Returns the first found SafeTensors path, or None.
+fn auto_discover_safetensors(gguf_path: &Path) -> Option<std::path::PathBuf> {
+    let parent = gguf_path.parent()?;
+    let stem = gguf_path.file_stem()?.to_str()?;
+
+    // Strategy 1: Sibling file with .safetensors extension
+    let sibling = parent.join(format!("{stem}.safetensors"));
+    if sibling.exists() {
+        return Some(sibling);
+    }
+
+    // Strategy 2: Sibling subdirectory containing model.safetensors
+    // e.g., /home/noah/models/qwen2.5-coder-7b-instruct-q4k.gguf
+    //     → /home/noah/models/qwen2.5-coder-7b-instruct/model.safetensors
+    // Strip quantization suffixes to find base model name
+    let base_name = stem
+        .trim_end_matches("-q4k")
+        .trim_end_matches("-q4_k_m")
+        .trim_end_matches("-q6k")
+        .trim_end_matches("-q6_k")
+        .trim_end_matches("-q5k")
+        .trim_end_matches("-q5_k_m")
+        .trim_end_matches("-q8_0")
+        .trim_end_matches("-f16")
+        .trim_end_matches("-f32");
+    let subdir = parent.join(base_name);
+    if subdir.is_dir() {
+        // Check for model.safetensors (single file) or sharded index
+        let single = subdir.join("model.safetensors");
+        if single.exists() {
+            return Some(single);
+        }
+        let index = subdir.join("model.safetensors.index.json");
+        if index.exists() {
+            // Sharded model — check if actual shard files exist
+            if let Ok(entries) = std::fs::read_dir(&subdir) {
+                for entry in entries.flatten() {
+                    let name = entry.file_name();
+                    let name_str = name.to_string_lossy();
+                    if name_str.ends_with(".safetensors") && name_str != "model.safetensors" {
+                        return Some(entry.path());
+                    }
+                }
+            }
+        }
+    }
+
+    // Strategy 3: HuggingFace cache
+    let hf_cache = dirs::home_dir()?.join(".cache/huggingface/hub");
+    if hf_cache.is_dir() {
+        if let Ok(entries) = std::fs::read_dir(&hf_cache) {
+            for entry in entries.flatten() {
+                let dir_name = entry.file_name();
+                let dir_str = dir_name.to_string_lossy();
+                if !dir_str.starts_with("models--") {
+                    continue;
+                }
+                // Match model name case-insensitively
+                let model_part = dir_str
+                    .trim_start_matches("models--")
+                    .replace("--", "/")
+                    .to_lowercase();
+                if !model_part.contains(&base_name.to_lowercase()) {
+                    continue;
+                }
+                // Look for snapshots/*/model.safetensors
+                let snapshots = entry.path().join("snapshots");
+                if let Ok(snaps) = std::fs::read_dir(&snapshots) {
+                    for snap in snaps.flatten() {
+                        let single = snap.path().join("model.safetensors");
+                        if single.exists() {
+                            return Some(single);
+                        }
+                        // Check for sharded .safetensors files
+                        if let Ok(files) = std::fs::read_dir(snap.path()) {
+                            for f in files.flatten() {
+                                let fname = f.file_name();
+                                if fname.to_string_lossy().ends_with(".safetensors") {
+                                    return Some(f.path());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    None
+}
+
 /// Invariant: argmax(forward_gguf(M, tokens)) == argmax(forward_safetensors(M, tokens))
 ///
 /// This is the cornerstone of the architecture's logical validity - it demonstrates
@@ -2043,11 +2209,34 @@ fn run_format_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
         use realizar::gguf::{GGUFModel, MappedGGUFModel, OwnedQuantizedModel};
         use realizar::safetensors_infer::SafetensorsToAprConverter;
 
-        let Some(safetensors_path) = &config.safetensors_path else {
-            return Ok(GateResult::skipped(
-                "format_parity",
-                "No SafeTensors path provided (use --safetensors-path)",
-            ));
+        // P0-QA-001: Never skip — auto-discover or FAIL with actionable message
+        let discovered_path;
+        let safetensors_path = if let Some(p) = &config.safetensors_path {
+            p
+        } else {
+            match auto_discover_safetensors(path) {
+                Some(p) => {
+                    if !config.json {
+                        println!(
+                            "  {} Auto-discovered SafeTensors: {}",
+                            "INFO".cyan(),
+                            p.display()
+                        );
+                    }
+                    discovered_path = p;
+                    &discovered_path
+                }
+                None => {
+                    return Ok(GateResult::failed(
+                        "format_parity",
+                        "No SafeTensors found. Provide --safetensors-path or download: \
+                         huggingface-cli download <model> --include '*.safetensors'",
+                        None,
+                        None,
+                        start.elapsed(),
+                    ));
+                }
+            }
         };
 
         // Verify GGUF model
@@ -2059,17 +2248,26 @@ fn run_format_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
         })?;
 
         if gguf_format != ModelFormat::Gguf {
-            return Ok(GateResult::skipped(
+            return Ok(GateResult::failed(
                 "format_parity",
-                "Primary model must be GGUF format",
+                "Primary model must be GGUF format for cross-format parity test",
+                None,
+                None,
+                start.elapsed(),
             ));
         }
 
         // Verify SafeTensors model exists
         if !safetensors_path.exists() {
-            return Ok(GateResult::skipped(
+            return Ok(GateResult::failed(
                 "format_parity",
-                &format!("SafeTensors file not found: {}", safetensors_path.display()),
+                &format!(
+                    "SafeTensors not found: {}. Download with: huggingface-cli download <model> --include '*.safetensors'",
+                    safetensors_path.display()
+                ),
+                None,
+                None,
+                start.elapsed(),
             ));
         }
 
@@ -4148,7 +4346,7 @@ mod tests {
             "Ollama not available (start with: ollama serve)",
             "Requires 'inference' feature",
             "Non-GGUF format (F32/F16 lacks fused kernels for Ollama parity)",
-            "No --safetensors-path provided",
+            "Skipped by --skip-format-parity",
             "Skipped by --skip-golden",
         ];
         for reason in &reasons {
