@@ -7,19 +7,19 @@
 
 The following protocols replace the infrastructure-dependent tests from Round 3/4.
 
-#### I. Code-Based Stress Testing (Replacing F-STRESS-201/420)
+### I. Code-Based Stress Testing (Replacing F-STRESS-201/420)
 *   **Protocol:** `F-STRESS-603 (The Mutex Crunch)`
 *   **Implementation:** `tests/stress_tests.rs`
 *   **Logic:** Spawn 10 threads. Each thread shares an `Arc<Mutex<AprTransformer>>`. Loop 100 times calling `model.embed("test")`. Assert no panics or hangs > 2s.
 *   **Advantage:** Runs in CI, no `k6`/`docker` dependency.
 
-#### II. Synthetic Boundary Testing (Replacing F-STRESS-202/421)
+### II. Synthetic Boundary Testing (Replacing F-STRESS-202/421)
 *   **Protocol:** `F-STRESS-606 (The Synthetic Limit)`
 *   **Implementation:** `tests/boundary_tests.rs`
 *   **Logic:** Create a `MockModel` with `context_len=10`. Feed prompt length 10. Assert `ContextLimit` error (not panic).
 *   **Advantage:** Deterministic, fast, no large model download required.
 
-#### III. Import Logic Falsification (Replacing F-SHOW-402)
+### III. Import Logic Falsification (Replacing F-SHOW-402)
 *   **Protocol:** `F-IMPORT-602 (The Localhost Paradox)`
 *   **Implementation:** `tests/import_logic.rs`
 *   **Logic:**
@@ -52,7 +52,7 @@ Round 7 targets the stability of recent P0 fixes and the new observability featu
 
 These protocols harden the system against regression of recent critical fixes and verify new features.
 
-#### I. Advanced Regression Testing
+### I. Advanced Regression Testing
 *   **Protocol:** `F-REGR-701 (The Zombie Fix)`
 *   **Target:** Regression of GH-170 (Chat Hang).
 *   **Implementation:** `tests/chat_stability.rs`
@@ -62,7 +62,7 @@ These protocols harden the system against regression of recent critical fixes an
     3. Generate 100 tokens.
     4. Assert completion < 60s (no hang) and valid EOS termination.
 
-#### II. Observability Verification
+### II. Observability Verification
 *   **Protocol:** `F-OBS-702 (The Flamegraph)`
 *   **Target:** GH-174 (SVG Export).
 *   **Implementation:** `tests/profile_tests.rs`
@@ -73,7 +73,7 @@ These protocols harden the system against regression of recent critical fixes an
 *   **Implementation:** `tests/profile_tests.rs`
 *   **Logic:** Run `apr profile ... --focus attention`. Assert output contains "attention" but NOT "matmul" (unless nested).
 
-#### III. Edge Case Stability
+### III. Edge Case Stability
 *   **Protocol:** `F-EDGE-704 (The Empty Model)`
 *   **Target:** PMAT-178 (0-byte file handling).
 *   **Implementation:** `tests/loader_tests.rs`
@@ -101,7 +101,7 @@ Round 9 combines multiple failure modes to test system resilience under complex 
 
 "The Perfect Storm" targets combined and boundary failure modes.
 
-#### I. Multi-Tenancy
+### I. Multi-Tenancy
 *   **Protocol:** `F-STORM-901 (The Multi-Tenant Crash)`
 *   **Implementation:** `tests/multi_tenant.rs`
 *   **Logic:**
@@ -110,7 +110,7 @@ Round 9 combines multiple failure modes to test system resilience under complex 
     3. Hammer both with requests.
     4. Assert no cross-process VRAM corruption or context loss.
 
-#### II. Configuration Resilience
+### II. Configuration Resilience
 *   **Protocol:** `F-STORM-902 (The Corrupt Config)`
 *   **Implementation:** `tests/loader_resilience.rs`
 *   **Logic:**
@@ -119,7 +119,7 @@ Round 9 combines multiple failure modes to test system resilience under complex 
     3. Run `apr run`.
     4. Assert fallback to inferred config or internal metadata.
 
-#### III. Numerical Stability
+### III. Numerical Stability
 *   **Protocol:** `F-STORM-903 (The Zero-Weight Layer)`
 *   **Implementation:** `tests/math_stability.rs`
 *   **Logic:**
@@ -127,7 +127,7 @@ Round 9 combines multiple failure modes to test system resilience under complex 
     2. Run inference.
     3. Assert no Panic/NaN. Output should be uniform/zeroed but valid.
 
-#### IV. Precision Limits
+### IV. Precision Limits
 *   **Protocol:** `F-STORM-904 (The Precision Boundary)`
 *   **Implementation:** `tests/math_stability.rs`
 *   **Logic:**
@@ -161,7 +161,7 @@ The Omega Protocol represents the final barrier before 1.0 release, targeting en
 
 The "Omega Protocol" defines the ultimate stability gates for Release 1.0.
 
-#### I. Deterministic Entropy
+### I. Deterministic Entropy
 *   **Protocol:** `F-OMEGA-1002 (Zero-Temp Mirror)`
 *   **Logic:**
     1. Set `temperature=0.0`.
@@ -170,14 +170,14 @@ The "Omega Protocol" defines the ultimate stability gates for Release 1.0.
     4. Re-run identical command to `new.bin`.
     5. Assert `sha256sum ref.bin == sha256sum new.bin`.
 
-#### II. Temporal Robustness
+### II. Temporal Robustness
 *   **Protocol:** `F-OMEGA-1003 (The Marathon)`
 *   **Logic:**
     1. Generate 10,000 tokens using sliding window KV cache.
     2. Assert `perplexity` does not explode after the context window limit is reached.
     3. Verify no `NaN` injection during the context rotation.
 
-#### III. Systemic Resilience (The Disk Swapper)
+### III. Systemic Resilience (The Disk Swapper)
 *   **Protocol:** `F-OMEGA-1005`
 *   **Logic:**
     1. Start `apr serve`.
@@ -185,7 +185,7 @@ The "Omega Protocol" defines the ultimate stability gates for Release 1.0.
     3. `mv model.apr model.apr.bak` (move the underlying file).
     4. Assert server continues to function (verifies mmap handle persistence/caching).
 
-#### IV. Fix Verification (The Bare Name Invariant)
+### IV. Fix Verification (The Bare Name Invariant)
 *   **Protocol:** `F-REGR-1007`
 *   **Logic:**
     1. Convert GGUF to APR.
@@ -215,7 +215,7 @@ Round 11 focuses on the atomicity of special tokens and the integrity of streami
 
 The "Atomic Protocol" ensures the integrity of the tokenization and serving layer.
 
-#### I. Token Atomicity
+### I. Token Atomicity
 *   **Protocol:** `F-ATOMIC-1101 (The Split Token)`
 *   **Target:** GH-189 (Special Token Splitting).
 *   **Implementation:** `tests/tokenizer_atomicity.rs`
@@ -224,7 +224,7 @@ The "Atomic Protocol" ensures the integrity of the tokenization and serving laye
     2. Assert `len == 1` (token ID 151644).
     3. Assert `len != 10` (character tokens).
 
-#### II. Streaming Integrity
+### II. Streaming Integrity
 *   **Protocol:** `F-ATOMIC-1102 (The Streaming Invariant)`
 *   **Target:** SSE implementation correctness.
 *   **Implementation:** `tests/streaming_parity.rs`
@@ -233,7 +233,7 @@ The "Atomic Protocol" ensures the integrity of the tokenization and serving laye
     2. Request `B` (stream).
     3. Assert `A.text == B.chunks.join("")`.
 
-#### III. Resource Safety
+### III. Resource Safety
 *   **Protocol:** `F-ATOMIC-1103 (Interrupt Safety)`
 *   **Target:** Server resource leaks.
 *   **Implementation:** `tests/server_stress.rs`
@@ -267,7 +267,7 @@ Round 12 validates the production readiness, upgrade path, and long-term stabili
 
 "The Final Cut" protocols ensure the software behaves as a good citizen in a production environment.
 
-#### I. Production Readiness
+### I. Production Readiness
 *   **Protocol:** `F-FINAL-1201 (The Cold Start)`
 *   **Target:** Startup latency SLA.
 *   **Implementation:** `tests/cold_start.rs`
@@ -276,7 +276,7 @@ Round 12 validates the production readiness, upgrade path, and long-term stabili
     2. Run `apr run`.
     3. Assert `TTFT < 500ms`.
 
-#### II. Stability
+### II. Stability
 *   **Protocol:** `F-FINAL-1202 (The Long Haul)`
 *   **Target:** Memory leaks / fragmentation.
 *   **Implementation:** `tests/soak_test.rs`
@@ -285,7 +285,7 @@ Round 12 validates the production readiness, upgrade path, and long-term stabili
     2. Generate load for 24h (simulated time via acceleration or actual soak).
     3. Assert `max_rss` stable.
 
-#### III. Lifecycle
+### III. Lifecycle
 *   **Protocol:** `F-FINAL-1203 (The Upgrade Path)`
 *   **Target:** Backward compatibility.
 *   **Implementation:** `tests/compat_test.rs`
@@ -319,21 +319,21 @@ Round 13 addresses the critical GH-192 performance bottleneck by ensuring native
 
 "The Quantization Preservation" protocols ensure that performance gains are structural and permanent.
 
-#### I. Automatic Optimization
+### I. Automatic Optimization
 *   **Protocol:** `F-PERF-1301 (Pass-through Check)`
 *   **Logic:**
     1. Convert Q4K GGUF to APR without flags.
     2. Assert `model.apr` size < 1.2x `source.gguf`.
     3. Assert `apr tensors model.apr` shows `q4_k` type for weights.
 
-#### II. Performance Floor
+### II. Performance Floor
 *   **Protocol:** `F-PERF-1302 (Throughput Gate)`
 *   **Logic:**
     1. Run `apr benchmark model.apr`.
     2. Assert `tokens_per_sec > 100`.
     3. *Falsification:* If throughput drops to < 50 tok/s, the pass-through logic has regressed.
 
-#### III. Cache Integrity
+### III. Cache Integrity
 *   **Protocol:** `F-PERF-1304 (Bit-Identical Cache)`
 *   **Logic:**
     1. Generate 100 tokens.

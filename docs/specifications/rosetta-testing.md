@@ -142,7 +142,7 @@ We added 50+ tests to ensure the dispatch logic is robust and falsifiable.
 **Null Hypothesis ($H_0$):**
 *"The Rosetta Stone ecosystem correctly dispatches and converts model data across APR, GGUF, and SafeTensors formats without loss of fidelity or silent logic errors."*
 
-### 1. The Conversion Harness (SafeTensors ↔ APR)
+## 1. The Conversion Harness (SafeTensors ↔ APR)
 
 | ID | Test | Expectation | Result | Evidence |
 |:---|:---|:---|:---|:---|

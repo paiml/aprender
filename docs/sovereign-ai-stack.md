@@ -89,7 +89,7 @@ aprender is part of the **Paiml Sovereign AI Stack**, a complete pure Rust ecosy
 
 | Component | Description | crates.io |
 |-----------|-------------|-----------|
-| [trueno](https://github.com/paiml/trueno) | SIMD/GPU/WASM tensor operations | [![](https://img.shields.io/crates/v/trueno.svg)](https://crates.io/crates/trueno) |
+| [trueno](https://github.com/paiml/trueno) | SIMD/GPU/WASM tensor operations | [![trueno crates.io version](https://img.shields.io/crates/v/trueno.svg)](https://crates.io/crates/trueno) |
 | [repartir](https://github.com/paiml/repartir) | Distributed computing primitives | - |
 | [trueno-viz](https://github.com/paiml/trueno-viz) | Browser visualization (WASM) | - |
 
@@ -98,14 +98,14 @@ aprender is part of the **Paiml Sovereign AI Stack**, a complete pure Rust ecosy
 | Component | Description | crates.io |
 |-----------|-------------|-----------|
 | [alimentar](https://github.com/paiml/alimentar) | Data loading & distribution | - |
-| [trueno-db](https://github.com/paiml/trueno-db) | GPU columnar database (Arrow 53) | [![](https://img.shields.io/crates/v/trueno-db.svg)](https://crates.io/crates/trueno-db) |
-| [trueno-graph](https://github.com/paiml/trueno-graph) | Graph database | [![](https://img.shields.io/crates/v/trueno-graph.svg)](https://crates.io/crates/trueno-graph) |
+| [trueno-db](https://github.com/paiml/trueno-db) | GPU columnar database (Arrow 53) | [![trueno-db crates.io version](https://img.shields.io/crates/v/trueno-db.svg)](https://crates.io/crates/trueno-db) |
+| [trueno-graph](https://github.com/paiml/trueno-graph) | Graph database | [![trueno-graph crates.io version](https://img.shields.io/crates/v/trueno-graph.svg)](https://crates.io/crates/trueno-graph) |
 
 ### ML/AI Layer
 
 | Component | Description | crates.io |
 |-----------|-------------|-----------|
-| [aprender](https://github.com/paiml/aprender) | ML/DL algorithms | [![](https://img.shields.io/crates/v/aprender.svg)](https://crates.io/crates/aprender) |
+| [aprender](https://github.com/paiml/aprender) | ML/DL algorithms | [![aprender crates.io version](https://img.shields.io/crates/v/aprender.svg)](https://crates.io/crates/aprender) |
 | [entrenar](https://github.com/paiml/entrenar) | Training & optimization | - |
 | [realizar](https://github.com/paiml/realizar) | Model serving, MLOps | - |
 

@@ -8,7 +8,7 @@ Execute the following 6-Phase Protocol. **Stop the line** (FAIL) immediately if 
 
 ---
 
-### Phase 1: The "Toyota Way" Quality Audit (P0)
+## Phase 1: The "Toyota Way" Quality Audit (P0)
 **Claim:** "Zero SATD in production code. 95%+ Test Coverage."
 *   **F-SATD-002 (Regression Check):**
     *   *Action:* `grep -r "TODO" src/ crates/ | grep -v "test" | grep -v "rosetta.rs"`
@@ -17,7 +17,7 @@ Execute the following 6-Phase Protocol. **Stop the line** (FAIL) immediately if 
     *   *Action:* Check most recent `tarpaulin` report or run coverage check.
     *   *Falsification Criteria:* Coverage < 95.0%.
 
-### Phase 2: Ground Truth Verification (SafeTensors) (P0)
+## Phase 2: Ground Truth Verification (SafeTensors) (P0)
 **Claim:** "SafeTensors 1.5B/0.5B is Production Ready and serves as Ground Truth."
 *   **F-GT-002 (The "2+2" Test):**
     *   *Action:* `apr run hf://Qwen/Qwen2.5-Coder-1.5B-Instruct "What is 2+2?" --chat`
@@ -26,7 +26,7 @@ Execute the following 6-Phase Protocol. **Stop the line** (FAIL) immediately if 
         2.  Output contains garbage (e.g., repeated tokens, wrong language).
         3.  Process hangs (>60s).
 
-### Phase 3: The Known Defect (APR Q4_K Parity) (P1)
+## Phase 3: The Known Defect (APR Q4_K Parity) (P1)
 **Claim:** "APR Q4_K conversion is currently IN PROGRESS/BROKEN."
 *   **F-PAR-002 (Garbage Confirmation):**
     *   *Action:*
@@ -37,7 +37,7 @@ Execute the following 6-Phase Protocol. **Stop the line** (FAIL) immediately if 
         *   **IF IT WORKS:** The spec is FALSIFIED (Claiming "Broken" when it works is a documentation error).
         *   **IF IT FAILS:** The spec is CORROBORATED (Behavior matches "Known Issue").
 
-### Phase 4: Reliability & Panic Resilience (P0)
+## Phase 4: Reliability & Panic Resilience (P0)
 **Claim:** "All panics (Empty File, Missing Tokenizer, Lock Poisoning) are fixed."
 *   **F-CRIT-004 (Empty File):**
     *   *Action:* `touch empty.safetensors && apr run empty.safetensors "hi"`
@@ -49,7 +49,7 @@ Execute the following 6-Phase Protocol. **Stop the line** (FAIL) immediately if 
     *   *Action:* Verify `realizar/cuda/executor/*.rs` uses `.lock().expect(...)` or handles `PoisonError`.
     *   *Falsification Criteria:* Found `.lock().unwrap()` in CUDA executor.
 
-### Phase 5: Performance Claims (P1)
+## Phase 5: Performance Claims (P1)
 **Claim:** "GPU > 2x CPU Speedup. SafeTensors CPU ~19 tok/s (1.5B)."
 *   **F-PERF-004 (Speedup):**
     *   *Action:*
@@ -59,7 +59,7 @@ Execute the following 6-Phase Protocol. **Stop the line** (FAIL) immediately if 
 *   **F-PERF-005 (Baseline):**
     *   *Falsification Criteria:* CPU Tok/s < 10.0 (Severe regression).
 
-### Phase 6: Tooling & UX (P2)
+## Phase 6: Tooling & UX (P2)
 **Claim:** "All 13 Tools exist. Verbose mode provides complete telemetry."
 *   **F-TOOL-002 (Tool Check):**
     *   *Action:* `apr --help`

@@ -429,11 +429,11 @@ If any book test fails, the entire CI pipeline fails.
 This is **Jidoka** (built-in quality) - defects cannot propagate.
 ```
 
-### GREEN Phase: Implementation
+## GREEN Phase: Implementation
 
 All the code above IS the implementation! The TDD harness is meta - it's code that tests documentation.
 
-### REFACTOR Phase: Quality Checks
+## REFACTOR Phase: Quality Checks
 
 ```bash
 # Verify all tests pass

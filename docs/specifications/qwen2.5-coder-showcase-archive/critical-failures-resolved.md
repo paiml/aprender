@@ -47,7 +47,7 @@
 **Fix (PMAT-181):** Read EOS token from APR metadata via `extract_apr_eos_token()` instead of hardcoding 151645.
 See `crates/apr-cli/src/commands/chat.rs:1068-1104` for implementation.
 
-### 100-Point Falsification Results (PMAT-112, 2026-01-27)
+## 100-Point Falsification Results (PMAT-112, 2026-01-27)
 
 **Showcase-Specific Score: 12/55** (See `docs/qa/popperian_falsification_checklist.md`)
 

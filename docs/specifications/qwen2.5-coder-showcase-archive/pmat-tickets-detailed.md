@@ -2,7 +2,7 @@
 
 > Archived from qwen2.5-coder-showcase-demo.md (lines 689-1568)
 
-### RED TEAM FINDINGS (2026-01-30): Protocol "Burn It Down"
+## RED TEAM FINDINGS (2026-01-30): Protocol "Burn It Down"
 
 **Attack Surface Audit Results:**
 

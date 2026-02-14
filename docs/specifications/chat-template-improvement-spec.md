@@ -1354,7 +1354,7 @@ apr chat ~/.apr/models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf \
 ```
 ```
 
-### 7.4 CI Integration
+## 7.4 CI Integration
 
 Add to `.github/workflows/ci.yml`:
 

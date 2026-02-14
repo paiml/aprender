@@ -7,7 +7,7 @@
 **Date:** 2025-11-26
 **Updated:** 2025-11-26
 
-### Changelog
+## Changelog
 - v1.0.0: Initial spec (header, CRC32, basic save/load)
 - v1.1.0: Sovereign AI architecture, GGUF export, ONNX out of scope
 - v1.2.0: Commercial licensing, watermarking, model marketplace support

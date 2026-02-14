@@ -16,7 +16,7 @@
 **Last Falsification Run:** 2026-02-05 (Round 53 - PMAT-237 Pre-Dispatch Contract Gate)
 **Quality Philosophy:** Toyota Way + Popperian Falsification (Zero SATD, Stop-the-Line, Jidoka, see Appendix F)
 
-### Release Criteria (Round 53 Update - 2026-02-05)
+## Release Criteria (Round 53 Update - 2026-02-05)
 
 | Format | CPU | GPU | Status | Notes |
 |--------|-----|-----|--------|-------|
