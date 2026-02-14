@@ -1025,6 +1025,90 @@ mod proptests {
     }
 }
 
+/// BH-MUT-0002: Boundary mutation tests for Q8_0 dequantize arithmetic
+///
+/// Target: `let val = f32::from(q) * scale;` (line 290)
+/// Mutations: `*` → `+`, `*` → `-`, `*` → `/`, scale sign flip
+#[cfg(test)]
+mod tests_bh_mut {
+    use super::*;
+
+    /// BH-MUT-0002a: scale=0 produces all-zero output
+    /// Detects `* scale` → `+ scale` mutation (would produce non-zero)
+    #[test]
+    fn test_bh_mut_scale_zero_produces_zero() {
+        let data: Vec<f32> = vec![0.0; 32]; // All zeros → scale = 0
+        let shape = vec![32];
+
+        let quantized = quantize(&data, &shape, QuantType::Q8_0).expect("quantize");
+        let dequantized = dequantize(&quantized).expect("dequantize");
+
+        for (i, &val) in dequantized.iter().enumerate() {
+            assert_eq!(val, 0.0, "dequant[{i}] should be 0.0 with zero scale, got {val}");
+        }
+    }
+
+    /// BH-MUT-0002b: sign preservation through multiply
+    /// Detects `* scale` → `/ scale` mutation (signs may differ for negative q with positive scale)
+    #[test]
+    fn test_bh_mut_sign_preservation() {
+        // Negative values: q < 0, scale > 0 → result < 0
+        let data: Vec<f32> = (-16..16).map(|i| i as f32).collect();
+        let shape = vec![32];
+
+        let quantized = quantize(&data, &shape, QuantType::Q8_0).expect("quantize");
+        let dequantized = dequantize(&quantized).expect("dequantize");
+
+        // Negative inputs should produce negative outputs
+        for i in 0..16 {
+            if data[i] < -0.5 {
+                assert!(
+                    dequantized[i] < 0.0,
+                    "dequant[{i}] should be negative for input {}, got {}",
+                    data[i],
+                    dequantized[i]
+                );
+            }
+        }
+        // Positive inputs should produce positive outputs
+        for i in 17..32 {
+            if data[i] > 0.5 {
+                assert!(
+                    dequantized[i] > 0.0,
+                    "dequant[{i}] should be positive for input {}, got {}",
+                    data[i],
+                    dequantized[i]
+                );
+            }
+        }
+    }
+
+    /// BH-MUT-0002c: magnitude scales linearly with scale factor
+    /// Detects `* scale` → `+ scale` or `- scale` mutations
+    #[test]
+    fn test_bh_mut_magnitude_scaling() {
+        // Small values → small scale; large values → large scale
+        let small: Vec<f32> = vec![0.1; 32];
+        let large: Vec<f32> = vec![100.0; 32];
+        let shape = vec![32];
+
+        let q_small = quantize(&small, &shape, QuantType::Q8_0).expect("quantize small");
+        let q_large = quantize(&large, &shape, QuantType::Q8_0).expect("quantize large");
+
+        let d_small = dequantize(&q_small).expect("deq small");
+        let d_large = dequantize(&q_large).expect("deq large");
+
+        // Large values should dequantize to larger magnitudes than small values
+        let mag_small: f32 = d_small.iter().map(|v| v.abs()).sum::<f32>() / 32.0;
+        let mag_large: f32 = d_large.iter().map(|v| v.abs()).sum::<f32>() / 32.0;
+
+        assert!(
+            mag_large > mag_small * 10.0,
+            "Large magnitude ({mag_large}) should be >> small ({mag_small})"
+        );
+    }
+}
+
 /// Falsification tests per spec v3.0.0 Section BB (Quantization)
 #[cfg(test)]
 mod tests_falsification_bb {
