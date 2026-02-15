@@ -66,7 +66,10 @@ pub mod vae;
 
 pub use activation::{LeakyReLU, ReLU, Sigmoid, Softmax, Tanh, GELU};
 pub use container::{ModuleDict, ModuleList, Sequential};
-pub use conv::{AvgPool2d, Conv1d, Conv2d, Flatten, GlobalAvgPool2d, MaxPool1d, MaxPool2d};
+pub use conv::{
+    AvgPool2d, Conv1d, Conv2d, ConvDimensionNumbers, ConvLayout, Flatten, GlobalAvgPool2d,
+    KernelLayout, MaxPool1d, MaxPool2d,
+};
 pub use dropout::{AlphaDropout, DropBlock, DropConnect, Dropout, Dropout2d};
 pub use functional as F;
 pub use gnn::{AdjacencyMatrix, GATConv, GCNConv, MessagePassing, SAGEAggregation, SAGEConv};

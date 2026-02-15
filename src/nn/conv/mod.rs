@@ -9,9 +9,14 @@
 //! - He, K., et al. (2015). Delving deep into rectifiers: Surpassing
 //!   human-level performance on `ImageNet` classification. ICCV.
 
+pub(crate) mod im2col;
+pub(crate) mod layout;
+pub(crate) mod permute;
+
 use super::init::{kaiming_uniform, zeros};
 use super::module::Module;
 use crate::autograd::Tensor;
+pub use layout::{ConvDimensionNumbers, ConvLayout, KernelLayout};
 
 /// 1D Convolution layer.
 ///
@@ -47,6 +52,10 @@ pub struct Conv1d {
     stride: usize,
     /// Padding
     padding: usize,
+    /// Data layout for input/output (default: NCL)
+    layout: ConvLayout,
+    /// Whether to use im2col+GEMM path (default: true)
+    use_im2col: bool,
 }
 
 impl Conv1d {
@@ -100,7 +109,35 @@ impl Conv1d {
             kernel_size,
             stride,
             padding,
+            layout: ConvLayout::NCL,
+            use_im2col: true,
         }
+    }
+
+    /// Create Conv1d with a specific data layout.
+    ///
+    /// # Arguments
+    ///
+    /// * `in_channels` - Number of input channels
+    /// * `out_channels` - Number of output channels
+    /// * `kernel_size` - Size of the convolving kernel
+    /// * `stride` - Stride of the convolution
+    /// * `padding` - Zero-padding added to both sides
+    /// * `bias` - If true, adds a learnable bias
+    /// * `layout` - Data layout for input/output tensors
+    #[must_use]
+    pub fn with_layout(
+        in_channels: usize,
+        out_channels: usize,
+        kernel_size: usize,
+        stride: usize,
+        padding: usize,
+        bias: bool,
+        layout: ConvLayout,
+    ) -> Self {
+        let mut conv = Self::with_options(in_channels, out_channels, kernel_size, stride, padding, bias);
+        conv.layout = layout;
+        conv
     }
 
     /// Create Conv1d with specific stride.
@@ -144,28 +181,13 @@ impl Conv1d {
     }
 }
 
-impl Module for Conv1d {
-    fn forward(&self, input: &Tensor) -> Tensor {
-        assert_eq!(
-            input.ndim(),
-            3,
-            "Conv1d expects 3D input [N, C, L], got {}D",
-            input.ndim()
-        );
-
+impl Conv1d {
+    /// Naive 5-loop convolution (fallback path).
+    fn forward_naive(&self, input: &Tensor) -> Tensor {
         let shape = input.shape();
         let (batch_size, in_channels, in_length) = (shape[0], shape[1], shape[2]);
 
-        assert_eq!(
-            in_channels, self.in_channels,
-            "Expected {} input channels, got {}",
-            self.in_channels, in_channels
-        );
-
-        // Calculate output length
         let out_length = (in_length + 2 * self.padding - self.kernel_size) / self.stride + 1;
-
-        // Perform convolution
         let mut output = vec![0.0; batch_size * self.out_channels * out_length];
 
         let input_data = input.data();
@@ -180,7 +202,6 @@ impl Module for Conv1d {
                         for k in 0..self.kernel_size {
                             let il = ol * self.stride + k;
 
-                            // Handle padding
                             let val = if il < self.padding || il >= in_length + self.padding {
                                 0.0
                             } else {
@@ -195,7 +216,6 @@ impl Module for Conv1d {
                         }
                     }
 
-                    // Add bias
                     if let Some(ref bias) = self.bias {
                         sum += bias.data()[oc];
                     }
@@ -206,6 +226,98 @@ impl Module for Conv1d {
         }
 
         Tensor::new(&output, &[batch_size, self.out_channels, out_length])
+    }
+
+    /// im2col + GEMM convolution (fast path via trueno SIMD matmul).
+    fn forward_im2col(&self, input: &Tensor) -> Tensor {
+        let shape = input.shape();
+        let (batch_size, in_channels, in_length) = (shape[0], shape[1], shape[2]);
+
+        let out_length = (in_length + 2 * self.padding - self.kernel_size) / self.stride + 1;
+
+        // Weight reshaped to [out_channels, in_channels * kernel_size]
+        let weight_2d = Tensor::new(
+            self.weight.data(),
+            &[self.out_channels, self.in_channels * self.kernel_size],
+        );
+
+        let input_data = input.data();
+        let batch_spatial = in_channels * in_length;
+
+        let mut all_output = Vec::with_capacity(batch_size * self.out_channels * out_length);
+
+        for n in 0..batch_size {
+            let batch_input = &input_data[n * batch_spatial..(n + 1) * batch_spatial];
+
+            let (col_data, col_h, col_w) = im2col::im2col_1d(
+                batch_input,
+                in_channels,
+                in_length,
+                self.kernel_size,
+                self.stride,
+                self.padding,
+            );
+
+            let col_tensor = Tensor::new(&col_data, &[col_h, col_w]);
+            let result = weight_2d.matmul(&col_tensor);
+
+            // result shape: [out_channels, out_length]
+            let mut result_data = result.data().to_vec();
+
+            // Add bias
+            if let Some(ref bias) = self.bias {
+                let bias_data = bias.data();
+                for oc in 0..self.out_channels {
+                    for ol in 0..out_length {
+                        result_data[oc * out_length + ol] += bias_data[oc];
+                    }
+                }
+            }
+
+            all_output.extend_from_slice(&result_data);
+        }
+
+        Tensor::new(&all_output, &[batch_size, self.out_channels, out_length])
+    }
+}
+
+impl Module for Conv1d {
+    fn forward(&self, input: &Tensor) -> Tensor {
+        assert_eq!(
+            input.ndim(),
+            3,
+            "Conv1d expects 3D input [N, C, L], got {}D",
+            input.ndim()
+        );
+
+        // Handle layout: convert to NCL if needed
+        let ncl_input = if self.layout == ConvLayout::NLC {
+            permute::permute(input, &ConvLayout::NLC.permutation_to(ConvLayout::NCL))
+        } else {
+            input.clone()
+        };
+
+        let shape = ncl_input.shape();
+        let in_channels = shape[1];
+
+        assert_eq!(
+            in_channels, self.in_channels,
+            "Expected {} input channels, got {}",
+            self.in_channels, in_channels
+        );
+
+        let result = if self.use_im2col {
+            self.forward_im2col(&ncl_input)
+        } else {
+            self.forward_naive(&ncl_input)
+        };
+
+        // Convert output back to original layout if needed
+        if self.layout == ConvLayout::NLC {
+            permute::permute(&result, &ConvLayout::NCL.permutation_to(ConvLayout::NLC))
+        } else {
+            result
+        }
     }
 
     fn parameters(&self) -> Vec<&Tensor> {
@@ -232,6 +344,8 @@ impl std::fmt::Debug for Conv1d {
             .field("stride", &self.stride)
             .field("padding", &self.padding)
             .field("bias", &self.bias.is_some())
+            .field("layout", &self.layout)
+            .field("use_im2col", &self.use_im2col)
             .finish_non_exhaustive()
     }
 }
@@ -276,6 +390,10 @@ pub struct Conv2d {
     padding_h: usize,
     /// Padding width
     padding_w: usize,
+    /// Data layout for input/output (default: NCHW)
+    layout: ConvLayout,
+    /// Whether to use im2col+GEMM path (default: true)
+    use_im2col: bool,
 }
 
 impl Conv2d {
@@ -345,7 +463,35 @@ impl Conv2d {
             stride_w: stride.1,
             padding_h: padding.0,
             padding_w: padding.1,
+            layout: ConvLayout::NCHW,
+            use_im2col: true,
         }
+    }
+
+    /// Create Conv2d with a specific data layout.
+    ///
+    /// # Arguments
+    ///
+    /// * `in_channels` - Number of input channels
+    /// * `out_channels` - Number of output channels
+    /// * `kernel_size` - (height, width) of the kernel
+    /// * `stride` - (height, width) stride
+    /// * `padding` - (height, width) padding
+    /// * `bias` - If true, adds a learnable bias
+    /// * `layout` - Data layout for input/output tensors
+    #[must_use]
+    pub fn with_layout(
+        in_channels: usize,
+        out_channels: usize,
+        kernel_size: (usize, usize),
+        stride: (usize, usize),
+        padding: (usize, usize),
+        bias: bool,
+        layout: ConvLayout,
+    ) -> Self {
+        let mut conv = Self::with_options(in_channels, out_channels, kernel_size, stride, padding, bias);
+        conv.layout = layout;
+        conv
     }
 
     /// Create Conv2d with stride.
@@ -403,29 +549,15 @@ impl Conv2d {
     }
 }
 
-impl Module for Conv2d {
-    fn forward(&self, input: &Tensor) -> Tensor {
-        assert_eq!(
-            input.ndim(),
-            4,
-            "Conv2d expects 4D input [N, C, H, W], got {}D",
-            input.ndim()
-        );
-
+impl Conv2d {
+    /// Naive 7-loop convolution (fallback path).
+    fn forward_naive(&self, input: &Tensor) -> Tensor {
         let shape = input.shape();
         let (batch_size, in_channels, in_h, in_w) = (shape[0], shape[1], shape[2], shape[3]);
 
-        assert_eq!(
-            in_channels, self.in_channels,
-            "Expected {} input channels, got {}",
-            self.in_channels, in_channels
-        );
-
-        // Calculate output dimensions
         let out_h = (in_h + 2 * self.padding_h - self.kernel_h) / self.stride_h + 1;
         let out_w = (in_w + 2 * self.padding_w - self.kernel_w) / self.stride_w + 1;
 
-        // Perform convolution
         let mut output = vec![0.0; batch_size * self.out_channels * out_h * out_w];
 
         let input_data = input.data();
@@ -443,7 +575,6 @@ impl Module for Conv2d {
                                     let ih = oh * self.stride_h + kh;
                                     let iw = ow * self.stride_w + kw;
 
-                                    // Handle padding
                                     let val = if ih < self.padding_h
                                         || ih >= in_h + self.padding_h
                                         || iw < self.padding_w
@@ -469,7 +600,6 @@ impl Module for Conv2d {
                             }
                         }
 
-                        // Add bias
                         if let Some(ref bias) = self.bias {
                             sum += bias.data()[oc];
                         }
@@ -484,6 +614,104 @@ impl Module for Conv2d {
         }
 
         Tensor::new(&output, &[batch_size, self.out_channels, out_h, out_w])
+    }
+
+    /// im2col + GEMM convolution (fast path via trueno SIMD matmul).
+    fn forward_im2col(&self, input: &Tensor) -> Tensor {
+        let shape = input.shape();
+        let (batch_size, in_channels, in_h, in_w) = (shape[0], shape[1], shape[2], shape[3]);
+
+        let out_h = (in_h + 2 * self.padding_h - self.kernel_h) / self.stride_h + 1;
+        let out_w = (in_w + 2 * self.padding_w - self.kernel_w) / self.stride_w + 1;
+
+        // Weight reshaped to [out_channels, in_channels * kH * kW]
+        let weight_2d = Tensor::new(
+            self.weight.data(),
+            &[self.out_channels, self.in_channels * self.kernel_h * self.kernel_w],
+        );
+
+        let input_data = input.data();
+        let batch_spatial = in_channels * in_h * in_w;
+
+        let mut all_output = Vec::with_capacity(batch_size * self.out_channels * out_h * out_w);
+
+        for n in 0..batch_size {
+            let batch_input = &input_data[n * batch_spatial..(n + 1) * batch_spatial];
+
+            let (col_data, col_h, col_w) = im2col::im2col_2d(
+                batch_input,
+                in_channels,
+                in_h,
+                in_w,
+                self.kernel_h,
+                self.kernel_w,
+                self.stride_h,
+                self.stride_w,
+                self.padding_h,
+                self.padding_w,
+            );
+
+            let col_tensor = Tensor::new(&col_data, &[col_h, col_w]);
+            let result = weight_2d.matmul(&col_tensor);
+
+            // result shape: [out_channels, out_h * out_w]
+            let mut result_data = result.data().to_vec();
+
+            // Add bias
+            if let Some(ref bias) = self.bias {
+                let bias_data = bias.data();
+                let spatial = out_h * out_w;
+                for oc in 0..self.out_channels {
+                    for s in 0..spatial {
+                        result_data[oc * spatial + s] += bias_data[oc];
+                    }
+                }
+            }
+
+            all_output.extend_from_slice(&result_data);
+        }
+
+        Tensor::new(&all_output, &[batch_size, self.out_channels, out_h, out_w])
+    }
+}
+
+impl Module for Conv2d {
+    fn forward(&self, input: &Tensor) -> Tensor {
+        assert_eq!(
+            input.ndim(),
+            4,
+            "Conv2d expects 4D input [N, C, H, W], got {}D",
+            input.ndim()
+        );
+
+        // Handle layout: convert to NCHW if needed
+        let nchw_input = if self.layout == ConvLayout::NHWC {
+            permute::permute(input, &ConvLayout::NHWC.permutation_to(ConvLayout::NCHW))
+        } else {
+            input.clone()
+        };
+
+        let shape = nchw_input.shape();
+        let in_channels = shape[1];
+
+        assert_eq!(
+            in_channels, self.in_channels,
+            "Expected {} input channels, got {}",
+            self.in_channels, in_channels
+        );
+
+        let result = if self.use_im2col {
+            self.forward_im2col(&nchw_input)
+        } else {
+            self.forward_naive(&nchw_input)
+        };
+
+        // Convert output back to original layout if needed
+        if self.layout == ConvLayout::NHWC {
+            permute::permute(&result, &ConvLayout::NCHW.permutation_to(ConvLayout::NHWC))
+        } else {
+            result
+        }
     }
 
     fn parameters(&self) -> Vec<&Tensor> {
@@ -510,6 +738,8 @@ impl std::fmt::Debug for Conv2d {
             .field("stride", &(self.stride_h, self.stride_w))
             .field("padding", &(self.padding_h, self.padding_w))
             .field("bias", &self.bias.is_some())
+            .field("layout", &self.layout)
+            .field("use_im2col", &self.use_im2col)
             .finish_non_exhaustive()
     }
 }
