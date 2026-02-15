@@ -1,0 +1,450 @@
+
+#[test]
+fn test_cli_017_publish_without_token() {
+    // Train a model first
+    let history = create_temp_history(&["git status", "git commit -m test", "cargo build"]);
+
+    let model = NamedTempFile::new().unwrap();
+
+    // Train
+    aprender_shell()
+        .args([
+            "train",
+            "-f",
+            history.path().to_str().unwrap(),
+            "-o",
+            model.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    // Publish without HF_TOKEN (should show instructions)
+    aprender_shell()
+        .args([
+            "publish",
+            "-m",
+            model.path().to_str().unwrap(),
+            "-r",
+            "paiml/test-model",
+        ])
+        .env_remove("HF_TOKEN")
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("HF_TOKEN"))
+        .stdout(predicate::str::contains("Model card saved"));
+}
+
+#[test]
+fn test_cli_017_publish_generates_readme() {
+    // Train a model first
+    let history = create_temp_history(&[
+        "kubectl get pods",
+        "kubectl describe pod test",
+        "docker run nginx",
+    ]);
+
+    let temp_dir = tempfile::tempdir().unwrap();
+    let model_path = temp_dir.path().join("test.model");
+
+    // Train
+    aprender_shell()
+        .args([
+            "train",
+            "-f",
+            history.path().to_str().unwrap(),
+            "-o",
+            model_path.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    // Publish (generates README.md)
+    aprender_shell()
+        .args([
+            "publish",
+            "-m",
+            model_path.to_str().unwrap(),
+            "-r",
+            "paiml/kubectl-model",
+            "-c",
+            "Initial upload",
+        ])
+        .env_remove("HF_TOKEN")
+        .assert()
+        .success();
+
+    // Check README.md was created
+    let readme_path = temp_dir.path().join("README.md");
+    assert!(readme_path.exists(), "README.md should be created");
+
+    let content = std::fs::read_to_string(&readme_path).unwrap();
+    assert!(
+        content.contains("aprender"),
+        "README should mention aprender"
+    );
+    assert!(
+        content.contains("Shell Completion"),
+        "README should mention Shell Completion"
+    );
+}
+
+#[test]
+fn test_cli_017_publish_with_custom_commit() {
+    let history = create_temp_history(&["npm install", "npm test"]);
+    let model = NamedTempFile::new().unwrap();
+
+    aprender_shell()
+        .args([
+            "train",
+            "-f",
+            history.path().to_str().unwrap(),
+            "-o",
+            model.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    // Without HF_TOKEN, shows upload instructions with commit message
+    aprender_shell()
+        .args([
+            "publish",
+            "-m",
+            model.path().to_str().unwrap(),
+            "-r",
+            "org/custom",
+            "-c",
+            "Custom commit v2",
+        ])
+        .env_remove("HF_TOKEN")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("org/custom"))
+        .stdout(predicate::str::contains("Model card saved"));
+}
+
+// ============================================================================
+// Test: CLI_018 - Stream Mode (GH-95)
+// ============================================================================
+
+#[test]
+fn test_cli_018_stream_help() {
+    aprender_shell()
+        .args(["stream", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Stream mode"))
+        .stdout(predicate::str::contains("stdin"))
+        .stdout(predicate::str::contains("--format"));
+}
+
+#[test]
+fn test_cli_018_stream_missing_model() {
+    aprender_shell()
+        .args(["stream", "-m", "/nonexistent/model.apr"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("not found").or(predicate::str::contains("Failed")));
+}
+
+// ============================================================================
+// Test: CLI_019 - Daemon Mode (GH-95)
+// ============================================================================
+
+#[test]
+fn test_cli_019_daemon_help() {
+    aprender_shell()
+        .args(["daemon", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Daemon mode"))
+        .stdout(predicate::str::contains("socket"))
+        .stdout(predicate::str::contains("--foreground"));
+}
+
+#[test]
+fn test_cli_019_daemon_stop_no_daemon() {
+    aprender_shell()
+        .args(["daemon-stop", "-s", "/tmp/nonexistent-test.sock"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("not running").or(predicate::str::contains("not found")));
+}
+
+#[test]
+fn test_cli_019_daemon_status_no_daemon() {
+    aprender_shell()
+        .args(["daemon-status", "-s", "/tmp/nonexistent-test.sock"])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("not running").or(predicate::str::contains("not found")));
+}
+
+#[test]
+fn test_cli_019_daemon_missing_model() {
+    aprender_shell()
+        .args([
+            "daemon",
+            "-m",
+            "/nonexistent/model.apr",
+            "-s",
+            "/tmp/test-daemon.sock",
+            "--foreground",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("not found").or(predicate::str::contains("Failed")));
+}
+
+// ============================================================================
+// Test: CLI_020 - ZSH Widget with Daemon Support (GH-95)
+// ============================================================================
+
+#[test]
+fn test_cli_020_zsh_widget_v4() {
+    aprender_shell()
+        .arg("zsh-widget")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("aprender-shell ZSH widget v5"))
+        .stdout(predicate::str::contains("daemon support"));
+}
+
+#[test]
+fn test_cli_020_zsh_widget_daemon_functions() {
+    aprender_shell()
+        .arg("zsh-widget")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("_aprender_daemon_available"))
+        .stdout(predicate::str::contains("_aprender_suggest_daemon"))
+        .stdout(predicate::str::contains("APRENDER_USE_DAEMON"));
+}
+
+#[test]
+fn test_cli_020_zsh_widget_auto_daemon() {
+    aprender_shell()
+        .arg("zsh-widget")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("APRENDER_AUTO_DAEMON"));
+}
+
+#[test]
+fn test_cli_020_zsh_widget_socket_config() {
+    aprender_shell()
+        .arg("zsh-widget")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("APRENDER_SOCKET"));
+}
+
+#[test]
+fn test_cli_020_zsh_widget_shellcheck_directive() {
+    // Widget should include shellcheck directive for ZSH-specific syntax
+    aprender_shell()
+        .arg("zsh-widget")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("shellcheck shell=zsh"));
+}
+
+#[test]
+fn test_cli_020_zsh_widget_bashrs_lint() {
+    use std::process::Command as StdCommand;
+
+    // Check if bashrs is available
+    let bashrs_available = StdCommand::new("bashrs")
+        .arg("--version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+
+    if !bashrs_available {
+        eprintln!("⚠️  bashrs not installed, skipping lint validation");
+        return;
+    }
+
+    // Generate widget
+    let widget_output = aprender_shell()
+        .arg("zsh-widget")
+        .output()
+        .expect("Failed to generate widget");
+
+    assert!(widget_output.status.success());
+
+    // Write to temp file for bashrs
+    let mut widget_file = NamedTempFile::new().unwrap();
+    widget_file.write_all(&widget_output.stdout).unwrap();
+
+    // Run bashrs lint
+    let lint_output = StdCommand::new("bashrs")
+        .args([
+            "lint",
+            "--format",
+            "json",
+            widget_file.path().to_str().unwrap(),
+        ])
+        .output()
+        .expect("Failed to run bashrs lint");
+
+    // Parse result (bashrs outputs JSON with errors/warnings)
+    let stdout = String::from_utf8_lossy(&lint_output.stdout);
+    let stderr = String::from_utf8_lossy(&lint_output.stderr);
+
+    // Check for errors (warnings are acceptable for ZSH-specific syntax)
+    // bashrs lint exits 1 on warnings but 0 on clean
+    // We accept warnings but not errors
+    assert!(
+        !stderr.contains("[error]") && !stdout.contains("\"severity\":\"error\""),
+        "Widget has lint errors: stdout={}, stderr={}",
+        stdout,
+        stderr
+    );
+
+    eprintln!("✅ bashrs lint passed (0 errors)");
+}
+
+// ============================================================================
+// Test: CLI_021 - Chaos Resilience (GH-99)
+// ============================================================================
+
+/// Test graceful handling of empty model file
+#[test]
+fn test_cli_021_chaos_empty_model() {
+    let empty_model = NamedTempFile::new().unwrap();
+
+    // Should handle gracefully with error message (may exit 0 with empty suggestions)
+    aprender_shell()
+        .args([
+            "suggest",
+            "-m",
+            empty_model.path().to_str().unwrap(),
+            "git ",
+        ])
+        .assert()
+        .stderr(
+            predicate::str::contains("Invalid")
+                .or(predicate::str::contains("corrupted"))
+                .or(predicate::str::contains("small"))
+                .or(predicate::str::is_empty()), // May also just return empty
+        );
+}
+
+/// Test graceful handling of truncated model file
+#[test]
+fn test_cli_021_chaos_truncated_model() {
+    let mut truncated_model = NamedTempFile::new().unwrap();
+    // Write partial header (magic bytes only, truncated)
+    truncated_model.write_all(b"APRN").unwrap();
+
+    // Should handle gracefully with error message
+    aprender_shell()
+        .args([
+            "suggest",
+            "-m",
+            truncated_model.path().to_str().unwrap(),
+            "git ",
+        ])
+        .assert()
+        .stderr(
+            predicate::str::contains("Invalid")
+                .or(predicate::str::contains("corrupted"))
+                .or(predicate::str::contains("small"))
+                .or(predicate::str::contains("unexpected")),
+        );
+}
+
+/// Test graceful handling of model with wrong magic bytes
+#[test]
+fn test_cli_021_chaos_wrong_magic() {
+    let mut bad_model = NamedTempFile::new().unwrap();
+    // Write wrong magic bytes
+    bad_model.write_all(b"XXXX12345678901234567890").unwrap();
+
+    // Should handle gracefully with error message
+    aprender_shell()
+        .args(["suggest", "-m", bad_model.path().to_str().unwrap(), "git "])
+        .assert()
+        .stderr(
+            predicate::str::contains("Invalid")
+                .or(predicate::str::contains("corrupted"))
+                .or(predicate::str::contains("small"))
+                .or(predicate::str::contains("magic")),
+        );
+}
+
+/// Test graceful handling of very long prefix input
+#[test]
+fn test_cli_021_chaos_long_prefix() {
+    let history = create_temp_history(&["git status", "cargo build"]);
+    let model = NamedTempFile::new().unwrap();
+
+    aprender_shell()
+        .args([
+            "train",
+            "-f",
+            history.path().to_str().unwrap(),
+            "-o",
+            model.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    // Very long prefix (10KB)
+    let long_prefix = "g".repeat(10000);
+
+    aprender_shell()
+        .args([
+            "suggest",
+            "-m",
+            model.path().to_str().unwrap(),
+            &long_prefix,
+        ])
+        .assert()
+        .success(); // Should handle gracefully (returns empty or truncates)
+}
+
+/// Test graceful handling of prefix with special characters
+#[test]
+fn test_cli_021_chaos_special_chars() {
+    let history = create_temp_history(&["git status", "cargo build"]);
+    let model = NamedTempFile::new().unwrap();
+
+    aprender_shell()
+        .args([
+            "train",
+            "-f",
+            history.path().to_str().unwrap(),
+            "-o",
+            model.path().to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    // Test various special character inputs
+    // Note: Null bytes (\0) are excluded because they cannot be passed via command line
+    // (this is a limitation of the test harness, not the binary)
+    let test_cases = [
+        "\x1b[31m",         // ANSI escape
+        "$(whoami)",        // Command substitution
+        "`whoami`",         // Backtick substitution
+        "'; DROP TABLE",    // SQL injection attempt
+        "&&rm -rf /",       // Command chain attempt
+        "|cat /etc/passwd", // Pipe injection
+    ];
+
+    for prefix in test_cases {
+        let result = aprender_shell()
+            .args(["suggest", "-m", model.path().to_str().unwrap(), prefix])
+            .assert();
+
+        // Should either succeed (with sanitized input) or fail gracefully
+        // Must NOT panic or crash
+        let output = result.get_output();
+        assert!(
+            output.status.success() || !output.stderr.is_empty(),
+            "Should handle special chars gracefully: {:?}",
+            prefix
+        );
+    }
+}
