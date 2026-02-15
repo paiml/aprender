@@ -6,7 +6,6 @@ This page provides a complete reference for all `cargo run --example` commands a
 
 | Example | Description | Category |
 |---------|-------------|----------|
-| `linear_regression` | Basic linear regression | Supervised |
 | `logistic_regression` | Binary classification | Supervised |
 | `decision_tree_iris` | Decision tree classifier | Supervised |
 | `random_forest_iris` | Random forest classifier | Supervised |
@@ -14,11 +13,12 @@ This page provides a complete reference for all `cargo run --example` commands a
 | `naive_bayes_iris` | Naive Bayes classifier | Supervised |
 | `knn_iris` | K-nearest neighbors | Supervised |
 | `svm_iris` | Support vector machine | Supervised |
-| `kmeans_clustering` | K-means unsupervised | Unsupervised |
+| `iris_clustering` | K-means on Iris dataset | Unsupervised |
 | `pca_iris` | Dimensionality reduction | Unsupervised |
 | `time_series_forecasting` | ARIMA forecasting | Time Series |
 | `text_preprocessing` | NLP text processing | NLP |
-| `qwen_inference` | LLM inference | Deep Learning |
+| `qwen_chat` | Qwen2 LLM configuration demo | Deep Learning |
+| `rosetta_stone` | Universal format converter | Model Ops |
 
 ## Running Examples
 
@@ -40,12 +40,13 @@ cargo run --example <name> -- arg1 arg2
 
 ## Supervised Learning
 
-### Linear Regression
+### Regression
 
 ```bash
-cargo run --example linear_regression --release
 cargo run --example regularized_regression --release
 cargo run --example boston_housing --release
+cargo run --example decision_tree_regression --release
+cargo run --example random_forest_regression --release
 ```
 
 ### Classification
@@ -58,6 +59,7 @@ cargo run --example gbm_iris --release
 cargo run --example naive_bayes_iris --release
 cargo run --example knn_iris --release
 cargo run --example svm_iris --release
+cargo run --example classification_training --release
 ```
 
 ### Bayesian Inference
@@ -87,6 +89,7 @@ cargo run --example dbscan_clustering --release
 cargo run --example hierarchical_clustering --release
 cargo run --example gmm_clustering --release
 cargo run --example spectral_clustering --release
+cargo run --example automl_clustering --release
 ```
 
 ### Dimensionality Reduction
@@ -111,19 +114,33 @@ cargo run --example lof_anomaly --release
 cargo run --example xor_training --release
 cargo run --example neural_network_training --release
 cargo run --example classification_training --release
+cargo run --example mixture_of_experts --release
 ```
 
-### LLM Inference
+### LLM / Qwen2
 
 ```bash
-# Qwen model inference (requires model file)
-cargo run --example qwen_inference --release --features inference
+# Qwen2 model configuration and tokenization demo
+cargo run --example qwen_chat --release
 
-# Whisper transcription
-cargo run --example whisper_transcribe --release --features inference
+# Qwen2 native APR format demo
+cargo run --example qwen_apr_native --release
+
+# Chat template rendering (ChatML, LLaMA, etc.)
+cargo run --example chat_template --release
 
 # HuggingFace model import
 cargo run --example phi_hf_import --release
+
+# Whisper transcription
+cargo run --example whisper_transcribe --release --features inference
+```
+
+### Model Compression
+
+```bash
+cargo run --example pruning_magnitude --release
+cargo run --example lottery_ticket_pruning --release
 ```
 
 ## Time Series
@@ -147,6 +164,7 @@ cargo run --example topic_sentiment_analysis --release
 cargo run --example graph_algorithms_comprehensive --release
 cargo run --example graph_social_network --release
 cargo run --example community_detection --release
+cargo run --example logic_family_tree --release
 ```
 
 ## Optimization
@@ -183,6 +201,18 @@ cargo run --example apr_embed --release
 cargo run --example apr_with_metadata --release
 cargo run --example apr_cli_commands --release
 cargo run --example create_test_apr --release
+cargo run --example create_test_transformer_apr --release
+```
+
+### Model Conversion
+
+```bash
+# Rosetta Stone universal format converter
+cargo run --example rosetta_stone --release
+
+# Validated tensor contracts (Poka-Yoke)
+cargo run --example validated_tensors --release
+cargo run --example poka_yoke_validation --release
 ```
 
 ### Model Serialization
@@ -190,7 +220,14 @@ cargo run --example create_test_apr --release
 ```bash
 cargo run --example model_serialization --release
 cargo run --example shell_model_format --release
-cargo run --example shell_encryption_demo --release
+cargo run --example shell_encryption_demo --release --features format-encryption
+```
+
+### Binary Inspection
+
+```bash
+# Hex forensics — format-aware binary inspection
+cargo run --example hex_forensics --release
 ```
 
 ## Data Processing
@@ -215,7 +252,7 @@ cargo run --example recommend_content --release
 cargo run --example market_basket_apriori --release
 ```
 
-## AutoML
+## AutoML / Model Selection
 
 ```bash
 cargo run --example automl_clustering --release
@@ -250,34 +287,38 @@ cargo run --example pipeline_verification --release
 cargo run --example poka_yoke_validation --release
 ```
 
-## Advanced
-
-### Mixture of Experts
-
-```bash
-cargo run --example mixture_of_experts --release
-```
-
-### Online Learning
+## Online Learning
 
 ```bash
 cargo run --example online_learning --release
 ```
 
-### Code Analysis
+## Code Analysis
 
 ```bash
 cargo run --example code_analysis --release
 ```
 
-### Logic Programming
+## Benchmarks
 
 ```bash
-cargo run --example logic_family_tree --release
+cargo run --example bench_comparison --release
+cargo run --example showcase_benchmark --release
+cargo run --example mem_test --release
+```
+
+## QA / Falsification
+
+```bash
+cargo run --example qa_verify --release
+cargo run --example qa_falsify --release
+cargo run --example qa_run --release
+cargo run --example qa_chat --release
+cargo run --example qa_serve --release
 ```
 
 ## See Also
 
-- [Case Studies](./linear-regression.md) - Detailed walkthroughs
-- [APR CLI Tool](../tools/apr-cli.md) - Command-line interface
-- [APR Format Specification](../tools/apr-spec.md) - Model format details
+- [Case Studies](./boston-housing.md) — Detailed walkthroughs
+- [APR CLI Tool](../tools/apr-cli.md) — Command-line interface
+- [APR Format Specification](../tools/apr-spec.md) — Model format details
