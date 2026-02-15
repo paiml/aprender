@@ -81,6 +81,9 @@ pub mod v2;
 // GGUF export module (spec §7.2)
 pub mod gguf;
 
+// ONNX format reader (GH-238)
+pub mod onnx;
+
 // Hex dump and data flow visualization (GH-122, Toyota Principle 12: Genchi Genbutsu)
 pub mod hexdump;
 

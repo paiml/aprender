@@ -1417,13 +1417,56 @@ pub(crate) fn load_source_tensors(
                 user_metadata: UserMetadata::new(),
             })
         }
+        // GH-238: ONNX format import
+        "onnx" => {
+            let onnx_reader =
+                crate::format::onnx::OnnxReader::from_file(path).map_err(|e| {
+                    AprenderError::FormatError {
+                        message: format!("Failed to parse ONNX file: {e}"),
+                    }
+                })?;
+
+            let tensors = onnx_reader.to_f32_tensors();
+            if tensors.is_empty() {
+                return Err(AprenderError::FormatError {
+                    message: "ONNX file contains no tensor initializers (weights)".to_string(),
+                });
+            }
+
+            eprintln!(
+                "[GH-238] Loaded {} tensors from ONNX (ir_version={}, producer={})",
+                tensors.len(),
+                onnx_reader.metadata().ir_version,
+                onnx_reader.metadata().producer_name
+            );
+
+            let model_config = infer_model_config_from_tensors(&tensors);
+            let tokenizer = load_tokenizer_from_json(path);
+
+            Ok(SourceLoadResult {
+                tensors,
+                f16_raw_tensors: BTreeMap::new(),
+                tokenizer,
+                model_config,
+                user_metadata: UserMetadata::new(),
+            })
+        }
+        // GH-238: NeMo format (tar.gz archive)
+        "nemo" => Err(AprenderError::FormatError {
+            message: "NeMo format (.nemo) import is not yet implemented. \
+                      Convert to SafeTensors first using: \
+                      python -c \"from nemo.collections.asr.models import ... ; model.export('model.onnx')\""
+                .to_string(),
+        }),
         "bin" | "pt" | "pth" => Err(AprenderError::FormatError {
             message: format!(
                 "PyTorch format ({extension}) not supported. Convert to SafeTensors first."
             ),
         }),
         other => Err(AprenderError::FormatError {
-            message: format!("Unknown file format: .{other}. Supported: .safetensors"),
+            message: format!(
+                "Unknown file format: .{other}. Supported: .safetensors, .gguf, .onnx"
+            ),
         }),
     }
 }
