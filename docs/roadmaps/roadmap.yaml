@@ -1,5 +1,5 @@
 roadmap_version: '1.0'
-github_enabled: "true"
+github_enabled: true
 github_repo: paiml/aprender
 roadmap:
 - id: GH-9
@@ -3674,4 +3674,126 @@ roadmap:
   estimated_effort: null
   labels:
   - bug
+  notes: null
+- id: PMAT-257
+  github_issue: null
+  item_type: task
+  title: 'GH-259: apr flow — add GGUF/SafeTensors support via Rosetta dispatch'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-02-15T08:14:25Z
+  updated: 2026-02-15T08:36:11Z
+  spec: null
+  acceptance_criteria:
+  - apr flow only works with APR format, fails on GGUF with 'Invalid magic'. Should use Rosetta Stone dispatch like tree/hex/debug.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-258
+  github_issue: null
+  item_type: task
+  title: 'GH-260: apr diff — fix cross-format APR parse failure'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-02-15T08:14:26Z
+  updated: 2026-02-15T08:36:12Z
+  spec: null
+  acceptance_criteria:
+  - 'apr diff GGUF vs APR fails with ''Invalid tensor index: invalid dtype''. Rosetta Stone diff should handle cross-format comparison.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-243
+  github_issue: 243
+  item_type: task
+  title: 'feat: apr quantize — unified quantization pipeline with GGUF/AWQ/GPTQ output'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-02-15T10:52:15.943055870+00:00
+  updated: 2026-02-15T10:52:15.943055870+00:00
+  spec: null
+  acceptance_criteria:
+  - '`apr quantize model.apr --scheme int4` works end-to-end'
+  - '`apr quantize model.apr --scheme gptq --calibration data.jsonl` works'
+  - '`apr quantize --plan --json` returns memory/time estimates'
+  - '`--batch` mode produces multiple output files'
+  - JSON output for all modes
+  - Testable in tiny-model-ground-truth parity checker
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-244
+  github_issue: 244
+  item_type: task
+  title: 'feat: apr finetune — LoRA/QLoRA fine-tuning with adapter upload to Hub'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-02-15T11:12:10.414158761+00:00
+  updated: 2026-02-15T11:12:10.414158761+00:00
+  spec: null
+  acceptance_criteria:
+  - '`apr finetune model.apr --method lora --data train.jsonl` trains and saves adapter'
+  - '`apr finetune merge` produces valid APR model'
+  - Adapter format compatible with PEFT (`adapter_config.json`)
+  - '`--plan --json` returns VRAM/time estimates (existing behavior preserved)'
+  - Testable with tiny models (SmolLM-135M fine-tune should complete in <5min)
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-247
+  github_issue: 247
+  item_type: task
+  title: 'feat: apr prune + apr distill — structured pruning and knowledge distillation pipeline'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-02-15T11:12:51.494148163+00:00
+  updated: 2026-02-15T11:12:51.494148163+00:00
+  spec: null
+  acceptance_criteria:
+  - '`apr prune model.apr --method structured --target-ratio 0.5` produces smaller model'
+  - '`apr distill teacher.apr --student pruned.apr --data train.jsonl` trains student'
+  - '`apr prune --analyze --json` returns layer importance scores'
+  - '`apr prune --plan --json` returns time/memory/quality estimates'
+  - Combined `--distill` flag works for Minitron-style pipeline
+  - Pruned model passes `apr validate` and `apr check`
+  - Testable with tiny models (SmolLM-135M → ~70M should complete in <10min)
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-246
+  github_issue: 246
+  item_type: task
+  title: 'feat: apr export — MLX, CoreML, and OpenVINO format support'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-02-15T11:30:26.378754681+00:00
+  updated: 2026-02-15T11:30:26.378754681+00:00
+  spec: null
+  acceptance_criteria:
+  - '`apr export --format mlx` produces loadable MLX model'
+  - '`apr export --format onnx` produces valid ONNX model'
+  - '`apr export --list-formats --json` lists all supported formats'
+  - '`--batch` mode produces multiple output directories'
+  - Round-trip validation via `apr rosetta` for each format
+  - Testable in tiny-model-ground-truth parity checker
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
   notes: null

@@ -50,8 +50,14 @@ pub enum ExportFormat {
     SafeTensors,
     /// GGUF format (.gguf) - llama.cpp / local inference
     Gguf,
+    /// MLX format (directory with .safetensors + config.json) - Apple Silicon
+    Mlx,
     /// ONNX format (.onnx) - Cross-framework inference (not yet implemented)
     Onnx,
+    /// OpenVINO IR format (.xml + .bin) - Intel inference (not yet implemented)
+    OpenVino,
+    /// CoreML format (.mlpackage) - iOS/macOS deployment (not yet implemented)
+    CoreMl,
     /// `TorchScript` format (.pt) - `PyTorch` deployment (not yet implemented)
     TorchScript,
 }
@@ -63,7 +69,10 @@ impl std::str::FromStr for ExportFormat {
         match s.to_lowercase().as_str() {
             "safetensors" | "st" => Ok(Self::SafeTensors),
             "gguf" => Ok(Self::Gguf),
+            "mlx" => Ok(Self::Mlx),
             "onnx" => Ok(Self::Onnx),
+            "openvino" | "ov" => Ok(Self::OpenVino),
+            "coreml" | "mlpackage" => Ok(Self::CoreMl),
             "torchscript" | "pt" | "torch" => Ok(Self::TorchScript),
             _ => Err(format!("Unknown export format: {s}")),
         }
@@ -77,7 +86,10 @@ impl ExportFormat {
         match self {
             Self::SafeTensors => "safetensors",
             Self::Gguf => "gguf",
+            Self::Mlx => "mlx",
             Self::Onnx => "onnx",
+            Self::OpenVino => "xml",
+            Self::CoreMl => "mlpackage",
             Self::TorchScript => "pt",
         }
     }
@@ -85,7 +97,35 @@ impl ExportFormat {
     /// Check if format is supported
     #[must_use]
     pub fn is_supported(&self) -> bool {
-        matches!(self, Self::SafeTensors | Self::Gguf)
+        matches!(self, Self::SafeTensors | Self::Gguf | Self::Mlx)
+    }
+
+    /// Human-readable name for display
+    #[must_use]
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            Self::SafeTensors => "SafeTensors",
+            Self::Gguf => "GGUF",
+            Self::Mlx => "MLX",
+            Self::Onnx => "ONNX",
+            Self::OpenVino => "OpenVINO",
+            Self::CoreMl => "CoreML",
+            Self::TorchScript => "TorchScript",
+        }
+    }
+
+    /// All known export formats
+    #[must_use]
+    pub fn all() -> &'static [ExportFormat] {
+        &[
+            Self::SafeTensors,
+            Self::Gguf,
+            Self::Mlx,
+            Self::Onnx,
+            Self::OpenVino,
+            Self::CoreMl,
+            Self::TorchScript,
+        ]
     }
 }
 
@@ -376,8 +416,15 @@ fn dispatch_export(
         ExportFormat::Gguf => {
             export_to_gguf(tensors, output_path, input_path, options.quantize.as_ref())
         }
-        ExportFormat::Onnx | ExportFormat::TorchScript => Err(AprenderError::FormatError {
-            message: format!("Export format {:?} is not yet implemented", options.format),
+        ExportFormat::Mlx => export_mlx(tensors, input_path, output_path, options),
+        ExportFormat::Onnx
+        | ExportFormat::OpenVino
+        | ExportFormat::CoreMl
+        | ExportFormat::TorchScript => Err(AprenderError::FormatError {
+            message: format!(
+                "Export format {} is not yet implemented. Supported: safetensors, gguf, mlx",
+                options.format.display_name()
+            ),
         }),
     }
 }
@@ -1059,6 +1106,62 @@ fn extract_apr_tokenizer_for_gguf(
     }
 
     entries
+}
+
+/// GH-246: Export to MLX format (Apple Silicon).
+///
+/// MLX models are stored as a directory containing:
+/// - `model.safetensors` — weights in SafeTensors format
+/// - `config.json` — model configuration (HuggingFace-compatible)
+/// - `tokenizer.json` — tokenizer (optional, from APR metadata)
+///
+/// This reuses the SafeTensors export path since MLX uses SafeTensors as its
+/// underlying weight format. The key difference is the directory structure.
+fn export_mlx(
+    tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+    input_path: &Path,
+    output_path: &Path,
+    options: &ExportOptions,
+) -> Result<()> {
+    // Output path is the directory
+    fs::create_dir_all(output_path).map_err(|e| AprenderError::FormatError {
+        message: format!("Failed to create MLX output directory: {e}"),
+    })?;
+
+    // Write model.safetensors
+    let weights_path = output_path.join("model.safetensors");
+    let user_metadata = extract_user_metadata(input_path);
+    if user_metadata.is_empty() {
+        save_safetensors(&weights_path, tensors).map_err(|e| AprenderError::FormatError {
+            message: format!("Failed to write MLX weights: {e}"),
+        })?;
+    } else {
+        save_safetensors_with_metadata(&weights_path, tensors, &user_metadata).map_err(|e| {
+            AprenderError::FormatError {
+                message: format!("Failed to write MLX weights: {e}"),
+            }
+        })?;
+    }
+
+    // Write config.json
+    let config = infer_model_config(tensors);
+    let config_path = output_path.join("config.json");
+    fs::write(&config_path, config).map_err(|e| AprenderError::FormatError {
+        message: format!("Failed to write MLX config.json: {e}"),
+    })?;
+
+    // Write tokenizer.json if available
+    if options.include_tokenizer {
+        let tokenizer_json = infer_tokenizer_json(input_path);
+        if !tokenizer_json.is_empty() {
+            let tokenizer_path = output_path.join("tokenizer.json");
+            if let Err(e) = fs::write(&tokenizer_path, &tokenizer_json) {
+                eprintln!("[GH-246] Warning: Failed to write tokenizer.json: {e}");
+            }
+        }
+    }
+
+    Ok(())
 }
 
 /// PMAT-252: Raw block passthrough for APR→GGUF export.

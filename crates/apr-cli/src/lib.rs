@@ -393,20 +393,32 @@ pub enum Commands {
     /// Export model to other formats
     Export {
         /// Path to .apr model file
-        #[arg(value_name = "FILE")]
-        file: PathBuf,
+        #[arg(value_name = "FILE", required_unless_present = "list_formats")]
+        file: Option<PathBuf>,
 
-        /// Output format (onnx, safetensors, gguf)
+        /// Output format (safetensors, gguf, mlx, onnx, openvino, coreml)
         #[arg(long, default_value = "safetensors")]
         format: String,
 
-        /// Output file path
+        /// Output file/directory path
         #[arg(short, long)]
-        output: PathBuf,
+        output: Option<PathBuf>,
 
         /// Apply quantization during export (int8, int4, fp16)
         #[arg(long)]
         quantize: Option<String>,
+
+        /// List all supported export formats
+        #[arg(long)]
+        list_formats: bool,
+
+        /// Batch export to multiple formats (comma-separated: gguf,mlx,safetensors)
+        #[arg(long)]
+        batch: Option<String>,
+
+        /// Output in JSON format
+        #[arg(long)]
+        json: bool,
     },
 
     /// Import from external formats (hf://org/repo, local files, URLs)
@@ -1495,9 +1507,9 @@ fn extract_model_paths(command: &Commands) -> Vec<PathBuf> {
                 vec![]
             }
         }
+        Commands::Export { file, .. } => file.iter().cloned().collect(),
         Commands::Serve { file, .. }
         | Commands::Trace { file, .. }
-        | Commands::Export { file, .. }
         | Commands::Convert { file, .. }
         | Commands::Probar { file, .. }
         | Commands::CompareHf { file, .. }
@@ -2264,7 +2276,18 @@ fn dispatch_core_command(cli: &Cli) -> Option<Result<(), CliError>> {
             format,
             output,
             quantize,
-        } => export::run(file, format, output, quantize.as_deref()),
+            list_formats,
+            batch,
+            json,
+        } => export::run(
+            file.as_deref(),
+            format,
+            output.as_deref(),
+            quantize.as_deref(),
+            *list_formats,
+            batch.as_deref(),
+            *json || cli.json,
+        ),
         Commands::Import {
             source,
             output,
@@ -4147,10 +4170,11 @@ mod tests {
                 format,
                 output,
                 quantize,
+                ..
             } => {
-                assert_eq!(file, PathBuf::from("model.apr"));
+                assert_eq!(file, Some(PathBuf::from("model.apr")));
                 assert_eq!(format, "gguf");
-                assert_eq!(output, PathBuf::from("model.gguf"));
+                assert_eq!(output, Some(PathBuf::from("model.gguf")));
                 assert_eq!(quantize, Some("int4".to_string()));
             }
             _ => panic!("Expected Export command"),
@@ -5576,10 +5600,13 @@ mod tests {
     #[test]
     fn test_extract_paths_export() {
         let cmd = Commands::Export {
-            file: PathBuf::from("model.apr"),
+            file: Some(PathBuf::from("model.apr")),
             format: "gguf".to_string(),
-            output: PathBuf::from("out.gguf"),
+            output: Some(PathBuf::from("out.gguf")),
             quantize: None,
+            list_formats: false,
+            batch: None,
+            json: false,
         };
         let paths = extract_model_paths(&cmd);
         assert_eq!(paths, vec![PathBuf::from("model.apr")]);
@@ -6316,10 +6343,13 @@ mod tests {
     #[test]
     fn test_execute_export_file_not_found() {
         let cli = make_cli(Commands::Export {
-            file: PathBuf::from("/tmp/nonexistent_model_export_test.apr"),
+            file: Some(PathBuf::from("/tmp/nonexistent_model_export_test.apr")),
             format: "safetensors".to_string(),
-            output: PathBuf::from("/tmp/out.safetensors"),
+            output: Some(PathBuf::from("/tmp/out.safetensors")),
             quantize: None,
+            list_formats: false,
+            batch: None,
+            json: false,
         });
         let result = execute_command(&cli);
         assert!(result.is_err(), "Export should fail with non-existent file");
@@ -6827,9 +6857,11 @@ mod tests {
     /// Test that 'apr export' without output fails
     #[test]
     fn test_missing_export_output() {
+        // Output is now optional at parse level (validated at runtime)
+        // so parse succeeds, but execution should fail with ValidationFailed
         let args = vec!["apr", "export", "model.apr"];
         let result = parse_cli(args);
-        assert!(result.is_err(), "export requires -o/--output");
+        assert!(result.is_ok(), "export parses without -o (validated at runtime)");
     }
 
     /// Test that 'apr convert' without output fails

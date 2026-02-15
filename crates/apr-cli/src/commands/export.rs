@@ -1,12 +1,21 @@
-//! Export command implementation
-//!
-//! Implements APR-SPEC §4.6: Export Command
+//! Export command implementation (GH-246)
 //!
 //! Exports APR models to other formats for different ecosystems:
 //! - SafeTensors (.safetensors) - HuggingFace ecosystem
 //! - GGUF (.gguf) - llama.cpp / local inference
+//! - MLX (directory) - Apple Silicon inference
 //! - ONNX (.onnx) - Cross-framework inference (planned)
-//! - TorchScript (.pt) - PyTorch deployment (planned)
+//! - OpenVINO (.xml/.bin) - Intel inference (planned)
+//! - CoreML (.mlpackage) - iOS/macOS deployment (planned)
+//!
+//! # Example
+//!
+//! ```bash
+//! apr export model.apr --format gguf -o model.gguf
+//! apr export model.apr --format mlx -o model-mlx/
+//! apr export model.apr --batch gguf,mlx -o exports/
+//! apr export --list-formats --json
+//! ```
 
 use crate::error::{CliError, Result};
 use crate::output;
@@ -15,53 +24,73 @@ use humansize::{format_size, BINARY};
 use std::path::Path;
 
 /// Run the export command
-pub(crate) fn run(file: &Path, format: &str, output: &Path, quantize: Option<&str>) -> Result<()> {
-    // Validate input exists
+#[allow(clippy::too_many_arguments)]
+#[allow(clippy::disallowed_methods)]
+pub(crate) fn run(
+    file: Option<&Path>,
+    format: &str,
+    output: Option<&Path>,
+    quantize: Option<&str>,
+    list_formats: bool,
+    batch: Option<&str>,
+    json_output: bool,
+) -> Result<()> {
+    // Handle --list-formats
+    if list_formats {
+        return run_list_formats(json_output);
+    }
+
+    // Require file for all other operations
+    let file = file.ok_or_else(|| {
+        CliError::ValidationFailed("Model file path required. Usage: apr export <FILE>".to_string())
+    })?;
+
     if !file.exists() {
         return Err(CliError::FileNotFound(file.to_path_buf()));
     }
 
-    output::header("APR Export");
-    println!(
-        "{}",
-        output::kv_table(&[
-            ("Input", file.display().to_string()),
-            ("Output", output.display().to_string()),
-            ("Format", format.to_string()),
-        ])
-    );
+    // Handle --batch mode
+    if let Some(batch_formats) = batch {
+        return run_batch(file, batch_formats, output, quantize, json_output);
+    }
+
+    // Require output for single export
+    let output = output.ok_or_else(|| {
+        CliError::ValidationFailed("Output path required. Use -o <path>".to_string())
+    })?;
 
     // Parse export format
     let export_format: ExportFormat = format.parse().map_err(|_| {
         CliError::ValidationFailed(format!(
-            "Unknown export format: {format}. Supported: safetensors, gguf"
+            "Unknown export format: {format}. Use: safetensors, gguf, mlx, onnx, openvino, coreml"
         ))
     })?;
 
     // Check if format is supported
     if !export_format.is_supported() {
         return Err(CliError::ValidationFailed(format!(
-            "Export format '{format}' is not yet supported. Use 'safetensors' or 'gguf'."
+            "Export format '{}' is not yet implemented. Supported: safetensors, gguf, mlx",
+            export_format.display_name()
         )));
     }
 
     // Parse quantization option
-    let quant_type = match quantize {
-        Some("int8") => Some(QuantizationType::Int8),
-        Some("int4") => Some(QuantizationType::Int4),
-        Some("fp16") => Some(QuantizationType::Fp16),
-        Some(other) => {
-            return Err(CliError::ValidationFailed(format!(
-                "Unknown quantization: {other}. Supported: int8, int4, fp16"
-            )));
-        }
-        None => None,
-    };
+    let quant_type = parse_quantization(quantize)?;
 
-    if let Some(ref q) = quant_type {
-        output::metric("Quantization", format!("{q:?}"), "");
+    if !json_output {
+        output::header("APR Export");
+        let mut pairs = vec![
+            ("Input", file.display().to_string()),
+            ("Output", output.display().to_string()),
+            ("Format", export_format.display_name().to_string()),
+        ];
+        if let Some(ref q) = quant_type {
+            pairs.push(("Quantization", format!("{q:?}")));
+        }
+        println!("{}", output::kv_table(&pairs));
+        println!();
+        output::pipeline_stage("Exporting", output::StageStatus::Running);
     }
-    println!();
 
     // Build options
     let options = ExportOptions {
@@ -70,23 +99,234 @@ pub(crate) fn run(file: &Path, format: &str, output: &Path, quantize: Option<&st
         ..Default::default()
     };
 
-    // Run export
-    output::pipeline_stage("Exporting", output::StageStatus::Running);
-
     match apr_export(file, output, options) {
         Ok(report) => {
-            display_report(&report);
+            if json_output {
+                display_report_json(&report);
+            } else {
+                display_report(&report);
+            }
             Ok(())
         }
         Err(e) => {
-            println!();
-            println!("  {}", output::badge_fail("Export failed"));
+            if !json_output {
+                println!();
+                println!("  {}", output::badge_fail("Export failed"));
+            }
             Err(CliError::ValidationFailed(e.to_string()))
         }
     }
 }
 
-/// Display export report
+/// Parse quantization option string
+fn parse_quantization(quantize: Option<&str>) -> Result<Option<QuantizationType>> {
+    match quantize {
+        Some("int8") => Ok(Some(QuantizationType::Int8)),
+        Some("int4") => Ok(Some(QuantizationType::Int4)),
+        Some("fp16") => Ok(Some(QuantizationType::Fp16)),
+        Some("q4k") => Ok(Some(QuantizationType::Q4K)),
+        Some(other) => Err(CliError::ValidationFailed(format!(
+            "Unknown quantization: {other}. Supported: int8, int4, fp16, q4k"
+        ))),
+        None => Ok(None),
+    }
+}
+
+/// List all supported export formats
+#[allow(clippy::disallowed_methods)]
+fn run_list_formats(json_output: bool) -> Result<()> {
+    if json_output {
+        let formats: Vec<serde_json::Value> = ExportFormat::all()
+            .iter()
+            .map(|f| {
+                serde_json::json!({
+                    "name": f.display_name(),
+                    "extension": f.extension(),
+                    "supported": f.is_supported(),
+                    "parse_aliases": format_aliases(*f),
+                })
+            })
+            .collect();
+        let json = serde_json::json!({ "formats": formats });
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json).unwrap_or_default()
+        );
+    } else {
+        output::header("APR Export — Supported Formats");
+        println!();
+        for f in ExportFormat::all() {
+            let status = if f.is_supported() {
+                output::badge_pass("supported")
+            } else {
+                output::badge_info("planned")
+            };
+            println!(
+                "  {:<14} .{:<14} {}",
+                f.display_name(),
+                f.extension(),
+                status
+            );
+        }
+        println!();
+        println!(
+            "  {} Use --format <name> to select format.",
+            output::badge_info("INFO")
+        );
+    }
+    Ok(())
+}
+
+/// Get parse aliases for a format
+fn format_aliases(f: ExportFormat) -> Vec<String> {
+    match f {
+        ExportFormat::SafeTensors => vec!["safetensors".into(), "st".into()],
+        ExportFormat::Gguf => vec!["gguf".into()],
+        ExportFormat::Mlx => vec!["mlx".into()],
+        ExportFormat::Onnx => vec!["onnx".into()],
+        ExportFormat::OpenVino => vec!["openvino".into(), "ov".into()],
+        ExportFormat::CoreMl => vec!["coreml".into(), "mlpackage".into()],
+        ExportFormat::TorchScript => vec!["torchscript".into(), "pt".into(), "torch".into()],
+    }
+}
+
+/// Batch export to multiple formats
+#[allow(clippy::disallowed_methods)]
+fn run_batch(
+    file: &Path,
+    batch_formats: &str,
+    output_dir: Option<&Path>,
+    quantize: Option<&str>,
+    json_output: bool,
+) -> Result<()> {
+    let out_dir = output_dir.unwrap_or(Path::new("exports"));
+
+    // Parse comma-separated formats
+    let formats: Vec<ExportFormat> = batch_formats
+        .split(',')
+        .map(|s| {
+            s.trim()
+                .parse::<ExportFormat>()
+                .map_err(|_| CliError::ValidationFailed(format!("Unknown format in batch: {s}")))
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    // Validate all are supported
+    for f in &formats {
+        if !f.is_supported() {
+            return Err(CliError::ValidationFailed(format!(
+                "Format '{}' in batch is not yet supported",
+                f.display_name()
+            )));
+        }
+    }
+
+    let quant_type = parse_quantization(quantize)?;
+
+    if !json_output {
+        output::header("APR Export — Batch");
+        output::kv("Input", file.display().to_string());
+        output::kv("Output dir", out_dir.display().to_string());
+        output::kv(
+            "Formats",
+            formats
+                .iter()
+                .map(ExportFormat::display_name)
+                .collect::<Vec<_>>()
+                .join(", "),
+        );
+        println!();
+    }
+
+    let mut results = Vec::new();
+
+    for fmt in &formats {
+        let ext = fmt.extension();
+        let out_path = if *fmt == ExportFormat::Mlx {
+            out_dir.join(format!("model-{ext}"))
+        } else {
+            out_dir.join(format!("model.{ext}"))
+        };
+
+        // Create parent dir
+        if let Some(parent) = out_path.parent() {
+            std::fs::create_dir_all(parent).ok();
+        }
+
+        let options = ExportOptions {
+            format: *fmt,
+            quantize: quant_type,
+            ..Default::default()
+        };
+
+        if !json_output {
+            output::pipeline_stage(
+                &format!("Exporting to {}", fmt.display_name()),
+                output::StageStatus::Running,
+            );
+        }
+
+        match apr_export(file, &out_path, options) {
+            Ok(report) => {
+                if !json_output {
+                    println!(
+                        "    {} → {} ({})",
+                        fmt.display_name(),
+                        out_path.display(),
+                        format_size(report.exported_size, BINARY)
+                    );
+                }
+                results.push((fmt.display_name(), out_path.display().to_string(), report));
+            }
+            Err(e) => {
+                if !json_output {
+                    println!(
+                        "    {} {} — {}",
+                        output::badge_fail("FAIL"),
+                        fmt.display_name(),
+                        e
+                    );
+                }
+            }
+        }
+    }
+
+    if json_output {
+        let json_results: Vec<serde_json::Value> = results
+            .iter()
+            .map(|(name, path, report)| {
+                serde_json::json!({
+                    "format": name,
+                    "output": path,
+                    "original_size": report.original_size,
+                    "exported_size": report.exported_size,
+                    "tensor_count": report.tensor_count,
+                })
+            })
+            .collect();
+        let json = serde_json::json!({
+            "batch": true,
+            "input": file.display().to_string(),
+            "results": json_results,
+        });
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json).unwrap_or_default()
+        );
+    } else {
+        println!();
+        println!(
+            "  {} Batch export complete: {}/{} formats",
+            output::badge_pass("PASS"),
+            results.len(),
+            formats.len()
+        );
+    }
+
+    Ok(())
+}
+
+/// Display export report (human-readable)
 fn display_report(report: &ExportReport) {
     println!();
     output::subheader("Export Report");
@@ -95,7 +335,7 @@ fn display_report(report: &ExportReport) {
         ("Original size", format_size(report.original_size, BINARY)),
         ("Exported size", format_size(report.exported_size, BINARY)),
         ("Tensors", output::count_fmt(report.tensor_count)),
-        ("Format", format!("{:?}", report.format)),
+        ("Format", report.format.display_name().to_string()),
     ];
     if let Some(ref quant) = report.quantization {
         pairs.push(("Quantization", format!("{quant:?}")));
@@ -104,6 +344,23 @@ fn display_report(report: &ExportReport) {
     println!("{}", output::kv_table(&pairs));
     println!();
     println!("  {}", output::badge_pass("Export successful"));
+}
+
+/// Display export report (JSON)
+#[allow(clippy::disallowed_methods)]
+fn display_report_json(report: &ExportReport) {
+    let json = serde_json::json!({
+        "status": "success",
+        "original_size": report.original_size,
+        "exported_size": report.exported_size,
+        "tensor_count": report.tensor_count,
+        "format": report.format.display_name(),
+        "quantization": report.quantization.as_ref().map(|q| format!("{q:?}")),
+    });
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&json).unwrap_or_default()
+    );
 }
 
 #[cfg(test)]
@@ -120,10 +377,13 @@ mod tests {
     #[test]
     fn test_run_file_not_found() {
         let result = run(
-            Path::new("/nonexistent/model.apr"),
+            Some(Path::new("/nonexistent/model.apr")),
             "safetensors",
-            Path::new("/tmp/output.safetensors"),
+            Some(Path::new("/tmp/output.safetensors")),
             None,
+            false,
+            None,
+            false,
         );
         assert!(result.is_err());
         match result {
@@ -133,15 +393,49 @@ mod tests {
     }
 
     #[test]
-    fn test_run_unknown_format() {
-        // Create a temp file to bypass file existence check
-        let file = NamedTempFile::with_suffix(".apr").expect("create temp file");
+    fn test_run_no_file() {
+        let result = run(None, "safetensors", None, None, false, None, false);
+        assert!(result.is_err());
+        match result {
+            Err(CliError::ValidationFailed(msg)) => {
+                assert!(msg.contains("Model file path required"));
+            }
+            _ => panic!("Expected ValidationFailed error"),
+        }
+    }
 
+    #[test]
+    fn test_run_no_output() {
+        let file = NamedTempFile::with_suffix(".apr").expect("create temp file");
         let result = run(
-            file.path(),
-            "unknown_format",
-            Path::new("/tmp/output.xyz"),
+            Some(file.path()),
+            "safetensors",
             None,
+            None,
+            false,
+            None,
+            false,
+        );
+        assert!(result.is_err());
+        match result {
+            Err(CliError::ValidationFailed(msg)) => {
+                assert!(msg.contains("Output path required"));
+            }
+            _ => panic!("Expected ValidationFailed error"),
+        }
+    }
+
+    #[test]
+    fn test_run_unknown_format() {
+        let file = NamedTempFile::with_suffix(".apr").expect("create temp file");
+        let result = run(
+            Some(file.path()),
+            "unknown_format",
+            Some(Path::new("/tmp/output.xyz")),
+            None,
+            false,
+            None,
+            false,
         );
         assert!(result.is_err());
         match result {
@@ -155,12 +449,14 @@ mod tests {
     #[test]
     fn test_run_unknown_quantization() {
         let file = NamedTempFile::with_suffix(".apr").expect("create temp file");
-
         let result = run(
-            file.path(),
+            Some(file.path()),
             "safetensors",
-            Path::new("/tmp/output.safetensors"),
+            Some(Path::new("/tmp/output.safetensors")),
             Some("unknown_quant"),
+            false,
+            None,
+            false,
         );
         assert!(result.is_err());
         match result {
@@ -174,14 +470,63 @@ mod tests {
     #[test]
     fn test_run_unsupported_format_onnx() {
         let file = NamedTempFile::with_suffix(".apr").expect("create temp file");
-
-        let result = run(file.path(), "onnx", Path::new("/tmp/output.onnx"), None);
+        let result = run(
+            Some(file.path()),
+            "onnx",
+            Some(Path::new("/tmp/output.onnx")),
+            None,
+            false,
+            None,
+            false,
+        );
         assert!(result.is_err());
         match result {
             Err(CliError::ValidationFailed(msg)) => {
-                assert!(msg.contains("not yet supported"));
+                assert!(msg.contains("not yet implemented"));
             }
-            _ => panic!("Expected ValidationFailed error for unsupported format"),
+            _ => panic!("Expected ValidationFailed error"),
+        }
+    }
+
+    #[test]
+    fn test_run_unsupported_format_openvino() {
+        let file = NamedTempFile::with_suffix(".apr").expect("create temp file");
+        let result = run(
+            Some(file.path()),
+            "openvino",
+            Some(Path::new("/tmp/output.xml")),
+            None,
+            false,
+            None,
+            false,
+        );
+        assert!(result.is_err());
+        match result {
+            Err(CliError::ValidationFailed(msg)) => {
+                assert!(msg.contains("not yet implemented"));
+            }
+            _ => panic!("Expected ValidationFailed error"),
+        }
+    }
+
+    #[test]
+    fn test_run_unsupported_format_coreml() {
+        let file = NamedTempFile::with_suffix(".apr").expect("create temp file");
+        let result = run(
+            Some(file.path()),
+            "coreml",
+            Some(Path::new("/tmp/output.mlpackage")),
+            None,
+            false,
+            None,
+            false,
+        );
+        assert!(result.is_err());
+        match result {
+            Err(CliError::ValidationFailed(msg)) => {
+                assert!(msg.contains("not yet implemented"));
+            }
+            _ => panic!("Expected ValidationFailed error"),
         }
     }
 
@@ -190,44 +535,118 @@ mod tests {
     // ========================================================================
 
     #[test]
+    fn test_parse_quantization_valid() {
+        assert!(matches!(
+            parse_quantization(Some("int8")),
+            Ok(Some(QuantizationType::Int8))
+        ));
+        assert!(matches!(
+            parse_quantization(Some("int4")),
+            Ok(Some(QuantizationType::Int4))
+        ));
+        assert!(matches!(
+            parse_quantization(Some("fp16")),
+            Ok(Some(QuantizationType::Fp16))
+        ));
+        assert!(matches!(
+            parse_quantization(Some("q4k")),
+            Ok(Some(QuantizationType::Q4K))
+        ));
+        assert!(matches!(parse_quantization(None), Ok(None)));
+    }
+
+    #[test]
+    fn test_parse_quantization_invalid() {
+        assert!(parse_quantization(Some("unknown")).is_err());
+    }
+
+    #[test]
     fn test_run_with_int8_quantization() {
         let file = NamedTempFile::with_suffix(".apr").expect("create temp file");
-
-        // This will fail at apr_export, but we test the quantization parsing
         let result = run(
-            file.path(),
+            Some(file.path()),
             "safetensors",
-            Path::new("/tmp/output.safetensors"),
+            Some(Path::new("/tmp/output.safetensors")),
             Some("int8"),
-        );
-        // Will fail because file is not a valid APR, but that's after quant parsing
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_run_with_int4_quantization() {
-        let file = NamedTempFile::with_suffix(".apr").expect("create temp file");
-
-        let result = run(
-            file.path(),
-            "safetensors",
-            Path::new("/tmp/output.safetensors"),
-            Some("int4"),
+            false,
+            None,
+            false,
         );
         assert!(result.is_err());
     }
 
-    #[test]
-    fn test_run_with_fp16_quantization() {
-        let file = NamedTempFile::with_suffix(".apr").expect("create temp file");
+    // ========================================================================
+    // List Formats Tests
+    // ========================================================================
 
+    #[test]
+    fn test_list_formats() {
+        let result = run(None, "safetensors", None, None, true, None, false);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_list_formats_json() {
+        let result = run(None, "safetensors", None, None, true, None, true);
+        assert!(result.is_ok());
+    }
+
+    // ========================================================================
+    // Batch Export Tests
+    // ========================================================================
+
+    #[test]
+    fn test_batch_unknown_format() {
+        let file = NamedTempFile::with_suffix(".apr").expect("create temp file");
         let result = run(
-            file.path(),
+            Some(file.path()),
             "safetensors",
-            Path::new("/tmp/output.safetensors"),
-            Some("fp16"),
+            Some(Path::new("/tmp/exports")),
+            None,
+            false,
+            Some("gguf,unknown"),
+            false,
         );
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_batch_unsupported_format() {
+        let file = NamedTempFile::with_suffix(".apr").expect("create temp file");
+        let result = run(
+            Some(file.path()),
+            "safetensors",
+            Some(Path::new("/tmp/exports")),
+            None,
+            false,
+            Some("gguf,onnx"),
+            false,
+        );
+        assert!(result.is_err());
+        match result {
+            Err(CliError::ValidationFailed(msg)) => {
+                assert!(msg.contains("not yet supported"));
+            }
+            _ => panic!("Expected ValidationFailed error"),
+        }
+    }
+
+    // ========================================================================
+    // Format Aliases Tests
+    // ========================================================================
+
+    #[test]
+    fn test_format_aliases() {
+        let aliases = format_aliases(ExportFormat::SafeTensors);
+        assert!(aliases.contains(&"safetensors".to_string()));
+        assert!(aliases.contains(&"st".to_string()));
+
+        let aliases = format_aliases(ExportFormat::Mlx);
+        assert!(aliases.contains(&"mlx".to_string()));
+
+        let aliases = format_aliases(ExportFormat::OpenVino);
+        assert!(aliases.contains(&"openvino".to_string()));
+        assert!(aliases.contains(&"ov".to_string()));
     }
 
     // ========================================================================
@@ -237,13 +656,12 @@ mod tests {
     #[test]
     fn test_display_report_basic() {
         let report = ExportReport {
-            original_size: 1024 * 1024, // 1MB
-            exported_size: 512 * 1024,  // 512KB
+            original_size: 1024 * 1024,
+            exported_size: 512 * 1024,
             tensor_count: 10,
             format: ExportFormat::SafeTensors,
             quantization: None,
         };
-        // Should not panic
         display_report(&report);
     }
 
@@ -260,10 +678,22 @@ mod tests {
     }
 
     #[test]
+    fn test_display_report_json() {
+        let report = ExportReport {
+            original_size: 1024 * 1024,
+            exported_size: 512 * 1024,
+            tensor_count: 10,
+            format: ExportFormat::Mlx,
+            quantization: None,
+        };
+        display_report_json(&report);
+    }
+
+    #[test]
     fn test_display_report_large_model() {
         let report = ExportReport {
-            original_size: 7 * 1024 * 1024 * 1024, // 7GB
-            exported_size: 4 * 1024 * 1024 * 1024, // 4GB
+            original_size: 7 * 1024 * 1024 * 1024,
+            exported_size: 4 * 1024 * 1024 * 1024,
             tensor_count: 500,
             format: ExportFormat::Gguf,
             quantization: Some(QuantizationType::Int4),
@@ -280,14 +710,73 @@ mod tests {
         let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
         file.write_all(b"not a valid APR file")
             .expect("write to file");
-
         let result = run(
-            file.path(),
+            Some(file.path()),
             "safetensors",
-            Path::new("/tmp/output.safetensors"),
+            Some(Path::new("/tmp/output.safetensors")),
             None,
+            false,
+            None,
+            false,
         );
-        // Should fail because file is not valid APR
         assert!(result.is_err());
+    }
+
+    // ========================================================================
+    // ExportFormat API Tests
+    // ========================================================================
+
+    #[test]
+    fn test_export_format_all() {
+        let all = ExportFormat::all();
+        assert!(all.len() >= 7);
+        assert!(all.contains(&ExportFormat::Mlx));
+        assert!(all.contains(&ExportFormat::OpenVino));
+        assert!(all.contains(&ExportFormat::CoreMl));
+    }
+
+    #[test]
+    fn test_export_format_display_name() {
+        assert_eq!(ExportFormat::SafeTensors.display_name(), "SafeTensors");
+        assert_eq!(ExportFormat::Gguf.display_name(), "GGUF");
+        assert_eq!(ExportFormat::Mlx.display_name(), "MLX");
+        assert_eq!(ExportFormat::Onnx.display_name(), "ONNX");
+        assert_eq!(ExportFormat::OpenVino.display_name(), "OpenVINO");
+        assert_eq!(ExportFormat::CoreMl.display_name(), "CoreML");
+    }
+
+    #[test]
+    fn test_export_format_parse_new_variants() {
+        assert!(matches!("mlx".parse::<ExportFormat>(), Ok(ExportFormat::Mlx)));
+        assert!(matches!(
+            "openvino".parse::<ExportFormat>(),
+            Ok(ExportFormat::OpenVino)
+        ));
+        assert!(matches!("ov".parse::<ExportFormat>(), Ok(ExportFormat::OpenVino)));
+        assert!(matches!(
+            "coreml".parse::<ExportFormat>(),
+            Ok(ExportFormat::CoreMl)
+        ));
+        assert!(matches!(
+            "mlpackage".parse::<ExportFormat>(),
+            Ok(ExportFormat::CoreMl)
+        ));
+    }
+
+    #[test]
+    fn test_export_format_supported() {
+        assert!(ExportFormat::SafeTensors.is_supported());
+        assert!(ExportFormat::Gguf.is_supported());
+        assert!(ExportFormat::Mlx.is_supported());
+        assert!(!ExportFormat::Onnx.is_supported());
+        assert!(!ExportFormat::OpenVino.is_supported());
+        assert!(!ExportFormat::CoreMl.is_supported());
+    }
+
+    #[test]
+    fn test_export_format_extension() {
+        assert_eq!(ExportFormat::Mlx.extension(), "mlx");
+        assert_eq!(ExportFormat::OpenVino.extension(), "xml");
+        assert_eq!(ExportFormat::CoreMl.extension(), "mlpackage");
     }
 }
