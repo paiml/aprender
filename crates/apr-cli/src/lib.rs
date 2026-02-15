@@ -556,9 +556,9 @@ pub enum Commands {
         #[arg(long, short = 's', default_value = "int4")]
         scheme: String,
 
-        /// Output file path
+        /// Output file path (required unless --plan)
         #[arg(short, long)]
-        output: PathBuf,
+        output: Option<PathBuf>,
 
         /// Output format override (apr, gguf, safetensors)
         #[arg(long)]
@@ -2343,7 +2343,7 @@ fn dispatch_core_command(cli: &Cli) -> Option<Result<(), CliError>> {
             batch,
             plan,
             force,
-        } => quantize::run(file, scheme, output, format.as_deref(), batch.as_deref(), *plan, *force, cli.json),
+        } => quantize::run(file, scheme, output.as_deref(), format.as_deref(), batch.as_deref(), *plan, *force, cli.json),
         Commands::Finetune {
             file,
             method,

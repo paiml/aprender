@@ -80,7 +80,7 @@ fn estimate_memory(file_size: u64, scheme: QuantScheme) -> (u64, u64, f64) {
 pub(crate) fn run(
     file: &Path,
     scheme: &str,
-    output_path: &Path,
+    output_path: Option<&Path>,
     format: Option<&str>,
     batch: Option<&str>,
     plan_only: bool,
@@ -92,17 +92,22 @@ pub(crate) fn run(
         return Err(CliError::FileNotFound(file.to_path_buf()));
     }
 
-    // Handle batch mode
-    if let Some(schemes) = batch {
-        return run_batch(file, schemes, output_path, force, json_output);
-    }
-
     // Parse scheme
     let quant_scheme: QuantScheme = scheme.parse().map_err(CliError::ValidationFailed)?;
 
-    // Plan mode
+    // Plan mode (does not require output path)
     if plan_only {
         return run_plan(file, quant_scheme, format, json_output);
+    }
+
+    // From here on, output is required
+    let output_path = output_path.ok_or_else(|| {
+        CliError::ValidationFailed("--output is required (unless --plan is used)".to_string())
+    })?;
+
+    // Handle batch mode
+    if let Some(schemes) = batch {
+        return run_batch(file, schemes, output_path, force, json_output);
     }
 
     // F-CONV-064: Overwrite protection
@@ -505,7 +510,7 @@ mod tests {
         let result = run(
             Path::new("/nonexistent/model.apr"),
             "int4",
-            Path::new("/tmp/output.apr"),
+            Some(Path::new("/tmp/output.apr")),
             None,
             None,
             false,
@@ -522,7 +527,7 @@ mod tests {
         let result = run(
             input.path(),
             "bad_scheme",
-            Path::new("/tmp/output.apr"),
+            Some(Path::new("/tmp/output.apr")),
             None,
             None,
             false,
@@ -545,7 +550,7 @@ mod tests {
         let result = run(
             input.path(),
             "int4",
-            output.path(),
+            Some(output.path()),
             None,
             None,
             false,
@@ -568,7 +573,7 @@ mod tests {
         let result = run(
             input.path(),
             "int4",
-            Path::new("/tmp/output.apr"),
+            None, // plan mode doesn't need output
             None,
             None,
             true, // plan only
@@ -585,7 +590,7 @@ mod tests {
         let result = run(
             input.path(),
             "int4",
-            Path::new("/tmp/output.apr"),
+            None, // plan mode doesn't need output
             None,
             None,
             true,
@@ -602,7 +607,7 @@ mod tests {
         let result = run(
             input.path(),
             "int4",
-            Path::new("/tmp/output.apr"),
+            Some(Path::new("/tmp/output.apr")),
             None,
             None,
             false,
