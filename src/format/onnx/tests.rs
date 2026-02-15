@@ -105,6 +105,37 @@ fn build_tensor_proto_raw(name: &str, dims: &[i64], data_type: i32, raw: &[u8]) 
     buf
 }
 
+/// Build a TensorProto with raw_data in field 9 (PyTorch ONNX format)
+fn build_tensor_proto_field9(name: &str, dims: &[i64], data_type: i32, raw: &[u8]) -> Vec<u8> {
+    let mut buf = Vec::new();
+
+    // dims
+    if !dims.is_empty() {
+        buf.push(0x0A);
+        let mut dims_buf = Vec::new();
+        for &d in dims {
+            write_varint(&mut dims_buf, d as u64);
+        }
+        write_varint(&mut buf, dims_buf.len() as u64);
+        buf.extend_from_slice(&dims_buf);
+    }
+
+    // data_type
+    buf.push(0x10);
+    write_varint(&mut buf, data_type as u64);
+
+    // name
+    buf.push(0x42);
+    write_string(&mut buf, name);
+
+    // raw_data in field 9 (PyTorch ONNX convention)
+    buf.push(0x4A); // field 9, wire type 2
+    write_varint(&mut buf, raw.len() as u64);
+    buf.extend_from_slice(raw);
+
+    buf
+}
+
 fn write_varint(buf: &mut Vec<u8>, mut val: u64) {
     loop {
         let byte = (val & 0x7F) as u8;
@@ -345,4 +376,111 @@ fn test_double_to_f32() {
     let vals = tensor.to_f32();
     assert_eq!(vals.len(), 1);
     assert!((vals[0] - 3.14).abs() < 0.001);
+}
+
+// ============================================================================
+// Field 9 raw_data Tests (PyTorch ONNX convention)
+// ============================================================================
+
+#[test]
+fn test_field9_raw_data_pytorch_convention() {
+    // PyTorch ONNX exporter stores raw_data in field 9 instead of field 13
+    let float_bytes: Vec<u8> = [1.0f32, 2.0, 3.0, 4.0]
+        .iter()
+        .flat_map(|f| f.to_le_bytes())
+        .collect();
+    let tensor = build_tensor_proto_field9("weight", &[2, 2], 1, &float_bytes);
+
+    // Wrap in graph + model
+    let mut graph = Vec::new();
+    graph.push(0x2A);
+    write_varint(&mut graph, tensor.len() as u64);
+    graph.extend_from_slice(&tensor);
+
+    let mut model = Vec::new();
+    model.push(0x08);
+    model.push(7);
+    model.push(0x3A);
+    write_varint(&mut model, graph.len() as u64);
+    model.extend_from_slice(&graph);
+
+    let reader = OnnxReader::from_bytes(&model).expect("parse field 9 ONNX");
+    assert_eq!(reader.tensors().len(), 1);
+    let t = &reader.tensors()[0];
+    assert_eq!(t.name, "weight");
+    assert_eq!(t.shape, vec![2, 2]);
+    assert_eq!(t.data_type, OnnxDataType::Float);
+    assert_eq!(t.raw_data.len(), 16);
+
+    let vals = t.to_f32();
+    assert_eq!(vals.len(), 4);
+    assert!((vals[0] - 1.0).abs() < 1e-6);
+    assert!((vals[3] - 4.0).abs() < 1e-6);
+}
+
+#[test]
+fn test_field9_and_field13_both_handled() {
+    // Verify field 13 still works (standard ONNX)
+    let float_bytes: Vec<u8> = [5.0f32, 6.0]
+        .iter()
+        .flat_map(|f| f.to_le_bytes())
+        .collect();
+    let tensor13 = build_tensor_proto_raw("bias13", &[2], 1, &float_bytes);
+    let tensor9 = build_tensor_proto_field9("bias9", &[2], 1, &float_bytes);
+
+    let mut graph = Vec::new();
+    // Add field 13 tensor
+    graph.push(0x2A);
+    write_varint(&mut graph, tensor13.len() as u64);
+    graph.extend_from_slice(&tensor13);
+    // Add field 9 tensor
+    graph.push(0x2A);
+    write_varint(&mut graph, tensor9.len() as u64);
+    graph.extend_from_slice(&tensor9);
+
+    let mut model = Vec::new();
+    model.push(0x08);
+    model.push(7);
+    model.push(0x3A);
+    write_varint(&mut model, graph.len() as u64);
+    model.extend_from_slice(&graph);
+
+    let reader = OnnxReader::from_bytes(&model).expect("parse mixed ONNX");
+    assert_eq!(reader.tensors().len(), 2);
+    assert_eq!(reader.tensors()[0].name, "bias13");
+    assert_eq!(reader.tensors()[1].name, "bias9");
+    // Both should have data
+    assert_eq!(reader.tensors()[0].to_f32().len(), 2);
+    assert_eq!(reader.tensors()[1].to_f32().len(), 2);
+}
+
+// ============================================================================
+// Real ONNX File Tests (GH-238)
+// ============================================================================
+
+#[test]
+fn test_real_onnx_file_debug() {
+    // MiniLM-L6-v2 ONNX model from fastembed cache (optional)
+    let path = std::path::Path::new(
+        "/home/noah/src/trueno-rag/.fastembed_cache/models--Qdrant--all-MiniLM-L6-v2-onnx/snapshots/5f1b8cd78bc4fb444dd171e59b18f3a3af89a079/model.onnx"
+    );
+    if !path.exists() {
+        return; // Skip if model not available
+    }
+
+    let reader = OnnxReader::from_file(path).expect("Failed to parse ONNX");
+    assert_eq!(reader.tensors().len(), 101);
+    assert_eq!(reader.metadata().ir_version, 6);
+    assert_eq!(reader.metadata().producer_name, "pytorch");
+
+    // Verify first tensor (word embeddings)
+    let t0 = &reader.tensors()[0];
+    assert_eq!(t0.name, "embeddings.word_embeddings.weight");
+    assert_eq!(t0.shape, vec![30522, 384]);
+    assert_eq!(t0.data_type, OnnxDataType::Float);
+    assert_eq!(t0.raw_data.len(), 30522 * 384 * 4);
+
+    // Verify to_f32_tensors produces all tensors
+    let tensors = reader.to_f32_tensors();
+    assert_eq!(tensors.len(), 101);
 }

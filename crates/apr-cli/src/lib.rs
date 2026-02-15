@@ -1576,6 +1576,17 @@ fn validate_model_contract(paths: &[PathBuf]) -> Result<(), CliError> {
             validate_shard_index(path)?;
             continue;
         }
+        // GH-238: Skip rosetta validation for non-native formats (ONNX, NeMo, etc.)
+        // Rosetta only validates GGUF/APR/SafeTensors tensor layout contracts.
+        // Import pipeline handles format-specific validation for these formats.
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_lowercase();
+        if !matches!(ext.as_str(), "gguf" | "safetensors" | "apr") {
+            continue;
+        }
         validate_single_model(&rosetta, path)?;
     }
     Ok(())

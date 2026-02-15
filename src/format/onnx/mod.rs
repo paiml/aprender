@@ -312,15 +312,17 @@ impl OnnxReader {
     fn parse_graph(data: &[u8]) -> Result<Vec<OnnxTensor>> {
         let mut reader = ProtobufReader::new(data);
         let mut tensors = Vec::new();
-
         while reader.has_more() {
             let (field_num, wire_type) = reader.read_tag()?;
             match (field_num, wire_type) {
                 // initializer (field 5, repeated length-delimited TensorProto)
                 (5, 2) => {
                     let tensor_data = reader.read_bytes()?;
-                    if let Ok(tensor) = Self::parse_tensor_proto(tensor_data) {
-                        tensors.push(tensor);
+                    match Self::parse_tensor_proto(tensor_data) {
+                        Ok(tensor) => tensors.push(tensor),
+                        Err(e) => {
+                            eprintln!("[ONNX] Warning: skipping malformed tensor initializer: {e}");
+                        }
                     }
                 }
                 // Skip other fields
@@ -382,7 +384,6 @@ impl OnnxReader {
         let mut int32_data: Vec<i32> = Vec::new();
         let mut int64_data: Vec<i64> = Vec::new();
         let mut double_data: Vec<f64> = Vec::new();
-
         while reader.has_more() {
             let (field_num, wire_type) = reader.read_tag()?;
             match (field_num, wire_type) {
@@ -438,6 +439,11 @@ impl OnnxReader {
                 // name (field 8, string)
                 (8, 2) => {
                     name = reader.read_string()?;
+                }
+                // raw_data (field 9, bytes) — some ONNX exporters (e.g. PyTorch) use
+                // field 9 instead of field 13 for raw tensor data
+                (9, 2) => {
+                    raw_data = reader.read_bytes()?.to_vec();
                 }
                 // double_data (field 10, packed repeated double)
                 (10, 2) => {
