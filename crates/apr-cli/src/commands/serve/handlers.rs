@@ -704,12 +704,6 @@ fn start_apr_server_gpu(
     config: &ServerConfig,
     tokenizer: Option<SafeTensorsTokenizerInfo>,
 ) -> Result<()> {
-    use axum::{
-        http::StatusCode,
-        response::IntoResponse,
-        routing::{get, post},
-        Json, Router,
-    };
     use realizar::apr::AprV2ModelCuda;
     use std::sync::Mutex;
 
@@ -727,15 +721,23 @@ fn start_apr_server_gpu(
         .green()
     );
 
+    // GH-261: Load CPU transformer as per-request fallback
+    let cpu_state = load_apr_model_state(model_path, config)?;
+    println!(
+        "{}",
+        "CPU fallback: enabled (AprTransformer ready)".cyan()
+    );
+
     let runtime = tokio::runtime::Runtime::new()
         .map_err(|e| CliError::InferenceFailed(format!("Failed to create runtime: {e}")))?;
 
     let bind_addr = config.bind_addr();
     let cuda_model = Arc::new(Mutex::new(cuda_model));
     let tokenizer = Arc::new(tokenizer);
+    let cpu_state = Arc::new(Mutex::new(cpu_state));
 
     runtime.block_on(async move {
-        let app = build_gpu_router(cuda_model, tokenizer);
+        let app = build_gpu_router(cuda_model, tokenizer, cpu_state);
 
         let listener = tokio::net::TcpListener::bind(&bind_addr)
             .await
@@ -760,9 +762,9 @@ fn start_apr_server_gpu(
 fn build_gpu_router(
     cuda_model: Arc<std::sync::Mutex<realizar::apr::AprV2ModelCuda>>,
     tokenizer: Arc<Option<SafeTensorsTokenizerInfo>>,
+    cpu_state: Arc<std::sync::Mutex<AprServerState>>,
 ) -> axum::Router {
     use axum::{
-        http::StatusCode,
         response::IntoResponse,
         routing::{get, post},
         Json, Router,
@@ -770,21 +772,27 @@ fn build_gpu_router(
 
     let cuda_for_completions = cuda_model.clone();
     let tok_for_completions = tokenizer.clone();
+    let cpu_for_completions = cpu_state.clone();
     let cuda_for_chat = cuda_model;
     let tok_for_chat = tokenizer;
+    let cpu_for_chat = cpu_state;
 
     Router::new()
         .route(
             "/health",
-            get(|| async { Json(serde_json::json!({"status": "healthy", "gpu": true})) }),
+            get(|| async {
+                Json(serde_json::json!({"status": "healthy", "gpu": true, "gpu_fallback": true}))
+            }),
         )
         .route(
             "/v1/completions",
             post(move |Json(req): Json<GpuCompletionRequest>| {
                 let cuda = cuda_for_completions.clone();
                 let tok_info = tok_for_completions.clone();
+                let cpu = cpu_for_completions.clone();
                 async move {
-                    handle_gpu_completion(&cuda, tok_info.as_ref().as_ref(), &req).into_response()
+                    handle_gpu_completion(&cuda, tok_info.as_ref().as_ref(), &req, &cpu)
+                        .into_response()
                 }
             }),
         )
@@ -793,8 +801,9 @@ fn build_gpu_router(
             post(move |Json(req): Json<serde_json::Value>| {
                 let cuda = cuda_for_chat.clone();
                 let tok_info = tok_for_chat.clone();
+                let cpu = cpu_for_chat.clone();
                 async move {
-                    handle_gpu_chat_completion(&cuda, tok_info.as_ref().as_ref(), &req)
+                    handle_gpu_chat_completion(&cuda, tok_info.as_ref().as_ref(), &req, &cpu)
                         .into_response()
                 }
             }),
@@ -814,6 +823,7 @@ fn handle_gpu_completion(
     cuda: &std::sync::Mutex<realizar::apr::AprV2ModelCuda>,
     tok_info: Option<&SafeTensorsTokenizerInfo>,
     req: &GpuCompletionRequest,
+    cpu_state: &std::sync::Mutex<AprServerState>,
 ) -> axum::response::Response {
     use axum::{http::StatusCode, response::IntoResponse, Json};
 
@@ -825,12 +835,47 @@ fn handle_gpu_completion(
     let output_tokens =
         match run_gpu_generation(cuda, &input_tokens, req.max_tokens.min(128), eos_id) {
             Ok(t) => t,
-            Err(e) => {
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(serde_json::json!({"error": e})),
-                )
-                    .into_response();
+            Err(gpu_err) => {
+                // GH-261: Per-request CPU fallback
+                eprintln!("[GPU->CPU FALLBACK] {gpu_err}");
+                let s = match cpu_state.lock() {
+                    Ok(guard) => guard.clone(),
+                    Err(_) => {
+                        return (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            Json(serde_json::json!({
+                                "error": format!("GPU failed: {gpu_err}; CPU state corrupted")
+                            })),
+                        )
+                            .into_response();
+                    }
+                };
+                match run_apr_cpu_inference(
+                    &s,
+                    &req.prompt,
+                    req.max_tokens.min(128),
+                    0.0,
+                ) {
+                    Ok(out) => {
+                        return Json(serde_json::json!({
+                            "text": out.text,
+                            "tokens_generated": out.tokens_generated,
+                            "latency_ms": out.gen_duration.as_millis() as u64,
+                            "tok_per_sec": compute_tok_per_sec(out.tokens_generated, out.gen_duration),
+                            "compute_mode": "cpu-fallback"
+                        }))
+                        .into_response();
+                    }
+                    Err(cpu_err) => {
+                        return (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            Json(serde_json::json!({
+                                "error": format!("GPU failed: {gpu_err}; CPU fallback also failed: {cpu_err}")
+                            })),
+                        )
+                            .into_response();
+                    }
+                }
             }
         };
     let gen_time = gen_start.elapsed();
@@ -854,6 +899,7 @@ fn handle_gpu_chat_completion(
     cuda: &std::sync::Mutex<realizar::apr::AprV2ModelCuda>,
     tok_info: Option<&SafeTensorsTokenizerInfo>,
     req: &serde_json::Value,
+    cpu_state: &std::sync::Mutex<AprServerState>,
 ) -> axum::response::Response {
     use axum::{
         response::{
@@ -873,6 +919,10 @@ fn handle_gpu_chat_completion(
         .get("max_tokens")
         .and_then(serde_json::Value::as_u64)
         .unwrap_or(32) as usize;
+    let temperature = req
+        .get("temperature")
+        .and_then(serde_json::Value::as_f64)
+        .unwrap_or(0.0) as f32;
 
     let Some(msgs) = messages else {
         return Json(serde_json::json!({"error": "Missing messages"})).into_response();
@@ -886,7 +936,52 @@ fn handle_gpu_chat_completion(
     let gen_start = Instant::now();
     let output_tokens = match run_gpu_generation(cuda, &input_tokens, max_tokens.min(256), eos_id) {
         Ok(t) => t,
-        Err(e) => return Json(serde_json::json!({"error": e})).into_response(),
+        Err(gpu_err) => {
+            // GH-261: Per-request CPU fallback
+            eprintln!("[GPU->CPU FALLBACK] {gpu_err}");
+            let s = match cpu_state.lock() {
+                Ok(guard) => guard.clone(),
+                Err(_) => {
+                    return Json(serde_json::json!({
+                        "error": format!("GPU failed: {gpu_err}; CPU state corrupted")
+                    }))
+                    .into_response();
+                }
+            };
+            match run_apr_cpu_inference(&s, &prompt, max_tokens.min(256), temperature) {
+                Ok(out) => {
+                    let request_id = generate_request_id();
+                    let created = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs();
+                    return Json(serde_json::json!({
+                        "id": request_id,
+                        "object": "chat.completion",
+                        "created": created,
+                        "model": "apr-cpu-fallback",
+                        "choices": [{"index": 0, "message": {"role": "assistant", "content": out.text}, "finish_reason": "stop"}],
+                        "usage": {
+                            "prompt_tokens": out.input_token_count,
+                            "completion_tokens": out.tokens_generated,
+                            "total_tokens": out.input_token_count + out.tokens_generated
+                        },
+                        "_apr_metrics": {
+                            "latency_ms": start.elapsed().as_millis() as u64,
+                            "tok_per_sec": compute_tok_per_sec(out.tokens_generated, out.gen_duration),
+                            "compute_mode": "cpu-fallback"
+                        }
+                    }))
+                    .into_response();
+                }
+                Err(cpu_err) => {
+                    return Json(serde_json::json!({
+                        "error": format!("GPU failed: {gpu_err}; CPU fallback also failed: {cpu_err}")
+                    }))
+                    .into_response();
+                }
+            }
+        }
     };
     let elapsed = gen_start.elapsed();
 
