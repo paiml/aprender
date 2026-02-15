@@ -279,9 +279,14 @@ pub fn apr_export<P: AsRef<Path>>(
 
     dispatch_export(&tensors, input_path, output_path, &options)?;
 
-    let exported_size = fs::metadata(output_path)
-        .map(|m| m.len() as usize)
-        .unwrap_or(0);
+    let exported_size = if output_path.is_dir() {
+        // GH-246: For directory-based exports (MLX), sum all file sizes
+        dir_total_size(output_path)
+    } else {
+        fs::metadata(output_path)
+            .map(|m| m.len() as usize)
+            .unwrap_or(0)
+    };
     Ok(ExportReport {
         original_size,
         exported_size,
@@ -289,6 +294,20 @@ pub fn apr_export<P: AsRef<Path>>(
         format: options.format,
         quantization: options.quantize,
     })
+}
+
+/// GH-246: Calculate total size of all files in a directory (for MLX exports).
+fn dir_total_size(dir: &Path) -> usize {
+    fs::read_dir(dir)
+        .map(|entries| {
+            entries
+                .filter_map(|e| e.ok())
+                .filter_map(|e| e.metadata().ok())
+                .filter(|m| m.is_file())
+                .map(|m| m.len() as usize)
+                .sum()
+        })
+        .unwrap_or(0)
 }
 
 /// Validate export inputs (file exists, format supported).
@@ -301,7 +320,7 @@ fn validate_export_inputs(input_path: &Path, options: &ExportOptions) -> Result<
     if !options.format.is_supported() {
         return Err(AprenderError::FormatError {
             message: format!(
-                "Export format {:?} is not yet supported. Use 'safetensors' or 'gguf'.",
+                "Export format {:?} is not yet supported. Use 'safetensors', 'gguf', or 'mlx'.",
                 options.format
             ),
         });
