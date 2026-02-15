@@ -22,10 +22,10 @@ pub mod federation;
 
 // Commands are crate-private, used internally by execute_command
 use commands::{
-    bench, canary, canary::CanaryCommands, cbtop, chat, compare_hf, convert, debug, diff, eval,
-    explain, export, flow, hex, import, inspect, lint, merge, oracle, probar, profile, ptx_explain,
-    publish, pull, qa, rosetta, rosetta::RosettaCommands, run, serve, showcase, tensors, trace,
-    tree, tui, tune, validate,
+    bench, canary, canary::CanaryCommands, cbtop, chat, compare_hf, convert, debug, diff, distill,
+    eval, explain, export, finetune, flow, hex, import, inspect, lint, merge, oracle, probar,
+    profile, prune, ptx_explain, publish, pull, qa, quantize, rosetta, rosetta::RosettaCommands,
+    run, serve, showcase, tensors, trace, tree, tui, tune, validate,
 };
 
 /// apr - APR Model Operations Tool
@@ -532,6 +532,166 @@ pub enum Commands {
         /// RNG seed for DARE (default: 42)
         #[arg(long, default_value = "42")]
         seed: u64,
+    },
+
+    /// Quantize model weights (GH-243)
+    Quantize {
+        /// Input model file
+        #[arg(value_name = "FILE")]
+        file: PathBuf,
+
+        /// Quantization scheme: int8, int4, fp16, q4k
+        #[arg(long, short = 's', default_value = "int4")]
+        scheme: String,
+
+        /// Output file path
+        #[arg(short, long)]
+        output: PathBuf,
+
+        /// Output format override (apr, gguf, safetensors)
+        #[arg(long)]
+        format: Option<String>,
+
+        /// Batch quantization (comma-separated schemes)
+        #[arg(long)]
+        batch: Option<String>,
+
+        /// Plan mode (estimate only, no execution)
+        #[arg(long)]
+        plan: bool,
+
+        /// Force overwrite existing files
+        #[arg(short, long)]
+        force: bool,
+    },
+
+    /// Fine-tune model with LoRA/QLoRA (GH-244)
+    Finetune {
+        /// Input model file
+        #[arg(value_name = "FILE")]
+        file: Option<PathBuf>,
+
+        /// Fine-tuning method: auto, full, lora, qlora
+        #[arg(long, short = 'm', default_value = "auto")]
+        method: String,
+
+        /// LoRA rank (default: auto-selected)
+        #[arg(long, short = 'r')]
+        rank: Option<u32>,
+
+        /// Available VRAM in GB
+        #[arg(long, default_value = "16.0")]
+        vram: f64,
+
+        /// Plan mode (estimate only)
+        #[arg(long)]
+        plan: bool,
+
+        /// Training data file (JSONL format)
+        #[arg(long, short = 'd', value_name = "FILE")]
+        data: Option<PathBuf>,
+
+        /// Output path (adapter dir or merged model)
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+
+        /// Adapter path for merge mode
+        #[arg(long)]
+        adapter: Option<PathBuf>,
+
+        /// Merge adapter into base model
+        #[arg(long)]
+        merge: bool,
+
+        /// Training epochs
+        #[arg(long, default_value = "3")]
+        epochs: u32,
+
+        /// Learning rate
+        #[arg(long, default_value = "0.0002")]
+        learning_rate: f64,
+
+        /// Model size for planning (e.g., "7B", "1.5B")
+        #[arg(long, value_name = "SIZE")]
+        model_size: Option<String>,
+    },
+
+    /// Prune model (structured/unstructured pruning) (GH-247)
+    Prune {
+        /// Input model file
+        #[arg(value_name = "FILE")]
+        file: PathBuf,
+
+        /// Pruning method: magnitude, structured, depth, width, wanda, sparsegpt
+        #[arg(long, short = 'm', default_value = "magnitude")]
+        method: String,
+
+        /// Target pruning ratio (0-1)
+        #[arg(long, default_value = "0.5")]
+        target_ratio: f32,
+
+        /// Sparsity level (0-1)
+        #[arg(long, default_value = "0.0")]
+        sparsity: f32,
+
+        /// Output file path
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+
+        /// Layers to remove for depth pruning (e.g., "20-24")
+        #[arg(long)]
+        remove_layers: Option<String>,
+
+        /// Analyze mode (identify pruning opportunities)
+        #[arg(long)]
+        analyze: bool,
+
+        /// Plan mode (estimate only)
+        #[arg(long)]
+        plan: bool,
+
+        /// Calibration data file
+        #[arg(long, value_name = "FILE")]
+        calibration: Option<PathBuf>,
+    },
+
+    /// Knowledge distillation (teacher → student) (GH-247)
+    Distill {
+        /// Teacher model file
+        #[arg(value_name = "TEACHER")]
+        teacher: PathBuf,
+
+        /// Student model file
+        #[arg(long, value_name = "FILE")]
+        student: Option<PathBuf>,
+
+        /// Training data file
+        #[arg(long, short = 'd', value_name = "FILE")]
+        data: Option<PathBuf>,
+
+        /// Output file path
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+
+        /// Distillation strategy: standard, progressive, ensemble
+        #[arg(long, default_value = "standard")]
+        strategy: String,
+
+        /// Temperature for softmax scaling
+        #[arg(long, default_value = "3.0")]
+        temperature: f64,
+
+        /// Alpha weight for KL vs task loss
+        #[arg(long, default_value = "0.7")]
+        alpha: f64,
+
+        /// Training epochs
+        #[arg(long, default_value = "3")]
+        epochs: u32,
+
+        /// Plan mode (estimate only)
+        #[arg(long)]
+        plan: bool,
     },
 
     /// Interactive terminal UI
@@ -1349,6 +1509,10 @@ fn extract_model_paths(command: &Commands) -> Vec<PathBuf> {
 
         Commands::Merge { files, .. } => files.clone(),
 
+        Commands::Quantize { file, .. } | Commands::Prune { file, .. } => vec![file.clone()],
+        Commands::Distill { teacher, .. } => vec![teacher.clone()],
+        Commands::Finetune { file, .. } => file.iter().cloned().collect(),
+
         Commands::Cbtop { model_path, .. } => model_path.iter().cloned().collect(),
         Commands::Tui { file, .. } => file.iter().cloned().collect(),
         Commands::Import { source, .. } => {
@@ -2148,6 +2312,87 @@ fn dispatch_core_command(cli: &Cli) -> Option<Result<(), CliError>> {
             density,
             seed,
         } => merge::run(files, strategy, output, weights.clone(), base_model.clone(), *drop_rate, *density, *seed),
+        Commands::Quantize {
+            file,
+            scheme,
+            output,
+            format,
+            batch,
+            plan,
+            force,
+        } => quantize::run(file, scheme, output, format.as_deref(), batch.as_deref(), *plan, *force, cli.json),
+        Commands::Finetune {
+            file,
+            method,
+            rank,
+            vram,
+            plan,
+            data,
+            output,
+            adapter,
+            merge,
+            epochs,
+            learning_rate,
+            model_size,
+        } => finetune::run(
+            file.as_deref(),
+            method,
+            *rank,
+            *vram,
+            *plan,
+            data.as_deref(),
+            output.as_deref(),
+            adapter.as_deref(),
+            *merge,
+            *epochs,
+            *learning_rate,
+            model_size.as_deref(),
+            cli.json,
+        ),
+        Commands::Prune {
+            file,
+            method,
+            target_ratio,
+            sparsity,
+            output,
+            remove_layers,
+            analyze,
+            plan,
+            calibration,
+        } => prune::run(
+            file,
+            method,
+            *target_ratio,
+            *sparsity,
+            output.as_deref(),
+            remove_layers.as_deref(),
+            *analyze,
+            *plan,
+            calibration.as_deref(),
+            cli.json,
+        ),
+        Commands::Distill {
+            teacher,
+            student,
+            data,
+            output,
+            strategy,
+            temperature,
+            alpha,
+            epochs,
+            plan,
+        } => distill::run(
+            teacher,
+            student.as_deref(),
+            data.as_deref(),
+            output.as_deref(),
+            strategy,
+            *temperature,
+            *alpha,
+            *epochs,
+            *plan,
+            cli.json,
+        ),
         Commands::Tui { file } => tui::run(file.clone()),
         _ => return None,
     })
