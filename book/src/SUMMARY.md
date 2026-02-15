@@ -291,6 +291,7 @@
 - [Case Study: Validated Tensors — Compile-Time Contracts](./examples/validated-tensors.md)
 - [Case Study: Qwen Inference with realizar](./examples/qwen-inference.md)
 - [Case Study: Sharded SafeTensors Serving (GH-213)](./examples/sharded-safetensors-serve.md)
+- [Case Study: Model Merge Strategies (GH-245)](./examples/model-merge-strategies.md)
 
 # Sprint-Based Development
 

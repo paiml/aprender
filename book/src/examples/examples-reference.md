@@ -19,6 +19,7 @@ This page provides a complete reference for all `cargo run --example` commands a
 | `text_preprocessing` | NLP text processing | NLP |
 | `qwen_chat` | Qwen2 LLM configuration demo | Deep Learning |
 | `rosetta_stone` | Universal format converter | Model Ops |
+| `model_merge_strategies` | SLERP/TIES/DARE model merging | Model Ops |
 
 ## Running Examples
 
@@ -213,6 +214,13 @@ cargo run --example rosetta_stone --release
 # Validated tensor contracts (Poka-Yoke)
 cargo run --example validated_tensors --release
 cargo run --example poka_yoke_validation --release
+```
+
+### Model Merging
+
+```bash
+# All 5 merge strategies: Average, Weighted, SLERP, TIES, DARE
+cargo run --example model_merge_strategies --release
 ```
 
 ### Model Serialization
