@@ -449,3 +449,4 @@ fn test_compute_std_empty() {
 include!("coverage_types_tests_part_02.rs");
 include!("coverage_types_tests_part_03.rs");
 include!("coverage_types_tests_part_04.rs");
+include!("coverage_types_tests_part_05.rs");
