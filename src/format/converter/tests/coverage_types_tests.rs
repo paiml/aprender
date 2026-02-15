@@ -1302,6 +1302,7 @@ fn test_merge_options_custom() {
     let opts = MergeOptions {
         strategy: MergeStrategy::Weighted,
         weights: Some(vec![0.7, 0.3]),
+        ..Default::default()
     };
     assert_eq!(opts.strategy, MergeStrategy::Weighted);
     assert!(opts.weights.is_some());
@@ -1313,6 +1314,7 @@ fn test_merge_options_slerp() {
     let opts = MergeOptions {
         strategy: MergeStrategy::Slerp,
         weights: None,
+        ..Default::default()
     };
     assert_eq!(opts.strategy, MergeStrategy::Slerp);
     assert!(opts.weights.is_none());

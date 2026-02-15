@@ -505,7 +505,7 @@ pub enum Commands {
         #[arg(value_name = "FILES", num_args = 2..)]
         files: Vec<PathBuf>,
 
-        /// Merge strategy (average, weighted, ties)
+        /// Merge strategy (average, weighted, slerp, ties, dare)
         #[arg(long, default_value = "average")]
         strategy: String,
 
@@ -516,6 +516,22 @@ pub enum Commands {
         /// Weights for weighted merge (comma-separated, e.g., "0.7,0.3")
         #[arg(long, value_delimiter = ',')]
         weights: Option<Vec<f32>>,
+
+        /// Base model for TIES/DARE (task vectors computed as delta from base)
+        #[arg(long)]
+        base_model: Option<PathBuf>,
+
+        /// DARE drop probability (default: 0.9)
+        #[arg(long, default_value = "0.9")]
+        drop_rate: f32,
+
+        /// TIES trim density threshold (default: 0.2)
+        #[arg(long, default_value = "0.2")]
+        density: f32,
+
+        /// RNG seed for DARE (default: 42)
+        #[arg(long, default_value = "42")]
+        seed: u64,
     },
 
     /// Interactive terminal UI
@@ -2127,7 +2143,11 @@ fn dispatch_core_command(cli: &Cli) -> Option<Result<(), CliError>> {
             strategy,
             output,
             weights,
-        } => merge::run(files, strategy, output, weights.clone()),
+            base_model,
+            drop_rate,
+            density,
+            seed,
+        } => merge::run(files, strategy, output, weights.clone(), base_model.clone(), *drop_rate, *density, *seed),
         Commands::Tui { file } => tui::run(file.clone()),
         _ => return None,
     })
@@ -2902,6 +2922,7 @@ mod tests {
                 strategy,
                 output,
                 weights,
+                ..
             } => {
                 assert_eq!(files.len(), 2);
                 assert_eq!(strategy, "weighted");
@@ -3316,6 +3337,10 @@ mod tests {
             strategy: "average".to_string(),
             output: PathBuf::from("merged.apr"),
             weights: None,
+            base_model: None,
+            drop_rate: 0.9,
+            density: 0.2,
+            seed: 42,
         };
         let paths = extract_model_paths(&cmd);
         assert_eq!(paths.len(), 3);

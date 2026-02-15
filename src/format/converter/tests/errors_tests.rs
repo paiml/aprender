@@ -251,13 +251,12 @@ fn test_merge_strategy_from_str() {
 
 #[test]
 fn test_merge_strategy_is_supported() {
-    // Average and Weighted are supported
+    // All 5 strategies are supported
     assert!(MergeStrategy::Average.is_supported());
     assert!(MergeStrategy::Weighted.is_supported());
-    // Advanced strategies not yet implemented
-    assert!(!MergeStrategy::Ties.is_supported());
-    assert!(!MergeStrategy::Dare.is_supported());
-    assert!(!MergeStrategy::Slerp.is_supported());
+    assert!(MergeStrategy::Ties.is_supported());
+    assert!(MergeStrategy::Dare.is_supported());
+    assert!(MergeStrategy::Slerp.is_supported());
 }
 
 #[test]
@@ -272,6 +271,7 @@ fn test_merge_options_weighted() {
     let opts = MergeOptions {
         strategy: MergeStrategy::Weighted,
         weights: Some(vec![0.7, 0.3]),
+        ..Default::default()
     };
     assert!(matches!(opts.strategy, MergeStrategy::Weighted));
     assert_eq!(opts.weights, Some(vec![0.7, 0.3]));
@@ -1138,6 +1138,7 @@ fn test_calculate_merge_weights_average() {
     let options = MergeOptions {
         strategy: MergeStrategy::Average,
         weights: None,
+        ..Default::default()
     };
     let weights = calculate_merge_weights(3, &options).expect("weights");
     assert_eq!(weights.len(), 3);
@@ -1151,6 +1152,7 @@ fn test_calculate_merge_weights_custom() {
     let options = MergeOptions {
         strategy: MergeStrategy::Weighted,
         weights: Some(vec![0.5, 0.3, 0.2]),
+        ..Default::default()
     };
     let weights = calculate_merge_weights(3, &options).expect("weights");
     // Weighted merging always normalizes
@@ -1163,6 +1165,7 @@ fn test_calculate_merge_weights_normalize() {
     let options = MergeOptions {
         strategy: MergeStrategy::Weighted,
         weights: Some(vec![2.0, 2.0, 1.0]),
+        ..Default::default()
     };
     let weights = calculate_merge_weights(3, &options).expect("weights");
     let sum: f32 = weights.iter().sum();
@@ -1178,6 +1181,7 @@ fn test_calculate_merge_weights_zero_sum() {
     let options = MergeOptions {
         strategy: MergeStrategy::Weighted,
         weights: Some(vec![0.0, 0.0, 0.0]),
+        ..Default::default()
     };
     let result = calculate_merge_weights(3, &options);
     assert!(result.is_err());

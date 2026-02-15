@@ -5,9 +5,9 @@
 //! Merges multiple models into a single model using various strategies:
 //! - average: Simple average of weights (ensemble)
 //! - weighted: Weighted average by specified weights
-//! - ties: TIES merging (planned)
-//! - dare: DARE merging (planned)
-//! - slerp: Spherical linear interpolation (planned)
+//! - slerp: Spherical linear interpolation (2 models)
+//! - ties: TIES merging (trim, elect sign, merge)
+//! - dare: DARE merging (drop and rescale)
 
 use crate::error::{CliError, Result};
 use crate::output;
@@ -33,6 +33,14 @@ fn validate_merge_weights(
             validate_weight_values(&w, file_count)?;
             println!("Weights: {:?}", w);
             Ok(Some(w))
+        }
+        MergeStrategy::Slerp | MergeStrategy::Dare => {
+            // SLERP uses first weight as interpolation t (default 0.5)
+            // DARE uses weights for per-model scaling (optional)
+            if let Some(ref w) = weights {
+                println!("Weights: {:?}", w);
+            }
+            Ok(weights)
         }
         _ => {
             if weights.is_some() {
@@ -80,11 +88,16 @@ fn validate_weight_values(w: &[f32], file_count: usize) -> Result<()> {
 }
 
 /// Run the merge command
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn run(
     files: &[PathBuf],
     strategy: &str,
     output: &Path,
     weights: Option<Vec<f32>>,
+    base_model: Option<PathBuf>,
+    drop_rate: f32,
+    density: f32,
+    seed: u64,
 ) -> Result<()> {
     // Validate we have at least 2 files
     if files.len() < 2 {
@@ -103,7 +116,6 @@ pub(crate) fn run(
     output::header("APR Merge");
     let mut input_pairs: Vec<(&str, String)> = Vec::new();
     for (i, file) in files.iter().enumerate() {
-        // Use a leak-free approach: push all as "Input N"
         input_pairs.push(("Input", format!("{}. {}", i + 1, file.display())));
     }
     input_pairs.push(("Output", output.display().to_string()));
@@ -112,14 +124,14 @@ pub(crate) fn run(
     // Parse merge strategy
     let merge_strategy: MergeStrategy = strategy.parse().map_err(|_| {
         CliError::ValidationFailed(format!(
-            "Unknown merge strategy: {strategy}. Supported: average, weighted"
+            "Unknown merge strategy: {strategy}. Supported: average, weighted, slerp, ties, dare"
         ))
     })?;
 
     // Check if strategy is supported
     if !merge_strategy.is_supported() {
         return Err(CliError::ValidationFailed(format!(
-            "Merge strategy '{strategy}' is not yet supported. Use 'average' or 'weighted'."
+            "Merge strategy '{strategy}' is not yet supported."
         )));
     }
 
@@ -132,6 +144,10 @@ pub(crate) fn run(
     let options = MergeOptions {
         strategy: merge_strategy,
         weights: validated_weights,
+        base_model,
+        drop_rate,
+        density,
+        seed,
     };
 
     // Run merge
@@ -190,12 +206,15 @@ mod tests {
     fn test_run_insufficient_files() {
         let file = NamedTempFile::with_suffix(".apr").expect("create temp file");
 
-        // Only 1 file - should fail
         let result = run(
             &[file.path().to_path_buf()],
             "average",
             Path::new("/tmp/merged.apr"),
             None,
+            None,
+            0.9,
+            0.2,
+            42,
         );
         assert!(result.is_err());
         match result {
@@ -208,7 +227,7 @@ mod tests {
 
     #[test]
     fn test_run_empty_files() {
-        let result = run(&[], "average", Path::new("/tmp/merged.apr"), None);
+        let result = run(&[], "average", Path::new("/tmp/merged.apr"), None, None, 0.9, 0.2, 42);
         assert!(result.is_err());
         match result {
             Err(CliError::ValidationFailed(msg)) => {
@@ -228,6 +247,10 @@ mod tests {
             "average",
             Path::new("/tmp/merged.apr"),
             None,
+            None,
+            0.9,
+            0.2,
+            42,
         );
         assert!(result.is_err());
         match result {
@@ -248,6 +271,10 @@ mod tests {
             "average",
             Path::new("/tmp/merged.apr"),
             None,
+            None,
+            0.9,
+            0.2,
+            42,
         );
         assert!(result.is_err());
         match result {
@@ -266,6 +293,10 @@ mod tests {
             "unknown_strategy",
             Path::new("/tmp/merged.apr"),
             None,
+            None,
+            0.9,
+            0.2,
+            42,
         );
         assert!(result.is_err());
         match result {
@@ -277,23 +308,74 @@ mod tests {
     }
 
     #[test]
-    fn test_run_unsupported_strategy_ties() {
-        let file1 = NamedTempFile::with_suffix(".apr").expect("create temp file");
-        let file2 = NamedTempFile::with_suffix(".apr").expect("create temp file");
+    fn test_run_ties_without_base_model() {
+        let file1 = NamedTempFile::with_suffix(".safetensors").expect("create temp file");
+        let file2 = NamedTempFile::with_suffix(".safetensors").expect("create temp file");
 
         let result = run(
             &[file1.path().to_path_buf(), file2.path().to_path_buf()],
             "ties",
-            Path::new("/tmp/merged.apr"),
+            Path::new("/tmp/merged.safetensors"),
             None,
+            None, // no base model
+            0.9,
+            0.2,
+            42,
         );
         assert!(result.is_err());
         match result {
             Err(CliError::ValidationFailed(msg)) => {
-                assert!(msg.contains("not yet supported"));
+                assert!(msg.contains("base-model") || msg.contains("base_model") || msg.contains("TIES"));
             }
-            _ => panic!("Expected ValidationFailed error for unsupported strategy"),
+            _ => panic!("Expected ValidationFailed error for missing base model"),
         }
+    }
+
+    #[test]
+    fn test_run_dare_without_base_model() {
+        let file1 = NamedTempFile::with_suffix(".safetensors").expect("create temp file");
+        let file2 = NamedTempFile::with_suffix(".safetensors").expect("create temp file");
+
+        let result = run(
+            &[file1.path().to_path_buf(), file2.path().to_path_buf()],
+            "dare",
+            Path::new("/tmp/merged.safetensors"),
+            None,
+            None, // no base model
+            0.9,
+            0.2,
+            42,
+        );
+        assert!(result.is_err());
+        match result {
+            Err(CliError::ValidationFailed(msg)) => {
+                assert!(msg.contains("base-model") || msg.contains("base_model") || msg.contains("DARE"));
+            }
+            _ => panic!("Expected ValidationFailed error for missing base model"),
+        }
+    }
+
+    #[test]
+    fn test_run_slerp_with_three_models() {
+        let file1 = NamedTempFile::with_suffix(".safetensors").expect("create temp file");
+        let file2 = NamedTempFile::with_suffix(".safetensors").expect("create temp file");
+        let file3 = NamedTempFile::with_suffix(".safetensors").expect("create temp file");
+
+        let result = run(
+            &[
+                file1.path().to_path_buf(),
+                file2.path().to_path_buf(),
+                file3.path().to_path_buf(),
+            ],
+            "slerp",
+            Path::new("/tmp/merged.safetensors"),
+            None,
+            None,
+            0.9,
+            0.2,
+            42,
+        );
+        assert!(result.is_err());
     }
 
     // ========================================================================
@@ -355,6 +437,10 @@ mod tests {
             "average",
             Path::new("/tmp/merged.apr"),
             None,
+            None,
+            0.9,
+            0.2,
+            42,
         );
         // Should fail because files are not valid APR
         assert!(result.is_err());
@@ -373,6 +459,10 @@ mod tests {
             "weighted",
             Path::new("/tmp/merged.apr"),
             Some(vec![0.7, 0.3]),
+            None,
+            0.9,
+            0.2,
+            42,
         );
         // Will fail at actual merge, but tests weight parsing path
         assert!(result.is_err());

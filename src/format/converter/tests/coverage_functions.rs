@@ -151,6 +151,7 @@ mod tests_export_merge_functions {
         let options = MergeOptions {
             strategy: MergeStrategy::Average,
             weights: None,
+            ..Default::default()
         };
         let result = apr_merge(&[&input1, &input2], &output, options);
         assert!(result.is_ok(), "Merge should succeed: {:?}", result.err());
@@ -177,6 +178,7 @@ mod tests_export_merge_functions {
         let options = MergeOptions {
             strategy: MergeStrategy::Weighted,
             weights: Some(vec![0.7, 0.3]),
+            ..Default::default()
         };
         let result = apr_merge(&[&input1, &input2], &output, options);
         assert!(
@@ -219,12 +221,13 @@ mod tests_export_merge_functions {
 
         let options = MergeOptions {
             strategy: MergeStrategy::Ties,
-            weights: None,
+            ..Default::default()
         };
+        // TIES requires --base-model, so without one it should fail
         let result = apr_merge(&[&input1, &input2], &output, options);
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("not yet supported") || err.contains("Ties"));
+        assert!(err.contains("base-model") || err.contains("TIES"));
     }
 
     #[test]
@@ -241,8 +244,9 @@ mod tests_export_merge_functions {
 
         let options = MergeOptions {
             strategy: MergeStrategy::Dare,
-            weights: None,
+            ..Default::default()
         };
+        // DARE requires --base-model, so without one it should fail
         let result = apr_merge(&[&input1, &input2], &output, options);
         assert!(result.is_err());
     }
@@ -261,10 +265,11 @@ mod tests_export_merge_functions {
 
         let options = MergeOptions {
             strategy: MergeStrategy::Slerp,
-            weights: None,
+            ..Default::default()
         };
+        // SLERP should succeed with 2 models and default weight (0.5)
         let result = apr_merge(&[&input1, &input2], &output, options);
-        assert!(result.is_err());
+        assert!(result.is_ok(), "SLERP with 2 models should succeed: {:?}", result.err());
     }
 
     #[test]
