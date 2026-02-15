@@ -428,7 +428,11 @@ fn run_safetensors_evaluation(path: &Path, config: &EvalConfig, json: bool) -> R
 }
 
 #[cfg(not(feature = "inference"))]
-fn run_safetensors_evaluation(_path: &Path, _config: &EvalConfig, _json: bool) -> Result<EvalResult> {
+fn run_safetensors_evaluation(
+    _path: &Path,
+    _config: &EvalConfig,
+    _json: bool,
+) -> Result<EvalResult> {
     Err(CliError::ValidationFailed(
         "Evaluation requires 'inference' feature. Rebuild with: \
          cargo install --path crates/apr-cli --features inference"

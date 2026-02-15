@@ -751,7 +751,7 @@ mod tests {
         file.write_all(b"not valid").expect("write");
 
         let result = run(file.path(), true, false); // no_gpu = true
-                                             // Should fail (invalid file)
+                                                    // Should fail (invalid file)
         assert!(result.is_err());
     }
 

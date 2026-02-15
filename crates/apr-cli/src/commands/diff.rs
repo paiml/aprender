@@ -67,9 +67,7 @@ struct DiffResultJson {
 impl From<&DiffReport> for DiffResultJson {
     fn from(report: &DiffReport) -> Self {
         let format_count = report.differences_by_category(DiffCategory::Format).len();
-        let metadata_count = report
-            .differences_by_category(DiffCategory::Metadata)
-            .len();
+        let metadata_count = report.differences_by_category(DiffCategory::Metadata).len();
         let tensor_count = report.differences_by_category(DiffCategory::Tensor).len();
         let quant_count = report
             .differences_by_category(DiffCategory::Quantization)

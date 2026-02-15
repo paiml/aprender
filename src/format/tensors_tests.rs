@@ -1521,3 +1521,189 @@ fn test_safetensors_less_than_8_bytes() {
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("too small"));
 }
+
+// ====================================================================
+// extract_tensors_from_metadata_with_counts: Coverage tests (impact 5.7)
+// ====================================================================
+
+#[test]
+fn test_extract_tensors_from_metadata_with_counts_basic() {
+    use std::collections::HashMap;
+
+    let mut metadata = HashMap::new();
+    let shapes = serde_json::json!({
+        "model.embed_tokens.weight": [256, 128],
+        "model.norm.weight": [128],
+        "model.layers.0.self_attn.q_proj.weight": [128, 128]
+    });
+    metadata.insert("tensor_shapes".to_string(), shapes);
+
+    let options = TensorListOptions::default();
+    let (tensors, total_count, total_size_bytes) =
+        super::extract_tensors_from_metadata_with_counts(&metadata, &options);
+
+    assert_eq!(total_count, 3);
+    assert_eq!(tensors.len(), 3);
+    // Size = sum of elements * 4 (f32 assumed)
+    // 256*128*4 + 128*4 + 128*128*4 = 131072 + 512 + 65536 = 197120
+    assert_eq!(total_size_bytes, 197120);
+}
+
+#[test]
+fn test_extract_tensors_from_metadata_with_counts_empty_shapes() {
+    use std::collections::HashMap;
+
+    let mut metadata = HashMap::new();
+    metadata.insert("tensor_shapes".to_string(), serde_json::json!({}));
+
+    let options = TensorListOptions::default();
+    let (tensors, total_count, total_size) =
+        super::extract_tensors_from_metadata_with_counts(&metadata, &options);
+
+    assert_eq!(total_count, 0);
+    assert_eq!(tensors.len(), 0);
+    assert_eq!(total_size, 0);
+}
+
+#[test]
+fn test_extract_tensors_from_metadata_with_counts_no_tensor_shapes_key() {
+    use std::collections::HashMap;
+
+    let metadata = HashMap::new();
+
+    let options = TensorListOptions::default();
+    let (tensors, total_count, total_size) =
+        super::extract_tensors_from_metadata_with_counts(&metadata, &options);
+
+    assert_eq!(total_count, 0);
+    assert_eq!(tensors.len(), 0);
+    assert_eq!(total_size, 0);
+}
+
+#[test]
+fn test_extract_tensors_from_metadata_with_counts_non_object_tensor_shapes() {
+    use std::collections::HashMap;
+
+    let mut metadata = HashMap::new();
+    metadata.insert(
+        "tensor_shapes".to_string(),
+        serde_json::json!("not an object"),
+    );
+
+    let options = TensorListOptions::default();
+    let (tensors, total_count, total_size) =
+        super::extract_tensors_from_metadata_with_counts(&metadata, &options);
+
+    assert_eq!(total_count, 0);
+    assert_eq!(tensors.len(), 0);
+    assert_eq!(total_size, 0);
+}
+
+#[test]
+fn test_extract_tensors_from_metadata_with_counts_with_filter() {
+    use std::collections::HashMap;
+
+    let mut metadata = HashMap::new();
+    let shapes = serde_json::json!({
+        "model.embed_tokens.weight": [256, 128],
+        "model.norm.weight": [128],
+        "model.layers.0.self_attn.q_proj.weight": [128, 128],
+        "model.layers.0.self_attn.k_proj.weight": [64, 128]
+    });
+    metadata.insert("tensor_shapes".to_string(), shapes);
+
+    let options = TensorListOptions {
+        filter: Some("attn".to_string()),
+        ..Default::default()
+    };
+    let (tensors, total_count, _total_size) =
+        super::extract_tensors_from_metadata_with_counts(&metadata, &options);
+
+    // Only attn tensors match
+    assert_eq!(total_count, 2);
+    assert_eq!(tensors.len(), 2);
+    for t in &tensors {
+        assert!(
+            t.name.contains("attn"),
+            "all tensors should match filter: {}",
+            t.name
+        );
+    }
+}
+
+#[test]
+fn test_extract_tensors_from_metadata_with_counts_with_limit() {
+    use std::collections::HashMap;
+
+    let mut metadata = HashMap::new();
+    let mut shapes = serde_json::Map::new();
+    for i in 0..10 {
+        shapes.insert(format!("tensor_{i}"), serde_json::json!([64, 64]));
+    }
+    metadata.insert(
+        "tensor_shapes".to_string(),
+        serde_json::Value::Object(shapes),
+    );
+
+    let options = TensorListOptions {
+        limit: 3,
+        ..Default::default()
+    };
+    let (tensors, total_count, total_size) =
+        super::extract_tensors_from_metadata_with_counts(&metadata, &options);
+
+    // total_count should be 10 (all tensors counted)
+    assert_eq!(total_count, 10);
+    // But only 3 returned (due to limit)
+    assert_eq!(tensors.len(), 3);
+    // total_size should reflect ALL tensors, not just limited ones
+    // 10 * 64 * 64 * 4 = 163840
+    assert_eq!(total_size, 163840);
+}
+
+#[test]
+fn test_extract_tensors_from_metadata_with_counts_dtype_is_f32() {
+    use std::collections::HashMap;
+
+    let mut metadata = HashMap::new();
+    let shapes = serde_json::json!({
+        "tensor_a": [4, 4]
+    });
+    metadata.insert("tensor_shapes".to_string(), shapes);
+
+    let options = TensorListOptions::default();
+    let (tensors, _, _) = super::extract_tensors_from_metadata_with_counts(&metadata, &options);
+
+    assert_eq!(tensors.len(), 1);
+    assert_eq!(tensors[0].dtype, "f32");
+    assert_eq!(tensors[0].size_bytes, 4 * 4 * 4); // 4*4 elements * 4 bytes
+    assert!(tensors[0].mean.is_none());
+    assert!(tensors[0].std.is_none());
+    assert!(tensors[0].min.is_none());
+    assert!(tensors[0].max.is_none());
+    assert!(tensors[0].nan_count.is_none());
+    assert!(tensors[0].inf_count.is_none());
+}
+
+#[test]
+fn test_extract_tensors_from_metadata_with_counts_filter_no_match() {
+    use std::collections::HashMap;
+
+    let mut metadata = HashMap::new();
+    let shapes = serde_json::json!({
+        "model.embed_tokens.weight": [256, 128],
+        "model.norm.weight": [128]
+    });
+    metadata.insert("tensor_shapes".to_string(), shapes);
+
+    let options = TensorListOptions {
+        filter: Some("nonexistent_pattern".to_string()),
+        ..Default::default()
+    };
+    let (tensors, total_count, total_size) =
+        super::extract_tensors_from_metadata_with_counts(&metadata, &options);
+
+    assert_eq!(total_count, 0);
+    assert_eq!(tensors.len(), 0);
+    assert_eq!(total_size, 0);
+}

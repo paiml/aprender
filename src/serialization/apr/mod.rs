@@ -196,9 +196,7 @@ impl AprReader {
         // Validate APR1 magic
         let magic = data.get(0..4).ok_or("File too short for magic")?;
         if magic != APR_MAGIC {
-            return Err(format!(
-                "Invalid magic: expected APR1, got {magic:?}",
-            ));
+            return Err(format!("Invalid magic: expected APR1, got {magic:?}",));
         }
 
         // Read metadata length

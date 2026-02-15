@@ -458,13 +458,27 @@ fn run_strings_mode_succeeds_on_regular_file() {
 
 #[test]
 fn run_hex_mode_file_not_found() {
-    let result = run(Path::new("/nonexistent/file.bin"), false, true, false, 256, false);
+    let result = run(
+        Path::new("/nonexistent/file.bin"),
+        false,
+        true,
+        false,
+        256,
+        false,
+    );
     assert!(result.is_err());
 }
 
 #[test]
 fn run_strings_mode_file_not_found() {
-    let result = run(Path::new("/nonexistent/file.bin"), false, false, true, 256, false);
+    let result = run(
+        Path::new("/nonexistent/file.bin"),
+        false,
+        false,
+        true,
+        256,
+        false,
+    );
     assert!(result.is_err());
 }
 

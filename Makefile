@@ -248,7 +248,7 @@ tier4: tier3
 #     - commands/eval       : Model evaluation (requires model files)
 #     - commands/canary     : Canary testing
 #     - chaos\.rs           : Chaos testing module
-COVERAGE_EXCLUDE_REGEX := \.cargo/|trueno|realizar/|entrenar/|fuzz/|golden_traces/|hf_hub/|demo/|test_factory|pacha/|aprender-monte-carlo/src/main|aprender-tsp/src/main|showcase/|aprender-shell/src/main|commands/serve/|commands/cbtop|commands/chat|commands/tui|federation/tui|commands/run\.rs|commands/pull|commands/compare_hf|commands/trace|commands/bench\.rs|commands/eval|commands/canary|chaos\.rs|audio/|format/quantize\.rs|format/signing\.rs|voice/|playback\.rs|commands/hex\.rs|commands/flow\.rs|commands/tree\.rs|commands/showcase/|commands/probar\.rs|federation/|commands/publish\.rs|apr-cli/src/lib\.rs|commands/check\.rs
+COVERAGE_EXCLUDE_REGEX := \.cargo/|trueno|realizar/|entrenar/|fuzz/|golden_traces/|hf_hub/|demo/|test_factory|pacha/|aprender-monte-carlo/src/main|aprender-tsp/src/main|showcase/|aprender-shell/src/main|commands/serve/|commands/cbtop|commands/chat|commands/tui|federation/tui|commands/run\.rs|commands/pull|commands/compare_hf|commands/trace|commands/bench\.rs|commands/eval|commands/canary|chaos\.rs|audio/|format/quantize\.rs|format/signing\.rs|voice/|playback\.rs|commands/hex\.rs|commands/flow\.rs|commands/tree\.rs|commands/showcase/|commands/probar\.rs|federation/|commands/publish\.rs|apr-cli/src/lib\.rs|commands/check\.rs|commands/parity\.rs|commands/profile\.rs|commands/rosetta\.rs|commands/qa\.rs|commands/oracle\.rs
 
 # Coverage threshold (enforced: fail if below)
 COV_THRESHOLD := 95

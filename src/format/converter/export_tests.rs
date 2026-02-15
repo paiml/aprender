@@ -1886,7 +1886,11 @@ fn test_bug_213_resolve_gguf_config_defaults_without_metadata() {
 // ========================================================================
 
 /// Helper: create a minimal tensor map with HF-style names for testing export_to_gguf
-fn make_test_tensors(hidden: usize, vocab: usize, layers: usize) -> BTreeMap<String, (Vec<f32>, Vec<usize>)> {
+fn make_test_tensors(
+    hidden: usize,
+    vocab: usize,
+    layers: usize,
+) -> BTreeMap<String, (Vec<f32>, Vec<usize>)> {
     let mut tensors = BTreeMap::new();
 
     // Embedding
@@ -2003,14 +2007,25 @@ fn test_export_to_gguf_q4k_preserves_embeddings_as_f32() {
 
     let reader = GgufReader::from_file(&output).expect("should parse GGUF");
     // Embedding (token_embd.weight) should remain F32 (dtype=0)
-    let embd = reader.tensors.iter().find(|t| t.name == "token_embd.weight");
+    let embd = reader
+        .tensors
+        .iter()
+        .find(|t| t.name == "token_embd.weight");
     assert!(embd.is_some(), "should have token_embd.weight");
-    assert_eq!(embd.expect("embd").dtype, 0, "embedding should stay F32 (dtype=0) under Q4K");
+    assert_eq!(
+        embd.expect("embd").dtype,
+        0,
+        "embedding should stay F32 (dtype=0) under Q4K"
+    );
 
     // lm_head (output.weight) should also remain F32
     let lm_head = reader.tensors.iter().find(|t| t.name == "output.weight");
     assert!(lm_head.is_some(), "should have output.weight");
-    assert_eq!(lm_head.expect("lm_head").dtype, 0, "lm_head should stay F32 (dtype=0) under Q4K");
+    assert_eq!(
+        lm_head.expect("lm_head").dtype,
+        0,
+        "lm_head should stay F32 (dtype=0) under Q4K"
+    );
 }
 
 #[test]
@@ -2032,10 +2047,17 @@ fn test_export_to_gguf_shape_reversal_for_2d() {
     export_to_gguf(&tensors, &output, &input, None).expect("export should succeed");
 
     let reader = GgufReader::from_file(&output).expect("should parse GGUF");
-    let embd = reader.tensors.iter().find(|t| t.name == "token_embd.weight");
+    let embd = reader
+        .tensors
+        .iter()
+        .find(|t| t.name == "token_embd.weight");
     assert!(embd.is_some());
     let dims = &embd.expect("embd").dims;
-    assert_eq!(dims, &vec![64, 128], "shape should be reversed for GGUF [ne0, ne1]");
+    assert_eq!(
+        dims,
+        &vec![64, 128],
+        "shape should be reversed for GGUF [ne0, ne1]"
+    );
 }
 
 #[test]
@@ -2044,10 +2066,7 @@ fn test_export_to_gguf_1d_shape_unchanged() {
 
     let mut tensors = BTreeMap::new();
     // 1D tensor shape should NOT be reversed
-    tensors.insert(
-        "model.norm.weight".to_string(),
-        (vec![1.0; 64], vec![64]),
-    );
+    tensors.insert("model.norm.weight".to_string(), (vec![1.0; 64], vec![64]));
     // Need at least one 2D tensor for the file to be useful
     tensors.insert(
         "model.embed_tokens.weight".to_string(),
@@ -2062,7 +2081,10 @@ fn test_export_to_gguf_1d_shape_unchanged() {
     export_to_gguf(&tensors, &output, &input, None).expect("export should succeed");
 
     let reader = GgufReader::from_file(&output).expect("should parse GGUF");
-    let norm = reader.tensors.iter().find(|t| t.name == "output_norm.weight");
+    let norm = reader
+        .tensors
+        .iter()
+        .find(|t| t.name == "output_norm.weight");
     assert!(norm.is_some());
     let dims = &norm.expect("norm").dims;
     assert_eq!(dims, &vec![64], "1D shape should be preserved");
@@ -2084,18 +2106,39 @@ fn test_export_to_gguf_tensor_name_mapping() {
     let names: Vec<&str> = reader.tensors.iter().map(|t| t.name.as_str()).collect();
 
     // Verify key HF→GGUF name mappings
-    assert!(names.contains(&"token_embd.weight"), "embed_tokens → token_embd");
+    assert!(
+        names.contains(&"token_embd.weight"),
+        "embed_tokens → token_embd"
+    );
     assert!(names.contains(&"output.weight"), "lm_head → output");
-    assert!(names.contains(&"output_norm.weight"), "model.norm → output_norm");
+    assert!(
+        names.contains(&"output_norm.weight"),
+        "model.norm → output_norm"
+    );
     assert!(names.contains(&"blk.0.attn_q.weight"), "q_proj → attn_q");
     assert!(names.contains(&"blk.0.attn_k.weight"), "k_proj → attn_k");
     assert!(names.contains(&"blk.0.attn_v.weight"), "v_proj → attn_v");
-    assert!(names.contains(&"blk.0.attn_output.weight"), "o_proj → attn_output");
-    assert!(names.contains(&"blk.0.ffn_gate.weight"), "gate_proj → ffn_gate");
+    assert!(
+        names.contains(&"blk.0.attn_output.weight"),
+        "o_proj → attn_output"
+    );
+    assert!(
+        names.contains(&"blk.0.ffn_gate.weight"),
+        "gate_proj → ffn_gate"
+    );
     assert!(names.contains(&"blk.0.ffn_up.weight"), "up_proj → ffn_up");
-    assert!(names.contains(&"blk.0.ffn_down.weight"), "down_proj → ffn_down");
-    assert!(names.contains(&"blk.0.attn_norm.weight"), "input_layernorm → attn_norm");
-    assert!(names.contains(&"blk.0.ffn_norm.weight"), "post_attention_layernorm → ffn_norm");
+    assert!(
+        names.contains(&"blk.0.ffn_down.weight"),
+        "down_proj → ffn_down"
+    );
+    assert!(
+        names.contains(&"blk.0.attn_norm.weight"),
+        "input_layernorm → attn_norm"
+    );
+    assert!(
+        names.contains(&"blk.0.ffn_norm.weight"),
+        "post_attention_layernorm → ffn_norm"
+    );
 }
 
 #[test]
@@ -2117,7 +2160,11 @@ fn test_export_to_gguf_from_apr_input_reads_metadata() {
 
     let mut writer = AprV2Writer::new(metadata);
     // Add minimal tensors
-    writer.add_f32_tensor("model.embed_tokens.weight", vec![256, 64], &vec![0.1; 256 * 64]);
+    writer.add_f32_tensor(
+        "model.embed_tokens.weight",
+        vec![256, 64],
+        &vec![0.1; 256 * 64],
+    );
     writer.add_f32_tensor("model.norm.weight", vec![64], &vec![1.0; 64]);
 
     let apr_path = dir.path().join("model.apr");
@@ -2129,10 +2176,7 @@ fn test_export_to_gguf_from_apr_input_reads_metadata() {
         "model.embed_tokens.weight".to_string(),
         (vec![0.1; 256 * 64], vec![256, 64]),
     );
-    tensors.insert(
-        "model.norm.weight".to_string(),
-        (vec![1.0; 64], vec![64]),
-    );
+    tensors.insert("model.norm.weight".to_string(), (vec![1.0; 64], vec![64]));
 
     let output = dir.path().join("output.gguf");
     export_to_gguf(&tensors, &output, &apr_path, None).expect("export should succeed");
@@ -2140,7 +2184,11 @@ fn test_export_to_gguf_from_apr_input_reads_metadata() {
     let reader = GgufReader::from_file(&output).expect("should parse GGUF");
     // Architecture should come from APR metadata, not default
     let arch = reader.architecture();
-    assert_eq!(arch.as_deref(), Some("llama"), "should use APR metadata architecture");
+    assert_eq!(
+        arch.as_deref(),
+        Some("llama"),
+        "should use APR metadata architecture"
+    );
 }
 
 #[test]
@@ -2154,10 +2202,7 @@ fn test_export_to_gguf_tied_embeddings_creates_output_weight() {
         (vec![0.1; 512 * 256], vec![512, 256]),
     );
     // No lm_head.weight — this is a tied-embedding model
-    tensors.insert(
-        "model.norm.weight".to_string(),
-        (vec![1.0; 256], vec![256]),
-    );
+    tensors.insert("model.norm.weight".to_string(), (vec![1.0; 256], vec![256]));
 
     let dir = tempfile::tempdir().expect("temp dir");
     let output = dir.path().join("test_tied.gguf");
@@ -2170,7 +2215,10 @@ fn test_export_to_gguf_tied_embeddings_creates_output_weight() {
     let reader = GgufReader::from_file(&output).expect("should parse GGUF");
     let has_output = reader.tensors.iter().any(|t| t.name == "output.weight");
     // Should have synthesized output.weight from embedding
-    assert!(has_output, "tied embedding model should get synthesized output.weight");
+    assert!(
+        has_output,
+        "tied embedding model should get synthesized output.weight"
+    );
 }
 
 #[test]
@@ -2197,7 +2245,11 @@ fn test_export_to_gguf_with_explicit_lm_head_no_duplicate() {
     export_to_gguf(&tensors, &output, &input, Some(&quant)).expect("export should succeed");
 
     let reader = GgufReader::from_file(&output).expect("should parse GGUF");
-    let output_count = reader.tensors.iter().filter(|t| t.name == "output.weight").count();
+    let output_count = reader
+        .tensors
+        .iter()
+        .filter(|t| t.name == "output.weight")
+        .count();
     assert_eq!(output_count, 1, "should have exactly one output.weight");
 }
 
@@ -2384,7 +2436,10 @@ fn test_build_tied_output_weight_from_embed_tokens() {
     );
 
     let result = build_tied_output_weight(&tensors);
-    assert!(result.is_some(), "should create output.weight from embed_tokens");
+    assert!(
+        result.is_some(),
+        "should create output.weight from embed_tokens"
+    );
 
     let tensor = result.expect("tied weight");
     assert_eq!(tensor.name, "output.weight");
@@ -2413,7 +2468,10 @@ fn test_build_tied_output_weight_none_without_embedding() {
     );
 
     let result = build_tied_output_weight(&tensors);
-    assert!(result.is_none(), "should return None when no embedding tensor found");
+    assert!(
+        result.is_none(),
+        "should return None when no embedding tensor found"
+    );
 }
 
 #[test]
@@ -2438,7 +2496,10 @@ fn test_build_tied_output_weight_none_for_small_data() {
     );
 
     let result = build_tied_output_weight(&tensors);
-    assert!(result.is_none(), "should return None when data too small for Q4K");
+    assert!(
+        result.is_none(),
+        "should return None when data too small for Q4K"
+    );
 }
 
 // ========================================================================
@@ -2469,7 +2530,10 @@ fn test_append_tokenizer_prefers_json_over_apr_fallback() {
 
     // When tokenizer is Some, APR metadata should be ignored
     let mut apr = crate::format::v2::AprV2Metadata::new("test");
-    apr.custom.insert("tokenizer.vocabulary".to_string(), serde_json::json!(["x", "y"]));
+    apr.custom.insert(
+        "tokenizer.vocabulary".to_string(),
+        serde_json::json!(["x", "y"]),
+    );
 
     append_tokenizer_to_metadata(&mut metadata, Some(&tok), Some(&apr), "qwen2", &input);
 
@@ -2486,14 +2550,24 @@ fn test_append_tokenizer_uses_apr_fallback_when_no_json() {
     let input = dir.path().join("dummy.safetensors");
 
     let mut apr = crate::format::v2::AprV2Metadata::new("test");
-    apr.custom.insert("tokenizer.vocabulary".to_string(), serde_json::json!(["x", "y"]));
-    apr.custom.insert("tokenizer.model".to_string(), serde_json::json!("gpt2"));
+    apr.custom.insert(
+        "tokenizer.vocabulary".to_string(),
+        serde_json::json!(["x", "y"]),
+    );
+    apr.custom
+        .insert("tokenizer.model".to_string(), serde_json::json!("gpt2"));
 
     append_tokenizer_to_metadata(&mut metadata, None, Some(&apr), "qwen2", &input);
 
     let keys: Vec<&str> = metadata.iter().map(|(k, _)| k.as_str()).collect();
-    assert!(keys.contains(&"tokenizer.ggml.model"), "should have model from APR fallback");
-    assert!(keys.contains(&"tokenizer.ggml.tokens"), "should have tokens from APR fallback");
+    assert!(
+        keys.contains(&"tokenizer.ggml.model"),
+        "should have model from APR fallback"
+    );
+    assert!(
+        keys.contains(&"tokenizer.ggml.tokens"),
+        "should have tokens from APR fallback"
+    );
 }
 
 #[test]
@@ -2505,11 +2579,15 @@ fn test_append_tokenizer_no_metadata_when_neither_source() {
     append_tokenizer_to_metadata(&mut metadata, None, None, "qwen2", &input);
 
     // Should have no tokenizer metadata entries
-    let tok_keys: Vec<&str> = metadata.iter()
+    let tok_keys: Vec<&str> = metadata
+        .iter()
         .map(|(k, _)| k.as_str())
         .filter(|k| k.starts_with("tokenizer."))
         .collect();
-    assert!(tok_keys.is_empty(), "no tokenizer sources → no tokenizer metadata");
+    assert!(
+        tok_keys.is_empty(),
+        "no tokenizer sources → no tokenizer metadata"
+    );
 }
 
 // ========================================================================
@@ -2522,8 +2600,16 @@ fn test_detect_apr_quantization_f32_returns_none() {
 
     let dir = tempfile::tempdir().expect("temp dir");
     let mut writer = AprV2Writer::new(AprV2Metadata::new("test"));
-    writer.add_f32_tensor("model.layers.0.self_attn.q_proj.weight", vec![64, 64], &vec![0.01; 64 * 64]);
-    writer.add_f32_tensor("model.layers.0.self_attn.k_proj.weight", vec![64, 64], &vec![0.01; 64 * 64]);
+    writer.add_f32_tensor(
+        "model.layers.0.self_attn.q_proj.weight",
+        vec![64, 64],
+        &vec![0.01; 64 * 64],
+    );
+    writer.add_f32_tensor(
+        "model.layers.0.self_attn.k_proj.weight",
+        vec![64, 64],
+        &vec![0.01; 64 * 64],
+    );
 
     let path = dir.path().join("test.apr");
     let bytes = writer.write().expect("write");
@@ -2559,17 +2645,57 @@ fn test_apr_export_to_gguf_end_to_end() {
     metadata.num_kv_heads = Some(2);
 
     let mut writer = AprV2Writer::new(metadata);
-    writer.add_f32_tensor("model.embed_tokens.weight", vec![256, 64], &vec![0.1; 256 * 64]);
+    writer.add_f32_tensor(
+        "model.embed_tokens.weight",
+        vec![256, 64],
+        &vec![0.1; 256 * 64],
+    );
     writer.add_f32_tensor("model.norm.weight", vec![64], &vec![1.0; 64]);
-    writer.add_f32_tensor("model.layers.0.self_attn.q_proj.weight", vec![64, 64], &vec![0.01; 64 * 64]);
-    writer.add_f32_tensor("model.layers.0.self_attn.k_proj.weight", vec![64, 64], &vec![0.01; 64 * 64]);
-    writer.add_f32_tensor("model.layers.0.self_attn.v_proj.weight", vec![64, 64], &vec![0.01; 64 * 64]);
-    writer.add_f32_tensor("model.layers.0.self_attn.o_proj.weight", vec![64, 64], &vec![0.01; 64 * 64]);
-    writer.add_f32_tensor("model.layers.0.input_layernorm.weight", vec![64], &vec![1.0; 64]);
-    writer.add_f32_tensor("model.layers.0.post_attention_layernorm.weight", vec![64], &vec![1.0; 64]);
-    writer.add_f32_tensor("model.layers.0.mlp.gate_proj.weight", vec![64, 64], &vec![0.01; 64 * 64]);
-    writer.add_f32_tensor("model.layers.0.mlp.up_proj.weight", vec![64, 64], &vec![0.01; 64 * 64]);
-    writer.add_f32_tensor("model.layers.0.mlp.down_proj.weight", vec![64, 64], &vec![0.01; 64 * 64]);
+    writer.add_f32_tensor(
+        "model.layers.0.self_attn.q_proj.weight",
+        vec![64, 64],
+        &vec![0.01; 64 * 64],
+    );
+    writer.add_f32_tensor(
+        "model.layers.0.self_attn.k_proj.weight",
+        vec![64, 64],
+        &vec![0.01; 64 * 64],
+    );
+    writer.add_f32_tensor(
+        "model.layers.0.self_attn.v_proj.weight",
+        vec![64, 64],
+        &vec![0.01; 64 * 64],
+    );
+    writer.add_f32_tensor(
+        "model.layers.0.self_attn.o_proj.weight",
+        vec![64, 64],
+        &vec![0.01; 64 * 64],
+    );
+    writer.add_f32_tensor(
+        "model.layers.0.input_layernorm.weight",
+        vec![64],
+        &vec![1.0; 64],
+    );
+    writer.add_f32_tensor(
+        "model.layers.0.post_attention_layernorm.weight",
+        vec![64],
+        &vec![1.0; 64],
+    );
+    writer.add_f32_tensor(
+        "model.layers.0.mlp.gate_proj.weight",
+        vec![64, 64],
+        &vec![0.01; 64 * 64],
+    );
+    writer.add_f32_tensor(
+        "model.layers.0.mlp.up_proj.weight",
+        vec![64, 64],
+        &vec![0.01; 64 * 64],
+    );
+    writer.add_f32_tensor(
+        "model.layers.0.mlp.down_proj.weight",
+        vec![64, 64],
+        &vec![0.01; 64 * 64],
+    );
 
     let apr_path = dir.path().join("model.apr");
     let bytes = writer.write().expect("write APR");
@@ -2600,7 +2726,10 @@ fn test_apr_export_to_gguf_end_to_end() {
 fn test_push_string_array_with_valid_data() {
     let mut entries = Vec::new();
     let mut custom = std::collections::HashMap::new();
-    custom.insert("my_tokens".to_string(), serde_json::json!(["hello", "world"]));
+    custom.insert(
+        "my_tokens".to_string(),
+        serde_json::json!(["hello", "world"]),
+    );
 
     push_string_array(&mut entries, &custom, "my_tokens", "tokenizer.ggml.tokens");
 
@@ -2689,8 +2818,12 @@ fn test_extract_apr_tokenizer_maps_bpe_to_gpt2() {
     use crate::format::v2::AprV2Metadata;
 
     let mut apr = AprV2Metadata::new("test");
-    apr.custom.insert("tokenizer.model".to_string(), serde_json::json!("bpe"));
-    apr.custom.insert("tokenizer.vocabulary".to_string(), serde_json::json!(["a", "b"]));
+    apr.custom
+        .insert("tokenizer.model".to_string(), serde_json::json!("bpe"));
+    apr.custom.insert(
+        "tokenizer.vocabulary".to_string(),
+        serde_json::json!(["a", "b"]),
+    );
 
     let entries = extract_apr_tokenizer_for_gguf(&apr);
     let model_entry = entries.iter().find(|(k, _)| k == "tokenizer.ggml.model");
@@ -2719,7 +2852,10 @@ fn test_extract_apr_tokenizer_chat_template_from_custom() {
 
     let mut apr = AprV2Metadata::new("test");
     // No chat_template field, but has it in custom
-    apr.custom.insert("tokenizer.chat_template".to_string(), serde_json::json!("template_str"));
+    apr.custom.insert(
+        "tokenizer.chat_template".to_string(),
+        serde_json::json!("template_str"),
+    );
 
     let entries = extract_apr_tokenizer_for_gguf(&apr);
     let tmpl = entries.iter().find(|(k, _)| k == "tokenizer.chat_template");
@@ -2731,10 +2867,15 @@ fn test_extract_apr_tokenizer_add_bos_token() {
     use crate::format::v2::AprV2Metadata;
 
     let mut apr = AprV2Metadata::new("test");
-    apr.custom.insert("tokenizer.add_bos_token".to_string(), serde_json::json!(true));
+    apr.custom.insert(
+        "tokenizer.add_bos_token".to_string(),
+        serde_json::json!(true),
+    );
 
     let entries = extract_apr_tokenizer_for_gguf(&apr);
-    let bos = entries.iter().find(|(k, _)| k == "tokenizer.ggml.add_bos_token");
+    let bos = entries
+        .iter()
+        .find(|(k, _)| k == "tokenizer.ggml.add_bos_token");
     assert!(bos.is_some(), "should include add_bos_token flag");
 }
 
@@ -2771,7 +2912,11 @@ fn test_resolve_architecture_ignores_unknown_model_type() {
     apr.architecture = None;
     apr.model_type = "unknown".to_string();
 
-    assert_eq!(resolve_architecture(&apr), "qwen2", "unknown model_type should default to qwen2");
+    assert_eq!(
+        resolve_architecture(&apr),
+        "qwen2",
+        "unknown model_type should default to qwen2"
+    );
 }
 
 #[test]
@@ -2782,5 +2927,831 @@ fn test_resolve_architecture_ignores_empty_model_type() {
     apr.architecture = None;
     apr.model_type = String::new();
 
-    assert_eq!(resolve_architecture(&apr), "qwen2", "empty model_type should default to qwen2");
+    assert_eq!(
+        resolve_architecture(&apr),
+        "qwen2",
+        "empty model_type should default to qwen2"
+    );
+}
+
+// ========================================================================
+// build_gguf_arch_metadata: Coverage tests (impact 22.8)
+// ========================================================================
+
+#[test]
+fn test_build_gguf_arch_metadata_with_all_fields_populated() {
+    use crate::format::gguf::GgufValue;
+    use crate::format::v2::AprV2Metadata;
+
+    let mut apr = AprV2Metadata::new("test-model");
+    apr.architecture = Some("qwen2".to_string());
+    apr.hidden_size = Some(896);
+    apr.num_layers = Some(24);
+    apr.num_heads = Some(14);
+    apr.num_kv_heads = Some(2);
+    apr.vocab_size = Some(151936);
+    apr.intermediate_size = Some(4864);
+    apr.max_position_embeddings = Some(32768);
+    apr.rope_theta = Some(1_000_000.0);
+    apr.rms_norm_eps = Some(1e-6);
+    apr.name = Some("Qwen2.5-0.5B".to_string());
+
+    let entries = build_gguf_arch_metadata(&apr);
+
+    // Verify all expected keys are present
+    let find = |key: &str| entries.iter().find(|(k, _)| k == key).map(|(_, v)| v);
+
+    // general.architecture
+    match find("general.architecture") {
+        Some(GgufValue::String(s)) => assert_eq!(s, "qwen2"),
+        other => panic!("Expected String 'qwen2', got: {other:?}"),
+    }
+
+    // general.name
+    match find("general.name") {
+        Some(GgufValue::String(s)) => assert_eq!(s, "Qwen2.5-0.5B"),
+        other => panic!("Expected String 'Qwen2.5-0.5B', got: {other:?}"),
+    }
+
+    // general.quantization_version
+    match find("general.quantization_version") {
+        Some(GgufValue::Uint32(v)) => assert_eq!(*v, 2),
+        other => panic!("Expected Uint32(2), got: {other:?}"),
+    }
+
+    // qwen2.context_length
+    match find("qwen2.context_length") {
+        Some(GgufValue::Uint32(v)) => assert_eq!(*v, 32768),
+        other => panic!("Expected Uint32(32768), got: {other:?}"),
+    }
+
+    // qwen2.embedding_length
+    match find("qwen2.embedding_length") {
+        Some(GgufValue::Uint32(v)) => assert_eq!(*v, 896),
+        other => panic!("Expected Uint32(896), got: {other:?}"),
+    }
+
+    // qwen2.block_count
+    match find("qwen2.block_count") {
+        Some(GgufValue::Uint32(v)) => assert_eq!(*v, 24),
+        other => panic!("Expected Uint32(24), got: {other:?}"),
+    }
+
+    // qwen2.feed_forward_length
+    match find("qwen2.feed_forward_length") {
+        Some(GgufValue::Uint32(v)) => assert_eq!(*v, 4864),
+        other => panic!("Expected Uint32(4864), got: {other:?}"),
+    }
+
+    // qwen2.attention.head_count
+    match find("qwen2.attention.head_count") {
+        Some(GgufValue::Uint32(v)) => assert_eq!(*v, 14),
+        other => panic!("Expected Uint32(14), got: {other:?}"),
+    }
+
+    // qwen2.attention.head_count_kv
+    match find("qwen2.attention.head_count_kv") {
+        Some(GgufValue::Uint32(v)) => assert_eq!(*v, 2),
+        other => panic!("Expected Uint32(2), got: {other:?}"),
+    }
+
+    // qwen2.attention.layer_norm_rms_epsilon
+    match find("qwen2.attention.layer_norm_rms_epsilon") {
+        Some(GgufValue::Float32(v)) => assert!((*v - 1e-6).abs() < 1e-10),
+        other => panic!("Expected Float32(1e-6), got: {other:?}"),
+    }
+
+    // qwen2.rope.freq_base
+    match find("qwen2.rope.freq_base") {
+        Some(GgufValue::Float32(v)) => assert!((*v - 1_000_000.0).abs() < 1.0),
+        other => panic!("Expected Float32(1000000.0), got: {other:?}"),
+    }
+
+    // qwen2.rope.dimension_count = hidden_size / num_heads = 896/14 = 64
+    match find("qwen2.rope.dimension_count") {
+        Some(GgufValue::Uint32(v)) => assert_eq!(*v, 64),
+        other => panic!("Expected Uint32(64), got: {other:?}"),
+    }
+
+    // qwen2.vocab_size
+    match find("qwen2.vocab_size") {
+        Some(GgufValue::Uint32(v)) => assert_eq!(*v, 151936),
+        other => panic!("Expected Uint32(151936), got: {other:?}"),
+    }
+
+    // Verify total count: 14 entries
+    assert_eq!(entries.len(), 14);
+}
+
+#[test]
+fn test_build_gguf_arch_metadata_defaults_when_fields_are_none() {
+    use crate::format::gguf::GgufValue;
+    use crate::format::v2::AprV2Metadata;
+
+    // Create metadata with all Option fields as None
+    let mut apr = AprV2Metadata::new("test");
+    apr.architecture = None;
+    apr.model_type = String::new();
+    apr.hidden_size = None;
+    apr.num_layers = None;
+    apr.num_heads = None;
+    apr.num_kv_heads = None;
+    apr.vocab_size = None;
+    apr.intermediate_size = None;
+    apr.max_position_embeddings = None;
+    apr.rope_theta = None;
+    apr.rms_norm_eps = None;
+    apr.name = None;
+
+    let entries = build_gguf_arch_metadata(&apr);
+
+    let find = |key: &str| entries.iter().find(|(k, _)| k == key).map(|(_, v)| v);
+
+    // Should use defaults
+    match find("general.architecture") {
+        Some(GgufValue::String(s)) => assert_eq!(s, "qwen2"), // default
+        other => panic!("Expected String 'qwen2', got: {other:?}"),
+    }
+    match find("general.name") {
+        Some(GgufValue::String(s)) => assert_eq!(s, "model"), // default
+        other => panic!("Expected String 'model', got: {other:?}"),
+    }
+    // Default hidden_size=4096, num_heads=32, head_dim=128
+    match find("qwen2.embedding_length") {
+        Some(GgufValue::Uint32(v)) => assert_eq!(*v, 4096),
+        other => panic!("Expected default Uint32(4096), got: {other:?}"),
+    }
+    match find("qwen2.block_count") {
+        Some(GgufValue::Uint32(v)) => assert_eq!(*v, 32),
+        other => panic!("Expected default Uint32(32), got: {other:?}"),
+    }
+    match find("qwen2.attention.head_count") {
+        Some(GgufValue::Uint32(v)) => assert_eq!(*v, 32),
+        other => panic!("Expected default Uint32(32), got: {other:?}"),
+    }
+    // num_kv_heads defaults to num_heads
+    match find("qwen2.attention.head_count_kv") {
+        Some(GgufValue::Uint32(v)) => assert_eq!(*v, 32),
+        other => panic!("Expected default Uint32(32), got: {other:?}"),
+    }
+    match find("qwen2.vocab_size") {
+        Some(GgufValue::Uint32(v)) => assert_eq!(*v, 32000),
+        other => panic!("Expected default Uint32(32000), got: {other:?}"),
+    }
+    match find("qwen2.feed_forward_length") {
+        Some(GgufValue::Uint32(v)) => assert_eq!(*v, 11008),
+        other => panic!("Expected default Uint32(11008), got: {other:?}"),
+    }
+    match find("qwen2.context_length") {
+        Some(GgufValue::Uint32(v)) => assert_eq!(*v, 32768),
+        other => panic!("Expected default Uint32(32768), got: {other:?}"),
+    }
+    match find("qwen2.rope.freq_base") {
+        Some(GgufValue::Float32(v)) => assert!((*v - 1_000_000.0).abs() < 1.0),
+        other => panic!("Expected default Float32(1000000.0), got: {other:?}"),
+    }
+    match find("qwen2.rope.dimension_count") {
+        // head_dim = 4096/32 = 128
+        Some(GgufValue::Uint32(v)) => assert_eq!(*v, 128),
+        other => panic!("Expected default Uint32(128), got: {other:?}"),
+    }
+    match find("qwen2.attention.layer_norm_rms_epsilon") {
+        Some(GgufValue::Float32(v)) => assert!((*v - 1e-6).abs() < 1e-10),
+        other => panic!("Expected default Float32(1e-6), got: {other:?}"),
+    }
+}
+
+#[test]
+fn test_build_gguf_arch_metadata_zero_heads_uses_default_head_dim() {
+    use crate::format::gguf::GgufValue;
+    use crate::format::v2::AprV2Metadata;
+
+    let mut apr = AprV2Metadata::new("test");
+    apr.architecture = Some("llama".to_string());
+    apr.num_heads = Some(0);
+    apr.hidden_size = Some(512);
+
+    let entries = build_gguf_arch_metadata(&apr);
+    let find = |key: &str| entries.iter().find(|(k, _)| k == key).map(|(_, v)| v);
+
+    // When num_heads=0, head_dim defaults to 128
+    match find("llama.rope.dimension_count") {
+        Some(GgufValue::Uint32(v)) => assert_eq!(*v, 128),
+        other => panic!("Expected Uint32(128), got: {other:?}"),
+    }
+}
+
+#[test]
+fn test_build_gguf_arch_metadata_llama_architecture() {
+    use crate::format::gguf::GgufValue;
+    use crate::format::v2::AprV2Metadata;
+
+    let mut apr = AprV2Metadata::new("llama-model");
+    apr.architecture = Some("llama".to_string());
+    apr.hidden_size = Some(4096);
+    apr.num_heads = Some(32);
+    apr.num_kv_heads = Some(8);
+    apr.name = Some("LLaMA-7B".to_string());
+
+    let entries = build_gguf_arch_metadata(&apr);
+    let find = |key: &str| entries.iter().find(|(k, _)| k == key).map(|(_, v)| v);
+
+    // All arch-prefixed keys should use "llama" prefix
+    match find("general.architecture") {
+        Some(GgufValue::String(s)) => assert_eq!(s, "llama"),
+        other => panic!("Expected 'llama', got: {other:?}"),
+    }
+    assert!(find("llama.context_length").is_some());
+    assert!(find("llama.embedding_length").is_some());
+    assert!(find("llama.block_count").is_some());
+    assert!(find("llama.attention.head_count").is_some());
+    assert!(find("llama.attention.head_count_kv").is_some());
+    assert!(find("llama.rope.dimension_count").is_some());
+
+    // And none with qwen2 prefix
+    assert!(find("qwen2.context_length").is_none());
+}
+
+// ========================================================================
+// export_apr_to_gguf_raw: Full round-trip test (impact 7.6)
+// ========================================================================
+
+#[test]
+fn test_export_apr_to_gguf_raw_round_trip() {
+    use crate::format::gguf::GgufReader;
+    use crate::format::v2::{AprV2Metadata, AprV2Writer};
+    use tempfile::tempdir;
+
+    let dir = tempdir().expect("create temp dir");
+    let apr_path = dir.path().join("model.apr");
+    let gguf_path = dir.path().join("model.gguf");
+
+    // Build a minimal APR file with F32 tensors
+    let mut metadata = AprV2Metadata::new("qwen2");
+    metadata.architecture = Some("qwen2".to_string());
+    metadata.hidden_size = Some(4);
+    metadata.num_layers = Some(1);
+    metadata.num_heads = Some(2);
+    metadata.num_kv_heads = Some(2);
+    metadata.vocab_size = Some(8);
+    metadata.intermediate_size = Some(16);
+    metadata.max_position_embeddings = Some(2048);
+    metadata.rope_theta = Some(10000.0);
+    metadata.rms_norm_eps = Some(1e-5);
+    metadata.name = Some("test-model".to_string());
+    // Add tokenizer custom fields so ValidatedGgufMetadata passes
+    metadata
+        .custom
+        .insert("tokenizer.model".to_string(), serde_json::json!("gpt2"));
+    metadata.custom.insert(
+        "tokenizer.vocabulary".to_string(),
+        serde_json::json!([
+            "<|endoftext|>",
+            "hello",
+            "world",
+            "the",
+            "a",
+            "is",
+            ".",
+            " "
+        ]),
+    );
+    metadata
+        .custom
+        .insert("tokenizer.vocab_size".to_string(), serde_json::json!(8));
+
+    let mut writer = AprV2Writer::new(metadata);
+
+    // Add tensors
+    let embed_data = vec![0.1f32; 8 * 4]; // [8, 4] embedding
+    writer.add_f32_tensor("model.embed_tokens.weight", vec![8, 4], &embed_data);
+
+    let norm_data = vec![1.0f32; 4]; // [4] norm
+    writer.add_f32_tensor("model.norm.weight", vec![4], &norm_data);
+
+    let lm_head_data = vec![0.05f32; 8 * 4]; // [8, 4] lm_head
+    writer.add_f32_tensor("lm_head.weight", vec![8, 4], &lm_head_data);
+
+    let apr_bytes = writer.write().expect("write APR");
+    std::fs::write(&apr_path, &apr_bytes).expect("write APR file");
+
+    // Export APR to GGUF
+    let report = export_apr_to_gguf_raw(&apr_path, &gguf_path).expect("export should succeed");
+
+    assert_eq!(report.tensor_count, 3);
+    assert_eq!(report.format, ExportFormat::Gguf);
+    // Note: exported_size may be 0 due to BufWriter not flushed before fs::metadata
+    assert!(gguf_path.exists());
+
+    // Read the GGUF and verify
+    let gguf = GgufReader::from_file(&gguf_path).expect("read GGUF");
+
+    // Check tensor count
+    assert_eq!(gguf.tensor_count, 3);
+
+    // Check that tensor names are mapped to GGUF convention
+    let tensor_names: Vec<String> = gguf.tensors.iter().map(|t| t.name.clone()).collect();
+    assert!(
+        tensor_names.contains(&"token_embd.weight".to_string()),
+        "Expected token_embd.weight, got: {tensor_names:?}"
+    );
+    assert!(
+        tensor_names.contains(&"output_norm.weight".to_string()),
+        "Expected output_norm.weight, got: {tensor_names:?}"
+    );
+    assert!(
+        tensor_names.contains(&"output.weight".to_string()),
+        "Expected output.weight, got: {tensor_names:?}"
+    );
+
+    // Verify architecture metadata is present
+    let arch = gguf.metadata.get("general.architecture");
+    assert!(arch.is_some(), "general.architecture should be present");
+}
+
+#[test]
+fn test_export_apr_to_gguf_raw_missing_file() {
+    use tempfile::tempdir;
+
+    let dir = tempdir().expect("create temp dir");
+    let apr_path = dir.path().join("nonexistent.apr");
+    let gguf_path = dir.path().join("output.gguf");
+
+    let result = export_apr_to_gguf_raw(&apr_path, &gguf_path);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_export_apr_to_gguf_raw_includes_f16_dtype() {
+    use crate::format::v2::{AprV2Metadata, AprV2Writer};
+    use tempfile::tempdir;
+
+    let dir = tempdir().expect("create temp dir");
+    let apr_path = dir.path().join("model.apr");
+    let gguf_path = dir.path().join("model.gguf");
+
+    // Build APR with F16 tensor
+    let mut metadata = AprV2Metadata::new("qwen2");
+    metadata.architecture = Some("qwen2".to_string());
+    metadata.hidden_size = Some(4);
+    metadata.num_layers = Some(1);
+    metadata.num_heads = Some(2);
+    metadata.vocab_size = Some(8);
+    metadata.name = Some("test".to_string());
+    metadata
+        .custom
+        .insert("tokenizer.model".to_string(), serde_json::json!("gpt2"));
+    metadata.custom.insert(
+        "tokenizer.vocabulary".to_string(),
+        serde_json::json!(["a", "b", "c", "d", "e", "f", "g", "h"]),
+    );
+
+    let mut writer = AprV2Writer::new(metadata);
+
+    // Add F16 tensor
+    let f32_data = vec![0.5f32; 8 * 4];
+    writer.add_f16_tensor("model.embed_tokens.weight", vec![8, 4], &f32_data);
+
+    // Add F32 tensor
+    let norm_data = vec![1.0f32; 4];
+    writer.add_f32_tensor("model.norm.weight", vec![4], &norm_data);
+
+    let apr_bytes = writer.write().expect("write APR");
+    std::fs::write(&apr_path, &apr_bytes).expect("write APR file");
+
+    let report = export_apr_to_gguf_raw(&apr_path, &gguf_path).expect("export should succeed");
+    assert_eq!(report.tensor_count, 2);
+    assert!(gguf_path.exists());
+}
+
+#[test]
+fn test_export_apr_to_gguf_raw_shape_reversal() {
+    use crate::format::gguf::GgufReader;
+    use crate::format::v2::{AprV2Metadata, AprV2Writer};
+    use tempfile::tempdir;
+
+    let dir = tempdir().expect("create temp dir");
+    let apr_path = dir.path().join("model.apr");
+    let gguf_path = dir.path().join("model.gguf");
+
+    let mut metadata = AprV2Metadata::new("qwen2");
+    metadata.architecture = Some("qwen2".to_string());
+    metadata.hidden_size = Some(4);
+    metadata.num_layers = Some(1);
+    metadata.num_heads = Some(2);
+    metadata.vocab_size = Some(8);
+    metadata.name = Some("test".to_string());
+    metadata
+        .custom
+        .insert("tokenizer.model".to_string(), serde_json::json!("gpt2"));
+    metadata.custom.insert(
+        "tokenizer.vocabulary".to_string(),
+        serde_json::json!(["a", "b", "c", "d", "e", "f", "g", "h"]),
+    );
+
+    let mut writer = AprV2Writer::new(metadata);
+
+    // 2D tensor: APR [rows=8, cols=4]
+    let data = vec![0.1f32; 8 * 4];
+    writer.add_f32_tensor("model.embed_tokens.weight", vec![8, 4], &data);
+
+    // 1D tensor: stays the same
+    let data_1d = vec![1.0f32; 4];
+    writer.add_f32_tensor("model.norm.weight", vec![4], &data_1d);
+
+    let apr_bytes = writer.write().expect("write APR");
+    std::fs::write(&apr_path, &apr_bytes).expect("write APR file");
+
+    let _report = export_apr_to_gguf_raw(&apr_path, &gguf_path).expect("export");
+
+    let gguf = GgufReader::from_file(&gguf_path).expect("read GGUF");
+
+    // For the 2D tensor, GGUF shape should be [ne0=4, ne1=8] (reversed)
+    let embd_tensor = gguf
+        .tensors
+        .iter()
+        .find(|t| t.name == "token_embd.weight")
+        .expect("find embedding tensor");
+    assert_eq!(
+        embd_tensor.dims,
+        vec![4_u64, 8],
+        "2D shape should be reversed for GGUF"
+    );
+
+    // For the 1D tensor, shape stays the same
+    let norm_tensor = gguf
+        .tensors
+        .iter()
+        .find(|t| t.name == "output_norm.weight")
+        .expect("find norm tensor");
+    assert_eq!(
+        norm_tensor.dims,
+        vec![4_u64],
+        "1D shape should be unchanged"
+    );
+}
+
+// ========================================================================
+// unfuse_qkv_tensors: Coverage tests (impact 6.6)
+// ========================================================================
+
+#[test]
+fn test_unfuse_qkv_tensors_no_fused_tensors_passthrough() {
+    use tempfile::tempdir;
+
+    let dir = tempdir().expect("create temp dir");
+    let apr_path = dir.path().join("fake.apr");
+
+    // Tensors without any qkv_proj should pass through unchanged
+    let mut tensors = BTreeMap::new();
+    tensors.insert(
+        "model.layers.0.self_attn.q_proj.weight".to_string(),
+        (vec![1.0f32; 16], vec![4, 4]),
+    );
+    tensors.insert(
+        "model.layers.0.self_attn.k_proj.weight".to_string(),
+        (vec![2.0f32; 16], vec![4, 4]),
+    );
+
+    let result = unfuse_qkv_tensors(tensors.clone(), &apr_path);
+    assert_eq!(result.len(), 2, "non-fused tensors should pass through");
+    assert!(result.contains_key("model.layers.0.self_attn.q_proj.weight"));
+    assert!(result.contains_key("model.layers.0.self_attn.k_proj.weight"));
+}
+
+#[test]
+fn test_unfuse_qkv_tensors_no_apr_metadata_returns_original() {
+    use tempfile::tempdir;
+
+    let dir = tempdir().expect("create temp dir");
+    let apr_path = dir.path().join("nonexistent.apr");
+
+    // Has fused tensor but no APR file -> should return original
+    let mut tensors = BTreeMap::new();
+    tensors.insert(
+        "model.layers.0.self_attn.qkv_proj.weight".to_string(),
+        (vec![0.5f32; 48], vec![12, 4]),
+    );
+
+    let result = unfuse_qkv_tensors(tensors.clone(), &apr_path);
+    // No metadata available (file doesn't exist) -> returns original
+    assert_eq!(result.len(), 1);
+    assert!(result.contains_key("model.layers.0.self_attn.qkv_proj.weight"));
+}
+
+#[test]
+fn test_unfuse_qkv_tensors_weight_split_with_metadata() {
+    use crate::format::v2::{AprV2Metadata, AprV2Writer};
+    use tempfile::tempdir;
+
+    let dir = tempdir().expect("create temp dir");
+    let apr_path = dir.path().join("model.apr");
+
+    // Build APR with metadata that has the config we need
+    let mut metadata = AprV2Metadata::new("qwen2");
+    metadata.hidden_size = Some(4);
+    metadata.num_heads = Some(2);
+    metadata.num_kv_heads = Some(2);
+
+    let mut writer = AprV2Writer::new(metadata);
+    // Need at least one tensor to write a valid APR
+    writer.add_f32_tensor("dummy", vec![4], &[1.0f32; 4]);
+    let bytes = writer.write().expect("write APR");
+    std::fs::write(&apr_path, &bytes).expect("write file");
+
+    // hidden_size=4, num_heads=2, num_kv_heads=2
+    // head_dim = 4/2 = 2, kv_dim = 2*2 = 4
+    // qkv_dim = hidden_size + 2*kv_dim = 4 + 8 = 12
+    // weight shape: [qkv_dim, hidden_dim] = [12, 4]
+    let hidden_dim = 4;
+    let q_elements = 4 * hidden_dim; // hidden_size * hidden_dim = 16
+    let kv_elements = 4 * hidden_dim; // kv_dim * hidden_dim = 16
+    let total = q_elements + 2 * kv_elements; // 48
+
+    let mut data = Vec::with_capacity(total);
+    for i in 0..total {
+        data.push(i as f32);
+    }
+
+    let mut tensors = BTreeMap::new();
+    tensors.insert(
+        "model.layers.0.self_attn.qkv_proj.weight".to_string(),
+        (data, vec![12, 4]),
+    );
+
+    let result = unfuse_qkv_tensors(tensors, &apr_path);
+
+    // Should have 3 separate tensors instead of 1 fused
+    assert_eq!(result.len(), 3, "should split into q, k, v");
+    assert!(result.contains_key("model.layers.0.self_attn.q_proj.weight"));
+    assert!(result.contains_key("model.layers.0.self_attn.k_proj.weight"));
+    assert!(result.contains_key("model.layers.0.self_attn.v_proj.weight"));
+
+    // Verify shapes
+    let (q_data, q_shape) = result
+        .get("model.layers.0.self_attn.q_proj.weight")
+        .unwrap();
+    assert_eq!(q_shape, &vec![4, 4]); // [hidden_size, hidden_dim]
+    assert_eq!(q_data.len(), 16);
+
+    let (k_data, k_shape) = result
+        .get("model.layers.0.self_attn.k_proj.weight")
+        .unwrap();
+    assert_eq!(k_shape, &vec![4, 4]); // [kv_dim, hidden_dim]
+    assert_eq!(k_data.len(), 16);
+
+    let (v_data, v_shape) = result
+        .get("model.layers.0.self_attn.v_proj.weight")
+        .unwrap();
+    assert_eq!(v_shape, &vec![4, 4]); // [kv_dim, hidden_dim]
+    assert_eq!(v_data.len(), 16);
+
+    // Verify data is correctly split (sequential values)
+    assert_eq!(q_data[0], 0.0);
+    assert_eq!(k_data[0], 16.0);
+    assert_eq!(v_data[0], 32.0);
+}
+
+#[test]
+fn test_unfuse_qkv_tensors_bias_split_with_metadata() {
+    use crate::format::v2::{AprV2Metadata, AprV2Writer};
+    use tempfile::tempdir;
+
+    let dir = tempdir().expect("create temp dir");
+    let apr_path = dir.path().join("model.apr");
+
+    let mut metadata = AprV2Metadata::new("qwen2");
+    metadata.hidden_size = Some(4);
+    metadata.num_heads = Some(2);
+    metadata.num_kv_heads = Some(2);
+
+    let mut writer = AprV2Writer::new(metadata);
+    writer.add_f32_tensor("dummy", vec![4], &[1.0f32; 4]);
+    let bytes = writer.write().expect("write APR");
+    std::fs::write(&apr_path, &bytes).expect("write file");
+
+    // kv_dim = 2*2 = 4
+    // bias shape: [qkv_dim] = [hidden_size + 2*kv_dim] = [4 + 8] = [12]
+    let mut data = Vec::new();
+    for i in 0..12 {
+        data.push(i as f32);
+    }
+
+    let mut tensors = BTreeMap::new();
+    tensors.insert(
+        "model.layers.0.self_attn.qkv_proj.bias".to_string(),
+        (data, vec![12]),
+    );
+
+    let result = unfuse_qkv_tensors(tensors, &apr_path);
+
+    assert_eq!(result.len(), 3, "bias should split into q, k, v");
+    assert!(result.contains_key("model.layers.0.self_attn.q_proj.bias"));
+    assert!(result.contains_key("model.layers.0.self_attn.k_proj.bias"));
+    assert!(result.contains_key("model.layers.0.self_attn.v_proj.bias"));
+
+    let (q_bias, q_shape) = result.get("model.layers.0.self_attn.q_proj.bias").unwrap();
+    assert_eq!(q_shape, &vec![4]); // hidden_size
+    assert_eq!(q_bias, &[0.0, 1.0, 2.0, 3.0]);
+
+    let (k_bias, k_shape) = result.get("model.layers.0.self_attn.k_proj.bias").unwrap();
+    assert_eq!(k_shape, &vec![4]); // kv_dim
+    assert_eq!(k_bias, &[4.0, 5.0, 6.0, 7.0]);
+
+    let (v_bias, v_shape) = result.get("model.layers.0.self_attn.v_proj.bias").unwrap();
+    assert_eq!(v_shape, &vec![4]); // kv_dim
+    assert_eq!(v_bias, &[8.0, 9.0, 10.0, 11.0]);
+}
+
+#[test]
+fn test_unfuse_qkv_tensors_weight_too_small_passthrough() {
+    use crate::format::v2::{AprV2Metadata, AprV2Writer};
+    use tempfile::tempdir;
+
+    let dir = tempdir().expect("create temp dir");
+    let apr_path = dir.path().join("model.apr");
+
+    let mut metadata = AprV2Metadata::new("qwen2");
+    metadata.hidden_size = Some(4);
+    metadata.num_heads = Some(2);
+    metadata.num_kv_heads = Some(2);
+
+    let mut writer = AprV2Writer::new(metadata);
+    writer.add_f32_tensor("dummy", vec![4], &[1.0f32; 4]);
+    let bytes = writer.write().expect("write APR");
+    std::fs::write(&apr_path, &bytes).expect("write file");
+
+    // Data too small for split (needs 48, only give 10)
+    let mut tensors = BTreeMap::new();
+    tensors.insert(
+        "model.layers.0.self_attn.qkv_proj.weight".to_string(),
+        (vec![0.5f32; 10], vec![5, 2]),
+    );
+
+    let result = unfuse_qkv_tensors(tensors, &apr_path);
+    // Should keep the original tensor because data is too small to split
+    assert_eq!(result.len(), 1);
+    assert!(result.contains_key("model.layers.0.self_attn.qkv_proj.weight"));
+}
+
+#[test]
+fn test_unfuse_qkv_tensors_bias_wrong_size_passthrough() {
+    use crate::format::v2::{AprV2Metadata, AprV2Writer};
+    use tempfile::tempdir;
+
+    let dir = tempdir().expect("create temp dir");
+    let apr_path = dir.path().join("model.apr");
+
+    let mut metadata = AprV2Metadata::new("qwen2");
+    metadata.hidden_size = Some(4);
+    metadata.num_heads = Some(2);
+    metadata.num_kv_heads = Some(2);
+
+    let mut writer = AprV2Writer::new(metadata);
+    writer.add_f32_tensor("dummy", vec![4], &[1.0f32; 4]);
+    let bytes = writer.write().expect("write APR");
+    std::fs::write(&apr_path, &bytes).expect("write file");
+
+    // Bias data length doesn't match expected qkv_dim=12
+    let mut tensors = BTreeMap::new();
+    tensors.insert(
+        "model.layers.0.self_attn.qkv_proj.bias".to_string(),
+        (vec![0.5f32; 7], vec![7]),
+    );
+
+    let result = unfuse_qkv_tensors(tensors, &apr_path);
+    assert_eq!(result.len(), 1);
+    assert!(result.contains_key("model.layers.0.self_attn.qkv_proj.bias"));
+}
+
+#[test]
+fn test_unfuse_qkv_tensors_zero_hidden_returns_original() {
+    use crate::format::v2::{AprV2Metadata, AprV2Writer};
+    use tempfile::tempdir;
+
+    let dir = tempdir().expect("create temp dir");
+    let apr_path = dir.path().join("model.apr");
+
+    let mut metadata = AprV2Metadata::new("qwen2");
+    metadata.hidden_size = Some(0); // zero hidden size
+    metadata.num_heads = Some(0); // zero heads
+
+    let mut writer = AprV2Writer::new(metadata);
+    writer.add_f32_tensor("dummy", vec![4], &[1.0f32; 4]);
+    let bytes = writer.write().expect("write APR");
+    std::fs::write(&apr_path, &bytes).expect("write file");
+
+    let mut tensors = BTreeMap::new();
+    tensors.insert(
+        "model.layers.0.self_attn.qkv_proj.weight".to_string(),
+        (vec![0.5f32; 48], vec![12, 4]),
+    );
+
+    let result = unfuse_qkv_tensors(tensors, &apr_path);
+    // zero hidden_size should bail early and return original
+    assert_eq!(result.len(), 1);
+}
+
+// ========================================================================
+// push_string_array / push_u32_field / push_i32_array: Helper tests
+// ========================================================================
+
+#[test]
+fn test_push_string_array_present() {
+    use crate::format::gguf::GgufValue;
+    let mut entries = Vec::new();
+    let mut custom = std::collections::HashMap::new();
+    custom.insert(
+        "tokenizer.tokens".to_string(),
+        serde_json::json!(["hello", "world", "test"]),
+    );
+
+    push_string_array(
+        &mut entries,
+        &custom,
+        "tokenizer.tokens",
+        "tokenizer.ggml.tokens",
+    );
+    assert_eq!(entries.len(), 1);
+    match &entries[0].1 {
+        GgufValue::ArrayString(v) => assert_eq!(v, &["hello", "world", "test"]),
+        other => panic!("Expected ArrayString, got: {other:?}"),
+    }
+}
+
+#[test]
+fn test_push_string_array_missing_key() {
+    let mut entries = Vec::new();
+    let custom = std::collections::HashMap::new();
+
+    push_string_array(&mut entries, &custom, "nonexistent", "target");
+    assert!(entries.is_empty());
+}
+
+#[test]
+fn test_push_string_array_empty_array() {
+    let mut entries = Vec::new();
+    let mut custom = std::collections::HashMap::new();
+    custom.insert("arr".to_string(), serde_json::json!([]));
+
+    push_string_array(&mut entries, &custom, "arr", "target");
+    assert!(entries.is_empty(), "empty array should not be pushed");
+}
+
+#[test]
+fn test_push_u32_field_present() {
+    use crate::format::gguf::GgufValue;
+    let mut entries = Vec::new();
+    let mut custom = std::collections::HashMap::new();
+    custom.insert("vocab_size".to_string(), serde_json::json!(32000));
+
+    push_u32_field(&mut entries, &custom, "vocab_size", "tokenizer.vocab_size");
+    assert_eq!(entries.len(), 1);
+    match &entries[0].1 {
+        GgufValue::Uint32(v) => assert_eq!(*v, 32000),
+        other => panic!("Expected Uint32, got: {other:?}"),
+    }
+}
+
+#[test]
+fn test_push_u32_field_missing() {
+    let mut entries = Vec::new();
+    let custom = std::collections::HashMap::new();
+
+    push_u32_field(&mut entries, &custom, "nonexistent", "target");
+    assert!(entries.is_empty());
+}
+
+#[test]
+fn test_push_i32_array_present() {
+    use crate::format::gguf::GgufValue;
+    let mut entries = Vec::new();
+    let mut custom = std::collections::HashMap::new();
+    custom.insert("types".to_string(), serde_json::json!([1, 3, 1, 1, 3]));
+
+    push_i32_array(&mut entries, &custom, "types", "tokenizer.ggml.token_type");
+    assert_eq!(entries.len(), 1);
+    match &entries[0].1 {
+        GgufValue::ArrayInt32(v) => assert_eq!(v, &[1, 3, 1, 1, 3]),
+        other => panic!("Expected ArrayInt32, got: {other:?}"),
+    }
+}
+
+#[test]
+fn test_push_i32_array_missing() {
+    let mut entries = Vec::new();
+    let custom = std::collections::HashMap::new();
+
+    push_i32_array(&mut entries, &custom, "nonexistent", "target");
+    assert!(entries.is_empty());
+}
+
+#[test]
+fn test_push_i32_array_empty() {
+    let mut entries = Vec::new();
+    let mut custom = std::collections::HashMap::new();
+    custom.insert("types".to_string(), serde_json::json!([]));
+
+    push_i32_array(&mut entries, &custom, "types", "target");
+    assert!(entries.is_empty(), "empty array should not be pushed");
 }

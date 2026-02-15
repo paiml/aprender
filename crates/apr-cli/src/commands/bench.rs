@@ -725,8 +725,7 @@ fn run_apr_benchmark(path: &Path, config: &BenchConfig, use_cuda: bool) -> Resul
     if generation_failed && total_tokens == 0 {
         eprintln!(
             "{}",
-            "Note: Generation produced 0 new tokens, reporting forward-pass throughput."
-                .yellow()
+            "Note: Generation produced 0 new tokens, reporting forward-pass throughput.".yellow()
         );
         total_tokens = config.iterations * prompt_tokens.len();
     }
@@ -2479,7 +2478,16 @@ mod tests {
         // When prompt is Some, run() should use the provided prompt
         let mut file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
         file.write_all(b"fake gguf data").expect("write");
-        let result = run(file.path(), 1, 1, 16, Some("Hello world"), false, None, false);
+        let result = run(
+            file.path(),
+            1,
+            1,
+            16,
+            Some("Hello world"),
+            false,
+            None,
+            false,
+        );
         assert!(result.is_err());
     }
 
@@ -2606,7 +2614,16 @@ mod tests {
     #[test]
     fn test_brick_name_unknown_returns_error() {
         let file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
-        let result = run(file.path(), 1, 3, 16, None, false, Some("unknown_thing"), false);
+        let result = run(
+            file.path(),
+            1,
+            3,
+            16,
+            None,
+            false,
+            Some("unknown_thing"),
+            false,
+        );
         assert!(result.is_err());
         let msg = format!("{}", result.unwrap_err());
         assert!(msg.contains("Unknown brick type"));
@@ -2920,7 +2937,16 @@ mod tests {
         file.write_all(b"fake data").expect("write");
 
         // warmup=7, iterations=13, max_tokens=128, prompt=Some("test prompt")
-        let result = run(file.path(), 7, 13, 128, Some("test prompt"), false, None, false);
+        let result = run(
+            file.path(),
+            7,
+            13,
+            128,
+            Some("test prompt"),
+            false,
+            None,
+            false,
+        );
         assert!(result.is_err());
     }
 

@@ -1044,7 +1044,10 @@ mod tests_bh_mut {
         let dequantized = dequantize(&quantized).expect("dequantize");
 
         for (i, &val) in dequantized.iter().enumerate() {
-            assert_eq!(val, 0.0, "dequant[{i}] should be 0.0 with zero scale, got {val}");
+            assert_eq!(
+                val, 0.0,
+                "dequant[{i}] should be 0.0 with zero scale, got {val}"
+            );
         }
     }
 

@@ -1924,11 +1924,7 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
 #[allow(clippy::too_many_lines)]
 fn dispatch_core_command(cli: &Cli) -> Option<Result<(), CliError>> {
     Some(match cli.command.as_ref() {
-        Commands::Check {
-            file,
-            no_gpu,
-            json,
-        } => commands::check::run(file, *no_gpu, *json),
+        Commands::Check { file, no_gpu, json } => commands::check::run(file, *no_gpu, *json),
         Commands::Run {
             source,
             positional_prompt,

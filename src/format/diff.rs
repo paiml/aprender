@@ -853,4 +853,3 @@ fn truncate_value(s: &str, max_len: usize) -> String {
 #[cfg(test)]
 #[path = "diff_tests.rs"]
 mod tests;
-
