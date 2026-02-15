@@ -1,5 +1,4 @@
 impl MarkovModel {
-impl MarkovModel {
 
     /// Number of unique n-grams
     pub fn ngram_count(&self) -> usize {
@@ -110,5 +109,4 @@ impl MarkovModel {
             metrics,
         }
     }
-}
 }

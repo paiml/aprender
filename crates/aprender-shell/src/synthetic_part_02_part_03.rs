@@ -1,5 +1,4 @@
 impl CommandGenerator {
-impl CommandGenerator {
 
     fn default_templates() -> Vec<CommandTemplate> {
         vec![
@@ -466,5 +465,4 @@ impl CommandGenerator {
             },
         ]
     }
-}
 }

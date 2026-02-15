@@ -1,5 +1,4 @@
 impl MarkovModel {
-impl MarkovModel {
     /// Create a new model with given n-gram size
     pub fn new(n: usize) -> Self {
         Self {
@@ -238,59 +237,57 @@ impl MarkovModel {
     /// - "cargo-lambda  help" (double spaces)
     /// - "git rm -r --cached vendor/\\" (trailing backslash)
     fn is_corrupted_command(cmd: &str) -> bool {
-        // Check for double spaces
-        if cmd.contains("  ") {
-            return true;
-        }
+        Self::has_formatting_corruption(cmd)
+            || Self::has_typo_first_word(cmd)
+            || cmd.split_whitespace().any(Self::is_corrupted_token)
+    }
 
-        // Check for trailing backslash (incomplete multiline)
-        if cmd.trim_end().ends_with('\\') {
-            return true;
-        }
+    /// Check for double spaces, trailing backslashes, and escape sequences.
+    fn has_formatting_corruption(cmd: &str) -> bool {
+        let trimmed = cmd.trim_end();
+        cmd.contains("  ") || trimmed.ends_with('\\') || trimmed.ends_with("\\\\")
+    }
 
-        // Check for trailing escape sequences
-        if cmd.trim_end().ends_with("\\\\") {
-            return true;
-        }
+    /// Check if the first word is a known typo of a common command.
+    fn has_typo_first_word(cmd: &str) -> bool {
+        const TYPO_PATTERNS: &[(&str, &[&str])] = &[
+            ("git", &["gitr", "giti", "gits", "gitl", "gitp"]),
+            ("cargo", &["cargoo", "cargos", "cargob"]),
+            ("docker", &["dockerr", "dockers"]),
+            ("npm", &["npmi", "npmr"]),
+        ];
 
-        // Check first word is a valid command (Issue #92)
-        // Valid commands start with letter and contain only alphanumeric + underscore + hyphen
-        if let Some(first) = cmd.split_whitespace().next() {
-            // Reject if first word is a common command with extra chars (typos)
-            // e.g., "gitr", "giti", "gits", "cargoo"
-            let typo_patterns = [
-                ("git", &["gitr", "giti", "gits", "gitl", "gitp"][..]),
-                ("cargo", &["cargoo", "cargos", "cargob"][..]),
-                ("docker", &["dockerr", "dockers"][..]),
-                ("npm", &["npmi", "npmr"][..]),
-            ];
+        let Some(first) = cmd.split_whitespace().next() else {
+            return false;
+        };
 
-            for (valid, typos) in typo_patterns {
-                if typos.contains(&first) {
-                    return true;
-                }
-                // Also catch typos where space merged (e.g., "gi tpush" from "git push")
-                if first.len() < valid.len() && valid.starts_with(first) {
-                    // "gi" is valid prefix, but check second word for merged space
-                    let tokens: Vec<&str> = cmd.split_whitespace().collect();
-                    if tokens.len() >= 2 {
-                        let second = tokens[1];
-                        // Check if second word looks like "tpush" (merged space)
-                        if second.len() > 1
-                            && !second.starts_with('-')
-                            && valid.ends_with(&first[first.len().saturating_sub(1)..])
-                        {
-                            let expected_start = &valid[first.len()..];
-                            if second.starts_with(expected_start) && expected_start.len() == 1 {
-                                return true;
-                            }
-                        }
-                    }
-                }
+        for &(valid, typos) in TYPO_PATTERNS {
+            if typos.contains(&first) {
+                return true;
+            }
+            if Self::is_merged_space_typo(cmd, first, valid) {
+                return true;
             }
         }
+        false
+    }
 
-        cmd.split_whitespace().any(Self::is_corrupted_token)
+    /// Detect typos where a space merged with the next word (e.g., "gi tpush").
+    fn is_merged_space_typo(cmd: &str, first: &str, valid: &str) -> bool {
+        if first.len() >= valid.len() || !valid.starts_with(first) {
+            return false;
+        }
+        let tokens: Vec<&str> = cmd.split_whitespace().collect();
+        if tokens.len() < 2 {
+            return false;
+        }
+        let second = tokens[1];
+        let expected_start = &valid[first.len()..];
+        second.len() > 1
+            && !second.starts_with('-')
+            && valid.ends_with(&first[first.len().saturating_sub(1)..])
+            && expected_start.len() == 1
+            && second.starts_with(expected_start)
     }
 
     /// Detect corrupted individual tokens.
@@ -446,5 +443,4 @@ impl MarkovModel {
         // If payload is smaller than uncompressed size, compression was used
         Ok(info.payload_size < info.uncompressed_size)
     }
-}
 }
