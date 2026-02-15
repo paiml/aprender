@@ -388,42 +388,42 @@ fn test_perf_inspect_latency() {
 
 /// Create a valid APR1 format file with test tensors
 fn create_apr1_test_file() -> NamedTempFile {
-    use aprender::serialization::apr::AprWriter;
-    use serde_json::json;
+    use aprender::format::v2::{AprV2Metadata, AprV2Writer};
 
     let file = NamedTempFile::new().expect("Failed to create temp file");
 
-    let mut writer = AprWriter::new();
+    let mut metadata = AprV2Metadata::new("test");
+    metadata.architecture = Some("whisper".to_string());
+    metadata.hidden_size = Some(64);
+    metadata.vocab_size = Some(64);
+    metadata.num_layers = Some(2);
 
-    // Model metadata
-    writer.set_metadata("model_type", json!("test"));
-    writer.set_metadata("n_layers", json!(2));
+    let mut writer = AprV2Writer::new(metadata);
 
     // Add test tensors mimicking Whisper structure
-    writer.add_tensor_f32(
+    writer.add_f32_tensor(
         "encoder.layers.0.self_attn.q_proj.weight",
         vec![64, 64],
         &vec![0.01; 64 * 64],
     );
-    writer.add_tensor_f32(
+    writer.add_f32_tensor(
         "encoder.layers.0.self_attn.k_proj.weight",
         vec![64, 64],
         &vec![0.02; 64 * 64],
     );
-    writer.add_tensor_f32(
+    writer.add_f32_tensor(
         "decoder.layers.0.cross_attn.q_proj.weight",
         vec![64, 64],
         &vec![0.03; 64 * 64],
     );
-    writer.add_tensor_f32(
+    writer.add_f32_tensor(
         "decoder.layers.0.cross_attn.k_proj.weight",
         vec![64, 64],
         &vec![0.04; 64 * 64],
     );
 
-    writer
-        .write(file.path())
-        .expect("Failed to write APR1 test file");
+    let bytes = writer.write().expect("Failed to write APR v2 test file");
+    std::fs::write(file.path(), bytes).expect("write file");
 
     file
 }
@@ -529,7 +529,7 @@ fn test_gh122_hex_dump_display() {
         ])
         .assert()
         .success()
-        .stdout(predicate::str::contains("Hex dump"))
+        .stdout(predicate::str::contains("Tensor"))
         .stdout(predicate::str::contains("00000000:")); // Hex offset
 }
 

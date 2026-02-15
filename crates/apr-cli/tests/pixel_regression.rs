@@ -27,7 +27,49 @@ fn snapshots_dir() -> PathBuf {
 }
 
 fn test_apr_file() -> PathBuf {
-    snapshots_dir().join("test.apr")
+    let path = snapshots_dir().join("test.apr");
+    // Ensure the test file exists and is v2 format
+    if !path.exists() || is_v1_format(&path) {
+        create_v2_test_apr(&path);
+    }
+    path
+}
+
+fn is_v1_format(path: &std::path::Path) -> bool {
+    let bytes = fs::read(path).unwrap_or_default();
+    // v1 magic is "APR1" (0x41505231), v2 is "APR\0" (0x41505200)
+    bytes.len() >= 4 && bytes[3] != 0x00
+}
+
+fn create_v2_test_apr(path: &std::path::Path) {
+    use aprender::format::v2::{AprV2Metadata, AprV2Writer};
+
+    let mut metadata = AprV2Metadata::new("whisper");
+    metadata.architecture = Some("whisper".to_string());
+    metadata.hidden_size = Some(384);
+    metadata.vocab_size = Some(384);
+    metadata.num_layers = Some(4);
+
+    let mut writer = AprV2Writer::new(metadata);
+
+    // Reproduce the same tensor structure as the v1 test.apr (Whisper tiny model)
+    for layer in 0..4 {
+        for proj in &["q_proj", "k_proj", "v_proj", "out_proj"] {
+            let name = format!("encoder.layers.{layer}.self_attn.{proj}.weight");
+            writer.add_f32_tensor(&name, vec![384, 384], &vec![0.01; 384 * 384]);
+        }
+        for proj in &["q_proj", "k_proj", "v_proj", "out_proj"] {
+            let name = format!("decoder.layers.{layer}.self_attn.{proj}.weight");
+            writer.add_f32_tensor(&name, vec![384, 384], &vec![0.02; 384 * 384]);
+        }
+        for proj in &["q_proj", "k_proj", "v_proj", "out_proj"] {
+            let name = format!("decoder.layers.{layer}.cross_attn.{proj}.weight");
+            writer.add_f32_tensor(&name, vec![384, 384], &vec![0.03; 384 * 384]);
+        }
+    }
+
+    let bytes = writer.write().expect("Failed to write v2 test APR");
+    fs::write(path, bytes).expect("write test.apr");
 }
 
 /// Compare output against golden snapshot, stripping ANSI color codes

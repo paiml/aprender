@@ -9,6 +9,7 @@
 //!   apr flow model.apr --all
 
 use crate::error::CliError;
+use aprender::format::rosetta::RosettaStone;
 use aprender::serialization::apr::AprReader;
 use colored::Colorize;
 use std::path::Path;
@@ -57,43 +58,49 @@ pub(crate) fn run(
         return Err(CliError::FileNotFound(apr_path.to_path_buf()));
     }
 
-    let reader = AprReader::open(apr_path)
-        .map_err(|e| CliError::InvalidFormat(format!("Failed to read APR: {e}")))?;
+    // GH-259: All formats via Rosetta Stone (handles GGUF, SafeTensors, APR v2)
+    let rosetta = RosettaStone::new();
+    let report = rosetta
+        .inspect(apr_path)
+        .map_err(|e| CliError::InvalidFormat(format!("Failed to inspect: {e}")))?;
 
-    // Detect model architecture from tensor names
-    let tensor_names: Vec<String> = reader.tensors.iter().map(|t| t.name.clone()).collect();
+    let tensor_names: Vec<String> = report.tensors.iter().map(|t| t.name.clone()).collect();
     let arch = detect_architecture(&tensor_names);
 
+    // APR reader for verbose tensor stats (only available for APR format)
+    let apr_reader = AprReader::open(apr_path).ok();
+
     println!(
-        "{} {} ({})",
+        "{} {} ({}, {})",
         "Model:".bold(),
         apr_path
             .file_name()
             .and_then(|s| s.to_str())
             .unwrap_or("model")
             .cyan(),
-        arch.yellow()
+        arch.yellow(),
+        format!("{:?}", report.format).cyan()
     );
     println!();
 
     match component {
         FlowComponent::Full => {
-            print_full_flow(&reader, &tensor_names, verbose);
+            print_full_flow(&apr_reader, &tensor_names, verbose);
         }
         FlowComponent::Encoder => {
-            print_encoder_flow(&reader, &tensor_names, verbose);
+            print_encoder_flow(&apr_reader, &tensor_names, verbose);
         }
         FlowComponent::Decoder => {
-            print_decoder_flow(&reader, &tensor_names, verbose);
+            print_decoder_flow(&apr_reader, &tensor_names, verbose);
         }
         FlowComponent::CrossAttention => {
-            print_cross_attention_flow(&reader, &tensor_names, layer_filter, verbose);
+            print_cross_attention_flow(&apr_reader, &tensor_names, layer_filter, verbose);
         }
         FlowComponent::SelfAttention => {
-            print_self_attention_flow(&reader, &tensor_names, layer_filter, verbose);
+            print_self_attention_flow(&apr_reader, &tensor_names, layer_filter, verbose);
         }
         FlowComponent::Ffn => {
-            print_ffn_flow(&reader, &tensor_names, layer_filter, verbose);
+            print_ffn_flow(&apr_reader, &tensor_names, layer_filter, verbose);
         }
     }
 
@@ -120,7 +127,7 @@ fn detect_architecture(tensor_names: &[String]) -> &'static str {
 }
 
 /// Print full model flow
-fn print_full_flow(_reader: &AprReader, tensor_names: &[String], verbose: bool) {
+fn print_full_flow(_reader: &Option<AprReader>, tensor_names: &[String], verbose: bool) {
     println!(
         "{}",
         "═══════════════════════════════════════════════════════════════".dimmed()
@@ -157,7 +164,7 @@ fn print_full_flow(_reader: &AprReader, tensor_names: &[String], verbose: bool) 
 }
 
 /// Print encoder flow
-fn print_encoder_flow(_reader: &AprReader, tensor_names: &[String], verbose: bool) {
+fn print_encoder_flow(_reader: &Option<AprReader>, tensor_names: &[String], verbose: bool) {
     println!(
         "{}",
         "═══════════════════════════════════════════════════════════════".dimmed()
@@ -249,7 +256,7 @@ fn print_encoder_block(tensor_names: &[String], _verbose: bool) {
 }
 
 /// Print decoder flow
-fn print_decoder_flow(_reader: &AprReader, tensor_names: &[String], verbose: bool) {
+fn print_decoder_flow(_reader: &Option<AprReader>, tensor_names: &[String], verbose: bool) {
     println!(
         "{}",
         "═══════════════════════════════════════════════════════════════".dimmed()
@@ -335,7 +342,7 @@ fn print_decoder_block(tensor_names: &[String], _verbose: bool) {
 /// Print cross-attention flow (critical for debugging Posterior Collapse)
 #[allow(clippy::too_many_lines)] // Visual debugging output requires detailed formatting
 fn print_cross_attention_flow(
-    reader: &AprReader,
+    reader: &Option<AprReader>,
     tensor_names: &[String],
     layer_filter: Option<&str>,
     verbose: bool,
@@ -456,7 +463,7 @@ fn print_cross_attention_flow(
                 "out_proj.weight",
             ] {
                 let tensor_name = format!("{layer_prefix}.{suffix}");
-                if let Ok(data) = reader.read_tensor_f32(&tensor_name) {
+                if let Some(Ok(data)) = reader.as_ref().map(|r| r.read_tensor_f32(&tensor_name)) {
                     let (min, max, mean, std) = compute_stats(&data);
                     println!(
                         "  {}: min={:.4} max={:.4} mean={:.4} std={:.4}",
@@ -484,7 +491,7 @@ fn print_cross_attention_flow(
 
 /// Print self-attention flow
 fn print_self_attention_flow(
-    _reader: &AprReader,
+    _reader: &Option<AprReader>,
     _tensor_names: &[String],
     _layer_filter: Option<&str>,
     _verbose: bool,
@@ -553,7 +560,7 @@ fn print_self_attention_flow(
 
 /// Print FFN flow
 fn print_ffn_flow(
-    _reader: &AprReader,
+    _reader: &Option<AprReader>,
     _tensor_names: &[String],
     _layer_filter: Option<&str>,
     _verbose: bool,
