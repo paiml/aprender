@@ -219,21 +219,8 @@ fn load_apr_model_state(model_path: &Path, config: &ServerConfig) -> Result<AprS
         );
     }
 
-    // GPU check (APR GPU path not yet ready)
-    let use_gpu = config.gpu && !config.no_gpu;
-
-    #[cfg(feature = "cuda")]
-    if use_gpu && is_transformer {
-        println!(
-            "{}",
-            "Note: APR GPU path disabled (PMAT-099 - tensor name mapping WIP)".yellow()
-        );
-        println!("{}", "Using CPU path for APR inference".dimmed());
-    }
-
-    #[cfg(not(feature = "cuda"))]
-    let _ = use_gpu;
-
+    // GH-259: GPU is handled by start_apr_server before reaching here.
+    // This path is CPU-only.
     println!("{}", "Using CPU inference".dimmed());
 
     // Load transformer
@@ -306,6 +293,44 @@ struct AprCompletionResponse {
 }
 
 fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
+    // GH-259: Try GPU path first when requested (reuses existing start_apr_server_gpu)
+    #[cfg(feature = "cuda")]
+    {
+        let use_gpu = config.gpu && !config.no_gpu;
+        if use_gpu {
+            use realizar::apr::AprModel;
+
+            println!("{}", "Loading APR model for GPU...".dimmed());
+            match AprModel::load(model_path) {
+                Ok(model) => {
+                    let tokenizer_path = model_path.with_file_name("tokenizer.json");
+                    let tokenizer = if tokenizer_path.exists() {
+                        load_safetensors_tokenizer(&tokenizer_path)
+                    } else {
+                        None
+                    };
+
+                    match start_apr_server_gpu(model_path, model, config, tokenizer) {
+                        Ok(()) => return Ok(()),
+                        Err(e) => {
+                            println!(
+                                "{}",
+                                format!("GPU init failed, falling back to CPU: {e}").yellow()
+                            );
+                        }
+                    }
+                }
+                Err(e) => {
+                    println!(
+                        "{}",
+                        format!("Failed to load APR model for GPU: {e}").yellow()
+                    );
+                    println!("{}", "Falling back to CPU path...".dimmed());
+                }
+            }
+        }
+    }
+
     let state = load_apr_model_state(model_path, config)?;
     let is_transformer = state.is_transformer;
 
