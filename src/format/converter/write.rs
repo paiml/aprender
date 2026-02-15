@@ -447,3 +447,4 @@ fn insert_tokenizer_metadata(
 }
 
 include!("write_part_02.rs");
+include!("write_part_03.rs");
