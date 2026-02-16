@@ -1,6 +1,6 @@
 //! Tests for transfer module.
 
-pub(crate) use super::*;
+pub(crate) use super::super::*;
 
 pub(crate) use crate::nn::Linear;
 

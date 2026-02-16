@@ -1,3 +1,5 @@
+#[allow(clippy::wildcard_imports)]
+use super::*;
 
 impl PageEntry {
     /// Create a new page entry.

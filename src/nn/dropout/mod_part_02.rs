@@ -1,3 +1,5 @@
+#[allow(clippy::wildcard_imports)]
+use super::*;
 
 impl DropBlock {
     /// Create `DropBlock` with given block size and drop probability.
@@ -274,4 +276,5 @@ fn apply_dropout(input: &Tensor, p: f32, rng: &Mutex<StdRng>) -> Tensor {
 }
 
 #[cfg(test)]
+#[path = "tests.rs"]
 mod tests;

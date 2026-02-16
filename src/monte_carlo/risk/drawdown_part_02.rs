@@ -1,7 +1,8 @@
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    #[allow(clippy::wildcard_imports)]
+    use super::super::*;
     use crate::monte_carlo::engine::PathMetadata;
 
     #[test]

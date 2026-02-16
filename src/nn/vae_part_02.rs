@@ -1,3 +1,5 @@
+#[allow(clippy::wildcard_imports)]
+use super::*;
 
 impl ConditionalVAE {
     /// Create a new CVAE.
@@ -153,7 +155,7 @@ impl std::fmt::Debug for ConditionalVAE {
 // ============================================================================
 
 /// Sample from standard normal distribution N(0, I).
-fn sample_standard_normal(shape: &[usize]) -> Tensor {
+pub(super) fn sample_standard_normal(shape: &[usize]) -> Tensor {
     use rand::Rng;
     let mut rng = rand::thread_rng();
 
@@ -171,13 +173,13 @@ fn sample_standard_normal(shape: &[usize]) -> Tensor {
 }
 
 /// Compute exp(0.5 * x) for standard deviation from log variance.
-fn exp_half(log_var: &Tensor) -> Tensor {
+pub(super) fn exp_half(log_var: &Tensor) -> Tensor {
     let data: Vec<f32> = log_var.data().iter().map(|&x| (0.5 * x).exp()).collect();
     Tensor::new(&data, log_var.shape())
 }
 
 /// Compute a + b * c element-wise.
-fn add_mul(a: &Tensor, b: &Tensor, c: &Tensor) -> Tensor {
+pub(super) fn add_mul(a: &Tensor, b: &Tensor, c: &Tensor) -> Tensor {
     let data: Vec<f32> = a
         .data()
         .iter()
@@ -189,7 +191,7 @@ fn add_mul(a: &Tensor, b: &Tensor, c: &Tensor) -> Tensor {
 }
 
 /// MSE loss between reconstruction and target.
-fn mse_loss(pred: &Tensor, target: &Tensor) -> f32 {
+pub(super) fn mse_loss(pred: &Tensor, target: &Tensor) -> f32 {
     let sum_sq: f32 = pred
         .data()
         .iter()
@@ -200,7 +202,7 @@ fn mse_loss(pred: &Tensor, target: &Tensor) -> f32 {
 }
 
 /// KL divergence loss for VAE: -0.5 * sum(1 + `log_var` - mu^2 - `exp(log_var)`).
-fn kl_divergence_loss(mu: &Tensor, log_var: &Tensor) -> f32 {
+pub(super) fn kl_divergence_loss(mu: &Tensor, log_var: &Tensor) -> f32 {
     let kl: f32 = mu
         .data()
         .iter()
@@ -211,7 +213,7 @@ fn kl_divergence_loss(mu: &Tensor, log_var: &Tensor) -> f32 {
 }
 
 /// Linear interpolation between two tensors.
-fn lerp(a: &Tensor, b: &Tensor, alpha: f32) -> Tensor {
+pub(super) fn lerp(a: &Tensor, b: &Tensor, alpha: f32) -> Tensor {
     let data: Vec<f32> = a
         .data()
         .iter()
@@ -222,7 +224,7 @@ fn lerp(a: &Tensor, b: &Tensor, alpha: f32) -> Tensor {
 }
 
 /// Concatenate one-hot encoding of class label to tensor.
-fn concat_one_hot(x: &Tensor, class_label: usize, num_classes: usize) -> Tensor {
+pub(super) fn concat_one_hot(x: &Tensor, class_label: usize, num_classes: usize) -> Tensor {
     let batch_size = x.shape()[0];
     let input_dim = x.shape()[1];
 

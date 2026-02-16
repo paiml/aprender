@@ -1,11 +1,10 @@
-
 // ============================================================================
 // Tests (EXTREME TDD)
 // ============================================================================
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::*;
     use std::io::Write;
     use tempfile::NamedTempFile;
 

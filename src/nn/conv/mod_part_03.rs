@@ -1,3 +1,5 @@
+#[allow(clippy::wildcard_imports)]
+use super::*;
 
 impl MaxPool2d {
     /// Create a new `MaxPool2d` layer with square kernel.
@@ -249,4 +251,5 @@ impl Module for Flatten {
 }
 
 #[cfg(test)]
+#[path = "tests.rs"]
 mod tests;

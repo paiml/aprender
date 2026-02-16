@@ -440,4 +440,5 @@ impl<T: Copy + Default + PartialEq> PartialEq for AlignedVec<T> {
     }
 }
 
-include!("mod_part_02.rs");
+mod mod_part_02;
+pub use mod_part_02::*;

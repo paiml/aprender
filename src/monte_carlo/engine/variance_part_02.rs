@@ -1,7 +1,8 @@
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    #[allow(clippy::wildcard_imports)]
+    use super::super::*;
 
     #[test]
     fn test_no_variance_reduction() {

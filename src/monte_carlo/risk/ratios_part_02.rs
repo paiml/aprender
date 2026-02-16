@@ -1,7 +1,8 @@
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    #[allow(clippy::wildcard_imports)]
+    use super::super::*;
 
     fn sample_returns() -> Vec<f64> {
         vec![

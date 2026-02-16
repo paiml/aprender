@@ -1,3 +1,8 @@
+#[allow(clippy::wildcard_imports)]
+use super::*;
+use crate::text::Tokenizer;
+use crate::AprenderError;
+use std::collections::HashMap;
 
 impl Tokenizer for BpeTokenizer {
     fn tokenize(&self, text: &str) -> Result<Vec<String>, AprenderError> {
@@ -73,7 +78,7 @@ pub struct WordPieceTokenizer {
     /// Unknown token
     unk_token: String,
     /// Maximum word length before splitting to unk
-    max_word_len: usize,
+    pub(super) max_word_len: usize,
 }
 
 impl WordPieceTokenizer {
@@ -421,13 +426,13 @@ impl Tokenizer for WordPieceTokenizer {
 #[derive(Debug, Clone)]
 pub struct UnigramTokenizer {
     /// Token to (ID, log probability) mapping
-    vocab: HashMap<String, (u32, f64)>,
+    pub(super) vocab: HashMap<String, (u32, f64)>,
     /// ID to token mapping
-    inverse_vocab: HashMap<u32, String>,
+    pub(super) inverse_vocab: HashMap<u32, String>,
     /// Unknown token
-    unk_token: String,
+    pub(super) unk_token: String,
     /// BOS token
-    bos_token: String,
+    pub(super) bos_token: String,
     /// EOS token
-    eos_token: String,
+    pub(super) eos_token: String,
 }

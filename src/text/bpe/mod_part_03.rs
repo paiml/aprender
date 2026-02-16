@@ -1,3 +1,8 @@
+#[allow(clippy::wildcard_imports)]
+use super::*;
+use crate::error::{AprenderError, Result};
+use serde::Deserialize;
+use std::collections::HashMap;
 
 impl Qwen2BpeTokenizer {
     /// Special token: <|`im_start`|>
@@ -361,4 +366,5 @@ pub fn load_from_files(vocab_json: &str, merges_txt: &str) -> Result<BpeTokenize
 // ============================================================================
 
 #[cfg(test)]
+#[path = "tests.rs"]
 mod tests;

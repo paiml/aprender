@@ -1,3 +1,5 @@
+#[allow(clippy::wildcard_imports)]
+use super::*;
 
 /// Additional model-specific data
 #[derive(Debug, Clone, Default)]
@@ -234,4 +236,5 @@ impl std::fmt::Display for NativeModelError {
 impl std::error::Error for NativeModelError {}
 
 #[cfg(test)]
+#[path = "tests.rs"]
 mod tests;

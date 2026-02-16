@@ -1,3 +1,5 @@
+#[allow(clippy::wildcard_imports)]
+use super::*;
 
 impl SpecAugment {
     /// Create `SpecAugment` with default parameters.
@@ -358,4 +360,5 @@ impl RandAugment {
 }
 
 #[cfg(test)]
+#[path = "tests.rs"]
 mod tests;

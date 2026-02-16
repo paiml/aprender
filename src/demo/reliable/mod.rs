@@ -18,7 +18,7 @@
 use crate::AprenderError;
 use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 #[cfg(feature = "hf-hub-integration")]
 use dirs;
@@ -430,4 +430,5 @@ pub struct PerformanceMetrics {
     pub backend: String,
 }
 
-include!("mod_part_02.rs");
+mod mod_part_02;
+pub use mod_part_02::*;

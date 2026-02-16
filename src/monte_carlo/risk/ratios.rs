@@ -336,4 +336,5 @@ pub fn gain_to_pain_ratio(returns: &[f64]) -> f64 {
     }
 }
 
-include!("ratios_part_02.rs");
+#[path = "ratios_part_02.rs"]
+mod ratios_part_02;

@@ -1,3 +1,7 @@
+#[allow(clippy::wildcard_imports)]
+use super::*;
+use crate::error::Result;
+use std::collections::HashMap;
 
 impl BpeTokenizer {
     /// Create a new BPE tokenizer with given config
@@ -137,7 +141,7 @@ impl BpeTokenizer {
 
     /// Split text on special tokens while preserving them as separate segments.
     /// Returns vec of segments where special tokens are their own elements.
-    fn split_on_special_tokens(&self, text: &str) -> Vec<String> {
+    pub(crate) fn split_on_special_tokens(&self, text: &str) -> Vec<String> {
         if self.special_tokens.is_empty() {
             return vec![text.to_string()];
         }
@@ -232,7 +236,7 @@ impl BpeTokenizer {
     }
 
     /// Pre-tokenize text into words
-    fn pre_tokenize(&self, text: &str) -> Vec<String> {
+    pub(crate) fn pre_tokenize(&self, text: &str) -> Vec<String> {
         // Simple regex-like pattern: split on whitespace, keeping punctuation
         // Future: Use self.config for model-specific pre-tokenization rules
         let _ = &self.config;
@@ -260,7 +264,7 @@ impl BpeTokenizer {
     }
 
     /// Convert string to byte-encoded tokens
-    fn bytes_to_bpe_tokens(&self, word: &str) -> Vec<String> {
+    pub(crate) fn bytes_to_bpe_tokens(&self, word: &str) -> Vec<String> {
         word.bytes()
             .map(|b| {
                 self.byte_encoder
@@ -271,7 +275,7 @@ impl BpeTokenizer {
     }
 
     /// Convert byte-encoded tokens back to string
-    fn bpe_tokens_to_bytes(&self, text: &str) -> String {
+    pub(crate) fn bpe_tokens_to_bytes(&self, text: &str) -> String {
         let bytes: Vec<u8> = text
             .chars()
             .filter_map(|c| self.byte_decoder.get(&c).copied())
@@ -281,7 +285,7 @@ impl BpeTokenizer {
     }
 
     /// Apply BPE merges to token list
-    fn bpe(&self, tokens: &[String]) -> Vec<String> {
+    pub(crate) fn bpe(&self, tokens: &[String]) -> Vec<String> {
         if tokens.len() <= 1 {
             return tokens.to_vec();
         }
@@ -349,9 +353,9 @@ impl Default for BpeTokenizer {
 #[derive(Debug, Clone)]
 pub struct Qwen2BpeTokenizer {
     /// Base tokenizer
-    base: BpeTokenizer,
+    pub(super) base: BpeTokenizer,
     /// Special token IDs
-    im_start_id: u32,
-    im_end_id: u32,
-    endoftext_id: u32,
+    pub(super) im_start_id: u32,
+    pub(super) im_end_id: u32,
+    pub(super) endoftext_id: u32,
 }

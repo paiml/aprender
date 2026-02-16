@@ -1,3 +1,7 @@
+#[allow(clippy::wildcard_imports)]
+use super::*;
+use crate::error::Result;
+use crate::primitives::Matrix;
 
 impl GaussianNB {
     /// Creates a new Gaussian Naive Bayes classifier.
@@ -249,16 +253,16 @@ impl Default for GaussianNB {
 #[derive(Debug, Clone)]
 pub struct LinearSVM {
     /// Weights for each feature
-    weights: Option<Vec<f32>>,
+    pub(crate) weights: Option<Vec<f32>>,
     /// Bias term
-    bias: f32,
+    pub(crate) bias: f32,
     /// Regularization parameter (default: 1.0)
     /// Larger C means less regularization
-    c: f32,
+    pub(crate) c: f32,
     /// Learning rate for subgradient descent (default: 0.01)
-    learning_rate: f32,
+    pub(crate) learning_rate: f32,
     /// Maximum iterations (default: 1000)
-    max_iter: usize,
+    pub(crate) max_iter: usize,
     /// Convergence tolerance (default: 1e-4)
-    tol: f32,
+    pub(crate) tol: f32,
 }

@@ -1,3 +1,5 @@
+#[allow(clippy::wildcard_imports)]
+use super::*;
 
 impl ReduceLROnPlateau {
     /// Create a new `ReduceLROnPlateau` scheduler.
@@ -90,4 +92,5 @@ impl LRScheduler for ReduceLROnPlateau {
 }
 
 #[cfg(test)]
+#[path = "tests.rs"]
 mod tests;

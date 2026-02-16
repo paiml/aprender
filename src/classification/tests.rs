@@ -1,6 +1,6 @@
 //! Tests for classification module.
 
-pub(crate) use super::*;
+pub(crate) use super::super::*;
 
 #[test]
 fn test_sigmoid() {

@@ -1,4 +1,4 @@
-pub(crate) use super::*;
+pub(crate) use super::super::*;
 
 #[test]
 fn test_aligned_vec_creation() {

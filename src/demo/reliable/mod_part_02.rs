@@ -1,3 +1,6 @@
+#[allow(clippy::wildcard_imports)]
+use super::*;
+use std::time::{Duration, Instant};
 
 impl PerformanceMetrics {
     /// Calculate tokens per second
@@ -247,4 +250,5 @@ pub mod models {
 // ============================================================================
 
 #[cfg(test)]
+#[path = "tests.rs"]
 mod tests;

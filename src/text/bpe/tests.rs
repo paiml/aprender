@@ -1,4 +1,5 @@
-pub(crate) use super::*;
+#[allow(clippy::wildcard_imports)]
+pub(crate) use super::super::*;
 #[test]
 fn test_bpe_config_default() {
     let config = BpeConfig::default();

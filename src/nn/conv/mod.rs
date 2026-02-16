@@ -396,5 +396,7 @@ pub struct Conv2d {
     use_im2col: bool,
 }
 
-include!("mod_part_02.rs");
-include!("mod_part_03.rs");
+mod mod_part_02;
+pub use mod_part_02::*;
+mod mod_part_03;
+pub use mod_part_03::*;

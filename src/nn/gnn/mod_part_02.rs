@@ -1,3 +1,4 @@
+#[allow(clippy::wildcard_imports)]
 use super::*;
 
 /// `GraphSAGE` convolutional layer (Hamilton et al., 2017).
@@ -169,7 +170,7 @@ impl SAGEConv {
                     }
                 }
                 // Replace -inf with 0 for features that had no finite value
-                for f in agg.iter_mut() {
+                for f in &mut agg {
                     if f.is_infinite() {
                         *f = 0.0;
                     }
@@ -258,14 +259,14 @@ impl SAGEConv {
         let mut output = vec![0.0f32; num_nodes * self.out_features];
 
         for node in 0..num_nodes {
-            let agg_features = self.aggregate_neighbors(&x_data, &neighbor_lists[node]);
+            let agg_features = self.aggregate_neighbors(x_data, &neighbor_lists[node]);
             self.transform_node(
-                node, &x_data, in_feat, &ws_data, &wn_data, &agg_features, &mut output,
+                node, x_data, in_feat, ws_data, wn_data, &agg_features, &mut output,
             );
         }
 
         if let Some(ref bias) = self.bias {
-            Self::add_bias_to_output(&bias.data(), num_nodes, self.out_features, &mut output);
+            Self::add_bias_to_output(bias.data(), num_nodes, self.out_features, &mut output);
         }
 
         if self.normalize {

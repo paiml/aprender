@@ -1,3 +1,4 @@
+#[allow(clippy::wildcard_imports)]
 use super::*;
 use super::mod_part_02::{reshape_for_attention, reshape_from_attention, transpose_last_two, matmul_batched};
 use super::mod_part_04::{elu_feature_map, sum_last_dim, matmul_with_broadcast, divide_with_eps, repeat_kv_heads};

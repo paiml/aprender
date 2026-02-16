@@ -1,7 +1,7 @@
-
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::*;
+    use super::super::loss_part_02::{abs, softmax_2d, log_softmax};
     use crate::autograd::clear_graph;
 
     #[test]

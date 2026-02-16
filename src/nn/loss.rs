@@ -429,5 +429,9 @@ pub struct NLLLoss {
     reduction: Reduction,
 }
 
-include!("loss_part_02.rs");
-include!("loss_part_03.rs");
+#[path = "loss_part_02.rs"]
+mod loss_part_02;
+#[allow(clippy::wildcard_imports)]
+use loss_part_02::*;
+#[path = "loss_part_03.rs"]
+mod loss_part_03;

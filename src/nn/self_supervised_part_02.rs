@@ -1,3 +1,4 @@
+#[allow(clippy::wildcard_imports)]
 use super::*;
 
 /// BYOL (Bootstrap Your Own Latent) framework (Grill et al., 2020).

@@ -1,3 +1,5 @@
+#[allow(clippy::wildcard_imports)]
+use super::*;
 
 impl Conv2d {
     /// Create a new Conv2d layer with square kernel.
@@ -423,8 +425,8 @@ impl Module for MaxPool1d {
 /// - Output: `(N, C, H_out, W_out)`
 #[derive(Debug)]
 pub struct MaxPool2d {
-    kernel_h: usize,
-    kernel_w: usize,
-    stride_h: usize,
-    stride_w: usize,
+    pub(crate) kernel_h: usize,
+    pub(crate) kernel_w: usize,
+    pub(crate) stride_h: usize,
+    pub(crate) stride_w: usize,
 }

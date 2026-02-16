@@ -43,8 +43,6 @@
 //! - Zero `unwrap()` calls
 //! - All public APIs return `Result<T, E>` where fallible
 
-use crate::error::{AprenderError, Result};
-use serde::Deserialize;
 use std::collections::HashMap;
 
 // ============================================================================
@@ -187,5 +185,7 @@ pub struct BpeTokenizer {
     byte_decoder: HashMap<char, u8>,
 }
 
-include!("mod_part_02.rs");
-include!("mod_part_03.rs");
+mod mod_part_02;
+pub use mod_part_02::*;
+mod mod_part_03;
+pub use mod_part_03::*;

@@ -252,4 +252,5 @@ impl DrawdownStatistics {
     }
 }
 
-include!("drawdown_part_02.rs");
+#[path = "drawdown_part_02.rs"]
+mod drawdown_part_02;

@@ -1,3 +1,5 @@
+#[allow(clippy::wildcard_imports)]
+use super::*;
 
 impl OnlineDistillation {
     /// Create online distillation with specified number of peer networks.
@@ -159,7 +161,7 @@ impl ProgressiveDistillation {
     }
 }
 
-fn softmax_with_temp(logits: &[f32], temp: f32) -> Vec<f32> {
+pub(super) fn softmax_with_temp(logits: &[f32], temp: f32) -> Vec<f32> {
     let scaled: Vec<f32> = logits.iter().map(|&x| x / temp).collect();
     let max = scaled.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b));
     let exp: Vec<f32> = scaled.iter().map(|&x| (x - max).exp()).collect();
@@ -328,4 +330,5 @@ fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
 }
 
 #[cfg(test)]
+#[path = "tests.rs"]
 mod tests;

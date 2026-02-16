@@ -1,3 +1,7 @@
+#[allow(clippy::wildcard_imports)]
+use super::*;
+use crate::error::Result;
+use crate::primitives::Matrix;
 
 impl KNearestNeighbors {
     /// Creates a new K-Nearest Neighbors classifier.
@@ -191,7 +195,7 @@ impl KNearestNeighbors {
     }
 
     /// Computes distance between two samples.
-    fn compute_distance(
+    pub(crate) fn compute_distance(
         &self,
         x1: &Matrix<f32>,
         i1: usize,
@@ -285,13 +289,13 @@ impl KNearestNeighbors {
 #[derive(Debug, Clone)]
 pub struct GaussianNB {
     /// Class prior probabilities P(y=c)
-    class_priors: Option<Vec<f32>>,
+    pub(crate) class_priors: Option<Vec<f32>>,
     /// Feature means per class: means[class][feature]
-    means: Option<Vec<Vec<f32>>>,
+    pub(crate) means: Option<Vec<Vec<f32>>>,
     /// Feature variances per class: variances[class][feature]
-    variances: Option<Vec<Vec<f32>>>,
+    pub(crate) variances: Option<Vec<Vec<f32>>>,
     /// Class labels
-    classes: Option<Vec<usize>>,
+    pub(crate) classes: Option<Vec<usize>>,
     /// Laplace smoothing parameter (`var_smoothing`)
-    var_smoothing: f32,
+    pub(crate) var_smoothing: f32,
 }

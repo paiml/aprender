@@ -257,4 +257,5 @@ fn variance(values: &[f64]) -> f64 {
     values.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / n
 }
 
-include!("variance_part_02.rs");
+#[path = "variance_part_02.rs"]
+mod variance_part_02;

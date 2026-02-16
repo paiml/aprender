@@ -166,7 +166,7 @@ pub(crate) fn load_tokenizer_from_explicit_path(tokenizer_path: &Path) -> Option
     let token_to_id = extract_vocab_with_added_tokens(&json)?;
 
     let sibling_config = load_sibling_config(tokenizer_path);
-    let expected_vocab_size = get_config_u32(&sibling_config, "vocab_size");
+    let expected_vocab_size = get_config_u32(sibling_config.as_ref(), "vocab_size");
     let vocabulary = build_vocab_vector(&token_to_id, expected_vocab_size);
 
     eprintln!(
@@ -180,7 +180,7 @@ pub(crate) fn load_tokenizer_from_explicit_path(tokenizer_path: &Path) -> Option
     }
 
     let (bos_token_id, eos_token_id) =
-        resolve_bos_eos(&json, &sibling_config);
+        resolve_bos_eos(&json, sibling_config.as_ref());
 
     Some(GgufTokenizer {
         vocabulary,
@@ -221,9 +221,8 @@ fn extract_vocab_with_added_tokens(
 }
 
 /// Extract a u32 field from a config JSON, returning 0 if missing.
-fn get_config_u32(config: &Option<serde_json::Value>, key: &str) -> u32 {
+fn get_config_u32(config: Option<&serde_json::Value>, key: &str) -> u32 {
     config
-        .as_ref()
         .and_then(|cfg| cfg.get(key).and_then(|v| v.as_u64()))
         .map(|v| v as u32)
         .unwrap_or(0)
@@ -232,14 +231,12 @@ fn get_config_u32(config: &Option<serde_json::Value>, key: &str) -> u32 {
 /// Resolve BOS/EOS token IDs from sibling config.json, falling back to added_tokens.
 fn resolve_bos_eos(
     json: &serde_json::Value,
-    sibling_config: &Option<serde_json::Value>,
+    sibling_config: Option<&serde_json::Value>,
 ) -> (Option<u32>, Option<u32>) {
     let mut bos = sibling_config
-        .as_ref()
         .and_then(|cfg| cfg.get("bos_token_id").and_then(|v| v.as_u64()))
         .map(|v| v as u32);
     let mut eos = sibling_config
-        .as_ref()
         .and_then(|cfg| cfg.get("eos_token_id").and_then(|v| v.as_u64()))
         .map(|v| v as u32);
 

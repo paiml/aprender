@@ -1,3 +1,4 @@
+#[allow(clippy::wildcard_imports)]
 use super::*;
 
 impl GATConv {
@@ -244,7 +245,7 @@ impl GATConv {
 
         let total_out = self.out_features * self.num_heads;
         let h_data = Self::linear_transform(
-            &x.data(), &self.weight.data(), num_nodes, self.in_features, total_out,
+            x.data(), self.weight.data(), num_nodes, self.in_features, total_out,
         );
         let neighbor_lists = Self::build_neighbor_lists(&adj_with_loops, num_nodes);
         let att_src_data = self.att_src.data();
@@ -258,7 +259,7 @@ impl GATConv {
             if neighbors.is_empty() { continue; }
             for head in 0..self.num_heads {
                 let scores: Vec<f32> = neighbors.iter()
-                    .map(|&n| self.edge_attention_score(&att_src_data, &att_tgt_data, &h_data, node, n, head, total_out))
+                    .map(|&n| self.edge_attention_score(att_src_data, att_tgt_data, &h_data, node, n, head, total_out))
                     .collect();
                 let weights = Self::softmax_attention(&scores);
                 self.scatter_attention(&h_data, neighbors, &weights, node, head, total_out, final_out, &mut output);
@@ -266,7 +267,7 @@ impl GATConv {
         }
 
         if let Some(ref bias) = self.bias {
-            Self::add_gat_bias(&bias.data(), num_nodes, self.out_features, self.num_heads, final_out, self.concat, &mut output);
+            Self::add_gat_bias(bias.data(), num_nodes, self.out_features, self.num_heads, final_out, self.concat, &mut output);
         }
 
         Tensor::new(&output, &[num_nodes, final_out])

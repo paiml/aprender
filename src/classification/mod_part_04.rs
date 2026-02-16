@@ -1,3 +1,7 @@
+#[allow(clippy::wildcard_imports)]
+use super::*;
+use crate::error::Result;
+use crate::primitives::Matrix;
 
 impl LinearSVM {
     /// Creates a new Linear SVM with default parameters.
@@ -193,4 +197,5 @@ impl Default for LinearSVM {
 }
 
 #[cfg(test)]
+#[path = "tests.rs"]
 mod tests;

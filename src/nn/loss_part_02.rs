@@ -1,3 +1,5 @@
+#[allow(clippy::wildcard_imports)]
+use super::*;
 
 impl NLLLoss {
     #[must_use]
@@ -34,13 +36,13 @@ impl NLLLoss {
 // ============================================================================
 
 /// Element-wise absolute value.
-fn abs(x: &Tensor) -> Tensor {
+pub(super) fn abs(x: &Tensor) -> Tensor {
     let data: Vec<f32> = x.data().iter().map(|&v| v.abs()).collect();
     Tensor::new(&data, x.shape())
 }
 
 /// Softmax computation for gradient tracking.
-fn softmax_2d(x: &Tensor) -> Tensor {
+pub(super) fn softmax_2d(x: &Tensor) -> Tensor {
     assert_eq!(x.ndim(), 2);
 
     let (batch, features) = (x.shape()[0], x.shape()[1]);
@@ -72,7 +74,7 @@ fn softmax_2d(x: &Tensor) -> Tensor {
 }
 
 /// Log-softmax for numerical stability.
-fn log_softmax(x: &Tensor) -> Tensor {
+pub(super) fn log_softmax(x: &Tensor) -> Tensor {
     assert_eq!(x.ndim(), 2);
 
     let (batch, features) = (x.shape()[0], x.shape()[1]);

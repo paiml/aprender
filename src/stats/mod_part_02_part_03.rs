@@ -1,4 +1,4 @@
-impl<'a> DescriptiveStats<'a> {
+impl DescriptiveStats<'_> {
 
     /// Compute histogram with specified bin selection method.
     ///

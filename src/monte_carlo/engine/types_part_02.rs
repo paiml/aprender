@@ -1,7 +1,8 @@
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    #[allow(clippy::wildcard_imports)]
+    use super::super::*;
 include!("types_part_02_part_02.rs");
 include!("types_part_02_part_03.rs");
 

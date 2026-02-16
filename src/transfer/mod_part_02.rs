@@ -1,3 +1,8 @@
+#[allow(clippy::wildcard_imports)]
+use super::*;
+use super::mod_part_03::softmax_with_temp;
+use crate::autograd::Tensor;
+use crate::nn::Module;
 
 impl<E: TransferEncoder> Module for DomainAdapter<E> {
     fn forward(&self, input: &Tensor) -> Tensor {
@@ -422,9 +427,9 @@ impl SelfDistillation {
 #[derive(Debug, Clone)]
 pub struct OnlineDistillation {
     /// Number of networks in the cohort
-    num_networks: usize,
+    pub(crate) num_networks: usize,
     /// Temperature for KL divergence
-    temperature: f32,
+    pub(crate) temperature: f32,
     /// Weight for mutual learning loss
-    mutual_weight: f32,
+    pub(crate) mutual_weight: f32,
 }

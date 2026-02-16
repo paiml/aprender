@@ -442,4 +442,4 @@ pub enum PlateauMode {
     Max,
 }
 
-include!("mod_part_02.rs");
+mod mod_part_02;

@@ -1,7 +1,8 @@
 //\! Tokenize Tests - Extreme TDD
 //\! PMAT-085: Extracted from mod.rs for PMAT file health compliance
 
-pub(crate) use super::*;
+#[allow(clippy::wildcard_imports)]
+pub(crate) use super::super::*;
 
 // ========== WhitespaceTokenizer Tests ==========
 

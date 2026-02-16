@@ -1,3 +1,8 @@
+#[allow(clippy::wildcard_imports)]
+use super::*;
+use crate::text::Tokenizer;
+use crate::AprenderError;
+use std::collections::HashMap;
 
 impl UnigramTokenizer {
     /// Train a Unigram tokenizer on the given corpus.
@@ -228,4 +233,5 @@ impl Tokenizer for UnigramTokenizer {
 }
 
 #[cfg(test)]
+#[path = "tests.rs"]
 mod tests;

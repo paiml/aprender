@@ -1,3 +1,5 @@
+#[allow(clippy::wildcard_imports)]
+use super::*;
 
 impl GroupNorm {
     /// Create a new `GroupNorm` layer.
@@ -385,4 +387,5 @@ impl Module for InstanceNorm {
 }
 
 #[cfg(test)]
+#[path = "tests.rs"]
 mod tests;

@@ -1,11 +1,10 @@
-
 // ============================================================================
 // Property Tests (EXTREME TDD)
 // ============================================================================
 
 #[cfg(test)]
 mod prop_tests {
-    use super::*;
+    use super::super::*;
     use proptest::prelude::*;
     use std::io::Write;
     use tempfile::NamedTempFile;
