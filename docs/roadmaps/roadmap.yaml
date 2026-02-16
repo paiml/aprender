@@ -3797,3 +3797,24 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-259
+  github_issue: null
+  item_type: task
+  title: apr hex --stats silently drops stats for BF16 tensors
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-02-16T14:40:10Z
+  updated: 2026-02-16T14:40:10Z
+  spec: null
+  acceptance_criteria:
+  - 'apr hex --tensor <name> --stats on a BF16 safetensors file (e.g. Qwen2-0.5B) shows the tensor header but skips the Statistics: line entirely. No error, no warning — just silent omission. F32 tensors work fine. Discovered via tiny-model-ground-truth safetensors parity tests comparing apr hex against Python safetensors + torch stats.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - hex
+  - bf16
+  - safetensors
+  - parity
+  notes: null
