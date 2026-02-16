@@ -1,3 +1,4 @@
+use super::*;
 
 /// BYOL (Bootstrap Your Own Latent) framework (Grill et al., 2020).
 ///
@@ -200,7 +201,7 @@ impl SimCSE {
     }
 }
 
-fn l2_normalize(v: &[f32]) -> Vec<f32> {
+pub(super) fn l2_normalize(v: &[f32]) -> Vec<f32> {
     let norm: f32 = v.iter().map(|&x| x * x).sum::<f32>().sqrt().max(1e-10);
     v.iter().map(|&x| x / norm).collect()
 }

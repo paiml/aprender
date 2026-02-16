@@ -435,5 +435,9 @@ impl MoCo {
     }
 }
 
-include!("self_supervised_part_02.rs");
-include!("self_supervised_part_03.rs");
+#[path = "self_supervised_part_02.rs"]
+mod self_supervised_part_02;
+pub use self_supervised_part_02::*;
+
+#[path = "self_supervised_part_03.rs"]
+mod self_supervised_part_03;

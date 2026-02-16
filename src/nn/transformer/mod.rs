@@ -388,22 +388,32 @@ impl std::fmt::Debug for TransformerEncoderLayer {
 ///
 /// Like encoder but with an additional cross-attention layer.
 pub struct TransformerDecoderLayer {
-    self_attn: MultiHeadAttention,
-    cross_attn: MultiHeadAttention,
-    linear1: Linear,
-    linear2: Linear,
-    norm1: LayerNorm,
-    norm2: LayerNorm,
-    norm3: LayerNorm,
-    dropout: Dropout,
-    dropout1: Dropout,
-    dropout2: Dropout,
-    dropout3: Dropout,
-    d_model: usize,
-    training: bool,
+    pub(crate) self_attn: MultiHeadAttention,
+    pub(crate) cross_attn: MultiHeadAttention,
+    pub(crate) linear1: Linear,
+    pub(crate) linear2: Linear,
+    pub(crate) norm1: LayerNorm,
+    pub(crate) norm2: LayerNorm,
+    pub(crate) norm3: LayerNorm,
+    pub(crate) dropout: Dropout,
+    pub(crate) dropout1: Dropout,
+    pub(crate) dropout2: Dropout,
+    pub(crate) dropout3: Dropout,
+    pub(crate) d_model: usize,
+    pub(crate) training: bool,
 }
 
-include!("mod_part_02.rs");
-include!("mod_part_03.rs");
-include!("mod_part_04.rs");
-include!("mod_part_05.rs");
+#[path = "mod_part_02.rs"]
+mod mod_part_02;
+pub use mod_part_02::*;
+
+#[path = "mod_part_03.rs"]
+mod mod_part_03;
+pub use mod_part_03::*;
+
+#[path = "mod_part_04.rs"]
+mod mod_part_04;
+pub use mod_part_04::*;
+
+#[path = "mod_part_05.rs"]
+mod mod_part_05;

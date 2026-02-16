@@ -358,20 +358,24 @@ impl Module for FakeQuantize {
 #[derive(Debug)]
 pub struct QuantizedLinear {
     /// Weight scale
-    weight_scale: f32,
+    pub(crate) weight_scale: f32,
     /// Input scale
-    input_scale: f32,
+    pub(crate) input_scale: f32,
     /// Output scale
-    output_scale: f32,
+    pub(crate) output_scale: f32,
     /// Quantized weights (i8)
-    weights_q: Vec<i8>,
+    pub(crate) weights_q: Vec<i8>,
     /// Quantized bias (i32)
-    bias_q: Option<Vec<i32>>,
+    pub(crate) bias_q: Option<Vec<i32>>,
     /// Input dimension
-    in_features: usize,
+    pub(crate) in_features: usize,
     /// Output dimension
-    out_features: usize,
+    pub(crate) out_features: usize,
 }
 
-include!("quantization_part_02.rs");
-include!("quantization_part_03.rs");
+#[path = "quantization_part_02.rs"]
+mod quantization_part_02;
+pub use quantization_part_02::*;
+
+#[path = "quantization_part_03.rs"]
+mod quantization_part_03;

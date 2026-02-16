@@ -1,3 +1,4 @@
+use super::*;
 
 /// `GraphSAGE` convolutional layer (Hamilton et al., 2017).
 ///
@@ -306,25 +307,25 @@ impl SAGEConv {
 #[derive(Debug, Clone)]
 pub struct GATConv {
     /// Input feature dimension
-    in_features: usize,
+    pub(crate) in_features: usize,
     /// Output feature dimension (per head)
-    out_features: usize,
+    pub(crate) out_features: usize,
     /// Number of attention heads
-    num_heads: usize,
+    pub(crate) num_heads: usize,
     /// Linear transformation weight [`in_features`, `out_features` * `num_heads`]
-    weight: Tensor,
+    pub(crate) weight: Tensor,
     /// Attention weight for source nodes [`num_heads`, `out_features`]
-    att_src: Tensor,
+    pub(crate) att_src: Tensor,
     /// Attention weight for target nodes [`num_heads`, `out_features`]
-    att_tgt: Tensor,
+    pub(crate) att_tgt: Tensor,
     /// Bias [`out_features` * `num_heads`]
-    bias: Option<Tensor>,
+    pub(crate) bias: Option<Tensor>,
     /// Negative slope for `LeakyReLU`
-    negative_slope: f32,
+    pub(crate) negative_slope: f32,
     /// Dropout probability
-    dropout: f32,
+    pub(crate) dropout: f32,
     /// Whether to concatenate heads (true) or average them (false)
-    concat: bool,
+    pub(crate) concat: bool,
     /// Add self-loops
-    add_self_loops: bool,
+    pub(crate) add_self_loops: bool,
 }

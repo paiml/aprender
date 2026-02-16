@@ -1,3 +1,4 @@
+use super::*;
 
 impl GATConv {
     /// Create a new GAT layer.

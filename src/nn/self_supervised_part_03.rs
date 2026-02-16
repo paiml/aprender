@@ -1,7 +1,6 @@
-
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::nn::self_supervised::*;
 
     #[test]
     fn test_masked_prediction() {

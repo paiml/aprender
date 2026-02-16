@@ -1,3 +1,4 @@
+use super::*;
 
 impl TeacherForcing {
     /// Create constant teacher forcing (ratio doesn't change).

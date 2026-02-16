@@ -1,3 +1,5 @@
+use super::*;
+use super::mod_part_03::GroupedQueryAttention;
 
 impl std::fmt::Debug for GroupedQueryAttention {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -16,7 +18,7 @@ impl std::fmt::Debug for GroupedQueryAttention {
 // ============================================================================
 
 /// ELU feature map: φ(x) = elu(x) + 1 for positive-definite kernel.
-fn elu_feature_map(x: &Tensor) -> Tensor {
+pub(super) fn elu_feature_map(x: &Tensor) -> Tensor {
     let data: Vec<f32> = x
         .data()
         .iter()
@@ -27,7 +29,7 @@ fn elu_feature_map(x: &Tensor) -> Tensor {
 
 /// Sum over last dimension.
 #[allow(clippy::needless_range_loop)]
-fn sum_last_dim(x: &Tensor) -> Tensor {
+pub(super) fn sum_last_dim(x: &Tensor) -> Tensor {
     let shape = x.shape();
     let last_dim = shape[shape.len() - 1];
     let new_size: usize = shape[..shape.len() - 1].iter().product();
@@ -44,7 +46,7 @@ fn sum_last_dim(x: &Tensor) -> Tensor {
 }
 
 /// Matrix multiply with broadcasting for normalizer computation.
-fn matmul_with_broadcast(q: &Tensor, k_sum: &Tensor) -> Tensor {
+pub(super) fn matmul_with_broadcast(q: &Tensor, k_sum: &Tensor) -> Tensor {
     // q: [batch, heads, seq, head_dim]
     // k_sum: [batch, heads, head_dim]
     // output: [batch, heads, seq, 1] (dot product of each q row with k_sum)
@@ -73,7 +75,7 @@ fn matmul_with_broadcast(q: &Tensor, k_sum: &Tensor) -> Tensor {
 }
 
 /// Divide tensor by normalizer with epsilon for numerical stability.
-fn divide_with_eps(x: &Tensor, normalizer: &Tensor, eps: f32) -> Tensor {
+pub(super) fn divide_with_eps(x: &Tensor, normalizer: &Tensor, eps: f32) -> Tensor {
     // x: [batch, heads, seq, head_dim]
     // normalizer: [batch, heads, seq, 1]
     let x_shape = x.shape();
@@ -147,7 +149,7 @@ fn repeat_single_kv_head(
 }
 
 /// Repeat KV heads to match Q heads for Grouped Query Attention.
-fn repeat_kv_heads(x: &Tensor, groups: usize) -> Tensor {
+pub(super) fn repeat_kv_heads(x: &Tensor, groups: usize) -> Tensor {
     if groups == 1 {
         return x.clone();
     }
@@ -197,13 +199,13 @@ fn repeat_kv_heads(x: &Tensor, groups: usize) -> Tensor {
 ///   Position Embedding. arXiv:2104.09864
 #[derive(Debug, Clone)]
 pub struct RotaryPositionEmbedding {
-    head_dim: usize,
-    max_seq_len: usize,
-    base: f32,
+    pub(crate) head_dim: usize,
+    pub(crate) max_seq_len: usize,
+    pub(crate) base: f32,
     /// Precomputed cos values [`max_seq_len`, `head_dim/2`]
-    cos_cache: Vec<f32>,
+    pub(crate) cos_cache: Vec<f32>,
     /// Precomputed sin values [`max_seq_len`, `head_dim/2`]
-    sin_cache: Vec<f32>,
+    pub(crate) sin_cache: Vec<f32>,
 }
 
 impl RotaryPositionEmbedding {
@@ -341,7 +343,7 @@ impl RotaryPositionEmbedding {
 ///   Linear Biases Enables Input Length Extrapolation. ICLR.
 #[derive(Debug, Clone)]
 pub struct ALiBi {
-    num_heads: usize,
+    pub(crate) num_heads: usize,
     /// Per-head slopes (geometric sequence starting from 2^(-8/n))
-    slopes: Vec<f32>,
+    pub(crate) slopes: Vec<f32>,
 }

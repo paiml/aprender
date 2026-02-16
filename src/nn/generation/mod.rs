@@ -332,10 +332,14 @@ impl std::fmt::Debug for BeamSearch {
 /// let token = sampler.sample(&logits);
 /// ```
 pub struct NucleusSampler {
-    top_p: f32,
-    temperature: f32,
-    min_tokens_to_keep: usize,
+    pub(crate) top_p: f32,
+    pub(crate) temperature: f32,
+    pub(crate) min_tokens_to_keep: usize,
 }
 
-include!("mod_part_02.rs");
-include!("mod_part_03.rs");
+#[path = "mod_part_02.rs"]
+mod mod_part_02;
+pub use mod_part_02::*;
+
+#[path = "mod_part_03.rs"]
+mod mod_part_03;

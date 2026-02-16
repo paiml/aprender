@@ -1,3 +1,4 @@
+use crate::nn::quantization::*;
 
     #[test]
     fn test_fake_quant_config_default() {

@@ -1,3 +1,5 @@
+use super::*;
+use super::mod_part_03::{slice_pe, add_positional_encoding};
 
 impl TransformerDecoderLayer {
     /// Create a new Transformer Decoder Layer.
@@ -207,7 +209,7 @@ impl Module for PositionalEncoding {
 // ============================================================================
 
 /// Transpose the last two dimensions of a tensor.
-fn transpose_last_two(x: &Tensor) -> Tensor {
+pub(super) fn transpose_last_two(x: &Tensor) -> Tensor {
     let shape = x.shape();
     let ndim = shape.len();
 
@@ -253,7 +255,7 @@ fn transpose_last_two(x: &Tensor) -> Tensor {
 /// never happen as dimensions are validated by the assert above. If it does,
 /// it indicates a bug in the trueno library.
 #[allow(clippy::expect_used)]
-fn matmul_batched(a: &Tensor, b: &Tensor) -> Tensor {
+pub(super) fn matmul_batched(a: &Tensor, b: &Tensor) -> Tensor {
     let a_shape = a.shape();
     let b_shape = b.shape();
 
@@ -277,12 +279,12 @@ fn matmul_batched(a: &Tensor, b: &Tensor) -> Tensor {
 }
 
 /// Scale tensor by scalar (SIMD-accelerated).
-fn scale_tensor(x: &Tensor, scale: f32) -> Tensor {
+pub(super) fn scale_tensor(x: &Tensor, scale: f32) -> Tensor {
     x.mul_scalar(scale)
 }
 
 /// Add attention mask to scores (SIMD-accelerated).
-fn add_mask(scores: &Tensor, mask: &Tensor) -> Tensor {
+pub(super) fn add_mask(scores: &Tensor, mask: &Tensor) -> Tensor {
     // Mask contains 0 for valid positions and -inf for masked positions
     // Use SIMD-accelerated add if shapes match, otherwise broadcast
     if scores.shape() == mask.shape() {
@@ -299,7 +301,7 @@ fn add_mask(scores: &Tensor, mask: &Tensor) -> Tensor {
 }
 
 /// Softmax over last dimension.
-fn softmax_last_dim(x: &Tensor) -> Tensor {
+pub(super) fn softmax_last_dim(x: &Tensor) -> Tensor {
     let shape = x.shape();
     let last_dim = shape[shape.len() - 1];
     let batch_size: usize = shape[..shape.len() - 1].iter().product();
@@ -327,7 +329,7 @@ fn softmax_last_dim(x: &Tensor) -> Tensor {
 }
 
 /// Apply dropout (simplified).
-fn apply_dropout(x: &Tensor, p: f32) -> Tensor {
+pub(super) fn apply_dropout(x: &Tensor, p: f32) -> Tensor {
     use rand::Rng;
     let mut rng = rand::thread_rng();
     let scale = 1.0 / (1.0 - p);
@@ -342,7 +344,7 @@ fn apply_dropout(x: &Tensor, p: f32) -> Tensor {
 }
 
 /// Reshape for multi-head attention: [batch, seq, embed] -> [batch, heads, seq, `head_dim`]
-fn reshape_for_attention(
+pub(super) fn reshape_for_attention(
     x: &Tensor,
     batch: usize,
     seq_len: usize,
@@ -375,7 +377,7 @@ fn reshape_for_attention(
 }
 
 /// Reshape from multi-head attention: [batch, heads, seq, `head_dim`] -> [batch, seq, embed]
-fn reshape_from_attention(x: &Tensor, batch: usize, seq_len: usize, embed_dim: usize) -> Tensor {
+pub(super) fn reshape_from_attention(x: &Tensor, batch: usize, seq_len: usize, embed_dim: usize) -> Tensor {
     let num_heads = x.shape()[1];
     let head_dim = x.shape()[3];
 
@@ -402,7 +404,7 @@ fn reshape_from_attention(x: &Tensor, batch: usize, seq_len: usize, embed_dim: u
 }
 
 /// Element-wise tensor addition.
-fn add_tensors(a: &Tensor, b: &Tensor) -> Tensor {
+pub(super) fn add_tensors(a: &Tensor, b: &Tensor) -> Tensor {
     assert_eq!(a.shape(), b.shape(), "Shapes must match for addition");
     let data: Vec<f32> = a
         .data()
@@ -414,7 +416,7 @@ fn add_tensors(a: &Tensor, b: &Tensor) -> Tensor {
 }
 
 /// GELU activation.
-fn gelu(x: &Tensor) -> Tensor {
+pub(super) fn gelu(x: &Tensor) -> Tensor {
     let data: Vec<f32> = x
         .data()
         .iter()

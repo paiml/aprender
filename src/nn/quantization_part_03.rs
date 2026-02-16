@@ -1,7 +1,8 @@
-
 #[cfg(test)]
+#[path = "."]
 mod tests {
-    use super::*;
-include!("quantization_part_03_part_02.rs");
-include!("quantization_part_03_part_03.rs");
+    #[path = "quantization_part_03_part_02.rs"]
+    mod quantization_part_03_part_02;
+    #[path = "quantization_part_03_part_03.rs"]
+    mod quantization_part_03_part_03;
 }

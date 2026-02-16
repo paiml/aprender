@@ -1,3 +1,4 @@
+use super::*;
 
 impl NucleusSampler {
     /// Create a new nucleus sampler.
@@ -279,7 +280,7 @@ pub fn apply_temperature(logits: &Tensor, temperature: f32) -> Tensor {
 }
 
 // Helper: Sample from logits using the Gumbel-softmax trick.
-fn sample_from_logits(logits: &Tensor) -> usize {
+pub(super) fn sample_from_logits(logits: &Tensor) -> usize {
     use rand::Rng;
     let mut rng = rand::thread_rng();
 
@@ -318,7 +319,7 @@ fn sample_from_logits(logits: &Tensor) -> usize {
 }
 
 // Helper: argmax
-fn argmax(data: &[f32]) -> usize {
+pub(super) fn argmax(data: &[f32]) -> usize {
     data.iter()
         .enumerate()
         .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
@@ -356,10 +357,10 @@ fn argmax(data: &[f32]) -> usize {
 /// Running Fully Recurrent Neural Networks.
 #[derive(Debug, Clone)]
 pub struct TeacherForcing {
-    schedule: TeacherForcingSchedule,
-    initial_ratio: f32,
-    final_ratio: f32,
-    num_steps: usize,
+    pub(crate) schedule: TeacherForcingSchedule,
+    pub(crate) initial_ratio: f32,
+    pub(crate) final_ratio: f32,
+    pub(crate) num_steps: usize,
 }
 
 /// Teacher forcing schedule type.

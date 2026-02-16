@@ -382,16 +382,18 @@ impl Optimizer for Adam {
 /// ```
 #[derive(Debug)]
 pub struct AdamW {
-    param_ids: Vec<TensorId>,
-    lr: f32,
-    beta1: f32,
-    beta2: f32,
-    eps: f32,
-    weight_decay: f32,
-    m: Vec<Vec<f32>>,
-    v: Vec<Vec<f32>>,
+    pub(crate) param_ids: Vec<TensorId>,
+    pub(crate) lr: f32,
+    pub(crate) beta1: f32,
+    pub(crate) beta2: f32,
+    pub(crate) eps: f32,
+    pub(crate) weight_decay: f32,
+    pub(crate) m: Vec<Vec<f32>>,
+    pub(crate) v: Vec<Vec<f32>>,
     pub(crate) t: usize,
     pub(crate) initialized: bool,
 }
 
-include!("mod_part_02.rs");
+#[path = "mod_part_02.rs"]
+mod mod_part_02;
+pub use mod_part_02::*;

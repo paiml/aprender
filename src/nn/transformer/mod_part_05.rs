@@ -1,3 +1,5 @@
+use super::*;
+use super::mod_part_04::ALiBi;
 
 impl ALiBi {
     /// Create `ALiBi` with specified number of attention heads.

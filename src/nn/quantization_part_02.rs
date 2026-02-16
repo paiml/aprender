@@ -1,3 +1,4 @@
+use super::*;
 
 impl QuantizedLinear {
     /// Create quantized linear from float weights.

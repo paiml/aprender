@@ -1,12 +1,15 @@
+use super::*;
+use super::mod_part_02::{reshape_for_attention, reshape_from_attention, transpose_last_two, matmul_batched};
+use super::mod_part_04::{elu_feature_map, sum_last_dim, matmul_with_broadcast, divide_with_eps, repeat_kv_heads};
 
 /// Slice positional encoding for current sequence length.
-fn slice_pe(pe: &Tensor, seq_len: usize, d_model: usize) -> Tensor {
+pub(super) fn slice_pe(pe: &Tensor, seq_len: usize, d_model: usize) -> Tensor {
     let data: Vec<f32> = pe.data()[..seq_len * d_model].to_vec();
     Tensor::new(&data, &[seq_len, d_model])
 }
 
 /// Add positional encoding to input (broadcasting over batch).
-fn add_positional_encoding(x: &Tensor, pe: &Tensor) -> Tensor {
+pub(super) fn add_positional_encoding(x: &Tensor, pe: &Tensor) -> Tensor {
     let batch_size = x.shape()[0];
     let seq_len = x.shape()[1];
     let d_model = x.shape()[2];
@@ -228,17 +231,17 @@ impl std::fmt::Debug for LinearAttention {
 /// let y = gqa.forward(&x);
 /// ```
 pub struct GroupedQueryAttention {
-    embed_dim: usize,
-    num_heads: usize,
-    num_kv_heads: usize,
-    head_dim: usize,
-    kv_head_dim: usize,
-    dropout_p: f32,
-    q_proj: Linear,
-    k_proj: Linear,
-    v_proj: Linear,
-    out_proj: Linear,
-    training: bool,
+    pub(crate) embed_dim: usize,
+    pub(crate) num_heads: usize,
+    pub(crate) num_kv_heads: usize,
+    pub(crate) head_dim: usize,
+    pub(crate) kv_head_dim: usize,
+    pub(crate) dropout_p: f32,
+    pub(crate) q_proj: Linear,
+    pub(crate) k_proj: Linear,
+    pub(crate) v_proj: Linear,
+    pub(crate) out_proj: Linear,
+    pub(crate) training: bool,
 }
 
 impl GroupedQueryAttention {

@@ -1,3 +1,4 @@
+use crate::nn::quantization::*;
 
     // ========================================================================
     // Coverage: QuantizedLinear from_float with zero weights
