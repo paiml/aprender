@@ -443,3 +443,4 @@ fn test_quantize_int4_empty() {
 include!("pure_functions_part_02.rs");
 include!("pure_functions_part_03.rs");
 include!("pure_functions_part_04.rs");
+include!("pure_functions_part_05.rs");
