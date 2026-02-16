@@ -334,7 +334,13 @@ lto = true
 codegen-units = 1
 debug = true  # Enable debug info for flamegraph/profiling
 
-# PMAT-088: Override realizar with local version for clean_chat_output fix
+# PMAT-088: Override with local versions for API consistency.
+# PMAT-262: Override aprender so `cargo install --path crates/apr-cli` uses local,
+# not crates.io aprender (which may be stale and fail to compile).
+# All sibling crates must be patched to prevent type mismatches from mixed versions.
 [patch.crates-io]
+aprender = { path = "." }
 realizar = { path = "../realizar" }
+renacer = { path = "../renacer" }
+trueno = { path = "../trueno" }
 trueno-gpu = { path = "../trueno/trueno-gpu" }
