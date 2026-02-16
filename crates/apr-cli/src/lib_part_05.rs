@@ -226,6 +226,7 @@ fn dispatch_core_command(cli: &Cli) -> Option<Result<(), CliError>> {
             compress.as_deref(),
             output,
             *force,
+            cli.json,
         ),
         Commands::Merge {
             files,
@@ -236,7 +237,7 @@ fn dispatch_core_command(cli: &Cli) -> Option<Result<(), CliError>> {
             drop_rate,
             density,
             seed,
-        } => merge::run(files, strategy, output, weights.clone(), base_model.clone(), *drop_rate, *density, *seed),
+        } => merge::run(files, strategy, output, weights.clone(), base_model.clone(), *drop_rate, *density, *seed, cli.json),
         Commands::Quantize {
             file,
             scheme,

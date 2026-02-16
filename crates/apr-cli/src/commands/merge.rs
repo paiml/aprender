@@ -88,7 +88,7 @@ fn validate_weight_values(w: &[f32], file_count: usize) -> Result<()> {
 }
 
 /// Run the merge command
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::disallowed_methods)]
 pub(crate) fn run(
     files: &[PathBuf],
     strategy: &str,
@@ -98,6 +98,7 @@ pub(crate) fn run(
     drop_rate: f32,
     density: f32,
     seed: u64,
+    json_output: bool,
 ) -> Result<()> {
     // Validate we have at least 2 files
     if files.len() < 2 {
@@ -113,13 +114,15 @@ pub(crate) fn run(
         }
     }
 
-    output::header("APR Merge");
-    let mut input_pairs: Vec<(&str, String)> = Vec::new();
-    for (i, file) in files.iter().enumerate() {
-        input_pairs.push(("Input", format!("{}. {}", i + 1, file.display())));
+    if !json_output {
+        output::header("APR Merge");
+        let mut input_pairs: Vec<(&str, String)> = Vec::new();
+        for (i, file) in files.iter().enumerate() {
+            input_pairs.push(("Input", format!("{}. {}", i + 1, file.display())));
+        }
+        input_pairs.push(("Output", output.display().to_string()));
+        println!("{}", output::kv_table(&input_pairs));
     }
-    input_pairs.push(("Output", output.display().to_string()));
-    println!("{}", output::kv_table(&input_pairs));
 
     // Parse merge strategy
     let merge_strategy: MergeStrategy = strategy.parse().map_err(|_| {
@@ -135,10 +138,14 @@ pub(crate) fn run(
         )));
     }
 
-    println!("Strategy: {merge_strategy:?}");
+    if !json_output {
+        println!("Strategy: {merge_strategy:?}");
+    }
 
     let validated_weights = validate_merge_weights(merge_strategy, weights, files.len(), strategy)?;
-    println!();
+    if !json_output {
+        println!();
+    }
 
     // Build options
     let options = MergeOptions {
@@ -151,19 +158,46 @@ pub(crate) fn run(
     };
 
     // Run merge
-    output::pipeline_stage("Merging", output::StageStatus::Running);
+    if !json_output {
+        output::pipeline_stage("Merging", output::StageStatus::Running);
+    }
 
     match apr_merge(files, output.to_path_buf(), options) {
         Ok(report) => {
-            display_report(&report);
+            if json_output {
+                display_report_json(&report, files, strategy, output);
+            } else {
+                display_report(&report);
+            }
             Ok(())
         }
         Err(e) => {
-            println!();
-            println!("  {}", output::badge_fail("Merge failed"));
+            if !json_output {
+                println!();
+                println!("  {}", output::badge_fail("Merge failed"));
+            }
             Err(CliError::ValidationFailed(e.to_string()))
         }
     }
+}
+
+/// Display merge report as JSON
+#[allow(clippy::disallowed_methods)]
+fn display_report_json(report: &MergeReport, files: &[PathBuf], strategy: &str, output: &Path) {
+    let json = serde_json::json!({
+        "status": "success",
+        "inputs": files.iter().map(|f| f.display().to_string()).collect::<Vec<_>>(),
+        "output": output.display().to_string(),
+        "strategy": strategy,
+        "model_count": report.model_count,
+        "tensor_count": report.tensor_count,
+        "output_size": report.output_size,
+        "weights_used": report.weights_used,
+    });
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&json).unwrap_or_default()
+    );
 }
 
 /// Display merge report
@@ -215,6 +249,7 @@ mod tests {
             0.9,
             0.2,
             42,
+            false,
         );
         assert!(result.is_err());
         match result {
@@ -227,7 +262,17 @@ mod tests {
 
     #[test]
     fn test_run_empty_files() {
-        let result = run(&[], "average", Path::new("/tmp/merged.apr"), None, None, 0.9, 0.2, 42);
+        let result = run(
+            &[],
+            "average",
+            Path::new("/tmp/merged.apr"),
+            None,
+            None,
+            0.9,
+            0.2,
+            42,
+            false,
+        );
         assert!(result.is_err());
         match result {
             Err(CliError::ValidationFailed(msg)) => {
@@ -251,6 +296,7 @@ mod tests {
             0.9,
             0.2,
             42,
+            false,
         );
         assert!(result.is_err());
         match result {
@@ -275,6 +321,7 @@ mod tests {
             0.9,
             0.2,
             42,
+            false,
         );
         assert!(result.is_err());
         match result {
@@ -297,6 +344,7 @@ mod tests {
             0.9,
             0.2,
             42,
+            false,
         );
         assert!(result.is_err());
         match result {
@@ -321,11 +369,16 @@ mod tests {
             0.9,
             0.2,
             42,
+            false,
         );
         assert!(result.is_err());
         match result {
             Err(CliError::ValidationFailed(msg)) => {
-                assert!(msg.contains("base-model") || msg.contains("base_model") || msg.contains("TIES"));
+                assert!(
+                    msg.contains("base-model")
+                        || msg.contains("base_model")
+                        || msg.contains("TIES")
+                );
             }
             _ => panic!("Expected ValidationFailed error for missing base model"),
         }
@@ -345,11 +398,16 @@ mod tests {
             0.9,
             0.2,
             42,
+            false,
         );
         assert!(result.is_err());
         match result {
             Err(CliError::ValidationFailed(msg)) => {
-                assert!(msg.contains("base-model") || msg.contains("base_model") || msg.contains("DARE"));
+                assert!(
+                    msg.contains("base-model")
+                        || msg.contains("base_model")
+                        || msg.contains("DARE")
+                );
             }
             _ => panic!("Expected ValidationFailed error for missing base model"),
         }
@@ -374,6 +432,7 @@ mod tests {
             0.9,
             0.2,
             42,
+            false,
         );
         assert!(result.is_err());
     }
@@ -441,6 +500,7 @@ mod tests {
             0.9,
             0.2,
             42,
+            false,
         );
         // Should fail because files are not valid APR
         assert!(result.is_err());
@@ -463,6 +523,7 @@ mod tests {
             0.9,
             0.2,
             42,
+            false,
         );
         // Will fail at actual merge, but tests weight parsing path
         assert!(result.is_err());

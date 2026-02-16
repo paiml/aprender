@@ -331,9 +331,7 @@ pub fn apr_convert<P: AsRef<Path>>(
     // PMAT-271: Use magic bytes first, extension fallback for extensionless HF cache blobs
     let is_gguf = crate::format::rosetta::FormatType::from_magic(input_path)
         .map(|f| matches!(f, crate::format::rosetta::FormatType::Gguf))
-        .unwrap_or_else(|_| {
-            input_path.extension().and_then(|e| e.to_str()) == Some("gguf")
-        });
+        .unwrap_or_else(|_| input_path.extension().and_then(|e| e.to_str()) == Some("gguf"));
 
     // GH-181: Q4K GGUF pass-through (skip dequant->requant for already-quantized sources)
     if is_gguf && options.quantize == Some(QuantizationType::Q4K) {
@@ -351,7 +349,13 @@ pub fn apr_convert<P: AsRef<Path>>(
 
     // Step 1: Load tensors
     let tensors = load_model_tensors(input_path)?;
-    let original_size = calculate_tensor_size(&tensors);
+    // PMAT-274 FIX: Use input FILE size (not raw F32 tensor bytes) for fair comparison.
+    // calculate_tensor_size() counts decompressed F32 bytes (no headers/metadata), but
+    // ConvertReport::build() reads output FILE size (with headers/metadata/alignment).
+    // This apples-to-oranges comparison made small-model quantization report ratio ≈ 1.0.
+    let original_size = fs::metadata(input_path)
+        .map(|m| m.len() as usize)
+        .unwrap_or_else(|_| calculate_tensor_size(&tensors));
     let original_count = tensors.len();
 
     // Step 1b: PMAT-205 / GH-190: Map GGUF tensor names to APR canonical format
