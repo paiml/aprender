@@ -544,22 +544,37 @@ The payload checksum does not match the header.
   1. Run `apr validate --checksum` to verify.
   2. Check source file integrity (MD5/SHA256).
 </code></pre>
-<h3 id="tensor-names"><a class="header" href="#tensor-names">Tensor Names</a></h3>
-<pre><code class="language-bash">$ apr explain --tensor encoder.conv1.weight
+<h3 id="tensor-names-by-convention"><a class="header" href="#tensor-names-by-convention">Tensor Names (by convention)</a></h3>
+<pre><code class="language-bash">$ apr explain --tensor q_proj
 
-**encoder.conv1.weight**
-- **Role**: Initial feature extraction (Audio -&gt; Latent)
-- **Shape**: [384, 80, 3] (Filters, Input Channels, Kernel Size)
-- **Stats**: Mean 0.002, Std 0.04 (Healthy)
+Explain tensor: q_proj
+- **Role**: Query projection in attention mechanism
 </code></pre>
-<h3 id="model-architecture"><a class="header" href="#model-architecture">Model Architecture</a></h3>
-<pre><code class="language-bash">$ apr explain --file whisper.apr
+<h3 id="tensor-lookup-from-actual-model-file"><a class="header" href="#tensor-lookup-from-actual-model-file">Tensor Lookup (from actual model file)</a></h3>
+<pre><code class="language-bash">$ apr explain --tensor conv1 --file whisper-tiny.safetensors
 
-This is a **Whisper (Tiny)** model.
-- **Purpose**: Automatic Speech Recognition (ASR)
+Explain tensor: conv1
+
+**model.encoder.conv1.weight**
+- **Shape**: [384, 80, 3]
+- **DType**: F32
+- **Role**: First convolutional layer (feature extraction)
+
+**model.encoder.conv1.bias**
+- **Shape**: [384]
+- **DType**: F32
+- **Role**: First convolutional layer (feature extraction)
+</code></pre>
+<p>Supports APR, GGUF, and SafeTensors formats via RosettaStone. Fuzzy matching finds all tensors containing the search term.</p>
+<h3 id="model-architecture"><a class="header" href="#model-architecture">Model Architecture</a></h3>
+<pre><code class="language-bash">$ apr explain --file whisper-tiny.safetensors
+
+Explain model architecture: whisper-tiny.safetensors
+- **Format**: SafeTensors
+- **Tensors**: 99
 - **Architecture**: Encoder-Decoder Transformer
-- **Input**: 80-channel Mel spectrograms
-- **Output**: Text tokens (multilingual)
+- **Examples**: Whisper, T5, BART
+- **Layers**: 4
 </code></pre>
 <h2 id="key-takeaways"><a class="header" href="#key-takeaways">Key Takeaways</a></h2>
 <ol>

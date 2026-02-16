@@ -180,7 +180,7 @@
                 <div id="content" class="content">
                     <main>
                         <h1 id="case-study-apr-cli-commands-demo"><a class="header" href="#case-study-apr-cli-commands-demo">Case Study: APR CLI Commands Demo</a></h1>
-<p>This case study demonstrates creating test models and using all 17 apr-cli commands for model inspection, validation, transformation, testing, and inference.</p>
+<p>This case study demonstrates creating test models and using all 26 apr-cli commands for model inspection, validation, transformation, testing, and inference.</p>
 <h2 id="the-problem"><a class="header" href="#the-problem">The Problem</a></h2>
 <p>APR model files need comprehensive tooling for:</p>
 <div class="table-wrapper"><table><thead><tr><th>Need</th><th>Traditional Approach</th><th>Problem</th></tr></thead><tbody>
@@ -191,7 +191,7 @@
 </tbody></table>
 </div>
 <h2 id="the-solution-apr-cli"><a class="header" href="#the-solution-apr-cli">The Solution: apr-cli</a></h2>
-<p>The <code>apr</code> CLI provides 17 commands for complete model lifecycle management:</p>
+<p>The <code>apr</code> CLI provides 26 commands for complete model lifecycle management:</p>
 <pre><code class="language-bash"># Build the CLI
 cargo build -p apr-cli
 
@@ -209,7 +209,7 @@ cargo build -p apr-cli
 <pre><code class="language-rust ignore">//! APR CLI Commands Demo
 //!
 //! Demonstrates creating test models and using the apr-cli commands.
-//! This example creates model files that work with all 24 apr-cli commands.
+//! This example creates model files that work with all 26 apr-cli commands.
 //!
 //! Toyota Way Alignment:
 //! - **Genchi Genbutsu**: Go and see - inspect actual model data
@@ -229,6 +229,8 @@ cargo build -p apr-cli
 //! ./target/debug/apr diff /tmp/apr_cli_demo/demo_model.apr /tmp/apr_cli_demo/demo_model_v2.apr
 //! ./target/debug/apr probar /tmp/apr_cli_demo/demo_model.apr -o /tmp/apr_cli_demo/probar
 //! ./target/debug/apr explain E002
+//! ./target/debug/apr explain --tensor conv1 --file /tmp/apr_cli_demo/demo_model.apr
+//! ./target/debug/apr flow /tmp/apr_cli_demo/demo_model.apr --json
 //!
 //! # Inference commands (requires --features inference):
 //! cargo build -p apr-cli --features inference
@@ -404,7 +406,7 @@ fn print_cli_commands(model_path: &amp;Path, model_v2_path: &amp;Path) {
     println!(&quot;For inference commands (run, serve):&quot;);
     println!(&quot;  cargo build -p apr-cli --features inference\n&quot;);
 
-    println!(&quot;=== 24 APR CLI Commands ===\n&quot;);
+    println!(&quot;=== 26 APR CLI Commands ===\n&quot;);
 
     println!(&quot;--- Model Inspection ---\n&quot;);
 
@@ -481,6 +483,7 @@ fn print_cli_commands(model_path: &amp;Path, model_v2_path: &amp;Path) {
     println!(&quot;14. EXPLAIN - Get explanations:&quot;);
     println!(&quot;    ./target/debug/apr explain E002&quot;);
     println!(&quot;    ./target/debug/apr explain --tensor encoder.conv1.weight&quot;);
+    println!(&quot;    ./target/debug/apr explain --tensor conv1 --file model.safetensors&quot;);
     println!(&quot;    ./target/debug/apr explain --file {model}\n&quot;);
 
     println!(&quot;--- Interactive ---\n&quot;);
@@ -509,16 +512,28 @@ fn print_cli_commands(model_path: &amp;Path, model_v2_path: &amp;Path) {
     println!(&quot;    ./target/debug/apr chat model.gguf&quot;);
     println!(&quot;    ./target/debug/apr chat model.gguf --system \&quot;You are a helpful assistant\&quot;\n&quot;);
 
+    println!(&quot;--- Data Flow &amp; Comparison ---\n&quot;);
+
+    println!(&quot;19. FLOW - Visualize data flow through model (any format):&quot;);
+    println!(&quot;    ./target/debug/apr flow {model}&quot;);
+    println!(&quot;    ./target/debug/apr flow {model} --json&quot;);
+    println!(&quot;    ./target/debug/apr flow {model} --verbose\n&quot;);
+
+    println!(&quot;20. COMPARE-HF - Compare local model against HuggingFace source:&quot;);
+    println!(&quot;    ./target/debug/apr compare-hf {model} --hf openai/whisper-tiny&quot;);
+    println!(&quot;    ./target/debug/apr compare-hf model.gguf --hf openai/whisper-tiny&quot;);
+    println!(&quot;    ./target/debug/apr compare-hf {model} --hf openai/whisper-tiny --json\n&quot;);
+
     println!(&quot;--- HuggingFace Hub ---\n&quot;);
 
-    println!(&quot;19. PUBLISH - Push model to HuggingFace Hub:&quot;);
+    println!(&quot;21. PUBLISH - Push model to HuggingFace Hub:&quot;);
     println!(&quot;    ./target/debug/apr publish {demo_dir}/ org/model-name&quot;);
     println!(&quot;    ./target/debug/apr publish {demo_dir}/ org/model-name --dry-run&quot;);
     println!(
         &quot;    ./target/debug/apr publish {demo_dir}/ org/model-name --license mit --tags rust,ml\n&quot;
     );
 
-    println!(&quot;20. PULL - Download model from HuggingFace Hub:&quot;);
+    println!(&quot;22. PULL - Download model from HuggingFace Hub:&quot;);
     println!(&quot;    ./target/debug/apr pull hf://org/repo-name -o ./models/&quot;);
     println!(
         &quot;    ./target/debug/apr pull hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF -o ./models/\n&quot;
@@ -526,24 +541,24 @@ fn print_cli_commands(model_path: &amp;Path, model_v2_path: &amp;Path) {
 
     println!(&quot;--- Benchmarking &amp; QA ---\n&quot;);
 
-    println!(&quot;21. QA - Run falsifiable QA checklist:&quot;);
+    println!(&quot;23. QA - Run falsifiable QA checklist:&quot;);
     println!(&quot;    ./target/debug/apr qa model.gguf&quot;);
     println!(&quot;    ./target/debug/apr qa model.gguf --assert-tps 100&quot;);
     println!(&quot;    ./target/debug/apr qa model.gguf --json\n&quot;);
 
-    println!(&quot;22. SHOWCASE - Performance benchmark demo:&quot;);
+    println!(&quot;24. SHOWCASE - Performance benchmark demo:&quot;);
     println!(&quot;    ./target/debug/apr showcase model.gguf&quot;);
     println!(&quot;    ./target/debug/apr showcase model.gguf --warmup 3 --iterations 10\n&quot;);
 
-    println!(&quot;23. PROFILE - Deep performance profiling:&quot;);
+    println!(&quot;25. PROFILE - Deep performance profiling:&quot;);
     println!(&quot;    ./target/debug/apr profile model.gguf&quot;);
     println!(&quot;    ./target/debug/apr profile model.gguf --roofline\n&quot;);
 
-    println!(&quot;24. BENCH - Run benchmarks:&quot;);
+    println!(&quot;26. BENCH - Run benchmarks:&quot;);
     println!(&quot;    ./target/debug/apr bench model.gguf&quot;);
     println!(&quot;    ./target/debug/apr bench model.gguf --iterations 100\n&quot;);
 }</code></pre>
-<h2 id="all-17-commands"><a class="header" href="#all-17-commands">All 17 Commands</a></h2>
+<h2 id="all-26-commands"><a class="header" href="#all-26-commands">All 26 Commands</a></h2>
 <h3 id="model-inspection"><a class="header" href="#model-inspection">Model Inspection</a></h3>
 <h4 id="1-inspect---view-model-metadata"><a class="header" href="#1-inspect---view-model-metadata">1. INSPECT - View Model Metadata</a></h4>
 <pre><code class="language-bash">apr inspect model.apr              # Basic info
@@ -651,11 +666,12 @@ apr probar model.apr -o output --format json  # JSON format
 <p>Exports model data for visual regression testing.</p>
 <h3 id="help--documentation"><a class="header" href="#help--documentation">Help &amp; Documentation</a></h3>
 <h4 id="14-explain---get-explanations"><a class="header" href="#14-explain---get-explanations">14. EXPLAIN - Get Explanations</a></h4>
-<pre><code class="language-bash">apr explain E002                           # Explain error code
-apr explain --tensor encoder.conv1.weight  # Explain tensor name
-apr explain --file model.apr               # Analyze file
+<pre><code class="language-bash">apr explain E002                                            # Explain error code
+apr explain --tensor encoder.conv1.weight                   # Explain tensor by convention
+apr explain --tensor conv1 --file model.safetensors         # Look up in actual model
+apr explain --file model.apr                                # Analyze architecture
 </code></pre>
-<p>Provides context-aware explanations for errors and tensor patterns.</p>
+<p>Provides context-aware explanations for errors, tensors, and model architectures. When <code>--file</code> is provided with <code>--tensor</code>, looks up the tensor in the actual model via RosettaStone (supports APR, GGUF, SafeTensors).</p>
 <h3 id="interactive"><a class="header" href="#interactive">Interactive</a></h3>
 <h4 id="15-tui---interactive-terminal-ui"><a class="header" href="#15-tui---interactive-terminal-ui">15. TUI - Interactive Terminal UI</a></h4>
 <pre><code class="language-bash">apr tui model.apr                          # Launch interactive UI
@@ -719,6 +735,45 @@ curl -X POST http://localhost:8080/predict \
 <li><code>/tensors</code> - Tensor listing (SafeTensors)</li>
 <li>Graceful shutdown via Ctrl+C</li>
 </ul>
+<h3 id="chat--comparison"><a class="header" href="#chat--comparison">Chat &amp; Comparison</a></h3>
+<h4 id="18-chat---interactive-chat-llm-models"><a class="header" href="#18-chat---interactive-chat-llm-models">18. CHAT - Interactive Chat (LLM models)</a></h4>
+<pre><code class="language-bash">apr chat model.gguf                                          # Interactive chat
+apr chat model.gguf --system &quot;You are a helpful assistant&quot;   # Custom system prompt
+</code></pre>
+<h4 id="19-flow---visualize-data-flow"><a class="header" href="#19-flow---visualize-data-flow">19. FLOW - Visualize Data Flow</a></h4>
+<pre><code class="language-bash">apr flow model.safetensors            # Show data flow
+apr flow model.gguf --json            # JSON output (architecture, groups)
+apr flow model.apr --verbose           # Verbose with shapes
+</code></pre>
+<p>Detects architecture (Encoder-Decoder, Decoder-Only, Encoder-Only) and groups tensors by layer. Supports APR, GGUF, and SafeTensors.</p>
+<h4 id="20-compare-hf---compare-against-huggingface-source"><a class="header" href="#20-compare-hf---compare-against-huggingface-source">20. COMPARE-HF - Compare Against HuggingFace Source</a></h4>
+<pre><code class="language-bash">apr compare-hf model.apr --hf openai/whisper-tiny              # APR format
+apr compare-hf model.gguf --hf openai/whisper-tiny             # GGUF format
+apr compare-hf model.safetensors --hf openai/whisper-tiny      # SafeTensors format
+apr compare-hf model.apr --hf openai/whisper-tiny --json       # JSON output
+</code></pre>
+<p>Auto-detects local model format. Compares tensor-by-tensor against HuggingFace source.</p>
+<h3 id="huggingface-hub"><a class="header" href="#huggingface-hub">HuggingFace Hub</a></h3>
+<h4 id="21-publish---push-to-huggingface-hub"><a class="header" href="#21-publish---push-to-huggingface-hub">21. PUBLISH - Push to HuggingFace Hub</a></h4>
+<pre><code class="language-bash">apr publish model_dir/ org/model-name --dry-run
+</code></pre>
+<h4 id="22-pull---download-model"><a class="header" href="#22-pull---download-model">22. PULL - Download Model</a></h4>
+<pre><code class="language-bash">apr pull hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF -o ./models/
+</code></pre>
+<h3 id="benchmarking--qa"><a class="header" href="#benchmarking--qa">Benchmarking &amp; QA</a></h3>
+<h4 id="23-qa---falsifiable-qa-checklist"><a class="header" href="#23-qa---falsifiable-qa-checklist">23. QA - Falsifiable QA Checklist</a></h4>
+<pre><code class="language-bash">apr qa model.gguf                     # Run 8-gate QA checklist
+apr qa model.gguf --json              # JSON output
+</code></pre>
+<h4 id="24-showcase---performance-benchmark"><a class="header" href="#24-showcase---performance-benchmark">24. SHOWCASE - Performance Benchmark</a></h4>
+<pre><code class="language-bash">apr showcase model.gguf --warmup 3 --iterations 10
+</code></pre>
+<h4 id="25-profile---deep-performance-profiling"><a class="header" href="#25-profile---deep-performance-profiling">25. PROFILE - Deep Performance Profiling</a></h4>
+<pre><code class="language-bash">apr profile model.gguf --roofline
+</code></pre>
+<h4 id="26-bench---run-benchmarks"><a class="header" href="#26-bench---run-benchmarks">26. BENCH - Run Benchmarks</a></h4>
+<pre><code class="language-bash">apr bench model.gguf --iterations 100
+</code></pre>
 <h2 id="example-output"><a class="header" href="#example-output">Example Output</a></h2>
 <p>Running the example creates demo models:</p>
 <pre><code>=== APR CLI Commands Demo ===
@@ -770,7 +825,7 @@ apr debug model.apr --drama
 <h2 id="benefits"><a class="header" href="#benefits">Benefits</a></h2>
 <div class="table-wrapper"><table><thead><tr><th>Benefit</th><th>Description</th></tr></thead><tbody>
 <tr><td>Standardized</td><td>Consistent CLI for all APR models</td></tr>
-<tr><td>Comprehensive</td><td>17 commands cover full lifecycle</td></tr>
+<tr><td>Comprehensive</td><td>26 commands cover full lifecycle</td></tr>
 <tr><td>Scriptable</td><td>JSON output for automation</td></tr>
 <tr><td>Debuggable</td><td>Deep inspection with drama mode</td></tr>
 <tr><td>Validatable</td><td>100-point QA with grades</td></tr>

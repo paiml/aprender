@@ -219,7 +219,7 @@
 <tr><td><code>check</code></td><td>Model self-test: 10-stage pipeline integrity</td><td>Jidoka</td></tr>
 <tr><td><code>publish</code></td><td>Publish model to HuggingFace Hub</td><td>Automation</td></tr>
 <tr><td><code>cbtop</code></td><td>ComputeBrick pipeline monitor</td><td>Visualization</td></tr>
-<tr><td><code>compare-hf</code></td><td>Compare APR model against HuggingFace source</td><td>Jidoka</td></tr>
+<tr><td><code>compare-hf</code></td><td>Compare local model (APR/GGUF/SafeTensors) against HuggingFace</td><td>Jidoka</td></tr>
 <tr><td><code>explain</code></td><td>Explain errors, architecture, and tensors</td><td>Knowledge Sharing</td></tr>
 <tr><td><code>tui</code></td><td>Interactive terminal UI</td><td>Visualization</td></tr>
 <tr><td><code>canary</code></td><td>Regression testing via tensor statistics</td><td>Jidoka</td></tr>
@@ -705,14 +705,17 @@ Score: 98/100 (Grade: A+)
 ✓ Import successful
 </code></pre>
 <h2 id="explain-command"><a class="header" href="#explain-command">Explain Command</a></h2>
-<p>Get explanations for error codes, tensor names, and model architectures.</p>
+<p>Get explanations for error codes, tensor names, and model architectures. Supports all formats (APR, GGUF, SafeTensors) via RosettaStone.</p>
 <pre><code class="language-bash"># Explain an error code
 apr explain E002
 
-# Explain a specific tensor
+# Explain a specific tensor (by naming convention)
 apr explain --tensor encoder.conv1.weight
 
-# Explain model architecture
+# Explain a tensor from an actual model file (with shape, dtype, role)
+apr explain --tensor encoder.conv1.weight --file model.safetensors
+
+# Explain model architecture from file
 apr explain --file model.apr
 </code></pre>
 <h3 id="error-code-explanations"><a class="header" href="#error-code-explanations">Error Code Explanations</a></h3>
@@ -727,22 +730,38 @@ The payload checksum does not match the header.
   2. Check source file integrity (MD5/SHA256).
 </code></pre>
 <h3 id="tensor-explanations"><a class="header" href="#tensor-explanations">Tensor Explanations</a></h3>
-<pre><code class="language-bash">apr explain --tensor encoder.conv1.weight
+<p>When a <code>--file</code> is provided, the tensor is looked up in the actual model via RosettaStone:</p>
+<pre><code class="language-bash">apr explain --tensor conv1 --file whisper-tiny.safetensors
 </code></pre>
-<pre><code>**encoder.conv1.weight**
-- **Role**: Initial feature extraction (Audio -&gt; Latent)
-- **Shape**: [384, 80, 3] (Filters, Input Channels, Kernel Size)
-- **Stats**: Mean 0.002, Std 0.04 (Healthy)
+<pre><code>Explain tensor: conv1
+
+**model.encoder.conv1.weight**
+- **Shape**: [384, 80, 3]
+- **DType**: F32
+- **Role**: First convolutional layer (feature extraction)
+
+**model.encoder.conv1.bias**
+- **Shape**: [384]
+- **DType**: F32
+- **Role**: First convolutional layer (feature extraction)
+</code></pre>
+<p>Fuzzy matching finds all tensors containing the search term. If no match is found, similar tensor names are suggested.</p>
+<p>Without <code>--file</code>, explains the tensor role by naming convention:</p>
+<pre><code class="language-bash">apr explain --tensor q_proj
+</code></pre>
+<pre><code>Explain tensor: q_proj
+- **Role**: Query projection in attention mechanism
 </code></pre>
 <h3 id="architecture-explanations"><a class="header" href="#architecture-explanations">Architecture Explanations</a></h3>
-<pre><code class="language-bash">apr explain --file whisper.apr
+<p>Uses RosettaStone to inspect the actual model file and detect architecture:</p>
+<pre><code class="language-bash">apr explain --file whisper-tiny.safetensors
 </code></pre>
-<pre><code>Explain model architecture: whisper.apr
-This is a **Whisper (Tiny)** model.
-- **Purpose**: Automatic Speech Recognition (ASR)
+<pre><code>Explain model architecture: whisper-tiny.safetensors
+- **Format**: SafeTensors
+- **Tensors**: 99
 - **Architecture**: Encoder-Decoder Transformer
-- **Input**: 80-channel Mel spectrograms
-- **Output**: Text tokens (multilingual)
+- **Examples**: Whisper, T5, BART
+- **Layers**: 4
 </code></pre>
 <h2 id="pull-command"><a class="header" href="#pull-command">Pull Command</a></h2>
 <p>Download and cache models from HuggingFace with Ollama-style UX.</p>
@@ -818,25 +837,36 @@ apr cbtop --refresh 500  # 500ms
 └──────────────────────────────────────────────────────────┘
 </code></pre>
 <h2 id="compare-hf-command"><a class="header" href="#compare-hf-command">Compare-hf Command</a></h2>
-<p>Compare APR model against HuggingFace source for validation.</p>
-<pre><code class="language-bash"># Compare converted model against HF source
-apr compare-hf model.apr --hf-repo openai/whisper-tiny
+<p>Compare a local model against HuggingFace source for validation. Supports APR, GGUF, and SafeTensors formats via automatic format detection.</p>
+<pre><code class="language-bash"># Compare local model against HF source (any format)
+apr compare-hf model.apr --hf openai/whisper-tiny
+apr compare-hf model.gguf --hf openai/whisper-tiny
+apr compare-hf model.safetensors --hf openai/whisper-tiny
 
-# Show tensor-level differences
-apr compare-hf model.apr --hf-repo org/repo --tensors
+# Filter to specific tensor
+apr compare-hf model.apr --hf openai/whisper-tiny --tensor conv1
 
-# Tolerance for floating point comparison
-apr compare-hf model.apr --hf-repo org/repo --tolerance 1e-5
+# Custom threshold for floating point comparison
+apr compare-hf model.apr --hf openai/whisper-tiny --threshold 1e-5
+
+# JSON output
+apr compare-hf model.apr --hf openai/whisper-tiny --json
 </code></pre>
 <h3 id="example-output-9"><a class="header" href="#example-output-9">Example Output</a></h3>
-<pre><code>Comparing model.apr against hf://openai/whisper-tiny
+<pre><code>Loading local model: model.apr (Apr)
+Downloading HF model: openai/whisper-tiny
+Found 99 tensors in HF model
 
-Tensor Comparison:
-  ✓ encoder.conv1.weight: max_diff=1.2e-7 (within tolerance)
-  ✓ encoder.conv1.bias: max_diff=0.0 (exact match)
-  ✓ decoder.embed_tokens.weight: max_diff=2.3e-8 (within tolerance)
+======================================================================
+HuggingFace vs APR Weight Comparison
+======================================================================
 
-Result: MATCH (all tensors within tolerance 1e-5)
+Total tensors compared: 99
+Passed threshold (&lt; 1e-06): 99
+
+Worst tensor: encoder.conv1.weight (diff=0.000000)
+
+All tensors match within threshold!
 </code></pre>
 <h2 id="hex-command"><a class="header" href="#hex-command">Hex Command</a></h2>
 <p>Hex dump tensor data for low-level debugging.</p>
@@ -885,38 +915,60 @@ apr tree model.gguf --params
 └── lm_head [51865, 384]
 </code></pre>
 <h2 id="flow-command"><a class="header" href="#flow-command">Flow Command</a></h2>
-<p>Visualize data flow through the model.</p>
+<p>Visualize data flow through the model. Supports APR, GGUF, and SafeTensors formats via RosettaStone.</p>
 <pre><code class="language-bash"># Show data flow diagram
-apr flow model.apr
+apr flow model.safetensors
 
-# Export as DOT format
-apr flow model.apr --format dot -o model.dot
+# Filter to specific layer
+apr flow model.gguf --layer 0
 
-# Show with tensor shapes
-apr flow model.apr --shapes
+# Filter by component
+apr flow model.apr --component attention
+
+# JSON output (structured tensor groups and architecture)
+apr flow model.safetensors --json
+
+# Verbose output with tensor shapes
+apr flow model.apr --verbose
 </code></pre>
 <h3 id="example-output-12"><a class="header" href="#example-output-12">Example Output</a></h3>
-<pre><code>=== Data Flow: model.apr ===
+<pre><code>=== Data Flow: whisper-tiny.safetensors ===
 
-input [batch, seq_len]
-    │
-    ▼
-token_embd [batch, seq_len, 384]
-    │
-    ▼
-encoder.blocks.0 ─┬─ attn ─┬─ Q ──┐
-                  │        ├─ K ──┼─► attention
-                  │        └─ V ──┘
-                  └─ mlp ─────────►
-    │
-    ▼
-...
-    │
-    ▼
-lm_head [batch, seq_len, vocab]
-    │
-    ▼
-output logits
+Architecture: Encoder-Decoder Transformer
+
+Embedding:
+  model.decoder.embed_tokens.weight [51865, 384] F32
+  model.decoder.embed_positions.weight [448, 384] F32
+
+Encoder Layers (4):
+  Layer 0: self_attn (q_proj, k_proj, v_proj, out_proj) + mlp (fc1, fc2) + layer_norm (x2)
+  Layer 1: ...
+  ...
+
+Decoder Layers (4):
+  Layer 0: self_attn + encoder_attn + mlp + layer_norm (x3)
+  ...
+
+Output:
+  proj_out.weight [51865, 384] F32
+</code></pre>
+<h3 id="json-output"><a class="header" href="#json-output">JSON Output</a></h3>
+<pre><code class="language-bash">apr flow model.safetensors --json
+</code></pre>
+<pre><code class="language-json">{
+  &quot;file&quot;: &quot;model.safetensors&quot;,
+  &quot;format&quot;: &quot;SafeTensors&quot;,
+  &quot;architecture&quot;: &quot;Encoder-Decoder Transformer&quot;,
+  &quot;total_tensors&quot;: 99,
+  &quot;groups&quot;: {
+    &quot;embedding&quot;: [&quot;model.decoder.embed_tokens.weight&quot;, &quot;...&quot;],
+    &quot;encoder&quot;: [&quot;model.encoder.layers.0.self_attn.q_proj.weight&quot;, &quot;...&quot;],
+    &quot;decoder&quot;: [&quot;model.decoder.layers.0.self_attn.q_proj.weight&quot;, &quot;...&quot;],
+    &quot;output&quot;: [&quot;proj_out.weight&quot;]
+  },
+  &quot;encoder_layers&quot;: 4,
+  &quot;decoder_layers&quot;: 4
+}
 </code></pre>
 <h2 id="bench-command"><a class="header" href="#bench-command">Bench Command</a></h2>
 <p>Benchmark model throughput (spec H12: &gt;= 10 tok/s).</p>
