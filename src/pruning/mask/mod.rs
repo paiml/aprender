@@ -92,117 +92,10 @@ impl SparsityPattern {
     pub fn validate(&self, mask: &Tensor) -> Result<(), PruningError> {
         match self {
             SparsityPattern::Unstructured => Ok(()),
-
-            SparsityPattern::NM { n, m } => {
-                let data = mask.data();
-                if data.len() % m != 0 {
-                    return Err(PruningError::InvalidPattern {
-                        message: format!("Mask length {} not divisible by M={}", data.len(), m),
-                    });
-                }
-
-                // Check each group of M elements
-                for (i, chunk) in data.chunks(*m).enumerate() {
-                    let count: usize = chunk.iter().filter(|&&v| (v - 1.0).abs() < 1e-6).count();
-                    if count != *n {
-                        return Err(PruningError::InvalidPattern {
-                            message: format!(
-                                "Group {i} has {count} non-zeros, expected {n} for {n}:{m} pattern"
-                            ),
-                        });
-                    }
-                }
-                Ok(())
-            }
-
-            SparsityPattern::Block { height, width } => {
-                let shape = mask.shape();
-                if shape.len() < 2 {
-                    return Err(PruningError::InvalidPattern {
-                        message: "Block sparsity requires 2D mask".to_string(),
-                    });
-                }
-                if shape[0] % height != 0 || shape[1] % width != 0 {
-                    return Err(PruningError::InvalidPattern {
-                        message: format!(
-                            "Mask shape {shape:?} not divisible by block size ({height}, {width})"
-                        ),
-                    });
-                }
-
-                // Check each block is uniform (all 0s or all 1s)
-                let data = mask.data();
-                let rows = shape[0];
-                let cols = shape[1];
-
-                for br in 0..(rows / height) {
-                    for bc in 0..(cols / width) {
-                        let first_val = data[br * height * cols + bc * width];
-                        for r in 0..*height {
-                            for c in 0..*width {
-                                let idx = (br * height + r) * cols + (bc * width + c);
-                                let val = data[idx];
-                                if (val - first_val).abs() > 1e-6 {
-                                    return Err(PruningError::InvalidPattern {
-                                        message: format!("Block ({br}, {bc}) is not uniform"),
-                                    });
-                                }
-                            }
-                        }
-                    }
-                }
-                Ok(())
-            }
-
-            SparsityPattern::Row => {
-                let shape = mask.shape();
-                if shape.len() < 2 {
-                    return Err(PruningError::InvalidPattern {
-                        message: "Row sparsity requires 2D mask".to_string(),
-                    });
-                }
-
-                let data = mask.data();
-                let cols = shape[1];
-
-                // Check each row is uniform
-                for (row_idx, chunk) in data.chunks(cols).enumerate() {
-                    let first = chunk[0];
-                    if !chunk.iter().all(|&v| (v - first).abs() < 1e-6) {
-                        return Err(PruningError::InvalidPattern {
-                            message: format!("Row {row_idx} is not uniform"),
-                        });
-                    }
-                }
-                Ok(())
-            }
-
-            SparsityPattern::Column => {
-                let shape = mask.shape();
-                if shape.len() < 2 {
-                    return Err(PruningError::InvalidPattern {
-                        message: "Column sparsity requires 2D mask".to_string(),
-                    });
-                }
-
-                let data = mask.data();
-                let rows = shape[0];
-                let cols = shape[1];
-
-                // Check each column is uniform
-                for col in 0..cols {
-                    let first = data[col];
-                    for row in 1..rows {
-                        let val = data[row * cols + col];
-                        if (val - first).abs() > 1e-6 {
-                            return Err(PruningError::InvalidPattern {
-                                message: format!("Column {col} is not uniform"),
-                            });
-                        }
-                    }
-                }
-                Ok(())
-            }
+            SparsityPattern::NM { n, m } => validate_nm(mask, *n, *m),
+            SparsityPattern::Block { height, width } => validate_block(mask, *height, *width),
+            SparsityPattern::Row => validate_row(mask),
+            SparsityPattern::Column => validate_column(mask),
         }
     }
 }
@@ -402,6 +295,115 @@ pub fn generate_unstructured_mask(
         Tensor::new(&mask_data, scores.shape()),
         SparsityPattern::Unstructured,
     )
+}
+
+/// Validate N:M sparsity pattern: every M consecutive elements must have exactly N non-zeros.
+fn validate_nm(mask: &Tensor, n: usize, m: usize) -> Result<(), PruningError> {
+    let data = mask.data();
+    if data.len() % m != 0 {
+        return Err(PruningError::InvalidPattern {
+            message: format!(
+                "Tensor length {} not divisible by M={}",
+                data.len(),
+                m
+            ),
+        });
+    }
+    for (i, chunk) in data.chunks(m).enumerate() {
+        let nnz = chunk.iter().filter(|&&v| v > 0.5).count();
+        if nnz != n {
+            return Err(PruningError::InvalidPattern {
+                message: format!(
+                    "Group {} has {} non-zeros, expected {} (N:M = {}:{})",
+                    i, nnz, n, n, m
+                ),
+            });
+        }
+    }
+    Ok(())
+}
+
+/// Validate block sparsity: each block must be uniform (all 0s or all 1s).
+fn validate_block(mask: &Tensor, height: usize, width: usize) -> Result<(), PruningError> {
+    let shape = mask.shape();
+    if shape.len() != 2 {
+        return Err(PruningError::InvalidPattern {
+            message: format!("Block pattern requires 2D tensor, got {}D", shape.len()),
+        });
+    }
+    let (rows, cols) = (shape[0], shape[1]);
+    if rows % height != 0 || cols % width != 0 {
+        return Err(PruningError::InvalidPattern {
+            message: format!(
+                "Shape [{rows}, {cols}] not divisible by block [{height}, {width}]"
+            ),
+        });
+    }
+    let data = mask.data();
+    for br in 0..(rows / height) {
+        for bc in 0..(cols / width) {
+            let first = data[br * height * cols + bc * width];
+            for r in 0..height {
+                for c in 0..width {
+                    let val = data[(br * height + r) * cols + bc * width + c];
+                    if (val - first).abs() > 1e-6 {
+                        return Err(PruningError::InvalidPattern {
+                            message: format!(
+                                "Block ({br}, {bc}) is not uniform: found {val} and {first}"
+                            ),
+                        });
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Validate row sparsity: each row must be uniform (all 0s or all 1s).
+fn validate_row(mask: &Tensor) -> Result<(), PruningError> {
+    let shape = mask.shape();
+    if shape.len() != 2 {
+        return Err(PruningError::InvalidPattern {
+            message: format!("Row pattern requires 2D tensor, got {}D", shape.len()),
+        });
+    }
+    let (rows, cols) = (shape[0], shape[1]);
+    let data = mask.data();
+    for r in 0..rows {
+        let first = data[r * cols];
+        for c in 1..cols {
+            if (data[r * cols + c] - first).abs() > 1e-6 {
+                return Err(PruningError::InvalidPattern {
+                    message: format!("Row {r} is not uniform"),
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Validate column sparsity: each column must be uniform (all 0s or all 1s).
+fn validate_column(mask: &Tensor) -> Result<(), PruningError> {
+    let shape = mask.shape();
+    if shape.len() != 2 {
+        return Err(PruningError::InvalidPattern {
+            message: format!("Column pattern requires 2D tensor, got {}D", shape.len()),
+        });
+    }
+    let (rows, cols) = (shape[0], shape[1]);
+    let data = mask.data();
+    for c in 0..cols {
+        let first = data[c];
+        for r in 1..rows {
+            if (data[r * cols + c] - first).abs() > 1e-6 {
+                return Err(PruningError::InvalidPattern {
+                    message: format!("Column {c} is not uniform"),
+                });
+            }
+        }
+    }
+    Ok(())
 }
 
 include!("mod_part_02.rs");

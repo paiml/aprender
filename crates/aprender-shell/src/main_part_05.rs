@@ -1,4 +1,85 @@
 
+/// Filter synthetic commands by quality score and update diversity monitor.
+fn filter_commands_by_quality(
+    commands: &[String],
+    config: &aprender::synthetic::SyntheticConfig,
+    diversity_monitor: &mut Option<aprender::synthetic::DiversityMonitor>,
+) -> (Vec<String>, usize) {
+    use aprender::synthetic::DiversityScore;
+
+    let mut quality_filtered: Vec<String> = Vec::new();
+    let mut rejected_count = 0;
+
+    for cmd in commands {
+        let tokens: Vec<&str> = cmd.split_whitespace().collect();
+        let quality_score = if tokens.is_empty() {
+            0.0
+        } else {
+            let length_score = (tokens.len() as f32 / 5.0).min(1.0);
+            let base_known =
+                ["git", "cargo", "docker", "make", "npm", "kubectl", "aws"].contains(&tokens[0]);
+            let base_score = if base_known { 0.8 } else { 0.5 };
+            (length_score * 0.4 + base_score * 0.6).min(1.0)
+        };
+
+        if config.meets_quality(quality_score) {
+            quality_filtered.push(cmd.clone());
+
+            if let Some(ref mut monitor) = diversity_monitor {
+                let unique_tokens: std::collections::HashSet<_> = tokens.iter().collect();
+                let diversity = if tokens.is_empty() {
+                    0.0
+                } else {
+                    unique_tokens.len() as f32 / tokens.len() as f32
+                };
+                let score = DiversityScore::new(diversity, diversity * 0.5, diversity);
+                monitor.record(score);
+            }
+        } else {
+            rejected_count += 1;
+        }
+    }
+
+    (quality_filtered, rejected_count)
+}
+
+/// Print coverage report for augmentation.
+fn print_coverage_report(
+    result: &synthetic::SyntheticResult,
+    quality_count: usize,
+    rejected_count: usize,
+) {
+    println!("\n📈 Coverage Report:");
+    println!("   Generated:          {}", result.commands.len());
+    println!(
+        "   Quality filtered:   {} (rejected {})",
+        quality_count, rejected_count
+    );
+    println!("   Known n-grams:      {}", result.report.known_ngrams);
+    println!("   Total n-grams:      {}", result.report.total_ngrams);
+    println!("   New n-grams added:  {}", result.report.new_ngrams);
+    println!(
+        "   Coverage gain:      {:.1}%",
+        result.report.coverage_gain * 100.0
+    );
+}
+
+/// Print diversity metrics if monitoring.
+fn print_diversity_report(diversity_monitor: &Option<aprender::synthetic::DiversityMonitor>) {
+    if let Some(ref monitor) = diversity_monitor {
+        println!("\n📊 Diversity Metrics:");
+        println!("   Mean diversity:     {:.3}", monitor.mean_diversity());
+        if monitor.is_collapsing() {
+            println!("   ⚠️  Warning: Low diversity detected (potential mode collapse)");
+        } else {
+            println!("   ✓  Diversity is healthy");
+        }
+        if monitor.is_trending_down() {
+            println!("   ⚠️  Warning: Diversity trending downward");
+        }
+    }
+}
+
 fn cmd_augment(
     history_path: Option<PathBuf>,
     output: &str,
@@ -10,9 +91,7 @@ fn cmd_augment(
 ) {
     validate_ngram(ngram);
     use aprender::synthetic::code_eda::{CodeEda, CodeEdaConfig, CodeLanguage};
-    use aprender::synthetic::{
-        DiversityMonitor, DiversityScore, SyntheticConfig, SyntheticGenerator,
-    };
+    use aprender::synthetic::{DiversityMonitor, SyntheticConfig, SyntheticGenerator};
 
     let mode = if use_code_eda { "CodeEDA" } else { "Template" };
     println!("🧬 aprender-shell: Data Augmentation ({mode} mode)\n");
@@ -108,72 +187,11 @@ fn cmd_augment(
         }
     };
 
-    // Quality filtering using aprender's config
-    let mut quality_filtered: Vec<String> = Vec::new();
-    let mut rejected_count = 0;
+    let (quality_filtered, rejected_count) =
+        filter_commands_by_quality(&result.commands, &config, &mut diversity_monitor);
 
-    for cmd in &result.commands {
-        // Simple quality heuristic: command length and token count
-        let tokens: Vec<&str> = cmd.split_whitespace().collect();
-        let quality_score = if tokens.is_empty() {
-            0.0
-        } else {
-            // Quality based on: reasonable length, known base command
-            let length_score = (tokens.len() as f32 / 5.0).min(1.0);
-            let base_known =
-                ["git", "cargo", "docker", "make", "npm", "kubectl", "aws"].contains(&tokens[0]);
-            let base_score = if base_known { 0.8 } else { 0.5 };
-            (length_score * 0.4 + base_score * 0.6).min(1.0)
-        };
-
-        if config.meets_quality(quality_score) {
-            quality_filtered.push(cmd.clone());
-
-            // Update diversity monitor
-            if let Some(ref mut monitor) = diversity_monitor {
-                // Compute simple diversity based on unique tokens
-                let unique_tokens: std::collections::HashSet<_> = tokens.iter().collect();
-                let diversity = if tokens.is_empty() {
-                    0.0
-                } else {
-                    unique_tokens.len() as f32 / tokens.len() as f32
-                };
-                let score = DiversityScore::new(diversity, diversity * 0.5, diversity);
-                monitor.record(score);
-            }
-        } else {
-            rejected_count += 1;
-        }
-    }
-
-    println!("\n📈 Coverage Report:");
-    println!("   Generated:          {}", result.commands.len());
-    println!(
-        "   Quality filtered:   {} (rejected {})",
-        quality_filtered.len(),
-        rejected_count
-    );
-    println!("   Known n-grams:      {}", result.report.known_ngrams);
-    println!("   Total n-grams:      {}", result.report.total_ngrams);
-    println!("   New n-grams added:  {}", result.report.new_ngrams);
-    println!(
-        "   Coverage gain:      {:.1}%",
-        result.report.coverage_gain * 100.0
-    );
-
-    // Show diversity metrics if monitoring
-    if let Some(ref monitor) = diversity_monitor {
-        println!("\n📊 Diversity Metrics:");
-        println!("   Mean diversity:     {:.3}", monitor.mean_diversity());
-        if monitor.is_collapsing() {
-            println!("   ⚠️  Warning: Low diversity detected (potential mode collapse)");
-        } else {
-            println!("   ✓  Diversity is healthy");
-        }
-        if monitor.is_trending_down() {
-            println!("   ⚠️  Warning: Diversity trending downward");
-        }
-    }
+    print_coverage_report(&result, quality_filtered.len(), rejected_count);
+    print_diversity_report(&diversity_monitor);
 
     // Combine real + synthetic
     let mut augmented_commands = commands.clone();

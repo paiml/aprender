@@ -159,12 +159,95 @@ fn cmd_tune(history_path: Option<PathBuf>, trials: usize, ratio: f32) {
     println!("   aprender-shell train --ngram {}", best_ngram);
 }
 
+/// Load a MarkovModel, optionally with encryption.
+fn load_inspect_model(path: &std::path::Path, password: Option<&str>) -> MarkovModel {
+    let encrypted = MarkovModel::is_encrypted(path).unwrap_or(false);
+
+    if let Some(pwd) = password {
+        match MarkovModel::load_encrypted(path, pwd) {
+            Ok(m) => m,
+            Err(e) => {
+                eprintln!("❌ Failed to load encrypted model: {e}");
+                std::process::exit(1);
+            }
+        }
+    } else {
+        match MarkovModel::load(path) {
+            Ok(m) => m,
+            Err(e) => {
+                if encrypted {
+                    eprintln!("❌ Model is encrypted. Use --password flag to decrypt.");
+                } else {
+                    eprintln!("❌ Failed to load model: {e}");
+                }
+                std::process::exit(1);
+            }
+        }
+    }
+}
+
+/// Render a model card in text format to stdout.
+fn render_model_card_text(card: &aprender::format::model_card::ModelCard, path: &std::path::Path) {
+    println!("📋 Model Card: {}\n", path.display());
+    println!("═══════════════════════════════════════════");
+    println!("           MODEL INFORMATION               ");
+    println!("═══════════════════════════════════════════");
+    println!("  ID:           {}", card.model_id);
+    println!("  Name:         {}", card.name);
+    println!("  Version:      {}", card.version);
+    if let Some(ref author) = card.author {
+        println!("  Author:       {}", author);
+    }
+    println!("  Created:      {}", card.created_at);
+    println!("  Framework:    {}", card.framework_version);
+    if let Some(ref arch) = card.architecture {
+        println!("  Architecture: {}", arch);
+    }
+    if let Some(count) = card.param_count {
+        println!("  Parameters:   {}", count);
+    }
+    println!("───────────────────────────────────────────");
+
+    if let Some(ref training) = card.training_data {
+        println!("\n📊 Training Data:");
+        println!("  Source:  {}", training.name);
+        if let Some(samples) = training.samples {
+            println!("  Samples: {}", samples);
+        }
+        if let Some(ref hash) = training.hash {
+            println!("  Hash:    {}", hash);
+        }
+    }
+
+    if !card.hyperparameters.is_empty() {
+        println!("\n⚙️  Hyperparameters:");
+        for (key, value) in &card.hyperparameters {
+            println!("  {}: {}", key, value);
+        }
+    }
+
+    if !card.metrics.is_empty() {
+        println!("\n📈 Metrics:");
+        for (key, value) in &card.metrics {
+            println!("  {}: {}", key, value);
+        }
+    }
+
+    if let Some(ref desc) = card.description {
+        println!("\n📝 Description:");
+        println!("  {}", desc);
+    }
+
+    println!("\n💡 Export formats:");
+    println!("   JSON:        aprender-shell inspect --format json");
+    println!("   Hugging Face: aprender-shell inspect --format huggingface");
+}
+
 fn cmd_inspect(model_path: &str, format: &str, use_password: bool) {
     use aprender::format::model_card::{ModelCard, TrainingDataInfo};
 
     let path = expand_path(model_path);
 
-    // Get password if needed
     let password = if use_password {
         Some(
             rpassword::prompt_password("Enter password: ").unwrap_or_else(|e| {
@@ -176,33 +259,8 @@ fn cmd_inspect(model_path: &str, format: &str, use_password: bool) {
         None
     };
 
-    // Check encryption status
-    let encrypted = MarkovModel::is_encrypted(&path).unwrap_or(false);
+    let model = load_inspect_model(&path, password.as_deref());
 
-    // Load model to get metadata
-    let model = if let Some(ref pwd) = password {
-        match MarkovModel::load_encrypted(&path, pwd) {
-            Ok(m) => m,
-            Err(e) => {
-                eprintln!("❌ Failed to load encrypted model: {e}");
-                std::process::exit(1);
-            }
-        }
-    } else {
-        match MarkovModel::load(&path) {
-            Ok(m) => m,
-            Err(e) => {
-                if encrypted {
-                    eprintln!("❌ Model is encrypted. Use --password flag to decrypt.");
-                } else {
-                    eprintln!("❌ Failed to load model: {e}");
-                }
-                std::process::exit(1);
-            }
-        }
-    };
-
-    // Generate model card from model stats
     let model_id = format!(
         "aprender-shell-markov-{}gram-{}",
         model.ngram_size(),
@@ -229,62 +287,7 @@ fn cmd_inspect(model_path: &str, format: &str, use_password: bool) {
         "huggingface" | "hf" => {
             println!("{}", card.to_huggingface());
         }
-        _ => {
-            // Default: text format
-            println!("📋 Model Card: {}\n", path.display());
-            println!("═══════════════════════════════════════════");
-            println!("           MODEL INFORMATION               ");
-            println!("═══════════════════════════════════════════");
-            println!("  ID:           {}", card.model_id);
-            println!("  Name:         {}", card.name);
-            println!("  Version:      {}", card.version);
-            if let Some(ref author) = card.author {
-                println!("  Author:       {}", author);
-            }
-            println!("  Created:      {}", card.created_at);
-            println!("  Framework:    {}", card.framework_version);
-            if let Some(ref arch) = card.architecture {
-                println!("  Architecture: {}", arch);
-            }
-            if let Some(count) = card.param_count {
-                println!("  Parameters:   {}", count);
-            }
-            println!("───────────────────────────────────────────");
-
-            if let Some(ref training) = card.training_data {
-                println!("\n📊 Training Data:");
-                println!("  Source:  {}", training.name);
-                if let Some(samples) = training.samples {
-                    println!("  Samples: {}", samples);
-                }
-                if let Some(ref hash) = training.hash {
-                    println!("  Hash:    {}", hash);
-                }
-            }
-
-            if !card.hyperparameters.is_empty() {
-                println!("\n⚙️  Hyperparameters:");
-                for (key, value) in &card.hyperparameters {
-                    println!("  {}: {}", key, value);
-                }
-            }
-
-            if !card.metrics.is_empty() {
-                println!("\n📈 Metrics:");
-                for (key, value) in &card.metrics {
-                    println!("  {}: {}", key, value);
-                }
-            }
-
-            if let Some(ref desc) = card.description {
-                println!("\n📝 Description:");
-                println!("  {}", desc);
-            }
-
-            println!("\n💡 Export formats:");
-            println!("   JSON:        aprender-shell inspect --format json");
-            println!("   Hugging Face: aprender-shell inspect --format huggingface");
-        }
+        _ => render_model_card_text(&card, &path),
     }
 }
 

@@ -120,6 +120,44 @@ fn parse_yaml(input: &str) -> Result<YamlValue> {
     Ok(val)
 }
 
+/// Skip blank lines and comments, returning the index of the next content line.
+fn skip_to_content(lines: &[&str], start: usize) -> usize {
+    let mut i = start;
+    while i < lines.len() {
+        let trimmed = lines[i].trim();
+        if !trimmed.is_empty() && !trimmed.starts_with('#') {
+            break;
+        }
+        i += 1;
+    }
+    i
+}
+
+/// Parse a nested YAML value (sequence, mapping, or null) after an empty colon.
+fn parse_nested_value(
+    lines: &[&str],
+    start: usize,
+    parent_indent: usize,
+) -> Result<(YamlValue, usize)> {
+    let next_i = skip_to_content(lines, start);
+
+    if next_i >= lines.len() {
+        return Ok((YamlValue::Null, next_i));
+    }
+
+    let next_line = lines[next_i];
+    let next_indent = next_line.len() - next_line.trim_start().len();
+    let next_trimmed = next_line.trim();
+
+    if next_trimmed.starts_with("- ") {
+        parse_sequence(lines, next_i, next_indent)
+    } else if next_indent > parent_indent {
+        parse_mapping(lines, next_i, next_indent)
+    } else {
+        Ok((YamlValue::Null, next_i))
+    }
+}
+
 fn parse_mapping(lines: &[&str], start: usize, indent: usize) -> Result<(YamlValue, usize)> {
     let mut entries = Vec::new();
     let mut i = start;
@@ -128,73 +166,36 @@ fn parse_mapping(lines: &[&str], start: usize, indent: usize) -> Result<(YamlVal
         let line = lines[i];
         let trimmed = line.trim();
 
-        // Skip empty lines and comments
         if trimmed.is_empty() || trimmed.starts_with('#') {
             i += 1;
             continue;
         }
 
-        // Calculate indentation
         let line_indent = line.len() - line.trim_start().len();
 
-        // If indentation decreased, we're done with this mapping
         if line_indent < indent && !entries.is_empty() {
             return Ok((YamlValue::Mapping(entries), i));
         }
 
-        // Skip if indentation is less than expected (shouldn't happen at top level)
         if line_indent < indent {
             i += 1;
             continue;
         }
 
-        // If indentation increased beyond expected, we're done
         if line_indent > indent && !entries.is_empty() {
             return Ok((YamlValue::Mapping(entries), i));
         }
 
-        // Parse key: value
         if let Some(colon_pos) = trimmed.find(':') {
             let key = trimmed[..colon_pos].trim().to_string();
             let after_colon = trimmed[colon_pos + 1..].trim();
 
             if after_colon.is_empty() {
-                // Value is on next lines (nested mapping or sequence)
                 i += 1;
-
-                // Peek at next non-empty line to determine type
-                let mut next_i = i;
-                while next_i < lines.len() {
-                    let next_trimmed = lines[next_i].trim();
-                    if !next_trimmed.is_empty() && !next_trimmed.starts_with('#') {
-                        break;
-                    }
-                    next_i += 1;
-                }
-
-                if next_i < lines.len() {
-                    let next_line = lines[next_i];
-                    let next_indent = next_line.len() - next_line.trim_start().len();
-                    let next_trimmed = next_line.trim();
-
-                    if next_trimmed.starts_with("- ") {
-                        // Sequence
-                        let (seq, new_i) = parse_sequence(lines, next_i, next_indent)?;
-                        entries.push((key, seq));
-                        i = new_i;
-                    } else if next_indent > indent {
-                        // Nested mapping
-                        let (mapping, new_i) = parse_mapping(lines, next_i, next_indent)?;
-                        entries.push((key, mapping));
-                        i = new_i;
-                    } else {
-                        entries.push((key, YamlValue::Null));
-                    }
-                } else {
-                    entries.push((key, YamlValue::Null));
-                }
+                let (value, new_i) = parse_nested_value(lines, i, indent)?;
+                entries.push((key, value));
+                i = new_i;
             } else {
-                // Inline value
                 let value = parse_scalar(after_colon);
                 entries.push((key, value));
                 i += 1;

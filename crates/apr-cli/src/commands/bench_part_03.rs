@@ -194,60 +194,24 @@ fn run_safetensors_cuda_benchmark(path: &Path, config: &BenchConfig) -> Result<B
     calculate_benchmark_stats(iteration_times, total_tokens, first_token_time, config)
 }
 
-/// CUDA GPU-accelerated benchmark path
+/// Run warmup iterations for CUDA benchmark.
 #[cfg(feature = "inference")]
-fn run_cuda_benchmark(
-    _gguf: &realizar::gguf::GGUFModel,
-    _model_bytes: &[u8],
+fn run_cuda_warmup(
+    cuda_model: &mut realizar::gguf::OwnedQuantizedModelCuda,
     prompt_tokens: &[u32],
     gen_config: &realizar::gguf::QuantizedGenerateConfig,
     config: &BenchConfig,
-    start: Instant,
-    model_path: &Path,
-) -> Result<BenchResult> {
-    use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel, OwnedQuantizedModelCuda};
-
-    if !config.quiet {
-        eprintln!("{}", "Initializing CUDA model...".cyan());
-    }
-
-    // Create MappedGGUFModel from path (memory-mapped for efficiency)
-    let mapped = MappedGGUFModel::from_path(model_path)
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to map model: {e}")))?;
-
-    // Create OwnedQuantizedModel from mapped model
-    let model = OwnedQuantizedModel::from_mapped(&mapped)
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to create model: {e}")))?;
-
-    // Wrap with CUDA executor for GPU acceleration
-    let mut cuda_model = OwnedQuantizedModelCuda::new(model, 0)
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to initialize CUDA: {e}")))?;
-
-    let load_time = start.elapsed();
-    if !config.quiet {
-        eprintln!(
-            "{} in {:.2}s (GPU device 0)",
-            "Model ready".green(),
-            load_time.as_secs_f32()
-        );
-        eprintln!();
-    }
-
-    // Warmup with CUDA
+) -> Result<()> {
     if !config.quiet {
         eprintln!("{}", "Running warmup (GPU)...".yellow());
     }
     for i in 0..config.warmup {
-        // Try GPU-resident path for better performance
-        match cuda_model.generate_gpu_resident(prompt_tokens, gen_config) {
-            Ok(_) => {}
-            Err(e) => {
+        cuda_model
+            .generate_gpu_resident(prompt_tokens, gen_config)
+            .map_err(|e| {
                 eprintln!("\n  Warmup error: {e}");
-                return Err(CliError::ValidationFailed(format!(
-                    "GPU warmup failed: {e}"
-                )));
-            }
-        }
+                CliError::ValidationFailed(format!("GPU warmup failed: {e}"))
+            })?;
         if !config.quiet {
             eprint!("  Warmup {}/{}\r", i + 1, config.warmup);
             std::io::Write::flush(&mut std::io::stderr()).ok();
@@ -257,8 +221,17 @@ fn run_cuda_benchmark(
         eprintln!("  Warmup complete        ");
         eprintln!();
     }
+    Ok(())
+}
 
-    // Measurement with CUDA
+/// Run measurement iterations for CUDA benchmark.
+#[cfg(feature = "inference")]
+fn run_cuda_measurement(
+    cuda_model: &mut realizar::gguf::OwnedQuantizedModelCuda,
+    prompt_tokens: &[u32],
+    gen_config: &realizar::gguf::QuantizedGenerateConfig,
+    config: &BenchConfig,
+) -> Result<(Vec<Duration>, usize, Duration)> {
     if !config.quiet {
         eprintln!("{}", "Running benchmark (GPU)...".yellow());
     }
@@ -269,16 +242,12 @@ fn run_cuda_benchmark(
     for i in 0..config.iterations {
         let iter_start = Instant::now();
 
-        // Use GPU-resident path for maximum performance
-        let output = match cuda_model.generate_gpu_resident(prompt_tokens, gen_config) {
-            Ok(tokens) => tokens,
-            Err(e) => {
+        let output = cuda_model
+            .generate_gpu_resident(prompt_tokens, gen_config)
+            .map_err(|e| {
                 eprintln!("\n  Generation error: {e}");
-                return Err(CliError::ValidationFailed(format!(
-                    "GPU generation failed: {e}"
-                )));
-            }
-        };
+                CliError::ValidationFailed(format!("GPU generation failed: {e}"))
+            })?;
         let tokens_generated = output.len().saturating_sub(prompt_tokens.len());
 
         let iter_time = iter_start.elapsed();
@@ -305,6 +274,49 @@ fn run_cuda_benchmark(
         eprintln!();
         eprintln!();
     }
+    Ok((iteration_times, total_tokens, first_token_time))
+}
+
+/// CUDA GPU-accelerated benchmark path
+#[cfg(feature = "inference")]
+fn run_cuda_benchmark(
+    _gguf: &realizar::gguf::GGUFModel,
+    _model_bytes: &[u8],
+    prompt_tokens: &[u32],
+    gen_config: &realizar::gguf::QuantizedGenerateConfig,
+    config: &BenchConfig,
+    start: Instant,
+    model_path: &Path,
+) -> Result<BenchResult> {
+    use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel, OwnedQuantizedModelCuda};
+
+    if !config.quiet {
+        eprintln!("{}", "Initializing CUDA model...".cyan());
+    }
+
+    let mapped = MappedGGUFModel::from_path(model_path)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to map model: {e}")))?;
+
+    let model = OwnedQuantizedModel::from_mapped(&mapped)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to create model: {e}")))?;
+
+    let mut cuda_model = OwnedQuantizedModelCuda::new(model, 0)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to initialize CUDA: {e}")))?;
+
+    let load_time = start.elapsed();
+    if !config.quiet {
+        eprintln!(
+            "{} in {:.2}s (GPU device 0)",
+            "Model ready".green(),
+            load_time.as_secs_f32()
+        );
+        eprintln!();
+    }
+
+    run_cuda_warmup(&mut cuda_model, prompt_tokens, gen_config, config)?;
+
+    let (iteration_times, total_tokens, first_token_time) =
+        run_cuda_measurement(&mut cuda_model, prompt_tokens, gen_config, config)?;
 
     calculate_benchmark_stats(iteration_times, total_tokens, first_token_time, config)
 }

@@ -42,31 +42,8 @@ impl std::str::FromStr for DistillStrategy {
     }
 }
 
-/// Run the distill command
-#[allow(clippy::too_many_arguments)]
-#[allow(clippy::disallowed_methods)]
-pub(crate) fn run(
-    teacher_path: &Path,
-    student_path: Option<&Path>,
-    data_path: Option<&Path>,
-    output_path: Option<&Path>,
-    strategy: &str,
-    temperature: f64,
-    alpha: f64,
-    epochs: u32,
-    plan_only: bool,
-    json_output: bool,
-) -> Result<()> {
-    // Validate teacher exists
-    if !teacher_path.exists() {
-        return Err(CliError::FileNotFound(teacher_path.to_path_buf()));
-    }
-
-    let distill_strategy: DistillStrategy = strategy
-        .parse()
-        .map_err(CliError::ValidationFailed)?;
-
-    // Validate temperature and alpha
+/// Validate distillation parameters (temperature, alpha).
+fn validate_distill_params(temperature: f64, alpha: f64) -> Result<()> {
     if temperature <= 0.0 {
         return Err(CliError::ValidationFailed(format!(
             "Temperature must be positive, got {temperature}"
@@ -77,72 +54,39 @@ pub(crate) fn run(
             "Alpha must be between 0 and 1, got {alpha}"
         )));
     }
+    Ok(())
+}
 
-    // Plan mode
-    if plan_only {
-        return run_plan(teacher_path, student_path, distill_strategy, temperature, alpha, epochs, json_output);
-    }
-
-    // Validate required paths for training
-    if student_path.is_none() && !matches!(distill_strategy, DistillStrategy::Progressive) {
-        return Err(CliError::ValidationFailed(
-            "Student model required for standard distillation. Use --student <path>".to_string(),
-        ));
-    }
-
-    let out = output_path.ok_or_else(|| {
-        CliError::ValidationFailed(
-            "Output path required. Use -o <path> to specify output.".to_string(),
-        )
-    })?;
-
-    if !json_output {
-        output::header("APR Distill");
-        let mut pairs = vec![
-            ("Teacher", teacher_path.display().to_string()),
-            ("Strategy", format!("{distill_strategy:?}")),
-            ("Temperature", format!("{temperature:.1}")),
-            ("Alpha", format!("{alpha:.2}")),
-            ("Epochs", epochs.to_string()),
-            ("Output", out.display().to_string()),
-        ];
-        if let Some(student) = student_path {
-            pairs.insert(1, ("Student", student.display().to_string()));
-        }
-        if let Some(data) = data_path {
-            pairs.push(("Training data", data.display().to_string()));
-        }
-        println!("{}", output::kv_table(&pairs));
-        println!();
-    }
-
-    // Validate student exists if provided
+/// Validate that optional file paths exist on disk.
+fn validate_optional_paths(student_path: Option<&Path>, data_path: Option<&Path>) -> Result<()> {
     if let Some(student) = student_path {
         if !student.exists() {
             return Err(CliError::FileNotFound(student.to_path_buf()));
         }
     }
-
-    // Validate training data exists if provided
     if let Some(data) = data_path {
         if !data.exists() {
             return Err(CliError::FileNotFound(data.to_path_buf()));
         }
     }
+    Ok(())
+}
 
-    if !json_output {
-        output::pipeline_stage("Distilling", output::StageStatus::Running);
-    }
-
-    // Distillation execution
-    let teacher_size = std::fs::metadata(teacher_path)
-        .map_err(|e| CliError::ValidationFailed(format!("Cannot read teacher: {e}")))?
-        .len();
-
-    let student_size = student_path
-        .and_then(|p| std::fs::metadata(p).ok())
-        .map_or(teacher_size / 2, |m| m.len());
-
+/// Print distillation result (JSON or text).
+#[allow(clippy::too_many_arguments)]
+#[allow(clippy::disallowed_methods)]
+fn print_distill_result(
+    teacher_path: &Path,
+    student_path: Option<&Path>,
+    out: &Path,
+    distill_strategy: DistillStrategy,
+    temperature: f64,
+    alpha: f64,
+    epochs: u32,
+    teacher_size: u64,
+    student_size: u64,
+    json_output: bool,
+) {
     if json_output {
         let json = serde_json::json!({
             "status": "configured",
@@ -190,6 +134,95 @@ pub(crate) fn run(
             output::badge_info("INFO")
         );
     }
+}
+
+/// Run the distill command
+#[allow(clippy::too_many_arguments)]
+#[allow(clippy::disallowed_methods)]
+pub(crate) fn run(
+    teacher_path: &Path,
+    student_path: Option<&Path>,
+    data_path: Option<&Path>,
+    output_path: Option<&Path>,
+    strategy: &str,
+    temperature: f64,
+    alpha: f64,
+    epochs: u32,
+    plan_only: bool,
+    json_output: bool,
+) -> Result<()> {
+    if !teacher_path.exists() {
+        return Err(CliError::FileNotFound(teacher_path.to_path_buf()));
+    }
+
+    let distill_strategy: DistillStrategy = strategy
+        .parse()
+        .map_err(CliError::ValidationFailed)?;
+
+    validate_distill_params(temperature, alpha)?;
+
+    if plan_only {
+        return run_plan(teacher_path, student_path, distill_strategy, temperature, alpha, epochs, json_output);
+    }
+
+    if student_path.is_none() && !matches!(distill_strategy, DistillStrategy::Progressive) {
+        return Err(CliError::ValidationFailed(
+            "Student model required for standard distillation. Use --student <path>".to_string(),
+        ));
+    }
+
+    let out = output_path.ok_or_else(|| {
+        CliError::ValidationFailed(
+            "Output path required. Use -o <path> to specify output.".to_string(),
+        )
+    })?;
+
+    if !json_output {
+        output::header("APR Distill");
+        let mut pairs = vec![
+            ("Teacher", teacher_path.display().to_string()),
+            ("Strategy", format!("{distill_strategy:?}")),
+            ("Temperature", format!("{temperature:.1}")),
+            ("Alpha", format!("{alpha:.2}")),
+            ("Epochs", epochs.to_string()),
+            ("Output", out.display().to_string()),
+        ];
+        if let Some(student) = student_path {
+            pairs.insert(1, ("Student", student.display().to_string()));
+        }
+        if let Some(data) = data_path {
+            pairs.push(("Training data", data.display().to_string()));
+        }
+        println!("{}", output::kv_table(&pairs));
+        println!();
+    }
+
+    validate_optional_paths(student_path, data_path)?;
+
+    if !json_output {
+        output::pipeline_stage("Distilling", output::StageStatus::Running);
+    }
+
+    let teacher_size = std::fs::metadata(teacher_path)
+        .map_err(|e| CliError::ValidationFailed(format!("Cannot read teacher: {e}")))?
+        .len();
+
+    let student_size = student_path
+        .and_then(|p| std::fs::metadata(p).ok())
+        .map_or(teacher_size / 2, |m| m.len());
+
+    print_distill_result(
+        teacher_path,
+        student_path,
+        out,
+        distill_strategy,
+        temperature,
+        alpha,
+        epochs,
+        teacher_size,
+        student_size,
+        json_output,
+    );
 
     Ok(())
 }
