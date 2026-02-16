@@ -1,0 +1,132 @@
+family: moonshine
+display_name: "UsefulSensors Moonshine"
+vendor: UsefulSensors
+architectures:
+  - MoonshineForConditionalGeneration
+hf_pattern: "usefulsensors/moonshine-*"
+
+size_variants:
+  tiny:
+    parameters: "27M"
+    n_mels: 1
+    encoder_layers: 6
+    decoder_layers: 6
+    d_model: 288
+    encoder_attention_heads: 8
+    decoder_attention_heads: 8
+    num_kv_heads: 8
+    encoder_ffn_dim: 1152
+    decoder_ffn_dim: 1152
+    vocab_size: 32768
+    max_position_embeddings: 194
+    head_dim: 36
+    rope_theta: 10000.0
+    partial_rotary_factor: 0.9
+  base:
+    parameters: "61M"
+    n_mels: 1
+    encoder_layers: 8
+    decoder_layers: 8
+    d_model: 416
+    encoder_attention_heads: 8
+    decoder_attention_heads: 8
+    num_kv_heads: 8
+    encoder_ffn_dim: 1664
+    decoder_ffn_dim: 1664
+    vocab_size: 32768
+    max_position_embeddings: 194
+    head_dim: 52
+    rope_theta: 10000.0
+    partial_rotary_factor: 0.62
+
+# Constraints describe the dominant architectural pattern.
+# Moonshine encoder uses gelu_mlp; decoder uses gated_mlp (SiLU gate).
+# Attention projections have no bias; MLP fc1/fc2 have bias.
+# Norm is LayerNorm(bias=False), not RMSNorm.
+constraints:
+  attention_type: mha
+  activation: silu
+  norm_type: layernorm
+  has_bias: "false"
+  tied_embeddings: "true"
+  positional_encoding: rope
+  mlp_type: gated_mlp
+
+tensor_template:
+  encoder:
+    conv1_weight: "model.encoder.conv1.weight"
+    conv2_weight: "model.encoder.conv2.weight"
+    conv2_bias: "model.encoder.conv2.bias"
+    conv3_weight: "model.encoder.conv3.weight"
+    conv3_bias: "model.encoder.conv3.bias"
+    groupnorm_weight: "model.encoder.groupnorm.weight"
+    groupnorm_bias: "model.encoder.groupnorm.bias"
+    layer_norm_weight: "model.encoder.layer_norm.weight"
+    per_layer:
+      input_layernorm_weight: "model.encoder.layers.{n}.input_layernorm.weight"
+      self_attn_q_proj_weight: "model.encoder.layers.{n}.self_attn.q_proj.weight"
+      self_attn_k_proj_weight: "model.encoder.layers.{n}.self_attn.k_proj.weight"
+      self_attn_v_proj_weight: "model.encoder.layers.{n}.self_attn.v_proj.weight"
+      self_attn_o_proj_weight: "model.encoder.layers.{n}.self_attn.o_proj.weight"
+      post_attention_layernorm_weight: "model.encoder.layers.{n}.post_attention_layernorm.weight"
+      mlp_fc1_weight: "model.encoder.layers.{n}.mlp.fc1.weight"
+      mlp_fc1_bias: "model.encoder.layers.{n}.mlp.fc1.bias"
+      mlp_fc2_weight: "model.encoder.layers.{n}.mlp.fc2.weight"
+      mlp_fc2_bias: "model.encoder.layers.{n}.mlp.fc2.bias"
+  decoder:
+    embed_tokens: "model.decoder.embed_tokens.weight"
+    norm_weight: "model.decoder.norm.weight"
+    per_layer:
+      input_layernorm_weight: "model.decoder.layers.{n}.input_layernorm.weight"
+      self_attn_q_proj_weight: "model.decoder.layers.{n}.self_attn.q_proj.weight"
+      self_attn_k_proj_weight: "model.decoder.layers.{n}.self_attn.k_proj.weight"
+      self_attn_v_proj_weight: "model.decoder.layers.{n}.self_attn.v_proj.weight"
+      self_attn_o_proj_weight: "model.decoder.layers.{n}.self_attn.o_proj.weight"
+      post_attention_layernorm_weight: "model.decoder.layers.{n}.post_attention_layernorm.weight"
+      encoder_attn_q_proj_weight: "model.decoder.layers.{n}.encoder_attn.q_proj.weight"
+      encoder_attn_k_proj_weight: "model.decoder.layers.{n}.encoder_attn.k_proj.weight"
+      encoder_attn_v_proj_weight: "model.decoder.layers.{n}.encoder_attn.v_proj.weight"
+      encoder_attn_o_proj_weight: "model.decoder.layers.{n}.encoder_attn.o_proj.weight"
+      final_layernorm_weight: "model.decoder.layers.{n}.final_layernorm.weight"
+      mlp_fc1_weight: "model.decoder.layers.{n}.mlp.fc1.weight"
+      mlp_fc1_bias: "model.decoder.layers.{n}.mlp.fc1.bias"
+      mlp_fc2_weight: "model.decoder.layers.{n}.mlp.fc2.weight"
+      mlp_fc2_bias: "model.decoder.layers.{n}.mlp.fc2.bias"
+  proj_out: "proj_out.weight"
+
+shape_template:
+  encoder:
+    conv1_weight: "[d_model, 1, 127]"
+    conv2_weight: "[2*d_model, d_model, 7]"
+    conv3_weight: "[d_model, 2*d_model, 3]"
+    groupnorm_weight: "[d_model]"
+    layer_norm_weight: "[d_model]"
+    input_layernorm: "[d_model]"
+    self_attn_q_proj: "[d_model, d_model]"
+    self_attn_k_proj: "[d_model, d_model]"
+    self_attn_v_proj: "[d_model, d_model]"
+    self_attn_o_proj: "[d_model, d_model]"
+    post_attention_layernorm: "[d_model]"
+    mlp_fc1: "[encoder_ffn_dim, d_model]"
+    mlp_fc2: "[d_model, encoder_ffn_dim]"
+  decoder:
+    embed_tokens: "[vocab_size, d_model]"
+    norm_weight: "[d_model]"
+    input_layernorm: "[d_model]"
+    self_attn_q_proj: "[d_model, d_model]"
+    self_attn_k_proj: "[d_model, d_model]"
+    self_attn_v_proj: "[d_model, d_model]"
+    self_attn_o_proj: "[d_model, d_model]"
+    post_attention_layernorm: "[d_model]"
+    encoder_attn_q_proj: "[d_model, d_model]"
+    encoder_attn_k_proj: "[d_model, d_model]"
+    encoder_attn_v_proj: "[d_model, d_model]"
+    encoder_attn_o_proj: "[d_model, d_model]"
+    final_layernorm: "[d_model]"
+    mlp_fc1: "[2*decoder_ffn_dim, d_model]"
+    mlp_fc2: "[d_model, decoder_ffn_dim]"
+  proj_out: "[vocab_size, d_model]"
+
+quantizations:
+  - f16
+  - f32
