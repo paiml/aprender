@@ -1,4 +1,103 @@
 
+/// Strip quantization suffixes from a GGUF stem to find the base model name.
+fn strip_quant_suffix(stem: &str) -> &str {
+    stem.trim_end_matches("-q4k")
+        .trim_end_matches("-q4_k_m")
+        .trim_end_matches("-q6k")
+        .trim_end_matches("-q6_k")
+        .trim_end_matches("-q5k")
+        .trim_end_matches("-q5_k_m")
+        .trim_end_matches("-q8_0")
+        .trim_end_matches("-f16")
+        .trim_end_matches("-f32")
+}
+
+/// Strategy 2 helper: find a safetensors shard file in a directory that has
+/// a `model.safetensors.index.json` but no single `model.safetensors`.
+fn find_sharded_safetensors(dir: &Path) -> Option<std::path::PathBuf> {
+    let index = dir.join("model.safetensors.index.json");
+    if !index.exists() {
+        return None;
+    }
+    let entries = std::fs::read_dir(dir).ok()?;
+    entries.flatten().find_map(|entry| {
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+        let is_shard = name_str.ends_with(".safetensors") && name_str != "model.safetensors";
+        is_shard.then(|| entry.path())
+    })
+}
+
+/// Strategy 2: look in a sibling subdirectory (base model name without quant suffix)
+/// for `model.safetensors` or a sharded safetensors file.
+fn discover_sibling_subdir(parent: &Path, base_name: &str) -> Option<std::path::PathBuf> {
+    let subdir = parent.join(base_name);
+    if !subdir.is_dir() {
+        return None;
+    }
+    let single = subdir.join("model.safetensors");
+    if single.exists() {
+        return Some(single);
+    }
+    find_sharded_safetensors(&subdir)
+}
+
+/// Find the first `.safetensors` file in a snapshot directory (single or sharded).
+fn find_safetensors_in_snapshot(snap_path: &Path) -> Option<std::path::PathBuf> {
+    let single = snap_path.join("model.safetensors");
+    if single.exists() {
+        return Some(single);
+    }
+    let files = std::fs::read_dir(snap_path).ok()?;
+    files.flatten().find_map(|f| {
+        let fname = f.file_name();
+        fname
+            .to_string_lossy()
+            .ends_with(".safetensors")
+            .then(|| f.path())
+    })
+}
+
+/// Strategy 3: search HuggingFace cache (`~/.cache/huggingface/hub/models--*`)
+/// for a matching model directory containing safetensors files.
+fn discover_hf_cache(base_name: &str) -> Option<std::path::PathBuf> {
+    let hf_cache = dirs::home_dir()?.join(".cache/huggingface/hub");
+    if !hf_cache.is_dir() {
+        return None;
+    }
+    let entries = std::fs::read_dir(&hf_cache).ok()?;
+    let base_lower = base_name.to_lowercase();
+
+    for entry in entries.flatten() {
+        let dir_name = entry.file_name();
+        let dir_str = dir_name.to_string_lossy();
+        if !dir_str.starts_with("models--") {
+            continue;
+        }
+        // Match model name case-insensitively
+        let model_part = dir_str
+            .trim_start_matches("models--")
+            .replace("--", "/")
+            .to_lowercase();
+        if !model_part.contains(&base_lower) {
+            continue;
+        }
+        // Look for snapshots/*/model.safetensors
+        let snapshots = entry.path().join("snapshots");
+        let snaps = match std::fs::read_dir(&snapshots) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+        for snap in snaps.flatten() {
+            if let Some(found) = find_safetensors_in_snapshot(&snap.path()) {
+                return Some(found);
+            }
+        }
+    }
+
+    None
+}
+
 /// Gate 5: Cross-Format Parity Test (F-QUAL-032)
 ///
 /// Compares argmax output between GGUF and SafeTensors for the same model.
@@ -21,83 +120,13 @@ fn auto_discover_safetensors(gguf_path: &Path) -> Option<std::path::PathBuf> {
     }
 
     // Strategy 2: Sibling subdirectory containing model.safetensors
-    // e.g., /home/noah/models/qwen2.5-coder-7b-instruct-q4k.gguf
-    //     → /home/noah/models/qwen2.5-coder-7b-instruct/model.safetensors
-    // Strip quantization suffixes to find base model name
-    let base_name = stem
-        .trim_end_matches("-q4k")
-        .trim_end_matches("-q4_k_m")
-        .trim_end_matches("-q6k")
-        .trim_end_matches("-q6_k")
-        .trim_end_matches("-q5k")
-        .trim_end_matches("-q5_k_m")
-        .trim_end_matches("-q8_0")
-        .trim_end_matches("-f16")
-        .trim_end_matches("-f32");
-    let subdir = parent.join(base_name);
-    if subdir.is_dir() {
-        // Check for model.safetensors (single file) or sharded index
-        let single = subdir.join("model.safetensors");
-        if single.exists() {
-            return Some(single);
-        }
-        let index = subdir.join("model.safetensors.index.json");
-        if index.exists() {
-            // Sharded model — check if actual shard files exist
-            if let Ok(entries) = std::fs::read_dir(&subdir) {
-                for entry in entries.flatten() {
-                    let name = entry.file_name();
-                    let name_str = name.to_string_lossy();
-                    if name_str.ends_with(".safetensors") && name_str != "model.safetensors" {
-                        return Some(entry.path());
-                    }
-                }
-            }
-        }
+    let base_name = strip_quant_suffix(stem);
+    if let Some(found) = discover_sibling_subdir(parent, base_name) {
+        return Some(found);
     }
 
     // Strategy 3: HuggingFace cache
-    let hf_cache = dirs::home_dir()?.join(".cache/huggingface/hub");
-    if hf_cache.is_dir() {
-        if let Ok(entries) = std::fs::read_dir(&hf_cache) {
-            for entry in entries.flatten() {
-                let dir_name = entry.file_name();
-                let dir_str = dir_name.to_string_lossy();
-                if !dir_str.starts_with("models--") {
-                    continue;
-                }
-                // Match model name case-insensitively
-                let model_part = dir_str
-                    .trim_start_matches("models--")
-                    .replace("--", "/")
-                    .to_lowercase();
-                if !model_part.contains(&base_name.to_lowercase()) {
-                    continue;
-                }
-                // Look for snapshots/*/model.safetensors
-                let snapshots = entry.path().join("snapshots");
-                if let Ok(snaps) = std::fs::read_dir(&snapshots) {
-                    for snap in snaps.flatten() {
-                        let single = snap.path().join("model.safetensors");
-                        if single.exists() {
-                            return Some(single);
-                        }
-                        // Check for sharded .safetensors files
-                        if let Ok(files) = std::fs::read_dir(snap.path()) {
-                            for f in files.flatten() {
-                                let fname = f.file_name();
-                                if fname.to_string_lossy().ends_with(".safetensors") {
-                                    return Some(f.path());
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    None
+    discover_hf_cache(base_name)
 }
 
 /// Invariant: argmax(forward_gguf(M, tokens)) == argmax(forward_safetensors(M, tokens))
@@ -287,6 +316,35 @@ fn check_ollama_available() -> bool {
         .unwrap_or(false)
 }
 
+/// Detect model size label from a lowercased filename.
+/// Returns None if no known size pattern is found.
+fn detect_size_from_filename(filename_lower: &str) -> Option<&'static str> {
+    // (primary pattern, alternate pattern, size label)
+    const SIZE_PATTERNS: &[(&str, &str, &str)] = &[
+        ("0.5b", "-0_5b", "0.5b"),
+        ("1.5b", "-1_5b", "1.5b"),
+        ("3b", "-3b", "3b"),
+        ("7b", "-7b", "7b"),
+        ("14b", "-14b", "14b"),
+        ("32b", "-32b", "32b"),
+    ];
+    SIZE_PATTERNS.iter().find_map(|(primary, alt, label)| {
+        let matched = filename_lower.contains(primary) || filename_lower.contains(alt);
+        matched.then_some(*label)
+    })
+}
+
+/// Estimate model size from file size on disk (for hash-named pacha-cached files).
+/// GGUF Q4_K sizes: 0.5B~400MB, 1.5B~1GB, 3B~2GB, 7B~4.5GB
+fn estimate_size_from_file(path: &Path) -> &'static str {
+    match std::fs::metadata(path).map(|m| m.len()).unwrap_or(0) {
+        0..=800_000_000 => "0.5b",
+        800_000_001..=2_000_000_000 => "1.5b",
+        2_000_000_001..=4_000_000_000 => "3b",
+        _ => "7b",
+    }
+}
+
 /// Detect Ollama model name from GGUF filename (BUG-QA-001 fix)
 /// Matches model size to avoid unfair comparison (e.g., 0.5B APR vs 1.5B Ollama)
 /// Detect the matching Ollama model tag for fair like-for-like comparison.
@@ -301,29 +359,8 @@ fn detect_ollama_model_from_path(path: &Path) -> String {
     let filename = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
     let filename_lower = filename.to_lowercase();
 
-    // Detect model size from filename first
-    let size = if filename_lower.contains("0.5b") || filename_lower.contains("-0_5b") {
-        "0.5b"
-    } else if filename_lower.contains("1.5b") || filename_lower.contains("-1_5b") {
-        "1.5b"
-    } else if filename_lower.contains("3b") || filename_lower.contains("-3b") {
-        "3b"
-    } else if filename_lower.contains("7b") || filename_lower.contains("-7b") {
-        "7b"
-    } else if filename_lower.contains("14b") || filename_lower.contains("-14b") {
-        "14b"
-    } else if filename_lower.contains("32b") || filename_lower.contains("-32b") {
-        "32b"
-    } else {
-        // Fallback: estimate from file size (for hash-named pacha-cached files).
-        // GGUF Q4_K sizes: 0.5B≈400MB, 1.5B≈1GB, 3B≈2GB, 7B≈4.5GB
-        match std::fs::metadata(path).map(|m| m.len()).unwrap_or(0) {
-            0..=800_000_000 => "0.5b",
-            800_000_001..=2_000_000_000 => "1.5b",
-            2_000_000_001..=4_000_000_000 => "3b",
-            _ => "7b",
-        }
-    };
+    let size = detect_size_from_filename(&filename_lower)
+        .unwrap_or_else(|| estimate_size_from_file(path));
 
     // Default Ollama tag uses Q4_K_M — fair comparison for quantized GGUF
     format!("qwen2.5-coder:{size}")

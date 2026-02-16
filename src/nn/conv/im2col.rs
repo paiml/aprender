@@ -9,6 +9,51 @@
 //! - Chellapilla, K., Puri, S., & Simard, P. (2006). High performance
 //!   convolutional neural networks for document processing.
 
+/// Sample a single input value with padding boundary checks.
+///
+/// Returns `0.0` for positions that fall in the padding region,
+/// otherwise returns the corresponding input element.
+#[inline]
+fn sample_padded(input: &[f32], c: usize, ih: usize, iw: usize, in_h: usize, in_w: usize, ph: usize, pw: usize) -> f32 {
+    let in_bounds = ih >= ph && ih < in_h + ph && iw >= pw && iw < in_w + pw;
+    if in_bounds {
+        input[c * in_h * in_w + (ih - ph) * in_w + (iw - pw)]
+    } else {
+        0.0
+    }
+}
+
+/// Fill one row of the im2col matrix for a given (channel, ky, kx) triple.
+///
+/// Each row corresponds to one element of the kernel applied across all
+/// spatial output positions.
+#[inline]
+fn fill_col_row(
+    col: &mut [f32],
+    input: &[f32],
+    row: usize,
+    col_w: usize,
+    c: usize,
+    y: usize,
+    x: usize,
+    out_h: usize,
+    out_w: usize,
+    sh: usize,
+    sw: usize,
+    in_h: usize,
+    in_w: usize,
+    ph: usize,
+    pw: usize,
+) {
+    for oh in 0..out_h {
+        for ow in 0..out_w {
+            let ih = oh * sh + y;
+            let iw = ow * sw + x;
+            col[row * col_w + oh * out_w + ow] = sample_padded(input, c, ih, iw, in_h, in_w, ph, pw);
+        }
+    }
+}
+
 /// Perform im2col for 2D convolution.
 ///
 /// Converts a single batch element's input into a column matrix suitable
@@ -57,20 +102,7 @@ pub(crate) fn im2col_2d(
         for y in 0..kh {
             for x in 0..kw {
                 let row = c * kh * kw + y * kw + x;
-                for oh in 0..out_h {
-                    for ow in 0..out_w {
-                        let ih = oh * sh + y;
-                        let iw = ow * sw + x;
-
-                        let val = if ih < ph || ih >= in_h + ph || iw < pw || iw >= in_w + pw {
-                            0.0
-                        } else {
-                            input[c * in_h * in_w + (ih - ph) * in_w + (iw - pw)]
-                        };
-
-                        col[row * col_w + oh * out_w + ow] = val;
-                    }
-                }
+                fill_col_row(&mut col, input, row, col_w, c, y, x, out_h, out_w, sh, sw, in_h, in_w, ph, pw);
             }
         }
     }

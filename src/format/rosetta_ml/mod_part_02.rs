@@ -85,46 +85,9 @@ impl AnomalyDetector {
         let n = training_data.len();
         let p = 12; // Feature dimension
 
-        // Compute mean
-        let mut mean = vec![0.0f32; p];
-        for features in training_data {
-            let vec = features.to_vec();
-            for (i, &v) in vec.iter().enumerate() {
-                mean[i] += v;
-            }
-        }
-        for m in &mut mean {
-            *m /= n as f32;
-        }
-
-        // Compute covariance matrix
-        let mut cov = vec![vec![0.0f32; p]; p];
-        for features in training_data {
-            let vec = features.to_vec();
-            for i in 0..p {
-                for j in 0..p {
-                    cov[i][j] += (vec[i] - mean[i]) * (vec[j] - mean[j]);
-                }
-            }
-        }
-        for row in &mut cov {
-            for c in row {
-                *c /= (n - 1) as f32;
-            }
-        }
-
-        // Ledoit-Wolf shrinkage: Σ_reg = (1-α)Σ + α·trace(Σ)/p·I
-        let trace: f32 = (0..p).map(|i| cov[i][i]).sum();
-        let shrink_target = trace / p as f32;
-
-        for i in 0..p {
-            for j in 0..p {
-                cov[i][j] *= 1.0 - shrinkage;
-                if i == j {
-                    cov[i][j] += shrinkage * shrink_target;
-                }
-            }
-        }
+        let mean = compute_feature_mean(training_data, p, n);
+        let mut cov = compute_covariance(training_data, &mean, p, n);
+        apply_ledoit_wolf_shrinkage(&mut cov, p, shrinkage);
 
         // Invert covariance matrix (simple Gauss-Jordan for 12x12)
         let inv_cov = invert_matrix(&cov)?;
@@ -191,6 +154,60 @@ impl AnomalyDetector {
     }
 }
 
+/// Compute mean feature vector from training data.
+fn compute_feature_mean(training_data: &[TensorFeatures], p: usize, n: usize) -> Vec<f32> {
+    let mut mean = vec![0.0f32; p];
+    for features in training_data {
+        let vec = features.to_vec();
+        for (i, &v) in vec.iter().enumerate() {
+            mean[i] += v;
+        }
+    }
+    for m in &mut mean {
+        *m /= n as f32;
+    }
+    mean
+}
+
+/// Compute covariance matrix from training data and mean vector.
+fn compute_covariance(
+    training_data: &[TensorFeatures],
+    mean: &[f32],
+    p: usize,
+    n: usize,
+) -> Vec<Vec<f32>> {
+    let mut cov = vec![vec![0.0f32; p]; p];
+    for features in training_data {
+        let vec = features.to_vec();
+        for i in 0..p {
+            for j in 0..p {
+                cov[i][j] += (vec[i] - mean[i]) * (vec[j] - mean[j]);
+            }
+        }
+    }
+    for row in &mut cov {
+        for c in row {
+            *c /= (n - 1) as f32;
+        }
+    }
+    cov
+}
+
+/// Apply Ledoit-Wolf shrinkage: Sigma_reg = (1-alpha)*Sigma + alpha*trace(Sigma)/p*I
+fn apply_ledoit_wolf_shrinkage(cov: &mut [Vec<f32>], p: usize, shrinkage: f32) {
+    let trace: f32 = (0..p).map(|i| cov[i][i]).sum();
+    let shrink_target = trace / p as f32;
+
+    for i in 0..p {
+        for j in 0..p {
+            cov[i][j] *= 1.0 - shrinkage;
+            if i == j {
+                cov[i][j] += shrinkage * shrink_target;
+            }
+        }
+    }
+}
+
 /// Simple matrix inversion using Gauss-Jordan elimination
 fn invert_matrix(matrix: &[Vec<f32>]) -> Option<Vec<Vec<f32>>> {
     let n = matrix.len();
@@ -198,7 +215,25 @@ fn invert_matrix(matrix: &[Vec<f32>]) -> Option<Vec<Vec<f32>>> {
         return None;
     }
 
-    // Augment with identity matrix
+    let mut aug = build_augmented_matrix(matrix, n);
+
+    for i in 0..n {
+        partial_pivot(&mut aug, i);
+
+        let pivot = aug[i][i];
+        if pivot.abs() < 1e-10 {
+            return None; // Singular matrix
+        }
+
+        scale_row(&mut aug[i], pivot);
+        eliminate_column(&mut aug, i, n);
+    }
+
+    Some(extract_inverse(&aug, n))
+}
+
+/// Build augmented matrix [A | I] for Gauss-Jordan elimination.
+fn build_augmented_matrix(matrix: &[Vec<f32>], n: usize) -> Vec<Vec<f32>> {
     let mut aug = vec![vec![0.0f32; 2 * n]; n];
     for i in 0..n {
         for j in 0..n {
@@ -206,48 +241,50 @@ fn invert_matrix(matrix: &[Vec<f32>]) -> Option<Vec<Vec<f32>>> {
         }
         aug[i][n + i] = 1.0;
     }
+    aug
+}
 
-    // Gauss-Jordan elimination
-    for i in 0..n {
-        // Find pivot
-        let mut max_row = i;
-        for k in (i + 1)..n {
-            if aug[k][i].abs() > aug[max_row][i].abs() {
-                max_row = k;
-            }
-        }
-        aug.swap(i, max_row);
-
-        let pivot = aug[i][i];
-        if pivot.abs() < 1e-10 {
-            return None; // Singular matrix
-        }
-
-        // Scale pivot row
-        for j in 0..(2 * n) {
-            aug[i][j] /= pivot;
-        }
-
-        // Eliminate column
-        for k in 0..n {
-            if k != i {
-                let factor = aug[k][i];
-                for j in 0..(2 * n) {
-                    aug[k][j] -= factor * aug[i][j];
-                }
-            }
+/// Find the row with the largest absolute value in the given column
+/// at or below the diagonal, then swap it into position.
+fn partial_pivot(aug: &mut [Vec<f32>], col: usize) {
+    let mut max_row = col;
+    for k in (col + 1)..aug.len() {
+        if aug[k][col].abs() > aug[max_row][col].abs() {
+            max_row = k;
         }
     }
+    aug.swap(col, max_row);
+}
 
-    // Extract inverse
+/// Scale a row by dividing all elements by the pivot value.
+fn scale_row(row: &mut [f32], pivot: f32) {
+    for val in row.iter_mut() {
+        *val /= pivot;
+    }
+}
+
+/// Eliminate all entries in the given column except the pivot row.
+fn eliminate_column(aug: &mut [Vec<f32>], col: usize, n: usize) {
+    for k in 0..n {
+        if k == col {
+            continue;
+        }
+        let factor = aug[k][col];
+        for j in 0..(2 * n) {
+            aug[k][j] -= factor * aug[col][j];
+        }
+    }
+}
+
+/// Extract the inverse matrix from the right half of the augmented matrix.
+fn extract_inverse(aug: &[Vec<f32>], n: usize) -> Vec<Vec<f32>> {
     let mut inverse = vec![vec![0.0f32; n]; n];
     for i in 0..n {
         for j in 0..n {
             inverse[i][j] = aug[i][n + j];
         }
     }
-
-    Some(inverse)
+    inverse
 }
 
 // ============================================================================
