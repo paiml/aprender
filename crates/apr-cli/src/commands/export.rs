@@ -23,6 +23,75 @@ use aprender::format::{apr_export, ExportFormat, ExportOptions, ExportReport, Qu
 use humansize::{format_size, BINARY};
 use std::path::Path;
 
+/// GH-273: Resolve export format (infer from output extension) and parse quantization.
+fn resolve_export_options(
+    format: &str,
+    output: &Path,
+    quantize: Option<&str>,
+) -> Result<(ExportFormat, Option<QuantizationType>)> {
+    // GH-273: Infer export format from output extension when --format is default
+    let effective_format = if format == "safetensors" {
+        let ext = output.extension().and_then(|e| e.to_str()).unwrap_or("");
+        match ext {
+            "gguf" => "gguf",
+            "mlx" => "mlx",
+            "onnx" => "onnx",
+            _ => format,
+        }
+    } else {
+        format
+    };
+
+    let export_format: ExportFormat = effective_format.parse().map_err(|_| {
+        CliError::ValidationFailed(format!(
+            "Unknown export format: {effective_format}. Use: safetensors, gguf, mlx, onnx, openvino, coreml"
+        ))
+    })?;
+
+    if !export_format.is_supported() {
+        return Err(CliError::ValidationFailed(format!(
+            "Export format '{}' is not yet implemented. Supported: safetensors, gguf, mlx",
+            export_format.display_name()
+        )));
+    }
+
+    let quant_type = parse_quantization(quantize)?;
+    Ok((export_format, quant_type))
+}
+
+/// Execute the export and display results.
+fn execute_and_display(
+    file: &Path,
+    output: &Path,
+    export_format: ExportFormat,
+    quant_type: Option<QuantizationType>,
+    json_output: bool,
+) -> Result<()> {
+    let options = ExportOptions {
+        format: export_format,
+        quantize: quant_type,
+        ..Default::default()
+    };
+
+    match apr_export(file, output, options) {
+        Ok(report) => {
+            if json_output {
+                display_report_json(&report);
+            } else {
+                display_report(&report);
+            }
+            Ok(())
+        }
+        Err(e) => {
+            if !json_output {
+                println!();
+                println!("  {}", output::badge_fail("Export failed"));
+            }
+            Err(CliError::ValidationFailed(e.to_string()))
+        }
+    }
+}
+
 /// Run the export command
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::disallowed_methods)]
@@ -59,23 +128,7 @@ pub(crate) fn run(
         CliError::ValidationFailed("Output path required. Use -o <path>".to_string())
     })?;
 
-    // Parse export format
-    let export_format: ExportFormat = format.parse().map_err(|_| {
-        CliError::ValidationFailed(format!(
-            "Unknown export format: {format}. Use: safetensors, gguf, mlx, onnx, openvino, coreml"
-        ))
-    })?;
-
-    // Check if format is supported
-    if !export_format.is_supported() {
-        return Err(CliError::ValidationFailed(format!(
-            "Export format '{}' is not yet implemented. Supported: safetensors, gguf, mlx",
-            export_format.display_name()
-        )));
-    }
-
-    // Parse quantization option
-    let quant_type = parse_quantization(quantize)?;
+    let (export_format, quant_type) = resolve_export_options(format, output, quantize)?;
 
     // PMAT-261: Detect stdout pipe output (-o - | -o /dev/stdout)
     let pipe_to_stdout = crate::pipe::is_stdout(&output.to_string_lossy());
@@ -98,30 +151,7 @@ pub(crate) fn run(
         output::pipeline_stage("Exporting", output::StageStatus::Running);
     }
 
-    // Build options
-    let options = ExportOptions {
-        format: export_format,
-        quantize: quant_type,
-        ..Default::default()
-    };
-
-    match apr_export(file, output, options) {
-        Ok(report) => {
-            if json_output {
-                display_report_json(&report);
-            } else {
-                display_report(&report);
-            }
-            Ok(())
-        }
-        Err(e) => {
-            if !json_output {
-                println!();
-                println!("  {}", output::badge_fail("Export failed"));
-            }
-            Err(CliError::ValidationFailed(e.to_string()))
-        }
-    }
+    execute_and_display(file, output, export_format, quant_type, json_output)
 }
 
 /// PMAT-261: Export to stdout — write raw bytes, no ANSI, no status messages.
