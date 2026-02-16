@@ -7,6 +7,7 @@
 use aprender::autograd::Tensor;
 use aprender::nn::{Conv1d, Conv2d, ConvDimensionNumbers, ConvLayout, KernelLayout, Module};
 
+#[allow(clippy::cognitive_complexity)]
 fn main() {
     println!("=== GH-159 Dogfood: Conv Layout Optimization ===\n");
 

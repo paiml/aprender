@@ -324,96 +324,91 @@ pub(crate) async fn safetensors_chat_completions_handler(
         0.0
     };
 
-    // Generate unique ID using timestamp and process ID
-    let request_id = format!(
+    let tool_calls = if has_tools {
+        super::types::parse_tool_calls(&output_text)
+    } else {
+        None
+    };
+
+    build_chat_response(
+        output_text,
+        tool_calls,
+        stream_mode,
+        input_ids.len(),
+        tokens_generated,
+        elapsed,
+        tok_per_sec,
+    )
+}
+
+/// Generate a unique request ID for OpenAI-compatible responses.
+#[cfg(feature = "inference")]
+fn generate_request_id() -> String {
+    format!(
         "chatcmpl-{}-{}",
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_nanos(),
         std::process::id()
-    );
+    )
+}
 
-    // GH-160: Check for tool calls in output
-    let tool_calls = if has_tools {
-        super::types::parse_tool_calls(&output_text)
-    } else {
-        None
-    };
+/// Build OpenAI-compatible chat completion response (streaming or non-streaming).
+#[cfg(feature = "inference")]
+fn build_chat_response(
+    output_text: String,
+    tool_calls: Option<Vec<super::types::ToolCall>>,
+    stream_mode: bool,
+    prompt_tokens: usize,
+    tokens_generated: usize,
+    elapsed: std::time::Duration,
+    tok_per_sec: f64,
+) -> axum::response::Response {
+    use axum::response::{sse::Event, IntoResponse, Sse};
+    use futures_util::stream;
+
+    let request_id = generate_request_id();
     let has_tool_calls = tool_calls.is_some();
     let finish_reason = if has_tool_calls { "tool_calls" } else { "stop" };
+    let created = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
 
-    // Return OpenAI-compatible response
     if stream_mode {
-        // SSE streaming response
-        let response = if has_tool_calls {
-            serde_json::json!({
-                "id": request_id,
-                "object": "chat.completion.chunk",
-                "created": std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_secs(),
-                "model": "safetensors",
-                "choices": [{
-                    "index": 0,
-                    "delta": {"role": "assistant", "tool_calls": tool_calls},
-                    "finish_reason": finish_reason
-                }]
-            })
+        let delta = if has_tool_calls {
+            serde_json::json!({"role": "assistant", "tool_calls": tool_calls})
         } else {
-            serde_json::json!({
-                "id": request_id,
-                "object": "chat.completion.chunk",
-                "created": std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_secs(),
-                "model": "safetensors",
-                "choices": [{
-                    "index": 0,
-                    "delta": {"role": "assistant", "content": output_text},
-                    "finish_reason": finish_reason
-                }]
-            })
+            serde_json::json!({"role": "assistant", "content": output_text})
         };
-
+        let response = serde_json::json!({
+            "id": request_id,
+            "object": "chat.completion.chunk",
+            "created": created,
+            "model": "safetensors",
+            "choices": [{"index": 0, "delta": delta, "finish_reason": finish_reason}]
+        });
         let stream = stream::once(async move {
             Ok::<_, std::convert::Infallible>(Event::default().data(response.to_string()))
         });
         Sse::new(stream).into_response()
     } else {
-        // Non-streaming response (GH-160: tool calls support)
         let message = if has_tool_calls {
-            serde_json::json!({
-                "role": "assistant",
-                "content": null,
-                "tool_calls": tool_calls
-            })
+            serde_json::json!({"role": "assistant", "content": null, "tool_calls": tool_calls})
         } else {
-            serde_json::json!({
-                "role": "assistant",
-                "content": output_text
-            })
+            serde_json::json!({"role": "assistant", "content": output_text})
         };
-
         axum::Json(serde_json::json!({
             "id": request_id,
             "object": "chat.completion",
-            "created": std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs(),
+            "created": created,
             "model": "safetensors",
-            "choices": [{
-                "index": 0,
-                "message": message,
-                "finish_reason": finish_reason
-            }],
+            "choices": [{"index": 0, "message": message, "finish_reason": finish_reason}],
             "usage": {
-                "prompt_tokens": input_ids.len(),
+                "prompt_tokens": prompt_tokens,
                 "completion_tokens": tokens_generated,
-                "total_tokens": input_ids.len() + tokens_generated
+                "total_tokens": prompt_tokens + tokens_generated
             },
             "latency_ms": elapsed.as_millis(),
             "tok_per_sec": tok_per_sec

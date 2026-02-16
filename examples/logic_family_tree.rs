@@ -14,6 +14,7 @@
 
 use aprender::logic::{logical_join, logical_project, Equation, LogicMode, ProgramBuilder};
 
+#[allow(clippy::cognitive_complexity)]
 fn main() {
     println!("=== TensorLogic Family Tree Demo ===\n");
 
@@ -43,15 +44,8 @@ fn main() {
     print_matrix(&grandparent, &["Alice", "Bob", "Charlie", "David"]);
 
     // Interpret results
-    println!("\nDeduced grandparent relationships:");
     let names = ["Alice", "Bob", "Charlie", "David"];
-    for (i, row) in grandparent.iter().enumerate() {
-        for (j, &val) in row.iter().enumerate() {
-            if val > 0.5 {
-                println!("  {} is grandparent of {}", names[i], names[j]);
-            }
-        }
-    }
+    print_relationships(&grandparent, &names, "grandparent");
 
     // Compute great-grandparent = grandparent @ parent
     println!("\nComputing great-grandparent relation...");
@@ -60,14 +54,7 @@ fn main() {
     println!("Great-grandparent relation:");
     print_matrix(&great_grandparent, &["Alice", "Bob", "Charlie", "David"]);
 
-    println!("\nDeduced great-grandparent relationships:");
-    for (i, row) in great_grandparent.iter().enumerate() {
-        for (j, &val) in row.iter().enumerate() {
-            if val > 0.5 {
-                println!("  {} is great-grandparent of {}", names[i], names[j]);
-            }
-        }
-    }
+    print_relationships(&great_grandparent, &names, "great-grandparent");
 
     // Demonstrate existential projection (HasDescendant)
     println!("\n=== Existential Projection Demo ===");
@@ -128,8 +115,28 @@ fn main() {
     let uncertain_grandparent =
         logical_join(&uncertain_parent, &uncertain_parent, LogicMode::Continuous);
 
+    print_uncertain_relationships(&uncertain_grandparent, &names);
+
+    println!("\n=== Demo Complete ===");
+    println!("TensorLogic enables differentiable logical reasoning!");
+}
+
+/// Print deduced relationships from a relation matrix.
+fn print_relationships(matrix: &[Vec<f64>], names: &[&str], relation: &str) {
+    println!("\nDeduced {relation} relationships:");
+    for (i, row) in matrix.iter().enumerate() {
+        for (j, &val) in row.iter().enumerate() {
+            if val > 0.5 {
+                println!("  {} is {relation} of {}", names[i], names[j]);
+            }
+        }
+    }
+}
+
+/// Print uncertain (probabilistic) grandparent relationships.
+fn print_uncertain_relationships(matrix: &[Vec<f64>], names: &[&str]) {
     println!("\nUncertain grandparent probabilities:");
-    for (i, row) in uncertain_grandparent.iter().enumerate() {
+    for (i, row) in matrix.iter().enumerate() {
         for (j, &val) in row.iter().enumerate() {
             if val > 0.1 {
                 println!(
@@ -139,9 +146,6 @@ fn main() {
             }
         }
     }
-
-    println!("\n=== Demo Complete ===");
-    println!("TensorLogic enables differentiable logical reasoning!");
 }
 
 /// Print a matrix with row/column labels

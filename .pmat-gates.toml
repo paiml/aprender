@@ -29,9 +29,11 @@ max_complexity = 10
 
 [exclude]
 # mdBook generated files (not our code)
+# Python helper scripts (one-off utilities, not production code)
 patterns = [
     "**/book/**",
     "**/target/**",
+    "scripts/*.py",
 ]
 
 [dead_code]

@@ -15,6 +15,7 @@ use aprender::pruning::{
     generate_nm_mask, generate_unstructured_mask, Importance, MagnitudeImportance,
 };
 
+#[allow(clippy::cognitive_complexity)]
 fn main() {
     println!("╔══════════════════════════════════════════════════════════════╗");
     println!("║         Magnitude Pruning with Aprender                      ║");

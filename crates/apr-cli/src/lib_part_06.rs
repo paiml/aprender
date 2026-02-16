@@ -1,8 +1,9 @@
-
-/// Dispatch extended commands (analysis, profiling, QA, benchmarks).
-#[allow(clippy::too_many_lines)]
-fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
-    match cli.command.as_ref() {
+/// Dispatch analysis commands (cbtop, probar, compare-hf, hex, tree, flow, oracle).
+///
+/// Returns `None` if the command is not an analysis command, allowing the caller
+/// to try other sub-dispatchers.
+fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
+    let result = match cli.command.as_ref() {
         Commands::Cbtop {
             model,
             attach,
@@ -123,71 +124,46 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
             *json || cli.json,
         ),
 
-        Commands::Chat {
-            file,
-            temperature,
-            top_p,
-            max_tokens,
-            system,
-            inspect,
-            no_gpu,
-            gpu: _,
-            trace,
-            trace_steps,
-            trace_verbose,
-            trace_output,
-            trace_level,
-            profile,
-        } => chat::run(
-            file,
-            *temperature,
-            *top_p,
-            *max_tokens,
-            system.as_deref(),
-            *inspect,
-            *no_gpu,
-            *trace,
-            trace_steps.as_deref(),
-            *trace_verbose,
-            trace_output.clone(),
-            trace_level.as_str(),
-            *profile,
-        ),
-
-        Commands::Bench {
-            file,
-            warmup,
-            iterations,
-            max_tokens,
-            prompt,
-            fast,
-            brick,
-        } => bench::run(
-            file,
-            *warmup,
-            *iterations,
-            *max_tokens,
-            prompt.as_deref(),
-            *fast,
-            brick.as_deref(),
+        Commands::Oracle {
+            source,
+            family,
+            size,
+            compliance,
+            tensors,
+            stats,
+            explain,
+            kernels,
+            validate,
+            full,
+        } => oracle::run(
+            source.as_ref(),
+            family.as_ref(),
+            size.as_ref(),
+            *compliance,
+            *tensors,
             cli.json,
+            cli.verbose,
+            cli.offline,
+            oracle::OracleFlags {
+                stats: *stats,
+                explain: *explain,
+                kernels: *kernels,
+                validate: *validate,
+                full: *full,
+            },
         ),
 
-        Commands::Eval {
-            file,
-            dataset,
-            text,
-            max_tokens,
-            threshold,
-        } => eval::run(
-            file,
-            dataset,
-            text.as_deref(),
-            Some(*max_tokens),
-            Some(*threshold),
-            cli.json,
-        ),
+        _ => return None,
+    };
+    Some(result)
+}
 
+/// Dispatch profiling and QA commands (profile, bench, eval, qa, parity, ptx, ptx-map, tune).
+///
+/// Returns `None` if the command is not a profiling command, allowing the caller
+/// to try other sub-dispatchers.
+fn dispatch_profiling_commands(cli: &Cli) -> Option<Result<(), CliError>> {
+    let result = match cli.command.as_ref() {
         Commands::Profile {
             file,
             granular,
@@ -234,6 +210,40 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
             *ollama,
             *no_gpu,
             compare.as_deref(),
+        ),
+
+        Commands::Bench {
+            file,
+            warmup,
+            iterations,
+            max_tokens,
+            prompt,
+            fast,
+            brick,
+        } => bench::run(
+            file,
+            *warmup,
+            *iterations,
+            *max_tokens,
+            prompt.as_deref(),
+            *fast,
+            brick.as_deref(),
+            cli.json,
+        ),
+
+        Commands::Eval {
+            file,
+            dataset,
+            text,
+            max_tokens,
+            threshold,
+        } => eval::run(
+            file,
+            dataset,
+            text.as_deref(),
+            Some(*max_tokens),
+            Some(*threshold),
+            cli.json,
         ),
 
         Commands::Qa {
@@ -344,6 +354,59 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
             *json || cli.json,
         ),
 
+        _ => return None,
+    };
+    Some(result)
+}
+
+/// Dispatch extended commands (analysis, profiling, QA, benchmarks).
+///
+/// Delegates to [`dispatch_analysis_commands`] and [`dispatch_profiling_commands`]
+/// sub-dispatchers to keep cyclomatic complexity below 10 per function.
+fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
+    // Try analysis commands first (cbtop, probar, compare-hf, hex, tree, flow, oracle)
+    if let Some(result) = dispatch_analysis_commands(cli) {
+        return result;
+    }
+
+    // Try profiling/QA commands (profile, bench, eval, qa, parity, ptx, ptx-map, tune)
+    if let Some(result) = dispatch_profiling_commands(cli) {
+        return result;
+    }
+
+    // Remaining extended commands handled directly
+    match cli.command.as_ref() {
+        Commands::Chat {
+            file,
+            temperature,
+            top_p,
+            max_tokens,
+            system,
+            inspect,
+            no_gpu,
+            gpu: _,
+            trace,
+            trace_steps,
+            trace_verbose,
+            trace_output,
+            trace_level,
+            profile,
+        } => chat::run(
+            file,
+            *temperature,
+            *top_p,
+            *max_tokens,
+            system.as_deref(),
+            *inspect,
+            *no_gpu,
+            *trace,
+            trace_steps.as_deref(),
+            *trace_verbose,
+            trace_output.clone(),
+            trace_level.as_str(),
+            *profile,
+        ),
+
         Commands::Showcase {
             auto_verify,
             step,
@@ -393,35 +456,6 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
             message.as_deref(),
             *dry_run,
             cli.verbose,
-        ),
-
-        Commands::Oracle {
-            source,
-            family,
-            size,
-            compliance,
-            tensors,
-            stats,
-            explain,
-            kernels,
-            validate,
-            full,
-        } => oracle::run(
-            source.as_ref(),
-            family.as_ref(),
-            size.as_ref(),
-            *compliance,
-            *tensors,
-            cli.json,
-            cli.verbose,
-            cli.offline,
-            oracle::OracleFlags {
-                stats: *stats,
-                explain: *explain,
-                kernels: *kernels,
-                validate: *validate,
-                full: *full,
-            },
         ),
 
         // All other commands handled by dispatch_core_command

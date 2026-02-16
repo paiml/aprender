@@ -32,6 +32,47 @@ fn format_family_description_footer(config: &ModelFamilyConfig, verbose: bool) -
     out
 }
 
+/// Collect and sort size variants, optionally filtered.
+fn collect_size_variants<'a>(
+    config: &'a ModelFamilyConfig,
+    size_filter: Option<&str>,
+) -> Vec<(&'a String, &'a ModelSizeConfig)> {
+    if let Some(size) = size_filter {
+        config
+            .size_variants
+            .iter()
+            .filter(|(k, _)| k.as_str() == size)
+            .collect()
+    } else {
+        let mut v: Vec<_> = config.size_variants.iter().collect();
+        v.sort_by_key(|(_, sc)| sc.hidden_dim);
+        v
+    }
+}
+
+/// Print extended stats/explain/kernels for a single variant.
+fn print_variant_details(
+    sc: &ModelSizeConfig,
+    flags: OracleFlags,
+    family: &dyn ModelFamily,
+) {
+    if !flags.show_stats() && !flags.show_explain() && !flags.show_kernels() {
+        return;
+    }
+    let stats = build_statistical_analysis(sc, family.constraints());
+    if flags.show_stats() {
+        print!("{}", format_family_variant_stats(&stats));
+    }
+    if flags.show_explain() {
+        let expl = build_architecture_explanation(sc, family.constraints(), &stats);
+        print!("{}", format_family_variant_explain(&expl));
+    }
+    if flags.show_kernels() {
+        let kern = build_kernel_compatibility(sc, family.constraints(), &stats);
+        print!("{}", format_family_variant_kernels(&kern));
+    }
+}
+
 fn output_family_description(
     config: &ModelFamilyConfig,
     size_filter: Option<&str>,
@@ -42,39 +83,11 @@ fn output_family_description(
     output::section(&format!("{} Family Contract", config.display_name));
     print!("{}", format_family_description_header(config));
 
-    // Size variants
-    let variants: Vec<(&String, &ModelSizeConfig)> = if let Some(size) = size_filter {
-        config
-            .size_variants
-            .iter()
-            .filter(|(k, _)| k.as_str() == size)
-            .collect()
-    } else {
-        let mut v: Vec<_> = config.size_variants.iter().collect();
-        v.sort_by_key(|(_, sc)| sc.hidden_dim);
-        v
-    };
+    let variants = collect_size_variants(config, size_filter);
 
     for (name, sc) in &variants {
         print!("{}", format_family_size_variant(name, sc));
-
-        if flags.show_stats() || flags.show_explain() || flags.show_kernels() {
-            let stats = build_statistical_analysis(sc, family.constraints());
-
-            if flags.show_stats() {
-                print!("{}", format_family_variant_stats(&stats));
-            }
-
-            if flags.show_explain() {
-                let expl = build_architecture_explanation(sc, family.constraints(), &stats);
-                print!("{}", format_family_variant_explain(&expl));
-            }
-
-            if flags.show_kernels() {
-                let kern = build_kernel_compatibility(sc, family.constraints(), &stats);
-                print!("{}", format_family_variant_kernels(&kern));
-            }
-        }
+        print_variant_details(sc, flags, family);
     }
 
     if size_filter.is_some() && variants.is_empty() {

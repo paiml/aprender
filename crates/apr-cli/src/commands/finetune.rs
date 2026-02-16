@@ -14,7 +14,7 @@
 use crate::error::{CliError, Result};
 use crate::output;
 use colored::Colorize;
-use entrenar_lora::{plan, MemoryPlanner, MergeEngine, Method};
+use entrenar_lora::{plan, MemoryPlanner, MemoryRequirement, MergeEngine, Method, OptimalConfig};
 use std::path::Path;
 
 /// Fine-tuning method selection
@@ -54,213 +54,148 @@ impl From<FinetuneMethod> for Method {
     }
 }
 
-/// Run the finetune command
-#[allow(clippy::too_many_arguments)]
+/// Resolve model parameters from either --model-size flag or file inspection.
+fn resolve_model_params(model_size: Option<&str>, model_path: Option<&Path>) -> Result<u64> {
+    if let Some(size) = model_size {
+        parse_model_size(size)
+    } else if let Some(path) = model_path {
+        estimate_params_from_file(path)
+    } else {
+        Err(CliError::ValidationFailed(
+            "Either model path or --model-size required".to_string(),
+        ))
+    }
+}
+
+/// Display plan configuration as JSON.
 #[allow(clippy::disallowed_methods)]
-pub(crate) fn run(
-    model_path: Option<&Path>,
-    method: &str,
-    rank: Option<u32>,
+fn display_plan_json(
+    config: &OptimalConfig,
+    req: &MemoryRequirement,
+    model_params: u64,
     vram_gb: f64,
-    plan_only: bool,
-    data_path: Option<&Path>,
-    output_path: Option<&Path>,
-    adapter_path: Option<&Path>,
-    merge_mode: bool,
     epochs: u32,
     learning_rate: f64,
-    model_size: Option<&str>,
+    plan_only: bool,
+) {
+    let json = serde_json::json!({
+        "model_params": model_params,
+        "vram_gb": vram_gb,
+        "recommended_method": format!("{:?}", config.method),
+        "recommended_rank": config.rank,
+        "recommended_alpha": config.alpha,
+        "trainable_params": config.trainable_params,
+        "trainable_percent": config.trainable_percent,
+        "memory_gb": config.memory_gb,
+        "utilization_percent": config.utilization_percent,
+        "speedup": config.speedup,
+        "epochs": epochs,
+        "learning_rate": learning_rate,
+        "plan_only": plan_only,
+        "memory_breakdown": {
+            "model_bytes": req.model_bytes,
+            "adapter_bytes": req.adapter_bytes,
+            "optimizer_bytes": req.optimizer_bytes,
+            "activation_bytes": req.activation_bytes,
+            "total_bytes": req.total_bytes,
+            "savings_percent": req.savings_percent,
+        },
+    });
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&json).unwrap_or_default()
+    );
+}
+
+/// Display plan configuration as human-readable text.
+fn display_plan_text(
+    config: &OptimalConfig,
+    req: &MemoryRequirement,
+    vram_gb: f64,
+) {
+    println!("{}", "RECOMMENDED CONFIGURATION".white().bold());
+    println!("{}", "═".repeat(50));
+    println!();
+    println!(
+        "  Method:           {}",
+        format!("{:?}", config.method).cyan().bold()
+    );
+    println!("  Rank:             {}", config.rank.to_string().green());
+    println!("  Alpha:            {:.1}", config.alpha);
+    println!(
+        "  Trainable params: {} ({:.2}%)",
+        format_params(config.trainable_params).yellow(),
+        config.trainable_percent
+    );
+    println!(
+        "  Memory required:  {:.2} GB ({:.0}% utilization)",
+        config.memory_gb, config.utilization_percent
+    );
+    println!(
+        "  Speedup:          {:.1}x vs full fine-tuning",
+        config.speedup
+    );
+    println!();
+
+    display_memory_breakdown(req, vram_gb);
+}
+
+/// Display memory breakdown table with feasibility check.
+fn display_memory_breakdown(req: &MemoryRequirement, vram_gb: f64) {
+    println!("{}", "MEMORY BREAKDOWN".white().bold());
+    println!("{}", "─".repeat(50));
+
+    let model_gb = req.model_bytes as f64 / 1e9;
+    let adapter_gb = req.adapter_bytes as f64 / 1e9;
+    let optimizer_gb = req.optimizer_bytes as f64 / 1e9;
+    let activation_gb = req.activation_bytes as f64 / 1e9;
+    let total_gb = req.total_bytes as f64 / 1e9;
+
+    println!("  Base model:       {model_gb:.2} GB");
+    println!("  Adapter:          {adapter_gb:.2} GB");
+    println!("  Optimizer states: {optimizer_gb:.2} GB");
+    println!("  Activations:      {activation_gb:.2} GB");
+    println!("{}", "─".repeat(50));
+    println!("  {}:            {total_gb:.2} GB", "TOTAL".bold());
+    println!(
+        "  Savings:          {:.0}% vs full fine-tuning",
+        req.savings_percent
+    );
+    println!();
+
+    if total_gb <= vram_gb {
+        println!(
+            "{} Configuration fits in {vram_gb:.1} GB VRAM",
+            "✓".green().bold(),
+        );
+    } else {
+        println!(
+            "{} Configuration requires {total_gb:.2} GB but only {vram_gb:.1} GB available",
+            "⚠".yellow().bold(),
+        );
+        println!();
+        println!("  Suggestions:");
+        println!("    - Use QLoRA (4-bit quantization)");
+        println!("    - Reduce rank (--rank 4)");
+        println!("    - Use gradient checkpointing");
+    }
+}
+
+/// Execute LoRA adapter creation from model tensors.
+fn execute_training(
+    model_path: &Path,
+    config: &OptimalConfig,
+    data_path: &Path,
+    output_path: &Path,
+    epochs: u32,
+    learning_rate: f64,
     json_output: bool,
 ) -> Result<()> {
-    // Handle merge subcommand
-    if merge_mode {
-        return run_merge(model_path, adapter_path, output_path, json_output);
-    }
-
-    let ft_method: FinetuneMethod = method.parse().map_err(CliError::ValidationFailed)?;
-
-    if !json_output {
-        output::section("apr finetune (GH-244: LoRA/QLoRA Fine-tuning)");
-        println!();
-    }
-
-    // Determine model parameters
-    let model_params = if let Some(size) = model_size {
-        parse_model_size(size)?
-    } else if let Some(path) = model_path {
-        estimate_params_from_file(path)?
-    } else {
-        return Err(CliError::ValidationFailed(
-            "Either model path or --model-size required".to_string(),
-        ));
-    };
-
-    if !json_output {
-        output::kv("Model parameters", format_params(model_params));
-        output::kv("Available VRAM", format!("{vram_gb:.1} GB"));
-        output::kv("Method", format!("{ft_method:?}"));
-        if let Some(r) = rank {
-            output::kv("Requested rank", r.to_string());
-        }
-        output::kv("Epochs", epochs.to_string());
-        output::kv("Learning rate", format!("{learning_rate:.1e}"));
-        println!();
-    }
-
-    // Plan configuration using entrenar-lora
-    let config = plan(model_params, vram_gb, ft_method.into())
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to plan config: {e}")))?;
-
-    // Memory breakdown
-    let planner = MemoryPlanner::new(model_params);
-    let req = planner.estimate(config.method, config.rank);
-
-    if json_output {
-        let json = serde_json::json!({
-            "model_params": model_params,
-            "vram_gb": vram_gb,
-            "recommended_method": format!("{:?}", config.method),
-            "recommended_rank": config.rank,
-            "recommended_alpha": config.alpha,
-            "trainable_params": config.trainable_params,
-            "trainable_percent": config.trainable_percent,
-            "memory_gb": config.memory_gb,
-            "utilization_percent": config.utilization_percent,
-            "speedup": config.speedup,
-            "epochs": epochs,
-            "learning_rate": learning_rate,
-            "plan_only": plan_only,
-            "memory_breakdown": {
-                "model_bytes": req.model_bytes,
-                "adapter_bytes": req.adapter_bytes,
-                "optimizer_bytes": req.optimizer_bytes,
-                "activation_bytes": req.activation_bytes,
-                "total_bytes": req.total_bytes,
-                "savings_percent": req.savings_percent,
-            },
-        });
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&json).unwrap_or_default()
-        );
-        if plan_only {
-            return Ok(());
-        }
-    } else {
-        // Display recommended config
-        println!("{}", "RECOMMENDED CONFIGURATION".white().bold());
-        println!("{}", "═".repeat(50));
-        println!();
-        println!(
-            "  Method:           {}",
-            format!("{:?}", config.method).cyan().bold()
-        );
-        println!("  Rank:             {}", config.rank.to_string().green());
-        println!("  Alpha:            {:.1}", config.alpha);
-        println!(
-            "  Trainable params: {} ({:.2}%)",
-            format_params(config.trainable_params).yellow(),
-            config.trainable_percent
-        );
-        println!(
-            "  Memory required:  {:.2} GB ({:.0}% utilization)",
-            config.memory_gb, config.utilization_percent
-        );
-        println!(
-            "  Speedup:          {:.1}x vs full fine-tuning",
-            config.speedup
-        );
-        println!();
-
-        // Memory breakdown
-        println!("{}", "MEMORY BREAKDOWN".white().bold());
-        println!("{}", "─".repeat(50));
-
-        let model_gb = req.model_bytes as f64 / 1e9;
-        let adapter_gb = req.adapter_bytes as f64 / 1e9;
-        let optimizer_gb = req.optimizer_bytes as f64 / 1e9;
-        let activation_gb = req.activation_bytes as f64 / 1e9;
-        let total_gb = req.total_bytes as f64 / 1e9;
-
-        println!("  Base model:       {model_gb:.2} GB");
-        println!("  Adapter:          {adapter_gb:.2} GB");
-        println!("  Optimizer states: {optimizer_gb:.2} GB");
-        println!("  Activations:      {activation_gb:.2} GB");
-        println!("{}", "─".repeat(50));
-        println!("  {}:            {total_gb:.2} GB", "TOTAL".bold());
-        println!(
-            "  Savings:          {:.0}% vs full fine-tuning",
-            req.savings_percent
-        );
-        println!();
-
-        // Feasibility check
-        if total_gb <= vram_gb {
-            println!(
-                "{} Configuration fits in {vram_gb:.1} GB VRAM",
-                "✓".green().bold(),
-            );
-        } else {
-            println!(
-                "{} Configuration requires {total_gb:.2} GB but only {vram_gb:.1} GB available",
-                "⚠".yellow().bold(),
-            );
-            println!();
-            println!("  Suggestions:");
-            println!("    - Use QLoRA (4-bit quantization)");
-            println!("    - Reduce rank (--rank 4)");
-            println!("    - Use gradient checkpointing");
-        }
-    }
-
-    if plan_only {
-        return Ok(());
-    }
-
-    // Training execution
-    if data_path.is_none() {
-        if !json_output {
-            println!();
-            println!("{}", "NEXT STEPS".white().bold());
-            println!("{}", "─".repeat(50));
-            println!("  Provide --data <train.jsonl> to start training.");
-            println!(
-                "  Example: apr finetune model.apr --method lora --data train.jsonl -o adapter/"
-            );
-        }
-        return Ok(());
-    }
-
-    let data = data_path.expect("data checked above");
-    if !data.exists() {
-        return Err(CliError::FileNotFound(data.to_path_buf()));
-    }
-
-    if !json_output {
-        println!();
-        output::pipeline_stage("Training", output::StageStatus::Running);
-        println!("  Data: {}", data.display());
-        println!("  Epochs: {epochs}");
-        println!("  Learning rate: {learning_rate:.1e}");
-    }
-
-    // PMAT-272: Create LoRA adapter weights for target layers
-    let out = output_path.unwrap_or(Path::new("adapter.apr"));
-
-    let model_path = model_path.ok_or_else(|| {
-        CliError::ValidationFailed("Model path required for training".to_string())
-    })?;
-    if !model_path.exists() {
-        return Err(CliError::FileNotFound(model_path.to_path_buf()));
-    }
-
-    // Load model tensors via RosettaStone
     let rosetta = aprender::format::rosetta::RosettaStone::new();
     let report = rosetta
         .inspect(model_path)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to inspect model: {e}")))?;
 
-    // Identify LoRA-eligible layers (2D weight tensors in attention/MLP)
     let lora_targets: Vec<_> = report
         .tensors
         .iter()
@@ -283,11 +218,48 @@ pub(crate) fn run(
         println!("  Rank: {lora_rank}, Alpha: {lora_alpha:.1}");
     }
 
-    // Create LoRA adapters: A [rank, cols] with Kaiming init, B [rows, rank] with zeros
     let mut writer = aprender::serialization::apr::AprWriter::new();
+    write_adapter_metadata(
+        &mut writer,
+        model_path,
+        config,
+        epochs,
+        learning_rate,
+        Some(data_path),
+    );
+
+    let (adapter_count, total_adapter_params) =
+        create_lora_tensors(&mut writer, &lora_targets, lora_rank as usize);
+
+    let bytes = writer
+        .to_bytes()
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to serialize adapters: {e}")))?;
+    std::fs::write(output_path, &bytes)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to write adapter: {e}")))?;
+
+    display_adapter_result(
+        adapter_count,
+        total_adapter_params,
+        bytes.len() as u64,
+        output_path,
+        config,
+        json_output,
+    );
+    Ok(())
+}
+
+/// Write LoRA adapter metadata to APR writer.
+fn write_adapter_metadata(
+    writer: &mut aprender::serialization::apr::AprWriter,
+    model_path: &Path,
+    config: &OptimalConfig,
+    epochs: u32,
+    learning_rate: f64,
+    data_path: Option<&Path>,
+) {
     writer.set_metadata("adapter_type", serde_json::json!("lora"));
-    writer.set_metadata("lora_rank", serde_json::json!(lora_rank));
-    writer.set_metadata("lora_alpha", serde_json::json!(lora_alpha));
+    writer.set_metadata("lora_rank", serde_json::json!(config.rank));
+    writer.set_metadata("lora_alpha", serde_json::json!(config.alpha));
     writer.set_metadata("method", serde_json::json!(format!("{:?}", config.method)));
     writer.set_metadata(
         "source_model",
@@ -298,27 +270,30 @@ pub(crate) fn run(
     if let Some(dp) = data_path {
         writer.set_metadata("data_path", serde_json::json!(dp.display().to_string()));
     }
+}
 
+/// Create LoRA A/B tensor pairs for all eligible layers.
+fn create_lora_tensors(
+    writer: &mut aprender::serialization::apr::AprWriter,
+    lora_targets: &[&aprender::format::rosetta::TensorInfo],
+    rank: usize,
+) -> (u64, u64) {
     let mut adapter_count = 0u64;
     let mut total_adapter_params = 0u64;
-    let rank = lora_rank as usize;
 
-    for ti in &lora_targets {
+    for ti in lora_targets {
         let rows = ti.shape[0];
         let cols = ti.shape[1];
 
-        // LoRA A: [rank, cols] — Kaiming uniform init: U(-sqrt(1/cols), sqrt(1/cols))
         let bound = 1.0 / (cols as f32).sqrt();
         let a_data: Vec<f32> = (0..rank * cols)
             .map(|i| {
-                // Deterministic pseudo-random using tensor name hash + index
                 let seed = hash_seed(&ti.name, i);
                 (seed % 1000) as f32 / 1000.0 * 2.0 * bound - bound
             })
             .collect();
         writer.add_tensor_f32(format!("{}.lora_a", ti.name), vec![rank, cols], &a_data);
 
-        // LoRA B: [rows, rank] — zero init (standard LoRA: BA starts at zero)
         let b_data = vec![0.0f32; rows * rank];
         writer.add_tensor_f32(format!("{}.lora_b", ti.name), vec![rows, rank], &b_data);
 
@@ -326,23 +301,28 @@ pub(crate) fn run(
         total_adapter_params += (rank * cols + rows * rank) as u64;
     }
 
-    let bytes = writer
-        .to_bytes()
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to serialize adapters: {e}")))?;
-    std::fs::write(out, &bytes)
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to write adapter: {e}")))?;
+    (adapter_count, total_adapter_params)
+}
 
-    let output_size = bytes.len() as u64;
-
+/// Display adapter creation results.
+#[allow(clippy::disallowed_methods)]
+fn display_adapter_result(
+    adapter_count: u64,
+    total_adapter_params: u64,
+    output_size: u64,
+    output_path: &Path,
+    config: &OptimalConfig,
+    json_output: bool,
+) {
     if json_output {
         let json = serde_json::json!({
             "status": "adapter_created",
             "adapter_layers": adapter_count,
             "adapter_params": total_adapter_params,
             "output_size": output_size,
-            "output": out.display().to_string(),
-            "rank": lora_rank,
-            "alpha": lora_alpha,
+            "output": output_path.display().to_string(),
+            "rank": config.rank,
+            "alpha": config.alpha,
             "method": format!("{:?}", config.method),
         });
         println!(
@@ -362,12 +342,214 @@ pub(crate) fn run(
                     "Output size",
                     humansize::format_size(output_size, humansize::BINARY)
                 ),
-                ("Output", out.display().to_string()),
+                ("Output", output_path.display().to_string()),
             ])
         );
     }
+}
 
-    Ok(())
+/// Run the finetune command
+#[allow(clippy::too_many_arguments)]
+#[allow(clippy::disallowed_methods)]
+pub(crate) fn run(
+    model_path: Option<&Path>,
+    method: &str,
+    rank: Option<u32>,
+    vram_gb: f64,
+    plan_only: bool,
+    data_path: Option<&Path>,
+    output_path: Option<&Path>,
+    adapter_path: Option<&Path>,
+    merge_mode: bool,
+    epochs: u32,
+    learning_rate: f64,
+    model_size: Option<&str>,
+    json_output: bool,
+) -> Result<()> {
+    if merge_mode {
+        return run_merge(model_path, adapter_path, output_path, json_output);
+    }
+
+    let ft_method: FinetuneMethod = method.parse().map_err(CliError::ValidationFailed)?;
+
+    if !json_output {
+        output::section("apr finetune (GH-244: LoRA/QLoRA Fine-tuning)");
+        println!();
+    }
+
+    let model_params = resolve_model_params(model_size, model_path)?;
+    display_run_header(ft_method, model_params, vram_gb, rank, epochs, learning_rate, json_output);
+
+    let config = plan(model_params, vram_gb, ft_method.into())
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to plan config: {e}")))?;
+
+    let planner = MemoryPlanner::new(model_params);
+    let req = planner.estimate(config.method, config.rank);
+
+    if json_output {
+        display_plan_json(&config, &req, model_params, vram_gb, epochs, learning_rate, plan_only);
+    } else {
+        display_plan_text(&config, &req, vram_gb);
+    }
+
+    if plan_only {
+        return Ok(());
+    }
+
+    let data = match data_path {
+        Some(d) => d,
+        None => {
+            display_next_steps(json_output);
+            return Ok(());
+        }
+    };
+    if !data.exists() {
+        return Err(CliError::FileNotFound(data.to_path_buf()));
+    }
+
+    if !json_output {
+        println!();
+        output::pipeline_stage("Training", output::StageStatus::Running);
+        println!("  Data: {}", data.display());
+        println!("  Epochs: {epochs}");
+        println!("  Learning rate: {learning_rate:.1e}");
+    }
+
+    let mp = model_path.ok_or_else(|| {
+        CliError::ValidationFailed("Model path required for training".to_string())
+    })?;
+    if !mp.exists() {
+        return Err(CliError::FileNotFound(mp.to_path_buf()));
+    }
+
+    let out = output_path.unwrap_or(Path::new("adapter.apr"));
+    execute_training(mp, &config, data, out, epochs, learning_rate, json_output)
+}
+
+/// Display run header with model info.
+fn display_run_header(
+    ft_method: FinetuneMethod,
+    model_params: u64,
+    vram_gb: f64,
+    rank: Option<u32>,
+    epochs: u32,
+    learning_rate: f64,
+    json_output: bool,
+) {
+    if !json_output {
+        output::kv("Model parameters", format_params(model_params));
+        output::kv("Available VRAM", format!("{vram_gb:.1} GB"));
+        output::kv("Method", format!("{ft_method:?}"));
+        if let Some(r) = rank {
+            output::kv("Requested rank", r.to_string());
+        }
+        output::kv("Epochs", epochs.to_string());
+        output::kv("Learning rate", format!("{learning_rate:.1e}"));
+        println!();
+    }
+}
+
+/// Display next steps when no training data is provided.
+fn display_next_steps(json_output: bool) {
+    if !json_output {
+        println!();
+        println!("{}", "NEXT STEPS".white().bold());
+        println!("{}", "─".repeat(50));
+        println!("  Provide --data <train.jsonl> to start training.");
+        println!(
+            "  Example: apr finetune model.apr --method lora --data train.jsonl -o adapter/"
+        );
+    }
+}
+
+/// Validate and resolve merge input paths.
+fn validate_merge_paths<'a>(
+    model_path: Option<&'a Path>,
+    adapter_path: Option<&'a Path>,
+) -> Result<(&'a Path, &'a Path)> {
+    let model = model_path.ok_or_else(|| {
+        CliError::ValidationFailed(
+            "Model path required for merge. Usage: apr finetune merge model.apr --adapter adapter/"
+                .to_string(),
+        )
+    })?;
+    let adapter = adapter_path.ok_or_else(|| {
+        CliError::ValidationFailed(
+            "Adapter path required for merge. Use --adapter <path>".to_string(),
+        )
+    })?;
+    if !model.exists() {
+        return Err(CliError::FileNotFound(model.to_path_buf()));
+    }
+    if !adapter.exists() {
+        return Err(CliError::FileNotFound(adapter.to_path_buf()));
+    }
+    Ok((model, adapter))
+}
+
+/// Read LoRA rank/alpha from adapter metadata.
+fn read_adapter_lora_params(adapter: &Path) -> Result<(u32, f32)> {
+    let reader = aprender::serialization::apr::AprReader::open(adapter)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to read adapter: {e}")))?;
+    let rank = reader
+        .get_metadata("lora_rank")
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(16) as u32;
+    let alpha = reader
+        .get_metadata("lora_alpha")
+        .and_then(serde_json::Value::as_f64)
+        .unwrap_or(16.0) as f32;
+    Ok((rank, alpha))
+}
+
+/// Display merge result.
+#[allow(clippy::disallowed_methods)]
+fn display_merge_result(
+    model: &Path,
+    adapter: &Path,
+    output_path: &Path,
+    output_size: u64,
+    merged_count: u64,
+    total_layers: usize,
+    lora_rank: u32,
+    lora_alpha: f32,
+    json_output: bool,
+) {
+    if json_output {
+        let json = serde_json::json!({
+            "status": "merged",
+            "base_model": model.display().to_string(),
+            "adapter": adapter.display().to_string(),
+            "output": output_path.display().to_string(),
+            "output_size": output_size,
+            "merged_layers": merged_count,
+            "total_layers": total_layers,
+            "rank": lora_rank,
+            "alpha": lora_alpha,
+        });
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json).unwrap_or_default()
+        );
+    } else {
+        output::pipeline_stage("Merging", output::StageStatus::Done);
+        println!();
+        output::subheader("Merge Complete");
+        println!(
+            "{}",
+            output::kv_table(&[
+                (
+                    "Layers merged",
+                    format!("{merged_count} / {total_layers}")
+                ),
+                (
+                    "Output size",
+                    humansize::format_size(output_size, humansize::BINARY)
+                ),
+                ("Output", output_path.display().to_string()),
+            ])
+        );
+    }
 }
 
 /// Run adapter merge (finetune merge)
@@ -378,26 +560,7 @@ fn run_merge(
     output_path: Option<&Path>,
     json_output: bool,
 ) -> Result<()> {
-    let model = model_path.ok_or_else(|| {
-        CliError::ValidationFailed(
-            "Model path required for merge. Usage: apr finetune merge model.apr --adapter adapter/"
-                .to_string(),
-        )
-    })?;
-
-    let adapter = adapter_path.ok_or_else(|| {
-        CliError::ValidationFailed(
-            "Adapter path required for merge. Use --adapter <path>".to_string(),
-        )
-    })?;
-
-    if !model.exists() {
-        return Err(CliError::FileNotFound(model.to_path_buf()));
-    }
-    if !adapter.exists() {
-        return Err(CliError::FileNotFound(adapter.to_path_buf()));
-    }
-
+    let (model, adapter) = validate_merge_paths(model_path, adapter_path)?;
     let out = output_path.unwrap_or(Path::new("merged.apr"));
 
     if !json_output {
@@ -414,9 +577,7 @@ fn run_merge(
         output::pipeline_stage("Merging", output::StageStatus::Running);
     }
 
-    // PMAT-272: Load base model and adapter, merge using entrenar MergeEngine
     let rosetta = aprender::format::rosetta::RosettaStone::new();
-
     let base_report = rosetta
         .inspect(model)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to inspect base model: {e}")))?;
@@ -424,19 +585,8 @@ fn run_merge(
         .inspect(adapter)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to inspect adapter: {e}")))?;
 
-    // Read adapter metadata for rank/alpha
-    let adapter_reader = aprender::serialization::apr::AprReader::open(adapter)
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to read adapter: {e}")))?;
-    let lora_rank = adapter_reader
-        .get_metadata("lora_rank")
-        .and_then(serde_json::Value::as_u64)
-        .unwrap_or(16) as u32;
-    let lora_alpha = adapter_reader
-        .get_metadata("lora_alpha")
-        .and_then(serde_json::Value::as_f64)
-        .unwrap_or(16.0) as f32;
+    let (lora_rank, lora_alpha) = read_adapter_lora_params(adapter)?;
 
-    // Find adapter pairs (name.lora_a / name.lora_b)
     let adapter_names: std::collections::HashSet<String> = adapter_report
         .tensors
         .iter()
@@ -447,15 +597,8 @@ fn run_merge(
     let mut writer = aprender::serialization::apr::AprWriter::new();
     let mut merged_count = 0u64;
 
-    // Copy base model metadata
-    writer.set_metadata(
-        "merge_source",
-        serde_json::json!(model.display().to_string()),
-    );
-    writer.set_metadata(
-        "merge_adapter",
-        serde_json::json!(adapter.display().to_string()),
-    );
+    writer.set_metadata("merge_source", serde_json::json!(model.display().to_string()));
+    writer.set_metadata("merge_adapter", serde_json::json!(adapter.display().to_string()));
     writer.set_metadata("lora_rank", serde_json::json!(lora_rank));
     writer.set_metadata("lora_alpha", serde_json::json!(lora_alpha));
 
@@ -490,44 +633,10 @@ fn run_merge(
     std::fs::write(out, &bytes)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to write output: {e}")))?;
 
-    let output_size = bytes.len() as u64;
-
-    if json_output {
-        let json = serde_json::json!({
-            "status": "merged",
-            "base_model": model.display().to_string(),
-            "adapter": adapter.display().to_string(),
-            "output": out.display().to_string(),
-            "output_size": output_size,
-            "merged_layers": merged_count,
-            "total_layers": base_report.tensors.len(),
-            "rank": lora_rank,
-            "alpha": lora_alpha,
-        });
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&json).unwrap_or_default()
-        );
-    } else {
-        output::pipeline_stage("Merging", output::StageStatus::Done);
-        println!();
-        output::subheader("Merge Complete");
-        println!(
-            "{}",
-            output::kv_table(&[
-                (
-                    "Layers merged",
-                    format!("{merged_count} / {}", base_report.tensors.len())
-                ),
-                (
-                    "Output size",
-                    humansize::format_size(output_size, humansize::BINARY)
-                ),
-                ("Output", out.display().to_string()),
-            ])
-        );
-    }
-
+    display_merge_result(
+        model, adapter, out, bytes.len() as u64, merged_count,
+        base_report.tensors.len(), lora_rank, lora_alpha, json_output,
+    );
     Ok(())
 }
 
