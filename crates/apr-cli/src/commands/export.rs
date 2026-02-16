@@ -77,6 +77,12 @@ pub(crate) fn run(
     // Parse quantization option
     let quant_type = parse_quantization(quantize)?;
 
+    // PMAT-261: Detect stdout pipe output (-o - | -o /dev/stdout)
+    let pipe_to_stdout = crate::pipe::is_stdout(&output.to_string_lossy());
+    if pipe_to_stdout {
+        return run_export_to_stdout(file, export_format, quant_type);
+    }
+
     if !json_output {
         output::header("APR Export");
         let mut pairs = vec![
@@ -113,6 +119,41 @@ pub(crate) fn run(
                 println!();
                 println!("  {}", output::badge_fail("Export failed"));
             }
+            Err(CliError::ValidationFailed(e.to_string()))
+        }
+    }
+}
+
+/// PMAT-261: Export to stdout — write raw bytes, no ANSI, no status messages.
+///
+/// Exports to a temporary file, then writes the raw bytes to stdout.
+/// All status output is suppressed (binary data on stdout must be clean).
+fn run_export_to_stdout(
+    file: &Path,
+    export_format: ExportFormat,
+    quant_type: Option<QuantizationType>,
+) -> Result<()> {
+    let tmp_dir = std::env::temp_dir();
+    let tmp_path = tmp_dir.join(format!("apr-export-{}.bin", std::process::id()));
+
+    let options = ExportOptions {
+        format: export_format,
+        quantize: quant_type,
+        ..Default::default()
+    };
+
+    let result = apr_export(file, &tmp_path, options);
+    match result {
+        Ok(_) => {
+            let data = std::fs::read(&tmp_path).map_err(|e| {
+                let _ = std::fs::remove_file(&tmp_path);
+                CliError::ValidationFailed(format!("Failed to read exported file: {e}"))
+            })?;
+            let _ = std::fs::remove_file(&tmp_path);
+            crate::pipe::write_stdout(&data)
+        }
+        Err(e) => {
+            let _ = std::fs::remove_file(&tmp_path);
             Err(CliError::ValidationFailed(e.to_string()))
         }
     }

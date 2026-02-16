@@ -99,7 +99,10 @@ fn dispatch_core_command(cli: &Cli) -> Option<Result<(), CliError>> {
             hex,
             strings,
             limit,
-        } => debug::run(file, *drama, *hex, *strings, *limit, cli.json),
+        } => {
+            let (d, h, s, l, j) = (*drama, *hex, *strings, *limit, cli.json);
+            crate::pipe::with_stdin_support(file, |p| debug::run(p, d, h, s, l, j))
+        }
 
         Commands::Validate {
             file,

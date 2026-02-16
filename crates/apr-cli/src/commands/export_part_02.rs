@@ -415,4 +415,51 @@ mod tests {
         assert_eq!(ExportFormat::OpenVino.extension(), "xml");
         assert_eq!(ExportFormat::CoreMl.extension(), "mlpackage");
     }
+
+    // ========================================================================
+    // PMAT-261: Stdout Pipe Detection Tests
+    // ========================================================================
+
+    #[test]
+    fn test_stdout_pipe_detection_dash() {
+        let result = run(
+            Some(Path::new("/nonexistent.apr")),
+            "safetensors",
+            Some(Path::new("-")),
+            None,
+            false,
+            None,
+            false,
+        );
+        // Fails with FileNotFound (not output validation) because stdout is detected
+        assert!(result.is_err());
+        assert!(matches!(result, Err(CliError::FileNotFound(_))));
+    }
+
+    #[test]
+    fn test_stdout_pipe_detection_dev_stdout() {
+        let result = run(
+            Some(Path::new("/nonexistent.apr")),
+            "safetensors",
+            Some(Path::new("/dev/stdout")),
+            None,
+            false,
+            None,
+            false,
+        );
+        assert!(result.is_err());
+        assert!(matches!(result, Err(CliError::FileNotFound(_))));
+    }
+
+    #[test]
+    fn test_stdout_pipe_run_export_to_stdout_invalid_file() {
+        let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
+        file.write_all(b"not a valid APR file").expect("write");
+        let result = run_export_to_stdout(
+            file.path(),
+            ExportFormat::SafeTensors,
+            None,
+        );
+        assert!(result.is_err());
+    }
 }

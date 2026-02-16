@@ -9,19 +9,22 @@ use std::fs;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
-/// Sentinel value for stdin/stdout in POSIX convention.
-const STDIN_MARKER: &str = "-";
-
 /// Check if a path string indicates stdin.
+///
+/// Recognizes POSIX `-` convention and Linux device paths:
+/// `-`, `/dev/stdin`, `/dev/fd/0`, `/proc/self/fd/0`
 #[must_use]
 pub fn is_stdin(path: &str) -> bool {
-    path == STDIN_MARKER
+    matches!(path, "-" | "/dev/stdin" | "/dev/fd/0" | "/proc/self/fd/0")
 }
 
 /// Check if a path string indicates stdout.
+///
+/// Recognizes POSIX `-` convention and Linux device paths:
+/// `-`, `/dev/stdout`, `/dev/fd/1`, `/proc/self/fd/1`
 #[must_use]
 pub fn is_stdout(path: &str) -> bool {
-    path == STDIN_MARKER
+    matches!(path, "-" | "/dev/stdout" | "/dev/fd/1" | "/proc/self/fd/1")
 }
 
 /// Temporary file that holds stdin data for mmap-based operations.
@@ -120,15 +123,24 @@ mod tests {
     #[test]
     fn test_is_stdin() {
         assert!(is_stdin("-"));
+        assert!(is_stdin("/dev/stdin"));
+        assert!(is_stdin("/dev/fd/0"));
+        assert!(is_stdin("/proc/self/fd/0"));
         assert!(!is_stdin("model.gguf"));
         assert!(!is_stdin(""));
         assert!(!is_stdin("--"));
+        assert!(!is_stdin("/dev/fd/1"));
     }
 
     #[test]
     fn test_is_stdout() {
         assert!(is_stdout("-"));
+        assert!(is_stdout("/dev/stdout"));
+        assert!(is_stdout("/dev/fd/1"));
+        assert!(is_stdout("/proc/self/fd/1"));
         assert!(!is_stdout("output.apr"));
+        assert!(!is_stdout("/dev/stdin"));
+        assert!(!is_stdout("/dev/fd/0"));
     }
 
     #[test]
