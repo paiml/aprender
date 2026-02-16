@@ -120,7 +120,7 @@ semicolon_if_nothing_returned = "allow"  # Style preference
 
 [package]
 name = "aprender"
-version = "0.25.8"
+version = "0.25.9"
 edition = "2021"
 rust-version = "1.70"
 authors = ["Noah Gift <noah@paiml.com>"]
@@ -145,7 +145,7 @@ exclude = [
     "docs/specifications/",
     "docs/roadmaps/",
     "fuzz/",
-    "models/",
+    "/models/",
 ]
 
 [lints]
