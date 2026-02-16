@@ -1,3 +1,5 @@
+use crate::optim::*;
+use crate::primitives::Vector;
 
 #[test]
 fn test_lbfgs_sphere() {

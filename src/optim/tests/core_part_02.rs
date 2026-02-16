@@ -1,3 +1,5 @@
+use crate::optim::*;
+use crate::primitives::Vector;
 
 #[test]
 #[should_panic(expected = "same length")]

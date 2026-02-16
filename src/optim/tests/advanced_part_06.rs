@@ -1,3 +1,5 @@
+use crate::optim::*;
+use crate::primitives::{Matrix, Vector};
 
 // ==================== Additional Coverage Tests ====================
 

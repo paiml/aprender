@@ -1,3 +1,5 @@
+use crate::optim::*;
+use crate::primitives::Vector;
 
 #[test]
 fn test_cg_gradient_norm_tracking() {

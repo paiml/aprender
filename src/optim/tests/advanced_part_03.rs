@@ -1,3 +1,5 @@
+use crate::optim::*;
+use crate::primitives::Vector;
 
 // ==================== Projected Gradient Descent Tests ====================
 

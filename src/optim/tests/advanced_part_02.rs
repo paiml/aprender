@@ -1,3 +1,5 @@
+use crate::optim::*;
+use crate::primitives::{Matrix, Vector};
 
 #[test]
 fn test_coordinate_descent_immediate_convergence() {

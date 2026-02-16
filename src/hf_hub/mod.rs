@@ -282,12 +282,15 @@ impl PushOptions {
 #[derive(Debug)]
 pub struct HfHubClient {
     /// HF API token
-    token: Option<String>,
+    pub(crate) token: Option<String>,
     /// Cache directory for downloaded models
-    cache_dir: PathBuf,
+    pub(crate) cache_dir: PathBuf,
     /// HF Hub API base URL
-    api_base: String,
+    pub(crate) api_base: String,
 }
 
-include!("mod_part_02.rs");
-include!("mod_part_03.rs");
+mod mod_part_02;
+mod mod_part_03;
+
+#[cfg(test)]
+mod tests;

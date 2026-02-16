@@ -442,8 +442,17 @@ fn test_coordinate_descent_multidimensional() {
     }
 }
 
-include!("advanced_part_02.rs");
-include!("advanced_part_03.rs");
-include!("advanced_part_04.rs");
-include!("advanced_part_05.rs");
-include!("advanced_part_06.rs");
+#[path = "advanced_part_02.rs"]
+mod advanced_part_02;
+
+#[path = "advanced_part_03.rs"]
+mod advanced_part_03;
+
+#[path = "advanced_part_04.rs"]
+mod advanced_part_04;
+
+#[path = "advanced_part_05.rs"]
+mod advanced_part_05;
+
+#[path = "advanced_part_06.rs"]
+mod advanced_part_06;

@@ -1,3 +1,5 @@
+use crate::optim::*;
+use crate::primitives::Vector;
 
 // Test ProjectedGradientDescent line search with actual backtracking
 #[test]

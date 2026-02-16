@@ -1,3 +1,9 @@
+use super::super::{
+    base64_encode, HfHubClient, HfHubError, ModelCard, PushOptions, UploadProgress, UploadResult,
+    Result,
+};
+use std::path::PathBuf;
+
 impl HfHubClient {
     /// Create a new HF Hub client
     ///
@@ -35,7 +41,7 @@ impl HfHubClient {
     }
 
     /// Get default cache directory
-    fn default_cache_dir() -> PathBuf {
+    pub(crate) fn default_cache_dir() -> PathBuf {
         dirs::cache_dir()
             .unwrap_or_else(|| PathBuf::from("."))
             .join("huggingface")
@@ -49,7 +55,7 @@ impl HfHubClient {
     }
 
     /// Parse repository ID (org/name format)
-    fn parse_repo_id(repo_id: &str) -> Result<(&str, &str)> {
+    pub(crate) fn parse_repo_id(repo_id: &str) -> Result<(&str, &str)> {
         let parts: Vec<&str> = repo_id.split('/').collect();
         if parts.len() != 2 {
             return Err(HfHubError::InvalidRepoId(repo_id.to_string()));

@@ -449,6 +449,11 @@ fn test_adam_negative_gradients() {
     assert!(params[0] > 1.0);
 }
 
-include!("core_part_02.rs");
-include!("core_part_03.rs");
-include!("core_part_04.rs");
+#[path = "core_part_02.rs"]
+mod core_part_02;
+
+#[path = "core_part_03.rs"]
+mod core_part_03;
+
+#[path = "core_part_04.rs"]
+mod core_part_04;

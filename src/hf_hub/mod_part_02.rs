@@ -1,6 +1,10 @@
+use super::*;
 
 impl HfHubClient {
 }
 
-include!("mod_part_02_part_02.rs");
-include!("mod_part_02_part_03.rs");
+#[path = "mod_part_02_part_02.rs"]
+mod mod_part_02_part_02;
+
+#[path = "mod_part_02_part_03.rs"]
+mod mod_part_02_part_03;

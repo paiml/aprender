@@ -1,3 +1,5 @@
+use super::{compute_tp_fp_fn, precision, recall, f1_score, Average};
+use std::fmt::Write;
 
 /// Generate a text classification report (sklearn-style).
 ///
@@ -88,34 +90,10 @@ pub fn classification_report(y_pred: &[usize], y_true: &[usize]) -> String {
     report
 }
 
-/// Helper function to compute TP, FP, FN for each class.
-fn compute_tp_fp_fn(
-    y_pred: &[usize],
-    y_true: &[usize],
-    n_classes: usize,
-) -> (Vec<usize>, Vec<usize>, Vec<usize>, Vec<usize>) {
-    let mut tp = vec![0usize; n_classes];
-    let mut fp = vec![0usize; n_classes];
-    let mut fn_counts = vec![0usize; n_classes];
-    let mut support = vec![0usize; n_classes];
-
-    for (&true_label, &pred_label) in y_true.iter().zip(y_pred.iter()) {
-        support[true_label] += 1;
-
-        if true_label == pred_label {
-            tp[true_label] += 1;
-        } else {
-            fp[pred_label] += 1;
-            fn_counts[true_label] += 1;
-        }
-    }
-
-    (tp, fp, fn_counts, support)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::super::{accuracy, confusion_matrix};
 
     // ==================== ACCURACY TESTS ====================
 

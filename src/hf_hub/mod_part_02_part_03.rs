@@ -1,3 +1,8 @@
+use super::super::{
+    base64_encode, HfHubClient, HfHubError, ModelCard,
+    Result,
+};
+
 /// 5GB chunk size for S3 multipart upload.
 const LFS_CHUNK_SIZE: usize = 5 * 1024 * 1024 * 1024;
 
@@ -5,7 +10,7 @@ impl HfHubClient {
 
     /// Send preupload request to HuggingFace API and return parsed file info.
     #[cfg(feature = "hf-hub-integration")]
-    fn send_preupload_request(
+    pub(crate) fn send_preupload_request(
         &self,
         repo_id: &str,
         filename: &str,
@@ -247,7 +252,7 @@ impl HfHubClient {
     /// **OBS-003/OBS-004**: Full verbose logging for diagnostics
     #[cfg(feature = "hf-hub-integration")]
     #[allow(clippy::disallowed_methods)]
-    fn upload_via_lfs(
+    pub(crate) fn upload_via_lfs(
         &self,
         repo_id: &str,
         filename: &str,
