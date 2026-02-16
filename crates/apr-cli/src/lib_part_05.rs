@@ -88,7 +88,10 @@ fn dispatch_core_command(cli: &Cli) -> Option<Result<(), CliError>> {
             filters,
             weights,
             json,
-        } => inspect::run(file, *vocab, *filters, *weights, *json || cli.json),
+        } => {
+            let (v, f, w, j) = (*vocab, *filters, *weights, *json || cli.json);
+            crate::pipe::with_stdin_support(file, |p| inspect::run(p, v, f, w, j))
+        }
 
         Commands::Debug {
             file,
@@ -103,7 +106,10 @@ fn dispatch_core_command(cli: &Cli) -> Option<Result<(), CliError>> {
             quality,
             strict,
             min_score,
-        } => validate::run(file, *quality, *strict, *min_score, cli.json),
+        } => {
+            let (q, s, ms, j) = (*quality, *strict, *min_score, cli.json);
+            crate::pipe::with_stdin_support(file, |p| validate::run(p, q, s, ms, j))
+        }
 
         Commands::Diff {
             file1,
@@ -131,7 +137,10 @@ fn dispatch_core_command(cli: &Cli) -> Option<Result<(), CliError>> {
             filter,
             limit,
             json,
-        } => tensors::run(file, *stats, filter.as_deref(), *json || cli.json, *limit),
+        } => {
+            let (s, f, j, l) = (*stats, filter.as_deref().map(str::to_owned), *json || cli.json, *limit);
+            crate::pipe::with_stdin_support(file, |p| tensors::run(p, s, f.as_deref(), j, l))
+        }
 
         Commands::Trace {
             file,
@@ -153,7 +162,10 @@ fn dispatch_core_command(cli: &Cli) -> Option<Result<(), CliError>> {
             *interactive,
         ),
 
-        Commands::Lint { file } => lint::run(file, cli.json),
+        Commands::Lint { file } => {
+            let j = cli.json;
+            crate::pipe::with_stdin_support(file, |p| lint::run(p, j))
+        }
         Commands::Explain { code, file, tensor } => {
             explain::run(code.clone(), file.clone(), tensor.clone())
         }

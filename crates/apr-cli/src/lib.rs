@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 mod commands;
 pub mod error;
 mod output;
+pub mod pipe;
 
 pub use error::CliError;
 
