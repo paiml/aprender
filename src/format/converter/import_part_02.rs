@@ -208,22 +208,27 @@ pub(crate) fn load_model_config_from_json(model_path: &Path) -> Option<GgufModel
 
     // Parse HuggingFace config.json format
     // GH-235: GPT-2 uses different field names (n_embd, n_head, n_layer, n_inner, n_positions).
-    // Try standard names first, fall back to GPT-2 aliases.
+    // GH-265: BLOOM, GPT-Neo, OPT, GPT-BigCode also use non-standard key names.
+    // Try standard names first, fall back to architecture-specific aliases.
     let hidden_size = json
         .get("hidden_size")
-        .or_else(|| json.get("n_embd")) // GPT-2
+        .or_else(|| json.get("n_embd")) // GPT-2, GPT-BigCode
+        .or_else(|| json.get("n_embed")) // BLOOM
+        .or_else(|| json.get("d_model")) // T5, BART, Whisper
         .and_then(serde_json::Value::as_u64)
         .map(|v| v as usize);
 
     let num_layers = json
         .get("num_hidden_layers")
-        .or_else(|| json.get("n_layer")) // GPT-2
+        .or_else(|| json.get("n_layer")) // GPT-2, BLOOM, GPT-BigCode
+        .or_else(|| json.get("num_layers")) // GPT-Neo
         .and_then(serde_json::Value::as_u64)
         .map(|v| v as usize);
 
     let num_heads = json
         .get("num_attention_heads")
-        .or_else(|| json.get("n_head")) // GPT-2
+        .or_else(|| json.get("n_head")) // GPT-2, GPT-BigCode
+        .or_else(|| json.get("num_heads")) // GPT-Neo
         .and_then(serde_json::Value::as_u64)
         .map(|v| v as usize);
 
@@ -240,14 +245,16 @@ pub(crate) fn load_model_config_from_json(model_path: &Path) -> Option<GgufModel
 
     let intermediate_size = json
         .get("intermediate_size")
-        .or_else(|| json.get("n_inner")) // GPT-2
+        .or_else(|| json.get("n_inner")) // GPT-2, GPT-BigCode
+        .or_else(|| json.get("ffn_dim")) // OPT
         .and_then(serde_json::Value::as_u64)
         .map(|v| v as usize)
-        .or_else(|| hidden_size.map(|h| 4 * h)); // GPT-2 default: 4 * hidden_size
+        .or_else(|| hidden_size.map(|h| 4 * h)); // BLOOM/GPT-Neo default: 4 * hidden_size
 
     let max_position_embeddings = json
         .get("max_position_embeddings")
         .or_else(|| json.get("n_positions")) // GPT-2
+        .or_else(|| json.get("n_ctx")) // GPT-2 alternative
         .and_then(serde_json::Value::as_u64)
         .map(|v| v as usize);
 
