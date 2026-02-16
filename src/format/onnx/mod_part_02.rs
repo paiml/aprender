@@ -171,131 +171,105 @@ impl OnnxReader {
     /// Parse TensorProto
     fn parse_tensor_proto(data: &[u8]) -> Result<OnnxTensor> {
         let mut reader = ProtobufReader::new(data);
-        let mut name = String::new();
-        let mut dims: Vec<usize> = Vec::new();
-        let mut data_type = OnnxDataType::Float;
-        let mut raw_data: Vec<u8> = Vec::new();
-        let mut float_data: Vec<f32> = Vec::new();
-        let mut int32_data: Vec<i32> = Vec::new();
-        let mut int64_data: Vec<i64> = Vec::new();
-        let mut double_data: Vec<f64> = Vec::new();
+        let mut fields = TensorProtoFields::default();
+
         while reader.has_more() {
             let (field_num, wire_type) = reader.read_tag()?;
-            match (field_num, wire_type) {
-                // dims (field 1, repeated int64 - packed or unpacked)
-                (1, 0) => {
-                    dims.push(reader.read_varint()? as usize);
-                }
-                (1, 2) => {
-                    // Packed repeated int64
-                    let packed = reader.read_bytes()?;
-                    let mut pr = ProtobufReader::new(packed);
-                    while pr.has_more() {
-                        dims.push(pr.read_varint()? as usize);
-                    }
-                }
-                // data_type (field 2, varint)
-                (2, 0) => {
-                    data_type = OnnxDataType::from_i32(reader.read_varint()? as i32);
-                }
-                // float_data (field 4, packed repeated float)
-                (4, 2) => {
-                    let packed = reader.read_bytes()?;
-                    for chunk in packed.chunks_exact(4) {
-                        float_data
-                            .push(f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
-                    }
-                }
-                (4, 5) => {
-                    float_data.push(reader.read_f32()?);
-                }
-                // int32_data (field 5, packed repeated int32)
-                (5, 2) => {
-                    let packed = reader.read_bytes()?;
-                    let mut pr = ProtobufReader::new(packed);
-                    while pr.has_more() {
-                        int32_data.push(pr.read_varint()? as i32);
-                    }
-                }
-                (5, 0) => {
-                    int32_data.push(reader.read_varint()? as i32);
-                }
-                // int64_data (field 7, packed repeated int64)
-                (7, 2) => {
-                    let packed = reader.read_bytes()?;
-                    let mut pr = ProtobufReader::new(packed);
-                    while pr.has_more() {
-                        int64_data.push(pr.read_varint()? as i64);
-                    }
-                }
-                (7, 0) => {
-                    int64_data.push(reader.read_varint()? as i64);
-                }
-                // name (field 8, string)
-                (8, 2) => {
-                    name = reader.read_string()?;
-                }
-                // raw_data (field 9, bytes) — some ONNX exporters (e.g. PyTorch) use
-                // field 9 instead of field 13 for raw tensor data
-                (9, 2) => {
-                    raw_data = reader.read_bytes()?.to_vec();
-                }
-                // double_data (field 10, packed repeated double)
-                (10, 2) => {
-                    let packed = reader.read_bytes()?;
-                    for chunk in packed.chunks_exact(8) {
-                        double_data.push(f64::from_le_bytes([
-                            chunk[0], chunk[1], chunk[2], chunk[3], chunk[4], chunk[5], chunk[6],
-                            chunk[7],
-                        ]));
-                    }
-                }
-                (10, 1) => {
-                    double_data.push(reader.read_f64()?);
-                }
-                // raw_data (field 13, bytes)
-                (13, 2) => {
-                    raw_data = reader.read_bytes()?.to_vec();
-                }
-                // Skip unknown fields
-                (_, 0) => {
-                    reader.read_varint()?;
-                }
-                (_, 1) => {
-                    reader.skip(8)?;
-                }
-                (_, 2) => {
-                    let len = reader.read_varint()? as usize;
-                    reader.skip(len)?;
-                }
-                (_, 5) => {
-                    reader.skip(4)?;
-                }
-                _ => {
-                    reader.read_varint()?;
-                }
-            }
+            Self::parse_tensor_field(&mut reader, &mut fields, field_num, wire_type)?;
         }
 
-        // If raw_data is empty, reconstruct from typed arrays
-        if raw_data.is_empty() {
-            if !float_data.is_empty() {
-                raw_data = float_data.iter().flat_map(|f| f.to_le_bytes()).collect();
-            } else if !int32_data.is_empty() {
-                raw_data = int32_data.iter().flat_map(|i| i.to_le_bytes()).collect();
-            } else if !int64_data.is_empty() {
-                raw_data = int64_data.iter().flat_map(|i| i.to_le_bytes()).collect();
-            } else if !double_data.is_empty() {
-                raw_data = double_data.iter().flat_map(|d| d.to_le_bytes()).collect();
-            }
-        }
+        Ok(fields.into_tensor())
+    }
 
-        Ok(OnnxTensor {
-            name,
-            shape: dims,
-            data_type,
+    /// Parse a single TensorProto field from the protobuf stream
+    fn parse_tensor_field(
+        reader: &mut ProtobufReader<'_>,
+        fields: &mut TensorProtoFields,
+        field_num: u32,
+        wire_type: u32,
+    ) -> Result<()> {
+        match (field_num, wire_type) {
+            // dims (field 1, repeated int64 - unpacked)
+            (1, 0) => fields.dims.push(reader.read_varint()? as usize),
+            // dims (field 1, packed repeated int64)
+            (1, 2) => reader.read_packed_varints_into(&mut fields.dims)?,
+            // data_type (field 2, varint)
+            (2, 0) => fields.data_type = OnnxDataType::from_i32(reader.read_varint()? as i32),
+            // float_data (field 4, packed repeated float)
+            (4, 2) => reader.read_packed_f32_into(&mut fields.float_data)?,
+            // float_data (field 4, unpacked float)
+            (4, 5) => fields.float_data.push(reader.read_f32()?),
+            // int32_data (field 5, packed repeated int32)
+            (5, 2) => reader.read_packed_varints_i32_into(&mut fields.int32_data)?,
+            // int32_data (field 5, unpacked varint)
+            (5, 0) => fields.int32_data.push(reader.read_varint()? as i32),
+            // int64_data (field 7, packed repeated int64)
+            (7, 2) => reader.read_packed_varints_i64_into(&mut fields.int64_data)?,
+            // int64_data (field 7, unpacked varint)
+            (7, 0) => fields.int64_data.push(reader.read_varint()? as i64),
+            // name (field 8, string)
+            (8, 2) => fields.name = reader.read_string()?,
+            // raw_data (field 9, bytes) -- PyTorch ONNX convention
+            (9, 2) => fields.raw_data = reader.read_bytes()?.to_vec(),
+            // double_data (field 10, packed repeated double)
+            (10, 2) => reader.read_packed_f64_into(&mut fields.double_data)?,
+            // double_data (field 10, unpacked double)
+            (10, 1) => fields.double_data.push(reader.read_f64()?),
+            // raw_data (field 13, bytes)
+            (13, 2) => fields.raw_data = reader.read_bytes()?.to_vec(),
+            // Skip unknown fields
+            _ => reader.skip_field(wire_type)?,
+        }
+        Ok(())
+    }
+}
+
+/// Accumulated fields during `TensorProto` parsing.
+///
+/// Collects typed data arrays and metadata, then converts to `OnnxTensor`
+/// once all fields have been read.
+#[derive(Default)]
+struct TensorProtoFields {
+    name: String,
+    dims: Vec<usize>,
+    data_type: OnnxDataType,
+    raw_data: Vec<u8>,
+    float_data: Vec<f32>,
+    int32_data: Vec<i32>,
+    int64_data: Vec<i64>,
+    double_data: Vec<f64>,
+}
+
+impl Default for OnnxDataType {
+    fn default() -> Self {
+        Self::Float
+    }
+}
+
+impl TensorProtoFields {
+    /// Convert accumulated fields into an `OnnxTensor`, reconstructing
+    /// `raw_data` from typed arrays if the protobuf did not include it.
+    fn into_tensor(self) -> OnnxTensor {
+        let raw_data = if !self.raw_data.is_empty() {
+            self.raw_data
+        } else if !self.float_data.is_empty() {
+            self.float_data.iter().flat_map(|f| f.to_le_bytes()).collect()
+        } else if !self.int32_data.is_empty() {
+            self.int32_data.iter().flat_map(|i| i.to_le_bytes()).collect()
+        } else if !self.int64_data.is_empty() {
+            self.int64_data.iter().flat_map(|i| i.to_le_bytes()).collect()
+        } else if !self.double_data.is_empty() {
+            self.double_data.iter().flat_map(|d| d.to_le_bytes()).collect()
+        } else {
+            Vec::new()
+        };
+
+        OnnxTensor {
+            name: self.name,
+            shape: self.dims,
+            data_type: self.data_type,
             raw_data,
-        })
+        }
     }
 }
 
@@ -412,6 +386,72 @@ impl<'a> ProtobufReader<'a> {
             });
         }
         self.pos += n;
+        Ok(())
+    }
+
+    /// Skip an unknown protobuf field based on its wire type.
+    fn skip_field(&mut self, wire_type: u32) -> Result<()> {
+        match wire_type {
+            0 => { self.read_varint()?; }
+            1 => self.skip(8)?,
+            2 => {
+                let len = self.read_varint()? as usize;
+                self.skip(len)?;
+            }
+            5 => self.skip(4)?,
+            _ => { self.read_varint()?; }
+        }
+        Ok(())
+    }
+
+    /// Read a packed repeated field of varints into a `Vec<usize>`.
+    fn read_packed_varints_into(&mut self, out: &mut Vec<usize>) -> Result<()> {
+        let packed = self.read_bytes()?;
+        let mut pr = ProtobufReader::new(packed);
+        while pr.has_more() {
+            out.push(pr.read_varint()? as usize);
+        }
+        Ok(())
+    }
+
+    /// Read a packed repeated field of varints into a `Vec<i32>`.
+    fn read_packed_varints_i32_into(&mut self, out: &mut Vec<i32>) -> Result<()> {
+        let packed = self.read_bytes()?;
+        let mut pr = ProtobufReader::new(packed);
+        while pr.has_more() {
+            out.push(pr.read_varint()? as i32);
+        }
+        Ok(())
+    }
+
+    /// Read a packed repeated field of varints into a `Vec<i64>`.
+    fn read_packed_varints_i64_into(&mut self, out: &mut Vec<i64>) -> Result<()> {
+        let packed = self.read_bytes()?;
+        let mut pr = ProtobufReader::new(packed);
+        while pr.has_more() {
+            out.push(pr.read_varint()? as i64);
+        }
+        Ok(())
+    }
+
+    /// Read a packed repeated field of little-endian f32 values.
+    fn read_packed_f32_into(&mut self, out: &mut Vec<f32>) -> Result<()> {
+        let packed = self.read_bytes()?;
+        for chunk in packed.chunks_exact(4) {
+            out.push(f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]));
+        }
+        Ok(())
+    }
+
+    /// Read a packed repeated field of little-endian f64 values.
+    fn read_packed_f64_into(&mut self, out: &mut Vec<f64>) -> Result<()> {
+        let packed = self.read_bytes()?;
+        for chunk in packed.chunks_exact(8) {
+            out.push(f64::from_le_bytes([
+                chunk[0], chunk[1], chunk[2], chunk[3],
+                chunk[4], chunk[5], chunk[6], chunk[7],
+            ]));
+        }
         Ok(())
     }
 }

@@ -443,6 +443,16 @@ pub struct ConversionReport {
     pub dropped_tensors: Vec<String>,
 }
 
+/// Internal accumulator for tensor statistics (used by `compute_tensor_validation`).
+struct TensorAccum {
+    min: f32,
+    max: f32,
+    sum: f64,
+    nan_count: usize,
+    inf_count: usize,
+    zero_count: usize,
+}
+
 include!("mod_part_02.rs");
 include!("mod_part_03.rs");
 include!("mod_part_04.rs");

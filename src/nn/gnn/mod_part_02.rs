@@ -115,6 +115,123 @@ impl SAGEConv {
         self.aggregation
     }
 
+    /// Accumulate neighbor features into `agg` by summing.
+    fn accumulate_neighbors(
+        x_data: &[f32],
+        neighbors: &[usize],
+        in_features: usize,
+        agg: &mut [f32],
+    ) {
+        for &neigh in neighbors {
+            for f in 0..in_features {
+                agg[f] += x_data[neigh * in_features + f];
+            }
+        }
+    }
+
+    /// Scale aggregated features in-place by `1 / count`.
+    fn scale_by_mean(agg: &mut [f32], count: usize) {
+        let divisor = count as f32;
+        for f in agg.iter_mut() {
+            *f /= divisor;
+        }
+    }
+
+    /// Aggregate neighbor features for a single node according to `self.aggregation`.
+    fn aggregate_neighbors(
+        &self,
+        x_data: &[f32],
+        neighbors: &[usize],
+    ) -> Vec<f32> {
+        if neighbors.is_empty() {
+            return vec![0.0f32; self.in_features];
+        }
+
+        match self.aggregation {
+            SAGEAggregation::Mean | SAGEAggregation::Lstm => {
+                // Lstm uses mean as simplified fallback (full LSTM would need state)
+                let mut agg = vec![0.0f32; self.in_features];
+                Self::accumulate_neighbors(x_data, neighbors, self.in_features, &mut agg);
+                Self::scale_by_mean(&mut agg, neighbors.len());
+                agg
+            }
+            SAGEAggregation::Sum => {
+                let mut agg = vec![0.0f32; self.in_features];
+                Self::accumulate_neighbors(x_data, neighbors, self.in_features, &mut agg);
+                agg
+            }
+            SAGEAggregation::Max => {
+                let mut agg = vec![f32::NEG_INFINITY; self.in_features];
+                for &neigh in neighbors {
+                    for f in 0..self.in_features {
+                        agg[f] = agg[f].max(x_data[neigh * self.in_features + f]);
+                    }
+                }
+                // Replace -inf with 0 for features that had no finite value
+                for f in agg.iter_mut() {
+                    if f.is_infinite() {
+                        *f = 0.0;
+                    }
+                }
+                agg
+            }
+        }
+    }
+
+    /// Linear transform for a single node: out = W_self * x_node + W_neigh * agg_neigh.
+    fn transform_node(
+        &self,
+        node: usize,
+        x_data: &[f32],
+        in_feat: usize,
+        ws_data: &[f32],
+        wn_data: &[f32],
+        agg_features: &[f32],
+        output: &mut [f32],
+    ) {
+        for out_f in 0..self.out_features {
+            let mut val = 0.0f32;
+
+            // Self contribution
+            if self.root_weight {
+                for in_f in 0..self.in_features {
+                    val += x_data[node * in_feat + in_f]
+                        * ws_data[in_f * self.out_features + out_f];
+                }
+            }
+
+            // Neighbor contribution
+            for in_f in 0..self.in_features {
+                val += agg_features[in_f] * wn_data[in_f * self.out_features + out_f];
+            }
+
+            output[node * self.out_features + out_f] = val;
+        }
+    }
+
+    /// Add bias to every node row in `output`.
+    fn add_bias_to_output(bias_data: &[f32], num_nodes: usize, out_features: usize, output: &mut [f32]) {
+        for node in 0..num_nodes {
+            for f in 0..out_features {
+                output[node * out_features + f] += bias_data[f];
+            }
+        }
+    }
+
+    /// L2-normalize each node row in `output`.
+    fn l2_normalize_rows(num_nodes: usize, out_features: usize, output: &mut [f32]) {
+        for node in 0..num_nodes {
+            let start = node * out_features;
+            let end = start + out_features;
+            let norm: f32 = output[start..end].iter().map(|x| x * x).sum::<f32>().sqrt();
+            if norm > 1e-8 {
+                for val in &mut output[start..end] {
+                    *val /= norm;
+                }
+            }
+        }
+    }
+
     /// Forward pass with neighbor aggregation.
     ///
     /// # Arguments
@@ -135,116 +252,37 @@ impl SAGEConv {
         let wn_data = self.weight_neigh.data();
 
         // Build neighbor lists for aggregation
+        let neighbor_lists = Self::build_neighbor_lists(adj, num_nodes);
+
+        let mut output = vec![0.0f32; num_nodes * self.out_features];
+
+        for node in 0..num_nodes {
+            let agg_features = self.aggregate_neighbors(&x_data, &neighbor_lists[node]);
+            self.transform_node(
+                node, &x_data, in_feat, &ws_data, &wn_data, &agg_features, &mut output,
+            );
+        }
+
+        if let Some(ref bias) = self.bias {
+            Self::add_bias_to_output(&bias.data(), num_nodes, self.out_features, &mut output);
+        }
+
+        if self.normalize {
+            Self::l2_normalize_rows(num_nodes, self.out_features, &mut output);
+        }
+
+        Tensor::new(&output, &[num_nodes, self.out_features])
+    }
+
+    /// Build adjacency neighbor lists (target -> list of sources).
+    fn build_neighbor_lists(adj: &AdjacencyMatrix, num_nodes: usize) -> Vec<Vec<usize>> {
         let mut neighbor_lists: Vec<Vec<usize>> = vec![Vec::new(); num_nodes];
         for (&src, &tgt) in adj.edge_src().iter().zip(adj.edge_tgt().iter()) {
             if tgt < num_nodes && src < num_nodes {
                 neighbor_lists[tgt].push(src);
             }
         }
-
-        let mut output = vec![0.0f32; num_nodes * self.out_features];
-
-        for node in 0..num_nodes {
-            let neighbors = &neighbor_lists[node];
-
-            // Aggregate neighbor features
-            let mut agg_features = vec![0.0f32; self.in_features];
-
-            if !neighbors.is_empty() {
-                match self.aggregation {
-                    SAGEAggregation::Mean => {
-                        for &neigh in neighbors {
-                            for f in 0..self.in_features {
-                                agg_features[f] += x_data[neigh * in_feat + f];
-                            }
-                        }
-                        let count = neighbors.len() as f32;
-                        for f in &mut agg_features {
-                            *f /= count;
-                        }
-                    }
-                    SAGEAggregation::Sum => {
-                        for &neigh in neighbors {
-                            for f in 0..self.in_features {
-                                agg_features[f] += x_data[neigh * in_feat + f];
-                            }
-                        }
-                    }
-                    SAGEAggregation::Max => {
-                        agg_features = vec![f32::NEG_INFINITY; self.in_features];
-                        for &neigh in neighbors {
-                            for f in 0..self.in_features {
-                                agg_features[f] = agg_features[f].max(x_data[neigh * in_feat + f]);
-                            }
-                        }
-                        // Replace -inf with 0 for nodes without that feature
-                        for f in &mut agg_features {
-                            if f.is_infinite() {
-                                *f = 0.0;
-                            }
-                        }
-                    }
-                    SAGEAggregation::Lstm => {
-                        // Simplified: just use mean for now (full LSTM would need state)
-                        for &neigh in neighbors {
-                            for f in 0..self.in_features {
-                                agg_features[f] += x_data[neigh * in_feat + f];
-                            }
-                        }
-                        let count = neighbors.len() as f32;
-                        for f in &mut agg_features {
-                            *f /= count;
-                        }
-                    }
-                }
-            }
-
-            // Transform: out = W_self * x + W_neigh * agg_neigh + bias
-            for out_f in 0..self.out_features {
-                let mut val = 0.0f32;
-
-                // Self contribution
-                if self.root_weight {
-                    for in_f in 0..self.in_features {
-                        val += x_data[node * in_feat + in_f]
-                            * ws_data[in_f * self.out_features + out_f];
-                    }
-                }
-
-                // Neighbor contribution
-                for in_f in 0..self.in_features {
-                    val += agg_features[in_f] * wn_data[in_f * self.out_features + out_f];
-                }
-
-                output[node * self.out_features + out_f] = val;
-            }
-        }
-
-        // Add bias
-        if let Some(ref bias) = self.bias {
-            let bias_data = bias.data();
-            for node in 0..num_nodes {
-                for f in 0..self.out_features {
-                    output[node * self.out_features + f] += bias_data[f];
-                }
-            }
-        }
-
-        // L2 normalize if requested
-        if self.normalize {
-            for node in 0..num_nodes {
-                let start = node * self.out_features;
-                let end = start + self.out_features;
-                let norm: f32 = output[start..end].iter().map(|x| x * x).sum::<f32>().sqrt();
-                if norm > 1e-8 {
-                    for val in &mut output[start..end] {
-                        *val /= norm;
-                    }
-                }
-            }
-        }
-
-        Tensor::new(&output, &[num_nodes, self.out_features])
+        neighbor_lists
     }
 }
 

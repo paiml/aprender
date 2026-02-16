@@ -99,12 +99,47 @@ impl RosettaStone {
             };
         }
 
+        let stats = Self::accumulate_tensor_stats(data);
+        let valid_count = element_count - stats.nan_count - stats.inf_count;
+        let mean = if valid_count > 0 {
+            (stats.sum / valid_count as f64) as f32
+        } else {
+            0.0
+        };
+        let std = Self::compute_std_dev(data, mean, valid_count);
+
+        let failures = Self::collect_validation_failures(
+            name,
+            data,
+            &stats,
+            element_count,
+            valid_count,
+        );
+        let is_valid = failures.is_empty();
+
+        TensorValidation {
+            name: name.to_string(),
+            is_valid,
+            nan_count: stats.nan_count,
+            inf_count: stats.inf_count,
+            zero_count: stats.zero_count,
+            element_count,
+            min: if stats.min.is_infinite() { 0.0 } else { stats.min },
+            max: if stats.max.is_infinite() { 0.0 } else { stats.max },
+            mean,
+            std,
+            failures,
+        }
+    }
+
+    /// Accumulate basic statistics (min, max, sum, nan/inf/zero counts) in a single pass.
+    fn accumulate_tensor_stats(data: &[f32]) -> TensorAccum {
         let mut min = f32::INFINITY;
         let mut max = f32::NEG_INFINITY;
         let mut sum = 0.0f64;
-        let mut nan_count = 0;
-        let mut inf_count = 0;
-        let mut zero_count = 0;
+        let mut nan_count = 0usize;
+        let mut inf_count = 0usize;
+        let mut zero_count = 0usize;
 
         for &v in data {
             if v.is_nan() {
@@ -127,51 +162,84 @@ impl RosettaStone {
             sum += f64::from(v);
         }
 
-        let valid_count = element_count - nan_count - inf_count;
-        let mean = if valid_count > 0 {
-            (sum / valid_count as f64) as f32
-        } else {
-            0.0
-        };
+        TensorAccum { min, max, sum, nan_count, inf_count, zero_count }
+    }
 
-        // Compute std dev
-        let mut var_sum = 0.0f64;
-        for &v in data {
-            if !v.is_nan() && !v.is_infinite() {
-                let diff = f64::from(v) - f64::from(mean);
-                var_sum += diff * diff;
-            }
+    /// Compute sample standard deviation from data, given pre-computed mean and valid count.
+    fn compute_std_dev(data: &[f32], mean: f32, valid_count: usize) -> f32 {
+        if valid_count <= 1 {
+            return 0.0;
         }
-        let std = if valid_count > 1 {
-            (var_sum / (valid_count - 1) as f64).sqrt() as f32
-        } else {
-            0.0
-        };
+        let mean_f64 = f64::from(mean);
+        let var_sum: f64 = data.iter()
+            .filter(|v| !v.is_nan() && !v.is_infinite())
+            .map(|&v| {
+                let diff = f64::from(v) - mean_f64;
+                diff * diff
+            })
+            .sum();
+        (var_sum / (valid_count - 1) as f64).sqrt() as f32
+    }
 
-        // Collect failures (APR-SPEC 10.9 + PMAT-235 contract gates)
+    /// Collect all validation failures (APR-SPEC 10.9 + PMAT-235 contract gates).
+    fn collect_validation_failures(
+        name: &str,
+        data: &[f32],
+        stats: &TensorAccum,
+        element_count: usize,
+        valid_count: usize,
+    ) -> Vec<String> {
         let mut failures = Vec::new();
-        if nan_count > 0 {
+
+        // NaN / Inf checks
+        if stats.nan_count > 0 {
             failures.push(format!(
-                "[F-DATA-QUALITY-002] {nan_count} NaN values detected"
+                "[F-DATA-QUALITY-002] {} NaN values detected", stats.nan_count
             ));
         }
-        if inf_count > 0 {
+        if stats.inf_count > 0 {
             failures.push(format!(
-                "[F-DATA-QUALITY-002] {inf_count} Inf values detected"
+                "[F-DATA-QUALITY-002] {} Inf values detected", stats.inf_count
             ));
         }
-        if zero_count == element_count {
+        if stats.zero_count == element_count {
             failures.push("[F-DATA-QUALITY-001] All values are zero (uninitialized?)".to_string());
         }
 
         // Density gate (F-DATA-QUALITY-001)
-        // Embedding tensors: >50% zeros indicates corrupt offset loading
-        // Weight tensors: >80% zeros indicates uninitialized or zeroed memory
-        let zero_pct = if element_count > 0 {
-            100.0 * zero_count as f32 / element_count as f32
-        } else {
-            0.0
-        };
+        Self::check_density_gate(name, stats.zero_count, element_count, &mut failures);
+
+        // L2 norm gate (F-DATA-QUALITY-003)
+        Self::check_l2_norm_gate(data, valid_count, &mut failures);
+
+        // Variation gate (F-DATA-QUALITY-003)
+        Self::check_variation_gate(name, stats.min, stats.max, valid_count, &mut failures);
+
+        failures
+    }
+
+    /// Density gate: embedding tensors >50% zeros, weight tensors >80% zeros.
+    fn check_density_gate(
+        name: &str,
+        zero_count: usize,
+        element_count: usize,
+        failures: &mut Vec<String>,
+    ) {
+        if element_count == 0 || zero_count == element_count {
+            return;
+        }
+        let zero_pct = 100.0 * zero_count as f32 / element_count as f32;
+        let density_threshold = Self::density_threshold_for(name);
+        if zero_pct > density_threshold {
+            failures.push(format!(
+                "[F-DATA-QUALITY-001] DENSITY: {zero_pct:.1}% zeros (max {density_threshold}%)"
+            ));
+        }
+    }
+
+    /// Return the density threshold for a tensor based on its name.
+    /// Embedding and lm_head tensors use 50%; all others use 80%.
+    fn density_threshold_for(name: &str) -> f32 {
         let name_lower = name.to_lowercase();
         let is_embedding = name_lower.contains("embed")
             || name_lower.contains("wte")
@@ -179,56 +247,44 @@ impl RosettaStone {
             || name_lower.contains("position_embedding");
         // GH-234: lm_head has similar value distribution to embeddings (especially weight-tied)
         let is_lm_head = name_lower.contains("lm_head") || name_lower == "output.weight";
-        let density_threshold = if is_embedding || is_lm_head {
-            50.0
-        } else {
-            80.0
-        };
-        if zero_pct > density_threshold && zero_count < element_count {
-            failures.push(format!(
-                "[F-DATA-QUALITY-001] DENSITY: {zero_pct:.1}% zeros (max {density_threshold}%)"
-            ));
-        }
+        if is_embedding || is_lm_head { 50.0 } else { 80.0 }
+    }
 
-        // PMAT-235: L2 norm gate (F-DATA-QUALITY-003)
-        let l2_norm = {
-            let mut sum_sq = 0.0f64;
-            for &v in data {
-                if !v.is_nan() && !v.is_infinite() {
-                    sum_sq += f64::from(v) * f64::from(v);
-                }
-            }
-            sum_sq.sqrt() as f32
-        };
-        if valid_count > 0 && l2_norm < 1e-6 {
+    /// PMAT-235: L2 norm gate — tensor is effectively empty if L2 norm ~0.
+    fn check_l2_norm_gate(data: &[f32], valid_count: usize, failures: &mut Vec<String>) {
+        if valid_count == 0 {
+            return;
+        }
+        let sum_sq: f64 = data.iter()
+            .filter(|v| !v.is_nan() && !v.is_infinite())
+            .map(|&v| f64::from(v) * f64::from(v))
+            .sum();
+        let l2_norm = sum_sq.sqrt() as f32;
+        if l2_norm < 1e-6 {
             failures
                 .push("[F-DATA-QUALITY-003] L2 norm ~0: tensor is effectively empty".to_string());
         }
+    }
 
-        // PMAT-235: Variation gate (F-DATA-QUALITY-003)
-        // Norm and bias tensors are exempt: constant init (e.g., all 1.0 for RMS norm) is correct
+    /// PMAT-235: Variation gate — tensor has no variation (all values identical).
+    /// Norm and bias tensors are exempt (constant init is correct for e.g. RMS norm).
+    fn check_variation_gate(
+        name: &str,
+        min: f32,
+        max: f32,
+        valid_count: usize,
+        failures: &mut Vec<String>,
+    ) {
+        if valid_count <= 1 || min.is_infinite() {
+            return;
+        }
+        let name_lower = name.to_lowercase();
         let is_norm_or_bias = name_lower.contains("norm")
             || name_lower.contains("bias")
             || name_lower.contains("ln_");
-        if valid_count > 1 && (max - min).abs() < 1e-10 && !min.is_infinite() && !is_norm_or_bias {
+        if (max - min).abs() < 1e-10 && !is_norm_or_bias {
             failures
                 .push("[F-DATA-QUALITY-003] All values identical: tensor is constant".to_string());
-        }
-
-        let is_valid = failures.is_empty();
-
-        TensorValidation {
-            name: name.to_string(),
-            is_valid,
-            nan_count,
-            inf_count,
-            zero_count,
-            element_count,
-            min: if min.is_infinite() { 0.0 } else { min },
-            max: if max.is_infinite() { 0.0 } else { max },
-            mean,
-            std,
-            failures,
         }
     }
 
