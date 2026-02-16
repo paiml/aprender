@@ -319,20 +319,45 @@ fn print_safetensor_entry(
         output::format_size(end - start)
     );
 
-    if dtype == "F32" && abs_end <= bytes.len() {
-        let tensor_bytes = &bytes[abs_start..abs_end];
-        let f32_data: Vec<f32> = tensor_bytes
-            .chunks_exact(4)
-            .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-            .collect();
+    if abs_end > bytes.len() {
+        return;
+    }
+    let tensor_bytes = &bytes[abs_start..abs_end];
+
+    let f32_data: Option<Vec<f32>> = match dtype {
+        "F32" => Some(
+            tensor_bytes
+                .chunks_exact(4)
+                .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+                .collect(),
+        ),
+        "F16" => Some(
+            tensor_bytes
+                .chunks_exact(2)
+                .map(|c| f16_to_f32(u16::from_le_bytes([c[0], c[1]])))
+                .collect(),
+        ),
+        "BF16" => Some(
+            tensor_bytes
+                .chunks_exact(2)
+                .map(|c| {
+                    let bits = u32::from_le_bytes([0, 0, c[0], c[1]]);
+                    f32::from_bits(bits)
+                })
+                .collect(),
+        ),
+        _ => None,
+    };
+
+    if let Some(ref data) = f32_data {
         if opts.stats {
-            print_tensor_stats(&f32_data);
+            print_tensor_stats(data);
         }
         if opts.distribution {
-            let analysis = compute_distribution(&f32_data);
+            let analysis = compute_distribution(data);
             print_distribution(&analysis);
         }
-        print_hex_dump(&f32_data, opts.limit);
+        print_hex_dump(data, opts.limit);
     }
 }
 
