@@ -38,20 +38,26 @@ impl ConvertReport {
     }
 }
 
+/// PMAT-271: Detect format via magic bytes first, extension fallback.
+/// Handles extensionless HF cache blob paths.
+fn detect_format(path: &Path) -> Result<crate::format::rosetta::FormatType> {
+    use crate::format::rosetta::FormatType;
+    FormatType::from_magic(path).or_else(|_| FormatType::from_extension(path))
+}
+
 /// Load tensors from model file
 ///
 /// Supports: SafeTensors, APR, GGUF (GH-164 fix)
 /// GGUF tensors are dequantized to F32 during loading.
+/// PMAT-271: Uses magic byte detection first, extension fallback for extensionless HF cache blobs.
 pub(crate) fn load_model_tensors(path: &Path) -> Result<BTreeMap<String, (Vec<f32>, Vec<usize>)>> {
-    let extension = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    use crate::format::rosetta::FormatType;
+    let format = detect_format(path)?;
 
-    match extension {
-        "safetensors" => load_safetensors_tensors(path),
-        "apr" => load_apr_tensors_f32(path),
-        "gguf" => load_gguf_tensors_f32(path),
-        other => Err(AprenderError::FormatError {
-            message: format!("Unsupported format for conversion: .{other}"),
-        }),
+    match format {
+        FormatType::SafeTensors => load_safetensors_tensors(path),
+        FormatType::Apr => load_apr_tensors_f32(path),
+        FormatType::Gguf => load_gguf_tensors_f32(path),
     }
 }
 
@@ -60,15 +66,17 @@ pub(crate) fn load_model_tensors(path: &Path) -> Result<BTreeMap<String, (Vec<f3
 /// Returns `TensorProvenance::Native` for SafeTensors and unquantized APR sources,
 /// `TensorProvenance::Dequantized` for GGUF and quantized APR sources.
 /// This enables compile-time prevention of double quantization.
+/// PMAT-271: Uses magic byte detection first, extension fallback for extensionless HF cache blobs.
 pub(crate) fn load_model_tensors_provenance(path: &Path) -> Result<TensorProvenance> {
-    let extension = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    use crate::format::rosetta::FormatType;
+    let format = detect_format(path)?;
 
-    match extension {
-        "safetensors" => {
+    match format {
+        FormatType::SafeTensors => {
             let tensors = load_safetensors_tensors(path)?;
             Ok(TensorProvenance::Native(NativeF32Tensors::new(tensors)))
         }
-        "apr" => {
+        FormatType::Apr => {
             // Check if source has quantized tensors
             if let Some(quant) = export::detect_apr_quantization(path) {
                 let tensors = load_apr_tensors_f32(path)?;
@@ -80,7 +88,7 @@ pub(crate) fn load_model_tensors_provenance(path: &Path) -> Result<TensorProvena
                 Ok(TensorProvenance::Native(NativeF32Tensors::new(tensors)))
             }
         }
-        "gguf" => {
+        FormatType::Gguf => {
             // GGUF models are always quantized (Q4K, Q6K, etc.)
             let tensors = load_gguf_tensors_f32(path)?;
             Ok(TensorProvenance::Dequantized(DequantizedTensors::new(
@@ -88,9 +96,6 @@ pub(crate) fn load_model_tensors_provenance(path: &Path) -> Result<TensorProvena
                 QuantizationType::Q4K,
             )))
         }
-        other => Err(AprenderError::FormatError {
-            message: format!("Unsupported format for conversion: .{other}"),
-        }),
     }
 }
 

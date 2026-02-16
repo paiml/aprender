@@ -245,7 +245,7 @@ checksum = "a23eb6b1614318a8071c9b2521f36b424b2c83db5eb3a0fead4a6c0809af6e61"
 name = "apr-cli"
 version = "0.2.18"
 dependencies = [
- "aprender 0.25.8",
+ "aprender 0.25.9",
  "assert_cmd",
  "axum",
  "axum-test",
@@ -276,7 +276,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tower 0.5.3",
- "trueno 0.14.4",
+ "trueno 0.14.6",
  "trueno-explain",
  "trueno-viz",
  "trueno-zram-core 0.2.0",
@@ -304,26 +304,7 @@ dependencies = [
 
 [[package]]
 name = "aprender"
-version = "0.25.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d831daab6d9a7d5f84ceccc1f8a7b85432d3c5288fd6e9ae715c0a0f85ca3c94"
-dependencies = [
- "bincode",
- "getrandom 0.2.17",
- "memmap2",
- "minijinja",
- "rand 0.8.5",
- "rand_chacha 0.3.1",
- "rayon",
- "rmp-serde",
- "serde",
- "serde_json",
- "trueno 0.14.4",
-]
-
-[[package]]
-name = "aprender"
-version = "0.25.8"
+version = "0.25.9"
 dependencies = [
  "aes-gcm",
  "alimentar",
@@ -371,7 +352,7 @@ dependencies = [
 name = "aprender-monte-carlo"
 version = "0.1.1"
 dependencies = [
- "aprender 0.25.8",
+ "aprender 0.25.9",
  "assert_cmd",
  "chrono",
  "clap",
@@ -390,7 +371,7 @@ dependencies = [
 name = "aprender-shell"
 version = "0.3.0"
 dependencies = [
- "aprender 0.25.8",
+ "aprender 0.25.9",
  "assert_cmd",
  "clap",
  "criterion",
@@ -407,7 +388,7 @@ dependencies = [
 name = "aprender-tsp"
 version = "0.2.0"
 dependencies = [
- "aprender 0.25.8",
+ "aprender 0.25.9",
  "assert_cmd",
  "clap",
  "crc32fast",
@@ -2188,7 +2169,7 @@ dependencies = [
 name = "entrenar"
 version = "0.5.10"
 dependencies = [
- "aprender 0.25.0",
+ "aprender 0.25.9",
  "bytemuck",
  "chrono",
  "clap",
@@ -2207,7 +2188,7 @@ dependencies = [
  "sha2",
  "thiserror 2.0.18",
  "toml",
- "trueno 0.14.4",
+ "trueno 0.14.6",
  "trueno-viz",
  "zip",
 ]
@@ -5091,7 +5072,7 @@ name = "realizar"
 version = "0.6.14"
 dependencies = [
  "anyhow",
- "aprender 0.25.8",
+ "aprender 0.25.9",
  "arc-swap",
  "async-stream",
  "axum",
@@ -6508,22 +6489,6 @@ name = "trueno"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5ba5457f1f184520c46e6b315d540baa4cf2a2ae3d047e13001a4a23a12c6ab8"
-dependencies = [
- "anyhow",
- "chrono",
- "hostname",
- "num_cpus",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "toml",
-]
-
-[[package]]
-name = "trueno"
-version = "0.14.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "35d2c230ebde5da651c4dc89c32bfe0d277f4e36750a5849d2e69af50b646211"
 dependencies = [
  "anyhow",
  "chrono",

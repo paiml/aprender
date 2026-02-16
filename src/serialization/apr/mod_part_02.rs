@@ -1,4 +1,5 @@
-/// Simple CRC32 implementation
+/// Simple CRC32 implementation (kept for backward compat with core_io)
+#[allow(dead_code)]
 pub(crate) fn crc32(data: &[u8]) -> u32 {
     let mut crc: u32 = 0xFFFF_FFFF;
     for &byte in data {
@@ -9,6 +10,7 @@ pub(crate) fn crc32(data: &[u8]) -> u32 {
 }
 
 /// CRC32 lookup table (IEEE polynomial)
+#[allow(dead_code)]
 const CRC32_TABLE: [u32; 256] = [
     0x0000_0000,
     0x7707_3096,

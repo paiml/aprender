@@ -373,10 +373,12 @@ fn test_load_model_tensors_unsupported_format() {
     let path = std::path::Path::new("/tmp/test.xyz");
     let result = load_model_tensors(path);
     assert!(result.is_err());
-    assert!(result
-        .unwrap_err()
-        .to_string()
-        .contains("Unsupported format"));
+    // PMAT-271: Error comes from magic byte detection + extension fallback
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.contains("Unknown format extension") || err.contains("Unsupported format"),
+        "Expected format detection error, got: {err}"
+    );
 }
 
 // ============================================================================

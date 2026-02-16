@@ -34,11 +34,13 @@ pub fn apr_import<P: AsRef<Path>>(
     let local_path = resolve_source(&parsed_source, options.cache)?;
 
     // Step 2: Check if GGUF - use raw import path to preserve quantization
-    let extension = local_path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("");
-    if extension == "gguf" {
+    // PMAT-271: Use magic bytes first, extension fallback for extensionless HF cache blobs
+    let is_gguf = crate::format::rosetta::FormatType::from_magic(&local_path)
+        .map(|f| matches!(f, crate::format::rosetta::FormatType::Gguf))
+        .unwrap_or_else(|_| {
+            local_path.extension().and_then(|e| e.to_str()) == Some("gguf")
+        });
+    if is_gguf {
         // PMAT-103: Use raw GGUF loading to preserve Q4_K/Q6_K quantization
         // This is critical for format parity - we don't want to dequantize and re-quantize
         return apr_import_gguf_raw(&local_path, output_path, &options);

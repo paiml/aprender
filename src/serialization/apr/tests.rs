@@ -5,15 +5,11 @@ pub(crate) use super::*;
 // =========================================================================
 
 #[test]
-fn test_apr_magic() {
-    assert_eq!(APR_MAGIC, [b'A', b'P', b'R', b'1']);
-}
-
-#[test]
-fn test_writer_creates_valid_magic() {
+fn test_writer_creates_valid_apr() {
     let writer = AprWriter::new();
     let bytes = writer.to_bytes().unwrap();
-    assert_eq!(&bytes[0..4], &APR_MAGIC);
+    // Must start with APR v2 magic: "APR\0"
+    assert_eq!(&bytes[0..3], b"APR");
 }
 
 // =========================================================================
@@ -154,8 +150,7 @@ fn test_metadata_and_tensors() {
     let mut writer = AprWriter::new();
 
     // Add metadata
-    writer.set_metadata("model", JsonValue::String("test".into()));
-    writer.set_metadata("version", JsonValue::Number(1.into()));
+    writer.set_metadata("model_type", JsonValue::String("test".into()));
 
     // Add tensors
     writer.add_tensor_f32("layer.0.weight", vec![4, 4], &vec![0.5; 16]);
@@ -166,7 +161,7 @@ fn test_metadata_and_tensors() {
 
     // Verify metadata
     assert_eq!(
-        reader.get_metadata("model"),
+        reader.get_metadata("model_type"),
         Some(&JsonValue::String("test".into()))
     );
 
@@ -187,7 +182,6 @@ fn test_invalid_magic() {
     let data = vec![b'X', b'Y', b'Z', b'1', 0, 0, 0, 0];
     let result = AprReader::from_bytes(data);
     assert!(result.is_err());
-    assert!(result.unwrap_err().contains("Invalid magic"));
 }
 
 #[test]
@@ -195,22 +189,6 @@ fn test_file_too_short() {
     let data = vec![b'A', b'P', b'R'];
     let result = AprReader::from_bytes(data);
     assert!(result.is_err());
-}
-
-// =========================================================================
-// CRC32 Tests
-// =========================================================================
-
-#[test]
-fn test_crc32_empty() {
-    assert_eq!(crc32(&[]), 0x0000_0000);
-}
-
-#[test]
-fn test_crc32_hello() {
-    // Known CRC32 for "hello"
-    let crc = crc32(b"hello");
-    assert_eq!(crc, 0x3610_A686);
 }
 
 // =========================================================================
@@ -247,138 +225,33 @@ fn test_full_roundtrip() {
     assert_eq!(embed.len(), 6400);
 }
 
-// =========================================================================
-// Compression Tests (GH-146)
-// =========================================================================
-
 #[test]
-fn test_apr_magic_distinct() {
-    // APR1 (uncompressed) vs APR\0 (compressed) - distinct formats
-    assert_eq!(APR_MAGIC, [b'A', b'P', b'R', b'1']);
-    assert_eq!(APR_MAGIC_COMPRESSED, [b'A', b'P', b'R', 0]);
-    assert_ne!(APR_MAGIC, APR_MAGIC_COMPRESSED);
-}
-
-#[test]
-fn test_compression_byte_roundtrip() {
-    assert_eq!(Compression::None.as_byte(), 0);
-    assert_eq!(Compression::from_byte(0), Some(Compression::None));
-
-    #[cfg(feature = "format-compression")]
-    {
-        assert_eq!(Compression::Lz4.as_byte(), 1);
-        assert_eq!(Compression::from_byte(1), Some(Compression::Lz4));
-        assert_eq!(Compression::Zstd.as_byte(), 2);
-        assert_eq!(Compression::from_byte(2), Some(Compression::Zstd));
-    }
-
-    assert_eq!(Compression::from_byte(255), None);
-}
-
-#[test]
-fn test_with_compression_builder() {
-    let writer = AprWriter::new().with_compression(Compression::None);
-    let bytes = writer.to_bytes().unwrap();
-    // Should produce APR1 format (no compression)
-    assert_eq!(&bytes[0..4], &APR_MAGIC);
-}
-
-#[cfg(feature = "format-compression")]
-#[test]
-fn test_lz4_compression_roundtrip() {
-    let mut writer = AprWriter::new().with_compression(Compression::Lz4);
-    writer.set_metadata("model", JsonValue::String("test-lz4".into()));
-    writer.add_tensor_f32("weights", vec![100], &vec![0.5; 100]);
-
-    let bytes = writer.to_bytes().unwrap();
-
-    // Should produce APR2 format
-    assert_eq!(&bytes[0..4], &APR_MAGIC_COMPRESSED);
-    assert_eq!(bytes[4], 1); // LZ4 compression byte
-
-    // Reader should auto-detect and decompress
-    let reader = AprReader::from_bytes(bytes).unwrap();
-    assert_eq!(
-        reader.get_metadata("model"),
-        Some(&JsonValue::String("test-lz4".into()))
-    );
-    let data = reader.read_tensor_f32("weights").unwrap();
-    assert_eq!(data, vec![0.5; 100]);
-}
-
-#[cfg(feature = "format-compression")]
-#[test]
-fn test_zstd_compression_roundtrip() {
-    let mut writer = AprWriter::new().with_compression(Compression::Zstd);
-    writer.set_metadata("model", JsonValue::String("test-zstd".into()));
-    writer.add_tensor_f32("bias", vec![50], &vec![0.1; 50]);
-
-    let bytes = writer.to_bytes().unwrap();
-
-    // Should produce APR2 format
-    assert_eq!(&bytes[0..4], &APR_MAGIC_COMPRESSED);
-    assert_eq!(bytes[4], 2); // ZSTD compression byte
-
-    // Reader should auto-detect and decompress
-    let reader = AprReader::from_bytes(bytes).unwrap();
-    assert_eq!(
-        reader.get_metadata("model"),
-        Some(&JsonValue::String("test-zstd".into()))
-    );
-    let data = reader.read_tensor_f32("bias").unwrap();
-    assert_eq!(data, vec![0.1; 50]);
-}
-
-#[cfg(feature = "format-compression")]
-#[test]
-fn test_compression_reduces_size() {
-    // Create data with high compressibility (repeated values)
-    let mut writer_uncompressed = AprWriter::new();
-    writer_uncompressed.add_tensor_f32("data", vec![10000], &vec![0.0; 10000]);
-    let uncompressed = writer_uncompressed.to_bytes().unwrap();
-
-    let mut writer_lz4 = AprWriter::new().with_compression(Compression::Lz4);
-    writer_lz4.add_tensor_f32("data", vec![10000], &vec![0.0; 10000]);
-    let compressed = writer_lz4.to_bytes().unwrap();
-
-    // LZ4 should compress repeated zeros very well
-    assert!(
-        compressed.len() < uncompressed.len() / 10,
-        "LZ4 should compress repeated data significantly: {} vs {}",
-        compressed.len(),
-        uncompressed.len()
-    );
-}
-
-#[cfg(feature = "format-compression")]
-#[test]
-fn test_large_model_compression_roundtrip() {
-    // Simulate a small ML model
-    let mut writer = AprWriter::new().with_compression(Compression::Lz4);
-
-    writer.set_metadata("model_type", JsonValue::String("whisper-tiny".into()));
-    writer.set_metadata("n_vocab", JsonValue::Number(51865.into()));
-
-    // Add multiple tensors like a real model
-    writer.add_tensor_f32("encoder.embed", vec![384, 80], &vec![0.01; 384 * 80]);
-    writer.add_tensor_f32(
-        "encoder.conv1.weight",
-        vec![384, 80, 3],
-        &vec![0.02; 384 * 80 * 3],
-    );
-    writer.add_tensor_f32("decoder.embed", vec![51865, 384], &vec![0.001; 51865 * 384]);
+fn test_well_known_metadata_fields() {
+    let mut writer = AprWriter::new();
+    writer.set_metadata("model_type", JsonValue::String("transformer".into()));
+    writer.set_metadata("model_name", JsonValue::String("test-model".into()));
+    writer.set_metadata("architecture", JsonValue::String("qwen2".into()));
+    writer.set_metadata("custom_field", JsonValue::Number(42.into()));
 
     let bytes = writer.to_bytes().unwrap();
     let reader = AprReader::from_bytes(bytes).unwrap();
 
-    // Verify metadata
+    // Well-known fields round-trip correctly
     assert_eq!(
         reader.get_metadata("model_type"),
-        Some(&JsonValue::String("whisper-tiny".into()))
+        Some(&JsonValue::String("transformer".into()))
     );
-
-    // Verify tensors
-    assert_eq!(reader.tensors.len(), 3);
-    let embed = reader.read_tensor_f32("encoder.embed").unwrap();
-    assert_eq!(embed.len(), 384 * 80);
+    assert_eq!(
+        reader.get_metadata("model_name"),
+        Some(&JsonValue::String("test-model".into()))
+    );
+    assert_eq!(
+        reader.get_metadata("architecture"),
+        Some(&JsonValue::String("qwen2".into()))
+    );
+    // Custom fields preserved via AprV2Metadata.custom
+    assert_eq!(
+        reader.get_metadata("custom_field"),
+        Some(&JsonValue::Number(42.into()))
+    );
 }

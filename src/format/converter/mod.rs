@@ -328,11 +328,12 @@ pub fn apr_convert<P: AsRef<Path>>(
 ) -> Result<ConvertReport> {
     let input_path = input.as_ref();
     let output_path = output.as_ref();
-    let extension = input_path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("");
-    let is_gguf = extension == "gguf";
+    // PMAT-271: Use magic bytes first, extension fallback for extensionless HF cache blobs
+    let is_gguf = crate::format::rosetta::FormatType::from_magic(input_path)
+        .map(|f| matches!(f, crate::format::rosetta::FormatType::Gguf))
+        .unwrap_or_else(|_| {
+            input_path.extension().and_then(|e| e.to_str()) == Some("gguf")
+        });
 
     // GH-181: Q4K GGUF pass-through (skip dequant->requant for already-quantized sources)
     if is_gguf && options.quantize == Some(QuantizationType::Q4K) {
