@@ -1,3 +1,6 @@
+use crate::primitives::Vector;
+use super::OptimizationResult;
+
 // ==================== Proximal Operators ====================
 
 /// Proximal operators for non-smooth regularization.
@@ -287,5 +290,3 @@ pub trait Optimizer {
     fn reset(&mut self);
 }
 
-#[cfg(test)]
-mod tests;

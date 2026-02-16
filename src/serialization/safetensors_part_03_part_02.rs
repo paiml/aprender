@@ -1,3 +1,10 @@
+use crate::serialization::safetensors::{
+    extract_tensor, load_safetensors, save_safetensors, save_safetensors_with_metadata,
+    MappedSafeTensors, SafeTensorsDType, TensorMetadata, UserMetadata,
+};
+use crate::serialization::safetensors::safetensors_part_02::{extract_bf16_to_f32, extract_f16_to_f32};
+use std::collections::BTreeMap;
+use std::fs;
 
     #[test]
     fn test_save_and_load_safetensors() {

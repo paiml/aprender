@@ -1,5 +1,6 @@
+use super::{SafeTensorsMetadata, TensorMetadata, UserMetadata};
 
-fn validate_and_read_header(bytes: &[u8]) -> Result<usize, String> {
+pub(super) fn validate_and_read_header(bytes: &[u8]) -> Result<usize, String> {
     if bytes.len() < 8 {
         return Err(format!(
             "Invalid SafeTensors file: file is {} bytes, need at least 8 bytes for header",
@@ -25,7 +26,7 @@ fn validate_and_read_header(bytes: &[u8]) -> Result<usize, String> {
     Ok(metadata_len)
 }
 
-fn parse_metadata(
+pub(super) fn parse_metadata(
     bytes: &[u8],
     metadata_len: usize,
 ) -> Result<(SafeTensorsMetadata, UserMetadata), String> {
@@ -61,7 +62,7 @@ fn parse_metadata(
 }
 
 /// Extracts string key-value pairs from a `__metadata__` JSON object into `UserMetadata`.
-fn extract_user_metadata(value: serde_json::Value, user_metadata: &mut UserMetadata) {
+pub(super) fn extract_user_metadata(value: serde_json::Value, user_metadata: &mut UserMetadata) {
     let serde_json::Value::Object(meta_map) = value else {
         return;
     };
@@ -120,7 +121,7 @@ pub fn extract_tensor(raw_data: &[u8], tensor_meta: &TensorMetadata) -> Result<V
 }
 
 /// Extract F32 tensor data
-fn extract_f32(tensor_bytes: &[u8]) -> Result<Vec<f32>, String> {
+pub(super) fn extract_f32(tensor_bytes: &[u8]) -> Result<Vec<f32>, String> {
     if tensor_bytes.len() % 4 != 0 {
         return Err(format!(
             "Invalid F32 tensor data: size {} is not a multiple of 4 bytes",
@@ -140,7 +141,7 @@ fn extract_f32(tensor_bytes: &[u8]) -> Result<Vec<f32>, String> {
 }
 
 /// Extract BF16 tensor data and convert to F32
-fn extract_bf16_to_f32(tensor_bytes: &[u8]) -> Result<Vec<f32>, String> {
+pub(crate) fn extract_bf16_to_f32(tensor_bytes: &[u8]) -> Result<Vec<f32>, String> {
     if tensor_bytes.len() % 2 != 0 {
         return Err(format!(
             "Invalid BF16 tensor data: size {} is not a multiple of 2 bytes",
@@ -160,7 +161,7 @@ fn extract_bf16_to_f32(tensor_bytes: &[u8]) -> Result<Vec<f32>, String> {
 }
 
 /// Extract F16 tensor data and convert to F32
-fn extract_f16_to_f32(tensor_bytes: &[u8]) -> Result<Vec<f32>, String> {
+pub(crate) fn extract_f16_to_f32(tensor_bytes: &[u8]) -> Result<Vec<f32>, String> {
     if tensor_bytes.len() % 2 != 0 {
         return Err(format!(
             "Invalid F16 tensor data: size {} is not a multiple of 2 bytes",

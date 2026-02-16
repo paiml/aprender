@@ -285,4 +285,8 @@ fn create_regularized_matrix(a: &Matrix<f32>, n: usize, lambda: f32) -> Matrix<f
     Matrix::from_vec(n, n, a_reg_data).expect("Matrix dimensions should be valid")
 }
 
-include!("mod_part_02.rs");
+mod mod_part_02;
+pub use mod_part_02::*;
+
+#[cfg(test)]
+mod tests;

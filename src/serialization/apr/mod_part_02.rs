@@ -1,6 +1,5 @@
-
 /// Simple CRC32 implementation
-fn crc32(data: &[u8]) -> u32 {
+pub(crate) fn crc32(data: &[u8]) -> u32 {
     let mut crc: u32 = 0xFFFF_FFFF;
     for &byte in data {
         let idx = ((crc ^ u32::from(byte)) & 0xFF) as usize;
@@ -269,5 +268,3 @@ const CRC32_TABLE: [u32; 256] = [
     0x2D02_EF8D,
 ];
 
-#[cfg(test)]
-mod tests;

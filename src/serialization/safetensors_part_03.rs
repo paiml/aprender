@@ -1,7 +1,5 @@
+#[path = "safetensors_part_03_part_02.rs"]
+mod safetensors_part_03_part_02;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-include!("safetensors_part_03_part_02.rs");
-include!("safetensors_part_03_part_03.rs");
-}
+#[path = "safetensors_part_03_part_03.rs"]
+mod safetensors_part_03_part_03;

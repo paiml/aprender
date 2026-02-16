@@ -1,3 +1,7 @@
+use crate::primitives::Vector;
+
+use super::Adam;
+use crate::optim::Optimizer;
 
 impl Adam {
     /// Creates a new Adam optimizer with the given learning rate and default hyperparameters.

@@ -1,3 +1,5 @@
+use crate::speech::{SpeechError, SpeechResult};
+use super::{AsrConfig, LanguageDetection, Segment, Transcription};
 
 /// Detect language from audio features (G2)
 ///
@@ -287,5 +289,3 @@ impl Iterator for StreamingTranscription {
 // Tests
 // ============================================================================
 
-#[cfg(test)]
-mod tests;

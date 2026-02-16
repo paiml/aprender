@@ -304,5 +304,9 @@ pub struct Adam {
     t: usize,
 }
 
-include!("stochastic_part_02.rs");
-include!("stochastic_part_03.rs");
+#[path = "stochastic_part_02.rs"]
+mod stochastic_part_02;
+
+#[cfg(test)]
+#[path = "stochastic_part_03.rs"]
+mod stochastic_part_03;

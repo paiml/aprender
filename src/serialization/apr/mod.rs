@@ -432,4 +432,8 @@ impl AprWriter {
     }
 }
 
-include!("mod_part_02.rs");
+mod mod_part_02;
+pub(crate) use mod_part_02::crc32;
+
+#[cfg(test)]
+mod tests;

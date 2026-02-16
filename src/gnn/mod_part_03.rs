@@ -1,76 +1,7 @@
-
-impl GNNModule for EdgeConv {
-    #[allow(clippy::needless_range_loop)]
-    fn forward_gnn(&self, x: &Tensor, edge_index: &[EdgeIndex]) -> Tensor {
-        let num_nodes = x.shape()[0];
-        let in_features = x.shape()[1];
-
-        assert_eq!(
-            in_features, self.in_features,
-            "Expected {} input features, got {}",
-            self.in_features, in_features
-        );
-
-        let x_data = x.data();
-
-        // Build neighbor lists
-        let mut neighbors: Vec<Vec<usize>> = vec![vec![]; num_nodes];
-        for &(src, tgt) in edge_index {
-            neighbors[tgt].push(src);
-            neighbors[src].push(tgt);
-        }
-
-        // Compute output via max aggregation of edge features
-        let mut output = vec![f32::NEG_INFINITY; num_nodes * self.out_features];
-
-        for i in 0..num_nodes {
-            if neighbors[i].is_empty() {
-                // No neighbors: use self-loop
-                neighbors[i].push(i);
-            }
-
-            for &j in &neighbors[i] {
-                // Compute edge features: CONCAT(h_i, h_j - h_i)
-                let mut edge_feat = Vec::with_capacity(in_features * 2);
-
-                // h_i
-                for f in 0..in_features {
-                    edge_feat.push(x_data[i * in_features + f]);
-                }
-                // h_j - h_i
-                for f in 0..in_features {
-                    edge_feat.push(x_data[j * in_features + f] - x_data[i * in_features + f]);
-                }
-
-                // Apply MLP
-                let edge_tensor = Tensor::new(&edge_feat, &[1, in_features * 2]);
-                let h1 = self.linear1.forward(&edge_tensor);
-                let h1_relu: Vec<f32> = h1.data().iter().map(|&v| v.max(0.0)).collect();
-                let h1_tensor = Tensor::new(&h1_relu, &[1, self.hidden_features]);
-                let h2 = self.linear2.forward(&h1_tensor);
-                let h2_data = h2.data();
-
-                // Max aggregation
-                for f in 0..self.out_features {
-                    output[i * self.out_features + f] =
-                        output[i * self.out_features + f].max(h2_data[f]);
-                }
-            }
-        }
-
-        // Replace -inf with 0
-        for o in &mut output {
-            if *o == f32::NEG_INFINITY {
-                *o = 0.0;
-            }
-        }
-
-        Tensor::new(&output, &[num_nodes, self.out_features])
-    }
-}
+use crate::autograd::Tensor;
 
 /// Replace negative infinity values with zero.
-fn replace_neg_infinity(values: &mut [f32]) {
+pub(crate) fn replace_neg_infinity(values: &mut [f32]) {
     for v in values {
         if *v == f32::NEG_INFINITY {
             *v = 0.0;
@@ -239,6 +170,3 @@ pub fn global_max_pool(x: &Tensor, batch: Option<&[usize]>) -> Tensor {
         Tensor::new(&maxs, &[1, num_features])
     }
 }
-
-#[cfg(test)]
-mod tests;

@@ -1,7 +1,9 @@
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::super::*;
+    use crate::optim::Optimizer;
+    use crate::primitives::Vector;
 
     #[test]
     fn test_sgd_basic_update() {
