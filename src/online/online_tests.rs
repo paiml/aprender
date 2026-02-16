@@ -1,4 +1,4 @@
-use super::*;
+pub(crate) use super::*;
 
 #[test]
 fn test_online_linear_regression_basic() {
@@ -448,4 +448,6 @@ fn test_config_debug() {
     assert!(debug_str.contains("OnlineLearnerConfig"));
 }
 
-include!("online_tests_part_02.rs");
+#[path = "online_tests_part_02.rs"]
+
+mod online_tests_part_02;

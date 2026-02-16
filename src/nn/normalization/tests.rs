@@ -1,7 +1,7 @@
 //\! Normalization Tests - Extreme TDD
 //\! PMAT-085: Extracted from mod.rs for PMAT file health compliance
 
-use super::*;
+pub(crate) use super::*;
 
 #[test]
 fn test_layer_norm_shape() {
@@ -444,5 +444,8 @@ fn test_batch_norm_1d_parameters_mut() {
     assert_eq!(params[0].numel(), 32);
 }
 
-include!("tests_part_02.rs");
-include!("tests_part_03.rs");
+#[path = "tests_part_02.rs"]
+
+mod tests_part_02;
+#[path = "tests_part_03.rs"]
+mod tests_part_03;

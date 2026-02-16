@@ -1,4 +1,4 @@
-use super::*;
+pub(crate) use super::*;
 
 // ========================================================================
 // Test LintLevel
@@ -441,6 +441,10 @@ fn test_lint_large_compressed_tensor_passes() {
     assert!(compression_issues.is_empty());
 }
 
-include!("tests_part_02.rs");
-include!("tests_part_03.rs");
-include!("tests_part_04.rs");
+#[path = "tests_part_02.rs"]
+
+mod tests_part_02;
+#[path = "tests_part_03.rs"]
+mod tests_part_03;
+#[path = "tests_part_04.rs"]
+mod tests_part_04;

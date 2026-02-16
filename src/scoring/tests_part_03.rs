@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_model_type_neural_no_regularization_warning() {

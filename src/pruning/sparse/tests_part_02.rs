@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_sparse_tensor_block_nnz() {

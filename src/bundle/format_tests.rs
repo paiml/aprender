@@ -1,6 +1,6 @@
-use super::*;
-use crate::bundle::manifest::ModelMetadata;
-use tempfile::NamedTempFile;
+pub(crate) use super::*;
+pub(crate) use crate::bundle::manifest::ModelMetadata;
+pub(crate) use tempfile::NamedTempFile;
 
 #[test]
 fn test_bundle_format_validate_magic() {

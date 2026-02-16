@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_apply_repetition_penalty_mixed_logits() {

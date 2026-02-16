@@ -1,11 +1,11 @@
-use super::*;
+pub(crate) use super::*;
 
 // ========================================================================
 // BUG-GGUF-001 Falsification Tests: Allocation Attack Prevention
 // ========================================================================
 
 /// Create minimal GGUF header bytes for testing
-fn create_gguf_header(tensor_count: u64, metadata_count: u64) -> Vec<u8> {
+pub(super) fn create_gguf_header(tensor_count: u64, metadata_count: u64) -> Vec<u8> {
     let mut data = Vec::new();
     // Magic: "GGUF"
     data.extend_from_slice(&GGUF_MAGIC.to_le_bytes());
@@ -445,5 +445,8 @@ fn test_from_bytes_invalid_magic() {
     );
 }
 
-include!("reader_tests_part_02.rs");
-include!("reader_tests_part_03.rs");
+#[path = "reader_tests_part_02.rs"]
+
+mod reader_tests_part_02;
+#[path = "reader_tests_part_03.rs"]
+mod reader_tests_part_03;

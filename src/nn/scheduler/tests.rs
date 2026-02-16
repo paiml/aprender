@@ -1,7 +1,7 @@
-use super::*;
+pub(crate) use super::*;
 
 // Mock optimizer for testing
-struct MockOptimizer {
+pub(super) struct MockOptimizer {
     lr: f32,
 }
 
@@ -435,4 +435,6 @@ fn test_linear_warmup_after_warmup_complete() {
     assert_eq!(scheduler.last_epoch(), 5);
 }
 
-include!("tests_part_02.rs");
+#[path = "tests_part_02.rs"]
+
+mod tests_part_02;

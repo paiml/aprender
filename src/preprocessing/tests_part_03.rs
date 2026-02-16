@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_tsne_learning_rate() {

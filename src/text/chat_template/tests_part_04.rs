@@ -1,3 +1,4 @@
+use super::*;
 
 /// Test Phi with system message
 #[test]

@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_infer_model_config_attention_wq_pattern() {

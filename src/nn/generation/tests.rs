@@ -1,4 +1,4 @@
-use super::*;
+pub(crate) use super::*;
 
 // ========================================================================
 // Generation Config Tests
@@ -439,4 +439,6 @@ fn test_apply_repetition_penalty_negative_logits() {
     assert_eq!(penalized.data()[3], -2.0); // unchanged
 }
 
-include!("tests_part_02.rs");
+#[path = "tests_part_02.rs"]
+
+mod tests_part_02;

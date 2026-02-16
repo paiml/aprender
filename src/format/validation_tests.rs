@@ -1,7 +1,7 @@
 //! APR Format Validation Tests - Extreme TDD
 //! PMAT-197: Extracted from validation.rs for file size reduction
 
-use super::*;
+pub(crate) use super::*;
 
 #[cfg(test)]
 mod tests_poka_yoke {
@@ -415,6 +415,10 @@ mod tests_whisper_validation {
     }
 }
 
-include!("validation_tests_part_02.rs");
-include!("validation_tests_part_03.rs");
-include!("validation_tests_part_04.rs");
+#[path = "validation_tests_part_02.rs"]
+
+mod validation_tests_part_02;
+#[path = "validation_tests_part_03.rs"]
+mod validation_tests_part_03;
+#[path = "validation_tests_part_04.rs"]
+mod validation_tests_part_04;

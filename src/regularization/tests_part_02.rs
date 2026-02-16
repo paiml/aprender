@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_randaugment_apply_shear_y() {

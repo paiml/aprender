@@ -1,18 +1,18 @@
 //! Error handling property tests.
 
 use super::super::*;
-use proptest::prelude::*;
+pub(crate) use proptest::prelude::*;
 
-fn arb_non_magic_bytes() -> impl Strategy<Value = [u8; 4]> {
+pub(super) fn arb_non_magic_bytes() -> impl Strategy<Value = [u8; 4]> {
     any::<[u8; 4]>().prop_filter("not APR magic", |b| b != b"APR\x00")
 }
 
-fn arb_invalid_model_type() -> impl Strategy<Value = u16> {
+pub(super) fn arb_invalid_model_type() -> impl Strategy<Value = u16> {
     // Valid model types are 0-16, so anything >= 17 is invalid
     17u16..=u16::MAX
 }
 
-fn arb_invalid_compression() -> impl Strategy<Value = u8> {
+pub(super) fn arb_invalid_compression() -> impl Strategy<Value = u8> {
     // Valid compression values are 0-3, so anything >= 4 is invalid
     4u8..=u8::MAX
 }

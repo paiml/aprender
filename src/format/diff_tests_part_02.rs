@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_compare_tensors_different_shape() {
@@ -182,7 +183,7 @@ fn test_diff_models_file_not_found() {
 // Coverage: compute_differences all branches
 // ====================================================================
 
-fn make_report(
+pub(crate) fn make_report(
     format: FormatType,
     size: usize,
     params: usize,

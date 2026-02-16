@@ -1,5 +1,5 @@
-use super::*;
-use crate::citl::{Difficulty, ErrorCategory};
+pub(crate) use super::*;
+pub(crate) use crate::citl::{Difficulty, ErrorCategory};
 
 // ==================== SourceSpan Tests ====================
 

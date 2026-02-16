@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn p107_empty_tensor_list() {
@@ -97,7 +98,7 @@ fn p110_conversion_duration() {
 // These tests generate their own valid fixtures using the library APIs.
 
 /// Generate a unique temp file name for tests
-fn unique_temp_path(prefix: &str, ext: &str) -> std::path::PathBuf {
+pub(crate) fn unique_temp_path(prefix: &str, ext: &str) -> std::path::PathBuf {
     use std::sync::atomic::{AtomicU64, Ordering};
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let id = COUNTER.fetch_add(1, Ordering::Relaxed);
@@ -106,7 +107,7 @@ fn unique_temp_path(prefix: &str, ext: &str) -> std::path::PathBuf {
 }
 
 /// Helper: Create a minimal valid SafeTensors file
-fn create_safetensors_fixture() -> std::path::PathBuf {
+pub(crate) fn create_safetensors_fixture() -> std::path::PathBuf {
     use std::io::Write;
     let path = unique_temp_path("test_tiny", "safetensors");
     let mut file = std::fs::File::create(&path).expect("Create temp file");
@@ -127,7 +128,7 @@ fn create_safetensors_fixture() -> std::path::PathBuf {
 }
 
 /// Helper: Create a minimal valid APR v2 file using the library API
-fn create_apr_fixture() -> std::path::PathBuf {
+pub(crate) fn create_apr_fixture() -> std::path::PathBuf {
     use crate::format::v2::{AprV2Metadata, AprV2Writer};
     let path = unique_temp_path("test_tiny", "apr");
     let metadata = AprV2Metadata::new("test");

@@ -1,7 +1,7 @@
-use super::*;
+pub(crate) use super::*;
 
 // Mock module for testing
-struct MockLinear {
+pub(super) struct MockLinear {
     weights: Tensor,
 }
 
@@ -449,4 +449,6 @@ fn test_hessian_with_relative_damping() {
     );
 }
 
-include!("sparsegpt_tests_part_02.rs");
+#[path = "sparsegpt_tests_part_02.rs"]
+
+mod sparsegpt_tests_part_02;

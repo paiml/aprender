@@ -1,4 +1,4 @@
-use super::*;
+pub(crate) use super::*;
 
 #[test]
 fn test_train_test_split_basic() {
@@ -435,5 +435,8 @@ fn test_stratified_kfold_different_random_states() {
     }
 }
 
-include!("tests_part_02.rs");
-include!("tests_part_03.rs");
+#[path = "tests_part_02.rs"]
+
+mod tests_part_02;
+#[path = "tests_part_03.rs"]
+mod tests_part_03;

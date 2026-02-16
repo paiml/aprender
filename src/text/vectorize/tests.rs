@@ -1,5 +1,5 @@
-use super::*;
-use crate::text::tokenize::WhitespaceTokenizer;
+pub(crate) use super::*;
+pub(crate) use crate::text::tokenize::WhitespaceTokenizer;
 
 #[test]
 fn test_count_vectorizer_basic() {
@@ -440,4 +440,6 @@ fn test_tfidf_with_min_df() {
     assert!(!vocab.contains_key("bird"));
 }
 
-include!("tests_part_02.rs");
+#[path = "tests_part_02.rs"]
+
+mod tests_part_02;

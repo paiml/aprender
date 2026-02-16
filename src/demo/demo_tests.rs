@@ -1,4 +1,4 @@
-use super::*;
+pub(crate) use super::*;
 
 // =========================================================================
 // J1: Qwen2-0.5B imports from HF (configuration validation)

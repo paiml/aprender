@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_minmax_single_sample() {

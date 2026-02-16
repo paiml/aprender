@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_decode_sentencepiece_no_leading_space() {
@@ -262,7 +263,7 @@ fn test_parse_f32_array_too_short() {
     assert!(result.is_err());
 }
 
-fn create_gguf_with_string_metadata(key_name: &str, value: &str) -> Vec<u8> {
+pub(crate) fn create_gguf_with_string_metadata(key_name: &str, value: &str) -> Vec<u8> {
     let mut data = Vec::new();
     data.extend_from_slice(b"GGUF");
     data.extend_from_slice(&3u32.to_le_bytes());

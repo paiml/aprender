@@ -1,4 +1,4 @@
-use super::*;
+pub(crate) use super::*;
 #[test]
 fn test_bpe_config_default() {
     let config = BpeConfig::default();
@@ -438,4 +438,6 @@ fn test_encode_with_special_tokens() {
     assert!(tokens.contains(&50256));
 }
 
-include!("tests_part_02.rs");
+#[path = "tests_part_02.rs"]
+
+mod tests_part_02;

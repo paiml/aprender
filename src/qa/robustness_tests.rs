@@ -1,7 +1,9 @@
-use super::{
-    numerical, run_edge_case_tests, test_empty_handling, test_inf_handling, test_nan_handling,
-    test_zero_handling, Duration, EdgeCaseBehavior, EdgeCaseConfig, EdgeCaseResult, Instant,
+pub(super) use super::{
+    numerical, process_edge_case_result, run_edge_case_tests, test_empty_handling,
+    test_inf_handling, test_max_size_handling, test_nan_handling, test_zero_handling,
+    CategoryScore, EdgeCaseBehavior, EdgeCaseConfig, EdgeCaseResult, Severity,
 };
+use std::time::{Duration, Instant};
 
 #[test]
 fn test_edge_case_config_default() {
@@ -446,5 +448,8 @@ fn test_run_edge_case_tests_only_nan() {
     assert_eq!(score.tests_passed + score.tests_failed, 1);
 }
 
-include!("robustness_tests_part_02.rs");
-include!("robustness_tests_part_03.rs");
+#[path = "robustness_tests_part_02.rs"]
+
+mod robustness_tests_part_02;
+#[path = "robustness_tests_part_03.rs"]
+mod robustness_tests_part_03;

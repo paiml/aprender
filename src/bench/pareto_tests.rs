@@ -1,6 +1,6 @@
-use super::*;
+pub(crate) use super::*;
 
-fn make_result(model_id: &str, size: u64, success: f64) -> EvalResult {
+pub(super) fn make_result(model_id: &str, size: u64, success: f64) -> EvalResult {
     let mut result = EvalResult::new(model_id, "test", size);
     result.overall_success_rate = success;
     result.avg_turns_to_success = 1.5;

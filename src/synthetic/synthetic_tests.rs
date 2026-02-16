@@ -1,8 +1,8 @@
-use super::*;
+pub(crate) use super::*;
 
 /// Simple test generator for unit tests
 #[derive(Debug)]
-struct DoubleGenerator;
+pub(super) struct DoubleGenerator;
 
 impl SyntheticGenerator for DoubleGenerator {
     type Input = i32;

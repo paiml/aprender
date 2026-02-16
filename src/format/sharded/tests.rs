@@ -1,4 +1,4 @@
-use super::*;
+pub(crate) use super::*;
 #[test]
 fn test_shard_index_empty() {
     let index = ShardIndex::new();
@@ -436,4 +436,6 @@ fn test_shard_index_default() {
     assert!(!index.is_valid());
 }
 
-include!("tests_part_02.rs");
+#[path = "tests_part_02.rs"]
+
+mod tests_part_02;

@@ -1,4 +1,4 @@
-use super::*;
+pub(crate) use super::*;
 
 #[test]
 fn test_model_zoo_entry_new() {
@@ -431,4 +431,6 @@ fn test_model_zoo_type_all_variants_name() {
     assert_eq!(ModelZooType::Other.name(), "Other");
 }
 
-include!("tests_part_02.rs");
+#[path = "tests_part_02.rs"]
+
+mod tests_part_02;

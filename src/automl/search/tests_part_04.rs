@@ -1,3 +1,4 @@
+use super::*;
 
 mod proptests {
     use super::*;

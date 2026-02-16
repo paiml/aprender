@@ -1,3 +1,4 @@
+use super::*;
 
 // ==========================================================================
 // M7: Embedding similarity correlates with relation
@@ -333,7 +334,7 @@ fn apply_nonlinearity_with_mask(
 }
 
 // Helper function for K19 test
-fn apply_nonlinearity_with_temp(
+pub(super) fn apply_nonlinearity_with_temp(
     scores: &[Vec<f64>],
     nonlinearity: Nonlinearity,
     temperature: f64,

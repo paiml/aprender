@@ -1,4 +1,4 @@
-use super::*;
+pub(crate) use super::*;
 
 // ========== NG4: Forward pass is deterministic ==========
 

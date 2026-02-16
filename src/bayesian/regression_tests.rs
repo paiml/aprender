@@ -1,4 +1,4 @@
-use super::*;
+pub(crate) use super::*;
 
 #[test]
 fn test_new() {
@@ -445,4 +445,6 @@ fn test_clone_after_fit() {
     assert!(cloned.noise_variance().is_some());
 }
 
-include!("regression_tests_part_02.rs");
+#[path = "regression_tests_part_02.rs"]
+
+mod regression_tests_part_02;

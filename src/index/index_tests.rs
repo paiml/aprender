@@ -1,4 +1,4 @@
-use super::*;
+pub(crate) use super::*;
 
 #[test]
 fn test_cross_encoder_score() {

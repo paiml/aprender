@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_instantiate_template_with_both_types() {

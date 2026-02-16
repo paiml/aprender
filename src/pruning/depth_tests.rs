@@ -1,4 +1,4 @@
-use super::*;
+pub(crate) use super::*;
 
 // ==========================================================================
 // FALSIFICATION: Cosine similarity computation

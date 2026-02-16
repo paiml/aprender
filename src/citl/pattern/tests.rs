@@ -1,4 +1,4 @@
-use super::*;
+pub(crate) use super::*;
 
 // ==================== PatternLibrary Tests ====================
 
@@ -440,5 +440,8 @@ fn test_pattern_library_load_nonexistent() {
     assert!(result.is_err());
 }
 
-include!("tests_part_02.rs");
-include!("tests_part_03.rs");
+#[path = "tests_part_02.rs"]
+
+mod tests_part_02;
+#[path = "tests_part_03.rs"]
+mod tests_part_03;

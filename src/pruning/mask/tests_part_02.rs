@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_generate_block_mask_not_divisible() {

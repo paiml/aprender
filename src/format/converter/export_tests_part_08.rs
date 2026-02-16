@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_build_gguf_arch_metadata_defaults_when_fields_are_none() {

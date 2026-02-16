@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_extract_top_level_json_value_before_children() {

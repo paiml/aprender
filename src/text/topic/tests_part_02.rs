@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_pseudo_random_deterministic() {

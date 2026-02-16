@@ -1,7 +1,8 @@
 //\! Rosetta Tests - Extreme TDD
 //\! PMAT-085: Extracted from mod.rs for PMAT file health compliance
 
-use super::*;
+pub(crate) use super::*;
+pub(crate) use tests_part_03::{create_apr_fixture, create_safetensors_fixture, unique_temp_path};
 
 // ========================================================================
 // Section 1: Format Detection Tests (P001-P010)
@@ -419,6 +420,10 @@ fn p057_verification_not_equivalent() {
     assert!(!report.passes_with_tolerance(1e-3));
 }
 
-include!("tests_part_02.rs");
-include!("tests_part_03.rs");
-include!("tests_part_04.rs");
+#[path = "tests_part_02.rs"]
+
+mod tests_part_02;
+#[path = "tests_part_03.rs"]
+mod tests_part_03;
+#[path = "tests_part_04.rs"]
+mod tests_part_04;

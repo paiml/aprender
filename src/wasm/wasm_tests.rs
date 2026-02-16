@@ -1,4 +1,4 @@
-use super::*;
+pub(crate) use super::*;
 
 // =========================================================================
 // L1: wasm32-unknown-unknown target compiles

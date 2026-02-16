@@ -1,4 +1,4 @@
-use super::*;
+pub(crate) use super::*;
 
 // ========== NG21: Stereo output has correct frequency difference ==========
 

@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_cutmix_apply_empty_box() {

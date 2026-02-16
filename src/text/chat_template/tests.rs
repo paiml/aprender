@@ -1,7 +1,7 @@
 //\! Chat Template Tests - Extreme TDD
 //\! PMAT-085: Extracted from mod.rs for PMAT file health compliance
 
-use super::*;
+pub(crate) use super::*;
 
 // ========================================================================
 // Section 1: Template Loading & Parsing (CTL-01 to CTL-10)
@@ -437,8 +437,14 @@ fn ctp_01_format_performance() {
     );
 }
 
-include!("tests_part_02.rs");
-include!("tests_part_03.rs");
-include!("tests_part_04.rs");
-include!("tests_part_05.rs");
-include!("tests_part_06.rs");
+#[path = "tests_part_02.rs"]
+
+mod tests_part_02;
+#[path = "tests_part_03.rs"]
+mod tests_part_03;
+#[path = "tests_part_04.rs"]
+mod tests_part_04;
+#[path = "tests_part_05.rs"]
+mod tests_part_05;
+#[path = "tests_part_06.rs"]
+mod tests_part_06;

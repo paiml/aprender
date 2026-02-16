@@ -1,4 +1,4 @@
-use super::*;
+pub(crate) use super::*;
 #[test]
 fn test_mse_loss_perfect() {
     let y_true = Vector::from_slice(&[1.0, 2.0, 3.0]);
@@ -439,4 +439,6 @@ fn test_focal_loss_gamma_effect() {
     assert!(loss_gamma_2 < loss_gamma_0);
 }
 
-include!("tests_part_02.rs");
+#[path = "tests_part_02.rs"]
+
+mod tests_part_02;

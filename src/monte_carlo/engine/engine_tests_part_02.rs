@@ -1,3 +1,4 @@
+use super::*;
 
 // Test default implementation of generate_antithetic_path
 struct NoAntitheticModel;

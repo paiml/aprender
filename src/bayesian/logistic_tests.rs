@@ -1,4 +1,4 @@
-use super::*;
+pub(crate) use super::*;
 
 /// Test: Constructor creates model with correct defaults
 #[test]

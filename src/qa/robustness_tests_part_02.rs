@@ -1,3 +1,5 @@
+use super::*;
+use std::time::Duration;
 
 #[test]
 fn test_run_edge_case_tests_only_inf() {

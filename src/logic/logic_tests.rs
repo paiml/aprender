@@ -1,4 +1,5 @@
-use super::*;
+pub(crate) use super::*;
+use logic_tests_part_02::apply_nonlinearity_with_temp;
 
 // ==========================================================================
 // K1: logical_join computes einsum correctly
@@ -412,7 +413,7 @@ fn k20_trueno_simd_acceleration() {
 
 /// Naive scalar matrix multiply with cache-unfriendly access pattern
 /// Used as baseline for K20 benchmark
-fn naive_matrix_multiply_scalar(a: &[Vec<f64>], b: &[Vec<f64>]) -> Vec<Vec<f64>> {
+pub(super) fn naive_matrix_multiply_scalar(a: &[Vec<f64>], b: &[Vec<f64>]) -> Vec<Vec<f64>> {
     let rows = a.len();
     let cols = if b.is_empty() { 0 } else { b[0].len() };
     let inner = if a.is_empty() { 0 } else { a[0].len() };
@@ -434,4 +435,6 @@ fn naive_matrix_multiply_scalar(a: &[Vec<f64>], b: &[Vec<f64>]) -> Vec<Vec<f64>>
     result
 }
 
-include!("logic_tests_part_02.rs");
+#[path = "logic_tests_part_02.rs"]
+
+mod logic_tests_part_02;

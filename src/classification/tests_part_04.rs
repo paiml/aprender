@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_linear_svm_convergence() {

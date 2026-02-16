@@ -1,4 +1,4 @@
-use super::*;
+pub(crate) use super::*;
 
 #[test]
 fn test_dropout_eval_mode() {
@@ -444,4 +444,6 @@ fn test_dropconnect_apply_to_weights_eval_mode() {
     assert_eq!(masked.data(), weights.data());
 }
 
-include!("tests_part_02.rs");
+#[path = "tests_part_02.rs"]
+
+mod tests_part_02;

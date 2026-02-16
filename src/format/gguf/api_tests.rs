@@ -1,9 +1,9 @@
-use super::*;
-use crate::format::gguf::{export_tensors_to_gguf, GgmlType, GgufTensor, GgufValue};
-use tempfile::NamedTempFile;
+pub(crate) use super::*;
+pub(crate) use crate::format::gguf::{export_tensors_to_gguf, GgmlType, GgufTensor, GgufValue};
+pub(crate) use tempfile::NamedTempFile;
 
 /// Helper to create a minimal GGUF file for testing
-fn create_test_gguf_file() -> NamedTempFile {
+pub(super) fn create_test_gguf_file() -> NamedTempFile {
     let file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
 
     // Create minimal GGUF with one tensor and metadata
@@ -57,7 +57,7 @@ fn create_test_gguf_file() -> NamedTempFile {
 }
 
 /// Helper to create GGUF with tokenizer data
-fn create_test_gguf_with_tokenizer() -> NamedTempFile {
+pub(super) fn create_test_gguf_with_tokenizer() -> NamedTempFile {
     let file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
 
     let tensors = vec![GgufTensor {
@@ -118,7 +118,7 @@ fn create_test_gguf_with_tokenizer() -> NamedTempFile {
 }
 
 /// Helper to create GGUF with qwen2 architecture (for rope_type testing)
-fn create_test_gguf_qwen2() -> NamedTempFile {
+pub(super) fn create_test_gguf_qwen2() -> NamedTempFile {
     let file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
 
     let tensors = vec![GgufTensor {
@@ -446,4 +446,6 @@ fn test_gguf_model_config_clone() {
     assert_eq!(cloned.rope_type, config.rope_type);
 }
 
-include!("api_tests_part_02.rs");
+#[path = "api_tests_part_02.rs"]
+
+mod api_tests_part_02;

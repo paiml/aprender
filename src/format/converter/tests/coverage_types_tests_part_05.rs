@@ -1,3 +1,4 @@
+use super::*;
 
 // ========================================================================
 // GH-219 Coverage Gap: Architecture pure functions

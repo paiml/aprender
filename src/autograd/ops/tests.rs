@@ -1,9 +1,9 @@
 use super::*;
-use crate::autograd::{clear_graph, no_grad};
+pub(crate) use crate::autograd::{clear_graph, no_grad};
 
 /// Numerical gradient check using central differences.
 #[allow(dead_code)]
-fn numerical_gradient<F>(f: F, x: &Tensor, eps: f32) -> Tensor
+pub(super) fn numerical_gradient<F>(f: F, x: &Tensor, eps: f32) -> Tensor
 where
     F: Fn(&Tensor) -> Tensor,
 {
@@ -25,7 +25,7 @@ where
 }
 
 #[allow(dead_code)]
-fn check_gradient<F>(f: F, x: &Tensor, eps: f32, tol: f32) -> bool
+pub(super) fn check_gradient<F>(f: F, x: &Tensor, eps: f32, tol: f32) -> bool
 where
     F: Fn(&Tensor) -> Tensor,
 {
@@ -445,4 +445,6 @@ fn test_broadcast_add_forward() {
     assert_eq!(result.data(), &[11.0, 22.0, 13.0, 24.0]);
 }
 
-include!("tests_part_02.rs");
+#[path = "tests_part_02.rs"]
+
+mod tests_part_02;

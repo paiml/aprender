@@ -1,4 +1,4 @@
-use super::*;
+pub(crate) use super::*;
 #[test]
 fn test_stack_component() {
     assert_eq!(StackComponent::Aprender.name(), "aprender");
@@ -445,5 +445,8 @@ fn test_quantization_type_debug() {
     assert!(debug_str.contains("Int8"));
 }
 
-include!("tests_part_02.rs");
-include!("tests_part_03.rs");
+#[path = "tests_part_02.rs"]
+
+mod tests_part_02;
+#[path = "tests_part_03.rs"]
+mod tests_part_03;

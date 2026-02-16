@@ -1,7 +1,7 @@
 //\! V2 Tests - Extreme TDD
 //\! PMAT-085: Extracted from mod.rs for PMAT file health compliance
 
-use super::*;
+pub(crate) use super::*;
 
 #[test]
 fn test_magic_v2() {
@@ -447,6 +447,10 @@ fn test_flags_all_bits() {
     assert!(flags.is_quantized());
 }
 
-include!("tests_part_02.rs");
-include!("tests_part_03.rs");
-include!("tests_part_04.rs");
+#[path = "tests_part_02.rs"]
+
+mod tests_part_02;
+#[path = "tests_part_03.rs"]
+mod tests_part_03;
+#[path = "tests_part_04.rs"]
+mod tests_part_04;

@@ -1,14 +1,14 @@
 //! Core property-based tests for APR format.
 
 use super::super::*;
-use proptest::prelude::*;
+pub(crate) use proptest::prelude::*;
 
 // ================================================================
 // Arbitrary Strategies
 // ================================================================
 
 /// Generate arbitrary ModelType
-fn arb_model_type() -> impl Strategy<Value = ModelType> {
+pub(super) fn arb_model_type() -> impl Strategy<Value = ModelType> {
     prop_oneof![
         Just(ModelType::LinearRegression),
         Just(ModelType::LogisticRegression),
@@ -31,7 +31,7 @@ fn arb_model_type() -> impl Strategy<Value = ModelType> {
 }
 
 /// Generate arbitrary Compression
-fn arb_compression() -> impl Strategy<Value = Compression> {
+pub(super) fn arb_compression() -> impl Strategy<Value = Compression> {
     prop_oneof![
         Just(Compression::None),
         Just(Compression::ZstdDefault),
@@ -41,12 +41,12 @@ fn arb_compression() -> impl Strategy<Value = Compression> {
 }
 
 /// Generate arbitrary valid flags (6 bits)
-fn arb_flags() -> impl Strategy<Value = Flags> {
+pub(super) fn arb_flags() -> impl Strategy<Value = Flags> {
     (0u8..64).prop_map(Flags::from_bits)
 }
 
 /// Generate arbitrary Header with valid values
-fn arb_header() -> impl Strategy<Value = Header> {
+pub(super) fn arb_header() -> impl Strategy<Value = Header> {
     (
         arb_model_type(),
         0u32..1_000_000,             // metadata_size

@@ -1,3 +1,4 @@
+use super::*;
 
 // ==================== Coverage: parse_json_diagnostics with non-JSON lines ====================
 

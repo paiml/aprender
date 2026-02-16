@@ -1,8 +1,8 @@
 //! Tests for nn::optim optimizers
 //! PMAT-085: Extracted from optim.rs for file health
 
-use super::*;
-use crate::autograd::clear_graph;
+pub(crate) use super::*;
+pub(crate) use crate::autograd::clear_graph;
 
 #[test]
 fn test_sgd_basic() {
@@ -445,6 +445,10 @@ fn test_adam_step_trait() {
     assert_eq!(adam.t, 1);
 }
 
-include!("tests_part_02.rs");
-include!("tests_part_03.rs");
-include!("tests_part_04.rs");
+#[path = "tests_part_02.rs"]
+
+mod tests_part_02;
+#[path = "tests_part_03.rs"]
+mod tests_part_03;
+#[path = "tests_part_04.rs"]
+mod tests_part_04;

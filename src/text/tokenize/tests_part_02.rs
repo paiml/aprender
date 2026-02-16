@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_bpe_from_huggingface_whisper_tokens() {

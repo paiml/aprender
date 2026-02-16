@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_showcase_runner_to_grid_native_without_gguf_with_ollama() {

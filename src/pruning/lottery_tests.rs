@@ -1,8 +1,8 @@
-use super::*;
-use crate::nn::Module;
+pub(crate) use super::*;
+pub(crate) use crate::nn::Module;
 
 // Mock module for testing
-struct MockModule {
+pub(super) struct MockModule {
     weights: Tensor,
 }
 

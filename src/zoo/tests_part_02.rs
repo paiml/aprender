@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_model_zoo_type_all_variants_category() {

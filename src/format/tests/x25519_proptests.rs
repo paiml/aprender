@@ -3,13 +3,13 @@
 #![allow(unused_imports)]
 
 use super::super::*;
-use proptest::prelude::*;
+pub(crate) use proptest::prelude::*;
 
-use super::*;
-use proptest::prelude::*;
+pub(crate) use super::*;
+pub(crate) use proptest::prelude::*;
 
 /// Strategy for generating test model data
-fn arb_model_data() -> impl Strategy<Value = Vec<f32>> {
+pub(super) fn arb_model_data() -> impl Strategy<Value = Vec<f32>> {
     proptest::collection::vec(-100.0f32..100.0, 1..50)
 }
 

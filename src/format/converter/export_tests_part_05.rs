@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_validated_metadata_complete_passes() {

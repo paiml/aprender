@@ -1,3 +1,4 @@
+use super::*;
 
 // P120: APR tokenizer extraction round-trip
 // H0: Tokenizer vocabulary embedded in APR can be extracted and used for decoding

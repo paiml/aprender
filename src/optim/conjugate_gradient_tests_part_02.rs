@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_cg_fr_non_descent_direction_fallback() {

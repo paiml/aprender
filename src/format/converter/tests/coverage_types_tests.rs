@@ -446,7 +446,12 @@ fn test_compute_std_empty() {
     assert_eq!(std, 0.0);
 }
 
-include!("coverage_types_tests_part_02.rs");
-include!("coverage_types_tests_part_03.rs");
-include!("coverage_types_tests_part_04.rs");
-include!("coverage_types_tests_part_05.rs");
+#[path = "coverage_types_tests_part_02.rs"]
+
+mod coverage_types_tests_part_02;
+#[path = "coverage_types_tests_part_03.rs"]
+mod coverage_types_tests_part_03;
+#[path = "coverage_types_tests_part_04.rs"]
+mod coverage_types_tests_part_04;
+#[path = "coverage_types_tests_part_05.rs"]
+mod coverage_types_tests_part_05;

@@ -1,5 +1,5 @@
-use super::*;
-use crate::linear_model::LinearRegression;
+pub(crate) use super::*;
+pub(crate) use crate::linear_model::LinearRegression;
 
 #[test]
 fn test_model_result_stats() {

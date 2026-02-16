@@ -1,4 +1,4 @@
-use super::*;
+pub(crate) use super::*;
 
 // Test config validation
 #[test]
@@ -132,7 +132,7 @@ fn test_streaming_transcription_complete() {
 }
 
 // Test mock model
-struct MockAsrModel;
+pub(super) struct MockAsrModel;
 
 impl AsrModel for MockAsrModel {
     fn model_id(&self) -> &str {

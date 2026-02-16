@@ -1,3 +1,4 @@
+use super::*;
 
 /// P0 REGRESSION TEST: lint_apr_file dispatches correctly by magic
 #[test]

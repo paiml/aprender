@@ -1,6 +1,6 @@
-use super::*;
-use crate::ensemble::gating::SoftmaxGating;
-use crate::linear_model::LinearRegression;
+pub(crate) use super::*;
+pub(crate) use crate::ensemble::gating::SoftmaxGating;
+pub(crate) use crate::linear_model::LinearRegression;
 
 #[test]
 fn test_moe_config_default() {

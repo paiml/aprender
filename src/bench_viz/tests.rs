@@ -1,7 +1,7 @@
 //\! Bench Viz Tests - Extreme TDD
 //\! PMAT-085: Extracted from mod.rs for PMAT file health compliance
 
-use super::*;
+pub(crate) use super::*;
 
 #[test]
 fn test_bench_stats_computation() {
@@ -448,4 +448,6 @@ fn test_truncate_long_string() {
     assert_eq!(truncate(s, 5), "hello");
 }
 
-include!("tests_part_02.rs");
+#[path = "tests_part_02.rs"]
+
+mod tests_part_02;

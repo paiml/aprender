@@ -1,8 +1,8 @@
-use super::*;
-use crate::autograd::Tensor;
+pub(crate) use super::*;
+pub(crate) use crate::autograd::Tensor;
 
 // Mock module for testing
-struct MockModule {
+pub(super) struct MockModule {
     weights: Tensor,
 }
 

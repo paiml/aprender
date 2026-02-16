@@ -1,7 +1,7 @@
 //! Unit tests for pygmy model builder functions.
 
-use super::*;
-use crate::format::v2::{AprV2Reader, MAGIC_V2};
+pub(crate) use super::*;
+pub(crate) use crate::format::v2::{AprV2Reader, MAGIC_V2};
 
 #[test]
 fn test_pygmy_safetensors_valid() {
@@ -430,4 +430,6 @@ mod quantize_tests {
     }
 }
 
-include!("tests_part_02.rs");
+#[path = "tests_part_02.rs"]
+
+mod tests_part_02;

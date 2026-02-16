@@ -1,4 +1,4 @@
-use super::*;
+pub(crate) use super::*;
 
 #[test]
 fn test_aligned_vec_creation() {
@@ -445,4 +445,6 @@ fn test_trueno_native_model_debug_clone() {
     assert!(debug.contains("TruenoNativeModel"));
 }
 
-include!("tests_part_02.rs");
+#[path = "tests_part_02.rs"]
+
+mod tests_part_02;

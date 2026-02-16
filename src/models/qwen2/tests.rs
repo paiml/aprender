@@ -1,9 +1,9 @@
 //! Qwen2 Model Tests - Extreme TDD
 //! PMAT-085: Extracted from mod.rs for PMAT file health compliance
 
-use super::*;
+pub(crate) use super::*;
 
-fn create_tiny_config() -> Qwen2Config {
+pub(super) fn create_tiny_config() -> Qwen2Config {
     Qwen2Config {
         hidden_size: 64,
         num_attention_heads: 4,
@@ -427,5 +427,8 @@ fn s1_tokenizer_loads_from_json() {
     println!("S1 PASSED: encode('Hello') -> {} tokens", tokens.len());
 }
 
-include!("tests_part_02.rs");
-include!("tests_part_03.rs");
+#[path = "tests_part_02.rs"]
+
+mod tests_part_02;
+#[path = "tests_part_03.rs"]
+mod tests_part_03;

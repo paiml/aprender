@@ -1,15 +1,15 @@
 //! Tests for explainability wrappers
 
-use super::*;
-use crate::classification::LogisticRegression;
-use crate::linear_model::LinearRegression;
-use crate::primitives::{Matrix, Vector};
-use crate::traits::Estimator;
-use crate::tree::{DecisionTreeRegressor, RandomForestRegressor};
-use entrenar::monitor::inference::Explainable;
+pub(crate) use super::*;
+pub(crate) use crate::classification::LogisticRegression;
+pub(crate) use crate::linear_model::LinearRegression;
+pub(crate) use crate::primitives::{Matrix, Vector};
+pub(crate) use crate::traits::Estimator;
+pub(crate) use crate::tree::{DecisionTreeRegressor, RandomForestRegressor};
+pub(crate) use entrenar::monitor::inference::Explainable;
 
 // Import extension traits from parent module
-use super::{
+pub(crate) use super::{
     IntoEnsembleExplainable, IntoExplainable, IntoLogisticExplainable, IntoTreeExplainable,
 };
 
@@ -435,4 +435,6 @@ fn test_forest_path_explain() {
     assert!(confidence >= 0.0 && confidence <= 1.0);
 }
 
-include!("tests_part_02.rs");
+#[path = "tests_part_02.rs"]
+
+mod tests_part_02;

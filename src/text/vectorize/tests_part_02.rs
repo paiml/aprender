@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_tfidf_with_max_df() {

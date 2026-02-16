@@ -1,11 +1,11 @@
 //! License property tests.
 
 use super::super::*;
-use proptest::prelude::*;
+pub(crate) use proptest::prelude::*;
 
 // Arbitrary generators for license types
 
-fn arb_license_tier() -> impl Strategy<Value = LicenseTier> {
+pub(super) fn arb_license_tier() -> impl Strategy<Value = LicenseTier> {
     prop_oneof![
         Just(LicenseTier::Personal),
         Just(LicenseTier::Team),
@@ -15,21 +15,21 @@ fn arb_license_tier() -> impl Strategy<Value = LicenseTier> {
 }
 
 /// Generate valid UUID v4 format
-fn arb_uuid() -> impl Strategy<Value = String> {
+pub(super) fn arb_uuid() -> impl Strategy<Value = String> {
     "[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
 }
 
 /// Generate SHA256 hash
-fn arb_hash() -> impl Strategy<Value = String> {
+pub(super) fn arb_hash() -> impl Strategy<Value = String> {
     "[0-9a-f]{64}"
 }
 
 /// Generate ISO 8601 date (YYYY-MM-DD)
-fn arb_iso_date() -> impl Strategy<Value = String> {
+pub(super) fn arb_iso_date() -> impl Strategy<Value = String> {
     (2024u32..2035, 1u32..13, 1u32..29).prop_map(|(y, m, d)| format!("{y:04}-{m:02}-{d:02}"))
 }
 
-fn arb_license_info() -> impl Strategy<Value = LicenseInfo> {
+pub(super) fn arb_license_info() -> impl Strategy<Value = LicenseInfo> {
     (
         arb_uuid(),
         arb_hash(),
@@ -48,7 +48,7 @@ fn arb_license_info() -> impl Strategy<Value = LicenseInfo> {
         })
 }
 
-fn arb_model_data() -> impl Strategy<Value = Vec<f32>> {
+pub(super) fn arb_model_data() -> impl Strategy<Value = Vec<f32>> {
     proptest::collection::vec(
         any::<f32>().prop_filter("finite", |f| f.is_finite()),
         1..100,

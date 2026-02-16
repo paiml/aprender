@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_flatten_from_dim_2d() {

@@ -1,6 +1,6 @@
-use super::*;
-use crate::citl::diagnostic::DiagnosticSeverity;
-use crate::citl::{Difficulty, ErrorCategory};
+pub(crate) use super::*;
+pub(crate) use crate::citl::diagnostic::DiagnosticSeverity;
+pub(crate) use crate::citl::{Difficulty, ErrorCategory};
 // ==================== ErrorEmbedding Tests ====================
 
 #[test]
@@ -433,4 +433,6 @@ fn test_gnn_encoder_tokenize_rust_complex() {
     assert!(tokens.iter().any(|t| t.contains('<') || t == "<"));
 }
 
-include!("tests_part_02.rs");
+#[path = "tests_part_02.rs"]
+
+mod tests_part_02;

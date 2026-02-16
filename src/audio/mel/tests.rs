@@ -1,4 +1,4 @@
-use super::*;
+pub(crate) use super::*;
 
 // ============================================================
 // UNIT TESTS: Configuration
@@ -447,4 +447,6 @@ fn test_has_inf_positive() {
     assert!(has_inf(&samples));
 }
 
-include!("tests_part_02.rs");
+#[path = "tests_part_02.rs"]
+
+mod tests_part_02;

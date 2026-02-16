@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_batch_norm_1d_3d_input_training() {

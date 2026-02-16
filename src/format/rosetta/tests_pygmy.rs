@@ -1,5 +1,5 @@
 use super::super::*;
-use super::{create_apr_fixture, create_safetensors_fixture, unique_temp_path};
+pub(crate) use super::super::{create_apr_fixture, create_safetensors_fixture, unique_temp_path};
 
 // ========================================================================
 // Pygmy-Based Tests (T-COV-95)
@@ -445,6 +445,10 @@ fn tcov_tensor_validation_is_all_zeros_true() {
     assert!(tv.is_all_zeros());
 }
 
-include!("tests_pygmy_part_02.rs");
-include!("tests_pygmy_part_03.rs");
-include!("tests_pygmy_part_04.rs");
+#[path = "tests_pygmy_part_02.rs"]
+
+mod tests_pygmy_part_02;
+#[path = "tests_pygmy_part_03.rs"]
+mod tests_pygmy_part_03;
+#[path = "tests_pygmy_part_04.rs"]
+mod tests_pygmy_part_04;

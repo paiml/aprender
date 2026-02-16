@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_compute_frame_energy_constant() {

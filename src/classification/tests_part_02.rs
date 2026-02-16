@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_knn_minkowski_distance() {

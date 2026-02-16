@@ -1,4 +1,4 @@
-use super::*;
+pub(crate) use super::*;
 #[test]
 fn test_eviction_policy_default() {
     assert_eq!(EvictionPolicy::default(), EvictionPolicy::LRU);
@@ -446,5 +446,8 @@ fn test_model_registry_l2_operations() {
     assert!(registry.get("model1").is_some());
 }
 
-include!("tests_part_02.rs");
-include!("tests_part_03.rs");
+#[path = "tests_part_02.rs"]
+
+mod tests_part_02;
+#[path = "tests_part_03.rs"]
+mod tests_part_03;

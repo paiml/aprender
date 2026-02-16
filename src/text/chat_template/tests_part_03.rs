@@ -1,3 +1,4 @@
+use super::*;
 
 /// Very long conversation (50+ turns)
 #[test]

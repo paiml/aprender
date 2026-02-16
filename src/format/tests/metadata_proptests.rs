@@ -1,9 +1,9 @@
 //! Metadata property tests.
 
 use super::super::*;
-use proptest::prelude::*;
+pub(crate) use proptest::prelude::*;
 
-fn arb_training_info() -> impl Strategy<Value = TrainingInfo> {
+pub(super) fn arb_training_info() -> impl Strategy<Value = TrainingInfo> {
     (
         proptest::option::of(1usize..1_000_000),
         proptest::option::of(1u64..86_400_000), // up to 24h in ms
@@ -16,12 +16,12 @@ fn arb_training_info() -> impl Strategy<Value = TrainingInfo> {
         })
 }
 
-fn arb_model_name() -> impl Strategy<Value = String> {
+pub(super) fn arb_model_name() -> impl Strategy<Value = String> {
     "[a-zA-Z][a-zA-Z0-9_-]{0,49}"
 }
 
 #[allow(clippy::disallowed_methods)] // json! macro uses unwrap internally
-fn arb_hyperparams() -> impl Strategy<Value = HashMap<String, serde_json::Value>> {
+pub(super) fn arb_hyperparams() -> impl Strategy<Value = HashMap<String, serde_json::Value>> {
     proptest::collection::hash_map(
         "[a-z_]{1,20}",
         prop_oneof![
@@ -35,7 +35,7 @@ fn arb_hyperparams() -> impl Strategy<Value = HashMap<String, serde_json::Value>
     )
 }
 
-fn arb_model_data() -> impl Strategy<Value = Vec<f32>> {
+pub(super) fn arb_model_data() -> impl Strategy<Value = Vec<f32>> {
     proptest::collection::vec(any::<f32>().prop_filter("finite", |f| f.is_finite()), 1..50)
 }
 

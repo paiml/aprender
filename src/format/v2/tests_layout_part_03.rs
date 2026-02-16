@@ -1,3 +1,4 @@
+use super::*;
 
 // ---------------------------------------------------------------------------
 // Writer flags: verify LZ4 and sharding flags are set

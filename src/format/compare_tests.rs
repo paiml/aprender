@@ -1,4 +1,4 @@
-use super::*;
+pub(crate) use super::*;
 
 #[test]
 fn test_compare_config_default() {
@@ -439,5 +439,8 @@ fn test_compare_config_quantized_tolerances() {
     assert!(!config.normalize_first);
 }
 
-include!("compare_tests_part_02.rs");
-include!("compare_tests_part_03.rs");
+#[path = "compare_tests_part_02.rs"]
+
+mod compare_tests_part_02;
+#[path = "compare_tests_part_03.rs"]
+mod compare_tests_part_03;

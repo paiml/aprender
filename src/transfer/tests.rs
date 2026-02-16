@@ -1,11 +1,11 @@
 //! Tests for transfer module.
 
-use super::*;
+pub(crate) use super::*;
 
-use crate::nn::Linear;
+pub(crate) use crate::nn::Linear;
 
 // Simple test encoder for testing
-struct SimpleEncoder {
+pub(super) struct SimpleEncoder {
     linear: Linear,
     training: bool,
 }
@@ -438,4 +438,6 @@ fn test_online_distillation_combined_loss() {
     assert!((combined - 0.4).abs() < 0.1);
 }
 
-include!("tests_part_02.rs");
+#[path = "tests_part_02.rs"]
+
+mod tests_part_02;

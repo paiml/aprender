@@ -1,6 +1,6 @@
 //! Tests for classification module.
 
-use super::*;
+pub(crate) use super::*;
 
 #[test]
 fn test_sigmoid() {
@@ -446,6 +446,10 @@ fn test_knn_manhattan_distance() {
     assert_eq!(pred[0], 0); // Closer to (1, 0)
 }
 
-include!("tests_part_02.rs");
-include!("tests_part_03.rs");
-include!("tests_part_04.rs");
+#[path = "tests_part_02.rs"]
+
+mod tests_part_02;
+#[path = "tests_part_03.rs"]
+mod tests_part_03;
+#[path = "tests_part_04.rs"]
+mod tests_part_04;

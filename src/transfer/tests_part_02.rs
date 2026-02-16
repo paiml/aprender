@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_online_distillation_all_losses() {

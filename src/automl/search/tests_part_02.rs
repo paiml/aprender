@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_active_learning_with_de_search() {

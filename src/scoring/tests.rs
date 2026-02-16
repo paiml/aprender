@@ -1,6 +1,6 @@
 //! Tests for scoring module.
 
-use super::*;
+pub(crate) use super::*;
 
 #[test]
 fn test_grade_from_score() {
@@ -440,5 +440,8 @@ fn test_dimension_score_debug() {
     assert!(debug_str.contains("DimensionScore"));
 }
 
-include!("tests_part_02.rs");
-include!("tests_part_03.rs");
+#[path = "tests_part_02.rs"]
+
+mod tests_part_02;
+#[path = "tests_part_03.rs"]
+mod tests_part_03;

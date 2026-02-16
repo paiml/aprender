@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_merge_report_struct() {

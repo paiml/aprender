@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_accessor_vocabulary_none_when_missing() {

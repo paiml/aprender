@@ -1,3 +1,4 @@
+use super::*;
 
 // --- CompareReport::summary() branch coverage ---
 

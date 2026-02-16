@@ -1,6 +1,6 @@
-use super::*;
+pub(crate) use super::*;
 
-fn sample_df() -> DataFrame {
+pub(super) fn sample_df() -> DataFrame {
     let columns = vec![
         ("a".to_string(), Vector::from_slice(&[1.0, 2.0, 3.0])),
         ("b".to_string(), Vector::from_slice(&[4.0, 5.0, 6.0])),

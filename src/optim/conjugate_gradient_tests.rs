@@ -1,4 +1,4 @@
-use super::*;
+pub(crate) use super::*;
 
 #[test]
 fn test_cg_quadratic() {
@@ -431,4 +431,6 @@ fn test_cg_norm_function() {
     assert!(result.gradient_norm < 1e-4);
 }
 
-include!("conjugate_gradient_tests_part_02.rs");
+#[path = "conjugate_gradient_tests_part_02.rs"]
+
+mod conjugate_gradient_tests_part_02;

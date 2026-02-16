@@ -1,3 +1,4 @@
+use super::*;
 
 /// P070i: compute_tensor_validation embedding below density threshold (49% zeros)
 /// Covers: density gate where zero_pct <= threshold (embedding at 49%, under 50%)

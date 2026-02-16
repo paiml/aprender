@@ -1,13 +1,13 @@
 //! Tests for ONNX reader (GH-238)
 
-use super::*;
+pub(crate) use super::*;
 
 // ============================================================================
 // Protobuf Wire Format Tests
 // ============================================================================
 
 /// Build a minimal ONNX-like protobuf with a single tensor initializer
-fn build_test_onnx(tensor_name: &str, dims: &[i64], float_data: &[f32]) -> Vec<u8> {
+pub(super) fn build_test_onnx(tensor_name: &str, dims: &[i64], float_data: &[f32]) -> Vec<u8> {
     let mut buf = Vec::new();
 
     // ModelProto.ir_version = 7 (field 1, varint)
@@ -28,7 +28,7 @@ fn build_test_onnx(tensor_name: &str, dims: &[i64], float_data: &[f32]) -> Vec<u
 }
 
 /// Build a GraphProto with a single initializer tensor
-fn build_graph_proto(name: &str, dims: &[i64], float_data: &[f32]) -> Vec<u8> {
+pub(super) fn build_graph_proto(name: &str, dims: &[i64], float_data: &[f32]) -> Vec<u8> {
     let mut buf = Vec::new();
 
     // GraphProto.initializer (field 5, length-delimited TensorProto)
@@ -41,7 +41,7 @@ fn build_graph_proto(name: &str, dims: &[i64], float_data: &[f32]) -> Vec<u8> {
 }
 
 /// Build a TensorProto with float data
-fn build_tensor_proto(name: &str, dims: &[i64], float_data: &[f32]) -> Vec<u8> {
+pub(super) fn build_tensor_proto(name: &str, dims: &[i64], float_data: &[f32]) -> Vec<u8> {
     let mut buf = Vec::new();
 
     // dims (field 1, packed repeated int64)
@@ -75,7 +75,7 @@ fn build_tensor_proto(name: &str, dims: &[i64], float_data: &[f32]) -> Vec<u8> {
 }
 
 /// Build a TensorProto with raw_data instead of float_data
-fn build_tensor_proto_raw(name: &str, dims: &[i64], data_type: i32, raw: &[u8]) -> Vec<u8> {
+pub(super) fn build_tensor_proto_raw(name: &str, dims: &[i64], data_type: i32, raw: &[u8]) -> Vec<u8> {
     let mut buf = Vec::new();
 
     // dims
@@ -106,7 +106,7 @@ fn build_tensor_proto_raw(name: &str, dims: &[i64], data_type: i32, raw: &[u8]) 
 }
 
 /// Build a TensorProto with raw_data in field 9 (PyTorch ONNX format)
-fn build_tensor_proto_field9(name: &str, dims: &[i64], data_type: i32, raw: &[u8]) -> Vec<u8> {
+pub(super) fn build_tensor_proto_field9(name: &str, dims: &[i64], data_type: i32, raw: &[u8]) -> Vec<u8> {
     let mut buf = Vec::new();
 
     // dims
@@ -136,7 +136,7 @@ fn build_tensor_proto_field9(name: &str, dims: &[i64], data_type: i32, raw: &[u8
     buf
 }
 
-fn write_varint(buf: &mut Vec<u8>, mut val: u64) {
+pub(super) fn write_varint(buf: &mut Vec<u8>, mut val: u64) {
     loop {
         let byte = (val & 0x7F) as u8;
         val >>= 7;
@@ -148,7 +148,7 @@ fn write_varint(buf: &mut Vec<u8>, mut val: u64) {
     }
 }
 
-fn write_string(buf: &mut Vec<u8>, s: &str) {
+pub(super) fn write_string(buf: &mut Vec<u8>, s: &str) {
     write_varint(buf, s.len() as u64);
     buf.extend_from_slice(s.as_bytes());
 }

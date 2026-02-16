@@ -1,9 +1,9 @@
-use super::*;
-use crate::serialization::safetensors::save_safetensors;
-use tempfile::tempdir;
+pub(crate) use super::*;
+pub(crate) use crate::serialization::safetensors::save_safetensors;
+pub(crate) use tempfile::tempdir;
 
 /// Create a test model file with given tensors
-fn create_test_model(
+pub(super) fn create_test_model(
     path: &Path,
     tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
 ) -> Result<()> {
@@ -446,4 +446,6 @@ fn test_slerp_vectors_at_t1() {
     }
 }
 
-include!("merge_tests_part_02.rs");
+#[path = "merge_tests_part_02.rs"]
+
+mod merge_tests_part_02;

@@ -1,9 +1,9 @@
-use super::*;
-use crate::bundle::{BundleManifest, BundleWriter, ModelEntry};
-use std::collections::HashMap;
-use tempfile::NamedTempFile;
+pub(crate) use super::*;
+pub(crate) use crate::bundle::{BundleManifest, BundleWriter, ModelEntry};
+pub(crate) use std::collections::HashMap;
+pub(crate) use tempfile::NamedTempFile;
 
-fn create_test_bundle(models: &[(&str, Vec<u8>)]) -> NamedTempFile {
+pub(super) fn create_test_bundle(models: &[(&str, Vec<u8>)]) -> NamedTempFile {
     let temp = NamedTempFile::new().expect("Failed to create temp file");
 
     let mut manifest = BundleManifest::new();

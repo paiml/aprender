@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_compute_std_with_nan() {

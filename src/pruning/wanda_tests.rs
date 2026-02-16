@@ -1,8 +1,8 @@
-use super::*;
-use crate::pruning::calibration::ActivationStats;
+pub(crate) use super::*;
+pub(crate) use crate::pruning::calibration::ActivationStats;
 
 // Mock module for testing
-struct MockLinear {
+pub(super) struct MockLinear {
     weights: Tensor,
 }
 
@@ -444,4 +444,6 @@ fn test_wanda_preserves_shape() {
     );
 }
 
-include!("wanda_tests_part_02.rs");
+#[path = "wanda_tests_part_02.rs"]
+
+mod wanda_tests_part_02;

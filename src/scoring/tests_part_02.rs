@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_score_breakdown_debug() {

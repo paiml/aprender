@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_dropconnect_apply_to_weights_zero_prob() {

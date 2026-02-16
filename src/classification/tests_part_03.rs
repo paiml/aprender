@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_gaussian_nb_dimension_mismatch() {

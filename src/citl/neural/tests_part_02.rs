@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_training_sample_with_positive() {
@@ -236,7 +237,7 @@ fn test_neural_encoder_debug() {
 
 // ==================== Helper Functions ====================
 
-fn cosine_sim(a: &[f32], b: &[f32]) -> f32 {
+pub(super) fn cosine_sim(a: &[f32], b: &[f32]) -> f32 {
     let va = Vector::from_slice(a);
     let vb = Vector::from_slice(b);
 

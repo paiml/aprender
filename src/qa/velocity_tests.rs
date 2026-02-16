@@ -1,4 +1,4 @@
-use super::*;
+pub(crate) use super::*;
 
 #[test]
 fn test_p1_test_fast_exists() {
@@ -444,4 +444,6 @@ fn test_p2_makefile_smoke_check() {
     assert!(!result.details.is_empty());
 }
 
-include!("velocity_tests_part_02.rs");
+#[path = "velocity_tests_part_02.rs"]
+
+mod velocity_tests_part_02;

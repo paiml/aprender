@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_model_registry_l1_fixed_policy_overflow() {

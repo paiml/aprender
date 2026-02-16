@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_stratified_kfold_shuffle_no_random_state() {

@@ -1,3 +1,4 @@
+use super::*;
 
 // ========================================================================
 // infer_model_config: GQA detection (k_proj < q_proj)

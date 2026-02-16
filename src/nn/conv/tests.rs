@@ -1,4 +1,4 @@
-use super::*;
+pub(crate) use super::*;
 
 #[test]
 fn test_conv1d_shape() {
@@ -444,4 +444,6 @@ fn test_flatten_no_op_for_2d() {
     assert_eq!(y.shape(), &[4, 64]);
 }
 
-include!("tests_part_02.rs");
+#[path = "tests_part_02.rs"]
+
+mod tests_part_02;

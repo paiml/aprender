@@ -1,4 +1,4 @@
-use super::*;
+pub(crate) use super::*;
 
 // ========== NG1: Config validation rejects invalid ranges ==========
 

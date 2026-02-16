@@ -1,4 +1,4 @@
-use super::*;
+pub(crate) use super::*;
 
 // RDB-01 Tests
 #[test]
@@ -444,4 +444,6 @@ fn test_performance_metrics_json_content() {
     assert!(json.contains("tokens_generated"));
 }
 
-include!("tests_part_02.rs");
+#[path = "tests_part_02.rs"]
+
+mod tests_part_02;

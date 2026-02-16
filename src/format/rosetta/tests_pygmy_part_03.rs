@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn tcov_conversion_path_display_with_intermediates() {

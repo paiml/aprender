@@ -1,6 +1,6 @@
 //! Tests for linear_model module.
 
-use super::*;
+pub(crate) use super::*;
 
 #[test]
 fn test_new() {
@@ -435,7 +435,12 @@ fn test_underdetermined_system_without_intercept() {
     );
 }
 
-include!("tests_part_02.rs");
-include!("tests_part_03.rs");
-include!("tests_part_04.rs");
-include!("tests_part_05.rs");
+#[path = "tests_part_02.rs"]
+
+mod tests_part_02;
+#[path = "tests_part_03.rs"]
+mod tests_part_03;
+#[path = "tests_part_04.rs"]
+mod tests_part_04;
+#[path = "tests_part_05.rs"]
+mod tests_part_05;

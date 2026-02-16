@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_gguf_non_gpt2_model_string() {
@@ -73,7 +74,7 @@ fn test_gguf_non_gpt2_model_string() {
 // Helper functions for GGUF test data creation
 // ========================================================================
 
-fn create_gguf_with_extra_metadata(val_type: u32, val_bytes: &[u8]) -> Vec<u8> {
+pub(crate) fn create_gguf_with_extra_metadata(val_type: u32, val_bytes: &[u8]) -> Vec<u8> {
     let mut data = Vec::new();
     data.extend_from_slice(b"GGUF");
     data.extend_from_slice(&3u32.to_le_bytes());
@@ -136,7 +137,7 @@ fn create_gguf_with_extra_metadata(val_type: u32, val_bytes: &[u8]) -> Vec<u8> {
     data
 }
 
-fn create_gguf_with_array_metadata(elem_type: u32, elem_bytes: &[u8]) -> Vec<u8> {
+pub(crate) fn create_gguf_with_array_metadata(elem_type: u32, elem_bytes: &[u8]) -> Vec<u8> {
     let elem_size = match elem_type {
         0 | 1 | 7 => 1,
         2 | 3 => 2,

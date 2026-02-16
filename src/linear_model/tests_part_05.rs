@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_lasso_multivariate_coverage() {

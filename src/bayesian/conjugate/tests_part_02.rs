@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_normal_inverse_gamma_posterior_mean_variance() {

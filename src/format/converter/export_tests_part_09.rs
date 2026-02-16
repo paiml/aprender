@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_unfuse_qkv_tensors_weight_split_with_metadata() {

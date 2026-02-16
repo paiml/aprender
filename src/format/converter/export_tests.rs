@@ -1,5 +1,5 @@
-use super::*;
-use std::collections::BTreeMap;
+pub(crate) use super::*;
+pub(crate) use std::collections::BTreeMap;
 
 // ========================================================================
 // hf_to_gguf_name: Attention projection patterns
@@ -438,11 +438,20 @@ fn test_unfuse_qkv_tensors_no_fused_passthrough() {
     assert!(result.contains_key("model.layers.0.self_attn.v_proj.weight"));
 }
 
-include!("export_tests_part_02.rs");
-include!("export_tests_part_03.rs");
-include!("export_tests_part_04.rs");
-include!("export_tests_part_05.rs");
-include!("export_tests_part_06.rs");
-include!("export_tests_part_07.rs");
-include!("export_tests_part_08.rs");
-include!("export_tests_part_09.rs");
+#[path = "export_tests_part_02.rs"]
+
+mod export_tests_part_02;
+#[path = "export_tests_part_03.rs"]
+mod export_tests_part_03;
+#[path = "export_tests_part_04.rs"]
+mod export_tests_part_04;
+#[path = "export_tests_part_05.rs"]
+mod export_tests_part_05;
+#[path = "export_tests_part_06.rs"]
+mod export_tests_part_06;
+#[path = "export_tests_part_07.rs"]
+mod export_tests_part_07;
+#[path = "export_tests_part_08.rs"]
+mod export_tests_part_08;
+#[path = "export_tests_part_09.rs"]
+mod export_tests_part_09;

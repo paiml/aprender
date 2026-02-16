@@ -1,5 +1,5 @@
-use super::*;
-use crate::citl::{Difficulty, ErrorCategory};
+pub(crate) use super::*;
+pub(crate) use crate::citl::{Difficulty, ErrorCategory};
 // ==================== CompilerVersion Tests ====================
 
 #[test]
@@ -448,6 +448,10 @@ fn test_find_children_array_end_nested() {
     assert_eq!(end, json.len() - 1);
 }
 
-include!("tests_part_02.rs");
-include!("tests_part_03.rs");
-include!("tests_part_04.rs");
+#[path = "tests_part_02.rs"]
+
+mod tests_part_02;
+#[path = "tests_part_03.rs"]
+mod tests_part_03;
+#[path = "tests_part_04.rs"]
+mod tests_part_04;

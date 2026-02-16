@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_tsne_very_short_iterations() {

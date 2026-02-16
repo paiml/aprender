@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_ng16_white_noise_flat_spectrum() {

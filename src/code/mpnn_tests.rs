@@ -1,6 +1,6 @@
-use super::*;
+pub(crate) use super::*;
 
-fn create_test_graph() -> CodeGraph {
+pub(super) fn create_test_graph() -> CodeGraph {
     let mut graph = CodeGraph::new();
 
     // Add nodes: x (variable), y (variable), add (function)

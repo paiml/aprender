@@ -3,19 +3,19 @@
 #![allow(unused_imports)]
 
 use super::super::*;
-use proptest::prelude::*;
+pub(crate) use proptest::prelude::*;
 
-use super::*;
-use proptest::prelude::*;
+pub(crate) use super::*;
+pub(crate) use proptest::prelude::*;
 
 /// Strategy for generating valid passwords (8-64 chars)
-fn arb_password() -> impl Strategy<Value = String> {
+pub(super) fn arb_password() -> impl Strategy<Value = String> {
     proptest::collection::vec(any::<u8>(), 8..64)
         .prop_map(|bytes| bytes.iter().map(|b| (b % 94 + 33) as char).collect())
 }
 
 /// Strategy for generating test model data
-fn arb_model_data() -> impl Strategy<Value = Vec<f32>> {
+pub(super) fn arb_model_data() -> impl Strategy<Value = Vec<f32>> {
     proptest::collection::vec(-100.0f32..100.0, 1..100)
 }
 

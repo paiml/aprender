@@ -1,7 +1,7 @@
 //\! Transformer Tests - Extreme TDD
 //\! PMAT-085: Extracted from mod.rs for PMAT file health compliance
 
-use super::*;
+pub(crate) use super::*;
 
 #[test]
 fn test_multi_head_attention_shape() {
@@ -434,5 +434,8 @@ fn test_alibi_creation() {
     assert_eq!(alibi.slopes().len(), 8);
 }
 
-include!("tests_part_02.rs");
-include!("tests_part_03.rs");
+#[path = "tests_part_02.rs"]
+
+mod tests_part_02;
+#[path = "tests_part_03.rs"]
+mod tests_part_03;

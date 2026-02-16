@@ -1,6 +1,6 @@
-use super::*;
+pub(crate) use super::*;
 
-use tempfile::NamedTempFile;
+pub(crate) use tempfile::NamedTempFile;
 
 #[test]
 fn test_verify_logits_pass() {

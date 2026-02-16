@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_pattern_library_save_load_preserves_embeddings() {

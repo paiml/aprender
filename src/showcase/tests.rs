@@ -1,7 +1,7 @@
 //\! Showcase Tests - Extreme TDD
 //\! PMAT-085: Extracted from mod.rs for PMAT file health compliance
 
-use super::*;
+pub(crate) use super::*;
 
 #[test]
 fn test_benchmark_stats_computation() {
@@ -446,5 +446,8 @@ fn test_showcase_runner_to_grid_with_both_stats() {
     assert!(!output.is_empty());
 }
 
-include!("tests_part_02.rs");
-include!("tests_part_03.rs");
+#[path = "tests_part_02.rs"]
+
+mod tests_part_02;
+#[path = "tests_part_03.rs"]
+mod tests_part_03;

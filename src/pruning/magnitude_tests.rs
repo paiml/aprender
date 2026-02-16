@@ -1,7 +1,7 @@
-use super::*;
+pub(crate) use super::*;
 
 // Mock module for testing
-struct MockModule {
+pub(super) struct MockModule {
     weights: Tensor,
 }
 
@@ -24,7 +24,7 @@ impl Module for MockModule {
 }
 
 // Empty module for testing edge case
-struct EmptyModule;
+pub(super) struct EmptyModule;
 
 impl Module for EmptyModule {
     fn forward(&self, input: &Tensor) -> Tensor {

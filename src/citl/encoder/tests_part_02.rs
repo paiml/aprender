@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_gnn_encoder_with_suggestion() {

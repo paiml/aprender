@@ -1,5 +1,5 @@
-use super::*;
-use tempfile::NamedTempFile;
+pub(crate) use super::*;
+pub(crate) use tempfile::NamedTempFile;
 
 #[test]
 fn test_bundle_config_default() {

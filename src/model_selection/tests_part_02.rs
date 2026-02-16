@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_stratified_kfold_binary_classification() {

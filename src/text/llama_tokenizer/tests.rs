@@ -1,4 +1,6 @@
-use super::*;
+pub(crate) use super::*;
+pub(crate) use tests_part_04::{create_gguf_with_array_metadata, create_gguf_with_extra_metadata};
+pub(crate) use tests_part_05::create_gguf_with_string_metadata;
 
 // ========================================================================
 // Falsification Tests (Popperian)
@@ -124,7 +126,7 @@ fn lt08_rejects_invalid_gguf() {
 // Helper Functions
 // ========================================================================
 
-fn create_test_tokenizer() -> LlamaTokenizer {
+pub(super) fn create_test_tokenizer() -> LlamaTokenizer {
     // Create a minimal tokenizer for testing
     let tokens = vec![
         "<unk>".to_string(),
@@ -143,7 +145,7 @@ fn create_test_tokenizer() -> LlamaTokenizer {
     LlamaTokenizer::new(tokens, scores, 1, 2, 0).expect("Failed to create test tokenizer")
 }
 
-fn create_test_gguf() -> Vec<u8> {
+pub(super) fn create_test_gguf() -> Vec<u8> {
     let mut data = Vec::new();
 
     // GGUF header
@@ -283,7 +285,7 @@ fn gpt04_model_type_detection() {
     );
 }
 
-fn create_gpt2_test_gguf() -> Vec<u8> {
+pub(super) fn create_gpt2_test_gguf() -> Vec<u8> {
     let mut data = Vec::new();
 
     // GGUF header
@@ -442,7 +444,12 @@ fn test_new_invalid_unk_id() {
     assert!(result.is_err());
 }
 
-include!("tests_part_02.rs");
-include!("tests_part_03.rs");
-include!("tests_part_04.rs");
-include!("tests_part_05.rs");
+#[path = "tests_part_02.rs"]
+
+mod tests_part_02;
+#[path = "tests_part_03.rs"]
+mod tests_part_03;
+#[path = "tests_part_04.rs"]
+mod tests_part_04;
+#[path = "tests_part_05.rs"]
+mod tests_part_05;

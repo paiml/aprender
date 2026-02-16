@@ -1,11 +1,11 @@
 //! Distillation property tests.
 
 use super::super::*;
-use proptest::prelude::*;
+pub(crate) use proptest::prelude::*;
 
 // Arbitrary generators for distillation types
 
-fn arb_distill_method() -> impl Strategy<Value = DistillMethod> {
+pub(super) fn arb_distill_method() -> impl Strategy<Value = DistillMethod> {
     prop_oneof![
         Just(DistillMethod::Standard),
         Just(DistillMethod::Progressive),
@@ -13,7 +13,7 @@ fn arb_distill_method() -> impl Strategy<Value = DistillMethod> {
     ]
 }
 
-fn arb_model_type() -> impl Strategy<Value = ModelType> {
+pub(super) fn arb_model_type() -> impl Strategy<Value = ModelType> {
     prop_oneof![
         Just(ModelType::LinearRegression),
         Just(ModelType::LogisticRegression),
@@ -27,7 +27,7 @@ fn arb_model_type() -> impl Strategy<Value = ModelType> {
     ]
 }
 
-fn arb_teacher_provenance() -> impl Strategy<Value = TeacherProvenance> {
+pub(super) fn arb_teacher_provenance() -> impl Strategy<Value = TeacherProvenance> {
     (
         "[a-f0-9]{64}",                              // SHA256 hash
         proptest::option::of("[a-zA-Z0-9+/]{86}=="), // Ed25519 signature (base64)
@@ -45,7 +45,7 @@ fn arb_teacher_provenance() -> impl Strategy<Value = TeacherProvenance> {
         )
 }
 
-fn arb_distillation_params() -> impl Strategy<Value = DistillationParams> {
+pub(super) fn arb_distillation_params() -> impl Strategy<Value = DistillationParams> {
     (
         1.0f32..10.0f32,                       // temperature (1.0-10.0)
         0.0f32..1.0f32,                        // alpha (0.0-1.0)
@@ -64,7 +64,7 @@ fn arb_distillation_params() -> impl Strategy<Value = DistillationParams> {
         )
 }
 
-fn arb_layer_mapping() -> impl Strategy<Value = LayerMapping> {
+pub(super) fn arb_layer_mapping() -> impl Strategy<Value = LayerMapping> {
     (
         0usize..100usize, // student_layer
         0usize..200usize, // teacher_layer
@@ -77,7 +77,7 @@ fn arb_layer_mapping() -> impl Strategy<Value = LayerMapping> {
         })
 }
 
-fn arb_distillation_info() -> impl Strategy<Value = DistillationInfo> {
+pub(super) fn arb_distillation_info() -> impl Strategy<Value = DistillationInfo> {
     (
         arb_distill_method(),
         arb_teacher_provenance(),
@@ -91,7 +91,7 @@ fn arb_distillation_info() -> impl Strategy<Value = DistillationInfo> {
         })
 }
 
-fn arb_model_data() -> impl Strategy<Value = Vec<f32>> {
+pub(super) fn arb_model_data() -> impl Strategy<Value = Vec<f32>> {
     proptest::collection::vec(
         any::<f32>().prop_filter("finite", |f| f.is_finite()),
         1..100,

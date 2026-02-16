@@ -1,7 +1,7 @@
-use super::*;
-use crate::primitives::Matrix;
+pub(crate) use super::*;
+pub(crate) use crate::primitives::Matrix;
 
-fn simple_dataset() -> (Matrix<f32>, Vec<usize>) {
+pub(super) fn simple_dataset() -> (Matrix<f32>, Vec<usize>) {
     // 2-class dataset: features [x1, x2], labels {0, 1}
     let x = Matrix::from_vec(
         6,

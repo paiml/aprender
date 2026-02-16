@@ -1,9 +1,9 @@
 //! Integration property tests.
 
 use super::super::*;
-use proptest::prelude::*;
+pub(crate) use proptest::prelude::*;
 
-fn arb_model_type() -> impl Strategy<Value = ModelType> {
+pub(super) fn arb_model_type() -> impl Strategy<Value = ModelType> {
     prop_oneof![
         Just(ModelType::LinearRegression),
         Just(ModelType::LogisticRegression),
@@ -15,14 +15,14 @@ fn arb_model_type() -> impl Strategy<Value = ModelType> {
     ]
 }
 
-fn arb_model_data() -> impl Strategy<Value = Vec<f32>> {
+pub(super) fn arb_model_data() -> impl Strategy<Value = Vec<f32>> {
     proptest::collection::vec(
         any::<f32>().prop_filter("finite", |f| f.is_finite()),
         10..500,
     )
 }
 
-fn arb_large_model_data() -> impl Strategy<Value = Vec<f32>> {
+pub(super) fn arb_large_model_data() -> impl Strategy<Value = Vec<f32>> {
     proptest::collection::vec(
         any::<f32>().prop_filter("finite", |f| f.is_finite()),
         1000..5000,

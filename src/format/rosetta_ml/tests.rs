@@ -1,7 +1,7 @@
 //\! Rosetta ML Tests - Extreme TDD
 //\! PMAT-085: Extracted from mod.rs for PMAT file health compliance
 
-use super::*;
+pub(crate) use super::*;
 
 #[test]
 fn test_tensor_features_basic() {
@@ -445,5 +445,8 @@ fn test_canary_checksum_mismatch() {
     ));
 }
 
-include!("tests_part_02.rs");
-include!("tests_part_03.rs");
+#[path = "tests_part_02.rs"]
+
+mod tests_part_02;
+#[path = "tests_part_03.rs"]
+mod tests_part_03;

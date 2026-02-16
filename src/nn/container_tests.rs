@@ -1,5 +1,5 @@
-use super::*;
-use crate::nn::{Dropout, Linear, ReLU};
+pub(crate) use super::*;
+pub(crate) use crate::nn::{Dropout, Linear, ReLU};
 
 #[test]
 fn test_sequential_empty() {
@@ -445,4 +445,6 @@ fn test_sequential_empty_forward() {
     assert_eq!(y.shape(), x.shape());
 }
 
-include!("container_tests_part_02.rs");
+#[path = "container_tests_part_02.rs"]
+
+mod container_tests_part_02;

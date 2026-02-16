@@ -1,8 +1,8 @@
-use super::*;
+pub(crate) use super::*;
 
 // Test sample type
 #[derive(Clone, Debug, PartialEq)]
-struct TestSample {
+pub(super) struct TestSample {
     embedding: Vec<f32>,
     label: i32,
 }

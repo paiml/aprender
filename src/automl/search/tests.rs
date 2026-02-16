@@ -1,9 +1,9 @@
 //\! AutoML Search Tests - Extreme TDD
 //\! PMAT-085: Extracted from mod.rs for PMAT file health compliance
 
-use super::*;
+pub(crate) use super::*;
 
-use crate::automl::params::RandomForestParam as RF;
+pub(crate) use crate::automl::params::RandomForestParam as RF;
 
 #[test]
 fn test_search_space_builder() {
@@ -428,6 +428,10 @@ fn test_active_learning_uncertainty_score() {
     );
 }
 
-include!("tests_part_02.rs");
-include!("tests_part_03.rs");
-include!("tests_part_04.rs");
+#[path = "tests_part_02.rs"]
+
+mod tests_part_02;
+#[path = "tests_part_03.rs"]
+mod tests_part_03;
+#[path = "tests_part_04.rs"]
+mod tests_part_04;

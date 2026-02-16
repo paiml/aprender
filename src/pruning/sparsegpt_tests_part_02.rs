@@ -1,10 +1,11 @@
+use super::*;
 
 // ==========================================================================
 // FALSIFICATION: Importance trait compute with calibration
 // ==========================================================================
 #[test]
 fn test_sparsegpt_compute_with_calibration() {
-    use super::super::calibration::{ActivationStats, CalibrationContext};
+    use crate::pruning::calibration::{ActivationStats, CalibrationContext};
 
     let module = MockLinear::new(&[1.0, 2.0, 3.0, 4.0], 2, 2);
     let sparsegpt = SparseGPTImportance::new("layer0").with_damp(1.0);
@@ -24,7 +25,7 @@ fn test_sparsegpt_compute_with_calibration() {
 
 #[test]
 fn test_sparsegpt_compute_missing_layer_stats() {
-    use super::super::calibration::CalibrationContext;
+    use crate::pruning::calibration::CalibrationContext;
 
     let module = MockLinear::new(&[1.0, 2.0, 3.0, 4.0], 2, 2);
     let sparsegpt = SparseGPTImportance::new("nonexistent_layer");
@@ -40,7 +41,7 @@ fn test_sparsegpt_compute_missing_layer_stats() {
 
 #[test]
 fn test_sparsegpt_compute_empty_module() {
-    use super::super::calibration::{ActivationStats, CalibrationContext};
+    use crate::pruning::calibration::{ActivationStats, CalibrationContext};
 
     struct EmptyModule;
     impl Module for EmptyModule {

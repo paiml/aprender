@@ -1,7 +1,8 @@
 //\! Neural Tests - Extreme TDD
 //\! PMAT-085: Extracted from mod.rs for PMAT file health compliance
 
-use super::*;
+pub(crate) use super::*;
+use tests_part_02::cosine_sim;
 
 // ==================== NeuralEncoderConfig Tests ====================
 
@@ -449,4 +450,6 @@ fn test_training_sample_creation() {
     assert!(sample.positive.is_none());
 }
 
-include!("tests_part_02.rs");
+#[path = "tests_part_02.rs"]
+
+mod tests_part_02;

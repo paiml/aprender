@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_alignment_info_debug() {

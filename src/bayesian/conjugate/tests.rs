@@ -1,7 +1,7 @@
 //\! Conjugate Tests - Extreme TDD
 //\! PMAT-085: Extracted from mod.rs for PMAT file health compliance
 
-use super::*;
+pub(crate) use super::*;
 
 // ========== Beta-Binomial Tests ==========
 
@@ -449,4 +449,6 @@ fn test_normal_inverse_gamma_posterior_mean_mu() {
     assert!((mean_mu - sample_mean).abs() < 0.1);
 }
 
-include!("tests_part_02.rs");
+#[path = "tests_part_02.rs"]
+
+mod tests_part_02;

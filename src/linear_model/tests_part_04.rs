@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_linear_regression_save_load_safetensors() {

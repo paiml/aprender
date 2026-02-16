@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_param_value_as_i64_returns_none_for_non_numeric() {

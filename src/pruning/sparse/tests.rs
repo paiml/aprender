@@ -1,4 +1,4 @@
-use super::*;
+pub(crate) use super::*;
 
 // ==========================================================================
 // FALSIFICATION: CSR tensor construction
@@ -446,4 +446,6 @@ fn test_sparse_tensor_block_format() {
     }
 }
 
-include!("tests_part_02.rs");
+#[path = "tests_part_02.rs"]
+
+mod tests_part_02;

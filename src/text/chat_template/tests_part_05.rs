@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_huggingface_template_supports_system() {

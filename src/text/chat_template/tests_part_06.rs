@@ -1,3 +1,4 @@
+use super::*;
 
 /// Test sanitize_user_content with benign content (no-op)
 #[test]

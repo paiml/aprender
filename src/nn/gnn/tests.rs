@@ -1,6 +1,6 @@
-use super::*;
+pub(crate) use super::*;
 /// Helper function to create deterministic test data.
-fn create_test_tensor(shape: &[usize], seed: u32) -> Tensor {
+pub(super) fn create_test_tensor(shape: &[usize], seed: u32) -> Tensor {
     let len: usize = shape.iter().product();
     let data: Vec<f32> = (0..len)
         .map(|i| ((i as f32 + seed as f32) * 0.1).sin())
@@ -449,4 +449,6 @@ fn test_gnn_disconnected_graph() {
     assert_eq!(out.shape(), &[4, 2]);
 }
 
-include!("tests_part_02.rs");
+#[path = "tests_part_02.rs"]
+
+mod tests_part_02;

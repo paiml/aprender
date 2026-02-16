@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_truncate_exact_length() {

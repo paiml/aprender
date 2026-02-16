@@ -1,4 +1,4 @@
-use super::*;
+pub(crate) use super::*;
 
 // ==========================================================================
 // FALSIFICATION: SparsityPattern validation
@@ -445,5 +445,8 @@ fn test_generate_block_mask_uniform_blocks() {
     }
 }
 
-include!("tests_part_02.rs");
-include!("tests_part_03.rs");
+#[path = "tests_part_02.rs"]
+
+mod tests_part_02;
+#[path = "tests_part_03.rs"]
+mod tests_part_03;

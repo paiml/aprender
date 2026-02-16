@@ -1,3 +1,4 @@
+use super::*;
 
 /// GH-200: AprV2ReaderRef also handles Q6K.
 #[test]

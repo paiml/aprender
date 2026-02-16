@@ -1,7 +1,7 @@
-use super::*;
+pub(crate) use super::*;
 
 // Simple test model
-struct ConstantGrowthModel {
+pub(super) struct ConstantGrowthModel {
     initial: f64,
     growth_rate: f64,
 }
@@ -447,4 +447,6 @@ fn test_simulation_result_debug_clone() {
     assert_eq!(cloned.model_name, result.model_name);
 }
 
-include!("engine_tests_part_02.rs");
+#[path = "engine_tests_part_02.rs"]
+
+mod engine_tests_part_02;

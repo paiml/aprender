@@ -1,15 +1,15 @@
 //! Integration and property tests for metaheuristics.
 
-use super::*;
+pub(crate) use super::*;
 
 /// Sphere function: f(x) = Σxᵢ² (global minimum at origin)
-fn sphere(x: &[f64]) -> f64 {
+pub(super) fn sphere(x: &[f64]) -> f64 {
     x.iter().map(|xi| xi * xi).sum()
 }
 
 /// Rosenbrock function: f(x) = Σ[100(xᵢ₊₁ - xᵢ²)² + (1-xᵢ)²]
 /// Global minimum at (1, 1, ..., 1)
-fn rosenbrock(x: &[f64]) -> f64 {
+pub(super) fn rosenbrock(x: &[f64]) -> f64 {
     (0..x.len() - 1)
         .map(|i| 100.0 * (x[i + 1] - x[i] * x[i]).powi(2) + (1.0 - x[i]).powi(2))
         .sum()
@@ -17,7 +17,7 @@ fn rosenbrock(x: &[f64]) -> f64 {
 
 /// Rastrigin function: highly multimodal
 #[allow(dead_code)]
-fn rastrigin(x: &[f64]) -> f64 {
+pub(super) fn rastrigin(x: &[f64]) -> f64 {
     let n = f64::from(x.len() as i32);
     10.0 * n
         + x.iter()

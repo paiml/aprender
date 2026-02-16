@@ -1,8 +1,8 @@
-use super::*;
+pub(crate) use super::*;
 
 // Simple test generator
 #[derive(Debug, Clone)]
-struct DoubleGen;
+pub(super) struct DoubleGen;
 
 impl SyntheticGenerator for DoubleGen {
     type Input = i32;

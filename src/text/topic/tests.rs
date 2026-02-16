@@ -1,4 +1,4 @@
-use super::*;
+pub(crate) use super::*;
 
 #[test]
 fn test_lda_fit() {
@@ -447,4 +447,6 @@ fn test_normalize_rows_very_small_sum() {
     assert!(data[0] < 1e-14);
 }
 
-include!("tests_part_02.rs");
+#[path = "tests_part_02.rs"]
+
+mod tests_part_02;

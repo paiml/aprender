@@ -1,5 +1,5 @@
-use super::*;
-fn simple_linear_model(x: &Vector<f32>) -> f32 {
+pub(crate) use super::*;
+pub(super) fn simple_linear_model(x: &Vector<f32>) -> f32 {
     // Simple linear model: y = 2*x0 + 3*x1 - 1*x2 + 1.5
     2.0 * x[0] + 3.0 * x[1] - 1.0 * x[2] + 1.5
 }
@@ -449,4 +449,6 @@ fn test_counterfactual_result_debug() {
     assert!(debug_str.contains("CounterfactualResult"));
 }
 
-include!("tests_part_02.rs");
+#[path = "tests_part_02.rs"]
+
+mod tests_part_02;

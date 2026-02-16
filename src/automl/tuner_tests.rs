@@ -1,6 +1,6 @@
-use super::*;
-use crate::automl::params::RandomForestParam as RF;
-use crate::automl::{RandomSearch, SearchSpace};
+pub(crate) use super::*;
+pub(crate) use crate::automl::params::RandomForestParam as RF;
+pub(crate) use crate::automl::{RandomSearch, SearchSpace};
 
 #[test]
 fn test_auto_tuner_basic() {
@@ -440,4 +440,6 @@ fn test_callback_on_start_called() {
     assert!(started.load(Ordering::SeqCst));
 }
 
-include!("tuner_tests_part_02.rs");
+#[path = "tuner_tests_part_02.rs"]
+
+mod tuner_tests_part_02;

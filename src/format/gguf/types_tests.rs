@@ -1,4 +1,4 @@
-use super::*;
+pub(crate) use super::*;
 
 // ============================================================================
 // Constants Tests
@@ -437,4 +437,6 @@ fn test_padding_for_alignment_different_alignments() {
     assert_eq!(padding_for_alignment(100, 64), 28);
 }
 
-include!("types_tests_part_02.rs");
+#[path = "types_tests_part_02.rs"]
+
+mod types_tests_part_02;

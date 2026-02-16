@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_slerp_vectors_at_t05_orthogonal() {

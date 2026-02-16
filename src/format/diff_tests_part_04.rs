@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_diff_inspections_no_metadata() {

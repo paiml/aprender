@@ -1,4 +1,4 @@
-use super::*;
+pub(crate) use super::*;
 
 #[test]
 fn test_tts_config_default() {
@@ -444,4 +444,6 @@ fn test_tts_config_debug() {
     assert!(debug_str.contains("TtsConfig"));
 }
 
-include!("tests_part_02.rs");
+#[path = "tests_part_02.rs"]
+
+mod tests_part_02;

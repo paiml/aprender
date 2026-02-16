@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_callback_on_end_called() {

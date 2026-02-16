@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_batch_norm_single_sample_training() {

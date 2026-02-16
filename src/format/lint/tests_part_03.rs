@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_lint_level_copy() {

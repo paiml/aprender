@@ -1,10 +1,10 @@
-use super::*;
-fn simple_graph_edges() -> Vec<EdgeIndex> {
+pub(crate) use super::*;
+pub(super) fn simple_graph_edges() -> Vec<EdgeIndex> {
     // Triangle graph: 0-1-2-0
     vec![(0, 1), (1, 2), (2, 0)]
 }
 
-fn line_graph_edges() -> Vec<EdgeIndex> {
+pub(super) fn line_graph_edges() -> Vec<EdgeIndex> {
     // Line: 0-1-2-3
     vec![(0, 1), (1, 2), (2, 3)]
 }
@@ -440,4 +440,6 @@ fn test_edgeconv_accessors() {
     assert_eq!(edge_conv.out_features(), 8);
 }
 
-include!("tests_part_02.rs");
+#[path = "tests_part_02.rs"]
+
+mod tests_part_02;

@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_alibi_slopes_power_of_two() {

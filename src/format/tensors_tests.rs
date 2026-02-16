@@ -1,5 +1,5 @@
-use super::*;
-use crate::format::test_factory::{
+pub(crate) use super::*;
+pub(crate) use crate::format::test_factory::{
     build_pygmy_apr, build_pygmy_apr_f16, build_pygmy_apr_q4, build_pygmy_apr_q8,
     build_pygmy_apr_with_config, build_pygmy_safetensors, build_pygmy_safetensors_with_config,
     PygmyConfig,
@@ -423,6 +423,10 @@ fn test_tensor_list_result_clone() {
     assert_eq!(cloned.format_version, result.format_version);
 }
 
-include!("tensors_tests_part_02.rs");
-include!("tensors_tests_part_03.rs");
-include!("tensors_tests_part_04.rs");
+#[path = "tensors_tests_part_02.rs"]
+
+mod tensors_tests_part_02;
+#[path = "tensors_tests_part_03.rs"]
+mod tensors_tests_part_03;
+#[path = "tensors_tests_part_04.rs"]
+mod tensors_tests_part_04;

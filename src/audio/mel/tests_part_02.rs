@@ -1,3 +1,4 @@
+use super::*;
 
 #[test]
 fn test_has_inf_negative() {
