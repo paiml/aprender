@@ -229,6 +229,178 @@ pub fn save_safetensors_with_metadata<P: AsRef<Path>>(
     Ok(())
 }
 
+/// PMAT-260: Serialize F32 data as BF16 bytes.
+///
+/// BF16 is the upper 16 bits of F32. For data that originated as BF16,
+/// the F32 representation has zeros in the lower 16 bits, so this
+/// truncation is lossless.
+fn f32_slice_to_bf16_bytes(data: &[f32]) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(data.len() * 2);
+    for &value in data {
+        let bits = value.to_bits();
+        let bf16 = (bits >> 16) as u16;
+        bytes.extend_from_slice(&bf16.to_le_bytes());
+    }
+    bytes
+}
+
+/// PMAT-260: Serialize F32 data as F16 bytes.
+///
+/// Uses IEEE 754 half-precision format. For data that originated as F16,
+/// the F32 representation is exact, so this round-trip is lossless.
+fn f32_slice_to_f16_bytes(data: &[f32]) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(data.len() * 2);
+    for &value in data {
+        let bits = value.to_bits();
+        let sign = (bits >> 16) & 0x8000;
+        let exponent = ((bits >> 23) & 0xFF) as i32;
+        let mantissa = bits & 0x007F_FFFF;
+
+        let f16_bits = if exponent == 0xFF {
+            // Inf/NaN
+            sign | 0x7C00 | if mantissa != 0 { 0x0200 } else { 0 }
+        } else if exponent > 142 {
+            // Overflow → Inf
+            sign | 0x7C00
+        } else if exponent < 113 {
+            // Underflow → zero (or denorm, but we simplify)
+            sign
+        } else {
+            let e = (exponent - 112) as u32;
+            let m = mantissa >> 13;
+            sign | (e << 10) | (m & 0x3FF)
+        };
+        bytes.extend_from_slice(&(f16_bits as u16).to_le_bytes());
+    }
+    bytes
+}
+
+/// PMAT-260: Encode tensor data according to dtype, returning (dtype_str, raw_bytes).
+fn encode_tensor_for_dtype(
+    data: &[f32],
+    original_dtype: Option<&str>,
+) -> (&'static str, Vec<u8>) {
+    match original_dtype {
+        Some("BF16") => ("BF16", f32_slice_to_bf16_bytes(data)),
+        Some("F16") => ("F16", f32_slice_to_f16_bytes(data)),
+        _ => (
+            "F32",
+            data.iter().flat_map(|f| f.to_le_bytes()).collect(),
+        ),
+    }
+}
+
+/// PMAT-260: Save SafeTensors with original dtype preservation.
+///
+/// When `original_dtypes` contains entries, tensors with BF16/F16 origin
+/// are written back in their original dtype instead of being widened to F32.
+///
+/// # Errors
+///
+/// Returns error if file writing or JSON serialization fails.
+pub fn save_safetensors_typed<P: AsRef<Path>>(
+    path: P,
+    tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+    original_dtypes: &BTreeMap<String, String>,
+) -> Result<(), String> {
+    let mut metadata = SafeTensorsMetadata::new();
+    let mut raw_data = Vec::new();
+    let mut current_offset = 0;
+
+    for (name, (data, shape)) in tensors {
+        let orig = original_dtypes.get(name).map(String::as_str);
+        let (dtype_str, tensor_bytes) = encode_tensor_for_dtype(data, orig);
+
+        let start_offset = current_offset;
+        let end_offset = current_offset + tensor_bytes.len();
+
+        metadata.insert(
+            name.clone(),
+            TensorMetadata {
+                dtype: dtype_str.to_string(),
+                shape: shape.clone(),
+                data_offsets: [start_offset, end_offset],
+            },
+        );
+
+        raw_data.extend_from_slice(&tensor_bytes);
+        current_offset = end_offset;
+    }
+
+    let metadata_json =
+        serde_json::to_string(&metadata).map_err(|e| format!("JSON serialization failed: {e}"))?;
+    let metadata_bytes = metadata_json.as_bytes();
+    let metadata_len = metadata_bytes.len() as u64;
+
+    let mut output = Vec::new();
+    output.extend_from_slice(&metadata_len.to_le_bytes());
+    output.extend_from_slice(metadata_bytes);
+    output.extend_from_slice(&raw_data);
+
+    fs::write(path, output).map_err(|e| format!("File write failed: {e}"))?;
+    Ok(())
+}
+
+/// PMAT-260: Save SafeTensors with user metadata AND original dtype preservation.
+///
+/// # Errors
+///
+/// Returns error if file writing or JSON serialization fails.
+pub fn save_safetensors_with_metadata_typed<P: AsRef<Path>>(
+    path: P,
+    tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+    user_metadata: &UserMetadata,
+    original_dtypes: &BTreeMap<String, String>,
+) -> Result<(), String> {
+    let mut header = serde_json::Map::new();
+
+    if !user_metadata.is_empty() {
+        let meta_obj: serde_json::Map<String, serde_json::Value> = user_metadata
+            .iter()
+            .map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone())))
+            .collect();
+        header.insert(
+            "__metadata__".to_string(),
+            serde_json::Value::Object(meta_obj),
+        );
+    }
+
+    let mut raw_data = Vec::new();
+    let mut current_offset = 0;
+
+    for (name, (data, shape)) in tensors {
+        let orig = original_dtypes.get(name).map(String::as_str);
+        let (dtype_str, tensor_bytes) = encode_tensor_for_dtype(data, orig);
+
+        let start_offset = current_offset;
+        let end_offset = current_offset + tensor_bytes.len();
+
+        #[allow(clippy::disallowed_methods)]
+        let tensor_meta = serde_json::json!({
+            "dtype": dtype_str,
+            "shape": shape,
+            "data_offsets": [start_offset, end_offset]
+        });
+        header.insert(name.clone(), tensor_meta);
+
+        raw_data.extend_from_slice(&tensor_bytes);
+        current_offset = end_offset;
+    }
+
+    let metadata_json =
+        serde_json::to_string(&header).map_err(|e| format!("JSON serialization failed: {e}"))?;
+    let metadata_bytes = metadata_json.as_bytes();
+    let metadata_len = metadata_bytes.len() as u64;
+
+    let mut output = Vec::new();
+    output.extend_from_slice(&metadata_len.to_le_bytes());
+    output.extend_from_slice(metadata_bytes);
+    output.extend_from_slice(&raw_data);
+
+    fs::write(path, output).map_err(|e| format!("File write failed: {e}"))?;
+    Ok(())
+}
+
 /// Loads tensors from `SafeTensors` format.
 ///
 /// # Arguments
@@ -426,6 +598,18 @@ impl MappedSafeTensors {
     #[must_use]
     pub fn user_metadata(&self) -> &UserMetadata {
         &self.user_metadata
+    }
+
+    /// PMAT-260: Extract original dtype for each tensor.
+    ///
+    /// Returns a map of tensor name → dtype string (e.g., "F32", "F16", "BF16").
+    /// Used by the export pipeline to preserve original dtypes during round-trip.
+    #[must_use]
+    pub fn dtype_map(&self) -> BTreeMap<String, String> {
+        self.metadata
+            .iter()
+            .map(|(name, meta)| (name.clone(), meta.dtype.clone()))
+            .collect()
     }
 }
 

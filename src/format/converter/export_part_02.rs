@@ -5,22 +5,41 @@ fn export_safetensors_with_companions(
     input_path: &Path,
     output_path: &Path,
     options: &ExportOptions,
+    original_dtypes: &BTreeMap<String, String>,
 ) -> Result<()> {
     // PMAT-223: Extract user metadata from APR custom field for round-trip
     let user_metadata = extract_user_metadata(input_path);
+
+    // PMAT-260: Log dtype preservation when BF16/F16 tensors are present
+    let non_f32_count = original_dtypes
+        .values()
+        .filter(|d| d.as_str() != "F32")
+        .count();
+    if non_f32_count > 0 {
+        eprintln!(
+            "[PMAT-260] Preserving original dtypes for {non_f32_count} non-F32 tensors (BF16/F16)"
+        );
+    }
+
     if user_metadata.is_empty() {
-        save_safetensors(output_path, tensors).map_err(|e| AprenderError::FormatError {
-            message: format!("Failed to export to SafeTensors: {e}"),
+        save_safetensors_typed(output_path, tensors, original_dtypes).map_err(|e| {
+            AprenderError::FormatError {
+                message: format!("Failed to export to SafeTensors: {e}"),
+            }
         })?;
     } else {
         eprintln!(
             "[PMAT-223] Restoring {} user metadata key(s) to SafeTensors __metadata__",
             user_metadata.len()
         );
-        save_safetensors_with_metadata(output_path, tensors, &user_metadata).map_err(|e| {
-            AprenderError::FormatError {
-                message: format!("Failed to export to SafeTensors: {e}"),
-            }
+        save_safetensors_with_metadata_typed(
+            output_path,
+            tensors,
+            &user_metadata,
+            original_dtypes,
+        )
+        .map_err(|e| AprenderError::FormatError {
+            message: format!("Failed to export to SafeTensors: {e}"),
         })?;
     }
 

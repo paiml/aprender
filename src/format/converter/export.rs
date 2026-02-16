@@ -6,7 +6,8 @@ use crate::format::converter_types::{Architecture, QuantizationType};
 use crate::format::gguf::GgufReader;
 use crate::format::layout_contract::contract;
 use crate::serialization::safetensors::{
-    save_safetensors, save_safetensors_with_metadata, UserMetadata,
+    save_safetensors, save_safetensors_typed, save_safetensors_with_metadata,
+    save_safetensors_with_metadata_typed, UserMetadata,
 };
 use std::collections::BTreeMap;
 use std::fs;
@@ -273,11 +274,15 @@ pub fn apr_export<P: AsRef<Path>>(
     let original_size = calculate_tensor_size(provenance.as_map());
     let tensors = provenance.into_map();
 
+    // PMAT-260: Capture original dtypes from SafeTensors source for round-trip preservation.
+    // BF16 tensors must be written back as BF16, not widened to F32.
+    let original_dtypes = extract_source_dtypes(input_path);
+
     let tensors = prepare_tensors_for_export(tensors, input_path, &options);
     enforce_contract_violations(&tensors)?;
     let tensors = apply_export_quantization(tensors, input_path, &options)?;
 
-    dispatch_export(&tensors, input_path, output_path, &options)?;
+    dispatch_export(&tensors, input_path, output_path, &options, &original_dtypes)?;
 
     let exported_size = if output_path.is_dir() {
         // GH-246: For directory-based exports (MLX), sum all file sizes
@@ -422,16 +427,35 @@ fn apply_export_quantization(
 }
 
 /// Dispatch to format-specific export.
+/// PMAT-260: Extract original dtype map from a SafeTensors source file.
+///
+/// Returns a map of tensor name → dtype string (e.g. "BF16", "F16", "F32").
+/// Returns empty map for non-SafeTensors sources (APR, GGUF).
+fn extract_source_dtypes(input_path: &Path) -> BTreeMap<String, String> {
+    if input_path.extension().and_then(|e| e.to_str()) != Some("safetensors") {
+        return BTreeMap::new();
+    }
+    match crate::serialization::safetensors::MappedSafeTensors::open(input_path) {
+        Ok(mapped) => mapped.dtype_map(),
+        Err(_) => BTreeMap::new(),
+    }
+}
+
 fn dispatch_export(
     tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
     input_path: &Path,
     output_path: &Path,
     options: &ExportOptions,
+    original_dtypes: &BTreeMap<String, String>,
 ) -> Result<()> {
     match options.format {
-        ExportFormat::SafeTensors => {
-            export_safetensors_with_companions(tensors, input_path, output_path, options)
-        }
+        ExportFormat::SafeTensors => export_safetensors_with_companions(
+            tensors,
+            input_path,
+            output_path,
+            options,
+            original_dtypes,
+        ),
         ExportFormat::Gguf => {
             export_to_gguf(tensors, output_path, input_path, options.quantize.as_ref())
         }
