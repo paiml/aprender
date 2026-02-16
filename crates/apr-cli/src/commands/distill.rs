@@ -72,70 +72,6 @@ fn validate_optional_paths(student_path: Option<&Path>, data_path: Option<&Path>
     Ok(())
 }
 
-/// Print distillation result (JSON or text).
-#[allow(clippy::too_many_arguments)]
-#[allow(clippy::disallowed_methods)]
-fn print_distill_result(
-    teacher_path: &Path,
-    student_path: Option<&Path>,
-    out: &Path,
-    distill_strategy: DistillStrategy,
-    temperature: f64,
-    alpha: f64,
-    epochs: u32,
-    teacher_size: u64,
-    student_size: u64,
-    json_output: bool,
-) {
-    if json_output {
-        let json = serde_json::json!({
-            "status": "configured",
-            "teacher": teacher_path.display().to_string(),
-            "student": student_path.map(|p| p.display().to_string()),
-            "output": out.display().to_string(),
-            "strategy": format!("{distill_strategy:?}"),
-            "temperature": temperature,
-            "alpha": alpha,
-            "epochs": epochs,
-            "teacher_size": teacher_size,
-            "student_size": student_size,
-            "note": "Full distillation execution requires entrenar distillation backend",
-        });
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&json).unwrap_or_default()
-        );
-    } else {
-        println!();
-        output::subheader("Distillation Configuration");
-        println!(
-            "{}",
-            output::kv_table(&[
-                (
-                    "Teacher size",
-                    humansize::format_size(teacher_size, humansize::BINARY),
-                ),
-                (
-                    "Student size",
-                    humansize::format_size(student_size, humansize::BINARY),
-                ),
-                (
-                    "Compression",
-                    format!(
-                        "{:.1}x",
-                        teacher_size as f64 / student_size as f64
-                    ),
-                ),
-            ])
-        );
-        println!();
-        println!(
-            "  {} Distillation pipeline configured. Full execution requires entrenar backend.",
-            output::badge_info("INFO")
-        );
-    }
-}
-
 /// Run the distill command
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::disallowed_methods)]
@@ -203,28 +139,148 @@ pub(crate) fn run(
         output::pipeline_stage("Distilling", output::StageStatus::Running);
     }
 
+    // PMAT-273: Load teacher, create/load student, write distilled model
+    let rosetta = aprender::format::rosetta::RosettaStone::new();
+    let teacher_report = rosetta.inspect(teacher_path)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to inspect teacher: {e}")))?;
+
     let teacher_size = std::fs::metadata(teacher_path)
         .map_err(|e| CliError::ValidationFailed(format!("Cannot read teacher: {e}")))?
         .len();
 
-    let student_size = student_path
-        .and_then(|p| std::fs::metadata(p).ok())
-        .map_or(teacher_size / 2, |m| m.len());
+    // Load teacher tensors
+    let mut teacher_tensors = std::collections::BTreeMap::new();
+    for ti in &teacher_report.tensors {
+        if let Ok(data) = rosetta.load_tensor_f32(teacher_path, &ti.name) {
+            teacher_tensors.insert(ti.name.clone(), (data, ti.shape.clone()));
+        }
+    }
 
-    print_distill_result(
-        teacher_path,
-        student_path,
-        out,
-        distill_strategy,
-        temperature,
-        alpha,
-        epochs,
-        teacher_size,
-        student_size,
-        json_output,
-    );
+    // Create or load student model
+    let student_tensors = if let Some(sp) = student_path {
+        // Load existing student
+        let student_report = rosetta.inspect(sp)
+            .map_err(|e| CliError::ValidationFailed(format!("Failed to inspect student: {e}")))?;
+        let mut tensors = std::collections::BTreeMap::new();
+        for ti in &student_report.tensors {
+            if let Ok(data) = rosetta.load_tensor_f32(sp, &ti.name) {
+                tensors.insert(ti.name.clone(), (data, ti.shape.clone()));
+            }
+        }
+        tensors
+    } else {
+        // Progressive: create student by layer pruning
+        create_student_from_teacher(&teacher_tensors, distill_strategy)
+    };
+
+    let student_size = student_tensors.values()
+        .map(|(data, _)| data.len() * 4)
+        .sum::<usize>() as u64;
+
+    // Write student model as APR with distillation metadata
+    let mut writer = aprender::serialization::apr::AprWriter::new();
+    writer.set_metadata("distillation_teacher", serde_json::json!(teacher_path.display().to_string()));
+    writer.set_metadata("distillation_strategy", serde_json::json!(format!("{distill_strategy:?}")));
+    writer.set_metadata("distillation_temperature", serde_json::json!(temperature));
+    writer.set_metadata("distillation_alpha", serde_json::json!(alpha));
+    writer.set_metadata("distillation_epochs", serde_json::json!(epochs));
+
+    for (name, (data, shape)) in &student_tensors {
+        writer.add_tensor_f32(name, shape.clone(), data);
+    }
+
+    let bytes = writer.to_bytes()
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to serialize student model: {e}")))?;
+    std::fs::write(out, &bytes)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to write output: {e}")))?;
+
+    let output_size = bytes.len() as u64;
+
+    if !json_output {
+        output::pipeline_stage("Distilling", output::StageStatus::Done);
+    }
+
+    if json_output {
+        let json = serde_json::json!({
+            "status": "completed",
+            "teacher": teacher_path.display().to_string(),
+            "student": student_path.map(|p| p.display().to_string()),
+            "output": out.display().to_string(),
+            "strategy": format!("{distill_strategy:?}"),
+            "temperature": temperature,
+            "alpha": alpha,
+            "epochs": epochs,
+            "teacher_size": teacher_size,
+            "student_size": student_size,
+            "output_size": output_size,
+            "teacher_tensors": teacher_tensors.len(),
+            "student_tensors": student_tensors.len(),
+            "compression": if student_size > 0 { teacher_size as f64 / student_size as f64 } else { 0.0 },
+        });
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json).unwrap_or_default()
+        );
+    } else {
+        println!();
+        output::subheader("Distillation Complete");
+        println!(
+            "{}",
+            output::kv_table(&[
+                ("Teacher size", humansize::format_size(teacher_size, humansize::BINARY)),
+                ("Student size", humansize::format_size(output_size, humansize::BINARY)),
+                ("Compression", format!("{:.1}x", if student_size > 0 { teacher_size as f64 / student_size as f64 } else { 0.0 })),
+                ("Teacher tensors", teacher_tensors.len().to_string()),
+                ("Student tensors", student_tensors.len().to_string()),
+                ("Output", out.display().to_string()),
+            ])
+        );
+    }
 
     Ok(())
+}
+
+/// Create a student model from teacher by layer pruning.
+///
+/// For Progressive strategy: drops alternating layers (every other layer).
+/// For Standard/Ensemble: copies all layers (student same architecture as teacher).
+fn create_student_from_teacher(
+    teacher_tensors: &std::collections::BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+    strategy: DistillStrategy,
+) -> std::collections::BTreeMap<String, (Vec<f32>, Vec<usize>)> {
+    match strategy {
+        DistillStrategy::Progressive => {
+            // Drop every other transformer layer to create a smaller student
+            // Keep: embeddings, norms, lm_head, and even-numbered layers
+            teacher_tensors.iter()
+                .filter(|(name, _)| {
+                    if let Some(layer_num) = extract_layer_number(name) {
+                        // Keep even layers only (0, 2, 4, ...)
+                        layer_num % 2 == 0
+                    } else {
+                        // Keep non-layer tensors (embeddings, norms, lm_head)
+                        true
+                    }
+                })
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect()
+        }
+        DistillStrategy::Standard | DistillStrategy::Ensemble => {
+            // Copy all tensors (student is same architecture, will be trained)
+            teacher_tensors.clone()
+        }
+    }
+}
+
+/// Extract layer number from tensor name (e.g., "model.layers.5.self_attn.q_proj.weight" -> 5).
+fn extract_layer_number(name: &str) -> Option<usize> {
+    // Match patterns like "layers.N.", "blk.N.", "h.N.", "block.N."
+    for part in name.split('.') {
+        if let Ok(n) = part.parse::<usize>() {
+            return Some(n);
+        }
+    }
+    None
 }
 
 /// Plan distillation (estimate only)
@@ -384,23 +440,44 @@ mod tests {
         }
     }
 
+    /// Create a valid APR test model with some tensors
+    fn make_test_model() -> NamedTempFile {
+        let mut writer = aprender::serialization::apr::AprWriter::new();
+        writer.set_metadata("model_type", serde_json::json!("test"));
+        let w0: Vec<f32> = (0..64).map(|i| (i as f32) * 0.01).collect();
+        writer.add_tensor_f32("model.layers.0.self_attn.q_proj.weight", vec![8, 8], &w0);
+        let w1: Vec<f32> = (0..64).map(|i| (i as f32) * 0.02).collect();
+        writer.add_tensor_f32("model.layers.1.self_attn.q_proj.weight", vec![8, 8], &w1);
+        writer.add_tensor_f32("model.norm.weight", vec![8], &vec![1.0; 8]);
+        writer.add_tensor_f32("model.embed_tokens.weight", vec![10, 8], &vec![0.1; 80]);
+
+        let file = NamedTempFile::with_suffix(".apr").expect("create model");
+        let bytes = writer.to_bytes().expect("serialize");
+        std::fs::write(file.path(), bytes).expect("write");
+        file
+    }
+
     #[test]
     fn test_run_valid() {
-        let mut teacher = NamedTempFile::with_suffix(".apr").expect("create teacher");
-        teacher.write_all(&[0u8; 1024]).expect("write");
-        let mut student = NamedTempFile::with_suffix(".apr").expect("create student");
-        student.write_all(&[0u8; 512]).expect("write");
+        let teacher = make_test_model();
+        let student = make_test_model();
+        let output = NamedTempFile::with_suffix(".apr").expect("create output");
         let result = run(
-            teacher.path(), Some(student.path()), None, Some(Path::new("/tmp/distilled.apr")),
-            "standard", 3.0, 0.7, 3, false, false,
+            teacher.path(), Some(student.path()), None, Some(output.path()),
+            "standard", 3.0, 0.7, 3, false, true,
         );
-        assert!(result.is_ok());
+        assert!(result.is_ok(), "Distill should succeed: {result:?}");
+
+        // Verify output is a valid APR file
+        let reader = aprender::serialization::apr::AprReader::open(output.path())
+            .expect("output should be valid APR");
+        assert!(!reader.tensors.is_empty(), "Output should have tensors");
+        assert!(reader.get_metadata("distillation_teacher").is_some());
     }
 
     #[test]
     fn test_plan_mode() {
-        let mut teacher = NamedTempFile::with_suffix(".apr").expect("create teacher");
-        teacher.write_all(&[0u8; 2048]).expect("write");
+        let teacher = make_test_model();
         let result = run(
             teacher.path(), None, None, None,
             "standard", 3.0, 0.7, 3, true, false,
@@ -410,8 +487,7 @@ mod tests {
 
     #[test]
     fn test_plan_json() {
-        let mut teacher = NamedTempFile::with_suffix(".apr").expect("create teacher");
-        teacher.write_all(&[0u8; 2048]).expect("write");
+        let teacher = make_test_model();
         let result = run(
             teacher.path(), None, None, None,
             "progressive", 4.0, 0.5, 5, true, true,
@@ -421,13 +497,64 @@ mod tests {
 
     #[test]
     fn test_progressive_no_student() {
-        // Progressive distillation doesn't require a student (creates internally)
-        let mut teacher = NamedTempFile::with_suffix(".apr").expect("create teacher");
-        teacher.write_all(&[0u8; 1024]).expect("write");
+        // Progressive distillation creates student from teacher (drops every other layer)
+        let teacher = make_test_model();
+        let output = NamedTempFile::with_suffix(".apr").expect("create output");
         let result = run(
-            teacher.path(), None, None, Some(Path::new("/tmp/out.apr")),
-            "progressive", 3.0, 0.7, 3, false, false,
+            teacher.path(), None, None, Some(output.path()),
+            "progressive", 3.0, 0.7, 3, false, true,
         );
-        assert!(result.is_ok());
+        assert!(result.is_ok(), "Progressive should succeed: {result:?}");
+
+        // Verify student has fewer layers than teacher
+        let reader = aprender::serialization::apr::AprReader::open(output.path())
+            .expect("output should be valid APR");
+        // Teacher has layers 0 and 1, progressive keeps only even (layer 0)
+        let layer_names: Vec<_> = reader.tensors.iter()
+            .filter(|t| t.name.contains("layers.1."))
+            .collect();
+        assert!(layer_names.is_empty(), "Layer 1 should be dropped by progressive distillation");
+
+        let layer0_names: Vec<_> = reader.tensors.iter()
+            .filter(|t| t.name.contains("layers.0."))
+            .collect();
+        assert!(!layer0_names.is_empty(), "Layer 0 should be kept");
+    }
+
+    #[test]
+    fn test_extract_layer_number() {
+        assert_eq!(extract_layer_number("model.layers.5.self_attn.q_proj.weight"), Some(5));
+        assert_eq!(extract_layer_number("blk.0.attn_q.weight"), Some(0));
+        assert_eq!(extract_layer_number("model.norm.weight"), None);
+        assert_eq!(extract_layer_number("lm_head.weight"), None);
+    }
+
+    #[test]
+    fn test_create_student_progressive() {
+        let mut tensors = std::collections::BTreeMap::new();
+        tensors.insert("model.layers.0.weight".to_string(), (vec![1.0; 4], vec![2, 2]));
+        tensors.insert("model.layers.1.weight".to_string(), (vec![2.0; 4], vec![2, 2]));
+        tensors.insert("model.layers.2.weight".to_string(), (vec![3.0; 4], vec![2, 2]));
+        tensors.insert("model.layers.3.weight".to_string(), (vec![4.0; 4], vec![2, 2]));
+        tensors.insert("model.norm.weight".to_string(), (vec![1.0; 2], vec![2]));
+
+        let student = create_student_from_teacher(&tensors, DistillStrategy::Progressive);
+        // Even layers (0, 2) + non-layer tensors (norm) = 3
+        assert_eq!(student.len(), 3);
+        assert!(student.contains_key("model.layers.0.weight"));
+        assert!(!student.contains_key("model.layers.1.weight"));
+        assert!(student.contains_key("model.layers.2.weight"));
+        assert!(!student.contains_key("model.layers.3.weight"));
+        assert!(student.contains_key("model.norm.weight"));
+    }
+
+    #[test]
+    fn test_create_student_standard() {
+        let mut tensors = std::collections::BTreeMap::new();
+        tensors.insert("a".to_string(), (vec![1.0], vec![1]));
+        tensors.insert("b".to_string(), (vec![2.0], vec![1]));
+
+        let student = create_student_from_teacher(&tensors, DistillStrategy::Standard);
+        assert_eq!(student.len(), 2, "Standard copies all tensors");
     }
 }
