@@ -217,6 +217,7 @@
                 layer: None,
                 component: "full".to_string(),
                 verbose: false,
+                json: false,
             },
             Commands::Explain {
                 code: None,

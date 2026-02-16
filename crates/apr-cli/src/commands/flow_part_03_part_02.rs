@@ -230,6 +230,7 @@
             None,
             FlowComponent::Full,
             false,
+            false,
         );
         assert!(result.is_err());
         match result {
@@ -243,7 +244,7 @@
         let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
         file.write_all(b"not a valid apr file").expect("write");
 
-        let result = run(file.path(), None, FlowComponent::Full, false);
+        let result = run(file.path(), None, FlowComponent::Full, false, false);
         // Should fail because it's not a valid APR
         assert!(result.is_err());
     }
@@ -251,7 +252,7 @@
     #[test]
     fn test_run_is_directory() {
         let dir = tempdir().expect("create temp dir");
-        let result = run(dir.path(), None, FlowComponent::Full, false);
+        let result = run(dir.path(), None, FlowComponent::Full, false, false);
         // Should fail because it's a directory
         assert!(result.is_err());
     }
@@ -266,6 +267,7 @@
             Some("encoder.layers.0"),
             FlowComponent::Full,
             false,
+            false,
         );
         // Should fail (invalid file) but tests the filter path
         assert!(result.is_err());
@@ -276,7 +278,7 @@
         let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
         file.write_all(b"not a valid apr file").expect("write");
 
-        let result = run(file.path(), None, FlowComponent::Full, true);
+        let result = run(file.path(), None, FlowComponent::Full, true, false);
         // Should fail (invalid file) but tests verbose path
         assert!(result.is_err());
     }
@@ -286,7 +288,7 @@
         let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
         file.write_all(b"not a valid apr file").expect("write");
 
-        let result = run(file.path(), None, FlowComponent::Encoder, false);
+        let result = run(file.path(), None, FlowComponent::Encoder, false, false);
         // Should fail (invalid file) but tests encoder path
         assert!(result.is_err());
     }
@@ -296,7 +298,7 @@
         let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
         file.write_all(b"not a valid apr file").expect("write");
 
-        let result = run(file.path(), None, FlowComponent::Decoder, false);
+        let result = run(file.path(), None, FlowComponent::Decoder, false, false);
         // Should fail (invalid file) but tests decoder path
         assert!(result.is_err());
     }
@@ -306,7 +308,7 @@
         let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
         file.write_all(b"not a valid apr file").expect("write");
 
-        let result = run(file.path(), None, FlowComponent::SelfAttention, false);
+        let result = run(file.path(), None, FlowComponent::SelfAttention, false, false);
         // Should fail (invalid file) but tests self-attention path
         assert!(result.is_err());
     }
@@ -316,7 +318,7 @@
         let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
         file.write_all(b"not a valid apr file").expect("write");
 
-        let result = run(file.path(), None, FlowComponent::CrossAttention, false);
+        let result = run(file.path(), None, FlowComponent::CrossAttention, false, false);
         // Should fail (invalid file) but tests cross-attention path
         assert!(result.is_err());
     }
@@ -326,7 +328,7 @@
         let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
         file.write_all(b"not a valid apr file").expect("write");
 
-        let result = run(file.path(), None, FlowComponent::Ffn, false);
+        let result = run(file.path(), None, FlowComponent::Ffn, false, false);
         // Should fail (invalid file) but tests FFN path
         assert!(result.is_err());
     }

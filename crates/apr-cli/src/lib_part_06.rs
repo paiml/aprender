@@ -114,11 +114,13 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
             layer,
             component,
             verbose,
+            json,
         } => flow::run(
             file,
             layer.as_deref(),
             component.parse().unwrap_or(flow::FlowComponent::Full),
             *verbose || cli.verbose,
+            *json || cli.json,
         ),
 
         Commands::Chat {

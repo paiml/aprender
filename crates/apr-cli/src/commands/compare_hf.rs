@@ -43,22 +43,34 @@ fn run_compare(
     threshold: f64,
     json_output: bool,
 ) -> Result<(), CliError> {
+    use aprender::format::rosetta::{FormatType, RosettaStone};
     use aprender::serialization::AprReader;
 
     if !apr_path.exists() {
         return Err(CliError::FileNotFound(apr_path.to_path_buf()));
     }
 
-    // Load APR model
+    // PMAT-267: Detect format and load via appropriate reader
+    let format = FormatType::from_magic(apr_path)
+        .or_else(|_| FormatType::from_extension(apr_path))
+        .map_err(|e| CliError::InvalidFormat(format!("Unsupported format: {e}")))?;
+
     if !json_output {
         println!(
-            "Loading APR model: {}",
-            apr_path.display().to_string().cyan()
+            "Loading local model: {} ({:?})",
+            apr_path.display().to_string().cyan(),
+            format
         );
     }
 
-    let apr_reader = AprReader::open(apr_path)
-        .map_err(|e| CliError::InvalidFormat(format!("Failed to read APR: {e}")))?;
+    // For non-APR formats, use RosettaStone to read tensor data
+    let rosetta = RosettaStone::new();
+    let local_report = rosetta
+        .inspect(apr_path)
+        .map_err(|e| CliError::InvalidFormat(format!("Failed to inspect local model: {e}")))?;
+
+    // APR reader (only works for APR files)
+    let apr_reader = AprReader::open(apr_path).ok();
 
     // Download and load HF model
     if !json_output {
@@ -75,7 +87,9 @@ fn run_compare(
         );
     }
 
-    // Compare tensors
+    // PMAT-267: Compare tensors — use APR reader when available, RosettaStone otherwise
+    let local_tensor_names: Vec<String> = local_report.tensors.iter().map(|t| t.name.clone()).collect();
+
     let comparisons: Vec<TensorComparison> = hf_model
         .tensor_names()
         .iter()
@@ -83,13 +97,24 @@ fn run_compare(
         .filter_map(|name| {
             let hf_tensor = hf_model.tensor(name).ok()?;
 
-            // Try to load corresponding APR tensor
+            // Try to load corresponding local tensor
             // HF uses different naming, try common mappings
-            let apr_name = map_hf_to_apr_name(name);
-            let apr_data = apr_reader.read_tensor_f32(&apr_name).ok()?;
+            let local_name = map_hf_to_apr_name(name);
+
+            // Try APR reader first (fastest), then RosettaStone
+            let local_data = if let Some(ref reader) = apr_reader {
+                reader.read_tensor_f32(&local_name).ok()
+            } else {
+                // For GGUF/SafeTensors, check if tensor exists in report
+                if local_tensor_names.contains(&local_name) {
+                    rosetta.load_tensor_f32(apr_path, &local_name).ok()
+                } else {
+                    None
+                }
+            }?;
 
             Some(TensorComparison::compare(
-                name, &hf_tensor, &apr_data, threshold,
+                name, &hf_tensor, &local_data, threshold,
             ))
         })
         .collect();

@@ -99,7 +99,8 @@
         // First condition: false (needs all three)
         // Second: false (no encoder)
         // Third: false (no decoder)
-        assert_eq!(detect_architecture(&names), "unknown");
+        // PMAT-265: model.layers.* now detected as decoder-only
+        assert_eq!(detect_architecture(&names), "decoder-only (transformer)");
     }
 
     #[test]
@@ -132,7 +133,8 @@
             "model.layers.0.self_attn.q_proj.weight".to_string(),
             "lm_head.weight".to_string(),
         ];
-        assert_eq!(detect_architecture(&names), "unknown");
+        // PMAT-265: LLaMA-style (model.layers.* + lm_head) now detected
+        assert_eq!(detect_architecture(&names), "decoder-only (LLaMA/Qwen2)");
     }
 
     #[test]
@@ -144,7 +146,8 @@
             "blk.0.ffn_gate.weight".to_string(),
             "output.weight".to_string(),
         ];
-        assert_eq!(detect_architecture(&names), "unknown");
+        // PMAT-265: GGUF-style (blk.* + output.weight) now detected
+        assert_eq!(detect_architecture(&names), "decoder-only (LLaMA/Qwen2)");
     }
 
     #[test]

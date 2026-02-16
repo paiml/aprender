@@ -151,6 +151,7 @@
             None,
             FlowComponent::Full,
             false,
+            false,
         );
         match result {
             Err(CliError::FileNotFound(p)) => {
@@ -164,7 +165,7 @@
     fn test_run_empty_apr_file() {
         let file = NamedTempFile::with_suffix(".apr").expect("create temp file");
         // Empty file should fail with InvalidFormat
-        let result = run(file.path(), None, FlowComponent::Full, false);
+        let result = run(file.path(), None, FlowComponent::Full, false, false);
         assert!(result.is_err());
     }
 
@@ -174,7 +175,7 @@
         let path = dir.path().join("model.gguf");
         std::fs::write(&path, b"some data").expect("write");
         // This file exists but flow command requires APR format
-        let result = run(&path, None, FlowComponent::Full, false);
+        let result = run(&path, None, FlowComponent::Full, false, false);
         assert!(result.is_err());
     }
 
@@ -193,7 +194,7 @@
             FlowComponent::Ffn,
         ];
         for comp in &components {
-            let result = run(file.path(), None, *comp, false);
+            let result = run(file.path(), None, *comp, false, false);
             assert!(result.is_err(), "Expected error for component {comp:?}");
         }
     }
@@ -208,6 +209,7 @@
             Some("decoder.layers.0"),
             FlowComponent::CrossAttention,
             true,
+            false,
         );
         assert!(result.is_err());
     }

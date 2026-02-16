@@ -672,6 +672,9 @@ pub enum Commands {
         /// Verbose output with statistics
         #[arg(short, long)]
         verbose: bool,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
     },
     /// Interactive chat with language model
     Chat {

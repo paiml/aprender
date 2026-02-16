@@ -21,6 +21,7 @@
             layer: None,
             component: "full".to_string(),
             verbose: false,
+            json: false,
         };
         let paths = extract_model_paths(&cmd);
         assert!(paths.is_empty(), "Flow is a diagnostic command (exempt)");

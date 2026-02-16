@@ -53,6 +53,7 @@ pub(crate) fn run(
     layer_filter: Option<&str>,
     component: FlowComponent,
     verbose: bool,
+    json_output: bool,
 ) -> Result<(), CliError> {
     if !apr_path.exists() {
         return Err(CliError::FileNotFound(apr_path.to_path_buf()));
@@ -66,6 +67,11 @@ pub(crate) fn run(
 
     let tensor_names: Vec<String> = report.tensors.iter().map(|t| t.name.clone()).collect();
     let arch = detect_architecture(&tensor_names);
+
+    // PMAT-265: JSON output mode
+    if json_output {
+        return output_flow_json(apr_path, &report, &tensor_names, arch, &component);
+    }
 
     // APR reader for verbose tensor stats (only available for APR format)
     let apr_reader = AprReader::open(apr_path).ok();
@@ -107,13 +113,29 @@ pub(crate) fn run(
     Ok(())
 }
 
-/// Detect model architecture
+/// Detect model architecture from tensor naming patterns
 fn detect_architecture(tensor_names: &[String]) -> &'static str {
-    let has_encoder = tensor_names.iter().any(|n| n.starts_with("encoder"));
-    let has_decoder = tensor_names.iter().any(|n| n.starts_with("decoder"));
+    // Handle both "encoder.*" and "model.encoder.*" naming conventions
+    let has_encoder = tensor_names
+        .iter()
+        .any(|n| n.starts_with("encoder") || n.starts_with("model.encoder"));
+    let has_decoder = tensor_names
+        .iter()
+        .any(|n| n.starts_with("decoder") || n.starts_with("model.decoder"));
     let has_cross_attn = tensor_names
         .iter()
         .any(|n| n.contains("encoder_attn") || n.contains("cross_attn"));
+
+    // PMAT-265: Detect decoder-only LLM patterns (model.layers.*, blk.*)
+    let has_model_layers = tensor_names
+        .iter()
+        .any(|n| n.starts_with("model.layers.") || n.starts_with("blk."));
+    let has_lm_head = tensor_names
+        .iter()
+        .any(|n| n == "lm_head.weight" || n == "output.weight");
+    let has_transformer_h = tensor_names
+        .iter()
+        .any(|n| n.starts_with("transformer.h."));
 
     if has_encoder && has_decoder && has_cross_attn {
         "encoder-decoder (Whisper/T5)"
@@ -121,9 +143,99 @@ fn detect_architecture(tensor_names: &[String]) -> &'static str {
         "encoder-only (BERT)"
     } else if has_decoder && !has_encoder {
         "decoder-only (GPT/LLaMA)"
+    } else if has_model_layers && has_lm_head {
+        "decoder-only (LLaMA/Qwen2)"
+    } else if has_transformer_h {
+        "decoder-only (GPT-2)"
+    } else if has_model_layers {
+        "decoder-only (transformer)"
     } else {
         "unknown"
     }
+}
+
+/// PMAT-265: Output flow data as JSON
+fn output_flow_json(
+    path: &Path,
+    report: &aprender::format::rosetta::InspectionReport,
+    tensor_names: &[String],
+    architecture: &str,
+    component: &FlowComponent,
+) -> Result<(), CliError> {
+    use std::collections::BTreeMap;
+
+    let filename = path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("model");
+
+    // Group tensors by component
+    let mut components: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    for name in tensor_names {
+        let group = if name.starts_with("encoder.") || name.starts_with("model.encoder.") {
+            "encoder"
+        } else if name.starts_with("decoder.") || name.starts_with("model.decoder.") || name.starts_with("model.layers.") || name.starts_with("blk.") {
+            "decoder"
+        } else if name.contains("embed") || name.contains("token_embd") {
+            "embedding"
+        } else if name == "lm_head.weight" || name == "output.weight" {
+            "lm_head"
+        } else {
+            "other"
+        };
+        components.entry(group).or_default().push(name);
+    }
+
+    // Count layers (handle both "encoder.layers.*" and "model.encoder.layers.*")
+    let n_encoder_layers = tensor_names
+        .iter()
+        .filter(|n| n.starts_with("encoder.layers.") || n.starts_with("model.encoder.layers."))
+        .filter_map(|n| {
+            n.strip_prefix("encoder.layers.")
+                .or_else(|| n.strip_prefix("model.encoder.layers."))
+                .and_then(|s| s.split('.').next())
+                .and_then(|s| s.parse::<usize>().ok())
+        })
+        .max()
+        .map(|n| n + 1)
+        .unwrap_or(0);
+    let n_decoder_layers = tensor_names
+        .iter()
+        .filter(|n| n.starts_with("decoder.layers.") || n.starts_with("model.decoder.layers.") || n.starts_with("model.layers.") || n.starts_with("blk."))
+        .filter_map(|n| {
+            n.strip_prefix("decoder.layers.")
+                .or_else(|| n.strip_prefix("model.decoder.layers."))
+                .or_else(|| n.strip_prefix("model.layers."))
+                .or_else(|| n.strip_prefix("blk."))
+                .and_then(|s| s.split('.').next())
+                .and_then(|s| s.parse::<usize>().ok())
+        })
+        .max()
+        .map(|n| n + 1)
+        .unwrap_or(0);
+
+    // Build JSON manually to avoid serde dependency
+    let component_str = format!("{component:?}").to_lowercase();
+    let component_counts: String = components
+        .iter()
+        .map(|(k, v)| format!("    \"{k}\": {}", v.len()))
+        .collect::<Vec<_>>()
+        .join(",\n");
+
+    println!("{{");
+    println!("  \"file\": \"{filename}\",");
+    println!("  \"format\": \"{:?}\",", report.format);
+    println!("  \"architecture\": \"{architecture}\",");
+    println!("  \"component\": \"{component_str}\",");
+    println!("  \"total_tensors\": {},", tensor_names.len());
+    println!("  \"encoder_layers\": {n_encoder_layers},");
+    println!("  \"decoder_layers\": {n_decoder_layers},");
+    println!("  \"tensor_groups\": {{");
+    println!("{component_counts}");
+    println!("  }}");
+    println!("}}");
+
+    Ok(())
 }
 
 /// Print full model flow

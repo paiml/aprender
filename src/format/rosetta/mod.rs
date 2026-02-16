@@ -198,6 +198,16 @@ impl FormatType {
             // Read next 2 bytes to check for JSON start
             let mut json_start = [0u8; 2];
             if file.read_exact(&mut json_start).is_ok() && &json_start == b"{\"" {
+                // PMAT-264: Detect truncated SafeTensors files early
+                let file_size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+                let min_size = 8 + header_len;
+                if file_size < min_size {
+                    return Err(AprenderError::FormatError {
+                        message: format!(
+                            "Truncated SafeTensors file: header declares {min_size} bytes but file is only {file_size} bytes"
+                        ),
+                    });
+                }
                 return Ok(Self::SafeTensors);
             }
         }

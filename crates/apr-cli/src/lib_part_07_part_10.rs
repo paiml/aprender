@@ -77,6 +77,7 @@
             layer: None,
             component: "full".to_string(),
             verbose: false,
+            json: false,
         });
         let result = execute_command(&cli);
         assert!(result.is_err(), "Flow should fail with non-existent file");

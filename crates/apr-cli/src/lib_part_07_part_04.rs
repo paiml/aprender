@@ -76,6 +76,7 @@
                 layer,
                 component,
                 verbose,
+                json: _,
             } => {
                 assert_eq!(file, PathBuf::from("model.apr"));
                 assert_eq!(layer, Some("encoder.0".to_string()));
