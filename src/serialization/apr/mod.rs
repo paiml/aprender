@@ -59,15 +59,18 @@ impl AprReader {
     pub fn from_bytes(data: Vec<u8>) -> Result<Self, String> {
         use crate::format::v2::AprV2ReaderRef;
 
-        let reader = AprV2ReaderRef::from_bytes(&data)
-            .map_err(|e| format!("Invalid APR file: {e}"))?;
+        let reader =
+            AprV2ReaderRef::from_bytes(&data).map_err(|e| format!("Invalid APR file: {e}"))?;
 
         let meta = reader.metadata();
 
         // Build flat metadata from typed + custom fields
         let mut metadata = AprMetadata::new();
         if !meta.model_type.is_empty() {
-            metadata.insert("model_type".to_string(), JsonValue::String(meta.model_type.clone()));
+            metadata.insert(
+                "model_type".to_string(),
+                JsonValue::String(meta.model_type.clone()),
+            );
         }
         if let Some(ref name) = meta.name {
             metadata.insert("model_name".to_string(), JsonValue::String(name.clone()));
@@ -127,10 +130,11 @@ impl AprReader {
     pub fn read_tensor_f32(&self, name: &str) -> Result<Vec<f32>, String> {
         use crate::format::v2::AprV2ReaderRef;
 
-        let reader = AprV2ReaderRef::from_bytes(&self.data)
-            .map_err(|e| format!("Invalid APR file: {e}"))?;
+        let reader =
+            AprV2ReaderRef::from_bytes(&self.data).map_err(|e| format!("Invalid APR file: {e}"))?;
 
-        reader.get_f32_tensor(name)
+        reader
+            .get_f32_tensor(name)
             .ok_or_else(|| format!("Tensor not found or not F32: {name}"))
     }
 }

@@ -441,7 +441,11 @@ impl GNNModule for EdgeConv {
     fn forward_gnn(&self, x: &Tensor, edge_index: &[EdgeIndex]) -> Tensor {
         let num_nodes = x.shape()[0];
         let in_features = x.shape()[1];
-        assert_eq!(in_features, self.in_features, "Expected {} input features, got {}", self.in_features, in_features);
+        assert_eq!(
+            in_features, self.in_features,
+            "Expected {} input features, got {}",
+            self.in_features, in_features
+        );
         let x_data = x.data();
         let mut neighbors: Vec<Vec<usize>> = vec![vec![]; num_nodes];
         for &(src, tgt) in edge_index {
@@ -450,11 +454,17 @@ impl GNNModule for EdgeConv {
         }
         let mut output = vec![f32::NEG_INFINITY; num_nodes * self.out_features];
         for i in 0..num_nodes {
-            if neighbors[i].is_empty() { neighbors[i].push(i); }
+            if neighbors[i].is_empty() {
+                neighbors[i].push(i);
+            }
             for &j in &neighbors[i] {
                 let mut edge_feat = Vec::with_capacity(in_features * 2);
-                for f in 0..in_features { edge_feat.push(x_data[i * in_features + f]); }
-                for f in 0..in_features { edge_feat.push(x_data[j * in_features + f] - x_data[i * in_features + f]); }
+                for f in 0..in_features {
+                    edge_feat.push(x_data[i * in_features + f]);
+                }
+                for f in 0..in_features {
+                    edge_feat.push(x_data[j * in_features + f] - x_data[i * in_features + f]);
+                }
                 let edge_tensor = Tensor::new(&edge_feat, &[1, in_features * 2]);
                 let h1 = self.linear1.forward(&edge_tensor);
                 let h1_relu: Vec<f32> = h1.data().iter().map(|&v| v.max(0.0)).collect();
@@ -462,11 +472,16 @@ impl GNNModule for EdgeConv {
                 let h2 = self.linear2.forward(&h1_tensor);
                 let h2_data = h2.data();
                 for f in 0..self.out_features {
-                    output[i * self.out_features + f] = output[i * self.out_features + f].max(h2_data[f]);
+                    output[i * self.out_features + f] =
+                        output[i * self.out_features + f].max(h2_data[f]);
                 }
             }
         }
-        for o in &mut output { if *o == f32::NEG_INFINITY { *o = 0.0; } }
+        for o in &mut output {
+            if *o == f32::NEG_INFINITY {
+                *o = 0.0;
+            }
+        }
         Tensor::new(&output, &[num_nodes, self.out_features])
     }
 }

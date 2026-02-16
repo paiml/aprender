@@ -135,7 +135,14 @@ impl Conv1d {
         bias: bool,
         layout: ConvLayout,
     ) -> Self {
-        let mut conv = Self::with_options(in_channels, out_channels, kernel_size, stride, padding, bias);
+        let mut conv = Self::with_options(
+            in_channels,
+            out_channels,
+            kernel_size,
+            stride,
+            padding,
+            bias,
+        );
         conv.layout = layout;
         conv
     }

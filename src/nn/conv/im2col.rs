@@ -14,7 +14,16 @@
 /// Returns `0.0` for positions that fall in the padding region,
 /// otherwise returns the corresponding input element.
 #[inline]
-fn sample_padded(input: &[f32], c: usize, ih: usize, iw: usize, in_h: usize, in_w: usize, ph: usize, pw: usize) -> f32 {
+fn sample_padded(
+    input: &[f32],
+    c: usize,
+    ih: usize,
+    iw: usize,
+    in_h: usize,
+    in_w: usize,
+    ph: usize,
+    pw: usize,
+) -> f32 {
     let in_bounds = ih >= ph && ih < in_h + ph && iw >= pw && iw < in_w + pw;
     if in_bounds {
         input[c * in_h * in_w + (ih - ph) * in_w + (iw - pw)]
@@ -49,7 +58,8 @@ fn fill_col_row(
         for ow in 0..out_w {
             let ih = oh * sh + y;
             let iw = ow * sw + x;
-            col[row * col_w + oh * out_w + ow] = sample_padded(input, c, ih, iw, in_h, in_w, ph, pw);
+            col[row * col_w + oh * out_w + ow] =
+                sample_padded(input, c, ih, iw, in_h, in_w, ph, pw);
         }
     }
 }
@@ -102,7 +112,9 @@ pub(crate) fn im2col_2d(
         for y in 0..kh {
             for x in 0..kw {
                 let row = c * kh * kw + y * kw + x;
-                fill_col_row(&mut col, input, row, col_w, c, y, x, out_h, out_w, sh, sw, in_h, in_w, ph, pw);
+                fill_col_row(
+                    &mut col, input, row, col_w, c, y, x, out_h, out_w, sh, sw, in_h, in_w, ph, pw,
+                );
             }
         }
     }
@@ -187,12 +199,10 @@ mod tests {
         // row 1 (c=0, ky=0, kx=1): 2, 3, 5, 6
         // row 2 (c=0, ky=1, kx=0): 4, 5, 7, 8
         // row 3 (c=0, ky=1, kx=1): 5, 6, 8, 9
-        assert_eq!(col, vec![
-            1.0, 2.0, 4.0, 5.0,
-            2.0, 3.0, 5.0, 6.0,
-            4.0, 5.0, 7.0, 8.0,
-            5.0, 6.0, 8.0, 9.0,
-        ]);
+        assert_eq!(
+            col,
+            vec![1.0, 2.0, 4.0, 5.0, 2.0, 3.0, 5.0, 6.0, 4.0, 5.0, 7.0, 8.0, 5.0, 6.0, 8.0, 9.0,]
+        );
     }
 
     #[test]
@@ -251,11 +261,7 @@ mod tests {
         // row 0 (k=0): 1, 2, 3
         // row 1 (k=1): 2, 3, 4
         // row 2 (k=2): 3, 4, 5
-        assert_eq!(col, vec![
-            1.0, 2.0, 3.0,
-            2.0, 3.0, 4.0,
-            3.0, 4.0, 5.0,
-        ]);
+        assert_eq!(col, vec![1.0, 2.0, 3.0, 2.0, 3.0, 4.0, 3.0, 4.0, 5.0,]);
     }
 
     #[test]
@@ -271,11 +277,7 @@ mod tests {
         // row 0 (k=0): 0(pad), 1, 2
         // row 1 (k=1): 1, 2, 3
         // row 2 (k=2): 2, 3, 0(pad)
-        assert_eq!(col, vec![
-            0.0, 1.0, 2.0,
-            1.0, 2.0, 3.0,
-            2.0, 3.0, 0.0,
-        ]);
+        assert_eq!(col, vec![0.0, 1.0, 2.0, 1.0, 2.0, 3.0, 2.0, 3.0, 0.0,]);
     }
 
     #[test]

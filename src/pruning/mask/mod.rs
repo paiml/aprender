@@ -302,11 +302,7 @@ fn validate_nm(mask: &Tensor, n: usize, m: usize) -> Result<(), PruningError> {
     let data = mask.data();
     if data.len() % m != 0 {
         return Err(PruningError::InvalidPattern {
-            message: format!(
-                "Tensor length {} not divisible by M={}",
-                data.len(),
-                m
-            ),
+            message: format!("Tensor length {} not divisible by M={}", data.len(), m),
         });
     }
     for (i, chunk) in data.chunks(m).enumerate() {
@@ -334,9 +330,7 @@ fn validate_block(mask: &Tensor, height: usize, width: usize) -> Result<(), Prun
     let (rows, cols) = (shape[0], shape[1]);
     if rows % height != 0 || cols % width != 0 {
         return Err(PruningError::InvalidPattern {
-            message: format!(
-                "Shape [{rows}, {cols}] not divisible by block [{height}, {width}]"
-            ),
+            message: format!("Shape [{rows}, {cols}] not divisible by block [{height}, {width}]"),
         });
     }
     let data = mask.data();

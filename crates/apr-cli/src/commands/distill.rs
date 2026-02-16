@@ -91,14 +91,20 @@ pub(crate) fn run(
         return Err(CliError::FileNotFound(teacher_path.to_path_buf()));
     }
 
-    let distill_strategy: DistillStrategy = strategy
-        .parse()
-        .map_err(CliError::ValidationFailed)?;
+    let distill_strategy: DistillStrategy = strategy.parse().map_err(CliError::ValidationFailed)?;
 
     validate_distill_params(temperature, alpha)?;
 
     if plan_only {
-        return run_plan(teacher_path, student_path, distill_strategy, temperature, alpha, epochs, json_output);
+        return run_plan(
+            teacher_path,
+            student_path,
+            distill_strategy,
+            temperature,
+            alpha,
+            epochs,
+            json_output,
+        );
     }
 
     if student_path.is_none() && !matches!(distill_strategy, DistillStrategy::Progressive) {
@@ -141,7 +147,8 @@ pub(crate) fn run(
 
     // PMAT-273: Load teacher, create/load student, write distilled model
     let rosetta = aprender::format::rosetta::RosettaStone::new();
-    let teacher_report = rosetta.inspect(teacher_path)
+    let teacher_report = rosetta
+        .inspect(teacher_path)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to inspect teacher: {e}")))?;
 
     let teacher_size = std::fs::metadata(teacher_path)
@@ -159,7 +166,8 @@ pub(crate) fn run(
     // Create or load student model
     let student_tensors = if let Some(sp) = student_path {
         // Load existing student
-        let student_report = rosetta.inspect(sp)
+        let student_report = rosetta
+            .inspect(sp)
             .map_err(|e| CliError::ValidationFailed(format!("Failed to inspect student: {e}")))?;
         let mut tensors = std::collections::BTreeMap::new();
         for ti in &student_report.tensors {
@@ -173,14 +181,21 @@ pub(crate) fn run(
         create_student_from_teacher(&teacher_tensors, distill_strategy)
     };
 
-    let student_size = student_tensors.values()
+    let student_size = student_tensors
+        .values()
         .map(|(data, _)| data.len() * 4)
         .sum::<usize>() as u64;
 
     // Write student model as APR with distillation metadata
     let mut writer = aprender::serialization::apr::AprWriter::new();
-    writer.set_metadata("distillation_teacher", serde_json::json!(teacher_path.display().to_string()));
-    writer.set_metadata("distillation_strategy", serde_json::json!(format!("{distill_strategy:?}")));
+    writer.set_metadata(
+        "distillation_teacher",
+        serde_json::json!(teacher_path.display().to_string()),
+    );
+    writer.set_metadata(
+        "distillation_strategy",
+        serde_json::json!(format!("{distill_strategy:?}")),
+    );
     writer.set_metadata("distillation_temperature", serde_json::json!(temperature));
     writer.set_metadata("distillation_alpha", serde_json::json!(alpha));
     writer.set_metadata("distillation_epochs", serde_json::json!(epochs));
@@ -189,8 +204,9 @@ pub(crate) fn run(
         writer.add_tensor_f32(name, shape.clone(), data);
     }
 
-    let bytes = writer.to_bytes()
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to serialize student model: {e}")))?;
+    let bytes = writer.to_bytes().map_err(|e| {
+        CliError::ValidationFailed(format!("Failed to serialize student model: {e}"))
+    })?;
     std::fs::write(out, &bytes)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to write output: {e}")))?;
 
@@ -227,9 +243,25 @@ pub(crate) fn run(
         println!(
             "{}",
             output::kv_table(&[
-                ("Teacher size", humansize::format_size(teacher_size, humansize::BINARY)),
-                ("Student size", humansize::format_size(output_size, humansize::BINARY)),
-                ("Compression", format!("{:.1}x", if student_size > 0 { teacher_size as f64 / student_size as f64 } else { 0.0 })),
+                (
+                    "Teacher size",
+                    humansize::format_size(teacher_size, humansize::BINARY)
+                ),
+                (
+                    "Student size",
+                    humansize::format_size(output_size, humansize::BINARY)
+                ),
+                (
+                    "Compression",
+                    format!(
+                        "{:.1}x",
+                        if student_size > 0 {
+                            teacher_size as f64 / student_size as f64
+                        } else {
+                            0.0
+                        }
+                    )
+                ),
                 ("Teacher tensors", teacher_tensors.len().to_string()),
                 ("Student tensors", student_tensors.len().to_string()),
                 ("Output", out.display().to_string()),
@@ -252,7 +284,8 @@ fn create_student_from_teacher(
         DistillStrategy::Progressive => {
             // Drop every other transformer layer to create a smaller student
             // Keep: embeddings, norms, lm_head, and even-numbered layers
-            teacher_tensors.iter()
+            teacher_tensors
+                .iter()
                 .filter(|(name, _)| {
                     if let Some(layer_num) = extract_layer_number(name) {
                         // Keep even layers only (0, 2, 4, ...)
@@ -363,18 +396,38 @@ mod tests {
 
     #[test]
     fn test_distill_strategy_parse() {
-        assert!(matches!("standard".parse::<DistillStrategy>(), Ok(DistillStrategy::Standard)));
-        assert!(matches!("kl".parse::<DistillStrategy>(), Ok(DistillStrategy::Standard)));
-        assert!(matches!("progressive".parse::<DistillStrategy>(), Ok(DistillStrategy::Progressive)));
-        assert!(matches!("ensemble".parse::<DistillStrategy>(), Ok(DistillStrategy::Ensemble)));
+        assert!(matches!(
+            "standard".parse::<DistillStrategy>(),
+            Ok(DistillStrategy::Standard)
+        ));
+        assert!(matches!(
+            "kl".parse::<DistillStrategy>(),
+            Ok(DistillStrategy::Standard)
+        ));
+        assert!(matches!(
+            "progressive".parse::<DistillStrategy>(),
+            Ok(DistillStrategy::Progressive)
+        ));
+        assert!(matches!(
+            "ensemble".parse::<DistillStrategy>(),
+            Ok(DistillStrategy::Ensemble)
+        ));
         assert!("unknown".parse::<DistillStrategy>().is_err());
     }
 
     #[test]
     fn test_run_teacher_not_found() {
         let result = run(
-            Path::new("/nonexistent.apr"), None, None, Some(Path::new("/tmp/out.apr")),
-            "standard", 3.0, 0.7, 3, false, false,
+            Path::new("/nonexistent.apr"),
+            None,
+            None,
+            Some(Path::new("/tmp/out.apr")),
+            "standard",
+            3.0,
+            0.7,
+            3,
+            false,
+            false,
         );
         assert!(result.is_err());
         assert!(matches!(result, Err(CliError::FileNotFound(_))));
@@ -384,8 +437,16 @@ mod tests {
     fn test_run_invalid_temperature() {
         let input = NamedTempFile::with_suffix(".apr").expect("create input");
         let result = run(
-            input.path(), None, None, Some(Path::new("/tmp/out.apr")),
-            "standard", 0.0, 0.7, 3, false, false,
+            input.path(),
+            None,
+            None,
+            Some(Path::new("/tmp/out.apr")),
+            "standard",
+            0.0,
+            0.7,
+            3,
+            false,
+            false,
         );
         assert!(result.is_err());
         match result {
@@ -398,8 +459,16 @@ mod tests {
     fn test_run_invalid_alpha() {
         let input = NamedTempFile::with_suffix(".apr").expect("create input");
         let result = run(
-            input.path(), None, None, Some(Path::new("/tmp/out.apr")),
-            "standard", 3.0, 1.5, 3, false, false,
+            input.path(),
+            None,
+            None,
+            Some(Path::new("/tmp/out.apr")),
+            "standard",
+            3.0,
+            1.5,
+            3,
+            false,
+            false,
         );
         assert!(result.is_err());
         match result {
@@ -413,8 +482,16 @@ mod tests {
         let mut input = NamedTempFile::with_suffix(".apr").expect("create input");
         input.write_all(&[0u8; 512]).expect("write");
         let result = run(
-            input.path(), None, None, Some(Path::new("/tmp/out.apr")),
-            "standard", 3.0, 0.7, 3, false, false,
+            input.path(),
+            None,
+            None,
+            Some(Path::new("/tmp/out.apr")),
+            "standard",
+            3.0,
+            0.7,
+            3,
+            false,
+            false,
         );
         assert!(result.is_err());
         match result {
@@ -430,8 +507,16 @@ mod tests {
         let mut student = NamedTempFile::with_suffix(".apr").expect("create student");
         student.write_all(&[0u8; 256]).expect("write");
         let result = run(
-            teacher.path(), Some(student.path()), None, None,
-            "standard", 3.0, 0.7, 3, false, false,
+            teacher.path(),
+            Some(student.path()),
+            None,
+            None,
+            "standard",
+            3.0,
+            0.7,
+            3,
+            false,
+            false,
         );
         assert!(result.is_err());
         match result {
@@ -463,8 +548,16 @@ mod tests {
         let student = make_test_model();
         let output = NamedTempFile::with_suffix(".apr").expect("create output");
         let result = run(
-            teacher.path(), Some(student.path()), None, Some(output.path()),
-            "standard", 3.0, 0.7, 3, false, true,
+            teacher.path(),
+            Some(student.path()),
+            None,
+            Some(output.path()),
+            "standard",
+            3.0,
+            0.7,
+            3,
+            false,
+            true,
         );
         assert!(result.is_ok(), "Distill should succeed: {result:?}");
 
@@ -479,8 +572,16 @@ mod tests {
     fn test_plan_mode() {
         let teacher = make_test_model();
         let result = run(
-            teacher.path(), None, None, None,
-            "standard", 3.0, 0.7, 3, true, false,
+            teacher.path(),
+            None,
+            None,
+            None,
+            "standard",
+            3.0,
+            0.7,
+            3,
+            true,
+            false,
         );
         assert!(result.is_ok());
     }
@@ -489,8 +590,16 @@ mod tests {
     fn test_plan_json() {
         let teacher = make_test_model();
         let result = run(
-            teacher.path(), None, None, None,
-            "progressive", 4.0, 0.5, 5, true, true,
+            teacher.path(),
+            None,
+            None,
+            None,
+            "progressive",
+            4.0,
+            0.5,
+            5,
+            true,
+            true,
         );
         assert!(result.is_ok());
     }
@@ -501,8 +610,16 @@ mod tests {
         let teacher = make_test_model();
         let output = NamedTempFile::with_suffix(".apr").expect("create output");
         let result = run(
-            teacher.path(), None, None, Some(output.path()),
-            "progressive", 3.0, 0.7, 3, false, true,
+            teacher.path(),
+            None,
+            None,
+            Some(output.path()),
+            "progressive",
+            3.0,
+            0.7,
+            3,
+            false,
+            true,
         );
         assert!(result.is_ok(), "Progressive should succeed: {result:?}");
 
@@ -510,12 +627,19 @@ mod tests {
         let reader = aprender::serialization::apr::AprReader::open(output.path())
             .expect("output should be valid APR");
         // Teacher has layers 0 and 1, progressive keeps only even (layer 0)
-        let layer_names: Vec<_> = reader.tensors.iter()
+        let layer_names: Vec<_> = reader
+            .tensors
+            .iter()
             .filter(|t| t.name.contains("layers.1."))
             .collect();
-        assert!(layer_names.is_empty(), "Layer 1 should be dropped by progressive distillation");
+        assert!(
+            layer_names.is_empty(),
+            "Layer 1 should be dropped by progressive distillation"
+        );
 
-        let layer0_names: Vec<_> = reader.tensors.iter()
+        let layer0_names: Vec<_> = reader
+            .tensors
+            .iter()
             .filter(|t| t.name.contains("layers.0."))
             .collect();
         assert!(!layer0_names.is_empty(), "Layer 0 should be kept");
@@ -523,7 +647,10 @@ mod tests {
 
     #[test]
     fn test_extract_layer_number() {
-        assert_eq!(extract_layer_number("model.layers.5.self_attn.q_proj.weight"), Some(5));
+        assert_eq!(
+            extract_layer_number("model.layers.5.self_attn.q_proj.weight"),
+            Some(5)
+        );
         assert_eq!(extract_layer_number("blk.0.attn_q.weight"), Some(0));
         assert_eq!(extract_layer_number("model.norm.weight"), None);
         assert_eq!(extract_layer_number("lm_head.weight"), None);
@@ -532,10 +659,22 @@ mod tests {
     #[test]
     fn test_create_student_progressive() {
         let mut tensors = std::collections::BTreeMap::new();
-        tensors.insert("model.layers.0.weight".to_string(), (vec![1.0; 4], vec![2, 2]));
-        tensors.insert("model.layers.1.weight".to_string(), (vec![2.0; 4], vec![2, 2]));
-        tensors.insert("model.layers.2.weight".to_string(), (vec![3.0; 4], vec![2, 2]));
-        tensors.insert("model.layers.3.weight".to_string(), (vec![4.0; 4], vec![2, 2]));
+        tensors.insert(
+            "model.layers.0.weight".to_string(),
+            (vec![1.0; 4], vec![2, 2]),
+        );
+        tensors.insert(
+            "model.layers.1.weight".to_string(),
+            (vec![2.0; 4], vec![2, 2]),
+        );
+        tensors.insert(
+            "model.layers.2.weight".to_string(),
+            (vec![3.0; 4], vec![2, 2]),
+        );
+        tensors.insert(
+            "model.layers.3.weight".to_string(),
+            (vec![4.0; 4], vec![2, 2]),
+        );
         tensors.insert("model.norm.weight".to_string(), (vec![1.0; 2], vec![2]));
 
         let student = create_student_from_teacher(&tensors, DistillStrategy::Progressive);

@@ -29,7 +29,9 @@ fn explain_error_code(code: &str) {
         "E001" => {
             println!("**E001: Invalid Magic Bytes**");
             println!("The file does not start with a recognized format header.");
-            println!("- **Expected**: GGUF (`GGUF`), SafeTensors (u64 LE + `{{\"`), APR (`APR\\0`)");
+            println!(
+                "- **Expected**: GGUF (`GGUF`), SafeTensors (u64 LE + `{{\"`), APR (`APR\\0`)"
+            );
             println!("- **Troubleshooting**:");
             println!("  1. Run `apr validate <file>` to check format.");
             println!("  2. Verify file was not corrupted during download.");
@@ -112,22 +114,52 @@ fn explain_tensor(tensor_name: &str, file: Option<&PathBuf>) {
 
 /// Tensor naming convention table: (pattern, role description)
 const TENSOR_ROLES: &[(&[&str], &str)] = &[
-    (&["embed", "token_embd"], "Token embedding — maps token IDs to dense vectors"),
-    (&["lm_head", "output.weight"], "Language model head — projects hidden states to vocabulary logits"),
+    (
+        &["embed", "token_embd"],
+        "Token embedding — maps token IDs to dense vectors",
+    ),
+    (
+        &["lm_head", "output.weight"],
+        "Language model head — projects hidden states to vocabulary logits",
+    ),
     (&["q_proj"], "Query projection in attention mechanism"),
     (&["k_proj"], "Key projection in attention mechanism"),
     (&["v_proj"], "Value projection in attention mechanism"),
-    (&["o_proj", "out_proj"], "Output projection in attention mechanism"),
-    (&["gate_proj", "fc1"], "Feed-forward gate/first projection (SwiGLU or FFN)"),
+    (
+        &["o_proj", "out_proj"],
+        "Output projection in attention mechanism",
+    ),
+    (
+        &["gate_proj", "fc1"],
+        "Feed-forward gate/first projection (SwiGLU or FFN)",
+    ),
     (&["up_proj"], "Feed-forward up projection (SwiGLU)"),
     (&["down_proj", "fc2"], "Feed-forward down projection"),
-    (&["layernorm", "input_layernorm"], "Layer normalization — stabilizes activations"),
-    (&["rms_norm", "post_attention_layernorm"], "RMS normalization — pre/post attention normalization"),
+    (
+        &["layernorm", "input_layernorm"],
+        "Layer normalization — stabilizes activations",
+    ),
+    (
+        &["rms_norm", "post_attention_layernorm"],
+        "RMS normalization — pre/post attention normalization",
+    ),
     (&["conv1"], "First convolutional layer (feature extraction)"),
-    (&["conv2"], "Second convolutional layer (stride-2 downsampling)"),
-    (&["positional", "pos_embed"], "Positional encoding — provides sequence position information"),
-    (&["encoder_attn", "cross_attn"], "Cross-attention — attends to encoder output from decoder"),
-    (&["self_attn"], "Self-attention — attends within the same sequence"),
+    (
+        &["conv2"],
+        "Second convolutional layer (stride-2 downsampling)",
+    ),
+    (
+        &["positional", "pos_embed"],
+        "Positional encoding — provides sequence position information",
+    ),
+    (
+        &["encoder_attn", "cross_attn"],
+        "Cross-attention — attends to encoder output from decoder",
+    ),
+    (
+        &["self_attn"],
+        "Self-attention — attends within the same sequence",
+    ),
 ];
 
 /// Explain a tensor's role based on naming conventions
@@ -182,7 +214,10 @@ fn explain_file(path: &PathBuf) {
         Ok(r) => r,
         Err(e) => {
             println!("Failed to inspect model: {e}");
-            println!("Run `apr validate {0}` for format diagnostics.", path.display());
+            println!(
+                "Run `apr validate {0}` for format diagnostics.",
+                path.display()
+            );
             return;
         }
     };
@@ -191,8 +226,12 @@ fn explain_file(path: &PathBuf) {
     println!("- **Tensors**: {}", report.tensors.len());
 
     let tensor_names: Vec<String> = report.tensors.iter().map(|t| t.name.clone()).collect();
-    let has_encoder = tensor_names.iter().any(|n| n.starts_with("encoder") || n.starts_with("model.encoder"));
-    let has_decoder = tensor_names.iter().any(|n| n.starts_with("decoder") || n.starts_with("model.decoder"));
+    let has_encoder = tensor_names
+        .iter()
+        .any(|n| n.starts_with("encoder") || n.starts_with("model.encoder"));
+    let has_decoder = tensor_names
+        .iter()
+        .any(|n| n.starts_with("decoder") || n.starts_with("model.decoder"));
     let has_model_layers = tensor_names.iter().any(|n| n.starts_with("model.layers."));
 
     let (arch, examples) = if has_encoder && has_decoder {

@@ -1,6 +1,6 @@
 use super::super::{
-    base64_encode, HfHubClient, HfHubError, ModelCard, PushOptions, UploadProgress, UploadResult,
-    Result,
+    base64_encode, HfHubClient, HfHubError, ModelCard, PushOptions, Result, UploadProgress,
+    UploadResult,
 };
 use std::path::PathBuf;
 

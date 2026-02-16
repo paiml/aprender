@@ -445,5 +445,4 @@ fn test_p2_makefile_smoke_check() {
 }
 
 #[path = "velocity_tests_part_02.rs"]
-
 mod velocity_tests_part_02;

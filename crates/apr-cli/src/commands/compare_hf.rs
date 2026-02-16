@@ -88,7 +88,11 @@ fn run_compare(
     }
 
     // PMAT-267: Compare tensors — use APR reader when available, RosettaStone otherwise
-    let local_tensor_names: Vec<String> = local_report.tensors.iter().map(|t| t.name.clone()).collect();
+    let local_tensor_names: Vec<String> = local_report
+        .tensors
+        .iter()
+        .map(|t| t.name.clone())
+        .collect();
 
     let comparisons: Vec<TensorComparison> = hf_model
         .tensor_names()
@@ -114,7 +118,10 @@ fn run_compare(
             }?;
 
             Some(TensorComparison::compare(
-                name, &hf_tensor, &local_data, threshold,
+                name,
+                &hf_tensor,
+                &local_data,
+                threshold,
             ))
         })
         .collect();

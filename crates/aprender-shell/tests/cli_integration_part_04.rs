@@ -1,4 +1,3 @@
-
 /// Test graceful handling of unicode edge cases
 #[test]
 fn test_cli_021_chaos_unicode() {

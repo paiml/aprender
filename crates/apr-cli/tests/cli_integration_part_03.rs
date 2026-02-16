@@ -1,4 +1,3 @@
-
 // F-TUNE-002: apr tune with missing model shows error
 #[test]
 fn test_f_tune_002_missing_model() {

@@ -1,4 +1,4 @@
-use super::{compute_tp_fp_fn, precision, recall, f1_score, Average};
+use super::{compute_tp_fp_fn, f1_score, precision, recall, Average};
 use std::fmt::Write;
 
 /// Generate a text classification report (sklearn-style).
@@ -92,8 +92,8 @@ pub fn classification_report(y_pred: &[usize], y_true: &[usize]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::{accuracy, confusion_matrix};
+    use super::*;
 
     // ==================== ACCURACY TESTS ====================
 

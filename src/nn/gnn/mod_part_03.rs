@@ -108,7 +108,11 @@ impl GATConv {
 
     /// `LeakyReLU` activation.
     fn leaky_relu(&self, x: f32) -> f32 {
-        if x > 0.0 { x } else { self.negative_slope * x }
+        if x > 0.0 {
+            x
+        } else {
+            self.negative_slope * x
+        }
     }
 
     /// Linear transformation: H = X * W [num_nodes, total_out].
@@ -188,7 +192,11 @@ impl GATConv {
         let head_off = head * self.out_features;
         for (i, &neigh) in neighbors.iter().enumerate() {
             let alpha = attn_weights[i];
-            let scale = if self.concat { 1.0 } else { 1.0 / self.num_heads as f32 };
+            let scale = if self.concat {
+                1.0
+            } else {
+                1.0 / self.num_heads as f32
+            };
             let out_off = if self.concat { head_off } else { 0 };
             for f in 0..self.out_features {
                 output[node * final_out + out_off + f] +=
@@ -216,7 +224,8 @@ impl GATConv {
                 for f in 0..out_features {
                     let avg_bias: f32 = (0..num_heads)
                         .map(|h| bias_data[h * out_features + f])
-                        .sum::<f32>() / num_heads as f32;
+                        .sum::<f32>()
+                        / num_heads as f32;
                     output[node * final_out + f] += avg_bias;
                 }
             }
@@ -245,29 +254,67 @@ impl GATConv {
 
         let total_out = self.out_features * self.num_heads;
         let h_data = Self::linear_transform(
-            x.data(), self.weight.data(), num_nodes, self.in_features, total_out,
+            x.data(),
+            self.weight.data(),
+            num_nodes,
+            self.in_features,
+            total_out,
         );
         let neighbor_lists = Self::build_neighbor_lists(&adj_with_loops, num_nodes);
         let att_src_data = self.att_src.data();
         let att_tgt_data = self.att_tgt.data();
 
-        let final_out = if self.concat { total_out } else { self.out_features };
+        let final_out = if self.concat {
+            total_out
+        } else {
+            self.out_features
+        };
         let mut output = vec![0.0f32; num_nodes * final_out];
 
         for node in 0..num_nodes {
             let neighbors = &neighbor_lists[node];
-            if neighbors.is_empty() { continue; }
+            if neighbors.is_empty() {
+                continue;
+            }
             for head in 0..self.num_heads {
-                let scores: Vec<f32> = neighbors.iter()
-                    .map(|&n| self.edge_attention_score(att_src_data, att_tgt_data, &h_data, node, n, head, total_out))
+                let scores: Vec<f32> = neighbors
+                    .iter()
+                    .map(|&n| {
+                        self.edge_attention_score(
+                            att_src_data,
+                            att_tgt_data,
+                            &h_data,
+                            node,
+                            n,
+                            head,
+                            total_out,
+                        )
+                    })
                     .collect();
                 let weights = Self::softmax_attention(&scores);
-                self.scatter_attention(&h_data, neighbors, &weights, node, head, total_out, final_out, &mut output);
+                self.scatter_attention(
+                    &h_data,
+                    neighbors,
+                    &weights,
+                    node,
+                    head,
+                    total_out,
+                    final_out,
+                    &mut output,
+                );
             }
         }
 
         if let Some(ref bias) = self.bias {
-            Self::add_gat_bias(bias.data(), num_nodes, self.out_features, self.num_heads, final_out, self.concat, &mut output);
+            Self::add_gat_bias(
+                bias.data(),
+                num_nodes,
+                self.out_features,
+                self.num_heads,
+                final_out,
+                self.concat,
+                &mut output,
+            );
         }
 
         Tensor::new(&output, &[num_nodes, final_out])

@@ -94,7 +94,14 @@ impl Conv2d {
         bias: bool,
         layout: ConvLayout,
     ) -> Self {
-        let mut conv = Self::with_options(in_channels, out_channels, kernel_size, stride, padding, bias);
+        let mut conv = Self::with_options(
+            in_channels,
+            out_channels,
+            kernel_size,
+            stride,
+            padding,
+            bias,
+        );
         conv.layout = layout;
         conv
     }
@@ -232,7 +239,10 @@ impl Conv2d {
         // Weight reshaped to [out_channels, in_channels * kH * kW]
         let weight_2d = Tensor::new(
             self.weight.data(),
-            &[self.out_channels, self.in_channels * self.kernel_h * self.kernel_w],
+            &[
+                self.out_channels,
+                self.in_channels * self.kernel_h * self.kernel_w,
+            ],
         );
 
         let input_data = input.data();

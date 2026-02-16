@@ -276,17 +276,11 @@ fn f32_slice_to_f16_bytes(data: &[f32]) -> Vec<u8> {
 }
 
 /// PMAT-260: Encode tensor data according to dtype, returning (dtype_str, raw_bytes).
-fn encode_tensor_for_dtype(
-    data: &[f32],
-    original_dtype: Option<&str>,
-) -> (&'static str, Vec<u8>) {
+fn encode_tensor_for_dtype(data: &[f32], original_dtype: Option<&str>) -> (&'static str, Vec<u8>) {
     match original_dtype {
         Some("BF16") => ("BF16", f32_slice_to_bf16_bytes(data)),
         Some("F16") => ("F16", f32_slice_to_f16_bytes(data)),
-        _ => (
-            "F32",
-            data.iter().flat_map(|f| f.to_le_bytes()).collect(),
-        ),
+        _ => ("F32", data.iter().flat_map(|f| f.to_le_bytes()).collect()),
     }
 }
 
@@ -623,8 +617,7 @@ impl MappedSafeTensors {
 mod safetensors_part_02;
 pub use safetensors_part_02::extract_tensor;
 use safetensors_part_02::{
-    extract_bf16_to_f32, extract_f16_to_f32, extract_f32, parse_metadata,
-    validate_and_read_header,
+    extract_bf16_to_f32, extract_f16_to_f32, extract_f32, parse_metadata, validate_and_read_header,
 };
 
 #[cfg(test)]

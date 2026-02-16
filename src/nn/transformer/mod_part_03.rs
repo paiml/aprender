@@ -1,7 +1,11 @@
+use super::mod_part_02::{
+    matmul_batched, reshape_for_attention, reshape_from_attention, transpose_last_two,
+};
+use super::mod_part_04::{
+    divide_with_eps, elu_feature_map, matmul_with_broadcast, repeat_kv_heads, sum_last_dim,
+};
 #[allow(clippy::wildcard_imports)]
 use super::*;
-use super::mod_part_02::{reshape_for_attention, reshape_from_attention, transpose_last_two, matmul_batched};
-use super::mod_part_04::{elu_feature_map, sum_last_dim, matmul_with_broadcast, divide_with_eps, repeat_kv_heads};
 
 /// Slice positional encoding for current sequence length.
 pub(super) fn slice_pe(pe: &Tensor, seq_len: usize, d_model: usize) -> Tensor {

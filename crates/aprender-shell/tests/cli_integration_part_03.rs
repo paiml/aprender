@@ -1,4 +1,3 @@
-
 #[test]
 fn test_cli_017_publish_without_token() {
     // Train a model first

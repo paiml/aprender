@@ -77,9 +77,7 @@ pub(crate) fn run(
         return run_merge(model_path, adapter_path, output_path, json_output);
     }
 
-    let ft_method: FinetuneMethod = method
-        .parse()
-        .map_err(CliError::ValidationFailed)?;
+    let ft_method: FinetuneMethod = method.parse().map_err(CliError::ValidationFailed)?;
 
     if !json_output {
         output::section("apr finetune (GH-244: LoRA/QLoRA Fine-tuning)");
@@ -226,7 +224,9 @@ pub(crate) fn run(
             println!("{}", "NEXT STEPS".white().bold());
             println!("{}", "─".repeat(50));
             println!("  Provide --data <train.jsonl> to start training.");
-            println!("  Example: apr finetune model.apr --method lora --data train.jsonl -o adapter/");
+            println!(
+                "  Example: apr finetune model.apr --method lora --data train.jsonl -o adapter/"
+            );
         }
         return Ok(());
     }
@@ -256,11 +256,14 @@ pub(crate) fn run(
 
     // Load model tensors via RosettaStone
     let rosetta = aprender::format::rosetta::RosettaStone::new();
-    let report = rosetta.inspect(model_path)
+    let report = rosetta
+        .inspect(model_path)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to inspect model: {e}")))?;
 
     // Identify LoRA-eligible layers (2D weight tensors in attention/MLP)
-    let lora_targets: Vec<_> = report.tensors.iter()
+    let lora_targets: Vec<_> = report
+        .tensors
+        .iter()
         .filter(|t| t.shape.len() == 2 && is_lora_eligible(&t.name))
         .collect();
 
@@ -286,7 +289,10 @@ pub(crate) fn run(
     writer.set_metadata("lora_rank", serde_json::json!(lora_rank));
     writer.set_metadata("lora_alpha", serde_json::json!(lora_alpha));
     writer.set_metadata("method", serde_json::json!(format!("{:?}", config.method)));
-    writer.set_metadata("source_model", serde_json::json!(model_path.display().to_string()));
+    writer.set_metadata(
+        "source_model",
+        serde_json::json!(model_path.display().to_string()),
+    );
     writer.set_metadata("epochs", serde_json::json!(epochs));
     writer.set_metadata("learning_rate", serde_json::json!(learning_rate));
     if let Some(dp) = data_path {
@@ -310,25 +316,18 @@ pub(crate) fn run(
                 (seed % 1000) as f32 / 1000.0 * 2.0 * bound - bound
             })
             .collect();
-        writer.add_tensor_f32(
-            format!("{}.lora_a", ti.name),
-            vec![rank, cols],
-            &a_data,
-        );
+        writer.add_tensor_f32(format!("{}.lora_a", ti.name), vec![rank, cols], &a_data);
 
         // LoRA B: [rows, rank] — zero init (standard LoRA: BA starts at zero)
         let b_data = vec![0.0f32; rows * rank];
-        writer.add_tensor_f32(
-            format!("{}.lora_b", ti.name),
-            vec![rows, rank],
-            &b_data,
-        );
+        writer.add_tensor_f32(format!("{}.lora_b", ti.name), vec![rows, rank], &b_data);
 
         adapter_count += 1;
         total_adapter_params += (rank * cols + rows * rank) as u64;
     }
 
-    let bytes = writer.to_bytes()
+    let bytes = writer
+        .to_bytes()
         .map_err(|e| CliError::ValidationFailed(format!("Failed to serialize adapters: {e}")))?;
     std::fs::write(out, &bytes)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to write adapter: {e}")))?;
@@ -359,7 +358,10 @@ pub(crate) fn run(
             output::kv_table(&[
                 ("Layers adapted", adapter_count.to_string()),
                 ("Adapter params", format_params(total_adapter_params)),
-                ("Output size", humansize::format_size(output_size, humansize::BINARY)),
+                (
+                    "Output size",
+                    humansize::format_size(output_size, humansize::BINARY)
+                ),
                 ("Output", out.display().to_string()),
             ])
         );
@@ -415,23 +417,29 @@ fn run_merge(
     // PMAT-272: Load base model and adapter, merge using entrenar MergeEngine
     let rosetta = aprender::format::rosetta::RosettaStone::new();
 
-    let base_report = rosetta.inspect(model)
+    let base_report = rosetta
+        .inspect(model)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to inspect base model: {e}")))?;
-    let adapter_report = rosetta.inspect(adapter)
+    let adapter_report = rosetta
+        .inspect(adapter)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to inspect adapter: {e}")))?;
 
     // Read adapter metadata for rank/alpha
     let adapter_reader = aprender::serialization::apr::AprReader::open(adapter)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to read adapter: {e}")))?;
-    let lora_rank = adapter_reader.get_metadata("lora_rank")
+    let lora_rank = adapter_reader
+        .get_metadata("lora_rank")
         .and_then(serde_json::Value::as_u64)
         .unwrap_or(16) as u32;
-    let lora_alpha = adapter_reader.get_metadata("lora_alpha")
+    let lora_alpha = adapter_reader
+        .get_metadata("lora_alpha")
         .and_then(serde_json::Value::as_f64)
         .unwrap_or(16.0) as f32;
 
     // Find adapter pairs (name.lora_a / name.lora_b)
-    let adapter_names: std::collections::HashSet<String> = adapter_report.tensors.iter()
+    let adapter_names: std::collections::HashSet<String> = adapter_report
+        .tensors
+        .iter()
         .map(|t| t.name.clone())
         .collect();
 
@@ -440,22 +448,31 @@ fn run_merge(
     let mut merged_count = 0u64;
 
     // Copy base model metadata
-    writer.set_metadata("merge_source", serde_json::json!(model.display().to_string()));
-    writer.set_metadata("merge_adapter", serde_json::json!(adapter.display().to_string()));
+    writer.set_metadata(
+        "merge_source",
+        serde_json::json!(model.display().to_string()),
+    );
+    writer.set_metadata(
+        "merge_adapter",
+        serde_json::json!(adapter.display().to_string()),
+    );
     writer.set_metadata("lora_rank", serde_json::json!(lora_rank));
     writer.set_metadata("lora_alpha", serde_json::json!(lora_alpha));
 
     for ti in &base_report.tensors {
-        let base_data = rosetta.load_tensor_f32(model, &ti.name)
+        let base_data = rosetta
+            .load_tensor_f32(model, &ti.name)
             .map_err(|e| CliError::ValidationFailed(format!("Failed to load {}: {e}", ti.name)))?;
 
         let a_name = format!("{}.lora_a", ti.name);
         let b_name = format!("{}.lora_b", ti.name);
 
         let merged = if adapter_names.contains(&a_name) && adapter_names.contains(&b_name) {
-            let lora_a = rosetta.load_tensor_f32(adapter, &a_name)
+            let lora_a = rosetta
+                .load_tensor_f32(adapter, &a_name)
                 .map_err(|e| CliError::ValidationFailed(format!("Failed to load {a_name}: {e}")))?;
-            let lora_b = rosetta.load_tensor_f32(adapter, &b_name)
+            let lora_b = rosetta
+                .load_tensor_f32(adapter, &b_name)
                 .map_err(|e| CliError::ValidationFailed(format!("Failed to load {b_name}: {e}")))?;
 
             merged_count += 1;
@@ -467,8 +484,9 @@ fn run_merge(
         writer.add_tensor_f32(&ti.name, ti.shape.clone(), &merged);
     }
 
-    let bytes = writer.to_bytes()
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to serialize merged model: {e}")))?;
+    let bytes = writer.to_bytes().map_err(|e| {
+        CliError::ValidationFailed(format!("Failed to serialize merged model: {e}"))
+    })?;
     std::fs::write(out, &bytes)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to write output: {e}")))?;
 
@@ -497,8 +515,14 @@ fn run_merge(
         println!(
             "{}",
             output::kv_table(&[
-                ("Layers merged", format!("{merged_count} / {}", base_report.tensors.len())),
-                ("Output size", humansize::format_size(output_size, humansize::BINARY)),
+                (
+                    "Layers merged",
+                    format!("{merged_count} / {}", base_report.tensors.len())
+                ),
+                (
+                    "Output size",
+                    humansize::format_size(output_size, humansize::BINARY)
+                ),
                 ("Output", out.display().to_string()),
             ])
         );
@@ -511,11 +535,22 @@ fn run_merge(
 fn is_lora_eligible(name: &str) -> bool {
     // Target attention and MLP projection layers
     let targets = [
-        "q_proj", "k_proj", "v_proj", "o_proj",
-        "gate_proj", "up_proj", "down_proj",
-        "attn_q", "attn_k", "attn_v", "attn_output",
-        "ffn_gate", "ffn_up", "ffn_down",
-        "self_attn", "mlp",
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj",
+        "gate_proj",
+        "up_proj",
+        "down_proj",
+        "attn_q",
+        "attn_k",
+        "attn_v",
+        "attn_output",
+        "ffn_gate",
+        "ffn_up",
+        "ffn_down",
+        "self_attn",
+        "mlp",
     ];
     // Must be a weight tensor (not bias, norm, embedding)
     let is_weight = name.ends_with(".weight") || name.ends_with("weight");
@@ -590,10 +625,22 @@ mod tests {
 
     #[test]
     fn test_finetune_method_parse() {
-        assert!(matches!("auto".parse::<FinetuneMethod>(), Ok(FinetuneMethod::Auto)));
-        assert!(matches!("full".parse::<FinetuneMethod>(), Ok(FinetuneMethod::Full)));
-        assert!(matches!("lora".parse::<FinetuneMethod>(), Ok(FinetuneMethod::LoRA)));
-        assert!(matches!("qlora".parse::<FinetuneMethod>(), Ok(FinetuneMethod::QLoRA)));
+        assert!(matches!(
+            "auto".parse::<FinetuneMethod>(),
+            Ok(FinetuneMethod::Auto)
+        ));
+        assert!(matches!(
+            "full".parse::<FinetuneMethod>(),
+            Ok(FinetuneMethod::Full)
+        ));
+        assert!(matches!(
+            "lora".parse::<FinetuneMethod>(),
+            Ok(FinetuneMethod::LoRA)
+        ));
+        assert!(matches!(
+            "qlora".parse::<FinetuneMethod>(),
+            Ok(FinetuneMethod::QLoRA)
+        ));
         assert!("unknown".parse::<FinetuneMethod>().is_err());
     }
 
@@ -631,8 +678,19 @@ mod tests {
     #[test]
     fn test_run_plan_with_model_size() {
         let result = run(
-            None, "lora", None, 16.0, true, None, None, None, false, 3, 2e-4,
-            Some("7B"), false,
+            None,
+            "lora",
+            None,
+            16.0,
+            true,
+            None,
+            None,
+            None,
+            false,
+            3,
+            2e-4,
+            Some("7B"),
+            false,
         );
         assert!(result.is_ok());
     }
@@ -640,8 +698,19 @@ mod tests {
     #[test]
     fn test_run_plan_json() {
         let result = run(
-            None, "qlora", None, 24.0, true, None, None, None, false, 3, 2e-4,
-            Some("14B"), true,
+            None,
+            "qlora",
+            None,
+            24.0,
+            true,
+            None,
+            None,
+            None,
+            false,
+            3,
+            2e-4,
+            Some("14B"),
+            true,
         );
         assert!(result.is_ok());
     }
@@ -651,8 +720,19 @@ mod tests {
         let mut input = NamedTempFile::with_suffix(".apr").expect("create input");
         input.write_all(&[0u8; 4096]).expect("write");
         let result = run(
-            Some(input.path()), "auto", None, 16.0, true, None, None, None, false,
-            3, 2e-4, None, false,
+            Some(input.path()),
+            "auto",
+            None,
+            16.0,
+            true,
+            None,
+            None,
+            None,
+            false,
+            3,
+            2e-4,
+            None,
+            false,
         );
         assert!(result.is_ok());
     }
@@ -718,9 +798,17 @@ mod tests {
         let mut writer = aprender::serialization::apr::AprWriter::new();
         writer.set_metadata("model_type", serde_json::json!("test"));
         let q_data: Vec<f32> = (0..64).map(|i| (i as f32) * 0.01).collect();
-        writer.add_tensor_f32("model.layers.0.self_attn.q_proj.weight", vec![8, 8], &q_data);
+        writer.add_tensor_f32(
+            "model.layers.0.self_attn.q_proj.weight",
+            vec![8, 8],
+            &q_data,
+        );
         let v_data: Vec<f32> = (0..64).map(|i| (i as f32) * 0.02).collect();
-        writer.add_tensor_f32("model.layers.0.self_attn.v_proj.weight", vec![8, 8], &v_data);
+        writer.add_tensor_f32(
+            "model.layers.0.self_attn.v_proj.weight",
+            vec![8, 8],
+            &v_data,
+        );
         // Add a non-eligible tensor to verify it's skipped
         writer.add_tensor_f32("model.embed_tokens.weight", vec![10, 8], &vec![0.1; 80]);
 
@@ -735,9 +823,19 @@ mod tests {
         let output_file = NamedTempFile::with_suffix(".apr").expect("create output");
 
         let result = run(
-            Some(input_file.path()), "lora", None, 16.0, false,
-            Some(data_file.path()), Some(output_file.path()), None, false,
-            3, 2e-4, None, true,
+            Some(input_file.path()),
+            "lora",
+            None,
+            16.0,
+            false,
+            Some(data_file.path()),
+            Some(output_file.path()),
+            None,
+            false,
+            3,
+            2e-4,
+            None,
+            true,
         );
         assert!(result.is_ok(), "Training should succeed: {result:?}");
 
@@ -764,23 +862,40 @@ mod tests {
         let mut base_writer = aprender::serialization::apr::AprWriter::new();
         base_writer.set_metadata("model_type", serde_json::json!("test"));
         let q_data: Vec<f32> = vec![1.0; 64];
-        base_writer.add_tensor_f32("model.layers.0.self_attn.q_proj.weight", vec![8, 8], &q_data);
+        base_writer.add_tensor_f32(
+            "model.layers.0.self_attn.q_proj.weight",
+            vec![8, 8],
+            &q_data,
+        );
         base_writer.add_tensor_f32("model.norm.weight", vec![8], &vec![1.0; 8]);
 
         let base_file = NamedTempFile::with_suffix(".apr").expect("create base");
-        std::fs::write(base_file.path(), base_writer.to_bytes().expect("serialize")).expect("write");
+        std::fs::write(base_file.path(), base_writer.to_bytes().expect("serialize"))
+            .expect("write");
 
         // Create adapter
         let mut adapter_writer = aprender::serialization::apr::AprWriter::new();
         adapter_writer.set_metadata("lora_rank", serde_json::json!(4));
         adapter_writer.set_metadata("lora_alpha", serde_json::json!(8.0));
         let lora_a: Vec<f32> = vec![0.1; 4 * 8]; // [rank=4, cols=8]
-        adapter_writer.add_tensor_f32("model.layers.0.self_attn.q_proj.weight.lora_a", vec![4, 8], &lora_a);
+        adapter_writer.add_tensor_f32(
+            "model.layers.0.self_attn.q_proj.weight.lora_a",
+            vec![4, 8],
+            &lora_a,
+        );
         let lora_b: Vec<f32> = vec![0.05; 8 * 4]; // [rows=8, rank=4]
-        adapter_writer.add_tensor_f32("model.layers.0.self_attn.q_proj.weight.lora_b", vec![8, 4], &lora_b);
+        adapter_writer.add_tensor_f32(
+            "model.layers.0.self_attn.q_proj.weight.lora_b",
+            vec![8, 4],
+            &lora_b,
+        );
 
         let adapter_file = NamedTempFile::with_suffix(".apr").expect("create adapter");
-        std::fs::write(adapter_file.path(), adapter_writer.to_bytes().expect("serialize")).expect("write");
+        std::fs::write(
+            adapter_file.path(),
+            adapter_writer.to_bytes().expect("serialize"),
+        )
+        .expect("write");
 
         let output_file = NamedTempFile::with_suffix(".apr").expect("create output");
 
@@ -796,10 +911,13 @@ mod tests {
         let merged = aprender::serialization::apr::AprReader::open(output_file.path())
             .expect("merged should be valid APR");
         assert_eq!(merged.tensors.len(), 2); // q_proj + norm
-        let q_merged = merged.read_tensor_f32("model.layers.0.self_attn.q_proj.weight")
+        let q_merged = merged
+            .read_tensor_f32("model.layers.0.self_attn.q_proj.weight")
             .expect("should have q_proj");
         // Merged values should differ from base (adapter contribution added)
-        assert!(q_merged.iter().any(|&v| (v - 1.0).abs() > 1e-6),
-            "Merged weights should differ from base");
+        assert!(
+            q_merged.iter().any(|&v| (v - 1.0).abs() > 1e-6),
+            "Merged weights should differ from base"
+        );
     }
 }

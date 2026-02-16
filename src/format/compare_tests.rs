@@ -440,7 +440,6 @@ fn test_compare_config_quantized_tolerances() {
 }
 
 #[path = "compare_tests_part_02.rs"]
-
 mod compare_tests_part_02;
 #[path = "compare_tests_part_03.rs"]
 mod compare_tests_part_03;

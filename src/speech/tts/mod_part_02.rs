@@ -1,5 +1,5 @@
-use crate::speech::{SpeechError, SpeechResult};
 use super::{SpeechSynthesizer, SynthesisRequest, SynthesisResult, TtsConfig, Vocoder};
+use crate::speech::{SpeechError, SpeechResult};
 
 // ============================================================================
 // Stub Implementations
@@ -291,4 +291,3 @@ pub fn split_sentences(text: &str) -> Vec<String> {
 // ============================================================================
 // Tests
 // ============================================================================
-

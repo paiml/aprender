@@ -441,5 +441,4 @@ fn test_callback_on_start_called() {
 }
 
 #[path = "tuner_tests_part_02.rs"]
-
 mod tuner_tests_part_02;

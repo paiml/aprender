@@ -140,11 +140,7 @@ impl SAGEConv {
     }
 
     /// Aggregate neighbor features for a single node according to `self.aggregation`.
-    fn aggregate_neighbors(
-        &self,
-        x_data: &[f32],
-        neighbors: &[usize],
-    ) -> Vec<f32> {
+    fn aggregate_neighbors(&self, x_data: &[f32], neighbors: &[usize]) -> Vec<f32> {
         if neighbors.is_empty() {
             return vec![0.0f32; self.in_features];
         }
@@ -197,8 +193,8 @@ impl SAGEConv {
             // Self contribution
             if self.root_weight {
                 for in_f in 0..self.in_features {
-                    val += x_data[node * in_feat + in_f]
-                        * ws_data[in_f * self.out_features + out_f];
+                    val +=
+                        x_data[node * in_feat + in_f] * ws_data[in_f * self.out_features + out_f];
                 }
             }
 
@@ -212,7 +208,12 @@ impl SAGEConv {
     }
 
     /// Add bias to every node row in `output`.
-    fn add_bias_to_output(bias_data: &[f32], num_nodes: usize, out_features: usize, output: &mut [f32]) {
+    fn add_bias_to_output(
+        bias_data: &[f32],
+        num_nodes: usize,
+        out_features: usize,
+        output: &mut [f32],
+    ) {
         for node in 0..num_nodes {
             for f in 0..out_features {
                 output[node * out_features + f] += bias_data[f];
@@ -261,7 +262,13 @@ impl SAGEConv {
         for node in 0..num_nodes {
             let agg_features = self.aggregate_neighbors(x_data, &neighbor_lists[node]);
             self.transform_node(
-                node, x_data, in_feat, ws_data, wn_data, &agg_features, &mut output,
+                node,
+                x_data,
+                in_feat,
+                ws_data,
+                wn_data,
+                &agg_features,
+                &mut output,
             );
         }
 

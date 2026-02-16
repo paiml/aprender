@@ -133,9 +133,7 @@ fn detect_architecture(tensor_names: &[String]) -> &'static str {
     let has_lm_head = tensor_names
         .iter()
         .any(|n| n == "lm_head.weight" || n == "output.weight");
-    let has_transformer_h = tensor_names
-        .iter()
-        .any(|n| n.starts_with("transformer.h."));
+    let has_transformer_h = tensor_names.iter().any(|n| n.starts_with("transformer.h."));
 
     if has_encoder && has_decoder && has_cross_attn {
         "encoder-decoder (Whisper/T5)"
@@ -164,17 +162,18 @@ fn output_flow_json(
 ) -> Result<(), CliError> {
     use std::collections::BTreeMap;
 
-    let filename = path
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or("model");
+    let filename = path.file_name().and_then(|s| s.to_str()).unwrap_or("model");
 
     // Group tensors by component
     let mut components: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
     for name in tensor_names {
         let group = if name.starts_with("encoder.") || name.starts_with("model.encoder.") {
             "encoder"
-        } else if name.starts_with("decoder.") || name.starts_with("model.decoder.") || name.starts_with("model.layers.") || name.starts_with("blk.") {
+        } else if name.starts_with("decoder.")
+            || name.starts_with("model.decoder.")
+            || name.starts_with("model.layers.")
+            || name.starts_with("blk.")
+        {
             "decoder"
         } else if name.contains("embed") || name.contains("token_embd") {
             "embedding"
@@ -201,7 +200,12 @@ fn output_flow_json(
         .unwrap_or(0);
     let n_decoder_layers = tensor_names
         .iter()
-        .filter(|n| n.starts_with("decoder.layers.") || n.starts_with("model.decoder.layers.") || n.starts_with("model.layers.") || n.starts_with("blk."))
+        .filter(|n| {
+            n.starts_with("decoder.layers.")
+                || n.starts_with("model.decoder.layers.")
+                || n.starts_with("model.layers.")
+                || n.starts_with("blk.")
+        })
         .filter_map(|n| {
             n.strip_prefix("decoder.layers.")
                 .or_else(|| n.strip_prefix("model.decoder.layers."))

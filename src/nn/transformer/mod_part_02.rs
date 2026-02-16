@@ -1,6 +1,6 @@
+use super::mod_part_03::{add_positional_encoding, slice_pe};
 #[allow(clippy::wildcard_imports)]
 use super::*;
-use super::mod_part_03::{slice_pe, add_positional_encoding};
 
 impl TransformerDecoderLayer {
     /// Create a new Transformer Decoder Layer.
@@ -378,7 +378,12 @@ pub(super) fn reshape_for_attention(
 }
 
 /// Reshape from multi-head attention: [batch, heads, seq, `head_dim`] -> [batch, seq, embed]
-pub(super) fn reshape_from_attention(x: &Tensor, batch: usize, seq_len: usize, embed_dim: usize) -> Tensor {
+pub(super) fn reshape_from_attention(
+    x: &Tensor,
+    batch: usize,
+    seq_len: usize,
+    embed_dim: usize,
+) -> Tensor {
     let num_heads = x.shape()[1];
     let head_dim = x.shape()[3];
 

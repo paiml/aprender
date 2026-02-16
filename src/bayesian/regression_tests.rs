@@ -446,5 +446,4 @@ fn test_clone_after_fit() {
 }
 
 #[path = "regression_tests_part_02.rs"]
-
 mod regression_tests_part_02;

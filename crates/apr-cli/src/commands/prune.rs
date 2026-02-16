@@ -72,9 +72,7 @@ pub(crate) fn run(
         return Err(CliError::FileNotFound(file.to_path_buf()));
     }
 
-    let prune_method: PruneMethod = method
-        .parse()
-        .map_err(CliError::ValidationFailed)?;
+    let prune_method: PruneMethod = method.parse().map_err(CliError::ValidationFailed)?;
 
     // Validate parameters
     if target_ratio <= 0.0 || target_ratio >= 1.0 {
@@ -143,7 +141,8 @@ pub(crate) fn run(
 
     // Load tensors via RosettaStone (supports APR, GGUF, SafeTensors)
     let rosetta = aprender::format::rosetta::RosettaStone::new();
-    let report = rosetta.inspect(file)
+    let report = rosetta
+        .inspect(file)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to inspect model: {e}")))?;
 
     let mut tensors = std::collections::BTreeMap::new();
@@ -154,7 +153,10 @@ pub(crate) fn run(
     }
 
     let original_count = tensors.len();
-    let original_params: usize = tensors.values().map(|(data, _shape): &(Vec<f32>, Vec<usize>)| data.len()).sum();
+    let original_params: usize = tensors
+        .values()
+        .map(|(data, _shape): &(Vec<f32>, Vec<usize>)| data.len())
+        .sum();
 
     // Apply pruning based on method
     let pruned_tensors = match prune_method {
@@ -173,12 +175,21 @@ pub(crate) fn run(
     };
 
     let pruned_count = pruned_tensors.len();
-    let pruned_params: usize = pruned_tensors.values().map(|(data, _shape): &(Vec<f32>, Vec<usize>)| data.len()).sum();
-    let zeros: usize = pruned_tensors.values().map(|(data, _shape): &(Vec<f32>, Vec<usize>)| data.iter().filter(|v| **v == 0.0).count()).sum();
+    let pruned_params: usize = pruned_tensors
+        .values()
+        .map(|(data, _shape): &(Vec<f32>, Vec<usize>)| data.len())
+        .sum();
+    let zeros: usize = pruned_tensors
+        .values()
+        .map(|(data, _shape): &(Vec<f32>, Vec<usize>)| data.iter().filter(|v| **v == 0.0).count())
+        .sum();
 
     // Write pruned model as APR
     let mut writer = aprender::serialization::apr::AprWriter::new();
-    writer.set_metadata("pruning_method", serde_json::json!(format!("{prune_method:?}")));
+    writer.set_metadata(
+        "pruning_method",
+        serde_json::json!(format!("{prune_method:?}")),
+    );
     writer.set_metadata("pruning_ratio", serde_json::json!(target_ratio));
     writer.set_metadata("pruning_sparsity", serde_json::json!(sparsity));
     writer.set_metadata("source_file", serde_json::json!(file.display().to_string()));
@@ -187,8 +198,9 @@ pub(crate) fn run(
         writer.add_tensor_f32(name, shape.clone(), data);
     }
 
-    let bytes = writer.to_bytes()
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to serialize pruned model: {e}")))?;
+    let bytes = writer.to_bytes().map_err(|e| {
+        CliError::ValidationFailed(format!("Failed to serialize pruned model: {e}"))
+    })?;
     std::fs::write(out, &bytes)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to write output: {e}")))?;
 
@@ -224,11 +236,27 @@ pub(crate) fn run(
         println!(
             "{}",
             output::kv_table(&[
-                ("Input size", humansize::format_size(file_size, humansize::BINARY)),
-                ("Output size", humansize::format_size(output_size, humansize::BINARY)),
+                (
+                    "Input size",
+                    humansize::format_size(file_size, humansize::BINARY)
+                ),
+                (
+                    "Output size",
+                    humansize::format_size(output_size, humansize::BINARY)
+                ),
                 ("Tensors", format!("{original_count} → {pruned_count}")),
                 ("Parameters", format!("{original_params} → {pruned_params}")),
-                ("Zeros", format!("{zeros} ({:.1}%)", if pruned_params > 0 { zeros as f64 / pruned_params as f64 * 100.0 } else { 0.0 })),
+                (
+                    "Zeros",
+                    format!(
+                        "{zeros} ({:.1}%)",
+                        if pruned_params > 0 {
+                            zeros as f64 / pruned_params as f64 * 100.0
+                        } else {
+                            0.0
+                        }
+                    )
+                ),
                 ("Output", out.display().to_string()),
             ])
         );
@@ -274,10 +302,7 @@ fn run_analyze(file: &Path, method: PruneMethod, json_output: bool) -> Result<()
                     "File size",
                     humansize::format_size(file_size, humansize::BINARY),
                 ),
-                (
-                    "Est. parameters",
-                    format_params(estimated_params),
-                ),
+                ("Est. parameters", format_params(estimated_params),),
                 ("Method", format!("{method:?}")),
             ])
         );
@@ -370,11 +395,15 @@ fn prune_magnitude(
         // Collect absolute values and find the threshold
         let mut abs_vals: Vec<f32> = data.iter().map(|v| v.abs()).collect();
         abs_vals.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-        let cutoff_idx = ((abs_vals.len() as f64 * sparsity as f64) as usize).min(abs_vals.len().saturating_sub(1));
+        let cutoff_idx = ((abs_vals.len() as f64 * sparsity as f64) as usize)
+            .min(abs_vals.len().saturating_sub(1));
         let threshold = abs_vals[cutoff_idx];
 
         // Zero out values below threshold
-        let pruned: Vec<f32> = data.iter().map(|v| if v.abs() < threshold { 0.0 } else { *v }).collect();
+        let pruned: Vec<f32> = data
+            .iter()
+            .map(|v| if v.abs() < threshold { 0.0 } else { *v })
+            .collect();
         result.insert(name.clone(), (pruned, shape.clone()));
     }
 
@@ -390,14 +419,25 @@ fn prune_depth(
     let layers_to_remove: Vec<usize> = if layer_spec.contains('-') {
         let parts: Vec<&str> = layer_spec.split('-').collect();
         if parts.len() != 2 {
-            return Err(CliError::ValidationFailed(format!("Invalid layer range: {layer_spec}")));
+            return Err(CliError::ValidationFailed(format!(
+                "Invalid layer range: {layer_spec}"
+            )));
         }
-        let start: usize = parts[0].parse().map_err(|_| CliError::ValidationFailed(format!("Invalid layer number: {}", parts[0])))?;
-        let end: usize = parts[1].parse().map_err(|_| CliError::ValidationFailed(format!("Invalid layer number: {}", parts[1])))?;
+        let start: usize = parts[0].parse().map_err(|_| {
+            CliError::ValidationFailed(format!("Invalid layer number: {}", parts[0]))
+        })?;
+        let end: usize = parts[1].parse().map_err(|_| {
+            CliError::ValidationFailed(format!("Invalid layer number: {}", parts[1]))
+        })?;
         (start..=end).collect()
     } else {
-        layer_spec.split(',')
-            .map(|s| s.trim().parse::<usize>().map_err(|_| CliError::ValidationFailed(format!("Invalid layer number: {s}"))))
+        layer_spec
+            .split(',')
+            .map(|s| {
+                s.trim()
+                    .parse::<usize>()
+                    .map_err(|_| CliError::ValidationFailed(format!("Invalid layer number: {s}")))
+            })
             .collect::<std::result::Result<Vec<_>, _>>()?
     };
 
@@ -439,21 +479,50 @@ mod tests {
 
     #[test]
     fn test_prune_method_parse() {
-        assert!(matches!("magnitude".parse::<PruneMethod>(), Ok(PruneMethod::Magnitude)));
-        assert!(matches!("mag".parse::<PruneMethod>(), Ok(PruneMethod::Magnitude)));
-        assert!(matches!("structured".parse::<PruneMethod>(), Ok(PruneMethod::Structured)));
-        assert!(matches!("depth".parse::<PruneMethod>(), Ok(PruneMethod::Depth)));
-        assert!(matches!("width".parse::<PruneMethod>(), Ok(PruneMethod::Width)));
-        assert!(matches!("wanda".parse::<PruneMethod>(), Ok(PruneMethod::Wanda)));
-        assert!(matches!("sparsegpt".parse::<PruneMethod>(), Ok(PruneMethod::SparseGpt)));
+        assert!(matches!(
+            "magnitude".parse::<PruneMethod>(),
+            Ok(PruneMethod::Magnitude)
+        ));
+        assert!(matches!(
+            "mag".parse::<PruneMethod>(),
+            Ok(PruneMethod::Magnitude)
+        ));
+        assert!(matches!(
+            "structured".parse::<PruneMethod>(),
+            Ok(PruneMethod::Structured)
+        ));
+        assert!(matches!(
+            "depth".parse::<PruneMethod>(),
+            Ok(PruneMethod::Depth)
+        ));
+        assert!(matches!(
+            "width".parse::<PruneMethod>(),
+            Ok(PruneMethod::Width)
+        ));
+        assert!(matches!(
+            "wanda".parse::<PruneMethod>(),
+            Ok(PruneMethod::Wanda)
+        ));
+        assert!(matches!(
+            "sparsegpt".parse::<PruneMethod>(),
+            Ok(PruneMethod::SparseGpt)
+        ));
         assert!("unknown".parse::<PruneMethod>().is_err());
     }
 
     #[test]
     fn test_run_file_not_found() {
         let result = run(
-            Path::new("/nonexistent.apr"), "magnitude", 0.5, 0.0,
-            Some(Path::new("/tmp/out.apr")), None, false, false, None, false,
+            Path::new("/nonexistent.apr"),
+            "magnitude",
+            0.5,
+            0.0,
+            Some(Path::new("/tmp/out.apr")),
+            None,
+            false,
+            false,
+            None,
+            false,
         );
         assert!(result.is_err());
         assert!(matches!(result, Err(CliError::FileNotFound(_))));
@@ -463,8 +532,16 @@ mod tests {
     fn test_run_invalid_target_ratio_zero() {
         let input = NamedTempFile::with_suffix(".apr").expect("create input");
         let result = run(
-            input.path(), "magnitude", 0.0, 0.0,
-            Some(Path::new("/tmp/out.apr")), None, false, false, None, false,
+            input.path(),
+            "magnitude",
+            0.0,
+            0.0,
+            Some(Path::new("/tmp/out.apr")),
+            None,
+            false,
+            false,
+            None,
+            false,
         );
         assert!(result.is_err());
         match result {
@@ -477,8 +554,16 @@ mod tests {
     fn test_run_invalid_target_ratio_one() {
         let input = NamedTempFile::with_suffix(".apr").expect("create input");
         let result = run(
-            input.path(), "magnitude", 1.0, 0.0,
-            Some(Path::new("/tmp/out.apr")), None, false, false, None, false,
+            input.path(),
+            "magnitude",
+            1.0,
+            0.0,
+            Some(Path::new("/tmp/out.apr")),
+            None,
+            false,
+            false,
+            None,
+            false,
         );
         assert!(result.is_err());
     }
@@ -487,8 +572,16 @@ mod tests {
     fn test_run_invalid_sparsity() {
         let input = NamedTempFile::with_suffix(".apr").expect("create input");
         let result = run(
-            input.path(), "magnitude", 0.5, 1.5,
-            Some(Path::new("/tmp/out.apr")), None, false, false, None, false,
+            input.path(),
+            "magnitude",
+            0.5,
+            1.5,
+            Some(Path::new("/tmp/out.apr")),
+            None,
+            false,
+            false,
+            None,
+            false,
         );
         assert!(result.is_err());
         match result {
@@ -502,8 +595,16 @@ mod tests {
         let mut input = NamedTempFile::with_suffix(".apr").expect("create input");
         input.write_all(&[0u8; 512]).expect("write");
         let result = run(
-            input.path(), "depth", 0.5, 0.0,
-            Some(Path::new("/tmp/out.apr")), None, false, false, None, false,
+            input.path(),
+            "depth",
+            0.5,
+            0.0,
+            Some(Path::new("/tmp/out.apr")),
+            None,
+            false,
+            false,
+            None,
+            false,
         );
         assert!(result.is_err());
         match result {
@@ -517,8 +618,16 @@ mod tests {
         let mut input = NamedTempFile::with_suffix(".apr").expect("create input");
         input.write_all(&[0u8; 512]).expect("write");
         let result = run(
-            input.path(), "magnitude", 0.5, 0.0,
-            None, None, false, false, None, false,
+            input.path(),
+            "magnitude",
+            0.5,
+            0.0,
+            None,
+            None,
+            false,
+            false,
+            None,
+            false,
         );
         assert!(result.is_err());
         match result {
@@ -532,8 +641,16 @@ mod tests {
         let mut input = NamedTempFile::with_suffix(".apr").expect("create input");
         input.write_all(&[0u8; 1024]).expect("write");
         let result = run(
-            input.path(), "magnitude", 0.5, 0.0,
-            None, None, true, false, None, false,
+            input.path(),
+            "magnitude",
+            0.5,
+            0.0,
+            None,
+            None,
+            true,
+            false,
+            None,
+            false,
         );
         assert!(result.is_ok());
     }
@@ -543,8 +660,16 @@ mod tests {
         let mut input = NamedTempFile::with_suffix(".apr").expect("create input");
         input.write_all(&[0u8; 1024]).expect("write");
         let result = run(
-            input.path(), "magnitude", 0.5, 0.0,
-            None, None, true, false, None, true,
+            input.path(),
+            "magnitude",
+            0.5,
+            0.0,
+            None,
+            None,
+            true,
+            false,
+            None,
+            true,
         );
         assert!(result.is_ok());
     }
@@ -554,8 +679,16 @@ mod tests {
         let mut input = NamedTempFile::with_suffix(".apr").expect("create input");
         input.write_all(&[0u8; 2048]).expect("write");
         let result = run(
-            input.path(), "structured", 0.3, 0.0,
-            None, None, false, true, None, false,
+            input.path(),
+            "structured",
+            0.3,
+            0.0,
+            None,
+            None,
+            false,
+            true,
+            None,
+            false,
         );
         assert!(result.is_ok());
     }
@@ -565,8 +698,16 @@ mod tests {
         let mut input = NamedTempFile::with_suffix(".apr").expect("create input");
         input.write_all(&[0u8; 2048]).expect("write");
         let result = run(
-            input.path(), "magnitude", 0.5, 0.2,
-            None, None, false, true, None, true,
+            input.path(),
+            "magnitude",
+            0.5,
+            0.2,
+            None,
+            None,
+            false,
+            true,
+            None,
+            true,
         );
         assert!(result.is_ok());
     }
@@ -587,8 +728,16 @@ mod tests {
 
         let output = NamedTempFile::with_suffix(".apr").expect("create output");
         let result = run(
-            input.path(), "magnitude", 0.5, 0.0,
-            Some(output.path()), None, false, false, None, false,
+            input.path(),
+            "magnitude",
+            0.5,
+            0.0,
+            Some(output.path()),
+            None,
+            false,
+            false,
+            None,
+            false,
         );
         assert!(result.is_ok(), "prune failed: {:?}", result.err());
         // Verify output file was actually created with content

@@ -1,5 +1,5 @@
-use crate::primitives::Vector;
 use super::OptimizationResult;
+use crate::primitives::Vector;
 
 // ==================== Proximal Operators ====================
 
@@ -289,4 +289,3 @@ pub trait Optimizer {
     /// changes to the optimization problem.
     fn reset(&mut self);
 }
-

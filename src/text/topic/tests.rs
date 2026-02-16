@@ -448,5 +448,4 @@ fn test_normalize_rows_very_small_sum() {
 }
 
 #[path = "tests_part_02.rs"]
-
 mod tests_part_02;

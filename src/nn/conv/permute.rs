@@ -30,7 +30,10 @@ pub(crate) fn permute(tensor: &Tensor, perm: &[usize]) -> Tensor {
     // Validate perm is a valid permutation
     let mut seen = vec![false; ndim];
     for &p in perm {
-        assert!(p < ndim, "permutation index {p} out of range for ndim {ndim}");
+        assert!(
+            p < ndim,
+            "permutation index {p} out of range for ndim {ndim}"
+        );
         assert!(!seen[p], "duplicate index {p} in permutation");
         seen[p] = true;
     }

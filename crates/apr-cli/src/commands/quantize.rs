@@ -250,10 +250,7 @@ fn run_plan(
                 ("Output format", output_format.to_string()),
                 ("Estimated output", format_size(output_size, BINARY)),
                 ("Reduction", format!("{reduction:.2}x")),
-                (
-                    "Peak memory",
-                    format_size(input_size + output_size, BINARY),
-                ),
+                ("Peak memory", format_size(input_size + output_size, BINARY),),
             ])
         );
         println!();
@@ -298,10 +295,7 @@ fn run_batch(
         })?;
     }
 
-    let stem = file
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("model");
+    let stem = file.file_stem().and_then(|s| s.to_str()).unwrap_or("model");
 
     if !json_output {
         output::header("APR Quantize — Batch");
@@ -314,10 +308,7 @@ fn run_batch(
     let mut results = Vec::new();
 
     for (scheme_name, scheme) in scheme_list.iter().zip(parsed.iter()) {
-        let ext = file
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("apr");
+        let ext = file.extension().and_then(|e| e.to_str()).unwrap_or("apr");
         let output_file = output_dir.join(format!("{stem}-{scheme_name}.{ext}"));
 
         if !json_output {
@@ -414,10 +405,7 @@ fn quantize_to_gguf(
                     ])
                 );
                 println!();
-                println!(
-                    "  {}",
-                    output::badge_pass("GGUF quantization successful")
-                );
+                println!("  {}", output::badge_pass("GGUF quantization successful"));
             }
             Ok(())
         }

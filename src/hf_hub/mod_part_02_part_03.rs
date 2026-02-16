@@ -1,13 +1,9 @@
-use super::super::{
-    base64_encode, HfHubClient, HfHubError, ModelCard,
-    Result,
-};
+use super::super::{base64_encode, HfHubClient, HfHubError, ModelCard, Result};
 
 /// 5GB chunk size for S3 multipart upload.
 const LFS_CHUNK_SIZE: usize = 5 * 1024 * 1024 * 1024;
 
 impl HfHubClient {
-
     /// Send preupload request to HuggingFace API and return parsed file info.
     #[cfg(feature = "hf-hub-integration")]
     pub(crate) fn send_preupload_request(
@@ -19,7 +15,10 @@ impl HfHubClient {
         token: &str,
     ) -> Result<serde_json::Value> {
         let preupload_url = format!("{}/api/models/{}/preupload/main", self.api_base, repo_id);
-        eprintln!("[LFS] Step 1: Requesting upload URLs from {}", preupload_url);
+        eprintln!(
+            "[LFS] Step 1: Requesting upload URLs from {}",
+            preupload_url
+        );
 
         let preupload_body = serde_json::json!({
             "files": [{
@@ -28,8 +27,11 @@ impl HfHubClient {
                 "sample": base64_encode(&data[..data.len().min(512)])
             }]
         });
-        eprintln!("[LFS] Preupload request (size={}, sha256={}...)",
-            data.len(), sha256.get(..16).unwrap_or(sha256));
+        eprintln!(
+            "[LFS] Preupload request (size={}, sha256={}...)",
+            data.len(),
+            sha256.get(..16).unwrap_or(sha256)
+        );
 
         let preupload_resp = match ureq::post(&preupload_url)
             .set("Authorization", &format!("Bearer {token}"))
@@ -38,9 +40,17 @@ impl HfHubClient {
         {
             Ok(resp) => resp,
             Err(ureq::Error::Status(code, resp)) => {
-                let body = resp.into_string().unwrap_or_else(|_| "unable to read body".to_string());
-                eprintln!("[LFS] ERROR: Preupload failed with status {}: {}", code, body);
-                return Err(HfHubError::NetworkError(format!("Preupload failed (HTTP {}): {}", code, body)));
+                let body = resp
+                    .into_string()
+                    .unwrap_or_else(|_| "unable to read body".to_string());
+                eprintln!(
+                    "[LFS] ERROR: Preupload failed with status {}: {}",
+                    code, body
+                );
+                return Err(HfHubError::NetworkError(format!(
+                    "Preupload failed (HTTP {}): {}",
+                    code, body
+                )));
             }
             Err(e) => {
                 eprintln!("[LFS] ERROR: Preupload request failed: {}", e);
@@ -48,12 +58,18 @@ impl HfHubClient {
             }
         };
 
-        eprintln!("[LFS] Preupload response status: {}", preupload_resp.status());
+        eprintln!(
+            "[LFS] Preupload response status: {}",
+            preupload_resp.status()
+        );
         let preupload_data: serde_json::Value = preupload_resp.into_json().map_err(|e| {
             eprintln!("[LFS] ERROR: Failed to parse preupload response: {}", e);
             HfHubError::NetworkError(format!("Preupload parse failed: {e}"))
         })?;
-        eprintln!("[LFS] Preupload response: {}", serde_json::to_string_pretty(&preupload_data).unwrap_or_default());
+        eprintln!(
+            "[LFS] Preupload response: {}",
+            serde_json::to_string_pretty(&preupload_data).unwrap_or_default()
+        );
 
         let files = preupload_data["files"].as_array().ok_or_else(|| {
             eprintln!("[LFS] ERROR: Invalid preupload response - no 'files' array");
@@ -61,7 +77,9 @@ impl HfHubClient {
         })?;
         if files.is_empty() {
             eprintln!("[LFS] ERROR: Empty files array in preupload response");
-            return Err(HfHubError::NetworkError("No file info returned".to_string()));
+            return Err(HfHubError::NetworkError(
+                "No file info returned".to_string(),
+            ));
         }
 
         Ok(files[0].clone())
@@ -77,7 +95,10 @@ impl HfHubClient {
     ) -> Result<()> {
         use std::time::Instant;
 
-        eprintln!("[LFS] Step 2: Multipart upload with {} presigned URLs", urls.len());
+        eprintln!(
+            "[LFS] Step 2: Multipart upload with {} presigned URLs",
+            urls.len()
+        );
         let file_size = data.len();
 
         for (i, url_value) in urls.iter().enumerate() {
@@ -88,8 +109,14 @@ impl HfHubClient {
             let chunk_end = ((i + 1) * LFS_CHUNK_SIZE).min(file_size);
             let chunk_data = &data[chunk_start..chunk_end];
 
-            eprintln!("[LFS] Uploading chunk {}/{}: bytes {}-{} ({:.1} MB)",
-                i + 1, urls.len(), chunk_start, chunk_end, chunk_data.len() as f64 / 1_000_000.0);
+            eprintln!(
+                "[LFS] Uploading chunk {}/{}: bytes {}-{} ({:.1} MB)",
+                i + 1,
+                urls.len(),
+                chunk_start,
+                chunk_end,
+                chunk_data.len() as f64 / 1_000_000.0
+            );
 
             let t = Instant::now();
             let resp = ureq::put(chunk_url)
@@ -102,10 +129,18 @@ impl HfHubClient {
                 })?;
 
             let status = resp.status();
-            eprintln!("[LFS] Chunk {}/{} uploaded: status={}, elapsed={:.1}s",
-                i + 1, urls.len(), status, t.elapsed().as_secs_f64());
+            eprintln!(
+                "[LFS] Chunk {}/{} uploaded: status={}, elapsed={:.1}s",
+                i + 1,
+                urls.len(),
+                status,
+                t.elapsed().as_secs_f64()
+            );
             if !(200..300).contains(&status) {
-                return Err(HfHubError::NetworkError(format!("Chunk upload failed with status {}", status)));
+                return Err(HfHubError::NetworkError(format!(
+                    "Chunk upload failed with status {}",
+                    status
+                )));
             }
         }
 
@@ -124,7 +159,10 @@ impl HfHubClient {
     fn upload_single(data: &[u8], url: &str, file_info: &serde_json::Value) -> Result<()> {
         use std::time::Instant;
 
-        eprintln!("[LFS] Step 2: Single URL upload to {}", &url[..url.len().min(100)]);
+        eprintln!(
+            "[LFS] Step 2: Single URL upload to {}",
+            &url[..url.len().min(100)]
+        );
         let upload_start = Instant::now();
         let headers = file_info.get("uploadHeader").and_then(|v| v.as_object());
 
@@ -147,13 +185,19 @@ impl HfHubClient {
         })?;
 
         let status = resp.status();
-        eprintln!("[LFS] Upload complete: status={}, elapsed={:.1}s, speed={:.1} MB/s",
-            status, upload_start.elapsed().as_secs_f64(),
-            (data.len() as f64 / 1_000_000.0) / upload_start.elapsed().as_secs_f64());
+        eprintln!(
+            "[LFS] Upload complete: status={}, elapsed={:.1}s, speed={:.1} MB/s",
+            status,
+            upload_start.elapsed().as_secs_f64(),
+            (data.len() as f64 / 1_000_000.0) / upload_start.elapsed().as_secs_f64()
+        );
 
         if !(200..300).contains(&status) {
             let body = resp.into_string().unwrap_or_default();
-            return Err(HfHubError::NetworkError(format!("Upload failed (HTTP {}): {}", status, body)));
+            return Err(HfHubError::NetworkError(format!(
+                "Upload failed (HTTP {}): {}",
+                status, body
+            )));
         }
         Ok(())
     }
@@ -205,13 +249,26 @@ impl HfHubClient {
             Ok(resp) => {
                 let status = resp.status();
                 let body = resp.into_string().unwrap_or_default();
-                eprintln!("[LFS] ERROR: Commit failed with status {}: {}", status, &body[..body.len().min(500)]);
-                Err(HfHubError::NetworkError(format!("Commit failed (HTTP {}): {}", status, body)))
+                eprintln!(
+                    "[LFS] ERROR: Commit failed with status {}: {}",
+                    status,
+                    &body[..body.len().min(500)]
+                );
+                Err(HfHubError::NetworkError(format!(
+                    "Commit failed (HTTP {}): {}",
+                    status, body
+                )))
             }
             Err(ureq::Error::Status(code, resp)) => {
                 let body = resp.into_string().unwrap_or_default();
-                eprintln!("[LFS] ERROR: Commit failed with status {}: {}", code, &body[..body.len().min(500)]);
-                Err(HfHubError::NetworkError(format!("Commit failed (HTTP {code}): {body}")))
+                eprintln!(
+                    "[LFS] ERROR: Commit failed with status {}: {}",
+                    code,
+                    &body[..body.len().min(500)]
+                );
+                Err(HfHubError::NetworkError(format!(
+                    "Commit failed (HTTP {code}): {body}"
+                )))
             }
             Err(e) => {
                 eprintln!("[LFS] ERROR: Network error during commit: {}", e);
@@ -237,7 +294,8 @@ impl HfHubClient {
             "File {} ({:.1} GB) exceeds 5GB limit. \
              HuggingFace Hub requires multipart LFS for files > 5GB. \
              Split into smaller shards or use huggingface-cli.",
-            filename, file_size as f64 / 1_000_000_000.0
+            filename,
+            file_size as f64 / 1_000_000_000.0
         )))
     }
 
@@ -266,7 +324,11 @@ impl HfHubClient {
         let start = Instant::now();
         let file_size = data.len();
 
-        eprintln!("[LFS] Calculating SHA256 for {} ({:.1} MB)...", filename, file_size as f64 / 1_000_000.0);
+        eprintln!(
+            "[LFS] Calculating SHA256 for {} ({:.1} MB)...",
+            filename,
+            file_size as f64 / 1_000_000.0
+        );
         let mut hasher = Sha256::new();
         hasher.update(data);
         let sha256 = format!("{:x}", hasher.finalize());
@@ -274,22 +336,38 @@ impl HfHubClient {
         eprintln!("[LFS] Using token: {}...", &token[..12.min(token.len())]);
 
         let num_chunks = (file_size + LFS_CHUNK_SIZE - 1) / LFS_CHUNK_SIZE;
-        eprintln!("[LFS] File size: {} bytes, will upload in {} chunk(s)", file_size, num_chunks);
+        eprintln!(
+            "[LFS] File size: {} bytes, will upload in {} chunk(s)",
+            file_size, num_chunks
+        );
 
         let file_info = self.send_preupload_request(repo_id, filename, data, &sha256, token)?;
 
-        let upload_mode = file_info.get("uploadMode").and_then(|v| v.as_str()).unwrap_or("unknown");
+        let upload_mode = file_info
+            .get("uploadMode")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown");
         eprintln!("[LFS] Upload mode: {}", upload_mode);
 
-        let upload_url = file_info.get("uploadUrl").or_else(|| file_info.get("upload_url")).and_then(|v| v.as_str());
-        let chunk_urls = file_info.get("chunkUrls").or_else(|| file_info.get("chunk_urls"))
-            .or_else(|| file_info.get("urls")).and_then(|v| v.as_array());
+        let upload_url = file_info
+            .get("uploadUrl")
+            .or_else(|| file_info.get("upload_url"))
+            .and_then(|v| v.as_str());
+        let chunk_urls = file_info
+            .get("chunkUrls")
+            .or_else(|| file_info.get("chunk_urls"))
+            .or_else(|| file_info.get("urls"))
+            .and_then(|v| v.as_array());
 
         eprintln!("[LFS] Upload URL present: {}", upload_url.is_some());
         eprintln!("[LFS] Chunk URLs present: {}", chunk_urls.is_some());
 
         const FIVE_GB: usize = 5 * 1024 * 1024 * 1024;
-        if upload_url.is_none() && chunk_urls.is_none() && upload_mode == "lfs" && file_size > FIVE_GB {
+        if upload_url.is_none()
+            && chunk_urls.is_none()
+            && upload_mode == "lfs"
+            && file_size > FIVE_GB
+        {
             return Self::reject_oversized_file(repo_id, filename, file_size);
         }
 
@@ -303,7 +381,10 @@ impl HfHubClient {
         }
 
         self.commit_lfs_pointer(repo_id, filename, &sha256, file_size, commit_msg, token)?;
-        eprintln!("[LFS] Total upload time: {:.1}s", start.elapsed().as_secs_f64());
+        eprintln!(
+            "[LFS] Total upload time: {:.1}s",
+            start.elapsed().as_secs_f64()
+        );
         Ok(())
     }
 

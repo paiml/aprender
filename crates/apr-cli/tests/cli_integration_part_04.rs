@@ -1,4 +1,3 @@
-
 // F-FORMAT-DISPATCH-003: apr tensors supports all 3 formats
 #[test]
 fn test_f_format_dispatch_003_tensors_all_formats() {

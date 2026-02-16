@@ -421,7 +421,12 @@ fn test_invalid_config_rejected() {
 // ========== NG16-NG18: Spectral slope verification ==========
 
 /// Helper: Compute average power in frequency band
-pub(super) fn compute_band_power(samples: &[f32], sample_rate: u32, low_hz: f32, high_hz: f32) -> f32 {
+pub(super) fn compute_band_power(
+    samples: &[f32],
+    sample_rate: u32,
+    low_hz: f32,
+    high_hz: f32,
+) -> f32 {
     use rustfft::{num_complex::Complex, FftPlanner};
 
     let n = samples.len();
@@ -444,5 +449,4 @@ pub(super) fn compute_band_power(samples: &[f32], sample_rate: u32, low_hz: f32,
 }
 
 #[path = "generator_tests_part_02.rs"]
-
 mod generator_tests_part_02;

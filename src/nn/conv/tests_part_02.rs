@@ -96,10 +96,24 @@ fn test_im2col_2d_matches_naive() {
     let stride = 1;
     let padding = 1;
 
-    let conv_im2col = Conv2d::with_options(in_c, out_c, (kh, kw), (stride, stride), (padding, padding), true);
+    let conv_im2col = Conv2d::with_options(
+        in_c,
+        out_c,
+        (kh, kw),
+        (stride, stride),
+        (padding, padding),
+        true,
+    );
 
     // Create naive version with same weights
-    let mut conv_naive = Conv2d::with_options(in_c, out_c, (kh, kw), (stride, stride), (padding, padding), true);
+    let mut conv_naive = Conv2d::with_options(
+        in_c,
+        out_c,
+        (kh, kw),
+        (stride, stride),
+        (padding, padding),
+        true,
+    );
     // Copy weights from im2col version
     let params_im2col = conv_im2col.parameters();
     let mut params_naive = conv_naive.parameters_mut();
@@ -181,7 +195,12 @@ fn test_nhwc_layout_conv2d() {
 
     // Create NHWC version with same weights
     let mut conv_nhwc = Conv2d::with_layout(
-        in_c, out_c, (ksize, ksize), (1, 1), (0, 0), true,
+        in_c,
+        out_c,
+        (ksize, ksize),
+        (1, 1),
+        (0, 0),
+        true,
         layout::ConvLayout::NHWC,
     );
     let params_nchw = conv_nchw.parameters();
@@ -231,10 +250,7 @@ fn test_nlc_layout_conv1d() {
 
     let conv_ncl = Conv1d::new(in_c, out_c, k);
 
-    let mut conv_nlc = Conv1d::with_layout(
-        in_c, out_c, k, 1, 0, true,
-        layout::ConvLayout::NLC,
-    );
+    let mut conv_nlc = Conv1d::with_layout(in_c, out_c, k, 1, 0, true, layout::ConvLayout::NLC);
     let params_ncl = conv_ncl.parameters();
     let mut params_nlc = conv_nlc.parameters_mut();
     *params_nlc[0] = params_ncl[0].clone();
@@ -261,12 +277,7 @@ fn test_nlc_layout_conv1d() {
 
     assert_eq!(out_ncl.shape(), out_nlc_as_ncl.shape());
     for (a, b) in out_ncl.data().iter().zip(out_nlc_as_ncl.data().iter()) {
-        assert!(
-            (a - b).abs() < 1e-4,
-            "NCL vs NLC mismatch: {} vs {}",
-            a,
-            b
-        );
+        assert!((a - b).abs() < 1e-4, "NCL vs NLC mismatch: {} vs {}", a, b);
     }
 }
 
@@ -331,9 +342,7 @@ fn test_conv2d_im2col_large_stride_with_padding() {
     *params_n[1] = params[1].clone();
     conv_naive.use_im2col = false;
 
-    let input_data: Vec<f32> = (0..2 * 2 * 7 * 7)
-        .map(|i| (i as f32) * 0.01)
-        .collect();
+    let input_data: Vec<f32> = (0..2 * 2 * 7 * 7).map(|i| (i as f32) * 0.01).collect();
     let input = Tensor::new(&input_data, &[2, 2, 7, 7]);
 
     let out_im2col = conv.forward(&input);
@@ -347,7 +356,15 @@ fn test_conv2d_im2col_large_stride_with_padding() {
 
 #[test]
 fn test_conv2d_with_layout_constructor() {
-    let conv = Conv2d::with_layout(3, 16, (3, 3), (1, 1), (0, 0), true, layout::ConvLayout::NHWC);
+    let conv = Conv2d::with_layout(
+        3,
+        16,
+        (3, 3),
+        (1, 1),
+        (0, 0),
+        true,
+        layout::ConvLayout::NHWC,
+    );
     let debug_str = format!("{:?}", conv);
     assert!(debug_str.contains("NHWC"));
 }

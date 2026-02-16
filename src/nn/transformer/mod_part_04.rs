@@ -1,6 +1,6 @@
+use super::mod_part_03::GroupedQueryAttention;
 #[allow(clippy::wildcard_imports)]
 use super::*;
-use super::mod_part_03::GroupedQueryAttention;
 
 impl std::fmt::Debug for GroupedQueryAttention {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

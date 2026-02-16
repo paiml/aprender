@@ -432,5 +432,4 @@ fn test_cg_norm_function() {
 }
 
 #[path = "conjugate_gradient_tests_part_02.rs"]
-
 mod conjugate_gradient_tests_part_02;

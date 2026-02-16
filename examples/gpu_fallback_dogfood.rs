@@ -32,13 +32,7 @@ fn main() {
     // Start server
     println!("Starting `apr serve --gpu` on port {PORT}...");
     let mut child = Command::new("apr")
-        .args([
-            "serve",
-            "--gpu",
-            MODEL_PATH,
-            "--port",
-            &PORT.to_string(),
-        ])
+        .args(["serve", "--gpu", MODEL_PATH, "--port", &PORT.to_string()])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -171,9 +165,7 @@ fn send_http(host: &str, request: &str) -> Result<String, String> {
         Duration::from_secs(15),
     )
     .map_err(|e| format!("connect failed: {e}"))?;
-    stream
-        .set_read_timeout(Some(Duration::from_secs(30)))
-        .ok();
+    stream.set_read_timeout(Some(Duration::from_secs(30))).ok();
     stream
         .write_all(request.as_bytes())
         .map_err(|e| format!("write failed: {e}"))?;

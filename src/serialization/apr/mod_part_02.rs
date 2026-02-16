@@ -269,4 +269,3 @@ const CRC32_TABLE: [u32; 256] = [
     0x5A05_DF1B,
     0x2D02_EF8D,
 ];
-

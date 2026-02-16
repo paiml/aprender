@@ -450,5 +450,4 @@ fn test_gnn_disconnected_graph() {
 }
 
 #[path = "tests_part_02.rs"]
-
 mod tests_part_02;

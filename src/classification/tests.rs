@@ -447,7 +447,6 @@ fn test_knn_manhattan_distance() {
 }
 
 #[path = "tests_part_02.rs"]
-
 mod tests_part_02;
 #[path = "tests_part_03.rs"]
 mod tests_part_03;

@@ -1,7 +1,6 @@
 use super::*;
 
-impl HfHubClient {
-}
+impl HfHubClient {}
 
 #[path = "mod_part_02_part_02.rs"]
 mod mod_part_02_part_02;

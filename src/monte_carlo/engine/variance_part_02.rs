@@ -1,4 +1,3 @@
-
 #[cfg(test)]
 mod tests {
     #[allow(clippy::wildcard_imports)]

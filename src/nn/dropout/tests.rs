@@ -445,5 +445,4 @@ fn test_dropconnect_apply_to_weights_eval_mode() {
 }
 
 #[path = "tests_part_02.rs"]
-
 mod tests_part_02;

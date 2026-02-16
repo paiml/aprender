@@ -17,20 +17,28 @@ use aprender::serialization::safetensors::{load_safetensors, save_safetensors};
 use std::collections::BTreeMap;
 use tempfile::tempdir;
 
-fn create_model(
-    path: &std::path::Path,
-    weight_diag: [f32; 4],
-    bias: [f32; 4],
-) {
+fn create_model(path: &std::path::Path, weight_diag: [f32; 4], bias: [f32; 4]) {
     let mut tensors = BTreeMap::new();
     tensors.insert(
         "layer.weight".to_string(),
         (
             vec![
-                weight_diag[0], 0.0, 0.0, 0.0,
-                0.0, weight_diag[1], 0.0, 0.0,
-                0.0, 0.0, weight_diag[2], 0.0,
-                0.0, 0.0, 0.0, weight_diag[3],
+                weight_diag[0],
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                weight_diag[1],
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                weight_diag[2],
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                weight_diag[3],
             ],
             vec![4, 4],
         ),
@@ -51,7 +59,12 @@ fn inspect(path: &std::path::Path, label: &str) {
             .collect();
         let preview: Vec<String> = floats.iter().take(8).map(|v| format!("{v:.3}")).collect();
         let suffix = if floats.len() > 8 { "..." } else { "" };
-        println!("    {name} {:?} = [{}{}]", info.shape, preview.join(", "), suffix);
+        println!(
+            "    {name} {:?} = [{}{}]",
+            info.shape,
+            preview.join(", "),
+            suffix
+        );
     }
 }
 
@@ -70,7 +83,11 @@ fn main() {
     create_model(&base_path, [0.0; 4], [0.0; 4]);
     create_model(&model_a_path, [1.0, 2.0, 3.0, 4.0], [0.5, 0.5, 0.5, 0.5]);
     create_model(&model_b_path, [4.0, 3.0, 2.0, 1.0], [1.0, 1.0, 1.0, 1.0]);
-    create_model(&model_c_path, [2.0, 2.0, 2.0, 2.0], [0.25, 0.25, 0.25, 0.25]);
+    create_model(
+        &model_c_path,
+        [2.0, 2.0, 2.0, 2.0],
+        [0.25, 0.25, 0.25, 0.25],
+    );
 
     println!("Input models:");
     inspect(&base_path, "base (zeros)");
@@ -162,7 +179,9 @@ fn main() {
     println!("apr merge a.st b.st --strategy average -o merged.st");
     println!("apr merge a.st b.st --strategy weighted --weights 0.7,0.3 -o merged.st");
     println!("apr merge a.st b.st --strategy slerp --weights 0.3 -o merged.st");
-    println!("apr merge a.st b.st c.st --strategy ties --base-model base.st --density 0.2 -o merged.st");
+    println!(
+        "apr merge a.st b.st c.st --strategy ties --base-model base.st --density 0.2 -o merged.st"
+    );
     println!("apr merge a.st b.st c.st --strategy dare --base-model base.st --drop-rate 0.5 --seed 42 -o merged.st");
 
     println!("\nAll 5 merge strategies completed successfully.");
