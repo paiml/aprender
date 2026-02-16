@@ -42,7 +42,17 @@ impl ChatSession {
             // Using LlamaTokenizer/Qwen2BpeTokenizer causes wrong IDs for <|im_start|>, <|im_end|>, etc.
             if self.format == ModelFormat::Gguf {
                 return match self.generate_gguf_with_prompt(&formatted_prompt, config) {
-                    Ok(response) => clean_chat_response(&response),
+                    Ok(response) => {
+                        // GH-262: Always show tok/s for GGUF path
+                        let gen_time = start.elapsed();
+                        let approx_tokens = response.split_whitespace().count().max(1) * 4 / 3;
+                        let tps = approx_tokens as f32 / gen_time.as_secs_f32();
+                        println!(
+                            "{}",
+                            format!("[{:.1}s, ~{:.0} tok/s]", gen_time.as_secs_f32(), tps).dimmed()
+                        );
+                        clean_chat_response(&response)
+                    }
                     Err(e) => format!("[Error: {}]", e),
                 };
             }
@@ -83,19 +93,21 @@ impl ChatSession {
                         &output_tokens[..]
                     };
 
-                    // Debug: show generation stats
+                    // GH-262: Always show tok/s so users can gauge performance
+                    let tps = new_tokens.len() as f32 / gen_time.as_secs_f32();
+                    println!(
+                        "{}",
+                        format!(
+                            "[{} tokens in {:.1}s = {:.1} tok/s]",
+                            new_tokens.len(),
+                            gen_time.as_secs_f32(),
+                            tps,
+                        )
+                        .dimmed()
+                    );
+
+                    // Debug: show first 10 new tokens (only with --inspect)
                     if config.inspect {
-                        println!(
-                            "{}",
-                            format!(
-                                "[{} new tokens in {:.2}s = {:.1} tok/s]",
-                                new_tokens.len(),
-                                gen_time.as_secs_f32(),
-                                new_tokens.len() as f32 / gen_time.as_secs_f32()
-                            )
-                            .dimmed()
-                        );
-                        // Debug: show first 10 new tokens
                         if let Some(ref tok) = self.llama_tokenizer {
                             println!(
                                 "[DEBUG: first 10 new tokens: {:?}]",

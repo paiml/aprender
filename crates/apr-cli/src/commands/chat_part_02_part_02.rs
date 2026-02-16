@@ -281,15 +281,43 @@ impl ChatSession {
                     match AprV2Model::from_bytes(model_bytes.clone()) {
                         Ok(apr_model) => match AprV2ModelCuda::new(apr_model, 0) {
                             Ok(cuda_model) => {
+                                let vram_mb = cuda_model.vram_mb();
                                 println!(
                                     "{}",
                                     format!(
                                         "[APR CUDA: {} ({} MB VRAM) — pre-cached]",
                                         cuda_model.device_name(),
-                                        cuda_model.vram_mb()
+                                        vram_mb
                                     )
                                     .bright_green()
                                 );
+                                // GH-262: Warn about F32 performance when model VRAM > 2GB
+                                // F32 models use ~4x more memory bandwidth than Q4K, resulting
+                                // in ~4x slower inference. A 1.5B F32 model uses ~5.9 GB vs ~0.9 GB Q4K.
+                                if vram_mb > 2048 {
+                                    println!(
+                                        "{}",
+                                        format!(
+                                            "  Performance tip: This APR model uses {} MB VRAM (F32 tensors).",
+                                            vram_mb
+                                        ).yellow()
+                                    );
+                                    println!(
+                                        "{}",
+                                        "  For ~4x faster inference, convert to GGUF Q4K:".yellow()
+                                    );
+                                    println!(
+                                        "{}",
+                                        format!(
+                                            "    apr export {} --format gguf -o model.gguf",
+                                            path.display()
+                                        ).yellow()
+                                    );
+                                    println!(
+                                        "{}",
+                                        "    apr chat model.gguf".yellow()
+                                    );
+                                }
                                 cached_apr_cuda = Some(cuda_model);
                             }
                             Err(e) => {
