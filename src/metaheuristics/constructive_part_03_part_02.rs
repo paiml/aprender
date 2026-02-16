@@ -258,7 +258,7 @@
 
     #[test]
     fn test_tabu_search_graph_space() {
-        // Exercises the Graph branch in TabuSearch::optimize (line 529).
+        // Verify TabuSearch handles Graph search spaces correctly.
         let space = SearchSpace::Graph {
             num_nodes: 4,
             adjacency: vec![
