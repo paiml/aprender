@@ -192,6 +192,8 @@ tier3:
 	@echo "Running Tier 3: Full validation..."
 	@PROPTEST_CASES=25 QUICKCHECK_TESTS=25 cargo test --all
 	@cargo clippy -- -D warnings
+	@echo "Checking include!() files tracked by git..."
+	@bash scripts/check_include_files.sh
 	@echo "Tier 3: PASSED"
 
 # Tier 4: CI/CD (5-60 minutes, heavyweight)
