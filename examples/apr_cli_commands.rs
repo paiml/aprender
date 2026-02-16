@@ -1,7 +1,7 @@
 //! APR CLI Commands Demo
 //!
 //! Demonstrates creating test models and using the apr-cli commands.
-//! This example creates model files that work with all 24 apr-cli commands.
+//! This example creates model files that work with all 26 apr-cli commands.
 //!
 //! Toyota Way Alignment:
 //! - **Genchi Genbutsu**: Go and see - inspect actual model data
@@ -21,6 +21,8 @@
 //! ./target/debug/apr diff /tmp/apr_cli_demo/demo_model.apr /tmp/apr_cli_demo/demo_model_v2.apr
 //! ./target/debug/apr probar /tmp/apr_cli_demo/demo_model.apr -o /tmp/apr_cli_demo/probar
 //! ./target/debug/apr explain E002
+//! ./target/debug/apr explain --tensor conv1 --file /tmp/apr_cli_demo/demo_model.apr
+//! ./target/debug/apr flow /tmp/apr_cli_demo/demo_model.apr --json
 //!
 //! # Inference commands (requires --features inference):
 //! cargo build -p apr-cli --features inference
@@ -196,7 +198,7 @@ fn print_cli_commands(model_path: &Path, model_v2_path: &Path) {
     println!("For inference commands (run, serve):");
     println!("  cargo build -p apr-cli --features inference\n");
 
-    println!("=== 24 APR CLI Commands ===\n");
+    println!("=== 26 APR CLI Commands ===\n");
 
     println!("--- Model Inspection ---\n");
 
@@ -273,6 +275,7 @@ fn print_cli_commands(model_path: &Path, model_v2_path: &Path) {
     println!("14. EXPLAIN - Get explanations:");
     println!("    ./target/debug/apr explain E002");
     println!("    ./target/debug/apr explain --tensor encoder.conv1.weight");
+    println!("    ./target/debug/apr explain --tensor conv1 --file model.safetensors");
     println!("    ./target/debug/apr explain --file {model}\n");
 
     println!("--- Interactive ---\n");
@@ -301,16 +304,28 @@ fn print_cli_commands(model_path: &Path, model_v2_path: &Path) {
     println!("    ./target/debug/apr chat model.gguf");
     println!("    ./target/debug/apr chat model.gguf --system \"You are a helpful assistant\"\n");
 
+    println!("--- Data Flow & Comparison ---\n");
+
+    println!("19. FLOW - Visualize data flow through model (any format):");
+    println!("    ./target/debug/apr flow {model}");
+    println!("    ./target/debug/apr flow {model} --json");
+    println!("    ./target/debug/apr flow {model} --verbose\n");
+
+    println!("20. COMPARE-HF - Compare local model against HuggingFace source:");
+    println!("    ./target/debug/apr compare-hf {model} --hf openai/whisper-tiny");
+    println!("    ./target/debug/apr compare-hf model.gguf --hf openai/whisper-tiny");
+    println!("    ./target/debug/apr compare-hf {model} --hf openai/whisper-tiny --json\n");
+
     println!("--- HuggingFace Hub ---\n");
 
-    println!("19. PUBLISH - Push model to HuggingFace Hub:");
+    println!("21. PUBLISH - Push model to HuggingFace Hub:");
     println!("    ./target/debug/apr publish {demo_dir}/ org/model-name");
     println!("    ./target/debug/apr publish {demo_dir}/ org/model-name --dry-run");
     println!(
         "    ./target/debug/apr publish {demo_dir}/ org/model-name --license mit --tags rust,ml\n"
     );
 
-    println!("20. PULL - Download model from HuggingFace Hub:");
+    println!("22. PULL - Download model from HuggingFace Hub:");
     println!("    ./target/debug/apr pull hf://org/repo-name -o ./models/");
     println!(
         "    ./target/debug/apr pull hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF -o ./models/\n"
@@ -318,20 +333,20 @@ fn print_cli_commands(model_path: &Path, model_v2_path: &Path) {
 
     println!("--- Benchmarking & QA ---\n");
 
-    println!("21. QA - Run falsifiable QA checklist:");
+    println!("23. QA - Run falsifiable QA checklist:");
     println!("    ./target/debug/apr qa model.gguf");
     println!("    ./target/debug/apr qa model.gguf --assert-tps 100");
     println!("    ./target/debug/apr qa model.gguf --json\n");
 
-    println!("22. SHOWCASE - Performance benchmark demo:");
+    println!("24. SHOWCASE - Performance benchmark demo:");
     println!("    ./target/debug/apr showcase model.gguf");
     println!("    ./target/debug/apr showcase model.gguf --warmup 3 --iterations 10\n");
 
-    println!("23. PROFILE - Deep performance profiling:");
+    println!("25. PROFILE - Deep performance profiling:");
     println!("    ./target/debug/apr profile model.gguf");
     println!("    ./target/debug/apr profile model.gguf --roofline\n");
 
-    println!("24. BENCH - Run benchmarks:");
+    println!("26. BENCH - Run benchmarks:");
     println!("    ./target/debug/apr bench model.gguf");
     println!("    ./target/debug/apr bench model.gguf --iterations 100\n");
 }

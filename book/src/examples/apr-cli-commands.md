@@ -1,6 +1,6 @@
 # Case Study: APR CLI Commands Demo
 
-This case study demonstrates creating test models and using all 17 apr-cli commands for model inspection, validation, transformation, testing, and inference.
+This case study demonstrates creating test models and using all 26 apr-cli commands for model inspection, validation, transformation, testing, and inference.
 
 ## The Problem
 
@@ -15,7 +15,7 @@ APR model files need comprehensive tooling for:
 
 ## The Solution: apr-cli
 
-The `apr` CLI provides 17 commands for complete model lifecycle management:
+The `apr` CLI provides 26 commands for complete model lifecycle management:
 
 ```bash
 # Build the CLI
@@ -39,7 +39,7 @@ Run: `cargo run --example apr_cli_commands`
 {{#include ../../../examples/apr_cli_commands.rs}}
 ```
 
-## All 17 Commands
+## All 26 Commands
 
 ### Model Inspection
 
@@ -202,12 +202,13 @@ Exports model data for visual regression testing.
 #### 14. EXPLAIN - Get Explanations
 
 ```bash
-apr explain E002                           # Explain error code
-apr explain --tensor encoder.conv1.weight  # Explain tensor name
-apr explain --file model.apr               # Analyze file
+apr explain E002                                            # Explain error code
+apr explain --tensor encoder.conv1.weight                   # Explain tensor by convention
+apr explain --tensor conv1 --file model.safetensors         # Look up in actual model
+apr explain --file model.apr                                # Analyze architecture
 ```
 
-Provides context-aware explanations for errors and tensor patterns.
+Provides context-aware explanations for errors, tensors, and model architectures. When `--file` is provided with `--tensor`, looks up the tensor in the actual model via RosettaStone (supports APR, GGUF, SafeTensors).
 
 ### Interactive
 
@@ -288,6 +289,77 @@ curl -X POST http://localhost:8080/predict \
 - `/tensors` - Tensor listing (SafeTensors)
 - Graceful shutdown via Ctrl+C
 
+### Chat & Comparison
+
+#### 18. CHAT - Interactive Chat (LLM models)
+
+```bash
+apr chat model.gguf                                          # Interactive chat
+apr chat model.gguf --system "You are a helpful assistant"   # Custom system prompt
+```
+
+#### 19. FLOW - Visualize Data Flow
+
+```bash
+apr flow model.safetensors            # Show data flow
+apr flow model.gguf --json            # JSON output (architecture, groups)
+apr flow model.apr --verbose           # Verbose with shapes
+```
+
+Detects architecture (Encoder-Decoder, Decoder-Only, Encoder-Only) and groups tensors by layer. Supports APR, GGUF, and SafeTensors.
+
+#### 20. COMPARE-HF - Compare Against HuggingFace Source
+
+```bash
+apr compare-hf model.apr --hf openai/whisper-tiny              # APR format
+apr compare-hf model.gguf --hf openai/whisper-tiny             # GGUF format
+apr compare-hf model.safetensors --hf openai/whisper-tiny      # SafeTensors format
+apr compare-hf model.apr --hf openai/whisper-tiny --json       # JSON output
+```
+
+Auto-detects local model format. Compares tensor-by-tensor against HuggingFace source.
+
+### HuggingFace Hub
+
+#### 21. PUBLISH - Push to HuggingFace Hub
+
+```bash
+apr publish model_dir/ org/model-name --dry-run
+```
+
+#### 22. PULL - Download Model
+
+```bash
+apr pull hf://Qwen/Qwen2.5-Coder-1.5B-Instruct-GGUF -o ./models/
+```
+
+### Benchmarking & QA
+
+#### 23. QA - Falsifiable QA Checklist
+
+```bash
+apr qa model.gguf                     # Run 8-gate QA checklist
+apr qa model.gguf --json              # JSON output
+```
+
+#### 24. SHOWCASE - Performance Benchmark
+
+```bash
+apr showcase model.gguf --warmup 3 --iterations 10
+```
+
+#### 25. PROFILE - Deep Performance Profiling
+
+```bash
+apr profile model.gguf --roofline
+```
+
+#### 26. BENCH - Run Benchmarks
+
+```bash
+apr bench model.gguf --iterations 100
+```
+
 ## Example Output
 
 Running the example creates demo models:
@@ -358,7 +430,7 @@ apr debug model.apr --drama
 | Benefit | Description |
 |---------|-------------|
 | Standardized | Consistent CLI for all APR models |
-| Comprehensive | 17 commands cover full lifecycle |
+| Comprehensive | 26 commands cover full lifecycle |
 | Scriptable | JSON output for automation |
 | Debuggable | Deep inspection with drama mode |
 | Validatable | 100-point QA with grades |

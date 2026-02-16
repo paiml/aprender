@@ -455,27 +455,46 @@ The payload checksum does not match the header.
   2. Check source file integrity (MD5/SHA256).
 ```
 
-### Tensor Names
+### Tensor Names (by convention)
 
 ```bash
-$ apr explain --tensor encoder.conv1.weight
+$ apr explain --tensor q_proj
 
-**encoder.conv1.weight**
-- **Role**: Initial feature extraction (Audio -> Latent)
-- **Shape**: [384, 80, 3] (Filters, Input Channels, Kernel Size)
-- **Stats**: Mean 0.002, Std 0.04 (Healthy)
+Explain tensor: q_proj
+- **Role**: Query projection in attention mechanism
 ```
+
+### Tensor Lookup (from actual model file)
+
+```bash
+$ apr explain --tensor conv1 --file whisper-tiny.safetensors
+
+Explain tensor: conv1
+
+**model.encoder.conv1.weight**
+- **Shape**: [384, 80, 3]
+- **DType**: F32
+- **Role**: First convolutional layer (feature extraction)
+
+**model.encoder.conv1.bias**
+- **Shape**: [384]
+- **DType**: F32
+- **Role**: First convolutional layer (feature extraction)
+```
+
+Supports APR, GGUF, and SafeTensors formats via RosettaStone. Fuzzy matching finds all tensors containing the search term.
 
 ### Model Architecture
 
 ```bash
-$ apr explain --file whisper.apr
+$ apr explain --file whisper-tiny.safetensors
 
-This is a **Whisper (Tiny)** model.
-- **Purpose**: Automatic Speech Recognition (ASR)
+Explain model architecture: whisper-tiny.safetensors
+- **Format**: SafeTensors
+- **Tensors**: 99
 - **Architecture**: Encoder-Decoder Transformer
-- **Input**: 80-channel Mel spectrograms
-- **Output**: Text tokens (multilingual)
+- **Examples**: Whisper, T5, BART
+- **Layers**: 4
 ```
 
 ## Key Takeaways
