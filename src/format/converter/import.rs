@@ -437,3 +437,4 @@ include!("import_part_02.rs");
 include!("import_part_03.rs");
 include!("import_part_04.rs");
 include!("import_part_05.rs");
+include!("import_part_06.rs");
