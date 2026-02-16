@@ -352,6 +352,7 @@ impl RosettaStone {
 
         let mut tensors = Vec::new();
         let mut total_params: usize = 0;
+        let mut max_data_end: usize = 0;
 
         for name in tensor_names {
             if let Some(info) = mapped.get_metadata(name) {
@@ -361,6 +362,9 @@ impl RosettaStone {
                 total_params += params;
 
                 let data_len = info.data_offsets[1] - info.data_offsets[0];
+                if info.data_offsets[1] > max_data_end {
+                    max_data_end = info.data_offsets[1];
+                }
 
                 tensors.push(TensorInfo {
                     name: name.to_string(),
@@ -370,6 +374,17 @@ impl RosettaStone {
                     stats: None,
                 });
             }
+        }
+
+        // PMAT-264: Detect truncated data section (valid header but payload truncated)
+        let data_offset = mapped.data_offset();
+        let required_size = data_offset + max_data_end;
+        if required_size > file_size {
+            return Err(AprenderError::FormatError {
+                message: format!(
+                    "Truncated SafeTensors data: tensors require {required_size} bytes but file is only {file_size} bytes"
+                ),
+            });
         }
 
         // GH-249: Infer architecture from tensor names for SafeTensors

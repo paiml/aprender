@@ -475,6 +475,12 @@ impl MappedSafeTensors {
         })
     }
 
+    /// Get the offset where tensor data begins (after header + metadata JSON).
+    #[must_use]
+    pub fn data_offset(&self) -> usize {
+        self.data_offset
+    }
+
     /// Get tensor metadata by name.
     #[must_use]
     pub fn get_metadata(&self, name: &str) -> Option<&TensorMetadata> {
