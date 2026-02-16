@@ -375,3 +375,70 @@ fn test_build_q4k_metadata_empty_config_gh219() {
     assert_eq!(metadata.param_count, 0);
     assert_eq!(metadata.architecture, Some("qwen2".to_string()));
 }
+
+// ============================================================================
+// sanitize_hf_json tests (GH-268)
+// ============================================================================
+
+#[test]
+fn test_sanitize_hf_json_infinity_gh268() {
+    let input = r#"{"time_step_limit": [0.0, Infinity]}"#;
+    let sanitized = sanitize_hf_json(input);
+    assert_eq!(sanitized, r#"{"time_step_limit": [0.0, 1e308]}"#);
+    // Verify it parses as valid JSON
+    let parsed: serde_json::Value = serde_json::from_str(&sanitized).expect("should parse");
+    assert_eq!(parsed["time_step_limit"][1].as_f64().expect("f64"), 1e308);
+}
+
+#[test]
+fn test_sanitize_hf_json_negative_infinity_gh268() {
+    let input = r#"{"min_value": -Infinity}"#;
+    let sanitized = sanitize_hf_json(input);
+    assert_eq!(sanitized, r#"{"min_value": -1e308}"#);
+    let parsed: serde_json::Value = serde_json::from_str(&sanitized).expect("should parse");
+    assert!(parsed["min_value"].as_f64().expect("f64") < -1e307);
+}
+
+#[test]
+fn test_sanitize_hf_json_nan_gh268() {
+    let input = r#"{"default_value": NaN}"#;
+    let sanitized = sanitize_hf_json(input);
+    assert_eq!(sanitized, r#"{"default_value": null}"#);
+    let parsed: serde_json::Value = serde_json::from_str(&sanitized).expect("should parse");
+    assert!(parsed["default_value"].is_null());
+}
+
+#[test]
+fn test_sanitize_hf_json_multiple_values_gh268() {
+    let input = r#"{"a": Infinity, "b": -Infinity, "c": NaN, "d": 42}"#;
+    let sanitized = sanitize_hf_json(input);
+    let parsed: serde_json::Value = serde_json::from_str(&sanitized).expect("should parse");
+    assert_eq!(parsed["a"].as_f64().expect("f64"), 1e308);
+    assert!(parsed["b"].as_f64().expect("f64") < -1e307);
+    assert!(parsed["c"].is_null());
+    assert_eq!(parsed["d"].as_i64().expect("i64"), 42);
+}
+
+#[test]
+fn test_sanitize_hf_json_no_special_values_gh268() {
+    let input = r#"{"hidden_size": 768, "num_layers": 12}"#;
+    let sanitized = sanitize_hf_json(input);
+    assert_eq!(sanitized, input); // No changes needed
+}
+
+#[test]
+fn test_sanitize_hf_json_mamba2_config_gh268() {
+    // Realistic Mamba2 config.json snippet
+    let input = r#"{
+  "model_type": "mamba2",
+  "hidden_size": 768,
+  "time_step_limit": [0.0, Infinity],
+  "num_heads": 24
+}"#;
+    let sanitized = sanitize_hf_json(input);
+    let parsed: serde_json::Value = serde_json::from_str(&sanitized).expect("should parse");
+    assert_eq!(parsed["model_type"].as_str().expect("str"), "mamba2");
+    assert_eq!(parsed["hidden_size"].as_u64().expect("u64"), 768);
+    assert_eq!(parsed["time_step_limit"][1].as_f64().expect("f64"), 1e308);
+    assert_eq!(parsed["num_heads"].as_u64().expect("u64"), 24);
+}

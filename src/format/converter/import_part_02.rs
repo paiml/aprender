@@ -178,6 +178,19 @@ pub(crate) struct SourceLoadResult {
     pub(crate) user_metadata: UserMetadata,
 }
 
+/// Sanitize non-standard JSON from HuggingFace config files (GH-268).
+///
+/// Some HuggingFace models (e.g., Mamba2 variants) include JavaScript literals
+/// like `Infinity`, `-Infinity`, and `NaN` which are not valid JSON.
+/// This function replaces them with JSON-compatible equivalents before parsing.
+pub fn sanitize_hf_json(content: &str) -> String {
+    // Replace -Infinity BEFORE Infinity to avoid partial match
+    content
+        .replace("-Infinity", "-1e308")
+        .replace("Infinity", "1e308")
+        .replace("NaN", "null")
+}
+
 /// Load model config from config.json alongside the model file (PMAT-098)
 ///
 /// This is the preferred way to get model config for SafeTensors models.
@@ -190,7 +203,8 @@ pub(crate) fn load_model_config_from_json(model_path: &Path) -> Option<GgufModel
     }
 
     let content = fs::read_to_string(&config_path).ok()?;
-    let json: serde_json::Value = serde_json::from_str(&content).ok()?;
+    let sanitized = sanitize_hf_json(&content);
+    let json: serde_json::Value = serde_json::from_str(&sanitized).ok()?;
 
     // Parse HuggingFace config.json format
     // GH-235: GPT-2 uses different field names (n_embd, n_head, n_layer, n_inner, n_positions).

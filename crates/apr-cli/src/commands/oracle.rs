@@ -409,7 +409,8 @@ fn fetch_hf_data(repo: &str) -> Result<HuggingFaceData, CliError> {
     // Fetch config.json (required)
     let config_url = format!("https://huggingface.co/{repo}/raw/main/config.json");
     let config_body = fetch_url(&config_url)?;
-    let config_json: serde_json::Value = serde_json::from_str(&config_body)
+    let sanitized_config = aprender::format::converter::sanitize_hf_json(&config_body);
+    let config_json: serde_json::Value = serde_json::from_str(&sanitized_config)
         .map_err(|e| CliError::InvalidFormat(format!("Invalid config.json from {repo}: {e}")))?;
 
     let model_type = config_json["model_type"].as_str().map(String::from);

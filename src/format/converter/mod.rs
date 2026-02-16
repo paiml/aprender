@@ -44,6 +44,8 @@ pub use crate::format::converter_types::{
 pub(crate) use import::infer_model_config_from_tensors;
 use import::load_safetensors_tensors;
 pub(crate) use import::map_tensor_names;
+// GH-268: Sanitize non-standard JSON from HuggingFace config files
+pub use import::sanitize_hf_json;
 
 // For tests: re-export helper types and functions
 #[cfg(test)]

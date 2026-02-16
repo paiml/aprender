@@ -79,7 +79,10 @@ pub(crate) fn load_tokenizer_from_json(model_path: &Path) -> Option<GgufTokenize
                 .filter(|p| p.exists())
                 .and_then(|p| fs::read_to_string(p).ok())
         })
-        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok());
+        .and_then(|s| {
+            let sanitized = sanitize_hf_json(&s);
+            serde_json::from_str::<serde_json::Value>(&sanitized).ok()
+        });
 
     parse_tokenizer_json(&json, config_json.as_ref())
 }
@@ -91,7 +94,10 @@ fn load_sibling_config(path: &Path) -> Option<serde_json::Value> {
         .exists()
         .then(|| fs::read_to_string(&config_path).ok())
         .flatten()
-        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+        .and_then(|s| {
+            let sanitized = sanitize_hf_json(&s);
+            serde_json::from_str::<serde_json::Value>(&sanitized).ok()
+        })
 }
 
 /// Build vocabulary vector from token-to-id map, padded to expected vocab size.
