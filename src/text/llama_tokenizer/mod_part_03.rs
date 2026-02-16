@@ -45,101 +45,18 @@ impl LlamaTokenizer {
         let mut tokenizer_model = TokenizerModel::SentencePiece; // Default
 
         for _ in 0..metadata_count {
-            if offset + 8 > data.len() {
-                break;
-            }
+            let (key, val_type, new_offset) = match Self::read_metadata_key(data, offset) {
+                Some(v) => v,
+                None => break,
+            };
+            offset = new_offset;
 
-            // Read key
-            let key_len = u64::from_le_bytes(data[offset..offset + 8].try_into().map_err(|_| {
-                AprenderError::FormatError {
-                    message: "Failed to read key length".to_string(),
-                }
-            })?) as usize;
-            offset += 8;
-
-            if offset + key_len > data.len() {
-                break;
-            }
-            let key = String::from_utf8_lossy(&data[offset..offset + key_len]).to_string();
-            offset += key_len;
-
-            if offset + 4 > data.len() {
-                break;
-            }
-
-            // Read value type
-            let val_type =
-                u32::from_le_bytes(data[offset..offset + 4].try_into().map_err(|_| {
-                    AprenderError::FormatError {
-                        message: "Failed to read value type".to_string(),
-                    }
-                })?);
-            offset += 4;
-
-            // Parse value based on type and key
-            match key.as_str() {
-                "tokenizer.ggml.tokens" => {
-                    if val_type == 9 {
-                        // Array
-                        let (arr, new_offset) = Self::parse_string_array(data, offset)?;
-                        tokens = Some(arr);
-                        offset = new_offset;
-                    }
-                }
-                "tokenizer.ggml.scores" => {
-                    if val_type == 9 {
-                        // Array
-                        let (arr, new_offset) = Self::parse_f32_array(data, offset)?;
-                        scores = Some(arr);
-                        offset = new_offset;
-                    }
-                }
-                "tokenizer.ggml.bos_token_id" => {
-                    if val_type == 4 && offset + 4 <= data.len() {
-                        bos_token_id = u32::from_le_bytes(
-                            data[offset..offset + 4].try_into().unwrap_or([0; 4]),
-                        );
-                        offset += 4;
-                    }
-                }
-                "tokenizer.ggml.eos_token_id" => {
-                    if val_type == 4 && offset + 4 <= data.len() {
-                        eos_token_id = u32::from_le_bytes(
-                            data[offset..offset + 4].try_into().unwrap_or([0; 4]),
-                        );
-                        offset += 4;
-                    }
-                }
-                "tokenizer.ggml.unknown_token_id" => {
-                    if val_type == 4 && offset + 4 <= data.len() {
-                        unk_token_id = u32::from_le_bytes(
-                            data[offset..offset + 4].try_into().unwrap_or([0; 4]),
-                        );
-                        offset += 4;
-                    }
-                }
-                "tokenizer.ggml.model" => {
-                    // Detect tokenizer type: "gpt2" for GPT-2 BPE, "llama" for SentencePiece
-                    if val_type == 8 && offset + 8 <= data.len() {
-                        let str_len = u64::from_le_bytes(
-                            data[offset..offset + 8].try_into().unwrap_or([0; 8]),
-                        ) as usize;
-                        offset += 8;
-                        if offset + str_len <= data.len() {
-                            let model_str =
-                                String::from_utf8_lossy(&data[offset..offset + str_len]);
-                            if model_str == "gpt2" {
-                                tokenizer_model = TokenizerModel::Gpt2;
-                            }
-                            offset += str_len;
-                        }
-                    }
-                }
-                _ => {
-                    // Skip other values
-                    offset = Self::skip_value(data, offset, val_type);
-                }
-            }
+            offset = Self::apply_metadata_field(
+                data, offset, &key, val_type,
+                &mut tokens, &mut scores,
+                &mut bos_token_id, &mut eos_token_id, &mut unk_token_id,
+                &mut tokenizer_model,
+            )?;
         }
 
         let tokens = tokens.ok_or_else(|| AprenderError::FormatError {
@@ -151,6 +68,98 @@ impl LlamaTokenizer {
         let mut tokenizer = Self::new(tokens, scores, bos_token_id, eos_token_id, unk_token_id)?;
         tokenizer.set_model(tokenizer_model);
         Ok(tokenizer)
+    }
+
+    /// Read a GGUF metadata key and value type, returning (key, val_type, new_offset).
+    fn read_metadata_key(data: &[u8], mut offset: usize) -> Option<(String, u32, usize)> {
+        if offset + 8 > data.len() { return None; }
+        let key_len = u64::from_le_bytes(data[offset..offset + 8].try_into().ok()?) as usize;
+        offset += 8;
+        if offset + key_len > data.len() { return None; }
+        let key = String::from_utf8_lossy(&data[offset..offset + key_len]).to_string();
+        offset += key_len;
+        if offset + 4 > data.len() { return None; }
+        let val_type = u32::from_le_bytes(data[offset..offset + 4].try_into().ok()?);
+        offset += 4;
+        Some((key, val_type, offset))
+    }
+
+    /// Read a u32 from GGUF data at offset (val_type == 4).
+    fn read_u32_field(data: &[u8], offset: usize, val_type: u32) -> Option<(u32, usize)> {
+        if val_type == 4 && offset + 4 <= data.len() {
+            let val = u32::from_le_bytes(data[offset..offset + 4].try_into().unwrap_or([0; 4]));
+            Some((val, offset + 4))
+        } else {
+            None
+        }
+    }
+
+    /// Read a string from GGUF data at offset (val_type == 8).
+    fn read_string_field(data: &[u8], offset: usize, val_type: u32) -> Option<(String, usize)> {
+        if val_type == 8 && offset + 8 <= data.len() {
+            let str_len = u64::from_le_bytes(data[offset..offset + 8].try_into().unwrap_or([0; 8])) as usize;
+            let new_offset = offset + 8;
+            if new_offset + str_len <= data.len() {
+                let s = String::from_utf8_lossy(&data[new_offset..new_offset + str_len]).to_string();
+                return Some((s, new_offset + str_len));
+            }
+        }
+        None
+    }
+
+    /// Try to read a u32 field, writing it to `target` if present. Returns new offset.
+    fn try_apply_u32(data: &[u8], offset: usize, val_type: u32, target: &mut u32) -> Option<usize> {
+        let (val, off) = Self::read_u32_field(data, offset, val_type)?;
+        *target = val;
+        Some(off)
+    }
+
+    /// Apply a single GGUF metadata field to tokenizer state.
+    #[allow(clippy::too_many_arguments)]
+    fn apply_metadata_field(
+        data: &[u8],
+        offset: usize,
+        key: &str,
+        val_type: u32,
+        tokens: &mut Option<Vec<String>>,
+        scores: &mut Option<Vec<f32>>,
+        bos_token_id: &mut u32,
+        eos_token_id: &mut u32,
+        unk_token_id: &mut u32,
+        tokenizer_model: &mut TokenizerModel,
+    ) -> Result<usize> {
+        match key {
+            "tokenizer.ggml.tokens" if val_type == 9 => {
+                let (arr, off) = Self::parse_string_array(data, offset)?;
+                *tokens = Some(arr);
+                Ok(off)
+            }
+            "tokenizer.ggml.scores" if val_type == 9 => {
+                let (arr, off) = Self::parse_f32_array(data, offset)?;
+                *scores = Some(arr);
+                Ok(off)
+            }
+            "tokenizer.ggml.bos_token_id" => Ok(
+                Self::try_apply_u32(data, offset, val_type, bos_token_id)
+                    .unwrap_or_else(|| Self::skip_value(data, offset, val_type))
+            ),
+            "tokenizer.ggml.eos_token_id" => Ok(
+                Self::try_apply_u32(data, offset, val_type, eos_token_id)
+                    .unwrap_or_else(|| Self::skip_value(data, offset, val_type))
+            ),
+            "tokenizer.ggml.unknown_token_id" => Ok(
+                Self::try_apply_u32(data, offset, val_type, unk_token_id)
+                    .unwrap_or_else(|| Self::skip_value(data, offset, val_type))
+            ),
+            "tokenizer.ggml.model" => {
+                if let Some((s, off)) = Self::read_string_field(data, offset, val_type) {
+                    if s == "gpt2" { *tokenizer_model = TokenizerModel::Gpt2; }
+                    return Ok(off);
+                }
+                Ok(Self::skip_value(data, offset, val_type))
+            }
+            _ => Ok(Self::skip_value(data, offset, val_type)),
+        }
     }
 
     fn parse_string_array(data: &[u8], mut offset: usize) -> Result<(Vec<String>, usize)> {
@@ -228,56 +237,51 @@ impl LlamaTokenizer {
         Ok((result, offset))
     }
 
-    fn skip_value(data: &[u8], mut offset: usize, val_type: u32) -> usize {
+    /// Return the byte size of a single GGUF scalar value for the given type.
+    fn gguf_scalar_size(val_type: u32) -> usize {
         match val_type {
-            0 | 1 | 7 => offset += 1, // u8, i8, bool
-            2 | 3 => offset += 2,     // u16, i16
-            4..=6 => offset += 4,     // u32, i32, f32
-            8 => {
-                // string
-                if offset + 8 > data.len() {
-                    return offset;
-                }
-                let len = u64::from_le_bytes(data[offset..offset + 8].try_into().unwrap_or([0; 8]))
-                    as usize;
-                offset += 8 + len;
-            }
-            9 => {
-                // array
-                if offset + 12 > data.len() {
-                    return offset;
-                }
-                let elem_type =
-                    u32::from_le_bytes(data[offset..offset + 4].try_into().unwrap_or([0; 4]));
-                offset += 4;
-                let count =
-                    u64::from_le_bytes(data[offset..offset + 8].try_into().unwrap_or([0; 8]))
-                        as usize;
-                offset += 8;
+            0 | 1 | 7 => 1,   // u8, i8, bool
+            2 | 3 => 2,       // u16, i16
+            4..=6 => 4,       // u32, i32, f32
+            10..=12 => 8,     // u64, i64, f64
+            _ => 0,
+        }
+    }
 
-                match elem_type {
-                    0 | 1 | 7 => offset += count,
-                    2 | 3 => offset += count * 2,
-                    4..=6 => offset += count * 4,
-                    8 => {
-                        for _ in 0..count {
-                            if offset + 8 > data.len() {
-                                break;
-                            }
-                            let len = u64::from_le_bytes(
-                                data[offset..offset + 8].try_into().unwrap_or([0; 8]),
-                            ) as usize;
-                            offset += 8 + len;
-                        }
-                    }
-                    10..=12 => offset += count * 8,
-                    _ => {}
-                }
+    /// Skip a GGUF string at `offset`, returning new offset.
+    fn skip_gguf_string(data: &[u8], offset: usize) -> usize {
+        if offset + 8 > data.len() { return offset; }
+        let len = u64::from_le_bytes(data[offset..offset + 8].try_into().unwrap_or([0; 8])) as usize;
+        offset + 8 + len
+    }
+
+    /// Skip a GGUF array at `offset`, returning new offset.
+    fn skip_gguf_array(data: &[u8], mut offset: usize) -> usize {
+        if offset + 12 > data.len() { return offset; }
+        let elem_type = u32::from_le_bytes(data[offset..offset + 4].try_into().unwrap_or([0; 4]));
+        offset += 4;
+        let count = u64::from_le_bytes(data[offset..offset + 8].try_into().unwrap_or([0; 8])) as usize;
+        offset += 8;
+
+        let elem_size = Self::gguf_scalar_size(elem_type);
+        if elem_size > 0 {
+            offset += count * elem_size;
+        } else if elem_type == 8 {
+            for _ in 0..count {
+                offset = Self::skip_gguf_string(data, offset);
             }
-            10..=12 => offset += 8, // u64, i64, f64
-            _ => {}
         }
         offset
+    }
+
+    fn skip_value(data: &[u8], offset: usize, val_type: u32) -> usize {
+        let scalar = Self::gguf_scalar_size(val_type);
+        if scalar > 0 { return offset + scalar; }
+        match val_type {
+            8 => Self::skip_gguf_string(data, offset),
+            9 => Self::skip_gguf_array(data, offset),
+            _ => offset,
+        }
     }
 }
 

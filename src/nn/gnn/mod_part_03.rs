@@ -106,10 +106,118 @@ impl GATConv {
 
     /// `LeakyReLU` activation.
     fn leaky_relu(&self, x: f32) -> f32 {
-        if x > 0.0 {
-            x
-        } else {
-            self.negative_slope * x
+        if x > 0.0 { x } else { self.negative_slope * x }
+    }
+
+    /// Linear transformation: H = X * W [num_nodes, total_out].
+    fn linear_transform(
+        x_data: &[f32],
+        w_data: &[f32],
+        num_nodes: usize,
+        in_features: usize,
+        total_out: usize,
+    ) -> Vec<f32> {
+        let mut h_data = vec![0.0f32; num_nodes * total_out];
+        for node in 0..num_nodes {
+            for out_f in 0..total_out {
+                let mut sum = 0.0f32;
+                for in_f in 0..in_features {
+                    sum += x_data[node * in_features + in_f] * w_data[in_f * total_out + out_f];
+                }
+                h_data[node * total_out + out_f] = sum;
+            }
+        }
+        h_data
+    }
+
+    /// Build adjacency neighbor lists (target -> list of sources).
+    fn build_neighbor_lists(adj: &AdjacencyMatrix, num_nodes: usize) -> Vec<Vec<usize>> {
+        let mut lists: Vec<Vec<usize>> = vec![Vec::new(); num_nodes];
+        for (&src, &tgt) in adj.edge_src().iter().zip(adj.edge_tgt().iter()) {
+            if tgt < num_nodes && src < num_nodes {
+                lists[tgt].push(src);
+            }
+        }
+        lists
+    }
+
+    /// Compute attention score for a single edge (node → neighbor) for one head.
+    fn edge_attention_score(
+        &self,
+        att_src_data: &[f32],
+        att_tgt_data: &[f32],
+        h_data: &[f32],
+        node: usize,
+        neigh: usize,
+        head: usize,
+        total_out: usize,
+    ) -> f32 {
+        let head_off = head * self.out_features;
+        let mut score = 0.0f32;
+        for f in 0..self.out_features {
+            score += att_src_data[head * self.out_features + f]
+                * h_data[node * total_out + head_off + f];
+            score += att_tgt_data[head * self.out_features + f]
+                * h_data[neigh * total_out + head_off + f];
+        }
+        self.leaky_relu(score)
+    }
+
+    /// Softmax over raw attention scores, returning normalized weights.
+    fn softmax_attention(scores: &[f32]) -> Vec<f32> {
+        let max_s = scores.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+        let exp: Vec<f32> = scores.iter().map(|&s| (s - max_s).exp()).collect();
+        let sum: f32 = exp.iter().sum();
+        exp.iter().map(|&e| e / (sum + 1e-8)).collect()
+    }
+
+    /// Scatter attention-weighted neighbor features into output for one head.
+    fn scatter_attention(
+        &self,
+        h_data: &[f32],
+        neighbors: &[usize],
+        attn_weights: &[f32],
+        node: usize,
+        head: usize,
+        total_out: usize,
+        final_out: usize,
+        output: &mut [f32],
+    ) {
+        let head_off = head * self.out_features;
+        for (i, &neigh) in neighbors.iter().enumerate() {
+            let alpha = attn_weights[i];
+            let scale = if self.concat { 1.0 } else { 1.0 / self.num_heads as f32 };
+            let out_off = if self.concat { head_off } else { 0 };
+            for f in 0..self.out_features {
+                output[node * final_out + out_off + f] +=
+                    alpha * scale * h_data[neigh * total_out + head_off + f];
+            }
+        }
+    }
+
+    /// Add bias to GAT output, handling concat vs average mode.
+    fn add_gat_bias(
+        bias_data: &[f32],
+        num_nodes: usize,
+        out_features: usize,
+        num_heads: usize,
+        final_out: usize,
+        concat: bool,
+        output: &mut [f32],
+    ) {
+        for node in 0..num_nodes {
+            if concat {
+                for f in 0..final_out {
+                    output[node * final_out + f] += bias_data[f];
+                }
+            } else {
+                for f in 0..out_features {
+                    let avg_bias: f32 = (0..num_heads)
+                        .map(|h| bias_data[h * out_features + f])
+                        .sum::<f32>() / num_heads as f32;
+                    output[node * final_out + f] += avg_bias;
+                }
+            }
         }
     }
 
@@ -122,147 +230,42 @@ impl GATConv {
     /// # Returns
     /// Output features [`num_nodes`, `out_features` * `num_heads`] if concat
     /// or [`num_nodes`, `out_features`] if averaging heads
-    #[allow(clippy::too_many_lines)]
+    #[must_use]
     pub fn forward(&self, x: &Tensor, adj: &AdjacencyMatrix) -> Tensor {
         let num_nodes = x.shape()[0];
-        let in_feat = x.shape()[1];
+        assert_eq!(x.shape()[1], self.in_features);
 
-        assert_eq!(in_feat, self.in_features);
-
-        // Add self-loops if needed
         let adj_with_loops = if self.add_self_loops && !adj.has_self_loops() {
             adj.clone().add_self_loops()
         } else {
             adj.clone()
         };
 
-        let x_data = x.data();
-        let w_data = self.weight.data();
+        let total_out = self.out_features * self.num_heads;
+        let h_data = Self::linear_transform(
+            &x.data(), &self.weight.data(), num_nodes, self.in_features, total_out,
+        );
+        let neighbor_lists = Self::build_neighbor_lists(&adj_with_loops, num_nodes);
         let att_src_data = self.att_src.data();
         let att_tgt_data = self.att_tgt.data();
 
-        let total_out = self.out_features * self.num_heads;
-
-        // Step 1: Linear transformation: H = X * W [num_nodes, out_features * num_heads]
-        let mut h_data = vec![0.0f32; num_nodes * total_out];
-        for node in 0..num_nodes {
-            for out_f in 0..total_out {
-                let mut sum = 0.0f32;
-                for in_f in 0..self.in_features {
-                    sum += x_data[node * in_feat + in_f] * w_data[in_f * total_out + out_f];
-                }
-                h_data[node * total_out + out_f] = sum;
-            }
-        }
-
-        // Step 2: Compute attention scores for each head
-        // Build neighbor list
-        let mut neighbor_lists: Vec<Vec<usize>> = vec![Vec::new(); num_nodes];
-        for (&src, &tgt) in adj_with_loops
-            .edge_src()
-            .iter()
-            .zip(adj_with_loops.edge_tgt().iter())
-        {
-            if tgt < num_nodes && src < num_nodes {
-                neighbor_lists[tgt].push(src);
-            }
-        }
-
-        // Output: [num_nodes, total_out] if concat, [num_nodes, out_features] if avg
-        let final_out = if self.concat {
-            total_out
-        } else {
-            self.out_features
-        };
+        let final_out = if self.concat { total_out } else { self.out_features };
         let mut output = vec![0.0f32; num_nodes * final_out];
 
-        // For each node, compute attention-weighted sum of neighbor features
         for node in 0..num_nodes {
             let neighbors = &neighbor_lists[node];
-
-            if neighbors.is_empty() {
-                continue;
-            }
-
-            // For each head
+            if neighbors.is_empty() { continue; }
             for head in 0..self.num_heads {
-                let head_offset = head * self.out_features;
-
-                // Compute attention scores for all neighbors
-                let mut attn_scores: Vec<f32> = Vec::with_capacity(neighbors.len());
-
-                for &neigh in neighbors {
-                    // e_ij = LeakyReLU(a_src^T * h_i + a_tgt^T * h_j)
-                    let mut score = 0.0f32;
-
-                    // Source (current node) contribution
-                    for f in 0..self.out_features {
-                        score += att_src_data[head * self.out_features + f]
-                            * h_data[node * total_out + head_offset + f];
-                    }
-
-                    // Target (neighbor) contribution
-                    for f in 0..self.out_features {
-                        score += att_tgt_data[head * self.out_features + f]
-                            * h_data[neigh * total_out + head_offset + f];
-                    }
-
-                    attn_scores.push(self.leaky_relu(score));
-                }
-
-                // Softmax over attention scores
-                let max_score = attn_scores
-                    .iter()
-                    .copied()
-                    .fold(f32::NEG_INFINITY, f32::max);
-                let exp_scores: Vec<f32> =
-                    attn_scores.iter().map(|&s| (s - max_score).exp()).collect();
-                let sum_exp: f32 = exp_scores.iter().sum();
-                let attn_weights: Vec<f32> =
-                    exp_scores.iter().map(|&e| e / (sum_exp + 1e-8)).collect();
-
-                // Compute attention-weighted sum
-                for (i, &neigh) in neighbors.iter().enumerate() {
-                    let alpha = attn_weights[i];
-
-                    if self.concat {
-                        for f in 0..self.out_features {
-                            output[node * final_out + head_offset + f] +=
-                                alpha * h_data[neigh * total_out + head_offset + f];
-                        }
-                    } else {
-                        // Average across heads
-                        for f in 0..self.out_features {
-                            output[node * final_out + f] += alpha
-                                * h_data[neigh * total_out + head_offset + f]
-                                / self.num_heads as f32;
-                        }
-                    }
-                }
+                let scores: Vec<f32> = neighbors.iter()
+                    .map(|&n| self.edge_attention_score(&att_src_data, &att_tgt_data, &h_data, node, n, head, total_out))
+                    .collect();
+                let weights = Self::softmax_attention(&scores);
+                self.scatter_attention(&h_data, neighbors, &weights, node, head, total_out, final_out, &mut output);
             }
         }
 
-        // Add bias
         if let Some(ref bias) = self.bias {
-            let bias_data = bias.data();
-            if self.concat {
-                for node in 0..num_nodes {
-                    for f in 0..final_out {
-                        output[node * final_out + f] += bias_data[f];
-                    }
-                }
-            } else {
-                // When averaging, we also average the bias
-                for node in 0..num_nodes {
-                    for f in 0..self.out_features {
-                        let mut avg_bias = 0.0f32;
-                        for head in 0..self.num_heads {
-                            avg_bias += bias_data[head * self.out_features + f];
-                        }
-                        output[node * final_out + f] += avg_bias / self.num_heads as f32;
-                    }
-                }
-            }
+            Self::add_gat_bias(&bias.data(), num_nodes, self.out_features, self.num_heads, final_out, self.concat, &mut output);
         }
 
         Tensor::new(&output, &[num_nodes, final_out])

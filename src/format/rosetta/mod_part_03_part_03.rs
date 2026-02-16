@@ -81,51 +81,49 @@ impl RosettaStone {
         })
     }
 
+    /// Build an empty (valid) `TensorValidation` for tensors with no elements.
+    fn empty_tensor_validation(name: &str) -> TensorValidation {
+        TensorValidation {
+            name: name.to_string(),
+            is_valid: true,
+            nan_count: 0,
+            inf_count: 0,
+            zero_count: 0,
+            element_count: 0,
+            min: 0.0,
+            max: 0.0,
+            mean: 0.0,
+            std: 0.0,
+            failures: Vec::new(),
+        }
+    }
+
+    /// Clamp infinite min/max to 0.0 for reporting.
+    fn clamp_infinite(v: f32) -> f32 {
+        if v.is_infinite() { 0.0 } else { v }
+    }
+
     fn compute_tensor_validation(&self, name: &str, data: &[f32]) -> TensorValidation {
         let element_count = data.len();
         if element_count == 0 {
-            return TensorValidation {
-                name: name.to_string(),
-                is_valid: true,
-                nan_count: 0,
-                inf_count: 0,
-                zero_count: 0,
-                element_count: 0,
-                min: 0.0,
-                max: 0.0,
-                mean: 0.0,
-                std: 0.0,
-                failures: Vec::new(),
-            };
+            return Self::empty_tensor_validation(name);
         }
 
         let stats = Self::accumulate_tensor_stats(data);
         let valid_count = element_count - stats.nan_count - stats.inf_count;
-        let mean = if valid_count > 0 {
-            (stats.sum / valid_count as f64) as f32
-        } else {
-            0.0
-        };
+        let mean = if valid_count > 0 { (stats.sum / valid_count as f64) as f32 } else { 0.0 };
         let std = Self::compute_std_dev(data, mean, valid_count);
-
-        let failures = Self::collect_validation_failures(
-            name,
-            data,
-            &stats,
-            element_count,
-            valid_count,
-        );
-        let is_valid = failures.is_empty();
+        let failures = Self::collect_validation_failures(name, data, &stats, element_count, valid_count);
 
         TensorValidation {
             name: name.to_string(),
-            is_valid,
+            is_valid: failures.is_empty(),
             nan_count: stats.nan_count,
             inf_count: stats.inf_count,
             zero_count: stats.zero_count,
             element_count,
-            min: if stats.min.is_infinite() { 0.0 } else { stats.min },
-            max: if stats.max.is_infinite() { 0.0 } else { stats.max },
+            min: Self::clamp_infinite(stats.min),
+            max: Self::clamp_infinite(stats.max),
             mean,
             std,
             failures,
