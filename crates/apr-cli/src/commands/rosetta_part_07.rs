@@ -353,6 +353,42 @@ fn print_conversion_json(
     println!("}}");
 }
 
+fn print_conversion_summary(report: &ConversionReport) {
+    println!();
+    println!("{}", "--- Target Inspection ---".yellow());
+    print_inspection_summary(&report.target_inspection);
+    println!();
+
+    // Summary
+    println!("{}", "=== Conversion Summary ===".cyan().bold());
+    println!("Path: {}", report.path);
+    println!("Duration: {}ms", report.duration_ms);
+    println!(
+        "Tensors: {} -> {}",
+        report.source_inspection.tensors.len(),
+        report.target_inspection.tensors.len()
+    );
+
+    if report.is_lossless() && report.tensor_counts_match() {
+        println!();
+        println!("{}", "Conversion successful".green().bold());
+    } else {
+        println!();
+        if !report.tensor_counts_match() {
+            println!(
+                "{}",
+                "Warning: Tensor count changed during conversion".yellow()
+            );
+        }
+        if !report.is_lossless() {
+            println!(
+                "{}",
+                format!("Warning: {} tensors dropped", report.dropped_tensors.len()).yellow()
+            );
+        }
+    }
+}
+
 fn print_verification_json(report: &VerificationReport) {
     println!("{{");
     println!("  \"is_equivalent\": {},", report.is_equivalent);

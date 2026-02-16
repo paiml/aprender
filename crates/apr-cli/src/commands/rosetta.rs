@@ -10,8 +10,8 @@
 use crate::error::{CliError, Result};
 use crate::output;
 use aprender::format::rosetta::{
-    ConversionOptions, ConversionPath, FormatType, InspectionReport, RosettaStone, TensorInfo,
-    VerificationReport,
+    ConversionOptions, ConversionPath, ConversionReport, FormatType, InspectionReport,
+    RosettaStone, TensorInfo, VerificationReport,
 };
 use clap::Subcommand;
 use colored::Colorize;
@@ -301,39 +301,7 @@ pub fn run_convert(
     if json {
         print_conversion_json(&report.path, &source_report, &report.target_inspection);
     } else {
-        println!();
-        println!("{}", "--- Target Inspection ---".yellow());
-        print_inspection_summary(&report.target_inspection);
-        println!();
-
-        // Summary
-        println!("{}", "=== Conversion Summary ===".cyan().bold());
-        println!("Path: {}", report.path);
-        println!("Duration: {}ms", report.duration_ms);
-        println!(
-            "Tensors: {} -> {}",
-            report.source_inspection.tensors.len(),
-            report.target_inspection.tensors.len()
-        );
-
-        if report.is_lossless() && report.tensor_counts_match() {
-            println!();
-            println!("{}", "Conversion successful".green().bold());
-        } else {
-            println!();
-            if !report.tensor_counts_match() {
-                println!(
-                    "{}",
-                    "Warning: Tensor count changed during conversion".yellow()
-                );
-            }
-            if !report.is_lossless() {
-                println!(
-                    "{}",
-                    format!("Warning: {} tensors dropped", report.dropped_tensors.len()).yellow()
-                );
-            }
-        }
+        print_conversion_summary(&report);
     }
 
     Ok(())

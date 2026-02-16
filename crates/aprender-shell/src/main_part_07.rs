@@ -230,6 +230,96 @@ fn cmd_stream(model_path: &str, count: usize, format: &str, use_password: bool) 
     eprintln!("👋 Stream mode exiting");
 }
 
+/// Load a model for daemon/stream use, handling password and error exits.
+#[cfg(unix)]
+fn load_daemon_model(path: &std::path::Path, use_password: bool) -> MarkovModel {
+    if use_password {
+        let password =
+            rpassword::prompt_password("🔐 Model password: ").unwrap_or_else(|_| String::new());
+        match MarkovModel::load_encrypted(path, &password) {
+            Ok(m) => m,
+            Err(e) => {
+                eprintln!("❌ Failed to load encrypted model: {e}");
+                std::process::exit(1);
+            }
+        }
+    } else {
+        match load_model_graceful(path) {
+            Ok(m) => m,
+            Err(e) => {
+                eprintln!("{e}");
+                std::process::exit(1);
+            }
+        }
+    }
+}
+
+/// Result of handling a single daemon request.
+#[cfg(unix)]
+enum DaemonAction {
+    /// Continue accepting connections.
+    Continue,
+    /// Shut down the daemon.
+    Shutdown,
+}
+
+/// Handle a single daemon request (special commands or suggestion generation).
+#[cfg(unix)]
+fn handle_daemon_request(
+    prefix: &str,
+    stream: &mut std::os::unix::net::UnixStream,
+    model: &MarkovModel,
+    count: usize,
+    start_time: std::time::Instant,
+    request_count: u64,
+) -> DaemonAction {
+    use std::io::Write;
+
+    match prefix.to_uppercase().as_str() {
+        "PING" => {
+            writeln!(stream, "PONG").ok();
+            writeln!(stream).ok();
+            return DaemonAction::Continue;
+        }
+        "QUIT" | "SHUTDOWN" => {
+            writeln!(stream, "OK").ok();
+            eprintln!("👋 Daemon shutting down (received QUIT)");
+            return DaemonAction::Shutdown;
+        }
+        "STATS" => {
+            let uptime = start_time.elapsed().as_secs();
+            writeln!(stream, "requests: {request_count}").ok();
+            writeln!(stream, "uptime_secs: {uptime}").ok();
+            writeln!(stream, "model_commands: {}", model.total_commands()).ok();
+            writeln!(stream, "model_ngrams: {}", model.ngram_count()).ok();
+            writeln!(stream).ok();
+            return DaemonAction::Continue;
+        }
+        "" => {
+            writeln!(stream).ok();
+            return DaemonAction::Continue;
+        }
+        _ => {}
+    }
+
+    // Validate and get suggestions
+    let suggestions = match sanitize_prefix(prefix) {
+        Ok(p) => {
+            let raw = model.suggest(&p, count);
+            filter_sensitive_suggestions(raw)
+        }
+        Err(_) => vec![],
+    };
+
+    // Send suggestions
+    for (suggestion, _) in &suggestions {
+        writeln!(stream, "{suggestion}").ok();
+    }
+    writeln!(stream).ok(); // Empty line terminates response
+
+    DaemonAction::Continue
+}
+
 /// Daemon mode: Unix socket server for sub-ms suggestions
 ///
 /// Starts a server that listens on a Unix socket and responds to suggestion requests.
@@ -247,7 +337,7 @@ fn cmd_daemon(
     use_password: bool,
     foreground: bool,
 ) {
-    use std::io::{BufRead, BufReader, Write};
+    use std::io::{BufRead, BufReader};
     use std::os::unix::net::UnixListener;
 
     let path = expand_path(model_path);
@@ -260,25 +350,7 @@ fn cmd_daemon(
     }
 
     // Load model
-    let model = if use_password {
-        let password =
-            rpassword::prompt_password("🔐 Model password: ").unwrap_or_else(|_| String::new());
-        match MarkovModel::load_encrypted(&path, &password) {
-            Ok(m) => m,
-            Err(e) => {
-                eprintln!("❌ Failed to load encrypted model: {e}");
-                std::process::exit(1);
-            }
-        }
-    } else {
-        match load_model_graceful(&path) {
-            Ok(m) => m,
-            Err(e) => {
-                eprintln!("{e}");
-                std::process::exit(1);
-            }
-        }
-    };
+    let model = load_daemon_model(&path, use_password);
 
     // Bind socket
     let listener = match UnixListener::bind(socket_path) {
@@ -328,48 +400,11 @@ fn cmd_daemon(
         let prefix = line.trim();
         request_count += 1;
 
-        // Handle special commands
-        match prefix.to_uppercase().as_str() {
-            "PING" => {
-                writeln!(stream, "PONG").ok();
-                writeln!(stream).ok();
-                continue;
-            }
-            "QUIT" | "SHUTDOWN" => {
-                writeln!(stream, "OK").ok();
-                eprintln!("👋 Daemon shutting down (received QUIT)");
-                break;
-            }
-            "STATS" => {
-                let uptime = start_time.elapsed().as_secs();
-                writeln!(stream, "requests: {request_count}").ok();
-                writeln!(stream, "uptime_secs: {uptime}").ok();
-                writeln!(stream, "model_commands: {}", model.total_commands()).ok();
-                writeln!(stream, "model_ngrams: {}", model.ngram_count()).ok();
-                writeln!(stream).ok();
-                continue;
-            }
-            "" => {
-                writeln!(stream).ok();
-                continue;
-            }
-            _ => {}
+        match handle_daemon_request(prefix, &mut stream, &model, count, start_time, request_count)
+        {
+            DaemonAction::Shutdown => break,
+            DaemonAction::Continue => {}
         }
-
-        // Validate and get suggestions
-        let suggestions = match sanitize_prefix(prefix) {
-            Ok(p) => {
-                let raw = model.suggest(&p, count);
-                filter_sensitive_suggestions(raw)
-            }
-            Err(_) => vec![],
-        };
-
-        // Send suggestions
-        for (suggestion, _) in &suggestions {
-            writeln!(stream, "{suggestion}").ok();
-        }
-        writeln!(stream).ok(); // Empty line terminates response
     }
 
     // Cleanup

@@ -108,11 +108,7 @@ fn display_plan_json(
 }
 
 /// Display plan configuration as human-readable text.
-fn display_plan_text(
-    config: &OptimalConfig,
-    req: &MemoryRequirement,
-    vram_gb: f64,
-) {
+fn display_plan_text(config: &OptimalConfig, req: &MemoryRequirement, vram_gb: f64) {
     println!("{}", "RECOMMENDED CONFIGURATION".white().bold());
     println!("{}", "═".repeat(50));
     println!();
@@ -378,7 +374,15 @@ pub(crate) fn run(
     }
 
     let model_params = resolve_model_params(model_size, model_path)?;
-    display_run_header(ft_method, model_params, vram_gb, rank, epochs, learning_rate, json_output);
+    display_run_header(
+        ft_method,
+        model_params,
+        vram_gb,
+        rank,
+        epochs,
+        learning_rate,
+        json_output,
+    );
 
     let config = plan(model_params, vram_gb, ft_method.into())
         .map_err(|e| CliError::ValidationFailed(format!("Failed to plan config: {e}")))?;
@@ -387,7 +391,15 @@ pub(crate) fn run(
     let req = planner.estimate(config.method, config.rank);
 
     if json_output {
-        display_plan_json(&config, &req, model_params, vram_gb, epochs, learning_rate, plan_only);
+        display_plan_json(
+            &config,
+            &req,
+            model_params,
+            vram_gb,
+            epochs,
+            learning_rate,
+            plan_only,
+        );
     } else {
         display_plan_text(&config, &req, vram_gb);
     }
@@ -456,9 +468,7 @@ fn display_next_steps(json_output: bool) {
         println!("{}", "NEXT STEPS".white().bold());
         println!("{}", "─".repeat(50));
         println!("  Provide --data <train.jsonl> to start training.");
-        println!(
-            "  Example: apr finetune model.apr --method lora --data train.jsonl -o adapter/"
-        );
+        println!("  Example: apr finetune model.apr --method lora --data train.jsonl -o adapter/");
     }
 }
 
@@ -538,10 +548,7 @@ fn display_merge_result(
         println!(
             "{}",
             output::kv_table(&[
-                (
-                    "Layers merged",
-                    format!("{merged_count} / {total_layers}")
-                ),
+                ("Layers merged", format!("{merged_count} / {total_layers}")),
                 (
                     "Output size",
                     humansize::format_size(output_size, humansize::BINARY)
@@ -597,8 +604,14 @@ fn run_merge(
     let mut writer = aprender::serialization::apr::AprWriter::new();
     let mut merged_count = 0u64;
 
-    writer.set_metadata("merge_source", serde_json::json!(model.display().to_string()));
-    writer.set_metadata("merge_adapter", serde_json::json!(adapter.display().to_string()));
+    writer.set_metadata(
+        "merge_source",
+        serde_json::json!(model.display().to_string()),
+    );
+    writer.set_metadata(
+        "merge_adapter",
+        serde_json::json!(adapter.display().to_string()),
+    );
     writer.set_metadata("lora_rank", serde_json::json!(lora_rank));
     writer.set_metadata("lora_alpha", serde_json::json!(lora_alpha));
 
@@ -634,8 +647,15 @@ fn run_merge(
         .map_err(|e| CliError::ValidationFailed(format!("Failed to write output: {e}")))?;
 
     display_merge_result(
-        model, adapter, out, bytes.len() as u64, merged_count,
-        base_report.tensors.len(), lora_rank, lora_alpha, json_output,
+        model,
+        adapter,
+        out,
+        bytes.len() as u64,
+        merged_count,
+        base_report.tensors.len(),
+        lora_rank,
+        lora_alpha,
+        json_output,
     );
     Ok(())
 }

@@ -38,7 +38,7 @@ impl CommandGenerator {
         self.templates.iter().flat_map(|t| {
             t.variants
                 .iter()
-                .map(move |v| Self::build_command(&t.base, v, "", ""))
+                .map(move |v| Self::build_command(t.base, v, "", ""))
         })
     }
 
@@ -48,7 +48,7 @@ impl CommandGenerator {
             t.variants.iter().flat_map(move |v| {
                 t.flags
                     .iter()
-                    .map(move |f| Self::build_command(&t.base, v, f, ""))
+                    .map(move |f| Self::build_command(t.base, v, f, ""))
             })
         })
     }
@@ -60,7 +60,7 @@ impl CommandGenerator {
                 t.flags.iter().flat_map(move |f| {
                     t.args
                         .iter()
-                        .map(move |a| Self::build_command(&t.base, v, f, a))
+                        .map(move |a| Self::build_command(t.base, v, f, a))
                 })
             })
         })

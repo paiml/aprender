@@ -219,11 +219,39 @@ fn execute_safetensors_inference(
 
     let infer_time = infer_start.elapsed();
 
+    Ok(format_safetensors_output(
+        &cfg,
+        v,
+        &input_tokens,
+        &generated_tokens,
+        hidden_size,
+        num_layers,
+        vocab_size,
+        infer_time,
+        &mut tracer,
+    ))
+}
+
+/// Format the output string for SafeTensors generation, including trace decode/output.
+#[cfg(feature = "inference")]
+fn format_safetensors_output(
+    cfg: &realizar::safetensors::SafetensorsConfig,
+    vocab: &[String],
+    input_tokens: &[u32],
+    generated_tokens: &[u32],
+    hidden_size: usize,
+    num_layers: usize,
+    vocab_size: usize,
+    infer_time: std::time::Duration,
+    tracer: &mut Option<realizar::InferenceTracer>,
+) -> String {
+    use realizar::apr::AprModel;
+
     // Trace DECODE step for generated tokens
     if let Some(ref mut t) = tracer {
         for (i, &token_id) in generated_tokens.iter().enumerate() {
             t.start_step(realizar::TraceStep::Decode);
-            let decoded = AprModel::decode_tokens(v, &[token_id]);
+            let decoded = AprModel::decode_tokens(vocab, &[token_id]);
             t.trace_decode(i + 1, token_id, &decoded, vocab_size);
         }
 
@@ -258,14 +286,14 @@ fn execute_safetensors_inference(
     );
 
     // Decode and show output text
-    let decoded_text = AprModel::decode_tokens(v, &generated_tokens);
+    let decoded_text = AprModel::decode_tokens(vocab, generated_tokens);
     output.push_str("Generated text:\n");
     output.push_str(&format!("  {}\n\n", clean_model_output(&decoded_text)));
 
     output.push_str("Generated token IDs:\n");
     output.push_str(&format!("  {:?}\n", generated_tokens));
 
-    Ok(output)
+    output
 }
 
 /// Find embedding tensor name in SafeTensors model
@@ -368,6 +396,47 @@ fn run_safetensors_generation(
     generated
 }
 
+/// Format and encode a GGUF prompt: detect instruct mode, apply chat template, encode, and log.
+#[cfg(feature = "inference")]
+fn format_gguf_prompt(
+    prompt: &str,
+    model_path: &Path,
+    options: &RunOptions,
+    mapped_model: &realizar::gguf::MappedGGUFModel,
+) -> Vec<u32> {
+    use realizar::chat_template::{format_messages, ChatMessage};
+
+    let model_name = model_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("");
+    let is_instruct = model_name.to_lowercase().contains("instruct");
+
+    let formatted_prompt = if is_instruct {
+        let messages = vec![ChatMessage::user(prompt)];
+        format_messages(&messages, Some(model_name)).unwrap_or_else(|_| prompt.to_owned())
+    } else {
+        prompt.to_owned()
+    };
+
+    if options.trace || options.verbose {
+        eprintln!(
+            "[APR-TRACE] Model: {} (instruct={})",
+            model_name, is_instruct
+        );
+        eprintln!("[APR-TRACE] Formatted prompt: {:?}", formatted_prompt);
+    }
+
+    let tokens = mapped_model.model.encode(&formatted_prompt);
+    if options.trace || options.verbose {
+        eprintln!(
+            "[APR-TRACE] encode returned: {:?}",
+            tokens.as_ref().map(std::vec::Vec::len)
+        );
+    }
+    tokens.unwrap_or_else(|| vec![1u32])
+}
+
 /// Prepare input tokens for GGUF inference (prompt encoding with chat template).
 #[cfg(feature = "inference")]
 fn prepare_gguf_input_tokens(
@@ -376,46 +445,15 @@ fn prepare_gguf_input_tokens(
     options: &RunOptions,
     input_path: Option<&PathBuf>,
 ) -> Result<Vec<u32>> {
-    use realizar::chat_template::{format_messages, ChatMessage};
-
     if let Some(ref prompt) = options.prompt {
         if prompt.contains(',') || prompt.chars().all(|c| c.is_ascii_digit() || c == ',') {
             return parse_token_ids(prompt);
         }
-
-        let model_name = model_path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("");
-        let is_instruct = model_name.to_lowercase().contains("instruct");
-
-        let formatted_prompt = if is_instruct {
-            let messages = vec![ChatMessage::user(prompt)];
-            format_messages(&messages, Some(model_name)).unwrap_or_else(|_| prompt.clone())
-        } else {
-            prompt.clone()
-        };
-
-        if options.trace || options.verbose {
-            eprintln!(
-                "[APR-TRACE] Model: {} (instruct={})",
-                model_name, is_instruct
-            );
-            eprintln!("[APR-TRACE] Formatted prompt: {:?}", formatted_prompt);
-        }
-
-        let tokens = mapped_model.model.encode(&formatted_prompt);
-        if options.trace || options.verbose {
-            eprintln!(
-                "[APR-TRACE] encode returned: {:?}",
-                tokens.as_ref().map(std::vec::Vec::len)
-            );
-        }
-        Ok(tokens.unwrap_or_else(|| vec![1u32]))
-    } else if let Some(path) = input_path {
-        let content = std::fs::read_to_string(path)?;
-        parse_token_ids(&content)
-    } else {
-        Ok(vec![1u32])
+        return Ok(format_gguf_prompt(prompt, model_path, options, mapped_model));
     }
+    if let Some(path) = input_path {
+        let content = std::fs::read_to_string(path)?;
+        return parse_token_ids(&content);
+    }
+    Ok(vec![1u32])
 }
