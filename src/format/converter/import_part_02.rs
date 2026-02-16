@@ -340,25 +340,24 @@ pub(crate) fn parse_tokenizer_json(
     // Step 3: Extract BOS/EOS special token IDs
     let (bos_token_id, eos_token_id) = parse_special_tokens(json, config_json);
 
-    // Step 4: Extract model type and merge rules
-    let model_type = json
-        .get("model")
-        .and_then(|m| m.get("type"))
-        .and_then(|t| t.as_str())
-        .map(String::from);
-
-    let merges = parse_merges(json);
-
     Some(GgufTokenizer {
         vocabulary,
-        merges,
-        model_type,
+        merges: parse_merges(json),
+        model_type: extract_model_type(json),
         bos_token_id,
         eos_token_id,
         architecture: None,
         model_name: None,
         ..Default::default()
     })
+}
+
+/// Extract model type string from tokenizer JSON.
+fn extract_model_type(json: &serde_json::Value) -> Option<String> {
+    json.get("model")
+        .and_then(|m| m.get("type"))
+        .and_then(|t| t.as_str())
+        .map(String::from)
 }
 
 /// Build a token-to-id map from the base vocabulary in `model.vocab`, then overlay

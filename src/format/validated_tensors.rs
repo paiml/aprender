@@ -201,13 +201,11 @@ impl ValidatedEmbedding {
         vocab_size: usize,
         hidden_dim: usize,
     ) -> Result<Self, ContractValidationError> {
-        let name = "embedding";
-
         // Gate 1: Shape validation (structural)
         let expected_len = vocab_size * hidden_dim;
         if data.len() != expected_len {
             return Err(ContractValidationError {
-                tensor_name: name.to_string(),
+                tensor_name: "embedding".to_string(),
                 rule_id: "F-LAYOUT-CONTRACT-001".to_string(),
                 message: format!(
                     "Shape mismatch: got {} elements, expected {} ({}x{})",
@@ -221,11 +219,25 @@ impl ValidatedEmbedding {
 
         let stats = TensorStats::compute(&data);
 
-        // Gate 2: Density validation (F-DATA-QUALITY-001)
-        // Rejects tensors with >80% zeros (corrupt offset or uninitialized data)
+        // Gates 2-6: Statistical quality validation
+        Self::validate_stats(&stats)?;
+
+        // Gate 7: Spot check validation at 10%/50%/90% of vocab
+        Self::validate_spot_checks(&data, vocab_size, hidden_dim)?;
+
+        Ok(Self {
+            data,
+            vocab_size,
+            hidden_dim,
+            stats,
+        })
+    }
+
+    /// Validate tensor statistics (Gates 2-6).
+    fn validate_stats(stats: &TensorStats) -> Result<(), ContractValidationError> {
         if stats.zero_pct() > Self::MAX_ZERO_PCT {
             return Err(ContractValidationError {
-                tensor_name: name.to_string(),
+                tensor_name: "embedding".to_string(),
                 rule_id: "F-DATA-QUALITY-001".to_string(),
                 message: format!(
                     "DENSITY FAILURE: {:.1}% zeros (max {}%). Data likely loaded from wrong offset!",
@@ -234,45 +246,43 @@ impl ValidatedEmbedding {
                 ),
             });
         }
-
-        // Gate 3: NaN validation (F-DATA-QUALITY-002)
         if stats.nan_count > 0 {
             return Err(ContractValidationError {
-                tensor_name: name.to_string(),
+                tensor_name: "embedding".to_string(),
                 rule_id: "F-DATA-QUALITY-002".to_string(),
                 message: format!("Contains {} NaN values", stats.nan_count),
             });
         }
-
-        // Gate 4: Inf validation (F-DATA-QUALITY-002)
         if stats.inf_count > 0 {
             return Err(ContractValidationError {
-                tensor_name: name.to_string(),
+                tensor_name: "embedding".to_string(),
                 rule_id: "F-DATA-QUALITY-002".to_string(),
                 message: format!("Contains {} Inf values", stats.inf_count),
             });
         }
-
-        // Gate 5: L2 norm validation (F-DATA-QUALITY-003)
         if stats.l2_norm < Self::MIN_L2_NORM {
             return Err(ContractValidationError {
-                tensor_name: name.to_string(),
+                tensor_name: "embedding".to_string(),
                 rule_id: "F-DATA-QUALITY-003".to_string(),
                 message: "L2 norm ~0: tensor is effectively empty".to_string(),
             });
         }
-
-        // Gate 6: Variation validation (F-DATA-QUALITY-003)
         if (stats.max - stats.min).abs() < 1e-10 {
             return Err(ContractValidationError {
-                tensor_name: name.to_string(),
+                tensor_name: "embedding".to_string(),
                 rule_id: "F-DATA-QUALITY-003".to_string(),
                 message: "All values identical: tensor is constant".to_string(),
             });
         }
+        Ok(())
+    }
 
-        // Gate 7: Spot check validation (F-DATA-QUALITY-004)
-        // Check tokens at 10%, 50%, 90% of vocab to catch offset bugs
+    /// Validate spot checks at key vocab positions (Gate 7).
+    fn validate_spot_checks(
+        data: &[f32],
+        vocab_size: usize,
+        hidden_dim: usize,
+    ) -> Result<(), ContractValidationError> {
         for pct in Self::SPOT_CHECK_PCTS {
             let token_id = vocab_size * pct / 100;
             let start = token_id * hidden_dim;
@@ -281,7 +291,7 @@ impl ValidatedEmbedding {
                 let token_l2: f32 = data[start..end].iter().map(|x| x * x).sum::<f32>().sqrt();
                 if token_l2 < Self::MIN_TOKEN_L2 {
                     return Err(ContractValidationError {
-                        tensor_name: name.to_string(),
+                        tensor_name: "embedding".to_string(),
                         rule_id: "F-DATA-QUALITY-004".to_string(),
                         message: format!(
                             "Token {} ({}% of vocab) has L2={:.2e}: embedding data likely corrupted or offset",
@@ -291,13 +301,7 @@ impl ValidatedEmbedding {
                 }
             }
         }
-
-        Ok(Self {
-            data,
-            vocab_size,
-            hidden_dim,
-            stats,
-        })
+        Ok(())
     }
 
     /// Access the validated data

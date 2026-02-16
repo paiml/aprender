@@ -137,54 +137,77 @@ pub(crate) fn apr_import_gguf_raw(
     output_path: &Path,
     options: &ImportOptions,
 ) -> Result<ValidationReport> {
-    // Load GGUF with raw quantized tensors (preserves Q4_K bytes)
     let raw_result = load_gguf_raw(gguf_path)?;
 
-    // PMAT-232: Validate tokenizer data before import
     let effective_tokenizer = resolve_gguf_tokenizer(
         &raw_result.tokenizer,
         gguf_path,
         options.tokenizer_path.as_deref(),
     )?;
 
-    // PMAT-222: Auto-detect architecture from GGUF model config
-    let effective_arch = infer_architecture(
+    let effective_arch = resolve_and_log_architecture(
         &options.architecture,
         raw_result.model_config.architecture.as_deref(),
-    );
+        options.strict,
+    )?;
+
+    let mapped_tensors =
+        map_and_enforce_raw_tensors(raw_result.tensors, &effective_arch, &raw_result.model_config)?;
+
+    let mut validation_result = ValidationReport::new();
+    validation_result.total_score = 85;
+
+    write_apr_file_raw(
+        &mapped_tensors,
+        output_path,
+        options,
+        Some(&effective_tokenizer),
+        Some(&raw_result.model_config),
+    )?;
+
+    Ok(validation_result)
+}
+
+/// Resolve architecture from options/GGUF config, log detection, and warn if unverified.
+fn resolve_and_log_architecture(
+    user_arch: &Architecture,
+    gguf_arch: Option<&str>,
+    strict: bool,
+) -> Result<Architecture> {
+    let effective_arch = infer_architecture(user_arch, gguf_arch);
     if effective_arch != Architecture::Auto {
         eprintln!(
             "[PMAT-222] Auto-detected architecture: {:?} (tensor names will be mapped)",
             effective_arch
         );
     }
-    warn_unverified_architecture(&effective_arch, options.strict)?;
+    warn_unverified_architecture(&effective_arch, strict)?;
+    Ok(effective_arch)
+}
 
-    // Map tensor names to APR canonical format using detected architecture
-    let mut mapped_tensors: BTreeMap<String, GgufRawTensor> = raw_result
-        .tensors
-        .into_iter()
-        .map(|(name, tensor)| {
-            let mapped_name = effective_arch.map_name(&name);
-            (mapped_name, tensor)
-        })
-        .collect();
-
-    // GH-241: Split fused QKV tensors for GPT-2 (raw/quantized version)
-    if effective_arch == Architecture::Gpt2 {
-        Architecture::split_gpt2_fused_qkv_raw(&mut mapped_tensors);
-    }
-
-    // MANDATORY CONTRACT ENFORCEMENT (GH-208)
-    // The contract is NOT A SUGGESTION - it is the SOURCE OF TRUTH.
-    // ALL shape transformations go through enforce_import_contract().
-    // See: contracts/tensor-layout-v1.yaml, Five Whys analysis in layout_contract.rs
+/// Map tensor names, split GPT-2 QKV if needed, and enforce layout contract.
+fn map_and_enforce_raw_tensors(
+    tensors: BTreeMap<String, GgufRawTensor>,
+    effective_arch: &Architecture,
+    model_config: &crate::format::gguf::GgufModelConfig,
+) -> Result<BTreeMap<String, GgufRawTensor>> {
     use crate::format::layout_contract::enforce_import_contract;
 
-    let vocab_size = raw_result.model_config.vocab_size.unwrap_or(0);
-    let hidden_dim = raw_result.model_config.hidden_size.unwrap_or(0);
+    // Stage 1: Name mapping
+    let mut mapped: BTreeMap<String, GgufRawTensor> = tensors
+        .into_iter()
+        .map(|(name, tensor)| (effective_arch.map_name(&name), tensor))
+        .collect();
 
-    // Validate contract enforcement is possible
+    // Stage 2: GPT-2 QKV splitting
+    if *effective_arch == Architecture::Gpt2 {
+        Architecture::split_gpt2_fused_qkv_raw(&mut mapped);
+    }
+
+    // Stage 3: Contract enforcement (GH-208)
+    let vocab_size = model_config.vocab_size.unwrap_or(0);
+    let hidden_dim = model_config.hidden_size.unwrap_or(0);
+
     if vocab_size == 0 || hidden_dim == 0 {
         return Err(AprenderError::FormatError {
             message: format!(
@@ -196,23 +219,17 @@ pub(crate) fn apr_import_gguf_raw(
         });
     }
 
-    // Apply CONTRACT-ENFORCED shape transformation to all tensors
-    let mapped_tensors: BTreeMap<String, GgufRawTensor> = mapped_tensors
+    let mapped: BTreeMap<String, GgufRawTensor> = mapped
         .into_iter()
         .map(|(name, mut tensor)| {
-            // Use CONTRACT to determine shape transformation
             let (apr_shape, needs_data_transpose) =
                 enforce_import_contract(&name, &tensor.shape, vocab_size, hidden_dim);
-
-            // GH-208: Data transpose should NEVER be needed for GGUF import
-            // If this fires, the contract is misconfigured
             assert!(
                 !needs_data_transpose,
                 "CONTRACT BUG: enforce_import_contract returned needs_data_transpose=true for '{}'. \
                  GGUF→APR NEVER needs data transpose. See GH-208.",
                 name
             );
-
             tensor.shape = apr_shape;
             (name, tensor)
         })
@@ -220,26 +237,12 @@ pub(crate) fn apr_import_gguf_raw(
 
     eprintln!(
         "[CONTRACT-ENFORCED] {} tensors transformed via tensor-layout-v1.yaml (vocab={}, hidden={})",
-        mapped_tensors.len(),
+        mapped.len(),
         vocab_size,
         hidden_dim
     );
 
-    // Basic validation (skip strict validation for quantized tensors - can't compute meaningful stats)
-    let mut validation_result = ValidationReport::new();
-    validation_result.total_score = 85; // Default score for raw import (tensors preserved)
-
-    // Write APR file with raw quantized tensors
-    // Use effective_tokenizer which may be from external file (PMAT-232)
-    write_apr_file_raw(
-        &mapped_tensors,
-        output_path,
-        options,
-        Some(&effective_tokenizer),
-        Some(&raw_result.model_config),
-    )?;
-
-    Ok(validation_result)
+    Ok(mapped)
 }
 
 /// Resolve a source to a local file path

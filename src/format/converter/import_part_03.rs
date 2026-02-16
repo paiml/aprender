@@ -163,6 +163,41 @@ pub(crate) fn load_tokenizer_from_explicit_path(tokenizer_path: &Path) -> Option
     let content = fs::read_to_string(tokenizer_path).ok()?;
     let json: serde_json::Value = serde_json::from_str(&content).ok()?;
 
+    let token_to_id = extract_vocab_with_added_tokens(&json)?;
+
+    let sibling_config = load_sibling_config(tokenizer_path);
+    let expected_vocab_size = get_config_u32(&sibling_config, "vocab_size");
+    let vocabulary = build_vocab_vector(&token_to_id, expected_vocab_size);
+
+    eprintln!(
+        "[PMAT-232] External tokenizer loaded: {} vocab tokens from {}",
+        vocabulary.len(),
+        tokenizer_path.display()
+    );
+
+    if vocabulary.is_empty() {
+        return None;
+    }
+
+    let (bos_token_id, eos_token_id) =
+        resolve_bos_eos(&json, &sibling_config);
+
+    Some(GgufTokenizer {
+        vocabulary,
+        merges: parse_merges(&json),
+        model_type: extract_model_type(&json),
+        bos_token_id,
+        eos_token_id,
+        architecture: None,
+        model_name: None,
+        ..Default::default()
+    })
+}
+
+/// Extract base vocab + added_tokens into a single BTreeMap.
+fn extract_vocab_with_added_tokens(
+    json: &serde_json::Value,
+) -> Option<std::collections::BTreeMap<u32, String>> {
     let vocab_obj = json.get("model")?.get("vocab")?;
     let vocab_map = vocab_obj.as_object()?;
 
@@ -182,69 +217,42 @@ pub(crate) fn load_tokenizer_from_explicit_path(tokenizer_path: &Path) -> Option
         }
     }
 
-    let sibling_config = load_sibling_config(tokenizer_path);
-    let expected_vocab_size = sibling_config
+    Some(token_to_id)
+}
+
+/// Extract a u32 field from a config JSON, returning 0 if missing.
+fn get_config_u32(config: &Option<serde_json::Value>, key: &str) -> u32 {
+    config
         .as_ref()
-        .and_then(|cfg| cfg.get("vocab_size").and_then(|v| v.as_u64()))
+        .and_then(|cfg| cfg.get(key).and_then(|v| v.as_u64()))
         .map(|v| v as u32)
-        .unwrap_or(0);
+        .unwrap_or(0)
+}
 
-    let vocabulary = build_vocab_vector(&token_to_id, expected_vocab_size);
-
-    eprintln!(
-        "[PMAT-232] External tokenizer loaded: {} vocab tokens from {}",
-        vocabulary.len(),
-        tokenizer_path.display()
-    );
-
-    if vocabulary.is_empty() {
-        return None;
-    }
-
-    let mut bos_token_id = sibling_config
+/// Resolve BOS/EOS token IDs from sibling config.json, falling back to added_tokens.
+fn resolve_bos_eos(
+    json: &serde_json::Value,
+    sibling_config: &Option<serde_json::Value>,
+) -> (Option<u32>, Option<u32>) {
+    let mut bos = sibling_config
         .as_ref()
         .and_then(|cfg| cfg.get("bos_token_id").and_then(|v| v.as_u64()))
         .map(|v| v as u32);
-    let mut eos_token_id = sibling_config
+    let mut eos = sibling_config
         .as_ref()
         .and_then(|cfg| cfg.get("eos_token_id").and_then(|v| v.as_u64()))
         .map(|v| v as u32);
 
-    if bos_token_id.is_none() || eos_token_id.is_none() {
+    if bos.is_none() || eos.is_none() {
         if let Some(added_tokens) = json.get("added_tokens").and_then(|v| v.as_array()) {
-            (bos_token_id, eos_token_id) =
-                infer_bos_eos_from_added_tokens(added_tokens, bos_token_id, eos_token_id);
+            (bos, eos) = infer_bos_eos_from_added_tokens(added_tokens, bos, eos);
         }
     }
 
-    let model_type = json
-        .get("model")
-        .and_then(|m| m.get("type"))
-        .and_then(|t| t.as_str())
-        .map(String::from);
-
-    let merges = json
-        .get("model")
-        .and_then(|m| m.get("merges"))
-        .and_then(|m| m.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect()
-        })
-        .unwrap_or_default();
-
-    Some(GgufTokenizer {
-        vocabulary,
-        merges,
-        model_type,
-        bos_token_id,
-        eos_token_id,
-        architecture: None,
-        model_name: None,
-        ..Default::default()
-    })
+    (bos, eos)
 }
+
+// extract_model_type() is defined in import_part_02.rs
 
 /// Infer vocab_size and hidden_size from embedding tensor shape.
 ///
