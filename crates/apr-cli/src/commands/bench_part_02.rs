@@ -1,4 +1,36 @@
 
+/// Run warmup iterations with progress display.
+fn run_bench_warmup<F: FnMut()>(config: &BenchConfig, count: usize, mut f: F) {
+    if !config.quiet {
+        eprintln!("{}", "Running warmup...".yellow());
+    }
+    for i in 0..count {
+        f();
+        if !config.quiet {
+            eprint!("  Warmup {}/{}\r", i + 1, count);
+            std::io::Write::flush(&mut std::io::stderr()).ok();
+        }
+    }
+    if !config.quiet {
+        eprintln!("  Warmup complete        ");
+        eprintln!();
+    }
+}
+
+/// Print benchmark progress for a single iteration.
+fn print_bench_progress(config: &BenchConfig, i: usize, tokens: usize, time: Duration) {
+    if !config.quiet {
+        eprint!(
+            "  Iteration {}/{}: {} tokens in {:.2}s\r",
+            i + 1,
+            config.iterations,
+            tokens,
+            time.as_secs_f32()
+        );
+        std::io::Write::flush(&mut std::io::stderr()).ok();
+    }
+}
+
 fn print_results(result: &BenchResult) {
     output::section("Results");
     println!();
@@ -155,16 +187,37 @@ fn run_gguf_benchmark(path: &Path, config: &BenchConfig, use_cuda: bool) -> Resu
     }
 }
 
+/// Resolve prompt tokens from APR model's tokenizer, with fallbacks.
+#[cfg(feature = "inference")]
+fn resolve_apr_prompt_tokens(path: &Path, prompt: &str) -> Vec<u32> {
+    use realizar::apr::AprV2Model;
+
+    if let Some(tokenizer) =
+        AprV2Model::load_tokenizer_from_path(&path.with_file_name("tokenizer.json"))
+    {
+        tokenizer.encode(prompt)
+    } else if let Some((vocab, _, _)) = AprV2Model::load_tokenizer_from_sibling(path) {
+        let token_to_id: std::collections::HashMap<String, u32> = vocab
+            .iter()
+            .enumerate()
+            .map(|(i, t)| (t.clone(), i as u32))
+            .collect();
+        prompt
+            .split_whitespace()
+            .filter_map(|w| token_to_id.get(w).copied())
+            .collect()
+    } else {
+        vec![1, 2, 3, 4, 5]
+    }
+}
+
 /// APR format benchmark
 /// GH-192: Now supports CUDA GPU acceleration and uses KV cache for O(n) generation
 #[cfg(feature = "inference")]
 fn run_apr_benchmark(path: &Path, config: &BenchConfig, use_cuda: bool) -> Result<BenchResult> {
-    use realizar::apr::AprV2Model;
     use realizar::apr_transformer::{AprTransformer, GenerateConfig};
 
     if use_cuda {
-        // GH-254: If GPU generates 0 tokens (e.g. APR Q8 not supported on CUDA),
-        // fall back to CPU benchmark transparently
         let result = run_apr_cuda_benchmark(path, config)?;
         if result.total_tokens > 0 {
             return Ok(result);
@@ -182,7 +235,6 @@ fn run_apr_benchmark(path: &Path, config: &BenchConfig, use_cuda: bool) -> Resul
     }
     let start = Instant::now();
 
-    // Load APR model as AprTransformer for KV cache support
     let transformer = AprTransformer::from_apr_file(path)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to load APR: {e}")))?;
 
@@ -196,55 +248,23 @@ fn run_apr_benchmark(path: &Path, config: &BenchConfig, use_cuda: bool) -> Resul
         eprintln!();
     }
 
-    // Try to get tokenizer from sibling file
-    let prompt_tokens: Vec<u32> = if let Some(tokenizer) =
-        AprV2Model::load_tokenizer_from_path(&path.with_file_name("tokenizer.json"))
-    {
-        tokenizer.encode(&config.prompt)
-    } else if let Some((vocab, _, _)) = AprV2Model::load_tokenizer_from_sibling(path) {
-        // Simple whitespace tokenization as fallback
-        let token_to_id: std::collections::HashMap<String, u32> = vocab
-            .iter()
-            .enumerate()
-            .map(|(i, t)| (t.clone(), i as u32))
-            .collect();
-        config
-            .prompt
-            .split_whitespace()
-            .filter_map(|w| token_to_id.get(w).copied())
-            .collect()
-    } else {
-        // Fallback tokens
-        vec![1, 2, 3, 4, 5]
-    };
+    let prompt_tokens = resolve_apr_prompt_tokens(path, &config.prompt);
 
-    // Generation config for greedy sampling
     let gen_config = GenerateConfig {
         max_tokens: config.max_tokens.min(32),
-        temperature: 0.0, // Greedy
+        temperature: 0.0,
         top_p: 1.0,
         top_k: 0,
         repetition_penalty: 1.0,
         trace: false,
     };
 
-    // Warmup - uses KV cache for O(n) complexity
-    if !config.quiet {
-        eprintln!("{}", "Running warmup...".yellow());
-    }
-    for i in 0..config.warmup {
+    // Warmup
+    run_bench_warmup(config, config.warmup, || {
         let _ = transformer.generate_with_cache(&prompt_tokens, &gen_config);
-        if !config.quiet {
-            eprint!("  Warmup {}/{}\r", i + 1, config.warmup);
-            std::io::Write::flush(&mut std::io::stderr()).ok();
-        }
-    }
-    if !config.quiet {
-        eprintln!("  Warmup complete        ");
-        eprintln!();
-    }
+    });
 
-    // Measurement - uses KV cache for O(n) complexity
+    // Measurement
     if !config.quiet {
         eprintln!("{}", "Running benchmark...".yellow());
     }
@@ -273,23 +293,13 @@ fn run_apr_benchmark(path: &Path, config: &BenchConfig, use_cuda: bool) -> Resul
             }
         }
 
-        if !config.quiet {
-            eprint!(
-                "  Iteration {}/{}: {} tokens in {:.2}s\r",
-                i + 1,
-                config.iterations,
-                tokens_generated,
-                iter_time.as_secs_f32()
-            );
-            std::io::Write::flush(&mut std::io::stderr()).ok();
-        }
+        print_bench_progress(config, i, tokens_generated, iter_time);
     }
     if !config.quiet {
         eprintln!();
     }
 
     // GH-254: If generation produced 0 new tokens, fall back to forward-pass throughput
-    // This counts prompt tokens processed per iteration instead
     if generation_failed && total_tokens == 0 {
         eprintln!(
             "{}",
@@ -320,31 +330,16 @@ fn run_apr_cuda_benchmark(path: &Path, config: &BenchConfig) -> Result<BenchResu
 
     let tensor_count = cpu_model.tensor_count();
 
-    // Try to get tokenizer before wrapping with CUDA
+    // Use embedded tokenizer if available, else fall back to sibling/default
     let prompt_tokens: Vec<u32> = if let Some(tokenizer) = cpu_model.load_embedded_bpe_tokenizer() {
         tokenizer.encode(&config.prompt)
-    } else if let Some((vocab, _, _)) = AprV2Model::load_tokenizer_from_sibling(path) {
-        // Simple whitespace tokenization as fallback
-        let token_to_id: std::collections::HashMap<String, u32> = vocab
-            .iter()
-            .enumerate()
-            .map(|(i, t)| (t.clone(), i as u32))
-            .collect();
-        config
-            .prompt
-            .split_whitespace()
-            .filter_map(|w| token_to_id.get(w).copied())
-            .collect()
     } else {
-        // Fallback tokens
-        vec![1, 2, 3, 4, 5]
+        resolve_apr_prompt_tokens(path, &config.prompt)
     };
 
-    // Wrap with CUDA acceleration
     let mut model = AprV2ModelCuda::new(cpu_model, 0)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to init APR CUDA: {e}")))?;
 
-    // EOS token for Qwen2 models
     let eos_token: u32 = 151645;
 
     let load_time = start.elapsed();
@@ -358,26 +353,13 @@ fn run_apr_cuda_benchmark(path: &Path, config: &BenchConfig) -> Result<BenchResu
         eprintln!();
     }
 
-    // Warmup - use cached version for proper KV cache usage
-    if !config.quiet {
-        eprintln!("{}", "Running warmup (GPU)...".yellow());
-    }
-    for i in 0..config.warmup {
-        // Reset KV cache position for each iteration
+    // Warmup
+    run_bench_warmup(config, config.warmup, || {
         model.reset_kv_cache();
-        let _ =
-            model.generate_cuda_with_cache(&prompt_tokens, config.max_tokens.min(16), eos_token);
-        if !config.quiet {
-            eprint!("  Warmup {}/{}\r", i + 1, config.warmup);
-            std::io::Write::flush(&mut std::io::stderr()).ok();
-        }
-    }
-    if !config.quiet {
-        eprintln!("  Warmup complete        ");
-        eprintln!();
-    }
+        let _ = model.generate_cuda_with_cache(&prompt_tokens, config.max_tokens.min(16), eos_token);
+    });
 
-    // Measurement - use cached version for O(n) instead of O(n²)
+    // Measurement
     if !config.quiet {
         eprintln!("{}", "Running benchmark (GPU)...".yellow());
     }
@@ -388,7 +370,6 @@ fn run_apr_cuda_benchmark(path: &Path, config: &BenchConfig) -> Result<BenchResu
     for i in 0..config.iterations {
         let iter_start = Instant::now();
 
-        // Reset KV cache and use cached generation
         model.reset_kv_cache();
         let output = model
             .generate_cuda_with_cache(&prompt_tokens, config.max_tokens.min(32), eos_token)
@@ -404,16 +385,7 @@ fn run_apr_cuda_benchmark(path: &Path, config: &BenchConfig) -> Result<BenchResu
                 Duration::from_secs_f64(iter_time.as_secs_f64() / tokens_generated.max(1) as f64);
         }
 
-        if !config.quiet {
-            eprint!(
-                "  Iteration {}/{}: {} tokens in {:.2}s\r",
-                i + 1,
-                config.iterations,
-                tokens_generated,
-                iter_time.as_secs_f32()
-            );
-            std::io::Write::flush(&mut std::io::stderr()).ok();
-        }
+        print_bench_progress(config, i, tokens_generated, iter_time);
     }
     if !config.quiet {
         eprintln!();
