@@ -163,6 +163,24 @@ CONTRACT.validate_apr_shape("lm_head.weight", &[vocab, hidden], vocab, hidden)?;
 - `src/models/qwen2/mod.rs::generate()` / `forward()` - DELETE
 - `examples/qwen_inference.rs` - REWRITE to use apr CLI
 
+## Publishing Safety (CB-510 Lesson)
+
+**CRITICAL: `.gitignore` and `Cargo.toml` exclude patterns must use root-anchored paths.**
+
+The `models/` pattern silently matches `src/models/` — hiding source code from git and crates.io. Always use `/models/` (root-anchored).
+
+```bash
+# Pre-publish checks (also in make tier3)
+bash scripts/check_include_files.sh     # All 562 include!() files tracked by git
+bash scripts/check_package_includes.sh  # All 319 src/ include!() files in cargo package
+
+# After creating new include!() files, verify they're not gitignored:
+git ls-files --others --exclude-standard src/
+git check-ignore -v src/path/to/new_file.rs  # Should return exit 1 (not ignored)
+```
+
+**After any `.gitignore` or `Cargo.toml` exclude change:** re-run both scripts.
+
 ## Shell Scripts: Use bashrs (NOT shellcheck)
 
 ```bash
