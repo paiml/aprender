@@ -378,7 +378,7 @@ impl RosettaStone {
         Ok(InspectionReport {
             format: FormatType::SafeTensors,
             file_size,
-            metadata: BTreeMap::new(),
+            metadata: mapped.user_metadata().clone(),
             tensors,
             total_params,
             quantization: None,

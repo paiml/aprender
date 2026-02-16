@@ -24,6 +24,7 @@ impl RosettaStone {
         let mut tensors = Vec::new();
         let mut total_params: usize = 0;
         let mut total_file_size: usize = 0;
+        let mut user_meta: BTreeMap<String, String> = BTreeMap::new();
 
         for shard_file in index.shard_files() {
             let shard_path = base_dir.join(shard_file);
@@ -39,6 +40,14 @@ impl RosettaStone {
                 MappedSafeTensors::open(&shard_path).map_err(|e| AprenderError::FormatError {
                     message: format!("SafeTensors open failed for shard {shard_file}: {e}"),
                 })?;
+
+            // GH-271: Collect user metadata from first shard that has it
+            if user_meta.is_empty() {
+                let shard_meta = mapped.user_metadata();
+                if !shard_meta.is_empty() {
+                    user_meta.clone_from(shard_meta);
+                }
+            }
 
             for name in mapped.tensor_names() {
                 if let Some(info) = mapped.get_metadata(name) {
@@ -62,7 +71,10 @@ impl RosettaStone {
         Ok(InspectionReport {
             format: FormatType::SafeTensors,
             file_size: total_file_size,
-            metadata: BTreeMap::from([("shards".to_string(), index.shard_count().to_string())]),
+            metadata: {
+                user_meta.insert("shards".to_string(), index.shard_count().to_string());
+                user_meta
+            },
             tensors,
             total_params,
             quantization: None,
