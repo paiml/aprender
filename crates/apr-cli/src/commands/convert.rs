@@ -10,6 +10,34 @@ use aprender::format::{apr_convert, Compression, ConvertOptions, QuantizationTyp
 use humansize::{format_size, BINARY};
 use std::path::Path;
 
+/// Parse quantization type from CLI string.
+fn parse_quantization(s: Option<&str>) -> Result<Option<QuantizationType>> {
+    match s {
+        Some("int8") => Ok(Some(QuantizationType::Int8)),
+        Some("int4") => Ok(Some(QuantizationType::Int4)),
+        Some("fp16") => Ok(Some(QuantizationType::Fp16)),
+        Some("q4k" | "q4_k") => Ok(Some(QuantizationType::Q4K)),
+        Some(other) => Err(CliError::ValidationFailed(format!(
+            "Unknown quantization: {other}. Supported: int8, int4, fp16, q4k"
+        ))),
+        None => Ok(None),
+    }
+}
+
+/// Parse compression type from CLI string.
+fn parse_compression(s: Option<&str>) -> Result<Option<Compression>> {
+    match s {
+        Some("none") => Ok(Some(Compression::None)),
+        Some("zstd" | "zstd-default") => Ok(Some(Compression::ZstdDefault)),
+        Some("zstd-max") => Ok(Some(Compression::ZstdMax)),
+        Some("lz4") => Ok(Some(Compression::Lz4)),
+        Some(other) => Err(CliError::ValidationFailed(format!(
+            "Unknown compression: {other}. Supported: none, zstd, zstd-max, lz4"
+        ))),
+        None => Ok(None),
+    }
+}
+
 /// Run the convert command
 pub(crate) fn run(
     file: &Path,
@@ -18,7 +46,6 @@ pub(crate) fn run(
     output: &Path,
     force: bool,
 ) -> Result<()> {
-    // Validate input exists
     if !file.exists() {
         return Err(CliError::FileNotFound(file.to_path_buf()));
     }
@@ -40,33 +67,8 @@ pub(crate) fn run(
         ])
     );
 
-    // Parse quantization option
-    let quant_type = match quantize {
-        Some("int8") => Some(QuantizationType::Int8),
-        Some("int4") => Some(QuantizationType::Int4),
-        Some("fp16") => Some(QuantizationType::Fp16),
-        Some("q4k" | "q4_k") => Some(QuantizationType::Q4K),
-        Some(other) => {
-            return Err(CliError::ValidationFailed(format!(
-                "Unknown quantization: {other}. Supported: int8, int4, fp16, q4k"
-            )));
-        }
-        None => None,
-    };
-
-    // Parse compression option
-    let compress_type = match compress {
-        Some("none") => Some(Compression::None),
-        Some("zstd" | "zstd-default") => Some(Compression::ZstdDefault),
-        Some("zstd-max") => Some(Compression::ZstdMax),
-        Some("lz4") => Some(Compression::Lz4),
-        Some(other) => {
-            return Err(CliError::ValidationFailed(format!(
-                "Unknown compression: {other}. Supported: none, zstd, zstd-max, lz4"
-            )));
-        }
-        None => None,
-    };
+    let quant_type = parse_quantization(quantize)?;
+    let compress_type = parse_compression(compress)?;
 
     let quant_str = quant_type
         .as_ref()

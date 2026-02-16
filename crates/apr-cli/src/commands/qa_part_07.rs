@@ -1,4 +1,19 @@
 
+/// Detect model format by reading magic bytes (first 8 bytes only).
+///
+/// Avoids loading multi-GB files just to check format. Used by PTX parity
+/// and GPU state isolation gates.
+#[cfg(feature = "inference")]
+fn detect_model_format(path: &Path) -> Option<realizar::format::ModelFormat> {
+    let magic = std::fs::File::open(path).ok().and_then(|mut f| {
+        use std::io::Read;
+        let mut buf = [0u8; 8];
+        f.read_exact(&mut buf).ok()?;
+        Some(buf.to_vec())
+    })?;
+    realizar::format::detect_format(&magic).ok()
+}
+
 /// Gate 6: PTX Parity Validation (GH-219, F-PTX-001)
 ///
 /// Validates that all 6 batched GPU kernels maintain structural parity with their
@@ -18,19 +33,10 @@ fn run_ptx_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
     // Extract model dimensions from GGUF metadata
     #[cfg(feature = "inference")]
     {
-        use realizar::format::{detect_format, ModelFormat};
+        use realizar::format::ModelFormat;
         use realizar::ptx_parity::{validate_all_kernel_pairs, KernelDimensions};
 
-        // Only run for GGUF models (PTX kernels are for quantized inference)
-        // Read only first 8 bytes (not the entire multi-GB file)
-        let magic = std::fs::File::open(path).ok().and_then(|mut f| {
-            use std::io::Read;
-            let mut buf = [0u8; 8];
-            f.read_exact(&mut buf).ok()?;
-            Some(buf.to_vec())
-        });
-        let fmt = magic.and_then(|m| detect_format(&m).ok());
-        if fmt != Some(ModelFormat::Gguf) {
+        if detect_model_format(path) != Some(ModelFormat::Gguf) {
             return Ok(GateResult::skipped(
                 "ptx_parity",
                 "Non-GGUF format (PTX kernels only apply to quantized inference)",
@@ -119,28 +125,20 @@ fn run_gpu_state_isolation_gate(path: &Path, _config: &QaConfig) -> Result<GateR
     #[cfg(all(feature = "inference", feature = "cuda"))]
     {
         use realizar::cuda::CudaExecutor;
-        use realizar::format::{detect_format, ModelFormat};
+        use realizar::format::ModelFormat;
         use realizar::gguf::{
             GGUFModel, MappedGGUFModel, OwnedQuantizedModel, OwnedQuantizedModelCuda,
             QuantizedGenerateConfig,
         };
 
-        let cuda_available = CudaExecutor::is_available() && CudaExecutor::num_devices() > 0;
-        if !cuda_available {
+        if !CudaExecutor::is_available() || CudaExecutor::num_devices() == 0 {
             return Ok(GateResult::skipped(
                 "gpu_state_isolation",
                 "CUDA not available",
             ));
         }
 
-        let magic = std::fs::File::open(path).ok().and_then(|mut f| {
-            use std::io::Read;
-            let mut buf = [0u8; 8];
-            f.read_exact(&mut buf).ok()?;
-            Some(buf.to_vec())
-        });
-        let fmt = magic.and_then(|m| detect_format(&m).ok());
-        if fmt != Some(ModelFormat::Gguf) {
+        if detect_model_format(path) != Some(ModelFormat::Gguf) {
             return Ok(GateResult::skipped(
                 "gpu_state_isolation",
                 "Only GGUF format supported for GPU state isolation",
@@ -173,24 +171,18 @@ fn run_gpu_state_isolation_gate(path: &Path, _config: &QaConfig) -> Result<GateR
         let mut cuda_model = OwnedQuantizedModelCuda::new(model, 0)
             .map_err(|e| CliError::ValidationFailed(format!("CUDA init failed: {e}")))?;
 
-        // Generation 1: prompt A
         let output_a = cuda_model
             .generate_gpu_resident(&tokens_a, &gen_config)
             .map_err(|e| CliError::ValidationFailed(format!("Gen 1 failed: {e}")))?;
-
-        // Generation 2: prompt B
         let output_b = cuda_model
             .generate_gpu_resident(&tokens_b, &gen_config)
             .map_err(|e| CliError::ValidationFailed(format!("Gen 2 failed: {e}")))?;
-
-        // Generation 3: prompt A again (must match generation 1)
         let output_a2 = cuda_model
             .generate_gpu_resident(&tokens_a, &gen_config)
             .map_err(|e| CliError::ValidationFailed(format!("Gen 3 failed: {e}")))?;
 
         let duration = start.elapsed();
 
-        // State isolation: same prompt must produce same output
         if output_a != output_a2 {
             let text_a = gguf.decode(&output_a);
             let text_a2 = gguf.decode(&output_a2);
@@ -208,7 +200,6 @@ fn run_gpu_state_isolation_gate(path: &Path, _config: &QaConfig) -> Result<GateR
             ));
         }
 
-        // Model is functional: different prompts produce different output
         if output_a == output_b {
             return Ok(GateResult::failed(
                 "gpu_state_isolation",
@@ -230,7 +221,7 @@ fn run_gpu_state_isolation_gate(path: &Path, _config: &QaConfig) -> Result<GateR
 
     #[cfg(not(all(feature = "inference", feature = "cuda")))]
     {
-        let _ = (path, config);
+        let _ = (path, _config);
         Ok(GateResult::skipped(
             "gpu_state_isolation",
             "Requires inference+cuda features",

@@ -1,4 +1,52 @@
 
+/// Compute percentage change from baseline to current, returning 0 if baseline is zero.
+fn pct_change(baseline: f64, current: f64) -> f64 {
+    if baseline > 0.0 {
+        ((current - baseline) / baseline) * 100.0
+    } else {
+        0.0
+    }
+}
+
+/// Classify a metric delta as regression, improvement, or neutral.
+///
+/// `higher_is_better`: true for throughput (positive delta = improvement),
+/// false for latency (positive delta = regression).
+fn classify_metric(
+    label: &str,
+    delta_pct: f64,
+    threshold_pct: f64,
+    old_val: f64,
+    new_val: f64,
+    unit: &str,
+    higher_is_better: bool,
+    regressions: &mut Vec<String>,
+    improvements: &mut Vec<String>,
+) {
+    let is_regression = if higher_is_better {
+        delta_pct < -threshold_pct
+    } else {
+        delta_pct > threshold_pct
+    };
+    let is_improvement = if higher_is_better {
+        delta_pct > threshold_pct
+    } else {
+        delta_pct < -threshold_pct
+    };
+
+    if is_regression {
+        regressions.push(format!(
+            "{label}: {:.1}% slower ({old_val:.1} → {new_val:.1} {unit})",
+            delta_pct.abs()
+        ));
+    } else if is_improvement {
+        improvements.push(format!(
+            "{label}: {:.1}% faster ({old_val:.1} → {new_val:.1} {unit})",
+            delta_pct.abs()
+        ));
+    }
+}
+
 /// Run differential benchmark comparing two models (Phase 4)
 ///
 /// Returns Ok(true) if model_b is better or equal, Ok(false) if regression detected.
@@ -11,7 +59,6 @@ pub(crate) fn run_diff_benchmark(
     measure: usize,
     regression_threshold: f64, // e.g., 0.05 = 5% regression triggers failure
 ) -> Result<bool, CliError> {
-    // Validate files exist
     if !model_a.exists() {
         return Err(CliError::FileNotFound(model_a.to_path_buf()));
     }
@@ -22,7 +69,6 @@ pub(crate) fn run_diff_benchmark(
     output::section("Differential Benchmark (PMAT-192 Phase 4)");
     println!();
 
-    // Profile model A
     output::kv("Profiling Model A", model_a.display());
     #[cfg(feature = "inference")]
     let results_a = profile_real_inference_cpu(model_a, warmup, measure)?;
@@ -32,67 +78,54 @@ pub(crate) fn run_diff_benchmark(
         "Requires --features inference".to_string(),
     ));
 
-    // Profile model B
     output::kv("Profiling Model B", model_b.display());
     #[cfg(feature = "inference")]
     let results_b = profile_real_inference_cpu(model_b, warmup, measure)?;
 
-    // Calculate deltas
-    let throughput_delta = if results_a.throughput_tok_s > 0.0 {
-        ((results_b.throughput_tok_s - results_a.throughput_tok_s) / results_a.throughput_tok_s)
-            * 100.0
-    } else {
-        0.0
-    };
-
+    let throughput_delta = pct_change(results_a.throughput_tok_s, results_b.throughput_tok_s);
     let latency_a_ms = results_a.total_inference_us / 1000.0;
     let latency_b_ms = results_b.total_inference_us / 1000.0;
-    let latency_delta = if latency_a_ms > 0.0 {
-        ((latency_b_ms - latency_a_ms) / latency_a_ms) * 100.0
-    } else {
-        0.0
+    let latency_delta = pct_change(latency_a_ms, latency_b_ms);
+
+    let winner = match results_b
+        .throughput_tok_s
+        .partial_cmp(&results_a.throughput_tok_s)
+    {
+        Some(std::cmp::Ordering::Greater) => {
+            format!("Model B ({:.1}% faster)", throughput_delta.abs())
+        }
+        Some(std::cmp::Ordering::Less) => {
+            format!("Model A ({:.1}% faster)", throughput_delta.abs())
+        }
+        _ => "Tie".to_string(),
     };
 
-    // Determine winner
-    let winner = if results_b.throughput_tok_s > results_a.throughput_tok_s {
-        format!("Model B ({:.1}% faster)", throughput_delta.abs())
-    } else if results_a.throughput_tok_s > results_b.throughput_tok_s {
-        format!("Model A ({:.1}% faster)", throughput_delta.abs())
-    } else {
-        "Tie".to_string()
-    };
-
-    // Detect regressions and improvements
     let mut regressions = Vec::new();
     let mut improvements = Vec::new();
+    let thresh_pct = regression_threshold * 100.0;
 
-    if throughput_delta < -regression_threshold * 100.0 {
-        regressions.push(format!(
-            "Throughput: {:.1}% slower ({:.1} → {:.1} tok/s)",
-            throughput_delta.abs(),
-            results_a.throughput_tok_s,
-            results_b.throughput_tok_s
-        ));
-    } else if throughput_delta > regression_threshold * 100.0 {
-        improvements.push(format!(
-            "Throughput: {:.1}% faster ({:.1} → {:.1} tok/s)",
-            throughput_delta, results_a.throughput_tok_s, results_b.throughput_tok_s
-        ));
-    }
-
-    if latency_delta > regression_threshold * 100.0 {
-        regressions.push(format!(
-            "Latency: {:.1}% slower ({:.2} → {:.2} ms)",
-            latency_delta, latency_a_ms, latency_b_ms
-        ));
-    } else if latency_delta < -regression_threshold * 100.0 {
-        improvements.push(format!(
-            "Latency: {:.1}% faster ({:.2} → {:.2} ms)",
-            latency_delta.abs(),
-            latency_a_ms,
-            latency_b_ms
-        ));
-    }
+    classify_metric(
+        "Throughput",
+        throughput_delta,
+        thresh_pct,
+        results_a.throughput_tok_s,
+        results_b.throughput_tok_s,
+        "tok/s",
+        true,
+        &mut regressions,
+        &mut improvements,
+    );
+    classify_metric(
+        "Latency",
+        latency_delta,
+        thresh_pct,
+        latency_a_ms,
+        latency_b_ms,
+        "ms",
+        false,
+        &mut regressions,
+        &mut improvements,
+    );
 
     let report = DiffBenchmarkReport {
         model_a: model_a.display().to_string(),
@@ -108,14 +141,23 @@ pub(crate) fn run_diff_benchmark(
         improvements,
     };
 
-    // Output
     match format {
         OutputFormat::Json => report.print_json(),
         _ => report.print_human(),
     }
 
-    // Return false if any regressions detected
     Ok(regressions.is_empty())
+}
+
+/// Return focus-area keywords, or `None` for `All` (no filtering).
+fn focus_keywords(focus: ProfileFocus) -> Option<&'static [&'static str]> {
+    match focus {
+        ProfileFocus::All => None,
+        ProfileFocus::Attention => Some(&["attention", "attn", "qkv", "softmax"]),
+        ProfileFocus::Mlp => Some(&["mlp", "ffn", "gate", "up_proj", "down_proj"]),
+        ProfileFocus::Matmul => Some(&["matmul", "gemm", "mm", "linear"]),
+        ProfileFocus::Embedding => Some(&["embed", "lm_head", "vocab"]),
+    }
 }
 
 /// GH-173: Filter profile results by focus area (PMAT-182)
@@ -123,53 +165,14 @@ fn filter_results_by_focus(
     results: &RealProfileResults,
     focus: ProfileFocus,
 ) -> RealProfileResults {
-    let filtered_hotspots = match focus {
-        ProfileFocus::All => results.hotspots.clone(),
-        ProfileFocus::Attention => results
+    let filtered_hotspots = match focus_keywords(focus) {
+        None => results.hotspots.clone(),
+        Some(keywords) => results
             .hotspots
             .iter()
             .filter(|h| {
-                let name_lower = h.name.to_lowercase();
-                name_lower.contains("attention")
-                    || name_lower.contains("attn")
-                    || name_lower.contains("qkv")
-                    || name_lower.contains("softmax")
-            })
-            .cloned()
-            .collect(),
-        ProfileFocus::Mlp => results
-            .hotspots
-            .iter()
-            .filter(|h| {
-                let name_lower = h.name.to_lowercase();
-                name_lower.contains("mlp")
-                    || name_lower.contains("ffn")
-                    || name_lower.contains("gate")
-                    || name_lower.contains("up_proj")
-                    || name_lower.contains("down_proj")
-            })
-            .cloned()
-            .collect(),
-        ProfileFocus::Matmul => results
-            .hotspots
-            .iter()
-            .filter(|h| {
-                let name_lower = h.name.to_lowercase();
-                name_lower.contains("matmul")
-                    || name_lower.contains("gemm")
-                    || name_lower.contains("mm")
-                    || name_lower.contains("linear")
-            })
-            .cloned()
-            .collect(),
-        ProfileFocus::Embedding => results
-            .hotspots
-            .iter()
-            .filter(|h| {
-                let name_lower = h.name.to_lowercase();
-                name_lower.contains("embed")
-                    || name_lower.contains("lm_head")
-                    || name_lower.contains("vocab")
+                let lower = h.name.to_lowercase();
+                keywords.iter().any(|k| lower.contains(k))
             })
             .cloned()
             .collect(),
