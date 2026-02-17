@@ -134,13 +134,32 @@ Key contract constraints:
 
 ## Verification Checklist
 
-- [ ] `apr import` SafeTensors → APR succeeds with 399 tensors
-- [ ] Contract validation passes (all shapes match qwen3.yaml)
-- [ ] `apr export` APR → GGUF produces valid GGUF with full metadata
-- [ ] GGUF metadata includes: rope_freq_base, context_length, rms_norm_eps, head_count_kv
-- [ ] `apr qa` passes all 10 gates (CPU + GPU golden output)
+- [x] `apr import` SafeTensors → APR succeeds with 399 tensors (8.28GB Q4K)
+- [x] Contract validation passes (all shapes match qwen3.yaml)
+- [x] `apr export` APR → GGUF produces valid GGUF with full metadata (267 dup tokens deduped)
+- [x] GGUF metadata includes 19 keys (arch=qwen3, layers=36, heads=32/8kv, hidden=4096)
+- [ ] `apr qa` passes all gates — **3/4 pass** (Tensor Contract, Metadata, Format)
+- [ ] Golden output gate — CPU works (generates `<think>` chain-of-thought) but gate expects "4" without thinking tokens
+- [ ] GPU parity — cosine similarity 0.000479 (need ≥0.99), QK norm likely missing in GPU path
 - [ ] Ollama parity >= 1.0x
-- [ ] Thinking mode tokens present in tokenizer vocabulary
+- [x] Thinking mode tokens present in tokenizer vocabulary (`<think>`=151667, `</think>`=151668)
+
+## Bugs Found During Pipeline
+
+### GH-279-1: GGUF token table dedup (FIXED)
+Qwen3 tokenizer has 267 reserved tokens all mapped to `<unk>`. llama.cpp requires unique strings.
+Fix: `ValidatedGgufMetadata::validate()` auto-dedupes with `_N` suffixes (commit `135de184`).
+
+### GH-279-2: `apr import hf://` fails for sharded models (NOT FIXED)
+`apr import hf://Qwen/Qwen3-8B` tries to download single `model.safetensors` (404 for sharded models).
+Workaround: use local path from `apr pull` cache.
+
+### GH-279-3: GPU parity failure (IN PROGRESS)
+GPU forward pass diverges from CPU (cosine sim 0.000479). Root cause: likely QK norm not applied in GPU matmul path.
+CPU argmax: 33975 | GPU argmax: 85222 | Max logit diff: 12084.8
+
+### GH-279-4: Golden output gate thinks vs answers (IN PROGRESS)
+Qwen3 uses thinking mode by default — generates `<think>` chain before answer. Golden output gate expects direct "4".
 
 ## References
 
