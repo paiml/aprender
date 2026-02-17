@@ -20,6 +20,7 @@ impl HfHubClient {
             preupload_url
         );
 
+        #[allow(clippy::disallowed_methods)]
         let preupload_body = serde_json::json!({
             "files": [{
                 "path": filename,

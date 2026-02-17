@@ -1,4 +1,4 @@
-use super::*;
+use super::HfHubClient;
 
 impl HfHubClient {}
 
