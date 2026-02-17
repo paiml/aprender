@@ -84,8 +84,7 @@ tensor_template:
   embedding: "model.embed_tokens.weight"
   position_embedding: "model.position_embedding.weight"
   lm_head: "lm_head.weight"
-  final_norm_weight: "model.norm.weight"
-  final_norm_bias: "model.norm.bias"
+  final_norm: "model.norm.weight"
   per_layer:
     q_proj_weight: "model.layers.{n}.self_attn.q_proj.weight"
     q_proj_bias: "model.layers.{n}.self_attn.q_proj.bias"
