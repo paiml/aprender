@@ -92,6 +92,90 @@ struct GgufNameMapper {
     per_layer: std::collections::HashMap<String, String>,
     /// Per-layer suffixes that should be skipped
     skip_suffixes: std::collections::HashSet<String>,
+    /// GH-277: If true, transpose 2D Conv1D weight tensors to Linear layout during export.
+    transpose_weights: bool,
+    /// GH-277: Fusion rules — concatenate multiple APR per-layer tensors into one GGUF tensor.
+    /// Each entry: (gguf_suffix, [(apr_suffix, apr_role), ...])
+    fusion_rules: Vec<FusionExportRule>,
+}
+
+/// A resolved fusion rule: maps APR per-layer suffixes to a single GGUF suffix.
+struct FusionExportRule {
+    /// GGUF suffix for the fused tensor (e.g., "attn_qkv.weight")
+    gguf_suffix: String,
+    /// APR per-layer suffixes to concatenate, in order
+    apr_suffixes: Vec<String>,
+}
+
+/// Build global tensor name mappings (embedding, lm_head, norms, position embedding).
+fn build_global_mappings(
+    tt: &crate::format::model_family::TensorTemplate,
+    gt: &crate::format::model_family::GgufTensorTemplate,
+) -> std::collections::HashMap<String, String> {
+    let mut global = std::collections::HashMap::new();
+
+    if let Some(gguf_name) = &gt.embedding {
+        global.insert(tt.embedding.clone(), gguf_name.clone());
+    }
+    if let (Some(apr_name), Some(gguf_name)) = (&tt.lm_head, &gt.lm_head) {
+        global.insert(apr_name.clone(), gguf_name.clone());
+    }
+    if let (Some(apr_name), Some(gguf_name)) = (&tt.final_norm, &gt.final_norm_weight) {
+        global.insert(apr_name.clone(), gguf_name.clone());
+    }
+    if let (Some(apr_norm), Some(gguf_bias)) = (&tt.final_norm, &gt.final_norm_bias) {
+        let apr_bias = apr_norm.replace(".weight", ".bias");
+        global.insert(apr_bias, gguf_bias.clone());
+    }
+    if let Some(gguf_name) = &gt.position_embedding {
+        if let Some(Some(apr_name)) = tt.per_layer.get("position_embedding") {
+            global.insert(apr_name.clone(), gguf_name.clone());
+        } else {
+            global.insert(
+                "model.position_embedding.weight".to_string(),
+                gguf_name.clone(),
+            );
+        }
+    }
+    global
+}
+
+/// Resolve fusion rules from GGUF template against tensor template to get APR suffixes.
+fn resolve_fusion_rules(
+    tt: &crate::format::model_family::TensorTemplate,
+    gt: &crate::format::model_family::GgufTensorTemplate,
+) -> Vec<FusionExportRule> {
+    gt.fuse
+        .iter()
+        .filter_map(|rule| {
+            let apr_suffixes: Vec<String> = rule
+                .source_roles
+                .iter()
+                .filter_map(|role| {
+                    tt.per_layer.get(role.as_str()).and_then(|opt| {
+                        opt.as_ref().map(|pat| {
+                            pat.strip_prefix("model.layers.{n}.")
+                                .unwrap_or(pat)
+                                .to_string()
+                        })
+                    })
+                })
+                .collect();
+
+            if apr_suffixes.len() == rule.source_roles.len() {
+                Some(FusionExportRule {
+                    gguf_suffix: rule.gguf_suffix.clone(),
+                    apr_suffixes,
+                })
+            } else {
+                eprintln!(
+                    "[GH-277] WARNING: Fusion rule `{}` has unresolved source roles, skipping",
+                    rule.gguf_suffix
+                );
+                None
+            }
+        })
+        .collect()
 }
 
 impl GgufNameMapper {
@@ -100,85 +184,41 @@ impl GgufNameMapper {
         let tt = &config.tensor_template;
         let gt = &config.gguf_tensor_template;
 
-        let mut global = std::collections::HashMap::new();
+        let global = build_global_mappings(tt, gt);
         let mut per_layer = std::collections::HashMap::new();
         let mut skip_suffixes = std::collections::HashSet::new();
 
-        // Global: embedding
-        if let Some(gguf_name) = &gt.embedding {
-            global.insert(tt.embedding.clone(), gguf_name.clone());
-        }
-
-        // Global: lm_head
-        if let (Some(apr_name), Some(gguf_name)) = (&tt.lm_head, &gt.lm_head) {
-            global.insert(apr_name.clone(), gguf_name.clone());
-        }
-
-        // Global: final_norm_weight
-        if let (Some(apr_name), Some(gguf_name)) = (&tt.final_norm, &gt.final_norm_weight) {
-            global.insert(apr_name.clone(), gguf_name.clone());
-        }
-
-        // Global: final_norm_bias — APR name derived from final_norm by replacing .weight → .bias
-        if let (Some(apr_norm), Some(gguf_bias)) = (&tt.final_norm, &gt.final_norm_bias) {
-            let apr_bias = apr_norm.replace(".weight", ".bias");
-            global.insert(apr_bias, gguf_bias.clone());
-        }
-
-        // Global: position_embedding — APR name from tensor_template per_layer "position_embedding"
-        // or directly from the contract if it has a dedicated field
-        if let Some(gguf_name) = &gt.position_embedding {
-            // Look for position_embedding in the tensor_template per_layer first
-            if let Some(Some(apr_name)) = tt.per_layer.get("position_embedding") {
-                // It's listed as per_layer but it's really global (no {n} in the name)
-                global.insert(apr_name.clone(), gguf_name.clone());
-            } else {
-                // Fallback: standard APR name
-                global.insert(
-                    "model.position_embedding.weight".to_string(),
-                    gguf_name.clone(),
-                );
-            }
-        }
-
-        // Per-layer: correlate roles between tensor_template and gguf_tensor_template
         for (role, apr_pattern_opt) in &tt.per_layer {
             let Some(apr_pattern) = apr_pattern_opt else {
                 continue;
             };
-            // Skip position_embedding (handled as global above)
             if role == "position_embedding" {
                 continue;
             }
 
-            // Extract APR suffix: strip "model.layers.{n}." prefix
             let apr_suffix = apr_pattern
                 .strip_prefix("model.layers.{n}.")
                 .unwrap_or(apr_pattern);
 
-            // Look up GGUF mapping for this role
             match gt.per_layer.get(role) {
                 Some(Some(gguf_suffix)) => {
                     per_layer.insert(apr_suffix.to_string(), gguf_suffix.clone());
                 }
                 Some(None) => {
-                    // Explicit null → skip this tensor
                     skip_suffixes.insert(apr_suffix.to_string());
                 }
-                None => {
-                    // Role exists in tensor_template but not in gguf_tensor_template.
-                    // Check if there's a matching role with _weight/_bias suffix.
-                    // E.g., tensor_template has "q_proj" but gguf has "q_proj_weight".
-                    // This handles the mismatch between llama.yaml (no suffix) and
-                    // gpt2.yaml (has _weight/_bias suffix).
-                }
+                None => {}
             }
         }
+
+        let fusion_rules = resolve_fusion_rules(tt, gt);
 
         Self {
             global,
             per_layer,
             skip_suffixes,
+            transpose_weights: gt.transpose_weights,
+            fusion_rules,
         }
     }
 
@@ -214,6 +254,16 @@ impl GgufNameMapper {
             apr_name
         );
         Some(apr_name.to_string())
+    }
+
+    /// GH-277: Get fusion rules for this mapper.
+    fn fusion_rules(&self) -> &[FusionExportRule] {
+        &self.fusion_rules
+    }
+
+    /// GH-277: Whether to transpose 2D weight tensors from Conv1D to Linear layout.
+    fn needs_transpose(&self) -> bool {
+        self.transpose_weights
     }
 }
 
@@ -341,7 +391,236 @@ fn build_legacy_mapper() -> GgufNameMapper {
         global,
         per_layer,
         skip_suffixes: std::collections::HashSet::new(),
+        transpose_weights: false,
+        fusion_rules: Vec::new(),
     }
+}
+
+/// GH-277: Detect the number of layers from the tensor names.
+/// Scans for "model.layers.{n}." and returns max(n) + 1.
+fn detect_num_layers_from_names<'a>(names: impl Iterator<Item = &'a str>) -> usize {
+    let mut max_layer = 0usize;
+    for name in names {
+        if let Some(rest) = name.strip_prefix("model.layers.") {
+            if let Some(dot_pos) = rest.find('.') {
+                if let Ok(n) = rest[..dot_pos].parse::<usize>() {
+                    max_layer = max_layer.max(n + 1);
+                }
+            }
+        }
+    }
+    max_layer
+}
+
+/// Transpose a 2D f32 matrix from `[rows, cols]` to `[cols, rows]` (Conv1D → Linear).
+fn transpose_2d_f32(data: &[f32], rows: usize, cols: usize) -> Vec<f32> {
+    let mut out = vec![0.0f32; data.len()];
+    for r in 0..rows {
+        for c in 0..cols {
+            out[c * rows + r] = data[r * cols + c];
+        }
+    }
+    out
+}
+
+/// Compute the concatenated shape from per-source shapes (concat along dim 0).
+/// Returns `None` if shapes are incompatible or empty.
+fn compute_fused_shape(shapes: &[Vec<usize>]) -> Option<Vec<usize>> {
+    let first = shapes.first()?;
+    match first.len() {
+        2 => {
+            let total_rows: usize = shapes.iter().map(|s| s[0]).sum();
+            Some(vec![total_rows, first[1]])
+        }
+        1 => {
+            let total: usize = shapes.iter().map(|s| s[0]).sum();
+            Some(vec![total])
+        }
+        _ => None,
+    }
+}
+
+/// Convert a row-major shape to GGUF ne-order (reversed for 2D).
+fn shape_to_gguf(shape: &[usize]) -> Vec<u64> {
+    if shape.len() == 2 {
+        vec![shape[1] as u64, shape[0] as u64]
+    } else {
+        shape.iter().map(|&d| d as u64).collect()
+    }
+}
+
+/// Collect and optionally transpose source tensors for one fusion rule + layer.
+/// Returns `(concatenated_data, per_source_shapes)` or `None` if any source is missing.
+fn collect_fusion_sources(
+    rule: &FusionExportRule,
+    layer: usize,
+    tensors: &std::collections::BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+    needs_transpose: bool,
+) -> Option<(Vec<f32>, Vec<Vec<usize>>)> {
+    let is_weight = rule.gguf_suffix.ends_with(".weight");
+    let mut all_data: Vec<f32> = Vec::new();
+    let mut all_shapes: Vec<Vec<usize>> = Vec::new();
+
+    for apr_suffix in &rule.apr_suffixes {
+        let apr_name = format!("model.layers.{layer}.{apr_suffix}");
+        let (data, shape) = tensors.get(&apr_name)?;
+
+        if needs_transpose && is_weight && shape.len() == 2 {
+            let transposed = transpose_2d_f32(data, shape[0], shape[1]);
+            all_data.extend_from_slice(&transposed);
+            all_shapes.push(vec![shape[1], shape[0]]);
+        } else {
+            all_data.extend_from_slice(data);
+            all_shapes.push(shape.clone());
+        }
+    }
+    Some((all_data, all_shapes))
+}
+
+/// GH-277: Build fused tensors for the F32 export path.
+///
+/// For each fusion rule and each layer, looks up source tensors by APR name,
+/// concatenates their f32 data, and returns the fused GGUF tensors.
+fn build_fused_tensors_f32(
+    mapper: &GgufNameMapper,
+    tensors: &std::collections::BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+    use_q4k: bool,
+) -> Vec<crate::format::gguf::GgufTensor> {
+    use crate::format::gguf::{GgmlType, GgufTensor};
+
+    let rules = mapper.fusion_rules();
+    if rules.is_empty() {
+        return Vec::new();
+    }
+
+    let num_layers = detect_num_layers_from_names(tensors.keys().map(|s| s.as_str()));
+    let needs_transpose = mapper.needs_transpose();
+    let mut fused = Vec::new();
+
+    for rule in rules {
+        for layer in 0..num_layers {
+            let Some((all_data, all_shapes)) =
+                collect_fusion_sources(rule, layer, tensors, needs_transpose)
+            else {
+                continue;
+            };
+
+            let Some(fused_shape) = compute_fused_shape(&all_shapes) else {
+                continue;
+            };
+
+            let gguf_shape = shape_to_gguf(&fused_shape);
+            let gguf_name = format!("blk.{layer}.{}", rule.gguf_suffix);
+
+            let (dtype, bytes) = if use_q4k && fused_shape.len() == 2 && all_data.len() >= 256 {
+                let gguf_shape_usize = vec![fused_shape[1], fused_shape[0]];
+                let q4k_bytes = super::quantize_q4_k_matrix(&all_data, &gguf_shape_usize);
+                (GgmlType::Q4K, q4k_bytes)
+            } else {
+                let f32_bytes: Vec<u8> = all_data.iter().flat_map(|f| f.to_le_bytes()).collect();
+                (GgmlType::F32, f32_bytes)
+            };
+
+            eprintln!(
+                "[GH-277] Fused `{}` from {} sources ({} elements)",
+                gguf_name,
+                rule.apr_suffixes.len(),
+                all_data.len()
+            );
+
+            fused.push(GgufTensor {
+                name: gguf_name,
+                shape: gguf_shape,
+                dtype,
+                data: bytes,
+            });
+        }
+    }
+
+    fused
+}
+
+/// GH-277: Build fused tensors for the raw APR→GGUF export path.
+///
+/// For each fusion rule and each layer, reads raw tensor bytes from the APR reader,
+/// concatenates them, and returns fused GGUF tensors.
+/// Map APR tensor dtype to GGML type for raw byte fusion.
+fn apr_dtype_to_ggml(dtype: crate::format::v2::TensorDType) -> crate::format::gguf::GgmlType {
+    use crate::format::gguf::GgmlType;
+    use crate::format::v2::TensorDType;
+    match dtype {
+        TensorDType::F32 => GgmlType::F32,
+        TensorDType::F16 => GgmlType::F16,
+        TensorDType::Q4K => GgmlType::Q4K,
+        TensorDType::Q6K => GgmlType::Q6K,
+        TensorDType::Q8 => GgmlType::Q8_0,
+        _ => GgmlType::F32,
+    }
+}
+
+/// Collect raw bytes for fusion sources from an APR reader.
+/// Returns `(bytes, shapes, dtype)` or `None` if any source is missing.
+fn collect_raw_fusion_sources(
+    rule: &FusionExportRule,
+    layer: usize,
+    reader: &crate::format::v2::AprV2Reader,
+) -> Option<(Vec<u8>, Vec<Vec<usize>>, crate::format::gguf::GgmlType)> {
+    let mut all_bytes: Vec<u8> = Vec::new();
+    let mut all_shapes: Vec<Vec<usize>> = Vec::new();
+    let mut dtype = crate::format::gguf::GgmlType::F32;
+
+    for apr_suffix in &rule.apr_suffixes {
+        let apr_name = format!("model.layers.{layer}.{apr_suffix}");
+        let entry = reader.get_tensor(&apr_name)?;
+        let raw = reader.get_tensor_data(&apr_name)?;
+
+        all_bytes.extend_from_slice(raw);
+        all_shapes.push(entry.shape.clone());
+        dtype = apr_dtype_to_ggml(entry.dtype);
+    }
+    Some((all_bytes, all_shapes, dtype))
+}
+
+fn build_fused_tensors_raw(
+    mapper: &GgufNameMapper,
+    reader: &crate::format::v2::AprV2Reader,
+) -> Vec<crate::format::gguf::GgufTensor> {
+    use crate::format::gguf::GgufTensor;
+
+    let rules = mapper.fusion_rules();
+    if rules.is_empty() {
+        return Vec::new();
+    }
+
+    let names = reader.tensor_names();
+    let num_layers = detect_num_layers_from_names(names.iter().map(|s| s.as_ref()));
+    let mut fused = Vec::new();
+
+    for rule in rules {
+        for layer in 0..num_layers {
+            let Some((all_bytes, all_shapes, dtype)) =
+                collect_raw_fusion_sources(rule, layer, reader)
+            else {
+                continue;
+            };
+
+            let Some(fused_shape) = compute_fused_shape(&all_shapes) else {
+                continue;
+            };
+
+            let gguf_shape = shape_to_gguf(&fused_shape);
+            let gguf_name = format!("blk.{layer}.{}", rule.gguf_suffix);
+
+            fused.push(GgufTensor {
+                name: gguf_name,
+                shape: gguf_shape,
+                dtype,
+                data: all_bytes,
+            });
+        }
+    }
+
+    fused
 }
 
 /// Export format options
@@ -483,6 +762,51 @@ pub(crate) struct ValidatedGgufMetadata {
     inner: Vec<(String, crate::format::gguf::GgufValue)>,
 }
 
+/// GH-277/GH-279: Dedup token table for llama.cpp compatibility.
+/// HuggingFace tokenizers may have reserved tokens sharing the same string.
+/// llama.cpp requires unique token strings — append "_N" suffix to duplicates.
+fn dedup_token_table(metadata: &mut [(String, crate::format::gguf::GgufValue)]) {
+    let Some(pos) = metadata
+        .iter()
+        .position(|(k, _)| k == "tokenizer.ggml.tokens")
+    else {
+        return;
+    };
+
+    let crate::format::gguf::GgufValue::ArrayString(tokens) = &metadata[pos].1 else {
+        return;
+    };
+
+    let mut seen = std::collections::HashMap::with_capacity(tokens.len());
+    let mut dedup_count = 0u32;
+    let deduped: Vec<String> = tokens
+        .iter()
+        .enumerate()
+        .map(|(idx, tok)| {
+            let count = seen.entry(tok.clone()).or_insert(0u32);
+            *count += 1;
+            if *count > 1 {
+                dedup_count += 1;
+                eprintln!(
+                    "[GH-279] Dedup token id={idx}: {tok:?} → {tok}_{c}",
+                    c = *count - 1
+                );
+                format!("{tok}_{}", *count - 1)
+            } else {
+                tok.clone()
+            }
+        })
+        .collect();
+
+    if dedup_count > 0 {
+        eprintln!("[GH-279] Deduped {dedup_count} duplicate token(s) in GGUF token table");
+        metadata[pos] = (
+            "tokenizer.ggml.tokens".to_string(),
+            crate::format::gguf::GgufValue::ArrayString(deduped),
+        );
+    }
+}
+
 impl ValidatedGgufMetadata {
     /// Validate and construct metadata. Fails if required keys are missing.
     pub(crate) fn validate(
@@ -490,7 +814,6 @@ impl ValidatedGgufMetadata {
     ) -> Result<Self> {
         let has_key = |k: &str| metadata.iter().any(|(name, _)| name == k);
 
-        // REQUIRED: general.architecture must always be present
         if !has_key("general.architecture") {
             return Err(AprenderError::FormatError {
                 message: "[GH-253-4] GGUF export missing required key: general.architecture"
@@ -498,7 +821,6 @@ impl ValidatedGgufMetadata {
             });
         }
 
-        // CONSISTENCY: if tokens present, model type must also be present (and vice versa)
         let has_tokens = has_key("tokenizer.ggml.tokens");
         let has_model = has_key("tokenizer.ggml.model");
         if has_tokens && !has_model {
@@ -516,47 +838,7 @@ impl ValidatedGgufMetadata {
             });
         }
 
-        // GH-277/GH-279: Dedup token table for llama.cpp compatibility.
-        // HuggingFace tokenizers (Qwen3, etc.) may have reserved tokens that
-        // share the same string (e.g. multiple "<unk>" entries). llama.cpp
-        // requires unique token strings. Fix: append "_N" suffix to duplicates.
-        if let Some(pos) = metadata
-            .iter()
-            .position(|(k, _)| k == "tokenizer.ggml.tokens")
-        {
-            if let (_, crate::format::gguf::GgufValue::ArrayString(tokens)) = &metadata[pos] {
-                let mut seen =
-                    std::collections::HashMap::with_capacity(tokens.len());
-                let mut dedup_count = 0u32;
-                let deduped: Vec<String> = tokens
-                    .iter()
-                    .enumerate()
-                    .map(|(idx, tok)| {
-                        let count = seen.entry(tok.clone()).or_insert(0u32);
-                        *count += 1;
-                        if *count > 1 {
-                            dedup_count += 1;
-                            eprintln!(
-                                "[GH-279] Dedup token id={idx}: {tok:?} → {tok}_{c}",
-                                c = *count - 1
-                            );
-                            format!("{tok}_{}", *count - 1)
-                        } else {
-                            tok.clone()
-                        }
-                    })
-                    .collect();
-                if dedup_count > 0 {
-                    eprintln!(
-                        "[GH-279] Deduped {dedup_count} duplicate token(s) in GGUF token table"
-                    );
-                    metadata[pos] = (
-                        "tokenizer.ggml.tokens".to_string(),
-                        crate::format::gguf::GgufValue::ArrayString(deduped),
-                    );
-                }
-            }
-        }
+        dedup_token_table(&mut metadata);
 
         Ok(Self { inner: metadata })
     }

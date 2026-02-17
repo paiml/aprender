@@ -241,6 +241,8 @@ pub struct ModelConstraints {
     pub tied_embeddings: bool,
     pub positional_encoding: PositionalEncoding,
     pub mlp_type: MlpType,
+    /// GH-280: Whether Q and K projections have per-head RMSNorm (e.g., Qwen3)
+    pub qk_norm: bool,
 }
 
 /// Tensor name template for a model family.
@@ -276,6 +278,24 @@ pub struct GgufTensorTemplate {
     /// Per-layer tensor role → GGUF suffix (after "blk.{n}.")
     /// None values mean the tensor should be SKIPPED during export
     pub per_layer: HashMap<String, Option<String>>,
+    /// GH-277: If true, transpose 2D weight tensors from Conv1D to Linear layout during export.
+    /// GPT-2 uses Conv1D `[in_features, out_features]`, llama.cpp expects `[out_features, in_features]`.
+    pub transpose_weights: bool,
+    /// GH-277: Fusion rules for concatenating multiple APR tensors into one GGUF tensor.
+    /// Used for architectures like GPT-2 where llama.cpp expects fused QKV.
+    pub fuse: Vec<GgufFusionRule>,
+}
+
+/// GH-277: Rule for fusing multiple APR per-layer tensors into a single GGUF tensor.
+///
+/// Example: GPT-2's separate Q, K, V projections are concatenated into a single
+/// `attn_qkv.weight` tensor for llama.cpp compatibility.
+#[derive(Debug, Clone)]
+pub struct GgufFusionRule {
+    /// GGUF suffix for the fused tensor (e.g., "attn_qkv.weight")
+    pub gguf_suffix: String,
+    /// APR tensor role names to concatenate, in order (e.g., `q_proj_weight`, `k_proj_weight`, `v_proj_weight`)
+    pub source_roles: Vec<String>,
 }
 
 /// Shape template for a model family (parameterized expressions).

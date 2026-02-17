@@ -139,13 +139,18 @@ gguf_tensor_template:
   lm_head: "output.weight"
   final_norm_weight: "output_norm.weight"
   final_norm_bias: "output_norm.bias"
+  # GH-277: GPT-2 uses Conv1D layout [in_features, out_features].
+  # GGUF/llama.cpp expects Linear layout [out_features, in_features].
+  # The exporter must transpose 2D weight tensors during GGUF export.
+  transpose_weights: true
   per_layer:
-    q_proj_weight: "attn_q.weight"
-    q_proj_bias: "attn_q.bias"
-    k_proj_weight: "attn_k.weight"
-    k_proj_bias: "attn_k.bias"
-    v_proj_weight: "attn_v.weight"
-    v_proj_bias: "attn_v.bias"
+    # Q/K/V are fused into a single attn_qkv tensor (see fuse section below)
+    q_proj_weight: null
+    q_proj_bias: null
+    k_proj_weight: null
+    k_proj_bias: null
+    v_proj_weight: null
+    v_proj_bias: null
     o_proj_weight: "attn_output.weight"
     o_proj_bias: "attn_output.bias"
     up_proj_weight: "ffn_up.weight"
@@ -159,6 +164,13 @@ gguf_tensor_template:
     causal_mask: null
     gate_proj_weight: null
     gate_proj_bias: null
+  # GH-277: Fusion rules — concatenate separate APR tensors into single GGUF tensors.
+  # llama.cpp GPT-2 expects fused QKV (blk.N.attn_qkv) not separate Q/K/V.
+  fuse:
+    - gguf_name: "attn_qkv.weight"
+      sources: [q_proj_weight, k_proj_weight, v_proj_weight]
+    - gguf_name: "attn_qkv.bias"
+      sources: [q_proj_bias, k_proj_bias, v_proj_bias]
 
 quantizations:
   - q4_k_m

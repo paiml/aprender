@@ -14,7 +14,8 @@ use std::path::Path;
 use crate::error::{AprenderError, Result};
 use crate::format::model_family::{
     Activation, AttentionType, CertificationConfig, ChatTemplateConfig, DynModelFamily,
-    FamilyRegistry, GgufTensorTemplate, MlpType, ModelConstraints, ModelFamilyConfig,
+    FamilyRegistry, GgufFusionRule, GgufTensorTemplate, MlpType, ModelConstraints,
+    ModelFamilyConfig,
     ModelSizeConfig, NormType, PositionalEncoding, ShapeTemplate, TensorTemplate,
 };
 

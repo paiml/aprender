@@ -76,6 +76,7 @@ fn parse_constraints(yaml: &YamlValue) -> Result<ModelConstraints> {
             yaml.get_str("positional_encoding").unwrap_or("absolute"),
         )?,
         mlp_type: MlpType::from_str_contract(yaml.get_str("mlp_type").unwrap_or("gelu_mlp"))?,
+        qk_norm: yaml.get_bool("qk_norm").unwrap_or(false),
     })
 }
 
@@ -129,6 +130,10 @@ fn parse_gguf_tensor_template(yaml: &YamlValue) -> GgufTensorTemplate {
     let lm_head = opt_str("lm_head");
     let final_norm_weight = opt_str("final_norm_weight");
     let final_norm_bias = opt_str("final_norm_bias");
+    let transpose_weights = yaml
+        .get("transpose_weights")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
 
     let mut per_layer = HashMap::new();
     if let Some(YamlValue::Mapping(pl)) = yaml.get("per_layer") {
@@ -142,6 +147,27 @@ fn parse_gguf_tensor_template(yaml: &YamlValue) -> GgufTensorTemplate {
         }
     }
 
+    // GH-277: Parse fusion rules
+    let mut fuse = Vec::new();
+    if let Some(YamlValue::Sequence(rules)) = yaml.get("fuse") {
+        for rule in rules {
+            if let (Some(gguf_name), Some(YamlValue::Sequence(sources))) =
+                (rule.get_str("gguf_name"), rule.get("sources"))
+            {
+                let source_roles: Vec<String> = sources
+                    .iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect();
+                if !source_roles.is_empty() {
+                    fuse.push(GgufFusionRule {
+                        gguf_suffix: gguf_name.to_string(),
+                        source_roles,
+                    });
+                }
+            }
+        }
+    }
+
     GgufTensorTemplate {
         embedding,
         position_embedding,
@@ -149,6 +175,8 @@ fn parse_gguf_tensor_template(yaml: &YamlValue) -> GgufTensorTemplate {
         final_norm_weight,
         final_norm_bias,
         per_layer,
+        transpose_weights,
+        fuse,
     }
 }
 

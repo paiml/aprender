@@ -383,9 +383,10 @@ fn export_to_gguf(
         Some(QuantizationType::Q4K | QuantizationType::Int4)
     );
 
-    // GH-202 FIX: Build GGUF tensors WITHOUT data transpose.
+    // GH-202 FIX: Build GGUF tensors WITHOUT data transpose (unless Conv1D→Linear needed).
     // GGML data layout data[i0 + i1*ne0] is IDENTICAL to C row-major when shape
     // is reversed. Only shape needs reversal from [rows, cols] to [ne0=cols, ne1=rows].
+    let needs_transpose = mapper.needs_transpose();
     let gguf_tensors: Vec<GgufTensor> = tensors
         .iter()
         .filter_map(|(name, (data, shape))| {
@@ -396,28 +397,52 @@ fn export_to_gguf(
             let is_embedding = gguf_name == "token_embd.weight" || name.contains("embed_tokens");
             let is_lm_head = gguf_name == "output.weight" || name.contains("lm_head");
 
-            // Reverse shape for GGUF: [rows, cols] → [ne0=cols, ne1=rows]
-            let gguf_shape = if shape.len() == 2 {
-                vec![shape[1] as u64, shape[0] as u64]
+            // GH-277: For Conv1D architectures (GPT-2), transpose 2D weight tensors
+            // from Conv1D [in_features, out_features] to Linear [out_features, in_features].
+            // Skip 1D tensors (biases, norms) and embeddings/lm_head.
+            let is_weight_2d = shape.len() == 2 && gguf_name.ends_with(".weight");
+            let (effective_data, effective_shape) = if needs_transpose
+                && is_weight_2d
+                && !is_embedding
+                && !is_lm_head
+                && !gguf_name.contains("_norm")
+                && !gguf_name.contains("position_embd")
+            {
+                let rows = shape[0];
+                let cols = shape[1];
+                let mut transposed = vec![0.0f32; data.len()];
+                for r in 0..rows {
+                    for c in 0..cols {
+                        transposed[c * rows + r] = data[r * cols + c];
+                    }
+                }
+                (transposed, vec![cols, rows])
             } else {
-                shape.iter().map(|&d| d as u64).collect()
+                (data.clone(), shape.clone())
             };
 
-            // GH-202 FIX: No data transpose needed. Data is row-major in APR,
-            // and GGML's layout with reversed shape is identical.
-            let (dtype, bytes) =
-                if use_q4k && shape.len() == 2 && data.len() >= 256 && !is_embedding && !is_lm_head
-                {
-                    // Quantize row-major F32 to Q4K using GGUF shape [ne0, ne1]
-                    // quantize_q4_k_matrix processes per-row with ne0 elements per row
-                    let gguf_shape_usize = vec![shape[1], shape[0]]; // [ne0=cols, ne1=rows]
-                    let q4k_bytes = super::quantize_q4_k_matrix(data, &gguf_shape_usize);
-                    (GgmlType::Q4K, q4k_bytes)
-                } else {
-                    // F32 (weights, embeddings, 1D) - just convert to bytes, no transpose
-                    let f32_bytes: Vec<u8> = data.iter().flat_map(|f| f.to_le_bytes()).collect();
-                    (GgmlType::F32, f32_bytes)
-                };
+            // Reverse shape for GGUF: [rows, cols] → [ne0=cols, ne1=rows]
+            let gguf_shape = if effective_shape.len() == 2 {
+                vec![effective_shape[1] as u64, effective_shape[0] as u64]
+            } else {
+                effective_shape.iter().map(|&d| d as u64).collect()
+            };
+
+            // GH-202 FIX: No data transpose needed (already handled above for Conv1D).
+            let (dtype, bytes) = if use_q4k
+                && effective_shape.len() == 2
+                && effective_data.len() >= 256
+                && !is_embedding
+                && !is_lm_head
+            {
+                let gguf_shape_usize = vec![effective_shape[1], effective_shape[0]];
+                let q4k_bytes = super::quantize_q4_k_matrix(&effective_data, &gguf_shape_usize);
+                (GgmlType::Q4K, q4k_bytes)
+            } else {
+                let f32_bytes: Vec<u8> =
+                    effective_data.iter().flat_map(|f| f.to_le_bytes()).collect();
+                (GgmlType::F32, f32_bytes)
+            };
 
             Some(GgufTensor {
                 name: gguf_name,
@@ -428,9 +453,13 @@ fn export_to_gguf(
         })
         .collect();
 
+    // GH-277: Add fused tensors (e.g., QKV fusion for GPT-2)
+    let fused = build_fused_tensors_f32(&mapper, tensors, use_q4k);
+    let mut gguf_tensors = gguf_tensors;
+    gguf_tensors.extend(fused);
+
     // BUG-4 FIX: For tied embedding models, create Q4K output.weight from embedding
     let has_lm_head = gguf_tensors.iter().any(|t| t.name == "output.weight");
-    let mut gguf_tensors = gguf_tensors;
 
     if use_q4k && !has_lm_head {
         if let Some(tied) = build_tied_output_weight(tensors) {

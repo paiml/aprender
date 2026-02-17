@@ -97,6 +97,8 @@ struct FamilyData {
     gguf_final_norm_bias: Option<String>,
     gguf_per_layer: Vec<(String, String)>, // (role, gguf_suffix) - only non-null entries
     gguf_skip_roles: Vec<String>,          // roles with explicit null in gguf template
+    gguf_transpose_weights: bool,          // GH-277: transpose Conv1D→Linear during export
+    gguf_fuse: Vec<(String, Vec<String>)>, // GH-277: (gguf_suffix, [source_role, ...])
 }
 
 struct SizeData {
@@ -122,6 +124,7 @@ struct ConstraintsData {
     tied: bool,
     position: String,
     mlp: String,
+    qk_norm: bool,
 }
 
 // ============================================================================
@@ -195,6 +198,7 @@ fn parse_family_yaml(content: &str, path: &Path) -> FamilyData {
         mlp: get_str(&constraints_section, "mlp_type")
             .unwrap_or("swiglu")
             .to_string(),
+        qk_norm: get_bool(&constraints_section, "qk_norm").unwrap_or(false),
     };
 
     // Parse tensor_template
@@ -256,6 +260,11 @@ fn parse_family_yaml(content: &str, path: &Path) -> FamilyData {
         }
     }
 
+    // GH-277: Parse transpose_weights and fuse rules from gguf_tensor_template
+    let gguf_transpose_weights = get_str(&gguf_section, "transpose_weights")
+        .is_some_and(|s| s == "true");
+    let gguf_fuse = parse_fuse_rules(&gguf_section);
+
     FamilyData {
         family: family.to_string(),
         display_name: display_name.to_string(),
@@ -277,6 +286,8 @@ fn parse_family_yaml(content: &str, path: &Path) -> FamilyData {
         gguf_final_norm_bias,
         gguf_per_layer,
         gguf_skip_roles,
+        gguf_transpose_weights,
+        gguf_fuse,
     }
 }
 
@@ -370,6 +381,68 @@ fn parse_key_values_with_null(content: &str) -> Vec<(String, String)> {
         }
     }
     pairs
+}
+
+/// GH-277: Parse fuse rules from the gguf_tensor_template section.
+///
+/// Expects YAML like:
+/// ```yaml
+/// fuse:
+///   - gguf_name: "attn_qkv.weight"
+///     sources: [q_proj_weight, k_proj_weight, v_proj_weight]
+/// ```
+/// Parse a YAML inline array like `[a, b, c]` from a line containing brackets.
+fn parse_yaml_inline_array(line: &str) -> Vec<String> {
+    let Some(start) = line.find('[') else {
+        return Vec::new();
+    };
+    let Some(end) = line.find(']') else {
+        return Vec::new();
+    };
+    line[start + 1..end]
+        .split(',')
+        .map(|s| s.trim().trim_matches('"').to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
+fn parse_fuse_rules(gguf_section: &str) -> Vec<(String, Vec<String>)> {
+    let fuse_section = extract_section(gguf_section, "fuse");
+    if fuse_section.trim().is_empty() {
+        return Vec::new();
+    }
+
+    let mut rules = Vec::new();
+    let mut current_gguf_name: Option<String> = None;
+    let mut current_sources: Vec<String> = Vec::new();
+
+    for line in fuse_section.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("- gguf_name:") || trimmed.starts_with("-  gguf_name:") {
+            if let Some(name) = current_gguf_name.take() {
+                if !current_sources.is_empty() {
+                    rules.push((name, std::mem::take(&mut current_sources)));
+                }
+            }
+            let val = trimmed
+                .split(':')
+                .nth(1)
+                .unwrap_or("")
+                .trim()
+                .trim_matches('"');
+            current_gguf_name = Some(val.to_string());
+        } else if trimmed.starts_with("sources:") {
+            current_sources = parse_yaml_inline_array(trimmed);
+        }
+    }
+
+    if let Some(name) = current_gguf_name {
+        if !current_sources.is_empty() {
+            rules.push((name, current_sources));
+        }
+    }
+
+    rules
 }
 
 fn parse_size_variants(content: &str, path: &Path) -> Vec<SizeData> {
@@ -643,6 +716,24 @@ fn generate_family_registration(f: &FamilyData) -> String {
         out.push_str("        let gguf_per_layer = std::collections::HashMap::new();\n");
     }
 
+    // GH-277: Generate fusion rules
+    if f.gguf_fuse.is_empty() {
+        out.push_str("        let gguf_fuse = Vec::new();\n");
+    } else {
+        out.push_str("        let gguf_fuse = vec![\n");
+        for (gguf_suffix, sources) in &f.gguf_fuse {
+            let sources_str = sources
+                .iter()
+                .map(|s| format!("\"{s}\".to_string()"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            out.push_str(&format!(
+                "            GgufFusionRule {{ gguf_suffix: \"{gguf_suffix}\".to_string(), source_roles: vec![{sources_str}] }},\n"
+            ));
+        }
+        out.push_str("        ];\n");
+    }
+
     out.push_str(&format!(
         "        let config = ModelFamilyConfig {{\n\
          \x20           family: \"{}\".to_string(),\n\
@@ -659,6 +750,7 @@ fn generate_family_registration(f: &FamilyData) -> String {
          \x20               tied_embeddings: {},\n\
          \x20               positional_encoding: PositionalEncoding::from_str_contract(\"{}\").unwrap_or(PositionalEncoding::Rope),\n\
          \x20               mlp_type: MlpType::from_str_contract(\"{}\").unwrap_or(MlpType::SwiGlu),\n\
+         \x20               qk_norm: {},\n\
          \x20           }},\n\
          \x20           tensor_template: TensorTemplate {{\n\
          \x20               embedding: \"{}\".to_string(),\n\
@@ -673,6 +765,8 @@ fn generate_family_registration(f: &FamilyData) -> String {
          \x20               final_norm_weight: {},\n\
          \x20               final_norm_bias: {},\n\
          \x20               per_layer: gguf_per_layer,\n\
+         \x20               transpose_weights: {},\n\
+         \x20               fuse: gguf_fuse,\n\
          \x20           }},\n\
          \x20           shape_template: ShapeTemplate {{ shapes }},\n\
          \x20           quantizations: vec![{}],\n\
@@ -695,6 +789,7 @@ fn generate_family_registration(f: &FamilyData) -> String {
         f.constraints.tied,
         f.constraints.position,
         f.constraints.mlp,
+        f.constraints.qk_norm,
         f.embedding_tensor,
         f.lm_head_tensor
             .as_ref()
@@ -718,6 +813,7 @@ fn generate_family_registration(f: &FamilyData) -> String {
         f.gguf_final_norm_bias
             .as_ref()
             .map_or("None".to_string(), |s| format!("Some(\"{s}\".to_string())")),
+        f.gguf_transpose_weights,
         f.quantizations
             .iter()
             .map(|q| format!("\"{q}\".to_string()"))

@@ -415,6 +415,10 @@ fn export_apr_to_gguf_raw(input: &Path, output: &Path) -> Result<ExportReport> {
         });
     }
 
+    // GH-277: Add fused tensors (e.g., QKV fusion for GPT-2)
+    let fused = build_fused_tensors_raw(&mapper, &reader);
+    gguf_tensors.extend(fused);
+
     // Write to file
     let file = File::create(output).map_err(|e| AprenderError::FormatError {
         message: format!("Failed to create output file: {e}"),
