@@ -40,6 +40,7 @@ pub(crate) struct HexOptions {
     pub raw: bool,
     pub offset: usize,
     pub width: usize,
+    pub slice: Option<String>,
 }
 
 impl Default for HexOptions {
@@ -59,6 +60,7 @@ impl Default for HexOptions {
             raw: false,
             offset: 0,
             width: 16,
+            slice: None,
         }
     }
 }
@@ -145,6 +147,11 @@ pub(crate) fn run(opts: &HexOptions) -> Result<(), CliError> {
     if opts.entropy {
         print_entropy_analysis(&bytes, format);
         return Ok(());
+    }
+
+    // Slice mode — extract a range of elements from a specific tensor
+    if opts.slice.is_some() && opts.tensor.is_some() {
+        return run_slice(opts, &bytes, format);
     }
 
     // Format-specific modes

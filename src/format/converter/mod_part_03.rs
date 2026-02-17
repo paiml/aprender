@@ -1,4 +1,3 @@
-
 /// Convert f16 to f32
 fn f16_to_f32(bits: u16) -> f32 {
     let sign = ((bits & 0x8000) as u32) << 16;
@@ -211,10 +210,149 @@ fn save_model_tensors(
         return save_model_tensors_with_config(tensors, output, compression, quantize);
     }
 
-    // For non-APR output (e.g., .safetensors), use plain SafeTensors
+    // PMAT-274 FIX: Apply quantization for SafeTensors output too
+    if let Some(quant) = quantize {
+        return save_safetensors_quantized(tensors, output, quant);
+    }
+
+    // For non-APR output without quantization, use plain SafeTensors (F32)
     save_safetensors(output, tensors).map_err(|e| AprenderError::FormatError {
         message: format!("Failed to save converted model: {e}"),
     })
+}
+
+/// PMAT-274: Save SafeTensors with quantized dtype.
+/// Converts F32 tensors to the appropriate reduced-precision format.
+/// Respects `should_skip_quantization` for sensitive tensors (embeddings, biases, norms).
+fn save_safetensors_quantized(
+    tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+    output: &Path,
+    quant: QuantizationType,
+) -> Result<()> {
+    let mut metadata = SafeTensorsMetadata::new();
+    let mut raw_data = Vec::new();
+    let mut current_offset = 0;
+
+    for (name, (data, shape)) in tensors {
+        let (dtype_str, tensor_bytes) = if should_skip_quantization(name, data.len()) {
+            // Sensitive tensors stay F32
+            let bytes: Vec<u8> = data.iter().flat_map(|f| f.to_le_bytes()).collect();
+            ("F32", bytes)
+        } else {
+            quantize_for_safetensors(data, quant)
+        };
+
+        let start_offset = current_offset;
+        let end_offset = current_offset + tensor_bytes.len();
+
+        metadata.insert(
+            name.clone(),
+            TensorMetadata {
+                dtype: dtype_str.to_string(),
+                shape: shape.clone(),
+                data_offsets: [start_offset, end_offset],
+            },
+        );
+
+        raw_data.extend_from_slice(&tensor_bytes);
+        current_offset = end_offset;
+    }
+
+    let metadata_json =
+        serde_json::to_string(&metadata).map_err(|e| AprenderError::FormatError {
+            message: format!("JSON serialization failed: {e}"),
+        })?;
+
+    let header_bytes = metadata_json.as_bytes();
+    let header_len = header_bytes.len() as u64;
+
+    let mut file_data = Vec::new();
+    file_data.extend_from_slice(&header_len.to_le_bytes());
+    file_data.extend_from_slice(header_bytes);
+    file_data.extend_from_slice(&raw_data);
+
+    fs::write(output, file_data).map_err(|e| AprenderError::FormatError {
+        message: format!("Failed to write output file: {e}"),
+    })
+}
+
+/// Convert F32 tensor data to quantized bytes for SafeTensors output.
+/// Returns (dtype_string, raw_bytes).
+fn quantize_for_safetensors(data: &[f32], quant: QuantizationType) -> (&'static str, Vec<u8>) {
+    match quant {
+        QuantizationType::Fp16 => {
+            let bytes = f32_slice_to_f16_le_bytes(data);
+            ("F16", bytes)
+        }
+        QuantizationType::Int8 => {
+            // Symmetric quantization: scale = max(abs(data)) / 127
+            let max_abs = data.iter().map(|v| v.abs()).fold(0.0f32, f32::max);
+            let scale = if max_abs > 0.0 { 127.0 / max_abs } else { 1.0 };
+            let bytes: Vec<u8> = data
+                .iter()
+                .map(|&v| (v * scale).round().clamp(-128.0, 127.0) as i8)
+                .map(|v| v as u8)
+                .collect();
+            ("I8", bytes)
+        }
+        QuantizationType::Int4 => {
+            // Int4: pack 2 values per byte, stored as U8
+            // Symmetric quantization: scale = max(abs(data)) / 7
+            let max_abs = data.iter().map(|v| v.abs()).fold(0.0f32, f32::max);
+            let scale = if max_abs > 0.0 { 7.0 / max_abs } else { 1.0 };
+            let quantized: Vec<u8> = data
+                .iter()
+                .map(|&v| ((v * scale).round().clamp(-8.0, 7.0) as i8 + 8) as u8)
+                .collect();
+            // Pack pairs of 4-bit values into single bytes
+            let mut packed = Vec::with_capacity((quantized.len() + 1) / 2);
+            for chunk in quantized.chunks(2) {
+                let low = chunk[0] & 0x0F;
+                let high = if chunk.len() > 1 { chunk[1] & 0x0F } else { 0 };
+                packed.push(low | (high << 4));
+            }
+            ("U8", packed) // Stored as U8 with 2 values packed per byte
+        }
+        QuantizationType::Q4K => {
+            // Q4K is APR-only format, fall back to Int8 for SafeTensors
+            let max_abs = data.iter().map(|v| v.abs()).fold(0.0f32, f32::max);
+            let scale = if max_abs > 0.0 { 127.0 / max_abs } else { 1.0 };
+            let bytes: Vec<u8> = data
+                .iter()
+                .map(|&v| (v * scale).round().clamp(-128.0, 127.0) as i8)
+                .map(|v| v as u8)
+                .collect();
+            ("I8", bytes)
+        }
+    }
+}
+
+/// Convert F32 slice to IEEE 754 half-precision (F16) little-endian bytes.
+fn f32_slice_to_f16_le_bytes(data: &[f32]) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(data.len() * 2);
+    for &value in data {
+        let bits = value.to_bits();
+        let sign = (bits >> 16) & 0x8000;
+        let exponent = ((bits >> 23) & 0xFF) as i32;
+        let mantissa = bits & 0x007F_FFFF;
+
+        let f16_bits = if exponent == 0xFF {
+            // Inf/NaN
+            sign | 0x7C00 | if mantissa != 0 { 0x0200 } else { 0 }
+        } else if exponent > 142 {
+            // Overflow -> Inf
+            sign | 0x7C00
+        } else if exponent < 113 {
+            // Underflow -> zero
+            sign
+        } else {
+            let e = (exponent - 112) as u32;
+            let m = mantissa >> 13;
+            sign | (e << 10) | (m & 0x3FF)
+        };
+        bytes.extend_from_slice(&(f16_bits as u16).to_le_bytes());
+    }
+    bytes
 }
 
 /// Save model tensors to APR format with embedded config metadata (GH-165 fix)

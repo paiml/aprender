@@ -77,6 +77,7 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             raw,
             offset,
             width,
+            slice,
         } => dispatch_hex(
             file,
             tensor.as_deref(),
@@ -92,6 +93,7 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             *raw,
             offset,
             *width,
+            slice.as_deref(),
         ),
 
         Commands::Tree {

@@ -639,6 +639,9 @@ pub enum Commands {
         /// Bytes per row for raw output (default: 16)
         #[arg(long, default_value = "16")]
         width: usize,
+        /// Slice range for partial tensor reads (e.g., 0:3 for first 3 elements)
+        #[arg(long)]
+        slice: Option<String>,
     },
     /// Model architecture tree view
     Tree {

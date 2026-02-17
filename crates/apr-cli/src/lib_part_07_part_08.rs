@@ -437,6 +437,7 @@
             raw: false,
             offset: "0".to_string(),
             width: 16,
+            slice: None,
         };
         let paths = extract_model_paths(&cmd);
         assert!(paths.is_empty(), "Hex is a diagnostic command (exempt)");

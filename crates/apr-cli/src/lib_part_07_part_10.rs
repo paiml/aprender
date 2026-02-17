@@ -50,6 +50,7 @@
             raw: false,
             offset: String::new(),
             width: 16,
+            slice: None,
         });
         let result = execute_command(&cli);
         assert!(result.is_err(), "Hex should fail with non-existent file");

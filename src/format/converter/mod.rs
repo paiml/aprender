@@ -26,7 +26,7 @@ use crate::format::gguf::{
 };
 use crate::format::v2::{AprV2Metadata, AprV2Writer, QuantizationMetadata};
 use crate::format::Compression;
-use crate::serialization::safetensors::save_safetensors;
+use crate::serialization::safetensors::{save_safetensors, SafeTensorsMetadata, TensorMetadata};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;

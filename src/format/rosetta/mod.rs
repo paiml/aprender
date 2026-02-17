@@ -172,7 +172,7 @@ impl FormatType {
     /// Returns error if file cannot be read or magic is unknown
     pub fn from_magic(path: &Path) -> Result<Self> {
         use std::fs::File;
-        use std::io::Read;
+        use std::io::{Read, Seek, SeekFrom};
 
         let mut file = File::open(path).map_err(|e| AprenderError::FormatError {
             message: format!("Cannot open file: {e}"),
@@ -207,6 +207,44 @@ impl FormatType {
                             "Truncated SafeTensors file: header declares {min_size} bytes but file is only {file_size} bytes"
                         ),
                     });
+                }
+                // PMAT-264: Also verify tensor data section is complete
+                let data_section_start = 8 + header_len;
+                file.seek(SeekFrom::Start(8)).map_err(|e| {
+                    AprenderError::FormatError {
+                        message: format!("Cannot seek in SafeTensors file: {e}"),
+                    }
+                })?;
+                let mut header_buf = vec![0u8; header_len as usize];
+                file.read_exact(&mut header_buf).map_err(|e| {
+                    AprenderError::FormatError {
+                        message: format!("Cannot read SafeTensors header: {e}"),
+                    }
+                })?;
+                if let Ok(header_json) =
+                    serde_json::from_slice::<serde_json::Value>(&header_buf)
+                {
+                    if let Some(obj) = header_json.as_object() {
+                        let max_data_end = obj
+                            .iter()
+                            .filter(|(k, _)| *k != "__metadata__")
+                            .filter_map(|(_, v)| {
+                                v.get("data_offsets")
+                                    .and_then(|d| d.as_array())
+                                    .and_then(|arr| arr.get(1))
+                                    .and_then(|e| e.as_u64())
+                            })
+                            .max()
+                            .unwrap_or(0);
+                        let required_size = data_section_start + max_data_end;
+                        if file_size < required_size {
+                            return Err(AprenderError::FormatError {
+                                message: format!(
+                                    "Truncated SafeTensors file: tensor data requires {required_size} bytes but file is only {file_size} bytes"
+                                ),
+                            });
+                        }
+                    }
                 }
                 return Ok(Self::SafeTensors);
             }

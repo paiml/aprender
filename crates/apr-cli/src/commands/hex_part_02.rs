@@ -362,6 +362,282 @@ fn print_safetensor_entry(
 }
 
 // ============================================================================
+// --slice: Extract a range of elements from a tensor
+// ============================================================================
+
+/// Parse a slice string like "0:3" into (start, end).
+fn parse_slice(s: &str) -> Result<(usize, usize), CliError> {
+    let parts: Vec<&str> = s.split(':').collect();
+    if parts.len() != 2 {
+        return Err(CliError::InvalidFormat(
+            format!("Invalid slice format '{s}': expected 'start:end' (e.g., 0:3)"),
+        ));
+    }
+    let start: usize = parts[0]
+        .parse()
+        .map_err(|e| CliError::InvalidFormat(format!("Invalid slice start: {e}")))?;
+    let end: usize = parts[1]
+        .parse()
+        .map_err(|e| CliError::InvalidFormat(format!("Invalid slice end: {e}")))?;
+    if start >= end {
+        return Err(CliError::InvalidFormat(
+            format!("Invalid slice range {start}:{end}: start must be less than end"),
+        ));
+    }
+    Ok((start, end))
+}
+
+/// Dispatch slice extraction based on format.
+fn run_slice(opts: &HexOptions, bytes: &[u8], format: FileFormat) -> Result<(), CliError> {
+    let slice_str = opts.slice.as_deref().ok_or_else(|| {
+        CliError::InvalidFormat("--slice requires a range".to_string())
+    })?;
+    let tensor_filter = opts.tensor.as_deref().ok_or_else(|| {
+        CliError::InvalidFormat("--slice requires --tensor".to_string())
+    })?;
+    let (start, end) = parse_slice(slice_str)?;
+
+    match format {
+        FileFormat::SafeTensors => slice_safetensors(opts, bytes, tensor_filter, start, end),
+        FileFormat::Gguf => slice_gguf(opts, tensor_filter, start, end),
+        FileFormat::Apr => slice_apr(opts, tensor_filter, start, end),
+    }
+}
+
+/// Slice extraction for SafeTensors format.
+#[allow(clippy::disallowed_methods)]
+fn slice_safetensors(
+    opts: &HexOptions,
+    bytes: &[u8],
+    tensor_name: &str,
+    start: usize,
+    end: usize,
+) -> Result<(), CliError> {
+    let parsed = parse_safetensors_header(bytes)?;
+    let tensor_map = parsed.header.as_object().ok_or_else(|| {
+        CliError::InvalidFormat("SafeTensors header is not a JSON object".to_string())
+    })?;
+
+    let info = tensor_map.get(tensor_name).ok_or_else(|| {
+        CliError::InvalidFormat(format!("Tensor '{tensor_name}' not found"))
+    })?;
+
+    let (dtype, shape, data_offsets) = extract_st_tensor_info(info, tensor_name)?;
+    let num_elements: usize = shape.iter().product();
+
+    if end > num_elements {
+        return Err(CliError::InvalidFormat(format!(
+            "Slice end {end} exceeds tensor size {num_elements}"
+        )));
+    }
+
+    let abs_start = 8 + parsed.header_len + data_offsets.0;
+    let abs_end = 8 + parsed.header_len + data_offsets.1;
+    if abs_end > bytes.len() {
+        return Err(CliError::InvalidFormat("Tensor data exceeds file bounds".to_string()));
+    }
+    let tensor_bytes = &bytes[abs_start..abs_end];
+
+    let values = decode_st_slice(tensor_bytes, &dtype, start, end)?;
+    let slice_count = end - start;
+
+    output_slice_result(opts, tensor_name, start, end, &dtype, slice_count, &values)
+}
+
+/// Extract SafeTensors tensor metadata: dtype, shape, (data_start, data_end).
+fn extract_st_tensor_info(
+    info: &serde_json::Value,
+    tensor_name: &str,
+) -> Result<(String, Vec<usize>, (usize, usize)), CliError> {
+    let dtype = info
+        .get("dtype")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| {
+            CliError::InvalidFormat(format!("Missing dtype for tensor '{tensor_name}'"))
+        })?
+        .to_string();
+
+    let shape: Vec<usize> = info
+        .get("shape")
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| {
+            CliError::InvalidFormat(format!("Missing shape for tensor '{tensor_name}'"))
+        })?
+        .iter()
+        .filter_map(|v| v.as_u64().map(|n| n as usize))
+        .collect();
+
+    let offsets = info
+        .get("data_offsets")
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| {
+            CliError::InvalidFormat(format!("Missing data_offsets for tensor '{tensor_name}'"))
+        })?;
+
+    let data_start = offsets
+        .first()
+        .and_then(serde_json::Value::as_u64)
+        .ok_or_else(|| {
+            CliError::InvalidFormat(format!("Invalid data_offsets for tensor '{tensor_name}'"))
+        })? as usize;
+
+    let data_end = offsets
+        .get(1)
+        .and_then(serde_json::Value::as_u64)
+        .ok_or_else(|| {
+            CliError::InvalidFormat(format!("Invalid data_offsets for tensor '{tensor_name}'"))
+        })? as usize;
+
+    Ok((dtype, shape, (data_start, data_end)))
+}
+
+/// Decode a slice of elements from raw SafeTensors bytes for a given dtype.
+fn decode_st_slice(
+    tensor_bytes: &[u8],
+    dtype: &str,
+    start: usize,
+    end: usize,
+) -> Result<Vec<f32>, CliError> {
+    match dtype {
+        "F32" => {
+            let byte_start = start * 4;
+            let byte_end = end * 4;
+            if byte_end > tensor_bytes.len() {
+                return Err(CliError::InvalidFormat("Slice exceeds tensor data".to_string()));
+            }
+            Ok(tensor_bytes[byte_start..byte_end]
+                .chunks_exact(4)
+                .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+                .collect())
+        }
+        "F16" => {
+            let byte_start = start * 2;
+            let byte_end = end * 2;
+            if byte_end > tensor_bytes.len() {
+                return Err(CliError::InvalidFormat("Slice exceeds tensor data".to_string()));
+            }
+            Ok(tensor_bytes[byte_start..byte_end]
+                .chunks_exact(2)
+                .map(|c| f16_to_f32(u16::from_le_bytes([c[0], c[1]])))
+                .collect())
+        }
+        "BF16" => {
+            let byte_start = start * 2;
+            let byte_end = end * 2;
+            if byte_end > tensor_bytes.len() {
+                return Err(CliError::InvalidFormat("Slice exceeds tensor data".to_string()));
+            }
+            Ok(tensor_bytes[byte_start..byte_end]
+                .chunks_exact(2)
+                .map(|c| {
+                    let bits = u32::from_le_bytes([0, 0, c[0], c[1]]);
+                    f32::from_bits(bits)
+                })
+                .collect())
+        }
+        _ => Err(CliError::InvalidFormat(format!(
+            "Unsupported dtype '{dtype}' for --slice (supported: F32, F16, BF16)"
+        ))),
+    }
+}
+
+/// Slice extraction for GGUF format (dequantize then slice).
+#[allow(clippy::disallowed_methods)]
+fn slice_gguf(
+    opts: &HexOptions,
+    tensor_name: &str,
+    start: usize,
+    end: usize,
+) -> Result<(), CliError> {
+    let (data, shape) = get_gguf_tensor_f32(&opts.file, tensor_name)?;
+    let num_elements = data.len();
+
+    if end > num_elements {
+        return Err(CliError::InvalidFormat(format!(
+            "Slice end {end} exceeds tensor size {num_elements}"
+        )));
+    }
+
+    let values: Vec<f32> = data[start..end].to_vec();
+    let info = parse_gguf(&opts.file)?;
+    let dtype_name = info
+        .tensors
+        .iter()
+        .find(|t| t.name == tensor_name)
+        .map(|t| ggml_dtype_name(t.dtype))
+        .unwrap_or("Unknown");
+
+    let _ = shape; // shape available but not needed for flat slice
+    let slice_count = end - start;
+    output_slice_result(opts, tensor_name, start, end, dtype_name, slice_count, &values)
+}
+
+/// Slice extraction for APR format.
+#[allow(clippy::disallowed_methods)]
+fn slice_apr(
+    opts: &HexOptions,
+    tensor_name: &str,
+    start: usize,
+    end: usize,
+) -> Result<(), CliError> {
+    let file_bytes = std::fs::read(&opts.file)
+        .map_err(|e| CliError::InvalidFormat(format!("Failed to read file: {e}")))?;
+    let reader = AprV2Reader::from_bytes(&file_bytes)
+        .map_err(|e| CliError::InvalidFormat(format!("Failed to read APR: {e}")))?;
+
+    let data = reader.get_tensor_as_f32(tensor_name).ok_or_else(|| {
+        CliError::InvalidFormat(format!("Tensor '{tensor_name}' not found or cannot be read as f32"))
+    })?;
+
+    let num_elements = data.len();
+    if end > num_elements {
+        return Err(CliError::InvalidFormat(format!(
+            "Slice end {end} exceeds tensor size {num_elements}"
+        )));
+    }
+
+    let values: Vec<f32> = data[start..end].to_vec();
+    let dtype_name = reader
+        .get_tensor(tensor_name)
+        .map(|e| format!("{:?}", e.dtype))
+        .unwrap_or_else(|| "Unknown".to_string());
+
+    let slice_count = end - start;
+    output_slice_result(opts, tensor_name, start, end, &dtype_name, slice_count, &values)
+}
+
+/// Output slice result as JSON or text.
+#[allow(clippy::disallowed_methods)]
+fn output_slice_result(
+    opts: &HexOptions,
+    tensor_name: &str,
+    start: usize,
+    end: usize,
+    dtype: &str,
+    count: usize,
+    values: &[f32],
+) -> Result<(), CliError> {
+    if opts.json {
+        let json = serde_json::json!({
+            "tensor": tensor_name,
+            "slice": format!("{start}:{end}"),
+            "dtype": dtype,
+            "shape": [count],
+            "values": values,
+        });
+        if let Ok(s) = serde_json::to_string_pretty(&json) {
+            println!("{s}");
+        }
+    } else {
+        println!("{}: {}", "Tensor".bold(), tensor_name.cyan());
+        println!("{}: {start}:{end} ({count} elements)", "Slice".bold());
+        println!("{}: {}", "Dtype".bold(), output::dtype_color(dtype));
+        println!("{}: {:?}", "Values".bold(), values);
+    }
+    Ok(())
+}
+
+// ============================================================================
 // --header: Annotated file header
 // ============================================================================
 

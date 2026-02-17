@@ -111,6 +111,7 @@ fn dispatch_hex(
     raw: bool,
     offset: &str,
     width: usize,
+    slice: Option<&str>,
 ) -> Result<(), CliError> {
     let parsed_offset = hex::parse_hex_offset(offset).map_err(CliError::InvalidFormat)?;
     hex::run(&hex::HexOptions {
@@ -128,6 +129,7 @@ fn dispatch_hex(
         raw,
         offset: parsed_offset,
         width,
+        slice: slice.map(String::from),
     })
 }
 

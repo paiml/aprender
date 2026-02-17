@@ -97,7 +97,7 @@ fn run_rosetta_validation(
         .map_err(|e| CliError::ValidationFailed(format!("Validation failed: {e}")))?;
 
     if json {
-        return print_rosetta_validation_json(path, &report);
+        return print_rosetta_validation_json(path, &report, format);
     }
 
     output::header(&format!("Validate: {} (Rosetta Stone)", format));
@@ -261,6 +261,7 @@ fn print_apr_validation_json(
 fn print_rosetta_validation_json(
     path: &Path,
     report: &RosettaValidationReport,
+    format: FormatType,
 ) -> Result<(), CliError> {
     // GH-251: Include individual tensor checks as a list (same schema as APR path)
     let checks_json: Vec<serde_json::Value> = report
@@ -281,9 +282,14 @@ fn print_rosetta_validation_json(
         })
         .collect();
 
+    let format_str = match format {
+        FormatType::SafeTensors => "safetensors",
+        FormatType::Gguf => "gguf",
+        FormatType::Apr => "apr",
+    };
     let output = serde_json::json!({
         "model": path.display().to_string(),
-        "format": "rosetta",
+        "format": format_str,
         "total_tensors": report.tensor_count,
         "failed_tensors": report.failed_tensor_count,
         "total_nan": report.total_nan_count,

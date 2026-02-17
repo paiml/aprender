@@ -204,6 +204,7 @@
                 raw: false,
                 offset: "0".to_string(),
                 width: 16,
+                slice: None,
             },
             Commands::Tree {
                 file: PathBuf::from("m.apr"),
