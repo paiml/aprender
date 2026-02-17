@@ -585,6 +585,43 @@ fn test_source_parse_http_no_s_gh219() {
 // Architecture::map_name dispatch for Phi (uses llama_map_name)
 // -------------------------------------------------------------------------
 
+// -------------------------------------------------------------------------
+// GH-278: Qwen3.5 architecture support
+// -------------------------------------------------------------------------
+
+#[test]
+fn test_from_model_type_qwen3_5_gh278() {
+    assert_eq!(Architecture::from_model_type("qwen3_5"), Some(Architecture::Qwen3_5));
+    assert_eq!(Architecture::from_model_type("qwen3.5"), Some(Architecture::Qwen3_5));
+}
+
+#[test]
+fn test_qwen3_5_is_inference_verified_gh278() {
+    assert!(Architecture::Qwen3_5.is_inference_verified());
+}
+
+#[test]
+fn test_qwen3_5_display_name_gh278() {
+    assert_eq!(Architecture::Qwen3_5.display_name(), "Qwen3.5");
+}
+
+#[test]
+fn test_qwen3_5_uses_qwen2_mapping_gh278() {
+    // Qwen3.5 should use the same tensor name mapping as Qwen2
+    assert_eq!(
+        Architecture::Qwen3_5.map_name("blk.0.attn_q.weight"),
+        Architecture::Qwen2.map_name("blk.0.attn_q.weight")
+    );
+    assert_eq!(
+        Architecture::Qwen3_5.map_name("token_embd.weight"),
+        Architecture::Qwen2.map_name("token_embd.weight")
+    );
+    assert_eq!(
+        Architecture::Qwen3_5.map_name("output.weight"),
+        Architecture::Qwen2.map_name("output.weight")
+    );
+}
+
 #[test]
 fn test_phi_uses_llama_mapping_gh219() {
     // Phi uses same mapping as LLaMA
