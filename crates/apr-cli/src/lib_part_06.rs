@@ -3,8 +3,11 @@
 /// Returns `None` if the command is not an analysis command, allowing the caller
 /// to try other sub-dispatchers.
 fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
-    let result = match cli.command.as_ref() {
-        Commands::Cbtop {
+    let Commands::Extended(ref ext) = *cli.command.as_ref() else {
+        return None;
+    };
+    let result = match ext {
+        ExtendedCommands::Cbtop {
             model,
             attach,
             model_path,
@@ -40,7 +43,7 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             *simulated,
         ),
 
-        Commands::Probar {
+        ExtendedCommands::Probar {
             file,
             output,
             format,
@@ -54,7 +57,7 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             layer.as_deref(),
         ),
 
-        Commands::CompareHf {
+        ExtendedCommands::CompareHf {
             file,
             hf,
             tensor,
@@ -62,7 +65,7 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             json,
         } => compare_hf::run(file, hf, tensor.as_deref(), *threshold, *json || cli.json),
 
-        Commands::Hex {
+        ExtendedCommands::Hex {
             file,
             tensor,
             limit,
@@ -96,7 +99,7 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             slice.as_deref(),
         ),
 
-        Commands::Tree {
+        ExtendedCommands::Tree {
             file,
             filter,
             format,
@@ -112,7 +115,7 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             tree::run(file, filter.as_deref(), tree_format, *sizes, *depth)
         }
 
-        Commands::Flow {
+        ExtendedCommands::Flow {
             file,
             layer,
             component,
@@ -126,7 +129,7 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             *json || cli.json,
         ),
 
-        Commands::Oracle {
+        ExtendedCommands::Oracle {
             source,
             family,
             size,
@@ -165,8 +168,11 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
 /// Returns `None` if the command is not a profiling command, allowing the caller
 /// to try other sub-dispatchers.
 fn dispatch_profiling_commands(cli: &Cli) -> Option<Result<(), CliError>> {
-    let result = match cli.command.as_ref() {
-        Commands::Profile {
+    let Commands::Extended(ref ext) = *cli.command.as_ref() else {
+        return None;
+    };
+    let result = match ext {
+        ExtendedCommands::Profile {
             file,
             granular,
             format,
@@ -214,7 +220,7 @@ fn dispatch_profiling_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             compare.as_deref(),
         ),
 
-        Commands::Bench {
+        ExtendedCommands::Bench {
             file,
             warmup,
             iterations,
@@ -233,7 +239,7 @@ fn dispatch_profiling_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             cli.json,
         ),
 
-        Commands::Eval {
+        ExtendedCommands::Eval {
             file,
             dataset,
             text,
@@ -248,7 +254,7 @@ fn dispatch_profiling_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             cli.json,
         ),
 
-        Commands::Qa {
+        ExtendedCommands::Qa {
             file,
             assert_tps,
             assert_speedup,
@@ -296,13 +302,13 @@ fn dispatch_profiling_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             *skip_metadata,
         ),
 
-        Commands::Parity {
+        ExtendedCommands::Parity {
             file,
             prompt,
             assert,
         } => commands::parity::run(file, prompt, *assert, cli.verbose),
 
-        Commands::PtxMap {
+        ExtendedCommands::PtxMap {
             file,
             kernel,
             reverse,
@@ -318,7 +324,7 @@ fn dispatch_profiling_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             *prefill,
         ),
 
-        Commands::Ptx {
+        ExtendedCommands::Ptx {
             file,
             kernel,
             strict,
@@ -334,7 +340,7 @@ fn dispatch_profiling_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             *verbose || cli.verbose,
         ),
 
-        Commands::Tune {
+        ExtendedCommands::Tune {
             file,
             method,
             rank,
@@ -377,8 +383,11 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
     }
 
     // Remaining extended commands handled directly
-    match cli.command.as_ref() {
-        Commands::Chat {
+    let Commands::Extended(ref ext) = *cli.command.as_ref() else {
+        unreachable!("dispatch_core_command handles all non-extended variants");
+    };
+    match ext {
+        ExtendedCommands::Chat {
             file,
             temperature,
             top_p,
@@ -409,7 +418,7 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
             *profile,
         ),
 
-        Commands::Showcase {
+        ExtendedCommands::Showcase {
             auto_verify,
             step,
             tier,
@@ -435,9 +444,9 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
             *quiet,
         ),
 
-        Commands::Rosetta { action } => dispatch_rosetta(action, cli.json),
+        ExtendedCommands::Rosetta { action } => dispatch_rosetta(action, cli.json),
 
-        Commands::Publish {
+        ExtendedCommands::Publish {
             directory,
             repo_id,
             model_name,
@@ -460,7 +469,7 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
             cli.verbose,
         ),
 
-        // All other commands handled by dispatch_core_command
-        _ => unreachable!("dispatch_core_command handles all remaining variants"),
+        // All other extended commands handled by sub-dispatchers above
+        _ => unreachable!("all extended commands handled by sub-dispatchers"),
     }
 }

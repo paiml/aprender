@@ -17,13 +17,13 @@
         ];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Eval {
+            Commands::Extended(ExtendedCommands::Eval {
                 file,
                 dataset,
                 text,
                 max_tokens,
                 threshold,
-            } => {
+            }) => {
                 assert_eq!(file, PathBuf::from("model.gguf"));
                 assert_eq!(dataset, "lambada");
                 assert_eq!(text, Some("The quick brown fox".to_string()));
@@ -40,13 +40,13 @@
         let args = vec!["apr", "eval", "model.apr"];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Eval {
+            Commands::Extended(ExtendedCommands::Eval {
                 dataset,
                 text,
                 max_tokens,
                 threshold,
                 ..
-            } => {
+            }) => {
                 assert_eq!(dataset, "wikitext-2");
                 assert!(text.is_none());
                 assert_eq!(max_tokens, 512);
@@ -71,13 +71,13 @@
         ];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Flow {
+            Commands::Extended(ExtendedCommands::Flow {
                 file,
                 layer,
                 component,
                 verbose,
                 json: _,
-            } => {
+            }) => {
                 assert_eq!(file, PathBuf::from("model.apr"));
                 assert_eq!(layer, Some("encoder.0".to_string()));
                 assert_eq!(component, "encoder");
@@ -93,12 +93,12 @@
         let args = vec!["apr", "flow", "model.apr"];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Flow {
+            Commands::Extended(ExtendedCommands::Flow {
                 component,
                 verbose,
                 layer,
                 ..
-            } => {
+            }) => {
                 assert_eq!(component, "full");
                 assert!(!verbose);
                 assert!(layer.is_none());
@@ -124,7 +124,7 @@
         ];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Hex {
+            Commands::Extended(ExtendedCommands::Hex {
                 file,
                 tensor,
                 limit,
@@ -132,7 +132,7 @@
                 list,
                 json,
                 ..
-            } => {
+            }) => {
                 assert_eq!(file, PathBuf::from("model.apr"));
                 assert_eq!(tensor, Some("embed.weight".to_string()));
                 assert_eq!(limit, 128);
@@ -150,14 +150,14 @@
         let args = vec!["apr", "hex", "model.apr"];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Hex {
+            Commands::Extended(ExtendedCommands::Hex {
                 limit,
                 stats,
                 list,
                 json,
                 tensor,
                 ..
-            } => {
+            }) => {
                 assert_eq!(limit, 64);
                 assert!(!stats);
                 assert!(!list);
@@ -185,13 +185,13 @@
         ];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Tree {
+            Commands::Extended(ExtendedCommands::Tree {
                 file,
                 filter,
                 format,
                 sizes,
                 depth,
-            } => {
+            }) => {
                 assert_eq!(file, PathBuf::from("model.apr"));
                 assert_eq!(filter, Some("encoder".to_string()));
                 assert_eq!(format, "mermaid");
@@ -208,13 +208,13 @@
         let args = vec!["apr", "tree", "model.apr"];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Tree {
+            Commands::Extended(ExtendedCommands::Tree {
                 format,
                 sizes,
                 depth,
                 filter,
                 ..
-            } => {
+            }) => {
                 assert_eq!(format, "ascii");
                 assert!(!sizes);
                 assert!(depth.is_none());
@@ -242,13 +242,13 @@
         ];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Probar {
+            Commands::Extended(ExtendedCommands::Probar {
                 file,
                 output,
                 format,
                 golden,
                 layer,
-            } => {
+            }) => {
                 assert_eq!(file, PathBuf::from("model.apr"));
                 assert_eq!(output, PathBuf::from("/tmp/probar"));
                 assert_eq!(format, "json");
@@ -265,13 +265,13 @@
         let args = vec!["apr", "probar", "model.apr"];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Probar {
+            Commands::Extended(ExtendedCommands::Probar {
                 output,
                 format,
                 golden,
                 layer,
                 ..
-            } => {
+            }) => {
                 assert_eq!(output, PathBuf::from("./probar-export"));
                 assert_eq!(format, "both");
                 assert!(golden.is_none());

@@ -109,12 +109,12 @@
         ];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Chat {
+            Commands::Extended(ExtendedCommands::Chat {
                 file,
                 temperature,
                 top_p,
                 ..
-            } => {
+            }) => {
                 assert_eq!(file, PathBuf::from("model.gguf"));
                 assert!((temperature - 0.5).abs() < f32::EPSILON);
                 assert!((top_p - 0.95).abs() < f32::EPSILON);
@@ -177,12 +177,12 @@
         ];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Bench {
+            Commands::Extended(ExtendedCommands::Bench {
                 file,
                 warmup,
                 iterations,
                 ..
-            } => {
+            }) => {
                 assert_eq!(file, PathBuf::from("model.gguf"));
                 assert_eq!(warmup, 5);
                 assert_eq!(iterations, 10);
@@ -206,13 +206,13 @@
         ];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Cbtop {
+            Commands::Extended(ExtendedCommands::Cbtop {
                 headless,
                 ci,
                 throughput,
                 brick_score,
                 ..
-            } => {
+            }) => {
                 assert!(headless);
                 assert!(ci);
                 assert_eq!(throughput, Some(100.0));
@@ -235,12 +235,12 @@
         ];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Qa {
+            Commands::Extended(ExtendedCommands::Qa {
                 file,
                 assert_tps,
                 skip_ollama,
                 ..
-            } => {
+            }) => {
                 assert_eq!(file, PathBuf::from("model.gguf"));
                 assert_eq!(assert_tps, Some(50.0));
                 assert!(skip_ollama);
@@ -356,12 +356,12 @@
         ];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Showcase {
+            Commands::Extended(ExtendedCommands::Showcase {
                 tier,
                 gpu,
                 auto_verify,
                 ..
-            } => {
+            }) => {
                 assert_eq!(tier, "medium");
                 assert!(gpu);
                 assert!(auto_verify);
@@ -383,13 +383,13 @@
         ];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Profile {
+            Commands::Extended(ExtendedCommands::Profile {
                 file,
                 granular,
                 detect_naive,
                 fail_on_naive,
                 ..
-            } => {
+            }) => {
                 assert_eq!(file, PathBuf::from("model.apr"));
                 assert!(granular);
                 assert!(detect_naive);
@@ -416,14 +416,14 @@
         ];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Profile {
+            Commands::Extended(ExtendedCommands::Profile {
                 file,
                 ci,
                 assert_throughput,
                 assert_p99,
                 format,
                 ..
-            } => {
+            }) => {
                 assert_eq!(file, PathBuf::from("model.gguf"));
                 assert!(ci);
                 assert_eq!(assert_throughput, Some(100.0));

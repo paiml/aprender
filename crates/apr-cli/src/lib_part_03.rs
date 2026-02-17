@@ -1,4 +1,42 @@
 
+/// PMAT-237: Extract model file paths from an `ExtendedCommands` variant.
+///
+/// Helper for `extract_model_paths` — handles the 19 variants that moved to
+/// `ExtendedCommands` (Chat, Bench, Eval, Profile, Qa, Parity, PtxMap, Ptx,
+/// Tune, Cbtop, Probar, CompareHf, Hex, Tree, Flow, Showcase, Rosetta,
+/// Publish, Oracle).
+fn extract_extended_model_paths(command: &ExtendedCommands) -> Vec<PathBuf> {
+    match command {
+        // === ACTION COMMANDS (gated) ===
+        ExtendedCommands::Probar { file, .. }
+        | ExtendedCommands::CompareHf { file, .. }
+        | ExtendedCommands::Chat { file, .. }
+        | ExtendedCommands::Bench { file, .. }
+        | ExtendedCommands::Eval { file, .. }
+        | ExtendedCommands::Profile { file, .. } => vec![file.clone()],
+
+        ExtendedCommands::Cbtop { model_path, .. } => model_path.iter().cloned().collect(),
+
+        // Rosetta action subcommands
+        ExtendedCommands::Rosetta { action } => match action {
+            RosettaCommands::Convert { source, .. }
+            | RosettaCommands::Chain { source, .. }
+            | RosettaCommands::Verify { source, .. } => vec![source.clone()],
+            RosettaCommands::CompareInference {
+                model_a, model_b, ..
+            } => {
+                vec![model_a.clone(), model_b.clone()]
+            }
+            // Diagnostic rosetta commands — exempt
+            _ => vec![],
+        },
+
+        // === DIAGNOSTIC COMMANDS (exempt) ===
+        // Qa, Parity, PtxMap, Ptx, Tune, Hex, Tree, Flow, Showcase, Publish, Oracle
+        _ => vec![],
+    }
+}
+
 /// PMAT-237: Extract model file paths from a command variant.
 ///
 /// Returns paths for action commands (run, serve, bench, etc.) that should be
@@ -20,12 +58,6 @@ fn extract_model_paths(command: &Commands) -> Vec<PathBuf> {
         Commands::Serve { file, .. }
         | Commands::Trace { file, .. }
         | Commands::Convert { file, .. }
-        | Commands::Probar { file, .. }
-        | Commands::CompareHf { file, .. }
-        | Commands::Chat { file, .. }
-        | Commands::Bench { file, .. }
-        | Commands::Eval { file, .. }
-        | Commands::Profile { file, .. }
         | Commands::Check { file, .. } => vec![file.clone()],
 
         Commands::Merge { files, .. } => files.clone(),
@@ -34,7 +66,6 @@ fn extract_model_paths(command: &Commands) -> Vec<PathBuf> {
         Commands::Distill { teacher, .. } => vec![teacher.clone()],
         Commands::Finetune { file, .. } => file.iter().cloned().collect(),
 
-        Commands::Cbtop { model_path, .. } => model_path.iter().cloned().collect(),
         Commands::Tui { file, .. } => file.iter().cloned().collect(),
         Commands::Import { source, .. } => {
             let path = PathBuf::from(source);
@@ -45,23 +76,12 @@ fn extract_model_paths(command: &Commands) -> Vec<PathBuf> {
             }
         }
 
-        // Rosetta action subcommands
-        Commands::Rosetta { action } => match action {
-            RosettaCommands::Convert { source, .. }
-            | RosettaCommands::Chain { source, .. }
-            | RosettaCommands::Verify { source, .. } => vec![source.clone()],
-            RosettaCommands::CompareInference {
-                model_a, model_b, ..
-            } => {
-                vec![model_a.clone(), model_b.clone()]
-            }
-            // Diagnostic rosetta commands — exempt
-            _ => vec![],
-        },
+        // Delegate to ExtendedCommands helper
+        Commands::Extended(ref ext) => extract_extended_model_paths(ext),
 
         // === DIAGNOSTIC COMMANDS (exempt) ===
-        // qa, validate, inspect, debug, tensors, hex, diff, lint, tree, flow,
-        // explain, list, rm, pull, showcase, tune, canary, publish
+        // validate, inspect, debug, tensors, diff, lint,
+        // explain, list, rm, pull, canary
         _ => vec![],
     }
 }

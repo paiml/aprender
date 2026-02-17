@@ -63,6 +63,7 @@ pub struct Cli {
 }
 
 include!("lib_part_02.rs");
+include!("lib_part_02_part_02.rs");
 include!("lib_part_03.rs");
 include!("lib_part_04.rs");
 include!("lib_part_05.rs");

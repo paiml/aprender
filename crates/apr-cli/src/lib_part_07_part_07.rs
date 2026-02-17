@@ -68,7 +68,7 @@
         ];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Qa {
+            Commands::Extended(ExtendedCommands::Qa {
                 skip_golden,
                 skip_throughput,
                 skip_ollama,
@@ -82,7 +82,7 @@
                 json,
                 verbose,
                 ..
-            } => {
+            }) => {
                 assert!(skip_golden);
                 assert!(skip_throughput);
                 assert!(skip_ollama);
@@ -169,7 +169,7 @@
         ];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Bench {
+            Commands::Extended(ExtendedCommands::Bench {
                 warmup,
                 iterations,
                 max_tokens,
@@ -177,7 +177,7 @@
                 fast,
                 brick,
                 ..
-            } => {
+            }) => {
                 assert_eq!(warmup, 10);
                 assert_eq!(iterations, 20);
                 assert_eq!(max_tokens, 64);
@@ -208,7 +208,7 @@
         ];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Cbtop {
+            Commands::Extended(ExtendedCommands::Cbtop {
                 model_path,
                 speculative,
                 speculation_k,
@@ -216,7 +216,7 @@
                 concurrent,
                 simulated,
                 ..
-            } => {
+            }) => {
                 assert_eq!(model_path, Some(PathBuf::from("model.gguf")));
                 assert!(speculative);
                 assert_eq!(speculation_k, 8);
@@ -245,14 +245,14 @@
         ];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Profile {
+            Commands::Extended(ExtendedCommands::Profile {
                 energy,
                 perf_grade,
                 callgraph,
                 compare_hf,
                 output,
                 ..
-            } => {
+            }) => {
                 assert!(energy);
                 assert!(perf_grade);
                 assert!(callgraph);
@@ -285,7 +285,7 @@
         ];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Chat {
+            Commands::Extended(ExtendedCommands::Chat {
                 system,
                 inspect,
                 trace,
@@ -295,7 +295,7 @@
                 trace_level,
                 profile,
                 ..
-            } => {
+            }) => {
                 assert_eq!(system, Some("You are a helpful assistant.".to_string()));
                 assert!(inspect);
                 assert!(trace);
@@ -321,7 +321,7 @@
         ];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Showcase {
+            Commands::Extended(ExtendedCommands::Showcase {
                 step,
                 tier,
                 zram,
@@ -330,7 +330,7 @@
                 verbose,
                 quiet,
                 ..
-            } => {
+            }) => {
                 assert_eq!(step, Some("bench".to_string()));
                 assert_eq!(tier, "tiny");
                 assert!(zram);
@@ -364,7 +364,7 @@
         ];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Rosetta { action } => match action {
+            Commands::Extended(ExtendedCommands::Rosetta { action }) => match action {
                 RosettaCommands::CompareInference {
                     model_a,
                     model_b,
@@ -406,7 +406,7 @@
         ];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Rosetta { action } => match action {
+            Commands::Extended(ExtendedCommands::Rosetta { action }) => match action {
                 RosettaCommands::DiffTensors {
                     model_a,
                     model_b,

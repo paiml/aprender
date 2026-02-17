@@ -2,13 +2,13 @@
     /// Test extract_model_paths: Tree is diagnostic (exempt)
     #[test]
     fn test_extract_paths_tree_exempt() {
-        let cmd = Commands::Tree {
+        let cmd = Commands::Extended(ExtendedCommands::Tree {
             file: PathBuf::from("model.apr"),
             filter: None,
             format: "ascii".to_string(),
             sizes: false,
             depth: None,
-        };
+        });
         let paths = extract_model_paths(&cmd);
         assert!(paths.is_empty(), "Tree is a diagnostic command (exempt)");
     }
@@ -16,13 +16,13 @@
     /// Test extract_model_paths: Flow is diagnostic (exempt)
     #[test]
     fn test_extract_paths_flow_exempt() {
-        let cmd = Commands::Flow {
+        let cmd = Commands::Extended(ExtendedCommands::Flow {
             file: PathBuf::from("model.apr"),
             layer: None,
             component: "full".to_string(),
             verbose: false,
             json: false,
-        };
+        });
         let paths = extract_model_paths(&cmd);
         assert!(paths.is_empty(), "Flow is a diagnostic command (exempt)");
     }
@@ -30,7 +30,7 @@
     /// Test extract_model_paths: Publish is diagnostic (exempt)
     #[test]
     fn test_extract_paths_publish_exempt() {
-        let cmd = Commands::Publish {
+        let cmd = Commands::Extended(ExtendedCommands::Publish {
             directory: PathBuf::from("/tmp/models"),
             repo_id: "org/repo".to_string(),
             model_name: None,
@@ -40,7 +40,7 @@
             tags: None,
             message: None,
             dry_run: false,
-        };
+        });
         let paths = extract_model_paths(&cmd);
         assert!(paths.is_empty(), "Publish is a diagnostic command (exempt)");
     }
@@ -48,7 +48,7 @@
     /// Test extract_model_paths: Tune is diagnostic (exempt)
     #[test]
     fn test_extract_paths_tune_exempt() {
-        let cmd = Commands::Tune {
+        let cmd = Commands::Extended(ExtendedCommands::Tune {
             file: Some(PathBuf::from("model.apr")),
             method: "auto".to_string(),
             rank: None,
@@ -58,7 +58,7 @@
             freeze_base: false,
             train_data: None,
             json: false,
-        };
+        });
         let paths = extract_model_paths(&cmd);
         assert!(paths.is_empty(), "Tune is a diagnostic command (exempt)");
     }
@@ -100,7 +100,7 @@
     /// Test extract_model_paths: Oracle is diagnostic (exempt)
     #[test]
     fn test_extract_paths_oracle_exempt() {
-        let cmd = Commands::Oracle {
+        let cmd = Commands::Extended(ExtendedCommands::Oracle {
             source: Some("model.gguf".to_string()),
             family: None,
             size: None,
@@ -111,7 +111,7 @@
             kernels: false,
             validate: false,
             full: false,
-        };
+        });
         let paths = extract_model_paths(&cmd);
         assert!(paths.is_empty(), "Oracle is a diagnostic command (exempt)");
     }
@@ -119,7 +119,7 @@
     /// Test extract_model_paths: Showcase is diagnostic (exempt)
     #[test]
     fn test_extract_paths_showcase_exempt() {
-        let cmd = Commands::Showcase {
+        let cmd = Commands::Extended(ExtendedCommands::Showcase {
             auto_verify: false,
             step: None,
             tier: "small".to_string(),
@@ -131,7 +131,7 @@
             json: false,
             verbose: false,
             quiet: false,
-        };
+        });
         let paths = extract_model_paths(&cmd);
         assert!(
             paths.is_empty(),
@@ -142,7 +142,7 @@
     /// Test extract_model_paths: Rosetta Convert returns source path
     #[test]
     fn test_extract_paths_rosetta_convert() {
-        let cmd = Commands::Rosetta {
+        let cmd = Commands::Extended(ExtendedCommands::Rosetta {
             action: RosettaCommands::Convert {
                 source: PathBuf::from("model.gguf"),
                 target: PathBuf::from("out.safetensors"),
@@ -151,7 +151,7 @@
                 json: false,
                 tokenizer: None,
             },
-        };
+        });
         let paths = extract_model_paths(&cmd);
         assert_eq!(paths, vec![PathBuf::from("model.gguf")]);
     }
@@ -159,14 +159,14 @@
     /// Test extract_model_paths: Rosetta Chain returns source path
     #[test]
     fn test_extract_paths_rosetta_chain() {
-        let cmd = Commands::Rosetta {
+        let cmd = Commands::Extended(ExtendedCommands::Rosetta {
             action: RosettaCommands::Chain {
                 source: PathBuf::from("model.gguf"),
                 formats: vec!["safetensors".to_string(), "apr".to_string()],
                 work_dir: PathBuf::from("/tmp"),
                 json: false,
             },
-        };
+        });
         let paths = extract_model_paths(&cmd);
         assert_eq!(paths, vec![PathBuf::from("model.gguf")]);
     }
@@ -174,14 +174,14 @@
     /// Test extract_model_paths: Rosetta Verify returns source path
     #[test]
     fn test_extract_paths_rosetta_verify() {
-        let cmd = Commands::Rosetta {
+        let cmd = Commands::Extended(ExtendedCommands::Rosetta {
             action: RosettaCommands::Verify {
                 source: PathBuf::from("model.apr"),
                 intermediate: "safetensors".to_string(),
                 tolerance: 1e-5,
                 json: false,
             },
-        };
+        });
         let paths = extract_model_paths(&cmd);
         assert_eq!(paths, vec![PathBuf::from("model.apr")]);
     }
@@ -189,7 +189,7 @@
     /// Test extract_model_paths: Rosetta CompareInference returns both paths
     #[test]
     fn test_extract_paths_rosetta_compare_inference() {
-        let cmd = Commands::Rosetta {
+        let cmd = Commands::Extended(ExtendedCommands::Rosetta {
             action: RosettaCommands::CompareInference {
                 model_a: PathBuf::from("model_a.gguf"),
                 model_b: PathBuf::from("model_b.apr"),
@@ -199,7 +199,7 @@
                 tolerance: 0.1,
                 json: false,
             },
-        };
+        });
         let paths = extract_model_paths(&cmd);
         assert_eq!(
             paths,
@@ -210,13 +210,13 @@
     /// Test extract_model_paths: Rosetta Inspect is diagnostic (exempt)
     #[test]
     fn test_extract_paths_rosetta_inspect_exempt() {
-        let cmd = Commands::Rosetta {
+        let cmd = Commands::Extended(ExtendedCommands::Rosetta {
             action: RosettaCommands::Inspect {
                 file: PathBuf::from("model.gguf"),
                 hexdump: false,
                 json: false,
             },
-        };
+        });
         let paths = extract_model_paths(&cmd);
         assert!(
             paths.is_empty(),
@@ -227,7 +227,7 @@
     /// Test extract_model_paths: Rosetta DiffTensors is diagnostic (exempt)
     #[test]
     fn test_extract_paths_rosetta_diff_tensors_exempt() {
-        let cmd = Commands::Rosetta {
+        let cmd = Commands::Extended(ExtendedCommands::Rosetta {
             action: RosettaCommands::DiffTensors {
                 model_a: PathBuf::from("a.gguf"),
                 model_b: PathBuf::from("b.apr"),
@@ -236,7 +236,7 @@
                 filter: None,
                 json: false,
             },
-        };
+        });
         let paths = extract_model_paths(&cmd);
         assert!(
             paths.is_empty(),
@@ -247,7 +247,7 @@
     /// Test extract_model_paths: Rosetta Fingerprint is diagnostic (exempt)
     #[test]
     fn test_extract_paths_rosetta_fingerprint_exempt() {
-        let cmd = Commands::Rosetta {
+        let cmd = Commands::Extended(ExtendedCommands::Rosetta {
             action: RosettaCommands::Fingerprint {
                 model: PathBuf::from("model.gguf"),
                 model_b: None,
@@ -256,7 +256,7 @@
                 verbose: false,
                 json: false,
             },
-        };
+        });
         let paths = extract_model_paths(&cmd);
         assert!(
             paths.is_empty(),
@@ -267,7 +267,7 @@
     /// Test extract_model_paths: Rosetta ValidateStats is diagnostic (exempt)
     #[test]
     fn test_extract_paths_rosetta_validate_stats_exempt() {
-        let cmd = Commands::Rosetta {
+        let cmd = Commands::Extended(ExtendedCommands::Rosetta {
             action: RosettaCommands::ValidateStats {
                 model: PathBuf::from("model.apr"),
                 reference: None,
@@ -276,7 +276,7 @@
                 strict: false,
                 json: false,
             },
-        };
+        });
         let paths = extract_model_paths(&cmd);
         assert!(
             paths.is_empty(),

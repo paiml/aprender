@@ -17,7 +17,7 @@
         ];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Rosetta { action } => match action {
+            Commands::Extended(ExtendedCommands::Rosetta { action }) => match action {
                 RosettaCommands::Fingerprint {
                     model,
                     model_b,
@@ -58,7 +58,7 @@
         ];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Rosetta { action } => match action {
+            Commands::Extended(ExtendedCommands::Rosetta { action }) => match action {
                 RosettaCommands::ValidateStats {
                     model,
                     reference,
@@ -199,13 +199,13 @@
     /// Test extract_model_paths: Probar returns file path
     #[test]
     fn test_extract_paths_probar() {
-        let cmd = Commands::Probar {
+        let cmd = Commands::Extended(ExtendedCommands::Probar {
             file: PathBuf::from("model.apr"),
             output: PathBuf::from("./probar-export"),
             format: "both".to_string(),
             golden: None,
             layer: None,
-        };
+        });
         let paths = extract_model_paths(&cmd);
         assert_eq!(paths, vec![PathBuf::from("model.apr")]);
     }
@@ -213,13 +213,13 @@
     /// Test extract_model_paths: CompareHf returns file path
     #[test]
     fn test_extract_paths_compare_hf() {
-        let cmd = Commands::CompareHf {
+        let cmd = Commands::Extended(ExtendedCommands::CompareHf {
             file: PathBuf::from("model.apr"),
             hf: "openai/whisper-tiny".to_string(),
             tensor: None,
             threshold: 1e-5,
             json: false,
-        };
+        });
         let paths = extract_model_paths(&cmd);
         assert_eq!(paths, vec![PathBuf::from("model.apr")]);
     }
@@ -227,7 +227,7 @@
     /// Test extract_model_paths: Chat returns file path
     #[test]
     fn test_extract_paths_chat() {
-        let cmd = Commands::Chat {
+        let cmd = Commands::Extended(ExtendedCommands::Chat {
             file: PathBuf::from("model.gguf"),
             temperature: 0.7,
             top_p: 0.9,
@@ -242,7 +242,7 @@
             trace_output: None,
             trace_level: "basic".to_string(),
             profile: false,
-        };
+        });
         let paths = extract_model_paths(&cmd);
         assert_eq!(paths, vec![PathBuf::from("model.gguf")]);
     }
@@ -250,13 +250,13 @@
     /// Test extract_model_paths: Eval returns file path
     #[test]
     fn test_extract_paths_eval() {
-        let cmd = Commands::Eval {
+        let cmd = Commands::Extended(ExtendedCommands::Eval {
             file: PathBuf::from("model.gguf"),
             dataset: "wikitext-2".to_string(),
             text: None,
             max_tokens: 512,
             threshold: 20.0,
-        };
+        });
         let paths = extract_model_paths(&cmd);
         assert_eq!(paths, vec![PathBuf::from("model.gguf")]);
     }
@@ -264,7 +264,7 @@
     /// Test extract_model_paths: Profile returns file path
     #[test]
     fn test_extract_paths_profile() {
-        let cmd = Commands::Profile {
+        let cmd = Commands::Extended(ExtendedCommands::Profile {
             file: PathBuf::from("model.apr"),
             granular: false,
             format: "human".to_string(),
@@ -287,7 +287,7 @@
             ollama: false,
             no_gpu: false,
             compare: None,
-        };
+        });
         let paths = extract_model_paths(&cmd);
         assert_eq!(paths, vec![PathBuf::from("model.apr")]);
     }
@@ -355,7 +355,7 @@
     /// Test extract_model_paths: Cbtop with model_path returns it
     #[test]
     fn test_extract_paths_cbtop_with_model_path() {
-        let cmd = Commands::Cbtop {
+        let cmd = Commands::Extended(ExtendedCommands::Cbtop {
             model: None,
             attach: None,
             model_path: Some(PathBuf::from("model.gguf")),
@@ -372,7 +372,7 @@
             draft_model: None,
             concurrent: 1,
             simulated: false,
-        };
+        });
         let paths = extract_model_paths(&cmd);
         assert_eq!(paths, vec![PathBuf::from("model.gguf")]);
     }
@@ -380,7 +380,7 @@
     /// Test extract_model_paths: Cbtop without model_path returns empty
     #[test]
     fn test_extract_paths_cbtop_no_model_path() {
-        let cmd = Commands::Cbtop {
+        let cmd = Commands::Extended(ExtendedCommands::Cbtop {
             model: Some("qwen2.5-coder".to_string()),
             attach: None,
             model_path: None,
@@ -397,7 +397,7 @@
             draft_model: None,
             concurrent: 1,
             simulated: false,
-        };
+        });
         let paths = extract_model_paths(&cmd);
         assert!(paths.is_empty());
     }
@@ -422,7 +422,7 @@
     /// Test extract_model_paths: Hex is diagnostic (exempt)
     #[test]
     fn test_extract_paths_hex_exempt() {
-        let cmd = Commands::Hex {
+        let cmd = Commands::Extended(ExtendedCommands::Hex {
             file: PathBuf::from("model.apr"),
             tensor: None,
             limit: 64,
@@ -438,7 +438,7 @@
             offset: "0".to_string(),
             width: 16,
             slice: None,
-        };
+        });
         let paths = extract_model_paths(&cmd);
         assert!(paths.is_empty(), "Hex is a diagnostic command (exempt)");
     }

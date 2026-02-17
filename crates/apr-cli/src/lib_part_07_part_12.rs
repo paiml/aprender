@@ -39,7 +39,7 @@
         let args = vec!["apr", "bench", "model.gguf"];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Bench {
+            Commands::Extended(ExtendedCommands::Bench {
                 warmup,
                 iterations,
                 max_tokens,
@@ -47,7 +47,7 @@
                 fast,
                 brick,
                 ..
-            } => {
+            }) => {
                 assert_eq!(warmup, 3);
                 assert_eq!(iterations, 5);
                 assert_eq!(max_tokens, 32);
@@ -65,7 +65,7 @@
         let args = vec!["apr", "cbtop"];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Cbtop {
+            Commands::Extended(ExtendedCommands::Cbtop {
                 model,
                 attach,
                 model_path,
@@ -82,7 +82,7 @@
                 draft_model,
                 concurrent,
                 simulated,
-            } => {
+            }) => {
                 assert!(model.is_none());
                 assert!(attach.is_none());
                 assert!(model_path.is_none());
@@ -110,7 +110,7 @@
         let args = vec!["apr", "profile", "model.apr"];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Profile {
+            Commands::Extended(ExtendedCommands::Profile {
                 granular,
                 format,
                 focus,
@@ -129,7 +129,7 @@
                 warmup,
                 measure,
                 ..
-            } => {
+            }) => {
                 assert!(!granular);
                 assert_eq!(format, "human");
                 assert!(focus.is_none());
@@ -158,7 +158,7 @@
         let args = vec!["apr", "qa", "model.gguf"];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Qa {
+            Commands::Extended(ExtendedCommands::Qa {
                 assert_tps,
                 assert_speedup,
                 assert_gpu_speedup,
@@ -175,7 +175,7 @@
                 json,
                 verbose,
                 ..
-            } => {
+            }) => {
                 assert!(assert_tps.is_none());
                 assert!(assert_speedup.is_none());
                 assert!(assert_gpu_speedup.is_none());
@@ -202,7 +202,7 @@
         let args = vec!["apr", "chat", "model.gguf"];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Chat {
+            Commands::Extended(ExtendedCommands::Chat {
                 temperature,
                 top_p,
                 max_tokens,
@@ -217,7 +217,7 @@
                 trace_level,
                 profile,
                 ..
-            } => {
+            }) => {
                 assert!((temperature - 0.7).abs() < f32::EPSILON);
                 assert!((top_p - 0.9).abs() < f32::EPSILON);
                 assert_eq!(max_tokens, 512);

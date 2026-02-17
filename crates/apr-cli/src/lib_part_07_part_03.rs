@@ -5,7 +5,7 @@
         let args = vec!["apr", "rosetta", "inspect", "model.gguf", "--json"];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Rosetta { action } => match action {
+            Commands::Extended(ExtendedCommands::Rosetta { action }) => match action {
                 RosettaCommands::Inspect { file, json, .. } => {
                     assert_eq!(file, PathBuf::from("model.gguf"));
                     assert!(json);
@@ -29,7 +29,7 @@
         ];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Rosetta { action } => match action {
+            Commands::Extended(ExtendedCommands::Rosetta { action }) => match action {
                 RosettaCommands::Convert {
                     source,
                     target,
@@ -61,7 +61,7 @@
         ];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Rosetta { action } => match action {
+            Commands::Extended(ExtendedCommands::Rosetta { action }) => match action {
                 RosettaCommands::Chain {
                     source,
                     formats,
@@ -93,7 +93,7 @@
         ];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Rosetta { action } => match action {
+            Commands::Extended(ExtendedCommands::Rosetta { action }) => match action {
                 RosettaCommands::Verify {
                     source,
                     intermediate,
@@ -165,7 +165,7 @@
             Commands::Lint {
                 file: PathBuf::from("m.apr"),
             },
-            Commands::Qa {
+            Commands::Extended(ExtendedCommands::Qa {
                 file: PathBuf::from("m.apr"),
                 assert_tps: None,
                 assert_speedup: None,
@@ -188,8 +188,8 @@
                 regression_threshold: None,
                 skip_gpu_state: false,
                 skip_metadata: false,
-            },
-            Commands::Hex {
+            }),
+            Commands::Extended(ExtendedCommands::Hex {
                 file: PathBuf::from("m.apr"),
                 tensor: None,
                 limit: 64,
@@ -205,21 +205,21 @@
                 offset: "0".to_string(),
                 width: 16,
                 slice: None,
-            },
-            Commands::Tree {
+            }),
+            Commands::Extended(ExtendedCommands::Tree {
                 file: PathBuf::from("m.apr"),
                 filter: None,
                 format: "ascii".to_string(),
                 sizes: false,
                 depth: None,
-            },
-            Commands::Flow {
+            }),
+            Commands::Extended(ExtendedCommands::Flow {
                 file: PathBuf::from("m.apr"),
                 layer: None,
                 component: "full".to_string(),
                 verbose: false,
                 json: false,
-            },
+            }),
             Commands::Explain {
                 code: None,
                 file: None,
@@ -255,7 +255,7 @@
         let paths = extract_model_paths(&serve_cmd);
         assert_eq!(paths, vec![PathBuf::from("model.gguf")]);
 
-        let bench_cmd = Commands::Bench {
+        let bench_cmd = Commands::Extended(ExtendedCommands::Bench {
             file: PathBuf::from("model.apr"),
             warmup: 3,
             iterations: 5,
@@ -263,7 +263,7 @@
             prompt: None,
             fast: false,
             brick: None,
-        };
+        });
         let paths = extract_model_paths(&bench_cmd);
         assert_eq!(paths, vec![PathBuf::from("model.apr")]);
     }
@@ -366,7 +366,7 @@
         ];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Publish {
+            Commands::Extended(ExtendedCommands::Publish {
                 directory,
                 repo_id,
                 model_name,
@@ -376,7 +376,7 @@
                 tags,
                 message,
                 dry_run,
-            } => {
+            }) => {
                 assert_eq!(directory, PathBuf::from("/tmp/models"));
                 assert_eq!(repo_id, "paiml/whisper-apr-tiny");
                 assert_eq!(model_name, Some("Whisper Tiny".to_string()));
@@ -404,7 +404,7 @@
         let args = vec!["apr", "publish", "./models", "org/repo"];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Publish {
+            Commands::Extended(ExtendedCommands::Publish {
                 license,
                 pipeline_tag,
                 dry_run,
@@ -413,7 +413,7 @@
                 tags,
                 message,
                 ..
-            } => {
+            }) => {
                 assert_eq!(license, "mit");
                 assert_eq!(pipeline_tag, "text-generation");
                 assert!(!dry_run);

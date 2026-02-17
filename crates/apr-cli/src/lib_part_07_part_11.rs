@@ -204,13 +204,13 @@
     /// Test execute_command: Rosetta inspect with non-existent file returns error
     #[test]
     fn test_execute_rosetta_inspect_file_not_found() {
-        let cli = make_cli(Commands::Rosetta {
+        let cli = make_cli(Commands::Extended(ExtendedCommands::Rosetta {
             action: RosettaCommands::Inspect {
                 file: PathBuf::from("/tmp/nonexistent_rosetta_inspect.gguf"),
                 hexdump: false,
                 json: false,
             },
-        });
+        }));
         let result = execute_command(&cli);
         assert!(
             result.is_err(),
@@ -221,7 +221,7 @@
     /// Test execute_command: Rosetta convert with non-existent source returns error
     #[test]
     fn test_execute_rosetta_convert_file_not_found() {
-        let cli = make_cli(Commands::Rosetta {
+        let cli = make_cli(Commands::Extended(ExtendedCommands::Rosetta {
             action: RosettaCommands::Convert {
                 source: PathBuf::from("/tmp/nonexistent_rosetta_convert.gguf"),
                 target: PathBuf::from("/tmp/out.safetensors"),
@@ -230,7 +230,7 @@
                 json: false,
                 tokenizer: None,
             },
-        });
+        }));
         let result = execute_command(&cli);
         assert!(
             result.is_err(),
@@ -241,7 +241,7 @@
     /// Test execute_command: Rosetta fingerprint with non-existent file returns error
     #[test]
     fn test_execute_rosetta_fingerprint_file_not_found() {
-        let cli = make_cli(Commands::Rosetta {
+        let cli = make_cli(Commands::Extended(ExtendedCommands::Rosetta {
             action: RosettaCommands::Fingerprint {
                 model: PathBuf::from("/tmp/nonexistent_rosetta_fingerprint.gguf"),
                 model_b: None,
@@ -250,7 +250,7 @@
                 verbose: false,
                 json: false,
             },
-        });
+        }));
         let result = execute_command(&cli);
         assert!(
             result.is_err(),
@@ -261,7 +261,7 @@
     /// Test execute_command: Bench with non-existent file returns error
     #[test]
     fn test_execute_bench_file_not_found() {
-        let cli = make_cli(Commands::Bench {
+        let cli = make_cli(Commands::Extended(ExtendedCommands::Bench {
             file: PathBuf::from("/tmp/nonexistent_model_bench_test.gguf"),
             warmup: 1,
             iterations: 1,
@@ -269,7 +269,7 @@
             prompt: None,
             fast: false,
             brick: None,
-        });
+        }));
         let result = execute_command(&cli);
         assert!(result.is_err(), "Bench should fail with non-existent file");
     }
@@ -277,13 +277,13 @@
     /// Test execute_command: Eval with non-existent file returns error
     #[test]
     fn test_execute_eval_file_not_found() {
-        let cli = make_cli(Commands::Eval {
+        let cli = make_cli(Commands::Extended(ExtendedCommands::Eval {
             file: PathBuf::from("/tmp/nonexistent_model_eval_test.gguf"),
             dataset: "wikitext-2".to_string(),
             text: None,
             max_tokens: 32,
             threshold: 20.0,
-        });
+        }));
         let result = execute_command(&cli);
         assert!(result.is_err(), "Eval should fail with non-existent file");
     }
@@ -291,7 +291,7 @@
     /// Test execute_command: Profile with non-existent file returns error
     #[test]
     fn test_execute_profile_file_not_found() {
-        let cli = make_cli(Commands::Profile {
+        let cli = make_cli(Commands::Extended(ExtendedCommands::Profile {
             file: PathBuf::from("/tmp/nonexistent_model_profile_test.apr"),
             granular: false,
             format: "human".to_string(),
@@ -314,7 +314,7 @@
             ollama: false,
             no_gpu: false,
             compare: None,
-        });
+        }));
         let result = execute_command(&cli);
         assert!(
             result.is_err(),
@@ -325,13 +325,13 @@
     /// Test execute_command: CompareHf with non-existent file returns error
     #[test]
     fn test_execute_compare_hf_file_not_found() {
-        let cli = make_cli(Commands::CompareHf {
+        let cli = make_cli(Commands::Extended(ExtendedCommands::CompareHf {
             file: PathBuf::from("/tmp/nonexistent_model_compare_hf_test.apr"),
             hf: "openai/whisper-tiny".to_string(),
             tensor: None,
             threshold: 1e-5,
             json: false,
-        });
+        }));
         let result = execute_command(&cli);
         assert!(
             result.is_err(),
@@ -358,7 +358,7 @@
     /// Test execute_command: Publish with non-existent directory returns error
     #[test]
     fn test_execute_publish_dir_not_found() {
-        let cli = make_cli(Commands::Publish {
+        let cli = make_cli(Commands::Extended(ExtendedCommands::Publish {
             directory: PathBuf::from("/tmp/nonexistent_publish_dir_test"),
             repo_id: "test/test".to_string(),
             model_name: None,
@@ -368,7 +368,7 @@
             tags: None,
             message: None,
             dry_run: true, // Use dry_run to avoid actual upload
-        });
+        }));
         let result = execute_command(&cli);
         assert!(
             result.is_err(),

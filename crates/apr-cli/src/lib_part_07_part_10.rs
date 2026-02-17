@@ -35,7 +35,7 @@
     /// Test execute_command: Hex with non-existent file returns error
     #[test]
     fn test_execute_hex_file_not_found() {
-        let cli = make_cli(Commands::Hex {
+        let cli = make_cli(Commands::Extended(ExtendedCommands::Hex {
             file: PathBuf::from("/tmp/nonexistent_model_hex_test.apr"),
             tensor: None,
             limit: 64,
@@ -51,7 +51,7 @@
             offset: String::new(),
             width: 16,
             slice: None,
-        });
+        }));
         let result = execute_command(&cli);
         assert!(result.is_err(), "Hex should fail with non-existent file");
     }
@@ -59,13 +59,13 @@
     /// Test execute_command: Tree with non-existent file returns error
     #[test]
     fn test_execute_tree_file_not_found() {
-        let cli = make_cli(Commands::Tree {
+        let cli = make_cli(Commands::Extended(ExtendedCommands::Tree {
             file: PathBuf::from("/tmp/nonexistent_model_tree_test.apr"),
             filter: None,
             format: "ascii".to_string(),
             sizes: false,
             depth: None,
-        });
+        }));
         let result = execute_command(&cli);
         assert!(result.is_err(), "Tree should fail with non-existent file");
     }
@@ -73,13 +73,13 @@
     /// Test execute_command: Flow with non-existent file returns error
     #[test]
     fn test_execute_flow_file_not_found() {
-        let cli = make_cli(Commands::Flow {
+        let cli = make_cli(Commands::Extended(ExtendedCommands::Flow {
             file: PathBuf::from("/tmp/nonexistent_model_flow_test.apr"),
             layer: None,
             component: "full".to_string(),
             verbose: false,
             json: false,
-        });
+        }));
         let result = execute_command(&cli);
         assert!(result.is_err(), "Flow should fail with non-existent file");
     }
@@ -87,13 +87,13 @@
     /// Test execute_command: Probar with non-existent file returns error
     #[test]
     fn test_execute_probar_file_not_found() {
-        let cli = make_cli(Commands::Probar {
+        let cli = make_cli(Commands::Extended(ExtendedCommands::Probar {
             file: PathBuf::from("/tmp/nonexistent_model_probar_test.apr"),
             output: PathBuf::from("/tmp/probar-out"),
             format: "both".to_string(),
             golden: None,
             layer: None,
-        });
+        }));
         let result = execute_command(&cli);
         assert!(result.is_err(), "Probar should fail with non-existent file");
     }
@@ -148,7 +148,7 @@
     /// Test execute_command: Tune --plan without file succeeds
     #[test]
     fn test_execute_tune_plan_no_file() {
-        let cli = make_cli(Commands::Tune {
+        let cli = make_cli(Commands::Extended(ExtendedCommands::Tune {
             file: None,
             method: "auto".to_string(),
             rank: None,
@@ -158,7 +158,7 @@
             freeze_base: false,
             train_data: None,
             json: false,
-        });
+        }));
         let result = execute_command(&cli);
         // Tune with --plan and --model should succeed without a file
         assert!(
@@ -172,7 +172,7 @@
     /// prints summary and returns Ok.
     #[test]
     fn test_execute_qa_all_skips_succeeds() {
-        let cli = make_cli(Commands::Qa {
+        let cli = make_cli(Commands::Extended(ExtendedCommands::Qa {
             file: PathBuf::from("/tmp/nonexistent_model_qa_test.gguf"),
             assert_tps: None,
             assert_speedup: None,
@@ -195,7 +195,7 @@
             regression_threshold: None,
             skip_gpu_state: false,
             skip_metadata: true,
-        });
+        }));
         let result = execute_command(&cli);
         assert!(
             result.is_ok(),
@@ -206,7 +206,7 @@
     /// Test execute_command: Qa with non-existent file and gates enabled returns error
     #[test]
     fn test_execute_qa_with_gates_file_not_found() {
-        let cli = make_cli(Commands::Qa {
+        let cli = make_cli(Commands::Extended(ExtendedCommands::Qa {
             file: PathBuf::from("/tmp/nonexistent_model_qa_gates_test.gguf"),
             assert_tps: None,
             assert_speedup: None,
@@ -229,7 +229,7 @@
             regression_threshold: None,
             skip_gpu_state: false,
             skip_metadata: true,
-        });
+        }));
         let result = execute_command(&cli);
         assert!(
             result.is_err(),

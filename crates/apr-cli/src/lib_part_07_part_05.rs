@@ -118,7 +118,7 @@
         ];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Oracle {
+            Commands::Extended(ExtendedCommands::Oracle {
                 source,
                 compliance,
                 tensors,
@@ -129,7 +129,7 @@
                 full,
                 family,
                 size,
-            } => {
+            }) => {
                 assert_eq!(source, Some("model.gguf".to_string()));
                 assert!(compliance);
                 assert!(tensors);
@@ -151,12 +151,12 @@
         let args = vec!["apr", "oracle", "--family", "qwen2", "--size", "7b"];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Oracle {
+            Commands::Extended(ExtendedCommands::Oracle {
                 source,
                 family,
                 size,
                 ..
-            } => {
+            }) => {
                 assert!(source.is_none());
                 assert_eq!(family, Some("qwen2".to_string()));
                 assert_eq!(size, Some("7b".to_string()));
@@ -171,7 +171,7 @@
         let args = vec!["apr", "oracle", "hf://Qwen/Qwen2.5-Coder-1.5B"];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Oracle { source, .. } => {
+            Commands::Extended(ExtendedCommands::Oracle { source, .. }) => {
                 assert_eq!(source, Some("hf://Qwen/Qwen2.5-Coder-1.5B".to_string()));
             }
             _ => panic!("Expected Oracle command"),
@@ -250,13 +250,13 @@
         ];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::CompareHf {
+            Commands::Extended(ExtendedCommands::CompareHf {
                 file,
                 hf,
                 tensor,
                 threshold,
                 json,
-            } => {
+            }) => {
                 assert_eq!(file, PathBuf::from("model.apr"));
                 assert_eq!(hf, "openai/whisper-tiny");
                 assert_eq!(tensor, Some("encoder.0".to_string()));
@@ -279,12 +279,12 @@
         ];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::CompareHf {
+            Commands::Extended(ExtendedCommands::CompareHf {
                 tensor,
                 threshold,
                 json,
                 ..
-            } => {
+            }) => {
                 assert!(tensor.is_none());
                 assert!((threshold - 1e-5).abs() < f64::EPSILON);
                 assert!(!json);
@@ -344,7 +344,7 @@
         ];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Tune {
+            Commands::Extended(ExtendedCommands::Tune {
                 file,
                 method,
                 rank,
@@ -354,7 +354,7 @@
                 freeze_base,
                 train_data,
                 json,
-            } => {
+            }) => {
                 assert_eq!(file, Some(PathBuf::from("model.apr")));
                 assert_eq!(method, "lora");
                 assert_eq!(rank, Some(16));
@@ -375,7 +375,7 @@
         let args = vec!["apr", "tune"];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Tune {
+            Commands::Extended(ExtendedCommands::Tune {
                 file,
                 method,
                 rank,
@@ -385,7 +385,7 @@
                 freeze_base,
                 train_data,
                 json,
-            } => {
+            }) => {
                 assert!(file.is_none());
                 assert_eq!(method, "auto");
                 assert!(rank.is_none());
