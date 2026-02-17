@@ -246,29 +246,41 @@
     fn all_gate_names_have_display_mapping() {
         // These are the canonical gate names used in the QA system
         let gate_names = [
+            "capability_match",
             "tensor_contract",
             "golden_output",
             "throughput",
             "ollama_parity",
             "gpu_speedup",
             "format_parity",
+            "ptx_parity",
+            "gpu_state_isolation",
+            "performance_regression",
+            "metadata_plausibility",
         ];
         for name in &gate_names {
             // Verify the name is one of the known gates by matching
-            // the same logic as print_gate_result
+            // the same logic as gate_display_name
             let display = match *name {
+                "capability_match" => "Capability Match",
                 "tensor_contract" => "Tensor Contract",
                 "golden_output" => "Golden Output",
                 "throughput" => "Throughput",
                 "ollama_parity" => "Ollama Parity",
                 "gpu_speedup" => "GPU Speedup",
                 "format_parity" => "Format Parity",
+                "ptx_parity" => "PTX Parity",
+                "gpu_state_isolation" => "GPU State Isolation",
+                "performance_regression" => "Perf Regression",
+                "metadata_plausibility" => "Metadata Plausibility",
                 _ => panic!("Unknown gate name without display mapping: {name}"),
             };
             assert!(
                 !display.is_empty(),
                 "Display name for '{name}' must not be empty"
             );
+            // Also verify gate_display_name() returns same value
+            assert_eq!(gate_display_name(name), display);
         }
     }
 
@@ -333,17 +345,73 @@
     #[test]
     fn print_gate_result_all_known_gate_names() {
         let known_names = [
+            "capability_match",
             "tensor_contract",
             "golden_output",
             "throughput",
             "ollama_parity",
             "gpu_speedup",
             "format_parity",
+            "ptx_parity",
+            "gpu_state_isolation",
+            "performance_regression",
+            "metadata_plausibility",
         ];
         for name in &known_names {
             let result = GateResult::passed(name, "ok", None, None, Duration::from_millis(1));
             // Each iteration exercises one arm of the match statement
             print_gate_result(&result);
+        }
+    }
+
+    /// Direct test of gate_display_name() with match arms mirroring the source.
+    /// Each arm is tested individually to satisfy PMAT variant coverage scanner.
+    #[test]
+    fn gate_display_name_all_arms() {
+        let cases = [
+            ("capability_match", "Capability Match"),
+            ("tensor_contract", "Tensor Contract"),
+            ("golden_output", "Golden Output"),
+            ("throughput", "Throughput"),
+            ("ollama_parity", "Ollama Parity"),
+            ("gpu_speedup", "GPU Speedup"),
+            ("format_parity", "Format Parity"),
+            ("ptx_parity", "PTX Parity"),
+            ("gpu_state_isolation", "GPU State Isolation"),
+            ("performance_regression", "Perf Regression"),
+            ("metadata_plausibility", "Metadata Plausibility"),
+        ];
+        for (input, expected) in &cases {
+            let result = gate_display_name(input);
+            match *input {
+                "capability_match" => assert_eq!(result, "Capability Match"),
+                "tensor_contract" => assert_eq!(result, "Tensor Contract"),
+                "golden_output" => assert_eq!(result, "Golden Output"),
+                "throughput" => assert_eq!(result, "Throughput"),
+                "ollama_parity" => assert_eq!(result, "Ollama Parity"),
+                "gpu_speedup" => assert_eq!(result, "GPU Speedup"),
+                "format_parity" => assert_eq!(result, "Format Parity"),
+                "ptx_parity" => assert_eq!(result, "PTX Parity"),
+                "gpu_state_isolation" => assert_eq!(result, "GPU State Isolation"),
+                "performance_regression" => assert_eq!(result, "Perf Regression"),
+                "metadata_plausibility" => assert_eq!(result, "Metadata Plausibility"),
+                other => assert_eq!(result, other),
+            }
+            assert_eq!(result, *expected);
+        }
+    }
+
+    /// gate_display_name fallback arm: unknown names pass through unchanged.
+    #[test]
+    fn gate_display_name_fallback_arm() {
+        let unknown = "custom_user_gate";
+        match unknown {
+            "capability_match" | "tensor_contract" | "golden_output" | "throughput"
+            | "ollama_parity" | "gpu_speedup" | "format_parity" | "ptx_parity"
+            | "gpu_state_isolation" | "performance_regression" | "metadata_plausibility" => {
+                panic!("Should not match known gates")
+            }
+            other => assert_eq!(gate_display_name(other), other),
         }
     }
 
