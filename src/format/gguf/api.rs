@@ -38,6 +38,9 @@ pub struct GgufTokenizer {
     pub add_bos_token: Option<bool>,
     /// GH-253: Chat template (Jinja2 format)
     pub chat_template: Option<String>,
+    /// GH-277: Pre-tokenizer type (e.g., "default", "gpt-2", "qwen2")
+    /// Preserved for GGUF→APR→GGUF round-trip fidelity
+    pub pre_type: Option<String>,
 }
 
 impl GgufTokenizer {
@@ -112,6 +115,7 @@ pub fn load_gguf_with_tokenizer<P: AsRef<Path>>(path: P) -> Result<GgufLoadResul
         eos_token_id: reader.eos_token_id(),
         architecture: reader.architecture(),
         model_name: reader.model_name(),
+        pre_type: reader.pre_tokenizer_type(),
         ..Default::default()
     };
 
@@ -194,6 +198,7 @@ pub fn load_gguf_raw<P: AsRef<Path>>(path: P) -> Result<GgufRawLoadResult> {
         padding_token_id: reader.padding_token_id(),
         add_bos_token: reader.add_bos_token(),
         chat_template: reader.chat_template(),
+        pre_type: reader.pre_tokenizer_type(),
     };
 
     // PMAT-114: Infer rope_type from architecture

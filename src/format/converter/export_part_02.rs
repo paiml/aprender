@@ -179,7 +179,7 @@ fn build_gguf_config_metadata(
 ) -> Vec<(String, crate::format::gguf::GgufValue)> {
     use crate::format::gguf::GgufValue;
     let arch = &cfg.arch;
-    vec![
+    let mut metadata = vec![
         (
             "general.architecture".to_string(),
             GgufValue::String(arch.clone()),
@@ -217,29 +217,46 @@ fn build_gguf_config_metadata(
             format!("{arch}.attention.head_count_kv"),
             GgufValue::Uint32(cfg.num_kv_heads as u32),
         ),
-        (
+    ];
+
+    // GH-277: GPT-2 uses standard LayerNorm, not RMSNorm
+    if arch == "gpt2" {
+        metadata.push((
+            format!("{arch}.attention.layer_norm_epsilon"),
+            GgufValue::Float32(cfg.rms_norm_eps),
+        ));
+    } else {
+        metadata.push((
             format!("{arch}.attention.layer_norm_rms_epsilon"),
             GgufValue::Float32(cfg.rms_norm_eps),
-        ),
-        (
+        ));
+    }
+
+    // GH-277: Only emit RoPE keys for architectures that use RoPE
+    if uses_rope(arch) {
+        metadata.push((
             format!("{arch}.rope.dimension_count"),
             GgufValue::Uint32(cfg.head_dim as u32),
-        ),
-        (
+        ));
+        metadata.push((
             format!("{arch}.rope.freq_base"),
             GgufValue::Float32(cfg.rope_theta),
-        ),
-        (
-            format!("{arch}.vocab_size"),
-            GgufValue::Uint32(cfg.vocab_size as u32),
-        ),
-    ]
+        ));
+    }
+
+    metadata.push((
+        format!("{arch}.vocab_size"),
+        GgufValue::Uint32(cfg.vocab_size as u32),
+    ));
+
+    metadata
 }
 
 /// Build tokenizer metadata KV pairs for GGUF export.
 fn build_tokenizer_gguf_metadata(
     tokenizer: &crate::format::gguf::GgufTokenizer,
     arch: &str,
+    model_name: &str,
 ) -> Vec<(String, crate::format::gguf::GgufValue)> {
     use crate::format::gguf::GgufValue;
     let mut metadata = Vec::new();
@@ -249,9 +266,14 @@ fn build_tokenizer_gguf_metadata(
         "tokenizer.ggml.model".to_string(),
         GgufValue::String(model_type.to_lowercase()),
     ));
+    // GH-277: Use pre-tokenizer type mapping, preferring round-trip preserved value
+    let pre_type = tokenizer
+        .pre_type
+        .as_deref()
+        .unwrap_or_else(|| resolve_pre_tokenizer_type(arch, model_name));
     metadata.push((
         "tokenizer.ggml.pre".to_string(),
-        GgufValue::String(arch.to_string()),
+        GgufValue::String(pre_type.to_string()),
     ));
 
     if let Some(bos) = tokenizer.bos_token_id {
@@ -315,6 +337,7 @@ fn export_to_gguf(
         tokenizer.as_ref(),
         apr_metadata.as_ref(),
         &cfg.arch,
+        &cfg.model_name,
         input,
     );
 
@@ -413,10 +436,11 @@ fn append_tokenizer_to_metadata(
     tokenizer: Option<&crate::format::gguf::GgufTokenizer>,
     apr_metadata: Option<&crate::format::v2::AprV2Metadata>,
     arch: &str,
+    model_name: &str,
     input: &Path,
 ) {
     if let Some(tok) = tokenizer {
-        metadata.extend(build_tokenizer_gguf_metadata(tok, arch));
+        metadata.extend(build_tokenizer_gguf_metadata(tok, arch, model_name));
         return;
     }
 

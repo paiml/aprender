@@ -64,15 +64,7 @@ fn insert_f32_tokenizer_metadata(
     custom: &mut std::collections::HashMap<String, serde_json::Value>,
 ) {
     if !tok.vocabulary.is_empty() {
-        let vocab_array: Vec<serde_json::Value> = tok
-            .vocabulary
-            .iter()
-            .map(|s| serde_json::Value::String(s.clone()))
-            .collect();
-        custom.insert(
-            "tokenizer.vocabulary".to_string(),
-            serde_json::Value::Array(vocab_array),
-        );
+        insert_string_array(custom, "tokenizer.vocabulary", &tok.vocabulary);
         custom.insert(
             "tokenizer.vocab_size".to_string(),
             serde_json::Value::Number(serde_json::Number::from(tok.vocabulary.len())),
@@ -84,18 +76,7 @@ fn insert_f32_tokenizer_metadata(
             serde_json::Value::String(model_type.clone()),
         );
     }
-    if let Some(bos) = tok.bos_token_id {
-        custom.insert(
-            "tokenizer.bos_token_id".to_string(),
-            serde_json::Value::Number(serde_json::Number::from(bos)),
-        );
-    }
-    if let Some(eos) = tok.eos_token_id {
-        custom.insert(
-            "tokenizer.eos_token_id".to_string(),
-            serde_json::Value::Number(serde_json::Number::from(eos)),
-        );
-    }
+    insert_common_tokenizer_fields(tok, custom);
     if let Some(ref arch) = tok.architecture {
         custom.insert(
             "tokenizer.architecture".to_string(),
@@ -108,21 +89,12 @@ fn insert_f32_tokenizer_metadata(
             serde_json::Value::String(name.clone()),
         );
     }
-    // PMAT-221 FIX: Embed BPE merge rules for SafeTensors path
     if !tok.merges.is_empty() {
         eprintln!(
             "[PMAT-221] Embedding {} BPE merge rules into APR metadata (SafeTensors path)",
             tok.merges.len()
         );
-        let merges_array: Vec<serde_json::Value> = tok
-            .merges
-            .iter()
-            .map(|s| serde_json::Value::String(s.clone()))
-            .collect();
-        custom.insert(
-            "tokenizer.merges".to_string(),
-            serde_json::Value::Array(merges_array),
-        );
+        insert_string_array(custom, "tokenizer.merges", &tok.merges);
     }
 }
 
@@ -360,32 +332,11 @@ fn resolve_tied_embeddings(
     (result, has_tied)
 }
 
-/// Insert tokenizer metadata into the custom metadata map (PMAT-171).
-fn insert_tokenizer_metadata(
+/// Insert common tokenizer fields shared by both import paths.
+fn insert_common_tokenizer_fields(
     tok: &GgufTokenizer,
     custom: &mut std::collections::HashMap<String, serde_json::Value>,
 ) {
-    if !tok.vocabulary.is_empty() {
-        let vocab_array: Vec<serde_json::Value> = tok
-            .vocabulary
-            .iter()
-            .map(|s| serde_json::Value::String(s.clone()))
-            .collect();
-        custom.insert(
-            "tokenizer.vocabulary".to_string(),
-            serde_json::Value::Array(vocab_array),
-        );
-        custom.insert(
-            "tokenizer.vocab_size".to_string(),
-            serde_json::Value::Number(serde_json::Number::from(tok.vocabulary.len())),
-        );
-    }
-    if let Some(model_type) = &tok.model_type {
-        custom.insert(
-            "tokenizer.model".to_string(),
-            serde_json::Value::String(model_type.clone()),
-        );
-    }
     if let Some(bos) = tok.bos_token_id {
         custom.insert(
             "tokenizer.bos_token_id".to_string(),
@@ -398,23 +349,63 @@ fn insert_tokenizer_metadata(
             serde_json::Value::Number(serde_json::Number::from(eos)),
         );
     }
-    // GH-185 FIX: Embed BPE merge rules for standalone APR encoding
+    // GH-277: Store pre-tokenizer type for GGUF export round-trip
+    if let Some(ref pre) = tok.pre_type {
+        custom.insert(
+            "tokenizer.pre_type".to_string(),
+            serde_json::Value::String(pre.clone()),
+        );
+    }
+}
+
+/// Store string array as JSON in custom metadata.
+fn insert_string_array(
+    custom: &mut std::collections::HashMap<String, serde_json::Value>,
+    key: &str,
+    values: &[String],
+) {
+    let arr: Vec<serde_json::Value> = values
+        .iter()
+        .map(|s| serde_json::Value::String(s.clone()))
+        .collect();
+    custom.insert(key.to_string(), serde_json::Value::Array(arr));
+}
+
+/// Insert tokenizer metadata into the custom metadata map (PMAT-171).
+fn insert_tokenizer_metadata(
+    tok: &GgufTokenizer,
+    custom: &mut std::collections::HashMap<String, serde_json::Value>,
+) {
+    if !tok.vocabulary.is_empty() {
+        insert_string_array(custom, "tokenizer.vocabulary", &tok.vocabulary);
+        custom.insert(
+            "tokenizer.vocab_size".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(tok.vocabulary.len())),
+        );
+    }
+    if let Some(model_type) = &tok.model_type {
+        custom.insert(
+            "tokenizer.model".to_string(),
+            serde_json::Value::String(model_type.clone()),
+        );
+    }
+    insert_common_tokenizer_fields(tok, custom);
     if !tok.merges.is_empty() {
         eprintln!(
             "[GH-185] Embedding {} BPE merge rules into APR metadata",
             tok.merges.len()
         );
-        let merges_array: Vec<serde_json::Value> = tok
-            .merges
-            .iter()
-            .map(|s| serde_json::Value::String(s.clone()))
-            .collect();
-        custom.insert(
-            "tokenizer.merges".to_string(),
-            serde_json::Value::Array(merges_array),
-        );
+        insert_string_array(custom, "tokenizer.merges", &tok.merges);
     }
     // GH-253: Store additional tokenizer metadata for GGUF export round-trip
+    insert_gh253_tokenizer_fields(tok, custom);
+}
+
+/// GH-253: Store extended tokenizer metadata for GGUF round-trip.
+fn insert_gh253_tokenizer_fields(
+    tok: &GgufTokenizer,
+    custom: &mut std::collections::HashMap<String, serde_json::Value>,
+) {
     if !tok.token_type.is_empty() {
         let type_array: Vec<serde_json::Value> = tok
             .token_type

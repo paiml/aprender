@@ -25,7 +25,7 @@ fn build_gguf_arch_metadata(
         .clone()
         .unwrap_or_else(|| "model".to_string());
 
-    vec![
+    let mut metadata = vec![
         (
             "general.architecture".to_string(),
             GgufValue::String(arch.to_string()),
@@ -60,23 +60,39 @@ fn build_gguf_arch_metadata(
             format!("{arch}.attention.head_count_kv"),
             GgufValue::Uint32(num_kv_heads as u32),
         ),
-        (
+    ];
+
+    // GH-277: GPT-2 uses standard LayerNorm, not RMSNorm
+    if arch == "gpt2" {
+        metadata.push((
+            format!("{arch}.attention.layer_norm_epsilon"),
+            GgufValue::Float32(rms_norm_eps),
+        ));
+    } else {
+        metadata.push((
             format!("{arch}.attention.layer_norm_rms_epsilon"),
             GgufValue::Float32(rms_norm_eps),
-        ),
-        (
+        ));
+    }
+
+    // GH-277: Only emit RoPE keys for architectures that use RoPE
+    if uses_rope(arch) {
+        metadata.push((
             format!("{arch}.rope.dimension_count"),
             GgufValue::Uint32(head_dim as u32),
-        ),
-        (
+        ));
+        metadata.push((
             format!("{arch}.rope.freq_base"),
             GgufValue::Float32(rope_theta),
-        ),
-        (
-            format!("{arch}.vocab_size"),
-            GgufValue::Uint32(vocab_size as u32),
-        ),
-    ]
+        ));
+    }
+
+    metadata.push((
+        format!("{arch}.vocab_size"),
+        GgufValue::Uint32(vocab_size as u32),
+    ));
+
+    metadata
 }
 
 /// Push a string array from APR custom fields to GGUF entries.
@@ -160,9 +176,15 @@ fn extract_apr_tokenizer_for_gguf(
         "tokenizer.ggml.model".to_string(),
         GgufValue::String(model_type.to_string()),
     ));
+    // GH-277: Use pre-tokenizer type mapping, preferring round-trip preserved value
+    let model_name = apr_metadata.name.as_deref().unwrap_or("");
+    let pre_type = custom
+        .get("tokenizer.pre_type")
+        .and_then(|v| v.as_str())
+        .unwrap_or_else(|| resolve_pre_tokenizer_type(arch, model_name));
     entries.push((
         "tokenizer.ggml.pre".to_string(),
-        GgufValue::String(arch.to_string()),
+        GgufValue::String(pre_type.to_string()),
     ));
 
     push_string_array(

@@ -44,6 +44,39 @@ fn resolve_architecture(apr_metadata: &crate::format::v2::AprV2Metadata) -> &str
         .unwrap_or("qwen2")
 }
 
+/// GH-277: Resolve GGUF pre-tokenizer type from architecture and model metadata.
+///
+/// The `tokenizer.ggml.pre` field identifies the pre-tokenizer regex patterns
+/// used by llama.cpp for text splitting before BPE. This is NOT the same as
+/// the model architecture.
+///
+/// Reference: llama.cpp/convert_hf_to_gguf.py `get_vocab_base_pre()`
+fn resolve_pre_tokenizer_type(arch: &str, model_name: &str) -> &'static str {
+    let name_lower = model_name.to_lowercase();
+    // SmolLM models use "default" pre-tokenizer despite llama architecture
+    if name_lower.contains("smollm") {
+        return "default";
+    }
+    match arch {
+        "gpt2" => "gpt-2",
+        "qwen2" | "qwen2.5" | "qwen" => "qwen2",
+        "llama" | "mistral" => "default",
+        "phi" | "phi3" => "default",
+        "gemma" | "gemma2" => "default",
+        "deepseek" | "deepseek2" => "deepseek",
+        "starcoder" | "starcoder2" => "starcoder",
+        _ => "default", // Safe fallback per llama.cpp convention
+    }
+}
+
+/// GH-277: Check if architecture uses RoPE (vs learned position embeddings).
+///
+/// GPT-2 and StarCoder use learned position embeddings, not RoPE.
+/// All other transformer architectures in the GGUF ecosystem use RoPE.
+fn uses_rope(arch: &str) -> bool {
+    !matches!(arch, "gpt2" | "starcoder")
+}
+
 /// Export format options
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExportFormat {
@@ -214,6 +247,37 @@ impl ValidatedGgufMetadata {
                     "[GH-253-4] GGUF export has tokenizer.ggml.model but missing tokenizer.ggml.tokens"
                         .to_string(),
             });
+        }
+
+        // GH-277: Validate token table bijection (no duplicates)
+        if let Some((_, crate::format::gguf::GgufValue::ArrayString(tokens))) = metadata
+            .iter()
+            .find(|(k, _)| k == "tokenizer.ggml.tokens")
+        {
+            let mut seen = std::collections::HashSet::with_capacity(tokens.len());
+            let mut duplicates = Vec::new();
+            for (idx, token) in tokens.iter().enumerate() {
+                if !seen.insert(token) {
+                    duplicates.push((idx, token.clone()));
+                    if duplicates.len() >= 5 {
+                        break; // Enough evidence
+                    }
+                }
+            }
+            if !duplicates.is_empty() {
+                let examples: Vec<String> = duplicates
+                    .iter()
+                    .map(|(idx, tok)| format!("id={idx}: {tok:?}"))
+                    .collect();
+                return Err(AprenderError::FormatError {
+                    message: format!(
+                        "[GH-277] GGUF token table has {} duplicate entries (llama.cpp will crash). \
+                         Examples: {}",
+                        duplicates.len(),
+                        examples.join(", ")
+                    ),
+                });
+            }
         }
 
         Ok(Self { inner: metadata })

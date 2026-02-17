@@ -67,13 +67,14 @@ impl GgufReader {
             offset += 4;
 
             // Parse value for tokenizer, general, and model architecture keys
-            // We parse: tokenizer.*, general.*, llama.*, qwen2.*, phi.* for full model config
+            // We parse: tokenizer.*, general.*, llama.*, qwen2.*, phi.*, gpt2.* for full model config
             if key.starts_with("tokenizer.")
                 || key.starts_with("general.")
                 || key.starts_with("llama.")
                 || key.starts_with("qwen2.")
                 || key.starts_with("phi.")
                 || key.starts_with("mistral.")
+                || key.starts_with("gpt2.")
             {
                 let (value, value_len) = read_metadata_value(&data, offset, value_type)?;
                 metadata.insert(key, value);
@@ -331,14 +332,19 @@ impl GgufReader {
         }
     }
 
-    /// Get RMS norm epsilon
+    /// Get RMS norm epsilon (or standard LayerNorm epsilon for GPT-2)
     #[must_use]
     pub fn rms_norm_eps(&self) -> Option<f32> {
         let arch = self.architecture().unwrap_or_else(|| "llama".to_string());
-        let key = format!("{arch}.attention.layer_norm_rms_epsilon");
-        match self.metadata.get(&key) {
+        // GH-277: Try RMSNorm key first, then standard LayerNorm key (for GPT-2)
+        let rms_key = format!("{arch}.attention.layer_norm_rms_epsilon");
+        let ln_key = format!("{arch}.attention.layer_norm_epsilon");
+        match self.metadata.get(&rms_key) {
             Some(GgufValue::Float32(v)) => Some(*v),
-            _ => None,
+            _ => match self.metadata.get(&ln_key) {
+                Some(GgufValue::Float32(v)) => Some(*v),
+                _ => None,
+            },
         }
     }
 
@@ -386,6 +392,16 @@ impl GgufReader {
     pub fn chat_template(&self) -> Option<String> {
         if let Some(GgufValue::String(tmpl)) = self.metadata.get("tokenizer.chat_template") {
             Some(tmpl.clone())
+        } else {
+            None
+        }
+    }
+
+    /// GH-277: Get pre-tokenizer type (tokenizer.ggml.pre)
+    #[must_use]
+    pub fn pre_tokenizer_type(&self) -> Option<String> {
+        if let Some(GgufValue::String(pre)) = self.metadata.get("tokenizer.ggml.pre") {
+            Some(pre.clone())
         } else {
             None
         }

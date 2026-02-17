@@ -189,9 +189,10 @@ fn test_build_tokenizer_gguf_metadata_with_full_tokenizer() {
         padding_token_id: None,
         add_bos_token: None,
         chat_template: None,
+        pre_type: None,
     };
 
-    let metadata = build_tokenizer_gguf_metadata(&tok, "qwen2");
+    let metadata = build_tokenizer_gguf_metadata(&tok, "qwen2", "model");
 
     let keys: Vec<&str> = metadata.iter().map(|(k, _)| k.as_str()).collect();
     assert!(keys.contains(&"tokenizer.ggml.model"));
@@ -218,9 +219,10 @@ fn test_build_tokenizer_gguf_metadata_without_optional_fields() {
         padding_token_id: None,
         add_bos_token: None,
         chat_template: None,
+        pre_type: None,
     };
 
-    let metadata = build_tokenizer_gguf_metadata(&tok, "llama");
+    let metadata = build_tokenizer_gguf_metadata(&tok, "llama", "model");
 
     // Should have model and pre, but no bos/eos/tokens/merges
     let keys: Vec<&str> = metadata.iter().map(|(k, _)| k.as_str()).collect();
@@ -331,6 +333,7 @@ fn test_append_tokenizer_prefers_json_over_apr_fallback() {
         padding_token_id: None,
         add_bos_token: None,
         chat_template: None,
+        pre_type: None,
     };
 
     let mut metadata = Vec::new();
@@ -344,7 +347,7 @@ fn test_append_tokenizer_prefers_json_over_apr_fallback() {
         serde_json::json!(["x", "y"]),
     );
 
-    append_tokenizer_to_metadata(&mut metadata, Some(&tok), Some(&apr), "qwen2", &input);
+    append_tokenizer_to_metadata(&mut metadata, Some(&tok), Some(&apr), "qwen2", "model", &input);
 
     // Should have tokenizer metadata from the GgufTokenizer, not APR
     let keys: Vec<&str> = metadata.iter().map(|(k, _)| k.as_str()).collect();
@@ -366,7 +369,7 @@ fn test_append_tokenizer_uses_apr_fallback_when_no_json() {
     apr.custom
         .insert("tokenizer.model".to_string(), serde_json::json!("gpt2"));
 
-    append_tokenizer_to_metadata(&mut metadata, None, Some(&apr), "qwen2", &input);
+    append_tokenizer_to_metadata(&mut metadata, None, Some(&apr), "qwen2", "model", &input);
 
     let keys: Vec<&str> = metadata.iter().map(|(k, _)| k.as_str()).collect();
     assert!(
@@ -385,7 +388,7 @@ fn test_append_tokenizer_no_metadata_when_neither_source() {
     let dir = tempfile::tempdir().expect("temp dir");
     let input = dir.path().join("dummy.safetensors");
 
-    append_tokenizer_to_metadata(&mut metadata, None, None, "qwen2", &input);
+    append_tokenizer_to_metadata(&mut metadata, None, None, "qwen2", "model", &input);
 
     // Should have no tokenizer metadata entries
     let tok_keys: Vec<&str> = metadata
@@ -432,4 +435,310 @@ fn test_detect_apr_quantization_f32_returns_none() {
 fn test_detect_apr_quantization_nonexistent_file() {
     let result = detect_apr_quantization(std::path::Path::new("/nonexistent/model.apr"));
     assert_eq!(result, None, "nonexistent file should return None");
+}
+
+// ========================================================================
+// GH-277: Pre-tokenizer type resolution
+// ========================================================================
+
+#[test]
+fn test_resolve_pre_tokenizer_type_gpt2() {
+    assert_eq!(resolve_pre_tokenizer_type("gpt2", ""), "gpt-2");
+    assert_eq!(resolve_pre_tokenizer_type("gpt2", "gpt2-124m"), "gpt-2");
+}
+
+#[test]
+fn test_resolve_pre_tokenizer_type_llama_default() {
+    assert_eq!(resolve_pre_tokenizer_type("llama", ""), "default");
+    assert_eq!(resolve_pre_tokenizer_type("llama", "LLaMA-7B"), "default");
+}
+
+#[test]
+fn test_resolve_pre_tokenizer_type_smollm_override() {
+    // SmolLM uses "default" despite llama architecture
+    assert_eq!(
+        resolve_pre_tokenizer_type("llama", "SmolLM-135M"),
+        "default"
+    );
+    assert_eq!(
+        resolve_pre_tokenizer_type("llama", "HuggingFaceTB/SmolLM-135M"),
+        "default"
+    );
+}
+
+#[test]
+fn test_resolve_pre_tokenizer_type_qwen2() {
+    assert_eq!(resolve_pre_tokenizer_type("qwen2", ""), "qwen2");
+    assert_eq!(
+        resolve_pre_tokenizer_type("qwen2", "Qwen2-0.5B"),
+        "qwen2"
+    );
+}
+
+#[test]
+fn test_resolve_pre_tokenizer_type_unknown_fallback() {
+    assert_eq!(
+        resolve_pre_tokenizer_type("some_new_arch", ""),
+        "default"
+    );
+}
+
+// ========================================================================
+// GH-277: uses_rope
+// ========================================================================
+
+#[test]
+fn test_uses_rope_gpt2_false() {
+    assert!(!uses_rope("gpt2"), "GPT-2 uses learned pos embeddings, not RoPE");
+}
+
+#[test]
+fn test_uses_rope_starcoder_false() {
+    assert!(!uses_rope("starcoder"), "StarCoder uses learned pos embeddings");
+}
+
+#[test]
+fn test_uses_rope_llama_true() {
+    assert!(uses_rope("llama"), "LLaMA uses RoPE");
+}
+
+#[test]
+fn test_uses_rope_qwen2_true() {
+    assert!(uses_rope("qwen2"), "Qwen2 uses RoPE");
+}
+
+// ========================================================================
+// GH-277: GPT-2 architecture-specific metadata keys
+// ========================================================================
+
+#[test]
+fn test_build_gguf_config_metadata_gpt2_layer_norm_epsilon() {
+    use crate::format::v2::AprV2Metadata;
+
+    let mut apr = AprV2Metadata::new("gpt2-test");
+    apr.architecture = Some("gpt2".to_string());
+    apr.rms_norm_eps = Some(1e-5);
+
+    let cfg = resolve_gguf_config(Some(&apr), None);
+    let metadata = build_gguf_config_metadata(&cfg);
+
+    let keys: Vec<&str> = metadata.iter().map(|(k, _)| k.as_str()).collect();
+
+    // GPT-2 should use layer_norm_epsilon, NOT layer_norm_rms_epsilon
+    assert!(
+        keys.contains(&"gpt2.attention.layer_norm_epsilon"),
+        "GPT-2 should have layer_norm_epsilon"
+    );
+    assert!(
+        !keys.contains(&"gpt2.attention.layer_norm_rms_epsilon"),
+        "GPT-2 should NOT have layer_norm_rms_epsilon"
+    );
+}
+
+#[test]
+fn test_build_gguf_config_metadata_gpt2_no_rope_keys() {
+    use crate::format::v2::AprV2Metadata;
+
+    let mut apr = AprV2Metadata::new("gpt2-test");
+    apr.architecture = Some("gpt2".to_string());
+
+    let cfg = resolve_gguf_config(Some(&apr), None);
+    let metadata = build_gguf_config_metadata(&cfg);
+
+    let keys: Vec<&str> = metadata.iter().map(|(k, _)| k.as_str()).collect();
+
+    // GPT-2 should NOT have RoPE keys
+    assert!(
+        !keys.contains(&"gpt2.rope.dimension_count"),
+        "GPT-2 should NOT have rope.dimension_count"
+    );
+    assert!(
+        !keys.contains(&"gpt2.rope.freq_base"),
+        "GPT-2 should NOT have rope.freq_base"
+    );
+}
+
+#[test]
+fn test_build_gguf_config_metadata_llama_has_rope_keys() {
+    use crate::format::v2::AprV2Metadata;
+
+    let mut apr = AprV2Metadata::new("llama-test");
+    apr.architecture = Some("llama".to_string());
+
+    let cfg = resolve_gguf_config(Some(&apr), None);
+    let metadata = build_gguf_config_metadata(&cfg);
+
+    let keys: Vec<&str> = metadata.iter().map(|(k, _)| k.as_str()).collect();
+
+    // LLaMA should have RoPE keys and RMSNorm
+    assert!(keys.contains(&"llama.rope.dimension_count"));
+    assert!(keys.contains(&"llama.rope.freq_base"));
+    assert!(keys.contains(&"llama.attention.layer_norm_rms_epsilon"));
+    assert!(!keys.contains(&"llama.attention.layer_norm_epsilon"));
+}
+
+// ========================================================================
+// GH-277: Pre-tokenizer type in tokenizer metadata
+// ========================================================================
+
+#[test]
+fn test_build_tokenizer_gguf_metadata_pre_type_gpt2() {
+    use crate::format::gguf::GgufTokenizer;
+
+    let tok = GgufTokenizer {
+        model_type: Some("gpt2".into()),
+        pre_type: None,
+        ..Default::default()
+    };
+
+    let metadata = build_tokenizer_gguf_metadata(&tok, "gpt2", "gpt2-model");
+
+    let pre_val = metadata
+        .iter()
+        .find(|(k, _)| k == "tokenizer.ggml.pre")
+        .map(|(_, v)| match v {
+            crate::format::gguf::GgufValue::String(s) => s.as_str(),
+            _ => "",
+        });
+    assert_eq!(pre_val, Some("gpt-2"), "GPT-2 pre-tokenizer should be 'gpt-2' with hyphen");
+}
+
+#[test]
+fn test_build_tokenizer_gguf_metadata_pre_type_llama_default() {
+    use crate::format::gguf::GgufTokenizer;
+
+    let tok = GgufTokenizer {
+        model_type: Some("gpt2".into()),
+        pre_type: None,
+        ..Default::default()
+    };
+
+    let metadata = build_tokenizer_gguf_metadata(&tok, "llama", "model");
+
+    let pre_val = metadata
+        .iter()
+        .find(|(k, _)| k == "tokenizer.ggml.pre")
+        .map(|(_, v)| match v {
+            crate::format::gguf::GgufValue::String(s) => s.as_str(),
+            _ => "",
+        });
+    assert_eq!(pre_val, Some("default"), "LLaMA pre-tokenizer should be 'default'");
+}
+
+#[test]
+fn test_build_tokenizer_gguf_metadata_preserves_roundtrip_pre_type() {
+    use crate::format::gguf::GgufTokenizer;
+
+    let tok = GgufTokenizer {
+        model_type: Some("gpt2".into()),
+        pre_type: Some("custom-pre".to_string()),
+        ..Default::default()
+    };
+
+    let metadata = build_tokenizer_gguf_metadata(&tok, "llama", "model");
+
+    let pre_val = metadata
+        .iter()
+        .find(|(k, _)| k == "tokenizer.ggml.pre")
+        .map(|(_, v)| match v {
+            crate::format::gguf::GgufValue::String(s) => s.as_str(),
+            _ => "",
+        });
+    assert_eq!(pre_val, Some("custom-pre"), "Round-trip pre_type should be preserved");
+}
+
+// ========================================================================
+// GH-277: Token table bijection validation
+// ========================================================================
+
+#[test]
+fn test_validated_metadata_rejects_duplicate_tokens() {
+    use crate::format::gguf::GgufValue;
+
+    let metadata = vec![
+        (
+            "general.architecture".to_string(),
+            GgufValue::String("llama".to_string()),
+        ),
+        (
+            "tokenizer.ggml.model".to_string(),
+            GgufValue::String("gpt2".to_string()),
+        ),
+        (
+            "tokenizer.ggml.tokens".to_string(),
+            GgufValue::ArrayString(vec![
+                "hello".into(),
+                "world".into(),
+                "hello".into(), // duplicate!
+            ]),
+        ),
+    ];
+
+    let result = ValidatedGgufMetadata::validate(metadata);
+    assert!(result.is_err(), "should reject duplicate tokens");
+    let err_msg = format!("{}", result.unwrap_err());
+    assert!(
+        err_msg.contains("GH-277"),
+        "error should reference GH-277: {err_msg}"
+    );
+}
+
+#[test]
+fn test_validated_metadata_accepts_unique_tokens() {
+    use crate::format::gguf::GgufValue;
+
+    let metadata = vec![
+        (
+            "general.architecture".to_string(),
+            GgufValue::String("llama".to_string()),
+        ),
+        (
+            "tokenizer.ggml.model".to_string(),
+            GgufValue::String("gpt2".to_string()),
+        ),
+        (
+            "tokenizer.ggml.tokens".to_string(),
+            GgufValue::ArrayString(vec!["hello".into(), "world".into(), "foo".into()]),
+        ),
+    ];
+
+    let result = ValidatedGgufMetadata::validate(metadata);
+    assert!(result.is_ok(), "unique tokens should be accepted");
+}
+
+// ========================================================================
+// GH-277: build_gguf_arch_metadata (raw passthrough path)
+// ========================================================================
+
+#[test]
+fn test_build_gguf_arch_metadata_gpt2_keys() {
+    use crate::format::v2::AprV2Metadata;
+
+    let mut apr = AprV2Metadata::new("gpt2-test");
+    apr.architecture = Some("gpt2".to_string());
+    apr.rms_norm_eps = Some(1e-5);
+
+    let metadata = build_gguf_arch_metadata(&apr);
+    let keys: Vec<&str> = metadata.iter().map(|(k, _)| k.as_str()).collect();
+
+    assert!(keys.contains(&"gpt2.attention.layer_norm_epsilon"));
+    assert!(!keys.contains(&"gpt2.attention.layer_norm_rms_epsilon"));
+    assert!(!keys.contains(&"gpt2.rope.dimension_count"));
+    assert!(!keys.contains(&"gpt2.rope.freq_base"));
+}
+
+#[test]
+fn test_build_gguf_arch_metadata_qwen2_keys() {
+    use crate::format::v2::AprV2Metadata;
+
+    let mut apr = AprV2Metadata::new("qwen2-test");
+    apr.architecture = Some("qwen2".to_string());
+
+    let metadata = build_gguf_arch_metadata(&apr);
+    let keys: Vec<&str> = metadata.iter().map(|(k, _)| k.as_str()).collect();
+
+    assert!(keys.contains(&"qwen2.attention.layer_norm_rms_epsilon"));
+    assert!(!keys.contains(&"qwen2.attention.layer_norm_epsilon"));
+    assert!(keys.contains(&"qwen2.rope.dimension_count"));
+    assert!(keys.contains(&"qwen2.rope.freq_base"));
 }
