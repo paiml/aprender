@@ -467,6 +467,10 @@ fn export_to_gguf(
         }
     }
 
+    // GH-277: Dedup token table for llama.cpp compatibility (Qwen2/Qwen3 have
+    // duplicate <unk> tokens that cause id_to_token != token_to_id assertion).
+    super::export::dedup_token_table(&mut metadata);
+
     // Write to file
     let file = File::create(output).map_err(|e| AprenderError::FormatError {
         message: format!("Failed to create output file: {e}"),

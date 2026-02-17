@@ -669,16 +669,15 @@ fn test_validated_metadata_deduplicates_tokens() {
             GgufValue::ArrayString(vec![
                 "hello".into(),
                 "world".into(),
-                "hello".into(), // duplicate — should be deduped to "hello_1"
+                "hello".into(), // duplicate — should be deduped to [PAD2]
             ]),
         ),
     ];
 
-    // GH-279: validate() now auto-dedupes instead of rejecting
+    // GH-277: validate() now auto-dedupes using [PAD{id}] format (like HuggingFace)
     let result = ValidatedGgufMetadata::validate(metadata);
     assert!(result.is_ok(), "should auto-dedup duplicate tokens: {result:?}");
     let validated = result.expect("validated");
-    // Find the token array in validated metadata and check dedup
     let tokens = validated.as_slice().iter().find_map(|(k, v)| {
         if k == "tokenizer.ggml.tokens" {
             if let GgufValue::ArrayString(t) = v {
@@ -694,7 +693,7 @@ fn test_validated_metadata_deduplicates_tokens() {
     assert_eq!(tokens.len(), 3);
     assert_eq!(tokens[0], "hello");
     assert_eq!(tokens[1], "world");
-    assert_eq!(tokens[2], "hello_1", "duplicate should get _1 suffix");
+    assert_eq!(tokens[2], "[PAD2]", "duplicate should get [PAD<id>] name");
 }
 
 #[test]

@@ -763,9 +763,13 @@ pub(crate) struct ValidatedGgufMetadata {
 }
 
 /// GH-277/GH-279: Dedup token table for llama.cpp compatibility.
-/// HuggingFace tokenizers may have reserved tokens sharing the same string.
-/// llama.cpp requires unique token strings — append "_N" suffix to duplicates.
-fn dedup_token_table(metadata: &mut [(String, crate::format::gguf::GgufValue)]) {
+///
+/// HuggingFace tokenizers (Qwen2, Qwen3, etc.) may have reserved/padding tokens
+/// that share the same string (e.g., 290 copies of `<unk>`). llama.cpp requires
+/// `id_to_token.size() == token_to_id.size()`, meaning every token string must be
+/// unique. Following HuggingFace's `convert_hf_to_gguf.py` convention, duplicate
+/// tokens are renamed to `[PAD{token_id}]`.
+pub(crate) fn dedup_token_table(metadata: &mut [(String, crate::format::gguf::GgufValue)]) {
     let Some(pos) = metadata
         .iter()
         .position(|(k, _)| k == "tokenizer.ggml.tokens")
@@ -777,29 +781,24 @@ fn dedup_token_table(metadata: &mut [(String, crate::format::gguf::GgufValue)]) 
         return;
     };
 
-    let mut seen = std::collections::HashMap::with_capacity(tokens.len());
+    let mut seen = std::collections::HashSet::with_capacity(tokens.len());
     let mut dedup_count = 0u32;
     let deduped: Vec<String> = tokens
         .iter()
         .enumerate()
         .map(|(idx, tok)| {
-            let count = seen.entry(tok.clone()).or_insert(0u32);
-            *count += 1;
-            if *count > 1 {
+            if seen.contains(tok.as_str()) {
                 dedup_count += 1;
-                eprintln!(
-                    "[GH-279] Dedup token id={idx}: {tok:?} → {tok}_{c}",
-                    c = *count - 1
-                );
-                format!("{tok}_{}", *count - 1)
+                format!("[PAD{idx}]")
             } else {
+                seen.insert(tok.clone());
                 tok.clone()
             }
         })
         .collect();
 
     if dedup_count > 0 {
-        eprintln!("[GH-279] Deduped {dedup_count} duplicate token(s) in GGUF token table");
+        eprintln!("[GH-277] Deduped {dedup_count} duplicate token(s) → [PAD{{id}}] format");
         metadata[pos] = (
             "tokenizer.ggml.tokens".to_string(),
             crate::format::gguf::GgufValue::ArrayString(deduped),
