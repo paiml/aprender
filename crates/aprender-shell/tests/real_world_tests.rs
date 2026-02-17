@@ -446,4 +446,4 @@ fn test_real_007_export_import_roundtrip() {
         .stdout(predicate::str::contains("git"));
 }
 
-include!("real_world_tests_part_02.rs");
+include!("parts/real_world_tests_part_02.rs");

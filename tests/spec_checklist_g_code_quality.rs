@@ -198,14 +198,11 @@ fn g6_native_error_types() {
 /// G8: SIMD operations verification
 #[test]
 fn g8_simd_operations() {
-    // Verify tensor operations use optimized paths
     let a = Tensor::ones(&[64, 64]);
     let b = Tensor::ones(&[64, 64]);
-
-    // Matrix multiplication should use optimized implementation
     let c = a.matmul(&b);
 
-    // Result should be correct (64 * 1.0 = 64.0 for each element)
+    // 64x64 ones × 64x64 ones = 64.0 per element
     let data = c.data();
     assert!(
         (data[0] - 64.0).abs() < 1e-4,

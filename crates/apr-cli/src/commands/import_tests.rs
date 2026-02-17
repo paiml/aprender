@@ -485,7 +485,10 @@ fn t_gh267_reject_remote_bin_file() {
     assert!(result.is_err());
     let err = format!("{}", result.unwrap_err());
     assert!(err.contains("GH-267"), "Error must cite GH-267: {err}");
-    assert!(err.contains("SafeTensors"), "Error must suggest conversion: {err}");
+    assert!(
+        err.contains("SafeTensors"),
+        "Error must suggest conversion: {err}"
+    );
 }
 
 #[test]

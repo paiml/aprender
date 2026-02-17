@@ -1,43 +1,20 @@
 
-/// Bytes per element for GGML data types (approximate for block types)
+/// Bytes per element for GGML data types (table lookup, O(1)).
+///
+/// Block-quantized types use approximate bytes-per-element.
+/// Unknown dtypes default to 4.0 (F32 size) as a conservative overestimate.
 fn ggml_dtype_element_size(dtype: u32) -> f64 {
-    match dtype {
-        0 => 4.0,                // F32
-        1 => 2.0,                // F16
-        2 => 0.5 + 2.0 / 32.0,   // Q4_0: 4-bit + scale
-        3 => 0.5 + 4.0 / 32.0,   // Q4_1: 4-bit + scale + min
-        6 => 0.625 + 2.0 / 32.0, // Q5_0
-        7 => 0.625 + 4.0 / 32.0, // Q5_1
-        8 => 1.0 + 2.0 / 32.0,   // Q8_0
-        9 => 1.0 + 4.0 / 32.0,   // Q8_1
-        10 => 0.3125,            // Q2_K
-        11 => 0.4375,            // Q3_K
-        12 => 0.5625,            // Q4_K
-        13 => 0.6875,            // Q5_K
-        14 => 0.8125,            // Q6_K
-        15 => 1.0625,            // Q8_K
-        26 => 2.0,               // BF16
-        // GGML I-quants (importance matrix quantization)
-        16 => 0.5625, // IQ2_XXS
-        17 => 0.625,  // IQ2_XS
-        18 => 0.6875, // IQ3_XXS
-        19 => 0.4375, // IQ1_S
-        20 => 0.5625, // IQ4_NL
-        21 => 0.4375, // IQ3_S
-        22 => 0.625,  // IQ2_S
-        23 => 0.5,    // IQ4_XS
-        24 => 1.0,    // I8
-        25 => 2.0,    // I16
-        27 => 4.0,    // I32
-        28 => 8.0,    // I64
-        29 => 8.0,    // F64
-        30 => 0.375,  // IQ1_M
-        // Unknown dtype: use F32 size (4 bytes) as conservative estimate.
-        // This is intentional — for size estimation purposes, overestimating
-        // is safer than underestimating. The dtype name function above will
-        // report "unknown" for diagnostics.
-        _ => 4.0,
-    }
+    // Index: [F32, F16, Q4_0, Q4_1, (4), (5), Q5_0, Q5_1, Q8_0, Q8_1,
+    //         Q2_K, Q3_K, Q4_K, Q5_K, Q6_K, Q8_K, IQ2_XXS, IQ2_XS,
+    //         IQ3_XXS, IQ1_S, IQ4_NL, IQ3_S, IQ2_S, IQ4_XS, I8, I16,
+    //         BF16, I32, I64, F64, IQ1_M]
+    const SIZES: [f64; 31] = [
+        4.0, 2.0, 0.5625, 0.625, 4.0, 4.0, 0.6875, 0.75,
+        1.0625, 1.125, 0.3125, 0.4375, 0.5625, 0.6875, 0.8125, 1.0625,
+        0.5625, 0.625, 0.6875, 0.4375, 0.5625, 0.4375, 0.625, 0.5,
+        1.0, 2.0, 2.0, 4.0, 8.0, 8.0, 0.375,
+    ];
+    SIZES.get(dtype as usize).copied().unwrap_or(4.0)
 }
 
 /// List tensors from GGUF file bytes

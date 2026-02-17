@@ -184,7 +184,11 @@ fn run_sharded(org: &str, repo: &str, shard_files: &[String], force: bool) -> Re
     let existing_manifest = load_existing_manifest(&manifest_path, force);
 
     let file_checksums = download_all_shards(
-        &cache_dir, &base_url, shard_files, force, existing_manifest.as_ref(),
+        &cache_dir,
+        &base_url,
+        shard_files,
+        force,
+        existing_manifest.as_ref(),
     )?;
 
     download_companion_files(&cache_dir, &base_url, force)?;
@@ -252,8 +256,14 @@ fn download_all_shards(
     let total = shard_files.len();
     for (i, shard_file) in shard_files.iter().enumerate() {
         download_or_verify_shard(
-            cache_dir, base_url, shard_file, i, total, force,
-            existing_manifest, &mut file_checksums,
+            cache_dir,
+            base_url,
+            shard_file,
+            i,
+            total,
+            force,
+            existing_manifest,
+            &mut file_checksums,
         )?;
     }
     Ok(file_checksums)

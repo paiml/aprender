@@ -378,40 +378,15 @@ fn list_tensors_v1(data: &[u8], options: TensorListOptions) -> Result<TensorList
 // GGUF Format Support (PMAT-ROSETTA-001)
 // ============================================================================
 
-/// GGML data type names from dtype id
+/// GGML dtype id to human-readable name (table lookup, O(1))
 fn ggml_dtype_name(dtype: u32) -> &'static str {
-    match dtype {
-        0 => "F32",
-        1 => "F16",
-        2 => "Q4_0",
-        3 => "Q4_1",
-        6 => "Q5_0",
-        7 => "Q5_1",
-        8 => "Q8_0",
-        9 => "Q8_1",
-        10 => "Q2_K",
-        11 => "Q3_K",
-        12 => "Q4_K",
-        13 => "Q5_K",
-        14 => "Q6_K",
-        15 => "Q8_K",
-        16 => "IQ2_XXS",
-        17 => "IQ2_XS",
-        18 => "IQ3_XXS",
-        19 => "IQ1_S",
-        20 => "IQ4_NL",
-        21 => "IQ3_S",
-        22 => "IQ2_S",
-        23 => "IQ4_XS",
-        24 => "I8",
-        25 => "I16",
-        26 => "BF16",
-        27 => "I32",
-        28 => "I64",
-        29 => "F64",
-        30 => "IQ1_M",
-        _ => "unknown",
-    }
+    const NAMES: [&str; 31] = [
+        "F32", "F16", "Q4_0", "Q4_1", "unknown", "unknown", "Q5_0", "Q5_1",
+        "Q8_0", "Q8_1", "Q2_K", "Q3_K", "Q4_K", "Q5_K", "Q6_K", "Q8_K",
+        "IQ2_XXS", "IQ2_XS", "IQ3_XXS", "IQ1_S", "IQ4_NL", "IQ3_S",
+        "IQ2_S", "IQ4_XS", "I8", "I16", "BF16", "I32", "I64", "F64", "IQ1_M",
+    ];
+    NAMES.get(dtype as usize).copied().unwrap_or("unknown")
 }
 
 include!("tensors_part_02.rs");

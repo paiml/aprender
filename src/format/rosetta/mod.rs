@@ -210,20 +210,16 @@ impl FormatType {
                 }
                 // PMAT-264: Also verify tensor data section is complete
                 let data_section_start = 8 + header_len;
-                file.seek(SeekFrom::Start(8)).map_err(|e| {
-                    AprenderError::FormatError {
+                file.seek(SeekFrom::Start(8))
+                    .map_err(|e| AprenderError::FormatError {
                         message: format!("Cannot seek in SafeTensors file: {e}"),
-                    }
-                })?;
+                    })?;
                 let mut header_buf = vec![0u8; header_len as usize];
-                file.read_exact(&mut header_buf).map_err(|e| {
-                    AprenderError::FormatError {
+                file.read_exact(&mut header_buf)
+                    .map_err(|e| AprenderError::FormatError {
                         message: format!("Cannot read SafeTensors header: {e}"),
-                    }
-                })?;
-                if let Ok(header_json) =
-                    serde_json::from_slice::<serde_json::Value>(&header_buf)
-                {
+                    })?;
+                if let Ok(header_json) = serde_json::from_slice::<serde_json::Value>(&header_buf) {
                     if let Some(obj) = header_json.as_object() {
                         let max_data_end = obj
                             .iter()
