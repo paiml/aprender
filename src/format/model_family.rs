@@ -256,6 +256,28 @@ pub struct TensorTemplate {
     pub per_layer: HashMap<String, Option<String>>,
 }
 
+/// GH-277: GGUF tensor name template for contract-driven export.
+///
+/// Maps APR canonical tensor roles to GGUF canonical tensor names
+/// (from llama.cpp llama-arch.cpp). Used by the GGUF exporter to
+/// produce llama.cpp-compatible files without hardcoded name tables.
+#[derive(Debug, Clone, Default)]
+pub struct GgufTensorTemplate {
+    /// Embedding tensor GGUF name (e.g., "token_embd.weight")
+    pub embedding: Option<String>,
+    /// Position embedding GGUF name (e.g., "position_embd.weight"), None if not used
+    pub position_embedding: Option<String>,
+    /// LM head GGUF name (e.g., "output.weight")
+    pub lm_head: Option<String>,
+    /// Final norm weight GGUF name (e.g., "output_norm.weight")
+    pub final_norm_weight: Option<String>,
+    /// Final norm bias GGUF name (e.g., "output_norm.bias"), None for RMSNorm models
+    pub final_norm_bias: Option<String>,
+    /// Per-layer tensor role → GGUF suffix (after "blk.{n}.")
+    /// None values mean the tensor should be SKIPPED during export
+    pub per_layer: HashMap<String, Option<String>>,
+}
+
 /// Shape template for a model family (parameterized expressions).
 #[derive(Debug, Clone)]
 pub struct ShapeTemplate {
@@ -301,6 +323,8 @@ pub struct ModelFamilyConfig {
     pub constraints: ModelConstraints,
     /// Tensor name template
     pub tensor_template: TensorTemplate,
+    /// GH-277: GGUF tensor name template for export
+    pub gguf_tensor_template: GgufTensorTemplate,
     /// Shape template
     pub shape_template: ShapeTemplate,
     /// Supported quantization formats

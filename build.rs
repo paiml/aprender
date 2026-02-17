@@ -89,6 +89,14 @@ struct FamilyData {
     per_layer_tensors: Vec<(String, String)>, // (role, pattern)
     quantizations: Vec<String>,
     chat_format: Option<String>,
+    // GH-277: GGUF tensor name template for contract-driven export
+    gguf_embedding: Option<String>,
+    gguf_position_embedding: Option<String>,
+    gguf_lm_head: Option<String>,
+    gguf_final_norm_weight: Option<String>,
+    gguf_final_norm_bias: Option<String>,
+    gguf_per_layer: Vec<(String, String)>, // (role, gguf_suffix) - only non-null entries
+    gguf_skip_roles: Vec<String>,          // roles with explicit null in gguf template
 }
 
 struct SizeData {
@@ -218,6 +226,36 @@ fn parse_family_yaml(content: &str, path: &Path) -> FamilyData {
     let ct_section = extract_section(content, "chat_template");
     let chat_format = get_str(&ct_section, "format").map(String::from);
 
+    // GH-277: Parse gguf_tensor_template
+    let gguf_section = extract_section(content, "gguf_tensor_template");
+    let gguf_embedding = get_str(&gguf_section, "embedding")
+        .filter(|s| *s != "null")
+        .map(String::from);
+    let gguf_position_embedding = get_str(&gguf_section, "position_embedding")
+        .filter(|s| *s != "null")
+        .map(String::from);
+    let gguf_lm_head = get_str(&gguf_section, "lm_head")
+        .filter(|s| *s != "null")
+        .map(String::from);
+    let gguf_final_norm_weight = get_str(&gguf_section, "final_norm_weight")
+        .filter(|s| *s != "null")
+        .map(String::from);
+    let gguf_final_norm_bias = get_str(&gguf_section, "final_norm_bias")
+        .filter(|s| *s != "null")
+        .map(String::from);
+
+    let gguf_pl_section = extract_section(&gguf_section, "per_layer");
+    let gguf_all_kv = parse_key_values_with_null(&gguf_pl_section);
+    let mut gguf_per_layer = Vec::new();
+    let mut gguf_skip_roles = Vec::new();
+    for (role, val) in gguf_all_kv {
+        if val == "null" || val.is_empty() {
+            gguf_skip_roles.push(role);
+        } else {
+            gguf_per_layer.push((role, val));
+        }
+    }
+
     FamilyData {
         family: family.to_string(),
         display_name: display_name.to_string(),
@@ -232,6 +270,13 @@ fn parse_family_yaml(content: &str, path: &Path) -> FamilyData {
         per_layer_tensors,
         quantizations,
         chat_format,
+        gguf_embedding,
+        gguf_position_embedding,
+        gguf_lm_head,
+        gguf_final_norm_weight,
+        gguf_final_norm_bias,
+        gguf_per_layer,
+        gguf_skip_roles,
     }
 }
 
@@ -304,6 +349,22 @@ fn parse_key_values(content: &str) -> Vec<(String, String)> {
             let key = trimmed[..colon_pos].trim();
             let val = trimmed[colon_pos + 1..].trim().trim_matches('"');
             if !key.is_empty() && val != "null" && !val.is_empty() {
+                pairs.push((key.to_string(), val.to_string()));
+            }
+        }
+    }
+    pairs
+}
+
+/// Like `parse_key_values` but preserves "null" entries instead of skipping them.
+fn parse_key_values_with_null(content: &str) -> Vec<(String, String)> {
+    let mut pairs = Vec::new();
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if let Some(colon_pos) = trimmed.find(':') {
+            let key = trimmed[..colon_pos].trim();
+            let val = trimmed[colon_pos + 1..].trim().trim_matches('"');
+            if !key.is_empty() {
                 pairs.push((key.to_string(), val.to_string()));
             }
         }
@@ -564,6 +625,24 @@ fn generate_family_registration(f: &FamilyData) -> String {
         out.push_str("        // Chat template parsed at runtime if needed\n");
     }
 
+    // GH-277: Generate gguf_tensor_template
+    let has_gguf_entries = !f.gguf_per_layer.is_empty() || !f.gguf_skip_roles.is_empty();
+    if has_gguf_entries {
+        out.push_str("        let mut gguf_per_layer = std::collections::HashMap::new();\n");
+        for (role, suffix) in &f.gguf_per_layer {
+            out.push_str(&format!(
+                "        gguf_per_layer.insert(\"{role}\".to_string(), Some(\"{suffix}\".to_string()));\n"
+            ));
+        }
+        for role in &f.gguf_skip_roles {
+            out.push_str(&format!(
+                "        gguf_per_layer.insert(\"{role}\".to_string(), None);\n"
+            ));
+        }
+    } else {
+        out.push_str("        let gguf_per_layer = std::collections::HashMap::new();\n");
+    }
+
     out.push_str(&format!(
         "        let config = ModelFamilyConfig {{\n\
          \x20           family: \"{}\".to_string(),\n\
@@ -586,6 +665,14 @@ fn generate_family_registration(f: &FamilyData) -> String {
          \x20               lm_head: {},\n\
          \x20               final_norm: {},\n\
          \x20               per_layer,\n\
+         \x20           }},\n\
+         \x20           gguf_tensor_template: GgufTensorTemplate {{\n\
+         \x20               embedding: {},\n\
+         \x20               position_embedding: {},\n\
+         \x20               lm_head: {},\n\
+         \x20               final_norm_weight: {},\n\
+         \x20               final_norm_bias: {},\n\
+         \x20               per_layer: gguf_per_layer,\n\
          \x20           }},\n\
          \x20           shape_template: ShapeTemplate {{ shapes }},\n\
          \x20           quantizations: vec![{}],\n\
@@ -613,6 +700,22 @@ fn generate_family_registration(f: &FamilyData) -> String {
             .as_ref()
             .map_or("None".to_string(), |s| format!("Some(\"{s}\".to_string())")),
         f.final_norm_tensor
+            .as_ref()
+            .map_or("None".to_string(), |s| format!("Some(\"{s}\".to_string())")),
+        // GH-277: gguf_tensor_template fields
+        f.gguf_embedding
+            .as_ref()
+            .map_or("None".to_string(), |s| format!("Some(\"{s}\".to_string())")),
+        f.gguf_position_embedding
+            .as_ref()
+            .map_or("None".to_string(), |s| format!("Some(\"{s}\".to_string())")),
+        f.gguf_lm_head
+            .as_ref()
+            .map_or("None".to_string(), |s| format!("Some(\"{s}\".to_string())")),
+        f.gguf_final_norm_weight
+            .as_ref()
+            .map_or("None".to_string(), |s| format!("Some(\"{s}\".to_string())")),
+        f.gguf_final_norm_bias
             .as_ref()
             .map_or("None".to_string(), |s| format!("Some(\"{s}\".to_string())")),
         f.quantizations

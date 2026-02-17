@@ -14,8 +14,8 @@ use std::path::Path;
 use crate::error::{AprenderError, Result};
 use crate::format::model_family::{
     Activation, AttentionType, CertificationConfig, ChatTemplateConfig, DynModelFamily,
-    FamilyRegistry, MlpType, ModelConstraints, ModelFamilyConfig, ModelSizeConfig, NormType,
-    PositionalEncoding, ShapeTemplate, TensorTemplate,
+    FamilyRegistry, GgufTensorTemplate, MlpType, ModelConstraints, ModelFamilyConfig,
+    ModelSizeConfig, NormType, PositionalEncoding, ShapeTemplate, TensorTemplate,
 };
 
 // ============================================================================
@@ -361,6 +361,12 @@ fn yaml_to_config(yaml: &YamlValue, source: &Path) -> Result<ModelFamilyConfig> 
         .ok_or_else(|| err("missing required field: tensor_template"))?;
     let tensor_template = parse_tensor_template(template_yaml)?;
 
+    // GH-277: Parse gguf_tensor_template (optional)
+    let gguf_tensor_template = yaml
+        .get("gguf_tensor_template")
+        .map(parse_gguf_tensor_template)
+        .unwrap_or_default();
+
     // Parse shape_template
     let shape_yaml = yaml.get("shape_template");
     let shape_template = if let Some(sy) = shape_yaml {
@@ -402,6 +408,7 @@ fn yaml_to_config(yaml: &YamlValue, source: &Path) -> Result<ModelFamilyConfig> 
         size_variants,
         constraints,
         tensor_template,
+        gguf_tensor_template,
         shape_template,
         quantizations,
         chat_template,

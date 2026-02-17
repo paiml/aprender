@@ -358,11 +358,20 @@ fn export_apr_to_gguf_raw(input: &Path, output: &Path) -> Result<ExportReport> {
         hidden_size
     );
 
+    // GH-277: Build contract-driven tensor name mapper
+    let mapper = build_gguf_mapper(arch);
+
     // Build GGUF tensors with raw byte passthrough
     let tensor_names = reader.tensor_names();
     let mut gguf_tensors = Vec::with_capacity(tensor_names.len());
 
     for name in &tensor_names {
+        // GH-277: Use contract-driven mapping; skip tensors that return None
+        let Some(gguf_name) = mapper.map_name(name) else {
+            eprintln!("[GH-277] Skipping tensor '{}' (not in GGUF contract)", name);
+            continue;
+        };
+
         let entry = reader
             .get_tensor(name)
             .ok_or_else(|| AprenderError::FormatError {
@@ -373,8 +382,6 @@ fn export_apr_to_gguf_raw(input: &Path, output: &Path) -> Result<ExportReport> {
             .ok_or_else(|| AprenderError::FormatError {
                 message: format!("Tensor '{}' data not found", name),
             })?;
-
-        let gguf_name = hf_to_gguf_name(name);
 
         // Map APR dtype → GGUF dtype (same discriminant values)
         let gguf_dtype = match entry.dtype {
@@ -427,48 +434,10 @@ fn export_apr_to_gguf_raw(input: &Path, output: &Path) -> Result<ExportReport> {
     })
 }
 
-/// Map HuggingFace-style tensor names to GGUF convention (GGUF-EXPORT-001)
-///
-/// Reverse of `Architecture::qwen2_map_name()` which maps GGUF→HF.
-/// This maps HF→GGUF for export.
+/// Legacy mapper for test compatibility.
+/// Uses the fallback legacy mapper (same behavior as old hardcoded function).
+#[cfg(test)]
 fn hf_to_gguf_name(name: &str) -> String {
-    // Handle layer tensors: model.layers.N.suffix → blk.N.suffix
-    if let Some(rest) = name.strip_prefix("model.layers.") {
-        if let Some(dot_pos) = rest.find('.') {
-            let layer_num = &rest[..dot_pos];
-            let suffix = &rest[dot_pos + 1..];
-
-            let gguf_suffix = match suffix {
-                "self_attn.q_proj.weight" => "attn_q.weight",
-                "self_attn.q_proj.bias" => "attn_q.bias",
-                "self_attn.k_proj.weight" => "attn_k.weight",
-                "self_attn.k_proj.bias" => "attn_k.bias",
-                "self_attn.v_proj.weight" => "attn_v.weight",
-                "self_attn.v_proj.bias" => "attn_v.bias",
-                "self_attn.o_proj.weight" => "attn_output.weight",
-                "self_attn.o_proj.bias" => "attn_output.bias",
-                "self_attn.qkv_proj.weight" => "attn_qkv.weight",
-                "self_attn.qkv_proj.bias" => "attn_qkv.bias",
-                "input_layernorm.weight" => "attn_norm.weight",
-                // GH-279: Qwen3 QK normalization tensors
-                "self_attn.q_norm.weight" => "attn_q_norm.weight",
-                "self_attn.k_norm.weight" => "attn_k_norm.weight",
-                "mlp.gate_proj.weight" => "ffn_gate.weight",
-                "mlp.up_proj.weight" => "ffn_up.weight",
-                "mlp.down_proj.weight" => "ffn_down.weight",
-                "post_attention_layernorm.weight" => "ffn_norm.weight",
-                other => other, // Preserve unknown suffixes
-            };
-
-            return format!("blk.{layer_num}.{gguf_suffix}");
-        }
-    }
-
-    // Handle non-layer tensors
-    match name {
-        "model.embed_tokens.weight" => "token_embd.weight".to_string(),
-        "lm_head.weight" => "output.weight".to_string(),
-        "model.norm.weight" => "output_norm.weight".to_string(),
-        _ => name.to_string(), // Preserve unknown names
-    }
+    let mapper = build_legacy_mapper();
+    mapper.map_name(name).unwrap_or_else(|| name.to_string())
 }

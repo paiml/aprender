@@ -128,6 +128,7 @@ mod tests {
                 final_norm: Some("model.norm.weight".to_string()),
                 per_layer,
             },
+            gguf_tensor_template: GgufTensorTemplate::default(),
             shape_template: ShapeTemplate { shapes },
             quantizations: vec!["q4_k_m".to_string(), "q6_k".to_string(), "f16".to_string()],
             chat_template: None,

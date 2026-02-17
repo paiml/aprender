@@ -114,6 +114,44 @@ fn parse_tensor_template(yaml: &YamlValue) -> Result<TensorTemplate> {
     })
 }
 
+/// GH-277: Parse gguf_tensor_template from YAML.
+fn parse_gguf_tensor_template(yaml: &YamlValue) -> GgufTensorTemplate {
+    let opt_str = |key: &str| -> Option<String> {
+        yaml.get(key).and_then(|v| match v {
+            YamlValue::Null => None,
+            YamlValue::String(s) => Some(s.clone()),
+            _ => None,
+        })
+    };
+
+    let embedding = opt_str("embedding");
+    let position_embedding = opt_str("position_embedding");
+    let lm_head = opt_str("lm_head");
+    let final_norm_weight = opt_str("final_norm_weight");
+    let final_norm_bias = opt_str("final_norm_bias");
+
+    let mut per_layer = HashMap::new();
+    if let Some(YamlValue::Mapping(pl)) = yaml.get("per_layer") {
+        for (key, val) in pl {
+            let value = match val {
+                YamlValue::Null => None,
+                YamlValue::String(s) => Some(s.clone()),
+                _ => None,
+            };
+            per_layer.insert(key.clone(), value);
+        }
+    }
+
+    GgufTensorTemplate {
+        embedding,
+        position_embedding,
+        lm_head,
+        final_norm_weight,
+        final_norm_bias,
+        per_layer,
+    }
+}
+
 fn parse_shape_template(yaml: &YamlValue) -> ShapeTemplate {
     let mut shapes = HashMap::new();
     if let YamlValue::Mapping(mapping) = yaml {

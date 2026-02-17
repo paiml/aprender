@@ -171,10 +171,12 @@ fn test_hf_to_gguf_name_unknown_passthrough() {
 
 #[test]
 fn test_hf_to_gguf_name_unknown_layer_suffix_passthrough() {
-    // A layer tensor with an unrecognized suffix passes through as-is
+    // GH-277: Unknown layer suffixes now pass through with the APR name unchanged
+    // (the legacy mapper doesn't have a mapping, so it falls through to the
+    // global check which also fails, resulting in passthrough with warning)
     assert_eq!(
         hf_to_gguf_name("model.layers.0.some_unknown_suffix.weight"),
-        "blk.0.some_unknown_suffix.weight"
+        "model.layers.0.some_unknown_suffix.weight"
     );
 }
 

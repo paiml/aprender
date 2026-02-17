@@ -374,29 +374,23 @@ fn export_to_gguf(
         cfg.hidden_size
     );
 
-    // GGUF-EXPORT-001: Map tensor names from HF convention to GGUF convention
-    // PMAT-222 FIX: Reverse 2D shapes from standard [rows, cols] to GGML [ne0, ne1]
-    // GGML convention: ne[0] is the contiguous dimension (cols), ne[1] is rows.
-    // This is the inverse of write.rs:520 which reverses GGML→standard on import.
-    //
+    // GH-277: Build contract-driven tensor name mapper
+    let mapper = build_gguf_mapper(&cfg.arch);
+
     // BUG-1 FIX: Support Q4_K quantization for GGUF inference compatibility.
-    // F32 GGUF files don't work with realizar's fused matmul kernels which
-    // only support Q4_0/Q8_0/Q4_K/Q5_K/Q6_K types.
     let use_q4k = matches!(
         quantize,
         Some(QuantizationType::Q4K | QuantizationType::Int4)
     );
 
     // GH-202 FIX: Build GGUF tensors WITHOUT data transpose.
-    //
-    // CRITICAL INSIGHT: GGML data layout data[i0 + i1*ne0] is IDENTICAL to
-    // C row-major data[row*cols + col] when shape is reversed. The data does
-    // NOT need transposing for GGUF export — only shape needs reversal from
-    // standard [rows, cols] back to GGML [ne0=cols, ne1=rows].
+    // GGML data layout data[i0 + i1*ne0] is IDENTICAL to C row-major when shape
+    // is reversed. Only shape needs reversal from [rows, cols] to [ne0=cols, ne1=rows].
     let gguf_tensors: Vec<GgufTensor> = tensors
         .iter()
-        .map(|(name, (data, shape))| {
-            let gguf_name = hf_to_gguf_name(name);
+        .filter_map(|(name, (data, shape))| {
+            // GH-277: Use contract-driven mapping; skip tensors that return None
+            let gguf_name = mapper.map_name(name)?;
 
             // lm_head and embeddings skip quantization — keep F32 to preserve full precision
             let is_embedding = gguf_name == "token_embd.weight" || name.contains("embed_tokens");
@@ -425,12 +419,12 @@ fn export_to_gguf(
                     (GgmlType::F32, f32_bytes)
                 };
 
-            GgufTensor {
+            Some(GgufTensor {
                 name: gguf_name,
                 shape: gguf_shape,
                 dtype,
                 data: bytes,
-            }
+            })
         })
         .collect();
 

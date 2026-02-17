@@ -131,6 +131,36 @@ shape_template:
   causal_mask: "[1, 1, max_position_embeddings, max_position_embeddings]"
   bias: "[hidden_dim]"
 
+# GH-277: GGUF tensor name template for llama.cpp-compatible export.
+# Maps APR canonical names to GGUF canonical names (from llama-arch.cpp).
+# Null entries mean the tensor should be SKIPPED during GGUF export.
+gguf_tensor_template:
+  embedding: "token_embd.weight"
+  position_embedding: "position_embd.weight"
+  lm_head: "output.weight"
+  final_norm_weight: "output_norm.weight"
+  final_norm_bias: "output_norm.bias"
+  per_layer:
+    q_proj_weight: "attn_q.weight"
+    q_proj_bias: "attn_q.bias"
+    k_proj_weight: "attn_k.weight"
+    k_proj_bias: "attn_k.bias"
+    v_proj_weight: "attn_v.weight"
+    v_proj_bias: "attn_v.bias"
+    o_proj_weight: "attn_output.weight"
+    o_proj_bias: "attn_output.bias"
+    up_proj_weight: "ffn_up.weight"
+    up_proj_bias: "ffn_up.bias"
+    down_proj_weight: "ffn_down.weight"
+    down_proj_bias: "ffn_down.bias"
+    input_layernorm_weight: "attn_norm.weight"
+    input_layernorm_bias: "attn_norm.bias"
+    post_attention_layernorm_weight: "ffn_norm.weight"
+    post_attention_layernorm_bias: "ffn_norm.bias"
+    causal_mask: null
+    gate_proj_weight: null
+    gate_proj_bias: null
+
 quantizations:
   - q4_k_m
   - q8_0

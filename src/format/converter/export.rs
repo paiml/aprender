@@ -77,6 +77,273 @@ fn uses_rope(arch: &str) -> bool {
     !matches!(arch, "gpt2" | "starcoder")
 }
 
+/// GH-277: Contract-driven APR→GGUF tensor name mapping.
+///
+/// Uses the model family contract's `tensor_template` (APR names) and
+/// `gguf_tensor_template` (GGUF names) to build a mapping. This replaces
+/// the old hardcoded `hf_to_gguf_name()` function.
+///
+/// Returns a `GgufNameMapper` that converts APR tensor names to GGUF names.
+/// Tensors with `None` in gguf_tensor_template are skipped.
+struct GgufNameMapper {
+    /// Global tensor mapping: APR name → GGUF name
+    global: std::collections::HashMap<String, String>,
+    /// Per-layer suffix mapping: APR suffix (after "model.layers.{n}.") → GGUF suffix
+    per_layer: std::collections::HashMap<String, String>,
+    /// Per-layer suffixes that should be skipped
+    skip_suffixes: std::collections::HashSet<String>,
+}
+
+impl GgufNameMapper {
+    /// Build a mapper from a model family config's tensor template + gguf template.
+    fn from_contract(config: &crate::format::model_family::ModelFamilyConfig) -> Self {
+        let tt = &config.tensor_template;
+        let gt = &config.gguf_tensor_template;
+
+        let mut global = std::collections::HashMap::new();
+        let mut per_layer = std::collections::HashMap::new();
+        let mut skip_suffixes = std::collections::HashSet::new();
+
+        // Global: embedding
+        if let Some(gguf_name) = &gt.embedding {
+            global.insert(tt.embedding.clone(), gguf_name.clone());
+        }
+
+        // Global: lm_head
+        if let (Some(apr_name), Some(gguf_name)) = (&tt.lm_head, &gt.lm_head) {
+            global.insert(apr_name.clone(), gguf_name.clone());
+        }
+
+        // Global: final_norm_weight
+        if let (Some(apr_name), Some(gguf_name)) = (&tt.final_norm, &gt.final_norm_weight) {
+            global.insert(apr_name.clone(), gguf_name.clone());
+        }
+
+        // Global: final_norm_bias — APR name derived from final_norm by replacing .weight → .bias
+        if let (Some(apr_norm), Some(gguf_bias)) = (&tt.final_norm, &gt.final_norm_bias) {
+            let apr_bias = apr_norm.replace(".weight", ".bias");
+            global.insert(apr_bias, gguf_bias.clone());
+        }
+
+        // Global: position_embedding — APR name from tensor_template per_layer "position_embedding"
+        // or directly from the contract if it has a dedicated field
+        if let Some(gguf_name) = &gt.position_embedding {
+            // Look for position_embedding in the tensor_template per_layer first
+            if let Some(Some(apr_name)) = tt.per_layer.get("position_embedding") {
+                // It's listed as per_layer but it's really global (no {n} in the name)
+                global.insert(apr_name.clone(), gguf_name.clone());
+            } else {
+                // Fallback: standard APR name
+                global.insert(
+                    "model.position_embedding.weight".to_string(),
+                    gguf_name.clone(),
+                );
+            }
+        }
+
+        // Per-layer: correlate roles between tensor_template and gguf_tensor_template
+        for (role, apr_pattern_opt) in &tt.per_layer {
+            let Some(apr_pattern) = apr_pattern_opt else {
+                continue;
+            };
+            // Skip position_embedding (handled as global above)
+            if role == "position_embedding" {
+                continue;
+            }
+
+            // Extract APR suffix: strip "model.layers.{n}." prefix
+            let apr_suffix = apr_pattern
+                .strip_prefix("model.layers.{n}.")
+                .unwrap_or(apr_pattern);
+
+            // Look up GGUF mapping for this role
+            match gt.per_layer.get(role) {
+                Some(Some(gguf_suffix)) => {
+                    per_layer.insert(apr_suffix.to_string(), gguf_suffix.clone());
+                }
+                Some(None) => {
+                    // Explicit null → skip this tensor
+                    skip_suffixes.insert(apr_suffix.to_string());
+                }
+                None => {
+                    // Role exists in tensor_template but not in gguf_tensor_template.
+                    // Check if there's a matching role with _weight/_bias suffix.
+                    // E.g., tensor_template has "q_proj" but gguf has "q_proj_weight".
+                    // This handles the mismatch between llama.yaml (no suffix) and
+                    // gpt2.yaml (has _weight/_bias suffix).
+                }
+            }
+        }
+
+        Self {
+            global,
+            per_layer,
+            skip_suffixes,
+        }
+    }
+
+    /// Map an APR tensor name to its GGUF equivalent.
+    /// Returns `None` if the tensor should be skipped (e.g., causal attention mask).
+    fn map_name(&self, apr_name: &str) -> Option<String> {
+        // Check global mappings first
+        if let Some(gguf_name) = self.global.get(apr_name) {
+            return Some(gguf_name.clone());
+        }
+
+        // Check per-layer: extract layer number and suffix
+        if let Some(rest) = apr_name.strip_prefix("model.layers.") {
+            if let Some(dot_pos) = rest.find('.') {
+                let layer_num = &rest[..dot_pos];
+                let suffix = &rest[dot_pos + 1..];
+
+                // Check skip list
+                if self.skip_suffixes.contains(suffix) {
+                    return None;
+                }
+
+                // Look up suffix mapping
+                if let Some(gguf_suffix) = self.per_layer.get(suffix) {
+                    return Some(format!("blk.{layer_num}.{gguf_suffix}"));
+                }
+            }
+        }
+
+        // Fallback: pass through with warning
+        eprintln!(
+            "[GH-277] WARNING: No GGUF mapping for tensor '{}', passing through",
+            apr_name
+        );
+        Some(apr_name.to_string())
+    }
+}
+
+/// Build a `GgufNameMapper` from architecture name by looking up the family contract.
+fn build_gguf_mapper(arch: &str) -> GgufNameMapper {
+    let registry = crate::format::model_family::build_default_registry();
+
+    // Try to find the family by architecture name
+    let family = registry
+        .get(arch)
+        .or_else(|| registry.detect_from_model_type(arch));
+
+    match family {
+        Some(f) => {
+            let config = f.config();
+            if config.gguf_tensor_template.embedding.is_some() {
+                eprintln!(
+                    "[GH-277] Using contract-driven GGUF mapping for family '{}'",
+                    config.family
+                );
+                GgufNameMapper::from_contract(config)
+            } else {
+                eprintln!(
+                    "[GH-277] Family '{}' has no gguf_tensor_template, using legacy mapping",
+                    config.family
+                );
+                build_legacy_mapper()
+            }
+        }
+        None => {
+            eprintln!(
+                "[GH-277] No family contract for arch '{}', using legacy mapping",
+                arch
+            );
+            build_legacy_mapper()
+        }
+    }
+}
+
+/// Build a legacy mapper that replicates the old `hf_to_gguf_name()` behavior
+/// for architectures that don't have gguf_tensor_template in their contracts.
+fn build_legacy_mapper() -> GgufNameMapper {
+    let mut global = std::collections::HashMap::new();
+    global.insert(
+        "model.embed_tokens.weight".to_string(),
+        "token_embd.weight".to_string(),
+    );
+    global.insert("lm_head.weight".to_string(), "output.weight".to_string());
+    global.insert(
+        "model.norm.weight".to_string(),
+        "output_norm.weight".to_string(),
+    );
+
+    let mut per_layer = std::collections::HashMap::new();
+    per_layer.insert(
+        "self_attn.q_proj.weight".to_string(),
+        "attn_q.weight".to_string(),
+    );
+    per_layer.insert(
+        "self_attn.q_proj.bias".to_string(),
+        "attn_q.bias".to_string(),
+    );
+    per_layer.insert(
+        "self_attn.k_proj.weight".to_string(),
+        "attn_k.weight".to_string(),
+    );
+    per_layer.insert(
+        "self_attn.k_proj.bias".to_string(),
+        "attn_k.bias".to_string(),
+    );
+    per_layer.insert(
+        "self_attn.v_proj.weight".to_string(),
+        "attn_v.weight".to_string(),
+    );
+    per_layer.insert(
+        "self_attn.v_proj.bias".to_string(),
+        "attn_v.bias".to_string(),
+    );
+    per_layer.insert(
+        "self_attn.o_proj.weight".to_string(),
+        "attn_output.weight".to_string(),
+    );
+    per_layer.insert(
+        "self_attn.o_proj.bias".to_string(),
+        "attn_output.bias".to_string(),
+    );
+    per_layer.insert(
+        "self_attn.qkv_proj.weight".to_string(),
+        "attn_qkv.weight".to_string(),
+    );
+    per_layer.insert(
+        "self_attn.qkv_proj.bias".to_string(),
+        "attn_qkv.bias".to_string(),
+    );
+    per_layer.insert(
+        "input_layernorm.weight".to_string(),
+        "attn_norm.weight".to_string(),
+    );
+    per_layer.insert(
+        "self_attn.q_norm.weight".to_string(),
+        "attn_q_norm.weight".to_string(),
+    );
+    per_layer.insert(
+        "self_attn.k_norm.weight".to_string(),
+        "attn_k_norm.weight".to_string(),
+    );
+    per_layer.insert(
+        "mlp.gate_proj.weight".to_string(),
+        "ffn_gate.weight".to_string(),
+    );
+    per_layer.insert(
+        "mlp.up_proj.weight".to_string(),
+        "ffn_up.weight".to_string(),
+    );
+    per_layer.insert(
+        "mlp.down_proj.weight".to_string(),
+        "ffn_down.weight".to_string(),
+    );
+    per_layer.insert(
+        "post_attention_layernorm.weight".to_string(),
+        "ffn_norm.weight".to_string(),
+    );
+
+    GgufNameMapper {
+        global,
+        per_layer,
+        skip_suffixes: std::collections::HashSet::new(),
+    }
+}
+
 /// Export format options
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExportFormat {
