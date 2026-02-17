@@ -263,8 +263,13 @@ pub(crate) fn load_model_config_from_json(model_path: &Path) -> Option<GgufModel
         .and_then(serde_json::Value::as_f64)
         .unwrap_or(10000.0);
 
+    // GH-278: Read norm epsilon from config.json.
+    // LLaMA/Qwen use "rms_norm_eps", GPT-2/BERT use "layer_norm_epsilon",
+    // some models use "layer_norm_eps". Try all known key names.
     let rms_norm_eps = json
         .get("rms_norm_eps")
+        .or_else(|| json.get("layer_norm_epsilon"))
+        .or_else(|| json.get("layer_norm_eps"))
         .and_then(serde_json::Value::as_f64)
         .unwrap_or(1e-6);
 
