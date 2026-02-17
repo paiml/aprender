@@ -7,191 +7,173 @@ fn run_safetensors_benchmark(
     config: &BenchConfig,
     use_cuda: bool,
 ) -> Result<BenchResult> {
-    use realizar::apr::AprV2Model;
     use realizar::safetensors_infer::SafetensorsToAprConverter;
 
     if use_cuda {
         return run_safetensors_cuda_benchmark(path, config);
     }
 
-    if !config.quiet {
-        eprintln!("{}", "Loading SafeTensors model (CPU)...".yellow());
-    }
+    bench_log(config, &"Loading SafeTensors model (CPU)...".yellow().to_string());
     let start = Instant::now();
 
-    // Convert SafeTensors to AprTransformer
     let transformer = SafetensorsToAprConverter::convert(path)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to load SafeTensors: {e}")))?;
 
-    let load_time = start.elapsed();
-    if !config.quiet {
-        eprintln!(
-            "{} in {:.2}s",
-            "Model ready".green(),
-            load_time.as_secs_f32()
-        );
-        eprintln!();
-    }
+    bench_log_ready(config, start.elapsed(), "");
+    let prompt_tokens = resolve_safetensors_tokens(path, &config.prompt);
 
-    // Try to load tokenizer from sibling tokenizer.json file
-    let prompt_tokens: Vec<u32> = if let Some(tokenizer) =
-        AprV2Model::load_tokenizer_from_path(&path.with_file_name("tokenizer.json"))
-    {
-        tokenizer.encode(&config.prompt)
-    } else {
-        // Fallback tokens for Qwen2
-        vec![151643, 9707, 11, 358, 1079, 264, 11761, 18328, 13, 9842]
-    };
+    run_forward_warmup(config, &transformer, &prompt_tokens);
 
-    // Warmup
-    if !config.quiet {
-        eprintln!("{}", "Running warmup...".yellow());
-    }
-    for i in 0..config.warmup {
-        let _ = transformer.forward(&prompt_tokens);
-        if !config.quiet {
-            eprint!("  Warmup {}/{}\r", i + 1, config.warmup);
-            std::io::Write::flush(&mut std::io::stderr()).ok();
-        }
-    }
-    if !config.quiet {
-        eprintln!("  Warmup complete        ");
-        eprintln!();
-    }
-
-    // Measurement (forward pass only - no generation for SafeTensors)
-    if !config.quiet {
-        eprintln!("{}", "Running benchmark (forward pass)...".yellow());
-    }
+    bench_log(config, &"Running benchmark (forward pass)...".yellow().to_string());
     let mut iteration_times = Vec::with_capacity(config.iterations);
     let total_tokens = config.iterations * prompt_tokens.len();
 
     for i in 0..config.iterations {
         let iter_start = Instant::now();
-
         let _ = transformer.forward(&prompt_tokens);
-
         let iter_time = iter_start.elapsed();
         iteration_times.push(iter_time);
-
-        if !config.quiet {
-            eprint!(
-                "  Iteration {}/{}: {:.2}s\r",
-                i + 1,
-                config.iterations,
-                iter_time.as_secs_f32()
-            );
-            std::io::Write::flush(&mut std::io::stderr()).ok();
-        }
+        bench_log_iter(config, i, iter_time, None);
     }
     let first_token_time = iteration_times.first().copied().unwrap_or(Duration::ZERO);
-    if !config.quiet {
-        eprintln!();
-        eprintln!();
-    }
+    bench_log_done(config);
 
     calculate_benchmark_stats(iteration_times, total_tokens, first_token_time, config)
+}
+
+/// Resolve prompt tokens from sibling tokenizer.json or fallback.
+#[cfg(feature = "inference")]
+fn resolve_safetensors_tokens(path: &Path, prompt: &str) -> Vec<u32> {
+    use realizar::apr::AprV2Model;
+    if let Some(tokenizer) =
+        AprV2Model::load_tokenizer_from_path(&path.with_file_name("tokenizer.json"))
+    {
+        tokenizer.encode(prompt)
+    } else {
+        vec![151643, 9707, 11, 358, 1079, 264, 11761, 18328, 13, 9842]
+    }
+}
+
+/// Run forward-pass warmup for SafeTensors CPU benchmark.
+#[cfg(feature = "inference")]
+fn run_forward_warmup(
+    config: &BenchConfig,
+    transformer: &realizar::apr_transformer::AprTransformer,
+    prompt_tokens: &[u32],
+) {
+    bench_log(config, &"Running warmup...".yellow().to_string());
+    for i in 0..config.warmup {
+        let _ = transformer.forward(prompt_tokens);
+        bench_log_iter(config, i, Duration::ZERO, None);
+    }
+    bench_log_done(config);
+}
+
+/// Log a message if not in quiet mode.
+#[cfg(feature = "inference")]
+fn bench_log(config: &BenchConfig, msg: &str) {
+    if !config.quiet {
+        eprintln!("{msg}");
+    }
+}
+
+/// Log "Model ready" with timing.
+#[cfg(feature = "inference")]
+fn bench_log_ready(config: &BenchConfig, elapsed: Duration, suffix: &str) {
+    if !config.quiet {
+        eprintln!("{} in {:.2}s{suffix}", "Model ready".green(), elapsed.as_secs_f32());
+        eprintln!();
+    }
+}
+
+/// Log iteration progress.
+#[cfg(feature = "inference")]
+fn bench_log_iter(config: &BenchConfig, i: usize, time: Duration, tokens: Option<usize>) {
+    if config.quiet {
+        return;
+    }
+    if let Some(tok) = tokens {
+        eprint!("  Iteration {}/{}: {} tokens in {:.2}s\r", i + 1, config.iterations, tok, time.as_secs_f32());
+    } else if time > Duration::ZERO {
+        eprint!("  Iteration {}/{}: {:.2}s\r", i + 1, config.iterations, time.as_secs_f32());
+    } else {
+        eprint!("  Warmup {}/{}\r", i + 1, config.warmup);
+    }
+    std::io::Write::flush(&mut std::io::stderr()).ok();
+}
+
+/// Log benchmark phase completion.
+#[cfg(feature = "inference")]
+fn bench_log_done(config: &BenchConfig) {
+    if !config.quiet {
+        eprintln!("  Complete        ");
+        eprintln!();
+    }
 }
 
 /// SafeTensors CUDA benchmark (GH-192)
 /// Uses SafeTensorsCudaModel for direct GPU loading
 #[cfg(feature = "inference")]
 fn run_safetensors_cuda_benchmark(path: &Path, config: &BenchConfig) -> Result<BenchResult> {
-    use realizar::apr::AprV2Model;
     use realizar::safetensors_cuda::SafeTensorsCudaModel;
 
-    if !config.quiet {
-        eprintln!("{}", "Loading SafeTensors model (GPU)...".yellow());
-    }
+    bench_log(config, &"Loading SafeTensors model (GPU)...".yellow().to_string());
     let start = Instant::now();
 
-    // Load SafeTensors directly to GPU (PMAT-116)
     let mut model = SafeTensorsCudaModel::load(path, 0)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to load SafeTensors CUDA: {e}")))?;
 
-    // Try to load tokenizer from sibling tokenizer.json file
-    let prompt_tokens: Vec<u32> = if let Some(tokenizer) =
-        AprV2Model::load_tokenizer_from_path(&path.with_file_name("tokenizer.json"))
-    {
-        tokenizer.encode(&config.prompt)
-    } else {
-        // Fallback tokens for Qwen2
-        vec![151643, 9707, 11, 358, 1079, 264, 11761, 18328, 13, 9842]
-    };
-
-    // EOS token for Qwen2 models
+    let prompt_tokens = resolve_safetensors_tokens(path, &config.prompt);
     let eos_token: u32 = 151645;
 
-    let load_time = start.elapsed();
-    if !config.quiet {
-        eprintln!(
-            "{} in {:.2}s (GPU device 0)",
-            "Model ready".green(),
-            load_time.as_secs_f32()
-        );
-        eprintln!();
-    }
+    bench_log_ready(config, start.elapsed(), " (GPU device 0)");
 
-    // Warmup - reset KV cache for each iteration
-    if !config.quiet {
-        eprintln!("{}", "Running warmup (GPU)...".yellow());
-    }
+    bench_log(config, &"Running warmup (GPU)...".yellow().to_string());
     for i in 0..config.warmup {
         model.reset_kv_cache();
         let _ = model.generate(&prompt_tokens, config.max_tokens.min(16), eos_token);
-        if !config.quiet {
-            eprint!("  Warmup {}/{}\r", i + 1, config.warmup);
-            std::io::Write::flush(&mut std::io::stderr()).ok();
-        }
+        bench_log_iter(config, i, Duration::ZERO, None);
     }
-    if !config.quiet {
-        eprintln!("  Warmup complete        ");
-        eprintln!();
-    }
+    bench_log_done(config);
 
-    // Measurement - reset KV cache for each iteration
-    if !config.quiet {
-        eprintln!("{}", "Running benchmark (GPU)...".yellow());
-    }
+    let (iteration_times, total_tokens, first_token_time) =
+        run_safetensors_cuda_measurement(&mut model, &prompt_tokens, eos_token, config)?;
+
+    calculate_benchmark_stats(iteration_times, total_tokens, first_token_time, config)
+}
+
+/// Run measurement iterations for SafeTensors CUDA benchmark.
+#[cfg(feature = "inference")]
+fn run_safetensors_cuda_measurement(
+    model: &mut realizar::safetensors_cuda::SafeTensorsCudaModel,
+    prompt_tokens: &[u32],
+    eos_token: u32,
+    config: &BenchConfig,
+) -> Result<(Vec<Duration>, usize, Duration)> {
+    bench_log(config, &"Running benchmark (GPU)...".yellow().to_string());
     let mut iteration_times = Vec::with_capacity(config.iterations);
     let mut total_tokens = 0usize;
     let mut first_token_time = Duration::ZERO;
 
     for i in 0..config.iterations {
         let iter_start = Instant::now();
-
         model.reset_kv_cache();
         let output = model
-            .generate(&prompt_tokens, config.max_tokens.min(32), eos_token)
-            .unwrap_or_else(|_| prompt_tokens.clone());
+            .generate(prompt_tokens, config.max_tokens.min(32), eos_token)
+            .unwrap_or_else(|_| prompt_tokens.to_vec());
         let tokens_generated = output.len().saturating_sub(prompt_tokens.len());
-
         let iter_time = iter_start.elapsed();
         iteration_times.push(iter_time);
         total_tokens += tokens_generated;
-
         if i == 0 {
             first_token_time =
                 Duration::from_secs_f64(iter_time.as_secs_f64() / tokens_generated.max(1) as f64);
         }
-
-        if !config.quiet {
-            eprint!(
-                "  Iteration {}/{}: {} tokens in {:.2}s\r",
-                i + 1,
-                config.iterations,
-                tokens_generated,
-                iter_time.as_secs_f32()
-            );
-            std::io::Write::flush(&mut std::io::stderr()).ok();
-        }
+        bench_log_iter(config, i, iter_time, Some(tokens_generated));
     }
-    if !config.quiet {
-        eprintln!();
-        eprintln!();
-    }
+    bench_log_done(config);
 
-    calculate_benchmark_stats(iteration_times, total_tokens, first_token_time, config)
+    Ok((iteration_times, total_tokens, first_token_time))
 }
 
 /// Run warmup iterations for CUDA benchmark.
@@ -332,80 +314,68 @@ fn run_cpu_benchmark(
 ) -> Result<BenchResult> {
     use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel};
 
-    // Use memory-mapped loading for CPU path
     let mapped = MappedGGUFModel::from_path(path)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to mmap model: {e}")))?;
     let model = OwnedQuantizedModel::from_mapped(&mapped)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to create model: {e}")))?;
 
-    let load_time = start.elapsed();
-    if !config.quiet {
-        eprintln!(
-            "{} in {:.2}s (CPU)",
-            "Model ready".green(),
-            load_time.as_secs_f32()
-        );
-        eprintln!();
-    }
+    bench_log_ready(config, start.elapsed(), " (CPU)");
 
-    // Warmup
-    if !config.quiet {
-        eprintln!("{}", "Running warmup (CPU)...".yellow());
-    }
+    run_cpu_warmup(&model, prompt_tokens, gen_config, config);
+
+    let (iteration_times, total_tokens, first_token_time) =
+        run_cpu_measurement(&model, prompt_tokens, gen_config, config);
+
+    calculate_benchmark_stats(iteration_times, total_tokens, first_token_time, config)
+}
+
+/// Run CPU warmup iterations.
+#[cfg(feature = "inference")]
+fn run_cpu_warmup(
+    model: &realizar::gguf::OwnedQuantizedModel,
+    prompt_tokens: &[u32],
+    gen_config: &realizar::gguf::QuantizedGenerateConfig,
+    config: &BenchConfig,
+) {
+    bench_log(config, &"Running warmup (CPU)...".yellow().to_string());
     for i in 0..config.warmup {
         let _ = model.generate_with_cache(prompt_tokens, gen_config);
-        if !config.quiet {
-            eprint!("  Warmup {}/{}\r", i + 1, config.warmup);
-            std::io::Write::flush(&mut std::io::stderr()).ok();
-        }
+        bench_log_iter(config, i, Duration::ZERO, None);
     }
-    if !config.quiet {
-        eprintln!("  Warmup complete        ");
-        eprintln!();
-    }
+    bench_log_done(config);
+}
 
-    // Measurement
-    if !config.quiet {
-        eprintln!("{}", "Running benchmark (CPU)...".yellow());
-    }
+/// Run CPU measurement iterations.
+#[cfg(feature = "inference")]
+fn run_cpu_measurement(
+    model: &realizar::gguf::OwnedQuantizedModel,
+    prompt_tokens: &[u32],
+    gen_config: &realizar::gguf::QuantizedGenerateConfig,
+    config: &BenchConfig,
+) -> (Vec<Duration>, usize, Duration) {
+    bench_log(config, &"Running benchmark (CPU)...".yellow().to_string());
     let mut iteration_times = Vec::with_capacity(config.iterations);
     let mut total_tokens = 0usize;
     let mut first_token_time = Duration::ZERO;
 
     for i in 0..config.iterations {
         let iter_start = Instant::now();
-
         let output = model
             .generate_with_cache(prompt_tokens, gen_config)
             .unwrap_or_default();
         let tokens_generated = output.len().saturating_sub(prompt_tokens.len());
-
         let iter_time = iter_start.elapsed();
         iteration_times.push(iter_time);
         total_tokens += tokens_generated;
-
         if i == 0 {
             first_token_time =
                 Duration::from_secs_f64(iter_time.as_secs_f64() / tokens_generated.max(1) as f64);
         }
-
-        if !config.quiet {
-            eprint!(
-                "  Iteration {}/{}: {} tokens in {:.2}s\r",
-                i + 1,
-                config.iterations,
-                tokens_generated,
-                iter_time.as_secs_f32()
-            );
-            std::io::Write::flush(&mut std::io::stderr()).ok();
-        }
+        bench_log_iter(config, i, iter_time, Some(tokens_generated));
     }
-    if !config.quiet {
-        eprintln!();
-        eprintln!();
-    }
+    bench_log_done(config);
 
-    calculate_benchmark_stats(iteration_times, total_tokens, first_token_time, config)
+    (iteration_times, total_tokens, first_token_time)
 }
 
 /// Calculate benchmark statistics from iteration timings

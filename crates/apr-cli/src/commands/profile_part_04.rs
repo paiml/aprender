@@ -140,83 +140,22 @@ fn profile_gpu_generation(
         }
     }
 
-    // Compute real percentile latencies from per-pass decode times
-    let mut sorted_decode = per_pass_decode_times.clone();
-    sorted_decode.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-
-    let p50 = percentile(&sorted_decode, 50.0);
-    let p95 = percentile(&sorted_decode, 95.0);
-    let p99 = percentile(&sorted_decode, 99.0);
-    let lat_min = sorted_decode.first().copied().unwrap_or(0.0);
-    let lat_max = sorted_decode.last().copied().unwrap_or(0.0);
-
-    // Compute throughput
-    let avg_decode_ms = if per_pass_decode_times.is_empty() {
-        0.0
-    } else {
-        per_pass_decode_times.iter().sum::<f64>() / per_pass_decode_times.len() as f64
-    };
-    let tokens_per_decode = if measure_passes > 0 {
-        total_tokens_generated / measure_passes
-    } else {
-        0
-    };
-    let decode_tok_s = if avg_decode_ms > 0.0 {
-        tokens_per_decode as f64 / (avg_decode_ms / 1000.0)
-    } else {
-        0.0
-    };
-
-    let avg_prefill_ms = if per_pass_prefill_times.is_empty() {
-        0.0
-    } else {
-        per_pass_prefill_times.iter().sum::<f64>() / per_pass_prefill_times.len() as f64
-    };
-    let prefill_tok_s = if avg_prefill_ms > 0.0 {
-        test_tokens.len() as f64 / (avg_prefill_ms / 1000.0)
-    } else {
-        0.0
-    };
-
-    let avg_total_ms = if per_pass_total_times.is_empty() {
-        0.0
-    } else {
-        per_pass_total_times.iter().sum::<f64>() / per_pass_total_times.len() as f64
-    };
-
-    // ========================================================================
-    // PAR-PROFILE: BrickProfiler pass — per-operation GPU timing breakdown
-    // Disable CUDA graph to get individual kernel timing via stream sync.
-    // This adds overhead (~2x slower) but gives exact per-brick measurements.
-    // ========================================================================
-    println!(
-        "{}",
-        "Per-operation profiling pass (no CUDA graph)...".dimmed()
+    let stats = compute_profile_stats(
+        &per_pass_decode_times,
+        &per_pass_prefill_times,
+        &per_pass_total_times,
+        total_tokens_generated,
+        measure_passes,
+        test_tokens.len(),
     );
 
-    // SKIP_CUDA_GRAPH is checked per-call (not cached in OnceLock)
-    std::env::set_var("SKIP_CUDA_GRAPH", "1");
-    cuda_model.clear_decode_graph();
-    cuda_model.enable_profiling();
-    cuda_model.reset_profiler();
-
-    // Run profiling pass with enough tokens for stable per-op breakdown
-    let profile_tokens = 16;
-    let profile_config = QuantizedGenerateConfig {
-        max_tokens: profile_tokens,
-        temperature: 0.0,
-        top_k: 1,
-        stop_tokens: vec![],
-        trace: false,
-    };
-    let _ = cuda_model.generate_gpu_resident(&test_tokens, &profile_config);
-
-    // Extract per-operation hotspots from BrickProfiler
-    let hotspots = extract_gpu_hotspots(&cuda_model, num_layers, hidden_dim, vocab_size);
+    let hotspots = run_brick_profiler_pass(
+        &mut cuda_model, &test_tokens, num_layers, hidden_dim, vocab_size,
+    );
     let category_summary = Some(compute_category_summary(&hotspots));
 
     // F-PROFILE-009: Compute kernel launch overhead
-    let total_decode_us = avg_decode_ms * 1000.0;
+    let total_decode_us = stats.avg_decode_ms * 1000.0;
     let (launch_overhead_us, launch_overhead_pct) =
         compute_kernel_launch_overhead(&hotspots, total_decode_us);
 
@@ -229,22 +168,22 @@ fn profile_gpu_generation(
         hidden_dim,
         warmup_passes,
         measure_passes,
-        total_inference_us: avg_total_ms * 1000.0,
-        throughput_tok_s: decode_tok_s,
-        tokens_per_pass: tokens_per_decode,
+        total_inference_us: stats.avg_total_ms * 1000.0,
+        throughput_tok_s: stats.decode_tok_s,
+        tokens_per_pass: stats.tokens_per_decode,
         hotspots,
         per_layer_us: vec![],
         is_real_data: true,
         roofline: None,
         category_summary,
         backend: "cuda".to_string(),
-        latency_p50_ms: p50,
-        latency_p95_ms: p95,
-        latency_p99_ms: p99,
-        latency_min_ms: lat_min,
-        latency_max_ms: lat_max,
-        prefill_tok_s,
-        decode_tok_s,
+        latency_p50_ms: stats.p50,
+        latency_p95_ms: stats.p95,
+        latency_p99_ms: stats.p99,
+        latency_min_ms: stats.lat_min,
+        latency_max_ms: stats.lat_max,
+        prefill_tok_s: stats.prefill_tok_s,
+        decode_tok_s: stats.decode_tok_s,
         total_tokens_generated,
         kernel_launch_overhead_pct: launch_overhead_pct,
         kernel_launch_overhead_us: launch_overhead_us,
@@ -259,6 +198,132 @@ fn profile_gpu_generation(
     Ok(results)
 }
 
+/// Computed statistics from GPU generation profiling passes.
+#[cfg(feature = "inference")]
+struct ProfileStats {
+    p50: f64,
+    p95: f64,
+    p99: f64,
+    lat_min: f64,
+    lat_max: f64,
+    avg_decode_ms: f64,
+    tokens_per_decode: usize,
+    decode_tok_s: f64,
+    prefill_tok_s: f64,
+    avg_total_ms: f64,
+}
+
+/// Compute percentile latencies and throughput from measurement passes.
+#[cfg(feature = "inference")]
+fn compute_profile_stats(
+    decode_times: &[f64],
+    prefill_times: &[f64],
+    total_times: &[f64],
+    total_tokens: usize,
+    measure_passes: usize,
+    prompt_len: usize,
+) -> ProfileStats {
+    let mut sorted_decode = decode_times.to_vec();
+    sorted_decode.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+
+    let percentile = |pct: f64| -> f64 {
+        if sorted_decode.is_empty() {
+            return 0.0;
+        }
+        let idx = ((pct / 100.0) * (sorted_decode.len() - 1) as f64) as usize;
+        sorted_decode[idx.min(sorted_decode.len() - 1)]
+    };
+
+    let p50 = percentile(50.0);
+    let p95 = percentile(95.0);
+    let p99 = percentile(99.0);
+    let lat_min = sorted_decode.first().copied().unwrap_or(0.0);
+    let lat_max = sorted_decode.last().copied().unwrap_or(0.0);
+
+    let avg_decode_ms = if decode_times.is_empty() {
+        0.0
+    } else {
+        decode_times.iter().sum::<f64>() / decode_times.len() as f64
+    };
+    let tokens_per_decode = if measure_passes > 0 {
+        total_tokens / measure_passes
+    } else {
+        0
+    };
+    let decode_tok_s = if avg_decode_ms > 0.0 {
+        tokens_per_decode as f64 / (avg_decode_ms / 1000.0)
+    } else {
+        0.0
+    };
+
+    let avg_prefill_ms = if prefill_times.is_empty() {
+        0.0
+    } else {
+        prefill_times.iter().sum::<f64>() / prefill_times.len() as f64
+    };
+    let prefill_tok_s = if avg_prefill_ms > 0.0 {
+        prompt_len as f64 / (avg_prefill_ms / 1000.0)
+    } else {
+        0.0
+    };
+
+    let avg_total_ms = if total_times.is_empty() {
+        0.0
+    } else {
+        total_times.iter().sum::<f64>() / total_times.len() as f64
+    };
+
+    ProfileStats {
+        p50,
+        p95,
+        p99,
+        lat_min,
+        lat_max,
+        avg_decode_ms,
+        tokens_per_decode,
+        decode_tok_s,
+        prefill_tok_s,
+        avg_total_ms,
+    }
+}
+
+/// Run BrickProfiler pass for per-operation GPU timing breakdown.
+///
+/// Disables CUDA graph to get individual kernel timing via stream sync.
+/// This adds overhead (~2x slower) but gives exact per-brick measurements.
+#[cfg(feature = "inference")]
+fn run_brick_profiler_pass(
+    cuda_model: &mut realizar::gguf::OwnedQuantizedModelCuda,
+    test_tokens: &[u32],
+    num_layers: usize,
+    hidden_dim: usize,
+    vocab_size: usize,
+) -> Vec<Hotspot> {
+    use realizar::gguf::QuantizedGenerateConfig;
+
+    println!(
+        "{}",
+        "Per-operation profiling pass (no CUDA graph)...".dimmed()
+    );
+
+    // SKIP_CUDA_GRAPH is checked per-call (not cached in OnceLock)
+    std::env::set_var("SKIP_CUDA_GRAPH", "1");
+    cuda_model.clear_decode_graph();
+    cuda_model.enable_profiling();
+    cuda_model.reset_profiler();
+
+    let profile_config = QuantizedGenerateConfig {
+        max_tokens: 16,
+        temperature: 0.0,
+        top_k: 1,
+        stop_tokens: vec![],
+        trace: false,
+    };
+    let _ = cuda_model.generate_gpu_resident(test_tokens, &profile_config);
+
+    extract_gpu_hotspots(cuda_model, num_layers, hidden_dim, vocab_size)
+}
+
 /// Estimate data bytes moved per kernel invocation based on operation name and model dims.
 ///
 /// For memory-bandwidth-bound kernels (GEMV, RMSNorm), the data movement is dominated
@@ -266,45 +331,76 @@ fn profile_gpu_generation(
 #[cfg(feature = "inference")]
 fn estimate_kernel_data_bytes(name: &str, hidden_dim: usize, vocab_size: usize) -> Option<u64> {
     let name_lower = name.to_lowercase();
-    // Q4K: 0.5625 bytes/element (144 bytes per 256-element super-block)
-    let q4k_bytes_per_elem: f64 = 144.0 / 256.0;
-    // Activation read/write: hidden_dim * 4 bytes (f32) in + hidden_dim * 4 out
-    let activation_rw = (hidden_dim * 8) as u64;
+    let op = classify_kernel_op(&name_lower);
+    compute_kernel_bytes(op, hidden_dim, vocab_size)
+}
 
-    if name_lower.contains("q_proj")
-        || name_lower.contains("k_proj")
-        || name_lower.contains("v_proj")
-    {
-        // QKV projection: read weight [hidden, head_dim], read input, write output
-        let weight_bytes = (hidden_dim as f64 * hidden_dim as f64 * q4k_bytes_per_elem) as u64;
-        Some(weight_bytes + activation_rw)
-    } else if name_lower.contains("o_proj") || name_lower.contains("out_proj") {
-        let weight_bytes = (hidden_dim as f64 * hidden_dim as f64 * q4k_bytes_per_elem) as u64;
-        Some(weight_bytes + activation_rw)
-    } else if name_lower.contains("gate_proj") || name_lower.contains("up_proj") {
-        // FFN gate/up: [hidden, intermediate] where intermediate ≈ 4*hidden for Qwen2
-        let intermediate = hidden_dim * 4; // approximate
-        let weight_bytes = (hidden_dim as f64 * intermediate as f64 * q4k_bytes_per_elem) as u64;
-        Some(weight_bytes + activation_rw)
-    } else if name_lower.contains("down_proj") {
-        let intermediate = hidden_dim * 4;
-        let weight_bytes = (intermediate as f64 * hidden_dim as f64 * q4k_bytes_per_elem) as u64;
-        Some(weight_bytes + activation_rw)
-    } else if name_lower.contains("lm_head") || name_lower.contains("output") {
-        let weight_bytes = (hidden_dim as f64 * vocab_size as f64 * q4k_bytes_per_elem) as u64;
-        Some(weight_bytes + (vocab_size * 4) as u64 + (hidden_dim * 4) as u64)
-    } else if name_lower.contains("rmsnorm") || name_lower.contains("layernorm") {
-        // Norm: read + write activation, read weight (small)
-        Some(activation_rw + (hidden_dim * 4) as u64)
-    } else if name_lower.contains("rope") || name_lower.contains("rotary") {
-        Some(activation_rw)
-    } else if name_lower.contains("softmax") || name_lower.contains("attention") {
-        // Attention score: approximate as hidden_dim^2 / num_heads read/write
-        Some(activation_rw * 2)
-    } else if name_lower.contains("embed") {
-        Some((hidden_dim * 4) as u64) // Single embedding lookup
+/// Kernel operation types for data movement estimation.
+#[cfg(feature = "inference")]
+enum KernelOp {
+    QkvProj,
+    OutProj,
+    FfnGateUp,
+    FfnDown,
+    LmHead,
+    Norm,
+    Rope,
+    Attention,
+    Embed,
+    Unknown,
+}
+
+/// Classify kernel operation by name substring matching.
+#[cfg(feature = "inference")]
+fn classify_kernel_op(name: &str) -> KernelOp {
+    if name.contains("q_proj") || name.contains("k_proj") || name.contains("v_proj") {
+        KernelOp::QkvProj
+    } else if name.contains("o_proj") || name.contains("out_proj") {
+        KernelOp::OutProj
+    } else if name.contains("gate_proj") || name.contains("up_proj") {
+        KernelOp::FfnGateUp
+    } else if name.contains("down_proj") {
+        KernelOp::FfnDown
+    } else if name.contains("lm_head") || name.contains("output") {
+        KernelOp::LmHead
+    } else if name.contains("rmsnorm") || name.contains("layernorm") {
+        KernelOp::Norm
+    } else if name.contains("rope") || name.contains("rotary") {
+        KernelOp::Rope
+    } else if name.contains("softmax") || name.contains("attention") {
+        KernelOp::Attention
+    } else if name.contains("embed") {
+        KernelOp::Embed
     } else {
-        None // Unknown operation
+        KernelOp::Unknown
+    }
+}
+
+/// Compute estimated data bytes moved for a kernel operation.
+#[cfg(feature = "inference")]
+fn compute_kernel_bytes(op: KernelOp, hidden_dim: usize, vocab_size: usize) -> Option<u64> {
+    let q4k_bpe: f64 = 144.0 / 256.0; // Q4K bytes/element
+    let act_rw = (hidden_dim * 8) as u64; // activation read+write
+    let h = hidden_dim as f64;
+
+    match op {
+        KernelOp::QkvProj | KernelOp::OutProj => {
+            Some((h * h * q4k_bpe) as u64 + act_rw)
+        }
+        KernelOp::FfnGateUp => {
+            Some((h * (hidden_dim * 4) as f64 * q4k_bpe) as u64 + act_rw)
+        }
+        KernelOp::FfnDown => {
+            Some(((hidden_dim * 4) as f64 * h * q4k_bpe) as u64 + act_rw)
+        }
+        KernelOp::LmHead => {
+            Some((h * vocab_size as f64 * q4k_bpe) as u64 + (vocab_size * 4 + hidden_dim * 4) as u64)
+        }
+        KernelOp::Norm => Some(act_rw + (hidden_dim * 4) as u64),
+        KernelOp::Rope => Some(act_rw),
+        KernelOp::Attention => Some(act_rw * 2),
+        KernelOp::Embed => Some((hidden_dim * 4) as u64),
+        KernelOp::Unknown => None,
     }
 }
 

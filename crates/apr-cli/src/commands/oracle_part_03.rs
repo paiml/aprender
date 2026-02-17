@@ -354,25 +354,8 @@ fn run_hf_mode(
     // Detect family from model_type
     let detected_family = model_type.and_then(|mt| registry.detect_from_model_type(mt));
 
-    // Build family info and size variant
-    let (family_info, size_variant_info) = if let Some(family) = detected_family {
-        let config = family.config();
-        let fi = build_family_info(config);
-
-        // Detect size from config.json values
-        let size_info = match (hidden_size, num_layers) {
-            (Some(h), Some(l)) => family.detect_size(h, l).and_then(|size_name| {
-                family
-                    .size_config(&size_name)
-                    .map(|sc| build_size_info(&size_name, sc, family))
-            }),
-            _ => None,
-        };
-
-        (Some(fi), size_info)
-    } else {
-        (None, None)
-    };
+    let (family_info, size_variant_info) =
+        resolve_family_and_size(detected_family, hidden_size, num_layers);
 
     // Build certification info
     let certification = detected_family.and_then(|family| {
@@ -427,4 +410,25 @@ fn run_hf_mode(
     }
 
     Ok(())
+}
+
+/// Resolve model family info and size variant from detected family.
+fn resolve_family_and_size(
+    detected_family: Option<&dyn aprender::format::model_family::ModelFamily>,
+    hidden_size: Option<usize>,
+    num_layers: Option<usize>,
+) -> (Option<FamilyInfo>, Option<SizeVariantInfo>) {
+    let Some(family) = detected_family else {
+        return (None, None);
+    };
+    let fi = build_family_info(family.config());
+    let size_info = match (hidden_size, num_layers) {
+        (Some(h), Some(l)) => family.detect_size(h, l).and_then(|size_name| {
+            family
+                .size_config(&size_name)
+                .map(|sc| build_size_info(&size_name, sc, family))
+        }),
+        _ => None,
+    };
+    (Some(fi), size_info)
 }
