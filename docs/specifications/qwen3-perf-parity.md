@@ -93,12 +93,14 @@ apr bench qwen3-8b-q4k.gguf --warmup 3 --measure 10
 
 ## Performance Targets
 
-| Metric | Current (3rd-party GGUF) | Target | How |
-|--------|-------------------------|--------|-----|
-| Ollama parity | 0.52x | >= 1.0x | Full metadata in our GGUF |
-| GPU golden output | garbage | coherent | Fix metadata → correct rope_theta |
-| QA gates | 8/10 | 10/10 | Our GGUF with proper config |
-| Decode speed (GPU) | unmeasured | 40+ tok/s | Already achieved for Qwen2-7B |
+| Metric | 3rd-party GGUF | Our GGUF | Target | Status |
+|--------|---------------|----------|--------|--------|
+| Ollama parity | 0.52x | **0.7x** (87 vs 132) | >= 1.0x | Grade D |
+| GPU golden output | garbage | garbage (no QK norm in kernel) | coherent | GH-280 |
+| CPU golden output | — | **coherent** (thinking mode works) | coherent | PASS |
+| QA gates | 8/10 | **8/10** | 10/10 | 2 remain |
+| CPU throughput | — | **74.4 tok/s** | 40+ | PASS |
+| GPU speedup | — | **15.5x** (81 vs 5) | 2x+ | PASS |
 
 ### Root Cause of 0.52x Parity
 
@@ -138,10 +140,11 @@ Key contract constraints:
 - [x] Contract validation passes (all shapes match qwen3.yaml)
 - [x] `apr export` APR → GGUF produces valid GGUF with full metadata (267 dup tokens deduped)
 - [x] GGUF metadata includes 19 keys (arch=qwen3, layers=36, heads=32/8kv, hidden=4096)
-- [ ] `apr qa` passes all gates — **3/4 pass** (Tensor Contract, Metadata, Format)
-- [ ] Golden output gate — CPU works (generates `<think>` chain-of-thought) but gate expects "4" without thinking tokens
-- [ ] GPU parity — cosine similarity 0.000479 (need ≥0.99), QK norm likely missing in GPU path
-- [ ] Ollama parity >= 1.0x
+- [ ] `apr qa` passes all gates — **8/10 pass**
+- [x] Tensor Contract, Metadata, Throughput (74.4 tok/s), GPU Speedup (15.5x), PTX, GPU State, Perf Regression
+- [x] Ollama Parity: 0.7x (87 vs 132 tok/s) — PASS (threshold 0.2x) but not at 1.0x target
+- [ ] Golden Output: CPU coherent (thinking mode), GPU garbage (QK norm not in kernel → GH-280)
+- [ ] Format Parity: needs `--safetensors-path` flag
 - [x] Thinking mode tokens present in tokenizer vocabulary (`<think>`=151667, `</think>`=151668)
 
 ## Bugs Found During Pipeline
