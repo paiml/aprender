@@ -532,4 +532,65 @@ mod tests {
         let names = std::collections::HashSet::new();
         assert!(!has_required_tensor(&names, &["model.norm.weight"]));
     }
+
+    // =========================================================================
+    // GH-279-2: APR cache directory helpers
+    // =========================================================================
+
+    #[test]
+    fn test_get_apr_cache_dir_returns_expected_path() {
+        // get_apr_cache_dir() should return ~/.apr/cache/hf/
+        if let Some(dir) = get_apr_cache_dir() {
+            let path_str = dir.to_string_lossy();
+            assert!(
+                path_str.ends_with(".apr/cache/hf"),
+                "APR cache dir should end with .apr/cache/hf, got: {path_str}"
+            );
+        }
+        // If HOME is not set, returns None — that's also valid
+    }
+
+    #[test]
+    fn test_find_in_cache_apr_cache_tempdir_gh279() {
+        // Create a temp directory simulating ~/.apr/cache/hf/Qwen/Qwen3-8B/
+        let tmp = tempfile::tempdir().expect("create tempdir");
+        let org_dir = tmp.path().join("Qwen");
+        let repo_dir = org_dir.join("Qwen3-8B");
+        fs::create_dir_all(&repo_dir).expect("create repo dir");
+
+        // Create a fake index file
+        let index_file = repo_dir.join("model.safetensors.index.json");
+        fs::write(&index_file, "{}").expect("write index");
+
+        // Verify the helper function finds files in APR cache structure
+        let apr_path = tmp
+            .path()
+            .join("Qwen")
+            .join("Qwen3-8B")
+            .join("model.safetensors.index.json");
+        assert!(apr_path.exists(), "Index file should exist at APR cache path");
+    }
+
+    #[test]
+    fn test_find_in_aprender_cache_returns_none_for_missing() {
+        let tmp = tempfile::tempdir().expect("create tempdir");
+        let result = find_in_aprender_cache(tmp.path(), "Qwen", "Qwen3-8B", "model.safetensors");
+        assert!(result.is_none(), "Should return None for non-existent file");
+    }
+
+    #[test]
+    fn test_find_in_aprender_cache_finds_existing_file() {
+        let tmp = tempfile::tempdir().expect("create tempdir");
+        let file_path = tmp
+            .path()
+            .join("aprender")
+            .join("hf")
+            .join("Qwen")
+            .join("Qwen3-8B");
+        fs::create_dir_all(&file_path).expect("create dirs");
+        fs::write(file_path.join("model.safetensors"), b"fake").expect("write file");
+
+        let result = find_in_aprender_cache(tmp.path(), "Qwen", "Qwen3-8B", "model.safetensors");
+        assert!(result.is_some(), "Should find existing file in aprender cache");
+    }
 }

@@ -144,7 +144,7 @@ Key contract constraints:
 - [x] Tensor Contract, Metadata, Throughput (74.4 tok/s), GPU Speedup (15.5x), PTX, GPU State, Perf Regression
 - [x] Ollama Parity: 0.7x (87 vs 132 tok/s) — PASS (threshold 0.2x) but not at 1.0x target
 - [ ] Golden Output: CPU coherent (thinking mode), GPU garbage (QK norm not in kernel → GH-280)
-- [ ] Format Parity: needs `--safetensors-path` flag
+- [ ] Format Parity: auto-discovers SafeTensors from `~/.apr/cache/hf/` (GH-279-2)
 - [x] Thinking mode tokens present in tokenizer vocabulary (`<think>`=151667, `</think>`=151668)
 
 ## Bugs Found During Pipeline
@@ -153,9 +153,9 @@ Key contract constraints:
 Qwen3 tokenizer has 267 reserved tokens all mapped to `<unk>`. llama.cpp requires unique strings.
 Fix: `ValidatedGgufMetadata::validate()` auto-dedupes with `_N` suffixes (commit `135de184`).
 
-### GH-279-2: `apr import hf://` fails for sharded models (NOT FIXED)
-`apr import hf://Qwen/Qwen3-8B` tries to download single `model.safetensors` (404 for sharded models).
-Workaround: use local path from `apr pull` cache.
+### GH-279-2: `apr import hf://` fails for sharded models (FIXED)
+`apr import hf://Qwen/Qwen3-8B` now checks `~/.apr/cache/hf/` and falls back to `model.safetensors.index.json` for sharded models.
+Fix: Added APR cache to `find_in_cache()` + sharded index fallback in `resolve_hf_source()`.
 
 ### GH-279-3: GPU parity failure (IN PROGRESS)
 GPU forward pass diverges from CPU (cosine sim 0.000479). Root cause: likely QK norm not applied in GPU matmul path.

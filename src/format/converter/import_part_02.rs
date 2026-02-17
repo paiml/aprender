@@ -115,6 +115,16 @@ fn find_in_hf_hub_cache(
     None
 }
 
+/// Get the APR CLI cache directory (~/.apr/cache/hf/).
+///
+/// This is where `apr pull` stores downloaded models (sharded SafeTensors, etc.).
+/// Separate from the library cache (`~/.cache/aprender/hf/`).
+fn get_apr_cache_dir() -> Option<PathBuf> {
+    std::env::var("HOME")
+        .ok()
+        .map(|h| PathBuf::from(h).join(".apr").join("cache").join("hf"))
+}
+
 /// Find a model file in standard cache locations
 fn find_in_cache(org: &str, repo: &str, filename: &str) -> Option<PathBuf> {
     let cache_paths = [get_xdg_cache_dir(), get_hf_cache_dir()];
@@ -125,6 +135,14 @@ fn find_in_cache(org: &str, repo: &str, filename: &str) -> Option<PathBuf> {
         }
         if let Some(path) = find_in_hf_hub_cache(cache_base, org, repo, filename) {
             return Some(path);
+        }
+    }
+
+    // GH-279-2: Check ~/.apr/cache/hf/ (where `apr pull` stores sharded models)
+    if let Some(apr_cache_base) = get_apr_cache_dir() {
+        let apr_path = apr_cache_base.join(org).join(repo).join(filename);
+        if apr_path.exists() {
+            return Some(apr_path);
         }
     }
 

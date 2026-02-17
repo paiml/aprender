@@ -215,3 +215,109 @@
         assert_eq!(ollama_parity_grade(2.0), "A+");
         assert_eq!(ollama_parity_grade(3.5), "A+");
     }
+
+    // ========================================================================
+    // GH-279-2: strip_quant_suffix — Qwen3 patterns
+    // ========================================================================
+
+    #[test]
+    fn strip_quant_suffix_qwen3_q4k() {
+        assert_eq!(strip_quant_suffix("qwen3-8b-q4k"), "qwen3-8b");
+    }
+
+    #[test]
+    fn strip_quant_suffix_qwen3_q4_k_m() {
+        assert_eq!(strip_quant_suffix("qwen3-8b-q4_k_m"), "qwen3-8b");
+    }
+
+    #[test]
+    fn strip_quant_suffix_qwen3_q6k() {
+        assert_eq!(strip_quant_suffix("qwen3-8b-q6k"), "qwen3-8b");
+    }
+
+    #[test]
+    fn strip_quant_suffix_qwen3_f16() {
+        assert_eq!(strip_quant_suffix("qwen3-8b-f16"), "qwen3-8b");
+    }
+
+    #[test]
+    fn strip_quant_suffix_no_suffix() {
+        assert_eq!(strip_quant_suffix("qwen3-8b"), "qwen3-8b");
+    }
+
+    #[test]
+    fn strip_quant_suffix_qwen3_q8_0() {
+        assert_eq!(strip_quant_suffix("qwen3-8b-q8_0"), "qwen3-8b");
+    }
+
+    // ========================================================================
+    // GH-279-2: discover_apr_cache — tempdir tests
+    // ========================================================================
+
+    #[test]
+    fn discover_apr_cache_returns_none_for_nonexistent_model() {
+        // When the base_name doesn't match any repo in ~/.apr/cache/hf/,
+        // should return None
+        let result = discover_apr_cache("nonexistent-model-xyzzy-9999");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn find_sharded_safetensors_with_index_and_shard() {
+        let tmp = tempfile::tempdir().expect("create tempdir");
+
+        // Create sharded index + shard file
+        std::fs::write(
+            tmp.path().join("model.safetensors.index.json"),
+            r#"{"weight_map": {}}"#,
+        )
+        .expect("write index");
+        std::fs::write(
+            tmp.path().join("model-00001-of-00004.safetensors"),
+            b"fake shard",
+        )
+        .expect("write shard");
+
+        let shard = find_sharded_safetensors(tmp.path());
+        assert!(shard.is_some(), "Should find sharded safetensors");
+        let shard_path = shard.expect("shard exists");
+        assert!(
+            shard_path.to_string_lossy().ends_with(".safetensors"),
+            "Should find a .safetensors file"
+        );
+    }
+
+    #[test]
+    fn find_sharded_safetensors_returns_none_without_index() {
+        let tmp = tempfile::tempdir().expect("create tempdir");
+        // No index file — just a shard
+        std::fs::write(
+            tmp.path().join("model-00001-of-00002.safetensors"),
+            b"data",
+        )
+        .expect("write shard");
+
+        let result = find_sharded_safetensors(tmp.path());
+        assert!(
+            result.is_none(),
+            "Should return None without index.json present"
+        );
+    }
+
+    #[test]
+    fn discover_sibling_subdir_finds_single_model() {
+        let tmp = tempfile::tempdir().expect("create tempdir");
+        let subdir = tmp.path().join("qwen3-8b");
+        std::fs::create_dir_all(&subdir).expect("create subdir");
+        std::fs::write(subdir.join("model.safetensors"), b"fake model").expect("write model");
+
+        let result = discover_sibling_subdir(tmp.path(), "qwen3-8b");
+        assert!(result.is_some(), "Should find model.safetensors in subdir");
+    }
+
+    #[test]
+    fn discover_sibling_subdir_returns_none_for_missing_dir() {
+        let tmp = tempfile::tempdir().expect("create tempdir");
+        let result = discover_sibling_subdir(tmp.path(), "nonexistent");
+        assert!(result.is_none());
+    }

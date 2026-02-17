@@ -98,6 +98,49 @@ fn discover_hf_cache(base_name: &str) -> Option<std::path::PathBuf> {
     None
 }
 
+/// Search a single repo directory for SafeTensors files (sharded or single).
+fn find_safetensors_in_repo(repo_path: &Path) -> Option<std::path::PathBuf> {
+    find_sharded_safetensors(repo_path).or_else(|| {
+        let single = repo_path.join("model.safetensors");
+        single.exists().then_some(single)
+    })
+}
+
+/// Strategy 4: search APR cache (`~/.apr/cache/hf/`) for SafeTensors files.
+///
+/// `apr pull` downloads sharded models to `~/.apr/cache/hf/{org}/{repo}/`.
+/// This strategy searches for a repo directory whose name matches the GGUF
+/// base name, then returns the first SafeTensors file found.
+fn discover_apr_cache(base_name: &str) -> Option<std::path::PathBuf> {
+    let apr_cache = dirs::home_dir()?.join(".apr").join("cache").join("hf");
+    if !apr_cache.is_dir() {
+        return None;
+    }
+    let base_lower = base_name.to_lowercase();
+    for org_entry in std::fs::read_dir(&apr_cache).ok()?.flatten() {
+        if !org_entry.path().is_dir() {
+            continue;
+        }
+        if let Some(found) = search_org_for_model(&org_entry.path(), &base_lower) {
+            return Some(found);
+        }
+    }
+    None
+}
+
+/// Search an org directory for a repo matching `base_lower` that contains SafeTensors.
+fn search_org_for_model(org_path: &Path, base_lower: &str) -> Option<std::path::PathBuf> {
+    for repo_entry in std::fs::read_dir(org_path).ok()?.flatten() {
+        let repo_name = repo_entry.file_name().to_string_lossy().to_lowercase();
+        if repo_name.contains(base_lower) {
+            if let Some(found) = find_safetensors_in_repo(&repo_entry.path()) {
+                return Some(found);
+            }
+        }
+    }
+    None
+}
+
 /// Gate 5: Cross-Format Parity Test (F-QUAL-032)
 ///
 /// Compares argmax output between GGUF and SafeTensors for the same model.
@@ -107,6 +150,7 @@ fn discover_hf_cache(base_name: &str) -> Option<std::path::PathBuf> {
 /// 1. Sibling directory of GGUF file (same name but .safetensors)
 /// 2. Sibling subdirectories containing .safetensors files
 /// 3. HuggingFace cache (~/.cache/huggingface/hub/models--*)
+/// 4. APR cache (~/.apr/cache/hf/) — sharded models from `apr pull` (GH-279-2)
 ///
 /// Returns the first found SafeTensors path, or None.
 fn auto_discover_safetensors(gguf_path: &Path) -> Option<std::path::PathBuf> {
@@ -126,7 +170,12 @@ fn auto_discover_safetensors(gguf_path: &Path) -> Option<std::path::PathBuf> {
     }
 
     // Strategy 3: HuggingFace cache
-    discover_hf_cache(base_name)
+    if let Some(found) = discover_hf_cache(base_name) {
+        return Some(found);
+    }
+
+    // Strategy 4: APR cache (~/.apr/cache/hf/) — sharded models from `apr pull`
+    discover_apr_cache(base_name)
 }
 
 /// Invariant: argmax(forward_gguf(M, tokens)) == argmax(forward_safetensors(M, tokens))

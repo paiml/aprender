@@ -312,6 +312,14 @@ fn resolve_hf_source(org: &str, repo: &str, file: Option<&String>, cache: bool) 
         if let Some(path) = find_hf_in_cache(org, repo, file, filename) {
             return Ok(path);
         }
+        // GH-279-2: For SafeTensors repos, also check for sharded index
+        // Sharded models (e.g. Qwen3-8B) have model.safetensors.index.json
+        // instead of a single model.safetensors file.
+        if file.is_none() && filename == "model.safetensors" {
+            if let Some(path) = find_in_cache(org, repo, "model.safetensors.index.json") {
+                return Ok(path);
+            }
+        }
     }
 
     // Try to download using hf-hub if feature is enabled (GH-129: proper error handling)
