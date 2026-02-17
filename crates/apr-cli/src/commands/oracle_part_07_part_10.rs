@@ -192,6 +192,7 @@
                 final_norm: None,
                 per_layer: HashMap::new(),
             },
+            gguf_tensor_template: aprender::format::model_family::GgufTensorTemplate::default(),
             shape_template: aprender::format::model_family::ShapeTemplate {
                 shapes: HashMap::new(),
             },
@@ -324,6 +325,7 @@
                 final_norm: Some("norm.weight".to_string()),
                 per_layer,
             },
+            gguf_tensor_template: GgufTensorTemplate::default(),
             shape_template: ShapeTemplate {
                 shapes: HashMap::new(),
             },
@@ -369,6 +371,7 @@
                 final_norm: None,
                 per_layer: HashMap::new(),
             },
+            gguf_tensor_template: aprender::format::model_family::GgufTensorTemplate::default(),
             shape_template: aprender::format::model_family::ShapeTemplate {
                 shapes: HashMap::new(),
             },
@@ -399,6 +402,7 @@
                 final_norm: None,
                 per_layer: HashMap::new(),
             },
+            gguf_tensor_template: aprender::format::model_family::GgufTensorTemplate::default(),
             shape_template: aprender::format::model_family::ShapeTemplate {
                 shapes: HashMap::new(),
             },

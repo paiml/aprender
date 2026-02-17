@@ -118,6 +118,7 @@
             size_variants: HashMap::new(),
             constraints: make_test_constraints(),
             tensor_template: template.clone(),
+            gguf_tensor_template: aprender::format::model_family::GgufTensorTemplate::default(),
             shape_template: aprender::format::model_family::ShapeTemplate {
                 shapes: HashMap::new(),
             },
@@ -149,6 +150,7 @@
             size_variants: HashMap::new(),
             constraints: make_test_constraints(),
             tensor_template: template.clone(),
+            gguf_tensor_template: aprender::format::model_family::GgufTensorTemplate::default(),
             shape_template: aprender::format::model_family::ShapeTemplate {
                 shapes: HashMap::new(),
             },
@@ -212,6 +214,7 @@
             size_variants,
             constraints: make_test_constraints(),
             tensor_template: template.clone(),
+            gguf_tensor_template: aprender::format::model_family::GgufTensorTemplate::default(),
             shape_template: aprender::format::model_family::ShapeTemplate {
                 shapes: HashMap::new(),
             },
@@ -275,6 +278,7 @@
             size_variants,
             constraints: make_test_constraints(),
             tensor_template: template.clone(),
+            gguf_tensor_template: aprender::format::model_family::GgufTensorTemplate::default(),
             shape_template: aprender::format::model_family::ShapeTemplate {
                 shapes: HashMap::new(),
             },

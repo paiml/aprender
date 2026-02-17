@@ -648,11 +648,11 @@ fn test_build_tokenizer_gguf_metadata_preserves_roundtrip_pre_type() {
 }
 
 // ========================================================================
-// GH-277: Token table bijection validation
+// GH-277/GH-279: Token table dedup validation
 // ========================================================================
 
 #[test]
-fn test_validated_metadata_rejects_duplicate_tokens() {
+fn test_validated_metadata_deduplicates_tokens() {
     use crate::format::gguf::GgufValue;
 
     let metadata = vec![
@@ -669,18 +669,32 @@ fn test_validated_metadata_rejects_duplicate_tokens() {
             GgufValue::ArrayString(vec![
                 "hello".into(),
                 "world".into(),
-                "hello".into(), // duplicate!
+                "hello".into(), // duplicate — should be deduped to "hello_1"
             ]),
         ),
     ];
 
+    // GH-279: validate() now auto-dedupes instead of rejecting
     let result = ValidatedGgufMetadata::validate(metadata);
-    assert!(result.is_err(), "should reject duplicate tokens");
-    let err_msg = format!("{}", result.unwrap_err());
-    assert!(
-        err_msg.contains("GH-277"),
-        "error should reference GH-277: {err_msg}"
-    );
+    assert!(result.is_ok(), "should auto-dedup duplicate tokens: {result:?}");
+    let validated = result.expect("validated");
+    // Find the token array in validated metadata and check dedup
+    let tokens = validated.as_slice().iter().find_map(|(k, v)| {
+        if k == "tokenizer.ggml.tokens" {
+            if let GgufValue::ArrayString(t) = v {
+                Some(t.clone())
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    });
+    let tokens = tokens.expect("should have token array");
+    assert_eq!(tokens.len(), 3);
+    assert_eq!(tokens[0], "hello");
+    assert_eq!(tokens[1], "world");
+    assert_eq!(tokens[2], "hello_1", "duplicate should get _1 suffix");
 }
 
 #[test]
