@@ -289,9 +289,32 @@ fn build_tokenizer_gguf_metadata(
         ));
     }
     if !tokenizer.vocabulary.is_empty() {
+        // GH-279: Dedup token table for llama.cpp compatibility.
+        // HuggingFace tokenizers (Qwen3, etc.) may have multiple reserved tokens
+        // mapped to "<unk>" — llama.cpp requires unique token strings.
+        // Fix: append "_N" suffix to duplicates (same approach as convert.py).
+        let mut seen = std::collections::HashMap::with_capacity(tokenizer.vocabulary.len());
+        let deduped: Vec<String> = tokenizer
+            .vocabulary
+            .iter()
+            .enumerate()
+            .map(|(idx, tok)| {
+                let count = seen.entry(tok.clone()).or_insert(0u32);
+                *count += 1;
+                if *count > 1 {
+                    eprintln!(
+                        "[GH-279] Dedup token id={idx}: {tok:?} → {tok}_{c}",
+                        c = *count - 1
+                    );
+                    format!("{tok}_{}", *count - 1)
+                } else {
+                    tok.clone()
+                }
+            })
+            .collect();
         metadata.push((
             "tokenizer.ggml.tokens".to_string(),
-            GgufValue::ArrayString(tokenizer.vocabulary.clone()),
+            GgufValue::ArrayString(deduped),
         ));
         eprintln!(
             "[BUG-EXPORT-004] Added tokenizer metadata: model={}, vocab_size={}, bos={:?}, eos={:?}",

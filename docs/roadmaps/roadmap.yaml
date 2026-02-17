@@ -3854,3 +3854,19 @@ roadmap:
   - performance
   - pipeline
   notes: null
+- id: PMAT-262
+  github_issue: null
+  item_type: task
+  title: 'GH-277/278: Fix GGUF export compatibility with llama.cpp'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-02-17T17:14:20Z
+  updated: 2026-02-17T17:14:23.890164421+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
