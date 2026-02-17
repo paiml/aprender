@@ -308,14 +308,43 @@ pub fn run_convert(
 }
 
 /// Run the rosetta chain subcommand
-// serde_json::json!() macro uses infallible unwrap internally
 #[allow(clippy::disallowed_methods)]
 pub fn run_chain(source: &Path, formats: &[String], work_dir: &Path, json: bool) -> Result<()> {
     if !source.exists() {
         return Err(CliError::FileNotFound(source.to_path_buf()));
     }
 
-    // Parse format strings
+    let chain = parse_format_chain(formats)?;
+    validate_chain_no_cycles(&chain)?;
+
+    std::fs::create_dir_all(work_dir)
+        .map_err(|e| CliError::ValidationFailed(format!("Cannot create work directory: {e}")))?;
+
+    if !json {
+        let path = ConversionPath::chain(
+            chain[0],
+            chain[1..chain.len() - 1].to_vec(),
+            chain[chain.len() - 1],
+        );
+        println!("{}", "=== Rosetta Stone Chain Conversion ===".cyan().bold());
+        println!();
+        println!("Source: {}", source.display());
+        println!("Chain: {path}");
+        println!("Work Dir: {}", work_dir.display());
+        println!();
+    }
+
+    let rosetta = RosettaStone::new();
+    let reports = rosetta
+        .chain(source, &chain, work_dir)
+        .map_err(|e| CliError::ValidationFailed(format!("Chain conversion failed: {e}")))?;
+
+    print_chain_results(&chain, &reports, json);
+    Ok(())
+}
+
+/// Parse format strings into typed format chain.
+fn parse_format_chain(formats: &[String]) -> Result<Vec<FormatType>> {
     let chain: Vec<FormatType> = formats
         .iter()
         .map(|s| match s.to_lowercase().as_str() {
@@ -333,8 +362,11 @@ pub fn run_chain(source: &Path, formats: &[String], work_dir: &Path, json: bool)
             "Chain must have at least 2 formats".to_string(),
         ));
     }
+    Ok(chain)
+}
 
-    // Check for cycles
+/// Validate that the conversion chain has no cycles.
+fn validate_chain_no_cycles(chain: &[FormatType]) -> Result<()> {
     let path = ConversionPath::chain(
         chain[0],
         chain[1..chain.len() - 1].to_vec(),
@@ -345,28 +377,18 @@ pub fn run_chain(source: &Path, formats: &[String], work_dir: &Path, json: bool)
             "Conversion chain contains a cycle (repeated format in middle)".to_string(),
         ));
     }
+    Ok(())
+}
 
-    // Create work directory
-    std::fs::create_dir_all(work_dir)
-        .map_err(|e| CliError::ValidationFailed(format!("Cannot create work directory: {e}")))?;
-
-    let rosetta = RosettaStone::new();
-
-    if !json {
-        println!("{}", "=== Rosetta Stone Chain Conversion ===".cyan().bold());
-        println!();
-        println!("Source: {}", source.display());
-        println!("Chain: {path}");
-        println!("Work Dir: {}", work_dir.display());
-        println!();
-    }
-
-    let reports = rosetta
-        .chain(source, &chain, work_dir)
-        .map_err(|e| CliError::ValidationFailed(format!("Chain conversion failed: {e}")))?;
-
+/// Print chain conversion results in JSON or text format.
+// serde_json::json!() macro uses infallible unwrap internally
+#[allow(clippy::disallowed_methods)]
+fn print_chain_results(
+    chain: &[FormatType],
+    reports: &[aprender::format::rosetta::ConversionReport],
+    json: bool,
+) {
     if json {
-        // Print JSON output for chain conversion
         let steps: Vec<serde_json::Value> = reports
             .iter()
             .enumerate()
@@ -403,11 +425,8 @@ pub fn run_chain(source: &Path, formats: &[String], work_dir: &Path, json: bool)
             );
             println!();
         }
-
         println!("{}", "Chain conversion complete".green().bold());
     }
-
-    Ok(())
 }
 
 include!("rosetta_part_02.rs");
