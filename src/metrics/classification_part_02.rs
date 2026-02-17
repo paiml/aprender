@@ -373,4 +373,104 @@ mod tests {
         assert!((recall(&y_pred, &y_true, Average::Macro) - 1.0).abs() < 1e-6);
         assert!((f1_score(&y_pred, &y_true, Average::Macro) - 1.0).abs() < 1e-6);
     }
+
+    // ==================== PER-CLASS METRIC TESTS ====================
+
+    #[test]
+    fn test_precision_per_class_perfect() {
+        use super::super::precision_per_class;
+        let y_true = vec![0, 1, 2, 0, 1, 2];
+        let y_pred = vec![0, 1, 2, 0, 1, 2];
+        let per_class = precision_per_class(&y_pred, &y_true);
+        assert_eq!(per_class.len(), 3);
+        for &p in &per_class {
+            assert!((p - 1.0).abs() < 1e-6);
+        }
+    }
+
+    #[test]
+    fn test_precision_per_class_partial() {
+        use super::super::precision_per_class;
+        // Class 0: pred=[0,0], true=[0,1] → TP=1, FP=1 → 0.5
+        // Class 1: pred=[1], true=[1] → TP=1, FP=0 → 1.0
+        let y_true = vec![0, 1, 1];
+        let y_pred = vec![0, 0, 1];
+        let per_class = precision_per_class(&y_pred, &y_true);
+        assert!((per_class[0] - 0.5).abs() < 1e-6);
+        assert!((per_class[1] - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_recall_per_class_perfect() {
+        use super::super::recall_per_class;
+        let y_true = vec![0, 1, 2, 0, 1, 2];
+        let y_pred = vec![0, 1, 2, 0, 1, 2];
+        let per_class = recall_per_class(&y_pred, &y_true);
+        assert_eq!(per_class.len(), 3);
+        for &r in &per_class {
+            assert!((r - 1.0).abs() < 1e-6);
+        }
+    }
+
+    #[test]
+    fn test_recall_per_class_partial() {
+        use super::super::recall_per_class;
+        // Class 0: true=[0], pred=[1] → TP=0, FN=1 → 0.0
+        // Class 1: true=[1,1], pred=[1,0] → TP=1, FN=1 → 0.5
+        let y_true = vec![0, 1, 1];
+        let y_pred = vec![1, 1, 0];
+        let per_class = recall_per_class(&y_pred, &y_true);
+        assert!((per_class[0] - 0.0).abs() < 1e-6);
+        assert!((per_class[1] - 0.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_f1_per_class_perfect() {
+        use super::super::f1_per_class;
+        let y_true = vec![0, 1, 2, 0, 1, 2];
+        let y_pred = vec![0, 1, 2, 0, 1, 2];
+        let per_class = f1_per_class(&y_pred, &y_true);
+        assert_eq!(per_class.len(), 3);
+        for &f in &per_class {
+            assert!((f - 1.0).abs() < 1e-6);
+        }
+    }
+
+    #[test]
+    fn test_f1_per_class_harmonic_mean() {
+        use super::super::{f1_per_class, precision_per_class, recall_per_class};
+        let y_true = vec![0, 0, 1, 1, 1];
+        let y_pred = vec![0, 1, 1, 1, 0];
+        let p = precision_per_class(&y_pred, &y_true);
+        let r = recall_per_class(&y_pred, &y_true);
+        let f = f1_per_class(&y_pred, &y_true);
+        for i in 0..p.len() {
+            if p[i] + r[i] > 0.0 {
+                let expected = 2.0 * p[i] * r[i] / (p[i] + r[i]);
+                assert!((f[i] - expected).abs() < 1e-6);
+            } else {
+                assert!((f[i] - 0.0).abs() < 1e-6);
+            }
+        }
+    }
+
+    #[test]
+    fn test_per_class_consistency_with_macro() {
+        use super::super::{precision_per_class, recall_per_class, f1_per_class};
+        let y_true = vec![0, 0, 1, 1, 2, 2];
+        let y_pred = vec![0, 1, 1, 2, 2, 0];
+        // Macro average should equal mean of per-class
+        let p_per = precision_per_class(&y_pred, &y_true);
+        let r_per = recall_per_class(&y_pred, &y_true);
+        let f_per = f1_per_class(&y_pred, &y_true);
+        let p_macro = precision(&y_pred, &y_true, Average::Macro);
+        let r_macro = recall(&y_pred, &y_true, Average::Macro);
+        let f_macro = f1_score(&y_pred, &y_true, Average::Macro);
+        let p_mean: f32 = p_per.iter().sum::<f32>() / p_per.len() as f32;
+        let r_mean: f32 = r_per.iter().sum::<f32>() / r_per.len() as f32;
+        let f_mean: f32 = f_per.iter().sum::<f32>() / f_per.len() as f32;
+        assert!((p_mean - p_macro).abs() < 1e-6);
+        assert!((r_mean - r_macro).abs() < 1e-6);
+        assert!((f_mean - f_macro).abs() < 1e-6);
+    }
 }

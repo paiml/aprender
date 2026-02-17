@@ -3818,3 +3818,19 @@ roadmap:
   - safetensors
   - parity
   notes: null
+- id: PMAT-260
+  github_issue: null
+  item_type: task
+  title: 'GH-279/280/281: Entrenar delegation API gaps (Loss Send+Sync, cross_entropy_loss, per-class metrics)'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-02-17T11:24:45Z
+  updated: 2026-02-17T11:24:48.713673395+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

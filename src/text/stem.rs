@@ -274,10 +274,11 @@ impl PorterStemmer {
             }
         }
         // Special case: -ion requires preceding s or t
-        if word.ends_with("ion") && word.len() > 3 {
-            if matches!(word.as_bytes().get(word.len() - 4), Some(b's' | b't')) {
-                word.truncate(word.len() - 3);
-            }
+        if word.ends_with("ion")
+            && word.len() > 3
+            && matches!(word.as_bytes().get(word.len() - 4), Some(b's' | b't'))
+        {
+            word.truncate(word.len() - 3);
         }
     }
 }

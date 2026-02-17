@@ -336,6 +336,152 @@ pub fn f1_score(y_pred: &[usize], y_true: &[usize], average: Average) -> f32 {
     }
 }
 
+/// Compute per-class precision scores.
+///
+/// Returns a vector of precision values, one per class (ordered by class index).
+/// For binary classification, index 1 is the positive-class precision.
+///
+/// precision_i = TP_i / (TP_i + FP_i)
+///
+/// # Arguments
+///
+/// * `y_pred` - Predicted class labels
+/// * `y_true` - True class labels
+///
+/// # Returns
+///
+/// Vector of per-class precision scores (each in 0.0..=1.0)
+///
+/// # Panics
+///
+/// Panics if vectors have different lengths or are empty.
+///
+/// # Examples
+///
+/// ```
+/// use aprender::metrics::classification::precision_per_class;
+///
+/// let y_true = vec![1, 0, 1, 0];
+/// let y_pred = vec![1, 1, 0, 0];
+/// let per_class = precision_per_class(&y_pred, &y_true);
+/// assert_eq!(per_class.len(), 2);
+/// // class 0: TP=1, FP=1 → 0.5
+/// // class 1: TP=1, FP=1 → 0.5
+/// assert!((per_class[0] - 0.5).abs() < 1e-5);
+/// assert!((per_class[1] - 0.5).abs() < 1e-5);
+/// ```
+#[must_use]
+pub fn precision_per_class(y_pred: &[usize], y_true: &[usize]) -> Vec<f32> {
+    assert_eq!(y_pred.len(), y_true.len(), "Vectors must have same length");
+    assert!(!y_true.is_empty(), "Vectors cannot be empty");
+
+    let n_classes = y_true
+        .iter()
+        .chain(y_pred.iter())
+        .max()
+        .map_or(0, |&m| m + 1);
+
+    let (tp, fp, _, _) = compute_tp_fp_fn(y_pred, y_true, n_classes);
+    (0..n_classes).map(|i| class_precision(tp[i], fp[i])).collect()
+}
+
+/// Compute per-class recall scores.
+///
+/// Returns a vector of recall values, one per class (ordered by class index).
+/// For binary classification, index 1 is the positive-class recall.
+///
+/// recall_i = TP_i / (TP_i + FN_i)
+///
+/// # Arguments
+///
+/// * `y_pred` - Predicted class labels
+/// * `y_true` - True class labels
+///
+/// # Returns
+///
+/// Vector of per-class recall scores (each in 0.0..=1.0)
+///
+/// # Panics
+///
+/// Panics if vectors have different lengths or are empty.
+///
+/// # Examples
+///
+/// ```
+/// use aprender::metrics::classification::recall_per_class;
+///
+/// let y_true = vec![1, 0, 1, 0];
+/// let y_pred = vec![1, 1, 0, 0];
+/// let per_class = recall_per_class(&y_pred, &y_true);
+/// assert_eq!(per_class.len(), 2);
+/// // class 0: TP=1, FN=1 → 0.5
+/// // class 1: TP=1, FN=1 → 0.5
+/// assert!((per_class[0] - 0.5).abs() < 1e-5);
+/// assert!((per_class[1] - 0.5).abs() < 1e-5);
+/// ```
+#[must_use]
+pub fn recall_per_class(y_pred: &[usize], y_true: &[usize]) -> Vec<f32> {
+    assert_eq!(y_pred.len(), y_true.len(), "Vectors must have same length");
+    assert!(!y_true.is_empty(), "Vectors cannot be empty");
+
+    let n_classes = y_true
+        .iter()
+        .chain(y_pred.iter())
+        .max()
+        .map_or(0, |&m| m + 1);
+
+    let (tp, _, fn_counts, _) = compute_tp_fp_fn(y_pred, y_true, n_classes);
+    (0..n_classes).map(|i| class_recall(tp[i], fn_counts[i])).collect()
+}
+
+/// Compute per-class F1 scores.
+///
+/// Returns a vector of F1 scores, one per class (ordered by class index).
+/// For binary classification, index 1 is the positive-class F1.
+///
+/// F1_i = 2 * precision_i * recall_i / (precision_i + recall_i)
+///
+/// # Arguments
+///
+/// * `y_pred` - Predicted class labels
+/// * `y_true` - True class labels
+///
+/// # Returns
+///
+/// Vector of per-class F1 scores (each in 0.0..=1.0)
+///
+/// # Panics
+///
+/// Panics if vectors have different lengths or are empty.
+///
+/// # Examples
+///
+/// ```
+/// use aprender::metrics::classification::f1_per_class;
+///
+/// let y_true = vec![1, 0, 1, 0];
+/// let y_pred = vec![1, 1, 0, 0];
+/// let per_class = f1_per_class(&y_pred, &y_true);
+/// assert_eq!(per_class.len(), 2);
+/// // Both classes: precision=0.5, recall=0.5 → F1=0.5
+/// assert!((per_class[0] - 0.5).abs() < 1e-5);
+/// assert!((per_class[1] - 0.5).abs() < 1e-5);
+/// ```
+#[must_use]
+pub fn f1_per_class(y_pred: &[usize], y_true: &[usize]) -> Vec<f32> {
+    assert_eq!(y_pred.len(), y_true.len(), "Vectors must have same length");
+    assert!(!y_true.is_empty(), "Vectors cannot be empty");
+
+    let n_classes = y_true
+        .iter()
+        .chain(y_pred.iter())
+        .max()
+        .map_or(0, |&m| m + 1);
+
+    let (tp, fp, fn_counts, _) = compute_tp_fp_fn(y_pred, y_true, n_classes);
+    (0..n_classes).map(|i| class_f1(tp[i], fp[i], fn_counts[i])).collect()
+}
+
 /// Compute confusion matrix.
 ///
 /// Returns a matrix where element `[i,j]` is the count of samples

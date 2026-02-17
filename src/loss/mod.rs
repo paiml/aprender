@@ -191,11 +191,80 @@ pub fn huber_loss(y_pred: &Vector<f32>, y_true: &Vector<f32>, delta: f32) -> f32
     sum / n
 }
 
+/// Cross-entropy loss with one-hot (soft) targets.
+///
+/// Computes: L = -sum(y_true * log(softmax(y_pred)))
+///
+/// Uses numerically stable log-softmax (max subtraction).
+///
+/// # Arguments
+///
+/// * `y_pred` - Raw logits (pre-softmax predictions)
+/// * `y_true` - Target distribution (one-hot or soft labels, must sum to ~1.0)
+///
+/// # Returns
+///
+/// The cross-entropy loss (non-negative scalar)
+///
+/// # Panics
+///
+/// Panics if `y_pred` and `y_true` have different lengths or are empty.
+///
+/// # Example
+///
+/// ```
+/// use aprender::loss::cross_entropy_loss;
+/// use aprender::primitives::Vector;
+///
+/// let logits = Vector::from_slice(&[2.0, 1.0, 0.5]);
+/// let targets = Vector::from_slice(&[1.0, 0.0, 0.0]); // one-hot
+///
+/// let loss = cross_entropy_loss(&logits, &targets);
+/// assert!(loss > 0.0);
+/// ```
+#[must_use]
+pub fn cross_entropy_loss(y_pred: &Vector<f32>, y_true: &Vector<f32>) -> f32 {
+    assert_eq!(
+        y_pred.len(),
+        y_true.len(),
+        "Predicted and true values must have same length"
+    );
+    assert!(!y_pred.is_empty(), "Vectors cannot be empty");
+
+    // Numerically stable log-softmax: log(softmax(x_i)) = x_i - max(x) - log(sum(exp(x_j - max(x))))
+    let mut max_val = f32::NEG_INFINITY;
+    for i in 0..y_pred.len() {
+        if y_pred[i] > max_val {
+            max_val = y_pred[i];
+        }
+    }
+
+    let mut exp_sum = 0.0f32;
+    for i in 0..y_pred.len() {
+        exp_sum += (y_pred[i] - max_val).exp();
+    }
+    let log_sum_exp = max_val + exp_sum.ln();
+
+    // CE = -sum(y_true_i * log_softmax(y_pred_i))
+    let mut loss = 0.0f32;
+    for i in 0..y_pred.len() {
+        if y_true[i] > 0.0 {
+            let log_softmax_i = y_pred[i] - log_sum_exp;
+            loss -= y_true[i] * log_softmax_i;
+        }
+    }
+
+    loss
+}
+
 /// Trait for loss functions.
 ///
 /// Implement this trait to create custom loss functions compatible with
 /// training algorithms.
-pub trait Loss {
+///
+/// The `Send + Sync` bounds enable safe sharing across threads,
+/// required for multithreaded training loops (e.g., entrenar).
+pub trait Loss: Send + Sync {
     /// Computes the loss between predictions and targets.
     ///
     /// # Arguments
