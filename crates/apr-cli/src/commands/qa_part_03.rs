@@ -82,6 +82,15 @@ fn run_metadata_plausibility_gate(path: &Path, config: &QaConfig) -> Result<Gate
     }
 }
 
+/// Return plausible rope_theta range for an architecture family.
+fn rope_theta_range(arch: Option<&str>) -> (f64, f64, &'static str) {
+    match arch {
+        Some("qwen2" | "qwen2.5" | "qwen") => (100_000.0, f64::MAX, "expected ~1000000.0 (100x too low, will produce garbage)"),
+        Some("llama" | "llama2" | "llama3") => (1000.0, 10_000_000.0, "expected 10000-500000"),
+        _ => (100.0, 100_000_000.0, "outside plausible range [100, 100M]"),
+    }
+}
+
 /// Check rope_theta plausibility per architecture family.
 fn check_rope_theta(
     arch: Option<&str>,
@@ -90,45 +99,20 @@ fn check_rope_theta(
     violations: &mut Vec<String>,
     checks_passed: &mut usize,
 ) {
-    if let Some(theta) = rope_theta {
-        let theta_f64 = f64::from(theta);
-        match arch {
-            Some("qwen2" | "qwen2.5" | "qwen") => {
-                if theta_f64 < 100_000.0 {
-                    violations.push(format!(
-                        "rope_theta={theta} for qwen2 — expected ~1000000.0 \
-                         (100x too low, will produce garbage)"
-                    ));
-                } else {
-                    *checks_passed += 1;
-                }
-            }
-            Some("llama" | "llama2" | "llama3") => {
-                if (1000.0..=10_000_000.0).contains(&theta_f64) {
-                    *checks_passed += 1;
-                } else {
-                    violations.push(format!(
-                        "rope_theta={theta} for llama — expected 10000-500000"
-                    ));
-                }
-            }
-            _ => {
-                if (100.0..=100_000_000.0).contains(&theta_f64) {
-                    *checks_passed += 1;
-                } else {
-                    violations.push(format!(
-                        "rope_theta={theta} outside plausible range [100, 100M]"
-                    ));
-                }
-            }
-        }
-    } else {
-        let magic = &data[0..4];
-        if magic == b"GGUF" {
+    let Some(theta) = rope_theta else {
+        if data.len() >= 4 && &data[0..4] == b"GGUF" {
             *checks_passed += 1;
         } else {
             violations.push("rope_theta missing from APR metadata".to_string());
         }
+        return;
+    };
+    let theta_f64 = f64::from(theta);
+    let (min, max, msg) = rope_theta_range(arch);
+    if theta_f64 >= min && theta_f64 <= max {
+        *checks_passed += 1;
+    } else {
+        violations.push(format!("rope_theta={theta} for {} — {msg}", arch.unwrap_or("unknown")));
     }
 }
 
@@ -352,6 +336,35 @@ pub fn verify_output(
     OutputVerification::Pass
 }
 
+/// GH-279-4: Strip `<think>...</think>` blocks from model output.
+///
+/// Qwen3 thinking mode generates chain-of-thought reasoning inside `<think>` tags
+/// before the actual answer. The golden output gate validates the ANSWER, not the
+/// reasoning. This function strips thinking blocks so `verify_output()` sees only
+/// the final answer.
+///
+/// Behavior:
+/// - No `<think>` tags → passthrough (no-op for non-thinking models)
+/// - Complete `<think>...</think>` → stripped, answer preserved
+/// - Unclosed `<think>` (tokens exhausted during reasoning) → truncated at `<think>`
+/// - Multiple blocks → all stripped
+pub fn strip_thinking_blocks(output: &str) -> String {
+    let mut result = output.to_string();
+    // Strip all complete <think>...</think> blocks
+    while let (Some(start), Some(end)) = (result.find("<think>"), result.find("</think>")) {
+        if end > start {
+            result = format!("{}{}", &result[..start], &result[end + "</think>".len()..]);
+        } else {
+            break;
+        }
+    }
+    // Handle unclosed <think> (model ran out of tokens during reasoning)
+    if let Some(start) = result.find("<think>") {
+        result.truncate(start);
+    }
+    result.trim().to_string()
+}
+
 /// JIDOKA: Validate GPU golden output matches expected patterns (PMAT-232 lesson).
 ///
 /// Without this, GPU correctness was NEVER tested — `apr qa` golden output only ran CPU.
@@ -372,8 +385,9 @@ fn validate_gpu_golden_output(
         Ok(mut cuda_model) => match cuda_model.generate_gpu_resident(prompt_tokens, gen_config) {
             Ok(gpu_tokens) => {
                 let gpu_text = gguf.decode(&gpu_tokens);
+                let gpu_answer = strip_thinking_blocks(&gpu_text); // GH-279-4
                 if let OutputVerification::Fail { reason } =
-                    verify_output(&gpu_text, "golden_output_gpu", expected_patterns)
+                    verify_output(&gpu_answer, "golden_output_gpu", expected_patterns)
                 {
                     return Ok(Some(format!("GPU output failed (CPU passed): {reason}")));
                 }

@@ -127,8 +127,13 @@ fn validate_golden_test_case(
 ) -> Result<Option<GateResult>> {
     use realizar::format::ModelFormat;
 
+    // GH-279-4: Thinking models (Qwen3) need extra tokens for <think>...</think>
+    // chain-of-thought before the answer. 32 tokens is not enough — the model
+    // exhausts the budget on reasoning and never emits the answer.
+    let golden_max_tokens = config.max_tokens.max(128);
+
     let Some((_, output_text)) =
-        generate_golden_for_format(path, prompt, config.max_tokens, format, mapped, gguf_model)?
+        generate_golden_for_format(path, prompt, golden_max_tokens, format, mapped, gguf_model)?
     else {
         return Ok(Some(GateResult::skipped(
             "golden_output",
@@ -146,7 +151,7 @@ fn validate_golden_test_case(
             .encode(prompt)
             .unwrap_or_else(|| vec![151643, 9707]);
         let gen_config = QuantizedGenerateConfig {
-            max_tokens: config.max_tokens,
+            max_tokens: golden_max_tokens, // GH-279-4: match CPU budget
             temperature: 0.0,
             top_k: 1,
             ..Default::default()
@@ -171,8 +176,9 @@ fn validate_golden_test_case(
     #[cfg(not(feature = "cuda"))]
     let _ = cuda_available;
 
+    let answer_text = strip_thinking_blocks(&output_text); // GH-279-4
     if let OutputVerification::Fail { reason } =
-        verify_output(&output_text, "golden_output", expected_patterns)
+        verify_output(&answer_text, "golden_output", expected_patterns)
     {
         return Ok(Some(GateResult::failed(
             "golden_output",

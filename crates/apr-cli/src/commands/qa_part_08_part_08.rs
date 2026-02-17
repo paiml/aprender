@@ -143,6 +143,51 @@
     }
 
     // ========================================================================
+    // strip_thinking_blocks Tests (GH-279-4)
+    // ========================================================================
+
+    #[test]
+    fn strip_thinking_no_tags() {
+        // Non-thinking model output: passthrough unchanged
+        assert_eq!(strip_thinking_blocks("The answer is 4."), "The answer is 4.");
+    }
+
+    #[test]
+    fn strip_thinking_complete_block() {
+        // Thinking block followed by answer
+        let input = "<think>Let me calculate 2+2. That's 4.</think>4";
+        assert_eq!(strip_thinking_blocks(input), "4");
+    }
+
+    #[test]
+    fn strip_thinking_unclosed() {
+        // Model ran out of tokens during reasoning (unclosed <think>)
+        let input = "<think>Let me think about this carefully...";
+        assert_eq!(strip_thinking_blocks(input), "");
+    }
+
+    #[test]
+    fn strip_thinking_multiline() {
+        // Multi-line thinking block
+        let input = "<think>\nStep 1: 2+2\nStep 2: =4\n</think>\nThe answer is 4.";
+        assert_eq!(strip_thinking_blocks(input), "The answer is 4.");
+    }
+
+    #[test]
+    fn strip_thinking_multiple_blocks() {
+        // Multiple thinking blocks
+        let input = "<think>first thought</think>Hello <think>second thought</think>world";
+        assert_eq!(strip_thinking_blocks(input), "Hello world");
+    }
+
+    #[test]
+    fn strip_thinking_preserves_surrounding() {
+        // Only think tags are stripped, surrounding content preserved
+        let input = "Before <think>reasoning</think> After";
+        assert_eq!(strip_thinking_blocks(input), "Before  After");
+    }
+
+    // ========================================================================
     // Ollama Parity Grade Tests (F-PROFILE-010)
     // ========================================================================
 

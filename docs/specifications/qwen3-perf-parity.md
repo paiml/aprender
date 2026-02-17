@@ -161,8 +161,9 @@ Workaround: use local path from `apr pull` cache.
 GPU forward pass diverges from CPU (cosine sim 0.000479). Root cause: likely QK norm not applied in GPU matmul path.
 CPU argmax: 33975 | GPU argmax: 85222 | Max logit diff: 12084.8
 
-### GH-279-4: Golden output gate thinks vs answers (IN PROGRESS)
+### GH-279-4: Golden output gate thinks vs answers (FIXED)
 Qwen3 uses thinking mode by default — generates `<think>` chain before answer. Golden output gate expects direct "4".
+Fix: `strip_thinking_blocks()` strips `<think>...</think>` before `verify_output()`. No-op for non-thinking models.
 
 ## References
 
