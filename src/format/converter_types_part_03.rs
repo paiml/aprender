@@ -48,7 +48,10 @@ impl TensorExpectation {
             || name.contains("post_attention_layernorm")
             || name.contains("rms_norm")
             || name.contains("attn_norm") // GGUF pattern (blk.N.attn_norm.weight)
-            || name.contains("ffn_norm")) // GGUF pattern (blk.N.ffn_norm.weight)
+            || name.contains("ffn_norm") // GGUF pattern (blk.N.ffn_norm.weight)
+            // GH-279: Qwen3 QK normalization (RMSNorm, not linear)
+            || name.contains("q_norm")
+            || name.contains("k_norm"))
             && name.ends_with(".weight")
         {
             return Some(Self::RMSNORM_WEIGHT);

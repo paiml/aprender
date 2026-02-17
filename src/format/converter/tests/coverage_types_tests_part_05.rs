@@ -630,3 +630,97 @@ fn test_phi_uses_llama_mapping_gh219() {
         Architecture::Llama.map_name("model.layers.0.self_attn.q_proj.weight")
     );
 }
+
+// -------------------------------------------------------------------------
+// GH-279: Qwen3 QK normalization tensor mappings
+// -------------------------------------------------------------------------
+
+#[test]
+fn test_qwen3_map_name_qk_norm_tensors_gh279() {
+    let arch = Architecture::Qwen3;
+    assert_eq!(
+        arch.map_name("blk.0.attn_q_norm.weight"),
+        "model.layers.0.self_attn.q_norm.weight"
+    );
+    assert_eq!(
+        arch.map_name("blk.0.attn_k_norm.weight"),
+        "model.layers.0.self_attn.k_norm.weight"
+    );
+    assert_eq!(
+        arch.map_name("blk.35.attn_q_norm.weight"),
+        "model.layers.35.self_attn.q_norm.weight"
+    );
+    assert_eq!(
+        arch.map_name("blk.35.attn_k_norm.weight"),
+        "model.layers.35.self_attn.k_norm.weight"
+    );
+}
+
+#[test]
+fn test_qwen2_map_name_qk_norm_also_works_gh279() {
+    // Qwen2 uses the same mapper, so QK norm tensors should map correctly
+    // even though Qwen2 models don't have them
+    let arch = Architecture::Qwen2;
+    assert_eq!(
+        arch.map_name("blk.0.attn_q_norm.weight"),
+        "model.layers.0.self_attn.q_norm.weight"
+    );
+    assert_eq!(
+        arch.map_name("blk.0.attn_k_norm.weight"),
+        "model.layers.0.self_attn.k_norm.weight"
+    );
+}
+
+#[test]
+fn test_qwen3_safetensors_passthrough_qk_norm_gh279() {
+    // SafeTensors names are already in HF format — should pass through unchanged
+    let arch = Architecture::Qwen3;
+    assert_eq!(
+        arch.map_name("model.layers.0.self_attn.q_norm.weight"),
+        "model.layers.0.self_attn.q_norm.weight"
+    );
+    assert_eq!(
+        arch.map_name("model.layers.0.self_attn.k_norm.weight"),
+        "model.layers.0.self_attn.k_norm.weight"
+    );
+}
+
+#[test]
+fn test_qk_norm_tensor_expectation_is_rmsnorm_gh279() {
+    // QK norm tensors must be classified as RMSNORM_WEIGHT, not LINEAR_WEIGHT
+    let q_norm = TensorExpectation::for_tensor("model.layers.0.self_attn.q_norm.weight");
+    assert!(q_norm.is_some(), "q_norm should have an expectation");
+    assert_eq!(
+        q_norm.unwrap().description,
+        TensorExpectation::RMSNORM_WEIGHT.description,
+        "q_norm should be RMSNORM_WEIGHT"
+    );
+
+    let k_norm = TensorExpectation::for_tensor("model.layers.0.self_attn.k_norm.weight");
+    assert!(k_norm.is_some(), "k_norm should have an expectation");
+    assert_eq!(
+        k_norm.unwrap().description,
+        TensorExpectation::RMSNORM_WEIGHT.description,
+        "k_norm should be RMSNORM_WEIGHT"
+    );
+}
+
+#[test]
+fn test_qk_norm_gguf_tensor_expectation_is_rmsnorm_gh279() {
+    // GGUF-style names should also be classified as RMSNORM_WEIGHT
+    let q_norm = TensorExpectation::for_tensor("blk.0.attn_q_norm.weight");
+    assert!(q_norm.is_some(), "GGUF q_norm should have an expectation");
+    assert_eq!(
+        q_norm.unwrap().description,
+        TensorExpectation::RMSNORM_WEIGHT.description,
+        "GGUF q_norm should be RMSNORM_WEIGHT"
+    );
+
+    let k_norm = TensorExpectation::for_tensor("blk.0.attn_k_norm.weight");
+    assert!(k_norm.is_some(), "GGUF k_norm should have an expectation");
+    assert_eq!(
+        k_norm.unwrap().description,
+        TensorExpectation::RMSNORM_WEIGHT.description,
+        "GGUF k_norm should be RMSNORM_WEIGHT"
+    );
+}

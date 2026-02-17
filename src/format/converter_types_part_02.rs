@@ -111,6 +111,9 @@ impl Architecture {
                     "attn_output.weight" => "self_attn.o_proj.weight",
                     "attn_output.bias" => "self_attn.o_proj.bias",
                     "attn_norm.weight" => "input_layernorm.weight",
+                    // GH-279: Qwen3 QK normalization tensors
+                    "attn_q_norm.weight" => "self_attn.q_norm.weight",
+                    "attn_k_norm.weight" => "self_attn.k_norm.weight",
                     "ffn_gate.weight" => "mlp.gate_proj.weight",
                     "ffn_up.weight" => "mlp.up_proj.weight",
                     "ffn_down.weight" => "mlp.down_proj.weight",

@@ -3834,3 +3834,23 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-261
+  github_issue: null
+  item_type: task
+  title: 'Qwen3-8B: Performance Parity Pipeline'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-02-17T14:37:33Z
+  updated: 2026-02-17T14:37:38.489368300+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Import Qwen3-8B SafeTensors, quantize Q4K, export GGUF with full metadata, achieve Ollama parity. Contract: contracts/model-families/qwen3.yaml. Spec: docs/specifications/qwen3-perf-parity.md. Key diffs from Qwen2: no attention bias, QK norm tensors, thinking mode tokens.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - qwen3
+  - performance
+  - pipeline
+  notes: null

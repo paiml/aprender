@@ -450,6 +450,9 @@ fn hf_to_gguf_name(name: &str) -> String {
                 "self_attn.qkv_proj.weight" => "attn_qkv.weight",
                 "self_attn.qkv_proj.bias" => "attn_qkv.bias",
                 "input_layernorm.weight" => "attn_norm.weight",
+                // GH-279: Qwen3 QK normalization tensors
+                "self_attn.q_norm.weight" => "attn_q_norm.weight",
+                "self_attn.k_norm.weight" => "attn_k_norm.weight",
                 "mlp.gate_proj.weight" => "ffn_gate.weight",
                 "mlp.up_proj.weight" => "ffn_up.weight",
                 "mlp.down_proj.weight" => "ffn_down.weight",

@@ -245,6 +245,46 @@ fn test_hf_to_gguf_name_all_layer_suffixes_mapped() {
 }
 
 // ========================================================================
+// GH-279: Qwen3 QK norm tensor export mappings
+// ========================================================================
+
+#[test]
+fn test_hf_to_gguf_name_qk_norm_gh279() {
+    assert_eq!(
+        hf_to_gguf_name("model.layers.0.self_attn.q_norm.weight"),
+        "blk.0.attn_q_norm.weight"
+    );
+    assert_eq!(
+        hf_to_gguf_name("model.layers.0.self_attn.k_norm.weight"),
+        "blk.0.attn_k_norm.weight"
+    );
+    assert_eq!(
+        hf_to_gguf_name("model.layers.35.self_attn.q_norm.weight"),
+        "blk.35.attn_q_norm.weight"
+    );
+    assert_eq!(
+        hf_to_gguf_name("model.layers.35.self_attn.k_norm.weight"),
+        "blk.35.attn_k_norm.weight"
+    );
+}
+
+#[test]
+fn test_qk_norm_roundtrip_import_export_gh279() {
+    // GGUF import → APR → GGUF export must roundtrip
+    let gguf_q = "blk.5.attn_q_norm.weight";
+    let gguf_k = "blk.5.attn_k_norm.weight";
+
+    let apr_q = Architecture::Qwen3.map_name(gguf_q);
+    let apr_k = Architecture::Qwen3.map_name(gguf_k);
+
+    assert_eq!(apr_q, "model.layers.5.self_attn.q_norm.weight");
+    assert_eq!(apr_k, "model.layers.5.self_attn.k_norm.weight");
+
+    assert_eq!(hf_to_gguf_name(&apr_q), gguf_q);
+    assert_eq!(hf_to_gguf_name(&apr_k), gguf_k);
+}
+
+// ========================================================================
 // infer_vocab_hidden: Embedding tensor present
 // ========================================================================
 
