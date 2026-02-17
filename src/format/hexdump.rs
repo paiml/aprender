@@ -103,54 +103,16 @@ pub fn hex_dump(data: &[u8], config: &HexDumpConfig) -> String {
         data.len()
     };
 
-    let truncated = max_bytes < data.len();
-
     for (line_idx, chunk) in data[..max_bytes].chunks(bytes_per_line).enumerate() {
-        // Offset column
         if config.show_offset {
             result.push_str(&format!("{:08x}  ", line_idx * bytes_per_line));
         }
-
-        // Hex bytes
-        for (i, byte) in chunk.iter().enumerate() {
-            if config.group_size > 1 && i > 0 && i % config.group_size == 0 {
-                result.push(' ');
-            }
-            result.push_str(&format!("{byte:02x} "));
-        }
-
-        // Padding for incomplete lines
-        if chunk.len() < bytes_per_line {
-            let missing = bytes_per_line - chunk.len();
-            for i in 0..missing {
-                if config.group_size > 1 && (chunk.len() + i) % config.group_size == 0 {
-                    result.push(' ');
-                }
-                result.push_str("   ");
-            }
-        }
-
-        // ASCII sidebar
-        if config.show_ascii {
-            result.push_str(" |");
-            for byte in chunk {
-                if byte.is_ascii_graphic() || *byte == b' ' {
-                    result.push(*byte as char);
-                } else {
-                    result.push('.');
-                }
-            }
-            // Padding for incomplete lines
-            for _ in chunk.len()..bytes_per_line {
-                result.push(' ');
-            }
-            result.push('|');
-        }
-
+        format_hex_bytes(&mut result, chunk, bytes_per_line, config.group_size);
+        format_ascii_sidebar(&mut result, chunk, bytes_per_line, config.show_ascii);
         result.push('\n');
     }
 
-    if truncated {
+    if max_bytes < data.len() {
         result.push_str(&format!(
             "... ({} more bytes truncated)\n",
             data.len() - max_bytes
@@ -158,6 +120,41 @@ pub fn hex_dump(data: &[u8], config: &HexDumpConfig) -> String {
     }
 
     result
+}
+
+/// Format hex bytes with optional grouping and padding for incomplete lines.
+fn format_hex_bytes(result: &mut String, chunk: &[u8], bytes_per_line: usize, group_size: usize) {
+    for (i, byte) in chunk.iter().enumerate() {
+        if group_size > 1 && i > 0 && i % group_size == 0 {
+            result.push(' ');
+        }
+        result.push_str(&format!("{byte:02x} "));
+    }
+    for i in 0..(bytes_per_line - chunk.len()) {
+        if group_size > 1 && (chunk.len() + i) % group_size == 0 {
+            result.push(' ');
+        }
+        result.push_str("   ");
+    }
+}
+
+/// Format ASCII sidebar with padding for incomplete lines.
+fn format_ascii_sidebar(result: &mut String, chunk: &[u8], bytes_per_line: usize, show: bool) {
+    if !show {
+        return;
+    }
+    result.push_str(" |");
+    for byte in chunk {
+        if byte.is_ascii_graphic() || *byte == b' ' {
+            result.push(*byte as char);
+        } else {
+            result.push('.');
+        }
+    }
+    for _ in chunk.len()..bytes_per_line {
+        result.push(' ');
+    }
+    result.push('|');
 }
 
 /// Generate hex dump of f32 tensor values.

@@ -205,10 +205,7 @@ fn run_headless_apr(
 /// - Reports real hardware info from CUDA context
 #[cfg(feature = "inference")]
 fn run_headless_real(config: CbtopConfig) -> Result<()> {
-    use realizar::cuda::CudaExecutor;
-    use realizar::gguf::{
-        MappedGGUFModel, OwnedQuantizedModel, OwnedQuantizedModelCuda, QuantizedGenerateConfig,
-    };
+    use realizar::gguf::QuantizedGenerateConfig;
 
     // PAR-073: Disable CUDA graphs BEFORE model load for per-brick profiling
     // CUDA graph replay bypasses timing code, so we must use the non-graphed path
@@ -251,56 +248,12 @@ fn run_headless_real(config: CbtopConfig) -> Result<()> {
         return run_headless_apr(config, &model_path, &model_name);
     }
 
-    // GGUF path requires CUDA
-    // Check CUDA availability
-    let cuda_available = CudaExecutor::is_available();
-    let cuda_devices = CudaExecutor::num_devices();
-
-    if !cuda_available || cuda_devices == 0 {
-        eprintln!("cbtop: ERROR - CUDA not available. Real profiling requires CUDA GPU.");
-        return Err(CliError::ValidationFailed(
-            "CUDA not available for real profiling".to_string(),
-        ));
-    }
-
-    eprintln!("  CUDA: {} GPU(s) detected", cuda_devices);
-    eprintln!();
-
-    // Load model
-    eprintln!("cbtop: Loading model...");
-    let load_start = Instant::now();
-
-    let mapped = MappedGGUFModel::from_path(model_path)
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to map model: {e}")))?;
-
-    let model = OwnedQuantizedModel::from_mapped(&mapped)
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to create model: {e}")))?;
-
-    let mut cuda_model = OwnedQuantizedModelCuda::new(model, 0)
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to initialize CUDA: {e}")))?;
-
-    let load_time = load_start.elapsed();
-    eprintln!("cbtop: Model loaded in {:.2}s", load_time.as_secs_f32());
-    eprintln!("cbtop: CUDA graphs DISABLED for per-brick profiling (PAR-073)");
-    eprintln!();
+    let (mapped, mut cuda_model) = load_gguf_cuda_for_profiling(&model_path)?;
 
     let mut draft_cuda_model = load_draft_model(&config)?;
 
-    // Get model dimensions for brick benchmarks (via GGUFModel)
-    let hidden_dim = mapped.model.embedding_dim().unwrap_or(896);
-    let num_heads = mapped.model.num_heads().unwrap_or(14);
-    let num_kv_heads = mapped.model.num_kv_heads().unwrap_or(2);
-    let num_layers = mapped.model.num_layers().unwrap_or(28);
-    let head_dim = hidden_dim / num_heads;
-    // Infer intermediate_dim from tensor or use typical Qwen scaling (5.4x hidden)
-    let intermediate_dim = mapped
-        .model
-        .tensors
-        .iter()
-        .find(|t| t.name == "blk.0.ffn_up.weight")
-        .map_or(hidden_dim * 54 / 10, |t| {
-            t.dims.first().copied().unwrap_or(4864) as usize
-        });
+    let (hidden_dim, num_heads, num_kv_heads, num_layers, head_dim, intermediate_dim) =
+        extract_model_dims(&mapped);
 
     eprintln!("cbtop: Model config:");
     eprintln!("  Hidden: {}", hidden_dim);
@@ -397,15 +350,7 @@ fn run_headless_real(config: CbtopConfig) -> Result<()> {
         num_layers,
     );
 
-    // Calculate CV from latencies
-    let mean_latency = latencies_us.iter().sum::<f64>() / latencies_us.len() as f64;
-    let variance = latencies_us
-        .iter()
-        .map(|x| (x - mean_latency).powi(2))
-        .sum::<f64>()
-        / latencies_us.len() as f64;
-    let std_dev = variance.sqrt();
-    let cv_percent = (std_dev / mean_latency) * 100.0;
+    let cv_percent = compute_cv_percent(&latencies_us);
 
     // PMAT-PERF-009: Renacer BrickTracer escalation for anomaly detection
     #[cfg(feature = "visualization")]
@@ -421,6 +366,78 @@ fn run_headless_real(config: CbtopConfig) -> Result<()> {
         &latencies_us,
         brick_reports,
     )
+}
+
+/// Load and initialize GGUF model for CUDA profiling.
+#[cfg(feature = "inference")]
+fn load_gguf_cuda_for_profiling(
+    model_path: &std::path::Path,
+) -> Result<(
+    realizar::gguf::MappedGGUFModel,
+    realizar::gguf::OwnedQuantizedModelCuda,
+)> {
+    use realizar::cuda::CudaExecutor;
+    use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel, OwnedQuantizedModelCuda};
+
+    let cuda_devices = CudaExecutor::num_devices();
+    if !CudaExecutor::is_available() || cuda_devices == 0 {
+        eprintln!("cbtop: ERROR - CUDA not available. Real profiling requires CUDA GPU.");
+        return Err(CliError::ValidationFailed(
+            "CUDA not available for real profiling".to_string(),
+        ));
+    }
+    eprintln!("  CUDA: {} GPU(s) detected", cuda_devices);
+    eprintln!();
+
+    eprintln!("cbtop: Loading model...");
+    let load_start = Instant::now();
+
+    let mapped = MappedGGUFModel::from_path(model_path)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to map model: {e}")))?;
+    let model = OwnedQuantizedModel::from_mapped(&mapped)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to create model: {e}")))?;
+    let cuda_model = OwnedQuantizedModelCuda::new(model, 0)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to initialize CUDA: {e}")))?;
+
+    let load_time = load_start.elapsed();
+    eprintln!("cbtop: Model loaded in {:.2}s", load_time.as_secs_f32());
+    eprintln!("cbtop: CUDA graphs DISABLED for per-brick profiling (PAR-073)");
+    eprintln!();
+
+    Ok((mapped, cuda_model))
+}
+
+/// Extract model dimensions from a mapped GGUF model.
+#[cfg(feature = "inference")]
+fn extract_model_dims(
+    mapped: &realizar::gguf::MappedGGUFModel,
+) -> (usize, usize, usize, usize, usize, usize) {
+    let hidden_dim = mapped.model.embedding_dim().unwrap_or(896);
+    let num_heads = mapped.model.num_heads().unwrap_or(14);
+    let num_kv_heads = mapped.model.num_kv_heads().unwrap_or(2);
+    let num_layers = mapped.model.num_layers().unwrap_or(28);
+    let head_dim = hidden_dim / num_heads;
+    let intermediate_dim = mapped
+        .model
+        .tensors
+        .iter()
+        .find(|t| t.name == "blk.0.ffn_up.weight")
+        .map_or(hidden_dim * 54 / 10, |t| {
+            t.dims.first().copied().unwrap_or(4864) as usize
+        });
+    (hidden_dim, num_heads, num_kv_heads, num_layers, head_dim, intermediate_dim)
+}
+
+/// Compute coefficient of variation (CV%) from latency measurements.
+#[cfg(feature = "inference")]
+fn compute_cv_percent(latencies_us: &[f64]) -> f64 {
+    let mean = latencies_us.iter().sum::<f64>() / latencies_us.len() as f64;
+    let variance = latencies_us
+        .iter()
+        .map(|x| (x - mean).powi(2))
+        .sum::<f64>()
+        / latencies_us.len() as f64;
+    (variance.sqrt() / mean) * 100.0
 }
 
 #[cfg(feature = "inference")]

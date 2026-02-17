@@ -252,42 +252,55 @@ pub fn load_from_json(json: &str) -> Result<BpeTokenizer> {
         });
     }
 
-    // Parse the JSON
     let hf_tokenizer: HfTokenizerJson =
         serde_json::from_str(json).map_err(|e| AprenderError::FormatError {
             message: format!("Failed to parse tokenizer JSON: {e}"),
         })?;
 
-    // Determine config based on vocab size
-    let vocab_size = hf_tokenizer.model.vocab.len();
-    let config = if vocab_size > 150000 {
+    let config = config_from_vocab_size(hf_tokenizer.model.vocab.len());
+    let mut tokenizer = BpeTokenizer::new(config);
+
+    load_vocab_into(&mut tokenizer, &hf_tokenizer.model.vocab);
+    load_merges_from_strings(&mut tokenizer, &hf_tokenizer.model.merges);
+    load_added_tokens(&mut tokenizer, &hf_tokenizer.added_tokens);
+
+    Ok(tokenizer)
+}
+
+/// Determine BPE config based on vocabulary size.
+fn config_from_vocab_size(vocab_size: usize) -> BpeConfig {
+    if vocab_size > 150_000 {
         BpeConfig::qwen2()
-    } else if vocab_size > 50000 {
+    } else if vocab_size > 50_000 {
         BpeConfig::whisper()
-    } else if vocab_size > 40000 {
+    } else if vocab_size > 40_000 {
         BpeConfig::gpt2()
     } else {
         BpeConfig::llama()
-    };
+    }
+}
 
-    let mut tokenizer = BpeTokenizer::new(config);
-
-    // Load vocabulary
-    for (token, id) in &hf_tokenizer.model.vocab {
+/// Load vocabulary entries into a tokenizer.
+fn load_vocab_into(tokenizer: &mut BpeTokenizer, vocab: &HashMap<String, u32>) {
+    for (token, id) in vocab {
         tokenizer.vocab.insert(token.clone(), *id);
         tokenizer.id_to_token.insert(*id, token.clone());
     }
+}
 
-    // Load merge rules
-    for merge_str in &hf_tokenizer.model.merges {
+/// Load merge rules from space-separated merge strings.
+fn load_merges_from_strings(tokenizer: &mut BpeTokenizer, merges: &[String]) {
+    for merge_str in merges {
         let parts: Vec<&str> = merge_str.split(' ').collect();
         if parts.len() >= 2 {
             tokenizer.add_merge(parts[0], parts[1]);
         }
     }
+}
 
-    // Load special/added tokens
-    for added in &hf_tokenizer.added_tokens {
+/// Load added tokens (special and regular) into a tokenizer.
+fn load_added_tokens(tokenizer: &mut BpeTokenizer, added_tokens: &[HfAddedToken]) {
+    for added in added_tokens {
         if added.special {
             tokenizer.add_special_token(&added.content, added.id);
         } else {
@@ -297,8 +310,6 @@ pub fn load_from_json(json: &str) -> Result<BpeTokenizer> {
                 .insert(added.id, added.content.clone());
         }
     }
-
-    Ok(tokenizer)
 }
 
 /// Load tokenizer from vocab.json and merges.txt files.
@@ -319,46 +330,32 @@ pub fn load_from_files(vocab_json: &str, merges_txt: &str) -> Result<BpeTokenize
         });
     }
 
-    // Parse vocabulary JSON
     let vocab: HashMap<String, u32> =
         serde_json::from_str(vocab_json).map_err(|e| AprenderError::FormatError {
             message: format!("Failed to parse vocabulary JSON: {e}"),
         })?;
 
-    // Determine config based on vocab size
-    let vocab_size = vocab.len();
-    let config = if vocab_size > 150000 {
-        BpeConfig::qwen2()
-    } else if vocab_size > 50000 {
-        BpeConfig::whisper()
-    } else if vocab_size > 40000 {
-        BpeConfig::gpt2()
-    } else {
-        BpeConfig::llama()
-    };
-
+    let config = config_from_vocab_size(vocab.len());
     let mut tokenizer = BpeTokenizer::new(config);
 
-    // Load vocabulary
-    for (token, id) in &vocab {
-        tokenizer.vocab.insert(token.clone(), *id);
-        tokenizer.id_to_token.insert(*id, token.clone());
-    }
+    load_vocab_into(&mut tokenizer, &vocab);
+    load_merges_from_text(&mut tokenizer, merges_txt);
 
-    // Parse and load merges
+    Ok(tokenizer)
+}
+
+/// Parse merge rules from merges.txt format (one "pair1 pair2" per line, skipping comments).
+fn load_merges_from_text(tokenizer: &mut BpeTokenizer, merges_txt: &str) {
     for line in merges_txt.lines() {
         let line = line.trim();
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
-
         let parts: Vec<&str> = line.split_whitespace().collect();
         if parts.len() >= 2 {
             tokenizer.add_merge(parts[0], parts[1]);
         }
     }
-
-    Ok(tokenizer)
 }
 
 // ============================================================================

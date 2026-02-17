@@ -71,70 +71,22 @@ pub fn generate_block_mask(
     target_sparsity: f32,
 ) -> Result<SparsityMask, PruningError> {
     let shape = scores.shape();
-    if shape.len() != 2 {
-        return Err(PruningError::ShapeMismatch {
-            expected: vec![0, 0], // Indicates 2D expected
-            got: shape.to_vec(),
-        });
-    }
-
-    let rows = shape[0];
-    let cols = shape[1];
-
-    if rows % block_height != 0 || cols % block_width != 0 {
-        return Err(PruningError::InvalidPattern {
-            message: format!(
-                "Shape [{rows}, {cols}] not divisible by block size [{block_height}, {block_width}]"
-            ),
-        });
-    }
-
-    if !(0.0..=1.0).contains(&target_sparsity) {
-        return Err(PruningError::InvalidSparsity {
-            value: target_sparsity,
-            constraint: "must be between 0.0 and 1.0".to_string(),
-        });
-    }
-
-    let num_block_rows = rows / block_height;
-    let num_block_cols = cols / block_width;
-    let num_blocks = num_block_rows * num_block_cols;
-    let num_prune = (num_blocks as f32 * target_sparsity) as usize;
+    let (rows, cols) =
+        validate_block_mask_inputs(shape, block_height, block_width, target_sparsity)?;
 
     let data = scores.data();
+    let block_scores = compute_sorted_block_scores(data, rows, cols, block_height, block_width);
 
-    // Compute block importance (sum of element importance within block)
-    let mut block_scores: Vec<(usize, usize, f32)> = Vec::with_capacity(num_blocks);
-    for br in 0..num_block_rows {
-        for bc in 0..num_block_cols {
-            let mut sum = 0.0f32;
-            for r in 0..block_height {
-                for c in 0..block_width {
-                    let row = br * block_height + r;
-                    let col = bc * block_width + c;
-                    sum += data[row * cols + col];
-                }
-            }
-            block_scores.push((br, bc, sum));
-        }
-    }
-
-    // Sort by importance (ascending - lowest importance first)
-    block_scores.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal));
-
-    // Create mask (all ones initially)
+    let num_prune = (block_scores.len() as f32 * target_sparsity) as usize;
     let mut mask_data = vec![1.0f32; rows * cols];
 
-    // Zero out the lowest-importance blocks
-    for &(br, bc, _) in block_scores.iter().take(num_prune) {
-        for r in 0..block_height {
-            for c in 0..block_width {
-                let row = br * block_height + r;
-                let col = bc * block_width + c;
-                mask_data[row * cols + col] = 0.0;
-            }
-        }
-    }
+    zero_out_blocks(
+        &mut mask_data,
+        &block_scores[..num_prune],
+        cols,
+        block_height,
+        block_width,
+    );
 
     SparsityMask::new(
         Tensor::new(&mask_data, shape),
@@ -143,6 +95,80 @@ pub fn generate_block_mask(
             width: block_width,
         },
     )
+}
+
+/// Validate inputs for block mask generation. Returns (rows, cols).
+fn validate_block_mask_inputs(
+    shape: &[usize],
+    block_height: usize,
+    block_width: usize,
+    target_sparsity: f32,
+) -> Result<(usize, usize), PruningError> {
+    if shape.len() != 2 {
+        return Err(PruningError::ShapeMismatch {
+            expected: vec![0, 0],
+            got: shape.to_vec(),
+        });
+    }
+    let (rows, cols) = (shape[0], shape[1]);
+    if rows % block_height != 0 || cols % block_width != 0 {
+        return Err(PruningError::InvalidPattern {
+            message: format!(
+                "Shape [{rows}, {cols}] not divisible by block size [{block_height}, {block_width}]"
+            ),
+        });
+    }
+    if !(0.0..=1.0).contains(&target_sparsity) {
+        return Err(PruningError::InvalidSparsity {
+            value: target_sparsity,
+            constraint: "must be between 0.0 and 1.0".to_string(),
+        });
+    }
+    Ok((rows, cols))
+}
+
+/// Compute block importance scores, sorted ascending by sum.
+fn compute_sorted_block_scores(
+    data: &[f32],
+    rows: usize,
+    cols: usize,
+    block_height: usize,
+    block_width: usize,
+) -> Vec<(usize, usize, f32)> {
+    let num_block_rows = rows / block_height;
+    let num_block_cols = cols / block_width;
+    let mut block_scores: Vec<(usize, usize, f32)> =
+        Vec::with_capacity(num_block_rows * num_block_cols);
+    for br in 0..num_block_rows {
+        for bc in 0..num_block_cols {
+            let mut sum = 0.0f32;
+            for r in 0..block_height {
+                for c in 0..block_width {
+                    sum += data[(br * block_height + r) * cols + bc * block_width + c];
+                }
+            }
+            block_scores.push((br, bc, sum));
+        }
+    }
+    block_scores.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal));
+    block_scores
+}
+
+/// Zero out blocks in the mask for the given block positions.
+fn zero_out_blocks(
+    mask_data: &mut [f32],
+    blocks_to_prune: &[(usize, usize, f32)],
+    cols: usize,
+    block_height: usize,
+    block_width: usize,
+) {
+    for &(br, bc, _) in blocks_to_prune {
+        for r in 0..block_height {
+            for c in 0..block_width {
+                mask_data[(br * block_height + r) * cols + bc * block_width + c] = 0.0;
+            }
+        }
+    }
 }
 
 /// Generate a row sparsity mask.

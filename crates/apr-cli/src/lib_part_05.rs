@@ -1,7 +1,34 @@
 
 /// Dispatch core commands (run, serve, inspection, format operations).
-#[allow(clippy::too_many_lines)]
+///
+/// Delegates to sub-dispatchers to keep cyclomatic complexity below 10 per function.
 fn dispatch_core_command(cli: &Cli) -> Option<Result<(), CliError>> {
+    // Try runtime commands first (check, run, serve)
+    if let Some(result) = dispatch_runtime_commands(cli) {
+        return Some(result);
+    }
+
+    // Try inspection commands (inspect, debug, validate, lint, explain, canary)
+    if let Some(result) = dispatch_inspection_commands(cli) {
+        return Some(result);
+    }
+
+    // Try diagnostic commands (trace, tensors, diff)
+    if let Some(result) = dispatch_diagnostic_commands(cli) {
+        return Some(result);
+    }
+
+    // Try format commands (export, import, convert, quantize)
+    if let Some(result) = dispatch_format_commands(cli) {
+        return Some(result);
+    }
+
+    // Try model management commands (merge, finetune, prune, distill, pull, list, rm, tui)
+    dispatch_model_commands(cli)
+}
+
+/// Dispatch runtime commands: check, run, serve.
+fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
     Some(match cli.command.as_ref() {
         Commands::Check { file, no_gpu, json } => commands::check::run(file, *no_gpu, *json),
         Commands::Run {
@@ -82,6 +109,13 @@ fn dispatch_core_command(cli: &Cli) -> Option<Result<(), CliError>> {
             cli.verbose,
         ),
 
+        _ => return None,
+    })
+}
+
+/// Dispatch inspection commands: inspect, debug, validate, lint, explain, canary.
+fn dispatch_inspection_commands(cli: &Cli) -> Option<Result<(), CliError>> {
+    Some(match cli.command.as_ref() {
         Commands::Inspect {
             file,
             vocab,
@@ -114,37 +148,22 @@ fn dispatch_core_command(cli: &Cli) -> Option<Result<(), CliError>> {
             crate::pipe::with_stdin_support(file, |p| validate::run(p, q, s, ms, j))
         }
 
-        Commands::Diff {
-            file1,
-            file2,
-            weights,
-            values,
-            filter,
-            limit,
-            transpose_aware,
-            json,
-        } => diff::run(
-            file1,
-            file2,
-            *weights,
-            *values,
-            filter.as_deref(),
-            *limit,
-            *transpose_aware,
-            *json || cli.json,
-        ),
-
-        Commands::Tensors {
-            file,
-            stats,
-            filter,
-            limit,
-            json,
-        } => {
-            let (s, f, j, l) = (*stats, filter.as_deref().map(str::to_owned), *json || cli.json, *limit);
-            crate::pipe::with_stdin_support(file, |p| tensors::run(p, s, f.as_deref(), j, l))
+        Commands::Lint { file } => {
+            let j = cli.json;
+            crate::pipe::with_stdin_support(file, |p| lint::run(p, j))
         }
+        Commands::Explain { code, file, tensor } => {
+            explain::run(code.clone(), file.clone(), tensor.clone())
+        }
+        Commands::Canary { command } => canary::run(command.clone()),
 
+        _ => return None,
+    })
+}
+
+/// Dispatch diagnostic commands: trace, tensors, diff.
+fn dispatch_diagnostic_commands(cli: &Cli) -> Option<Result<(), CliError>> {
+    Some(match cli.command.as_ref() {
         Commands::Trace {
             file,
             layer,
@@ -165,14 +184,44 @@ fn dispatch_core_command(cli: &Cli) -> Option<Result<(), CliError>> {
             *interactive,
         ),
 
-        Commands::Lint { file } => {
-            let j = cli.json;
-            crate::pipe::with_stdin_support(file, |p| lint::run(p, j))
+        Commands::Tensors {
+            file,
+            stats,
+            filter,
+            limit,
+            json,
+        } => {
+            let (s, f, j, l) = (*stats, filter.as_deref().map(str::to_owned), *json || cli.json, *limit);
+            crate::pipe::with_stdin_support(file, |p| tensors::run(p, s, f.as_deref(), j, l))
         }
-        Commands::Explain { code, file, tensor } => {
-            explain::run(code.clone(), file.clone(), tensor.clone())
-        }
-        Commands::Canary { command } => canary::run(command.clone()),
+
+        Commands::Diff {
+            file1,
+            file2,
+            weights,
+            values,
+            filter,
+            limit,
+            transpose_aware,
+            json,
+        } => diff::run(
+            file1,
+            file2,
+            *weights,
+            *values,
+            filter.as_deref(),
+            *limit,
+            *transpose_aware,
+            *json || cli.json,
+        ),
+
+        _ => return None,
+    })
+}
+
+/// Dispatch format operation commands: export, import, convert, quantize.
+fn dispatch_format_commands(cli: &Cli) -> Option<Result<(), CliError>> {
+    Some(match cli.command.as_ref() {
         Commands::Export {
             file,
             format,
@@ -211,9 +260,6 @@ fn dispatch_core_command(cli: &Cli) -> Option<Result<(), CliError>> {
             *enforce_provenance,
             *allow_no_config,
         ),
-        Commands::Pull { model_ref, force } => pull::run(model_ref, *force),
-        Commands::List => pull::list(cli.json),
-        Commands::Rm { model_ref } => pull::remove(model_ref),
         Commands::Convert {
             file,
             quantize,
@@ -228,6 +274,23 @@ fn dispatch_core_command(cli: &Cli) -> Option<Result<(), CliError>> {
             *force,
             cli.json,
         ),
+        Commands::Quantize {
+            file,
+            scheme,
+            output,
+            format,
+            batch,
+            plan,
+            force,
+        } => quantize::run(file, scheme, output.as_deref(), format.as_deref(), batch.as_deref(), *plan, *force, cli.json),
+
+        _ => return None,
+    })
+}
+
+/// Dispatch model management commands: merge, finetune, prune, distill, pull, list, rm, tui.
+fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
+    Some(match cli.command.as_ref() {
         Commands::Merge {
             files,
             strategy,
@@ -238,15 +301,6 @@ fn dispatch_core_command(cli: &Cli) -> Option<Result<(), CliError>> {
             density,
             seed,
         } => merge::run(files, strategy, output, weights.clone(), base_model.clone(), *drop_rate, *density, *seed, cli.json),
-        Commands::Quantize {
-            file,
-            scheme,
-            output,
-            format,
-            batch,
-            plan,
-            force,
-        } => quantize::run(file, scheme, output.as_deref(), format.as_deref(), batch.as_deref(), *plan, *force, cli.json),
         Commands::Finetune {
             file,
             method,
@@ -319,7 +373,11 @@ fn dispatch_core_command(cli: &Cli) -> Option<Result<(), CliError>> {
             *plan,
             cli.json,
         ),
+        Commands::Pull { model_ref, force } => pull::run(model_ref, *force),
+        Commands::List => pull::list(cli.json),
+        Commands::Rm { model_ref } => pull::remove(model_ref),
         Commands::Tui { file } => tui::run(file.clone()),
+
         _ => return None,
     })
 }

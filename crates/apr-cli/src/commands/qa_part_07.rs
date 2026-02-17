@@ -30,11 +30,9 @@ fn run_ptx_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
         println!("{}", "Running PTX parity validation...".yellow());
     }
 
-    // Extract model dimensions from GGUF metadata
     #[cfg(feature = "inference")]
     {
         use realizar::format::ModelFormat;
-        use realizar::ptx_parity::{validate_all_kernel_pairs, KernelDimensions};
 
         if detect_model_format(path) != Some(ModelFormat::Gguf) {
             return Ok(GateResult::skipped(
@@ -43,56 +41,13 @@ fn run_ptx_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
             ));
         }
 
-        // Load model config to get dimensions
-        let mapped = realizar::gguf::MappedGGUFModel::from_path(path.to_str().unwrap_or_default())
-            .map_err(|e| CliError::ValidationFailed(format!("Failed to load GGUF: {e}")))?;
-
-        let model_config = realizar::gguf::GGUFConfig::from_gguf(&mapped.model)
-            .map_err(|e| CliError::ValidationFailed(format!("Failed to read config: {e}")))?;
-
-        let dims = KernelDimensions {
-            hidden_dim: model_config.hidden_dim as u32,
-            intermediate_dim: model_config.intermediate_dim as u32,
-            num_heads: model_config.num_heads as u32,
-            head_dim: (model_config.hidden_dim / model_config.num_heads) as u32,
-            rope_theta: model_config.rope_theta,
-            epsilon: model_config.eps,
-        };
-
-        let report = validate_all_kernel_pairs(&dims);
+        let report = run_ptx_validation(path)?;
         let duration = start.elapsed();
 
-        if report.all_passed() {
-            Ok(GateResult::passed(
-                "ptx_parity",
-                &report.summary(),
-                Some(report.passed as f64),
-                Some(report.total as f64),
-                duration,
-            ))
-        } else {
-            // Show violations in verbose mode
-            if !config.json && config.verbose {
-                for result in &report.results {
-                    if !result.passed {
-                        println!(
-                            "  {} {} ({}): {}",
-                            "FAIL".red(),
-                            result.name,
-                            result.dispatch_strategy,
-                            result.violations.join("; ")
-                        );
-                    }
-                }
-            }
-            Ok(GateResult::failed(
-                "ptx_parity",
-                &report.summary(),
-                Some(report.passed as f64),
-                Some(report.total as f64),
-                duration,
-            ))
+        if !report.all_passed() {
+            print_ptx_violations(config, &report);
         }
+        Ok(ptx_gate_result(&report, duration))
     }
 
     #[cfg(not(feature = "inference"))]
@@ -102,6 +57,71 @@ fn run_ptx_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
             "ptx_parity",
             "Requires inference feature",
         ))
+    }
+}
+
+/// Run PTX parity validation against GGUF model dimensions.
+#[cfg(feature = "inference")]
+fn run_ptx_validation(path: &Path) -> Result<realizar::ptx_parity::PtxParityReport> {
+    use realizar::ptx_parity::{validate_all_kernel_pairs, KernelDimensions};
+
+    let mapped = realizar::gguf::MappedGGUFModel::from_path(path.to_str().unwrap_or_default())
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to load GGUF: {e}")))?;
+    let model_config = realizar::gguf::GGUFConfig::from_gguf(&mapped.model)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to read config: {e}")))?;
+
+    let dims = KernelDimensions {
+        hidden_dim: model_config.hidden_dim as u32,
+        intermediate_dim: model_config.intermediate_dim as u32,
+        num_heads: model_config.num_heads as u32,
+        head_dim: (model_config.hidden_dim / model_config.num_heads) as u32,
+        rope_theta: model_config.rope_theta,
+        epsilon: model_config.eps,
+    };
+    Ok(validate_all_kernel_pairs(&dims))
+}
+
+/// Print PTX parity violations in verbose mode.
+#[cfg(feature = "inference")]
+fn print_ptx_violations(config: &QaConfig, report: &realizar::ptx_parity::PtxParityReport) {
+    if config.json || !config.verbose {
+        return;
+    }
+    for result in &report.results {
+        if !result.passed {
+            println!(
+                "  {} {} ({}): {}",
+                "FAIL".red(),
+                result.name,
+                result.dispatch_strategy,
+                result.violations.join("; ")
+            );
+        }
+    }
+}
+
+/// Build gate result from PTX parity report.
+#[cfg(feature = "inference")]
+fn ptx_gate_result(
+    report: &realizar::ptx_parity::PtxParityReport,
+    duration: Duration,
+) -> GateResult {
+    if report.all_passed() {
+        GateResult::passed(
+            "ptx_parity",
+            &report.summary(),
+            Some(report.passed as f64),
+            Some(report.total as f64),
+            duration,
+        )
+    } else {
+        GateResult::failed(
+            "ptx_parity",
+            &report.summary(),
+            Some(report.passed as f64),
+            Some(report.total as f64),
+            duration,
+        )
     }
 }
 
@@ -126,10 +146,6 @@ fn run_gpu_state_isolation_gate(path: &Path, _config: &QaConfig) -> Result<GateR
     {
         use realizar::cuda::CudaExecutor;
         use realizar::format::ModelFormat;
-        use realizar::gguf::{
-            GGUFModel, MappedGGUFModel, OwnedQuantizedModel, OwnedQuantizedModelCuda,
-            QuantizedGenerateConfig,
-        };
 
         if !CudaExecutor::is_available() || CudaExecutor::num_devices() == 0 {
             return Ok(GateResult::skipped(
@@ -145,87 +161,115 @@ fn run_gpu_state_isolation_gate(path: &Path, _config: &QaConfig) -> Result<GateR
             ));
         }
 
-        let model_bytes = std::fs::read(path)
-            .map_err(|e| CliError::ValidationFailed(format!("Failed to read model: {e}")))?;
-        let gguf = GGUFModel::from_bytes(&model_bytes)
-            .map_err(|e| CliError::ValidationFailed(format!("Failed to parse GGUF: {e}")))?;
-
-        let prompt_a = "<|im_start|>user\nWhat is 2+2?<|im_end|>\n<|im_start|>assistant\n";
-        let prompt_b =
-            "<|im_start|>user\nWrite hello world in Python<|im_end|>\n<|im_start|>assistant\n";
-
-        let tokens_a = gguf.encode(prompt_a).unwrap_or_else(|| vec![151643, 9707]);
-        let tokens_b = gguf.encode(prompt_b).unwrap_or_else(|| vec![151643, 1234]);
-
-        let gen_config = QuantizedGenerateConfig {
-            max_tokens: 16,
-            temperature: 0.0,
-            top_k: 1,
-            ..Default::default()
-        };
-
-        let mapped = MappedGGUFModel::from_path(path)
-            .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
-        let model = OwnedQuantizedModel::from_mapped(&mapped)
-            .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
-        let mut cuda_model = OwnedQuantizedModelCuda::new(model, 0)
-            .map_err(|e| CliError::ValidationFailed(format!("CUDA init failed: {e}")))?;
-
-        let output_a = cuda_model
-            .generate_gpu_resident(&tokens_a, &gen_config)
-            .map_err(|e| CliError::ValidationFailed(format!("Gen 1 failed: {e}")))?;
-        let output_b = cuda_model
-            .generate_gpu_resident(&tokens_b, &gen_config)
-            .map_err(|e| CliError::ValidationFailed(format!("Gen 2 failed: {e}")))?;
-        let output_a2 = cuda_model
-            .generate_gpu_resident(&tokens_a, &gen_config)
-            .map_err(|e| CliError::ValidationFailed(format!("Gen 3 failed: {e}")))?;
-
+        let result = run_gpu_isolation_test(path)?;
         let duration = start.elapsed();
+        return Ok(gpu_isolation_gate_result(result, duration));
+    }
 
-        if output_a != output_a2 {
-            let text_a = gguf.decode(&output_a);
-            let text_a2 = gguf.decode(&output_a2);
-            return Ok(GateResult::failed(
-                "gpu_state_isolation",
-                &format!(
-                    "State leak: prompt A produced different output on retry. \
-                     First: '{}', Retry: '{}'",
-                    text_a.chars().take(50).collect::<String>(),
-                    text_a2.chars().take(50).collect::<String>()
-                ),
-                None,
-                None,
-                duration,
-            ));
-        }
+    #[cfg(not(all(feature = "inference", feature = "cuda")))]
+    {
+        let _ = (path, _config, start);
+        Ok(GateResult::skipped(
+            "gpu_state_isolation",
+            "Requires inference+cuda features",
+        ))
+    }
+}
 
-        if output_a == output_b {
-            return Ok(GateResult::failed(
-                "gpu_state_isolation",
-                "Model stuck: same output for different prompts (GPU state not functional)",
-                None,
-                None,
-                duration,
-            ));
-        }
+/// Output from GPU state isolation test.
+#[cfg(all(feature = "inference", feature = "cuda"))]
+enum GpuIsolationResult {
+    Passed,
+    StateLeak(String, String),
+    ModelStuck,
+}
 
-        Ok(GateResult::passed(
+/// Run the 3-generation GPU isolation test.
+#[cfg(all(feature = "inference", feature = "cuda"))]
+fn run_gpu_isolation_test(path: &Path) -> Result<GpuIsolationResult> {
+    use realizar::gguf::{
+        GGUFModel, MappedGGUFModel, OwnedQuantizedModel, OwnedQuantizedModelCuda,
+        QuantizedGenerateConfig,
+    };
+
+    let model_bytes = std::fs::read(path)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to read model: {e}")))?;
+    let gguf = GGUFModel::from_bytes(&model_bytes)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to parse GGUF: {e}")))?;
+
+    let tokens_a = gguf
+        .encode("<|im_start|>user\nWhat is 2+2?<|im_end|>\n<|im_start|>assistant\n")
+        .unwrap_or_else(|| vec![151643, 9707]);
+    let tokens_b = gguf
+        .encode("<|im_start|>user\nWrite hello world in Python<|im_end|>\n<|im_start|>assistant\n")
+        .unwrap_or_else(|| vec![151643, 1234]);
+
+    let gen_config = QuantizedGenerateConfig {
+        max_tokens: 16,
+        temperature: 0.0,
+        top_k: 1,
+        ..Default::default()
+    };
+
+    let mapped = MappedGGUFModel::from_path(path)
+        .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
+    let model = OwnedQuantizedModel::from_mapped(&mapped)
+        .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
+    let mut cuda_model = OwnedQuantizedModelCuda::new(model, 0)
+        .map_err(|e| CliError::ValidationFailed(format!("CUDA init failed: {e}")))?;
+
+    let output_a = cuda_model
+        .generate_gpu_resident(&tokens_a, &gen_config)
+        .map_err(|e| CliError::ValidationFailed(format!("Gen 1 failed: {e}")))?;
+    let output_b = cuda_model
+        .generate_gpu_resident(&tokens_b, &gen_config)
+        .map_err(|e| CliError::ValidationFailed(format!("Gen 2 failed: {e}")))?;
+    let output_a2 = cuda_model
+        .generate_gpu_resident(&tokens_a, &gen_config)
+        .map_err(|e| CliError::ValidationFailed(format!("Gen 3 failed: {e}")))?;
+
+    if output_a != output_a2 {
+        let text_a = gguf.decode(&output_a);
+        let text_a2 = gguf.decode(&output_a2);
+        return Ok(GpuIsolationResult::StateLeak(
+            text_a.chars().take(50).collect(),
+            text_a2.chars().take(50).collect(),
+        ));
+    }
+    if output_a == output_b {
+        return Ok(GpuIsolationResult::ModelStuck);
+    }
+    Ok(GpuIsolationResult::Passed)
+}
+
+/// Convert GPU isolation test result to gate result.
+#[cfg(all(feature = "inference", feature = "cuda"))]
+fn gpu_isolation_gate_result(result: GpuIsolationResult, duration: Duration) -> GateResult {
+    match result {
+        GpuIsolationResult::Passed => GateResult::passed(
             "gpu_state_isolation",
             "GPU state properly isolated: 3 generations, deterministic replay confirmed",
             Some(3.0),
             Some(3.0),
             duration,
-        ))
-    }
-
-    #[cfg(not(all(feature = "inference", feature = "cuda")))]
-    {
-        let _ = (path, _config);
-        Ok(GateResult::skipped(
+        ),
+        GpuIsolationResult::StateLeak(first, retry) => GateResult::failed(
             "gpu_state_isolation",
-            "Requires inference+cuda features",
-        ))
+            &format!(
+                "State leak: prompt A produced different output on retry. \
+                 First: '{first}', Retry: '{retry}'"
+            ),
+            None,
+            None,
+            duration,
+        ),
+        GpuIsolationResult::ModelStuck => GateResult::failed(
+            "gpu_state_isolation",
+            "Model stuck: same output for different prompts (GPU state not functional)",
+            None,
+            None,
+            duration,
+        ),
     }
 }
 
