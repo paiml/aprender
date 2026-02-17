@@ -219,7 +219,7 @@ pub(crate) struct ValidatedGgufMetadata {
 impl ValidatedGgufMetadata {
     /// Validate and construct metadata. Fails if required keys are missing.
     pub(crate) fn validate(
-        metadata: Vec<(String, crate::format::gguf::GgufValue)>,
+        mut metadata: Vec<(String, crate::format::gguf::GgufValue)>,
     ) -> Result<Self> {
         let has_key = |k: &str| metadata.iter().any(|(name, _)| name == k);
 
@@ -249,34 +249,45 @@ impl ValidatedGgufMetadata {
             });
         }
 
-        // GH-277: Validate token table bijection (no duplicates)
-        if let Some((_, crate::format::gguf::GgufValue::ArrayString(tokens))) = metadata
+        // GH-277/GH-279: Dedup token table for llama.cpp compatibility.
+        // HuggingFace tokenizers (Qwen3, etc.) may have reserved tokens that
+        // share the same string (e.g. multiple "<unk>" entries). llama.cpp
+        // requires unique token strings. Fix: append "_N" suffix to duplicates.
+        if let Some(pos) = metadata
             .iter()
-            .find(|(k, _)| k == "tokenizer.ggml.tokens")
+            .position(|(k, _)| k == "tokenizer.ggml.tokens")
         {
-            let mut seen = std::collections::HashSet::with_capacity(tokens.len());
-            let mut duplicates = Vec::new();
-            for (idx, token) in tokens.iter().enumerate() {
-                if !seen.insert(token) {
-                    duplicates.push((idx, token.clone()));
-                    if duplicates.len() >= 5 {
-                        break; // Enough evidence
-                    }
-                }
-            }
-            if !duplicates.is_empty() {
-                let examples: Vec<String> = duplicates
+            if let (_, crate::format::gguf::GgufValue::ArrayString(tokens)) = &metadata[pos] {
+                let mut seen =
+                    std::collections::HashMap::with_capacity(tokens.len());
+                let mut dedup_count = 0u32;
+                let deduped: Vec<String> = tokens
                     .iter()
-                    .map(|(idx, tok)| format!("id={idx}: {tok:?}"))
+                    .enumerate()
+                    .map(|(idx, tok)| {
+                        let count = seen.entry(tok.clone()).or_insert(0u32);
+                        *count += 1;
+                        if *count > 1 {
+                            dedup_count += 1;
+                            eprintln!(
+                                "[GH-279] Dedup token id={idx}: {tok:?} → {tok}_{c}",
+                                c = *count - 1
+                            );
+                            format!("{tok}_{}", *count - 1)
+                        } else {
+                            tok.clone()
+                        }
+                    })
                     .collect();
-                return Err(AprenderError::FormatError {
-                    message: format!(
-                        "[GH-277] GGUF token table has {} duplicate entries (llama.cpp will crash). \
-                         Examples: {}",
-                        duplicates.len(),
-                        examples.join(", ")
-                    ),
-                });
+                if dedup_count > 0 {
+                    eprintln!(
+                        "[GH-279] Deduped {dedup_count} duplicate token(s) in GGUF token table"
+                    );
+                    metadata[pos] = (
+                        "tokenizer.ggml.tokens".to_string(),
+                        crate::format::gguf::GgufValue::ArrayString(deduped),
+                    );
+                }
             }
         }
 
