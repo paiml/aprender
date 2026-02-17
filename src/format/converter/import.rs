@@ -388,7 +388,7 @@ fn warn_unverified_architecture(arch: &Architecture, strict: bool) -> Result<()>
         arch.display_name()
     );
     eprintln!(
-        "[PMAT-224] Verified architectures: Qwen2, LLaMA. Use --strict to reject unverified."
+        "[PMAT-224] Verified architectures: Qwen2, Qwen3, Qwen3.5, LLaMA, Phi. Use --strict to reject unverified."
     );
     if strict {
         return Err(AprenderError::FormatError {
