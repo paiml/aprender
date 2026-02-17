@@ -137,9 +137,11 @@ fn parse_architecture(arch: Option<&str>) -> Result<Architecture> {
         Some("llama") => Ok(Architecture::Llama),
         Some("bert") => Ok(Architecture::Bert),
         Some("qwen2") => Ok(Architecture::Qwen2),
+        Some("qwen3") => Ok(Architecture::Qwen3),
+        Some("qwen3_5" | "qwen3.5") => Ok(Architecture::Qwen3_5),
         Some("auto") | None => Ok(Architecture::Auto),
         Some(other) => Err(CliError::ValidationFailed(format!(
-            "Unknown architecture: {other}. Supported: whisper, llama, bert, qwen2, auto"
+            "Unknown architecture: {other}. Supported: whisper, llama, bert, qwen2, qwen3, qwen3_5, auto"
         ))),
     }
 }

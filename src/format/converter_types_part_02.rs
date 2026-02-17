@@ -10,6 +10,7 @@ impl Architecture {
             Self::Bert => Self::bert_map_name(source_name),
             Self::Qwen2 => Self::qwen2_map_name(source_name),
             Self::Qwen3 => Self::qwen2_map_name(source_name), // Qwen3 uses same GGUF naming as Qwen2
+            Self::Qwen3_5 => Self::qwen2_map_name(source_name), // Qwen3.5 uses same tensor naming as Qwen2
             Self::Gpt2 => Self::gpt2_map_name(source_name),
             Self::Phi => Self::llama_map_name(source_name), // Phi uses HuggingFace model.layers naming
         }
@@ -21,7 +22,7 @@ impl Architecture {
     /// and confirmed realizar inference compatibility.
     #[must_use]
     pub fn is_inference_verified(&self) -> bool {
-        matches!(self, Self::Qwen2 | Self::Qwen3 | Self::Llama | Self::Phi)
+        matches!(self, Self::Qwen2 | Self::Qwen3 | Self::Qwen3_5 | Self::Llama | Self::Phi)
     }
 
     /// PMAT-224: Get a human-readable name for warning messages.
@@ -34,6 +35,7 @@ impl Architecture {
             Self::Bert => "BERT",
             Self::Qwen2 => "Qwen2",
             Self::Qwen3 => "Qwen3",
+            Self::Qwen3_5 => "Qwen3.5",
             Self::Gpt2 => "GPT-2",
             Self::Phi => "Phi",
         }
@@ -48,6 +50,7 @@ impl Architecture {
         match model_type.to_lowercase().as_str() {
             "qwen2" | "qwen" | "qwen2.5" => Some(Self::Qwen2),
             "qwen3" => Some(Self::Qwen3),
+            "qwen3_5" | "qwen3.5" => Some(Self::Qwen3_5),
             "llama" | "llama2" | "llama3" => Some(Self::Llama),
             "whisper" => Some(Self::Whisper),
             "bert" => Some(Self::Bert),

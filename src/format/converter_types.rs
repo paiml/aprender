@@ -111,6 +111,8 @@ pub enum Architecture {
     Qwen2,
     /// Alibaba Qwen3
     Qwen3,
+    /// Alibaba Qwen3.5 (hybrid linear/quadratic attention)
+    Qwen3_5,
     /// `OpenAI` GPT-2
     Gpt2,
     /// Microsoft Phi (Phi-3, Phi-4)

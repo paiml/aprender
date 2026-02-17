@@ -276,7 +276,7 @@ pub(crate) fn load_model_config_from_json(model_path: &Path) -> Option<GgufModel
     // PMAT-114: Infer rope_type from architecture
     // Qwen2/Qwen2.5/Qwen3 and Phi models use NEOX-style RoPE (type 2)
     let rope_type = match architecture.as_deref() {
-        Some("qwen2" | "qwen2.5" | "qwen" | "qwen3") => Some(2),
+        Some("qwen2" | "qwen2.5" | "qwen" | "qwen3" | "qwen3_5" | "qwen3.5") => Some(2),
         Some("phi" | "phi3" | "phi4") => Some(2),
         _ => Some(0),
     };
