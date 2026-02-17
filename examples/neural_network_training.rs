@@ -40,12 +40,7 @@ fn build_model() -> Sequential {
 }
 
 /// Run the training loop for the given number of epochs.
-fn train_model(
-    model: &mut Sequential,
-    x: &Tensor,
-    y: &Tensor,
-    epochs: usize,
-) -> Vec<f32> {
+fn train_model(model: &mut Sequential, x: &Tensor, y: &Tensor, epochs: usize) -> Vec<f32> {
     let loss_fn = MSELoss::new();
     let mut optimizer = Adam::new(model.parameters_mut(), 0.1);
     let mut scheduler = StepLR::new(100, 0.5);

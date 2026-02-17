@@ -261,8 +261,8 @@ fn parse_family_yaml(content: &str, path: &Path) -> FamilyData {
     }
 
     // GH-277: Parse transpose_weights and fuse rules from gguf_tensor_template
-    let gguf_transpose_weights = get_str(&gguf_section, "transpose_weights")
-        .is_some_and(|s| s == "true");
+    let gguf_transpose_weights =
+        get_str(&gguf_section, "transpose_weights").is_some_and(|s| s == "true");
     let gguf_fuse = parse_fuse_rules(&gguf_section);
 
     FamilyData {

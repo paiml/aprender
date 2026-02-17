@@ -381,10 +381,9 @@ fn list_tensors_v1(data: &[u8], options: TensorListOptions) -> Result<TensorList
 /// GGML dtype id to human-readable name (table lookup, O(1))
 fn ggml_dtype_name(dtype: u32) -> &'static str {
     const NAMES: [&str; 31] = [
-        "F32", "F16", "Q4_0", "Q4_1", "unknown", "unknown", "Q5_0", "Q5_1",
-        "Q8_0", "Q8_1", "Q2_K", "Q3_K", "Q4_K", "Q5_K", "Q6_K", "Q8_K",
-        "IQ2_XXS", "IQ2_XS", "IQ3_XXS", "IQ1_S", "IQ4_NL", "IQ3_S",
-        "IQ2_S", "IQ4_XS", "I8", "I16", "BF16", "I32", "I64", "F64", "IQ1_M",
+        "F32", "F16", "Q4_0", "Q4_1", "unknown", "unknown", "Q5_0", "Q5_1", "Q8_0", "Q8_1", "Q2_K",
+        "Q3_K", "Q4_K", "Q5_K", "Q6_K", "Q8_K", "IQ2_XXS", "IQ2_XS", "IQ3_XXS", "IQ1_S", "IQ4_NL",
+        "IQ3_S", "IQ2_S", "IQ4_XS", "I8", "I16", "BF16", "I32", "I64", "F64", "IQ1_M",
     ];
     NAMES.get(dtype as usize).copied().unwrap_or("unknown")
 }

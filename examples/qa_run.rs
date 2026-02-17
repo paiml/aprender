@@ -1422,9 +1422,15 @@ fn print_cell_result(result: &CellResult) {
 /// Format a cell result as a status string
 fn format_cell_status(result: &CellResult) -> String {
     if result.passed() {
-        format!("{}✓ {}/{}{}  ", GREEN, result.total_points, result.max_points, NC)
+        format!(
+            "{}✓ {}/{}{}  ",
+            GREEN, result.total_points, result.max_points, NC
+        )
     } else {
-        format!("{}✗ {}/{}{}  ", RED, result.total_points, result.max_points, NC)
+        format!(
+            "{}✗ {}/{}{}  ",
+            RED, result.total_points, result.max_points, NC
+        )
     }
 }
 
@@ -1432,7 +1438,10 @@ fn format_cell_status(result: &CellResult) -> String {
 fn print_matrix_row(label: &str, backend: Backend, results: &[CellResult]) {
     print!("{}║{} {:^10} │", MAGENTA, NC, label);
     for fmt in [Format::Gguf, Format::SafeTensors, Format::Apr] {
-        if let Some(r) = results.iter().find(|r| r.cell.backend == backend && r.cell.format == fmt) {
+        if let Some(r) = results
+            .iter()
+            .find(|r| r.cell.backend == backend && r.cell.format == fmt)
+        {
             print!(" {:^12} │", format_cell_status(r));
         } else {
             print!(" {:^12} │", "—");
@@ -1447,22 +1456,48 @@ fn compute_grade(total_points: u32, max_points: u32) -> &'static str {
         "A+"
     } else {
         let ratio = total_points as f64 / max_points as f64;
-        if ratio >= 0.9 { "A" } else if ratio >= 0.8 { "B" } else if ratio >= 0.7 { "C" } else { "F" }
+        if ratio >= 0.9 {
+            "A"
+        } else if ratio >= 0.8 {
+            "B"
+        } else if ratio >= 0.7 {
+            "C"
+        } else {
+            "F"
+        }
     }
 }
 
 fn print_matrix_summary(results: &[CellResult]) {
     println!();
-    println!("{}╔═════════════════════════════════════════════════════════════╗{}", MAGENTA, NC);
-    println!("{}║             QA MATRIX SUMMARY (PMAT-QA-MATRIX-001)          ║{}", MAGENTA, NC);
-    println!("{}╠═════════════════════════════════════════════════════════════╣{}", MAGENTA, NC);
-    println!("{}║{} {:^10} │ {:^12} │ {:^12} │ {:^12} {}║{}", MAGENTA, NC, "", "GGUF", "SafeTensors", "APR", MAGENTA, NC);
-    println!("{}╟───────────┼──────────────┼──────────────┼──────────────╢{}", MAGENTA, NC);
+    println!(
+        "{}╔═════════════════════════════════════════════════════════════╗{}",
+        MAGENTA, NC
+    );
+    println!(
+        "{}║             QA MATRIX SUMMARY (PMAT-QA-MATRIX-001)          ║{}",
+        MAGENTA, NC
+    );
+    println!(
+        "{}╠═════════════════════════════════════════════════════════════╣{}",
+        MAGENTA, NC
+    );
+    println!(
+        "{}║{} {:^10} │ {:^12} │ {:^12} │ {:^12} {}║{}",
+        MAGENTA, NC, "", "GGUF", "SafeTensors", "APR", MAGENTA, NC
+    );
+    println!(
+        "{}╟───────────┼──────────────┼──────────────┼──────────────╢{}",
+        MAGENTA, NC
+    );
 
     print_matrix_row("CPU", Backend::Cpu, results);
     print_matrix_row("GPU", Backend::Gpu, results);
 
-    println!("{}╠═════════════════════════════════════════════════════════════╣{}", MAGENTA, NC);
+    println!(
+        "{}╠═════════════════════════════════════════════════════════════╣{}",
+        MAGENTA, NC
+    );
 
     let total_points: u32 = results.iter().map(|r| r.total_points).sum();
     let max_points: u32 = results.iter().map(|r| r.max_points).sum();
@@ -1470,15 +1505,26 @@ fn print_matrix_summary(results: &[CellResult]) {
     let total = results.len();
     let grade = compute_grade(total_points, max_points);
 
-    println!("{}║{} Cells: {}/{} passed    Points: {}/{}    Grade: {:>14}{}║{}", MAGENTA, NC, passed, total, total_points, max_points, grade, MAGENTA, NC);
-    println!("{}╚═════════════════════════════════════════════════════════════╝{}", MAGENTA, NC);
+    println!(
+        "{}║{} Cells: {}/{} passed    Points: {}/{}    Grade: {:>14}{}║{}",
+        MAGENTA, NC, passed, total, total_points, max_points, grade, MAGENTA, NC
+    );
+    println!(
+        "{}╚═════════════════════════════════════════════════════════════╝{}",
+        MAGENTA, NC
+    );
 
     if passed == total {
         println!();
         println!("{}Hypothesis \"apr run produces correct output across all formats/backends\" SURVIVED.{}", GREEN, NC);
     } else {
         println!();
-        println!("{}Hypothesis FALSIFIED. {} cell(s) failed.{}", RED, total - passed, NC);
+        println!(
+            "{}Hypothesis FALSIFIED. {} cell(s) failed.{}",
+            RED,
+            total - passed,
+            NC
+        );
     }
 }
 
@@ -1949,9 +1995,15 @@ fn check_correctness_parity(apr_answer: &str, _ollama_answer: &str, ollama_corre
     println!();
     println!("{}Test 3: Correctness Parity{}", BOLD, NC);
     if apr_correct && ollama_correct {
-        println!("{}[PASS]{} P050: Both produce correct answer (contains '4')", GREEN, NC);
+        println!(
+            "{}[PASS]{} P050: Both produce correct answer (contains '4')",
+            GREEN, NC
+        );
     } else if apr_correct {
-        println!("{}[PASS]{} P050: APR correct (Ollama groundtruth was incorrect)", GREEN, NC);
+        println!(
+            "{}[PASS]{} P050: APR correct (Ollama groundtruth was incorrect)",
+            GREEN, NC
+        );
     } else {
         println!("{}[FAIL]{} P050: APR output doesn't contain '4'", RED, NC);
         return false;
@@ -1966,10 +2018,16 @@ fn check_performance_parity(apr_time: f64, ollama_time: f64) -> bool {
     println!();
     println!("{}Test 4: Performance Parity{}", BOLD, NC);
     if within_2x {
-        println!("{}[PASS]{} P051: APR within 2x of Ollama ({:.2}x speedup)", GREEN, NC, speedup);
+        println!(
+            "{}[PASS]{} P051: APR within 2x of Ollama ({:.2}x speedup)",
+            GREEN, NC, speedup
+        );
         true
     } else {
-        println!("{}[FAIL]{} P051: APR too slow (need 2x, got {:.2}x)", RED, NC, speedup);
+        println!(
+            "{}[FAIL]{} P051: APR too slow (need 2x, got {:.2}x)",
+            RED, NC, speedup
+        );
         false
     }
 }
@@ -1978,14 +2036,23 @@ fn check_performance_parity(apr_time: f64, ollama_time: f64) -> bool {
 fn print_ollama_summary(all_passed: bool, apr_time: f64, ollama_time: f64) {
     let speedup = ollama_time / apr_time;
     println!();
-    println!("{}═══════════════════════════════════════════════════════════════{}", CYAN, NC);
+    println!(
+        "{}═══════════════════════════════════════════════════════════════{}",
+        CYAN, NC
+    );
     println!(
         "{}Ollama Parity: {} | Speedup: {:.2}x | APR: {:.2}s | Ollama: {:.2}s{}",
         if all_passed { GREEN } else { RED },
         if all_passed { "PASS" } else { "FAIL" },
-        speedup, apr_time, ollama_time, NC
+        speedup,
+        apr_time,
+        ollama_time,
+        NC
     );
-    println!("{}═══════════════════════════════════════════════════════════════{}", CYAN, NC);
+    println!(
+        "{}═══════════════════════════════════════════════════════════════{}",
+        CYAN, NC
+    );
 }
 
 /// Run Ollama parity comparison (PMAT-SHOWCASE-METHODOLOGY-001 Section 5)
@@ -1995,18 +2062,33 @@ fn print_ollama_summary(all_passed: bool, apr_time: f64, ollama_time: f64) {
 /// 2. Performance - Within 2x of Ollama tok/s
 fn run_ollama_comparison(config: &Config) -> bool {
     println!();
-    println!("{}═══════════════════════════════════════════════════════════════{}", CYAN, NC);
-    println!("{}         OLLAMA PARITY TEST (PMAT-SHOWCASE-METHODOLOGY-001)      {}", CYAN, NC);
-    println!("{}═══════════════════════════════════════════════════════════════{}", CYAN, NC);
+    println!(
+        "{}═══════════════════════════════════════════════════════════════{}",
+        CYAN, NC
+    );
+    println!(
+        "{}         OLLAMA PARITY TEST (PMAT-SHOWCASE-METHODOLOGY-001)      {}",
+        CYAN, NC
+    );
+    println!(
+        "{}═══════════════════════════════════════════════════════════════{}",
+        CYAN, NC
+    );
     println!();
 
     if !is_ollama_installed() {
-        println!("{}[SKIP]{} Ollama not installed - skipping parity test", YELLOW, NC);
+        println!(
+            "{}[SKIP]{} Ollama not installed - skipping parity test",
+            YELLOW, NC
+        );
         return true;
     }
 
     if !is_ollama_model_available() {
-        println!("{}[SKIP]{} Ollama model {} not available", YELLOW, NC, OLLAMA_MODEL);
+        println!(
+            "{}[SKIP]{} Ollama model {} not available",
+            YELLOW, NC, OLLAMA_MODEL
+        );
         println!("       Install with: ollama pull {}", OLLAMA_MODEL);
         return true;
     }
@@ -2015,12 +2097,14 @@ fn run_ollama_comparison(config: &Config) -> bool {
 
     // Test 1: Ollama groundtruth
     println!("{}Test 1: Ollama Groundtruth{}", BOLD, NC);
-    let (ollama_answer, ollama_time) = match timed_command_output(
-        Command::new("ollama").args(["run", OLLAMA_MODEL, prompt]),
-    ) {
-        Ok(r) => r,
-        Err(e) => { println!("{}[FAIL]{} {}", RED, NC, e); return false; }
-    };
+    let (ollama_answer, ollama_time) =
+        match timed_command_output(Command::new("ollama").args(["run", OLLAMA_MODEL, prompt])) {
+            Ok(r) => r,
+            Err(e) => {
+                println!("{}[FAIL]{} {}", RED, NC, e);
+                return false;
+            }
+        };
     println!("  Ollama output: {:?}", ollama_answer);
     println!("  Ollama time: {:.2}s", ollama_time);
 
@@ -2028,18 +2112,30 @@ fn run_ollama_comparison(config: &Config) -> bool {
     if ollama_correct {
         println!("{}[PASS]{} Ollama groundtruth is correct", GREEN, NC);
     } else {
-        println!("{}[WARN]{} Ollama groundtruth doesn't contain '4': {}", YELLOW, NC, ollama_answer);
+        println!(
+            "{}[WARN]{} Ollama groundtruth doesn't contain '4': {}",
+            YELLOW, NC, ollama_answer
+        );
     }
 
     // Test 2: APR output
     println!();
     println!("{}Test 2: APR Output{}", BOLD, NC);
-    let (apr_answer, apr_time) = match timed_command_output(
-        Command::new(&config.apr_binary).args(["run", &config.gguf_model, "--prompt", prompt, "--max-tokens", "10"]),
-    ) {
-        Ok(r) => r,
-        Err(e) => { println!("{}[FAIL]{} {}", RED, NC, e); return false; }
-    };
+    let (apr_answer, apr_time) =
+        match timed_command_output(Command::new(&config.apr_binary).args([
+            "run",
+            &config.gguf_model,
+            "--prompt",
+            prompt,
+            "--max-tokens",
+            "10",
+        ])) {
+            Ok(r) => r,
+            Err(e) => {
+                println!("{}[FAIL]{} {}", RED, NC, e);
+                return false;
+            }
+        };
     println!("  APR output: {:?}", apr_answer);
     println!("  APR time: {:.2}s", apr_time);
 

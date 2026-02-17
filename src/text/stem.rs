@@ -234,7 +234,10 @@ impl PorterStemmer {
         }
 
         // Step 1c: -y → -i
-        if word.ends_with('y') && word.len() > 1 && word[..word.len() - 1].chars().any(Self::is_vowel) {
+        if word.ends_with('y')
+            && word.len() > 1
+            && word[..word.len() - 1].chars().any(Self::is_vowel)
+        {
             word.truncate(word.len() - 1);
             word.push('i');
         }
@@ -262,10 +265,24 @@ impl PorterStemmer {
         }
         // Suffix → trim length (checked in order of specificity)
         const SUFFIXES: &[(&str, usize)] = &[
-            ("ement", 5), ("ance", 4), ("ence", 4), ("able", 4), ("ible", 4),
-            ("ment", 4), ("ant", 3), ("ent", 3), ("ism", 3), ("ate", 3),
-            ("iti", 3), ("ous", 3), ("ive", 3), ("ize", 3), ("al", 2),
-            ("er", 2), ("ic", 2), ("ou", 2),
+            ("ement", 5),
+            ("ance", 4),
+            ("ence", 4),
+            ("able", 4),
+            ("ible", 4),
+            ("ment", 4),
+            ("ant", 3),
+            ("ent", 3),
+            ("ism", 3),
+            ("ate", 3),
+            ("iti", 3),
+            ("ous", 3),
+            ("ive", 3),
+            ("ize", 3),
+            ("al", 2),
+            ("er", 2),
+            ("ic", 2),
+            ("ou", 2),
         ];
         for &(suffix, trim) in SUFFIXES {
             if word.ends_with(suffix) {

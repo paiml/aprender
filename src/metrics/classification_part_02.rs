@@ -456,7 +456,7 @@ mod tests {
 
     #[test]
     fn test_per_class_consistency_with_macro() {
-        use super::super::{precision_per_class, recall_per_class, f1_per_class};
+        use super::super::{f1_per_class, precision_per_class, recall_per_class};
         let y_true = vec![0, 0, 1, 1, 2, 2];
         let y_pred = vec![0, 1, 1, 2, 2, 0];
         // Macro average should equal mean of per-class

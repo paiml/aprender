@@ -54,7 +54,11 @@ impl TsplibParseState {
             dimension: self.dimension,
             comment: self.comment,
             edge_weight_type: self.edge_weight_type,
-            coords: if self.coords.is_empty() { None } else { Some(self.coords) },
+            coords: if self.coords.is_empty() {
+                None
+            } else {
+                Some(self.coords)
+            },
             distances,
             best_known: self.best_known,
         })
@@ -73,11 +77,7 @@ impl TsplibParser {
     }
 
     /// Parse a single node coordinate line ("id x y")
-    fn parse_coord_line(
-        line: &str,
-        path: &Path,
-        line_num: usize,
-    ) -> TspResult<Option<(f64, f64)>> {
+    fn parse_coord_line(line: &str, path: &Path, line_num: usize) -> TspResult<Option<(f64, f64)>> {
         let parts: Vec<&str> = line.split_whitespace().collect();
         if parts.len() >= 3 {
             let x: f64 = parts[1].parse().map_err(|_| TspError::ParseError {
@@ -164,9 +164,21 @@ impl TsplibParser {
 
             // Section headers
             match line {
-                "NODE_COORD_SECTION" => { in_node_coord = true; in_edge_weight = false; continue; }
-                "EDGE_WEIGHT_SECTION" => { in_edge_weight = true; in_node_coord = false; continue; }
-                "DISPLAY_DATA_SECTION" => { in_node_coord = false; in_edge_weight = false; continue; }
+                "NODE_COORD_SECTION" => {
+                    in_node_coord = true;
+                    in_edge_weight = false;
+                    continue;
+                }
+                "EDGE_WEIGHT_SECTION" => {
+                    in_edge_weight = true;
+                    in_node_coord = false;
+                    continue;
+                }
+                "DISPLAY_DATA_SECTION" => {
+                    in_node_coord = false;
+                    in_edge_weight = false;
+                    continue;
+                }
                 _ => {}
             }
 

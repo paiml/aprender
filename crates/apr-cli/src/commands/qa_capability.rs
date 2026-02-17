@@ -1,4 +1,3 @@
-
 //! GH-280: Capability Match Gate for `apr qa`.
 //!
 //! Validates that the model's required operations are supported by the GPU
@@ -115,8 +114,7 @@ pub fn run_capability_gate(path: &Path, config: &QaConfig) -> Result<GateResult>
                 duration,
             )),
             Err(missing) => {
-                let missing_names: Vec<String> =
-                    missing.iter().map(ToString::to_string).collect();
+                let missing_names: Vec<String> = missing.iter().map(ToString::to_string).collect();
                 Ok(GateResult::failed(
                     "capability_match",
                     &format!(

@@ -55,11 +55,7 @@ fn create_test_data() -> Matrix<f32> {
 }
 
 /// Part 1: Compare Random Forest vs Single Decision Tree.
-fn compare_rf_vs_tree(
-    x_train: &Matrix<f32>,
-    y_train: &Vector<f32>,
-    x_test: &Matrix<f32>,
-) {
+fn compare_rf_vs_tree(x_train: &Matrix<f32>, y_train: &Vector<f32>, x_test: &Matrix<f32>) {
     println!("=== Part 1: Random Forest vs Single Decision Tree ===\n");
 
     // Train Random Forest

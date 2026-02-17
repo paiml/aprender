@@ -382,7 +382,9 @@ pub fn precision_per_class(y_pred: &[usize], y_true: &[usize]) -> Vec<f32> {
         .map_or(0, |&m| m + 1);
 
     let (tp, fp, _, _) = compute_tp_fp_fn(y_pred, y_true, n_classes);
-    (0..n_classes).map(|i| class_precision(tp[i], fp[i])).collect()
+    (0..n_classes)
+        .map(|i| class_precision(tp[i], fp[i]))
+        .collect()
 }
 
 /// Compute per-class recall scores.
@@ -431,7 +433,9 @@ pub fn recall_per_class(y_pred: &[usize], y_true: &[usize]) -> Vec<f32> {
         .map_or(0, |&m| m + 1);
 
     let (tp, _, fn_counts, _) = compute_tp_fp_fn(y_pred, y_true, n_classes);
-    (0..n_classes).map(|i| class_recall(tp[i], fn_counts[i])).collect()
+    (0..n_classes)
+        .map(|i| class_recall(tp[i], fn_counts[i]))
+        .collect()
 }
 
 /// Compute per-class F1 scores.
@@ -479,7 +483,9 @@ pub fn f1_per_class(y_pred: &[usize], y_true: &[usize]) -> Vec<f32> {
         .map_or(0, |&m| m + 1);
 
     let (tp, fp, fn_counts, _) = compute_tp_fp_fn(y_pred, y_true, n_classes);
-    (0..n_classes).map(|i| class_f1(tp[i], fp[i], fn_counts[i])).collect()
+    (0..n_classes)
+        .map(|i| class_f1(tp[i], fp[i], fn_counts[i]))
+        .collect()
 }
 
 /// Compute confusion matrix.

@@ -15,8 +15,8 @@ use crate::error::{AprenderError, Result};
 use crate::format::model_family::{
     Activation, AttentionType, CertificationConfig, ChatTemplateConfig, DynModelFamily,
     FamilyRegistry, GgufFusionRule, GgufTensorTemplate, MlpType, ModelConstraints,
-    ModelFamilyConfig,
-    ModelSizeConfig, NormType, PositionalEncoding, ShapeTemplate, TensorTemplate,
+    ModelFamilyConfig, ModelSizeConfig, NormType, PositionalEncoding, ShapeTemplate,
+    TensorTemplate,
 };
 
 // ============================================================================

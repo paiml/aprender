@@ -134,13 +134,28 @@ pub(crate) fn run(
         output::pipeline_stage("Pruning", output::StageStatus::Running);
     }
 
-    let prune_result = execute_pruning(file, prune_method, target_ratio, sparsity, remove_layers, out)?;
+    let prune_result = execute_pruning(
+        file,
+        prune_method,
+        target_ratio,
+        sparsity,
+        remove_layers,
+        out,
+    )?;
 
     if !json_output {
         output::pipeline_stage("Pruning", output::StageStatus::Done);
     }
 
-    print_prune_output(file, out, prune_method, target_ratio, sparsity, &prune_result, json_output);
+    print_prune_output(
+        file,
+        out,
+        prune_method,
+        target_ratio,
+        sparsity,
+        &prune_result,
+        json_output,
+    );
 
     Ok(())
 }
@@ -187,7 +202,13 @@ fn execute_pruning(
         .map(|(data, _shape): &(Vec<f32>, Vec<usize>)| data.len())
         .sum();
 
-    let pruned_tensors = apply_pruning(&tensors, prune_method, target_ratio, sparsity, remove_layers)?;
+    let pruned_tensors = apply_pruning(
+        &tensors,
+        prune_method,
+        target_ratio,
+        sparsity,
+        remove_layers,
+    )?;
 
     let pruned_count = pruned_tensors.len();
     let pruned_params: usize = pruned_tensors
@@ -199,7 +220,14 @@ fn execute_pruning(
         .map(|(data, _shape): &(Vec<f32>, Vec<usize>)| data.iter().filter(|v| **v == 0.0).count())
         .sum();
 
-    let bytes = write_pruned_model(file, prune_method, target_ratio, sparsity, &pruned_tensors, out)?;
+    let bytes = write_pruned_model(
+        file,
+        prune_method,
+        target_ratio,
+        sparsity,
+        &pruned_tensors,
+        out,
+    )?;
     let output_size = bytes.len() as u64;
 
     Ok(PruneResult {
@@ -253,7 +281,10 @@ fn write_pruned_model(
     );
     writer.set_metadata("pruning_ratio", serde_json::json!(target_ratio));
     writer.set_metadata("pruning_sparsity", serde_json::json!(sparsity));
-    writer.set_metadata("source_file", serde_json::json!(source_file.display().to_string()));
+    writer.set_metadata(
+        "source_file",
+        serde_json::json!(source_file.display().to_string()),
+    );
 
     for (name, (data, shape)) in pruned_tensors {
         writer.add_tensor_f32(name, shape.clone(), data);
@@ -313,8 +344,14 @@ fn print_prune_output(
                     "Output size",
                     humansize::format_size(result.output_size, humansize::BINARY)
                 ),
-                ("Tensors", format!("{} → {}", result.original_count, result.pruned_count)),
-                ("Parameters", format!("{} → {}", result.original_params, result.pruned_params)),
+                (
+                    "Tensors",
+                    format!("{} → {}", result.original_count, result.pruned_count)
+                ),
+                (
+                    "Parameters",
+                    format!("{} → {}", result.original_params, result.pruned_params)
+                ),
                 (
                     "Zeros",
                     format!(

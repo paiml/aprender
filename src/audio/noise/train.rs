@@ -136,17 +136,38 @@ impl NoiseTrainer {
             let d_h2 = backprop_delta(&d_z3, w3, n_freqs, hidden_dim);
             let d_z2 = apply_relu_derivative(&d_h2, &h2);
 
-            accumulate_layer_grads(&d_z2, &h1, &mut grad_w2, &mut grad_b2, hidden_dim, hidden_dim);
+            accumulate_layer_grads(
+                &d_z2,
+                &h1,
+                &mut grad_w2,
+                &mut grad_b2,
+                hidden_dim,
+                hidden_dim,
+            );
 
             let d_h1 = backprop_delta(&d_z2, w2, hidden_dim, hidden_dim);
             let d_z1 = apply_relu_derivative(&d_h1, &h1);
 
-            accumulate_layer_grads(&d_z1, &input, &mut grad_w1, &mut grad_b1, hidden_dim, config_dim);
+            accumulate_layer_grads(
+                &d_z1,
+                &input,
+                &mut grad_w1,
+                &mut grad_b1,
+                hidden_dim,
+                config_dim,
+            );
         }
 
         // Average and apply gradients
         let batch_size = configs.len() as f32;
-        for grads in [&mut grad_w1, &mut grad_b1, &mut grad_w2, &mut grad_b2, &mut grad_w3, &mut grad_b3] {
+        for grads in [
+            &mut grad_w1,
+            &mut grad_b1,
+            &mut grad_w2,
+            &mut grad_b2,
+            &mut grad_w3,
+            &mut grad_b3,
+        ] {
             for g in grads.iter_mut() {
                 *g /= batch_size;
             }

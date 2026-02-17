@@ -3616,7 +3616,11 @@ fn extract_variant_name(trimmed: &str) -> Option<String> {
         .chars()
         .take_while(|c| c.is_alphanumeric() || *c == '_')
         .collect();
-    if name.is_empty() { None } else { Some(name) }
+    if name.is_empty() {
+        None
+    } else {
+        Some(name)
+    }
 }
 
 fn extract_enum_variant_names(source: &str, enum_header: &str) -> Vec<String> {
