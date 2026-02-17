@@ -108,8 +108,6 @@ impl NoiseTrainer {
         }
 
         let mut total_loss = 0.0;
-
-        // Accumulate gradients
         let n_freqs = self.model.n_freqs();
         let hidden_dim = self.model.hidden_dim();
         let config_dim = self.model.config_dim();
@@ -124,141 +122,36 @@ impl NoiseTrainer {
 
         for (config, target) in configs.iter().zip(targets.iter()) {
             let input = self.encode_config(config);
-
-            // Forward pass with intermediate activations
             let (h1, h2, output) = self.forward_with_cache(&input);
 
-            // Compute loss
-            let loss = spectral_loss(&output, target);
-            total_loss += loss;
+            total_loss += spectral_loss(&output, target);
 
-            // Backward pass
-            // dL/d_output (gradient of spectral_loss)
-            let mut d_out = Vec::with_capacity(n_freqs);
-            for i in 0..n_freqs {
-                let weight = 1.0 / (1.0 + i as f32 * 0.01);
-                let p_log = (output[i] + 1e-10).ln();
-                let t_log = (target[i] + 1e-10).ln();
-                // d/dp of weight * (ln(p) - ln(t))^2 = 2 * weight * (ln(p) - ln(t)) / p
-                let grad = 2.0 * weight * (p_log - t_log) / (output[i] + 1e-10) / n_freqs as f32;
-                d_out.push(grad);
-            }
+            let d_out = compute_output_gradient(&output, target, n_freqs);
+            let d_z3 = apply_softplus_derivative(&output, &d_out);
 
-            // Through softplus: d_softplus/dx = sigmoid(x)
-            // For output[i] = softplus(z[i]), we need z[i]
-            // Since softplus(z) = ln(1 + exp(z)), we have z = ln(exp(output) - 1)
-            // But numerically: d_softplus = 1 - exp(-output) for output > 0
-            let d_z3: Vec<f32> = output
-                .iter()
-                .zip(d_out.iter())
-                .map(|(&o, &d)| {
-                    if o > 20.0 {
-                        d // Derivative is 1 for large values
-                    } else {
-                        d * (1.0 - (-o).exp().min(1.0))
-                    }
-                })
-                .collect();
-
-            // Gradient for W3 and b3
             let (_w1, _b1, w2, _b2, w3, _b3) = self.model.weights();
 
-            for i in 0..n_freqs {
-                grad_b3[i] += d_z3[i];
-                for j in 0..hidden_dim {
-                    grad_w3[j * n_freqs + i] += d_z3[i] * h2[j];
-                }
-            }
+            accumulate_layer_grads(&d_z3, &h2, &mut grad_w3, &mut grad_b3, n_freqs, hidden_dim);
 
-            // Backprop through layer 2
-            let mut d_h2 = vec![0.0; hidden_dim];
-            for j in 0..hidden_dim {
-                for i in 0..n_freqs {
-                    d_h2[j] += d_z3[i] * w3[j * n_freqs + i];
-                }
-            }
+            let d_h2 = backprop_delta(&d_z3, w3, n_freqs, hidden_dim);
+            let d_z2 = apply_relu_derivative(&d_h2, &h2);
 
-            // Through ReLU
-            let d_z2: Vec<f32> = d_h2
-                .iter()
-                .zip(h2.iter())
-                .map(|(&d, &h)| if h > 0.0 { d } else { 0.0 })
-                .collect();
+            accumulate_layer_grads(&d_z2, &h1, &mut grad_w2, &mut grad_b2, hidden_dim, hidden_dim);
 
-            // Gradient for W2 and b2
-            for i in 0..hidden_dim {
-                grad_b2[i] += d_z2[i];
-                for j in 0..hidden_dim {
-                    grad_w2[j * hidden_dim + i] += d_z2[i] * h1[j];
-                }
-            }
+            let d_h1 = backprop_delta(&d_z2, w2, hidden_dim, hidden_dim);
+            let d_z1 = apply_relu_derivative(&d_h1, &h1);
 
-            // Backprop through layer 1
-            let mut d_h1 = vec![0.0; hidden_dim];
-            for j in 0..hidden_dim {
-                for i in 0..hidden_dim {
-                    d_h1[j] += d_z2[i] * w2[j * hidden_dim + i];
-                }
-            }
-
-            // Through ReLU
-            let d_z1: Vec<f32> = d_h1
-                .iter()
-                .zip(h1.iter())
-                .map(|(&d, &h)| if h > 0.0 { d } else { 0.0 })
-                .collect();
-
-            // Gradient for W1 and b1
-            for i in 0..hidden_dim {
-                grad_b1[i] += d_z1[i];
-                for j in 0..config_dim {
-                    grad_w1[j * hidden_dim + i] += d_z1[i] * input[j];
-                }
-            }
+            accumulate_layer_grads(&d_z1, &input, &mut grad_w1, &mut grad_b1, hidden_dim, config_dim);
         }
 
-        // Average gradients
+        // Average and apply gradients
         let batch_size = configs.len() as f32;
-        for g in &mut grad_w3 {
-            *g /= batch_size;
+        for grads in [&mut grad_w1, &mut grad_b1, &mut grad_w2, &mut grad_b2, &mut grad_w3, &mut grad_b3] {
+            for g in grads.iter_mut() {
+                *g /= batch_size;
+            }
         }
-        for g in &mut grad_b3 {
-            *g /= batch_size;
-        }
-        for g in &mut grad_w2 {
-            *g /= batch_size;
-        }
-        for g in &mut grad_b2 {
-            *g /= batch_size;
-        }
-        for g in &mut grad_w1 {
-            *g /= batch_size;
-        }
-        for g in &mut grad_b1 {
-            *g /= batch_size;
-        }
-
-        // Apply gradients
-        let (w1_mut, b1_mut, w2_mut, b2_mut, w3_mut, b3_mut) = self.model.weights_mut();
-
-        for (w, g) in w1_mut.iter_mut().zip(grad_w1.iter()) {
-            *w -= self.learning_rate * g;
-        }
-        for (b, g) in b1_mut.iter_mut().zip(grad_b1.iter()) {
-            *b -= self.learning_rate * g;
-        }
-        for (w, g) in w2_mut.iter_mut().zip(grad_w2.iter()) {
-            *w -= self.learning_rate * g;
-        }
-        for (b, g) in b2_mut.iter_mut().zip(grad_b2.iter()) {
-            *b -= self.learning_rate * g;
-        }
-        for (w, g) in w3_mut.iter_mut().zip(grad_w3.iter()) {
-            *w -= self.learning_rate * g;
-        }
-        for (b, g) in b3_mut.iter_mut().zip(grad_b3.iter()) {
-            *b -= self.learning_rate * g;
-        }
+        self.apply_gradients(&grad_w1, &grad_b1, &grad_w2, &grad_b2, &grad_w3, &grad_b3);
 
         total_loss / batch_size
     }
@@ -363,6 +256,69 @@ impl NoiseTrainer {
     pub fn model(&self) -> &SpectralMLP {
         &self.model
     }
+}
+
+/// Compute gradient of spectral loss w.r.t. output
+fn compute_output_gradient(output: &[f32], target: &[f32], n_freqs: usize) -> Vec<f32> {
+    (0..n_freqs)
+        .map(|i| {
+            let weight = 1.0 / (1.0 + i as f32 * 0.01);
+            let p_log = (output[i] + 1e-10).ln();
+            let t_log = (target[i] + 1e-10).ln();
+            2.0 * weight * (p_log - t_log) / (output[i] + 1e-10) / n_freqs as f32
+        })
+        .collect()
+}
+
+/// Apply softplus derivative: d_softplus/dx = sigmoid(x)
+fn apply_softplus_derivative(output: &[f32], d_out: &[f32]) -> Vec<f32> {
+    output
+        .iter()
+        .zip(d_out.iter())
+        .map(|(&o, &d)| {
+            if o > 20.0 {
+                d
+            } else {
+                d * (1.0 - (-o).exp().min(1.0))
+            }
+        })
+        .collect()
+}
+
+/// Apply ReLU derivative: pass gradient where activation > 0
+fn apply_relu_derivative(d_h: &[f32], h: &[f32]) -> Vec<f32> {
+    d_h.iter()
+        .zip(h.iter())
+        .map(|(&d, &h_val)| if h_val > 0.0 { d } else { 0.0 })
+        .collect()
+}
+
+/// Accumulate weight and bias gradients for a single layer
+fn accumulate_layer_grads(
+    d_z: &[f32],
+    activation: &[f32],
+    grad_w: &mut [f32],
+    grad_b: &mut [f32],
+    out_dim: usize,
+    in_dim: usize,
+) {
+    for i in 0..out_dim {
+        grad_b[i] += d_z[i];
+        for j in 0..in_dim {
+            grad_w[j * out_dim + i] += d_z[i] * activation[j];
+        }
+    }
+}
+
+/// Backpropagate delta through a weight matrix
+fn backprop_delta(d_z: &[f32], weights: &[f32], out_dim: usize, in_dim: usize) -> Vec<f32> {
+    let mut d_h = vec![0.0; in_dim];
+    for j in 0..in_dim {
+        for i in 0..out_dim {
+            d_h[j] += d_z[i] * weights[j * out_dim + i];
+        }
+    }
+    d_h
 }
 
 /// Spectral loss function with perceptual weighting

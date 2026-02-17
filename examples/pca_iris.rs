@@ -12,15 +12,8 @@ use aprender::preprocessing::{StandardScaler, PCA};
 use aprender::primitives::Matrix;
 use aprender::traits::Transformer;
 
-#[allow(clippy::too_many_lines)]
-fn main() {
-    println!("═══════════════════════════════════════════════════════");
-    println!("  PCA Dimensionality Reduction - Iris Dataset");
-    println!("═══════════════════════════════════════════════════════\n");
-
-    // Simulated iris-like data
-    // Features: [sepal_length, sepal_width, petal_length, petal_width]
-    // 30 samples from three species
+/// Create the simulated iris-like dataset with species labels.
+fn create_iris_data() -> (Matrix<f32>, Vec<&'static str>) {
     let data = Matrix::from_vec(
         30,
         4,
@@ -72,31 +65,26 @@ fn main() {
         "Virginica",
     ];
 
-    let (n_samples, n_features) = data.shape();
-    println!("📊 Dataset Information:");
-    println!("   Samples: {n_samples}");
-    println!("   Features: {n_features} (sepal length, sepal width, petal length, petal width)");
-    println!("   Species: Setosa, Versicolor, Virginica (10 each)\n");
+    (data, species)
+}
 
-    // ========================================================================
-    // Step 1: Standardize the data
-    // ========================================================================
+/// Step 1 & 2: Standardize features and apply PCA.
+fn standardize_and_reduce(data: &Matrix<f32>) -> (StandardScaler, PCA, Matrix<f32>, Matrix<f32>) {
+    let (_, n_features) = data.shape();
+
     println!("═══════════════════════════════════════════════════════");
     println!("  Step 1: Standardizing Features");
     println!("═══════════════════════════════════════════════════════\n");
 
     let mut scaler = StandardScaler::new();
     let scaled_data = scaler
-        .fit_transform(&data)
+        .fit_transform(data)
         .expect("Example data should be valid");
 
     println!("Why standardize?");
     println!("   PCA is sensitive to feature scales. Standardizing ensures");
     println!("   all features contribute equally to principal components.\n");
 
-    // ========================================================================
-    // Step 2: Apply PCA to reduce from 4D to 2D
-    // ========================================================================
     println!("═══════════════════════════════════════════════════════");
     println!("  Step 2: Applying PCA (4D → 2D)");
     println!("═══════════════════════════════════════════════════════\n");
@@ -110,9 +98,11 @@ fn main() {
     println!("   Original: {n_features} features");
     println!("   Reduced:  {} principal components\n", 2);
 
-    // ========================================================================
-    // Step 3: Analyze explained variance
-    // ========================================================================
+    (scaler, pca, scaled_data, transformed)
+}
+
+/// Step 3: Analyze explained variance.
+fn analyze_explained_variance(pca: &PCA) -> f32 {
     println!("═══════════════════════════════════════════════════════");
     println!("  Step 3: Explained Variance Analysis");
     println!("═══════════════════════════════════════════════════════\n");
@@ -152,9 +142,11 @@ fn main() {
     );
     println!("   This is excellent for 2D visualization!\n");
 
-    // ========================================================================
-    // Step 4: Display transformed data
-    // ========================================================================
+    total_variance
+}
+
+/// Step 4: Display transformed data samples.
+fn display_transformed_data(transformed: &Matrix<f32>, species: &[&str]) {
     println!("═══════════════════════════════════════════════════════");
     println!("  Step 4: Transformed Data (First 5 samples per species)");
     println!("═══════════════════════════════════════════════════════\n");
@@ -175,16 +167,23 @@ fn main() {
         );
     }
     println!();
+}
 
-    // ========================================================================
-    // Step 5: Reconstruction and error analysis
-    // ========================================================================
+/// Step 5: Reconstruct from reduced dimensions and measure error.
+fn reconstruction_analysis(
+    data: &Matrix<f32>,
+    pca: &PCA,
+    scaler: &StandardScaler,
+    transformed: &Matrix<f32>,
+) -> f32 {
+    let (n_samples, n_features) = data.shape();
+
     println!("═══════════════════════════════════════════════════════");
     println!("  Step 5: Reconstruction from 2D → 4D");
     println!("═══════════════════════════════════════════════════════\n");
 
     let reconstructed_scaled = pca
-        .inverse_transform(&transformed)
+        .inverse_transform(transformed)
         .expect("Example data should be valid");
     let reconstructed = scaler
         .inverse_transform(&reconstructed_scaled)
@@ -235,9 +234,11 @@ fn main() {
     println!("   RMSE of {rmse:.4} means typical reconstruction error is small");
     println!("   Dimensionality reduction preserved most information!\n");
 
-    // ========================================================================
-    // Step 6: Principal Components Analysis
-    // ========================================================================
+    rmse
+}
+
+/// Step 6: Show principal component loadings.
+fn show_component_loadings(pca: &PCA) {
     println!("═══════════════════════════════════════════════════════");
     println!("  Step 6: Principal Components (Feature Loadings)");
     println!("═══════════════════════════════════════════════════════\n");
@@ -265,10 +266,10 @@ fn main() {
     println!("   Larger absolute values = more important for that component");
     println!("   PC1 likely captures overall flower size");
     println!("   PC2 likely captures petal vs sepal differences\n");
+}
 
-    // ========================================================================
-    // Summary
-    // ========================================================================
+/// Print the final summary.
+fn print_summary(total_variance: f32, rmse: f32) {
     println!("═══════════════════════════════════════════════════════");
     println!("  Summary");
     println!("═══════════════════════════════════════════════════════\n");
@@ -302,4 +303,25 @@ fn main() {
     println!("═══════════════════════════════════════════════════════");
     println!("  Example Complete!");
     println!("═══════════════════════════════════════════════════════");
+}
+
+fn main() {
+    println!("═══════════════════════════════════════════════════════");
+    println!("  PCA Dimensionality Reduction - Iris Dataset");
+    println!("═══════════════════════════════════════════════════════\n");
+
+    let (data, species) = create_iris_data();
+
+    let (n_samples, n_features) = data.shape();
+    println!("📊 Dataset Information:");
+    println!("   Samples: {n_samples}");
+    println!("   Features: {n_features} (sepal length, sepal width, petal length, petal width)");
+    println!("   Species: Setosa, Versicolor, Virginica (10 each)\n");
+
+    let (scaler, pca, _scaled_data, transformed) = standardize_and_reduce(&data);
+    let total_variance = analyze_explained_variance(&pca);
+    display_transformed_data(&transformed, &species);
+    let rmse = reconstruction_analysis(&data, &pca, &scaler, &transformed);
+    show_component_loadings(&pca);
+    print_summary(total_variance, rmse);
 }

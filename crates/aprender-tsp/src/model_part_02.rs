@@ -1,4 +1,76 @@
 
+/// Helper for sequential binary payload reading with error context
+struct PayloadReader<'a> {
+    data: &'a [u8],
+    path: &'a Path,
+    offset: usize,
+}
+
+impl<'a> PayloadReader<'a> {
+    fn new(data: &'a [u8], path: &'a Path, offset: usize) -> Self {
+        Self { data, path, offset }
+    }
+
+    fn read_u32(&mut self, field: &str) -> TspResult<u32> {
+        let bytes: [u8; 4] = self.data[self.offset..self.offset + 4]
+            .try_into()
+            .map_err(|_| TspError::ParseError {
+                file: self.path.to_path_buf(),
+                line: None,
+                cause: format!("Failed to read {field}"),
+            })?;
+        self.offset += 4;
+        Ok(u32::from_le_bytes(bytes))
+    }
+
+    fn read_f64(&mut self, field: &str) -> TspResult<f64> {
+        let bytes: [u8; 8] = self.data[self.offset..self.offset + 8]
+            .try_into()
+            .map_err(|_| TspError::ParseError {
+                file: self.path.to_path_buf(),
+                line: None,
+                cause: format!("Failed to read {field}"),
+            })?;
+        self.offset += 8;
+        Ok(f64::from_le_bytes(bytes))
+    }
+
+    fn read_metadata(&mut self) -> TspResult<TspModelMetadata> {
+        Ok(TspModelMetadata {
+            trained_instances: self.read_u32("trained_instances")?,
+            avg_instance_size: self.read_u32("avg_instance_size")?,
+            best_known_gap: self.read_f64("best_known_gap")?,
+            training_time_secs: self.read_f64("training_time_secs")?,
+        })
+    }
+
+    fn read_params(&mut self, algorithm: TspAlgorithm) -> TspResult<TspParams> {
+        match algorithm {
+            TspAlgorithm::Aco => Ok(TspParams::Aco {
+                alpha: self.read_f64("alpha")?,
+                beta: self.read_f64("beta")?,
+                rho: self.read_f64("rho")?,
+                q0: self.read_f64("q0")?,
+                num_ants: self.read_u32("num_ants")? as usize,
+            }),
+            TspAlgorithm::Tabu => Ok(TspParams::Tabu {
+                tenure: self.read_u32("tenure")? as usize,
+                max_neighbors: self.read_u32("max_neighbors")? as usize,
+            }),
+            TspAlgorithm::Ga => Ok(TspParams::Ga {
+                population_size: self.read_u32("population_size")? as usize,
+                crossover_rate: self.read_f64("crossover_rate")?,
+                mutation_rate: self.read_f64("mutation_rate")?,
+            }),
+            TspAlgorithm::Hybrid => Ok(TspParams::Hybrid {
+                ga_fraction: self.read_f64("ga_fraction")?,
+                tabu_fraction: self.read_f64("tabu_fraction")?,
+                aco_fraction: self.read_f64("aco_fraction")?,
+            }),
+        }
+    }
+}
+
 impl TspModel {
     /// Create a new TSP model with default ACO parameters
     pub fn new(algorithm: TspAlgorithm) -> Self {
@@ -192,7 +264,6 @@ impl TspModel {
     }
 
     /// Deserialize payload
-    #[allow(clippy::too_many_lines)]
     fn deserialize_payload(payload: &[u8], path: &Path) -> TspResult<Self> {
         if payload.is_empty() {
             return Err(TspError::ParseError {
@@ -216,8 +287,7 @@ impl TspModel {
             }
         };
 
-        // Minimum payload size check
-        let min_size = 1 + 4 + 4 + 8 + 8; // algo + metadata
+        let min_size = 1 + 4 + 4 + 8 + 8;
         if payload.len() < min_size {
             return Err(TspError::ParseError {
                 file: path.to_path_buf(),
@@ -226,217 +296,10 @@ impl TspModel {
             });
         }
 
-        let mut offset = 1;
+        let mut reader = PayloadReader::new(payload, path, 1);
+        let metadata = reader.read_metadata()?;
+        let params = reader.read_params(algorithm)?;
 
-        // Metadata
-        let trained_instances = u32::from_le_bytes([
-            payload[offset],
-            payload[offset + 1],
-            payload[offset + 2],
-            payload[offset + 3],
-        ]);
-        offset += 4;
-
-        let avg_instance_size = u32::from_le_bytes([
-            payload[offset],
-            payload[offset + 1],
-            payload[offset + 2],
-            payload[offset + 3],
-        ]);
-        offset += 4;
-
-        let best_known_gap = f64::from_le_bytes([
-            payload[offset],
-            payload[offset + 1],
-            payload[offset + 2],
-            payload[offset + 3],
-            payload[offset + 4],
-            payload[offset + 5],
-            payload[offset + 6],
-            payload[offset + 7],
-        ]);
-        offset += 8;
-
-        let training_time_secs = f64::from_le_bytes([
-            payload[offset],
-            payload[offset + 1],
-            payload[offset + 2],
-            payload[offset + 3],
-            payload[offset + 4],
-            payload[offset + 5],
-            payload[offset + 6],
-            payload[offset + 7],
-        ]);
-        offset += 8;
-
-        let metadata = TspModelMetadata {
-            trained_instances,
-            avg_instance_size,
-            best_known_gap,
-            training_time_secs,
-        };
-
-        // Algorithm-specific parameters
-        let params =
-            match algorithm {
-                TspAlgorithm::Aco => {
-                    let alpha =
-                        f64::from_le_bytes(payload[offset..offset + 8].try_into().map_err(
-                            |_| TspError::ParseError {
-                                file: path.to_path_buf(),
-                                line: None,
-                                cause: "Failed to read alpha".into(),
-                            },
-                        )?);
-                    offset += 8;
-
-                    let beta = f64::from_le_bytes(payload[offset..offset + 8].try_into().map_err(
-                        |_| TspError::ParseError {
-                            file: path.to_path_buf(),
-                            line: None,
-                            cause: "Failed to read beta".into(),
-                        },
-                    )?);
-                    offset += 8;
-
-                    let rho = f64::from_le_bytes(payload[offset..offset + 8].try_into().map_err(
-                        |_| TspError::ParseError {
-                            file: path.to_path_buf(),
-                            line: None,
-                            cause: "Failed to read rho".into(),
-                        },
-                    )?);
-                    offset += 8;
-
-                    let q0 = f64::from_le_bytes(payload[offset..offset + 8].try_into().map_err(
-                        |_| TspError::ParseError {
-                            file: path.to_path_buf(),
-                            line: None,
-                            cause: "Failed to read q0".into(),
-                        },
-                    )?);
-                    offset += 8;
-
-                    let num_ants =
-                        u32::from_le_bytes(payload[offset..offset + 4].try_into().map_err(
-                            |_| TspError::ParseError {
-                                file: path.to_path_buf(),
-                                line: None,
-                                cause: "Failed to read num_ants".into(),
-                            },
-                        )?) as usize;
-
-                    TspParams::Aco {
-                        alpha,
-                        beta,
-                        rho,
-                        q0,
-                        num_ants,
-                    }
-                }
-                TspAlgorithm::Tabu => {
-                    let tenure =
-                        u32::from_le_bytes(payload[offset..offset + 4].try_into().map_err(
-                            |_| TspError::ParseError {
-                                file: path.to_path_buf(),
-                                line: None,
-                                cause: "Failed to read tenure".into(),
-                            },
-                        )?) as usize;
-                    offset += 4;
-
-                    let max_neighbors =
-                        u32::from_le_bytes(payload[offset..offset + 4].try_into().map_err(
-                            |_| TspError::ParseError {
-                                file: path.to_path_buf(),
-                                line: None,
-                                cause: "Failed to read max_neighbors".into(),
-                            },
-                        )?) as usize;
-
-                    TspParams::Tabu {
-                        tenure,
-                        max_neighbors,
-                    }
-                }
-                TspAlgorithm::Ga => {
-                    let population_size =
-                        u32::from_le_bytes(payload[offset..offset + 4].try_into().map_err(
-                            |_| TspError::ParseError {
-                                file: path.to_path_buf(),
-                                line: None,
-                                cause: "Failed to read population_size".into(),
-                            },
-                        )?) as usize;
-                    offset += 4;
-
-                    let crossover_rate =
-                        f64::from_le_bytes(payload[offset..offset + 8].try_into().map_err(
-                            |_| TspError::ParseError {
-                                file: path.to_path_buf(),
-                                line: None,
-                                cause: "Failed to read crossover_rate".into(),
-                            },
-                        )?);
-                    offset += 8;
-
-                    let mutation_rate =
-                        f64::from_le_bytes(payload[offset..offset + 8].try_into().map_err(
-                            |_| TspError::ParseError {
-                                file: path.to_path_buf(),
-                                line: None,
-                                cause: "Failed to read mutation_rate".into(),
-                            },
-                        )?);
-
-                    TspParams::Ga {
-                        population_size,
-                        crossover_rate,
-                        mutation_rate,
-                    }
-                }
-                TspAlgorithm::Hybrid => {
-                    let ga_fraction =
-                        f64::from_le_bytes(payload[offset..offset + 8].try_into().map_err(
-                            |_| TspError::ParseError {
-                                file: path.to_path_buf(),
-                                line: None,
-                                cause: "Failed to read ga_fraction".into(),
-                            },
-                        )?);
-                    offset += 8;
-
-                    let tabu_fraction =
-                        f64::from_le_bytes(payload[offset..offset + 8].try_into().map_err(
-                            |_| TspError::ParseError {
-                                file: path.to_path_buf(),
-                                line: None,
-                                cause: "Failed to read tabu_fraction".into(),
-                            },
-                        )?);
-                    offset += 8;
-
-                    let aco_fraction =
-                        f64::from_le_bytes(payload[offset..offset + 8].try_into().map_err(
-                            |_| TspError::ParseError {
-                                file: path.to_path_buf(),
-                                line: None,
-                                cause: "Failed to read aco_fraction".into(),
-                            },
-                        )?);
-
-                    TspParams::Hybrid {
-                        ga_fraction,
-                        tabu_fraction,
-                        aco_fraction,
-                    }
-                }
-            };
-
-        Ok(Self {
-            algorithm,
-            params,
-            metadata,
-        })
+        Ok(Self { algorithm, params, metadata })
     }
 }

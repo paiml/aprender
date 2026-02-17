@@ -134,12 +134,41 @@ pub(crate) fn run(
         output::pipeline_stage("Pruning", output::StageStatus::Running);
     }
 
-    // PMAT-270: Actually load, prune, and write the output file
+    let prune_result = execute_pruning(file, prune_method, target_ratio, sparsity, remove_layers, out)?;
+
+    if !json_output {
+        output::pipeline_stage("Pruning", output::StageStatus::Done);
+    }
+
+    print_prune_output(file, out, prune_method, target_ratio, sparsity, &prune_result, json_output);
+
+    Ok(())
+}
+
+/// Result of the pruning operation, containing all metrics needed for output.
+struct PruneResult {
+    file_size: u64,
+    output_size: u64,
+    original_count: usize,
+    pruned_count: usize,
+    original_params: usize,
+    pruned_params: usize,
+    zeros: usize,
+}
+
+/// Load model, apply pruning, and write the output file.
+fn execute_pruning(
+    file: &Path,
+    prune_method: PruneMethod,
+    target_ratio: f32,
+    sparsity: f32,
+    remove_layers: Option<&str>,
+    out: &Path,
+) -> Result<PruneResult> {
     let file_size = std::fs::metadata(file)
         .map_err(|e| CliError::ValidationFailed(format!("Cannot read model: {e}")))?
         .len();
 
-    // Load tensors via RosettaStone (supports APR, GGUF, SafeTensors)
     let rosetta = aprender::format::rosetta::RosettaStone::new();
     let report = rosetta
         .inspect(file)
@@ -158,21 +187,7 @@ pub(crate) fn run(
         .map(|(data, _shape): &(Vec<f32>, Vec<usize>)| data.len())
         .sum();
 
-    // Apply pruning based on method
-    let pruned_tensors = match prune_method {
-        PruneMethod::Magnitude => prune_magnitude(&tensors, sparsity.max(target_ratio)),
-        PruneMethod::Depth => {
-            let layers = remove_layers.expect("validated above");
-            prune_depth(&tensors, layers)?
-        }
-        PruneMethod::Structured | PruneMethod::Width => {
-            prune_magnitude(&tensors, sparsity.max(target_ratio))
-        }
-        PruneMethod::Wanda | PruneMethod::SparseGpt => {
-            // Fall back to magnitude pruning (calibration-based methods need more infra)
-            prune_magnitude(&tensors, sparsity.max(target_ratio))
-        }
-    };
+    let pruned_tensors = apply_pruning(&tensors, prune_method, target_ratio, sparsity, remove_layers)?;
 
     let pruned_count = pruned_tensors.len();
     let pruned_params: usize = pruned_tensors
@@ -184,7 +199,53 @@ pub(crate) fn run(
         .map(|(data, _shape): &(Vec<f32>, Vec<usize>)| data.iter().filter(|v| **v == 0.0).count())
         .sum();
 
-    // Write pruned model as APR
+    let bytes = write_pruned_model(file, prune_method, target_ratio, sparsity, &pruned_tensors, out)?;
+    let output_size = bytes.len() as u64;
+
+    Ok(PruneResult {
+        file_size,
+        output_size,
+        original_count,
+        pruned_count,
+        original_params,
+        pruned_params,
+        zeros,
+    })
+}
+
+/// Apply the selected pruning method to the tensor map.
+fn apply_pruning(
+    tensors: &std::collections::BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+    prune_method: PruneMethod,
+    target_ratio: f32,
+    sparsity: f32,
+    remove_layers: Option<&str>,
+) -> Result<std::collections::BTreeMap<String, (Vec<f32>, Vec<usize>)>> {
+    match prune_method {
+        PruneMethod::Magnitude => Ok(prune_magnitude(tensors, sparsity.max(target_ratio))),
+        PruneMethod::Depth => {
+            let layers = remove_layers.expect("validated above");
+            prune_depth(tensors, layers)
+        }
+        PruneMethod::Structured | PruneMethod::Width => {
+            Ok(prune_magnitude(tensors, sparsity.max(target_ratio)))
+        }
+        PruneMethod::Wanda | PruneMethod::SparseGpt => {
+            Ok(prune_magnitude(tensors, sparsity.max(target_ratio)))
+        }
+    }
+}
+
+/// Serialize pruned tensors and write the APR file to disk.
+#[allow(clippy::disallowed_methods)]
+fn write_pruned_model(
+    source_file: &Path,
+    prune_method: PruneMethod,
+    target_ratio: f32,
+    sparsity: f32,
+    pruned_tensors: &std::collections::BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+    out: &Path,
+) -> Result<Vec<u8>> {
     let mut writer = aprender::serialization::apr::AprWriter::new();
     writer.set_metadata(
         "pruning_method",
@@ -192,9 +253,9 @@ pub(crate) fn run(
     );
     writer.set_metadata("pruning_ratio", serde_json::json!(target_ratio));
     writer.set_metadata("pruning_sparsity", serde_json::json!(sparsity));
-    writer.set_metadata("source_file", serde_json::json!(file.display().to_string()));
+    writer.set_metadata("source_file", serde_json::json!(source_file.display().to_string()));
 
-    for (name, (data, shape)) in &pruned_tensors {
+    for (name, (data, shape)) in pruned_tensors {
         writer.add_tensor_f32(name, shape.clone(), data);
     }
 
@@ -204,12 +265,20 @@ pub(crate) fn run(
     std::fs::write(out, &bytes)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to write output: {e}")))?;
 
-    let output_size = bytes.len() as u64;
+    Ok(bytes)
+}
 
-    if !json_output {
-        output::pipeline_stage("Pruning", output::StageStatus::Done);
-    }
-
+/// Print pruning results as JSON or human-readable table.
+#[allow(clippy::disallowed_methods)]
+fn print_prune_output(
+    file: &Path,
+    out: &Path,
+    prune_method: PruneMethod,
+    target_ratio: f32,
+    sparsity: f32,
+    result: &PruneResult,
+    json_output: bool,
+) {
     if json_output {
         let json = serde_json::json!({
             "status": "completed",
@@ -218,13 +287,13 @@ pub(crate) fn run(
             "method": format!("{prune_method:?}"),
             "target_ratio": target_ratio,
             "sparsity": sparsity,
-            "input_size": file_size,
-            "output_size": output_size,
-            "tensors": pruned_count,
-            "original_params": original_params,
-            "pruned_params": pruned_params,
-            "zero_params": zeros,
-            "actual_sparsity": if pruned_params > 0 { zeros as f64 / pruned_params as f64 } else { 0.0 },
+            "input_size": result.file_size,
+            "output_size": result.output_size,
+            "tensors": result.pruned_count,
+            "original_params": result.original_params,
+            "pruned_params": result.pruned_params,
+            "zero_params": result.zeros,
+            "actual_sparsity": if result.pruned_params > 0 { result.zeros as f64 / result.pruned_params as f64 } else { 0.0 },
         });
         println!(
             "{}",
@@ -238,20 +307,21 @@ pub(crate) fn run(
             output::kv_table(&[
                 (
                     "Input size",
-                    humansize::format_size(file_size, humansize::BINARY)
+                    humansize::format_size(result.file_size, humansize::BINARY)
                 ),
                 (
                     "Output size",
-                    humansize::format_size(output_size, humansize::BINARY)
+                    humansize::format_size(result.output_size, humansize::BINARY)
                 ),
-                ("Tensors", format!("{original_count} → {pruned_count}")),
-                ("Parameters", format!("{original_params} → {pruned_params}")),
+                ("Tensors", format!("{} → {}", result.original_count, result.pruned_count)),
+                ("Parameters", format!("{} → {}", result.original_params, result.pruned_params)),
                 (
                     "Zeros",
                     format!(
-                        "{zeros} ({:.1}%)",
-                        if pruned_params > 0 {
-                            zeros as f64 / pruned_params as f64 * 100.0
+                        "{} ({:.1}%)",
+                        result.zeros,
+                        if result.pruned_params > 0 {
+                            result.zeros as f64 / result.pruned_params as f64 * 100.0
                         } else {
                             0.0
                         }
@@ -261,8 +331,6 @@ pub(crate) fn run(
             ])
         );
     }
-
-    Ok(())
 }
 
 /// Analyze model for pruning opportunities

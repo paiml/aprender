@@ -76,11 +76,8 @@ fn print_result(name: &str, result: &aprender::optim::OptimizationResult) {
     println!("  Time: {:?}", result.elapsed_time);
 }
 
-#[allow(clippy::too_many_lines)]
-fn main() {
-    println!("=== Batch Optimization Examples ===\n");
-
-    // Example 1: Rosenbrock function with different optimizers
+/// Example 1: Rosenbrock function with all four optimizers.
+fn rosenbrock_comparison() {
     println!("--- Example 1: Rosenbrock Function ---");
     println!("Minimizing f(x,y) = (1-x)^2 + 100(y-x^2)^2");
     println!("Global minimum at (1, 1)\n");
@@ -92,7 +89,7 @@ fn main() {
     let result_lbfgs = lbfgs.minimize(rosenbrock, rosenbrock_grad, x0.clone());
     print_result("L-BFGS", &result_lbfgs);
 
-    // Conjugate Gradient (Polak-Ribière)
+    // Conjugate Gradient (Polak-Ribiere)
     let mut cg_pr = ConjugateGradient::new(1000, 1e-6, CGBetaFormula::PolakRibiere);
     let result_cg_pr = cg_pr.minimize(rosenbrock, rosenbrock_grad, x0.clone());
     print_result("CG (Polak-Ribière)", &result_cg_pr);
@@ -106,8 +103,10 @@ fn main() {
     let mut dn = DampedNewton::new(1000, 1e-6);
     let result_dn = dn.minimize(rosenbrock, rosenbrock_grad, x0);
     print_result("Damped Newton", &result_dn);
+}
 
-    // Example 2: Sphere function (convex quadratic)
+/// Example 2: 5D sphere function (convex quadratic).
+fn sphere_comparison() {
     println!("\n\n--- Example 2: Sphere Function (5D) ---");
     println!("Minimizing f(x) = sum(x_i^2)");
     println!("Global minimum at origin\n");
@@ -134,8 +133,10 @@ fn main() {
         "Damped Newton: {} iterations, gradient norm: {:.2e}",
         result.iterations, result.gradient_norm
     );
+}
 
-    // Example 3: Booth function
+/// Example 3: Booth function optimization.
+fn booth_comparison() {
     println!("\n\n--- Example 3: Booth Function ---");
     println!("Minimizing f(x,y) = (x + 2y - 7)^2 + (2x + y - 5)^2");
     println!("Global minimum at (1, 3)\n");
@@ -153,8 +154,10 @@ fn main() {
     let mut dn = DampedNewton::new(100, 1e-6);
     let result = dn.minimize(booth, booth_grad, x0_booth);
     print_result("Damped Newton", &result);
+}
 
-    // Example 4: Comparing convergence behavior
+/// Example 4: Convergence comparison from different initial points.
+fn convergence_comparison() {
     println!("\n\n--- Example 4: Convergence Comparison ---");
     println!("Running optimizers with different initial points\n");
 
@@ -189,8 +192,10 @@ fn main() {
         );
         println!();
     }
+}
 
-    // Example 5: Optimizer configuration
+/// Example 5: Optimizer configuration tuning.
+fn optimizer_configuration() {
     println!("\n--- Example 5: Optimizer Configuration ---\n");
 
     // L-BFGS with different history sizes
@@ -220,6 +225,16 @@ fn main() {
         let result = opt.minimize(booth, booth_grad, Vector::from_slice(&[0.0, 0.0]));
         println!("  epsilon={:.0e}: {} iterations", eps, result.iterations);
     }
+}
+
+fn main() {
+    println!("=== Batch Optimization Examples ===\n");
+
+    rosenbrock_comparison();
+    sphere_comparison();
+    booth_comparison();
+    convergence_comparison();
+    optimizer_configuration();
 
     println!("\n=== Examples Complete ===");
 }

@@ -3,77 +3,17 @@ impl ChatSession {
         pub(super) fn generate(&mut self, user_input: &str, config: &ChatConfig) -> String {
             let start = Instant::now();
 
-            // Build conversation with chat template (Toyota Way: Standardized Work)
-            let mut messages: Vec<ChatMessage> = Vec::new();
-
-            // Add system prompt if configured
-            if let Some(ref system) = config.system {
-                messages.push(ChatMessage::system(system));
-            }
-
-            // Add conversation history
-            messages.extend(self.history.iter().cloned());
-
-            // Add current user message
-            messages.push(ChatMessage::user(user_input));
-
-            // Format conversation using detected template
-            let formatted_prompt = match self.chat_template.format_conversation(&messages) {
+            let formatted_prompt = match self.build_formatted_prompt(user_input, config) {
                 Ok(prompt) => prompt,
-                Err(e) => {
-                    return format!("[Template error: {}]", e);
-                }
+                Err(e) => return e,
             };
-
-            // APR-TRACE-001: Debug formatted prompt
-            if config.trace {
-                eprintln!(
-                    "[APR-TRACE] Formatted prompt ({} chars):",
-                    formatted_prompt.len()
-                );
-                eprintln!(
-                    "[APR-TRACE] {:?}",
-                    &formatted_prompt[..formatted_prompt.len().min(500)]
-                );
-            }
 
             // For GGUF, use embedded tokenizer directly (correct special token IDs)
-            // This is critical: GGUF models have their own tokenizer with correct special token IDs
-            // Using LlamaTokenizer/Qwen2BpeTokenizer causes wrong IDs for <|im_start|>, <|im_end|>, etc.
             if self.format == ModelFormat::Gguf {
-                return match self.generate_gguf_with_prompt(&formatted_prompt, config) {
-                    Ok(response) => {
-                        // GH-262: Always show tok/s for GGUF path
-                        let gen_time = start.elapsed();
-                        let approx_tokens = response.split_whitespace().count().max(1) * 4 / 3;
-                        let tps = approx_tokens as f32 / gen_time.as_secs_f32();
-                        println!(
-                            "{}",
-                            format!("[{:.1}s, ~{:.0} tok/s]", gen_time.as_secs_f32(), tps).dimmed()
-                        );
-                        clean_chat_response(&response)
-                    }
-                    Err(e) => format!("[Error: {}]", e),
-                };
+                return self.generate_gguf_response(&formatted_prompt, config, start);
             }
 
-            // For non-GGUF formats, tokenize with loaded tokenizer
-            let prompt_tokens: Vec<u32> = if let Some(ref tokenizer) = self.llama_tokenizer {
-                tokenizer.encode_with_bos(&formatted_prompt)
-            } else if let Some(ref tokenizer) = self.qwen_tokenizer {
-                tokenizer.encode(&formatted_prompt)
-            } else {
-                formatted_prompt.chars().map(|c| c as u32).collect()
-            };
-
-            // PMAT-114: Debug APR tokenization to compare with GGUF
-            if config.trace {
-                eprintln!(
-                    "[APR-TRACE] Prompt tokens ({} tokens): {:?}",
-                    prompt_tokens.len(),
-                    &prompt_tokens[..prompt_tokens.len().min(50)]
-                );
-            }
+            let prompt_tokens = self.tokenize_prompt(&formatted_prompt, config);
 
             let result = match self.format {
                 ModelFormat::Apr => self.generate_apr(&prompt_tokens, config),
@@ -86,55 +26,144 @@ impl ChatSession {
 
             match result {
                 Ok(output_tokens) => {
-                    // Strip prompt tokens - only decode newly generated tokens
-                    let new_tokens = if output_tokens.len() > prompt_tokens.len() {
-                        &output_tokens[prompt_tokens.len()..]
-                    } else {
-                        &output_tokens[..]
-                    };
-
-                    // GH-262: Always show tok/s so users can gauge performance
-                    let tps = new_tokens.len() as f32 / gen_time.as_secs_f32();
-                    println!(
-                        "{}",
-                        format!(
-                            "[{} tokens in {:.1}s = {:.1} tok/s]",
-                            new_tokens.len(),
-                            gen_time.as_secs_f32(),
-                            tps,
-                        )
-                        .dimmed()
-                    );
-
-                    // Debug: show first 10 new tokens (only with --inspect)
-                    if config.inspect {
-                        if let Some(ref tok) = self.llama_tokenizer {
-                            println!(
-                                "[DEBUG: first 10 new tokens: {:?}]",
-                                &new_tokens[..new_tokens.len().min(10)]
-                            );
-                            for &id in new_tokens.iter().take(10) {
-                                println!("[DEBUG: {} -> {:?}]", id, tok.id_to_token(id));
-                            }
-                        }
-                    }
-
-                    // Decode only the new tokens
-                    let raw_response = if let Some(ref tokenizer) = self.llama_tokenizer {
-                        tokenizer.decode(new_tokens)
-                    } else if let Some(ref tokenizer) = self.qwen_tokenizer {
-                        tokenizer.decode(new_tokens)
-                    } else {
-                        new_tokens
-                            .iter()
-                            .filter_map(|&t| char::from_u32(t))
-                            .collect()
-                    };
-
-                    // Clean up ChatML markers from response
+                    let new_tokens = Self::strip_prompt_tokens(&output_tokens, &prompt_tokens);
+                    self.print_token_stats(new_tokens, gen_time);
+                    self.debug_inspect_tokens(new_tokens, config);
+                    let raw_response = self.decode_tokens(new_tokens);
                     clean_chat_response(&raw_response)
                 }
                 Err(e) => format!("[Error: {}]", e),
+            }
+        }
+
+        /// Build the formatted prompt from conversation history and user input.
+        ///
+        /// Returns Ok(prompt) or Err(error_string) for template failures.
+        fn build_formatted_prompt(
+            &self,
+            user_input: &str,
+            config: &ChatConfig,
+        ) -> Result<String, String> {
+            let mut messages: Vec<ChatMessage> = Vec::new();
+
+            if let Some(ref system) = config.system {
+                messages.push(ChatMessage::system(system));
+            }
+            messages.extend(self.history.iter().cloned());
+            messages.push(ChatMessage::user(user_input));
+
+            let formatted_prompt = self
+                .chat_template
+                .format_conversation(&messages)
+                .map_err(|e| format!("[Template error: {}]", e))?;
+
+            if config.trace {
+                eprintln!(
+                    "[APR-TRACE] Formatted prompt ({} chars):",
+                    formatted_prompt.len()
+                );
+                eprintln!(
+                    "[APR-TRACE] {:?}",
+                    &formatted_prompt[..formatted_prompt.len().min(500)]
+                );
+            }
+
+            Ok(formatted_prompt)
+        }
+
+        /// Handle the GGUF generation path, returning a cleaned response string.
+        fn generate_gguf_response(
+            &mut self,
+            formatted_prompt: &str,
+            config: &ChatConfig,
+            start: Instant,
+        ) -> String {
+            match self.generate_gguf_with_prompt(formatted_prompt, config) {
+                Ok(response) => {
+                    let gen_time = start.elapsed();
+                    let approx_tokens = response.split_whitespace().count().max(1) * 4 / 3;
+                    let tps = approx_tokens as f32 / gen_time.as_secs_f32();
+                    println!(
+                        "{}",
+                        format!("[{:.1}s, ~{:.0} tok/s]", gen_time.as_secs_f32(), tps).dimmed()
+                    );
+                    clean_chat_response(&response)
+                }
+                Err(e) => format!("[Error: {}]", e),
+            }
+        }
+
+        /// Tokenize the formatted prompt using the available tokenizer.
+        fn tokenize_prompt(&self, formatted_prompt: &str, config: &ChatConfig) -> Vec<u32> {
+            let prompt_tokens: Vec<u32> = if let Some(ref tokenizer) = self.llama_tokenizer {
+                tokenizer.encode_with_bos(formatted_prompt)
+            } else if let Some(ref tokenizer) = self.qwen_tokenizer {
+                tokenizer.encode(formatted_prompt)
+            } else {
+                formatted_prompt.chars().map(|c| c as u32).collect()
+            };
+
+            if config.trace {
+                eprintln!(
+                    "[APR-TRACE] Prompt tokens ({} tokens): {:?}",
+                    prompt_tokens.len(),
+                    &prompt_tokens[..prompt_tokens.len().min(50)]
+                );
+            }
+
+            prompt_tokens
+        }
+
+        /// Strip prompt tokens from output, returning only newly generated tokens.
+        fn strip_prompt_tokens<'a>(output_tokens: &'a [u32], prompt_tokens: &[u32]) -> &'a [u32] {
+            if output_tokens.len() > prompt_tokens.len() {
+                &output_tokens[prompt_tokens.len()..]
+            } else {
+                output_tokens
+            }
+        }
+
+        /// Print token generation performance stats (GH-262).
+        fn print_token_stats(&self, new_tokens: &[u32], gen_time: std::time::Duration) {
+            let tps = new_tokens.len() as f32 / gen_time.as_secs_f32();
+            println!(
+                "{}",
+                format!(
+                    "[{} tokens in {:.1}s = {:.1} tok/s]",
+                    new_tokens.len(),
+                    gen_time.as_secs_f32(),
+                    tps,
+                )
+                .dimmed()
+            );
+        }
+
+        /// Print debug token inspection output (only with --inspect flag).
+        fn debug_inspect_tokens(&self, new_tokens: &[u32], config: &ChatConfig) {
+            if config.inspect {
+                if let Some(ref tok) = self.llama_tokenizer {
+                    println!(
+                        "[DEBUG: first 10 new tokens: {:?}]",
+                        &new_tokens[..new_tokens.len().min(10)]
+                    );
+                    for &id in new_tokens.iter().take(10) {
+                        println!("[DEBUG: {} -> {:?}]", id, tok.id_to_token(id));
+                    }
+                }
+            }
+        }
+
+        /// Decode token IDs to a string using the available tokenizer.
+        fn decode_tokens(&self, tokens: &[u32]) -> String {
+            if let Some(ref tokenizer) = self.llama_tokenizer {
+                tokenizer.decode(tokens)
+            } else if let Some(ref tokenizer) = self.qwen_tokenizer {
+                tokenizer.decode(tokens)
+            } else {
+                tokens
+                    .iter()
+                    .filter_map(|&t| char::from_u32(t))
+                    .collect()
             }
         }
 

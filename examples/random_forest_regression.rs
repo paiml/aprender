@@ -5,14 +5,9 @@
 
 use aprender::prelude::*;
 
-#[allow(clippy::too_many_lines)]
-fn main() {
-    println!("Random Forest Regression Example");
-    println!("=================================\n");
-
-    // Simulated housing data with non-linear patterns
-    // Features: [sqft, bedrooms, bathrooms, age]
-    // Target: price (in thousands)
+/// Create the training dataset: simulated housing data with non-linear patterns.
+/// Features: [sqft, bedrooms, bathrooms, age], Target: price (in thousands).
+fn create_training_data() -> (Matrix<f32>, Vector<f32>) {
     let x_train = Matrix::from_vec(
         25,
         4,
@@ -40,8 +35,12 @@ fn main() {
         1400.0, 1650.0, 1950.0, 2300.0, 2700.0, // Luxury
     ]);
 
-    // Test data
-    let x_test = Matrix::from_vec(
+    (x_train, y_train)
+}
+
+/// Create the test dataset for evaluation.
+fn create_test_data() -> Matrix<f32> {
+    Matrix::from_vec(
         5,
         4,
         vec![
@@ -52,25 +51,32 @@ fn main() {
             4800.0, 8.0, 6.0, 0.8, // Luxury house
         ],
     )
-    .expect("Example data should be valid");
+    .expect("Example data should be valid")
+}
 
+/// Part 1: Compare Random Forest vs Single Decision Tree.
+fn compare_rf_vs_tree(
+    x_train: &Matrix<f32>,
+    y_train: &Vector<f32>,
+    x_test: &Matrix<f32>,
+) {
     println!("=== Part 1: Random Forest vs Single Decision Tree ===\n");
 
     // Train Random Forest
     println!("Training Random Forest (n_estimators=50, max_depth=5)...");
     let mut rf = RandomForestRegressor::new(50).with_max_depth(5);
-    rf.fit(&x_train, &y_train).expect("Failed to fit RF");
+    rf.fit(x_train, y_train).expect("Failed to fit RF");
 
     // Train single Decision Tree for comparison
     println!("Training single Decision Tree (max_depth=5)...");
     let mut single_tree = DecisionTreeRegressor::new().with_max_depth(5);
     single_tree
-        .fit(&x_train, &y_train)
+        .fit(x_train, y_train)
         .expect("Failed to fit tree");
 
     // Compare performance on training data
-    let rf_r2 = rf.score(&x_train, &y_train);
-    let tree_r2 = single_tree.score(&x_train, &y_train);
+    let rf_r2 = rf.score(x_train, y_train);
+    let tree_r2 = single_tree.score(x_train, y_train);
 
     println!("\nTraining Performance:");
     println!("  Random Forest R²:     {rf_r2:.4}");
@@ -78,8 +84,8 @@ fn main() {
     println!("  → RF advantage:       {:.4}", rf_r2 - tree_r2);
 
     // Predictions on test data
-    let rf_preds = rf.predict(&x_test);
-    let tree_preds = single_tree.predict(&x_test);
+    let rf_preds = rf.predict(x_test);
+    let tree_preds = single_tree.predict(x_test);
 
     println!("\nTest Predictions Comparison:");
     println!(
@@ -98,10 +104,12 @@ fn main() {
         let diff = rf_pred - tree_pred;
         println!("{sqft:>12.0} {rf_pred:>12.0} {tree_pred:>12.0} {diff:>12.0}");
     }
+}
 
+/// Part 2: Show effect of varying n_estimators.
+fn compare_n_estimators(x_train: &Matrix<f32>, y_train: &Vector<f32>) {
     println!("\n=== Part 2: Effect of n_estimators (Number of Trees) ===\n");
 
-    // Train forests with different numbers of trees
     let n_estimators_values = [5, 10, 30, 100];
     println!("Comparing different n_estimators:");
     println!(
@@ -114,10 +122,10 @@ fn main() {
         let mut rf = RandomForestRegressor::new(n_est)
             .with_max_depth(5)
             .with_random_state(42);
-        rf.fit(&x_train, &y_train)
+        rf.fit(x_train, y_train)
             .expect("Example data should be valid");
 
-        let r2 = rf.score(&x_train, &y_train);
+        let r2 = rf.score(x_train, y_train);
 
         println!("{:>12} {:>12.4} {:>12}", n_est, r2, "✓");
     }
@@ -126,7 +134,10 @@ fn main() {
     println!("  • More stable predictions (reduced variance)");
     println!("  • Diminishing returns after ~30-50 trees");
     println!("  • Longer training time");
+}
 
+/// Part 3: Demonstrate variance reduction through ensembling.
+fn show_variance_reduction(x_train: &Matrix<f32>, y_train: &Vector<f32>) {
     println!("\n=== Part 3: Variance Reduction Through Ensemble ===\n");
 
     // Train multiple single trees to show variance
@@ -138,9 +149,9 @@ fn main() {
 
         // Simulate different training by using different bootstrap samples
         // (In practice, you'd use different random splits)
-        tree.fit(&x_train, &y_train)
+        tree.fit(x_train, y_train)
             .expect("Example data should be valid");
-        let r2 = tree.score(&x_train, &y_train);
+        let r2 = tree.score(x_train, y_train);
         tree_r2s.push(r2);
         println!("  Tree {}: R² = {:.4}", seed + 1, r2);
     }
@@ -159,13 +170,16 @@ fn main() {
     let mut rf = RandomForestRegressor::new(50)
         .with_max_depth(6)
         .with_random_state(42);
-    rf.fit(&x_train, &y_train)
+    rf.fit(x_train, y_train)
         .expect("Example data should be valid");
-    let rf_r2 = rf.score(&x_train, &y_train);
+    let rf_r2 = rf.score(x_train, y_train);
 
     println!("  Random Forest: R² = {rf_r2:.4} (stable)");
     println!("\n  → Random Forest reduces variance through averaging!");
+}
 
+/// Part 4: Non-linear pattern handling with quadratic data.
+fn handle_nonlinear_patterns() {
     println!("\n=== Part 4: Handling Non-Linear Patterns ===\n");
 
     // Create quadratic data
@@ -206,23 +220,26 @@ fn main() {
         "  → RF captures non-linearity {:.1}% better",
         (rf_r2_quad - lr_r2_quad) * 100.0
     );
+}
 
+/// Part 5: Reproducibility via random_state.
+fn show_reproducibility(x_train: &Matrix<f32>, y_train: &Vector<f32>, x_test: &Matrix<f32>) {
     println!("\n=== Part 5: Reproducibility with random_state ===\n");
 
     // Train two forests with same random state
     let mut rf1 = RandomForestRegressor::new(20)
         .with_max_depth(5)
         .with_random_state(42);
-    rf1.fit(&x_train, &y_train)
+    rf1.fit(x_train, y_train)
         .expect("Example data should be valid");
-    let pred1 = rf1.predict(&x_test);
+    let pred1 = rf1.predict(x_test);
 
     let mut rf2 = RandomForestRegressor::new(20)
         .with_max_depth(5)
         .with_random_state(42);
-    rf2.fit(&x_train, &y_train)
+    rf2.fit(x_train, y_train)
         .expect("Example data should be valid");
-    let pred2 = rf2.predict(&x_test);
+    let pred2 = rf2.predict(x_test);
 
     println!("Training two forests with same random_state=42:");
     println!(
@@ -250,7 +267,10 @@ fn main() {
     }
 
     println!("\n  → Predictions are identical (reproducible)");
+}
 
+/// Part 6: Practical house price prediction example.
+fn predict_house_prices(x_train: &Matrix<f32>, y_train: &Vector<f32>) {
     println!("\n=== Part 6: Practical Example - House Price Prediction ===\n");
 
     // New houses to predict
@@ -270,7 +290,7 @@ fn main() {
         .with_max_depth(8)
         .with_random_state(42);
     final_rf
-        .fit(&x_train, &y_train)
+        .fit(x_train, y_train)
         .expect("Example data should be valid");
 
     let predictions = final_rf.predict(&new_houses);
@@ -293,15 +313,17 @@ fn main() {
 
         println!("{sqft:>10.0} {beds:>8.0} {baths:>6.1} {age:>8.0} ${price:>7.0}k {desc:>15}");
     }
+}
 
+/// Part 7: Feature importance analysis.
+fn show_feature_importance(x_train: &Matrix<f32>, y_train: &Vector<f32>) {
     println!("\n=== Part 7: Feature Importance ===\n");
 
-    // Train model with all features to see their relative importance
     let mut rf_importance = RandomForestRegressor::new(50)
         .with_max_depth(8)
         .with_random_state(42);
     rf_importance
-        .fit(&x_train, &y_train)
+        .fit(x_train, y_train)
         .expect("Example data should be valid");
 
     let importances = rf_importance.feature_importances();
@@ -354,20 +376,21 @@ fn main() {
     println!("  ✅ Domain insights: Understand what drives prices");
     println!("  ✅ Model debugging: Verify expected features are important");
     println!("  ✅ Explainability: Show stakeholders what matters");
+}
 
+/// Part 8: Out-of-Bag error estimation.
+fn show_oob_estimation(x_train: &Matrix<f32>, y_train: &Vector<f32>) {
     println!("\n=== Part 8: Out-of-Bag (OOB) Error Estimation ===\n");
 
-    // Train model with OOB evaluation
     let mut rf_oob = RandomForestRegressor::new(50)
         .with_max_depth(8)
         .with_random_state(42);
     rf_oob
-        .fit(&x_train, &y_train)
+        .fit(x_train, y_train)
         .expect("Example data should be valid");
 
-    // Get OOB score (free validation without test set)
     let oob_score = rf_oob.oob_score();
-    let training_score = rf_oob.score(&x_train, &y_train);
+    let training_score = rf_oob.score(x_train, y_train);
 
     println!("Performance comparison:");
     println!("  Training R²:    {training_score:.4}");
@@ -387,7 +410,10 @@ fn main() {
     println!("  ✅ OOB: Unbiased estimate of generalization error");
     println!("  ✅ OOB: All data used for training AND validation");
     println!("  ✅ Test Set: Gold standard, but requires holding out data");
+}
 
+/// Print the final summary.
+fn print_summary() {
     println!("\n=== Summary ===\n");
     println!("✅ Random Forest Regression Advantages:");
     println!("   • Reduces overfitting through ensemble averaging");
@@ -412,4 +438,22 @@ fn main() {
     println!("   • Training R²: 0.95-1.00 (high but not overfitting)");
     println!("   • Test R²: Often 5-10% better than single tree");
     println!("   • Prediction variance: ~1/sqrt(n_trees) of single tree");
+}
+
+fn main() {
+    println!("Random Forest Regression Example");
+    println!("=================================\n");
+
+    let (x_train, y_train) = create_training_data();
+    let x_test = create_test_data();
+
+    compare_rf_vs_tree(&x_train, &y_train, &x_test);
+    compare_n_estimators(&x_train, &y_train);
+    show_variance_reduction(&x_train, &y_train);
+    handle_nonlinear_patterns();
+    show_reproducibility(&x_train, &y_train, &x_test);
+    predict_house_prices(&x_train, &y_train);
+    show_feature_importance(&x_train, &y_train);
+    show_oob_estimation(&x_train, &y_train);
+    print_summary();
 }

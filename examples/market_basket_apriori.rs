@@ -18,19 +18,9 @@
 
 use aprender::mining::Apriori;
 
-#[allow(clippy::too_many_lines, clippy::unnecessary_wraps)]
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("=== Market Basket Analysis with Apriori ===\n");
-
-    // Item ID mapping for readability
-    // 1: Milk, 2: Bread, 3: Butter, 4: Eggs, 5: Cheese
-    // 6: Yogurt, 7: Coffee, 8: Tea, 9: Sugar, 10: Flour
-
-    // Example 1: Basic Grocery Transactions
-    println!("Example 1: Basic Grocery Store Transactions");
-    println!("--------------------------------------------");
-
-    let transactions = vec![
+/// Create basic grocery transaction data.
+fn create_grocery_transactions() -> Vec<Vec<usize>> {
+    vec![
         vec![1, 2, 3],       // Milk, Bread, Butter
         vec![1, 2, 4],       // Milk, Bread, Eggs
         vec![1, 2, 3, 4],    // Milk, Bread, Butter, Eggs
@@ -41,75 +31,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         vec![1, 2, 3, 4, 5], // Milk, Bread, Butter, Eggs, Cheese
         vec![1, 2, 5],       // Milk, Bread, Cheese
         vec![2, 4],          // Bread, Eggs
-    ];
+    ]
+}
 
-    println!("Total transactions: {}", transactions.len());
-    println!("Transaction samples:");
-    for (i, transaction) in transactions.iter().take(3).enumerate() {
-        println!("  Transaction {}: {:?}", i + 1, transaction);
-    }
-    println!();
-
-    // Find frequent itemsets with minimum support 30%
-    let mut apriori = Apriori::new()
-        .with_min_support(0.3)
-        .with_min_confidence(0.6);
-
-    apriori.fit(&transactions);
-
-    let itemsets = apriori.get_frequent_itemsets();
-    println!("Frequent itemsets (support >= 30%):");
-    for (itemset, support) in &itemsets {
-        println!("  {:?} -> support: {:.2}%", itemset, support * 100.0);
-    }
-    println!();
-
-    // Generate association rules
-    let rules = apriori.get_rules();
-    println!("Association rules (confidence >= 60%):");
-    for rule in &rules {
-        println!("  {:?} => {:?}", rule.antecedent, rule.consequent);
-        println!("    Support: {:.2}%", rule.support * 100.0);
-        println!("    Confidence: {:.2}%", rule.confidence * 100.0);
-        println!("    Lift: {:.2}", rule.lift);
-        println!();
-    }
-
-    // Example 2: Effect of Support Threshold
-    println!("\nExample 2: Effect of Support Threshold");
-    println!("---------------------------------------");
-
-    let mut apriori_low = Apriori::new()
-        .with_min_support(0.2) // Lower threshold
-        .with_min_confidence(0.5);
-
-    apriori_low.fit(&transactions);
-
-    let itemsets_low = apriori_low.get_frequent_itemsets();
-    println!(
-        "With min_support=20%: {} frequent itemsets",
-        itemsets_low.len()
-    );
-
-    let mut apriori_high = Apriori::new()
-        .with_min_support(0.5) // Higher threshold
-        .with_min_confidence(0.5);
-
-    apriori_high.fit(&transactions);
-
-    let itemsets_high = apriori_high.get_frequent_itemsets();
-    println!(
-        "With min_support=50%: {} frequent itemsets",
-        itemsets_high.len()
-    );
-    println!("Higher support => fewer, more reliable patterns");
-    println!();
-
-    // Example 3: Breakfast Category Analysis
-    println!("\nExample 3: Breakfast Category Analysis");
-    println!("---------------------------------------");
-
-    let breakfast_transactions = vec![
+/// Create breakfast category transaction data.
+fn create_breakfast_transactions() -> Vec<Vec<usize>> {
+    vec![
         vec![1, 4, 2],    // Milk, Eggs, Bread
         vec![1, 4, 7],    // Milk, Eggs, Coffee
         vec![1, 2, 3],    // Milk, Bread, Butter
@@ -120,7 +47,85 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         vec![1, 2, 7],    // Milk, Bread, Coffee
         vec![4, 2],       // Eggs, Bread
         vec![1, 4, 6],    // Milk, Eggs, Yogurt
-    ];
+    ]
+}
+
+/// Example 1: Basic grocery store analysis - mine frequent itemsets and rules.
+fn run_basic_analysis(transactions: &[Vec<usize>]) -> Apriori {
+    println!("Example 1: Basic Grocery Store Transactions");
+    println!("--------------------------------------------");
+
+    println!("Total transactions: {}", transactions.len());
+    println!("Transaction samples:");
+    for (i, transaction) in transactions.iter().take(3).enumerate() {
+        println!("  Transaction {}: {:?}", i + 1, transaction);
+    }
+    println!();
+
+    let mut apriori = Apriori::new()
+        .with_min_support(0.3)
+        .with_min_confidence(0.6);
+
+    apriori.fit(transactions);
+
+    let itemsets = apriori.get_frequent_itemsets();
+    println!("Frequent itemsets (support >= 30%):");
+    for (itemset, support) in &itemsets {
+        println!("  {:?} -> support: {:.2}%", itemset, support * 100.0);
+    }
+    println!();
+
+    let rules = apriori.get_rules();
+    println!("Association rules (confidence >= 60%):");
+    for rule in &rules {
+        println!("  {:?} => {:?}", rule.antecedent, rule.consequent);
+        println!("    Support: {:.2}%", rule.support * 100.0);
+        println!("    Confidence: {:.2}%", rule.confidence * 100.0);
+        println!("    Lift: {:.2}", rule.lift);
+        println!();
+    }
+
+    apriori
+}
+
+/// Example 2: Compare effect of different support thresholds.
+fn compare_support_thresholds(transactions: &[Vec<usize>]) {
+    println!("\nExample 2: Effect of Support Threshold");
+    println!("---------------------------------------");
+
+    let mut apriori_low = Apriori::new()
+        .with_min_support(0.2)
+        .with_min_confidence(0.5);
+
+    apriori_low.fit(transactions);
+
+    let itemsets_low = apriori_low.get_frequent_itemsets();
+    println!(
+        "With min_support=20%: {} frequent itemsets",
+        itemsets_low.len()
+    );
+
+    let mut apriori_high = Apriori::new()
+        .with_min_support(0.5)
+        .with_min_confidence(0.5);
+
+    apriori_high.fit(transactions);
+
+    let itemsets_high = apriori_high.get_frequent_itemsets();
+    println!(
+        "With min_support=50%: {} frequent itemsets",
+        itemsets_high.len()
+    );
+    println!("Higher support => fewer, more reliable patterns");
+    println!();
+}
+
+/// Example 3: Breakfast category analysis.
+fn run_breakfast_analysis() {
+    println!("\nExample 3: Breakfast Category Analysis");
+    println!("---------------------------------------");
+
+    let breakfast_transactions = create_breakfast_transactions();
 
     let mut breakfast_apriori = Apriori::new()
         .with_min_support(0.3)
@@ -140,8 +145,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
     println!();
+}
 
-    // Example 4: Interpreting Lift
+/// Example 4: Interpret lift values from association rules.
+fn interpret_lift(rules: &[aprender::mining::AssociationRule]) {
     println!("\nExample 4: Interpreting Lift Values");
     println!("------------------------------------");
 
@@ -165,17 +172,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     println!();
+}
 
-    // Example 5: Confidence vs Support Trade-off
+/// Example 5: Compare high-confidence vs balanced parameter settings.
+fn compare_confidence_support(transactions: &[Vec<usize>]) {
     println!("\nExample 5: Confidence vs Support Trade-off");
     println!("-------------------------------------------");
 
-    // High confidence, low support
     let mut high_conf = Apriori::new()
-        .with_min_support(0.1) // Low support
-        .with_min_confidence(0.9); // High confidence
+        .with_min_support(0.1)
+        .with_min_confidence(0.9);
 
-    high_conf.fit(&transactions);
+    high_conf.fit(transactions);
     let high_conf_rules = high_conf.get_rules();
 
     println!("High confidence (90%), low support (10%):");
@@ -183,20 +191,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  Trade-off: Very reliable but rare patterns");
     println!();
 
-    // Balanced parameters
     let mut balanced = Apriori::new()
-        .with_min_support(0.3) // Medium support
-        .with_min_confidence(0.6); // Medium confidence
+        .with_min_support(0.3)
+        .with_min_confidence(0.6);
 
-    balanced.fit(&transactions);
+    balanced.fit(transactions);
     let balanced_rules = balanced.get_rules();
 
     println!("Balanced (support=30%, confidence=60%):");
     println!("  {} rules found", balanced_rules.len());
     println!("  Trade-off: Reasonably reliable and frequent patterns");
     println!();
+}
 
-    // Example 6: Real-World Recommendations
+/// Example 6 & 7 & 8: Product placement, item frequency, and cross-selling.
+fn display_recommendations_and_analysis(apriori: &Apriori) {
+    let rules = apriori.get_rules();
+
+    // Example 6: Product placement recommendations
     println!("\nExample 6: Product Placement Recommendations");
     println!("---------------------------------------------");
 
@@ -217,7 +229,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!();
     }
 
-    // Example 7: Item Frequency Analysis
+    // Example 7: Item frequency analysis
     println!("\nExample 7: Item Frequency Analysis");
     println!("-----------------------------------");
 
@@ -237,7 +249,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     println!();
 
-    // Example 8: Finding Cross-Selling Opportunities
+    // Example 8: Cross-selling opportunities
     println!("\nExample 8: Cross-Selling Opportunities");
     println!("---------------------------------------");
 
@@ -256,6 +268,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("    Lift: {:.2}x", rule.lift);
         println!();
     }
+}
+
+#[allow(clippy::unnecessary_wraps)]
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    println!("=== Market Basket Analysis with Apriori ===\n");
+
+    // Item ID mapping for readability
+    // 1: Milk, 2: Bread, 3: Butter, 4: Eggs, 5: Cheese
+    // 6: Yogurt, 7: Coffee, 8: Tea, 9: Sugar, 10: Flour
+
+    let transactions = create_grocery_transactions();
+    let apriori = run_basic_analysis(&transactions);
+    compare_support_thresholds(&transactions);
+    run_breakfast_analysis();
+
+    let rules = apriori.get_rules();
+    interpret_lift(&rules);
+    compare_confidence_support(&transactions);
+    display_recommendations_and_analysis(&apriori);
 
     println!("=== Analysis Complete ===");
 

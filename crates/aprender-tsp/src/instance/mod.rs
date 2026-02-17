@@ -13,9 +13,10 @@ use crate::error::{TspError, TspResult};
 use std::path::Path;
 
 /// Edge weight computation method
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum EdgeWeightType {
     /// Euclidean 2D distance
+    #[default]
     Euc2d,
     /// Euclidean 3D distance
     Euc3d,

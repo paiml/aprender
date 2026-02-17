@@ -6,6 +6,61 @@ use crate::error::{TspError, TspResult};
 use crate::instance::{EdgeWeightType, TspInstance};
 use std::path::Path;
 
+/// Intermediate state during TSPLIB parsing
+#[derive(Default)]
+struct TsplibParseState {
+    name: String,
+    comment: Option<String>,
+    dimension: usize,
+    edge_weight_type: EdgeWeightType,
+    coords: Vec<(f64, f64)>,
+    edge_weights: Vec<f64>,
+    best_known: Option<f64>,
+}
+
+impl TsplibParseState {
+    fn into_instance(self, path: &Path) -> Result<TspInstance, TspError> {
+        if self.dimension == 0 {
+            return Err(TspError::ParseError {
+                file: path.to_path_buf(),
+                line: None,
+                cause: "Missing DIMENSION field".into(),
+            });
+        }
+
+        let distances = if !self.edge_weights.is_empty() {
+            TsplibParser::build_matrix_from_weights(&self.edge_weights, self.dimension, path)?
+        } else if !self.coords.is_empty() {
+            TsplibParser::compute_distance_matrix(&self.coords, self.edge_weight_type)
+        } else {
+            return Err(TspError::ParseError {
+                file: path.to_path_buf(),
+                line: None,
+                cause: "No coordinates or edge weights found".into(),
+            });
+        };
+
+        let name = if self.name.is_empty() {
+            path.file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("unnamed")
+                .to_string()
+        } else {
+            self.name
+        };
+
+        Ok(TspInstance {
+            name,
+            dimension: self.dimension,
+            comment: self.comment,
+            edge_weight_type: self.edge_weight_type,
+            coords: if self.coords.is_empty() { None } else { Some(self.coords) },
+            distances,
+            best_known: self.best_known,
+        })
+    }
+}
+
 /// Parser for TSPLIB format files
 #[derive(Debug)]
 pub struct TsplibParser;
@@ -17,155 +72,122 @@ impl TsplibParser {
         Self::parse(&content, path)
     }
 
+    /// Parse a single node coordinate line ("id x y")
+    fn parse_coord_line(
+        line: &str,
+        path: &Path,
+        line_num: usize,
+    ) -> TspResult<Option<(f64, f64)>> {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() >= 3 {
+            let x: f64 = parts[1].parse().map_err(|_| TspError::ParseError {
+                file: path.to_path_buf(),
+                line: Some(line_num + 1),
+                cause: format!("Invalid x coordinate: {}", parts[1]),
+            })?;
+            let y: f64 = parts[2].parse().map_err(|_| TspError::ParseError {
+                file: path.to_path_buf(),
+                line: Some(line_num + 1),
+                cause: format!("Invalid y coordinate: {}", parts[2]),
+            })?;
+            Ok(Some((x, y)))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Parse edge weight values from a line
+    fn parse_weight_line(
+        line: &str,
+        path: &Path,
+        line_num: usize,
+        weights: &mut Vec<f64>,
+    ) -> TspResult<()> {
+        for part in line.split_whitespace() {
+            let weight: f64 = part.parse().map_err(|_| TspError::ParseError {
+                file: path.to_path_buf(),
+                line: Some(line_num + 1),
+                cause: format!("Invalid edge weight: {part}"),
+            })?;
+            weights.push(weight);
+        }
+        Ok(())
+    }
+
+    /// Parse a header key-value field
+    fn parse_header_field(
+        key: &str,
+        value: &str,
+        path: &Path,
+        line_num: usize,
+        state: &mut TsplibParseState,
+    ) -> TspResult<()> {
+        match key {
+            "NAME" => state.name = value.to_string(),
+            "COMMENT" => {
+                state.comment = Some(value.to_string());
+                if let Some(opt) = Self::extract_optimal_from_comment(value) {
+                    state.best_known = Some(opt);
+                }
+            }
+            "BEST_KNOWN" | "OPTIMAL" => {
+                if let Ok(opt) = value.parse::<f64>() {
+                    state.best_known = Some(opt);
+                }
+            }
+            "DIMENSION" => {
+                state.dimension = value.parse().map_err(|_| TspError::ParseError {
+                    file: path.to_path_buf(),
+                    line: Some(line_num + 1),
+                    cause: format!("Invalid dimension: {value}"),
+                })?;
+            }
+            "EDGE_WEIGHT_TYPE" => {
+                state.edge_weight_type = Self::parse_edge_weight_type(value, path, line_num)?;
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
     /// Parse TSPLIB content
-    #[allow(clippy::too_many_lines)]
     pub fn parse(content: &str, path: &Path) -> TspResult<TspInstance> {
-        let mut name = String::new();
-        let mut comment = None;
-        let mut dimension = 0;
-        let mut edge_weight_type = EdgeWeightType::Euc2d;
-        let mut coords: Vec<(f64, f64)> = Vec::new();
-        let mut in_node_coord_section = false;
-        let mut in_edge_weight_section = false;
-        let mut edge_weights: Vec<f64> = Vec::new();
-        let mut best_known: Option<f64> = None;
+        let mut state = TsplibParseState::default();
+        let mut in_node_coord = false;
+        let mut in_edge_weight = false;
 
         for (line_num, line) in content.lines().enumerate() {
             let line = line.trim();
-
             if line.is_empty() || line == "EOF" {
                 continue;
             }
 
-            // Check for section headers
-            if line == "NODE_COORD_SECTION" {
-                in_node_coord_section = true;
-                in_edge_weight_section = false;
-                continue;
-            }
-            if line == "EDGE_WEIGHT_SECTION" {
-                in_edge_weight_section = true;
-                in_node_coord_section = false;
-                continue;
-            }
-            if line == "DISPLAY_DATA_SECTION" {
-                in_node_coord_section = false;
-                in_edge_weight_section = false;
-                continue;
+            // Section headers
+            match line {
+                "NODE_COORD_SECTION" => { in_node_coord = true; in_edge_weight = false; continue; }
+                "EDGE_WEIGHT_SECTION" => { in_edge_weight = true; in_node_coord = false; continue; }
+                "DISPLAY_DATA_SECTION" => { in_node_coord = false; in_edge_weight = false; continue; }
+                _ => {}
             }
 
-            // Parse node coordinates
-            if in_node_coord_section {
-                let parts: Vec<&str> = line.split_whitespace().collect();
-                if parts.len() >= 3 {
-                    let x: f64 = parts[1].parse().map_err(|_| TspError::ParseError {
-                        file: path.to_path_buf(),
-                        line: Some(line_num + 1),
-                        cause: format!("Invalid x coordinate: {}", parts[1]),
-                    })?;
-                    let y: f64 = parts[2].parse().map_err(|_| TspError::ParseError {
-                        file: path.to_path_buf(),
-                        line: Some(line_num + 1),
-                        cause: format!("Invalid y coordinate: {}", parts[2]),
-                    })?;
-                    coords.push((x, y));
+            if in_node_coord {
+                if let Some(coord) = Self::parse_coord_line(line, path, line_num)? {
+                    state.coords.push(coord);
                 }
-                continue;
-            }
-
-            // Parse edge weights
-            if in_edge_weight_section {
-                for part in line.split_whitespace() {
-                    let weight: f64 = part.parse().map_err(|_| TspError::ParseError {
-                        file: path.to_path_buf(),
-                        line: Some(line_num + 1),
-                        cause: format!("Invalid edge weight: {part}"),
-                    })?;
-                    edge_weights.push(weight);
-                }
-                continue;
-            }
-
-            // Parse header fields
-            if let Some((key, value)) = line.split_once(':') {
-                let key = key.trim().to_uppercase();
-                let value = value.trim();
-
-                match key.as_str() {
-                    "NAME" => name = value.to_string(),
-                    "COMMENT" => {
-                        comment = Some(value.to_string());
-                        // Try to extract optimal tour value from comment
-                        // Common patterns: "Optimal tour: 7542", "Optimal: 7542", "Best known: 7542"
-                        if let Some(opt) = Self::extract_optimal_from_comment(value) {
-                            best_known = Some(opt);
-                        }
-                    }
-                    "BEST_KNOWN" | "OPTIMAL" => {
-                        // Some files have explicit BEST_KNOWN or OPTIMAL field
-                        if let Ok(opt) = value.parse::<f64>() {
-                            best_known = Some(opt);
-                        }
-                    }
-                    "DIMENSION" => {
-                        dimension = value.parse().map_err(|_| TspError::ParseError {
-                            file: path.to_path_buf(),
-                            line: Some(line_num + 1),
-                            cause: format!("Invalid dimension: {value}"),
-                        })?;
-                    }
-                    "EDGE_WEIGHT_TYPE" => {
-                        edge_weight_type = Self::parse_edge_weight_type(value, path, line_num)?;
-                    }
-                    // Unknown or informational fields - ignore
-                    _ => {}
-                }
+            } else if in_edge_weight {
+                Self::parse_weight_line(line, path, line_num, &mut state.edge_weights)?;
+            } else if let Some((key, value)) = line.split_once(':') {
+                Self::parse_header_field(
+                    key.trim().to_uppercase().as_str(),
+                    value.trim(),
+                    path,
+                    line_num,
+                    &mut state,
+                )?;
             }
         }
 
-        // Validate parsed data
-        if dimension == 0 {
-            return Err(TspError::ParseError {
-                file: path.to_path_buf(),
-                line: None,
-                cause: "Missing DIMENSION field".into(),
-            });
-        }
-
-        // Build distance matrix
-        let distances = if !edge_weights.is_empty() {
-            Self::build_matrix_from_weights(&edge_weights, dimension, path)?
-        } else if !coords.is_empty() {
-            Self::compute_distance_matrix(&coords, edge_weight_type)
-        } else {
-            return Err(TspError::ParseError {
-                file: path.to_path_buf(),
-                line: None,
-                cause: "No coordinates or edge weights found".into(),
-            });
-        };
-
-        if name.is_empty() {
-            name = path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("unnamed")
-                .to_string();
-        }
-
-        Ok(TspInstance {
-            name,
-            dimension,
-            comment,
-            edge_weight_type,
-            coords: if coords.is_empty() {
-                None
-            } else {
-                Some(coords)
-            },
-            distances,
-            best_known,
-        })
+        state.into_instance(path)
     }
 
     fn parse_edge_weight_type(

@@ -1,4 +1,67 @@
 
+/// Pre-fault all mmap pages to avoid page faults during model load/inference (PAR-200: B4 CPU perf fix).
+///
+/// Without this, `OwnedQuantizedModel::from_mapped()` triggers ~9M minor page faults = 2.5s overhead.
+/// Touches one byte per 4K page to force the kernel to fault in each page.
+#[cfg(feature = "inference")]
+fn prefault_mmap_pages(data: &[u8]) {
+    let page_size = 4096;
+    let mut checksum: u8 = 0;
+    for i in (0..data.len()).step_by(page_size) {
+        checksum = checksum.wrapping_add(data[i]);
+    }
+    std::hint::black_box(checksum);
+    // Manual div_ceil to avoid MSRV incompatibility (clippy::incompatible_msrv)
+    let pages_touched = (data.len() + page_size - 1) / page_size;
+    let _ = pages_touched;
+}
+
+/// Build a fallback metadata display when quantized inference is unavailable.
+#[cfg(feature = "inference")]
+fn build_gguf_fallback_display(
+    model_path: &Path,
+    model: &realizar::gguf::GGUFModel,
+    load_error: &realizar::RealizarError,
+) -> String {
+    let mut output = format!(
+        "GGUF Model (quantized inference unavailable)\n\
+         Model: {}\n\
+         Load error: {}\n\
+         GGUF Version: {}\n\
+         Tensors: {}\n\
+         Metadata entries: {}\n\n",
+        model_path.display(),
+        load_error,
+        model.header.version,
+        model.tensors.len(),
+        model.metadata.len()
+    );
+
+    output.push_str("Metadata (first 10):\n");
+    for (i, (key, _)) in model.metadata.iter().take(10).enumerate() {
+        output.push_str(&format!("  {}. {}\n", i + 1, key));
+    }
+    if model.metadata.len() > 10 {
+        output.push_str(&format!("  ... and {} more\n", model.metadata.len() - 10));
+    }
+
+    output.push_str("\nTensors (first 10):\n");
+    for (i, tensor) in model.tensors.iter().take(10).enumerate() {
+        output.push_str(&format!(
+            "  {}. {} (type: {}, dims: {:?})\n",
+            i + 1,
+            tensor.name,
+            tensor.qtype,
+            tensor.dims
+        ));
+    }
+    if model.tensors.len() > 10 {
+        output.push_str(&format!("  ... and {} more\n", model.tensors.len() - 10));
+    }
+
+    output
+}
+
 /// Execute GGUF model inspection
 ///
 /// Execute GGUF model inference using realizar's optimized OwnedQuantizedModel.
@@ -13,32 +76,13 @@ fn execute_gguf_inference(
     use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel, QuantizedGenerateConfig};
     use std::time::Instant;
 
-    // Load GGUF model via memory mapping
     let start = Instant::now();
     let mapped_model = MappedGGUFModel::from_path(model_path)
         .map_err(|e| CliError::ModelLoadFailed(format!("Failed to load GGUF model: {e}")))?;
-    let mmap_time = start.elapsed();
+    let _mmap_time = start.elapsed();
 
-    // Pre-fault all mmap pages to avoid page faults during model load/inference (PAR-200: B4 CPU perf fix)
-    // Without this, OwnedQuantizedModel::from_mapped() triggers ~9M minor page faults = 2.5s overhead!
-    {
-        let prefault_start = Instant::now();
-        let data = mapped_model.data();
-        let page_size = 4096;
-        let mut checksum: u8 = 0;
-        // Touch one byte per page to force kernel to fault in the page
-        for i in (0..data.len()).step_by(page_size) {
-            checksum = checksum.wrapping_add(data[i]);
-        }
-        // Use checksum to prevent dead code elimination
-        std::hint::black_box(checksum);
-        // Debug timing (can be removed in production)
-        // Use manual div_ceil to avoid MSRV incompatibility (clippy::incompatible_msrv)
-        let pages_touched = (data.len() + page_size - 1) / page_size;
-        let _ = (pages_touched, prefault_start.elapsed());
-    }
+    prefault_mmap_pages(mapped_model.data());
 
-    // Try to create optimized quantized model
     let load_start = Instant::now();
     let model_result = OwnedQuantizedModel::from_mapped(&mapped_model);
     let _load_time = load_start.elapsed();
@@ -48,21 +92,15 @@ fn execute_gguf_inference(
             let input_tokens =
                 prepare_gguf_input_tokens(model_path, &mapped_model, options, input_path)?;
 
-            let max_new_tokens = options.max_tokens;
-            // PAR-200: Use greedy sampling for GPU argmax path (faster + deterministic)
             let gen_config = QuantizedGenerateConfig {
-                max_tokens: max_new_tokens.min(128),
-                temperature: 0.0,     // Greedy sampling for GPU argmax
-                top_k: 1,             // Force argmax path
-                trace: options.trace, // PMAT-TRACE-GGUF-001: Pass trace flag
+                max_tokens: options.max_tokens.min(128),
+                temperature: 0.0,
+                top_k: 1,
+                trace: options.trace,
                 ..Default::default()
             };
 
-            // Create decode function for tracing (APR-TRACE-001)
             let decode_fn = |token_id: u32| -> String { mapped_model.model.decode(&[token_id]) };
-
-            // PAR-200: Use GPU-resident path for 20x faster inference (116 tok/s vs 5.7 tok/s)
-            // APR-TRACE-001: Pass trace options for traced generation when --trace is enabled
             let trace_opts = if options.trace { Some(options) } else { None };
             let gen_result = run_gguf_generate(
                 model,
@@ -74,7 +112,6 @@ fn execute_gguf_inference(
                 Some(&decode_fn),
             )?;
 
-            // Show inference-only performance (excludes loading time)
             if options.benchmark {
                 let new_tokens = gen_result.tokens.len().saturating_sub(input_tokens.len());
                 let tok_per_sec = if gen_result.inference_ms > 0.0 {
@@ -88,55 +125,16 @@ fn execute_gguf_inference(
                 );
             }
 
-            // Decode output using GGUF's embedded tokenizer - only new tokens
             let generated_tokens = &gen_result.tokens[input_tokens.len()..];
             let decoded_text = mapped_model.model.decode(generated_tokens);
-
-            // Clean output: strip ChatML markers for instruct models
             let cleaned = clean_model_output(&decoded_text);
             Ok(cleaned)
         }
-        Err(e) => {
-            // Fallback to metadata display
-            let model = &mapped_model.model;
-            let mut output = format!(
-                "GGUF Model (quantized inference unavailable)\n\
-                 Model: {}\n\
-                 Load error: {}\n\
-                 GGUF Version: {}\n\
-                 Tensors: {}\n\
-                 Metadata entries: {}\n\n",
-                model_path.display(),
-                e,
-                model.header.version,
-                model.tensors.len(),
-                model.metadata.len()
-            );
-
-            output.push_str("Metadata (first 10):\n");
-            for (i, (key, _)) in model.metadata.iter().take(10).enumerate() {
-                output.push_str(&format!("  {}. {}\n", i + 1, key));
-            }
-            if model.metadata.len() > 10 {
-                output.push_str(&format!("  ... and {} more\n", model.metadata.len() - 10));
-            }
-
-            output.push_str("\nTensors (first 10):\n");
-            for (i, tensor) in model.tensors.iter().take(10).enumerate() {
-                output.push_str(&format!(
-                    "  {}. {} (type: {}, dims: {:?})\n",
-                    i + 1,
-                    tensor.name,
-                    tensor.qtype,
-                    tensor.dims
-                ));
-            }
-            if model.tensors.len() > 10 {
-                output.push_str(&format!("  ... and {} more\n", model.tensors.len() - 10));
-            }
-
-            Ok(output)
-        }
+        Err(e) => Ok(build_gguf_fallback_display(
+            model_path,
+            &mapped_model.model,
+            &e,
+        )),
     }
 }
 

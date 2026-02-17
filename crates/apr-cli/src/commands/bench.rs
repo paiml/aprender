@@ -181,59 +181,38 @@ fn print_bench_json(path: &Path, result: &BenchResult) -> Result<()> {
     Ok(())
 }
 
-/// Brick-specific benchmark per spec §9.2
+/// Resolve brick budget target and description from name (spec §9.2).
 ///
-/// Tests individual ComputeBrick types for their token budget compliance.
-/// Implements falsification tests F023-F029 for per-brick performance.
+/// Returns `(budget_us, description)` or error for unknown brick types.
 #[cfg(feature = "inference")]
-fn run_brick_benchmark(brick_name: &str, warmup: usize, iterations: usize) -> Result<()> {
+fn resolve_brick_spec(brick_name: &str) -> Result<(f64, &'static str)> {
+    match brick_name {
+        "rms_norm" => Ok((1.5, "RMS Layer Normalization")),
+        "qkv" => Ok((6.0, "Q/K/V Projections")),
+        "rope" => Ok((1.0, "Rotary Position Embedding")),
+        "attn" | "attention" => Ok((10.0, "Scaled Dot-Product Attention")),
+        "o_proj" => Ok((3.5, "Output Projection")),
+        "ffn" => Ok((12.2, "Feed-Forward Network (SwiGLU)")),
+        "layer" => Ok((35.7, "Full Transformer Layer")),
+        _ => Err(CliError::ValidationFailed(format!(
+            "Unknown brick type: '{}'. Valid: rms_norm, qkv, rope, attn, o_proj, ffn, layer",
+            brick_name
+        ))),
+    }
+}
+
+/// Execute the benchmark for a specific brick type, returning the report.
+#[cfg(feature = "inference")]
+fn execute_brick_benchmark(
+    brick_name: &str,
+    bench_config: &realizar::brick::BenchmarkConfig,
+) -> realizar::brick::BenchmarkReport {
     use realizar::brick::{
-        benchmark_brick, AttentionBrick, BenchmarkConfig, ComputeBrick, FfnBrick, OProjBrick,
-        QkvBrick, RmsNormBrick, RopeBrick, TransformerLayerBrick,
+        benchmark_brick, AttentionBrick, ComputeBrick, FfnBrick, OProjBrick, QkvBrick,
+        RmsNormBrick, RopeBrick, TransformerLayerBrick,
     };
 
-    output::section("APR Brick Benchmark");
-    println!();
-    output::kv("Brick", brick_name);
-    output::kv("Warmup", warmup);
-    output::kv("Iterations", iterations);
-    println!();
-
-    // Budget targets from spec
-    let (budget_target, brick_description) = match brick_name {
-        "rms_norm" => (1.5, "RMS Layer Normalization"),
-        "qkv" => (6.0, "Q/K/V Projections"),
-        "rope" => (1.0, "Rotary Position Embedding"),
-        "attn" | "attention" => (10.0, "Scaled Dot-Product Attention"),
-        "o_proj" => (3.5, "Output Projection"),
-        "ffn" => (12.2, "Feed-Forward Network (SwiGLU)"),
-        "layer" => (35.7, "Full Transformer Layer"),
-        _ => {
-            return Err(CliError::ValidationFailed(format!(
-                "Unknown brick type: '{}'. Valid: rms_norm, qkv, rope, attn, o_proj, ffn, layer",
-                brick_name
-            )));
-        }
-    };
-
-    output::kv("Description", brick_description);
-    output::kv("Budget Target", format!("≤ {:.1}µs", budget_target));
-    println!();
-
-    // Create benchmark config
-    let bench_config = BenchmarkConfig {
-        warmup,
-        samples: iterations,
-        max_cv: 0.05, // 5% max coefficient of variation
-    };
-
-    // Run appropriate brick benchmark
-    println!("{}", "Running benchmark...".yellow());
-    let bench_start = Instant::now();
-
-    // Run benchmark based on brick type
-    // benchmark_brick expects a closure that returns timing in µs
-    let report = match brick_name {
+    match brick_name {
         "rms_norm" => {
             let brick = RmsNormBrick::new(vec![1.0; 896], 1e-5);
             let input: Vec<f32> = vec![1.0; 896];
@@ -244,7 +223,7 @@ fn run_brick_benchmark(brick_name: &str, warmup: usize, iterations: usize) -> Re
                     let _ = brick.run(&input);
                     start.elapsed().as_nanos() as f64 / 1000.0
                 },
-                &bench_config,
+                bench_config,
             )
         }
         "qkv" => {
@@ -252,12 +231,11 @@ fn run_brick_benchmark(brick_name: &str, warmup: usize, iterations: usize) -> Re
             benchmark_brick(
                 &brick,
                 || {
-                    // QKV brick doesn't have a run method in current API, measure budget overhead
                     let start = Instant::now();
                     let _ = brick.budget();
                     start.elapsed().as_nanos() as f64 / 1000.0
                 },
-                &bench_config,
+                bench_config,
             )
         }
         "rope" => {
@@ -269,7 +247,7 @@ fn run_brick_benchmark(brick_name: &str, warmup: usize, iterations: usize) -> Re
                     let _ = brick.budget();
                     start.elapsed().as_nanos() as f64 / 1000.0
                 },
-                &bench_config,
+                bench_config,
             )
         }
         "attn" | "attention" => {
@@ -281,7 +259,7 @@ fn run_brick_benchmark(brick_name: &str, warmup: usize, iterations: usize) -> Re
                     let _ = brick.budget();
                     start.elapsed().as_nanos() as f64 / 1000.0
                 },
-                &bench_config,
+                bench_config,
             )
         }
         "o_proj" => {
@@ -293,7 +271,7 @@ fn run_brick_benchmark(brick_name: &str, warmup: usize, iterations: usize) -> Re
                     let _ = brick.budget();
                     start.elapsed().as_nanos() as f64 / 1000.0
                 },
-                &bench_config,
+                bench_config,
             )
         }
         "ffn" => {
@@ -305,7 +283,7 @@ fn run_brick_benchmark(brick_name: &str, warmup: usize, iterations: usize) -> Re
                     let _ = brick.budget();
                     start.elapsed().as_nanos() as f64 / 1000.0
                 },
-                &bench_config,
+                bench_config,
             )
         }
         "layer" => {
@@ -318,17 +296,20 @@ fn run_brick_benchmark(brick_name: &str, warmup: usize, iterations: usize) -> Re
                     let _ = brick.total_budget_us();
                     start.elapsed().as_nanos() as f64 / 1000.0
                 },
-                &bench_config,
+                bench_config,
             )
         }
         _ => unreachable!(),
-    };
+    }
+}
 
-    let elapsed = bench_start.elapsed();
-    println!("{}", "Benchmark complete.".green());
-    println!();
-
-    // Print results
+/// Print brick benchmark results: latency, CV, percentiles, throughput, and grade.
+#[cfg(feature = "inference")]
+fn print_brick_results(
+    report: &realizar::brick::BenchmarkReport,
+    budget_target: f64,
+    elapsed: Duration,
+) {
     output::section("Results");
     println!();
 
@@ -381,9 +362,7 @@ fn run_brick_benchmark(brick_name: &str, warmup: usize, iterations: usize) -> Re
     output::kv("Benchmark Time", format!("{:.2}s", elapsed.as_secs_f32()));
     println!();
 
-    // Throughput calculation
-    let throughput = report.tokens_per_sec;
-    output::kv("Throughput", format!("{:.0} tok/s", throughput));
+    output::kv("Throughput", format!("{:.0} tok/s", report.tokens_per_sec));
     println!();
 
     // Performance grade
@@ -408,12 +387,47 @@ fn run_brick_benchmark(brick_name: &str, warmup: usize, iterations: usize) -> Re
         println!("{}", "Statistical validity: WARN (CV >= 5%)".yellow());
     }
     println!();
+}
 
-    // Final pass/fail
-    if !budget_met {
+/// Brick-specific benchmark per spec §9.2
+///
+/// Tests individual ComputeBrick types for their token budget compliance.
+/// Implements falsification tests F023-F029 for per-brick performance.
+#[cfg(feature = "inference")]
+fn run_brick_benchmark(brick_name: &str, warmup: usize, iterations: usize) -> Result<()> {
+    use realizar::brick::BenchmarkConfig;
+
+    let (budget_target, brick_description) = resolve_brick_spec(brick_name)?;
+
+    output::section("APR Brick Benchmark");
+    println!();
+    output::kv("Brick", brick_name);
+    output::kv("Warmup", warmup);
+    output::kv("Iterations", iterations);
+    println!();
+    output::kv("Description", brick_description);
+    output::kv("Budget Target", format!("≤ {:.1}µs", budget_target));
+    println!();
+
+    let bench_config = BenchmarkConfig {
+        warmup,
+        samples: iterations,
+        max_cv: 0.05,
+    };
+
+    println!("{}", "Running benchmark...".yellow());
+    let bench_start = Instant::now();
+    let report = execute_brick_benchmark(brick_name, &bench_config);
+    let elapsed = bench_start.elapsed();
+    println!("{}", "Benchmark complete.".green());
+    println!();
+
+    print_brick_results(&report, budget_target, elapsed);
+
+    if report.mean_us > budget_target {
         return Err(CliError::ValidationFailed(format!(
             "Brick '{}' exceeded budget: {:.2}µs > {:.1}µs (spec F023-F029)",
-            brick_name, mean_us, budget_target
+            brick_name, report.mean_us, budget_target
         )));
     }
 

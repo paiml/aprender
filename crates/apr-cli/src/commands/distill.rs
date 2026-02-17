@@ -145,7 +145,54 @@ pub(crate) fn run(
         output::pipeline_stage("Distilling", output::StageStatus::Running);
     }
 
-    // PMAT-273: Load teacher, create/load student, write distilled model
+    let distill_result = execute_distillation(
+        teacher_path,
+        student_path,
+        distill_strategy,
+        temperature,
+        alpha,
+        epochs,
+        out,
+    )?;
+
+    if !json_output {
+        output::pipeline_stage("Distilling", output::StageStatus::Done);
+    }
+
+    print_distill_output(
+        teacher_path,
+        student_path,
+        out,
+        distill_strategy,
+        temperature,
+        alpha,
+        epochs,
+        &distill_result,
+        json_output,
+    );
+
+    Ok(())
+}
+
+/// Result of the distillation operation, containing all metrics needed for output.
+struct DistillResult {
+    teacher_size: u64,
+    student_size: u64,
+    output_size: u64,
+    teacher_tensor_count: usize,
+    student_tensor_count: usize,
+}
+
+/// Load teacher/student, create student if needed, write distilled model.
+fn execute_distillation(
+    teacher_path: &Path,
+    student_path: Option<&Path>,
+    distill_strategy: DistillStrategy,
+    temperature: f64,
+    alpha: f64,
+    epochs: u32,
+    out: &Path,
+) -> Result<DistillResult> {
     let rosetta = aprender::format::rosetta::RosettaStone::new();
     let teacher_report = rosetta
         .inspect(teacher_path)
@@ -155,29 +202,14 @@ pub(crate) fn run(
         .map_err(|e| CliError::ValidationFailed(format!("Cannot read teacher: {e}")))?
         .len();
 
-    // Load teacher tensors
-    let mut teacher_tensors = std::collections::BTreeMap::new();
-    for ti in &teacher_report.tensors {
-        if let Ok(data) = rosetta.load_tensor_f32(teacher_path, &ti.name) {
-            teacher_tensors.insert(ti.name.clone(), (data, ti.shape.clone()));
-        }
-    }
+    let teacher_tensors = load_tensors_f32(&rosetta, teacher_path, &teacher_report)?;
 
-    // Create or load student model
     let student_tensors = if let Some(sp) = student_path {
-        // Load existing student
         let student_report = rosetta
             .inspect(sp)
             .map_err(|e| CliError::ValidationFailed(format!("Failed to inspect student: {e}")))?;
-        let mut tensors = std::collections::BTreeMap::new();
-        for ti in &student_report.tensors {
-            if let Ok(data) = rosetta.load_tensor_f32(sp, &ti.name) {
-                tensors.insert(ti.name.clone(), (data, ti.shape.clone()));
-            }
-        }
-        tensors
+        load_tensors_f32(&rosetta, sp, &student_report)?
     } else {
-        // Progressive: create student by layer pruning
         create_student_from_teacher(&teacher_tensors, distill_strategy)
     };
 
@@ -186,7 +218,55 @@ pub(crate) fn run(
         .map(|(data, _)| data.len() * 4)
         .sum::<usize>() as u64;
 
-    // Write student model as APR with distillation metadata
+    let teacher_tensor_count = teacher_tensors.len();
+    let student_tensor_count = student_tensors.len();
+
+    let bytes = write_distilled_model(
+        teacher_path,
+        distill_strategy,
+        temperature,
+        alpha,
+        epochs,
+        &student_tensors,
+        out,
+    )?;
+    let output_size = bytes.len() as u64;
+
+    Ok(DistillResult {
+        teacher_size,
+        student_size,
+        output_size,
+        teacher_tensor_count,
+        student_tensor_count,
+    })
+}
+
+/// Load all tensors from a model file as f32 via RosettaStone.
+fn load_tensors_f32(
+    rosetta: &aprender::format::rosetta::RosettaStone,
+    path: &Path,
+    report: &aprender::format::rosetta::InspectionReport,
+) -> Result<std::collections::BTreeMap<String, (Vec<f32>, Vec<usize>)>> {
+    let mut tensors = std::collections::BTreeMap::new();
+    for ti in &report.tensors {
+        if let Ok(data) = rosetta.load_tensor_f32(path, &ti.name) {
+            tensors.insert(ti.name.clone(), (data, ti.shape.clone()));
+        }
+    }
+    Ok(tensors)
+}
+
+/// Serialize student tensors with distillation metadata and write to disk.
+#[allow(clippy::disallowed_methods)]
+fn write_distilled_model(
+    teacher_path: &Path,
+    strategy: DistillStrategy,
+    temperature: f64,
+    alpha: f64,
+    epochs: u32,
+    student_tensors: &std::collections::BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+    out: &Path,
+) -> Result<Vec<u8>> {
     let mut writer = aprender::serialization::apr::AprWriter::new();
     writer.set_metadata(
         "distillation_teacher",
@@ -194,13 +274,13 @@ pub(crate) fn run(
     );
     writer.set_metadata(
         "distillation_strategy",
-        serde_json::json!(format!("{distill_strategy:?}")),
+        serde_json::json!(format!("{strategy:?}")),
     );
     writer.set_metadata("distillation_temperature", serde_json::json!(temperature));
     writer.set_metadata("distillation_alpha", serde_json::json!(alpha));
     writer.set_metadata("distillation_epochs", serde_json::json!(epochs));
 
-    for (name, (data, shape)) in &student_tensors {
+    for (name, (data, shape)) in student_tensors {
         writer.add_tensor_f32(name, shape.clone(), data);
     }
 
@@ -210,28 +290,39 @@ pub(crate) fn run(
     std::fs::write(out, &bytes)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to write output: {e}")))?;
 
-    let output_size = bytes.len() as u64;
+    Ok(bytes)
+}
 
-    if !json_output {
-        output::pipeline_stage("Distilling", output::StageStatus::Done);
-    }
-
+/// Print distillation results as JSON or human-readable table.
+#[allow(clippy::too_many_arguments)]
+#[allow(clippy::disallowed_methods)]
+fn print_distill_output(
+    teacher_path: &Path,
+    student_path: Option<&Path>,
+    out: &Path,
+    strategy: DistillStrategy,
+    temperature: f64,
+    alpha: f64,
+    epochs: u32,
+    result: &DistillResult,
+    json_output: bool,
+) {
     if json_output {
         let json = serde_json::json!({
             "status": "completed",
             "teacher": teacher_path.display().to_string(),
             "student": student_path.map(|p| p.display().to_string()),
             "output": out.display().to_string(),
-            "strategy": format!("{distill_strategy:?}"),
+            "strategy": format!("{strategy:?}"),
             "temperature": temperature,
             "alpha": alpha,
             "epochs": epochs,
-            "teacher_size": teacher_size,
-            "student_size": student_size,
-            "output_size": output_size,
-            "teacher_tensors": teacher_tensors.len(),
-            "student_tensors": student_tensors.len(),
-            "compression": if student_size > 0 { teacher_size as f64 / student_size as f64 } else { 0.0 },
+            "teacher_size": result.teacher_size,
+            "student_size": result.student_size,
+            "output_size": result.output_size,
+            "teacher_tensors": result.teacher_tensor_count,
+            "student_tensors": result.student_tensor_count,
+            "compression": if result.student_size > 0 { result.teacher_size as f64 / result.student_size as f64 } else { 0.0 },
         });
         println!(
             "{}",
@@ -245,31 +336,29 @@ pub(crate) fn run(
             output::kv_table(&[
                 (
                     "Teacher size",
-                    humansize::format_size(teacher_size, humansize::BINARY)
+                    humansize::format_size(result.teacher_size, humansize::BINARY)
                 ),
                 (
                     "Student size",
-                    humansize::format_size(output_size, humansize::BINARY)
+                    humansize::format_size(result.output_size, humansize::BINARY)
                 ),
                 (
                     "Compression",
                     format!(
                         "{:.1}x",
-                        if student_size > 0 {
-                            teacher_size as f64 / student_size as f64
+                        if result.student_size > 0 {
+                            result.teacher_size as f64 / result.student_size as f64
                         } else {
                             0.0
                         }
                     )
                 ),
-                ("Teacher tensors", teacher_tensors.len().to_string()),
-                ("Student tensors", student_tensors.len().to_string()),
+                ("Teacher tensors", result.teacher_tensor_count.to_string()),
+                ("Student tensors", result.student_tensor_count.to_string()),
                 ("Output", out.display().to_string()),
             ])
         );
     }
-
-    Ok(())
 }
 
 /// Create a student model from teacher by layer pruning.
