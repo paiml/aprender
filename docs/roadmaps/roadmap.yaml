@@ -3870,3 +3870,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: GH-280
+  github_issue: null
+  item_type: task
+  title: 'GH-280: Kernel capability gate — contract-driven GPU admission control'
+  status: completed
+  priority: medium
+  assigned_to: null
+  created: 2026-02-17T18:43:44.982621547+00:00
+  updated: 2026-02-17T18:44:46Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
