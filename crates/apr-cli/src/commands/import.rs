@@ -22,6 +22,9 @@ pub(crate) fn run(
     enforce_provenance: bool,
     allow_no_config: bool,
 ) -> Result<()> {
+    // GH-267: Detect PyTorch model.bin format and give helpful error
+    reject_pytorch_format(source)?;
+
     check_provenance(source, enforce_provenance)?;
 
     // GH-169: Derive output path from source if not provided
@@ -307,6 +310,79 @@ fn derive_output_path(source: &str) -> Result<PathBuf> {
         })?;
         Ok(PathBuf::from(format!("{stem}.apr")))
     }
+}
+
+/// GH-267: Detect PyTorch model.bin files and give actionable conversion advice.
+///
+/// PyTorch checkpoints use Python pickle (magic: 0x80 0x02..0x05) or ZIP
+/// (magic: PK\x03\x04). Neither can be parsed safely in pure Rust.
+fn reject_pytorch_format(source: &str) -> Result<()> {
+    let path = Path::new(source);
+
+    // Check extension first (.bin is the standard PyTorch extension)
+    let is_bin_extension = path
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("bin") || ext.eq_ignore_ascii_case("pt"));
+    if !is_bin_extension {
+        return Ok(());
+    }
+
+    // Verify by reading magic bytes if the file exists locally
+    if path.exists() {
+        if let Ok(magic) = read_magic_bytes(path) {
+            if is_pytorch_magic(&magic) {
+                return Err(pytorch_conversion_error(source));
+            }
+        }
+        // .bin file exists but isn't PyTorch — could be other binary, let pipeline handle it
+        return Ok(());
+    }
+
+    // Remote .bin file — reject based on extension alone
+    Err(pytorch_conversion_error(source))
+}
+
+fn read_magic_bytes(path: &Path) -> std::io::Result<[u8; 4]> {
+    use std::io::Read;
+    let mut f = std::fs::File::open(path)?;
+    let mut buf = [0u8; 4];
+    f.read_exact(&mut buf)?;
+    Ok(buf)
+}
+
+/// Check if magic bytes indicate PyTorch format (pickle or ZIP).
+fn is_pytorch_magic(magic: &[u8; 4]) -> bool {
+    // ZIP archive (torch.save with _use_new_zipfile_serialization=True, default since PyTorch 1.6)
+    if magic[0..4] == *b"PK\x03\x04" {
+        return true;
+    }
+    // Python pickle protocol (older torch.save)
+    if magic[0] == 0x80 && (2..=5).contains(&magic[1]) {
+        return true;
+    }
+    false
+}
+
+fn pytorch_conversion_error(source: &str) -> CliError {
+    CliError::ValidationFailed(format!(
+        "GH-267: '{source}' appears to be a PyTorch checkpoint (model.bin / .pt).\n\
+         \n\
+         PyTorch checkpoints use Python pickle format which cannot be parsed in pure Rust.\n\
+         Convert to SafeTensors first using one of these methods:\n\
+         \n\
+         Method 1 (recommended): HuggingFace CLI\n\
+           pip install huggingface-hub\n\
+           huggingface-cli convert {source} --to safetensors\n\
+         \n\
+         Method 2: Python one-liner\n\
+           pip install torch safetensors\n\
+           python -c \"import torch; from safetensors.torch import save_file; \\\n\
+             sd = torch.load('{source}', weights_only=True); \\\n\
+             save_file(sd, '{source}'.replace('.bin', '.safetensors'))\"\n\
+         \n\
+         Then import the resulting .safetensors file:\n\
+           apr import model.safetensors -o model.apr"
+    ))
 }
 
 #[cfg(test)]
