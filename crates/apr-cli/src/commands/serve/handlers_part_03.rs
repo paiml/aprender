@@ -93,6 +93,13 @@ fn handle_gpu_chat_completion(
     };
     use futures_util::stream;
 
+    // GH-283: Validate model name before processing
+    if let Ok(s) = cpu_state.lock() {
+        if let Some(err_response) = validate_request_model(req, &s.model_name) {
+            return err_response;
+        }
+    }
+
     let messages = req.get("messages").and_then(|m| m.as_array());
     let stream_mode = req
         .get("stream")
@@ -185,12 +192,19 @@ fn handle_gpu_chat_completion(
         .unwrap_or_default()
         .as_secs();
 
+    // GH-283: Use actual model name in response
+    let response_model = cpu_state
+        .lock()
+        .ok()
+        .map(|s| s.model_name.clone())
+        .unwrap_or_else(|| "apr-gpu".to_string());
+
     if stream_mode {
         let response = serde_json::json!({
             "id": request_id,
             "object": "chat.completion.chunk",
             "created": created,
-            "model": "apr-gpu",
+            "model": &response_model,
             "choices": [{"index": 0, "delta": {"role": "assistant", "content": output_text}, "finish_reason": "stop"}]
         });
         let stream = stream::once(async move {
@@ -202,7 +216,7 @@ fn handle_gpu_chat_completion(
             "id": request_id,
             "object": "chat.completion",
             "created": created,
-            "model": "apr-gpu",
+            "model": &response_model,
             "choices": [{"index": 0, "message": {"role": "assistant", "content": output_text}, "finish_reason": "stop"}],
             "usage": {
                 "prompt_tokens": input_tokens.len(),

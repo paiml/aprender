@@ -137,3 +137,55 @@ fn test_tool_choice_function_name_roundtrip() {
     let parsed: ToolChoiceFunction = serde_json::from_str(&json).unwrap();
     assert_eq!(parsed.name, "my_fn");
 }
+
+// ========================================================================
+// GH-283: validate_request_model tests
+// ========================================================================
+
+#[cfg(feature = "inference")]
+#[test]
+fn validate_model_matching_name_passes() {
+    let req = serde_json::json!({"model": "qwen2.5-1.5b", "messages": []});
+    assert!(
+        handlers::validate_request_model(&req, "qwen2.5-1.5b").is_none(),
+        "Matching model name should pass"
+    );
+}
+
+#[cfg(feature = "inference")]
+#[test]
+fn validate_model_wildcard_apr_passes() {
+    let req = serde_json::json!({"model": "apr", "messages": []});
+    assert!(
+        handlers::validate_request_model(&req, "some-model").is_none(),
+        "'apr' should be accepted as wildcard"
+    );
+}
+
+#[cfg(feature = "inference")]
+#[test]
+fn validate_model_missing_field_passes() {
+    let req = serde_json::json!({"messages": []});
+    assert!(
+        handlers::validate_request_model(&req, "qwen2.5-1.5b").is_none(),
+        "Missing model field should pass"
+    );
+}
+
+#[cfg(feature = "inference")]
+#[test]
+fn validate_model_wrong_name_returns_error() {
+    let req = serde_json::json!({"model": "INVENTED_MODEL", "messages": []});
+    let result = handlers::validate_request_model(&req, "qwen2.5-1.5b");
+    assert!(result.is_some(), "Wrong model name should return error");
+}
+
+#[cfg(feature = "inference")]
+#[test]
+fn validate_model_null_field_passes() {
+    let req = serde_json::json!({"model": null, "messages": []});
+    assert!(
+        handlers::validate_request_model(&req, "any-model").is_none(),
+        "Null model field should pass (as_str returns None)"
+    );
+}

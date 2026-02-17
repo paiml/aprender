@@ -38,6 +38,46 @@ fn handle_apr_cpu_completion(
     }
 }
 
+/// GH-283: Validate the "model" field in the request matches the loaded model.
+///
+/// Returns an error response if the model name doesn't match. Accepts "apr" as
+/// a wildcard for backward compatibility. If no "model" field is present in the
+/// request, validation passes (OpenAI spec allows omitting it).
+#[cfg(feature = "inference")]
+pub(crate) fn validate_request_model(
+    req: &serde_json::Value,
+    loaded_model: &str,
+) -> Option<axum::response::Response> {
+    use axum::{http::StatusCode, response::IntoResponse, Json};
+
+    let requested = match req.get("model").and_then(serde_json::Value::as_str) {
+        Some(m) => m,
+        None => return None, // No model field — accept
+    };
+
+    // Accept "apr" as wildcard for backward compatibility
+    if requested == "apr" || requested == loaded_model {
+        return None;
+    }
+
+    Some(
+        (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({
+                "error": {
+                    "message": format!(
+                        "The model '{}' does not exist. This server is serving '{}'.",
+                        requested, loaded_model
+                    ),
+                    "type": "invalid_request_error",
+                    "code": "model_not_found"
+                }
+            })),
+        )
+            .into_response(),
+    )
+}
+
 /// Handle POST /v1/chat/completions for APR CPU inference (PAR-302).
 #[cfg(feature = "inference")]
 #[allow(clippy::disallowed_methods)]
@@ -69,6 +109,11 @@ fn handle_apr_cpu_chat_completion(
             .into_response();
         }
     };
+
+    // GH-283: Validate model name before processing
+    if let Some(err_response) = validate_request_model(req, &s.model_name) {
+        return err_response;
+    }
 
     let messages = req.get("messages").and_then(|m| m.as_array());
     let stream_mode = req
@@ -105,7 +150,7 @@ fn handle_apr_cpu_chat_completion(
 
     if stream_mode {
         let response = serde_json::json!({
-            "id": request_id, "object": "chat.completion.chunk", "created": created, "model": "apr",
+            "id": request_id, "object": "chat.completion.chunk", "created": created, "model": &s.model_name,
             "choices": [{"index": 0, "delta": {"role": "assistant", "content": out.text}, "finish_reason": "stop"}]
         });
         let events = vec![
@@ -117,7 +162,7 @@ fn handle_apr_cpu_chat_completion(
 
     let latency_ms = start.elapsed().as_millis() as u64;
     let mut response = serde_json::json!({
-        "id": request_id, "object": "chat.completion", "created": created, "model": "apr",
+        "id": request_id, "object": "chat.completion", "created": created, "model": &s.model_name,
         "choices": [{"index": 0, "message": {"role": "assistant", "content": out.text}, "finish_reason": "stop"}],
         "usage": {"prompt_tokens": out.input_token_count, "completion_tokens": out.tokens_generated, "total_tokens": out.input_token_count + out.tokens_generated},
         "_apr_metrics": {"latency_ms": latency_ms, "tok_per_sec": tok_per_sec}

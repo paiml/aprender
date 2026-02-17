@@ -86,6 +86,8 @@ struct AprServerState {
     architecture: String,
     is_transformer: bool,
     tokenizer: Option<SafeTensorsTokenizerInfo>,
+    /// GH-283: Model name for request validation (derived from filename stem)
+    model_name: String,
 }
 
 /// Output from a successful APR inference run
@@ -249,12 +251,20 @@ fn load_apr_model_state(model_path: &Path, config: &ServerConfig) -> Result<AprS
         None
     };
 
+    // GH-283: Derive model name from filename for request validation
+    let model_name = model_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("apr")
+        .to_string();
+
     Ok(AprServerState {
         transformer,
         model_type,
         architecture,
         is_transformer,
         tokenizer: bpe_tokenizer,
+        model_name,
     })
 }
 
