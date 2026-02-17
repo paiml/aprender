@@ -1,0 +1,147 @@
+family: gpt2
+display_name: "OpenAI GPT-2"
+vendor: OpenAI
+architectures:
+  - GPT2LMHeadModel
+hf_pattern: "openai-community/gpt2*"
+
+size_variants:
+  small:
+    parameters: "124M"
+    hidden_dim: 768
+    num_layers: 12
+    num_heads: 12
+    num_kv_heads: 12
+    intermediate_dim: 3072
+    vocab_size: 50257
+    max_position_embeddings: 1024
+    head_dim: 64
+    norm_eps: 0.00001
+  medium:
+    parameters: "355M"
+    hidden_dim: 1024
+    num_layers: 24
+    num_heads: 16
+    num_kv_heads: 16
+    intermediate_dim: 4096
+    vocab_size: 50257
+    max_position_embeddings: 1024
+    head_dim: 64
+    norm_eps: 0.00001
+  large:
+    parameters: "774M"
+    hidden_dim: 1280
+    num_layers: 36
+    num_heads: 20
+    num_kv_heads: 20
+    intermediate_dim: 5120
+    vocab_size: 50257
+    max_position_embeddings: 1024
+    head_dim: 64
+    norm_eps: 0.00001
+  xl:
+    parameters: "1.5B"
+    hidden_dim: 1600
+    num_layers: 48
+    num_heads: 25
+    num_kv_heads: 25
+    intermediate_dim: 6400
+    vocab_size: 50257
+    max_position_embeddings: 1024
+    head_dim: 64
+    norm_eps: 0.00001
+
+constraints:
+  attention_type: mha
+  activation: gelu
+  norm_type: layernorm
+  has_bias: "true"
+  tied_embeddings: "true"
+  positional_encoding: absolute
+  mlp_type: gelu_mlp
+
+# Tensor names use aprender's normalized convention (not HuggingFace raw names).
+# HuggingFace GPT-2 uses Conv1D layers (weight shape [in, out]) but aprender
+# normalizes to the same naming pattern as LLaMA. The weight SHAPES remain
+# Conv1D layout [in_features, out_features] — consumers MUST transpose for
+# Linear-style matmul (y = x @ W^T).
+#
+# HuggingFace raw name mapping (for reference):
+#   transformer.wte.weight          -> model.embed_tokens.weight
+#   transformer.wpe.weight          -> model.position_embedding.weight
+#   transformer.h.{n}.ln_1.weight   -> model.layers.{n}.input_layernorm.weight
+#   transformer.h.{n}.ln_1.bias     -> model.layers.{n}.input_layernorm.bias
+#   transformer.h.{n}.attn.c_attn   -> split into q_proj/k_proj/v_proj (Conv1D [768, 2304])
+#   transformer.h.{n}.attn.c_proj   -> model.layers.{n}.self_attn.o_proj (Conv1D [768, 768])
+#   transformer.h.{n}.ln_2.weight   -> model.layers.{n}.post_attention_layernorm.weight
+#   transformer.h.{n}.ln_2.bias     -> model.layers.{n}.post_attention_layernorm.bias
+#   transformer.h.{n}.mlp.c_fc      -> model.layers.{n}.mlp.up_proj (Conv1D [768, 3072])
+#   transformer.h.{n}.mlp.c_proj    -> model.layers.{n}.mlp.down_proj (Conv1D [3072, 768])
+#   transformer.ln_f.weight         -> model.norm.weight
+#   transformer.ln_f.bias           -> model.norm.bias
+#   lm_head.weight                  -> lm_head.weight (tied to embed_tokens)
+tensor_template:
+  embedding: "model.embed_tokens.weight"
+  position_embedding: "model.position_embedding.weight"
+  lm_head: "lm_head.weight"
+  final_norm_weight: "model.norm.weight"
+  final_norm_bias: "model.norm.bias"
+  per_layer:
+    q_proj_weight: "model.layers.{n}.self_attn.q_proj.weight"
+    q_proj_bias: "model.layers.{n}.self_attn.q_proj.bias"
+    k_proj_weight: "model.layers.{n}.self_attn.k_proj.weight"
+    k_proj_bias: "model.layers.{n}.self_attn.k_proj.bias"
+    v_proj_weight: "model.layers.{n}.self_attn.v_proj.weight"
+    v_proj_bias: "model.layers.{n}.self_attn.v_proj.bias"
+    o_proj_weight: "model.layers.{n}.self_attn.o_proj.weight"
+    o_proj_bias: "model.layers.{n}.self_attn.o_proj.bias"
+    up_proj_weight: "model.layers.{n}.mlp.up_proj.weight"
+    up_proj_bias: "model.layers.{n}.mlp.up_proj.bias"
+    down_proj_weight: "model.layers.{n}.mlp.down_proj.weight"
+    down_proj_bias: "model.layers.{n}.mlp.down_proj.bias"
+    input_layernorm_weight: "model.layers.{n}.input_layernorm.weight"
+    input_layernorm_bias: "model.layers.{n}.input_layernorm.bias"
+    post_attention_layernorm_weight: "model.layers.{n}.post_attention_layernorm.weight"
+    post_attention_layernorm_bias: "model.layers.{n}.post_attention_layernorm.bias"
+    causal_mask: "model.layers.{n}.attn.bias"
+    gate_proj_weight: null
+    gate_proj_bias: null
+
+# Shape template: GPT-2 Conv1D layout [in_features, out_features]
+# This is TRANSPOSED relative to Linear layout [out_features, in_features].
+# The shape_template documents the STORED layout. Inference engines must
+# transpose weight matrices before matmul: y = x @ W (Conv1D) vs y = x @ W^T (Linear).
+shape_template:
+  embedding: "[vocab_size, hidden_dim]"
+  position_embedding: "[max_position_embeddings, hidden_dim]"
+  lm_head: "[vocab_size, hidden_dim]"
+  final_norm: "[hidden_dim]"
+  # Conv1D layout: [in_features, out_features]
+  # q/k/v_proj: symmetric [hidden_dim, hidden_dim], no transpose needed
+  q_proj: "[hidden_dim, hidden_dim]"
+  k_proj: "[hidden_dim, hidden_dim]"
+  v_proj: "[hidden_dim, hidden_dim]"
+  o_proj: "[hidden_dim, hidden_dim]"
+  # up_proj: [hidden_dim, intermediate_dim] Conv1D layout
+  up_proj: "[hidden_dim, intermediate_dim]"
+  # down_proj: [intermediate_dim, hidden_dim] Conv1D layout
+  down_proj: "[intermediate_dim, hidden_dim]"
+  input_layernorm: "[hidden_dim]"
+  post_attention_layernorm: "[hidden_dim]"
+  causal_mask: "[1, 1, max_position_embeddings, max_position_embeddings]"
+  bias: "[hidden_dim]"
+
+quantizations:
+  - q4_k_m
+  - q8_0
+  - f16
+  - f32
+
+certification:
+  playbook_path: "../apr-model-qa-playbook/playbooks/models/gpt2-{size}.playbook.yaml"
+  csv_family_key: "gpt2"
+  size_categories:
+    small: small
+    medium: small
+    large: medium
+    xl: large
