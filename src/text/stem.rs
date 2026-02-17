@@ -198,71 +198,100 @@ impl PorterStemmer {
     }
 }
 
-impl Stemmer for PorterStemmer {
-    #[allow(clippy::too_many_lines)]
-    fn stem(&self, word: &str) -> Result<String, AprenderError> {
-        // Convert to lowercase for processing
-        let mut word = word.to_lowercase();
-
-        // Skip very short words
-        if word.len() <= 2 {
-            return Ok(word);
-        }
-
-        // Step 1a: plurals and -ed, -ing
+impl PorterStemmer {
+    /// Step 1: Handle plurals, past tense, and progressive suffixes
+    fn apply_step1(word: &mut String) {
+        // Step 1a: plurals
         if word.ends_with("sses") || word.ends_with("ies") {
-            word = word[..word.len() - 2].to_string();
-        } else if word.ends_with("ss") {
-            // Keep ss
-        } else if word.ends_with('s') && word.len() > 1 {
-            word = word[..word.len() - 1].to_string();
+            word.truncate(word.len() - 2);
+        } else if !word.ends_with("ss") && word.ends_with('s') && word.len() > 1 {
+            word.truncate(word.len() - 1);
         }
 
-        // Step 1b: -ed, -ing
+        // Step 1b: -eed, -ed, -ing
         let mut step1b_flag = false;
         if word.ends_with("eed") {
             let stem = &word[..word.len() - 3];
             if Self::measure(stem) > 0 {
-                word = format!("{stem}ee");
+                word.truncate(word.len() - 1); // eed → ee
             }
         } else if word.ends_with("ed") {
-            let stem = &word[..word.len() - 2];
-            if stem.chars().any(Self::is_vowel) {
-                word = stem.to_string();
+            let stem_len = word.len() - 2;
+            if word[..stem_len].chars().any(Self::is_vowel) {
+                word.truncate(stem_len);
                 step1b_flag = true;
             }
         } else if word.ends_with("ing") {
-            let stem = &word[..word.len() - 3];
-            if stem.chars().any(Self::is_vowel) {
-                word = stem.to_string();
+            let stem_len = word.len() - 3;
+            if word[..stem_len].chars().any(Self::is_vowel) {
+                word.truncate(stem_len);
                 step1b_flag = true;
             }
         }
 
-        // Step 1b continued: handle special cases after removing -ed/-ing
         if step1b_flag {
-            if word.ends_with("at") || word.ends_with("bl") || word.ends_with("iz") {
-                word.push('e');
-            } else if Self::ends_with_double_consonant(&word)
-                && !word.ends_with('l')
-                && !word.ends_with('s')
-                && !word.ends_with('z')
-            {
-                word.pop();
-            } else if Self::measure(&word) == 1 && Self::ends_with_cvc(&word) {
-                word.push('e');
-            }
+            Self::apply_step1b_fixup(word);
         }
 
-        // Step 1c: -y
-        if word.ends_with('y') && word.len() > 1 {
-            let stem = &word[..word.len() - 1];
-            if stem.chars().any(Self::is_vowel) {
-                word = format!("{stem}i");
+        // Step 1c: -y → -i
+        if word.ends_with('y') && word.len() > 1 && word[..word.len() - 1].chars().any(Self::is_vowel) {
+            word.truncate(word.len() - 1);
+            word.push('i');
+        }
+    }
+
+    /// Step 1b fixup: adjust word after removing -ed/-ing
+    fn apply_step1b_fixup(word: &mut String) {
+        if word.ends_with("at") || word.ends_with("bl") || word.ends_with("iz") {
+            word.push('e');
+        } else if Self::ends_with_double_consonant(word)
+            && !word.ends_with('l')
+            && !word.ends_with('s')
+            && !word.ends_with('z')
+        {
+            word.pop();
+        } else if Self::measure(word) == 1 && Self::ends_with_cvc(word) {
+            word.push('e');
+        }
+    }
+
+    /// Step 4: Remove suffixes from words with measure > 1
+    fn apply_step4(word: &mut String) {
+        if Self::measure(word) <= 1 {
+            return;
+        }
+        // Suffix → trim length (checked in order of specificity)
+        const SUFFIXES: &[(&str, usize)] = &[
+            ("ement", 5), ("ance", 4), ("ence", 4), ("able", 4), ("ible", 4),
+            ("ment", 4), ("ant", 3), ("ent", 3), ("ism", 3), ("ate", 3),
+            ("iti", 3), ("ous", 3), ("ive", 3), ("ize", 3), ("al", 2),
+            ("er", 2), ("ic", 2), ("ou", 2),
+        ];
+        for &(suffix, trim) in SUFFIXES {
+            if word.ends_with(suffix) {
+                word.truncate(word.len() - trim);
+                return;
             }
         }
+        // Special case: -ion requires preceding s or t
+        if word.ends_with("ion") && word.len() > 3 {
+            if matches!(word.as_bytes().get(word.len() - 4), Some(b's' | b't')) {
+                word.truncate(word.len() - 3);
+            }
+        }
+    }
+}
 
-        // Step 2: common suffixes
+impl Stemmer for PorterStemmer {
+    fn stem(&self, word: &str) -> Result<String, AprenderError> {
+        let mut word = word.to_lowercase();
+        if word.len() <= 2 {
+            return Ok(word);
+        }
+
+        Self::apply_step1(&mut word);
+
+        // Step 2: derivational suffixes
         word = Self::replace_suffix(&word, "ational", "ate", 0);
         word = Self::replace_suffix(&word, "tional", "tion", 0);
         word = Self::replace_suffix(&word, "enci", "ence", 0);
@@ -284,7 +313,7 @@ impl Stemmer for PorterStemmer {
         word = Self::replace_suffix(&word, "iviti", "ive", 0);
         word = Self::replace_suffix(&word, "biliti", "ble", 0);
 
-        // Step 3: more suffixes
+        // Step 3: more derivational suffixes
         word = Self::replace_suffix(&word, "icate", "ic", 0);
         word = Self::replace_suffix(&word, "ative", "", 0);
         word = Self::replace_suffix(&word, "alize", "al", 0);
@@ -293,59 +322,13 @@ impl Stemmer for PorterStemmer {
         word = Self::replace_suffix(&word, "ful", "", 0);
         word = Self::replace_suffix(&word, "ness", "", 0);
 
-        // Step 4: remove suffixes in longer words
-        #[allow(clippy::if_same_then_else)]
-        if Self::measure(&word) > 1 {
-            if word.ends_with("al") {
-                word = word[..word.len() - 2].to_string();
-            } else if word.ends_with("ance") {
-                word = word[..word.len() - 4].to_string();
-            } else if word.ends_with("ence") {
-                word = word[..word.len() - 4].to_string();
-            } else if word.ends_with("er") {
-                word = word[..word.len() - 2].to_string();
-            } else if word.ends_with("ic") {
-                word = word[..word.len() - 2].to_string();
-            } else if word.ends_with("able") {
-                word = word[..word.len() - 4].to_string();
-            } else if word.ends_with("ible") {
-                word = word[..word.len() - 4].to_string();
-            } else if word.ends_with("ant") {
-                word = word[..word.len() - 3].to_string();
-            } else if word.ends_with("ement") {
-                word = word[..word.len() - 5].to_string();
-            } else if word.ends_with("ment") {
-                word = word[..word.len() - 4].to_string();
-            } else if word.ends_with("ent") {
-                word = word[..word.len() - 3].to_string();
-            } else if word.ends_with("ion") && word.len() > 3 {
-                let prev = word.chars().nth(word.len() - 4);
-                if matches!(prev, Some('s' | 't')) {
-                    word = word[..word.len() - 3].to_string();
-                }
-            } else if word.ends_with("ou") {
-                word = word[..word.len() - 2].to_string();
-            } else if word.ends_with("ism") {
-                word = word[..word.len() - 3].to_string();
-            } else if word.ends_with("ate") {
-                word = word[..word.len() - 3].to_string();
-            } else if word.ends_with("iti") {
-                word = word[..word.len() - 3].to_string();
-            } else if word.ends_with("ous") {
-                word = word[..word.len() - 3].to_string();
-            } else if word.ends_with("ive") {
-                word = word[..word.len() - 3].to_string();
-            } else if word.ends_with("ize") {
-                word = word[..word.len() - 3].to_string();
-            }
-        }
+        Self::apply_step4(&mut word);
 
-        // Step 5a: remove -e
+        // Step 5a: remove final -e
         if word.ends_with('e') {
-            let stem = &word[..word.len() - 1];
-            let m = Self::measure(stem);
-            if m > 1 || (m == 1 && !Self::ends_with_cvc(stem)) {
-                word = stem.to_string();
+            let m = Self::measure(&word[..word.len() - 1]);
+            if m > 1 || (m == 1 && !Self::ends_with_cvc(&word[..word.len() - 1])) {
+                word.truncate(word.len() - 1);
             }
         }
 
