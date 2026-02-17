@@ -76,44 +76,46 @@ pub fn run(model_ref: &str, force: bool) -> Result<()> {
 fn run_single_file(model_ref: &str, force: bool) -> Result<()> {
     println!("Model: {}", model_ref.cyan());
 
-    // Initialize pacha ModelFetcher
     let mut fetcher = ModelFetcher::with_config(FetchConfig::default()).map_err(|e| {
         CliError::ValidationFailed(format!("Failed to initialize model fetcher: {e}"))
     })?;
 
-    // Check if already cached
     if !force && fetcher.is_cached(model_ref) {
-        println!("{} Model already cached", "✓".green());
-
-        // Get the cached path
-        let result = fetcher
-            .pull_quiet(model_ref)
-            .map_err(|e| CliError::ValidationFailed(format!("Failed to get cached model: {e}")))?;
-
-        println!("  Path: {}", result.path.display());
-        println!("  Size: {}", result.size_human());
-        println!("  Format: {:?}", result.format);
-
-        // GH-198: Ensure companion files exist for cached SafeTensors models
-        if matches!(result.format, ModelFormat::SafeTensors(_)) {
-            fetch_safetensors_companions(&result.path, &result.resolved_uri)?;
-            // GH-211: Convert to APR + GGUF for full QA qualification
-            convert_safetensors_formats(&result.path)?;
-        }
-
-        println!();
-        println!("{}", "Usage:".cyan().bold());
-        println!("  apr run {}", result.path.display());
-        return Ok(());
+        return handle_cached_model(&mut fetcher, model_ref);
     }
 
+    let result = download_single_model(&mut fetcher, model_ref)?;
+    ensure_safetensors_companions(&result)?;
+    print_pull_usage(&result.path, true);
+    Ok(())
+}
+
+/// Handle a model that is already cached in pacha.
+fn handle_cached_model(fetcher: &mut ModelFetcher, model_ref: &str) -> Result<()> {
+    println!("{} Model already cached", "✓".green());
+    let result = fetcher
+        .pull_quiet(model_ref)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to get cached model: {e}")))?;
+
+    println!("  Path: {}", result.path.display());
+    println!("  Size: {}", result.size_human());
+    println!("  Format: {:?}", result.format);
+
+    ensure_safetensors_companions(&result)?;
+    print_pull_usage(&result.path, false);
+    Ok(())
+}
+
+/// Download a single model with progress bar.
+fn download_single_model(
+    fetcher: &mut ModelFetcher,
+    model_ref: &str,
+) -> Result<pacha::fetcher::FetchResult> {
     println!();
     println!("{}", "Downloading...".yellow());
 
-    // Pull with progress callback
     let result = fetcher
         .pull(model_ref, |progress| {
-            // Simple progress bar
             let pct = progress.percent();
             print!(
                 "\r  [{:50}] {:5.1}% ({}/{})",
@@ -139,20 +141,26 @@ fn run_single_file(model_ref: &str, force: bool) -> Result<()> {
     println!("  Size: {}", result.size_human().yellow());
     println!("  Format: {:?}", result.format);
     println!("  Hash: {}", &result.hash[..16]);
+    Ok(result)
+}
 
-    // GH-198: Download companion files for SafeTensors models
+/// Ensure companion files exist for SafeTensors models (GH-198, GH-211).
+fn ensure_safetensors_companions(result: &pacha::fetcher::FetchResult) -> Result<()> {
     if matches!(result.format, ModelFormat::SafeTensors(_)) {
         fetch_safetensors_companions(&result.path, &result.resolved_uri)?;
-        // GH-211: Convert to APR + GGUF for full QA qualification
         convert_safetensors_formats(&result.path)?;
     }
+    Ok(())
+}
 
+/// Print usage instructions after a successful pull.
+fn print_pull_usage(path: &Path, show_serve: bool) {
     println!();
     println!("{}", "Usage:".cyan().bold());
-    println!("  apr run {}", result.path.display());
-    println!("  apr serve {}", result.path.display());
-
-    Ok(())
+    println!("  apr run {}", path.display());
+    if show_serve {
+        println!("  apr serve {}", path.display());
+    }
 }
 
 /// GH-213: Pull a sharded SafeTensors model (3B+ models with multiple shard files)
@@ -164,56 +172,20 @@ fn run_sharded(org: &str, repo: &str, shard_files: &[String], force: bool) -> Re
         shard_files.len().to_string().yellow()
     );
 
-    let cache_dir = dirs::home_dir()
-        .ok_or_else(|| CliError::ValidationFailed("Cannot find home directory".to_string()))?
-        .join(".apr")
-        .join("cache")
-        .join("hf")
-        .join(org)
-        .join(repo);
-
+    let cache_dir = resolve_shard_cache_dir(org, repo)?;
     std::fs::create_dir_all(&cache_dir)?;
 
     let base_url = format!("https://huggingface.co/{org}/{repo}/resolve/main");
-
-    // Download index.json
     let index_path = cache_dir.join("model.safetensors.index.json");
-    if force || !index_path.exists() {
-        println!();
-        println!("  {} model.safetensors.index.json", "Downloading".yellow());
-        download_file(
-            &format!("{base_url}/model.safetensors.index.json"),
-            &index_path,
-        )?;
-    } else {
-        println!("  {} model.safetensors.index.json (cached)", "✓".green());
-    }
 
-    // GH-213: Load existing manifest for cache-hit verification
+    download_index_if_needed(&base_url, &index_path, force)?;
+
     let manifest_path = cache_dir.join(".apr-manifest.json");
-    let existing_manifest: Option<ShardManifest> = if !force && manifest_path.exists() {
-        std::fs::read_to_string(&manifest_path)
-            .ok()
-            .and_then(|s| serde_json::from_str(&s).ok())
-    } else {
-        None
-    };
+    let existing_manifest = load_existing_manifest(&manifest_path, force);
 
-    // Download each shard, collecting checksums
-    let mut file_checksums: HashMap<String, FileChecksum> = HashMap::new();
-    let total_shards = shard_files.len();
-    for (i, shard_file) in shard_files.iter().enumerate() {
-        download_or_verify_shard(
-            &cache_dir,
-            &base_url,
-            shard_file,
-            i,
-            total_shards,
-            force,
-            existing_manifest.as_ref(),
-            &mut file_checksums,
-        )?;
-    }
+    let file_checksums = download_all_shards(
+        &cache_dir, &base_url, shard_files, force, existing_manifest.as_ref(),
+    )?;
 
     download_companion_files(&cache_dir, &base_url, force)?;
     write_shard_manifest(&manifest_path, org, repo, file_checksums)?;
@@ -221,17 +193,70 @@ fn run_sharded(org: &str, repo: &str, shard_files: &[String], force: bool) -> Re
     println!();
     println!("{} Downloaded successfully", "✓".green());
     println!("  Path: {}", index_path.display().to_string().green());
-    println!("  Shards: {}", total_shards.to_string().yellow());
+    println!("  Shards: {}", shard_files.len().to_string().yellow());
 
-    // GH-211: Convert sharded SafeTensors to APR + GGUF for full QA qualification
     convert_safetensors_formats(&index_path)?;
 
     println!();
     println!("{}", "Usage:".cyan().bold());
     println!("  apr run {}", index_path.display());
     println!("  apr serve {}", index_path.display());
-
     Ok(())
+}
+
+/// Resolve the cache directory for a sharded model.
+fn resolve_shard_cache_dir(org: &str, repo: &str) -> Result<std::path::PathBuf> {
+    Ok(dirs::home_dir()
+        .ok_or_else(|| CliError::ValidationFailed("Cannot find home directory".to_string()))?
+        .join(".apr")
+        .join("cache")
+        .join("hf")
+        .join(org)
+        .join(repo))
+}
+
+/// Download the SafeTensors index.json if not already cached.
+fn download_index_if_needed(base_url: &str, index_path: &Path, force: bool) -> Result<()> {
+    if force || !index_path.exists() {
+        println!();
+        println!("  {} model.safetensors.index.json", "Downloading".yellow());
+        download_file(
+            &format!("{base_url}/model.safetensors.index.json"),
+            index_path,
+        )?;
+    } else {
+        println!("  {} model.safetensors.index.json (cached)", "✓".green());
+    }
+    Ok(())
+}
+
+/// Load existing shard manifest for cache-hit verification (GH-213).
+fn load_existing_manifest(manifest_path: &Path, force: bool) -> Option<ShardManifest> {
+    if force || !manifest_path.exists() {
+        return None;
+    }
+    std::fs::read_to_string(manifest_path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+}
+
+/// Download all shards, collecting checksums for the manifest.
+fn download_all_shards(
+    cache_dir: &Path,
+    base_url: &str,
+    shard_files: &[String],
+    force: bool,
+    existing_manifest: Option<&ShardManifest>,
+) -> Result<HashMap<String, FileChecksum>> {
+    let mut file_checksums: HashMap<String, FileChecksum> = HashMap::new();
+    let total = shard_files.len();
+    for (i, shard_file) in shard_files.iter().enumerate() {
+        download_or_verify_shard(
+            cache_dir, base_url, shard_file, i, total, force,
+            existing_manifest, &mut file_checksums,
+        )?;
+    }
+    Ok(file_checksums)
 }
 
 /// Download or verify a single shard file, updating the checksum map.
