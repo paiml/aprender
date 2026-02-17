@@ -1,9 +1,9 @@
 ---
 title: "Qwen3-8B: Performance Parity Pipeline"
 issue: GH-279
-status: In Progress
+status: Partially Complete (GH-280 blocks GPU parity)
 created: 2026-02-17
-updated: 2026-02-17
+updated: 2026-02-18
 ---
 
 # Qwen3-8B: Performance Parity Pipeline
