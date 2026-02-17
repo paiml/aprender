@@ -157,13 +157,23 @@ Fix: `ValidatedGgufMetadata::validate()` auto-dedupes with `_N` suffixes (commit
 `apr import hf://Qwen/Qwen3-8B` now checks `~/.apr/cache/hf/` and falls back to `model.safetensors.index.json` for sharded models.
 Fix: Added APR cache to `find_in_cache()` + sharded index fallback in `resolve_hf_source()`.
 
-### GH-279-3: GPU parity failure (IN PROGRESS)
-GPU forward pass diverges from CPU (cosine sim 0.000479). Root cause: likely QK norm not applied in GPU matmul path.
+### GH-279-3: GPU parity failure (IN PROGRESS → PARTIALLY FIXED)
+GPU forward pass diverges from CPU (cosine sim 0.000479). Root cause: QK norm not applied in GPU matmul path.
 CPU argmax: 33975 | GPU argmax: 85222 | Max logit diff: 12084.8
+Fixes applied: trueno PTX bar_sync label mismatch fixed (commit `d989451`), sm_70 baseline target for broad GPU compatibility. Remaining: QK norm kernel (GH-280).
 
 ### GH-279-4: Golden output gate thinks vs answers (FIXED)
 Qwen3 uses thinking mode by default — generates `<think>` chain before answer. Golden output gate expects direct "4".
 Fix: `strip_thinking_blocks()` strips `<think>...</think>` before `verify_output()`. No-op for non-thinking models.
+
+### GH-284: CPU inference 2.4 tok/s vs Ollama 120 tok/s (FIXED)
+Root cause: F32 matmul in `realizar::apr_transformer::helpers::f32_matmul()` was single-threaded scalar code.
+Fix: Added rayon parallel chunking (`par_chunks_mut` with 64-element chunks) and AVX2 SIMD dot product (`simd_dot_f32`) for all F32 matmul operations (commit `55cfb95` in realizar).
+
+### GH-282: PTX kernel load failures in `apr serve --gpu` (PARTIALLY FIXED)
+Root cause 1: trueno PTX `bar_sync(id)` stored barrier ID in `.src` operand but emitter read from `.label` field. `bar_sync(1)` emitted as `bar.sync 0;` instead of `bar.sync 1;`.
+Root cause 2: Hardcoded `sm_89` PTX target caused JIT failures on GPUs older than RTX 4090.
+Fix: Set `.label("sync {id}")` in `bar_sync()`, changed default target to `sm_70` (Volta baseline), added `emit_ptx_for_target()` API (commit `d989451` in trueno).
 
 ## References
 
