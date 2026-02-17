@@ -60,6 +60,24 @@ fn project_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
 }
 
+fn search_dir_for_file(search_root: &Path, filename: &str) -> Option<PathBuf> {
+    let mut dirs_to_visit = vec![search_root.to_path_buf()];
+    while let Some(dir) = dirs_to_visit.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                dirs_to_visit.push(path);
+            } else if path.file_name().map_or(false, |n| n == filename) {
+                return Some(path);
+            }
+        }
+    }
+    None
+}
+
 fn find_generated_file(filename: &str) -> Option<PathBuf> {
     let target_dir = project_root().join("target");
     for profile in &["debug", "release"] {
@@ -67,18 +85,8 @@ fn find_generated_file(filename: &str) -> Option<PathBuf> {
         if !search_root.exists() {
             continue;
         }
-        let mut dirs_to_visit = vec![search_root];
-        while let Some(dir) = dirs_to_visit.pop() {
-            if let Ok(entries) = std::fs::read_dir(&dir) {
-                for entry in entries.flatten() {
-                    let path = entry.path();
-                    if path.is_dir() {
-                        dirs_to_visit.push(path);
-                    } else if path.file_name().map_or(false, |n| n == filename) {
-                        return Some(path);
-                    }
-                }
-            }
+        if let Some(found) = search_dir_for_file(&search_root, filename) {
+            return Some(found);
         }
     }
     None
@@ -629,10 +637,10 @@ fn f_cli_005_action_commands_gated_diagnostics_exempt() {
     let gated_commands = [
         "Commands::Run",
         "Commands::Serve",
-        "Commands::Chat",
-        "Commands::Bench",
-        "Commands::Eval",
-        "Commands::Profile",
+        "ExtendedCommands::Chat",
+        "ExtendedCommands::Bench",
+        "ExtendedCommands::Eval",
+        "ExtendedCommands::Profile",
         "Commands::Check",
     ];
 
@@ -1161,37 +1169,41 @@ fn f_checklist_004_falsification_depth_ge_level_5() {
 }
 
 #[test]
+fn is_satd_marker(trimmed: &str, marker: &str) -> bool {
+    let Some(pos) = trimmed.find(marker) else {
+        return false;
+    };
+    let after = trimmed.get(pos + marker.len()..pos + marker.len() + 1);
+    match after {
+        Some(c) => !c.chars().next().map_or(false, |ch| ch.is_alphanumeric()),
+        None => true,
+    }
+}
+
+fn check_file_for_satd(path: &std::path::Path, violations: &mut Vec<String>) {
+    let content = std::fs::read_to_string(path).unwrap_or_default();
+    let satd_markers = ["TODO", "FIXME", "HACK"];
+    for (line_no, line) in content.lines().enumerate() {
+        let trimmed = line.trim();
+        if !trimmed.starts_with("//") && !trimmed.starts_with("///") {
+            continue;
+        }
+        for marker in &satd_markers {
+            if is_satd_marker(trimmed, marker) {
+                violations.push(format!("{}:{}: '{trimmed}'", path.display(), line_no + 1));
+            }
+        }
+    }
+}
+
 fn f_checklist_005_satd_is_zero() {
     // F-CHECKLIST-005: SATD = 0 across codebase
     let dirs = [project_root().join("src"), project_root().join("crates")];
-    let satd_markers = ["TODO", "FIXME", "HACK"];
     let mut violations = Vec::new();
 
     for dir in &dirs {
         for path in collect_rs_files(dir) {
-            let content = std::fs::read_to_string(&path).unwrap_or_default();
-            for (line_no, line) in content.lines().enumerate() {
-                let trimmed = line.trim();
-                if !trimmed.starts_with("//") && !trimmed.starts_with("///") {
-                    continue;
-                }
-                for marker in &satd_markers {
-                    if let Some(pos) = trimmed.find(marker) {
-                        let after = trimmed.get(pos + marker.len()..pos + marker.len() + 1);
-                        let is_satd = match after {
-                            Some(c) => !c.chars().next().map_or(false, |ch| ch.is_alphanumeric()),
-                            None => true,
-                        };
-                        if is_satd {
-                            violations.push(format!(
-                                "{}:{}: '{trimmed}'",
-                                path.display(),
-                                line_no + 1
-                            ));
-                        }
-                    }
-                }
-            }
+            check_file_for_satd(&path, &mut violations);
         }
     }
 
@@ -3579,48 +3591,32 @@ fn f_model_all_8_families_in_registry() {
 // =============================================================================
 
 fn count_enum_variants(source: &str, enum_header: &str) -> usize {
-    let mut in_enum = false;
-    let mut brace_depth: i32 = 0;
-    let mut count = 0;
+    extract_enum_variant_names(source, enum_header).len()
+}
 
-    for line in source.lines() {
-        let trimmed = line.trim();
+fn count_braces(line: &str) -> i32 {
+    line.chars()
+        .map(|ch| match ch {
+            '{' => 1,
+            '}' => -1,
+            _ => 0,
+        })
+        .sum()
+}
 
-        if !in_enum {
-            if trimmed.contains(enum_header) {
-                in_enum = true;
-                for ch in trimmed.chars() {
-                    match ch {
-                        '{' => brace_depth += 1,
-                        '}' => brace_depth -= 1,
-                        _ => {}
-                    }
-                }
-            }
-        } else {
-            let depth_before = brace_depth;
-            for ch in trimmed.chars() {
-                match ch {
-                    '{' => brace_depth += 1,
-                    '}' => brace_depth -= 1,
-                    _ => {}
-                }
-            }
-            if brace_depth == 0 {
-                break;
-            }
-            if depth_before == 1 {
-                if trimmed.starts_with('#') || trimmed.starts_with("//") || trimmed.is_empty() {
-                    continue;
-                }
-                let first_char = trimmed.chars().next().unwrap_or(' ');
-                if first_char.is_ascii_uppercase() {
-                    count += 1;
-                }
-            }
-        }
+fn extract_variant_name(trimmed: &str) -> Option<String> {
+    if trimmed.starts_with('#') || trimmed.starts_with("//") || trimmed.is_empty() {
+        return None;
     }
-    count
+    let first_char = trimmed.chars().next().unwrap_or(' ');
+    if !first_char.is_ascii_uppercase() {
+        return None;
+    }
+    let name: String = trimmed
+        .chars()
+        .take_while(|c| c.is_alphanumeric() || *c == '_')
+        .collect();
+    if name.is_empty() { None } else { Some(name) }
 }
 
 fn extract_enum_variant_names(source: &str, enum_header: &str) -> Vec<String> {
@@ -3634,41 +3630,19 @@ fn extract_enum_variant_names(source: &str, enum_header: &str) -> Vec<String> {
         if !in_enum {
             if trimmed.contains(enum_header) {
                 in_enum = true;
-                for ch in trimmed.chars() {
-                    match ch {
-                        '{' => brace_depth += 1,
-                        '}' => brace_depth -= 1,
-                        _ => {}
-                    }
-                }
+                brace_depth += count_braces(trimmed);
             }
-        } else {
-            let depth_before = brace_depth;
-            for ch in trimmed.chars() {
-                match ch {
-                    '{' => brace_depth += 1,
-                    '}' => brace_depth -= 1,
-                    _ => {}
-                }
-            }
-            if brace_depth == 0 {
-                break;
-            }
-            if depth_before == 1 {
-                if trimmed.starts_with('#') || trimmed.starts_with("//") || trimmed.is_empty() {
-                    continue;
-                }
-                let first_char = trimmed.chars().next().unwrap_or(' ');
-                if first_char.is_ascii_uppercase() {
-                    // Extract the variant name (up to space, comma, or brace)
-                    let name: String = trimmed
-                        .chars()
-                        .take_while(|c| c.is_alphanumeric() || *c == '_')
-                        .collect();
-                    if !name.is_empty() {
-                        names.push(name);
-                    }
-                }
+            continue;
+        }
+
+        let depth_before = brace_depth;
+        brace_depth += count_braces(trimmed);
+        if brace_depth == 0 {
+            break;
+        }
+        if depth_before == 1 {
+            if let Some(name) = extract_variant_name(trimmed) {
+                names.push(name);
             }
         }
     }
