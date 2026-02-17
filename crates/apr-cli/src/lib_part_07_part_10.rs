@@ -195,6 +195,7 @@
             regression_threshold: None,
             skip_gpu_state: false,
             skip_metadata: true,
+            skip_capability: true,
         }));
         let result = execute_command(&cli);
         assert!(
@@ -229,6 +230,7 @@
             regression_threshold: None,
             skip_gpu_state: false,
             skip_metadata: true,
+            skip_capability: true,
         }));
         let result = execute_command(&cli);
         assert!(

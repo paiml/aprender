@@ -34,6 +34,15 @@ fn run_qa(path: &Path, config: &QaConfig) -> Result<QaReport> {
         println!("{}", output::kv_table(&config_pairs));
     }
 
+    // GH-280: Gate 0 — Capability match (earliest gate)
+    dispatch_gate(
+        &mut gates,
+        config.json,
+        config.skip_capability,
+        "capability_match",
+        "Skipped by --skip-capability",
+        || super::qa_capability::run_capability_gate(path, config),
+    )?;
     dispatch_gate(
         &mut gates,
         config.json,

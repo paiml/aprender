@@ -188,6 +188,7 @@
                 regression_threshold: None,
                 skip_gpu_state: false,
                 skip_metadata: false,
+                skip_capability: false,
             }),
             Commands::Extended(ExtendedCommands::Hex {
                 file: PathBuf::from("m.apr"),

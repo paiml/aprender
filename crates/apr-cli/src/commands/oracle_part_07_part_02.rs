@@ -43,6 +43,7 @@
                 tied_embeddings: false,
                 positional_encoding: PositionalEncoding::Rope,
                 mlp_type: MlpType::SwiGlu,
+                qk_norm: false,
             },
             tensor_template: TensorTemplate {
                 embedding: "embed.weight".to_string(),
@@ -158,6 +159,7 @@
                 tied_embeddings: false,
                 positional_encoding: aprender::format::model_family::PositionalEncoding::Rope,
                 mlp_type: aprender::format::model_family::MlpType::SwiGlu,
+                qk_norm: false,
             },
             tensor_template: aprender::format::model_family::TensorTemplate {
                 embedding: String::new(),
@@ -298,6 +300,7 @@
             tied_embeddings: false,
             positional_encoding: PositionalEncoding::Rope,
             mlp_type: MlpType::SwiGlu,
+            qk_norm: false,
         }
     }
 

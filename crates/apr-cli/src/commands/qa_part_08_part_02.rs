@@ -335,6 +335,7 @@
             None,
             false,
             false,
+            false, // skip_capability
         );
         assert!(result.is_err());
     }
@@ -367,6 +368,7 @@
             None,
             false,
             false,
+            false, // skip_capability
         );
         // Should fail (invalid GGUF)
         assert!(result.is_err());
@@ -400,6 +402,7 @@
             None,
             false,
             false,
+            false, // skip_capability
         );
         // Should fail (invalid file)
         assert!(result.is_err());
@@ -433,6 +436,7 @@
             None,
             true, // skip_gpu_state
             true, // skip_metadata
+            true, // skip_capability
         );
         // When all gates are skipped, the QA passes (skipped gates don't fail)
         assert!(result.is_ok());

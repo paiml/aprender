@@ -27,6 +27,7 @@
             None,
             false,
             false,
+            false, // skip_capability
         );
         // Should fail (invalid file)
         assert!(result.is_err());
@@ -60,6 +61,7 @@
             None,
             false,
             false,
+            false, // skip_capability
         );
         // Should fail (invalid file)
         assert!(result.is_err());
@@ -94,6 +96,7 @@
             None,
             false,
             false,
+            false, // skip_capability
         );
         // Should fail (invalid files)
         assert!(result.is_err());
@@ -127,6 +130,7 @@
             None,
             false,
             false,
+            false, // skip_capability
         );
         // Should fail (invalid file)
         assert!(result.is_err());

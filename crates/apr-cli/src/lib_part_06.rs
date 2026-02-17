@@ -277,6 +277,7 @@ fn dispatch_profiling_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             regression_threshold,
             skip_gpu_state,
             skip_metadata,
+            skip_capability,
         } => qa::run(
             file,
             *assert_tps,
@@ -300,6 +301,7 @@ fn dispatch_profiling_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             *regression_threshold,
             *skip_gpu_state,
             *skip_metadata,
+            *skip_capability,
         ),
 
         ExtendedCommands::Parity {

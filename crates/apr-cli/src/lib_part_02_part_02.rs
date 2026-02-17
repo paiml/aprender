@@ -231,6 +231,9 @@ pub enum ExtendedCommands {
         /// Skip metadata plausibility validation (Bug 210, GH-222)
         #[arg(long)]
         skip_metadata: bool,
+        /// Skip GPU capability match gate (GH-280)
+        #[arg(long)]
+        skip_capability: bool,
     },
     /// GPU/CPU parity check (PMAT-232: genchi genbutsu — see where GPU diverges)
     Parity {

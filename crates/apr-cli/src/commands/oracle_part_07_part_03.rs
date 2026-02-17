@@ -272,6 +272,7 @@
             tied_embeddings: true,
             positional_encoding: PositionalEncoding::Rope,
             mlp_type: MlpType::GeluMlp,
+            qk_norm: false,
         };
         let params = compute_param_count(&size, &constraints);
         assert!(params > 0, "Even minimal model should have params");

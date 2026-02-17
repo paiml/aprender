@@ -111,6 +111,8 @@ pub struct QaConfig {
     pub skip_gpu_state: bool,
     /// Skip metadata plausibility validation (Bug 210, GH-222)
     pub skip_metadata: bool,
+    /// Skip GPU capability match gate (GH-280)
+    pub skip_capability: bool,
 }
 
 impl Default for QaConfig {
@@ -137,6 +139,7 @@ impl Default for QaConfig {
             regression_threshold: 0.10,
             skip_gpu_state: false,
             skip_metadata: false,
+            skip_capability: false,
         }
     }
 }
@@ -163,7 +166,7 @@ pub struct GateResult {
 }
 
 impl GateResult {
-    fn passed(
+    pub(crate) fn passed(
         name: &str,
         message: &str,
         value: Option<f64>,
@@ -181,7 +184,7 @@ impl GateResult {
         }
     }
 
-    fn failed(
+    pub(crate) fn failed(
         name: &str,
         message: &str,
         value: Option<f64>,
@@ -316,6 +319,7 @@ pub fn run(
     regression_threshold: Option<f64>,
     skip_gpu_state: bool,
     skip_metadata: bool,
+    skip_capability: bool,
 ) -> Result<()> {
     let config = QaConfig {
         min_tps: min_tps.unwrap_or(100.0),
@@ -339,6 +343,7 @@ pub fn run(
         regression_threshold: regression_threshold.unwrap_or(0.10),
         skip_gpu_state,
         skip_metadata,
+        skip_capability,
     };
 
     let report = run_qa(path, &config)?;
@@ -382,6 +387,7 @@ fn dispatch_gate(
 /// Human-readable gate name for display.
 fn gate_display_name(name: &str) -> &str {
     match name {
+        "capability_match" => "Capability Match",
         "tensor_contract" => "Tensor Contract",
         "golden_output" => "Golden Output",
         "throughput" => "Throughput",
