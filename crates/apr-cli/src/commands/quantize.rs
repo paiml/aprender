@@ -87,116 +87,93 @@ pub(crate) fn run(
     force: bool,
     json_output: bool,
 ) -> Result<()> {
-    // Validate input exists
     if !file.exists() {
         return Err(CliError::FileNotFound(file.to_path_buf()));
     }
 
-    // Parse scheme
     let quant_scheme: QuantScheme = scheme.parse().map_err(CliError::ValidationFailed)?;
 
-    // Plan mode (does not require output path)
     if plan_only {
         return run_plan(file, quant_scheme, format, json_output);
     }
 
-    // From here on, output is required
     let output_path = output_path.ok_or_else(|| {
         CliError::ValidationFailed("--output is required (unless --plan is used)".to_string())
     })?;
 
-    // Handle batch mode
     if let Some(schemes) = batch {
         return run_batch(file, schemes, output_path, force, json_output);
     }
 
-    // F-CONV-064: Overwrite protection
+    check_overwrite_protection(output_path, force)?;
+    print_quantize_header(file, quant_scheme, output_path, json_output);
+
+    let output_ext = resolve_output_format(format, output_path);
+    if output_ext == "gguf" {
+        return quantize_to_gguf(file, quant_scheme, output_path, json_output);
+    }
+
+    run_apr_quantize(file, quant_scheme, output_path, json_output)
+}
+
+/// F-CONV-064: Overwrite protection check.
+fn check_overwrite_protection(output_path: &Path, force: bool) -> Result<()> {
     if output_path.exists() && !force {
         return Err(CliError::ValidationFailed(format!(
             "Output file '{}' already exists. Use --force to overwrite.",
             output_path.display()
         )));
     }
+    Ok(())
+}
 
-    if !json_output {
+/// Print header for quantize command (no-op in JSON mode).
+fn print_quantize_header(file: &Path, scheme: QuantScheme, output_path: &Path, json: bool) {
+    if !json {
         output::header("APR Quantize");
         println!(
             "{}",
             output::kv_table(&[
                 ("Input", file.display().to_string()),
-                ("Scheme", format!("{quant_scheme:?}")),
+                ("Scheme", format!("{scheme:?}")),
                 ("Output", output_path.display().to_string()),
             ])
         );
         println!();
     }
+}
 
-    // Determine output format from extension or flag
-    let output_ext = format.unwrap_or_else(|| {
+/// Determine output format from explicit flag or file extension.
+fn resolve_output_format<'a>(format: Option<&'a str>, output_path: &'a Path) -> &'a str {
+    format.unwrap_or_else(|| {
         output_path
             .extension()
             .and_then(|e| e.to_str())
             .unwrap_or("apr")
-    });
+    })
+}
 
-    match output_ext {
-        "gguf" => {
-            return quantize_to_gguf(file, quant_scheme, output_path, json_output);
-        }
-        _ => {
-            // Use apr_convert for APR/SafeTensors output
-        }
-    }
-
+/// Run APR-native quantization via apr_convert.
+#[allow(clippy::disallowed_methods)]
+fn run_apr_quantize(
+    file: &Path,
+    scheme: QuantScheme,
+    output_path: &Path,
+    json_output: bool,
+) -> Result<()> {
     if !json_output {
         output::pipeline_stage("Quantizing", output::StageStatus::Running);
     }
 
     let options = ConvertOptions {
-        quantize: Some(quant_scheme.into()),
+        quantize: Some(scheme.into()),
         compress: None,
         validate: true,
     };
 
     match apr_convert(file, output_path, options) {
         Ok(report) => {
-            if json_output {
-                let json = serde_json::json!({
-                    "status": "success",
-                    "input": file.display().to_string(),
-                    "output": output_path.display().to_string(),
-                    "scheme": format!("{quant_scheme:?}"),
-                    "original_size": report.original_size,
-                    "quantized_size": report.converted_size,
-                    "reduction_ratio": report.reduction_ratio,
-                    "tensor_count": report.tensor_count,
-                });
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(&json).unwrap_or_default()
-                );
-            } else {
-                println!();
-                output::subheader("Quantization Report");
-                println!(
-                    "{}",
-                    output::kv_table(&[
-                        ("Original size", format_size(report.original_size, BINARY)),
-                        ("Quantized size", format_size(report.converted_size, BINARY)),
-                        ("Tensors", output::count_fmt(report.tensor_count)),
-                        (
-                            "Reduction",
-                            format!(
-                                "{} ({:.2}x)",
-                                report.reduction_percent(),
-                                report.reduction_ratio
-                            ),
-                        ),
-                    ])
-                );
-                println!();
-                println!("  {}", output::badge_pass("Quantization successful"));
-            }
+            print_apr_quantize_result(file, output_path, scheme, &report, json_output);
             Ok(())
         }
         Err(e) => {
@@ -206,6 +183,54 @@ pub(crate) fn run(
             }
             Err(CliError::ValidationFailed(e.to_string()))
         }
+    }
+}
+
+/// Print APR quantization result (JSON or human-readable).
+#[allow(clippy::disallowed_methods)]
+fn print_apr_quantize_result(
+    file: &Path,
+    output_path: &Path,
+    scheme: QuantScheme,
+    report: &aprender::format::ConvertReport,
+    json_output: bool,
+) {
+    if json_output {
+        let json = serde_json::json!({
+            "status": "success",
+            "input": file.display().to_string(),
+            "output": output_path.display().to_string(),
+            "scheme": format!("{scheme:?}"),
+            "original_size": report.original_size,
+            "quantized_size": report.converted_size,
+            "reduction_ratio": report.reduction_ratio,
+            "tensor_count": report.tensor_count,
+        });
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json).unwrap_or_default()
+        );
+    } else {
+        println!();
+        output::subheader("Quantization Report");
+        println!(
+            "{}",
+            output::kv_table(&[
+                ("Original size", format_size(report.original_size, BINARY)),
+                ("Quantized size", format_size(report.converted_size, BINARY)),
+                ("Tensors", output::count_fmt(report.tensor_count)),
+                (
+                    "Reduction",
+                    format!(
+                        "{} ({:.2}x)",
+                        report.reduction_percent(),
+                        report.reduction_ratio
+                    ),
+                ),
+            ])
+        );
+        println!();
+        println!("  {}", output::badge_pass("Quantization successful"));
     }
 }
 
@@ -272,20 +297,36 @@ fn run_batch(
     json_output: bool,
 ) -> Result<()> {
     let scheme_list: Vec<&str> = schemes.split(',').map(str::trim).collect();
-
     if scheme_list.is_empty() {
         return Err(CliError::ValidationFailed(
             "No quantization schemes specified for batch mode".to_string(),
         ));
     }
 
-    // Validate all schemes first
     let parsed: Vec<QuantScheme> = scheme_list
         .iter()
         .map(|s| s.parse::<QuantScheme>().map_err(CliError::ValidationFailed))
         .collect::<Result<Vec<_>>>()?;
 
-    // Create output directory if needed
+    ensure_output_dir(output_dir)?;
+    print_batch_header(file, &scheme_list, output_dir, json_output);
+
+    let stem = file.file_stem().and_then(|s| s.to_str()).unwrap_or("model");
+    let ext = file.extension().and_then(|e| e.to_str()).unwrap_or("apr");
+    let mut results = Vec::new();
+
+    for (scheme_name, scheme) in scheme_list.iter().zip(parsed.iter()) {
+        let output_file = output_dir.join(format!("{stem}-{scheme_name}.{ext}"));
+        let ok = run_batch_single(file, scheme_name, *scheme, &output_file, force, json_output)?;
+        results.push(ok);
+    }
+
+    print_batch_summary(&results, json_output);
+    Ok(())
+}
+
+/// Ensure the batch output directory exists.
+fn ensure_output_dir(output_dir: &Path) -> Result<()> {
     if !output_dir.exists() {
         std::fs::create_dir_all(output_dir).map_err(|e| {
             CliError::ValidationFailed(format!(
@@ -294,66 +335,74 @@ fn run_batch(
             ))
         })?;
     }
+    Ok(())
+}
 
-    let stem = file.file_stem().and_then(|s| s.to_str()).unwrap_or("model");
-
-    if !json_output {
+/// Print batch mode header (no-op in JSON mode).
+fn print_batch_header(file: &Path, schemes: &[&str], output_dir: &Path, json: bool) {
+    if !json {
         output::header("APR Quantize — Batch");
         println!("  Input: {}", file.display());
-        println!("  Schemes: {}", scheme_list.join(", "));
+        println!("  Schemes: {}", schemes.join(", "));
         println!("  Output: {}/", output_dir.display());
         println!();
     }
+}
 
-    let mut results = Vec::new();
-
-    for (scheme_name, scheme) in scheme_list.iter().zip(parsed.iter()) {
-        let ext = file.extension().and_then(|e| e.to_str()).unwrap_or("apr");
-        let output_file = output_dir.join(format!("{stem}-{scheme_name}.{ext}"));
-
-        if !json_output {
-            output::pipeline_stage(
-                &format!("Quantizing {scheme_name}"),
-                output::StageStatus::Running,
-            );
-        }
-
-        let options = ConvertOptions {
-            quantize: Some((*scheme).into()),
-            compress: None,
-            validate: true,
-        };
-
-        match apr_convert(file, &output_file, options) {
-            Ok(report) => {
-                if !json_output {
-                    println!(
-                        "    {} {} → {} ({:.2}x)",
-                        output::badge_pass("OK"),
-                        format_size(report.original_size, BINARY),
-                        format_size(report.converted_size, BINARY),
-                        report.reduction_ratio,
-                    );
-                }
-                results.push(((*scheme_name).to_string(), true, output_file));
-            }
-            Err(e) => {
-                if !json_output {
-                    println!("    {} {e}", output::badge_fail("FAIL"));
-                }
-                if !force {
-                    return Err(CliError::ValidationFailed(format!(
-                        "Batch quantization failed at scheme {scheme_name}: {e}"
-                    )));
-                }
-                results.push(((*scheme_name).to_string(), false, output_file));
-            }
-        }
+/// Run a single batch quantization step. Returns Ok(true) on success, Ok(false) on force-skip.
+fn run_batch_single(
+    file: &Path,
+    scheme_name: &str,
+    scheme: QuantScheme,
+    output_file: &Path,
+    force: bool,
+    json_output: bool,
+) -> Result<bool> {
+    if !json_output {
+        output::pipeline_stage(
+            &format!("Quantizing {scheme_name}"),
+            output::StageStatus::Running,
+        );
     }
 
+    let options = ConvertOptions {
+        quantize: Some(scheme.into()),
+        compress: None,
+        validate: true,
+    };
+
+    match apr_convert(file, output_file, options) {
+        Ok(report) => {
+            if !json_output {
+                println!(
+                    "    {} {} → {} ({:.2}x)",
+                    output::badge_pass("OK"),
+                    format_size(report.original_size, BINARY),
+                    format_size(report.converted_size, BINARY),
+                    report.reduction_ratio,
+                );
+            }
+            Ok(true)
+        }
+        Err(e) => {
+            if !json_output {
+                println!("    {} {e}", output::badge_fail("FAIL"));
+            }
+            if !force {
+                return Err(CliError::ValidationFailed(format!(
+                    "Batch quantization failed at scheme {scheme_name}: {e}"
+                )));
+            }
+            Ok(false)
+        }
+    }
+}
+
+/// Print batch completion summary.
+fn print_batch_summary(results: &[bool], json_output: bool) {
     if !json_output {
         println!();
-        let success_count = results.iter().filter(|(_, ok, _)| *ok).count();
+        let success_count = results.iter().filter(|ok| **ok).count();
         println!(
             "  {} {}/{} quantizations completed",
             if success_count == results.len() {
@@ -365,8 +414,6 @@ fn run_batch(
             results.len()
         );
     }
-
-    Ok(())
 }
 
 /// Quantize to GGUF format (via export pipeline)
