@@ -133,6 +133,8 @@ pub enum PositionalEncoding {
     Absolute,
     /// Relative position embeddings
     Relative,
+    /// No positional encoding (RWKV, Mamba — state carries temporal info)
+    None,
 }
 
 impl fmt::Display for PositionalEncoding {
@@ -142,6 +144,7 @@ impl fmt::Display for PositionalEncoding {
             Self::Alibi => write!(f, "ALiBi"),
             Self::Absolute => write!(f, "Absolute"),
             Self::Relative => write!(f, "Relative"),
+            Self::None => write!(f, "None"),
         }
     }
 }
@@ -153,9 +156,10 @@ impl PositionalEncoding {
             "alibi" => Ok(Self::Alibi),
             "absolute" | "sinusoidal" => Ok(Self::Absolute),
             "relative" => Ok(Self::Relative),
+            "none" => Ok(Self::None),
             _ => Err(AprenderError::FormatError {
                 message: format!(
-                    "Unknown positional encoding: {s}. Expected: rope, alibi, absolute, relative"
+                    "Unknown positional encoding: {s}. Expected: rope, alibi, absolute, relative, none"
                 ),
             }),
         }

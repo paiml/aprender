@@ -1,0 +1,68 @@
+family: mamba
+display_name: "Mamba State Space Model"
+vendor: state-spaces
+architectures:
+  - MambaForCausalLM
+  - MambaModel
+hf_pattern: "state-spaces/mamba-*"
+
+size_variants:
+  130m:
+    parameters: "130M"
+    hidden_dim: 768
+    num_layers: 24
+    num_heads: 12
+    intermediate_dim: 1536
+    vocab_size: 50280
+    head_dim: 64
+  370m:
+    parameters: "370M"
+    hidden_dim: 1024
+    num_layers: 48
+    num_heads: 16
+    intermediate_dim: 2048
+    vocab_size: 50280
+    head_dim: 64
+  790m:
+    parameters: "790M"
+    hidden_dim: 1536
+    num_layers: 48
+    num_heads: 24
+    intermediate_dim: 3072
+    vocab_size: 50280
+    head_dim: 64
+
+# Mamba is a pure SSM (State Space Model) — no attention mechanism at all.
+# Uses selective state space recurrence instead of attention.
+# d_state=16, conv_kernel=4, expand=2 are architecture-level constants.
+# No num_attention_heads — intentionally null/absent in config.json.
+# No positional encoding — state carries temporal info via recurrence.
+constraints:
+  attention_type: mha
+  activation: silu
+  norm_type: rmsnorm
+  has_bias: "false"
+  tied_embeddings: "true"
+  positional_encoding: none
+  mlp_type: swiglu
+
+tensor_template:
+  embed_tokens: "backbone.embeddings.weight"
+  norm_f_weight: "backbone.norm_f.weight"
+  per_layer:
+    norm_weight: "backbone.layers.{n}.norm.weight"
+    mixer_in_proj: "backbone.layers.{n}.mixer.in_proj.weight"
+    mixer_out_proj: "backbone.layers.{n}.mixer.out_proj.weight"
+    mixer_conv1d_weight: "backbone.layers.{n}.mixer.conv1d.weight"
+    mixer_conv1d_bias: "backbone.layers.{n}.mixer.conv1d.bias"
+
+shape_template:
+  embed_tokens: "[vocab_size, hidden_dim]"
+  norm_f_weight: "[hidden_dim]"
+  norm_weight: "[hidden_dim]"
+  mixer_in_proj: "[2*hidden_dim, hidden_dim]"
+  mixer_out_proj: "[hidden_dim, hidden_dim]"
+
+quantizations:
+  - f16
+  - f32

@@ -1,0 +1,73 @@
+family: rwkv7
+display_name: "RWKV-7 Linear Attention"
+vendor: RWKV Foundation
+architectures:
+  - Rwkv7ForCausalLM
+  - RwkvForCausalLM
+hf_pattern: "RWKV/RWKV7-*"
+
+size_variants:
+  0.1b:
+    parameters: "191M"
+    hidden_dim: 768
+    num_layers: 12
+    num_heads: 12
+    intermediate_dim: 3072
+    vocab_size: 65536
+    head_dim: 64
+  0.4b:
+    parameters: "400M"
+    hidden_dim: 1024
+    num_layers: 24
+    num_heads: 16
+    intermediate_dim: 4096
+    vocab_size: 65536
+    head_dim: 64
+
+# RWKV7 is NOT a transformer — it uses linear recurrence, not attention.
+# num_heads is intentionally omitted (null in config.json).
+# We use gelu activation with gelu_mlp since RWKV uses GELU-based channel mixing.
+# No positional encoding — state carries temporal info via recurrence.
+constraints:
+  attention_type: mha
+  activation: gelu
+  norm_type: layernorm
+  has_bias: "false"
+  tied_embeddings: "false"
+  positional_encoding: none
+  mlp_type: gelu_mlp
+
+tensor_template:
+  embed: "model.embeddings.weight"
+  head: "model.head.weight"
+  ln_out_weight: "model.ln_out.weight"
+  ln_out_bias: "model.ln_out.bias"
+  per_layer:
+    ln1_weight: "model.blocks.{n}.ln1.weight"
+    ln1_bias: "model.blocks.{n}.ln1.bias"
+    ln2_weight: "model.blocks.{n}.ln2.weight"
+    ln2_bias: "model.blocks.{n}.ln2.bias"
+    att_receptance: "model.blocks.{n}.att.receptance.weight"
+    att_key: "model.blocks.{n}.att.key.weight"
+    att_value: "model.blocks.{n}.att.value.weight"
+    att_gate: "model.blocks.{n}.att.gate.weight"
+    att_output: "model.blocks.{n}.att.output.weight"
+    ffn_key: "model.blocks.{n}.ffn.key.weight"
+    ffn_value: "model.blocks.{n}.ffn.value.weight"
+    ffn_receptance: "model.blocks.{n}.ffn.receptance.weight"
+
+shape_template:
+  embed: "[vocab_size, hidden_dim]"
+  head: "[vocab_size, hidden_dim]"
+  ln_out_weight: "[hidden_dim]"
+  att_receptance: "[hidden_dim, hidden_dim]"
+  att_key: "[hidden_dim, hidden_dim]"
+  att_value: "[hidden_dim, hidden_dim]"
+  att_gate: "[hidden_dim, hidden_dim]"
+  att_output: "[hidden_dim, hidden_dim]"
+  ffn_key: "[intermediate_dim, hidden_dim]"
+  ffn_value: "[hidden_dim, intermediate_dim]"
+
+quantizations:
+  - f16
+  - f32

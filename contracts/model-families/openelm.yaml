@@ -1,0 +1,66 @@
+family: openelm
+display_name: "Apple OpenELM"
+vendor: Apple
+architectures:
+  - OpenELMForCausalLM
+  - OpenELMModel
+hf_pattern: "apple/OpenELM-*"
+
+# OpenELM uses variable-width attention: per-layer num_query_heads and num_kv_heads
+# arrays, plus per-layer ffn_multipliers. The size_variants list the MAX head counts
+# (last layer), which determines head_dim = hidden_dim / max_num_heads.
+size_variants:
+  270m:
+    parameters: "270M"
+    hidden_dim: 1280
+    num_layers: 16
+    num_heads: 20
+    num_kv_heads: 5
+    intermediate_dim: 5120
+    vocab_size: 32000
+    max_position_embeddings: 2048
+    head_dim: 64
+    rope_theta: 10000.0
+    rms_norm_eps: 0.000001
+  450m:
+    parameters: "450M"
+    hidden_dim: 1536
+    num_layers: 20
+    num_heads: 24
+    num_kv_heads: 6
+    intermediate_dim: 6144
+    vocab_size: 32000
+    max_position_embeddings: 2048
+    head_dim: 64
+    rope_theta: 10000.0
+    rms_norm_eps: 0.000001
+
+constraints:
+  attention_type: gqa
+  activation: silu
+  norm_type: rmsnorm
+  has_bias: "false"
+  tied_embeddings: "false"
+  positional_encoding: rope
+  mlp_type: swiglu
+
+tensor_template:
+  token_embeddings: "transformer.token_embeddings.weight"
+  norm_weight: "transformer.norm.weight"
+  per_layer:
+    attn_norm_weight: "transformer.layers.{n}.attn_norm.weight"
+    qkv_proj: "transformer.layers.{n}.attn.qkv_proj.weight"
+    out_proj: "transformer.layers.{n}.attn.out_proj.weight"
+    ffn_norm_weight: "transformer.layers.{n}.ffn_norm.weight"
+    proj_1: "transformer.layers.{n}.ffn.proj_1.weight"
+    proj_2: "transformer.layers.{n}.ffn.proj_2.weight"
+
+shape_template:
+  token_embeddings: "[vocab_size, hidden_dim]"
+  norm_weight: "[hidden_dim]"
+  attn_norm_weight: "[hidden_dim]"
+  ffn_norm_weight: "[hidden_dim]"
+
+quantizations:
+  - f16
+  - f32

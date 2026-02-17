@@ -1,0 +1,77 @@
+family: falcon_h1
+display_name: "Falcon-H1 Hybrid Transformer+SSM"
+vendor: TII (Technology Innovation Institute)
+architectures:
+  - FalconH1ForCausalLM
+  - Falcon3ForCausalLM
+hf_pattern: "tiiuae/Falcon-H1-*"
+
+size_variants:
+  tiny:
+    parameters: "91M"
+    hidden_dim: 512
+    num_layers: 24
+    num_heads: 8
+    num_kv_heads: 2
+    intermediate_dim: 768
+    vocab_size: 32768
+    max_position_embeddings: 8192
+    head_dim: 64
+    rope_theta: 10000.0
+    rms_norm_eps: 0.000001
+  0.5b:
+    parameters: "521M"
+    hidden_dim: 1024
+    num_layers: 36
+    num_heads: 8
+    num_kv_heads: 2
+    intermediate_dim: 2816
+    vocab_size: 32784
+    max_position_embeddings: 8192
+    head_dim: 128
+    rope_theta: 10000.0
+    rms_norm_eps: 0.000001
+
+# Falcon-H1 is a hybrid: GQA attention + Mamba-2 SSM heads in parallel per layer.
+# The attention portion uses standard GQA + RMSNorm + SiLU + RoPE (Class A kernels).
+# The SSM portion requires separate Mamba-2 kernels (not yet supported for inference).
+constraints:
+  attention_type: gqa
+  activation: silu
+  norm_type: rmsnorm
+  has_bias: "false"
+  tied_embeddings: "false"
+  positional_encoding: rope
+  mlp_type: swiglu
+
+tensor_template:
+  embed_tokens: "model.embed_tokens.weight"
+  norm_weight: "model.norm.weight"
+  lm_head: "lm_head.weight"
+  per_layer:
+    input_layernorm_weight: "model.layers.{n}.input_layernorm.weight"
+    self_attn_q_proj: "model.layers.{n}.self_attn.q_proj.weight"
+    self_attn_k_proj: "model.layers.{n}.self_attn.k_proj.weight"
+    self_attn_v_proj: "model.layers.{n}.self_attn.v_proj.weight"
+    self_attn_o_proj: "model.layers.{n}.self_attn.o_proj.weight"
+    post_attention_layernorm_weight: "model.layers.{n}.post_attention_layernorm.weight"
+    mlp_gate_proj: "model.layers.{n}.mlp.gate_proj.weight"
+    mlp_up_proj: "model.layers.{n}.mlp.up_proj.weight"
+    mlp_down_proj: "model.layers.{n}.mlp.down_proj.weight"
+
+shape_template:
+  embed_tokens: "[vocab_size, hidden_dim]"
+  norm_weight: "[hidden_dim]"
+  lm_head: "[vocab_size, hidden_dim]"
+  input_layernorm: "[hidden_dim]"
+  self_attn_q_proj: "[num_heads*head_dim, hidden_dim]"
+  self_attn_k_proj: "[num_kv_heads*head_dim, hidden_dim]"
+  self_attn_v_proj: "[num_kv_heads*head_dim, hidden_dim]"
+  self_attn_o_proj: "[hidden_dim, num_heads*head_dim]"
+  mlp_gate_proj: "[intermediate_dim, hidden_dim]"
+  mlp_up_proj: "[intermediate_dim, hidden_dim]"
+  mlp_down_proj: "[hidden_dim, intermediate_dim]"
+
+quantizations:
+  - f16
+  - f32

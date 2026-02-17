@@ -307,6 +307,9 @@ pub fn build_architecture_explanation(
              Max context: {}.",
             size.max_position_embeddings
         ),
+        PositionalEncoding::None => "No positional encoding: temporal information is carried \
+             through recurrent state (RWKV, Mamba). Theoretically infinite context."
+            .to_string(),
     };
 
     let params_b = stats.model_params as f64 / 1e9;
