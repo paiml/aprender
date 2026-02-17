@@ -129,8 +129,10 @@ fn validate_golden_test_case(
 
     // GH-279-4: Thinking models (Qwen3) need extra tokens for <think>...</think>
     // chain-of-thought before the answer. 32 tokens is not enough — the model
-    // exhausts the budget on reasoning and never emits the answer.
-    let golden_max_tokens = config.max_tokens.max(128);
+    // exhausts the budget on reasoning and never emits the answer. Qwen3's
+    // thinking can be verbose (~100-200 tokens for simple math), so 512 gives
+    // ample room for reasoning + answer.
+    let golden_max_tokens = config.max_tokens.max(512);
 
     let Some((_, output_text)) =
         generate_golden_for_format(path, prompt, golden_max_tokens, format, mapped, gguf_model)?
@@ -176,7 +178,12 @@ fn validate_golden_test_case(
     #[cfg(not(feature = "cuda"))]
     let _ = cuda_available;
 
-    let answer_text = strip_thinking_blocks(&output_text); // GH-279-4
+    // GH-279-4: generate_with_cache returns prompt + generated tokens.
+    // Strip the prompt echo so we verify only the model's generated output.
+    let generated_text = output_text
+        .strip_prefix(prompt)
+        .unwrap_or(&output_text);
+    let answer_text = strip_thinking_blocks(generated_text); // GH-279-4
     if let OutputVerification::Fail { reason } =
         verify_output(&answer_text, "golden_output", expected_patterns)
     {
