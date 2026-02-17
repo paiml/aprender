@@ -58,6 +58,29 @@ fn find_safetensors_in_snapshot(snap_path: &Path) -> Option<std::path::PathBuf> 
     })
 }
 
+/// Check if a HF cache directory name matches the target model.
+fn hf_cache_dir_matches(dir_name: &str, base_lower: &str) -> bool {
+    if !dir_name.starts_with("models--") {
+        return false;
+    }
+    let model_part = dir_name
+        .trim_start_matches("models--")
+        .replace("--", "/")
+        .to_lowercase();
+    model_part.contains(base_lower)
+}
+
+/// Search HF cache model directory snapshots for SafeTensors files.
+fn search_hf_model_snapshots(model_dir: &Path) -> Option<std::path::PathBuf> {
+    let snapshots = model_dir.join("snapshots");
+    for snap in std::fs::read_dir(&snapshots).ok()?.flatten() {
+        if let Some(found) = find_safetensors_in_snapshot(&snap.path()) {
+            return Some(found);
+        }
+    }
+    None
+}
+
 /// Strategy 3: search HuggingFace cache (`~/.cache/huggingface/hub/models--*`)
 /// for a matching model directory containing safetensors files.
 fn discover_hf_cache(base_name: &str) -> Option<std::path::PathBuf> {
@@ -65,36 +88,17 @@ fn discover_hf_cache(base_name: &str) -> Option<std::path::PathBuf> {
     if !hf_cache.is_dir() {
         return None;
     }
-    let entries = std::fs::read_dir(&hf_cache).ok()?;
     let base_lower = base_name.to_lowercase();
 
-    for entry in entries.flatten() {
+    for entry in std::fs::read_dir(&hf_cache).ok()?.flatten() {
         let dir_name = entry.file_name();
-        let dir_str = dir_name.to_string_lossy();
-        if !dir_str.starts_with("models--") {
+        if !hf_cache_dir_matches(&dir_name.to_string_lossy(), &base_lower) {
             continue;
         }
-        // Match model name case-insensitively
-        let model_part = dir_str
-            .trim_start_matches("models--")
-            .replace("--", "/")
-            .to_lowercase();
-        if !model_part.contains(&base_lower) {
-            continue;
-        }
-        // Look for snapshots/*/model.safetensors
-        let snapshots = entry.path().join("snapshots");
-        let snaps = match std::fs::read_dir(&snapshots) {
-            Ok(s) => s,
-            Err(_) => continue,
-        };
-        for snap in snaps.flatten() {
-            if let Some(found) = find_safetensors_in_snapshot(&snap.path()) {
-                return Some(found);
-            }
+        if let Some(found) = search_hf_model_snapshots(&entry.path()) {
+            return Some(found);
         }
     }
-
     None
 }
 

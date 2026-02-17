@@ -481,7 +481,7 @@
     fn detect_ollama_model_file_size_heuristic_tiny() {
         // Create a real temp file with no size hint in name
         let file = NamedTempFile::with_suffix(".gguf").expect("create temp file");
-        // Empty temp file maps to 0.5b via file size heuristic (0..=800MB range)
+        // File with 0 bytes falls in the 0..=800MB bucket → "0.5b" size label
         let model = detect_ollama_model_from_path(file.path());
         assert_eq!(
             model, "qwen2.5-coder:0.5b",
