@@ -6,11 +6,7 @@ use std::path::PathBuf;
 /// Returns Result for consistency with other CLI commands and to enable
 /// future error handling (e.g., file read failures, network errors).
 #[allow(clippy::unnecessary_wraps)]
-pub(crate) fn run(
-    code: Option<String>,
-    file: Option<PathBuf>,
-    tensor: Option<&str>,
-) -> Result<()> {
+pub(crate) fn run(code: Option<String>, file: Option<PathBuf>, tensor: Option<&str>) -> Result<()> {
     if let Some(c) = code {
         explain_error_code(&c);
     } else if let Some(t) = tensor {
