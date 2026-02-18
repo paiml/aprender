@@ -251,8 +251,8 @@ Based on roofline analysis + mathematical derivation, the optimization priority 
 | P0 | GPU inference (GH-280 ✓) | 10-50x | Escapes memory bandwidth wall entirely (HBM2: 900 GB/s) | DONE |
 | P1 | Bsum precomputation | 5-15% | Contract-derived: hoist weight-independent activation sums out of per-row loop | DONE |
 | P2 | Dual-prefetch standardization | 20-40% | All SIMD kernels now prefetch weights + activations 1 superblock ahead | DONE |
-| P3 | Reduce Q8K quantization passes | 5-10% | Currently quantize once for QKV, once for attn_out, once for FFN; some can share | TODO |
-| P4 | Parallel QKV projections | 3-5% | K+V overlap with Q tail; marginal on memory-bound workload | TODO |
+| P3 | Reduce Q8K quantization passes | 5-10% | Audit found NO redundant passes — GELU reuses QKV, SwiGLU uses different activations | ALREADY OPTIMAL |
+| P4 | Parallel QKV projections | 3-5% | K+V overlap with Q tail via rayon::join; all 4 Separate QKV paths | DONE |
 
 #### Step 5: Implementation Status (2026-02-18)
 
@@ -379,10 +379,24 @@ Fix: `strip_thinking_blocks()` strips `<think>...</think>` before `verify_output
 - Standardized: all kernels now dual-prefetch (weights + activations) 1 superblock ahead
 - Added weight row prefetch to 4-row AVX512 VNNI micro-kernel
 
+**Phase 8** (P3 Q8K quantization pass audit — ALREADY OPTIMAL):
+- Audited all 7 `quantize_activations_q8k_into` call sites in `single_part_02.rs`
+- Each call operates on a **different** activation vector (post-attn-norm, post-ffn-norm, attention output, gated FFN intermediate, final norm)
+- GELU path already reuses QKV quantization for FFN up (Call Site 5: no separate quantize call)
+- Two scratch buffer slots (`q8k_hidden_*` for hidden-dim, `q8k_inter_*` for intermediate-dim) are correctly partitioned
+- **Conclusion: no redundant quantization passes exist.** P3 is already optimal.
+
+**Phase 9** (P4 Parallel QKV projections):
+- All 4 Separate QKV dispatch paths parallelized with nested `rayon::join`
+- `qkv_matmul`: Q ‖ (K ‖ V) via `rayon::join` returning `Vec<f32>`
+- `qkv_matmul_into`: `split_at_mut` for safe non-overlapping output slices + `rayon::join`
+- `fused_rmsnorm_qkv_matmul`: same pattern after shared RMSNorm
+- `qkv_matmul_q8k_into`: per-format dispatch closures (Q4K→Q8K or F32) run in parallel
+- Marginal gain on memory-bound workloads; beneficial for compute-bound scenarios
+
 **Remaining CPU optimization path:**
-1. **P3: Reduce Q8K quantization passes** — share pre-quantized activations across QKV+attn_out in same layer
-2. **P4: Parallel QKV projections** — marginal on memory-bound workload
-3. **GPU inference (GH-280 ✓)** — escapes the bandwidth wall entirely. HBM2 at 900 GB/s → 215 tok/s ceiling.
+All identified CPU optimizations (P0-P4) are now COMPLETE. Further CPU gains require hardware changes (DDR5, more channels).
+**GPU inference (GH-280 ✓)** escapes the bandwidth wall entirely. HBM2 at 900 GB/s → 215 tok/s ceiling.
 
 **Key insight: 40+ tok/s on CPU is physically impossible** for 8B Q4K. The memory bandwidth wall is ~8 tok/s. Further CPU work yields diminishing returns. The path forward is GPU.
 
