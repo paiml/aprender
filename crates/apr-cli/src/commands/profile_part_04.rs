@@ -337,6 +337,7 @@ fn estimate_kernel_data_bytes(name: &str, hidden_dim: usize, vocab_size: usize) 
 
 /// Kernel operation types for data movement estimation.
 #[cfg(feature = "inference")]
+#[derive(Clone, Copy)]
 enum KernelOp {
     QkvProj,
     OutProj,
@@ -353,27 +354,25 @@ enum KernelOp {
 /// Classify kernel operation by name substring matching.
 #[cfg(feature = "inference")]
 fn classify_kernel_op(name: &str) -> KernelOp {
-    if name.contains("q_proj") || name.contains("k_proj") || name.contains("v_proj") {
-        KernelOp::QkvProj
-    } else if name.contains("o_proj") || name.contains("out_proj") {
-        KernelOp::OutProj
-    } else if name.contains("gate_proj") || name.contains("up_proj") {
-        KernelOp::FfnGateUp
-    } else if name.contains("down_proj") {
-        KernelOp::FfnDown
-    } else if name.contains("lm_head") || name.contains("output") {
-        KernelOp::LmHead
-    } else if name.contains("rmsnorm") || name.contains("layernorm") {
-        KernelOp::Norm
-    } else if name.contains("rope") || name.contains("rotary") {
-        KernelOp::Rope
-    } else if name.contains("softmax") || name.contains("attention") {
-        KernelOp::Attention
-    } else if name.contains("embed") {
-        KernelOp::Embed
-    } else {
-        KernelOp::Unknown
+    const RULES: &[(&[&str], KernelOp)] = &[
+        (&["q_proj", "k_proj", "v_proj"], KernelOp::QkvProj),
+        (&["o_proj", "out_proj"], KernelOp::OutProj),
+        (&["gate_proj", "up_proj"], KernelOp::FfnGateUp),
+        (&["down_proj"], KernelOp::FfnDown),
+        (&["lm_head", "output"], KernelOp::LmHead),
+        (&["rmsnorm", "layernorm"], KernelOp::Norm),
+        (&["rope", "rotary"], KernelOp::Rope),
+        (&["softmax", "attention"], KernelOp::Attention),
+        (&["embed"], KernelOp::Embed),
+    ];
+    for &(patterns, op) in RULES {
+        for &pattern in patterns {
+            if name.contains(pattern) {
+                return op;
+            }
+        }
     }
+    KernelOp::Unknown
 }
 
 /// Compute estimated data bytes moved for a kernel operation.
