@@ -163,7 +163,7 @@ fn run_gpu_state_isolation_gate(path: &Path, _config: &QaConfig) -> Result<GateR
 
         let result = run_gpu_isolation_test(path)?;
         let duration = start.elapsed();
-        return Ok(gpu_isolation_gate_result(result, duration));
+        Ok(gpu_isolation_gate_result(result, duration))
     }
 
     #[cfg(not(all(feature = "inference", feature = "cuda")))]

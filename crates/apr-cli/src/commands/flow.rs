@@ -70,7 +70,7 @@ pub(crate) fn run(
 
     // PMAT-265: JSON output mode
     if json_output {
-        return output_flow_json(apr_path, &report, &tensor_names, arch, &component);
+        return output_flow_json(apr_path, &report, &tensor_names, arch, component);
     }
 
     // APR reader for verbose tensor stats (only available for APR format)
@@ -158,7 +158,7 @@ fn output_flow_json(
     report: &aprender::format::rosetta::InspectionReport,
     tensor_names: &[String],
     architecture: &str,
-    component: &FlowComponent,
+    component: FlowComponent,
 ) -> Result<(), CliError> {
     use std::collections::BTreeMap;
 
@@ -196,8 +196,7 @@ fn output_flow_json(
                 .and_then(|s| s.parse::<usize>().ok())
         })
         .max()
-        .map(|n| n + 1)
-        .unwrap_or(0);
+        .map_or(0, |n| n + 1);
     let n_decoder_layers = tensor_names
         .iter()
         .filter(|n| {
@@ -215,8 +214,7 @@ fn output_flow_json(
                 .and_then(|s| s.parse::<usize>().ok())
         })
         .max()
-        .map(|n| n + 1)
-        .unwrap_or(0);
+        .map_or(0, |n| n + 1);
 
     // Build JSON manually to avoid serde dependency
     let component_str = format!("{component:?}").to_lowercase();

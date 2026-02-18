@@ -445,6 +445,7 @@ fn slice_safetensors(
 }
 
 /// Extract SafeTensors tensor metadata: dtype, shape, (data_start, data_end).
+#[allow(clippy::type_complexity)]
 fn extract_st_tensor_info(
     info: &serde_json::Value,
     tensor_name: &str,
@@ -564,8 +565,7 @@ fn slice_gguf(
         .tensors
         .iter()
         .find(|t| t.name == tensor_name)
-        .map(|t| ggml_dtype_name(t.dtype))
-        .unwrap_or("Unknown");
+        .map_or("Unknown", |t| ggml_dtype_name(t.dtype));
 
     let _ = shape; // shape available but not needed for flat slice
     let slice_count = end - start;
@@ -599,8 +599,7 @@ fn slice_apr(
     let values: Vec<f32> = data[start..end].to_vec();
     let dtype_name = reader
         .get_tensor(tensor_name)
-        .map(|e| format!("{:?}", e.dtype))
-        .unwrap_or_else(|| "Unknown".to_string());
+        .map_or_else(|| "Unknown".to_string(), |e| format!("{:?}", e.dtype));
 
     let slice_count = end - start;
     output_slice_result(opts, tensor_name, start, end, &dtype_name, slice_count, &values)

@@ -356,6 +356,7 @@ fn generate_request_id() -> String {
 
 /// Build OpenAI-compatible chat completion response (streaming or non-streaming).
 #[cfg(feature = "inference")]
+#[allow(clippy::needless_pass_by_value)]
 fn build_chat_response(
     output_text: String,
     tool_calls: Option<Vec<super::types::ToolCall>>,

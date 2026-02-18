@@ -124,6 +124,7 @@ impl ChatSession {
         }
 
         /// Print token generation performance stats (GH-262).
+        #[allow(clippy::unused_self)]
         fn print_token_stats(&self, new_tokens: &[u32], gen_time: std::time::Duration) {
             let tps = new_tokens.len() as f32 / gen_time.as_secs_f32();
             println!(

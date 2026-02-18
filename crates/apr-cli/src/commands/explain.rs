@@ -9,11 +9,11 @@ use std::path::PathBuf;
 pub(crate) fn run(
     code: Option<String>,
     file: Option<PathBuf>,
-    tensor: Option<String>,
+    tensor: Option<&str>,
 ) -> Result<()> {
     if let Some(c) = code {
         explain_error_code(&c);
-    } else if let Some(ref t) = tensor {
+    } else if let Some(t) = tensor {
         explain_tensor(t, file.as_ref());
     } else if let Some(f) = file {
         explain_file(&f);
@@ -197,8 +197,7 @@ fn count_layers(tensor_names: &[String]) -> usize {
                 .and_then(|s| s.parse::<usize>().ok())
         })
         .max()
-        .map(|n| n + 1)
-        .unwrap_or(0)
+        .map_or(0, |n| n + 1)
 }
 
 fn explain_file(path: &PathBuf) {
@@ -289,13 +288,13 @@ mod tests {
 
     #[test]
     fn test_explain_known_tensor() {
-        let result = run(None, None, Some("encoder.conv1.weight".to_string()));
+        let result = run(None, None, Some("encoder.conv1.weight"));
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_explain_unknown_tensor() {
-        let result = run(None, None, Some("unknown.tensor".to_string()));
+        let result = run(None, None, Some("unknown.tensor"));
         assert!(result.is_ok());
     }
 
@@ -334,7 +333,7 @@ mod tests {
 
     #[test]
     fn test_explain_empty_tensor() {
-        let result = run(None, None, Some(String::new()));
+        let result = run(None, None, Some(""));
         assert!(result.is_ok());
     }
 }

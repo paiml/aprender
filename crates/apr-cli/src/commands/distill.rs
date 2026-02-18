@@ -242,6 +242,7 @@ fn execute_distillation(
 }
 
 /// Load all tensors from a model file as f32 via RosettaStone.
+#[allow(clippy::type_complexity)]
 fn load_tensors_f32(
     rosetta: &aprender::format::rosetta::RosettaStone,
     path: &Path,

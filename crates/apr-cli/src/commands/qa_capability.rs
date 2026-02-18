@@ -76,18 +76,15 @@ pub fn run_capability_gate(path: &Path, config: &QaConfig) -> Result<GateResult>
     }
 
     // Parse GGUF to get architecture string
-    let arch = match extract_gguf_architecture(&data) {
-        Some(a) => a,
-        None => {
-            let duration = start.elapsed();
-            return Ok(GateResult::passed(
-                "capability_match",
-                "GGUF missing architecture metadata — skipping capability check",
-                None,
-                None,
-                duration,
-            ));
-        }
+    let Some(arch) = extract_gguf_architecture(&data) else {
+        let duration = start.elapsed();
+        return Ok(GateResult::passed(
+            "capability_match",
+            "GGUF missing architecture metadata — skipping capability check",
+            None,
+            None,
+            duration,
+        ));
     };
 
     // Derive constraints and check capability

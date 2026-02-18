@@ -114,6 +114,7 @@ fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
 }
 
 /// Dispatch inspection commands: inspect, debug, validate, lint, explain, canary.
+#[allow(clippy::many_single_char_names)]
 fn dispatch_inspection_commands(cli: &Cli) -> Option<Result<(), CliError>> {
     Some(match cli.command.as_ref() {
         Commands::Inspect {
@@ -153,7 +154,7 @@ fn dispatch_inspection_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             crate::pipe::with_stdin_support(file, |p| lint::run(p, j))
         }
         Commands::Explain { code, file, tensor } => {
-            explain::run(code.clone(), file.clone(), tensor.clone())
+            explain::run(code.clone(), file.clone(), tensor.as_deref())
         }
         Commands::Canary { command } => canary::run(command.clone()),
 

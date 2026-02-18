@@ -353,6 +353,7 @@ fn read_magic_bytes(path: &Path) -> std::io::Result<[u8; 4]> {
 }
 
 /// Check if magic bytes indicate PyTorch format (pickle or ZIP).
+#[allow(clippy::trivially_copy_pass_by_ref)]
 fn is_pytorch_magic(magic: &[u8; 4]) -> bool {
     // ZIP archive (torch.save with _use_new_zipfile_serialization=True, default since PyTorch 1.6)
     if magic[0..4] == *b"PK\x03\x04" {

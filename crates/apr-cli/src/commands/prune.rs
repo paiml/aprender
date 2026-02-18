@@ -242,6 +242,7 @@ fn execute_pruning(
 }
 
 /// Apply the selected pruning method to the tensor map.
+#[allow(clippy::type_complexity)]
 fn apply_pruning(
     tensors: &std::collections::BTreeMap<String, (Vec<f32>, Vec<usize>)>,
     prune_method: PruneMethod,
@@ -516,6 +517,7 @@ fn prune_magnitude(
 }
 
 /// Depth pruning: remove entire layers by name pattern
+#[allow(clippy::type_complexity)]
 fn prune_depth(
     tensors: &std::collections::BTreeMap<String, (Vec<f32>, Vec<usize>)>,
     layer_spec: &str,

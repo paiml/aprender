@@ -245,6 +245,7 @@ fn execute_training(
 }
 
 /// Write LoRA adapter metadata to APR writer.
+#[allow(clippy::disallowed_methods)]
 fn write_adapter_metadata(
     writer: &mut aprender::serialization::apr::AprWriter,
     model_path: &Path,
@@ -408,12 +409,9 @@ pub(crate) fn run(
         return Ok(());
     }
 
-    let data = match data_path {
-        Some(d) => d,
-        None => {
-            display_next_steps(json_output);
-            return Ok(());
-        }
+    let Some(data) = data_path else {
+        display_next_steps(json_output);
+        return Ok(());
     };
     if !data.exists() {
         return Err(CliError::FileNotFound(data.to_path_buf()));
