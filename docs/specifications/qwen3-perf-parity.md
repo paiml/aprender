@@ -3,7 +3,7 @@ title: "Qwen3-8B: Performance Parity Pipeline"
 issue: GH-279
 status: Partially Complete (GH-280 blocks GPU parity)
 created: 2026-02-17
-updated: 2026-02-18
+updated: 2026-02-18 (falsified)
 ---
 
 # Qwen3-8B: Performance Parity Pipeline
@@ -29,7 +29,7 @@ Source: [HuggingFace `Qwen/Qwen3-8B` config.json](https://huggingface.co/Qwen/Qw
 |-----------|----------|-------------|
 | Architecture | `Qwen3ForCausalLM` | was `Qwen2ForCausalLM` |
 | model_type | `qwen3` | was `qwen2` |
-| vocab_size | 151,936 | same |
+| vocab_size | 151,936 | was 152,064 |
 | hidden_size | 4,096 | was 3,584 |
 | num_hidden_layers | 36 | was 28 |
 | num_attention_heads | 32 | was 28 |
@@ -39,8 +39,8 @@ Source: [HuggingFace `Qwen/Qwen3-8B` config.json](https://huggingface.co/Qwen/Qw
 | max_position_embeddings | 40,960 | was 131,072 |
 | rope_theta | 1,000,000 | same |
 | rms_norm_eps | 1e-6 | same |
-| **attention_bias** | **false** | **was true** |
-| **qk_norm** | **true** | **not present** |
+| **attention_bias** | **false** | **was true (default)** |
+| **qk_norm** | **true** (inferred from tensors) | **not present** |
 | tie_word_embeddings | false | same |
 | activation | silu (SwiGLU) | same |
 | norm_type | rmsnorm | same |
@@ -100,7 +100,7 @@ apr bench qwen3-8b-q4k.gguf --warmup 3 --measure 10
 | CPU golden output | — | **coherent** (thinking mode works) | coherent | PASS |
 | QA gates | 8/10 | **8/10** | 10/10 | 2 remain |
 | CPU throughput | — | **74.4 tok/s** | 40+ | PASS |
-| GPU speedup | — | **15.5x** (81 vs 5) | 2x+ | PASS |
+| GPU speedup | — | **15.5x** (81 vs 5.2 pre-fix GPU) | 2x+ | PASS |
 
 ### Root Cause of 0.52x Parity
 
@@ -122,7 +122,7 @@ K_norm = RMSNorm(K, k_norm_weight)  # shape: [batch, kv_heads, seq, head_dim]
 attn = softmax(Q_norm @ K_norm^T / sqrt(head_dim)) @ V
 ```
 
-The `q_norm.weight` and `k_norm.weight` tensors have shape `[head_dim]` (128) and are broadcast across all heads. This stabilizes attention scores at scale and eliminates the need for attention bias.
+The `q_norm.weight` and `k_norm.weight` tensors have shape `[head_dim]` (128) and are broadcast across all heads. This stabilizes attention scores at scale (Qwen3 removes attention bias, using QK norm instead).
 
 ## Contract
 
@@ -138,8 +138,8 @@ Key contract constraints:
 
 - [x] `apr import` SafeTensors → APR succeeds with 399 tensors (8.28GB Q4K)
 - [x] Contract validation passes (all shapes match qwen3.yaml)
-- [x] `apr export` APR → GGUF produces valid GGUF with full metadata (267 dup tokens deduped)
-- [x] GGUF metadata includes 19 keys (arch=qwen3, layers=36, heads=32/8kv, hidden=4096)
+- [x] `apr export` APR → GGUF produces valid GGUF with full metadata (~267 dup tokens deduped to `[PAD{id}]`)
+- [x] GGUF metadata includes ~19 keys (arch=qwen3, layers=36, heads=32/8kv, hidden=4096)
 - [ ] `apr qa` passes all gates — **8/10 pass**
 - [x] Tensor Contract, Metadata, Throughput (74.4 tok/s), GPU Speedup (15.5x), PTX, GPU State, Perf Regression
 - [x] Ollama Parity: 0.7x (87 vs 132 tok/s) — PASS (threshold 0.2x) but not at 1.0x target
@@ -150,8 +150,8 @@ Key contract constraints:
 ## Bugs Found During Pipeline
 
 ### GH-279-1: GGUF token table dedup (FIXED)
-Qwen3 tokenizer has 267 reserved tokens all mapped to `<unk>`. llama.cpp requires unique strings.
-Fix: `ValidatedGgufMetadata::validate()` auto-dedupes with `_N` suffixes (commit `135de184`).
+Qwen3 tokenizer has ~267 reserved tokens all mapped to `<unk>`. llama.cpp requires unique strings.
+Fix: `ValidatedGgufMetadata::validate()` auto-dedupes with `[PAD{id}]` suffixes following HuggingFace convention (commit `135de184`).
 
 ### GH-279-2: `apr import hf://` fails for sharded models (FIXED)
 `apr import hf://Qwen/Qwen3-8B` now checks `~/.apr/cache/hf/` and falls back to `model.safetensors.index.json` for sharded models.
