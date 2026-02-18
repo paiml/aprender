@@ -739,7 +739,15 @@ CONTRACTS := $(PV_DIR)/contracts/softmax-kernel-v1.yaml \
              $(PV_DIR)/contracts/tensor-inventory-v1.yaml \
              $(PV_DIR)/contracts/performance-grading-v1.yaml \
              $(PV_DIR)/contracts/lora-algebra-v1.yaml \
-             $(PV_DIR)/contracts/quantization-ordering-v1.yaml
+             $(PV_DIR)/contracts/quantization-ordering-v1.yaml \
+             $(PV_DIR)/contracts/q4k-q6k-superblock-v1.yaml \
+             $(PV_DIR)/contracts/sampling-algorithms-v1.yaml \
+             $(PV_DIR)/contracts/validated-tensor-v1.yaml \
+             $(PV_DIR)/contracts/hybrid-layer-dispatch-v1.yaml \
+             $(PV_DIR)/contracts/qwen35-shapes-v1.yaml \
+             $(PV_DIR)/contracts/kv-cache-sizing-v1.yaml \
+             $(PV_DIR)/contracts/backend-dispatch-v1.yaml \
+             $(PV_DIR)/contracts/kv-cache-equivalence-v1.yaml
 
 contract-validate: ## Validate all kernel contracts (schema + staleness)
 	@echo "Validating kernel contracts..."
