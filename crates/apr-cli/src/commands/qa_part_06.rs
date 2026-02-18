@@ -12,20 +12,30 @@ fn strip_quant_suffix(stem: &str) -> &str {
         .trim_end_matches("-f32")
 }
 
-/// Strategy 2 helper: find a safetensors shard file in a directory that has
-/// a `model.safetensors.index.json` but no single `model.safetensors`.
+/// Strategy 2 helper: find a SafeTensors entry point in a sharded model directory.
+/// Returns the first shard (sorted) for sharded models. The format parity gate
+/// handles converter failures for sharded models gracefully.
 fn find_sharded_safetensors(dir: &Path) -> Option<std::path::PathBuf> {
     let index = dir.join("model.safetensors.index.json");
     if !index.exists() {
         return None;
     }
-    let entries = std::fs::read_dir(dir).ok()?;
-    entries.flatten().find_map(|entry| {
-        let name = entry.file_name();
-        let name_str = name.to_string_lossy();
-        let is_shard = name_str.ends_with(".safetensors") && name_str != "model.safetensors";
-        is_shard.then(|| entry.path())
-    })
+    // Collect all shards, sort, return first (lowest shard number = shard-00001)
+    let mut shards: Vec<_> = std::fs::read_dir(dir)
+        .ok()?
+        .flatten()
+        .filter_map(|entry| {
+            let name = entry.file_name();
+            let name_str = name.to_string_lossy().to_string();
+            if name_str.ends_with(".safetensors") && name_str != "model.safetensors" {
+                Some(entry.path())
+            } else {
+                None
+            }
+        })
+        .collect();
+    shards.sort();
+    shards.into_iter().next()
 }
 
 /// Strategy 2: look in a sibling subdirectory (base model name without quant suffix)
@@ -42,20 +52,29 @@ fn discover_sibling_subdir(parent: &Path, base_name: &str) -> Option<std::path::
     find_sharded_safetensors(&subdir)
 }
 
-/// Find the first `.safetensors` file in a snapshot directory (single or sharded).
+/// Find the SafeTensors entry point in a snapshot directory (single or sharded).
+/// For sharded models, returns the first shard (sorted by name = shard-00001).
 fn find_safetensors_in_snapshot(snap_path: &Path) -> Option<std::path::PathBuf> {
     let single = snap_path.join("model.safetensors");
     if single.exists() {
         return Some(single);
     }
-    let files = std::fs::read_dir(snap_path).ok()?;
-    files.flatten().find_map(|f| {
-        let fname = f.file_name();
-        fname
-            .to_string_lossy()
-            .ends_with(".safetensors")
-            .then(|| f.path())
-    })
+    // Fallback: return first shard sorted (shard-00001)
+    let mut shards: Vec<_> = std::fs::read_dir(snap_path)
+        .ok()?
+        .flatten()
+        .filter_map(|f| {
+            let fname = f.file_name();
+            let name = fname.to_string_lossy();
+            if name.ends_with(".safetensors") && name != "model.safetensors" {
+                Some(f.path())
+            } else {
+                None
+            }
+        })
+        .collect();
+    shards.sort();
+    shards.into_iter().next()
 }
 
 /// Check if a HF cache directory name matches the target model.
@@ -282,10 +301,27 @@ fn run_format_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
 
         // Run SafeTensors forward pass to get logits
         let st_logits = {
-            let transformer =
-                SafetensorsToAprConverter::convert(safetensors_path).map_err(|e| {
-                    CliError::ValidationFailed(format!("SafeTensors convert failed: {e}"))
-                })?;
+            let transformer = match SafetensorsToAprConverter::convert(safetensors_path) {
+                Ok(t) => t,
+                Err(e) => {
+                    let msg = format!("{e}");
+                    if msg.contains("Tensor not found") || msg.contains("not supported") {
+                        return Ok(GateResult::failed(
+                            "format_parity",
+                            &format!(
+                                "SafeTensors shard incomplete (sharded model needs multi-shard loader): {}",
+                                safetensors_path.display()
+                            ),
+                            None,
+                            None,
+                            start.elapsed(),
+                        ));
+                    }
+                    return Err(CliError::ValidationFailed(format!(
+                        "SafeTensors convert failed: {e}"
+                    )));
+                }
+            };
             transformer.forward(&prompt_tokens).map_err(|e| {
                 CliError::ValidationFailed(format!("SafeTensors forward failed: {e}"))
             })?

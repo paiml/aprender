@@ -67,11 +67,12 @@ impl GgufReader {
             offset += 4;
 
             // Parse value for tokenizer, general, and model architecture keys
-            // We parse: tokenizer.*, general.*, llama.*, qwen2.*, phi.*, gpt2.* for full model config
+            // We parse: tokenizer.*, general.*, and per-arch keys for full model config
             if key.starts_with("tokenizer.")
                 || key.starts_with("general.")
                 || key.starts_with("llama.")
                 || key.starts_with("qwen2.")
+                || key.starts_with("qwen3.")
                 || key.starts_with("phi.")
                 || key.starts_with("mistral.")
                 || key.starts_with("gpt2.")
