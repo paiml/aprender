@@ -15,6 +15,7 @@ fn run_throughput_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
         use realizar::cuda::CudaExecutor;
         use realizar::format::{detect_format, ModelFormat};
 
+        let tracer = renacer::brick_tracer::BrickTracer::new_local();
         let cuda_available = CudaExecutor::is_available() && CudaExecutor::num_devices() > 0;
 
         let model_bytes = std::fs::read(path)
@@ -24,14 +25,14 @@ fn run_throughput_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
             .map_err(|e| CliError::ValidationFailed(format!("Failed to detect format: {e}")))?;
 
         let prompt = "Write a hello world program in Python:";
-        let Some((tps, duration)) = throughput_for_format(
+        let Some((tps, _measurement_duration)) = throughput_for_format(
             path,
             &model_bytes,
             format,
             prompt,
             config,
             cuda_available,
-            start,
+            &tracer,
         )?
         else {
             return Ok(GateResult::skipped(
@@ -39,6 +40,8 @@ fn run_throughput_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
                 "SafeTensors: tokenizer.json not found in model directory",
             ));
         };
+
+        let duration = start.elapsed();
 
         // Format-aware thresholds: quantized GGUF on GPU is ~100x faster than F32 CPU.
         // Comparing unquantized F32 models against a quantized GPU target is meaningless.
@@ -107,7 +110,11 @@ fn ollama_parity_grade(ratio: f64) -> &'static str {
 /// decode-only throughput (eval_count/eval_duration), so short runs
 /// unfairly penalize our measurement.
 #[cfg(feature = "inference")]
-fn measure_our_gguf_tps(path: &Path, config: &QaConfig) -> Result<f64> {
+fn measure_our_gguf_tps(
+    path: &Path,
+    config: &QaConfig,
+    tracer: &renacer::brick_tracer::BrickTracer,
+) -> Result<f64> {
     use realizar::gguf::{
         GGUFModel, MappedGGUFModel, OwnedQuantizedModel, OwnedQuantizedModelCuda,
         QuantizedGenerateConfig,
@@ -127,6 +134,7 @@ fn measure_our_gguf_tps(path: &Path, config: &QaConfig) -> Result<f64> {
         top_k: 1,
         ..Default::default()
     };
+    let budget_us = parity_max_tokens as u64 * config.iterations as u64 * 100_000;
 
     let cuda_available = realizar::cuda::CudaExecutor::is_available()
         && realizar::cuda::CudaExecutor::num_devices() > 0;
@@ -136,35 +144,62 @@ fn measure_our_gguf_tps(path: &Path, config: &QaConfig) -> Result<f64> {
     let model = OwnedQuantizedModel::from_mapped(&mapped)
         .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
 
+    // GH-284: Try CUDA, fall back to CPU on capability mismatch (e.g. missing QkNorm kernel)
     if cuda_available {
-        let mut cuda_model = OwnedQuantizedModelCuda::new(model, 0)
-            .map_err(|e| CliError::ValidationFailed(format!("CUDA init failed: {e}")))?;
-        let (tps, _) = measure_generate_throughput(
-            config.warmup,
-            config.iterations,
-            prompt_tokens.len(),
-            Instant::now(),
-            || {
-                cuda_model
-                    .generate_gpu_resident(&prompt_tokens, &gen_config)
-                    .unwrap_or_default()
-            },
-        );
-        Ok(tps)
-    } else {
-        let (tps, _) = measure_generate_throughput(
-            config.warmup,
-            config.iterations,
-            prompt_tokens.len(),
-            Instant::now(),
-            || {
-                model
-                    .generate_with_cache(&prompt_tokens, &gen_config)
-                    .unwrap_or_default()
-            },
-        );
-        Ok(tps)
+        match OwnedQuantizedModelCuda::with_max_seq_len(model, 0, 2048) {
+            Ok(mut cuda_model) => {
+                let (tps, _) = measure_generate_throughput(
+                    config.warmup,
+                    config.iterations,
+                    prompt_tokens.len(),
+                    tracer,
+                    "qa_ollama_parity_gpu",
+                    budget_us,
+                    config.verbose,
+                    || {
+                        cuda_model
+                            .generate_gpu_resident(&prompt_tokens, &gen_config)
+                            .unwrap_or_default()
+                    },
+                );
+                return Ok(tps);
+            }
+            Err(e) => {
+                // Recover the model for CPU fallback (CudaInitError preserves the model)
+                let model = e.into_model();
+                let (tps, _) = measure_generate_throughput(
+                    config.warmup,
+                    config.iterations,
+                    prompt_tokens.len(),
+                    tracer,
+                    "qa_ollama_parity_cpu_fallback",
+                    budget_us,
+                    config.verbose,
+                    || {
+                        model
+                            .generate_with_cache(&prompt_tokens, &gen_config)
+                            .unwrap_or_default()
+                    },
+                );
+                return Ok(tps);
+            }
+        }
     }
+    let (tps, _) = measure_generate_throughput(
+        config.warmup,
+        config.iterations,
+        prompt_tokens.len(),
+        tracer,
+        "qa_ollama_parity_cpu",
+        budget_us,
+        config.verbose,
+        || {
+            model
+                .generate_with_cache(&prompt_tokens, &gen_config)
+                .unwrap_or_default()
+        },
+    );
+    Ok(tps)
 }
 
 fn run_ollama_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
@@ -183,6 +218,7 @@ fn run_ollama_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
 
     #[cfg(feature = "inference")]
     {
+        let tracer = renacer::brick_tracer::BrickTracer::new_local();
         let ollama_tps = measure_ollama_throughput(path, config)?;
 
         if ollama_tps <= 0.0 {
@@ -192,7 +228,7 @@ fn run_ollama_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
             ));
         }
 
-        let our_tps = measure_our_gguf_tps(path, config)?;
+        let our_tps = measure_our_gguf_tps(path, config, &tracer)?;
         let speedup = our_tps / ollama_tps;
         let grade = ollama_parity_grade(speedup);
         let duration = start.elapsed();
@@ -240,7 +276,11 @@ fn run_ollama_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
 /// Toyota Way: Genchi Genbutsu - Go and see for yourself. Measure real performance.
 /// Measure GPU and CPU throughput for a GGUF model, returning (cpu_tps, gpu_tps).
 #[cfg(feature = "inference")]
-fn measure_gpu_cpu_tps(path: &Path, config: &QaConfig) -> Result<(f64, f64)> {
+fn measure_gpu_cpu_tps(
+    path: &Path,
+    config: &QaConfig,
+    tracer: &renacer::brick_tracer::BrickTracer,
+) -> Result<(f64, f64)> {
     use realizar::gguf::{
         GGUFModel, MappedGGUFModel, OwnedQuantizedModel, OwnedQuantizedModelCuda,
         QuantizedGenerateConfig,
@@ -259,6 +299,7 @@ fn measure_gpu_cpu_tps(path: &Path, config: &QaConfig) -> Result<(f64, f64)> {
         top_k: 1,
         ..Default::default()
     };
+    let budget_us = config.max_tokens as u64 * config.iterations as u64 * 100_000;
 
     // CPU throughput
     let mapped = MappedGGUFModel::from_path(path)
@@ -269,7 +310,10 @@ fn measure_gpu_cpu_tps(path: &Path, config: &QaConfig) -> Result<(f64, f64)> {
         config.warmup,
         config.iterations,
         prompt_tokens.len(),
-        Instant::now(),
+        tracer,
+        "qa_gpu_speedup_cpu",
+        budget_us,
+        config.verbose,
         || {
             model
                 .generate_with_cache(&prompt_tokens, &gen_config)
@@ -277,24 +321,31 @@ fn measure_gpu_cpu_tps(path: &Path, config: &QaConfig) -> Result<(f64, f64)> {
         },
     );
 
-    // GPU throughput
+    // GPU throughput — GH-284: fall back to 0.0 on capability mismatch
     let mapped2 = MappedGGUFModel::from_path(path)
         .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
     let model2 = OwnedQuantizedModel::from_mapped(&mapped2)
         .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
-    let mut cuda_model = OwnedQuantizedModelCuda::new(model2, 0)
-        .map_err(|e| CliError::ValidationFailed(format!("CUDA init failed: {e}")))?;
-    let (gpu_tps, _) = measure_generate_throughput(
-        config.warmup,
-        config.iterations,
-        prompt_tokens.len(),
-        Instant::now(),
-        || {
-            cuda_model
-                .generate_gpu_resident(&prompt_tokens, &gen_config)
-                .unwrap_or_default()
-        },
-    );
+    let gpu_tps = match OwnedQuantizedModelCuda::with_max_seq_len(model2, 0, 2048) {
+        Ok(mut cuda_model) => {
+            let (tps, _) = measure_generate_throughput(
+                config.warmup,
+                config.iterations,
+                prompt_tokens.len(),
+                tracer,
+                "qa_gpu_speedup_gpu",
+                budget_us,
+                config.verbose,
+                || {
+                    cuda_model
+                        .generate_gpu_resident(&prompt_tokens, &gen_config)
+                        .unwrap_or_default()
+                },
+            );
+            tps
+        }
+        Err(_) => 0.0, // GPU unavailable for this architecture (e.g. missing QkNorm)
+    };
 
     Ok((cpu_tps, gpu_tps))
 }
@@ -330,7 +381,8 @@ fn run_gpu_speedup_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
             ));
         }
 
-        let (cpu_tps, gpu_tps) = measure_gpu_cpu_tps(path, config)?;
+        let tracer = renacer::brick_tracer::BrickTracer::new_local();
+        let (cpu_tps, gpu_tps) = measure_gpu_cpu_tps(path, config, &tracer)?;
         let duration = start.elapsed();
 
         if cpu_tps <= 0.0 {

@@ -269,30 +269,68 @@ fn run_golden_output_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
 /// Run warmup+measure loop for throughput benchmarking.
 ///
 /// Calls `generate_fn` for `warmup` iterations (discarding results), then
-/// measures `iterations` runs to compute tokens per second.
+/// measures `iterations` runs using `BrickTracer` for syscall-level diagnostics.
+/// Returns (tokens_per_second, measurement_duration).
 #[cfg(feature = "inference")]
 fn measure_generate_throughput(
     warmup: usize,
     iterations: usize,
     prompt_len: usize,
-    overall_start: Instant,
+    tracer: &renacer::brick_tracer::BrickTracer,
+    brick_name: &str,
+    budget_us: u64,
+    verbose: bool,
     mut generate_fn: impl FnMut() -> Vec<u32>,
 ) -> (f64, Duration) {
+    // Warmup (untraced)
     for _ in 0..warmup {
         let _ = generate_fn();
     }
 
-    let mut total_tokens = 0usize;
-    let measure_start = Instant::now();
-    for _ in 0..iterations {
-        let output = generate_fn();
-        total_tokens += output.len().saturating_sub(prompt_len);
+    // Measurement (traced via BrickTracer for syscall breakdown)
+    let traced = tracer.trace(brick_name, budget_us, || {
+        let mut tokens = 0usize;
+        for _ in 0..iterations {
+            let output = generate_fn();
+            tokens += output.len().saturating_sub(prompt_len);
+        }
+        tokens
+    });
+    let total_tokens = traced.result;
+    let measure_secs = traced.duration_us as f64 / 1_000_000.0;
+    let tps = if measure_secs > 0.0 {
+        total_tokens as f64 / measure_secs
+    } else {
+        0.0
+    };
+
+    if verbose {
+        let bd = &traced.syscall_breakdown;
+        eprintln!(
+            "  BrickTracer [{brick_name}]: {:.1} tok/s, {}us total",
+            tps, traced.duration_us
+        );
+        eprintln!(
+            "    compute: {}us  mmap: {}us  futex: {}us  ioctl: {}us",
+            bd.compute_us, bd.mmap_us, bd.futex_us, bd.ioctl_us
+        );
+        eprintln!(
+            "    overhead: {:.1}%  dominant: {}",
+            bd.syscall_overhead_percent(),
+            bd.dominant_syscall()
+        );
+        if let Some(ref meta) = traced.metadata {
+            eprintln!(
+                "    budget: {}us  actual: {}us  efficiency: {:.1}%",
+                meta.budget_us,
+                meta.actual_us,
+                meta.efficiency * 100.0
+            );
+        }
     }
-    let measure_time = measure_start.elapsed();
-    (
-        total_tokens as f64 / measure_time.as_secs_f64(),
-        overall_start.elapsed(),
-    )
+
+    let duration = Duration::from_micros(traced.duration_us);
+    (tps, duration)
 }
 
 /// Measure throughput for a GGUF model (GPU or CPU path).
@@ -302,7 +340,7 @@ fn throughput_gguf(
     model_bytes: &[u8],
     config: &QaConfig,
     cuda_available: bool,
-    start: Instant,
+    tracer: &renacer::brick_tracer::BrickTracer,
     prompt: &str,
 ) -> Result<(f64, Duration)> {
     use realizar::gguf::{
@@ -319,39 +357,65 @@ fn throughput_gguf(
         top_k: 1,
         ..Default::default()
     };
+    let budget_us = config.max_tokens as u64 * config.iterations as u64 * 100_000;
 
     let mapped = MappedGGUFModel::from_path(path)
         .map_err(|e| CliError::ValidationFailed(format!("Map failed: {e}")))?;
     let model = OwnedQuantizedModel::from_mapped(&mapped)
         .map_err(|e| CliError::ValidationFailed(format!("Model failed: {e}")))?;
 
+    // GH-284: Try CUDA, fall back to CPU on capability mismatch (e.g. missing QkNorm kernel)
     if cuda_available {
-        let mut cuda_model = OwnedQuantizedModelCuda::new(model, 0)
-            .map_err(|e| CliError::ValidationFailed(format!("CUDA init failed: {e}")))?;
-        Ok(measure_generate_throughput(
-            config.warmup,
-            config.iterations,
-            prompt_tokens.len(),
-            start,
-            || {
-                cuda_model
-                    .generate_gpu_resident(&prompt_tokens, &gen_config)
-                    .unwrap_or_default()
-            },
-        ))
-    } else {
-        Ok(measure_generate_throughput(
-            config.warmup,
-            config.iterations,
-            prompt_tokens.len(),
-            start,
-            || {
-                model
-                    .generate_with_cache(&prompt_tokens, &gen_config)
-                    .unwrap_or_default()
-            },
-        ))
+        match OwnedQuantizedModelCuda::with_max_seq_len(model, 0, 2048) {
+            Ok(mut cuda_model) => {
+                return Ok(measure_generate_throughput(
+                    config.warmup,
+                    config.iterations,
+                    prompt_tokens.len(),
+                    tracer,
+                    "qa_throughput_gguf_gpu",
+                    budget_us,
+                    config.verbose,
+                    || {
+                        cuda_model
+                            .generate_gpu_resident(&prompt_tokens, &gen_config)
+                            .unwrap_or_default()
+                    },
+                ));
+            }
+            Err(e) => {
+                let model = e.into_model();
+                return Ok(measure_generate_throughput(
+                    config.warmup,
+                    config.iterations,
+                    prompt_tokens.len(),
+                    tracer,
+                    "qa_throughput_gguf_cpu_fallback",
+                    budget_us,
+                    config.verbose,
+                    || {
+                        model
+                            .generate_with_cache(&prompt_tokens, &gen_config)
+                            .unwrap_or_default()
+                    },
+                ));
+            }
+        }
     }
+    Ok(measure_generate_throughput(
+        config.warmup,
+        config.iterations,
+        prompt_tokens.len(),
+        tracer,
+        "qa_throughput_gguf_cpu",
+        budget_us,
+        config.verbose,
+        || {
+            model
+                .generate_with_cache(&prompt_tokens, &gen_config)
+                .unwrap_or_default()
+        },
+    ))
 }
 
 /// Measure throughput for an APR model.
@@ -359,7 +423,7 @@ fn throughput_gguf(
 fn throughput_apr(
     path: &Path,
     config: &QaConfig,
-    start: Instant,
+    tracer: &renacer::brick_tracer::BrickTracer,
     prompt: &str,
 ) -> Result<(f64, Duration)> {
     use realizar::apr::AprV2Model;
@@ -380,12 +444,16 @@ fn throughput_apr(
         top_k: 1,
         ..Default::default()
     };
+    let budget_us = config.max_tokens as u64 * config.iterations as u64 * 100_000;
 
     Ok(measure_generate_throughput(
         config.warmup,
         config.iterations,
         prompt_tokens.len(),
-        start,
+        tracer,
+        "qa_throughput_apr",
+        budget_us,
+        config.verbose,
         || {
             transformer
                 .generate_with_cache(&prompt_tokens, &gen_config)
@@ -399,7 +467,7 @@ fn throughput_apr(
 fn throughput_safetensors(
     path: &Path,
     config: &QaConfig,
-    start: Instant,
+    tracer: &renacer::brick_tracer::BrickTracer,
     prompt: &str,
 ) -> Result<Option<(f64, Duration)>> {
     use aprender::text::bpe::{load_from_json, BpeTokenizer};
@@ -425,12 +493,16 @@ fn throughput_safetensors(
         top_k: 1,
         ..Default::default()
     };
+    let budget_us = config.max_tokens as u64 * config.iterations as u64 * 100_000;
 
     Ok(Some(measure_generate_throughput(
         config.warmup,
         config.iterations,
         prompt_tokens.len(),
-        start,
+        tracer,
+        "qa_throughput_safetensors",
+        budget_us,
+        config.verbose,
         || {
             transformer
                 .generate_with_cache(&prompt_tokens, &gen_config)
@@ -448,15 +520,15 @@ fn throughput_for_format(
     prompt: &str,
     config: &QaConfig,
     cuda_available: bool,
-    start: Instant,
+    tracer: &renacer::brick_tracer::BrickTracer,
 ) -> Result<Option<(f64, Duration)>> {
     use realizar::format::ModelFormat;
 
     match format {
         ModelFormat::Gguf => {
-            throughput_gguf(path, model_bytes, config, cuda_available, start, prompt).map(Some)
+            throughput_gguf(path, model_bytes, config, cuda_available, tracer, prompt).map(Some)
         }
-        ModelFormat::Apr => throughput_apr(path, config, start, prompt).map(Some),
-        ModelFormat::SafeTensors => throughput_safetensors(path, config, start, prompt),
+        ModelFormat::Apr => throughput_apr(path, config, tracer, prompt).map(Some),
+        ModelFormat::SafeTensors => throughput_safetensors(path, config, tracer, prompt),
     }
 }

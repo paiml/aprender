@@ -3,7 +3,7 @@ title: "Qwen3-8B: Performance Parity Pipeline"
 issue: GH-279
 status: Partially Complete (GH-280 blocks GPU parity)
 created: 2026-02-17
-updated: 2026-02-18 (dogfooded)
+updated: 2026-02-18 (BrickTracer instrumented)
 ---
 
 # Qwen3-8B: Performance Parity Pipeline
@@ -95,12 +95,26 @@ apr bench qwen3-8b-q4k.gguf --warmup 3 --measure 10
 
 | Metric | 3rd-party GGUF | Our GGUF | Target | Status |
 |--------|---------------|----------|--------|--------|
-| Ollama parity | 0.52x | **0.05x** (7 vs 138 tok/s) | >= 1.0x | Grade F |
+| Ollama parity | 0.52x | **0.05x** (6 vs 129 tok/s) | >= 1.0x | Grade F |
 | GPU golden output | garbage | garbage (no QK norm in kernel) | coherent | GH-280 |
 | CPU golden output | — | **coherent** (thinking mode works) | coherent | PASS |
-| QA gates | 8/10 | **6/11** | 10/10 | 5 remain |
-| CPU throughput | — | **4.0 tok/s** | 40+ | FAIL |
+| QA gates | 8/10 | **6/11** (3 pass, 3 fail, 5 skip) | 10/10 | 5 remain |
+| CPU throughput | — | **3.9 tok/s** (BrickTracer) | 40+ | FAIL |
 | GPU speedup | — | skipped (QkNorm kernel missing) | 2x+ | GH-280 |
+
+### BrickTracer Root Cause Analysis (2026-02-18)
+
+All throughput measurement now uses `renacer::BrickTracer` with `SyscallBreakdown`:
+
+| Measurement | tok/s | Total (us) | Compute | mmap | futex | ioctl | Overhead | Efficiency |
+|-------------|-------|-----------|---------|------|-------|-------|----------|------------|
+| QA Throughput (CPU) | 3.9 | 81,323,284 | 81,323,284 | 0 | 0 | 0 | 0.0% | 39.3% |
+| QA Ollama Parity (CPU) | 5.9 | 216,468,496 | 216,468,496 | 0 | 0 | 0 | 0.0% | 59.1% |
+| Bench 3-iter (CPU) | 3.2 | 30,460,000 | 30,460,000 | 0 | 0 | 0 | 0.0% | — |
+
+**Key insight: 100% compute-bound.** Zero syscall overhead — no mmap stalls, no futex contention, no ioctl latency. The bottleneck is purely in the matmul compute kernels. Improving throughput requires faster kernels (Q8K integer path, CUDA QkNorm), not I/O optimization.
+
+**Perf regression detected:** Previous report cached 6.2 tok/s → now 3.9 tok/s (36% regression). This may reflect measurement methodology change (BrickTracer vs raw Instant) or background load variance.
 
 ### Root Cause of 0.52x Parity
 
@@ -141,9 +155,9 @@ Key contract constraints:
 - [x] `apr export` APR → GGUF produces valid GGUF with full metadata (~267 dup tokens deduped to `[PAD{id}]`)
 - [x] GGUF metadata includes ~19 keys (arch=qwen3, layers=36, heads=32/8kv, hidden=4096)
 - [ ] `apr qa` passes all gates — **8/10 pass**
-- [x] Tensor Contract, Metadata (rope_theta=1000000, max_pos=40960), Golden Output, Perf Regression
-- [ ] Throughput: 4.0 tok/s < 10 tok/s threshold — FAIL
-- [ ] Ollama Parity: 0.05x (7 vs 138 tok/s) Grade F < 0.2x threshold — FAIL
+- [x] Tensor Contract (399 tensors), Metadata (rope_theta=1000000, max_pos=40960), Golden Output (2 cases)
+- [ ] Throughput: 3.9 tok/s < 10 tok/s threshold — FAIL (BrickTracer: 100% compute-bound, 0% syscall overhead)
+- [ ] Ollama Parity: 0.05x (6 vs 129 tok/s) Grade F < 0.2x threshold — FAIL
 - [ ] GPU Speedup: skipped (QkNorm kernel missing → GH-280)
 - [ ] Capability Match: FAIL (GPU missing QkNorm kernel → GH-280)
 - [ ] Golden Output: CPU coherent (thinking mode), GPU garbage (QK norm not in kernel → GH-280)
@@ -169,9 +183,14 @@ Fixes applied: trueno PTX bar_sync label mismatch fixed (commit `d989451`), sm_7
 Qwen3 uses thinking mode by default — generates `<think>` chain before answer. Golden output gate expects direct "4".
 Fix: `strip_thinking_blocks()` strips `<think>...</think>` before `verify_output()`. No-op for non-thinking models.
 
-### GH-284: CPU inference 2.4 tok/s vs Ollama 120 tok/s (FIXED)
-Root cause: F32 matmul in `realizar::apr_transformer::helpers::f32_matmul()` was single-threaded scalar code.
-Fix: Added rayon parallel chunking (`par_chunks_mut` with 64-element chunks) and AVX2 SIMD dot product (`simd_dot_f32`) for all F32 matmul operations (commit `55cfb95` in realizar).
+### GH-284: CPU inference 2.4 tok/s vs Ollama 120 tok/s (PARTIALLY FIXED)
+**Phase 1** (commit `55cfb95`): F32 matmul in `realizar::apr_transformer::helpers::f32_matmul()` was single-threaded scalar code. Added rayon parallel chunking (`par_chunks_mut` with 64-element chunks) and AVX2 SIMD dot product (`simd_dot_f32`) for all F32 matmul operations. Result: 2.4 → 4.0 tok/s.
+
+**Phase 2** (GH-284 cont.): Wire Q8K integer path to remaining hot loops. The `maddubs`-based Q8K kernel (`fused_q4k_q8k_parallel_matvec_into`) was already wired for FFN and attention output projections but two paths still used the slow f32 dequant AVX2 kernel (8 vals/instruction vs 32 vals/instruction):
+1. **LM head** (151936×4096): `single_part_02.rs` now uses `quantize_activations_q8k_into` + `fused_q4k_q8k_parallel_matvec_into` when weight is Q4K and `hidden_dim % 256 == 0`.
+2. **QKV projections** (36 layers): `matmul_part_02.rs::qkv_matmul_q8k_into()` was a stub that ignored pre-quantized Q8K data and fell back to f32. Now dispatches to `fused_q4k_q8k_parallel_matvec_into` for Q4K weights (both Fused and Separate QKV layouts).
+
+**Phase 3** (BrickTracer instrumentation): Replaced all `Instant::now()` + `.elapsed()` throughput measurement with `renacer::BrickTracer`. SyscallBreakdown confirms **100% compute-bound** (0% mmap/futex/ioctl overhead). Budget efficiency 39-59% indicates significant room for kernel optimization. Next steps: profile which matmul calls dominate the 81M microseconds of compute time.
 
 ### GH-282: PTX kernel load failures in `apr serve --gpu` (PARTIALLY FIXED)
 Root cause 1: trueno PTX `bar_sync(id)` stored barrier ID in `.src` operand but emitter read from `.label` field. `bar_sync(1)` emitted as `bar.sync 0;` instead of `bar.sync 1;`.

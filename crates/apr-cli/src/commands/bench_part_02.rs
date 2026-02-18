@@ -137,16 +137,22 @@ fn run_realizar_benchmark(path: &Path, config: &BenchConfig) -> Result<BenchResu
     // Route to format-specific benchmark
     // GH-192: All formats now support CUDA acceleration
     let use_cuda = cuda_available && cuda_devices > 0;
+    let tracer = renacer::brick_tracer::BrickTracer::new_local();
     match format {
-        ModelFormat::Gguf => run_gguf_benchmark(path, config, use_cuda),
-        ModelFormat::Apr => run_apr_benchmark(path, config, use_cuda),
-        ModelFormat::SafeTensors => run_safetensors_benchmark(path, config, use_cuda),
+        ModelFormat::Gguf => run_gguf_benchmark(path, config, use_cuda, &tracer),
+        ModelFormat::Apr => run_apr_benchmark(path, config, use_cuda, &tracer),
+        ModelFormat::SafeTensors => run_safetensors_benchmark(path, config, use_cuda, &tracer),
     }
 }
 
 /// GGUF format benchmark (supports GPU acceleration)
 #[cfg(feature = "inference")]
-fn run_gguf_benchmark(path: &Path, config: &BenchConfig, use_cuda: bool) -> Result<BenchResult> {
+fn run_gguf_benchmark(
+    path: &Path,
+    config: &BenchConfig,
+    use_cuda: bool,
+    tracer: &renacer::brick_tracer::BrickTracer,
+) -> Result<BenchResult> {
     use realizar::gguf::{GGUFModel, QuantizedGenerateConfig};
 
     if !config.quiet {
@@ -173,7 +179,7 @@ fn run_gguf_benchmark(path: &Path, config: &BenchConfig, use_cuda: bool) -> Resu
     };
 
     if use_cuda {
-        run_cuda_benchmark(
+        match run_cuda_benchmark(
             &gguf,
             &model_bytes,
             &prompt_tokens,
@@ -181,9 +187,23 @@ fn run_gguf_benchmark(path: &Path, config: &BenchConfig, use_cuda: bool) -> Resu
             config,
             start,
             path,
-        )
+            tracer,
+        ) {
+            Ok(result) => Ok(result),
+            Err(e) => {
+                // GH-284: Fall back to CPU on CUDA capability mismatch (e.g. missing QkNorm kernel)
+                if !config.quiet {
+                    eprintln!(
+                        "{}",
+                        format!("CUDA init failed, falling back to CPU: {e}").yellow()
+                    );
+                }
+                let cpu_start = Instant::now();
+                run_cpu_benchmark(&prompt_tokens, &gen_config, config, cpu_start, path, tracer)
+            }
+        }
     } else {
-        run_cpu_benchmark(&prompt_tokens, &gen_config, config, start, path)
+        run_cpu_benchmark(&prompt_tokens, &gen_config, config, start, path, tracer)
     }
 }
 
@@ -214,11 +234,16 @@ fn resolve_apr_prompt_tokens(path: &Path, prompt: &str) -> Vec<u32> {
 /// APR format benchmark
 /// GH-192: Now supports CUDA GPU acceleration and uses KV cache for O(n) generation
 #[cfg(feature = "inference")]
-fn run_apr_benchmark(path: &Path, config: &BenchConfig, use_cuda: bool) -> Result<BenchResult> {
+fn run_apr_benchmark(
+    path: &Path,
+    config: &BenchConfig,
+    use_cuda: bool,
+    tracer: &renacer::brick_tracer::BrickTracer,
+) -> Result<BenchResult> {
     use realizar::apr_transformer::{AprTransformer, GenerateConfig};
 
     if use_cuda {
-        let result = run_apr_cuda_benchmark(path, config)?;
+        let result = run_apr_cuda_benchmark(path, config, tracer)?;
         if result.total_tokens > 0 {
             return Ok(result);
         }
@@ -259,7 +284,7 @@ fn run_apr_benchmark(path: &Path, config: &BenchConfig, use_cuda: bool) -> Resul
         trace: false,
     };
 
-    // Warmup
+    // Warmup (untraced)
     run_bench_warmup(config, config.warmup, || {
         let _ = transformer.generate_with_cache(&prompt_tokens, &gen_config);
     });
@@ -272,16 +297,18 @@ fn run_apr_benchmark(path: &Path, config: &BenchConfig, use_cuda: bool) -> Resul
     let mut total_tokens = 0usize;
     let mut first_token_time = Duration::ZERO;
     let mut generation_failed = false;
+    let budget_us = config.max_tokens as u64 * 100_000;
 
     for i in 0..config.iterations {
-        let iter_start = Instant::now();
-
-        let output = transformer
-            .generate_with_cache(&prompt_tokens, &gen_config)
-            .unwrap_or_else(|_| prompt_tokens.clone());
+        let traced = tracer.trace("bench_apr_iter", budget_us, || {
+            transformer
+                .generate_with_cache(&prompt_tokens, &gen_config)
+                .unwrap_or_else(|_| prompt_tokens.clone())
+        });
+        let output = traced.result;
         let tokens_generated = output.len().saturating_sub(prompt_tokens.len());
 
-        let iter_time = iter_start.elapsed();
+        let iter_time = Duration::from_micros(traced.duration_us);
         iteration_times.push(iter_time);
         total_tokens += tokens_generated;
 
@@ -316,7 +343,11 @@ fn run_apr_benchmark(path: &Path, config: &BenchConfig, use_cuda: bool) -> Resul
 
 /// APR format CUDA benchmark (GH-192)
 #[cfg(feature = "inference")]
-fn run_apr_cuda_benchmark(path: &Path, config: &BenchConfig) -> Result<BenchResult> {
+fn run_apr_cuda_benchmark(
+    path: &Path,
+    config: &BenchConfig,
+    tracer: &renacer::brick_tracer::BrickTracer,
+) -> Result<BenchResult> {
     use realizar::apr::{AprV2Model, AprV2ModelCuda};
 
     if !config.quiet {
@@ -353,7 +384,7 @@ fn run_apr_cuda_benchmark(path: &Path, config: &BenchConfig) -> Result<BenchResu
         eprintln!();
     }
 
-    // Warmup
+    // Warmup (untraced)
     run_bench_warmup(config, config.warmup, || {
         model.reset_kv_cache();
         let _ = model.generate_cuda_with_cache(&prompt_tokens, config.max_tokens.min(16), eos_token);
@@ -366,17 +397,19 @@ fn run_apr_cuda_benchmark(path: &Path, config: &BenchConfig) -> Result<BenchResu
     let mut iteration_times = Vec::with_capacity(config.iterations);
     let mut total_tokens = 0usize;
     let mut first_token_time = Duration::ZERO;
+    let budget_us = config.max_tokens as u64 * 100_000;
 
     for i in 0..config.iterations {
-        let iter_start = Instant::now();
-
         model.reset_kv_cache();
-        let output = model
-            .generate_cuda_with_cache(&prompt_tokens, config.max_tokens.min(32), eos_token)
-            .unwrap_or_default();
+        let traced = tracer.trace("bench_apr_gpu_iter", budget_us, || {
+            model
+                .generate_cuda_with_cache(&prompt_tokens, config.max_tokens.min(32), eos_token)
+                .unwrap_or_default()
+        });
+        let output = traced.result;
         let tokens_generated = output.len().saturating_sub(prompt_tokens.len());
 
-        let iter_time = iter_start.elapsed();
+        let iter_time = Duration::from_micros(traced.duration_us);
         iteration_times.push(iter_time);
         total_tokens += tokens_generated;
 

@@ -6,11 +6,12 @@ fn run_safetensors_benchmark(
     path: &Path,
     config: &BenchConfig,
     use_cuda: bool,
+    tracer: &renacer::brick_tracer::BrickTracer,
 ) -> Result<BenchResult> {
     use realizar::safetensors_infer::SafetensorsToAprConverter;
 
     if use_cuda {
-        return run_safetensors_cuda_benchmark(path, config);
+        return run_safetensors_cuda_benchmark(path, config, tracer);
     }
 
     bench_log(config, &"Loading SafeTensors model (CPU)...".yellow().to_string());
@@ -27,11 +28,14 @@ fn run_safetensors_benchmark(
     bench_log(config, &"Running benchmark (forward pass)...".yellow().to_string());
     let mut iteration_times = Vec::with_capacity(config.iterations);
     let total_tokens = config.iterations * prompt_tokens.len();
+    let budget_us = config.max_tokens as u64 * 100_000;
 
     for i in 0..config.iterations {
-        let iter_start = Instant::now();
-        let _ = transformer.forward(&prompt_tokens);
-        let iter_time = iter_start.elapsed();
+        let traced = tracer.trace("bench_safetensors_cpu_iter", budget_us, || {
+            transformer.forward(&prompt_tokens)
+        });
+        let _ = traced.result;
+        let iter_time = Duration::from_micros(traced.duration_us);
         iteration_times.push(iter_time);
         bench_log_iter(config, i, iter_time, None);
     }
@@ -114,7 +118,11 @@ fn bench_log_done(config: &BenchConfig) {
 /// SafeTensors CUDA benchmark (GH-192)
 /// Uses SafeTensorsCudaModel for direct GPU loading
 #[cfg(feature = "inference")]
-fn run_safetensors_cuda_benchmark(path: &Path, config: &BenchConfig) -> Result<BenchResult> {
+fn run_safetensors_cuda_benchmark(
+    path: &Path,
+    config: &BenchConfig,
+    tracer: &renacer::brick_tracer::BrickTracer,
+) -> Result<BenchResult> {
     use realizar::safetensors_cuda::SafeTensorsCudaModel;
 
     bench_log(config, &"Loading SafeTensors model (GPU)...".yellow().to_string());
@@ -137,7 +145,7 @@ fn run_safetensors_cuda_benchmark(path: &Path, config: &BenchConfig) -> Result<B
     bench_log_done(config);
 
     let (iteration_times, total_tokens, first_token_time) =
-        run_safetensors_cuda_measurement(&mut model, &prompt_tokens, eos_token, config)?;
+        run_safetensors_cuda_measurement(&mut model, &prompt_tokens, eos_token, config, tracer)?;
 
     calculate_benchmark_stats(iteration_times, total_tokens, first_token_time, config)
 }
@@ -149,20 +157,24 @@ fn run_safetensors_cuda_measurement(
     prompt_tokens: &[u32],
     eos_token: u32,
     config: &BenchConfig,
+    tracer: &renacer::brick_tracer::BrickTracer,
 ) -> Result<(Vec<Duration>, usize, Duration)> {
     bench_log(config, &"Running benchmark (GPU)...".yellow().to_string());
     let mut iteration_times = Vec::with_capacity(config.iterations);
     let mut total_tokens = 0usize;
     let mut first_token_time = Duration::ZERO;
+    let budget_us = config.max_tokens as u64 * 100_000;
 
     for i in 0..config.iterations {
-        let iter_start = Instant::now();
         model.reset_kv_cache();
-        let output = model
-            .generate(prompt_tokens, config.max_tokens.min(32), eos_token)
-            .unwrap_or_else(|_| prompt_tokens.to_vec());
+        let traced = tracer.trace("bench_safetensors_gpu_iter", budget_us, || {
+            model
+                .generate(prompt_tokens, config.max_tokens.min(32), eos_token)
+                .unwrap_or_else(|_| prompt_tokens.to_vec())
+        });
+        let output = traced.result;
         let tokens_generated = output.len().saturating_sub(prompt_tokens.len());
-        let iter_time = iter_start.elapsed();
+        let iter_time = Duration::from_micros(traced.duration_us);
         iteration_times.push(iter_time);
         total_tokens += tokens_generated;
         if i == 0 {
@@ -213,6 +225,7 @@ fn run_cuda_measurement(
     prompt_tokens: &[u32],
     gen_config: &realizar::gguf::QuantizedGenerateConfig,
     config: &BenchConfig,
+    tracer: &renacer::brick_tracer::BrickTracer,
 ) -> Result<(Vec<Duration>, usize, Duration)> {
     if !config.quiet {
         eprintln!("{}", "Running benchmark (GPU)...".yellow());
@@ -220,19 +233,20 @@ fn run_cuda_measurement(
     let mut iteration_times = Vec::with_capacity(config.iterations);
     let mut total_tokens = 0usize;
     let mut first_token_time = Duration::ZERO;
+    let budget_us = config.max_tokens as u64 * 100_000;
 
     for i in 0..config.iterations {
-        let iter_start = Instant::now();
-
-        let output = cuda_model
-            .generate_gpu_resident(prompt_tokens, gen_config)
-            .map_err(|e| {
-                eprintln!("\n  Generation error: {e}");
-                CliError::ValidationFailed(format!("GPU generation failed: {e}"))
-            })?;
+        let traced = tracer.trace("bench_gpu_iter", budget_us, || {
+            cuda_model
+                .generate_gpu_resident(prompt_tokens, gen_config)
+        });
+        let output = traced.result.map_err(|e| {
+            eprintln!("\n  Generation error: {e}");
+            CliError::ValidationFailed(format!("GPU generation failed: {e}"))
+        })?;
         let tokens_generated = output.len().saturating_sub(prompt_tokens.len());
 
-        let iter_time = iter_start.elapsed();
+        let iter_time = Duration::from_micros(traced.duration_us);
         iteration_times.push(iter_time);
         total_tokens += tokens_generated;
 
@@ -269,6 +283,7 @@ fn run_cuda_benchmark(
     config: &BenchConfig,
     start: Instant,
     model_path: &Path,
+    tracer: &renacer::brick_tracer::BrickTracer,
 ) -> Result<BenchResult> {
     use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel, OwnedQuantizedModelCuda};
 
@@ -298,7 +313,7 @@ fn run_cuda_benchmark(
     run_cuda_warmup(&mut cuda_model, prompt_tokens, gen_config, config)?;
 
     let (iteration_times, total_tokens, first_token_time) =
-        run_cuda_measurement(&mut cuda_model, prompt_tokens, gen_config, config)?;
+        run_cuda_measurement(&mut cuda_model, prompt_tokens, gen_config, config, tracer)?;
 
     calculate_benchmark_stats(iteration_times, total_tokens, first_token_time, config)
 }
@@ -311,6 +326,7 @@ fn run_cpu_benchmark(
     config: &BenchConfig,
     start: Instant,
     path: &Path,
+    tracer: &renacer::brick_tracer::BrickTracer,
 ) -> Result<BenchResult> {
     use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel};
 
@@ -324,7 +340,7 @@ fn run_cpu_benchmark(
     run_cpu_warmup(&model, prompt_tokens, gen_config, config);
 
     let (iteration_times, total_tokens, first_token_time) =
-        run_cpu_measurement(&model, prompt_tokens, gen_config, config);
+        run_cpu_measurement(&model, prompt_tokens, gen_config, config, tracer);
 
     calculate_benchmark_stats(iteration_times, total_tokens, first_token_time, config)
 }
@@ -352,19 +368,23 @@ fn run_cpu_measurement(
     prompt_tokens: &[u32],
     gen_config: &realizar::gguf::QuantizedGenerateConfig,
     config: &BenchConfig,
+    tracer: &renacer::brick_tracer::BrickTracer,
 ) -> (Vec<Duration>, usize, Duration) {
     bench_log(config, &"Running benchmark (CPU)...".yellow().to_string());
     let mut iteration_times = Vec::with_capacity(config.iterations);
     let mut total_tokens = 0usize;
     let mut first_token_time = Duration::ZERO;
+    let budget_us = config.max_tokens as u64 * 100_000;
 
     for i in 0..config.iterations {
-        let iter_start = Instant::now();
-        let output = model
-            .generate_with_cache(prompt_tokens, gen_config)
-            .unwrap_or_default();
+        let traced = tracer.trace("bench_cpu_iter", budget_us, || {
+            model
+                .generate_with_cache(prompt_tokens, gen_config)
+                .unwrap_or_default()
+        });
+        let output = traced.result;
         let tokens_generated = output.len().saturating_sub(prompt_tokens.len());
-        let iter_time = iter_start.elapsed();
+        let iter_time = Duration::from_micros(traced.duration_us);
         iteration_times.push(iter_time);
         total_tokens += tokens_generated;
         if i == 0 {
