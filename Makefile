@@ -732,7 +732,14 @@ CONTRACTS := $(PV_DIR)/contracts/softmax-kernel-v1.yaml \
              $(PV_DIR)/contracts/tensor-shape-flow-v1.yaml \
              $(PV_DIR)/contracts/roofline-model-v1.yaml \
              $(PV_DIR)/contracts/gated-delta-net-v1.yaml \
-             $(PV_DIR)/contracts/format-parity-v1.yaml
+             $(PV_DIR)/contracts/format-parity-v1.yaml \
+             $(PV_DIR)/contracts/shannon-entropy-v1.yaml \
+             $(PV_DIR)/contracts/f16-conversion-v1.yaml \
+             $(PV_DIR)/contracts/kernel-launch-budget-v1.yaml \
+             $(PV_DIR)/contracts/tensor-inventory-v1.yaml \
+             $(PV_DIR)/contracts/performance-grading-v1.yaml \
+             $(PV_DIR)/contracts/lora-algebra-v1.yaml \
+             $(PV_DIR)/contracts/quantization-ordering-v1.yaml
 
 contract-validate: ## Validate all kernel contracts (schema + staleness)
 	@echo "Validating kernel contracts..."

@@ -23,7 +23,7 @@ fn valid_config_strategy(
                 let d_ff = hidden * 2 + 256; // guaranteed > hidden
                 let num_layers = 4;
                 let vocab_size = 1000;
-                let max_position = 2048;
+                let _max_position = 2048;
                 (hidden, n_h, n_kv, d_k, d_ff, num_layers, vocab_size)
             })
         })
