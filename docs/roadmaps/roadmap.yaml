@@ -3842,10 +3842,10 @@ roadmap:
   priority: high
   assigned_to: null
   created: 2026-02-17T14:37:33Z
-  updated: 2026-02-17T14:37:38.489368300+00:00
+  updated: 2026-02-18T11:51:35Z
   spec: null
   acceptance_criteria:
-  - 'Import Qwen3-8B SafeTensors, quantize Q4K, export GGUF with full metadata, achieve Ollama parity. Contract: contracts/model-families/qwen3.yaml. Spec: docs/specifications/qwen3-perf-parity.md. Key diffs from Qwen2: no attention bias, QK norm tensors, thinking mode tokens.'
+  - 'GH-280 complete: PerHeadRmsNormKernel in trueno-gpu v0.4.18, capability gate flipped, 20/21 falsification checks pass. Remaining: throughput optimization (3.9 tok/s → 40+ target), GPU golden output verification (unblocked), format parity.'
   phases: []
   subtasks: []
   estimated_effort: null
@@ -3878,9 +3878,10 @@ roadmap:
   priority: medium
   assigned_to: null
   created: 2026-02-17T18:43:44.982621547+00:00
-  updated: 2026-02-17T18:45:54.299408190+00:00
+  updated: 2026-02-18T11:51:41Z
   spec: null
-  acceptance_criteria: []
+  acceptance_criteria:
+  - PerHeadRmsNormKernel added to trueno-gpu v0.4.18. Capability gate flipped in realizar. Qwen3 GPU inference unblocked. 9 new kernel tests, 10 capability tests pass.
   phases: []
   subtasks: []
   estimated_effort: null
