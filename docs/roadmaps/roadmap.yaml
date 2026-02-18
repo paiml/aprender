@@ -3890,19 +3890,29 @@ roadmap:
 - id: GH-279-4
   github_issue: null
   item_type: task
-  title: 'New task: GH-279-4'
-  status: inprogress
-  priority: medium
+  title: 'GH-279: Wire QkNorm into GPU forward path + fix format_parity sharded SafeTensors'
+  status: completed
+  priority: high
   assigned_to: null
   created: 2026-02-17T19:03:09.771720927+00:00
-  updated: 2026-02-17T19:03:09.771720927+00:00
+  updated: 2026-02-18T21:00:00.000000000+00:00
   spec: null
-  acceptance_criteria: []
+  acceptance_criteria:
+    - 'golden_output QA gate passes (GPU QkNorm matches CPU path)'
+    - 'format_parity QA gate passes (sharded SafeTensors loads all shards)'
+    - 'performance_regression QA gate passes (GPU speedup restored to baseline)'
   phases: []
   subtasks: []
-  estimated_effort: null
-  labels: []
-  notes: null
+  estimated_effort: 4h
+  labels:
+    - cuda
+    - qwen3
+    - qa-gates
+  notes: 'Wired per-head RMSNorm (QkNorm) into GPU forward path for Qwen3 models. Added
+    attn_q/k_norm_ptr/len fields to IndexedLayerWeights + BoundLayerWeights. Used existing
+    per_head_rmsnorm_into CUDA kernel and cache_rmsnorm_gamma upload. Fixed format_parity
+    gate to detect sharded models via model.safetensors.index.json. Extensive complexity
+    refactoring to pass pre-commit quality gates.'
 - id: Add contract-driven property tests from provable-contracts
   github_issue: null
   item_type: task
