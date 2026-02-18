@@ -18,6 +18,11 @@ pub mod qa_types {
     pub use crate::commands::qa::{GateResult, QaReport, SystemInfo};
 }
 
+// Public re-exports for downstream crates (whisper-apr proxies these)
+pub mod model_pull {
+    pub use crate::commands::pull::{list, run};
+}
+
 #[cfg(feature = "inference")]
 pub mod federation;
 

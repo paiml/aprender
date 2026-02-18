@@ -246,13 +246,36 @@ The Q8 sum computation per super-block costs ~20 instructions (8× `cvtepi8_epi1
 
 Based on roofline analysis + mathematical derivation, the optimization priority is:
 
-| Priority | Optimization | Expected Gain | Rationale |
-|----------|-------------|---------------|-----------|
-| P0 | GPU inference (GH-280 ✓) | 10-50x | Escapes memory bandwidth wall entirely (HBM2: 900 GB/s) |
-| P1 | Bsum precomputation | 5-15% | Contract-derived: hoist weight-independent activation sums out of per-row loop |
-| P2 | Memory prefetching | 20-40% | CPU at 49% bandwidth utilization; `_mm_prefetch` can close gap |
-| P3 | Reduce Q8K quantization passes | 5-10% | Currently quantize once for QKV, once for attn_out, once for FFN; some can share |
-| P4 | Parallel QKV projections | 3-5% | K+V overlap with Q tail; marginal on memory-bound workload |
+| Priority | Optimization | Expected Gain | Rationale | Status |
+|----------|-------------|---------------|-----------|--------|
+| P0 | GPU inference (GH-280 ✓) | 10-50x | Escapes memory bandwidth wall entirely (HBM2: 900 GB/s) | DONE |
+| P1 | Bsum precomputation | 5-15% | Contract-derived: hoist weight-independent activation sums out of per-row loop | DONE |
+| P2 | Dual-prefetch standardization | 20-40% | All SIMD kernels now prefetch weights + activations 1 superblock ahead | DONE |
+| P3 | Reduce Q8K quantization passes | 5-10% | Currently quantize once for QKV, once for attn_out, once for FFN; some can share | TODO |
+| P4 | Parallel QKV projections | 3-5% | K+V overlap with Q tail; marginal on memory-bound workload | TODO |
+
+#### Step 5: Implementation Status (2026-02-18)
+
+**Contract-by-design infrastructure** (quantized-dot-product-v1.yaml):
+- `QuantBlockFormat` trait with 5 monomorphized implementations (Q4K, Q5K, Q6K, Q4_0, Q8_0)
+- Generic scalar reference kernel (`generic_fused_dot_scalar`) — mathematical truth
+- Generic parallel matvec (`generic_parallel_matvec_into`) — replaces 6 duplicated functions (~260 lines eliminated)
+- 5 Popperian falsification tests (FALSIFY-QDOT-001 through 005)
+- Parallel_k.rs Q4K/Q5K/Q6K functions now delegate to generic infrastructure
+
+**P1 Bsum precomputation** (bsum_precompute.rs):
+- `precompute_q8k_bsums()` computes all activation sub-block sums once per token
+- `fused_q4k_q8k_dot_with_bsums_avx2` uses precomputed bsums (~50 SIMD instructions saved/superblock/row)
+- Wired into `fused_q4k_q8k_parallel_matvec_into` fallback path (transparent to callers)
+- Wired into `fused_q4k_q8k_ffn_up_gate_into` for both up+gate projections
+- 4-row AVX512 VNNI micro-kernel already had internal precomputation (unchanged)
+
+**P2 Dual-prefetch standardization** (4 kernel files):
+- `fused_q4k_dot_avx2`: added activation prefetch alongside existing Q4_K prefetch
+- `fused_q4k_q8k_dot_avx512vnni`: added Q8_K prefetch (was missing, V2 variant had it)
+- `fused_q4k_q8k_dot_4rows_avx512vnni`: added weight row prefetch for all 4 rows
+- `fused_q6k_dot_avx2`: added activation prefetch alongside existing Q6_K prefetch
+- All kernels now use `_MM_HINT_T0` dual-prefetch 1 superblock ahead
 
 **Critical insight:** On CPU, we will NOT reach 40 tok/s for an 8B model — the memory bandwidth wall is ~8 tok/s. The 40+ tok/s target requires GPU inference, which is now unblocked by GH-280. CPU optimization ceiling is ~6-8 tok/s with perfect bandwidth utilization.
 
@@ -340,10 +363,26 @@ Fix: `strip_thinking_blocks()` strips `<think>...</think>` before `verify_output
 - **Bandwidth ceiling: 7.9 tok/s** — current 3.9 tok/s = 49% of ceiling
 - Compute ceiling: 41 tok/s (AVX2 FMA) — not the bottleneck
 
-**Remaining CPU optimization path (contract-derived):**
-1. **P1: Software prefetch** — `_mm_prefetch(_MM_HINT_T0)` for next super-block during current super-block processing. Expected: +20-40% (3.9 → 5-6 tok/s)
-2. **P2: Kernel parity with llama.cpp** — structural diff of `fused_q4k_q8k_dot_simd` vs `ggml_vec_dot_q4_K_q8_K`. Eliminate any per-super-block instruction overhead.
-3. **P0: GPU inference (GH-280 ✓)** — escapes the bandwidth wall entirely. HBM2 at 900 GB/s → 215 tok/s ceiling.
+**Phase 5** (Contract-by-design kernel architecture):
+- `QuantBlockFormat` trait + 5 implementations: zero-cost monomorphized generic kernels for all blocked quantization formats
+- Generic scalar reference kernel validates mathematical correctness
+- Generic parallel matvec eliminates ~260 lines of duplication across Q4K/Q5K/Q6K
+- 5 Popperian falsification tests validate contract claims
+
+**Phase 6** (P1 Bsum precomputation):
+- `precompute_q8k_bsums()` hoists activation sub-block sums out of per-row loop
+- AVX2 bsum-aware dot variant saves ~50 SIMD instructions per superblock per row
+- Transparent optimization: wired into `fused_q4k_q8k_parallel_matvec_into` and `fused_q4k_q8k_ffn_up_gate_into`
+
+**Phase 7** (P2 Dual-prefetch standardization):
+- Audited all 6 SIMD kernels; 4 had incomplete prefetch (missing Q8_K or activation prefetch)
+- Standardized: all kernels now dual-prefetch (weights + activations) 1 superblock ahead
+- Added weight row prefetch to 4-row AVX512 VNNI micro-kernel
+
+**Remaining CPU optimization path:**
+1. **P3: Reduce Q8K quantization passes** — share pre-quantized activations across QKV+attn_out in same layer
+2. **P4: Parallel QKV projections** — marginal on memory-bound workload
+3. **GPU inference (GH-280 ✓)** — escapes the bandwidth wall entirely. HBM2 at 900 GB/s → 215 tok/s ceiling.
 
 **Key insight: 40+ tok/s on CPU is physically impossible** for 8B Q4K. The memory bandwidth wall is ~8 tok/s. Further CPU work yields diminishing returns. The path forward is GPU.
 
