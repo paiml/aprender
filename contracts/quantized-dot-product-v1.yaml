@@ -1,0 +1,316 @@
+# Quantized Dot Product Algebra Contract v1.0.0
+# THE SOURCE OF TRUTH for blocked quantization dot product kernels
+#
+# Mathematical Foundation:
+#   Papers: GPTQ (Frantar 2022), LLM.int8() (Dettmers 2022), GGML K-quant (ggerganov)
+#   Memory Wall: Wulf & McKee (1995) — fused ops eliminate intermediate buffer traffic
+#
+# General Dequantization (all blocked formats):
+#   x_i = d * s_j * q_i - dmin * m_j
+#
+# Dot Product Decomposition (the key algebra):
+#   dot(W, x) = sum_superblock [
+#     SCALE TERM:  d_W * d_x * sum_j( s_j * sum_i( q_W_i * q_x_i ) )
+#   - OFFSET TERM: dmin_W * d_x * sum_j( m_j * sum_i( q_x_i ) )    <-- bsums
+#   ]
+#
+# KEY INSIGHT: The offset term depends ONLY on sum(q_x) per sub-block (bsums),
+# NOT on q_W. Therefore bsums can be precomputed once and reused across all rows.
+#
+# ENFORCEMENT: realizar/src/quantize/contract_tests.rs
+
+metadata:
+  version: "1.0.0"
+  created: "2026-02-18"
+  author: "PAIML Engineering"
+  description: "Mathematical specification for quantized dot product kernels"
+  references:
+    - "Frantar et al. (2022). GPTQ: Accurate Post-Training Quantization. arXiv:2210.17323"
+    - "Dettmers et al. (2022). LLM.int8(): 8-bit Matrix Multiplication. NeurIPS 2022"
+    - "Wulf & McKee (1995). Hitting the Memory Wall. ACM SIGARCH 23(1)"
+    - "ggerganov/ggml — K-quant 256-element super-blocks with 6-bit packed sub-block scales"
+    - "contracts/tensor-layout-v1.yaml (LAYOUT-001/002: row-major only)"
+
+# =============================================================================
+# FORMAT REGISTRY
+# =============================================================================
+#
+# Each entry encodes ALL constants needed to implement a correct kernel.
+# The QuantBlockFormat trait in format_trait.rs is derived from this registry.
+
+formats:
+  Q4_K:
+    family: k_quant
+    elements_per_superblock: 256
+    subblocks_per_superblock: 8
+    elements_per_subblock: 32
+    superblock_bytes: 144
+    quant_bits: 4
+    has_dmin: true
+    quant_signed: false
+    zero_offset: 0
+    ulp_tolerance: 8          # max scalar-SIMD divergence in ULPs
+    bits_per_weight: 4.5
+    layout:
+      d_offset: 0             # f16 super-block scale
+      d_bytes: 2
+      dmin_offset: 2           # f16 super-block min
+      dmin_bytes: 2
+      scales_offset: 4         # 12 bytes of packed 6-bit scales
+      scales_bytes: 12
+      qs_offset: 16            # 128 bytes of 4-bit packed values
+      qs_bytes: 128
+    dequant_formula: "d * s_j * q_i - dmin * m_j"
+    scale_extraction: "extract_scale_min() — 6-bit packed per PAR-001"
+
+  Q5_K:
+    family: k_quant
+    elements_per_superblock: 256
+    subblocks_per_superblock: 8
+    elements_per_subblock: 32
+    superblock_bytes: 176
+    quant_bits: 5
+    has_dmin: true
+    quant_signed: false
+    zero_offset: 0
+    ulp_tolerance: 8
+    bits_per_weight: 5.5
+    layout:
+      d_offset: 0
+      d_bytes: 2
+      dmin_offset: 2
+      dmin_bytes: 2
+      scales_offset: 4
+      scales_bytes: 12
+      qh_offset: 16            # 32 bytes of high bits (1 bit per value)
+      qh_bytes: 32
+      qs_offset: 48
+      qs_bytes: 128
+    dequant_formula: "d * s_j * q_i - dmin * m_j  (q_i is 5-bit: low4 | high1<<4)"
+    scale_extraction: "extract_scale_min() — same as Q4_K"
+
+  Q6_K:
+    family: k_quant
+    elements_per_superblock: 256
+    subblocks_per_superblock: 16
+    elements_per_subblock: 16
+    superblock_bytes: 210
+    quant_bits: 6
+    has_dmin: false
+    quant_signed: true          # q_i - 32 gives signed range
+    zero_offset: 32             # subtract 32 to center
+    ulp_tolerance: 8
+    bits_per_weight: 6.5625
+    layout:
+      ql_offset: 0              # 128 bytes of low 4-bit values
+      ql_bytes: 128
+      qh_offset: 128            # 64 bytes of high 2-bit values
+      qh_bytes: 64
+      scales_offset: 192        # 16 bytes of signed 8-bit scales
+      scales_bytes: 16
+      d_offset: 208             # f16 super-block scale (at end!)
+      d_bytes: 2
+    dequant_formula: "d * sc[j] * (q_i - 32)"
+    scale_extraction: "Direct i8 read — no packing"
+
+  Q4_0:
+    family: simple
+    elements_per_superblock: 32   # "super-block" is just a block for simple formats
+    subblocks_per_superblock: 1
+    elements_per_subblock: 32
+    superblock_bytes: 18          # 2 (f16 scale) + 16 (packed nibbles)
+    quant_bits: 4
+    has_dmin: false
+    quant_signed: false
+    zero_offset: 8                # subtract 8 to center unsigned 4-bit
+    ulp_tolerance: 4
+    bits_per_weight: 4.0
+    layout:
+      d_offset: 0
+      d_bytes: 2
+      qs_offset: 2
+      qs_bytes: 16
+    dequant_formula: "scale * (q_i - 8)"
+    scale_extraction: "N/A — single scale per block"
+
+  Q8_0:
+    family: simple
+    elements_per_superblock: 32
+    subblocks_per_superblock: 1
+    elements_per_subblock: 32
+    superblock_bytes: 34          # 2 (f16 scale) + 32 (i8 values)
+    quant_bits: 8
+    has_dmin: false
+    quant_signed: true            # native i8
+    zero_offset: 0
+    ulp_tolerance: 2
+    bits_per_weight: 8.0
+    layout:
+      d_offset: 0
+      d_bytes: 2
+      qs_offset: 2
+      qs_bytes: 32
+    dequant_formula: "scale * q_i  (q_i is signed i8)"
+    scale_extraction: "N/A — single scale per block"
+
+# =============================================================================
+# KERNEL STRUCTURE
+# =============================================================================
+#
+# Every correct kernel for ANY blocked quantization format follows these 6 phases.
+# The generic_fused_dot_scalar in generic_dot.rs implements this exactly.
+
+kernel_structure:
+  phases:
+    - name: validate
+      description: "Check data length is multiple of superblock_bytes"
+      invariant: "data.len() % F::SUPERBLOCK_BYTES == 0"
+
+    - name: preprocess
+      description: "Pad activations to super-block boundary (GH-202 fix)"
+      invariant: "activations.len() >= num_superblocks * F::ELEMENTS_PER_SUPERBLOCK"
+
+    - name: bsum_precompute
+      description: >
+        For formats with has_dmin=true: precompute sum(activation[sub-block]) for each
+        sub-block. This depends ONLY on activations, NOT on weights, so it can be
+        computed once and reused across all weight rows.
+      applies_to: "Q4_K, Q5_K (has_dmin=true)"
+      gap_in_current_code: >
+        Current fused_k_part_05.rs computes q8 sums on-the-fly inside the super-block
+        loop (lines 157-200). This is a contract-derived finding — the math shows these
+        sums are weight-independent and should be hoisted out.
+
+    - name: superblock_loop
+      description: >
+        For each super-block: read d, dmin, scales; compute scale_term and offset_term.
+        scale_term = d * sum_j(s_j * dot(q_W_block_j, q_x_block_j))
+        offset_term = dmin * sum_j(m_j * bsum_j)  [only if has_dmin]
+      invariant: "Processes exactly F::ELEMENTS_PER_SUPERBLOCK values per iteration"
+
+    - name: combine_terms
+      description: "accumulator += scale_term - offset_term"
+      note: "When has_dmin=false, offset_term is zero — the subtraction is optimized away"
+
+    - name: hsum
+      description: "Horizontal sum of SIMD accumulator to scalar result"
+      note: "SIMD kernels accumulate in vector registers; final hsum reduces to f32"
+
+# =============================================================================
+# SIMD DISPATCH TABLE
+# =============================================================================
+#
+# Exhaustive mapping: (format × ISA) → kernel function.
+# NO catch-all `_ =>` allowed (LAYOUT-002 lesson from tensor-layout-v1.yaml).
+
+simd_dispatch:
+  Q4_K:
+    scalar: "fused_q4k_dot"
+    avx2: "fused_q4k_dot_avx2"
+    avx512_vnni: "fused_q4k_dot_avx512_vnni"
+    # Q4_K × Q8_K path (integer-integer, faster)
+    q8k_scalar: "fused_q4k_q8k_dot"
+    q8k_avx2: "fused_q4k_q8k_dot_simd"
+    q8k_avx512_vnni: "fused_q4k_q8k_dot_avx512vnni_v2"
+    q8k_4row_avx512_vnni: "fused_q4k_q8k_dot_4rows_avx512vnni"
+
+  Q5_K:
+    scalar: "fused_q5k_dot"
+    avx2: "fused_q5k_dot (scalar fallback)"   # SIMD Q5K deferred to Phase 2
+
+  Q6_K:
+    scalar: "fused_q6k_dot"
+    avx2: "fused_q6k_dot_avx2"
+
+  Q4_0:
+    scalar: "fused_q4_0_dot_scalar (via dequant path)"
+    avx2: "fused_rmsnorm_q4_0_matmul (fused with RMSNorm)"
+
+  Q8_0:
+    scalar: "fused_q8_0_q8_0_dot_scalar"
+    avx2: "fused_q8_0_q8_0_dot_avx2"
+
+# =============================================================================
+# ENFORCEMENT RULES
+# =============================================================================
+
+enforcement:
+  format_registry_complete:
+    description: "Every QuantBlockFormat impl must have a matching entry in this contract"
+    check: "contract_tests::FALSIFY-QDOT-004 — iterate all format impls, verify YAML entry exists"
+    severity: "ERROR"
+
+  kernel_correctness:
+    description: "Every SIMD kernel must produce output within ULP_TOLERANCE of scalar reference"
+    check: "contract_tests::FALSIFY-QDOT-001 — proptest with random weights and activations"
+    severity: "ERROR"
+
+  bsum_precomputation:
+    description: >
+      For has_dmin formats, precomputed bsums must equal on-the-fly bsums.
+      This validates the mathematical decomposition: offset term depends only on activations.
+    check: "contract_tests::FALSIFY-QDOT-003"
+    severity: "ERROR"
+
+  no_catch_all_dispatch:
+    description: "SIMD dispatch must be exhaustive over formats — no _ => fallback"
+    check: "contract_tests::FALSIFY-QDOT-005"
+    severity: "ERROR"
+    reference: "tensor-layout-v1.yaml enforcement rule: no catch-all in WeightQuantType match"
+
+  row_major_only:
+    description: "All kernels operate on row-major data (LAYOUT-002)"
+    check: "No colmajor functions exist in quantize module"
+    severity: "ERROR"
+    reference: "contracts/tensor-layout-v1.yaml"
+
+# =============================================================================
+# FALSIFICATION TESTS
+# =============================================================================
+
+falsification_tests:
+  - id: FALSIFY-QDOT-001
+    rule: "SIMD kernels are numerically equivalent to scalar reference"
+    prediction: "For random data, |simd_result - scalar_result| <= ULP_TOLERANCE * epsilon"
+    test: "proptest for each format: generate random superblocks + activations, compare"
+    if_fails: "SIMD kernel has a bug (wrong nibble extraction, missing offset term, etc.)"
+
+  - id: FALSIFY-QDOT-002
+    rule: "Formats are isolated — wrong format kernel produces garbage"
+    prediction: "Passing Q6_K data through Q4_K kernel produces result that differs >100x from correct"
+    test: "Cross-format: encode known vector as Q4_K and Q6_K, verify wrong-format dot is garbage"
+    if_fails: "Format dispatch is broken or formats are accidentally compatible"
+
+  - id: FALSIFY-QDOT-003
+    rule: "Precomputed bsums equal on-the-fly bsums"
+    prediction: "For random activations, precomputed sub-block sums match inline computation"
+    test: "Compute bsums both ways, verify exact equality (integer arithmetic)"
+    if_fails: "Mathematical decomposition is wrong or sub-block boundaries are misaligned"
+
+  - id: FALSIFY-QDOT-004
+    rule: "Format registry is complete"
+    prediction: "Every QuantBlockFormat impl has a YAML entry and vice versa"
+    test: "Iterate trait impls, check FORMAT_ID exists in YAML; iterate YAML, check impl exists"
+    if_fails: "New format added to code but not to contract, or vice versa"
+
+  - id: FALSIFY-QDOT-005
+    rule: "Dispatch table is exhaustive"
+    prediction: "Every format in registry has at least a scalar entry in simd_dispatch"
+    test: "For each format in YAML, verify simd_dispatch has an entry with at least 'scalar' key"
+    if_fails: "Format was added to registry but dispatch table not updated"
+
+# =============================================================================
+# QA GATE DEFINITION
+# =============================================================================
+
+qa_gate:
+  id: "F-QDOT-001"
+  name: "Quantized Dot Product Contract"
+  description: "Validates kernel correctness via mathematical reference"
+  checks:
+    - "All SIMD kernels match scalar reference within ULP tolerance"
+    - "Format registry matches trait implementations"
+    - "Dispatch table covers all formats"
+    - "Cross-format isolation holds"
+  pass_criteria: "All 5 FALSIFY tests pass"
+  falsification: "Introduce a sign error in nibble extraction — gate must catch it"

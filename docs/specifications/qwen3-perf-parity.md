@@ -159,47 +159,98 @@ Memory bandwidth (DDR4-3200 dual-channel):
 - On CPU, realistic target is **6-8 tok/s** (hitting bandwidth wall)
 - Current 3.9 tok/s = **49% of bandwidth ceiling** → room for ~2x via better prefetching/cache use
 
-#### Step 2: Reference Kernel — llama.cpp `ggml_vec_dot_q4_K_q8_K`
+#### Step 2: Mathematical Derivation — Dot Product Algebra
 
-Source: [`ggml/src/ggml-cpu/ggml-cpu-quants.c`](https://github.com/ggerganov/llama.cpp/blob/master/ggml/src/ggml-cpu/ggml-cpu-quants.c)
+**Paper citations:**
+- GPTQ (Frantar et al. 2022, arXiv:2210.17323): Blocked quantization with per-block scales
+- LLM.int8() (Dettmers et al. 2022, NeurIPS): Affine quantization `x = d·s·q - dmin·m`
+- Memory Wall (Wulf & McKee 1995, SIGARCH): Fused ops eliminate intermediate buffer traffic
+- GGML K-quant (ggerganov/ggml): 256-element super-blocks with 6-bit packed sub-block scales
 
-The gold-standard Q4K×Q8K dot product (AVX2 path):
+**General dequantization** (all blocked formats):
 
-```c
-// Key structural patterns in llama.cpp:
-// 1. Process 256 values per super-block (QK_K = 256)
-// 2. 8 sub-blocks of 32 values each within a super-block
-// 3. Split scales: 6-bit scales packed into 12 bytes
-// 4. Inner loop: vpmadd + vpmaddubsw for integer dot product
-// 5. Software prefetch: NONE (relies on hardware prefetcher)
-// 6. Single accumulator: __m256 acc (not multi-accumulator)
-// 7. Scale decode: bit manipulation to extract 6-bit scales from packed 12 bytes
+```
+x_i = d · s_j · q_i − dmin · m_j
 ```
 
-Key differences to audit against our `fused_q4k_q8k_dot_simd`:
-- [ ] Scale decode pattern (6-bit unpack from 12-byte packed format)
-- [ ] Sub-block iteration order (8 blocks of 32 values)
-- [ ] Integer multiply-accumulate instruction selection (`vpmaddubsw` + `vpmaddwd`)
-- [ ] dmin correction (Q4K minimum subtraction via `vpsubb` + sum)
-- [ ] Final horizontal sum pattern
+Where: `d` = super-block scale (f16), `dmin` = super-block min (f16, optional), `s_j` = sub-block scale (6-bit), `m_j` = sub-block min (6-bit, optional), `q_i` = quantized value (b-bit unsigned).
 
-#### Step 3: Structural Diff (Our Kernel vs llama.cpp)
+**Dot product decomposition** (the key algebra):
 
-**TODO:** Read our `fused_q4k_q8k_dot_simd` (in `realizar/src/quantize/fused_k_part_05.rs`) and diff against llama.cpp's AVX2 implementation instruction-by-instruction. Document:
-1. Instruction count per super-block (ours vs theirs)
-2. Memory access pattern (sequential vs strided)
-3. Branch prediction hazards
-4. Any extra work we do that they don't
+```
+dot(W, x) = Σ_superblock [
+    SCALE TERM:  d_W · d_x · Σ_j( s_j · Σ_i( q_W_i · q_x_i ) )
+  − OFFSET TERM: dmin_W · d_x · Σ_j( m_j · Σ_i( q_x_i ) )
+]
+```
+
+**KEY INSIGHT**: The offset term depends ONLY on `sum(q_x)` per sub-block (bsums), NOT on `q_W`. Therefore:
+
+1. Activation sub-block sums (bsums) can be **precomputed once** and reused across all weight rows
+2. The inner loop only needs `q_W × q_x` multiply-accumulate (maps to `maddubs`)
+3. The offset correction is computed **outside** the inner loop using precomputed bsums
+
+This is a **contract-derived finding** — our code in `fused_k_part_05.rs:157-200` computes q8 sums on-the-fly inside the super-block loop, which is the primary structural deviation from the mathematically optimal kernel.
+
+**Format-specific degenerations:**
+
+| Format | Super-block | Sub-blocks | has_dmin | Dequant Formula |
+|--------|-------------|------------|----------|-----------------|
+| Q4_K | 256 vals / 144 bytes | 8×32 | yes | `d·s_j·q_i − dmin·m_j` |
+| Q5_K | 256 vals / 176 bytes | 8×32 | yes | `d·s_j·q_i − dmin·m_j` |
+| Q6_K | 256 vals / 210 bytes | 16×16 | **no** | `d·s_j·(q_i−32)` |
+| Q4_0 | 32 vals / 18 bytes | 1×32 | **no** | `scale·(q_i−8)` |
+| Q8_0 | 32 vals / 34 bytes | 1×32 | **no** | `scale·q_i (signed)` |
+
+When `has_dmin=false`, the offset term vanishes. When `subblocks=1`, the sub-block scale is 1.0.
+
+**Contract**: [`contracts/quantized-dot-product-v1.yaml`](../../contracts/quantized-dot-product-v1.yaml)
+**Trait**: `realizar/src/quantize/format_trait.rs::QuantBlockFormat`
+**Reference kernel**: `realizar/src/quantize/generic_dot.rs::generic_fused_dot_scalar`
+**Falsification**: 5 tests in `realizar/src/quantize/contract_tests.rs` (FALSIFY-QDOT-001 through 005)
+
+#### Step 3: Contract-Derived Bsum Gap Analysis
+
+The mathematical decomposition reveals a specific, measurable deviation from the optimal kernel:
+
+**Current code** (`fused_k_part_05.rs:157-200`):
+```
+for each super-block:
+    for each 64-value chunk (4 iterations):
+        load Q4K data, load Q8K data
+        compute Q4×Q8 dot products → block_dots
+        compute Q8 sums → block_q8sums     ← REDUNDANT PER ROW
+    apply scales using block_dots
+    apply dmin correction using block_q8sums
+```
+
+**Optimal (from algebra)**:
+```
+ONCE per token (before matvec):
+    for each sub-block:
+        bsums[j] = Σ_i(q_x_i)             ← PRECOMPUTED ONCE
+
+for each row (weight):
+    for each super-block:
+        for each 64-value chunk:
+            load Q4K data, load Q8K data
+            compute Q4×Q8 dot products → block_dots   ← SAME
+            (NO Q8 sum computation)                     ← ELIMINATED
+        apply scales using block_dots
+        apply dmin correction using bsums[j]            ← USE PRECOMPUTED
+```
+
+The Q8 sum computation per super-block costs ~20 instructions (8× `cvtepi8_epi16`, 8× `madd_epi16`, 4× `add_epi32`, 4× `hadd_epi32`, plus lane extract). For 8B model with 36 layers × 7 projections × ~16 super-blocks per row, this is ~80,640 wasted instructions per token.
 
 #### Step 4: Derived Optimization Plan
 
-Based on roofline analysis, the optimization priority is:
+Based on roofline analysis + mathematical derivation, the optimization priority is:
 
 | Priority | Optimization | Expected Gain | Rationale |
 |----------|-------------|---------------|-----------|
 | P0 | GPU inference (GH-280 ✓) | 10-50x | Escapes memory bandwidth wall entirely (HBM2: 900 GB/s) |
-| P1 | Memory prefetching | 20-40% | CPU at 49% bandwidth utilization; `_mm_prefetch` can close gap |
-| P2 | Kernel parity with llama.cpp | 10-20% | Eliminate any instruction overhead vs reference |
+| P1 | Bsum precomputation | 5-15% | Contract-derived: hoist weight-independent activation sums out of per-row loop |
+| P2 | Memory prefetching | 20-40% | CPU at 49% bandwidth utilization; `_mm_prefetch` can close gap |
 | P3 | Reduce Q8K quantization passes | 5-10% | Currently quantize once for QKV, once for attn_out, once for FFN; some can share |
 | P4 | Parallel QKV projections | 3-5% | K+V overlap with Q tail; marginal on memory-bound workload |
 
