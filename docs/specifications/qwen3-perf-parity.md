@@ -3,7 +3,7 @@ title: "Qwen3-8B: Performance Parity Pipeline"
 issue: GH-279
 status: Partially Complete (GH-280 blocks GPU parity)
 created: 2026-02-17
-updated: 2026-02-18 (falsified)
+updated: 2026-02-18 (dogfooded)
 ---
 
 # Qwen3-8B: Performance Parity Pipeline
@@ -95,12 +95,12 @@ apr bench qwen3-8b-q4k.gguf --warmup 3 --measure 10
 
 | Metric | 3rd-party GGUF | Our GGUF | Target | Status |
 |--------|---------------|----------|--------|--------|
-| Ollama parity | 0.52x | **0.7x** (87 vs 132) | >= 1.0x | Grade D |
+| Ollama parity | 0.52x | **0.05x** (7 vs 138 tok/s) | >= 1.0x | Grade F |
 | GPU golden output | garbage | garbage (no QK norm in kernel) | coherent | GH-280 |
 | CPU golden output | — | **coherent** (thinking mode works) | coherent | PASS |
-| QA gates | 8/10 | **8/10** | 10/10 | 2 remain |
-| CPU throughput | — | **74.4 tok/s** | 40+ | PASS |
-| GPU speedup | — | **15.5x** (81 vs 5.2 pre-fix GPU) | 2x+ | PASS |
+| QA gates | 8/10 | **6/11** | 10/10 | 5 remain |
+| CPU throughput | — | **4.0 tok/s** | 40+ | FAIL |
+| GPU speedup | — | skipped (QkNorm kernel missing) | 2x+ | GH-280 |
 
 ### Root Cause of 0.52x Parity
 
@@ -141,8 +141,11 @@ Key contract constraints:
 - [x] `apr export` APR → GGUF produces valid GGUF with full metadata (~267 dup tokens deduped to `[PAD{id}]`)
 - [x] GGUF metadata includes ~19 keys (arch=qwen3, layers=36, heads=32/8kv, hidden=4096)
 - [ ] `apr qa` passes all gates — **8/10 pass**
-- [x] Tensor Contract, Metadata, Throughput (74.4 tok/s), GPU Speedup (15.5x), PTX, GPU State, Perf Regression
-- [x] Ollama Parity: 0.7x (87 vs 132 tok/s) — PASS (threshold 0.2x) but not at 1.0x target
+- [x] Tensor Contract, Metadata (rope_theta=1000000, max_pos=40960), Golden Output, Perf Regression
+- [ ] Throughput: 4.0 tok/s < 10 tok/s threshold — FAIL
+- [ ] Ollama Parity: 0.05x (7 vs 138 tok/s) Grade F < 0.2x threshold — FAIL
+- [ ] GPU Speedup: skipped (QkNorm kernel missing → GH-280)
+- [ ] Capability Match: FAIL (GPU missing QkNorm kernel → GH-280)
 - [ ] Golden Output: CPU coherent (thinking mode), GPU garbage (QK norm not in kernel → GH-280)
 - [ ] Format Parity: auto-discovers SafeTensors from `~/.apr/cache/hf/` (GH-279-2)
 - [x] Thinking mode tokens present in tokenizer vocabulary (`<think>`=151667, `</think>`=151668)
@@ -174,6 +177,15 @@ Fix: Added rayon parallel chunking (`par_chunks_mut` with 64-element chunks) and
 Root cause 1: trueno PTX `bar_sync(id)` stored barrier ID in `.src` operand but emitter read from `.label` field. `bar_sync(1)` emitted as `bar.sync 0;` instead of `bar.sync 1;`.
 Root cause 2: Hardcoded `sm_89` PTX target caused JIT failures on GPUs older than RTX 4090.
 Fix: Set `.label("sync {id}")` in `bar_sync()`, changed default target to `sm_70` (Volta baseline), added `emit_ptx_for_target()` API (commit `d989451` in trueno).
+
+### GH-279-5: GGUF reader drops qwen3.* metadata keys (FIXED)
+Root cause: `GgufReader::from_bytes()` in `reader_part_02_part_02.rs` has a hardcoded prefix whitelist for metadata parsing (`llama.`, `qwen2.`, `phi.`, `mistral.`, `gpt2.`). The `qwen3.` prefix was missing, so `qwen3.rope.freq_base`, `qwen3.context_length`, and `qwen3.attention.layer_norm_rms_epsilon` were silently skipped.
+Effect: QA metadata gate showed `rope_theta=none, max_pos=none` even though the GGUF export correctly wrote ~19 metadata keys.
+Fix: Added `qwen3.` to the reader prefix whitelist. Now reads `rope_theta=1000000, max_pos=40960`.
+
+### GH-279-6: Format parity shard discovery ordering (FIXED)
+Root cause: `find_sharded_safetensors()` used `find_map()` on unordered `read_dir()` entries, returning whichever shard the filesystem happened to list first. For Qwen3-8B (5 shards), this returned shard-00002 which lacks `model.embed_tokens.weight`.
+Fix: Sort shards by name before selecting, and handle converter failures for sharded models gracefully in the format parity gate.
 
 ## References
 
