@@ -189,7 +189,59 @@ impl MelFilterbank {
             ));
         }
 
-        // Calculate number of frames
+        if self.config.center_pad {
+            self.compute_center_padded(audio, hop_length)
+        } else {
+            self.compute_unpadded(audio, hop_length)
+        }
+    }
+
+    /// Compute mel spectrogram with center padding (librosa/Whisper mode)
+    ///
+    /// Pads n_fft/2 zeros on each side so that n_frames = audio_len / hop_length.
+    fn compute_center_padded(
+        &self,
+        audio: &[f32],
+        hop_length: usize,
+    ) -> AudioResult<Vec<f32>> {
+        let pad_len = self.config.n_fft / 2;
+        let padded_len = audio.len() + 2 * pad_len;
+        let mut padded_audio = vec![0.0_f32; padded_len];
+        padded_audio[pad_len..pad_len + audio.len()].copy_from_slice(audio);
+
+        let n_frames = audio.len() / hop_length;
+        if n_frames == 0 {
+            return Ok(Vec::new());
+        }
+
+        let mut mel_spec = vec![0.0_f32; n_frames * self.config.n_mels];
+
+        for frame_idx in 0..n_frames {
+            let start = frame_idx * hop_length;
+            let power_spec = self.compute_power_spectrum(&padded_audio, start);
+
+            for mel_idx in 0..self.config.n_mels {
+                let mut mel_energy = 0.0_f32;
+                for (freq_idx, &power) in power_spec.iter().enumerate() {
+                    mel_energy += self.filters[mel_idx * self.n_freqs + freq_idx] * power;
+                }
+                let log_mel = (mel_energy.max(1e-10)).log10();
+                mel_spec[frame_idx * self.config.n_mels + mel_idx] = log_mel;
+            }
+        }
+
+        self.normalize_whisper(&mut mel_spec);
+        Ok(mel_spec)
+    }
+
+    /// Compute mel spectrogram without center padding (original mode)
+    ///
+    /// n_frames = (audio_len - n_fft) / hop_length + 1
+    fn compute_unpadded(
+        &self,
+        audio: &[f32],
+        hop_length: usize,
+    ) -> AudioResult<Vec<f32>> {
         let n_frames = if audio.len() >= self.config.n_fft {
             (audio.len() - self.config.n_fft) / hop_length + 1
         } else {
@@ -353,7 +405,9 @@ impl MelFilterbank {
     /// Calculate number of frames for given audio length
     #[must_use]
     pub fn num_frames(&self, audio_len: usize) -> usize {
-        if audio_len >= self.config.n_fft {
+        if self.config.center_pad {
+            audio_len / self.config.hop_length
+        } else if audio_len >= self.config.n_fft {
             (audio_len - self.config.n_fft) / self.config.hop_length + 1
         } else {
             0

@@ -80,7 +80,8 @@ let config = MelConfig::custom(
     512,    // hop_length
     48000,  // sample_rate
     20.0,   // fmin (Hz)
-    20000.0 // fmax (Hz)
+    20000.0, // fmax (Hz)
+    false,  // center_pad
 );
 ```
 

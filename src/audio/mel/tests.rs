@@ -185,7 +185,8 @@ fn test_mel_compute_short_audio() {
 
 #[test]
 fn test_mel_compute_exact_one_frame() {
-    let config = MelConfig::whisper();
+    // Use non-center-padded config for exact frame count test
+    let config = MelConfig { center_pad: false, ..MelConfig::whisper() };
     let mel = MelFilterbank::new(&config);
     let audio = vec![0.0; 400]; // Exactly one FFT window
     let result = mel.compute(&audio).expect("compute should succeed");
@@ -194,7 +195,8 @@ fn test_mel_compute_exact_one_frame() {
 
 #[test]
 fn test_mel_compute_multiple_frames() {
-    let config = MelConfig::whisper();
+    // Use non-center-padded config for exact frame count test
+    let config = MelConfig { center_pad: false, ..MelConfig::whisper() };
     let mel = MelFilterbank::new(&config);
     // 16000 samples = 1 second at 16kHz
     // With hop_length=160, we get (16000 - 400) / 160 + 1 = 98 frames
@@ -202,6 +204,17 @@ fn test_mel_compute_multiple_frames() {
     let result = mel.compute(&audio).expect("compute should succeed");
     let n_frames = result.len() / 80;
     assert_eq!(n_frames, 98);
+}
+
+#[test]
+fn test_mel_compute_center_padded_frames() {
+    let config = MelConfig::whisper(); // center_pad=true
+    let mel = MelFilterbank::new(&config);
+    // 16000 samples, center_pad=true: n_frames = 16000 / 160 = 100
+    let audio = vec![0.0; 16000];
+    let result = mel.compute(&audio).expect("compute should succeed");
+    let n_frames = result.len() / 80;
+    assert_eq!(n_frames, 100);
 }
 
 #[test]
@@ -228,7 +241,8 @@ fn test_mel_compute_sine_wave() {
 
 #[test]
 fn test_num_frames() {
-    let config = MelConfig::whisper();
+    // Non-center-padded: n_frames = (len - n_fft) / hop + 1
+    let config = MelConfig { center_pad: false, ..MelConfig::whisper() };
     let mel = MelFilterbank::new(&config);
 
     assert_eq!(mel.num_frames(0), 0);
@@ -236,6 +250,19 @@ fn test_num_frames() {
     assert_eq!(mel.num_frames(400), 1);
     assert_eq!(mel.num_frames(560), 2);
     assert_eq!(mel.num_frames(16000), 98);
+}
+
+#[test]
+fn test_num_frames_center_padded() {
+    // Center-padded: n_frames = len / hop
+    let config = MelConfig::whisper(); // center_pad=true
+    let mel = MelFilterbank::new(&config);
+
+    assert_eq!(mel.num_frames(0), 0);
+    assert_eq!(mel.num_frames(100), 0);
+    assert_eq!(mel.num_frames(160), 1);
+    assert_eq!(mel.num_frames(400), 2);
+    assert_eq!(mel.num_frames(16000), 100);
 }
 
 // ============================================================

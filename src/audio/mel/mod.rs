@@ -251,12 +251,19 @@ pub struct MelConfig {
     pub fmin: f32,
     /// Maximum frequency for mel filterbank (Hz, typically sample_rate/2)
     pub fmax: f32,
+    /// Whether to apply center padding (pad n_fft/2 zeros on each side)
+    ///
+    /// When true (librosa default, used by OpenAI Whisper / HuggingFace):
+    ///   n_frames = audio_len / hop_length
+    /// When false:
+    ///   n_frames = (audio_len - n_fft) / hop_length + 1
+    pub center_pad: bool,
 }
 
 impl MelConfig {
     /// Create configuration matching OpenAI Whisper
     ///
-    /// Parameters: n_mels=80, n_fft=400, hop_length=160, sample_rate=16000
+    /// Parameters: n_mels=80, n_fft=400, hop_length=160, sample_rate=16000, center_pad=true
     #[must_use]
     pub fn whisper() -> Self {
         Self {
@@ -266,6 +273,7 @@ impl MelConfig {
             sample_rate: 16000,
             fmin: 0.0,
             fmax: 8000.0,
+            center_pad: true,
         }
     }
 
@@ -281,6 +289,7 @@ impl MelConfig {
             sample_rate: 22050,
             fmin: 0.0,
             fmax: 11025.0,
+            center_pad: false,
         }
     }
 
@@ -293,6 +302,7 @@ impl MelConfig {
         sample_rate: u32,
         fmin: f32,
         fmax: f32,
+        center_pad: bool,
     ) -> Self {
         Self {
             n_mels,
@@ -301,6 +311,7 @@ impl MelConfig {
             sample_rate,
             fmin,
             fmax,
+            center_pad,
         }
     }
 
