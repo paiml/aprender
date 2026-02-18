@@ -93,14 +93,16 @@ apr bench qwen3-8b-q4k.gguf --warmup 3 --measure 10
 
 ## Performance Targets
 
-| Metric | 3rd-party GGUF | Our GGUF | Target | Status |
-|--------|---------------|----------|--------|--------|
-| Ollama parity | 0.52x | **0.05x** (6 vs 129 tok/s) | >= 1.0x | Grade F |
-| GPU golden output | garbage | **unblocked** (QkNorm kernel added — GH-280) | coherent | READY TO TEST |
-| CPU golden output | — | **coherent** (thinking mode works) | coherent | PASS |
-| QA gates | 8/10 | **6/11** (3 pass, 3 fail, 5 skip) | 10/10 | 5 remain |
-| CPU throughput | — | **3.9 tok/s** (BrickTracer) | 40+ | FAIL |
-| GPU speedup | — | **unblocked** (capability gate open — GH-280) | 2x+ | READY TO TEST |
+| Metric | 3rd-party GGUF | Our GGUF | Target | Roofline | Status |
+|--------|---------------|----------|--------|----------|--------|
+| CPU throughput | — | **3.9 tok/s** | 6-8 | **7.9** (DDR4 BW wall) | 49% of ceiling |
+| GPU throughput | — | **unblocked** (GH-280) | 40+ | **~215** (HBM2 BW) | READY TO TEST |
+| CPU golden output | — | **coherent** (thinking mode) | coherent | — | PASS |
+| GPU golden output | garbage | **unblocked** (GH-280) | coherent | — | READY TO TEST |
+| Ollama parity | 0.52x | **0.05x** (6 vs 129 tok/s) | >= 1.0x | GPU-only | Grade F (CPU) |
+| QA gates | 8/10 | **6/11** (3 pass, 3 fail, 5 skip) | 10/10 | — | 5 remain |
+
+**Roofline note:** The "40+ tok/s" target is achievable only via GPU (HBM2 bandwidth: 900+ GB/s). On CPU with DDR4, the memory bandwidth wall is ~7.9 tok/s for 8B Q4K. Current 3.9 tok/s = 49% of ceiling — reachable via prefetch + kernel parity with llama.cpp, not via architectural guessing.
 
 ### BrickTracer Root Cause Analysis (2026-02-18)
 
@@ -112,9 +114,96 @@ All throughput measurement now uses `renacer::BrickTracer` with `SyscallBreakdow
 | QA Ollama Parity (CPU) | 5.9 | 216,468,496 | 216,468,496 | 0 | 0 | 0 | 0.0% | 59.1% |
 | Bench 3-iter (CPU) | 3.2 | 30,460,000 | 30,460,000 | 0 | 0 | 0 | 0.0% | — |
 
-**Key insight: 100% compute-bound.** Zero syscall overhead — no mmap stalls, no futex contention, no ioctl latency. The bottleneck is purely in the matmul compute kernels. Improving throughput requires faster kernels (Q8K integer path, CUDA QkNorm), not I/O optimization.
+**Key insight: 100% compute-bound.** Zero syscall overhead — no mmap stalls, no futex contention, no ioctl latency. The bottleneck is purely in the matmul compute kernels.
 
 **Perf regression detected:** Previous report cached 6.2 tok/s → now 3.9 tok/s (36% regression). This may reflect measurement methodology change (BrickTracer vs raw Instant) or background load variance.
+
+### Throughput Optimization: Contract-by-Design
+
+**Methodology:** We do NOT guess at optimizations or play whack-a-mole. Every change is derived from:
+1. **Roofline model** — hardware-dictated theoretical ceiling
+2. **Reference kernel analysis** — structural diff vs llama.cpp's proven `ggml_vec_dot_q4_K_q8_K`
+3. **Mathematical derivation** — if memory-bound, no compute optimization helps; if compute-bound, identify the specific missing SIMD pattern
+4. **Contract validation** — `apr qa --assert-tps` gates enforce that changes actually improve throughput
+
+#### Step 1: Roofline Model (Theoretical Ceiling)
+
+For Qwen3-8B Q4K single-token generation (matvec):
+
+```
+Model parameters:
+  36 layers × (Q:4096×4096 + K:1024×4096 + V:1024×4096 + O:4096×4096
+              + up:12288×4096 + gate:12288×4096 + down:4096×12288) = 6.84B params
+  + LM head: 151936×4096 = 0.62B params
+  Total: 7.46B parameters
+
+Weight bytes (Q4K = 4.5 bits/param):
+  7.46B × 144/256 bytes = 4.19 GB read per token
+
+Activation compute (Q8K integer path):
+  7.46B multiply-accumulate ops per token
+  AVX2 FMA: 8 FMAs/instruction × 2 instructions/cycle × 4 GHz = 64 GFLOP/s/core
+  8 cores: 512 GFLOP/s theoretical peak
+  Q4K overhead (dequant + nibble extract): ~40% penalty → ~307 effective GFLOP/s
+  Compute ceiling: 307G / 7.46G = ~41 tok/s
+
+Memory bandwidth (DDR4-3200 dual-channel):
+  Theoretical: 51.2 GB/s
+  Effective (with TLB misses, cache line waste): ~30-35 GB/s
+  Bandwidth ceiling: 33 GB/s / 4.19 GB = ~7.9 tok/s
+```
+
+**Roofline verdict: MEMORY-BOUND.** The bandwidth ceiling (7.9 tok/s) is far below the compute ceiling (41 tok/s). This means:
+- Compute optimizations (parallel QKV, larger SIMD) have **diminishing returns** past the bandwidth wall
+- The path to 40+ tok/s requires **GPU** (HBM2 bandwidth: 900+ GB/s → ~215 tok/s ceiling)
+- On CPU, realistic target is **6-8 tok/s** (hitting bandwidth wall)
+- Current 3.9 tok/s = **49% of bandwidth ceiling** → room for ~2x via better prefetching/cache use
+
+#### Step 2: Reference Kernel — llama.cpp `ggml_vec_dot_q4_K_q8_K`
+
+Source: [`ggml/src/ggml-cpu/ggml-cpu-quants.c`](https://github.com/ggerganov/llama.cpp/blob/master/ggml/src/ggml-cpu/ggml-cpu-quants.c)
+
+The gold-standard Q4K×Q8K dot product (AVX2 path):
+
+```c
+// Key structural patterns in llama.cpp:
+// 1. Process 256 values per super-block (QK_K = 256)
+// 2. 8 sub-blocks of 32 values each within a super-block
+// 3. Split scales: 6-bit scales packed into 12 bytes
+// 4. Inner loop: vpmadd + vpmaddubsw for integer dot product
+// 5. Software prefetch: NONE (relies on hardware prefetcher)
+// 6. Single accumulator: __m256 acc (not multi-accumulator)
+// 7. Scale decode: bit manipulation to extract 6-bit scales from packed 12 bytes
+```
+
+Key differences to audit against our `fused_q4k_q8k_dot_simd`:
+- [ ] Scale decode pattern (6-bit unpack from 12-byte packed format)
+- [ ] Sub-block iteration order (8 blocks of 32 values)
+- [ ] Integer multiply-accumulate instruction selection (`vpmaddubsw` + `vpmaddwd`)
+- [ ] dmin correction (Q4K minimum subtraction via `vpsubb` + sum)
+- [ ] Final horizontal sum pattern
+
+#### Step 3: Structural Diff (Our Kernel vs llama.cpp)
+
+**TODO:** Read our `fused_q4k_q8k_dot_simd` (in `realizar/src/quantize/fused_k_part_05.rs`) and diff against llama.cpp's AVX2 implementation instruction-by-instruction. Document:
+1. Instruction count per super-block (ours vs theirs)
+2. Memory access pattern (sequential vs strided)
+3. Branch prediction hazards
+4. Any extra work we do that they don't
+
+#### Step 4: Derived Optimization Plan
+
+Based on roofline analysis, the optimization priority is:
+
+| Priority | Optimization | Expected Gain | Rationale |
+|----------|-------------|---------------|-----------|
+| P0 | GPU inference (GH-280 ✓) | 10-50x | Escapes memory bandwidth wall entirely (HBM2: 900 GB/s) |
+| P1 | Memory prefetching | 20-40% | CPU at 49% bandwidth utilization; `_mm_prefetch` can close gap |
+| P2 | Kernel parity with llama.cpp | 10-20% | Eliminate any instruction overhead vs reference |
+| P3 | Reduce Q8K quantization passes | 5-10% | Currently quantize once for QKV, once for attn_out, once for FFN; some can share |
+| P4 | Parallel QKV projections | 3-5% | K+V overlap with Q tail; marginal on memory-bound workload |
+
+**Critical insight:** On CPU, we will NOT reach 40 tok/s for an 8B model — the memory bandwidth wall is ~8 tok/s. The 40+ tok/s target requires GPU inference, which is now unblocked by GH-280. CPU optimization ceiling is ~6-8 tok/s with perfect bandwidth utilization.
 
 ### Root Cause of 0.52x Parity
 
@@ -156,8 +245,9 @@ Key contract constraints:
 - [x] GGUF metadata includes ~19 keys (arch=qwen3, layers=36, heads=32/8kv, hidden=4096)
 - [ ] `apr qa` passes all gates — **8/10 pass**
 - [x] Tensor Contract (399 tensors), Metadata (rope_theta=1000000, max_pos=40960), Golden Output (2 cases)
-- [ ] Throughput: 3.9 tok/s < 10 tok/s threshold — FAIL (BrickTracer: 100% compute-bound, 0% syscall overhead)
-- [ ] Ollama Parity: 0.05x (6 vs 129 tok/s) Grade F < 0.2x threshold — FAIL
+- [ ] CPU Throughput: 3.9 tok/s (49% of 7.9 tok/s DDR4 roofline) — target 6+ tok/s via prefetch + kernel parity
+- [ ] GPU Throughput: **unblocked** (GH-280) — target 40+ tok/s (HBM2 roofline: ~215 tok/s)
+- [ ] Ollama Parity: 0.05x (6 vs 129 tok/s) — Ollama uses GPU; CPU-vs-GPU comparison is apples-to-oranges
 - [ ] GPU Speedup: **unblocked** (PerHeadRmsNormKernel in trueno-gpu v0.4.18 — GH-280)
 - [x] Capability Match: PASS (QkNorm added to `gpu_supported_ops()` — GH-280)
 - [ ] Golden Output: CPU coherent (thinking mode), GPU **unblocked** (QkNorm kernel added — GH-280)
@@ -183,14 +273,28 @@ Fixes applied: trueno PTX bar_sync label mismatch fixed (commit `d989451`), sm_7
 Qwen3 uses thinking mode by default — generates `<think>` chain before answer. Golden output gate expects direct "4".
 Fix: `strip_thinking_blocks()` strips `<think>...</think>` before `verify_output()`. No-op for non-thinking models.
 
-### GH-284: CPU inference 2.4 tok/s vs Ollama 120 tok/s (PARTIALLY FIXED)
+### GH-284: CPU inference 2.4 tok/s → 3.9 tok/s (ROOFLINE-BOUNDED)
+
 **Phase 1** (commit `55cfb95`): F32 matmul in `realizar::apr_transformer::helpers::f32_matmul()` was single-threaded scalar code. Added rayon parallel chunking (`par_chunks_mut` with 64-element chunks) and AVX2 SIMD dot product (`simd_dot_f32`) for all F32 matmul operations. Result: 2.4 → 4.0 tok/s.
 
 **Phase 2** (GH-284 cont.): Wire Q8K integer path to remaining hot loops. The `maddubs`-based Q8K kernel (`fused_q4k_q8k_parallel_matvec_into`) was already wired for FFN and attention output projections but two paths still used the slow f32 dequant AVX2 kernel (8 vals/instruction vs 32 vals/instruction):
 1. **LM head** (151936×4096): `single_part_02.rs` now uses `quantize_activations_q8k_into` + `fused_q4k_q8k_parallel_matvec_into` when weight is Q4K and `hidden_dim % 256 == 0`.
 2. **QKV projections** (36 layers): `matmul_part_02.rs::qkv_matmul_q8k_into()` was a stub that ignored pre-quantized Q8K data and fell back to f32. Now dispatches to `fused_q4k_q8k_parallel_matvec_into` for Q4K weights (both Fused and Separate QKV layouts).
 
-**Phase 3** (BrickTracer instrumentation): Replaced all `Instant::now()` + `.elapsed()` throughput measurement with `renacer::BrickTracer`. SyscallBreakdown confirms **100% compute-bound** (0% mmap/futex/ioctl overhead). Budget efficiency 39-59% indicates significant room for kernel optimization. Next steps: profile which matmul calls dominate the 81M microseconds of compute time.
+**Phase 3** (BrickTracer instrumentation): Replaced all `Instant::now()` + `.elapsed()` throughput measurement with `renacer::BrickTracer`. SyscallBreakdown confirms **0% syscall overhead**. Budget efficiency 39-59%.
+
+**Phase 4** (Roofline analysis — contract-by-design): BrickTracer reported "100% compute-bound" but this is misleading — BrickTracer measures compute vs syscalls, not compute vs memory stalls. Roofline model shows Qwen3-8B Q4K is **memory-bandwidth-bound**:
+- 4.19 GB weight data read per token
+- DDR4-3200 dual-channel: ~33 GB/s effective bandwidth
+- **Bandwidth ceiling: 7.9 tok/s** — current 3.9 tok/s = 49% of ceiling
+- Compute ceiling: 41 tok/s (AVX2 FMA) — not the bottleneck
+
+**Remaining CPU optimization path (contract-derived):**
+1. **P1: Software prefetch** — `_mm_prefetch(_MM_HINT_T0)` for next super-block during current super-block processing. Expected: +20-40% (3.9 → 5-6 tok/s)
+2. **P2: Kernel parity with llama.cpp** — structural diff of `fused_q4k_q8k_dot_simd` vs `ggml_vec_dot_q4_K_q8_K`. Eliminate any per-super-block instruction overhead.
+3. **P0: GPU inference (GH-280 ✓)** — escapes the bandwidth wall entirely. HBM2 at 900 GB/s → 215 tok/s ceiling.
+
+**Key insight: 40+ tok/s on CPU is physically impossible** for 8B Q4K. The memory bandwidth wall is ~8 tok/s. Further CPU work yields diminishing returns. The path forward is GPU.
 
 ### GH-282: PTX kernel load failures in `apr serve --gpu` (PARTIALLY FIXED)
 Root cause 1: trueno PTX `bar_sync(id)` stored barrier ID in `.src` operand but emitter read from `.label` field. `bar_sync(1)` emitted as `bar.sync 0;` instead of `bar.sync 1;`.
