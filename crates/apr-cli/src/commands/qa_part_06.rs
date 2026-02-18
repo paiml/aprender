@@ -217,6 +217,7 @@ fn run_format_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
         use realizar::format::{detect_format, ModelFormat};
         use realizar::gguf::{GGUFModel, MappedGGUFModel, OwnedQuantizedModel};
         use realizar::safetensors_infer::SafetensorsToAprConverter;
+        use realizar::{SafetensorsConfig, ShardedSafeTensorsModel};
 
         // P0-QA-001: Never skip — auto-discover or FAIL with actionable message
         let discovered_path;
@@ -301,7 +302,27 @@ fn run_format_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
 
         // Run SafeTensors forward pass to get logits
         let st_logits = {
-            let transformer = match SafetensorsToAprConverter::convert(safetensors_path) {
+            let parent_dir = safetensors_path.parent().unwrap_or(Path::new("."));
+            let index_path = parent_dir.join("model.safetensors.index.json");
+
+            let transformer = if index_path.exists() {
+                // Sharded model: use multi-shard loader
+                let sharded =
+                    ShardedSafeTensorsModel::load_from_index(&index_path).map_err(|e| {
+                        CliError::ValidationFailed(format!("Sharded load failed: {e}"))
+                    })?;
+                let config =
+                    SafetensorsConfig::load_from_sibling(safetensors_path).ok_or_else(|| {
+                        CliError::ValidationFailed(
+                            "config.json not found for sharded model".to_string(),
+                        )
+                    })?;
+                SafetensorsToAprConverter::convert_sharded(&sharded, &config)
+            } else {
+                SafetensorsToAprConverter::convert(safetensors_path)
+            };
+
+            match transformer {
                 Ok(t) => t,
                 Err(e) => {
                     let msg = format!("{e}");
@@ -309,7 +330,7 @@ fn run_format_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
                         return Ok(GateResult::failed(
                             "format_parity",
                             &format!(
-                                "SafeTensors shard incomplete (sharded model needs multi-shard loader): {}",
+                                "SafeTensors conversion failed: {}",
                                 safetensors_path.display()
                             ),
                             None,
@@ -321,8 +342,9 @@ fn run_format_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
                         "SafeTensors convert failed: {e}"
                     )));
                 }
-            };
-            transformer.forward(&prompt_tokens).map_err(|e| {
+            }
+            .forward(&prompt_tokens)
+            .map_err(|e| {
                 CliError::ValidationFailed(format!("SafeTensors forward failed: {e}"))
             })?
         };
