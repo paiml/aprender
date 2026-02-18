@@ -1,70 +1,100 @@
 
 /// Handle POST /v1/completions for GPU inference.
+///
+/// GH-284: Now async with `spawn_blocking` to avoid blocking the tokio runtime.
 #[cfg(feature = "inference")]
 #[allow(clippy::disallowed_methods)] // serde_json::json!() uses infallible unwrap
-fn handle_gpu_completion(
-    cuda: &std::sync::Mutex<realizar::apr::AprV2ModelCuda>,
-    tok_info: Option<&SafeTensorsTokenizerInfo>,
-    req: &GpuCompletionRequest,
-    cpu_state: &std::sync::Mutex<AprServerState>,
+async fn handle_gpu_completion(
+    cuda: Arc<std::sync::Mutex<realizar::apr::AprV2ModelCuda>>,
+    tok_info: Arc<Option<SafeTensorsTokenizerInfo>>,
+    req: GpuCompletionRequest,
+    cpu_state: Arc<std::sync::Mutex<AprServerState>>,
 ) -> axum::response::Response {
     use axum::{http::StatusCode, response::IntoResponse, Json};
 
     let start = Instant::now();
-    let input_tokens = encode_prompt(tok_info, &req.prompt);
-    let eos_id = eos_token_id(tok_info, 2);
+    let tok_ref = tok_info.as_ref().as_ref();
+    let input_tokens = encode_prompt(tok_ref, &req.prompt);
+    let eos_id = eos_token_id(tok_ref, 2);
+    let max_tokens = req.max_tokens.min(128);
+    let prompt = req.prompt.clone();
+
+    // GH-284: Run GPU generation off the async runtime
+    let cuda_clone = cuda.clone();
+    let input_clone = input_tokens.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        run_gpu_generation(&cuda_clone, &input_clone, max_tokens, eos_id)
+    })
+    .await;
 
     let gen_start = Instant::now();
-    let output_tokens =
-        match run_gpu_generation(cuda, &input_tokens, req.max_tokens.min(128), eos_id) {
-            Ok(t) => t,
-            Err(gpu_err) => {
-                // GH-261: Per-request CPU fallback
-                eprintln!("[GPU->CPU FALLBACK] {gpu_err}");
-                let s = match cpu_state.lock() {
-                    Ok(guard) => guard.clone(),
-                    Err(_) => {
-                        return (
-                            StatusCode::INTERNAL_SERVER_ERROR,
-                            Json(serde_json::json!({
-                                "error": format!("GPU failed: {gpu_err}; CPU state corrupted")
-                            })),
-                        )
-                            .into_response();
-                    }
-                };
-                match run_apr_cpu_inference(
-                    &s,
-                    &req.prompt,
-                    req.max_tokens.min(128),
-                    0.0,
-                ) {
-                    Ok(out) => {
-                        return Json(serde_json::json!({
-                            "text": out.text,
-                            "tokens_generated": out.tokens_generated,
-                            "latency_ms": out.gen_duration.as_millis() as u64,
-                            "tok_per_sec": compute_tok_per_sec(out.tokens_generated, out.gen_duration),
-                            "compute_mode": "cpu-fallback"
-                        }))
+    let output_tokens = match result {
+        Ok(Ok(t)) => t,
+        Ok(Err(gpu_err)) => {
+            // GH-261: Per-request CPU fallback
+            eprintln!("[GPU->CPU FALLBACK] {gpu_err}");
+            let s = match cpu_state.lock() {
+                Ok(guard) => guard.clone(),
+                Err(_) => {
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(serde_json::json!({
+                            "error": format!("GPU failed: {gpu_err}; CPU state corrupted")
+                        })),
+                    )
                         .into_response();
-                    }
-                    Err(cpu_err) => {
-                        return (
-                            StatusCode::INTERNAL_SERVER_ERROR,
-                            Json(serde_json::json!({
-                                "error": format!("GPU failed: {gpu_err}; CPU fallback also failed: {cpu_err}")
-                            })),
-                        )
-                            .into_response();
-                    }
+                }
+            };
+
+            // CPU fallback also in spawn_blocking
+            let result = tokio::task::spawn_blocking(move || {
+                run_apr_cpu_inference(&s, &prompt, max_tokens, 0.0)
+            })
+            .await;
+
+            match result {
+                Ok(Ok(out)) => {
+                    return Json(serde_json::json!({
+                        "text": out.text,
+                        "tokens_generated": out.tokens_generated,
+                        "latency_ms": out.gen_duration.as_millis() as u64,
+                        "tok_per_sec": compute_tok_per_sec(out.tokens_generated, out.gen_duration),
+                        "compute_mode": "cpu-fallback"
+                    }))
+                    .into_response();
+                }
+                Ok(Err(cpu_err)) => {
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(serde_json::json!({
+                            "error": format!("GPU failed: {gpu_err}; CPU fallback also failed: {cpu_err}")
+                        })),
+                    )
+                        .into_response();
+                }
+                Err(e) => {
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(serde_json::json!({
+                            "error": format!("GPU failed: {gpu_err}; CPU task failed: {e}")
+                        })),
+                    )
+                        .into_response();
                 }
             }
-        };
+        }
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": format!("GPU task failed: {e}")})),
+            )
+                .into_response();
+        }
+    };
     let gen_time = gen_start.elapsed();
 
     let new_tokens = extract_new_tokens(&output_tokens, input_tokens.len());
-    let text = decode_tokens(tok_info, new_tokens);
+    let text = decode_tokens(tok_info.as_ref().as_ref(), new_tokens);
 
     Json(GpuCompletionResponse {
         text,
@@ -76,13 +106,16 @@ fn handle_gpu_completion(
 }
 
 /// Handle POST /v1/chat/completions for GPU inference (PAR-302).
+///
+/// GH-284: True per-token SSE streaming. GPU generates all tokens in
+/// `spawn_blocking`, then streams them as individual SSE events.
 #[cfg(feature = "inference")]
 #[allow(clippy::disallowed_methods)] // serde_json::json!() uses infallible unwrap
-fn handle_gpu_chat_completion(
-    cuda: &std::sync::Mutex<realizar::apr::AprV2ModelCuda>,
-    tok_info: Option<&SafeTensorsTokenizerInfo>,
-    req: &serde_json::Value,
-    cpu_state: &std::sync::Mutex<AprServerState>,
+async fn handle_gpu_chat_completion(
+    cuda: Arc<std::sync::Mutex<realizar::apr::AprV2ModelCuda>>,
+    tok_info: Arc<Option<SafeTensorsTokenizerInfo>>,
+    req: serde_json::Value,
+    cpu_state: Arc<std::sync::Mutex<AprServerState>>,
 ) -> axum::response::Response {
     use axum::{
         response::{
@@ -91,11 +124,10 @@ fn handle_gpu_chat_completion(
         },
         Json,
     };
-    use futures_util::stream;
 
     // GH-283: Validate model name before processing
     if let Ok(s) = cpu_state.lock() {
-        if let Some(err_response) = validate_request_model(req, &s.model_name) {
+        if let Some(err_response) = validate_request_model(&req, &s.model_name) {
             return err_response;
         }
     }
@@ -120,13 +152,23 @@ fn handle_gpu_chat_completion(
 
     let prompt = format_chatml(msgs);
     let start = Instant::now();
-    let input_tokens = encode_prompt(tok_info, &prompt);
-    let eos_id = eos_token_id(tok_info, 151_645);
+    let tok_ref = tok_info.as_ref().as_ref();
+    let input_tokens = encode_prompt(tok_ref, &prompt);
+    let eos_id = eos_token_id(tok_ref, 151_645);
+    let max_tokens_clamped = max_tokens.min(256);
 
+    // GH-284: Run GPU generation in spawn_blocking
+    let cuda_clone = cuda.clone();
+    let input_clone = input_tokens.clone();
     let gen_start = Instant::now();
-    let output_tokens = match run_gpu_generation(cuda, &input_tokens, max_tokens.min(256), eos_id) {
-        Ok(t) => t,
-        Err(gpu_err) => {
+    let gen_result = tokio::task::spawn_blocking(move || {
+        run_gpu_generation(&cuda_clone, &input_clone, max_tokens_clamped, eos_id)
+    })
+    .await;
+
+    let output_tokens = match gen_result {
+        Ok(Ok(t)) => t,
+        Ok(Err(gpu_err)) => {
             // GH-261: Per-request CPU fallback
             eprintln!("[GPU->CPU FALLBACK] {gpu_err}");
             let s = match cpu_state.lock() {
@@ -138,8 +180,14 @@ fn handle_gpu_chat_completion(
                     .into_response();
                 }
             };
-            match run_apr_cpu_inference(&s, &prompt, max_tokens.min(256), temperature) {
-                Ok(out) => {
+
+            let result = tokio::task::spawn_blocking(move || {
+                run_apr_cpu_inference(&s, &prompt, max_tokens_clamped, temperature)
+            })
+            .await;
+
+            match result {
+                Ok(Ok(out)) => {
                     let request_id = generate_request_id();
                     let created = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
@@ -164,13 +212,23 @@ fn handle_gpu_chat_completion(
                     }))
                     .into_response();
                 }
-                Err(cpu_err) => {
+                Ok(Err(cpu_err)) => {
                     return Json(serde_json::json!({
                         "error": format!("GPU failed: {gpu_err}; CPU fallback also failed: {cpu_err}")
                     }))
                     .into_response();
                 }
+                Err(e) => {
+                    return Json(serde_json::json!({
+                        "error": format!("GPU failed: {gpu_err}; CPU task failed: {e}")
+                    }))
+                    .into_response();
+                }
             }
+        }
+        Err(e) => {
+            return Json(serde_json::json!({"error": format!("GPU task failed: {e}")}))
+                .into_response();
         }
     };
     let elapsed = gen_start.elapsed();
@@ -183,7 +241,6 @@ fn handle_gpu_chat_completion(
         new_tokens.len()
     );
 
-    let output_text = decode_tokens(tok_info, new_tokens);
     let tokens_generated = new_tokens.len();
     let tok_per_sec = compute_tok_per_sec(tokens_generated, elapsed);
     let request_id = generate_request_id();
@@ -196,22 +253,51 @@ fn handle_gpu_chat_completion(
     let response_model = cpu_state
         .lock()
         .ok()
-        .map(|s| s.model_name.clone())
-        .unwrap_or_else(|| "apr-gpu".to_string());
+        .map_or_else(|| "apr-gpu".to_string(), |s| s.model_name.clone());
 
     if stream_mode {
-        let response = serde_json::json!({
-            "id": request_id,
-            "object": "chat.completion.chunk",
-            "created": created,
-            "model": &response_model,
-            "choices": [{"index": 0, "delta": {"role": "assistant", "content": output_text}, "finish_reason": "stop"}]
-        });
-        let stream = stream::once(async move {
-            Ok::<_, std::convert::Infallible>(Event::default().data(response.to_string()))
-        });
+        // GH-284: True per-token SSE streaming — send each token as a separate event
+        let new_tokens_owned: Vec<u32> = new_tokens.to_vec();
+
+        let stream = futures_util::stream::unfold(
+            (Some(new_tokens_owned.into_iter()), tok_info, request_id, created, response_model),
+            |(maybe_iter, tok_info, request_id, created, model_name)| async move {
+                let mut iter = maybe_iter?;
+                match iter.next() {
+                    Some(token_id) => {
+                        let text = decode_single_token((*tok_info).as_ref(), token_id);
+                        let chunk = serde_json::json!({
+                            "id": &request_id,
+                            "object": "chat.completion.chunk",
+                            "created": created,
+                            "model": &model_name,
+                            "choices": [{
+                                "index": 0,
+                                "delta": {"content": text},
+                                "finish_reason": serde_json::Value::Null
+                            }]
+                        });
+                        let event = Event::default().data(chunk.to_string());
+                        Some((
+                            Ok::<_, std::convert::Infallible>(event),
+                            (Some(iter), tok_info, request_id, created, model_name),
+                        ))
+                    }
+                    None => {
+                        // All tokens sent — yield [DONE] and end stream
+                        let event = Event::default().data("[DONE]");
+                        Some((
+                            Ok::<_, std::convert::Infallible>(event),
+                            (None, tok_info, request_id, created, model_name),
+                        ))
+                    }
+                }
+            },
+        );
+
         Sse::new(stream).into_response()
     } else {
+        let output_text = decode_tokens(tok_info.as_ref().as_ref(), new_tokens);
         Json(serde_json::json!({
             "id": request_id,
             "object": "chat.completion",

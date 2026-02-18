@@ -370,6 +370,9 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
 }
 
 /// Build the axum Router for APR CPU inference.
+///
+/// GH-284: Handlers are async with `spawn_blocking` to avoid blocking the
+/// tokio runtime during multi-second generation.
 #[cfg(feature = "inference")]
 #[allow(clippy::disallowed_methods)] // serde_json::json!() macro uses infallible unwrap
 fn build_apr_cpu_router(state: AprServerState) -> axum::Router {
@@ -405,18 +408,15 @@ fn build_apr_cpu_router(state: AprServerState) -> axum::Router {
             "/v1/completions",
             post(move |Json(req): Json<AprCompletionRequest>| {
                 let state = state_for_completions.clone();
-                async move { handle_apr_cpu_completion(&state, &req).into_response() }
+                async move { handle_apr_cpu_completion(&state, &req).await }
             }),
         )
         .route(
             "/v1/chat/completions",
             post(
-                move |headers: axum::http::HeaderMap,
-                      Json(req): Json<serde_json::Value>| {
+                move |headers: axum::http::HeaderMap, Json(req): Json<serde_json::Value>| {
                     let state = state_for_chat.clone();
-                    async move {
-                        handle_apr_cpu_chat_completion(&state, &headers, &req).into_response()
-                    }
+                    async move { handle_apr_cpu_chat_completion(&state, &headers, &req).await }
                 },
             ),
         )

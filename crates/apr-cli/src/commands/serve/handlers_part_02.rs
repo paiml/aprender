@@ -1,8 +1,10 @@
 
 /// Handle POST /v1/completions for APR CPU inference.
+///
+/// GH-284: Now async with `spawn_blocking` to avoid blocking the tokio runtime.
 #[cfg(feature = "inference")]
 #[allow(clippy::disallowed_methods)]
-fn handle_apr_cpu_completion(
+async fn handle_apr_cpu_completion(
     state: &std::sync::Mutex<AprServerState>,
     req: &AprCompletionRequest,
 ) -> axum::response::Response {
@@ -22,17 +24,31 @@ fn handle_apr_cpu_completion(
     };
 
     let max_tokens = req.max_tokens.min(128);
-    match run_apr_cpu_inference(&s, &req.prompt, max_tokens, req.temperature.unwrap_or(0.0)) {
-        Ok(out) => Json(AprCompletionResponse {
+    let prompt = req.prompt.clone();
+    let temperature = req.temperature.unwrap_or(0.0);
+
+    // GH-284: Run inference off the async runtime to avoid blocking
+    let result = tokio::task::spawn_blocking(move || {
+        run_apr_cpu_inference(&s, &prompt, max_tokens, temperature)
+    })
+    .await;
+
+    match result {
+        Ok(Ok(out)) => Json(AprCompletionResponse {
             text: out.text,
             tokens_generated: out.tokens_generated,
             latency_ms: out.gen_duration.as_millis() as u64,
             tok_per_sec: compute_tok_per_sec(out.tokens_generated, out.gen_duration),
         })
         .into_response(),
-        Err(e) => (
+        Ok(Err(e)) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(serde_json::json!({"error": e})),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": format!("Task failed: {e}")})),
         )
             .into_response(),
     }
@@ -44,15 +60,15 @@ fn handle_apr_cpu_completion(
 /// a wildcard for backward compatibility. If no "model" field is present in the
 /// request, validation passes (OpenAI spec allows omitting it).
 #[cfg(feature = "inference")]
+#[allow(clippy::disallowed_methods)] // serde_json::json!() macro uses infallible unwrap
 pub(crate) fn validate_request_model(
     req: &serde_json::Value,
     loaded_model: &str,
 ) -> Option<axum::response::Response> {
     use axum::{http::StatusCode, response::IntoResponse, Json};
 
-    let requested = match req.get("model").and_then(serde_json::Value::as_str) {
-        Some(m) => m,
-        None => return None, // No model field — accept
+    let Some(requested) = req.get("model").and_then(serde_json::Value::as_str) else {
+        return None; // No model field — accept
     };
 
     // Accept "apr" as wildcard for backward compatibility
@@ -78,10 +94,23 @@ pub(crate) fn validate_request_model(
     )
 }
 
+/// Decode a single token ID to text using BPE tokenizer or char fallback.
+#[cfg(feature = "inference")]
+fn decode_single_token(tokenizer: Option<&SafeTensorsTokenizerInfo>, token_id: u32) -> String {
+    match tokenizer {
+        Some(tok) => tok.tokenizer.decode(&[token_id]).unwrap_or_default(),
+        None => char::from_u32(token_id)
+            .map_or(String::new(), |c| c.to_string()),
+    }
+}
+
 /// Handle POST /v1/chat/completions for APR CPU inference (PAR-302).
+///
+/// GH-284: True per-token SSE streaming via `spawn_blocking` + mpsc channel.
+/// Non-streaming path also uses `spawn_blocking` to avoid blocking the runtime.
 #[cfg(feature = "inference")]
 #[allow(clippy::disallowed_methods)]
-fn handle_apr_cpu_chat_completion(
+async fn handle_apr_cpu_chat_completion(
     state: &std::sync::Mutex<AprServerState>,
     headers: &axum::http::HeaderMap,
     req: &serde_json::Value,
@@ -93,7 +122,6 @@ fn handle_apr_cpu_chat_completion(
         },
         Json,
     };
-    use futures_util::stream;
 
     let trace_level = headers
         .get("X-Trace-Level")
@@ -134,11 +162,119 @@ fn handle_apr_cpu_chat_completion(
     };
 
     let prompt = format_chatml(msgs);
-    let start = Instant::now();
 
-    let out = match run_apr_cpu_inference(&s, &prompt, max_tokens.min(256), temperature) {
-        Ok(out) => out,
-        Err(e) => return Json(serde_json::json!({"error": e})).into_response(),
+    // ========================================================================
+    // GH-284: True SSE streaming path
+    // ========================================================================
+    if stream_mode {
+        let (tx, rx) = tokio::sync::mpsc::channel::<std::result::Result<u32, String>>(16);
+        let s_for_gen = s.clone();
+        let prompt_for_gen = prompt;
+        let max_tokens_clamped = max_tokens.min(256);
+
+        // Run generation in a blocking thread so the tokio runtime stays free
+        tokio::task::spawn_blocking(move || {
+            let Some(transformer) = s_for_gen.transformer.as_ref() else {
+                let _ = tx.blocking_send(Err("Transformer not loaded".to_string()));
+                return;
+            };
+
+            let input_tokens: Vec<u32> = match &s_for_gen.tokenizer {
+                Some(tok) => tok.tokenizer.encode(&prompt_for_gen),
+                None => prompt_for_gen.chars().map(|c| c as u32).collect(),
+            };
+
+            let gen_config = realizar::apr_transformer::GenerateConfig {
+                max_tokens: max_tokens_clamped,
+                temperature,
+                top_p: 0.9,
+                top_k: 0,
+                repetition_penalty: 1.0,
+                trace: false,
+            };
+
+            let Ok(t) = transformer.lock() else {
+                let _ = tx.blocking_send(Err("Lock poisoned".to_string()));
+                return;
+            };
+
+            // GH-284: Stream each token via the callback → mpsc channel
+            let _ = t.generate_with_cache_streaming(&input_tokens, &gen_config, |token_id| {
+                // blocking_send returns Err when receiver is dropped (client disconnected)
+                tx.blocking_send(Ok(token_id)).is_ok()
+            });
+            // tx is dropped here → channel closes → SSE stream ends
+        });
+
+        // Build async SSE stream from the channel receiver
+        let tokenizer = s.tokenizer.clone();
+        let request_id = generate_request_id();
+        let created = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let model_name = s.model_name.clone();
+
+        // State for unfold: Option<Receiver> — None means we've sent [DONE]
+        let stream = futures_util::stream::unfold(
+            (Some(rx), tokenizer, request_id, created, model_name),
+            |(maybe_rx, tokenizer, request_id, created, model_name)| async move {
+                let mut rx = maybe_rx?;
+                match rx.recv().await {
+                    Some(Ok(token_id)) => {
+                        let text = decode_single_token(tokenizer.as_ref(), token_id);
+                        let chunk = serde_json::json!({
+                            "id": &request_id,
+                            "object": "chat.completion.chunk",
+                            "created": created,
+                            "model": &model_name,
+                            "choices": [{
+                                "index": 0,
+                                "delta": {"content": text},
+                                "finish_reason": serde_json::Value::Null
+                            }]
+                        });
+                        let event = Event::default().data(chunk.to_string());
+                        Some((
+                            Ok::<_, std::convert::Infallible>(event),
+                            (Some(rx), tokenizer, request_id, created, model_name),
+                        ))
+                    }
+                    Some(Err(_)) | None => {
+                        // Generation complete — yield [DONE] and end stream
+                        let event = Event::default().data("[DONE]");
+                        Some((
+                            Ok::<_, std::convert::Infallible>(event),
+                            (None, tokenizer, request_id, created, model_name),
+                        ))
+                    }
+                }
+            },
+        );
+
+        return Sse::new(stream).into_response();
+    }
+
+    // ========================================================================
+    // GH-284: Non-streaming path — still use spawn_blocking
+    // ========================================================================
+    let start = Instant::now();
+    let s_for_blocking = s.clone();
+    let prompt_owned = prompt;
+    let max_t = max_tokens.min(256);
+
+    let result = tokio::task::spawn_blocking(move || {
+        run_apr_cpu_inference(&s_for_blocking, &prompt_owned, max_t, temperature)
+    })
+    .await;
+
+    let out = match result {
+        Ok(Ok(out)) => out,
+        Ok(Err(e)) => return Json(serde_json::json!({"error": e})).into_response(),
+        Err(e) => {
+            return Json(serde_json::json!({"error": format!("Task failed: {e}")}))
+                .into_response()
+        }
     };
 
     let tok_per_sec = compute_tok_per_sec(out.tokens_generated, out.gen_duration);
@@ -147,18 +283,6 @@ fn handle_apr_cpu_chat_completion(
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
-
-    if stream_mode {
-        let response = serde_json::json!({
-            "id": request_id, "object": "chat.completion.chunk", "created": created, "model": &s.model_name,
-            "choices": [{"index": 0, "delta": {"role": "assistant", "content": out.text}, "finish_reason": "stop"}]
-        });
-        let events = vec![
-            Ok::<_, std::convert::Infallible>(Event::default().data(response.to_string())),
-            Ok::<_, std::convert::Infallible>(Event::default().data("[DONE]")),
-        ];
-        return Sse::new(stream::iter(events)).into_response();
-    }
 
     let latency_ms = start.elapsed().as_millis() as u64;
     let mut response = serde_json::json!({
@@ -383,6 +507,8 @@ fn start_apr_server_gpu(
 }
 
 /// Build the axum Router for GPU inference endpoints.
+///
+/// GH-284: Handlers are async with `spawn_blocking` to avoid blocking the runtime.
 #[cfg(feature = "inference")]
 #[allow(clippy::disallowed_methods)] // serde_json::json!() uses infallible unwrap
 fn build_gpu_router(
@@ -417,8 +543,7 @@ fn build_gpu_router(
                 let tok_info = tok_for_completions.clone();
                 let cpu = cpu_for_completions.clone();
                 async move {
-                    handle_gpu_completion(&cuda, tok_info.as_ref().as_ref(), &req, &cpu)
-                        .into_response()
+                    handle_gpu_completion(cuda, tok_info, req, cpu).await
                 }
             }),
         )
@@ -429,8 +554,7 @@ fn build_gpu_router(
                 let tok_info = tok_for_chat.clone();
                 let cpu = cpu_for_chat.clone();
                 async move {
-                    handle_gpu_chat_completion(&cuda, tok_info.as_ref().as_ref(), &req, &cpu)
-                        .into_response()
+                    handle_gpu_chat_completion(cuda, tok_info, req, cpu).await
                 }
             }),
         )

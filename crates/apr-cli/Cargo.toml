@@ -80,7 +80,7 @@ realizar = { version = "0.6.14", optional = true, default-features = false, feat
 trueno = { version = "0.14.4", optional = true }
 
 # Async runtime for server
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal"], optional = true }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "sync"], optional = true }
 
 # HTTP server (for serve command with inference feature)
 axum = { version = "0.7", optional = true }
