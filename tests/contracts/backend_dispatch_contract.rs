@@ -11,9 +11,9 @@ const SIMD_ONLY_THRESHOLD: u64 = 1_000;
 /// Dispatch decision based on element count.
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 enum Backend {
-    SimdOnly,      // < 1000 elements
-    SimdThreaded,  // 1000..100_000
-    Gpu,           // >= 100_000
+    SimdOnly,     // < 1000 elements
+    SimdThreaded, // 1000..100_000
+    Gpu,          // >= 100_000
 }
 
 fn dispatch(element_count: u64) -> Backend {

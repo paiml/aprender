@@ -7,7 +7,14 @@ use proptest::prelude::*;
 
 /// Ollama parity grade from ratio (apr_tps / ollama_tps).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum OllamaGrade { F, D, C, B, A, APlus }
+enum OllamaGrade {
+    F,
+    D,
+    C,
+    B,
+    A,
+    APlus,
+}
 
 fn ollama_grade(ratio: f64) -> OllamaGrade {
     if ratio < 0.5 {
@@ -27,7 +34,13 @@ fn ollama_grade(ratio: f64) -> OllamaGrade {
 
 /// Efficiency grade from roofline utilization fraction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum EfficiencyGrade { F, D, C, B, A }
+enum EfficiencyGrade {
+    F,
+    D,
+    C,
+    B,
+    A,
+}
 
 fn efficiency_grade(fraction: f64) -> EfficiencyGrade {
     if fraction < 0.10 {

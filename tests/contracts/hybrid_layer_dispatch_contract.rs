@@ -20,7 +20,13 @@ fn dispatch(layer_types: &[LayerType], index: usize) -> LayerType {
 /// Generate random layer type arrays.
 fn layer_types_strategy(max_layers: usize) -> impl Strategy<Value = Vec<LayerType>> {
     proptest::collection::vec(
-        prop::bool::ANY.prop_map(|b| if b { LayerType::Attention } else { LayerType::Linear }),
+        prop::bool::ANY.prop_map(|b| {
+            if b {
+                LayerType::Attention
+            } else {
+                LayerType::Linear
+            }
+        }),
         2..max_layers,
     )
 }

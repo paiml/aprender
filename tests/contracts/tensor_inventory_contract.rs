@@ -33,9 +33,9 @@ fn total_tensors(cfg: &TensorConfig) -> u32 {
 /// Bytes for given quantization scheme.
 fn quant_bytes(params: u64, scheme: &str) -> u64 {
     match scheme {
-        "Q4K" => params * 18 / 32,    // 18 bytes per 32-element superblock
-        "Q6K" => params * 26 / 32,    // 26 bytes per 32-element block
-        "Q8_0" => params * 34 / 32,   // 34 bytes per 32-element block
+        "Q4K" => params * 18 / 32,  // 18 bytes per 32-element superblock
+        "Q6K" => params * 26 / 32,  // 26 bytes per 32-element block
+        "Q8_0" => params * 34 / 32, // 34 bytes per 32-element block
         "F16" => params * 2,
         "F32" => params * 4,
         _ => 0,
@@ -43,14 +43,22 @@ fn quant_bytes(params: u64, scheme: &str) -> u64 {
 }
 
 fn config_strategy() -> impl Strategy<Value = TensorConfig> {
-    (1u32..100, proptest::bool::ANY, proptest::bool::ANY, 2u32..4, proptest::bool::ANY)
-        .prop_map(|(layers, has_bias, has_qk_norm, num_norms, tied)| TensorConfig {
-            layers,
-            has_bias,
-            has_qk_norm,
-            num_norms,
-            tied_embeddings: tied,
-        })
+    (
+        1u32..100,
+        proptest::bool::ANY,
+        proptest::bool::ANY,
+        2u32..4,
+        proptest::bool::ANY,
+    )
+        .prop_map(
+            |(layers, has_bias, has_qk_norm, num_norms, tied)| TensorConfig {
+                layers,
+                has_bias,
+                has_qk_norm,
+                num_norms,
+                tied_embeddings: tied,
+            },
+        )
 }
 
 proptest! {

@@ -12,15 +12,15 @@ fn kernel_launches(layers: u32) -> u32 {
 }
 
 /// Per-layer decomposition components.
-const NORM_KERNELS: u32 = 2;     // pre-attn norm + pre-ffn norm
-const MATMUL_KERNELS: u32 = 5;   // QKV + attn_output + gate + up + down
-const ROPE_KERNELS: u32 = 1;     // rotary position embedding
-const ATTN_KERNELS: u32 = 1;     // scaled dot-product attention
-const SWIGLU_KERNELS: u32 = 1;   // SiLU activation (fused in SwiGLU)
+const NORM_KERNELS: u32 = 2; // pre-attn norm + pre-ffn norm
+const MATMUL_KERNELS: u32 = 5; // QKV + attn_output + gate + up + down
+const ROPE_KERNELS: u32 = 1; // rotary position embedding
+const ATTN_KERNELS: u32 = 1; // scaled dot-product attention
+const SWIGLU_KERNELS: u32 = 1; // SiLU activation (fused in SwiGLU)
 const RESIDUAL_KERNELS: u32 = 2; // post-attn residual + post-ffn residual
 
-const PER_LAYER_TOTAL: u32 = NORM_KERNELS + MATMUL_KERNELS + ROPE_KERNELS
-    + ATTN_KERNELS + SWIGLU_KERNELS + RESIDUAL_KERNELS;
+const PER_LAYER_TOTAL: u32 =
+    NORM_KERNELS + MATMUL_KERNELS + ROPE_KERNELS + ATTN_KERNELS + SWIGLU_KERNELS + RESIDUAL_KERNELS;
 
 proptest! {
     /// Obligation: Per-token formula (invariant)
