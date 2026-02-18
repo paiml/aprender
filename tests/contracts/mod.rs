@@ -11,8 +11,28 @@
 //     --binding contracts/aprender/binding.yaml
 
 mod activation_contract;
+mod adamw_contract;
 mod attention_contract;
+mod batchnorm_contract;
+mod cma_es_contract;
+mod conv1d_contract;
+mod cross_entropy_contract;
+mod flash_attention_contract;
+mod format_parity_contract;
+mod gated_delta_net_contract;
+mod gqa_contract;
+mod kmeans_contract;
+mod layernorm_contract;
+mod lbfgs_contract;
 mod matmul_contract;
+mod model_config_algebra_contract;
+mod pagerank_contract;
+mod qk_norm_contract;
 mod rmsnorm_contract;
+mod roofline_model_contract;
 mod rope_contract;
+mod silu_contract;
 mod softmax_contract;
+mod ssm_contract;
+mod swiglu_contract;
+mod tensor_shape_flow_contract;

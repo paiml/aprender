@@ -713,7 +713,26 @@ CONTRACTS := $(PV_DIR)/contracts/softmax-kernel-v1.yaml \
              $(PV_DIR)/contracts/attention-kernel-v1.yaml \
              $(PV_DIR)/contracts/activation-kernel-v1.yaml \
              $(PV_DIR)/contracts/matmul-kernel-v1.yaml \
-             $(PV_DIR)/contracts/flash-attention-v1.yaml
+             $(PV_DIR)/contracts/flash-attention-v1.yaml \
+             $(PV_DIR)/contracts/swiglu-kernel-v1.yaml \
+             $(PV_DIR)/contracts/gqa-kernel-v1.yaml \
+             $(PV_DIR)/contracts/layernorm-kernel-v1.yaml \
+             $(PV_DIR)/contracts/silu-kernel-v1.yaml \
+             $(PV_DIR)/contracts/cross-entropy-kernel-v1.yaml \
+             $(PV_DIR)/contracts/adamw-kernel-v1.yaml \
+             $(PV_DIR)/contracts/ssm-kernel-v1.yaml \
+             $(PV_DIR)/contracts/conv1d-kernel-v1.yaml \
+             $(PV_DIR)/contracts/batchnorm-kernel-v1.yaml \
+             $(PV_DIR)/contracts/kmeans-kernel-v1.yaml \
+             $(PV_DIR)/contracts/pagerank-kernel-v1.yaml \
+             $(PV_DIR)/contracts/lbfgs-kernel-v1.yaml \
+             $(PV_DIR)/contracts/cma-es-kernel-v1.yaml \
+             $(PV_DIR)/contracts/model-config-algebra-v1.yaml \
+             $(PV_DIR)/contracts/qk-norm-v1.yaml \
+             $(PV_DIR)/contracts/tensor-shape-flow-v1.yaml \
+             $(PV_DIR)/contracts/roofline-model-v1.yaml \
+             $(PV_DIR)/contracts/gated-delta-net-v1.yaml \
+             $(PV_DIR)/contracts/format-parity-v1.yaml
 
 contract-validate: ## Validate all kernel contracts (schema + staleness)
 	@echo "Validating kernel contracts..."
