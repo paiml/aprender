@@ -3903,3 +3903,19 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: Add contract-driven property tests from provable-contracts
+  github_issue: null
+  item_type: task
+  title: 'New task: Add contract-driven property tests from provable-contracts'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-02-18T14:48:42.940650234+00:00
+  updated: 2026-02-18T14:48:42.940650234+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
