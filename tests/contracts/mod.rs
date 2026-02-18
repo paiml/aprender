@@ -10,9 +10,9 @@
 //     contracts/<kernel>.yaml \
 //     --binding contracts/aprender/binding.yaml
 
-mod softmax_contract;
-mod rmsnorm_contract;
 mod activation_contract;
 mod attention_contract;
 mod matmul_contract;
+mod rmsnorm_contract;
 mod rope_contract;
+mod softmax_contract;

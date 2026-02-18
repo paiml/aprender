@@ -3929,3 +3929,31 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: GH-282
+  github_issue: 282
+  item_type: bug
+  title: 'fix: apr serve GPU failures — missing make_current() in APR CUDA path'
+  status: completed
+  priority: high
+  assigned_to: null
+  created: 2026-02-18T22:00:00.000000000+00:00
+  updated: 2026-02-18T22:00:00.000000000+00:00
+  spec: null
+  acceptance_criteria:
+    - 'APR CUDA forward path calls make_current() before all GPU operations'
+    - 'GEMM kernel param types match .param .u32 declarations (u32, not i32)'
+    - 'CUDA error code 201 (INVALID_CONTEXT) mapped in trueno-gpu diagnostics'
+    - 'All 14802 realizar unit tests pass'
+  phases: []
+  subtasks: []
+  estimated_effort: 2h
+  labels:
+    - cuda
+    - apr-serve
+    - bug-fix
+  notes: 'Root cause: AprV2ModelCuda never called make_current() before CUDA ops. GGUF
+    path had make_current() in 4+ places. When tokio worker threads (apr serve) called
+    forward_cuda, the CUDA context was not current, causing cuModuleLoadData to fail
+    with error 201 (CUDA_ERROR_INVALID_CONTEXT). Also fixed i32→u32 type mismatch in
+    GEMM parameter passing and added 5 missing CUDA error codes to trueno-gpu mapping.
+    GH-284 (HTTP perf regression) is a cascade from this — GPU falls back to CPU.'

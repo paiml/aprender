@@ -216,8 +216,6 @@ fn run_format_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
     {
         use realizar::format::{detect_format, ModelFormat};
         use realizar::gguf::{GGUFModel, MappedGGUFModel, OwnedQuantizedModel};
-        use realizar::safetensors_infer::SafetensorsToAprConverter;
-        use realizar::{SafetensorsConfig, ShardedSafeTensorsModel};
 
         // P0-QA-001: Never skip — auto-discover or FAIL with actionable message
         let discovered_path;
@@ -301,52 +299,18 @@ fn run_format_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
         };
 
         // Run SafeTensors forward pass to get logits
-        let st_logits = {
-            let parent_dir = safetensors_path.parent().unwrap_or(Path::new("."));
-            let index_path = parent_dir.join("model.safetensors.index.json");
-
-            let transformer = if index_path.exists() {
-                // Sharded model: use multi-shard loader
-                let sharded =
-                    ShardedSafeTensorsModel::load_from_index(&index_path).map_err(|e| {
-                        CliError::ValidationFailed(format!("Sharded load failed: {e}"))
-                    })?;
-                let config =
-                    SafetensorsConfig::load_from_sibling(safetensors_path).ok_or_else(|| {
-                        CliError::ValidationFailed(
-                            "config.json not found for sharded model".to_string(),
-                        )
-                    })?;
-                SafetensorsToAprConverter::convert_sharded(&sharded, &config)
-            } else {
-                SafetensorsToAprConverter::convert(safetensors_path)
-            };
-
-            match transformer {
-                Ok(t) => t,
-                Err(e) => {
-                    let msg = format!("{e}");
-                    if msg.contains("Tensor not found") || msg.contains("not supported") {
-                        return Ok(GateResult::failed(
-                            "format_parity",
-                            &format!(
-                                "SafeTensors conversion failed: {}",
-                                safetensors_path.display()
-                            ),
-                            None,
-                            None,
-                            start.elapsed(),
-                        ));
-                    }
-                    return Err(CliError::ValidationFailed(format!(
-                        "SafeTensors convert failed: {e}"
-                    )));
-                }
+        let st_logits = match run_safetensors_forward(safetensors_path, &prompt_tokens) {
+            Ok(logits) => logits,
+            Err(ForwardError::ConversionFailed(path)) => {
+                return Ok(GateResult::failed(
+                    "format_parity",
+                    &format!("SafeTensors conversion failed: {}", path),
+                    None,
+                    None,
+                    start.elapsed(),
+                ));
             }
-            .forward(&prompt_tokens)
-            .map_err(|e| {
-                CliError::ValidationFailed(format!("SafeTensors forward failed: {e}"))
-            })?
+            Err(ForwardError::Cli(e)) => return Err(e),
         };
 
         let duration = start.elapsed();
@@ -411,6 +375,50 @@ fn run_format_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
 }
 
 /// Check if Ollama is available by pinging the API
+/// Internal error type for SafeTensors forward pass (avoids early-return from parent).
+#[cfg(feature = "inference")]
+enum ForwardError {
+    ConversionFailed(String),
+    Cli(CliError),
+}
+
+/// Run SafeTensors forward pass, handling sharded and single-file models.
+#[cfg(feature = "inference")]
+fn run_safetensors_forward(
+    safetensors_path: &Path,
+    prompt_tokens: &[u32],
+) -> std::result::Result<Vec<f32>, ForwardError> {
+    use realizar::safetensors_infer::SafetensorsToAprConverter;
+    use realizar::{SafetensorsConfig, ShardedSafeTensorsModel};
+
+    let parent_dir = safetensors_path.parent().unwrap_or(Path::new("."));
+    let index_path = parent_dir.join("model.safetensors.index.json");
+
+    let transformer = if index_path.exists() {
+        let sharded = ShardedSafeTensorsModel::load_from_index(&index_path)
+            .map_err(|e| ForwardError::Cli(CliError::ValidationFailed(format!("Sharded load failed: {e}"))))?;
+        let config = SafetensorsConfig::load_from_sibling(safetensors_path)
+            .ok_or_else(|| ForwardError::Cli(CliError::ValidationFailed("config.json not found for sharded model".to_string())))?;
+        SafetensorsToAprConverter::convert_sharded(&sharded, &config)
+    } else {
+        SafetensorsToAprConverter::convert(safetensors_path)
+    };
+
+    let model = match transformer {
+        Ok(t) => t,
+        Err(e) => {
+            let msg = format!("{e}");
+            if msg.contains("Tensor not found") || msg.contains("not supported") {
+                return Err(ForwardError::ConversionFailed(safetensors_path.display().to_string()));
+            }
+            return Err(ForwardError::Cli(CliError::ValidationFailed(format!("SafeTensors convert failed: {e}"))));
+        }
+    };
+
+    model.forward(prompt_tokens)
+        .map_err(|e| ForwardError::Cli(CliError::ValidationFailed(format!("SafeTensors forward failed: {e}"))))
+}
+
 fn check_ollama_available() -> bool {
     // Try to connect to Ollama API
     std::process::Command::new("curl")

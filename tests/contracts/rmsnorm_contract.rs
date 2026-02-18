@@ -4,8 +4,8 @@
 // DO NOT EDIT — regenerate with `pv probar --binding`
 
 use aprender::autograd::Tensor;
-use aprender::nn::RMSNorm;
 use aprender::nn::Module;
+use aprender::nn::RMSNorm;
 use proptest::prelude::*;
 
 proptest! {
