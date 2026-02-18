@@ -238,6 +238,7 @@ renacer = "0.9"
 tempfile = "3.14"  # For format module tests
 jugar-probar = "0.5"  # TUI/GUI testing framework with coverage tracking (spec §8)
 ctrlc = "3.4"  # Signal handling for SIGINT/SIGTERM (PMAT-098-PF: zombie process mitigation)
+provable-contracts = { version = "0.1", path = "../provable-contracts/crates/provable-contracts" }  # Contract enforcement (dev-only)
 
 [features]
 default = ["parallel"]

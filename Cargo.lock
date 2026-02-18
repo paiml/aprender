@@ -326,6 +326,7 @@ dependencies = [
  "memmap2",
  "minijinja",
  "proptest",
+ "provable-contracts",
  "rand 0.8.5",
  "rand_chacha 0.3.1",
  "rayon",
@@ -4788,6 +4789,15 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.114",
+]
+
+[[package]]
+name = "provable-contracts"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_yaml",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

@@ -19,7 +19,7 @@ SHELL := /bin/bash
 # Multi-line recipes execute in same shell
 .ONESHELL:
 
-.PHONY: all build test test-smoke test-fast test-quick test-full test-heavy lint fmt clean doc book book-build book-serve book-test tier1 tier2 tier3 tier4 coverage coverage-fast profile hooks-install hooks-verify lint-scripts bashrs-score bashrs-lint-makefile chaos-test chaos-test-full chaos-test-lite fuzz bench dev pre-push ci check run-ci run-bench audit deps-validate deny pmat-score pmat-gates quality-report semantic-search examples mutants mutants-fast property-test install-alsa test-alsa test-audio-full
+.PHONY: all build test test-smoke test-fast test-quick test-full test-heavy lint fmt clean doc book book-build book-serve book-test tier1 tier2 tier3 tier4 coverage coverage-fast profile hooks-install hooks-verify lint-scripts bashrs-score bashrs-lint-makefile chaos-test chaos-test-full chaos-test-lite fuzz bench dev pre-push ci check run-ci run-bench audit deps-validate deny pmat-score pmat-gates quality-report semantic-search examples mutants mutants-fast property-test install-alsa test-alsa test-audio-full contract-validate contract-test contract-audit contract-regen contract-check
 
 # Default target
 all: tier2
@@ -696,3 +696,56 @@ test-audio-full: ## Run all audio tests including ALSA (if available)
 		PROPTEST_CASES=25 QUICKCHECK_TESTS=25 cargo test --features audio audio::; \
 	fi
 	@echo "✅ Audio tests complete"
+
+# ============================================================================
+# CONTRACT ENFORCEMENT (provable-contracts integration)
+# ============================================================================
+# Kernel contracts live in ../provable-contracts/contracts/
+# Binding registry: ../provable-contracts/contracts/aprender/binding.yaml
+# Generated tests: tests/contracts/
+
+PV_DIR := ../provable-contracts
+PV_BIN := cargo run --manifest-path $(PV_DIR)/Cargo.toml --bin pv --
+BINDING := $(PV_DIR)/contracts/aprender/binding.yaml
+CONTRACTS := $(PV_DIR)/contracts/softmax-kernel-v1.yaml \
+             $(PV_DIR)/contracts/rmsnorm-kernel-v1.yaml \
+             $(PV_DIR)/contracts/rope-kernel-v1.yaml \
+             $(PV_DIR)/contracts/attention-kernel-v1.yaml \
+             $(PV_DIR)/contracts/activation-kernel-v1.yaml \
+             $(PV_DIR)/contracts/matmul-kernel-v1.yaml \
+             $(PV_DIR)/contracts/flash-attention-v1.yaml
+
+contract-validate: ## Validate all kernel contracts (schema + staleness)
+	@echo "Validating kernel contracts..."
+	@for contract in $(CONTRACTS); do \
+		echo "  $$contract"; \
+		$(PV_BIN) validate "$$contract" || exit 1; \
+	done
+	@echo "Contract validation passed"
+
+contract-test: ## Run contract-driven property tests
+	@echo "Running contract property tests..."
+	@PROPTEST_CASES=100 cargo test --test contract_tests
+	@echo "Contract tests passed"
+
+contract-audit: ## Audit binding coverage (equations -> implementations)
+	@echo "Running binding audit..."
+	@for contract in $(CONTRACTS); do \
+		echo ""; \
+		$(PV_BIN) audit "$$contract" --binding $(BINDING); \
+	done
+	@echo ""
+	@echo "Binding audit complete"
+
+contract-regen: ## Regenerate wired test files from contracts
+	@echo "Regenerating contract test files..."
+	@for contract in $(CONTRACTS); do \
+		name=$$(basename "$$contract" .yaml | sed 's/-kernel-v[0-9]*//;s/-v[0-9]*//'); \
+		echo "  $$name <- $$contract"; \
+		$(PV_BIN) probar "$$contract" --binding $(BINDING) > tests/contracts/$${name}_contract.rs.new 2>/dev/null || true; \
+	done
+	@echo "Regeneration complete (review .rs.new files)"
+
+contract-check: contract-validate contract-test contract-audit ## Full contract compliance check
+	@echo ""
+	@echo "Contract compliance check: PASSED"
