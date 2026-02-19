@@ -351,6 +351,57 @@ fn load_fingerprints_from_json(path: &Path) -> Result<Vec<TensorFingerprint>> {
     Ok(fingerprints)
 }
 
+/// Compare a single tensor fingerprint against a reference and collect anomalies.
+fn compare_tensor_fingerprint(
+    actual_fp: &TensorFingerprint,
+    ref_fp: &TensorFingerprint,
+    threshold: f32,
+    strict: bool,
+    anomalies: &mut Vec<StatisticalAnomaly>,
+) {
+    let role_threshold = if strict {
+        get_role_threshold(&actual_fp.name)
+    } else {
+        threshold
+    };
+
+    let mean_deviation = if ref_fp.std > 1e-10 {
+        (actual_fp.mean - ref_fp.mean).abs() / ref_fp.std
+    } else {
+        (actual_fp.mean - ref_fp.mean).abs() * 1000.0
+    };
+
+    if mean_deviation > role_threshold {
+        anomalies.push(StatisticalAnomaly {
+            tensor: actual_fp.name.clone(),
+            field: "mean".to_string(),
+            expected: ref_fp.mean,
+            actual: actual_fp.mean,
+            deviation_sigma: mean_deviation,
+        });
+    }
+
+    if actual_fp.nan_count > 0 && ref_fp.nan_count == 0 {
+        anomalies.push(StatisticalAnomaly {
+            tensor: actual_fp.name.clone(),
+            field: "nan_count".to_string(),
+            expected: ref_fp.nan_count as f32,
+            actual: actual_fp.nan_count as f32,
+            deviation_sigma: f32::INFINITY,
+        });
+    }
+
+    if actual_fp.inf_count > 0 && ref_fp.inf_count == 0 {
+        anomalies.push(StatisticalAnomaly {
+            tensor: actual_fp.name.clone(),
+            field: "inf_count".to_string(),
+            expected: ref_fp.inf_count as f32,
+            actual: actual_fp.inf_count as f32,
+            deviation_sigma: f32::INFINITY,
+        });
+    }
+}
+
 /// Validate fingerprints against reference
 fn validate_fingerprints(
     actual: &[TensorFingerprint],
@@ -368,50 +419,7 @@ fn validate_fingerprints(
     for actual_fp in actual {
         let norm_name = normalize_tensor_name(&actual_fp.name);
         if let Some(ref_fp) = ref_map.get(&norm_name) {
-            // Get role-specific threshold
-            let role_threshold = if strict {
-                get_role_threshold(&actual_fp.name)
-            } else {
-                threshold
-            };
-
-            // Check mean
-            let mean_deviation = if ref_fp.std > 1e-10 {
-                (actual_fp.mean - ref_fp.mean).abs() / ref_fp.std
-            } else {
-                (actual_fp.mean - ref_fp.mean).abs() * 1000.0 // Scale up small differences
-            };
-
-            if mean_deviation > role_threshold {
-                anomalies.push(StatisticalAnomaly {
-                    tensor: actual_fp.name.clone(),
-                    field: "mean".to_string(),
-                    expected: ref_fp.mean,
-                    actual: actual_fp.mean,
-                    deviation_sigma: mean_deviation,
-                });
-            }
-
-            // Check for NaN/Inf (always anomalous if reference doesn't have them)
-            if actual_fp.nan_count > 0 && ref_fp.nan_count == 0 {
-                anomalies.push(StatisticalAnomaly {
-                    tensor: actual_fp.name.clone(),
-                    field: "nan_count".to_string(),
-                    expected: ref_fp.nan_count as f32,
-                    actual: actual_fp.nan_count as f32,
-                    deviation_sigma: f32::INFINITY,
-                });
-            }
-
-            if actual_fp.inf_count > 0 && ref_fp.inf_count == 0 {
-                anomalies.push(StatisticalAnomaly {
-                    tensor: actual_fp.name.clone(),
-                    field: "inf_count".to_string(),
-                    expected: ref_fp.inf_count as f32,
-                    actual: actual_fp.inf_count as f32,
-                    deviation_sigma: f32::INFINITY,
-                });
-            }
+            compare_tensor_fingerprint(actual_fp, ref_fp, threshold, strict, &mut anomalies);
         }
     }
 

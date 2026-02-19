@@ -261,6 +261,47 @@ fn format_aliases(f: ExportFormat) -> Vec<String> {
     }
 }
 
+/// Print batch export summary (JSON or human-readable).
+#[allow(clippy::disallowed_methods)]
+fn print_batch_summary(
+    file: &Path,
+    results: &[(&str, String, ExportReport)],
+    total_formats: usize,
+    json_output: bool,
+) {
+    if json_output {
+        let json_results: Vec<serde_json::Value> = results
+            .iter()
+            .map(|(name, path, report)| {
+                serde_json::json!({
+                    "format": name,
+                    "output": path,
+                    "original_size": report.original_size,
+                    "exported_size": report.exported_size,
+                    "tensor_count": report.tensor_count,
+                })
+            })
+            .collect();
+        let json = serde_json::json!({
+            "batch": true,
+            "input": file.display().to_string(),
+            "results": json_results,
+        });
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json).unwrap_or_default()
+        );
+    } else {
+        println!();
+        println!(
+            "  {} Batch export complete: {}/{} formats",
+            output::badge_pass("PASS"),
+            results.len(),
+            total_formats
+        );
+    }
+}
+
 /// Batch export to multiple formats
 #[allow(clippy::disallowed_methods)]
 fn run_batch(
@@ -362,37 +403,7 @@ fn run_batch(
         }
     }
 
-    if json_output {
-        let json_results: Vec<serde_json::Value> = results
-            .iter()
-            .map(|(name, path, report)| {
-                serde_json::json!({
-                    "format": name,
-                    "output": path,
-                    "original_size": report.original_size,
-                    "exported_size": report.exported_size,
-                    "tensor_count": report.tensor_count,
-                })
-            })
-            .collect();
-        let json = serde_json::json!({
-            "batch": true,
-            "input": file.display().to_string(),
-            "results": json_results,
-        });
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&json).unwrap_or_default()
-        );
-    } else {
-        println!();
-        println!(
-            "  {} Batch export complete: {}/{} formats",
-            output::badge_pass("PASS"),
-            results.len(),
-            formats.len()
-        );
-    }
+    print_batch_summary(file, &results, formats.len(), json_output);
 
     Ok(())
 }

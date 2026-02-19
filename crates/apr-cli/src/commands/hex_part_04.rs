@@ -93,6 +93,49 @@ fn compute_byte_entropy(bytes: &[u8]) -> f64 {
     entropy
 }
 
+/// Result of sliding-window entropy analysis over a byte buffer.
+struct SlidingWindowEntropy {
+    min_entropy: f64,
+    max_entropy: f64,
+    min_offset: usize,
+    max_offset: usize,
+    /// Regions where entropy < 1.0 (possible all-zeros or corruption).
+    anomalous_regions: Vec<(usize, f64)>,
+}
+
+/// Compute sliding-window entropy statistics over `bytes` using 4KB windows.
+fn compute_sliding_window_entropy(bytes: &[u8]) -> SlidingWindowEntropy {
+    let window_size = 4096;
+    let step = (bytes.len() / 100).max(window_size); // ~100 samples
+    let mut result = SlidingWindowEntropy {
+        min_entropy: f64::MAX,
+        max_entropy: f64::MIN,
+        min_offset: 0,
+        max_offset: 0,
+        anomalous_regions: Vec::new(),
+    };
+
+    let mut offset = 0;
+    while offset + window_size <= bytes.len() {
+        let e = compute_byte_entropy(&bytes[offset..offset + window_size]);
+
+        if e < result.min_entropy {
+            result.min_entropy = e;
+            result.min_offset = offset;
+        }
+        if e > result.max_entropy {
+            result.max_entropy = e;
+            result.max_offset = offset;
+        }
+        if e < 1.0 {
+            result.anomalous_regions.push((offset, e));
+        }
+
+        offset += step;
+    }
+    result
+}
+
 fn print_entropy_analysis(bytes: &[u8], format: FileFormat) {
     output::header(&format!(
         "Byte Entropy Analysis ({})",
@@ -121,60 +164,32 @@ fn print_entropy_analysis(bytes: &[u8], format: FileFormat) {
     output::metric("Expected range", expected, "");
 
     // Sliding window analysis (4KB windows)
-    let window_size = 4096;
-    if bytes.len() >= window_size {
-        let mut min_entropy = f64::MAX;
-        let mut max_entropy = f64::MIN;
-        let mut min_offset = 0;
-        let mut max_offset = 0;
-        let mut anomalous_regions = Vec::new();
-
-        let step = (bytes.len() / 100).max(window_size); // ~100 samples
-        let mut offset = 0;
-        while offset + window_size <= bytes.len() {
-            let window = &bytes[offset..offset + window_size];
-            let e = compute_byte_entropy(window);
-
-            if e < min_entropy {
-                min_entropy = e;
-                min_offset = offset;
-            }
-            if e > max_entropy {
-                max_entropy = e;
-                max_offset = offset;
-            }
-
-            // Flag anomalous regions (very low entropy = all-zeros or corruption)
-            if e < 1.0 {
-                anomalous_regions.push((offset, e));
-            }
-
-            offset += step;
-        }
+    if bytes.len() >= 4096 {
+        let sw = compute_sliding_window_entropy(bytes);
 
         output::subheader("Sliding Window (4KB)");
         output::metric(
             "Min entropy",
-            format!("{min_entropy:.4} at 0x{min_offset:X}"),
+            format!("{:.4} at 0x{:X}", sw.min_entropy, sw.min_offset),
             "",
         );
         output::metric(
             "Max entropy",
-            format!("{max_entropy:.4} at 0x{max_offset:X}"),
+            format!("{:.4} at 0x{:X}", sw.max_entropy, sw.max_offset),
             "",
         );
 
-        if !anomalous_regions.is_empty() {
+        if !sw.anomalous_regions.is_empty() {
             println!(
                 "\n  {} {} anomalous regions (entropy < 1.0):",
                 "Warning:".yellow().bold(),
-                anomalous_regions.len()
+                sw.anomalous_regions.len()
             );
-            for (off, e) in anomalous_regions.iter().take(5) {
+            for (off, e) in sw.anomalous_regions.iter().take(5) {
                 println!("    0x{off:08X}: entropy={e:.4} (possible all-zeros or padding)");
             }
-            if anomalous_regions.len() > 5 {
-                println!("    ... and {} more", anomalous_regions.len() - 5);
+            if sw.anomalous_regions.len() > 5 {
+                println!("    ... and {} more", sw.anomalous_regions.len() - 5);
             }
         }
     }

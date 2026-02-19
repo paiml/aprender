@@ -201,6 +201,85 @@ fn auto_discover_safetensors(gguf_path: &Path) -> Option<std::path::PathBuf> {
     discover_apr_cache(base_name)
 }
 
+/// Compute the argmax index from a slice of logits.
+fn compute_argmax(logits: &[f32]) -> Option<u32> {
+    logits
+        .iter()
+        .enumerate()
+        .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+        .map(|(idx, _)| idx as u32)
+}
+
+/// Compare argmax values from GGUF and SafeTensors forward passes and produce
+/// the appropriate `GateResult`.
+fn compare_argmax_results(
+    gguf_argmax: Option<u32>,
+    st_argmax: Option<u32>,
+    duration: Duration,
+) -> GateResult {
+    match (gguf_argmax, st_argmax) {
+        (Some(gguf_token), Some(st_token)) if gguf_token == st_token => GateResult::passed(
+            "format_parity",
+            &format!(
+                "GGUF argmax={} == SafeTensors argmax={} (Cross-format parity VERIFIED)",
+                gguf_token, st_token
+            ),
+            Some(gguf_token as f64),
+            Some(st_token as f64),
+            duration,
+        ),
+        (Some(gguf_token), Some(st_token)) => GateResult::failed(
+            "format_parity",
+            &format!(
+                "GGUF argmax={} != SafeTensors argmax={} (Cross-format parity BROKEN)",
+                gguf_token, st_token
+            ),
+            Some(gguf_token as f64),
+            Some(st_token as f64),
+            duration,
+        ),
+        _ => GateResult::failed(
+            "format_parity",
+            "Failed to get argmax from one or both formats",
+            None,
+            None,
+            duration,
+        ),
+    }
+}
+
+/// Resolve the SafeTensors path from config or auto-discovery.
+/// Returns `Ok(PathBuf)` on success, or `Err(GateResult)` if discovery fails.
+fn resolve_safetensors_path(
+    gguf_path: &Path,
+    config: &QaConfig,
+    elapsed: Duration,
+) -> std::result::Result<std::path::PathBuf, GateResult> {
+    if let Some(p) = &config.safetensors_path {
+        return Ok(p.clone());
+    }
+    match auto_discover_safetensors(gguf_path) {
+        Some(p) => {
+            if !config.json {
+                println!(
+                    "  {} Auto-discovered SafeTensors: {}",
+                    "INFO".cyan(),
+                    p.display()
+                );
+            }
+            Ok(p)
+        }
+        None => Err(GateResult::failed(
+            "format_parity",
+            "No SafeTensors found. Provide --safetensors-path or download: \
+             huggingface-cli download <model> --include '*.safetensors'",
+            None,
+            None,
+            elapsed,
+        )),
+    }
+}
+
 /// Invariant: argmax(forward_gguf(M, tokens)) == argmax(forward_safetensors(M, tokens))
 ///
 /// This is the cornerstone of the architecture's logical validity - it demonstrates
@@ -218,33 +297,9 @@ fn run_format_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
         use realizar::gguf::{GGUFModel, MappedGGUFModel, OwnedQuantizedModel};
 
         // P0-QA-001: Never skip — auto-discover or FAIL with actionable message
-        let discovered_path;
-        let safetensors_path = if let Some(p) = &config.safetensors_path {
-            p
-        } else {
-            match auto_discover_safetensors(path) {
-                Some(p) => {
-                    if !config.json {
-                        println!(
-                            "  {} Auto-discovered SafeTensors: {}",
-                            "INFO".cyan(),
-                            p.display()
-                        );
-                    }
-                    discovered_path = p;
-                    &discovered_path
-                }
-                None => {
-                    return Ok(GateResult::failed(
-                        "format_parity",
-                        "No SafeTensors found. Provide --safetensors-path or download: \
-                         huggingface-cli download <model> --include '*.safetensors'",
-                        None,
-                        None,
-                        start.elapsed(),
-                    ));
-                }
-            }
+        let safetensors_path = match resolve_safetensors_path(path, config, start.elapsed()) {
+            Ok(p) => p,
+            Err(gate_result) => return Ok(gate_result),
         };
 
         // Verify GGUF model
@@ -299,7 +354,7 @@ fn run_format_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
         };
 
         // Run SafeTensors forward pass to get logits
-        let st_logits = match run_safetensors_forward(safetensors_path, &prompt_tokens) {
+        let st_logits = match run_safetensors_forward(&safetensors_path, &prompt_tokens) {
             Ok(logits) => logits,
             Err(ForwardError::ConversionFailed(path)) => {
                 return Ok(GateResult::failed(
@@ -314,54 +369,11 @@ fn run_format_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
         };
 
         let duration = start.elapsed();
-
-        // Get argmax from logits
-        let gguf_argmax = gguf_logits
-            .iter()
-            .enumerate()
-            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-            .map(|(idx, _)| idx as u32);
-
-        let st_argmax = st_logits
-            .iter()
-            .enumerate()
-            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-            .map(|(idx, _)| idx as u32);
-
-        match (gguf_argmax, st_argmax) {
-            (Some(gguf_token), Some(st_token)) => {
-                if gguf_token == st_token {
-                    Ok(GateResult::passed(
-                        "format_parity",
-                        &format!(
-                            "GGUF argmax={} == SafeTensors argmax={} (Cross-format parity VERIFIED)",
-                            gguf_token, st_token
-                        ),
-                        Some(gguf_token as f64),
-                        Some(st_token as f64),
-                        duration,
-                    ))
-                } else {
-                    Ok(GateResult::failed(
-                        "format_parity",
-                        &format!(
-                            "GGUF argmax={} != SafeTensors argmax={} (Cross-format parity BROKEN)",
-                            gguf_token, st_token
-                        ),
-                        Some(gguf_token as f64),
-                        Some(st_token as f64),
-                        duration,
-                    ))
-                }
-            }
-            _ => Ok(GateResult::failed(
-                "format_parity",
-                "Failed to get argmax from one or both formats",
-                None,
-                None,
-                duration,
-            )),
-        }
+        Ok(compare_argmax_results(
+            compute_argmax(&gguf_logits),
+            compute_argmax(&st_logits),
+            duration,
+        ))
     }
 
     #[cfg(not(feature = "inference"))]

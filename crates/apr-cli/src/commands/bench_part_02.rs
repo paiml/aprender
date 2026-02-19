@@ -231,6 +231,28 @@ fn resolve_apr_prompt_tokens(path: &Path, prompt: &str) -> Vec<u32> {
     }
 }
 
+/// Handle fallback when generation produced zero new tokens (GH-254).
+///
+/// Returns adjusted `total_tokens` for forward-pass throughput reporting.
+#[cfg(feature = "inference")]
+fn handle_zero_generation_fallback(
+    generation_failed: bool,
+    total_tokens: usize,
+    iterations: usize,
+    prompt_len: usize,
+    quiet: bool,
+) -> usize {
+    if generation_failed && total_tokens == 0 {
+        eprintln!(
+            "{}",
+            "Note: Generation produced 0 new tokens, reporting forward-pass throughput.".yellow()
+        );
+        iterations * prompt_len
+    } else {
+        total_tokens
+    }
+}
+
 /// APR format benchmark
 /// GH-192: Now supports CUDA GPU acceleration and uses KV cache for O(n) generation
 #[cfg(feature = "inference")]
@@ -327,13 +349,13 @@ fn run_apr_benchmark(
     }
 
     // GH-254: If generation produced 0 new tokens, fall back to forward-pass throughput
-    if generation_failed && total_tokens == 0 {
-        eprintln!(
-            "{}",
-            "Note: Generation produced 0 new tokens, reporting forward-pass throughput.".yellow()
-        );
-        total_tokens = config.iterations * prompt_tokens.len();
-    }
+    total_tokens = handle_zero_generation_fallback(
+        generation_failed,
+        total_tokens,
+        config.iterations,
+        prompt_tokens.len(),
+        config.quiet,
+    );
     if !config.quiet {
         eprintln!();
     }

@@ -52,6 +52,23 @@ fn generate_and_print(session: &mut ChatSession, input: &str, config: &ChatConfi
     println!();
 }
 
+/// Process a single REPL input line. Returns `true` to quit, `false` to continue.
+#[cfg(feature = "inference")]
+fn process_repl_input(
+    input: &str,
+    session: &mut ChatSession,
+    config: &ChatConfig,
+) -> Result<bool, CliError> {
+    if input.starts_with('/') {
+        match handle_command_inference(input, session)? {
+            CommandResult::Continue => return Ok(false),
+            CommandResult::Quit => return Ok(true),
+        }
+    }
+    generate_and_print(session, input, config);
+    Ok(false)
+}
+
 #[cfg(feature = "inference")]
 fn run_repl(path: &Path, config: &ChatConfig) -> Result<(), CliError> {
     let mut session = ChatSession::new(path)?;
@@ -60,13 +77,9 @@ fn run_repl(path: &Path, config: &ChatConfig) -> Result<(), CliError> {
         if input.is_empty() {
             continue;
         }
-        if input.starts_with('/') {
-            match handle_command_inference(&input, &mut session)? {
-                CommandResult::Continue => continue,
-                CommandResult::Quit => break,
-            }
+        if process_repl_input(&input, &mut session, config)? {
+            break;
         }
-        generate_and_print(&mut session, &input, config);
     }
 
     println!("{}", "Goodbye!".cyan());

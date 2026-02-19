@@ -52,6 +52,71 @@ impl std::str::FromStr for PruneMethod {
     }
 }
 
+/// Validate prune command parameters (target ratio, sparsity, method).
+fn validate_prune_params(
+    file: &Path,
+    method: &str,
+    target_ratio: f32,
+    sparsity: f32,
+) -> Result<PruneMethod> {
+    if !file.exists() {
+        return Err(CliError::FileNotFound(file.to_path_buf()));
+    }
+    let prune_method: PruneMethod = method.parse().map_err(CliError::ValidationFailed)?;
+    if target_ratio <= 0.0 || target_ratio >= 1.0 {
+        return Err(CliError::ValidationFailed(format!(
+            "Target ratio must be between 0 and 1 (exclusive), got {target_ratio}"
+        )));
+    }
+    if !(0.0..=1.0).contains(&sparsity) {
+        return Err(CliError::ValidationFailed(format!(
+            "Sparsity must be between 0 and 1, got {sparsity}"
+        )));
+    }
+    Ok(prune_method)
+}
+
+/// Print the configuration summary table before pruning.
+#[allow(clippy::disallowed_methods)]
+fn print_config_table(
+    file: &Path,
+    out: &Path,
+    prune_method: PruneMethod,
+    target_ratio: f32,
+    sparsity: f32,
+    remove_layers: Option<&str>,
+    calibration: Option<&Path>,
+) {
+    output::header("APR Prune");
+    let mut pairs = vec![
+        ("Input", file.display().to_string()),
+        ("Method", format!("{prune_method:?}")),
+        ("Target ratio", format!("{target_ratio:.2}")),
+        ("Output", out.display().to_string()),
+    ];
+    if sparsity > 0.0 {
+        pairs.push(("Sparsity", format!("{sparsity:.2}")));
+    }
+    if let Some(layers) = remove_layers {
+        pairs.push(("Remove layers", layers.to_string()));
+    }
+    if let Some(cal) = calibration {
+        pairs.push(("Calibration", cal.display().to_string()));
+    }
+    println!("{}", output::kv_table(&pairs));
+    println!();
+}
+
+/// Validate depth-pruning specific arguments.
+fn validate_depth_args(prune_method: PruneMethod, remove_layers: Option<&str>) -> Result<()> {
+    if matches!(prune_method, PruneMethod::Depth) && remove_layers.is_none() {
+        return Err(CliError::ValidationFailed(
+            "Depth pruning requires --remove-layers (e.g., --remove-layers 20-24)".to_string(),
+        ));
+    }
+    Ok(())
+}
+
 /// Run the prune command
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::disallowed_methods)]
@@ -67,24 +132,7 @@ pub(crate) fn run(
     calibration: Option<&Path>,
     json_output: bool,
 ) -> Result<()> {
-    // Validate input exists
-    if !file.exists() {
-        return Err(CliError::FileNotFound(file.to_path_buf()));
-    }
-
-    let prune_method: PruneMethod = method.parse().map_err(CliError::ValidationFailed)?;
-
-    // Validate parameters
-    if target_ratio <= 0.0 || target_ratio >= 1.0 {
-        return Err(CliError::ValidationFailed(format!(
-            "Target ratio must be between 0 and 1 (exclusive), got {target_ratio}"
-        )));
-    }
-    if !(0.0..=1.0).contains(&sparsity) {
-        return Err(CliError::ValidationFailed(format!(
-            "Sparsity must be between 0 and 1, got {sparsity}"
-        )));
-    }
+    let prune_method = validate_prune_params(file, method, target_ratio, sparsity)?;
 
     // Analyze mode
     if analyze_only {
@@ -103,32 +151,10 @@ pub(crate) fn run(
     })?;
 
     if !json_output {
-        output::header("APR Prune");
-        let mut pairs = vec![
-            ("Input", file.display().to_string()),
-            ("Method", format!("{prune_method:?}")),
-            ("Target ratio", format!("{target_ratio:.2}")),
-            ("Output", out.display().to_string()),
-        ];
-        if sparsity > 0.0 {
-            pairs.push(("Sparsity", format!("{sparsity:.2}")));
-        }
-        if let Some(layers) = remove_layers {
-            pairs.push(("Remove layers", layers.to_string()));
-        }
-        if let Some(cal) = calibration {
-            pairs.push(("Calibration", cal.display().to_string()));
-        }
-        println!("{}", output::kv_table(&pairs));
-        println!();
+        print_config_table(file, out, prune_method, target_ratio, sparsity, remove_layers, calibration);
     }
 
-    // Validate depth-specific args
-    if matches!(prune_method, PruneMethod::Depth) && remove_layers.is_none() {
-        return Err(CliError::ValidationFailed(
-            "Depth pruning requires --remove-layers (e.g., --remove-layers 20-24)".to_string(),
-        ));
-    }
+    validate_depth_args(prune_method, remove_layers)?;
 
     if !json_output {
         output::pipeline_stage("Pruning", output::StageStatus::Running);

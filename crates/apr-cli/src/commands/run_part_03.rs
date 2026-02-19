@@ -1,4 +1,29 @@
 
+/// Resolve tokenizer info into vocab slice, BOS ID, and EOS ID.
+///
+/// Returns default EOS=2 when no tokenizer is available.
+#[cfg(feature = "inference")]
+fn resolve_tokenizer_info(
+    tokenizer_info: &Option<(Vec<String>, Option<u32>, Option<u32>)>,
+) -> (Option<&[String]>, Option<u32>, Option<u32>) {
+    match tokenizer_info {
+        Some((v, b, e)) => {
+            eprintln!(
+                "{}",
+                format!("Loaded tokenizer ({} tokens)", v.len()).dimmed()
+            );
+            (Some(v.as_slice()), *b, *e)
+        }
+        None => {
+            eprintln!(
+                "{}",
+                "No tokenizer.json found. Using token IDs only.".yellow()
+            );
+            (None, None, Some(2u32))
+        }
+    }
+}
+
 /// Execute APR model inference (APR v2 format)
 ///
 /// APR v2 now supports transformer inference with forward() and generate() methods.
@@ -54,24 +79,8 @@ fn execute_apr_inference(
     if model.metadata().is_transformer() {
         eprintln!("{}", "Running transformer generation...".cyan());
 
-        // Try to load tokenizer from sibling file
         let tokenizer_info = AprModel::load_tokenizer_from_sibling(model_path);
-        let (vocab, _bos_id, eos_id) = match &tokenizer_info {
-            Some((v, b, e)) => {
-                eprintln!(
-                    "{}",
-                    format!("Loaded tokenizer ({} tokens)", v.len()).dimmed()
-                );
-                (Some(v.as_slice()), *b, *e)
-            }
-            None => {
-                eprintln!(
-                    "{}",
-                    "No tokenizer.json found. Using token IDs only.".yellow()
-                );
-                (None, None, Some(2u32)) // Default EOS
-            }
-        };
+        let (vocab, _bos_id, eos_id) = resolve_tokenizer_info(&tokenizer_info);
 
         let input_tokens =
             prepare_apr_input_tokens(model_path, options.prompt.as_deref(), input_path)?;

@@ -87,6 +87,32 @@ fn validate_weight_values(w: &[f32], file_count: usize) -> Result<()> {
     Ok(())
 }
 
+/// Validate merge inputs: at least 2 files and all must exist.
+fn validate_merge_inputs(files: &[PathBuf]) -> Result<()> {
+    if files.len() < 2 {
+        return Err(CliError::ValidationFailed(
+            "Merge requires at least 2 input models".to_string(),
+        ));
+    }
+    for file in files {
+        if !file.exists() {
+            return Err(CliError::FileNotFound(file.clone()));
+        }
+    }
+    Ok(())
+}
+
+/// Display the merge input/output summary header (non-JSON mode).
+fn display_merge_header(files: &[PathBuf], output_path: &Path) {
+    output::header("APR Merge");
+    let mut input_pairs: Vec<(&str, String)> = Vec::new();
+    for (i, file) in files.iter().enumerate() {
+        input_pairs.push(("Input", format!("{}. {}", i + 1, file.display())));
+    }
+    input_pairs.push(("Output", output_path.display().to_string()));
+    println!("{}", output::kv_table(&input_pairs));
+}
+
 /// Run the merge command
 #[allow(clippy::too_many_arguments, clippy::disallowed_methods)]
 pub(crate) fn run(
@@ -100,28 +126,10 @@ pub(crate) fn run(
     seed: u64,
     json_output: bool,
 ) -> Result<()> {
-    // Validate we have at least 2 files
-    if files.len() < 2 {
-        return Err(CliError::ValidationFailed(
-            "Merge requires at least 2 input models".to_string(),
-        ));
-    }
-
-    // Validate all input files exist
-    for file in files {
-        if !file.exists() {
-            return Err(CliError::FileNotFound(file.clone()));
-        }
-    }
+    validate_merge_inputs(files)?;
 
     if !json_output {
-        output::header("APR Merge");
-        let mut input_pairs: Vec<(&str, String)> = Vec::new();
-        for (i, file) in files.iter().enumerate() {
-            input_pairs.push(("Input", format!("{}. {}", i + 1, file.display())));
-        }
-        input_pairs.push(("Output", output.display().to_string()));
-        println!("{}", output::kv_table(&input_pairs));
+        display_merge_header(files, output);
     }
 
     // Parse merge strategy

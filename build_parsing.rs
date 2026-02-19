@@ -58,20 +58,33 @@ struct ConstraintsData {
 // Minimal YAML Parser (build.rs can't depend on the crate)
 // ============================================================================
 
+/// Given a trimmed YAML line like `key: "value"`, strip the key prefix and colon,
+/// returning the raw value portion (e.g. `"value"` or `bare_value`).
+fn strip_yaml_key<'a>(line: &'a str, key: &str) -> Option<&'a str> {
+    let rest = line.strip_prefix(key)?;
+    let rest = rest.trim_start();
+    let rest = rest.strip_prefix(':')?;
+    Some(rest.trim())
+}
+
+/// Interpret a raw YAML scalar value: remove surrounding quotes, or return
+/// the bare value if it is not empty and not an array/object opener.
+fn interpret_yaml_scalar(val: &str) -> Option<&str> {
+    if val.starts_with('"') && val.ends_with('"') && val.len() >= 2 {
+        return Some(&val[1..val.len() - 1]);
+    }
+    if !val.is_empty() && !val.starts_with('[') && !val.starts_with('{') {
+        return Some(val);
+    }
+    None
+}
+
 fn get_str<'a>(content: &'a str, key: &str) -> Option<&'a str> {
     for line in content.lines() {
         let trimmed = line.trim();
-        if let Some(rest) = trimmed.strip_prefix(key) {
-            let rest = rest.trim_start();
-            if let Some(rest) = rest.strip_prefix(':') {
-                let val = rest.trim();
-                // Remove surrounding quotes
-                if val.starts_with('"') && val.ends_with('"') && val.len() >= 2 {
-                    return Some(&val[1..val.len() - 1]);
-                }
-                if !val.is_empty() && !val.starts_with('[') && !val.starts_with('{') {
-                    return Some(val);
-                }
+        if let Some(val) = strip_yaml_key(trimmed, key) {
+            if let Some(result) = interpret_yaml_scalar(val) {
+                return Some(result);
             }
         }
     }

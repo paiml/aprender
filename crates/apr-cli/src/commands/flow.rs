@@ -152,6 +152,25 @@ fn detect_architecture(tensor_names: &[String]) -> &'static str {
     }
 }
 
+/// Count the number of distinct layers matching the given prefixes.
+///
+/// Looks for tensor names starting with any of the `prefixes`, strips the prefix,
+/// parses the first dot-separated segment as a layer index, and returns `max + 1`.
+fn count_layers_by_prefixes(tensor_names: &[String], prefixes: &[&str]) -> usize {
+    tensor_names
+        .iter()
+        .filter(|n| prefixes.iter().any(|p| n.starts_with(p)))
+        .filter_map(|n| {
+            prefixes
+                .iter()
+                .find_map(|p| n.strip_prefix(p))
+                .and_then(|s| s.split('.').next())
+                .and_then(|s| s.parse::<usize>().ok())
+        })
+        .max()
+        .map_or(0, |n| n + 1)
+}
+
 /// PMAT-265: Output flow data as JSON
 fn output_flow_json(
     path: &Path,
@@ -185,36 +204,18 @@ fn output_flow_json(
         components.entry(group).or_default().push(name);
     }
 
-    // Count layers (handle both "encoder.layers.*" and "model.encoder.layers.*")
-    let n_encoder_layers = tensor_names
-        .iter()
-        .filter(|n| n.starts_with("encoder.layers.") || n.starts_with("model.encoder.layers."))
-        .filter_map(|n| {
-            n.strip_prefix("encoder.layers.")
-                .or_else(|| n.strip_prefix("model.encoder.layers."))
-                .and_then(|s| s.split('.').next())
-                .and_then(|s| s.parse::<usize>().ok())
-        })
-        .max()
-        .map_or(0, |n| n + 1);
-    let n_decoder_layers = tensor_names
-        .iter()
-        .filter(|n| {
-            n.starts_with("decoder.layers.")
-                || n.starts_with("model.decoder.layers.")
-                || n.starts_with("model.layers.")
-                || n.starts_with("blk.")
-        })
-        .filter_map(|n| {
-            n.strip_prefix("decoder.layers.")
-                .or_else(|| n.strip_prefix("model.decoder.layers."))
-                .or_else(|| n.strip_prefix("model.layers."))
-                .or_else(|| n.strip_prefix("blk."))
-                .and_then(|s| s.split('.').next())
-                .and_then(|s| s.parse::<usize>().ok())
-        })
-        .max()
-        .map_or(0, |n| n + 1);
+    // Count layers
+    let n_encoder_layers =
+        count_layers_by_prefixes(tensor_names, &["encoder.layers.", "model.encoder.layers."]);
+    let n_decoder_layers = count_layers_by_prefixes(
+        tensor_names,
+        &[
+            "decoder.layers.",
+            "model.decoder.layers.",
+            "model.layers.",
+            "blk.",
+        ],
+    );
 
     // Build JSON manually to avoid serde dependency
     let component_str = format!("{component:?}").to_lowercase();

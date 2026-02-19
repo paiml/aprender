@@ -7,6 +7,39 @@
 //! - Sortino & van der Meer (1991), "Downside Risk"
 //! - Young (1991), "Calmar Ratio"
 
+/// Safe division that handles near-zero denominators.
+///
+/// When `denominator > epsilon`:  returns `numerator / denominator`.
+/// When `denominator <= epsilon` and `numerator > 0`: returns `+Infinity`.
+/// When `denominator <= epsilon` and `numerator < 0`: returns `-Infinity`.
+/// Otherwise: returns `fallback` (typically 0.0 or 1.0).
+#[inline]
+fn safe_ratio(numerator: f64, denominator: f64, fallback: f64) -> f64 {
+    const EPSILON: f64 = 1e-10;
+    if denominator > EPSILON {
+        numerator / denominator
+    } else if numerator > 0.0 {
+        f64::INFINITY
+    } else if numerator < 0.0 {
+        f64::NEG_INFINITY
+    } else {
+        fallback
+    }
+}
+
+/// Compute mean and sample standard deviation of a return series.
+///
+/// Returns `None` if fewer than 2 observations.
+fn mean_and_std(returns: &[f64]) -> Option<(f64, f64)> {
+    if returns.len() < 2 {
+        return None;
+    }
+    let n = returns.len() as f64;
+    let mean = returns.iter().sum::<f64>() / n;
+    let variance = returns.iter().map(|r| (r - mean).powi(2)).sum::<f64>() / (n - 1.0);
+    Some((mean, variance.sqrt()))
+}
+
 /// Calculate Sharpe Ratio
 ///
 /// `Sharpe = (E[R] - Rf) / σ(R)`
@@ -27,26 +60,10 @@
 /// ```
 #[must_use]
 pub fn sharpe_ratio(returns: &[f64], risk_free_rate: f64) -> f64 {
-    if returns.len() < 2 {
+    let Some((mean, std)) = mean_and_std(returns) else {
         return 0.0;
-    }
-
-    let n = returns.len() as f64;
-    let mean = returns.iter().sum::<f64>() / n;
-    let excess_return = mean - risk_free_rate;
-
-    let variance = returns.iter().map(|r| (r - mean).powi(2)).sum::<f64>() / (n - 1.0);
-    let std = variance.sqrt();
-
-    if std > 1e-10 {
-        excess_return / std
-    } else if excess_return > 0.0 {
-        f64::INFINITY
-    } else if excess_return < 0.0 {
-        f64::NEG_INFINITY
-    } else {
-        0.0
-    }
+    };
+    safe_ratio(mean - risk_free_rate, std, 0.0)
 }
 
 /// Calculate annualized Sharpe Ratio
@@ -59,27 +76,12 @@ pub fn sharpe_ratio(returns: &[f64], risk_free_rate: f64) -> f64 {
 /// * `periods_per_year` - Number of periods per year (252 for daily, 12 for monthly)
 #[must_use]
 pub fn sharpe_ratio_annualized(returns: &[f64], risk_free_rate: f64, periods_per_year: f64) -> f64 {
-    if returns.len() < 2 {
+    let Some((mean, std)) = mean_and_std(returns) else {
         return 0.0;
-    }
-
-    let n = returns.len() as f64;
-    let mean = returns.iter().sum::<f64>() / n;
+    };
     let annualized_return = mean * periods_per_year;
-    let excess_return = annualized_return - risk_free_rate;
-
-    let variance = returns.iter().map(|r| (r - mean).powi(2)).sum::<f64>() / (n - 1.0);
-    let annualized_vol = variance.sqrt() * periods_per_year.sqrt();
-
-    if annualized_vol > 1e-10 {
-        excess_return / annualized_vol
-    } else if excess_return > 0.0 {
-        f64::INFINITY
-    } else if excess_return < 0.0 {
-        f64::NEG_INFINITY
-    } else {
-        0.0
-    }
+    let annualized_vol = std * periods_per_year.sqrt();
+    safe_ratio(annualized_return - risk_free_rate, annualized_vol, 0.0)
 }
 
 /// Calculate Sortino Ratio
@@ -121,15 +123,7 @@ pub fn sortino_ratio(returns: &[f64], risk_free_rate: f64, target_return: f64) -
 
     let downside_deviation = (downside_sq_sum / n).sqrt();
 
-    if downside_deviation > 1e-10 {
-        excess_return / downside_deviation
-    } else if excess_return > 0.0 {
-        f64::INFINITY
-    } else if excess_return < 0.0 {
-        f64::NEG_INFINITY
-    } else {
-        0.0
-    }
+    safe_ratio(excess_return, downside_deviation, 0.0)
 }
 
 /// Calculate Calmar Ratio
@@ -151,15 +145,7 @@ pub fn sortino_ratio(returns: &[f64], risk_free_rate: f64, target_return: f64) -
 /// ```
 #[must_use]
 pub fn calmar_ratio(annualized_return: f64, max_drawdown: f64) -> f64 {
-    if max_drawdown > 1e-10 {
-        annualized_return / max_drawdown
-    } else if annualized_return > 0.0 {
-        f64::INFINITY
-    } else if annualized_return < 0.0 {
-        f64::NEG_INFINITY
-    } else {
-        0.0
-    }
+    safe_ratio(annualized_return, max_drawdown, 0.0)
 }
 
 /// Calculate Treynor Ratio
@@ -233,7 +219,7 @@ pub fn information_ratio(returns: &[f64], benchmark_returns: &[f64]) -> f64 {
 
 /// Calculate Omega Ratio
 ///
-/// Omega(L) = ∫_L^∞ (1-F(x))dx / ∫_{-∞}^L F(x)dx
+/// Omega(L) = integral from L to inf of (1-F(x))dx / integral from -inf to L of F(x)dx
 ///
 /// Ratio of upside probability-weighted gains to downside probability-weighted losses.
 ///
@@ -258,18 +244,12 @@ pub fn omega_ratio(returns: &[f64], threshold: f64) -> f64 {
         .map(|&r| threshold - r)
         .sum();
 
-    if losses > 1e-10 {
-        gains / losses
-    } else if gains > 0.0 {
-        f64::INFINITY
-    } else {
-        1.0
-    }
+    safe_ratio(gains, losses, 1.0)
 }
 
 /// Calculate Beta (systematic risk)
 ///
-/// β = Cov(R, Rm) / Var(Rm)
+/// Beta = Cov(R, Rm) / Var(Rm)
 fn calculate_beta(returns: &[f64], benchmark_returns: &[f64]) -> f64 {
     if returns.len() != benchmark_returns.len() || returns.len() < 2 {
         return 1.0;
@@ -301,7 +281,7 @@ fn calculate_beta(returns: &[f64], benchmark_returns: &[f64]) -> f64 {
 
 /// Calculate Alpha (Jensen's Alpha)
 ///
-/// `α = E[R] - (Rf + β × (E[Rm] - Rf))`
+/// Alpha = E[R] - (Rf + Beta * (E[Rm] - Rf))
 #[must_use]
 pub fn jensens_alpha(returns: &[f64], benchmark_returns: &[f64], risk_free_rate: f64) -> f64 {
     if returns.is_empty() || benchmark_returns.is_empty() {
@@ -327,13 +307,7 @@ pub fn gain_to_pain_ratio(returns: &[f64]) -> f64 {
     let gains: f64 = returns.iter().filter(|&&r| r > 0.0).sum();
     let losses: f64 = returns.iter().filter(|&&r| r < 0.0).map(|r| r.abs()).sum();
 
-    if losses > 1e-10 {
-        gains / losses
-    } else if gains > 0.0 {
-        f64::INFINITY
-    } else {
-        0.0
-    }
+    safe_ratio(gains, losses, 0.0)
 }
 
 #[path = "ratios_part_02.rs"]

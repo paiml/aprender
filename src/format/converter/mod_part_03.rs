@@ -30,52 +30,37 @@ fn f16_to_f32(bits: u16) -> f32 {
     }
 }
 
-/// Quantize to int8 (symmetric quantization)
-fn quantize_int8(data: &[f32]) -> Vec<f32> {
+/// Symmetric quantize-then-dequantize: maps floats to integer levels and back.
+///
+/// `max_level` is the positive clamp bound (e.g. 127 for int8, 7 for int4).
+/// `min_level` is the negative clamp bound (e.g. -127 for int8, -8 for int4).
+fn symmetric_quantize_dequantize(data: &[f32], max_level: f32, min_level: f32) -> Vec<f32> {
     if data.is_empty() {
         return vec![];
     }
 
-    // Find scale factor (max absolute value)
     let max_abs = data.iter().map(|v| v.abs()).fold(0.0f32, f32::max);
-
     if max_abs == 0.0 {
         return vec![0.0; data.len()];
     }
 
-    let scale = max_abs / 127.0;
-
-    // Quantize and dequantize
+    let scale = max_abs / max_level;
     data.iter()
         .map(|&v| {
-            let quantized = (v / scale).round().clamp(-127.0, 127.0) as i8;
+            let quantized = (v / scale).round().clamp(min_level, max_level) as i8;
             f32::from(quantized) * scale
         })
         .collect()
 }
 
+/// Quantize to int8 (symmetric quantization)
+fn quantize_int8(data: &[f32]) -> Vec<f32> {
+    symmetric_quantize_dequantize(data, 127.0, -127.0)
+}
+
 /// Quantize to int4 (symmetric quantization)
 fn quantize_int4(data: &[f32]) -> Vec<f32> {
-    if data.is_empty() {
-        return vec![];
-    }
-
-    // Find scale factor
-    let max_abs = data.iter().map(|v| v.abs()).fold(0.0f32, f32::max);
-
-    if max_abs == 0.0 {
-        return vec![0.0; data.len()];
-    }
-
-    let scale = max_abs / 7.0; // 4-bit signed range: -8 to 7
-
-    // Quantize and dequantize
-    data.iter()
-        .map(|&v| {
-            let quantized = (v / scale).round().clamp(-8.0, 7.0) as i8;
-            f32::from(quantized) * scale
-        })
-        .collect()
+    symmetric_quantize_dequantize(data, 7.0, -8.0) // 4-bit signed range: -8 to 7
 }
 
 // NOTE: quantize_q4_k moved to trueno-quant crate (Toyota Way consolidation)

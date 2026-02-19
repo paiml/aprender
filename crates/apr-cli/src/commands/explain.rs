@@ -61,51 +61,72 @@ fn explain_error_code(code: &str) {
 fn explain_tensor(tensor_name: &str, file: Option<&PathBuf>) {
     println!("Explain tensor: {tensor_name}");
 
-    // If a file is provided, look up the actual tensor
+    // If a file is provided, try to look up the actual tensor
     if let Some(path) = file {
-        if path.exists() {
-            let rosetta = aprender::format::rosetta::RosettaStone::new();
-            if let Ok(report) = rosetta.inspect(path) {
-                // Find matching tensor (exact or fuzzy)
-                let matching: Vec<_> = report
-                    .tensors
-                    .iter()
-                    .filter(|t| t.name == tensor_name || t.name.contains(tensor_name))
-                    .collect();
-
-                if matching.is_empty() {
-                    println!("Tensor '{tensor_name}' not found in {}", path.display());
-                    // Suggest similar tensors
-                    let suggestions: Vec<_> = report
-                        .tensors
-                        .iter()
-                        .filter(|t| {
-                            let parts: Vec<&str> = tensor_name.split('.').collect();
-                            parts.iter().any(|p| t.name.contains(p))
-                        })
-                        .take(5)
-                        .collect();
-                    if !suggestions.is_empty() {
-                        println!("\nDid you mean:");
-                        for s in &suggestions {
-                            println!("  - {} ({:?}, {:?})", s.name, s.shape, s.dtype);
-                        }
-                    }
-                } else {
-                    for t in &matching {
-                        println!("\n**{}**", t.name);
-                        println!("- **Shape**: {:?}", t.shape);
-                        println!("- **DType**: {:?}", t.dtype);
-                        explain_tensor_role(&t.name);
-                    }
-                }
-                return;
-            }
+        if explain_tensor_from_file(tensor_name, path) {
+            return;
         }
     }
 
     // Fallback: explain by naming convention
     explain_tensor_role(tensor_name);
+}
+
+/// Attempt to explain a tensor by inspecting a model file.
+/// Returns `true` if the file was successfully inspected (tensor found or not),
+/// `false` if the file could not be read.
+fn explain_tensor_from_file(tensor_name: &str, path: &PathBuf) -> bool {
+    if !path.exists() {
+        return false;
+    }
+
+    let rosetta = aprender::format::rosetta::RosettaStone::new();
+    let Ok(report) = rosetta.inspect(path) else {
+        return false;
+    };
+
+    // Find matching tensor (exact or fuzzy)
+    let matching: Vec<_> = report
+        .tensors
+        .iter()
+        .filter(|t| t.name == tensor_name || t.name.contains(tensor_name))
+        .collect();
+
+    if matching.is_empty() {
+        println!("Tensor '{tensor_name}' not found in {}", path.display());
+        print_tensor_suggestions(tensor_name, &report.tensors);
+    } else {
+        for t in &matching {
+            println!("\n**{}**", t.name);
+            println!("- **Shape**: {:?}", t.shape);
+            println!("- **DType**: {:?}", t.dtype);
+            explain_tensor_role(&t.name);
+        }
+    }
+
+    true
+}
+
+/// Print similar tensor name suggestions when an exact/fuzzy match fails
+fn print_tensor_suggestions(
+    tensor_name: &str,
+    tensors: &[aprender::format::rosetta::TensorInfo],
+) {
+    let suggestions: Vec<_> = tensors
+        .iter()
+        .filter(|t| {
+            let parts: Vec<&str> = tensor_name.split('.').collect();
+            parts.iter().any(|p| t.name.contains(p))
+        })
+        .take(5)
+        .collect();
+
+    if !suggestions.is_empty() {
+        println!("\nDid you mean:");
+        for s in &suggestions {
+            println!("  - {} ({:?}, {:?})", s.name, s.shape, s.dtype);
+        }
+    }
 }
 
 /// Tensor naming convention table: (pattern, role description)

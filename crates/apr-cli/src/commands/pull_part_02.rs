@@ -353,6 +353,16 @@ fn find_safetensors_file(filenames: &[&str], org: &str, repo: &str) -> Option<Re
         .map(|file| ResolvedModel::SingleFile(format!("hf://{org}/{repo}/{file}")))
 }
 
+/// Check if a URI already has a known model file extension.
+fn has_known_model_extension(uri: &str) -> bool {
+    std::path::Path::new(uri).extension().is_some_and(|ext| {
+        ext.eq_ignore_ascii_case("gguf")
+            || ext.eq_ignore_ascii_case("safetensors")
+            || ext.eq_ignore_ascii_case("apr")
+            || ext.eq_ignore_ascii_case("pt")
+    })
+}
+
 fn resolve_hf_model(uri: &str) -> Result<ResolvedModel> {
     let uri = normalize_hf_uri(uri);
     let uri = uri.as_str();
@@ -361,13 +371,7 @@ fn resolve_hf_model(uri: &str) -> Result<ResolvedModel> {
         return Ok(ResolvedModel::SingleFile(uri.to_string()));
     }
 
-    let has_model_ext = std::path::Path::new(uri).extension().is_some_and(|ext| {
-        ext.eq_ignore_ascii_case("gguf")
-            || ext.eq_ignore_ascii_case("safetensors")
-            || ext.eq_ignore_ascii_case("apr")
-            || ext.eq_ignore_ascii_case("pt")
-    });
-    if has_model_ext {
+    if has_known_model_extension(uri) {
         return Ok(ResolvedModel::SingleFile(uri.to_string()));
     }
 

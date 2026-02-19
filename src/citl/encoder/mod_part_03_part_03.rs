@@ -112,6 +112,47 @@ impl GNNErrorEncoder {
         embedding.iter().map(|&x| x / norm).collect()
     }
 
+    /// Decode error category from diagnostic node features.
+    ///
+    /// Checks feature indices 65-69 against a threshold of 0.5, returning the
+    /// first matching category or `Unknown` if none match.
+    fn decode_category(features: &[f32]) -> super::ErrorCategory {
+        /// Table mapping feature indices to error categories.
+        const CATEGORY_TABLE: [(usize, fn() -> super::ErrorCategory); 5] = [
+            (65, || super::ErrorCategory::TypeMismatch),
+            (66, || super::ErrorCategory::Ownership),
+            (67, || super::ErrorCategory::Lifetime),
+            (68, || super::ErrorCategory::TraitBound),
+            (69, || super::ErrorCategory::Import),
+        ];
+
+        for &(idx, make_category) in &CATEGORY_TABLE {
+            if features.get(idx).copied().unwrap_or(0.0) > 0.5 {
+                return make_category();
+            }
+        }
+        super::ErrorCategory::Unknown
+    }
+
+    /// Decode difficulty level from feature index 70.
+    ///
+    /// Uses descending thresholds: >0.8 Expert, >0.6 Hard, >0.4 Medium, else Easy.
+    fn decode_difficulty(features: &[f32]) -> super::Difficulty {
+        const DIFFICULTY_THRESHOLDS: [(f64, fn() -> super::Difficulty); 3] = [
+            (0.8, || super::Difficulty::Expert),
+            (0.6, || super::Difficulty::Hard),
+            (0.4, || super::Difficulty::Medium),
+        ];
+
+        let val = f64::from(features.get(70).copied().unwrap_or(0.0));
+        for &(threshold, make_difficulty) in &DIFFICULTY_THRESHOLDS {
+            if val > threshold {
+                return make_difficulty();
+            }
+        }
+        super::Difficulty::Easy
+    }
+
     /// Extract error code from graph (from diagnostic node).
     #[allow(clippy::unused_self)]
     fn extract_error_code_from_graph(&self, graph: &ProgramFeedbackGraph) -> ErrorCode {
@@ -119,31 +160,8 @@ impl GNNErrorEncoder {
         for (i, node_type) in graph.node_types.iter().enumerate() {
             if *node_type == NodeType::Diagnostic {
                 let features = &graph.node_features[i];
-                // Decode category from node type embedding (indices 65-69)
-                let category = if features.get(65).copied().unwrap_or(0.0) > 0.5 {
-                    super::ErrorCategory::TypeMismatch
-                } else if features.get(66).copied().unwrap_or(0.0) > 0.5 {
-                    super::ErrorCategory::Ownership
-                } else if features.get(67).copied().unwrap_or(0.0) > 0.5 {
-                    super::ErrorCategory::Lifetime
-                } else if features.get(68).copied().unwrap_or(0.0) > 0.5 {
-                    super::ErrorCategory::TraitBound
-                } else if features.get(69).copied().unwrap_or(0.0) > 0.5 {
-                    super::ErrorCategory::Import
-                } else {
-                    super::ErrorCategory::Unknown
-                };
-
-                let difficulty = if features.get(70).copied().unwrap_or(0.0) > 0.8 {
-                    super::Difficulty::Expert
-                } else if features.get(70).copied().unwrap_or(0.0) > 0.6 {
-                    super::Difficulty::Hard
-                } else if features.get(70).copied().unwrap_or(0.0) > 0.4 {
-                    super::Difficulty::Medium
-                } else {
-                    super::Difficulty::Easy
-                };
-
+                let category = Self::decode_category(features);
+                let difficulty = Self::decode_difficulty(features);
                 return ErrorCode::new("E0000", category, difficulty);
             }
         }
