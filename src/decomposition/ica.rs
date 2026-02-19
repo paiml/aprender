@@ -127,6 +127,7 @@ impl ICA {
     /// # Errors
     ///
     /// Returns error if data dimensions are invalid or optimization fails.
+    // Contract: ica-v1, equation = "fastica"
     #[allow(clippy::similar_names)]
     pub fn fit(&mut self, x: &Matrix<f32>) -> Result<()> {
         let n = x.n_rows();
