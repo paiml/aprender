@@ -61,7 +61,7 @@ mod rnn;
 pub mod scheduler;
 pub mod self_supervised;
 pub mod serialize;
-mod transformer;
+pub(crate) mod transformer;
 pub mod vae;
 
 pub use activation::{LeakyReLU, ReLU, Sigmoid, Softmax, Tanh, GELU};

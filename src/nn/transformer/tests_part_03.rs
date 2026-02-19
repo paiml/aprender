@@ -11,7 +11,7 @@ fn test_transformer_decoder_layer_parameters_mut() {
 fn test_add_tensors_shape_3d() {
     let a = Tensor::ones(&[2, 3, 4]);
     let b = Tensor::ones(&[2, 3, 4]);
-    let c = add_tensors(&a, &b);
+    let c = a.add(&b);
     assert_eq!(c.shape(), &[2, 3, 4]);
 }
 

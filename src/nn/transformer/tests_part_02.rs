@@ -257,7 +257,7 @@ fn test_scale_tensor() {
 fn test_add_tensors() {
     let a = Tensor::new(&[1.0, 2.0, 3.0], &[3]);
     let b = Tensor::new(&[4.0, 5.0, 6.0], &[3]);
-    let c = add_tensors(&a, &b);
+    let c = a.add(&b);
     assert_eq!(c.data(), &[5.0, 7.0, 9.0]);
 }
 

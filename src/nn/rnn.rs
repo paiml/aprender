@@ -156,14 +156,9 @@ fn tanh_tensor(x: &Tensor) -> Tensor {
     crate::nn::functional::tanh(x)
 }
 
+/// ONE PATH: Delegates to `Tensor::add` (UCBD §4).
 fn add_tensors(a: &Tensor, b: &Tensor) -> Tensor {
-    let data: Vec<f32> = a
-        .data()
-        .iter()
-        .zip(b.data())
-        .map(|(&x, &y)| x + y)
-        .collect();
-    Tensor::new(&data, a.shape())
+    a.add(b)
 }
 
 fn mul_tensors(a: &Tensor, b: &Tensor) -> Tensor {

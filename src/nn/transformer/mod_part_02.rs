@@ -42,7 +42,7 @@ impl TransformerDecoderLayer {
         let tgt_norm = self.norm1.forward(tgt);
         let (attn_out, _) = self.self_attn.forward_self(&tgt_norm, tgt_mask);
         let attn_out = self.dropout1.forward(&attn_out);
-        let tgt = add_tensors(tgt, &attn_out);
+        let tgt = tgt.add(&attn_out);
 
         // Cross-attention
         let tgt_norm = self.norm2.forward(&tgt);
@@ -50,7 +50,7 @@ impl TransformerDecoderLayer {
             .cross_attn
             .forward_qkv(&tgt_norm, memory, memory, memory_mask);
         let cross_out = self.dropout2.forward(&cross_out);
-        let tgt = add_tensors(&tgt, &cross_out);
+        let tgt = tgt.add(&cross_out);
 
         // Feed-forward
         let tgt_norm = self.norm3.forward(&tgt);
@@ -60,7 +60,7 @@ impl TransformerDecoderLayer {
         let ff_out = self.linear2.forward(&ff_out);
         let ff_out = self.dropout3.forward(&ff_out);
 
-        add_tensors(&tgt, &ff_out)
+        tgt.add(&ff_out)
     }
 }
 
@@ -210,7 +210,9 @@ impl Module for PositionalEncoding {
 // ============================================================================
 
 /// Transpose the last two dimensions of a tensor.
-pub(super) fn transpose_last_two(x: &Tensor) -> Tensor {
+///
+/// ONE PATH: Canonical ND transpose for attention operations (UCBD §4).
+pub(crate) fn transpose_last_two(x: &Tensor) -> Tensor {
     let shape = x.shape();
     let ndim = shape.len();
 
@@ -248,6 +250,8 @@ pub(super) fn transpose_last_two(x: &Tensor) -> Tensor {
 /// Batched matrix multiplication using SIMD-accelerated Trueno.
 /// For 4D tensors [batch, heads, m, k] @ [batch, heads, k, n] -> [batch, heads, m, n]
 ///
+/// ONE PATH: Canonical batched matmul for attention operations (UCBD §4).
+///
 /// Uses `trueno::Matrix::batched_matmul_4d` for efficient SIMD computation.
 /// Per spec §2.4.1 Compute Backend Hierarchy: SIMD before naive loops.
 ///
@@ -256,7 +260,7 @@ pub(super) fn transpose_last_two(x: &Tensor) -> Tensor {
 /// never happen as dimensions are validated by the assert above. If it does,
 /// it indicates a bug in the trueno library.
 #[allow(clippy::expect_used)]
-pub(super) fn matmul_batched(a: &Tensor, b: &Tensor) -> Tensor {
+pub(crate) fn matmul_batched(a: &Tensor, b: &Tensor) -> Tensor {
     let a_shape = a.shape();
     let b_shape = b.shape();
 
@@ -347,7 +351,9 @@ pub(super) fn reshape_for_attention(
 }
 
 /// Reshape from multi-head attention: [batch, heads, seq, `head_dim`] -> [batch, seq, embed]
-pub(super) fn reshape_from_attention(
+///
+/// ONE PATH: Canonical concat-heads for attention operations (UCBD §4).
+pub(crate) fn reshape_from_attention(
     x: &Tensor,
     batch: usize,
     seq_len: usize,
@@ -378,32 +384,9 @@ pub(super) fn reshape_from_attention(
     Tensor::new(&output, &[batch, seq_len, embed_dim])
 }
 
-/// Element-wise tensor addition.
-pub(super) fn add_tensors(a: &Tensor, b: &Tensor) -> Tensor {
-    assert_eq!(a.shape(), b.shape(), "Shapes must match for addition");
-    let data: Vec<f32> = a
-        .data()
-        .iter()
-        .zip(b.data().iter())
-        .map(|(&x, &y)| x + y)
-        .collect();
-    Tensor::new(&data, a.shape())
-}
-
-/// GELU activation.
+/// ONE PATH: Delegates to `nn::functional::gelu` (UCBD §4).
 pub(super) fn gelu(x: &Tensor) -> Tensor {
-    let data: Vec<f32> = x
-        .data()
-        .iter()
-        .map(|&v| {
-            0.5 * v
-                * (1.0
-                    + (std::f32::consts::FRAC_2_SQRT_PI * (v + 0.044715 * v.powi(3))
-                        / std::f32::consts::SQRT_2)
-                        .tanh())
-        })
-        .collect();
-    Tensor::new(&data, x.shape())
+    crate::nn::functional::gelu(x)
 }
 
 /// Compute sinusoidal positional encoding.

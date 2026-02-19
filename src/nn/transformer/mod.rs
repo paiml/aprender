@@ -319,7 +319,7 @@ impl TransformerEncoderLayer {
         let src_norm = self.norm1.forward(src);
         let (attn_out, _) = self.self_attn.forward_self(&src_norm, src_mask);
         let attn_out = self.dropout1.forward(&attn_out);
-        let src = add_tensors(src, &attn_out);
+        let src = src.add(&attn_out);
 
         // Feed-forward block
         let src_norm = self.norm2.forward(&src);
@@ -329,7 +329,7 @@ impl TransformerEncoderLayer {
         let ff_out = self.linear2.forward(&ff_out);
         let ff_out = self.dropout2.forward(&ff_out);
 
-        add_tensors(&src, &ff_out)
+        src.add(&ff_out)
     }
 }
 
@@ -408,6 +408,8 @@ pub struct TransformerDecoderLayer {
 #[path = "mod_part_02.rs"]
 mod mod_part_02;
 pub use mod_part_02::*;
+// ONE PATH: Re-export canonical attention utilities for crate-internal use (UCBD §4).
+pub(crate) use mod_part_02::{matmul_batched, reshape_from_attention, transpose_last_two};
 
 #[path = "mod_part_03.rs"]
 mod mod_part_03;
