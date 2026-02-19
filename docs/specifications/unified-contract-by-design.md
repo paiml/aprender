@@ -676,18 +676,17 @@ GGUF files to APR format. It MUST be kept. The distinction:
 | `src/format/gguf/types.rs` | **KEEP** | Type definitions shared with converter |
 | `src/serialization/safetensors.rs` | **KEEP** | Used by inspection/validation CLI commands |
 
-### 9.2 Dequant Consolidation (aprender → trueno)
+### 9.2 Dequant Consolidation (aprender → trueno) — DONE
 
-Aprender's dequant functions in `src/format/gguf/dequant.rs` duplicate trueno's implementations.
-These should be consolidated to delegate to trueno where signatures match:
+Aprender's dequant functions delegate to trueno's canonical implementations:
 
-| aprender Function | trueno Equivalent | Action |
+| aprender Function | trueno Equivalent | Status |
 |-------------------|-------------------|--------|
-| `dequantize_q4_k()` | `trueno::quantize::dequantize_q4_k()` | Delegate |
-| `dequantize_q6_k()` | `trueno::quantize::dequantize_q6_k()` | Delegate |
+| `dequantize_q4_k()` | `trueno_quant::dequantize_q4_k_to_f32()` | **DONE** — delegates |
+| `dequantize_q6_k()` | `trueno_quant::dequantize_q6_k_to_f32()` | **DONE** — delegates |
 | `dequantize_q4_0()` | No direct equivalent | Keep in aprender |
 | `dequantize_q8_0()` | No direct equivalent | Keep in aprender |
-| `f16_to_f32()` | `trueno::f16::to_f32()` | Delegate |
+| `f16_to_f32()` | `trueno::f16::to_f32()` | Keep (aprender wrapper adds bounds checking) |
 
 ### 9.3 Realizar Duplicate Helpers (Deferred)
 
