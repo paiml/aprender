@@ -280,79 +280,65 @@ fn save_safetensors_quantized(
 /// Returns (dtype_string, raw_bytes).
 fn quantize_for_safetensors(data: &[f32], quant: QuantizationType) -> (&'static str, Vec<u8>) {
     match quant {
-        QuantizationType::Fp16 => {
-            let bytes = f32_slice_to_f16_le_bytes(data);
-            ("F16", bytes)
+        QuantizationType::Fp16 => ("F16", f32_slice_to_f16_le_bytes(data)),
+        QuantizationType::Int8 | QuantizationType::Q4K => {
+            ("I8", symmetric_quantize_i8(data, 127.0))
         }
-        QuantizationType::Int8 => {
-            // Symmetric quantization: scale = max(abs(data)) / 127
-            let max_abs = data.iter().map(|v| v.abs()).fold(0.0f32, f32::max);
-            let scale = if max_abs > 0.0 { 127.0 / max_abs } else { 1.0 };
-            let bytes: Vec<u8> = data
-                .iter()
-                .map(|&v| (v * scale).round().clamp(-128.0, 127.0) as i8)
-                .map(|v| v as u8)
-                .collect();
-            ("I8", bytes)
-        }
-        QuantizationType::Int4 => {
-            // Int4: pack 2 values per byte, stored as U8
-            // Symmetric quantization: scale = max(abs(data)) / 7
-            let max_abs = data.iter().map(|v| v.abs()).fold(0.0f32, f32::max);
-            let scale = if max_abs > 0.0 { 7.0 / max_abs } else { 1.0 };
-            let quantized: Vec<u8> = data
-                .iter()
-                .map(|&v| ((v * scale).round().clamp(-8.0, 7.0) as i8 + 8) as u8)
-                .collect();
-            // Pack pairs of 4-bit values into single bytes
-            let mut packed = Vec::with_capacity((quantized.len() + 1) / 2);
-            for chunk in quantized.chunks(2) {
-                let low = chunk[0] & 0x0F;
-                let high = if chunk.len() > 1 { chunk[1] & 0x0F } else { 0 };
-                packed.push(low | (high << 4));
-            }
-            ("U8", packed) // Stored as U8 with 2 values packed per byte
-        }
-        QuantizationType::Q4K => {
-            // Q4K is APR-only format, fall back to Int8 for SafeTensors
-            let max_abs = data.iter().map(|v| v.abs()).fold(0.0f32, f32::max);
-            let scale = if max_abs > 0.0 { 127.0 / max_abs } else { 1.0 };
-            let bytes: Vec<u8> = data
-                .iter()
-                .map(|&v| (v * scale).round().clamp(-128.0, 127.0) as i8)
-                .map(|v| v as u8)
-                .collect();
-            ("I8", bytes)
-        }
+        QuantizationType::Int4 => ("U8", quantize_int4_packed(data)),
     }
+}
+
+/// Symmetric quantization to i8: scale = max(|data|) / max_val.
+fn symmetric_quantize_i8(data: &[f32], max_val: f32) -> Vec<u8> {
+    let max_abs = data.iter().map(|v| v.abs()).fold(0.0f32, f32::max);
+    let scale = if max_abs > 0.0 { max_val / max_abs } else { 1.0 };
+    data.iter()
+        .map(|&v| (v * scale).round().clamp(-128.0, 127.0) as i8 as u8)
+        .collect()
+}
+
+/// Int4 quantization: pack 2 nibbles per byte.
+fn quantize_int4_packed(data: &[f32]) -> Vec<u8> {
+    let max_abs = data.iter().map(|v| v.abs()).fold(0.0f32, f32::max);
+    let scale = if max_abs > 0.0 { 7.0 / max_abs } else { 1.0 };
+    let quantized: Vec<u8> = data
+        .iter()
+        .map(|&v| ((v * scale).round().clamp(-8.0, 7.0) as i8 + 8) as u8)
+        .collect();
+    quantized
+        .chunks(2)
+        .map(|chunk| {
+            let low = chunk[0] & 0x0F;
+            let high = chunk.get(1).map_or(0, |v| v & 0x0F);
+            low | (high << 4)
+        })
+        .collect()
+}
+
+/// Convert a single F32 value to F16 (IEEE 754 half-precision).
+fn f32_to_f16_bits(value: f32) -> u16 {
+    let bits = value.to_bits();
+    let sign = (bits >> 16) & 0x8000;
+    let exponent = ((bits >> 23) & 0xFF) as i32;
+    let mantissa = bits & 0x007F_FFFF;
+
+    let f16 = if exponent == 0xFF {
+        sign | 0x7C00 | if mantissa != 0 { 0x0200 } else { 0 }
+    } else if exponent > 142 {
+        sign | 0x7C00
+    } else if exponent < 113 {
+        sign
+    } else {
+        sign | (((exponent - 112) as u32) << 10) | ((mantissa >> 13) & 0x3FF)
+    };
+    f16 as u16
 }
 
 /// Convert F32 slice to IEEE 754 half-precision (F16) little-endian bytes.
 fn f32_slice_to_f16_le_bytes(data: &[f32]) -> Vec<u8> {
-    let mut bytes = Vec::with_capacity(data.len() * 2);
-    for &value in data {
-        let bits = value.to_bits();
-        let sign = (bits >> 16) & 0x8000;
-        let exponent = ((bits >> 23) & 0xFF) as i32;
-        let mantissa = bits & 0x007F_FFFF;
-
-        let f16_bits = if exponent == 0xFF {
-            // Inf/NaN
-            sign | 0x7C00 | if mantissa != 0 { 0x0200 } else { 0 }
-        } else if exponent > 142 {
-            // Overflow -> Inf
-            sign | 0x7C00
-        } else if exponent < 113 {
-            // Underflow -> zero
-            sign
-        } else {
-            let e = (exponent - 112) as u32;
-            let m = mantissa >> 13;
-            sign | (e << 10) | (m & 0x3FF)
-        };
-        bytes.extend_from_slice(&(f16_bits as u16).to_le_bytes());
-    }
-    bytes
+    data.iter()
+        .flat_map(|&v| f32_to_f16_bits(v).to_le_bytes())
+        .collect()
 }
 
 /// Save model tensors to APR format with embedded config metadata (GH-165 fix)
@@ -403,146 +389,5 @@ fn save_model_tensors_with_config(
 // save_model_tensors_with_gguf_config_and_tokenizer which extends it with
 // tokenizer embedding for standalone APR inference (PMAT-113).
 
-/// Save model tensors to APR format with GGUF config AND tokenizer (PMAT-113 fix)
-///
-/// This extends `save_model_tensors_with_gguf_config` to also embed the tokenizer
-/// vocabulary for standalone APR inference without sibling tokenizer.json files.
-fn save_model_tensors_with_gguf_config_and_tokenizer(
-    tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
-    output: &Path,
-    _compression: Option<Compression>,
-    gguf_config: &GgufModelConfig,
-    tokenizer: Option<&GgufTokenizer>,
-    quantize: Option<QuantizationType>,
-) -> Result<()> {
-    // Build AprV2Metadata with GGUF config (not inferred from tensor shapes)
-    let mut metadata = AprV2Metadata::new(gguf_config.architecture.as_deref().unwrap_or("qwen2"));
-    metadata.original_format = Some("gguf".to_string());
-    metadata.model_type = gguf_config
-        .architecture
-        .clone()
-        .unwrap_or_else(|| "qwen2".to_string());
-    // PMAT-113 FIX: Set architecture for chat template detection
-    metadata.architecture = gguf_config.architecture.clone();
 
-    // Copy all GGUF config fields to APR metadata
-    metadata.hidden_size = gguf_config.hidden_size;
-    metadata.num_layers = gguf_config.num_layers;
-    metadata.num_heads = gguf_config.num_heads;
-    metadata.num_kv_heads = gguf_config.num_kv_heads;
-    metadata.vocab_size = gguf_config.vocab_size;
-    metadata.intermediate_size = gguf_config.intermediate_size;
-    metadata.max_position_embeddings = gguf_config.max_position_embeddings;
-
-    // F-REGR-231 FIX: These fields are CRITICAL for correct inference
-    metadata.rope_theta = gguf_config.rope_theta;
-    metadata.rope_type = gguf_config.rope_type;
-    metadata.rms_norm_eps = gguf_config.rms_norm_eps;
-
-    // PMAT-113 FIX: Embed tokenizer vocabulary for standalone APR inference
-    if let Some(tok) = tokenizer {
-        if !tok.vocabulary.is_empty() {
-            eprintln!(
-                "[PMAT-113] Embedding {} vocabulary tokens into APR metadata",
-                tok.vocabulary.len()
-            );
-            // Store vocabulary as JSON array in custom metadata
-            let vocab_array: Vec<serde_json::Value> = tok
-                .vocabulary
-                .iter()
-                .map(|s| serde_json::Value::String(s.clone()))
-                .collect();
-            metadata.custom.insert(
-                "tokenizer.vocabulary".to_string(),
-                serde_json::Value::Array(vocab_array),
-            );
-            metadata.custom.insert(
-                "tokenizer.vocab_size".to_string(),
-                serde_json::Value::Number(serde_json::Number::from(tok.vocabulary.len())),
-            );
-        }
-        if let Some(ref model_type) = tok.model_type {
-            metadata.custom.insert(
-                "tokenizer.model".to_string(),
-                serde_json::Value::String(model_type.clone()),
-            );
-        }
-        if let Some(bos_id) = tok.bos_token_id {
-            metadata.custom.insert(
-                "tokenizer.bos_token_id".to_string(),
-                serde_json::Value::Number(serde_json::Number::from(bos_id)),
-            );
-        }
-        if let Some(eos_id) = tok.eos_token_id {
-            metadata.custom.insert(
-                "tokenizer.eos_token_id".to_string(),
-                serde_json::Value::Number(serde_json::Number::from(eos_id)),
-            );
-        }
-        // PMAT-171: Embed BPE merge rules for standalone APR encoding
-        if !tok.merges.is_empty() {
-            eprintln!(
-                "[PMAT-171] Embedding {} BPE merge rules into APR metadata",
-                tok.merges.len()
-            );
-            let merges_array: Vec<serde_json::Value> = tok
-                .merges
-                .iter()
-                .map(|s| serde_json::Value::String(s.clone()))
-                .collect();
-            metadata.custom.insert(
-                "tokenizer.merges".to_string(),
-                serde_json::Value::Array(merges_array),
-            );
-        }
-    }
-
-    // GH-237: Create writer and add tensors with correct dtype dispatch
-    let mut writer = AprV2Writer::new(metadata);
-    for (name, (data, shape)) in tensors {
-        add_tensor_with_quantization(&mut writer, name, shape, data, quantize);
-    }
-
-    // Write to file
-    let apr_bytes = writer.write().map_err(|e| AprenderError::FormatError {
-        message: format!("Failed to write APR format: {e}"),
-    })?;
-
-    fs::write(output, apr_bytes).map_err(|e| AprenderError::FormatError {
-        message: format!("Failed to write output file: {e}"),
-    })
-}
-
-/// Inferred model configuration from tensor shapes for Q4K quantization.
-///
-/// Used by `save_model_tensors_q4k` to populate APR metadata fields.
-struct InferredQ4kConfig {
-    hidden_size: Option<usize>,
-    num_layers: Option<usize>,
-    num_kv_heads: Option<usize>,
-    vocab_size: Option<usize>,
-    intermediate_size: Option<usize>,
-    num_heads: Option<usize>,
-}
-
-/// Infer model configuration from tensor names and shapes.
-///
-/// Scans the tensor map for well-known naming patterns (norm weights, embeddings,
-/// layer indices, projection matrices, gate projections) and extracts architecture
-/// dimensions. Assumes `head_dim=64` for head-count inference.
-fn infer_q4k_config(tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>) -> InferredQ4kConfig {
-    let mut cfg = InferredQ4kConfig {
-        hidden_size: None,
-        num_layers: None,
-        num_kv_heads: None,
-        vocab_size: None,
-        intermediate_size: None,
-        num_heads: None,
-    };
-
-    for (name, (_, shape)) in tensors {
-        infer_q4k_single_tensor(&mut cfg, name, shape);
-    }
-
-    cfg
-}
+include!("mod_part_03_include_01.rs");
