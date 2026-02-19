@@ -215,6 +215,7 @@ impl Optimizer for ConjugateGradient {
     }
 
     #[allow(clippy::too_many_lines)]
+    // Contract: optimization-v1, equation = "cg_minimize"
     fn minimize<F, G>(&mut self, objective: F, gradient: G, x0: Vector<f32>) -> OptimizationResult
     where
         F: Fn(&Vector<f32>) -> f32,
