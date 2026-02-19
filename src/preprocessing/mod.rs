@@ -277,6 +277,7 @@ impl StandardScaler {
     }
 }
 
+// Contract: preprocessing-normalization-v1, equation = "standard_scaler"
 impl Transformer for StandardScaler {
     /// Computes the mean and standard deviation of each feature.
     fn fit(&mut self, x: &Matrix<f32>) -> Result<()> {

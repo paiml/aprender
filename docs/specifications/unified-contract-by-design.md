@@ -1337,20 +1337,20 @@ All bound. See `binding.yaml` for per-equation status.
 | attention-scaling-v1 | 2 | 4 | Bound |
 | qwen35-e2e-verification-v1 | 6 | 5 | Bound |
 
-### Algorithm Contracts — Tier A1: Core Metrics (3) — NEW
+### Algorithm Contracts — Tier A1: Core Metrics (3) — P0 COMPLETE
 | Contract | Equations | Obligations | Status |
 |----------|-----------|-------------|--------|
-| metrics-regression-v1 | 4 | 8 | **Not bound** |
-| metrics-classification-v1 | 6 | 12 | **Not bound** |
-| metrics-clustering-v1 | 3 | 6 | **Not bound** |
+| metrics-regression-v1 | 4 | 7 | Bound |
+| metrics-classification-v1 | 5 | 8 | Bound |
+| metrics-clustering-v1 | 3 | 5 | Bound |
 
-### Algorithm Contracts — Tier A2: Loss & Normalization (2) — NEW
+### Algorithm Contracts — Tier A2: Loss & Normalization (2) — P0 COMPLETE (loss), P1 (norm)
 | Contract | Equations | Obligations | Status |
 |----------|-----------|-------------|--------|
-| loss-functions-v1 | 6 | 10 | **Not bound** |
+| loss-functions-v1 | 6 | 6 | Bound |
 | normalization-v1 | 3 | 6 | **Not bound** |
 
-### Algorithm Contracts — Tier A3: Supervised Learning (5) — NEW
+### Algorithm Contracts — Tier A3: Supervised Learning (5) — P1/P2
 | Contract | Equations | Obligations | Status |
 |----------|-----------|-------------|--------|
 | decision-tree-v1 | 4 | 8 | **Not bound** |
@@ -1359,13 +1359,13 @@ All bound. See `binding.yaml` for per-equation status.
 | linear-models-v1 | 4 | 8 | **Not bound** |
 | svm-v1 | 4 | 8 | **Not bound** |
 
-### Algorithm Contracts — Tier A4-A7: Extended (12) — NEW
+### Algorithm Contracts — Tier A4-A7: Extended (12) — P0 (centrality), P1-P3 (rest)
 | Contract | Equations | Obligations | Status |
 |----------|-----------|-------------|--------|
 | pca-v1 | 3 | 6 | **Not bound** |
 | ica-v1 | 3 | 6 | **Not bound** |
 | gbm-v1 | 3 | 6 | **Not bound** |
-| graph-centrality-v1 | 6 | 10 | **Not bound** |
+| graph-centrality-v1 | 6 | 8 | Bound |
 | optimization-v1 | 3 | 6 | **Not bound** |
 | calibration-v1 | 5 | 8 | **Not bound** |
 | active-learning-v1 | 4 | 6 | **Not bound** |

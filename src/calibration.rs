@@ -135,6 +135,7 @@ impl PlattScaling {
 }
 
 /// Expected Calibration Error (ECE) - measures calibration quality.
+#[provable_contracts_macros::contract("calibration-v1", equation = "expected_calibration_error")]
 #[must_use]
 pub fn expected_calibration_error(predictions: &[f32], labels: &[bool], n_bins: usize) -> f32 {
     let mut bin_sums = vec![0.0; n_bins];
@@ -162,6 +163,7 @@ pub fn expected_calibration_error(predictions: &[f32], labels: &[bool], n_bins: 
 }
 
 /// Maximum Calibration Error (MCE).
+#[provable_contracts_macros::contract("calibration-v1", equation = "maximum_calibration_error")]
 #[must_use]
 pub fn maximum_calibration_error(predictions: &[f32], labels: &[bool], n_bins: usize) -> f32 {
     let mut bin_sums = vec![0.0; n_bins];

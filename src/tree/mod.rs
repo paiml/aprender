@@ -40,6 +40,7 @@ mod regressor;
 // Re-exports
 pub use classifier::DecisionTreeClassifier;
 pub use gradient_boosting::GradientBoostingClassifier;
+pub use helpers::{gini_impurity, gini_split};
 pub use random_forest::{RandomForestClassifier, RandomForestRegressor};
 pub use regressor::DecisionTreeRegressor;
 

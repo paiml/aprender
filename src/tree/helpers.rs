@@ -126,8 +126,9 @@ pub(super) fn reconstruct_tree_node(
 /// chosen element if it were labeled according to the distribution of labels.
 ///
 /// Formula: Gini = 1 - `Σ(p_i²)` where `p_i` is the proportion of class i
+// Contract: decision-tree-v1, equation = "gini_impurity"
 #[allow(dead_code)]
-pub(super) fn gini_impurity(labels: &[usize]) -> f32 {
+pub fn gini_impurity(labels: &[usize]) -> f32 {
     if labels.is_empty() {
         return 0.0;
     }
@@ -151,8 +152,9 @@ pub(super) fn gini_impurity(labels: &[usize]) -> f32 {
 }
 
 /// Calculate weighted Gini impurity for a split.
+// Contract: decision-tree-v1, equation = "gini_split"
 #[allow(dead_code)]
-pub(super) fn gini_split(left_labels: &[usize], right_labels: &[usize]) -> f32 {
+pub fn gini_split(left_labels: &[usize], right_labels: &[usize]) -> f32 {
     let n_left = left_labels.len() as f32;
     let n_right = right_labels.len() as f32;
     let n_total = n_left + n_right;

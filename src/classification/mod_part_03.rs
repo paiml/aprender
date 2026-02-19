@@ -51,6 +51,7 @@ impl GaussianNB {
     /// - Sample count mismatch between X and y
     /// - Empty data
     /// - Less than 2 classes
+    // Contract: naive-bayes-v1, equation = "class_prior"
     pub fn fit(&mut self, x: &Matrix<f32>, y: &[usize]) -> Result<()> {
         let (n_samples, n_features) = x.shape();
 
@@ -128,6 +129,7 @@ impl GaussianNB {
     /// # Errors
     ///
     /// Returns error if model is not fitted or dimension mismatch.
+    // Contract: naive-bayes-v1, equation = "log_posterior"
     pub fn predict(&self, x: &Matrix<f32>) -> Result<Vec<usize>> {
         let probabilities = self.predict_proba(x)?;
         let classes = self.classes.as_ref().ok_or("Model not fitted")?;

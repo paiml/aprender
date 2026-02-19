@@ -99,6 +99,7 @@ impl MinMaxScaler {
     }
 }
 
+// Contract: preprocessing-normalization-v1, equation = "minmax_scaler"
 impl Transformer for MinMaxScaler {
     /// Computes the min and max of each feature.
     fn fit(&mut self, x: &Matrix<f32>) -> Result<()> {
