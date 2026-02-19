@@ -1,7 +1,7 @@
 # Unified Contract-by-Design Specification
 
 **Version**: 2.0.0
-**Status**: Phase 4 Complete (kernels), Phase 6 Complete (algorithms P0-P4), Step 6.7 AllImplemented enforced. Bindings: 249/251 implemented (2 SSM-only gaps). 24/24 algorithm contracts Bound, ~112 equations, 122 FALSIFY tests. Total: 286 contract tests passing (0 failures). One Path Rule enforced: softmax (10→1), sigmoid (8→1), relu (2→1), tanh (1→1), GELU (2→1), SiLU (1→1), cross-entropy log-softmax (2→1), layer_norm (3→1), rms_norm (2→1), dropout (2→1), transpose_last_two (2→1), batched_matmul (2→1), concat_heads/reshape_from_attention (2→1), add_tensors (3→Tensor::add), scale_tensor (2→Tensor::mul_scalar). Total: 41 duplicates eliminated, all paths delegate to canonical `nn::functional` or `nn::transformer`. Cross-crate falsification: all GREEN.
+**Status**: Phase 4 Complete (kernels), Phase 6 Complete (algorithms P0-P4), Step 6.7 AllImplemented enforced. Bindings: 249/251 implemented (2 SSM-only gaps). 24/24 algorithm contracts Bound, ~112 equations, 122 FALSIFY tests. Total: 286 contract tests passing (0 failures). One Path Rule enforced: softmax (10→1), sigmoid (8→1), relu (2→1), tanh (1→1), GELU (2→1), SiLU (1→1), cross-entropy log-softmax (2→1), layer_norm (3→1), rms_norm (2→1), dropout (2→1), transpose_last_two (2→1), batched_matmul (2→1), concat_heads/reshape_from_attention (2→1), add_tensors (3→Tensor::add), scale_tensor (2→Tensor::mul_scalar), euclidean_distance (6→1), cosine_similarity (15→1). Total: 62 duplicates eliminated → 17 canonical functions in `nn::functional` + `nn::transformer`. Cross-crate falsification: all GREEN.
 **Created**: 2026-02-19
 **Updated**: 2026-02-19
 **Scope**: trueno, realizar, aprender, entrenar, whisper.apr
@@ -337,7 +337,14 @@ delegate to the canonical source. Enforced by `// ONE PATH:` comments at every d
 | `add_tensors(a, b)` | `Tensor::add` | 3 (rnn, transformer, qwen2) |
 | `scale_tensor(x, s)` | `Tensor::mul_scalar` | 2 (citl, transformer) |
 
-**Total**: 41 duplicate implementations eliminated → 21 canonical functions. Zero duplicate compute paths.
+#### 4.6.4 Distance and Similarity Functions → `nn::functional`
+
+| Function | Canonical Source | Duplicates Eliminated |
+|----------|-----------------|----------------------|
+| `euclidean_distance(&[f32], &[f32])` | `nn::functional::euclidean_distance` | 6 (active_learning, cluster/agglomerative, cluster/dbscan, interpret, loss, voice/embedding) |
+| `cosine_similarity_slice(&[f32], &[f32])` | `nn::functional::cosine_similarity_slice` | 15 (loss, verify/delta, transfer, voice/{embedding,conversion}, speech/diarization, synthetic/mixup, citl/{pattern,encoder,neural×3}, pruning/depth) |
+
+**Total**: 62 duplicate implementations eliminated → 17 canonical functions. Zero duplicate compute paths.
 
 ---
 
