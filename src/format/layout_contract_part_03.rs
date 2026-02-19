@@ -220,6 +220,8 @@ fn required_tensor_patterns(has_qk_norm: bool, has_bias: bool) -> Vec<&'static s
 /// in the model's tensor list. Missing required tensor = `Err` with a
 /// descriptive message naming the missing tensor, architecture, and layer.
 ///
+/// Contract: architecture-requirements-v1, equation "weight_completeness"
+///
 /// # Arguments
 ///
 /// * `tensor_names` - Names of all tensors present in the model
@@ -229,6 +231,7 @@ fn required_tensor_patterns(has_qk_norm: bool, has_bias: bool) -> Vec<&'static s
 /// # Errors
 ///
 /// Returns `ContractError` if any required tensor is missing.
+#[provable_contracts_macros::contract("architecture-requirements-v1", equation = "import_completeness_gate")]
 pub fn enforce_architecture_completeness(
     tensor_names: &[&str],
     architecture: &str,

@@ -18,6 +18,9 @@
 use crate::autograd::Tensor;
 
 /// `ReLU` activation: max(0, x)
+///
+/// Contract: activation-kernel-v1, equation "relu"
+#[provable_contracts_macros::contract("activation-kernel-v1", equation = "relu")]
 #[must_use]
 pub fn relu(x: &Tensor) -> Tensor {
     x.relu()
@@ -47,6 +50,11 @@ pub fn tanh(x: &Tensor) -> Tensor {
 }
 
 /// GELU activation (Gaussian Error Linear Unit)
+///
+/// Equation: GELU(x) = 0.5 * x * (1 + tanh(sqrt(2/pi) * (x + 0.044715 * x^3)))
+///
+/// Contract: activation-kernel-v1, equation "gelu"
+#[provable_contracts_macros::contract("activation-kernel-v1", equation = "gelu")]
 #[must_use]
 pub fn gelu(x: &Tensor) -> Tensor {
     let sqrt_2_over_pi = (2.0_f32 / std::f32::consts::PI).sqrt();
@@ -65,7 +73,12 @@ pub fn gelu(x: &Tensor) -> Tensor {
 
 /// Softmax along a dimension
 ///
+/// Equation: softmax(x)_i = exp(x_i) / sum_j exp(x_j)
+///
 /// Currently only supports 2D tensors with dim=-1 (last dimension).
+///
+/// Contract: softmax-kernel-v1, equation "softmax"
+#[provable_contracts_macros::contract("softmax-kernel-v1", equation = "softmax")]
 #[must_use]
 pub fn softmax(x: &Tensor, _dim: i32) -> Tensor {
     assert_eq!(x.ndim(), 2, "softmax currently only supports 2D tensors");

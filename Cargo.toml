@@ -225,6 +225,9 @@ wasm-bindgen = { version = "0.2", optional = true }
 js-sys = { version = "0.3", optional = true }
 minijinja = { version = "2.14.0", features = ["loader", "serde"] }
 
+# UCBD: compile-time contract enforcement via #[contract] proc macro
+provable-contracts-macros = { version = "0.1", path = "../provable-contracts/crates/provable-contracts-macros" }
+
 # Toyota Way: ONE source of truth for quantization (Step E)
 # NOTE: Currently blocked by cyclic dependency (realizar optionally depends on aprender).
 # Resolution requires creating a separate quantization crate.
