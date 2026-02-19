@@ -99,69 +99,16 @@ fn crc32(data: &[u8]) -> u32 {
 /// - Sign: 1 bit
 /// - Exponent: 5 bits (bias 15)
 /// - Mantissa: 10 bits
+/// ONE PATH: Delegates to `trueno::f32_to_f16` (UCBD §4).
 fn f32_to_f16(value: f32) -> u16 {
-    let bits = value.to_bits();
-    let sign = ((bits >> 16) & 0x8000) as u16;
-    let exp = (bits >> 23) & 0xFF;
-    let mantissa = bits & 0x7F_FFFF;
-
-    if exp == 0 {
-        // Zero or denormal f32 → zero f16
-        sign
-    } else if exp == 255 {
-        // Inf or NaN
-        if mantissa == 0 {
-            sign | 0x7C00 // Inf
-        } else {
-            sign | 0x7E00 // NaN (quiet)
-        }
-    } else {
-        // Normalized number
-        let new_exp = (exp as i32) - 127 + 15;
-
-        if new_exp >= 31 {
-            // Overflow to infinity
-            sign | 0x7C00
-        } else if new_exp <= 0 {
-            // Underflow to zero (could do denormals but not worth it)
-            sign
-        } else {
-            let new_mantissa = (mantissa >> 13) as u16;
-            sign | ((new_exp as u16) << 10) | new_mantissa
-        }
-    }
+    trueno::f32_to_f16(value)
 }
 
 /// Convert f16 to f32
+///
+/// ONE PATH: Delegates to `trueno::f16_to_f32` (UCBD §4).
 fn f16_to_f32(bits: u16) -> f32 {
-    let sign = u32::from(bits & 0x8000) << 16;
-    let exp = (bits >> 10) & 0x1F;
-    let mantissa = u32::from(bits & 0x3FF);
-
-    if exp == 0 {
-        if mantissa == 0 {
-            f32::from_bits(sign)
-        } else {
-            // Denormal f16 → normalized f32
-            let mut m = mantissa;
-            let mut e = 0i32;
-            while (m & 0x400) == 0 {
-                m <<= 1;
-                e -= 1;
-            }
-            let new_exp = (127 - 15 + 1 + e) as u32;
-            let new_mantissa = (m & 0x3FF) << 13;
-            f32::from_bits(sign | (new_exp << 23) | new_mantissa)
-        }
-    } else if exp == 31 {
-        // Inf or NaN
-        f32::from_bits(sign | 0x7F80_0000 | (mantissa << 13))
-    } else {
-        // Normalized
-        let new_exp = (u32::from(exp) - 15 + 127) << 23;
-        let new_mantissa = mantissa << 13;
-        f32::from_bits(sign | new_exp | new_mantissa)
-    }
+    trueno::f16_to_f32(bits)
 }
 
 /// Dequantize Q4 block-quantized data to f32

@@ -193,44 +193,8 @@ fn bf16_to_f32(bytes: [u8; 2]) -> f32 {
 
 /// Convert F16 (IEEE 754 half-precision) to F32
 ///
-/// F16 has 5 exponent bits and 10 mantissa bits.
+/// ONE PATH: Delegates to `trueno::f16_to_f32` (UCBD §4).
 #[inline]
 fn f16_to_f32(bytes: [u8; 2]) -> f32 {
-    let h = u16::from_le_bytes(bytes);
-
-    // Extract components
-    let sign = (h >> 15) & 1;
-    let exp = (h >> 10) & 0x1F;
-    let mant = h & 0x3FF;
-
-    let f32_bits = if exp == 0 {
-        if mant == 0 {
-            // Zero (positive or negative)
-            u32::from(sign) << 31
-        } else {
-            // Subnormal: convert to normalized F32
-            let mut m = mant;
-            let mut e: i32 = -14; // F16 subnormal exponent bias adjustment
-            while (m & 0x400) == 0 {
-                m <<= 1;
-                e -= 1;
-            }
-            m &= 0x3FF; // Remove implicit 1
-            let exp32 = (e + 127) as u32; // F32 bias
-            (u32::from(sign) << 31) | (exp32 << 23) | (u32::from(m) << 13)
-        }
-    } else if exp == 31 {
-        // Inf or NaN
-        let mant32 = u32::from(mant) << 13;
-        (u32::from(sign) << 31) | (0xFF << 23) | mant32
-    } else {
-        // Normal number
-        // GH-205 FIX: Rearrange to avoid underflow in debug mode
-        // F16 bias is 15, F32 bias is 127, so we add 112 (127 - 15)
-        let exp32 = u32::from(exp) + 112; // Was: exp - 15 + 127 (underflows if exp < 15)
-        let mant32 = u32::from(mant) << 13;
-        (u32::from(sign) << 31) | (exp32 << 23) | mant32
-    };
-
-    f32::from_bits(f32_bits)
+    trueno::f16_to_f32(u16::from_le_bytes(bytes))
 }
