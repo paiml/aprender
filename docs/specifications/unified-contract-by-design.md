@@ -1,11 +1,11 @@
 # Unified Contract-by-Design Specification
 
-**Version**: 1.1.0
-**Status**: Phase 4 — Active Implementation (156/158 bindings, 24 `#[contract]` annotations)
+**Version**: 1.2.0
+**Status**: Phase 4 Complete — aprender at 98.7% (156/158 bindings, 24 `#[contract]` annotations, 42 contract test files, 164 passing falsification tests). Quality gates: clippy clean (all-targets -D warnings), 11,626 tests pass. Remaining: 2 SSM gaps, 7 realizar-only contracts.
 **Created**: 2026-02-19
 **Updated**: 2026-02-19
 **Scope**: trueno, realizar, aprender, entrenar, whisper.apr
-**Depends On**: `provable-contracts` (48 YAML contracts), `apr-model-qa-playbook` (217+ gates)
+**Depends On**: `provable-contracts` (49 YAML contracts), `apr-model-qa-playbook` (217+ gates)
 
 > **Core Thesis**: Every kernel, every model load, every tensor transformation in the
 > Sovereign AI Stack is governed by a provable contract. If a contract is missing,
@@ -783,12 +783,15 @@ MQS certification
 3. ~~Aprender GGUF reader~~ KEPT — conversion pipeline reader, not dead code (§9.1)
 4. ~~Run `scripts/check_include_files.sh`~~ Done — 562 include!() files tracked
 
-### Phase 4: Binding Completeness ~~(Weeks 4-8)~~ 98.7% COMPLETE
+### Phase 4: Binding Completeness ~~(Weeks 4-8)~~ COMPLETE (98.7%)
 
 1. ~~Implement Tier 1 bindings (Gated Delta Net, Conv1D)~~ Done (156/158)
 2. ~~Implement Tier 2 bindings (Flash Attention, SiLU, LoRA)~~ Done
 3. ~~Implement remaining Tier 3 bindings~~ Done (except 2 SSM gaps)
-4. build.rs WarnOnGaps policy active — tracks 2 SSM gaps silently via `CONTRACT_GAPS` env var
+4. ~~build.rs WarnOnGaps policy active~~ Done — tracks 2 SSM gaps silently via `CONTRACT_GAPS` env var
+5. ~~Quality gates clippy clean (`--all-targets -D warnings`)~~ Done — test/example allows scoped
+6. ~~42 contract test files with 164 passing falsification tests~~ Done
+7. ~~`pmat comply check`: COMPLIANT~~ Done
 
 ### Phase 5: build.rs Hard Enforcement (pending SSM implementation)
 
