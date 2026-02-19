@@ -162,8 +162,7 @@ fn test_integration_different_errors_produce_different_embeddings() {
 
     let diag1 = test_diagnostic(e0308(), "mismatched types");
 
-    let code2 = ErrorCode::new("E0382", ErrorCategory::Ownership, Difficulty::Medium);
-    let diag2 = test_diagnostic(code2, "use of moved value");
+    let diag2 = test_diagnostic(e0382(), "use of moved value");
 
     let emb1 = encoder.encode(&diag1, source1);
     let emb2 = encoder.encode(&diag2, source2);
@@ -272,9 +271,9 @@ fn test_suggested_fix_with_span_and_error_code() {
 fn test_error_code_hash() {
     use std::collections::HashSet;
     let mut set = HashSet::new();
-    let code1 = ErrorCode::new("E0308", ErrorCategory::TypeMismatch, Difficulty::Easy);
-    let code2 = ErrorCode::new("E0308", ErrorCategory::TypeMismatch, Difficulty::Easy);
-    let code3 = ErrorCode::new("E0382", ErrorCategory::Ownership, Difficulty::Medium);
+    let code1 = e0308();
+    let code2 = e0308();
+    let code3 = e0382();
 
     set.insert(code1.clone());
     set.insert(code2.clone());

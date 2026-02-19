@@ -73,40 +73,21 @@ fn test_language_all_variants() {
 fn test_rust_error_codes_all_tiers() {
     let codes = rust_error_codes();
 
-    // Tier 1: Easy
-    let easy_codes = ["E0308", "E0425", "E0433", "E0432", "E0412", "E0599"];
-    for code in &easy_codes {
-        let ec = codes.get(*code).expect("Code should exist");
-        assert_eq!(ec.difficulty, Difficulty::Easy);
-    }
-
-    // Tier 2: Medium
-    let medium_codes = [
-        "E0382", "E0502", "E0499", "E0596", "E0507", "E0282", "E0106",
+    // Data-driven: (difficulty_tier, error_codes_in_tier)
+    let tiers: &[(Difficulty, &[&str])] = &[
+        (Difficulty::Easy, &["E0308", "E0425", "E0433", "E0432", "E0412", "E0599"]),
+        (Difficulty::Medium, &["E0382", "E0502", "E0499", "E0596", "E0507", "E0282", "E0106"]),
+        (Difficulty::Hard, &["E0597", "E0621", "E0495", "E0623", "E0277"]),
+        (Difficulty::Expert, &["E0373"]),
     ];
-    for code in &medium_codes {
-        let ec = codes.get(*code).expect("Code should exist");
-        assert!(
-            ec.difficulty == Difficulty::Medium,
-            "Expected Medium for {code}"
-        );
-    }
-
-    // Tier 3: Hard
-    let hard_codes = ["E0597", "E0621", "E0495", "E0623", "E0277"];
-    for code in &hard_codes {
-        let ec = codes.get(*code).expect("Code should exist");
-        assert!(
-            ec.difficulty == Difficulty::Hard,
-            "Expected Hard for {code}"
-        );
-    }
-
-    // Tier 4: Expert
-    let expert_codes = ["E0373"];
-    for code in &expert_codes {
-        let ec = codes.get(*code).expect("Code should exist");
-        assert_eq!(ec.difficulty, Difficulty::Expert);
+    for (expected_diff, error_codes) in tiers {
+        for code in *error_codes {
+            let ec = codes.get(*code).unwrap_or_else(|| panic!("{code} not found"));
+            assert_eq!(
+                ec.difficulty, *expected_diff,
+                "Expected {expected_diff:?} for {code}"
+            );
+        }
     }
 }
 

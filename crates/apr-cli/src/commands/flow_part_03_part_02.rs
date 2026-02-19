@@ -284,53 +284,22 @@
     }
 
     #[test]
-    fn test_run_with_encoder_component() {
+    fn test_run_all_components_on_invalid_file() {
+        // Data-driven: each component variant should fail on invalid APR data
         let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
         file.write_all(b"not a valid apr file").expect("write");
 
-        let result = run(file.path(), None, FlowComponent::Encoder, false, false);
-        // Should fail (invalid file) but tests encoder path
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_run_with_decoder_component() {
-        let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
-        file.write_all(b"not a valid apr file").expect("write");
-
-        let result = run(file.path(), None, FlowComponent::Decoder, false, false);
-        // Should fail (invalid file) but tests decoder path
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_run_with_self_attention_component() {
-        let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
-        file.write_all(b"not a valid apr file").expect("write");
-
-        let result = run(file.path(), None, FlowComponent::SelfAttention, false, false);
-        // Should fail (invalid file) but tests self-attention path
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_run_with_cross_attention_component() {
-        let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
-        file.write_all(b"not a valid apr file").expect("write");
-
-        let result = run(file.path(), None, FlowComponent::CrossAttention, false, false);
-        // Should fail (invalid file) but tests cross-attention path
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_run_with_ffn_component() {
-        let mut file = NamedTempFile::with_suffix(".apr").expect("create temp file");
-        file.write_all(b"not a valid apr file").expect("write");
-
-        let result = run(file.path(), None, FlowComponent::Ffn, false, false);
-        // Should fail (invalid file) but tests FFN path
-        assert!(result.is_err());
+        let components = [
+            FlowComponent::Encoder,
+            FlowComponent::Decoder,
+            FlowComponent::SelfAttention,
+            FlowComponent::CrossAttention,
+            FlowComponent::Ffn,
+        ];
+        for comp in &components {
+            let result = run(file.path(), None, *comp, false, false);
+            assert!(result.is_err(), "Expected error for component {comp:?}");
+        }
     }
 
     // ========================================================================
@@ -338,101 +307,40 @@
     // ========================================================================
 
     #[test]
-    fn test_flow_component_from_str_mixed_case_full() {
-        assert_eq!(
-            "FULL".parse::<FlowComponent>().expect("parse"),
-            FlowComponent::Full
-        );
-        assert_eq!(
-            "Full".parse::<FlowComponent>().expect("parse"),
-            FlowComponent::Full
-        );
-        assert_eq!(
-            "ALL".parse::<FlowComponent>().expect("parse"),
-            FlowComponent::Full
-        );
-        assert_eq!(
-            "All".parse::<FlowComponent>().expect("parse"),
-            FlowComponent::Full
-        );
-    }
-
-    #[test]
-    fn test_flow_component_from_str_mixed_case_encoder() {
-        assert_eq!(
-            "ENC".parse::<FlowComponent>().expect("parse"),
-            FlowComponent::Encoder
-        );
-        assert_eq!(
-            "Enc".parse::<FlowComponent>().expect("parse"),
-            FlowComponent::Encoder
-        );
-        assert_eq!(
-            "Encoder".parse::<FlowComponent>().expect("parse"),
-            FlowComponent::Encoder
-        );
-    }
-
-    #[test]
-    fn test_flow_component_from_str_mixed_case_decoder() {
-        assert_eq!(
-            "DEC".parse::<FlowComponent>().expect("parse"),
-            FlowComponent::Decoder
-        );
-        assert_eq!(
-            "Dec".parse::<FlowComponent>().expect("parse"),
-            FlowComponent::Decoder
-        );
-        assert_eq!(
-            "Decoder".parse::<FlowComponent>().expect("parse"),
-            FlowComponent::Decoder
-        );
-        assert_eq!(
-            "DECODER".parse::<FlowComponent>().expect("parse"),
-            FlowComponent::Decoder
-        );
-    }
-
-    #[test]
-    fn test_flow_component_from_str_mixed_case_self_attn() {
-        assert_eq!(
-            "SELF_ATTN".parse::<FlowComponent>().expect("parse"),
-            FlowComponent::SelfAttention
-        );
-        assert_eq!(
-            "Self-Attn".parse::<FlowComponent>().expect("parse"),
-            FlowComponent::SelfAttention
-        );
-        assert_eq!(
-            "SELFATTN".parse::<FlowComponent>().expect("parse"),
-            FlowComponent::SelfAttention
-        );
-        assert_eq!(
-            "Self_Attn".parse::<FlowComponent>().expect("parse"),
-            FlowComponent::SelfAttention
-        );
-    }
-
-    #[test]
-    fn test_flow_component_from_str_mixed_case_cross_attn() {
-        assert_eq!(
-            "CROSS_ATTN".parse::<FlowComponent>().expect("parse"),
-            FlowComponent::CrossAttention
-        );
-        assert_eq!(
-            "CROSS-ATTN".parse::<FlowComponent>().expect("parse"),
-            FlowComponent::CrossAttention
-        );
-        assert_eq!(
-            "CROSSATTN".parse::<FlowComponent>().expect("parse"),
-            FlowComponent::CrossAttention
-        );
-        assert_eq!(
-            "ENCODER_ATTN".parse::<FlowComponent>().expect("parse"),
-            FlowComponent::CrossAttention
-        );
-        assert_eq!(
-            "Encoder_Attn".parse::<FlowComponent>().expect("parse"),
-            FlowComponent::CrossAttention
-        );
+    fn test_flow_component_from_str_mixed_case_aliases() {
+        // Data-driven: (input_alias, expected_variant)
+        let cases: &[(&str, FlowComponent)] = &[
+            // Full aliases
+            ("FULL", FlowComponent::Full),
+            ("Full", FlowComponent::Full),
+            ("ALL", FlowComponent::Full),
+            ("All", FlowComponent::Full),
+            // Encoder aliases
+            ("ENC", FlowComponent::Encoder),
+            ("Enc", FlowComponent::Encoder),
+            ("Encoder", FlowComponent::Encoder),
+            // Decoder aliases
+            ("DEC", FlowComponent::Decoder),
+            ("Dec", FlowComponent::Decoder),
+            ("Decoder", FlowComponent::Decoder),
+            ("DECODER", FlowComponent::Decoder),
+            // Self-attention aliases
+            ("SELF_ATTN", FlowComponent::SelfAttention),
+            ("Self-Attn", FlowComponent::SelfAttention),
+            ("SELFATTN", FlowComponent::SelfAttention),
+            ("Self_Attn", FlowComponent::SelfAttention),
+            // Cross-attention aliases
+            ("CROSS_ATTN", FlowComponent::CrossAttention),
+            ("CROSS-ATTN", FlowComponent::CrossAttention),
+            ("CROSSATTN", FlowComponent::CrossAttention),
+            ("ENCODER_ATTN", FlowComponent::CrossAttention),
+            ("Encoder_Attn", FlowComponent::CrossAttention),
+        ];
+        for (input, expected) in cases {
+            assert_eq!(
+                input.parse::<FlowComponent>().unwrap_or_else(|e| panic!("{input}: {e}")),
+                *expected,
+                "Alias {input:?} should parse correctly"
+            );
+        }
     }

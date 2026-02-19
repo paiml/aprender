@@ -80,27 +80,13 @@ impl DESearch {
 
         for (key, hyper) in params {
             let key_str = format!("{key:?}");
-            match hyper {
-                HyperParam::Continuous {
-                    low,
-                    high,
-                    log_scale,
-                } => {
-                    self.param_order.push(key_str);
-                    self.param_bounds.push((*low, *high, false, *log_scale));
-                }
-                HyperParam::Integer { low, high } => {
-                    self.param_order.push(key_str);
-                    self.param_bounds
-                        .push((*low as f64, *high as f64, true, false));
-                }
-                HyperParam::Categorical { choices } => {
-                    // Map categorical to integer index
-                    self.param_order.push(key_str);
-                    self.param_bounds
-                        .push((0.0, (choices.len() - 1) as f64, true, false));
-                }
-            }
+            let bounds = match hyper {
+                HyperParam::Continuous { low, high, log_scale } => (*low, *high, false, *log_scale),
+                HyperParam::Integer { low, high } => (*low as f64, *high as f64, true, false),
+                HyperParam::Categorical { choices } => (0.0, (choices.len() - 1) as f64, true, false),
+            };
+            self.param_order.push(key_str);
+            self.param_bounds.push(bounds);
         }
 
         let dim = self.param_bounds.len();
@@ -170,6 +156,23 @@ impl DESearch {
             clipped
         }
     }
+
+    /// Generate a mutant vector by applying a per-dimension formula.
+    fn mutate_vector(&self, dim: usize, formula: impl Fn(usize) -> f64) -> Vec<f64> {
+        (0..dim).map(formula).collect()
+    }
+
+    /// Select `count` distinct random indices, all different from `exclude`.
+    fn select_distinct_indices(rng: &mut XorShift64, pop_size: usize, exclude: usize, count: usize) -> Vec<usize> {
+        let mut indices = Vec::with_capacity(count);
+        while indices.len() < count {
+            let idx = rng.gen_usize(pop_size);
+            if idx != exclude && !indices.contains(&idx) {
+                indices.push(idx);
+            }
+        }
+        indices
+    }
 }
 
 impl<P: ParamKey> SearchStrategy<P> for DESearch {
@@ -221,57 +224,29 @@ impl<P: ParamKey> SearchStrategy<P> for DESearch {
 
         #[allow(clippy::needless_range_loop)]
         for i in 0..pop_size {
-            // Select 3 distinct random indices
-            let mut indices = Vec::with_capacity(3);
-            while indices.len() < 3 {
-                let idx = rng.gen_usize(pop_size);
-                if idx != i && !indices.contains(&idx) {
-                    indices.push(idx);
-                }
-            }
+            let indices = Self::select_distinct_indices(&mut rng, pop_size, i, 3);
             let (a, b, c) = (indices[0], indices[1], indices[2]);
+            let f = self.mutation_factor;
+            let pop = &self.population;
+            let best = self.best_idx;
 
             // Mutation based on strategy
             let mutant: Vec<f64> = match self.strategy {
-                DEStrategy::Rand1Bin => (0..dim)
-                    .map(|j| {
-                        self.population[a][j]
-                            + self.mutation_factor * (self.population[b][j] - self.population[c][j])
-                    })
-                    .collect(),
-                DEStrategy::Best1Bin => (0..dim)
-                    .map(|j| {
-                        self.population[self.best_idx][j]
-                            + self.mutation_factor * (self.population[a][j] - self.population[b][j])
-                    })
-                    .collect(),
-                DEStrategy::CurrentToBest1Bin => (0..dim)
-                    .map(|j| {
-                        self.population[i][j]
-                            + self.mutation_factor
-                                * (self.population[self.best_idx][j] - self.population[i][j])
-                            + self.mutation_factor * (self.population[a][j] - self.population[b][j])
-                    })
-                    .collect(),
+                DEStrategy::Rand1Bin => self.mutate_vector(dim, |j| {
+                    pop[a][j] + f * (pop[b][j] - pop[c][j])
+                }),
+                DEStrategy::Best1Bin => self.mutate_vector(dim, |j| {
+                    pop[best][j] + f * (pop[a][j] - pop[b][j])
+                }),
+                DEStrategy::CurrentToBest1Bin => self.mutate_vector(dim, |j| {
+                    pop[i][j] + f * (pop[best][j] - pop[i][j]) + f * (pop[a][j] - pop[b][j])
+                }),
                 DEStrategy::Rand2Bin => {
-                    // Need 5 indices for rand/2
-                    let mut more_indices = indices.clone();
-                    while more_indices.len() < 5 {
-                        let idx = rng.gen_usize(pop_size);
-                        if idx != i && !more_indices.contains(&idx) {
-                            more_indices.push(idx);
-                        }
-                    }
-                    let (d, e) = (more_indices[3], more_indices[4]);
-                    (0..dim)
-                        .map(|j| {
-                            self.population[a][j]
-                                + self.mutation_factor
-                                    * (self.population[b][j] - self.population[c][j])
-                                + self.mutation_factor
-                                    * (self.population[d][j] - self.population[e][j])
-                        })
-                        .collect()
+                    let more = Self::select_distinct_indices(&mut rng, pop_size, i, 5);
+                    let (ra, rb, rc, d, e) = (more[0], more[1], more[2], more[3], more[4]);
+                    self.mutate_vector(dim, |j| {
+                        pop[ra][j] + f * (pop[rb][j] - pop[rc][j]) + f * (pop[d][j] - pop[e][j])
+                    })
                 }
             };
 

@@ -43,7 +43,7 @@ fn test_diagnostic(error_code: ErrorCode, message: &str) -> CompilerDiagnostic {
 
 #[test]
 fn test_error_code_new() {
-    let code = ErrorCode::new("E0308", ErrorCategory::TypeMismatch, Difficulty::Easy);
+    let code = e0308();
     assert_eq!(code.code, "E0308");
     assert_eq!(code.category, ErrorCategory::TypeMismatch);
     assert_eq!(code.difficulty, Difficulty::Easy);
@@ -59,15 +59,20 @@ fn test_error_code_from_code() {
 
 #[test]
 fn test_error_code_display() {
-    let code = ErrorCode::new("E0308", ErrorCategory::TypeMismatch, Difficulty::Easy);
+    let code = e0308();
     assert_eq!(format!("{code}"), "E0308");
+}
+
+/// Helper: create E0382 Ownership/Medium error code (second most common in tests)
+fn e0382() -> ErrorCode {
+    ErrorCode::new("E0382", ErrorCategory::Ownership, Difficulty::Medium)
 }
 
 #[test]
 fn test_error_code_equality() {
-    let code1 = ErrorCode::new("E0308", ErrorCategory::TypeMismatch, Difficulty::Easy);
-    let code2 = ErrorCode::new("E0308", ErrorCategory::TypeMismatch, Difficulty::Easy);
-    let code3 = ErrorCode::new("E0382", ErrorCategory::Ownership, Difficulty::Medium);
+    let code1 = e0308();
+    let code2 = e0308();
+    let code3 = e0382();
 
     assert_eq!(code1, code2);
     assert_ne!(code1, code3);
@@ -77,10 +82,19 @@ fn test_error_code_equality() {
 
 #[test]
 fn test_difficulty_score() {
-    assert!((Difficulty::Easy.score() - 0.25).abs() < f32::EPSILON);
-    assert!((Difficulty::Medium.score() - 0.5).abs() < f32::EPSILON);
-    assert!((Difficulty::Hard.score() - 0.75).abs() < f32::EPSILON);
-    assert!((Difficulty::Expert.score() - 1.0).abs() < f32::EPSILON);
+    // Data-driven: (variant, expected_score)
+    let cases = [
+        (Difficulty::Easy, 0.25),
+        (Difficulty::Medium, 0.5),
+        (Difficulty::Hard, 0.75),
+        (Difficulty::Expert, 1.0),
+    ];
+    for (diff, expected) in &cases {
+        assert!(
+            (diff.score() - expected).abs() < f32::EPSILON,
+            "{diff:?} score mismatch"
+        );
+    }
 }
 
 #[test]
@@ -114,11 +128,17 @@ fn test_error_category_variants() {
 
 #[test]
 fn test_language_display() {
-    assert_eq!(format!("{}", Language::Python), "Python");
-    assert_eq!(format!("{}", Language::C), "C");
-    assert_eq!(format!("{}", Language::Ruchy), "Ruchy");
-    assert_eq!(format!("{}", Language::Bash), "Bash");
-    assert_eq!(format!("{}", Language::Rust), "Rust");
+    // Data-driven: (variant, expected_display)
+    let cases = [
+        (Language::Python, "Python"),
+        (Language::C, "C"),
+        (Language::Ruchy, "Ruchy"),
+        (Language::Bash, "Bash"),
+        (Language::Rust, "Rust"),
+    ];
+    for (lang, expected) in &cases {
+        assert_eq!(format!("{lang}"), *expected);
+    }
 }
 
 // ==================== CITLConfig Tests ====================
@@ -147,67 +167,31 @@ fn test_rust_error_codes_contains_common_errors() {
     assert!(codes.contains_key("E0282")); // 7.0%
 }
 
-#[test]
-fn test_rust_error_codes_categories() {
-    let codes = rust_error_codes();
-
-    assert_eq!(
-        codes.get("E0308").map(|c| c.category),
-        Some(ErrorCategory::TypeMismatch)
-    );
-    assert_eq!(
-        codes.get("E0382").map(|c| c.category),
-        Some(ErrorCategory::Ownership)
-    );
-    assert_eq!(
-        codes.get("E0597").map(|c| c.category),
-        Some(ErrorCategory::Lifetime)
-    );
-    assert_eq!(
-        codes.get("E0277").map(|c| c.category),
-        Some(ErrorCategory::TraitBound)
-    );
+/// Helper: assert an error code has the expected category and difficulty
+fn assert_error_code(codes: &std::collections::HashMap<String, ErrorCode>, code: &str, cat: ErrorCategory, diff: Difficulty) {
+    let ec = codes.get(code).unwrap_or_else(|| panic!("{code} not found"));
+    assert_eq!(ec.category, cat, "{code} category mismatch");
+    assert_eq!(ec.difficulty, diff, "{code} difficulty mismatch");
 }
 
 #[test]
-fn test_rust_error_codes_difficulties() {
+fn test_rust_error_codes_categories_and_difficulties() {
     let codes = rust_error_codes();
 
-    // Easy errors
-    assert_eq!(
-        codes.get("E0308").map(|c| c.difficulty),
-        Some(Difficulty::Easy)
-    );
-    assert_eq!(
-        codes.get("E0425").map(|c| c.difficulty),
-        Some(Difficulty::Easy)
-    );
+    // Data-driven: (code, expected_category, expected_difficulty)
+    let expectations: &[(&str, ErrorCategory, Difficulty)] = &[
+        ("E0308", ErrorCategory::TypeMismatch, Difficulty::Easy),
+        ("E0425", ErrorCategory::Unresolved, Difficulty::Easy),
+        ("E0382", ErrorCategory::Ownership, Difficulty::Medium),
+        ("E0502", ErrorCategory::Borrowing, Difficulty::Medium),
+        ("E0597", ErrorCategory::Lifetime, Difficulty::Hard),
+        ("E0277", ErrorCategory::TraitBound, Difficulty::Hard),
+        ("E0373", ErrorCategory::Async, Difficulty::Expert),
+    ];
 
-    // Medium errors
-    assert_eq!(
-        codes.get("E0382").map(|c| c.difficulty),
-        Some(Difficulty::Medium)
-    );
-    assert_eq!(
-        codes.get("E0502").map(|c| c.difficulty),
-        Some(Difficulty::Medium)
-    );
-
-    // Hard errors
-    assert_eq!(
-        codes.get("E0597").map(|c| c.difficulty),
-        Some(Difficulty::Hard)
-    );
-    assert_eq!(
-        codes.get("E0277").map(|c| c.difficulty),
-        Some(Difficulty::Hard)
-    );
-
-    // Expert errors
-    assert_eq!(
-        codes.get("E0373").map(|c| c.difficulty),
-        Some(Difficulty::Expert)
-    );
+    for (code, cat, diff) in expectations {
+        assert_error_code(&codes, code, *cat, *diff);
+    }
 }
 
 // ==================== CITLBuilder Tests ====================

@@ -3,97 +3,76 @@
     // Cross-Attention Layer Filtering Logic
     // ========================================================================
 
-    #[test]
-    fn test_cross_attn_layer_detection_encoder_attn() {
-        let tensor_names = vec![
-            "decoder.layers.0.encoder_attn.q_proj.weight".to_string(),
-            "decoder.layers.0.encoder_attn.k_proj.weight".to_string(),
-            "decoder.layers.1.encoder_attn.q_proj.weight".to_string(),
-        ];
-        let cross_attn_layers: Vec<_> = tensor_names
+    /// Filter tensor names to find cross-attention q_proj weights,
+    /// optionally constrained by a layer filter substring.
+    fn filter_cross_attn_q_proj<'a>(
+        tensor_names: &'a [String],
+        layer_filter: Option<&str>,
+    ) -> Vec<&'a String> {
+        tensor_names
             .iter()
             .filter(|n| n.contains("encoder_attn") || n.contains("cross_attn"))
             .filter(|n| n.contains("q_proj.weight"))
-            .collect();
-        assert_eq!(cross_attn_layers.len(), 2);
+            .filter(|n| layer_filter.map_or(true, |f| n.contains(f)))
+            .collect()
     }
 
     #[test]
-    fn test_cross_attn_layer_detection_cross_attn() {
-        let tensor_names = vec![
-            "decoder.layers.0.cross_attn.q_proj.weight".to_string(),
-            "decoder.layers.0.cross_attn.k_proj.weight".to_string(),
+    fn test_cross_attn_layer_detection() {
+        // Data-driven: (tensor_names, layer_filter, expected_count)
+        let cases: Vec<(Vec<String>, Option<&str>, usize)> = vec![
+            // encoder_attn variant: 2 q_proj matches
+            (vec![
+                "decoder.layers.0.encoder_attn.q_proj.weight".to_string(),
+                "decoder.layers.0.encoder_attn.k_proj.weight".to_string(),
+                "decoder.layers.1.encoder_attn.q_proj.weight".to_string(),
+            ], None, 2),
+            // cross_attn variant: 1 q_proj match
+            (vec![
+                "decoder.layers.0.cross_attn.q_proj.weight".to_string(),
+                "decoder.layers.0.cross_attn.k_proj.weight".to_string(),
+            ], None, 1),
+            // No cross/encoder_attn -> empty
+            (vec![
+                "decoder.layers.0.self_attn.q_proj.weight".to_string(),
+                "decoder.layers.0.ffn.fc1.weight".to_string(),
+            ], None, 0),
+            // Filter to layers.1 -> 1 match
+            (vec![
+                "decoder.layers.0.encoder_attn.q_proj.weight".to_string(),
+                "decoder.layers.1.encoder_attn.q_proj.weight".to_string(),
+                "decoder.layers.2.encoder_attn.q_proj.weight".to_string(),
+            ], Some("layers.1"), 1),
+            // Filter None -> matches all (2)
+            (vec![
+                "decoder.layers.0.encoder_attn.q_proj.weight".to_string(),
+                "decoder.layers.1.encoder_attn.q_proj.weight".to_string(),
+            ], None, 2),
+            // Filter layers.99 -> no match
+            (vec![
+                "decoder.layers.0.encoder_attn.q_proj.weight".to_string(),
+                "decoder.layers.1.encoder_attn.q_proj.weight".to_string(),
+            ], Some("layers.99"), 0),
         ];
-        let cross_attn_layers: Vec<_> = tensor_names
-            .iter()
-            .filter(|n| n.contains("encoder_attn") || n.contains("cross_attn"))
-            .filter(|n| n.contains("q_proj.weight"))
-            .collect();
-        assert_eq!(cross_attn_layers.len(), 1);
+        for (names, filter, expected) in &cases {
+            let result = filter_cross_attn_q_proj(names, *filter);
+            assert_eq!(
+                result.len(), *expected,
+                "Failed for filter={filter:?}, names={names:?}"
+            );
+        }
     }
 
     #[test]
-    fn test_cross_attn_layer_detection_empty() {
-        let tensor_names = vec![
-            "decoder.layers.0.self_attn.q_proj.weight".to_string(),
-            "decoder.layers.0.ffn.fc1.weight".to_string(),
-        ];
-        let cross_attn_layers: Vec<_> = tensor_names
-            .iter()
-            .filter(|n| n.contains("encoder_attn") || n.contains("cross_attn"))
-            .filter(|n| n.contains("q_proj.weight"))
-            .collect();
-        assert!(cross_attn_layers.is_empty());
-    }
-
-    #[test]
-    fn test_cross_attn_layer_filter_applied() {
+    fn test_cross_attn_layer_filter_applied_content() {
         let tensor_names = vec![
             "decoder.layers.0.encoder_attn.q_proj.weight".to_string(),
             "decoder.layers.1.encoder_attn.q_proj.weight".to_string(),
             "decoder.layers.2.encoder_attn.q_proj.weight".to_string(),
         ];
-        let layer_filter: Option<&str> = Some("layers.1");
-        let filtered: Vec<_> = tensor_names
-            .iter()
-            .filter(|n| n.contains("encoder_attn") || n.contains("cross_attn"))
-            .filter(|n| n.contains("q_proj.weight"))
-            .filter(|n| layer_filter.map_or(true, |f| n.contains(f)))
-            .collect();
+        let filtered = filter_cross_attn_q_proj(&tensor_names, Some("layers.1"));
         assert_eq!(filtered.len(), 1);
         assert!(filtered[0].contains("layers.1"));
-    }
-
-    #[test]
-    fn test_cross_attn_layer_filter_none_matches_all() {
-        let tensor_names = vec![
-            "decoder.layers.0.encoder_attn.q_proj.weight".to_string(),
-            "decoder.layers.1.encoder_attn.q_proj.weight".to_string(),
-        ];
-        let layer_filter: Option<&str> = None;
-        let filtered: Vec<_> = tensor_names
-            .iter()
-            .filter(|n| n.contains("encoder_attn") || n.contains("cross_attn"))
-            .filter(|n| n.contains("q_proj.weight"))
-            .filter(|n| layer_filter.map_or(true, |f| n.contains(f)))
-            .collect();
-        assert_eq!(filtered.len(), 2);
-    }
-
-    #[test]
-    fn test_cross_attn_layer_filter_no_match() {
-        let tensor_names = vec![
-            "decoder.layers.0.encoder_attn.q_proj.weight".to_string(),
-            "decoder.layers.1.encoder_attn.q_proj.weight".to_string(),
-        ];
-        let layer_filter: Option<&str> = Some("layers.99");
-        let filtered: Vec<_> = tensor_names
-            .iter()
-            .filter(|n| n.contains("encoder_attn") || n.contains("cross_attn"))
-            .filter(|n| n.contains("q_proj.weight"))
-            .filter(|n| layer_filter.map_or(true, |f| n.contains(f)))
-            .collect();
-        assert!(filtered.is_empty());
     }
 
     // ========================================================================

@@ -2,28 +2,34 @@ pub(crate) use super::*;
 
 // ========== StopWordsFilter Tests ==========
 
-#[test]
-fn test_english_filter_basic() {
+/// Helper: filter tokens through English stop words and assert expected result.
+fn assert_english_filter(tokens: &[&str], expected: &[&str]) {
     let filter = StopWordsFilter::english();
-    let tokens = vec!["the", "quick", "brown", "fox"];
-    let filtered = filter.filter(&tokens).expect("filter should succeed");
-    assert_eq!(filtered, vec!["quick", "brown", "fox"]);
+    let filtered = filter.filter(tokens).expect("filter should succeed");
+    let expected_strings: Vec<String> = expected.iter().map(|s| s.to_string()).collect();
+    assert_eq!(filtered, expected_strings, "input: {tokens:?}");
 }
 
 #[test]
-fn test_english_filter_case_insensitive() {
-    let filter = StopWordsFilter::english();
-    let tokens = vec!["The", "Cat", "IS", "happy"];
-    let filtered = filter.filter(&tokens).expect("filter should succeed");
-    assert_eq!(filtered, vec!["Cat", "happy"]);
-}
-
-#[test]
-fn test_english_filter_preserves_case() {
-    let filter = StopWordsFilter::english();
-    let tokens = vec!["Machine", "learning", "the", "FUTURE"];
-    let filtered = filter.filter(&tokens).expect("filter should succeed");
-    assert_eq!(filtered, vec!["Machine", "learning", "FUTURE"]);
+fn test_english_filter_basic_cases() {
+    // Data-driven: (input_tokens, expected_output)
+    let cases: &[(&[&str], &[&str])] = &[
+        // Basic filtering
+        (&["the", "quick", "brown", "fox"], &["quick", "brown", "fox"]),
+        // Case-insensitive
+        (&["The", "Cat", "IS", "happy"], &["Cat", "happy"]),
+        // Preserves original case
+        (&["Machine", "learning", "the", "FUTURE"], &["Machine", "learning", "FUTURE"]),
+        // Empty input
+        (&[], &[]),
+        // All stop words -> empty output
+        (&["the", "and", "is", "a"], &[]),
+        // No stop words -> all pass through
+        (&["machine", "learning", "neural", "network"], &["machine", "learning", "neural", "network"]),
+    ];
+    for (tokens, expected) in cases {
+        assert_english_filter(tokens, expected);
+    }
 }
 
 #[test]
@@ -32,30 +38,6 @@ fn test_custom_stop_words() {
     let tokens = vec!["foo", "test", "bar", "data", "baz"];
     let filtered = filter.filter(&tokens).expect("filter should succeed");
     assert_eq!(filtered, vec!["test", "data"]);
-}
-
-#[test]
-fn test_empty_tokens() {
-    let filter = StopWordsFilter::english();
-    let tokens: Vec<&str> = vec![];
-    let filtered = filter.filter(&tokens).expect("filter should succeed");
-    assert_eq!(filtered, Vec::<String>::new());
-}
-
-#[test]
-fn test_all_stop_words() {
-    let filter = StopWordsFilter::english();
-    let tokens = vec!["the", "and", "is", "a"];
-    let filtered = filter.filter(&tokens).expect("filter should succeed");
-    assert_eq!(filtered, Vec::<String>::new());
-}
-
-#[test]
-fn test_no_stop_words() {
-    let filter = StopWordsFilter::english();
-    let tokens = vec!["machine", "learning", "neural", "network"];
-    let filtered = filter.filter(&tokens).expect("filter should succeed");
-    assert_eq!(filtered, vec!["machine", "learning", "neural", "network"]);
 }
 
 #[test]
@@ -122,45 +104,21 @@ fn test_punctuation_handling() {
 }
 
 #[test]
-fn test_mixed_content() {
-    let filter = StopWordsFilter::english();
-    let tokens = vec![
-        "I", "love", "machine", "learning", "and", "neural", "networks", "because", "they", "are",
-        "powerful",
+fn test_real_world_sentences() {
+    // Data-driven: filter real-world token sequences
+    let cases: &[(&[&str], &[&str])] = &[
+        (
+            &["I", "love", "machine", "learning", "and", "neural", "networks", "because", "they", "are", "powerful"],
+            &["love", "machine", "learning", "neural", "networks", "powerful"],
+        ),
+        (
+            &["Natural", "language", "processing", "is", "a", "subfield", "of", "artificial", "intelligence"],
+            &["Natural", "language", "processing", "subfield", "artificial", "intelligence"],
+        ),
     ];
-    let filtered = filter.filter(&tokens).expect("filter should succeed");
-    assert_eq!(
-        filtered,
-        vec!["love", "machine", "learning", "neural", "networks", "powerful"]
-    );
-}
-
-#[test]
-fn test_real_world_sentence() {
-    let filter = StopWordsFilter::english();
-    let tokens = vec![
-        "Natural",
-        "language",
-        "processing",
-        "is",
-        "a",
-        "subfield",
-        "of",
-        "artificial",
-        "intelligence",
-    ];
-    let filtered = filter.filter(&tokens).expect("filter should succeed");
-    assert_eq!(
-        filtered,
-        vec![
-            "Natural",
-            "language",
-            "processing",
-            "subfield",
-            "artificial",
-            "intelligence"
-        ]
-    );
+    for (tokens, expected) in cases {
+        assert_english_filter(tokens, expected);
+    }
 }
 
 // ========== ENGLISH_STOP_WORDS Tests ==========
@@ -171,41 +129,25 @@ fn test_stop_words_list_has_expected_count() {
     assert_eq!(ENGLISH_STOP_WORDS.len(), 171);
 }
 
-#[test]
-fn test_stop_words_contains_articles() {
-    assert!(ENGLISH_STOP_WORDS.contains(&"a"));
-    assert!(ENGLISH_STOP_WORDS.contains(&"an"));
-    assert!(ENGLISH_STOP_WORDS.contains(&"the"));
-}
+/// Data-driven: expected stop words by category, consolidated from
+/// separate per-category tests to eliminate DataTransformation repetition.
+const EXPECTED_STOP_WORDS_BY_CATEGORY: &[(&str, &[&str])] = &[
+    ("articles", &["a", "an", "the"]),
+    ("pronouns", &["i", "you", "he", "she", "it", "we", "they"]),
+    ("prepositions", &["in", "on", "at", "by", "for", "with"]),
+    ("conjunctions", &["and", "or", "but", "if", "because"]),
+];
 
 #[test]
-fn test_stop_words_contains_pronouns() {
-    assert!(ENGLISH_STOP_WORDS.contains(&"i"));
-    assert!(ENGLISH_STOP_WORDS.contains(&"you"));
-    assert!(ENGLISH_STOP_WORDS.contains(&"he"));
-    assert!(ENGLISH_STOP_WORDS.contains(&"she"));
-    assert!(ENGLISH_STOP_WORDS.contains(&"it"));
-    assert!(ENGLISH_STOP_WORDS.contains(&"we"));
-    assert!(ENGLISH_STOP_WORDS.contains(&"they"));
-}
-
-#[test]
-fn test_stop_words_contains_prepositions() {
-    assert!(ENGLISH_STOP_WORDS.contains(&"in"));
-    assert!(ENGLISH_STOP_WORDS.contains(&"on"));
-    assert!(ENGLISH_STOP_WORDS.contains(&"at"));
-    assert!(ENGLISH_STOP_WORDS.contains(&"by"));
-    assert!(ENGLISH_STOP_WORDS.contains(&"for"));
-    assert!(ENGLISH_STOP_WORDS.contains(&"with"));
-}
-
-#[test]
-fn test_stop_words_contains_conjunctions() {
-    assert!(ENGLISH_STOP_WORDS.contains(&"and"));
-    assert!(ENGLISH_STOP_WORDS.contains(&"or"));
-    assert!(ENGLISH_STOP_WORDS.contains(&"but"));
-    assert!(ENGLISH_STOP_WORDS.contains(&"if"));
-    assert!(ENGLISH_STOP_WORDS.contains(&"because"));
+fn test_stop_words_contains_expected_categories() {
+    for (category, words) in EXPECTED_STOP_WORDS_BY_CATEGORY {
+        for word in *words {
+            assert!(
+                ENGLISH_STOP_WORDS.contains(word),
+                "{category}: expected {word:?} in ENGLISH_STOP_WORDS"
+            );
+        }
+    }
 }
 
 #[test]
