@@ -14,12 +14,18 @@
 //! ```
 //! use aprender::text::stopwords::StopWordsFilter;
 //!
+//! // English stop words: filter, check, count
 //! let filter = StopWordsFilter::english();
-//!
-//! // Filter stop words from tokens
 //! let tokens = vec!["the", "quick", "brown", "fox"];
 //! let filtered = filter.filter(&tokens).expect("filter should succeed");
 //! assert_eq!(filtered, vec!["quick", "brown", "fox"]);
+//! assert!(filter.is_stop_word("the"));
+//! assert_eq!(filter.len(), 171);
+//!
+//! // Custom stop words
+//! let custom = StopWordsFilter::new(vec!["foo", "bar"]);
+//! assert_eq!(custom.len(), 2);
+//! assert!(custom.is_stop_word("FOO")); // case-insensitive
 //! ```
 
 use crate::AprenderError;
@@ -28,23 +34,16 @@ use std::collections::HashSet;
 /// Stop words filter that removes common words from token lists.
 ///
 /// Stop words are case-insensitive and checked using a `HashSet` for O(1) lookup.
+/// Supports both borrowed (`filter`) and owned (`filter_owned`) token lists.
 ///
 /// # Examples
 ///
 /// ```
 /// use aprender::text::stopwords::StopWordsFilter;
 ///
-/// // Use default English stop words
 /// let filter = StopWordsFilter::english();
-/// let tokens = vec!["the", "cat", "is", "happy"];
-/// let filtered = filter.filter(&tokens).expect("filter should succeed");
-/// assert_eq!(filtered, vec!["cat", "happy"]);
-///
-/// // Custom stop words
-/// let custom_filter = StopWordsFilter::new(vec!["foo", "bar"]);
-/// let tokens = vec!["foo", "test", "bar", "data"];
-/// let filtered = custom_filter.filter(&tokens).expect("filter should succeed");
-/// assert_eq!(filtered, vec!["test", "data"]);
+/// let result = filter.filter(&["the", "cat", "is", "happy"]).unwrap();
+/// assert_eq!(result, vec!["cat", "happy"]);
 /// ```
 #[derive(Debug, Clone)]
 pub struct StopWordsFilter {
@@ -55,19 +54,13 @@ pub struct StopWordsFilter {
 impl StopWordsFilter {
     /// Create a new stop words filter with custom stop words.
     ///
-    /// # Arguments
-    ///
-    /// * `words` - Collection of stop words (will be converted to lowercase)
-    ///
-    /// # Examples
+    /// Words are converted to lowercase for case-insensitive matching.
     ///
     /// ```
-    /// use aprender::text::stopwords::StopWordsFilter;
-    ///
-    /// let filter = StopWordsFilter::new(vec!["custom", "stop", "words"]);
-    /// let tokens = vec!["custom", "text", "stop"];
-    /// let filtered = filter.filter(&tokens).expect("filter should succeed");
-    /// assert_eq!(filtered, vec!["text"]);
+    /// # use aprender::text::stopwords::StopWordsFilter;
+    /// let f = StopWordsFilter::new(vec!["custom", "STOP"]);
+    /// assert!(f.is_stop_word("Custom")); // case-insensitive
+    /// assert_eq!(f.len(), 2);
     /// ```
     pub fn new<I, S>(words: I) -> Self
     where
@@ -82,20 +75,14 @@ impl StopWordsFilter {
         Self { stop_words }
     }
 
-    /// Create a filter with English stop words.
-    ///
-    /// Uses a comprehensive list of 179 common English stop words based on
-    /// NLTK and scikit-learn stop word lists.
-    ///
-    /// # Examples
+    /// Create a filter with the default English stop words (171 words from NLTK/sklearn).
     ///
     /// ```
-    /// use aprender::text::stopwords::StopWordsFilter;
-    ///
-    /// let filter = StopWordsFilter::english();
-    /// let tokens = vec!["the", "machine", "learning", "is", "awesome"];
-    /// let filtered = filter.filter(&tokens).expect("filter should succeed");
-    /// assert_eq!(filtered, vec!["machine", "learning", "awesome"]);
+    /// # use aprender::text::stopwords::StopWordsFilter;
+    /// let f = StopWordsFilter::english();
+    /// assert_eq!(f.len(), 171);
+    /// assert!(f.is_stop_word("the"));
+    /// assert!(!f.is_stop_word("machine"));
     /// ```
     #[must_use]
     pub fn english() -> Self {
@@ -115,65 +102,26 @@ impl StopWordsFilter {
             .collect())
     }
 
-    /// Filter stop words from a list of tokens.
-    ///
-    /// # Arguments
-    ///
-    /// * `tokens` - Input tokens (strings)
-    ///
-    /// # Returns
-    ///
-    /// * `Ok(Vec<String>)` - Filtered tokens (stop words removed)
-    /// * `Err(AprenderError)` - If filtering fails
-    ///
-    /// # Examples
+    /// Filter stop words from borrowed token slices (case-insensitive, preserves original case).
     ///
     /// ```
-    /// use aprender::text::stopwords::StopWordsFilter;
-    ///
-    /// let filter = StopWordsFilter::english();
-    ///
-    /// // Case-insensitive filtering
-    /// let tokens = vec!["The", "Cat", "IS", "happy"];
-    /// let filtered = filter.filter(&tokens).expect("filter should succeed");
-    /// assert_eq!(filtered, vec!["Cat", "happy"]);
-    ///
-    /// // Preserves original case
-    /// let tokens = vec!["Machine", "learning", "the", "FUTURE"];
-    /// let filtered = filter.filter(&tokens).expect("filter should succeed");
-    /// assert_eq!(filtered, vec!["Machine", "learning", "FUTURE"]);
+    /// # use aprender::text::stopwords::StopWordsFilter;
+    /// let f = StopWordsFilter::english();
+    /// // Mixed case: stop words removed, content words kept with original case
+    /// let out = f.filter(&["The", "Cat", "IS", "happy"]).unwrap();
+    /// assert_eq!(out, vec!["Cat", "happy"]);
     /// ```
     pub fn filter<S: AsRef<str>>(&self, tokens: &[S]) -> Result<Vec<String>, AprenderError> {
         self.retain_non_stop(tokens.iter(), |token| token.as_ref().to_string())
     }
 
-    /// Filter stop words from a list of owned strings.
-    ///
-    /// This is a zero-copy version that avoids cloning non-stop-word tokens.
-    ///
-    /// # Arguments
-    ///
-    /// * `tokens` - Input tokens (owned strings)
-    ///
-    /// # Returns
-    ///
-    /// * `Ok(Vec<String>)` - Filtered tokens (stop words removed)
-    /// * `Err(AprenderError)` - If filtering fails
-    ///
-    /// # Examples
+    /// Filter stop words from owned strings (avoids cloning non-stop-word tokens).
     ///
     /// ```
-    /// use aprender::text::stopwords::StopWordsFilter;
-    ///
-    /// let filter = StopWordsFilter::english();
-    /// let tokens = vec![
-    ///     "the".to_string(),
-    ///     "cat".to_string(),
-    ///     "is".to_string(),
-    ///     "happy".to_string(),
-    /// ];
-    /// let filtered = filter.filter_owned(tokens).expect("filter should succeed");
-    /// assert_eq!(filtered, vec!["cat", "happy"]);
+    /// # use aprender::text::stopwords::StopWordsFilter;
+    /// let owned = vec!["the".into(), "cat".into(), "is".into(), "happy".into()];
+    /// let out = StopWordsFilter::english().filter_owned(owned).unwrap();
+    /// assert_eq!(out, vec!["cat", "happy"]);
     /// ```
     pub fn filter_owned(&self, tokens: Vec<String>) -> Result<Vec<String>, AprenderError> {
         self.retain_non_stop(tokens.into_iter(), |token| token)
@@ -181,61 +129,24 @@ impl StopWordsFilter {
 
     /// Check if a word is a stop word (case-insensitive).
     ///
-    /// # Arguments
-    ///
-    /// * `word` - Word to check
-    ///
-    /// # Returns
-    ///
-    /// * `true` if the word is a stop word
-    /// * `false` otherwise
-    ///
-    /// # Examples
-    ///
     /// ```
-    /// use aprender::text::stopwords::StopWordsFilter;
-    ///
-    /// let filter = StopWordsFilter::english();
-    /// assert!(filter.is_stop_word("the"));
-    /// assert!(filter.is_stop_word("THE"));
-    /// assert!(!filter.is_stop_word("machine"));
+    /// # use aprender::text::stopwords::StopWordsFilter;
+    /// let f = StopWordsFilter::english();
+    /// assert!(f.is_stop_word("THE"));   // case-insensitive
+    /// assert!(!f.is_stop_word("rust")); // not a stop word
     /// ```
     #[must_use]
     pub fn is_stop_word(&self, word: &str) -> bool {
         self.stop_words.contains(&word.to_lowercase())
     }
 
-    /// Get the number of stop words in the filter.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use aprender::text::stopwords::StopWordsFilter;
-    ///
-    /// let filter = StopWordsFilter::english();
-    /// assert_eq!(filter.len(), 171);
-    ///
-    /// let custom = StopWordsFilter::new(vec!["foo", "bar"]);
-    /// assert_eq!(custom.len(), 2);
-    /// ```
+    /// Number of stop words in this filter.
     #[must_use]
     pub fn len(&self) -> usize {
         self.stop_words.len()
     }
 
-    /// Check if the filter is empty.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use aprender::text::stopwords::StopWordsFilter;
-    ///
-    /// let empty = StopWordsFilter::new(Vec::<String>::new());
-    /// assert!(empty.is_empty());
-    ///
-    /// let english = StopWordsFilter::english();
-    /// assert!(!english.is_empty());
-    /// ```
+    /// Returns `true` if this filter contains no stop words.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.stop_words.is_empty()
@@ -244,22 +155,12 @@ impl StopWordsFilter {
 
 /// Default English stop words (171 common words).
 ///
-/// Based on NLTK and scikit-learn stop word lists, covering:
-/// - Articles: a, an, the
-/// - Pronouns: i, you, he, she, it, we, they
-/// - Prepositions: in, on, at, by, for, with, to, from
-/// - Conjunctions: and, or, but, if, because
-/// - Common verbs: is, are, was, were, be, been, being, have, has, had, do, does, did
-/// - Common adverbs: not, no, yes, very, too, so
-/// - Question words: what, when, where, why, how, who, which
-///
-/// # Examples
+/// Based on NLTK and scikit-learn stop word lists, covering articles, pronouns,
+/// prepositions, conjunctions, common verbs, adverbs/adjectives, and question words.
 ///
 /// ```
 /// use aprender::text::stopwords::ENGLISH_STOP_WORDS;
-///
 /// assert!(ENGLISH_STOP_WORDS.contains(&"the"));
-/// assert!(ENGLISH_STOP_WORDS.contains(&"and"));
 /// assert!(!ENGLISH_STOP_WORDS.contains(&"machine"));
 /// ```
 pub const ENGLISH_STOP_WORDS: &[&str] = &[
