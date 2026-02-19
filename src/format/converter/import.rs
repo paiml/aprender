@@ -51,14 +51,7 @@ pub fn apr_import<P: AsRef<Path>>(
 
     // PMAT-SAFETENSORS-TOK-001: For HuggingFace SafeTensors imports, try to find
     // tokenizer.json from the same repo if not found as sibling file
-    if load_result.tokenizer.is_none() {
-        if let Source::HuggingFace { org, repo, .. } = &parsed_source {
-            // Try to find tokenizer.json in HuggingFace cache for this repo
-            if let Some(tokenizer_path) = find_in_cache(org, repo, "tokenizer.json") {
-                load_result.tokenizer = load_tokenizer_from_json(&tokenizer_path);
-            }
-        }
-    }
+    resolve_hf_tokenizer_fallback(&mut load_result, &parsed_source);
 
     // PMAT-224: Warn about unverified architectures before proceeding
     let effective_arch = infer_architecture(
@@ -270,6 +263,14 @@ fn enforce_arch_completeness_gate(
     let Some(num_layers) = config.num_layers else {
         return Ok(()); // Can't check without layer count
     };
+    // Skip if model has no layer tensors — a config.json may describe layers
+    // that aren't present in this particular file (e.g., standalone embeddings)
+    let has_layers = tensors
+        .keys()
+        .any(|n| n.contains("model.layers.") || n.contains("blk."));
+    if !has_layers {
+        return Ok(());
+    }
     let names: Vec<&str> = tensors.keys().map(String::as_str).collect();
     crate::format::layout_contract::enforce_architecture_completeness(&names, arch_key, num_layers)
         .map_err(|e| AprenderError::FormatError {
@@ -289,11 +290,31 @@ fn enforce_arch_completeness_gate_f32(
     let Some(num_layers) = config.num_layers else {
         return Ok(());
     };
+    // Skip if model has no layer tensors — a config.json may describe layers
+    // that aren't present in this particular file (e.g., standalone embeddings)
+    let has_layers = tensors
+        .keys()
+        .any(|n| n.contains("model.layers.") || n.contains("blk."));
+    if !has_layers {
+        return Ok(());
+    }
     let names: Vec<&str> = tensors.keys().map(String::as_str).collect();
     crate::format::layout_contract::enforce_architecture_completeness(&names, arch_key, num_layers)
         .map_err(|e| AprenderError::FormatError {
             message: format!("GH-279 architecture completeness gate: {e}"),
         })
+}
+
+/// PMAT-SAFETENSORS-TOK-001: Try to find tokenizer.json from HF cache for this repo.
+fn resolve_hf_tokenizer_fallback(load_result: &mut SourceLoadResult, source: &Source) {
+    if load_result.tokenizer.is_some() {
+        return;
+    }
+    if let Source::HuggingFace { org, repo, .. } = source {
+        if let Some(tokenizer_path) = find_in_cache(org, repo, "tokenizer.json") {
+            load_result.tokenizer = load_tokenizer_from_json(&tokenizer_path);
+        }
+    }
 }
 
 /// Resolve a source to a local file path

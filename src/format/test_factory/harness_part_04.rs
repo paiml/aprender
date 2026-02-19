@@ -33,10 +33,11 @@ fn test_f_conv_04_strict_missing_norm() {
     );
 
     // Verify the error message mentions the missing tensor
+    // GH-279: completeness gate now catches missing layer norms before the final norm check
     let err_msg = result.unwrap_err().to_string();
     assert!(
-        err_msg.contains("model.norm.weight"),
-        "Error should mention missing tensor: {err_msg}"
+        err_msg.contains("attn_norm") || err_msg.contains("model.norm.weight"),
+        "Error should mention missing norm tensor: {err_msg}"
     );
 }
 

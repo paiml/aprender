@@ -183,36 +183,39 @@ pub fn enforce_matmul_contract(
 ///
 /// Returns the per-layer tensor name patterns that MUST be present for the
 /// given architecture features. Uses `{i}` as a placeholder for layer index.
+/// APR-style and HF-style name pairs for the same role.
+/// Each entry is (apr_pattern, hf_pattern) where {i} = layer index.
 #[must_use]
-fn required_tensor_patterns(has_qk_norm: bool, has_bias: bool) -> Vec<&'static str> {
-    let mut patterns = vec![
-        // Always required: layer norms
-        "blk.{i}.attn_norm.weight",
-        "blk.{i}.ffn_norm.weight",
-        // Always required: attention projections
-        "blk.{i}.attn_q.weight",
-        "blk.{i}.attn_k.weight",
-        "blk.{i}.attn_v.weight",
-        "blk.{i}.attn_output.weight",
-        // Always required: FFN projections (SwiGLU)
-        "blk.{i}.ffn_gate.weight",
-        "blk.{i}.ffn_up.weight",
-        "blk.{i}.ffn_down.weight",
+fn required_tensor_pattern_pairs(has_qk_norm: bool, has_bias: bool) -> Vec<(&'static str, &'static str)> {
+    let mut pairs = vec![
+        // Layer norms
+        ("blk.{i}.attn_norm.weight", "model.layers.{i}.input_layernorm.weight"),
+        ("blk.{i}.ffn_norm.weight", "model.layers.{i}.post_attention_layernorm.weight"),
+        // Attention projections
+        ("blk.{i}.attn_q.weight", "model.layers.{i}.self_attn.q_proj.weight"),
+        ("blk.{i}.attn_k.weight", "model.layers.{i}.self_attn.k_proj.weight"),
+        ("blk.{i}.attn_v.weight", "model.layers.{i}.self_attn.v_proj.weight"),
+        ("blk.{i}.attn_output.weight", "model.layers.{i}.self_attn.o_proj.weight"),
+        // FFN projections (SwiGLU)
+        ("blk.{i}.ffn_gate.weight", "model.layers.{i}.mlp.gate_proj.weight"),
+        ("blk.{i}.ffn_up.weight", "model.layers.{i}.mlp.up_proj.weight"),
+        ("blk.{i}.ffn_down.weight", "model.layers.{i}.mlp.down_proj.weight"),
     ];
 
     if has_qk_norm {
-        patterns.push("blk.{i}.attn_q_norm.weight");
-        patterns.push("blk.{i}.attn_k_norm.weight");
+        pairs.push(("blk.{i}.attn_q_norm.weight", "model.layers.{i}.self_attn.q_norm.weight"));
+        pairs.push(("blk.{i}.attn_k_norm.weight", "model.layers.{i}.self_attn.k_norm.weight"));
     }
 
     if has_bias {
-        patterns.push("blk.{i}.attn_q.bias");
-        patterns.push("blk.{i}.attn_k.bias");
-        patterns.push("blk.{i}.attn_v.bias");
+        pairs.push(("blk.{i}.attn_q.bias", "model.layers.{i}.self_attn.q_proj.bias"));
+        pairs.push(("blk.{i}.attn_k.bias", "model.layers.{i}.self_attn.k_proj.bias"));
+        pairs.push(("blk.{i}.attn_v.bias", "model.layers.{i}.self_attn.v_proj.bias"));
     }
 
-    patterns
+    pairs
 }
+
 
 /// GH-279: Enforce architecture completeness at import/export boundary.
 ///
@@ -245,16 +248,20 @@ pub fn enforce_architecture_completeness(
         _ => (false, false), // LLaMA, Mistral, Gemma, etc.
     };
 
-    let patterns = required_tensor_patterns(has_qk_norm, has_bias);
+    let pairs = required_tensor_pattern_pairs(has_qk_norm, has_bias);
 
     for layer_idx in 0..num_layers {
-        for pattern in &patterns {
-            let expected_name = pattern.replace("{i}", &layer_idx.to_string());
-            if !tensor_names.iter().any(|n| *n == expected_name) {
+        for (apr_pat, hf_pat) in &pairs {
+            let apr_name = apr_pat.replace("{i}", &layer_idx.to_string());
+            let hf_name = hf_pat.replace("{i}", &layer_idx.to_string());
+            // Accept EITHER APR-style or HF-style naming
+            let found = tensor_names.iter().any(|n| *n == apr_name || *n == hf_name);
+            if !found {
                 return Err(ContractError::TransposeError {
-                    tensor: expected_name,
+                    tensor: apr_name,
                     message: format!(
                         "GH-279: Missing required tensor for architecture '{}' \
+                         (checked both APR and HF naming) \
                          — see contracts/architecture-requirements-v1.yaml",
                         architecture
                     ),
@@ -272,25 +279,6 @@ mod architecture_completeness_tests {
 
     #[test]
     fn test_llama_base_complete() {
-        let names: Vec<&str> = (0..2)
-            .flat_map(|i| {
-                vec![
-                    format!("blk.{i}.attn_norm.weight"),
-                    format!("blk.{i}.ffn_norm.weight"),
-                    format!("blk.{i}.attn_q.weight"),
-                    format!("blk.{i}.attn_k.weight"),
-                    format!("blk.{i}.attn_v.weight"),
-                    format!("blk.{i}.attn_output.weight"),
-                    format!("blk.{i}.ffn_gate.weight"),
-                    format!("blk.{i}.ffn_up.weight"),
-                    format!("blk.{i}.ffn_down.weight"),
-                ]
-            })
-            .collect::<Vec<String>>()
-            .iter()
-            .map(String::as_str)
-            .collect::<Vec<&str>>();
-        // Need to keep owned strings alive
         let owned: Vec<String> = (0..2)
             .flat_map(|i| {
                 vec![

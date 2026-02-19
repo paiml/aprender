@@ -318,8 +318,6 @@ fn t_gh192_02_sequential_model_size_switching() {
 fn t_gh194_01_safetensors_apr_preserves_tensor_count() {
     use crate::format::tensors::{list_tensors_from_bytes, TensorListOptions};
     use crate::format::test_factory::{build_pygmy_safetensors_with_config, PygmyConfig};
-    use std::io::Write;
-    use tempfile::NamedTempFile;
 
     // Use realistic config to ensure we have a meaningful number of tensors
     let config = PygmyConfig::realistic();
@@ -336,20 +334,19 @@ fn t_gh194_01_safetensors_apr_preserves_tensor_count() {
         st_count
     );
 
-    // Write SafeTensors to temp file for import
-    let mut st_temp = NamedTempFile::with_suffix(".safetensors").expect("Create ST temp");
-    st_temp.write_all(&st_data).expect("Write ST data");
-    st_temp.flush().expect("Flush ST");
+    // Use isolated temp directory to prevent stale config.json from polluting
+    // architecture detection (the import pipeline looks for sibling config.json)
+    let work_dir = tempfile::tempdir().expect("Create temp dir");
+    let st_path = work_dir.path().join("model.safetensors");
+    std::fs::write(&st_path, &st_data).expect("Write ST data");
 
-    // Import SafeTensors to APR
-    let apr_temp = NamedTempFile::with_suffix(".apr").expect("Create APR temp");
-    let apr_path = apr_temp.path().to_path_buf();
+    let apr_path = work_dir.path().join("output.apr");
 
     use crate::format::converter::apr_import;
     use crate::format::converter_types::{Architecture, ImportOptions};
 
     let import_result = apr_import(
-        st_temp.path().to_str().expect("Path to string"),
+        st_path.to_str().expect("Path to string"),
         &apr_path,
         ImportOptions {
             architecture: Architecture::Auto,
