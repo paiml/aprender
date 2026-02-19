@@ -403,7 +403,7 @@ fn generate_algebraic_proofs(f: &FamilyData) -> String {
         ("gated_mlp", "silu") => true, // Moonshine decoder: SiLU-gated MLP
         // Unknown MLP types pass (future-proof for new architectures)
         (mlp, _) if mlp != "swiglu" && mlp != "gelu_mlp" && mlp != "gated_mlp" => true,
-        // Case: Known MLP type with WRONG activation — this is the bug we catch
+        // Known MLP type with mismatched activation — report mismatch
         _ => false,
     };
     assert!(
