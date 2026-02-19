@@ -141,8 +141,9 @@ impl Delta {
     /// - 1.0: identical direction
     /// - 0.0: orthogonal
     /// - -1.0: opposite direction
-    #[must_use]
+    ///
     /// ONE PATH: Delegates to `nn::functional::cosine_similarity_slice` (UCBD §4).
+    #[must_use]
     pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
         crate::nn::functional::cosine_similarity_slice(a, b)
     }

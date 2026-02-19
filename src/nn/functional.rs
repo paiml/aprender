@@ -176,11 +176,7 @@ pub fn tanh(x: &Tensor) -> Tensor {
 #[must_use]
 pub fn gelu(x: &Tensor) -> Tensor {
     // ONE PATH: Per-element delegates to trueno::gelu_scalar (UCBD §4).
-    let data: Vec<f32> = x
-        .data()
-        .iter()
-        .map(|&v| trueno::gelu_scalar(v))
-        .collect();
+    let data: Vec<f32> = x.data().iter().map(|&v| trueno::gelu_scalar(v)).collect();
 
     Tensor::new(&data, x.shape())
 }
