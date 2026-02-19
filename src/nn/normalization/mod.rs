@@ -286,7 +286,10 @@ impl Module for BatchNorm1d {
             let (mean, var) = if self.training {
                 let sum: f32 = indices.iter().map(|&i| input_data[i]).sum();
                 let mean = sum / indices.len() as f32;
-                let var_sum: f32 = indices.iter().map(|&i| (input_data[i] - mean).powi(2)).sum();
+                let var_sum: f32 = indices
+                    .iter()
+                    .map(|&i| (input_data[i] - mean).powi(2))
+                    .sum();
                 (mean, var_sum / indices.len() as f32)
             } else {
                 (self.running_mean.data()[f], self.running_var.data()[f])
