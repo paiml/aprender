@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Cross-Format Parity Tests
 //!
 //! These tests verify that GGUF, SafeTensors, and APR formats produce

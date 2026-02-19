@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 // Contract-driven property tests for aprender kernels.
 //
 // These tests enforce the YAML kernel contracts from

@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Cross-Architecture Determinism Tests (GH-203, PMAT-192)
 //!
 //! Tests for verifying reproducible inference across different architectures.

@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Integration tests for Aprender ML library.
 //!
 //! These tests verify end-to-end workflows combining multiple components.

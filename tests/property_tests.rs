@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Property-based tests using proptest.
 //!
 //! These tests verify invariants and properties of the ML algorithms.

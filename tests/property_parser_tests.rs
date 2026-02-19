@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Property-Based Parser Tests
 //!
 //! Uses proptest to verify parser invariants with random inputs.

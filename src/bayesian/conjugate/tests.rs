@@ -450,5 +450,4 @@ fn test_normal_inverse_gamma_posterior_mean_mu() {
 }
 
 #[path = "tests_part_02.rs"]
-
 mod tests_part_02;

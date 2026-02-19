@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! GH-202: End-to-End Tensor Comparison Test
 //!
 //! This integration test verifies GGUF→APR conversion produces correct tensor values

@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Chat Template Usage Tests
 //!
 //! These tests validate the chat template examples in the EXTREME TDD book.

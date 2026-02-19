@@ -54,7 +54,7 @@
         Architecture::split_gpt2_fused_qkv_raw(&mut tensors);
 
         assert_eq!(tensors.len(), 3);
-        for (_, t) in &tensors {
+        for t in tensors.values() {
             assert_eq!(t.dtype, 12, "dtype should be preserved after split");
         }
     }

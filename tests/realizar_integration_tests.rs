@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Realizar Integration Tests - Section S of EOY 2025 Specification
 //!
 //! These tests verify the Realizar-First Architecture mandate per spec v2.0.0.

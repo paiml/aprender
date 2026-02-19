@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Bug Regression Test Suite — Never Again
 //!
 //! Each test encodes a specific historical bug from the showcase spec.

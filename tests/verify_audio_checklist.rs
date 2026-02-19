@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 #![cfg(feature = "audio")]
 
 use aprender::audio::mel::{

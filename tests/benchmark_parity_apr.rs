@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! APR vs GGUF Format Parity Benchmark (T-QA-022)
 //!
 //! This benchmark compares performance of APR and GGUF formats to verify

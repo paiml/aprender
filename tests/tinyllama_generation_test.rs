@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! TinyLlama tokenizer test
 //!
 //! Tests that the LlamaTokenizer correctly loads from GGUF and encodes/decodes.

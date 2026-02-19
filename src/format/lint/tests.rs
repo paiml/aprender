@@ -442,7 +442,6 @@ fn test_lint_large_compressed_tensor_passes() {
 }
 
 #[path = "tests_part_02.rs"]
-
 mod tests_part_02;
 #[path = "tests_part_03.rs"]
 mod tests_part_03;

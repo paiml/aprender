@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! F041-F060: Backend Correctness Falsification Tests
 //!
 //! Per spec: docs/specifications/qwen2.5-coder-showcase-demo.md §9.4

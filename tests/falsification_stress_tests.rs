@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Falsification: Stress & Endurance Tests
 //!
 //! Tests for long sessions, large prompts, token limits, and concurrency.

@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Toyota Way Principles Verification Tests (P1-P14)
 //!
 //! These tests verify adherence to the 14 Toyota Production System principles

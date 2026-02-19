@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 // GitHub Issue #8: Complete SafeTensors Model Serialization
 // Tests for ElasticNet SafeTensors export functionality
 //

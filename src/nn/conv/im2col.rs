@@ -209,7 +209,7 @@ mod tests {
     fn test_im2col_2d_with_padding() {
         // 1 channel, 2x2 input, 3x3 kernel, stride 1, padding 1
         let input = [1.0, 2.0, 3.0, 4.0];
-        let (col, col_h, col_w) = im2col_2d(&input, 1, 2, 2, 3, 3, 1, 1, 1, 1);
+        let (_col, col_h, col_w) = im2col_2d(&input, 1, 2, 2, 3, 3, 1, 1, 1, 1);
 
         // out_h = (2+2-3)/1+1 = 2, out_w = (2+2-3)/1+1 = 2
         assert_eq!(col_h, 9); // 1*3*3

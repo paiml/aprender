@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 use aprender::text::chat_template::{
     ChatMessage, ChatTemplateEngine, HuggingFaceTemplate, SpecialTokens, TemplateFormat,
 };

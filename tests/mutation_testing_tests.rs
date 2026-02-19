@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Mutation Testing Verification Tests (MUT-01 to MUT-15)
 //!
 //! These tests verify mutation testing infrastructure and create mutation-sensitive

@@ -447,7 +447,6 @@ fn test_showcase_runner_to_grid_with_both_stats() {
 }
 
 #[path = "tests_part_02.rs"]
-
 mod tests_part_02;
 #[path = "tests_part_03.rs"]
 mod tests_part_03;

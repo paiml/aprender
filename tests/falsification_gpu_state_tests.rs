@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Falsification: GPU State Isolation Tests
 //!
 //! Tests that GPU state does not leak between generations.

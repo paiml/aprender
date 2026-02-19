@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Property-based tests for chaos engineering infrastructure
 //!
 //! Tests chaos configuration using proptest to verify invariants

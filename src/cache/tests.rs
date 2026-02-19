@@ -447,7 +447,6 @@ fn test_model_registry_l2_operations() {
 }
 
 #[path = "tests_part_02.rs"]
-
 mod tests_part_02;
 #[path = "tests_part_03.rs"]
 mod tests_part_03;

@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Popperian Falsification Tests — Compiler-Enforced Model Types & Model Oracle
 //!
 //! Per Popper (1959), each validation rule must make a prediction that could be

@@ -432,5 +432,4 @@ fn test_model_zoo_type_all_variants_name() {
 }
 
 #[path = "tests_part_02.rs"]
-
 mod tests_part_02;

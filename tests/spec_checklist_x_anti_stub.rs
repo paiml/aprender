@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Spec Checklist Tests - Section X: Anti-Stub & Architecture Integrity (10 points)
 //!
 //! These tests verify claims from the spec's falsification checklist.

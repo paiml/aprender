@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! F001-F020: Brick Core Invariants Falsification Tests
 //!
 //! Per spec: docs/specifications/qwen2.5-coder-showcase-demo.md §9.4

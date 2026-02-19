@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Format Parity Tests (Section Y: Y1-Y10)
 //!
 //! These tests verify that APR format achieves performance parity with GGUF

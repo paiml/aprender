@@ -437,5 +437,4 @@ fn test_shard_index_default() {
 }
 
 #[path = "tests_part_02.rs"]
-
 mod tests_part_02;

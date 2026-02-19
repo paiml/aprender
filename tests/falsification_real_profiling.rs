@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! F-PROF-001: True Per-Brick Profiling Falsification Test
 //!
 //! Per spec: docs/specifications/qwen2.5-coder-showcase-demo.md §6.8

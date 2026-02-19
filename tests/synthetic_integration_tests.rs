@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Integration tests for Synthetic Data Generation module.
 //!
 //! These tests verify end-to-end workflows for synthetic data generation,

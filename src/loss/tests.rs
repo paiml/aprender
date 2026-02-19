@@ -536,5 +536,4 @@ fn test_loss_trait_arc() {
 }
 
 #[path = "tests_part_02.rs"]
-
 mod tests_part_02;

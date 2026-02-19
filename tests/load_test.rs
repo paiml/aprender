@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Load Testing Infrastructure (GH-205, PMAT-194)
 //!
 //! Tests for concurrent request handling and server capacity.

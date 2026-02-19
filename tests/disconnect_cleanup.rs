@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Disconnect Cleanup Tests (GH-205, PMAT-194)
 //!
 //! Tests for zombie session detection and cleanup.

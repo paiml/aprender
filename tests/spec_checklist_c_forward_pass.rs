@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Spec Checklist Tests - Section C: Forward Pass (25 points)
 //!
 //! These tests verify claims from the spec's falsification checklist.

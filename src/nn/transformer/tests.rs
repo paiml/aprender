@@ -1,7 +1,7 @@
 //\! Transformer Tests - Extreme TDD
 //\! PMAT-085: Extracted from mod.rs for PMAT file health compliance
 
-pub(crate) use super::*;
+use super::*;
 
 #[test]
 fn test_multi_head_attention_shape() {

@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Tests for "Linear Regression Theory" chapter
 //!
 //! Chapter: book/src/ml-fundamentals/linear-regression.md

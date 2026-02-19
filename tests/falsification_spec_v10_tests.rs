@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Popperian Falsification Tests -- Showcase Spec v10.4.0 (119 Gates)
 //!
 //! This file implements ALL 119 falsification gates from:
@@ -1168,7 +1169,6 @@ fn f_checklist_004_falsification_depth_ge_level_5() {
     );
 }
 
-#[test]
 fn is_satd_marker(trimmed: &str, marker: &str) -> bool {
     let Some(pos) = trimmed.find(marker) else {
         return false;
@@ -1432,13 +1432,12 @@ fn f_ollama_001_token_level_parity_at_temp_zero() {
         .output();
     let ollama_text = match ollama_out {
         Ok(o) if o.status.success() => {
-            let body = String::from_utf8_lossy(&o.stdout).to_string();
+            let body = String::from_utf8_lossy(&o.stdout).into_owned();
             body.split("\"response\":\"")
                 .nth(1)
                 .and_then(|s| s.split("\",\"").next())
                 .unwrap_or("")
                 .replace("\\n", "\n")
-                .to_string()
         }
         _ => {
             eprintln!("SKIP: ollama API not reachable");
@@ -1518,11 +1517,11 @@ fn f_ollama_002_apr_throughput_ge_50_percent_of_ollama() {
         .output();
     let ollama_tps = match ollama_out {
         Ok(o) if o.status.success() => {
-            let body = String::from_utf8_lossy(&o.stdout).to_string();
+            let body = String::from_utf8_lossy(&o.stdout).into_owned();
             let parse_json_num = |body: &str, key: &str| -> f64 {
                 body.split(&format!("\"{}\":", key))
                     .nth(1)
-                    .and_then(|s| s.split(|c: char| c == ',' || c == '}').next())
+                    .and_then(|s| s.split([',', '}']).next())
                     .and_then(|s| s.trim().parse().ok())
                     .unwrap_or(0.0)
             };
@@ -1611,11 +1610,11 @@ fn f_ollama_003_ttft_within_2x_of_ollama() {
         .output();
     let ollama_ttft_ms = match ollama_out {
         Ok(o) if o.status.success() => {
-            let body = String::from_utf8_lossy(&o.stdout).to_string();
+            let body = String::from_utf8_lossy(&o.stdout).into_owned();
             let parse_num = |body: &str, key: &str| -> f64 {
                 body.split(&format!("\"{}\":", key))
                     .nth(1)
-                    .and_then(|s| s.split(|c: char| c == ',' || c == '}').next())
+                    .and_then(|s| s.split([',', '}']).next())
                     .and_then(|s| s.trim().parse().ok())
                     .unwrap_or(0.0)
             };
@@ -1690,14 +1689,13 @@ fn f_ollama_004_api_response_content_matches() {
         .output();
     let ollama_content = match ollama_out {
         Ok(o) if o.status.success() => {
-            let body = String::from_utf8_lossy(&o.stdout).to_string();
+            let body = String::from_utf8_lossy(&o.stdout).into_owned();
             // Extract message.content from response
             body.split("\"content\":\"")
                 .nth(1)
                 .and_then(|s| s.split("\"}").next())
                 .unwrap_or("")
                 .replace("\\n", "\n")
-                .to_string()
         }
         _ => {
             eprintln!("SKIP: ollama API not reachable");
@@ -1759,14 +1757,13 @@ fn f_ollama_004_api_response_content_matches() {
 
     let apr_content = match apr_out {
         Ok(o) if o.status.success() => {
-            let body = String::from_utf8_lossy(&o.stdout).to_string();
+            let body = String::from_utf8_lossy(&o.stdout).into_owned();
             // OpenAI format: choices[0].message.content
             body.split("\"content\":\"")
                 .nth(1)
                 .and_then(|s| s.split('"').next())
                 .unwrap_or("")
                 .replace("\\n", "\n")
-                .to_string()
         }
         _ => String::new(),
     };

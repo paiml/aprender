@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Chat Template Probar Testing
 //!
 //! This module implements 100% probar playbook coverage for the chat template system.

@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! F101-F108: 2x Ollama Performance Falsification Tests
 //!
 //! Per spec: docs/specifications/qwen2.5-coder-showcase-demo.md §5.0

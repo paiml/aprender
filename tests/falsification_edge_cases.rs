@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Falsification Edge Case Matrix
 //!
 //! Tests edge cases for parsers, format detection, URI handling, and generation

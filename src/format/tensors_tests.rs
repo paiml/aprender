@@ -424,7 +424,6 @@ fn test_tensor_list_result_clone() {
 }
 
 #[path = "tensors_tests_part_02.rs"]
-
 mod tensors_tests_part_02;
 #[path = "tensors_tests_part_03.rs"]
 mod tensors_tests_part_03;

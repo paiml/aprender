@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Spec Checklist Tests - Section D: Generation & Quality (20 points)
 //!
 //! These tests verify claims from the spec's falsification checklist.

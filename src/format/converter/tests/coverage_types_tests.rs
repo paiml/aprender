@@ -447,7 +447,6 @@ fn test_compute_std_empty() {
 }
 
 #[path = "coverage_types_tests_part_02.rs"]
-
 mod coverage_types_tests_part_02;
 #[path = "coverage_types_tests_part_03.rs"]
 mod coverage_types_tests_part_03;

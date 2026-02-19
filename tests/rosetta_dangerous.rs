@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Rosetta Dangerous Tests (ROSETTA-001)
 //!
 //! "Bold conjectures, and severe attempts to refute them." — K. Popper

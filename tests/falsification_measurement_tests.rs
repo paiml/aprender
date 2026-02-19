@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! M001-M010: Measurement Tools (cbtop) Falsification Tests
 //!
 //! Per spec: docs/specifications/qwen2.5-coder-showcase-demo.md §9.4

@@ -49,10 +49,10 @@ proptest! {
     /// Formal: SiLU(0) = 0
     #[test]
     #[ignore = "SiLU not yet implemented in aprender::nn::functional"]
-    fn prop_silu_at_zero(_dummy in 0..1i32) {
+    fn prop_silu_at_zero(dummy in 0..1i32) {
         // SiLU(0) = 0 * sigmoid(0) = 0 * 0.5 = 0
         // Blocked: no public silu function
-        let _ = _dummy;
+        let _ = dummy;
     }
 
     /// Obligation: ReLU monotonic (monotonicity)
