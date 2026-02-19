@@ -1220,42 +1220,42 @@ This section tracks the algorithm contract implementation progress (Phase 6).
 
 | Contract | Equations | Key Invariants | Status |
 |----------|-----------|----------------|--------|
-| metrics-regression-v1 | r_squared, mse, mae, rmse | R²≤1, MSE≥0, MAE≤RMSE | **Not bound** |
-| metrics-classification-v1 | accuracy, precision, recall, f1, confusion_matrix, roc_auc | F1=harmonic_mean(P,R), accuracy∈[0,1] | **Not bound** |
-| metrics-clustering-v1 | silhouette_score, inertia, adjusted_rand | silhouette∈[-1,1], inertia≥0 | **Not bound** |
+| metrics-regression-v1 | r_squared, mse, mae, rmse | R²≤1, MSE≥0, MAE≤RMSE | Bound |
+| metrics-classification-v1 | accuracy, precision, recall, f1, confusion_matrix, roc_auc | F1=harmonic_mean(P,R), accuracy∈[0,1] | Bound |
+| metrics-clustering-v1 | silhouette_score, inertia, adjusted_rand | silhouette∈[-1,1], inertia≥0 | Bound |
 
 ### Tier A2: Loss & Activation (2 contracts, ~10 equations)
 
 | Contract | Equations | Key Invariants | Status |
 |----------|-----------|----------------|--------|
-| loss-functions-v1 | bce, nll, huber, smooth_l1, l1_loss, mse_loss | all≥0, bce=-Σ[y·log(ŷ)+(1-y)·log(1-ŷ)] | **Not bound** |
-| normalization-v1 | rmsnorm_forward, layernorm_forward, groupnorm_forward | output_shape=input_shape, unit_variance | **Not bound** |
+| loss-functions-v1 | bce, nll, huber, smooth_l1, l1_loss, mse_loss | all≥0, bce=-Σ[y·log(ŷ)+(1-y)·log(1-ŷ)] | Bound |
+| normalization-v1 | rmsnorm_forward, layernorm_forward, groupnorm_forward | output_shape=input_shape, unit_variance | Bound |
 
 ### Tier A3: Supervised Learning (5 contracts, ~25 equations)
 
 | Contract | Equations | Key Invariants | Status |
 |----------|-----------|----------------|--------|
-| decision-tree-v1 | gini_impurity, entropy, information_gain, cart_split | gini∈[0,0.5], entropy≥0, IG≥0 | **Not bound** |
+| decision-tree-v1 | gini_impurity, entropy, information_gain, cart_split | gini∈[0,0.5], entropy≥0, IG≥0 | Bound |
 | random-forest-v1 | bootstrap_aggregation, oob_error, feature_importance | importance sums to 1, oob∈[0,1] | **Not bound** |
-| naive-bayes-v1 | gaussian_posterior, prior_update, log_likelihood | posterior∝prior×likelihood | **Not bound** |
-| linear-models-v1 | ols_normal_eq, ridge_penalty, logistic_sigmoid | β=(X^TX)^{-1}X^Ty, σ∈(0,1) | **Not bound** |
-| svm-v1 | hinge_loss, rbf_kernel, polynomial_kernel, margin | hinge≥0, kernel positive semi-definite | **Not bound** |
+| naive-bayes-v1 | gaussian_posterior, prior_update, log_likelihood | posterior∝prior×likelihood | Bound |
+| linear-models-v1 | ols_normal_eq, ridge_penalty, logistic_sigmoid | β=(X^TX)^{-1}X^Ty, σ∈(0,1) | Bound |
+| svm-v1 | hinge_loss, rbf_kernel, polynomial_kernel, margin | hinge≥0, kernel positive semi-definite | Bound |
 
 ### Tier A4: Unsupervised & Decomposition (3 contracts, ~12 equations)
 
 | Contract | Equations | Key Invariants | Status |
 |----------|-----------|----------------|--------|
-| pca-v1 | eigendecomposition, explained_variance, projection | Σ explained_var = 1, orthogonal components | **Not bound** |
-| ica-v1 | negentropy, fastica_iteration, whitening | independence maximized, E[s]=0 | **Not bound** |
+| pca-v1 | eigendecomposition, explained_variance, projection | Σ explained_var = 1, orthogonal components | Bound |
+| ica-v1 | negentropy, fastica_iteration, whitening | independence maximized, E[s]=0 | Bound |
 | gbm-v1 | gradient_boost, shrinkage, negative_gradient | loss non-increasing per stage | **Not bound** |
 
 ### Tier A5: Graph & Optimization (3 contracts, ~15 equations)
 
 | Contract | Equations | Key Invariants | Status |
 |----------|-----------|----------------|--------|
-| graph-centrality-v1 | degree, betweenness, closeness, eigenvector, katz, harmonic | all≥0, betweenness∈[0,1] normalized | **Not bound** |
+| graph-centrality-v1 | degree, betweenness, closeness, eigenvector, katz, harmonic | all≥0, betweenness∈[0,1] normalized | Bound |
 | optimization-v1 | conjugate_gradient, gradient_descent, newtons_method | convergence: f(x_{k+1})≤f(x_k) | **Not bound** |
-| calibration-v1 | platt_scaling, isotonic, temperature, ece, brier_score | calibrated P(y|p)≈p, ECE≥0, Brier∈[0,1] | **Not bound** |
+| calibration-v1 | platt_scaling, isotonic, temperature, ece, brier_score | calibrated P(y|p)≈p, ECE≥0, Brier∈[0,1] | Bound |
 
 ### Tier A6: Specialized (5 contracts, ~20 equations)
 
