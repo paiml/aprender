@@ -145,6 +145,19 @@ pub fn softmax_1d_f64(logits: &[f64]) -> Vec<f64> {
     exp.iter().map(|&x| x / sum).collect()
 }
 
+/// Log-softmax on a 1D slice of f32 values.
+///
+/// ONE PATH: All slice-based log-softmax MUST delegate here (UCBD §4).
+///
+/// More numerically stable than log(softmax(x)).
+/// Equation: log\_softmax(x)\_i = x\_i - max - log(sum exp(x\_j - max))
+#[must_use]
+pub fn log_softmax_1d(logits: &[f32]) -> Vec<f32> {
+    let max = logits.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b));
+    let log_sum_exp: f32 = logits.iter().map(|&x| (x - max).exp()).sum::<f32>().ln();
+    logits.iter().map(|&x| x - max - log_sum_exp).collect()
+}
+
 /// Tanh activation
 #[must_use]
 pub fn tanh(x: &Tensor) -> Tensor {

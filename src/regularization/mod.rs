@@ -97,19 +97,21 @@ impl LabelSmoothing {
 }
 
 /// Cross-entropy loss with label smoothing.
+///
+/// ONE PATH: Uses `nn::functional::log_softmax_1d` for numerical stability (UCBD §4).
 #[must_use]
 pub fn cross_entropy_with_smoothing(logits: &Vector<f32>, target_idx: usize, epsilon: f32) -> f32 {
     let n_classes = logits.len();
-    let probs = softmax(logits.as_slice());
+    let log_probs = crate::nn::functional::log_softmax_1d(logits.as_slice());
 
     let mut loss = 0.0;
-    for (i, &p) in probs.iter().enumerate() {
+    for (i, &lp) in log_probs.iter().enumerate() {
         let target = if i == target_idx {
             1.0 - epsilon + epsilon / n_classes as f32
         } else {
             epsilon / n_classes as f32
         };
-        loss -= target * p.max(1e-10).ln();
+        loss -= target * lp;
     }
     loss
 }
@@ -152,11 +154,6 @@ fn sample_normal(rng: &mut impl Rng) -> f32 {
     let u1: f32 = rng.gen::<f32>().max(1e-10);
     let u2: f32 = rng.gen();
     (-2.0 * u1.ln()).sqrt() * (2.0 * std::f32::consts::PI * u2).cos()
-}
-
-/// ONE PATH: Delegates to `nn::functional::softmax_1d` (UCBD §4).
-fn softmax(logits: &[f32]) -> Vec<f32> {
-    crate::nn::functional::softmax_1d(logits)
 }
 
 /// `CutMix` data augmentation (Yun et al., 2019).

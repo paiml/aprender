@@ -231,30 +231,17 @@ pub fn cross_entropy_loss(y_pred: &Vector<f32>, y_true: &Vector<f32>) -> f32 {
     );
     assert!(!y_pred.is_empty(), "Vectors cannot be empty");
 
-    // Numerically stable log-softmax: log(softmax(x_i)) = x_i - max(x) - log(sum(exp(x_j - max(x))))
-    let mut max_val = f32::NEG_INFINITY;
-    for i in 0..y_pred.len() {
-        if y_pred[i] > max_val {
-            max_val = y_pred[i];
-        }
-    }
-
-    let mut exp_sum = 0.0f32;
-    for i in 0..y_pred.len() {
-        exp_sum += (y_pred[i] - max_val).exp();
-    }
-    let log_sum_exp = max_val + exp_sum.ln();
+    // ONE PATH: Delegates log-softmax computation to nn::functional (UCBD §4).
+    let log_probs = crate::nn::functional::log_softmax_1d(y_pred.as_slice());
 
     // CE = -sum(y_true_i * log_softmax(y_pred_i))
-    let mut loss = 0.0f32;
-    for i in 0..y_pred.len() {
-        if y_true[i] > 0.0 {
-            let log_softmax_i = y_pred[i] - log_sum_exp;
-            loss -= y_true[i] * log_softmax_i;
-        }
-    }
-
-    loss
+    y_true
+        .as_slice()
+        .iter()
+        .zip(log_probs.iter())
+        .filter(|(&y, _)| y > 0.0)
+        .map(|(&y, &lp)| -y * lp)
+        .sum()
 }
 
 /// Trait for loss functions.
