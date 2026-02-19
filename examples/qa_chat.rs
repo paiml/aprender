@@ -445,5 +445,4 @@ fn print_summary(results: &[TestResult]) {
     }
 }
 
-
 include!("includes/qa_chat_include_01.rs");
