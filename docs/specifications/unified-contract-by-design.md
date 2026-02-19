@@ -832,10 +832,10 @@ MQS certification
 6. ~~42 contract test files with 164 passing falsification tests~~ Done
 7. ~~`pmat comply check`: COMPLIANT~~ Done
 
-### Phase 5: build.rs Hard Enforcement (pending SSM implementation)
+### Phase 5: build.rs Hard Enforcement
 
-1. Enable `build.rs` hard error for missing contracts — requires SSM implementation
-2. Enable cross-crate parity verification
+1. ~~Enable `build.rs` hard error for missing contracts~~ Done — AllImplemented policy with ALLOWED_GAPS (Step 6.7)
+2. ~~Enable cross-crate parity verification~~ Done — aprender + realizar + trueno all build with 236/239 bindings
 3. Run full QA playbook certification pass
 4. Tag release
 
