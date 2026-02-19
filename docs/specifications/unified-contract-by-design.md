@@ -1,7 +1,7 @@
 # Unified Contract-by-Design Specification
 
 **Version**: 2.0.0
-**Status**: Phase 4 Complete (kernels), Phase 6 Complete (algorithms P0-P3). Kernels: 197/203 bindings (97.0%), 24 `#[contract]` annotations. Algorithms: 21/24 contracts Bound, ~100 equations, 100 FALSIFY tests across 21 contract test files. Total: 264 contract tests passing. Remaining unbound: active-learning-v1, gnn-v1, metaheuristics-v1 (no implementation).
+**Status**: Phase 4 Complete (kernels), Phase 6 Complete (algorithms P0-P3), Step 6.7 AllImplemented enforced. Bindings: 236/239 implemented (3 allowed gaps). 24 `#[contract]` annotations. 21/24 algorithm contracts Bound, ~100 equations, 100 FALSIFY tests. Total: 264 contract tests passing. Remaining unbound: active-learning-v1, gnn-v1, metaheuristics-v1 (no implementation).
 **Created**: 2026-02-19
 **Updated**: 2026-02-19
 **Scope**: trueno, realizar, aprender, entrenar, whisper.apr
@@ -851,7 +851,7 @@ MQS certification
 8. **P3 contracts** (8 YAMLs): arima-v1, bayesian-v1, glm-v1, drift-detection-v1, metrics-ranking-v1, gbm-v1, optimization-v1, random-forest-v1 — DONE
 9. **P3 annotations + tests**: 33 FALSIFY-* tests passing — DONE
 10. **Binding registration**: ~70 algorithm equations in binding.yaml — DONE
-11. **Hard enforcement**: `build.rs` requires all algorithm bindings implemented — PENDING (Step 6.7)
+11. **Hard enforcement**: `build.rs` AllImplemented policy — 236/239 implemented, 3 allowed gaps (SSM, robust_scaler) — DONE
 
 ---
 

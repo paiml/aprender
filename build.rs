@@ -8,8 +8,8 @@
 //!
 //! 2. **Provable-contracts bindings**: Reads `binding.yaml` from the sibling
 //!    `provable-contracts` repo and sets `CONTRACT_*` env vars consumed by the
-//!    `#[contract]` proc macro. Policy: WarnOnGaps (Phase 4) — warnings for
-//!    partial/not_implemented bindings, no hard build failures.
+//!    `#[contract]` proc macro. Policy: AllImplemented (Step 6.7) — any
+//!    `not_implemented` binding NOT in ALLOWED_GAPS fails the build.
 //!
 //! The env vars follow the pattern:
 //!   `CONTRACT_<CONTRACT_STEM>_<EQUATION>=<status>`
@@ -57,10 +57,93 @@ fn binding_env_var_name(contract: &str, equation: &str) -> String {
     format!("CONTRACT_{stem}_{eq}")
 }
 
+/// Contracts allowed to remain `not_implemented` without failing the build.
+/// Each entry is `(contract_stem, equation)`. Any `not_implemented` binding
+/// NOT in this list triggers a hard build failure (AllImplemented policy).
+const ALLOWED_GAPS: &[(&str, &str)] = &[
+    // SSM/Mamba kernel — no implementation yet (GH-278 tracks Gated Delta Net)
+    ("ssm-kernel-v1", "ssm_discretize"),
+    ("ssm-kernel-v1", "ssm_scan"),
+    ("ssm-kernel-v1", "selective_gate"),
+    // Preprocessing — RobustScaler not yet implemented
+    ("preprocessing-normalization-v1", "robust_scaler"),
+];
+
+/// Returns true if the new status is dominated by what we already have.
+fn is_status_dominated(existing: Option<&str>, new: &str) -> bool {
+    match (existing, new) {
+        (None, _) => false,                        // first time
+        (Some("implemented"), _) => true,          // already best
+        (Some("partial"), "implemented") => false,  // upgrade
+        (Some("partial"), _) => true,              // keep partial
+        (Some("not_implemented"), "not_implemented") => true,
+        (Some("not_implemented"), _) => false,      // upgrade
+        _ => false,
+    }
+}
+
+/// De-duplicate bindings, keeping the best status for each (contract, equation).
+/// Returns (env_var → status, env_var → (contract_stem, equation)).
+fn dedup_bindings(
+    bindings: &[Binding],
+) -> (
+    std::collections::HashMap<String, String>,
+    std::collections::HashMap<String, (String, String)>,
+) {
+    let mut seen = std::collections::HashMap::<String, String>::new();
+    let mut seen_raw = std::collections::HashMap::<String, (String, String)>::new();
+
+    for binding in bindings {
+        let var_name = binding_env_var_name(&binding.contract, &binding.equation);
+
+        if is_status_dominated(seen.get(&var_name).map(|s| s.as_str()), &binding.status) {
+            continue;
+        }
+
+        seen.insert(var_name.clone(), binding.status.clone());
+        let contract_stem = binding
+            .contract
+            .trim_end_matches(".yaml")
+            .trim_end_matches(".yml")
+            .to_string();
+        seen_raw.insert(var_name, (contract_stem, binding.equation.clone()));
+    }
+
+    (seen, seen_raw)
+}
+
+/// Check if a (contract_stem, equation) gap is in the ALLOWED_GAPS list.
+fn is_gap_allowed(contract_stem: &str, equation: &str) -> bool {
+    ALLOWED_GAPS
+        .iter()
+        .any(|(c, e)| *c == contract_stem && *e == equation)
+}
+
+/// Enforce AllImplemented policy: panic if any unallowed gaps exist.
+fn enforce_all_implemented(
+    unallowed_gaps: &[String],
+) {
+    if unallowed_gaps.is_empty() {
+        return;
+    }
+    for gap in unallowed_gaps {
+        println!("cargo:warning=[contract] UNALLOWED GAP: {gap}");
+    }
+    panic!(
+        "[contract] AllImplemented policy violation: {} binding(s) are \
+         `not_implemented` but not in ALLOWED_GAPS:\n  {}\n\
+         Fix: implement the binding in binding.yaml, or add to ALLOWED_GAPS \
+         in build.rs with a tracking issue.",
+        unallowed_gaps.len(),
+        unallowed_gaps.join("\n  ")
+    );
+}
+
 /// Read provable-contracts binding.yaml and set CONTRACT_* env vars.
 ///
-/// Policy: WarnOnGaps (Phase 4). We emit warnings for partial/not_implemented
-/// bindings but do NOT fail the build. Phase 5 will switch to AllImplemented.
+/// Policy: AllImplemented (Step 6.7). Any `not_implemented` binding not in
+/// `ALLOWED_GAPS` fails the build. This ensures all algorithm contracts
+/// have working implementations before code compiles.
 fn emit_provable_contract_bindings() {
     let binding_path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
@@ -74,13 +157,11 @@ fn emit_provable_contract_bindings() {
 
     if !binding_path.exists() {
         // Graceful fallback: CI/crates.io builds won't have the sibling repo.
-        // The #[contract] proc macro should handle missing env vars gracefully.
         println!(
             "cargo:warning=provable-contracts binding.yaml not found at {}; \
              CONTRACT_* env vars will not be set (CI/crates.io build)",
             binding_path.display()
         );
-        // Set a sentinel so the proc macro knows we ran but had no file
         println!("cargo:rustc-env=CONTRACT_BINDING_SOURCE=none");
         return;
     }
@@ -109,52 +190,24 @@ fn emit_provable_contract_bindings() {
         }
     };
 
-    // Counters for the summary
+    let (seen, seen_raw) = dedup_bindings(&bindings.bindings);
+
     let mut implemented = 0u32;
     let mut partial = 0u32;
     let mut not_implemented = 0u32;
+    let mut unallowed_gaps: Vec<String> = Vec::new();
 
-    // De-duplicate: the binding.yaml may have multiple entries for the same
-    // (contract, equation) pair across different crates. We take the "best"
-    // status (implemented > partial > not_implemented).
-    let mut seen = std::collections::HashMap::<String, String>::new();
-
-    for binding in &bindings.bindings {
-        let var_name = binding_env_var_name(&binding.contract, &binding.equation);
-        let status = binding.status.as_str();
-
-        // Keep the best status seen so far for this (contract, equation) pair
-        let dominated = match (seen.get(&var_name).map(|s| s.as_str()), status) {
-            (None, _) => false,                        // first time
-            (Some("implemented"), _) => true,          // already best
-            (Some("partial"), "implemented") => false, // upgrade
-            (Some("partial"), _) => true,              // keep partial
-            (Some("not_implemented"), "not_implemented") => true,
-            (Some("not_implemented"), _) => false, // upgrade
-            _ => false,
-        };
-
-        if dominated {
-            continue;
-        }
-
-        seen.insert(var_name, status.to_string());
-    }
-
-    // Now emit env vars and warnings
     let mut keys: Vec<_> = seen.keys().cloned().collect();
     keys.sort();
 
     for var_name in &keys {
         let status = &seen[var_name];
-
         println!("cargo:rustc-env={var_name}={status}");
 
         match status.as_str() {
             "implemented" => implemented += 1,
             "partial" => {
                 partial += 1;
-                // Find the original binding for the note
                 let note = bindings
                     .bindings
                     .iter()
@@ -165,11 +218,11 @@ fn emit_provable_contract_bindings() {
             }
             "not_implemented" => {
                 not_implemented += 1;
-                // WarnOnGaps: track the gap silently via env var.
-                // We do NOT emit cargo:warning here because build-script warnings
-                // are indistinguishable from clippy warnings to quality gate tools,
-                // causing false failures with -D warnings. The gap count is available
-                // via CONTRACT_GAPS env var for auditing.
+                if let Some((ref stem, ref eq)) = seen_raw.get(var_name) {
+                    if !is_gap_allowed(stem, eq) {
+                        unallowed_gaps.push(format!("{var_name} ({stem}.yaml / {eq})"));
+                    }
+                }
             }
             other => {
                 println!("cargo:warning=[contract] UNKNOWN STATUS '{other}': {var_name}");
@@ -177,16 +230,13 @@ fn emit_provable_contract_bindings() {
         }
     }
 
+    enforce_all_implemented(&unallowed_gaps);
+
     let total = implemented + partial + not_implemented;
-    // Only emit summary as a cargo:warning when there are partial bindings
-    // (which need developer attention). Gap-only summaries are tracked silently
-    // via CONTRACT_GAPS env var to avoid tripping strict clippy (-D warnings).
-    if partial > 0 {
-        println!(
-            "cargo:warning=[contract] Summary: {implemented}/{total} implemented, \
-             {partial} partial, {not_implemented} gaps (WarnOnGaps policy)"
-        );
-    }
+    println!(
+        "cargo:warning=[contract] AllImplemented: {implemented}/{total} implemented, \
+         {partial} partial, {not_implemented} allowed gaps"
+    );
 
     // Set metadata env vars for the proc macro
     println!("cargo:rustc-env=CONTRACT_BINDING_SOURCE=binding.yaml");
