@@ -33,6 +33,7 @@ use trueno::Matrix;
 /// ```text
 /// Attention(Q, K, V) = softmax(Q * K^T / sqrt(d_k)) * V
 /// ```
+#[provable_contracts_macros::contract("attention-kernel-v1", equation = "attention")]
 fn scaled_dot_product_attention(
     query: &Tensor,
     key: &Tensor,
@@ -210,6 +211,7 @@ impl MultiHeadAttention {
 }
 
 impl Module for MultiHeadAttention {
+    #[provable_contracts_macros::contract("gqa-kernel-v1", equation = "gqa")]
     fn forward(&self, input: &Tensor) -> Tensor {
         let (output, _) = self.forward_self(input, None);
         output

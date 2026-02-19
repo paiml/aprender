@@ -122,6 +122,7 @@ impl GraphCentrality for Graph {
         centrality
     }
 
+    #[provable_contracts_macros::contract("pagerank-kernel-v1", equation = "pagerank")]
     fn pagerank(&self, damping: f64, max_iter: usize, tol: f64) -> Result<Vec<f64>, String> {
         if self.num_nodes() == 0 {
             return Ok(Vec::new());

@@ -203,6 +203,7 @@ impl LBFGS {
 }
 
 impl Optimizer for LBFGS {
+    #[provable_contracts_macros::contract("lbfgs-kernel-v1", equation = "two_loop_recursion")]
     fn step(&mut self, _params: &mut Vector<f32>, _gradients: &Vector<f32>) {
         panic!(
             "L-BFGS does not support stochastic updates (step). Use minimize() for batch optimization."

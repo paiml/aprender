@@ -271,6 +271,7 @@ impl CmaEs {
     }
 
     /// Sample from multivariate normal with diagonal covariance
+    #[provable_contracts_macros::contract("cma-es-kernel-v1", equation = "sample")]
     fn sample(&self, rng: &mut impl Rng) -> Vec<f64> {
         (0..self.dim)
             .map(|i| {
@@ -286,11 +287,67 @@ impl CmaEs {
             x[i] = x[i].clamp(lower[i], upper[i]);
         }
     }
+
+    /// Update evolution paths (p_sigma and p_c) and return p_sigma_norm.
+    #[allow(clippy::needless_range_loop)]
+    fn update_paths(&mut self, mean_diff: &[f64], gen: usize, chi_n: f64) -> f64 {
+        for i in 0..self.dim {
+            self.p_sigma[i] = (1.0 - self.c_sigma) * self.p_sigma[i]
+                + (self.c_sigma * (2.0 - self.c_sigma) * self.mu_eff).sqrt() * mean_diff[i]
+                    / self.c_diag[i].sqrt();
+        }
+
+        let p_sigma_norm: f64 = self.p_sigma.iter().map(|p| p * p).sum::<f64>().sqrt();
+        let h_sigma = if p_sigma_norm
+            / (1.0 - (1.0 - self.c_sigma).powi(2 * (gen as i32 + 1))).sqrt()
+            < (1.4 + 2.0 / (self.dim as f64 + 1.0)) * chi_n
+        {
+            1.0
+        } else {
+            0.0
+        };
+
+        for i in 0..self.dim {
+            self.p_c[i] = (1.0 - self.c_c) * self.p_c[i]
+                + h_sigma * (self.c_c * (2.0 - self.c_c) * self.mu_eff).sqrt() * mean_diff[i];
+        }
+
+        p_sigma_norm
+    }
+
+    /// Update diagonal covariance and step size.
+    #[allow(clippy::needless_range_loop)]
+    fn update_covariance(
+        &mut self,
+        population: &[Vec<f64>],
+        old_mean: &[f64],
+        fitness: &[(usize, f64)],
+        p_sigma_norm: f64,
+        chi_n: f64,
+    ) {
+        for i in 0..self.dim {
+            let rank_one = self.p_c[i] * self.p_c[i];
+            let mut rank_mu = 0.0;
+            for (rank, &(idx, _)) in fitness.iter().take(self.mu).enumerate() {
+                let y_i = (population[idx][i] - old_mean[i]) / self.sigma;
+                rank_mu += self.weights[rank] * y_i * y_i;
+            }
+
+            self.c_diag[i] = (1.0 - self.c_1 - self.c_mu) * self.c_diag[i]
+                + self.c_1 * rank_one
+                + self.c_mu * rank_mu;
+            self.c_diag[i] = self.c_diag[i].max(1e-20);
+        }
+
+        self.sigma *= ((self.c_sigma / self.d_sigma) * (p_sigma_norm / chi_n - 1.0)).exp();
+        self.sigma = self.sigma.clamp(1e-20, 1e10);
+    }
 }
 
 impl PerturbativeMetaheuristic for CmaEs {
     type Solution = Vec<f64>;
 
+    #[provable_contracts_macros::contract("cma-es-kernel-v1", equation = "mean_update")]
     #[allow(clippy::too_many_lines, clippy::needless_range_loop)]
     fn optimize<F>(
         &mut self,
@@ -391,7 +448,7 @@ impl PerturbativeMetaheuristic for CmaEs {
                 }
             }
 
-            // Update evolution paths
+            // Update evolution paths and covariance
             let mean_diff: Vec<f64> = self
                 .mean
                 .iter()
@@ -399,49 +456,8 @@ impl PerturbativeMetaheuristic for CmaEs {
                 .map(|(m, o)| (m - o) / self.sigma)
                 .collect();
 
-            // p_sigma update (simplified - no full C^(-1/2))
-            for i in 0..self.dim {
-                self.p_sigma[i] = (1.0 - self.c_sigma) * self.p_sigma[i]
-                    + (self.c_sigma * (2.0 - self.c_sigma) * self.mu_eff).sqrt() * mean_diff[i]
-                        / self.c_diag[i].sqrt();
-            }
-
-            let p_sigma_norm: f64 = self.p_sigma.iter().map(|p| p * p).sum::<f64>().sqrt();
-            let h_sigma = if p_sigma_norm
-                / (1.0 - (1.0 - self.c_sigma).powi(2 * (gen as i32 + 1))).sqrt()
-                < (1.4 + 2.0 / (self.dim as f64 + 1.0)) * chi_n
-            {
-                1.0
-            } else {
-                0.0
-            };
-
-            // p_c update
-            for i in 0..self.dim {
-                self.p_c[i] = (1.0 - self.c_c) * self.p_c[i]
-                    + h_sigma * (self.c_c * (2.0 - self.c_c) * self.mu_eff).sqrt() * mean_diff[i];
-            }
-
-            // Covariance update (diagonal only for simplicity)
-            for i in 0..self.dim {
-                let rank_one = self.p_c[i] * self.p_c[i];
-                let mut rank_mu = 0.0;
-                for (rank, &(idx, _)) in fitness.iter().take(self.mu).enumerate() {
-                    let y_i = (population[idx][i] - old_mean[i]) / self.sigma;
-                    rank_mu += self.weights[rank] * y_i * y_i;
-                }
-
-                self.c_diag[i] = (1.0 - self.c_1 - self.c_mu) * self.c_diag[i]
-                    + self.c_1 * rank_one
-                    + self.c_mu * rank_mu;
-
-                // Ensure positive
-                self.c_diag[i] = self.c_diag[i].max(1e-20);
-            }
-
-            // Step-size update
-            self.sigma *= ((self.c_sigma / self.d_sigma) * (p_sigma_norm / chi_n - 1.0)).exp();
-            self.sigma = self.sigma.clamp(1e-20, 1e10);
+            let p_sigma_norm = self.update_paths(&mean_diff, gen, chi_n);
+            self.update_covariance(&population, &old_mean, &fitness, p_sigma_norm, chi_n);
 
             if !tracker.update(self.best_value, self.lambda) {
                 break;

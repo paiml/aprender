@@ -394,6 +394,7 @@ impl UnsupervisedEstimator for KMeans {
     /// Returns an error if:
     /// - Data has fewer samples than clusters
     /// - Data is empty
+    #[provable_contracts_macros::contract("kmeans-kernel-v1", equation = "update")]
     fn fit(&mut self, x: &Matrix<f32>) -> Result<()> {
         let n_samples = x.n_rows();
 
@@ -437,6 +438,7 @@ impl UnsupervisedEstimator for KMeans {
     }
 
     /// Predicts cluster labels for new data.
+    #[provable_contracts_macros::contract("kmeans-kernel-v1", equation = "assignment")]
     fn predict(&self, x: &Matrix<f32>) -> Vec<usize> {
         let centroids = self
             .centroids
