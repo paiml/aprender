@@ -1236,7 +1236,7 @@ This section tracks the algorithm contract implementation progress (Phase 6).
 | Contract | Equations | Key Invariants | Status |
 |----------|-----------|----------------|--------|
 | decision-tree-v1 | gini_impurity, entropy, information_gain, cart_split | gini∈[0,0.5], entropy≥0, IG≥0 | Bound |
-| random-forest-v1 | bootstrap_aggregation, oob_error, feature_importance | importance sums to 1, oob∈[0,1] | **Not bound** |
+| random-forest-v1 | bootstrap_aggregation, oob_error, feature_importance | importance sums to 1, oob∈[0,1] | Bound |
 | naive-bayes-v1 | gaussian_posterior, prior_update, log_likelihood | posterior∝prior×likelihood | Bound |
 | linear-models-v1 | ols_normal_eq, ridge_penalty, logistic_sigmoid | β=(X^TX)^{-1}X^Ty, σ∈(0,1) | Bound |
 | svm-v1 | hinge_loss, rbf_kernel, polynomial_kernel, margin | hinge≥0, kernel positive semi-definite | Bound |
@@ -1247,14 +1247,14 @@ This section tracks the algorithm contract implementation progress (Phase 6).
 |----------|-----------|----------------|--------|
 | pca-v1 | eigendecomposition, explained_variance, projection | Σ explained_var = 1, orthogonal components | Bound |
 | ica-v1 | negentropy, fastica_iteration, whitening | independence maximized, E[s]=0 | Bound |
-| gbm-v1 | gradient_boost, shrinkage, negative_gradient | loss non-increasing per stage | **Not bound** |
+| gbm-v1 | gradient_boost, shrinkage, negative_gradient | loss non-increasing per stage | Bound |
 
 ### Tier A5: Graph & Optimization (3 contracts, ~15 equations)
 
 | Contract | Equations | Key Invariants | Status |
 |----------|-----------|----------------|--------|
 | graph-centrality-v1 | degree, betweenness, closeness, eigenvector, katz, harmonic | all≥0, betweenness∈[0,1] normalized | Bound |
-| optimization-v1 | conjugate_gradient, gradient_descent, newtons_method | convergence: f(x_{k+1})≤f(x_k) | **Not bound** |
+| optimization-v1 | conjugate_gradient, gradient_descent, newtons_method | convergence: f(x_{k+1})≤f(x_k) | Bound |
 | calibration-v1 | platt_scaling, isotonic, temperature, ece, brier_score | calibrated P(y|p)≈p, ECE≥0, Brier∈[0,1] | Bound |
 
 ### Tier A6: Specialized (5 contracts, ~20 equations)
@@ -1262,16 +1262,16 @@ This section tracks the algorithm contract implementation progress (Phase 6).
 | Contract | Equations | Key Invariants | Status |
 |----------|-----------|----------------|--------|
 | active-learning-v1 | uncertainty, margin, entropy, qbc | entropy≥0, margin≥0, QBC variance≥0 | **Not bound** |
-| arima-v1 | ar_forecast, differencing, ma_filter, aic | stationarity after d differences | **Not bound** |
-| bayesian-v1 | conjugate_prior, posterior_update, blr_predict | posterior∝prior×likelihood, predictive well-calibrated | **Not bound** |
-| glm-v1 | poisson_link, gamma_link, binomial_link, irls | link(μ)=Xβ, variance=V(μ) | **Not bound** |
-| drift-detection-v1 | psi, kl_divergence, ks_test | KL≥0, PSI≥0, KS∈[0,1] | **Not bound** |
+| arima-v1 | ar_forecast, differencing, ma_filter, aic | stationarity after d differences | Bound |
+| bayesian-v1 | conjugate_prior, posterior_update, blr_predict | posterior∝prior×likelihood, predictive well-calibrated | Bound |
+| glm-v1 | poisson_link, gamma_link, binomial_link, irls | link(μ)=Xβ, variance=V(μ) | Bound |
+| drift-detection-v1 | psi, kl_divergence, ks_test | KL≥0, PSI≥0, KS∈[0,1] | Bound |
 
 ### Tier A7: Auxiliary (3 contracts, ~12 equations)
 
 | Contract | Equations | Key Invariants | Status |
 |----------|-----------|----------------|--------|
-| metrics-ranking-v1 | hit_at_k, mrr, ndcg | all∈[0,1], NDCG normalized by ideal DCG | **Not bound** |
+| metrics-ranking-v1 | hit_at_k, mrr, ndcg | all∈[0,1], NDCG normalized by ideal DCG | Bound |
 | gnn-v1 | gcn_aggregate, message_passing, graph_pool | permutation equivariance | **Not bound** |
 | metaheuristics-v1 | simulated_annealing, genetic_crossover, pso_update | monotone non-increasing best-so-far | **Not bound** |
 
@@ -1348,32 +1348,32 @@ All bound. See `binding.yaml` for per-equation status.
 | Contract | Equations | Obligations | Status |
 |----------|-----------|-------------|--------|
 | loss-functions-v1 | 6 | 6 | Bound |
-| normalization-v1 | 3 | 6 | **Not bound** |
+| normalization-v1 | 3 | 6 | Bound |
 
-### Algorithm Contracts — Tier A3: Supervised Learning (5) — P1/P2
+### Algorithm Contracts — Tier A3: Supervised Learning (5) — P1/P2 COMPLETE
 | Contract | Equations | Obligations | Status |
 |----------|-----------|-------------|--------|
-| decision-tree-v1 | 4 | 8 | **Not bound** |
-| random-forest-v1 | 3 | 6 | **Not bound** |
-| naive-bayes-v1 | 3 | 6 | **Not bound** |
-| linear-models-v1 | 4 | 8 | **Not bound** |
-| svm-v1 | 4 | 8 | **Not bound** |
+| decision-tree-v1 | 4 | 8 | Bound |
+| random-forest-v1 | 3 | 6 | Bound |
+| naive-bayes-v1 | 3 | 6 | Bound |
+| linear-models-v1 | 4 | 8 | Bound |
+| svm-v1 | 4 | 8 | Bound |
 
-### Algorithm Contracts — Tier A4-A7: Extended (12) — P0 (centrality), P1-P3 (rest)
+### Algorithm Contracts — Tier A4-A7: Extended (12) — P0-P3 COMPLETE (except active-learning, gnn, metaheuristics)
 | Contract | Equations | Obligations | Status |
 |----------|-----------|-------------|--------|
-| pca-v1 | 3 | 6 | **Not bound** |
-| ica-v1 | 3 | 6 | **Not bound** |
-| gbm-v1 | 3 | 6 | **Not bound** |
+| pca-v1 | 3 | 6 | Bound |
+| ica-v1 | 3 | 6 | Bound |
+| gbm-v1 | 3 | 6 | Bound |
 | graph-centrality-v1 | 6 | 8 | Bound |
-| optimization-v1 | 3 | 6 | **Not bound** |
-| calibration-v1 | 5 | 8 | **Not bound** |
+| optimization-v1 | 3 | 6 | Bound |
+| calibration-v1 | 5 | 8 | Bound |
 | active-learning-v1 | 4 | 6 | **Not bound** |
-| arima-v1 | 4 | 8 | **Not bound** |
-| bayesian-v1 | 3 | 6 | **Not bound** |
-| glm-v1 | 4 | 8 | **Not bound** |
-| drift-detection-v1 | 3 | 6 | **Not bound** |
-| metrics-ranking-v1 | 3 | 6 | **Not bound** |
+| arima-v1 | 4 | 8 | Bound |
+| bayesian-v1 | 3 | 6 | Bound |
+| glm-v1 | 4 | 8 | Bound |
+| drift-detection-v1 | 3 | 6 | Bound |
+| metrics-ranking-v1 | 3 | 6 | Bound |
 
 ---
 
