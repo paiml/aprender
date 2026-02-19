@@ -1,7 +1,7 @@
 # Unified Contract-by-Design Specification
 
 **Version**: 2.0.0
-**Status**: Phase 4 Complete (kernels), Phase 6 Planned (algorithms). Kernels: 197/203 bindings (97.0%), 24 `#[contract]` annotations, 42 contract test files, 164 falsification tests. Algorithms: 0/~120 equations bound — **this version extends UCBD to all ML algorithms, statistics, and mathematics**.
+**Status**: Phase 4 Complete (kernels), Phase 6 Complete (algorithms P0-P3). Kernels: 197/203 bindings (97.0%), 24 `#[contract]` annotations. Algorithms: 21/24 contracts Bound, ~100 equations, 100 FALSIFY tests across 21 contract test files. Total: 264 contract tests passing. Remaining unbound: active-learning-v1, gnn-v1, metaheuristics-v1 (no implementation).
 **Created**: 2026-02-19
 **Updated**: 2026-02-19
 **Scope**: trueno, realizar, aprender, entrenar, whisper.apr
@@ -839,15 +839,19 @@ MQS certification
 3. Run full QA playbook certification pass
 4. Tag release
 
-### Phase 6: Algorithm & Statistics Contracts (NEW)
+### Phase 6: Algorithm & Statistics Contracts — COMPLETE (P0-P3)
 
-1. **P0 contracts** (4 YAMLs): metrics-regression-v1, metrics-classification-v1, loss-functions-v1, graph-centrality-v1
-2. **P0 annotations**: Add `#[contract]` to ~30 algorithm functions
-3. **P0 falsification tests**: Write FALSIFY-* tests for ~20 equations (coverage target: 95%)
-4. **P1 contracts** (4 YAMLs): calibration-v1, active-learning-v1, decision-tree-v1, normalization-v1
-5. **P2-P3 contracts** (16 YAMLs): remaining algorithm families
-6. **Binding registration**: All ~120 algorithm equations in binding.yaml
-7. **Hard enforcement**: `build.rs` requires all algorithm bindings implemented
+1. **P0 contracts** (5 YAMLs): metrics-regression-v1, metrics-classification-v1, metrics-clustering-v1, loss-functions-v1, graph-centrality-v1 — DONE
+2. **P0 annotations**: `#[contract]` + comment annotations on ~20 functions — DONE
+3. **P0 falsification tests**: 29 FALSIFY-* tests passing — DONE
+4. **P1 contracts** (4 YAMLs): calibration-v1, preprocessing-normalization-v1, decision-tree-v1, naive-bayes-v1 — DONE
+5. **P1 annotations + tests**: 23 FALSIFY-* tests passing — DONE
+6. **P2 contracts** (4 YAMLs): linear-models-v1, svm-v1, pca-v1, ica-v1 — DONE
+7. **P2 annotations + tests**: 15 FALSIFY-* tests passing — DONE
+8. **P3 contracts** (8 YAMLs): arima-v1, bayesian-v1, glm-v1, drift-detection-v1, metrics-ranking-v1, gbm-v1, optimization-v1, random-forest-v1 — DONE
+9. **P3 annotations + tests**: 33 FALSIFY-* tests passing — DONE
+10. **Binding registration**: ~70 algorithm equations in binding.yaml — DONE
+11. **Hard enforcement**: `build.rs` requires all algorithm bindings implemented — PENDING (Step 6.7)
 
 ---
 
@@ -1344,7 +1348,7 @@ All bound. See `binding.yaml` for per-equation status.
 | metrics-classification-v1 | 5 | 8 | Bound |
 | metrics-clustering-v1 | 3 | 5 | Bound |
 
-### Algorithm Contracts — Tier A2: Loss & Normalization (2) — P0 COMPLETE (loss), P1 (norm)
+### Algorithm Contracts — Tier A2: Loss & Normalization (2) — P0/P1 COMPLETE
 | Contract | Equations | Obligations | Status |
 |----------|-----------|-------------|--------|
 | loss-functions-v1 | 6 | 6 | Bound |
