@@ -18,17 +18,19 @@ use proptest::prelude::*;
 /// and y is a simple linear function plus noise.
 fn blr_training_strategy() -> impl Strategy<Value = (Matrix<f32>, Vector<f32>, usize)> {
     // n = samples (10..=20), d = features (2..=4)
-    (10usize..=20, 2usize..=4).prop_flat_map(|(n, d)| {
-        let features = proptest::collection::vec(-5.0f32..5.0, n * d);
-        let targets = proptest::collection::vec(-10.0f32..10.0, n);
-        let d_val = Just(d);
-        let n_val = Just(n);
-        (features, targets, n_val, d_val)
-    }).prop_map(|(features, targets, n, d)| {
-        let x = Matrix::from_vec(n, d, features).expect("valid matrix dimensions");
-        let y = Vector::from_vec(targets);
-        (x, y, d)
-    })
+    (10usize..=20, 2usize..=4)
+        .prop_flat_map(|(n, d)| {
+            let features = proptest::collection::vec(-5.0f32..5.0, n * d);
+            let targets = proptest::collection::vec(-10.0f32..10.0, n);
+            let d_val = Just(d);
+            let n_val = Just(n);
+            (features, targets, n_val, d_val)
+        })
+        .prop_map(|(features, targets, n, d)| {
+            let x = Matrix::from_vec(n, d, features).expect("valid matrix dimensions");
+            let y = Vector::from_vec(targets);
+            (x, y, d)
+        })
 }
 
 proptest! {

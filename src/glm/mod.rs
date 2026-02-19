@@ -273,7 +273,7 @@ impl GLM {
     /// `Ok(())` on successful convergence, error otherwise
     #[allow(clippy::needless_range_loop)]
     #[allow(clippy::too_many_lines)] // IRLS algorithm requires many steps
-    // Contract: glm-v1, equation = "irls_fit"
+                                     // Contract: glm-v1, equation = "irls_fit"
     pub fn fit(&mut self, x: &Matrix<f32>, y: &Vector<f32>) -> Result<()> {
         let n = x.n_rows();
         let p = x.n_cols();
