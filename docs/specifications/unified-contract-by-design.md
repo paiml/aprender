@@ -818,7 +818,7 @@ MQS certification
 3. ~~Aprender GGUF reader~~ KEPT — conversion pipeline reader, not dead code (§9.1)
 4. ~~Run `scripts/check_include_files.sh`~~ Done — 562 include!() files tracked
 
-### Phase 4: Binding Completeness ~~(Weeks 4-8)~~ COMPLETE (98.7%)
+### Phase 4: Binding Completeness ~~(Weeks 4-8)~~ COMPLETE (99.2%)
 
 1. ~~Implement Tier 1 bindings (Gated Delta Net, Conv1D)~~ Done (197/203)
 2. ~~Implement Tier 2 bindings (Flash Attention, SiLU, LoRA)~~ Done
@@ -849,7 +849,7 @@ MQS certification
 10. **P4 contracts** (3 YAMLs): active-learning-v1, gnn-v1, metaheuristics-v1 — DONE
 11. **P4 annotations + tests**: 11 FALSIFY-* tests passing — DONE
 12. **Binding registration**: ~82 algorithm equations in binding.yaml — DONE
-13. **Hard enforcement**: `build.rs` AllImplemented policy — 248/251 implemented, 3 allowed gaps (SSM, robust_scaler) — DONE
+13. **Hard enforcement**: `build.rs` AllImplemented policy — 249/251 implemented, 2 allowed gaps (SSM only) — DONE
 
 ---
 
@@ -1231,7 +1231,7 @@ This section tracks the algorithm contract implementation progress (Phase 6).
 | Contract | Equations | Key Invariants | Status |
 |----------|-----------|----------------|--------|
 | loss-functions-v1 | bce, nll, huber, smooth_l1, l1_loss, mse_loss | all≥0, bce=-Σ[y·log(ŷ)+(1-y)·log(1-ŷ)] | Bound |
-| normalization-v1 | rmsnorm_forward, layernorm_forward, groupnorm_forward | output_shape=input_shape, unit_variance | Bound |
+| preprocessing-normalization-v1 | standard_scaler, min_max_scaler, robust_scaler | zero_mean, bounded [0,1], IQR-centered | Bound |
 
 ### Tier A3: Supervised Learning (5 contracts, ~25 equations)
 
