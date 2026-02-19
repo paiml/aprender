@@ -95,20 +95,18 @@ impl LayerNorm {
 }
 
 impl Module for LayerNorm {
+    /// ONE PATH: Delegates computation to `nn::functional::layer_norm` (UCBD §4).
+    /// Shape validation and non-affine path handled here (Module layer).
     #[provable_contracts_macros::contract("layernorm-kernel-v1", equation = "layernorm")]
     fn forward(&self, input: &Tensor) -> Tensor {
-        // Compute mean and variance over normalized dimensions
         let shape = input.shape();
         let norm_size: usize = self.normalized_shape.iter().product();
 
-        // For simplicity, assume we normalize over the last dimension(s)
-        // that match normalized_shape
         assert!(
             shape.len() >= self.normalized_shape.len(),
             "Input must have at least as many dimensions as normalized_shape"
         );
 
-        // Check that the last dimensions match
         let start_dim = shape.len() - self.normalized_shape.len();
         for (i, &ns) in self.normalized_shape.iter().enumerate() {
             assert_eq!(
@@ -118,37 +116,30 @@ impl Module for LayerNorm {
             );
         }
 
-        // Compute statistics over the last normalized_shape dimensions
-        let batch_dims: usize = shape[..start_dim].iter().product();
-        let input_data = input.data();
+        if self.elementwise_affine {
+            // ONE PATH: delegate to canonical functional layer_norm
+            crate::nn::functional::layer_norm(input, &self.weight, &self.bias, self.eps)
+        } else {
+            // Non-affine: normalize without weight/bias
+            let batch_dims: usize = shape[..start_dim].iter().product();
+            let input_data = input.data();
+            let mut output_data = vec![0.0; input_data.len()];
 
-        let mut output_data = vec![0.0; input_data.len()];
+            for b in 0..batch_dims {
+                let offset = b * norm_size;
+                let slice = &input_data[offset..offset + norm_size];
+                let mean: f32 = slice.iter().sum::<f32>() / norm_size as f32;
+                let var: f32 =
+                    slice.iter().map(|&x| (x - mean).powi(2)).sum::<f32>() / norm_size as f32;
+                let std_inv = 1.0 / (var + self.eps).sqrt();
 
-        for b in 0..batch_dims {
-            let offset = b * norm_size;
-            let slice = &input_data[offset..offset + norm_size];
-
-            // Mean
-            let mean: f32 = slice.iter().sum::<f32>() / norm_size as f32;
-
-            // Variance
-            let var: f32 =
-                slice.iter().map(|&x| (x - mean).powi(2)).sum::<f32>() / norm_size as f32;
-
-            // Normalize and apply affine transformation
-            let std_inv = 1.0 / (var + self.eps).sqrt();
-
-            for i in 0..norm_size {
-                let normalized = (slice[i] - mean) * std_inv;
-                output_data[offset + i] = if self.elementwise_affine {
-                    normalized * self.weight.data()[i] + self.bias.data()[i]
-                } else {
-                    normalized
-                };
+                for i in 0..norm_size {
+                    output_data[offset + i] = (slice[i] - mean) * std_inv;
+                }
             }
-        }
 
-        Tensor::new(&output_data, shape)
+            Tensor::new(&output_data, shape)
+        }
     }
 
     fn parameters(&self) -> Vec<&Tensor> {

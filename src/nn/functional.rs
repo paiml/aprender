@@ -272,6 +272,75 @@ pub fn dropout(x: &Tensor, p: f32, training: bool) -> Tensor {
     Tensor::new(&data, x.shape())
 }
 
+/// Layer normalization over the last dimension of an ND tensor.
+///
+/// ONE PATH: This is the canonical functional layer norm. All standalone
+/// layer_norm implementations MUST delegate here (UCBD §4).
+///
+/// Equation: y\_i = (x\_i - mean) / sqrt(var + eps) * weight\_i + bias\_i
+///
+/// Contract: layernorm-kernel-v1, equation "layernorm"
+#[must_use]
+pub fn layer_norm(x: &Tensor, weight: &Tensor, bias: &Tensor, eps: f32) -> Tensor {
+    let shape = x.shape();
+    let last_dim = shape[shape.len() - 1];
+    let batch_size: usize = shape[..shape.len() - 1].iter().product();
+
+    let data = x.data();
+    let weight_data = weight.data();
+    let bias_data = bias.data();
+    let mut output = Vec::with_capacity(data.len());
+
+    for b in 0..batch_size {
+        let start = b * last_dim;
+        let slice = &data[start..start + last_dim];
+
+        let mean: f32 = slice.iter().sum::<f32>() / last_dim as f32;
+        let var: f32 = slice.iter().map(|&x| (x - mean).powi(2)).sum::<f32>() / last_dim as f32;
+        let inv_std = 1.0 / (var + eps).sqrt();
+
+        for (i, &val) in slice.iter().enumerate() {
+            let normalized = (val - mean) * inv_std;
+            output.push(normalized * weight_data[i] + bias_data[i]);
+        }
+    }
+
+    Tensor::new(&output, shape)
+}
+
+/// RMS normalization over the last dimension of an ND tensor.
+///
+/// ONE PATH: This is the canonical functional RMS norm. All standalone
+/// rms_norm implementations MUST delegate here (UCBD §4).
+///
+/// Equation: y\_i = x\_i / rms(x) * weight\_i, where rms(x) = sqrt(mean(x^2) + eps)
+///
+/// Contract: rmsnorm-kernel-v1, equation "rmsnorm"
+#[must_use]
+pub fn rms_norm(x: &Tensor, weight: &Tensor, eps: f32) -> Tensor {
+    let shape = x.shape();
+    let last_dim = shape[shape.len() - 1];
+    let batch_size: usize = shape[..shape.len() - 1].iter().product();
+
+    let data = x.data();
+    let weight_data = weight.data();
+    let mut output = Vec::with_capacity(data.len());
+
+    for b in 0..batch_size {
+        let start = b * last_dim;
+        let slice = &data[start..start + last_dim];
+
+        let rms: f32 = (slice.iter().map(|&x| x * x).sum::<f32>() / last_dim as f32 + eps).sqrt();
+        let inv_rms = 1.0 / rms;
+
+        for (i, &val) in slice.iter().enumerate() {
+            output.push(val * inv_rms * weight_data[i]);
+        }
+    }
+
+    Tensor::new(&output, shape)
+}
+
 /// Linear transformation: y = x @ weight^T + bias
 #[must_use]
 pub fn linear(x: &Tensor, weight: &Tensor, bias: Option<&Tensor>) -> Tensor {

@@ -133,37 +133,9 @@ fn gelu(x: &Tensor) -> Tensor {
     crate::nn::functional::gelu(x)
 }
 
+/// ONE PATH: Delegates to `nn::functional::layer_norm` (UCBD §4).
 fn layer_norm(x: &Tensor, weight: &Tensor, bias: &Tensor, eps: f32) -> Tensor {
-    // Layer normalization over last dimension
-    let shape = x.shape();
-    let last_dim = *shape.last().unwrap_or(&1);
-    let batch_size: usize = shape[..shape.len() - 1].iter().product();
-
-    let data = x.data();
-    let weight_data = weight.data();
-    let bias_data = bias.data();
-    let mut output = Vec::with_capacity(data.len());
-
-    for b in 0..batch_size {
-        let start = b * last_dim;
-        let slice = &data[start..start + last_dim];
-
-        // Compute mean
-        let mean: f32 = slice.iter().sum::<f32>() / last_dim as f32;
-
-        // Compute variance
-        let var: f32 = slice.iter().map(|&x| (x - mean).powi(2)).sum::<f32>() / last_dim as f32;
-
-        // Normalize
-        let inv_std = 1.0 / (var + eps).sqrt();
-        for (i, &val) in slice.iter().enumerate() {
-            let normalized = (val - mean) * inv_std;
-            let scaled = normalized * weight_data[i] + bias_data[i];
-            output.push(scaled);
-        }
-    }
-
-    Tensor::new(&output, shape)
+    crate::nn::functional::layer_norm(x, weight, bias, eps)
 }
 
 // ==================== Contrastive Loss ====================

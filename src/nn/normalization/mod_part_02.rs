@@ -278,6 +278,8 @@ impl RMSNorm {
 }
 
 impl Module for RMSNorm {
+    /// ONE PATH: Delegates computation to `nn::functional::rms_norm` (UCBD §4).
+    /// Shape validation and non-affine path handled here (Module layer).
     #[provable_contracts_macros::contract("rmsnorm-kernel-v1", equation = "rmsnorm")]
     fn forward(&self, input: &Tensor) -> Tensor {
         let shape = input.shape();
@@ -299,32 +301,30 @@ impl Module for RMSNorm {
             );
         }
 
-        let batch_dims: usize = shape[..start_dim].iter().product();
-        let input_data = input.data();
+        if self.elementwise_affine {
+            // ONE PATH: delegate to canonical functional rms_norm
+            crate::nn::functional::rms_norm(input, &self.weight, self.eps)
+        } else {
+            // Non-affine: normalize without weight
+            let batch_dims: usize = shape[..start_dim].iter().product();
+            let input_data = input.data();
+            let mut output_data = vec![0.0; input_data.len()];
 
-        let mut output_data = vec![0.0; input_data.len()];
+            for b in 0..batch_dims {
+                let offset = b * norm_size;
+                let slice = &input_data[offset..offset + norm_size];
 
-        for b in 0..batch_dims {
-            let offset = b * norm_size;
-            let slice = &input_data[offset..offset + norm_size];
+                let mean_sq: f32 =
+                    slice.iter().map(|&x| x * x).sum::<f32>() / norm_size as f32;
+                let rms_inv = 1.0 / (mean_sq + self.eps).sqrt();
 
-            // Compute root mean square (no mean subtraction!)
-            let mean_sq: f32 = slice.iter().map(|&x| x * x).sum::<f32>() / norm_size as f32;
-            let rms = (mean_sq + self.eps).sqrt();
-            let rms_inv = 1.0 / rms;
-
-            // Normalize and apply scale
-            for i in 0..norm_size {
-                let normalized = slice[i] * rms_inv;
-                output_data[offset + i] = if self.elementwise_affine {
-                    normalized * self.weight.data()[i]
-                } else {
-                    normalized
-                };
+                for i in 0..norm_size {
+                    output_data[offset + i] = slice[i] * rms_inv;
+                }
             }
-        }
 
-        Tensor::new(&output_data, shape)
+            Tensor::new(&output_data, shape)
+        }
     }
 
     fn parameters(&self) -> Vec<&Tensor> {
