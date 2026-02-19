@@ -44,6 +44,7 @@ pub enum Average {
 /// assert!((acc - 0.333333).abs() < 0.001);
 /// ```
 #[must_use]
+#[provable_contracts_macros::contract("metrics-classification-v1", equation = "accuracy")]
 pub fn accuracy(y_pred: &[usize], y_true: &[usize]) -> f32 {
     assert_eq!(y_pred.len(), y_true.len(), "Vectors must have same length");
     assert!(!y_true.is_empty(), "Vectors cannot be empty");
@@ -86,6 +87,7 @@ pub fn accuracy(y_pred: &[usize], y_true: &[usize]) -> f32 {
 /// assert!(prec >= 0.0 && prec <= 1.0);
 /// ```
 #[must_use]
+#[provable_contracts_macros::contract("metrics-classification-v1", equation = "precision")]
 pub fn precision(y_pred: &[usize], y_true: &[usize], average: Average) -> f32 {
     assert_eq!(y_pred.len(), y_true.len(), "Vectors must have same length");
     assert!(!y_true.is_empty(), "Vectors cannot be empty");
@@ -172,6 +174,7 @@ pub fn precision(y_pred: &[usize], y_true: &[usize], average: Average) -> f32 {
 /// assert!(rec >= 0.0 && rec <= 1.0);
 /// ```
 #[must_use]
+#[provable_contracts_macros::contract("metrics-classification-v1", equation = "recall")]
 pub fn recall(y_pred: &[usize], y_true: &[usize], average: Average) -> f32 {
     assert_eq!(y_pred.len(), y_true.len(), "Vectors must have same length");
     assert!(!y_true.is_empty(), "Vectors cannot be empty");
@@ -292,6 +295,7 @@ fn class_f1(tp: usize, fp: usize, fn_count: usize) -> f32 {
 /// assert!(f1 >= 0.0 && f1 <= 1.0);
 /// ```
 #[must_use]
+#[provable_contracts_macros::contract("metrics-classification-v1", equation = "f1_score")]
 pub fn f1_score(y_pred: &[usize], y_true: &[usize], average: Average) -> f32 {
     assert_eq!(y_pred.len(), y_true.len(), "Vectors must have same length");
     assert!(!y_true.is_empty(), "Vectors cannot be empty");
@@ -518,6 +522,7 @@ pub fn f1_per_class(y_pred: &[usize], y_true: &[usize]) -> Vec<f32> {
 /// assert_eq!(cm.n_cols(), 3);
 /// ```
 #[must_use]
+#[provable_contracts_macros::contract("metrics-classification-v1", equation = "confusion_matrix")]
 pub fn confusion_matrix(y_pred: &[usize], y_true: &[usize]) -> Matrix<usize> {
     assert_eq!(y_pred.len(), y_true.len(), "Vectors must have same length");
     assert!(!y_true.is_empty(), "Vectors cannot be empty");

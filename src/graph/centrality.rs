@@ -101,6 +101,8 @@ pub trait GraphCentrality {
 }
 
 impl GraphCentrality for Graph {
+    // Contract: graph-centrality-v1, equation = "degree"
+    // (annotation on binding.yaml; proc macro incompatible with trait impls)
     fn degree_centrality(&self) -> HashMap<NodeId, f64> {
         let mut centrality = HashMap::with_capacity(self.num_nodes());
 
@@ -176,6 +178,7 @@ impl GraphCentrality for Graph {
         Ok(ranks)
     }
 
+    // Contract: graph-centrality-v1, equation = "betweenness"
     fn betweenness_centrality(&self) -> Vec<f64> {
         if self.num_nodes() == 0 {
             return Vec::new();
@@ -211,6 +214,7 @@ impl GraphCentrality for Graph {
         centrality
     }
 
+    // Contract: graph-centrality-v1, equation = "closeness"
     fn closeness_centrality(&self) -> Vec<f64> {
         if self.num_nodes() == 0 {
             return Vec::new();
@@ -236,6 +240,7 @@ impl GraphCentrality for Graph {
         centrality
     }
 
+    // Contract: graph-centrality-v1, equation = "eigenvector"
     fn eigenvector_centrality(&self, max_iter: usize, tol: f64) -> Result<Vec<f64>, String> {
         if self.num_nodes() == 0 {
             return Ok(Vec::new());
@@ -273,6 +278,7 @@ impl GraphCentrality for Graph {
         Ok(x)
     }
 
+    // Contract: graph-centrality-v1, equation = "katz"
     fn katz_centrality(&self, alpha: f64, max_iter: usize, tol: f64) -> Result<Vec<f64>, String> {
         if self.num_nodes() == 0 {
             return Ok(Vec::new());
@@ -306,6 +312,7 @@ impl GraphCentrality for Graph {
         Ok(x)
     }
 
+    // Contract: graph-centrality-v1, equation = "harmonic"
     fn harmonic_centrality(&self) -> Vec<f64> {
         if self.num_nodes() == 0 {
             return Vec::new();
