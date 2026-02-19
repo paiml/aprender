@@ -1,7 +1,7 @@
 # Unified Contract-by-Design Specification
 
-**Version**: 1.2.0
-**Status**: Phase 4 Complete — aprender at 98.7% (156/158 bindings, 24 `#[contract]` annotations, 42 contract test files, 164 passing falsification tests). Quality gates: clippy clean (all-targets -D warnings), 11,626 tests pass. Remaining: 2 SSM gaps, 7 realizar-only contracts.
+**Version**: 1.3.0
+**Status**: Phase 4 Complete — aprender at 97.0% (197/203 bindings implemented, 24 `#[contract]` annotations, 42 contract test files, 164 passing falsification tests). Quality gates: clippy clean (all-targets -D warnings), 11,626 tests pass. Remaining: 6 SSM bindings (3 equations × 2 targets).
 **Created**: 2026-02-19
 **Updated**: 2026-02-19
 **Scope**: trueno, realizar, aprender, entrenar, whisper.apr
@@ -668,14 +668,16 @@ Per user mandate: **every binding in `provable-contracts/contracts/aprender/bind
 
 ### 10.2 Current Gaps (2 bindings — SSM only)
 
-**Updated 2026-02-19**: 156/158 deduplicated bindings are now `implemented`.
+**Updated 2026-02-19**: 197/203 bindings are now `implemented` (97.0%).
 All Tier 1 (Qwen3/3.5) and Tier 2 (architecture completeness) gaps have been closed.
 
-The only remaining gaps are SSM/Mamba, which is not yet implemented in any stack crate:
+The only remaining gaps are SSM/Mamba (3 equations × 2 target modules = 6 bindings),
+which is not yet implemented in any stack crate:
 
 | Contract | Equation | Target Module | Priority | Status |
 |----------|----------|---------------|----------|--------|
 | `ssm-kernel-v1` | `ssm_discretize` | `realizar::ssm` | P2 | not_implemented |
+| `ssm-kernel-v1` | `ssm_scan` | `realizar::ssm` | P2 | not_implemented |
 | `ssm-kernel-v1` | `selective_gate` | `realizar::ssm` | P2 | not_implemented |
 
 These require implementing the Mamba state space model (zero-order hold discretization,
@@ -785,7 +787,7 @@ MQS certification
 
 ### Phase 4: Binding Completeness ~~(Weeks 4-8)~~ COMPLETE (98.7%)
 
-1. ~~Implement Tier 1 bindings (Gated Delta Net, Conv1D)~~ Done (156/158)
+1. ~~Implement Tier 1 bindings (Gated Delta Net, Conv1D)~~ Done (197/203)
 2. ~~Implement Tier 2 bindings (Flash Attention, SiLU, LoRA)~~ Done
 3. ~~Implement remaining Tier 3 bindings~~ Done (except 2 SSM gaps)
 4. ~~build.rs WarnOnGaps policy active~~ Done — tracks 2 SSM gaps silently via `CONTRACT_GAPS` env var
@@ -887,7 +889,7 @@ cargo run --bin pv -- audit --orphans
 | activation-kernel-v1 | 4 | 9 | Bound |
 | attention-kernel-v1 | 4 | 12 | Bound |
 | matmul-kernel-v1 | 3 | 8 | Bound |
-| flash-attention-v1 | 3 | 9 | **Partial** |
+| flash-attention-v1 | 3 | 9 | Bound |
 
 ### Tier 2: Compound Kernels (6)
 | Contract | Equations | Obligations | Status |
@@ -895,7 +897,7 @@ cargo run --bin pv -- audit --orphans
 | swiglu-kernel-v1 | 2 | 5 | Bound |
 | gqa-kernel-v1 | 3 | 8 | Bound |
 | layernorm-kernel-v1 | 2 | 6 | Bound |
-| silu-kernel-v1 | 1 | 3 | **Partial** |
+| silu-kernel-v1 | 1 | 3 | Bound |
 | cross-entropy-kernel-v1 | 2 | 5 | Bound |
 | adamw-kernel-v1 | 4 | 10 | Bound |
 
@@ -903,7 +905,7 @@ cargo run --bin pv -- audit --orphans
 | Contract | Equations | Obligations | Status |
 |----------|-----------|-------------|--------|
 | ssm-kernel-v1 | 3 | 7 | **Not bound** |
-| conv1d-kernel-v1 | 2 | 5 | **Not bound** |
+| conv1d-kernel-v1 | 2 | 5 | Bound |
 | batchnorm-kernel-v1 | 2 | 5 | Bound |
 | kmeans-kernel-v1 | 3 | 6 | Bound |
 | pagerank-kernel-v1 | 2 | 5 | Bound |
@@ -911,18 +913,18 @@ cargo run --bin pv -- audit --orphans
 | cma-es-kernel-v1 | 3 | 8 | Bound |
 
 ### Model Architecture (21)
-All bound or partially bound. See `binding.yaml` for per-equation status.
+All bound. See `binding.yaml` for per-equation status.
 
 ### Qwen 3.5 Verification (7)
 | Contract | Equations | Obligations | Status |
 |----------|-----------|-------------|--------|
-| sliding-window-attention-v1 | 2 | 4 | **Not bound** |
-| rope-extrapolation-v1 | 3 | 6 | **Not bound** |
+| sliding-window-attention-v1 | 2 | 4 | Bound |
+| rope-extrapolation-v1 | 3 | 6 | Bound |
 | embedding-algebra-v1 | 2 | 4 | Bound |
 | inference-pipeline-v1 | 4 | 8 | Bound |
-| qwen35-hybrid-forward-v1 | 3 | 7 | **Partial** |
+| qwen35-hybrid-forward-v1 | 6 | 7 | Bound |
 | attention-scaling-v1 | 2 | 4 | Bound |
-| qwen35-e2e-verification-v1 | 2 | 5 | **Partial** |
+| qwen35-e2e-verification-v1 | 6 | 5 | Bound |
 
 ---
 

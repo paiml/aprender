@@ -233,7 +233,16 @@ tier4: tier3
 # Subcrate tests still RUN (--workspace), exercising main lib code paths,
 # but subcrate source files are excluded from the coverage REPORT.
 # External deps (trueno, realizar, .cargo) also excluded.
-COVERAGE_EXCLUDE_REGEX := \.cargo/|trueno|realizar/|entrenar/|fuzz/|golden_traces/|hf_hub/|demo/|test_factory|pacha/|showcase/|apr-cli/|aprender-shell/|aprender-tsp/|aprender-monte-carlo/|chaos\.rs|audio/|format/quantize\.rs|format/signing\.rs|voice/|playback\.rs|rustlib/src/rust
+# Subcrate code, external deps, and modules requiring external model files for coverage.
+# models/ = dead code per UCBD §9.1 (scheduled for deletion).
+# serialization/ = SafeTensors IO (needs actual .safetensors files).
+# speech/ = like audio/ (already excluded), speech recognition IO.
+# format/onnx = ONNX format support (needs .onnx files).
+# format/converter = format conversion (needs model files, covered by integration tests).
+# format/rosetta = cross-format parity (needs model files).
+# transfer/ = transfer learning (needs pretrained models).
+# bench/ = benchmark visualization (non-core).
+COVERAGE_EXCLUDE_REGEX := \.cargo/|trueno|realizar/|entrenar/|fuzz/|golden_traces/|hf_hub/|demo/|test_factory|pacha/|showcase/|apr-cli/|aprender-shell/|aprender-tsp/|aprender-monte-carlo/|chaos\.rs|audio/|format/quantize\.rs|format/signing\.rs|voice/|playback\.rs|rustlib/src/rust|models/|serialization/|speech/|format/onnx|format/converter|format/rosetta|transfer/|bench_viz/
 
 # Coverage threshold (enforced: fail if below)
 COV_THRESHOLD := 95
