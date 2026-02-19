@@ -152,6 +152,7 @@ impl ParticleSwarm {
 impl PerturbativeMetaheuristic for ParticleSwarm {
     type Solution = Vec<f64>;
 
+    // Contract: metaheuristics-v1, equation = "pso_velocity"
     fn optimize<F>(
         &mut self,
         objective: &F,

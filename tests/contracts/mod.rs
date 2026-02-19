@@ -11,6 +11,7 @@
 //     --binding contracts/aprender/binding.yaml
 
 mod activation_contract;
+mod active_learning_contract;
 mod adamw_contract;
 mod arch_requirements_contract;
 mod arima_contract;
@@ -32,6 +33,7 @@ mod format_parity_contract;
 mod gated_delta_net_contract;
 mod gbm_contract;
 mod glm_contract;
+mod gnn_contract;
 mod gqa_contract;
 mod graph_centrality_contract;
 mod hybrid_layer_dispatch_contract;
@@ -46,6 +48,7 @@ mod linear_models_contract;
 mod lora_algebra_contract;
 mod loss_functions_contract;
 mod matmul_contract;
+mod metaheuristics_contract;
 mod model_config_algebra_contract;
 mod naive_bayes_contract;
 mod optimization_contract;

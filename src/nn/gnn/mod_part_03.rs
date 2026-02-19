@@ -340,6 +340,7 @@ pub trait MessagePassing {
     fn update(&self, x: &Tensor, aggregated: &Tensor) -> Tensor;
 
     /// Full message passing forward.
+    // Contract: gnn-v1, equation = "message_passing"
     fn propagate(&self, x: &Tensor, edge_index: &AdjacencyMatrix) -> Tensor {
         let messages = self.message(x, x, edge_index);
         let aggregated = self.aggregate(&messages, edge_index, x.shape()[0]);

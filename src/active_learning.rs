@@ -38,6 +38,7 @@ impl UncertaintySampling {
 }
 
 impl QueryStrategy for UncertaintySampling {
+    // Contract: active-learning-v1, equation = "uncertainty_score"
     fn score(&self, predictions: &[Vector<f32>]) -> Vec<f32> {
         predictions
             .iter()
@@ -61,6 +62,7 @@ impl MarginSampling {
 }
 
 impl QueryStrategy for MarginSampling {
+    // Contract: active-learning-v1, equation = "margin_score"
     fn score(&self, predictions: &[Vector<f32>]) -> Vec<f32> {
         predictions
             .iter()
@@ -89,6 +91,7 @@ impl EntropySampling {
 }
 
 impl QueryStrategy for EntropySampling {
+    // Contract: active-learning-v1, equation = "entropy_score"
     fn score(&self, predictions: &[Vector<f32>]) -> Vec<f32> {
         predictions
             .iter()
@@ -118,6 +121,7 @@ impl QueryByCommittee {
     }
 
     /// Score based on vote entropy across committee members.
+    // Contract: active-learning-v1, equation = "qbc_score"
     #[must_use]
     pub fn score_committee(&self, committee_preds: &[Vec<Vector<f32>>]) -> Vec<f32> {
         if committee_preds.is_empty() || committee_preds[0].is_empty() {

@@ -104,6 +104,7 @@ impl SimulatedAnnealing {
 impl PerturbativeMetaheuristic for SimulatedAnnealing {
     type Solution = Vec<f64>;
 
+    // Contract: metaheuristics-v1, equation = "sa_acceptance"
     fn optimize<F>(
         &mut self,
         objective: &F,

@@ -159,6 +159,7 @@ impl GeneticAlgorithm {
 impl PerturbativeMetaheuristic for GeneticAlgorithm {
     type Solution = Vec<f64>;
 
+    // Contract: metaheuristics-v1, equation = "ga_crossover"
     fn optimize<F>(
         &mut self,
         objective: &F,
