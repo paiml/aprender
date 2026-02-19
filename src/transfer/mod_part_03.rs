@@ -161,12 +161,10 @@ impl ProgressiveDistillation {
     }
 }
 
+/// ONE PATH: Scales then delegates to `nn::functional::softmax_1d` (UCBD §4).
 pub(super) fn softmax_with_temp(logits: &[f32], temp: f32) -> Vec<f32> {
     let scaled: Vec<f32> = logits.iter().map(|&x| x / temp).collect();
-    let max = scaled.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b));
-    let exp: Vec<f32> = scaled.iter().map(|&x| (x - max).exp()).collect();
-    let sum: f32 = exp.iter().sum();
-    exp.iter().map(|&e| e / sum).collect()
+    crate::nn::functional::softmax_1d(&scaled)
 }
 
 /// Prototypical Networks for few-shot learning (Snell et al., 2017).

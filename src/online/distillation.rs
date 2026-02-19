@@ -68,29 +68,24 @@ impl DistillationConfig {
 
 /// Softmax with temperature scaling
 ///
+/// ONE PATH: Scales then delegates to `nn::functional::softmax_1d_f64` (UCBD §4).
+///
 /// `softmax_T(z_i)` = `exp(z_i/T)` / `sum(exp(z_j/T))`
 pub fn softmax_temperature(logits: &[f64], temperature: f64) -> Vec<f64> {
     if logits.is_empty() {
         return vec![];
     }
-
-    let t = temperature.max(1e-10); // Avoid division by zero
-
-    // Compute scaled logits
+    let t = temperature.max(1e-10);
     let scaled: Vec<f64> = logits.iter().map(|&z| z / t).collect();
-
-    // Subtract max for numerical stability
-    let max_logit = scaled.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-    let exp_logits: Vec<f64> = scaled.iter().map(|&z| (z - max_logit).exp()).collect();
-
-    let sum: f64 = exp_logits.iter().sum();
-    exp_logits.iter().map(|&e| e / sum).collect()
+    crate::nn::functional::softmax_1d_f64(&scaled)
 }
 
 /// Regular softmax (T=1)
+///
+/// ONE PATH: Delegates to `nn::functional::softmax_1d_f64` (UCBD §4).
 #[must_use]
 pub fn softmax(logits: &[f64]) -> Vec<f64> {
-    softmax_temperature(logits, 1.0)
+    crate::nn::functional::softmax_1d_f64(logits)
 }
 
 /// KL divergence: `D_KL(P` || Q) = sum(P * log(P/Q))

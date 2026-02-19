@@ -42,64 +42,15 @@ pub(super) fn abs(x: &Tensor) -> Tensor {
 }
 
 /// Softmax computation for gradient tracking.
+///
+/// ONE PATH: Delegates to `nn::functional::softmax` (UCBD §4).
 pub(super) fn softmax_2d(x: &Tensor) -> Tensor {
-    assert_eq!(x.ndim(), 2);
-
-    let (batch, features) = (x.shape()[0], x.shape()[1]);
-    let mut output = vec![0.0; batch * features];
-
-    for b in 0..batch {
-        let row_start = b * features;
-
-        // Find max for numerical stability
-        let max_val = x.data()[row_start..row_start + features]
-            .iter()
-            .fold(f32::NEG_INFINITY, |a, &b| a.max(b));
-
-        // Compute exp(x - max)
-        let mut sum = 0.0;
-        for j in 0..features {
-            let exp_val = (x.data()[row_start + j] - max_val).exp();
-            output[row_start + j] = exp_val;
-            sum += exp_val;
-        }
-
-        // Normalize
-        for j in 0..features {
-            output[row_start + j] /= sum;
-        }
-    }
-
-    Tensor::new(&output, x.shape())
+    crate::nn::functional::softmax(x, -1)
 }
 
 /// Log-softmax for numerical stability.
+///
+/// ONE PATH: Delegates to `nn::functional::log_softmax` (UCBD §4).
 pub(super) fn log_softmax(x: &Tensor) -> Tensor {
-    assert_eq!(x.ndim(), 2);
-
-    let (batch, features) = (x.shape()[0], x.shape()[1]);
-    let mut output = vec![0.0; batch * features];
-
-    for b in 0..batch {
-        let row_start = b * features;
-
-        // Find max for numerical stability
-        let max_val = x.data()[row_start..row_start + features]
-            .iter()
-            .fold(f32::NEG_INFINITY, |a, &b| a.max(b));
-
-        // Compute log(sum(exp(x - max)))
-        let log_sum_exp: f32 = x.data()[row_start..row_start + features]
-            .iter()
-            .map(|&v| (v - max_val).exp())
-            .sum::<f32>()
-            .ln();
-
-        // log_softmax = x - max - log_sum_exp
-        for j in 0..features {
-            output[row_start + j] = x.data()[row_start + j] - max_val - log_sum_exp;
-        }
-    }
-
-    Tensor::new(&output, x.shape())
+    crate::nn::functional::log_softmax(x, -1)
 }

@@ -57,12 +57,10 @@ impl SoftmaxGating {
         self.temperature
     }
 
+    /// ONE PATH: Scales then delegates to `nn::functional::softmax_1d` (UCBD §4).
     fn softmax(&self, logits: &[f32]) -> Vec<f32> {
         let scaled: Vec<f32> = logits.iter().map(|&x| x / self.temperature).collect();
-        let max = scaled.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-        let exp_vals: Vec<f32> = scaled.iter().map(|&x| (x - max).exp()).collect();
-        let sum: f32 = exp_vals.iter().sum();
-        exp_vals.iter().map(|&x| x / sum).collect()
+        crate::nn::functional::softmax_1d(&scaled)
     }
 }
 

@@ -121,6 +121,30 @@ pub fn swiglu_scalar(x: f32, gate: f32) -> f32 {
     x * gate / (1.0 + (-gate).exp())
 }
 
+/// Softmax on a 1D slice of f32 values.
+///
+/// ONE PATH: All slice-based softmax in the codebase MUST delegate here (UCBD §4).
+///
+/// Equation: softmax(x)\_i = exp(x\_i - max) / sum\_j exp(x\_j - max)
+#[must_use]
+pub fn softmax_1d(logits: &[f32]) -> Vec<f32> {
+    let max = logits.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b));
+    let exp: Vec<f32> = logits.iter().map(|&x| (x - max).exp()).collect();
+    let sum: f32 = exp.iter().sum();
+    exp.iter().map(|&x| x / sum).collect()
+}
+
+/// Softmax on a 1D slice of f64 values.
+///
+/// ONE PATH: All f64 slice-based softmax MUST delegate here (UCBD §4).
+#[must_use]
+pub fn softmax_1d_f64(logits: &[f64]) -> Vec<f64> {
+    let max = logits.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
+    let exp: Vec<f64> = logits.iter().map(|&x| (x - max).exp()).collect();
+    let sum: f64 = exp.iter().sum();
+    exp.iter().map(|&x| x / sum).collect()
+}
+
 /// Tanh activation
 #[must_use]
 pub fn tanh(x: &Tensor) -> Tensor {
@@ -149,85 +173,61 @@ pub fn gelu(x: &Tensor) -> Tensor {
     Tensor::new(&data, x.shape())
 }
 
-/// Softmax along a dimension
+/// Softmax along the last dimension of an ND tensor.
 ///
-/// Equation: softmax(x)_i = exp(x_i) / sum_j exp(x_j)
+/// Equation: softmax(x)\_i = exp(x\_i - max) / sum\_j exp(x\_j - max)
 ///
-/// Currently only supports 2D tensors with dim=-1 (last dimension).
+/// ONE PATH: This is the canonical Tensor softmax. All Tensor-based softmax
+/// MUST delegate here (UCBD §4). Internally uses `softmax_1d` per row.
 ///
 /// Contract: softmax-kernel-v1, equation "softmax"
 #[provable_contracts_macros::contract("softmax-kernel-v1", equation = "softmax")]
 #[must_use]
 pub fn softmax(x: &Tensor, _dim: i32) -> Tensor {
-    assert_eq!(x.ndim(), 2, "softmax currently only supports 2D tensors");
+    let shape = x.shape();
+    let last_dim = shape[shape.len() - 1];
+    let batch_size: usize = shape[..shape.len() - 1].iter().product();
 
-    let (batch, features) = (x.shape()[0], x.shape()[1]);
-    let mut output = vec![0.0; batch * features];
-
-    for b in 0..batch {
-        let row_start = b * features;
-
-        // Numerical stability: subtract max
-        let max_val = x.data()[row_start..row_start + features]
-            .iter()
-            .fold(f32::NEG_INFINITY, |a, &b| a.max(b));
-
-        // Compute exp and sum
-        let mut sum = 0.0;
-        for j in 0..features {
-            let exp_val = (x.data()[row_start + j] - max_val).exp();
-            output[row_start + j] = exp_val;
-            sum += exp_val;
-        }
-
-        // Normalize
-        for j in 0..features {
-            output[row_start + j] /= sum;
-        }
+    let mut output = Vec::with_capacity(x.data().len());
+    for b in 0..batch_size {
+        let start = b * last_dim;
+        let row = &x.data()[start..start + last_dim];
+        output.extend(softmax_1d(row));
     }
 
-    Tensor::new(&output, x.shape())
+    Tensor::new(&output, shape)
 }
 
-/// Log softmax along a dimension
+/// Log softmax along the last dimension of an ND tensor.
 ///
 /// More numerically stable than log(softmax(x)).
+///
+/// ONE PATH: This is the canonical Tensor log-softmax. All Tensor-based
+/// log-softmax MUST delegate here (UCBD §4).
 ///
 /// Contract: cross-entropy-kernel-v1, equation "log_softmax"
 #[provable_contracts_macros::contract("cross-entropy-kernel-v1", equation = "log_softmax")]
 #[must_use]
 pub fn log_softmax(x: &Tensor, _dim: i32) -> Tensor {
-    assert_eq!(
-        x.ndim(),
-        2,
-        "log_softmax currently only supports 2D tensors"
-    );
+    let shape = x.shape();
+    let last_dim = shape[shape.len() - 1];
+    let batch_size: usize = shape[..shape.len() - 1].iter().product();
 
-    let (batch, features) = (x.shape()[0], x.shape()[1]);
-    let mut output = vec![0.0; batch * features];
+    let mut output = vec![0.0f32; x.data().len()];
 
-    for b in 0..batch {
-        let row_start = b * features;
+    for b in 0..batch_size {
+        let start = b * last_dim;
+        let row = &x.data()[start..start + last_dim];
 
-        // Numerical stability: subtract max
-        let max_val = x.data()[row_start..row_start + features]
-            .iter()
-            .fold(f32::NEG_INFINITY, |a, &b| a.max(b));
+        let max_val = row.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b));
+        let log_sum_exp: f32 = row.iter().map(|&v| (v - max_val).exp()).sum::<f32>().ln();
 
-        // Compute log(sum(exp(x - max)))
-        let log_sum_exp: f32 = x.data()[row_start..row_start + features]
-            .iter()
-            .map(|&v| (v - max_val).exp())
-            .sum::<f32>()
-            .ln();
-
-        // log_softmax = x - max - log_sum_exp
-        for j in 0..features {
-            output[row_start + j] = x.data()[row_start + j] - max_val - log_sum_exp;
+        for j in 0..last_dim {
+            output[start + j] = row[j] - max_val - log_sum_exp;
         }
     }
 
-    Tensor::new(&output, x.shape())
+    Tensor::new(&output, shape)
 }
 
 /// Dropout (must be called with training flag)

@@ -142,34 +142,10 @@ impl Tensor {
     /// Uses numerically stable computation with max subtraction.
     #[must_use]
     pub fn softmax(&self) -> Tensor {
-        assert_eq!(self.ndim(), 2, "softmax currently only supports 2D tensors");
-
-        let (batch, features) = (self.shape()[0], self.shape()[1]);
-        let mut output = vec![0.0; batch * features];
-
-        for b in 0..batch {
-            let row_start = b * features;
-
-            // Find max for numerical stability
-            let max_val = self.data()[row_start..row_start + features]
-                .iter()
-                .fold(f32::NEG_INFINITY, |a, &b| a.max(b));
-
-            // Compute exp(x - max) and sum
-            let mut sum = 0.0;
-            for j in 0..features {
-                let exp_val = (self.data()[row_start + j] - max_val).exp();
-                output[row_start + j] = exp_val;
-                sum += exp_val;
-            }
-
-            // Normalize
-            for j in 0..features {
-                output[row_start + j] /= sum;
-            }
-        }
-
-        let mut result = Tensor::new(&output, self.shape());
+        // ONE PATH: Computation delegates to nn::functional::softmax (UCBD §4).
+        // Gradient tracking is handled here (autograd layer).
+        let computed = crate::nn::functional::softmax(self, -1);
+        let mut result = Tensor::new(computed.data(), self.shape());
 
         if is_grad_enabled() && self.requires_grad_enabled() {
             result.requires_grad_(true);

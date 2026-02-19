@@ -302,31 +302,10 @@ pub(super) fn add_mask(scores: &Tensor, mask: &Tensor) -> Tensor {
 }
 
 /// Softmax over last dimension.
+///
+/// ONE PATH: Delegates to `nn::functional::softmax` (UCBD §4).
 pub(super) fn softmax_last_dim(x: &Tensor) -> Tensor {
-    let shape = x.shape();
-    let last_dim = shape[shape.len() - 1];
-    let batch_size: usize = shape[..shape.len() - 1].iter().product();
-
-    let mut output = vec![0.0; x.data().len()];
-
-    for b in 0..batch_size {
-        let offset = b * last_dim;
-        let slice = &x.data()[offset..offset + last_dim];
-
-        // Max for numerical stability
-        let max_val = slice.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b));
-
-        // Compute exp(x - max)
-        let exp_vals: Vec<f32> = slice.iter().map(|&v| (v - max_val).exp()).collect();
-        let sum: f32 = exp_vals.iter().sum();
-
-        // Normalize
-        for (i, exp_v) in exp_vals.iter().enumerate() {
-            output[offset + i] = exp_v / sum;
-        }
-    }
-
-    Tensor::new(&output, shape)
+    crate::nn::functional::softmax(x, -1)
 }
 
 /// Apply dropout (simplified).

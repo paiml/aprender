@@ -154,11 +154,9 @@ fn sample_normal(rng: &mut impl Rng) -> f32 {
     (-2.0 * u1.ln()).sqrt() * (2.0 * std::f32::consts::PI * u2).cos()
 }
 
+/// ONE PATH: Delegates to `nn::functional::softmax_1d` (UCBD §4).
 fn softmax(logits: &[f32]) -> Vec<f32> {
-    let max = logits.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b));
-    let exp: Vec<f32> = logits.iter().map(|&x| (x - max).exp()).collect();
-    let sum: f32 = exp.iter().sum();
-    exp.iter().map(|&x| x / sum).collect()
+    crate::nn::functional::softmax_1d(logits)
 }
 
 /// `CutMix` data augmentation (Yun et al., 2019).
@@ -366,11 +364,9 @@ impl RDrop {
     }
 }
 
+/// ONE PATH: Delegates to `nn::functional::softmax_1d` (UCBD §4).
 fn softmax_slice(logits: &[f32]) -> Vec<f32> {
-    let max = logits.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b));
-    let exp: Vec<f32> = logits.iter().map(|&x| (x - max).exp()).collect();
-    let sum: f32 = exp.iter().sum();
-    exp.iter().map(|&x| x / sum).collect()
+    crate::nn::functional::softmax_1d(logits)
 }
 
 /// `SpecAugment`: Data augmentation for speech recognition (Park et al., 2019).

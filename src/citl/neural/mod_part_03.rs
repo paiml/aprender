@@ -73,32 +73,9 @@ fn batched_matmul(a: &Tensor, b: &Tensor) -> Tensor {
     Tensor::new(&output, &out_shape)
 }
 
-fn softmax(x: &Tensor, _dim: i32) -> Tensor {
-    // Softmax over last dimension
-    let shape = x.shape();
-    let last_dim = *shape.last().unwrap_or(&1);
-    let batch_size: usize = shape[..shape.len() - 1].iter().product();
-
-    let data = x.data();
-    let mut output = Vec::with_capacity(data.len());
-
-    for b in 0..batch_size {
-        let start = b * last_dim;
-        let slice = &data[start..start + last_dim];
-
-        // Find max for numerical stability
-        let max_val = slice.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-
-        // Compute exp and sum
-        let exp_vals: Vec<f32> = slice.iter().map(|&x| (x - max_val).exp()).collect();
-        let sum: f32 = exp_vals.iter().sum();
-
-        // Normalize
-        let inv_sum = 1.0 / sum;
-        output.extend(exp_vals.iter().map(|&x| x * inv_sum));
-    }
-
-    Tensor::new(&output, shape)
+/// ONE PATH: Delegates to `nn::functional::softmax` (UCBD §4).
+fn softmax(x: &Tensor, dim: i32) -> Tensor {
+    crate::nn::functional::softmax(x, dim)
 }
 
 fn dropout(x: &Tensor, p: f32) -> Tensor {

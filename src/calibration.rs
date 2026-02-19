@@ -188,11 +188,9 @@ pub fn maximum_calibration_error(predictions: &[f32], labels: &[bool], n_bins: u
     mce
 }
 
+/// ONE PATH: Delegates to `nn::functional::softmax_1d` (UCBD §4).
 fn softmax(logits: &[f32]) -> Vec<f32> {
-    let max = logits.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b));
-    let exp: Vec<f32> = logits.iter().map(|&x| (x - max).exp()).collect();
-    let sum: f32 = exp.iter().sum();
-    exp.iter().map(|&x| x / sum).collect()
+    crate::nn::functional::softmax_1d(logits)
 }
 
 /// ONE PATH: Delegates to `nn::functional::sigmoid_scalar` (UCBD §4).
