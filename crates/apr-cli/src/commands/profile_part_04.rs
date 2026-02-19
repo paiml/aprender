@@ -38,9 +38,9 @@ fn profile_gpu_generation(
     let model = OwnedQuantizedModel::from_mapped(&mapped)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to create model: {e}")))?;
 
-    let num_layers = model.config.num_layers;
-    let vocab_size = model.config.vocab_size;
-    let hidden_dim = model.config.hidden_dim;
+    let num_layers = model.config().num_layers;
+    let vocab_size = model.config().vocab_size;
+    let hidden_dim = model.config().hidden_dim;
 
     // Try GPU path
     let mut cuda_model = match realizar::gguf::OwnedQuantizedModelCuda::new(model, 0) {

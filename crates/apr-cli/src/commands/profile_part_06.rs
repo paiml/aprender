@@ -94,7 +94,7 @@ fn profile_gguf_real(
     let model = OwnedQuantizedModel::from_mapped(&mapped)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to create model: {e}")))?;
 
-    let config = &model.config;
+    let config = model.config();
     let num_layers = config.num_layers;
     let vocab_size = config.vocab_size;
     let hidden_dim = config.hidden_dim;
@@ -272,7 +272,7 @@ fn profile_apr_real(
     let model = AprTransformer::from_apr_file(path)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to load APR: {e}")))?;
 
-    let config = &model.config;
+    let config = model.config();
     let num_layers = config.num_layers;
     let vocab_size = config.vocab_size;
     let hidden_dim = config.hidden_dim;

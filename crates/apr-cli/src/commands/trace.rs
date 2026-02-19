@@ -332,7 +332,7 @@ fn run_traced_inference_gguf(path: &Path) -> Result<(), CliError> {
     let model = OwnedQuantizedModel::from_mapped(&mapped)
         .map_err(|e| CliError::ModelLoadFailed(format!("Failed to create quantized model: {e}")))?;
 
-    let config = &model.config;
+    let config = model.config();
     println!("Architecture: {}", config.architecture);
     println!("  Layers: {}", config.num_layers);
     println!("  Hidden dim: {}", config.hidden_dim);

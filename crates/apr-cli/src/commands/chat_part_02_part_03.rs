@@ -272,10 +272,10 @@ impl ChatSession {
                 let mut tracer = InferenceTracer::new(trace_config);
                 tracer.set_model_info(ModelInfo {
                     name: "GGUF Model (CPU)".to_string(),
-                    num_layers: model.config.num_layers,
-                    hidden_dim: model.config.hidden_dim,
-                    vocab_size: model.config.vocab_size,
-                    num_heads: model.config.num_heads,
+                    num_layers: model.config().num_layers,
+                    hidden_dim: model.config().hidden_dim,
+                    vocab_size: model.config().vocab_size,
+                    num_heads: model.config().num_heads,
                     quant_type: None,
                 });
 
@@ -403,9 +403,9 @@ impl ChatSession {
             // With KV cache, we can generate more tokens efficiently
             let practical_max = config.max_tokens;
 
-            let is_gqa = model.config.num_kv_heads < model.config.num_heads;
+            let is_gqa = model.config().num_kv_heads < model.config().num_heads;
             let gqa_note = if is_gqa {
-                format!(" (GQA: {} kv_heads)", model.config.num_kv_heads)
+                format!(" (GQA: {} kv_heads)", model.config().num_kv_heads)
             } else {
                 String::new()
             };
@@ -427,7 +427,7 @@ impl ChatSession {
                 use realizar::gguf::OwnedQuantizedModelCuda;
                 if OwnedQuantizedModelCuda::is_available() {
                     // Print model info before attempting CUDA (model consumed on success)
-                    let num_layers = model.config.num_layers;
+                    let num_layers = model.config().num_layers;
 
                     match OwnedQuantizedModelCuda::new(model, 0) {
                         Ok(mut cuda_model) => {

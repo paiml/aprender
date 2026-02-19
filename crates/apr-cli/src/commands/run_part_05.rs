@@ -228,7 +228,7 @@ fn run_gguf_generate(
         }
 
         let infer_start = Instant::now();
-        let config = cuda_model.model().config.clone();
+        let config = cuda_model.model().config().clone();
         let tokens = traced_generate(
             || cuda_model.generate_gpu_resident(input_tokens, gen_config),
             trace_options,
@@ -246,7 +246,7 @@ fn run_gguf_generate(
     #[allow(unused_variables)]
     let _ = benchmark;
     let infer_start = Instant::now();
-    let config = model.config.clone();
+    let config = model.config().clone();
     let tokens = traced_generate(
         || model.generate_with_cache(input_tokens, gen_config),
         trace_options,

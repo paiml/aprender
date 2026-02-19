@@ -10,7 +10,7 @@ fn check_tokenizer_real(model: &OwnedQuantizedModel) -> StageResult {
     let embedding = model.embed(&test_tokens);
 
     let embedding_ok = !embedding.is_empty()
-        && embedding.len() == test_tokens.len() * model.config.hidden_dim
+        && embedding.len() == test_tokens.len() * model.config().hidden_dim
         && !embedding.iter().any(|x| x.is_nan() || x.is_infinite());
 
     StageResult {

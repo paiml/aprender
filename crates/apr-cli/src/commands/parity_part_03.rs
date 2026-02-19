@@ -42,7 +42,7 @@ pub fn run(file: &Path, prompt: &str, assert: bool, verbose: bool) -> Result<()>
     let model = OwnedQuantizedModel::from_mapped(&mapped)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to create model: {e}")))?;
 
-    let config = &model.config;
+    let config = model.config();
     let hidden_dim = config.hidden_dim;
     let num_heads = config.num_heads;
     let kv_heads = config.num_kv_heads;

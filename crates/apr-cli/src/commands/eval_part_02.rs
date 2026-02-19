@@ -87,14 +87,14 @@ fn calculate_gguf_perplexity(
 ) -> Result<(f32, f32)> {
     use realizar::gguf::OwnedQuantizedKVCache;
 
-    let vocab_size = model.config.vocab_size;
+    let vocab_size = model.config().vocab_size;
     let mut total_log_prob = 0.0f64;
     let mut count = 0usize;
 
     // Create KV cache for efficient inference
     let mut cache = OwnedQuantizedKVCache::new(
-        model.config.num_layers,
-        model.config.hidden_dim,
+        model.config().num_layers,
+        model.config().hidden_dim,
         tokens.len() + 1, // max_seq_len = num tokens being evaluated
     );
 

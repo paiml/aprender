@@ -236,8 +236,8 @@ fn run_gguf_evaluation(path: &Path, config: &EvalConfig, json: bool) -> Result<E
         "{} in {:.2}s ({} layers, vocab_size={})",
         "Model ready".green(),
         load_time.as_secs_f32(),
-        model.config.num_layers,
-        model.config.vocab_size
+        model.config().num_layers,
+        model.config().vocab_size
     );
     progress!();
 

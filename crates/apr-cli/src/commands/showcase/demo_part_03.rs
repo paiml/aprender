@@ -32,20 +32,20 @@ pub(super) fn run_brick_demo(config: &ShowcaseConfig) -> Result<BrickDemoResult>
     println!(
         "  {} Model loaded: {} layers",
         "✓".green(),
-        model.config.num_layers
+        model.config().num_layers
     );
 
     // Create brick representation for layer 0
     println!();
     println!("{}", "─── Brick Architecture ───".yellow());
 
-    let hidden_dim = model.config.hidden_dim;
-    let num_heads = model.config.num_heads;
-    let num_kv_heads = model.config.num_kv_heads;
-    let intermediate_dim = model.config.intermediate_dim;
-    let eps = model.config.eps;
-    let rope_theta = model.config.rope_theta;
-    let rope_type = model.config.rope_type;
+    let hidden_dim = model.config().hidden_dim;
+    let num_heads = model.config().num_heads;
+    let num_kv_heads = model.config().num_kv_heads;
+    let intermediate_dim = model.config().intermediate_dim;
+    let eps = model.config().eps;
+    let rope_theta = model.config().rope_theta;
+    let rope_type = model.config().rope_type;
 
     // Create layer brick using model config
     let layer_brick = TransformerLayerBrick::from_config(
@@ -248,7 +248,7 @@ pub(super) fn run_brick_demo(config: &ShowcaseConfig) -> Result<BrickDemoResult>
         let start = Instant::now();
         let _ = model.forward(&[test_token]);
         let elapsed = start.elapsed().as_micros() as f64;
-        layer_timings_us.push(elapsed / model.config.num_layers as f64);
+        layer_timings_us.push(elapsed / model.config().num_layers as f64);
     }
 
     // Calculate statistics
@@ -261,7 +261,7 @@ pub(super) fn run_brick_demo(config: &ShowcaseConfig) -> Result<BrickDemoResult>
     let stddev_us = variance.sqrt();
     let cv = stddev_us / mean_us * 100.0;
 
-    let total_us = mean_us * model.config.num_layers as f64;
+    let total_us = mean_us * model.config().num_layers as f64;
     let tokens_per_sec = 1_000_000.0 / total_us;
 
     println!(
@@ -340,7 +340,7 @@ pub(super) fn run_brick_demo(config: &ShowcaseConfig) -> Result<BrickDemoResult>
     );
 
     Ok(BrickDemoResult {
-        layers_measured: model.config.num_layers,
+        layers_measured: model.config().num_layers,
         layer_timings_us,
         bottleneck,
         total_us,

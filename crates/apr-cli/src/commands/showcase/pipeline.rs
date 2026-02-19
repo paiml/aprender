@@ -116,10 +116,10 @@ pub(super) fn run_gguf_inference(config: &ShowcaseConfig) -> Result<bool> {
     );
 
     // Model info
-    println!("  Layers: {}", model.config.num_layers);
-    println!("  Hidden dim: {}", model.config.hidden_dim);
-    println!("  Heads: {}", model.config.num_heads);
-    println!("  KV heads: {}", model.config.num_kv_heads);
+    println!("  Layers: {}", model.config().num_layers);
+    println!("  Hidden dim: {}", model.config().hidden_dim);
+    println!("  Heads: {}", model.config().num_heads);
+    println!("  KV heads: {}", model.config().num_kv_heads);
 
     // DEBUG: Print actual embedding values from model BEFORE potential move to GPU
     let emb_token_0 = model.embed(&[0]);

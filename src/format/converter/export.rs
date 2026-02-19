@@ -413,13 +413,12 @@ fn detect_num_layers_from_names<'a>(names: impl Iterator<Item = &'a str>) -> usi
 }
 
 /// Transpose a 2D f32 matrix from `[rows, cols]` to `[cols, rows]` (Conv1D → Linear).
+///
+/// PMAT-285: Delegates to trueno's cache-blocked transpose.
 fn transpose_2d_f32(data: &[f32], rows: usize, cols: usize) -> Vec<f32> {
-    let mut out = vec![0.0f32; data.len()];
-    for r in 0..rows {
-        for c in 0..cols {
-            out[c * rows + r] = data[r * cols + c];
-        }
-    }
+    let mut out = vec![0.0f32; rows * cols];
+    trueno::blis::transpose::transpose(rows, cols, data, &mut out)
+        .expect("transpose_2d_f32: dimension mismatch");
     out
 }
 

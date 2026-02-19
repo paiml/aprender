@@ -368,14 +368,14 @@ fn start_gguf_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
         "{}",
         format!(
             "Model ready: {} layers, vocab_size={}, hidden_dim={}",
-            quantized_model.layers.len(),
-            quantized_model.config.vocab_size,
-            quantized_model.config.hidden_dim
+            quantized_model.layers().len(),
+            quantized_model.config().vocab_size,
+            quantized_model.config().hidden_dim
         )
         .green()
     );
 
-    let vocab = extract_gguf_vocab(&mapped_model, quantized_model.config.vocab_size);
+    let vocab = extract_gguf_vocab(&mapped_model, quantized_model.config().vocab_size);
 
     #[cfg(feature = "cuda")]
     if config.gpu && config.batch {
@@ -448,7 +448,7 @@ fn start_gguf_server_cuda(
             let quantized_model = OwnedQuantizedModel::from_mapped(mapped_model).map_err(|e| {
                 CliError::ModelLoadFailed(format!("Failed to rebuild quantized model: {e}"))
             })?;
-            let vocab = extract_gguf_vocab(mapped_model, quantized_model.config.vocab_size);
+            let vocab = extract_gguf_vocab(mapped_model, quantized_model.config().vocab_size);
             run_cpu_server(quantized_model, vocab, config)
         }
     }
