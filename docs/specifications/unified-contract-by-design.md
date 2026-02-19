@@ -699,26 +699,23 @@ For each deletion:
 
 ## 10. Binding Completeness Mandate
 
-### 10.1 All 174 Bindings Must Be Implemented
+### 10.1 All Bindings Must Be Implemented
 
-Per user mandate: **every binding in `provable-contracts/contracts/aprender/binding.yaml` must have status `implemented`**. No `partial` or `not_implemented` allowed.
+Per user mandate: **every binding in `provable-contracts/contracts/aprender/binding.yaml` must have status `implemented`**. No `partial` or `not_implemented` allowed (except `ALLOWED_GAPS` in `build.rs`).
 
-### 10.2 Current Gaps (2 bindings — SSM only)
+### 10.2 Current Gaps (3 bindings — SSM + RobustScaler)
 
-**Updated 2026-02-19**: 197/203 bindings are now `implemented` (97.0%).
-All Tier 1 (Qwen3/3.5) and Tier 2 (architecture completeness) gaps have been closed.
-
-The only remaining gaps are SSM/Mamba (3 equations × 2 target modules = 6 bindings),
-which is not yet implemented in any stack crate:
+**Updated 2026-02-19**: 236/239 bindings are now `implemented` (98.7%).
+AllImplemented policy enforced in `build.rs` — unallowed gaps fail the build.
 
 | Contract | Equation | Target Module | Priority | Status |
 |----------|----------|---------------|----------|--------|
 | `ssm-kernel-v1` | `ssm_discretize` | `realizar::ssm` | P2 | not_implemented |
-| `ssm-kernel-v1` | `ssm_scan` | `realizar::ssm` | P2 | not_implemented |
 | `ssm-kernel-v1` | `selective_gate` | `realizar::ssm` | P2 | not_implemented |
+| `preprocessing-normalization-v1` | `robust_scaler` | `aprender::preprocessing` | P3 | not_implemented |
 
-These require implementing the Mamba state space model (zero-order hold discretization,
-parallel associative scan, input-dependent selection). Tracked as future work.
+SSM requires implementing the Mamba state space model. RobustScaler requires
+median/IQR-based scaling. Both tracked as future work in `ALLOWED_GAPS`.
 
 #### Previously Closed Gaps (all now implemented)
 
