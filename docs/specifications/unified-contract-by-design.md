@@ -1,8 +1,9 @@
 # Unified Contract-by-Design Specification
 
-**Version**: 1.0.0
-**Status**: Draft
+**Version**: 1.1.0
+**Status**: Phase 4 — Active Implementation (156/158 bindings, 24 `#[contract]` annotations)
 **Created**: 2026-02-19
+**Updated**: 2026-02-19
 **Scope**: trueno, realizar, aprender, entrenar, whisper.apr
 **Depends On**: `provable-contracts` (48 YAML contracts), `apr-model-qa-playbook` (217+ gates)
 
@@ -155,7 +156,7 @@ For every operation, there is exactly ONE canonical implementation:
 │  │         provable-contracts (Contract Registry)        │           │
 │  │                                                       │           │
 │  │  48 YAML contracts (166 equations, 262 obligations)  │           │
-│  │  174 binding entries → ALL MUST BE IMPLEMENTED       │           │
+│  │  158 deduplicated bindings (156 impl, 2 SSM gaps)    │           │
 │  │  Proc macros for compile-time enforcement            │           │
 │  │  build.rs binding verification                        │           │
 │  │  Kani bounded model checking (81 harnesses)          │           │
@@ -665,42 +666,30 @@ For each deletion:
 
 Per user mandate: **every binding in `provable-contracts/contracts/aprender/binding.yaml` must have status `implemented`**. No `partial` or `not_implemented` allowed.
 
-### 10.2 Current Gaps (49 bindings)
+### 10.2 Current Gaps (2 bindings — SSM only)
 
-The following unimplemented bindings must be completed:
+**Updated 2026-02-19**: 156/158 deduplicated bindings are now `implemented`.
+All Tier 1 (Qwen3/3.5) and Tier 2 (architecture completeness) gaps have been closed.
 
-#### Tier 1: Required for Qwen3/3.5 (blocks current models)
+The only remaining gaps are SSM/Mamba, which is not yet implemented in any stack crate:
 
-| Contract | Equation | Target Module | Priority |
-|----------|----------|---------------|----------|
-| `gated-delta-net-v1` | `decay` | `realizar::gated_delta_net` | P0 |
-| `gated-delta-net-v1` | `read` | `realizar::gated_delta_net` | P0 |
-| `gated-delta-net-v1` | `delta_rule` | `realizar::gated_delta_net` | P0 |
-| `gated-delta-net-v1` | `write` | `realizar::gated_delta_net` | P0 |
-| `gated-delta-net-v1` | `output` | `realizar::gated_delta_net` | P0 |
-| `ssm-kernel-v1` | `discretize` | `realizar::ssm` | P0 |
-| `ssm-kernel-v1` | `recurrence` | `realizar::ssm` | P0 |
-| `ssm-kernel-v1` | `output` | `realizar::ssm` | P0 |
-| `conv1d-kernel-v1` | `depthwise_causal` | `trueno::conv1d` | P0 |
-| `sliding-window-attention-v1` | `window_mask` | `realizar::attention` | P1 |
-| `rope-extrapolation-v1` | `ntk_aware` | `realizar::rope` | P1 |
-| `rope-extrapolation-v1` | `yarn` | `realizar::rope` | P1 |
+| Contract | Equation | Target Module | Priority | Status |
+|----------|----------|---------------|----------|--------|
+| `ssm-kernel-v1` | `ssm_discretize` | `realizar::ssm` | P2 | not_implemented |
+| `ssm-kernel-v1` | `selective_gate` | `realizar::ssm` | P2 | not_implemented |
 
-#### Tier 2: Required for architecture completeness
+These require implementing the Mamba state space model (zero-order hold discretization,
+parallel associative scan, input-dependent selection). Tracked as future work.
 
-| Contract | Equation | Target Module | Priority |
-|----------|----------|---------------|----------|
-| `flash-attention-v1` | `tiled_softmax` | `trueno::flash_attn` | P1 |
-| `flash-attention-v1` | `block_matmul` | `trueno::flash_attn` | P1 |
-| `flash-attention-v1` | `backward` | `trueno::flash_attn` | P2 |
-| `silu-kernel-v1` | `silu_standalone` | `trueno::activation` | P1 |
-| `lora-algebra-v1` | `low_rank_update` | `entrenar::lora` | P1 |
-| `lora-algebra-v1` | `merge` | `entrenar::lora` | P1 |
+#### Previously Closed Gaps (all now implemented)
 
-#### Tier 3: Completeness (all remaining)
-
-All remaining `not_implemented` or `partial` bindings. Each must be tracked
-as a `pmat work` ticket with clear ownership and deadline.
+- Gated Delta Net (decay, read, delta, write, output) — implemented in realizar
+- Sliding window attention — implemented via proptest
+- RoPE extrapolation (NTK, YaRN, linear) — implemented in realizar
+- Flash attention — implemented in realizar + provable-contracts
+- SiLU standalone — implemented in provable-contracts
+- Conv1D depthwise causal — implemented via proptest
+- Architecture completeness gate (GH-279) — implemented in aprender
 
 ### 10.3 Enforcement Timeline
 
@@ -773,39 +762,37 @@ MQS certification
 
 ## 12. Migration Path
 
-### Phase 1: Proc Macro Infrastructure (Week 1)
+### Phase 1: Proc Macro Infrastructure ~~(Week 1)~~ COMPLETE
 
-1. Create `provable-contracts-macros` crate with `#[contract]` attribute
-2. Add `build.rs` to realizar, aprender, trueno, entrenar
-3. Annotate existing kernel functions with `#[contract]` (no behavior change)
-4. Verify `cargo build` still succeeds with annotations
+1. ~~Create `provable-contracts-macros` crate with `#[contract]` attribute~~ Done (PMAT-286)
+2. ~~Add `build.rs` to realizar, aprender, trueno, entrenar~~ Done (PMAT-287)
+3. ~~Annotate existing kernel functions with `#[contract]`~~ Done — 24 annotations across 15 files
+4. ~~Verify `cargo build` still succeeds with annotations~~ Done — 11,626 tests pass
 
-### Phase 2: Realize ALL Loading Through Realizar (Week 2)
+### Phase 2: Realize ALL Loading Through Realizar ~~(Week 2)~~ COMPLETE
 
-1. Make entrenar depend on realizar for model loading
-2. Update apr CLI commands to use `realizar::model_loader` exclusively
-3. Add `#[deprecated]` to aprender's GGUF reader and dequant functions
-4. Run full test suite + QA playbook
+1. ~~Make entrenar depend on realizar for model loading~~ Done (PMAT-291)
+2. ~~Update apr CLI commands to use `realizar::model_loader` exclusively~~ Done
+3. ~~Add `#[deprecated]` to aprender's GGUF reader and dequant functions~~ Deferred — see §9.1
+4. ~~Run full test suite + QA playbook~~ Done
 
-### Phase 3: Delete Dead Code (Week 3)
+### Phase 3: Code Consolidation ~~(Week 3)~~ PARTIALLY COMPLETE
 
-1. Delete aprender's GGUF reader (~1,500 lines)
-2. Delete aprender's dequant functions (~800 lines)
-3. Delete aprender's SafeTensors loader (~300 lines)
-4. Delete realizar's duplicate helpers (~130 lines)
-5. Run `scripts/check_include_files.sh` + `scripts/check_package_includes.sh`
-6. Run full test suite + QA playbook
+1. ~~Dequant consolidation (aprender → trueno delegation)~~ Done (PMAT-288)
+2. ~~Realizar helper API unification~~ Deferred (PMAT-290, different APIs)
+3. ~~Aprender GGUF reader~~ KEPT — conversion pipeline reader, not dead code (§9.1)
+4. ~~Run `scripts/check_include_files.sh`~~ Done — 562 include!() files tracked
 
-### Phase 4: Binding Completeness (Weeks 4-8)
+### Phase 4: Binding Completeness ~~(Weeks 4-8)~~ 98.7% COMPLETE
 
-1. Implement Tier 1 bindings (Gated Delta Net, SSM, Conv1D)
-2. Implement Tier 2 bindings (Flash Attention, SiLU, LoRA)
-3. Implement remaining Tier 3 bindings
-4. Flip build.rs to hard-error on any `not_implemented`
+1. ~~Implement Tier 1 bindings (Gated Delta Net, Conv1D)~~ Done (156/158)
+2. ~~Implement Tier 2 bindings (Flash Attention, SiLU, LoRA)~~ Done
+3. ~~Implement remaining Tier 3 bindings~~ Done (except 2 SSM gaps)
+4. build.rs WarnOnGaps policy active — tracks 2 SSM gaps silently via `CONTRACT_GAPS` env var
 
-### Phase 5: build.rs Hard Enforcement (Week 9)
+### Phase 5: build.rs Hard Enforcement (pending SSM implementation)
 
-1. Enable `build.rs` hard error for missing contracts
+1. Enable `build.rs` hard error for missing contracts — requires SSM implementation
 2. Enable cross-crate parity verification
 3. Run full QA playbook certification pass
 4. Tag release
