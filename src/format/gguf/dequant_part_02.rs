@@ -3,17 +3,10 @@
 /// `Q6_K`: super blocks of 256 elements
 /// Each super block: ql (128 bytes) + qh (64 bytes) + scales (16 bytes) + d (f16) = 210 bytes
 ///
-/// Layout matches llama.cpp/ggml `dequantize_row_q6_K`:
-/// - Two half-blocks of 128 elements each
-/// - For each half-block, 32 iterations produce 4 values each at positions [l, l+32, l+64, l+96]
-/// - ql[l] and ql[l+32] provide low 4 bits; qh[l] provides high 2 bits (shifts 0,2,4,6)
-/// - 16 scales: [0..7] for first half, [8..15] for second half
-///
-/// PMAT-238 FIX: Previous implementation had wrong index mapping and qh bit extraction,
-/// causing 99.7% of dequantized values to be zero (false positive in contract validator).
+/// Delegates to `trueno_quant::dequantize_q6_k_to_f32` — the single source of truth.
 pub(crate) fn dequantize_q6_k(data: &[u8], start: usize, num_elements: usize) -> Result<Vec<f32>> {
     const SUPER_BLOCK_SIZE: usize = 256;
-    const SUPER_BLOCK_BYTES: usize = 128 + 64 + 16 + 2; // 210 bytes
+    const SUPER_BLOCK_BYTES: usize = 210;
 
     let num_blocks = (num_elements + SUPER_BLOCK_SIZE - 1) / SUPER_BLOCK_SIZE;
     let total_bytes = num_blocks * SUPER_BLOCK_BYTES;
@@ -24,60 +17,10 @@ pub(crate) fn dequantize_q6_k(data: &[u8], start: usize, num_elements: usize) ->
         });
     }
 
-    let mut result = Vec::with_capacity(num_elements);
-    let mut offset = start;
-
-    for _ in 0..num_blocks {
-        // Read ql (128 bytes = low 4 bits of 256 6-bit values)
-        let ql = &data[offset..offset + 128];
-        offset += 128;
-
-        // Read qh (64 bytes = high 2 bits of 256 6-bit values)
-        let qh = &data[offset..offset + 64];
-        offset += 64;
-
-        // Read scales (16 bytes = 16 int8 scales)
-        let scales = &data[offset..offset + 16];
-        offset += 16;
-
-        // Read d (f16)
-        // GH-186 FIX: Use safe_f16_scale to clamp NaN/Inf/subnormal
-        let d = safe_f16_scale(u16::from_le_bytes([data[offset], data[offset + 1]]));
-        offset += 2;
-
-        // Two half-blocks of 128 elements each (matching llama.cpp layout)
-        let mut y = [0.0f32; 256];
-
-        for half in 0..2usize {
-            let ql_off = half * 64;
-            let qh_off = half * 32;
-            let sc_off = half * 8;
-
-            for l in 0..32usize {
-                let is = l / 16;
-                let ql_lo = ql[ql_off + l];
-                let ql_hi = ql[ql_off + l + 32];
-                let qh_byte = qh[qh_off + l];
-
-                // Each qh byte provides high 2 bits for 4 values at different bit positions
-                let q1 = (i32::from(ql_lo & 0x0F) | (i32::from((qh_byte >> 0) & 3) << 4)) - 32;
-                let q2 = (i32::from(ql_hi & 0x0F) | (i32::from((qh_byte >> 2) & 3) << 4)) - 32;
-                let q3 = (i32::from(ql_lo >> 4) | (i32::from((qh_byte >> 4) & 3) << 4)) - 32;
-                let q4 = (i32::from(ql_hi >> 4) | (i32::from((qh_byte >> 6) & 3) << 4)) - 32;
-
-                let base = half * 128;
-                y[base + l] = d * f32::from(scales[sc_off + is] as i8) * q1 as f32;
-                y[base + l + 32] = d * f32::from(scales[sc_off + is + 2] as i8) * q2 as f32;
-                y[base + l + 64] = d * f32::from(scales[sc_off + is + 4] as i8) * q3 as f32;
-                y[base + l + 96] = d * f32::from(scales[sc_off + is + 6] as i8) * q4 as f32;
-            }
-        }
-
-        result.extend_from_slice(&y);
-    }
-
-    result.truncate(num_elements);
-    Ok(result)
+    Ok(trueno_quant::dequantize_q6_k_to_f32(
+        &data[start..],
+        num_elements,
+    ))
 }
 
 /// Dequantize `Q4_1` format

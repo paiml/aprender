@@ -1,41 +1,18 @@
 //! GGUF dequantization kernels
+//!
+//! K-quant formats (Q4_K, Q5_K, Q6_K) delegate to `trueno_quant` — the single
+//! source of truth in the Sovereign AI Stack.  Legacy GGML formats (Q4_0, Q8_0,
+//! Q5_0, Q5_1, Q4_1, Q2_K, Q3_K, IQ*) have no trueno equivalent and keep their
+//! inline implementations.
 
 use crate::error::{AprenderError, Result};
 
-/// Convert F16 (IEEE 754 half-precision) to F32
+/// Convert F16 (IEEE 754 half-precision) to F32.
+///
+/// Delegates to `trueno_quant::f16_to_f32` which uses the `half` crate —
+/// the industry-standard implementation.
 pub(crate) fn f16_to_f32(bits: u16) -> f32 {
-    let sign = u32::from((bits >> 15) & 1);
-    let exp = u32::from((bits >> 10) & 0x1F);
-    let mant = u32::from(bits & 0x3FF);
-
-    if exp == 0 {
-        if mant == 0 {
-            // Zero
-            f32::from_bits(sign << 31)
-        } else {
-            // Subnormal - convert to normalized f32
-            let mut m = mant;
-            let mut e = 0i32;
-            while (m & 0x400) == 0 {
-                m <<= 1;
-                e -= 1;
-            }
-            m &= 0x3FF;
-            let f32_exp = (127 - 15 + 1 + e) as u32;
-            f32::from_bits((sign << 31) | (f32_exp << 23) | (m << 13))
-        }
-    } else if exp == 31 {
-        // Inf or NaN
-        if mant == 0 {
-            f32::from_bits((sign << 31) | (0xFF << 23))
-        } else {
-            f32::from_bits((sign << 31) | (0xFF << 23) | (mant << 13))
-        }
-    } else {
-        // Normal number
-        let f32_exp = (exp as i32 - 15 + 127) as u32;
-        f32::from_bits((sign << 31) | (f32_exp << 23) | (mant << 13))
-    }
+    trueno_quant::f16_to_f32(bits)
 }
 
 /// Convert F16 to F32 with NaN/Inf/subnormal clamping for use as scale factors.
@@ -289,9 +266,11 @@ pub(crate) fn dequantize_q5_1(data: &[u8], start: usize, num_elements: usize) ->
 /// Dequantize `Q4_K` format (K-quants)
 /// `Q4_K`: super blocks of 256 elements
 /// Each super block: d (f16) + dmin (f16) + scales (12 bytes) + qs (128 bytes) = 144 bytes
+///
+/// Delegates to `trueno_quant::dequantize_q4_k_to_f32` — the single source of truth.
 pub(crate) fn dequantize_q4_k(data: &[u8], start: usize, num_elements: usize) -> Result<Vec<f32>> {
     const SUPER_BLOCK_SIZE: usize = 256;
-    const SUPER_BLOCK_BYTES: usize = 2 + 2 + 12 + 128; // 144 bytes
+    const SUPER_BLOCK_BYTES: usize = 144;
 
     let num_blocks = (num_elements + SUPER_BLOCK_SIZE - 1) / SUPER_BLOCK_SIZE;
     let total_bytes = num_blocks * SUPER_BLOCK_BYTES;
@@ -302,74 +281,20 @@ pub(crate) fn dequantize_q4_k(data: &[u8], start: usize, num_elements: usize) ->
         });
     }
 
-    let mut result = Vec::with_capacity(num_elements);
-    let mut offset = start;
-
-    for _ in 0..num_blocks {
-        // Read d (f16 scale) and dmin (f16 min)
-        // GH-186 FIX: Use safe_f16_scale to clamp NaN/Inf/subnormal
-        let d = safe_f16_scale(u16::from_le_bytes([data[offset], data[offset + 1]]));
-        let dmin = safe_f16_scale(u16::from_le_bytes([data[offset + 2], data[offset + 3]]));
-        offset += 4;
-
-        // Read scales (12 bytes = 8 6-bit values packed)
-        // scales[0..7] are the 8 sub-block scales
-        let scales_bytes = &data[offset..offset + 12];
-        let mut scales = [0u8; 8];
-        let mut mins = [0u8; 8];
-
-        // Unpack 6-bit scales and mins from 12 bytes (llama.cpp Q4_K format)
-        // The packing is:
-        //   bytes 0-3: lower 6 bits of scales[0-3]
-        //   bytes 4-7: lower 6 bits of mins[0-3]
-        //   bytes 8-11: combined upper 2 bits for scales[4-7] and mins[4-7]
-        //
-        // For j < 4:  scale = q[j] & 63,     min = q[j+4] & 63
-        // For j >= 4: scale = (q[j+4] & 0xF) | ((q[j-4] >> 6) << 4)
-        //             min   = (q[j+4] >> 4) | ((q[j] >> 6) << 4)
-        //
-        // F-REGR-231 FIX: Previous implementation was wrong for scales[4-7] and mins[4-7]
-        for i in 0..4 {
-            // j < 4: direct 6-bit extraction
-            scales[i] = scales_bytes[i] & 0x3F;
-            mins[i] = scales_bytes[i + 4] & 0x3F;
-        }
-        for i in 0..4 {
-            // j >= 4: combine lower 4 bits from bytes 8-11 with upper 2 bits from bytes 0-3/4-7
-            scales[i + 4] = (scales_bytes[i + 8] & 0x0F) | ((scales_bytes[i] >> 6) << 4);
-            mins[i + 4] = (scales_bytes[i + 8] >> 4) | ((scales_bytes[i + 4] >> 6) << 4);
-        }
-        offset += 12;
-
-        // Read 128 bytes = 256 4-bit quantized values
-        let qs = &data[offset..offset + 128];
-        offset += 128;
-
-        // Dequantize: each sub-block has 32 elements
-        for j in 0..8 {
-            let scale = d * f32::from(scales[j]);
-            let min_val = dmin * f32::from(mins[j]);
-
-            for l in 0..16 {
-                let q_byte = qs[j * 16 + l];
-                let q0 = f32::from(q_byte & 0x0F);
-                let q1 = f32::from(q_byte >> 4);
-                result.push(q0 * scale - min_val);
-                result.push(q1 * scale - min_val);
-            }
-        }
-    }
-
-    result.truncate(num_elements);
-    Ok(result)
+    Ok(trueno_quant::dequantize_q4_k_to_f32(
+        &data[start..],
+        num_elements,
+    ))
 }
 
 /// Dequantize `Q5_K` format (K-quants)
 /// `Q5_K`: super blocks of 256 elements
 /// Each super block: d (f16) + dmin (f16) + scales (12 bytes) + qh (32 bytes) + qs (128 bytes) = 176 bytes
+///
+/// Delegates to `trueno_quant::dequantize_q5_k_to_f32` — the single source of truth.
 pub(crate) fn dequantize_q5_k(data: &[u8], start: usize, num_elements: usize) -> Result<Vec<f32>> {
     const SUPER_BLOCK_SIZE: usize = 256;
-    const SUPER_BLOCK_BYTES: usize = 2 + 2 + 12 + 32 + 128; // 176 bytes
+    const SUPER_BLOCK_BYTES: usize = 176;
 
     let num_blocks = (num_elements + SUPER_BLOCK_SIZE - 1) / SUPER_BLOCK_SIZE;
     let total_bytes = num_blocks * SUPER_BLOCK_BYTES;
@@ -380,65 +305,10 @@ pub(crate) fn dequantize_q5_k(data: &[u8], start: usize, num_elements: usize) ->
         });
     }
 
-    let mut result = Vec::with_capacity(num_elements);
-    let mut offset = start;
-
-    for _ in 0..num_blocks {
-        // Read d and dmin
-        // GH-186 FIX: Use safe_f16_scale to clamp NaN/Inf/subnormal
-        let d = safe_f16_scale(u16::from_le_bytes([data[offset], data[offset + 1]]));
-        let dmin = safe_f16_scale(u16::from_le_bytes([data[offset + 2], data[offset + 3]]));
-        offset += 4;
-
-        // Read and unpack scales (same as Q4_K)
-        let scales_bytes = &data[offset..offset + 12];
-        let mut scales = [0u8; 8];
-        let mut mins = [0u8; 8];
-
-        // Unpack 6-bit scales and mins from 12 bytes (llama.cpp Q5_K format - same as Q4_K)
-        // F-REGR-231 FIX: Use correct llama.cpp unpacking
-        for i in 0..4 {
-            // j < 4: direct 6-bit extraction
-            scales[i] = scales_bytes[i] & 0x3F;
-            mins[i] = scales_bytes[i + 4] & 0x3F;
-        }
-        for i in 0..4 {
-            // j >= 4: combine lower 4 bits from bytes 8-11 with upper 2 bits from bytes 0-3/4-7
-            scales[i + 4] = (scales_bytes[i + 8] & 0x0F) | ((scales_bytes[i] >> 6) << 4);
-            mins[i + 4] = (scales_bytes[i + 8] >> 4) | ((scales_bytes[i + 4] >> 6) << 4);
-        }
-        offset += 12;
-
-        // Read qh (32 bytes = 256 high bits)
-        let qh = &data[offset..offset + 32];
-        offset += 32;
-
-        // Read qs (128 bytes = 256 low 4-bit values)
-        let qs = &data[offset..offset + 128];
-        offset += 128;
-
-        // Dequantize
-        for j in 0..8 {
-            let scale = d * f32::from(scales[j]);
-            let min_val = dmin * f32::from(mins[j]);
-
-            for l in 0..16 {
-                let idx = j * 16 + l;
-                let q_byte = qs[idx];
-                let qh_byte = qh[idx / 8];
-                let bit_pos = (idx % 8) as u8;
-
-                let q0 = f32::from((q_byte & 0x0F) | (((qh_byte >> bit_pos) & 1) << 4));
-                let q1 = f32::from((q_byte >> 4) | ((((qh_byte >> bit_pos) >> 1) & 1) << 4));
-
-                result.push(q0 * scale - min_val);
-                result.push(q1 * scale - min_val);
-            }
-        }
-    }
-
-    result.truncate(num_elements);
-    Ok(result)
+    Ok(trueno_quant::dequantize_q5_k_to_f32(
+        &data[start..],
+        num_elements,
+    ))
 }
 
 include!("dequant_part_02.rs");
