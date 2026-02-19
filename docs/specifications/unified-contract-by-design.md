@@ -1,7 +1,7 @@
 # Unified Contract-by-Design Specification
 
 **Version**: 2.0.0
-**Status**: Phase 4 Complete (kernels), Phase 6 Complete (algorithms P0-P4), Step 6.7 AllImplemented enforced. Bindings: 248/251 implemented (3 allowed gaps). 24/24 algorithm contracts Bound, ~112 equations, 111 FALSIFY tests. Total: 275 contract tests passing (0 failures). All algorithm contracts BOUND.
+**Status**: Phase 4 Complete (kernels), Phase 6 Complete (algorithms P0-P4), Step 6.7 AllImplemented enforced. Bindings: 249/251 implemented (2 SSM-only gaps). 24/24 algorithm contracts Bound, ~112 equations, 112 FALSIFY tests. Total: 276 contract tests passing (0 failures). All algorithm contracts BOUND.
 **Created**: 2026-02-19
 **Updated**: 2026-02-19
 **Scope**: trueno, realizar, aprender, entrenar, whisper.apr
@@ -703,19 +703,18 @@ For each deletion:
 
 Per user mandate: **every binding in `provable-contracts/contracts/aprender/binding.yaml` must have status `implemented`**. No `partial` or `not_implemented` allowed (except `ALLOWED_GAPS` in `build.rs`).
 
-### 10.2 Current Gaps (3 bindings — SSM + RobustScaler)
+### 10.2 Current Gaps (2 bindings — SSM only)
 
-**Updated 2026-02-19**: 236/239 bindings are now `implemented` (98.7%).
+**Updated 2026-02-19**: 249/251 bindings are now `implemented` (99.2%).
 AllImplemented policy enforced in `build.rs` — unallowed gaps fail the build.
 
 | Contract | Equation | Target Module | Priority | Status |
 |----------|----------|---------------|----------|--------|
 | `ssm-kernel-v1` | `ssm_discretize` | `realizar::ssm` | P2 | not_implemented |
 | `ssm-kernel-v1` | `selective_gate` | `realizar::ssm` | P2 | not_implemented |
-| `preprocessing-normalization-v1` | `robust_scaler` | `aprender::preprocessing` | P3 | not_implemented |
 
-SSM requires implementing the Mamba state space model. RobustScaler requires
-median/IQR-based scaling. Both tracked as future work in `ALLOWED_GAPS`.
+SSM requires implementing the Mamba state space model (zero-order hold
+discretization, selective gating). Tracked as future work in `ALLOWED_GAPS`.
 
 #### Previously Closed Gaps (all now implemented)
 
