@@ -74,10 +74,10 @@ fn is_status_dominated(existing: Option<&str>, new: &str) -> bool {
     match (existing, new) {
         (None, _) => false,                        // first time
         (Some("implemented"), _) => true,          // already best
-        (Some("partial"), "implemented") => false,  // upgrade
+        (Some("partial"), "implemented") => false, // upgrade
         (Some("partial"), _) => true,              // keep partial
         (Some("not_implemented"), "not_implemented") => true,
-        (Some("not_implemented"), _) => false,      // upgrade
+        (Some("not_implemented"), _) => false, // upgrade
         _ => false,
     }
 }
@@ -120,9 +120,7 @@ fn is_gap_allowed(contract_stem: &str, equation: &str) -> bool {
 }
 
 /// Enforce AllImplemented policy: panic if any unallowed gaps exist.
-fn enforce_all_implemented(
-    unallowed_gaps: &[String],
-) {
+fn enforce_all_implemented(unallowed_gaps: &[String]) {
     if unallowed_gaps.is_empty() {
         return;
     }
