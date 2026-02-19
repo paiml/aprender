@@ -1,4 +1,32 @@
 
+/// Build a `TensorInfo` from SafeTensors metadata, optionally computing stats.
+fn build_safetensors_tensor_info(
+    mapped: &crate::serialization::safetensors::MappedSafeTensors,
+    name: &str,
+    meta: &crate::serialization::safetensors::TensorMetadata,
+    compute_stats: bool,
+) -> TensorInfo {
+    let size_bytes = meta.data_offsets[1] - meta.data_offsets[0];
+    let mut info = TensorInfo {
+        name: name.to_string(),
+        shape: meta.shape.clone(),
+        dtype: meta.dtype.clone(),
+        size_bytes,
+        mean: None,
+        std: None,
+        min: None,
+        max: None,
+        nan_count: None,
+        inf_count: None,
+    };
+    if compute_stats {
+        if let Ok(f32_data) = mapped.get_tensor(name) {
+            compute_tensor_stats(&mut info, &f32_data);
+        }
+    }
+    info
+}
+
 /// List tensors from SafeTensors via mmap (efficient for large files)
 fn list_tensors_safetensors_path(
     path: &Path,
@@ -26,32 +54,11 @@ fn list_tensors_safetensors_path(
 
         if let Some(meta) = mapped.get_metadata(name) {
             let size_bytes = meta.data_offsets[1] - meta.data_offsets[0];
-
             total_size += size_bytes;
             total_matching += 1;
 
-            // Only collect details up to the limit
             if tensors.len() < options.limit {
-                let mut info = TensorInfo {
-                    name: name.to_string(),
-                    shape: meta.shape.clone(),
-                    dtype: meta.dtype.clone(),
-                    size_bytes,
-                    mean: None,
-                    std: None,
-                    min: None,
-                    max: None,
-                    nan_count: None,
-                    inf_count: None,
-                };
-
-                if options.compute_stats {
-                    if let Ok(f32_data) = mapped.get_tensor(name) {
-                        compute_tensor_stats(&mut info, &f32_data);
-                    }
-                }
-
-                tensors.push(info);
+                tensors.push(build_safetensors_tensor_info(&mapped, name, meta, options.compute_stats));
             }
         }
     }

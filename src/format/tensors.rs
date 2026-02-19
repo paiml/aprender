@@ -223,6 +223,22 @@ pub fn list_tensors_from_bytes(
 }
 
 /// List tensors from APR v2 format (reads actual tensor index)
+/// Build a `TensorInfo` from a v2 reader entry, optionally computing stats.
+fn build_v2_tensor_info(
+    reader: &AprV2Reader,
+    name: &str,
+    entry: &TensorIndexEntry,
+    compute_stats: bool,
+) -> TensorInfo {
+    let mut info = tensor_info_from_entry(entry);
+    if compute_stats {
+        if let Some(data) = reader.get_tensor_as_f32(name) {
+            compute_tensor_stats(&mut info, &data);
+        }
+    }
+    info
+}
+
 fn list_tensors_v2(data: &[u8], options: TensorListOptions) -> Result<TensorListResult> {
     // Parse with v2 reader
     let reader = AprV2Reader::from_bytes(data).map_err(|e| AprenderError::FormatError {
@@ -233,41 +249,23 @@ fn list_tensors_v2(data: &[u8], options: TensorListOptions) -> Result<TensorList
     let mut tensors = Vec::new();
     let mut total_size = 0usize;
     let mut total_matching = 0usize;
-    let limit_reached = options.limit < usize::MAX;
 
     for name in reader.tensor_names() {
-        // Apply filter
         if let Some(ref pattern) = options.filter {
             if !name.contains(pattern.as_str()) {
                 continue;
             }
         }
 
-        // Get tensor entry
         if let Some(entry) = reader.get_tensor(name) {
-            let size = entry.size as usize;
-            total_size += size;
+            total_size += entry.size as usize;
             total_matching += 1;
 
-            // Only collect details up to the limit
             if tensors.len() < options.limit {
-                let mut info = tensor_info_from_entry(entry);
-
-                // Compute stats if requested
-                if options.compute_stats {
-                    if let Some(data) = reader.get_tensor_as_f32(name) {
-                        compute_tensor_stats(&mut info, &data);
-                    }
-                }
-
-                tensors.push(info);
+                tensors.push(build_v2_tensor_info(&reader, name, entry, options.compute_stats));
             }
         }
     }
-
-    // When no limit is applied, total_matching == tensors.len().
-    // When a limit truncates, total_matching reflects the true count.
-    let _ = limit_reached;
 
     Ok(TensorListResult {
         file: String::new(), // Set by caller

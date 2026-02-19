@@ -213,20 +213,29 @@ fn read_f64_le(data: &[u8], offset: usize) -> Result<f64> {
     ]))
 }
 
+/// Read a single-byte metadata value (Uint8, Int8, or Bool).
+fn read_metadata_byte(data: &[u8], offset: usize, value_type: u32) -> Result<(GgufValue, usize)> {
+    let label = match value_type {
+        0 => "Uint8",
+        1 => "Int8",
+        _ => "Bool",
+    };
+    ensure_bytes(data, offset, 1, label)?;
+    let val = match value_type {
+        0 => GgufValue::Uint8(data[offset]),
+        1 => GgufValue::Int8(data[offset] as i8),
+        _ => GgufValue::Bool(data[offset] != 0),
+    };
+    Ok((val, 1))
+}
+
 pub(crate) fn read_metadata_value(
     data: &[u8],
     offset: usize,
     value_type: u32,
 ) -> Result<(GgufValue, usize)> {
     match value_type {
-        0 => {
-            ensure_bytes(data, offset, 1, "Uint8")?;
-            Ok((GgufValue::Uint8(data[offset]), 1))
-        }
-        1 => {
-            ensure_bytes(data, offset, 1, "Int8")?;
-            Ok((GgufValue::Int8(data[offset] as i8), 1))
-        }
+        0 | 1 | 7 => read_metadata_byte(data, offset, value_type),
         2 => {
             ensure_bytes(data, offset, 2, "Uint16")?;
             Ok((
@@ -238,10 +247,6 @@ pub(crate) fn read_metadata_value(
         4 => Ok((GgufValue::Uint32(read_u32(data, offset)?), 4)),
         5 => Ok((GgufValue::Int32(read_i32_le(data, offset)?), 4)),
         6 => Ok((GgufValue::Float32(read_f32_le(data, offset)?), 4)),
-        7 => {
-            ensure_bytes(data, offset, 1, "Bool")?;
-            Ok((GgufValue::Bool(data[offset] != 0), 1))
-        }
         8 => {
             let (s, len) = read_string(data, offset)?;
             Ok((GgufValue::String(s), len))

@@ -234,6 +234,77 @@ fn read_apr_metadata(apr_path: &Path) -> Option<crate::format::v2::AprV2Metadata
 /// This function splits them back into separate `q_proj`, `k_proj`, `v_proj`
 /// for correct GGUF/SafeTensors export. New APR files with separate Q/K/V
 /// pass through unchanged.
+/// Split a fused QKV weight tensor into separate Q, K, V weight tensors.
+fn split_qkv_weight(
+    name: &str,
+    data: &[f32],
+    shape: &[usize],
+    hidden_size: usize,
+    kv_dim: usize,
+    result: &mut BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+) -> bool {
+    let hidden_dim = if shape.len() >= 2 { shape[1] } else { hidden_size };
+    let q_elements = hidden_size * hidden_dim;
+    let kv_elements = kv_dim * hidden_dim;
+
+    if data.len() < q_elements + 2 * kv_elements {
+        return false;
+    }
+
+    let prefix = name.strip_suffix("qkv_proj.weight").unwrap_or(name);
+    result.insert(
+        format!("{prefix}q_proj.weight"),
+        (data[..q_elements].to_vec(), vec![hidden_size, hidden_dim]),
+    );
+    result.insert(
+        format!("{prefix}k_proj.weight"),
+        (
+            data[q_elements..q_elements + kv_elements].to_vec(),
+            vec![kv_dim, hidden_dim],
+        ),
+    );
+    result.insert(
+        format!("{prefix}v_proj.weight"),
+        (
+            data[q_elements + kv_elements..q_elements + 2 * kv_elements].to_vec(),
+            vec![kv_dim, hidden_dim],
+        ),
+    );
+    true
+}
+
+/// Split a fused QKV bias tensor into separate Q, K, V bias tensors.
+fn split_qkv_bias(
+    name: &str,
+    data: &[f32],
+    hidden_size: usize,
+    kv_dim: usize,
+    result: &mut BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+) -> bool {
+    let qkv_dim = hidden_size + 2 * kv_dim;
+    if data.len() != qkv_dim {
+        return false;
+    }
+
+    let prefix = name.strip_suffix("qkv_proj.bias").unwrap_or(name);
+    result.insert(
+        format!("{prefix}q_proj.bias"),
+        (data[..hidden_size].to_vec(), vec![hidden_size]),
+    );
+    result.insert(
+        format!("{prefix}k_proj.bias"),
+        (
+            data[hidden_size..hidden_size + kv_dim].to_vec(),
+            vec![kv_dim],
+        ),
+    );
+    result.insert(
+        format!("{prefix}v_proj.bias"),
+        (data[hidden_size + kv_dim..].to_vec(), vec![kv_dim]),
+    );
+    true
+}
+
 fn unfuse_qkv_tensors(
     tensors: BTreeMap<String, (Vec<f32>, Vec<usize>)>,
     apr_path: &Path,
@@ -265,62 +336,11 @@ fn unfuse_qkv_tensors(
 
     for (name, (data, shape)) in tensors {
         if name.contains("qkv_proj.weight") {
-            // Split [Q;K;V] weight back into separate tensors.
-            // Shape was [qkv_dim, hidden_dim] where qkv_dim = hidden_size + 2*kv_dim.
-            let hidden_dim = if shape.len() >= 2 {
-                shape[1]
-            } else {
-                hidden_size
-            };
-            let q_elements = hidden_size * hidden_dim;
-            let kv_elements = kv_dim * hidden_dim;
-
-            if data.len() >= q_elements + 2 * kv_elements {
-                let prefix = name.strip_suffix("qkv_proj.weight").unwrap_or(&name);
-
-                result.insert(
-                    format!("{prefix}q_proj.weight"),
-                    (data[..q_elements].to_vec(), vec![hidden_size, hidden_dim]),
-                );
-                result.insert(
-                    format!("{prefix}k_proj.weight"),
-                    (
-                        data[q_elements..q_elements + kv_elements].to_vec(),
-                        vec![kv_dim, hidden_dim],
-                    ),
-                );
-                result.insert(
-                    format!("{prefix}v_proj.weight"),
-                    (
-                        data[q_elements + kv_elements..q_elements + 2 * kv_elements].to_vec(),
-                        vec![kv_dim, hidden_dim],
-                    ),
-                );
-            } else {
+            if !split_qkv_weight(&name, &data, &shape, hidden_size, kv_dim, &mut result) {
                 result.insert(name, (data, shape));
             }
         } else if name.contains("qkv_proj.bias") {
-            // Split [Q_bias; K_bias; V_bias] back into separate biases.
-            let qkv_dim = hidden_size + 2 * kv_dim;
-            if data.len() == qkv_dim {
-                let prefix = name.strip_suffix("qkv_proj.bias").unwrap_or(&name);
-
-                result.insert(
-                    format!("{prefix}q_proj.bias"),
-                    (data[..hidden_size].to_vec(), vec![hidden_size]),
-                );
-                result.insert(
-                    format!("{prefix}k_proj.bias"),
-                    (
-                        data[hidden_size..hidden_size + kv_dim].to_vec(),
-                        vec![kv_dim],
-                    ),
-                );
-                result.insert(
-                    format!("{prefix}v_proj.bias"),
-                    (data[hidden_size + kv_dim..].to_vec(), vec![kv_dim]),
-                );
-            } else {
+            if !split_qkv_bias(&name, &data, hidden_size, kv_dim, &mut result) {
                 result.insert(name, (data, shape));
             }
         } else {

@@ -1,4 +1,26 @@
 
+/// Encode a text prompt to tokens, returning None if no tokenizer is found.
+#[cfg(feature = "inference")]
+fn encode_prompt_tokens(
+    model_path: &Path,
+    prompt: &str,
+    vocab_size: usize,
+    tracer: &mut Option<realizar::InferenceTracer>,
+) -> Option<Vec<u32>> {
+    use realizar::apr::AprModel;
+
+    let tokens = AprModel::encode_text(model_path, prompt)?;
+    eprintln!(
+        "{}",
+        format!("Encoded {} chars to {} tokens", prompt.len(), tokens.len()).dimmed()
+    );
+    if let Some(ref mut t) = tracer {
+        t.start_step(realizar::TraceStep::Tokenize);
+        t.trace_encode(prompt, &tokens, vocab_size);
+    }
+    Some(tokens)
+}
+
 /// Prepare input tokens for SafeTensors inference
 #[cfg(feature = "inference")]
 fn prepare_safetensors_input_tokens(
@@ -8,22 +30,11 @@ fn prepare_safetensors_input_tokens(
     vocab_size: usize,
     tracer: &mut Option<realizar::InferenceTracer>,
 ) -> Result<Vec<u32>> {
-    use realizar::apr::AprModel;
-
     if let Some(prompt) = prompt {
         if prompt.contains(',') || prompt.chars().all(|c| c.is_ascii_digit() || c == ',') {
             return parse_token_ids(prompt);
         }
-        // Text prompt - encode using tokenizer
-        if let Some(tokens) = AprModel::encode_text(model_path, prompt) {
-            eprintln!(
-                "{}",
-                format!("Encoded {} chars to {} tokens", prompt.len(), tokens.len()).dimmed()
-            );
-            if let Some(ref mut t) = tracer {
-                t.start_step(realizar::TraceStep::Tokenize);
-                t.trace_encode(prompt, &tokens, vocab_size);
-            }
+        if let Some(tokens) = encode_prompt_tokens(model_path, prompt, vocab_size, tracer) {
             return Ok(tokens);
         }
         eprintln!(

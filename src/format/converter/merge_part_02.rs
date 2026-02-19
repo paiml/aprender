@@ -72,37 +72,44 @@ fn ties_trim(delta: &[f32], density: f32) -> Vec<f32> {
 }
 
 /// Elect sign per element (majority vote) and merge agreeing values.
+/// Elect the sign (positive or negative) for element `i` across trimmed deltas.
+/// Returns `true` if the elected sign is positive.
+fn ties_elect_sign(trimmed_deltas: &[Vec<f32>], i: usize) -> bool {
+    let mut pos_count = 0i32;
+    let mut neg_count = 0i32;
+    for delta in trimmed_deltas {
+        let val = delta[i];
+        if val > 0.0 {
+            pos_count += 1;
+        } else if val < 0.0 {
+            neg_count += 1;
+        }
+    }
+    pos_count >= neg_count
+}
+
+/// Sum values that agree with the elected sign, returning (sum, count).
+fn ties_sum_agreeing(trimmed_deltas: &[Vec<f32>], i: usize, elected_positive: bool) -> (f32, u32) {
+    let mut sum = 0.0f32;
+    let mut count = 0u32;
+    for delta in trimmed_deltas {
+        let val = delta[i];
+        let agrees = (elected_positive && val > 0.0) || (!elected_positive && val < 0.0);
+        if agrees {
+            sum += val;
+            count += 1;
+        }
+    }
+    (sum, count)
+}
+
 fn ties_elect_and_merge(trimmed_deltas: &[Vec<f32>], len: usize) -> Vec<f32> {
     let mut result = vec![0.0f32; len];
     let num_models = trimmed_deltas.len();
 
     for i in 0..len {
-        // Count positive vs negative votes (ignoring zeros from trimming)
-        let mut pos_count = 0i32;
-        let mut neg_count = 0i32;
-        for delta in trimmed_deltas {
-            let val = delta[i];
-            if val > 0.0 {
-                pos_count += 1;
-            } else if val < 0.0 {
-                neg_count += 1;
-            }
-        }
-
-        // Elected sign: positive if pos_count >= neg_count, else negative
-        let elected_positive = pos_count >= neg_count;
-
-        // Average values that agree with the elected sign
-        let mut sum = 0.0f32;
-        let mut count = 0u32;
-        for delta in trimmed_deltas {
-            let val = delta[i];
-            let agrees = (elected_positive && val > 0.0) || (!elected_positive && val < 0.0);
-            if agrees {
-                sum += val;
-                count += 1;
-            }
-        }
+        let elected_positive = ties_elect_sign(trimmed_deltas, i);
+        let (sum, count) = ties_sum_agreeing(trimmed_deltas, i, elected_positive);
 
         if count > 0 {
             // Scale by num_models (not count) to preserve magnitude relative to all models

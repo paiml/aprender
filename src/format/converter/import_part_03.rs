@@ -280,31 +280,25 @@ fn infer_embedding_dims(
 }
 
 /// Count transformer layers from tensor names (supports HF and GGUF naming).
+/// Extract a layer index from a tensor name at the given prefix (e.g. "layers.", "blk.").
+/// Returns `Some(index)` if the name contains `prefix` followed by `<number>.`.
+fn extract_layer_index(name: &str, prefix: &str) -> Option<usize> {
+    let start = name.find(prefix)?;
+    let rest = &name[start + prefix.len()..];
+    let end = rest.find('.')?;
+    rest[..end].parse::<usize>().ok()
+}
+
 fn count_transformer_layers(tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>) -> usize {
     tensors
         .keys()
         .filter_map(|name| {
-            if let Some(start) = name.find("blk.") {
-                let rest = &name[start + 4..];
-                if let Some(end) = rest.find('.') {
-                    if let Ok(n) = rest[..end].parse::<usize>() {
-                        return Some(n);
-                    }
-                }
+            if let Some(n) = extract_layer_index(name, "blk.") {
+                return Some(n);
             }
-            let patterns = [
-                (name.find("layers."), 7),
-                (name.find("h."), 2),
-                (name.find("blocks."), 7),
-            ];
-            for (pos, skip_len) in patterns {
-                if let Some(start) = pos {
-                    let rest = &name[start + skip_len..];
-                    if let Some(end) = rest.find('.') {
-                        if let Ok(n) = rest[..end].parse::<usize>() {
-                            return Some(n);
-                        }
-                    }
+            for prefix in &["layers.", "h.", "blocks."] {
+                if let Some(n) = extract_layer_index(name, prefix) {
+                    return Some(n);
                 }
             }
             None
