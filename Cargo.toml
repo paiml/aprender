@@ -231,6 +231,10 @@ minijinja = { version = "2.14.0", features = ["loader", "serde"] }
 # See docs/specifications/qwen2.5-coder-showcase-demo.md Section E.7 for roadmap.
 # realizar = { version = "0.6", default-features = false, optional = true }  # BLOCKED
 
+[build-dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
+
 [dev-dependencies]
 proptest = "1.6"
 criterion = "0.5"
