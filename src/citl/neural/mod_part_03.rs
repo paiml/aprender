@@ -128,18 +128,9 @@ fn concat_heads(x: &Tensor, batch_size: usize, seq_len: usize) -> Tensor {
     Tensor::new(&output, &[batch_size, seq_len, embed_dim])
 }
 
+/// ONE PATH: Delegates to `nn::functional::gelu` (UCBD §4).
 fn gelu(x: &Tensor) -> Tensor {
-    // GELU activation: x * Φ(x) ≈ 0.5 * x * (1 + tanh(sqrt(2/π) * (x + 0.044715 * x³)))
-    let data = x.data();
-    let output: Vec<f32> = data
-        .iter()
-        .map(|&x| {
-            let c = (2.0f32 / std::f32::consts::PI).sqrt();
-            0.5 * x * (1.0 + (c * (x + 0.044715 * x.powi(3))).tanh())
-        })
-        .collect();
-
-    Tensor::new(&output, x.shape())
+    crate::nn::functional::gelu(x)
 }
 
 fn layer_norm(x: &Tensor, weight: &Tensor, bias: &Tensor, eps: f32) -> Tensor {
