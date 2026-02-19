@@ -103,6 +103,16 @@ fn get_bool(content: &str, key: &str) -> Option<bool> {
     get_str(content, key).map(|v| matches!(v, "true" | "yes"))
 }
 
+/// Get a non-null optional string from a YAML section.
+///
+/// Returns `Some(String)` if the key exists and its value is not "null", else `None`.
+/// This replaces the repetitive `get_str(s, k).filter(|s| *s != "null").map(String::from)`.
+fn get_optional_str(section: &str, key: &str) -> Option<String> {
+    get_str(section, key)
+        .filter(|s| *s != "null")
+        .map(String::from)
+}
+
 fn parse_family_yaml(content: &str, path: &Path) -> FamilyData {
     let err = |msg: &str| -> ! { panic!("PMAT-250: {}: {msg}", path.display()) };
 
@@ -118,26 +128,21 @@ fn parse_family_yaml(content: &str, path: &Path) -> FamilyData {
     // Parse quantizations
     let quantizations = parse_list_section(content, "quantizations");
 
-    // Parse constraints
+    // Parse constraints — table-driven extraction reduces field-by-field repetition
     let constraints_section = extract_section(content, "constraints");
+    let c_str = |key: &str, default: &str| -> String {
+        get_str(&constraints_section, key)
+            .unwrap_or(default)
+            .to_string()
+    };
     let constraints = ConstraintsData {
-        attention: get_str(&constraints_section, "attention_type")
-            .unwrap_or("mha")
-            .to_string(),
-        activation: get_str(&constraints_section, "activation")
-            .unwrap_or("silu")
-            .to_string(),
-        norm: get_str(&constraints_section, "norm_type")
-            .unwrap_or("rmsnorm")
-            .to_string(),
+        attention: c_str("attention_type", "mha"),
+        activation: c_str("activation", "silu"),
+        norm: c_str("norm_type", "rmsnorm"),
         bias: get_bool(&constraints_section, "has_bias").unwrap_or(false),
         tied: get_bool(&constraints_section, "tied_embeddings").unwrap_or(false),
-        position: get_str(&constraints_section, "positional_encoding")
-            .unwrap_or("rope")
-            .to_string(),
-        mlp: get_str(&constraints_section, "mlp_type")
-            .unwrap_or("swiglu")
-            .to_string(),
+        position: c_str("positional_encoding", "rope"),
+        mlp: c_str("mlp_type", "swiglu"),
         qk_norm: get_bool(&constraints_section, "qk_norm").unwrap_or(false),
     };
 
@@ -152,12 +157,8 @@ fn parse_family_yaml(content: &str, path: &Path) -> FamilyData {
             // Find first quoted value in the section
             find_first_tensor_value(&tt_section).unwrap_or_default()
         });
-    let lm_head_tensor = get_str(&tt_section, "lm_head")
-        .filter(|s| *s != "null")
-        .map(String::from);
-    let final_norm_tensor = get_str(&tt_section, "final_norm")
-        .filter(|s| *s != "null")
-        .map(String::from);
+    let lm_head_tensor = get_optional_str(&tt_section, "lm_head");
+    let final_norm_tensor = get_optional_str(&tt_section, "final_norm");
 
     // Parse per_layer in tensor_template
     let per_layer_section = extract_section(&tt_section, "per_layer");
@@ -170,23 +171,13 @@ fn parse_family_yaml(content: &str, path: &Path) -> FamilyData {
     let ct_section = extract_section(content, "chat_template");
     let chat_format = get_str(&ct_section, "format").map(String::from);
 
-    // GH-277: Parse gguf_tensor_template
+    // GH-277: Parse gguf_tensor_template — use get_optional_str for all nullable fields
     let gguf_section = extract_section(content, "gguf_tensor_template");
-    let gguf_embedding = get_str(&gguf_section, "embedding")
-        .filter(|s| *s != "null")
-        .map(String::from);
-    let gguf_position_embedding = get_str(&gguf_section, "position_embedding")
-        .filter(|s| *s != "null")
-        .map(String::from);
-    let gguf_lm_head = get_str(&gguf_section, "lm_head")
-        .filter(|s| *s != "null")
-        .map(String::from);
-    let gguf_final_norm_weight = get_str(&gguf_section, "final_norm_weight")
-        .filter(|s| *s != "null")
-        .map(String::from);
-    let gguf_final_norm_bias = get_str(&gguf_section, "final_norm_bias")
-        .filter(|s| *s != "null")
-        .map(String::from);
+    let gguf_embedding = get_optional_str(&gguf_section, "embedding");
+    let gguf_position_embedding = get_optional_str(&gguf_section, "position_embedding");
+    let gguf_lm_head = get_optional_str(&gguf_section, "lm_head");
+    let gguf_final_norm_weight = get_optional_str(&gguf_section, "final_norm_weight");
+    let gguf_final_norm_bias = get_optional_str(&gguf_section, "final_norm_bias");
 
     let gguf_pl_section = extract_section(&gguf_section, "per_layer");
     let gguf_all_kv = parse_key_values_with_null(&gguf_pl_section);
@@ -422,36 +413,42 @@ fn parse_size_variants(content: &str, path: &Path) -> Vec<SizeData> {
     sizes
 }
 
-fn parse_size_block(name: &str, block: &str, path: &Path) -> SizeData {
-    let warn = |field: &str| {
-        eprintln!(
-            "cargo:warning=PMAT-250: {}: size_variants.{name}.{field} not found, using default",
-            path.display()
-        );
-    };
+/// Get a usize from the block, trying primary and alternate keys, with a warning fallback.
+///
+/// Reduces the repeated `get_usize(block, k).or_else(|| ...).unwrap_or_else(|| { warn(); 0 })`
+/// pattern in `parse_size_block`.
+fn get_usize_with_alt(
+    block: &str,
+    primary: &str,
+    alternates: &[&str],
+    path: &Path,
+    name: &str,
+    warn_on_missing: bool,
+) -> usize {
+    let mut result = get_usize(block, primary);
+    for alt in alternates {
+        if result.is_some() {
+            break;
+        }
+        result = get_usize(block, alt);
+    }
+    result.unwrap_or_else(|| {
+        if warn_on_missing {
+            eprintln!(
+                "cargo:warning=PMAT-250: {}: size_variants.{name}.{primary} not found, using default",
+                path.display()
+            );
+        }
+        0
+    })
+}
 
-    let hidden_dim = get_usize(block, "hidden_dim")
-        .or_else(|| get_usize(block, "d_model"))
-        .unwrap_or_else(|| {
-            warn("hidden_dim");
-            0
-        });
-    let num_layers = get_usize(block, "num_layers")
-        .or_else(|| get_usize(block, "encoder_layers"))
-        .unwrap_or_else(|| {
-            warn("num_layers");
-            0
-        });
-    let num_heads = get_usize(block, "num_heads")
-        .or_else(|| get_usize(block, "encoder_attention_heads"))
-        .unwrap_or_else(|| {
-            warn("num_heads");
-            0
-        });
+fn parse_size_block(name: &str, block: &str, path: &Path) -> SizeData {
+    let hidden_dim = get_usize_with_alt(block, "hidden_dim", &["d_model"], path, name, true);
+    let num_layers = get_usize_with_alt(block, "num_layers", &["encoder_layers"], path, name, true);
+    let num_heads = get_usize_with_alt(block, "num_heads", &["encoder_attention_heads"], path, name, true);
     let num_kv_heads = get_usize(block, "num_kv_heads").unwrap_or(num_heads);
-    let intermediate_dim = get_usize(block, "intermediate_dim")
-        .or_else(|| get_usize(block, "encoder_ffn_dim"))
-        .unwrap_or(0);
+    let intermediate_dim = get_usize_with_alt(block, "intermediate_dim", &["encoder_ffn_dim"], path, name, false);
     let vocab_size = get_usize(block, "vocab_size").unwrap_or(0);
     let max_pos = get_usize(block, "max_position_embeddings").unwrap_or(0);
     let head_dim = get_usize(block, "head_dim").unwrap_or_else(|| {

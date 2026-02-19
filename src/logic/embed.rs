@@ -14,6 +14,32 @@
 use rand::Rng;
 use std::collections::HashMap;
 
+/// Generate a random vector of given dimension with values in `[-0.1, 0.1)`.
+fn rand_vec(rng: &mut impl Rng, dim: usize) -> Vec<f64> {
+    (0..dim).map(|_| rng.gen_range(-0.1..0.1)).collect()
+}
+
+/// Generate a random matrix (rows x cols) with values in `[-0.1, 0.1)`.
+fn rand_matrix(rng: &mut impl Rng, rows: usize, cols: usize) -> Vec<Vec<f64>> {
+    (0..rows).map(|_| rand_vec(rng, cols)).collect()
+}
+
+/// Score all entities by varying either the subject or object position.
+///
+/// When `vary_subject` is true, iterates subjects for a fixed object;
+/// otherwise iterates objects for a fixed subject.
+fn score_all_entities(space: &EmbeddingSpace, fixed: usize, relation: &str, vary_subject: bool) -> Vec<f64> {
+    (0..space.num_entities)
+        .map(|i| {
+            if vary_subject {
+                space.score(i, relation, fixed)
+            } else {
+                space.score(fixed, relation, i)
+            }
+        })
+        .collect()
+}
+
 /// Embedding space for knowledge graph reasoning
 #[derive(Debug)]
 pub struct EmbeddingSpace {
@@ -33,15 +59,10 @@ impl EmbeddingSpace {
     pub fn new(num_entities: usize, dim: usize) -> Self {
         let mut rng = rand::thread_rng();
 
-        // Initialize entity embeddings randomly
-        let entity_embeddings: Vec<Vec<f64>> = (0..num_entities)
-            .map(|_| (0..dim).map(|_| rng.gen_range(-0.1..0.1)).collect())
-            .collect();
-
         Self {
             num_entities,
             dim,
-            entity_embeddings,
+            entity_embeddings: rand_matrix(&mut rng, num_entities, dim),
             relation_matrices: HashMap::new(),
         }
     }
@@ -49,13 +70,8 @@ impl EmbeddingSpace {
     /// Add a relation with random initialization
     pub fn add_relation(&mut self, name: &str) {
         let mut rng = rand::thread_rng();
-
-        // Initialize relation matrix randomly
-        let matrix: Vec<Vec<f64>> = (0..self.dim)
-            .map(|_| (0..self.dim).map(|_| rng.gen_range(-0.1..0.1)).collect())
-            .collect();
-
-        self.relation_matrices.insert(name.to_string(), matrix);
+        self.relation_matrices
+            .insert(name.to_string(), rand_matrix(&mut rng, self.dim, self.dim));
     }
 
     /// Get a relation matrix by name
@@ -177,17 +193,13 @@ impl BilinearScorer {
     /// Score all entities as objects for (subject, relation, ?)
     #[must_use]
     pub fn score_tails(&self, subject: usize, relation: &str) -> Vec<f64> {
-        (0..self.space.num_entities)
-            .map(|o| self.space.score(subject, relation, o))
-            .collect()
+        score_all_entities(&self.space, subject, relation, false)
     }
 
     /// Score all entities as subjects for (?, relation, object)
     #[must_use]
     pub fn score_heads(&self, relation: &str, object: usize) -> Vec<f64> {
-        (0..self.space.num_entities)
-            .map(|s| self.space.score(s, relation, object))
-            .collect()
+        score_all_entities(&self.space, object, relation, true)
     }
 
     /// Get top-K predictions for (subject, relation, ?)
@@ -249,60 +261,72 @@ impl RescalFactorizer {
     pub fn factorize(&self, triples: &[(usize, usize, usize)], iterations: usize) -> RescalResult {
         let mut rng = rand::thread_rng();
 
-        // Initialize A randomly
-        let mut a: Vec<Vec<f64>> = (0..self.num_entities)
-            .map(|_| (0..self.dim).map(|_| rng.gen_range(-0.1..0.1)).collect())
-            .collect();
-
-        // Initialize R_k randomly
+        let mut a = rand_matrix(&mut rng, self.num_entities, self.dim);
         let r: Vec<Vec<Vec<f64>>> = (0..self.num_relations)
-            .map(|_| {
-                (0..self.dim)
-                    .map(|_| (0..self.dim).map(|_| rng.gen_range(-0.1..0.1)).collect())
-                    .collect()
-            })
+            .map(|_| rand_matrix(&mut rng, self.dim, self.dim))
             .collect();
 
-        // Build adjacency tensors from triples
-        let mut x: Vec<Vec<Vec<f64>>> =
-            vec![vec![vec![0.0; self.num_entities]; self.num_entities]; self.num_relations];
-        for &(h, rel, t) in triples {
-            if rel < self.num_relations && h < self.num_entities && t < self.num_entities {
-                x[rel][h][t] = 1.0;
-            }
-        }
+        let x = build_adjacency_tensors(triples, self.num_relations, self.num_entities);
 
-        // Simplified ALS iteration (for demonstration)
         for _ in 0..iterations {
-            // Update A (simplified)
-            for i in 0..self.num_entities {
-                for d in 0..self.dim {
-                    let mut sum = 0.0;
-                    for k in 0..self.num_relations {
-                        for j in 0..self.num_entities {
-                            if x[k][i][j] > 0.0 {
-                                sum += r[k][d][0] * a[j][d];
-                            }
-                        }
-                    }
-                    a[i][d] = a[i][d] * 0.9 + sum * 0.1; // Momentum update
-                }
-            }
-
-            // Normalize A
-            for embedding in &mut a {
-                let norm: f64 = embedding.iter().map(|x| x * x).sum::<f64>().sqrt();
-                if norm > 1e-6 {
-                    for v in embedding.iter_mut() {
-                        *v /= norm;
-                    }
-                }
-            }
+            als_update_a(&mut a, &r, &x, self.dim);
+            normalize_rows(&mut a);
         }
 
         RescalResult {
             entity_embeddings: a,
             relation_cores: r,
+        }
+    }
+}
+
+/// Build adjacency tensors from triples. Returns `x[relation][head][tail]`.
+fn build_adjacency_tensors(
+    triples: &[(usize, usize, usize)],
+    num_relations: usize,
+    num_entities: usize,
+) -> Vec<Vec<Vec<f64>>> {
+    let mut x = vec![vec![vec![0.0; num_entities]; num_entities]; num_relations];
+    for &(h, rel, t) in triples {
+        if rel < num_relations && h < num_entities && t < num_entities {
+            x[rel][h][t] = 1.0;
+        }
+    }
+    x
+}
+
+/// Simplified ALS update for entity embeddings A.
+fn als_update_a(
+    a: &mut [Vec<f64>],
+    r: &[Vec<Vec<f64>>],
+    x: &[Vec<Vec<f64>>],
+    dim: usize,
+) {
+    let num_entities = a.len();
+    let num_relations = r.len();
+    for i in 0..num_entities {
+        for d in 0..dim {
+            let mut sum = 0.0;
+            for k in 0..num_relations {
+                for j in 0..num_entities {
+                    if x[k][i][j] > 0.0 {
+                        sum += r[k][d][0] * a[j][d];
+                    }
+                }
+            }
+            a[i][d] = a[i][d] * 0.9 + sum * 0.1;
+        }
+    }
+}
+
+/// Normalize each row (entity embedding) to unit L2 norm.
+fn normalize_rows(a: &mut [Vec<f64>]) {
+    for embedding in a.iter_mut() {
+        let norm: f64 = embedding.iter().map(|v| v * v).sum::<f64>().sqrt();
+        if norm > 1e-6 {
+            for v in embedding.iter_mut() {
+                *v /= norm;
+            }
         }
     }
 }

@@ -7,13 +7,10 @@ fn test_integration_pattern_library_workflow() {
     let encoder = ErrorEncoder::new();
 
     // Add a pattern
-    let code = ErrorCode::new("E0308", ErrorCategory::TypeMismatch, Difficulty::Easy);
-    let span = SourceSpan::default();
-    let diag = CompilerDiagnostic::new(
+    let code = e0308();
+    let diag = test_diagnostic(
         code.clone(),
-        DiagnosticSeverity::Error,
         "mismatched types: expected `String`, found `i32`",
-        span,
     );
 
     let source_code = "pub fn foo() -> String { 42 }";
@@ -44,11 +41,7 @@ fn test_integration_pattern_library_workflow() {
 #[test]
 fn test_integration_citl_full_pipeline() {
     // Test full CITL pipeline: compile -> diagnose -> suggest
-    let mut citl = CITL::builder()
-        .compiler(RustCompiler::new())
-        .max_iterations(5)
-        .build()
-        .expect("Should build");
+    let mut citl = test_citl_with_max_iter(5);
 
     // Code with type error (integer where String expected)
     let code = "pub fn foo() -> String { 42 }";
@@ -140,20 +133,14 @@ fn test_integration_similar_errors_produce_similar_embeddings() {
     let encoder = ErrorEncoder::new();
     let source_code = "let x: String = 42;";
 
-    let code1 = ErrorCode::new("E0308", ErrorCategory::TypeMismatch, Difficulty::Easy);
-    let diag1 = CompilerDiagnostic::new(
-        code1,
-        DiagnosticSeverity::Error,
+    let diag1 = test_diagnostic(
+        e0308(),
         "mismatched types: expected `String`, found `i32`",
-        SourceSpan::default(),
     );
 
-    let code2 = ErrorCode::new("E0308", ErrorCategory::TypeMismatch, Difficulty::Easy);
-    let diag2 = CompilerDiagnostic::new(
-        code2,
-        DiagnosticSeverity::Error,
+    let diag2 = test_diagnostic(
+        e0308(),
         "mismatched types: expected `String`, found `u32`",
-        SourceSpan::default(),
     );
 
     let emb1 = encoder.encode(&diag1, source_code);
@@ -173,21 +160,10 @@ fn test_integration_different_errors_produce_different_embeddings() {
     let source1 = "let x: String = 42;";
     let source2 = "let x = String::new(); let y = x; let z = x;";
 
-    let code1 = ErrorCode::new("E0308", ErrorCategory::TypeMismatch, Difficulty::Easy);
-    let diag1 = CompilerDiagnostic::new(
-        code1,
-        DiagnosticSeverity::Error,
-        "mismatched types",
-        SourceSpan::default(),
-    );
+    let diag1 = test_diagnostic(e0308(), "mismatched types");
 
     let code2 = ErrorCode::new("E0382", ErrorCategory::Ownership, Difficulty::Medium);
-    let diag2 = CompilerDiagnostic::new(
-        code2,
-        DiagnosticSeverity::Error,
-        "use of moved value",
-        SourceSpan::default(),
-    );
+    let diag2 = test_diagnostic(code2, "use of moved value");
 
     let emb1 = encoder.encode(&diag1, source1);
     let emb2 = encoder.encode(&diag2, source2);
@@ -211,9 +187,8 @@ fn test_citl_builder_default() {
 
 #[test]
 fn test_citl_builder_pattern_library_path() {
-    let compiler = RustCompiler::new();
     let citl = CITL::builder()
-        .compiler(compiler)
+        .compiler(RustCompiler::new())
         .pattern_library("/nonexistent/path/patterns.db")
         .build()
         .expect("Should build with nonexistent path (creates new library)");
@@ -223,17 +198,13 @@ fn test_citl_builder_pattern_library_path() {
 
 #[test]
 fn test_citl_add_pattern_self_training_disabled() {
-    let mut citl = CITL::builder()
-        .compiler(RustCompiler::new())
-        .build()
-        .expect("Should build");
+    let mut citl = test_citl_mut();
 
     // Disable self-training
     citl.config.enable_self_training = false;
 
     // Try to add a pattern
-    let error_code = ErrorCode::new("E0308", ErrorCategory::TypeMismatch, Difficulty::Easy);
-    let embedding = ErrorEmbedding::new(vec![0.0; 256], error_code, 12345);
+    let embedding = ErrorEmbedding::new(vec![0.0; 256], e0308(), 12345);
     let fix = FixTemplate::new("$expr.to_string()", "Convert to String");
 
     citl.add_pattern(embedding, fix, true);
@@ -244,14 +215,10 @@ fn test_citl_add_pattern_self_training_disabled() {
 
 #[test]
 fn test_citl_add_pattern_unsuccessful_fix() {
-    let mut citl = CITL::builder()
-        .compiler(RustCompiler::new())
-        .build()
-        .expect("Should build");
+    let mut citl = test_citl_mut();
 
     // Self-training enabled but fix was unsuccessful
-    let error_code = ErrorCode::new("E0308", ErrorCategory::TypeMismatch, Difficulty::Easy);
-    let embedding = ErrorEmbedding::new(vec![0.0; 256], error_code, 12345);
+    let embedding = ErrorEmbedding::new(vec![0.0; 256], e0308(), 12345);
     let fix = FixTemplate::new("$expr.to_string()", "Convert to String");
 
     citl.add_pattern(embedding, fix, false); // success = false
@@ -262,10 +229,7 @@ fn test_citl_add_pattern_unsuccessful_fix() {
 
 #[test]
 fn test_apply_fix_start_offset_out_of_bounds() {
-    let citl = CITL::builder()
-        .compiler(RustCompiler::new())
-        .build()
-        .expect("Should build");
+    let citl = test_citl();
 
     let source = "let x = 42;";
     let fix =
@@ -277,10 +241,7 @@ fn test_apply_fix_start_offset_out_of_bounds() {
 
 #[test]
 fn test_apply_fix_end_offset_out_of_bounds() {
-    let citl = CITL::builder()
-        .compiler(RustCompiler::new())
-        .build()
-        .expect("Should build");
+    let citl = test_citl();
 
     let source = "let x = 42;";
     let fix =
@@ -395,20 +356,10 @@ fn test_fix_result_debug_clone() {
 
 #[test]
 fn test_instantiate_template_with_expected_type() {
-    let citl = CITL::builder()
-        .compiler(RustCompiler::new())
-        .build()
-        .expect("Should build");
+    let citl = test_citl();
 
     let template = FixTemplate::new("$expr as $type", "Type cast");
-    let error_code = ErrorCode::new("E0308", ErrorCategory::TypeMismatch, Difficulty::Easy);
-    let span = SourceSpan::default();
-    let mut diag = CompilerDiagnostic::new(
-        error_code,
-        DiagnosticSeverity::Error,
-        "mismatched types",
-        span,
-    );
+    let mut diag = test_diagnostic(e0308(), "mismatched types");
     diag.expected = Some(TypeInfo::new("String"));
 
     let result = citl.instantiate_template(&template, &diag, "let x = 42;");
@@ -417,20 +368,10 @@ fn test_instantiate_template_with_expected_type() {
 
 #[test]
 fn test_instantiate_template_with_found_type() {
-    let citl = CITL::builder()
-        .compiler(RustCompiler::new())
-        .build()
-        .expect("Should build");
+    let citl = test_citl();
 
     let template = FixTemplate::new("convert $found to target", "Type conversion");
-    let error_code = ErrorCode::new("E0308", ErrorCategory::TypeMismatch, Difficulty::Easy);
-    let span = SourceSpan::default();
-    let mut diag = CompilerDiagnostic::new(
-        error_code,
-        DiagnosticSeverity::Error,
-        "mismatched types",
-        span,
-    );
+    let mut diag = test_diagnostic(e0308(), "mismatched types");
     diag.found = Some(TypeInfo::new("i32"));
 
     let result = citl.instantiate_template(&template, &diag, "let x = 42;");

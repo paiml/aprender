@@ -1,4 +1,4 @@
-
+// Tests for commands::tui (Tab, TuiApp)
 #[cfg(test)]
 mod tests {
     use super::*;

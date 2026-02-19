@@ -102,6 +102,19 @@ impl StopWordsFilter {
         Self::new(ENGLISH_STOP_WORDS)
     }
 
+    /// Shared filter implementation: retains non-stop-word tokens from any
+    /// iterator whose items can be converted to `String` via the provided closure.
+    fn retain_non_stop<I, F>(&self, iter: I, to_string: F) -> Result<Vec<String>, AprenderError>
+    where
+        I: Iterator,
+        F: Fn(I::Item) -> String,
+    {
+        Ok(iter
+            .map(to_string)
+            .filter(|s| !self.is_stop_word(s))
+            .collect())
+    }
+
     /// Filter stop words from a list of tokens.
     ///
     /// # Arguments
@@ -131,13 +144,7 @@ impl StopWordsFilter {
     /// assert_eq!(filtered, vec!["Machine", "learning", "FUTURE"]);
     /// ```
     pub fn filter<S: AsRef<str>>(&self, tokens: &[S]) -> Result<Vec<String>, AprenderError> {
-        let filtered: Vec<String> = tokens
-            .iter()
-            .filter(|token| !self.is_stop_word(token.as_ref()))
-            .map(|token| token.as_ref().to_string())
-            .collect();
-
-        Ok(filtered)
+        self.retain_non_stop(tokens.iter(), |token| token.as_ref().to_string())
     }
 
     /// Filter stop words from a list of owned strings.
@@ -169,12 +176,7 @@ impl StopWordsFilter {
     /// assert_eq!(filtered, vec!["cat", "happy"]);
     /// ```
     pub fn filter_owned(&self, tokens: Vec<String>) -> Result<Vec<String>, AprenderError> {
-        let filtered: Vec<String> = tokens
-            .into_iter()
-            .filter(|token| !self.is_stop_word(token))
-            .collect();
-
-        Ok(filtered)
+        self.retain_non_stop(tokens.into_iter(), |token| token)
     }
 
     /// Check if a word is a stop word (case-insensitive).

@@ -145,6 +145,23 @@ fn print_inspection_info_inference(session: &ChatSession) {
 // REPL implementation without inference feature (fallback)
 // =============================================================================
 
+/// Process a single REPL input line (fallback). Returns `true` to quit, `false` to continue.
+#[cfg(not(feature = "inference"))]
+fn process_repl_input_fallback(
+    input: &str,
+    session: &mut ChatSession,
+    config: &ChatConfig,
+) -> Result<bool, CliError> {
+    if input.starts_with('/') {
+        match handle_command(input, &mut session.history)? {
+            CommandResult::Continue => return Ok(false),
+            CommandResult::Quit => return Ok(true),
+        }
+    }
+    generate_and_print_fallback(session, input, config);
+    Ok(false)
+}
+
 #[cfg(not(feature = "inference"))]
 fn run_repl(path: &Path, config: &ChatConfig) -> Result<(), CliError> {
     let mut session = ChatSession::new(path)?;
@@ -153,13 +170,9 @@ fn run_repl(path: &Path, config: &ChatConfig) -> Result<(), CliError> {
         if input.is_empty() {
             continue;
         }
-        if input.starts_with('/') {
-            match handle_command(&input, &mut session.history)? {
-                CommandResult::Continue => continue,
-                CommandResult::Quit => break,
-            }
+        if process_repl_input_fallback(&input, &mut session, config)? {
+            break;
         }
-        generate_and_print_fallback(&mut session, &input, config);
     }
 
     println!("{}", "Goodbye!".cyan());

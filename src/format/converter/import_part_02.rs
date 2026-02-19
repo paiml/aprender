@@ -209,6 +209,41 @@ pub fn sanitize_hf_json(content: &str) -> String {
         .replace("NaN", "null")
 }
 
+/// Look up a `u64` JSON field by trying multiple key aliases in order.
+///
+/// Returns the first matching key's value as `usize`, or `None` if no alias matches.
+/// This is the data-driven replacement for the repeated pattern:
+///   `json.get("primary").or_else(|| json.get("alias1")).and_then(Value::as_u64).map(|v| v as usize)`
+fn json_usize_with_aliases(json: &serde_json::Value, keys: &[&str]) -> Option<usize> {
+    keys.iter()
+        .find_map(|&k| json.get(k))
+        .and_then(serde_json::Value::as_u64)
+        .map(|v| v as usize)
+}
+
+/// Look up an `f64` JSON field by trying multiple key aliases in order.
+///
+/// Returns the first matching key's value as `f64`, or the provided default.
+fn json_f64_with_aliases(json: &serde_json::Value, keys: &[&str], default: f64) -> f64 {
+    keys.iter()
+        .find_map(|&k| json.get(k))
+        .and_then(serde_json::Value::as_f64)
+        .unwrap_or(default)
+}
+
+/// HuggingFace config.json field alias table.
+///
+/// Each entry maps a semantic field to its known key names across architectures.
+/// GH-235: GPT-2 uses n_embd, n_head, n_layer, n_inner, n_positions.
+/// GH-265: BLOOM, GPT-Neo, OPT, GPT-BigCode also use non-standard key names.
+const CONFIG_ALIASES_HIDDEN_SIZE: &[&str] = &["hidden_size", "n_embd", "n_embed", "d_model"];
+const CONFIG_ALIASES_NUM_LAYERS: &[&str] = &["num_hidden_layers", "n_layer", "num_layers"];
+const CONFIG_ALIASES_NUM_HEADS: &[&str] = &["num_attention_heads", "n_head", "num_heads"];
+const CONFIG_ALIASES_INTERMEDIATE: &[&str] = &["intermediate_size", "n_inner", "ffn_dim"];
+const CONFIG_ALIASES_MAX_POS: &[&str] = &["max_position_embeddings", "n_positions", "n_ctx"];
+/// GH-278: LLaMA/Qwen use "rms_norm_eps", GPT-2/BERT use "layer_norm_epsilon".
+const CONFIG_ALIASES_NORM_EPS: &[&str] = &["rms_norm_eps", "layer_norm_epsilon", "layer_norm_eps"];
+
 /// Load model config from config.json alongside the model file (PMAT-098)
 ///
 /// This is the preferred way to get model config for SafeTensors models.
@@ -224,72 +259,23 @@ pub(crate) fn load_model_config_from_json(model_path: &Path) -> Option<GgufModel
     let sanitized = sanitize_hf_json(&content);
     let json: serde_json::Value = serde_json::from_str(&sanitized).ok()?;
 
-    // Parse HuggingFace config.json format
-    // GH-235: GPT-2 uses different field names (n_embd, n_head, n_layer, n_inner, n_positions).
-    // GH-265: BLOOM, GPT-Neo, OPT, GPT-BigCode also use non-standard key names.
-    // Try standard names first, fall back to architecture-specific aliases.
-    let hidden_size = json
-        .get("hidden_size")
-        .or_else(|| json.get("n_embd")) // GPT-2, GPT-BigCode
-        .or_else(|| json.get("n_embed")) // BLOOM
-        .or_else(|| json.get("d_model")) // T5, BART, Whisper
-        .and_then(serde_json::Value::as_u64)
-        .map(|v| v as usize);
+    // Parse HuggingFace config.json format using alias lookup tables
+    let hidden_size = json_usize_with_aliases(&json, CONFIG_ALIASES_HIDDEN_SIZE);
+    let num_layers = json_usize_with_aliases(&json, CONFIG_ALIASES_NUM_LAYERS);
+    let num_heads = json_usize_with_aliases(&json, CONFIG_ALIASES_NUM_HEADS);
 
-    let num_layers = json
-        .get("num_hidden_layers")
-        .or_else(|| json.get("n_layer")) // GPT-2, BLOOM, GPT-BigCode
-        .or_else(|| json.get("num_layers")) // GPT-Neo
-        .and_then(serde_json::Value::as_u64)
-        .map(|v| v as usize);
-
-    let num_heads = json
-        .get("num_attention_heads")
-        .or_else(|| json.get("n_head")) // GPT-2, GPT-BigCode
-        .or_else(|| json.get("num_heads")) // GPT-Neo
-        .and_then(serde_json::Value::as_u64)
-        .map(|v| v as usize);
-
-    let num_kv_heads = json
-        .get("num_key_value_heads")
-        .and_then(serde_json::Value::as_u64)
-        .map(|v| v as usize)
+    let num_kv_heads = json_usize_with_aliases(&json, &["num_key_value_heads"])
         .or(num_heads); // Default to num_heads if not specified (no GQA)
 
-    let vocab_size = json
-        .get("vocab_size")
-        .and_then(serde_json::Value::as_u64)
-        .map(|v| v as usize);
+    let vocab_size = json_usize_with_aliases(&json, &["vocab_size"]);
 
-    let intermediate_size = json
-        .get("intermediate_size")
-        .or_else(|| json.get("n_inner")) // GPT-2, GPT-BigCode
-        .or_else(|| json.get("ffn_dim")) // OPT
-        .and_then(serde_json::Value::as_u64)
-        .map(|v| v as usize)
+    let intermediate_size = json_usize_with_aliases(&json, CONFIG_ALIASES_INTERMEDIATE)
         .or_else(|| hidden_size.map(|h| 4 * h)); // BLOOM/GPT-Neo default: 4 * hidden_size
 
-    let max_position_embeddings = json
-        .get("max_position_embeddings")
-        .or_else(|| json.get("n_positions")) // GPT-2
-        .or_else(|| json.get("n_ctx")) // GPT-2 alternative
-        .and_then(serde_json::Value::as_u64)
-        .map(|v| v as usize);
+    let max_position_embeddings = json_usize_with_aliases(&json, CONFIG_ALIASES_MAX_POS);
 
-    let rope_theta = json
-        .get("rope_theta")
-        .and_then(serde_json::Value::as_f64)
-        .unwrap_or(10000.0);
-
-    // GH-278: Read norm epsilon from config.json.
-    // LLaMA/Qwen use "rms_norm_eps", GPT-2/BERT use "layer_norm_epsilon",
-    // some models use "layer_norm_eps". Try all known key names.
-    let rms_norm_eps = json
-        .get("rms_norm_eps")
-        .or_else(|| json.get("layer_norm_epsilon"))
-        .or_else(|| json.get("layer_norm_eps"))
-        .and_then(serde_json::Value::as_f64)
-        .unwrap_or(1e-6);
+    let rope_theta = json_f64_with_aliases(&json, &["rope_theta"], 10000.0);
+    let rms_norm_eps = json_f64_with_aliases(&json, CONFIG_ALIASES_NORM_EPS, 1e-6);
 
     let architecture = json
         .get("model_type")

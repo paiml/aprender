@@ -81,25 +81,63 @@ pub(super) fn format_benchmark_csv(bench: &BenchmarkComparison) -> String {
         bench.apr_tps, bench.apr_ttft_ms, bench.apr_tps_stddev, bench.runs
     );
 
-    // llama.cpp row (if available)
-    if let Some(tps) = bench.llama_cpp_tps {
-        let ttft = bench.llama_cpp_ttft_ms.unwrap_or(0.0);
-        let speedup = bench
-            .speedup_vs_llama
-            .map_or(String::new(), |s| format!("{s:.2}"));
-        let _ = writeln!(csv, "llama.cpp,{tps:.2},{ttft:.2},{speedup},N/A,N/A");
-    }
-
-    // Ollama row (if available)
-    if let Some(tps) = bench.ollama_tps {
-        let ttft = bench.ollama_ttft_ms.unwrap_or(0.0);
-        let speedup = bench
-            .speedup_vs_ollama
-            .map_or(String::new(), |s| format!("{s:.2}"));
-        let _ = writeln!(csv, "Ollama,{tps:.2},{ttft:.2},{speedup},N/A,N/A");
+    // Baseline rows (llama.cpp and Ollama follow the same CSV format)
+    let baselines: &[(&str, Option<f64>, Option<f64>, Option<f64>)] = &[
+        ("llama.cpp", bench.llama_cpp_tps, bench.llama_cpp_ttft_ms, bench.speedup_vs_llama),
+        ("Ollama", bench.ollama_tps, bench.ollama_ttft_ms, bench.speedup_vs_ollama),
+    ];
+    for &(name, tps_opt, ttft_opt, speedup_opt) in baselines {
+        if let Some(tps) = tps_opt {
+            let ttft = ttft_opt.unwrap_or(0.0);
+            let speedup = speedup_opt.map_or(String::new(), |s| format!("{s:.2}"));
+            let _ = writeln!(csv, "{name},{tps:.2},{ttft:.2},{speedup},N/A,N/A");
+        }
     }
 
     csv
+}
+
+/// Run baseline benchmarks (llama.cpp, Ollama) and build a `BenchmarkComparison`.
+///
+/// Shared by both the real-inference and simulated benchmark paths.
+fn build_comparison(
+    apr_tps: f64,
+    apr_ttft_ms: f64,
+    apr_tps_stddev: f64,
+    runs: usize,
+    config: &ShowcaseConfig,
+) -> BenchmarkComparison {
+    let llama_results = if config.baselines.contains(&Baseline::LlamaCpp) {
+        println!();
+        println!("{}", "Running llama.cpp benchmark...".yellow());
+        run_llama_cpp_bench(config).ok()
+    } else {
+        None
+    };
+
+    let ollama_results = if config.baselines.contains(&Baseline::Ollama) {
+        println!();
+        println!("{}", "Running Ollama benchmark...".yellow());
+        run_ollama_bench(config).ok()
+    } else {
+        None
+    };
+
+    let speedup_vs_llama = llama_results.map(|(tps, _)| ((apr_tps - tps) / tps) * 100.0);
+    let speedup_vs_ollama = ollama_results.map(|(tps, _)| ((apr_tps - tps) / tps) * 100.0);
+
+    BenchmarkComparison {
+        apr_tps,
+        apr_ttft_ms,
+        apr_tps_stddev,
+        runs,
+        llama_cpp_tps: llama_results.map(|(tps, _)| tps),
+        llama_cpp_ttft_ms: llama_results.map(|(_, ttft)| ttft),
+        ollama_tps: ollama_results.map(|(tps, _)| tps),
+        ollama_ttft_ms: ollama_results.map(|(_, ttft)| ttft),
+        speedup_vs_llama,
+        speedup_vs_ollama,
+    }
 }
 
 /// Step E: Benchmark Comparison with real measurements
@@ -198,54 +236,20 @@ pub(super) fn run_benchmark(config: &ShowcaseConfig) -> Result<BenchmarkComparis
         apr_results.len()
     );
 
-    // Baseline benchmarks
-    let llama_results = if config.baselines.contains(&Baseline::LlamaCpp) {
-        println!();
-        println!("{}", "Running llama.cpp benchmark...".yellow());
-        run_llama_cpp_bench(config).ok()
-    } else {
-        None
-    };
-
-    let ollama_results = if config.baselines.contains(&Baseline::Ollama) {
-        println!();
-        println!("{}", "Running Ollama benchmark...".yellow());
-        run_ollama_bench(config).ok()
-    } else {
-        None
-    };
-
-    // Calculate speedups
-    let speedup_vs_llama = llama_results.map(|(tps, _)| ((apr_tps - tps) / tps) * 100.0);
-    let speedup_vs_ollama = ollama_results.map(|(tps, _)| ((apr_tps - tps) / tps) * 100.0);
-
-    let comparison = BenchmarkComparison {
-        apr_tps,
-        apr_ttft_ms,
-        apr_tps_stddev,
-        runs: apr_results.len(),
-        llama_cpp_tps: llama_results.map(|(tps, _)| tps),
-        llama_cpp_ttft_ms: llama_results.map(|(_, ttft)| ttft),
-        ollama_tps: ollama_results.map(|(tps, _)| tps),
-        ollama_ttft_ms: ollama_results.map(|(_, ttft)| ttft),
-        speedup_vs_llama,
-        speedup_vs_ollama,
-    };
+    let comparison = build_comparison(apr_tps, apr_ttft_ms, apr_tps_stddev, apr_results.len(), config);
 
     print_benchmark_results(&comparison);
 
     Ok(comparison)
 }
 
+/// Shared benchmark setup: tokenize prompt and create generation config.
+///
+/// Returns (prompt_tokens, gen_config) used by both CPU and GPU benchmark paths.
 #[cfg(feature = "inference")]
-pub(super) fn run_real_benchmark(
-    model: &realizar::gguf::OwnedQuantizedModel,
+fn bench_setup(
     mapped: &realizar::gguf::MappedGGUFModel,
-    config: &ShowcaseConfig,
-) -> Result<Vec<BenchMeasurement>> {
-    use realizar::gguf::QuantizedGenerateConfig;
-
-    // Use real tokenization from the GGUF model's vocabulary
+) -> (Vec<u32>, realizar::gguf::QuantizedGenerateConfig) {
     let test_prompt = "Hello, I am a coding assistant. Write a function that calculates";
     let prompt_tokens: Vec<u32> = mapped.model.encode(test_prompt).unwrap_or_else(|| {
         // Fallback to Qwen2 pre-tokenized tokens if vocab not available
@@ -258,12 +262,43 @@ pub(super) fn run_real_benchmark(
     );
 
     // PERF-003: Use greedy sampling for fair benchmark (eliminates CPU top-k sort overhead)
-    let gen_config = QuantizedGenerateConfig {
+    let gen_config = realizar::gguf::QuantizedGenerateConfig {
         max_tokens: 32,
         temperature: 0.0, // Greedy
         top_k: 1,         // Greedy
         ..Default::default()
     };
+
+    (prompt_tokens, gen_config)
+}
+
+/// Record a single benchmark measurement from generation output.
+#[cfg(feature = "inference")]
+fn record_measurement(
+    output_len: usize,
+    prompt_len: usize,
+    duration: Duration,
+) -> BenchMeasurement {
+    let tokens_generated = output_len.saturating_sub(prompt_len);
+    let ttft = if tokens_generated > 0 {
+        Duration::from_secs_f64(duration.as_secs_f64() / tokens_generated as f64)
+    } else {
+        duration
+    };
+    BenchMeasurement {
+        tokens_generated,
+        duration,
+        ttft,
+    }
+}
+
+#[cfg(feature = "inference")]
+pub(super) fn run_real_benchmark(
+    model: &realizar::gguf::OwnedQuantizedModel,
+    mapped: &realizar::gguf::MappedGGUFModel,
+    config: &ShowcaseConfig,
+) -> Result<Vec<BenchMeasurement>> {
+    let (prompt_tokens, gen_config) = bench_setup(mapped);
 
     // Warmup
     print!("  Warmup: ");
@@ -286,18 +321,7 @@ pub(super) fn run_real_benchmark(
             .unwrap_or_default();
         let duration = start.elapsed();
 
-        let tokens_generated = output.len().saturating_sub(prompt_tokens.len());
-        let ttft = if tokens_generated > 0 {
-            Duration::from_secs_f64(duration.as_secs_f64() / tokens_generated as f64)
-        } else {
-            duration
-        };
-
-        measurements.push(BenchMeasurement {
-            tokens_generated,
-            duration,
-            ttft,
-        });
+        measurements.push(record_measurement(output.len(), prompt_tokens.len(), duration));
 
         if (i + 1) % 5 == 0 {
             print!("{} ", i + 1);
@@ -316,27 +340,7 @@ pub(super) fn run_real_benchmark_cuda(
     mapped: &realizar::gguf::MappedGGUFModel,
     config: &ShowcaseConfig,
 ) -> Result<Vec<BenchMeasurement>> {
-    use realizar::gguf::QuantizedGenerateConfig;
-
-    // Use real tokenization from the GGUF model's vocabulary
-    let test_prompt = "Hello, I am a coding assistant. Write a function that calculates";
-    let prompt_tokens: Vec<u32> = mapped.model.encode(test_prompt).unwrap_or_else(|| {
-        // Fallback to Qwen2 pre-tokenized tokens if vocab not available
-        vec![151643, 9707, 11, 358, 1079, 264, 11761, 18328, 13, 9842]
-    });
-    println!(
-        "  Prompt: {} tokens (\"{}...\")",
-        prompt_tokens.len(),
-        &test_prompt[..test_prompt.len().min(30)]
-    );
-
-    // PERF-003: Use greedy sampling for fair benchmark (eliminates CPU top-k sort overhead)
-    let gen_config = QuantizedGenerateConfig {
-        max_tokens: 32,
-        temperature: 0.0, // Greedy
-        top_k: 1,         // Greedy
-        ..Default::default()
-    };
+    let (prompt_tokens, gen_config) = bench_setup(mapped);
 
     // Warmup using GPU-resident inference
     print!("  Warmup: ");
@@ -374,19 +378,7 @@ pub(super) fn run_real_benchmark_cuda(
         };
         let duration = start.elapsed();
 
-        // Count output tokens (response minus prompt)
-        let tokens_generated = output.len().saturating_sub(prompt_tokens.len());
-        let ttft = if tokens_generated > 0 {
-            Duration::from_secs_f64(duration.as_secs_f64() / tokens_generated as f64)
-        } else {
-            duration
-        };
-
-        measurements.push(BenchMeasurement {
-            tokens_generated,
-            duration,
-            ttft,
-        });
+        measurements.push(record_measurement(output.len(), prompt_tokens.len(), duration));
 
         if (i + 1) % 5 == 0 {
             print!("{} ", i + 1);
@@ -412,33 +404,7 @@ pub(super) fn run_benchmark(config: &ShowcaseConfig) -> Result<BenchmarkComparis
     let apr_tps = 44.0 + generate_jitter() * 2.0;
     let apr_ttft_ms = 78.0 + generate_jitter() * 5.0;
 
-    let llama_results = if config.baselines.contains(&Baseline::LlamaCpp) {
-        run_llama_cpp_bench(config).ok()
-    } else {
-        None
-    };
-
-    let ollama_results = if config.baselines.contains(&Baseline::Ollama) {
-        run_ollama_bench(config).ok()
-    } else {
-        None
-    };
-
-    let speedup_vs_llama = llama_results.map(|(tps, _)| ((apr_tps - tps) / tps) * 100.0);
-    let speedup_vs_ollama = ollama_results.map(|(tps, _)| ((apr_tps - tps) / tps) * 100.0);
-
-    let comparison = BenchmarkComparison {
-        apr_tps,
-        apr_ttft_ms,
-        apr_tps_stddev: 2.0,
-        runs: config.bench_runs,
-        llama_cpp_tps: llama_results.map(|(tps, _)| tps),
-        llama_cpp_ttft_ms: llama_results.map(|(_, ttft)| ttft),
-        ollama_tps: ollama_results.map(|(tps, _)| tps),
-        ollama_ttft_ms: ollama_results.map(|(_, ttft)| ttft),
-        speedup_vs_llama,
-        speedup_vs_ollama,
-    };
+    let comparison = build_comparison(apr_tps, apr_ttft_ms, 2.0, config.bench_runs, config);
 
     print_benchmark_results(&comparison);
     Ok(comparison)

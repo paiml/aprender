@@ -302,6 +302,64 @@ fn print_batch_summary(
     }
 }
 
+/// Export a single format in batch mode. Returns Some on success, None on failure.
+fn export_single_format(
+    fmt: &ExportFormat,
+    file: &Path,
+    out_dir: &Path,
+    quant_type: Option<QuantizationType>,
+    json_output: bool,
+) -> Option<(&'static str, String, ExportReport)> {
+    let ext = fmt.extension();
+    let out_path = if *fmt == ExportFormat::Mlx {
+        out_dir.join(format!("model-{ext}"))
+    } else {
+        out_dir.join(format!("model.{ext}"))
+    };
+
+    if let Some(parent) = out_path.parent() {
+        std::fs::create_dir_all(parent).ok();
+    }
+
+    let options = ExportOptions {
+        format: *fmt,
+        quantize: quant_type,
+        ..Default::default()
+    };
+
+    if !json_output {
+        output::pipeline_stage(
+            &format!("Exporting to {}", fmt.display_name()),
+            output::StageStatus::Running,
+        );
+    }
+
+    match apr_export(file, &out_path, options) {
+        Ok(report) => {
+            if !json_output {
+                println!(
+                    "    {} → {} ({})",
+                    fmt.display_name(),
+                    out_path.display(),
+                    format_size(report.exported_size, BINARY)
+                );
+            }
+            Some((fmt.display_name(), out_path.display().to_string(), report))
+        }
+        Err(e) => {
+            if !json_output {
+                println!(
+                    "    {} {} — {}",
+                    output::badge_fail("FAIL"),
+                    fmt.display_name(),
+                    e
+                );
+            }
+            None
+        }
+    }
+}
+
 /// Batch export to multiple formats
 #[allow(clippy::disallowed_methods)]
 fn run_batch(
@@ -350,58 +408,10 @@ fn run_batch(
         println!();
     }
 
-    let mut results = Vec::new();
-
-    for fmt in &formats {
-        let ext = fmt.extension();
-        let out_path = if *fmt == ExportFormat::Mlx {
-            out_dir.join(format!("model-{ext}"))
-        } else {
-            out_dir.join(format!("model.{ext}"))
-        };
-
-        // Create parent dir
-        if let Some(parent) = out_path.parent() {
-            std::fs::create_dir_all(parent).ok();
-        }
-
-        let options = ExportOptions {
-            format: *fmt,
-            quantize: quant_type,
-            ..Default::default()
-        };
-
-        if !json_output {
-            output::pipeline_stage(
-                &format!("Exporting to {}", fmt.display_name()),
-                output::StageStatus::Running,
-            );
-        }
-
-        match apr_export(file, &out_path, options) {
-            Ok(report) => {
-                if !json_output {
-                    println!(
-                        "    {} → {} ({})",
-                        fmt.display_name(),
-                        out_path.display(),
-                        format_size(report.exported_size, BINARY)
-                    );
-                }
-                results.push((fmt.display_name(), out_path.display().to_string(), report));
-            }
-            Err(e) => {
-                if !json_output {
-                    println!(
-                        "    {} {} — {}",
-                        output::badge_fail("FAIL"),
-                        fmt.display_name(),
-                        e
-                    );
-                }
-            }
-        }
-    }
+    let results: Vec<_> = formats
+        .iter()
+        .filter_map(|fmt| export_single_format(fmt, file, out_dir, quant_type, json_output))
+        .collect();
 
     print_batch_summary(file, &results, formats.len(), json_output);
 

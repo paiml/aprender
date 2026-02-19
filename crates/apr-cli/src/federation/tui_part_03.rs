@@ -1,4 +1,4 @@
-
+// Tests for federation::tui (FederationTab, FederationApp)
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -2,20 +2,10 @@ use super::*;
 
 #[test]
 fn test_instantiate_template_with_both_types() {
-    let citl = CITL::builder()
-        .compiler(RustCompiler::new())
-        .build()
-        .expect("Should build");
+    let citl = test_citl();
 
     let template = FixTemplate::new("($expr as $type) // was $found", "Full cast");
-    let error_code = ErrorCode::new("E0308", ErrorCategory::TypeMismatch, Difficulty::Easy);
-    let span = SourceSpan::default();
-    let mut diag = CompilerDiagnostic::new(
-        error_code,
-        DiagnosticSeverity::Error,
-        "mismatched types",
-        span,
-    );
+    let mut diag = test_diagnostic(e0308(), "mismatched types");
     diag.expected = Some(TypeInfo::new("u64"));
     diag.found = Some(TypeInfo::new("i32"));
 
@@ -133,13 +123,9 @@ fn test_fix_result_failure_with_applied_fixes() {
 
 #[test]
 fn test_citl_search_patterns_empty_library() {
-    let citl = CITL::builder()
-        .compiler(RustCompiler::new())
-        .build()
-        .expect("Should build");
+    let citl = test_citl();
 
-    let error_code = ErrorCode::new("E0308", ErrorCategory::TypeMismatch, Difficulty::Easy);
-    let embedding = ErrorEmbedding::new(vec![0.1; 256], error_code, 12345);
+    let embedding = ErrorEmbedding::new(vec![0.1; 256], e0308(), 12345);
 
     let results = citl.search_patterns(&embedding, 10);
     assert!(results.is_empty());
@@ -147,18 +133,9 @@ fn test_citl_search_patterns_empty_library() {
 
 #[test]
 fn test_citl_encode_error() {
-    let citl = CITL::builder()
-        .compiler(RustCompiler::new())
-        .build()
-        .expect("Should build");
+    let citl = test_citl();
 
-    let error_code = ErrorCode::new("E0308", ErrorCategory::TypeMismatch, Difficulty::Easy);
-    let diag = CompilerDiagnostic::new(
-        error_code,
-        DiagnosticSeverity::Error,
-        "test error message",
-        SourceSpan::default(),
-    );
+    let diag = test_diagnostic(e0308(), "test error message");
 
     let embedding = citl.encode_error(&diag, "let x = 42;");
     assert!(!embedding.vector.is_empty());
@@ -168,10 +145,7 @@ fn test_citl_encode_error() {
 
 #[test]
 fn test_citl_apply_fix_basic() {
-    let citl = CITL::builder()
-        .compiler(RustCompiler::new())
-        .build()
-        .expect("Should build");
+    let citl = test_citl();
 
     let source = "fn main() { let x = 42 }"; // Missing semicolon
     let fix = SuggestedFix {
@@ -189,10 +163,7 @@ fn test_citl_apply_fix_basic() {
 
 #[test]
 fn test_citl_apply_fix_out_of_bounds_start() {
-    let citl = CITL::builder()
-        .compiler(RustCompiler::new())
-        .build()
-        .expect("Should build");
+    let citl = test_citl();
 
     let source = "short";
     let fix = SuggestedFix {
@@ -210,10 +181,7 @@ fn test_citl_apply_fix_out_of_bounds_start() {
 
 #[test]
 fn test_citl_apply_fix_out_of_bounds_end() {
-    let citl = CITL::builder()
-        .compiler(RustCompiler::new())
-        .build()
-        .expect("Should build");
+    let citl = test_citl();
 
     let source = "short";
     let fix = SuggestedFix {
@@ -231,10 +199,7 @@ fn test_citl_apply_fix_out_of_bounds_end() {
 
 #[test]
 fn test_citl_compiler_accessor() {
-    let citl = CITL::builder()
-        .compiler(RustCompiler::new())
-        .build()
-        .expect("Should build");
+    let citl = test_citl();
 
     // Just verify the accessor doesn't panic
     let _compiler = citl.compiler();
@@ -242,18 +207,9 @@ fn test_citl_compiler_accessor() {
 
 #[test]
 fn test_citl_suggest_fix_no_match() {
-    let citl = CITL::builder()
-        .compiler(RustCompiler::new())
-        .build()
-        .expect("Should build");
+    let citl = test_citl();
 
-    let error_code = ErrorCode::new("E0308", ErrorCategory::TypeMismatch, Difficulty::Easy);
-    let diag = CompilerDiagnostic::new(
-        error_code,
-        DiagnosticSeverity::Error,
-        "test error message",
-        SourceSpan::default(),
-    );
+    let diag = test_diagnostic(e0308(), "test error message");
 
     // Empty pattern library, should return None
     let result = citl.suggest_fix(&diag, "let x: i32 = \"hello\";");
@@ -294,10 +250,9 @@ fn test_suggested_fix_default_offsets() {
 
 #[test]
 fn test_citl_builder_pattern_library_nonexistent() {
-    let compiler = RustCompiler::new();
     // Using a nonexistent path should still work (creates empty library)
     let result = CITL::builder()
-        .compiler(compiler)
+        .compiler(RustCompiler::new())
         .pattern_library("/nonexistent/path/patterns.db")
         .build();
     assert!(result.is_ok());

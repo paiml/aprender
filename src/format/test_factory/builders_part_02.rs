@@ -1,5 +1,146 @@
 
 // ============================================================================
+// Shared tensor data generation helpers (reduces DataTransformation entropy)
+// ============================================================================
+
+/// Generate embedding-style tensor data: values in [-0.05, 0.05] range
+fn gen_embed_data(count: usize) -> Vec<f32> {
+    (0..count)
+        .map(|i| ((i % 100) as f32 - 50.0) / 1000.0)
+        .collect()
+}
+
+/// Generate weight-style tensor data: values in [-0.05, 0.05] range
+fn gen_weight_data(count: usize) -> Vec<f32> {
+    (0..count)
+        .map(|i| ((i % 200) as f32 - 100.0) / 2000.0)
+        .collect()
+}
+
+/// Create standard llama-style APR metadata with a writer
+fn new_llama_apr_writer(name: &str, hidden_size: usize, vocab_size: usize) -> AprV2Writer {
+    let mut metadata = AprV2Metadata::new(name);
+    metadata.architecture = Some("llama".to_string());
+    metadata.hidden_size = Some(hidden_size);
+    metadata.vocab_size = Some(vocab_size);
+    AprV2Writer::new(metadata)
+}
+
+/// Descriptor for a single-layer quantized APR model variant.
+///
+/// Captures the differences between Q8/Q4/F16 builders so the shared
+/// `build_single_layer_apr` helper can emit the right tensor types.
+enum QuantVariant {
+    Q8 { hidden: usize },
+    Q4 { block_size: usize },
+    F16 { hidden: usize },
+}
+
+/// Shared builder for single-layer quantized APR models (Q8, Q4, F16).
+///
+/// All three variants follow the same structure: embed (F32) + attention (quant) +
+/// norms (same dtype as variant) + final norm. Only the tensor-add method differs.
+fn build_single_layer_apr(variant: QuantVariant) -> Vec<u8> {
+    let config = PygmyConfig::default();
+
+    match variant {
+        QuantVariant::Q8 { hidden } => {
+            let mut writer = new_llama_apr_writer("pygmy", hidden, config.vocab_size);
+
+            // Embedding (F32)
+            writer.add_f32_tensor(
+                "model.embed_tokens.weight",
+                vec![config.vocab_size, hidden],
+                &gen_embed_data(config.vocab_size * hidden),
+            );
+
+            // Layer 0 attention (Q8)
+            let qkvo_data = gen_weight_data(hidden * hidden);
+            for suffix in &["q_proj", "k_proj", "v_proj", "o_proj"] {
+                writer.add_q8_tensor(
+                    format!("model.layers.0.self_attn.{suffix}.weight"),
+                    vec![hidden, hidden],
+                    &qkvo_data,
+                );
+            }
+
+            // Norms (F32)
+            let norm_data: Vec<f32> = vec![1.0; hidden];
+            writer.add_f32_tensor(
+                "model.layers.0.input_layernorm.weight",
+                vec![hidden],
+                &norm_data,
+            );
+            writer.add_f32_tensor("model.norm.weight", vec![hidden], &norm_data);
+
+            writer.write().unwrap_or_default()
+        }
+        QuantVariant::Q4 { block_size } => {
+            let mut writer = new_llama_apr_writer("pygmy", block_size, config.vocab_size);
+
+            // Embedding (F32) — uses default hidden_size for embed shape
+            writer.add_f32_tensor(
+                "model.embed_tokens.weight",
+                vec![config.vocab_size, config.hidden_size],
+                &gen_embed_data(config.vocab_size * config.hidden_size),
+            );
+
+            // Layer 0 attention (Q4)
+            let q4_data = gen_weight_data(block_size * block_size);
+            for suffix in &["q_proj", "k_proj", "v_proj", "o_proj"] {
+                writer.add_q4_tensor(
+                    format!("model.layers.0.self_attn.{suffix}.weight"),
+                    vec![block_size, block_size],
+                    &q4_data,
+                );
+            }
+
+            // Norms (F32)
+            let norm_data: Vec<f32> = vec![1.0; block_size];
+            writer.add_f32_tensor(
+                "model.layers.0.input_layernorm.weight",
+                vec![block_size],
+                &norm_data,
+            );
+            writer.add_f32_tensor("model.norm.weight", vec![block_size], &norm_data);
+
+            writer.write().unwrap_or_default()
+        }
+        QuantVariant::F16 { hidden } => {
+            let mut writer = new_llama_apr_writer("pygmy", hidden, config.vocab_size);
+
+            // Token embedding (F16)
+            writer.add_f16_tensor(
+                "model.embed_tokens.weight",
+                vec![config.vocab_size, hidden],
+                &gen_embed_data(config.vocab_size * hidden),
+            );
+
+            // Layer 0 attention (F16)
+            let qkvo_data = gen_weight_data(hidden * hidden);
+            for suffix in &["q_proj", "k_proj", "v_proj", "o_proj"] {
+                writer.add_f16_tensor(
+                    format!("model.layers.0.self_attn.{suffix}.weight"),
+                    vec![hidden, hidden],
+                    &qkvo_data,
+                );
+            }
+
+            // Norms (F16)
+            let norm_data: Vec<f32> = vec![1.0; hidden];
+            writer.add_f16_tensor(
+                "model.layers.0.input_layernorm.weight",
+                vec![hidden],
+                &norm_data,
+            );
+            writer.add_f16_tensor("model.norm.weight", vec![hidden], &norm_data);
+
+            writer.write().unwrap_or_default()
+        }
+    }
+}
+
+// ============================================================================
 // GH-205: F16 SafeTensors Builder for Passthrough Testing
 // ============================================================================
 
@@ -20,25 +161,19 @@ pub fn build_pygmy_safetensors_f16_with_config(config: PygmyConfig) -> Vec<u8> {
 
     // Token embedding: [vocab_size, hidden_size]
     if config.include_embedding {
-        let embed_data: Vec<f32> = (0..config.vocab_size * config.hidden_size)
-            .map(|i| ((i % 100) as f32 - 50.0) / 1000.0)
-            .collect();
         tensors.push((
             "model.embed_tokens.weight".to_string(),
             vec![config.vocab_size, config.hidden_size],
-            embed_data,
+            gen_embed_data(config.vocab_size * config.hidden_size),
         ));
     }
 
     // LM head: [vocab_size, hidden_size]
     if config.include_embedding && !config.tied_embeddings {
-        let lm_head_data: Vec<f32> = (0..config.vocab_size * config.hidden_size)
-            .map(|i| ((i % 100) as f32 - 50.0) / 1000.0)
-            .collect();
         tensors.push((
             "lm_head.weight".to_string(),
             vec![config.vocab_size, config.hidden_size],
-            lm_head_data,
+            gen_embed_data(config.vocab_size * config.hidden_size),
         ));
     }
 
@@ -157,13 +292,10 @@ pub fn build_pygmy_apr_with_config(config: PygmyConfig) -> Vec<u8> {
 
     // Token embedding
     if config.include_embedding {
-        let embed_data: Vec<f32> = (0..config.vocab_size * config.hidden_size)
-            .map(|i| ((i % 100) as f32 - 50.0) / 1000.0)
-            .collect();
         writer.add_f32_tensor(
             "model.embed_tokens.weight",
             vec![config.vocab_size, config.hidden_size],
-            &embed_data,
+            &gen_embed_data(config.vocab_size * config.hidden_size),
         );
     }
 
@@ -184,9 +316,7 @@ pub fn build_pygmy_apr_with_config(config: PygmyConfig) -> Vec<u8> {
         }
 
         if config.include_attention {
-            let qkvo_data: Vec<f32> = (0..config.hidden_size * config.hidden_size)
-                .map(|i| ((i % 200) as f32 - 100.0) / 2000.0)
-                .collect();
+            let qkvo_data = gen_weight_data(config.hidden_size * config.hidden_size);
             for suffix in &["q_proj", "k_proj", "v_proj", "o_proj"] {
                 writer.add_f32_tensor(
                     format!("model.layers.{layer_idx}.self_attn.{suffix}.weight"),
@@ -198,12 +328,8 @@ pub fn build_pygmy_apr_with_config(config: PygmyConfig) -> Vec<u8> {
 
         if config.include_mlp {
             let intermediate = config.hidden_size * 2;
-            let gate_up_data: Vec<f32> = (0..intermediate * config.hidden_size)
-                .map(|i| ((i % 200) as f32 - 100.0) / 2000.0)
-                .collect();
-            let down_data: Vec<f32> = (0..config.hidden_size * intermediate)
-                .map(|i| ((i % 200) as f32 - 100.0) / 2000.0)
-                .collect();
+            let gate_up_data = gen_weight_data(intermediate * config.hidden_size);
+            let down_data = gen_weight_data(config.hidden_size * intermediate);
 
             writer.add_f32_tensor(
                 format!("model.layers.{layer_idx}.mlp.gate_proj.weight"),
@@ -231,13 +357,10 @@ pub fn build_pygmy_apr_with_config(config: PygmyConfig) -> Vec<u8> {
 
     // LM head
     if config.include_embedding {
-        let lm_head_data: Vec<f32> = (0..config.vocab_size * config.hidden_size)
-            .map(|i| ((i % 100) as f32 - 50.0) / 1000.0)
-            .collect();
         writer.add_f32_tensor(
             "lm_head.weight",
             vec![config.vocab_size, config.hidden_size],
-            &lm_head_data,
+            &gen_embed_data(config.vocab_size * config.hidden_size),
         );
     }
 
@@ -247,154 +370,45 @@ pub fn build_pygmy_apr_with_config(config: PygmyConfig) -> Vec<u8> {
 /// Build APR with Q8 quantized tensors
 #[must_use]
 pub fn build_pygmy_apr_q8() -> Vec<u8> {
-    let config = PygmyConfig::default();
-    let mut metadata = AprV2Metadata::new("pygmy");
-    metadata.architecture = Some("llama".to_string());
-    metadata.hidden_size = Some(config.hidden_size);
-    metadata.vocab_size = Some(config.vocab_size);
-
-    let mut writer = AprV2Writer::new(metadata);
-
-    // Embedding (F32 - lookup table)
-    let embed_data: Vec<f32> = (0..config.vocab_size * config.hidden_size)
-        .map(|i| ((i % 100) as f32 - 50.0) / 1000.0)
-        .collect();
-    writer.add_f32_tensor(
-        "model.embed_tokens.weight",
-        vec![config.vocab_size, config.hidden_size],
-        &embed_data,
-    );
-
-    // Layer 0 attention (Q8)
-    let qkvo_data: Vec<f32> = (0..config.hidden_size * config.hidden_size)
-        .map(|i| ((i % 200) as f32 - 100.0) / 2000.0)
-        .collect();
-    for suffix in &["q_proj", "k_proj", "v_proj", "o_proj"] {
-        writer.add_q8_tensor(
-            format!("model.layers.0.self_attn.{suffix}.weight"),
-            vec![config.hidden_size, config.hidden_size],
-            &qkvo_data,
-        );
-    }
-
-    // Norms (F32)
-    let norm_data: Vec<f32> = vec![1.0; config.hidden_size];
-    writer.add_f32_tensor(
-        "model.layers.0.input_layernorm.weight",
-        vec![config.hidden_size],
-        &norm_data,
-    );
-    writer.add_f32_tensor("model.norm.weight", vec![config.hidden_size], &norm_data);
-
-    writer.write().unwrap_or_default()
+    build_single_layer_apr(QuantVariant::Q8 {
+        hidden: PygmyConfig::default().hidden_size,
+    })
 }
 
 /// Build APR with Q4 quantized tensors
 #[must_use]
 pub fn build_pygmy_apr_q4() -> Vec<u8> {
-    let config = PygmyConfig::default();
-    let mut metadata = AprV2Metadata::new("pygmy");
-    metadata.architecture = Some("llama".to_string());
-    metadata.hidden_size = Some(32); // Q4 block size alignment
-    metadata.vocab_size = Some(config.vocab_size);
-
-    let mut writer = AprV2Writer::new(metadata);
-
-    // Embedding (F32)
-    let embed_data: Vec<f32> = (0..config.vocab_size * config.hidden_size)
-        .map(|i| ((i % 100) as f32 - 50.0) / 1000.0)
-        .collect();
-    writer.add_f32_tensor(
-        "model.embed_tokens.weight",
-        vec![config.vocab_size, config.hidden_size],
-        &embed_data,
-    );
-
-    // Layer 0 attention (Q4) - need at least 32 elements for Q4 blocks
-    let q4_size = 32; // Q4 block size
-    let q4_data: Vec<f32> = (0..q4_size * q4_size)
-        .map(|i| ((i % 200) as f32 - 100.0) / 2000.0)
-        .collect();
-    for suffix in &["q_proj", "k_proj", "v_proj", "o_proj"] {
-        writer.add_q4_tensor(
-            format!("model.layers.0.self_attn.{suffix}.weight"),
-            vec![q4_size, q4_size],
-            &q4_data,
-        );
-    }
-
-    // Norms (F32)
-    let norm_data: Vec<f32> = vec![1.0; q4_size];
-    writer.add_f32_tensor(
-        "model.layers.0.input_layernorm.weight",
-        vec![q4_size],
-        &norm_data,
-    );
-    writer.add_f32_tensor("model.norm.weight", vec![q4_size], &norm_data);
-
-    writer.write().unwrap_or_default()
+    build_single_layer_apr(QuantVariant::Q4 { block_size: 32 })
 }
 
 /// Build APR with F16 tensors
 #[must_use]
 pub fn build_pygmy_apr_f16() -> Vec<u8> {
-    let config = PygmyConfig::default();
-    let mut metadata = AprV2Metadata::new("pygmy");
-    metadata.architecture = Some("llama".to_string());
-    metadata.hidden_size = Some(config.hidden_size);
-    metadata.vocab_size = Some(config.vocab_size);
-
-    let mut writer = AprV2Writer::new(metadata);
-
-    // Token embedding (F16)
-    let embed_data: Vec<f32> = (0..config.vocab_size * config.hidden_size)
-        .map(|i| ((i % 100) as f32 - 50.0) / 1000.0)
-        .collect();
-    writer.add_f16_tensor(
-        "model.embed_tokens.weight",
-        vec![config.vocab_size, config.hidden_size],
-        &embed_data,
-    );
-
-    // Layer 0 attention (F16)
-    let qkvo_data: Vec<f32> = (0..config.hidden_size * config.hidden_size)
-        .map(|i| ((i % 200) as f32 - 100.0) / 2000.0)
-        .collect();
-    for suffix in &["q_proj", "k_proj", "v_proj", "o_proj"] {
-        writer.add_f16_tensor(
-            format!("model.layers.0.self_attn.{suffix}.weight"),
-            vec![config.hidden_size, config.hidden_size],
-            &qkvo_data,
-        );
-    }
-
-    // Norms (F16)
-    let norm_data: Vec<f32> = vec![1.0; config.hidden_size];
-    writer.add_f16_tensor(
-        "model.layers.0.input_layernorm.weight",
-        vec![config.hidden_size],
-        &norm_data,
-    );
-    writer.add_f16_tensor("model.norm.weight", vec![config.hidden_size], &norm_data);
-
-    writer.write().unwrap_or_default()
+    build_single_layer_apr(QuantVariant::F16 {
+        hidden: PygmyConfig::default().hidden_size,
+    })
 }
 
 // ============================================================================
 // K-Quant Pygmy Builders (Q4K / Q6K)
 // ============================================================================
 
-/// Build APR with Q4_K quantized tensors (GGUF-style names)
+/// Shared builder for GGUF-style K-quant APR models (Q4K, Q6K).
 ///
-/// Q4_K format: 256-element super-blocks, 144 bytes each.
-/// Layout: d (f16, 2B) + dmin (f16, 2B) + scales (12B) + qs (128B) = 144 bytes.
-/// Uses GGUF naming: `token_embd.weight`, `blk.0.attn_q.weight`, etc.
-#[must_use]
-pub fn build_pygmy_apr_q4k() -> Vec<u8> {
-    let mut metadata = AprV2Metadata::new("pygmy-q4k");
+/// Both Q4K and Q6K follow the same structure with GGUF naming:
+/// embed (F32) + attention (raw quant blocks) + norms (F32) + output (F32).
+/// Only the block size and tensor-add method differ.
+fn build_kquant_gguf_apr(
+    name: &str,
+    block_bytes: usize,
+    add_raw_fn: fn(&mut AprV2Writer, String, Vec<usize>, Vec<u8>),
+) -> Vec<u8> {
+    let (vocab, hidden) = (8, 256);
+
+    let mut metadata = AprV2Metadata::new(name);
     metadata.architecture = Some("qwen2".to_string());
-    metadata.hidden_size = Some(256);
-    metadata.vocab_size = Some(8);
+    metadata.hidden_size = Some(hidden);
+    metadata.vocab_size = Some(vocab);
     metadata.num_layers = Some(1);
     metadata
         .custom
@@ -403,31 +417,38 @@ pub fn build_pygmy_apr_q4k() -> Vec<u8> {
     let mut writer = AprV2Writer::new(metadata);
 
     // Token embedding (F32 -- embedding lookup tables stay unquantized)
-    let embed_data: Vec<f32> = (0..8 * 256)
-        .map(|i| ((i % 100) as f32 - 50.0) / 1000.0)
-        .collect();
-    writer.add_f32_tensor("token_embd.weight", vec![8, 256], &embed_data);
+    writer.add_f32_tensor("token_embd.weight", vec![vocab, hidden], &gen_embed_data(vocab * hidden));
 
-    // Layer 0 attention weights (Q4K): 256 elements = 1 super-block = 144 bytes
-    let q4k_block = vec![0u8; 144];
+    // Layer 0 attention weights (K-quant): 256 elements = 1 super-block
+    let raw_block = vec![0u8; block_bytes];
     for suffix in &["attn_q", "attn_k", "attn_v", "attn_output"] {
-        writer.add_q4k_raw_tensor(
+        add_raw_fn(
+            &mut writer,
             format!("blk.0.{suffix}.weight"),
-            vec![256, 1],
-            q4k_block.clone(),
+            vec![hidden, 1],
+            raw_block.clone(),
         );
     }
 
     // Norms (F32)
-    let norm_data: Vec<f32> = vec![1.0; 256];
-    writer.add_f32_tensor("blk.0.attn_norm.weight", vec![256], &norm_data);
-    writer.add_f32_tensor("output_norm.weight", vec![256], &norm_data);
+    let norm_data: Vec<f32> = vec![1.0; hidden];
+    writer.add_f32_tensor("blk.0.attn_norm.weight", vec![hidden], &norm_data);
+    writer.add_f32_tensor("output_norm.weight", vec![hidden], &norm_data);
 
     // Output (F32)
-    let output_data: Vec<f32> = (0..8 * 256)
-        .map(|i| ((i % 100) as f32 - 50.0) / 1000.0)
-        .collect();
-    writer.add_f32_tensor("output.weight", vec![8, 256], &output_data);
+    writer.add_f32_tensor("output.weight", vec![vocab, hidden], &gen_embed_data(vocab * hidden));
 
     writer.write().unwrap_or_default()
+}
+
+/// Build APR with Q4_K quantized tensors (GGUF-style names)
+///
+/// Q4_K format: 256-element super-blocks, 144 bytes each.
+/// Layout: d (f16, 2B) + dmin (f16, 2B) + scales (12B) + qs (128B) = 144 bytes.
+/// Uses GGUF naming: `token_embd.weight`, `blk.0.attn_q.weight`, etc.
+#[must_use]
+pub fn build_pygmy_apr_q4k() -> Vec<u8> {
+    build_kquant_gguf_apr("pygmy-q4k", 144, |w, name, shape, data| {
+        w.add_q4k_raw_tensor(name, shape, data);
+    })
 }

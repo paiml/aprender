@@ -33,6 +33,26 @@
 
 use super::{BinaryGA, Budget, PerturbativeMetaheuristic, SearchSpace};
 
+/// Count how many features are selected in a boolean mask.
+///
+/// This is the canonical way to count selected features, extracted to avoid
+/// the repeated `mask.iter().filter(|&&s| s).count()` pattern.
+#[inline]
+#[cfg(test)]
+fn count_selected(mask: &[bool]) -> usize {
+    mask.iter().filter(|&&s| s).count()
+}
+
+/// Collect indices of selected (true) features from a boolean mask.
+#[inline]
+fn selected_indices(mask: &[bool]) -> Vec<usize> {
+    mask.iter()
+        .enumerate()
+        .filter(|(_, &s)| s)
+        .map(|(i, _)| i)
+        .collect()
+}
+
 /// Criterion for evaluating feature subsets.
 #[derive(Debug, Clone, Copy)]
 pub enum SelectionCriterion {
@@ -198,19 +218,14 @@ impl FeatureSelector {
 
         // Convert solution to mask
         let mask: Vec<bool> = result.solution.iter().map(|&b| b > 0.5).collect();
-        let selected_indices: Vec<usize> = mask
-            .iter()
-            .enumerate()
-            .filter(|(_, &s)| s)
-            .map(|(i, _)| i)
-            .collect();
-        let n_selected = selected_indices.len();
+        let sel_indices = selected_indices(&mask);
+        let n_selected = sel_indices.len();
 
         // Re-evaluate to get accuracy
         let (accuracy, _) = evaluator(&mask);
 
         FeatureSelectionResult {
-            selected_indices,
+            selected_indices: sel_indices,
             n_selected,
             score: -result.objective_value, // Convert back from minimization
             accuracy: Some(accuracy),
@@ -272,20 +287,15 @@ mod tests {
 
         // Evaluator: accuracy increases with first 3 features, then plateaus
         let evaluator = |mask: &[bool]| -> (f64, usize) {
-            let selected: Vec<usize> = mask
-                .iter()
-                .enumerate()
-                .filter(|(_, &s)| s)
-                .map(|(i, _)| i)
-                .collect();
-            let n = selected.len();
+            let sel = selected_indices(mask);
+            let n = sel.len();
 
             if n == 0 {
                 return (0.0, 0);
             }
 
             // First 3 features are important
-            let important_count = selected.iter().filter(|&&i| i < 3).count();
+            let important_count = sel.iter().filter(|&&i| i < 3).count();
             let accuracy = 0.5 + 0.15 * important_count as f64;
             (accuracy, n)
         };
@@ -313,7 +323,7 @@ mod tests {
 
         // Constant accuracy regardless of features
         let evaluator = |mask: &[bool]| -> (f64, usize) {
-            let n = mask.iter().filter(|&&s| s).count();
+            let n = count_selected(mask);
             (0.8, n) // Always 80% accuracy
         };
 
@@ -332,7 +342,7 @@ mod tests {
         let n_features = 10;
 
         let evaluator = |mask: &[bool]| -> (f64, usize) {
-            let n = mask.iter().filter(|&&s| s).count();
+            let n = count_selected(mask);
             let accuracy = 0.5 + 0.05 * n as f64; // More features = better
             (accuracy, n)
         };
@@ -356,7 +366,7 @@ mod tests {
         let n_samples = 100;
 
         let evaluator = |mask: &[bool]| -> (f64, usize) {
-            let n = mask.iter().filter(|&&s| s).count();
+            let n = count_selected(mask);
             let accuracy = if n == 0 {
                 0.0
             } else {
@@ -380,7 +390,7 @@ mod tests {
         let result = select_features(
             5,
             |mask| {
-                let n = mask.iter().filter(|&&s| s).count();
+                let n = count_selected(mask);
                 (0.6 + 0.1 * n.min(2) as f64, n)
             },
             Budget::Evaluations(200),
@@ -396,7 +406,7 @@ mod tests {
 
         // Feature 0 is most important, feature 3 is useless
         let evaluator = |mask: &[bool]| -> (f64, usize) {
-            let n = mask.iter().filter(|&&s| s).count();
+            let n = count_selected(mask);
             let mut acc = 0.5;
             if mask[0] {
                 acc += 0.2;
@@ -433,10 +443,7 @@ mod tests {
         };
 
         assert_eq!(result.selected_indices.len(), result.n_selected);
-        assert_eq!(
-            result.mask.iter().filter(|&&s| s).count(),
-            result.n_selected
-        );
+        assert_eq!(count_selected(&result.mask), result.n_selected);
     }
 
     #[test]
@@ -458,7 +465,7 @@ mod tests {
         let n_samples = 50;
 
         let evaluator = |mask: &[bool]| -> (f64, usize) {
-            let n = mask.iter().filter(|&&s| s).count();
+            let n = count_selected(mask);
             (0.75, n)
         };
 
@@ -478,7 +485,7 @@ mod tests {
 
         // Evaluator that handles empty selection
         let evaluator = |mask: &[bool]| -> (f64, usize) {
-            let n = mask.iter().filter(|&&s| s).count();
+            let n = count_selected(mask);
             if n == 0 {
                 (0.0, 0)
             } else {

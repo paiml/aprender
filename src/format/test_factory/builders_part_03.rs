@@ -6,45 +6,9 @@
 /// Uses GGUF naming: `token_embd.weight`, `blk.0.attn_q.weight`, etc.
 #[must_use]
 pub fn build_pygmy_apr_q6k() -> Vec<u8> {
-    let mut metadata = AprV2Metadata::new("pygmy-q6k");
-    metadata.architecture = Some("qwen2".to_string());
-    metadata.hidden_size = Some(256);
-    metadata.vocab_size = Some(8);
-    metadata.num_layers = Some(1);
-    metadata
-        .custom
-        .insert("naming".to_string(), serde_json::json!("gguf"));
-
-    let mut writer = AprV2Writer::new(metadata);
-
-    // Token embedding (F32)
-    let embed_data: Vec<f32> = (0..8 * 256)
-        .map(|i| ((i % 100) as f32 - 50.0) / 1000.0)
-        .collect();
-    writer.add_f32_tensor("token_embd.weight", vec![8, 256], &embed_data);
-
-    // Layer 0 attention weights (Q6K): 256 elements = 1 super-block = 210 bytes
-    let q6k_block = vec![0u8; 210];
-    for suffix in &["attn_q", "attn_k", "attn_v", "attn_output"] {
-        writer.add_q6k_raw_tensor(
-            format!("blk.0.{suffix}.weight"),
-            vec![256, 1],
-            q6k_block.clone(),
-        );
-    }
-
-    // Norms (F32)
-    let norm_data: Vec<f32> = vec![1.0; 256];
-    writer.add_f32_tensor("blk.0.attn_norm.weight", vec![256], &norm_data);
-    writer.add_f32_tensor("output_norm.weight", vec![256], &norm_data);
-
-    // Output (F32)
-    let output_data: Vec<f32> = (0..8 * 256)
-        .map(|i| ((i % 100) as f32 - 50.0) / 1000.0)
-        .collect();
-    writer.add_f32_tensor("output.weight", vec![8, 256], &output_data);
-
-    writer.write().unwrap_or_default()
+    build_kquant_gguf_apr("pygmy-q6k", 210, |w, name, shape, data| {
+        w.add_q6k_raw_tensor(name, shape, data);
+    })
 }
 
 // ============================================================================
@@ -253,90 +217,68 @@ pub fn build_pygmy_apr_gguf_names_with_config(config: GgufPygmyConfig) -> Vec<u8
     );
 
     let mut writer = AprV2Writer::new(metadata);
+    let h = config.hidden_size;
+    let v = config.vocab_size;
 
     // Token embedding: GGUF uses `token_embd.weight` (NOT model.embed_tokens.weight)
-    // Shape: [vocab_size, hidden_size] in GGUF (row-major)
-    let embed_data: Vec<f32> = (0..config.vocab_size * config.hidden_size)
-        .map(|i| ((i % 100) as f32 - 50.0) / 1000.0)
-        .collect();
-    writer.add_f32_tensor(
-        "token_embd.weight",
-        vec![config.vocab_size, config.hidden_size],
-        &embed_data,
-    );
+    writer.add_f32_tensor("token_embd.weight", vec![v, h], &gen_embed_data(v * h));
 
     // Layer tensors with GGUF naming
     for layer_idx in 0..config.num_layers {
-        // Input layernorm: blk.N.attn_norm.weight
-        let norm_data: Vec<f32> = vec![1.0; config.hidden_size];
+        let norm_data: Vec<f32> = vec![1.0; h];
         writer.add_f32_tensor(
             format!("blk.{layer_idx}.attn_norm.weight"),
-            vec![config.hidden_size],
+            vec![h],
             &norm_data,
         );
         writer.add_f32_tensor(
             format!("blk.{layer_idx}.ffn_norm.weight"),
-            vec![config.hidden_size],
+            vec![h],
             &norm_data,
         );
 
         // Attention: blk.N.attn_{q,k,v,output}.weight
-        let qkvo_data: Vec<f32> = (0..config.hidden_size * config.hidden_size)
-            .map(|i| ((i % 200) as f32 - 100.0) / 2000.0)
-            .collect();
+        let qkvo_data = gen_weight_data(h * h);
         for suffix in &["attn_q", "attn_k", "attn_v", "attn_output"] {
             writer.add_f32_tensor(
                 format!("blk.{layer_idx}.{suffix}.weight"),
-                vec![config.hidden_size, config.hidden_size],
+                vec![h, h],
                 &qkvo_data,
             );
         }
 
         // MLP: blk.N.ffn_{gate,up,down}.weight
-        let intermediate = config.hidden_size * 2;
-        let gate_up_data: Vec<f32> = (0..intermediate * config.hidden_size)
-            .map(|i| ((i % 200) as f32 - 100.0) / 2000.0)
-            .collect();
-        let down_data: Vec<f32> = (0..config.hidden_size * intermediate)
-            .map(|i| ((i % 200) as f32 - 100.0) / 2000.0)
-            .collect();
+        let intermediate = h * 2;
+        let gate_up_data = gen_weight_data(intermediate * h);
+        let down_data = gen_weight_data(h * intermediate);
 
         writer.add_f32_tensor(
             format!("blk.{layer_idx}.ffn_gate.weight"),
-            vec![intermediate, config.hidden_size],
+            vec![intermediate, h],
             &gate_up_data,
         );
         writer.add_f32_tensor(
             format!("blk.{layer_idx}.ffn_up.weight"),
-            vec![intermediate, config.hidden_size],
+            vec![intermediate, h],
             &gate_up_data,
         );
         writer.add_f32_tensor(
             format!("blk.{layer_idx}.ffn_down.weight"),
-            vec![config.hidden_size, intermediate],
+            vec![h, intermediate],
             &down_data,
         );
     }
 
     // Output norm: output_norm.weight
-    let norm_data: Vec<f32> = vec![1.0; config.hidden_size];
-    writer.add_f32_tensor("output_norm.weight", vec![config.hidden_size], &norm_data);
+    let norm_data: Vec<f32> = vec![1.0; h];
+    writer.add_f32_tensor("output_norm.weight", vec![h], &norm_data);
 
     // LM head (output projection)
-    if config.weight_tying {
-        // Weight tying: NO separate output.weight tensor
-        // realizar must use token_embd.weight (transposed) for lm_head
-    } else {
-        // No weight tying: separate output.weight tensor
-        let lm_head_data: Vec<f32> = (0..config.vocab_size * config.hidden_size)
-            .map(|i| ((i % 100) as f32 - 50.0) / 1000.0)
-            .collect();
-        writer.add_f32_tensor(
-            "output.weight",
-            vec![config.vocab_size, config.hidden_size],
-            &lm_head_data,
-        );
+    if !config.weight_tying {
+        writer.add_f32_tensor("output.weight", vec![v, h], &gen_embed_data(v * h));
     }
+    // Weight tying: NO separate output.weight tensor
+    // realizar must use token_embd.weight (transposed) for lm_head
 
     writer.write().unwrap_or_default()
 }
@@ -348,10 +290,13 @@ pub fn build_pygmy_apr_gguf_names_with_config(config: GgufPygmyConfig) -> Vec<u8
 #[must_use]
 pub fn build_pygmy_apr_hf_names_tied() -> Vec<u8> {
     let config = PygmyConfig::default();
+    let h = config.hidden_size;
+    let v = config.vocab_size;
+
     let mut metadata = AprV2Metadata::new("pygmy-hf-tied");
     metadata.architecture = Some("qwen2".to_string());
-    metadata.hidden_size = Some(config.hidden_size);
-    metadata.vocab_size = Some(config.vocab_size);
+    metadata.hidden_size = Some(h);
+    metadata.vocab_size = Some(v);
     metadata.num_layers = Some(config.num_layers);
     metadata
         .custom
@@ -363,71 +308,61 @@ pub fn build_pygmy_apr_hf_names_tied() -> Vec<u8> {
     let mut writer = AprV2Writer::new(metadata);
 
     // Token embedding: model.embed_tokens.weight
-    let embed_data: Vec<f32> = (0..config.vocab_size * config.hidden_size)
-        .map(|i| ((i % 100) as f32 - 50.0) / 1000.0)
-        .collect();
     writer.add_f32_tensor(
         "model.embed_tokens.weight",
-        vec![config.vocab_size, config.hidden_size],
-        &embed_data,
+        vec![v, h],
+        &gen_embed_data(v * h),
     );
 
     // Layer tensors with HuggingFace naming
     for layer_idx in 0..config.num_layers {
-        // Norms
-        let norm_data: Vec<f32> = vec![1.0; config.hidden_size];
+        let norm_data: Vec<f32> = vec![1.0; h];
         writer.add_f32_tensor(
             format!("model.layers.{layer_idx}.input_layernorm.weight"),
-            vec![config.hidden_size],
+            vec![h],
             &norm_data,
         );
         writer.add_f32_tensor(
             format!("model.layers.{layer_idx}.post_attention_layernorm.weight"),
-            vec![config.hidden_size],
+            vec![h],
             &norm_data,
         );
 
         // Attention
-        let qkvo_data: Vec<f32> = (0..config.hidden_size * config.hidden_size)
-            .map(|i| ((i % 200) as f32 - 100.0) / 2000.0)
-            .collect();
+        let qkvo_data = gen_weight_data(h * h);
         for suffix in &["q_proj", "k_proj", "v_proj", "o_proj"] {
             writer.add_f32_tensor(
                 format!("model.layers.{layer_idx}.self_attn.{suffix}.weight"),
-                vec![config.hidden_size, config.hidden_size],
+                vec![h, h],
                 &qkvo_data,
             );
         }
 
         // MLP
-        let intermediate = config.hidden_size * 2;
-        let gate_up_data: Vec<f32> = (0..intermediate * config.hidden_size)
-            .map(|i| ((i % 200) as f32 - 100.0) / 2000.0)
-            .collect();
-        let down_data: Vec<f32> = (0..config.hidden_size * intermediate)
-            .map(|i| ((i % 200) as f32 - 100.0) / 2000.0)
-            .collect();
+        let intermediate = h * 2;
+        let gate_up_data = gen_weight_data(intermediate * h);
+        let down_data = gen_weight_data(h * intermediate);
 
         writer.add_f32_tensor(
             format!("model.layers.{layer_idx}.mlp.gate_proj.weight"),
-            vec![intermediate, config.hidden_size],
+            vec![intermediate, h],
             &gate_up_data,
         );
         writer.add_f32_tensor(
             format!("model.layers.{layer_idx}.mlp.up_proj.weight"),
-            vec![intermediate, config.hidden_size],
+            vec![intermediate, h],
             &gate_up_data,
         );
         writer.add_f32_tensor(
             format!("model.layers.{layer_idx}.mlp.down_proj.weight"),
-            vec![config.hidden_size, intermediate],
+            vec![h, intermediate],
             &down_data,
         );
     }
 
     // Final norm
-    let norm_data: Vec<f32> = vec![1.0; config.hidden_size];
-    writer.add_f32_tensor("model.norm.weight", vec![config.hidden_size], &norm_data);
+    let norm_data: Vec<f32> = vec![1.0; h];
+    writer.add_f32_tensor("model.norm.weight", vec![h], &norm_data);
 
     // NO lm_head.weight - weight tying uses model.embed_tokens.weight
     // realizaer must find lm_head via model.embed_tokens.weight or embed_tokens.weight

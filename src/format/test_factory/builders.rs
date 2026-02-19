@@ -240,21 +240,38 @@ impl PygmyConfig {
     }
 }
 
+/// Generate embedding-style tensor data: values in [-0.05, 0.05] range (SafeTensors variant)
+///
+/// NOTE: This duplicates gen_embed_data from builders_part_02.rs because
+/// builders.rs is compiled before the include!() of part_02. Both are
+/// private helpers generating the same deterministic pattern.
+fn gen_st_embed_data(count: usize) -> Vec<f32> {
+    (0..count)
+        .map(|i| ((i % 100) as f32 - 50.0) / 1000.0)
+        .collect()
+}
+
+/// Generate weight-style tensor data: values in [-0.05, 0.05] range (SafeTensors variant)
+fn gen_st_weight_data(count: usize) -> Vec<f32> {
+    (0..count)
+        .map(|i| ((i % 200) as f32 - 100.0) / 2000.0)
+        .collect()
+}
+
 /// Build SafeTensors with custom config
 #[must_use]
 pub fn build_pygmy_safetensors_with_config(config: PygmyConfig) -> Vec<u8> {
     // Build tensor metadata and data
     let mut tensors: Vec<(String, Vec<usize>, Vec<f32>)> = Vec::new();
+    let h = config.hidden_size;
+    let v = config.vocab_size;
 
     // Token embedding: [vocab_size, hidden_size]
     if config.include_embedding {
-        let embed_data: Vec<f32> = (0..config.vocab_size * config.hidden_size)
-            .map(|i| ((i % 100) as f32 - 50.0) / 1000.0)
-            .collect();
         tensors.push((
             "model.embed_tokens.weight".to_string(),
-            vec![config.vocab_size, config.hidden_size],
-            embed_data,
+            vec![v, h],
+            gen_st_embed_data(v * h),
         ));
     }
 
@@ -262,15 +279,15 @@ pub fn build_pygmy_safetensors_with_config(config: PygmyConfig) -> Vec<u8> {
     for layer_idx in 0..config.num_layers {
         // Input layernorm
         if config.include_norms {
-            let norm_data: Vec<f32> = vec![1.0; config.hidden_size];
+            let norm_data: Vec<f32> = vec![1.0; h];
             tensors.push((
                 format!("model.layers.{layer_idx}.input_layernorm.weight"),
-                vec![config.hidden_size],
+                vec![h],
                 norm_data.clone(),
             ));
             tensors.push((
                 format!("model.layers.{layer_idx}.post_attention_layernorm.weight"),
-                vec![config.hidden_size],
+                vec![h],
                 norm_data,
             ));
         }
@@ -281,43 +298,37 @@ pub fn build_pygmy_safetensors_with_config(config: PygmyConfig) -> Vec<u8> {
             let kv_dim = config.kv_dim();
 
             // Q and O: [hidden_size, hidden_size]
-            let q_data: Vec<f32> = (0..config.hidden_size * config.hidden_size)
-                .map(|i| ((i % 200) as f32 - 100.0) / 2000.0)
-                .collect();
+            let q_data = gen_st_weight_data(h * h);
             tensors.push((
                 format!("model.layers.{layer_idx}.self_attn.q_proj.weight"),
-                vec![config.hidden_size, config.hidden_size],
+                vec![h, h],
                 q_data.clone(),
             ));
             tensors.push((
                 format!("model.layers.{layer_idx}.self_attn.o_proj.weight"),
-                vec![config.hidden_size, config.hidden_size],
+                vec![h, h],
                 q_data,
             ));
 
             // K and V: [kv_dim, hidden_size] (may differ from Q for GQA)
-            let kv_data: Vec<f32> = (0..kv_dim * config.hidden_size)
-                .map(|i| ((i % 200) as f32 - 100.0) / 2000.0)
-                .collect();
+            let kv_data = gen_st_weight_data(kv_dim * h);
             tensors.push((
                 format!("model.layers.{layer_idx}.self_attn.k_proj.weight"),
-                vec![kv_dim, config.hidden_size],
+                vec![kv_dim, h],
                 kv_data.clone(),
             ));
             tensors.push((
                 format!("model.layers.{layer_idx}.self_attn.v_proj.weight"),
-                vec![kv_dim, config.hidden_size],
+                vec![kv_dim, h],
                 kv_data,
             ));
 
             // Biases (Qwen2-style)
             if config.include_bias {
-                let q_bias: Vec<f32> = (0..config.hidden_size)
-                    .map(|i| (i as f32) / 1000.0)
-                    .collect();
+                let q_bias: Vec<f32> = (0..h).map(|i| (i as f32) / 1000.0).collect();
                 tensors.push((
                     format!("model.layers.{layer_idx}.self_attn.q_proj.bias"),
-                    vec![config.hidden_size],
+                    vec![h],
                     q_bias,
                 ));
                 let kv_bias: Vec<f32> = (0..kv_dim).map(|i| (i as f32) / 1000.0).collect();
@@ -336,27 +347,23 @@ pub fn build_pygmy_safetensors_with_config(config: PygmyConfig) -> Vec<u8> {
 
         // MLP: gate, up, down projections
         if config.include_mlp {
-            let intermediate = config.hidden_size * 2;
-            let gate_up_data: Vec<f32> = (0..intermediate * config.hidden_size)
-                .map(|i| ((i % 200) as f32 - 100.0) / 2000.0)
-                .collect();
-            let down_data: Vec<f32> = (0..config.hidden_size * intermediate)
-                .map(|i| ((i % 200) as f32 - 100.0) / 2000.0)
-                .collect();
+            let intermediate = h * 2;
+            let gate_up_data = gen_st_weight_data(intermediate * h);
+            let down_data = gen_st_weight_data(h * intermediate);
 
             tensors.push((
                 format!("model.layers.{layer_idx}.mlp.gate_proj.weight"),
-                vec![intermediate, config.hidden_size],
+                vec![intermediate, h],
                 gate_up_data.clone(),
             ));
             tensors.push((
                 format!("model.layers.{layer_idx}.mlp.up_proj.weight"),
-                vec![intermediate, config.hidden_size],
+                vec![intermediate, h],
                 gate_up_data,
             ));
             tensors.push((
                 format!("model.layers.{layer_idx}.mlp.down_proj.weight"),
-                vec![config.hidden_size, intermediate],
+                vec![h, intermediate],
                 down_data,
             ));
         }
@@ -364,24 +371,20 @@ pub fn build_pygmy_safetensors_with_config(config: PygmyConfig) -> Vec<u8> {
 
     // Final norm
     if config.include_norms && config.num_layers > 0 {
-        let norm_data: Vec<f32> = vec![1.0; config.hidden_size];
         tensors.push((
             "model.norm.weight".to_string(),
-            vec![config.hidden_size],
-            norm_data,
+            vec![h],
+            vec![1.0; h],
         ));
     }
 
     // LM head: [vocab_size, hidden_size]
     // ROSETTA-003: Omit lm_head when tied_embeddings=true (HuggingFace convention)
     if config.include_embedding && !config.tied_embeddings {
-        let lm_head_data: Vec<f32> = (0..config.vocab_size * config.hidden_size)
-            .map(|i| ((i % 100) as f32 - 50.0) / 1000.0)
-            .collect();
         tensors.push((
             "lm_head.weight".to_string(),
-            vec![config.vocab_size, config.hidden_size],
-            lm_head_data,
+            vec![v, h],
+            gen_st_embed_data(v * h),
         ));
     }
 

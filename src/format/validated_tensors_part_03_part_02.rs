@@ -1,4 +1,45 @@
 
+    // ================================================================
+    // Test data generators — deduplicate repeated data construction
+    // ================================================================
+
+    /// Generate good embedding test data: sin-wave values that pass all validation gates.
+    fn good_embedding_data(vocab_size: usize, hidden_dim: usize) -> Vec<f32> {
+        (0..vocab_size * hidden_dim)
+            .map(|i| (i as f32 * 0.01).sin() * 0.1)
+            .collect()
+    }
+
+    /// Generate good weight test data: linearly spaced small values.
+    fn good_weight_data(n: usize) -> Vec<f32> {
+        (0..n).map(|i| i as f32 * 0.01).collect()
+    }
+
+    /// Create embedding data with a single poisoned value at the given index.
+    fn embedding_with_poison(vocab_size: usize, hidden_dim: usize, idx: usize, poison: f32) -> Vec<f32> {
+        let mut data = good_embedding_data(vocab_size, hidden_dim);
+        data[idx] = poison;
+        data
+    }
+
+    /// Create weight data with a single poisoned value at the given index.
+    fn weight_with_poison(n: usize, idx: usize, poison: f32) -> Vec<f32> {
+        let mut data = good_weight_data(n);
+        data[idx] = poison;
+        data
+    }
+
+    /// Assert that a validation error contains an expected substring.
+    fn assert_err_contains(result: std::result::Result<impl std::fmt::Debug, ContractValidationError>, expected: &str) {
+        let err = result.expect_err(&format!("Should reject (expected '{expected}')"));
+        assert!(
+            err.message.contains(expected),
+            "Error should mention '{}': {}",
+            expected,
+            err.message
+        );
+    }
+
     // FALSIFY-001: Embedding density check
     #[test]
     fn falsify_001_embedding_rejects_all_zeros() {
@@ -31,10 +72,7 @@
     fn falsify_001_embedding_accepts_good_data() {
         let vocab_size = 100;
         let hidden_dim = 64;
-        let data: Vec<f32> = (0..vocab_size * hidden_dim)
-            .map(|i| (i as f32 * 0.01).sin() * 0.1)
-            .collect();
-        let result = ValidatedEmbedding::new(data, vocab_size, hidden_dim);
+        let result = ValidatedEmbedding::new(good_embedding_data(vocab_size, hidden_dim), vocab_size, hidden_dim);
         assert!(
             result.is_ok(),
             "Should accept good data: {:?}",
@@ -46,34 +84,19 @@
     // §18.3: This test was missing, causing a gap in FALSIFY numbering.
     #[test]
     fn falsify_002_embedding_rejects_inf() {
-        let vocab_size = 10;
-        let hidden_dim = 8;
-        let mut data: Vec<f32> = (0..vocab_size * hidden_dim)
-            .map(|i| (i as f32 * 0.01).sin() * 0.1)
-            .collect();
-        data[7] = f32::INFINITY;
-        let result = ValidatedEmbedding::new(data, vocab_size, hidden_dim);
-        assert!(result.is_err(), "Should reject Inf");
-        assert!(result.unwrap_err().message.contains("Inf"));
+        let data = embedding_with_poison(10, 8, 7, f32::INFINITY);
+        assert_err_contains(ValidatedEmbedding::new(data, 10, 8), "Inf");
     }
 
     #[test]
     fn falsify_002_embedding_rejects_neg_inf() {
-        let vocab_size = 10;
-        let hidden_dim = 8;
-        let mut data: Vec<f32> = (0..vocab_size * hidden_dim)
-            .map(|i| (i as f32 * 0.01).sin() * 0.1)
-            .collect();
-        data[3] = f32::NEG_INFINITY;
-        let result = ValidatedEmbedding::new(data, vocab_size, hidden_dim);
-        assert!(result.is_err(), "Should reject -Inf");
-        assert!(result.unwrap_err().message.contains("Inf"));
+        let data = embedding_with_poison(10, 8, 3, f32::NEG_INFINITY);
+        assert_err_contains(ValidatedEmbedding::new(data, 10, 8), "Inf");
     }
 
     #[test]
     fn falsify_002_weight_rejects_inf() {
-        let mut data: Vec<f32> = (0..100).map(|i| i as f32 * 0.01).collect();
-        data[50] = f32::INFINITY;
+        let data = weight_with_poison(100, 50, f32::INFINITY);
         let result = ValidatedWeight::new(data, 10, 10, "test_weight");
         assert!(result.is_err(), "Should reject Inf in weight");
     }
@@ -81,21 +104,13 @@
     // FALSIFY-003: NaN rejection
     #[test]
     fn falsify_003_embedding_rejects_nan() {
-        let vocab_size = 10;
-        let hidden_dim = 8;
-        let mut data: Vec<f32> = (0..vocab_size * hidden_dim)
-            .map(|i| i as f32 * 0.01)
-            .collect();
-        data[5] = f32::NAN;
-        let result = ValidatedEmbedding::new(data, vocab_size, hidden_dim);
-        assert!(result.is_err(), "Should reject NaN");
-        assert!(result.unwrap_err().message.contains("NaN"));
+        let data = embedding_with_poison(10, 8, 5, f32::NAN);
+        assert_err_contains(ValidatedEmbedding::new(data, 10, 8), "NaN");
     }
 
     #[test]
     fn falsify_003_weight_rejects_nan() {
-        let mut data: Vec<f32> = (0..100).map(|i| i as f32 * 0.01).collect();
-        data[50] = f32::NAN;
+        let data = weight_with_poison(100, 50, f32::NAN);
         let result = ValidatedWeight::new(data, 10, 10, "test_weight");
         assert!(result.is_err(), "Should reject NaN");
     }
@@ -106,9 +121,7 @@
         // Token at 10% of vocab has zero embedding
         let vocab_size = 100;
         let hidden_dim = 64;
-        let mut data: Vec<f32> = (0..vocab_size * hidden_dim)
-            .map(|i| (i as f32 * 0.01).sin() * 0.1)
-            .collect();
+        let mut data = good_embedding_data(vocab_size, hidden_dim);
 
         // Zero out token at 10% (token 10)
         let token_10_start = 10 * hidden_dim;
@@ -139,8 +152,7 @@
 
     #[test]
     fn weight_accepts_good_data() {
-        let data: Vec<f32> = (0..100).map(|i| i as f32 * 0.01).collect();
-        let result = ValidatedWeight::new(data, 10, 10, "test");
+        let result = ValidatedWeight::new(good_weight_data(100), 10, 10, "test");
         assert!(result.is_ok());
     }
 
@@ -163,8 +175,7 @@
 
     #[test]
     fn pmat_248_validated_weight_is_row_major_by_default() {
-        let data: Vec<f32> = (0..100).map(|i| i as f32 * 0.01).collect();
-        let weight: ValidatedWeight = ValidatedWeight::new(data, 10, 10, "test").unwrap();
+        let weight: ValidatedWeight = ValidatedWeight::new(good_weight_data(100), 10, 10, "test").unwrap();
         // This compiles because ValidatedWeight == ValidatedWeight<RowMajor>
         let _explicit: ValidatedWeight<RowMajor> = weight;
     }
@@ -183,8 +194,7 @@
     fn pmat_248_phantom_data_does_not_increase_struct_size() {
         // ValidatedWeight with PhantomData should have same layout as without
         // (PhantomData is ZST, compiler optimizes it away)
-        let data: Vec<f32> = (0..100).map(|i| i as f32 * 0.01).collect();
-        let weight = ValidatedWeight::new(data, 10, 10, "test").unwrap();
+        let weight = ValidatedWeight::new(good_weight_data(100), 10, 10, "test").unwrap();
         // Ensure all fields are accessible (compile-time check)
         let _ = weight.data();
         let _ = weight.out_dim();
@@ -199,20 +209,8 @@
 
     #[test]
     fn embedding_rejects_inf_values() {
-        let vocab_size = 10;
-        let hidden_dim = 8;
-        let mut data: Vec<f32> = (0..vocab_size * hidden_dim)
-            .map(|i| (i as f32 * 0.01).sin() * 0.1)
-            .collect();
-        data[7] = f32::INFINITY;
-        let result = ValidatedEmbedding::new(data, vocab_size, hidden_dim);
-        assert!(result.is_err(), "Should reject Inf values");
-        let err = result.unwrap_err();
-        assert!(
-            err.message.contains("Inf"),
-            "Error should mention Inf: {}",
-            err.message
-        );
+        let data = embedding_with_poison(10, 8, 7, f32::INFINITY);
+        assert_err_contains(ValidatedEmbedding::new(data, 10, 8), "Inf");
     }
 
     // ================================================================
@@ -221,22 +219,13 @@
 
     #[test]
     fn embedding_rejects_near_zero_l2_norm() {
-        let vocab_size = 10;
-        let hidden_dim = 8;
         // Values above the zero threshold (1e-10) but producing negligible L2 norm (< 1e-6).
         // With 80 elements at 1e-8 each: L2 = sqrt(80 * (1e-8)^2) = sqrt(80)*1e-8 ~ 8.9e-8.
         // Also make values vary slightly to pass the constant check.
-        let data: Vec<f32> = (0..vocab_size * hidden_dim)
+        let data: Vec<f32> = (0..10 * 8)
             .map(|i| 1e-8 + (i as f32) * 1e-12)
             .collect();
-        let result = ValidatedEmbedding::new(data, vocab_size, hidden_dim);
-        assert!(result.is_err(), "Should reject near-zero L2 norm");
-        let err = result.unwrap_err();
-        assert!(
-            err.message.contains("L2 norm"),
-            "Error should mention L2 norm: {}",
-            err.message
-        );
+        assert_err_contains(ValidatedEmbedding::new(data, 10, 8), "L2 norm");
     }
 
     // ================================================================
@@ -245,17 +234,8 @@
 
     #[test]
     fn embedding_rejects_constant_values() {
-        let vocab_size = 10;
-        let hidden_dim = 8;
-        let data = vec![0.5f32; vocab_size * hidden_dim];
-        let result = ValidatedEmbedding::new(data, vocab_size, hidden_dim);
-        assert!(result.is_err(), "Should reject constant values");
-        let err = result.unwrap_err();
-        assert!(
-            err.message.contains("constant"),
-            "Error should mention constant: {}",
-            err.message
-        );
+        let data = vec![0.5f32; 10 * 8];
+        assert_err_contains(ValidatedEmbedding::new(data, 10, 8), "constant");
     }
 
     // ================================================================
@@ -266,9 +246,7 @@
     fn embedding_accessors_return_correct_values() {
         let vocab_size = 100;
         let hidden_dim = 64;
-        let data: Vec<f32> = (0..vocab_size * hidden_dim)
-            .map(|i| (i as f32 * 0.01).sin() * 0.1)
-            .collect();
+        let data = good_embedding_data(vocab_size, hidden_dim);
         let original_data = data.clone();
         let emb = ValidatedEmbedding::new(data, vocab_size, hidden_dim)
             .expect("good data should be accepted");
@@ -295,16 +273,8 @@
 
     #[test]
     fn weight_rejects_inf_values() {
-        let mut data: Vec<f32> = (0..100).map(|i| i as f32 * 0.01).collect();
-        data[42] = f32::INFINITY;
-        let result = ValidatedWeight::new(data, 10, 10, "test_weight");
-        assert!(result.is_err(), "Should reject Inf values");
-        let err = result.unwrap_err();
-        assert!(
-            err.message.contains("Inf"),
-            "Error should mention Inf: {}",
-            err.message
-        );
+        let data = weight_with_poison(100, 42, f32::INFINITY);
+        assert_err_contains(ValidatedWeight::new(data, 10, 10, "test_weight"), "Inf");
     }
 
     // ================================================================
@@ -316,14 +286,7 @@
         // Values above the zero threshold (1e-10) but producing negligible L2 norm (< 1e-6).
         // With 100 elements at 1e-8: L2 = sqrt(100 * (1e-8)^2) = 10 * 1e-8 = 1e-7.
         let data: Vec<f32> = (0..100).map(|i| 1e-8 + (i as f32) * 1e-12).collect();
-        let result = ValidatedWeight::new(data, 10, 10, "test_weight");
-        assert!(result.is_err(), "Should reject near-zero L2 norm");
-        let err = result.unwrap_err();
-        assert!(
-            err.message.contains("L2 norm"),
-            "Error should mention L2 norm: {}",
-            err.message
-        );
+        assert_err_contains(ValidatedWeight::new(data, 10, 10, "test_weight"), "L2 norm");
     }
 
     // ================================================================
@@ -332,7 +295,7 @@
 
     #[test]
     fn weight_accessors_return_correct_values() {
-        let data: Vec<f32> = (0..100).map(|i| i as f32 * 0.01).collect();
+        let data = good_weight_data(100);
         let original_data = data.clone();
         let weight =
             ValidatedWeight::new(data, 10, 10, "my_weight").expect("good data should be accepted");
@@ -360,14 +323,7 @@
     fn vector_rejects_nan_values() {
         let mut data = vec![1.0f32; 50];
         data[25] = f32::NAN;
-        let result = ValidatedVector::new(data, 50, "test_vec");
-        assert!(result.is_err(), "Should reject NaN values");
-        let err = result.unwrap_err();
-        assert!(
-            err.message.contains("NaN"),
-            "Error should mention NaN: {}",
-            err.message
-        );
+        assert_err_contains(ValidatedVector::new(data, 50, "test_vec"), "NaN");
     }
 
     // ================================================================
@@ -378,14 +334,7 @@
     fn vector_rejects_inf_values() {
         let mut data = vec![1.0f32; 50];
         data[10] = f32::NEG_INFINITY;
-        let result = ValidatedVector::new(data, 50, "test_vec");
-        assert!(result.is_err(), "Should reject Inf values");
-        let err = result.unwrap_err();
-        assert!(
-            err.message.contains("Inf"),
-            "Error should mention Inf: {}",
-            err.message
-        );
+        assert_err_contains(ValidatedVector::new(data, 50, "test_vec"), "Inf");
     }
 
     // ================================================================

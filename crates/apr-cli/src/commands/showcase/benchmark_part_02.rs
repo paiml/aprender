@@ -144,6 +144,16 @@ pub(super) fn run_ollama_bench(config: &ShowcaseConfig) -> Result<(f64, f64)> {
     Ok((tps, ttft))
 }
 
+/// Format a speedup result line with pass/fail status
+fn format_speedup_line(label: &str, speedup: f64) {
+    let status = if speedup >= 25.0 {
+        format!("{} (target: 25%)", "PASS".green().bold())
+    } else {
+        format!("{} (target: 25%)", "FAIL".red().bold())
+    };
+    println!("Speedup vs {label}: {speedup:.1}% {status}");
+}
+
 pub(super) fn print_benchmark_results(comparison: &BenchmarkComparison) {
     println!();
     println!("{}", "═══ Benchmark Results ═══".cyan().bold());
@@ -161,41 +171,32 @@ pub(super) fn print_benchmark_results(comparison: &BenchmarkComparison) {
         comparison.runs
     );
 
-    if let Some(tps) = comparison.llama_cpp_tps {
-        println!(
-            "│ llama.cpp       │ {:>10.1} │ {:>10.1} │      N/A │",
-            tps,
-            comparison.llama_cpp_ttft_ms.unwrap_or(0.0)
-        );
-    }
-
-    if let Some(tps) = comparison.ollama_tps {
-        println!(
-            "│ Ollama          │ {:>10.1} │ {:>10.1} │      N/A │",
-            tps,
-            comparison.ollama_ttft_ms.unwrap_or(0.0)
-        );
+    // Baseline rows (both follow the same table format)
+    let baselines: &[(&str, Option<f64>, Option<f64>)] = &[
+        ("llama.cpp       ", comparison.llama_cpp_tps, comparison.llama_cpp_ttft_ms),
+        ("Ollama          ", comparison.ollama_tps, comparison.ollama_ttft_ms),
+    ];
+    for &(name, tps_opt, ttft_opt) in baselines {
+        if let Some(tps) = tps_opt {
+            println!(
+                "│ {name}│ {:>10.1} │ {:>10.1} │      N/A │",
+                tps,
+                ttft_opt.unwrap_or(0.0)
+            );
+        }
     }
 
     println!("└─────────────────┴────────────┴────────────┴──────────┘");
     println!();
 
     // Speedup summary
-    if let Some(speedup) = comparison.speedup_vs_llama {
-        let status = if speedup >= 25.0 {
-            format!("{} (target: 25%)", "PASS".green().bold())
-        } else {
-            format!("{} (target: 25%)", "FAIL".red().bold())
-        };
-        println!("Speedup vs llama.cpp: {:.1}% {}", speedup, status);
-    }
-
-    if let Some(speedup) = comparison.speedup_vs_ollama {
-        let status = if speedup >= 25.0 {
-            format!("{} (target: 25%)", "PASS".green().bold())
-        } else {
-            format!("{} (target: 25%)", "FAIL".red().bold())
-        };
-        println!("Speedup vs Ollama: {:.1}% {}", speedup, status);
+    let speedups: &[(&str, Option<f64>)] = &[
+        ("llama.cpp", comparison.speedup_vs_llama),
+        ("Ollama", comparison.speedup_vs_ollama),
+    ];
+    for &(label, speedup_opt) in speedups {
+        if let Some(speedup) = speedup_opt {
+            format_speedup_line(label, speedup);
+        }
     }
 }

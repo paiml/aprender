@@ -1,5 +1,44 @@
 pub(crate) use super::*;
 
+// ==================== Test Helpers (reduce DataTransformation repetition) ====================
+
+/// Build a default CITL instance with RustCompiler for testing
+fn test_citl() -> CITL {
+    CITL::builder()
+        .compiler(RustCompiler::new())
+        .build()
+        .expect("Should build")
+}
+
+/// Build a mutable CITL instance with RustCompiler for testing
+fn test_citl_mut() -> CITL {
+    test_citl()
+}
+
+/// Build a CITL instance with custom max_iterations
+fn test_citl_with_max_iter(max_iterations: usize) -> CITL {
+    CITL::builder()
+        .compiler(RustCompiler::new())
+        .max_iterations(max_iterations)
+        .build()
+        .expect("Should build")
+}
+
+/// Create a standard E0308 TypeMismatch error code (most common in tests)
+fn e0308() -> ErrorCode {
+    ErrorCode::new("E0308", ErrorCategory::TypeMismatch, Difficulty::Easy)
+}
+
+/// Create a standard compiler diagnostic for testing
+fn test_diagnostic(error_code: ErrorCode, message: &str) -> CompilerDiagnostic {
+    CompilerDiagnostic::new(
+        error_code,
+        DiagnosticSeverity::Error,
+        message,
+        SourceSpan::default(),
+    )
+}
+
 // ==================== ErrorCode Tests ====================
 
 #[test]
@@ -186,27 +225,19 @@ fn test_citl_builder_without_compiler_fails() {
 
 #[test]
 fn test_citl_builder_with_compiler_succeeds() {
-    let compiler = RustCompiler::new();
-    let result = CITL::builder().compiler(compiler).build();
-    assert!(result.is_ok());
+    let _citl = test_citl();
 }
 
 #[test]
 fn test_citl_builder_max_iterations() {
-    let compiler = RustCompiler::new();
-    let citl = CITL::builder()
-        .compiler(compiler)
-        .max_iterations(20)
-        .build()
-        .expect("Should build");
+    let citl = test_citl_with_max_iter(20);
     assert_eq!(citl.config.max_iterations, 20);
 }
 
 #[test]
 fn test_citl_builder_confidence_threshold() {
-    let compiler = RustCompiler::new();
     let citl = CITL::builder()
-        .compiler(compiler)
+        .compiler(RustCompiler::new())
         .confidence_threshold(0.9)
         .build()
         .expect("Should build");
@@ -246,10 +277,7 @@ fn test_fix_result_failure() {
 
 #[test]
 fn test_suggest_fix_for_valid_code_returns_none() {
-    let citl = CITL::builder()
-        .compiler(RustCompiler::new())
-        .build()
-        .expect("Should build");
+    let citl = test_citl();
 
     let code = "pub fn add(a: i32, b: i32) -> i32 { a + b }";
     let result = citl.compile(code).expect("Should compile");
@@ -260,24 +288,16 @@ fn test_suggest_fix_for_valid_code_returns_none() {
 
 #[test]
 fn test_suggest_fix_returns_suggestion_for_error() {
-    let mut citl = CITL::builder()
-        .compiler(RustCompiler::new())
-        .build()
-        .expect("Should build");
+    let mut citl = test_citl_mut();
 
     // Add a pattern for E0308 type mismatch
-    let error_code = ErrorCode::new("E0308", ErrorCategory::TypeMismatch, Difficulty::Easy);
+    let error_code = e0308();
     let fix = FixTemplate::new("$expr.to_string()", "Convert to String");
     let embedding = ErrorEmbedding::new(vec![0.0; 256], error_code.clone(), 12345);
     citl.pattern_library.add_pattern(embedding, fix);
 
     // Now suggest_fix should find this pattern for similar errors
-    let diag = CompilerDiagnostic::new(
-        error_code,
-        DiagnosticSeverity::Error,
-        "mismatched types",
-        SourceSpan::default(),
-    );
+    let diag = test_diagnostic(error_code, "mismatched types");
 
     let suggestion = citl.suggest_fix(&diag, "let x: String = 42;");
     // Should find a suggestion (may or may not match well depending on embedding)
@@ -287,10 +307,7 @@ fn test_suggest_fix_returns_suggestion_for_error() {
 
 #[test]
 fn test_apply_fix_simple_replacement() {
-    let citl = CITL::builder()
-        .compiler(RustCompiler::new())
-        .build()
-        .expect("Should build");
+    let citl = test_citl();
 
     let source = "let x = 42;";
     let fix = SuggestedFix::new("42_i32".to_string(), 0.9, "Add type suffix".to_string())
@@ -302,10 +319,7 @@ fn test_apply_fix_simple_replacement() {
 
 #[test]
 fn test_apply_fix_preserves_surrounding_code() {
-    let citl = CITL::builder()
-        .compiler(RustCompiler::new())
-        .build()
-        .expect("Should build");
+    let citl = test_citl();
 
     let source = "fn foo() { let x = bar(); }";
     let fix = SuggestedFix::new(
@@ -321,10 +335,7 @@ fn test_apply_fix_preserves_surrounding_code() {
 
 #[test]
 fn test_fix_all_valid_code_returns_immediately() {
-    let mut citl = CITL::builder()
-        .compiler(RustCompiler::new())
-        .build()
-        .expect("Should build");
+    let mut citl = test_citl_mut();
 
     let code = "pub fn add(a: i32, b: i32) -> i32 { a + b }";
     let result = citl.fix_all(code);
@@ -335,11 +346,7 @@ fn test_fix_all_valid_code_returns_immediately() {
 
 #[test]
 fn test_fix_all_respects_max_iterations() {
-    let mut citl = CITL::builder()
-        .compiler(RustCompiler::new())
-        .max_iterations(3)
-        .build()
-        .expect("Should build");
+    let mut citl = test_citl_with_max_iter(3);
 
     // Code with unfixable error (no patterns available)
     let code = "fn main() { let x: String = 42; }";
@@ -414,13 +421,9 @@ pub fn greet(name: &str) -> String {
 fn test_integration_encoder_produces_embeddings() {
     // Test that the error encoder produces valid embeddings
     let encoder = ErrorEncoder::new();
-    let code = ErrorCode::new("E0308", ErrorCategory::TypeMismatch, Difficulty::Easy);
-    let span = SourceSpan::default();
-    let diag = CompilerDiagnostic::new(
-        code,
-        DiagnosticSeverity::Error,
+    let diag = test_diagnostic(
+        e0308(),
         "mismatched types: expected `String`, found `i32`",
-        span,
     );
 
     let source_code = "pub fn foo() -> String { 42 }";

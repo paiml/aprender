@@ -30,6 +30,15 @@ fn f16_to_f32(bits: u16) -> f32 {
     }
 }
 
+/// Compute the maximum absolute value in a float slice.
+///
+/// Extracted helper to deduplicate the repeated `data.iter().map(|v| v.abs()).fold(...)` pattern
+/// used across quantization functions.
+#[inline]
+fn max_abs_value(data: &[f32]) -> f32 {
+    data.iter().map(|v| v.abs()).fold(0.0f32, f32::max)
+}
+
 /// Symmetric quantize-then-dequantize: maps floats to integer levels and back.
 ///
 /// `max_level` is the positive clamp bound (e.g. 127 for int8, 7 for int4).
@@ -39,7 +48,7 @@ fn symmetric_quantize_dequantize(data: &[f32], max_level: f32, min_level: f32) -
         return vec![];
     }
 
-    let max_abs = data.iter().map(|v| v.abs()).fold(0.0f32, f32::max);
+    let max_abs = max_abs_value(data);
     if max_abs == 0.0 {
         return vec![0.0; data.len()];
     }
@@ -116,6 +125,27 @@ fn needs_transpose(name: &str, shape: &[usize]) -> bool {
     weight_patterns.iter().any(|pattern| name.contains(pattern))
 }
 
+/// Check if a tensor name matches any pattern in a lookup table.
+///
+/// Data-driven replacement for repeated `name.contains("a") || name.contains("b") || ...` chains.
+#[inline]
+fn name_matches_any(name: &str, patterns: &[&str]) -> bool {
+    patterns.iter().any(|p| name.contains(p))
+}
+
+/// Tensor name patterns that indicate embedding tensors (GH-231/232).
+const EMBEDDING_PATTERNS: &[&str] = &[
+    "embed_tokens",
+    "token_embd",
+    "wte",
+    "wpe",
+    "word_embeddings",
+    "position_embedding",
+];
+
+/// Tensor name patterns that indicate norm/bias tensors (precision-sensitive).
+const NORM_BIAS_PATTERNS: &[&str] = &["bias", "layernorm", "layer_norm", "norm.weight"];
+
 /// GH-237: Should this tensor skip quantization?
 ///
 /// Returns true for tensors where quantization causes quality loss:
@@ -128,21 +158,12 @@ fn needs_transpose(name: &str, shape: &[usize]) -> bool {
 /// Used by both the convert path (`add_tensor_with_quantization`) and the
 /// import path (`add_f32_tensor_to_writer` in write.rs).
 pub(super) fn should_skip_quantization(name: &str, element_count: usize) -> bool {
-    let is_embedding = name.contains("embed_tokens")
-        || name.contains("token_embd")
-        || name.contains("wte")
-        || name.contains("wpe")
-        || name.contains("word_embeddings")
-        || name.contains("position_embedding");
-
+    let is_embedding = name_matches_any(name, EMBEDDING_PATTERNS);
     let is_lm_head = name.contains("lm_head") || name == "output.weight";
 
     is_embedding
         || is_lm_head
-        || name.contains("bias")
-        || name.contains("layernorm")
-        || name.contains("layer_norm")
-        || name.contains("norm.weight")
+        || name_matches_any(name, NORM_BIAS_PATTERNS)
         || element_count < 1024
 }
 
@@ -275,7 +296,7 @@ fn quantize_for_safetensors(data: &[f32], quant: QuantizationType) -> (&'static 
 
 /// Symmetric quantization to i8: scale = max(|data|) / max_val.
 fn symmetric_quantize_i8(data: &[f32], max_val: f32) -> Vec<u8> {
-    let max_abs = data.iter().map(|v| v.abs()).fold(0.0f32, f32::max);
+    let max_abs = max_abs_value(data);
     let scale = if max_abs > 0.0 { max_val / max_abs } else { 1.0 };
     data.iter()
         .map(|&v| (v * scale).round().clamp(-128.0, 127.0) as i8 as u8)
@@ -284,7 +305,7 @@ fn symmetric_quantize_i8(data: &[f32], max_val: f32) -> Vec<u8> {
 
 /// Int4 quantization: pack 2 nibbles per byte.
 fn quantize_int4_packed(data: &[f32]) -> Vec<u8> {
-    let max_abs = data.iter().map(|v| v.abs()).fold(0.0f32, f32::max);
+    let max_abs = max_abs_value(data);
     let scale = if max_abs > 0.0 { 7.0 / max_abs } else { 1.0 };
     let quantized: Vec<u8> = data
         .iter()
