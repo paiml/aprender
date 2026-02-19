@@ -77,9 +77,9 @@ impl GradientBoostingClassifier {
         self
     }
 
-    /// Sigmoid function: σ(x) = 1 / (1 + e^(-x))
+    /// ONE PATH: Delegates to `nn::functional::sigmoid_scalar` (UCBD §4).
     fn sigmoid(x: f32) -> f32 {
-        1.0 / (1.0 + (-x).exp())
+        crate::nn::functional::sigmoid_scalar(x)
     }
 
     /// Trains the Gradient Boosting Classifier.

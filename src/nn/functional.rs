@@ -66,6 +66,15 @@ pub fn sigmoid_scalar(x: f32) -> f32 {
     1.0 / (1.0 + (-x).exp())
 }
 
+/// Scalar sigmoid (f64): σ(x) = 1 / (1 + exp(-x))
+///
+/// ONE PATH: The canonical f64 scalar sigmoid for all aprender code (UCBD §4).
+#[inline]
+#[must_use]
+pub fn sigmoid_scalar_f64(x: f64) -> f64 {
+    1.0 / (1.0 + (-x).exp())
+}
+
 /// SiLU (Swish) activation: x * sigmoid(x)
 ///
 /// Equation: SiLU(x) = x / (1 + exp(-x))

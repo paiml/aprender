@@ -99,9 +99,9 @@ impl LogisticRegression {
         self
     }
 
-    /// Sigmoid activation function: σ(z) = 1 / (1 + e^(-z))
+    /// ONE PATH: Delegates to `nn::functional::sigmoid_scalar` (UCBD §4).
     fn sigmoid(z: f32) -> f32 {
-        1.0 / (1.0 + (-z).exp())
+        crate::nn::functional::sigmoid_scalar(z)
     }
 
     /// Predicts probabilities for samples.

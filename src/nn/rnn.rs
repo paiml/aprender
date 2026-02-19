@@ -146,14 +146,14 @@ impl std::fmt::Debug for GRU {
 }
 
 // Helper functions
+/// ONE PATH: Delegates to `nn::functional::sigmoid` (UCBD §4).
 fn sigmoid_tensor(x: &Tensor) -> Tensor {
-    let data: Vec<f32> = x.data().iter().map(|&v| 1.0 / (1.0 + (-v).exp())).collect();
-    Tensor::new(&data, x.shape())
+    crate::nn::functional::sigmoid(x)
 }
 
+/// ONE PATH: Delegates to `nn::functional::tanh` (UCBD §4).
 fn tanh_tensor(x: &Tensor) -> Tensor {
-    let data: Vec<f32> = x.data().iter().map(|&v| v.tanh()).collect();
-    Tensor::new(&data, x.shape())
+    crate::nn::functional::tanh(x)
 }
 
 fn add_tensors(a: &Tensor, b: &Tensor) -> Tensor {

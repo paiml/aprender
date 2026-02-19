@@ -351,9 +351,9 @@ impl OnlineLogisticRegression {
         self.bias
     }
 
-    /// Sigmoid function
+    /// ONE PATH: Delegates to `nn::functional::sigmoid_scalar_f64` (UCBD §4).
     fn sigmoid(z: f64) -> f64 {
-        1.0 / (1.0 + (-z).exp())
+        crate::nn::functional::sigmoid_scalar_f64(z)
     }
 
     /// Predict probability for a single sample
