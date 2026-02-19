@@ -3898,21 +3898,17 @@ roadmap:
   updated: 2026-02-18T21:00:00.000000000+00:00
   spec: null
   acceptance_criteria:
-    - 'golden_output QA gate passes (GPU QkNorm matches CPU path)'
-    - 'format_parity QA gate passes (sharded SafeTensors loads all shards)'
-    - 'performance_regression QA gate passes (GPU speedup restored to baseline)'
+  - golden_output QA gate passes (GPU QkNorm matches CPU path)
+  - format_parity QA gate passes (sharded SafeTensors loads all shards)
+  - performance_regression QA gate passes (GPU speedup restored to baseline)
   phases: []
   subtasks: []
   estimated_effort: 4h
   labels:
-    - cuda
-    - qwen3
-    - qa-gates
-  notes: 'Wired per-head RMSNorm (QkNorm) into GPU forward path for Qwen3 models. Added
-    attn_q/k_norm_ptr/len fields to IndexedLayerWeights + BoundLayerWeights. Used existing
-    per_head_rmsnorm_into CUDA kernel and cache_rmsnorm_gamma upload. Fixed format_parity
-    gate to detect sharded models via model.safetensors.index.json. Extensive complexity
-    refactoring to pass pre-commit quality gates.'
+  - cuda
+  - qwen3
+  - qa-gates
+  notes: Wired per-head RMSNorm (QkNorm) into GPU forward path for Qwen3 models. Added attn_q/k_norm_ptr/len fields to IndexedLayerWeights + BoundLayerWeights. Used existing per_head_rmsnorm_into CUDA kernel and cache_rmsnorm_gamma upload. Fixed format_parity gate to detect sharded models via model.safetensors.index.json. Extensive complexity refactoring to pass pre-commit quality gates.
 - id: Add contract-driven property tests from provable-contracts
   github_issue: null
   item_type: task
@@ -3940,20 +3936,185 @@ roadmap:
   updated: 2026-02-18T22:00:00.000000000+00:00
   spec: null
   acceptance_criteria:
-    - 'APR CUDA forward path calls make_current() before all GPU operations'
-    - 'GEMM kernel param types match .param .u32 declarations (u32, not i32)'
-    - 'CUDA error code 201 (INVALID_CONTEXT) mapped in trueno-gpu diagnostics'
-    - 'All 14802 realizar unit tests pass'
+  - APR CUDA forward path calls make_current() before all GPU operations
+  - GEMM kernel param types match .param .u32 declarations (u32, not i32)
+  - CUDA error code 201 (INVALID_CONTEXT) mapped in trueno-gpu diagnostics
+  - All 14802 realizar unit tests pass
   phases: []
   subtasks: []
   estimated_effort: 2h
   labels:
-    - cuda
-    - apr-serve
-    - bug-fix
-  notes: 'Root cause: AprV2ModelCuda never called make_current() before CUDA ops. GGUF
-    path had make_current() in 4+ places. When tokio worker threads (apr serve) called
-    forward_cuda, the CUDA context was not current, causing cuModuleLoadData to fail
-    with error 201 (CUDA_ERROR_INVALID_CONTEXT). Also fixed i32→u32 type mismatch in
-    GEMM parameter passing and added 5 missing CUDA error codes to trueno-gpu mapping.
-    GH-284 (HTTP perf regression) is a cascade from this — GPU falls back to CPU.'
+  - cuda
+  - apr-serve
+  - bug-fix
+  notes: 'Root cause: AprV2ModelCuda never called make_current() before CUDA ops. GGUF path had make_current() in 4+ places. When tokio worker threads (apr serve) called forward_cuda, the CUDA context was not current, causing cuModuleLoadData to fail with error 201 (CUDA_ERROR_INVALID_CONTEXT). Also fixed i32→u32 type mismatch in GEMM parameter passing and added 5 missing CUDA error codes to trueno-gpu mapping. GH-284 (HTTP perf regression) is a cascade from this — GPU falls back to CPU.'
+- id: PMAT-283
+  github_issue: null
+  item_type: task
+  title: 'GH-279-SEAL-001: Seal OwnedQuantizedModel fields pub(crate)'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-02-19T09:29:42Z
+  updated: 2026-02-19T09:29:51.753508785+00:00
+  spec: null
+  acceptance_criteria:
+  - Make OwnedQuantizedModel fields pub(crate) with accessor methods. Currently all fields are pub — anyone can construct garbage bypassing contract_gate. 18+ consumer files need updating.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-284
+  github_issue: null
+  item_type: task
+  title: 'GH-279-SEAL-002: Validated input wrapper for GpuModel::from_apr_weights'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-02-19T09:29:44Z
+  updated: 2026-02-19T09:29:44Z
+  spec: null
+  acceptance_criteria:
+  - from_apr_weights takes raw Vec<f32>. Add a ValidatedAprWeights wrapper that proves dimensions were checked. Prevents callers from passing wrong-sized vectors.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-285
+  github_issue: null
+  item_type: task
+  title: 'GH-279-SEAL-003: Consolidate transpose to trueno-quant single source'
+  status: planned
+  priority: low
+  assigned_to: null
+  created: 2026-02-19T09:29:47Z
+  updated: 2026-02-19T09:29:47Z
+  spec: null
+  acceptance_criteria:
+  - Both aprender format/converter/mod.rs and realizar have transpose logic. trueno-quant already has transpose_q4k/q5k/q6k_for_matmul. Remove duplicates, ensure single source of truth.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-286
+  github_issue: null
+  item_type: task
+  title: 'UCBD-001: Create provable-contracts-macros proc macro crate'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-02-19T10:23:09Z
+  updated: 2026-02-19T10:23:50.165073372+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Phase 1A from unified-contract-by-design.md. Create #[contract] attribute macro.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-287
+  github_issue: null
+  item_type: task
+  title: 'UCBD-002: Add build.rs binding verification to realizar'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-02-19T10:23:09Z
+  updated: 2026-02-19T10:31:38.305319356+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Phase 1B: build.rs reads binding.yaml, verifies all bindings implemented.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-288
+  github_issue: null
+  item_type: task
+  title: 'UCBD-003: Delete aprender GGUF reader/dequant dead code'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-02-19T10:23:10Z
+  updated: 2026-02-19T10:30:18Z
+  spec: null
+  acceptance_criteria:
+  - 'REVISED: Aprender GGUF reader is NOT dead code — it''s the conversion pipeline reader for ''apr import''. Only realizar''s inference loading replaces aprender''s inference loading. Updated to: consolidate dequant functions to use trueno''s implementations where possible.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-289
+  github_issue: null
+  item_type: task
+  title: 'UCBD-004: Delete aprender SafeTensors loader dead code'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-02-19T10:23:10Z
+  updated: 2026-02-19T10:23:10Z
+  spec: null
+  acceptance_criteria:
+  - 'Phase 3B: ~300 lines. Realizar owns loading.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-290
+  github_issue: null
+  item_type: task
+  title: 'UCBD-005: Delete realizar duplicate helpers'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-02-19T10:23:10Z
+  updated: 2026-02-19T10:27:58Z
+  spec: null
+  acceptance_criteria:
+  - 'REVISED: apr/helpers.rs functions are not true duplicates — different APIs (no bias, transposed matmul). Requires API unification, not simple deletion. Deprioritized.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-291
+  github_issue: null
+  item_type: task
+  title: 'UCBD-006: Wire entrenar to use realizar for model loading'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-02-19T10:23:10Z
+  updated: 2026-02-19T10:23:10Z
+  spec: null
+  acceptance_criteria:
+  - 'Phase 2: entrenar depends on realizar, not aprender, for model I/O.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-292
+  github_issue: null
+  item_type: task
+  title: 'UCBD-007: Implement all 49 not_implemented bindings'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-02-19T10:23:10Z
+  updated: 2026-02-19T10:23:10Z
+  spec: null
+  acceptance_criteria:
+  - 'Phase 4: All binding.yaml entries must be implemented.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

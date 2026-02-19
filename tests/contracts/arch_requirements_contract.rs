@@ -124,10 +124,7 @@ fn falsify_arch_002_qwen2_missing_bias() {
     assert!(result.is_err(), "Qwen2 without bias must fail");
 
     let msg = format!("{}", result.unwrap_err());
-    assert!(
-        msg.contains("bias"),
-        "Error must mention bias: {msg}"
-    );
+    assert!(msg.contains("bias"), "Error must mention bias: {msg}");
 }
 
 #[test]

@@ -125,12 +125,12 @@ fn emit_provable_contract_bindings() {
 
         // Keep the best status seen so far for this (contract, equation) pair
         let dominated = match (seen.get(&var_name).map(|s| s.as_str()), status) {
-            (None, _) => false,                            // first time
-            (Some("implemented"), _) => true,              // already best
-            (Some("partial"), "implemented") => false,     // upgrade
-            (Some("partial"), _) => true,                  // keep partial
+            (None, _) => false,                        // first time
+            (Some("implemented"), _) => true,          // already best
+            (Some("partial"), "implemented") => false, // upgrade
+            (Some("partial"), _) => true,              // keep partial
             (Some("not_implemented"), "not_implemented") => true,
-            (Some("not_implemented"), _) => false,         // upgrade
+            (Some("not_implemented"), _) => false, // upgrade
             _ => false,
         };
 
@@ -161,9 +161,7 @@ fn emit_provable_contract_bindings() {
                     .find(|b| &binding_env_var_name(&b.contract, &b.equation) == var_name)
                     .and_then(|b| b.notes.as_deref())
                     .unwrap_or("");
-                println!(
-                    "cargo:warning=[contract] PARTIAL: {var_name} — {note}"
-                );
+                println!("cargo:warning=[contract] PARTIAL: {var_name} — {note}");
             }
             "not_implemented" => {
                 not_implemented += 1;
@@ -174,14 +172,10 @@ fn emit_provable_contract_bindings() {
                     .find(|b| &binding_env_var_name(&b.contract, &b.equation) == var_name)
                     .and_then(|b| b.notes.as_deref())
                     .unwrap_or("");
-                println!(
-                    "cargo:warning=[contract] GAP: {var_name} — {note}"
-                );
+                println!("cargo:warning=[contract] GAP: {var_name} — {note}");
             }
             other => {
-                println!(
-                    "cargo:warning=[contract] UNKNOWN STATUS '{other}': {var_name}"
-                );
+                println!("cargo:warning=[contract] UNKNOWN STATUS '{other}': {var_name}");
             }
         }
     }
@@ -194,7 +188,10 @@ fn emit_provable_contract_bindings() {
 
     // Set metadata env vars for the proc macro
     println!("cargo:rustc-env=CONTRACT_BINDING_SOURCE=binding.yaml");
-    println!("cargo:rustc-env=CONTRACT_BINDING_VERSION={}", bindings.version);
+    println!(
+        "cargo:rustc-env=CONTRACT_BINDING_VERSION={}",
+        bindings.version
+    );
     println!("cargo:rustc-env=CONTRACT_TOTAL={total}");
     println!("cargo:rustc-env=CONTRACT_IMPLEMENTED={implemented}");
     println!("cargo:rustc-env=CONTRACT_PARTIAL={partial}");

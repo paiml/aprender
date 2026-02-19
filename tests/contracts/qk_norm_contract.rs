@@ -302,9 +302,7 @@ fn test_cross_backend_qwen3_q_dimensions() {
     let eps = 1e-6_f32;
 
     // Deterministic input (sin wave for variety)
-    let input: Vec<f32> = (0..total)
-        .map(|i| (i as f32 * 0.037).sin() * 2.0)
-        .collect();
+    let input: Vec<f32> = (0..total).map(|i| (i as f32 * 0.037).sin() * 2.0).collect();
     let gamma: Vec<f32> = (0..head_dim).map(|i| 0.8 + (i as f32 * 0.003)).collect();
 
     let gpu_out = gpu_reference_per_head_rmsnorm(&input, &gamma, num_heads, head_dim, eps);
@@ -323,9 +321,7 @@ fn test_cross_backend_qwen3_q_dimensions() {
             cpu_out[i]
         );
     }
-    eprintln!(
-        "Qwen3-8B Q (32×128): max relative error = {max_rel_err:.2e} — PASS"
-    );
+    eprintln!("Qwen3-8B Q (32×128): max relative error = {max_rel_err:.2e} — PASS");
 }
 
 /// FALSIFY-QKN-006 (deterministic): Qwen3-8B K dimensions (8 heads × 128 dim)
@@ -336,9 +332,7 @@ fn test_cross_backend_qwen3_k_dimensions() {
     let total = num_heads * head_dim;
     let eps = 1e-6_f32;
 
-    let input: Vec<f32> = (0..total)
-        .map(|i| (i as f32 * 0.051).cos() * 1.5)
-        .collect();
+    let input: Vec<f32> = (0..total).map(|i| (i as f32 * 0.051).cos() * 1.5).collect();
     let gamma: Vec<f32> = (0..head_dim).map(|i| 0.9 + (i as f32 * 0.002)).collect();
 
     let gpu_out = gpu_reference_per_head_rmsnorm(&input, &gamma, num_heads, head_dim, eps);
@@ -357,9 +351,7 @@ fn test_cross_backend_qwen3_k_dimensions() {
             cpu_out[i]
         );
     }
-    eprintln!(
-        "Qwen3-8B K (8×128): max relative error = {max_rel_err:.2e} — PASS"
-    );
+    eprintln!("Qwen3-8B K (8×128): max relative error = {max_rel_err:.2e} — PASS");
 }
 
 /// FALSIFY-QKN-007 (deterministic): Wrong num_heads detection
@@ -375,35 +367,31 @@ fn test_wrong_num_heads_detection() {
     let total = correct_heads * head_dim;
     let eps = 1e-6_f32;
 
-    let input: Vec<f32> = (0..total)
-        .map(|i| (i as f32 * 0.037).sin() * 2.0)
-        .collect();
+    let input: Vec<f32> = (0..total).map(|i| (i as f32 * 0.037).sin() * 2.0).collect();
     let gamma: Vec<f32> = (0..head_dim).map(|i| 0.8 + (i as f32 * 0.003)).collect();
 
-    let correct_out =
-        gpu_reference_per_head_rmsnorm(&input, &gamma, correct_heads, head_dim, eps);
+    let correct_out = gpu_reference_per_head_rmsnorm(&input, &gamma, correct_heads, head_dim, eps);
 
     // Simulate the bug: GPU only processes wrong_heads heads, rest is uninitialized/zero
     let mut wrong_out = vec![0.0f32; total];
-    let partial =
-        gpu_reference_per_head_rmsnorm(&input[..wrong_heads * head_dim], &gamma, wrong_heads, head_dim, eps);
+    let partial = gpu_reference_per_head_rmsnorm(
+        &input[..wrong_heads * head_dim],
+        &gamma,
+        wrong_heads,
+        head_dim,
+        eps,
+    );
     wrong_out[..wrong_heads * head_dim].copy_from_slice(&partial);
 
     // Cosine similarity should be very low (proving the bug is detectable)
-    let dot: f32 = correct_out
-        .iter()
-        .zip(&wrong_out)
-        .map(|(a, b)| a * b)
-        .sum();
+    let dot: f32 = correct_out.iter().zip(&wrong_out).map(|(a, b)| a * b).sum();
     let norm_correct: f32 = correct_out.iter().map(|v| v * v).sum::<f32>().sqrt();
     let norm_wrong: f32 = wrong_out.iter().map(|v| v * v).sum::<f32>().sqrt();
     let cosine = dot / (norm_correct * norm_wrong);
 
     // With 8/32 heads processed, cosine ≈ sqrt(8/32) ≈ 0.5 (only 1/4 of data overlaps).
     // Correct normalization would give cosine > 0.9999, so anything < 0.9 detects the bug.
-    eprintln!(
-        "Wrong num_heads (8 vs 32): cosine similarity = {cosine:.6} — should be < 0.9"
-    );
+    eprintln!("Wrong num_heads (8 vs 32): cosine similarity = {cosine:.6} — should be < 0.9");
     assert!(
         cosine < 0.9,
         "Wrong num_heads should produce dramatically different output, got cosine={cosine}"
