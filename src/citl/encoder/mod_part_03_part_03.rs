@@ -69,9 +69,10 @@ impl GNNErrorEncoder {
     }
 
     /// Apply `ReLU` activation.
+    ///
+    /// ONE PATH: Delegates to `nn::functional::relu` (UCBD §4).
     fn relu(tensor: &Tensor) -> Tensor {
-        let data: Vec<f32> = tensor.data().iter().map(|&x| x.max(0.0)).collect();
-        Tensor::new(&data, tensor.shape())
+        crate::nn::functional::relu(tensor)
     }
 
     /// Mean pool over nodes.
