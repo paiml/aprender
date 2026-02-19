@@ -38,6 +38,9 @@ pub fn leaky_relu(x: &Tensor, negative_slope: f32) -> Tensor {
 }
 
 /// Sigmoid activation: 1 / (1 + exp(-x))
+///
+/// Contract: silu-kernel-v1, equation "sigmoid"
+#[provable_contracts_macros::contract("silu-kernel-v1", equation = "sigmoid")]
 #[must_use]
 pub fn sigmoid(x: &Tensor) -> Tensor {
     x.sigmoid()
@@ -114,6 +117,9 @@ pub fn softmax(x: &Tensor, _dim: i32) -> Tensor {
 /// Log softmax along a dimension
 ///
 /// More numerically stable than log(softmax(x)).
+///
+/// Contract: cross-entropy-kernel-v1, equation "log_softmax"
+#[provable_contracts_macros::contract("cross-entropy-kernel-v1", equation = "log_softmax")]
 #[must_use]
 pub fn log_softmax(x: &Tensor, _dim: i32) -> Tensor {
     assert_eq!(

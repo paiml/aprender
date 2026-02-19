@@ -110,6 +110,9 @@ impl Embedding {
     }
 
     /// Look up embeddings for token IDs.
+    ///
+    /// Contract: embedding-algebra-v1, equation "embedding_lookup"
+    #[provable_contracts_macros::contract("embedding-algebra-v1", equation = "embedding_lookup")]
     #[must_use]
     pub fn forward(&self, input_ids: &[u32]) -> Tensor {
         let batch_size = 1;

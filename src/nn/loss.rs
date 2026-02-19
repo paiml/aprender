@@ -252,6 +252,9 @@ impl CrossEntropyLoss {
     ///
     /// * `logits` - Shape `[batch, num_classes]`
     /// * `targets` - Shape `[batch]`, integer class indices (as f32)
+    ///
+    /// Contract: cross-entropy-kernel-v1, equation "cross_entropy"
+    #[provable_contracts_macros::contract("cross-entropy-kernel-v1", equation = "cross_entropy")]
     #[must_use]
     pub fn forward(&self, logits: &Tensor, targets: &Tensor) -> Tensor {
         assert_eq!(logits.ndim(), 2, "Logits must be 2D [batch, classes]");

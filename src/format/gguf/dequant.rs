@@ -11,6 +11,9 @@ use crate::error::{AprenderError, Result};
 ///
 /// Delegates to `trueno_quant::f16_to_f32` which uses the `half` crate —
 /// the industry-standard implementation.
+///
+/// Contract: f16-conversion-v1, equation "f16_to_f32_bias"
+#[provable_contracts_macros::contract("f16-conversion-v1", equation = "f16_to_f32_bias")]
 pub(crate) fn f16_to_f32(bits: u16) -> f32 {
     trueno_quant::f16_to_f32(bits)
 }

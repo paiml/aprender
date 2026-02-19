@@ -197,6 +197,9 @@ impl Tensor {
     ///
     /// Currently supports 2D tensors only. Batched matmul (3D+ tensors) can be
     /// added by iterating over batch dimensions and calling 2D matmul.
+    ///
+    /// Contract: matmul-kernel-v1, equation "matmul"
+    #[provable_contracts_macros::contract("matmul-kernel-v1", equation = "matmul")]
     #[must_use]
     pub fn matmul(&self, other: &Tensor) -> Tensor {
         assert_eq!(self.ndim(), 2, "matmul requires 2D tensors");
