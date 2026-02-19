@@ -1,3 +1,29 @@
+/// Iterate over audio frames, applying a closure to each frame slice.
+///
+/// Returns one result per frame. Frame boundaries: `[i*hop .. min(i*hop + frame_size, audio.len())]`.
+fn map_frames<T>(audio: &[f32], frame_size: usize, hop_length: usize, f: impl Fn(&[f32], usize) -> T) -> Vec<T> {
+    let num_frames = (audio.len().saturating_sub(frame_size)) / hop_length + 1;
+    let num_frames = num_frames.max(1);
+    (0..num_frames)
+        .map(|i| {
+            let start = i * hop_length;
+            let end = (start + frame_size).min(audio.len());
+            f(&audio[start..end], i)
+        })
+        .collect()
+}
+
+/// Compute RMS energy of an audio frame.
+fn frame_rms(frame: &[f32]) -> f32 {
+    frame.iter().map(|x| x * x).sum::<f32>().sqrt()
+}
+
+/// Distribute energy across frequency bins using a low-pass shape approximation.
+fn energy_to_bins(energy: f32, freq_bins: usize) -> Vec<f32> {
+    (0..freq_bins)
+        .map(|bin| energy / (1.0 + (bin as f32 / 20.0)))
+        .collect()
+}
 
 impl SpectralSubtractionIsolator {
     /// Create a new spectral subtraction isolator
@@ -24,38 +50,10 @@ impl SpectralSubtractionIsolator {
 
     /// Compute STFT magnitude spectrum (simplified)
     fn compute_stft(&self, audio: &[f32]) -> Vec<Vec<f32>> {
-        let fft_size = self.config.fft_size;
-        let hop_length = self.config.hop_length;
         let freq_bins = self.config.freq_bins();
-
-        let num_frames = (audio.len().saturating_sub(fft_size)) / hop_length + 1;
-        let num_frames = num_frames.max(1);
-
-        (0..num_frames)
-            .map(|i| {
-                let start = i * hop_length;
-                let end = (start + fft_size).min(audio.len());
-
-                // Compute energy per frequency bin (simplified - real impl uses FFT)
-                let mut magnitudes = vec![0.0f32; freq_bins];
-
-                if end > start {
-                    let frame = &audio[start..end];
-
-                    // Simple energy-based approximation
-                    let energy: f32 = frame.iter().map(|x| x * x).sum::<f32>().sqrt();
-
-                    // Distribute energy across bins (placeholder)
-                    for (bin, mag) in magnitudes.iter_mut().enumerate() {
-                        // Low-pass shape approximation
-                        let freq_factor = 1.0 / (1.0 + (bin as f32 / 20.0));
-                        *mag = energy * freq_factor;
-                    }
-                }
-
-                magnitudes
-            })
-            .collect()
+        map_frames(audio, self.config.fft_size, self.config.hop_length, |frame, _| {
+            energy_to_bins(frame_rms(frame), freq_bins)
+        })
     }
 
     /// Apply spectral subtraction to magnitudes
@@ -306,31 +304,12 @@ impl VoiceIsolator for WienerFilterIsolator {
             ));
         }
 
-        // Compute magnitude frames
-        let hop_length = self.config.hop_length;
-        let fft_size = self.config.fft_size;
+        // Compute magnitude frames using shared frame iteration
         let freq_bins = self.config.freq_bins();
-
-        let num_frames = (noise_audio.len().saturating_sub(fft_size)) / hop_length + 1;
-        let num_frames = num_frames.max(1);
-
-        let frames: Vec<Vec<f32>> = (0..num_frames)
-            .map(|i| {
-                let start = i * hop_length;
-                let end = (start + fft_size).min(noise_audio.len());
-
-                // Energy per bin (simplified)
-                let frame = &noise_audio[start..end];
-                let energy: f32 = frame.iter().map(|x| x * x).sum::<f32>().sqrt();
-
-                (0..freq_bins)
-                    .map(|bin| {
-                        let freq_factor = 1.0 / (1.0 + (bin as f32 / 20.0));
-                        energy * freq_factor
-                    })
-                    .collect()
-            })
-            .collect();
+        let frames: Vec<Vec<f32>> = map_frames(
+            noise_audio, self.config.fft_size, self.config.hop_length,
+            |frame, _| energy_to_bins(frame_rms(frame), freq_bins),
+        );
 
         Ok(NoiseProfile::from_frames(&frames, self.config.sample_rate))
     }
@@ -361,26 +340,20 @@ pub fn estimate_snr(audio: &[f32]) -> f32 {
 
     // Estimate noise as minimum energy segments
     let frame_size = 256.min(audio.len());
-    let num_frames = audio.len() / frame_size;
+    let frame_energies = map_frames(audio, frame_size, frame_size, |frame, _| {
+        let energy: f32 = frame.iter().map(|x| x * x).sum();
+        (energy / frame.len().max(1) as f32).sqrt()
+    });
 
-    if num_frames == 0 {
+    if frame_energies.is_empty() {
         return 20.0; // Default assumption
     }
-
-    let frame_energies: Vec<f32> = (0..num_frames)
-        .map(|i| {
-            let start = i * frame_size;
-            let end = (start + frame_size).min(audio.len());
-            let energy: f32 = audio[start..end].iter().map(|x| x * x).sum();
-            (energy / (end - start) as f32).sqrt()
-        })
-        .collect();
 
     // Noise floor as 10th percentile of frame energies
     let mut sorted_energies = frame_energies.clone();
     sorted_energies.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
-    let noise_idx = (num_frames / 10).max(0);
+    let noise_idx = sorted_energies.len() / 10;
     let noise_rms = sorted_energies.get(noise_idx).copied().unwrap_or(0.0001);
 
     // SNR in dB
@@ -433,18 +406,14 @@ pub fn detect_voice_activity(audio: &[f32], frame_size: usize, threshold: f32) -
         return vec![];
     }
 
+    // Ceiling division to include partial trailing frame (differs from STFT framing)
     let num_frames = (audio.len() + frame_size - 1) / frame_size;
-
     (0..num_frames)
         .map(|i| {
             let start = i * frame_size;
-            let end = (start + frame_size).min(audio.len());
-
-            // Compute frame energy
-            let energy: f32 = audio[start..end].iter().map(|x| x * x).sum();
-            let rms = (energy / (end - start).max(1) as f32).sqrt();
-
-            rms > threshold
+            let frame = &audio[start..(start + frame_size).min(audio.len())];
+            let energy: f32 = frame.iter().map(|x| x * x).sum();
+            (energy / frame.len().max(1) as f32).sqrt() > threshold
         })
         .collect()
 }
