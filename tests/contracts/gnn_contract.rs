@@ -14,7 +14,9 @@ use proptest::prelude::*;
 
 /// LCG pseudo-random number generator step.
 fn lcg_next(state: &mut u64) -> f32 {
-    *state = state.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
+    *state = state
+        .wrapping_mul(6_364_136_223_846_793_005)
+        .wrapping_add(1);
     (*state >> 33) as f32 / u32::MAX as f32
 }
 
