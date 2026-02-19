@@ -356,12 +356,12 @@
         ];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Extended(ExtendedCommands::Showcase {
+            Commands::Extended(ExtendedCommands::Tools(ToolCommands::Showcase {
                 tier,
                 gpu,
                 auto_verify,
                 ..
-            }) => {
+            })) => {
                 assert_eq!(tier, "medium");
                 assert!(gpu);
                 assert!(auto_verify);

@@ -118,7 +118,7 @@
         ];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Extended(ExtendedCommands::Oracle {
+            Commands::Extended(ExtendedCommands::Tools(ToolCommands::Oracle {
                 source,
                 compliance,
                 tensors,
@@ -129,7 +129,7 @@
                 full,
                 family,
                 size,
-            }) => {
+            })) => {
                 assert_eq!(source, Some("model.gguf".to_string()));
                 assert!(compliance);
                 assert!(tensors);
@@ -151,12 +151,12 @@
         let args = vec!["apr", "oracle", "--family", "qwen2", "--size", "7b"];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Extended(ExtendedCommands::Oracle {
+            Commands::Extended(ExtendedCommands::Tools(ToolCommands::Oracle {
                 source,
                 family,
                 size,
                 ..
-            }) => {
+            })) => {
                 assert!(source.is_none());
                 assert_eq!(family, Some("qwen2".to_string()));
                 assert_eq!(size, Some("7b".to_string()));
@@ -171,7 +171,7 @@
         let args = vec!["apr", "oracle", "hf://Qwen/Qwen2.5-Coder-1.5B"];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Extended(ExtendedCommands::Oracle { source, .. }) => {
+            Commands::Extended(ExtendedCommands::Tools(ToolCommands::Oracle { source, .. })) => {
                 assert_eq!(source, Some("hf://Qwen/Qwen2.5-Coder-1.5B".to_string()));
             }
             _ => panic!("Expected Oracle command"),

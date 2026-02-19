@@ -17,7 +17,7 @@
         ];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Extended(ExtendedCommands::Rosetta { action }) => match action {
+            Commands::Extended(ExtendedCommands::Tools(ToolCommands::Rosetta { action })) => match action {
                 RosettaCommands::Fingerprint {
                     model,
                     model_b,
@@ -58,7 +58,7 @@
         ];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Extended(ExtendedCommands::Rosetta { action }) => match action {
+            Commands::Extended(ExtendedCommands::Tools(ToolCommands::Rosetta { action })) => match action {
                 RosettaCommands::ValidateStats {
                     model,
                     reference,

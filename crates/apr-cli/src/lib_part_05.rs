@@ -302,7 +302,7 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             density,
             seed,
         } => merge::run(files, strategy, output, weights.clone(), base_model.clone(), *drop_rate, *density, *seed, cli.json),
-        Commands::Finetune {
+        Commands::ModelOps(ModelOpsCommands::Finetune {
             file,
             method,
             rank,
@@ -315,7 +315,7 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             epochs,
             learning_rate,
             model_size,
-        } => finetune::run(
+        }) => finetune::run(
             file.as_deref(),
             method,
             *rank,
@@ -330,7 +330,7 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             model_size.as_deref(),
             cli.json,
         ),
-        Commands::Prune {
+        Commands::ModelOps(ModelOpsCommands::Prune {
             file,
             method,
             target_ratio,
@@ -340,7 +340,7 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             analyze,
             plan,
             calibration,
-        } => prune::run(
+        }) => prune::run(
             file,
             method,
             *target_ratio,
@@ -352,7 +352,7 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             calibration.as_deref(),
             cli.json,
         ),
-        Commands::Distill {
+        Commands::ModelOps(ModelOpsCommands::Distill {
             teacher,
             student,
             data,
@@ -362,7 +362,7 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             alpha,
             epochs,
             plan,
-        } => distill::run(
+        }) => distill::run(
             teacher,
             student.as_deref(),
             data.as_deref(),

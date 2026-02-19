@@ -129,7 +129,7 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             *json || cli.json,
         ),
 
-        ExtendedCommands::Oracle {
+        ExtendedCommands::Tools(ToolCommands::Oracle {
             source,
             family,
             size,
@@ -140,7 +140,7 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             kernels,
             validate,
             full,
-        } => oracle::run(
+        }) => oracle::run(
             source.as_ref(),
             family.as_ref(),
             size.as_ref(),
@@ -420,7 +420,7 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
             *profile,
         ),
 
-        ExtendedCommands::Showcase {
+        ExtendedCommands::Tools(ToolCommands::Showcase {
             auto_verify,
             step,
             tier,
@@ -432,7 +432,7 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
             json,
             verbose,
             quiet,
-        } => dispatch_showcase(
+        }) => dispatch_showcase(
             *auto_verify,
             step.as_deref(),
             tier,
@@ -446,9 +446,9 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
             *quiet,
         ),
 
-        ExtendedCommands::Rosetta { action } => dispatch_rosetta(action, cli.json),
+        ExtendedCommands::Tools(ToolCommands::Rosetta { action }) => dispatch_rosetta(action, cli.json),
 
-        ExtendedCommands::Publish {
+        ExtendedCommands::Tools(ToolCommands::Publish {
             directory,
             repo_id,
             model_name,
@@ -458,7 +458,7 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
             tags,
             message,
             dry_run,
-        } => publish::execute(
+        }) => publish::execute(
             directory,
             repo_id,
             model_name.as_deref(),

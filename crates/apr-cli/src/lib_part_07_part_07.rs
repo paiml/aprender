@@ -321,7 +321,7 @@
         ];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Extended(ExtendedCommands::Showcase {
+            Commands::Extended(ExtendedCommands::Tools(ToolCommands::Showcase {
                 step,
                 tier,
                 zram,
@@ -330,7 +330,7 @@
                 verbose,
                 quiet,
                 ..
-            }) => {
+            })) => {
                 assert_eq!(step, Some("bench".to_string()));
                 assert_eq!(tier, "tiny");
                 assert!(zram);
@@ -364,7 +364,7 @@
         ];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Extended(ExtendedCommands::Rosetta { action }) => match action {
+            Commands::Extended(ExtendedCommands::Tools(ToolCommands::Rosetta { action })) => match action {
                 RosettaCommands::CompareInference {
                     model_a,
                     model_b,
@@ -406,7 +406,7 @@
         ];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Extended(ExtendedCommands::Rosetta { action }) => match action {
+            Commands::Extended(ExtendedCommands::Tools(ToolCommands::Rosetta { action })) => match action {
                 RosettaCommands::DiffTensors {
                     model_a,
                     model_b,

@@ -204,13 +204,13 @@
     /// Test execute_command: Rosetta inspect with non-existent file returns error
     #[test]
     fn test_execute_rosetta_inspect_file_not_found() {
-        let cli = make_cli(Commands::Extended(ExtendedCommands::Rosetta {
+        let cli = make_cli(Commands::Extended(ExtendedCommands::Tools(ToolCommands::Rosetta {
             action: RosettaCommands::Inspect {
                 file: PathBuf::from("/tmp/nonexistent_rosetta_inspect.gguf"),
                 hexdump: false,
                 json: false,
             },
-        }));
+        })));
         let result = execute_command(&cli);
         assert!(
             result.is_err(),
@@ -221,7 +221,7 @@
     /// Test execute_command: Rosetta convert with non-existent source returns error
     #[test]
     fn test_execute_rosetta_convert_file_not_found() {
-        let cli = make_cli(Commands::Extended(ExtendedCommands::Rosetta {
+        let cli = make_cli(Commands::Extended(ExtendedCommands::Tools(ToolCommands::Rosetta {
             action: RosettaCommands::Convert {
                 source: PathBuf::from("/tmp/nonexistent_rosetta_convert.gguf"),
                 target: PathBuf::from("/tmp/out.safetensors"),
@@ -230,7 +230,7 @@
                 json: false,
                 tokenizer: None,
             },
-        }));
+        })));
         let result = execute_command(&cli);
         assert!(
             result.is_err(),
@@ -241,7 +241,7 @@
     /// Test execute_command: Rosetta fingerprint with non-existent file returns error
     #[test]
     fn test_execute_rosetta_fingerprint_file_not_found() {
-        let cli = make_cli(Commands::Extended(ExtendedCommands::Rosetta {
+        let cli = make_cli(Commands::Extended(ExtendedCommands::Tools(ToolCommands::Rosetta {
             action: RosettaCommands::Fingerprint {
                 model: PathBuf::from("/tmp/nonexistent_rosetta_fingerprint.gguf"),
                 model_b: None,
@@ -250,7 +250,7 @@
                 verbose: false,
                 json: false,
             },
-        }));
+        })));
         let result = execute_command(&cli);
         assert!(
             result.is_err(),
@@ -358,7 +358,7 @@
     /// Test execute_command: Publish with non-existent directory returns error
     #[test]
     fn test_execute_publish_dir_not_found() {
-        let cli = make_cli(Commands::Extended(ExtendedCommands::Publish {
+        let cli = make_cli(Commands::Extended(ExtendedCommands::Tools(ToolCommands::Publish {
             directory: PathBuf::from("/tmp/nonexistent_publish_dir_test"),
             repo_id: "test/test".to_string(),
             model_name: None,
@@ -368,7 +368,7 @@
             tags: None,
             message: None,
             dry_run: true, // Use dry_run to avoid actual upload
-        }));
+        })));
         let result = execute_command(&cli);
         assert!(
             result.is_err(),

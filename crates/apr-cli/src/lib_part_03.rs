@@ -18,7 +18,7 @@ fn extract_extended_model_paths(command: &ExtendedCommands) -> Vec<PathBuf> {
         ExtendedCommands::Cbtop { model_path, .. } => model_path.iter().cloned().collect(),
 
         // Rosetta action subcommands
-        ExtendedCommands::Rosetta { action } => match action {
+        ExtendedCommands::Tools(ToolCommands::Rosetta { action }) => match action {
             RosettaCommands::Convert { source, .. }
             | RosettaCommands::Chain { source, .. }
             | RosettaCommands::Verify { source, .. } => vec![source.clone()],
@@ -62,9 +62,10 @@ fn extract_model_paths(command: &Commands) -> Vec<PathBuf> {
 
         Commands::Merge { files, .. } => files.clone(),
 
-        Commands::Quantize { file, .. } | Commands::Prune { file, .. } => vec![file.clone()],
-        Commands::Distill { teacher, .. } => vec![teacher.clone()],
-        Commands::Finetune { file, .. } => file.iter().cloned().collect(),
+        Commands::Quantize { file, .. } => vec![file.clone()],
+        Commands::ModelOps(ModelOpsCommands::Prune { file, .. }) => vec![file.clone()],
+        Commands::ModelOps(ModelOpsCommands::Distill { teacher, .. }) => vec![teacher.clone()],
+        Commands::ModelOps(ModelOpsCommands::Finetune { file, .. }) => file.iter().cloned().collect(),
 
         Commands::Tui { file, .. } => file.iter().cloned().collect(),
         Commands::Import { source, .. } => {

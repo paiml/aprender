@@ -5,7 +5,7 @@
         let args = vec!["apr", "rosetta", "inspect", "model.gguf", "--json"];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Extended(ExtendedCommands::Rosetta { action }) => match action {
+            Commands::Extended(ExtendedCommands::Tools(ToolCommands::Rosetta { action })) => match action {
                 RosettaCommands::Inspect { file, json, .. } => {
                     assert_eq!(file, PathBuf::from("model.gguf"));
                     assert!(json);
@@ -29,7 +29,7 @@
         ];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Extended(ExtendedCommands::Rosetta { action }) => match action {
+            Commands::Extended(ExtendedCommands::Tools(ToolCommands::Rosetta { action })) => match action {
                 RosettaCommands::Convert {
                     source,
                     target,
@@ -61,7 +61,7 @@
         ];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Extended(ExtendedCommands::Rosetta { action }) => match action {
+            Commands::Extended(ExtendedCommands::Tools(ToolCommands::Rosetta { action })) => match action {
                 RosettaCommands::Chain {
                     source,
                     formats,
@@ -93,7 +93,7 @@
         ];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Extended(ExtendedCommands::Rosetta { action }) => match action {
+            Commands::Extended(ExtendedCommands::Tools(ToolCommands::Rosetta { action })) => match action {
                 RosettaCommands::Verify {
                     source,
                     intermediate,
@@ -367,7 +367,7 @@
         ];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Extended(ExtendedCommands::Publish {
+            Commands::Extended(ExtendedCommands::Tools(ToolCommands::Publish {
                 directory,
                 repo_id,
                 model_name,
@@ -377,7 +377,7 @@
                 tags,
                 message,
                 dry_run,
-            }) => {
+            })) => {
                 assert_eq!(directory, PathBuf::from("/tmp/models"));
                 assert_eq!(repo_id, "paiml/whisper-apr-tiny");
                 assert_eq!(model_name, Some("Whisper Tiny".to_string()));
@@ -405,7 +405,7 @@
         let args = vec!["apr", "publish", "./models", "org/repo"];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Extended(ExtendedCommands::Publish {
+            Commands::Extended(ExtendedCommands::Tools(ToolCommands::Publish {
                 license,
                 pipeline_tag,
                 dry_run,
@@ -414,7 +414,7 @@
                 tags,
                 message,
                 ..
-            }) => {
+            })) => {
                 assert_eq!(license, "mit");
                 assert_eq!(pipeline_tag, "text-generation");
                 assert!(!dry_run);
