@@ -209,6 +209,7 @@ impl BayesianLinearRegression {
     /// model.fit(&x, &y).expect("fit should succeed with valid data");
     /// assert!(model.posterior_mean().is_some());
     /// ```
+    // Contract: bayesian-v1, equation = "blr_predict"
     pub fn fit(&mut self, x: &Matrix<f32>, y: &Vector<f32>) -> Result<()> {
         let n = x.n_rows();
         let p = x.n_cols();

@@ -23,6 +23,7 @@
 /// assert_eq!(hit_at_k(&predictions, &target, 2), 1.0);  // 3 is in top 2
 /// assert_eq!(hit_at_k(&predictions, &target, 5), 1.0);  // 3 is in top 5
 /// ```
+// Contract: metrics-ranking-v1, equation = "hit_at_k"
 #[must_use]
 pub fn hit_at_k<T: PartialEq>(predictions: &[T], target: &T, k: usize) -> f32 {
     let top_k = predictions.iter().take(k);
@@ -81,6 +82,7 @@ pub fn mean_hit_at_k<T: PartialEq + Clone>(predictions: &[Vec<T>], targets: &[T]
 /// assert!((reciprocal_rank(&predictions, &1) - 0.333).abs() < 0.01);  // rank 3 → 1/3
 /// assert!((reciprocal_rank(&predictions, &99) - 0.0).abs() < 1e-6);   // not found → 0
 /// ```
+// Contract: metrics-ranking-v1, equation = "reciprocal_rank"
 #[must_use]
 pub fn reciprocal_rank<T: PartialEq>(predictions: &[T], target: &T) -> f32 {
     for (i, pred) in predictions.iter().enumerate() {
@@ -111,6 +113,7 @@ pub fn reciprocal_rank<T: PartialEq>(predictions: &[T], target: &T) -> f32 {
 /// // MRR = (1/1 + 1/2 + 1/3) / 3 ≈ 0.611
 /// assert!((score - 0.611).abs() < 0.01);
 /// ```
+// Contract: metrics-ranking-v1, equation = "mrr"
 #[must_use]
 pub fn mrr<T: PartialEq + Clone>(predictions: &[Vec<T>], targets: &[T]) -> f32 {
     if predictions.is_empty() || predictions.len() != targets.len() {
@@ -176,6 +179,7 @@ pub fn dcg_at_k(relevance: &[f32], k: usize) -> f32 {
 /// let suboptimal = vec![0.0, 1.0, 2.0, 3.0, 3.0];
 /// assert!(ndcg_at_k(&suboptimal, 5) < 0.8);
 /// ```
+// Contract: metrics-ranking-v1, equation = "ndcg_at_k"
 #[must_use]
 pub fn ndcg_at_k(relevance: &[f32], k: usize) -> f32 {
     let dcg = dcg_at_k(relevance, k);

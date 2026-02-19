@@ -114,6 +114,7 @@ impl DriftDetector {
     /// Detect drift in univariate data using normalized mean difference.
     ///
     /// Uses (|`mean_ref` - `mean_cur`| / `std_ref`) as drift measure.
+    // Contract: drift-detection-v1, equation = "univariate_drift"
     #[must_use]
     pub fn detect_univariate(&self, reference: &Vector<f32>, current: &Vector<f32>) -> DriftStatus {
         if reference.len() < self.config.min_samples || current.len() < self.config.min_samples {
@@ -164,6 +165,7 @@ impl DriftDetector {
     /// Detect performance drift using accuracy/score degradation.
     ///
     /// Compares baseline performance to current performance.
+    // Contract: drift-detection-v1, equation = "performance_drift"
     #[must_use]
     pub fn detect_performance_drift(
         &self,

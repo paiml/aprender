@@ -148,6 +148,7 @@ impl ARIMA {
     /// let data = Vector::from_slice(&[10.0, 12.0, 13.0, 15.0, 14.0, 16.0]);
     /// model.fit(&data).expect("fit should succeed");
     /// ```
+    // Contract: arima-v1, equation = "differencing"
     pub fn fit(&mut self, data: &Vector<f64>) -> Result<(), AprenderError> {
         // Validate data length
         let min_length = self.p.max(self.q) + self.d + 1;
@@ -214,6 +215,7 @@ impl ARIMA {
     /// let forecast = model.forecast(3).expect("forecast should succeed");
     /// assert_eq!(forecast.len(), 3);
     /// ```
+    // Contract: arima-v1, equation = "ar_forecast"
     pub fn forecast(&self, n_periods: usize) -> Result<Vector<f64>, AprenderError> {
         // Check if model is fitted
         let original_data = self

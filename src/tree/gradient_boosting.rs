@@ -92,6 +92,7 @@ impl GradientBoostingClassifier {
     /// # Returns
     ///
     /// Ok(()) on success, Err with message on failure.
+    // Contract: gbm-v1, equation = "gradient_boost"
     pub fn fit(&mut self, x: &crate::primitives::Matrix<f32>, y: &[usize]) -> Result<()> {
         if x.n_rows() != y.len() {
             return Err("x and y must have the same number of samples".into());
@@ -183,6 +184,7 @@ impl GradientBoostingClassifier {
     /// # Returns
     ///
     /// Vector of predicted labels (0 or 1).
+    // Contract: gbm-v1, equation = "predict"
     pub fn predict(&self, x: &crate::primitives::Matrix<f32>) -> Result<Vec<usize>> {
         let probas = self.predict_proba(x)?;
         Ok(probas

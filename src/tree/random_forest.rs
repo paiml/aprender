@@ -68,6 +68,7 @@ impl RandomForestRegressor {
     /// # Errors
     ///
     /// Returns an error if fitting fails.
+    // Contract: random-forest-v1, equation = "bootstrap_sample"
     pub fn fit(
         &mut self,
         x: &crate::primitives::Matrix<f32>,
@@ -138,6 +139,7 @@ impl RandomForestRegressor {
     /// # Panics
     ///
     /// Panics if the model hasn't been fitted yet.
+    // Contract: random-forest-v1, equation = "majority_vote"
     #[must_use]
     pub fn predict(&self, x: &crate::primitives::Matrix<f32>) -> crate::primitives::Vector<f32> {
         assert!(

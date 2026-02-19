@@ -168,6 +168,7 @@ impl BetaBinomial {
     /// assert_eq!(model.alpha(), 8.0);
     /// assert_eq!(model.beta(), 4.0);
     /// ```
+    // Contract: bayesian-v1, equation = "conjugate_update"
     pub fn update(&mut self, successes: u32, trials: u32) {
         assert!(successes <= trials, "Successes cannot exceed total trials");
         let failures = trials - successes;
