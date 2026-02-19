@@ -344,10 +344,51 @@ fn print_standard_model_stats(model: &MarkovModel, encrypted: bool) {
     }
 }
 
+/// Load an existing model from disk, handling encryption and error diagnostics.
+fn load_existing_model(path: &std::path::Path, password: Option<&str>) -> MarkovModel {
+    if let Some(pwd) = password {
+        return MarkovModel::load_encrypted(path, pwd).unwrap_or_else(|e| {
+            eprintln!("❌ Failed to load encrypted model: {e}");
+            eprintln!("   Hint: Check password or try without --password flag");
+            std::process::exit(1);
+        });
+    }
+    match MarkovModel::load(path) {
+        Ok(m) => m,
+        Err(e) => {
+            eprintln!("❌ Failed to load model '{}': {e}", path.display());
+            print_model_load_hint(&e);
+            std::process::exit(1);
+        }
+    }
+}
+
+/// Print a diagnostic hint based on the model load error.
+fn print_model_load_hint(e: &std::io::Error) {
+    let msg = e.to_string();
+    if msg.contains("Checksum mismatch") {
+        eprintln!("   Hint: The model file may be corrupted. Run 'aprender-shell train' to rebuild.");
+    } else if msg.contains("magic") || msg.contains("invalid") {
+        eprintln!("   Hint: The file may not be a valid aprender model.");
+    }
+}
+
+/// Save a model to disk, preserving encryption status.
+fn save_model_to_disk(model: &MarkovModel, path: &std::path::Path, password: Option<&str>) {
+    if let Some(pwd) = password {
+        if let Err(e) = model.save_encrypted(path, pwd) {
+            eprintln!("❌ Failed to save encrypted model: {e}");
+            std::process::exit(1);
+        }
+    } else if let Err(e) = model.save(path) {
+        eprintln!("❌ Failed to save model: {e}");
+        std::process::exit(1);
+    }
+}
+
 fn cmd_update(history_path: Option<PathBuf>, model_path: &str, quiet: bool, use_password: bool) {
     let path = expand_path(model_path);
 
-    // Get password if needed
     let password = if use_password {
         Some(
             rpassword::prompt_password("Enter password: ").unwrap_or_else(|e| {
@@ -359,28 +400,8 @@ fn cmd_update(history_path: Option<PathBuf>, model_path: &str, quiet: bool, use_
         None
     };
 
-    // Load existing model or create new one
     let mut model = if path.exists() {
-        if let Some(ref pwd) = password {
-            MarkovModel::load_encrypted(&path, pwd).unwrap_or_else(|e| {
-                eprintln!("❌ Failed to load encrypted model: {e}");
-                eprintln!("   Hint: Check password or try without --password flag");
-                std::process::exit(1);
-            })
-        } else {
-            match MarkovModel::load(&path) {
-                Ok(m) => m,
-                Err(e) => {
-                    eprintln!("❌ Failed to load model '{}': {e}", path.display());
-                    if e.to_string().contains("Checksum mismatch") {
-                        eprintln!("   Hint: The model file may be corrupted. Run 'aprender-shell train' to rebuild.");
-                    } else if e.to_string().contains("magic") || e.to_string().contains("invalid") {
-                        eprintln!("   Hint: The file may not be a valid aprender model.");
-                    }
-                    std::process::exit(1);
-                }
-            }
-        }
+        load_existing_model(&path, password.as_deref())
     } else {
         if !quiet {
             println!("📝 No existing model, creating new one...");
@@ -388,11 +409,9 @@ fn cmd_update(history_path: Option<PathBuf>, model_path: &str, quiet: bool, use_
         MarkovModel::new(3)
     };
 
-    // Find and parse history with graceful error handling (QA 2.4, 8.3)
     let history_file = find_history_file_graceful(history_path);
     let all_commands = parse_history_graceful(&history_file);
 
-    // Get only new commands (after last trained position)
     let last_pos = model.last_trained_position();
     let new_commands: Vec<String> = all_commands.into_iter().skip(last_pos).collect();
 
@@ -407,19 +426,8 @@ fn cmd_update(history_path: Option<PathBuf>, model_path: &str, quiet: bool, use_
         println!("📊 Found {} new commands", new_commands.len());
     }
 
-    // Incremental train
     model.train_incremental(&new_commands);
-
-    // Save (preserve encryption status)
-    if let Some(ref pwd) = password {
-        if let Err(e) = model.save_encrypted(&path, pwd) {
-            eprintln!("❌ Failed to save encrypted model: {e}");
-            std::process::exit(1);
-        }
-    } else if let Err(e) = model.save(&path) {
-        eprintln!("❌ Failed to save model: {e}");
-        std::process::exit(1);
-    }
+    save_model_to_disk(&model, &path, password.as_deref());
 
     if !quiet {
         println!(

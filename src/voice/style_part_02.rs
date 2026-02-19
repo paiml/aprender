@@ -143,6 +143,36 @@ pub fn style_from_embedding(embedding: &SpeakerEmbedding, config: &StyleConfig) 
 ///
 /// # Errors
 /// Returns error if styles have different dimensions or list is empty.
+/// Check that `got` matches `expected`, returning a dimension mismatch error if not.
+fn check_dim(expected: usize, got: usize) -> VoiceResult<()> {
+    if got != expected {
+        return Err(VoiceError::DimensionMismatch { expected, got });
+    }
+    Ok(())
+}
+
+/// Validate that all styles have the same dimensions as `first`.
+fn validate_style_dims(styles: &[StyleVector], first: &StyleVector) -> VoiceResult<()> {
+    for style in styles.iter().skip(1) {
+        check_dim(first.prosody.len(), style.prosody.len())?;
+        check_dim(first.timbre.len(), style.timbre.len())?;
+        check_dim(first.rhythm.len(), style.rhythm.len())?;
+    }
+    Ok(())
+}
+
+/// Compute the element-wise average of multiple f32 slices.
+fn average_component<F: Fn(&StyleVector) -> &[f32]>(styles: &[StyleVector], len: usize, accessor: F) -> Vec<f32> {
+    let count = styles.len() as f32;
+    let mut result = vec![0.0_f32; len];
+    for style in styles {
+        for (i, &v) in accessor(style).iter().enumerate() {
+            result[i] += v / count;
+        }
+    }
+    result
+}
+
 pub fn average_styles(styles: &[StyleVector]) -> VoiceResult<StyleVector> {
     if styles.is_empty() {
         return Err(VoiceError::InvalidConfig(
@@ -151,49 +181,11 @@ pub fn average_styles(styles: &[StyleVector]) -> VoiceResult<StyleVector> {
     }
 
     let first = &styles[0];
-    let prosody_len = first.prosody.len();
-    let timbre_len = first.timbre.len();
-    let rhythm_len = first.rhythm.len();
+    validate_style_dims(styles, first)?;
 
-    // Verify all dimensions match
-    for style in styles.iter().skip(1) {
-        if style.prosody.len() != prosody_len {
-            return Err(VoiceError::DimensionMismatch {
-                expected: prosody_len,
-                got: style.prosody.len(),
-            });
-        }
-        if style.timbre.len() != timbre_len {
-            return Err(VoiceError::DimensionMismatch {
-                expected: timbre_len,
-                got: style.timbre.len(),
-            });
-        }
-        if style.rhythm.len() != rhythm_len {
-            return Err(VoiceError::DimensionMismatch {
-                expected: rhythm_len,
-                got: style.rhythm.len(),
-            });
-        }
-    }
-
-    let count = styles.len() as f32;
-
-    let mut prosody = vec![0.0_f32; prosody_len];
-    let mut timbre = vec![0.0_f32; timbre_len];
-    let mut rhythm = vec![0.0_f32; rhythm_len];
-
-    for style in styles {
-        for (i, &v) in style.prosody.iter().enumerate() {
-            prosody[i] += v / count;
-        }
-        for (i, &v) in style.timbre.iter().enumerate() {
-            timbre[i] += v / count;
-        }
-        for (i, &v) in style.rhythm.iter().enumerate() {
-            rhythm[i] += v / count;
-        }
-    }
+    let prosody = average_component(styles, first.prosody.len(), |s| &s.prosody);
+    let timbre = average_component(styles, first.timbre.len(), |s| &s.timbre);
+    let rhythm = average_component(styles, first.rhythm.len(), |s| &s.rhythm);
 
     Ok(StyleVector::new(prosody, timbre, rhythm))
 }

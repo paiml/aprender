@@ -133,6 +133,50 @@ fn cmd_publish(model_path: &str, repo_id: &str, commit_msg: &str, create: bool, 
 // Daemon/Stream Mode Commands (GH-95)
 // =============================================================================
 
+/// Load a model for stream mode, handling password and error exits.
+fn load_stream_model(path: &std::path::Path, use_password: bool) -> MarkovModel {
+    if use_password {
+        let password =
+            rpassword::prompt_password("🔐 Model password: ").unwrap_or_else(|_| String::new());
+        MarkovModel::load_encrypted(path, &password).unwrap_or_else(|e| {
+            eprintln!("❌ Failed to load encrypted model: {e}");
+            std::process::exit(1);
+        })
+    } else {
+        load_model_graceful(path).unwrap_or_else(|e| {
+            eprintln!("{e}");
+            std::process::exit(1);
+        })
+    }
+}
+
+/// Write filtered suggestions to stdout in the requested format.
+fn write_suggestions(
+    stdout: &mut std::io::Stdout,
+    filtered: &[(String, f32)],
+    format: &str,
+) {
+    use std::io::Write;
+    match format {
+        "json" => {
+            let json_suggestions: Vec<_> = filtered
+                .iter()
+                .map(|(s, score)| format!(r#"{{"suggestion":"{}","score":{:.4}}}"#, s, score))
+                .collect();
+            writeln!(stdout, "[{}]", json_suggestions.join(",")).ok();
+        }
+        "tab" => {
+            let tab_line: Vec<_> = filtered.iter().map(|(s, _)| s.as_str()).collect();
+            writeln!(stdout, "{}", tab_line.join("\t")).ok();
+        }
+        _ => {
+            for (suggestion, _) in filtered {
+                writeln!(stdout, "{suggestion}").ok();
+            }
+        }
+    }
+}
+
 /// Stream mode: read prefixes from stdin, output suggestions to stdout
 ///
 /// Model is loaded once and kept in memory for sub-millisecond latency.
@@ -146,27 +190,7 @@ fn cmd_stream(model_path: &str, count: usize, format: &str, use_password: bool) 
     use std::io::{BufRead, Write};
 
     let path = expand_path(model_path);
-
-    // Load model once
-    let model = if use_password {
-        let password =
-            rpassword::prompt_password("🔐 Model password: ").unwrap_or_else(|_| String::new());
-        match MarkovModel::load_encrypted(&path, &password) {
-            Ok(m) => m,
-            Err(e) => {
-                eprintln!("❌ Failed to load encrypted model: {e}");
-                std::process::exit(1);
-            }
-        }
-    } else {
-        match load_model_graceful(&path) {
-            Ok(m) => m,
-            Err(e) => {
-                eprintln!("{e}");
-                std::process::exit(1);
-            }
-        }
-    };
+    let model = load_stream_model(&path, use_password);
 
     eprintln!(
         "🚀 Stream mode ready (model: {} commands)",
@@ -183,12 +207,10 @@ fn cmd_stream(model_path: &str, count: usize, format: &str, use_password: bool) 
             Err(_) => break,
         };
 
-        // Exit conditions
         if prefix.is_empty() || prefix.eq_ignore_ascii_case("QUIT") {
             break;
         }
 
-        // Validate and sanitize prefix
         let prefix = match sanitize_prefix(&prefix) {
             Ok(p) => p,
             Err(_) => {
@@ -197,32 +219,10 @@ fn cmd_stream(model_path: &str, count: usize, format: &str, use_password: bool) 
             }
         };
 
-        // Get suggestions
         let suggestions = model.suggest(&prefix, count);
         let filtered = filter_sensitive_suggestions(suggestions);
+        write_suggestions(&mut stdout, &filtered, format);
 
-        // Output in requested format
-        match format {
-            "json" => {
-                let json_suggestions: Vec<_> = filtered
-                    .iter()
-                    .map(|(s, score)| format!(r#"{{"suggestion":"{}","score":{:.4}}}"#, s, score))
-                    .collect();
-                writeln!(stdout, "[{}]", json_suggestions.join(",")).ok();
-            }
-            "tab" => {
-                let tab_line: Vec<_> = filtered.iter().map(|(s, _)| s.as_str()).collect();
-                writeln!(stdout, "{}", tab_line.join("\t")).ok();
-            }
-            _ => {
-                // "lines" format (default)
-                for (suggestion, _) in &filtered {
-                    writeln!(stdout, "{suggestion}").ok();
-                }
-            }
-        }
-
-        // Empty line delimiter for batch processing
         writeln!(stdout).ok();
         stdout.flush().ok();
     }

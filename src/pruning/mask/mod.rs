@@ -319,15 +319,45 @@ fn validate_nm(mask: &Tensor, n: usize, m: usize) -> Result<(), PruningError> {
     Ok(())
 }
 
-/// Validate block sparsity: each block must be uniform (all 0s or all 1s).
-fn validate_block(mask: &Tensor, height: usize, width: usize) -> Result<(), PruningError> {
+/// Require that the mask is 2D and return (rows, cols).
+fn require_2d(mask: &Tensor, pattern_name: &str) -> Result<(usize, usize), PruningError> {
     let shape = mask.shape();
     if shape.len() != 2 {
         return Err(PruningError::InvalidPattern {
-            message: format!("Block pattern requires 2D tensor, got {}D", shape.len()),
+            message: format!("{pattern_name} pattern requires 2D tensor, got {}D", shape.len()),
         });
     }
-    let (rows, cols) = (shape[0], shape[1]);
+    Ok((shape[0], shape[1]))
+}
+
+/// Check that a single block is uniform (all values equal to `first`).
+fn check_block_uniform(
+    data: &[f32],
+    br: usize,
+    bc: usize,
+    height: usize,
+    width: usize,
+    cols: usize,
+) -> Result<(), PruningError> {
+    let first = data[br * height * cols + bc * width];
+    for r in 0..height {
+        for c in 0..width {
+            let val = data[(br * height + r) * cols + bc * width + c];
+            if (val - first).abs() > 1e-6 {
+                return Err(PruningError::InvalidPattern {
+                    message: format!(
+                        "Block ({br}, {bc}) is not uniform: found {val} and {first}"
+                    ),
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Validate block sparsity: each block must be uniform (all 0s or all 1s).
+fn validate_block(mask: &Tensor, height: usize, width: usize) -> Result<(), PruningError> {
+    let (rows, cols) = require_2d(mask, "Block")?;
     if rows % height != 0 || cols % width != 0 {
         return Err(PruningError::InvalidPattern {
             message: format!("Shape [{rows}, {cols}] not divisible by block [{height}, {width}]"),
@@ -336,19 +366,7 @@ fn validate_block(mask: &Tensor, height: usize, width: usize) -> Result<(), Prun
     let data = mask.data();
     for br in 0..(rows / height) {
         for bc in 0..(cols / width) {
-            let first = data[br * height * cols + bc * width];
-            for r in 0..height {
-                for c in 0..width {
-                    let val = data[(br * height + r) * cols + bc * width + c];
-                    if (val - first).abs() > 1e-6 {
-                        return Err(PruningError::InvalidPattern {
-                            message: format!(
-                                "Block ({br}, {bc}) is not uniform: found {val} and {first}"
-                            ),
-                        });
-                    }
-                }
-            }
+            check_block_uniform(data, br, bc, height, width, cols)?;
         }
     }
     Ok(())
@@ -356,13 +374,7 @@ fn validate_block(mask: &Tensor, height: usize, width: usize) -> Result<(), Prun
 
 /// Validate row sparsity: each row must be uniform (all 0s or all 1s).
 fn validate_row(mask: &Tensor) -> Result<(), PruningError> {
-    let shape = mask.shape();
-    if shape.len() != 2 {
-        return Err(PruningError::InvalidPattern {
-            message: format!("Row pattern requires 2D tensor, got {}D", shape.len()),
-        });
-    }
-    let (rows, cols) = (shape[0], shape[1]);
+    let (rows, cols) = require_2d(mask, "Row")?;
     let data = mask.data();
     for r in 0..rows {
         let first = data[r * cols];
@@ -379,13 +391,7 @@ fn validate_row(mask: &Tensor) -> Result<(), PruningError> {
 
 /// Validate column sparsity: each column must be uniform (all 0s or all 1s).
 fn validate_column(mask: &Tensor) -> Result<(), PruningError> {
-    let shape = mask.shape();
-    if shape.len() != 2 {
-        return Err(PruningError::InvalidPattern {
-            message: format!("Column pattern requires 2D tensor, got {}D", shape.len()),
-        });
-    }
-    let (rows, cols) = (shape[0], shape[1]);
+    let (rows, cols) = require_2d(mask, "Column")?;
     let data = mask.data();
     for c in 0..cols {
         let first = data[c];

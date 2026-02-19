@@ -159,6 +159,59 @@ fn parse_nested_value(
     }
 }
 
+/// Classify a YAML line's relationship to the current mapping scope.
+enum MappingLineAction {
+    /// Skip blank or comment lines.
+    Skip,
+    /// Line is dedented and entries exist: the mapping is complete.
+    EndMapping,
+    /// Line is dedented but no entries yet: skip it.
+    SkipDedented,
+    /// Line is over-indented and entries exist: the mapping is complete.
+    EndOverindent,
+    /// Line is at the correct indent level: parse it as a key-value entry.
+    ParseEntry,
+}
+
+fn classify_mapping_line(trimmed: &str, line_indent: usize, indent: usize, has_entries: bool) -> MappingLineAction {
+    if trimmed.is_empty() || trimmed.starts_with('#') {
+        return MappingLineAction::Skip;
+    }
+    if line_indent < indent && has_entries {
+        return MappingLineAction::EndMapping;
+    }
+    if line_indent < indent {
+        return MappingLineAction::SkipDedented;
+    }
+    if line_indent > indent && has_entries {
+        return MappingLineAction::EndOverindent;
+    }
+    MappingLineAction::ParseEntry
+}
+
+/// Parse a single key-value entry from a YAML mapping line.
+/// Returns the parsed entry and the next line index.
+fn parse_mapping_entry(
+    lines: &[&str],
+    trimmed: &str,
+    current_idx: usize,
+    indent: usize,
+) -> Result<Option<((String, YamlValue), usize)>> {
+    let Some(colon_pos) = trimmed.find(':') else {
+        return Ok(None);
+    };
+    let key = trimmed[..colon_pos].trim().to_string();
+    let after_colon = trimmed[colon_pos + 1..].trim();
+
+    if after_colon.is_empty() {
+        let (value, new_i) = parse_nested_value(lines, current_idx + 1, indent)?;
+        Ok(Some(((key, value), new_i)))
+    } else {
+        let value = parse_scalar(after_colon);
+        Ok(Some(((key, value), current_idx + 1)))
+    }
+}
+
 fn parse_mapping(lines: &[&str], start: usize, indent: usize) -> Result<(YamlValue, usize)> {
     let mut entries = Vec::new();
     let mut i = start;
@@ -166,48 +219,29 @@ fn parse_mapping(lines: &[&str], start: usize, indent: usize) -> Result<(YamlVal
     while i < lines.len() {
         let line = lines[i];
         let trimmed = line.trim();
-
-        if trimmed.is_empty() || trimmed.starts_with('#') {
-            i += 1;
-            continue;
-        }
-
         let line_indent = line.len() - line.trim_start().len();
 
-        if line_indent < indent && !entries.is_empty() {
-            return Ok((YamlValue::Mapping(entries), i));
-        }
-
-        if line_indent < indent {
-            i += 1;
-            continue;
-        }
-
-        if line_indent > indent && !entries.is_empty() {
-            return Ok((YamlValue::Mapping(entries), i));
-        }
-
-        if let Some(colon_pos) = trimmed.find(':') {
-            let key = trimmed[..colon_pos].trim().to_string();
-            let after_colon = trimmed[colon_pos + 1..].trim();
-
-            if after_colon.is_empty() {
-                i += 1;
-                let (value, new_i) = parse_nested_value(lines, i, indent)?;
-                entries.push((key, value));
-                i = new_i;
-            } else {
-                let value = parse_scalar(after_colon);
-                entries.push((key, value));
+        match classify_mapping_line(trimmed, line_indent, indent, !entries.is_empty()) {
+            MappingLineAction::Skip | MappingLineAction::SkipDedented => {
                 i += 1;
             }
-        } else {
-            i += 1;
+            MappingLineAction::EndMapping | MappingLineAction::EndOverindent => {
+                return Ok((YamlValue::Mapping(entries), i));
+            }
+            MappingLineAction::ParseEntry => {
+                if let Some((entry, new_i)) = parse_mapping_entry(lines, trimmed, i, indent)? {
+                    entries.push(entry);
+                    i = new_i;
+                } else {
+                    i += 1;
+                }
+            }
         }
     }
 
     Ok((YamlValue::Mapping(entries), i))
 }
+
 
 fn parse_sequence(lines: &[&str], start: usize, indent: usize) -> Result<(YamlValue, usize)> {
     let mut items = Vec::new();

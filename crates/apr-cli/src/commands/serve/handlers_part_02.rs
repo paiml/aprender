@@ -104,6 +104,119 @@ fn decode_single_token(tokenizer: Option<&SafeTensorsTokenizerInfo>, token_id: u
     }
 }
 
+/// Spawn a blocking task to stream tokens via an mpsc channel.
+///
+/// GH-284: Runs transformer generation in a dedicated thread, sending each
+/// token through the channel. The channel closes when generation completes.
+#[cfg(feature = "inference")]
+fn spawn_cpu_streaming_task(
+    s: AprServerState,
+    prompt: String,
+    max_tokens: usize,
+    temperature: f32,
+    tx: tokio::sync::mpsc::Sender<std::result::Result<u32, String>>,
+) {
+    tokio::task::spawn_blocking(move || {
+        let Some(transformer) = s.transformer.as_ref() else {
+            let _ = tx.blocking_send(Err("Transformer not loaded".to_string()));
+            return;
+        };
+
+        let input_tokens: Vec<u32> = match &s.tokenizer {
+            Some(tok) => tok.tokenizer.encode(&prompt),
+            None => prompt.chars().map(|c| c as u32).collect(),
+        };
+
+        let gen_config = realizar::apr_transformer::GenerateConfig {
+            max_tokens,
+            temperature,
+            top_p: 0.9,
+            top_k: 0,
+            repetition_penalty: 1.0,
+            trace: false,
+        };
+
+        let Ok(t) = transformer.lock() else {
+            let _ = tx.blocking_send(Err("Lock poisoned".to_string()));
+            return;
+        };
+
+        // GH-284: Stream each token via the callback -> mpsc channel
+        let _ = t.generate_with_cache_streaming(&input_tokens, &gen_config, |token_id| {
+            tx.blocking_send(Ok(token_id)).is_ok()
+        });
+    });
+}
+
+/// Build an SSE stream from a token receiver channel.
+#[cfg(feature = "inference")]
+#[allow(clippy::disallowed_methods)] // serde_json::json!() macro uses infallible unwrap
+fn build_cpu_sse_stream(
+    rx: tokio::sync::mpsc::Receiver<std::result::Result<u32, String>>,
+    tokenizer: Option<SafeTensorsTokenizerInfo>,
+    model_name: String,
+) -> axum::response::Response {
+    use axum::response::{sse::{Event, Sse}, IntoResponse};
+
+    let request_id = generate_request_id();
+    let created = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    let stream = futures_util::stream::unfold(
+        (Some(rx), tokenizer, request_id, created, model_name),
+        |(maybe_rx, tokenizer, request_id, created, model_name)| async move {
+            let mut rx = maybe_rx?;
+            match rx.recv().await {
+                Some(Ok(token_id)) => {
+                    let text = decode_single_token(tokenizer.as_ref(), token_id);
+                    let chunk = serde_json::json!({
+                        "id": &request_id,
+                        "object": "chat.completion.chunk",
+                        "created": created,
+                        "model": &model_name,
+                        "choices": [{
+                            "index": 0,
+                            "delta": {"content": text},
+                            "finish_reason": serde_json::Value::Null
+                        }]
+                    });
+                    let event = Event::default().data(chunk.to_string());
+                    Some((
+                        Ok::<_, std::convert::Infallible>(event),
+                        (Some(rx), tokenizer, request_id, created, model_name),
+                    ))
+                }
+                Some(Err(_)) | None => {
+                    let event = Event::default().data("[DONE]");
+                    Some((
+                        Ok::<_, std::convert::Infallible>(event),
+                        (None, tokenizer, request_id, created, model_name),
+                    ))
+                }
+            }
+        },
+    );
+
+    Sse::new(stream).into_response()
+}
+
+/// Insert trace data into a chat completion response based on trace level.
+#[cfg(feature = "inference")]
+fn insert_trace_data(response: &mut serde_json::Value, trace_level: Option<&str>, trace_data: serde_json::Value) {
+    let Some(level) = trace_level else { return };
+    let key = match level {
+        "brick" => "brick_trace",
+        "step" => "step_trace",
+        "layer" => "layer_trace",
+        _ => return,
+    };
+    if let Some(obj) = response.as_object_mut() {
+        obj.insert(key.to_string(), trace_data);
+    }
+}
+
 /// Handle POST /v1/chat/completions for APR CPU inference (PAR-302).
 ///
 /// GH-284: True per-token SSE streaming via `spawn_blocking` + mpsc channel.
@@ -115,13 +228,7 @@ async fn handle_apr_cpu_chat_completion(
     headers: &axum::http::HeaderMap,
     req: &serde_json::Value,
 ) -> axum::response::Response {
-    use axum::{
-        response::{
-            sse::{Event, Sse},
-            IntoResponse,
-        },
-        Json,
-    };
+    use axum::{response::IntoResponse, Json};
 
     let trace_level = headers
         .get("X-Trace-Level")
@@ -138,24 +245,14 @@ async fn handle_apr_cpu_chat_completion(
         }
     };
 
-    // GH-283: Validate model name before processing
     if let Some(err_response) = validate_request_model(req, &s.model_name) {
         return err_response;
     }
 
     let messages = req.get("messages").and_then(|m| m.as_array());
-    let stream_mode = req
-        .get("stream")
-        .and_then(serde_json::Value::as_bool)
-        .unwrap_or(false);
-    let max_tokens = req
-        .get("max_tokens")
-        .and_then(serde_json::Value::as_u64)
-        .unwrap_or(32) as usize;
-    let temperature = req
-        .get("temperature")
-        .and_then(serde_json::Value::as_f64)
-        .unwrap_or(0.0) as f32;
+    let stream_mode = req.get("stream").and_then(serde_json::Value::as_bool).unwrap_or(false);
+    let max_tokens = req.get("max_tokens").and_then(serde_json::Value::as_u64).unwrap_or(32) as usize;
+    let temperature = req.get("temperature").and_then(serde_json::Value::as_f64).unwrap_or(0.0) as f32;
 
     let Some(msgs) = messages else {
         return Json(serde_json::json!({"error": "Missing messages"})).into_response();
@@ -163,101 +260,14 @@ async fn handle_apr_cpu_chat_completion(
 
     let prompt = format_chatml(msgs);
 
-    // ========================================================================
     // GH-284: True SSE streaming path
-    // ========================================================================
     if stream_mode {
         let (tx, rx) = tokio::sync::mpsc::channel::<std::result::Result<u32, String>>(16);
-        let s_for_gen = s.clone();
-        let prompt_for_gen = prompt;
-        let max_tokens_clamped = max_tokens.min(4096);
-
-        // Run generation in a blocking thread so the tokio runtime stays free
-        tokio::task::spawn_blocking(move || {
-            let Some(transformer) = s_for_gen.transformer.as_ref() else {
-                let _ = tx.blocking_send(Err("Transformer not loaded".to_string()));
-                return;
-            };
-
-            let input_tokens: Vec<u32> = match &s_for_gen.tokenizer {
-                Some(tok) => tok.tokenizer.encode(&prompt_for_gen),
-                None => prompt_for_gen.chars().map(|c| c as u32).collect(),
-            };
-
-            let gen_config = realizar::apr_transformer::GenerateConfig {
-                max_tokens: max_tokens_clamped,
-                temperature,
-                top_p: 0.9,
-                top_k: 0,
-                repetition_penalty: 1.0,
-                trace: false,
-            };
-
-            let Ok(t) = transformer.lock() else {
-                let _ = tx.blocking_send(Err("Lock poisoned".to_string()));
-                return;
-            };
-
-            // GH-284: Stream each token via the callback → mpsc channel
-            let _ = t.generate_with_cache_streaming(&input_tokens, &gen_config, |token_id| {
-                // blocking_send returns Err when receiver is dropped (client disconnected)
-                tx.blocking_send(Ok(token_id)).is_ok()
-            });
-            // tx is dropped here → channel closes → SSE stream ends
-        });
-
-        // Build async SSE stream from the channel receiver
-        let tokenizer = s.tokenizer.clone();
-        let request_id = generate_request_id();
-        let created = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
-        let model_name = s.model_name.clone();
-
-        // State for unfold: Option<Receiver> — None means we've sent [DONE]
-        let stream = futures_util::stream::unfold(
-            (Some(rx), tokenizer, request_id, created, model_name),
-            |(maybe_rx, tokenizer, request_id, created, model_name)| async move {
-                let mut rx = maybe_rx?;
-                match rx.recv().await {
-                    Some(Ok(token_id)) => {
-                        let text = decode_single_token(tokenizer.as_ref(), token_id);
-                        let chunk = serde_json::json!({
-                            "id": &request_id,
-                            "object": "chat.completion.chunk",
-                            "created": created,
-                            "model": &model_name,
-                            "choices": [{
-                                "index": 0,
-                                "delta": {"content": text},
-                                "finish_reason": serde_json::Value::Null
-                            }]
-                        });
-                        let event = Event::default().data(chunk.to_string());
-                        Some((
-                            Ok::<_, std::convert::Infallible>(event),
-                            (Some(rx), tokenizer, request_id, created, model_name),
-                        ))
-                    }
-                    Some(Err(_)) | None => {
-                        // Generation complete — yield [DONE] and end stream
-                        let event = Event::default().data("[DONE]");
-                        Some((
-                            Ok::<_, std::convert::Infallible>(event),
-                            (None, tokenizer, request_id, created, model_name),
-                        ))
-                    }
-                }
-            },
-        );
-
-        return Sse::new(stream).into_response();
+        spawn_cpu_streaming_task(s.clone(), prompt, max_tokens.min(4096), temperature, tx);
+        return build_cpu_sse_stream(rx, s.tokenizer.clone(), s.model_name.clone());
     }
 
-    // ========================================================================
-    // GH-284: Non-streaming path — still use spawn_blocking
-    // ========================================================================
+    // GH-284: Non-streaming path
     let start = Instant::now();
     let s_for_blocking = s.clone();
     let prompt_owned = prompt;
@@ -271,10 +281,7 @@ async fn handle_apr_cpu_chat_completion(
     let out = match result {
         Ok(Ok(out)) => out,
         Ok(Err(e)) => return Json(serde_json::json!({"error": e})).into_response(),
-        Err(e) => {
-            return Json(serde_json::json!({"error": format!("Task failed: {e}")}))
-                .into_response()
-        }
+        Err(e) => return Json(serde_json::json!({"error": format!("Task failed: {e}")})).into_response(),
     };
 
     let tok_per_sec = compute_tok_per_sec(out.tokens_generated, out.gen_duration);
@@ -292,23 +299,11 @@ async fn handle_apr_cpu_chat_completion(
         "_apr_metrics": {"latency_ms": latency_ms, "tok_per_sec": tok_per_sec}
     });
 
-    if let Some(ref level) = trace_level {
-        let trace_data = serde_json::json!({
-            "total_time_us": latency_ms * 1000, "prompt_tokens": out.input_token_count,
-            "completion_tokens": out.tokens_generated, "layers": 28
-        });
-        if let Some(obj) = response.as_object_mut() {
-            let key = match level.as_str() {
-                "brick" => Some("brick_trace"),
-                "step" => Some("step_trace"),
-                "layer" => Some("layer_trace"),
-                _ => None,
-            };
-            if let Some(key) = key {
-                obj.insert(key.to_string(), trace_data);
-            }
-        }
-    }
+    let trace_data = serde_json::json!({
+        "total_time_us": latency_ms * 1000, "prompt_tokens": out.input_token_count,
+        "completion_tokens": out.tokens_generated, "layers": 28
+    });
+    insert_trace_data(&mut response, trace_level.as_deref(), trace_data);
 
     Json(response).into_response()
 }
