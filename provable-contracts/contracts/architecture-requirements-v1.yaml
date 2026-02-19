@@ -1,0 +1,446 @@
+# Architecture Requirements Contract v1
+# THE SOURCE OF TRUTH for per-architecture tensor requirements
+#
+# STATUS: Authoritative - DO NOT GREP THE CODEBASE, READ THIS FILE
+# CONSUMERS:
+#   - aprender/src/format/validated_layer_weights.rs (ValidatedLayerWeights construction)
+#   - realizar/src/model_loader.rs (architecture-aware weight loading)
+#   - apr-cli qa (architecture completeness gate)
+#
+# ENFORCEMENT: ValidatedLayerWeights MUST reject construction if required roles
+# are missing. This is Poka-Yoke: incomplete layers are compile/construction errors,
+# not runtime garbage.
+#
+# THEORETICAL FOUNDATION:
+#   - Toyota Poka-Yoke: impossible to construct layer with missing weights
+#   - Popperian Falsification: each architecture has explicit falsification tests
+#   - Parse, Don't Validate: raw weight maps -> ValidatedLayerWeights transformation
+
+contract:
+  name: architecture-requirements
+  version: "1.0.0"
+  created: "2026-02-19"
+  author: "PAIML Engineering"
+  description: "Per-architecture required weight roles for transformer layers"
+  lessons_learned:
+    - "GH-278: Qwen3.5 Gated Delta Net layers have completely different weight roles than standard attention"
+    - "GH-250: Architecture-specific weights (bias, QK norm) silently missing caused garbage"
+    - "Qwen2 has attention biases that LLaMA does not — treating them identically is a P0 bug"
+
+# =============================================================================
+# COMMON ROLES
+# =============================================================================
+# These weight roles are required by ALL architectures for standard transformer
+# layers. Any architecture that uses SwiGLU FFN (all current ones) requires all
+# of these. Missing any one of these produces garbage output.
+
+common_roles:
+  - role: attn_norm
+    description: "Attention layer norm / RMS norm weight"
+    shape: "[hidden_dim]"
+    dtype: "f32"
+
+  - role: ffn_norm
+    description: "FFN layer norm / RMS norm weight"
+    shape: "[hidden_dim]"
+    dtype: "f32"
+
+  - role: attn_q_proj
+    description: "Query projection weight"
+    shape: "[num_heads * head_dim, hidden_dim]"
+    dtype: "quantized or f32/f16"
+
+  - role: attn_k_proj
+    description: "Key projection weight"
+    shape: "[num_kv_heads * head_dim, hidden_dim]"
+    dtype: "quantized or f32/f16"
+
+  - role: attn_v_proj
+    description: "Value projection weight"
+    shape: "[num_kv_heads * head_dim, hidden_dim]"
+    dtype: "quantized or f32/f16"
+
+  - role: attn_o_proj
+    description: "Output projection weight"
+    shape: "[hidden_dim, num_heads * head_dim]"
+    dtype: "quantized or f32/f16"
+
+  - role: ffn_gate
+    description: "FFN gate projection (SwiGLU gate)"
+    shape: "[intermediate_dim, hidden_dim]"
+    dtype: "quantized or f32/f16"
+
+  - role: ffn_up
+    description: "FFN up projection"
+    shape: "[intermediate_dim, hidden_dim]"
+    dtype: "quantized or f32/f16"
+
+  - role: ffn_down
+    description: "FFN down projection"
+    shape: "[hidden_dim, intermediate_dim]"
+    dtype: "quantized or f32/f16"
+
+# =============================================================================
+# ARCHITECTURES
+# =============================================================================
+# Each architecture declares its additional required roles beyond common_roles.
+# ValidatedLayerWeights enforces common_roles + additional_roles at construction.
+
+architectures:
+  llama:
+    description: "LLaMA family (LLaMA 2/3, Mistral, CodeLlama, etc)"
+    has_bias: false
+    has_qk_norm: false
+    additional_roles: []
+    example_models:
+      - "meta-llama/Llama-2-7b"
+      - "meta-llama/Llama-3.1-8B"
+      - "mistralai/Mistral-7B-v0.3"
+    notes: |
+      Base transformer architecture. All weight roles come from common_roles.
+      No attention biases, no QK normalization. This is the simplest case.
+
+  qwen2:
+    description: "Qwen2 family (has attention biases on Q, K, V projections)"
+    has_bias: true
+    has_qk_norm: false
+    additional_roles:
+      - role: attn_q_bias
+        description: "Query projection bias vector"
+        shape: "[num_heads * head_dim]"
+        dtype: "f32"
+
+      - role: attn_k_bias
+        description: "Key projection bias vector"
+        shape: "[num_kv_heads * head_dim]"
+        dtype: "f32"
+
+      - role: attn_v_bias
+        description: "Value projection bias vector"
+        shape: "[num_kv_heads * head_dim]"
+        dtype: "f32"
+
+    example_models:
+      - "Qwen/Qwen2.5-Coder-0.5B"
+      - "Qwen/Qwen2.5-7B"
+      - "Qwen/Qwen2-72B"
+    notes: |
+      Qwen2 adds bias vectors to Q, K, V attention projections. These are 1D
+      vectors (not matrices) but are REQUIRED — missing biases produce subtly
+      wrong attention scores that compound across layers into garbage output.
+      The O projection does NOT have bias. Only Q, K, V.
+
+  qwen3:
+    description: "Qwen3 family (has QK norm, no attention biases)"
+    has_bias: false
+    has_qk_norm: true
+    additional_roles:
+      - role: attn_q_norm
+        description: "Query RMS normalization weight (applied after Q projection)"
+        shape: "[head_dim]"
+        dtype: "f32"
+
+      - role: attn_k_norm
+        description: "Key RMS normalization weight (applied after K projection)"
+        shape: "[head_dim]"
+        dtype: "f32"
+
+    example_models:
+      - "Qwen/Qwen3-8B"
+      - "Qwen/Qwen3-32B"
+    notes: |
+      Qwen3 drops the attention biases from Qwen2 and adds QK normalization.
+      Q and K vectors are RMS-normalized per-head AFTER projection. The norm
+      weights are per head_dim (not per num_heads*head_dim). Missing QK norm
+      causes attention scores to explode (unbounded dot products).
+
+  qwen3_5:
+    description: "Qwen3.5 hybrid architecture (standard attention + gated delta net layers)"
+    has_bias: false
+    has_qk_norm: true
+    layer_types:
+      standard_attention:
+        description: "Standard transformer attention layers (same as Qwen3)"
+        additional_roles:
+          - role: attn_q_norm
+            description: "Query RMS normalization weight"
+            shape: "[head_dim]"
+            dtype: "f32"
+
+          - role: attn_k_norm
+            description: "Key RMS normalization weight"
+            shape: "[head_dim]"
+            dtype: "f32"
+
+      gated_delta_net:
+        description: >
+          Recurrent SSM layers with decay and delta rule. These layers replace
+          standard attention with a linear-time recurrence that maintains a
+          [num_v_heads, k_head_dim, v_head_dim] state matrix. The recurrence
+          follows: decay -> read (state^T @ k) -> delta (beta * (v - read)) ->
+          write (state += k outer delta) -> output (state^T @ q).
+        roles:
+          - role: attn_norm
+            description: "Layer norm before GDN block"
+            shape: "[hidden_dim]"
+            dtype: "f32"
+
+          - role: ffn_norm
+            description: "FFN layer norm after GDN block"
+            shape: "[hidden_dim]"
+            dtype: "f32"
+
+          - role: gdn_in_proj_qkv
+            description: "Fused Q/K/V input projection for GDN"
+            shape: "[q_dim + 2 * kv_dim, hidden_dim]"
+            dtype: "quantized or f32/f16"
+            note: "q_dim = num_v_heads * 2 * k_head_dim, kv_dim = num_k_heads * (k_head_dim + v_head_dim)"
+
+          - role: gdn_in_proj_z
+            description: "Gate projection (z) for output gating"
+            shape: "[num_v_heads * v_head_dim, hidden_dim]"
+            dtype: "quantized or f32/f16"
+
+          - role: gdn_in_proj_b
+            description: "Beta projection for delta rule scaling"
+            shape: "[num_k_heads * k_head_dim, hidden_dim]"
+            dtype: "quantized or f32/f16"
+
+          - role: gdn_in_proj_a
+            description: "Alpha projection for decay computation"
+            shape: "[num_k_heads * k_head_dim, hidden_dim]"
+            dtype: "quantized or f32/f16"
+
+          - role: gdn_conv1d
+            description: "Depthwise causal Conv1D weights"
+            shape: "[conv_dim, 1, kernel_size]"
+            dtype: "f32"
+            note: "kernel_size=4, applied to concatenated QKV before SiLU activation"
+
+          - role: gdn_a_log
+            description: "Log-space decay parameter (A_log)"
+            shape: "[num_k_heads * k_head_dim]"
+            dtype: "f32"
+            note: "Stored in log-space; actual decay = -exp(a_log) for numerical stability"
+
+          - role: gdn_dt_bias
+            description: "Timestep bias for decay modulation"
+            shape: "[num_k_heads * k_head_dim]"
+            dtype: "f32"
+
+          - role: gdn_norm
+            description: "Group norm / RMS norm inside GDN block"
+            shape: "[num_v_heads * v_head_dim]"
+            dtype: "f32"
+
+          - role: gdn_out_proj
+            description: "Output projection from GDN block"
+            shape: "[hidden_dim, num_v_heads * v_head_dim]"
+            dtype: "quantized or f32/f16"
+
+          - role: ffn_gate
+            description: "FFN gate projection (SwiGLU gate)"
+            shape: "[intermediate_dim, hidden_dim]"
+            dtype: "quantized or f32/f16"
+
+          - role: ffn_up
+            description: "FFN up projection"
+            shape: "[intermediate_dim, hidden_dim]"
+            dtype: "quantized or f32/f16"
+
+          - role: ffn_down
+            description: "FFN down projection"
+            shape: "[hidden_dim, intermediate_dim]"
+            dtype: "quantized or f32/f16"
+
+    layer_assignment:
+      description: >
+        Qwen3.5 interleaves standard attention and GDN layers. The assignment
+        pattern is architecture-specific and defined in the model config. A
+        typical pattern for a 36-layer model alternates based on layer index.
+      config_key: "layer_types"
+      note: >
+        The model's config.json contains a list mapping each layer index to
+        either 'standard_attention' or 'gated_delta_net'. Validation MUST
+        check the correct role set for each layer's assigned type.
+
+    example_models:
+      - "Qwen/Qwen3.5-32B"
+    notes: |
+      Qwen3.5 is a HYBRID architecture. Some layers use standard attention
+      (identical to Qwen3), while others use Gated Delta Net (a recurrent
+      SSM). ValidatedLayerWeights MUST check the layer_type field to determine
+      which role set to enforce. Using standard attention roles on a GDN layer
+      (or vice versa) is a P0 bug — the weight shapes are completely different.
+
+# =============================================================================
+# VALIDATION RULES
+# =============================================================================
+
+validation_rules:
+  - id: F-ARCH-REQ-001
+    name: "Common roles present for all architectures"
+    description: "Every standard attention layer must contain all 9 common_roles"
+    severity: P0
+    critical: true
+
+  - id: F-ARCH-REQ-002
+    name: "Architecture-specific roles present"
+    description: "Qwen2 layers must have bias roles; Qwen3 layers must have QK norm roles"
+    severity: P0
+    critical: true
+
+  - id: F-ARCH-REQ-003
+    name: "No extraneous roles"
+    description: "LLaMA layers must NOT contain bias or QK norm roles (indicates wrong arch detection)"
+    severity: P1
+
+  - id: F-ARCH-REQ-004
+    name: "Qwen3.5 layer type consistency"
+    description: "Each Qwen3.5 layer must be validated against its declared layer_type"
+    severity: P0
+    critical: true
+
+  - id: F-ARCH-REQ-005
+    name: "GDN layers must not have attention projections"
+    description: "Gated delta net layers use gdn_in_proj_qkv, NOT separate attn_q/k/v_proj"
+    severity: P0
+    critical: true
+
+# =============================================================================
+# POPPERIAN FALSIFICATION TESTS
+# =============================================================================
+
+falsification_tests:
+  - id: FALSIFY-ARCH-001
+    rule: "F-ARCH-REQ-001 (Common roles)"
+    prediction: "It is impossible to construct ValidatedLayerWeights missing any common role"
+    falsification_test: |
+      #[test]
+      fn falsify_arch_001_missing_common_role() {
+          // Attempt to construct layer weights without attn_q_proj
+          let mut roles = HashMap::new();
+          roles.insert("attn_norm", norm_data.clone());
+          roles.insert("ffn_norm", norm_data.clone());
+          // deliberately omit attn_q_proj
+          roles.insert("attn_k_proj", weight_data.clone());
+          roles.insert("attn_v_proj", weight_data.clone());
+          roles.insert("attn_o_proj", weight_data.clone());
+          roles.insert("ffn_gate", weight_data.clone());
+          roles.insert("ffn_up", weight_data.clone());
+          roles.insert("ffn_down", weight_data.clone());
+
+          let result = ValidatedLayerWeights::new(Architecture::Llama, 0, roles);
+          assert!(result.is_err(), "Must reject layer missing attn_q_proj");
+          assert!(result.unwrap_err().to_string().contains("attn_q_proj"));
+      }
+    if_test_passes: "Contract is BROKEN - missing common role not detected"
+
+  - id: FALSIFY-ARCH-002
+    rule: "F-ARCH-REQ-002 (Architecture-specific roles)"
+    prediction: "It is impossible to construct Qwen2 layer without attention biases"
+    falsification_test: |
+      #[test]
+      fn falsify_arch_002_qwen2_missing_bias() {
+          // All common roles present, but no bias vectors
+          let mut roles = all_common_roles();
+
+          let result = ValidatedLayerWeights::new(Architecture::Qwen2, 0, roles);
+          assert!(result.is_err(), "Must reject Qwen2 layer without biases");
+          assert!(result.unwrap_err().to_string().contains("attn_q_bias"));
+      }
+    if_test_passes: "Contract is BROKEN - Qwen2 bias requirement not enforced"
+
+  - id: FALSIFY-ARCH-003
+    rule: "F-ARCH-REQ-002 (QK norm for Qwen3)"
+    prediction: "It is impossible to construct Qwen3 layer without QK norm weights"
+    falsification_test: |
+      #[test]
+      fn falsify_arch_003_qwen3_missing_qk_norm() {
+          let mut roles = all_common_roles();
+
+          let result = ValidatedLayerWeights::new(Architecture::Qwen3, 0, roles);
+          assert!(result.is_err(), "Must reject Qwen3 layer without QK norm");
+          assert!(result.unwrap_err().to_string().contains("attn_q_norm"));
+      }
+    if_test_passes: "Contract is BROKEN - Qwen3 QK norm requirement not enforced"
+
+  - id: FALSIFY-ARCH-004
+    rule: "F-ARCH-REQ-003 (No extraneous roles)"
+    prediction: "Constructing LLaMA layer with bias roles should warn or reject"
+    falsification_test: |
+      #[test]
+      fn falsify_arch_004_llama_extraneous_bias() {
+          let mut roles = all_common_roles();
+          roles.insert("attn_q_bias", bias_data.clone());  // LLaMA has no bias
+
+          let result = ValidatedLayerWeights::new(Architecture::Llama, 0, roles);
+          assert!(result.is_err(), "Must reject LLaMA layer with extraneous bias");
+      }
+    if_test_passes: "Contract is BROKEN - wrong architecture detection not caught"
+
+  - id: FALSIFY-ARCH-005
+    rule: "F-ARCH-REQ-004 (Qwen3.5 layer type)"
+    prediction: "It is impossible to construct Qwen3.5 GDN layer with standard attention roles"
+    falsification_test: |
+      #[test]
+      fn falsify_arch_005_qwen35_wrong_layer_type() {
+          // Standard attention roles on a GDN layer
+          let mut roles = all_common_roles();
+          roles.insert("attn_q_norm", norm_data.clone());
+          roles.insert("attn_k_norm", norm_data.clone());
+
+          let result = ValidatedLayerWeights::new(
+              Architecture::Qwen3_5,
+              0,
+              roles,
+              LayerType::GatedDeltaNet,  // GDN layer, but given attn roles
+          );
+          assert!(result.is_err(), "Must reject GDN layer with attention roles");
+      }
+    if_test_passes: "Contract is BROKEN - Qwen3.5 layer type validation not enforced"
+
+  - id: FALSIFY-ARCH-006
+    rule: "F-ARCH-REQ-005 (GDN completeness)"
+    prediction: "It is impossible to construct GDN layer missing gdn_a_log"
+    falsification_test: |
+      #[test]
+      fn falsify_arch_006_gdn_missing_a_log() {
+          let mut roles = all_gdn_roles();
+          roles.remove("gdn_a_log");  // Missing decay parameter
+
+          let result = ValidatedLayerWeights::new(
+              Architecture::Qwen3_5,
+              0,
+              roles,
+              LayerType::GatedDeltaNet,
+          );
+          assert!(result.is_err(), "Must reject GDN layer missing gdn_a_log");
+          assert!(result.unwrap_err().to_string().contains("gdn_a_log"));
+      }
+    if_test_passes: "Contract is BROKEN - GDN role completeness not enforced"
+
+# =============================================================================
+# TOYOTA WAY APPLICATION
+# =============================================================================
+
+toyota_way_principles:
+  jidoka: |
+    "Automation with a human touch" - ValidatedLayerWeights stops the line
+    immediately when a required role is missing. No incomplete layer propagates
+    to inference. The error message names the exact missing role and architecture.
+
+  poka_yoke: |
+    "Mistake-proofing" - The type system makes it physically impossible to
+    construct a transformer layer with missing weights. Architecture enum
+    determines which roles are checked. Wrong architecture = wrong roles = error.
+
+  genchi_genbutsu: |
+    "Go and see" - The falsification tests construct layers with known-bad
+    role sets. We don't assume validation works — we prove it rejects every
+    known-bad configuration.
+
+  kaizen: |
+    "Continuous improvement" - When Qwen3.5 introduced GDN layers (GH-278),
+    we added layer_types to handle hybrid architectures. The contract evolves
+    to prevent every observed architecture mismatch.

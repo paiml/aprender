@@ -99,6 +99,7 @@ fn crc32(data: &[u8]) -> u32 {
 /// - Sign: 1 bit
 /// - Exponent: 5 bits (bias 15)
 /// - Mantissa: 10 bits
+///
 /// ONE PATH: Delegates to `trueno::f32_to_f16` (UCBD §4).
 fn f32_to_f16(value: f32) -> u16 {
     trueno::f32_to_f16(value)

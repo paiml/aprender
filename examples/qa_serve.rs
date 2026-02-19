@@ -178,23 +178,10 @@ fn verify_server_health(port: u16) -> bool {
     }
 }
 
-/// Start the apr serve process
-fn start_server(config: &QaConfig, model: &PathBuf) -> Option<Child> {
-    // Check if port is already in use BEFORE starting
-    if check_port_in_use(config.port) {
-        eprintln!(
-            "{}ERROR: Port {} already in use. Cannot start server.{}",
-            RED, config.port, NC
-        );
-        eprintln!(
-            "{}Try: lsof -i :{} to find what's using it{}",
-            YELLOW, config.port, NC
-        );
-        return None;
-    }
-
+/// Build the Command to launch the server process
+fn build_server_command(config: &QaConfig, model: &PathBuf) -> Command {
     let port_str = config.port.to_string();
-    let args = vec![
+    let serve_args = vec![
         "serve",
         model.to_str().unwrap_or(""),
         "--port",
@@ -213,46 +200,72 @@ fn start_server(config: &QaConfig, model: &PathBuf) -> Option<Child> {
             "inference",
             "--",
         ]);
-        c.args(&args);
+        c.args(&serve_args);
         c
     } else {
         let mut c = Command::new(&config.apr_binary);
-        c.args(&args);
+        c.args(&serve_args);
         c
     };
 
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+    cmd
+}
+
+/// Poll until the server health check passes, returning true on success
+fn await_server_health(port: u16, verbose: bool) -> bool {
+    for i in 0..60 {
+        thread::sleep(Duration::from_secs(1));
+        if verify_server_health(port) {
+            if verbose {
+                eprintln!("{}Server health check passed after {}s{}", GREEN, i + 1, NC);
+            }
+            return true;
+        }
+        if verbose && i % 10 == 9 {
+            eprintln!("{}Waiting for server... {}s{}", YELLOW, i + 1, NC);
+        }
+    }
+    false
+}
+
+/// Start the apr serve process
+fn start_server(config: &QaConfig, model: &PathBuf) -> Option<Child> {
+    if check_port_in_use(config.port) {
+        eprintln!(
+            "{}ERROR: Port {} already in use. Cannot start server.{}",
+            RED, config.port, NC
+        );
+        eprintln!(
+            "{}Try: lsof -i :{} to find what's using it{}",
+            YELLOW, config.port, NC
+        );
+        return None;
+    }
+
+    let mut cmd = build_server_command(config, model);
 
     if config.verbose {
         eprintln!("{}DEBUG: Starting server {:?}{}", CYAN, cmd, NC);
     }
 
-    match cmd.spawn() {
-        Ok(child) => {
-            // Wait for server to be ready - verify with health check, not just TCP
-            for i in 0..60 {
-                thread::sleep(Duration::from_secs(1));
-                if verify_server_health(config.port) {
-                    if config.verbose {
-                        eprintln!("{}Server health check passed after {}s{}", GREEN, i + 1, NC);
-                    }
-                    return Some(child);
-                }
-                if config.verbose && i % 10 == 9 {
-                    eprintln!("{}Waiting for server... {}s{}", YELLOW, i + 1, NC);
-                }
-            }
-            eprintln!(
-                "{}Server failed to respond to health check within 60s{}",
-                RED, NC
-            );
-            None
-        }
+    let child = match cmd.spawn() {
+        Ok(c) => c,
         Err(e) => {
             eprintln!("{}Failed to spawn server: {}{}", RED, e, NC);
-            None
+            return None;
         }
+    };
+
+    if await_server_health(config.port, config.verbose) {
+        return Some(child);
     }
+
+    eprintln!(
+        "{}Server failed to respond to health check within 60s{}",
+        RED, NC
+    );
+    None
 }
 
 /// HTTP GET request (minimal, no external deps)
@@ -356,25 +369,28 @@ fn http_post(
     Ok((status, resp_body))
 }
 
+/// Find the end of a JSON string value (position of the closing unescaped quote)
+fn find_closing_quote(chars: &[char], start: usize) -> usize {
+    let mut end = start;
+    while end < chars.len() {
+        if chars[end] == '"' && (end == 0 || chars[end - 1] != '\\') {
+            break;
+        }
+        end += 1;
+    }
+    end
+}
+
 /// Extract JSON field (minimal parser)
 fn extract_json_content(json: &str) -> Option<String> {
     // Look for "content": "..." pattern
-    if let Some(start) = json.find("\"content\":") {
-        let rest = &json[start + 10..];
-        if let Some(quote_start) = rest.find('"') {
-            let content_start = quote_start + 1;
-            let mut end = content_start;
-            let chars: Vec<char> = rest.chars().collect();
-            while end < chars.len() {
-                if chars[end] == '"' && (end == 0 || chars[end - 1] != '\\') {
-                    break;
-                }
-                end += 1;
-            }
-            return Some(chars[content_start..end].iter().collect());
-        }
-    }
-    None
+    let start = json.find("\"content\":")?;
+    let rest = &json[start + 10..];
+    let quote_start = rest.find('"')?;
+    let content_start = quote_start + 1;
+    let chars: Vec<char> = rest.chars().collect();
+    let end = find_closing_quote(&chars, content_start);
+    Some(chars[content_start..end].iter().collect())
 }
 
 // === TEST FUNCTIONS ===
@@ -467,6 +483,5 @@ fn test_non_empty_content(config: &QaConfig) -> TestResult {
         Err(e) => TestResult::fail("P021", "Non-Empty Content", 2, e),
     }
 }
-
 
 include!("includes/qa_serve_include_01.rs");

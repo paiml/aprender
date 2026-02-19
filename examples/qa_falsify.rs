@@ -106,25 +106,53 @@ fn verify_output(output: &str, expected_contains: Option<&str>) -> Result<String
 }
 
 // ============================================================================
-// TEST 2: GARBAGE DETECTION FALSIFICATION
+// SHARED HELPERS
 // ============================================================================
 
-fn test_garbage_detection() {
+fn print_section_header(title: &str) {
     println!(
         "\n{}═══════════════════════════════════════════════════════════════{}",
         "\x1b[1;34m", "\x1b[0m"
     );
-    println!(
-        "{}TEST 2: GARBAGE DETECTION FALSIFICATION{}",
-        "\x1b[1;33m", "\x1b[0m"
-    );
+    println!("{}{}{}", "\x1b[1;33m", title, "\x1b[0m");
     println!(
         "{}═══════════════════════════════════════════════════════════════{}\n",
         "\x1b[1;34m", "\x1b[0m"
     );
+}
 
-    let test_cases = vec![
-        // (input, should_pass, description)
+/// Run a list of (input, should_pass, desc) test cases through verify_output(_, None).
+/// Returns (passed, failed).
+fn run_garbage_cases(cases: &[(&str, bool, &str)]) -> (u32, u32) {
+    let mut passed = 0u32;
+    let mut failed = 0u32;
+    for &(input, should_pass, desc) in cases {
+        let result = verify_output(input, None);
+        let actually_passed = result.is_ok();
+        if actually_passed == should_pass {
+            println!("  {}✓ PASS{}: {}", "\x1b[32m", "\x1b[0m", desc);
+            passed += 1;
+        } else {
+            println!("  {}✗ FAIL{}: {}", "\x1b[31m", "\x1b[0m", desc);
+            println!(
+                "    Expected: {}, Got: {:?}",
+                if should_pass { "PASS" } else { "FAIL" },
+                result
+            );
+            failed += 1;
+        }
+    }
+    (passed, failed)
+}
+
+// ============================================================================
+// TEST 2: GARBAGE DETECTION FALSIFICATION
+// ============================================================================
+
+fn test_garbage_detection() {
+    print_section_header("TEST 2: GARBAGE DETECTION FALSIFICATION");
+
+    let test_cases: Vec<(&str, bool, &str)> = vec![
         (
             "This is a token",
             true,
@@ -171,27 +199,7 @@ fn test_garbage_detection() {
         ("Unicode: 专门窗 text", false, "CJK garbage - should FAIL"),
     ];
 
-    let mut passed = 0;
-    let mut failed = 0;
-
-    for (input, should_pass, desc) in test_cases {
-        let result = verify_output(input, None);
-        let actually_passed = result.is_ok();
-
-        if actually_passed == should_pass {
-            println!("  {}✓ PASS{}: {}", "\x1b[32m", "\x1b[0m", desc);
-            passed += 1;
-        } else {
-            println!("  {}✗ FAIL{}: {}", "\x1b[31m", "\x1b[0m", desc);
-            println!(
-                "    Expected: {}, Got: {:?}",
-                if should_pass { "PASS" } else { "FAIL" },
-                result
-            );
-            failed += 1;
-        }
-    }
-
+    let (passed, failed) = run_garbage_cases(&test_cases);
     println!("\n  Summary: {}/{} tests passed", passed, passed + failed);
 
     if failed > 0 {
@@ -211,23 +219,36 @@ fn test_garbage_detection() {
 // TEST 5: FALSE CONFIDENCE AUDIT (Answer Verification Brittleness)
 // ============================================================================
 
-fn test_answer_verification() {
-    println!(
-        "\n{}═══════════════════════════════════════════════════════════════{}",
-        "\x1b[1;34m", "\x1b[0m"
-    );
-    println!(
-        "{}TEST 5: FALSE CONFIDENCE AUDIT (Answer Verification){}",
-        "\x1b[1;33m", "\x1b[0m"
-    );
-    println!(
-        "{}═══════════════════════════════════════════════════════════════{}\n",
-        "\x1b[1;34m", "\x1b[0m"
-    );
+/// Evaluate a single answer-verification test case. Returns 1 if brittle, 0 otherwise.
+fn eval_answer_case(input: &str, expected: Option<&str>, should_pass: bool, desc: &str) -> u32 {
+    let result = verify_output(input, expected);
+    let actually_passed = result.is_ok();
+    let is_risk = desc.contains("RISK") || desc.contains("EDGE CASE");
 
-    let test_cases = vec![
-        // (input, expected, should_pass, description)
-        // With word boundary fix, these edge cases now behave correctly
+    if actually_passed != should_pass {
+        println!("  {}✗{}: {}", "\x1b[31m", "\x1b[0m", desc);
+        println!(
+            "    Expected: {}, Got: {:?}",
+            if should_pass { "PASS" } else { "FAIL" },
+            result
+        );
+        return 0;
+    }
+    if is_risk {
+        println!(
+            "  {}⚠ RISK{}: {} (passes but semantically wrong)",
+            "\x1b[33m", "\x1b[0m", desc
+        );
+        return 1;
+    }
+    println!("  {}✓{}: {}", "\x1b[32m", "\x1b[0m", desc);
+    0
+}
+
+fn test_answer_verification() {
+    print_section_header("TEST 5: FALSE CONFIDENCE AUDIT (Answer Verification)");
+
+    let test_cases: Vec<(&str, Option<&str>, bool, &str)> = vec![
         ("4", Some("4"), true, "Exact answer '4' - should PASS"),
         (
             "The answer is 4.",
@@ -263,7 +284,6 @@ fn test_answer_verification() {
         ),
         ("", Some("4"), false, "Empty output - should FAIL"),
         ("forty-four", Some("4"), false, "Spelled out - should FAIL"),
-        // Additional word boundary tests
         (
             "answer=4",
             Some("4"),
@@ -284,33 +304,12 @@ fn test_answer_verification() {
         ),
     ];
 
-    let mut brittle_cases = 0;
-
-    for (input, expected, should_pass, desc) in &test_cases {
-        let result = verify_output(input, *expected);
-        let actually_passed = result.is_ok();
-
-        let is_risk = desc.contains("RISK") || desc.contains("EDGE CASE");
-
-        if actually_passed == *should_pass {
-            if is_risk {
-                println!(
-                    "  {}⚠ RISK{}: {} (passes but semantically wrong)",
-                    "\x1b[33m", "\x1b[0m", desc
-                );
-                brittle_cases += 1;
-            } else {
-                println!("  {}✓{}: {}", "\x1b[32m", "\x1b[0m", desc);
-            }
-        } else {
-            println!("  {}✗{}: {}", "\x1b[31m", "\x1b[0m", desc);
-            println!(
-                "    Expected: {}, Got: {:?}",
-                if *should_pass { "PASS" } else { "FAIL" },
-                result
-            );
-        }
-    }
+    let brittle_cases: u32 = test_cases
+        .iter()
+        .map(|&(input, expected, should_pass, desc)| {
+            eval_answer_case(input, expected, should_pass, desc)
+        })
+        .sum();
 
     if brittle_cases > 0 {
         println!(
@@ -332,41 +331,45 @@ fn test_answer_verification() {
 // TEST 4: MATRIX INTEGRITY CHECK
 // ============================================================================
 
-fn test_matrix_integrity() {
-    println!(
-        "\n{}═══════════════════════════════════════════════════════════════{}",
-        "\x1b[1;34m", "\x1b[0m"
-    );
-    println!(
-        "{}TEST 4: MATRIX INTEGRITY CHECK{}",
-        "\x1b[1;33m", "\x1b[0m"
-    );
-    println!(
-        "{}═══════════════════════════════════════════════════════════════{}\n",
-        "\x1b[1;34m", "\x1b[0m"
-    );
+/// Report the cell count found in matrix output.
+fn report_cell_count(num: u32) {
+    match num {
+        27 => println!("  {}✓ Matrix claims 27 cells{}", "\x1b[32m", "\x1b[0m"),
+        21 => println!(
+            "  {}⚠ Matrix has 21 cells (not 27 as documented){}",
+            "\x1b[33m", "\x1b[0m"
+        ),
+        _ => println!(
+            "  {}⚠ Matrix has {} cells (unexpected){}",
+            "\x1b[33m", num, "\x1b[0m"
+        ),
+    }
+}
 
-    // Calculate expected matrix size:
-    // 3 modalities (Run, Chat, Serve) × 3 formats (GGUF, SafeTensors, APR) × configs
-    // Per format: CPU, CPU+trace, GPU (only GGUF has GPU)
-    // So: 3 modalities × (3 formats × 2 CPU configs + 1 GPU config for GGUF) = 3 × (6 + 1) = 21
-    // Wait, let me recalculate:
-    // For each modality:
-    //   GGUF: CPU, CPU+trace, GPU = 3
-    //   SafeTensors: CPU, CPU+trace = 2
-    //   APR: CPU, CPU+trace = 2
-    //   Total per modality: 7
-    // 3 modalities × 7 = 21 cells
+/// Search stdout+stderr for a matrix cell-count line and report it.
+fn parse_matrix_output(out: &std::process::Output) {
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
 
-    // Actually looking at the code:
-    // for modality in [Run, Chat, Serve]:
-    //   for format in [Gguf, SafeTensors, Apr]:
-    //     CPU without trace (1)
-    //     CPU with trace (1)
-    //     if format == Gguf: GPU without trace (1)
-    // So per modality: 3 formats × 2 + 1 GPU = 7
-    // Total: 3 × 7 = 21
+    let line = stdout
+        .lines()
+        .chain(stderr.lines())
+        .find(|l| l.contains("FULL MATRIX:") || (l.contains("Testing") && l.contains("cell")));
 
+    let Some(line) = line else {
+        println!("  Could not find cell count in output");
+        println!("  (This test requires models to be available)");
+        return;
+    };
+
+    println!("  Found: {}", line.trim());
+    if let Some(num) = line.split_whitespace().find_map(|w| w.parse::<u32>().ok()) {
+        report_cell_count(num);
+    }
+}
+
+fn print_matrix_calculation() {
+    // 3 modalities x (GGUF:3 + SafeTensors:2 + APR:2) = 3 x 7 = 21 cells
     println!("  Expected matrix calculation:");
     println!("    Modalities: Run, Chat, Serve (3)");
     println!("    Formats: GGUF, SafeTensors, APR (3)");
@@ -384,8 +387,12 @@ fn test_matrix_integrity() {
     println!();
     println!("  To verify, run: cargo run --example qa_run -- --full-matrix --help");
     println!("  And count 'Testing N cell(s)' in the output.");
+}
 
-    // Let's actually run it and count
+fn test_matrix_integrity() {
+    print_section_header("TEST 4: MATRIX INTEGRITY CHECK");
+    print_matrix_calculation();
+
     println!("\n  Running actual matrix count...");
 
     let output = Command::new("cargo")
@@ -403,48 +410,13 @@ fn test_matrix_integrity() {
         .output();
 
     match output {
-        Ok(out) => {
-            let stdout = String::from_utf8_lossy(&out.stdout);
-            let stderr = String::from_utf8_lossy(&out.stderr);
-
-            // Look for "Testing N cell(s)" or "FULL MATRIX: N cells"
-            if let Some(line) = stdout
-                .lines()
-                .chain(stderr.lines())
-                .find(|l| l.contains("FULL MATRIX:") || l.contains("Testing") && l.contains("cell"))
-            {
-                println!("  Found: {}", line.trim());
-
-                // Extract number
-                if let Some(num) = line.split_whitespace().find_map(|w| w.parse::<u32>().ok()) {
-                    if num == 27 {
-                        println!("  {}✓ Matrix claims 27 cells{}", "\x1b[32m", "\x1b[0m");
-                    } else if num == 21 {
-                        println!(
-                            "  {}⚠ Matrix has 21 cells (not 27 as documented){}",
-                            "\x1b[33m", "\x1b[0m"
-                        );
-                    } else {
-                        println!(
-                            "  {}⚠ Matrix has {} cells (unexpected){}",
-                            "\x1b[33m", num, "\x1b[0m"
-                        );
-                    }
-                }
-            } else {
-                println!("  Could not find cell count in output");
-                println!("  (This test requires models to be available)");
-            }
-        }
-        Err(e) => {
-            println!("  Could not run qa_run: {}", e);
-        }
+        Ok(out) => parse_matrix_output(&out),
+        Err(e) => println!("  Could not run qa_run: {}", e),
     }
 }
 
 // ============================================================================
 // TEST 1: HANG DETECTION (Simulation)
 // ============================================================================
-
 
 include!("includes/qa_falsify_include_01.rs");

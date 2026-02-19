@@ -1,87 +1,46 @@
-fn test_hang_detection_simulation() {
-    println!(
-        "\n{}═══════════════════════════════════════════════════════════════{}",
-        "\x1b[1;34m", "\x1b[0m"
-    );
-    println!(
-        "{}TEST 1: HANG DETECTION (Simulation){}",
-        "\x1b[1;33m", "\x1b[0m"
-    );
-    println!(
-        "{}═══════════════════════════════════════════════════════════════{}\n",
-        "\x1b[1;34m", "\x1b[0m"
-    );
-
-    println!("  Testing wait_with_timeout logic with a 3-second simulated hang...");
-
-    // Spawn a process that sleeps longer than our test timeout
+/// Poll a child process until it exits or the timeout elapses.
+/// Returns Ok(status) if the child exited, or Err(message) on timeout/error.
+fn wait_with_timeout_sim(
+    child: &mut std::process::Child,
+    timeout: Duration,
+) -> Result<std::process::ExitStatus, String> {
     let start = Instant::now();
-    let timeout = Duration::from_secs(3);
-
-    let mut child = Command::new("sleep")
-        .arg("10")  // Sleep for 10 seconds
-        .spawn()
-        .expect("Failed to spawn sleep process");
-
-    // Simulate our wait_with_timeout logic
     let poll_interval = Duration::from_millis(100);
-    let result = loop {
+    loop {
         match child.try_wait() {
-            Ok(Some(status)) => break Ok(status),
-            Ok(None) => {
-                if start.elapsed() >= timeout {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    break Err(format!(
-                        "HANG: Process killed after {}s timeout",
-                        timeout.as_secs()
-                    ));
-                }
-                std::thread::sleep(poll_interval);
+            Ok(Some(status)) => return Ok(status),
+            Ok(None) if start.elapsed() >= timeout => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!("HANG: Process killed after {}s timeout", timeout.as_secs()));
             }
-            Err(e) => break Err(format!("Process error: {}", e)),
+            Ok(None) => std::thread::sleep(poll_interval),
+            Err(e) => return Err(format!("Process error: {}", e)),
         }
-    };
+    }
+}
 
-    let elapsed = start.elapsed();
-
+/// Report hang-detection result and timing accuracy.
+fn report_hang_result(result: &Result<std::process::ExitStatus, String>, elapsed: Duration, timeout: Duration) {
     match result {
         Err(msg) if msg.contains("HANG") => {
-            println!(
-                "  {}✓ PASS{}: Hang detected and process killed",
-                "\x1b[32m", "\x1b[0m"
-            );
-            println!(
-                "    Elapsed: {:.2}s (timeout: {}s)",
-                elapsed.as_secs_f64(),
-                timeout.as_secs()
-            );
+            println!("  {}✓ PASS{}: Hang detected and process killed", "\x1b[32m", "\x1b[0m");
+            println!("    Elapsed: {:.2}s (timeout: {}s)", elapsed.as_secs_f64(), timeout.as_secs());
             if elapsed.as_secs() <= timeout.as_secs() + 1 {
                 println!("    Timeout enforcement: ACCURATE");
             } else {
                 println!(
                     "    {}⚠ Timeout enforcement: DELAYED by {:.2}s{}",
-                    "\x1b[33m",
-                    elapsed.as_secs_f64() - timeout.as_secs_f64(),
-                    "\x1b[0m"
+                    "\x1b[33m", elapsed.as_secs_f64() - timeout.as_secs_f64(), "\x1b[0m"
                 );
             }
         }
-        Ok(_) => {
-            println!(
-                "  {}✗ FAIL{}: Process completed without hang detection",
-                "\x1b[31m", "\x1b[0m"
-            );
-        }
-        Err(e) => {
-            println!(
-                "  {}✗ FAIL{}: Unexpected error: {}",
-                "\x1b[31m", "\x1b[0m", e
-            );
-        }
+        Ok(_) => println!("  {}✗ FAIL{}: Process completed without hang detection", "\x1b[31m", "\x1b[0m"),
+        Err(e) => println!("  {}✗ FAIL{}: Unexpected error: {}", "\x1b[31m", "\x1b[0m", e),
     }
+}
 
-    // Verify no zombie
+fn check_no_zombie() {
     println!("\n  Checking for zombie processes...");
     let ps_output = Command::new("ps")
         .args(["aux"])
@@ -90,13 +49,29 @@ fn test_hang_detection_simulation() {
         .unwrap_or_default();
 
     if ps_output.contains("sleep 10") {
-        println!(
-            "  {}✗ ZOMBIE DETECTED{}: 'sleep 10' process still running",
-            "\x1b[31m", "\x1b[0m"
-        );
+        println!("  {}✗ ZOMBIE DETECTED{}: 'sleep 10' process still running", "\x1b[31m", "\x1b[0m");
     } else {
         println!("  {}✓ No zombie processes{}", "\x1b[32m", "\x1b[0m");
     }
+}
+
+fn test_hang_detection_simulation() {
+    print_section_header("TEST 1: HANG DETECTION (Simulation)");
+    println!("  Testing wait_with_timeout logic with a 3-second simulated hang...");
+
+    let timeout = Duration::from_secs(3);
+    let start = Instant::now();
+
+    let mut child = Command::new("sleep")
+        .arg("10")
+        .spawn()
+        .expect("Failed to spawn sleep process");
+
+    let result = wait_with_timeout_sim(&mut child, timeout);
+    let elapsed = start.elapsed();
+
+    report_hang_result(&result, elapsed, timeout);
+    check_no_zombie();
 }
 
 // ============================================================================
@@ -104,18 +79,7 @@ fn test_hang_detection_simulation() {
 // ============================================================================
 
 fn test_zombie_server_info() {
-    println!(
-        "\n{}═══════════════════════════════════════════════════════════════{}",
-        "\x1b[1;34m", "\x1b[0m"
-    );
-    println!(
-        "{}TEST 3: ZOMBIE SERVER (PMAT-098-PF SIGINT Resiliency){}",
-        "\x1b[1;33m", "\x1b[0m"
-    );
-    println!(
-        "{}═══════════════════════════════════════════════════════════════{}\n",
-        "\x1b[1;34m", "\x1b[0m"
-    );
+    print_section_header("TEST 3: ZOMBIE SERVER (PMAT-098-PF SIGINT Resiliency)");
 
     println!(
         "  {}SIGINT Handler Implementation (PMAT-098-PF):{}",
@@ -176,15 +140,7 @@ fn main() {
     test_matrix_integrity();
     test_zombie_server_info();
 
-    println!(
-        "\n{}═══════════════════════════════════════════════════════════════{}",
-        "\x1b[1;34m", "\x1b[0m"
-    );
-    println!("{}FALSIFICATION SUMMARY{}", "\x1b[1;33m", "\x1b[0m");
-    println!(
-        "{}═══════════════════════════════════════════════════════════════{}\n",
-        "\x1b[1;34m", "\x1b[0m"
-    );
+    print_section_header("FALSIFICATION SUMMARY");
 
     println!("  {}FINDINGS (All Fixed):{}", "\x1b[1m", "\x1b[0m");
     println!(

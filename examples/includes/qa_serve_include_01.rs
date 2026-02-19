@@ -272,10 +272,15 @@ fn print_summary(results: &[TestResult]) {
     }
 }
 
-fn main() {
-    let args: Vec<String> = env::args().collect();
-    let mut config = QaConfig::default();
+/// Run a test and immediately print the result, collecting it into the results vec
+fn run_and_print(results: &mut Vec<TestResult>, result: TestResult) {
+    result.print();
+    results.push(result);
+}
 
+/// Parse CLI arguments into a QaConfig. Returns None if --help was requested.
+fn parse_args(args: &[String]) -> Option<QaConfig> {
+    let mut config = QaConfig::default();
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
@@ -287,27 +292,53 @@ fn main() {
                 config.port = args[i + 1].parse().unwrap_or(8080);
                 i += 2;
             }
-            "--all-models" => {
-                config.all_models = true;
-                i += 1;
-            }
-            "--verbose" | "-v" => {
-                config.verbose = true;
-                i += 1;
-            }
+            "--all-models" => { config.all_models = true; i += 1; }
+            "--verbose" | "-v" => { config.verbose = true; i += 1; }
             "--help" | "-h" => {
                 println!("Usage: cargo run --example qa_serve [OPTIONS]");
                 println!("  --model PATH   Model file");
                 println!("  --port N       Server port (default: 8080)");
                 println!("  --all-models   Test multiple model sizes");
                 println!("  --verbose      Verbose output");
-                return;
+                return None;
             }
-            _ => {
-                i += 1;
-            }
+            _ => { i += 1; }
         }
     }
+    Some(config)
+}
+
+/// Run all QA tests against the server, returning collected results
+fn run_all_tests(config: &QaConfig) -> Vec<TestResult> {
+    let mut results = Vec::new();
+
+    run_and_print(&mut results, test_health(config));
+    run_and_print(&mut results, test_compute_mode(config));
+    run_and_print(&mut results, test_valid_json(config));
+    run_and_print(&mut results, test_openai_structure(config));
+    run_and_print(&mut results, test_non_empty_content(config));
+    run_and_print(&mut results, test_no_token_artifacts(config));
+    run_and_print(&mut results, test_no_bpe_artifacts(config));
+    run_and_print(&mut results, test_streaming_format(config));
+    run_and_print(&mut results, test_stream_termination(config));
+    run_and_print(&mut results, test_determinism(config));
+    run_and_print(&mut results, test_malformed_json(config));
+    run_and_print(&mut results, test_coherency(config));
+    run_and_print(&mut results, test_no_multi_turn_loop(config));
+    run_and_print(&mut results, test_trace_level(config, "brick", "P030", "Trace Brick Level"));
+    run_and_print(&mut results, test_trace_level(config, "step", "P031", "Trace Step Level"));
+    run_and_print(&mut results, test_trace_level(config, "layer", "P032", "Trace Layer Level"));
+    run_and_print(&mut results, test_default_suppression(config));
+
+    results
+}
+
+fn main() {
+    let args: Vec<String> = env::args().collect();
+    let config = match parse_args(&args) {
+        Some(c) => c,
+        None => return,
+    };
 
     print_header();
 
@@ -326,8 +357,7 @@ fn main() {
 
     // Start server
     println!("{}Starting server...{}", YELLOW, NC);
-    let server = start_server(&config, &model);
-    let mut server = match server {
+    let mut server = match start_server(&config, &model) {
         Some(s) => s,
         None => {
             println!("{}ERROR: Server failed to start{}", RED, NC);
@@ -339,7 +369,6 @@ fn main() {
     println!();
 
     let start = Instant::now();
-    let mut results = Vec::new();
 
     println!(
         "{}=== Section C: qa_serve.rs Tests (35 Points) ==={}",
@@ -347,107 +376,7 @@ fn main() {
     );
     println!();
 
-    // Run all tests
-    results.push(test_health(&config));
-    results
-        .last()
-        .expect("results should not be empty after push")
-        .print();
-    results.push(test_compute_mode(&config));
-    results
-        .last()
-        .expect("results should not be empty after push")
-        .print();
-    results.push(test_valid_json(&config));
-    results
-        .last()
-        .expect("results should not be empty after push")
-        .print();
-    results.push(test_openai_structure(&config));
-    results
-        .last()
-        .expect("results should not be empty after push")
-        .print();
-    results.push(test_non_empty_content(&config));
-    results
-        .last()
-        .expect("results should not be empty after push")
-        .print();
-    results.push(test_no_token_artifacts(&config));
-    results
-        .last()
-        .expect("results should not be empty after push")
-        .print();
-    results.push(test_no_bpe_artifacts(&config));
-    results
-        .last()
-        .expect("results should not be empty after push")
-        .print();
-    results.push(test_streaming_format(&config));
-    results
-        .last()
-        .expect("results should not be empty after push")
-        .print();
-    results.push(test_stream_termination(&config));
-    results
-        .last()
-        .expect("results should not be empty after push")
-        .print();
-    results.push(test_determinism(&config));
-    results
-        .last()
-        .expect("results should not be empty after push")
-        .print();
-    results.push(test_malformed_json(&config));
-    results
-        .last()
-        .expect("results should not be empty after push")
-        .print();
-    results.push(test_coherency(&config));
-    results
-        .last()
-        .expect("results should not be empty after push")
-        .print();
-    results.push(test_no_multi_turn_loop(&config));
-    results
-        .last()
-        .expect("results should not be empty after push")
-        .print();
-    results.push(test_trace_level(
-        &config,
-        "brick",
-        "P030",
-        "Trace Brick Level",
-    ));
-    results
-        .last()
-        .expect("results should not be empty after push")
-        .print();
-    results.push(test_trace_level(
-        &config,
-        "step",
-        "P031",
-        "Trace Step Level",
-    ));
-    results
-        .last()
-        .expect("results should not be empty after push")
-        .print();
-    results.push(test_trace_level(
-        &config,
-        "layer",
-        "P032",
-        "Trace Layer Level",
-    ));
-    results
-        .last()
-        .expect("results should not be empty after push")
-        .print();
-    results.push(test_default_suppression(&config));
-    results
-        .last()
-        .expect("results should not be empty after push")
-        .print();
+    let results = run_all_tests(&config);
 
     let elapsed = start.elapsed();
     println!();
