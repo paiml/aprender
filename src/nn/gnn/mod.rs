@@ -317,6 +317,7 @@ impl GCNConv {
     ///
     /// # Returns
     /// Output features [`num_nodes`, `out_features`]
+    // Contract: gnn-v1, equation = "gcn_aggregate"
     #[must_use]
     pub fn forward(&self, x: &Tensor, adj: &AdjacencyMatrix) -> Tensor {
         let num_nodes = x.shape()[0];
