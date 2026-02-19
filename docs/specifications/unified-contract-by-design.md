@@ -993,7 +993,7 @@ The `#[contract]` proc macro, build.rs verification, and falsification test fram
 | Bayesian | `bayesian-v1` | conjugate_prior, posterior_update, blr_predict | `bayesian/` |
 | Optimization | `optimization-v1` | conjugate_gradient, gradient_descent, newtons_method | `optim/` |
 | Drift Detection | `drift-detection-v1` | psi, kl_divergence, ks_test | `metrics/drift.rs` |
-| Normalization | `normalization-v1` | l2_normalize, min_max_scale, standardize | `preprocessing/` |
+| Preprocessing | `preprocessing-normalization-v1` | standard_scaler, minmax_scaler, robust_scaler | `preprocessing/` |
 | GNN | `gnn-v1` | gcn_aggregate, message_passing, graph_pool | `gnn/` |
 | Metaheuristics | `metaheuristics-v1` | simulated_annealing, genetic, particle_swarm | `metaheuristics/` |
 
@@ -1193,7 +1193,7 @@ Priority is determined by: (1) uncovered lines, (2) equation clarity, (3) pure t
 | **P1** | calibration-v1 | ~150 | platt, isotonic, temperature, ece, brier |
 | **P1** | active-learning-v1 | ~220 | uncertainty, margin, entropy, qbc |
 | **P1** | decision-tree-v1 | ~180 | gini, entropy, information_gain, cart_split |
-| **P1** | normalization-v1 | ~150 | rmsnorm, layernorm, groupnorm forward passes |
+| **P1** | preprocessing-normalization-v1 | ~150 | standard_scaler, minmax_scaler, robust_scaler |
 | **P2** | naive-bayes-v1 | ~120 | gaussian_posterior, prior, log_likelihood |
 | **P2** | linear-models-v1 | ~100 | ols, ridge, logistic |
 | **P2** | pca-v1 | ~100 | eigendecomposition, explained_variance |
@@ -1350,7 +1350,7 @@ All bound. See `binding.yaml` for per-equation status.
 | Contract | Equations | Obligations | Status |
 |----------|-----------|-------------|--------|
 | loss-functions-v1 | 6 | 6 | Bound |
-| normalization-v1 | 3 | 6 | Bound |
+| preprocessing-normalization-v1 | 3 | 6 | Bound |
 
 ### Algorithm Contracts — Tier A3: Supervised Learning (5) — P1/P2 COMPLETE
 | Contract | Equations | Obligations | Status |
