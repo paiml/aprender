@@ -441,5 +441,4 @@ fn j22_preallocation_detection() {
     );
 }
 
-
 include!("includes/spec_checklist_j_profiling_include_01.rs");

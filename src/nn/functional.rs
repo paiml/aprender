@@ -402,5 +402,4 @@ pub fn cosine_similarity_slice(a: &[f32], b: &[f32]) -> f32 {
     }
 }
 
-
 include!("functional_include_01.rs");

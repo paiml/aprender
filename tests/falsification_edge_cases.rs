@@ -139,5 +139,4 @@ fn edge_safetensors_empty_file() {
     );
 }
 
-
 include!("includes/falsification_edge_cases_include_01.rs");

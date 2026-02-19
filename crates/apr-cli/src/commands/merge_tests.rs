@@ -146,9 +146,7 @@ fn test_run_ties_without_base_model() {
     match result {
         Err(CliError::ValidationFailed(msg)) => {
             assert!(
-                msg.contains("base-model")
-                    || msg.contains("base_model")
-                    || msg.contains("TIES")
+                msg.contains("base-model") || msg.contains("base_model") || msg.contains("TIES")
             );
         }
         _ => panic!("Expected ValidationFailed error for missing base model"),
@@ -175,9 +173,7 @@ fn test_run_dare_without_base_model() {
     match result {
         Err(CliError::ValidationFailed(msg)) => {
             assert!(
-                msg.contains("base-model")
-                    || msg.contains("base_model")
-                    || msg.contains("DARE")
+                msg.contains("base-model") || msg.contains("base_model") || msg.contains("DARE")
             );
         }
         _ => panic!("Expected ValidationFailed error for missing base model"),

@@ -442,5 +442,4 @@ pub fn recall_per_class(y_pred: &[usize], y_true: &[usize]) -> Vec<f32> {
         .collect()
 }
 
-
 include!("classification_include_01.rs");

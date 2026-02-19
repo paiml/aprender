@@ -432,5 +432,4 @@ fn test_scaler_high_dimensional_data() {
     fs::remove_file(path).ok();
 }
 
-
 include!("includes/github_issue_8_scaler_safetensors_tests_include_01.rs");

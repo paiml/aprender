@@ -447,5 +447,4 @@ pub struct MappedSafeTensors {
     data_offset: usize,
 }
 
-
 include!("safetensors_include_01.rs");

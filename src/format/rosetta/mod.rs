@@ -112,5 +112,4 @@ pub enum FormatType {
     Apr,
 }
 
-
 include!("mod_include_01.rs");

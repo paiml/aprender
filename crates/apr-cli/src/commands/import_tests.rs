@@ -478,5 +478,4 @@ fn t_gh267_not_pytorch_apr() {
     assert!(!is_pytorch_magic(&magic));
 }
 
-
 include!("import_tests_include_01.rs");

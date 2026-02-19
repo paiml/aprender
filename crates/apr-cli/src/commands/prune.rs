@@ -427,5 +427,4 @@ fn run_analyze(file: &Path, method: PruneMethod, json_output: bool) -> Result<()
     Ok(())
 }
 
-
 include!("prune_include_01.rs");

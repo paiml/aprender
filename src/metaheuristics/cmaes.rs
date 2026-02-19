@@ -344,5 +344,4 @@ impl CmaEs {
     }
 }
 
-
 include!("cmaes_include_01.rs");

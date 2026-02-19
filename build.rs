@@ -309,6 +309,5 @@ fn main() {
     fs::write(&out_path, generated).expect("write generated code");
 }
 
-
 include!("build_parsing.rs");
 include!("build_codegen.rs");

@@ -447,5 +447,4 @@ fn s19_valid_utf8() {
     );
 }
 
-
 include!("includes/realizar_integration_tests_include_01.rs");
