@@ -1226,7 +1226,7 @@ This section tracks the algorithm contract implementation progress (Phase 6).
 | metrics-classification-v1 | accuracy, precision, recall, f1, confusion_matrix, roc_auc | F1=harmonic_mean(P,R), accuracy∈[0,1] | Bound |
 | metrics-clustering-v1 | silhouette_score, inertia, adjusted_rand | silhouette∈[-1,1], inertia≥0 | Bound |
 
-### Tier A2: Loss & Activation (2 contracts, ~10 equations)
+### Tier A2: Loss & Preprocessing (2 contracts, ~10 equations)
 
 | Contract | Equations | Key Invariants | Status |
 |----------|-----------|----------------|--------|
@@ -1346,7 +1346,7 @@ All bound. See `binding.yaml` for per-equation status.
 | metrics-classification-v1 | 5 | 8 | Bound |
 | metrics-clustering-v1 | 3 | 5 | Bound |
 
-### Algorithm Contracts — Tier A2: Loss & Normalization (2) — P0/P1 COMPLETE
+### Algorithm Contracts — Tier A2: Loss & Preprocessing (2) — P0/P1 COMPLETE
 | Contract | Equations | Obligations | Status |
 |----------|-----------|-------------|--------|
 | loss-functions-v1 | 6 | 6 | Bound |
