@@ -1,7 +1,7 @@
 # Unified Contract-by-Design Specification
 
 **Version**: 2.0.0
-**Status**: Phase 4 Complete (kernels), Phase 6 Complete (algorithms P0-P3), Step 6.7 AllImplemented enforced. Bindings: 236/239 implemented (3 allowed gaps). 24 `#[contract]` annotations. 21/24 algorithm contracts Bound, ~100 equations, 100 FALSIFY tests. Total: 264 contract tests passing. Remaining unbound: active-learning-v1, gnn-v1, metaheuristics-v1 (no implementation).
+**Status**: Phase 4 Complete (kernels), Phase 6 Complete (algorithms P0-P4), Step 6.7 AllImplemented enforced. Bindings: 248/251 implemented (3 allowed gaps). 24/24 algorithm contracts Bound, ~112 equations, 111 FALSIFY tests. Total: 275 contract tests passing (0 failures). All algorithm contracts BOUND.
 **Created**: 2026-02-19
 **Updated**: 2026-02-19
 **Scope**: trueno, realizar, aprender, entrenar, whisper.apr
@@ -836,7 +836,7 @@ MQS certification
 3. Run full QA playbook certification pass
 4. Tag release
 
-### Phase 6: Algorithm & Statistics Contracts — COMPLETE (P0-P3)
+### Phase 6: Algorithm & Statistics Contracts — COMPLETE (P0-P4, 24/24 Bound)
 
 1. **P0 contracts** (5 YAMLs): metrics-regression-v1, metrics-classification-v1, metrics-clustering-v1, loss-functions-v1, graph-centrality-v1 — DONE
 2. **P0 annotations**: `#[contract]` + comment annotations on ~20 functions — DONE
@@ -847,8 +847,10 @@ MQS certification
 7. **P2 annotations + tests**: 15 FALSIFY-* tests passing — DONE
 8. **P3 contracts** (8 YAMLs): arima-v1, bayesian-v1, glm-v1, drift-detection-v1, metrics-ranking-v1, gbm-v1, optimization-v1, random-forest-v1 — DONE
 9. **P3 annotations + tests**: 33 FALSIFY-* tests passing — DONE
-10. **Binding registration**: ~70 algorithm equations in binding.yaml — DONE
-11. **Hard enforcement**: `build.rs` AllImplemented policy — 236/239 implemented, 3 allowed gaps (SSM, robust_scaler) — DONE
+10. **P4 contracts** (3 YAMLs): active-learning-v1, gnn-v1, metaheuristics-v1 — DONE
+11. **P4 annotations + tests**: 11 FALSIFY-* tests passing — DONE
+12. **Binding registration**: ~82 algorithm equations in binding.yaml — DONE
+13. **Hard enforcement**: `build.rs` AllImplemented policy — 248/251 implemented, 3 allowed gaps (SSM, robust_scaler) — DONE
 
 ---
 
@@ -1262,7 +1264,7 @@ This section tracks the algorithm contract implementation progress (Phase 6).
 
 | Contract | Equations | Key Invariants | Status |
 |----------|-----------|----------------|--------|
-| active-learning-v1 | uncertainty, margin, entropy, qbc | entropy≥0, margin≥0, QBC variance≥0 | **Not bound** |
+| active-learning-v1 | uncertainty, margin, entropy, qbc | entropy≥0, margin≥0, QBC variance≥0 | Bound |
 | arima-v1 | ar_forecast, differencing, ma_filter, aic | stationarity after d differences | Bound |
 | bayesian-v1 | conjugate_prior, posterior_update, blr_predict | posterior∝prior×likelihood, predictive well-calibrated | Bound |
 | glm-v1 | poisson_link, gamma_link, binomial_link, irls | link(μ)=Xβ, variance=V(μ) | Bound |
@@ -1273,8 +1275,8 @@ This section tracks the algorithm contract implementation progress (Phase 6).
 | Contract | Equations | Key Invariants | Status |
 |----------|-----------|----------------|--------|
 | metrics-ranking-v1 | hit_at_k, mrr, ndcg | all∈[0,1], NDCG normalized by ideal DCG | Bound |
-| gnn-v1 | gcn_aggregate, message_passing, graph_pool | permutation equivariance | **Not bound** |
-| metaheuristics-v1 | simulated_annealing, genetic_crossover, pso_update | monotone non-increasing best-so-far | **Not bound** |
+| gnn-v1 | gcn_aggregate, message_passing, global_mean_pool, global_max_pool | node count preservation, pooling bounds | Bound |
+| metaheuristics-v1 | sa_acceptance, ga_crossover, pso_velocity, best_monotone | monotone non-increasing best-so-far | Bound |
 
 ### 15.2 Phase 6 Migration Path
 
@@ -1360,7 +1362,7 @@ All bound. See `binding.yaml` for per-equation status.
 | linear-models-v1 | 4 | 8 | Bound |
 | svm-v1 | 4 | 8 | Bound |
 
-### Algorithm Contracts — Tier A4-A7: Extended (12) — P0-P3 COMPLETE (except active-learning, gnn, metaheuristics)
+### Algorithm Contracts — Tier A4-A7: Extended (15) — P0-P4 ALL BOUND
 | Contract | Equations | Obligations | Status |
 |----------|-----------|-------------|--------|
 | pca-v1 | 3 | 6 | Bound |
@@ -1369,12 +1371,14 @@ All bound. See `binding.yaml` for per-equation status.
 | graph-centrality-v1 | 6 | 8 | Bound |
 | optimization-v1 | 3 | 6 | Bound |
 | calibration-v1 | 5 | 8 | Bound |
-| active-learning-v1 | 4 | 6 | **Not bound** |
+| active-learning-v1 | 4 | 6 | Bound |
 | arima-v1 | 4 | 8 | Bound |
 | bayesian-v1 | 3 | 6 | Bound |
 | glm-v1 | 4 | 8 | Bound |
 | drift-detection-v1 | 3 | 6 | Bound |
 | metrics-ranking-v1 | 3 | 6 | Bound |
+| gnn-v1 | 4 | 6 | Bound |
+| metaheuristics-v1 | 4 | 7 | Bound |
 
 ---
 
