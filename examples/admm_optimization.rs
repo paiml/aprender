@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! # ADMM (Alternating Direction Method of Multipliers) Examples
 //!
 //! Demonstrates the use of ADMM for distributed and constrained optimization:
@@ -146,7 +147,12 @@ fn distributed_lasso_admm() {
     println!("Constraint violation: {:.6}", result.constraint_violation);
     println!("Elapsed time: {:?}", result.elapsed_time);
 
-    // Analyze sparsity
+    print_sparsity_analysis(&result, &x_true_data, n);
+    print_prediction_rmse(&D, &result.solution, &b, m);
+    println!();
+}
+
+fn print_sparsity_analysis(result: &OptimizationResult, x_true_data: &[f32], n: usize) {
     let mut nnz = 0;
     let mut recovered_indices = Vec::new();
     for i in 0..n {
@@ -161,32 +167,26 @@ fn distributed_lasso_admm() {
     println!("Recovered indices: {recovered_indices:?}");
 
     println!("\nRecovered vs True coefficients:");
-    println!(
-        "  x[2]: true = {:.3}, recovered = {:.3}",
-        x_true_data[2], result.solution[2]
-    );
-    println!(
-        "  x[5]: true = {:.3}, recovered = {:.3}",
-        x_true_data[5], result.solution[5]
-    );
-    println!(
-        "  x[8]: true = {:.3}, recovered = {:.3}",
-        x_true_data[8], result.solution[8]
-    );
-
-    // Prediction error
-    let y_pred = D
-        .matvec(&result.solution)
-        .expect("Matrix-vector multiplication");
-    let mut pred_error = 0.0;
-    for i in 0..m {
-        let diff = y_pred[i] - b[i];
-        pred_error += diff * diff;
+    for &idx in &[2, 5, 8] {
+        println!(
+            "  x[{idx}]: true = {:.3}, recovered = {:.3}",
+            x_true_data[idx], result.solution[idx]
+        );
     }
-    pred_error = (pred_error / (m as f32)).sqrt();
-    println!("\nPrediction RMSE: {pred_error:.6}");
+}
 
-    println!();
+fn print_prediction_rmse(design: &Matrix<f32>, solution: &Vector<f32>, b: &Vector<f32>, m: usize) {
+    let y_pred = design
+        .matvec(solution)
+        .expect("Matrix-vector multiplication");
+    let pred_error: f32 = (0..m)
+        .map(|i| {
+            let diff = y_pred[i] - b[i];
+            diff * diff
+        })
+        .sum::<f32>();
+    let rmse = (pred_error / (m as f32)).sqrt();
+    println!("\nPrediction RMSE: {rmse:.6}");
 }
 
 /// Example 2: Consensus Optimization (Federated Learning Simulation)
