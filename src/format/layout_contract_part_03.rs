@@ -166,3 +166,251 @@ pub fn enforce_matmul_contract(
         tensor_name, weight_shape[1], expected_in_dim
     );
 }
+
+// ============================================================================
+// GH-279: Architecture Completeness Gate
+// ============================================================================
+//
+// Five Whys Root Cause: GPU inference silently produces garbage because the
+// APR weight loader forgot to upload QK norm weights for Qwen3. The type
+// system couldn't distinguish "model doesn't need QK norm" from "loader forgot."
+//
+// Solution: Before writing an APR file, verify that ALL tensors required by
+// the declared architecture are present. Missing tensor = hard error, not
+// silent garbage inference later.
+
+/// GH-279: Required tensor name patterns per architecture feature.
+///
+/// Returns the per-layer tensor name patterns that MUST be present for the
+/// given architecture features. Uses `{i}` as a placeholder for layer index.
+#[must_use]
+fn required_tensor_patterns(has_qk_norm: bool, has_bias: bool) -> Vec<&'static str> {
+    let mut patterns = vec![
+        // Always required: layer norms
+        "blk.{i}.attn_norm.weight",
+        "blk.{i}.ffn_norm.weight",
+        // Always required: attention projections
+        "blk.{i}.attn_q.weight",
+        "blk.{i}.attn_k.weight",
+        "blk.{i}.attn_v.weight",
+        "blk.{i}.attn_output.weight",
+        // Always required: FFN projections (SwiGLU)
+        "blk.{i}.ffn_gate.weight",
+        "blk.{i}.ffn_up.weight",
+        "blk.{i}.ffn_down.weight",
+    ];
+
+    if has_qk_norm {
+        patterns.push("blk.{i}.attn_q_norm.weight");
+        patterns.push("blk.{i}.attn_k_norm.weight");
+    }
+
+    if has_bias {
+        patterns.push("blk.{i}.attn_q.bias");
+        patterns.push("blk.{i}.attn_k.bias");
+        patterns.push("blk.{i}.attn_v.bias");
+    }
+
+    patterns
+}
+
+/// GH-279: Enforce architecture completeness at import/export boundary.
+///
+/// Checks that all tensors required by the declared architecture are present
+/// in the model's tensor list. Missing required tensor = `Err` with a
+/// descriptive message naming the missing tensor, architecture, and layer.
+///
+/// # Arguments
+///
+/// * `tensor_names` - Names of all tensors present in the model
+/// * `architecture` - Architecture name (e.g., "qwen3", "qwen2", "llama")
+/// * `num_layers` - Number of transformer layers
+///
+/// # Errors
+///
+/// Returns `ContractError` if any required tensor is missing.
+pub fn enforce_architecture_completeness(
+    tensor_names: &[&str],
+    architecture: &str,
+    num_layers: usize,
+) -> Result<(), ContractError> {
+    // Derive architecture requirements
+    let (has_qk_norm, has_bias) = match architecture {
+        "qwen3" => (true, false),
+        "qwen2" | "qwen2.5" | "qwen" => (false, true),
+        "phi" | "phi2" | "phi3" => (false, true),
+        _ => (false, false), // LLaMA, Mistral, Gemma, etc.
+    };
+
+    let patterns = required_tensor_patterns(has_qk_norm, has_bias);
+
+    for layer_idx in 0..num_layers {
+        for pattern in &patterns {
+            let expected_name = pattern.replace("{i}", &layer_idx.to_string());
+            if !tensor_names.iter().any(|n| *n == expected_name) {
+                return Err(ContractError::TransposeError {
+                    tensor: expected_name,
+                    message: format!(
+                        "GH-279: Missing required tensor for architecture '{}' \
+                         — see contracts/architecture-requirements-v1.yaml",
+                        architecture
+                    ),
+                });
+            }
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod architecture_completeness_tests {
+    use super::*;
+
+    #[test]
+    fn test_llama_base_complete() {
+        let names: Vec<&str> = (0..2)
+            .flat_map(|i| {
+                vec![
+                    format!("blk.{i}.attn_norm.weight"),
+                    format!("blk.{i}.ffn_norm.weight"),
+                    format!("blk.{i}.attn_q.weight"),
+                    format!("blk.{i}.attn_k.weight"),
+                    format!("blk.{i}.attn_v.weight"),
+                    format!("blk.{i}.attn_output.weight"),
+                    format!("blk.{i}.ffn_gate.weight"),
+                    format!("blk.{i}.ffn_up.weight"),
+                    format!("blk.{i}.ffn_down.weight"),
+                ]
+            })
+            .collect::<Vec<String>>()
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<&str>>();
+        // Need to keep owned strings alive
+        let owned: Vec<String> = (0..2)
+            .flat_map(|i| {
+                vec![
+                    format!("blk.{i}.attn_norm.weight"),
+                    format!("blk.{i}.ffn_norm.weight"),
+                    format!("blk.{i}.attn_q.weight"),
+                    format!("blk.{i}.attn_k.weight"),
+                    format!("blk.{i}.attn_v.weight"),
+                    format!("blk.{i}.attn_output.weight"),
+                    format!("blk.{i}.ffn_gate.weight"),
+                    format!("blk.{i}.ffn_up.weight"),
+                    format!("blk.{i}.ffn_down.weight"),
+                ]
+            })
+            .collect();
+        let refs: Vec<&str> = owned.iter().map(String::as_str).collect();
+
+        assert!(enforce_architecture_completeness(&refs, "llama", 2).is_ok());
+    }
+
+    #[test]
+    fn test_llama_missing_ffn_gate() {
+        let owned: Vec<String> = (0..2)
+            .flat_map(|i| {
+                let mut v = vec![
+                    format!("blk.{i}.attn_norm.weight"),
+                    format!("blk.{i}.ffn_norm.weight"),
+                    format!("blk.{i}.attn_q.weight"),
+                    format!("blk.{i}.attn_k.weight"),
+                    format!("blk.{i}.attn_v.weight"),
+                    format!("blk.{i}.attn_output.weight"),
+                    format!("blk.{i}.ffn_up.weight"),
+                    format!("blk.{i}.ffn_down.weight"),
+                ];
+                // Intentionally omit ffn_gate for layer 1
+                if i == 0 {
+                    v.push(format!("blk.{i}.ffn_gate.weight"));
+                }
+                v
+            })
+            .collect();
+        let refs: Vec<&str> = owned.iter().map(String::as_str).collect();
+
+        let result = enforce_architecture_completeness(&refs, "llama", 2);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("blk.1.ffn_gate.weight"), "Error should name the missing tensor: {msg}");
+    }
+
+    #[test]
+    fn test_qwen3_requires_qk_norm() {
+        // Base tensors only (no QK norm) — should fail for Qwen3
+        let owned: Vec<String> = (0..1)
+            .flat_map(|i| {
+                vec![
+                    format!("blk.{i}.attn_norm.weight"),
+                    format!("blk.{i}.ffn_norm.weight"),
+                    format!("blk.{i}.attn_q.weight"),
+                    format!("blk.{i}.attn_k.weight"),
+                    format!("blk.{i}.attn_v.weight"),
+                    format!("blk.{i}.attn_output.weight"),
+                    format!("blk.{i}.ffn_gate.weight"),
+                    format!("blk.{i}.ffn_up.weight"),
+                    format!("blk.{i}.ffn_down.weight"),
+                ]
+            })
+            .collect();
+        let refs: Vec<&str> = owned.iter().map(String::as_str).collect();
+
+        let result = enforce_architecture_completeness(&refs, "qwen3", 1);
+        assert!(result.is_err());
+        let msg = format!("{}", result.unwrap_err());
+        assert!(msg.contains("attn_q_norm"), "Should require QK norm for Qwen3: {}", msg);
+    }
+
+    #[test]
+    fn test_qwen3_complete_with_qk_norm() {
+        let owned: Vec<String> = (0..1)
+            .flat_map(|i| {
+                vec![
+                    format!("blk.{i}.attn_norm.weight"),
+                    format!("blk.{i}.ffn_norm.weight"),
+                    format!("blk.{i}.attn_q.weight"),
+                    format!("blk.{i}.attn_k.weight"),
+                    format!("blk.{i}.attn_v.weight"),
+                    format!("blk.{i}.attn_output.weight"),
+                    format!("blk.{i}.ffn_gate.weight"),
+                    format!("blk.{i}.ffn_up.weight"),
+                    format!("blk.{i}.ffn_down.weight"),
+                    format!("blk.{i}.attn_q_norm.weight"),
+                    format!("blk.{i}.attn_k_norm.weight"),
+                ]
+            })
+            .collect();
+        let refs: Vec<&str> = owned.iter().map(String::as_str).collect();
+
+        assert!(enforce_architecture_completeness(&refs, "qwen3", 1).is_ok());
+    }
+
+    #[test]
+    fn test_qwen2_requires_bias() {
+        // Base tensors only (no bias) — should fail for Qwen2
+        let owned: Vec<String> = (0..1)
+            .flat_map(|i| {
+                vec![
+                    format!("blk.{i}.attn_norm.weight"),
+                    format!("blk.{i}.ffn_norm.weight"),
+                    format!("blk.{i}.attn_q.weight"),
+                    format!("blk.{i}.attn_k.weight"),
+                    format!("blk.{i}.attn_v.weight"),
+                    format!("blk.{i}.attn_output.weight"),
+                    format!("blk.{i}.ffn_gate.weight"),
+                    format!("blk.{i}.ffn_up.weight"),
+                    format!("blk.{i}.ffn_down.weight"),
+                ]
+            })
+            .collect();
+        let refs: Vec<&str> = owned.iter().map(String::as_str).collect();
+
+        let result = enforce_architecture_completeness(&refs, "qwen2", 1);
+        assert!(result.is_err());
+        let msg = format!("{}", result.unwrap_err());
+        assert!(msg.contains("bias"), "Should require bias for Qwen2: {}", msg);
+    }
+}

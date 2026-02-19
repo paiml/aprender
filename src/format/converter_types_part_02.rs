@@ -25,6 +25,25 @@ impl Architecture {
         matches!(self, Self::Qwen2 | Self::Qwen3 | Self::Qwen3_5 | Self::Llama | Self::Phi)
     }
 
+    /// GH-279: Get the architecture key for `enforce_architecture_completeness()`.
+    ///
+    /// Returns a lowercase key that matches the architecture match table in
+    /// `layout_contract_part_03.rs::enforce_architecture_completeness()`.
+    /// Returns `None` for architectures where completeness checking doesn't apply
+    /// (e.g., Whisper, BERT, GPT-2 have different tensor naming).
+    #[must_use]
+    pub fn completeness_key(&self) -> Option<&'static str> {
+        match self {
+            Self::Llama => Some("llama"),
+            Self::Qwen2 => Some("qwen2"),
+            Self::Qwen3 => Some("qwen3"),
+            Self::Qwen3_5 => Some("qwen3"),  // Same transformer block structure as Qwen3
+            Self::Phi => Some("phi"),
+            // Auto, Whisper, BERT, GPT-2: no completeness check (different tensor naming)
+            _ => None,
+        }
+    }
+
     /// PMAT-224: Get a human-readable name for warning messages.
     #[must_use]
     pub fn display_name(&self) -> &'static str {

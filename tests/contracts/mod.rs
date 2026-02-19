@@ -12,6 +12,7 @@
 
 mod activation_contract;
 mod adamw_contract;
+mod arch_requirements_contract;
 mod attention_contract;
 mod backend_dispatch_contract;
 mod batchnorm_contract;

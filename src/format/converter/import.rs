@@ -110,6 +110,11 @@ pub fn apr_import<P: AsRef<Path>>(
         options.strict,
     )?;
 
+    // GH-279: Architecture completeness gate for SafeTensors path
+    if let Some(config) = load_result.model_config.as_ref() {
+        enforce_arch_completeness_gate_f32(&effective_arch, &mapped_tensors, config)?;
+    }
+
     // Step 5: Validate tensors (inline validation)
     let validation_result = validate_tensors(&mapped_tensors, &options)?;
 
@@ -155,6 +160,9 @@ pub(crate) fn apr_import_gguf_raw(
 
     let mapped_tensors =
         map_and_enforce_raw_tensors(raw_result.tensors, &effective_arch, &raw_result.model_config)?;
+
+    // GH-279: Architecture completeness gate — refuse to write incomplete models
+    enforce_arch_completeness_gate(&effective_arch, &mapped_tensors, &raw_result.model_config)?;
 
     let mut validation_result = ValidationReport::new();
     validation_result.total_score = 85;
@@ -245,6 +253,47 @@ fn map_and_enforce_raw_tensors(
     );
 
     Ok(mapped)
+}
+
+/// GH-279: Architecture completeness gate for raw GGUF tensor import.
+///
+/// Verifies that ALL tensors required by the declared architecture are present
+/// BEFORE writing the APR file. Missing tensor = hard error, not silent garbage later.
+fn enforce_arch_completeness_gate(
+    arch: &Architecture,
+    tensors: &BTreeMap<String, GgufRawTensor>,
+    config: &GgufModelConfig,
+) -> Result<()> {
+    let Some(arch_key) = arch.completeness_key() else {
+        return Ok(()); // Non-transformer architectures skip this gate
+    };
+    let Some(num_layers) = config.num_layers else {
+        return Ok(()); // Can't check without layer count
+    };
+    let names: Vec<&str> = tensors.keys().map(String::as_str).collect();
+    crate::format::layout_contract::enforce_architecture_completeness(&names, arch_key, num_layers)
+        .map_err(|e| AprenderError::FormatError {
+            message: format!("GH-279 architecture completeness gate: {e}"),
+        })
+}
+
+/// GH-279: Architecture completeness gate for F32 SafeTensors import.
+fn enforce_arch_completeness_gate_f32(
+    arch: &Architecture,
+    tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+    config: &GgufModelConfig,
+) -> Result<()> {
+    let Some(arch_key) = arch.completeness_key() else {
+        return Ok(());
+    };
+    let Some(num_layers) = config.num_layers else {
+        return Ok(());
+    };
+    let names: Vec<&str> = tensors.keys().map(String::as_str).collect();
+    crate::format::layout_contract::enforce_architecture_completeness(&names, arch_key, num_layers)
+        .map_err(|e| AprenderError::FormatError {
+            message: format!("GH-279 architecture completeness gate: {e}"),
+        })
 }
 
 /// Resolve a source to a local file path
