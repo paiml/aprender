@@ -1,7 +1,7 @@
 # Unified Contract-by-Design Specification
 
 **Version**: 2.0.0
-**Status**: Phase 4 Complete (kernels), Phase 6 Complete (algorithms P0-P4), Step 6.7 AllImplemented enforced. Bindings: 249/251 implemented (2 SSM-only gaps). 24/24 algorithm contracts Bound, ~112 equations, 122 FALSIFY tests. Total: 286 contract tests passing (0 failures). SiLU + SwiGLU public API exposed. Cross-crate falsification: trueno (3,195), realizar (14,828), entrenar (57), whisper.apr (5) — all GREEN.
+**Status**: Phase 4 Complete (kernels), Phase 6 Complete (algorithms P0-P4), Step 6.7 AllImplemented enforced. Bindings: 249/251 implemented (2 SSM-only gaps). 24/24 algorithm contracts Bound, ~112 equations, 122 FALSIFY tests. Total: 286 contract tests passing (0 failures). One Path Rule enforced: softmax (10 duplicates → 1 canonical), sigmoid (8 → 1), relu (2 → 1), tanh (1 → 1), GELU (1 → 1), SiLU (1 → 1), cross-entropy log-softmax (2 → 1). Cross-crate falsification: all GREEN.
 **Created**: 2026-02-19
 **Updated**: 2026-02-19
 **Scope**: trueno, realizar, aprender, entrenar, whisper.apr
@@ -295,6 +295,29 @@ trueno::blis::transpose::transpose(rows, cols, data, &mut out)
 // All other transpose functions delegate to this via contract_gate::transpose_f32()
 // Zero duplicate implementations allowed.
 ```
+
+### 4.6 Activation Functions: ONE Path
+
+Every activation function has ONE canonical implementation in `nn::functional`.
+All other call sites delegate to the canonical source. Enforced by ONE PATH comments.
+
+| Function | Canonical Source | Duplicates Consolidated |
+|----------|-----------------|------------------------|
+| `softmax(Tensor)` | `nn::functional::softmax` | 5 (citl, transformer, loss, autograd, loss_part_02) |
+| `softmax_1d(&[f32])` | `nn::functional::softmax_1d` | 5 (calibration, regularization×2, transfer, gating) |
+| `softmax_1d_f64(&[f64])` | `nn::functional::softmax_1d_f64` | 2 (distillation, logic/ops) |
+| `log_softmax(Tensor)` | `nn::functional::log_softmax` | 1 (loss_part_02) |
+| `log_softmax_1d(&[f32])` | `nn::functional::log_softmax_1d` | 2 (loss cross_entropy, regularization smoothing) |
+| `sigmoid_scalar(f32)` | `nn::functional::sigmoid_scalar` | 5 (bayesian, calibration, classification, explainable, gradient_boosting) |
+| `sigmoid_scalar_f64(f64)` | `nn::functional::sigmoid_scalar_f64` | 1 (online) |
+| `sigmoid(Tensor)` | `nn::functional::sigmoid` | 1 (rnn) |
+| `relu_scalar(f32)` | `nn::functional::relu_scalar` | 1 (spectral) |
+| `relu(Tensor)` | `nn::functional::relu` | 1 (citl encoder) |
+| `silu/silu_scalar` | `nn::functional::silu{,_scalar}` | 1 (qwen2) |
+| `tanh(Tensor)` | `nn::functional::tanh` | 1 (rnn) |
+| `gelu(Tensor)` | `nn::functional::gelu` | 1 (citl neural) |
+
+**Total**: 27 duplicate implementations → 13 canonical functions. Zero duplicate compute paths.
 
 ---
 
