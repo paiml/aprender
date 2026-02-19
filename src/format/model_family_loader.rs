@@ -173,7 +173,12 @@ enum MappingLineAction {
     ParseEntry,
 }
 
-fn classify_mapping_line(trimmed: &str, line_indent: usize, indent: usize, has_entries: bool) -> MappingLineAction {
+fn classify_mapping_line(
+    trimmed: &str,
+    line_indent: usize,
+    indent: usize,
+    has_entries: bool,
+) -> MappingLineAction {
     if trimmed.is_empty() || trimmed.starts_with('#') {
         return MappingLineAction::Skip;
     }
@@ -241,7 +246,6 @@ fn parse_mapping(lines: &[&str], start: usize, indent: usize) -> Result<(YamlVal
 
     Ok((YamlValue::Mapping(entries), i))
 }
-
 
 fn parse_sequence(lines: &[&str], start: usize, indent: usize) -> Result<(YamlValue, usize)> {
     let mut items = Vec::new();

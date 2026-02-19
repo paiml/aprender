@@ -324,7 +324,10 @@ fn require_2d(mask: &Tensor, pattern_name: &str) -> Result<(usize, usize), Pruni
     let shape = mask.shape();
     if shape.len() != 2 {
         return Err(PruningError::InvalidPattern {
-            message: format!("{pattern_name} pattern requires 2D tensor, got {}D", shape.len()),
+            message: format!(
+                "{pattern_name} pattern requires 2D tensor, got {}D",
+                shape.len()
+            ),
         });
     }
     Ok((shape[0], shape[1]))
@@ -345,9 +348,7 @@ fn check_block_uniform(
             let val = data[(br * height + r) * cols + bc * width + c];
             if (val - first).abs() > 1e-6 {
                 return Err(PruningError::InvalidPattern {
-                    message: format!(
-                        "Block ({br}, {bc}) is not uniform: found {val} and {first}"
-                    ),
+                    message: format!("Block ({br}, {bc}) is not uniform: found {val} and {first}"),
                 });
             }
         }
