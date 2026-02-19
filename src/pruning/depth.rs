@@ -192,11 +192,11 @@ impl DepthPruner {
             return Ok(1.0); // Empty tensors are identical
         }
 
-        let sim = crate::nn::functional::cosine_similarity_slice(&a_data, &b_data);
+        let sim = crate::nn::functional::cosine_similarity_slice(a_data, b_data);
 
         // Both-zero special case: canonical returns 0.0, but equal tensors should be 1.0
-        let both_zero = a_data.iter().all(|&x| x.abs() < 1e-10)
-            && b_data.iter().all(|&x| x.abs() < 1e-10);
+        let both_zero =
+            a_data.iter().all(|&x| x.abs() < 1e-10) && b_data.iter().all(|&x| x.abs() < 1e-10);
         if both_zero {
             return Ok(1.0);
         }
