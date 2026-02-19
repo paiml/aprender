@@ -26,6 +26,16 @@ pub fn relu(x: &Tensor) -> Tensor {
     x.relu()
 }
 
+/// Scalar ReLU: max(0, x)
+///
+/// ONE PATH: The canonical scalar ReLU for all aprender modules.
+/// UCBD §4: audio/noise/spectral.rs MUST delegate here.
+#[inline]
+#[must_use]
+pub fn relu_scalar(x: f32) -> f32 {
+    x.max(0.0)
+}
+
 /// Leaky `ReLU` activation: `max(negative_slope` * x, x)
 #[must_use]
 pub fn leaky_relu(x: &Tensor, negative_slope: f32) -> Tensor {
@@ -44,6 +54,16 @@ pub fn leaky_relu(x: &Tensor, negative_slope: f32) -> Tensor {
 #[must_use]
 pub fn sigmoid(x: &Tensor) -> Tensor {
     x.sigmoid()
+}
+
+/// Scalar sigmoid: σ(x) = 1 / (1 + exp(-x))
+///
+/// ONE PATH: The canonical scalar sigmoid for all aprender modules.
+/// UCBD §4: bayesian/logistic.rs and calibration.rs MUST delegate here.
+#[inline]
+#[must_use]
+pub fn sigmoid_scalar(x: f32) -> f32 {
+    1.0 / (1.0 + (-x).exp())
 }
 
 /// SiLU (Swish) activation: x * sigmoid(x)

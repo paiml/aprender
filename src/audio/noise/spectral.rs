@@ -268,9 +268,11 @@ impl SpectralMLP {
 }
 
 /// ReLU activation function
+///
+/// ONE PATH: Delegates to `nn::functional::relu_scalar` (UCBD §4).
 #[inline]
 fn relu(x: f32) -> f32 {
-    x.max(0.0)
+    crate::nn::functional::relu_scalar(x)
 }
 
 /// Softplus activation function: log(1 + exp(x))

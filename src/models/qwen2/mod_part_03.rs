@@ -3,10 +3,11 @@
 // ============================================================================
 
 /// `SiLU` (Swish) activation: x * sigmoid(x)
-/// Uses SIMD-accelerated Tensor ops instead of naive iterators.
+///
+/// ONE PATH: Delegates to `nn::functional::silu` (canonical implementation).
+/// UCBD §4: There is ONE way to compute SiLU in aprender.
 fn silu(x: &Tensor) -> Tensor {
-    // SiLU(x) = x * sigmoid(x)
-    x.mul(&x.sigmoid())
+    crate::nn::functional::silu(x)
 }
 
 /// Element-wise multiplication (SIMD-accelerated).

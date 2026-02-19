@@ -55,13 +55,11 @@ fn c7_rmsnorm_numerical_stability() {
 /// C8: SwiGLU activation must produce some negative values
 #[test]
 fn c8_swiglu_non_monotonic() {
-    // SiLU (used in SwiGLU) is non-monotonic and produces negative values
-    fn silu(x: f32) -> f32 {
-        x / (1.0 + (-x).exp())
-    }
+    // ONE PATH: uses nn::functional::silu_scalar (UCBD §4)
+    use aprender::nn::functional::silu_scalar;
 
     let test_values = [-2.0f32, -1.5, -1.0, -0.5, 0.0, 0.5, 1.0, 2.0];
-    let outputs: Vec<f32> = test_values.iter().map(|&x| silu(x)).collect();
+    let outputs: Vec<f32> = test_values.iter().map(|&x| silu_scalar(x)).collect();
 
     // SiLU must produce negative values for negative inputs
     let has_negative = outputs.iter().any(|&x| x < 0.0);
