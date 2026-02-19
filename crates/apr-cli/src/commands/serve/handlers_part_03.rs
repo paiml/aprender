@@ -16,7 +16,7 @@ async fn handle_gpu_completion(
     let tok_ref = tok_info.as_ref().as_ref();
     let input_tokens = encode_prompt(tok_ref, &req.prompt);
     let eos_id = eos_token_id(tok_ref, 2);
-    let max_tokens = req.max_tokens.min(128);
+    let max_tokens = req.max_tokens.min(4096);
     let prompt = req.prompt.clone();
 
     // GH-284: Run GPU generation off the async runtime
@@ -155,7 +155,7 @@ async fn handle_gpu_chat_completion(
     let tok_ref = tok_info.as_ref().as_ref();
     let input_tokens = encode_prompt(tok_ref, &prompt);
     let eos_id = eos_token_id(tok_ref, 151_645);
-    let max_tokens_clamped = max_tokens.min(256);
+    let max_tokens_clamped = max_tokens.min(4096);
 
     // GH-284: Run GPU generation in spawn_blocking
     let cuda_clone = cuda.clone();

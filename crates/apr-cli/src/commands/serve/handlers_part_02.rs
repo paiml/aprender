@@ -23,7 +23,7 @@ async fn handle_apr_cpu_completion(
         }
     };
 
-    let max_tokens = req.max_tokens.min(128);
+    let max_tokens = req.max_tokens.min(4096);
     let prompt = req.prompt.clone();
     let temperature = req.temperature.unwrap_or(0.0);
 
@@ -170,7 +170,7 @@ async fn handle_apr_cpu_chat_completion(
         let (tx, rx) = tokio::sync::mpsc::channel::<std::result::Result<u32, String>>(16);
         let s_for_gen = s.clone();
         let prompt_for_gen = prompt;
-        let max_tokens_clamped = max_tokens.min(256);
+        let max_tokens_clamped = max_tokens.min(4096);
 
         // Run generation in a blocking thread so the tokio runtime stays free
         tokio::task::spawn_blocking(move || {
@@ -261,7 +261,7 @@ async fn handle_apr_cpu_chat_completion(
     let start = Instant::now();
     let s_for_blocking = s.clone();
     let prompt_owned = prompt;
-    let max_t = max_tokens.min(256);
+    let max_t = max_tokens.min(4096);
 
     let result = tokio::task::spawn_blocking(move || {
         run_apr_cpu_inference(&s_for_blocking, &prompt_owned, max_t, temperature)
