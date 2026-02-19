@@ -685,7 +685,7 @@ in `realizar/src/apr/helpers.rs` have **different APIs** from the GPU scheduler 
 Duplicate transpose implementations consolidated to `contract_gate::transpose_f32()`
 delegating to `trueno::blis::transpose`. 6 implementations now delegate to one.
 
-### 9.3 Deletion Safety Protocol
+### 9.5 Deletion Safety Protocol
 
 For each deletion:
 1. Verify no external callers: `pmat query --literal "function_name" --files-with-matches`
