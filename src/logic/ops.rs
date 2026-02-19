@@ -343,17 +343,9 @@ fn apply_nonlinearity_row(row: &[f64], func: Nonlinearity, mask: Option<&Vec<boo
     }
 }
 
+/// ONE PATH: Delegates to `nn::functional::softmax_1d_f64` (UCBD §4).
 fn softmax_row(row: &[f64]) -> Vec<f64> {
-    // Numerical stability: subtract max
-    let max_val = row.iter().fold(f64::NEG_INFINITY, |a, &b| f64::max(a, b));
-    let exp_vals: Vec<f64> = row.iter().map(|&x| (x - max_val).exp()).collect();
-    let sum: f64 = exp_vals.iter().sum();
-
-    if sum == 0.0 {
-        vec![0.0; row.len()]
-    } else {
-        exp_vals.iter().map(|&x| x / sum).collect()
-    }
+    crate::nn::functional::softmax_1d_f64(row)
 }
 
 /// Threshold matrix values at 0.5 for Boolean mode
