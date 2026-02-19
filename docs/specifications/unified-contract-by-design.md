@@ -1,7 +1,7 @@
 # Unified Contract-by-Design Specification
 
 **Version**: 2.0.0
-**Status**: Phase 4 Complete (kernels), Phase 6 Complete (algorithms P0-P4), Step 6.7 AllImplemented enforced. Bindings: 249/251 implemented (2 SSM-only gaps). 24/24 algorithm contracts Bound, ~112 equations, 122 FALSIFY tests. Total: 286 contract tests passing (0 failures). One Path Rule enforced: softmax (10 duplicates → 1 canonical), sigmoid (8 → 1), relu (2 → 1), tanh (1 → 1), GELU (1 → 1), SiLU (1 → 1), cross-entropy log-softmax (2 → 1). Cross-crate falsification: all GREEN.
+**Status**: Phase 4 Complete (kernels), Phase 6 Complete (algorithms P0-P4), Step 6.7 AllImplemented enforced. Bindings: 249/251 implemented (2 SSM-only gaps). 24/24 algorithm contracts Bound, ~112 equations, 122 FALSIFY tests. Total: 286 contract tests passing (0 failures). One Path Rule enforced: softmax (10→1), sigmoid (8→1), relu (2→1), tanh (1→1), GELU (2→1), SiLU (1→1), cross-entropy log-softmax (2→1), layer_norm (3→1), rms_norm (2→1), dropout (2→1), transpose_last_two (2→1), batched_matmul (2→1), concat_heads/reshape_from_attention (2→1), add_tensors (3→Tensor::add), scale_tensor (2→Tensor::mul_scalar). Total: 41 duplicates eliminated, all paths delegate to canonical `nn::functional` or `nn::transformer`. Cross-crate falsification: all GREEN.
 **Created**: 2026-02-19
 **Updated**: 2026-02-19
 **Scope**: trueno, realizar, aprender, entrenar, whisper.apr
@@ -296,13 +296,15 @@ trueno::blis::transpose::transpose(rows, cols, data, &mut out)
 // Zero duplicate implementations allowed.
 ```
 
-### 4.6 Activation Functions: ONE Path
+### 4.6 Mathematical Functions: ONE Path Enforcement
 
-Every activation function has ONE canonical implementation in `nn::functional`.
-All other call sites delegate to the canonical source. Enforced by ONE PATH comments.
+Every mathematical function has ONE canonical implementation. All other call sites
+delegate to the canonical source. Enforced by `// ONE PATH:` comments at every delegate.
 
-| Function | Canonical Source | Duplicates Consolidated |
-|----------|-----------------|------------------------|
+#### 4.6.1 Activation Functions → `nn::functional`
+
+| Function | Canonical Source | Duplicates Eliminated |
+|----------|-----------------|----------------------|
 | `softmax(Tensor)` | `nn::functional::softmax` | 5 (citl, transformer, loss, autograd, loss_part_02) |
 | `softmax_1d(&[f32])` | `nn::functional::softmax_1d` | 5 (calibration, regularization×2, transfer, gating) |
 | `softmax_1d_f64(&[f64])` | `nn::functional::softmax_1d_f64` | 2 (distillation, logic/ops) |
@@ -315,9 +317,27 @@ All other call sites delegate to the canonical source. Enforced by ONE PATH comm
 | `relu(Tensor)` | `nn::functional::relu` | 1 (citl encoder) |
 | `silu/silu_scalar` | `nn::functional::silu{,_scalar}` | 1 (qwen2) |
 | `tanh(Tensor)` | `nn::functional::tanh` | 1 (rnn) |
-| `gelu(Tensor)` | `nn::functional::gelu` | 1 (citl neural) |
+| `gelu(Tensor)` | `nn::functional::gelu` | 2 (citl neural, transformer) |
 
-**Total**: 27 duplicate implementations → 13 canonical functions. Zero duplicate compute paths.
+#### 4.6.2 Normalization Functions → `nn::functional`
+
+| Function | Canonical Source | Duplicates Eliminated |
+|----------|-----------------|----------------------|
+| `layer_norm(Tensor, w, b, eps)` | `nn::functional::layer_norm` | 3 (citl, LayerNorm::forward, transformer) |
+| `rms_norm(Tensor, w, eps)` | `nn::functional::rms_norm` | 2 (RMSNorm::forward affine path) |
+| `dropout(Tensor, p, train)` | `nn::functional::dropout` | 2 (transformer apply_dropout) |
+
+#### 4.6.3 Tensor Operations → `nn::transformer` (SIMD-accelerated)
+
+| Function | Canonical Source | Duplicates Eliminated |
+|----------|-----------------|----------------------|
+| `transpose_last_two(Tensor)` | `nn::transformer::transpose_last_two` | 2 (citl naive → SIMD) |
+| `matmul_batched(Tensor, Tensor)` | `nn::transformer::matmul_batched` | 2 (citl O(n⁴) naive → Trueno SIMD) |
+| `reshape_from_attention(...)` | `nn::transformer::reshape_from_attention` | 2 (citl concat_heads) |
+| `add_tensors(a, b)` | `Tensor::add` | 3 (rnn, transformer, qwen2) |
+| `scale_tensor(x, s)` | `Tensor::mul_scalar` | 2 (citl, transformer) |
+
+**Total**: 41 duplicate implementations eliminated → 21 canonical functions. Zero duplicate compute paths.
 
 ---
 
