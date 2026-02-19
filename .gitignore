@@ -60,8 +60,17 @@ crates/aprender-shell/qa_test_artifacts/
 .pmat/dead-code-cache.json
 .pmat/metrics/
 .pmat/context.db
+.pmat/context.db-shm
+.pmat/context.db-wal
 .pmat/context.idx/
+.pmat/workspace.db
+.pmat/workspace.db-shm
+.pmat/workspace.db-wal
 .pmat/workspace.idx/
+.pmat/coverage-cache.json
+.pmat/deny-cache.txt
+.pmat/lint-cache.txt
+.pmat/hooks-cache/
 .pmat/deps-cache.json
 .pmat-qa/
 .pmat-work/
