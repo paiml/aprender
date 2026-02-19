@@ -65,8 +65,6 @@ const ALLOWED_GAPS: &[(&str, &str)] = &[
     ("ssm-kernel-v1", "ssm_discretize"),
     ("ssm-kernel-v1", "ssm_scan"),
     ("ssm-kernel-v1", "selective_gate"),
-    // Preprocessing — RobustScaler not yet implemented
-    ("preprocessing-normalization-v1", "robust_scaler"),
 ];
 
 /// Returns true if the new status is dominated by what we already have.
