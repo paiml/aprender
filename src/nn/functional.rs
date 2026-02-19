@@ -60,11 +60,7 @@ pub fn sigmoid(x: &Tensor) -> Tensor {
 // Contract: silu-kernel-v1, equation = "silu"
 #[must_use]
 pub fn silu(x: &Tensor) -> Tensor {
-    let data: Vec<f32> = x
-        .data()
-        .iter()
-        .map(|&v| v / (1.0 + (-v).exp()))
-        .collect();
+    let data: Vec<f32> = x.data().iter().map(|&v| v / (1.0 + (-v).exp())).collect();
     Tensor::new(&data, x.shape())
 }
 
