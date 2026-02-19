@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! APR Format with JSON Metadata Example
 //!
 //! Demonstrates how to embed arbitrary metadata (vocab, config, tokenizer settings)

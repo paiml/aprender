@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Memory usage test for Qwen2 model
 use aprender::demo::Qwen2Config;
 use aprender::models::Qwen2Model;

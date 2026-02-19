@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Trueno Compute Integration Example
 //!
 //! Demonstrates the integration of trueno 0.8.8+ compute infrastructure

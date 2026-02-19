@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Beta-Binomial Bayesian Inference Example
 //!
 //! Demonstrates how to use conjugate priors for Bernoulli/Binomial data.

@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Code Analysis with Code2Vec Embeddings and MPNN
 //!
 //! This example demonstrates aprender's code analysis capabilities:

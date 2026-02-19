@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! t-SNE (t-Distributed Stochastic Neighbor Embedding) visualization example
 //!
 //! Demonstrates dimensionality reduction for visualization of high-dimensional data.

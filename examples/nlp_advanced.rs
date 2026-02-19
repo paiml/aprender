@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Advanced NLP features: Similarity, Entity Extraction, and Summarization.
 //!
 //! This example demonstrates three key NLP capabilities:

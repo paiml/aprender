@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Gradient Boosting Machine on Iris Dataset
 //!
 //! This example demonstrates Gradient Boosting (GBM) for binary classification

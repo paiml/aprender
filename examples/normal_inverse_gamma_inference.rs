@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Normal-InverseGamma Bayesian Inference Example
 //!
 //! Demonstrates how to use conjugate priors for normal data with unknown mean and variance.

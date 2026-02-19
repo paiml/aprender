@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Chat Template Example
 //!
 //! Demonstrates the chat template system for formatting LLM conversations.

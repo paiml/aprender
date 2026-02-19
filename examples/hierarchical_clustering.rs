@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Hierarchical clustering example
 //!
 //! Demonstrates agglomerative clustering with different linkage methods.

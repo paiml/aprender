@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Tabu Search for the Traveling Salesman Problem
 //!
 //! This example demonstrates Tabu Search solving a TSP instance.

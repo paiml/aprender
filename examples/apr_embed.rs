@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! APR Data Embedding Example
 //!
 //! Demonstrates the data embedding system for .apr model files:

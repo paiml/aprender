@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! TensorLogic Family Tree Demo (Section O3)
 //!
 //! Demonstrates neuro-symbolic reasoning with a family tree example.

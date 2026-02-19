@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Demo: Model Bundling with Renacer Tracing
 //!
 //! This example demonstrates the bundle module and can be traced with renacer

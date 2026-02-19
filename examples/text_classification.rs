@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Text Classification with TF-IDF
 //!
 //! Demonstrates end-to-end text classification pipeline:

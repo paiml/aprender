@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Grid Search Hyperparameter Tuning Example
 //!
 //! Demonstrates grid search for finding optimal regularization parameters

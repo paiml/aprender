@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Lottery Ticket Hypothesis Pruning Example
 //!
 //! Demonstrates finding "winning tickets" - sparse subnetworks that can

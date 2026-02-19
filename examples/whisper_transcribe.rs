@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Whisper Transcription Demo (Section O2)
 //!
 //! Demonstrates the audio processing pipeline for speech recognition.

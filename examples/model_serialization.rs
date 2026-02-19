@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Model Serialization Example
 //!
 //! Demonstrates how to save and load trained models using bincode serialization.

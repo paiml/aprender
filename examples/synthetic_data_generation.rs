@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Example: Synthetic Data Generation for ML Training
 //!
 //! This example demonstrates how to use aprender's synthetic data generation

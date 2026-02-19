@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! CUDA and GPU Backend Configuration Example
 //!
 //! This example demonstrates how to configure aprender for different

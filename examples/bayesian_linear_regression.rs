@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Bayesian Linear Regression with Analytical Posterior
 //!
 //! Demonstrates Bayesian linear regression with conjugate Normal-InverseGamma prior,

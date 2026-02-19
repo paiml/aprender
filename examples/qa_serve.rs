@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! QA Example: apr serve Falsification Suite (PMAT-QA-RUST-001)
 //!
 //! Popperian falsification tests for `apr serve` HTTP endpoints.

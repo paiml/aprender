@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Boston Housing example - Linear Regression
 //!
 //! Demonstrates linear regression using simulated housing data.

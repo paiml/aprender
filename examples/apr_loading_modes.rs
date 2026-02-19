@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! APR Loading Modes Example
 //!
 //! Demonstrates the loading subsystem for .apr model files with different

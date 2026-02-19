@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Neural Network Training Example
 //!
 //! Demonstrates the complete deep learning pipeline using aprender's nn module:

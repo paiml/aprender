@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Qwen2-0.5B Native APR Format Demo
 //!
 //! Demonstrates creating and loading a Qwen2-0.5B-Instruct model in native

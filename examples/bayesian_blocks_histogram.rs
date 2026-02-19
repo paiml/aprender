@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Bayesian Blocks Histogram Example
 //!
 //! Demonstrates the Bayesian Blocks optimal histogram binning algorithm.

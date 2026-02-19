@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! QA Example: Aprender Quality Gates (PMAT-QA-RUST-001)
 //!
 //! Comprehensive codebase verification - replaces qa-verify.sh, all-modules-qa-verify.sh,

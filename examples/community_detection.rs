@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Community Detection using Louvain Algorithm
 //!
 //! This example demonstrates community detection in networks using the Louvain

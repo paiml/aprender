@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! XOR Neural Network Training Example
 //!
 //! Demonstrates aprender's PyTorch-compatible deep learning by solving the classic

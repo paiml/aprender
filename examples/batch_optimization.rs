@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Batch Optimization Examples
 //!
 //! Demonstrates the use of batch optimization algorithms (L-BFGS, Conjugate Gradient,

@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! DataFrame Basics example
 //!
 //! Demonstrates core DataFrame operations for ML workflows.

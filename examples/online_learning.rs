@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Online Learning and Dynamic Retraining Example
 //!
 //! Demonstrates incremental model updates without full retraining using:

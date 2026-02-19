@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Random Forest Regression example
 //!
 //! Demonstrates Random Forest regression with housing price prediction,

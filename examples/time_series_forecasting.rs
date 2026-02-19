@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! ARIMA Time Series Forecasting
 //!
 //! Demonstrates ARIMA modeling for time series forecasting with different configurations:

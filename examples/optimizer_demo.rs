@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Optimizer Demo Example
 //!
 //! Demonstrates SGD and Adam optimizers for gradient-based optimization:

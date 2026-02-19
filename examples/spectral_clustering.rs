@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Spectral Clustering example
 //!
 //! Demonstrates graph-based clustering using eigendecomposition.

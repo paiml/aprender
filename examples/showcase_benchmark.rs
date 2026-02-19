@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Showcase Benchmark Example (PAR-040)
 //!
 //! Demonstrates the GPU inference showcase with rich visualization and PMAT verification.

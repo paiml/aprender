@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! APR Model Inspection Example
 //!
 //! Demonstrates the inspection tooling for .apr model files:

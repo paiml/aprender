@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! PMAT-235: Validated Tensors - Compile-Time Contract Enforcement
 //!
 //! Demonstrates the Poka-Yoke (mistake-proofing) pattern for tensor validation.

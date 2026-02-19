@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! # Constrained Optimization Examples
 //!
 //! This example demonstrates Phase 3 constrained optimization methods:

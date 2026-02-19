@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Market Basket Analysis with Apriori Algorithm
 //!
 //! This example demonstrates association rule mining for retail transaction data.

@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Logistic Regression Binary Classification Example
 //!
 //! Demonstrates binary classification using Logistic Regression on a synthetic dataset.

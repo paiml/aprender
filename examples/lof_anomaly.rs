@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Local Outlier Factor (LOF) anomaly detection example
 //!
 //! Demonstrates LOF for detecting outliers in varying density regions.

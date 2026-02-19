@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Phi Model Import from HuggingFace
 //!
 //! Demonstrates importing Microsoft's smallest Phi model from HuggingFace Hub

@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Neural Network Classification Example
 //!
 //! Demonstrates training a classifier using aprender's nn module:

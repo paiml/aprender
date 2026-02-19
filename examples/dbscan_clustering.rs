@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! DBSCAN clustering example
 //!
 //! Demonstrates density-based clustering with outlier detection.

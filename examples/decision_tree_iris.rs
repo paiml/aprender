@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Iris Classification example - Decision Tree
 //!
 //! Demonstrates Decision Tree classification using simulated iris data.

@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Mixture of Experts (MoE) Ensemble Example
 //!
 //! Demonstrates specialized ensemble learning with learnable gating network

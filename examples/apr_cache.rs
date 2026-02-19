@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! APR Model Cache Example
 //!
 //! Demonstrates the hierarchical caching system implementing Toyota Way Just-In-Time:

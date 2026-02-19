@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Metaheuristics Optimization Example
 //!
 //! Demonstrates derivative-free global optimization using various

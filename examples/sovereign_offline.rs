@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Sovereign AI: Offline Mode Example
 //!
 //! This example demonstrates APR's Sovereign AI capabilities per Section 9.2:

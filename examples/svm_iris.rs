@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Linear Support Vector Machine Classification on Iris Dataset
 //!
 //! This example demonstrates Linear SVM classification on the Iris flower dataset.

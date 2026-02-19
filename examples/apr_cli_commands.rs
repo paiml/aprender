@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! APR CLI Commands Demo
 //!
 //! Demonstrates creating test models and using the apr-cli commands.

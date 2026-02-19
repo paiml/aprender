@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Negative Binomial GLM Example
 //!
 //! Demonstrates the Negative Binomial family in aprender's GLM implementation.

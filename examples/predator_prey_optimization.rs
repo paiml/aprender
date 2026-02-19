@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Predator-Prey Ecosystem Parameter Optimization
 //!
 //! This example uses metaheuristics to optimize parameters of a

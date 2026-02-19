@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! K-Nearest Neighbors Classification on Iris Dataset
 //!
 //! This example demonstrates K-Nearest Neighbors (kNN) classification on the

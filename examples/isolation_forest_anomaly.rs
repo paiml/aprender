@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Isolation Forest anomaly detection example
 //!
 //! Demonstrates using Isolation Forest to detect outliers and anomalies.

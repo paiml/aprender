@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! AutoML Clustering Example - Finding Optimal K with TPE
 //!
 //! Demonstrates using TPE (Tree-structured Parzen Estimator) to automatically

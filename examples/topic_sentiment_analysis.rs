@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Topic Modeling and Sentiment Analysis
 //!
 //! Demonstrates advanced NLP techniques:

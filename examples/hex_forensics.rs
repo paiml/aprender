@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Hex Forensics — Binary Model Inspection Demo
 //!
 //! Demonstrates the algorithms behind `apr hex`: Shannon entropy, value

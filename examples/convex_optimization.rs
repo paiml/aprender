@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! # Convex Optimization Examples
 //!
 //! This example demonstrates Phase 2 convex optimization methods:

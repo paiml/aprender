@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! QA Infrastructure Falsification Tests (PMAT-098 Red Team)
 //!
 //! This file attempts to falsify the claims made about qa_run.rs:

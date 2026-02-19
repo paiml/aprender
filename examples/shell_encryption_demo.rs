@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Shell Model Encryption Demo
 //!
 //! Demonstrates both encrypted and unencrypted model formats in aprender-shell.

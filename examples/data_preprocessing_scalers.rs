@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Data Preprocessing with Scalers Example
 //!
 //! Demonstrates StandardScaler and MinMaxScaler for feature normalization.

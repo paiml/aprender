@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! APR-POKA-001: Poka-Yoke Validation Example
 //!
 //! Demonstrates the Poka-yoke (mistake-proofing) validation system for ML models.

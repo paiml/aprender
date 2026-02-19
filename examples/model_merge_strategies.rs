@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Model Merge Strategies Example (GH-245)
 //!
 //! Demonstrates all 5 merge strategies available in `apr merge`:

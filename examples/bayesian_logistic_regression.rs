@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Bayesian Logistic Regression with Laplace Approximation
 //!
 //! Demonstrates Bayesian logistic regression using the Laplace approximation,

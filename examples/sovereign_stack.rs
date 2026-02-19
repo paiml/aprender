@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Sovereign AI Stack Integration Example
 //!
 //! Demonstrates the Pragmatic AI Labs Sovereign AI Stack integration:

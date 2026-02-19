@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Iris Clustering example - K-Means
 //!
 //! Demonstrates K-Means clustering using simulated iris data.

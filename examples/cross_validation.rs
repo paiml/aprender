@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Cross-Validation Example
 //!
 //! Demonstrates train/test splitting and K-Fold cross-validation for model evaluation.

@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Qwen2 Chat Demo (Section O4)
 //!
 //! CLI demonstration of the Qwen2-0.5B model configuration and tokenization.

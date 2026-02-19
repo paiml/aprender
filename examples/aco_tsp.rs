@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Ant Colony Optimization for the Traveling Salesman Problem
 //!
 //! This example demonstrates ACO solving a classic TSP instance.

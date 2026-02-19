@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Social Network Analysis Example
 //!
 //! This example demonstrates graph algorithms on a social network:

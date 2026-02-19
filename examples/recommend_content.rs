@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Content-Based Recommendation Example
 //!
 //! This example demonstrates how to use the ContentRecommender for

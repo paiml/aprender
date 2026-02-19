@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Dirichlet-Multinomial Bayesian Inference Example
 //!
 //! Demonstrates how to use conjugate priors for categorical data (k > 2 categories).

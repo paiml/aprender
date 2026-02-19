@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Pipeline Verification Example
 //!
 //! Demonstrates the verify module for ML pipeline debugging with:

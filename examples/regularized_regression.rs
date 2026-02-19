@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Regularized Regression Example
 //!
 //! Demonstrates Ridge, Lasso, and ElasticNet regression with:

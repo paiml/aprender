@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Shell Model Format Verification Example
 //!
 //! Demonstrates and verifies the .apr model format for shell completion models.

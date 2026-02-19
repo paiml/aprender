@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Random Forest Iris Classification Example
 //!
 //! Demonstrates Random Forest ensemble classifier on the classic Iris dataset.

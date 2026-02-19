@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Generate test APR v2 file with full transformer metadata for inference testing
 //! Creates a minimal decoder-only LLM with proper tensor structure
 use aprender::format::v2::{AprV2Metadata, AprV2Writer, TensorDType};

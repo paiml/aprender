@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Comprehensive Graph Algorithms Demo
 //!
 //! This example demonstrates all graph algorithms from v0.6.0:

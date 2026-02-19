@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Gaussian Mixture Model (GMM) clustering example
 //!
 //! Demonstrates probabilistic clustering with soft assignments using the EM algorithm.

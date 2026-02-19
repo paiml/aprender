@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Benchmark Comparison Visualization Example (PAR-040)
 //!
 //! Demonstrates the 2×3 grid benchmark visualization with:

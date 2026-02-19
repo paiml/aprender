@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! APR 100-Point Quality Scoring Example
 //!
 //! Demonstrates the comprehensive model quality scoring system that evaluates

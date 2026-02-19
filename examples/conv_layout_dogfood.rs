@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Dogfood test for GH-159: Conv layout optimization with im2col+GEMM.
 //!
 //! ```bash

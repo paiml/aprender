@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Rosetta Stone - Universal Model Format Converter Example
 //!
 //! Demonstrates the Rosetta Stone pattern for model format conversion:

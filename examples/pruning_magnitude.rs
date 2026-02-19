@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Magnitude Pruning Example
 //!
 //! Demonstrates neural network pruning using magnitude-based importance:

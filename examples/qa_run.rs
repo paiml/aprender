@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! QA Example: apr run Falsification Suite (PMAT-QA-RUST-001 + PMAT-QA-MATRIX-001)
 //!
 //! Popperian falsification tests for `apr run` command with full matrix support.

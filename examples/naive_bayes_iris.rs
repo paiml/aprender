@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Gaussian Naive Bayes Classification on Iris Dataset
 //!
 //! This example demonstrates Gaussian Naive Bayes (GaussianNB) classification on the

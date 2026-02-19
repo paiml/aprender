@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Dogfood test for GH-261: CPU fallback when GPU serve fails per-request.
 //!
 //! Starts `apr serve --gpu` on a small APR model, then verifies:

@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Text Preprocessing and NLP
 //!
 //! Demonstrates text preprocessing pipeline for Natural Language Processing:

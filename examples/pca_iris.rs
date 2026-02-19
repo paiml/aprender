@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! PCA Dimensionality Reduction Example - Iris Dataset
 //!
 //! This example demonstrates Principal Component Analysis (PCA) on the Iris dataset:

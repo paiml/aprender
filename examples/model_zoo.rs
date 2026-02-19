@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Model Zoo Example
 //!
 //! Demonstrates the Model Zoo protocol for model sharing and discovery:

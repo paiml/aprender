@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Descriptive Statistics Example
 //!
 //! This example demonstrates statistical analysis on a dataset:

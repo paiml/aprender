@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Gamma-Poisson Bayesian Inference Example
 //!
 //! Demonstrates how to use conjugate priors for count data (Poisson-distributed events).

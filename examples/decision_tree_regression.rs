@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)]
 //! Decision Tree Regression example
 //!
 //! Demonstrates Decision Tree regression using simulated housing data,
