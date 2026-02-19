@@ -289,6 +289,7 @@ impl Conv1d {
 }
 
 impl Module for Conv1d {
+    #[provable_contracts_macros::contract("conv1d-kernel-v1", equation = "conv1d")]
     fn forward(&self, input: &Tensor) -> Tensor {
         assert_eq!(
             input.ndim(),

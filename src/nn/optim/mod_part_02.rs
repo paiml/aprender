@@ -94,6 +94,7 @@ impl AdamW {
 }
 
 impl Optimizer for AdamW {
+    #[provable_contracts_macros::contract("adamw-kernel-v1", equation = "weight_update")]
     fn step(&mut self) {
         self.t += 1;
         self.initialized = true;

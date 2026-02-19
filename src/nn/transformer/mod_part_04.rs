@@ -262,6 +262,7 @@ impl RotaryPositionEmbedding {
     /// # Returns
     ///
     /// Tensor with rotary embeddings applied.
+    #[provable_contracts_macros::contract("rope-kernel-v1", equation = "rope")]
     #[must_use]
     pub fn apply(&self, x: &Tensor, position_ids: &[usize]) -> Tensor {
         let shape = x.shape();

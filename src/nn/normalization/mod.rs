@@ -95,6 +95,7 @@ impl LayerNorm {
 }
 
 impl Module for LayerNorm {
+    #[provable_contracts_macros::contract("layernorm-kernel-v1", equation = "layernorm")]
     fn forward(&self, input: &Tensor) -> Tensor {
         // Compute mean and variance over normalized dimensions
         let shape = input.shape();
@@ -223,7 +224,43 @@ impl BatchNorm1d {
     }
 }
 
+impl BatchNorm1d {
+    /// Collect indices for a single feature across batch and spatial dims.
+    fn feature_indices(shape: &[usize], feature: usize) -> Vec<usize> {
+        let (batch_size, features) = (shape[0], shape[1]);
+        if shape.len() == 2 {
+            (0..batch_size).map(|b| b * features + feature).collect()
+        } else {
+            let length = shape[2];
+            let mut indices = Vec::with_capacity(batch_size * length);
+            for b in 0..batch_size {
+                for l in 0..length {
+                    indices.push(b * features * length + feature * length + l);
+                }
+            }
+            indices
+        }
+    }
+
+    /// Normalize feature values in-place given mean, std_inv, and affine params.
+    fn normalize_feature(
+        input_data: &[f32],
+        output_data: &mut [f32],
+        indices: &[usize],
+        mean: f32,
+        std_inv: f32,
+        gamma: f32,
+        beta: f32,
+    ) {
+        for &idx in indices {
+            let normalized = (input_data[idx] - mean) * std_inv;
+            output_data[idx] = normalized * gamma + beta;
+        }
+    }
+}
+
 impl Module for BatchNorm1d {
+    #[provable_contracts_macros::contract("batchnorm-kernel-v1", equation = "batchnorm_train")]
     fn forward(&self, input: &Tensor) -> Tensor {
         assert!(
             input.ndim() == 2 || input.ndim() == 3,
@@ -232,9 +269,7 @@ impl Module for BatchNorm1d {
         );
 
         let shape = input.shape();
-        // For both 2D [batch, features] and 3D [batch, features, length],
-        // features is always at shape[1]
-        let (batch_size, features) = (shape[0], shape[1]);
+        let features = shape[1];
 
         assert_eq!(
             features, self.num_features,
@@ -245,94 +280,28 @@ impl Module for BatchNorm1d {
         let input_data = input.data();
         let mut output_data = vec![0.0; input_data.len()];
 
-        if self.training {
-            // Compute batch statistics
-            for f in 0..features {
-                let mut sum = 0.0;
-                let mut count = 0;
+        for f in 0..features {
+            let indices = Self::feature_indices(shape, f);
 
-                // Gather all values for this feature
-                if input.ndim() == 2 {
-                    for b in 0..batch_size {
-                        sum += input_data[b * features + f];
-                        count += 1;
-                    }
-                } else {
-                    let length = shape[2];
-                    for b in 0..batch_size {
-                        for l in 0..length {
-                            sum += input_data[b * features * length + f * length + l];
-                            count += 1;
-                        }
-                    }
-                }
+            let (mean, var) = if self.training {
+                let sum: f32 = indices.iter().map(|&i| input_data[i]).sum();
+                let mean = sum / indices.len() as f32;
+                let var_sum: f32 = indices.iter().map(|&i| (input_data[i] - mean).powi(2)).sum();
+                (mean, var_sum / indices.len() as f32)
+            } else {
+                (self.running_mean.data()[f], self.running_var.data()[f])
+            };
 
-                let mean = sum / count as f32;
-
-                // Compute variance
-                let mut var_sum = 0.0;
-                if input.ndim() == 2 {
-                    for b in 0..batch_size {
-                        let val = input_data[b * features + f];
-                        var_sum += (val - mean).powi(2);
-                    }
-                } else {
-                    let length = shape[2];
-                    for b in 0..batch_size {
-                        for l in 0..length {
-                            let val = input_data[b * features * length + f * length + l];
-                            var_sum += (val - mean).powi(2);
-                        }
-                    }
-                }
-                let var = var_sum / count as f32;
-
-                // Normalize
-                let std_inv = 1.0 / (var + self.eps).sqrt();
-
-                if input.ndim() == 2 {
-                    for b in 0..batch_size {
-                        let idx = b * features + f;
-                        let normalized = (input_data[idx] - mean) * std_inv;
-                        output_data[idx] = normalized * self.weight.data()[f] + self.bias.data()[f];
-                    }
-                } else {
-                    let length = shape[2];
-                    for b in 0..batch_size {
-                        for l in 0..length {
-                            let idx = b * features * length + f * length + l;
-                            let normalized = (input_data[idx] - mean) * std_inv;
-                            output_data[idx] =
-                                normalized * self.weight.data()[f] + self.bias.data()[f];
-                        }
-                    }
-                }
-            }
-        } else {
-            // Use running statistics
-            for f in 0..features {
-                let mean = self.running_mean.data()[f];
-                let var = self.running_var.data()[f];
-                let std_inv = 1.0 / (var + self.eps).sqrt();
-
-                if input.ndim() == 2 {
-                    for b in 0..batch_size {
-                        let idx = b * features + f;
-                        let normalized = (input_data[idx] - mean) * std_inv;
-                        output_data[idx] = normalized * self.weight.data()[f] + self.bias.data()[f];
-                    }
-                } else {
-                    let length = shape[2];
-                    for b in 0..batch_size {
-                        for l in 0..length {
-                            let idx = b * features * length + f * length + l;
-                            let normalized = (input_data[idx] - mean) * std_inv;
-                            output_data[idx] =
-                                normalized * self.weight.data()[f] + self.bias.data()[f];
-                        }
-                    }
-                }
-            }
+            let std_inv = 1.0 / (var + self.eps).sqrt();
+            Self::normalize_feature(
+                input_data,
+                &mut output_data,
+                &indices,
+                mean,
+                std_inv,
+                self.weight.data()[f],
+                self.bias.data()[f],
+            );
         }
 
         Tensor::new(&output_data, shape)

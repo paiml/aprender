@@ -278,6 +278,7 @@ impl RMSNorm {
 }
 
 impl Module for RMSNorm {
+    #[provable_contracts_macros::contract("rmsnorm-kernel-v1", equation = "rmsnorm")]
     fn forward(&self, input: &Tensor) -> Tensor {
         let shape = input.shape();
         let norm_size: usize = self.normalized_shape.iter().product();
