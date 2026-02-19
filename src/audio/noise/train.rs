@@ -172,7 +172,15 @@ impl NoiseTrainer {
                 *g /= batch_size;
             }
         }
-        self.apply_gradients(&grad_w1, &grad_b1, &grad_w2, &grad_b2, &grad_w3, &grad_b3);
+        // Apply SGD: param -= lr * grad
+        let lr = self.learning_rate;
+        let (w1, b1, w2, b2, w3, b3) = self.model.weights_mut();
+        for (p, g) in w1.iter_mut().zip(grad_w1.iter()) { *p -= lr * g; }
+        for (p, g) in b1.iter_mut().zip(grad_b1.iter()) { *p -= lr * g; }
+        for (p, g) in w2.iter_mut().zip(grad_w2.iter()) { *p -= lr * g; }
+        for (p, g) in b2.iter_mut().zip(grad_b2.iter()) { *p -= lr * g; }
+        for (p, g) in w3.iter_mut().zip(grad_w3.iter()) { *p -= lr * g; }
+        for (p, g) in b3.iter_mut().zip(grad_b3.iter()) { *p -= lr * g; }
 
         total_loss / batch_size
     }
