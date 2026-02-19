@@ -11,17 +11,19 @@ use proptest::prelude::*;
 /// Strategy: generate random training data with n samples and d features.
 /// Ensures n_samples > n_features + 1 so OLS is well-determined with intercept.
 fn ols_training_strategy() -> impl Strategy<Value = (Matrix<f32>, Vector<f32>, usize, usize)> {
-    (10usize..=30, 2usize..=4).prop_flat_map(|(n, d)| {
-        let features = proptest::collection::vec(-10.0f32..10.0f32, n * d);
-        let targets = proptest::collection::vec(-50.0f32..50.0f32, n);
-        let n_val = Just(n);
-        let d_val = Just(d);
-        (features, targets, n_val, d_val)
-    }).prop_map(|(features, targets, n, d)| {
-        let x = Matrix::from_vec(n, d, features).expect("valid matrix dimensions");
-        let y = Vector::from_slice(&targets);
-        (x, y, n, d)
-    })
+    (10usize..=30, 2usize..=4)
+        .prop_flat_map(|(n, d)| {
+            let features = proptest::collection::vec(-10.0f32..10.0f32, n * d);
+            let targets = proptest::collection::vec(-50.0f32..50.0f32, n);
+            let n_val = Just(n);
+            let d_val = Just(d);
+            (features, targets, n_val, d_val)
+        })
+        .prop_map(|(features, targets, n, d)| {
+            let x = Matrix::from_vec(n, d, features).expect("valid matrix dimensions");
+            let y = Vector::from_slice(&targets);
+            (x, y, n, d)
+        })
 }
 
 proptest! {

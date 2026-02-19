@@ -10,14 +10,16 @@ use proptest::prelude::*;
 /// Strategy: generate a random matrix with n rows (20..40) and d=4 columns,
 /// plus a seed for ICA reproducibility.
 fn ica_data_strategy() -> impl Strategy<Value = (Matrix<f32>, usize, u64)> {
-    (20usize..=40, 0u64..1000).prop_flat_map(|(n, seed)| {
-        let d = 4usize;
-        let data = proptest::collection::vec(-10.0f32..10.0f32, n * d);
-        (data, Just(n), Just(d), Just(seed))
-    }).prop_map(|(data, n, d, seed)| {
-        let x = Matrix::from_vec(n, d, data).expect("valid matrix dimensions");
-        (x, n, seed)
-    })
+    (20usize..=40, 0u64..1000)
+        .prop_flat_map(|(n, seed)| {
+            let d = 4usize;
+            let data = proptest::collection::vec(-10.0f32..10.0f32, n * d);
+            (data, Just(n), Just(d), Just(seed))
+        })
+        .prop_map(|(data, n, d, seed)| {
+            let x = Matrix::from_vec(n, d, data).expect("valid matrix dimensions");
+            (x, n, seed)
+        })
 }
 
 proptest! {
