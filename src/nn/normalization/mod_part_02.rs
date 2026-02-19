@@ -314,8 +314,7 @@ impl Module for RMSNorm {
                 let offset = b * norm_size;
                 let slice = &input_data[offset..offset + norm_size];
 
-                let mean_sq: f32 =
-                    slice.iter().map(|&x| x * x).sum::<f32>() / norm_size as f32;
+                let mean_sq: f32 = slice.iter().map(|&x| x * x).sum::<f32>() / norm_size as f32;
                 let rms_inv = 1.0 / (mean_sq + self.eps).sqrt();
 
                 for i in 0..norm_size {
