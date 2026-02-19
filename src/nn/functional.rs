@@ -367,6 +367,55 @@ fn broadcast_add_1d(matrix: &Tensor, vector: &Tensor) -> Tensor {
     Tensor::new(&result, &[rows, cols])
 }
 
+// ============================================================================
+// Distance Functions (ONE PATH canonical implementations)
+// ============================================================================
+
+/// Euclidean distance between two slices.
+///
+/// ONE PATH: Canonical euclidean distance (UCBD §4).
+///
+/// ```text
+/// d(a, b) = sqrt(Σ(a_i - b_i)²)
+/// ```
+pub fn euclidean_distance(a: &[f32], b: &[f32]) -> f32 {
+    a.iter()
+        .zip(b.iter())
+        .map(|(&x, &y)| (x - y).powi(2))
+        .sum::<f32>()
+        .sqrt()
+}
+
+/// Cosine similarity between two slices.
+///
+/// ONE PATH: Canonical cosine similarity for `&[f32]` (UCBD §4).
+///
+/// ```text
+/// cos(a, b) = (a · b) / (||a|| × ||b||)
+/// ```
+pub fn cosine_similarity_slice(a: &[f32], b: &[f32]) -> f32 {
+    if a.len() != b.len() || a.is_empty() {
+        return 0.0;
+    }
+
+    let mut dot = 0.0_f32;
+    let mut norm_a = 0.0_f32;
+    let mut norm_b = 0.0_f32;
+
+    for (&x, &y) in a.iter().zip(b.iter()) {
+        dot += x * y;
+        norm_a += x * x;
+        norm_b += y * y;
+    }
+
+    let denom = norm_a.sqrt() * norm_b.sqrt();
+    if denom < 1e-10 {
+        0.0
+    } else {
+        (dot / denom).clamp(-1.0, 1.0)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

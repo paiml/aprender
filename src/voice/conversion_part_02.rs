@@ -382,19 +382,7 @@ pub fn conversion_quality(
     (source_sim, target_sim, conversion_score)
 }
 
-/// Calculate cosine similarity between two vectors.
+/// ONE PATH: Delegates to `nn::functional::cosine_similarity_slice` (UCBD §4).
 fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
-    if a.len() != b.len() || a.is_empty() {
-        return 0.0;
-    }
-
-    let dot: f32 = a.iter().zip(b).map(|(x, y)| x * y).sum();
-    let norm_a: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
-    let norm_b: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
-
-    if norm_a > 0.0 && norm_b > 0.0 {
-        (dot / (norm_a * norm_b)).clamp(-1.0, 1.0)
-    } else {
-        0.0
-    }
+    crate::nn::functional::cosine_similarity_slice(a, b)
 }

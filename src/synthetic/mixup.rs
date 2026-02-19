@@ -234,21 +234,9 @@ impl<T: Embeddable> MixUpGenerator<T> {
             .collect()
     }
 
-    /// Compute cosine similarity between two embeddings.
+    /// ONE PATH: Delegates to `nn::functional::cosine_similarity_slice` (UCBD §4).
     fn cosine_similarity(e1: &[f32], e2: &[f32]) -> f32 {
-        if e1.len() != e2.len() || e1.is_empty() {
-            return 0.0;
-        }
-
-        let dot: f32 = e1.iter().zip(e2.iter()).map(|(a, b)| a * b).sum();
-        let norm1: f32 = e1.iter().map(|x| x * x).sum::<f32>().sqrt();
-        let norm2: f32 = e2.iter().map(|x| x * x).sum::<f32>().sqrt();
-
-        if norm1 < f32::EPSILON || norm2 < f32::EPSILON {
-            return 0.0;
-        }
-
-        (dot / (norm1 * norm2)).clamp(-1.0, 1.0)
+        crate::nn::functional::cosine_similarity_slice(e1, e2)
     }
 
     /// Compute embedding variance as diversity measure.

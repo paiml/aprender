@@ -52,25 +52,13 @@ impl ErrorEmbedding {
         self.vector.len()
     }
 
-    /// Compute cosine similarity with another embedding using trueno SIMD.
+    /// ONE PATH: Delegates to `nn::functional::cosine_similarity_slice` (UCBD §4).
     #[must_use]
     pub fn cosine_similarity(&self, other: &ErrorEmbedding) -> f32 {
         if self.vector.len() != other.vector.len() || self.vector.is_empty() {
             return 0.0;
         }
-
-        let va = Vector::from_slice(&self.vector);
-        let vb = Vector::from_slice(&other.vector);
-
-        let dot = va.dot(&vb).unwrap_or(0.0);
-        let norm_a = va.norm_l2().unwrap_or(0.0);
-        let norm_b = vb.norm_l2().unwrap_or(0.0);
-
-        if norm_a == 0.0 || norm_b == 0.0 {
-            0.0
-        } else {
-            dot / (norm_a * norm_b)
-        }
+        crate::nn::functional::cosine_similarity_slice(&self.vector, &other.vector)
     }
 
     /// Compute L2 distance to another embedding using trueno SIMD.

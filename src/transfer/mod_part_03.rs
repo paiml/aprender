@@ -320,11 +320,9 @@ impl MatchingNetwork {
     }
 }
 
+/// ONE PATH: Delegates to `nn::functional::cosine_similarity_slice` (UCBD §4).
 fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
-    let dot: f32 = a.iter().zip(b).map(|(&x, &y)| x * y).sum();
-    let na: f32 = a.iter().map(|&x| x * x).sum::<f32>().sqrt();
-    let nb: f32 = b.iter().map(|&x| x * x).sum::<f32>().sqrt();
-    dot / (na * nb + 1e-10)
+    crate::nn::functional::cosine_similarity_slice(a, b)
 }
 
 #[cfg(test)]

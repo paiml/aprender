@@ -142,20 +142,9 @@ impl Delta {
     /// - 0.0: orthogonal
     /// - -1.0: opposite direction
     #[must_use]
+    /// ONE PATH: Delegates to `nn::functional::cosine_similarity_slice` (UCBD §4).
     pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
-        if a.len() != b.len() || a.is_empty() {
-            return 0.0;
-        }
-
-        let dot: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
-        let norm_a: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
-        let norm_b: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
-
-        if norm_a < 1e-10 || norm_b < 1e-10 {
-            return 0.0;
-        }
-
-        dot / (norm_a * norm_b)
+        crate::nn::functional::cosine_similarity_slice(a, b)
     }
 
     /// Compute KL divergence D(P || Q).

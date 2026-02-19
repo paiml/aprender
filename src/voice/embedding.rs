@@ -230,6 +230,7 @@ impl SpeakerEmbedding {
     ///
     /// # Errors
     /// Returns error if dimensions don't match.
+    /// ONE PATH: Core computation delegates to `nn::functional::euclidean_distance` (UCBD §4).
     pub fn euclidean_distance(&self, other: &Self) -> VoiceResult<f32> {
         if self.dim() != other.dim() {
             return Err(VoiceError::DimensionMismatch {
@@ -237,13 +238,10 @@ impl SpeakerEmbedding {
                 got: other.dim(),
             });
         }
-        let sum_sq: f32 = self
-            .vector
-            .iter()
-            .zip(other.vector.iter())
-            .map(|(a, b)| (a - b).powi(2))
-            .sum();
-        Ok(sum_sq.sqrt())
+        Ok(crate::nn::functional::euclidean_distance(
+            &self.vector,
+            &other.vector,
+        ))
     }
 }
 
@@ -386,27 +384,14 @@ impl EmbeddingExtractor for XVector {
 ///
 /// For speaker verification, same speaker pairs typically have
 /// cosine similarity > 0.7.
+///
+/// ONE PATH: Delegates to `nn::functional::cosine_similarity_slice` (UCBD §4).
 #[must_use]
 pub fn cosine_similarity(a: &SpeakerEmbedding, b: &SpeakerEmbedding) -> f32 {
     if a.dim() != b.dim() || a.dim() == 0 {
         return 0.0;
     }
-
-    let dot: f32 = a
-        .as_slice()
-        .iter()
-        .zip(b.as_slice().iter())
-        .map(|(x, y)| x * y)
-        .sum();
-
-    let norm_a = a.l2_norm();
-    let norm_b = b.l2_norm();
-
-    if norm_a < f32::EPSILON || norm_b < f32::EPSILON {
-        return 0.0;
-    }
-
-    (dot / (norm_a * norm_b)).clamp(-1.0, 1.0)
+    crate::nn::functional::cosine_similarity_slice(a.as_slice(), b.as_slice())
 }
 
 /// Normalize embedding to unit length.

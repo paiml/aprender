@@ -404,30 +404,14 @@ pub fn triplet_loss(
     (d_pos - d_neg + margin).max(0.0)
 }
 
-/// Euclidean distance between two vectors.
+/// ONE PATH: Delegates to `nn::functional::euclidean_distance` (UCBD §4).
 fn euclidean_distance(a: &Vector<f32>, b: &Vector<f32>) -> f32 {
-    let mut sum = 0.0;
-    for i in 0..a.len() {
-        let diff = a[i] - b[i];
-        sum += diff * diff;
-    }
-    sum.sqrt()
+    crate::nn::functional::euclidean_distance(a.as_slice(), b.as_slice())
 }
 
-/// Cosine similarity between two vectors.
+/// ONE PATH: Delegates to `nn::functional::cosine_similarity_slice` (UCBD §4).
 fn cosine_similarity(a: &Vector<f32>, b: &Vector<f32>) -> f32 {
-    let mut dot = 0.0;
-    let mut norm_a = 0.0;
-    let mut norm_b = 0.0;
-
-    for i in 0..a.len() {
-        dot += a[i] * b[i];
-        norm_a += a[i] * a[i];
-        norm_b += b[i] * b[i];
-    }
-
-    let denom = (norm_a.sqrt() * norm_b.sqrt()).max(1e-8);
-    dot / denom
+    crate::nn::functional::cosine_similarity_slice(a.as_slice(), b.as_slice())
 }
 
 include!("mod_part_02.rs");

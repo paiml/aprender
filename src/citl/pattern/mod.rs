@@ -9,8 +9,6 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Read as IoRead, Write as IoWrite};
 use std::path::Path;
-use trueno::Vector;
-
 /// Magic header for pattern library files.
 const MAGIC: &[u8; 4] = b"CITL";
 /// Current format version.

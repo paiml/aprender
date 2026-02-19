@@ -125,16 +125,13 @@ impl AgglomerativeClustering {
             .expect("Model not fitted. Call fit() first.")
     }
 
-    /// Calculate Euclidean distance between two points.
+    /// ONE PATH: Core computation delegates to `nn::functional::euclidean_distance` (UCBD §4).
     #[allow(clippy::unused_self)]
     fn euclidean_distance(&self, x: &Matrix<f32>, i: usize, j: usize) -> f32 {
         let n_features = x.shape().1;
-        let mut sum = 0.0;
-        for k in 0..n_features {
-            let diff = x.get(i, k) - x.get(j, k);
-            sum += diff * diff;
-        }
-        sum.sqrt()
+        let row_i: Vec<f32> = (0..n_features).map(|k| x.get(i, k)).collect();
+        let row_j: Vec<f32> = (0..n_features).map(|k| x.get(j, k)).collect();
+        crate::nn::functional::euclidean_distance(&row_i, &row_j)
     }
 
     /// Calculate pairwise distance matrix.
@@ -183,6 +180,22 @@ impl AgglomerativeClustering {
         (min_i, min_j, min_dist)
     }
 
+    /// Collect pairwise distances between two clusters.
+    fn pairwise_cluster_distances(
+        &self,
+        x: &Matrix<f32>,
+        cluster_a: &[usize],
+        cluster_b: &[usize],
+    ) -> Vec<f32> {
+        let mut dists = Vec::with_capacity(cluster_a.len() * cluster_b.len());
+        for &i in cluster_a {
+            for &j in cluster_b {
+                dists.push(self.euclidean_distance(x, i, j));
+            }
+        }
+        dists
+    }
+
     /// Update distances for a newly merged cluster using specified linkage.
     fn update_distances(
         &self,
@@ -197,62 +210,29 @@ impl AgglomerativeClustering {
 
         let dist = match self.linkage {
             Linkage::Single => {
-                // Minimum distance
-                let mut min_dist = f32::INFINITY;
-                for &i in merged_cluster {
-                    for &j in other_cluster {
-                        let d = self.euclidean_distance(x, i, j);
-                        if d < min_dist {
-                            min_dist = d;
-                        }
-                    }
-                }
-                min_dist
+                let dists = self.pairwise_cluster_distances(x, merged_cluster, other_cluster);
+                dists.into_iter().fold(f32::INFINITY, f32::min)
             }
             Linkage::Complete => {
-                // Maximum distance
-                let mut max_dist = 0.0;
-                for &i in merged_cluster {
-                    for &j in other_cluster {
-                        let d = self.euclidean_distance(x, i, j);
-                        if d > max_dist {
-                            max_dist = d;
-                        }
-                    }
-                }
-                max_dist
+                let dists = self.pairwise_cluster_distances(x, merged_cluster, other_cluster);
+                dists.into_iter().fold(0.0_f32, f32::max)
             }
             Linkage::Average => {
-                // Average distance
-                let mut sum = 0.0;
-                let mut count = 0;
-                for &i in merged_cluster {
-                    for &j in other_cluster {
-                        sum += self.euclidean_distance(x, i, j);
-                        count += 1;
-                    }
-                }
-                if count > 0 {
-                    sum / count as f32
-                } else {
+                let dists = self.pairwise_cluster_distances(x, merged_cluster, other_cluster);
+                if dists.is_empty() {
                     0.0
+                } else {
+                    dists.iter().sum::<f32>() / dists.len() as f32
                 }
             }
             Linkage::Ward => {
-                // Ward's method: minimize within-cluster variance
-                // Simplified: use centroid distance weighted by cluster sizes
                 let merged_centroid = self.compute_centroid(x, merged_cluster);
                 let other_centroid = self.compute_centroid(x, other_cluster);
-
-                let mut sum = 0.0;
-                for k in 0..x.shape().1 {
-                    let diff = merged_centroid[k] - other_centroid[k];
-                    sum += diff * diff;
-                }
-
+                let centroid_dist =
+                    crate::nn::functional::euclidean_distance(&merged_centroid, &other_centroid);
                 let n1 = merged_cluster.len() as f32;
                 let n2 = other_cluster.len() as f32;
-                ((n1 * n2) / (n1 + n2)) * sum.sqrt()
+                ((n1 * n2) / (n1 + n2)) * centroid_dist
             }
         };
 

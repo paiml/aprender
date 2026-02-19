@@ -241,8 +241,8 @@ fn div_scalar(x: &Tensor, scalar: f32) -> Tensor {
     scale_tensor(x, 1.0 / scalar)
 }
 
+/// ONE PATH: Each element delegates to `nn::functional::cosine_similarity_slice` (UCBD §4).
 fn cosine_similarity_batch(a: &Tensor, b: &Tensor) -> Tensor {
-    // Compute cosine similarity for each pair in batch
     let shape_a = a.shape();
     let batch_size = shape_a[0];
     let dim = shape_a[1];
@@ -254,22 +254,14 @@ fn cosine_similarity_batch(a: &Tensor, b: &Tensor) -> Tensor {
     for i in 0..batch_size {
         let a_slice = &a_data[i * dim..(i + 1) * dim];
         let b_slice = &b_data[i * dim..(i + 1) * dim];
-
-        let va = Vector::from_slice(a_slice);
-        let vb = Vector::from_slice(b_slice);
-
-        let dot = va.dot(&vb).unwrap_or(0.0);
-        let norm_a = va.norm_l2().unwrap_or(1.0);
-        let norm_b = vb.norm_l2().unwrap_or(1.0);
-
-        output.push(dot / (norm_a * norm_b + 1e-8));
+        output.push(crate::nn::functional::cosine_similarity_slice(a_slice, b_slice));
     }
 
     Tensor::new(&output, &[batch_size])
 }
 
+/// ONE PATH: Each element delegates to `nn::functional::cosine_similarity_slice` (UCBD §4).
 fn cosine_similarity_many(anchor: &Tensor, negatives: &Tensor) -> Tensor {
-    // Compute cosine similarity between anchor and each negative
     let a_shape = anchor.shape();
     let n_shape = negatives.shape();
     let batch_size = a_shape[0];
@@ -282,26 +274,18 @@ fn cosine_similarity_many(anchor: &Tensor, negatives: &Tensor) -> Tensor {
 
     for b in 0..batch_size {
         let a_slice = &a_data[b * dim..(b + 1) * dim];
-        let va = Vector::from_slice(a_slice);
-        let norm_a = va.norm_l2().unwrap_or(1.0);
-
         for n in 0..num_negatives {
             let n_start = b * num_negatives * dim + n * dim;
             let n_slice = &n_data[n_start..n_start + dim];
-            let vn = Vector::from_slice(n_slice);
-
-            let dot = va.dot(&vn).unwrap_or(0.0);
-            let norm_n = vn.norm_l2().unwrap_or(1.0);
-
-            output.push(dot / (norm_a * norm_n + 1e-8));
+            output.push(crate::nn::functional::cosine_similarity_slice(a_slice, n_slice));
         }
     }
 
     Tensor::new(&output, &[batch_size, num_negatives])
 }
 
+/// ONE PATH: Each element delegates to `nn::functional::cosine_similarity_slice` (UCBD §4).
 fn cosine_similarity_matrix(a: &Tensor, b: &Tensor) -> Tensor {
-    // Compute all-pairs cosine similarity: [batch, dim] x [batch, dim] -> [batch, batch]
     let shape = a.shape();
     let batch_size = shape[0];
     let dim = shape[1];
@@ -312,17 +296,9 @@ fn cosine_similarity_matrix(a: &Tensor, b: &Tensor) -> Tensor {
 
     for i in 0..batch_size {
         let a_slice = &a_data[i * dim..(i + 1) * dim];
-        let va = Vector::from_slice(a_slice);
-        let norm_a = va.norm_l2().unwrap_or(1.0);
-
         for j in 0..batch_size {
             let b_slice = &b_data[j * dim..(j + 1) * dim];
-            let vb = Vector::from_slice(b_slice);
-
-            let dot = va.dot(&vb).unwrap_or(0.0);
-            let norm_b = vb.norm_l2().unwrap_or(1.0);
-
-            output.push(dot / (norm_a * norm_b + 1e-8));
+            output.push(crate::nn::functional::cosine_similarity_slice(a_slice, b_slice));
         }
     }
 

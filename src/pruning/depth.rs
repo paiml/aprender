@@ -175,6 +175,8 @@ impl DepthPruner {
     /// Compute cosine similarity between two tensors.
     ///
     /// `cos_sim` = (a · b) / (||a|| * ||b||)
+    ///
+    /// ONE PATH: Delegates to `nn::functional::cosine_similarity_slice` (UCBD §4).
     pub fn cosine_similarity(a: &Tensor, b: &Tensor) -> Result<f32, PruningError> {
         let a_data = a.data();
         let b_data = b.data();
@@ -190,31 +192,16 @@ impl DepthPruner {
             return Ok(1.0); // Empty tensors are identical
         }
 
-        let mut dot_product = 0.0f32;
-        let mut norm_a = 0.0f32;
-        let mut norm_b = 0.0f32;
+        let sim = crate::nn::functional::cosine_similarity_slice(&a_data, &b_data);
 
-        for i in 0..a_data.len() {
-            dot_product += a_data[i] * b_data[i];
-            norm_a += a_data[i] * a_data[i];
-            norm_b += b_data[i] * b_data[i];
+        // Both-zero special case: canonical returns 0.0, but equal tensors should be 1.0
+        let both_zero = a_data.iter().all(|&x| x.abs() < 1e-10)
+            && b_data.iter().all(|&x| x.abs() < 1e-10);
+        if both_zero {
+            return Ok(1.0);
         }
 
-        norm_a = norm_a.sqrt();
-        norm_b = norm_b.sqrt();
-
-        // Handle zero vectors
-        if norm_a < 1e-10 || norm_b < 1e-10 {
-            if norm_a < 1e-10 && norm_b < 1e-10 {
-                return Ok(1.0); // Both zero - consider identical
-            }
-            return Ok(0.0); // One zero - orthogonal
-        }
-
-        let cos_sim = dot_product / (norm_a * norm_b);
-
-        // Clamp to [-1, 1] for numerical stability
-        Ok(cos_sim.clamp(-1.0, 1.0))
+        Ok(sim)
     }
 
     /// Compute Block Importance for a single layer.

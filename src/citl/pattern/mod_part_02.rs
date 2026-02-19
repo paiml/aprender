@@ -5,25 +5,9 @@ impl Default for PatternStats {
     }
 }
 
-/// Compute cosine similarity between two vectors using trueno SIMD.
+/// ONE PATH: Delegates to `nn::functional::cosine_similarity_slice` (UCBD §4).
 fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
-    if a.len() != b.len() || a.is_empty() {
-        return 0.0;
-    }
-
-    let va = Vector::from_slice(a);
-    let vb = Vector::from_slice(b);
-
-    // Use trueno's SIMD-accelerated operations
-    let dot = va.dot(&vb).unwrap_or(0.0);
-    let norm_a = va.norm_l2().unwrap_or(0.0);
-    let norm_b = vb.norm_l2().unwrap_or(0.0);
-
-    if norm_a == 0.0 || norm_b == 0.0 {
-        0.0
-    } else {
-        dot / (norm_a * norm_b)
-    }
+    crate::nn::functional::cosine_similarity_slice(a, b)
 }
 
 // ==================== Binary Serialization Helpers ====================

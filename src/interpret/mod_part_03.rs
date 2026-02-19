@@ -150,13 +150,9 @@ impl CounterfactualExplainer {
         }
     }
 
+    /// ONE PATH: Delegates to `nn::functional::euclidean_distance` (UCBD §4).
     fn euclidean_distance(a: &Vector<f32>, b: &Vector<f32>) -> f32 {
-        a.as_slice()
-            .iter()
-            .zip(b.as_slice())
-            .map(|(&x, &y)| (x - y).powi(2))
-            .sum::<f32>()
-            .sqrt()
+        crate::nn::functional::euclidean_distance(a.as_slice(), b.as_slice())
     }
 }
 

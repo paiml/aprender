@@ -313,12 +313,9 @@ impl CoreSetSelection {
         }
     }
 
+    /// ONE PATH: Delegates to `nn::functional::euclidean_distance` (UCBD §4).
     fn euclidean_distance(a: &[f32], b: &[f32]) -> f32 {
-        a.iter()
-            .zip(b.iter())
-            .map(|(&x, &y)| (x - y).powi(2))
-            .sum::<f32>()
-            .sqrt()
+        crate::nn::functional::euclidean_distance(a, b)
     }
 }
 

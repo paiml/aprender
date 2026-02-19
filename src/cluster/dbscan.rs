@@ -119,18 +119,13 @@ impl DBSCAN {
         neighbors
     }
 
-    /// Computes Euclidean distance between samples i and j.
+    /// ONE PATH: Core computation delegates to `nn::functional::euclidean_distance` (UCBD §4).
     #[allow(clippy::unused_self)]
     fn euclidean_distance(&self, x: &Matrix<f32>, i: usize, j: usize) -> f32 {
         let n_features = x.shape().1;
-        let mut sum = 0.0;
-
-        for k in 0..n_features {
-            let diff = x.get(i, k) - x.get(j, k);
-            sum += diff * diff;
-        }
-
-        sum.sqrt()
+        let row_i: Vec<f32> = (0..n_features).map(|k| x.get(i, k)).collect();
+        let row_j: Vec<f32> = (0..n_features).map(|k| x.get(j, k)).collect();
+        crate::nn::functional::euclidean_distance(&row_i, &row_j)
     }
 
     /// Expands a cluster from a core point.
