@@ -1,16 +1,18 @@
 # Unified Contract-by-Design Specification
 
-**Version**: 1.3.0
-**Status**: Phase 4 Complete — aprender at 97.0% (197/203 bindings implemented, 24 `#[contract]` annotations, 42 contract test files, 164 passing falsification tests). Quality gates: clippy clean (all-targets -D warnings), 11,626 tests pass. Remaining: 6 SSM bindings (3 equations × 2 targets).
+**Version**: 2.0.0
+**Status**: Phase 4 Complete (kernels), Phase 6 Planned (algorithms). Kernels: 197/203 bindings (97.0%), 24 `#[contract]` annotations, 42 contract test files, 164 falsification tests. Algorithms: 0/~120 equations bound — **this version extends UCBD to all ML algorithms, statistics, and mathematics**.
 **Created**: 2026-02-19
 **Updated**: 2026-02-19
 **Scope**: trueno, realizar, aprender, entrenar, whisper.apr
-**Depends On**: `provable-contracts` (49 YAML contracts), `apr-model-qa-playbook` (217+ gates)
+**Depends On**: `provable-contracts` (49 kernel YAML + new algorithm YAMLs), `apr-model-qa-playbook` (217+ gates)
 
-> **Core Thesis**: Every kernel, every model load, every tensor transformation in the
-> Sovereign AI Stack is governed by a provable contract. If a contract is missing,
-> **the code does not compile**. There is ONE way to load, ONE way to serve, ONE way
-> to import, ONE way to export. Duplicate paths are deleted, not deprecated.
+> **Core Thesis**: Every kernel, every ML algorithm, every statistical estimator, every
+> mathematical function in the Sovereign AI Stack is governed by a provable contract.
+> If a contract is missing, **the code does not compile**. There is ONE way to load,
+> ONE way to serve, ONE way to import, ONE way to export. Every equation has a YAML
+> source of truth, a `#[contract]` annotation, and a falsification test.
+> Duplicate paths are deleted, not deprecated.
 
 ---
 
@@ -29,6 +31,8 @@
 11. [QA Playbook Integration](#11-qa-playbook-integration)
 12. [Migration Path](#12-migration-path)
 13. [Verification](#13-verification)
+14. [Algorithm & Statistics Contract Architecture](#14-algorithm--statistics-contract-architecture)
+15. [Algorithm Contract Inventory](#15-algorithm-contract-inventory)
 
 ---
 
@@ -78,7 +82,35 @@ Make the wrong thing impossible to express in the type system:
 - `LmHeadWeight` / `LmHeadWeightTransposed` newtypes prevent argument swaps
 - Sealed constructors (private inner fields) prevent bypassing validation
 
-### 2.5 One Way Only
+### 2.5 Equation Enforcement for All Mathematics
+
+Every mathematical function — not just kernels — must have:
+1. A **YAML contract** with the canonical equation, domain, codomain, and invariants
+2. A **`#[contract]` annotation** on the implementing function
+3. A **falsification test** (FALSIFY-*) that verifies the invariants hold
+
+This applies to:
+- **Kernels** (softmax, RMSNorm, RoPE, attention) — already bound
+- **ML algorithms** (decision trees, random forests, GBM, SVM, k-NN, naive Bayes)
+- **Statistical estimators** (linear/logistic regression, Bayesian inference, GLMs)
+- **Metrics** (R², MSE, accuracy, F1, silhouette, NDCG)
+- **Loss functions** (BCE, NLL, Huber, cross-entropy)
+- **Optimization** (gradient descent, conjugate gradient, L-BFGS, CMA-ES)
+- **Decomposition** (PCA, ICA, SVD, eigendecomposition)
+- **Time series** (ARIMA, ACF/PACF, Ljung-Box)
+- **Graph algorithms** (centrality, shortest path, community detection)
+- **Calibration** (Platt scaling, isotonic regression, temperature scaling)
+- **Drift detection** (PSI, KL divergence, KS test)
+
+```
+Traditional:  implement algorithm → write unit tests → "seems to work"
+Contract:     define equation in YAML → annotate function → falsification test → "invariants not yet falsified"
+```
+
+The difference is epistemic: tests check specific inputs, contracts enforce
+mathematical properties that must hold for ALL valid inputs.
+
+### 2.6 One Way Only
 
 For every operation, there is exactly ONE canonical implementation:
 
@@ -155,8 +187,13 @@ For every operation, there is exactly ONE canonical implementation:
 │  ┌──────────────────────────────────────────────────────┐           │
 │  │         provable-contracts (Contract Registry)        │           │
 │  │                                                       │           │
-│  │  48 YAML contracts (166 equations, 262 obligations)  │           │
-│  │  158 deduplicated bindings (156 impl, 2 SSM gaps)    │           │
+│  │  KERNEL CONTRACTS (48 YAMLs, 166 eq, 262 oblig.)    │           │
+│  │    197/203 bindings implemented (97.0%)              │           │
+│  │                                                       │           │
+│  │  ALGORITHM CONTRACTS (new — ~30 YAMLs, ~120 eq)     │           │
+│  │    Metrics, loss, estimators, optimization,           │           │
+│  │    decomposition, time series, graph, calibration     │           │
+│  │                                                       │           │
 │  │  Proc macros for compile-time enforcement            │           │
 │  │  build.rs binding verification                        │           │
 │  │  Kani bounded model checking (81 harnesses)          │           │
@@ -802,6 +839,16 @@ MQS certification
 3. Run full QA playbook certification pass
 4. Tag release
 
+### Phase 6: Algorithm & Statistics Contracts (NEW)
+
+1. **P0 contracts** (4 YAMLs): metrics-regression-v1, metrics-classification-v1, loss-functions-v1, graph-centrality-v1
+2. **P0 annotations**: Add `#[contract]` to ~30 algorithm functions
+3. **P0 falsification tests**: Write FALSIFY-* tests for ~20 equations (coverage target: 95%)
+4. **P1 contracts** (4 YAMLs): calibration-v1, active-learning-v1, decision-tree-v1, normalization-v1
+5. **P2-P3 contracts** (16 YAMLs): remaining algorithm families
+6. **Binding registration**: All ~120 algorithm equations in binding.yaml
+7. **Hard enforcement**: `build.rs` requires all algorithm bindings implemented
+
 ---
 
 ## 13. Verification
@@ -878,7 +925,371 @@ cargo run --bin pv -- audit --orphans
 
 ---
 
-## Appendix A: Contract YAML Inventory (48 contracts)
+## 14. Algorithm & Statistics Contract Architecture
+
+### 14.1 Five Whys: Why Algorithms Need Contracts Too
+
+**Symptom**: Coverage at 87% despite 11,626 tests — pure algorithm modules at 0-35% coverage.
+
+1. **Why?** Algorithm functions (metrics, loss, centrality, calibration) have no exercising tests.
+2. **Why?** Tests were written ad-hoc — no systematic obligation to cover all functions.
+3. **Why?** No contract system for algorithms — only kernels have `#[contract]` annotations.
+4. **Why?** Original UCBD spec was scoped to kernels (inference pipeline bugs).
+5. **Why?** **The assumption that "algorithms are just code, not kernels" left them without mathematical enforcement.**
+
+**Root cause**: The contract system distinguishes between "kernels" (softmax, RMSNorm) and "algorithms" (R², Gini impurity, Platt scaling) — but mathematically they're the same: functions with equations, domains, codomains, and invariants. The type system doesn't distinguish "kernel math" from "algorithm math."
+
+**Solution**: Extend the contract system to ALL mathematical functions. Every equation gets a YAML, a `#[contract]`, and a FALSIFY test.
+
+### 14.2 Contract-Algorithm Isomorphism
+
+A kernel contract and an algorithm contract have IDENTICAL structure:
+
+```yaml
+# Kernel contract (already exists):
+equations:
+  softmax:
+    formula: "σ(x)_i = exp(x_i - max(x)) / Σ_j exp(x_j - max(x))"
+    invariants:
+      - "Σ σ(x)_i = 1.0"
+      - "σ(x)_i > 0"
+
+# Algorithm contract (new — identical structure):
+equations:
+  r_squared:
+    formula: "R² = 1 - SS_res/SS_tot = 1 - Σ(y-ŷ)²/Σ(y-ȳ)²"
+    invariants:
+      - "R² ≤ 1.0 (upper bound)"
+      - "R² = 1.0 when ŷ = y (perfect prediction)"
+      - "R² = 0.0 when ŷ = ȳ (predict mean)"
+```
+
+The `#[contract]` proc macro, build.rs verification, and falsification test framework work identically for both.
+
+### 14.3 Algorithm Contract Categories
+
+| Category | YAML Prefix | Equations | Module(s) |
+|----------|-------------|-----------|-----------|
+| Regression Metrics | `metrics-regression-v1` | R², MSE, MAE, RMSE | `metrics/mod.rs` |
+| Classification Metrics | `metrics-classification-v1` | accuracy, precision, recall, F1, confusion_matrix, ROC-AUC | `metrics/classification.rs` |
+| Clustering Metrics | `metrics-clustering-v1` | silhouette_score, inertia, adjusted_rand | `metrics/mod.rs`, `cluster/` |
+| Ranking Metrics | `metrics-ranking-v1` | hit_at_k, mrr, ndcg | `metrics/ranking.rs` |
+| Loss Functions | `loss-functions-v1` | bce, nll, huber, smooth_l1, l1, mse_loss | `nn/loss.rs` |
+| Decision Trees | `decision-tree-v1` | gini_impurity, entropy, information_gain | `tree/` |
+| Random Forest | `random-forest-v1` | bootstrap_aggregation, oob_error, feature_importance | `tree/` |
+| GBM | `gbm-v1` | gradient_boost, shrinkage, negative_gradient | `ensemble/` |
+| Naive Bayes | `naive-bayes-v1` | gaussian_posterior, prior_update, log_likelihood | `classification/` |
+| Linear Models | `linear-models-v1` | ols, ridge, lasso, logistic_sigmoid | `regression/`, `classification/` |
+| SVM | `svm-v1` | hinge_loss, rbf_kernel, margin | `svm/` |
+| PCA | `pca-v1` | eigendecomposition, explained_variance, projection | `preprocessing/` |
+| ICA | `ica-v1` | negentropy, fastica_iteration, whitening | `decomposition/ica.rs` |
+| Graph Centrality | `graph-centrality-v1` | degree, betweenness, closeness, eigenvector, katz, harmonic | `graph/centrality.rs` |
+| Calibration | `calibration-v1` | platt_scaling, isotonic, temperature, ece, brier_score | `calibration.rs` |
+| Active Learning | `active-learning-v1` | uncertainty, margin, entropy, qbc | `active_learning.rs` |
+| ARIMA | `arima-v1` | ar_forecast, differencing, ma_filter, aic | `time_series/` |
+| GLMs | `glm-v1` | poisson_link, gamma_link, binomial_link, irls | `glm/` |
+| Bayesian | `bayesian-v1` | conjugate_prior, posterior_update, blr_predict | `bayesian/` |
+| Optimization | `optimization-v1` | conjugate_gradient, gradient_descent, newtons_method | `optim/` |
+| Drift Detection | `drift-detection-v1` | psi, kl_divergence, ks_test | `metrics/drift.rs` |
+| Normalization | `normalization-v1` | l2_normalize, min_max_scale, standardize | `preprocessing/` |
+| GNN | `gnn-v1` | gcn_aggregate, message_passing, graph_pool | `gnn/` |
+| Metaheuristics | `metaheuristics-v1` | simulated_annealing, genetic, particle_swarm | `metaheuristics/` |
+
+**Total: ~24 new YAML contracts, ~120 equations, ~200 proof obligations.**
+
+### 14.4 Equation Format for Algorithms
+
+Every algorithm equation follows the same YAML schema as kernel equations:
+
+```yaml
+# provable-contracts/contracts/metrics-regression-v1.yaml
+metadata:
+  version: "1.0.0"
+  description: "Regression metrics — error measurement for continuous predictions"
+  references:
+    - "Draper & Smith (1998) Applied Regression Analysis"
+
+equations:
+  r_squared:
+    formula: "R² = 1 - Σ(yᵢ - ŷᵢ)² / Σ(yᵢ - ȳ)²"
+    domain: "y, ŷ ∈ ℝⁿ, n ≥ 1, Var(y) > 0"
+    codomain: "R² ∈ (-∞, 1]"
+    invariants:
+      - "R² ≤ 1.0 (upper bound from Cauchy-Schwarz)"
+      - "R² = 1.0 iff ŷᵢ = yᵢ for all i (perfect fit)"
+      - "R² = 0.0 iff ŷᵢ = ȳ for all i (predict mean)"
+      - "R² < 0 possible (worse than mean predictor)"
+
+  mse:
+    formula: "MSE = (1/n) Σ(yᵢ - ŷᵢ)²"
+    domain: "y, ŷ ∈ ℝⁿ, n ≥ 1"
+    codomain: "MSE ∈ [0, ∞)"
+    invariants:
+      - "MSE ≥ 0 (non-negativity from squared terms)"
+      - "MSE = 0 iff ŷᵢ = yᵢ for all i"
+      - "MSE(y, ŷ) = MSE(ŷ, y) (symmetry)"
+
+  mae:
+    formula: "MAE = (1/n) Σ|yᵢ - ŷᵢ|"
+    domain: "y, ŷ ∈ ℝⁿ, n ≥ 1"
+    codomain: "MAE ∈ [0, ∞)"
+    invariants:
+      - "MAE ≥ 0 (non-negativity from absolute value)"
+      - "MAE = 0 iff ŷᵢ = yᵢ for all i"
+      - "MAE ≤ RMSE (Jensen's inequality)"
+
+  rmse:
+    formula: "RMSE = √MSE = √((1/n) Σ(yᵢ - ŷᵢ)²)"
+    domain: "y, ŷ ∈ ℝⁿ, n ≥ 1"
+    codomain: "RMSE ∈ [0, ∞)"
+    invariants:
+      - "RMSE ≥ 0"
+      - "RMSE ≥ MAE (always, from Jensen's)"
+      - "RMSE = 0 iff MSE = 0"
+
+proof_obligations:
+  - type: bound
+    property: "R² upper bound"
+    formal: "R² ≤ 1.0 for all y, ŷ with Var(y) > 0"
+  - type: bound
+    property: "MSE non-negativity"
+    formal: "MSE ≥ 0 for all y, ŷ"
+  - type: invariant
+    property: "MAE-RMSE ordering"
+    formal: "MAE(y, ŷ) ≤ RMSE(y, ŷ) for all y, ŷ"
+  - type: equivalence
+    property: "Perfect prediction"
+    formal: "R² = 1 ∧ MSE = 0 ∧ MAE = 0 ∧ RMSE = 0 when ŷ = y"
+
+falsification_tests:
+  - id: FALSIFY-RM-001
+    rule: "R² upper bound"
+    prediction: "R² ≤ 1.0 for random y, ŷ ∈ [-1000, 1000]ⁿ"
+    test: "proptest with 10000 random vector pairs, n=2..128"
+    if_fails: "Division by zero or sign error in SS computation"
+  - id: FALSIFY-RM-002
+    rule: "MSE non-negativity"
+    prediction: "MSE ≥ 0 for all inputs"
+    test: "proptest with extreme values"
+    if_fails: "Arithmetic overflow in squared difference"
+  - id: FALSIFY-RM-003
+    rule: "MAE ≤ RMSE (Jensen's inequality)"
+    prediction: "MAE ≤ RMSE for random inputs"
+    test: "proptest comparing MAE and RMSE on same inputs"
+    if_fails: "Implementation violates Jensen's inequality"
+  - id: FALSIFY-RM-004
+    rule: "Perfect prediction identity"
+    prediction: "When ŷ = y: R²=1, MSE=0, MAE=0, RMSE=0"
+    test: "proptest with y = ŷ for random vectors"
+    if_fails: "Floating-point error accumulation"
+```
+
+### 14.5 Annotating Algorithm Functions
+
+Existing algorithm functions receive `#[contract]` annotations identical to kernels:
+
+```rust
+// BEFORE: no contract, no mathematical enforcement
+pub fn r_squared(y_pred: &Vector<f32>, y_true: &Vector<f32>) -> f32 { ... }
+
+// AFTER: contract-bound, equation-enforced
+#[contract("metrics-regression-v1", equation = "r_squared")]
+pub fn r_squared(y_pred: &Vector<f32>, y_true: &Vector<f32>) -> f32 { ... }
+```
+
+```rust
+// BEFORE: loss function with only cross-entropy contracted
+pub fn bce_loss(predictions: &[f32], targets: &[f32]) -> f32 { ... }
+
+// AFTER: all loss functions have contracts
+#[contract("loss-functions-v1", equation = "bce")]
+pub fn bce_loss(predictions: &[f32], targets: &[f32]) -> f32 { ... }
+```
+
+```rust
+// BEFORE: graph centrality with only pagerank contracted
+pub fn degree_centrality(graph: &Graph) -> Vec<f64> { ... }
+
+// AFTER: all centrality measures have contracts
+#[contract("graph-centrality-v1", equation = "degree")]
+pub fn degree_centrality(graph: &Graph) -> Vec<f64> { ... }
+```
+
+### 14.6 Falsification Tests for Algorithms
+
+Algorithm contract tests follow the SAME pattern as kernel contract tests:
+
+```rust
+// tests/contracts/regression_metrics_contract.rs
+// CONTRACT: metrics-regression-v1.yaml
+
+proptest! {
+    /// Obligation: R² upper bound
+    /// Formal: R² ≤ 1.0 for all y, ŷ with Var(y) > 0
+    #[test]
+    fn prop_r_squared_upper_bound(
+        y_true in proptest::collection::vec(-1000.0f32..1000.0, 4..64usize),
+        noise in proptest::collection::vec(-100.0f32..100.0, 4..64usize),
+    ) {
+        let n = y_true.len().min(noise.len());
+        let y_true = Vector::from_slice(&y_true[..n]);
+        let y_pred_data: Vec<f32> = y_true.as_slice().iter()
+            .zip(noise[..n].iter())
+            .map(|(y, n)| y + n)
+            .collect();
+        let y_pred = Vector::from_slice(&y_pred_data);
+
+        // Skip degenerate case: constant y_true
+        let var: f32 = y_true.as_slice().iter()
+            .map(|y| (y - y_true.mean()).powi(2))
+            .sum();
+        prop_assume!(var > 1e-6);
+
+        let r2 = r_squared(&y_pred, &y_true);
+        prop_assert!(r2 <= 1.0 + 1e-6, "R²={r2} > 1.0 — upper bound violated");
+    }
+
+    /// Obligation: MSE ≥ 0 (non-negativity)
+    #[test]
+    fn prop_mse_non_negative(
+        y_true in proptest::collection::vec(-1e6f32..1e6, 2..128usize),
+        y_pred in proptest::collection::vec(-1e6f32..1e6, 2..128usize),
+    ) {
+        let n = y_true.len().min(y_pred.len());
+        let yt = Vector::from_slice(&y_true[..n]);
+        let yp = Vector::from_slice(&y_pred[..n]);
+        let m = mse(&yp, &yt);
+        prop_assert!(m >= 0.0, "MSE={m} < 0 — non-negativity violated");
+    }
+
+    /// Obligation: MAE ≤ RMSE (Jensen's inequality)
+    #[test]
+    fn prop_mae_le_rmse(
+        y_true in proptest::collection::vec(-1e3f32..1e3, 2..64usize),
+        y_pred in proptest::collection::vec(-1e3f32..1e3, 2..64usize),
+    ) {
+        let n = y_true.len().min(y_pred.len());
+        let yt = Vector::from_slice(&y_true[..n]);
+        let yp = Vector::from_slice(&y_pred[..n]);
+        let m = mae(&yp, &yt);
+        let r = rmse(&yp, &yt);
+        prop_assert!(m <= r + 1e-6, "MAE={m} > RMSE={r} — Jensen's violated");
+    }
+}
+```
+
+### 14.7 Implementation Priority (by coverage impact)
+
+Priority is determined by: (1) uncovered lines, (2) equation clarity, (3) pure testability.
+
+| Priority | Contract YAML | Uncov Lines | Key Functions |
+|----------|--------------|-------------|---------------|
+| **P0** | metrics-regression-v1 | ~200 | r_squared, mse, mae, rmse, inertia, silhouette |
+| **P0** | metrics-classification-v1 | ~300 | accuracy, precision, recall, f1, confusion_matrix |
+| **P0** | loss-functions-v1 | ~200 | bce, nll, huber, smooth_l1, mse_loss |
+| **P0** | graph-centrality-v1 | ~150 | degree, betweenness, closeness, eigenvector, katz |
+| **P1** | calibration-v1 | ~150 | platt, isotonic, temperature, ece, brier |
+| **P1** | active-learning-v1 | ~220 | uncertainty, margin, entropy, qbc |
+| **P1** | decision-tree-v1 | ~180 | gini, entropy, information_gain, cart_split |
+| **P1** | normalization-v1 | ~150 | rmsnorm, layernorm, groupnorm forward passes |
+| **P2** | naive-bayes-v1 | ~120 | gaussian_posterior, prior, log_likelihood |
+| **P2** | linear-models-v1 | ~100 | ols, ridge, logistic |
+| **P2** | pca-v1 | ~100 | eigendecomposition, explained_variance |
+| **P2** | optimization-v1 | ~100 | conjugate_gradient, gradient_descent |
+| **P2** | arima-v1 | ~120 | ar_forecast, differencing, ma_filter |
+| **P2** | bayesian-v1 | ~100 | conjugate_prior, posterior_update |
+| **P3** | svm-v1 | ~80 | hinge_loss, rbf_kernel |
+| **P3** | ica-v1 | ~80 | negentropy, fastica |
+| **P3** | gbm-v1 | ~80 | gradient_boost, shrinkage |
+| **P3** | random-forest-v1 | ~80 | bootstrap, oob_error, feature_importance |
+| **P3** | glm-v1 | ~80 | poisson_link, gamma_link |
+| **P3** | drift-detection-v1 | ~80 | psi, kl_divergence, ks_test |
+| **P3** | metrics-ranking-v1 | ~60 | hit_at_k, mrr, ndcg |
+| **P3** | gnn-v1 | ~60 | gcn_aggregate, message_passing |
+| **P3** | metaheuristics-v1 | ~100 | simulated_annealing, genetic, pso |
+
+---
+
+## 15. Algorithm Contract Inventory
+
+### 15.1 Phase 6 Scope: ~24 YAMLs, ~120 equations, ~200 proof obligations
+
+This section tracks the algorithm contract implementation progress (Phase 6).
+
+### Tier A1: Core Metrics (3 contracts, ~20 equations)
+
+| Contract | Equations | Key Invariants | Status |
+|----------|-----------|----------------|--------|
+| metrics-regression-v1 | r_squared, mse, mae, rmse | R²≤1, MSE≥0, MAE≤RMSE | **Not bound** |
+| metrics-classification-v1 | accuracy, precision, recall, f1, confusion_matrix, roc_auc | F1=harmonic_mean(P,R), accuracy∈[0,1] | **Not bound** |
+| metrics-clustering-v1 | silhouette_score, inertia, adjusted_rand | silhouette∈[-1,1], inertia≥0 | **Not bound** |
+
+### Tier A2: Loss & Activation (2 contracts, ~10 equations)
+
+| Contract | Equations | Key Invariants | Status |
+|----------|-----------|----------------|--------|
+| loss-functions-v1 | bce, nll, huber, smooth_l1, l1_loss, mse_loss | all≥0, bce=-Σ[y·log(ŷ)+(1-y)·log(1-ŷ)] | **Not bound** |
+| normalization-v1 | rmsnorm_forward, layernorm_forward, groupnorm_forward | output_shape=input_shape, unit_variance | **Not bound** |
+
+### Tier A3: Supervised Learning (5 contracts, ~25 equations)
+
+| Contract | Equations | Key Invariants | Status |
+|----------|-----------|----------------|--------|
+| decision-tree-v1 | gini_impurity, entropy, information_gain, cart_split | gini∈[0,0.5], entropy≥0, IG≥0 | **Not bound** |
+| random-forest-v1 | bootstrap_aggregation, oob_error, feature_importance | importance sums to 1, oob∈[0,1] | **Not bound** |
+| naive-bayes-v1 | gaussian_posterior, prior_update, log_likelihood | posterior∝prior×likelihood | **Not bound** |
+| linear-models-v1 | ols_normal_eq, ridge_penalty, logistic_sigmoid | β=(X^TX)^{-1}X^Ty, σ∈(0,1) | **Not bound** |
+| svm-v1 | hinge_loss, rbf_kernel, polynomial_kernel, margin | hinge≥0, kernel positive semi-definite | **Not bound** |
+
+### Tier A4: Unsupervised & Decomposition (3 contracts, ~12 equations)
+
+| Contract | Equations | Key Invariants | Status |
+|----------|-----------|----------------|--------|
+| pca-v1 | eigendecomposition, explained_variance, projection | Σ explained_var = 1, orthogonal components | **Not bound** |
+| ica-v1 | negentropy, fastica_iteration, whitening | independence maximized, E[s]=0 | **Not bound** |
+| gbm-v1 | gradient_boost, shrinkage, negative_gradient | loss non-increasing per stage | **Not bound** |
+
+### Tier A5: Graph & Optimization (3 contracts, ~15 equations)
+
+| Contract | Equations | Key Invariants | Status |
+|----------|-----------|----------------|--------|
+| graph-centrality-v1 | degree, betweenness, closeness, eigenvector, katz, harmonic | all≥0, betweenness∈[0,1] normalized | **Not bound** |
+| optimization-v1 | conjugate_gradient, gradient_descent, newtons_method | convergence: f(x_{k+1})≤f(x_k) | **Not bound** |
+| calibration-v1 | platt_scaling, isotonic, temperature, ece, brier_score | calibrated P(y|p)≈p, ECE≥0, Brier∈[0,1] | **Not bound** |
+
+### Tier A6: Specialized (5 contracts, ~20 equations)
+
+| Contract | Equations | Key Invariants | Status |
+|----------|-----------|----------------|--------|
+| active-learning-v1 | uncertainty, margin, entropy, qbc | entropy≥0, margin≥0, QBC variance≥0 | **Not bound** |
+| arima-v1 | ar_forecast, differencing, ma_filter, aic | stationarity after d differences | **Not bound** |
+| bayesian-v1 | conjugate_prior, posterior_update, blr_predict | posterior∝prior×likelihood, predictive well-calibrated | **Not bound** |
+| glm-v1 | poisson_link, gamma_link, binomial_link, irls | link(μ)=Xβ, variance=V(μ) | **Not bound** |
+| drift-detection-v1 | psi, kl_divergence, ks_test | KL≥0, PSI≥0, KS∈[0,1] | **Not bound** |
+
+### Tier A7: Auxiliary (3 contracts, ~12 equations)
+
+| Contract | Equations | Key Invariants | Status |
+|----------|-----------|----------------|--------|
+| metrics-ranking-v1 | hit_at_k, mrr, ndcg | all∈[0,1], NDCG normalized by ideal DCG | **Not bound** |
+| gnn-v1 | gcn_aggregate, message_passing, graph_pool | permutation equivariance | **Not bound** |
+| metaheuristics-v1 | simulated_annealing, genetic_crossover, pso_update | monotone non-increasing best-so-far | **Not bound** |
+
+### 15.2 Phase 6 Migration Path
+
+| Step | Action | Gate |
+|------|--------|------|
+| 6.1 | Create P0 contract YAMLs (metrics-regression, metrics-classification, loss-functions, graph-centrality) | YAML review |
+| 6.2 | Add `#[contract]` annotations to P0 functions | `cargo build` |
+| 6.3 | Write FALSIFY-* contract tests for P0 equations | `cargo test` |
+| 6.4 | Register P0 bindings in `binding.yaml` | `build.rs` pass |
+| 6.5 | Create P1 contract YAMLs and repeat | Coverage ≥95% |
+| 6.6 | Create P2-P3 contract YAMLs and repeat | Full binding coverage |
+| 6.7 | Enable `build.rs` hard enforcement for algorithm contracts | `AllImplemented` |
+
+---
+
+## Appendix A: Contract YAML Inventory (48 kernel + ~24 algorithm contracts)
 
 ### Tier 1: Core Kernels (7)
 | Contract | Equations | Obligations | Status |
@@ -926,6 +1337,44 @@ All bound. See `binding.yaml` for per-equation status.
 | attention-scaling-v1 | 2 | 4 | Bound |
 | qwen35-e2e-verification-v1 | 6 | 5 | Bound |
 
+### Algorithm Contracts — Tier A1: Core Metrics (3) — NEW
+| Contract | Equations | Obligations | Status |
+|----------|-----------|-------------|--------|
+| metrics-regression-v1 | 4 | 8 | **Not bound** |
+| metrics-classification-v1 | 6 | 12 | **Not bound** |
+| metrics-clustering-v1 | 3 | 6 | **Not bound** |
+
+### Algorithm Contracts — Tier A2: Loss & Normalization (2) — NEW
+| Contract | Equations | Obligations | Status |
+|----------|-----------|-------------|--------|
+| loss-functions-v1 | 6 | 10 | **Not bound** |
+| normalization-v1 | 3 | 6 | **Not bound** |
+
+### Algorithm Contracts — Tier A3: Supervised Learning (5) — NEW
+| Contract | Equations | Obligations | Status |
+|----------|-----------|-------------|--------|
+| decision-tree-v1 | 4 | 8 | **Not bound** |
+| random-forest-v1 | 3 | 6 | **Not bound** |
+| naive-bayes-v1 | 3 | 6 | **Not bound** |
+| linear-models-v1 | 4 | 8 | **Not bound** |
+| svm-v1 | 4 | 8 | **Not bound** |
+
+### Algorithm Contracts — Tier A4-A7: Extended (12) — NEW
+| Contract | Equations | Obligations | Status |
+|----------|-----------|-------------|--------|
+| pca-v1 | 3 | 6 | **Not bound** |
+| ica-v1 | 3 | 6 | **Not bound** |
+| gbm-v1 | 3 | 6 | **Not bound** |
+| graph-centrality-v1 | 6 | 10 | **Not bound** |
+| optimization-v1 | 3 | 6 | **Not bound** |
+| calibration-v1 | 5 | 8 | **Not bound** |
+| active-learning-v1 | 4 | 6 | **Not bound** |
+| arima-v1 | 4 | 8 | **Not bound** |
+| bayesian-v1 | 3 | 6 | **Not bound** |
+| glm-v1 | 4 | 8 | **Not bound** |
+| drift-detection-v1 | 3 | 6 | **Not bound** |
+| metrics-ranking-v1 | 3 | 6 | **Not bound** |
+
 ---
 
 ## Appendix B: Model Family Coverage (17 families)
@@ -955,13 +1404,18 @@ All bound. See `binding.yaml` for per-equation status.
 
 | Term | Definition |
 |------|-----------|
-| **Contract** | YAML file defining equations, proof obligations, and falsification tests for a kernel or pipeline |
+| **Contract** | YAML file defining equations, proof obligations, and falsification tests for a kernel, algorithm, or pipeline |
+| **Kernel Contract** | Contract for a compute primitive (softmax, RMSNorm, matmul, RoPE) — Tiers 1-3 |
+| **Algorithm Contract** | Contract for an ML algorithm or statistical function (R², Gini, PageRank, Platt scaling) — Tiers A1-A7 |
 | **Binding** | Mapping from a contract equation to a Rust function implementation |
 | **Proof Obligation** | Mathematical property that must hold for all valid inputs |
 | **Falsification Gate** | Test designed to BREAK a contract — passing means "not yet falsified" |
+| **Equation** | Named mathematical formula within a contract (e.g., `r_squared` in `metrics-regression-v1`) |
+| **Invariant** | Property that must hold after every invocation (e.g., "MSE ≥ 0") |
 | **Poka-Yoke** | Mistake-proofing via type system (sealed constructors, newtypes) |
 | **Jidoka** | Stop-on-first-defect — P0 failure = MQS 0 |
 | **MQS** | Model Qualification Score (0-1000) from apr-model-qa-playbook |
 | **The One Path** | Exactly one canonical implementation for each operation |
 | **Dead Code** | Duplicate implementations that will be deleted (not deprecated) |
 | **Contract Gate** | Runtime validation checkpoint (e.g., `contract_gate::validate_model_load_basic()`) |
+| **Contract-Algorithm Isomorphism** | Kernel contracts and algorithm contracts use identical YAML structure (§14.2) |
