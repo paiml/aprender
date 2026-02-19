@@ -1,30 +1,53 @@
+/// SPC color level for threshold-based formatting.
+#[derive(Clone, Copy)]
+enum SpcColor { GreenBold, Green, Yellow, Red, RedBold }
 
-fn format_kl(kl: f64) -> String {
-    if kl < 0.001 {
-        format!("{:>8.5}", kl).green().bold().to_string()
-    } else if kl < KL_DIV_MAX {
-        format!("{:>8.5}", kl).green().to_string()
-    } else if kl < 0.1 {
-        format!("{:>8.4}", kl).yellow().to_string()
-    } else if kl < 1.0 {
-        format!("{:>8.3}", kl).red().to_string()
-    } else {
-        format!("{:>8.2}", kl).red().bold().to_string()
+/// Apply SPC color to a pre-formatted string.
+fn apply_spc_color(s: &str, level: SpcColor) -> String {
+    match level {
+        SpcColor::GreenBold => s.green().bold().to_string(),
+        SpcColor::Green => s.green().to_string(),
+        SpcColor::Yellow => s.yellow().to_string(),
+        SpcColor::Red => s.red().to_string(),
+        SpcColor::RedBold => s.red().bold().to_string(),
     }
 }
 
-fn format_sigma(sigma: f64) -> String {
-    if sigma >= 6.0 {
-        format!("{:>6.1}σ ", sigma).green().bold().to_string()
-    } else if sigma >= SIGMA_MIN {
-        format!("{:>6.1}σ ", sigma).green().to_string()
-    } else if sigma >= 2.0 {
-        format!("{:>6.1}σ ", sigma).yellow().to_string()
-    } else if sigma >= 1.0 {
-        format!("{:>6.1}σ ", sigma).red().to_string()
-    } else {
-        format!("{:>6.1}σ ", sigma).red().bold().to_string()
+/// KL divergence thresholds (lower is better): <0.001=GreenBold, <KL_MAX=Green, <0.1=Yellow, <1.0=Red, else RedBold.
+const KL_THRESHOLDS: [(f64, SpcColor); 4] = [
+    (0.001, SpcColor::GreenBold), (KL_DIV_MAX, SpcColor::Green),
+    (0.1, SpcColor::Yellow), (1.0, SpcColor::Red),
+];
+
+/// Sigma thresholds (higher is better, checked descending): >=6=GreenBold, >=SIGMA_MIN=Green, >=2=Yellow, >=1=Red, else RedBold.
+const SIGMA_THRESHOLDS: [(f64, SpcColor); 4] = [
+    (6.0, SpcColor::GreenBold), (SIGMA_MIN as f64, SpcColor::Green),
+    (2.0, SpcColor::Yellow), (1.0, SpcColor::Red),
+];
+
+fn color_lower_is_better(val: f64, thresholds: &[(f64, SpcColor)], fallback: SpcColor) -> SpcColor {
+    for &(t, color) in thresholds {
+        if val < t { return color; }
     }
+    fallback
+}
+
+fn color_higher_is_better(val: f64, thresholds: &[(f64, SpcColor)], fallback: SpcColor) -> SpcColor {
+    for &(t, color) in thresholds {
+        if val >= t { return color; }
+    }
+    fallback
+}
+
+fn format_kl(kl: f64) -> String {
+    let color = color_lower_is_better(kl, &KL_THRESHOLDS, SpcColor::RedBold);
+    let precision = if kl < 0.1 { 5 } else if kl < 1.0 { 3 } else { 2 };
+    apply_spc_color(&format!("{kl:>8.*}", precision), color)
+}
+
+fn format_sigma(sigma: f64) -> String {
+    let color = color_higher_is_better(sigma, &SIGMA_THRESHOLDS, SpcColor::RedBold);
+    apply_spc_color(&format!("{sigma:>6.1}σ "), color)
 }
 
 /// Print summary statistics
@@ -82,28 +105,25 @@ fn print_summary(metrics: &[SpcMetrics]) {
     // Yield
     eprintln!();
     let yield_pct = (pass_count as f64 / n as f64) * 100.0;
-    let yield_str = if yield_pct >= 100.0 {
-        format!("{yield_pct:.1}%").green().bold().to_string()
-    } else if yield_pct >= 85.0 {
-        format!("{yield_pct:.1}%").yellow().to_string()
-    } else {
-        format!("{yield_pct:.1}%").red().bold().to_string()
-    };
+    let yield_color = color_higher_is_better(
+        yield_pct,
+        &[(100.0, SpcColor::GreenBold), (85.0, SpcColor::Yellow)],
+        SpcColor::RedBold,
+    );
+    let yield_str = apply_spc_color(&format!("{yield_pct:.1}%"), yield_color);
     eprintln!(
         "  Yield:              {} ({} pass, {} warn, {} fail out of {})",
         yield_str, pass_count, warn_count, fail_count, n,
     );
 
     // Defect rate in PPM (parts per million)
-    let ppm_str = if ppm < 3.4 {
-        format!("{ppm:.1} PPM").green().bold().to_string()
-    } else if ppm < 100.0 {
-        format!("{ppm:.1} PPM").yellow().to_string()
-    } else if ppm < 10000.0 {
-        format!("{ppm:.0} PPM").red().to_string()
-    } else {
-        format!("{ppm:.0} PPM").red().bold().to_string()
-    };
+    let ppm_color = color_lower_is_better(
+        ppm,
+        &[(3.4, SpcColor::GreenBold), (100.0, SpcColor::Yellow), (10000.0, SpcColor::Red)],
+        SpcColor::RedBold,
+    );
+    let precision = if ppm < 100.0 { 1 } else { 0 };
+    let ppm_str = apply_spc_color(&format!("{ppm:.precision$} PPM"), ppm_color);
     eprintln!(
         "  Defect rate:        {} (logits outside tolerance)",
         ppm_str
@@ -186,103 +206,74 @@ fn print_summary(metrics: &[SpcMetrics]) {
     eprintln!();
 }
 
+/// Color a value relative to a threshold: green if pass, red if fail, yellow if marginal.
+fn color_vs_threshold(val: f32, threshold: f32, higher_is_better: bool) -> SpcColor {
+    let pass = if higher_is_better { val >= threshold } else { val <= threshold };
+    if pass { SpcColor::Green } else { SpcColor::RedBold }
+}
+
 fn format_metric_range(avg: f32, min: f32, threshold: f32, higher_is_better: bool) -> String {
-    let pass = if higher_is_better {
-        min >= threshold
-    } else {
-        avg <= threshold
-    };
-    let avg_s = format!("{avg:.6}");
-    let min_s = format!("{min:.6}");
+    let pass = if higher_is_better { min >= threshold } else { avg <= threshold };
     let thr_s = format!("{threshold:.3}");
+    let avg_c = apply_spc_color(&format!("{avg:.6}"), color_vs_threshold(avg, threshold, higher_is_better));
+    let min_c = apply_spc_color(&format!("{min:.6}"), color_vs_threshold(min, threshold, higher_is_better));
     if pass {
-        format!(
-            "avg={} min={} (threshold: {})",
-            avg_s.green(),
-            min_s.green(),
-            thr_s.dimmed()
-        )
+        format!("avg={avg_c} min={min_c} (threshold: {})", thr_s.dimmed())
     } else {
-        format!(
-            "avg={} min={} (threshold: {} {})",
-            if avg >= threshold {
-                avg_s.yellow().to_string()
-            } else {
-                avg_s.red().bold().to_string()
-            },
-            if min >= threshold {
-                min_s.yellow().to_string()
-            } else {
-                min_s.red().bold().to_string()
-            },
-            thr_s.dimmed(),
-            "VIOLATED".red().bold()
-        )
+        format!("avg={avg_c} min={min_c} (threshold: {} {})", thr_s.dimmed(), "VIOLATED".red().bold())
     }
 }
 
 fn format_metric_single(val: f64, threshold: f64, lower_is_better: bool) -> String {
-    let pass = if lower_is_better {
-        val <= threshold
-    } else {
-        val >= threshold
-    };
-    let val_s = format!("{val:.6}");
+    let pass = if lower_is_better { val <= threshold } else { val >= threshold };
+    let color = if pass { SpcColor::Green } else { SpcColor::RedBold };
+    let val_c = apply_spc_color(&format!("{val:.6}"), color);
     let thr_s = format!("{threshold:.3}");
     if pass {
-        format!("{} (threshold: {})", val_s.green(), thr_s.dimmed())
+        format!("{val_c} (threshold: {})", thr_s.dimmed())
     } else {
-        format!(
-            "{} (threshold: {} {})",
-            val_s.red().bold(),
-            thr_s.dimmed(),
-            "VIOLATED".red().bold()
-        )
+        format!("{val_c} (threshold: {} {})", thr_s.dimmed(), "VIOLATED".red().bold())
     }
 }
+
+/// Sigma yield labels indexed by integer sigma level.
+const SIGMA_YIELD_LABELS: &[&str] = &[
+    "out of control", "68.3% yield", "95.4% yield",
+    "99.73% yield", "99.994% yield", "99.99994% yield",
+];
 
 fn format_sigma_summary(sigma: f64) -> String {
     let s = format!("{sigma:.2}σ");
-    let label = match sigma as u32 {
-        0 => "out of control",
-        1 => "68.3% yield",
-        2 => "95.4% yield",
-        3 => "99.73% yield",
-        4 => "99.994% yield",
-        5 => "99.99994% yield",
-        _ => "world class",
-    };
-    if sigma >= 6.0 {
-        format!("{} ({})", s.green().bold(), label.dimmed())
-    } else if sigma >= SIGMA_MIN {
-        format!("{} ({})", s.green(), label.dimmed())
-    } else if sigma >= 2.0 {
-        format!("{} ({})", s.yellow(), label.dimmed())
+    let idx = (sigma as usize).min(SIGMA_YIELD_LABELS.len() - 1);
+    let label = if sigma >= 6.0 { "world class" } else { SIGMA_YIELD_LABELS[idx] };
+    let color = color_higher_is_better(sigma, &SIGMA_THRESHOLDS, SpcColor::RedBold);
+    let colored_s = apply_spc_color(&s, color);
+    if sigma >= 2.0 {
+        format!("{colored_s} ({})", label.dimmed())
     } else {
-        format!("{} ({} {})", s.red().bold(), label, "VIOLATED".red().bold())
+        format!("{colored_s} ({} {})", label, "VIOLATED".red().bold())
     }
 }
 
+/// Cpk capability thresholds and their labels.
+const CPK_LEVELS: &[(f64, SpcColor, &str)] = &[
+    (2.0, SpcColor::GreenBold, "world class, ≥2.0"),
+    (1.33, SpcColor::Green, "capable, ≥1.33"),
+    (1.0, SpcColor::Yellow, "marginal, needs improvement"),
+];
+
 fn format_cpk(cpk: f64) -> String {
-    let s = format!("{cpk:.3}");
-    if cpk >= 2.0 {
-        format!("{} (world class, ≥2.0)", s.green().bold())
-    } else if cpk >= 1.33 {
-        format!("{} (capable, ≥1.33)", s.green())
-    } else if cpk >= 1.0 {
-        format!(
-            "{} (marginal, needs improvement {})",
-            s.yellow(),
-            "< 1.33".red()
-        )
-    } else {
-        format!(
-            "{} ({} {})",
-            s.red().bold(),
-            "incapable",
-            "VIOLATED".red().bold()
-        )
+    for &(threshold, color, label) in CPK_LEVELS {
+        if cpk >= threshold {
+            return format!("{} ({label})", apply_spc_color(&format!("{cpk:.3}"), color));
+        }
     }
+    format!(
+        "{} ({} {})",
+        apply_spc_color(&format!("{cpk:.3}"), SpcColor::RedBold),
+        "incapable",
+        "VIOLATED".red().bold()
+    )
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

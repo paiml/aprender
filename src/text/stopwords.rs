@@ -262,78 +262,30 @@ impl StopWordsFilter {
 /// assert!(ENGLISH_STOP_WORDS.contains(&"and"));
 /// assert!(!ENGLISH_STOP_WORDS.contains(&"machine"));
 /// ```
-pub const ENGLISH_STOP_WORDS: &[&str] = &build_stop_words();
-
-/// Category-based stop word definitions. Each tuple: (category, words).
-const STOP_WORD_CATEGORIES: &[(&str, &[&str])] = &[
-    ("articles", &["a", "an", "the"]),
-    ("pronouns", &[
-        "i", "me", "my", "myself", "we", "our", "ours", "ourselves",
-        "you", "your", "yours", "yourself", "yourselves",
-        "he", "him", "his", "himself", "she", "her", "hers", "herself",
-        "it", "its", "itself", "they", "them", "their", "theirs", "themselves",
-    ]),
-    ("questions", &["what", "which", "who", "whom", "whose", "why", "when", "where", "how"]),
-    ("prepositions", &[
-        "about", "above", "across", "after", "against", "along", "among", "around",
-        "at", "before", "behind", "below", "beneath", "beside", "between", "beyond",
-        "by", "down", "during", "for", "from", "in", "inside", "into", "near",
-        "of", "off", "on", "onto", "out", "outside", "over", "through", "throughout",
-        "to", "toward", "under", "underneath", "until", "up", "upon",
-        "with", "within", "without",
-    ]),
-    ("conjunctions", &[
-        "and", "as", "because", "but", "if", "or", "since", "so",
-        "than", "that", "though", "unless", "while",
-    ]),
-    ("verbs", &[
-        "am", "is", "are", "was", "were", "be", "been", "being",
-        "have", "has", "had", "having", "do", "does", "did", "doing",
-        "would", "should", "could", "ought", "can", "may", "might", "must", "will", "shall",
-    ]),
-    ("adverbs_adjectives", &[
-        "all", "any", "both", "each", "every", "few", "more", "most", "much",
-        "neither", "no", "none", "not", "one", "other", "same", "several",
-        "some", "such", "very", "too", "only", "own", "then", "there",
-        "these", "this", "those", "just", "now", "here",
-    ]),
-    ("common", &[
-        "again", "also", "another", "back", "even", "ever",
-        "get", "give", "go", "got", "made", "make", "say", "see", "take", "way",
-    ]),
+pub const ENGLISH_STOP_WORDS: &[&str] = &[
+    // Articles + pronouns (34)
+    "a", "an", "the", "i", "me", "my", "myself", "we", "our", "ours", "ourselves", "you",
+    "your", "yours", "yourself", "yourselves", "he", "him", "his", "himself", "she", "her",
+    "hers", "herself", "it", "its", "itself", "they", "them", "their", "theirs", "themselves",
+    // Questions (9) + prepositions (45)
+    "what", "which", "who", "whom", "whose", "why", "when", "where", "how",
+    "about", "above", "across", "after", "against", "along", "among", "around", "at", "before",
+    "behind", "below", "beneath", "beside", "between", "beyond", "by", "down", "during", "for",
+    "from", "in", "inside", "into", "near", "of", "off", "on", "onto", "out", "outside", "over",
+    "through", "throughout", "to", "toward", "under", "underneath", "until", "up", "upon", "with",
+    "within", "without",
+    // Conjunctions (13) + verbs (26)
+    "and", "as", "because", "but", "if", "or", "since", "so", "than", "that", "though",
+    "unless", "while", "am", "is", "are", "was", "were", "be", "been", "being", "have", "has",
+    "had", "having", "do", "does", "did", "doing", "would", "should", "could", "ought", "can",
+    "may", "might", "must", "will", "shall",
+    // Adverbs/adjectives (30) + common (16)
+    "all", "any", "both", "each", "every", "few", "more", "most", "much", "neither", "no",
+    "none", "not", "one", "other", "same", "several", "some", "such", "very", "too", "only",
+    "own", "then", "there", "these", "this", "those", "just", "now", "here",
+    "again", "also", "another", "back", "even", "ever", "get", "give", "go", "got", "made",
+    "make", "say", "see", "take", "way",
 ];
-
-/// Total number of stop words across all categories.
-const TOTAL_STOP_WORDS: usize = count_total_stop_words();
-
-/// Count total stop words at compile time.
-const fn count_total_stop_words() -> usize {
-    let mut total = 0;
-    let mut i = 0;
-    while i < STOP_WORD_CATEGORIES.len() {
-        total += STOP_WORD_CATEGORIES[i].1.len();
-        i += 1;
-    }
-    total
-}
-
-/// Flatten all category words into a single array at compile time.
-const fn build_stop_words() -> [&'static str; TOTAL_STOP_WORDS] {
-    let mut result = [""; TOTAL_STOP_WORDS];
-    let mut idx = 0;
-    let mut cat = 0;
-    while cat < STOP_WORD_CATEGORIES.len() {
-        let words = STOP_WORD_CATEGORIES[cat].1;
-        let mut w = 0;
-        while w < words.len() {
-            result[idx] = words[w];
-            idx += 1;
-            w += 1;
-        }
-        cat += 1;
-    }
-    result
-}
 
 #[cfg(test)]
 #[path = "stopwords_tests.rs"]
