@@ -28,12 +28,11 @@ pub fn relu(x: &Tensor) -> Tensor {
 
 /// Scalar ReLU: max(0, x)
 ///
-/// ONE PATH: The canonical scalar ReLU for all aprender modules.
-/// UCBD §4: audio/noise/spectral.rs MUST delegate here.
+/// ONE PATH: Delegates to `trueno::activations::relu_scalar` (UCBD §4).
 #[inline]
 #[must_use]
 pub fn relu_scalar(x: f32) -> f32 {
-    x.max(0.0)
+    trueno::relu_scalar(x)
 }
 
 /// Leaky `ReLU` activation: `max(negative_slope` * x, x)
@@ -58,12 +57,11 @@ pub fn sigmoid(x: &Tensor) -> Tensor {
 
 /// Scalar sigmoid: σ(x) = 1 / (1 + exp(-x))
 ///
-/// ONE PATH: The canonical scalar sigmoid for all aprender modules.
-/// UCBD §4: bayesian/logistic.rs and calibration.rs MUST delegate here.
+/// ONE PATH: Delegates to `trueno::activations::sigmoid_scalar` (UCBD §4).
 #[inline]
 #[must_use]
 pub fn sigmoid_scalar(x: f32) -> f32 {
-    1.0 / (1.0 + (-x).exp())
+    trueno::sigmoid_scalar(x)
 }
 
 /// Scalar sigmoid (f64): σ(x) = 1 / (1 + exp(-x))
@@ -79,27 +77,23 @@ pub fn sigmoid_scalar_f64(x: f64) -> f64 {
 ///
 /// Equation: SiLU(x) = x / (1 + exp(-x))
 ///
-/// Properties:
-/// - SiLU(0) = 0
-/// - Monotonic for x >= 0
-/// - Global minimum ≈ -0.278 at x ≈ -1.278
-/// - Approaches x for large positive x
+/// ONE PATH: Per-element delegates to `trueno::silu_scalar` (UCBD §4).
 ///
 /// Contract: silu-kernel-v1, equation "silu"
 // Contract: silu-kernel-v1, equation = "silu"
 #[must_use]
 pub fn silu(x: &Tensor) -> Tensor {
-    let data: Vec<f32> = x.data().iter().map(|&v| v / (1.0 + (-v).exp())).collect();
+    let data: Vec<f32> = x.data().iter().map(|&v| trueno::silu_scalar(v)).collect();
     Tensor::new(&data, x.shape())
 }
 
 /// Scalar SiLU for non-Tensor contexts.
 ///
-/// Contract: silu-kernel-v1, equation "silu"
+/// ONE PATH: Delegates to `trueno::activations::silu_scalar` (UCBD §4).
 #[inline]
 #[must_use]
 pub fn silu_scalar(x: f32) -> f32 {
-    x / (1.0 + (-x).exp())
+    trueno::silu_scalar(x)
 }
 
 /// SwiGLU activation: SiLU(gate) * x
@@ -116,7 +110,7 @@ pub fn swiglu(x: &Tensor, gate: &Tensor) -> Tensor {
         .data()
         .iter()
         .zip(gate.data().iter())
-        .map(|(&xi, &gi)| xi * gi / (1.0 + (-gi).exp()))
+        .map(|(&xi, &gi)| xi * trueno::silu_scalar(gi))
         .collect();
     Tensor::new(&data, x.shape())
 }
@@ -181,15 +175,11 @@ pub fn tanh(x: &Tensor) -> Tensor {
 #[provable_contracts_macros::contract("activation-kernel-v1", equation = "gelu")]
 #[must_use]
 pub fn gelu(x: &Tensor) -> Tensor {
-    let sqrt_2_over_pi = (2.0_f32 / std::f32::consts::PI).sqrt();
-
+    // ONE PATH: Per-element delegates to trueno::gelu_scalar (UCBD §4).
     let data: Vec<f32> = x
         .data()
         .iter()
-        .map(|&v| {
-            let inner = sqrt_2_over_pi * (v + 0.044715 * v.powi(3));
-            0.5 * v * (1.0 + inner.tanh())
-        })
+        .map(|&v| trueno::gelu_scalar(v))
         .collect();
 
     Tensor::new(&data, x.shape())
