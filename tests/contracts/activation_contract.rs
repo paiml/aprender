@@ -45,14 +45,13 @@ proptest! {
         );
     }
 
-    /// Obligation: SiLU at zero (invariant)
-    /// Formal: SiLU(0) = 0
+    /// FALSIFY-ACT-003: SiLU at zero (invariant)
+    /// Formal: SiLU(0) = 0 * sigmoid(0) = 0
     #[test]
-    #[ignore = "SiLU not yet implemented in aprender::nn::functional"]
     fn prop_silu_at_zero(dummy in 0..1i32) {
-        // SiLU(0) = 0 * sigmoid(0) = 0 * 0.5 = 0
-        // Blocked: no public silu function
         let _ = dummy;
+        let val = aprender::nn::functional::silu_scalar(0.0);
+        prop_assert!(val.abs() < 1e-7, "SiLU(0) = {val}, expected 0.0");
     }
 
     /// Obligation: ReLU monotonic (monotonicity)

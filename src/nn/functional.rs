@@ -46,6 +46,65 @@ pub fn sigmoid(x: &Tensor) -> Tensor {
     x.sigmoid()
 }
 
+/// SiLU (Swish) activation: x * sigmoid(x)
+///
+/// Equation: SiLU(x) = x / (1 + exp(-x))
+///
+/// Properties:
+/// - SiLU(0) = 0
+/// - Monotonic for x >= 0
+/// - Global minimum ≈ -0.278 at x ≈ -1.278
+/// - Approaches x for large positive x
+///
+/// Contract: silu-kernel-v1, equation "silu"
+// Contract: silu-kernel-v1, equation = "silu"
+#[must_use]
+pub fn silu(x: &Tensor) -> Tensor {
+    let data: Vec<f32> = x
+        .data()
+        .iter()
+        .map(|&v| v / (1.0 + (-v).exp()))
+        .collect();
+    Tensor::new(&data, x.shape())
+}
+
+/// Scalar SiLU for non-Tensor contexts.
+///
+/// Contract: silu-kernel-v1, equation "silu"
+#[inline]
+#[must_use]
+pub fn silu_scalar(x: f32) -> f32 {
+    x / (1.0 + (-x).exp())
+}
+
+/// SwiGLU activation: SiLU(gate) * x
+///
+/// Equation: SwiGLU(x, gate) = x * SiLU(gate) = x * gate / (1 + exp(-gate))
+///
+/// Used in FFN layers: output = down_proj(SwiGLU(up_proj(x), gate_proj(x)))
+///
+/// Contract: swiglu-kernel-v1, equation "swiglu"
+// Contract: swiglu-kernel-v1, equation = "swiglu"
+#[must_use]
+pub fn swiglu(x: &Tensor, gate: &Tensor) -> Tensor {
+    let data: Vec<f32> = x
+        .data()
+        .iter()
+        .zip(gate.data().iter())
+        .map(|(&xi, &gi)| xi * gi / (1.0 + (-gi).exp()))
+        .collect();
+    Tensor::new(&data, x.shape())
+}
+
+/// Scalar SwiGLU for non-Tensor contexts.
+///
+/// Contract: swiglu-kernel-v1, equation "swiglu"
+#[inline]
+#[must_use]
+pub fn swiglu_scalar(x: f32, gate: f32) -> f32 {
+    x * gate / (1.0 + (-gate).exp())
+}
+
 /// Tanh activation
 #[must_use]
 pub fn tanh(x: &Tensor) -> Tensor {
