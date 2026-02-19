@@ -596,41 +596,56 @@ pub fn load_whisper(path: &Path) -> Result<WhisperModel> {
 
 ---
 
-## 9. Dead Code Elimination Plan
+## 9. Code Consolidation Plan
 
-### 9.1 Code to Delete from Aprender
+### 9.1 Clarification: Aprender GGUF Reader Is NOT Dead Code
 
-The following aprender code becomes dead after realizar owns all loading:
+**CORRECTION**: The original spec incorrectly marked aprender's GGUF reader as dead code.
+Aprender's GGUF reader is the **conversion pipeline reader** used by `apr import` to convert
+GGUF files to APR format. It MUST be kept. The distinction:
 
-| File/Module | Lines | Reason for Deletion |
-|-------------|-------|---------------------|
-| `src/format/gguf/reader.rs` + parts | ~1,500 | Realizar has `gguf::MappedGGUFModel` |
-| `src/format/gguf/dequant.rs` + parts | ~800 | Realizar has `quantize::dequant` (all formats) |
-| `src/format/gguf/api.rs` | ~200 | Thin wrapper over reader, no longer needed |
-| `src/format/quantize.rs` (dequant fns) | ~400 | Realizar owns dequantization |
-| `src/serialization/safetensors.rs` | ~300 | Realizar has `safetensors::MappedSafeTensorsModel` |
+- **Inference loading** (realizar): `realizar::model_loader::load_from_path()` — loads for inference
+- **Conversion reading** (aprender): `aprender::format::gguf::load_gguf_raw()` — reads for format conversion
 
-**Total**: ~3,200 lines of dead code to delete.
+| Module | Status | Reason |
+|--------|--------|--------|
+| `src/format/gguf/reader.rs` + parts | **KEEP** | Conversion pipeline reader for `apr import` |
+| `src/format/gguf/dequant.rs` + parts | **KEEP** | Used by reader's F32 extraction path |
+| `src/format/gguf/api.rs` | **KEEP** | Public API for conversion pipeline |
+| `src/format/gguf/types.rs` | **KEEP** | Type definitions shared with converter |
+| `src/serialization/safetensors.rs` | **KEEP** | Used by inspection/validation CLI commands |
 
-**What stays in aprender**:
-- `format::converter::*` — import/export pipeline (calls realizar for loading)
-- `format::layout_contract` — SOURCE OF TRUTH for tensor shapes
-- `format::validation` — QA validation gates
-- `format::lint` — Best practice checks
-- `format::diff` — Model comparison
-- `format::v2::*` — APR v2 writer (aprender writes APR files during import)
-- `format::quantize.rs` (type definitions only, not dequant functions)
+### 9.2 Dequant Consolidation (aprender → trueno)
 
-### 9.2 Code to Delete from Realizar
+Aprender's dequant functions in `src/format/gguf/dequant.rs` duplicate trueno's implementations.
+These should be consolidated to delegate to trueno where signatures match:
 
-| File/Module | Lines | Reason for Deletion |
-|-------------|-------|---------------------|
-| Duplicate transpose implementations | ~50 | PMAT-285 already completed (delegate to `contract_gate::transpose_f32`) |
-| `apr::helpers::rms_norm` | ~20 | Duplicate of `gpu::scheduler::ops::layer_norm_static` |
-| `apr::helpers::matmul` | ~25 | Duplicate of `gpu::metrics_part_02::cpu_matmul` |
-| `apr::helpers::simple_attention` | ~35 | Duplicate of `gpu::scheduler::ops::gqa_multihead_attention` |
+| aprender Function | trueno Equivalent | Action |
+|-------------------|-------------------|--------|
+| `dequantize_q4_k()` | `trueno::quantize::dequantize_q4_k()` | Delegate |
+| `dequantize_q6_k()` | `trueno::quantize::dequantize_q6_k()` | Delegate |
+| `dequantize_q4_0()` | No direct equivalent | Keep in aprender |
+| `dequantize_q8_0()` | No direct equivalent | Keep in aprender |
+| `f16_to_f32()` | `trueno::f16::to_f32()` | Delegate |
 
-**Total**: ~130 lines. (Realizar is already cleaner due to PMAT-283/284/285.)
+### 9.3 Realizar Duplicate Helpers (Deferred)
+
+The APR CPU inference helpers (`rms_norm`, `matmul`, `simple_attention`, `apply_rope_norm`)
+in `realizar/src/apr/helpers.rs` have **different APIs** from the GPU scheduler equivalents:
+
+| Helper | GPU Equivalent | Difference |
+|--------|---------------|------------|
+| `rms_norm(x, weight, eps)` | `layer_norm_static(input, weight, bias, dim, eps)` | No bias param |
+| `matmul(x, w, seq, in, out)` | `cpu_matmul(a, b, m, k, n)` | Transposed weight convention |
+| `simple_attention(...)` | `gqa_multihead_attention(...)` | Multi-seq vs single-pos |
+
+**Status**: API unification deferred. These serve the APR CPU inference path which has
+~70 call sites. Unifying requires changing all callers. Track as PMAT-290.
+
+### 9.4 Already Completed (PMAT-285)
+
+Duplicate transpose implementations consolidated to `contract_gate::transpose_f32()`
+delegating to `trueno::blis::transpose`. 6 implementations now delegate to one.
 
 ### 9.3 Deletion Safety Protocol
 
