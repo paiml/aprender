@@ -65,6 +65,7 @@ impl LinearSVM {
     /// # Returns
     ///
     /// Ok(()) on success, Err with message on failure.
+    // Contract: svm-v1, equation = "hinge_loss"
     pub fn fit(&mut self, x: &Matrix<f32>, y: &[usize]) -> Result<()> {
         if x.n_rows() != y.len() {
             return Err("x and y must have the same number of samples".into());
@@ -183,6 +184,7 @@ impl LinearSVM {
     /// # Returns
     ///
     /// Vector of predicted labels (0 or 1).
+    // Contract: svm-v1, equation = "svm_predict"
     pub fn predict(&self, x: &Matrix<f32>) -> Result<Vec<usize>> {
         let decisions = self.decision_function(x)?;
 

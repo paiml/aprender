@@ -279,6 +279,7 @@ impl PCA {
     }
 }
 
+// Contract: pca-v1, equation = "pca_transform"
 impl Transformer for PCA {
     fn fit(&mut self, x: &Matrix<f32>) -> Result<()> {
         use trueno::SymmetricEigen;

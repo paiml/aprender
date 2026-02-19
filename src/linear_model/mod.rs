@@ -233,6 +233,7 @@ impl LinearRegression {
     }
 }
 
+// Contract: linear-models-v1, equation = "ols_fit"
 impl Estimator for LinearRegression {
     /// Fits the linear regression model using normal equations.
     ///
