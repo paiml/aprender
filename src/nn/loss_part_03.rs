@@ -437,4 +437,200 @@ mod tests {
         let debug_str = format!("{:?}", loss2);
         assert!(debug_str.contains("NLLLoss"));
     }
+
+    // =========================================================================
+    // CrossEntropyLoss::forward coverage gap tests (48 uncov lines)
+    // =========================================================================
+
+    #[test]
+    fn test_cross_entropy_forward_label_smoothing_with_sum_reduction() {
+        // Test label smoothing + Sum reduction to cover combined path
+        let logits = Tensor::new(&[1.0, 2.0, 0.5, 0.1, 3.0, 0.2], &[2, 3]);
+        let targets = Tensor::from_slice(&[1.0, 1.0]);
+
+        let criterion = CrossEntropyLoss {
+            reduction: Reduction::Sum,
+            label_smoothing: 0.1,
+        };
+        let loss = criterion.forward(&logits, &targets);
+
+        // Sum of per-sample losses should be positive
+        assert!(loss.item() > 0.0, "Sum-reduced loss should be positive");
+        // Sum should be larger than mean for 2 samples
+        let mean_criterion = CrossEntropyLoss::with_label_smoothing(0.1);
+        let mean_loss = mean_criterion.forward(&logits, &targets);
+        assert!(
+            (loss.item() - mean_loss.item() * 2.0).abs() < 1e-4,
+            "Sum should be 2x mean for 2 samples"
+        );
+    }
+
+    #[test]
+    fn test_cross_entropy_forward_label_smoothing_with_none_reduction() {
+        // Test label smoothing + None reduction: returns per-sample losses
+        let logits = Tensor::new(&[1.0, 2.0, 0.5, 0.1, 3.0, 0.2], &[2, 3]);
+        let targets = Tensor::from_slice(&[1.0, 1.0]);
+
+        let criterion = CrossEntropyLoss {
+            reduction: Reduction::None,
+            label_smoothing: 0.1,
+        };
+        let loss = criterion.forward(&logits, &targets);
+
+        assert_eq!(loss.shape(), &[2], "None reduction should return per-sample losses");
+        // Both losses should be positive
+        assert!(loss.data()[0] > 0.0);
+        assert!(loss.data()[1] > 0.0);
+    }
+
+    #[test]
+    fn test_cross_entropy_forward_label_smoothing_value_correctness() {
+        // 1 sample, 3 classes, target=0, label_smoothing=0.1
+        // Verify the numerical computation of label smoothing
+        let logits = Tensor::new(&[2.0, 1.0, 0.0], &[1, 3]);
+        let targets = Tensor::from_slice(&[0.0]);
+
+        let criterion_no_smooth = CrossEntropyLoss::new();
+        let loss_no_smooth = criterion_no_smooth.forward(&logits, &targets);
+
+        let criterion_smooth = CrossEntropyLoss::with_label_smoothing(0.1);
+        let loss_smooth = criterion_smooth.forward(&logits, &targets);
+
+        // Label smoothing should increase loss for correct predictions
+        // (redistributes probability to incorrect classes)
+        assert!(
+            loss_smooth.item() > loss_no_smooth.item(),
+            "Label smoothing should increase loss for correct prediction: smooth={} vs no_smooth={}",
+            loss_smooth.item(),
+            loss_no_smooth.item()
+        );
+    }
+
+    #[test]
+    fn test_cross_entropy_forward_label_smoothing_multi_class() {
+        // 1 sample, 5 classes - exercises the inner loop over all classes
+        let logits = Tensor::new(&[0.5, 1.0, 0.2, 0.8, 1.5], &[1, 5]);
+        let targets = Tensor::from_slice(&[4.0]); // target is last class
+
+        let criterion = CrossEntropyLoss::with_label_smoothing(0.2);
+        let loss = criterion.forward(&logits, &targets);
+
+        assert!(loss.item() > 0.0, "Loss should be positive");
+        assert!(loss.item().is_finite(), "Loss should be finite");
+    }
+
+    #[test]
+    fn test_cross_entropy_forward_large_batch_label_smoothing() {
+        // 4 samples, 3 classes - exercises the batch loop with label smoothing
+        let logits = Tensor::new(
+            &[
+                1.0, 2.0, 0.5, // sample 0
+                0.1, 3.0, 0.2, // sample 1
+                2.0, 0.0, 1.0, // sample 2
+                0.5, 0.5, 2.0, // sample 3
+            ],
+            &[4, 3],
+        );
+        let targets = Tensor::from_slice(&[1.0, 1.0, 0.0, 2.0]);
+
+        let criterion = CrossEntropyLoss {
+            reduction: Reduction::Mean,
+            label_smoothing: 0.15,
+        };
+        let loss = criterion.forward(&logits, &targets);
+
+        assert!(loss.item() > 0.0);
+        assert!(loss.item().is_finite());
+    }
+
+    #[test]
+    fn test_cross_entropy_forward_standard_without_smoothing_explicit() {
+        // Explicitly test the else branch (no label smoothing) with specific values
+        // logits = [10, 0, 0] -> softmax ~ [1, 0, 0], target=0
+        // loss = -log(softmax[0]) ~ 0
+        let logits = Tensor::new(&[10.0, 0.0, 0.0], &[1, 3]);
+        let targets = Tensor::from_slice(&[0.0]);
+
+        let criterion = CrossEntropyLoss::new();
+        let loss = criterion.forward(&logits, &targets);
+
+        // Strong prediction for correct class: loss should be very small
+        assert!(loss.item() < 0.01, "Loss for strong correct prediction: {}", loss.item());
+    }
+
+    #[test]
+    fn test_cross_entropy_forward_autograd_records_gradient_fn() {
+        // Exercise the autograd recording path (lines 330-342)
+        clear_graph();
+
+        let logits = Tensor::new(&[1.0, 2.0, 0.5], &[1, 3]).requires_grad();
+        let logits_id = logits.id();
+        let targets = Tensor::from_slice(&[1.0]);
+
+        let criterion = CrossEntropyLoss::new(); // no label smoothing, autograd enabled
+        let loss = criterion.forward(&logits, &targets);
+
+        // Loss tensor should have requires_grad and grad_fn set
+        assert!(loss.requires_grad_enabled(), "Loss should require grad");
+
+        // Backward should produce gradients
+        loss.backward();
+        let grad = crate::autograd::get_grad(logits_id).expect("Should have gradient");
+        assert_eq!(grad.shape(), &[1, 3]);
+
+        // Softmax of [1,2,0.5] ~ [0.186, 0.506, 0.113, ...] normalized
+        // Gradient = softmax - one_hot = [positive, negative, positive]
+        let g = grad.data();
+        assert!(g[0] > 0.0, "Non-target class gradient should be positive");
+        assert!(g[1] < 0.0, "Target class gradient should be negative");
+        assert!(g[2] > 0.0, "Non-target class gradient should be positive");
+    }
+
+    #[test]
+    fn test_cross_entropy_forward_autograd_skipped_with_label_smoothing() {
+        // When label_smoothing > 0, autograd is NOT recorded (line 330 condition)
+        clear_graph();
+
+        let logits = Tensor::new(&[1.0, 2.0, 0.5], &[1, 3]).requires_grad();
+        let logits_id = logits.id();
+        let targets = Tensor::from_slice(&[1.0]);
+
+        let criterion = CrossEntropyLoss::with_label_smoothing(0.1);
+        let loss = criterion.forward(&logits, &targets);
+
+        // With label smoothing, backward should not produce gradients
+        // (autograd path is skipped)
+        loss.backward();
+        let grad = crate::autograd::get_grad(logits_id);
+        assert!(
+            grad.is_none(),
+            "Label smoothing path should skip autograd recording"
+        );
+    }
+
+    #[test]
+    fn test_cross_entropy_forward_target_class_boundary() {
+        // Test with target at the last class index (boundary condition)
+        let logits = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0], &[1, 5]);
+        let targets = Tensor::from_slice(&[4.0]); // last class
+
+        let criterion = CrossEntropyLoss::new();
+        let loss = criterion.forward(&logits, &targets);
+
+        // Target is the class with highest logit, so loss should be relatively small
+        assert!(loss.item() > 0.0);
+        assert!(loss.item() < 2.0, "Correct prediction loss should be moderate");
+    }
+
+    #[test]
+    fn test_cross_entropy_forward_target_class_zero() {
+        // Test with target=0 (first class)
+        let logits = Tensor::new(&[5.0, 1.0, 1.0], &[1, 3]);
+        let targets = Tensor::from_slice(&[0.0]);
+
+        let criterion = CrossEntropyLoss::new();
+        let loss = criterion.forward(&logits, &targets);
+
+        assert!(loss.item() < 0.1, "Strong correct prediction at class 0");
+    }
 }
