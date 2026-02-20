@@ -1287,11 +1287,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'New task: WAPR-CLI-STUBS'
-  status: inprogress
+  status: cancelled
   priority: medium
   assigned_to: null
   created: 2025-12-16T09:48:19.113691302+00:00
-  updated: 2025-12-16T09:48:19.113691302+00:00
+  updated: 2026-02-20T11:05:32Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -1383,11 +1383,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'New task: PMAT-PERF-009-CUDA'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-01-11T23:07:13.191160326+00:00
-  updated: 2026-01-11T23:07:13.191160326+00:00
+  updated: 2026-02-20T11:05:16Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -1399,11 +1399,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'New task: PMAT-PERF-009-WIRE'
-  status: inprogress
+  status: cancelled
   priority: medium
   assigned_to: null
   created: 2026-01-12T09:15:48.332874564+00:00
-  updated: 2026-01-12T09:15:48.332874564+00:00
+  updated: 2026-02-20T11:05:32Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -1431,11 +1431,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'New task: PMAT-PERF-OPTIMIZE'
-  status: inprogress
+  status: cancelled
   priority: medium
   assigned_to: null
   created: 2026-01-12T09:38:13.765147245+00:00
-  updated: 2026-01-12T09:38:13.765147245+00:00
+  updated: 2026-02-20T11:05:32Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -1447,11 +1447,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'New task: PMAT-PERF-2X-TARGET'
-  status: inprogress
+  status: cancelled
   priority: medium
   assigned_to: null
   created: 2026-01-12T09:46:30.149149972+00:00
-  updated: 2026-01-12T09:46:30.149149972+00:00
+  updated: 2026-02-20T11:05:32Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -1832,11 +1832,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PAR-301: Expand apr serve to support APR and SafeTensors formats'
-  status: planned
+  status: completed
   priority: high
   assigned_to: null
   created: 2026-01-22T09:45:17Z
-  updated: 2026-01-22T09:45:17Z
+  updated: 2026-02-20T11:07:30Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -1864,11 +1864,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PERF-ST-001: SafeTensors performance parity with GGUF'
-  status: planned
+  status: completed
   priority: high
   assigned_to: null
   created: 2026-01-22T10:29:50Z
-  updated: 2026-01-22T10:29:50Z
+  updated: 2026-02-20T11:07:30Z
   spec: null
   acceptance_criteria:
   - SafeTensors inference is 0.4 tok/s vs GGUF 30+ tok/s - need five-whys analysis
@@ -1881,11 +1881,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-098: APR format performance parity with GGUF and SafeTensors'
-  status: planned
+  status: completed
   priority: high
   assigned_to: null
   created: 2026-01-22T12:49:19Z
-  updated: 2026-01-22T12:49:19Z
+  updated: 2026-02-20T11:07:30Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -1929,11 +1929,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'New task: APR-PUB-001'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-01-23T10:19:57.986146153+00:00
-  updated: 2026-01-23T10:19:57.986146153+00:00
+  updated: 2026-02-20T11:05:16Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -1945,11 +1945,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'New task: PMAT-103-SIMD: AVX2 SIMD optimization for Q4K matmul to achieve 5+ tok/s'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-01-23T12:13:30.786974749+00:00
-  updated: 2026-01-23T12:13:30.786974749+00:00
+  updated: 2026-02-20T11:05:16Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -2033,11 +2033,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-110: APR CUDA KV Cache - Implement proper KV cache for AprV2ModelCuda generation'
-  status: planned
+  status: completed
   priority: high
   assigned_to: null
   created: 2026-01-26T19:17:34Z
-  updated: 2026-01-26T19:17:34Z
+  updated: 2026-02-20T11:07:30Z
   spec: null
   acceptance_criteria:
   - |-
@@ -2063,11 +2063,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'New task: PMAT-110'
-  status: inprogress
+  status: cancelled
   priority: medium
   assigned_to: null
   created: 2026-01-26T19:17:40.490094202+00:00
-  updated: 2026-01-26T19:19:52Z
+  updated: 2026-02-20T11:05:32Z
   spec: null
   acceptance_criteria:
   - "Root cause: realizar's AprV2ModelCuda::forward_single_cuda has NO KV cache - it just calls forward_cuda(&[token]) with no context. This makes generation impossible (logits all -inf).\n\nFix: Implement proper KV cache in realizar similar to GGUF CUDA path (OwnedQuantizedKVCache).\n\nSCOPE: Both APR AND SafeTensors formats must work with GPU for:\n- apr chat (interactive)\n- apr serve (REST API)\n- apr run (single prompt)\n\nAcceptance criteria:\n- [ ] APR CUDA generates correct output (not empty/garbage)\n- [ ] SafeTensors CUDA generates correct output\n- [ ] Temperature sampling works for both formats\n- [ ] Performance: >50 tok/s on RTX 4090 for both\n- [ ] Test: apr chat with APR model uses GPU\n- [ ] Test: apr chat with SafeTensors model uses GPU\n- [ ] Test: apr serve works with APR format\n- [ ] Test: apr serve works with SafeTensors format\n- [ ] Test: apr run works with APR format  \n- [ ] Test: apr run works with SafeTensors format"
@@ -2538,11 +2538,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: GGUF-EXPORT-001
-  status: inprogress
+  status: completed
   priority: critical
   assigned_to: null
   created: 2026-02-01T23:21:56Z
-  updated: 2026-02-04T14:42:51.640175315+00:00
+  updated: 2026-02-20T11:05:16Z
   spec: null
   acceptance_criteria:
   - 'P0: GGUF exporter writes zero metadata keys and HF-style tensor names'
@@ -2720,11 +2720,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'STACK-DRIFT-001: Update downstream crates for aprender 0.25.1'
-  status: planned
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-02-04T13:19:13Z
-  updated: 2026-02-04T13:19:13Z
+  updated: 2026-02-20T11:07:30Z
   spec: null
   acceptance_criteria:
   - 'Stack drift detected by batuta bug-hunter. Crates needing update: aprender-shell, aprender-tsp, realizar, whisper-apr, pmat. Run ''batuta stack drift --fix'' after publish.'
@@ -2788,11 +2788,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'New task: PMAT-PHASE6: Re-run Phase 6 (marathon + throughput) with self-converted GGUF'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-02-04T14:50:34.685386748+00:00
-  updated: 2026-02-04T14:50:34.685386748+00:00
+  updated: 2026-02-20T11:05:16Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -2821,11 +2821,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'GH-200: Qwen2.5-Coder dev-tier QA qualification'
-  status: planned
+  status: completed
   priority: critical
   assigned_to: null
   created: 2026-02-04T17:25:52Z
-  updated: 2026-02-04T17:25:52Z
+  updated: 2026-02-20T11:07:30Z
   spec: null
   acceptance_criteria:
   - '0/6 models pass QA gates. Blocked by #202 LAYOUT-002 fix.'
@@ -2838,11 +2838,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'GH-199: APR 1.5B dequantize and GPU issues'
-  status: planned
+  status: completed
   priority: high
   assigned_to: null
   created: 2026-02-04T17:25:54Z
-  updated: 2026-02-04T17:25:54Z
+  updated: 2026-02-20T11:12:16Z
   spec: null
   acceptance_criteria:
   - lm_head.weight dequantize fails, APR 8x slower than GGUF, GPU output garbage.
@@ -2855,11 +2855,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'GH-192: APR inference performance (0.5 vs 270 tok/s)'
-  status: planned
+  status: completed
   priority: high
   assigned_to: null
   created: 2026-02-04T17:25:55Z
-  updated: 2026-02-04T17:25:55Z
+  updated: 2026-02-20T11:12:16Z
   spec: null
   acceptance_criteria:
   - APR format inference too slow. Dequant path not using fused kernels.
@@ -2920,11 +2920,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'New task: GH-205'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-02-05T11:20:38.193678509+00:00
-  updated: 2026-02-05T11:20:38.193678509+00:00
+  updated: 2026-02-20T11:05:16Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -2936,11 +2936,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'New task: GH-207'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-02-05T11:27:20.280899150+00:00
-  updated: 2026-02-05T11:27:20.280899150+00:00
+  updated: 2026-02-20T11:05:16Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -2952,11 +2952,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'New task: GH-208'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-02-05T11:29:43.574421852+00:00
-  updated: 2026-02-05T11:35:10.932807006+00:00
+  updated: 2026-02-20T11:05:16Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -2968,11 +2968,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'GH-208: APR Inference - Layer Weight Investigation'
-  status: inprogress
+  status: cancelled
   priority: high
   assigned_to: null
   created: 2026-02-05T12:13:27Z
-  updated: 2026-02-05T12:13:32.651486896+00:00
+  updated: 2026-02-20T11:05:32Z
   spec: null
   acceptance_criteria:
   - Embedding correlation fixed (1.0), but APR inference still produces garbage. Need to investigate layer weights and GPU kernels.
@@ -2985,11 +2985,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'GH-208-GPU: Fix GPU inference garbage output (Five Whys root cause analysis)'
-  status: inprogress
+  status: cancelled
   priority: critical
   assigned_to: null
   created: 2026-02-05T12:35:13Z
-  updated: 2026-02-05T12:35:18.513804845+00:00
+  updated: 2026-02-20T11:05:32Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -3021,11 +3021,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-240: Create model family YAMLs (qwen2, llama, whisper, bert)'
-  status: inprogress
+  status: completed
   priority: high
   assigned_to: null
   created: 2026-02-06T11:05:49Z
-  updated: 2026-02-06T11:06:31.775758025+00:00
+  updated: 2026-02-20T11:05:16Z
   spec: null
   acceptance_criteria:
   - Write contracts/model-families/qwen2.yaml, llama.yaml, whisper.yaml, bert.yaml following the schema in Section 4.2 of the model oracle spec. Each YAML declares size variants, constraints, tensor templates, shape templates, and chat template configurations.
@@ -3040,11 +3040,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-241: ModelFamily trait + ModelFamilyConfig'
-  status: inprogress
+  status: completed
   priority: high
   assigned_to: null
   created: 2026-02-06T11:05:53Z
-  updated: 2026-02-06T11:20:09.463661752+00:00
+  updated: 2026-02-20T11:05:16Z
   spec: null
   acceptance_criteria:
   - Create src/format/model_family.rs with ModelFamily trait, ModelFamilyConfig, ModelSizeConfig, ModelConstraints, and associated enums (AttentionType, Activation, NormType, PositionalEncoding, MlpType). Include detect_family() function that takes tensor names and returns matching ModelFamily impl.
@@ -3059,11 +3059,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-242: YAML contract loader'
-  status: inprogress
+  status: completed
   priority: high
   assigned_to: null
   created: 2026-02-06T11:05:55Z
-  updated: 2026-02-06T11:20:19.826643964+00:00
+  updated: 2026-02-20T11:05:16Z
   spec: null
   acceptance_criteria:
   - Create src/format/model_family_loader.rs that parses model family YAML files at runtime. Uses minimal YAML parsing (no serde_yaml dependency). Returns ModelFamilyConfig structs. Runtime fallback for build.rs codegen.
@@ -3078,11 +3078,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-243: Clippy column-major bans'
-  status: inprogress
+  status: completed
   priority: high
   assigned_to: null
   created: 2026-02-06T11:05:58Z
-  updated: 2026-02-06T11:10:27.433354440+00:00
+  updated: 2026-02-20T11:05:16Z
   spec: null
   acceptance_criteria:
   - Add disallowed-methods entries to .clippy.toml for all column-major matmul kernel functions. Verify cargo clippy -- -D warnings catches column-major imports.
@@ -3097,11 +3097,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-244: apr oracle local file mode'
-  status: planned
+  status: completed
   priority: high
   assigned_to: null
   created: 2026-02-06T11:06:05Z
-  updated: 2026-02-06T11:06:05Z
+  updated: 2026-02-20T11:12:22Z
   spec: null
   acceptance_criteria:
   - Add Commands::Oracle to crates/apr-cli/src/lib.rs. Implement local file analysis via RosettaStone::inspect(), match tensor names against family contracts, detect size variant, output ModelOracleReport in text and JSON. Include --compliance and --tensors flags.
@@ -3116,11 +3116,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-245: apr oracle HuggingFace API mode'
-  status: planned
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-02-06T11:06:07Z
-  updated: 2026-02-06T11:06:07Z
+  updated: 2026-02-20T11:12:22Z
   spec: null
   acceptance_criteria:
   - Implement HF API query for config.json. Parse model_type, hidden_size, num_hidden_layers from config. Match against family contracts. Handle gated models (401), rate limits (429), offline mode.
@@ -3135,11 +3135,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-246: apr oracle --family contract mode'
-  status: planned
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-02-06T11:06:09Z
-  updated: 2026-02-06T11:06:09Z
+  updated: 2026-02-20T11:12:22Z
   spec: null
   acceptance_criteria:
   - Implement contract description rendering. Load YAML, display all size variants or filter with --size. Show constraints, tensor templates with evaluated shapes, chat template. Text and JSON output.
@@ -3154,11 +3154,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-247: Playbook certification cross-reference'
-  status: planned
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-02-06T11:06:12Z
-  updated: 2026-02-06T11:06:12Z
+  updated: 2026-02-20T11:12:22Z
   spec: null
   acceptance_criteria:
   - Parse ../apr-model-qa-playbook/docs/certifications/models.csv. Map detected model to certification entry using csv_family_key and size variant. Populate CertificationInfo in ModelOracleReport. Handle missing playbook repo.
@@ -3268,11 +3268,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'GH-254: Verify F2-VALIDATION BOS fix and update showcase spec FALSIFIED gates'
-  status: inprogress
+  status: completed
   priority: critical
   assigned_to: null
   created: 2026-02-08T10:59:25Z
-  updated: 2026-02-08T10:59:29.795202937+00:00
+  updated: 2026-02-20T11:05:16Z
   spec: null
   acceptance_criteria:
   - 'BOS fix pushed to realizar (3670abb). Need to: 1) Verify GPU actually accelerates (>100 tok/s vs 33), 2) Update FALSIFIED gates in showcase spec, 3) Re-measure 1.5B and 7B GPU performance'
@@ -3288,11 +3288,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'GH-255: 7B GGUF GPU produces garbage output (CPU correct)'
-  status: inprogress
+  status: completed
   priority: critical
   assigned_to: null
   created: 2026-02-08T11:09:56Z
-  updated: 2026-02-08T11:11:21.146920795+00:00
+  updated: 2026-02-20T11:05:16Z
   spec: null
   acceptance_criteria:
   - '7B GPU: garbage (''2? son the -"'') vs CPU correct (''2+2 is 4''). 1.5B works on both. apr qa golden test uses CPU only — QA gap. Root cause: likely CUDA kernel dimension issue (7B: hidden=3584 vs 1.5B: hidden=1536). Five Whys needed.'
@@ -3308,11 +3308,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-260: Investigate 23.7 GB RSS for 7B Q4K (4 GB on disk) — 6x model size'
-  status: inprogress
+  status: completed
   priority: high
   assigned_to: null
   created: 2026-02-08T14:54:39Z
-  updated: 2026-02-08T14:54:43.951709339+00:00
+  updated: 2026-02-20T11:05:16Z
   spec: null
   acceptance_criteria:
   - 'Falsified: F-PERF GPU/CPU memory <6 GB shows 23.7 GB. 4 GB Q4K model using 6x memory suggests unnecessary copies or leaks. Similar pattern to GH-199 where model was cloned twice.'
@@ -3325,11 +3325,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-234: F-GT-001 enforce-provenance flag + F-GT-002 mixed quant warning'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-02-08T15:09:13Z
-  updated: 2026-02-08T15:09:17.130946832+00:00
+  updated: 2026-02-20T11:05:16Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -3341,11 +3341,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'New task: GH-219'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-02-09T15:48:15.332094603+00:00
-  updated: 2026-02-09T15:48:15.332094603+00:00
+  updated: 2026-02-20T11:05:16Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -3357,11 +3357,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-PROFILE-A: Formal verification + code quality for A score'
-  status: inprogress
+  status: completed
   priority: critical
   assigned_to: null
   created: 2026-02-10T08:37:32Z
-  updated: 2026-02-10T08:37:36.612982404+00:00
+  updated: 2026-02-20T11:05:16Z
   spec: null
   acceptance_criteria:
   - Improve Formal Verification 0.9->8+, Code Quality 11->20+, Rust Tooling 69.5->100+
@@ -3374,11 +3374,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'New task: Round-49-falsification'
-  status: inprogress
+  status: cancelled
   priority: medium
   assigned_to: null
   created: 2026-02-12T22:56:33.321235350+00:00
-  updated: 2026-02-12T22:56:33.321235350+00:00
+  updated: 2026-02-20T11:05:32Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -3406,11 +3406,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'New task: GH-237'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-02-13T16:38:26.474586084+00:00
-  updated: 2026-02-13T16:38:26.474586084+00:00
+  updated: 2026-02-20T11:05:16Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -3422,11 +3422,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'New task: qwen2.5-coder-showcase-demo'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-02-14T12:06:18.262210579+00:00
-  updated: 2026-02-14T12:06:18.262210579+00:00
+  updated: 2026-02-20T11:05:16Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -3438,11 +3438,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'New task: docs/specifications/qwen2.5-coder-showcase.md'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-02-14T14:19:31.830927419+00:00
-  updated: 2026-02-14T14:19:31.830927419+00:00
+  updated: 2026-02-20T11:05:16Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -3470,11 +3470,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: Fix 16 showcase spec falsification bugs (Round 51)
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-02-14T15:33:00Z
-  updated: 2026-02-14T15:33:03.251845641+00:00
+  updated: 2026-02-20T11:05:16Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -3505,11 +3505,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: Fix CB-500 string byte indexing warnings
-  status: planned
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-02-14T18:13:12Z
-  updated: 2026-02-14T18:13:12Z
+  updated: 2026-02-20T11:07:30Z
   spec: null
   acceptance_criteria:
   - 319 CB-506 warnings for &str[n..m] byte indexing that can panic on non-ASCII
@@ -3524,11 +3524,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: Fix CB-900 broken markdown links in book
-  status: planned
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-02-14T18:13:13Z
-  updated: 2026-02-14T18:13:13Z
+  updated: 2026-02-20T11:07:30Z
   spec: null
   acceptance_criteria:
   - 24 broken internal links in book/ and docs/
@@ -3543,11 +3543,11 @@ roadmap:
   github_issue: 248
   item_type: task
   title: 'bug: --json flag ignored on list, eval, tree, debug subcommands'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-02-14T21:33:19.572210614+00:00
-  updated: 2026-02-14T21:33:19.572210614+00:00
+  updated: 2026-02-20T11:05:16Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -3560,11 +3560,11 @@ roadmap:
   github_issue: 249
   item_type: task
   title: 'bug: apr inspect --json returns empty architecture field'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-02-14T21:32:59.143242352+00:00
-  updated: 2026-02-14T21:32:59.143242352+00:00
+  updated: 2026-02-20T11:05:16Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -3577,11 +3577,11 @@ roadmap:
   github_issue: 250
   item_type: task
   title: 'bug: apr run --json produces completely wrong tokens (32/32 mismatch)'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-02-14T21:32:59.917777950+00:00
-  updated: 2026-02-14T21:32:59.917777950+00:00
+  updated: 2026-02-20T11:05:16Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -3594,11 +3594,11 @@ roadmap:
   github_issue: 251
   item_type: task
   title: 'bug: apr validate output format changed — dict with top-level keys instead of checks list'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-02-14T21:33:00.732997709+00:00
-  updated: 2026-02-14T21:33:00.732997709+00:00
+  updated: 2026-02-20T11:05:16Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -3611,11 +3611,11 @@ roadmap:
   github_issue: 252
   item_type: task
   title: 'bug: apr lint exits 5 on warnings-only (0 errors)'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-02-14T21:33:01.473463794+00:00
-  updated: 2026-02-14T21:33:01.473463794+00:00
+  updated: 2026-02-20T11:05:16Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -3628,11 +3628,11 @@ roadmap:
   github_issue: 253
   item_type: task
   title: 'bug: apr check (selftest) fails with GH-187 embedding warning'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-02-14T21:33:02.228863416+00:00
-  updated: 2026-02-14T21:33:02.228863416+00:00
+  updated: 2026-02-20T11:05:16Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -3645,11 +3645,11 @@ roadmap:
   github_issue: 254
   item_type: task
   title: 'bug: apr bench reports 0.0 tok/s throughput on all models'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-02-14T21:33:03.102874011+00:00
-  updated: 2026-02-14T21:33:03.102874011+00:00
+  updated: 2026-02-20T11:05:16Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -3662,11 +3662,11 @@ roadmap:
   github_issue: 256
   item_type: task
   title: 'bug: apr diff reports structural diffs between int4 and int8 variants of same model'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-02-14T21:33:03.820306871+00:00
-  updated: 2026-02-14T21:33:03.820306871+00:00
+  updated: 2026-02-20T11:05:16Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -3713,11 +3713,11 @@ roadmap:
   github_issue: 243
   item_type: task
   title: 'feat: apr quantize — unified quantization pipeline with GGUF/AWQ/GPTQ output'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-02-15T10:52:15.943055870+00:00
-  updated: 2026-02-15T10:52:15.943055870+00:00
+  updated: 2026-02-20T11:05:16Z
   spec: null
   acceptance_criteria:
   - '`apr quantize model.apr --scheme int4` works end-to-end'
@@ -3735,11 +3735,11 @@ roadmap:
   github_issue: 244
   item_type: task
   title: 'feat: apr finetune — LoRA/QLoRA fine-tuning with adapter upload to Hub'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-02-15T11:12:10.414158761+00:00
-  updated: 2026-02-15T11:12:10.414158761+00:00
+  updated: 2026-02-20T11:05:16Z
   spec: null
   acceptance_criteria:
   - '`apr finetune model.apr --method lora --data train.jsonl` trains and saves adapter'
@@ -3756,11 +3756,11 @@ roadmap:
   github_issue: 247
   item_type: task
   title: 'feat: apr prune + apr distill — structured pruning and knowledge distillation pipeline'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-02-15T11:12:51.494148163+00:00
-  updated: 2026-02-15T11:12:51.494148163+00:00
+  updated: 2026-02-20T11:05:16Z
   spec: null
   acceptance_criteria:
   - '`apr prune model.apr --method structured --target-ratio 0.5` produces smaller model'
@@ -3779,11 +3779,11 @@ roadmap:
   github_issue: 246
   item_type: task
   title: 'feat: apr export — MLX, CoreML, and OpenVINO format support'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-02-15T11:30:26.378754681+00:00
-  updated: 2026-02-15T11:30:26.378754681+00:00
+  updated: 2026-02-20T11:05:16Z
   spec: null
   acceptance_criteria:
   - '`apr export --format mlx` produces loadable MLX model'
@@ -3801,11 +3801,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: apr hex --stats silently drops stats for BF16 tensors
-  status: planned
+  status: completed
   priority: high
   assigned_to: null
   created: 2026-02-16T14:40:10Z
-  updated: 2026-02-16T14:40:10Z
+  updated: 2026-02-20T11:07:30Z
   spec: null
   acceptance_criteria:
   - 'apr hex --tensor <name> --stats on a BF16 safetensors file (e.g. Qwen2-0.5B) shows the tensor header but skips the Statistics: line entirely. No error, no warning — just silent omission. F32 tensors work fine. Discovered via tiny-model-ground-truth safetensors parity tests comparing apr hex against Python safetensors + torch stats.'
@@ -3822,11 +3822,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'GH-279/280/281: Entrenar delegation API gaps (Loss Send+Sync, cross_entropy_loss, per-class metrics)'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-02-17T11:24:45Z
-  updated: 2026-02-17T11:24:48.713673395+00:00
+  updated: 2026-02-20T11:05:16Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -3838,11 +3838,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'Qwen3-8B: Performance Parity Pipeline'
-  status: inprogress
+  status: completed
   priority: high
   assigned_to: null
   created: 2026-02-17T14:37:33Z
-  updated: 2026-02-18T11:51:35Z
+  updated: 2026-02-20T11:05:16Z
   spec: null
   acceptance_criteria:
   - 'GH-280 complete: PerHeadRmsNormKernel in trueno-gpu v0.4.18, capability gate flipped, 20/21 falsification checks pass. Remaining: throughput optimization (3.9 tok/s → 40+ target), GPU golden output verification (unblocked), format parity.'
@@ -3952,11 +3952,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'GH-279-SEAL-001: Seal OwnedQuantizedModel fields pub(crate)'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-02-19T09:29:42Z
-  updated: 2026-02-19T09:29:51.753508785+00:00
+  updated: 2026-02-20T11:05:16Z
   spec: null
   acceptance_criteria:
   - Make OwnedQuantizedModel fields pub(crate) with accessor methods. Currently all fields are pub — anyone can construct garbage bypassing contract_gate. 18+ consumer files need updating.
@@ -3969,11 +3969,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'GH-279-SEAL-002: Validated input wrapper for GpuModel::from_apr_weights'
-  status: planned
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-02-19T09:29:44Z
-  updated: 2026-02-19T09:29:44Z
+  updated: 2026-02-20T11:12:35Z
   spec: null
   acceptance_criteria:
   - from_apr_weights takes raw Vec<f32>. Add a ValidatedAprWeights wrapper that proves dimensions were checked. Prevents callers from passing wrong-sized vectors.
@@ -3986,11 +3986,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'GH-279-SEAL-003: Consolidate transpose to trueno-quant single source'
-  status: planned
+  status: completed
   priority: low
   assigned_to: null
   created: 2026-02-19T09:29:47Z
-  updated: 2026-02-19T09:29:47Z
+  updated: 2026-02-20T11:12:35Z
   spec: null
   acceptance_criteria:
   - Both aprender format/converter/mod.rs and realizar have transpose logic. trueno-quant already has transpose_q4k/q5k/q6k_for_matmul. Remove duplicates, ensure single source of truth.
@@ -4020,11 +4020,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'UCBD-002: Add build.rs binding verification to realizar'
-  status: inprogress
+  status: completed
   priority: high
   assigned_to: null
   created: 2026-02-19T10:23:09Z
-  updated: 2026-02-19T10:31:38.305319356+00:00
+  updated: 2026-02-20T11:05:16Z
   spec: null
   acceptance_criteria:
   - 'Phase 1B: build.rs reads binding.yaml, verifies all bindings implemented.'
@@ -4037,11 +4037,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'UCBD-003: Delete aprender GGUF reader/dequant dead code'
-  status: inprogress
+  status: completed
   priority: high
   assigned_to: null
   created: 2026-02-19T10:23:10Z
-  updated: 2026-02-19T10:30:18Z
+  updated: 2026-02-20T11:05:16Z
   spec: null
   acceptance_criteria:
   - 'REVISED: Aprender GGUF reader is NOT dead code — it''s the conversion pipeline reader for ''apr import''. Only realizar''s inference loading replaces aprender''s inference loading. Updated to: consolidate dequant functions to use trueno''s implementations where possible.'
@@ -4071,11 +4071,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'UCBD-005: Delete realizar duplicate helpers'
-  status: inprogress
+  status: cancelled
   priority: medium
   assigned_to: null
   created: 2026-02-19T10:23:10Z
-  updated: 2026-02-19T10:27:58Z
+  updated: 2026-02-20T11:05:32Z
   spec: null
   acceptance_criteria:
   - 'REVISED: apr/helpers.rs functions are not true duplicates — different APIs (no bias, transposed matmul). Requires API unification, not simple deletion. Deprioritized.'
@@ -4122,11 +4122,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'New task: PMAT-293'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-02-19T11:01:57.089836872+00:00
-  updated: 2026-02-19T11:01:57.089836872+00:00
+  updated: 2026-02-20T11:05:16Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -4138,11 +4138,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'New task: PMAT-295'
-  status: inprogress
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-02-19T14:03:56.591443163+00:00
-  updated: 2026-02-19T14:03:56.591443163+00:00
+  updated: 2026-02-20T11:05:16Z
   spec: null
   acceptance_criteria: []
   phases: []
