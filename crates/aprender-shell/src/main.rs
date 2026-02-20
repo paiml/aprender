@@ -335,8 +335,8 @@ fn expand_path(path: &str) -> PathBuf {
     PathBuf::from(path)
 }
 
-include!("main_part_02.rs");
-include!("main_part_03.rs");
+include!("cli_dispatch.rs");
+include!("suggestion_helpers.rs");
 include!("remove.rs");
 include!("diversity.rs");
 include!("main_part_06.rs");

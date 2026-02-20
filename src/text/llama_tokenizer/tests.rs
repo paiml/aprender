@@ -1,5 +1,5 @@
 pub(crate) use super::*;
-pub(crate) use tests_part_04::{create_gguf_with_array_metadata, create_gguf_with_extra_metadata};
+pub(crate) use tests_gguf_sentencepiece::{create_gguf_with_array_metadata, create_gguf_with_extra_metadata};
 pub(crate) use construction::create_gguf_with_string_metadata;
 
 // ========================================================================
@@ -448,7 +448,7 @@ fn test_new_invalid_unk_id() {
 mod tests_part_02;
 #[path = "tests_part_03.rs"]
 mod tests_part_03;
-#[path = "tests_part_04.rs"]
-mod tests_part_04;
+#[path = "tests_gguf_sentencepiece.rs"]
+mod tests_gguf_sentencepiece;
 #[path = "construction.rs"]
 mod construction;

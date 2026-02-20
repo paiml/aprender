@@ -10,5 +10,5 @@ mod tests {
     use tempfile::NamedTempFile;
 include!("hex_part_06_part_02.rs");
 include!("make.rs");
-include!("hex_part_06_part_04.rs");
+include!("tests_blocks_and_slices.rs");
 }
