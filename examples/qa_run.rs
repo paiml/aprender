@@ -71,7 +71,7 @@ use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
-include!("includes/qa_run_part_01.rs");
+include!("includes/qa_run.rs");
 include!("includes/pmat-qa-protocol-001.rs");
 include!("includes/verify_result.rs");
 include!("includes/parsed_args.rs");

@@ -448,5 +448,5 @@ pub(super) fn compute_band_power(
     power / (high_bin - low_bin).max(1) as f32
 }
 
-#[path = "generator_tests_part_02.rs"]
-mod generator_tests_part_02;
+#[path = "generator_spectral_tests.rs"]
+mod generator_spectral_tests;
