@@ -225,7 +225,7 @@ include!("includes/falsification_spec_v10_part_03.rs");
 include!("includes/falsification_spec_v10_part_04.rs");
 include!("includes/f_ollama_00.rs");
 include!("includes/falsification_spec_v10_definition_of_done.rs");
-include!("includes/falsification_spec_v10_part_07.rs");
+include!("includes/falsification_spec_v10_ml_diagnostics.rs");
 include!("includes/f_trueno_00.rs");
 include!("includes/f_realize_0.rs");
 include!("includes/falsification_spec_v10_part_10.rs");

@@ -488,4 +488,4 @@ fn preload_gpu_weights(cuda_model: &mut realizar::gguf::OwnedQuantizedModelCuda)
     }
 }
 
-include!("handlers_part_03_include_01.rs");
+include!("server_runtime.rs");
