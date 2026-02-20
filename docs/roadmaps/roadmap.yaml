@@ -1351,11 +1351,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'Metal Backend Integration: AMD GPU Tensor Ops via Intel Mac'
-  status: planned
+  status: cancelled
   priority: medium
   assigned_to: null
   created: 2026-01-02T12:00:00+00:00
-  updated: 2026-01-02T12:00:00+00:00
+  updated: 2026-02-20T11:21:17Z
   spec: null
   acceptance_criteria:
   - trueno Metal backend available for tensor operations
@@ -3173,11 +3173,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-248: PhantomData<Layout> on Validated* types'
-  status: planned
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-02-06T11:06:18Z
-  updated: 2026-02-06T11:06:18Z
+  updated: 2026-02-20T11:17:14Z
   spec: null
   acceptance_criteria:
   - 'Add RowMajor marker type. Make ValidatedWeight generic: ValidatedWeight<L = RowMajor>. Existing code uses default and compiles unchanged. Add PhantomData<L> field. Update ValidatedEmbedding similarly.'
@@ -3211,11 +3211,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-250: build.rs YAML-to-Rust code generation'
-  status: planned
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-02-06T11:06:22Z
-  updated: 2026-02-06T11:06:22Z
+  updated: 2026-02-20T11:26:35Z
   spec: null
   acceptance_criteria:
   - Write build.rs that reads contracts/model-families/*.yaml, generates ModelFamily trait implementations, writes to OUT_DIR/model_families_generated.rs. Include cargo:rerun-if-changed directives.
@@ -3249,11 +3249,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-253: Additional model family YAMLs'
-  status: planned
+  status: completed
   priority: low
   assigned_to: null
   created: 2026-02-06T11:06:26Z
-  updated: 2026-02-06T11:06:26Z
+  updated: 2026-02-20T11:21:04Z
   spec: null
   acceptance_criteria:
   - Create contracts/model-families/mistral.yaml, phi.yaml, gemma.yaml, deepseek.yaml. Follow schema established in PMAT-240. Source config values from HuggingFace model cards and config.json files.
@@ -4003,11 +4003,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'UCBD-001: Create provable-contracts-macros proc macro crate'
-  status: inprogress
+  status: completed
   priority: high
   assigned_to: null
   created: 2026-02-19T10:23:09Z
-  updated: 2026-02-19T10:23:50.165073372+00:00
+  updated: 2026-02-20T11:15:12Z
   spec: null
   acceptance_criteria:
   - 'Phase 1A from unified-contract-by-design.md. Create #[contract] attribute macro.'
@@ -4054,11 +4054,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'UCBD-004: Delete aprender SafeTensors loader dead code'
-  status: planned
+  status: cancelled
   priority: medium
   assigned_to: null
   created: 2026-02-19T10:23:10Z
-  updated: 2026-02-19T10:23:10Z
+  updated: 2026-02-20T11:15:12Z
   spec: null
   acceptance_criteria:
   - 'Phase 3B: ~300 lines. Realizar owns loading.'
@@ -4105,11 +4105,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'UCBD-007: Implement all 49 not_implemented bindings'
-  status: planned
+  status: cancelled
   priority: medium
   assigned_to: null
   created: 2026-02-19T10:23:10Z
-  updated: 2026-02-19T10:23:10Z
+  updated: 2026-02-20T11:15:12Z
   spec: null
   acceptance_criteria:
   - 'Phase 4: All binding.yaml entries must be implemented.'
