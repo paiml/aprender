@@ -4154,11 +4154,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'GH-279 GAP-1: SafeTensors import completeness gate is conditional'
-  status: inprogress
+  status: completed
   priority: critical
   assigned_to: null
   created: 2026-02-20T10:29:00Z
-  updated: 2026-02-20T10:29:15.271147646+00:00
+  updated: 2026-02-20T10:47:50Z
   spec: null
   acceptance_criteria:
   - 'src/format/converter/import.rs:107 — if let Some(config) guard means SafeTensors without model_config silently skips the architecture completeness gate. Fix: make the gate unconditional, derive arch from tensor names when config is missing.'
@@ -4171,11 +4171,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'GH-279 GAP-2: Export path has zero architecture completeness checking'
-  status: inprogress
+  status: completed
   priority: critical
   assigned_to: null
   created: 2026-02-20T10:29:02Z
-  updated: 2026-02-20T10:45:57.825243856+00:00
+  updated: 2026-02-20T10:47:50Z
   spec: null
   acceptance_criteria:
   - 'src/format/converter/export.rs — enforce_architecture_completeness is never called. A Qwen3 model missing QK norm weights can be exported to GGUF without error. Fix: add enforce_architecture_completeness call before writing output file.'
@@ -4188,11 +4188,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'GH-279 GAP-3: validate_model_load_basic skips role checking on CPU paths'
-  status: inprogress
+  status: completed
   priority: critical
   assigned_to: null
   created: 2026-02-20T10:29:06Z
-  updated: 2026-02-20T10:45:57.935117103+00:00
+  updated: 2026-02-20T10:47:50Z
   spec: null
   acceptance_criteria:
   - 'realizar/src/contract_gate.rs:186 — passes present_roles: Vec::new() which skips completeness. Called from 9 loader paths. GPU paths are saved by ValidatedLayerWeights::validate() at build_indexed_weights time, but CPU paths never hit that gate. Fix: have loaders enumerate present roles and call full validate_model_load.'
@@ -4205,11 +4205,11 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'GH-279 GAP-4: CPU AprTransformer has no architecture completeness gate'
-  status: inprogress
+  status: completed
   priority: high
   assigned_to: null
   created: 2026-02-20T10:29:09Z
-  updated: 2026-02-20T10:45:58.044867954+00:00
+  updated: 2026-02-20T10:47:50Z
   spec: null
   acceptance_criteria:
   - 'ValidatedAprTransformer::validate() checks tensor shapes but NOT architecture-level role requirements. A Qwen3 APR file missing QK norm passes CPU validation. Fix: add architecture completeness check to ValidatedAprTransformer::validate() using metadata arch field.'
