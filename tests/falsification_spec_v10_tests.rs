@@ -222,7 +222,7 @@ macro_rules! require_model {
 include!("includes/falsification_spec_v10_ground_truth.rs");
 include!("includes/falsification_spec_v10_cli_interface.rs");
 include!("includes/falsification_spec_v10_model_spec.rs");
-include!("includes/falsification_spec_v10_part_04.rs");
+include!("includes/falsification_spec_v10_checklist.rs");
 include!("includes/f_ollama_00.rs");
 include!("includes/falsification_spec_v10_definition_of_done.rs");
 include!("includes/falsification_spec_v10_ml_diagnostics.rs");
