@@ -476,4 +476,4 @@ fn estimate_size_from_file(path: &Path) -> &'static str {
     }
 }
 
-include!("qa_part_06_include_01.rs");
+include!("ollama.rs");

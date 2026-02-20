@@ -246,6 +246,6 @@ fn dispatch_export(
 }
 
 include!("gguf_export_config.rs");
-include!("export_part_03.rs");
+include!("metadata.rs");
 include!("tensor.rs");
 include!("name.rs");

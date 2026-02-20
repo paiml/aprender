@@ -2,7 +2,7 @@
 //\! PMAT-085: Extracted from mod.rs for PMAT file health compliance
 
 pub(crate) use super::*;
-pub(crate) use tests_part_03::{create_apr_fixture, create_safetensors_fixture, unique_temp_path};
+pub(crate) use minimal::{create_apr_fixture, create_safetensors_fixture, unique_temp_path};
 
 // ========================================================================
 // Section 1: Format Detection Tests (P001-P010)
@@ -422,7 +422,7 @@ fn p057_verification_not_equivalent() {
 
 #[path = "tests_part_02.rs"]
 mod tests_part_02;
-#[path = "tests_part_03.rs"]
-mod tests_part_03;
+#[path = "minimal.rs"]
+mod minimal;
 #[path = "tests_part_04.rs"]
 mod tests_part_04;
