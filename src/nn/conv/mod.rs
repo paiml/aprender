@@ -404,7 +404,7 @@ pub struct Conv2d {
     use_im2col: bool,
 }
 
-mod mod_part_02;
-pub use mod_part_02::*;
-mod mod_part_03;
-pub use mod_part_03::*;
+mod conv2d;
+pub use conv2d::*;
+mod maxpool2d;
+pub use maxpool2d::*;

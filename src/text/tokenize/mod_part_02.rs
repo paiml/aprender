@@ -5,5 +5,5 @@ use std::collections::HashMap;
 
 impl BpeTokenizer {}
 
-include!("mod_part_02_part_02.rs");
-include!("mod_part_02_part_03.rs");
+include!("bpe_training.rs");
+include!("bpe_encoding.rs");

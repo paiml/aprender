@@ -242,5 +242,5 @@ pub struct CodeEda {
     reserved: HashSet<String>,
 }
 
-include!("code_eda_part_02.rs");
+include!("code_eda_impl.rs");
 include!("code_eda_part_03.rs");

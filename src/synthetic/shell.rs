@@ -374,5 +374,5 @@ pub struct ShellSyntheticGenerator {
     substitutions: HashMap<String, Vec<String>>,
 }
 
-include!("shell_part_02.rs");
+include!("shell_generator_impl.rs");
 include!("shell_part_03.rs");
