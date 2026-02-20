@@ -32,7 +32,7 @@ include!("includes/falsify_3.rs");
 include!("includes/falsify_iter.rs");
 include!("includes/falsify_iter4.rs");
 include!("includes/falsify_iter5.rs");
-include!("includes/falsification_model_oracle_part_07.rs");
+include!("includes/falsification_model_oracle_statistical_properties.rs");
 include!("includes/falsification_model_oracle_part_08.rs");
 include!("includes/falsify_iter7.rs");
 include!("includes/falsify_alg.rs");

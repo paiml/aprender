@@ -12,7 +12,7 @@
 use std::time::Instant;
 
 include!("includes/apr_inference_impl_tests.rs");
-include!("includes/format_parity_part_02.rs");
+include!("includes/format_parity.rs");
 
 // ============================================================================
 // Summary
