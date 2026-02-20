@@ -2659,14 +2659,14 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-205: Sharding-Aware Placement'
-  status: planned
+  status: cancelled
   priority: low
   assigned_to: null
   created: 2026-02-03T18:24:00Z
-  updated: 2026-02-03T18:24:00Z
+  updated: 2026-02-20T11:42:51Z
   spec: null
   acceptance_criteria:
-  - 'JAX-inspired PartitionSpec for multi-GPU device placement hints. Falsification: ShardingSpec struct with device placement and tensor partitioning.'
+  - 'Sharding-aware placement (JAX-inspired PartitionSpec) is aspirational multi-GPU work requiring 4-6 weeks. Foundation exists (repartir crate, sharded_index.rs, PartitionSpec types) but no runtime implementation. Single-GPU inference is the priority; multi-GPU sharding is a Phase 3+ concern. Cancelled: premature — single-GPU perf targets not yet met.'
   phases: []
   subtasks: []
   estimated_effort: null
@@ -3192,14 +3192,14 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-249: AprTransformer migration to Validated* fields'
-  status: planned
+  status: completed
   priority: medium
   assigned_to: null
   created: 2026-02-06T11:06:20Z
-  updated: 2026-02-06T11:06:20Z
+  updated: 2026-02-20T11:42:38Z
   spec: null
   acceptance_criteria:
-  - Change AprTransformer and AprTransformerLayer fields from Vec<f32> to ValidatedEmbedding, ValidatedWeight<RowMajor>, ValidatedVector. Update all construction sites in aprender and realizar.
+  - 'Covered by GH-279: ValidatedLayerWeights (cuda/types.rs) seals GPU weights with architecture-validated constructor. ValidatedAprTransformer (safetensors/validation_embedding.rs) seals CPU weights. Both enforce architecture requirements at construction time via required_roles(). Import/export completeness gates in aprender refuse incomplete models. The original intent — preventing unvalidated weights from reaching inference — is fully implemented.'
   phases: []
   subtasks: []
   estimated_effort: null
@@ -3230,14 +3230,14 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'PMAT-251: Generic AprTransformer<F: ModelFamily>'
-  status: planned
+  status: cancelled
   priority: medium
   assigned_to: null
   created: 2026-02-06T11:06:25Z
-  updated: 2026-02-06T11:06:25Z
+  updated: 2026-02-20T11:42:44Z
   spec: null
   acceptance_criteria:
-  - Parameterize AprTransformer<F> by model family. Update realizar model loading to construct AprTransformer<Qwen2> or AprTransformer<Llama> based on detected family. Maintain backward compat via type alias.
+  - 'Depended on PMAT-227 (now completed via GH-279). Generic AprTransformer<F: ModelFamily> would parameterize by model family — but the actual problem (compile-time architecture enforcement) is solved by ValidatedLayerWeights and ValidatedAprTransformer. Parameterizing by ModelFamily (different struct fields per arch) is aspirational and conflicts with the existing approach of using ArchConstraints + runtime validation at construction. The current sealed-constructor pattern is more practical: one struct, validated at construction. Cancelled: superseded by GH-279 design.'
   phases: []
   subtasks: []
   estimated_effort: null
@@ -4088,14 +4088,14 @@ roadmap:
   github_issue: null
   item_type: task
   title: 'UCBD-006: Wire entrenar to use realizar for model loading'
-  status: planned
+  status: cancelled
   priority: high
   assigned_to: null
   created: 2026-02-19T10:23:10Z
-  updated: 2026-02-19T10:23:10Z
+  updated: 2026-02-20T11:42:32Z
   spec: null
   acceptance_criteria:
-  - 'Phase 2: entrenar depends on realizar, not aprender, for model I/O.'
+  - 'Weight loading already uses canonical stack (aprender GgufReader for GGUF, safetensors for ST). Teacher inference needs realizar logits-level forward API which doesn''t exist yet — run_inference() returns text not logits. TeacherModel trait requires forward()->logits, hidden_states(), attention_weights() — none exposed by realizar. Cancelled: needs API design in realizar first.'
   phases: []
   subtasks: []
   estimated_effort: null

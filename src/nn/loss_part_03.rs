@@ -477,7 +477,11 @@ mod tests {
         };
         let loss = criterion.forward(&logits, &targets);
 
-        assert_eq!(loss.shape(), &[2], "None reduction should return per-sample losses");
+        assert_eq!(
+            loss.shape(),
+            &[2],
+            "None reduction should return per-sample losses"
+        );
         // Both losses should be positive
         assert!(loss.data()[0] > 0.0);
         assert!(loss.data()[1] > 0.0);
@@ -555,7 +559,11 @@ mod tests {
         let loss = criterion.forward(&logits, &targets);
 
         // Strong prediction for correct class: loss should be very small
-        assert!(loss.item() < 0.01, "Loss for strong correct prediction: {}", loss.item());
+        assert!(
+            loss.item() < 0.01,
+            "Loss for strong correct prediction: {}",
+            loss.item()
+        );
     }
 
     #[test]
@@ -619,7 +627,10 @@ mod tests {
 
         // Target is the class with highest logit, so loss should be relatively small
         assert!(loss.item() > 0.0);
-        assert!(loss.item() < 2.0, "Correct prediction loss should be moderate");
+        assert!(
+            loss.item() < 2.0,
+            "Correct prediction loss should be moderate"
+        );
     }
 
     #[test]
