@@ -1,3 +1,126 @@
+/// Compute block fitness for a candidate block `[l, r]` in sorted data,
+/// returning the total fitness including the prior penalty.
+///
+/// Used by `bayesian_blocks_edges` dynamic programming.
+fn bayesian_blocks_block_fitness(
+    sorted_data: &[f32],
+    best_fitness: &[f32],
+    l: usize,
+    r: usize,
+    ncp_prior: f32,
+) -> f32 {
+    let block_count = (r - l + 1) as f32;
+    let block_min = sorted_data[l];
+    let block_max = sorted_data[r];
+    let block_range = (block_max - block_min).max(1e-10);
+
+    // Fitness: prefer blocks with uniform density (low range relative to count)
+    let density_score = -block_range / block_count.sqrt();
+
+    // Total fitness: previous best + current block - prior penalty
+    if l == 0 {
+        density_score - ncp_prior
+    } else {
+        best_fitness[l - 1] + density_score - ncp_prior
+    }
+}
+
+/// Fill the dynamic programming table for Bayesian Blocks, returning
+/// `(best_fitness, last_change_point)` arrays.
+fn bayesian_blocks_dp(sorted_data: &[f32], ncp_prior: f32) -> (Vec<f32>, Vec<usize>) {
+    let n = sorted_data.len();
+    let mut best_fitness = vec![0.0_f32; n];
+    let mut last_change_point = vec![0_usize; n];
+
+    for r in 1..n {
+        let mut max_fitness = f32::NEG_INFINITY;
+        let mut best_cp = 0;
+
+        for l in 0..=r {
+            let fitness =
+                bayesian_blocks_block_fitness(sorted_data, &best_fitness, l, r, ncp_prior);
+            if fitness > max_fitness {
+                max_fitness = fitness;
+                best_cp = l;
+            }
+        }
+
+        best_fitness[r] = max_fitness;
+        last_change_point[r] = best_cp;
+    }
+
+    (best_fitness, last_change_point)
+}
+
+/// Backtrack the DP table to recover the list of change point indices.
+fn bayesian_blocks_backtrack(last_change_point: &[usize]) -> Vec<usize> {
+    let mut change_points = Vec::new();
+    let mut current = last_change_point.len() - 1;
+
+    while current > 0 {
+        let cp = last_change_point[current];
+        if cp > 0 {
+            change_points.push(cp);
+        }
+        if cp == 0 {
+            break;
+        }
+        current = cp - 1;
+    }
+
+    change_points.reverse();
+    change_points
+}
+
+/// Convert change-point indices and sorted data into a strictly-increasing
+/// vector of bin edges (with a small margin around the data range).
+fn bayesian_blocks_edges_from_change_points(
+    sorted_data: &[f32],
+    change_points: &[usize],
+) -> Vec<f32> {
+    let n = sorted_data.len();
+    let data_min = sorted_data[0];
+    let data_max = sorted_data[n - 1];
+    let range = data_max - data_min;
+    let margin = range * 0.001; // 0.1% margin
+
+    let mut edges = Vec::new();
+    edges.push(data_min - margin);
+
+    for &cp in change_points {
+        if cp > 0 && cp < n {
+            let edge = (sorted_data[cp - 1] + sorted_data[cp]) / 2.0;
+            edges.push(edge);
+        }
+    }
+
+    edges.push(data_max + margin);
+
+    // Ensure edges are strictly increasing and unique
+    edges.dedup();
+    edges.sort_by(|a, b| {
+        a.partial_cmp(b)
+            .expect("f32 values should be comparable (not NaN)")
+    });
+
+    // Remove any non-strictly-increasing edges
+    let mut i = 1;
+    while i < edges.len() {
+        if edges[i] <= edges[i - 1] {
+            edges.remove(i);
+        } else {
+            i += 1;
+        }
+    }
+
+    // Ensure we have at least 2 edges
+    if edges.len() < 2 {
+        return vec![data_min - margin, data_max + margin];
+    }
+
+    edges
+}
+
 impl<'a> DescriptiveStats<'a> {
     /// Create a new `DescriptiveStats` instance from a data vector.
     ///
@@ -281,115 +404,18 @@ impl<'a> DescriptiveStats<'a> {
         // Prior on number of change points (ncp_prior)
         // Following Scargle et al. (2013), we use a prior that penalizes too many blocks
         // but allows detection of significant changes. Lower value = more blocks.
-        let ncp_prior = 0.5_f32; // More sensitive to changes
+        let ncp_prior = 0.5_f32;
 
-        // Dynamic programming arrays
-        let mut best_fitness = vec![0.0_f32; n];
-        let mut last_change_point = vec![0_usize; n];
-
-        // Compute fitness for first block [0, 0]
-        best_fitness[0] = 0.0;
-
-        // Fill DP table
-        for r in 1..n {
-            // Try all possible positions for previous change point
-            let mut max_fitness = f32::NEG_INFINITY;
-            let mut best_cp = 0;
-
-            for l in 0..=r {
-                // Compute fitness for block [l, r]
-                let block_count = (r - l + 1) as f32;
-
-                // For Bayesian Blocks, we want to favor blocks with similar density
-                // Use negative variance as fitness (prefer uniform blocks)
-                let block_values: Vec<f32> = sorted_data[l..=r].to_vec();
-
-                // Compute block statistics
-                let block_min = block_values[0];
-                let block_max = block_values[block_values.len() - 1];
-                let block_range = (block_max - block_min).max(1e-10);
-
-                // Fitness: Prefer blocks with uniform density (low range relative to count)
-                // and penalize creating new blocks
-                let density_score = -block_range / block_count.sqrt();
-
-                // Total fitness: previous best + current block - prior penalty
-                let fitness = if l == 0 {
-                    density_score - ncp_prior
-                } else {
-                    best_fitness[l - 1] + density_score - ncp_prior
-                };
-
-                if fitness > max_fitness {
-                    max_fitness = fitness;
-                    best_cp = l;
-                }
-            }
-
-            best_fitness[r] = max_fitness;
-            last_change_point[r] = best_cp;
-        }
+        // Fill DP table via extracted helper
+        let (_best_fitness, last_change_point) = bayesian_blocks_dp(&sorted_data, ncp_prior);
 
         // Backtrack to find change points
-        let mut change_points = Vec::new();
-        let mut current = n - 1;
-
-        while current > 0 {
-            let cp = last_change_point[current];
-            if cp > 0 {
-                change_points.push(cp);
-            }
-            if cp == 0 {
-                break;
-            }
-            current = cp - 1;
-        }
-
-        change_points.reverse();
+        let change_points = bayesian_blocks_backtrack(&last_change_point);
 
         // Convert change points to bin edges
-        let mut edges = Vec::new();
-
-        // Add left edge (slightly before first data point)
-        let data_min = sorted_data[0];
-        let data_max = sorted_data[n - 1];
-        let range = data_max - data_min;
-        let margin = range * 0.001; // 0.1% margin
-        edges.push(data_min - margin);
-
-        // Add edges at change points (midpoint between adjacent blocks)
-        for &cp in &change_points {
-            if cp > 0 && cp < n {
-                let edge = (sorted_data[cp - 1] + sorted_data[cp]) / 2.0;
-                edges.push(edge);
-            }
-        }
-
-        // Add right edge (slightly after last data point)
-        edges.push(data_max + margin);
-
-        // Ensure edges are strictly increasing and unique
-        edges.dedup();
-        edges.sort_by(|a, b| {
-            a.partial_cmp(b)
-                .expect("f32 values should be comparable (not NaN)")
-        });
-
-        // Remove any non-strictly-increasing edges (shouldn't happen, but be safe)
-        let mut i = 1;
-        while i < edges.len() {
-            if edges[i] <= edges[i - 1] {
-                edges.remove(i);
-            } else {
-                i += 1;
-            }
-        }
-
-        // Ensure we have at least 2 edges
-        if edges.len() < 2 {
-            return Ok(vec![data_min - margin, data_max + margin]);
-        }
-
-        Ok(edges)
+        Ok(bayesian_blocks_edges_from_change_points(
+            &sorted_data,
+            &change_points,
+        ))
     }
 }
