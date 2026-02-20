@@ -10,5 +10,5 @@
 use std::path::Path;
 use tempfile::NamedTempFile;
 
-include!("includes/regression_never_again_part_01.rs");
-include!("includes/regression_never_again_part_02.rs");
+include!("includes/regression_1.rs");
+include!("includes/regression_2.rs");

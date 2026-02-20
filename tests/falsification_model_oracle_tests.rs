@@ -26,9 +26,9 @@ use aprender::format::model_family::{
 // Validated tensor types for FALSIFY-CMP-001
 use aprender::format::validated_tensors::{RowMajor, ValidatedWeight};
 
-include!("includes/falsification_model_oracle_part_01.rs");
-include!("includes/falsification_model_oracle_part_02.rs");
-include!("includes/falsification_model_oracle_part_03.rs");
+include!("includes/falsify_1.rs");
+include!("includes/falsify_2.rs");
+include!("includes/falsify_3.rs");
 include!("includes/falsify_iter.rs");
 include!("includes/falsify_iter4.rs");
 include!("includes/falsify_iter5.rs");

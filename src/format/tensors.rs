@@ -391,5 +391,5 @@ fn ggml_dtype_name(dtype: u32) -> &'static str {
     NAMES.get(dtype as usize).copied().unwrap_or("unknown")
 }
 
-include!("tensors_part_02.rs");
+include!("safetensors.rs");
 include!("tensors_part_03.rs");

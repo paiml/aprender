@@ -445,6 +445,6 @@ fn print_header(path: &Path, config: &BenchConfig) {
     println!();
 }
 
-include!("bench_part_02.rs");
+include!("benchmark.rs");
 include!("bench_part_03.rs");
 include!("bench_part_04.rs");
