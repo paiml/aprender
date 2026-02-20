@@ -76,13 +76,6 @@ impl ProcessGuard {
         self.child.as_mut()
     }
 
-    /// Take ownership of the child, preventing auto-kill on drop
-    #[allow(dead_code)]
-    fn take(&mut self) -> Option<Child> {
-        unregister_process(self.pid);
-        self.child.take()
-    }
-
     /// Manually kill and wait for the child
     fn kill_and_wait(&mut self) {
         if let Some(ref mut child) = self.child {
@@ -149,15 +142,6 @@ enum Modality {
 }
 
 impl Modality {
-    #[allow(dead_code)] // Reserved for future use (e.g., CLI output)
-    fn as_str(&self) -> &'static str {
-        match self {
-            Modality::Run => "run",
-            Modality::Chat => "chat",
-            Modality::Serve => "serve",
-        }
-    }
-
     fn display_name(&self) -> &'static str {
         match self {
             Modality::Run => "apr run",
@@ -205,14 +189,6 @@ impl Format {
         }
     }
 
-    #[allow(dead_code)]
-    fn extension(&self) -> &'static str {
-        match self {
-            Format::Gguf => ".gguf",
-            Format::SafeTensors => ".safetensors",
-            Format::Apr => ".apr",
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -224,29 +200,7 @@ enum TraceLevel {
     Profile,
 }
 
-impl TraceLevel {
-    #[allow(dead_code)]
-    fn as_str(&self) -> &'static str {
-        match self {
-            TraceLevel::None => "none",
-            TraceLevel::Brick => "brick",
-            TraceLevel::Step => "step",
-            TraceLevel::Layer => "layer",
-            TraceLevel::Profile => "profile",
-        }
-    }
-
-    #[allow(dead_code)]
-    fn flag(&self) -> Option<&'static str> {
-        match self {
-            TraceLevel::None => None,
-            TraceLevel::Brick => Some("brick"),
-            TraceLevel::Step => Some("step"),
-            TraceLevel::Layer => Some("layer"),
-            TraceLevel::Profile => Some("profile"),
-        }
-    }
-}
+// TraceLevel methods removed: as_str() and flag() were dead code (never called)
 
 /// Test class for same-model comparison (PMAT-SHOWCASE-METHODOLOGY-001)
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -260,15 +214,6 @@ enum TestClass {
 }
 
 impl TestClass {
-    #[allow(dead_code)]
-    fn as_str(&self) -> &'static str {
-        match self {
-            TestClass::Quantized => "quantized",
-            TestClass::FullPrecision => "full-precision",
-            TestClass::All => "all",
-        }
-    }
-
     fn includes_quantized(&self) -> bool {
         matches!(self, TestClass::Quantized | TestClass::All)
     }
@@ -398,17 +343,6 @@ impl ModelFixture {
         }
     }
 
-    /// Get the path to use for apr commands (original URI - apr handles resolution)
-    #[allow(dead_code)] // Reserved for future fixture-based flow
-    fn path(&self) -> &str {
-        self.resolved_path.as_deref().unwrap_or(&self.uri)
-    }
-
-    /// Check if the fixture is verified and ready for use
-    #[allow(dead_code)] // Reserved for future fixture-based flow
-    fn is_ready(&self) -> bool {
-        self.verified
-    }
 }
 
 /// Verify all required models before running tests (PMAT-QA-PROTOCOL-001 §7.2)

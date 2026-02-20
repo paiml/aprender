@@ -27,7 +27,6 @@ impl PagedMarkovModel {
 
     /// Get memory limit in bytes.
     #[must_use]
-    #[allow(dead_code)]
     pub fn memory_limit(&self) -> usize {
         self.memory_limit
     }
@@ -238,7 +237,6 @@ impl PagedMarkovModel {
     }
 
     /// Hint that a segment will be needed soon (for prefetching).
-    #[allow(dead_code)]
     pub fn prefetch_hint(&mut self, prefix: &str) {
         if let Some(ref mut bundle) = self.bundle {
             let _ = bundle.prefetch_hint(&format!("segment_{prefix}"));
@@ -247,21 +245,18 @@ impl PagedMarkovModel {
 
     /// Total commands trained on.
     #[must_use]
-    #[allow(dead_code)]
     pub fn total_commands(&self) -> usize {
         self.metadata.total_commands
     }
 
     /// N-gram size.
     #[must_use]
-    #[allow(dead_code)]
     pub fn ngram_size(&self) -> usize {
         self.n
     }
 
     /// Vocabulary size.
     #[must_use]
-    #[allow(dead_code)]
     pub fn vocab_size(&self) -> usize {
         self.metadata.command_freq.len()
     }

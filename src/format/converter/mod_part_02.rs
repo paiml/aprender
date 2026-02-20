@@ -258,7 +258,7 @@ pub(crate) fn validate_tensor_values(name: &str, data: &[f32]) -> Result<()> {
 }
 
 /// Dequantize F16 to F32 (PMAT-174)
-#[allow(dead_code)] // Retained for GGUF conversion paths
+#[cfg(test)]
 fn dequantize_f16_to_f32(bytes: &[u8], _num_elements: usize) -> Vec<f32> {
     bytes
         .chunks_exact(2)
@@ -270,7 +270,7 @@ fn dequantize_f16_to_f32(bytes: &[u8], _num_elements: usize) -> Vec<f32> {
 }
 
 /// Dequantize BF16 to F32 (PMAT-174)
-#[allow(dead_code)] // Retained for GGUF conversion paths
+#[cfg(test)]
 fn dequantize_bf16_to_f32(bytes: &[u8], _num_elements: usize) -> Vec<f32> {
     bytes
         .chunks_exact(2)
@@ -284,7 +284,7 @@ fn dequantize_bf16_to_f32(bytes: &[u8], _num_elements: usize) -> Vec<f32> {
 
 /// Dequantize Q8_0 to F32 (PMAT-174)
 /// Q8_0: 32-element blocks with f16 scale + 32 int8 quants
-#[allow(dead_code)] // Retained for GGUF conversion paths
+#[cfg(test)]
 fn dequantize_q8_0_to_f32(bytes: &[u8], num_elements: usize) -> Vec<f32> {
     const BLOCK_SIZE: usize = 32;
     const BLOCK_BYTES: usize = 2 + 32; // f16 scale + 32 int8s
@@ -390,6 +390,25 @@ fn quantize_fp16(data: &[f32]) -> Vec<f32> {
         .collect()
 }
 
+/// Pack a normal f32 value into f16 given its biased exponent and mantissa.
+fn f32_normal_to_f16(sign: u16, new_exp: i32, mantissa: u32) -> u16 {
+    if new_exp >= 31 {
+        return sign | 0x7C00; // overflow to infinity
+    }
+    if new_exp > 0 {
+        return sign | ((new_exp as u16) << 10) | ((mantissa >> 13) as u16);
+    }
+    // Subnormal: add implicit 1 bit, shift right, round to nearest
+    let full_mantissa = mantissa | 0x800000;
+    let shift = 14 - new_exp;
+    if shift > 24 {
+        return sign; // underflow to zero
+    }
+    let round_bit = 1u32 << (shift - 1);
+    let subnormal = (full_mantissa.saturating_add(round_bit) >> shift) as u16;
+    sign | (subnormal & 0x3FF)
+}
+
 /// Convert f32 to f16 (IEEE 754 half-precision)
 fn f32_to_f16(value: f32) -> u16 {
     let bits = value.to_bits();
@@ -397,37 +416,9 @@ fn f32_to_f16(value: f32) -> u16 {
     let exp = (bits >> 23) & 0xFF;
     let mantissa = bits & 0x7FFFFF;
 
-    if exp == 0 {
-        // Zero or denormal
-        sign
-    } else if exp == 0xFF {
-        // Inf or NaN
-        sign | 0x7C00 | if mantissa != 0 { 0x0200 } else { 0 }
-    } else {
-        // Normal number
-        let new_exp = exp as i32 - 127 + 15;
-        if new_exp >= 31 {
-            // Overflow to infinity
-            sign | 0x7C00
-        } else if new_exp <= 0 {
-            // Subnormal: f16 can represent down to 2^(-24) ≈ 5.96e-8
-            // Add implicit 1 bit to mantissa (bit 23)
-            let full_mantissa = mantissa | 0x800000;
-            // Calculate shift: 14 bits base when new_exp=0, more for negative
-            let shift = 14 - new_exp;
-            if shift <= 24 {
-                // Round to nearest: add 0.5 at the bit position being truncated
-                let round_bit = 1u32 << (shift - 1);
-                let rounded = full_mantissa.saturating_add(round_bit);
-                let subnormal = (rounded >> shift) as u16;
-                sign | (subnormal & 0x3FF)
-            } else {
-                // Too small for f16 subnormals, underflow to zero
-                sign
-            }
-        } else {
-            let new_mantissa = (mantissa >> 13) as u16;
-            sign | ((new_exp as u16) << 10) | new_mantissa
-        }
+    match exp {
+        0 => sign,                                                         // zero/denormal
+        0xFF => sign | 0x7C00 | if mantissa != 0 { 0x0200 } else { 0 },  // inf/NaN
+        _ => f32_normal_to_f16(sign, exp as i32 - 127 + 15, mantissa),    // normal
     }
 }

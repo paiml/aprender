@@ -6,13 +6,14 @@ use std::time::Duration;
 
 /// Showcase configuration
 #[derive(Debug, Clone)]
-#[allow(dead_code)] // Fields used by CLI but not all consumed yet
 pub struct ShowcaseConfig {
     /// Model tier (whisper-style: tiny, small, medium, large)
     pub tier: ModelTier,
     /// Model to use (derived from tier, can be overridden)
+    #[allow(dead_code)] // Read in tests; will be consumed when model selection is wired up
     pub model: String,
     /// Quantization level
+    #[allow(dead_code)] // Read in tests; will be consumed when quant selection is wired up
     pub quant: String,
     /// Output directory for models
     pub model_dir: PathBuf,
@@ -33,8 +34,10 @@ pub struct ShowcaseConfig {
     /// Force GPU acceleration
     pub gpu: bool,
     /// Verbose output
+    #[allow(dead_code)] // Read in tests; will be consumed when verbose logging is wired up
     pub verbose: bool,
     /// Quiet mode (errors only)
+    #[allow(dead_code)] // Read in tests; will be consumed when quiet mode is wired up
     pub quiet: bool,
 }
 
@@ -63,7 +66,7 @@ impl Default for ShowcaseConfig {
 impl ShowcaseConfig {
     /// Create config for a specific tier
     #[must_use]
-    #[allow(dead_code)] // Convenience constructor for future use
+    #[cfg(test)]
     pub fn with_tier(tier: ModelTier) -> Self {
         Self {
             tier,
@@ -158,7 +161,7 @@ impl ModelTier {
 
 /// Export format for benchmark results (Point 85)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-#[allow(dead_code)] // Variants are constructed by CLI parser
+#[allow(dead_code)] // Csv variant constructed via CLI parser
 pub enum ExportFormat {
     #[default]
     None,
@@ -217,7 +220,7 @@ pub(super) struct ShowcaseResults {
 
 /// ComputeBrick demo result - per-layer timing with bottleneck detection
 #[derive(Debug, Clone, Default)]
-#[allow(dead_code)] // Fields used in tests and for future summary output
+#[allow(dead_code)] // Fields read in tests and future summary output
 pub struct BrickDemoResult {
     /// Total layers measured
     pub layers_measured: usize,
@@ -252,7 +255,7 @@ pub struct ZramDemoResult {
 
 /// CUDA GPU demo result (Point 78, Sections 5.2/5.3)
 #[derive(Debug, Clone)]
-#[allow(dead_code)] // Fields used in tests and for future summary output
+#[allow(dead_code)] // Fields read in tests and future summary output
 pub struct CudaDemoResult {
     /// Number of CUDA devices detected
     pub device_count: usize,

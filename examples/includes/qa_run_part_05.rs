@@ -313,13 +313,6 @@ mod tests {
     }
 
     #[test]
-    fn test_format_extension() {
-        assert_eq!(Format::Gguf.extension(), ".gguf");
-        assert_eq!(Format::SafeTensors.extension(), ".safetensors");
-        assert_eq!(Format::Apr.extension(), ".apr");
-    }
-
-    #[test]
     fn test_cell_label() {
         let cell = MatrixCell::new(
             "M1",

@@ -19,12 +19,9 @@ const LOGIT_TOLERANCE: f32 = 1e-4;
 /// Mock logits for testing without real model files
 /// In production, these would come from actual model inference
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 struct MockLogits {
     format: &'static str,
-    prompt: String,
     logits: Vec<f32>,
-    vocab_size: usize,
 }
 
 impl MockLogits {
@@ -48,23 +45,12 @@ impl MockLogits {
             })
             .collect();
 
-        Self {
-            format,
-            prompt: prompt.to_string(),
-            logits,
-            vocab_size,
-        }
+        Self { format, logits }
     }
 
     /// Create with explicit logits (for poison tests)
-    fn with_logits(format: &'static str, prompt: &str, logits: Vec<f32>) -> Self {
-        let vocab_size = logits.len();
-        Self {
-            format,
-            prompt: prompt.to_string(),
-            logits,
-            vocab_size,
-        }
+    fn with_logits(format: &'static str, _prompt: &str, logits: Vec<f32>) -> Self {
+        Self { format, logits }
     }
 }
 
@@ -92,20 +78,13 @@ fn compare_logits(a: &MockLogits, b: &MockLogits) -> Result<f32, String> {
 
 /// Parity verification result
 #[derive(Debug)]
-#[allow(dead_code)]
 struct ParityResult {
-    format_a: &'static str,
-    format_b: &'static str,
-    max_diff: f32,
     passed: bool,
 }
 
 impl ParityResult {
-    fn new(format_a: &'static str, format_b: &'static str, max_diff: f32) -> Self {
+    fn new(_format_a: &'static str, _format_b: &'static str, max_diff: f32) -> Self {
         Self {
-            format_a,
-            format_b,
-            max_diff,
             passed: max_diff <= LOGIT_TOLERANCE,
         }
     }
@@ -362,14 +341,6 @@ fn p9_real_safetensors_apr_parity() {
 // ============================================================================
 // Helper: Cross-format inference facade
 // ============================================================================
-
-/// Unified interface for cross-format inference
-/// In production, this would dispatch to realizar for actual inference
-#[allow(dead_code)]
-trait CrossFormatInference {
-    fn format_name(&self) -> &'static str;
-    fn forward(&self, input_ids: &[u32]) -> Vec<f32>;
-}
 
 /// Cross-format parity checker
 struct ParityChecker {
