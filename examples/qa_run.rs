@@ -72,7 +72,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 include!("includes/qa_run_part_01.rs");
-include!("includes/qa_run_part_02.rs");
-include!("includes/qa_run_part_03.rs");
-include!("includes/qa_run_part_04.rs");
-include!("includes/qa_run_part_05.rs");
+include!("includes/pmat-qa-protocol-001.rs");
+include!("includes/verify_result.rs");
+include!("includes/parsed_args.rs");
+include!("includes/ollama.rs");

@@ -314,5 +314,5 @@ pub(crate) fn dequantize_q5_k(data: &[u8], start: usize, num_elements: usize) ->
     ))
 }
 
-include!("dequant_part_02.rs");
+include!("dequantize.rs");
 include!("dequant_part_03.rs");

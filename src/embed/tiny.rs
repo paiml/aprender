@@ -111,6 +111,6 @@ pub enum TinyModelRepr {
     },
 }
 
-include!("tiny_part_02.rs");
+include!("arguments.rs");
 include!("tiny_model_error.rs");
 include!("tiny_part_04.rs");

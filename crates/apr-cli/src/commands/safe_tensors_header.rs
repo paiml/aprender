@@ -444,4 +444,4 @@ fn slice_safetensors(
     output_slice_result(opts, tensor_name, start, end, &dtype, slice_count, &values)
 }
 
-include!("hex_part_02_include_01.rs");
+include!("slice.rs");

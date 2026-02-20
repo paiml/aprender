@@ -414,5 +414,5 @@ fn cosine_similarity(a: &Vector<f32>, b: &Vector<f32>) -> f32 {
     crate::nn::functional::cosine_similarity_slice(a.as_slice(), b.as_slice())
 }
 
-include!("mod_part_02.rs");
+include!("loss.rs");
 include!("wasserstein_loss.rs");

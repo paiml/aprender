@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use super::super::loss_part_02::{abs, log_softmax, softmax_2d};
+    use super::super::ucbd::{abs, log_softmax, softmax_2d};
     use super::super::*;
     use crate::autograd::clear_graph;
 

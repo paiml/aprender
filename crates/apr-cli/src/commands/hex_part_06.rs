@@ -9,6 +9,6 @@ mod tests {
     use std::io::Write;
     use tempfile::NamedTempFile;
 include!("hex_part_06_part_02.rs");
-include!("hex_part_06_part_03.rs");
+include!("make.rs");
 include!("hex_part_06_part_04.rs");
 }

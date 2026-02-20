@@ -384,6 +384,6 @@ struct TensorAccum {
     zero_count: usize,
 }
 
-include!("mod_part_02.rs");
+include!("check.rs");
 include!("mod_part_03.rs");
 include!("mod_part_04.rs");

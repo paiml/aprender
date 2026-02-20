@@ -433,8 +433,8 @@ impl GNNModule for GATConv {
 mod mod_part_02;
 pub use mod_part_02::*;
 
-mod mod_part_03;
-pub use mod_part_03::*;
+mod accumulate;
+pub use accumulate::*;
 
 #[cfg(test)]
 mod tests;

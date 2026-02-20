@@ -432,9 +432,9 @@ pub struct NLLLoss {
     reduction: Reduction,
 }
 
-#[path = "loss_part_02.rs"]
-mod loss_part_02;
+#[path = "ucbd.rs"]
+mod ucbd;
 #[allow(clippy::wildcard_imports)]
-use loss_part_02::*;
+use ucbd::*;
 #[path = "loss_part_03.rs"]
 mod loss_part_03;

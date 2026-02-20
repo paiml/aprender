@@ -420,5 +420,5 @@ fn classify_bos_eos(content: &str) -> (bool, bool) {
     (is_bos, is_eos)
 }
 
-include!("safetensors_part_02.rs");
-include!("safetensors_part_03.rs");
+include!("chat.rs");
+include!("simple.rs");

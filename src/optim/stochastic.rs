@@ -304,8 +304,8 @@ pub struct Adam {
     t: usize,
 }
 
-#[path = "stochastic_part_02.rs"]
-mod stochastic_part_02;
+#[path = "parameter.rs"]
+mod parameter;
 
 #[cfg(test)]
 #[path = "stochastic_part_03.rs"]

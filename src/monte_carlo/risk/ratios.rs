@@ -310,5 +310,5 @@ pub fn gain_to_pain_ratio(returns: &[f64]) -> f64 {
     safe_ratio(gains, losses, 0.0)
 }
 
-#[path = "ratios_part_02.rs"]
-mod ratios_part_02;
+#[path = "sample.rs"]
+mod sample;

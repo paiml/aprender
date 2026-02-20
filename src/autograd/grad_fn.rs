@@ -443,5 +443,5 @@ pub(crate) struct CrossEntropyBackward {
     pub(crate) targets: Vec<usize>,    // target class indices
 }
 
-include!("grad_fn_part_02.rs");
+include!("gradient.rs");
 include!("grad_fn_part_03.rs");

@@ -419,5 +419,5 @@ pub use mod_part_03::*;
 mod mod_part_04;
 pub use mod_part_04::*;
 
-#[path = "mod_part_05.rs"]
-mod mod_part_05;
+#[path = "attention.rs"]
+mod attention;

@@ -377,5 +377,5 @@ pub struct GatewayBuilder {
     middlewares: Vec<Box<dyn GatewayMiddleware>>,
 }
 
-include!("gateway_part_02.rs");
+include!("middleware.rs");
 include!("gateway_part_03.rs");

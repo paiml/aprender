@@ -448,4 +448,4 @@ fn extract_x25519_recipient_info(
     Ok((ephemeral_public, stored_recipient_hash))
 }
 
-include!("encryption_part_02.rs");
+include!("encrypted.rs");

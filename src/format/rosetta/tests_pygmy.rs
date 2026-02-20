@@ -442,8 +442,8 @@ fn tcov_tensor_validation_is_all_zeros_true() {
     assert!(tv.is_all_zeros());
 }
 
-#[path = "tests_pygmy_part_02.rs"]
-mod tests_pygmy_part_02;
+#[path = "tcov.rs"]
+mod tcov;
 #[path = "computation.rs"]
 mod computation;
 #[path = "tests_pygmy_part_04.rs"]

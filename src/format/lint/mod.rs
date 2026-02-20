@@ -446,4 +446,4 @@ fn check_layout_contract(report: &mut LintReport, info: &ModelLintInfo) {
     }
 }
 
-include!("mod_part_02.rs");
+include!("lint.rs");

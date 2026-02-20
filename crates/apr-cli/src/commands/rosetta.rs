@@ -429,10 +429,10 @@ fn print_chain_results(
     }
 }
 
-include!("rosetta_part_02.rs");
+include!("inference.rs");
 include!("rosetta_part_03.rs");
 include!("rosetta_part_04.rs");
 include!("rosetta_part_05.rs");
-include!("rosetta_part_06.rs");
+include!("fingerprints.rs");
 include!("inference_result.rs");
 include!("rosetta_part_08.rs");

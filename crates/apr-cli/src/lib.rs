@@ -71,7 +71,7 @@ include!("lib_part_02.rs");
 include!("model_ops_commands.rs");
 include!("extended_commands.rs");
 include!("tool_commands.rs");
-include!("lib_part_03.rs");
+include!("validate.rs");
 include!("lib_part_04.rs");
 include!("dispatch.rs");
 include!("lib_part_06.rs");

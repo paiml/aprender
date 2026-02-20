@@ -337,8 +337,8 @@ fn expand_path(path: &str) -> PathBuf {
 
 include!("main_part_02.rs");
 include!("main_part_03.rs");
-include!("main_part_04.rs");
-include!("main_part_05.rs");
+include!("remove.rs");
+include!("diversity.rs");
 include!("main_part_06.rs");
 include!("daemon_action.rs");
 include!("main_part_08.rs");

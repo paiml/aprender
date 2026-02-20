@@ -418,7 +418,7 @@ fn print_gguf_summary(path: &Path, info: &GgufInfo, bytes: &[u8]) {
 }
 
 include!("safe_tensors_header.rs");
-include!("hex_part_03.rs");
+include!("valid.rs");
 include!("sliding_window_entropy.rs");
 include!("hex_part_05.rs");
 include!("hex_part_06.rs");

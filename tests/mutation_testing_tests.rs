@@ -13,5 +13,5 @@
 
 use std::path::Path;
 
-include!("includes/mutation_testing_part_01.rs");
-include!("includes/mutation_testing_part_02.rs");
+include!("includes/mut0.rs");
+include!("includes/mutations.rs");

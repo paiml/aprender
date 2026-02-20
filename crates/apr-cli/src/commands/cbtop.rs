@@ -443,7 +443,7 @@ fn run_headless(config: CbtopConfig) -> Result<()> {
     }
 }
 
-include!("cbtop_part_02.rs");
+include!("gguf.rs");
 include!("cbtop_part_03.rs");
 include!("cbtop_part_04.rs");
 include!("cbtop_part_05.rs");

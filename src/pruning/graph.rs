@@ -376,5 +376,5 @@ pub struct PruningPlan {
     validated: bool,
 }
 
-include!("graph_part_02.rs");
+include!("removed.rs");
 include!("graph_part_03.rs");

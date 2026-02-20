@@ -10,5 +10,5 @@ include!("qa_part_08_part_04.rs");
 include!("qa_part_08_part_05.rs");
 include!("qa_part_08_part_06.rs");
 include!("qa_part_08_part_07.rs");
-include!("qa_part_08_part_08.rs");
+include!("fields.rs");
 }

@@ -446,5 +446,5 @@ impl ChatMLTemplate {
     }
 }
 
-include!("mod_part_02.rs");
+include!("template.rs");
 include!("raw_template.rs");

@@ -449,4 +449,4 @@ pub struct TrainingInfo {
     pub source: Option<String>,
 }
 
-include!("types_part_02.rs");
+include!("spec.rs");

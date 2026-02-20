@@ -427,8 +427,8 @@ fn s1_tokenizer_loads_from_json() {
     println!("S1 PASSED: encode('Hello') -> {} tokens", tokens.len());
 }
 
-#[path = "tests_part_02.rs"]
+#[path = "falsification.rs"]
 
-mod tests_part_02;
+mod falsification;
 #[path = "tests_part_03.rs"]
 mod tests_part_03;
