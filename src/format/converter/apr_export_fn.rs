@@ -53,6 +53,8 @@ pub fn apr_export<P: AsRef<Path>>(
 
     let tensors = prepare_tensors_for_export(tensors, input_path, &options);
     enforce_contract_violations(&tensors)?;
+    // PMAT-297: Architecture completeness gate — refuse to export incomplete models
+    enforce_export_completeness(input_path, &tensors)?;
     let tensors = apply_export_quantization(tensors, input_path, &options)?;
 
     dispatch_export(&tensors, input_path, output_path, &options, &original_dtypes)?;
@@ -72,6 +74,80 @@ pub fn apr_export<P: AsRef<Path>>(
         format: options.format,
         quantization: options.quantize,
     })
+}
+
+/// PMAT-297: Architecture completeness gate for export path.
+///
+/// Detects the architecture from APR metadata and verifies all required tensors
+/// are present before writing the output file. Missing tensor = hard error.
+fn enforce_export_completeness(
+    input_path: &Path,
+    tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+) -> Result<()> {
+    // Only check APR source files — GGUF/SafeTensors don't have APR metadata
+    if input_path.extension().and_then(|e| e.to_str()) != Some("apr") {
+        return Ok(());
+    }
+    let arch_key = match detect_apr_architecture_for_completeness(input_path) {
+        Some(key) => key,
+        None => return Ok(()), // Unknown architecture — skip
+    };
+    let num_layers = infer_layer_count(tensors.keys().map(String::as_str));
+    if num_layers == 0 {
+        return Ok(());
+    }
+    let names: Vec<&str> = tensors.keys().map(String::as_str).collect();
+    crate::format::layout_contract::enforce_architecture_completeness(&names, arch_key, num_layers)
+        .map_err(|e| AprenderError::FormatError {
+            message: format!("PMAT-297 export completeness gate: {e}"),
+        })
+}
+
+/// Detect architecture from APR metadata for completeness checking.
+fn detect_apr_architecture_for_completeness(apr_path: &Path) -> Option<&'static str> {
+    let data = fs::read(apr_path).ok()?;
+    let reader = crate::format::v2::AprV2Reader::from_bytes(&data).ok()?;
+    let metadata = reader.metadata();
+    let arch = metadata
+        .architecture
+        .as_deref()
+        .or_else(|| {
+            let mt = &metadata.model_type;
+            if mt.is_empty() || mt == "unknown" {
+                None
+            } else {
+                Some(mt.as_str())
+            }
+        })?;
+    // Map to completeness key (static str)
+    let key = match arch {
+        "qwen3" => "qwen3",
+        "qwen2" | "qwen2.5" | "qwen" => "qwen2",
+        "llama" | "llama3" => "llama",
+        "mistral" => "mistral",
+        "phi" | "phi3" => "phi",
+        "gemma" | "gemma2" => "gemma",
+        _ => return None,
+    };
+    Some(key)
+}
+
+/// Infer number of transformer layers from tensor name patterns.
+fn infer_layer_count<'a>(names: impl Iterator<Item = &'a str>) -> usize {
+    let mut max_idx: Option<usize> = None;
+    for name in names {
+        let idx = if let Some(rest) = name.strip_prefix("blk.") {
+            rest.split('.').next().and_then(|s| s.parse::<usize>().ok())
+        } else if let Some(rest) = name.strip_prefix("model.layers.") {
+            rest.split('.').next().and_then(|s| s.parse::<usize>().ok())
+        } else {
+            None
+        };
+        if let Some(i) = idx {
+            max_idx = Some(max_idx.map_or(i, |m: usize| m.max(i)));
+        }
+    }
+    max_idx.map_or(0, |m| m + 1)
 }
 
 /// GH-246: Calculate total size of all files in a directory (for MLX exports).

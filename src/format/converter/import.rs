@@ -104,8 +104,11 @@ pub fn apr_import<P: AsRef<Path>>(
     )?;
 
     // GH-279: Architecture completeness gate for SafeTensors path
+    // PMAT-296: Gate MUST run even without model_config — infer num_layers from tensor names
     if let Some(config) = load_result.model_config.as_ref() {
         enforce_arch_completeness_gate_f32(&effective_arch, &mapped_tensors, config)?;
+    } else {
+        enforce_arch_completeness_gate_inferred(&effective_arch, &mapped_tensors)?;
     }
 
     // Step 5: Validate tensors (inline validation)
@@ -303,6 +306,48 @@ fn enforce_arch_completeness_gate_f32(
         .map_err(|e| AprenderError::FormatError {
             message: format!("GH-279 architecture completeness gate: {e}"),
         })
+}
+
+/// PMAT-296: Architecture completeness gate when model_config is unavailable.
+///
+/// Infers `num_layers` from tensor names (counting unique layer indices).
+/// This closes the GAP-1 bypass: SafeTensors without config.json still get checked.
+fn enforce_arch_completeness_gate_inferred(
+    arch: &Architecture,
+    tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+) -> Result<()> {
+    let Some(arch_key) = arch.completeness_key() else {
+        return Ok(());
+    };
+    let num_layers = infer_num_layers_from_tensor_names(tensors.keys().map(String::as_str));
+    if num_layers == 0 {
+        return Ok(()); // No layer tensors → skip (e.g., standalone embeddings)
+    }
+    let names: Vec<&str> = tensors.keys().map(String::as_str).collect();
+    crate::format::layout_contract::enforce_architecture_completeness(&names, arch_key, num_layers)
+        .map_err(|e| AprenderError::FormatError {
+            message: format!("GH-279 architecture completeness gate (inferred): {e}"),
+        })
+}
+
+/// Infer the number of transformer layers from tensor name patterns.
+///
+/// Scans for `blk.{N}.` or `model.layers.{N}.` patterns and returns max(N) + 1.
+fn infer_num_layers_from_tensor_names<'a>(names: impl Iterator<Item = &'a str>) -> usize {
+    let mut max_layer: Option<usize> = None;
+    for name in names {
+        let idx = if let Some(rest) = name.strip_prefix("blk.") {
+            rest.split('.').next().and_then(|s| s.parse::<usize>().ok())
+        } else if let Some(rest) = name.strip_prefix("model.layers.") {
+            rest.split('.').next().and_then(|s| s.parse::<usize>().ok())
+        } else {
+            None
+        };
+        if let Some(i) = idx {
+            max_layer = Some(max_layer.map_or(i, |m: usize| m.max(i)));
+        }
+    }
+    max_layer.map_or(0, |m| m + 1)
 }
 
 /// PMAT-SAFETENSORS-TOK-001: Try to find tokenizer.json from HF cache for this repo.
