@@ -240,7 +240,7 @@ fn handle_zero_generation_fallback(
     total_tokens: usize,
     iterations: usize,
     prompt_len: usize,
-    quiet: bool,
+    _quiet: bool,
 ) -> usize {
     if generation_failed && total_tokens == 0 {
         eprintln!(
