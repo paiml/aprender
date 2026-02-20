@@ -67,7 +67,7 @@ pub struct Cli {
     pub skip_contract: bool,
 }
 
-include!("commands.rs");
+include!("commands_enum.rs");
 include!("model_ops_commands.rs");
 include!("extended_commands.rs");
 include!("tool_commands.rs");
