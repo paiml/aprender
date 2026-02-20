@@ -81,6 +81,6 @@ pub struct CountVectorizer {
     strip_accents: bool,
 }
 
-include!("mod_part_02.rs");
-include!("mod_part_03.rs");
+include!("tfidf_vectorizer.rs");
+include!("hashing_vectorizer.rs");
 include!("mod_part_04.rs");

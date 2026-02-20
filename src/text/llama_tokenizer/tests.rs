@@ -1,6 +1,6 @@
 pub(crate) use super::*;
 pub(crate) use tests_part_04::{create_gguf_with_array_metadata, create_gguf_with_extra_metadata};
-pub(crate) use tests_part_05::create_gguf_with_string_metadata;
+pub(crate) use construction::create_gguf_with_string_metadata;
 
 // ========================================================================
 // Falsification Tests (Popperian)
@@ -450,5 +450,5 @@ mod tests_part_02;
 mod tests_part_03;
 #[path = "tests_part_04.rs"]
 mod tests_part_04;
-#[path = "tests_part_05.rs"]
-mod tests_part_05;
+#[path = "construction.rs"]
+mod construction;

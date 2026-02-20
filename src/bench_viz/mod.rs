@@ -430,6 +430,6 @@ impl ProfilingHotspot {
     }
 }
 
-include!("mod_part_02.rs");
+include!("benchmark_grid.rs");
 include!("mod_part_03.rs");
-include!("mod_part_04.rs");
+include!("benchmark_runner.rs");

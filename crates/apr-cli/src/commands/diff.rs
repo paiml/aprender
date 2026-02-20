@@ -434,6 +434,6 @@ fn print_diff_json(
     );
 }
 
-include!("diff_part_02.rs");
+include!("diff_accumulator.rs");
 include!("diff_part_03.rs");
 include!("diff_part_04.rs");

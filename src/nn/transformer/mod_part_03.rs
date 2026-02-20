@@ -1,4 +1,4 @@
-use super::mod_part_02::{
+use super::positional_encoding::{
     matmul_batched, reshape_for_attention, reshape_from_attention, transpose_last_two,
 };
 use super::mod_part_04::{

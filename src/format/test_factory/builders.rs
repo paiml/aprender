@@ -442,5 +442,5 @@ fn build_safetensors_bytes(tensors: &[(String, Vec<usize>, Vec<f32>)]) -> Vec<u8
     result
 }
 
-include!("builders_part_02.rs");
-include!("builders_part_03.rs");
+include!("quant_variant.rs");
+include!("gguf_pygmy_config.rs");

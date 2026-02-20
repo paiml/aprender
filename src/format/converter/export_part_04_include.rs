@@ -245,7 +245,7 @@ fn dispatch_export(
     }
 }
 
-include!("export_part_02.rs");
+include!("gguf_export_config.rs");
 include!("export_part_03.rs");
 include!("export_part_04.rs");
 include!("export_part_05.rs");

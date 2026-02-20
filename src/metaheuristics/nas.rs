@@ -441,5 +441,5 @@ impl Default for NasGenome {
     }
 }
 
-include!("nas_part_02.rs");
+include!("nas_mutation.rs");
 include!("nas_part_03.rs");

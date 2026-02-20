@@ -440,5 +440,5 @@ impl AutoVcTransfer {
     }
 }
 
-include!("style_part_02.rs");
+include!("compute.rs");
 include!("style_part_03.rs");

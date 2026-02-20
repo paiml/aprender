@@ -441,9 +441,9 @@ pub(crate) fn download_hf_model(org: &str, repo: &str, file: Option<&str>) -> Re
     Ok(model_path)
 }
 
-include!("run_part_02.rs");
+include!("inference_output.rs");
 include!("run_part_03.rs");
 include!("run_part_04.rs");
-include!("run_part_05.rs");
+include!("gguf_generate_result.rs");
 include!("run_part_06.rs");
 include!("run_part_07.rs");

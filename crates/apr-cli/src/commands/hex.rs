@@ -417,8 +417,8 @@ fn print_gguf_summary(path: &Path, info: &GgufInfo, bytes: &[u8]) {
     output::metric("File size", output::format_size(bytes.len() as u64), "");
 }
 
-include!("hex_part_02.rs");
+include!("safe_tensors_header.rs");
 include!("hex_part_03.rs");
-include!("hex_part_04.rs");
+include!("sliding_window_entropy.rs");
 include!("hex_part_05.rs");
 include!("hex_part_06.rs");

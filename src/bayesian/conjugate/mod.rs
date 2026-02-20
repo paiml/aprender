@@ -374,6 +374,6 @@ pub struct GammaPoisson {
     beta: f32,
 }
 
-include!("mod_part_02.rs");
-include!("mod_part_03.rs");
+include!("normal_inverse_gamma.rs");
+include!("dirichlet_multinomial.rs");
 include!("mod_part_04.rs");

@@ -438,9 +438,9 @@ pub(crate) struct PageEntry {
     pub(crate) last_access: u64,
 }
 
-#[path = "mmap_part_02.rs"]
-mod mmap_part_02;
-pub(crate) use mmap_part_02::PageTable;
+#[path = "page_table.rs"]
+mod page_table;
+pub(crate) use page_table::PageTable;
 #[path = "mmap_part_03.rs"]
 mod mmap_part_03;
 #[path = "mmap_part_04.rs"]

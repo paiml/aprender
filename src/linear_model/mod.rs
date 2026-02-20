@@ -384,7 +384,7 @@ pub struct Ridge {
     fit_intercept: bool,
 }
 
-include!("mod_part_02.rs");
+include!("lasso.rs");
 include!("mod_part_03.rs");
-include!("mod_part_04.rs");
+include!("elastic_net.rs");
 include!("mod_part_05.rs");

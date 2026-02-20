@@ -444,7 +444,7 @@ fn percentile(sorted: &[f64], p: f64) -> f64 {
     }
 }
 
-include!("profile_part_02.rs");
+include!("diff_benchmark_report.rs");
 include!("profile_part_03.rs");
 include!("profile_part_04.rs");
 include!("profile_part_05.rs");

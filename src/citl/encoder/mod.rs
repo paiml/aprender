@@ -92,6 +92,6 @@ pub struct ErrorEncoder {
     vocab: HashMap<String, usize>,
 }
 
-include!("mod_part_02.rs");
+include!("gnn_error_encoder.rs");
 include!("mod_part_03.rs");
 include!("mod_part_04.rs");

@@ -394,6 +394,6 @@ pub struct AdamW {
     pub(crate) initialized: bool,
 }
 
-#[path = "mod_part_02.rs"]
-mod mod_part_02;
-pub use mod_part_02::*;
+#[path = "rm_sprop.rs"]
+mod rm_sprop;
+pub use rm_sprop::*;

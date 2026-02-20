@@ -205,5 +205,5 @@ pub struct PagedMarkovModel {
     bundle_path: Option<std::path::PathBuf>,
 }
 
-include!("paged_model_part_02.rs");
+include!("paged_model_stats.rs");
 include!("paged_model_part_03.rs");

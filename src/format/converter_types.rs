@@ -119,7 +119,7 @@ pub enum Architecture {
     Phi,
 }
 
-include!("converter_types_part_02.rs");
+include!("tensor_expectation.rs");
 include!("converter_types_part_03.rs");
-include!("converter_types_part_04.rs");
+include!("sharded_index.rs");
 include!("converter_types_part_05.rs");

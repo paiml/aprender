@@ -10,5 +10,5 @@ mod tests {
     use tempfile::{tempdir, NamedTempFile};
 include!("flow_part_03_part_02.rs");
 include!("flow_part_03_part_03.rs");
-include!("flow_part_03_part_04.rs");
+include!("filtering.rs");
 }

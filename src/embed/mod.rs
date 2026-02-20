@@ -389,5 +389,5 @@ pub enum DataCompression {
     },
 }
 
-include!("mod_part_02.rs");
+include!("embed_error.rs");
 include!("mod_part_03.rs");

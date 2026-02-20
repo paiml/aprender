@@ -396,4 +396,4 @@ fn save_model_tensors_with_config(
 // tokenizer embedding for standalone APR inference (PMAT-113).
 
 
-include!("mod_part_03_include_01.rs");
+include!("inferred_q4k_config.rs");

@@ -444,5 +444,5 @@ impl DynModelFamily {
     }
 }
 
-include!("model_family_part_02.rs");
+include!("family_registry.rs");
 include!("model_family_part_03.rs");

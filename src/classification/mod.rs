@@ -420,8 +420,8 @@ pub struct KNearestNeighbors {
     y_train: Option<Vec<usize>>,
 }
 
-mod mod_part_02;
-pub use mod_part_02::*;
-mod mod_part_03;
-pub use mod_part_03::*;
+mod gaussian_nb;
+pub use gaussian_nb::*;
+mod linear_svm;
+pub use linear_svm::*;
 mod mod_part_04;

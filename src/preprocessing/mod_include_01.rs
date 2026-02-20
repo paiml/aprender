@@ -130,5 +130,5 @@ impl Transformer for RobustScaler {
     }
 }
 
-include!("mod_part_02.rs");
-include!("mod_part_03.rs");
+include!("pca.rs");
+include!("tsne.rs");

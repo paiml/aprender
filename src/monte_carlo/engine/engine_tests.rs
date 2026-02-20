@@ -447,5 +447,5 @@ fn test_simulation_result_debug_clone() {
     assert_eq!(cloned.model_name, result.model_name);
 }
 
-#[path = "engine_tests_part_02.rs"]
-mod engine_tests_part_02;
+#[path = "no_antithetic_model.rs"]
+mod no_antithetic_model;

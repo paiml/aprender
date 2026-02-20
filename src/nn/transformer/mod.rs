@@ -405,11 +405,11 @@ pub struct TransformerDecoderLayer {
     pub(crate) training: bool,
 }
 
-#[path = "mod_part_02.rs"]
-mod mod_part_02;
-pub use mod_part_02::*;
+#[path = "positional_encoding.rs"]
+mod positional_encoding;
+pub use positional_encoding::*;
 // ONE PATH: Re-export canonical attention utilities for crate-internal use (UCBD §4).
-pub(crate) use mod_part_02::{matmul_batched, reshape_from_attention, transpose_last_two};
+pub(crate) use positional_encoding::{matmul_batched, reshape_from_attention, transpose_last_two};
 
 #[path = "mod_part_03.rs"]
 mod mod_part_03;

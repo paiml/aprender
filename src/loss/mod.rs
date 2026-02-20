@@ -415,4 +415,4 @@ fn cosine_similarity(a: &Vector<f32>, b: &Vector<f32>) -> f32 {
 }
 
 include!("mod_part_02.rs");
-include!("mod_part_03.rs");
+include!("wasserstein_loss.rs");

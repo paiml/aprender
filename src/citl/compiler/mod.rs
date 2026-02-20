@@ -328,5 +328,5 @@ pub struct RustCompiler {
     extra_flags: Vec<String>,
 }
 
-include!("mod_part_02.rs");
+include!("cargo_project.rs");
 include!("mod_part_03.rs");

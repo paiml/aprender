@@ -406,5 +406,5 @@ impl YourTtsCloner {
     }
 }
 
-include!("clone_part_02.rs");
+include!("sv2tts_speaker_encoder.rs");
 include!("clone_part_03.rs");

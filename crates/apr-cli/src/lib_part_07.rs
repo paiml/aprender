@@ -6,7 +6,7 @@
 #[cfg(test)]
 mod tests {
     use super::*;
-include!("lib_part_07_part_02.rs");
+include!("parsing.rs");
 include!("lib_part_07_part_03.rs");
 include!("lib_part_07_part_04.rs");
 include!("lib_part_07_part_05.rs");

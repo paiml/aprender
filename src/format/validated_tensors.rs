@@ -367,5 +367,5 @@ pub struct ValidatedWeight<L = RowMajor> {
     _layout: PhantomData<L>,
 }
 
-include!("validated_tensors_part_02.rs");
+include!("validated_vector.rs");
 include!("validated_tensors_part_03.rs");

@@ -185,7 +185,7 @@ pub struct BpeTokenizer {
     byte_decoder: HashMap<char, u8>,
 }
 
-mod mod_part_02;
-pub use mod_part_02::*;
+mod qwen2bpe_tokenizer;
+pub use qwen2bpe_tokenizer::*;
 mod mod_part_03;
 pub use mod_part_03::*;

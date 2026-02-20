@@ -344,5 +344,5 @@ impl Default for ADWIN {
     }
 }
 
-include!("drift_part_02.rs");
+include!("drift_detector_factory.rs");
 include!("drift_part_03.rs");

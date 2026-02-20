@@ -444,6 +444,6 @@ pub enum SAGEAggregation {
 mod mod_part_02;
 pub use mod_part_02::*;
 
-#[path = "mod_part_03.rs"]
-mod mod_part_03;
-pub use mod_part_03::*;
+#[path = "message_passing.rs"]
+mod message_passing;
+pub use message_passing::*;

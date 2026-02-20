@@ -445,7 +445,7 @@ fn test_from_bytes_invalid_magic() {
     );
 }
 
-#[path = "reader_tests_part_02.rs"]
-mod reader_tests_part_02;
+#[path = "builder.rs"]
+mod builder;
 #[path = "reader_tests_part_03.rs"]
 mod reader_tests_part_03;

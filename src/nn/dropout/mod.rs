@@ -414,5 +414,5 @@ pub struct DropBlock {
     rng: Mutex<StdRng>,
 }
 
-mod mod_part_02;
-pub use mod_part_02::*;
+mod drop_connect;
+pub use drop_connect::*;

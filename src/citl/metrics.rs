@@ -417,5 +417,5 @@ pub struct ConvergenceMetrics {
     iteration_histogram: HashMap<usize, u64>,
 }
 
-include!("metrics_part_02.rs");
+include!("metrics_summary.rs");
 include!("metrics_part_03.rs");

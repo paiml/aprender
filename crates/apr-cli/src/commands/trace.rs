@@ -424,7 +424,7 @@ fn run_traced_inference_gguf(_path: &Path) -> Result<(), CliError> {
     ))
 }
 
-include!("trace_part_02.rs");
+include!("vector_stats.rs");
 include!("trace_part_03.rs");
 include!("trace_part_04.rs");
 include!("trace_part_05.rs");

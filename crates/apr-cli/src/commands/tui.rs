@@ -443,5 +443,5 @@ fn render_overview(f: &mut Frame<'_>, area: Rect, app: &App) {
     f.render_widget(overview, area);
 }
 
-include!("tui_part_02.rs");
+include!("rendering.rs");
 include!("tui_part_03.rs");

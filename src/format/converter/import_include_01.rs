@@ -69,8 +69,8 @@ fn validate_contract_f32(
     Ok(())
 }
 
-include!("import_part_02.rs");
+include!("source_load_result.rs");
 include!("import_part_03.rs");
-include!("import_part_04.rs");
-include!("import_part_05.rs");
+include!("safe_tensors_load_result.rs");
+include!("tensor_accumulator.rs");
 include!("import_part_06.rs");

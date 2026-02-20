@@ -30,6 +30,6 @@ pub struct MarkovModel {
 }
 
 include!("model_part_02.rs");
-include!("model_part_03.rs");
+include!("validation_result.rs");
 include!("model_part_04.rs");
 include!("model_part_05.rs");

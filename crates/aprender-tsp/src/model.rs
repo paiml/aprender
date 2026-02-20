@@ -91,5 +91,5 @@ pub struct TspModel {
     pub metadata: TspModelMetadata,
 }
 
-include!("model_part_02.rs");
+include!("payload_reader.rs");
 include!("model_part_03.rs");

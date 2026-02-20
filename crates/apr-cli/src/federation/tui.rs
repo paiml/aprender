@@ -403,5 +403,5 @@ fn render_catalog(f: &mut Frame<'_>, area: Rect, app: &FederationApp) {
     f.render_widget(table, area);
 }
 
-include!("tui_part_02.rs");
+include!("rendering.rs");
 include!("tui_part_03.rs");

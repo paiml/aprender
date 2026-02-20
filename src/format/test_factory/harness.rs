@@ -142,6 +142,6 @@ pub(crate) struct ConversionTestHarness {
 }
 
 include!("harness_part_02.rs");
-include!("harness_part_03.rs");
+include!("collection.rs");
 include!("harness_part_04.rs");
 include!("harness_part_05.rs");

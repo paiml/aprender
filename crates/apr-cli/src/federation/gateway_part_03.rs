@@ -6,6 +6,6 @@
 #[cfg(test)]
 mod tests {
     use super::*;
-include!("gateway_part_03_part_02.rs");
+include!("tests.rs");
 include!("gateway_part_03_part_03.rs");
 }

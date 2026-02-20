@@ -431,6 +431,6 @@ fn print_welcome_banner(path: &Path, config: &ChatConfig) {
     println!();
 }
 
-include!("chat_part_02.rs");
+include!("chat_session.rs");
 include!("chat_part_03.rs");
 include!("chat_part_04.rs");

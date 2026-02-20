@@ -398,5 +398,5 @@ pub struct SpectralSubtractionIsolator {
     over_subtraction: f32,
 }
 
-include!("isolation_part_02.rs");
+include!("wiener_filter_isolator.rs");
 include!("isolation_part_03.rs");
