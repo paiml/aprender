@@ -36,5 +36,5 @@ fn calculate_cv(samples: &[f64]) -> f64 {
     (std_dev / mean) * 100.0
 }
 
-include!("includes/falsification_performance_part_01.rs");
-include!("includes/falsification_performance_part_02.rs");
+include!("includes/falsification_performance_throughput.rs");
+include!("includes/falsification_performance_quality_validation.rs");

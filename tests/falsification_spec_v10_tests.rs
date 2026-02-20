@@ -219,14 +219,14 @@ macro_rules! require_model {
 // These require model fixtures (SafeTensors BF16, 7B)
 // =============================================================================
 
-include!("includes/falsification_spec_v10_part_01.rs");
-include!("includes/falsification_spec_v10_part_02.rs");
-include!("includes/falsification_spec_v10_part_03.rs");
+include!("includes/falsification_spec_v10_ground_truth.rs");
+include!("includes/falsification_spec_v10_cli_interface.rs");
+include!("includes/falsification_spec_v10_model_spec.rs");
 include!("includes/falsification_spec_v10_part_04.rs");
 include!("includes/f_ollama_00.rs");
 include!("includes/falsification_spec_v10_definition_of_done.rs");
 include!("includes/falsification_spec_v10_ml_diagnostics.rs");
 include!("includes/f_trueno_00.rs");
 include!("includes/f_realize_0.rs");
-include!("includes/falsification_spec_v10_part_10.rs");
-include!("includes/falsification_spec_v10_part_11.rs");
+include!("includes/falsification_spec_v10_contract_model.rs");
+include!("includes/falsification_spec_v10_qwen2_7b_params.rs");
