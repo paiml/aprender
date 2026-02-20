@@ -11,7 +11,7 @@
 #[allow(unused_imports)]
 use std::time::Instant;
 
-include!("includes/format_parity_part_01.rs");
+include!("includes/apr_inference_impl_tests.rs");
 include!("includes/format_parity_part_02.rs");
 
 // ============================================================================
