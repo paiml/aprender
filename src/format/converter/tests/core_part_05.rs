@@ -103,6 +103,7 @@ mod tests_gh200_q4k_roundtrip {
             quantize: None,
             include_tokenizer: false,
             include_config: false,
+            skip_completeness_check: true, // Pygmy test model is intentionally incomplete
         };
         let result = apr_export(input, &output, options);
         assert!(
@@ -132,6 +133,7 @@ mod tests_gh200_q4k_roundtrip {
             quantize: None,
             include_tokenizer: false,
             include_config: false,
+            skip_completeness_check: true, // Pygmy test model is intentionally incomplete
         };
         let result = apr_export(input, &output, options);
         assert!(
@@ -164,6 +166,7 @@ mod tests_gh200_q4k_roundtrip {
             quantize: None,
             include_tokenizer: false,
             include_config: false,
+            skip_completeness_check: true, // Pygmy test model is intentionally incomplete
         };
         let result = apr_export(&apr_path, &st_path, options);
         assert!(

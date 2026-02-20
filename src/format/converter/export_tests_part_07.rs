@@ -82,6 +82,7 @@ fn test_apr_export_to_gguf_end_to_end() {
         quantize: None,
         include_tokenizer: false,
         include_config: false,
+        skip_completeness_check: true, // Test model lacks qwen2 biases
     };
 
     let report = apr_export(&apr_path, &output, options).expect("export should succeed");

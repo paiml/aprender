@@ -435,6 +435,7 @@ fn quantize_to_gguf(
         quantize: Some(scheme.into()),
         include_tokenizer: false,
         include_config: false,
+        ..Default::default()
     };
 
     match apr_export(file, output_path, options) {

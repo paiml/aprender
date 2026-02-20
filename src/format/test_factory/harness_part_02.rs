@@ -113,6 +113,7 @@ impl ConversionTestHarness {
             quantize: None,
             include_tokenizer: false,
             include_config: false,
+            ..Default::default()
         };
         let result = apr_export(input, &output, options);
         assert!(
@@ -138,6 +139,7 @@ impl ConversionTestHarness {
             quantize: None,
             include_tokenizer: false,
             include_config: false,
+            ..Default::default()
         };
         let result = apr_export(input, &output, options);
         assert!(
@@ -197,79 +199,26 @@ impl ConversionTestHarness {
     /// Checks: tensor existence, shape equality, and data values within tolerance.
     /// Panics if no source tensors were recorded (empty config guard).
     pub(crate) fn verify_apr(&self) -> VerificationResult {
-        assert!(
-            !self.source_tensors.is_empty(),
-            "Cannot verify with 0 source tensors -- use a non-empty PygmyConfig"
-        );
-        let output = self
-            .output_path
-            .as_ref()
-            .expect("No output path set -- run import first");
+        self.assert_source_tensors_present();
+        let output = self.require_output_path("run import first");
         let data = fs::read(output).expect("Failed to read output APR");
         let reader = AprV2Reader::from_bytes(&data).expect("Failed to parse output APR");
 
         let mut mismatches = Vec::new();
-        let tolerance = self.tolerance.f32_atol;
 
         for (name, expected_data, expected_shape) in &self.source_tensors {
-            // Check tensor exists
-            let entry = match reader.get_tensor(name) {
-                Some(e) => e,
-                None => {
-                    mismatches.push(TensorMismatch {
-                        tensor_name: name.clone(),
-                        kind: MismatchKind::Missing,
-                    });
-                    continue;
-                }
-            };
-
-            // Check shape
-            if &entry.shape != expected_shape {
-                mismatches.push(TensorMismatch {
-                    tensor_name: name.clone(),
-                    kind: MismatchKind::ShapeMismatch {
-                        expected: expected_shape.clone(),
-                        actual: entry.shape.clone(),
-                    },
-                });
-                continue;
-            }
-
-            // Check data values
-            if let Some(actual_data) = reader.get_tensor_as_f32(name) {
-                for (i, (&exp, &act)) in expected_data.iter().zip(actual_data.iter()).enumerate() {
-                    if (exp - act).abs() > tolerance {
-                        mismatches.push(TensorMismatch {
-                            tensor_name: name.clone(),
-                            kind: MismatchKind::DataMismatch {
-                                index: i,
-                                expected: exp,
-                                actual: act,
-                                tolerance,
-                            },
-                        });
-                        break; // One mismatch per tensor is enough
-                    }
-                }
-            }
+            let actual_shape = reader.get_tensor(name).map(|e| e.shape.clone());
+            let actual_data = reader.get_tensor_as_f32(name);
+            Self::verify_single_tensor(
+                name, expected_data, expected_shape,
+                actual_shape.as_deref(), actual_data.as_deref(),
+                self.tolerance.f32_atol, &mut mismatches,
+            );
         }
 
-        // T-QKV-02: Check for EXTRA tensors in output (detects fusion/split bugs)
-        let expected_names: std::collections::HashSet<&str> = self
-            .source_tensors
-            .iter()
-            .map(|(n, _, _)| n.as_str())
-            .collect();
-        for output_name in reader.tensor_names() {
-            if !expected_names.contains(output_name) {
-                mismatches.push(TensorMismatch {
-                    tensor_name: output_name.to_string(),
-                    kind: MismatchKind::Extra,
-                });
-            }
-        }
-
+        Self::check_extra_tensors(
+            &self.source_tensors, reader.tensor_names(), &[], &mut mismatches,
+        );
         VerificationResult { mismatches }
     }
 
@@ -278,80 +227,112 @@ impl ConversionTestHarness {
     /// Checks: tensor existence, shape equality, and data values within tolerance.
     /// Panics if no source tensors were recorded (empty config guard).
     pub(crate) fn verify_safetensors(&self) -> VerificationResult {
+        self.assert_source_tensors_present();
+        let output = self.require_output_path("run export first");
+        let mapped = MappedSafeTensors::open(output).expect("Failed to open output SafeTensors");
+
+        let mut mismatches = Vec::new();
+
+        for (name, expected_data, expected_shape) in &self.source_tensors {
+            let actual_shape = mapped.get_metadata(name).map(|m| m.shape.clone());
+            let actual_data = mapped.get_tensor(name).ok();
+            Self::verify_single_tensor(
+                name, expected_data, expected_shape,
+                actual_shape.as_deref(), actual_data.as_deref(),
+                self.tolerance.f32_atol, &mut mismatches,
+            );
+        }
+
+        Self::check_extra_tensors(
+            &self.source_tensors, mapped.tensor_names(),
+            &["__metadata__"], &mut mismatches,
+        );
+        VerificationResult { mismatches }
+    }
+
+    fn assert_source_tensors_present(&self) {
         assert!(
             !self.source_tensors.is_empty(),
             "Cannot verify with 0 source tensors -- use a non-empty PygmyConfig"
         );
-        let output = self
-            .output_path
+    }
+
+    fn require_output_path(&self, context: &str) -> &Path {
+        self.output_path
             .as_ref()
-            .expect("No output path set -- run export first");
-        let mapped = MappedSafeTensors::open(output).expect("Failed to open output SafeTensors");
+            .unwrap_or_else(|| panic!("No output path set -- {context}"))
+    }
 
-        let mut mismatches = Vec::new();
-        let tolerance = self.tolerance.f32_atol;
+    /// Verify a single tensor: existence → shape → data values.
+    fn verify_single_tensor(
+        name: &str,
+        expected_data: &[f32],
+        expected_shape: &[usize],
+        actual_shape: Option<&[usize]>,
+        actual_data: Option<&[f32]>,
+        tolerance: f32,
+        mismatches: &mut Vec<TensorMismatch>,
+    ) {
+        let Some(shape) = actual_shape else {
+            mismatches.push(TensorMismatch {
+                tensor_name: name.to_string(),
+                kind: MismatchKind::Missing,
+            });
+            return;
+        };
 
-        for (name, expected_data, expected_shape) in &self.source_tensors {
-            let meta = match mapped.get_metadata(name) {
-                Some(m) => m,
-                None => {
-                    mismatches.push(TensorMismatch {
-                        tensor_name: name.clone(),
-                        kind: MismatchKind::Missing,
-                    });
-                    continue;
-                }
-            };
-
-            if &meta.shape != expected_shape {
-                mismatches.push(TensorMismatch {
-                    tensor_name: name.clone(),
-                    kind: MismatchKind::ShapeMismatch {
-                        expected: expected_shape.clone(),
-                        actual: meta.shape.clone(),
-                    },
-                });
-                continue;
-            }
-
-            if let Ok(actual_data) = mapped.get_tensor(name) {
-                for (i, (&exp, &act)) in expected_data.iter().zip(actual_data.iter()).enumerate() {
-                    if (exp - act).abs() > tolerance {
-                        mismatches.push(TensorMismatch {
-                            tensor_name: name.clone(),
-                            kind: MismatchKind::DataMismatch {
-                                index: i,
-                                expected: exp,
-                                actual: act,
-                                tolerance,
-                            },
-                        });
-                        break;
-                    }
-                }
-            }
+        if shape != expected_shape {
+            mismatches.push(TensorMismatch {
+                tensor_name: name.to_string(),
+                kind: MismatchKind::ShapeMismatch {
+                    expected: expected_shape.to_vec(),
+                    actual: shape.to_vec(),
+                },
+            });
+            return;
         }
 
-        // T-QKV-02: Check for EXTRA tensors in output (detects fusion/split bugs)
-        let expected_names: std::collections::HashSet<&str> = self
-            .source_tensors
-            .iter()
-            .map(|(n, _, _)| n.as_str())
-            .collect();
-        for output_name in mapped.tensor_names() {
-            // SafeTensors __metadata__ key is not a tensor, skip it
-            if output_name == "__metadata__" {
+        if let Some(data) = actual_data {
+            if let Some((i, (&exp, &act))) = expected_data
+                .iter()
+                .zip(data.iter())
+                .enumerate()
+                .find(|(_, (&e, &a))| (e - a).abs() > tolerance)
+            {
+                mismatches.push(TensorMismatch {
+                    tensor_name: name.to_string(),
+                    kind: MismatchKind::DataMismatch {
+                        index: i,
+                        expected: exp,
+                        actual: act,
+                        tolerance,
+                    },
+                });
+            }
+        }
+    }
+
+    /// T-QKV-02: Check for EXTRA tensors in output (detects fusion/split bugs).
+    fn check_extra_tensors<S: AsRef<str>>(
+        source_tensors: &[(String, Vec<f32>, Vec<usize>)],
+        output_names: Vec<S>,
+        skip_names: &[&str],
+        mismatches: &mut Vec<TensorMismatch>,
+    ) {
+        let expected_names: std::collections::HashSet<&str> =
+            source_tensors.iter().map(|(n, _, _)| n.as_str()).collect();
+        for output_name in &output_names {
+            let name = output_name.as_ref();
+            if skip_names.contains(&name) {
                 continue;
             }
-            if !expected_names.contains(output_name) {
+            if !expected_names.contains(name) {
                 mismatches.push(TensorMismatch {
-                    tensor_name: output_name.to_string(),
+                    tensor_name: name.to_string(),
                     kind: MismatchKind::Extra,
                 });
             }
         }
-
-        VerificationResult { mismatches }
     }
 
     /// Get the output APR path (for manual inspection).

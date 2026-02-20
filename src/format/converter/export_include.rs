@@ -160,6 +160,8 @@ pub struct ExportOptions {
     pub include_tokenizer: bool,
     /// GH-182: Include config.json companion file (SafeTensors only)
     pub include_config: bool,
+    /// Skip PMAT-297 architecture completeness gate (for test pygmy models)
+    pub skip_completeness_check: bool,
 }
 
 impl Default for ExportOptions {
@@ -169,6 +171,7 @@ impl Default for ExportOptions {
             quantize: None,
             include_tokenizer: true, // Default to true for HuggingFace compatibility
             include_config: true,
+            skip_completeness_check: false,
         }
     }
 }

@@ -135,6 +135,7 @@ mod tests_bug1_gguf_export_falsification {
             quantize: None,
             include_tokenizer: false,
             include_config: false,
+            ..Default::default()
         };
 
         apr_export(&input_path, &output_path, options).expect("GGUF export should succeed");
@@ -191,6 +192,7 @@ mod tests_bug1_gguf_export_falsification {
             quantize: None,
             include_tokenizer: false,
             include_config: false,
+            ..Default::default()
         };
 
         apr_export(&input_path, &output_path, options).expect("GGUF export should succeed");
@@ -240,6 +242,7 @@ mod tests_bug1_gguf_export_falsification {
             quantize: None,
             include_tokenizer: false,
             include_config: false,
+            ..Default::default()
         };
 
         apr_export(&input_path, &output_path, options).expect("GGUF export should succeed");

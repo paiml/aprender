@@ -54,7 +54,9 @@ pub fn apr_export<P: AsRef<Path>>(
     let tensors = prepare_tensors_for_export(tensors, input_path, &options);
     enforce_contract_violations(&tensors)?;
     // PMAT-297: Architecture completeness gate — refuse to export incomplete models
-    enforce_export_completeness(input_path, &tensors)?;
+    if !options.skip_completeness_check {
+        enforce_export_completeness(input_path, &tensors)?;
+    }
     let tensors = apply_export_quantization(tensors, input_path, &options)?;
 
     dispatch_export(&tensors, input_path, output_path, &options, &original_dtypes)?;

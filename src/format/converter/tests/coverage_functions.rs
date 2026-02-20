@@ -43,6 +43,7 @@ mod tests_export_merge_functions {
             quantize: None,
             include_tokenizer: false,
             include_config: false,
+            ..Default::default()
         };
         let result = apr_export(&input_path, &output_path, options);
         assert!(result.is_ok(), "Export should succeed: {:?}", result.err());
@@ -81,6 +82,7 @@ mod tests_export_merge_functions {
             quantize: None,
             include_tokenizer: false,
             include_config: false,
+            ..Default::default()
         };
         let result = apr_export(&input_path, &output_path, options);
         assert!(result.is_err());
@@ -102,6 +104,7 @@ mod tests_export_merge_functions {
             quantize: None,
             include_tokenizer: false,
             include_config: false,
+            ..Default::default()
         };
         let result = apr_export(&input_path, &output_path, options);
         assert!(result.is_err());
@@ -121,6 +124,7 @@ mod tests_export_merge_functions {
             quantize: None,
             include_tokenizer: false,
             include_config: true,
+            ..Default::default()
         };
         let result = apr_export(&input_path, &output_path, options);
         assert!(result.is_ok());

@@ -305,6 +305,7 @@ fn test_export_options_custom() {
         quantize: Some(QuantizationType::Int8),
         include_tokenizer: false,
         include_config: false,
+        ..Default::default()
     };
     assert_eq!(opts.format, ExportFormat::Gguf);
     assert_eq!(opts.quantize, Some(QuantizationType::Int8));
@@ -326,6 +327,7 @@ fn test_export_options_clone() {
         quantize: Some(QuantizationType::Int4),
         include_tokenizer: true,
         include_config: false,
+        ..Default::default()
     };
     let cloned = opts.clone();
     assert_eq!(opts.format, cloned.format);
