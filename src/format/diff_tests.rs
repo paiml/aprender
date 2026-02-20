@@ -1,5 +1,5 @@
 pub(crate) use super::*;
-pub(crate) use diff_tests_part_02::make_report;
+pub(crate) use diff_tests_tensor_cmp::make_report;
 
 // ========================================================================
 // DiffOptions Tests
@@ -440,8 +440,8 @@ fn test_compare_tensors_different_count() {
     assert!(diffs.iter().any(|d| d.field.contains("bias")));
 }
 
-#[path = "diff_tests_part_02.rs"]
-mod diff_tests_part_02;
+#[path = "diff_tests_tensor_cmp.rs"]
+mod diff_tests_tensor_cmp;
 #[path = "diff_tests_part_03.rs"]
 mod diff_tests_part_03;
 #[path = "diff_tests_part_04.rs"]

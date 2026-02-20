@@ -448,4 +448,4 @@ fn test_cost_policy_low_tolerance_prefers_cheap() {
     assert!((score - 0.2).abs() < f64::EPSILON);
 }
 
-include!("policy_tests_part_02.rs");
+include!("policy_tests_cost_health.rs");

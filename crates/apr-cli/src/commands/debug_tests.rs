@@ -447,4 +447,4 @@ fn run_hex_mode_succeeds_on_regular_file() {
     assert!(result.is_ok());
 }
 
-include!("debug_tests_part_02.rs");
+include!("debug_tests_run_modes.rs");
