@@ -122,11 +122,21 @@ fn detect_apr_architecture_for_completeness(apr_path: &Path) -> Option<&'static 
     // Map to completeness key (static str)
     let key = match arch {
         "qwen3" => "qwen3",
+        "qwen3_5" | "qwen3.5" => "qwen3_5",
         "qwen2" | "qwen2.5" | "qwen" => "qwen2",
         "llama" | "llama3" => "llama",
         "mistral" => "mistral",
         "phi" | "phi3" => "phi",
         "gemma" | "gemma2" => "gemma",
+        "deepseek" | "deepseek2" => "deepseek",
+        "falcon_h1" | "falcon-h1" => "falcon_h1",
+        "openelm" => "openelm",
+        "moonshine" => "moonshine",
+        "rwkv7" | "rwkv" => "rwkv7",
+        "mamba" => "mamba",
+        "bert" => "bert",
+        "whisper" => "whisper",
+        "gpt2" => "gpt2",
         _ => return None,
     };
     Some(key)
