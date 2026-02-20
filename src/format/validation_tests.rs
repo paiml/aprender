@@ -417,7 +417,7 @@ mod tests_whisper_validation {
 
 #[path = "validation_tests_part_02.rs"]
 mod validation_tests_part_02;
-#[path = "validation_tests_part_03.rs"]
-mod validation_tests_part_03;
+#[path = "validation_tests_tooling_ops.rs"]
+mod validation_tests_tooling_ops;
 #[path = "validation_tests_part_04.rs"]
 mod validation_tests_part_04;
