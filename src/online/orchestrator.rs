@@ -437,5 +437,5 @@ pub struct OrchestratorBuilder<M: OnlineLearner + std::fmt::Debug> {
     delta: f64, // For ADWIN
 }
 
-include!("orchestrator_part_02.rs");
+include!("orchestrator_builder.rs");
 include!("orchestrator_part_03.rs");

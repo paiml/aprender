@@ -70,7 +70,7 @@ fn validate_contract_f32(
 }
 
 include!("source_load_result.rs");
-include!("import_part_03.rs");
+include!("tokenizer_loader.rs");
 include!("safe_tensors_load_result.rs");
 include!("tensor_accumulator.rs");
 include!("import_part_06.rs");

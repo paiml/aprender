@@ -429,5 +429,5 @@ pub struct CurriculumTrainer<S: CurriculumScheduler + std::fmt::Debug> {
     samples: Vec<ScoredSample>,
 }
 
-include!("curriculum_part_02.rs");
+include!("curriculum_trainer.rs");
 include!("curriculum_part_03.rs");

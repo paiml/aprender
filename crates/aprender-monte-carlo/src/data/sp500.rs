@@ -225,4 +225,4 @@ pub struct Sp500Stats {
     pub max_drawdown: f64,
 }
 
-include!("sp500_part_02.rs");
+include!("sp500_display_and_returns.rs");

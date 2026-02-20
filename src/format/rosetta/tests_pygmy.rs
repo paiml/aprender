@@ -446,5 +446,5 @@ fn tcov_tensor_validation_is_all_zeros_true() {
 mod tcov;
 #[path = "computation.rs"]
 mod computation;
-#[path = "tests_pygmy_part_04.rs"]
-mod tests_pygmy_part_04;
+#[path = "tests_pygmy_validation.rs"]
+mod tests_pygmy_validation;

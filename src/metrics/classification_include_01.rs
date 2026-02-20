@@ -125,6 +125,6 @@ fn compute_tp_fp_fn(
     (tp, fp, fn_counts, support)
 }
 
-#[path = "classification_part_02.rs"]
-mod classification_part_02;
-pub use classification_part_02::classification_report;
+#[path = "classification_report.rs"]
+mod classification_report;
+pub use classification_report::classification_report;

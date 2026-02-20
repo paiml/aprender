@@ -447,5 +447,5 @@ fn beta_function(a: f32, b: f32) -> f32 {
     gamma(a) * gamma(b) / gamma(a + b)
 }
 
-include!("hypothesis_part_02.rs");
+include!("beta_continued_fraction.rs");
 include!("hypothesis_part_03.rs");

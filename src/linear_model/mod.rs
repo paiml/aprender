@@ -385,6 +385,6 @@ pub struct Ridge {
 }
 
 include!("lasso.rs");
-include!("mod_part_03.rs");
+include!("lasso_impl.rs");
 include!("elastic_net.rs");
 include!("input.rs");
