@@ -2,7 +2,7 @@
 impl Graph {
 }
 
-include!("mod_part_02_part_02.rs");
+include!("graph_core.rs");
 include!("compute.rs");
 include!("examples.rs");
 include!("nodes.rs");

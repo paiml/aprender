@@ -295,5 +295,5 @@ pub struct RandomForestClassifier {
     pub(super) y_train: Option<Vec<usize>>,
 }
 
-include!("random_forest_part_02.rs");
+include!("random_forest_classifier.rs");
 include!("random_forest_part_03.rs");

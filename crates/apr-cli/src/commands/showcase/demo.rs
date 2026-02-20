@@ -381,5 +381,5 @@ pub(super) fn run_chat(_config: &ShowcaseConfig) -> Result<bool> {
     Ok(true)
 }
 
-include!("demo_part_02.rs");
-include!("demo_part_03.rs");
+include!("demo_zram.rs");
+include!("demo_brick.rs");

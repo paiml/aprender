@@ -428,6 +428,6 @@ fn build_apr_cpu_router(state: AprServerState) -> axum::Router {
         )
 }
 
-include!("handlers_part_02.rs");
-include!("handlers_part_03.rs");
+include!("handler_apr_cpu_completion.rs");
+include!("handler_gpu_completion.rs");
 include!("server.rs");
