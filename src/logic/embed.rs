@@ -28,7 +28,12 @@ fn rand_matrix(rng: &mut impl Rng, rows: usize, cols: usize) -> Vec<Vec<f64>> {
 ///
 /// When `vary_subject` is true, iterates subjects for a fixed object;
 /// otherwise iterates objects for a fixed subject.
-fn score_all_entities(space: &EmbeddingSpace, fixed: usize, relation: &str, vary_subject: bool) -> Vec<f64> {
+fn score_all_entities(
+    space: &EmbeddingSpace,
+    fixed: usize,
+    relation: &str,
+    vary_subject: bool,
+) -> Vec<f64> {
     (0..space.num_entities)
         .map(|i| {
             if vary_subject {
@@ -296,12 +301,7 @@ fn build_adjacency_tensors(
 }
 
 /// Simplified ALS update for entity embeddings A.
-fn als_update_a(
-    a: &mut [Vec<f64>],
-    r: &[Vec<Vec<f64>>],
-    x: &[Vec<Vec<f64>>],
-    dim: usize,
-) {
+fn als_update_a(a: &mut [Vec<f64>], r: &[Vec<Vec<f64>>], x: &[Vec<Vec<f64>>], dim: usize) {
     let num_entities = a.len();
     let num_relations = r.len();
     for i in 0..num_entities {

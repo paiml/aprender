@@ -83,8 +83,18 @@ pub(super) fn format_benchmark_csv(bench: &BenchmarkComparison) -> String {
 
     // Baseline rows (llama.cpp and Ollama follow the same CSV format)
     let baselines: &[(&str, Option<f64>, Option<f64>, Option<f64>)] = &[
-        ("llama.cpp", bench.llama_cpp_tps, bench.llama_cpp_ttft_ms, bench.speedup_vs_llama),
-        ("Ollama", bench.ollama_tps, bench.ollama_ttft_ms, bench.speedup_vs_ollama),
+        (
+            "llama.cpp",
+            bench.llama_cpp_tps,
+            bench.llama_cpp_ttft_ms,
+            bench.speedup_vs_llama,
+        ),
+        (
+            "Ollama",
+            bench.ollama_tps,
+            bench.ollama_ttft_ms,
+            bench.speedup_vs_ollama,
+        ),
     ];
     for &(name, tps_opt, ttft_opt, speedup_opt) in baselines {
         if let Some(tps) = tps_opt {
@@ -236,7 +246,13 @@ pub(super) fn run_benchmark(config: &ShowcaseConfig) -> Result<BenchmarkComparis
         apr_results.len()
     );
 
-    let comparison = build_comparison(apr_tps, apr_ttft_ms, apr_tps_stddev, apr_results.len(), config);
+    let comparison = build_comparison(
+        apr_tps,
+        apr_ttft_ms,
+        apr_tps_stddev,
+        apr_results.len(),
+        config,
+    );
 
     print_benchmark_results(&comparison);
 
@@ -321,7 +337,11 @@ pub(super) fn run_real_benchmark(
             .unwrap_or_default();
         let duration = start.elapsed();
 
-        measurements.push(record_measurement(output.len(), prompt_tokens.len(), duration));
+        measurements.push(record_measurement(
+            output.len(),
+            prompt_tokens.len(),
+            duration,
+        ));
 
         if (i + 1) % 5 == 0 {
             print!("{} ", i + 1);
@@ -378,7 +398,11 @@ pub(super) fn run_real_benchmark_cuda(
         };
         let duration = start.elapsed();
 
-        measurements.push(record_measurement(output.len(), prompt_tokens.len(), duration));
+        measurements.push(record_measurement(
+            output.len(),
+            prompt_tokens.len(),
+            duration,
+        ));
 
         if (i + 1) % 5 == 0 {
             print!("{} ", i + 1);

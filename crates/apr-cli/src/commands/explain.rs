@@ -108,10 +108,7 @@ fn explain_tensor_from_file(tensor_name: &str, path: &PathBuf) -> bool {
 }
 
 /// Print similar tensor name suggestions when an exact/fuzzy match fails
-fn print_tensor_suggestions(
-    tensor_name: &str,
-    tensors: &[aprender::format::rosetta::TensorInfo],
-) {
+fn print_tensor_suggestions(tensor_name: &str, tensors: &[aprender::format::rosetta::TensorInfo]) {
     let suggestions: Vec<_> = tensors
         .iter()
         .filter(|t| {

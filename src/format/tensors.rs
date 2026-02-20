@@ -262,7 +262,12 @@ fn list_tensors_v2(data: &[u8], options: TensorListOptions) -> Result<TensorList
             total_matching += 1;
 
             if tensors.len() < options.limit {
-                tensors.push(build_v2_tensor_info(&reader, name, entry, options.compute_stats));
+                tensors.push(build_v2_tensor_info(
+                    &reader,
+                    name,
+                    entry,
+                    options.compute_stats,
+                ));
             }
         }
     }

@@ -371,11 +371,7 @@ pub fn build_pygmy_safetensors_with_config(config: PygmyConfig) -> Vec<u8> {
 
     // Final norm
     if config.include_norms && config.num_layers > 0 {
-        tensors.push((
-            "model.norm.weight".to_string(),
-            vec![h],
-            vec![1.0; h],
-        ));
+        tensors.push(("model.norm.weight".to_string(), vec![h], vec![1.0; h]));
     }
 
     // LM head: [vocab_size, hidden_size]

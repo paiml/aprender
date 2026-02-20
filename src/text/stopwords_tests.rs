@@ -15,17 +15,26 @@ fn test_english_filter_basic_cases() {
     // Data-driven: (input_tokens, expected_output)
     let cases: &[(&[&str], &[&str])] = &[
         // Basic filtering
-        (&["the", "quick", "brown", "fox"], &["quick", "brown", "fox"]),
+        (
+            &["the", "quick", "brown", "fox"],
+            &["quick", "brown", "fox"],
+        ),
         // Case-insensitive
         (&["The", "Cat", "IS", "happy"], &["Cat", "happy"]),
         // Preserves original case
-        (&["Machine", "learning", "the", "FUTURE"], &["Machine", "learning", "FUTURE"]),
+        (
+            &["Machine", "learning", "the", "FUTURE"],
+            &["Machine", "learning", "FUTURE"],
+        ),
         // Empty input
         (&[], &[]),
         // All stop words -> empty output
         (&["the", "and", "is", "a"], &[]),
         // No stop words -> all pass through
-        (&["machine", "learning", "neural", "network"], &["machine", "learning", "neural", "network"]),
+        (
+            &["machine", "learning", "neural", "network"],
+            &["machine", "learning", "neural", "network"],
+        ),
     ];
     for (tokens, expected) in cases {
         assert_english_filter(tokens, expected);
@@ -108,12 +117,34 @@ fn test_real_world_sentences() {
     // Data-driven: filter real-world token sequences
     let cases: &[(&[&str], &[&str])] = &[
         (
-            &["I", "love", "machine", "learning", "and", "neural", "networks", "because", "they", "are", "powerful"],
-            &["love", "machine", "learning", "neural", "networks", "powerful"],
+            &[
+                "I", "love", "machine", "learning", "and", "neural", "networks", "because", "they",
+                "are", "powerful",
+            ],
+            &[
+                "love", "machine", "learning", "neural", "networks", "powerful",
+            ],
         ),
         (
-            &["Natural", "language", "processing", "is", "a", "subfield", "of", "artificial", "intelligence"],
-            &["Natural", "language", "processing", "subfield", "artificial", "intelligence"],
+            &[
+                "Natural",
+                "language",
+                "processing",
+                "is",
+                "a",
+                "subfield",
+                "of",
+                "artificial",
+                "intelligence",
+            ],
+            &[
+                "Natural",
+                "language",
+                "processing",
+                "subfield",
+                "artificial",
+                "intelligence",
+            ],
         ),
     ];
     for (tokens, expected) in cases {

@@ -151,7 +151,15 @@ pub(crate) fn run(
     })?;
 
     if !json_output {
-        print_config_table(file, out, prune_method, target_ratio, sparsity, remove_layers, calibration);
+        print_config_table(
+            file,
+            out,
+            prune_method,
+            target_ratio,
+            sparsity,
+            remove_layers,
+            calibration,
+        );
     }
 
     validate_depth_args(prune_method, remove_layers)?;
