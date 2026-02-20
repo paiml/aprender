@@ -1,19 +1,7 @@
 
 /// Get CPU info (best effort)
 fn get_cpu_info() -> String {
-    #[cfg(target_os = "linux")]
-    {
-        if let Ok(content) = std::fs::read_to_string("/proc/cpuinfo") {
-            for line in content.lines() {
-                if line.starts_with("model name") {
-                    if let Some(name) = line.split(':').nth(1) {
-                        return name.trim().to_string();
-                    }
-                }
-            }
-        }
-    }
-    "Unknown CPU".to_string()
+    batuta_common::sys::get_cpu_info()
 }
 
 /// Get system memory in GB (best effort)

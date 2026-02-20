@@ -84,21 +84,21 @@ fn test_format_size_boundary_values() {
     // Just below KB
     assert_eq!(super::format_size(1023), "1023 B");
     // Exactly KB
-    assert_eq!(super::format_size(1024), "1.00 KB");
+    assert_eq!(super::format_size(1024), "1.0 KB");
     // Just below MB
     let just_below_mb = 1024 * 1024 - 1;
     let result = super::format_size(just_below_mb);
     assert!(result.contains("KB"));
     // Exactly MB
-    assert_eq!(super::format_size(1024 * 1024), "1.00 MB");
+    assert_eq!(super::format_size(1024 * 1024), "1.0 MB");
     // Just below GB
     let just_below_gb = 1024 * 1024 * 1024 - 1;
     let result = super::format_size(just_below_gb);
     assert!(result.contains("MB"));
     // Exactly GB
-    assert_eq!(super::format_size(1024 * 1024 * 1024), "1.00 GB");
+    assert_eq!(super::format_size(1024 * 1024 * 1024), "1.0 GB");
     // Multi-GB
-    assert_eq!(super::format_size(10 * 1024 * 1024 * 1024), "10.00 GB");
+    assert_eq!(super::format_size(10 * 1024 * 1024 * 1024), "10.0 GB");
 }
 
 #[test]

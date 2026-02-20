@@ -122,21 +122,21 @@ fn test_format_size_bytes() {
 
 #[test]
 fn test_format_size_kilobytes() {
-    assert_eq!(format_size(1024), "1.00 KB");
-    assert_eq!(format_size(2048), "2.00 KB");
-    assert_eq!(format_size(1536), "1.50 KB");
+    assert_eq!(format_size(1024), "1.0 KB");
+    assert_eq!(format_size(2048), "2.0 KB");
+    assert_eq!(format_size(1536), "1.5 KB");
 }
 
 #[test]
 fn test_format_size_megabytes() {
-    assert_eq!(format_size(1024 * 1024), "1.00 MB");
-    assert_eq!(format_size(10 * 1024 * 1024), "10.00 MB");
+    assert_eq!(format_size(1024 * 1024), "1.0 MB");
+    assert_eq!(format_size(10 * 1024 * 1024), "10.0 MB");
 }
 
 #[test]
 fn test_format_size_gigabytes() {
-    assert_eq!(format_size(1024 * 1024 * 1024), "1.00 GB");
-    assert_eq!(format_size(2 * 1024 * 1024 * 1024), "2.00 GB");
+    assert_eq!(format_size(1024 * 1024 * 1024), "1.0 GB");
+    assert_eq!(format_size(2 * 1024 * 1024 * 1024), "2.0 GB");
 }
 
 // ========================================================================
@@ -359,7 +359,7 @@ fn tree_node_total_size_mixed_children() {
 
 #[test]
 fn format_size_exactly_1kb() {
-    assert_eq!(format_size(1024), "1.00 KB");
+    assert_eq!(format_size(1024), "1.0 KB");
 }
 
 #[test]
@@ -369,7 +369,7 @@ fn format_size_just_under_1kb() {
 
 #[test]
 fn format_size_exactly_1mb() {
-    assert_eq!(format_size(1024 * 1024), "1.00 MB");
+    assert_eq!(format_size(1024 * 1024), "1.0 MB");
 }
 
 #[test]
@@ -381,7 +381,7 @@ fn format_size_just_under_1mb() {
 
 #[test]
 fn format_size_exactly_1gb() {
-    assert_eq!(format_size(1024 * 1024 * 1024), "1.00 GB");
+    assert_eq!(format_size(1024 * 1024 * 1024), "1.0 GB");
 }
 
 #[test]
@@ -394,7 +394,7 @@ fn format_size_just_under_1gb() {
 fn format_size_fractional_gb() {
     // 1.5 GB
     let bytes = 1024 * 1024 * 1024 + 512 * 1024 * 1024;
-    assert_eq!(format_size(bytes), "1.50 GB");
+    assert_eq!(format_size(bytes), "1.5 GB");
 }
 
 #[test]

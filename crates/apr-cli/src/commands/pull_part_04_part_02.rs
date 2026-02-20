@@ -6,10 +6,10 @@
     #[test]
     fn test_format_bytes() {
         assert_eq!(format_bytes(512), "512 B");
-        assert_eq!(format_bytes(1024), "1.00 KB");
-        assert_eq!(format_bytes(1024 * 1024), "1.00 MB");
-        assert_eq!(format_bytes(1024 * 1024 * 1024), "1.00 GB");
-        assert_eq!(format_bytes(5 * 1024 * 1024 * 1024), "5.00 GB");
+        assert_eq!(format_bytes(1024), "1.0 KB");
+        assert_eq!(format_bytes(1024 * 1024), "1.0 MB");
+        assert_eq!(format_bytes(1024 * 1024 * 1024), "1.0 GB");
+        assert_eq!(format_bytes(5 * 1024 * 1024 * 1024), "5.0 GB");
     }
 
     #[test]
@@ -26,35 +26,35 @@
 
     #[test]
     fn test_format_bytes_kilobytes() {
-        assert_eq!(format_bytes(1024), "1.00 KB");
-        assert_eq!(format_bytes(2048), "2.00 KB");
-        assert_eq!(format_bytes(512 * 1024), "512.00 KB");
+        assert_eq!(format_bytes(1024), "1.0 KB");
+        assert_eq!(format_bytes(2048), "2.0 KB");
+        assert_eq!(format_bytes(512 * 1024), "512.0 KB");
     }
 
     #[test]
     fn test_format_bytes_megabytes() {
-        assert_eq!(format_bytes(1024 * 1024), "1.00 MB");
-        assert_eq!(format_bytes(100 * 1024 * 1024), "100.00 MB");
-        assert_eq!(format_bytes(500 * 1024 * 1024), "500.00 MB");
+        assert_eq!(format_bytes(1024 * 1024), "1.0 MB");
+        assert_eq!(format_bytes(100 * 1024 * 1024), "100.0 MB");
+        assert_eq!(format_bytes(500 * 1024 * 1024), "500.0 MB");
     }
 
     #[test]
     fn test_format_bytes_gigabytes() {
-        assert_eq!(format_bytes(1024 * 1024 * 1024), "1.00 GB");
-        assert_eq!(format_bytes(10 * 1024 * 1024 * 1024), "10.00 GB");
-        assert_eq!(format_bytes(100 * 1024 * 1024 * 1024), "100.00 GB");
+        assert_eq!(format_bytes(1024 * 1024 * 1024), "1.0 GB");
+        assert_eq!(format_bytes(10 * 1024 * 1024 * 1024), "10.0 GB");
+        assert_eq!(format_bytes(100 * 1024 * 1024 * 1024), "100.0 GB");
     }
 
     #[test]
     fn test_format_bytes_fractional_gb() {
         // 4.5 GB = 4.5 * 1024 * 1024 * 1024 = 4831838208 bytes
-        assert_eq!(format_bytes(4831838208), "4.50 GB");
+        assert_eq!(format_bytes(4831838208), "4.5 GB");
     }
 
     #[test]
     fn test_format_bytes_fractional_mb() {
         // 2.5 MB = 2.5 * 1024 * 1024 = 2621440 bytes
-        assert_eq!(format_bytes(2621440), "2.50 MB");
+        assert_eq!(format_bytes(2621440), "2.5 MB");
     }
 
     // =========================================================================

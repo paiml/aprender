@@ -139,49 +139,49 @@
 
     #[test]
     fn test_format_bytes_boundary_exact_kb() {
-        assert_eq!(format_bytes(1024), "1.00 KB");
+        assert_eq!(format_bytes(1024), "1.0 KB");
     }
 
     #[test]
     fn test_format_bytes_boundary_just_above_kb() {
-        assert_eq!(format_bytes(1025), "1.00 KB");
+        assert_eq!(format_bytes(1025), "1.0 KB");
     }
 
     #[test]
     fn test_format_bytes_boundary_just_below_mb() {
         // 1 MB - 1 byte = 1048575 bytes → KB range
-        assert_eq!(format_bytes(1_048_575), "1024.00 KB");
+        assert_eq!(format_bytes(1_048_575), "1024.0 KB");
     }
 
     #[test]
     fn test_format_bytes_boundary_exact_mb() {
-        assert_eq!(format_bytes(1_048_576), "1.00 MB");
+        assert_eq!(format_bytes(1_048_576), "1.0 MB");
     }
 
     #[test]
     fn test_format_bytes_boundary_just_below_gb() {
         // 1 GB - 1 byte = 1073741823 bytes → MB range
-        assert_eq!(format_bytes(1_073_741_823), "1024.00 MB");
+        assert_eq!(format_bytes(1_073_741_823), "1024.0 MB");
     }
 
     #[test]
     fn test_format_bytes_boundary_exact_gb() {
-        assert_eq!(format_bytes(1_073_741_824), "1.00 GB");
+        assert_eq!(format_bytes(1_073_741_824), "1.0 GB");
     }
 
     #[test]
     fn test_format_bytes_large_gb() {
         // 100 GB
-        assert_eq!(format_bytes(107_374_182_400), "100.00 GB");
+        assert_eq!(format_bytes(107_374_182_400), "100.0 GB");
     }
 
     #[test]
     fn test_format_bytes_u64_max() {
-        // u64::MAX should not panic, gives some large GB value
+        // u64::MAX should not panic, gives some large TB value
         let result = format_bytes(u64::MAX);
         assert!(
-            result.contains("GB"),
-            "u64::MAX should be in GB range: {}",
+            result.contains("TB"),
+            "u64::MAX should be in TB range: {}",
             result
         );
     }
@@ -189,13 +189,13 @@
     #[test]
     fn test_format_bytes_fractional_kb() {
         // 1.5 KB = 1536 bytes
-        assert_eq!(format_bytes(1536), "1.50 KB");
+        assert_eq!(format_bytes(1536), "1.5 KB");
     }
 
     #[test]
     fn test_format_bytes_7b_model_size() {
         // ~4.1 GB typical for 7B Q4_K_M
-        assert_eq!(format_bytes(4_402_341_888), "4.10 GB");
+        assert_eq!(format_bytes(4_402_341_888), "4.1 GB");
     }
 
     // =========================================================================

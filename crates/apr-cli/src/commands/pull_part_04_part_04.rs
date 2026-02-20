@@ -389,51 +389,51 @@
 
     #[test]
     fn test_format_bytes_exactly_two_kb() {
-        assert_eq!(format_bytes(2 * 1024), "2.00 KB");
+        assert_eq!(format_bytes(2 * 1024), "2.0 KB");
     }
 
     #[test]
     fn test_format_bytes_just_above_mb() {
         // 1 MB + 1 byte
-        assert_eq!(format_bytes(1_048_577), "1.00 MB");
+        assert_eq!(format_bytes(1_048_577), "1.0 MB");
     }
 
     #[test]
     fn test_format_bytes_just_above_gb() {
         // 1 GB + 1 byte
-        assert_eq!(format_bytes(1_073_741_825), "1.00 GB");
+        assert_eq!(format_bytes(1_073_741_825), "1.0 GB");
     }
 
     #[test]
     fn test_format_bytes_terabyte_range() {
-        // 1 TB = 1024 GB
+        // 1 TB = 1024 GB — batuta-common has TB unit
         let tb = 1024_u64 * 1024 * 1024 * 1024;
         let result = format_bytes(tb);
-        assert_eq!(result, "1024.00 GB");
+        assert_eq!(result, "1.0 TB");
     }
 
     #[test]
     fn test_format_bytes_10_tb() {
         let ten_tb = 10 * 1024_u64 * 1024 * 1024 * 1024;
         let result = format_bytes(ten_tb);
-        assert_eq!(result, "10240.00 GB");
+        assert_eq!(result, "10.0 TB");
     }
 
     #[test]
     fn test_format_bytes_exact_256_mb() {
-        assert_eq!(format_bytes(256 * 1024 * 1024), "256.00 MB");
+        assert_eq!(format_bytes(256 * 1024 * 1024), "256.0 MB");
     }
 
     #[test]
     fn test_format_bytes_1b_model_size() {
         // ~600 MB typical for 1B Q4_K_M
-        assert_eq!(format_bytes(629_145_600), "600.00 MB");
+        assert_eq!(format_bytes(629_145_600), "600.0 MB");
     }
 
     #[test]
     fn test_format_bytes_13b_model_size() {
         // ~7.4 GB typical for 13B Q4_K_M
-        assert_eq!(format_bytes(7_945_689_498), "7.40 GB");
+        assert_eq!(format_bytes(7_945_689_498), "7.4 GB");
     }
 
     #[test]

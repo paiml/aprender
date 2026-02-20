@@ -253,21 +253,21 @@ fn test_format_size_bytes() {
 
 #[test]
 fn test_format_size_kb() {
-    assert_eq!(format_size(1024), "1.00 KB");
-    assert_eq!(format_size(2048), "2.00 KB");
-    assert_eq!(format_size(1536), "1.50 KB");
+    assert_eq!(format_size(1024), "1.0 KB");
+    assert_eq!(format_size(2048), "2.0 KB");
+    assert_eq!(format_size(1536), "1.5 KB");
 }
 
 #[test]
 fn test_format_size_mb() {
-    assert_eq!(format_size(1024 * 1024), "1.00 MB");
-    assert_eq!(format_size(10 * 1024 * 1024), "10.00 MB");
+    assert_eq!(format_size(1024 * 1024), "1.0 MB");
+    assert_eq!(format_size(10 * 1024 * 1024), "10.0 MB");
 }
 
 #[test]
 fn test_format_size_gb() {
-    assert_eq!(format_size(1024 * 1024 * 1024), "1.00 GB");
-    assert_eq!(format_size(2 * 1024 * 1024 * 1024), "2.00 GB");
+    assert_eq!(format_size(1024 * 1024 * 1024), "1.0 GB");
+    assert_eq!(format_size(2 * 1024 * 1024 * 1024), "2.0 GB");
 }
 
 #[test]

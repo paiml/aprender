@@ -136,19 +136,7 @@ fn compute_tensor_stats(info: &mut TensorInfo, data: &[f32]) {
 /// Format size in human-readable form
 #[must_use]
 pub fn format_size(bytes: u64) -> String {
-    const KB: u64 = 1024;
-    const MB: u64 = 1024 * 1024;
-    const GB: u64 = 1024 * 1024 * 1024;
-
-    if bytes >= GB {
-        format!("{:.2} GB", bytes as f64 / GB as f64)
-    } else if bytes >= MB {
-        format!("{:.2} MB", bytes as f64 / MB as f64)
-    } else if bytes >= KB {
-        format!("{:.2} KB", bytes as f64 / KB as f64)
-    } else {
-        format!("{bytes} B")
-    }
+    batuta_common::fmt::format_bytes(bytes)
 }
 
 #[cfg(test)]
