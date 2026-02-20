@@ -425,11 +425,7 @@ fn truncate_path(path: &str, max_len: usize) -> String {
 }
 
 fn truncate_str(s: &str, max_len: usize) -> String {
-    if s.len() <= max_len {
-        s.to_string()
-    } else {
-        format!("{}...", &s[..max_len - 3])
-    }
+    batuta_common::display::truncate_str(s, max_len)
 }
 
 // ============================================================================

@@ -371,12 +371,7 @@ fn mean(data: &[f32]) -> f32 {
 }
 
 fn std_dev(data: &[f32], mean_val: f32) -> f32 {
-    if data.len() < 2 {
-        return 0.0;
-    }
-    let variance: f32 =
-        data.iter().map(|x| (x - mean_val).powi(2)).sum::<f32>() / (data.len() - 1) as f32;
-    variance.sqrt()
+    batuta_common::math::std_dev_f32_with_mean(data, mean_val)
 }
 
 #[cfg(test)]

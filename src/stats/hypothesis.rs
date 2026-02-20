@@ -381,23 +381,9 @@ fn normal_cdf(x: f32) -> f32 {
     0.5 * (1.0 + erf(x / 2.0_f32.sqrt()))
 }
 
-/// Error function approximation.
+/// Error function approximation (delegates to batuta-common).
 fn erf(x: f32) -> f32 {
-    // Abramowitz and Stegun approximation
-    let a1 = 0.254_829_6_f32;
-    let a2 = -0.284_496_72_f32;
-    let a3 = 1.421_413_8_f32;
-    let a4 = -1.453_152_1_f32;
-    let a5 = 1.061_405_4_f32;
-    let p = 0.327_591_1_f32;
-
-    let sign = if x < 0.0 { -1.0 } else { 1.0 };
-    let x = x.abs();
-
-    let t = 1.0 / (1.0 + p * x);
-    let y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * (-x * x).exp();
-
-    sign * y
+    batuta_common::math::erf_f32(x)
 }
 
 /// Incomplete gamma function approximation (series expansion).
