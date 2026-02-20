@@ -445,5 +445,5 @@ include!("inference_output.rs");
 include!("run_part_03.rs");
 include!("safetensors.rs");
 include!("gguf_generate_result.rs");
-include!("run_part_06.rs");
+include!("run_entry.rs");
 include!("run_part_07.rs");

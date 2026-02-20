@@ -359,5 +359,5 @@ pub struct GroupNorm {
     affine: bool,
 }
 
-mod mod_part_02;
-pub use mod_part_02::*;
+mod group_norm;
+pub use group_norm::*;

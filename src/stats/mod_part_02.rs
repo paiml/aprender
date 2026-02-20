@@ -2,5 +2,5 @@
 impl DescriptiveStats<'_> {
 }
 
-include!("mod_part_02_part_02.rs");
+include!("bayesian_blocks.rs");
 include!("histogram.rs");

@@ -341,5 +341,5 @@ pub struct NucleusSampler {
 mod mod_part_02;
 pub use mod_part_02::*;
 
-#[path = "mod_part_03.rs"]
-mod mod_part_03;
+#[path = "teacher_forcing.rs"]
+mod teacher_forcing;
