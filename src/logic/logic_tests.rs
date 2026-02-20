@@ -1,5 +1,5 @@
 pub(crate) use super::*;
-use logic_tests_part_02::apply_nonlinearity_with_temp;
+use logic_tests_embedding_learning::apply_nonlinearity_with_temp;
 
 // ==========================================================================
 // K1: logical_join computes einsum correctly
@@ -435,5 +435,5 @@ pub(super) fn naive_matrix_multiply_scalar(a: &[Vec<f64>], b: &[Vec<f64>]) -> Ve
     result
 }
 
-#[path = "logic_tests_part_02.rs"]
-mod logic_tests_part_02;
+#[path = "logic_tests_embedding_learning.rs"]
+mod logic_tests_embedding_learning;

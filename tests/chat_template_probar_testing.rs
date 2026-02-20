@@ -18,5 +18,5 @@ use aprender::text::chat_template::{
 };
 use jugar_probar::gui_coverage;
 
-include!("includes/chat_template_probar_part_01.rs");
+include!("includes/chat_template_probar.rs");
 include!("includes/chat_template_probar_part_02.rs");

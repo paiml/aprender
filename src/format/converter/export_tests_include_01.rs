@@ -178,8 +178,8 @@ mod export_tests_part_02;
 mod export_tests_part_03;
 #[path = "export_tests_part_04.rs"]
 mod export_tests_part_04;
-#[path = "export_tests_part_05.rs"]
-mod export_tests_part_05;
+#[path = "export_tests_metadata_gguf.rs"]
+mod export_tests_metadata_gguf;
 #[path = "export_tests_part_06.rs"]
 mod export_tests_part_06;
 #[path = "export_tests_part_07.rs"]
