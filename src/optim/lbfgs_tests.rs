@@ -204,6 +204,50 @@ fn test_lbfgs_compute_direction_no_history() {
 }
 
 #[test]
+fn test_lbfgs_max_iterations_deterministic() {
+    // Force MaxIterations by using max_iter=1 with a function that doesn't converge in 1 step
+    let mut optimizer = LBFGS::new(1, 1e-20, 5);
+
+    // Quadratic far from minimum — won't converge in 1 iteration with tiny tolerance
+    let f = |x: &Vector<f32>| (x[0] - 100.0).powi(2);
+    let grad = |x: &Vector<f32>| Vector::from_slice(&[2.0 * (x[0] - 100.0)]);
+
+    let x0 = Vector::from_slice(&[0.0]);
+    let result = optimizer.minimize(f, grad, x0);
+
+    assert_eq!(
+        result.status,
+        ConvergenceStatus::MaxIterations,
+        "Should hit MaxIterations with max_iter=1"
+    );
+    assert_eq!(result.iterations, 1);
+}
+
+#[test]
+fn test_lbfgs_stalled_deterministic() {
+    // Force Stalled by returning alpha=0 from line search
+    // A constant function has zero gradient change, causing tiny step sizes
+    let mut optimizer = LBFGS::new(100, 1e-20, 5);
+
+    // Function where gradient never changes (constant gradient)
+    // This causes s_k ~ 0 and line search returns tiny alpha
+    let f = |x: &Vector<f32>| x[0]; // Linear, gradient is constant 1.0
+    let grad = |_x: &Vector<f32>| Vector::from_slice(&[1.0]);
+
+    let x0 = Vector::from_slice(&[0.0]);
+    let result = optimizer.minimize(f, grad, x0);
+
+    // With constant gradient, LBFGS direction is -grad, line search on linear function
+    // may stall or hit max iterations
+    assert!(
+        result.status == ConvergenceStatus::Stalled
+            || result.status == ConvergenceStatus::MaxIterations,
+        "Should stall or max-iter on linear function: {:?}",
+        result.status
+    );
+}
+
+#[test]
 #[should_panic(expected = "does not support stochastic")]
 fn test_lbfgs_step_panics() {
     let mut optimizer = LBFGS::new(100, 1e-5, 5);
