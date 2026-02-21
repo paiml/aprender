@@ -444,7 +444,7 @@ fn test_bpe_from_huggingface_endoftext_special_token() {
     assert_eq!(tokenizer.bos_token(), Some("<|startoftext|>"));
 }
 
-#[path = "tests_part_02.rs"]
-mod tests_part_02;
-#[path = "tests_part_03.rs"]
-mod tests_part_03;
+#[path = "tests_bpe_loading.rs"]
+mod tests_bpe_loading;
+#[path = "tests_sentence.rs"]
+mod tests_sentence;

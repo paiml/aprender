@@ -444,5 +444,5 @@ fn test_dfs_directed() {
     assert_eq!(visited2[0], 2);
 }
 
-include!("advanced_part_02.rs");
-include!("advanced_part_03.rs");
+include!("advanced_dfs.rs");
+include!("advanced_topological.rs");

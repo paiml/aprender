@@ -252,5 +252,5 @@ impl DrawdownStatistics {
     }
 }
 
-#[path = "drawdown_part_02.rs"]
-mod drawdown_part_02;
+#[path = "drawdown_tests.rs"]
+mod drawdown_tests;

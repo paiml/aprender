@@ -187,5 +187,5 @@ pub struct BpeTokenizer {
 
 mod qwen2bpe_tokenizer;
 pub use qwen2bpe_tokenizer::*;
-mod mod_part_03;
-pub use mod_part_03::*;
+mod qwen2;
+pub use qwen2::*;

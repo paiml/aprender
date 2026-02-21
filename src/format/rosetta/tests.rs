@@ -420,9 +420,9 @@ fn p057_verification_not_equivalent() {
     assert!(!report.passes_with_tolerance(1e-3));
 }
 
-#[path = "tests_part_02.rs"]
-mod tests_part_02;
+#[path = "tests_conversion_inspection.rs"]
+mod tests_conversion_inspection;
 #[path = "minimal.rs"]
 mod minimal;
-#[path = "tests_part_04.rs"]
-mod tests_part_04;
+#[path = "tests_tokenizer_stress.rs"]
+mod tests_tokenizer_stress;

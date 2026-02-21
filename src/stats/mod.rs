@@ -84,5 +84,5 @@ pub enum BinMethod {
     Bayesian,
 }
 
-include!("mod_part_02.rs");
-include!("mod_part_03.rs");
+include!("descriptive_impl.rs");
+include!("descriptive_tests.rs");

@@ -2,8 +2,8 @@
 mod tests {
     #[allow(clippy::wildcard_imports)]
     use super::super::*;
-    include!("types_part_02_part_02.rs");
-    include!("types_part_02_part_03.rs");
+    include!("types_tests_path.rs");
+    include!("types_tests_budget.rs");
 
     // Property-based tests
     #[cfg(test)]

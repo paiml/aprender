@@ -440,5 +440,5 @@ pub struct IntegratedGradients {
     n_steps: usize,
 }
 
-include!("mod_part_02.rs");
-include!("mod_part_03.rs");
+include!("integrated_gradients.rs");
+include!("counterfactual.rs");

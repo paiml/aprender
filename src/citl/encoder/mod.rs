@@ -93,5 +93,5 @@ pub struct ErrorEncoder {
 }
 
 include!("gnn_error_encoder.rs");
-include!("mod_part_03.rs");
+include!("gnn_encoder_impl.rs");
 include!("program_feedback_graph.rs");

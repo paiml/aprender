@@ -448,5 +448,5 @@ pub struct SwapMove {
     pub j: usize,
 }
 
-include!("constructive_part_02.rs");
-include!("constructive_part_03.rs");
+include!("tabu_search_impl.rs");
+include!("constructive_tests.rs");

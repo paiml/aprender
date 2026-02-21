@@ -404,6 +404,6 @@ pub struct BpeTokenizer {
 }
 
 mod bpe_tokenizer_impl;
-mod mod_part_02;
+mod bpe_impl;
 pub use bpe_tokenizer_impl::*;
 mod unigram_training;

@@ -447,5 +447,5 @@ fn test_normalize_rows_very_small_sum() {
     assert!(data[0] < 1e-14);
 }
 
-#[path = "tests_part_02.rs"]
-mod tests_part_02;
+#[path = "tests_lda.rs"]
+mod tests_lda;

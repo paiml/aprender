@@ -438,5 +438,5 @@ fn test_online_distillation_combined_loss() {
     assert!((combined - 0.4).abs() < 0.1);
 }
 
-#[path = "tests_part_02.rs"]
-mod tests_part_02;
+#[path = "tests_distillation.rs"]
+mod tests_distillation;

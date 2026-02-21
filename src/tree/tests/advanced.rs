@@ -445,7 +445,7 @@ fn test_random_forest_classifier_feature_importances_reproducibility() {
     }
 }
 
-include!("advanced_part_02.rs");
-include!("advanced_part_03.rs");
-include!("advanced_part_04.rs");
-include!("advanced_part_05.rs");
+include!("advanced_regressor_importances.rs");
+include!("advanced_gbm_and_scoring.rs");
+include!("advanced_oob_and_serialization.rs");
+include!("advanced_flatten_and_traits.rs");

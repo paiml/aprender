@@ -444,6 +444,6 @@ fn test_modularity_perfect_split() {
     assert!(modularity > 0.5);
 }
 
-include!("core_part_02.rs");
-include!("core_part_03.rs");
-include!("core_part_04.rs");
+include!("core_louvain.rs");
+include!("core_density.rs");
+include!("core_dijkstra.rs");

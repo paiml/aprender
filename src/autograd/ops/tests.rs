@@ -445,5 +445,5 @@ fn test_broadcast_add_forward() {
     assert_eq!(result.data(), &[11.0, 22.0, 13.0, 24.0]);
 }
 
-#[path = "tests_part_02.rs"]
-mod tests_part_02;
+#[path = "tests_broadcast_ops.rs"]
+mod tests_broadcast_ops;

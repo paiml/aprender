@@ -2,8 +2,8 @@ use super::HfHubClient;
 
 impl HfHubClient {}
 
-#[path = "mod_part_02_part_02.rs"]
-mod mod_part_02_part_02;
+#[path = "client_impl.rs"]
+mod client_impl;
 
 #[path = "upload.rs"]
 mod upload;

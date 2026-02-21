@@ -445,7 +445,7 @@ fn test_generate_block_mask_uniform_blocks() {
     }
 }
 
-#[path = "tests_part_02.rs"]
-mod tests_part_02;
-#[path = "tests_part_03.rs"]
-mod tests_part_03;
+#[path = "tests_block_mask.rs"]
+mod tests_block_mask;
+#[path = "tests_column_validate.rs"]
+mod tests_column_validate;

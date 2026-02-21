@@ -440,7 +440,7 @@ fn test_dimension_score_debug() {
     assert!(debug_str.contains("DimensionScore"));
 }
 
-#[path = "tests_part_02.rs"]
-mod tests_part_02;
-#[path = "tests_part_03.rs"]
-mod tests_part_03;
+#[path = "tests_findings.rs"]
+mod tests_findings;
+#[path = "tests_model_scoring.rs"]
+mod tests_model_scoring;

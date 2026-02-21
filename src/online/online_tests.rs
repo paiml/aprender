@@ -448,5 +448,5 @@ fn test_config_debug() {
     assert!(debug_str.contains("OnlineLearnerConfig"));
 }
 
-#[path = "online_tests_part_02.rs"]
-mod online_tests_part_02;
+#[path = "online_tests_config.rs"]
+mod online_tests_config;

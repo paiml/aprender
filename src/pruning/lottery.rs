@@ -448,4 +448,4 @@ impl LotteryTicketPruner {
     }
 }
 
-include!("lottery_part_02.rs");
+include!("lottery_pruner_impl.rs");

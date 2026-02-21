@@ -165,13 +165,13 @@ impl MappedSafeTensors {
     }
 }
 
-#[path = "safetensors_part_02.rs"]
-mod safetensors_part_02;
-pub use safetensors_part_02::extract_tensor;
-use safetensors_part_02::{
+#[path = "safetensors_reader.rs"]
+mod safetensors_reader;
+pub use safetensors_reader::extract_tensor;
+use safetensors_reader::{
     extract_bf16_to_f32, extract_f16_to_f32, extract_f32, parse_metadata, validate_and_read_header,
 };
 
 #[cfg(test)]
-#[path = "safetensors_part_03.rs"]
-mod safetensors_part_03;
+#[path = "safetensors_tests.rs"]
+mod safetensors_tests;

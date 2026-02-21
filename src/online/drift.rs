@@ -345,4 +345,4 @@ impl Default for ADWIN {
 }
 
 include!("drift_detector_factory.rs");
-include!("drift_part_03.rs");
+include!("drift_tests.rs");

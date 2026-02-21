@@ -348,5 +348,5 @@ impl<P: ParamKey> SearchStrategy<P> for TPE {
     }
 }
 
-include!("tpe_part_02.rs");
-include!("tpe_part_03.rs");
+include!("tpe_tests.rs");
+include!("tpe_proptests.rs");

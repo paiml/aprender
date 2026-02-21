@@ -440,5 +440,5 @@ fn test_callback_on_start_called() {
     assert!(started.load(Ordering::SeqCst));
 }
 
-#[path = "tuner_tests_part_02.rs"]
-mod tuner_tests_part_02;
+#[path = "tuner_tests_callbacks.rs"]
+mod tuner_tests_callbacks;

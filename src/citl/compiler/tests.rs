@@ -448,9 +448,9 @@ fn test_find_children_array_end_nested() {
     assert_eq!(end, json.len() - 1);
 }
 
-#[path = "tests_part_02.rs"]
-mod tests_part_02;
-#[path = "tests_part_03.rs"]
-mod tests_part_03;
-#[path = "tests_part_04.rs"]
-mod tests_part_04;
+#[path = "tests_json_extraction.rs"]
+mod tests_json_extraction;
+#[path = "tests_json_diagnostics.rs"]
+mod tests_json_diagnostics;
+#[path = "tests_compiler_options.rs"]
+mod tests_compiler_options;

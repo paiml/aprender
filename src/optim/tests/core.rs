@@ -449,11 +449,11 @@ fn test_adam_negative_gradients() {
     assert!(params[0] > 1.0);
 }
 
-#[path = "core_part_02.rs"]
-mod core_part_02;
+#[path = "core_adam_errors.rs"]
+mod core_adam_errors;
 
-#[path = "core_part_03.rs"]
-mod core_part_03;
+#[path = "core_lbfgs.rs"]
+mod core_lbfgs;
 
-#[path = "core_part_04.rs"]
-mod core_part_04;
+#[path = "core_conjugate_gradient.rs"]
+mod core_conjugate_gradient;

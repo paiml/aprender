@@ -449,5 +449,5 @@ fn test_counterfactual_result_debug() {
     assert!(debug_str.contains("CounterfactualResult"));
 }
 
-#[path = "tests_part_02.rs"]
-mod tests_part_02;
+#[path = "tests_explainers.rs"]
+mod tests_explainers;

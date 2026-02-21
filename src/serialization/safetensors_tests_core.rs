@@ -1,4 +1,4 @@
-use crate::serialization::safetensors::safetensors_part_02::{
+use crate::serialization::safetensors::safetensors_reader::{
     extract_bf16_to_f32, extract_f16_to_f32,
 };
 use crate::serialization::safetensors::{

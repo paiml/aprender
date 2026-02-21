@@ -6,6 +6,6 @@
 #[cfg(test)]
 mod tests {
     use super::*;
-include!("shell_part_03_part_02.rs");
-include!("shell_part_03_part_03.rs");
+include!("style_tests_config.rs");
+include!("style_tests_average.rs");
 }

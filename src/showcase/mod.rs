@@ -445,5 +445,5 @@ impl ShowcaseRunner {
     }
 }
 
-include!("mod_part_02.rs");
+include!("profiling.rs");
 include!("compression.rs");

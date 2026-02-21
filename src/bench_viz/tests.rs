@@ -448,5 +448,5 @@ fn test_truncate_long_string() {
     assert_eq!(truncate(s, 5), "hello");
 }
 
-#[path = "tests_part_02.rs"]
-mod tests_part_02;
+#[path = "tests_hotspot_rendering.rs"]
+mod tests_hotspot_rendering;

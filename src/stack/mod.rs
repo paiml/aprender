@@ -427,4 +427,4 @@ pub struct InferenceConfig {
     pub health_path: Option<String>,
 }
 
-include!("mod_part_02.rs");
+include!("inference_config.rs");

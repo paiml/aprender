@@ -65,5 +65,5 @@ pub struct Graph {
     n_edges: usize,
 }
 
-include!("mod_part_02.rs");
-include!("mod_part_03.rs");
+include!("algorithms.rs");
+include!("test_module.rs");

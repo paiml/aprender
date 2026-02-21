@@ -424,8 +424,8 @@ fn test_agglomerative_fit_predict_consistency() {
     assert_eq!(labels_stored, labels_predicted);
 }
 
-include!("advanced_part_02.rs");
-include!("advanced_part_03.rs");
-include!("advanced_part_04.rs");
-include!("advanced_part_05.rs");
-include!("advanced_part_06.rs");
+include!("advanced_agglomerative.rs");
+include!("advanced_isolation_forest.rs");
+include!("advanced_isolation_single.rs");
+include!("advanced_lof.rs");
+include!("advanced_spectral.rs");

@@ -439,5 +439,5 @@ fn test_encode_with_special_tokens() {
     assert!(tokens.contains(&50256));
 }
 
-#[path = "tests_part_02.rs"]
-mod tests_part_02;
+#[path = "tests_encode_decode.rs"]
+mod tests_encode_decode;

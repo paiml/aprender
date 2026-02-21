@@ -388,5 +388,5 @@ pub struct WeightStats {
     pub l2_norm: f64,
 }
 
-include!("mod_part_02.rs");
-include!("mod_part_03.rs");
+include!("weight_stats.rs");
+include!("tests.rs");

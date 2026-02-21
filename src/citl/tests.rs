@@ -419,7 +419,7 @@ fn test_integration_encoder_produces_embeddings() {
     assert!(sum.abs() > 0.0, "Embedding should have non-zero values");
 }
 
-#[path = "tests_part_02.rs"]
-mod tests_part_02;
-#[path = "tests_part_03.rs"]
-mod tests_part_03;
+#[path = "tests_pattern_workflow.rs"]
+mod tests_pattern_workflow;
+#[path = "tests_template_instantiation.rs"]
+mod tests_template_instantiation;

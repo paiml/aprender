@@ -448,4 +448,4 @@ pub fn n12_replay_attack_resistance() -> SecurityResult {
 }
 
 include!("verify.rs");
-include!("security_part_03.rs");
+include!("security_tests.rs");

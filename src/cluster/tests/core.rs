@@ -445,5 +445,5 @@ fn test_larger_dataset() {
     }
 }
 
-include!("core_part_02.rs");
-include!("core_part_03.rs");
+include!("core_three_clusters.rs");
+include!("core_centroid_update.rs");

@@ -437,13 +437,13 @@ fn ctp_01_format_performance() {
     );
 }
 
-#[path = "tests_part_02.rs"]
-mod tests_part_02;
-#[path = "tests_part_03.rs"]
-mod tests_part_03;
-#[path = "tests_part_04.rs"]
-mod tests_part_04;
-#[path = "tests_part_05.rs"]
-mod tests_part_05;
-#[path = "tests_part_06.rs"]
-mod tests_part_06;
+#[path = "tests_toyota_compliance.rs"]
+mod tests_toyota_compliance;
+#[path = "tests_long_conversation.rs"]
+mod tests_long_conversation;
+#[path = "tests_phi_template.rs"]
+mod tests_phi_template;
+#[path = "tests_huggingface.rs"]
+mod tests_huggingface;
+#[path = "tests_sanitize.rs"]
+mod tests_sanitize;

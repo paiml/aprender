@@ -428,9 +428,9 @@ fn test_active_learning_uncertainty_score() {
     );
 }
 
-#[path = "tests_part_02.rs"]
-mod tests_part_02;
-#[path = "tests_part_03.rs"]
-mod tests_part_03;
-#[path = "tests_part_04.rs"]
-mod tests_part_04;
+#[path = "tests_active_learning.rs"]
+mod tests_active_learning;
+#[path = "tests_param_value.rs"]
+mod tests_param_value;
+#[path = "tests_proptests.rs"]
+mod tests_proptests;

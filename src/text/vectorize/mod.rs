@@ -83,4 +83,4 @@ pub struct CountVectorizer {
 
 include!("tfidf_vectorizer.rs");
 include!("hashing_vectorizer.rs");
-include!("mod_part_04.rs");
+include!("hashing.rs");

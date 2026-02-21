@@ -435,11 +435,11 @@ fn test_underdetermined_system_without_intercept() {
     );
 }
 
-#[path = "tests_part_02.rs"]
-mod tests_part_02;
-#[path = "tests_part_03.rs"]
-mod tests_part_03;
-#[path = "tests_part_04.rs"]
-mod tests_part_04;
-#[path = "tests_part_05.rs"]
-mod tests_part_05;
+#[path = "tests_determined_and_persistence.rs"]
+mod tests_determined_and_persistence;
+#[path = "tests_lasso.rs"]
+mod tests_lasso;
+#[path = "tests_safetensors.rs"]
+mod tests_safetensors;
+#[path = "tests_coverage.rs"]
+mod tests_coverage;

@@ -407,4 +407,4 @@ impl YourTtsCloner {
 }
 
 include!("sv2tts_speaker_encoder.rs");
-include!("clone_part_03.rs");
+include!("clone_tests.rs");

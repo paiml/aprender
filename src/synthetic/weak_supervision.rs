@@ -422,4 +422,4 @@ impl<T> Default for WeakSupervisionGenerator<T> {
 }
 
 include!("labeling.rs");
-include!("weak_supervision_part_03.rs");
+include!("weak_supervision_tests.rs");

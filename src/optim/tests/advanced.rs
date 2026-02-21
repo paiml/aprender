@@ -442,17 +442,17 @@ fn test_coordinate_descent_multidimensional() {
     }
 }
 
-#[path = "advanced_part_02.rs"]
-mod advanced_part_02;
+#[path = "advanced_coordinate_descent.rs"]
+mod advanced_coordinate_descent;
 
-#[path = "advanced_part_03.rs"]
-mod advanced_part_03;
+#[path = "advanced_projected_gradient.rs"]
+mod advanced_projected_gradient;
 
-#[path = "advanced_part_04.rs"]
-mod advanced_part_04;
+#[path = "advanced_interior_point.rs"]
+mod advanced_interior_point;
 
-#[path = "advanced_part_05.rs"]
-mod advanced_part_05;
+#[path = "advanced_line_search.rs"]
+mod advanced_line_search;
 
-#[path = "advanced_part_06.rs"]
-mod advanced_part_06;
+#[path = "advanced_admm_coverage.rs"]
+mod advanced_admm_coverage;

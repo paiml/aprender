@@ -432,9 +432,9 @@ fn test_minmax_dimension_mismatch_error() {
     assert!(scaler.transform(&test).is_err());
 }
 
-#[path = "tests_part_02.rs"]
-mod tests_part_02;
-#[path = "tests_part_03.rs"]
-mod tests_part_03;
-#[path = "tests_part_04.rs"]
-mod tests_part_04;
+#[path = "tests_scalers.rs"]
+mod tests_scalers;
+#[path = "tests_tsne.rs"]
+mod tests_tsne;
+#[path = "tests_tsne_edge_cases.rs"]
+mod tests_tsne_edge_cases;

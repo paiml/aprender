@@ -436,5 +436,5 @@ fn test_shard_index_default() {
     assert!(!index.is_valid());
 }
 
-#[path = "tests_part_02.rs"]
-mod tests_part_02;
+#[path = "tests_cache.rs"]
+mod tests_cache;

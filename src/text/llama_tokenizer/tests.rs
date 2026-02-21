@@ -444,10 +444,10 @@ fn test_new_invalid_unk_id() {
     assert!(result.is_err());
 }
 
-#[path = "tests_part_02.rs"]
-mod tests_part_02;
-#[path = "tests_part_03.rs"]
-mod tests_part_03;
+#[path = "tests_decode.rs"]
+mod tests_decode;
+#[path = "tests_gguf_parsing.rs"]
+mod tests_gguf_parsing;
 #[path = "tests_gguf_sentencepiece.rs"]
 mod tests_gguf_sentencepiece;
 #[path = "construction.rs"]

@@ -448,7 +448,7 @@ fn test_run_edge_case_tests_only_nan() {
     assert_eq!(score.tests_passed + score.tests_failed, 1);
 }
 
-#[path = "robustness_tests_part_02.rs"]
-mod robustness_tests_part_02;
-#[path = "robustness_tests_part_03.rs"]
-mod robustness_tests_part_03;
+#[path = "robustness_tests_edge_cases.rs"]
+mod robustness_tests_edge_cases;
+#[path = "robustness_tests_hangs.rs"]
+mod robustness_tests_hangs;

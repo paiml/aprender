@@ -433,6 +433,6 @@ fn test_score_perfect() {
     assert!((accuracy - 1.0).abs() < 1e-6); // Perfect classification
 }
 
-include!("core_part_02.rs");
-include!("core_part_03.rs");
-include!("core_part_04.rs");
+include!("core_ensemble_and_boosting.rs");
+include!("core_regression_tree.rs");
+include!("core_random_forest_regressor.rs");

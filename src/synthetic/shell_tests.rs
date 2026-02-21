@@ -6,6 +6,6 @@
 #[cfg(test)]
 mod tests {
     use super::*;
-include!("isolation_part_03_part_02.rs");
-include!("isolation_part_03_part_03.rs");
+include!("shell_tests_sample.rs");
+include!("shell_tests_generator.rs");
 }

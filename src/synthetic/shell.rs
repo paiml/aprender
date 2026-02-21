@@ -375,4 +375,4 @@ pub struct ShellSyntheticGenerator {
 }
 
 include!("shell_generator_impl.rs");
-include!("shell_part_03.rs");
+include!("shell_tests.rs");

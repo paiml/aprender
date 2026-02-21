@@ -440,7 +440,7 @@ fn test_pattern_library_load_nonexistent() {
     assert!(result.is_err());
 }
 
-#[path = "tests_part_02.rs"]
-mod tests_part_02;
-#[path = "tests_part_03.rs"]
-mod tests_part_03;
+#[path = "tests_pattern_persistence.rs"]
+mod tests_pattern_persistence;
+#[path = "tests_pattern_placeholders.rs"]
+mod tests_pattern_placeholders;

@@ -444,5 +444,5 @@ fn test_p2_makefile_smoke_check() {
     assert!(!result.details.is_empty());
 }
 
-#[path = "velocity_tests_part_02.rs"]
-mod velocity_tests_part_02;
+#[path = "velocity_tests_heavy.rs"]
+mod velocity_tests_heavy;

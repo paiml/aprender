@@ -447,7 +447,7 @@ fn test_randaugment_apply_shear_x() {
     assert_eq!(result.len(), 16);
 }
 
-#[path = "tests_part_02.rs"]
-mod tests_part_02;
-#[path = "tests_part_03.rs"]
-mod tests_part_03;
+#[path = "tests_augmentation.rs"]
+mod tests_augmentation;
+#[path = "tests_cutmix_specaugment.rs"]
+mod tests_cutmix_specaugment;

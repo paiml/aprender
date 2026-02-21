@@ -445,7 +445,7 @@ fn test_quantization_type_debug() {
     assert!(debug_str.contains("Int8"));
 }
 
-#[path = "tests_part_02.rs"]
-mod tests_part_02;
-#[path = "tests_part_03.rs"]
-mod tests_part_03;
+#[path = "tests_debug_impls.rs"]
+mod tests_debug_impls;
+#[path = "tests_derivation.rs"]
+mod tests_derivation;

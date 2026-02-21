@@ -443,8 +443,8 @@ fn test_compression_fallback_without_feature() {
     }
 }
 
-include!("unit_part_02.rs");
-include!("unit_part_03.rs");
-include!("unit_part_04.rs");
-include!("unit_part_05.rs");
-include!("unit_part_06.rs");
+include!("unit_compression_signing_encryption.rs");
+include!("unit_encryption_distillation.rs");
+include!("unit_distillation_gguf_mmap.rs");
+include!("unit_core_io_pygmy.rs");
+include!("unit_gguf_config.rs");

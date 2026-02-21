@@ -296,5 +296,5 @@ pub struct EdaGenerator {
     synonyms: SynonymDict,
 }
 
-include!("eda_part_02.rs");
-include!("eda_part_03.rs");
+include!("eda_generator_impl.rs");
+include!("eda_tests.rs");

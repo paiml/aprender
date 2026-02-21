@@ -2,7 +2,7 @@
 //\! PMAT-085: Extracted from mod.rs for PMAT file health compliance
 
 pub(crate) use super::*;
-use tests_part_02::cosine_sim;
+use tests_training_sample::cosine_sim;
 
 // ==================== NeuralEncoderConfig Tests ====================
 
@@ -450,5 +450,5 @@ fn test_training_sample_creation() {
     assert!(sample.positive.is_none());
 }
 
-#[path = "tests_part_02.rs"]
-mod tests_part_02;
+#[path = "tests_training_sample.rs"]
+mod tests_training_sample;

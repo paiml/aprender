@@ -448,5 +448,5 @@ impl fmt::Display for Finding {
     }
 }
 
-include!("mod_part_02.rs");
+include!("severity.rs");
 include!("score.rs");

@@ -441,9 +441,9 @@ fn test_lint_large_compressed_tensor_passes() {
     assert!(compression_issues.is_empty());
 }
 
-#[path = "tests_part_02.rs"]
-mod tests_part_02;
-#[path = "tests_part_03.rs"]
-mod tests_part_03;
-#[path = "tests_part_04.rs"]
-mod tests_part_04;
+#[path = "tests_model_lint.rs"]
+mod tests_model_lint;
+#[path = "tests_format_lint.rs"]
+mod tests_format_lint;
+#[path = "tests_magic_dispatch.rs"]
+mod tests_magic_dispatch;

@@ -204,4 +204,4 @@ pub struct OnnxReader {
     metadata: OnnxMetadata,
 }
 
-include!("mod_part_02.rs");
+include!("reader.rs");

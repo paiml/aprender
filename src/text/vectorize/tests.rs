@@ -440,5 +440,5 @@ fn test_tfidf_with_min_df() {
     assert!(!vocab.contains_key("bird"));
 }
 
-#[path = "tests_part_02.rs"]
-mod tests_part_02;
+#[path = "tests_tfidf.rs"]
+mod tests_tfidf;

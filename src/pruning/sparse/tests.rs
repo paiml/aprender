@@ -446,5 +446,5 @@ fn test_sparse_tensor_block_format() {
     }
 }
 
-#[path = "tests_part_02.rs"]
-mod tests_part_02;
+#[path = "tests_block_nnz.rs"]
+mod tests_block_nnz;

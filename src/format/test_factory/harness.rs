@@ -141,7 +141,7 @@ pub(crate) struct ConversionTestHarness {
     pub(crate) tolerance: ToleranceConfig,
 }
 
-include!("harness_part_02.rs");
+include!("harness_impl.rs");
 include!("collection.rs");
-include!("harness_part_04.rs");
-include!("harness_part_05.rs");
+include!("harness_strict_tests.rs");
+include!("harness_roundtrip_tests.rs");

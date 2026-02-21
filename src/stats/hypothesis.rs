@@ -434,4 +434,4 @@ fn beta_function(a: f32, b: f32) -> f32 {
 }
 
 include!("beta_continued_fraction.rs");
-include!("hypothesis_part_03.rs");
+include!("hypothesis_tests.rs");

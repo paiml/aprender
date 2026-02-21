@@ -289,8 +289,8 @@ pub struct HfHubClient {
     pub(crate) api_base: String,
 }
 
-mod mod_part_02;
-mod mod_part_03;
+mod client_modules;
+mod client_default;
 
 #[cfg(test)]
 mod tests;

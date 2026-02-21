@@ -396,5 +396,5 @@ pub fn percentile(values: &[f64], p: f64) -> f64 {
     }
 }
 
-#[path = "types_part_02.rs"]
-mod types_part_02;
+#[path = "types_tests.rs"]
+mod types_tests;

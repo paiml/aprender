@@ -433,7 +433,7 @@ impl<E: TransferEncoder> DomainAdapter<E> {
     }
 }
 
-mod mod_part_02;
-pub use mod_part_02::*;
-mod mod_part_03;
-pub use mod_part_03::*;
+mod lora;
+pub use lora::*;
+mod distillation;
+pub use distillation::*;

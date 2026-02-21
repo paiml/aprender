@@ -446,7 +446,7 @@ fn test_showcase_runner_to_grid_with_both_stats() {
     assert!(!output.is_empty());
 }
 
-#[path = "tests_part_02.rs"]
-mod tests_part_02;
-#[path = "tests_part_03.rs"]
-mod tests_part_03;
+#[path = "tests_profiling.rs"]
+mod tests_profiling;
+#[path = "tests_grid_rendering.rs"]
+mod tests_grid_rendering;

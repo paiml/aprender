@@ -444,5 +444,5 @@ fn test_wanda_preserves_shape() {
     );
 }
 
-#[path = "wanda_tests_part_02.rs"]
-mod wanda_tests_part_02;
+#[path = "wanda_tests_inf_detection.rs"]
+mod wanda_tests_inf_detection;

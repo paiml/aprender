@@ -449,5 +449,5 @@ fn test_hessian_with_relative_damping() {
     );
 }
 
-#[path = "sparsegpt_tests_part_02.rs"]
-mod sparsegpt_tests_part_02;
+#[path = "sparsegpt_tests_calibration.rs"]
+mod sparsegpt_tests_calibration;

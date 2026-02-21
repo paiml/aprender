@@ -444,6 +444,6 @@ impl TensorFeatures {
     }
 }
 
-include!("mod_part_02.rs");
-include!("mod_part_03.rs");
+include!("jidoka.rs");
+include!("error_pattern.rs");
 include!("canary.rs");

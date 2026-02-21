@@ -220,7 +220,7 @@ impl AprWriter {
     }
 }
 
-mod mod_part_02;
+mod crc32;
 
 #[cfg(test)]
 mod tests;

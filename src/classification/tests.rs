@@ -446,9 +446,9 @@ fn test_knn_manhattan_distance() {
     assert_eq!(pred[0], 0); // Closer to (1, 0)
 }
 
-#[path = "tests_part_02.rs"]
-mod tests_part_02;
-#[path = "tests_part_03.rs"]
-mod tests_part_03;
-#[path = "tests_part_04.rs"]
-mod tests_part_04;
+#[path = "tests_knn_naive_bayes.rs"]
+mod tests_knn_naive_bayes;
+#[path = "tests_naive_bayes_svm.rs"]
+mod tests_naive_bayes_svm;
+#[path = "tests_svm_convergence.rs"]
+mod tests_svm_convergence;

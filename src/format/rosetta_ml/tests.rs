@@ -445,7 +445,7 @@ fn test_canary_checksum_mismatch() {
     ));
 }
 
-#[path = "tests_part_02.rs"]
-mod tests_part_02;
-#[path = "tests_part_03.rs"]
-mod tests_part_03;
+#[path = "tests_jidoka.rs"]
+mod tests_jidoka;
+#[path = "tests_canary.rs"]
+mod tests_canary;

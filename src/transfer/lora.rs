@@ -1,4 +1,4 @@
-use super::mod_part_03::softmax_with_temp;
+use super::distillation::softmax_with_temp;
 #[allow(clippy::wildcard_imports)]
 use super::*;
 use crate::autograd::Tensor;

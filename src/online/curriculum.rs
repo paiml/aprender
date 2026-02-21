@@ -430,4 +430,4 @@ pub struct CurriculumTrainer<S: CurriculumScheduler + std::fmt::Debug> {
 }
 
 include!("curriculum_trainer.rs");
-include!("curriculum_part_03.rs");
+include!("curriculum_tests.rs");

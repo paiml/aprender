@@ -430,5 +430,5 @@ mod quantize_tests {
     }
 }
 
-#[path = "tests_part_02.rs"]
-mod tests_part_02;
+#[path = "tests_gguf_naming.rs"]
+mod tests_gguf_naming;
