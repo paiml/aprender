@@ -173,7 +173,7 @@ alsa = { version = "0.9", optional = true }  # ALSA bindings for Linux audio cap
 rayon = { version = "1.10", optional = true }
 
 # Shared formatting and system utilities (Batuta stack)
-batuta-common = { path = "../batuta-common" }
+batuta-common = "0.1"
 
 # Core compute primitives - SIMD-accelerated tensor operations
 # v0.14.5: wgpu adapter limits fix (buffer >256MB for 7B+ models)

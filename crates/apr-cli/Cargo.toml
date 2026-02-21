@@ -72,7 +72,7 @@ zram = ["trueno-zram-core"]
 aprender = { path = "../..", version = "0.25.0", default-features = true, features = ["format-compression"] }
 
 # Shared formatting and system utilities (Batuta stack)
-batuta-common = { path = "../../../batuta-common" }
+batuta-common = "0.1"
 
 # Inference engine (crates.io version, with local path for dev)
 # Note: cuda feature enables GPU-accelerated inference via trueno-gpu
