@@ -446,5 +446,5 @@ fn test_slerp_vectors_at_t1() {
     }
 }
 
-#[path = "merge_tests_part_02.rs"]
-mod merge_tests_part_02;
+#[path = "merge_tests_slerp.rs"]
+mod merge_tests_slerp;

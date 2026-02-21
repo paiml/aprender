@@ -427,4 +427,4 @@ fn test_model_type_unigram() {
     assert_eq!(tok.model_type.as_deref(), Some("Unigram"));
 }
 
-include!("tokenizer_parse_part_02.rs");
+include!("tokenizer_parse_vocab_padding.rs");

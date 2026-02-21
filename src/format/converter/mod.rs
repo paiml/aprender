@@ -420,6 +420,6 @@ pub struct ConvertReport {
     pub reduction_ratio: f64,
 }
 
-include!("mod_part_02.rs");
-include!("mod_part_03.rs");
-include!("mod_part_04.rs");
+include!("convert_report.rs");
+include!("f16_convert.rs");
+include!("infer_q4k_config.rs");

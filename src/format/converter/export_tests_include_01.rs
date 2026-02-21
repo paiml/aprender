@@ -172,19 +172,19 @@ fn test_pmat_260_extract_source_dtypes_non_safetensors() {
     assert!(dtypes.is_empty());
 }
 
-#[path = "export_tests_part_02.rs"]
-mod export_tests_part_02;
-#[path = "export_tests_part_03.rs"]
-mod export_tests_part_03;
-#[path = "export_tests_part_04.rs"]
-mod export_tests_part_04;
+#[path = "export_tests_unfuse_qkv.rs"]
+mod export_tests_unfuse_qkv;
+#[path = "export_tests_infer_gqa.rs"]
+mod export_tests_infer_gqa;
+#[path = "export_tests_infer_attn.rs"]
+mod export_tests_infer_attn;
 #[path = "export_tests_metadata_gguf.rs"]
 mod export_tests_metadata_gguf;
-#[path = "export_tests_part_06.rs"]
-mod export_tests_part_06;
-#[path = "export_tests_part_07.rs"]
-mod export_tests_part_07;
-#[path = "export_tests_part_08.rs"]
-mod export_tests_part_08;
-#[path = "export_tests_part_09.rs"]
-mod export_tests_part_09;
+#[path = "export_tests_tied_gguf.rs"]
+mod export_tests_tied_gguf;
+#[path = "export_tests_e2e_gguf.rs"]
+mod export_tests_e2e_gguf;
+#[path = "export_tests_arch_metadata.rs"]
+mod export_tests_arch_metadata;
+#[path = "export_tests_unfuse_with_metadata.rs"]
+mod export_tests_unfuse_with_metadata;

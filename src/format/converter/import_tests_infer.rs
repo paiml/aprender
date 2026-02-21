@@ -285,5 +285,5 @@ mod tests {
         assert_eq!(infer_intermediate_size_from_tensors(&tensors), None);
     }
 
-    include!("import_part_06_include_01.rs");
+    include!("import_tests_infer_arch.rs");
 }

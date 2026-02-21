@@ -402,4 +402,4 @@ fn test_append_tokenizer_no_metadata_when_neither_source() {
     );
 }
 
-include!("export_tests_part_06_include.rs");
+include!("export_tests_detect_quant.rs");

@@ -19,6 +19,6 @@ mod tests_write_functions {
         dequantize_q6_k_to_f32, quantize_q5_k, quantize_q5_k_matrix, transpose_q4k_for_matmul,
         transpose_q5k_for_matmul, transpose_q6k_for_matmul,
     };
-include!("coverage_functions_part_03_part_02.rs");
-include!("coverage_functions_part_03_part_03.rs");
+include!("coverage_write_apr_file.rs");
+include!("coverage_rosetta_inspect.rs");
 }

@@ -437,5 +437,5 @@ fn insert_gh253_tokenizer_fields(
     }
 }
 
-include!("write_part_02.rs");
-include!("write_part_03.rs");
+include!("write_model_config.rs");
+include!("write_tests_tied_embeddings.rs");

@@ -446,11 +446,11 @@ fn test_compute_std_empty() {
     assert_eq!(std, 0.0);
 }
 
-#[path = "coverage_types_tests_part_02.rs"]
-mod coverage_types_tests_part_02;
-#[path = "coverage_types_tests_part_03.rs"]
-mod coverage_types_tests_part_03;
-#[path = "coverage_types_tests_part_04.rs"]
-mod coverage_types_tests_part_04;
-#[path = "coverage_types_tests_part_05.rs"]
-mod coverage_types_tests_part_05;
+#[path = "coverage_types_std_nan.rs"]
+mod coverage_types_std_nan;
+#[path = "coverage_types_pygmy.rs"]
+mod coverage_types_pygmy;
+#[path = "coverage_types_merge_report.rs"]
+mod coverage_types_merge_report;
+#[path = "coverage_types_arch_functions.rs"]
+mod coverage_types_arch_functions;

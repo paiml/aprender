@@ -324,7 +324,7 @@ mod tests_import_options {
     }
 }
 
-include!("core_part_02.rs");
-include!("core_part_03.rs");
-include!("core_part_04.rs");
-include!("core_part_05.rs");
+include!("core_conversion.rs");
+include!("core_convert.rs");
+include!("core_rosetta_gqa.rs");
+include!("core_q4k_q6k_roundtrip.rs");

@@ -440,7 +440,7 @@ fn test_quantize_int4_empty() {
     assert!(q.is_empty());
 }
 
-include!("pure_functions_part_02.rs");
-include!("pure_functions_part_03.rs");
-include!("pure_functions_part_04.rs");
-include!("pure_functions_part_05.rs");
+include!("pure_functions_int4.rs");
+include!("pure_functions_bf16.rs");
+include!("pure_functions_infer_q4k.rs");
+include!("pure_functions_skip_quant.rs");

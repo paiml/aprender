@@ -449,7 +449,7 @@ fn test_import_error_download_failed() {
     assert!(msg.contains("timeout") || msg.contains("Download"));
 }
 
-#[path = "errors_tests_part_02.rs"]
-mod errors_tests_part_02;
-#[path = "errors_tests_part_03.rs"]
-mod errors_tests_part_03;
+#[path = "errors_tests_import.rs"]
+mod errors_tests_import;
+#[path = "errors_tests_quantize.rs"]
+mod errors_tests_quantize;

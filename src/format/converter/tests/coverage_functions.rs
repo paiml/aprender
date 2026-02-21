@@ -319,5 +319,5 @@ mod tests_export_merge_functions {
     }
 }
 
-include!("coverage_functions_part_02.rs");
-include!("coverage_functions_part_03.rs");
+include!("coverage_write_import_lint.rs");
+include!("coverage_write_functions.rs");

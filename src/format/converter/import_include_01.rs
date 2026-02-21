@@ -73,4 +73,4 @@ include!("source_load_result.rs");
 include!("tokenizer_loader.rs");
 include!("safe_tensors_load_result.rs");
 include!("tensor_accumulator.rs");
-include!("import_part_06.rs");
+include!("import_tests_infer.rs");

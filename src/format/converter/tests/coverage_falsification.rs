@@ -396,5 +396,5 @@ mod tests_pmat201_fingerprint_falsification {
     }
 }
 
-include!("coverage_falsification_part_02.rs");
-include!("coverage_falsification_part_03.rs");
+include!("coverage_golden_output.rs");
+include!("coverage_distribution_tags.rs");

@@ -449,4 +449,4 @@ fn test_sanitize_hf_json_mamba2_config_gh268() {
 // ============================================================================
 
 
-include!("pure_functions_part_05_include_01.rs");
+include!("pure_functions_config_gpt2.rs");

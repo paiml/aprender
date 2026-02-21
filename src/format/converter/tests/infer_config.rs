@@ -437,6 +437,6 @@ fn test_tensor_accumulator_new() {
     assert_eq!(acc.max, f32::NEG_INFINITY);
 }
 
-include!("infer_config_part_02.rs");
-include!("infer_config_part_03.rs");
-include!("infer_config_part_04.rs");
+include!("infer_config_accumulator.rs");
+include!("infer_config_gqa_heads.rs");
+include!("infer_config_arch_fallback.rs");
