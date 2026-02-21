@@ -446,7 +446,7 @@ fn test_model_registry_l2_operations() {
     assert!(registry.get("model1").is_some());
 }
 
-#[path = "tests_part_02.rs"]
-mod tests_part_02;
-#[path = "tests_part_03.rs"]
-mod tests_part_03;
+#[path = "tests_eviction.rs"]
+mod tests_eviction;
+#[path = "tests_eviction_policy.rs"]
+mod tests_eviction_policy;

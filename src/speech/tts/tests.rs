@@ -444,5 +444,5 @@ fn test_tts_config_debug() {
     assert!(debug_str.contains("TtsConfig"));
 }
 
-#[path = "tests_part_02.rs"]
-mod tests_part_02;
+#[path = "tests_synthesizers.rs"]
+mod tests_synthesizers;

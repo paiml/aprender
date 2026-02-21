@@ -449,5 +449,5 @@ fn test_normal_inverse_gamma_posterior_mean_mu() {
     assert!((mean_mu - sample_mean).abs() < 0.1);
 }
 
-#[path = "tests_part_02.rs"]
-mod tests_part_02;
+#[path = "tests_normal_inv_gamma.rs"]
+mod tests_normal_inv_gamma;

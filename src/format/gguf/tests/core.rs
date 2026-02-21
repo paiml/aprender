@@ -448,5 +448,5 @@ fn test_gguf_tensor_byte_size_q4_1() {
     assert!(size > 0);
 }
 
-include!("core_part_02.rs");
-include!("core_part_03.rs");
+include!("core_tensor_export.rs");
+include!("core_reader_metadata.rs");

@@ -444,5 +444,5 @@ fn test_performance_metrics_json_content() {
     assert!(json.contains("tokens_generated"));
 }
 
-#[path = "tests_part_02.rs"]
-mod tests_part_02;
+#[path = "tests_provenance.rs"]
+mod tests_provenance;

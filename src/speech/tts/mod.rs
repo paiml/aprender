@@ -436,8 +436,8 @@ pub trait Vocoder {
     fn n_mels(&self) -> usize;
 }
 
-mod mod_part_02;
-pub use mod_part_02::*;
+mod synthesizers;
+pub use synthesizers::*;
 
 #[cfg(test)]
 mod tests;

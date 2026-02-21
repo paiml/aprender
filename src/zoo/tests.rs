@@ -431,5 +431,5 @@ fn test_model_zoo_type_all_variants_name() {
     assert_eq!(ModelZooType::Other.name(), "Other");
 }
 
-#[path = "tests_part_02.rs"]
-mod tests_part_02;
+#[path = "tests_category.rs"]
+mod tests_category;

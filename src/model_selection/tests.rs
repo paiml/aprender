@@ -435,7 +435,7 @@ fn test_stratified_kfold_different_random_states() {
     }
 }
 
-#[path = "tests_part_02.rs"]
-mod tests_part_02;
-#[path = "tests_part_03.rs"]
-mod tests_part_03;
+#[path = "tests_stratified.rs"]
+mod tests_stratified;
+#[path = "tests_grid_search.rs"]
+mod tests_grid_search;

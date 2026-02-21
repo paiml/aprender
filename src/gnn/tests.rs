@@ -440,5 +440,5 @@ fn test_edgeconv_accessors() {
     assert_eq!(edge_conv.out_features(), 8);
 }
 
-#[path = "tests_part_02.rs"]
-mod tests_part_02;
+#[path = "tests_pooling.rs"]
+mod tests_pooling;

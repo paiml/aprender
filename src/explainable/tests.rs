@@ -435,5 +435,5 @@ fn test_forest_path_explain() {
     assert!(confidence >= 0.0 && confidence <= 1.0);
 }
 
-#[path = "tests_part_02.rs"]
-mod tests_part_02;
+#[path = "tests_monitor.rs"]
+mod tests_monitor;

@@ -431,5 +431,5 @@ fn test_cg_norm_function() {
     assert!(result.gradient_norm < 1e-4);
 }
 
-#[path = "conjugate_gradient_tests_part_02.rs"]
-mod conjugate_gradient_tests_part_02;
+#[path = "tests_cg_formulas.rs"]
+mod tests_cg_formulas;

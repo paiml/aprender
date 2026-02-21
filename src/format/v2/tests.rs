@@ -447,9 +447,9 @@ fn test_flags_all_bits() {
     assert!(flags.is_quantized());
 }
 
-#[path = "tests_part_02.rs"]
-mod tests_part_02;
-#[path = "tests_part_03.rs"]
-mod tests_part_03;
-#[path = "tests_part_04.rs"]
-mod tests_part_04;
+#[path = "tests_shard_provenance.rs"]
+mod tests_shard_provenance;
+#[path = "tests_pygmy_tensors.rs"]
+mod tests_pygmy_tensors;
+#[path = "tests_q6k_ref_reader.rs"]
+mod tests_q6k_ref_reader;

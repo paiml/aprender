@@ -354,8 +354,8 @@ impl Default for AprV2Header {
     }
 }
 
-include!("mod_part_02.rs");
-include!("mod_part_03.rs");
+include!("header_impl.rs");
+include!("tensor_index_impl.rs");
 include!("writer.rs");
-include!("mod_part_05.rs");
+include!("reader_impl.rs");
 include!("v2format_error.rs");

@@ -308,5 +308,5 @@ pub struct Adam {
 mod parameter;
 
 #[cfg(test)]
-#[path = "stochastic_part_03.rs"]
-mod stochastic_part_03;
+#[path = "sgd_tests.rs"]
+mod sgd_tests;

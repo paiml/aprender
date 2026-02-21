@@ -446,5 +446,5 @@ fn test_gguf_model_config_clone() {
     assert_eq!(cloned.rope_type, config.rope_type);
 }
 
-#[path = "api_tests_part_02.rs"]
-mod api_tests_part_02;
+#[path = "api_tests_raw_tensor_rope.rs"]
+mod api_tests_raw_tensor_rope;

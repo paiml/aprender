@@ -430,8 +430,8 @@ impl GNNModule for GATConv {
     }
 }
 
-mod mod_part_02;
-pub use mod_part_02::*;
+mod gin_conv;
+pub use gin_conv::*;
 
 mod accumulate;
 pub use accumulate::*;

@@ -443,5 +443,5 @@ fn test_f16_to_f32_half() {
     assert!((result - 0.5).abs() < 0.001);
 }
 
-include!("advanced_part_02.rs");
-include!("advanced_part_03.rs");
+include!("advanced_clone_traits.rs");
+include!("advanced_proptests.rs");

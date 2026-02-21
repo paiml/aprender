@@ -445,5 +445,5 @@ fn test_trueno_native_model_debug_clone() {
     assert!(debug.contains("TruenoNativeModel"));
 }
 
-#[path = "tests_part_02.rs"]
-mod tests_part_02;
+#[path = "tests_extra.rs"]
+mod tests_extra;

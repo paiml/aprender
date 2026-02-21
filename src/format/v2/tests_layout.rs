@@ -446,7 +446,7 @@ fn test_tensor_index_entry_many_dims() {
     assert_eq!(parsed.shape, shape);
 }
 
-#[path = "tests_layout_part_02.rs"]
-mod tests_layout_part_02;
-#[path = "tests_layout_part_03.rs"]
-mod tests_layout_part_03;
+#[path = "tests_layout_reader_errors.rs"]
+mod tests_layout_reader_errors;
+#[path = "tests_layout_writer_flags.rs"]
+mod tests_layout_writer_flags;

@@ -442,8 +442,8 @@ impl Default for LanguageDetection {
     }
 }
 
-mod mod_part_02;
-pub use mod_part_02::*;
+mod language_detect;
+pub use language_detect::*;
 
 #[cfg(test)]
 mod tests;

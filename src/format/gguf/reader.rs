@@ -325,5 +325,5 @@ pub struct GgufTensorMeta {
     pub offset: u64,
 }
 
-include!("reader_part_02.rs");
-include!("reader_part_03.rs");
+include!("reader_loading.rs");
+include!("reader_test_mod.rs");

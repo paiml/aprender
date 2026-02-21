@@ -445,5 +445,5 @@ fn test_clone_after_fit() {
     assert!(cloned.noise_variance().is_some());
 }
 
-#[path = "regression_tests_part_02.rs"]
-mod regression_tests_part_02;
+#[path = "tests_blr_validation.rs"]
+mod tests_blr_validation;

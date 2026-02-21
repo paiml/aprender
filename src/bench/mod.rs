@@ -352,5 +352,5 @@ pub struct ModelComparison {
     pub recommendations: Vec<Recommendation>,
 }
 
-include!("mod_part_02.rs");
+include!("comparison.rs");
 include!("test_task.rs");

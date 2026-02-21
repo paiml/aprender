@@ -81,5 +81,5 @@ fn test_loss_trait_arc() {
     assert!(result > 0.0);
 }
 
-#[path = "tests_part_02.rs"]
-mod tests_part_02;
+#[path = "tests_focal_kl.rs"]
+mod tests_focal_kl;

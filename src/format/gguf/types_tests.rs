@@ -437,5 +437,5 @@ fn test_padding_for_alignment_different_alignments() {
     assert_eq!(padding_for_alignment(100, 64), 28);
 }
 
-#[path = "types_tests_part_02.rs"]
-mod types_tests_part_02;
+#[path = "types_tests_write_metadata.rs"]
+mod types_tests_write_metadata;
