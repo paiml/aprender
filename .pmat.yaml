@@ -6,3 +6,9 @@ comply:
     - rules: ["CB-1000", "CB-1002", "CB-1007"]
       files: ["models", "models/**", "crates/apr-cli/models", "crates/apr-cli/models/**"]
       reason: "Local model cache directories are gitignored — model cards and tokenizers managed by upstream (HF Hub)"
+
+rust-project-score:
+  suppressions:
+    - check: "unwrap_calls"
+      reason: "unwrap() banned in production via .clippy.toml disallowed-methods. 180 count is tests/examples/book only (36 in src/ test modules, 0 in production). MUDA — false positive."
+      exclude_paths: ["examples/**", "book/**", "src/**/tests.rs", "src/**/*_tests*.rs"]

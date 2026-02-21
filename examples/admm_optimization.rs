@@ -454,10 +454,7 @@ fn print_qp_results(result: &OptimizationResult, Q: &Matrix<f32>, c_vec: &Vector
     println!("Minimum coefficient: {min_val:.6} (should be ≥ 0)");
 }
 
-/// Example 4: ADMM vs FISTA Comparison
-///
-/// Compare ADMM and FISTA on the same Lasso problem to demonstrate
-/// convergence behavior and computational tradeoffs.
-#[allow(clippy::too_many_lines)]
-
+// Example 4: ADMM vs FISTA Comparison
+// Compare ADMM and FISTA on the same Lasso problem to demonstrate
+// convergence behavior and computational tradeoffs.
 include!("includes/admm_optimization_include_01.rs");

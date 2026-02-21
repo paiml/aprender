@@ -423,9 +423,9 @@ fn test_tensor_list_result_clone() {
     assert_eq!(cloned.format_version, result.format_version);
 }
 
-#[path = "tensors_tests_part_02.rs"]
-mod tensors_tests_part_02;
-#[path = "tensors_tests_part_03.rs"]
-mod tensors_tests_part_03;
-#[path = "tensors_tests_part_04.rs"]
-mod tensors_tests_part_04;
+#[path = "tensors_tests_workflow.rs"]
+mod tensors_tests_workflow;
+#[path = "tensors_tests_stats.rs"]
+mod tensors_tests_stats;
+#[path = "tensors_tests_dtype_convert.rs"]
+mod tensors_tests_dtype_convert;

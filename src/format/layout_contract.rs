@@ -150,6 +150,6 @@ impl Default for LayoutContract {
     }
 }
 
-include!("layout_contract_part_02.rs");
-include!("layout_contract_part_03.rs");
-include!("layout_contract_part_04.rs");
+include!("layout_contract_specs.rs");
+include!("layout_contract_enforce.rs");
+include!("layout_contract_tests.rs");

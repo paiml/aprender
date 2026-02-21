@@ -456,4 +456,4 @@ fn yaml_to_config(yaml: &YamlValue, source: &Path) -> Result<ModelFamilyConfig> 
 }
 
 include!("parsing.rs");
-include!("model_family_loader_part_03.rs");
+include!("model_family_loader_tests.rs");

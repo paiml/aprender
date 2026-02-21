@@ -120,6 +120,6 @@ pub enum Architecture {
 }
 
 include!("tensor_expectation.rs");
-include!("converter_types_part_03.rs");
+include!("converter_types_expectations.rs");
 include!("sharded_index.rs");
-include!("converter_types_part_05.rs");
+include!("converter_types_tests.rs");

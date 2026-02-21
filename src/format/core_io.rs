@@ -445,5 +445,5 @@ pub fn load_from_bytes<M: DeserializeOwned>(data: &[u8], expected_type: ModelTyp
 /// Smaller files use standard read-to-heap which has lower overhead for small data.
 pub const MMAP_THRESHOLD: u64 = 1024 * 1024;
 
-include!("core_io_part_02.rs");
+include!("core_io_mmap.rs");
 include!("test_model.rs");

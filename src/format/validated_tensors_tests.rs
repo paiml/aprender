@@ -9,6 +9,6 @@
 #[cfg(test)]
 mod tests {
     use super::*;
-include!("validated_tensors_part_03_part_02.rs");
-include!("validated_tensors_part_03_part_03.rs");
+include!("validated_tensors_tests_generators.rs");
+include!("validated_tensors_tests_stats.rs");
 }

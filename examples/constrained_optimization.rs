@@ -359,13 +359,7 @@ fn linear_programming_interior_point() {
     println!();
 }
 
-/// Example 4: Quadratic Programming with Interior Point Method
-///
-/// Problem: minimize ½xᵀQx + cᵀx subject to Ax ≤ b
-///
-/// QP problems appear in:
-/// - Model predictive control
-/// - Portfolio optimization with risk constraints
-/// - Support vector machines
-
+// Example 4: Quadratic Programming with Interior Point Method
+// Problem: minimize ½xᵀQx + cᵀx subject to Ax ≤ b
+// QP problems appear in: MPC, portfolio optimization, SVMs.
 include!("includes/constrained_optimization_include_01.rs");

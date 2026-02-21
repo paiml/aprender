@@ -447,6 +447,6 @@ pub fn quantize(data: &[f32], shape: &[usize], quant_type: QuantType) -> Result<
     }
 }
 
-include!("quantize_part_02.rs");
+include!("quantize_dequant.rs");
 include!("generate.rs");
-include!("quantize_part_04.rs");
+include!("quantize_tests_falsification.rs");

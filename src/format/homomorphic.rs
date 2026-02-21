@@ -283,5 +283,5 @@ pub struct HeContext {
     params: HeParameters,
 }
 
-include!("homomorphic_part_02.rs");
-include!("homomorphic_part_03.rs");
+include!("homomorphic_context.rs");
+include!("homomorphic_proptests.rs");

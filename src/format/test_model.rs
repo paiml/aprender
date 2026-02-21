@@ -366,5 +366,5 @@ mod tests {
         assert!(result.is_err());
     }
 
-    include!("core_io_part_03_include_01.rs");
+    include!("core_io_tests_mmap.rs");
 }

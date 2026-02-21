@@ -368,4 +368,4 @@ pub struct ValidatedWeight<L = RowMajor> {
 }
 
 include!("validated_vector.rs");
-include!("validated_tensors_part_03.rs");
+include!("validated_tensors_tests.rs");

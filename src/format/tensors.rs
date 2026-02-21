@@ -392,4 +392,4 @@ fn ggml_dtype_name(dtype: u32) -> &'static str {
 }
 
 include!("safetensors.rs");
-include!("tensors_part_03.rs");
+include!("tensors_safetensors.rs");

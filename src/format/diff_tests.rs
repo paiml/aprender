@@ -442,7 +442,7 @@ fn test_compare_tensors_different_count() {
 
 #[path = "diff_tests_tensor_cmp.rs"]
 mod diff_tests_tensor_cmp;
-#[path = "diff_tests_part_03.rs"]
-mod diff_tests_part_03;
-#[path = "diff_tests_part_04.rs"]
-mod diff_tests_part_04;
+#[path = "diff_tests_dtype_normalize.rs"]
+mod diff_tests_dtype_normalize;
+#[path = "diff_tests_metadata.rs"]
+mod diff_tests_metadata;

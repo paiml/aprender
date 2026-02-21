@@ -381,10 +381,7 @@ fn print_cd_results(
     println!("\nPrediction RMSE: {:.6}", pred_error.sqrt());
 }
 
-/// Example 4: Box-Constrained Quadratic with Coordinate Descent
-///
-/// Problem: minimize ½xᵀQx - cᵀx subject to l ≤ x ≤ u
-///
-/// Demonstrates coordinate descent with bound constraints.
-
+// Example 4: Box-Constrained Quadratic with Coordinate Descent
+// Problem: minimize ½xᵀQx - cᵀx subject to l ≤ x ≤ u
+// Demonstrates coordinate descent with bound constraints.
 include!("includes/convex_optimization_include_01.rs");
