@@ -1,8 +1,7 @@
 #![no_main]
 
-use libfuzzer_sys::fuzz_target;
 use aprender::chaos::ChaosConfig;
-use std::time::Duration;
+use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
     // Test ChaosConfig builder pattern with arbitrary inputs
@@ -11,16 +10,14 @@ fuzz_target!(|data: &[u8]| {
     if data.len() >= 17 {
         // Extract fuzzing parameters from data
         let memory_limit = usize::from_le_bytes([
-            data[0], data[1], data[2], data[3],
-            data[4], data[5], data[6], data[7],
+            data[0], data[1], data[2], data[3], data[4], data[5], data[6], data[7],
         ]);
 
         let cpu_limit_raw = f64::from_le_bytes([
-            data[8], data[9], data[10], data[11],
-            data[12], data[13], data[14], data[15],
+            data[8], data[9], data[10], data[11], data[12], data[13], data[14], data[15],
         ]);
 
-        let signal_injection = data[16] % 2 == 0;
+        let signal_injection = data[16].is_multiple_of(2);
 
         // Test that builder pattern handles all inputs gracefully
         let config = ChaosConfig::new()

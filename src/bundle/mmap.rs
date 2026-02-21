@@ -441,7 +441,7 @@ pub(crate) struct PageEntry {
 #[path = "page_table.rs"]
 mod page_table;
 pub(crate) use page_table::PageTable;
-#[path = "mmap_tests.rs"]
-mod mmap_tests;
 #[path = "mmap_proptests.rs"]
 mod mmap_proptests;
+#[path = "mmap_tests.rs"]
+mod mmap_tests;

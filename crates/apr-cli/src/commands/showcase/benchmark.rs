@@ -82,7 +82,8 @@ pub(super) fn format_benchmark_csv(bench: &BenchmarkComparison) -> String {
     );
 
     // Baseline rows (llama.cpp and Ollama follow the same CSV format)
-    let baselines: &[(&str, Option<f64>, Option<f64>, Option<f64>)] = &[
+    type Baseline = (&'static str, Option<f64>, Option<f64>, Option<f64>);
+    let baselines: &[Baseline] = &[
         (
             "llama.cpp",
             bench.llama_cpp_tps,

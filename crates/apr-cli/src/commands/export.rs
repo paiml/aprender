@@ -304,14 +304,14 @@ fn print_batch_summary(
 
 /// Export a single format in batch mode. Returns Some on success, None on failure.
 fn export_single_format(
-    fmt: &ExportFormat,
+    fmt: ExportFormat,
     file: &Path,
     out_dir: &Path,
     quant_type: Option<QuantizationType>,
     json_output: bool,
 ) -> Option<(&'static str, String, ExportReport)> {
     let ext = fmt.extension();
-    let out_path = if *fmt == ExportFormat::Mlx {
+    let out_path = if fmt == ExportFormat::Mlx {
         out_dir.join(format!("model-{ext}"))
     } else {
         out_dir.join(format!("model.{ext}"))
@@ -322,7 +322,7 @@ fn export_single_format(
     }
 
     let options = ExportOptions {
-        format: *fmt,
+        format: fmt,
         quantize: quant_type,
         ..Default::default()
     };
@@ -410,7 +410,7 @@ fn run_batch(
 
     let results: Vec<_> = formats
         .iter()
-        .filter_map(|fmt| export_single_format(fmt, file, out_dir, quant_type, json_output))
+        .filter_map(|&fmt| export_single_format(fmt, file, out_dir, quant_type, json_output))
         .collect();
 
     print_batch_summary(file, &results, formats.len(), json_output);

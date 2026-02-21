@@ -25,8 +25,6 @@ fuzz_target!(|data: &[u8]| {
 
     // Also test from_extension with arbitrary path strings
     if let Ok(s) = std::str::from_utf8(data) {
-        let _ = aprender::format::rosetta::FormatType::from_extension(
-            std::path::Path::new(s),
-        );
+        let _ = aprender::format::rosetta::FormatType::from_extension(std::path::Path::new(s));
     }
 });

@@ -12,9 +12,9 @@ fuzz_target!(|data: &[u8]| {
         let _ = template.format_message("user", "test");
 
         // And format_conversation
-        let messages = vec![
-            aprender::text::chat_template::ChatMessage::user("hello".to_string()),
-        ];
+        let messages = vec![aprender::text::chat_template::ChatMessage::user(
+            "hello".to_string(),
+        )];
         let _ = template.format_conversation(&messages);
     }
 });

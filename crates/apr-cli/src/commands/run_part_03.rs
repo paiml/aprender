@@ -4,7 +4,7 @@
 /// Returns default EOS=2 when no tokenizer is available.
 #[cfg(feature = "inference")]
 fn resolve_tokenizer_info(
-    tokenizer_info: &Option<(Vec<String>, Option<u32>, Option<u32>)>,
+    tokenizer_info: Option<&(Vec<String>, Option<u32>, Option<u32>)>,
 ) -> (Option<&[String]>, Option<u32>, Option<u32>) {
     match tokenizer_info {
         Some((v, b, e)) => {
@@ -80,7 +80,7 @@ fn execute_apr_inference(
         eprintln!("{}", "Running transformer generation...".cyan());
 
         let tokenizer_info = AprModel::load_tokenizer_from_sibling(model_path);
-        let (vocab, _bos_id, eos_id) = resolve_tokenizer_info(&tokenizer_info);
+        let (vocab, _bos_id, eos_id) = resolve_tokenizer_info(tokenizer_info.as_ref());
 
         let input_tokens =
             prepare_apr_input_tokens(model_path, options.prompt.as_deref(), input_path)?;

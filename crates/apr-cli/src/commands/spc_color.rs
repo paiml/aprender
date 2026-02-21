@@ -21,7 +21,7 @@ const KL_THRESHOLDS: [(f64, SpcColor); 4] = [
 
 /// Sigma thresholds (higher is better, checked descending): >=6=GreenBold, >=SIGMA_MIN=Green, >=2=Yellow, >=1=Red, else RedBold.
 const SIGMA_THRESHOLDS: [(f64, SpcColor); 4] = [
-    (6.0, SpcColor::GreenBold), (SIGMA_MIN as f64, SpcColor::Green),
+    (6.0, SpcColor::GreenBold), (SIGMA_MIN, SpcColor::Green),
     (2.0, SpcColor::Yellow), (1.0, SpcColor::Red),
 ];
 
@@ -122,7 +122,7 @@ fn print_summary(metrics: &[SpcMetrics]) {
         &[(3.4, SpcColor::GreenBold), (100.0, SpcColor::Yellow), (10000.0, SpcColor::Red)],
         SpcColor::RedBold,
     );
-    let precision = if ppm < 100.0 { 1 } else { 0 };
+    let precision = usize::from(ppm < 100.0);
     let ppm_str = apply_spc_color(&format!("{ppm:.precision$} PPM"), ppm_color);
     eprintln!(
         "  Defect rate:        {} (logits outside tolerance)",
