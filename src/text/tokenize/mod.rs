@@ -403,7 +403,7 @@ pub struct BpeTokenizer {
     end_of_word: String,
 }
 
-mod bpe_tokenizer_impl;
 mod bpe_impl;
+mod bpe_tokenizer_impl;
 pub use bpe_tokenizer_impl::*;
 mod unigram_training;
