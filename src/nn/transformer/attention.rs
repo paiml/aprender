@@ -1,4 +1,4 @@
-use super::mod_part_04::ALiBi;
+use super::attention_helpers::ALiBi;
 #[allow(clippy::wildcard_imports)]
 use super::*;
 

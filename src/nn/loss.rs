@@ -436,5 +436,5 @@ pub struct NLLLoss {
 mod ucbd;
 #[allow(clippy::wildcard_imports)]
 use ucbd::*;
-#[path = "loss_part_03.rs"]
-mod loss_part_03;
+#[path = "loss_tests.rs"]
+mod loss_tests;

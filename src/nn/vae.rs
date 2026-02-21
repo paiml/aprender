@@ -382,9 +382,9 @@ pub struct ConditionalVAE {
     training: bool,
 }
 
-#[path = "vae_part_02.rs"]
-mod vae_part_02;
+#[path = "vae_conditional.rs"]
+mod vae_conditional;
 #[allow(clippy::wildcard_imports)]
-use vae_part_02::*;
-#[path = "vae_part_03.rs"]
-mod vae_part_03;
+use vae_conditional::*;
+#[path = "vae_tests.rs"]
+mod vae_tests;

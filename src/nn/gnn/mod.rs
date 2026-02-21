@@ -440,9 +440,9 @@ pub enum SAGEAggregation {
     Lstm,
 }
 
-#[path = "mod_part_02.rs"]
-mod mod_part_02;
-pub use mod_part_02::*;
+#[path = "sage_gat.rs"]
+mod sage_gat;
+pub use sage_gat::*;
 
 #[path = "message_passing.rs"]
 mod message_passing;

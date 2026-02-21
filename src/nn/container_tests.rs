@@ -445,5 +445,5 @@ fn test_sequential_empty_forward() {
     assert_eq!(y.shape(), x.shape());
 }
 
-#[path = "container_tests_part_02.rs"]
-mod container_tests_part_02;
+#[path = "container_tests_module_list.rs"]
+mod container_tests_module_list;

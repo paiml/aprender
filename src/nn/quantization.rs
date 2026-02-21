@@ -373,9 +373,9 @@ pub struct QuantizedLinear {
     pub(crate) out_features: usize,
 }
 
-#[path = "quantization_part_02.rs"]
-mod quantization_part_02;
-pub use quantization_part_02::*;
+#[path = "quantization_linear.rs"]
+mod quantization_linear;
+pub use quantization_linear::*;
 
-#[path = "quantization_part_03.rs"]
-mod quantization_part_03;
+#[path = "quantization_tests.rs"]
+mod quantization_tests;

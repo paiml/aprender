@@ -411,13 +411,13 @@ pub use positional_encoding::*;
 // ONE PATH: Re-export canonical attention utilities for crate-internal use (UCBD §4).
 pub(crate) use positional_encoding::{matmul_batched, reshape_from_attention, transpose_last_two};
 
-#[path = "mod_part_03.rs"]
-mod mod_part_03;
-pub use mod_part_03::*;
+#[path = "attention_gqa.rs"]
+mod attention_gqa;
+pub use attention_gqa::*;
 
-#[path = "mod_part_04.rs"]
-mod mod_part_04;
-pub use mod_part_04::*;
+#[path = "attention_helpers.rs"]
+mod attention_helpers;
+pub use attention_helpers::*;
 
 #[path = "attention.rs"]
 mod attention;

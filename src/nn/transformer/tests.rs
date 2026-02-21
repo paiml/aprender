@@ -434,7 +434,7 @@ fn test_alibi_creation() {
     assert_eq!(alibi.slopes().len(), 8);
 }
 
-#[path = "tests_part_02.rs"]
-mod tests_part_02;
-#[path = "tests_part_03.rs"]
-mod tests_part_03;
+#[path = "tests_alibi_mha.rs"]
+mod tests_alibi_mha;
+#[path = "tests_decoder_rope.rs"]
+mod tests_decoder_rope;

@@ -445,9 +445,9 @@ fn test_adam_step_trait() {
     assert_eq!(adam.t, 1);
 }
 
-#[path = "tests_part_02.rs"]
-mod tests_part_02;
-#[path = "tests_part_03.rs"]
-mod tests_part_03;
-#[path = "tests_part_04.rs"]
-mod tests_part_04;
+#[path = "tests_adam.rs"]
+mod tests_adam;
+#[path = "tests_state_resize.rs"]
+mod tests_state_resize;
+#[path = "tests_large_tensors.rs"]
+mod tests_large_tensors;

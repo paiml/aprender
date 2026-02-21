@@ -435,5 +435,5 @@ fn test_linear_warmup_after_warmup_complete() {
     assert_eq!(scheduler.last_epoch(), 5);
 }
 
-#[path = "tests_part_02.rs"]
-mod tests_part_02;
+#[path = "tests_warmup_cosine.rs"]
+mod tests_warmup_cosine;

@@ -444,5 +444,5 @@ fn test_dropconnect_apply_to_weights_eval_mode() {
     assert_eq!(masked.data(), weights.data());
 }
 
-#[path = "tests_part_02.rs"]
-mod tests_part_02;
+#[path = "tests_dropconnect.rs"]
+mod tests_dropconnect;

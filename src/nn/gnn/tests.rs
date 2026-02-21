@@ -449,5 +449,5 @@ fn test_gnn_disconnected_graph() {
     assert_eq!(out.shape(), &[4, 2]);
 }
 
-#[path = "tests_part_02.rs"]
-mod tests_part_02;
+#[path = "tests_sage_edge_cases.rs"]
+mod tests_sage_edge_cases;

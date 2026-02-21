@@ -439,5 +439,5 @@ fn test_apply_repetition_penalty_negative_logits() {
     assert_eq!(penalized.data()[3], -2.0); // unchanged
 }
 
-#[path = "tests_part_02.rs"]
-mod tests_part_02;
+#[path = "tests_repetition_penalty.rs"]
+mod tests_repetition_penalty;

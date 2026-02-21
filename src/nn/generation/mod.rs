@@ -337,9 +337,9 @@ pub struct NucleusSampler {
     pub(crate) min_tokens_to_keep: usize,
 }
 
-#[path = "mod_part_02.rs"]
-mod mod_part_02;
-pub use mod_part_02::*;
+#[path = "nucleus_sampler.rs"]
+mod nucleus_sampler;
+pub use nucleus_sampler::*;
 
 #[path = "teacher_forcing.rs"]
 mod teacher_forcing;

@@ -435,9 +435,9 @@ impl MoCo {
     }
 }
 
-#[path = "self_supervised_part_02.rs"]
-mod self_supervised_part_02;
-pub use self_supervised_part_02::*;
+#[path = "self_supervised_byol_simcse.rs"]
+mod self_supervised_byol_simcse;
+pub use self_supervised_byol_simcse::*;
 
-#[path = "self_supervised_part_03.rs"]
-mod self_supervised_part_03;
+#[path = "self_supervised_tests.rs"]
+mod self_supervised_tests;

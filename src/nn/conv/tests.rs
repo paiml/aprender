@@ -444,5 +444,5 @@ fn test_flatten_no_op_for_2d() {
     assert_eq!(y.shape(), &[4, 64]);
 }
 
-#[path = "tests_part_02.rs"]
-mod tests_part_02;
+#[path = "tests_flatten.rs"]
+mod tests_flatten;

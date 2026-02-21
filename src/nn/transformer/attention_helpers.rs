@@ -1,4 +1,4 @@
-use super::mod_part_03::GroupedQueryAttention;
+use super::attention_gqa::GroupedQueryAttention;
 #[allow(clippy::wildcard_imports)]
 use super::*;
 

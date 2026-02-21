@@ -1,4 +1,4 @@
-use super::mod_part_03::{add_positional_encoding, slice_pe};
+use super::attention_gqa::{add_positional_encoding, slice_pe};
 #[allow(clippy::wildcard_imports)]
 use super::*;
 
