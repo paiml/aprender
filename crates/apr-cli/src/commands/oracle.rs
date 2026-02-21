@@ -440,7 +440,7 @@ fn fetch_hf_data(repo: &str) -> Result<HuggingFaceData, CliError> {
 
 include!("config.json.rs");
 include!("oracle_flags.rs");
-include!("oracle_part_04.rs");
-include!("oracle_part_05.rs");
-include!("oracle_part_06.rs");
-include!("oracle_part_07.rs");
+include!("oracle_family.rs");
+include!("oracle_format_text_output.rs");
+include!("oracle_format_family.rs");
+include!("oracle_07.rs");

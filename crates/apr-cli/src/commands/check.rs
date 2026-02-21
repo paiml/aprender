@@ -444,4 +444,4 @@ fn run_real_checks_gguf(path: &Path, _no_gpu: bool) -> Result<Vec<StageResult>, 
 }
 
 include!("stage.rs");
-include!("check_part_03.rs");
+include!("check_03.rs");

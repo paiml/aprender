@@ -24,7 +24,7 @@ fn vector_f64_strategy(len: usize) -> impl Strategy<Value = Vector<f64>> {
     proptest::collection::vec(-100.0f64..100.0, len).prop_map(Vector::from_vec)
 }
 
-include!("includes/property_tests_part_01.rs");
-include!("includes/property_tests_part_02.rs");
-include!("includes/property_tests_part_02b.rs");
-include!("includes/property_tests_part_03.rs");
+include!("includes/property_tests_vector.rs");
+include!("includes/property_tests_logistic.rs");
+include!("includes/property_tests_nlp_summarization.rs");
+include!("includes/property_tests_noise_audio.rs");

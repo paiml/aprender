@@ -483,6 +483,6 @@ pub fn list(json: bool) -> Result<()> {
     Ok(())
 }
 
-include!("pull_part_02.rs");
-include!("pull_part_03.rs");
-include!("pull_part_04.rs");
+include!("pull_remove_resolve_model.rs");
+include!("pull_extract_shard.rs");
+include!("pull_04.rs");

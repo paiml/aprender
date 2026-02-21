@@ -7,8 +7,8 @@
 mod tests {
     use super::*;
     use std::io::Write;
-    use tempfile::{tempdir, NamedTempFile};
-include!("flow_part_03_part_02.rs");
-include!("flow_part_03_part_03.rs");
-include!("filtering.rs");
+    use tempfile::NamedTempFile;
+include!("hex_options_detect.rs");
+include!("make.rs");
+include!("tests_blocks_and_slices.rs");
 }

@@ -442,6 +442,6 @@ fn test_gh122_hex_help() {
         .stdout(predicate::str::contains("tensor"));
 }
 
-include!("includes/cli_integration_part_02.rs");
-include!("includes/cli_integration_part_03.rs");
-include!("includes/cli_integration_part_04.rs");
+include!("includes/cli_integration_gh122_hex.rs");
+include!("includes/cli_integration_tune.rs");
+include!("includes/cli_integration_format.rs");

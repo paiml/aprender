@@ -431,4 +431,4 @@ fn test_circuit_breaker_all_states_empty() {
     assert!(states.is_empty());
 }
 
-include!("health_tests_part_02.rs");
+include!("health_tests_circuit_breaker.rs");

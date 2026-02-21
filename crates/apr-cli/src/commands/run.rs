@@ -442,8 +442,8 @@ pub(crate) fn download_hf_model(org: &str, repo: &str, file: Option<&str>) -> Re
 }
 
 include!("inference_output.rs");
-include!("run_part_03.rs");
+include!("run_resolve_tokenizer.rs");
 include!("safetensors.rs");
 include!("gguf_generate_result.rs");
 include!("run_entry.rs");
-include!("run_part_07.rs");
+include!("run_07.rs");

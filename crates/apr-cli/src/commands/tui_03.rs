@@ -6,5 +6,5 @@ mod tests {
     const _MODULE: &str = "commands::tui";
 
 include!("tests_tab_navigation.rs");
-include!("tui_part_03_part_03.rs");
+include!("tui_coverage.rs");
 }

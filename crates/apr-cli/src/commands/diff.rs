@@ -435,5 +435,5 @@ fn print_diff_json(
 }
 
 include!("diff_accumulator.rs");
-include!("diff_part_03.rs");
-include!("diff_part_04.rs");
+include!("diff_output_json_text.rs");
+include!("diff_04.rs");

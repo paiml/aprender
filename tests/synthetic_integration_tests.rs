@@ -48,5 +48,5 @@ impl Embeddable for TextSample {
     }
 }
 
-include!("includes/synthetic_integration_part_01.rs");
-include!("includes/synthetic_integration_part_02.rs");
+include!("includes/synthetic_integration_eda.rs");
+include!("includes/synthetic_integration_cache.rs");

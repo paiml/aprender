@@ -11,5 +11,5 @@ use std::path::PathBuf;
 
 use aprender::format::rosetta::{FormatType, RosettaStone};
 
-include!("includes/rosetta_dangerous_part_01.rs");
-include!("includes/rosetta_dangerous_part_02.rs");
+include!("includes/rosetta_dangerous_edge_cases.rs");
+include!("includes/rosetta_dangerous_integration.rs");

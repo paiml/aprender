@@ -447,6 +447,6 @@ fn test_cli_009_export_import_roundtrip() {
         .stdout(predicate::str::contains("imported"));
 }
 
-include!("parts/cli_integration_part_02.rs");
-include!("parts/cli_integration_part_03.rs");
-include!("parts/cli_integration_part_04.rs");
+include!("parts/cli_integration_010.rs");
+include!("parts/cli_integration_017.rs");
+include!("parts/cli_integration_021.rs");

@@ -439,4 +439,4 @@ fn format_cosine(cos: f32) -> String {
 }
 
 include!("spc_color.rs");
-include!("parity_part_03.rs");
+include!("parity_03.rs");

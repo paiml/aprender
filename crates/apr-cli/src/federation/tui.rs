@@ -404,4 +404,4 @@ fn render_catalog(f: &mut Frame<'_>, area: Rect, app: &FederationApp) {
 }
 
 include!("rendering.rs");
-include!("tui_part_03.rs");
+include!("tui_03.rs");

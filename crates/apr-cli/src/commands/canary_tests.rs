@@ -447,4 +447,4 @@ fn test_load_canary_data_file_not_found() {
     assert!(result.is_err());
 }
 
-include!("canary_tests_part_02.rs");
+include!("canary_tests_mean_threshold_std.rs");

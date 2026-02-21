@@ -29,7 +29,7 @@ pub struct MarkovModel {
     last_trained_pos: usize,
 }
 
-include!("model_part_02.rs");
+include!("model_markov.rs");
 include!("validation_result.rs");
-include!("model_part_04.rs");
-include!("model_part_05.rs");
+include!("model_encrypted_roundtrip.rs");
+include!("model_corpus_path_load.rs");

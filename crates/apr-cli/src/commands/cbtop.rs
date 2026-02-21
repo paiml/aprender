@@ -443,8 +443,9 @@ fn run_headless(config: CbtopConfig) -> Result<()> {
     }
 }
 
+include!("cbtop_get_cpu_memory.rs");
+include!("cbtop_report_tui.rs");
 include!("gguf.rs");
-include!("cbtop_part_03.rs");
-include!("cbtop_part_04.rs");
-include!("cbtop_part_05.rs");
-include!("cbtop_part_06.rs");
+include!("cbtop_measure_batch.rs");
+include!("cbtop_render_title.rs");
+include!("cbtop_06.rs");

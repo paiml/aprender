@@ -454,5 +454,5 @@ fn print_decoder_block(tensor_names: &[String], _verbose: bool) {
     println!("└─────────────────────────────────────────────────────────────┘");
 }
 
-include!("flow_part_02.rs");
-include!("flow_part_03.rs");
+include!("flow_print_cross.rs");
+include!("flow_03.rs");

@@ -7,5 +7,5 @@
 mod tests {
     use super::*;
 include!("tests.rs");
-include!("gateway_part_03_part_03.rs");
+include!("gateway_initial_stats.rs");
 }

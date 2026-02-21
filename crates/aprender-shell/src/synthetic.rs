@@ -21,5 +21,5 @@ struct CommandTemplate {
     args: Vec<&'static str>,
 }
 
-include!("synthetic_part_02.rs");
-include!("synthetic_part_03.rs");
+include!("synthetic_command_generator.rs");
+include!("synthetic_default_command_mutator.rs");

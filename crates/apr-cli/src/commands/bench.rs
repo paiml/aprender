@@ -446,5 +446,5 @@ fn print_header(path: &Path, config: &BenchConfig) {
 }
 
 include!("benchmark.rs");
-include!("bench_part_03.rs");
-include!("bench_part_04.rs");
+include!("bench_safetensors.rs");
+include!("bench_04.rs");

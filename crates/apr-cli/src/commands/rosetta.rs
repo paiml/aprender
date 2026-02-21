@@ -430,9 +430,9 @@ fn print_chain_results(
 }
 
 include!("inference.rs");
-include!("rosetta_part_03.rs");
-include!("rosetta_part_04.rs");
-include!("rosetta_part_05.rs");
+include!("rosetta_print_inference.rs");
+include!("rosetta_diff_tensor.rs");
+include!("rosetta_validate.rs");
 include!("fingerprints.rs");
 include!("inference_result.rs");
-include!("rosetta_part_08.rs");
+include!("rosetta_08.rs");

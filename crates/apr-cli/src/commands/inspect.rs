@@ -423,5 +423,5 @@ fn read_metadata(reader: &mut BufReader<File>, header: &HeaderData) -> MetadataI
     }
 }
 
-include!("inspect_part_02.rs");
-include!("inspect_part_03.rs");
+include!("inspect_output_json.rs");
+include!("inspect_03.rs");

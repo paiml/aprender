@@ -447,4 +447,4 @@ fn test_get_eval_text_lambada_returns_sample_constant() {
     assert_eq!(text, SAMPLE_LAMBADA);
 }
 
-include!("eval_tests_part_02.rs");
+include!("eval_tests_get.rs");

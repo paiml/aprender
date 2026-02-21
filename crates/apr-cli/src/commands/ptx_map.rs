@@ -427,4 +427,4 @@ fn format_shared(bytes: u32) -> String {
     }
 }
 
-include!("ptx_map_part_02.rs");
+include!("ptx_map_print_kernel.rs");

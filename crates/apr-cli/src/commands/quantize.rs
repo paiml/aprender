@@ -467,4 +467,4 @@ fn quantize_to_gguf(
     }
 }
 
-include!("quantize_part_02.rs");
+include!("quantize_quant_scheme.rs");

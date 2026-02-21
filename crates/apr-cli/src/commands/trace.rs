@@ -425,6 +425,6 @@ fn run_traced_inference_gguf(_path: &Path) -> Result<(), CliError> {
 }
 
 include!("vector_stats.rs");
-include!("trace_part_03.rs");
+include!("trace_likely_has_repeated.rs");
 include!("layer.rs");
-include!("trace_part_05.rs");
+include!("trace_05.rs");

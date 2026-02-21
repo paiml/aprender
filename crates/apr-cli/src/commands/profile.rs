@@ -445,10 +445,10 @@ fn percentile(sorted: &[f64], p: f64) -> f64 {
 }
 
 include!("diff_benchmark_report.rs");
-include!("profile_part_03.rs");
+include!("profile_pct_change_classify.rs");
 include!("kernel.rs");
-include!("profile_part_05.rs");
-include!("profile_part_06.rs");
-include!("profile_part_07.rs");
+include!("profile_ollama.rs");
+include!("profile_safetensors.rs");
+include!("profile_print_hotspot.rs");
 include!("comparison.rs");
-include!("profile_part_09.rs");
+include!("profile_09.rs");

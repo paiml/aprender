@@ -440,4 +440,4 @@ async fn test_build_candidates_wrong_capability() {
     assert!(matches!(result, Err(FederationError::NoCapacity(_))));
 }
 
-include!("routing_tests_part_02.rs");
+include!("routing_tests_route.rs");

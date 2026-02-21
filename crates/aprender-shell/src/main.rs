@@ -339,6 +339,6 @@ include!("cli_dispatch.rs");
 include!("suggestion_helpers.rs");
 include!("remove.rs");
 include!("diversity.rs");
-include!("main_part_06.rs");
+include!("main_cmd_tune_name.rs");
 include!("daemon_action.rs");
-include!("main_part_08.rs");
+include!("main_cmd_daemon.rs");

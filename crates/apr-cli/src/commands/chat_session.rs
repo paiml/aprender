@@ -49,10 +49,10 @@ mod realizar_chat {
         cuda_init_failed: bool,
     }
 
-include!("chat_part_02_part_05.rs");
-include!("chat_part_02_part_02.rs");
-include!("chat_part_02_part_03.rs");
-include!("chat_part_02_part_04.rs");
+include!("chat_load_tokenizers.rs");
+include!("chat_session_02.rs");
+include!("chat_generate_session_02.rs");
+include!("chat_generate_safetensors.rs");
 }
 
 

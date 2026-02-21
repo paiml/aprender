@@ -433,9 +433,9 @@ fn test_import_failure_fails_falsification() {
     assert!(validate_falsification(&results, &full_run_config()).is_err());
 }
 
-include!("tests_tests_part_02.rs");
-include!("tests_tests_part_03.rs");
-include!("tests_tests_part_04.rs");
-include!("tests_tests_part_05.rs");
-include!("tests_tests_part_06.rs");
-include!("tests_tests_part_07.rs");
+include!("tests_tests_convert_failure.rs");
+include!("tests_tests_model_tier.rs");
+include!("tests_tests_calculate_stddev_generate.rs");
+include!("tests_tests_export_json.rs");
+include!("tests_tests_print_header.rs");
+include!("tests_tests_gguf.rs");

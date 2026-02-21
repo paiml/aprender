@@ -394,4 +394,4 @@ fn cmd_solve(
     Ok(())
 }
 
-include!("main_part_02.rs");
+include!("main_cmd_benchmark.rs");

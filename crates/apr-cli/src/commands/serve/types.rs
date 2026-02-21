@@ -443,4 +443,4 @@ fn find_embedded_tool_json(text: &str) -> Option<String> {
     None
 }
 
-include!("types_part_02.rs");
+include!("types_uuid_simple_server.rs");

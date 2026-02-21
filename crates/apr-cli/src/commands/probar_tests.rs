@@ -438,6 +438,6 @@ fn test_generate_snapshots_defaults_to_4_layers_when_key_missing() {
     assert_eq!(snapshots.len(), 4, "should default to 4 layers");
 }
 
-include!("probar_tests_part_02.rs");
-include!("probar_tests_part_03.rs");
-include!("probar_tests_part_04.rs");
+include!("probar_tests_generate_snapshots.rs");
+include!("probar_tests_export_png.rs");
+include!("probar_tests_generate_diff.rs");

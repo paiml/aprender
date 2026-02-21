@@ -448,4 +448,4 @@ fn test_health_state_copy() {
     assert_eq!(state, copied);
 }
 
-include!("traits_tests_part_02.rs");
+include!("traits_tests_circuit_state.rs");
