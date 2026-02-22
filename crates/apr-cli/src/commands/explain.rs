@@ -3,20 +3,54 @@ use std::path::PathBuf;
 
 /// Explain command - provides documentation about errors, tensors, and models.
 ///
-/// Returns Result for consistency with other CLI commands and to enable
-/// future error handling (e.g., file read failures, network errors).
+/// The positional argument is auto-detected: if it looks like a file path
+/// (exists on disk or has a model file extension), it's treated as `--file`.
+/// Otherwise it's treated as an error code.
 #[allow(clippy::unnecessary_wraps)]
-pub(crate) fn run(code: Option<String>, file: Option<PathBuf>, tensor: Option<&str>) -> Result<()> {
+pub(crate) fn run(
+    code_or_file: Option<String>,
+    file: Option<PathBuf>,
+    tensor: Option<&str>,
+) -> Result<()> {
+    // Auto-detect: is the positional argument a file path or an error code?
+    let (code, resolved_file) = match code_or_file {
+        Some(arg) => {
+            let path = PathBuf::from(&arg);
+            if is_model_path(&arg, &path) {
+                (None, Some(path))
+            } else {
+                (Some(arg), file)
+            }
+        }
+        None => (None, file),
+    };
+
     if let Some(c) = code {
         explain_error_code(&c);
     } else if let Some(t) = tensor {
-        explain_tensor(t, file.as_ref());
-    } else if let Some(f) = file {
+        explain_tensor(t, resolved_file.as_ref());
+    } else if let Some(f) = resolved_file {
         explain_file(&f);
     } else {
-        println!("Please provide --code, --tensor, or --file");
+        println!("Please provide an error code, model file path, or --tensor");
+        println!();
+        println!("Usage:");
+        println!("  apr explain E001              # explain error code");
+        println!("  apr explain model.gguf        # explain model architecture");
+        println!("  apr explain --tensor q_proj    # explain tensor role");
     }
     Ok(())
+}
+
+/// Check if an argument looks like a model file path (exists or has model extension)
+fn is_model_path(arg: &str, path: &PathBuf) -> bool {
+    // Check if file exists on disk
+    if path.exists() {
+        return true;
+    }
+    // Check for known model file extensions
+    let extensions = [".apr", ".gguf", ".safetensors", ".bin", ".pt", ".pth"];
+    extensions.iter().any(|ext| arg.ends_with(ext))
 }
 
 fn explain_error_code(code: &str) {
@@ -245,7 +279,10 @@ fn explain_file(path: &PathBuf) {
     let has_decoder = tensor_names
         .iter()
         .any(|n| n.starts_with("decoder") || n.starts_with("model.decoder"));
-    let has_model_layers = tensor_names.iter().any(|n| n.starts_with("model.layers."));
+    let has_model_layers = tensor_names
+        .iter()
+        .any(|n| n.starts_with("model.layers.") || n.starts_with("blk."));
+    let has_transformer_h = tensor_names.iter().any(|n| n.starts_with("transformer.h."));
 
     let (arch, examples) = if has_encoder && has_decoder {
         ("Encoder-Decoder Transformer", "Whisper, T5, BART")
@@ -253,6 +290,8 @@ fn explain_file(path: &PathBuf) {
         ("Encoder-Only Transformer", "BERT, RoBERTa")
     } else if has_decoder || has_model_layers {
         ("Decoder-Only Transformer", "LLaMA, Qwen2, GPT")
+    } else if has_transformer_h {
+        ("Decoder-Only Transformer", "GPT-2")
     } else {
         ("Unknown", "")
     };

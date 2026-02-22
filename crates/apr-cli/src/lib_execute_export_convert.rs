@@ -123,7 +123,7 @@
     #[test]
     fn test_execute_explain_no_args() {
         let cli = make_cli(Commands::Explain {
-            code: None,
+            code_or_file: None,
             file: None,
             tensor: None,
         });
@@ -136,7 +136,7 @@
     #[test]
     fn test_execute_explain_with_code() {
         let cli = make_cli(Commands::Explain {
-            code: Some("E001".to_string()),
+            code_or_file: Some("E001".to_string()),
             file: None,
             tensor: None,
         });

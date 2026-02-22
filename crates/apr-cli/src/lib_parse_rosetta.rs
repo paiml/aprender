@@ -222,7 +222,7 @@
                 json: false,
             }),
             Commands::Explain {
-                code: None,
+                code_or_file: None,
                 file: None,
                 tensor: None,
             },

@@ -240,10 +240,10 @@ pub enum Commands {
     },
     /// Explain errors, architecture, and tensors
     Explain {
-        /// Explain a specific error code
-        #[arg(value_name = "CODE")]
-        code: Option<String>,
-        /// Path to .apr model file (optional context)
+        /// Error code or model file path (auto-detected)
+        #[arg(value_name = "CODE_OR_FILE")]
+        code_or_file: Option<String>,
+        /// Path to .apr model file (optional context for --tensor)
         #[arg(short, long)]
         file: Option<PathBuf>,
         /// Explain a specific tensor

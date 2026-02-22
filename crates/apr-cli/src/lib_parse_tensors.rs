@@ -39,9 +39,12 @@
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
             Commands::Explain {
-                code, file, tensor, ..
+                code_or_file,
+                file,
+                tensor,
+                ..
             } => {
-                assert_eq!(code, Some("E001".to_string()));
+                assert_eq!(code_or_file, Some("E001".to_string()));
                 assert!(file.is_none());
                 assert!(tensor.is_none());
             }
@@ -62,8 +65,12 @@
         ];
         let cli = parse_cli(args).expect("Failed to parse");
         match *cli.command {
-            Commands::Explain { code, file, tensor } => {
-                assert!(code.is_none());
+            Commands::Explain {
+                code_or_file,
+                file,
+                tensor,
+            } => {
+                assert!(code_or_file.is_none());
                 assert_eq!(file, Some(PathBuf::from("model.apr")));
                 assert_eq!(tensor, Some("embed.weight".to_string()));
             }

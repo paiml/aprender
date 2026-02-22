@@ -91,7 +91,7 @@ pub(crate) fn run(
 
     match component {
         FlowComponent::Full => {
-            print_full_flow(apr_reader.as_ref(), &tensor_names, verbose);
+            print_full_flow(apr_reader.as_ref(), &tensor_names, arch, verbose);
         }
         FlowComponent::Encoder => {
             print_encoder_flow(apr_reader.as_ref(), &tensor_names, verbose);
@@ -241,8 +241,13 @@ fn output_flow_json(
     Ok(())
 }
 
-/// Print full model flow
-fn print_full_flow(_reader: Option<&AprReader>, tensor_names: &[String], verbose: bool) {
+/// Print full model flow — dispatches based on detected architecture
+fn print_full_flow(
+    _reader: Option<&AprReader>,
+    tensor_names: &[String],
+    arch: &str,
+    verbose: bool,
+) {
     println!(
         "{}",
         "═══════════════════════════════════════════════════════════════".dimmed()
@@ -254,6 +259,15 @@ fn print_full_flow(_reader: Option<&AprReader>, tensor_names: &[String], verbose
     );
     println!();
 
+    if arch.starts_with("decoder-only") {
+        print_decoder_only_flow(tensor_names, verbose);
+    } else {
+        print_encoder_decoder_flow(tensor_names, verbose);
+    }
+}
+
+/// Print encoder-decoder (Whisper/T5) full flow
+fn print_encoder_decoder_flow(tensor_names: &[String], verbose: bool) {
     // Input
     println!("{}  audio [N, samples]", "INPUT".green().bold());
     println!("   │");
@@ -276,6 +290,91 @@ fn print_full_flow(_reader: Option<&AprReader>, tensor_names: &[String], verbose
     println!("         │");
     println!("         ▼");
     println!("{}  tokens [N, seq_len]", "OUTPUT".green().bold());
+}
+
+/// Print decoder-only (LLaMA/Qwen/GPT) full flow
+fn print_decoder_only_flow(tensor_names: &[String], _verbose: bool) {
+    let n_layers = count_layers_by_prefixes(
+        tensor_names,
+        &["model.layers.", "blk.", "transformer.h."],
+    );
+
+    // Detect FFN type from tensor names
+    let has_gate_proj = tensor_names.iter().any(|n| {
+        n.contains("gate_proj") || n.contains("ffn_gate") || n.contains("w1")
+    });
+    let ffn_type = if has_gate_proj { "SwiGLU" } else { "GELU" };
+
+    // Detect GQA from tensor names
+    let has_gqa = tensor_names.iter().any(|n| n.contains("k_proj") || n.contains("attn_k"));
+
+    // Input
+    println!("{}  tokens [batch, seq_len]", "INPUT".green().bold());
+    println!("   │");
+    println!("   ▼");
+
+    // Token embedding
+    println!("┌───────────────────────────────────────────────────────────┐");
+    println!(
+        "│  {}                                             │",
+        "Token Embed".yellow()
+    );
+    println!(
+        "│  embed_tokens.weight → [batch, seq_len, hidden_dim]      │"
+    );
+    println!("└────────────────────────────┬──────────────────────────────┘");
+    println!("                             │");
+    println!("                             ▼");
+
+    // Transformer blocks
+    if n_layers > 0 {
+        println!("┌───────────────────────────────────────────────────────────┐");
+        println!(
+            "│  {} × {}                                       │",
+            "Transformer Layers".cyan().bold(),
+            n_layers.to_string().green().bold()
+        );
+        println!("│  ┌─────────────────────────────────────────────────────┐ │");
+        println!(
+            "│  │  {} → {} → + residual          │ │",
+            "RMSNorm".blue(),
+            if has_gqa {
+                "GQA Self-Attention + RoPE".yellow()
+            } else {
+                "Self-Attention + RoPE".yellow()
+            }
+        );
+        println!(
+            "│  │  {} → {} → + residual                      │ │",
+            "RMSNorm".blue(),
+            ffn_type.yellow()
+        );
+        println!("│  └─────────────────────────────────────────────────────┘ │");
+        println!("└────────────────────────────┬──────────────────────────────┘");
+    }
+
+    // Final norm
+    println!("                             │");
+    println!("                             ▼");
+    println!("┌───────────────────────────────────────────────────────────┐");
+    println!(
+        "│  {}                                              │",
+        "Final RMSNorm".blue()
+    );
+    println!("└────────────────────────────┬──────────────────────────────┘");
+
+    // LM head
+    println!("                             │");
+    println!("                             ▼");
+    println!("┌───────────────────────────────────────────────────────────┐");
+    println!(
+        "│  {} → logits [batch, seq_len, vocab_size]               │",
+        "LM Head".yellow()
+    );
+    println!("└────────────────────────────┬──────────────────────────────┘");
+    println!("                             │");
+    println!("                             ▼");
+    println!("{}  next_token_id", "OUTPUT".green().bold());
 }
 
 /// Print encoder flow
@@ -387,17 +486,11 @@ fn print_decoder_flow(_reader: Option<&AprReader>, tensor_names: &[String], verb
 }
 
 fn print_decoder_block(tensor_names: &[String], _verbose: bool) {
-    // Count decoder layers
-    let n_layers = tensor_names
-        .iter()
-        .filter(|n| n.starts_with("decoder.layers."))
-        .filter_map(|n| {
-            n.strip_prefix("decoder.layers.")
-                .and_then(|s| s.split('.').next())
-                .and_then(|s| s.parse::<usize>().ok())
-        })
-        .max()
-        .map_or(0, |n| n + 1);
+    // Count decoder layers (encoder-decoder models: decoder.layers.*, model.decoder.layers.*)
+    let n_layers = count_layers_by_prefixes(
+        tensor_names,
+        &["decoder.layers.", "model.decoder.layers."],
+    );
 
     println!("┌─────────────────────────────────────────────────────────────┐");
     println!(

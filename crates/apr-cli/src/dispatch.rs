@@ -153,9 +153,11 @@ fn dispatch_inspection_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             let j = cli.json;
             crate::pipe::with_stdin_support(file, |p| lint::run(p, j))
         }
-        Commands::Explain { code, file, tensor } => {
-            explain::run(code.clone(), file.clone(), tensor.as_deref())
-        }
+        Commands::Explain {
+            code_or_file,
+            file,
+            tensor,
+        } => explain::run(code_or_file.clone(), file.clone(), tensor.as_deref()),
         Commands::Canary { command } => canary::run(command.clone()),
 
         _ => return None,
