@@ -4,7 +4,7 @@ Cross-subcommand smoke test results across all local and cached models.
 Each cell shows whether `apr <subcommand>` completes without crashing on the model file.
 
 **Tool:** `apr qualify` (11-gate cross-subcommand smoke test)
-**Last Updated:** 2026-02-22 15:50 UTC
+**Last Updated:** 2026-02-22 16:21 UTC
 
 ## Legend
 
@@ -25,7 +25,7 @@ Each cell shows whether `apr <subcommand>` completes without crashing on the mod
 | model.safetensors | SafeTensors | 942M | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 11/11 | 9.6s |
 | qwen2.5-coder-1.5b-instruct-q4_k_m.gguf | GGUF | 1.0G | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 11/11 | 29.4s |
 | qwen2.5-coder-1.5b-instruct-q4k.apr | APR | 1.0G | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 11/11 | 26.5s |
-| qwen2.5-coder-1.5b.apr | APR | 6.6G | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | 10/11 | 55.2s |
+| qwen2.5-coder-1.5b.apr | APR | 6.6G | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | 10/11 | 50.9s |
 | qwen2.5-coder-7b-instruct-q4k.gguf | GGUF | 3.9G | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 11/11 | 128.7s |
 | qwen2.5-coder-7b-instruct-exported.gguf | GGUF | 3.9G | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 11/11 | 111.9s |
 | qwen2.5-coder-7b-instruct.apr | APR | 3.9G | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 11/11 | 107.9s |
@@ -45,9 +45,17 @@ Each cell shows whether `apr <subcommand>` completes without crashing on the mod
 | bartowski/DeepSeek-R1-Distill-Qwen-1.5B-GGUF:De... | GGUF | 1.0G | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 11/11 | 27.6s |
 | bartowski/Falcon3-7B-Instruct-GGUF:Falcon3-7B-I... | GGUF | 4.2G | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 11/11 | 110.5s |
 | BAAI/bge-small-en-v1.5:model.safetensors | SafeTensors | 127M | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | 8/11 | .4s |
+| Qwen/Qwen2.5-0.5B-Instruct-GGUF:qwen2.5-0.5b-in... | GGUF | 644M | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 11/11 | 21.2s |
+| bartowski/codegemma-2b-GGUF:codegemma-2b-Q4_K_M... | GGUF | 1.5G | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 11/11 | 38.1s |
+| bartowski/Phi-3.5-mini-instruct-GGUF:Phi-3.5-mi... | GGUF | 3.7G | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 💥 | 10/11 | 77.1s |
+| bartowski/Llama-3.2-3B-Instruct-GGUF:Llama-3.2-... | GGUF | 3.1G | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 11/11 | 86.7s |
+| bartowski/gemma-2-9b-it-GGUF:gemma-2-9b-it-Q4_K... | GGUF | 5.3G | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | 10/11 | 127.8s |
+| unsloth/Qwen3-1.7B-GGUF:Qwen3-1.7B-Q8_0.gguf | GGUF | 1.7G | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 11/11 | 52.6s |
+| bartowski/internlm2:5-1_8b-chat-GGUF_internlm2_... | GGUF | 1.0G | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 11/11 | 26.7s |
+| bartowski/Llama-3.2-1B-Instruct-GGUF:Llama-3.2-... | GGUF | 770M | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 11/11 | 18.9s |
+| unsloth/Qwen3-4B-GGUF:Qwen3-4B-Q8_0.gguf | GGUF | 3.9G | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | 10/11 | 102.1s |
 | 1f324656416dd0c0.gguf | GGUF | 5.8G | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 11/11 | 148.8s |
 | 9a368706285251ee.gguf | GGUF | 4.0G | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 11/11 | 109.2s |
-| 224555822c5d06bb.gguf | GGUF | 770M | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 11/11 | 23.2s |
 | 6a520edef23b374e.gguf | GGUF | 1.8G | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 11/11 | 49.0s |
 | 59dce3937a1047d8.gguf | GGUF | 2.3G | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 11/11 | 31.1s |
 | 5c84a14af979daf5.safetensors | SafeTensors | 11.2G | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | 10/11 | 57.4s |
