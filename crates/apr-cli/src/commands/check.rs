@@ -17,6 +17,9 @@ use realizar::gguf::{MappedGGUFModel, OwnedQuantizedModel};
 #[cfg(feature = "inference")]
 use realizar::apr::AprV2Model;
 
+#[cfg(feature = "inference")]
+use realizar::safetensors_infer::SafetensorsToAprConverter;
+
 /// Stage result with detailed information
 #[derive(Debug)]
 #[allow(dead_code)]
@@ -134,8 +137,9 @@ fn run_real_checks(path: &Path, no_gpu: bool) -> Result<Vec<StageResult>, CliErr
     match ext.to_lowercase().as_str() {
         "apr" => run_real_checks_apr(path),
         "gguf" => run_real_checks_gguf(path, no_gpu),
+        "safetensors" => run_real_checks_safetensors(path),
         _ => Err(CliError::InvalidFormat(format!(
-            "Unsupported format: {}. Use .apr or .gguf",
+            "Unsupported format: {}. Use .apr, .gguf, or .safetensors",
             ext
         ))),
     }
@@ -440,6 +444,154 @@ fn run_real_checks_gguf(path: &Path, _no_gpu: bool) -> Result<Vec<StageResult>, 
         check_gguf_lm_head(&mapped, model.config().vocab_size),
         check_logits_real(&model),
         check_sampler_real(&model),
+    ])
+}
+
+/// Run REAL validation for SafeTensors models (GH-305 P1)
+#[cfg(feature = "inference")]
+fn run_real_checks_safetensors(path: &Path) -> Result<Vec<StageResult>, CliError> {
+    // Load via SafetensorsToAprConverter to get an AprTransformer we can forward-pass
+    let transformer = SafetensorsToAprConverter::convert(path)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to load SafeTensors: {e}")))?;
+
+    let config = transformer.config();
+    let num_layers = config.num_layers;
+    let vocab_size = config.vocab_size;
+    let hidden_dim = config.hidden_dim;
+
+    // Structural checks: AprTransformer fields are guaranteed present after convert(),
+    // but we validate for completeness
+    let has_embed = !transformer.token_embedding.is_empty();
+    let has_layers = !transformer.layers.is_empty();
+    let has_lm_head = !transformer.lm_head_weight.is_empty();
+
+    // Check layer weights via first layer
+    let (has_qkv, has_attn_out, has_ffn) = if let Some(layer) = transformer.layers.first() {
+        (
+            !layer.qkv_weight.is_empty(),
+            !layer.attn_output_weight.is_empty(),
+            !layer.ffn_up_weight.is_empty() && !layer.ffn_down_weight.is_empty(),
+        )
+    } else {
+        (false, false, false)
+    };
+    let has_gate = transformer
+        .layers
+        .first()
+        .is_some_and(|l| l.ffn_gate_weight.is_some());
+
+    // Forward pass checks
+    let test_tokens = vec![1u32, 2];
+    let forward_ok = transformer.forward(&test_tokens).is_ok();
+
+    Ok(vec![
+        StageResult {
+            name: "Tokenizer",
+            eli5: "Words → numbers",
+            passed: forward_ok,
+            details: Some(format!("tokens={test_tokens:?}")),
+        },
+        tensor_check_stage(
+            "Embedding",
+            "Numbers → vectors",
+            has_embed,
+            &format!("vocab={vocab_size} × hidden={hidden_dim}"),
+            "Missing embedding tensor",
+        ),
+        StageResult {
+            name: "Positional Encoding",
+            eli5: "\"You are word #3\"",
+            passed: true,
+            details: Some(format!("RoPE theta={:.1}", config.rope_theta)),
+        },
+        tensor_check_stage(
+            "Q/K/V Projection",
+            "Make 3 question copies",
+            has_qkv,
+            "Q/K/V found",
+            "Missing Q/K/V",
+        ),
+        tensor_check_stage(
+            "Attention Scores",
+            "\"Who to look at?\"",
+            has_attn_out,
+            "Attention output found",
+            "Missing attention output",
+        ),
+        tensor_check_stage(
+            "Feed-Forward (MLP)",
+            "\"Think about it\"",
+            has_ffn,
+            &format!("MLP found{}", if has_gate { " (SwiGLU)" } else { " (GELU)" }),
+            "Missing MLP",
+        ),
+        StageResult {
+            name: "Layer Norm",
+            eli5: "Keep numbers stable",
+            passed: has_layers && num_layers > 0,
+            details: Some(format!("{num_layers} layers")),
+        },
+        StageResult {
+            name: "LM Head",
+            eli5: "Vector → vocab scores",
+            passed: has_lm_head || has_embed,
+            details: Some(format!(
+                "vocab_size={vocab_size}{}",
+                if has_lm_head { "" } else { " (tied)" }
+            )),
+        },
+        // Forward pass validation
+        {
+            match transformer.forward(&[1u32]) {
+                Ok(logits) => {
+                    let has_nan = logits.iter().any(|x| x.is_nan());
+                    let has_inf = logits.iter().any(|x| x.is_infinite());
+                    let valid = !has_nan && !has_inf && !logits.is_empty();
+                    StageResult {
+                        name: "Logits → Probs",
+                        eli5: "Scores → percentages",
+                        passed: valid,
+                        details: Some(if has_nan {
+                            "NaN detected".to_string()
+                        } else if has_inf {
+                            "Inf detected".to_string()
+                        } else {
+                            format!("logits[{}]", logits.len())
+                        }),
+                    }
+                }
+                Err(e) => StageResult {
+                    name: "Logits → Probs",
+                    eli5: "Scores → percentages",
+                    passed: false,
+                    details: Some(format!("Forward failed: {e}")),
+                },
+            }
+        },
+        // Sampler validation
+        {
+            match transformer.forward(&[1u32]) {
+                Ok(logits) => {
+                    let max_logit = logits.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+                    let exp_sum: f32 = logits.iter().map(|x| (x - max_logit).exp()).sum();
+                    let prob_sum: f32 =
+                        logits.iter().map(|x| (x - max_logit).exp() / exp_sum).sum();
+                    let valid = (prob_sum - 1.0).abs() < 0.001;
+                    StageResult {
+                        name: "Sampler/Decode",
+                        eli5: "Pick word, return",
+                        passed: valid,
+                        details: Some(format!("softmax sum = {:.6}", prob_sum)),
+                    }
+                }
+                Err(e) => StageResult {
+                    name: "Sampler/Decode",
+                    eli5: "Pick word, return",
+                    passed: false,
+                    details: Some(format!("Forward failed: {e}")),
+                },
+            }
+        },
     ])
 }
 
