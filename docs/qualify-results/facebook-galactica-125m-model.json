@@ -5,7 +5,7 @@
   "gates_executed": 11,
   "gates_skipped": 0,
   "gates_failed": 3,
-  "total_duration_ms": 1368,
+  "total_duration_ms": 1662,
   "gates": [
     {
       "name": "inspect",
@@ -19,14 +19,14 @@
       "display_name": "Validate",
       "status": "FAIL",
       "message": "Validation failed: 97 tensors failed validation",
-      "duration_ms": 479
+      "duration_ms": 631
     },
     {
       "name": "validate_quality",
       "display_name": "Validate (quality)",
       "status": "FAIL",
       "message": "Validation failed: 97 tensors failed validation",
-      "duration_ms": 463
+      "duration_ms": 540
     },
     {
       "name": "tensors",
@@ -40,7 +40,7 @@
       "display_name": "Lint",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 139
+      "duration_ms": 159
     },
     {
       "name": "debug",
@@ -54,34 +54,34 @@
       "display_name": "Tree",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 0
+      "duration_ms": 3
     },
     {
       "name": "hex",
       "display_name": "Hex",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 139
+      "duration_ms": 163
     },
     {
       "name": "flow",
       "display_name": "Flow",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 140
+      "duration_ms": 159
     },
     {
       "name": "explain",
       "display_name": "Explain",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 0
+      "duration_ms": 1
     },
     {
       "name": "check",
       "display_name": "Check (pipeline)",
       "status": "FAIL",
-      "message": "Validation failed: Failed to load SafeTensors: Operation 'get_tensor_auto' not supported: Tensor not found with names: 'model.embed_tokens.weight', 'token_embd.weight', or 'embed_tokens.weight'. Available tensors (196 total): [\"model.decoder.layers.11.fc1.bias\", \"model.decoder.layers.2.final_layer_norm.weight\", \"model.decoder.layers.3.self_attn.k_proj.bias\", \"model.decoder.layers.6.self_attn.q_proj.bias\", \"model.decoder.layers.7.self_attn.out_proj.bias\"], ...",
+      "message": "Validation failed: Failed to load SafeTensors: Operation 'get_tensor_auto' not supported: Tensor not found with names: 'model.embed_tokens.weight', 'token_embd.weight', or 'embed_tokens.weight'. Available tensors (196 total): [\"model.decoder.layers.11.self_attn_layer_norm.bias\", \"model.decoder.layers.5.final_layer_norm.weight\", \"model.decoder.layers.4.fc2.bias\", \"model.decoder.layers.7.self_attn.k_proj.weight\", \"model.decoder.layers.3.final_layer_norm.weight\"], ...",
       "duration_ms": 0
     }
   ]

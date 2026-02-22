@@ -1,88 +1,88 @@
 {
-  "model": "/home/noah/.cache/pacha/models/10e017a14e34b2ce.gguf",
+  "model": "/home/noah/.cache/pacha/models/59dce3937a1047d8.gguf",
   "tier": "smoke",
-  "passed": false,
+  "passed": true,
   "gates_executed": 11,
   "gates_skipped": 0,
-  "gates_failed": 1,
-  "total_duration_ms": 57065,
+  "gates_failed": 0,
+  "total_duration_ms": 31103,
   "gates": [
     {
       "name": "inspect",
       "display_name": "Inspect",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 3027
+      "duration_ms": 3633
     },
     {
       "name": "validate",
       "display_name": "Validate",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 17788
+      "duration_ms": 3551
     },
     {
       "name": "validate_quality",
       "display_name": "Validate (quality)",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 17829
+      "duration_ms": 3569
     },
     {
       "name": "tensors",
       "display_name": "Tensors",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 2567
+      "duration_ms": 2734
     },
     {
       "name": "lint",
       "display_name": "Lint",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 1377
+      "duration_ms": 1534
     },
     {
       "name": "debug",
       "display_name": "Debug",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 2410
+      "duration_ms": 2707
     },
     {
       "name": "tree",
       "display_name": "Tree",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 2463
+      "duration_ms": 2736
     },
     {
       "name": "hex",
       "display_name": "Hex",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 1402
+      "duration_ms": 1516
     },
     {
       "name": "flow",
       "display_name": "Flow",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 3692
+      "duration_ms": 4205
     },
     {
       "name": "explain",
       "display_name": "Explain",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 2336
+      "duration_ms": 2775
     },
     {
       "name": "check",
       "display_name": "Check (pipeline)",
-      "status": "PANIC",
-      "message": "PANIC: gated FFN contract requires gate weight",
-      "duration_ms": 1978
+      "status": "PASS",
+      "message": "OK",
+      "duration_ms": 1942
     }
   ]
 }

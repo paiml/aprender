@@ -5,7 +5,7 @@
   "gates_executed": 11,
   "gates_skipped": 0,
   "gates_failed": 1,
-  "total_duration_ms": 56047,
+  "total_duration_ms": 54622,
   "gates": [
     {
       "name": "inspect",
@@ -19,28 +19,28 @@
       "display_name": "Validate",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 4074
+      "duration_ms": 3869
     },
     {
       "name": "validate_quality",
       "display_name": "Validate (quality)",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 4021
+      "duration_ms": 3842
     },
     {
       "name": "tensors",
       "display_name": "Tensors",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 8415
+      "duration_ms": 7463
     },
     {
       "name": "lint",
       "display_name": "Lint",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 7529
+      "duration_ms": 7420
     },
     {
       "name": "debug",
@@ -54,35 +54,35 @@
       "display_name": "Tree",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 7341
+      "duration_ms": 7365
     },
     {
       "name": "hex",
       "display_name": "Hex",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 3884
+      "duration_ms": 4070
     },
     {
       "name": "flow",
       "display_name": "Flow",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 11475
+      "duration_ms": 11436
     },
     {
       "name": "explain",
       "display_name": "Explain",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 7693
+      "duration_ms": 7452
     },
     {
       "name": "check",
       "display_name": "Check (pipeline)",
       "status": "FAIL",
       "message": "Validation failed: Model self-test failed",
-      "duration_ms": 1609
+      "duration_ms": 1700
     }
   ]
 }

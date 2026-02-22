@@ -1,88 +1,88 @@
 {
-  "model": "/home/noah/.cache/pacha/models/3eb0c7b83aae13a8.gguf",
+  "model": "/home/noah/.cache/pacha/models/9a368706285251ee.gguf",
   "tier": "smoke",
-  "passed": false,
+  "passed": true,
   "gates_executed": 11,
   "gates_skipped": 0,
-  "gates_failed": 1,
-  "total_duration_ms": 39443,
+  "gates_failed": 0,
+  "total_duration_ms": 109278,
   "gates": [
     {
       "name": "inspect",
       "display_name": "Inspect",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 2189
+      "duration_ms": 6351
     },
     {
       "name": "validate",
       "display_name": "Validate",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 11366
+      "duration_ms": 32496
     },
     {
       "name": "validate_quality",
       "display_name": "Validate (quality)",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 11361
+      "duration_ms": 33981
     },
     {
       "name": "tensors",
       "display_name": "Tensors",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 1867
+      "duration_ms": 5245
     },
     {
       "name": "lint",
       "display_name": "Lint",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 968
+      "duration_ms": 2640
     },
     {
       "name": "debug",
       "display_name": "Debug",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 1807
+      "duration_ms": 4444
     },
     {
       "name": "tree",
       "display_name": "Tree",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 1845
+      "duration_ms": 4671
     },
     {
       "name": "hex",
       "display_name": "Hex",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 1002
+      "duration_ms": 3508
     },
     {
       "name": "flow",
       "display_name": "Flow",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 2798
+      "duration_ms": 7186
     },
     {
       "name": "explain",
       "display_name": "Explain",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 1831
+      "duration_ms": 4511
     },
     {
       "name": "check",
       "display_name": "Check (pipeline)",
-      "status": "FAIL",
-      "message": "Validation failed: Model self-test failed",
-      "duration_ms": 2315
+      "status": "PASS",
+      "message": "OK",
+      "duration_ms": 3733
     }
   ]
 }

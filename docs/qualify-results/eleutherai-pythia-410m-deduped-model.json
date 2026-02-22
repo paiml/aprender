@@ -5,28 +5,28 @@
   "gates_executed": 11,
   "gates_skipped": 0,
   "gates_failed": 3,
-  "total_duration_ms": 4631,
+  "total_duration_ms": 4876,
   "gates": [
     {
       "name": "inspect",
       "display_name": "Inspect",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 2
+      "duration_ms": 1
     },
     {
       "name": "validate",
       "display_name": "Validate",
       "status": "FAIL",
       "message": "Validation failed: 24 tensors failed validation",
-      "duration_ms": 1500
+      "duration_ms": 1814
     },
     {
       "name": "validate_quality",
       "display_name": "Validate (quality)",
       "status": "FAIL",
       "message": "Validation failed: 24 tensors failed validation",
-      "duration_ms": 1483
+      "duration_ms": 1491
     },
     {
       "name": "tensors",
@@ -40,7 +40,7 @@
       "display_name": "Lint",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 572
+      "duration_ms": 525
     },
     {
       "name": "debug",
@@ -61,14 +61,14 @@
       "display_name": "Hex",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 523
+      "duration_ms": 517
     },
     {
       "name": "flow",
       "display_name": "Flow",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 542
+      "duration_ms": 518
     },
     {
       "name": "explain",
@@ -81,8 +81,8 @@
       "name": "check",
       "display_name": "Check (pipeline)",
       "status": "FAIL",
-      "message": "Validation failed: Failed to load SafeTensors: Operation 'get_tensor_auto' not supported: Tensor not found with names: 'model.embed_tokens.weight', 'token_embd.weight', or 'embed_tokens.weight'. Available tensors (364 total): [\"gpt_neox.layers.6.mlp.dense_4h_to_h.bias\", \"gpt_neox.layers.14.mlp.dense_h_to_4h.weight\", \"gpt_neox.layers.20.attention.masked_bias\", \"gpt_neox.layers.7.attention.rotary_emb.inv_freq\", \"gpt_neox.layers.8.attention.query_key_value.bias\"], ...",
-      "duration_ms": 1
+      "message": "Validation failed: Failed to load SafeTensors: Operation 'get_tensor_auto' not supported: Tensor not found with names: 'model.embed_tokens.weight', 'token_embd.weight', or 'embed_tokens.weight'. Available tensors (364 total): [\"gpt_neox.layers.22.attention.query_key_value.weight\", \"gpt_neox.layers.3.mlp.dense_h_to_4h.bias\", \"gpt_neox.layers.20.post_attention_layernorm.bias\", \"gpt_neox.layers.4.attention.query_key_value.bias\", \"gpt_neox.layers.6.attention.masked_bias\"], ...",
+      "duration_ms": 0
     }
   ]
 }

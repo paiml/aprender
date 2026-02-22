@@ -5,84 +5,84 @@
   "gates_executed": 11,
   "gates_skipped": 0,
   "gates_failed": 1,
-  "total_duration_ms": 97844,
+  "total_duration_ms": 115322,
   "gates": [
     {
       "name": "inspect",
       "display_name": "Inspect",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 4503
+      "duration_ms": 5916
     },
     {
       "name": "validate",
       "display_name": "Validate",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 31878
+      "duration_ms": 32029
     },
     {
       "name": "validate_quality",
       "display_name": "Validate (quality)",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 31854
+      "duration_ms": 44211
     },
     {
       "name": "tensors",
       "display_name": "Tensors",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 4537
+      "duration_ms": 6642
     },
     {
       "name": "lint",
       "display_name": "Lint",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 2483
+      "duration_ms": 2940
     },
     {
       "name": "debug",
       "display_name": "Debug",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 4316
+      "duration_ms": 4582
     },
     {
       "name": "tree",
       "display_name": "Tree",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 4288
+      "duration_ms": 5203
     },
     {
       "name": "hex",
       "display_name": "Hex",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 2429
+      "duration_ms": 2472
     },
     {
       "name": "flow",
       "display_name": "Flow",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 6737
+      "duration_ms": 6903
     },
     {
       "name": "explain",
       "display_name": "Explain",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 4368
+      "duration_ms": 4385
     },
     {
       "name": "check",
       "display_name": "Check (pipeline)",
       "status": "FAIL",
       "message": "Validation failed: Failed to mmap GGUF: Operation 'parse_gguf' not supported: Unsupported GGUF version: 2, only v3 supported",
-      "duration_ms": 31
+      "duration_ms": 35
     }
   ]
 }

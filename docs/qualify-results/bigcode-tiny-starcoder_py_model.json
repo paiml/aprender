@@ -1,11 +1,11 @@
 {
-  "model": "/home/noah/.cache/pacha/models/0857d600dc8484c7.safetensors",
+  "model": "/home/noah/.cache/pacha/models/b55269866992c38b.safetensors",
   "tier": "smoke",
   "passed": false,
   "gates_executed": 11,
   "gates_skipped": 0,
   "gates_failed": 1,
-  "total_duration_ms": 966,
+  "total_duration_ms": 2377,
   "gates": [
     {
       "name": "inspect",
@@ -19,14 +19,14 @@
       "display_name": "Validate",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 248
+      "duration_ms": 739
     },
     {
       "name": "validate_quality",
       "display_name": "Validate (quality)",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 242
+      "duration_ms": 534
     },
     {
       "name": "tensors",
@@ -40,7 +40,7 @@
       "display_name": "Lint",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 154
+      "duration_ms": 369
     },
     {
       "name": "debug",
@@ -61,14 +61,14 @@
       "display_name": "Hex",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 152
+      "duration_ms": 363
     },
     {
       "name": "flow",
       "display_name": "Flow",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 161
+      "duration_ms": 364
     },
     {
       "name": "explain",
@@ -81,7 +81,7 @@
       "name": "check",
       "display_name": "Check (pipeline)",
       "status": "FAIL",
-      "message": "Validation failed: Failed to load SafeTensors: Format error: config.json missing num_attention_heads",
+      "message": "Validation failed: Failed to load SafeTensors: Operation 'get_tensor_auto' not supported: Tensor not found with names: 'model.embed_tokens.weight', 'token_embd.weight', or 'embed_tokens.weight'. Available tensors (244 total): [\"transformer.h.2.ln_2.bias\", \"transformer.h.9.mlp.c_fc.weight\", \"transformer.h.18.attn.c_attn.weight\", \"transformer.h.18.ln_1.weight\", \"transformer.h.17.attn.c_proj.weight\"], ...",
       "duration_ms": 0
     }
   ]

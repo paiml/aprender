@@ -1,46 +1,46 @@
 {
-  "model": "/home/noah/.cache/pacha/models/0857d600dc8484c7.safetensors",
+  "model": "/home/noah/.cache/pacha/models/38e63c2a12def40a.safetensors",
   "tier": "smoke",
-  "passed": false,
+  "passed": true,
   "gates_executed": 11,
   "gates_skipped": 0,
-  "gates_failed": 1,
-  "total_duration_ms": 1037,
+  "gates_failed": 0,
+  "total_duration_ms": 8391,
   "gates": [
     {
       "name": "inspect",
       "display_name": "Inspect",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 1
+      "duration_ms": 2
     },
     {
       "name": "validate",
       "display_name": "Validate",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 287
+      "duration_ms": 1880
     },
     {
       "name": "validate_quality",
       "display_name": "Validate (quality)",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 246
+      "duration_ms": 1516
     },
     {
       "name": "tensors",
       "display_name": "Tensors",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 1
+      "duration_ms": 0
     },
     {
       "name": "lint",
       "display_name": "Lint",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 163
+      "duration_ms": 577
     },
     {
       "name": "debug",
@@ -61,14 +61,14 @@
       "display_name": "Hex",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 166
+      "duration_ms": 566
     },
     {
       "name": "flow",
       "display_name": "Flow",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 165
+      "duration_ms": 548
     },
     {
       "name": "explain",
@@ -80,9 +80,9 @@
     {
       "name": "check",
       "display_name": "Check (pipeline)",
-      "status": "FAIL",
-      "message": "Validation failed: Failed to load SafeTensors: Format error: config.json missing num_attention_heads",
-      "duration_ms": 0
+      "status": "PASS",
+      "message": "OK",
+      "duration_ms": 3296
     }
   ]
 }

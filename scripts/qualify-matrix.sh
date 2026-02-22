@@ -261,20 +261,11 @@ generate_matrix() {
     done
     printf '%s\n' "-------|----------|"
 
-    # Rows — iterate over ALL models to keep consistent order
-    local slug json_file fmt sz dname
-    local pass_count total_count gate_status duration_ms duration_s
-    for model in "${ALL_MODELS[@]}"; do
-        slug="$(slug_for "${model}")"
-        json_file="${RESULTS_DIR}/${slug}.json"
-
-        # Skip missing or empty results
-        if [[ ! -f "${json_file}" ]] || [[ ! -s "${json_file}" ]]; then
-            continue
-        fi
-        if ! jq empty "${json_file}" 2>/dev/null; then
-            continue
-        fi
+    # Helper to emit one matrix row given a model path and JSON result file
+    emit_row() {
+        local model="$1"
+        local json_file="$2"
+        local fmt sz dname pass_count total_count gate_status duration_ms duration_s
 
         fmt="$(format_for "${model}")"
         sz="$(size_for "${model}")"
@@ -308,6 +299,60 @@ generate_matrix() {
         duration_s="$(bc <<< "scale=1; ${duration_ms} / 1000")"
 
         printf ' %d/%d | %ss |\n' "${pass_count}" "${total_count}" "${duration_s}"
+    }
+
+    # Track which JSON files and model paths we've already emitted
+    declare -A EMITTED_JSON
+    declare -A EMITTED_PATH
+
+    # Phase 1: Rows from ALL_MODELS (known models with proper names)
+    local slug json_file
+    for model in "${ALL_MODELS[@]}"; do
+        slug="$(slug_for "${model}")"
+        json_file="${RESULTS_DIR}/${slug}.json"
+
+        if [[ ! -f "${json_file}" ]] || [[ ! -s "${json_file}" ]]; then
+            continue
+        fi
+        if ! jq empty "${json_file}" 2>/dev/null; then
+            continue
+        fi
+
+        emit_row "${model}" "${json_file}"
+        EMITTED_JSON["${json_file}"]=1
+        EMITTED_PATH["${model}"]=1
+    done
+
+    # Phase 2: Pick up results for models not in ALL_MODELS
+    # (from previous qualify runs where models are no longer in manifest)
+    for json_file in "${RESULTS_DIR}"/*.json; do
+        local was_emitted="${EMITTED_JSON[$json_file]:-}"
+        if [[ -n "${was_emitted}" ]]; then
+            continue
+        fi
+        if [[ ! -s "${json_file}" ]]; then
+            continue
+        fi
+        if ! jq empty "${json_file}" 2>/dev/null; then
+            continue
+        fi
+
+        # Get model path from the JSON result
+        local result_model
+        result_model="$(jq -r '.model // ""' "${json_file}" 2>/dev/null)"
+        if [[ -z "${result_model}" ]] || [[ ! -f "${result_model}" ]]; then
+            continue
+        fi
+
+        # Skip if this model path was already emitted
+        local path_emitted="${EMITTED_PATH[$result_model]:-}"
+        if [[ -n "${path_emitted}" ]]; then
+            continue
+        fi
+
+        emit_row "${result_model}" "${json_file}"
+        EMITTED_JSON["${json_file}"]=1
+        EMITTED_PATH["${result_model}"]=1
     done
 
     printf '%s\n' "<!-- QUALIFY_MATRIX_END -->"

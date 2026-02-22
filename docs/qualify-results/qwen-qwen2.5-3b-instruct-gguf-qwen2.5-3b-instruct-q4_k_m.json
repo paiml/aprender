@@ -1,88 +1,88 @@
 {
-  "model": "/home/noah/.cache/pacha/models/04a7a2e6f6ea3e59.gguf",
+  "model": "/home/noah/.cache/pacha/models/c8490f8cd005ac4e.gguf",
   "tier": "smoke",
-  "passed": false,
+  "passed": true,
   "gates_executed": 11,
   "gates_skipped": 0,
-  "gates_failed": 2,
-  "total_duration_ms": 49865,
+  "gates_failed": 0,
+  "total_duration_ms": 30107,
   "gates": [
     {
       "name": "inspect",
       "display_name": "Inspect",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 2779
+      "duration_ms": 1607
     },
     {
       "name": "validate",
       "display_name": "Validate",
-      "status": "FAIL",
-      "message": "Validation failed: 1 tensors failed validation",
-      "duration_ms": 14712
+      "status": "PASS",
+      "message": "OK",
+      "duration_ms": 7970
     },
     {
       "name": "validate_quality",
       "display_name": "Validate (quality)",
-      "status": "FAIL",
-      "message": "Validation failed: 1 tensors failed validation",
-      "duration_ms": 14631
+      "status": "PASS",
+      "message": "OK",
+      "duration_ms": 10062
     },
     {
       "name": "tensors",
       "display_name": "Tensors",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 2312
+      "duration_ms": 1419
     },
     {
       "name": "lint",
       "display_name": "Lint",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 1199
+      "duration_ms": 755
     },
     {
       "name": "debug",
       "display_name": "Debug",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 2210
+      "duration_ms": 1282
     },
     {
       "name": "tree",
       "display_name": "Tree",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 2266
+      "duration_ms": 1267
     },
     {
       "name": "hex",
       "display_name": "Hex",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 1226
+      "duration_ms": 690
     },
     {
       "name": "flow",
       "display_name": "Flow",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 3387
+      "duration_ms": 1873
     },
     {
       "name": "explain",
       "display_name": "Explain",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 2204
+      "duration_ms": 1258
     },
     {
       "name": "check",
       "display_name": "Check (pipeline)",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 2933
+      "duration_ms": 1918
     }
   ]
 }
