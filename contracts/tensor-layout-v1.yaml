@@ -464,10 +464,18 @@ validation_rules_semantic:
 # If ANY falsification test passes (finds a counterexample), the contract
 # implementation is BROKEN and must be fixed before release.
 #
+# STATUS (2026-02-22): ALL 8 falsification tests IMPLEMENTED and PASSING
+#   FALSIFY-001..005: src/format/validated_tensors.rs (36 tests)
+#   FALSIFY-006:      crates/apr-cli/tests/falsification_cross_crate_parity.rs (13 tests)
+#   FALSIFY-007:      realizar/src/quantize/contract_tests.rs (1 test)
+#   FALSIFY-008:      realizar/src/quantize/contract_tests.rs (2 tests)
+#   Total: 52 falsification tests across 3 test files
+#
 falsification_tests:
   - id: FALSIFY-001
     rule: "F-DATA-QUALITY-001 (Embedding density)"
     prediction: "It is impossible to construct ValidatedEmbedding with >50% zeros"
+    status: "IMPLEMENTED"  # 36 tests in src/format/validated_tensors.rs
     falsification_test: |
       #[test]
       #[should_panic(expected = "DENSITY FAILURE")]
@@ -480,6 +488,7 @@ falsification_tests:
   - id: FALSIFY-002
     rule: "Type enforcement (Poka-Yoke)"
     prediction: "It is impossible to construct AprTransformer without ValidatedEmbedding"
+    status: "IMPLEMENTED"  # Compile-time enforcement via private fields
     falsification_test: |
       // This code should NOT compile
       fn falsify_002_type_enforcement() {
@@ -494,6 +503,7 @@ falsification_tests:
   - id: FALSIFY-003
     rule: "F-DATA-QUALITY-002 (NaN rejection)"
     prediction: "It is impossible to construct ValidatedWeight containing NaN"
+    status: "IMPLEMENTED"  # In src/format/validated_tensors.rs
     falsification_test: |
       #[test]
       #[should_panic(expected = "NaN")]
@@ -507,6 +517,7 @@ falsification_tests:
   - id: FALSIFY-004
     rule: "F-DATA-QUALITY-004 (Spot check)"
     prediction: "It is impossible to load SafeTensors with 94.5% leading zeros"
+    status: "IMPLEMENTED"  # In src/format/validated_tensors.rs
     falsification_test: |
       #[test]
       fn falsify_004_spot_check() {
@@ -527,6 +538,7 @@ falsification_tests:
   - id: FALSIFY-005
     rule: "F-LAYOUT-CONTRACT-002 (lm_head shape)"
     prediction: "It is impossible to construct AprTransformer with wrong lm_head shape"
+    status: "IMPLEMENTED"  # In src/format/validated_tensors.rs
     falsification_test: |
       #[test]
       #[should_panic(expected = "CONTRACT VIOLATION")]
@@ -541,59 +553,77 @@ falsification_tests:
   - id: FALSIFY-006
     rule: "Cross-crate enforcement"
     prediction: "Both aprender AND realizar enforce identical validation"
+    status: "IMPLEMENTED"  # 13 tests in apr-cli/tests/falsification_cross_crate_parity.rs
+    implementation: "crates/apr-cli/tests/falsification_cross_crate_parity.rs"
+    test_count: 13
     falsification_test: |
-      #[test]
-      fn falsify_006_cross_crate_parity() {
-          let data = vec![0.0f32; 1000];  // All zeros
-
-          // aprender validation
-          let apr_result = aprender::format::ValidatedEmbedding::new(
-              data.clone(), 10, 100
-          );
-
-          // realizar validation
-          let rlz_result = realizar::ValidatedEmbedding::new(
-              data.clone(), 10, 100
-          );
-
-          // Both must fail with same error type
-          assert!(apr_result.is_err());
-          assert!(rlz_result.is_err());
-          assert_eq!(
-              apr_result.unwrap_err().to_string(),
-              rlz_result.unwrap_err().to_string()
-          );
-      }
+      // 13 tests verifying aprender and realizar produce identical accept/reject
+      // decisions for the SAME input data:
+      //
+      // FALSIFY-006a: Good data accepted by BOTH crates (3 tests)
+      //   - falsify_006_good_embedding_accepted_by_both
+      //   - falsify_006_good_weight_accepted_by_both
+      //   - falsify_006_good_vector_accepted_by_both
+      //
+      // FALSIFY-006b: Bad data rejected by BOTH with same rule_id (7 tests)
+      //   - falsify_006_all_zeros_embedding_rejected_by_both
+      //   - falsify_006_nan_embedding_rejected_by_both
+      //   - falsify_006_inf_embedding_rejected_by_both
+      //   - falsify_006_wrong_shape_embedding_rejected_by_both
+      //   - falsify_006_spot_check_offset_bug_rejected_by_both
+      //   - falsify_006_all_zero_weight_rejected_by_both
+      //   - falsify_006_nan_weight_rejected_by_both
+      //
+      // FALSIFY-006c: Threshold boundary parity (2 tests)
+      //   - falsify_006_density_threshold_boundary_parity
+      //   - falsify_006_weight_density_threshold_boundary_parity
+      //
+      // FALSIFY-006d: Vector parity (1 test)
+      //   - falsify_006_nan_vector_rejected_by_both
     if_test_passes: "Contract is BROKEN - crates have divergent validation"
 
   - id: FALSIFY-007
     rule: "Quant dispatch exhaustiveness (PMAT-232)"
     prediction: "It is impossible to add a WeightQuantType variant without updating all dispatch sites"
+    status: "IMPLEMENTED"  # 1 test in realizar/src/quantize/contract_tests.rs
+    implementation: "realizar/src/quantize/contract_tests.rs::falsify_007_no_catch_all_in_dispatch_sites"
+    test_count: 1
     falsification_test: |
-      // WeightQuantType must NOT derive Default and MUST be #[non_exhaustive]
-      // or have exhaustive matches at all dispatch sites.
+      // Scans ALL dispatch site source files for `_ =>` catch-all arms
+      // inside WeightQuantType match blocks.
       //
-      // If this compiles, the contract is broken:
-      fn falsify_007_no_catch_all() {
-          // grep -c '_ =>' in all dispatch sites listed in quant_dispatch.dispatch_sites
-          // Count MUST be 0. Any `_ =>` in a WeightQuantType match is a contract violation.
-          //
-          // Automated: `cargo clippy -- -W clippy::wildcard_enum_match_arm` on realizar
-          // will flag every `_ =>` on WeightQuantType as a warning.
-      }
+      // Uses brace-depth tracking to distinguish:
+      //   - WeightQuantType match { _ => ... }  (VIOLATION)
+      //   - from_ggml_type(u32) match { _ => ... }  (LEGITIMATE)
+      //
+      // Helper functions:
+      //   is_in_weight_quant_match(lines, catch_all_line) -> bool
+      //   find_catch_all_violations(source) -> Vec<String>
+      //
+      // Scans: gemv_dispatch.rs, cuda/types.rs, brick/dispatch.rs,
+      //        quantize/dispatch.rs, layers/attention.rs, gpu/scheduler.rs
     if_catch_all_exists: "Contract is BROKEN - silent wrong-kernel dispatch possible"
     reference: "PMAT-232, ALG-006"
 
   - id: FALSIFY-008
     rule: "Quant type → kernel correctness"
     prediction: "Q6K weights dispatched through q4k_gemv_into produce garbage output"
+    status: "IMPLEMENTED"  # 2 tests in realizar/src/quantize/contract_tests.rs
+    implementation: "realizar/src/quantize/contract_tests.rs::falsify_qdot_008_*"
+    test_count: 2
     falsification_test: |
-      #[test]
-      fn falsify_008_wrong_kernel_detection() {
-          // Load a Q6K weight tensor, dispatch through Q4K kernel
-          // Assert output is NaN or magnitude > 1e6 (garbage)
-          // This MUST produce garbage - if it doesn't, our block formats are wrong
-      }
+      // Two cross-format isolation tests:
+      //
+      // 1. falsify_qdot_008_q6k_through_q4k_produces_garbage
+      //    - Quantizes data to Q6K format, runs through Q4K kernel
+      //    - Asserts relative error > 50% (formats are structurally incompatible)
+      //
+      // 2. falsify_qdot_008_q4k_through_q8_0_produces_garbage
+      //    - Quantizes data to Q4K format, runs through Q8_0 kernel
+      //    - Asserts relative error > 50% (different block sizes)
+      //
+      // These tests PROVE that dispatch correctness matters:
+      // feeding data through the wrong kernel produces garbage.
     if_test_fails: "Block format assumptions are wrong - Q4K and Q6K are more compatible than expected"
 
 # Toyota Way application notes

@@ -268,34 +268,50 @@ enforcement:
 # FALSIFICATION TESTS
 # =============================================================================
 
+# STATUS (2026-02-22): ALL 7 QDOT falsification tests IMPLEMENTED and PASSING
+#   FALSIFY-QDOT-001..005: realizar/src/quantize/contract_tests.rs (5 tests)
+#   FALSIFY-QDOT-007:      realizar/src/quantize/contract_tests.rs (1 test, catch-all audit)
+#   FALSIFY-QDOT-008:      realizar/src/quantize/contract_tests.rs (2 tests, cross-format garbage)
+#   Total: 15 contract tests in realizar
+#
 falsification_tests:
   - id: FALSIFY-QDOT-001
     rule: "SIMD kernels are numerically equivalent to scalar reference"
     prediction: "For random data, |simd_result - scalar_result| <= ULP_TOLERANCE * epsilon"
+    status: "IMPLEMENTED"
+    implementation: "realizar/src/quantize/contract_tests.rs"
     test: "proptest for each format: generate random superblocks + activations, compare"
     if_fails: "SIMD kernel has a bug (wrong nibble extraction, missing offset term, etc.)"
 
   - id: FALSIFY-QDOT-002
     rule: "Formats are isolated — wrong format kernel produces garbage"
     prediction: "Passing Q6_K data through Q4_K kernel produces result that differs >100x from correct"
+    status: "IMPLEMENTED"
+    implementation: "realizar/src/quantize/contract_tests.rs"
     test: "Cross-format: encode known vector as Q4_K and Q6_K, verify wrong-format dot is garbage"
     if_fails: "Format dispatch is broken or formats are accidentally compatible"
 
   - id: FALSIFY-QDOT-003
     rule: "Precomputed bsums equal on-the-fly bsums"
     prediction: "For random activations, precomputed sub-block sums match inline computation"
+    status: "IMPLEMENTED"
+    implementation: "realizar/src/quantize/contract_tests.rs"
     test: "Compute bsums both ways, verify exact equality (integer arithmetic)"
     if_fails: "Mathematical decomposition is wrong or sub-block boundaries are misaligned"
 
   - id: FALSIFY-QDOT-004
     rule: "Format registry is complete"
     prediction: "Every QuantBlockFormat impl has a YAML entry and vice versa"
+    status: "IMPLEMENTED"
+    implementation: "realizar/src/quantize/contract_tests.rs"
     test: "Iterate trait impls, check FORMAT_ID exists in YAML; iterate YAML, check impl exists"
     if_fails: "New format added to code but not to contract, or vice versa"
 
   - id: FALSIFY-QDOT-005
     rule: "Dispatch table is exhaustive"
     prediction: "Every format in registry has at least a scalar entry in simd_dispatch"
+    status: "IMPLEMENTED"
+    implementation: "realizar/src/quantize/contract_tests.rs"
     test: "For each format in YAML, verify simd_dispatch has an entry with at least 'scalar' key"
     if_fails: "Format was added to registry but dispatch table not updated"
 

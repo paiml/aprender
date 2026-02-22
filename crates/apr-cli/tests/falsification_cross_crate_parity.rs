@@ -115,8 +115,14 @@ mod cross_crate_parity {
         let apr_result = AprEmbedding::new(data.clone(), 100, 64);
         let rlz_result = RlzEmbedding::new(data, 100, 64);
 
-        assert!(apr_result.is_err(), "aprender should reject all-zero embedding");
-        assert!(rlz_result.is_err(), "realizar should reject all-zero embedding");
+        assert!(
+            apr_result.is_err(),
+            "aprender should reject all-zero embedding"
+        );
+        assert!(
+            rlz_result.is_err(),
+            "realizar should reject all-zero embedding"
+        );
 
         let apr_err = apr_result.unwrap_err();
         let rlz_err = rlz_result.unwrap_err();
@@ -213,8 +219,14 @@ mod cross_crate_parity {
         let apr_result = AprEmbedding::new(data.clone(), vocab_size, hidden_dim);
         let rlz_result = RlzEmbedding::new(data, vocab_size, hidden_dim);
 
-        assert!(apr_result.is_err(), "aprender should catch zero token at 10%");
-        assert!(rlz_result.is_err(), "realizar should catch zero token at 10%");
+        assert!(
+            apr_result.is_err(),
+            "aprender should catch zero token at 10%"
+        );
+        assert!(
+            rlz_result.is_err(),
+            "realizar should catch zero token at 10%"
+        );
 
         let apr_err = apr_result.unwrap_err();
         let rlz_err = rlz_result.unwrap_err();
@@ -232,8 +244,14 @@ mod cross_crate_parity {
         let apr_result = AprWeight::new(data.clone(), 10, 10, "test");
         let rlz_result = RlzWeight::new(data, 10, 10, "test");
 
-        assert!(apr_result.is_err(), "aprender should reject all-zero weight");
-        assert!(rlz_result.is_err(), "realizar should reject all-zero weight");
+        assert!(
+            apr_result.is_err(),
+            "aprender should reject all-zero weight"
+        );
+        assert!(
+            rlz_result.is_err(),
+            "realizar should reject all-zero weight"
+        );
 
         let apr_err = apr_result.unwrap_err();
         let rlz_err = rlz_result.unwrap_err();
@@ -311,8 +329,16 @@ mod cross_crate_parity {
             apr_result.is_err(),
             rlz_result.is_err(),
             "Density boundary: aprender={}, realizar={}. Thresholds have diverged!",
-            if apr_result.is_err() { "rejected" } else { "accepted" },
-            if rlz_result.is_err() { "rejected" } else { "accepted" },
+            if apr_result.is_err() {
+                "rejected"
+            } else {
+                "accepted"
+            },
+            if rlz_result.is_err() {
+                "rejected"
+            } else {
+                "accepted"
+            },
         );
     }
 
@@ -334,8 +360,16 @@ mod cross_crate_parity {
             apr_result.is_err(),
             rlz_result.is_err(),
             "Weight density boundary: aprender={}, realizar={}. Thresholds have diverged!",
-            if apr_result.is_err() { "rejected" } else { "accepted" },
-            if rlz_result.is_err() { "rejected" } else { "accepted" },
+            if apr_result.is_err() {
+                "rejected"
+            } else {
+                "accepted"
+            },
+            if rlz_result.is_err() {
+                "rejected"
+            } else {
+                "accepted"
+            },
         );
     }
 }
