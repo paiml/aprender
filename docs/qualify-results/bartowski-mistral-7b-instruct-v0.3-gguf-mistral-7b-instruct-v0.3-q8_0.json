@@ -1,88 +1,88 @@
 {
-  "model": "/home/noah/.cache/pacha/models/6588b38fa23ad136.safetensors",
+  "model": "/home/noah/.cache/pacha/models/7e601ffbb06c77da.gguf",
   "tier": "smoke",
-  "passed": false,
+  "passed": true,
   "gates_executed": 11,
   "gates_skipped": 0,
-  "gates_failed": 3,
-  "total_duration_ms": 498,
+  "gates_failed": 0,
+  "total_duration_ms": 154744,
   "gates": [
     {
       "name": "inspect",
       "display_name": "Inspect",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 1
+      "duration_ms": 9551
     },
     {
       "name": "validate",
       "display_name": "Validate",
-      "status": "FAIL",
-      "message": "Validation failed: 1 tensors failed validation",
-      "duration_ms": 114
+      "status": "PASS",
+      "message": "OK",
+      "duration_ms": 36192
     },
     {
       "name": "validate_quality",
       "display_name": "Validate (quality)",
-      "status": "FAIL",
-      "message": "Validation failed: 1 tensors failed validation",
-      "duration_ms": 138
+      "status": "PASS",
+      "message": "OK",
+      "duration_ms": 36749
     },
     {
       "name": "tensors",
       "display_name": "Tensors",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 0
+      "duration_ms": 8911
     },
     {
       "name": "lint",
       "display_name": "Lint",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 83
+      "duration_ms": 4432
     },
     {
       "name": "debug",
       "display_name": "Debug",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 0
+      "duration_ms": 7767
     },
     {
       "name": "tree",
       "display_name": "Tree",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 1
+      "duration_ms": 8506
     },
     {
       "name": "hex",
       "display_name": "Hex",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 75
+      "duration_ms": 4720
     },
     {
       "name": "flow",
       "display_name": "Flow",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 80
+      "duration_ms": 13463
     },
     {
       "name": "explain",
       "display_name": "Explain",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 0
+      "duration_ms": 8530
     },
     {
       "name": "check",
       "display_name": "Check (pipeline)",
-      "status": "FAIL",
-      "message": "Validation failed: Failed to load SafeTensors: Operation 'get_tensor_auto' not supported: Tensor not found with names: 'model.embed_tokens.weight', 'token_embd.weight', or 'embed_tokens.weight'. Available tensors (200 total): [\"encoder.layer.8.output.LayerNorm.bias\", \"encoder.layer.5.output.LayerNorm.weight\", \"encoder.layer.8.attention.self.key.weight\", \"encoder.layer.10.attention.self.query.bias\", \"encoder.layer.1.attention.self.query.bias\"], ...",
-      "duration_ms": 0
+      "status": "PASS",
+      "message": "OK",
+      "duration_ms": 15731
     }
   ]
 }
