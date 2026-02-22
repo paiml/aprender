@@ -397,6 +397,7 @@ fn run_real_checks_gguf(path: &Path, _no_gpu: bool) -> Result<Vec<StageResult>, 
         tensor_check_stage(
             "Q/K/V Projection",
             "Make 3 question copies",
+            // GH-309: Accept either separate Q/K/V or merged QKV (Phi-2, Phi-3.5)
             all_groups_match(
                 &names,
                 &[
@@ -404,7 +405,7 @@ fn run_real_checks_gguf(path: &Path, _no_gpu: bool) -> Result<Vec<StageResult>, 
                     &["blk.0.attn_k", "layers.0.self_attn.k_proj"],
                     &["blk.0.attn_v", "layers.0.self_attn.v_proj"],
                 ],
-            ),
+            ) || any_name_contains(&names, &["attn_qkv", "qkv_proj"]),
             "Q/K/V tensors found",
             "Missing Q/K/V tensors",
         ),
@@ -418,10 +419,18 @@ fn run_real_checks_gguf(path: &Path, _no_gpu: bool) -> Result<Vec<StageResult>, 
         tensor_check_stage(
             "Feed-Forward (MLP)",
             "\"Think about it\"",
+            // GH-306: Accept models with fused gate_up (no separate ffn_gate)
+            // Minimum: ffn_up + ffn_down, or gate_proj + up_proj + down_proj
             all_groups_match(
                 &names,
                 &[
                     &["ffn_gate", "gate_proj"],
+                    &["ffn_up", "up_proj"],
+                    &["ffn_down", "down_proj"],
+                ],
+            ) || all_groups_match(
+                &names,
+                &[
                     &["ffn_up", "up_proj"],
                     &["ffn_down", "down_proj"],
                 ],
@@ -432,13 +441,16 @@ fn run_real_checks_gguf(path: &Path, _no_gpu: bool) -> Result<Vec<StageResult>, 
         StageResult {
             name: "Layer Norm",
             eli5: "Keep numbers stable",
-            passed: all_groups_match(
+            // GH-309: Some models (Phi-2) share attn_norm for both attention and FFN
+            // (no separate ffn_norm/post_attention_layernorm). Accept either pattern.
+            passed: (all_groups_match(
                 &names,
                 &[
                     &["attn_norm", "input_layernorm"],
-                    &["ffn_norm", "post_attention_layernorm"],
+                    &["ffn_norm", "post_attention_layernorm", "post_ffw_norm"],
                 ],
-            ) && model.config().num_layers > 0,
+            ) || any_name_contains(&names, &["attn_norm", "input_layernorm"]))
+                && model.config().num_layers > 0,
             details: Some(format!("{} layers", model.config().num_layers)),
         },
         check_gguf_lm_head(&mapped, model.config().vocab_size),

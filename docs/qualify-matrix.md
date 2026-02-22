@@ -1,9 +1,9 @@
 # APR Qualify Matrix
 
-**Last Updated:** 2026-02-22 23:09 UTC
+**Last Updated:** 2026-02-22 23:16 UTC
 **Tool:** `apr qualify` (11-gate cross-subcommand smoke test)
 **Models:** 101 qualified
-**Perfect (11/11):** 83
+**Perfect (11/11):** 84
 
 <!-- QUALIFY_MATRIX_START -->
 | # | Model | Format | Inspect | Validate | Val.Quality | Tensors | Lint | Debug | Tree | Hex | Flow | Explain | Check | Score | Duration |
@@ -40,7 +40,7 @@
 | 30 | 7e601ffbb06c77da | GGUF | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 11/11 | 155s |
 | 31 | 2cd0f5750026e31f | GGUF | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 11/11 | 171s |
 | 32 | 59dce3937a1047d8 | GGUF | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 11/11 | 31s |
-| 33 | 6582adfa4b6afeed | GGUF | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | 10/11 | 77s |
+| 33 | 6582adfa4b6afeed | GGUF | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 11/11 | 78s |
 | 34 | 6d6d5777a04983da | GGUF | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 11/11 | 209s |
 | 35 | 5d853aa5f15ee2f5 | GGUF | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 11/11 | 46s |
 | 36 | fd6ae6308df6512e | GGUF | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 11/11 | 78s |
@@ -98,7 +98,7 @@
 | 88 | 8087e9bf97c265f8 | ST | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | 8/11 | 0s |
 | 89 | cb7ee7cd50590460 | GGUF | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 11/11 | 25s |
 | 90 | f04c88340c00d6e8 | GGUF | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | 10/11 | 115s |
-| 91 | 7cac9fec8abf060c | GGUF | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | 10/11 | 76s |
+| 91 | 7cac9fec8abf060c | GGUF | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | 10/11 | 41s |
 | 92 | TinyLlama-1.1B-Chat-v1.0-Q4_K_M | GGUF | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 11/11 | 26s |
 | 93 | 684041cd46bfafc7 | ST | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 11/11 | 21s |
 | 94 | 0693e999fc960643 | ST | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 11/11 | 25s |
