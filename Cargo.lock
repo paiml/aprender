@@ -243,7 +243,7 @@ checksum = "a23eb6b1614318a8071c9b2521f36b424b2c83db5eb3a0fead4a6c0809af6e61"
 
 [[package]]
 name = "apr-cli"
-version = "0.2.18"
+version = "0.3.0"
 dependencies = [
  "aprender 0.26.0",
  "assert_cmd",
@@ -305,26 +305,6 @@ dependencies = [
 
 [[package]]
 name = "aprender"
-version = "0.25.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7053416de79df742f9da17a53dea7087830b83761a80f69bc2a91b708aab781c"
-dependencies = [
- "bincode",
- "getrandom 0.2.17",
- "memmap2",
- "minijinja",
- "rand 0.8.5",
- "rand_chacha 0.3.1",
- "rayon",
- "rmp-serde",
- "serde",
- "serde_json",
- "trueno 0.14.6",
- "trueno-quant 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
-name = "aprender"
 version = "0.26.0"
 dependencies = [
  "aes-gcm",
@@ -364,7 +344,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "trueno 0.15.0",
- "trueno-quant 0.1.0",
+ "trueno-quant",
  "trueno-rag",
  "trueno-zram-core 0.3.0",
  "ureq",
@@ -2202,9 +2182,9 @@ dependencies = [
 
 [[package]]
 name = "entrenar"
-version = "0.5.10"
+version = "0.6.0"
 dependencies = [
- "aprender 0.25.9",
+ "aprender 0.26.0",
  "bytemuck",
  "chrono",
  "clap",
@@ -2223,7 +2203,7 @@ dependencies = [
  "sha2",
  "thiserror 2.0.18",
  "toml",
- "trueno 0.14.6",
+ "trueno 0.15.0",
  "trueno-viz",
  "zip",
 ]
@@ -2244,7 +2224,7 @@ name = "entrenar-lora"
 version = "0.2.0"
 dependencies = [
  "clap",
- "entrenar 0.5.10",
+ "entrenar 0.6.0",
  "entrenar-common",
  "serde",
  "serde_json",
@@ -5151,7 +5131,7 @@ dependencies = [
  "tracing",
  "trueno 0.15.0",
  "trueno-gpu",
- "trueno-quant 0.1.0",
+ "trueno-quant",
  "uuid",
 ]
 
@@ -6587,7 +6567,7 @@ dependencies = [
  "thiserror 2.0.18",
  "toml",
  "trueno-gpu",
- "trueno-quant 0.1.0",
+ "trueno-quant",
  "wgpu",
 ]
 
@@ -6665,15 +6645,6 @@ dependencies = [
 [[package]]
 name = "trueno-quant"
 version = "0.1.0"
-dependencies = [
- "half",
-]
-
-[[package]]
-name = "trueno-quant"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5da5ac788b596e45d1d3fa0991c04b0e1bac63ffe4ae2faf6ae7c0d9fdfc00eb"
 dependencies = [
  "half",
 ]
