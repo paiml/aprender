@@ -109,9 +109,9 @@ impl BinaryGA {
 
     /// Tournament selection
     fn tournament_select(&self, rng: &mut impl Rng) -> usize {
-        let mut best = rng.gen_range(0..self.population_size);
+        let mut best = rng.random_range(0..self.population_size);
         for _ in 1..self.tournament_size {
-            let candidate = rng.gen_range(0..self.population_size);
+            let candidate = rng.random_range(0..self.population_size);
             if self.fitness[candidate] < self.fitness[best] {
                 best = candidate;
             }
@@ -126,7 +126,7 @@ impl BinaryGA {
         let mut c2 = Vec::with_capacity(dim);
 
         for i in 0..dim {
-            if rng.gen::<f64>() < 0.5 {
+            if rng.random::<f64>() < 0.5 {
                 c1.push(p1[i]);
                 c2.push(p2[i]);
             } else {
@@ -141,7 +141,7 @@ impl BinaryGA {
     /// Bit-flip mutation
     fn mutate(&self, x: &mut [f64], rng: &mut impl Rng) {
         for bit in x.iter_mut() {
-            if rng.gen::<f64>() < self.mutation_prob {
+            if rng.random::<f64>() < self.mutation_prob {
                 // Flip: 0 -> 1 or 1 -> 0
                 *bit = if *bit > 0.5 { 0.0 } else { 1.0 };
             }
@@ -174,7 +174,7 @@ impl PerturbativeMetaheuristic for BinaryGA {
     {
         let mut rng: Box<dyn RngCore> = match self.seed {
             Some(s) => Box::new(StdRng::seed_from_u64(s)),
-            None => Box::new(thread_rng()),
+            None => Box::new(rand::rng()),
         };
 
         let dim = match space {
@@ -186,7 +186,7 @@ impl PerturbativeMetaheuristic for BinaryGA {
         self.population = (0..self.population_size)
             .map(|_| {
                 (0..dim)
-                    .map(|_| if rng.gen::<f64>() < 0.5 { 0.0 } else { 1.0 })
+                    .map(|_| if rng.random::<f64>() < 0.5 { 0.0 } else { 1.0 })
                     .collect()
             })
             .collect();
@@ -231,7 +231,7 @@ impl PerturbativeMetaheuristic for BinaryGA {
                 let p1 = self.tournament_select(&mut rng);
                 let p2 = self.tournament_select(&mut rng);
 
-                let (mut c1, mut c2) = if rng.gen::<f64>() < self.crossover_prob {
+                let (mut c1, mut c2) = if rng.random::<f64>() < self.crossover_prob {
                     Self::uniform_crossover(&self.population[p1], &self.population[p2], &mut rng)
                 } else {
                     (self.population[p1].clone(), self.population[p2].clone())

@@ -88,9 +88,9 @@ impl GeneticAlgorithm {
     }
 
     fn tournament_select(&self, rng: &mut impl Rng) -> usize {
-        let mut best = rng.gen_range(0..self.population_size);
+        let mut best = rng.random_range(0..self.population_size);
         for _ in 1..self.tournament_size {
-            let candidate = rng.gen_range(0..self.population_size);
+            let candidate = rng.random_range(0..self.population_size);
             if self.fitness[candidate] < self.fitness[best] {
                 best = candidate;
             }
@@ -110,15 +110,15 @@ impl GeneticAlgorithm {
         let mut c1 = p1.to_vec();
         let mut c2 = p2.to_vec();
 
-        if rng.gen::<f64>() < self.crossover_prob {
+        if rng.random::<f64>() < self.crossover_prob {
             for i in 0..dim {
-                if rng.gen::<f64>() < 0.5 {
+                if rng.random::<f64>() < 0.5 {
                     let y1 = p1[i].min(p2[i]);
                     let y2 = p1[i].max(p2[i]);
                     if (y2 - y1).abs() > 1e-14 {
                         let beta = 1.0 + (2.0 * (y1 - lower[i]) / (y2 - y1));
                         let alpha = 2.0 - beta.powf(-(self.sbx_eta + 1.0));
-                        let u: f64 = rng.gen();
+                        let u: f64 = rng.random();
                         let betaq = if u <= 1.0 / alpha {
                             (u * alpha).powf(1.0 / (self.sbx_eta + 1.0))
                         } else {
@@ -142,9 +142,9 @@ impl GeneticAlgorithm {
         rng: &mut impl Rng,
     ) {
         for i in 0..x.len() {
-            if rng.gen::<f64>() < mut_prob {
+            if rng.random::<f64>() < mut_prob {
                 let delta_max = upper[i] - lower[i];
-                let u: f64 = rng.gen();
+                let u: f64 = rng.random();
                 let delta = if u < 0.5 {
                     (2.0 * u).powf(1.0 / (self.mutation_eta + 1.0)) - 1.0
                 } else {
@@ -171,7 +171,7 @@ impl PerturbativeMetaheuristic for GeneticAlgorithm {
     {
         let mut rng: Box<dyn RngCore> = match self.seed {
             Some(s) => Box::new(StdRng::seed_from_u64(s)),
-            None => Box::new(thread_rng()),
+            None => Box::new(rand::rng()),
         };
 
         let (lower, upper, dim) = match space {
@@ -185,7 +185,7 @@ impl PerturbativeMetaheuristic for GeneticAlgorithm {
         self.population = (0..self.population_size)
             .map(|_| {
                 (0..dim)
-                    .map(|j| rng.gen_range(lower[j]..=upper[j]))
+                    .map(|j| rng.random_range(lower[j]..=upper[j]))
                     .collect()
             })
             .collect();

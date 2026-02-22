@@ -37,7 +37,7 @@ impl MaskedPrediction {
         let mut positions = Vec::new();
 
         for (i, _) in input.iter().enumerate() {
-            if rng.gen::<f32>() < self.mask_prob {
+            if rng.random::<f32>() < self.mask_prob {
                 masked[i] = self.mask_token_id;
                 positions.push(i);
             }
@@ -97,7 +97,7 @@ impl RotationPrediction {
         seed: u64,
     ) -> (Vec<f32>, usize) {
         let mut rng = StdRng::seed_from_u64(seed);
-        let rot = rng.gen_range(0..4);
+        let rot = rng.random_range(0..4);
         (self.rotate(image, h, w, c, rot), rot)
     }
 }
@@ -161,9 +161,9 @@ impl JigsawPuzzle {
         }
 
         // Shuffle
-        let perm_idx = rng.gen_range(0..self.num_permutations);
+        let perm_idx = rng.random_range(0..self.num_permutations);
         for i in (1..patches.len()).rev() {
-            let j = rng.gen_range(0..=i);
+            let j = rng.random_range(0..=i);
             patches.swap(i, j);
         }
 

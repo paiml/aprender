@@ -157,14 +157,14 @@ impl std::fmt::Debug for ConditionalVAE {
 /// Sample from standard normal distribution N(0, I).
 pub(super) fn sample_standard_normal(shape: &[usize]) -> Tensor {
     use rand::Rng;
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
 
     let size: usize = shape.iter().product();
     let data: Vec<f32> = (0..size)
         .map(|_| {
             // Box-Muller transform for normal distribution
-            let u1: f32 = rng.gen::<f32>().max(1e-10);
-            let u2: f32 = rng.gen();
+            let u1: f32 = rng.random::<f32>().max(1e-10);
+            let u2: f32 = rng.random();
             (-2.0 * u1.ln()).sqrt() * (2.0 * std::f32::consts::PI * u2).cos()
         })
         .collect();

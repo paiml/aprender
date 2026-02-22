@@ -207,7 +207,7 @@ mod tests {
     fn random_instance(n: usize, seed: u64) -> TspInstance {
         use rand::prelude::*;
         let mut rng = StdRng::seed_from_u64(seed);
-        let coords: Vec<(f64, f64)> = (0..n).map(|_| (rng.gen(), rng.gen())).collect();
+        let coords: Vec<(f64, f64)> = (0..n).map(|_| (rng.random(), rng.random())).collect();
         TspInstance::from_coords("random", coords).expect("should create")
     }
 

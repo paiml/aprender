@@ -185,7 +185,7 @@ impl TabuSolver {
 
         let mut rng = match self.seed {
             Some(s) => StdRng::seed_from_u64(s),
-            None => StdRng::from_entropy(),
+            None => StdRng::from_os_rng(),
         };
 
         let mut tabu_list: HashMap<(usize, usize), usize> = HashMap::new();
@@ -247,11 +247,11 @@ impl TspSolver for TabuSolver {
 
         let mut rng = match self.seed {
             Some(s) => StdRng::seed_from_u64(s),
-            None => StdRng::from_entropy(),
+            None => StdRng::from_os_rng(),
         };
 
         // Start with nearest neighbor tour
-        let start_city = rng.gen_range(0..instance.num_cities());
+        let start_city = rng.random_range(0..instance.num_cities());
         let initial_tour = Self::nearest_neighbor_tour(instance, start_city);
 
         self.refine(initial_tour, instance, max_iterations)

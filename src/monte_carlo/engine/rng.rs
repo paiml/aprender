@@ -54,7 +54,7 @@ impl MonteCarloRng {
 
     /// Generate a uniform random number in [0, 1)
     pub fn uniform(&mut self) -> f64 {
-        self.rng.gen()
+        self.rng.random()
     }
 
     /// Generate a uniform random number in [low, high)
@@ -67,8 +67,8 @@ impl MonteCarloRng {
     /// Uses the Box-Muller transform for efficiency.
     pub fn standard_normal(&mut self) -> f64 {
         // Box-Muller transform
-        let u1: f64 = self.rng.gen();
-        let u2: f64 = self.rng.gen();
+        let u1: f64 = self.rng.random();
+        let u2: f64 = self.rng.random();
 
         // Avoid log(0)
         let u1 = u1.max(1e-15_f64);
@@ -90,7 +90,7 @@ impl MonteCarloRng {
 
     /// Generate an exponential random variable
     pub fn exponential(&mut self, lambda: f64) -> f64 {
-        let u: f64 = self.rng.gen();
+        let u: f64 = self.rng.random();
         -u.max(1e-15).ln() / lambda
     }
 

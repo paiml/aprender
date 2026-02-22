@@ -337,10 +337,10 @@ pub(super) fn count_regression_tree_samples(node: &RegressionTreeNode) -> usize 
 ///
 /// Returns indices of samples to include in the bootstrap sample.
 pub(super) fn bootstrap_sample(n_samples: usize, random_state: Option<u64>) -> Vec<usize> {
-    use rand::distributions::{Distribution, Uniform};
+    use rand::distr::{Distribution, Uniform};
     use rand::SeedableRng;
 
-    let dist = Uniform::from(0..n_samples);
+    let dist = Uniform::new(0, n_samples).unwrap();
 
     let mut indices = Vec::with_capacity(n_samples);
 
@@ -350,7 +350,7 @@ pub(super) fn bootstrap_sample(n_samples: usize, random_state: Option<u64>) -> V
             indices.push(dist.sample(&mut rng));
         }
     } else {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         for _ in 0..n_samples {
             indices.push(dist.sample(&mut rng));
         }

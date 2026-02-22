@@ -92,11 +92,11 @@ impl GaSolver {
         population: &'a [(Vec<usize>, f64)],
         rng: &mut StdRng,
     ) -> &'a Vec<usize> {
-        let mut best_idx = rng.gen_range(0..population.len());
+        let mut best_idx = rng.random_range(0..population.len());
         let mut best_fitness = population[best_idx].1;
 
         for _ in 1..self.tournament_size {
-            let idx = rng.gen_range(0..population.len());
+            let idx = rng.random_range(0..population.len());
             if population[idx].1 < best_fitness {
                 best_fitness = population[idx].1;
                 best_idx = idx;
@@ -116,8 +116,8 @@ impl GaSolver {
         let mut child = vec![usize::MAX; n];
 
         // Select crossover segment
-        let start = rng.gen_range(0..n);
-        let end = rng.gen_range(start..n);
+        let start = rng.random_range(0..n);
+        let end = rng.random_range(start..n);
 
         // Copy segment from parent1
         child[start..=end].copy_from_slice(&parent1[start..=end]);
@@ -140,14 +140,14 @@ impl GaSolver {
 
     /// 2-opt mutation
     fn mutate(&self, tour: &mut [usize], rng: &mut StdRng) {
-        if rng.gen::<f64>() < self.mutation_rate {
+        if rng.random::<f64>() < self.mutation_rate {
             let n = tour.len();
             if n < 2 {
                 return;
             }
 
-            let i = rng.gen_range(0..n);
-            let j = rng.gen_range(0..n);
+            let i = rng.random_range(0..n);
+            let j = rng.random_range(0..n);
 
             if i != j {
                 let (i, j) = if i < j { (i, j) } else { (j, i) };
@@ -180,7 +180,7 @@ impl GaSolver {
             let parent1 = self.tournament_select(population, rng);
             let parent2 = self.tournament_select(population, rng);
 
-            let mut child = if rng.gen::<f64>() < self.crossover_rate {
+            let mut child = if rng.random::<f64>() < self.crossover_rate {
                 Self::order_crossover(parent1, parent2, rng)
             } else {
                 parent1.clone()
@@ -208,7 +208,7 @@ impl GaSolver {
 
         let mut rng = match self.seed {
             Some(s) => StdRng::seed_from_u64(s),
-            None => StdRng::from_entropy(),
+            None => StdRng::from_os_rng(),
         };
 
         // Initialize population
@@ -239,7 +239,7 @@ impl TspSolver for GaSolver {
 
         let mut rng = match self.seed {
             Some(s) => StdRng::seed_from_u64(s),
-            None => StdRng::from_entropy(),
+            None => StdRng::from_os_rng(),
         };
 
         // Initialize population

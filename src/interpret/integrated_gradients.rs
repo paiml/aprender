@@ -156,9 +156,9 @@ impl LIME {
             let mut distance_sq = 0.0_f32;
 
             for i in 0..n {
-                if rng.gen::<f32>() < 0.5 {
+                if rng.random::<f32>() < 0.5 {
                     // Perturb this feature by adding noise
-                    let noise = rng.gen_range(-0.5..0.5);
+                    let noise = rng.random_range(-0.5..0.5);
                     perturbed[i] += noise * sample[i].abs().max(1.0);
                     distance_sq += noise * noise;
                 }
@@ -418,7 +418,7 @@ impl SaliencyMap {
         F: Fn(&Vector<f32>) -> f32,
     {
         use rand::Rng;
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let n = sample.len();
         let mut sum_grads = vec![0.0f32; n];
 
@@ -427,7 +427,7 @@ impl SaliencyMap {
             let noisy: Vec<f32> = sample
                 .as_slice()
                 .iter()
-                .map(|&x| x + rng.gen_range(-noise_level..noise_level))
+                .map(|&x| x + rng.random_range(-noise_level..noise_level))
                 .collect();
             let noisy_sample = Vector::from_slice(&noisy);
 

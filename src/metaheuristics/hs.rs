@@ -93,20 +93,20 @@ impl HarmonySearch {
         let mut harmony = Vec::with_capacity(dim);
 
         for i in 0..dim {
-            let val = if rng.gen::<f64>() < self.hmcr {
+            let val = if rng.random::<f64>() < self.hmcr {
                 // Memory consideration: pick from harmony memory
-                let idx = rng.gen_range(0..self.memory_size);
+                let idx = rng.random_range(0..self.memory_size);
                 let mut v = self.memory[idx][i];
 
                 // Pitch adjustment
-                if rng.gen::<f64>() < self.par {
+                if rng.random::<f64>() < self.par {
                     let range = upper[i] - lower[i];
-                    v += rng.gen_range(-1.0..=1.0) * range * self.bandwidth;
+                    v += rng.random_range(-1.0..=1.0) * range * self.bandwidth;
                 }
                 v.clamp(lower[i], upper[i])
             } else {
                 // Random selection
-                rng.gen_range(lower[i]..=upper[i])
+                rng.random_range(lower[i]..=upper[i])
             };
             harmony.push(val);
         }
@@ -128,7 +128,7 @@ impl PerturbativeMetaheuristic for HarmonySearch {
     {
         let mut rng: Box<dyn RngCore> = match self.seed {
             Some(s) => Box::new(StdRng::seed_from_u64(s)),
-            None => Box::new(thread_rng()),
+            None => Box::new(rand::rng()),
         };
 
         let (lower, upper, dim) = match space {
@@ -140,7 +140,7 @@ impl PerturbativeMetaheuristic for HarmonySearch {
         self.memory = (0..self.memory_size)
             .map(|_| {
                 (0..dim)
-                    .map(|j| rng.gen_range(lower[j]..=upper[j]))
+                    .map(|j| rng.random_range(lower[j]..=upper[j]))
                     .collect()
             })
             .collect();

@@ -262,33 +262,33 @@ impl NasGenome {
     pub fn random(space: &NasSearchSpace, seed: u64) -> Self {
         let mut rng = StdRng::seed_from_u64(seed);
 
-        let n_layers = rng.gen_range(space.min_layers..=space.max_layers);
+        let n_layers = rng.random_range(space.min_layers..=space.max_layers);
         let mut layers = Vec::with_capacity(n_layers);
 
         for _ in 0..n_layers {
-            let layer_type = space.layer_types[rng.gen_range(0..space.layer_types.len())];
+            let layer_type = space.layer_types[rng.random_range(0..space.layer_types.len())];
             let mut config = LayerConfig::new(layer_type);
 
             match layer_type {
                 LayerType::Dense => {
-                    config.units = Some(rng.gen_range(space.units_range.0..=space.units_range.1));
+                    config.units = Some(rng.random_range(space.units_range.0..=space.units_range.1));
                     config.activation =
-                        Some(space.activations[rng.gen_range(0..space.activations.len())].clone());
+                        Some(space.activations[rng.random_range(0..space.activations.len())].clone());
                 }
                 LayerType::Conv2d => {
                     config.units =
-                        Some(rng.gen_range(space.filters_range.0..=space.filters_range.1));
+                        Some(rng.random_range(space.filters_range.0..=space.filters_range.1));
                     config.kernel_size =
-                        Some(space.kernel_sizes[rng.gen_range(0..space.kernel_sizes.len())]);
+                        Some(space.kernel_sizes[rng.random_range(0..space.kernel_sizes.len())]);
                     config.activation =
-                        Some(space.activations[rng.gen_range(0..space.activations.len())].clone());
+                        Some(space.activations[rng.random_range(0..space.activations.len())].clone());
                 }
                 LayerType::Dropout => {
                     config.dropout_rate =
-                        Some(rng.gen_range(space.dropout_range.0..=space.dropout_range.1));
+                        Some(rng.random_range(space.dropout_range.0..=space.dropout_range.1));
                 }
                 LayerType::Lstm => {
-                    config.units = Some(rng.gen_range(space.units_range.0..=space.units_range.1));
+                    config.units = Some(rng.random_range(space.units_range.0..=space.units_range.1));
                 }
                 _ => {}
             }

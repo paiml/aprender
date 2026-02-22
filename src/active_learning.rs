@@ -179,7 +179,7 @@ impl RandomSampling {
     #[must_use]
     pub fn select(&self, n_samples: usize, k: usize) -> Vec<usize> {
         use rand::seq::SliceRandom;
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let mut indices: Vec<usize> = (0..n_samples).collect();
         indices.shuffle(&mut rng);
         indices.truncate(k);

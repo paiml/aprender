@@ -54,12 +54,12 @@ impl SpecAugment {
     #[must_use]
     pub fn apply(&self, spec: &[f32], freq_bins: usize, time_steps: usize) -> Vec<f32> {
         let mut result = spec.to_vec();
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         // Apply frequency masks
         for _ in 0..self.num_freq_masks {
-            let f = rng.gen_range(0..=self.freq_mask_param.min(freq_bins));
-            let f0 = rng.gen_range(0..freq_bins.saturating_sub(f).max(1));
+            let f = rng.random_range(0..=self.freq_mask_param.min(freq_bins));
+            let f0 = rng.random_range(0..freq_bins.saturating_sub(f).max(1));
 
             for freq in f0..f0 + f {
                 if freq < freq_bins {
@@ -75,8 +75,8 @@ impl SpecAugment {
 
         // Apply time masks
         for _ in 0..self.num_time_masks {
-            let t = rng.gen_range(0..=self.time_mask_param.min(time_steps));
-            let t0 = rng.gen_range(0..time_steps.saturating_sub(t).max(1));
+            let t = rng.random_range(0..=self.time_mask_param.min(time_steps));
+            let t0 = rng.random_range(0..time_steps.saturating_sub(t).max(1));
 
             for time in t0..t0 + t {
                 if time < time_steps {
@@ -97,11 +97,11 @@ impl SpecAugment {
     #[must_use]
     pub fn freq_mask(&self, spec: &[f32], freq_bins: usize, time_steps: usize) -> Vec<f32> {
         let mut result = spec.to_vec();
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         for _ in 0..self.num_freq_masks {
-            let f = rng.gen_range(0..=self.freq_mask_param.min(freq_bins));
-            let f0 = rng.gen_range(0..freq_bins.saturating_sub(f).max(1));
+            let f = rng.random_range(0..=self.freq_mask_param.min(freq_bins));
+            let f0 = rng.random_range(0..freq_bins.saturating_sub(f).max(1));
 
             for freq in f0..f0 + f {
                 if freq < freq_bins {
@@ -122,11 +122,11 @@ impl SpecAugment {
     #[must_use]
     pub fn time_mask(&self, spec: &[f32], freq_bins: usize, time_steps: usize) -> Vec<f32> {
         let mut result = spec.to_vec();
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         for _ in 0..self.num_time_masks {
-            let t = rng.gen_range(0..=self.time_mask_param.min(time_steps));
-            let t0 = rng.gen_range(0..time_steps.saturating_sub(t).max(1));
+            let t = rng.random_range(0..=self.time_mask_param.min(time_steps));
+            let t0 = rng.random_range(0..time_steps.saturating_sub(t).max(1));
 
             for time in t0..t0 + t {
                 if time < time_steps {
@@ -230,8 +230,8 @@ impl RandAugment {
     /// Get N random augmentation types.
     #[must_use]
     pub fn sample_augmentations(&self) -> Vec<AugmentationType> {
-        use rand::seq::SliceRandom;
-        let mut rng = rand::thread_rng();
+        use rand::seq::IndexedRandom;
+        let mut rng = rand::rng();
         let mut selected = Vec::with_capacity(self.n);
 
         for _ in 0..self.n {

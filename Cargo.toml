@@ -120,7 +120,7 @@ semicolon_if_nothing_returned = "allow"  # Style preference
 
 [package]
 name = "aprender"
-version = "0.26.2"
+version = "0.26.3"
 edition = "2021"
 rust-version = "1.70"
 authors = ["Noah Gift <noah@paiml.com>"]
@@ -159,8 +159,8 @@ bincode = "1.3"
 rmp-serde = "1.3"  # MessagePack for .apr metadata (spec §2)
 
 # Random number generation for model_selection
-rand = { version = "0.8", features = ["small_rng"] }
-rand_chacha = "0.3"  # ChaCha20 PRNG for Monte Carlo simulations
+rand = { version = "0.9", features = ["small_rng"] }
+rand_chacha = "0.9"  # ChaCha20 PRNG for Monte Carlo simulations
 
 # Audio processing
 rustfft = { version = "6.2", optional = true }  # FFT for mel spectrogram computation

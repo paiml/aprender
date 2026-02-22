@@ -86,10 +86,10 @@ pub(crate) fn uniform(shape: &[usize], low: f32, high: f32, seed: Option<u64>) -
     let numel: usize = shape.iter().product();
     let mut rng = match seed {
         Some(s) => StdRng::seed_from_u64(s),
-        None => StdRng::from_entropy(),
+        None => StdRng::from_os_rng(),
     };
 
-    let data: Vec<f32> = (0..numel).map(|_| rng.gen_range(low..high)).collect();
+    let data: Vec<f32> = (0..numel).map(|_| rng.random_range(low..high)).collect();
 
     Tensor::new(&data, shape)
 }
@@ -101,14 +101,14 @@ pub(crate) fn normal(shape: &[usize], mean: f32, std: f32, seed: Option<u64>) ->
     let numel: usize = shape.iter().product();
     let mut rng = match seed {
         Some(s) => StdRng::seed_from_u64(s),
-        None => StdRng::from_entropy(),
+        None => StdRng::from_os_rng(),
     };
 
     // Box-Muller transform for normal distribution
     let data: Vec<f32> = (0..numel)
         .map(|_| {
-            let u1: f32 = rng.gen_range(0.0001_f32..1.0_f32);
-            let u2: f32 = rng.gen_range(0.0_f32..1.0_f32);
+            let u1: f32 = rng.random_range(0.0001_f32..1.0_f32);
+            let u2: f32 = rng.random_range(0.0_f32..1.0_f32);
             let z = (-2.0_f32 * u1.ln()).sqrt() * (2.0_f32 * std::f32::consts::PI * u2).cos();
             mean + std * z
         })

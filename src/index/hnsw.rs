@@ -104,7 +104,7 @@ impl HNSWIndex {
             nodes: Vec::new(),
             item_to_node: HashMap::new(),
             entry_point: None,
-            rng: rand::thread_rng(),
+            rng: rand::rng(),
         }
     }
 
@@ -285,7 +285,7 @@ impl HNSWIndex {
     ///
     /// Uses exponential decay: P(layer = l) ~ exp(-l / ml)
     fn random_layer(&mut self) -> usize {
-        let r: f64 = self.rng.gen_range(0.0..1.0);
+        let r: f64 = self.rng.random_range(0.0..1.0);
         (-r.ln() * self.ml).floor() as usize
     }
 

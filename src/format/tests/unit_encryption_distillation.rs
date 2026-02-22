@@ -53,7 +53,7 @@ fn test_x25519_recipient_roundtrip() {
     };
 
     // Generate recipient keypair
-    let recipient_secret = StaticSecret::random_from_rng(rand::thread_rng());
+    let recipient_secret = StaticSecret::random_from_rng(rand::rng());
     let recipient_public = PublicKey::from(&recipient_secret);
 
     let dir = tempdir().expect("create temp dir");
@@ -94,11 +94,11 @@ fn test_x25519_wrong_key_fails() {
     let model = TestModel { value: 42 };
 
     // Generate correct recipient keypair
-    let recipient_secret = StaticSecret::random_from_rng(rand::thread_rng());
+    let recipient_secret = StaticSecret::random_from_rng(rand::rng());
     let recipient_public = PublicKey::from(&recipient_secret);
 
     // Generate wrong keypair
-    let wrong_secret = StaticSecret::random_from_rng(rand::thread_rng());
+    let wrong_secret = StaticSecret::random_from_rng(rand::rng());
 
     let dir = tempdir().expect("create temp dir");
     let path = dir.path().join("x25519_wrong_key.apr");
@@ -149,7 +149,7 @@ fn test_x25519_rejects_password_encrypted_file() {
     .expect("save_encrypted should succeed");
 
     // Try to load as recipient - should fail
-    let wrong_secret = StaticSecret::random_from_rng(rand::thread_rng());
+    let wrong_secret = StaticSecret::random_from_rng(rand::rng());
     let result: Result<TestModel> = load_as_recipient(&path, ModelType::Custom, &wrong_secret);
     assert!(result.is_err());
     // Will fail because file layout doesn't match X25519 format
@@ -175,7 +175,7 @@ fn test_x25519_load_rejects_unencrypted_file() {
     save(&model, ModelType::Custom, &path, SaveOptions::default()).expect("save should succeed");
 
     // load_as_recipient should reject unencrypted files
-    let secret = StaticSecret::random_from_rng(rand::thread_rng());
+    let secret = StaticSecret::random_from_rng(rand::rng());
     let result: Result<TestModel> = load_as_recipient(&path, ModelType::Custom, &secret);
     assert!(result.is_err());
     let err_msg = result.unwrap_err().to_string();

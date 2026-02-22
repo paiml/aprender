@@ -212,7 +212,7 @@ fn shuffle_indices(n_samples: usize, random_state: Option<u64>) -> Vec<usize> {
         let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
         indices.shuffle(&mut rng);
     } else {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         indices.shuffle(&mut rng);
     }
 

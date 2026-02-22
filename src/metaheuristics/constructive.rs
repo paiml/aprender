@@ -189,7 +189,7 @@ impl AntColony {
         let mut visited = vec![false; n];
 
         // Start from random city
-        let start = rng.gen_range(0..n);
+        let start = rng.random_range(0..n);
         tour.push(start);
         visited[start] = true;
 
@@ -234,7 +234,7 @@ impl AntColony {
         }
 
         // Roulette wheel selection
-        let r = rng.gen::<f64>() * total;
+        let r = rng.random::<f64>() * total;
         let mut cumsum = 0.0;
         for (j, &p) in probs.iter().enumerate() {
             cumsum += p;
@@ -329,7 +329,7 @@ impl ConstructiveMetaheuristic for AntColony {
 
         let mut rng: Box<dyn RngCore> = match self.seed {
             Some(s) => Box::new(StdRng::seed_from_u64(s)),
-            None => Box::new(thread_rng()),
+            None => Box::new(rand::rng()),
         };
 
         self.init_pheromone(n);

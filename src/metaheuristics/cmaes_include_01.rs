@@ -15,7 +15,7 @@ impl PerturbativeMetaheuristic for CmaEs {
     {
         let mut rng: Box<dyn RngCore> = match self.seed {
             Some(s) => Box::new(StdRng::seed_from_u64(s)),
-            None => Box::new(thread_rng()),
+            None => Box::new(rand::rng()),
         };
 
         let (lower, upper) = match space {

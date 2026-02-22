@@ -263,7 +263,7 @@ impl NoiseTrainer {
 
         // Add random custom slopes
         for _ in 0..10 {
-            let slope = self.rng.gen_range(-12.0..12.0);
+            let slope = self.rng.random_range(-12.0..12.0);
             configs.push(NoiseConfig::new(NoiseType::Custom(slope)));
         }
 

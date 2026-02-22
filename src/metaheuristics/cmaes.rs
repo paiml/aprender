@@ -250,7 +250,7 @@ impl CmaEs {
         self.mean = lower
             .iter()
             .zip(upper.iter())
-            .map(|(l, u)| l + rng.gen::<f64>() * (u - l))
+            .map(|(l, u)| l + rng.random::<f64>() * (u - l))
             .collect();
 
         // Reset sigma
@@ -265,8 +265,8 @@ impl CmaEs {
 
     /// Sample standard normal using Box-Muller transform
     fn randn(rng: &mut impl Rng) -> f64 {
-        let u1: f64 = rng.gen::<f64>().max(1e-10);
-        let u2: f64 = rng.gen();
+        let u1: f64 = rng.random::<f64>().max(1e-10);
+        let u2: f64 = rng.random();
         (-2.0 * u1.ln()).sqrt() * (2.0 * PI * u2).cos()
     }
 

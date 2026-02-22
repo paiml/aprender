@@ -122,12 +122,12 @@ impl ParticleSwarm {
         for i in 0..self.swarm_size {
             // Random position
             let pos: Vec<f64> = (0..dim)
-                .map(|j| rng.gen_range(lower[j]..=upper[j]))
+                .map(|j| rng.random_range(lower[j]..=upper[j]))
                 .collect();
 
             // Random velocity
             let vel: Vec<f64> = (0..dim)
-                .map(|j| rng.gen_range(-v_max[j]..=v_max[j]))
+                .map(|j| rng.random_range(-v_max[j]..=v_max[j]))
                 .collect();
 
             let fit = objective(&pos);
@@ -164,7 +164,7 @@ impl PerturbativeMetaheuristic for ParticleSwarm {
     {
         let mut rng: Box<dyn RngCore> = match self.seed {
             Some(s) => Box::new(StdRng::seed_from_u64(s)),
-            None => Box::new(thread_rng()),
+            None => Box::new(rand::rng()),
         };
 
         self.initialize(objective, space, &mut rng);
@@ -192,8 +192,8 @@ impl PerturbativeMetaheuristic for ParticleSwarm {
                 // Update velocity - multiple arrays indexed by j
                 #[allow(clippy::needless_range_loop)]
                 for j in 0..dim {
-                    let r1: f64 = rng.gen();
-                    let r2: f64 = rng.gen();
+                    let r1: f64 = rng.random();
+                    let r2: f64 = rng.random();
 
                     self.velocities[i][j] = self.inertia * self.velocities[i][j]
                         + self.cognitive * r1 * (self.pbest_pos[i][j] - self.positions[i][j])

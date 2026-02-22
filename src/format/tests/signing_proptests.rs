@@ -25,7 +25,7 @@ proptest! {
         let model = Model { weights: data.clone() };
 
         // Generate signing keypair
-        let signing_key = SigningKey::generate(&mut rand::thread_rng());
+        let signing_key = SigningKey::generate(&mut rand::rng());
         let verifying_key = signing_key.verifying_key();
 
         let dir = tempdir().expect("tempdir");
@@ -50,8 +50,8 @@ proptest! {
         let model = Model { weights: data };
 
         // Generate two different keypairs
-        let signing_key = SigningKey::generate(&mut rand::thread_rng());
-        let wrong_key = SigningKey::generate(&mut rand::thread_rng());
+        let signing_key = SigningKey::generate(&mut rand::rng());
+        let wrong_key = SigningKey::generate(&mut rand::rng());
         let wrong_verifying = wrong_key.verifying_key();
 
         let dir = tempdir().expect("tempdir");
@@ -73,7 +73,7 @@ proptest! {
         struct Model { v: i32 }
 
         let model = Model { v: 1 };
-        let signing_key = SigningKey::generate(&mut rand::thread_rng());
+        let signing_key = SigningKey::generate(&mut rand::rng());
 
         let dir = tempdir().expect("tempdir");
         let path = dir.path().join("test.apr");
@@ -95,7 +95,7 @@ proptest! {
 
         let model = Model { weights: data };
 
-        let signing_key = SigningKey::generate(&mut rand::thread_rng());
+        let signing_key = SigningKey::generate(&mut rand::rng());
         let verifying_key = signing_key.verifying_key();
 
         let dir = tempdir().expect("tempdir");

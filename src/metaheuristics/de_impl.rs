@@ -67,7 +67,7 @@ impl DifferentialEvolution {
     fn make_rng(&self) -> StdRng {
         match self.seed {
             Some(seed) => StdRng::seed_from_u64(seed),
-            None => StdRng::from_entropy(),
+            None => StdRng::from_os_rng(),
         }
     }
 
@@ -91,7 +91,7 @@ impl DifferentialEvolution {
                 let individual: Vec<f64> = lower
                     .iter()
                     .zip(upper.iter())
-                    .map(|(&lo, &hi)| rng.gen_range(lo..=hi))
+                    .map(|(&lo, &hi)| rng.random_range(lo..=hi))
                     .collect();
                 self.population.push(individual);
             }
@@ -177,7 +177,7 @@ impl DifferentialEvolution {
 
         // Use a simple rejection sampling approach
         while indices.len() < 3 {
-            let idx = rng.gen_range(0..n);
+            let idx = rng.random_range(0..n);
             if idx != exclude && !indices.contains(&idx) {
                 indices.push(idx);
             }
@@ -192,7 +192,7 @@ impl DifferentialEvolution {
         let mut indices = Vec::with_capacity(5);
 
         while indices.len() < 5 {
-            let idx = rng.gen_range(0..n);
+            let idx = rng.random_range(0..n);
             if idx != exclude && !indices.contains(&idx) {
                 indices.push(idx);
             }
@@ -206,11 +206,11 @@ impl DifferentialEvolution {
         let dim = target.len();
 
         // Ensure at least one dimension comes from mutant
-        let j_rand = rng.gen_range(0..dim);
+        let j_rand = rng.random_range(0..dim);
 
         (0..dim)
             .map(|j| {
-                if j == j_rand || rng.gen::<f64>() < cr {
+                if j == j_rand || rng.random::<f64>() < cr {
                     mutant[j]
                 } else {
                     target[j]
@@ -236,8 +236,8 @@ impl DifferentialEvolution {
             AdaptationStrategy::JADE { mu_f, mu_cr, .. } => {
                 // Simplified: use uniform perturbation around mu
                 // Original JADE uses Cauchy for F, Normal for CR
-                let f = (*mu_f + rng.gen_range(-0.2..0.2)).clamp(0.1, 1.0);
-                let cr = (*mu_cr + rng.gen_range(-0.1..0.1)).clamp(0.0, 1.0);
+                let f = (*mu_f + rng.random_range(-0.2..0.2)).clamp(0.1, 1.0);
+                let cr = (*mu_cr + rng.random_range(-0.1..0.1)).clamp(0.0, 1.0);
                 (f, cr)
             }
             AdaptationStrategy::SHADE {
@@ -245,9 +245,9 @@ impl DifferentialEvolution {
                 memory_cr,
                 ..
             } => {
-                let idx = rng.gen_range(0..memory_f.len());
-                let f = (memory_f[idx] + rng.gen_range(-0.2..0.2)).clamp(0.1, 1.0);
-                let cr = (memory_cr[idx] + rng.gen_range(-0.1..0.1)).clamp(0.0, 1.0);
+                let idx = rng.random_range(0..memory_f.len());
+                let f = (memory_f[idx] + rng.random_range(-0.2..0.2)).clamp(0.1, 1.0);
+                let cr = (memory_cr[idx] + rng.random_range(-0.1..0.1)).clamp(0.0, 1.0);
                 (f, cr)
             }
         }
@@ -327,7 +327,7 @@ impl DifferentialEvolution {
                 if archive.len() < *archive_size {
                     archive.push(individual);
                 } else if !archive.is_empty() {
-                    let idx = rng.gen_range(0..archive.len());
+                    let idx = rng.random_range(0..archive.len());
                     archive[idx] = individual;
                 }
             }

@@ -14,7 +14,7 @@ impl DropBlock {
             block_size,
             p,
             training: true,
-            rng: Mutex::new(StdRng::from_entropy()),
+            rng: Mutex::new(StdRng::from_os_rng()),
         }
     }
 
@@ -74,7 +74,7 @@ impl Module for DropBlock {
             for ch in 0..c {
                 for i in 0..(h - block_size + 1) {
                     for j in 0..(w - block_size + 1) {
-                        if rng.gen::<f32>() < gamma {
+                        if rng.random::<f32>() < gamma {
                             // Drop block
                             for bi in 0..block_size {
                                 for bj in 0..block_size {
@@ -154,7 +154,7 @@ impl DropConnect {
         Self {
             p,
             training: true,
-            rng: Mutex::new(StdRng::from_entropy()),
+            rng: Mutex::new(StdRng::from_os_rng()),
         }
     }
 
@@ -194,7 +194,7 @@ impl DropConnect {
             .data()
             .iter()
             .map(|&w| {
-                if rng.gen::<f32>() < self.p {
+                if rng.random::<f32>() < self.p {
                     0.0
                 } else {
                     w * scale
@@ -226,7 +226,7 @@ impl Module for DropConnect {
             .data()
             .iter()
             .map(|&x| {
-                if rng.gen::<f32>() < self.p {
+                if rng.random::<f32>() < self.p {
                     0.0
                 } else {
                     x * scale
@@ -270,7 +270,7 @@ fn apply_dropout(input: &Tensor, p: f32, rng: &Mutex<StdRng>) -> Tensor {
     let data: Vec<f32> = input
         .data()
         .iter()
-        .map(|&x| if rng.gen::<f32>() < p { 0.0 } else { x * scale })
+        .map(|&x| if rng.random::<f32>() < p { 0.0 } else { x * scale })
         .collect();
     Tensor::new(&data, input.shape())
 }

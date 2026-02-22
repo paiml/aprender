@@ -160,7 +160,7 @@ fn dare_merge(
             for (i, (&m_val, &b_val)) in model_data.iter().zip(base_data.iter()).enumerate() {
                 let delta = m_val - b_val;
                 // Drop with probability drop_rate; keep with probability (1 - drop_rate)
-                let keep: bool = rng.gen::<f32>() >= drop_rate;
+                let keep: bool = rng.random::<f32>() >= drop_rate;
                 if keep {
                     merged_delta[i] += delta * rescale * weight;
                 }

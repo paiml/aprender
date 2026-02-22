@@ -46,17 +46,17 @@ impl SpectralMLP {
         let scale_3 = (2.0 / (hidden_dim + n_freqs) as f32).sqrt();
 
         let weights_1: Vec<f32> = (0..config_dim * hidden_dim)
-            .map(|_| rng.gen_range(-scale_1..scale_1))
+            .map(|_| rng.random_range(-scale_1..scale_1))
             .collect();
         let bias_1: Vec<f32> = vec![0.0; hidden_dim];
 
         let weights_2: Vec<f32> = (0..hidden_dim * hidden_dim)
-            .map(|_| rng.gen_range(-scale_2..scale_2))
+            .map(|_| rng.random_range(-scale_2..scale_2))
             .collect();
         let bias_2: Vec<f32> = vec![0.0; hidden_dim];
 
         let weights_3: Vec<f32> = (0..hidden_dim * n_freqs)
-            .map(|_| rng.gen_range(-scale_3..scale_3))
+            .map(|_| rng.random_range(-scale_3..scale_3))
             .collect();
         let bias_3: Vec<f32> = vec![0.0; n_freqs];
 

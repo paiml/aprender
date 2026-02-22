@@ -66,7 +66,7 @@ impl IsolationTree {
 
         // Random feature selection
         let n_features = x.shape().1;
-        let feature_idx = rng.gen_range(0..n_features);
+        let feature_idx = rng.random_range(0..n_features);
 
         // Find min/max for this feature in current samples
         let mut min_val = f32::INFINITY;
@@ -89,7 +89,7 @@ impl IsolationTree {
         }
 
         // Random split value between min and max
-        let split_val = rng.gen_range(min_val..max_val);
+        let split_val = rng.random_range(min_val..max_val);
 
         // Partition samples
         let mut left_indices = Vec::new();
@@ -307,7 +307,7 @@ impl IsolationForest {
         let mut rng: Box<dyn rand::RngCore> = if let Some(seed) = self.random_state {
             Box::new(rand::rngs::StdRng::seed_from_u64(seed))
         } else {
-            Box::new(rand::rngs::StdRng::from_entropy())
+            Box::new(rand::rngs::StdRng::from_os_rng())
         };
 
         // Build ensemble of trees

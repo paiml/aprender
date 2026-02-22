@@ -210,7 +210,7 @@ fn test_dtr_fit_sample_mismatch() {
 }
 
 #[test]
-#[should_panic(expected = "low >= high")]
+#[should_panic(expected = "EmptyRange")]
 fn test_rfc_fit_empty_coverage() {
     let x = Matrix::from_vec(0, 2, vec![]).expect("Matrix creation should succeed");
     let y: Vec<usize> = vec![];

@@ -68,7 +68,7 @@ impl Dropout {
         Self {
             p,
             training: true,
-            rng: Mutex::new(StdRng::from_entropy()),
+            rng: Mutex::new(StdRng::from_os_rng()),
         }
     }
 
@@ -113,7 +113,7 @@ impl Module for Dropout {
             .data()
             .iter()
             .map(|&x| {
-                if rng.gen::<f32>() < self.p {
+                if rng.random::<f32>() < self.p {
                     0.0
                 } else {
                     x * scale
@@ -198,7 +198,7 @@ impl Dropout2d {
         Self {
             p,
             training: true,
-            rng: Mutex::new(StdRng::from_entropy()),
+            rng: Mutex::new(StdRng::from_os_rng()),
         }
     }
 
@@ -251,7 +251,7 @@ impl Module for Dropout2d {
         // Generate channel masks for each sample in batch
         let mut channel_masks: Vec<bool> = Vec::with_capacity(batch_size * num_channels);
         for _ in 0..(batch_size * num_channels) {
-            channel_masks.push(rng.gen::<f32>() >= self.p);
+            channel_masks.push(rng.random::<f32>() >= self.p);
         }
 
         let input_data = input.data();
@@ -325,7 +325,7 @@ impl AlphaDropout {
         Self {
             p,
             training: true,
-            rng: Mutex::new(StdRng::from_entropy()),
+            rng: Mutex::new(StdRng::from_os_rng()),
         }
     }
 
@@ -367,7 +367,7 @@ impl Module for AlphaDropout {
             .data()
             .iter()
             .map(|&x| {
-                if rng.gen::<f32>() < self.p {
+                if rng.random::<f32>() < self.p {
                     a * alpha_p + b
                 } else {
                     a * x + b

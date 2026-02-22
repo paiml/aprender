@@ -94,7 +94,7 @@ impl SimulatedAnnealing {
             .enumerate()
             .map(|(i, &xi)| {
                 let range = upper[i] - lower[i];
-                let delta = rng.gen_range(-1.0..=1.0) * range * self.step_scale;
+                let delta = rng.random_range(-1.0..=1.0) * range * self.step_scale;
                 (xi + delta).clamp(lower[i], upper[i])
             })
             .collect()
@@ -116,7 +116,7 @@ impl PerturbativeMetaheuristic for SimulatedAnnealing {
     {
         let mut rng: Box<dyn RngCore> = match self.seed {
             Some(s) => Box::new(StdRng::seed_from_u64(s)),
-            None => Box::new(thread_rng()),
+            None => Box::new(rand::rng()),
         };
 
         let (lower, upper, dim) = match space {
@@ -126,7 +126,7 @@ impl PerturbativeMetaheuristic for SimulatedAnnealing {
 
         // Initialize with random solution
         self.current = (0..dim)
-            .map(|j| rng.gen_range(lower[j]..=upper[j]))
+            .map(|j| rng.random_range(lower[j]..=upper[j]))
             .collect();
         self.current_val = objective(&self.current);
         self.best = self.current.clone();
@@ -151,7 +151,7 @@ impl PerturbativeMetaheuristic for SimulatedAnnealing {
 
             // Metropolis acceptance
             let delta = candidate_val - self.current_val;
-            let accept = delta < 0.0 || rng.gen::<f64>() < (-delta / temp).exp();
+            let accept = delta < 0.0 || rng.random::<f64>() < (-delta / temp).exp();
 
             if accept {
                 self.current = candidate;

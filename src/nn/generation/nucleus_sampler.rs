@@ -283,7 +283,7 @@ pub fn apply_temperature(logits: &Tensor, temperature: f32) -> Tensor {
 // Helper: Sample from logits using the Gumbel-softmax trick.
 pub(super) fn sample_from_logits(logits: &Tensor) -> usize {
     use rand::Rng;
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
 
     // Softmax
     let max_logit = logits
@@ -305,7 +305,7 @@ pub(super) fn sample_from_logits(logits: &Tensor) -> usize {
     let probs: Vec<f32> = exp_logits.iter().map(|&x| x / sum).collect();
 
     // Sample using cumulative distribution
-    let r: f32 = rng.gen();
+    let r: f32 = rng.random();
     let mut cumsum = 0.0;
 
     for (i, &p) in probs.iter().enumerate() {

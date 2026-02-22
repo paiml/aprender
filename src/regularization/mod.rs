@@ -118,7 +118,7 @@ pub fn cross_entropy_with_smoothing(logits: &Vector<f32>, target_idx: usize, eps
 
 /// Sample from Beta distribution using Gamma samples.
 fn sample_beta(alpha: f32, beta: f32) -> f32 {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let x = sample_gamma(alpha, &mut rng);
     let y = sample_gamma(beta, &mut rng);
     let sum = x + y;
@@ -134,7 +134,7 @@ fn sample_beta(alpha: f32, beta: f32) -> f32 {
 fn sample_gamma(shape: f32, rng: &mut impl Rng) -> f32 {
     // Marsaglia and Tsang's method
     if shape < 1.0 {
-        return sample_gamma(1.0 + shape, rng) * rng.gen::<f32>().powf(1.0 / shape);
+        return sample_gamma(1.0 + shape, rng) * rng.random::<f32>().powf(1.0 / shape);
     }
     let d = shape - 1.0 / 3.0;
     let c = 1.0 / (9.0 * d).sqrt();
@@ -142,7 +142,7 @@ fn sample_gamma(shape: f32, rng: &mut impl Rng) -> f32 {
         let x: f32 = sample_normal(rng);
         let v = (1.0 + c * x).powi(3);
         if v > 0.0 {
-            let u: f32 = rng.gen();
+            let u: f32 = rng.random();
             if u < 1.0 - 0.0331 * x.powi(4) || u.ln() < 0.5 * x * x + d * (1.0 - v + v.ln()) {
                 return d * v;
             }
@@ -151,8 +151,8 @@ fn sample_gamma(shape: f32, rng: &mut impl Rng) -> f32 {
 }
 
 fn sample_normal(rng: &mut impl Rng) -> f32 {
-    let u1: f32 = rng.gen::<f32>().max(1e-10);
-    let u2: f32 = rng.gen();
+    let u1: f32 = rng.random::<f32>().max(1e-10);
+    let u2: f32 = rng.random();
     (-2.0 * u1.ln()).sqrt() * (2.0 * std::f32::consts::PI * u2).cos()
 }
 
@@ -190,9 +190,9 @@ impl CutMix {
         let rh = (height as f32 * ratio) as usize;
         let rw = (width as f32 * ratio) as usize;
 
-        let mut rng = rand::thread_rng();
-        let cx = rng.gen_range(0..width);
-        let cy = rng.gen_range(0..height);
+        let mut rng = rand::rng();
+        let cx = rng.random_range(0..width);
+        let cy = rng.random_range(0..height);
 
         let x1 = cx.saturating_sub(rw / 2);
         let y1 = cy.saturating_sub(rh / 2);
@@ -284,7 +284,7 @@ impl StochasticDepth {
         if !training || self.drop_prob == 0.0 {
             return true;
         }
-        rand::thread_rng().gen::<f32>() >= self.drop_prob
+        rand::rng().random::<f32>() >= self.drop_prob
     }
 
     /// Compute survival probability for linear decay schedule.

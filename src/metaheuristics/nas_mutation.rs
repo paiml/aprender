@@ -34,32 +34,32 @@ fn mutate_add_layer(genome: &mut NasGenome, space: &NasSearchSpace, rng: &mut im
     if genome.len() >= space.max_layers {
         return;
     }
-    let layer_type = space.layer_types[rng.gen_range(0..space.layer_types.len())];
+    let layer_type = space.layer_types[rng.random_range(0..space.layer_types.len())];
     let mut config = LayerConfig::new(layer_type);
 
     if matches!(layer_type, LayerType::Dense | LayerType::Lstm) {
-        config.units = Some(rng.gen_range(space.units_range.0..=space.units_range.1));
+        config.units = Some(rng.random_range(space.units_range.0..=space.units_range.1));
     }
     if !space.activations.is_empty() {
         config.activation =
-            Some(space.activations[rng.gen_range(0..space.activations.len())].clone());
+            Some(space.activations[rng.random_range(0..space.activations.len())].clone());
     }
 
-    let pos = rng.gen_range(0..=genome.len());
+    let pos = rng.random_range(0..=genome.len());
     genome.layers_mut().insert(pos, config);
 }
 
 fn mutate_remove_layer(genome: &mut NasGenome, space: &NasSearchSpace, rng: &mut impl Rng) {
     if genome.len() > space.min_layers {
-        let idx = rng.gen_range(0..genome.len());
+        let idx = rng.random_range(0..genome.len());
         genome.layers_mut().remove(idx);
     }
 }
 
 fn mutate_change_type(genome: &mut NasGenome, space: &NasSearchSpace, rng: &mut impl Rng) {
     if !genome.is_empty() && !space.layer_types.is_empty() {
-        let idx = rng.gen_range(0..genome.len());
-        let new_type = space.layer_types[rng.gen_range(0..space.layer_types.len())];
+        let idx = rng.random_range(0..genome.len());
+        let new_type = space.layer_types[rng.random_range(0..space.layer_types.len())];
         genome.layers_mut()[idx].layer_type = new_type;
     }
 }
@@ -68,25 +68,25 @@ fn mutate_modify_params(genome: &mut NasGenome, space: &NasSearchSpace, rng: &mu
     if genome.is_empty() {
         return;
     }
-    let idx = rng.gen_range(0..genome.len());
+    let idx = rng.random_range(0..genome.len());
     let layer = &mut genome.layers_mut()[idx];
 
     if let Some(units) = layer.units {
-        let delta = rng.gen_range(-32i64..=32);
+        let delta = rng.random_range(-32i64..=32);
         let new_units =
             (units as i64 + delta).clamp(space.units_range.0 as i64, space.units_range.1 as i64);
         layer.units = Some(new_units as usize);
     }
 
-    if rng.gen_bool(0.3) && !space.activations.is_empty() {
+    if rng.random_bool(0.3) && !space.activations.is_empty() {
         layer.activation =
-            Some(space.activations[rng.gen_range(0..space.activations.len())].clone());
+            Some(space.activations[rng.random_range(0..space.activations.len())].clone());
     }
 }
 
 fn mutate_toggle_active(genome: &mut NasGenome, rng: &mut impl Rng) {
     if !genome.is_empty() {
-        let idx = rng.gen_range(0..genome.len());
+        let idx = rng.random_range(0..genome.len());
         let layer = &mut genome.layers_mut()[idx];
         layer.active = !layer.active;
     }
@@ -106,8 +106,8 @@ pub fn crossover_genomes(
         return parent1.clone();
     }
 
-    let cut1 = rng.gen_range(0..=parent1.len());
-    let cut2 = rng.gen_range(0..=parent2.len());
+    let cut1 = rng.random_range(0..=parent1.len());
+    let cut2 = rng.random_range(0..=parent2.len());
 
     let mut child_layers = Vec::new();
 

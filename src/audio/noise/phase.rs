@@ -41,7 +41,7 @@ impl PhaseGenerator {
 
         for i in 0..n_freqs {
             // Generate new random phase
-            let random_phase = self.rng.gen_range(-PI..PI);
+            let random_phase = self.rng.random_range(-PI..PI);
 
             let phase = if self.coherence > 0.0 && i < self.previous_phases.len() {
                 // Blend with previous phase for coherence

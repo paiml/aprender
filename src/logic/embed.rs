@@ -16,7 +16,7 @@ use std::collections::HashMap;
 
 /// Generate a random vector of given dimension with values in `[-0.1, 0.1)`.
 fn rand_vec(rng: &mut impl Rng, dim: usize) -> Vec<f64> {
-    (0..dim).map(|_| rng.gen_range(-0.1..0.1)).collect()
+    (0..dim).map(|_| rng.random_range(-0.1..0.1)).collect()
 }
 
 /// Generate a random matrix (rows x cols) with values in `[-0.1, 0.1)`.
@@ -62,7 +62,7 @@ impl EmbeddingSpace {
     /// Create a new embedding space with random initialization
     #[must_use]
     pub fn new(num_entities: usize, dim: usize) -> Self {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         Self {
             num_entities,
@@ -74,7 +74,7 @@ impl EmbeddingSpace {
 
     /// Add a relation with random initialization
     pub fn add_relation(&mut self, name: &str) {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         self.relation_matrices
             .insert(name.to_string(), rand_matrix(&mut rng, self.dim, self.dim));
     }
@@ -264,7 +264,7 @@ impl RescalFactorizer {
     /// * `iterations` - Number of ALS iterations
     #[must_use]
     pub fn factorize(&self, triples: &[(usize, usize, usize)], iterations: usize) -> RescalResult {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
 
         let mut a = rand_matrix(&mut rng, self.num_entities, self.dim);
         let r: Vec<Vec<Vec<f64>>> = (0..self.num_relations)

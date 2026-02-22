@@ -246,13 +246,13 @@ pub fn dropout(x: &Tensor, p: f32, training: bool) -> Tensor {
     }
 
     use rand::Rng;
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let scale = 1.0 / (1.0 - p);
 
     let data: Vec<f32> = x
         .data()
         .iter()
-        .map(|&v| if rng.gen::<f32>() < p { 0.0 } else { v * scale })
+        .map(|&v| if rng.random::<f32>() < p { 0.0 } else { v * scale })
         .collect();
 
     Tensor::new(&data, x.shape())
