@@ -120,7 +120,7 @@ semicolon_if_nothing_returned = "allow"  # Style preference
 
 [package]
 name = "aprender"
-version = "0.26.1"
+version = "0.26.2"
 edition = "2021"
 rust-version = "1.70"
 authors = ["Noah Gift <noah@paiml.com>"]
@@ -239,7 +239,7 @@ provable-contracts-macros = { version = "0.1", path = "../provable-contracts/cra
 
 [build-dependencies]
 serde = { version = "1", features = ["derive"] }
-serde_yaml = "0.9"
+serde_yaml_ng = "0.10"
 
 [dev-dependencies]
 proptest = "1.6"

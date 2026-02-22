@@ -2,7 +2,7 @@
 //! APR CLI Commands Demo
 //!
 //! Demonstrates creating test models and using the apr-cli commands.
-//! This example creates model files that work with all 26 apr-cli commands.
+//! This example creates model files that work with all 27 apr-cli commands.
 //!
 //! Toyota Way Alignment:
 //! - **Genchi Genbutsu**: Go and see - inspect actual model data
@@ -199,7 +199,7 @@ fn print_cli_commands(model_path: &Path, model_v2_path: &Path) {
     println!("For inference commands (run, serve):");
     println!("  cargo build -p apr-cli --features inference\n");
 
-    println!("=== 26 APR CLI Commands ===\n");
+    println!("=== 27 APR CLI Commands ===\n");
 
     println!("--- Model Inspection ---\n");
 
@@ -339,15 +339,20 @@ fn print_cli_commands(model_path: &Path, model_v2_path: &Path) {
     println!("    ./target/debug/apr qa model.gguf --assert-tps 100");
     println!("    ./target/debug/apr qa model.gguf --json\n");
 
-    println!("24. SHOWCASE - Performance benchmark demo:");
+    println!("24. QUALIFY - Cross-subcommand smoke test:");
+    println!("    ./target/debug/apr qualify model.gguf");
+    println!("    ./target/debug/apr qualify model.gguf --tier full");
+    println!("    ./target/debug/apr qualify model.gguf --json\n");
+
+    println!("25. SHOWCASE - Performance benchmark demo:");
     println!("    ./target/debug/apr showcase model.gguf");
     println!("    ./target/debug/apr showcase model.gguf --warmup 3 --iterations 10\n");
 
-    println!("25. PROFILE - Deep performance profiling:");
+    println!("26. PROFILE - Deep performance profiling:");
     println!("    ./target/debug/apr profile model.gguf");
     println!("    ./target/debug/apr profile model.gguf --roofline\n");
 
-    println!("26. BENCH - Run benchmarks:");
+    println!("27. BENCH - Run benchmarks:");
     println!("    ./target/debug/apr bench model.gguf");
     println!("    ./target/debug/apr bench model.gguf --iterations 100\n");
 }

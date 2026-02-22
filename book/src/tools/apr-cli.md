@@ -45,6 +45,7 @@ The binary will be available at `target/release/apr`.
 | `eval` | Evaluate model perplexity (spec H13: PPL <= 20) | Measurement |
 | `profile` | Deep profiling with Roofline analysis | Genchi Genbutsu |
 | `qa` | Falsifiable QA checklist for model releases | Jidoka |
+| `qualify` | Cross-subcommand smoke test (does every tool handle this model?) | Jidoka |
 | `showcase` | Qwen2.5-Coder showcase demo | Standardization |
 | `check` | Model self-test: 10-stage pipeline integrity | Jidoka |
 | `publish` | Publish model to HuggingFace Hub | Automation |
@@ -1155,6 +1156,63 @@ apr qa model.gguf --json
 ...
 
 Result: 10/10 PASS
+```
+
+## Qualify Command
+
+Cross-subcommand smoke test: runs every diagnostic CLI tool against a model to verify no crashes. Fills the gap between `apr qa` (inference quality gates) and unit tests (isolated logic).
+
+```bash
+# Smoke test all 11 diagnostic tools on a model
+apr qualify model.gguf
+
+# Standard tier (smoke + contract audit via pv)
+apr qualify model.gguf --tier standard
+
+# Full tier (standard + playbook check via apr-qa)
+apr qualify model.gguf --tier full
+
+# JSON output for CI
+apr qualify model.gguf --json
+
+# Skip slow gates
+apr qualify model.gguf --skip validate,validate_quality
+
+# Show subcommand output
+apr qualify model.gguf --verbose
+```
+
+### Tiers
+
+| Tier | Gates | Description |
+|------|-------|-------------|
+| `smoke` (default) | 11 | In-process: inspect, validate, validate --quality, tensors, lint, debug, tree, hex, flow, explain, check |
+| `standard` | 12 | Smoke + contract audit via `pv` |
+| `full` | 13 | Standard + playbook check via `apr-qa` |
+
+### Example Output
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Qualify
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Model: model.gguf
+  Tier: smoke
+
+  ✓ PASS Inspect (1.3s)
+  ✓ PASS Validate (1.3m)
+  ✓ PASS Validate (quality) (1.4m)
+  ✓ PASS Tensors (1.3s)
+  ✓ PASS Lint (688ms)
+  ✓ PASS Debug (1.3s)
+  ✓ PASS Tree (1.3s)
+  ✓ PASS Hex (674ms)
+  ✓ PASS Flow (1.9s)
+  ✓ PASS Explain (1.3s)
+  ✓ PASS Check (pipeline) (3.9s)
+
+  ✓ ALL GATES PASSED
+  Total Duration: 2.9m
 ```
 
 ## Showcase Command

@@ -1,0 +1,26 @@
+{
+  "direct_count": 4,
+  "transitive_count": 83,
+  "timestamp": "2026-02-21T20:33:15.070900608+00:00",
+  "previous": {
+    "direct_count": 4,
+    "transitive_count": 83,
+    "timestamp": "2026-02-21T15:23:26.110836993+00:00",
+    "previous": {
+      "direct_count": 4,
+      "transitive_count": 83,
+      "timestamp": "2026-02-21T15:20:18.535382815+00:00",
+      "previous": {
+        "direct_count": 4,
+        "transitive_count": 83,
+        "timestamp": "2026-02-21T14:47:58.938279808+00:00",
+        "previous": {
+          "direct_count": 4,
+          "transitive_count": 83,
+          "timestamp": "2026-02-21T14:40:36.329527417+00:00",
+          "previous": null
+        }
+      }
+    }
+  }
+}

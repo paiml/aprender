@@ -245,7 +245,7 @@ checksum = "a23eb6b1614318a8071c9b2521f36b424b2c83db5eb3a0fead4a6c0809af6e61"
 name = "apr-cli"
 version = "0.3.1"
 dependencies = [
- "aprender 0.26.1",
+ "aprender 0.26.2",
  "assert_cmd",
  "axum",
  "axum-test",
@@ -306,7 +306,7 @@ dependencies = [
 
 [[package]]
 name = "aprender"
-version = "0.26.1"
+version = "0.26.2"
 dependencies = [
  "aes-gcm",
  "alimentar",
@@ -340,7 +340,7 @@ dependencies = [
  "safetensors 0.4.5",
  "serde",
  "serde_json",
- "serde_yaml",
+ "serde_yaml_ng",
  "sha2",
  "tempfile",
  "thiserror 2.0.18",
@@ -358,7 +358,7 @@ dependencies = [
 name = "aprender-monte-carlo"
 version = "0.1.1"
 dependencies = [
- "aprender 0.26.1",
+ "aprender 0.26.2",
  "assert_cmd",
  "chrono",
  "clap",
@@ -377,7 +377,7 @@ dependencies = [
 name = "aprender-shell"
 version = "0.3.0"
 dependencies = [
- "aprender 0.26.1",
+ "aprender 0.26.2",
  "assert_cmd",
  "clap",
  "criterion",
@@ -394,7 +394,7 @@ dependencies = [
 name = "aprender-tsp"
 version = "0.2.0"
 dependencies = [
- "aprender 0.26.1",
+ "aprender 0.26.2",
  "assert_cmd",
  "clap",
  "crc32fast",
@@ -2134,7 +2134,7 @@ checksum = "34aa73646ffb006b8f5147f3dc182bd4bcb190227ce861fc4a4844bf8e3cb2c0"
 name = "entrenar"
 version = "0.6.1"
 dependencies = [
- "aprender 0.26.1",
+ "aprender 0.26.2",
  "bytemuck",
  "chrono",
  "clap",
@@ -4975,10 +4975,10 @@ dependencies = [
 
 [[package]]
 name = "realizar"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "anyhow",
- "aprender 0.26.1",
+ "aprender 0.26.2",
  "arc-swap",
  "async-stream",
  "axum",
@@ -4994,7 +4994,7 @@ dependencies = [
  "rayon",
  "serde",
  "serde_json",
- "serde_yaml",
+ "serde_yaml_ng",
  "smallvec",
  "thiserror 1.0.69",
  "tokio",
@@ -5545,6 +5545,19 @@ name = "serde_yaml"
 version = "0.9.34+deprecated"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6a8b1a1a2ebf674015cc02edccce75287f1a0130d394307b36743c2f5d504b47"
+dependencies = [
+ "indexmap",
+ "itoa",
+ "ryu",
+ "serde",
+ "unsafe-libyaml",
+]
+
+[[package]]
+name = "serde_yaml_ng"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7b4db627b98b36d4203a7b458cf3573730f2bb591b28871d916dfa9efabfd41f"
 dependencies = [
  "indexmap",
  "itoa",

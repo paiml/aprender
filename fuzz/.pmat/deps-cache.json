@@ -1,0 +1,14 @@
+{
+  "cargo_lock_mtime": 1771684895,
+  "transitive_count": 97,
+  "prod_transitive_count": 72,
+  "duplicate_crates": [
+    {
+      "name": "getrandom",
+      "versions": [
+        "0.2.17",
+        "0.3.4"
+      ]
+    }
+  ]
+}

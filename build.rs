@@ -174,7 +174,7 @@ fn emit_provable_contract_bindings() {
         }
     };
 
-    let bindings: BindingFile = match serde_yaml::from_str(&yaml_content) {
+    let bindings: BindingFile = match serde_yaml_ng::from_str(&yaml_content) {
         Ok(b) => b,
         Err(e) => {
             println!(

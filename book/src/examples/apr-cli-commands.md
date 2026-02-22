@@ -1,6 +1,6 @@
 # Case Study: APR CLI Commands Demo
 
-This case study demonstrates creating test models and using all 26 apr-cli commands for model inspection, validation, transformation, testing, and inference.
+This case study demonstrates creating test models and using all 27 apr-cli commands for model inspection, validation, transformation, testing, and inference.
 
 ## The Problem
 
@@ -15,7 +15,7 @@ APR model files need comprehensive tooling for:
 
 ## The Solution: apr-cli
 
-The `apr` CLI provides 26 commands for complete model lifecycle management:
+The `apr` CLI provides 27 commands for complete model lifecycle management:
 
 ```bash
 # Build the CLI
@@ -39,7 +39,7 @@ Run: `cargo run --example apr_cli_commands`
 {{#include ../../../examples/apr_cli_commands.rs}}
 ```
 
-## All 26 Commands
+## All 27 Commands
 
 ### Model Inspection
 
@@ -342,19 +342,30 @@ apr qa model.gguf                     # Run 8-gate QA checklist
 apr qa model.gguf --json              # JSON output
 ```
 
-#### 24. SHOWCASE - Performance Benchmark
+#### 24. QUALIFY - Cross-Subcommand Smoke Test
+
+```bash
+apr qualify model.gguf                              # Smoke test all 11 tools
+apr qualify model.gguf --tier full                   # Full tier (+contracts +playbook)
+apr qualify model.gguf --json                        # JSON output for CI
+apr qualify model.gguf --skip validate,validate_quality  # Skip slow gates
+```
+
+Runs every diagnostic CLI tool against a model to verify no crashes. Three tiers: smoke (11 in-process gates), standard (+contract audit), full (+playbook check).
+
+#### 25. SHOWCASE - Performance Benchmark
 
 ```bash
 apr showcase model.gguf --warmup 3 --iterations 10
 ```
 
-#### 25. PROFILE - Deep Performance Profiling
+#### 26. PROFILE - Deep Performance Profiling
 
 ```bash
 apr profile model.gguf --roofline
 ```
 
-#### 26. BENCH - Run Benchmarks
+#### 27. BENCH - Run Benchmarks
 
 ```bash
 apr bench model.gguf --iterations 100
@@ -430,7 +441,7 @@ apr debug model.apr --drama
 | Benefit | Description |
 |---------|-------------|
 | Standardized | Consistent CLI for all APR models |
-| Comprehensive | 26 commands cover full lifecycle |
+| Comprehensive | 27 commands cover full lifecycle |
 | Scriptable | JSON output for automation |
 | Debuggable | Deep inspection with drama mode |
 | Validatable | 100-point QA with grades |

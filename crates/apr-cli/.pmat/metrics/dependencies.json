@@ -1,0 +1,26 @@
+{
+  "direct_count": 21,
+  "transitive_count": 403,
+  "timestamp": "2026-02-21T20:33:38.922212095+00:00",
+  "previous": {
+    "direct_count": 21,
+    "transitive_count": 403,
+    "timestamp": "2026-02-21T15:23:47.144976292+00:00",
+    "previous": {
+      "direct_count": 21,
+      "transitive_count": 403,
+      "timestamp": "2026-02-21T15:20:51.956412821+00:00",
+      "previous": {
+        "direct_count": 21,
+        "transitive_count": 403,
+        "timestamp": "2026-02-21T14:48:21.328075432+00:00",
+        "previous": {
+          "direct_count": 21,
+          "transitive_count": 403,
+          "timestamp": "2026-02-21T14:41:31.601833215+00:00",
+          "previous": null
+        }
+      }
+    }
+  }
+}
