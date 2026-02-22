@@ -5,28 +5,28 @@
   "gates_executed": 11,
   "gates_skipped": 0,
   "gates_failed": 1,
-  "total_duration_ms": 18168,
+  "total_duration_ms": 17698,
   "gates": [
     {
       "name": "inspect",
       "display_name": "Inspect",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 2
+      "duration_ms": 1
     },
     {
       "name": "validate",
       "display_name": "Validate",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 7091
+      "duration_ms": 6223
     },
     {
       "name": "validate_quality",
       "display_name": "Validate (quality)",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 6272
+      "duration_ms": 6234
     },
     {
       "name": "tensors",
@@ -40,7 +40,7 @@
       "display_name": "Lint",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 1486
+      "duration_ms": 1626
     },
     {
       "name": "debug",
@@ -61,27 +61,27 @@
       "display_name": "Hex",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 1491
+      "duration_ms": 1644
     },
     {
       "name": "flow",
       "display_name": "Flow",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 1506
+      "duration_ms": 1650
     },
     {
       "name": "explain",
       "display_name": "Explain",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 0
+      "duration_ms": 1
     },
     {
       "name": "check",
       "display_name": "Check (pipeline)",
       "status": "FAIL",
-      "message": "Validation failed: Failed to load SafeTensors: Operation 'get_tensor_auto' not supported: Tensor not found with names: 'model.norm.weight', 'output_norm.weight', or 'norm.weight'. Available tensors (341 total): [\"model.layers.1.self_attn.v_proj.weight\", \"model.layers.18.input_layernorm.weight\", \"model.layers.6.self_attn.v_proj.bias\", \"model.layers.4.self_attn.q_proj.bias\", \"model.layers.8.self_attn.dense.bias\"], ...",
+      "message": "Validation failed: Failed to load SafeTensors: Operation 'get_tensor_auto' not supported: Tensor not found with names: 'model.norm.weight', 'output_norm.weight', or 'norm.weight'. Available tensors (341 total): [\"model.layers.12.mlp.fc2.weight\", \"model.layers.4.mlp.fc1.weight\", \"model.layers.13.self_attn.v_proj.weight\", \"model.layers.6.self_attn.dense.weight\", \"model.layers.22.mlp.fc1.weight\"], ...",
       "duration_ms": 312
     }
   ]

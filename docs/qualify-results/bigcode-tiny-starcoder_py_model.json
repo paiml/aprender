@@ -1,11 +1,11 @@
 {
-  "model": "/home/noah/.cache/pacha/models/b55269866992c38b.safetensors",
+  "model": "/home/noah/.cache/pacha/models/0857d600dc8484c7.safetensors",
   "tier": "smoke",
   "passed": false,
   "gates_executed": 11,
   "gates_skipped": 0,
   "gates_failed": 1,
-  "total_duration_ms": 2374,
+  "total_duration_ms": 966,
   "gates": [
     {
       "name": "inspect",
@@ -19,14 +19,14 @@
       "display_name": "Validate",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 751
+      "duration_ms": 248
     },
     {
       "name": "validate_quality",
       "display_name": "Validate (quality)",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 529
+      "duration_ms": 242
     },
     {
       "name": "tensors",
@@ -40,7 +40,7 @@
       "display_name": "Lint",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 360
+      "duration_ms": 154
     },
     {
       "name": "debug",
@@ -54,21 +54,21 @@
       "display_name": "Tree",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 0
+      "duration_ms": 1
     },
     {
       "name": "hex",
       "display_name": "Hex",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 354
+      "duration_ms": 152
     },
     {
       "name": "flow",
       "display_name": "Flow",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 372
+      "duration_ms": 161
     },
     {
       "name": "explain",
@@ -81,7 +81,7 @@
       "name": "check",
       "display_name": "Check (pipeline)",
       "status": "FAIL",
-      "message": "Validation failed: Failed to load SafeTensors: Operation 'get_tensor_auto' not supported: Tensor not found with names: 'model.embed_tokens.weight', 'token_embd.weight', or 'embed_tokens.weight'. Available tensors (244 total): [\"transformer.h.12.mlp.c_fc.weight\", \"transformer.h.2.attn.c_attn.weight\", \"transformer.h.9.ln_1.bias\", \"transformer.h.15.mlp.c_fc.bias\", \"transformer.h.10.ln_1.bias\"], ...",
+      "message": "Validation failed: Failed to load SafeTensors: Format error: config.json missing num_attention_heads",
       "duration_ms": 0
     }
   ]

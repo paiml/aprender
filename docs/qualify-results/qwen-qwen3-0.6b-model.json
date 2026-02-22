@@ -5,7 +5,7 @@
   "gates_executed": 11,
   "gates_skipped": 0,
   "gates_failed": 1,
-  "total_duration_ms": 10921,
+  "total_duration_ms": 10355,
   "gates": [
     {
       "name": "inspect",
@@ -19,14 +19,14 @@
       "display_name": "Validate",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 3011
+      "duration_ms": 2458
     },
     {
       "name": "validate_quality",
       "display_name": "Validate (quality)",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 2410
+      "duration_ms": 2461
     },
     {
       "name": "tensors",
@@ -40,7 +40,7 @@
       "display_name": "Lint",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 818
+      "duration_ms": 849
     },
     {
       "name": "debug",
@@ -68,7 +68,7 @@
       "display_name": "Flow",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 843
+      "duration_ms": 821
     },
     {
       "name": "explain",
@@ -82,7 +82,7 @@
       "display_name": "Check (pipeline)",
       "status": "FAIL",
       "message": "Validation failed: Failed to load SafeTensors: Format error: [F-LAYOUT-CONTRACT-001] Tensor 'layers.0.qkv_weight': Shape mismatch: got 4194304 elements, expected 2097152 (2048x1024)",
-      "duration_ms": 3005
+      "duration_ms": 2935
     }
   ]
 }

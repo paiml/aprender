@@ -5,49 +5,49 @@
   "gates_executed": 11,
   "gates_skipped": 0,
   "gates_failed": 1,
-  "total_duration_ms": 99825,
+  "total_duration_ms": 97844,
   "gates": [
     {
       "name": "inspect",
       "display_name": "Inspect",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 5559
+      "duration_ms": 4503
     },
     {
       "name": "validate",
       "display_name": "Validate",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 31791
+      "duration_ms": 31878
     },
     {
       "name": "validate_quality",
       "display_name": "Validate (quality)",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 32861
+      "duration_ms": 31854
     },
     {
       "name": "tensors",
       "display_name": "Tensors",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 4570
+      "duration_ms": 4537
     },
     {
       "name": "lint",
       "display_name": "Lint",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 2471
+      "duration_ms": 2483
     },
     {
       "name": "debug",
       "display_name": "Debug",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 4271
+      "duration_ms": 4316
     },
     {
       "name": "tree",
@@ -61,28 +61,28 @@
       "display_name": "Hex",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 2394
+      "duration_ms": 2429
     },
     {
       "name": "flow",
       "display_name": "Flow",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 6617
+      "duration_ms": 6737
     },
     {
       "name": "explain",
       "display_name": "Explain",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 4201
+      "duration_ms": 4368
     },
     {
       "name": "check",
       "display_name": "Check (pipeline)",
       "status": "FAIL",
       "message": "Validation failed: Failed to mmap GGUF: Operation 'parse_gguf' not supported: Unsupported GGUF version: 2, only v3 supported",
-      "duration_ms": 0
+      "duration_ms": 31
     }
   ]
 }

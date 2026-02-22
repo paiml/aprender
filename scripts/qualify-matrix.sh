@@ -99,25 +99,39 @@ declare -A NAME_MAP
 ORDERED_PATHS=()
 
 build_cache_map() {
+    # Try manifest.json first (contains ALL cached models), fall back to apr list
+    local manifest="${HOME}/.cache/pacha/models/manifest.json"
     local cache_json
-    cache_json="$("${APR_BIN}" list --json 2>/dev/null)" || return 0
 
-    # Parse each model entry from JSON using jq TSV output
-    while IFS=$'\t' read -r name path; do
-        if [[ -f "${path}" ]]; then
-            # Derive display name from cache name
-            # Format: hf_<org>_<repo>_<filename> -> <org>/<repo>:<filename>
-            # Strip hf_ prefix, then split on _ into org, repo, rest
-            local stripped="${name#hf_}"
-            local org="${stripped%%_*}"
-            stripped="${stripped#*_}"
-            local repo="${stripped%%_*}"
-            local filename="${stripped#*_}"
-            local display="${org}/${repo}:${filename}"
-            NAME_MAP["${path}"]="${display}"
-            ORDERED_PATHS+=("${path}")
-        fi
-    done < <(printf '%s' "${cache_json}" | jq -r '.models[] | [.name, .path] | @tsv')
+    if [[ -f "${manifest}" ]]; then
+        cache_json="$(cat "${manifest}")"
+        while IFS=$'\t' read -r name path; do
+            if [[ -f "${path}" ]]; then
+                local stripped="${name#hf_}"
+                local org="${stripped%%_*}"
+                stripped="${stripped#*_}"
+                local repo="${stripped%%_*}"
+                local filename="${stripped#*_}"
+                local display="${org}/${repo}:${filename}"
+                NAME_MAP["${path}"]="${display}"
+                ORDERED_PATHS+=("${path}")
+            fi
+        done < <(printf '%s' "${cache_json}" | jq -r '.[] | [.name, .path] | @tsv')
+    else
+        cache_json="$("${APR_BIN}" list --json 2>/dev/null)" || return 0
+        while IFS=$'\t' read -r name path; do
+            if [[ -f "${path}" ]]; then
+                local stripped="${name#hf_}"
+                local org="${stripped%%_*}"
+                stripped="${stripped#*_}"
+                local repo="${stripped%%_*}"
+                local filename="${stripped#*_}"
+                local display="${org}/${repo}:${filename}"
+                NAME_MAP["${path}"]="${display}"
+                ORDERED_PATHS+=("${path}")
+            fi
+        done < <(printf '%s' "${cache_json}" | jq -r '.models[] | [.name, .path] | @tsv')
+    fi
 }
 
 # Get display name: check NAME_MAP first, then fallback to basename
