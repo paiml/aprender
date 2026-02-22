@@ -1,0 +1,88 @@
+{
+  "model": "/home/noah/.cache/pacha/models/c768e79326c80c18.gguf",
+  "tier": "smoke",
+  "passed": true,
+  "gates_executed": 11,
+  "gates_skipped": 0,
+  "gates_failed": 0,
+  "total_duration_ms": 50412,
+  "gates": [
+    {
+      "name": "inspect",
+      "display_name": "Inspect",
+      "status": "PASS",
+      "message": "OK",
+      "duration_ms": 2054
+    },
+    {
+      "name": "validate",
+      "display_name": "Validate",
+      "status": "PASS",
+      "message": "OK",
+      "duration_ms": 8647
+    },
+    {
+      "name": "validate_quality",
+      "display_name": "Validate (quality)",
+      "status": "PASS",
+      "message": "OK",
+      "duration_ms": 8542
+    },
+    {
+      "name": "tensors",
+      "display_name": "Tensors",
+      "status": "PASS",
+      "message": "OK",
+      "duration_ms": 2068
+    },
+    {
+      "name": "lint",
+      "display_name": "Lint",
+      "status": "PASS",
+      "message": "OK",
+      "duration_ms": 1076
+    },
+    {
+      "name": "debug",
+      "display_name": "Debug",
+      "status": "PASS",
+      "message": "OK",
+      "duration_ms": 1953
+    },
+    {
+      "name": "tree",
+      "display_name": "Tree",
+      "status": "PASS",
+      "message": "OK",
+      "duration_ms": 1895
+    },
+    {
+      "name": "hex",
+      "display_name": "Hex",
+      "status": "PASS",
+      "message": "OK",
+      "duration_ms": 1072
+    },
+    {
+      "name": "flow",
+      "display_name": "Flow",
+      "status": "PASS",
+      "message": "OK",
+      "duration_ms": 2942
+    },
+    {
+      "name": "explain",
+      "display_name": "Explain",
+      "status": "PASS",
+      "message": "OK",
+      "duration_ms": 1967
+    },
+    {
+      "name": "check",
+      "display_name": "Check (pipeline)",
+      "status": "PASS",
+      "message": "OK",
+      "duration_ms": 18093
+    }
+  ]
+}
