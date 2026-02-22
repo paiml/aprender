@@ -120,7 +120,7 @@ semicolon_if_nothing_returned = "allow"  # Style preference
 
 [package]
 name = "aprender"
-version = "0.25.9"
+version = "0.26.0"
 edition = "2021"
 rust-version = "1.70"
 authors = ["Noah Gift <noah@paiml.com>"]
@@ -177,7 +177,7 @@ batuta-common = "0.1"
 
 # Core compute primitives - SIMD-accelerated tensor operations
 # v0.14.5: wgpu adapter limits fix (buffer >256MB for 7B+ models)
-trueno = { version = "0.14.6", path = "../trueno" }
+trueno = { version = "0.15.0", path = "../trueno" }
 
 # K-quantization formats (Q4_K, Q5_K, Q6_K) - Toyota Way: ONE source of truth
 # Path dependency until published to crates.io

@@ -69,14 +69,14 @@ zram = ["trueno-zram-core"]
 
 [dependencies]
 # Core aprender library
-aprender = { path = "../..", version = "0.25.0", default-features = true, features = ["format-compression"] }
+aprender = { path = "../..", version = "0.26.0", default-features = true, features = ["format-compression"] }
 
 # Shared formatting and system utilities (Batuta stack)
 batuta-common = "0.1"
 
 # Inference engine (crates.io version, with local path for dev)
 # Note: cuda feature enables GPU-accelerated inference via trueno-gpu
-realizar = { version = "0.6.14", optional = true, default-features = false, features = ["server", "aprender-serve", "gpu", "cuda"] }
+realizar = { version = "0.7.0", optional = true, default-features = false, features = ["server", "aprender-serve", "gpu", "cuda"] }
 
 # SIMD compute library (for BrickProfiler in §12.11 unified profiling)
 # MUST use crates.io version to match aprender's trueno dependency

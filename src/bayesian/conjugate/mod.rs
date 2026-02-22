@@ -375,5 +375,5 @@ pub struct GammaPoisson {
 }
 
 include!("normal_inverse_gamma.rs");
+include!("normal_inverse_gamma_methods.rs");
 include!("dirichlet_multinomial.rs");
-include!("aprender::bayesian::dirichletmultinomial.rs");

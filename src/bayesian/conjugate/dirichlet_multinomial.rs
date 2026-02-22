@@ -1,262 +1,264 @@
 
-impl NormalInverseGamma {
-    /// Creates a non-informative prior N-IG(0, 0.001, 0.001, 0.001).
+impl DirichletMultinomial {
+    /// Creates a uniform prior Dirichlet(1, ..., 1) for k categories.
     ///
-    /// This weakly informative prior allows the data to dominate.
+    /// This represents equal probability for all categories with minimal prior belief.
+    ///
+    /// # Arguments
+    ///
+    /// * `k` - Number of categories (must be ≥ 2)
+    ///
+    /// # Panics
+    ///
+    /// Panics if k < 2.
     ///
     /// # Example
     ///
     /// ```
-    /// use aprender::bayesian::NormalInverseGamma;
+    /// use aprender::bayesian::DirichletMultinomial;
     ///
-    /// let prior = NormalInverseGamma::noninformative();
-    /// assert_eq!(prior.mu(), 0.0);
-    /// assert_eq!(prior.kappa(), 0.001);
+    /// let prior = DirichletMultinomial::uniform(3);
+    /// assert_eq!(prior.alphas().len(), 3);
+    /// assert_eq!(prior.alphas()[0], 1.0);
     /// ```
     #[must_use]
-    pub fn noninformative() -> Self {
+    pub fn uniform(k: usize) -> Self {
+        assert!(k >= 2, "Must have at least 2 categories");
         Self {
-            mu: 0.0,
-            kappa: 0.001,
-            alpha: 0.001,
-            beta: 0.001,
+            alphas: vec![1.0; k],
         }
     }
 
-    /// Creates an informative prior N-IG(μ₀, κ₀, α₀, β₀) from prior belief.
+    /// Creates an informative prior Dirichlet(α₁, ..., αₖ) from prior belief.
     ///
     /// # Arguments
     ///
-    /// * `mu` - Prior mean μ₀
-    /// * `kappa` - Prior precision κ₀ > 0 (pseudo sample size for mean)
-    /// * `alpha` - Prior shape α₀ > 0 (pseudo sample size for variance)
-    /// * `beta` - Prior scale β₀ > 0 (pseudo sum of squared deviations)
+    /// * `alphas` - Concentration parameters αᵢ > 0 for each category
     ///
     /// # Interpretation
     ///
-    /// - μ₀: Prior belief about the mean
-    /// - κ₀: Confidence in prior mean (larger = stronger belief)
-    /// - α₀: Prior degrees of freedom for variance
-    /// - β₀: Prior scale for variance
+    /// - αᵢ: Pseudo-count for category i
+    /// - Σαᵢ: Total pseudo-count (strength of prior belief)
+    /// - αᵢ / Σαⱼ: Prior mean probability for category i
     ///
     /// # Errors
     ///
-    /// Returns error if κ ≤ 0, α ≤ 0, or β ≤ 0.
+    /// Returns error if:
+    /// - Any αᵢ ≤ 0
+    /// - Fewer than 2 categories
     ///
     /// # Example
     ///
     /// ```
-    /// use aprender::bayesian::NormalInverseGamma;
+    /// use aprender::bayesian::DirichletMultinomial;
     ///
-    /// // Prior belief: mean ≈ 5.0, variance ≈ 1.0, moderate confidence
-    /// let prior = NormalInverseGamma::new(5.0, 10.0, 5.0, 5.0).expect("valid prior parameters");
-    /// assert_eq!(prior.mu(), 5.0);
+    /// // Prior belief: category probabilities [0.5, 0.3, 0.2] with 10 pseudo-counts
+    /// let prior = DirichletMultinomial::new(vec![5.0, 3.0, 2.0]).expect("valid concentration parameters");
+    /// let mean = prior.posterior_mean();
+    /// assert!((mean[0] - 0.5).abs() < 0.01);
     /// ```
-    pub fn new(mu: f32, kappa: f32, alpha: f32, beta: f32) -> Result<Self> {
-        if kappa <= 0.0 || alpha <= 0.0 || beta <= 0.0 {
+    pub fn new(alphas: Vec<f32>) -> Result<Self> {
+        if alphas.len() < 2 {
             return Err(AprenderError::InvalidHyperparameter {
-                param: "kappa, alpha, beta".to_string(),
-                value: format!("({kappa}, {alpha}, {beta})"),
+                param: "alphas".to_string(),
+                value: format!("{} categories", alphas.len()),
+                constraint: "at least 2 categories".to_string(),
+            });
+        }
+
+        if alphas.iter().any(|&a| a <= 0.0) {
+            return Err(AprenderError::InvalidHyperparameter {
+                param: "alphas".to_string(),
+                value: format!("{alphas:?}"),
                 constraint: "all > 0".to_string(),
             });
         }
-        Ok(Self {
-            mu,
-            kappa,
-            alpha,
-            beta,
-        })
+
+        Ok(Self { alphas })
     }
 
-    /// Returns the current μ₀ parameter.
+    /// Returns the current concentration parameters.
     #[must_use]
-    pub fn mu(&self) -> f32 {
-        self.mu
+    pub fn alphas(&self) -> &[f32] {
+        &self.alphas
     }
 
-    /// Returns the current κ₀ parameter.
+    /// Returns the number of categories.
     #[must_use]
-    pub fn kappa(&self) -> f32 {
-        self.kappa
+    pub fn num_categories(&self) -> usize {
+        self.alphas.len()
     }
 
-    /// Returns the current α₀ parameter.
-    #[must_use]
-    pub fn alpha(&self) -> f32 {
-        self.alpha
-    }
-
-    /// Returns the current β₀ parameter.
-    #[must_use]
-    pub fn beta(&self) -> f32 {
-        self.beta
-    }
-
-    /// Updates the posterior with observed data (Bayesian update).
+    /// Updates the posterior with observed category counts (Bayesian update).
     ///
     /// # Arguments
     ///
-    /// * `data` - Slice of observed values
+    /// * `counts` - Observed counts for each category
+    ///
+    /// # Panics
+    ///
+    /// Panics if `counts.len()` != `num_categories()`.
     ///
     /// # Example
     ///
     /// ```
-    /// use aprender::bayesian::NormalInverseGamma;
+    /// use aprender::bayesian::DirichletMultinomial;
     ///
-    /// let mut model = NormalInverseGamma::noninformative();
-    /// model.update(&[4.2, 5.8, 6.1, 4.5, 5.0]);
+    /// let mut model = DirichletMultinomial::uniform(3);
+    /// model.update(&[10, 5, 3]); // 10 A's, 5 B's, 3 C's
     ///
-    /// // Parameters have been updated via Bayesian inference
-    /// assert!(model.kappa() > 0.001); // Precision increased
+    /// // Posterior is Dirichlet(1+10, 1+5, 1+3) = Dirichlet(11, 6, 4)
+    /// assert_eq!(model.alphas()[0], 11.0);
     /// ```
-    pub fn update(&mut self, data: &[f32]) {
-        if data.is_empty() {
-            return;
+    pub fn update(&mut self, counts: &[u32]) {
+        assert_eq!(
+            counts.len(),
+            self.alphas.len(),
+            "Counts must match number of categories"
+        );
+
+        for (alpha, &count) in self.alphas.iter_mut().zip(counts.iter()) {
+            #[allow(clippy::cast_precision_loss)]
+            {
+                *alpha += count as f32;
+            }
         }
-
-        let n = data.len() as f32;
-
-        // Compute sample statistics
-        let sample_mean = data.iter().sum::<f32>() / n;
-        let sum_squared_deviations: f32 = data.iter().map(|&x| (x - sample_mean).powi(2)).sum();
-
-        // Update parameters
-        let kappa_n = self.kappa + n;
-        let mu_n = (self.kappa * self.mu + n * sample_mean) / kappa_n;
-        let alpha_n = self.alpha + n / 2.0;
-        let beta_n = self.beta
-            + sum_squared_deviations / 2.0
-            + (self.kappa * n * (sample_mean - self.mu).powi(2)) / (2.0 * kappa_n);
-
-        self.mu = mu_n;
-        self.kappa = kappa_n;
-        self.alpha = alpha_n;
-        self.beta = beta_n;
     }
 
-    /// Computes the posterior mean of μ: E[μ|data] = μₙ.
+    /// Computes the posterior mean E[θ|data] for all categories.
     ///
-    /// This is the expected value of the mean parameter.
+    /// Returns a vector where element i is E[θᵢ|data] = αᵢ / Σαⱼ.
     ///
     /// # Example
     ///
     /// ```
-    /// use aprender::bayesian::NormalInverseGamma;
+    /// use aprender::bayesian::DirichletMultinomial;
     ///
-    /// let mut model = NormalInverseGamma::noninformative();
-    /// model.update(&[4.2, 5.8, 6.1, 4.5, 5.0]);
+    /// let mut model = DirichletMultinomial::uniform(3);
+    /// model.update(&[10, 5, 3]);
     ///
-    /// let mean_mu = model.posterior_mean_mu();
-    /// assert!((mean_mu - 5.1).abs() < 0.5); // Close to sample mean
+    /// let mean = model.posterior_mean();
+    /// assert!((mean[0] - 11.0/21.0).abs() < 0.01); // (1+10)/(1+1+1+10+5+3)
+    /// assert!((mean.iter().sum::<f32>() - 1.0).abs() < 1e-6); // Sums to 1
     /// ```
     #[must_use]
-    pub fn posterior_mean_mu(&self) -> f32 {
-        self.mu
+    pub fn posterior_mean(&self) -> Vec<f32> {
+        let sum: f32 = self.alphas.iter().sum();
+        self.alphas.iter().map(|&a| a / sum).collect()
     }
 
-    /// Computes the posterior mean of σ²: E[σ²|data] = β/(α-1) for α > 1.
+    /// Computes the posterior mode (MAP estimate) for all categories.
     ///
-    /// This is the expected value of the variance parameter.
+    /// Returns a vector where element i is (αᵢ - 1) / (Σαⱼ - k).
+    /// Only defined when all αᵢ > 1.
     ///
     /// # Returns
     ///
-    /// - `Some(variance)` if α > 1
-    /// - `None` if α ≤ 1 (mean undefined)
+    /// - `Some(mode)` if all αᵢ > 1
+    /// - `None` if any αᵢ ≤ 1 (distribution has no unique mode)
     ///
     /// # Example
     ///
     /// ```
-    /// use aprender::bayesian::NormalInverseGamma;
+    /// use aprender::bayesian::DirichletMultinomial;
     ///
-    /// let mut model = NormalInverseGamma::noninformative();
-    /// model.update(&[4.2, 5.8, 6.1, 4.5, 5.0]);
+    /// let mut model = DirichletMultinomial::new(vec![2.0, 2.0, 2.0]).expect("valid concentration parameters");
+    /// model.update(&[10, 5, 3]);
     ///
-    /// let mean_var = model.posterior_mean_variance().expect("mean variance exists when alpha > 1");
-    /// assert!(mean_var > 0.0);
+    /// let mode = model.posterior_mode().expect("mode exists when all alphas > 1");
+    /// assert!((mode[0] - 11.0/21.0).abs() < 0.01); // (12-1)/(24-3)
     /// ```
     #[must_use]
-    pub fn posterior_mean_variance(&self) -> Option<f32> {
-        if self.alpha > 1.0 {
-            Some(self.beta / (self.alpha - 1.0))
+    pub fn posterior_mode(&self) -> Option<Vec<f32>> {
+        if self.alphas.iter().all(|&a| a > 1.0) {
+            let k = self.alphas.len() as f32;
+            let sum: f32 = self.alphas.iter().sum();
+            Some(self.alphas.iter().map(|&a| (a - 1.0) / (sum - k)).collect())
         } else {
             None
         }
     }
 
-    /// Computes the posterior variance of μ: Var[μ|data] = β/(κ(α-1)) for α > 1.
+    /// Computes the posterior variance `Var[θᵢ|data]` for all categories.
     ///
-    /// Measures uncertainty in the mean estimate.
-    ///
-    /// # Returns
-    ///
-    /// - `Some(variance)` if α > 1
-    /// - `None` if α ≤ 1 (variance undefined)
+    /// Returns a vector where element i is:
+    /// `Var[θᵢ] = αᵢ(α₀ - αᵢ) / (α₀²(α₀ + 1))`
+    /// where `α₀ = Σαⱼ`
     ///
     /// # Example
     ///
     /// ```
-    /// use aprender::bayesian::NormalInverseGamma;
+    /// use aprender::bayesian::DirichletMultinomial;
     ///
-    /// let mut model = NormalInverseGamma::noninformative();
-    /// model.update(&[4.2, 5.8, 6.1, 4.5, 5.0]);
+    /// let mut model = DirichletMultinomial::uniform(3);
+    /// model.update(&[10, 5, 3]);
     ///
-    /// let var_mu = model.posterior_variance_mu().expect("variance of mu exists when alpha > 1");
-    /// assert!(var_mu > 0.0); // Positive uncertainty
+    /// let variance = model.posterior_variance();
+    /// assert!(variance[0] > 0.0); // Positive uncertainty
     /// ```
     #[must_use]
-    pub fn posterior_variance_mu(&self) -> Option<f32> {
-        if self.alpha > 1.0 {
-            Some(self.beta / (self.kappa * (self.alpha - 1.0)))
-        } else {
-            None
-        }
+    pub fn posterior_variance(&self) -> Vec<f32> {
+        let sum: f32 = self.alphas.iter().sum();
+        self.alphas
+            .iter()
+            .map(|&a| a * (sum - a) / (sum * sum * (sum + 1.0)))
+            .collect()
     }
 
-    /// Computes the posterior predictive distribution mean: μₙ.
+    /// Computes the posterior predictive distribution for the next observation.
     ///
-    /// For Normal-InverseGamma, the posterior predictive is Student's t-distribution.
-    /// Returns the mean of the predictive distribution.
+    /// For Dirichlet-Multinomial, the posterior predictive probabilities are:
+    /// P(category i | data) = αᵢ / Σαⱼ
+    ///
+    /// This equals the posterior mean.
     ///
     /// # Example
     ///
     /// ```
-    /// use aprender::bayesian::NormalInverseGamma;
+    /// use aprender::bayesian::DirichletMultinomial;
     ///
-    /// let mut model = NormalInverseGamma::noninformative();
-    /// model.update(&[4.2, 5.8, 6.1, 4.5, 5.0]);
+    /// let mut model = DirichletMultinomial::uniform(3);
+    /// model.update(&[10, 5, 3]);
     ///
-    /// let pred_mean = model.posterior_predictive();
-    /// assert!((pred_mean - 5.1).abs() < 0.5);
+    /// let pred = model.posterior_predictive();
+    /// assert!((pred[0] - 11.0/21.0).abs() < 0.01);
+    /// assert!((pred.iter().sum::<f32>() - 1.0).abs() < 1e-6);
     /// ```
     #[must_use]
-    pub fn posterior_predictive(&self) -> f32 {
-        self.mu
+    pub fn posterior_predictive(&self) -> Vec<f32> {
+        self.posterior_mean()
     }
 
-    /// Computes a (1-α) credible interval for μ using Student's t-distribution.
+    /// Computes (1-α) credible intervals for all category probabilities.
     ///
-    /// Returns (lower, upper) bounds such that P(lower ≤ μ ≤ upper | data) = 1-α.
+    /// Returns a vector of (lower, upper) bounds for each category.
+    /// Uses normal approximation for each marginal distribution.
     ///
     /// # Arguments
     ///
-    /// * `confidence` - Confidence level (e.g., 0.95 for 95% credible interval)
+    /// * `confidence` - Confidence level (e.g., 0.95 for 95% credible intervals)
     ///
     /// # Errors
     ///
-    /// Returns error if confidence ∉ (0, 1) or if α ≤ 1 (variance undefined).
+    /// Returns error if confidence ∉ (0, 1).
     ///
     /// # Example
     ///
     /// ```
-    /// use aprender::bayesian::NormalInverseGamma;
+    /// use aprender::bayesian::DirichletMultinomial;
     ///
-    /// let mut model = NormalInverseGamma::noninformative();
-    /// model.update(&[4.2, 5.8, 6.1, 4.5, 5.0]);
+    /// let mut model = DirichletMultinomial::uniform(3);
+    /// model.update(&[10, 5, 3]);
     ///
-    /// let (lower, upper) = model.credible_interval_mu(0.95).expect("valid confidence level with alpha > 1");
-    /// assert!(lower < 5.1 && 5.1 < upper);
+    /// let intervals = model.credible_intervals(0.95).expect("valid confidence level");
+    /// let mean = model.posterior_mean();
+    ///
+    /// // Mean should be within interval for each category
+    /// for i in 0..3 {
+    ///     assert!(intervals[i].0 < mean[i] && mean[i] < intervals[i].1);
+    /// }
     /// ```
-    pub fn credible_interval_mu(&self, confidence: f32) -> Result<(f32, f32)> {
+    pub fn credible_intervals(&self, confidence: f32) -> Result<Vec<(f32, f32)>> {
         if !(0.0..1.0).contains(&confidence) {
             return Err(AprenderError::InvalidHyperparameter {
                 param: "confidence".to_string(),
@@ -265,21 +267,8 @@ impl NormalInverseGamma {
             });
         }
 
-        if self.alpha <= 1.0 {
-            return Err(AprenderError::InvalidHyperparameter {
-                param: "alpha".to_string(),
-                value: self.alpha.to_string(),
-                constraint: "> 1 for credible interval".to_string(),
-            });
-        }
-
-        // Approximate using normal distribution
-        // For exact t-distribution, would need special functions
-        let mean = self.mu;
-        let std = self
-            .posterior_variance_mu()
-            .expect("Variance exists when alpha > 1")
-            .sqrt();
+        let means = self.posterior_mean();
+        let variances = self.posterior_variance();
 
         let z = match confidence {
             c if (c - 0.95).abs() < 0.01 => 1.96,
@@ -288,48 +277,20 @@ impl NormalInverseGamma {
             _ => 1.96,
         };
 
-        let lower = mean - z * std;
-        let upper = mean + z * std;
+        let intervals = means
+            .iter()
+            .zip(variances.iter())
+            .map(|(&mean, &var)| {
+                let std = var.sqrt();
+                let lower = (mean - z * std).max(0.0); // Probability cannot be negative
+                let upper = (mean + z * std).min(1.0); // Probability cannot exceed 1
+                (lower, upper)
+            })
+            .collect();
 
-        Ok((lower, upper))
+        Ok(intervals)
     }
 }
 
-/// Dirichlet-Multinomial conjugate prior for categorical data.
-///
-/// Models probability parameters θ₁, ..., θₖ for k mutually exclusive categories
-/// where Σθᵢ = 1 (probability simplex).
-///
-/// **Prior**: Dirichlet(α₁, ..., αₖ)
-/// **Likelihood**: Multinomial(n, θ₁, ..., θₖ)
-/// **Posterior**: Dirichlet(α₁ + n₁, ..., αₖ + nₖ)
-///
-/// # Mathematical Foundation
-///
-/// Given observations in k categories with counts n₁, ..., nₖ:
-/// - Prior: p(θ) = Dirichlet(α) ∝ ∏θᵢ^(αᵢ-1)
-/// - Likelihood: p(n|θ) = Multinomial(n|θ) ∝ ∏θᵢ^nᵢ
-/// - Posterior: p(θ|n) = Dirichlet(α + n)
-///
-/// where α + n means element-wise addition: (α₁ + n₁, ..., αₖ + nₖ)
-///
-/// # Example
-///
-/// ```
-/// use aprender::bayesian::DirichletMultinomial;
-///
-/// // 3-category classification: [A, B, C]
-/// let mut model = DirichletMultinomial::uniform(3);
-///
-/// // Observe counts: 10 A's, 5 B's, 3 C's
-/// model.update(&[10, 5, 3]);
-///
-/// // Posterior probabilities
-/// let probs = model.posterior_mean();
-/// assert!((probs[0] - 10.0/21.0).abs() < 0.1); // P(A) ≈ 0.476
-/// ```
-#[derive(Debug, Clone)]
-pub struct DirichletMultinomial {
-    /// Concentration parameters α₁, ..., αₖ (pseudo-counts for each category)
-    alphas: Vec<f32>,
-}
+#[cfg(test)]
+mod tests;
