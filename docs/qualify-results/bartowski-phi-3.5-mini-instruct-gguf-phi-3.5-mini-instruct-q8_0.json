@@ -1,0 +1,88 @@
+{
+  "model": "/home/noah/.cache/pacha/models/6582adfa4b6afeed.gguf",
+  "tier": "smoke",
+  "passed": false,
+  "gates_executed": 11,
+  "gates_skipped": 0,
+  "gates_failed": 1,
+  "total_duration_ms": 77800,
+  "gates": [
+    {
+      "name": "inspect",
+      "display_name": "Inspect",
+      "status": "PASS",
+      "message": "OK",
+      "duration_ms": 4995
+    },
+    {
+      "name": "validate",
+      "display_name": "Validate",
+      "status": "PASS",
+      "message": "OK",
+      "duration_ms": 18583
+    },
+    {
+      "name": "validate_quality",
+      "display_name": "Validate (quality)",
+      "status": "PASS",
+      "message": "OK",
+      "duration_ms": 18728
+    },
+    {
+      "name": "tensors",
+      "display_name": "Tensors",
+      "status": "PASS",
+      "message": "OK",
+      "duration_ms": 4102
+    },
+    {
+      "name": "lint",
+      "display_name": "Lint",
+      "status": "PASS",
+      "message": "OK",
+      "duration_ms": 2254
+    },
+    {
+      "name": "debug",
+      "display_name": "Debug",
+      "status": "PASS",
+      "message": "OK",
+      "duration_ms": 3892
+    },
+    {
+      "name": "tree",
+      "display_name": "Tree",
+      "status": "PASS",
+      "message": "OK",
+      "duration_ms": 3909
+    },
+    {
+      "name": "hex",
+      "display_name": "Hex",
+      "status": "PASS",
+      "message": "OK",
+      "duration_ms": 2248
+    },
+    {
+      "name": "flow",
+      "display_name": "Flow",
+      "status": "PASS",
+      "message": "OK",
+      "duration_ms": 6243
+    },
+    {
+      "name": "explain",
+      "display_name": "Explain",
+      "status": "PASS",
+      "message": "OK",
+      "duration_ms": 4030
+    },
+    {
+      "name": "check",
+      "display_name": "Check (pipeline)",
+      "status": "PANIC",
+      "message": "PANIC: gated FFN contract requires gate weight",
+      "duration_ms": 8685
+    }
+  ]
+}
