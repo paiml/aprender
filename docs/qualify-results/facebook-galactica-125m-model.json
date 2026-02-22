@@ -5,7 +5,7 @@
   "gates_executed": 11,
   "gates_skipped": 0,
   "gates_failed": 3,
-  "total_duration_ms": 1500,
+  "total_duration_ms": 1513,
   "gates": [
     {
       "name": "inspect",
@@ -19,14 +19,14 @@
       "display_name": "Validate",
       "status": "FAIL",
       "message": "Validation failed: 97 tensors failed validation",
-      "duration_ms": 582
+      "duration_ms": 575
     },
     {
       "name": "validate_quality",
       "display_name": "Validate (quality)",
       "status": "FAIL",
       "message": "Validation failed: 97 tensors failed validation",
-      "duration_ms": 474
+      "duration_ms": 478
     },
     {
       "name": "tensors",
@@ -40,7 +40,7 @@
       "display_name": "Lint",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 145
+      "duration_ms": 149
     },
     {
       "name": "debug",
@@ -61,14 +61,14 @@
       "display_name": "Hex",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 145
+      "duration_ms": 150
     },
     {
       "name": "flow",
       "display_name": "Flow",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 147
+      "duration_ms": 155
     },
     {
       "name": "explain",
@@ -81,7 +81,7 @@
       "name": "check",
       "display_name": "Check (pipeline)",
       "status": "FAIL",
-      "message": "Validation failed: Failed to load SafeTensors: Operation 'get_tensor_auto' not supported: Tensor not found with names: 'model.embed_tokens.weight', 'token_embd.weight', or 'embed_tokens.weight'. Available tensors (196 total): [\"model.decoder.layers.9.self_attn.k_proj.bias\", \"model.decoder.layers.8.self_attn.v_proj.weight\", \"model.decoder.layers.10.self_attn.q_proj.weight\", \"model.decoder.layers.10.self_attn.k_proj.weight\", \"model.decoder.layers.4.self_attn.out_proj.bias\"], ...",
+      "message": "Validation failed: Failed to load SafeTensors: Operation 'get_tensor_auto' not supported: Tensor not found with names: 'model.embed_tokens.weight', 'token_embd.weight', or 'embed_tokens.weight'. Available tensors (196 total): [\"model.decoder.layers.1.self_attn.out_proj.weight\", \"model.decoder.layers.9.self_attn.k_proj.weight\", \"model.decoder.layers.1.self_attn.k_proj.bias\", \"model.decoder.layers.10.self_attn.out_proj.weight\", \"model.decoder.layers.3.final_layer_norm.weight\"], ...",
       "duration_ms": 0
     }
   ]

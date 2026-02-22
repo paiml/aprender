@@ -5,84 +5,84 @@
   "gates_executed": 11,
   "gates_skipped": 0,
   "gates_failed": 1,
-  "total_duration_ms": 42163,
+  "total_duration_ms": 41011,
   "gates": [
     {
       "name": "inspect",
       "display_name": "Inspect",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 2618
+      "duration_ms": 2556
     },
     {
       "name": "validate",
       "display_name": "Validate",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 12247
+      "duration_ms": 11542
     },
     {
       "name": "validate_quality",
       "display_name": "Validate (quality)",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 11636
+      "duration_ms": 11710
     },
     {
       "name": "tensors",
       "display_name": "Tensors",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 1900
+      "duration_ms": 1947
     },
     {
       "name": "lint",
       "display_name": "Lint",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 1324
+      "duration_ms": 1036
     },
     {
       "name": "debug",
       "display_name": "Debug",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 1893
+      "duration_ms": 1887
     },
     {
       "name": "tree",
       "display_name": "Tree",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 1903
+      "duration_ms": 1953
     },
     {
       "name": "hex",
       "display_name": "Hex",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 1149
+      "duration_ms": 1042
     },
     {
       "name": "flow",
       "display_name": "Flow",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 3014
+      "duration_ms": 2941
     },
     {
       "name": "explain",
       "display_name": "Explain",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 1878
+      "duration_ms": 1872
     },
     {
       "name": "check",
       "display_name": "Check (pipeline)",
       "status": "FAIL",
       "message": "Validation failed: Model self-test failed",
-      "duration_ms": 2357
+      "duration_ms": 2416
     }
   ]
 }

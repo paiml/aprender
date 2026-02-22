@@ -5,84 +5,84 @@
   "gates_executed": 11,
   "gates_skipped": 0,
   "gates_failed": 1,
-  "total_duration_ms": 60592,
+  "total_duration_ms": 59355,
   "gates": [
     {
       "name": "inspect",
       "display_name": "Inspect",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 2662
+      "duration_ms": 3202
     },
     {
       "name": "validate",
       "display_name": "Validate",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 18472
+      "duration_ms": 18139
     },
     {
       "name": "validate_quality",
       "display_name": "Validate (quality)",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 20432
+      "duration_ms": 17979
     },
     {
       "name": "tensors",
       "display_name": "Tensors",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 2711
+      "duration_ms": 3340
     },
     {
       "name": "lint",
       "display_name": "Lint",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 1407
+      "duration_ms": 1454
     },
     {
       "name": "debug",
       "display_name": "Debug",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 2473
+      "duration_ms": 2474
     },
     {
       "name": "tree",
       "display_name": "Tree",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 2456
+      "duration_ms": 2470
     },
     {
       "name": "hex",
       "display_name": "Hex",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 1419
+      "duration_ms": 1391
     },
     {
       "name": "flow",
       "display_name": "Flow",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 3803
+      "duration_ms": 3859
     },
     {
       "name": "explain",
       "display_name": "Explain",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 2454
+      "duration_ms": 2467
     },
     {
       "name": "check",
       "display_name": "Check (pipeline)",
       "status": "PANIC",
       "message": "PANIC: gated FFN contract requires gate weight",
-      "duration_ms": 1839
+      "duration_ms": 1905
     }
   ]
 }

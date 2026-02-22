@@ -5,28 +5,28 @@
   "gates_executed": 11,
   "gates_skipped": 0,
   "gates_failed": 1,
-  "total_duration_ms": 12584,
+  "total_duration_ms": 10921,
   "gates": [
     {
       "name": "inspect",
       "display_name": "Inspect",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 4
+      "duration_ms": 1
     },
     {
       "name": "validate",
       "display_name": "Validate",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 3812
+      "duration_ms": 3011
     },
     {
       "name": "validate_quality",
       "display_name": "Validate (quality)",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 2606
+      "duration_ms": 2410
     },
     {
       "name": "tensors",
@@ -40,14 +40,14 @@
       "display_name": "Lint",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 863
+      "duration_ms": 818
     },
     {
       "name": "debug",
       "display_name": "Debug",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 0
+      "duration_ms": 1
     },
     {
       "name": "tree",
@@ -61,14 +61,14 @@
       "display_name": "Hex",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 875
+      "duration_ms": 821
     },
     {
       "name": "flow",
       "display_name": "Flow",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 868
+      "duration_ms": 843
     },
     {
       "name": "explain",
@@ -82,7 +82,7 @@
       "display_name": "Check (pipeline)",
       "status": "FAIL",
       "message": "Validation failed: Failed to load SafeTensors: Format error: [F-LAYOUT-CONTRACT-001] Tensor 'layers.0.qkv_weight': Shape mismatch: got 4194304 elements, expected 2097152 (2048x1024)",
-      "duration_ms": 3546
+      "duration_ms": 3005
     }
   ]
 }

@@ -1,11 +1,11 @@
 {
-  "model": "/home/noah/models/qwen2.5-coder-1.5b.apr",
+  "model": "/home/noah/.cache/pacha/models/684041cd46bfafc7.safetensors",
   "tier": "smoke",
-  "passed": false,
+  "passed": true,
   "gates_executed": 11,
   "gates_skipped": 0,
-  "gates_failed": 1,
-  "total_duration_ms": 56731,
+  "gates_failed": 0,
+  "total_duration_ms": 20655,
   "gates": [
     {
       "name": "inspect",
@@ -19,28 +19,28 @@
       "display_name": "Validate",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 6481
+      "duration_ms": 4262
     },
     {
       "name": "validate_quality",
       "display_name": "Validate (quality)",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 3865
+      "duration_ms": 4295
     },
     {
       "name": "tensors",
       "display_name": "Tensors",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 7149
+      "duration_ms": 0
     },
     {
       "name": "lint",
       "display_name": "Lint",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 7487
+      "duration_ms": 1284
     },
     {
       "name": "debug",
@@ -54,35 +54,35 @@
       "display_name": "Tree",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 7476
+      "duration_ms": 0
     },
     {
       "name": "hex",
       "display_name": "Hex",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 4047
+      "duration_ms": 1306
     },
     {
       "name": "flow",
       "display_name": "Flow",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 11356
+      "duration_ms": 1291
     },
     {
       "name": "explain",
       "display_name": "Explain",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 7306
+      "duration_ms": 0
     },
     {
       "name": "check",
       "display_name": "Check (pipeline)",
-      "status": "FAIL",
-      "message": "Validation failed: Model self-test failed",
-      "duration_ms": 1558
+      "status": "PASS",
+      "message": "OK",
+      "duration_ms": 8211
     }
   ]
 }
