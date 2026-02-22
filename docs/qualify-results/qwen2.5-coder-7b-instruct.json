@@ -5,42 +5,42 @@
   "gates_executed": 11,
   "gates_skipped": 0,
   "gates_failed": 0,
-  "total_duration_ms": 110021,
+  "total_duration_ms": 107907,
   "gates": [
     {
       "name": "inspect",
       "display_name": "Inspect",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 41
+      "duration_ms": 40
     },
     {
       "name": "validate",
       "display_name": "Validate",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 3551
+      "duration_ms": 3794
     },
     {
       "name": "validate_quality",
       "display_name": "Validate (quality)",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 2281
+      "duration_ms": 2434
     },
     {
       "name": "tensors",
       "display_name": "Tensors",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 4835
+      "duration_ms": 4555
     },
     {
       "name": "lint",
       "display_name": "Lint",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 4712
+      "duration_ms": 4580
     },
     {
       "name": "debug",
@@ -54,35 +54,35 @@
       "display_name": "Tree",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 4802
+      "duration_ms": 4566
     },
     {
       "name": "hex",
       "display_name": "Hex",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 2495
+      "duration_ms": 2738
     },
     {
       "name": "flow",
       "display_name": "Flow",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 7223
+      "duration_ms": 8582
     },
     {
       "name": "explain",
       "display_name": "Explain",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 4837
+      "duration_ms": 4790
     },
     {
       "name": "check",
       "display_name": "Check (pipeline)",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 75233
+      "duration_ms": 71814
     }
   ]
 }

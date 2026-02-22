@@ -5,8 +5,9 @@ set -euo pipefail
 # qualify-matrix.sh — Run `apr qualify --json` across local models, generate matrix.
 #
 # Usage:
-#   bash scripts/qualify-matrix.sh                          # All 8 models
+#   bash scripts/qualify-matrix.sh                          # All local + cached models
 #   bash scripts/qualify-matrix.sh ~/models/TinyLlama*.gguf # Single model
+#   bash scripts/qualify-matrix.sh --cached-only             # Only cached models
 #
 # Prerequisites: apr binary on PATH (cargo install --path crates/apr-cli)
 
@@ -15,6 +16,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 RESULTS_DIR="${REPO_ROOT}/docs/qualify-results"
 MATRIX_FILE="${REPO_ROOT}/docs/qualify-matrix.md"
 TIMEOUT=180
+CACHED_ONLY=false
 
 # Find apr binary on PATH
 if ! command -v apr >/dev/null 2>&1; then
@@ -24,8 +26,8 @@ if ! command -v apr >/dev/null 2>&1; then
 fi
 APR_BIN="$(command -v apr)"
 
-# Model list (ordered smallest-first for fast feedback)
-ALL_MODELS=(
+# Local models (ordered smallest-first)
+LOCAL_MODELS=(
     "${HOME}/models/TinyLlama-1.1B-Chat-v1.0-Q4_K_M.gguf"
     "${HOME}/models/qwen2.5-coder-0.5b-instruct/model.safetensors"
     "${HOME}/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf"
@@ -36,14 +38,23 @@ ALL_MODELS=(
     "${HOME}/models/qwen2.5-coder-7b-instruct.apr"
 )
 
-# Slug derivation: basename without extension, lowercased
+# Slug derivation: use NAME_MAP display name if available, else basename
 slug_for() {
     local path="$1"
+    local mapped="${NAME_MAP[$path]:-}"
     local base
-    base="$(basename "${path}")"
+    if [[ -n "${mapped}" ]]; then
+        # Convert display name to slug: org/repo:file -> org-repo-file
+        base="${mapped}"
+        base="${base//\//-}"
+        base="${base//:/-}"
+    else
+        base="$(basename "${path}")"
+    fi
     base="${base%.gguf}"
     base="${base%.apr}"
     base="${base%.safetensors}"
+    base="${base%.converted}"
     printf '%s' "${base}" | tr '[[:upper:]]' '[[:lower:]]'
 }
 
@@ -82,12 +93,79 @@ emoji_for() {
     esac
 }
 
+# Build name→path mapping from apr cache and write to temp files
+# Creates: ORDERED_PATHS array, NAME_MAP associative array
+declare -A NAME_MAP
+ORDERED_PATHS=()
+
+build_cache_map() {
+    local cache_json
+    cache_json="$("${APR_BIN}" list --json 2>/dev/null)" || return 0
+
+    # Parse each model entry from JSON using jq TSV output
+    while IFS=$'\t' read -r name path; do
+        if [[ -f "${path}" ]]; then
+            # Derive display name from cache name
+            # Format: hf_<org>_<repo>_<filename> -> <org>/<repo>:<filename>
+            # Strip hf_ prefix, then split on _ into org, repo, rest
+            local stripped="${name#hf_}"
+            local org="${stripped%%_*}"
+            stripped="${stripped#*_}"
+            local repo="${stripped%%_*}"
+            local filename="${stripped#*_}"
+            local display="${org}/${repo}:${filename}"
+            NAME_MAP["${path}"]="${display}"
+            ORDERED_PATHS+=("${path}")
+        fi
+    done < <(printf '%s' "${cache_json}" | jq -r '.models[] | [.name, .path] | @tsv')
+}
+
+# Get display name: check NAME_MAP first, then fallback to basename
+display_name_for() {
+    local path="$1"
+    local mapped="${NAME_MAP[$path]:-}"
+    if [[ -n "${mapped}" ]]; then
+        printf '%s' "${mapped}"
+    else
+        basename "${path}"
+    fi
+}
+
+# Parse args
+EXPLICIT_MODELS=()
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --cached-only) CACHED_ONLY=true; shift ;;
+        *) EXPLICIT_MODELS+=("$1"); shift ;;
+    esac
+done
+
+# Build cache mapping
+build_cache_map
+
 # Determine which models to run
-if [[ $# -gt 0 ]]; then
-    MODELS=("$@")
+if [[ ${#EXPLICIT_MODELS[@]} -gt 0 ]]; then
+    MODELS=("${EXPLICIT_MODELS[@]}")
+elif [[ "${CACHED_ONLY}" == "true" ]]; then
+    MODELS=("${ORDERED_PATHS[@]}")
 else
-    MODELS=("${ALL_MODELS[@]}")
+    # Local models first, then cached models (dedup by path)
+    MODELS=("${LOCAL_MODELS[@]}")
+    declare -A SEEN
+    for m in "${LOCAL_MODELS[@]}"; do
+        SEEN["${m}"]=1
+    done
+    for m in "${ORDERED_PATHS[@]}"; do
+        was_seen="${SEEN[$m]:-}"
+        if [[ -z "${was_seen}" ]]; then
+            MODELS+=("${m}")
+            SEEN["${m}"]=1
+        fi
+    done
 fi
+
+# ALL_MODELS used for matrix generation (determines row order)
+ALL_MODELS=("${MODELS[@]}")
 
 mkdir -p "${RESULTS_DIR}"
 
@@ -101,7 +179,17 @@ for model in "${MODELS[@]}"; do
     slug="$(slug_for "${model}")"
     json_out="${RESULTS_DIR}/${slug}.json"
     err_out="${RESULTS_DIR}/${slug}.err"
-    echo "==> Qualifying: $(basename "${model}") -> ${slug}.json"
+    local_name="$(display_name_for "${model}")"
+    echo "==> Qualifying: ${local_name} -> ${slug}.json"
+
+    # Skip if JSON already exists and is non-empty (incremental runs)
+    if [[ -s "${json_out}" ]] && jq empty "${json_out}" 2>/dev/null; then
+        local_passed="$(jq -r '.passed' "${json_out}" 2>/dev/null)"
+        if [[ "${local_passed}" == "true" ]]; then
+            echo "    CACHED (already passed)"
+            continue
+        fi
+    fi
 
     # JSON goes to stdout; stderr goes to .err file for debugging
     if "${APR_BIN}" qualify "${model}" --json --timeout "${TIMEOUT}" >"${json_out}" 2>"${err_out}"; then
@@ -125,7 +213,7 @@ JQ_GATE_FILTER='.gates[] | select(.name == $n) | .status'
 generate_matrix() {
     printf '%s\n' "# APR Qualify Matrix"
     printf '\n'
-    printf '%s\n' "Cross-subcommand smoke test results across all local models."
+    printf '%s\n' "Cross-subcommand smoke test results across all local and cached models."
     printf 'Each cell shows whether `apr <subcommand>` completes without crashing on the model file.\n'
     printf '\n'
     printf '**Tool:** `apr qualify` (11-gate cross-subcommand smoke test)\n'
@@ -160,7 +248,7 @@ generate_matrix() {
     printf '%s\n' "-------|----------|"
 
     # Rows — iterate over ALL models to keep consistent order
-    local slug json_file fmt sz display_name
+    local slug json_file fmt sz dname
     local pass_count total_count gate_status duration_ms duration_s
     for model in "${ALL_MODELS[@]}"; do
         slug="$(slug_for "${model}")"
@@ -176,16 +264,16 @@ generate_matrix() {
 
         fmt="$(format_for "${model}")"
         sz="$(size_for "${model}")"
-        display_name="$(basename "${model}")"
+        dname="$(display_name_for "${model}")"
         # Truncate long names
-        if (( ${#display_name} > 45 )); then
-            display_name="${display_name:0:42}..."
+        if (( ${#dname} > 50 )); then
+            dname="${dname:0:47}..."
         fi
 
         # Extract gate statuses
         pass_count=0
         total_count=0
-        printf '| %s | %s | %s |' "${display_name}" "${fmt}" "${sz}"
+        printf '| %s | %s | %s |' "${dname}" "${fmt}" "${sz}"
 
         for gate_name in "${GATE_NAMES[@]}"; do
             gate_status="$(jq -r --arg n "${gate_name}" "${JQ_GATE_FILTER}" "${json_file}" 2>/dev/null)" || gate_status="SKIP"
@@ -213,11 +301,11 @@ generate_matrix() {
     printf '%s\n' "## Running"
     printf '\n'
     printf '%s\n' '```bash'
-    printf '%s\n' "# Build apr-cli with inference support"
-    printf '%s\n' "cargo build -p apr-cli --features inference --release"
-    printf '\n'
-    printf '%s\n' "# Run all models"
+    printf '%s\n' "# Run all local + cached models"
     printf '%s\n' "bash scripts/qualify-matrix.sh"
+    printf '\n'
+    printf '%s\n' "# Run only cached models (from apr pull)"
+    printf '%s\n' "bash scripts/qualify-matrix.sh --cached-only"
     printf '\n'
     printf '%s\n' "# Run a single model"
     printf '%s\n' "bash scripts/qualify-matrix.sh ~/models/TinyLlama-1.1B-Chat-v1.0-Q4_K_M.gguf"

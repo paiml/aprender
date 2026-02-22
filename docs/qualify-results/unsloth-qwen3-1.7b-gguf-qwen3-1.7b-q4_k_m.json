@@ -1,88 +1,88 @@
 {
-  "model": "/home/noah/models/TinyLlama-1.1B-Chat-v1.0-Q4_K_M.gguf",
+  "model": "/home/noah/.cache/pacha/models/927fe84ea33e6527.gguf",
   "tier": "smoke",
   "passed": true,
   "gates_executed": 11,
   "gates_skipped": 0,
   "gates_failed": 0,
-  "total_duration_ms": 25963,
+  "total_duration_ms": 26116,
   "gates": [
     {
       "name": "inspect",
       "display_name": "Inspect",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 1305
+      "duration_ms": 1639
     },
     {
       "name": "validate",
       "display_name": "Validate",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 8124
+      "duration_ms": 7350
     },
     {
       "name": "validate_quality",
       "display_name": "Validate (quality)",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 9537
+      "duration_ms": 7453
     },
     {
       "name": "tensors",
       "display_name": "Tensors",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 1175
+      "duration_ms": 1366
     },
     {
       "name": "lint",
       "display_name": "Lint",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 551
+      "duration_ms": 709
     },
     {
       "name": "debug",
       "display_name": "Debug",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 853
+      "duration_ms": 1191
     },
     {
       "name": "tree",
       "display_name": "Tree",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 897
+      "duration_ms": 1244
     },
     {
       "name": "hex",
       "display_name": "Hex",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 500
+      "duration_ms": 679
     },
     {
       "name": "flow",
       "display_name": "Flow",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 1334
+      "duration_ms": 1840
     },
     {
       "name": "explain",
       "display_name": "Explain",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 766
+      "duration_ms": 1196
     },
     {
       "name": "check",
       "display_name": "Check (pipeline)",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 875
+      "duration_ms": 1441
     }
   ]
 }

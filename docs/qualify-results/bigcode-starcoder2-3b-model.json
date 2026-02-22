@@ -1,88 +1,88 @@
 {
-  "model": "/home/noah/models/TinyLlama-1.1B-Chat-v1.0-Q4_K_M.gguf",
+  "model": "/home/noah/.cache/pacha/models/5c84a14af979daf5.safetensors",
   "tier": "smoke",
-  "passed": true,
+  "passed": false,
   "gates_executed": 11,
   "gates_skipped": 0,
-  "gates_failed": 0,
-  "total_duration_ms": 25963,
+  "gates_failed": 1,
+  "total_duration_ms": 57430,
   "gates": [
     {
       "name": "inspect",
       "display_name": "Inspect",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 1305
+      "duration_ms": 2
     },
     {
       "name": "validate",
       "display_name": "Validate",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 8124
+      "duration_ms": 18572
     },
     {
       "name": "validate_quality",
       "display_name": "Validate (quality)",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 9537
+      "duration_ms": 14088
     },
     {
       "name": "tensors",
       "display_name": "Tensors",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 1175
+      "duration_ms": 1
     },
     {
       "name": "lint",
       "display_name": "Lint",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 551
+      "duration_ms": 10778
     },
     {
       "name": "debug",
       "display_name": "Debug",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 853
+      "duration_ms": 1
     },
     {
       "name": "tree",
       "display_name": "Tree",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 897
+      "duration_ms": 2
     },
     {
       "name": "hex",
       "display_name": "Hex",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 500
+      "duration_ms": 6697
     },
     {
       "name": "flow",
       "display_name": "Flow",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 1334
+      "duration_ms": 6527
     },
     {
       "name": "explain",
       "display_name": "Explain",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 766
+      "duration_ms": 1
     },
     {
       "name": "check",
       "display_name": "Check (pipeline)",
-      "status": "PASS",
-      "message": "OK",
-      "duration_ms": 875
+      "status": "FAIL",
+      "message": "Validation failed: Failed to load SafeTensors: Operation 'get_tensor_auto' not supported: Tensor not found with names: 'model.layers.0.mlp.gate_proj.weight', 'blk.0.ffn_gate.weight', or 'layers.0.mlp.gate_proj.weight'. Available tensors (483 total): [\"model.layers.8.self_attn.o_proj.bias\", \"model.layers.25.mlp.c_proj.weight\", \"model.layers.10.mlp.c_fc.weight\", \"model.layers.28.mlp.c_fc.weight\", \"model.layers.22.input_layernorm.bias\"], ...",
+      "duration_ms": 755
     }
   ]
 }
