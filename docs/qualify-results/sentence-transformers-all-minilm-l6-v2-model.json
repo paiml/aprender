@@ -5,28 +5,28 @@
   "gates_executed": 11,
   "gates_skipped": 0,
   "gates_failed": 3,
-  "total_duration_ms": 351,
+  "total_duration_ms": 324,
   "gates": [
     {
       "name": "inspect",
       "display_name": "Inspect",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 0
+      "duration_ms": 1
     },
     {
       "name": "validate",
       "display_name": "Validate",
       "status": "FAIL",
       "message": "Validation failed: 1 tensors failed validation",
-      "duration_ms": 91
+      "duration_ms": 104
     },
     {
       "name": "validate_quality",
       "display_name": "Validate (quality)",
       "status": "FAIL",
       "message": "Validation failed: 1 tensors failed validation",
-      "duration_ms": 86
+      "duration_ms": 80
     },
     {
       "name": "tensors",
@@ -40,7 +40,7 @@
       "display_name": "Lint",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 56
+      "duration_ms": 44
     },
     {
       "name": "debug",
@@ -61,14 +61,14 @@
       "display_name": "Hex",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 54
+      "duration_ms": 47
     },
     {
       "name": "flow",
       "display_name": "Flow",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 57
+      "duration_ms": 44
     },
     {
       "name": "explain",
@@ -81,7 +81,7 @@
       "name": "check",
       "display_name": "Check (pipeline)",
       "status": "FAIL",
-      "message": "Validation failed: Failed to load SafeTensors: Operation 'get_tensor_auto' not supported: Tensor not found with names: 'model.embed_tokens.weight', 'token_embd.weight', or 'embed_tokens.weight'. Available tensors (104 total): [\"encoder.layer.5.intermediate.dense.bias\", \"encoder.layer.4.attention.self.key.weight\", \"encoder.layer.5.attention.self.value.bias\", \"encoder.layer.3.attention.self.value.bias\", \"encoder.layer.3.output.LayerNorm.weight\"], ...",
+      "message": "Validation failed: Failed to load SafeTensors: Operation 'get_tensor_auto' not supported: Tensor not found with names: 'model.embed_tokens.weight', 'token_embd.weight', or 'embed_tokens.weight'. Available tensors (104 total): [\"encoder.layer.0.output.LayerNorm.bias\", \"encoder.layer.3.attention.self.key.weight\", \"encoder.layer.0.attention.self.query.bias\", \"encoder.layer.3.attention.output.LayerNorm.weight\", \"encoder.layer.3.attention.self.query.weight\"], ...",
       "duration_ms": 0
     }
   ]

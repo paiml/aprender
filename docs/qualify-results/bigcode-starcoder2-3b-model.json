@@ -5,7 +5,7 @@
   "gates_executed": 11,
   "gates_skipped": 0,
   "gates_failed": 1,
-  "total_duration_ms": 57430,
+  "total_duration_ms": 50116,
   "gates": [
     {
       "name": "inspect",
@@ -19,14 +19,14 @@
       "display_name": "Validate",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 18572
+      "duration_ms": 16514
     },
     {
       "name": "validate_quality",
       "display_name": "Validate (quality)",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 14088
+      "duration_ms": 13113
     },
     {
       "name": "tensors",
@@ -40,7 +40,7 @@
       "display_name": "Lint",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 10778
+      "duration_ms": 6786
     },
     {
       "name": "debug",
@@ -54,21 +54,21 @@
       "display_name": "Tree",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 2
+      "duration_ms": 1
     },
     {
       "name": "hex",
       "display_name": "Hex",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 6697
+      "duration_ms": 6563
     },
     {
       "name": "flow",
       "display_name": "Flow",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 6527
+      "duration_ms": 6380
     },
     {
       "name": "explain",
@@ -81,8 +81,8 @@
       "name": "check",
       "display_name": "Check (pipeline)",
       "status": "FAIL",
-      "message": "Validation failed: Failed to load SafeTensors: Operation 'get_tensor_auto' not supported: Tensor not found with names: 'model.layers.0.mlp.gate_proj.weight', 'blk.0.ffn_gate.weight', or 'layers.0.mlp.gate_proj.weight'. Available tensors (483 total): [\"model.layers.8.self_attn.o_proj.bias\", \"model.layers.25.mlp.c_proj.weight\", \"model.layers.10.mlp.c_fc.weight\", \"model.layers.28.mlp.c_fc.weight\", \"model.layers.22.input_layernorm.bias\"], ...",
-      "duration_ms": 755
+      "message": "Validation failed: Failed to load SafeTensors: Operation 'get_tensor_auto' not supported: Tensor not found with names: 'model.layers.0.mlp.gate_proj.weight', 'blk.0.ffn_gate.weight', or 'layers.0.mlp.gate_proj.weight'. Available tensors (483 total): [\"model.layers.15.post_attention_layernorm.weight\", \"model.layers.29.self_attn.k_proj.weight\", \"model.layers.10.self_attn.o_proj.weight\", \"model.layers.25.input_layernorm.bias\", \"model.layers.6.self_attn.q_proj.weight\"], ...",
+      "duration_ms": 748
     }
   ]
 }
