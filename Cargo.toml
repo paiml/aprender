@@ -184,7 +184,7 @@ trueno = { version = "0.15.0", path = "../trueno" }
 trueno-quant = { version = "0.1", path = "../trueno/crates/trueno-quant" }
 
 # RAG pipeline for document-based ML (optional, GH-125)
-trueno-rag = { version = "0.1.10", optional = true }
+trueno-rag = { version = "0.2", optional = true }
 
 # Compression for .apr format (optional, spec §3.3)
 lz4_flex = { version = "0.11", optional = true }
