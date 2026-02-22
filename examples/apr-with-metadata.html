@@ -213,7 +213,8 @@ writer.add_tensor_f32(&quot;encoder.weight&quot;, vec![384, 80], &amp;weights);
 writer.write(&quot;model.apr&quot;)?;</code></pre>
 <h2 id="complete-example"><a class="header" href="#complete-example">Complete Example</a></h2>
 <p>Run: <code>cargo run --example apr_with_metadata</code></p>
-<pre><code class="language-rust ignore">//! APR Format with JSON Metadata Example
+<pre><code class="language-rust ignore">#![allow(clippy::disallowed_methods)]
+//! APR Format with JSON Metadata Example
 //!
 //! Demonstrates how to embed arbitrary metadata (vocab, config, tokenizer settings)
 //! alongside tensors in a single WASM-deployable file.

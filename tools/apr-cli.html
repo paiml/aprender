@@ -215,6 +215,7 @@
 <tr><td><code>eval</code></td><td>Evaluate model perplexity (spec H13: PPL &lt;= 20)</td><td>Measurement</td></tr>
 <tr><td><code>profile</code></td><td>Deep profiling with Roofline analysis</td><td>Genchi Genbutsu</td></tr>
 <tr><td><code>qa</code></td><td>Falsifiable QA checklist for model releases</td><td>Jidoka</td></tr>
+<tr><td><code>qualify</code></td><td>Cross-subcommand smoke test (does every tool handle this model?)</td><td>Jidoka</td></tr>
 <tr><td><code>showcase</code></td><td>Qwen2.5-Coder showcase demo</td><td>Standardization</td></tr>
 <tr><td><code>check</code></td><td>Model self-test: 10-stage pipeline integrity</td><td>Jidoka</td></tr>
 <tr><td><code>publish</code></td><td>Publish model to HuggingFace Hub</td><td>Automation</td></tr>
@@ -1103,6 +1104,55 @@ apr qa model.gguf --json
 
 Result: 10/10 PASS
 </code></pre>
+<h2 id="qualify-command"><a class="header" href="#qualify-command">Qualify Command</a></h2>
+<p>Cross-subcommand smoke test: runs every diagnostic CLI tool against a model to verify no crashes. Fills the gap between <code>apr qa</code> (inference quality gates) and unit tests (isolated logic).</p>
+<pre><code class="language-bash"># Smoke test all 11 diagnostic tools on a model
+apr qualify model.gguf
+
+# Standard tier (smoke + contract audit via pv)
+apr qualify model.gguf --tier standard
+
+# Full tier (standard + playbook check via apr-qa)
+apr qualify model.gguf --tier full
+
+# JSON output for CI
+apr qualify model.gguf --json
+
+# Skip slow gates
+apr qualify model.gguf --skip validate,validate_quality
+
+# Show subcommand output
+apr qualify model.gguf --verbose
+</code></pre>
+<h3 id="tiers"><a class="header" href="#tiers">Tiers</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Tier</th><th>Gates</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>smoke</code> (default)</td><td>11</td><td>In-process: inspect, validate, validate --quality, tensors, lint, debug, tree, hex, flow, explain, check</td></tr>
+<tr><td><code>standard</code></td><td>12</td><td>Smoke + contract audit via <code>pv</code></td></tr>
+<tr><td><code>full</code></td><td>13</td><td>Standard + playbook check via <code>apr-qa</code></td></tr>
+</tbody></table>
+</div>
+<h3 id="example-output-17"><a class="header" href="#example-output-17">Example Output</a></h3>
+<pre><code>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Qualify
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Model: model.gguf
+  Tier: smoke
+
+  ✓ PASS Inspect (1.3s)
+  ✓ PASS Validate (1.3m)
+  ✓ PASS Validate (quality) (1.4m)
+  ✓ PASS Tensors (1.3s)
+  ✓ PASS Lint (688ms)
+  ✓ PASS Debug (1.3s)
+  ✓ PASS Tree (1.3s)
+  ✓ PASS Hex (674ms)
+  ✓ PASS Flow (1.9s)
+  ✓ PASS Explain (1.3s)
+  ✓ PASS Check (pipeline) (3.9s)
+
+  ✓ ALL GATES PASSED
+  Total Duration: 2.9m
+</code></pre>
 <h2 id="showcase-command"><a class="header" href="#showcase-command">Showcase Command</a></h2>
 <p>Qwen2.5-Coder showcase demo for performance demonstration.</p>
 <pre><code class="language-bash"># Run showcase demo
@@ -1117,7 +1167,7 @@ apr showcase model.gguf --gpu
 # Batched GPU mode
 apr showcase model.gguf --gpu --batch
 </code></pre>
-<h3 id="example-output-17"><a class="header" href="#example-output-17">Example Output</a></h3>
+<h3 id="example-output-18"><a class="header" href="#example-output-18">Example Output</a></h3>
 <pre><code>╔════════════════════════════════════════════════════════════╗
 ║           APR Showcase: Qwen2.5-Coder Performance          ║
 ╚════════════════════════════════════════════════════════════╝
@@ -1148,7 +1198,7 @@ apr check model.gguf --verbose
 # JSON output
 apr check model.gguf --json
 </code></pre>
-<h3 id="example-output-18"><a class="header" href="#example-output-18">Example Output</a></h3>
+<h3 id="example-output-19"><a class="header" href="#example-output-19">Example Output</a></h3>
 <pre><code>=== Model Self-Test: model.gguf ===
 
 Stage 1: Format Validation
@@ -1209,7 +1259,7 @@ apr publish ./model-dir/ org/model-name --license mit --tags rust,ml
 # Custom commit message
 apr publish ./model-dir/ org/model-name --message &quot;v1.0.0 release&quot;
 </code></pre>
-<h3 id="example-output-19"><a class="header" href="#example-output-19">Example Output</a></h3>
+<h3 id="example-output-20"><a class="header" href="#example-output-20">Example Output</a></h3>
 <pre><code>=== Publishing to HuggingFace Hub ===
 
 Repository: org/model-name

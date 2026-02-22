@@ -180,7 +180,7 @@
                 <div id="content" class="content">
                     <main>
                         <h1 id="case-study-apr-cli-commands-demo"><a class="header" href="#case-study-apr-cli-commands-demo">Case Study: APR CLI Commands Demo</a></h1>
-<p>This case study demonstrates creating test models and using all 26 apr-cli commands for model inspection, validation, transformation, testing, and inference.</p>
+<p>This case study demonstrates creating test models and using all 27 apr-cli commands for model inspection, validation, transformation, testing, and inference.</p>
 <h2 id="the-problem"><a class="header" href="#the-problem">The Problem</a></h2>
 <p>APR model files need comprehensive tooling for:</p>
 <div class="table-wrapper"><table><thead><tr><th>Need</th><th>Traditional Approach</th><th>Problem</th></tr></thead><tbody>
@@ -191,7 +191,7 @@
 </tbody></table>
 </div>
 <h2 id="the-solution-apr-cli"><a class="header" href="#the-solution-apr-cli">The Solution: apr-cli</a></h2>
-<p>The <code>apr</code> CLI provides 26 commands for complete model lifecycle management:</p>
+<p>The <code>apr</code> CLI provides 27 commands for complete model lifecycle management:</p>
 <pre><code class="language-bash"># Build the CLI
 cargo build -p apr-cli
 
@@ -206,10 +206,11 @@ cargo build -p apr-cli
 </code></pre>
 <h2 id="complete-example"><a class="header" href="#complete-example">Complete Example</a></h2>
 <p>Run: <code>cargo run --example apr_cli_commands</code></p>
-<pre><code class="language-rust ignore">//! APR CLI Commands Demo
+<pre><code class="language-rust ignore">#![allow(clippy::disallowed_methods)]
+//! APR CLI Commands Demo
 //!
 //! Demonstrates creating test models and using the apr-cli commands.
-//! This example creates model files that work with all 26 apr-cli commands.
+//! This example creates model files that work with all 27 apr-cli commands.
 //!
 //! Toyota Way Alignment:
 //! - **Genchi Genbutsu**: Go and see - inspect actual model data
@@ -406,7 +407,7 @@ fn print_cli_commands(model_path: &amp;Path, model_v2_path: &amp;Path) {
     println!(&quot;For inference commands (run, serve):&quot;);
     println!(&quot;  cargo build -p apr-cli --features inference\n&quot;);
 
-    println!(&quot;=== 26 APR CLI Commands ===\n&quot;);
+    println!(&quot;=== 27 APR CLI Commands ===\n&quot;);
 
     println!(&quot;--- Model Inspection ---\n&quot;);
 
@@ -546,19 +547,24 @@ fn print_cli_commands(model_path: &amp;Path, model_v2_path: &amp;Path) {
     println!(&quot;    ./target/debug/apr qa model.gguf --assert-tps 100&quot;);
     println!(&quot;    ./target/debug/apr qa model.gguf --json\n&quot;);
 
-    println!(&quot;24. SHOWCASE - Performance benchmark demo:&quot;);
+    println!(&quot;24. QUALIFY - Cross-subcommand smoke test:&quot;);
+    println!(&quot;    ./target/debug/apr qualify model.gguf&quot;);
+    println!(&quot;    ./target/debug/apr qualify model.gguf --tier full&quot;);
+    println!(&quot;    ./target/debug/apr qualify model.gguf --json\n&quot;);
+
+    println!(&quot;25. SHOWCASE - Performance benchmark demo:&quot;);
     println!(&quot;    ./target/debug/apr showcase model.gguf&quot;);
     println!(&quot;    ./target/debug/apr showcase model.gguf --warmup 3 --iterations 10\n&quot;);
 
-    println!(&quot;25. PROFILE - Deep performance profiling:&quot;);
+    println!(&quot;26. PROFILE - Deep performance profiling:&quot;);
     println!(&quot;    ./target/debug/apr profile model.gguf&quot;);
     println!(&quot;    ./target/debug/apr profile model.gguf --roofline\n&quot;);
 
-    println!(&quot;26. BENCH - Run benchmarks:&quot;);
+    println!(&quot;27. BENCH - Run benchmarks:&quot;);
     println!(&quot;    ./target/debug/apr bench model.gguf&quot;);
     println!(&quot;    ./target/debug/apr bench model.gguf --iterations 100\n&quot;);
 }</code></pre>
-<h2 id="all-26-commands"><a class="header" href="#all-26-commands">All 26 Commands</a></h2>
+<h2 id="all-27-commands"><a class="header" href="#all-27-commands">All 27 Commands</a></h2>
 <h3 id="model-inspection"><a class="header" href="#model-inspection">Model Inspection</a></h3>
 <h4 id="1-inspect---view-model-metadata"><a class="header" href="#1-inspect---view-model-metadata">1. INSPECT - View Model Metadata</a></h4>
 <pre><code class="language-bash">apr inspect model.apr              # Basic info
@@ -765,13 +771,20 @@ apr compare-hf model.apr --hf openai/whisper-tiny --json       # JSON output
 <pre><code class="language-bash">apr qa model.gguf                     # Run 8-gate QA checklist
 apr qa model.gguf --json              # JSON output
 </code></pre>
-<h4 id="24-showcase---performance-benchmark"><a class="header" href="#24-showcase---performance-benchmark">24. SHOWCASE - Performance Benchmark</a></h4>
+<h4 id="24-qualify---cross-subcommand-smoke-test"><a class="header" href="#24-qualify---cross-subcommand-smoke-test">24. QUALIFY - Cross-Subcommand Smoke Test</a></h4>
+<pre><code class="language-bash">apr qualify model.gguf                              # Smoke test all 11 tools
+apr qualify model.gguf --tier full                   # Full tier (+contracts +playbook)
+apr qualify model.gguf --json                        # JSON output for CI
+apr qualify model.gguf --skip validate,validate_quality  # Skip slow gates
+</code></pre>
+<p>Runs every diagnostic CLI tool against a model to verify no crashes. Three tiers: smoke (11 in-process gates), standard (+contract audit), full (+playbook check).</p>
+<h4 id="25-showcase---performance-benchmark"><a class="header" href="#25-showcase---performance-benchmark">25. SHOWCASE - Performance Benchmark</a></h4>
 <pre><code class="language-bash">apr showcase model.gguf --warmup 3 --iterations 10
 </code></pre>
-<h4 id="25-profile---deep-performance-profiling"><a class="header" href="#25-profile---deep-performance-profiling">25. PROFILE - Deep Performance Profiling</a></h4>
+<h4 id="26-profile---deep-performance-profiling"><a class="header" href="#26-profile---deep-performance-profiling">26. PROFILE - Deep Performance Profiling</a></h4>
 <pre><code class="language-bash">apr profile model.gguf --roofline
 </code></pre>
-<h4 id="26-bench---run-benchmarks"><a class="header" href="#26-bench---run-benchmarks">26. BENCH - Run Benchmarks</a></h4>
+<h4 id="27-bench---run-benchmarks"><a class="header" href="#27-bench---run-benchmarks">27. BENCH - Run Benchmarks</a></h4>
 <pre><code class="language-bash">apr bench model.gguf --iterations 100
 </code></pre>
 <h2 id="example-output"><a class="header" href="#example-output">Example Output</a></h2>
@@ -825,7 +838,7 @@ apr debug model.apr --drama
 <h2 id="benefits"><a class="header" href="#benefits">Benefits</a></h2>
 <div class="table-wrapper"><table><thead><tr><th>Benefit</th><th>Description</th></tr></thead><tbody>
 <tr><td>Standardized</td><td>Consistent CLI for all APR models</td></tr>
-<tr><td>Comprehensive</td><td>26 commands cover full lifecycle</td></tr>
+<tr><td>Comprehensive</td><td>27 commands cover full lifecycle</td></tr>
 <tr><td>Scriptable</td><td>JSON output for automation</td></tr>
 <tr><td>Debuggable</td><td>Deep inspection with drama mode</td></tr>
 <tr><td>Validatable</td><td>100-point QA with grades</td></tr>

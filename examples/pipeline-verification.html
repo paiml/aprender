@@ -219,7 +219,8 @@ let report = pipeline.verify(|stage_name| {
 assert!(report.all_passed());</code></pre>
 <h2 id="complete-example"><a class="header" href="#complete-example">Complete Example</a></h2>
 <p>Run: <code>cargo run --example pipeline_verification</code></p>
-<pre><code class="language-rust ignore">//! Pipeline Verification Example
+<pre><code class="language-rust ignore">#![allow(clippy::disallowed_methods)]
+//! Pipeline Verification Example
 //!
 //! Demonstrates the verify module for ML pipeline debugging with:
 //! - Stage-by-stage ground truth comparison
