@@ -1,88 +1,88 @@
 {
   "model": "/home/noah/.cache/pacha/models/c559ee3981676abe.gguf",
   "tier": "smoke",
-  "passed": false,
+  "passed": true,
   "gates_executed": 11,
   "gates_skipped": 0,
-  "gates_failed": 1,
-  "total_duration_ms": 85247,
+  "gates_failed": 0,
+  "total_duration_ms": 89090,
   "gates": [
     {
       "name": "inspect",
       "display_name": "Inspect",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 3797
+      "duration_ms": 2984
     },
     {
       "name": "validate",
       "display_name": "Validate",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 12485
+      "duration_ms": 12625
     },
     {
       "name": "validate_quality",
       "display_name": "Validate (quality)",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 12400
+      "duration_ms": 12517
     },
     {
       "name": "tensors",
       "display_name": "Tensors",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 2909
+      "duration_ms": 2870
     },
     {
       "name": "lint",
       "display_name": "Lint",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 1536
+      "duration_ms": 1491
     },
     {
       "name": "debug",
       "display_name": "Debug",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 2773
+      "duration_ms": 2715
     },
     {
       "name": "tree",
       "display_name": "Tree",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 2782
+      "duration_ms": 2736
     },
     {
       "name": "hex",
       "display_name": "Hex",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 1536
+      "duration_ms": 1464
     },
     {
       "name": "flow",
       "display_name": "Flow",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 4298
+      "duration_ms": 4116
     },
     {
       "name": "explain",
       "display_name": "Explain",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 2804
+      "duration_ms": 2715
     },
     {
       "name": "check",
       "display_name": "Check (pipeline)",
-      "status": "PANIC",
-      "message": "PANIC: index out of bounds: the len is 0 but the index is 0",
-      "duration_ms": 37781
+      "status": "PASS",
+      "message": "OK",
+      "duration_ms": 42714
     }
   ]
 }
