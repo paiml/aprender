@@ -2,11 +2,11 @@
 
 pub(crate) use super::*;
 pub(crate) use crate::classification::LogisticRegression;
+pub(crate) use crate::explainable::path::Explainable;
 pub(crate) use crate::linear_model::LinearRegression;
 pub(crate) use crate::primitives::{Matrix, Vector};
 pub(crate) use crate::traits::Estimator;
 pub(crate) use crate::tree::{DecisionTreeRegressor, RandomForestRegressor};
-pub(crate) use entrenar::monitor::inference::Explainable;
 
 // Import extension traits from parent module
 pub(crate) use super::{
@@ -371,7 +371,7 @@ fn test_linear_path_explain() {
     let path = explainable.explain_one(&sample);
 
     // Test DecisionPath trait methods
-    use entrenar::monitor::inference::DecisionPath;
+    use crate::explainable::path::DecisionPath;
 
     let explanation = path.explain();
     assert!(explanation.contains("Prediction"));
@@ -396,7 +396,7 @@ fn test_tree_path_explain() {
     let path = explainable.explain_one(&sample);
 
     // Test DecisionPath trait methods
-    use entrenar::monitor::inference::DecisionPath;
+    use crate::explainable::path::DecisionPath;
 
     let explanation = path.explain();
     assert!(explanation.contains("Decision Path") || explanation.contains("LEAF"));
@@ -426,7 +426,7 @@ fn test_forest_path_explain() {
     let path = explainable.explain_one(&sample);
 
     // Test DecisionPath trait methods
-    use entrenar::monitor::inference::DecisionPath;
+    use crate::explainable::path::DecisionPath;
 
     let explanation = path.explain();
     assert!(explanation.contains("Ensemble"));
@@ -435,5 +435,6 @@ fn test_forest_path_explain() {
     assert!(confidence >= 0.0 && confidence <= 1.0);
 }
 
-#[path = "tests_monitor.rs"]
-mod tests_monitor;
+// Integration tests with InferenceMonitor moved to tests/explainable_monitor.rs
+// (must be a separate integration test because the test binary's crate instance
+// differs from the library instance that entrenar depends on — GH-305)

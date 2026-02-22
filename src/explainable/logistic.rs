@@ -2,8 +2,8 @@
 //!
 //! Provides `Explainable` implementation for `LogisticRegression`.
 
+use super::path::{Explainable, LinearPath};
 use crate::classification::LogisticRegression;
-use entrenar::monitor::inference::{path::LinearPath, Explainable};
 
 /// Wrapper that makes `LogisticRegression` explainable for inference monitoring.
 ///

@@ -2,12 +2,9 @@
 //!
 //! Provides `Explainable` implementation for `RandomForestRegressor`.
 
+use super::path::{Explainable, ForestPath, LeafInfo, TreePath};
 use crate::primitives::Matrix;
 use crate::tree::RandomForestRegressor;
-use entrenar::monitor::inference::{
-    path::{ForestPath, LeafInfo, TreePath},
-    Explainable,
-};
 
 /// Wrapper that makes `RandomForestRegressor` explainable for inference monitoring.
 ///

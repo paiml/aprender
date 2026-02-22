@@ -2,8 +2,8 @@
 //!
 //! Provides `Explainable` implementation for `LinearRegression`.
 
+use super::path::{Explainable, LinearPath};
 use crate::linear_model::LinearRegression;
-use entrenar::monitor::inference::{path::LinearPath, Explainable};
 
 /// Wrapper that makes `LinearRegression` explainable for inference monitoring.
 ///

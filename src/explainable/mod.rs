@@ -1,7 +1,7 @@
 //! Explainable AI Integration for Inference Monitoring
 //!
-//! This module bridges aprender models with entrenar's inference monitoring system,
-//! providing native `Explainable` trait implementations for APR format models.
+//! This module provides native `Explainable` trait implementations for APR format models,
+//! with decision path types for full prediction traceability.
 //!
 //! # Toyota Way: 現地現物 (Genchi Genbutsu)
 //!
@@ -18,42 +18,28 @@
 //! ```ignore
 //! use aprender::linear_model::LinearRegression;
 //! use aprender::explainable::LinearExplainable;
-//! use entrenar::monitor::inference::{InferenceMonitor, RingCollector};
+//! use aprender::explainable::path::{Explainable, DecisionPath};
 //!
 //! let model = LinearRegression::new();
 //! model.fit(&x, &y)?;
 //!
 //! // Wrap with explainability
 //! let explainable = LinearExplainable::new(model);
-//!
-//! // Create monitored inference
-//! let collector = RingCollector::<_, 64>::new();
-//! let mut monitor = InferenceMonitor::new(explainable, collector);
-//!
-//! // Predictions are now traced
-//! let output = monitor.predict(&features, 1);
-//! let trace = monitor.collector().recent(1)[0];
-//! println!("{}", trace.explain());
+//! let (outputs, paths) = explainable.predict_explained(&features, 1);
+//! println!("{}", paths[0].explain());
 //! ```
 
-#[cfg(feature = "inference-monitoring")]
+pub mod path;
+
 mod ensemble;
-#[cfg(feature = "inference-monitoring")]
 mod linear;
-#[cfg(feature = "inference-monitoring")]
 mod logistic;
-#[cfg(feature = "inference-monitoring")]
 mod tree;
 
-#[cfg(feature = "inference-monitoring")]
 pub use ensemble::{EnsembleExplainable, IntoEnsembleExplainable};
-#[cfg(feature = "inference-monitoring")]
 pub use linear::{IntoExplainable, LinearExplainable};
-#[cfg(feature = "inference-monitoring")]
 pub use logistic::{IntoLogisticExplainable, LogisticExplainable};
-#[cfg(feature = "inference-monitoring")]
 pub use tree::{IntoTreeExplainable, TreeExplainable};
 
-#[cfg(feature = "inference-monitoring")]
 #[cfg(test)]
 mod tests;

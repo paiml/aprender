@@ -2,12 +2,9 @@
 //!
 //! Provides `Explainable` implementation for `DecisionTreeRegressor`.
 
+use super::path::{Explainable, LeafInfo, TreePath, TreeSplit};
 use crate::primitives::Matrix;
 use crate::tree::DecisionTreeRegressor;
-use entrenar::monitor::inference::{
-    path::{LeafInfo, TreePath, TreeSplit},
-    Explainable,
-};
 
 /// Wrapper that makes `DecisionTreeRegressor` explainable for inference monitoring.
 ///

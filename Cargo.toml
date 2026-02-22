@@ -120,7 +120,7 @@ semicolon_if_nothing_returned = "allow"  # Style preference
 
 [package]
 name = "aprender"
-version = "0.26.0"
+version = "0.26.1"
 edition = "2021"
 rust-version = "1.70"
 authors = ["Noah Gift <noah@paiml.com>"]
@@ -206,8 +206,8 @@ sha2 = { version = "0.10", optional = true }  # For HKDF-SHA256
 # Data loading
 alimentar = { version = "0.2.2", optional = true }
 
-# Inference monitoring and explainability (optional)
-entrenar = { version = "0.5", optional = true }
+# entrenar: removed as runtime dep — explainable types now live in aprender (GH-305)
+# entrenar remains as dev-dependency for InferenceMonitor integration tests
 
 # Syscall/GPU profiling for showcase benchmarks (optional)
 renacer = { version = "0.9", optional = true }
@@ -249,6 +249,7 @@ tempfile = "3.14"  # For format module tests
 jugar-probar = "0.5"  # TUI/GUI testing framework with coverage tracking (spec §8)
 ctrlc = "3.4"  # Signal handling for SIGINT/SIGTERM (PMAT-098-PF: zombie process mitigation)
 provable-contracts = { version = "0.1", path = "../provable-contracts/crates/provable-contracts" }  # Contract enforcement (dev-only)
+entrenar = "0.6"  # Integration tests for InferenceMonitor (GH-305: was runtime dep, now dev-only)
 
 [features]
 default = ["parallel"]
@@ -273,7 +274,7 @@ audio-noise = ["audio"]  # Enable ML-based noise generation (GH-144)
 audio-noise-wasm = ["audio-noise", "wasm-bindgen", "js-sys"]  # Enable WASM bindings for noise generator
 safetensors-compare = ["safetensors", "hf-hub-integration", "half"]  # Enable SafeTensors comparison (GH-121)
 rag = ["trueno-rag"]  # Enable RAG pipeline for document-based ML (GH-125)
-inference-monitoring = ["entrenar"]  # Enable inference monitoring and explainability
+# inference-monitoring feature removed — explainable types now unconditional (GH-305)
 gpu = ["trueno/gpu"]  # Enable GPU acceleration via trueno wgpu backend
 model-tests = []  # Enable heavy model/inference tests (requires models/ dir, ollama, GPU)
 cuda = ["trueno/cuda-monitor"]  # Enable CUDA monitoring via trueno-gpu (NVIDIA GPUs)
@@ -352,6 +353,7 @@ debug = true  # Enable debug info for flamegraph/profiling
 [patch.crates-io]
 aprender = { path = "." }
 realizar = { path = "../realizar" }
+entrenar = { path = "../entrenar" }  # GH-305: needed for dev-dep integration tests
 # renacer patch removed: renacer depends on aprender, creating a cycle.
 # Uses crates.io version instead (optional dep, no type mismatch risk).
 trueno = { path = "../trueno" }

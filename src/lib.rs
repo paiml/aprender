@@ -105,8 +105,7 @@ pub mod demo;
 pub mod embed;
 pub mod ensemble;
 pub mod error;
-/// Explainability wrappers for inference monitoring (entrenar integration)
-#[cfg(feature = "inference-monitoring")]
+/// Explainability wrappers for inference monitoring
 pub mod explainable;
 pub mod format;
 pub mod glm;

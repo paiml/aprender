@@ -69,7 +69,7 @@ zram = ["trueno-zram-core"]
 
 [dependencies]
 # Core aprender library
-aprender = { path = "../..", version = "0.26.0", default-features = true, features = ["format-compression"] }
+aprender = { path = "../..", version = "0.26.1", default-features = true, features = ["format-compression"] }
 
 # Shared formatting and system utilities (Batuta stack)
 batuta-common = "0.1"
