@@ -1,0 +1,88 @@
+{
+  "model": "/home/noah/models/qwen2.5-coder-0.5b-instruct/model.safetensors",
+  "tier": "smoke",
+  "passed": true,
+  "gates_executed": 11,
+  "gates_skipped": 0,
+  "gates_failed": 0,
+  "total_duration_ms": 8989,
+  "gates": [
+    {
+      "name": "inspect",
+      "display_name": "Inspect",
+      "status": "PASS",
+      "message": "OK",
+      "duration_ms": 1
+    },
+    {
+      "name": "validate",
+      "display_name": "Validate",
+      "status": "PASS",
+      "message": "OK",
+      "duration_ms": 1817
+    },
+    {
+      "name": "validate_quality",
+      "display_name": "Validate (quality)",
+      "status": "PASS",
+      "message": "OK",
+      "duration_ms": 1885
+    },
+    {
+      "name": "tensors",
+      "display_name": "Tensors",
+      "status": "PASS",
+      "message": "OK",
+      "duration_ms": 1
+    },
+    {
+      "name": "lint",
+      "display_name": "Lint",
+      "status": "PASS",
+      "message": "OK",
+      "duration_ms": 688
+    },
+    {
+      "name": "debug",
+      "display_name": "Debug",
+      "status": "PASS",
+      "message": "OK",
+      "duration_ms": 1
+    },
+    {
+      "name": "tree",
+      "display_name": "Tree",
+      "status": "PASS",
+      "message": "OK",
+      "duration_ms": 1
+    },
+    {
+      "name": "hex",
+      "display_name": "Hex",
+      "status": "PASS",
+      "message": "OK",
+      "duration_ms": 608
+    },
+    {
+      "name": "flow",
+      "display_name": "Flow",
+      "status": "PASS",
+      "message": "OK",
+      "duration_ms": 599
+    },
+    {
+      "name": "explain",
+      "display_name": "Explain",
+      "status": "PASS",
+      "message": "OK",
+      "duration_ms": 0
+    },
+    {
+      "name": "check",
+      "display_name": "Check (pipeline)",
+      "status": "PASS",
+      "message": "OK",
+      "duration_ms": 3383
+    }
+  ]
+}

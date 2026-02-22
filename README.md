@@ -240,6 +240,7 @@ cargo install apr-cli
 | `apr eval` | Evaluate model perplexity (spec H13: PPL <= 20) |
 | `apr profile` | Deep profiling with Roofline analysis |
 | `apr qa` | Falsifiable QA checklist for model releases |
+| `apr qualify` | Cross-subcommand smoke test (does every tool handle this model?) |
 | `apr showcase` | Qwen2.5-Coder showcase demo |
 | `apr check` | Model self-test: 10-stage pipeline integrity check |
 | `apr publish` | Publish model to HuggingFace Hub |
@@ -362,6 +363,7 @@ apr-qa run playbooks/models/qwen2.5-coder-7b-mvp.playbook.yaml \
 | Examples | [`examples/`](examples/) |
 | APR Format Spec | [`docs/specifications/APR-SPEC.md`](docs/specifications/APR-SPEC.md) |
 | QA Protocol | [`docs/specifications/qa-showcase-methodology.md`](docs/specifications/qa-showcase-methodology.md) |
+| Qualify Matrix | [`docs/qualify-matrix.md`](docs/qualify-matrix.md) |
 🤖 [Coursera Hugging Face AI Development Specialization](https://www.coursera.org/specializations/hugging-face-ai-development) - Build Production AI systems with Hugging Face in Pure Rust
 
 ## Contributing

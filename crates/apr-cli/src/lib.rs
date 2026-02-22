@@ -30,8 +30,8 @@ pub mod federation;
 use commands::{
     bench, canary, canary::CanaryCommands, cbtop, chat, compare_hf, convert, debug, diff, distill,
     eval, explain, export, finetune, flow, hex, import, inspect, lint, merge, oracle, probar,
-    profile, prune, ptx_explain, publish, pull, qa, quantize, rosetta, rosetta::RosettaCommands,
-    run, serve, showcase, tensors, trace, tree, tui, tune, validate,
+    profile, prune, ptx_explain, publish, pull, qa, qualify, quantize, rosetta,
+    rosetta::RosettaCommands, run, serve, showcase, tensors, trace, tree, tui, tune, validate,
 };
 
 /// apr - APR Model Operations Tool

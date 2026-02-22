@@ -493,6 +493,27 @@ pub enum ExtendedCommands {
         #[arg(long)]
         json: bool,
     },
+    /// Cross-subcommand smoke test (does every tool handle this model?)
+    Qualify {
+        /// Path to model file (APR, GGUF, or SafeTensors)
+        #[arg(value_name = "FILE")]
+        file: PathBuf,
+        /// Testing tier: smoke (Phase 1), standard (+contracts), full (+playbook)
+        #[arg(long, default_value = "smoke")]
+        tier: String,
+        /// Timeout per gate in seconds
+        #[arg(long, default_value = "120")]
+        timeout: u64,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+        /// Show subcommand output (disable stdout suppression)
+        #[arg(short, long)]
+        verbose: bool,
+        /// Skip specific gates (comma-separated)
+        #[arg(long, value_delimiter = ',')]
+        skip: Option<Vec<String>>,
+    },
     /// Publishing, conversion, and analysis tools
     #[command(flatten)]
     Tools(ToolCommands),

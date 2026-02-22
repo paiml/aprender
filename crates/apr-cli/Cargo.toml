@@ -94,6 +94,9 @@ futures-util = { version = "0.3", optional = true }
 # CLI framework
 clap = { version = "4.5", features = ["derive", "env", "wrap_help"] }
 
+# Stdout suppression for qualify command
+gag = "1.0"
+
 # Output formatting
 colored = "2.1"
 tabled = "0.16"

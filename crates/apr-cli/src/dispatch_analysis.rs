@@ -129,6 +129,22 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             *json || cli.json,
         ),
 
+        ExtendedCommands::Qualify {
+            file,
+            tier,
+            timeout,
+            json,
+            verbose,
+            skip,
+        } => qualify::run(
+            file,
+            tier,
+            *timeout,
+            *json || cli.json,
+            *verbose || cli.verbose,
+            skip.as_deref(),
+        ),
+
         ExtendedCommands::Tools(ToolCommands::Oracle {
             source,
             family,
