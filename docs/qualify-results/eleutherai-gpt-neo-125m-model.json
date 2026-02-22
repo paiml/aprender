@@ -5,7 +5,7 @@
   "gates_executed": 11,
   "gates_skipped": 0,
   "gates_failed": 1,
-  "total_duration_ms": 1815,
+  "total_duration_ms": 2040,
   "gates": [
     {
       "name": "inspect",
@@ -19,14 +19,14 @@
       "display_name": "Validate",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 536
+      "duration_ms": 601
     },
     {
       "name": "validate_quality",
       "display_name": "Validate (quality)",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 393
+      "duration_ms": 447
     },
     {
       "name": "tensors",
@@ -40,7 +40,7 @@
       "display_name": "Lint",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 290
+      "duration_ms": 328
     },
     {
       "name": "debug",
@@ -54,21 +54,21 @@
       "display_name": "Tree",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 1
+      "duration_ms": 0
     },
     {
       "name": "hex",
       "display_name": "Hex",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 301
+      "duration_ms": 328
     },
     {
       "name": "flow",
       "display_name": "Flow",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 289
+      "duration_ms": 328
     },
     {
       "name": "explain",

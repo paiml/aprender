@@ -5,7 +5,7 @@
   "gates_executed": 11,
   "gates_skipped": 0,
   "gates_failed": 3,
-  "total_duration_ms": 4732,
+  "total_duration_ms": 5310,
   "gates": [
     {
       "name": "inspect",
@@ -19,14 +19,14 @@
       "display_name": "Validate",
       "status": "FAIL",
       "message": "Validation failed: 24 tensors failed validation",
-      "duration_ms": 1758
+      "duration_ms": 1888
     },
     {
       "name": "validate_quality",
       "display_name": "Validate (quality)",
       "status": "FAIL",
       "message": "Validation failed: 24 tensors failed validation",
-      "duration_ms": 1460
+      "duration_ms": 1574
     },
     {
       "name": "tensors",
@@ -40,7 +40,7 @@
       "display_name": "Lint",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 507
+      "duration_ms": 632
     },
     {
       "name": "debug",
@@ -61,14 +61,14 @@
       "display_name": "Hex",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 488
+      "duration_ms": 599
     },
     {
       "name": "flow",
       "display_name": "Flow",
       "status": "PASS",
       "message": "OK",
-      "duration_ms": 509
+      "duration_ms": 606
     },
     {
       "name": "explain",
@@ -81,7 +81,7 @@
       "name": "check",
       "display_name": "Check (pipeline)",
       "status": "FAIL",
-      "message": "Validation failed: Failed to load SafeTensors: Operation 'get_tensor_auto' not supported: Tensor not found with names: 'model.embed_tokens.weight', 'token_embd.weight', or 'embed_tokens.weight'. Available tensors (364 total): [\"gpt_neox.layers.0.attention.query_key_value.weight\", \"gpt_neox.layers.11.mlp.dense_4h_to_h.weight\", \"gpt_neox.layers.9.attention.masked_bias\", \"gpt_neox.layers.15.attention.masked_bias\", \"gpt_neox.layers.11.attention.rotary_emb.inv_freq\"], ...",
+      "message": "Validation failed: Failed to load SafeTensors: Operation 'get_tensor_auto' not supported: Tensor not found with names: 'model.embed_tokens.weight', 'token_embd.weight', or 'embed_tokens.weight'. Available tensors (364 total): [\"gpt_neox.layers.12.mlp.dense_h_to_4h.weight\", \"gpt_neox.layers.8.mlp.dense_4h_to_h.weight\", \"gpt_neox.layers.8.mlp.dense_h_to_4h.bias\", \"gpt_neox.layers.12.input_layernorm.bias\", \"gpt_neox.layers.8.post_attention_layernorm.bias\"], ...",
       "duration_ms": 0
     }
   ]

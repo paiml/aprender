@@ -1,0 +1,5 @@
+
+thread '<unnamed>' (717732) panicked at /home/noah/src/realizar/src/gguf/inference/forward/forward_fused_q4k.rs:217:22:
+gated FFN contract requires gate weight
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: Validation failed: 1 qualify gate(s) failed
