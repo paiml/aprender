@@ -307,10 +307,10 @@ fn test_infer_model_config_empty_tensors_returns_defaults() {
     let v: serde_json::Value = serde_json::from_str(&config)
         .unwrap_or_else(|e| panic!("Config is not valid JSON: {e}\n{config}"));
 
-    // Defaults when nothing is inferable
-    assert_eq!(v["hidden_size"], 4096);
+    // C-16 (Meyer DbC): 0 = unknown when nothing is inferable
+    assert_eq!(v["hidden_size"], 0);
     assert_eq!(v["num_hidden_layers"], 12);
-    assert_eq!(v["vocab_size"], 32000);
+    assert_eq!(v["vocab_size"], 0);
 }
 
 // ========================================================================
@@ -331,8 +331,8 @@ fn test_infer_model_config_no_embedding_fallback_to_lm_head() {
     let v: serde_json::Value = serde_json::from_str(&config)
         .unwrap_or_else(|e| panic!("Config is not valid JSON: {e}\n{config}"));
 
-    // hidden_size defaults to 4096 (no embed_tokens/token_embd found)
-    assert_eq!(v["hidden_size"], 4096);
+    // C-16 (Meyer DbC): hidden_size 0 = unknown (no embed_tokens/token_embd found)
+    assert_eq!(v["hidden_size"], 0);
     // vocab_size inferred from lm_head (larger dim)
     assert_eq!(v["vocab_size"], 32000);
 }

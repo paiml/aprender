@@ -16,7 +16,8 @@ fn run_traced_inference_apr(path: &Path) -> Result<(), CliError> {
     let metadata = model.metadata();
     let num_layers = metadata.num_layers.unwrap_or(0);
     let hidden_dim = metadata.hidden_size.unwrap_or(0);
-    let vocab_size = metadata.vocab_size.unwrap_or(32000);
+    // C-16 (Meyer DbC): 0 = unknown, no architecture-specific magic number.
+    let vocab_size = metadata.vocab_size.unwrap_or(0);
     let num_heads = metadata.num_heads.unwrap_or(0);
 
     println!("Architecture:");

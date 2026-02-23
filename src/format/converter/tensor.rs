@@ -17,11 +17,12 @@ fn infer_hidden_size(tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>) -> (usi
                 );
                 inferred
             } else {
-                shape.last().copied().unwrap_or(4096)
+                // C-16 (Meyer DbC): 0 = unknown, no architecture-specific magic number.
+                shape.last().copied().unwrap_or(0)
             };
             (dim, true)
         })
-        .unwrap_or((4096, false))
+        .unwrap_or((0, false))
 }
 
 /// Count transformer layers from tensor name patterns
@@ -69,11 +70,12 @@ fn infer_vocab_size(tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>) -> (usiz
                 );
                 inferred
             } else {
-                shape.first().copied().unwrap_or(32000)
+                // C-16 (Meyer DbC): 0 = unknown, no architecture-specific magic number.
+                shape.first().copied().unwrap_or(0)
             };
             (dim, true)
         })
-        .unwrap_or((32000, false))
+        .unwrap_or((0, false))
 }
 
 /// Infer model config.json from tensor shapes (GH-182, GH-193)

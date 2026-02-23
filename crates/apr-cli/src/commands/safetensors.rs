@@ -339,7 +339,8 @@ fn run_safetensors_generation(
     eos_id: Option<u32>,
     tracer: &mut Option<realizar::InferenceTracer>,
 ) -> Vec<u32> {
-    let vocab_size = config.vocab_size.unwrap_or(32000);
+    // C-16 (Meyer DbC): 0 = unknown, no architecture-specific magic number.
+    let vocab_size = config.vocab_size.unwrap_or(0);
     let num_layers = config.num_hidden_layers.unwrap_or(0);
     let hidden_size = config.hidden_size.unwrap_or(0);
 

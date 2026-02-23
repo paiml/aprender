@@ -237,7 +237,8 @@ fn run_real_checks_apr(path: &Path) -> Result<Vec<StageResult>, CliError> {
 
     let metadata = model.metadata();
     let num_layers = metadata.num_layers.unwrap_or(0);
-    let vocab_size = metadata.vocab_size.unwrap_or(32000);
+    // C-16 (Meyer DbC): 0 = unknown, no architecture-specific magic number.
+    let vocab_size = metadata.vocab_size.unwrap_or(0);
     let names: Vec<&str> = model.tensor_names();
 
     let has_embed = any_name_contains(&names, &["emb", "wte", "token_embd"]);
