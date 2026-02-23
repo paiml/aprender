@@ -267,8 +267,9 @@
 
     #[test]
     fn test_metadata_defaults_vocab_size() {
+        // C-16 (Meyer DbC): vocab_size defaults to 0 (no hidden assumption)
         let val: Option<usize> = None;
-        assert_eq!(val.unwrap_or(32000), 32000);
+        assert_eq!(val.unwrap_or(0), 0);
     }
 
     #[test]
@@ -280,7 +281,7 @@
     #[test]
     fn test_metadata_present_overrides_default() {
         let val: Option<usize> = Some(128256);
-        assert_eq!(val.unwrap_or(32000), 128256);
+        assert_eq!(val.unwrap_or(0), 128256);
     }
 
     // ========================================================================
