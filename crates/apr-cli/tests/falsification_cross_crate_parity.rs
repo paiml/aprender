@@ -672,4 +672,94 @@ mod cross_crate_parity {
             if apr_result.is_err() { "rejected" } else { "accepted" },
             if rlz_result.is_err() { "rejected" } else { "accepted" });
     }
+
+    // =========================================================================
+    // FALSIFY-A7: Cross-crate attention projection parity (Refs PMAT-330)
+    //
+    // Five-Whys:
+    //   Why 1: Attention projections could behave differently in training vs inference
+    //   Why 2: aprender and realizar might use different density/NaN thresholds
+    //   Why 3: Separate ValidatedWeight implementations in each crate
+    //   Why 4: No cross-crate test for attention weight validation
+    //   Why 5: Embedding/lm_head parity tests existed but attention did not
+    //
+    // Popper (1959): "These tests attempt to falsify the claim that
+    // aprender and realizar enforce identical attention weight validation."
+    // =========================================================================
+
+    fn good_attn_data(out_dim: usize, in_dim: usize) -> Vec<f32> {
+        (0..out_dim * in_dim)
+            .map(|i| (i as f32 * 0.001).sin() * 0.1)
+            .collect()
+    }
+
+    #[test]
+    fn falsify_a7_gqa_k_proj_accepted_by_both() {
+        // Qwen2 0.5B: kv_dim=128, hidden=896
+        let kv_dim = 128;
+        let hidden = 896;
+        let data = good_attn_data(kv_dim, hidden);
+
+        let apr_result = AprWeight::new(data.clone(), kv_dim, hidden, "k_proj");
+        let rlz_result = RlzWeight::new(data, kv_dim, hidden, "k_proj");
+
+        assert!(apr_result.is_ok(), "aprender must accept valid GQA k_proj: {:?}", apr_result.err());
+        assert!(rlz_result.is_ok(), "realizar must accept valid GQA k_proj: {:?}", rlz_result.err());
+    }
+
+    #[test]
+    fn falsify_a7_wrong_shape_attn_rejected_by_both() {
+        // Data for [128, 896] but declared as [896, 896]
+        let data = good_attn_data(128, 896);
+
+        let apr_result = AprWeight::new(data.clone(), 896, 896, "q_proj");
+        let rlz_result = RlzWeight::new(data, 896, 896, "q_proj");
+
+        assert!(apr_result.is_err(), "aprender must reject wrong-shape q_proj");
+        assert!(rlz_result.is_err(), "realizar must reject wrong-shape q_proj");
+
+        let apr_err = apr_result.unwrap_err();
+        let rlz_err = rlz_result.unwrap_err();
+        assert_eq!(apr_err.rule_id, rlz_err.rule_id,
+            "FALSIFY-A7: Both must cite same rule for shape mismatch.\n  aprender: {}\n  realizar: {}",
+            apr_err.rule_id, rlz_err.rule_id);
+    }
+
+    #[test]
+    fn falsify_a7_nan_in_v_proj_rejected_by_both() {
+        let kv_dim = 128;
+        let hidden = 64;
+        let mut data = good_attn_data(kv_dim, hidden);
+        data[100] = f32::NAN;
+
+        let apr_result = AprWeight::new(data.clone(), kv_dim, hidden, "v_proj");
+        let rlz_result = RlzWeight::new(data, kv_dim, hidden, "v_proj");
+
+        assert!(apr_result.is_err(), "aprender must reject NaN v_proj");
+        assert!(rlz_result.is_err(), "realizar must reject NaN v_proj");
+
+        let apr_err = apr_result.unwrap_err();
+        let rlz_err = rlz_result.unwrap_err();
+        assert_eq!(apr_err.rule_id, rlz_err.rule_id,
+            "FALSIFY-A7: Both must cite same rule for NaN v_proj.\n  aprender: {}\n  realizar: {}",
+            apr_err.rule_id, rlz_err.rule_id);
+    }
+
+    #[test]
+    fn falsify_a7_all_zero_o_proj_rejected_by_both() {
+        let hidden = 64;
+        let data = vec![0.0f32; hidden * hidden];
+
+        let apr_result = AprWeight::new(data.clone(), hidden, hidden, "o_proj");
+        let rlz_result = RlzWeight::new(data, hidden, hidden, "o_proj");
+
+        assert!(apr_result.is_err(), "aprender must reject all-zero o_proj");
+        assert!(rlz_result.is_err(), "realizar must reject all-zero o_proj");
+
+        let apr_err = apr_result.unwrap_err();
+        let rlz_err = rlz_result.unwrap_err();
+        assert_eq!(apr_err.rule_id, rlz_err.rule_id,
+            "FALSIFY-A7: Both must cite same rule for all-zero o_proj.\n  aprender: {}\n  realizar: {}",
+            apr_err.rule_id, rlz_err.rule_id);
+    }
 }

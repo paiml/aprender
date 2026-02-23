@@ -398,3 +398,192 @@
         assert_eq!(q6k_7b, 152_064 * 14 * 210,
             "FALSIFY-L8: Q6K byte size for 7B lm_head must match formula");
     }
+
+    // =========================================================================
+    // FALSIFY-A: §2.1.3 Attention Projections — Five-Whys Gap Analysis
+    //
+    // Contract: tensor-layout-v1.yaml §tensors.q_proj/k_proj/v_proj/o_proj
+    //   q_proj: [num_heads*head_dim, hidden]
+    //   k_proj: [num_kv_heads*head_dim, hidden]  ← different for GQA!
+    //   v_proj: [num_kv_heads*head_dim, hidden]  ← different for GQA!
+    //   o_proj: [hidden, num_heads*head_dim]      ← reversed from q_proj!
+    //
+    // Five-Whys:
+    //   Why 1: Attention could produce wrong results
+    //   Why 2: GQA dimensions (kv_heads vs heads) confused
+    //   Why 3: ValidatedWeight has no semantic context (Q vs K vs V)
+    //   Why 4: Generic out_dim/in_dim — doesn't know it's attention
+    //   Why 5: No per-tensor-role type system exists
+    //
+    // Popper (1959): "These tests attempt to falsify the claim that
+    // the attention projection contracts prevent incorrect matmul shapes."
+    // =========================================================================
+
+    /// FALSIFY-A1: ValidatedWeight accepts correct GQA K/V dimensions
+    ///
+    /// For Qwen2 0.5B: num_heads=14, num_kv_heads=2, head_dim=64, hidden=896.
+    /// K/V shape: [128, 896] (2 kv_heads × 64 head_dim = 128 out_dim).
+    /// Q shape: [896, 896] (14 heads × 64 head_dim = 896 out_dim).
+    #[test]
+    fn falsify_a1_validated_weight_accepts_gqa_k_v_shapes() {
+        let hidden = 896_usize;
+        let num_heads = 14_usize;
+        let num_kv_heads = 2_usize;
+        let head_dim = 64_usize;
+
+        let q_dim = num_heads * head_dim;    // 896
+        let kv_dim = num_kv_heads * head_dim; // 128
+
+        // Q: [q_dim, hidden] = [896, 896]
+        let q_data: Vec<f32> = (0..q_dim * hidden)
+            .map(|i| (i as f32 * 0.001).sin() * 0.1).collect();
+        assert!(ValidatedWeight::new(q_data, q_dim, hidden, "q_proj").is_ok(),
+            "FALSIFY-A1: q_proj [896, 896] must be valid for Qwen2 0.5B");
+
+        // K: [kv_dim, hidden] = [128, 896]
+        let k_data: Vec<f32> = (0..kv_dim * hidden)
+            .map(|i| (i as f32 * 0.001).sin() * 0.1).collect();
+        assert!(ValidatedWeight::new(k_data, kv_dim, hidden, "k_proj").is_ok(),
+            "FALSIFY-A1: k_proj [128, 896] must be valid for Qwen2 0.5B GQA");
+
+        // V: [kv_dim, hidden] = [128, 896]
+        let v_data: Vec<f32> = (0..kv_dim * hidden)
+            .map(|i| (i as f32 * 0.001).sin() * 0.1).collect();
+        assert!(ValidatedWeight::new(v_data, kv_dim, hidden, "v_proj").is_ok(),
+            "FALSIFY-A1: v_proj [128, 896] must be valid for Qwen2 0.5B GQA");
+    }
+
+    /// FALSIFY-A2: ValidatedWeight rejects K/V with wrong GQA dimensions
+    ///
+    /// If someone passes num_heads instead of num_kv_heads for K/V,
+    /// data length won't match declared dims → shape check fires.
+    #[test]
+    fn falsify_a2_validated_weight_rejects_wrong_gqa_dims() {
+        let hidden = 896_usize;
+        let num_kv_heads = 2_usize;
+        let head_dim = 64_usize;
+        let kv_dim = num_kv_heads * head_dim; // 128 — correct
+
+        // Data for correct K shape [128, 896]
+        let k_data: Vec<f32> = (0..kv_dim * hidden)
+            .map(|i| (i as f32 * 0.001).sin() * 0.1).collect();
+
+        // Declare wrong out_dim (896 instead of 128) — shape mismatch
+        let result = ValidatedWeight::new(k_data, 896, hidden, "k_proj");
+        assert!(result.is_err(),
+            "FALSIFY-A2: K data with 128*896 elements must fail when out_dim=896 declared");
+        assert_eq!(result.unwrap_err().rule_id, "F-LAYOUT-CONTRACT-001");
+    }
+
+    /// FALSIFY-A3: o_proj has reversed dimensions from q_proj
+    ///
+    /// Contract: q_proj is [heads*head_dim, hidden], o_proj is [hidden, heads*head_dim].
+    /// If you accidentally use q_proj order for o_proj, matmul is wrong.
+    #[test]
+    fn falsify_a3_o_proj_reversed_dims_from_q_proj() {
+        use crate::format::layout_contract::enforce_matmul_contract;
+
+        let hidden = 896_usize;
+        let q_dim = 896_usize; // num_heads * head_dim
+
+        // q_proj: out=q_dim, in=hidden → [q_dim, hidden]
+        enforce_matmul_contract("q_proj.weight", &[q_dim, hidden], q_dim, hidden);
+
+        // o_proj: out=hidden, in=q_dim → [hidden, q_dim] (REVERSED)
+        enforce_matmul_contract("o_proj.weight", &[hidden, q_dim], hidden, q_dim);
+    }
+
+    /// FALSIFY-A3b: For MHA (q_dim == hidden), o_proj shape is indistinguishable
+    ///
+    /// This documents a contract limitation: when num_heads * head_dim == hidden_dim
+    /// (true for all standard MHA), o_proj and q_proj have identical shapes.
+    /// The dimension reversal in the contract only matters for non-standard architectures.
+    #[test]
+    fn falsify_a3b_mha_o_proj_shape_equals_q_proj() {
+        use crate::format::layout_contract::enforce_matmul_contract;
+
+        let hidden = 896_usize;
+        let q_dim = 896_usize; // num_heads * head_dim == hidden for MHA
+
+        // For MHA: o_proj [hidden, q_dim] == [896, 896] == q_proj [q_dim, hidden]
+        // Both pass because out_dim == in_dim == 896
+        enforce_matmul_contract("o_proj.weight", &[hidden, q_dim], hidden, q_dim);
+        enforce_matmul_contract("q_proj.weight", &[q_dim, hidden], q_dim, hidden);
+
+        // Document: this is NOT a bug — MHA o_proj and q_proj are genuinely the same shape.
+        // The contract's dimension reversal only manifests in non-standard architectures
+        // where num_heads * head_dim != hidden_dim.
+        assert_eq!(q_dim, hidden,
+            "FALSIFY-A3b: For standard MHA, q_dim == hidden — shapes are symmetric");
+    }
+
+    /// FALSIFY-A4: enforce_import_contract handles per-layer attention names
+    ///
+    /// Attention projections use blk.{n}.attn_*.weight naming.
+    /// The contract must correctly pattern-match these.
+    #[test]
+    fn falsify_a4_import_contract_handles_layer_patterns() {
+        use crate::format::layout_contract::enforce_import_contract;
+
+        let hidden = 896_usize;
+        let q_dim = 896_usize;
+        let kv_dim = 128_usize;
+
+        // q_proj: GGUF [hidden, q_dim] → APR [q_dim, hidden]
+        let (shape, needs_t) = enforce_import_contract(
+            "blk.0.attn_q.weight", &[hidden, q_dim], 151_936, hidden);
+        assert_eq!(shape, vec![q_dim, hidden],
+            "FALSIFY-A4: q_proj shape must be [q_dim, hidden] after import");
+        assert!(!needs_t);
+
+        // k_proj: GGUF [hidden, kv_dim] → APR [kv_dim, hidden]
+        let (shape, needs_t) = enforce_import_contract(
+            "blk.0.attn_k.weight", &[hidden, kv_dim], 151_936, hidden);
+        assert_eq!(shape, vec![kv_dim, hidden],
+            "FALSIFY-A4: k_proj shape must be [kv_dim, hidden] after import");
+        assert!(!needs_t);
+
+        // o_proj: GGUF [q_dim, hidden] → APR [hidden, q_dim]
+        let (shape, needs_t) = enforce_import_contract(
+            "blk.0.attn_output.weight", &[q_dim, hidden], 151_936, hidden);
+        assert_eq!(shape, vec![hidden, q_dim],
+            "FALSIFY-A4: o_proj shape must be [hidden, q_dim] after import");
+        assert!(!needs_t);
+
+        // Layer 27 — verify pattern matching works for high indices
+        let (shape, _) = enforce_import_contract(
+            "blk.27.attn_v.weight", &[hidden, kv_dim], 151_936, hidden);
+        assert_eq!(shape, vec![kv_dim, hidden],
+            "FALSIFY-A4: v_proj layer 27 must match pattern");
+    }
+
+    /// FALSIFY-A5: ValidatedWeight rejects all-zero attention projection
+    ///
+    /// An all-zero Q projection would make all attention scores identical,
+    /// producing uniform attention → garbage output.
+    #[test]
+    fn falsify_a5_validated_weight_rejects_zero_attention_weight() {
+        let hidden = 64_usize;
+        let q_dim = 64_usize;
+        let data = vec![0.0f32; q_dim * hidden];
+
+        let result = ValidatedWeight::new(data, q_dim, hidden, "q_proj.weight");
+        assert!(result.is_err(),
+            "FALSIFY-A5: All-zero q_proj must be rejected — produces uniform attention");
+    }
+
+    /// FALSIFY-A6: ValidatedWeight rejects NaN in K projection
+    ///
+    /// NaN in K → NaN attention scores → NaN softmax → NaN output.
+    #[test]
+    fn falsify_a6_validated_weight_rejects_nan_k_proj() {
+        let hidden = 64_usize;
+        let kv_dim = 16_usize;
+        let mut data: Vec<f32> = (0..kv_dim * hidden)
+            .map(|i| (i as f32 * 0.001).sin() * 0.1).collect();
+        data[42] = f32::NAN;
+
+        let result = ValidatedWeight::new(data, kv_dim, hidden, "k_proj.weight");
+        assert!(result.is_err(),
+            "FALSIFY-A6: NaN in k_proj must be rejected — produces NaN attention");
+    }
