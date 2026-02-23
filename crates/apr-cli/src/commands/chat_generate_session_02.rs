@@ -357,8 +357,8 @@ impl ChatSession {
         /// PMAT-181: Extract EOS token ID from APR metadata (fixes GH-170)
         ///
         /// Five-Whys Root Cause: Different Qwen2 model sizes may have different EOS tokens
-        /// in their metadata. The 1.5B model's EOS token was being mismatched with hardcoded
-        /// 151645, causing generation to terminate immediately or hang.
+        /// in their metadata. The 1.5B model's EOS token was being mismatched with a hardcoded
+        /// value, causing generation to terminate immediately or hang.
         ///
         /// Toyota Way: Genchi Genbutsu - Go and see the actual model metadata
         fn extract_apr_eos_token(&self) -> Option<u32> {
