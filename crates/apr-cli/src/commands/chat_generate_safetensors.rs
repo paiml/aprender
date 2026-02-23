@@ -9,7 +9,8 @@ impl ChatSession {
             #[cfg(feature = "cuda")]
             if !config.force_cpu && !self.cuda_init_failed {
                 if let Some(ref mut cuda_model) = self.cached_safetensors_cuda {
-                    let eos_id = 151645u32; // Qwen2 EOS token
+                    // C-05 (Meyer DbC): EOS from model config, not hardcoded.
+                    let eos_id = cuda_model.config().eos_token_id.unwrap_or(0);
 
                     let tokens = cuda_model
                         .generate(prompt, config.max_tokens, eos_id)

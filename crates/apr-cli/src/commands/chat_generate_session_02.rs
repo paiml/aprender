@@ -216,11 +216,18 @@ impl ChatSession {
                 );
             }
 
+            // C-06 (Meyer DbC): EOS from GGUF metadata, not hardcoded.
+            let stop_tokens = mapped
+                .model
+                .eos_token_id()
+                .map(|id| vec![id])
+                .unwrap_or_default();
+
             let gen_config = QuantizedGenerateConfig {
                 max_tokens: config.max_tokens,
                 temperature: config.temperature,
                 top_k: 40,
-                stop_tokens: vec![151645, 151643], // <|im_end|>, <|endoftext|>
+                stop_tokens,
                 trace: config.trace,
             };
 
@@ -311,8 +318,9 @@ impl ChatSession {
             prompt: &[u32],
             config: &ChatConfig,
         ) -> Result<Vec<u32>, String> {
-            // PMAT-181: Extract EOS token from APR metadata (fixes GH-170)
-            let eos_token_id = self.extract_apr_eos_token().unwrap_or(151645);
+            // C-04 (Meyer DbC): EOS from model metadata — no hardcoded fallback.
+            // If model has no EOS metadata, use 0 (no token matches → rely on max_tokens).
+            let eos_token_id = self.extract_apr_eos_token().unwrap_or(0);
 
             // GH-224: Try cached CUDA model first (no re-upload per message)
             #[cfg(feature = "cuda")]
@@ -411,14 +419,19 @@ impl ChatSession {
                 String::new()
             };
 
-            // ChatML stop tokens for Qwen2/ChatML models:
-            // <|im_end|> = 151645, <|endoftext|> = 151643
+            // C-06 (Meyer DbC): EOS from model config, not hardcoded.
+            let stop_tokens = model
+                .config()
+                .eos_token_id
+                .map(|id| vec![id])
+                .unwrap_or_default();
+
             let gen_config = QuantizedGenerateConfig {
                 max_tokens: practical_max,
                 temperature: config.temperature,
                 top_k: 40,
-                stop_tokens: vec![151645, 151643], // <|im_end|>, <|endoftext|>
-                trace: config.trace,               // PMAT-TRACE-GGUF-001: Pass trace flag
+                stop_tokens,
+                trace: config.trace,
             };
 
             // Try CUDA GPU path first (200+ tok/s target)
