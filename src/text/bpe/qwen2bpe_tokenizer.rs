@@ -40,8 +40,8 @@ impl BpeTokenizer {
             }
         }
 
-        // Add special tokens
-        tokenizer.add_special_token("<|endoftext|>", 50256);
+        // Add special tokens (source of truth: special-tokens-registry-v1.yaml)
+        tokenizer.add_special_token("<|endoftext|>", crate::demo::SpecialTokens::gpt2().eos_id);
 
         tokenizer
     }
@@ -104,39 +104,37 @@ impl BpeTokenizer {
         // PMAT-114: Handle special tokens FIRST before BPE tokenization
         // This ensures tokens like <|im_start|> are encoded as single tokens (151644)
         // rather than being split into characters (27, 91, 318, 4906, 91, 29)
-        let segments = self.split_on_special_tokens(text);
-
-        for segment in segments {
+        for segment in self.split_on_special_tokens(text) {
             if let Some(&special_id) = self.special_tokens.get(&segment) {
-                // Special token - output its ID directly
                 ids.push(special_id);
             } else {
-                // Regular text - apply BPE tokenization
-                let segment_text = if self.config.add_prefix_space
-                    && !segment.starts_with(' ')
-                    && ids.is_empty()
-                {
-                    format!(" {segment}")
-                } else {
-                    segment
-                };
-
-                for word in self.pre_tokenize(&segment_text) {
-                    let byte_word = self.bytes_to_bpe_tokens(&word);
-                    let tokens = self.bpe(&byte_word);
-
-                    for token in tokens {
-                        if let Some(&id) = self.vocab.get(&token) {
-                            ids.push(id);
-                        } else if let Some(&id) = self.vocab.get(&self.config.unk_token) {
-                            ids.push(id);
-                        }
-                    }
-                }
+                self.encode_segment(&segment, &mut ids);
             }
         }
 
         ids
+    }
+
+    /// Encode a regular (non-special-token) text segment into token IDs.
+    fn encode_segment(&self, segment: &str, ids: &mut Vec<u32>) {
+        let segment_text = if self.config.add_prefix_space
+            && !segment.starts_with(' ')
+            && ids.is_empty()
+        {
+            format!(" {segment}")
+        } else {
+            segment.to_string()
+        };
+
+        for word in self.pre_tokenize(&segment_text) {
+            let byte_word = self.bytes_to_bpe_tokens(&word);
+            for token in self.bpe(&byte_word) {
+                let id = self.vocab.get(&token).or_else(|| self.vocab.get(&self.config.unk_token));
+                if let Some(&id) = id {
+                    ids.push(id);
+                }
+            }
+        }
     }
 
     /// Split text on special tokens while preserving them as separate segments.
@@ -154,34 +152,15 @@ impl BpeTokenizer {
         let mut remaining = text;
 
         while !remaining.is_empty() {
-            // Find the earliest special token occurrence
-            let mut earliest_match: Option<(usize, &str)> = None;
-
-            for token in &sorted_tokens {
-                if let Some(pos) = remaining.find(token.as_str()) {
-                    match earliest_match {
-                        None => earliest_match = Some((pos, token)),
-                        Some((prev_pos, _)) if pos < prev_pos => {
-                            earliest_match = Some((pos, token));
-                        }
-                        _ => {}
-                    }
-                }
-            }
-
-            match earliest_match {
+            match Self::find_earliest_special_token(remaining, &sorted_tokens) {
                 Some((pos, token)) => {
-                    // Add text before the special token (if any)
                     if pos > 0 {
                         result.push(remaining[..pos].to_string());
                     }
-                    // Add the special token itself
                     result.push(token.to_string());
-                    // Continue with remaining text
                     remaining = &remaining[pos + token.len()..];
                 }
                 None => {
-                    // No more special tokens - add remaining text
                     result.push(remaining.to_string());
                     break;
                 }
@@ -189,6 +168,22 @@ impl BpeTokenizer {
         }
 
         result
+    }
+
+    /// Find the earliest occurrence of any special token in `text`.
+    fn find_earliest_special_token<'a>(
+        text: &str,
+        sorted_tokens: &[&'a String],
+    ) -> Option<(usize, &'a String)> {
+        let mut earliest: Option<(usize, &'a String)> = None;
+        for token in sorted_tokens {
+            if let Some(pos) = text.find(token.as_str()) {
+                if earliest.map_or(true, |(prev_pos, _)| pos < prev_pos) {
+                    earliest = Some((pos, token));
+                }
+            }
+        }
+        earliest
     }
 
     /// Decode token IDs to text.
