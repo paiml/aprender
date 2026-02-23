@@ -164,6 +164,73 @@ mod tests_name_mapping {
         let mapped = Architecture::Qwen2.map_name("model.layers.0.self_attn.q_proj.weight");
         assert_eq!(mapped, "model.layers.0.self_attn.q_proj.weight");
     }
+
+    // =========================================================================
+    // FALSIFY tests — tensor-names-v1.yaml architecture_map contract
+    // =========================================================================
+
+    /// FALSIFY-TNAME-APRENDER-001: from_model_type() matches tensor-names-v1.yaml
+    /// architecture_map for all architectures aprender supports.
+    #[test]
+    fn test_falsify_from_model_type_matches_yaml_architecture_map() {
+        // (config.json model_type string, expected Architecture)
+        // These match tensor-names-v1.yaml architecture_map entries
+        let supported: &[(&str, Architecture)] = &[
+            ("qwen2", Architecture::Qwen2),
+            ("qwen", Architecture::Qwen2),
+            ("qwen2.5", Architecture::Qwen2),
+            ("qwen3", Architecture::Qwen3),
+            ("qwen3_5", Architecture::Qwen3_5),
+            ("qwen3.5", Architecture::Qwen3_5),
+            ("llama", Architecture::Llama),
+            ("llama3", Architecture::Llama),
+            ("whisper", Architecture::Whisper),
+            ("bert", Architecture::Bert),
+            ("gpt2", Architecture::Gpt2),
+            ("phi", Architecture::Phi),
+            ("phi3", Architecture::Phi),
+            // LLaMA derivatives (per YAML: same tensor naming)
+            ("mistral", Architecture::Llama),
+            ("gemma", Architecture::Llama),
+            ("gemma2", Architecture::Llama),
+        ];
+
+        for &(model_type, expected) in supported {
+            let got = Architecture::from_model_type(model_type);
+            assert_eq!(
+                got,
+                Some(expected),
+                "FALSIFY: from_model_type(\"{model_type}\") = {got:?}, expected Some({expected:?}) \
+                 (tensor-names-v1.yaml)"
+            );
+        }
+    }
+
+    /// FALSIFY-TNAME-APRENDER-002: Unknown architectures return None (not panic).
+    #[test]
+    fn test_falsify_from_model_type_unknown_returns_none() {
+        let unknowns = ["mamba", "rwkv", "jamba", "future_model_2027", ""];
+        for name in &unknowns {
+            assert_eq!(
+                Architecture::from_model_type(name),
+                None,
+                "FALSIFY: from_model_type(\"{name}\") should return None for unknown arch"
+            );
+        }
+    }
+
+    /// FALSIFY-TNAME-APRENDER-003: Phi-2 vs Phi-3 distinction.
+    /// tensor-names-v1.yaml maps PhiForCausalLM→phi2, Phi3ForCausalLM→phi.
+    /// Aprender uses a single Architecture::Phi for both (Phi-2 unsupported for import).
+    /// This test documents the known divergence.
+    #[test]
+    fn test_falsify_phi_architecture_mapping() {
+        // Aprender maps "phi" and "phi3" to the same Architecture::Phi
+        assert_eq!(Architecture::from_model_type("phi"), Some(Architecture::Phi));
+        assert_eq!(Architecture::from_model_type("phi3"), Some(Architecture::Phi));
+        // phi2 as a model_type string is not a separate variant in aprender
+        // (realizAR handles the phi2 distinction via tensor_names.rs)
+    }
 }
 
 #[cfg(test)]

@@ -451,4 +451,33 @@ fn test_infer_vocab_hidden_embedding_priority_over_lm_head() {
 }
 
 
+// =========================================================================
+// FALSIFY tests — model-metadata-bounds-v1.yaml rope_theta defaults
+// =========================================================================
+
+/// FALSIFY: default_rope_theta_for_architecture() matches the per-architecture
+/// defaults from model-metadata-bounds-v1.yaml.
+#[test]
+fn test_falsify_rope_theta_defaults_match_yaml_contract() {
+    // (architecture, expected_default) from model-metadata-bounds-v1.yaml
+    let expected: &[(&str, f32)] = &[
+        ("qwen2", 1_000_000.0),
+        ("qwen3", 1_000_000.0),
+        ("llama", 10_000.0),
+        ("mistral", 10_000.0),
+        ("gemma", 10_000.0),
+        ("deepseek", 10_000.0),
+        ("phi", 10_000.0),
+    ];
+
+    for &(arch, want) in expected {
+        let got = default_rope_theta_for_architecture(arch);
+        assert!(
+            (got - want).abs() < 1.0,
+            "FALSIFY: default_rope_theta_for_architecture(\"{arch}\") = {got}, \
+             expected {want} (model-metadata-bounds-v1.yaml)"
+        );
+    }
+}
+
 include!("export_tests_include_01.rs");
