@@ -287,24 +287,138 @@ fn test_demo_metrics_fail_cases() {
 }
 
 // =========================================================================
-// FALSIFY: SpecialTokens::qwen2() matches special-tokens-registry-v1.yaml
+// FALSIFY: SpecialTokens match special-tokens-registry-v1.yaml
+// Each test verifies constructor values AND proof obligation (IDs < vocab_size).
 // =========================================================================
+
+/// Helper: assert all non-zero token IDs are within vocab bounds.
+fn assert_tokens_within_vocab(tokens: &SpecialTokens, vocab_size: u32, family: &str) {
+    // EOS is always required and must be in bounds
+    assert!(tokens.eos_id < vocab_size, "FALSIFY: {family} EOS ({}) >= vocab_size ({vocab_size})", tokens.eos_id);
+    // BOS, PAD, im_start, im_end are 0 when null/unused — only check when non-zero
+    if tokens.bos_id > 0 {
+        assert!(tokens.bos_id < vocab_size, "FALSIFY: {family} BOS ({}) >= vocab_size ({vocab_size})", tokens.bos_id);
+    }
+    if tokens.pad_id > 0 {
+        assert!(tokens.pad_id < vocab_size, "FALSIFY: {family} PAD ({}) >= vocab_size ({vocab_size})", tokens.pad_id);
+    }
+    if tokens.im_start_id > 0 {
+        assert!(tokens.im_start_id < vocab_size, "FALSIFY: {family} im_start ({}) >= vocab_size ({vocab_size})", tokens.im_start_id);
+    }
+    if tokens.im_end_id > 0 {
+        assert!(tokens.im_end_id < vocab_size, "FALSIFY: {family} im_end ({}) >= vocab_size ({vocab_size})", tokens.im_end_id);
+    }
+}
+
 #[test]
 fn falsify_qwen2_special_tokens_match_yaml_registry() {
     let tokens = SpecialTokens::qwen2();
-
-    // Values from special-tokens-registry-v1.yaml families.qwen2
     assert_eq!(tokens.bos_id, 151_643, "FALSIFY: Qwen2 BOS mismatch vs YAML");
     assert_eq!(tokens.eos_id, 151_645, "FALSIFY: Qwen2 EOS mismatch vs YAML");
     assert_eq!(tokens.pad_id, 151_643, "FALSIFY: Qwen2 PAD mismatch vs YAML");
     assert_eq!(tokens.im_start_id, 151_644, "FALSIFY: Qwen2 im_start mismatch vs YAML");
     assert_eq!(tokens.im_end_id, 151_645, "FALSIFY: Qwen2 im_end mismatch vs YAML");
+    assert_tokens_within_vocab(&tokens, 151_936, "qwen2");
+}
 
-    // Proof obligation: all token IDs < vocab_size (151936)
-    const QWEN2_VOCAB: u32 = 151_936;
-    assert!(tokens.bos_id < QWEN2_VOCAB, "FALSIFY: BOS >= vocab_size");
-    assert!(tokens.eos_id < QWEN2_VOCAB, "FALSIFY: EOS >= vocab_size");
-    assert!(tokens.pad_id < QWEN2_VOCAB, "FALSIFY: PAD >= vocab_size");
-    assert!(tokens.im_start_id < QWEN2_VOCAB, "FALSIFY: im_start >= vocab_size");
-    assert!(tokens.im_end_id < QWEN2_VOCAB, "FALSIFY: im_end >= vocab_size");
+#[test]
+fn falsify_qwen3_5_special_tokens_match_yaml_registry() {
+    let tokens = SpecialTokens::qwen3_5();
+    assert_eq!(tokens.eos_id, 248_044, "FALSIFY: Qwen3.5 EOS mismatch vs YAML");
+    assert_tokens_within_vocab(&tokens, 248_320, "qwen3_5");
+}
+
+#[test]
+fn falsify_llama_special_tokens_match_yaml_registry() {
+    let tokens = SpecialTokens::llama();
+    assert_eq!(tokens.bos_id, 128_000, "FALSIFY: LLaMA BOS mismatch vs YAML");
+    assert_eq!(tokens.eos_id, 128_001, "FALSIFY: LLaMA EOS mismatch vs YAML");
+    assert_eq!(tokens.pad_id, 128_001, "FALSIFY: LLaMA PAD mismatch vs YAML");
+    assert_tokens_within_vocab(&tokens, 128_256, "llama");
+}
+
+#[test]
+fn falsify_mistral_special_tokens_match_yaml_registry() {
+    let tokens = SpecialTokens::mistral();
+    assert_eq!(tokens.bos_id, 1, "FALSIFY: Mistral BOS mismatch vs YAML");
+    assert_eq!(tokens.eos_id, 2, "FALSIFY: Mistral EOS mismatch vs YAML");
+    assert_tokens_within_vocab(&tokens, 32_000, "mistral");
+}
+
+#[test]
+fn falsify_gemma_special_tokens_match_yaml_registry() {
+    let tokens = SpecialTokens::gemma();
+    assert_eq!(tokens.bos_id, 2, "FALSIFY: Gemma BOS mismatch vs YAML");
+    assert_eq!(tokens.eos_id, 1, "FALSIFY: Gemma EOS mismatch vs YAML");
+    assert_eq!(tokens.pad_id, 0, "FALSIFY: Gemma PAD mismatch vs YAML");
+    assert_tokens_within_vocab(&tokens, 256_000, "gemma");
+}
+
+#[test]
+fn falsify_deepseek_special_tokens_match_yaml_registry() {
+    let tokens = SpecialTokens::deepseek();
+    assert_eq!(tokens.bos_id, 0, "FALSIFY: DeepSeek BOS mismatch vs YAML");
+    assert_eq!(tokens.eos_id, 1, "FALSIFY: DeepSeek EOS mismatch vs YAML");
+    assert_tokens_within_vocab(&tokens, 129_280, "deepseek");
+}
+
+#[test]
+fn falsify_phi3_special_tokens_match_yaml_registry() {
+    let tokens = SpecialTokens::phi3();
+    assert_eq!(tokens.bos_id, 1, "FALSIFY: Phi-3 BOS mismatch vs YAML");
+    assert_eq!(tokens.eos_id, 32_000, "FALSIFY: Phi-3 EOS mismatch vs YAML");
+    assert_eq!(tokens.pad_id, 32_000, "FALSIFY: Phi-3 PAD mismatch vs YAML");
+    assert_tokens_within_vocab(&tokens, 32_064, "phi3");
+}
+
+#[test]
+fn falsify_phi2_special_tokens_match_yaml_registry() {
+    let tokens = SpecialTokens::phi2();
+    assert_eq!(tokens.eos_id, 50_256, "FALSIFY: Phi-2 EOS mismatch vs YAML");
+    assert_eq!(tokens.pad_id, 50_256, "FALSIFY: Phi-2 PAD mismatch vs YAML");
+    assert_tokens_within_vocab(&tokens, 51_200, "phi2");
+}
+
+#[test]
+fn falsify_gpt2_special_tokens_match_yaml_registry() {
+    let tokens = SpecialTokens::gpt2();
+    assert_eq!(tokens.eos_id, 50_256, "FALSIFY: GPT-2 EOS mismatch vs YAML");
+    assert_eq!(tokens.pad_id, 50_256, "FALSIFY: GPT-2 PAD mismatch vs YAML");
+    assert_tokens_within_vocab(&tokens, 50_257, "gpt2");
+}
+
+#[test]
+fn falsify_from_architecture_maps_all_yaml_families() {
+    // Verify all architecture_mapping entries from the YAML resolve to a family
+    let mappings = [
+        ("qwen2", 151_645_u32),   // EOS from qwen2
+        ("qwen3", 151_645),       // shares qwen2 tokenizer
+        ("qwen3moe", 151_645),    // shares qwen2 tokenizer
+        ("qwen3_5", 248_044),
+        ("llama", 128_001),
+        ("mistral", 2),
+        ("gemma", 1),
+        ("gemma2", 1),            // maps to gemma
+        ("deepseek", 1),
+        ("deepseek2", 1),         // maps to deepseek
+        ("phi3", 32_000),
+        ("phi", 50_256),          // maps to phi2
+        ("phi2", 50_256),
+        ("gpt2", 50_256),
+    ];
+    for (arch, expected_eos) in mappings {
+        let tokens = SpecialTokens::from_architecture(arch)
+            .unwrap_or_else(|| panic!("FALSIFY: from_architecture('{arch}') returned None"));
+        assert_eq!(
+            tokens.eos_id, expected_eos,
+            "FALSIFY: from_architecture('{arch}') EOS mismatch"
+        );
+    }
+}
+
+#[test]
+fn falsify_from_architecture_unknown_returns_none() {
+    assert!(SpecialTokens::from_architecture("unknown").is_none());
+    assert!(SpecialTokens::from_architecture("mamba").is_none());
+    assert!(SpecialTokens::from_architecture("").is_none());
 }

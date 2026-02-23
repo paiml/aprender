@@ -133,17 +133,135 @@ pub struct SpecialTokens {
 }
 
 impl SpecialTokens {
-    /// C-09 (Meyer DbC): Qwen2-specific token IDs — NOT a generic default.
-    /// These are the correct IDs for Qwen2/Qwen2.5 models only.
-    /// Other architectures (LLaMA, Mistral, Phi) have different special token IDs.
+    // =========================================================================
+    // Family constructors — values from special-tokens-registry-v1.yaml
+    // Each constructor is the SINGLE SOURCE OF TRUTH for that family's token IDs.
+    // =========================================================================
+
+    /// Qwen2/Qwen2.5 special tokens (vocab_size: 151936)
     #[must_use]
     pub fn qwen2() -> Self {
         Self {
-            bos_id: 151643,
-            eos_id: 151645,
-            pad_id: 151643,
-            im_start_id: 151644,
-            im_end_id: 151645,
+            bos_id: 151_643,
+            eos_id: 151_645,
+            pad_id: 151_643,
+            im_start_id: 151_644,
+            im_end_id: 151_645,
+        }
+    }
+
+    /// Qwen3.5 special tokens (vocab_size: 248320, new tokenizer)
+    #[must_use]
+    pub fn qwen3_5() -> Self {
+        Self {
+            bos_id: 0,       // null in config — no explicit BOS
+            eos_id: 248_044,
+            pad_id: 0,       // null in config
+            im_start_id: 0,  // not documented in registry
+            im_end_id: 0,
+        }
+    }
+
+    /// LLaMA 3.x special tokens (vocab_size: 128256)
+    #[must_use]
+    pub fn llama() -> Self {
+        Self {
+            bos_id: 128_000,
+            eos_id: 128_001,
+            pad_id: 128_001,
+            im_start_id: 0, // LLaMA uses <|eom_id|>=128008 / <|eot_id|>=128009 instead
+            im_end_id: 0,
+        }
+    }
+
+    /// Mistral special tokens (vocab_size: 32000, SentencePiece)
+    #[must_use]
+    pub fn mistral() -> Self {
+        Self {
+            bos_id: 1,
+            eos_id: 2,
+            pad_id: 0, // null in config — using 0 as sentinel
+            im_start_id: 0,
+            im_end_id: 0,
+        }
+    }
+
+    /// Gemma / Gemma 2 special tokens (vocab_size: 256000)
+    #[must_use]
+    pub fn gemma() -> Self {
+        Self {
+            bos_id: 2,
+            eos_id: 1,
+            pad_id: 0,
+            im_start_id: 0,
+            im_end_id: 0,
+        }
+    }
+
+    /// DeepSeek V2/V3 special tokens (vocab_size: 129280)
+    #[must_use]
+    pub fn deepseek() -> Self {
+        Self {
+            bos_id: 0,
+            eos_id: 1,
+            pad_id: 0, // null in config
+            im_start_id: 0,
+            im_end_id: 0,
+        }
+    }
+
+    /// Phi-3 / Phi-3.5 special tokens (vocab_size: 32064)
+    #[must_use]
+    pub fn phi3() -> Self {
+        Self {
+            bos_id: 1,
+            eos_id: 32_000,
+            pad_id: 32_000,
+            im_start_id: 0,
+            im_end_id: 0,
+        }
+    }
+
+    /// Phi-2 special tokens (vocab_size: 51200, GPT-2 tokenizer)
+    #[must_use]
+    pub fn phi2() -> Self {
+        Self {
+            bos_id: 0,      // null in config
+            eos_id: 50_256,
+            pad_id: 50_256,
+            im_start_id: 0,
+            im_end_id: 0,
+        }
+    }
+
+    /// GPT-2 special tokens (vocab_size: 50257)
+    #[must_use]
+    pub fn gpt2() -> Self {
+        Self {
+            bos_id: 0,      // null in config
+            eos_id: 50_256,
+            pad_id: 50_256,
+            im_start_id: 0,
+            im_end_id: 0,
+        }
+    }
+
+    /// Lookup special tokens by GGUF architecture string.
+    /// Maps `general.architecture` values to the correct family.
+    /// Returns `None` for unknown architectures.
+    #[must_use]
+    pub fn from_architecture(arch: &str) -> Option<Self> {
+        match arch {
+            "qwen2" | "qwen3" | "qwen3moe" => Some(Self::qwen2()),
+            "qwen3_5" => Some(Self::qwen3_5()),
+            "llama" => Some(Self::llama()),
+            "mistral" => Some(Self::mistral()),
+            "gemma" | "gemma2" => Some(Self::gemma()),
+            "deepseek" | "deepseek2" => Some(Self::deepseek()),
+            "phi3" => Some(Self::phi3()),
+            "phi" | "phi2" => Some(Self::phi2()),
+            "gpt2" => Some(Self::gpt2()),
+            _ => None,
         }
     }
 }
