@@ -406,4 +406,141 @@ mod cross_crate_parity {
             },
         );
     }
+
+    // =========================================================================
+    // FALSIFY-E6: Cross-crate embedding constant parity (Refs PMAT-325)
+    //
+    // Five-Whys:
+    //   Why 1: GPU path could load garbage embeddings silently
+    //   Why 2: GPU path only checks shape, not data quality
+    //   Why 3: ValidatedEmbedding gates not wired into GGUF load
+    //   Why 4: GGUF load predates ValidatedEmbedding
+    //   Why 5: No cross-path contract enforcement test existed
+    //
+    // These tests verify that the CONSTANTS used for validation are
+    // identical between aprender and realizar, so when PMAT-325 is
+    // fixed, the GPU path will use the same thresholds.
+    // =========================================================================
+
+    #[test]
+    fn falsify_e6_embedding_constants_identical_across_crates() {
+        // Verify the validation constants are compiled into both crates
+        // by constructing boundary test cases that exercise each threshold.
+
+        // MAX_ZERO_PCT = 50.0 — both crates must agree on this boundary.
+        // Create embedding with 51% zeros (should fail in both).
+        let vocab_size = 100;
+        let hidden_dim = 64;
+        let total = vocab_size * hidden_dim;
+        let zero_count = total * 51 / 100; // 51% zeros
+
+        let mut data: Vec<f32> = (0..total)
+            .map(|i| (i as f32 * 0.01).sin() * 0.1 + 0.05)
+            .collect();
+        // Scatter zeros uniformly so spot-check tokens aren't wiped out
+        let mut count = 0;
+        for i in 0..total {
+            if count < zero_count && i % 2 == 0 {
+                data[i] = 0.0;
+                count += 1;
+            }
+        }
+        // Fill remaining if needed
+        let mut idx = 1;
+        while count < zero_count && idx < total {
+            if data[idx].abs() > 1e-10 {
+                data[idx] = 0.0;
+                count += 1;
+            }
+            idx += 3; // skip to avoid zeroing spot-check tokens entirely
+        }
+
+        let apr_result = AprEmbedding::new(data.clone(), vocab_size, hidden_dim);
+        let rlz_result = RlzEmbedding::new(data, vocab_size, hidden_dim);
+
+        // Both must reject: 51% > 50%
+        assert_eq!(
+            apr_result.is_err(),
+            rlz_result.is_err(),
+            "FALSIFY-E6: 51% zero embedding: aprender={}, realizar={}. Density thresholds diverged!",
+            if apr_result.is_err() { "rejected" } else { "accepted" },
+            if rlz_result.is_err() { "rejected" } else { "accepted" },
+        );
+    }
+
+    #[test]
+    fn falsify_e6_min_l2_norm_identical_across_crates() {
+        // MIN_L2_NORM = 1e-6 — test with near-zero L2 embedding.
+        // Values above the zero threshold (1e-10) but L2 < 1e-6.
+        let vocab_size = 10;
+        let hidden_dim = 8;
+        let data: Vec<f32> = (0..vocab_size * hidden_dim)
+            .map(|i| 1e-8 + (i as f32) * 1e-12) // L2 ≈ 8.9e-8 < 1e-6
+            .collect();
+
+        let apr_result = AprEmbedding::new(data.clone(), vocab_size, hidden_dim);
+        let rlz_result = RlzEmbedding::new(data, vocab_size, hidden_dim);
+
+        assert_eq!(
+            apr_result.is_err(),
+            rlz_result.is_err(),
+            "FALSIFY-E6: Near-zero L2 embedding: aprender={}, realizar={}. MIN_L2_NORM thresholds diverged!",
+            if apr_result.is_err() { "rejected" } else { "accepted" },
+            if rlz_result.is_err() { "rejected" } else { "accepted" },
+        );
+    }
+
+    #[test]
+    fn falsify_e6_spot_check_percentiles_identical_across_crates() {
+        // SPOT_CHECK_PCTS = [10, 50, 90] — both crates must check same positions.
+        // Zero out token at 50% — both must catch it.
+        let vocab_size = 100;
+        let hidden_dim = 64;
+        let mut data: Vec<f32> = (0..vocab_size * hidden_dim)
+            .map(|i| (i as f32 * 0.01).sin() * 0.1)
+            .collect();
+
+        // Zero out token at exactly 50% of vocab
+        let token_50 = vocab_size * 50 / 100; // token 50
+        let start = token_50 * hidden_dim;
+        for v in &mut data[start..start + hidden_dim] {
+            *v = 0.0;
+        }
+
+        let apr_result = AprEmbedding::new(data.clone(), vocab_size, hidden_dim);
+        let rlz_result = RlzEmbedding::new(data, vocab_size, hidden_dim);
+
+        assert!(apr_result.is_err(), "FALSIFY-E6: aprender must catch zero token at 50%");
+        assert!(rlz_result.is_err(), "FALSIFY-E6: realizar must catch zero token at 50%");
+
+        let apr_err = apr_result.unwrap_err();
+        let rlz_err = rlz_result.unwrap_err();
+        assert_eq!(
+            apr_err.rule_id, rlz_err.rule_id,
+            "FALSIFY-E6: Both must cite F-DATA-QUALITY-004 for spot check.\n  aprender: {}\n  realizar: {}",
+            apr_err.rule_id, rlz_err.rule_id
+        );
+    }
+
+    #[test]
+    fn falsify_e6_constant_embedding_rejected_by_both() {
+        // All-same-value embedding: passes density check but fails variation check.
+        let vocab_size = 10;
+        let hidden_dim = 8;
+        let data = vec![0.5f32; vocab_size * hidden_dim];
+
+        let apr_result = AprEmbedding::new(data.clone(), vocab_size, hidden_dim);
+        let rlz_result = RlzEmbedding::new(data, vocab_size, hidden_dim);
+
+        assert!(apr_result.is_err(), "aprender must reject constant embedding");
+        assert!(rlz_result.is_err(), "realizar must reject constant embedding");
+
+        let apr_err = apr_result.unwrap_err();
+        let rlz_err = rlz_result.unwrap_err();
+        assert_eq!(
+            apr_err.rule_id, rlz_err.rule_id,
+            "FALSIFY-E6: Both must cite same rule for constant embedding.\n  aprender: {}\n  realizar: {}",
+            apr_err.rule_id, rlz_err.rule_id
+        );
+    }
 }
