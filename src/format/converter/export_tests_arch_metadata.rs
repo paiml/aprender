@@ -1,80 +1,78 @@
 use super::*;
 
+/// C-07 (Meyer DbC): Missing required dimensions must panic, not silently default.
 #[test]
-fn test_build_gguf_arch_metadata_defaults_when_fields_are_none() {
+#[should_panic(expected = "C-07: hidden_size required")]
+fn test_build_gguf_arch_metadata_panics_on_missing_hidden_size() {
+    use crate::format::v2::AprV2Metadata;
+
+    let mut apr = AprV2Metadata::new("test");
+    apr.hidden_size = None;
+    apr.num_layers = Some(32);
+    apr.num_heads = Some(32);
+    apr.vocab_size = Some(32000);
+    apr.intermediate_size = Some(11008);
+
+    let _ = build_gguf_arch_metadata(&apr);
+}
+
+/// C-07 (Meyer DbC): Missing required dimensions must panic, not silently default.
+#[test]
+#[should_panic(expected = "C-07: num_layers required")]
+fn test_build_gguf_arch_metadata_panics_on_missing_num_layers() {
+    use crate::format::v2::AprV2Metadata;
+
+    let mut apr = AprV2Metadata::new("test");
+    apr.hidden_size = Some(4096);
+    apr.num_layers = None;
+    apr.num_heads = Some(32);
+    apr.vocab_size = Some(32000);
+    apr.intermediate_size = Some(11008);
+
+    let _ = build_gguf_arch_metadata(&apr);
+}
+
+/// C-07 (Meyer DbC): Missing required dimensions must panic, not silently default.
+#[test]
+#[should_panic(expected = "C-07: vocab_size required")]
+fn test_build_gguf_arch_metadata_panics_on_missing_vocab_size() {
+    use crate::format::v2::AprV2Metadata;
+
+    let mut apr = AprV2Metadata::new("test");
+    apr.hidden_size = Some(4096);
+    apr.num_layers = Some(32);
+    apr.num_heads = Some(32);
+    apr.vocab_size = None;
+    apr.intermediate_size = Some(11008);
+
+    let _ = build_gguf_arch_metadata(&apr);
+}
+
+/// C-07: With all required fields populated, export succeeds.
+#[test]
+fn test_build_gguf_arch_metadata_succeeds_with_required_fields() {
     use crate::format::gguf::GgufValue;
     use crate::format::v2::AprV2Metadata;
 
-    // Create metadata with all Option fields as None
     let mut apr = AprV2Metadata::new("test");
-    apr.architecture = None;
-    apr.model_type = String::new();
-    apr.hidden_size = None;
-    apr.num_layers = None;
-    apr.num_heads = None;
-    apr.num_kv_heads = None;
-    apr.vocab_size = None;
-    apr.intermediate_size = None;
-    apr.max_position_embeddings = None;
-    apr.rope_theta = None;
-    apr.rms_norm_eps = None;
-    apr.name = None;
+    apr.architecture = Some("qwen2".to_string());
+    apr.hidden_size = Some(4096);
+    apr.num_layers = Some(32);
+    apr.num_heads = Some(32);
+    apr.vocab_size = Some(32000);
+    apr.intermediate_size = Some(11008);
+    apr.name = Some("model".to_string());
 
     let entries = build_gguf_arch_metadata(&apr);
-
     let find = |key: &str| entries.iter().find(|(k, _)| k == key).map(|(_, v)| v);
 
-    // Should use defaults
-    match find("general.architecture") {
-        Some(GgufValue::String(s)) => assert_eq!(s, "qwen2"), // default
-        other => panic!("Expected String 'qwen2', got: {other:?}"),
-    }
-    match find("general.name") {
-        Some(GgufValue::String(s)) => assert_eq!(s, "model"), // default
-        other => panic!("Expected String 'model', got: {other:?}"),
-    }
-    // Default hidden_size=4096, num_heads=32, head_dim=128
     match find("qwen2.embedding_length") {
         Some(GgufValue::Uint32(v)) => assert_eq!(*v, 4096),
-        other => panic!("Expected default Uint32(4096), got: {other:?}"),
+        other => panic!("Expected Uint32(4096), got: {other:?}"),
     }
     match find("qwen2.block_count") {
         Some(GgufValue::Uint32(v)) => assert_eq!(*v, 32),
-        other => panic!("Expected default Uint32(32), got: {other:?}"),
-    }
-    match find("qwen2.attention.head_count") {
-        Some(GgufValue::Uint32(v)) => assert_eq!(*v, 32),
-        other => panic!("Expected default Uint32(32), got: {other:?}"),
-    }
-    // num_kv_heads defaults to num_heads
-    match find("qwen2.attention.head_count_kv") {
-        Some(GgufValue::Uint32(v)) => assert_eq!(*v, 32),
-        other => panic!("Expected default Uint32(32), got: {other:?}"),
-    }
-    match find("qwen2.vocab_size") {
-        Some(GgufValue::Uint32(v)) => assert_eq!(*v, 32000),
-        other => panic!("Expected default Uint32(32000), got: {other:?}"),
-    }
-    match find("qwen2.feed_forward_length") {
-        Some(GgufValue::Uint32(v)) => assert_eq!(*v, 11008),
-        other => panic!("Expected default Uint32(11008), got: {other:?}"),
-    }
-    match find("qwen2.context_length") {
-        Some(GgufValue::Uint32(v)) => assert_eq!(*v, 32768),
-        other => panic!("Expected default Uint32(32768), got: {other:?}"),
-    }
-    match find("qwen2.rope.freq_base") {
-        Some(GgufValue::Float32(v)) => assert!((*v - 1_000_000.0).abs() < 1.0),
-        other => panic!("Expected default Float32(1000000.0), got: {other:?}"),
-    }
-    match find("qwen2.rope.dimension_count") {
-        // head_dim = 4096/32 = 128
-        Some(GgufValue::Uint32(v)) => assert_eq!(*v, 128),
-        other => panic!("Expected default Uint32(128), got: {other:?}"),
-    }
-    match find("qwen2.attention.layer_norm_rms_epsilon") {
-        Some(GgufValue::Float32(v)) => assert!((*v - 1e-6).abs() < 1e-10),
-        other => panic!("Expected default Float32(1e-6), got: {other:?}"),
+        other => panic!("Expected Uint32(32), got: {other:?}"),
     }
 }
 
@@ -87,6 +85,9 @@ fn test_build_gguf_arch_metadata_zero_heads_uses_default_head_dim() {
     apr.architecture = Some("llama".to_string());
     apr.num_heads = Some(0);
     apr.hidden_size = Some(512);
+    apr.num_layers = Some(1);
+    apr.vocab_size = Some(100);
+    apr.intermediate_size = Some(256);
 
     let entries = build_gguf_arch_metadata(&apr);
     let find = |key: &str| entries.iter().find(|(k, _)| k == key).map(|(_, v)| v);
@@ -106,8 +107,11 @@ fn test_build_gguf_arch_metadata_llama_architecture() {
     let mut apr = AprV2Metadata::new("llama-model");
     apr.architecture = Some("llama".to_string());
     apr.hidden_size = Some(4096);
+    apr.num_layers = Some(32);
     apr.num_heads = Some(32);
     apr.num_kv_heads = Some(8);
+    apr.vocab_size = Some(32000);
+    apr.intermediate_size = Some(11008);
     apr.name = Some("LLaMA-7B".to_string());
 
     let entries = build_gguf_arch_metadata(&apr);
@@ -254,6 +258,7 @@ fn test_export_apr_to_gguf_raw_includes_f16_dtype() {
     metadata.num_layers = Some(1);
     metadata.num_heads = Some(2);
     metadata.vocab_size = Some(8);
+    metadata.intermediate_size = Some(16);
     metadata.name = Some("test".to_string());
     metadata
         .custom
@@ -297,6 +302,7 @@ fn test_export_apr_to_gguf_raw_shape_reversal() {
     metadata.num_layers = Some(1);
     metadata.num_heads = Some(2);
     metadata.vocab_size = Some(8);
+    metadata.intermediate_size = Some(16);
     metadata.name = Some("test".to_string());
     metadata
         .custom

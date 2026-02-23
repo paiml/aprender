@@ -6,12 +6,25 @@ fn build_gguf_arch_metadata(
     use crate::format::gguf::GgufValue;
 
     let arch = resolve_architecture(apr_metadata);
-    let hidden_size = apr_metadata.hidden_size.unwrap_or(4096);
-    let num_layers = apr_metadata.num_layers.unwrap_or(32);
-    let num_heads = apr_metadata.num_heads.unwrap_or(32);
+    // C-07 (Meyer DbC): Require dimensions from model metadata — no silent LLaMA-7B defaults.
+    // These fields are always populated during import/conversion. If missing, the APR file
+    // is malformed and exporting with wrong dimensions would produce a corrupt GGUF.
+    let hidden_size = apr_metadata
+        .hidden_size
+        .expect("C-07: hidden_size required for GGUF export (missing in APR metadata)");
+    let num_layers = apr_metadata
+        .num_layers
+        .expect("C-07: num_layers required for GGUF export (missing in APR metadata)");
+    let num_heads = apr_metadata
+        .num_heads
+        .expect("C-07: num_heads required for GGUF export (missing in APR metadata)");
     let num_kv_heads = apr_metadata.num_kv_heads.unwrap_or(num_heads);
-    let vocab_size = apr_metadata.vocab_size.unwrap_or(32000);
-    let intermediate_size = apr_metadata.intermediate_size.unwrap_or(11008);
+    let vocab_size = apr_metadata
+        .vocab_size
+        .expect("C-07: vocab_size required for GGUF export (missing in APR metadata)");
+    let intermediate_size = apr_metadata
+        .intermediate_size
+        .expect("C-07: intermediate_size required for GGUF export (missing in APR metadata)");
     let max_pos = apr_metadata.max_position_embeddings.unwrap_or(32768);
     let rope_theta = apr_metadata.rope_theta.unwrap_or(1_000_000.0);
     let rms_norm_eps = apr_metadata.rms_norm_eps.unwrap_or(1e-6);
@@ -336,10 +349,17 @@ fn export_apr_to_gguf_raw(input: &Path, output: &Path) -> Result<ExportReport> {
     let apr_metadata = reader.metadata().clone();
 
     let arch = resolve_architecture(&apr_metadata);
-    let num_layers = apr_metadata.num_layers.unwrap_or(32);
-    let num_heads = apr_metadata.num_heads.unwrap_or(32);
+    // C-07 (Meyer DbC): Required dimensions — no silent LLaMA-7B defaults.
+    let num_layers = apr_metadata
+        .num_layers
+        .expect("C-07: num_layers required for GGUF export");
+    let num_heads = apr_metadata
+        .num_heads
+        .expect("C-07: num_heads required for GGUF export");
     let num_kv_heads = apr_metadata.num_kv_heads.unwrap_or(num_heads);
-    let hidden_size = apr_metadata.hidden_size.unwrap_or(4096);
+    let hidden_size = apr_metadata
+        .hidden_size
+        .expect("C-07: hidden_size required for GGUF export");
 
     // Build metadata from architecture config + tokenizer custom fields
     let mut metadata = build_gguf_arch_metadata(&apr_metadata);

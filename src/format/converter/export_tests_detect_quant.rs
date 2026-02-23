@@ -325,6 +325,11 @@ fn test_build_gguf_arch_metadata_gpt2_keys() {
 
     let mut apr = AprV2Metadata::new("gpt2-test");
     apr.architecture = Some("gpt2".to_string());
+    apr.hidden_size = Some(768);
+    apr.num_layers = Some(12);
+    apr.num_heads = Some(12);
+    apr.vocab_size = Some(50257);
+    apr.intermediate_size = Some(3072);
     apr.rms_norm_eps = Some(1e-5);
 
     let metadata = build_gguf_arch_metadata(&apr);
@@ -342,6 +347,11 @@ fn test_build_gguf_arch_metadata_qwen2_keys() {
 
     let mut apr = AprV2Metadata::new("qwen2-test");
     apr.architecture = Some("qwen2".to_string());
+    apr.hidden_size = Some(1536);
+    apr.num_layers = Some(28);
+    apr.num_heads = Some(12);
+    apr.vocab_size = Some(151936);
+    apr.intermediate_size = Some(8960);
 
     let metadata = build_gguf_arch_metadata(&apr);
     let keys: Vec<&str> = metadata.iter().map(|(k, _)| k.as_str()).collect();
