@@ -25,13 +25,15 @@ fn build_gguf_arch_metadata(
     let intermediate_size = apr_metadata
         .intermediate_size
         .expect("C-07: intermediate_size required for GGUF export (missing in APR metadata)");
-    let max_pos = apr_metadata.max_position_embeddings.unwrap_or(32768);
-    let rope_theta = apr_metadata.rope_theta.unwrap_or(1_000_000.0);
+    let max_pos = apr_metadata.max_position_embeddings.unwrap_or(0);
+    // N-01 (Meyer DbC): rope_theta from metadata, or architecture-specific default.
+    let rope_theta = apr_metadata.rope_theta.unwrap_or_else(||
+        super::export::default_rope_theta_for_architecture(arch));
     let rms_norm_eps = apr_metadata.rms_norm_eps.unwrap_or(1e-6);
     let head_dim = if num_heads > 0 {
         hidden_size / num_heads
     } else {
-        128
+        0
     };
     let model_name = apr_metadata
         .name

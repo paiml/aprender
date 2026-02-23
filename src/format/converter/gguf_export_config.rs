@@ -111,27 +111,31 @@ fn resolve_gguf_config(
             .unwrap_or(default)
     }
 
-    let num_heads = resolve(apr_metadata, inferred, |m| m.num_heads, |c| c.num_heads, 32);
+    // N-02 (Meyer DbC): Use 0 for missing dimensions — no silent LLaMA-7B defaults.
+    let num_heads = resolve(apr_metadata, inferred, |m| m.num_heads, |c| c.num_heads, 0);
     let hidden_size = resolve(
         apr_metadata,
         inferred,
         |m| m.hidden_size,
         |c| c.hidden_size,
-        4096,
+        0,
     );
 
+    // N-01 (Meyer DbC): Resolve architecture, then use it for rope_theta default.
+    let arch = apr_metadata
+        .and_then(|m| m.architecture.clone())
+        .or_else(|| inferred.and_then(|c| c.architecture.clone()))
+        .unwrap_or_else(|| "unknown".to_string());
+
     GgufExportConfig {
-        arch: apr_metadata
-            .and_then(|m| m.architecture.clone())
-            .or_else(|| inferred.and_then(|c| c.architecture.clone()))
-            .unwrap_or_else(|| "qwen2".to_string()),
+        arch,
         hidden_size,
         num_layers: resolve(
             apr_metadata,
             inferred,
             |m| m.num_layers,
             |c| c.num_layers,
-            32,
+            0,
         ),
         num_heads,
         num_kv_heads: resolve(
@@ -146,26 +150,30 @@ fn resolve_gguf_config(
             inferred,
             |m| m.vocab_size,
             |c| c.vocab_size,
-            32000,
+            0,
         ),
         intermediate_size: resolve(
             apr_metadata,
             inferred,
             |m| m.intermediate_size,
             |c| c.intermediate_size,
-            11008,
+            0,
         ),
         max_pos: apr_metadata
             .and_then(|m| m.max_position_embeddings)
-            .unwrap_or(32768),
+            .unwrap_or(0),
         rope_theta: apr_metadata
             .and_then(|m| m.rope_theta)
-            .unwrap_or(1_000_000.0),
+            .unwrap_or_else(|| {
+                let a = apr_metadata.and_then(|m| m.architecture.as_deref()).unwrap_or("unknown");
+                super::export::default_rope_theta_for_architecture(a)
+            }),
         rms_norm_eps: apr_metadata.and_then(|m| m.rms_norm_eps).unwrap_or(1e-6),
+        // N-02 (Meyer DbC): 0 when dimensions unknown, not hardcoded 128.
         head_dim: if num_heads > 0 {
             hidden_size / num_heads
         } else {
-            128
+            0
         },
         model_name: apr_metadata
             .and_then(|m| m.name.clone())

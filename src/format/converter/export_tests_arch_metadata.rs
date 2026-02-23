@@ -92,10 +92,10 @@ fn test_build_gguf_arch_metadata_zero_heads_uses_default_head_dim() {
     let entries = build_gguf_arch_metadata(&apr);
     let find = |key: &str| entries.iter().find(|(k, _)| k == key).map(|(_, v)| v);
 
-    // When num_heads=0, head_dim defaults to 128
+    // N-02: When num_heads=0, head_dim defaults to 0 (no hidden assumption)
     match find("llama.rope.dimension_count") {
-        Some(GgufValue::Uint32(v)) => assert_eq!(*v, 128),
-        other => panic!("Expected Uint32(128), got: {other:?}"),
+        Some(GgufValue::Uint32(v)) => assert_eq!(*v, 0),
+        other => panic!("Expected Uint32(0), got: {other:?}"),
     }
 }
 

@@ -148,12 +148,9 @@ impl SpecialTokens {
     }
 }
 
-impl Default for SpecialTokens {
-    /// Returns Qwen2 special tokens. Only use for Qwen2/Qwen2.5 models.
-    fn default() -> Self {
-        Self::qwen2()
-    }
-}
+// N-08 (Meyer DbC): Default impl REMOVED — callers must explicitly use
+// SpecialTokens::qwen2() or construct from model metadata. The Default trait
+// violated the class invariant for non-Qwen2 models.
 
 impl Qwen2Tokenizer {
     /// Create tokenizer with Qwen2 configuration
@@ -161,7 +158,7 @@ impl Qwen2Tokenizer {
     pub fn new() -> Self {
         Self {
             vocab_size: 151936,
-            special_tokens: SpecialTokens::default(),
+            special_tokens: SpecialTokens::qwen2(),
         }
     }
 

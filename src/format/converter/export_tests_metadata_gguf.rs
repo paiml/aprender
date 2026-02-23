@@ -125,11 +125,11 @@ fn test_bug_213_resolve_gguf_config_from_apr_metadata() {
 fn test_bug_213_resolve_gguf_config_defaults_without_metadata() {
     let cfg = resolve_gguf_config(None, None);
 
-    // Should use hardcoded defaults
-    assert_eq!(cfg.arch, "qwen2");
-    assert_eq!(cfg.hidden_size, 4096);
-    assert_eq!(cfg.num_layers, 32);
-    assert_eq!(cfg.num_heads, 32);
+    // Should use zero defaults (no architecture-specific assumptions)
+    assert_eq!(cfg.arch, "unknown");
+    assert_eq!(cfg.hidden_size, 0);
+    assert_eq!(cfg.num_layers, 0);
+    assert_eq!(cfg.num_heads, 0);
 }
 
 // ========================================================================

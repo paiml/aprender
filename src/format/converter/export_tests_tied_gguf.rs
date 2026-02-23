@@ -106,9 +106,9 @@ fn test_resolve_gguf_config_falls_back_to_inferred() {
 #[test]
 fn test_resolve_gguf_config_head_dim_zero_heads() {
     let cfg = resolve_gguf_config(None, None);
-    // Default is 32 heads, 4096 hidden → head_dim = 128
-    assert_eq!(cfg.head_dim, 128);
-    assert_eq!(cfg.num_heads, 32);
+    // Default is 0 heads, 0 hidden → head_dim = 0
+    assert_eq!(cfg.head_dim, 0);
+    assert_eq!(cfg.num_heads, 0);
 }
 
 #[test]
@@ -139,16 +139,16 @@ fn test_build_gguf_config_metadata_has_all_required_keys() {
     assert!(keys.contains(&"general.name"));
     assert!(keys.contains(&"general.quantization_version"));
     assert!(keys.contains(&"general.file_type"));
-    assert!(keys.contains(&"qwen2.context_length"));
-    assert!(keys.contains(&"qwen2.embedding_length"));
-    assert!(keys.contains(&"qwen2.block_count"));
-    assert!(keys.contains(&"qwen2.feed_forward_length"));
-    assert!(keys.contains(&"qwen2.attention.head_count"));
-    assert!(keys.contains(&"qwen2.attention.head_count_kv"));
-    assert!(keys.contains(&"qwen2.attention.layer_norm_rms_epsilon"));
-    assert!(keys.contains(&"qwen2.rope.dimension_count"));
-    assert!(keys.contains(&"qwen2.rope.freq_base"));
-    assert!(keys.contains(&"qwen2.vocab_size"));
+    assert!(keys.contains(&"unknown.context_length"));
+    assert!(keys.contains(&"unknown.embedding_length"));
+    assert!(keys.contains(&"unknown.block_count"));
+    assert!(keys.contains(&"unknown.feed_forward_length"));
+    assert!(keys.contains(&"unknown.attention.head_count"));
+    assert!(keys.contains(&"unknown.attention.head_count_kv"));
+    assert!(keys.contains(&"unknown.attention.layer_norm_rms_epsilon"));
+    assert!(keys.contains(&"unknown.rope.dimension_count"));
+    assert!(keys.contains(&"unknown.rope.freq_base"));
+    assert!(keys.contains(&"unknown.vocab_size"));
     assert_eq!(metadata.len(), 14, "should have exactly 14 metadata keys");
 }
 

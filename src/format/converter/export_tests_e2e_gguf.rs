@@ -290,8 +290,8 @@ fn test_resolve_architecture_ignores_unknown_model_type() {
 
     assert_eq!(
         resolve_architecture(&apr),
-        "qwen2",
-        "unknown model_type should default to qwen2"
+        "unknown",
+        "unknown model_type should default to unknown"
     );
 }
 
@@ -305,8 +305,8 @@ fn test_resolve_architecture_ignores_empty_model_type() {
 
     assert_eq!(
         resolve_architecture(&apr),
-        "qwen2",
-        "empty model_type should default to qwen2"
+        "unknown",
+        "empty model_type should default to unknown"
     );
 }
 

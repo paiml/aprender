@@ -41,7 +41,21 @@ fn resolve_architecture(apr_metadata: &crate::format::v2::AprV2Metadata) -> &str
                 Some(mt.as_str())
             }
         })
-        .unwrap_or("qwen2")
+        // N-01 (Meyer DbC): "unknown" — don't assume Qwen2 for unidentified models.
+        .unwrap_or("unknown")
+}
+
+/// N-01 (Meyer DbC): Architecture-specific rope_theta default.
+///
+/// Mirrors `realizar::gguf::default_rope_theta_for_architecture()`.
+/// Qwen2/Qwen3 use 1,000,000; most others use 10,000.
+pub(crate) fn default_rope_theta_for_architecture(arch: &str) -> f32 {
+    let arch_lower = arch.to_lowercase();
+    if arch_lower.contains("qwen") {
+        1_000_000.0
+    } else {
+        10_000.0
+    }
 }
 
 /// GH-277: Resolve GGUF pre-tokenizer type from architecture and model metadata.
