@@ -496,5 +496,40 @@ fn test_falsify_qwen2_vocab_size_matches_config() {
     );
 }
 
+/// FALSIFY: config_from_vocab_size dispatch matches known model families
+#[test]
+fn test_falsify_config_from_vocab_size_dispatch() {
+    use crate::demo::Qwen2Config;
+
+    // Qwen2 (151936) → qwen2 config
+    let qwen2_config = super::config_from_vocab_size(Qwen2Config::VOCAB_SIZE);
+    assert_eq!(qwen2_config.vocab_size, Qwen2Config::VOCAB_SIZE,
+        "FALSIFY: config_from_vocab_size(151936) should return Qwen2 config");
+    assert!(!qwen2_config.add_prefix_space,
+        "FALSIFY: Qwen2 config should not add prefix space");
+
+    // Whisper (51865) → whisper config
+    let whisper_config = super::config_from_vocab_size(51865);
+    assert_eq!(whisper_config.vocab_size, 51865,
+        "FALSIFY: config_from_vocab_size(51865) should return Whisper config");
+
+    // GPT-2 (50257) falls in whisper range (>50000) — this is expected behavior
+    // because config_from_vocab_size uses threshold-based heuristic, not exact match.
+    // The actual vocab is loaded from tokenizer.json; this config only sets prefix_space etc.
+    let gpt2_config = super::config_from_vocab_size(50257);
+    assert!(!gpt2_config.add_prefix_space,
+        "FALSIFY: GPT-2 range config should not add prefix space");
+
+    // LLaMA (32000) → llama config
+    let llama_config = super::config_from_vocab_size(32000);
+    assert_eq!(llama_config.vocab_size, 32000,
+        "FALSIFY: config_from_vocab_size(32000) should return LLaMA config");
+
+    // Boundary: 40001 → gpt2 config
+    let gpt2_range = super::config_from_vocab_size(40001);
+    assert!(gpt2_range.add_prefix_space,
+        "FALSIFY: 40001 vocab should get GPT-2 config with prefix space");
+}
+
 #[path = "tests_encode_decode.rs"]
 mod tests_encode_decode;
