@@ -285,3 +285,26 @@ fn test_demo_metrics_fail_cases() {
     };
     assert!(!high_memory.meets_targets());
 }
+
+// =========================================================================
+// FALSIFY: SpecialTokens::qwen2() matches special-tokens-registry-v1.yaml
+// =========================================================================
+#[test]
+fn falsify_qwen2_special_tokens_match_yaml_registry() {
+    let tokens = SpecialTokens::qwen2();
+
+    // Values from special-tokens-registry-v1.yaml families.qwen2
+    assert_eq!(tokens.bos_id, 151_643, "FALSIFY: Qwen2 BOS mismatch vs YAML");
+    assert_eq!(tokens.eos_id, 151_645, "FALSIFY: Qwen2 EOS mismatch vs YAML");
+    assert_eq!(tokens.pad_id, 151_643, "FALSIFY: Qwen2 PAD mismatch vs YAML");
+    assert_eq!(tokens.im_start_id, 151_644, "FALSIFY: Qwen2 im_start mismatch vs YAML");
+    assert_eq!(tokens.im_end_id, 151_645, "FALSIFY: Qwen2 im_end mismatch vs YAML");
+
+    // Proof obligation: all token IDs < vocab_size (151936)
+    const QWEN2_VOCAB: u32 = 151_936;
+    assert!(tokens.bos_id < QWEN2_VOCAB, "FALSIFY: BOS >= vocab_size");
+    assert!(tokens.eos_id < QWEN2_VOCAB, "FALSIFY: EOS >= vocab_size");
+    assert!(tokens.pad_id < QWEN2_VOCAB, "FALSIFY: PAD >= vocab_size");
+    assert!(tokens.im_start_id < QWEN2_VOCAB, "FALSIFY: im_start >= vocab_size");
+    assert!(tokens.im_end_id < QWEN2_VOCAB, "FALSIFY: im_end >= vocab_size");
+}
