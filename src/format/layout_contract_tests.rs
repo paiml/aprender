@@ -293,4 +293,104 @@ mod tests {
             );
         }
     }
+
+    // ============================================================================
+    // FALSIFY: format-parity-v1.yaml — proptest properties
+    // ============================================================================
+
+    /// FALSIFY-FP-001: Transpose involution — swap(swap(shape)) == shape
+    #[test]
+    fn test_falsify_fp001_transpose_involution() {
+        // For any 2D shape, applying enforce_import_contract twice must return original shape
+        let shapes: &[(usize, usize)] = &[
+            (896, 151936),
+            (151936, 896),
+            (4864, 896),
+            (896, 4864),
+            (1, 1),
+            (128, 64),
+            (65536, 256),
+        ];
+
+        for &(a, b) in shapes {
+            let gguf_shape = vec![a, b];
+            // First pass: GGUF → APR
+            let (apr_shape, _) = enforce_import_contract("output.weight", &gguf_shape, b, a);
+            assert_eq!(apr_shape, vec![b, a], "FALSIFY-FP-001: first transpose failed for [{a}, {b}]");
+
+            // Second pass: applying the same swap again must recover original
+            let recovered = vec![apr_shape[1], apr_shape[0]];
+            assert_eq!(recovered, gguf_shape,
+                "FALSIFY-FP-001: transpose involution violated for [{a}, {b}] — swap(swap(s)) != s");
+        }
+    }
+
+    /// FALSIFY-FP-002: Element count preserved — product(gguf) == product(apr)
+    #[test]
+    fn test_falsify_fp002_element_count_preserved() {
+        let test_cases: &[(&str, &[usize])] = &[
+            ("output.weight", &[896, 151936]),
+            ("token_embd.weight", &[896, 151936]),
+            ("blk.0.attn_q.weight", &[896, 896]),
+            ("blk.0.ffn_gate.weight", &[4864, 896]),
+            ("output_norm.weight", &[896]),        // 1D — no transpose
+            ("blk.0.attn_norm.weight", &[896]),    // 1D — no transpose
+        ];
+
+        for &(name, gguf_shape) in test_cases {
+            let gguf_elements: usize = gguf_shape.iter().product();
+            let (apr_shape, _) = enforce_import_contract(name, gguf_shape, 151936, 896);
+            let apr_elements: usize = apr_shape.iter().product();
+            assert_eq!(gguf_elements, apr_elements,
+                "FALSIFY-FP-002: element count changed for '{name}': GGUF {gguf_elements} != APR {apr_elements}");
+        }
+    }
+
+    /// FALSIFY-FP-003: 1D identity — 1D shapes pass through unchanged
+    #[test]
+    fn test_falsify_fp003_1d_identity() {
+        let one_d_tensors = &[
+            "output_norm.weight",
+            "blk.0.attn_norm.weight",
+            "blk.0.ffn_norm.weight",
+        ];
+
+        for &name in one_d_tensors {
+            for &dim in &[896_usize, 1536, 4096, 1] {
+                let input = vec![dim];
+                let (output, needs_transpose) = enforce_import_contract(name, &input, 151936, dim);
+                assert_eq!(output, input,
+                    "FALSIFY-FP-003: 1D tensor '{name}' [{dim}] was modified during import");
+                assert!(!needs_transpose,
+                    "FALSIFY-FP-003: 1D tensor '{name}' [{dim}] should never need data transpose");
+            }
+        }
+    }
+
+    /// FALSIFY-FP-004: Data transpose is NEVER needed (GH-208 regression guard)
+    #[test]
+    fn test_falsify_fp004_data_transpose_never_needed() {
+        // For ANY tensor, enforce_import_contract must return needs_data_transpose=false
+        // This is the core GH-208 lesson: GGUF data is already row-major when shape is swapped
+        let all_dims: &[(usize, usize)] = &[
+            (896, 896), (4864, 896), (896, 4864),
+            (151936, 896), (896, 151936),
+            (128, 64), (1, 65536),
+        ];
+
+        let tensor_names = &[
+            "output.weight", "token_embd.weight",
+            "blk.0.attn_q.weight", "blk.0.attn_k.weight",
+            "blk.0.attn_v.weight", "blk.0.attn_output.weight",
+            "blk.0.ffn_gate.weight", "blk.0.ffn_up.weight", "blk.0.ffn_down.weight",
+        ];
+
+        for &name in tensor_names {
+            for &(a, b) in all_dims {
+                let (_, needs_transpose) = enforce_import_contract(name, &[a, b], b, a);
+                assert!(!needs_transpose,
+                    "FALSIFY-FP-004: '{name}' [{a}, {b}] claims data transpose needed — GH-208 regression!");
+            }
+        }
+    }
 }

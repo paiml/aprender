@@ -437,4 +437,94 @@ mod tests {
         let msg = format!("{}", result.unwrap_err());
         assert!(msg.contains("Unsupported GGUF dtype 255"));
     }
+
+    // =========================================================================
+    // FALSIFY: tied-embeddings-v1.yaml contract properties
+    // =========================================================================
+
+    /// FALSIFY-TE-001: Tied output shape equals embedding shape
+    #[test]
+    fn test_falsify_te001_tied_output_shape_equals_embedding_shape() {
+        // For any embedding shape, the tied lm_head must have identical shape
+        let shapes: &[Vec<usize>] = &[
+            vec![151936, 896],
+            vec![128256, 4096],
+            vec![32000, 768],
+            vec![1, 1],
+        ];
+
+        for shape in shapes {
+            let mut tensors: BTreeMap<String, (Vec<f32>, Vec<usize>)> = BTreeMap::new();
+            let data: Vec<f32> = (0..shape.iter().product::<usize>()).map(|i| i as f32).collect();
+            tensors.insert(
+                "model.embed_tokens.weight".to_string(),
+                (data, shape.clone()),
+            );
+
+            let (result, has_tied) = resolve_f32_tied_embeddings(&tensors);
+            assert!(has_tied, "FALSIFY-TE-001: should detect tied embeddings");
+            let lm_shape = &result["lm_head.weight"].1;
+            assert_eq!(lm_shape, shape,
+                "FALSIFY-TE-001: tied lm_head shape {lm_shape:?} != embedding shape {shape:?}");
+        }
+    }
+
+    /// FALSIFY-TE-002: Tied output data is bit-for-bit identical to embedding
+    #[test]
+    fn test_falsify_te002_tied_output_data_equals_embedding_data() {
+        let data = vec![1.0_f32, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let shape = vec![3, 2];
+
+        let mut tensors: BTreeMap<String, (Vec<f32>, Vec<usize>)> = BTreeMap::new();
+        tensors.insert(
+            "model.embed_tokens.weight".to_string(),
+            (data.clone(), shape.clone()),
+        );
+
+        let (result, _) = resolve_f32_tied_embeddings(&tensors);
+        let lm_data = &result["lm_head.weight"].0;
+        assert_eq!(lm_data, &data,
+            "FALSIFY-TE-002: tied lm_head data differs from embedding — must be bit-for-bit identical");
+    }
+
+    /// FALSIFY-TE-003: No extra parameters when embeddings are tied
+    #[test]
+    fn test_falsify_te003_no_extra_parameters_when_tied() {
+        let mut tensors: BTreeMap<String, (Vec<f32>, Vec<usize>)> = BTreeMap::new();
+        tensors.insert(
+            "model.embed_tokens.weight".to_string(),
+            (vec![1.0, 2.0], vec![1, 2]),
+        );
+        tensors.insert(
+            "other.weight".to_string(),
+            (vec![3.0], vec![1]),
+        );
+
+        let original_count = tensors.len();
+        let (result, has_tied) = resolve_f32_tied_embeddings(&tensors);
+        assert!(has_tied);
+
+        // Tied adds exactly 1 tensor (lm_head.weight)
+        assert_eq!(result.len(), original_count + 1,
+            "FALSIFY-TE-003: tied embeddings should add exactly 1 tensor, not more");
+    }
+
+    /// FALSIFY-TE-004: Explicit lm_head is NOT overwritten by embedding
+    #[test]
+    fn test_falsify_te004_explicit_lm_head_not_overwritten() {
+        let mut tensors: BTreeMap<String, (Vec<f32>, Vec<usize>)> = BTreeMap::new();
+        tensors.insert(
+            "model.embed_tokens.weight".to_string(),
+            (vec![1.0, 2.0], vec![1, 2]),
+        );
+        tensors.insert(
+            "lm_head.weight".to_string(),
+            (vec![9.0, 8.0], vec![1, 2]),
+        );
+
+        let (result, has_tied) = resolve_f32_tied_embeddings(&tensors);
+        assert!(!has_tied, "FALSIFY-TE-004: should NOT be tied when lm_head already exists");
+        assert_eq!(result["lm_head.weight"].0, vec![9.0, 8.0],
+            "FALSIFY-TE-004: explicit lm_head data was overwritten by embedding");
+    }
 }
