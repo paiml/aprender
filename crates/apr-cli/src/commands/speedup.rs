@@ -126,7 +126,8 @@ fn measure_our_gguf_tps(
         .map_err(|e| CliError::ValidationFailed(format!("Failed to parse GGUF: {e}")))?;
 
     let prompt = "Write a function to check if a number is prime:";
-    let prompt_tokens = gguf.encode(prompt).unwrap_or_else(|| vec![151643]);
+    let bos = aprender::demo::SpecialTokens::qwen2().bos_id;
+    let prompt_tokens = gguf.encode(prompt).unwrap_or_else(|| vec![bos]);
     let parity_max_tokens = config.max_tokens.max(128);
     let gen_config = QuantizedGenerateConfig {
         max_tokens: parity_max_tokens,
@@ -292,7 +293,8 @@ fn measure_gpu_cpu_tps(
         .map_err(|e| CliError::ValidationFailed(format!("Failed to parse GGUF: {e}")))?;
 
     let prompt = "Write a function to calculate factorial:";
-    let prompt_tokens = gguf.encode(prompt).unwrap_or_else(|| vec![151643]);
+    let bos = aprender::demo::SpecialTokens::qwen2().bos_id;
+    let prompt_tokens = gguf.encode(prompt).unwrap_or_else(|| vec![bos]);
     let gen_config = QuantizedGenerateConfig {
         max_tokens: config.max_tokens,
         temperature: 0.0,

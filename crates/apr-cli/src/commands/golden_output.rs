@@ -47,7 +47,8 @@ fn golden_output_gguf_cpu(
 ) -> Result<(Vec<u32>, String)> {
     use realizar::gguf::{OwnedQuantizedModel, QuantizedGenerateConfig};
 
-    let prompt_tokens = gguf.encode(prompt).unwrap_or_else(|| vec![151643, 9707]);
+    let bos = aprender::demo::SpecialTokens::qwen2().bos_id;
+    let prompt_tokens = gguf.encode(prompt).unwrap_or_else(|| vec![bos, 9707]);
     let gen_config = QuantizedGenerateConfig {
         max_tokens,
         temperature: 0.0,
@@ -149,9 +150,10 @@ fn validate_golden_test_case(
         // Safe: format==Gguf guarantees these are Some
         let gguf_ref = gguf_model.expect("GGUF model required for GPU golden output");
         let mapped_ref = mapped.expect("GGUF mapped model required for GPU golden output");
+        let bos = aprender::demo::SpecialTokens::qwen2().bos_id;
         let prompt_tokens = gguf_ref
             .encode(prompt)
-            .unwrap_or_else(|| vec![151643, 9707]);
+            .unwrap_or_else(|| vec![bos, 9707]);
         let gen_config = QuantizedGenerateConfig {
             max_tokens: golden_max_tokens, // GH-279-4: match CPU budget
             temperature: 0.0,
@@ -350,7 +352,8 @@ fn throughput_gguf(
 
     let gguf = GGUFModel::from_bytes(model_bytes)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to parse GGUF: {e}")))?;
-    let prompt_tokens = gguf.encode(prompt).unwrap_or_else(|| vec![151643, 9707]);
+    let bos = aprender::demo::SpecialTokens::qwen2().bos_id;
+    let prompt_tokens = gguf.encode(prompt).unwrap_or_else(|| vec![bos, 9707]);
     let gen_config = QuantizedGenerateConfig {
         max_tokens: config.max_tokens,
         temperature: 0.0,

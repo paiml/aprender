@@ -340,7 +340,8 @@ fn run_format_parity_gate(path: &Path, config: &QaConfig) -> Result<GateResult> 
 
         // Test prompt - use simple arithmetic for deterministic output
         let prompt = "<|im_start|>user\nWhat is 2+2?<|im_end|>\n<|im_start|>assistant\n";
-        let prompt_tokens: Vec<u32> = gguf.encode(prompt).unwrap_or_else(|| vec![151643, 9707]);
+        let bos = aprender::demo::SpecialTokens::qwen2().bos_id;
+        let prompt_tokens: Vec<u32> = gguf.encode(prompt).unwrap_or_else(|| vec![bos, 9707]);
 
         // Run GGUF forward pass to get logits
         let gguf_logits = {

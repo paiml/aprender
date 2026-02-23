@@ -268,9 +268,10 @@ fn bench_setup(
     mapped: &realizar::gguf::MappedGGUFModel,
 ) -> (Vec<u32>, realizar::gguf::QuantizedGenerateConfig) {
     let test_prompt = "Hello, I am a coding assistant. Write a function that calculates";
+    let bos = aprender::demo::SpecialTokens::qwen2().bos_id;
     let prompt_tokens: Vec<u32> = mapped.model.encode(test_prompt).unwrap_or_else(|| {
         // Fallback to Qwen2 pre-tokenized tokens if vocab not available
-        vec![151643, 9707, 11, 358, 1079, 264, 11761, 18328, 13, 9842]
+        vec![bos, 9707, 11, 358, 1079, 264, 11761, 18328, 13, 9842]
     });
     println!(
         "  Prompt: {} tokens (\"{}...\")",

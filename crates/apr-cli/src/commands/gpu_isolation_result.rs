@@ -197,12 +197,13 @@ fn run_gpu_isolation_test(path: &Path) -> Result<GpuIsolationResult> {
     let gguf = GGUFModel::from_bytes(&model_bytes)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to parse GGUF: {e}")))?;
 
+    let bos = aprender::demo::SpecialTokens::qwen2().bos_id;
     let tokens_a = gguf
         .encode("<|im_start|>user\nWhat is 2+2?<|im_end|>\n<|im_start|>assistant\n")
-        .unwrap_or_else(|| vec![151643, 9707]);
+        .unwrap_or_else(|| vec![bos, 9707]);
     let tokens_b = gguf
         .encode("<|im_start|>user\nWrite hello world in Python<|im_end|>\n<|im_start|>assistant\n")
-        .unwrap_or_else(|| vec![151643, 1234]);
+        .unwrap_or_else(|| vec![bos, 1234]);
 
     let gen_config = QuantizedGenerateConfig {
         max_tokens: 16,

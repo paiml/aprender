@@ -432,8 +432,8 @@ pub(super) fn run_apr_inference(config: &ShowcaseConfig) -> Result<bool> {
 
     // NOTE: APR format doesn't include tokenizer vocabulary
     // For proper tokenization, we'd need to load the source GGUF or store vocab in APR
-    // Using Qwen2 BOS token (151643) + common word tokens for reasonable test
-    let prompt_tokens: Vec<u32> = vec![151643, 9707, 11, 358, 1079, 264, 11761, 18328];
+    let bos = aprender::demo::SpecialTokens::qwen2().bos_id;
+    let prompt_tokens: Vec<u32> = vec![bos, 9707, 11, 358, 1079, 264, 11761, 18328];
     println!(
         "  {} APR doesn't include vocabulary - using pre-tokenized Qwen2 tokens",
         "ℹ".cyan()

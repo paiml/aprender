@@ -167,9 +167,10 @@ fn run_gguf_benchmark(
         .map_err(|e| CliError::ValidationFailed(format!("Failed to parse GGUF: {e}")))?;
 
     // Tokenize prompt
+    let bos = aprender::demo::SpecialTokens::qwen2().bos_id;
     let prompt_tokens: Vec<u32> = gguf
         .encode(&config.prompt)
-        .unwrap_or_else(|| vec![151643, 9707, 11, 358, 1079, 264, 11761, 18328, 13, 9842]);
+        .unwrap_or_else(|| vec![bos, 9707, 11, 358, 1079, 264, 11761, 18328, 13, 9842]);
 
     let gen_config = QuantizedGenerateConfig {
         max_tokens: config.max_tokens.min(128),

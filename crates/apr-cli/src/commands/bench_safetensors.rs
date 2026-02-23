@@ -54,7 +54,8 @@ fn resolve_safetensors_tokens(path: &Path, prompt: &str) -> Vec<u32> {
     {
         tokenizer.encode(prompt)
     } else {
-        vec![151643, 9707, 11, 358, 1079, 264, 11761, 18328, 13, 9842]
+        let bos = aprender::demo::SpecialTokens::qwen2().bos_id;
+        vec![bos, 9707, 11, 358, 1079, 264, 11761, 18328, 13, 9842]
     }
 }
 

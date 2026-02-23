@@ -172,9 +172,9 @@ impl ChatSession {
         ///
         /// GGUF models have their own tokenizer with correct special token IDs.
         /// Using LlamaTokenizer/Qwen2BpeTokenizer causes wrong token IDs for:
-        /// - <|im_start|> (should be 151644)
-        /// - <|im_end|> (should be 151645)
-        /// - <|endoftext|> (should be 151643)
+        /// - `<|im_start|>` (source of truth: `SpecialTokens::qwen2().im_start_id`)
+        /// - `<|im_end|>` (source of truth: `SpecialTokens::qwen2().im_end_id`)
+        /// - `<|endoftext|>` (source of truth: `SpecialTokens::qwen2().bos_id`)
         ///
         /// GH-224: Uses cached MappedGGUFModel and OwnedQuantizedModelCuda to avoid
         /// re-mmapping and re-uploading weights to VRAM on every message.
