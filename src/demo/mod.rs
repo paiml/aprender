@@ -54,15 +54,19 @@ impl Default for Qwen2Config {
 }
 
 impl Qwen2Config {
+    /// Qwen2 vocabulary size (all Qwen2/2.5 variants share 151936 tokens).
+    /// Source of truth for BpeConfig::qwen2(), Qwen2BpeTokenizer::vocab_size(), etc.
+    pub const VOCAB_SIZE: usize = 151_936;
+
     /// Configuration for Qwen2-0.5B-Instruct
     #[must_use]
-    pub fn qwen2_0_5b_instruct() -> Self {
+    pub const fn qwen2_0_5b_instruct() -> Self {
         Self {
             hidden_size: 896,
             num_attention_heads: 14,
             num_kv_heads: 2,
             num_layers: 24,
-            vocab_size: 151936,
+            vocab_size: Self::VOCAB_SIZE,
             max_seq_len: 32768,
             intermediate_size: 4864,
             rope_theta: 1_000_000.0,
@@ -74,7 +78,7 @@ impl Qwen2Config {
     /// Same architecture as Qwen2-0.5B-Instruct (shared base model).
     /// Both use: 896 hidden, 14 heads, 2 KV heads, 24 layers, 151936 vocab.
     #[must_use]
-    pub fn qwen25_coder_0_5b_instruct() -> Self {
+    pub const fn qwen25_coder_0_5b_instruct() -> Self {
         // Qwen2.5-Coder shares architecture with Qwen2-0.5B
         Self::qwen2_0_5b_instruct()
     }
@@ -275,7 +279,7 @@ impl Qwen2Tokenizer {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            vocab_size: 151936,
+            vocab_size: Qwen2Config::VOCAB_SIZE,
             special_tokens: SpecialTokens::qwen2(),
         }
     }

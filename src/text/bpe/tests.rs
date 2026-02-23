@@ -477,5 +477,24 @@ fn test_falsify_gpt2_base_eos_matches_registry() {
     );
 }
 
+#[test]
+fn test_falsify_qwen2_vocab_size_matches_config() {
+    use crate::demo::Qwen2Config;
+    let tokenizer = super::Qwen2BpeTokenizer::new();
+
+    // Qwen2BpeTokenizer::vocab_size() must equal Qwen2Config::VOCAB_SIZE
+    assert_eq!(
+        tokenizer.vocab_size(), Qwen2Config::VOCAB_SIZE,
+        "FALSIFY: Qwen2BpeTokenizer::vocab_size() diverged from Qwen2Config::VOCAB_SIZE"
+    );
+
+    // BpeConfig::qwen2().vocab_size must also match
+    let bpe_config = super::BpeConfig::qwen2();
+    assert_eq!(
+        bpe_config.vocab_size, Qwen2Config::VOCAB_SIZE,
+        "FALSIFY: BpeConfig::qwen2().vocab_size diverged from Qwen2Config::VOCAB_SIZE"
+    );
+}
+
 #[path = "tests_encode_decode.rs"]
 mod tests_encode_decode;

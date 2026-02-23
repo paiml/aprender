@@ -123,7 +123,7 @@ impl BpeConfig {
             eos_token: Some("<|im_end|>".to_string()),
             pad_token: Some("<|endoftext|>".to_string()),
             add_prefix_space: false,
-            vocab_size: 151936,
+            vocab_size: crate::demo::Qwen2Config::VOCAB_SIZE,
         }
     }
 }

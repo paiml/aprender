@@ -57,7 +57,7 @@ impl Qwen2BpeTokenizer {
     /// Get vocabulary size.
     #[must_use]
     pub fn vocab_size(&self) -> usize {
-        151936 // Qwen2 fixed vocab size
+        crate::demo::Qwen2Config::VOCAB_SIZE
     }
 
     /// Encode text to token IDs.
