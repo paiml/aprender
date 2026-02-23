@@ -437,6 +437,49 @@ fn ctp_01_format_performance() {
     );
 }
 
+// ============================================================================
+// FALSIFY: Chat template detection consistency with SpecialTokens registry
+// ============================================================================
+
+/// FALSIFY: Models with im_start/im_end tokens must detect as ChatML
+#[test]
+fn test_falsify_chatml_models_detected_from_name() {
+    // All model families that use SpecialTokens with im_start_id != 0 should be ChatML
+    let chatml_models = &[
+        "Qwen2-0.5B-Instruct",
+        "Qwen2.5-Coder-0.5B-Instruct",
+        "Qwen2-7B-Chat",
+        "qwen3-1.5B",
+    ];
+
+    for model in chatml_models {
+        let format = detect_format_from_name(model);
+        assert_eq!(format, TemplateFormat::ChatML,
+            "FALSIFY: '{model}' should detect as ChatML (has im_start/im_end tokens)");
+    }
+}
+
+/// FALSIFY: detect_format_from_name is consistent across case variations
+#[test]
+fn test_falsify_format_detection_case_insensitive() {
+    let cases = &[
+        ("qwen2-0.5b-instruct", TemplateFormat::ChatML),
+        ("QWEN2-0.5B-INSTRUCT", TemplateFormat::ChatML),
+        ("Mistral-7B-Instruct", TemplateFormat::Mistral),
+        ("MISTRAL-7B", TemplateFormat::Mistral),
+        ("llama-3-8b", TemplateFormat::Llama2),
+        ("LLAMA-3-8B", TemplateFormat::Llama2),
+        ("PHI-3-mini", TemplateFormat::Phi),
+        ("phi-2", TemplateFormat::Phi),
+    ];
+
+    for &(name, expected) in cases {
+        let detected = detect_format_from_name(name);
+        assert_eq!(detected, expected,
+            "FALSIFY: detect_format_from_name('{name}') returned {detected:?}, expected {expected:?}");
+    }
+}
+
 #[path = "tests_toyota_compliance.rs"]
 mod tests_toyota_compliance;
 #[path = "tests_long_conversation.rs"]
