@@ -242,3 +242,159 @@
             "FALSIFY-E5: Exactly 50% zeros should PASS (threshold is >50%, not >=50%): {:?}",
             result.err());
     }
+
+    // =========================================================================
+    // FALSIFY-L: §2.1.2 LM Head Contract — Five-Whys Gap Analysis
+    //
+    // Contract: tensor-layout-v1.yaml §tensors.lm_head
+    //   apr_shape: "[vocab, hidden]"
+    //   kernel: "matmul_q*k_rowmajor(W, x, vocab_size, hidden_dim)"
+    //   validation: "shape[0] == vocab_size AND shape[1] == hidden_dim"
+    //   critical: "true"
+    //   note: "GH-202 root cause - wrong shape caused [PAD] garbage output"
+    //
+    // Five-Whys:
+    //   Why 1: lm_head matmul could produce wrong logits
+    //   Why 2: Weight shape [hidden, vocab] instead of [vocab, hidden]
+    //   Why 3: enforce_matmul_contract not called at every matmul site
+    //   Why 4: Contract enforcement is opt-in, not mandatory-by-type
+    //   Why 5: ValidatedWeight exists but GGUF path doesn't use it
+    //
+    // Popper (1959): "These tests attempt to falsify the claim that
+    // the lm_head contract prevents ALL garbage logit output."
+    // =========================================================================
+
+    /// FALSIFY-L1: enforce_matmul_contract catches swapped lm_head dims
+    ///
+    /// GH-202 root cause: lm_head [hidden, vocab] instead of [vocab, hidden].
+    /// enforce_matmul_contract MUST panic on this exact scenario.
+    #[test]
+    #[should_panic(expected = "CONTRACT VIOLATION")]
+    fn falsify_l1_matmul_contract_catches_gh202_root_cause() {
+        use crate::format::layout_contract::enforce_matmul_contract;
+        // GH-202 scenario: shape is [hidden=896, vocab=151936] (wrong order)
+        enforce_matmul_contract("lm_head.weight", &[896, 151_936], 151_936, 896);
+    }
+
+    /// FALSIFY-L2: enforce_matmul_contract accepts correct lm_head shape
+    #[test]
+    fn falsify_l2_matmul_contract_accepts_correct_shape() {
+        use crate::format::layout_contract::enforce_matmul_contract;
+        // Correct: [vocab=151936, hidden=896]
+        enforce_matmul_contract("lm_head.weight", &[151_936, 896], 151_936, 896);
+    }
+
+    /// FALSIFY-L3: enforce_matmul_contract rejects 1D lm_head
+    ///
+    /// A flattened weight vector [vocab*hidden] should not pass the 2D check.
+    #[test]
+    #[should_panic(expected = "CONTRACT VIOLATION")]
+    fn falsify_l3_matmul_contract_rejects_1d_weight() {
+        use crate::format::layout_contract::enforce_matmul_contract;
+        // 1D shape — should panic
+        enforce_matmul_contract("lm_head.weight", &[151_936 * 896], 151_936, 896);
+    }
+
+    /// FALSIFY-L4: ValidatedWeight rejects lm_head with wrong shape
+    ///
+    /// ValidatedWeight::new() is the Poka-Yoke gate for weight tensors.
+    /// It must reject data whose length != out_dim * in_dim.
+    #[test]
+    fn falsify_l4_validated_weight_rejects_wrong_shape() {
+        // Data for [vocab=100, hidden=64] = 6400 elements
+        // But claim it's [vocab=152064, hidden=896] — shape mismatch
+        let data: Vec<f32> = (0..6400).map(|i| (i as f32 * 0.01).sin() * 0.1).collect();
+        let result = ValidatedWeight::new(data, 152_064, 896, "lm_head.weight");
+        assert!(result.is_err(),
+            "FALSIFY-L4: ValidatedWeight must reject data whose length != out_dim * in_dim");
+        assert_eq!(result.unwrap_err().rule_id, "F-LAYOUT-CONTRACT-001",
+            "FALSIFY-L4: Should cite shape mismatch rule");
+    }
+
+    /// FALSIFY-L5: ValidatedWeight rejects all-NaN lm_head
+    ///
+    /// If lm_head is all NaN, every logit would be NaN → argmax returns 0 → [PAD].
+    /// ValidatedWeight MUST catch this.
+    #[test]
+    fn falsify_l5_validated_weight_rejects_nan_lm_head() {
+        let data = vec![f32::NAN; 100 * 64];
+        let result = ValidatedWeight::new(data, 100, 64, "lm_head.weight");
+        assert!(result.is_err(),
+            "FALSIFY-L5: All-NaN lm_head must be rejected — produces [PAD] garbage");
+    }
+
+    /// FALSIFY-L6: Qwen2 vocab_size divergence affects lm_head too
+    ///
+    /// Same as FALSIFY-E2 but for lm_head: wrong vocab_size → matmul OOB.
+    /// ValidatedWeight must reject when data length doesn't match declared dims.
+    #[test]
+    fn falsify_l6_qwen2_vocab_divergence_in_lm_head() {
+        let small_vocab = 151_936_usize;
+        let large_vocab = 152_064_usize;
+        let hidden = 64;
+
+        // Data for small vocab
+        let small_data: Vec<f32> = (0..small_vocab * hidden)
+            .map(|i| (i as f32 * 0.01).sin() * 0.1)
+            .collect();
+
+        // Correct vocab → ok
+        assert!(ValidatedWeight::new(small_data.clone(), small_vocab, hidden, "lm_head").is_ok(),
+            "FALSIFY-L6: 151936 lm_head must be valid with correct vocab_size");
+
+        // Wrong vocab → must fail shape check
+        assert!(ValidatedWeight::new(small_data, large_vocab, hidden, "lm_head").is_err(),
+            "FALSIFY-L6: 151936 elements with vocab=152064 must fail shape check");
+    }
+
+    /// FALSIFY-L7: enforce_load_contract catches swapped lm_head at APR load time
+    ///
+    /// enforce_load_contract is the last line of defense when loading from APR.
+    /// lm_head is the ONLY critical tensor — its shape MUST be checked.
+    #[test]
+    fn falsify_l7_load_contract_rejects_swapped_lm_head() {
+        use crate::format::layout_contract::enforce_load_contract;
+
+        // Correct shape → ok
+        let ok = enforce_load_contract("lm_head.weight", &[151_936, 896], 151_936, 896);
+        assert!(ok.is_ok(), "FALSIFY-L7: Valid lm_head shape must pass load contract");
+
+        // Swapped shape → must fail (GH-202 regression)
+        let err = enforce_load_contract("lm_head.weight", &[896, 151_936], 151_936, 896);
+        assert!(err.is_err(),
+            "FALSIFY-L7: Swapped lm_head shape must fail load contract — GH-202 regression guard");
+    }
+
+    /// FALSIFY-L8: Q6K/Q4K byte size calculation matches contract formula
+    ///
+    /// tensor-layout-v1.yaml F-LAYOUT-CONTRACT-004:
+    ///   Q6K: 210 bytes per 256-element super-block
+    ///   Q4K: 144 bytes per 256-element super-block
+    /// If these calculations are wrong, dequantized matmul reads past buffer → UB.
+    #[test]
+    fn falsify_l8_quantized_byte_size_for_lm_head() {
+        use crate::format::layout_contract::LayoutContract;
+
+        // Qwen2 0.5B: vocab=151936, hidden=896
+        let q6k_bytes = LayoutContract::calculate_q6k_bytes(151_936, 896);
+        let q4k_bytes = LayoutContract::calculate_q4k_bytes(151_936, 896);
+
+        // ceil(896/256) = 4 super-blocks per row
+        let sb_per_row = (896 + 255) / 256; // = 4
+        assert_eq!(sb_per_row, 4);
+
+        let expected_q6k = 151_936 * sb_per_row * 210;
+        let expected_q4k = 151_936 * sb_per_row * 144;
+
+        assert_eq!(q6k_bytes, expected_q6k,
+            "FALSIFY-L8: Q6K byte size for lm_head must be vocab * ceil(hidden/256) * 210");
+        assert_eq!(q4k_bytes, expected_q4k,
+            "FALSIFY-L8: Q4K byte size for lm_head must be vocab * ceil(hidden/256) * 144");
+
+        // Qwen2 7B: vocab=152064, hidden=3584
+        let q6k_7b = LayoutContract::calculate_q6k_bytes(152_064, 3584);
+        let sb_7b = (3584 + 255) / 256; // = 14
+        assert_eq!(sb_7b, 14);
+        assert_eq!(q6k_7b, 152_064 * 14 * 210,
+            "FALSIFY-L8: Q6K byte size for 7B lm_head must match formula");
+    }

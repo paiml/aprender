@@ -543,4 +543,133 @@ mod cross_crate_parity {
             apr_err.rule_id, rlz_err.rule_id
         );
     }
+
+    // =========================================================================
+    // FALSIFY-L6: Cross-crate lm_head (ValidatedWeight) parity (Refs PMAT-328)
+    //
+    // Five-Whys:
+    //   Why 1: lm_head matmul could produce different results in aprender vs realizar
+    //   Why 2: ValidatedWeight gates might use different thresholds
+    //   Why 3: Separate implementations in two crates
+    //   Why 4: No cross-crate contract enforcement test existed
+    //   Why 5: lm_head is critical (GH-202) — divergence here = garbage output
+    //
+    // Popper (1959): "These tests attempt to falsify the claim that
+    // aprender and realizar enforce identical lm_head validation."
+    // =========================================================================
+
+    fn good_lm_head_data(vocab_size: usize, hidden_dim: usize) -> Vec<f32> {
+        (0..vocab_size * hidden_dim)
+            .map(|i| (i as f32 * 0.01).sin() * 0.1)
+            .collect()
+    }
+
+    #[test]
+    fn falsify_l6_good_lm_head_accepted_by_both() {
+        let vocab_size = 100;
+        let hidden_dim = 64;
+        let data = good_lm_head_data(vocab_size, hidden_dim);
+
+        let apr_result = AprWeight::new(data.clone(), vocab_size, hidden_dim, "lm_head.weight");
+        let rlz_result = RlzWeight::new(data, vocab_size, hidden_dim, "lm_head.weight");
+
+        assert!(apr_result.is_ok(),
+            "aprender should accept good lm_head: {:?}", apr_result.err());
+        assert!(rlz_result.is_ok(),
+            "realizar should accept good lm_head: {:?}", rlz_result.err());
+    }
+
+    #[test]
+    fn falsify_l6_wrong_shape_lm_head_rejected_by_both() {
+        // Data for 100*64=6400 but declared as 200*64=12800
+        let data = good_lm_head_data(100, 64);
+
+        let apr_result = AprWeight::new(data.clone(), 200, 64, "lm_head.weight");
+        let rlz_result = RlzWeight::new(data, 200, 64, "lm_head.weight");
+
+        assert!(apr_result.is_err(), "aprender must reject wrong-shape lm_head");
+        assert!(rlz_result.is_err(), "realizar must reject wrong-shape lm_head");
+
+        let apr_err = apr_result.unwrap_err();
+        let rlz_err = rlz_result.unwrap_err();
+        assert_eq!(apr_err.rule_id, rlz_err.rule_id,
+            "FALSIFY-L6: Both must cite same rule for shape mismatch.\n  aprender: {}\n  realizar: {}",
+            apr_err.rule_id, rlz_err.rule_id);
+    }
+
+    #[test]
+    fn falsify_l6_all_zero_lm_head_rejected_by_both() {
+        // All zeros → density >80% → rejected
+        let data = vec![0.0f32; 100 * 64];
+
+        let apr_result = AprWeight::new(data.clone(), 100, 64, "lm_head.weight");
+        let rlz_result = RlzWeight::new(data, 100, 64, "lm_head.weight");
+
+        assert!(apr_result.is_err(), "aprender must reject all-zero lm_head");
+        assert!(rlz_result.is_err(), "realizar must reject all-zero lm_head");
+
+        let apr_err = apr_result.unwrap_err();
+        let rlz_err = rlz_result.unwrap_err();
+        assert_eq!(apr_err.rule_id, rlz_err.rule_id,
+            "FALSIFY-L6: Both must cite same rule for all-zero lm_head.\n  aprender: {}\n  realizar: {}",
+            apr_err.rule_id, rlz_err.rule_id);
+    }
+
+    #[test]
+    fn falsify_l6_nan_lm_head_rejected_by_both() {
+        let mut data = good_lm_head_data(100, 64);
+        data[500] = f32::NAN;
+
+        let apr_result = AprWeight::new(data.clone(), 100, 64, "lm_head.weight");
+        let rlz_result = RlzWeight::new(data, 100, 64, "lm_head.weight");
+
+        assert!(apr_result.is_err(), "aprender must reject NaN lm_head");
+        assert!(rlz_result.is_err(), "realizar must reject NaN lm_head");
+
+        let apr_err = apr_result.unwrap_err();
+        let rlz_err = rlz_result.unwrap_err();
+        assert_eq!(apr_err.rule_id, rlz_err.rule_id,
+            "FALSIFY-L6: Both must cite same rule for NaN lm_head.\n  aprender: {}\n  realizar: {}",
+            apr_err.rule_id, rlz_err.rule_id);
+    }
+
+    #[test]
+    fn falsify_l6_inf_lm_head_rejected_by_both() {
+        let mut data = good_lm_head_data(100, 64);
+        data[300] = f32::INFINITY;
+
+        let apr_result = AprWeight::new(data.clone(), 100, 64, "lm_head.weight");
+        let rlz_result = RlzWeight::new(data, 100, 64, "lm_head.weight");
+
+        assert!(apr_result.is_err(), "aprender must reject Inf lm_head");
+        assert!(rlz_result.is_err(), "realizar must reject Inf lm_head");
+
+        let apr_err = apr_result.unwrap_err();
+        let rlz_err = rlz_result.unwrap_err();
+        assert_eq!(apr_err.rule_id, rlz_err.rule_id,
+            "FALSIFY-L6: Both must cite same rule for Inf lm_head.\n  aprender: {}\n  realizar: {}",
+            apr_err.rule_id, rlz_err.rule_id);
+    }
+
+    #[test]
+    fn falsify_l6_weight_density_threshold_parity_for_lm_head() {
+        // ValidatedWeight density threshold = 80%. Test at 81% zeros.
+        let total = 100 * 64;
+        let zero_count = total * 81 / 100;
+
+        let mut data: Vec<f32> = (0..total)
+            .map(|i| (i as f32 * 0.01).sin() * 0.1 + 0.05)
+            .collect();
+        for v in data.iter_mut().take(zero_count) {
+            *v = 0.0;
+        }
+
+        let apr_result = AprWeight::new(data.clone(), 100, 64, "lm_head.weight");
+        let rlz_result = RlzWeight::new(data, 100, 64, "lm_head.weight");
+
+        assert_eq!(apr_result.is_err(), rlz_result.is_err(),
+            "FALSIFY-L6: 81% zero lm_head: aprender={}, realizar={}. Density thresholds diverged!",
+            if apr_result.is_err() { "rejected" } else { "accepted" },
+            if rlz_result.is_err() { "rejected" } else { "accepted" });
+    }
 }
