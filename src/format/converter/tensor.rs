@@ -162,11 +162,16 @@ fn infer_model_config(tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>) -> Str
         .unwrap_or(num_attention_heads); // Default: same as num_attention_heads (MHA)
 
     // Create HuggingFace-compatible config.json with all required fields (GH-193)
+    // C-09: Use SpecialTokens registry as source of truth for BOS/EOS IDs.
+    // Default to Qwen2 (most common in this codebase) when architecture is unknown.
+    let tokens = crate::demo::SpecialTokens::qwen2();
+    let bos_id = tokens.bos_id;
+    let eos_id = tokens.eos_id;
     format!(
         r#"{{
   "architectures": ["Qwen2ForCausalLM"],
-  "bos_token_id": 151643,
-  "eos_token_id": 151645,
+  "bos_token_id": {bos_id},
+  "eos_token_id": {eos_id},
   "hidden_act": "silu",
   "hidden_size": {hidden_size},
   "initializer_range": 0.02,
