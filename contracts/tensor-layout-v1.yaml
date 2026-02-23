@@ -464,12 +464,29 @@ validation_rules_semantic:
 # If ANY falsification test passes (finds a counterexample), the contract
 # implementation is BROKEN and must be fixed before release.
 #
-# STATUS (2026-02-22): ALL 8 falsification tests IMPLEMENTED and PASSING
+# STATUS (2026-02-23): ALL 8 original falsification tests + 6 new sweeps PASSING
 #   FALSIFY-001..005: src/format/validated_tensors.rs (36 tests)
 #   FALSIFY-006:      crates/apr-cli/tests/falsification_cross_crate_parity.rs (13 tests)
-#   FALSIFY-007:      realizar/src/quantize/contract_tests.rs (1 test)
+#   FALSIFY-007:      realizar/src/quantize/contract_tests.rs (1 test, PMAT-334: 4/6 dispatch sites unscanned)
 #   FALSIFY-008:      realizar/src/quantize/contract_tests.rs (2 tests)
-#   Total: 52 falsification tests across 3 test files
+#   FALSIFY-E6:       §2.1.1 Embedding gap analysis (8+8+5 = 21 tests across 3 repos)
+#   FALSIFY-L:        §2.1.2 LM Head gap analysis (9+7+5 = 21 tests across 3 repos)
+#   FALSIFY-A:        §2.1.3 Attention gap analysis (7+6+5 = 18 tests across 3 repos)
+#   FALSIFY-F:        §2.1.4 FFN gap analysis (4+5+5 = 14 tests + 4 cross-crate)
+#   FALSIFY-N:        §2.1.5-6 Norm gap analysis (6+5+5 = 16 tests + 4 cross-crate)
+#   Total: 148 falsification tests across 12 test files in 3 repos
+#
+# GAPS FOUND:
+#   PMAT-325: aprender ValidatedEmbedding no dead-row semantic gate
+#   PMAT-326: entrenar embedding.from_params no shape validation
+#   PMAT-327: realizar GGUF embed path skips ValidatedEmbedding
+#   PMAT-328: realizar GGUF lm_head path skips ValidatedWeight
+#   PMAT-329: entrenar model.from_params no lm_head shape validation
+#   PMAT-330: ValidatedWeight no semantic Q/K/V dimension awareness
+#   PMAT-331: entrenar attention.from_params no shape validation
+#   PMAT-332: ValidatedVector accepts zero-length norm vectors
+#   PMAT-333: FFN gate_proj/up_proj shape symmetry not enforced
+#   PMAT-334: FALSIFY-007 only scans 2/6 dispatch sites
 #
 falsification_tests:
   - id: FALSIFY-001
