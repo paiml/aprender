@@ -587,3 +587,179 @@
         assert!(result.is_err(),
             "FALSIFY-A6: NaN in k_proj must be rejected — produces NaN attention");
     }
+
+    // =========================================================================
+    // FALSIFY-F: §2.1.4 FFN Projections (gate/up/down) — Five-Whys
+    //
+    // Contract: tensor-layout-v1.yaml §tensors.gate_proj/up_proj/down_proj
+    //   gate_proj: [intermediate, hidden] — SwiGLU gate
+    //   up_proj:   [intermediate, hidden] — SwiGLU up
+    //   down_proj: [hidden, intermediate] — reversed from gate/up!
+    //
+    // Five-Whys:
+    //   Why 1: SwiGLU could produce wrong FFN output
+    //   Why 2: gate/up same shape but different roles — swap is silent
+    //   Why 3: down_proj reversed dims from gate/up (like o_proj vs q_proj)
+    //   Why 4: intermediate_dim varies by architecture (not universal)
+    //   Why 5: No test verifying down_proj dim reversal is enforced
+    // =========================================================================
+
+    /// FALSIFY-F1: gate/up/down shapes accepted by ValidatedWeight
+    #[test]
+    fn falsify_f1_ffn_shapes_accepted() {
+        let hidden = 896_usize;
+        let intermediate = 4864_usize; // Qwen2 0.5B
+
+        // gate: [intermediate, hidden]
+        let gate_data: Vec<f32> = (0..intermediate * hidden)
+            .map(|i| (i as f32 * 0.001).sin() * 0.1).collect();
+        assert!(ValidatedWeight::new(gate_data, intermediate, hidden, "gate_proj").is_ok(),
+            "FALSIFY-F1: gate_proj [4864, 896] must be valid");
+
+        // up: [intermediate, hidden] — same shape as gate
+        let up_data: Vec<f32> = (0..intermediate * hidden)
+            .map(|i| (i as f32 * 0.002).sin() * 0.1).collect();
+        assert!(ValidatedWeight::new(up_data, intermediate, hidden, "up_proj").is_ok(),
+            "FALSIFY-F1: up_proj [4864, 896] must be valid");
+
+        // down: [hidden, intermediate] — REVERSED
+        let down_data: Vec<f32> = (0..hidden * intermediate)
+            .map(|i| (i as f32 * 0.003).sin() * 0.1).collect();
+        assert!(ValidatedWeight::new(down_data, hidden, intermediate, "down_proj").is_ok(),
+            "FALSIFY-F1: down_proj [896, 4864] must be valid");
+    }
+
+    /// FALSIFY-F2: enforce_matmul_contract validates down_proj reversed dims
+    #[test]
+    fn falsify_f2_down_proj_reversed_from_gate_up() {
+        use crate::format::layout_contract::enforce_matmul_contract;
+        let hidden = 896_usize;
+        let intermediate = 4864_usize;
+
+        // gate/up: out=intermediate, in=hidden
+        enforce_matmul_contract("gate_proj", &[intermediate, hidden], intermediate, hidden);
+        enforce_matmul_contract("up_proj", &[intermediate, hidden], intermediate, hidden);
+
+        // down: out=hidden, in=intermediate (REVERSED)
+        enforce_matmul_contract("down_proj", &[hidden, intermediate], hidden, intermediate);
+    }
+
+    /// FALSIFY-F3: enforce_matmul_contract panics on wrong down_proj dims
+    #[test]
+    #[should_panic(expected = "CONTRACT VIOLATION")]
+    fn falsify_f3_down_proj_with_gate_dims_panics() {
+        use crate::format::layout_contract::enforce_matmul_contract;
+        // WRONG: down_proj with gate_proj's [intermediate, hidden] but expected [hidden, intermediate]
+        enforce_matmul_contract("down_proj", &[4864, 896], 896, 4864);
+    }
+
+    /// FALSIFY-F4: enforce_import_contract handles FFN layer patterns
+    #[test]
+    fn falsify_f4_import_contract_ffn_patterns() {
+        use crate::format::layout_contract::enforce_import_contract;
+        let hidden = 896_usize;
+        let intermediate = 4864_usize;
+
+        // gate: GGUF [hidden, intermediate] → APR [intermediate, hidden]
+        let (shape, _) = enforce_import_contract(
+            "blk.0.ffn_gate.weight", &[hidden, intermediate], 151_936, hidden);
+        assert_eq!(shape, vec![intermediate, hidden]);
+
+        // up: GGUF [hidden, intermediate] → APR [intermediate, hidden]
+        let (shape, _) = enforce_import_contract(
+            "blk.0.ffn_up.weight", &[hidden, intermediate], 151_936, hidden);
+        assert_eq!(shape, vec![intermediate, hidden]);
+
+        // down: GGUF [intermediate, hidden] → APR [hidden, intermediate]
+        let (shape, _) = enforce_import_contract(
+            "blk.0.ffn_down.weight", &[intermediate, hidden], 151_936, hidden);
+        assert_eq!(shape, vec![hidden, intermediate]);
+
+        // Layer 23 — high index pattern
+        let (shape, _) = enforce_import_contract(
+            "blk.23.ffn_gate.weight", &[hidden, intermediate], 151_936, hidden);
+        assert_eq!(shape, vec![intermediate, hidden]);
+    }
+
+    // =========================================================================
+    // FALSIFY-N: §2.1.5-6 Layer Norms (attn_norm, ffn_norm, output_norm)
+    //
+    // Contract: tensor-layout-v1.yaml §tensors.input_layernorm etc.
+    //   All norms: shape=[hidden], transpose=false, kernel=element-wise multiply
+    //
+    // Five-Whys:
+    //   Why 1: Zero norm weight → zero output after normalization
+    //   Why 2: ValidatedVector doesn't check for near-zero norms
+    //   Why 3: 1D tensors need length validation (hidden_dim match)
+    //   Why 4: Norm import must NOT transpose (1D identity)
+    //   Why 5: No test verifying norm vector length == hidden_dim
+    // =========================================================================
+
+    /// FALSIFY-N1: ValidatedVector accepts correct norm weight
+    #[test]
+    fn falsify_n1_validated_vector_accepts_correct_norm() {
+        let hidden = 896_usize;
+        let data = vec![1.0f32; hidden]; // RMSNorm typically init to 1.0
+        let result = ValidatedVector::new(data, hidden, "attn_norm");
+        assert!(result.is_ok(), "FALSIFY-N1: Norm weight of ones must be valid: {:?}", result.err());
+    }
+
+    /// FALSIFY-N2: ValidatedVector rejects wrong-length norm
+    #[test]
+    fn falsify_n2_validated_vector_rejects_wrong_length() {
+        let data = vec![1.0f32; 100];
+        let result = ValidatedVector::new(data, 896, "attn_norm");
+        assert!(result.is_err(),
+            "FALSIFY-N2: Norm weight length 100 != hidden_dim 896 must fail");
+    }
+
+    /// FALSIFY-N3: ValidatedVector rejects NaN in norm
+    #[test]
+    fn falsify_n3_validated_vector_rejects_nan_norm() {
+        let mut data = vec![1.0f32; 64];
+        data[10] = f32::NAN;
+        let result = ValidatedVector::new(data, 64, "ffn_norm");
+        assert!(result.is_err(),
+            "FALSIFY-N3: NaN in norm weight must be rejected");
+    }
+
+    /// FALSIFY-N4: ValidatedVector rejects Inf in norm
+    #[test]
+    fn falsify_n4_validated_vector_rejects_inf_norm() {
+        let mut data = vec![1.0f32; 64];
+        data[5] = f32::INFINITY;
+        let result = ValidatedVector::new(data, 64, "output_norm");
+        assert!(result.is_err(),
+            "FALSIFY-N4: Inf in norm weight must be rejected");
+    }
+
+    /// FALSIFY-N5: enforce_import_contract does NOT transpose 1D norms
+    #[test]
+    fn falsify_n5_1d_norms_not_transposed() {
+        use crate::format::layout_contract::enforce_import_contract;
+        let hidden = 896_usize;
+
+        for name in &["blk.0.attn_norm.weight", "blk.0.ffn_norm.weight", "output_norm.weight"] {
+            let (shape, needs_t) = enforce_import_contract(name, &[hidden], 151_936, hidden);
+            assert_eq!(shape, vec![hidden],
+                "FALSIFY-N5: 1D norm '{name}' must pass through unchanged");
+            assert!(!needs_t,
+                "FALSIFY-N5: 1D norm '{name}' must NOT need data transpose");
+        }
+    }
+
+    /// FALSIFY-N6: Zero-length norm ACCEPTED — documents PMAT-332 gap
+    ///
+    /// Five-Whys:
+    /// 1. Why does ValidatedVector accept zero-length? → data.len()==expected_len (0==0)
+    /// 2. Why no zero-length guard? → Gate 1 only checks length mismatch, not minimum
+    /// 3. Why no minimum length? → ValidatedVector was designed for general 1D tensors
+    /// 4. Why not add a minimum? → Would need to decide policy (>0? >=hidden?)
+    /// 5. Why does this matter? → Zero-length norm produces NaN in LayerNorm division
+    #[test]
+    fn falsify_n6_zero_length_norm_accepted_gap() {
+        // GAP: ValidatedVector::new(vec![], 0, name) returns Ok — no minimum length gate
+        let result = ValidatedVector::new(vec![], 0, "attn_norm");
+        assert!(result.is_ok(),
+            "FALSIFY-N6: Documents PMAT-332 — zero-length norm NOT rejected by ValidatedVector");
+    }
