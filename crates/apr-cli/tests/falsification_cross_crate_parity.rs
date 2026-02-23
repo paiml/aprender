@@ -342,6 +342,40 @@ mod cross_crate_parity {
         );
     }
 
+    // =========================================================================
+    // FALSIFY-007: Special token ID parity between aprender and realizar
+    // =========================================================================
+
+    #[test]
+    fn falsify_007_special_tokens_match_realizar_defaults() {
+        use aprender::demo::SpecialTokens;
+
+        // Verify aprender's SpecialTokens registry matches realizar's
+        // default_eos_for_architecture and default_bos_for_architecture.
+        // Source of truth: special-tokens-registry-v1.yaml
+        let test_cases: &[(&str, u32, u32)] = &[
+            // (arch, expected_bos, expected_eos)
+            ("qwen2", 151_643, 151_645),
+            ("llama", 128_000, 128_001),
+            ("mistral", 1, 2),
+            ("gemma", 2, 1),
+            ("deepseek", 0, 1),
+            ("phi3", 1, 32_000),
+            ("gpt2", 0, 50_256),
+        ];
+
+        for &(arch, expected_bos, expected_eos) in test_cases {
+            let tokens = SpecialTokens::from_architecture(arch)
+                .unwrap_or_else(|| panic!("from_architecture('{arch}') returned None"));
+            assert_eq!(tokens.bos_id, expected_bos,
+                "FALSIFY-007: aprender BOS for '{arch}' ({}) != expected ({expected_bos})",
+                tokens.bos_id);
+            assert_eq!(tokens.eos_id, expected_eos,
+                "FALSIFY-007: aprender EOS for '{arch}' ({}) != expected ({expected_eos})",
+                tokens.eos_id);
+        }
+    }
+
     #[test]
     fn falsify_006_weight_density_threshold_boundary_parity() {
         // Test at exactly 80% zeros for weight — boundary case
