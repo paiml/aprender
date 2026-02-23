@@ -132,8 +132,12 @@ pub struct SpecialTokens {
     pub im_end_id: u32,
 }
 
-impl Default for SpecialTokens {
-    fn default() -> Self {
+impl SpecialTokens {
+    /// C-09 (Meyer DbC): Qwen2-specific token IDs — NOT a generic default.
+    /// These are the correct IDs for Qwen2/Qwen2.5 models only.
+    /// Other architectures (LLaMA, Mistral, Phi) have different special token IDs.
+    #[must_use]
+    pub fn qwen2() -> Self {
         Self {
             bos_id: 151643,
             eos_id: 151645,
@@ -141,6 +145,13 @@ impl Default for SpecialTokens {
             im_start_id: 151644,
             im_end_id: 151645,
         }
+    }
+}
+
+impl Default for SpecialTokens {
+    /// Returns Qwen2 special tokens. Only use for Qwen2/Qwen2.5 models.
+    fn default() -> Self {
+        Self::qwen2()
     }
 }
 
