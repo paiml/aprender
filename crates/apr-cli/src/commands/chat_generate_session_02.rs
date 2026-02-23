@@ -338,6 +338,7 @@ impl ChatSession {
                 top_k: 0,
                 repetition_penalty: 1.0,
                 trace: config.trace,
+                stop_tokens: vec![],
             };
 
             transformer

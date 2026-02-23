@@ -134,6 +134,7 @@ fn spawn_cpu_streaming_task(
             top_k: 0,
             repetition_penalty: 1.0,
             trace: false,
+            stop_tokens: vec![],
         };
 
         let Ok(t) = transformer.lock() else {

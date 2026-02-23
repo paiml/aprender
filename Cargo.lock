@@ -245,7 +245,7 @@ checksum = "a23eb6b1614318a8071c9b2521f36b424b2c83db5eb3a0fead4a6c0809af6e61"
 name = "apr-cli"
 version = "0.3.1"
 dependencies = [
- "aprender 0.26.2",
+ "aprender 0.26.3",
  "assert_cmd",
  "axum",
  "axum-test",
@@ -306,7 +306,7 @@ dependencies = [
 
 [[package]]
 name = "aprender"
-version = "0.26.2"
+version = "0.26.3"
 dependencies = [
  "aes-gcm",
  "alimentar",
@@ -358,7 +358,7 @@ dependencies = [
 name = "aprender-monte-carlo"
 version = "0.1.1"
 dependencies = [
- "aprender 0.26.2",
+ "aprender 0.26.3",
  "assert_cmd",
  "chrono",
  "clap",
@@ -377,7 +377,7 @@ dependencies = [
 name = "aprender-shell"
 version = "0.3.0"
 dependencies = [
- "aprender 0.26.2",
+ "aprender 0.26.3",
  "assert_cmd",
  "clap",
  "criterion",
@@ -394,7 +394,7 @@ dependencies = [
 name = "aprender-tsp"
 version = "0.2.0"
 dependencies = [
- "aprender 0.26.2",
+ "aprender 0.26.3",
  "assert_cmd",
  "clap",
  "crc32fast",
@@ -2134,7 +2134,7 @@ checksum = "34aa73646ffb006b8f5147f3dc182bd4bcb190227ce861fc4a4844bf8e3cb2c0"
 name = "entrenar"
 version = "0.6.1"
 dependencies = [
- "aprender 0.26.2",
+ "aprender 0.26.3",
  "bytemuck",
  "chrono",
  "clap",
@@ -4978,7 +4978,7 @@ name = "realizar"
 version = "0.7.1"
 dependencies = [
  "anyhow",
- "aprender 0.26.2",
+ "aprender 0.26.3",
  "arc-swap",
  "async-stream",
  "axum",

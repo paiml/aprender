@@ -129,6 +129,7 @@ fn run_apr_cpu_inference(
         top_k: 0,
         repetition_penalty: 1.0,
         trace: false,
+        stop_tokens: vec![],
     };
 
     let gen_start = Instant::now();

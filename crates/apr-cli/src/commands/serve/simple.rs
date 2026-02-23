@@ -47,6 +47,7 @@ pub(crate) async fn safetensors_generate_handler(
         top_k: 0,
         repetition_penalty: 1.0,
         trace: false,
+        stop_tokens: vec![],
     };
     let output_ids = {
         // PMAT-189: Handle transformer lock poisoning gracefully

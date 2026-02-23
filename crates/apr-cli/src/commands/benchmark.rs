@@ -304,6 +304,7 @@ fn run_apr_benchmark(
         top_k: 0,
         repetition_penalty: 1.0,
         trace: false,
+    stop_tokens: vec![],
     };
 
     // Warmup (untraced)
