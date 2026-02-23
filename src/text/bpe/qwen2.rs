@@ -5,12 +5,13 @@ use serde::Deserialize;
 use std::collections::HashMap;
 
 impl Qwen2BpeTokenizer {
+    // Source of truth: SpecialTokens::qwen2() from special-tokens-registry-v1.yaml
     /// Special token: <|`im_start`|>
-    pub const IM_START_ID: u32 = 151644;
+    pub const IM_START_ID: u32 = crate::demo::SpecialTokens::qwen2().im_start_id;
     /// Special token: <|`im_end`|>
-    pub const IM_END_ID: u32 = 151645;
+    pub const IM_END_ID: u32 = crate::demo::SpecialTokens::qwen2().im_end_id;
     /// Special token: <|endoftext|>
-    pub const ENDOFTEXT_ID: u32 = 151643;
+    pub const ENDOFTEXT_ID: u32 = crate::demo::SpecialTokens::qwen2().bos_id;
 
     /// Create a new Qwen2 tokenizer.
     #[must_use]

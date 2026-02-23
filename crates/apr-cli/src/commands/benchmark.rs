@@ -394,7 +394,8 @@ fn run_apr_cuda_benchmark(
     let mut model = AprV2ModelCuda::new(cpu_model, 0)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to init APR CUDA: {e}")))?;
 
-    let eos_token: u32 = 151645;
+    // Qwen2 EOS (source of truth: special-tokens-registry-v1.yaml)
+    let eos_token: u32 = aprender::demo::SpecialTokens::qwen2().eos_id;
 
     let load_time = start.elapsed();
     if !config.quiet {

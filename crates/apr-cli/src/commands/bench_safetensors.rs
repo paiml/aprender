@@ -132,7 +132,8 @@ fn run_safetensors_cuda_benchmark(
         .map_err(|e| CliError::ValidationFailed(format!("Failed to load SafeTensors CUDA: {e}")))?;
 
     let prompt_tokens = resolve_safetensors_tokens(path, &config.prompt);
-    let eos_token: u32 = 151645;
+    // Qwen2 EOS (source of truth: special-tokens-registry-v1.yaml)
+    let eos_token: u32 = aprender::demo::SpecialTokens::qwen2().eos_id;
 
     bench_log_ready(config, start.elapsed(), " (GPU device 0)");
 

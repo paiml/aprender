@@ -140,7 +140,7 @@ impl SpecialTokens {
 
     /// Qwen2/Qwen2.5 special tokens (vocab_size: 151936)
     #[must_use]
-    pub fn qwen2() -> Self {
+    pub const fn qwen2() -> Self {
         Self {
             bos_id: 151_643,
             eos_id: 151_645,
@@ -152,7 +152,7 @@ impl SpecialTokens {
 
     /// Qwen3.5 special tokens (vocab_size: 248320, new tokenizer)
     #[must_use]
-    pub fn qwen3_5() -> Self {
+    pub const fn qwen3_5() -> Self {
         Self {
             bos_id: 0,       // null in config — no explicit BOS
             eos_id: 248_044,
@@ -164,7 +164,7 @@ impl SpecialTokens {
 
     /// LLaMA 3.x special tokens (vocab_size: 128256)
     #[must_use]
-    pub fn llama() -> Self {
+    pub const fn llama() -> Self {
         Self {
             bos_id: 128_000,
             eos_id: 128_001,
@@ -176,7 +176,7 @@ impl SpecialTokens {
 
     /// Mistral special tokens (vocab_size: 32000, SentencePiece)
     #[must_use]
-    pub fn mistral() -> Self {
+    pub const fn mistral() -> Self {
         Self {
             bos_id: 1,
             eos_id: 2,
@@ -188,7 +188,7 @@ impl SpecialTokens {
 
     /// Gemma / Gemma 2 special tokens (vocab_size: 256000)
     #[must_use]
-    pub fn gemma() -> Self {
+    pub const fn gemma() -> Self {
         Self {
             bos_id: 2,
             eos_id: 1,
@@ -200,7 +200,7 @@ impl SpecialTokens {
 
     /// DeepSeek V2/V3 special tokens (vocab_size: 129280)
     #[must_use]
-    pub fn deepseek() -> Self {
+    pub const fn deepseek() -> Self {
         Self {
             bos_id: 0,
             eos_id: 1,
@@ -212,7 +212,7 @@ impl SpecialTokens {
 
     /// Phi-3 / Phi-3.5 special tokens (vocab_size: 32064)
     #[must_use]
-    pub fn phi3() -> Self {
+    pub const fn phi3() -> Self {
         Self {
             bos_id: 1,
             eos_id: 32_000,
@@ -224,7 +224,7 @@ impl SpecialTokens {
 
     /// Phi-2 special tokens (vocab_size: 51200, GPT-2 tokenizer)
     #[must_use]
-    pub fn phi2() -> Self {
+    pub const fn phi2() -> Self {
         Self {
             bos_id: 0,      // null in config
             eos_id: 50_256,
@@ -236,7 +236,7 @@ impl SpecialTokens {
 
     /// GPT-2 special tokens (vocab_size: 50257)
     #[must_use]
-    pub fn gpt2() -> Self {
+    pub const fn gpt2() -> Self {
         Self {
             bos_id: 0,      // null in config
             eos_id: 50_256,
