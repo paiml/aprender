@@ -408,22 +408,23 @@ fn load_gguf_cuda_for_profiling(
 }
 
 /// Extract model dimensions from a mapped GGUF model.
+/// C-08 (Meyer DbC): Use 0 for missing dimensions, never hardcoded Qwen2-0.5B defaults.
 #[cfg(feature = "inference")]
 fn extract_model_dims(
     mapped: &realizar::gguf::MappedGGUFModel,
 ) -> (usize, usize, usize, usize, usize, usize) {
-    let hidden_dim = mapped.model.embedding_dim().unwrap_or(896);
-    let num_heads = mapped.model.num_heads().unwrap_or(14);
-    let num_kv_heads = mapped.model.num_kv_heads().unwrap_or(2);
-    let num_layers = mapped.model.num_layers().unwrap_or(28);
-    let head_dim = hidden_dim / num_heads;
+    let hidden_dim = mapped.model.embedding_dim().unwrap_or(0);
+    let num_heads = mapped.model.num_heads().unwrap_or(0);
+    let num_kv_heads = mapped.model.num_kv_heads().unwrap_or(0);
+    let num_layers = mapped.model.num_layers().unwrap_or(0);
+    let head_dim = if num_heads > 0 { hidden_dim / num_heads } else { 0 };
     let intermediate_dim = mapped
         .model
         .tensors
         .iter()
         .find(|t| t.name == "blk.0.ffn_up.weight")
-        .map_or(hidden_dim * 54 / 10, |t| {
-            t.dims.first().copied().unwrap_or(4864) as usize
+        .map_or(0, |t| {
+            t.dims.first().copied().unwrap_or(0) as usize
         });
     (hidden_dim, num_heads, num_kv_heads, num_layers, head_dim, intermediate_dim)
 }
