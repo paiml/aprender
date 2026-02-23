@@ -59,6 +59,20 @@ impl GgufTokenizer {
 
 /// Transformer model configuration extracted from GGUF metadata
 /// CRITICAL for APR inference - must match realizar::apr::AprMetadata
+///
+/// # Bounds (model-metadata-bounds-v1.yaml)
+///
+/// | Field                  | Min   | Max         |
+/// |------------------------|-------|-------------|
+/// | hidden_size            | 1     | 65,536      |
+/// | num_layers             | 1     | 256         |
+/// | num_heads              | 1     | 256         |
+/// | num_kv_heads           | 1     | 256         |
+/// | vocab_size             | 1     | 1,000,000   |
+/// | intermediate_size      | 1     | 262,144     |
+/// | max_position_embeddings| 0     | 2,097,152   |
+/// | rope_theta             | 1.0   | 100,000,000 |
+/// | eps                    | 1e-10 | 0.01        |
 #[derive(Debug, Clone, Default)]
 pub struct GgufModelConfig {
     /// Model architecture family (e.g., "llama", "qwen2", "phi")
@@ -84,6 +98,64 @@ pub struct GgufModelConfig {
     /// RoPE type: 0=NORM (adjacent pairs), 2=NEOX (split halves)
     /// CORRECTNESS-011: Qwen2.5 models require rope_type=2 (NEOX style)
     pub rope_type: Option<u32>,
+}
+
+impl GgufModelConfig {
+    /// Validate config values against model-metadata-bounds-v1.yaml.
+    ///
+    /// Warns on out-of-bounds values (does not error — aprender is the import
+    /// pipeline, not the inference validator). Realizar's `ValidatedModelConfig`
+    /// is the hard gate.
+    pub fn warn_out_of_bounds(&self) {
+        Self::check_usize_bound(self.hidden_size, 1, 65_536, "hidden_size");
+        Self::check_usize_bound(self.num_layers, 1, 256, "num_layers");
+        Self::check_usize_bound(self.num_heads, 1, 256, "num_heads");
+        Self::check_usize_bound(self.num_kv_heads, 1, 256, "num_kv_heads");
+        Self::check_usize_bound(self.vocab_size, 1, 1_000_000, "vocab_size");
+        Self::check_usize_bound(self.intermediate_size, 1, 262_144, "intermediate_size");
+        Self::check_usize_bound(self.max_position_embeddings, 0, 2_097_152, "max_position_embeddings");
+
+        if let Some(theta) = self.rope_theta {
+            if theta > 0.0 && theta < 1.0 {
+                eprintln!(
+                    "Warning: rope_theta {theta} below minimum 1.0 (model-metadata-bounds-v1)"
+                );
+            }
+            if theta > 100_000_000.0 {
+                eprintln!(
+                    "Warning: rope_theta {theta} exceeds max 100000000.0 (model-metadata-bounds-v1)"
+                );
+            }
+        }
+
+        if let Some(eps) = self.rms_norm_eps {
+            if eps > 0.0 && eps < 1e-10 {
+                eprintln!(
+                    "Warning: rms_norm_eps {eps} below minimum 1e-10 (model-metadata-bounds-v1)"
+                );
+            }
+            if eps > 0.01 {
+                eprintln!(
+                    "Warning: rms_norm_eps {eps} exceeds max 0.01 (model-metadata-bounds-v1)"
+                );
+            }
+        }
+    }
+
+    fn check_usize_bound(value: Option<usize>, min: usize, max: usize, field: &str) {
+        if let Some(v) = value {
+            if v < min {
+                eprintln!(
+                    "Warning: {field} {v} below minimum {min} (model-metadata-bounds-v1)"
+                );
+            }
+            if v > max {
+                eprintln!(
+                    "Warning: {field} {v} exceeds max {max} (model-metadata-bounds-v1)"
+                );
+            }
+        }
+    }
 }
 
 /// Result of loading a GGUF file with full tokenizer data and model config

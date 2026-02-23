@@ -53,6 +53,11 @@ pub fn apr_import<P: AsRef<Path>>(
     // tokenizer.json from the same repo if not found as sibling file
     resolve_hf_tokenizer_fallback(&mut load_result, &parsed_source);
 
+    // model-metadata-bounds-v1.yaml: warn on out-of-bounds config values at import time
+    if let Some(config) = load_result.model_config.as_ref() {
+        config.warn_out_of_bounds();
+    }
+
     // PMAT-224: Warn about unverified architectures before proceeding
     let effective_arch = infer_architecture(
         &options.architecture,
@@ -141,6 +146,9 @@ pub(crate) fn apr_import_gguf_raw(
     options: &ImportOptions,
 ) -> Result<ValidationReport> {
     let raw_result = load_gguf_raw(gguf_path)?;
+
+    // model-metadata-bounds-v1.yaml: warn on out-of-bounds config values at import time
+    raw_result.model_config.warn_out_of_bounds();
 
     let effective_tokenizer = resolve_gguf_tokenizer(
         &raw_result.tokenizer,
