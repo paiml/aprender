@@ -268,11 +268,16 @@ enforcement:
 # FALSIFICATION TESTS
 # =============================================================================
 
-# STATUS (2026-02-22): ALL 7 QDOT falsification tests IMPLEMENTED and PASSING
+# STATUS (2026-02-23): ALL 8 QDOT falsification tests IMPLEMENTED and PASSING
 #   FALSIFY-QDOT-001..005: realizar/src/quantize/contract_tests.rs (5 tests)
+#   FALSIFY-QDOT-006:      realizar/src/quantize/contract_tests.rs (1 test, row-major-only)
 #   FALSIFY-QDOT-007:      realizar/src/quantize/contract_tests.rs (1 test, catch-all audit)
 #   FALSIFY-QDOT-008:      realizar/src/quantize/contract_tests.rs (2 tests, cross-format garbage)
-#   Total: 15 contract tests in realizar
+#   Total: 16 contract tests in realizar
+#
+# GAPS FOUND:
+#   PMAT-335: Q4_1 and Q5_0 formats in GPU dispatch but missing from ALL_FORMAT_IDS
+#   PMAT-336: FALSIFY-QDOT-006 was missing (now added)
 #
 falsification_tests:
   - id: FALSIFY-QDOT-001
@@ -314,6 +319,15 @@ falsification_tests:
     implementation: "realizar/src/quantize/contract_tests.rs"
     test: "For each format in YAML, verify simd_dispatch has an entry with at least 'scalar' key"
     if_fails: "Format was added to registry but dispatch table not updated"
+
+  - id: FALSIFY-QDOT-006
+    rule: "Row-major only (LAYOUT-002)"
+    prediction: "No colmajor kernel functions exist in the quantize module"
+    status: "IMPLEMENTED"
+    implementation: "realizar/src/quantize/contract_tests.rs::falsify_qdot_006_no_colmajor_functions_in_quantize"
+    test: "Scan all non-test .rs files in src/quantize/ for colmajor references"
+    if_fails: "LAYOUT-002 violated — colmajor kernel reintroduced (root cause of 7B GPU garbage)"
+    reference: "PMAT-232, PMAT-336"
 
 # =============================================================================
 # QA GATE DEFINITION

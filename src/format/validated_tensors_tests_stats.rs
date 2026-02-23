@@ -763,3 +763,136 @@
         assert!(result.is_ok(),
             "FALSIFY-N6: Documents PMAT-332 — zero-length norm NOT rejected by ValidatedVector");
     }
+
+    // =========================================================================
+    // FALSIFY-ARCH: Architecture Requirements Contract — Five-Whys Gap Analysis
+    //
+    // Contract: architecture-requirements-v1.yaml
+    //   F-ARCH-REQ-001: Common roles present for all architectures
+    //   F-ARCH-REQ-002: Architecture-specific roles (bias, QK norm)
+    //   F-ARCH-REQ-003: No extraneous roles
+    //
+    // Five-Whys:
+    //   Why 1: Qwen3 missing QK norm → attention scores explode → garbage
+    //   Why 2: Architecture detection wrong → loaded weights incomplete
+    //   Why 3: No per-architecture role enforcement at load time
+    //   Why 4: enforce_architecture_completeness only checks name patterns
+    //   Why 5: ROOT — extraneous roles not rejected (wrong arch detection)
+    //
+    // Popper (1959): "These tests attempt to falsify the claim that
+    // enforce_architecture_completeness correctly validates per-arch roles."
+    // =========================================================================
+
+    use crate::format::layout_contract::enforce_architecture_completeness;
+
+    /// Helper: build tensor name list for a complete LLaMA-style layer
+    fn make_base_tensor_names(num_layers: usize) -> Vec<String> {
+        let mut names = vec![
+            "token_embd.weight".to_string(),
+            "output.weight".to_string(),
+            "output_norm.weight".to_string(),
+        ];
+        for i in 0..num_layers {
+            names.extend([
+                format!("blk.{i}.attn_norm.weight"),
+                format!("blk.{i}.ffn_norm.weight"),
+                format!("blk.{i}.attn_q.weight"),
+                format!("blk.{i}.attn_k.weight"),
+                format!("blk.{i}.attn_v.weight"),
+                format!("blk.{i}.attn_output.weight"),
+                format!("blk.{i}.ffn_gate.weight"),
+                format!("blk.{i}.ffn_up.weight"),
+                format!("blk.{i}.ffn_down.weight"),
+            ]);
+        }
+        names
+    }
+
+    /// FALSIFY-ARCH1: Complete LLaMA layer accepted
+    #[test]
+    fn falsify_arch1_complete_llama_accepted() {
+        let names = make_base_tensor_names(2);
+        let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+        let result = enforce_architecture_completeness(&refs, "llama", 2);
+        assert!(result.is_ok(),
+            "FALSIFY-ARCH1: Complete LLaMA should pass: {:?}", result.err());
+    }
+
+    /// FALSIFY-ARCH2: LLaMA missing ffn_gate on layer 1 rejected
+    #[test]
+    fn falsify_arch2_llama_missing_ffn_gate_rejected() {
+        let mut names = make_base_tensor_names(2);
+        names.retain(|n| n != "blk.1.ffn_gate.weight");
+        let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+        let result = enforce_architecture_completeness(&refs, "llama", 2);
+        assert!(result.is_err(),
+            "FALSIFY-ARCH2: LLaMA missing ffn_gate must be rejected");
+        let msg = format!("{}", result.unwrap_err());
+        assert!(msg.contains("blk.1.ffn_gate"),
+            "FALSIFY-ARCH2: Error must name missing tensor: {msg}");
+    }
+
+    /// FALSIFY-ARCH3: Qwen2 without bias vectors rejected
+    #[test]
+    fn falsify_arch3_qwen2_without_bias_rejected() {
+        let names = make_base_tensor_names(1);
+        let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+        let result = enforce_architecture_completeness(&refs, "qwen2", 1);
+        assert!(result.is_err(),
+            "FALSIFY-ARCH3: Qwen2 without bias must be rejected");
+        let msg = format!("{}", result.unwrap_err());
+        assert!(msg.contains("bias"),
+            "FALSIFY-ARCH3: Error must mention bias: {msg}");
+    }
+
+    /// FALSIFY-ARCH4: Qwen3 without QK norm rejected
+    #[test]
+    fn falsify_arch4_qwen3_without_qk_norm_rejected() {
+        let names = make_base_tensor_names(1);
+        let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+        let result = enforce_architecture_completeness(&refs, "qwen3", 1);
+        assert!(result.is_err(),
+            "FALSIFY-ARCH4: Qwen3 without QK norm must be rejected");
+        let msg = format!("{}", result.unwrap_err());
+        assert!(msg.contains("attn_q_norm") || msg.contains("attn_k_norm"),
+            "FALSIFY-ARCH4: Error must mention QK norm: {msg}");
+    }
+
+    /// FALSIFY-ARCH5: Qwen3 with QK norm accepted
+    #[test]
+    fn falsify_arch5_qwen3_with_qk_norm_accepted() {
+        let mut names = make_base_tensor_names(1);
+        names.push("blk.0.attn_q_norm.weight".to_string());
+        names.push("blk.0.attn_k_norm.weight".to_string());
+        let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+        let result = enforce_architecture_completeness(&refs, "qwen3", 1);
+        assert!(result.is_ok(),
+            "FALSIFY-ARCH5: Qwen3 with QK norm should pass: {:?}", result.err());
+    }
+
+    /// FALSIFY-ARCH6: Qwen2 with bias accepted
+    #[test]
+    fn falsify_arch6_qwen2_with_bias_accepted() {
+        let mut names = make_base_tensor_names(1);
+        names.push("blk.0.attn_q.bias".to_string());
+        names.push("blk.0.attn_k.bias".to_string());
+        names.push("blk.0.attn_v.bias".to_string());
+        let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+        let result = enforce_architecture_completeness(&refs, "qwen2", 1);
+        assert!(result.is_ok(),
+            "FALSIFY-ARCH6: Qwen2 with bias should pass: {:?}", result.err());
+    }
+
+    /// FALSIFY-ARCH7: Missing attn_output on later layer caught
+    #[test]
+    fn falsify_arch7_missing_attn_output_layer3_caught() {
+        let mut names = make_base_tensor_names(4);
+        names.retain(|n| n != "blk.3.attn_output.weight");
+        let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+        let result = enforce_architecture_completeness(&refs, "llama", 4);
+        assert!(result.is_err(),
+            "FALSIFY-ARCH7: Missing attn_output on layer 3 must be caught");
+        let msg = format!("{}", result.unwrap_err());
+        assert!(msg.contains("blk.3"),
+            "FALSIFY-ARCH7: Error must identify layer 3: {msg}");
+    }
