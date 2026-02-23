@@ -2,8 +2,8 @@
 
 **Reference**: Meyer, B. (1992). "Applying 'Design by Contract'." *IEEE Computer*, 25(10), 40-51.
 
-**Status**: SPECIFICATION — filed as GitHub issues for tracking
-**Date**: 2026-02-23
+**Status**: PHASE 1 COMPLETE — all C-01–C-11 and N-01–N-08 fixed
+**Date**: 2026-02-23 (updated 2026-02-23)
 **Scope**: trueno, realizar, aprender, entrenar, batuta, provable-contracts, apr-playbook
 
 ---
@@ -243,6 +243,143 @@ unwrap_or(QWEN_HIDDEN_SIZE as u64)  // 896
 
 ---
 
+## 3b. Extended Findings (N-01 through N-08)
+
+Second falsification sweep on 2026-02-23, after C-01–C-11 were fixed. These findings escaped the original Section 7 gates because they used different patterns (`map_or`, `unwrap_or(0.5625)`, `unwrap_or(28)`, etc.).
+
+### N-01: aprender Export rope_theta Falls Back to Qwen2
+
+**Location**: `aprender/src/format/converter/export.rs`, `metadata.rs`
+
+**Pattern** (before fix):
+```rust
+rope_theta: apr_metadata.rope_theta.unwrap_or(1_000_000.0)
+```
+
+**Meyer violation**: No Hidden Clauses. Exporting a LLaMA model to GGUF silently writes Qwen2's rope_theta (1M) instead of LLaMA's (10K). The 100x error corrupts positional encoding.
+
+**Fix**: `default_rope_theta_for_architecture()` — uses architecture string to select correct default. **FIXED** in `affd1760` (aprender#324).
+
+---
+
+### N-02: aprender GGUF Export Config Hardcodes LLaMA-7B Dimensions
+
+**Location**: `aprender/src/format/converter/gguf_export_config.rs`
+
+**Pattern** (before fix):
+```rust
+.num_heads(32).hidden_size(4096).num_layers(32).vocab_size(32000).intermediate_size(11008)
+```
+
+**Meyer violation**: Precondition. Export config fallbacks use LLaMA-7B dimensions. A Phi-2 model with missing metadata exports with completely wrong dimensions — silent, plausible, wrong.
+
+**Fix**: All dimension fallbacks → 0, architecture → "unknown", rope_theta → architecture-specific. **FIXED** in `affd1760` (aprender#324).
+
+---
+
+### N-03: realizar context_length Defaults to 2048
+
+**Location**: 8 files across realizar (`safetensors_infer_convert.rs`, `loading.rs`, `config.rs`, etc.)
+
+**Pattern** (before fix):
+```rust
+context_length: config.context_length.unwrap_or(2048)
+```
+
+**Meyer violation**: No Hidden Clauses. A model with 128K context trained at that length silently gets truncated to 2048. The KV cache is 64x too small, producing wrong attention for any sequence >2048 tokens.
+
+**Fix**: All sites → `unwrap_or(0)`. KV cache constructor applies safe minimum of 2048 when context_length=0 (the only site where a physical default is necessary). **FIXED** in `eeb32f4` (realizar#83).
+
+---
+
+### N-04: realizar Linear Attention Hardcodes Qwen3.5 Dimensions
+
+**Location**: `realizar/src/gpu/scheduler/linear_attn.rs` (10 sites)
+
+**Pattern** (before fix):
+```rust
+num_v_heads.unwrap_or(32)
+k_head_dim.unwrap_or(128)
+v_head_dim.unwrap_or(128)
+conv_kernel_size.unwrap_or(4)
+gdn_expansion_ratio.unwrap_or(16)
+```
+
+**Meyer violation**: Precondition. Gated Delta Net parameters are architecture-specific. Defaulting to Qwen3.5's values for a different linear attention model produces wrong state dimensions.
+
+**Fix**: All defaults → 0. The scheduler must receive explicit dimensions from model config. **FIXED** in `eeb32f4` (realizar#84).
+
+---
+
+### N-05: entrenar Architecture Detection Hardcodes 4096/32000
+
+**Location**: `entrenar/crates/entrenar-inspect/src/architecture.rs`
+
+**Pattern** (before fix):
+```rust
+let hidden_dim = shapes.iter().find(...).map_or(4096, ...);
+let vocab_size = shapes.iter().find(...).map_or(32000, ...);
+let num_layers = shapes.keys().filter(...).max().map_or(32, ...);
+```
+
+**Meyer violation**: Postcondition. `detect_from_shapes()` claims to detect architecture info from tensor shapes, but fabricates LLaMA-7B dimensions when detection fails. Meyer: "A postcondition violation is a bug in the supplier."
+
+**Fix**: All `map_or` defaults → 0. Zero means "unknown/not detected." **FIXED** in `925d146` (entrenar#93).
+
+---
+
+### N-06: entrenar Fine-Tune Hardcodes 4096/32 as Hidden Dimensions
+
+**Location**: `entrenar/src/hf_pipeline/fine_tune/config.rs`
+
+**Pattern** (before fix):
+```rust
+let d = 4096; // assumed hidden size
+let num_layers = 32; // assumed layer count
+```
+
+**Meyer violation**: Precondition. Memory estimation for fine-tuning silently assumes LLaMA-7B dimensions regardless of actual model.
+
+**Fix**: Derive dimensions from total parameter count using transformer scaling law: `d ≈ sqrt(total / 384)`, `L ≈ total / (12 * d²)`. **FIXED** in `925d146` (entrenar#93).
+
+---
+
+### N-07: trueno Tuner Defaults to Qwen2-1.5B Architecture
+
+**Location**: `trueno/src/tuner/features/builder.rs` (3 sites), `trueno/src/tuner/models/throughput.rs` (1 site)
+
+**Pattern** (before fix):
+```rust
+num_layers_norm: (self.num_layers.unwrap_or(28) as f32 / 128.0)
+num_heads_norm: (self.num_heads.unwrap_or(12) as f32 / 128.0)
+head_dim_norm: (self.head_dim.unwrap_or(128) as f32 / 256.0)
+// throughput.rs:
+.unwrap_or(2) // quant type index
+```
+
+**Meyer violation**: Precondition. The tuner feature builder silently defaults to Qwen2-1.5B's architecture (28 layers, 12 heads, 128 head_dim). A tuning pass on a GPT-2 model uses wrong feature normalization, producing incorrect throughput predictions.
+
+**Fix**: All defaults → 0. The tuner must be given explicit architecture dimensions. **FIXED** in `d4812a3` (trueno#106).
+
+---
+
+### N-08: SpecialTokens::default() Delegates to Qwen2 (Duplicate of C-09)
+
+**Location**: `aprender/src/demo/mod.rs`
+
+**Pattern** (before fix):
+```rust
+impl Default for SpecialTokens {
+    fn default() -> Self { Self::qwen2() }
+}
+```
+
+**Meyer violation**: Class Invariant. Same as C-09 but through `Default` delegation rather than inline constants.
+
+**Fix**: Removed `Default` impl entirely. Call sites must use explicit constructors like `SpecialTokens::qwen2()`. **FIXED** in `affd1760` (aprender#325).
+
+---
+
 ## 4. Three Missing Provable Contracts
 
 The `provable-contracts/` repository has 89 YAML contracts (26 kernel, 20 architecture, 16 ML, 8 time-series, 9 data/format, 4 E2E). Three critical gaps:
@@ -366,10 +503,15 @@ trueno has `contracts.rs` with `validate_weight_buffer()`, `validate_gemv_shapes
 
 ## 6. Implementation Roadmap
 
-### Phase 1: Stop the Bleeding (Week 1)
-- [ ] Create `special-tokens-registry-v1.yaml` with codegen
-- [ ] Replace all 11 CRITICAL sites with contract lookups
-- [ ] File GitHub issues for each finding (C-01 through C-11)
+### Phase 1: Stop the Bleeding (Week 1) — COMPLETE
+
+All C-01–C-11 and N-01–N-08 findings fixed. Magic number fallbacks replaced with either 0 (unknown), architecture-specific lookups, or scaling-law derivations.
+
+- [x] Replace all 11 CRITICAL sites with zero-defaults or contract lookups
+- [x] File GitHub issues for each finding (C-01–C-11: entrenar#82-92, realizar#73-82; N-01–N-08: aprender#324-325, realizar#83-84, entrenar#93, trueno#106)
+- [x] Fix N-01–N-08 gate escapes across 4 repos (aprender, realizar, entrenar, trueno)
+- [x] All issues closed with verified fixes
+- [ ] Create `special-tokens-registry-v1.yaml` with codegen (deferred to Phase 2)
 
 ### Phase 2: Validated Constructors (Week 2-3)
 - [ ] Create `ValidatedModelConfig` newtype in realizar
@@ -412,6 +554,40 @@ rg '\b151645\b|\b151643\b|\b128001\b|\b128000\b' \
 ```
 
 Each must return **zero lines** for the ecosystem to be considered provably DbC-compliant per Meyer 1992.
+
+### Gate D: Extended Patterns (catches N-01–N-08 class violations)
+
+```bash
+# map_or with architecture-specific dimensions
+rg 'map_or\((4096|32000?|128|28|12|1536|8960|11008)' \
+   --type rust -g '!*test*' -g '!*bench*' -g '!*example*' \
+   ~/src/{trueno,realizar,aprender,entrenar,batuta}/src/
+
+# Unconditional rope_theta Qwen2 default (1M)
+rg 'unwrap_or\(1[_,]?000[_,]?000' \
+   --type rust -g '!*test*' -g '!*bench*' -g '!*example*' \
+   ~/src/{trueno,realizar,aprender,entrenar,batuta}/src/
+
+# context_length silent 2048 default (outside KV cache safe minimum)
+rg 'context_length.*unwrap_or\(2048\)' \
+   --type rust -g '!*test*' -g '!*bench*' -g '!*example*' \
+   ~/src/{trueno,realizar,aprender,entrenar,batuta}/src/
+
+# Quant type index fallback to non-zero
+rg 'unwrap_or\([0-9]+\).*quant' \
+   --type rust -g '!*test*' -g '!*bench*' -g '!*example*' \
+   ~/src/{trueno,realizar,aprender,entrenar,batuta}/src/
+```
+
+### Intentional Exceptions
+
+These matches are acceptable and should NOT be treated as violations:
+
+1. **KV cache safe minimum** (`realizar/src/apr_transformer/config.rs`): `if config.context_length > 0 { config.context_length } else { 2048 }` — physical necessity; KV cache with 0 capacity panics. The model metadata stores 0 (unknown), the KV cache applies a safe minimum at allocation time.
+
+2. **entrenar generic rope_theta** (`entrenar/src/hf_pipeline/fine_tune/config.rs`): `unwrap_or(10000.0)` — generic training default; entrenar doesn't have architecture detection to select per-arch values. Training with 10K is the safest generic default.
+
+3. **apr-cli check.rs display-only** (`apr-cli/src/commands/check.rs`): `10000.0` used in diagnostic display strings, not as production fallback values.
 
 ---
 
