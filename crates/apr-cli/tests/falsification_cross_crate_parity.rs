@@ -762,4 +762,156 @@ mod cross_crate_parity {
             "FALSIFY-A7: Both must cite same rule for all-zero o_proj.\n  aprender: {}\n  realizar: {}",
             apr_err.rule_id, rlz_err.rule_id);
     }
+
+    // =========================================================================
+    // FALSIFY-F8: §2.1.4 FFN Cross-Crate Parity (Refs PMAT-333)
+    //
+    // Contract: tensor-layout-v1.yaml §tensors.gate_proj/up_proj/down_proj
+    // Claim: "Both aprender AND realizar enforce identical FFN validation"
+    //
+    // Popper (1959): "If gate_proj passes in one crate but fails in another,
+    // the contract is broken — the two crates have diverged."
+    // =========================================================================
+
+    /// FALSIFY-F8a: Good gate_proj accepted by both crates
+    #[test]
+    fn falsify_f8_good_gate_proj_accepted_by_both() {
+        let intermediate = 64;
+        let hidden = 16;
+        let data: Vec<f32> = (0..intermediate * hidden)
+            .map(|i| (i as f32 * 0.01).sin() * 0.1 + 0.05)
+            .collect();
+
+        let apr_result = AprWeight::new(data.clone(), intermediate, hidden, "gate_proj");
+        let rlz_result = RlzWeight::new(data, intermediate, hidden, "gate_proj");
+
+        assert!(apr_result.is_ok(), "aprender must accept good gate_proj: {:?}", apr_result.err());
+        assert!(rlz_result.is_ok(), "realizar must accept good gate_proj: {:?}", rlz_result.err());
+    }
+
+    /// FALSIFY-F8b: Wrong-shape down_proj rejected by both crates
+    #[test]
+    fn falsify_f8_wrong_shape_down_proj_rejected_by_both() {
+        let hidden = 16;
+        let intermediate = 64;
+        // down_proj: [hidden, intermediate] = 1024 elements, but give 500
+        let data: Vec<f32> = (0..500)
+            .map(|i| (i as f32 * 0.01).sin() * 0.1 + 0.05)
+            .collect();
+
+        let apr_result = AprWeight::new(data.clone(), hidden, intermediate, "down_proj");
+        let rlz_result = RlzWeight::new(data, hidden, intermediate, "down_proj");
+
+        assert!(apr_result.is_err(), "aprender must reject wrong-shape down_proj");
+        assert!(rlz_result.is_err(), "realizar must reject wrong-shape down_proj");
+
+        let apr_err = apr_result.unwrap_err();
+        let rlz_err = rlz_result.unwrap_err();
+        assert_eq!(apr_err.rule_id, rlz_err.rule_id,
+            "FALSIFY-F8b: Both must cite same rule for wrong-shape down_proj.\n  aprender: {}\n  realizar: {}",
+            apr_err.rule_id, rlz_err.rule_id);
+    }
+
+    /// FALSIFY-F8c: NaN in up_proj rejected by both crates
+    #[test]
+    fn falsify_f8_nan_in_up_proj_rejected_by_both() {
+        let intermediate = 64;
+        let hidden = 16;
+        let mut data: Vec<f32> = (0..intermediate * hidden)
+            .map(|i| (i as f32 * 0.01).sin() * 0.1 + 0.05)
+            .collect();
+        data[42] = f32::NAN;
+
+        let apr_result = AprWeight::new(data.clone(), intermediate, hidden, "up_proj");
+        let rlz_result = RlzWeight::new(data, intermediate, hidden, "up_proj");
+
+        assert!(apr_result.is_err(), "aprender must reject NaN up_proj");
+        assert!(rlz_result.is_err(), "realizar must reject NaN up_proj");
+    }
+
+    /// FALSIFY-F8d: All-zero gate_proj rejected by both crates
+    #[test]
+    fn falsify_f8_all_zero_gate_proj_rejected_by_both() {
+        let intermediate = 64;
+        let hidden = 16;
+        let data = vec![0.0f32; intermediate * hidden];
+
+        let apr_result = AprWeight::new(data.clone(), intermediate, hidden, "gate_proj");
+        let rlz_result = RlzWeight::new(data, intermediate, hidden, "gate_proj");
+
+        assert!(apr_result.is_err(), "aprender must reject all-zero gate_proj");
+        assert!(rlz_result.is_err(), "realizar must reject all-zero gate_proj");
+
+        let apr_err = apr_result.unwrap_err();
+        let rlz_err = rlz_result.unwrap_err();
+        assert_eq!(apr_err.rule_id, rlz_err.rule_id,
+            "FALSIFY-F8d: Both must cite same rule for all-zero gate_proj");
+    }
+
+    // =========================================================================
+    // FALSIFY-N9: §2.1.5-6 Norm Cross-Crate Parity (Refs PMAT-332)
+    //
+    // Contract: tensor-layout-v1.yaml §tensors.input_layernorm/final_norm
+    // Claim: "Both aprender AND realizar enforce identical norm validation"
+    // =========================================================================
+
+    /// FALSIFY-N9a: Good norm vector accepted by both crates
+    #[test]
+    fn falsify_n9_good_norm_accepted_by_both() {
+        let hidden = 64;
+        let data = vec![1.0f32; hidden];
+
+        let apr_result = AprVector::new(data.clone(), hidden, "attn_norm");
+        let rlz_result = RlzVector::new(data, hidden, "attn_norm");
+
+        assert!(apr_result.is_ok(), "aprender must accept good norm: {:?}", apr_result.err());
+        assert!(rlz_result.is_ok(), "realizar must accept good norm: {:?}", rlz_result.err());
+    }
+
+    /// FALSIFY-N9b: Wrong-length norm rejected by both crates
+    #[test]
+    fn falsify_n9_wrong_length_norm_rejected_by_both() {
+        let data = vec![1.0f32; 32];
+        let expected_len = 64;
+
+        let apr_result = AprVector::new(data.clone(), expected_len, "output_norm");
+        let rlz_result = RlzVector::new(data, expected_len, "output_norm");
+
+        assert!(apr_result.is_err(), "aprender must reject wrong-length norm");
+        assert!(rlz_result.is_err(), "realizar must reject wrong-length norm");
+
+        let apr_err = apr_result.unwrap_err();
+        let rlz_err = rlz_result.unwrap_err();
+        assert_eq!(apr_err.rule_id, rlz_err.rule_id,
+            "FALSIFY-N9b: Both must cite same rule for wrong-length norm.\n  aprender: {}\n  realizar: {}",
+            apr_err.rule_id, rlz_err.rule_id);
+    }
+
+    /// FALSIFY-N9c: NaN in norm rejected by both crates
+    #[test]
+    fn falsify_n9_nan_in_norm_rejected_by_both() {
+        let hidden = 64;
+        let mut data = vec![1.0f32; hidden];
+        data[10] = f32::NAN;
+
+        let apr_result = AprVector::new(data.clone(), hidden, "ffn_norm");
+        let rlz_result = RlzVector::new(data, hidden, "ffn_norm");
+
+        assert!(apr_result.is_err(), "aprender must reject NaN norm");
+        assert!(rlz_result.is_err(), "realizar must reject NaN norm");
+    }
+
+    /// FALSIFY-N9d: Inf in norm rejected by both crates
+    #[test]
+    fn falsify_n9_inf_in_norm_rejected_by_both() {
+        let hidden = 64;
+        let mut data = vec![1.0f32; hidden];
+        data[5] = f32::INFINITY;
+
+        let apr_result = AprVector::new(data.clone(), hidden, "attn_norm");
+        let rlz_result = RlzVector::new(data, hidden, "attn_norm");
+
+        assert!(apr_result.is_err(), "aprender must reject Inf norm");
+        assert!(rlz_result.is_err(), "realizar must reject Inf norm");
+    }
 }
