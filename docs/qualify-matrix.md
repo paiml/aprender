@@ -1,9 +1,9 @@
 # APR Qualify Matrix
 
-**Last Updated:** 2026-02-22 23:37 UTC
+**Last Updated:** 2026-02-23 09:13 UTC
 **Tool:** `apr qualify` (11-gate cross-subcommand smoke test)
 **Models:** 101 qualified
-**Perfect (11/11):** 85
+**Perfect (11/11):** 86
 
 <!-- QUALIFY_MATRIX_START -->
 | # | Model | Format | Inspect | Validate | Val.Quality | Tensors | Lint | Debug | Tree | Hex | Flow | Explain | Check | Score | Duration |
@@ -97,7 +97,7 @@
 | 87 | qwen2.5-coder-7b-instruct | APR | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 11/11 | 108s |
 | 88 | 8087e9bf97c265f8 | ST | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | 8/11 | 0s |
 | 89 | cb7ee7cd50590460 | GGUF | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 11/11 | 25s |
-| 90 | f04c88340c00d6e8 | GGUF | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | 10/11 | 115s |
+| 90 | f04c88340c00d6e8 | GGUF | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 11/11 | 87s |
 | 91 | 7cac9fec8abf060c | GGUF | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 11/11 | 40s |
 | 92 | TinyLlama-1.1B-Chat-v1.0-Q4_K_M | GGUF | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 11/11 | 26s |
 | 93 | 684041cd46bfafc7 | ST | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 11/11 | 21s |
