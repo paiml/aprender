@@ -439,5 +439,43 @@ fn test_encode_with_special_tokens() {
     assert!(tokens.contains(&50256));
 }
 
+// ============================================================================
+// FALSIFY: Qwen2BpeTokenizer constants match special-tokens-registry-v1.yaml
+// ============================================================================
+
+#[test]
+fn test_falsify_qwen2_bpe_constants_match_special_tokens_registry() {
+    use crate::demo::SpecialTokens;
+    let registry = SpecialTokens::qwen2();
+
+    // Qwen2BpeTokenizer::IM_START_ID must equal SpecialTokens::qwen2().im_start_id
+    assert_eq!(
+        super::Qwen2BpeTokenizer::IM_START_ID, registry.im_start_id,
+        "FALSIFY: IM_START_ID diverged from special-tokens-registry-v1.yaml"
+    );
+    assert_eq!(
+        super::Qwen2BpeTokenizer::IM_END_ID, registry.im_end_id,
+        "FALSIFY: IM_END_ID diverged from special-tokens-registry-v1.yaml"
+    );
+    assert_eq!(
+        super::Qwen2BpeTokenizer::ENDOFTEXT_ID, registry.bos_id,
+        "FALSIFY: ENDOFTEXT_ID diverged from special-tokens-registry-v1.yaml"
+    );
+}
+
+#[test]
+fn test_falsify_gpt2_base_eos_matches_registry() {
+    use crate::demo::SpecialTokens;
+    let tokenizer = BpeTokenizer::gpt2_base();
+    let registry = SpecialTokens::gpt2();
+
+    // GPT-2 <|endoftext|> must map to registry EOS ID
+    let eos_id = tokenizer.token_to_id("<|endoftext|>");
+    assert_eq!(
+        eos_id, Some(registry.eos_id),
+        "FALSIFY: gpt2_base <|endoftext|> ID diverged from special-tokens-registry-v1.yaml"
+    );
+}
+
 #[path = "tests_encode_decode.rs"]
 mod tests_encode_decode;
