@@ -2,7 +2,7 @@
 
 **Reference**: Meyer, B. (1992). "Applying 'Design by Contract'." *IEEE Computer*, 25(10), 40-51.
 
-**Status**: PHASE 9 COMPLETE — 190 FALSIFY tests across stack (full proptest closure)
+**Status**: PHASE 10 COMPLETE — 222 FALSIFY tests across stack (§2.1.2 Normalization)
 **Date**: 2026-02-23 (updated 2026-02-24)
 **Scope**: trueno, realizar, aprender, entrenar, batuta, provable-contracts, apr-playbook
 
@@ -921,6 +921,68 @@ Proptest coverage by contract:
 - AP: 6/14 (43%) proptest — aprender+realizar
 - PIPE: 0/2 (0%) — pipeline tests are inherently integration, proptest N/A
 
+## 11. §2.1.2 Normalization Contract Falsification (Phase 10)
+
+### Five-Whys Root Cause
+
+- Why 1: aprender had 11 LN/RN FALSIFY tests but entrenar/realizar had near-zero
+- Why 2: trueno has no CPU-path normalization (GPU-only kernels) — marked N/A
+- Why 3: Zero proptest coverage for RN or LN across entire stack
+- Why 4: entrenar's autograd `layer_norm` had ZERO contract tests despite full backward impl
+- Why 5: Normalization was "obviously correct" (3 lines of math) — classic falsification gap
+
+### Contracts Covered
+
+**rmsnorm-kernel-v1.yaml** (5 claims):
+- RN-001: Finiteness (|RMSNorm(x)_i| < ∞ when ε > 0)
+- RN-002: Scale invariance (RMSNorm(α·x) = sign(α)·RMSNorm(x))
+- RN-003: SIMD equivalence — N/A (requires SIMD test harness)
+- RN-004: Zero vector (RMSNorm(0) = 0, not NaN)
+- RN-005: Unit γ normalized RMS ≈ 1
+
+**layernorm-kernel-v1.yaml** (7 claims):
+- LN-001: Centering (E[LN(x)] ≈ β)
+- LN-002: Standardization (Var[LN(x)] ≈ 1 with γ=1)
+- LN-003: Denominator safety (output finite for all finite input)
+- LN-004: SIMD equivalence — N/A (requires SIMD test harness)
+- LN-005: Idempotency (LN(LN(x)) ≈ LN(x))
+- LN-006: Shift invariance (LN(x+c) = LN(x))
+- LN-007: Constant input (LN([c,c,...,c]) ≈ β)
+
+### Tests Created (37 new, 190→227 total)
+
+**RN proptest + gap closure (10 tests)**:
+- aprender `9af92a10` — RN-001/002/005-prop (3 proptest)
+- entrenar `b27c256` — RN-001 deterministic + RN-001/002/005-prop (4 tests)
+- realizar `b4aca34` — RN-001/002/005-prop (3 proptest)
+
+**LN full coverage (27 tests)**:
+- aprender `e78b0a2f` — LN-003 + LN-001/002/006/007-prop (5 tests)
+- entrenar `6c901fd` — LN-001..007 + LN-001/002/006/007-prop (10 tests)
+- realizar `cbfeec8` — LN-001..007 + into consistency + LN-001/002/006/007-prop (12 tests)
+
+### Phase 10 Coverage Matrix (d=deterministic, p=proptest)
+
+| Contract | aprender | trueno | entrenar | realizar | Total |
+|----------|----------|--------|----------|----------|-------|
+| RN-001..005 | 6d+3p | N/A | 4d+3p | 6d+3p | 25 |
+| LN-001..007 | 6d+4p | N/A | 6d+4p | 8d+4p | 32 |
+| **Phase 10** | **19** | **0** | **17** | **21** | **57** |
+
+### Cumulative Coverage Matrix (§2.1.1 + §2.1.2)
+
+| Contract | aprender | trueno | entrenar | realizar | Total |
+|----------|----------|--------|----------|----------|-------|
+| EM-001..005 | 21d+3p | 12d+1p | 6d+3p | 7d+3p | 56 |
+| EMB-001..007 | 24d+4p | 5d+2p | 7d+3p | 7d+3p | 55 |
+| TE-001..004 | 2d | N/A | 4d+3p | 4d+3p | 16 |
+| SM-001..009 | 9d+3p | 9d+3p | 8d+3p | 9d+3p | 47 |
+| AP-001..005 | 4d+4p | N/A | N/A | 4d+2p | 14 |
+| PIPE-001 | N/A | N/A | 1d | 1d | 2 |
+| RN-001..005 | 6d+3p | N/A | 4d+3p | 6d+3p | 25 |
+| LN-001..007 | 6d+4p | N/A | 6d+4p | 8d+4p | 32 |
+| **Total** | **93** | **32** | **55** | **67** | **227** |
+
 ---
 
 ## References
@@ -934,3 +996,5 @@ Proptest coverage by contract:
 7. Hinton, G. et al. (2015). "Distilling the Knowledge in a Neural Network." *NIPS Workshop*.
 8. Vaswani, A. et al. (2017). "Attention Is All You Need." *NeurIPS*.
 9. Bridle, J.S. (1990). "Training Stochastic Model Recognition Algorithms as Networks." *Current Communications in Computer and Information Science*.
+10. Zhang, B. & Sennrich, R. (2019). "Root Mean Square Layer Normalization." *NeurIPS*.
+11. Ba, J.L. et al. (2016). "Layer Normalization." *arXiv:1607.06450*.
