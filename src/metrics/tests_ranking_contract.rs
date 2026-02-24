@@ -76,3 +76,55 @@ fn falsify_rk_004_reciprocal_rank_bounded() {
         "FALSIFIED RK-004: reciprocal_rank={rr}, expected 0.5"
     );
 }
+
+mod rk_proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// FALSIFY-RK-001-prop: Hit@K is binary for random predictions
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(20))]
+
+        #[test]
+        fn falsify_rk_001_prop_hit_binary(
+            n in 3..=10usize,
+            seed in 0..500u32,
+        ) {
+            let predictions: Vec<usize> = (0..n).map(|i| ((i + seed as usize) % n)).collect();
+            let target = seed as usize % n;
+
+            for k in 1..=n {
+                let h = hit_at_k(&predictions, &target, k);
+                prop_assert!(
+                    h == 0.0 || h == 1.0,
+                    "FALSIFIED RK-001-prop: hit_at_k={} for k={}, expected 0 or 1",
+                    h, k
+                );
+            }
+        }
+    }
+
+    /// FALSIFY-RK-003-prop: NDCG in [0, 1] for random relevance
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(20))]
+
+        #[test]
+        fn falsify_rk_003_prop_ndcg_bounded(
+            n in 3..=8usize,
+            seed in 0..500u32,
+        ) {
+            let relevance: Vec<f32> = (0..n)
+                .map(|i| (((i as f32 + seed as f32) * 0.37).sin().abs() * 5.0).floor())
+                .collect();
+
+            for k in 1..=n {
+                let score = ndcg_at_k(&relevance, k);
+                prop_assert!(
+                    (-0.001..=1.001).contains(&score),
+                    "FALSIFIED RK-003-prop: NDCG@{}={} not in [0,1]",
+                    k, score
+                );
+            }
+        }
+    }
+}

@@ -69,3 +69,56 @@ fn falsify_mcl_003_silhouette_deterministic() {
         "FALSIFIED MCL-003: silhouette scores differ on same input"
     );
 }
+
+mod mcl_proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// FALSIFY-MCL-001-prop: Silhouette score in [-1, 1] for random data
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(15))]
+
+        #[test]
+        fn falsify_mcl_001_prop_silhouette_bounded(
+            seed in 0..200u32,
+        ) {
+            let n = 6;
+            let data: Vec<f32> = (0..n * 2)
+                .map(|i| ((i as f32 + seed as f32) * 0.37).sin() * 10.0)
+                .collect();
+            let matrix = Matrix::from_vec(n, 2, data).expect("valid");
+            let labels: Vec<usize> = (0..n).map(|i| i % 2).collect();
+
+            let score = silhouette_score(&matrix, &labels);
+            prop_assert!(
+                (-1.0..=1.0001).contains(&score),
+                "FALSIFIED MCL-001-prop: silhouette={} not in [-1,1]",
+                score
+            );
+        }
+    }
+
+    /// FALSIFY-MCL-003-prop: Silhouette is deterministic
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(15))]
+
+        #[test]
+        fn falsify_mcl_003_prop_deterministic(
+            seed in 0..200u32,
+        ) {
+            let n = 6;
+            let data: Vec<f32> = (0..n * 2)
+                .map(|i| ((i as f32 + seed as f32) * 0.37).sin() * 10.0)
+                .collect();
+            let matrix = Matrix::from_vec(n, 2, data).expect("valid");
+            let labels: Vec<usize> = (0..n).map(|i| i % 2).collect();
+
+            let s1 = silhouette_score(&matrix, &labels);
+            let s2 = silhouette_score(&matrix, &labels);
+            prop_assert_eq!(
+                s1.to_bits(), s2.to_bits(),
+                "FALSIFIED MCL-003-prop: silhouette differs on same input"
+            );
+        }
+    }
+}

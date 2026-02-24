@@ -63,3 +63,63 @@ fn falsify_dr_003_score_nonneg() {
         );
     }
 }
+
+mod dr_proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// FALSIFY-DR-001-prop: Identical distributions yield NoDrift
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(15))]
+
+        #[test]
+        fn falsify_dr_001_prop_no_drift_identical(
+            n in 20..=50usize,
+            seed in 0..200u32,
+        ) {
+            let data: Vec<f32> = (0..n)
+                .map(|i| ((i as f32 + seed as f32) * 0.37).sin() * 10.0)
+                .collect();
+            let reference = Vector::from_vec(data.clone());
+            let current = Vector::from_vec(data);
+
+            let detector = DriftDetector::new(DriftConfig::default().with_min_samples(10));
+            let status = detector.detect_univariate(&reference, &current);
+            prop_assert!(
+                matches!(status, DriftStatus::NoDrift),
+                "FALSIFIED DR-001-prop: identical data triggered {:?}",
+                status
+            );
+        }
+    }
+
+    /// FALSIFY-DR-003-prop: Drift score is non-negative when present
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(15))]
+
+        #[test]
+        fn falsify_dr_003_prop_score_nonneg(
+            n in 20..=50usize,
+            seed in 0..200u32,
+        ) {
+            let ref_data: Vec<f32> = (0..n)
+                .map(|i| ((i as f32 + seed as f32) * 0.37).sin() * 10.0)
+                .collect();
+            let cur_data: Vec<f32> = (0..n)
+                .map(|i| ((i as f32 + seed as f32) * 0.37).sin() * 10.0 + 50.0)
+                .collect();
+            let reference = Vector::from_vec(ref_data);
+            let current = Vector::from_vec(cur_data);
+
+            let detector = DriftDetector::new(DriftConfig::default().with_min_samples(10));
+            let status = detector.detect_univariate(&reference, &current);
+            if let Some(score) = status.score() {
+                prop_assert!(
+                    score >= 0.0,
+                    "FALSIFIED DR-003-prop: drift score={} < 0",
+                    score
+                );
+            }
+        }
+    }
+}

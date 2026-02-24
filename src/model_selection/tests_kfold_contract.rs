@@ -89,3 +89,59 @@ fn falsify_kf_004_train_test_disjoint() {
         );
     }
 }
+
+mod kf_proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// FALSIFY-KF-001-prop: KFold produces exactly K splits for random K/n
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(20))]
+
+        #[test]
+        fn falsify_kf_001_prop_k_splits(
+            k in 2..=10usize,
+            n in 10..=50usize,
+        ) {
+            let k = k.min(n); // K cannot exceed n
+            let kfold = KFold::new(k);
+            let splits = kfold.split(n);
+            prop_assert_eq!(
+                splits.len(),
+                k,
+                "FALSIFIED KF-001-prop: splits={} != k={}",
+                splits.len(), k
+            );
+        }
+    }
+
+    /// FALSIFY-KF-002-prop: Every sample appears in exactly one test fold
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(20))]
+
+        #[test]
+        fn falsify_kf_002_prop_sample_coverage(
+            k in 2..=5usize,
+            n in 10..=30usize,
+        ) {
+            let k = k.min(n);
+            let kfold = KFold::new(k);
+            let splits = kfold.split(n);
+
+            let mut test_counts = vec![0usize; n];
+            for (_train, test) in &splits {
+                for &idx in test {
+                    test_counts[idx] += 1;
+                }
+            }
+
+            for (i, &count) in test_counts.iter().enumerate() {
+                prop_assert_eq!(
+                    count, 1,
+                    "FALSIFIED KF-002-prop: sample {} appeared {} times",
+                    i, count
+                );
+            }
+        }
+    }
+}

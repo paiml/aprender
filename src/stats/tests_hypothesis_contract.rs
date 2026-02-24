@@ -72,3 +72,49 @@ fn falsify_ht_004_chisq_pvalue_bounded() {
         result.pvalue
     );
 }
+
+mod ht_proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// FALSIFY-HT-001-prop: t-test p-value in [0, 1] for random samples
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(20))]
+
+        #[test]
+        fn falsify_ht_001_prop_pvalue_bounded(
+            n in 5..=20usize,
+            seed in 0..500u32,
+        ) {
+            let sample: Vec<f32> = (0..n)
+                .map(|i| ((i as f32 + seed as f32) * 0.37).sin() * 10.0)
+                .collect();
+            let result = ttest_1samp(&sample, 0.0).expect("valid");
+            prop_assert!(
+                (0.0..=1.0).contains(&result.pvalue),
+                "FALSIFIED HT-001-prop: p-value={} outside [0,1]",
+                result.pvalue
+            );
+        }
+    }
+
+    /// FALSIFY-HT-003-prop: t-statistic is finite for random data
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(20))]
+
+        #[test]
+        fn falsify_ht_003_prop_finite_statistic(
+            n in 5..=20usize,
+            seed in 0..500u32,
+        ) {
+            let sample: Vec<f32> = (0..n)
+                .map(|i| ((i as f32 + seed as f32) * 0.37).sin() * 10.0 + 5.0)
+                .collect();
+            let result = ttest_1samp(&sample, 5.0).expect("valid");
+            prop_assert!(
+                result.statistic.is_finite(),
+                "FALSIFIED HT-003-prop: t-statistic not finite"
+            );
+        }
+    }
+}

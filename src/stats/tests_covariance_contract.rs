@@ -67,3 +67,61 @@ fn falsify_cv_004_covariance_symmetric() {
         "FALSIFIED CV-004: Cov(X,Y)={cov_xy} != Cov(Y,X)={cov_yx}"
     );
 }
+
+mod cv_proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// FALSIFY-CV-002-prop: Correlation bounded in [-1, 1] for random data
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(30))]
+
+        #[test]
+        fn falsify_cv_002_prop_correlation_bounded(
+            n in 3..=20usize,
+            seed in 0..500u32,
+        ) {
+            let x_data: Vec<f32> = (0..n)
+                .map(|i| ((i as f32 + seed as f32) * 0.37).sin() * 10.0)
+                .collect();
+            let y_data: Vec<f32> = (0..n)
+                .map(|i| ((i as f32 + seed as f32 + 1.0) * 0.53).sin() * 10.0)
+                .collect();
+            let x = Vector::from_vec(x_data);
+            let y = Vector::from_vec(y_data);
+            let r = corr(&x, &y).expect("valid");
+            prop_assert!(
+                (-1.0 - 1e-5..=1.0 + 1e-5).contains(&r),
+                "FALSIFIED CV-002-prop: corr={} outside [-1,1]",
+                r
+            );
+        }
+    }
+
+    /// FALSIFY-CV-004-prop: Covariance symmetric for random data
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(30))]
+
+        #[test]
+        fn falsify_cv_004_prop_covariance_symmetric(
+            n in 3..=20usize,
+            seed in 0..500u32,
+        ) {
+            let x_data: Vec<f32> = (0..n)
+                .map(|i| ((i as f32 + seed as f32) * 0.37).sin() * 10.0)
+                .collect();
+            let y_data: Vec<f32> = (0..n)
+                .map(|i| ((i as f32 + seed as f32 + 1.0) * 0.53).sin() * 10.0)
+                .collect();
+            let x = Vector::from_vec(x_data);
+            let y = Vector::from_vec(y_data);
+            let cxy = cov(&x, &y).expect("valid");
+            let cyx = cov(&y, &x).expect("valid");
+            prop_assert!(
+                (cxy - cyx).abs() < 1e-4,
+                "FALSIFIED CV-004-prop: Cov(X,Y)={} != Cov(Y,X)={}",
+                cxy, cyx
+            );
+        }
+    }
+}
