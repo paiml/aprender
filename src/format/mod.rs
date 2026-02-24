@@ -172,6 +172,10 @@ pub mod model_family;
 // Fallback path; build.rs codegen (PMAT-250) is preferred.
 pub mod model_family_loader;
 
+// Special tokens registry contract falsification (FALSIFY-ST-001..006)
+#[cfg(test)]
+mod special_tokens_contract_falsify;
+
 // Digital signatures (spec §4.2, PMAT-198)
 #[cfg(feature = "format-signing")]
 pub mod signing;

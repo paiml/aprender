@@ -1,0 +1,240 @@
+# Special Tokens Registry v1.0.0
+# THE SOURCE OF TRUTH for BOS/EOS/PAD/IM_START/IM_END token IDs per model family
+#
+# Every SpecialTokens constructor in src/demo/mod.rs MUST match this file exactly.
+# Any divergence is a contract violation caught by FALSIFY-ST-001..005.
+#
+# Convention:
+#   - id: 0 means NULL / unused (not a valid special token)
+#   - eos_id is ALWAYS required and non-zero for generative models
+#   - bos_id may be 0 (null) for models that don't use explicit BOS
+#   - im_start_id / im_end_id are 0 for non-ChatML models
+#
+# ENFORCEMENT: src/format/special_tokens_contract_falsify.rs
+# CONSUMERS:
+#   - src/demo/mod.rs (SpecialTokens::qwen2(), etc.)
+#   - src/text/bpe/qwen2.rs (Qwen2BpeTokenizer constants)
+#   - crates/apr-cli/src/commands/benchmark.rs
+#   - crates/apr-cli/src/commands/bench_safetensors.rs
+#   - realizar/src/gguf/ (BOS for parity gate)
+
+metadata:
+  version: "1.0.0"
+  created: "2026-02-24"
+  author: "PAIML Engineering"
+  description: "Special token ID registry per model family"
+  references:
+    - "contracts/model-families/*.yaml (chat_template.special_tokens for string forms)"
+    - "HuggingFace tokenizer_config.json (bos_token_id, eos_token_id fields)"
+    - "PMAT-325: Original gap identification"
+
+# =============================================================================
+# TOKEN REGISTRY
+# =============================================================================
+#
+# Each entry maps a model family to its numeric special token IDs.
+# These IDs are vocabulary indices, NOT Unicode codepoints.
+
+families:
+
+  qwen2:
+    display_name: "Qwen2 / Qwen2.5-Coder"
+    vocab_size: 151936
+    bos_id: 151643        # <|endoftext|>
+    eos_id: 151645        # <|im_end|>
+    pad_id: 151643        # same as BOS
+    im_start_id: 151644   # <|im_start|>
+    im_end_id: 151645     # <|im_end|> (same as EOS)
+    token_strings:
+      bos: "<|endoftext|>"
+      eos: "<|im_end|>"
+      im_start: "<|im_start|>"
+      im_end: "<|im_end|>"
+      endoftext: "<|endoftext|>"
+    notes: "Qwen2/Qwen3 share tokenizer. EOS == im_end."
+
+  qwen3_5:
+    display_name: "Qwen3.5"
+    vocab_size: 248320
+    bos_id: 0             # null in config
+    eos_id: 248044
+    pad_id: 0             # null in config
+    im_start_id: 0        # not documented
+    im_end_id: 0          # not documented
+    notes: "New tokenizer, much larger vocab. BOS/PAD not used."
+
+  llama:
+    display_name: "LLaMA 3 / LLaMA 3.2"
+    vocab_size: 128256
+    bos_id: 128000        # <|begin_of_text|>
+    eos_id: 128001        # <|end_of_text|>
+    pad_id: 128001        # same as EOS (no dedicated PAD)
+    im_start_id: 0        # uses <|eom_id|>=128008, <|eot_id|>=128009 instead
+    im_end_id: 0
+    token_strings:
+      bos: "<|begin_of_text|>"
+      eos: "<|end_of_text|>"
+      start_header_id: "<|start_header_id|>"
+      end_header_id: "<|end_header_id|>"
+      eot_id: "<|eot_id|>"
+    notes: "LLaMA 3 uses header-based chat format, not ChatML."
+
+  mistral:
+    display_name: "Mistral / Mixtral"
+    vocab_size: 32000
+    bos_id: 1             # <s> (SentencePiece BOS)
+    eos_id: 2             # </s> (SentencePiece EOS)
+    pad_id: 0             # null in config
+    im_start_id: 0
+    im_end_id: 0
+    token_strings:
+      bos: "<s>"
+      eos: "</s>"
+    notes: "SentencePiece tokenizer. Standard BOS=1, EOS=2."
+
+  gemma:
+    display_name: "Google Gemma / Gemma 2"
+    vocab_size: 256000
+    bos_id: 2             # <bos>
+    eos_id: 1             # <eos>
+    pad_id: 0             # <pad> = 0
+    im_start_id: 0
+    im_end_id: 0
+    token_strings:
+      bos: "<bos>"
+      eos: "<eos>"
+      pad: "<pad>"
+      start_of_turn: "<start_of_turn>"
+      end_of_turn: "<end_of_turn>"
+    notes: "Note BOS=2, EOS=1 (reversed from SentencePiece convention)."
+
+  deepseek:
+    display_name: "DeepSeek V2/V3"
+    vocab_size: 129280
+    bos_id: 0             # null in config
+    eos_id: 1
+    pad_id: 0             # null in config
+    im_start_id: 0
+    im_end_id: 0
+    notes: "BOS not used. Minimal special tokens."
+
+  phi3:
+    display_name: "Microsoft Phi-3 / Phi-3.5"
+    vocab_size: 32064
+    bos_id: 1
+    eos_id: 32000         # <|endoftext|>
+    pad_id: 32000         # same as EOS
+    im_start_id: 0
+    im_end_id: 0
+    notes: "Phi-3 tokenizer. EOS is at 32000 (just past SentencePiece range)."
+
+  phi2:
+    display_name: "Microsoft Phi-2"
+    vocab_size: 51200
+    bos_id: 0             # null in config
+    eos_id: 50256         # <|endoftext|> (GPT-2 tokenizer)
+    pad_id: 50256         # same as EOS
+    im_start_id: 0
+    im_end_id: 0
+    notes: "GPT-2 tokenizer. No explicit BOS."
+
+  gpt2:
+    display_name: "OpenAI GPT-2"
+    vocab_size: 50257
+    bos_id: 0             # null in config
+    eos_id: 50256         # <|endoftext|>
+    pad_id: 50256         # same as EOS
+    im_start_id: 0
+    im_end_id: 0
+    token_strings:
+      endoftext: "<|endoftext|>"
+    notes: "Original GPT-2 tokenizer. No explicit BOS."
+
+# =============================================================================
+# ARCHITECTURE MAPPING
+# =============================================================================
+#
+# Maps GGUF `general.architecture` strings to family entries above.
+# Used by SpecialTokens::from_architecture() for runtime dispatch.
+
+architecture_mapping:
+  qwen2: qwen2
+  qwen3: qwen2          # shares tokenizer
+  qwen3moe: qwen2       # shares tokenizer
+  qwen3_5: qwen3_5
+  llama: llama
+  mistral: mistral
+  gemma: gemma
+  gemma2: gemma
+  deepseek: deepseek
+  deepseek2: deepseek
+  phi3: phi3
+  phi: phi2
+  phi2: phi2
+  gpt2: gpt2
+
+# =============================================================================
+# INVARIANTS
+# =============================================================================
+
+invariants:
+  - id: ST-001
+    rule: "eos_id < vocab_size for all families"
+    severity: ERROR
+
+  - id: ST-002
+    rule: "bos_id < vocab_size when bos_id > 0"
+    severity: ERROR
+
+  - id: ST-003
+    rule: "pad_id < vocab_size when pad_id > 0"
+    severity: ERROR
+
+  - id: ST-004
+    rule: "im_start_id < vocab_size when im_start_id > 0"
+    severity: ERROR
+
+  - id: ST-005
+    rule: "im_end_id < vocab_size when im_end_id > 0"
+    severity: ERROR
+
+  - id: ST-006
+    rule: "Every architecture_mapping value references a valid families entry"
+    severity: ERROR
+
+  - id: ST-007
+    rule: "SpecialTokens::from_architecture() covers all architecture_mapping keys"
+    severity: ERROR
+
+# =============================================================================
+# FALSIFICATION TESTS
+# =============================================================================
+
+falsification_tests:
+  - id: FALSIFY-ST-001
+    rule: "Rust SpecialTokens constructors match YAML registry"
+    prediction: "For each family, all 5 token IDs in code == YAML"
+    status: "IMPLEMENTED"
+    implementation: "src/format/special_tokens_contract_falsify.rs"
+    if_fails: "Code and YAML diverged — one was updated without the other"
+
+  - id: FALSIFY-ST-002
+    rule: "All token IDs within vocab bounds"
+    prediction: "Non-zero IDs < vocab_size"
+    status: "IMPLEMENTED"
+    implementation: "src/demo/demo_tests.rs::assert_tokens_within_vocab()"
+    if_fails: "Token ID >= vocab_size → embedding lookup OOB crash"
+
+  - id: FALSIFY-ST-003
+    rule: "Architecture mapping is complete"
+    prediction: "SpecialTokens::from_architecture() returns Some for all mapped archs"
+    status: "IMPLEMENTED"
+    implementation: "src/demo/demo_tests.rs::falsify_from_architecture_maps_all_yaml_families"
+    if_fails: "New architecture added to YAML but not to Rust match"
+
+  - id: FALSIFY-ST-004
+    rule: "YAML self-consistency"
+    prediction: "All token IDs in YAML satisfy the invariants section"
+    status: "IMPLEMENTED"
+    implementation: "src/format/special_tokens_contract_falsify.rs"
+    if_fails: "YAML has invalid token ID (>= vocab_size)"
