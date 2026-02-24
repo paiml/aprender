@@ -267,14 +267,19 @@ impl Matrix<f32> {
         }
 
         let n = self.rows;
+        let l = Self::cholesky_factor(self, n)?;
+        let y = Self::forward_substitute(&l, b, n);
+        let x = Self::backward_substitute(&l, &y, n);
 
-        // Cholesky decomposition: A = L * L^T
+        Ok(Vector::from_vec(x))
+    }
+
+    /// Cholesky decomposition: A = L * L^T. Returns lower triangular L as flat vec.
+    fn cholesky_factor(&self, n: usize) -> Result<Vec<f32>, &'static str> {
         let mut l = vec![0.0; n * n];
-
         for i in 0..n {
             for j in 0..=i {
                 let mut sum = 0.0;
-
                 if i == j {
                     for k in 0..j {
                         sum += l[j * n + k] * l[j * n + k];
@@ -292,8 +297,11 @@ impl Matrix<f32> {
                 }
             }
         }
+        Ok(l)
+    }
 
-        // Forward substitution: L * y = b
+    /// Forward substitution: solve L * y = b
+    fn forward_substitute(l: &[f32], b: &Vector<f32>, n: usize) -> Vec<f32> {
         let mut y = vec![0.0; n];
         for i in 0..n {
             let mut sum = 0.0;
@@ -302,8 +310,11 @@ impl Matrix<f32> {
             }
             y[i] = (b[i] - sum) / l[i * n + i];
         }
+        y
+    }
 
-        // Backward substitution: L^T * x = y
+    /// Backward substitution: solve L^T * x = y
+    fn backward_substitute(l: &[f32], y: &[f32], n: usize) -> Vec<f32> {
         let mut x = vec![0.0; n];
         for i in (0..n).rev() {
             let mut sum = 0.0;
@@ -312,11 +323,14 @@ impl Matrix<f32> {
             }
             x[i] = (y[i] - sum) / l[i * n + i];
         }
-
-        Ok(Vector::from_vec(x))
+        x
     }
 }
 
 #[cfg(test)]
 #[path = "matrix_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "tests_matrix_contract.rs"]
+mod tests_matrix_contract;

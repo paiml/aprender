@@ -96,43 +96,51 @@ impl Family {
         }
     }
 
+    /// Returns the family name for error messages.
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Poisson => "Poisson",
+            Self::NegativeBinomial => "Negative Binomial",
+            Self::Gamma => "Gamma",
+            Self::Binomial => "Binomial",
+        }
+    }
+
+    /// Returns whether a single response value is valid for this family.
+    fn is_valid_response(self, val: f32) -> bool {
+        match self {
+            Self::Poisson | Self::NegativeBinomial => val >= 0.0,
+            Self::Gamma => val > 0.0,
+            Self::Binomial => (0.0..=1.0).contains(&val),
+        }
+    }
+
+    /// Returns the constraint description for error messages.
+    const fn constraint_description(self) -> &'static str {
+        match self {
+            Self::Poisson | Self::NegativeBinomial => "non-negative counts",
+            Self::Gamma => "positive values",
+            Self::Binomial => "values in [0,1]",
+        }
+    }
+
+    /// Clamps μ to valid ranges for this family after inverse-link.
+    fn clamp_mu(self, mu_raw: f32) -> f32 {
+        match self {
+            Self::Poisson | Self::NegativeBinomial | Self::Gamma => mu_raw.max(1e-6),
+            Self::Binomial => mu_raw.clamp(1e-6, 1.0 - 1e-6),
+        }
+    }
+
     /// Validates that y values are appropriate for this family.
     fn validate_response(self, y: &Vector<f32>) -> Result<()> {
-        match self {
-            Self::Poisson | Self::NegativeBinomial => {
-                // Must be non-negative counts
-                for &val in y.as_slice() {
-                    if val < 0.0 {
-                        let family_name = if matches!(self, Self::Poisson) {
-                            "Poisson"
-                        } else {
-                            "Negative Binomial"
-                        };
-                        return Err(AprenderError::Other(format!(
-                            "{family_name} requires non-negative counts, got {val}"
-                        )));
-                    }
-                }
-            }
-            Self::Gamma => {
-                // Must be positive
-                for &val in y.as_slice() {
-                    if val <= 0.0 {
-                        return Err(AprenderError::Other(format!(
-                            "Gamma requires positive values, got {val}"
-                        )));
-                    }
-                }
-            }
-            Self::Binomial => {
-                // Must be in [0, 1]
-                for &val in y.as_slice() {
-                    if !(0.0..=1.0).contains(&val) {
-                        return Err(AprenderError::Other(format!(
-                            "Binomial requires values in [0,1], got {val}"
-                        )));
-                    }
-                }
+        for &val in y.as_slice() {
+            if !self.is_valid_response(val) {
+                return Err(AprenderError::Other(format!(
+                    "{} requires {}, got {val}",
+                    self.name(),
+                    self.constraint_description(),
+                )));
             }
         }
         Ok(())
@@ -271,9 +279,7 @@ impl GLM {
     /// # Returns
     ///
     /// `Ok(())` on successful convergence, error otherwise
-    #[allow(clippy::needless_range_loop)]
-    #[allow(clippy::too_many_lines)] // IRLS algorithm requires many steps
-                                     // Contract: glm-v1, equation = "irls_fit"
+    // Contract: glm-v1, equation = "irls_fit"
     pub fn fit(&mut self, x: &Matrix<f32>, y: &Vector<f32>) -> Result<()> {
         let n = x.n_rows();
         let p = x.n_cols();
@@ -289,153 +295,17 @@ impl GLM {
         // Validate response values for family
         self.family.validate_response(y)?;
 
-        // Initialize coefficients to zero
-        let mut beta = vec![0.0_f32; p];
-
-        // Initialize intercept and eta based on response mean
-        let y_mean = y.as_slice().iter().sum::<f32>() / n as f32;
-        let y_mean_safe = y_mean.clamp(0.01, 0.99); // Avoid extreme values
-        let mut intercept = self.link.link(y_mean_safe);
-
-        // Initialize linear predictor η
-        let mut eta = vec![intercept; n];
+        // Initialize IRLS state from response mean
+        let (mut beta, mut intercept, mut eta) = self.initialize_irls(y, n, p);
 
         // IRLS algorithm
         for _iter in 0..self.max_iter {
-            // Compute μ = g⁻¹(η) and clamp to valid ranges
-            let mu: Vec<f32> = eta
-                .iter()
-                .map(|&e| {
-                    let mu_raw = self.link.inverse_link(e);
-                    // Clamp mu to reasonable ranges based on family
-                    match self.family {
-                        Family::Poisson | Family::NegativeBinomial | Family::Gamma => {
-                            mu_raw.max(1e-6) // Must be positive
-                        }
-                        Family::Binomial => mu_raw.clamp(1e-6, 1.0 - 1e-6), // Must be in (0,1)
-                    }
-                })
-                .collect();
+            let (beta_new, intercept_new, eta_new, max_change) =
+                self.irls_iteration(x, y, &beta, intercept, &eta, n, p)?;
 
-            // Compute working response z = η + (y - μ) * g'(η)
-            let mut z = Vec::with_capacity(n);
-            for i in 0..n {
-                let deriv = self.link.derivative(eta[i]);
-                z.push(eta[i] + (y[i] - mu[i]) * deriv);
-            }
-
-            // Compute weights W = 1 / (V(μ) * [g'(η)]²)
-            let mut weights = Vec::with_capacity(n);
-            for i in 0..n {
-                let var = self.family.variance(mu[i], self.dispersion).max(1e-10); // Avoid zero variance
-                let deriv = self.link.derivative(eta[i]);
-                let weight = 1.0 / (var * deriv * deriv + 1e-10); // Add epsilon for stability
-                                                                  // Clamp weights to reasonable range to avoid numerical issues
-                let weight_clamped = weight.clamp(1e-6, 1e6);
-                weights.push(weight_clamped);
-            }
-
-            // Weighted least squares: solve (X'WX + εI)β = X'Wz for numerical stability
-            // Build augmented design matrix [1 X] to include intercept
-            let mut x_aug_data = Vec::with_capacity(n * (p + 1));
-            for i in 0..n {
-                x_aug_data.push(1.0); // Intercept column
-                for j in 0..p {
-                    x_aug_data.push(x.get(i, j));
-                }
-            }
-            let x_aug = Matrix::from_vec(n, p + 1, x_aug_data)
-                .map_err(|e| AprenderError::Other(format!("Augmented matrix error: {e}")))?;
-
-            // Compute X'W
-            let mut xtw_data = Vec::with_capacity((p + 1) * n);
-            for j in 0..=p {
-                for i in 0..n {
-                    xtw_data.push(x_aug.get(i, j) * weights[i].sqrt());
-                }
-            }
-            let xtw = Matrix::from_vec(p + 1, n, xtw_data)
-                .map_err(|e| AprenderError::Other(format!("X'W matrix error: {e}")))?;
-
-            // Compute W^(1/2) X (for normal equations)
-            let mut wx_data = Vec::with_capacity(n * (p + 1));
-            for i in 0..n {
-                for j in 0..=p {
-                    wx_data.push(weights[i].sqrt() * x_aug.get(i, j));
-                }
-            }
-            let wx = Matrix::from_vec(n, p + 1, wx_data)
-                .map_err(|e| AprenderError::Other(format!("WX matrix error: {e}")))?;
-
-            // Compute W^(1/2) z
-            let wz = z
-                .iter()
-                .enumerate()
-                .map(|(i, &zi)| weights[i].sqrt() * zi)
-                .collect::<Vec<_>>();
-            let wz_vec = Vector::from_vec(wz);
-
-            // Solve (X'WX)β_aug = X'Wz using normal equations
-            // (W^(1/2)X)' (W^(1/2)X) β_aug = (W^(1/2)X)' W^(1/2)z
-            let mut xtwx = xtw
-                .matmul(&wx)
-                .map_err(|e| AprenderError::Other(format!("X'WX computation failed: {e}")))?;
-            let xtwz = xtw
-                .matvec(&wz_vec)
-                .map_err(|e| AprenderError::Other(format!("X'Wz computation failed: {e}")))?;
-
-            // Add ridge regularization: X'WX + λI for numerical stability
-            // This ensures positive definiteness for Cholesky decomposition
-            // Scale ridge based on diagonal magnitude
-            let max_diag = (0..=p)
-                .map(|i| xtwx.get(i, i).abs())
-                .fold(0.0_f32, f32::max);
-            let ridge = (max_diag * 1e-6).max(1e-8); // Larger adaptive ridge for stability
-            for i in 0..=p {
-                let old_val = xtwx.get(i, i);
-                xtwx.set(i, i, old_val + ridge);
-            }
-
-            // Solve with Cholesky
-            let beta_aug = xtwx
-                .cholesky_solve(&xtwz)
-                .map_err(|e| AprenderError::Other(format!("Cholesky solve failed: {e}")))?;
-
-            // Extract intercept and coefficients
-            let intercept_new = beta_aug[0];
-            let beta_new = beta_aug.as_slice()[1..].to_vec();
-
-            // Step damping for log link to prevent divergence
-            // Log link can cause numerical instability regardless of family
-            let step_size = match self.link {
-                Link::Log => 0.5, // Damped steps for log link
-                _ => 1.0,         // Full steps for other links
-            };
-
-            let intercept_damped = intercept + step_size * (intercept_new - intercept);
-            let beta_damped: Vec<f32> = beta
-                .iter()
-                .zip(&beta_new)
-                .map(|(old, new)| old + step_size * (new - old))
-                .collect();
-
-            // Update linear predictor with damped steps
-            for i in 0..n {
-                let mut new_eta = intercept_damped;
-                for j in 0..p {
-                    new_eta += x.get(i, j) * beta_damped[j];
-                }
-                eta[i] = new_eta;
-            }
-
-            // Check convergence
-            let mut max_change = (intercept_damped - intercept).abs();
-            for j in 0..p {
-                max_change = max_change.max((beta_damped[j] - beta[j]).abs());
-            }
-
-            beta = beta_damped;
-            intercept = intercept_damped;
+            beta = beta_new;
+            intercept = intercept_new;
+            eta = eta_new;
 
             if max_change < self.tol {
                 self.coefficients = Some(beta);
@@ -448,6 +318,101 @@ impl GLM {
             "GLM IRLS did not converge in {} iterations",
             self.max_iter
         )))
+    }
+
+    /// Initializes IRLS state: coefficients (zero), intercept (from y mean), and linear predictor.
+    fn initialize_irls(
+        &self,
+        y: &Vector<f32>,
+        n: usize,
+        p: usize,
+    ) -> (Vec<f32>, f32, Vec<f32>) {
+        let beta = vec![0.0_f32; p];
+        let y_mean = y.as_slice().iter().sum::<f32>() / n as f32;
+        let y_mean_safe = y_mean.clamp(0.01, 0.99); // Avoid extreme values
+        let intercept = self.link.link(y_mean_safe);
+        let eta = vec![intercept; n];
+        (beta, intercept, eta)
+    }
+
+    /// Performs one IRLS iteration.
+    ///
+    /// Returns (new_beta, new_intercept, new_eta, max_change).
+    #[allow(clippy::needless_range_loop)]
+    fn irls_iteration(
+        &self,
+        x: &Matrix<f32>,
+        y: &Vector<f32>,
+        beta: &[f32],
+        intercept: f32,
+        eta: &[f32],
+        n: usize,
+        p: usize,
+    ) -> Result<(Vec<f32>, f32, Vec<f32>, f32)> {
+        // Compute μ = g⁻¹(η) and clamp to valid ranges
+        let mu: Vec<f32> = eta
+            .iter()
+            .map(|&e| self.family.clamp_mu(self.link.inverse_link(e)))
+            .collect();
+
+        // Compute working response z and weights W
+        let (z, weights) = self.compute_working_response_and_weights(y, &mu, eta, n);
+
+        // Solve weighted least squares for new coefficients
+        let beta_aug = solve_weighted_least_squares(x, &weights, &z, n, p)?;
+
+        // Extract intercept and coefficients, apply damping
+        let intercept_new = beta_aug[0];
+        let beta_new = &beta_aug.as_slice()[1..];
+        let step_size = self.damping_factor();
+
+        let intercept_damped = intercept + step_size * (intercept_new - intercept);
+        let beta_damped: Vec<f32> = beta
+            .iter()
+            .zip(beta_new)
+            .map(|(old, new)| old + step_size * (new - old))
+            .collect();
+
+        // Update linear predictor with damped steps
+        let eta_new = compute_linear_predictor(x, &beta_damped, intercept_damped, n, p);
+
+        // Check convergence: max absolute change in any coefficient
+        let max_change = compute_max_change(beta, &beta_damped, intercept, intercept_damped);
+
+        Ok((beta_damped, intercept_damped, eta_new, max_change))
+    }
+
+    /// Computes working response z and IRLS weights for one iteration.
+    ///
+    /// z_i = η_i + (y_i - μ_i) * g'(η_i)
+    /// w_i = clamp(1 / (V(μ_i) * [g'(η_i)]² + ε))
+    #[allow(clippy::needless_range_loop)]
+    fn compute_working_response_and_weights(
+        &self,
+        y: &Vector<f32>,
+        mu: &[f32],
+        eta: &[f32],
+        n: usize,
+    ) -> (Vec<f32>, Vec<f32>) {
+        let mut z = Vec::with_capacity(n);
+        let mut weights = Vec::with_capacity(n);
+        for i in 0..n {
+            let deriv = self.link.derivative(eta[i]);
+            z.push(eta[i] + (y[i] - mu[i]) * deriv);
+
+            let var = self.family.variance(mu[i], self.dispersion).max(1e-10);
+            let weight = 1.0 / (var * deriv * deriv + 1e-10);
+            weights.push(weight.clamp(1e-6, 1e6));
+        }
+        (z, weights)
+    }
+
+    /// Returns the step damping factor. Log link uses 0.5 to prevent divergence.
+    fn damping_factor(&self) -> f32 {
+        match self.link {
+            Link::Log => 0.5,
+            _ => 1.0,
+        }
     }
 
     /// Predicts mean response for test data.
@@ -487,6 +452,140 @@ impl GLM {
     }
 }
 
+/// Solves the weighted least squares sub-problem: (X'WX + λI)β = X'Wz.
+///
+/// Builds the augmented design matrix [1|X], applies W^{1/2} weighting,
+/// adds adaptive ridge regularization, and solves via Cholesky decomposition.
+#[allow(clippy::needless_range_loop)]
+fn solve_weighted_least_squares(
+    x: &Matrix<f32>,
+    weights: &[f32],
+    z: &[f32],
+    n: usize,
+    p: usize,
+) -> Result<Vector<f32>> {
+    // Build augmented design matrix [1 X] to include intercept
+    let x_aug = build_augmented_matrix(x, n, p)?;
+
+    // Compute W^(1/2) * X_aug (two layouts needed for normal equations)
+    let xtw = build_xtw(&x_aug, weights, n, p)?;
+    let wx = build_wx(&x_aug, weights, n, p)?;
+
+    // Compute W^(1/2) z
+    let wz: Vec<f32> = z
+        .iter()
+        .enumerate()
+        .map(|(i, &zi)| weights[i].sqrt() * zi)
+        .collect();
+    let wz_vec = Vector::from_vec(wz);
+
+    // Normal equations: (W^(1/2)X)' (W^(1/2)X) β = (W^(1/2)X)' W^(1/2)z
+    let mut xtwx = xtw
+        .matmul(&wx)
+        .map_err(|e| AprenderError::Other(format!("X'WX computation failed: {e}")))?;
+    let xtwz = xtw
+        .matvec(&wz_vec)
+        .map_err(|e| AprenderError::Other(format!("X'Wz computation failed: {e}")))?;
+
+    // Adaptive ridge regularization: X'WX + λI for positive definiteness
+    add_ridge_regularization(&mut xtwx, p);
+
+    xtwx.cholesky_solve(&xtwz)
+        .map_err(|e| AprenderError::Other(format!("Cholesky solve failed: {e}")))
+}
+
+/// Builds the augmented design matrix [1|X] with an intercept column.
+#[allow(clippy::needless_range_loop)]
+fn build_augmented_matrix(x: &Matrix<f32>, n: usize, p: usize) -> Result<Matrix<f32>> {
+    let mut data = Vec::with_capacity(n * (p + 1));
+    for i in 0..n {
+        data.push(1.0);
+        for j in 0..p {
+            data.push(x.get(i, j));
+        }
+    }
+    Matrix::from_vec(n, p + 1, data)
+        .map_err(|e| AprenderError::Other(format!("Augmented matrix error: {e}")))
+}
+
+/// Builds X'W^{1/2} matrix (transposed layout for left side of normal equations).
+#[allow(clippy::needless_range_loop)]
+fn build_xtw(x_aug: &Matrix<f32>, weights: &[f32], n: usize, p: usize) -> Result<Matrix<f32>> {
+    let mut data = Vec::with_capacity((p + 1) * n);
+    for j in 0..=p {
+        for i in 0..n {
+            data.push(x_aug.get(i, j) * weights[i].sqrt());
+        }
+    }
+    Matrix::from_vec(p + 1, n, data)
+        .map_err(|e| AprenderError::Other(format!("X'W matrix error: {e}")))
+}
+
+/// Builds W^{1/2}X matrix (weighted design matrix for right side of normal equations).
+#[allow(clippy::needless_range_loop)]
+fn build_wx(x_aug: &Matrix<f32>, weights: &[f32], n: usize, p: usize) -> Result<Matrix<f32>> {
+    let mut data = Vec::with_capacity(n * (p + 1));
+    for i in 0..n {
+        for j in 0..=p {
+            data.push(weights[i].sqrt() * x_aug.get(i, j));
+        }
+    }
+    Matrix::from_vec(n, p + 1, data)
+        .map_err(|e| AprenderError::Other(format!("WX matrix error: {e}")))
+}
+
+/// Adds adaptive ridge regularization λI to X'WX for numerical stability.
+///
+/// Ridge λ = max(max_diagonal * 1e-6, 1e-8) ensures positive definiteness.
+fn add_ridge_regularization(xtwx: &mut Matrix<f32>, p: usize) {
+    let max_diag = (0..=p)
+        .map(|i| xtwx.get(i, i).abs())
+        .fold(0.0_f32, f32::max);
+    let ridge = (max_diag * 1e-6).max(1e-8);
+    for i in 0..=p {
+        let old_val = xtwx.get(i, i);
+        xtwx.set(i, i, old_val + ridge);
+    }
+}
+
+/// Computes the linear predictor η = Xβ + β₀.
+#[allow(clippy::needless_range_loop)]
+fn compute_linear_predictor(
+    x: &Matrix<f32>,
+    beta: &[f32],
+    intercept: f32,
+    n: usize,
+    p: usize,
+) -> Vec<f32> {
+    let mut eta = Vec::with_capacity(n);
+    for i in 0..n {
+        let mut val = intercept;
+        for j in 0..p {
+            val += x.get(i, j) * beta[j];
+        }
+        eta.push(val);
+    }
+    eta
+}
+
+/// Computes the maximum absolute change across all coefficients and intercept.
+fn compute_max_change(
+    beta_old: &[f32],
+    beta_new: &[f32],
+    intercept_old: f32,
+    intercept_new: f32,
+) -> f32 {
+    let mut max_change = (intercept_new - intercept_old).abs();
+    for (old, new) in beta_old.iter().zip(beta_new) {
+        max_change = max_change.max((new - old).abs());
+    }
+    max_change
+}
+
 #[cfg(test)]
 #[path = "glm_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "tests_glm_contract.rs"]
+mod tests_glm_contract;

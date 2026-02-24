@@ -383,20 +383,103 @@ impl ICA {
         Ok((eigenvalue, Vector::from_vec(v)))
     }
 
+    /// Single fixed-point iteration step for one ICA component.
+    ///
+    /// Computes w_new from the current w using the tanh nonlinearity,
+    /// orthogonalizes against previously extracted components (Gram-Schmidt),
+    /// normalizes, and checks convergence.
+    ///
+    /// Returns `Ok((w_new, converged))` on success.
+    #[allow(clippy::similar_names)]
+    #[allow(clippy::needless_range_loop)]
+    fn fastica_iteration_step(
+        x_white: &Matrix<f32>,
+        w: &[f32],
+        w_vectors: &[f32],
+        comp: usize,
+        tol: f32,
+    ) -> Result<(Vec<f32>, bool)> {
+        let n = x_white.n_rows();
+        let p = x_white.n_cols();
+
+        // Compute w^T X^T for all samples
+        let mut wtx = vec![0.0_f32; n];
+        for i in 0..n {
+            let mut sum = 0.0;
+            for j in 0..p {
+                sum += w[j] * x_white.get(i, j);
+            }
+            wtx[i] = sum;
+        }
+
+        // E[X g(w^T X)] where g = tanh
+        let mut ex_g = vec![0.0_f32; p];
+        for j in 0..p {
+            let mut sum = 0.0;
+            for i in 0..n {
+                let g = wtx[i].tanh();
+                sum += x_white.get(i, j) * g;
+            }
+            ex_g[j] = sum / n as f32;
+        }
+
+        // E[g'(w^T X)] where g' = 1 - tanh^2
+        let mut eg_prime = 0.0;
+        for i in 0..n {
+            let tanh_val = wtx[i].tanh();
+            eg_prime += 1.0 - tanh_val * tanh_val;
+        }
+        eg_prime /= n as f32;
+
+        // w_new = E[X g(w^T X)] - E[g'(w^T X)] w
+        let mut w_new = vec![0.0_f32; p];
+        for j in 0..p {
+            w_new[j] = ex_g[j] - eg_prime * w[j];
+        }
+
+        // Orthogonalize against previous components (Gram-Schmidt deflation)
+        for prev_comp in 0..comp {
+            let mut dot = 0.0;
+            for j in 0..p {
+                dot += w_new[j] * w_vectors[prev_comp * p + j];
+            }
+            for j in 0..p {
+                w_new[j] -= dot * w_vectors[prev_comp * p + j];
+            }
+        }
+
+        // Normalize
+        let norm = (w_new.iter().map(|x| x * x).sum::<f32>()).sqrt();
+        if norm < 1e-10 {
+            return Err(AprenderError::Other(
+                "FastICA failed: w converged to zero".into(),
+            ));
+        }
+        for val in &mut w_new {
+            *val /= norm;
+        }
+
+        // Check convergence: |1 - |w · w_new|| < tol
+        let mut dot = 0.0;
+        for j in 0..p {
+            dot += w[j] * w_new[j];
+        }
+        let converged = (1.0 - dot.abs()) < tol;
+
+        Ok((w_new, converged))
+    }
+
     /// `FastICA` algorithm to find unmixing matrix.
     ///
     /// Uses deflation approach with tanh nonlinearity.
-    #[allow(clippy::similar_names)]
-    #[allow(clippy::needless_range_loop)]
     fn fastica(&self, x_white: &Matrix<f32>) -> Result<Matrix<f32>> {
-        let n = x_white.n_rows();
         let p = x_white.n_cols(); // Should equal n_components after whitening
 
         let mut w_vectors = Vec::with_capacity(p * p);
 
         // Deflation: extract components one by one
         for comp in 0..p {
-            // Initialize w randomly (simple: use component index for determinism)
+            // Initialize w deterministically using component index
             let mut w = vec![0.0_f32; p];
             w[comp % p] = 1.0;
 
@@ -408,75 +491,12 @@ impl ICA {
 
             // Fixed-point iteration
             for _iter in 0..self.max_iter {
-                // Compute w^T X^T for all samples
-                let mut wtx = vec![0.0_f32; n];
-                for i in 0..n {
-                    let mut sum = 0.0;
-                    for j in 0..p {
-                        sum += w[j] * x_white.get(i, j);
-                    }
-                    wtx[i] = sum;
-                }
-
-                // E[X g(w^T X)] where g = tanh
-                let mut ex_g = vec![0.0_f32; p];
-                for j in 0..p {
-                    let mut sum = 0.0;
-                    for i in 0..n {
-                        let g = wtx[i].tanh(); // g(w^T x)
-                        sum += x_white.get(i, j) * g;
-                    }
-                    ex_g[j] = sum / n as f32;
-                }
-
-                // E[g'(w^T X)] where g' = 1 - tanh^2
-                let mut eg_prime = 0.0;
-                for i in 0..n {
-                    let tanh_val = wtx[i].tanh();
-                    eg_prime += 1.0 - tanh_val * tanh_val;
-                }
-                eg_prime /= n as f32;
-
-                // w_new = E[X g(w^T X)] - E[g'(w^T X)] w
-                let mut w_new = vec![0.0_f32; p];
-                for j in 0..p {
-                    w_new[j] = ex_g[j] - eg_prime * w[j];
-                }
-
-                // Orthogonalize against previous components
-                for prev_comp in 0..comp {
-                    let mut dot = 0.0;
-                    for j in 0..p {
-                        dot += w_new[j] * w_vectors[prev_comp * p + j];
-                    }
-                    for j in 0..p {
-                        w_new[j] -= dot * w_vectors[prev_comp * p + j];
-                    }
-                }
-
-                // Normalize
-                let norm = (w_new.iter().map(|x| x * x).sum::<f32>()).sqrt();
-                if norm < 1e-10 {
-                    return Err(AprenderError::Other(
-                        "FastICA failed: w converged to zero".into(),
-                    ));
-                }
-                for val in &mut w_new {
-                    *val /= norm;
-                }
-
-                // Check convergence
-                let mut dot = 0.0;
-                for j in 0..p {
-                    dot += w[j] * w_new[j];
-                }
-
-                if (1.0 - dot.abs()) < self.tol {
-                    w = w_new;
+                let (w_new, converged) =
+                    Self::fastica_iteration_step(x_white, &w, &w_vectors, comp, self.tol)?;
+                w = w_new;
+                if converged {
                     break;
                 }
-
-                w = w_new;
             }
 
             // Store this component
@@ -492,3 +512,7 @@ impl ICA {
 #[cfg(test)]
 #[path = "ica_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "tests_ica_contract.rs"]
+mod tests_ica_contract;

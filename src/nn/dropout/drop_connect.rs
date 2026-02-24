@@ -40,6 +40,50 @@ impl DropBlock {
     pub fn p(&self) -> f32 {
         self.p
     }
+
+    /// Create a block dropout mask by sampling block centers and zeroing rectangular regions.
+    fn create_block_mask(
+        rng: &mut impl rand::Rng,
+        n: usize,
+        c: usize,
+        h: usize,
+        w: usize,
+        block_size: usize,
+        gamma: f32,
+    ) -> Vec<f32> {
+        let mut mask = vec![1.0_f32; n * c * h * w];
+        let plane_size = h * w;
+        for batch in 0..n {
+            for ch in 0..c {
+                let base = batch * c * plane_size + ch * plane_size;
+                Self::sample_block_centers(rng, &mut mask, base, h, w, block_size, gamma);
+            }
+        }
+        mask
+    }
+
+    /// Sample block centers for one spatial plane and zero the block regions.
+    fn sample_block_centers(
+        rng: &mut impl rand::Rng,
+        mask: &mut [f32],
+        base: usize,
+        h: usize,
+        w: usize,
+        block_size: usize,
+        gamma: f32,
+    ) {
+        for i in 0..(h - block_size + 1) {
+            for j in 0..(w - block_size + 1) {
+                if rng.random::<f32>() < gamma {
+                    for bi in 0..block_size {
+                        for bj in 0..block_size {
+                            mask[base + (i + bi) * w + (j + bj)] = 0.0;
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 impl Module for DropBlock {
@@ -55,44 +99,19 @@ impl Module for DropBlock {
 
         let shape = input.shape();
         if shape.len() != 4 {
-            // Not 4D (N, C, H, W), fall back to regular dropout
             return apply_dropout(input, self.p, &self.rng);
         }
 
         let (n, c, h, w) = (shape[0], shape[1], shape[2], shape[3]);
         let block_size = self.block_size.min(h).min(w);
-
-        // Compute gamma (probability of dropping a center point)
         let gamma = self.p / (block_size * block_size) as f32 * (h * w) as f32
             / ((h - block_size + 1) * (w - block_size + 1)) as f32;
 
         let mut rng = self.rng.lock().expect("DropBlock RNG lock");
-        let mut mask = vec![1.0_f32; n * c * h * w];
+        let mask = Self::create_block_mask(&mut rng, n, c, h, w, block_size, gamma);
 
-        // Sample block centers and create mask
-        for batch in 0..n {
-            for ch in 0..c {
-                for i in 0..(h - block_size + 1) {
-                    for j in 0..(w - block_size + 1) {
-                        if rng.random::<f32>() < gamma {
-                            // Drop block
-                            for bi in 0..block_size {
-                                for bj in 0..block_size {
-                                    let idx =
-                                        batch * c * h * w + ch * h * w + (i + bi) * w + (j + bj);
-                                    mask[idx] = 0.0;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Normalize by keep ratio
         let kept: f32 = mask.iter().sum();
-        let total = mask.len() as f32;
-        let norm = total / kept.max(1.0);
+        let norm = (mask.len() as f32) / kept.max(1.0);
 
         let data: Vec<f32> = input
             .data()
@@ -278,3 +297,7 @@ fn apply_dropout(input: &Tensor, p: f32, rng: &Mutex<StdRng>) -> Tensor {
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "tests_dropout_contract.rs"]
+mod tests_dropout_contract;

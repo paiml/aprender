@@ -205,6 +205,74 @@ impl ConjugateGradient {
         }
         sum.sqrt()
     }
+
+    /// Returns the negated gradient as the steepest descent direction.
+    fn steepest_descent(grad: &Vector<f32>, n: usize) -> Vector<f32> {
+        let mut d = Vector::zeros(n);
+        for i in 0..n {
+            d[i] = -grad[i];
+        }
+        d
+    }
+
+    /// Computes the conjugate search direction for the current iteration.
+    ///
+    /// On the first iteration (no previous state), returns steepest descent.
+    /// On subsequent iterations, computes the conjugate direction using β,
+    /// with automatic restart when:
+    /// - The periodic restart interval is hit
+    /// - The computed direction is not a descent direction (grad^T d >= 0)
+    fn compute_search_direction(&self, grad: &Vector<f32>, n: usize) -> Vector<f32> {
+        let (d_old, g_old) = match (&self.prev_direction, &self.prev_gradient) {
+            (Some(d), Some(g)) => (d, g),
+            _ => return Self::steepest_descent(grad, n),
+        };
+
+        // Check if periodic restart is needed
+        if self.restart_interval > 0 && self.iter_count % self.restart_interval == 0 {
+            return Self::steepest_descent(grad, n);
+        }
+
+        // Compute beta and conjugate direction: d = -grad + beta * d_old
+        let beta = self.compute_beta(grad, g_old, d_old);
+        let mut d_new = Vector::zeros(n);
+        for i in 0..n {
+            d_new[i] = -grad[i] + beta * d_old[i];
+        }
+
+        // Verify descent direction (grad^T d < 0); restart if not
+        let mut grad_dot_d = 0.0;
+        for i in 0..n {
+            grad_dot_d += grad[i] * d_new[i];
+        }
+        if grad_dot_d >= 0.0 {
+            return Self::steepest_descent(grad, n);
+        }
+
+        d_new
+    }
+
+    /// Builds an `OptimizationResult` with the given parameters.
+    ///
+    /// `constraint_violation` is always 0.0 for unconstrained CG.
+    fn make_result(
+        solution: Vector<f32>,
+        objective_value: f32,
+        iterations: usize,
+        status: ConvergenceStatus,
+        gradient_norm: f32,
+        elapsed_time: std::time::Duration,
+    ) -> OptimizationResult {
+        OptimizationResult {
+            solution,
+            objective_value,
+            iterations,
+            status,
+            gradient_norm,
+            constraint_violation: 0.0,
+            elapsed_time,
+        }
+    }
 }
 
 impl Optimizer for ConjugateGradient {
@@ -214,7 +282,6 @@ impl Optimizer for ConjugateGradient {
         )
     }
 
-    #[allow(clippy::too_many_lines)]
     // Contract: optimization-v1, equation = "cg_minimize"
     fn minimize<F, G>(&mut self, objective: F, gradient: G, x0: Vector<f32>) -> OptimizationResult
     where
@@ -237,82 +304,22 @@ impl Optimizer for ConjugateGradient {
         for iter in 0..self.max_iter {
             // Check convergence
             if grad_norm < self.tol {
-                return OptimizationResult {
-                    solution: x,
-                    objective_value: fx,
-                    iterations: iter,
-                    status: ConvergenceStatus::Converged,
-                    gradient_norm: grad_norm,
-                    constraint_violation: 0.0,
-                    elapsed_time: start_time.elapsed(),
-                };
+                return Self::make_result(
+                    x, fx, iter, ConvergenceStatus::Converged, grad_norm, start_time.elapsed(),
+                );
             }
 
-            // Compute search direction
-            let d = if let (Some(d_old), Some(g_old)) = (&self.prev_direction, &self.prev_gradient)
-            {
-                // Check if we need to restart
-                let need_restart = if self.restart_interval > 0 {
-                    self.iter_count % self.restart_interval == 0
-                } else {
-                    false
-                };
-
-                if need_restart {
-                    // Restart with steepest descent
-                    let mut d_new = Vector::zeros(n);
-                    for i in 0..n {
-                        d_new[i] = -grad[i];
-                    }
-                    d_new
-                } else {
-                    // Compute beta and conjugate direction
-                    let beta = self.compute_beta(&grad, g_old, d_old);
-
-                    // d = -grad + beta * d_old
-                    let mut d_new = Vector::zeros(n);
-                    for i in 0..n {
-                        d_new[i] = -grad[i] + beta * d_old[i];
-                    }
-
-                    // Check if direction is descent (grad^T d < 0)
-                    let mut grad_dot_d = 0.0;
-                    for i in 0..n {
-                        grad_dot_d += grad[i] * d_new[i];
-                    }
-
-                    if grad_dot_d >= 0.0 {
-                        // Not a descent direction - restart with steepest descent
-                        for i in 0..n {
-                            d_new[i] = -grad[i];
-                        }
-                    }
-
-                    d_new
-                }
-            } else {
-                // First iteration: use steepest descent
-                let mut d_new = Vector::zeros(n);
-                for i in 0..n {
-                    d_new[i] = -grad[i];
-                }
-                d_new
-            };
+            // Compute search direction (delegates restart/conjugacy logic)
+            let d = self.compute_search_direction(&grad, n);
 
             // Line search
             let alpha = self.line_search.search(&objective, &gradient, &x, &d);
 
             // Check for stalled progress
             if alpha < 1e-12 {
-                return OptimizationResult {
-                    solution: x,
-                    objective_value: fx,
-                    iterations: iter,
-                    status: ConvergenceStatus::Stalled,
-                    gradient_norm: grad_norm,
-                    constraint_violation: 0.0,
-                    elapsed_time: start_time.elapsed(),
-                };
+                return Self::make_result(
+                    x, fx, iter, ConvergenceStatus::Stalled, grad_norm, start_time.elapsed(),
+                );
             }
 
             // Update position: x_new = x + alpha * d
@@ -327,15 +334,9 @@ impl Optimizer for ConjugateGradient {
 
             // Check for numerical errors
             if fx_new.is_nan() || fx_new.is_infinite() {
-                return OptimizationResult {
-                    solution: x,
-                    objective_value: fx,
-                    iterations: iter,
-                    status: ConvergenceStatus::NumericalError,
-                    gradient_norm: grad_norm,
-                    constraint_violation: 0.0,
-                    elapsed_time: start_time.elapsed(),
-                };
+                return Self::make_result(
+                    x, fx, iter, ConvergenceStatus::NumericalError, grad_norm, start_time.elapsed(),
+                );
             }
 
             // Store current direction and gradient for next iteration
@@ -351,15 +352,9 @@ impl Optimizer for ConjugateGradient {
         }
 
         // Max iterations reached
-        OptimizationResult {
-            solution: x,
-            objective_value: fx,
-            iterations: self.max_iter,
-            status: ConvergenceStatus::MaxIterations,
-            gradient_norm: grad_norm,
-            constraint_violation: 0.0,
-            elapsed_time: start_time.elapsed(),
-        }
+        Self::make_result(
+            x, fx, self.max_iter, ConvergenceStatus::MaxIterations, grad_norm, start_time.elapsed(),
+        )
     }
 
     fn reset(&mut self) {
@@ -372,3 +367,7 @@ impl Optimizer for ConjugateGradient {
 #[cfg(test)]
 #[path = "conjugate_gradient_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "tests_cg_contract.rs"]
+mod tests_cg_contract;
