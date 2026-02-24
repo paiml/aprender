@@ -128,3 +128,125 @@ fn falsify_rp_001_multihead_norm_preservation() {
         );
     }
 }
+
+mod rp_proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// FALSIFY-RP-001-prop: Norm preservation for random dims/positions
+    ///
+    /// Contract: ‖RoPE(x, m)‖ ≈ ‖x‖ for any x, m
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(200))]
+
+        #[test]
+        fn falsify_rp_001_prop_norm_preservation(
+            dim in (1..=8u32).prop_map(|d| (d * 2) as usize),
+            pos in 0..512usize,
+            seed in 0..1000u32,
+        ) {
+            let data: Vec<f32> = (0..dim)
+                .map(|i| ((i as f32 + seed as f32) * 0.37).sin())
+                .collect();
+            let input_norm: f32 = data.iter().map(|v| v * v).sum::<f32>().sqrt();
+
+            if input_norm < 1e-8 {
+                return Ok(());
+            }
+
+            let rope = RotaryPositionEmbedding::new(dim, 1024);
+            let x = Tensor::new(&data, &[1, 1, 1, dim]);
+            let y = rope.apply(&x, &[pos]);
+            let output_norm: f32 = y.data().iter().map(|v| v * v).sum::<f32>().sqrt();
+
+            let rel_diff = (output_norm - input_norm).abs() / input_norm;
+            prop_assert!(
+                rel_diff < 1e-4,
+                "FALSIFIED RP-001-prop: dim={}, pos={}: ‖x‖={}, ‖RoPE(x)‖={}, rel_diff={}",
+                dim, pos, input_norm, output_norm, rel_diff
+            );
+        }
+    }
+
+    /// FALSIFY-RP-004-prop: Zero position identity for random vectors
+    ///
+    /// Contract: RoPE(x, 0) = x
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(200))]
+
+        #[test]
+        fn falsify_rp_004_prop_zero_identity(
+            dim in (1..=8u32).prop_map(|d| (d * 2) as usize),
+            seed in 0..1000u32,
+        ) {
+            let data: Vec<f32> = (0..dim)
+                .map(|i| ((i as f32 + seed as f32) * 0.73).cos())
+                .collect();
+
+            let rope = RotaryPositionEmbedding::new(dim, 128);
+            let x = Tensor::new(&data, &[1, 1, 1, dim]);
+            let y = rope.apply(&x, &[0]);
+
+            for (i, (&orig, &rotated)) in data.iter().zip(y.data().iter()).enumerate() {
+                let diff = (orig - rotated).abs();
+                prop_assert!(
+                    diff < 1e-5,
+                    "FALSIFIED RP-004-prop: dim={}, elem[{}]: {} vs {} (diff={})",
+                    dim, i, orig, rotated, diff
+                );
+            }
+        }
+    }
+
+    /// FALSIFY-RP-002-prop: Relative position invariance for random offsets
+    ///
+    /// Contract: ⟨RoPE(q,m), RoPE(k,n)⟩ = ⟨RoPE(q,m+d), RoPE(k,n+d)⟩
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(100))]
+
+        #[test]
+        fn falsify_rp_002_prop_relative_position(
+            offset in 1..50usize,
+            base_m in 0..100usize,
+            shift in 1..100usize,
+            seed in 0..1000u32,
+        ) {
+            let dim = 8;
+            let rope = RotaryPositionEmbedding::new(dim, 512);
+
+            let q_data: Vec<f32> = (0..dim)
+                .map(|i| ((i as f32 + seed as f32) * 0.37).sin())
+                .collect();
+            let k_data: Vec<f32> = (0..dim)
+                .map(|i| ((i as f32 + seed as f32) * 0.73).cos())
+                .collect();
+
+            let q = Tensor::new(&q_data, &[1, 1, 1, dim]);
+            let k = Tensor::new(&k_data, &[1, 1, 1, dim]);
+
+            // Pair 1: (m, m+offset)
+            let m1 = base_m;
+            let n1 = base_m + offset;
+            let q1 = rope.apply(&q, &[m1]);
+            let k1 = rope.apply(&k, &[n1]);
+            let dot1: f32 = q1.data().iter().zip(k1.data().iter())
+                .map(|(&a, &b)| a * b).sum();
+
+            // Pair 2: (m+shift, m+shift+offset) — same relative offset
+            let m2 = base_m + shift;
+            let n2 = base_m + shift + offset;
+            let q2 = rope.apply(&q, &[m2]);
+            let k2 = rope.apply(&k, &[n2]);
+            let dot2: f32 = q2.data().iter().zip(k2.data().iter())
+                .map(|(&a, &b)| a * b).sum();
+
+            let diff = (dot1 - dot2).abs();
+            let scale = dot1.abs().max(dot2.abs()).max(1e-6);
+            prop_assert!(
+                diff / scale < 1e-3,
+                "FALSIFIED RP-002-prop: dot({},{})={}, dot({},{})={}, diff={}",
+                m1, n1, dot1, m2, n2, dot2, diff
+            );
+        }
+    }
+}
