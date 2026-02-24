@@ -446,3 +446,5 @@ mod tests_attention_contract;
 mod tests_alibi_contract;
 #[path = "tests_gqa_contract.rs"]
 mod tests_gqa_contract;
+#[path = "tests_attention_scaling_contract.rs"]
+mod tests_attention_scaling_contract;

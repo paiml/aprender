@@ -372,5 +372,9 @@ pub struct Qwen2Model {
     training: bool,
 }
 
+#[cfg(test)]
+#[path = "tests_embedding_contract.rs"]
+mod tests_embedding_contract;
+
 include!("constructors.rs");
 include!("element-wise.rs");

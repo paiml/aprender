@@ -621,4 +621,8 @@ mod gelu_contract_tests {
     }
 }
 
+#[cfg(test)]
+#[path = "functional_tests_bias_contract.rs"]
+mod functional_tests_bias_contract;
+
 include!("functional_include_01.rs");
