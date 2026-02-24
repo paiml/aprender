@@ -80,3 +80,54 @@ fn falsify_sw_004_output_not_longer() {
         tokens.len()
     );
 }
+
+mod sw_proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// FALSIFY-SW-004-prop: Filtered output <= input length
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(20))]
+
+        #[test]
+        fn falsify_sw_004_prop_output_not_longer(
+            seed in 0..500u32,
+        ) {
+            let words_pool = ["the", "is", "a", "cat", "dog", "run", "fast", "on", "in", "big"];
+            let n = ((seed % 6) + 3) as usize;
+            let tokens: Vec<&str> = (0..n).map(|i| words_pool[(i + seed as usize) % words_pool.len()]).collect();
+
+            let filter = StopWordsFilter::english();
+            let filtered = filter.filter(&tokens).expect("filter");
+            prop_assert!(
+                filtered.len() <= tokens.len(),
+                "FALSIFIED SW-004-prop: filtered len {} > input len {}",
+                filtered.len(), tokens.len()
+            );
+        }
+    }
+
+    /// FALSIFY-SW-003-prop: Filtered output is subset of input
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(20))]
+
+        #[test]
+        fn falsify_sw_003_prop_subset(
+            seed in 0..500u32,
+        ) {
+            let words_pool = ["the", "is", "a", "cat", "dog", "run", "fast", "on", "in", "big"];
+            let n = ((seed % 6) + 3) as usize;
+            let tokens: Vec<&str> = (0..n).map(|i| words_pool[(i + seed as usize) % words_pool.len()]).collect();
+
+            let filter = StopWordsFilter::english();
+            let filtered = filter.filter(&tokens).expect("filter");
+            for word in &filtered {
+                prop_assert!(
+                    tokens.iter().any(|t| *t == word.as_str()),
+                    "FALSIFIED SW-003-prop: '{}' not in input",
+                    word
+                );
+            }
+        }
+    }
+}

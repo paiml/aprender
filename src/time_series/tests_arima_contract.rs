@@ -77,3 +77,62 @@ fn falsify_arima_004_order_preserved() {
     assert_eq!(d, 1, "FALSIFIED ARIMA-004: d={d}, expected 1");
     assert_eq!(q, 1, "FALSIFIED ARIMA-004: q={q}, expected 1");
 }
+
+mod arima_proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// FALSIFY-ARIMA-001-prop: Forecast length matches for random horizons
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(15))]
+
+        #[test]
+        fn falsify_arima_001_prop_forecast_length(
+            h in 1..=10usize,
+            seed in 0..200u32,
+        ) {
+            let data: Vec<f64> = (0..20)
+                .map(|i| ((i as f64 + seed as f64) * 0.37).sin() * 10.0 + 20.0)
+                .collect();
+            let v = Vector::from_vec(data);
+
+            let mut arima = ARIMA::new(1, 0, 0);
+            arima.fit(&v).expect("fit");
+
+            let forecast = arima.forecast(h).expect("forecast");
+            prop_assert_eq!(
+                forecast.len(),
+                h,
+                "FALSIFIED ARIMA-001-prop: {} forecasts for {} requested",
+                forecast.len(), h
+            );
+        }
+    }
+
+    /// FALSIFY-ARIMA-002-prop: Forecasts are finite for random data
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(15))]
+
+        #[test]
+        fn falsify_arima_002_prop_finite_forecasts(
+            seed in 0..200u32,
+        ) {
+            let data: Vec<f64> = (0..20)
+                .map(|i| ((i as f64 + seed as f64) * 0.37).sin() * 10.0 + 20.0)
+                .collect();
+            let v = Vector::from_vec(data);
+
+            let mut arima = ARIMA::new(1, 0, 0);
+            arima.fit(&v).expect("fit");
+
+            let forecast = arima.forecast(5).expect("forecast");
+            for (i, &val) in forecast.as_slice().iter().enumerate() {
+                prop_assert!(
+                    val.is_finite(),
+                    "FALSIFIED ARIMA-002-prop: forecast[{}]={} not finite",
+                    i, val
+                );
+            }
+        }
+    }
+}

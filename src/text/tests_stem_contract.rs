@@ -67,3 +67,53 @@ fn falsify_st_003_nonempty_output() {
         );
     }
 }
+
+mod st_proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// FALSIFY-ST-001-prop: Stemming is idempotent for random words
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(20))]
+
+        #[test]
+        fn falsify_st_001_prop_idempotent(
+            seed in 0..500u32,
+        ) {
+            let words = ["running", "studies", "easily", "caresses", "relational",
+                         "flying", "happiness", "dogs", "played", "faster"];
+            let word = words[seed as usize % words.len()];
+
+            let stemmer = PorterStemmer::new();
+            let once = stemmer.stem(word).expect("stem 1");
+            let twice = stemmer.stem(&once).expect("stem 2");
+            prop_assert_eq!(
+                once, twice,
+                "FALSIFIED ST-001-prop: not idempotent for '{}'",
+                word
+            );
+        }
+    }
+
+    /// FALSIFY-ST-002-prop: Stem output not longer than input
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(20))]
+
+        #[test]
+        fn falsify_st_002_prop_not_longer(
+            seed in 0..500u32,
+        ) {
+            let words = ["running", "studies", "easily", "caresses", "relational",
+                         "generalization", "processing", "flies", "playing", "connected"];
+            let word = words[seed as usize % words.len()];
+
+            let stemmer = PorterStemmer::new();
+            let stemmed = stemmer.stem(word).expect("stem");
+            prop_assert!(
+                stemmed.len() <= word.len(),
+                "FALSIFIED ST-002-prop: stem('{}')='{}' is longer",
+                word, stemmed
+            );
+        }
+    }
+}

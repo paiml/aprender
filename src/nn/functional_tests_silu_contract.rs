@@ -95,3 +95,43 @@ fn falsify_si_005_tensor_scalar_equivalence() {
         );
     }
 }
+
+mod silu_proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// FALSIFY-SI-002-prop: SiLU(x) > -0.28 for random x
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(50))]
+
+        #[test]
+        fn falsify_si_002_prop_lower_bound(
+            x in -100.0f32..100.0,
+        ) {
+            let y = silu_scalar(x);
+            prop_assert!(
+                y > -0.28,
+                "FALSIFIED SI-002-prop: SiLU({})={} <= -0.28",
+                x, y
+            );
+        }
+    }
+
+    /// FALSIFY-SI-005-prop: Tensor matches scalar for random values
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(30))]
+
+        #[test]
+        fn falsify_si_005_prop_tensor_scalar(
+            x in -50.0f32..50.0,
+        ) {
+            let t = silu(&Tensor::new(&[x], &[1]));
+            let expected = silu_scalar(x);
+            prop_assert!(
+                (t.data()[0] - expected).abs() < 1e-6,
+                "FALSIFIED SI-005-prop: tensor({})={} != scalar={}",
+                x, t.data()[0], expected
+            );
+        }
+    }
+}

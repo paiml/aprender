@@ -125,3 +125,66 @@ fn falsify_pn_004_minmax_inverse_roundtrip() {
         }
     }
 }
+
+mod pn_proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// FALSIFY-PN-002-prop: MinMaxScaler output in [0, 1] for random data
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(15))]
+
+        #[test]
+        fn falsify_pn_002_prop_minmax_bounded(
+            n in 4..=12usize,
+            seed in 0..200u32,
+        ) {
+            let data: Vec<f32> = (0..n * 2)
+                .map(|i| ((i as f32 + seed as f32) * 0.37).sin() * 100.0)
+                .collect();
+            let x = Matrix::from_vec(n, 2, data).expect("valid");
+
+            let mut scaler = MinMaxScaler::new();
+            scaler.fit(&x).expect("fit");
+            let transformed = scaler.transform(&x).expect("transform");
+
+            let (rows, cols) = transformed.shape();
+            for i in 0..rows {
+                for j in 0..cols {
+                    let v = transformed.get(i, j);
+                    prop_assert!(
+                        (-1e-5..=1.0 + 1e-5).contains(&v),
+                        "FALSIFIED PN-002-prop: value[{},{}]={} outside [0,1]",
+                        i, j, v
+                    );
+                }
+            }
+        }
+    }
+
+    /// FALSIFY-PN-003-prop: Output shape preserved for random sizes
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(15))]
+
+        #[test]
+        fn falsify_pn_003_prop_shape_preserved(
+            n in 3..=10usize,
+            p in 1..=4usize,
+            seed in 0..200u32,
+        ) {
+            let data: Vec<f32> = (0..n * p)
+                .map(|i| ((i as f32 + seed as f32) * 0.37).sin() * 50.0)
+                .collect();
+            let x = Matrix::from_vec(n, p, data).expect("valid");
+
+            let mut scaler = StandardScaler::new();
+            scaler.fit(&x).expect("fit");
+            let transformed = scaler.transform(&x).expect("transform");
+            prop_assert_eq!(
+                transformed.shape(),
+                (n, p),
+                "FALSIFIED PN-003-prop: shape changed"
+            );
+        }
+    }
+}

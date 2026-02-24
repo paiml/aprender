@@ -79,3 +79,55 @@ fn falsify_lora_004_scaling_affects_output() {
         "FALSIFIED LORA-004: different alpha produces same scaling"
     );
 }
+
+mod lora_proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// FALSIFY-LORA-001-prop: Output shape matches base weight shape for random ranks
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(10))]
+
+        #[test]
+        fn falsify_lora_001_prop_output_shape(
+            rank in 1..=8usize,
+        ) {
+            let in_dim = 8;
+            let out_dim = 16;
+            let config = LoRAConfig::new(rank, 1.0);
+            let adapter = LoRAAdapter::new(in_dim, out_dim, config);
+            let base_weight = Tensor::new(&vec![0.1; out_dim * in_dim], &[out_dim, in_dim]);
+
+            let result = adapter.apply(&base_weight);
+            prop_assert_eq!(
+                result.shape(),
+                &[out_dim, in_dim],
+                "FALSIFIED LORA-001-prop: output shape {:?} != [{}, {}]",
+                result.shape(), out_dim, in_dim
+            );
+        }
+    }
+
+    /// FALSIFY-LORA-003-prop: LoRA output is finite for random ranks
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(10))]
+
+        #[test]
+        fn falsify_lora_003_prop_finite_output(
+            rank in 1..=8usize,
+        ) {
+            let config = LoRAConfig::new(rank, 1.0);
+            let adapter = LoRAAdapter::new(8, 16, config);
+            let base_weight = Tensor::new(&vec![1.0; 128], &[16, 8]);
+
+            let result = adapter.apply(&base_weight);
+            for (i, &v) in result.data().iter().enumerate() {
+                prop_assert!(
+                    v.is_finite(),
+                    "FALSIFIED LORA-003-prop: output[{}]={} not finite (rank={})",
+                    i, v, rank
+                );
+            }
+        }
+    }
+}

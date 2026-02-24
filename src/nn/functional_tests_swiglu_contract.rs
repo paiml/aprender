@@ -120,3 +120,45 @@ fn falsify_sg_005_tensor_scalar_equivalence() {
         );
     }
 }
+
+mod swiglu_proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// FALSIFY-SG-003-prop: Decomposition SwiGLU(x,g) = x * SiLU(g) for random inputs
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(50))]
+
+        #[test]
+        fn falsify_sg_003_prop_decomposition(
+            x in -50.0f32..50.0,
+            g in -50.0f32..50.0,
+        ) {
+            let fused = swiglu_scalar(x, g);
+            let decomposed = x * silu_scalar(g);
+            prop_assert!(
+                (fused - decomposed).abs() < 1e-4,
+                "FALSIFIED SG-003-prop: swiglu({},{})={} != {}*silu({})={}",
+                x, g, fused, x, g, decomposed
+            );
+        }
+    }
+
+    /// FALSIFY-SG-004-prop: Finite output for random inputs
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(50))]
+
+        #[test]
+        fn falsify_sg_004_prop_finite(
+            x in -100.0f32..100.0,
+            g in -100.0f32..100.0,
+        ) {
+            let y = swiglu_scalar(x, g);
+            prop_assert!(
+                y.is_finite(),
+                "FALSIFIED SG-004-prop: SwiGLU({},{})={} not finite",
+                x, g, y
+            );
+        }
+    }
+}
