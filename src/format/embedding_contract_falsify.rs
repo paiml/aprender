@@ -502,3 +502,134 @@ fn falsify_em_cross_enforce_embedding_contract_mismatch() {
     // Wrong length should trigger CONTRACT VIOLATION panic
     crate::format::layout_contract::enforce_embedding_contract(999, 100, 64);
 }
+
+// ============================================================================
+// PROPTEST FALSIFY: Property-based falsification per YAML "proptest" directives
+//
+// Five-Whys (PMAT-354, Phase 8):
+//   Why 1: YAML specs explicitly call for "proptest with random..." in every claim
+//   Why 2: All 135 existing FALSIFY tests are deterministic (fixed inputs)
+//   Why 3: Deterministic tests cover chosen exemplars, not the input space
+//   Why 4: proptest explores edge cases humans don't anticipate
+//   Why 5: Popperian falsification demands maximally adversarial input generation
+//
+// References:
+//   - embedding-lookup-v1.yaml FALSIFY-EM-001: "proptest with random seq_len in [1, 512]"
+//   - embedding-lookup-v1.yaml FALSIFY-EM-002: "proptest with token_ids near vocab_size boundary"
+//   - embedding-lookup-v1.yaml FALSIFY-EM-004: "proptest with finite embedding table"
+//   - embedding-algebra-v1.yaml FALSIFY-EMB-001: "proptest: embed(t) == embed(t) for random t"
+//   - embedding-algebra-v1.yaml FALSIFY-EMB-002: "proptest with random valid token IDs"
+// ============================================================================
+
+mod proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// FALSIFY-EM-001-prop: Output shape correctness over random seq_len and d_model
+    /// YAML: "proptest with random seq_len in [1, 512] and d_model in {64, 128, 256}"
+    proptest! {
+        #[test]
+        fn falsify_em_001_prop_output_shape(
+            seq_len in 1_u32..128,
+            d_model_idx in 0_usize..3,
+        ) {
+            let d_models = [64_usize, 128, 256];
+            let d_model = d_models[d_model_idx];
+            let vocab_size = 500;
+            let emb = Embedding::new(vocab_size, d_model);
+            let input_ids: Vec<u32> = (0..seq_len).map(|i| i % vocab_size as u32).collect();
+            let output = emb.forward(&input_ids);
+            prop_assert_eq!(
+                output.shape(),
+                &[1, seq_len as usize, d_model],
+                "FALSIFIED EM-001-prop: seq_len={}, d_model={}, shape={:?}",
+                seq_len, d_model, output.shape()
+            );
+        }
+    }
+
+    /// FALSIFY-EM-002-prop: OOB panic freedom near vocab_size boundary
+    /// YAML: "proptest with token_ids near vocab_size boundary"
+    proptest! {
+        #[test]
+        fn falsify_em_002_prop_boundary_oob(
+            vocab_size in 10_usize..200,
+            offset in 0_u32..10,
+        ) {
+            let emb = Embedding::new(vocab_size, 32);
+            // Token at exact boundary: vocab_size - 1 (valid), vocab_size (OOB)
+            let valid_id = (vocab_size as u32).saturating_sub(1);
+            let oob_id = vocab_size as u32 + offset;
+
+            // Valid ID must not panic and must produce non-zero
+            let valid_output = emb.forward(&[valid_id]);
+            let valid_norm: f32 = valid_output.data().iter().map(|v| v * v).sum();
+            prop_assert!(valid_norm > 0.0, "FALSIFIED EM-002-prop: valid token {} produced zero", valid_id);
+
+            // OOB ID must not panic (N-09: produces zeros)
+            let oob_output = emb.forward(&[oob_id]);
+            let oob_norm: f32 = oob_output.data().iter().map(|v| v * v).sum();
+            prop_assert!(oob_norm == 0.0, "FALSIFIED EM-002-prop: OOB token {} produced non-zero", oob_id);
+        }
+    }
+
+    /// FALSIFY-EM-004-prop: All outputs finite when W is finite
+    /// YAML: "proptest with finite embedding table, check output is_finite()"
+    proptest! {
+        #[test]
+        fn falsify_em_004_prop_finite_output(
+            vocab_size in 10_usize..300,
+            d_model in prop::sample::select(vec![16_usize, 32, 64, 128]),
+            num_tokens in 1_usize..50,
+        ) {
+            let emb = Embedding::new(vocab_size, d_model);
+            let ids: Vec<u32> = (0..num_tokens).map(|i| (i % vocab_size) as u32).collect();
+            let output = emb.forward(&ids);
+            for (i, v) in output.data().iter().enumerate() {
+                prop_assert!(
+                    v.is_finite(),
+                    "FALSIFIED EM-004-prop: output[{}] = {} is not finite (vocab={}, d={})",
+                    i, v, vocab_size, d_model
+                );
+            }
+        }
+    }
+
+    /// FALSIFY-EMB-001-prop: Lookup determinism for random token IDs
+    /// YAML: "proptest: embed(t) == embed(t) for random t"
+    proptest! {
+        #[test]
+        fn falsify_emb_001_prop_lookup_determinism(
+            t in 0_u32..999,
+        ) {
+            let emb = Embedding::new(1000, 64);
+            let v1 = emb.forward(&[t]);
+            let v2 = emb.forward(&[t]);
+            prop_assert_eq!(
+                v1.data(), v2.data(),
+                "FALSIFIED EMB-001-prop: embed({}) non-deterministic", t
+            );
+        }
+    }
+
+    /// FALSIFY-EMB-002-prop: Shape preservation for random d_model
+    /// YAML: "proptest with random valid token IDs"
+    proptest! {
+        #[test]
+        fn falsify_emb_002_prop_shape(
+            d_model in prop::sample::select(vec![16_usize, 32, 64, 128, 256]),
+            num_tokens in 1_usize..20,
+        ) {
+            let vocab = 100;
+            let emb = Embedding::new(vocab, d_model);
+            let ids: Vec<u32> = (0..num_tokens).map(|i| (i % vocab) as u32).collect();
+            let output = emb.forward(&ids);
+            prop_assert_eq!(
+                output.shape(),
+                &[1, num_tokens, d_model],
+                "FALSIFIED EMB-002-prop: d_model={}, n={}, shape={:?}",
+                d_model, num_tokens, output.shape()
+            );
+        }
+    }
+}
