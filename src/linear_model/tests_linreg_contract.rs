@@ -91,3 +91,100 @@ fn falsify_lr_004_deterministic() {
         );
     }
 }
+
+mod lr_proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// FALSIFY-LR-001-prop: R² non-negative on random linear data with intercept
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(50))]
+
+        #[test]
+        fn falsify_lr_001_prop_r2_non_negative(
+            slope in -10.0f32..10.0,
+            intercept in -10.0f32..10.0,
+        ) {
+            let n = 20;
+            let x_data: Vec<f32> = (0..n).map(|i| i as f32 * 0.5).collect();
+            let y_data: Vec<f32> = x_data.iter().map(|&xi| slope * xi + intercept).collect();
+
+            let x = Matrix::from_vec(n, 1, x_data).expect("valid");
+            let y = Vector::from_slice(&y_data);
+
+            let mut lr = LinearRegression::new();
+            lr.fit(&x, &y).expect("fit");
+            let r2 = lr.score(&x, &y);
+
+            prop_assert!(
+                r2 >= -1e-6,
+                "FALSIFIED LR-001-prop: R²={} < 0 for slope={}, intercept={}",
+                r2, slope, intercept
+            );
+        }
+    }
+
+    /// FALSIFY-LR-002-prop: Deterministic predictions for random data
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(50))]
+
+        #[test]
+        fn falsify_lr_002_prop_deterministic(
+            seed in 0..1000u32,
+        ) {
+            let n = 10;
+            let x_data: Vec<f32> = (0..n)
+                .map(|i| ((i as f32 + seed as f32) * 0.37).sin() * 5.0)
+                .collect();
+            let y_data: Vec<f32> = x_data.iter().map(|&xi| 2.0 * xi + 1.0).collect();
+
+            let x = Matrix::from_vec(n, 1, x_data).expect("valid");
+            let y = Vector::from_slice(&y_data);
+
+            let mut lr = LinearRegression::new();
+            lr.fit(&x, &y).expect("fit");
+
+            let p1 = lr.predict(&x);
+            let p2 = lr.predict(&x);
+
+            for i in 0..n {
+                prop_assert_eq!(
+                    p1[i], p2[i],
+                    "FALSIFIED LR-002-prop: pred differs at index {}",
+                    i
+                );
+            }
+        }
+    }
+
+    /// FALSIFY-LR-003-prop: Prediction count matches input for random sizes
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(50))]
+
+        #[test]
+        fn falsify_lr_003_prop_prediction_count(
+            n_train in 5..=30usize,
+            n_test in 1..=20usize,
+        ) {
+            let x_data: Vec<f32> = (0..n_train).map(|i| i as f32).collect();
+            let y_data: Vec<f32> = x_data.iter().map(|&xi| 3.0 * xi - 1.0).collect();
+
+            let x = Matrix::from_vec(n_train, 1, x_data).expect("valid");
+            let y = Vector::from_slice(&y_data);
+
+            let mut lr = LinearRegression::new();
+            lr.fit(&x, &y).expect("fit");
+
+            let x_test_data: Vec<f32> = (0..n_test).map(|i| i as f32 * 0.1).collect();
+            let x_test = Matrix::from_vec(n_test, 1, x_test_data).expect("valid");
+            let preds = lr.predict(&x_test);
+
+            prop_assert_eq!(
+                preds.len(),
+                n_test,
+                "FALSIFIED LR-003-prop: {} preds for {} inputs",
+                preds.len(), n_test
+            );
+        }
+    }
+}
