@@ -433,3 +433,7 @@ pub struct OnlineDistillation {
     /// Weight for mutual learning loss
     pub(crate) mutual_weight: f32,
 }
+
+#[cfg(test)]
+#[path = "tests_lora_contract.rs"]
+mod tests_lora_contract;

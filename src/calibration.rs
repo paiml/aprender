@@ -376,3 +376,7 @@ pub fn brier_score(predictions: &[f32], labels: &[bool]) -> f32 {
 #[cfg(test)]
 #[path = "calibration_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "calibration_tests_contract.rs"]
+mod tests_cal_contract;

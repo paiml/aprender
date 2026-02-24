@@ -335,3 +335,7 @@ impl Optimizer for LBFGS {
 #[cfg(test)]
 #[path = "lbfgs_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "tests_lbfgs_contract.rs"]
+mod tests_lbfgs_contract;

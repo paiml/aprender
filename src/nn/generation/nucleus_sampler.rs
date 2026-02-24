@@ -376,3 +376,7 @@ pub enum TeacherForcingSchedule {
     /// Inverse square root decay.
     InverseSquareRoot,
 }
+
+#[cfg(test)]
+#[path = "tests_sampling_contract.rs"]
+mod tests_sampling_contract;
