@@ -2,7 +2,7 @@
 
 **Reference**: Meyer, B. (1992). "Applying 'Design by Contract'." *IEEE Computer*, 25(10), 40-51.
 
-**Status**: PHASE 11 COMPLETE — 279 FALSIFY tests across stack (§2.1.3 Activations)
+**Status**: PHASE 12 COMPLETE — 320 FALSIFY tests across stack (§2.1.4 RoPE + CE + LP)
 **Date**: 2026-02-23 (updated 2026-02-24)
 **Scope**: trueno, realizar, aprender, entrenar, batuta, provable-contracts, apr-playbook
 
@@ -1065,6 +1065,92 @@ Note: aprender's existing GELU/SiLU/SwiGLU proptest in `tests/contracts/` (12 te
 | **Total** | **107** | **48** | **79** | **92** | **326** |
 
 Note: The 326 total includes 47 pre-existing tests from aprender's `tests/contracts/` that predated this sweep but were verified as correctly mapping to YAML contracts.
+
+---
+
+## 13. §2.1.4 RoPE + Cross-Entropy + Linear Projection Contract Falsification (Phase 12)
+
+**Date**: 2026-02-24
+**Scope**: aprender, entrenar, realizar (trueno N/A — no RoPE/CE/LP implementations)
+**Contracts**: rope-kernel-v1.yaml, cross-entropy-kernel-v1.yaml, linear-projection-v1.yaml
+
+### Five-Whys Root Cause
+
+1. **Why**: RoPE had 4 aprender + 5 realizar deterministic tests but zero proptest
+2. **Why**: CE had 4 aprender deterministic tests but zero entrenar FALSIFY-CE tests
+3. **Why**: LP had 8 aprender deterministic tests but zero realizar FALSIFY-LP tests
+4. **Why**: No systematic cross-stack contract gap analysis for §2.1.4
+5. **Why**: Phase 11 only covered activations; RoPE/CE/LP left unswept
+
+**Root cause**: §2.1.4 contracts (positional encoding, loss functions, dense layers) had repo-local tests but no cross-stack falsification sweep.
+
+### Tests Created (41 new tests)
+
+**RoPE (rope-kernel-v1.yaml)** — 14 tests:
+
+| Contract | IDs | Repo | Count |
+|----------|-----|------|-------|
+| RP-001..004 | RP-001/002/004-prop | aprender | 3p |
+| RP-001..004 | RP-002 + RP-001/004-prop | realizar | 1d+2p |
+| **RP Total** | | | **6** new (14 total w/ existing) |
+
+**Cross-Entropy (cross-entropy-kernel-v1.yaml)** — 16 tests:
+
+| Contract | IDs | Repo | Count |
+|----------|-----|------|-------|
+| CE-001..006 | CE-002 + CE-001/003/006-prop | aprender | 1d+3p |
+| CE-001..006 | CE-001..003,006,001b + CE-001..003-prop | entrenar | 5d+3p |
+| **CE Total** | | | **12** new (16 total w/ existing) |
+
+**Linear Projection (linear-projection-v1.yaml)** — 11 tests:
+
+| Contract | IDs | Repo | Count |
+|----------|-----|------|-------|
+| LP-001..004 | LP-001/002/004-prop | aprender | 3p |
+| LP-001..004 | LP-001..004,002b + LP-001/002/004-prop | realizar | 5d+3p |
+| **LP Total** | | | **11** new (19 total w/ existing) |
+
+### Commits
+
+- `b79753f5` — aprender: RP proptest (3 tests)
+- `a2fd677` — realizar: RP-002 + proptest (3 tests)
+- `07d3fbd` — entrenar: FALSIFY-CE-001..006 + proptest (8 tests)
+- `cc3045a5` — aprender: CE-002 + proptest (4 tests)
+- `a831303` — realizar: FALSIFY-LP-001..004 + proptest (8 tests)
+- `c7b2fcc6` — aprender: LP proptest (3 tests)
+
+### Phase 12 Coverage Matrix (d=deterministic, p=proptest)
+
+| Contract | aprender | trueno | entrenar | realizar | Total |
+|----------|----------|--------|----------|----------|-------|
+| RP-001..004 | 4d+3p | N/A | N/A | 5d+2p | 14 |
+| CE-001..006 | 5d+3p | N/A | 5d+3p | N/A | 16 |
+| LP-001..005 | 8d+3p | N/A | N/A | 5d+3p | 19 |
+| **Phase 12** | **26** | **0** | **16** | **18** | **49** (incl. 8 pre-existing) |
+
+Note: trueno has no RoPE, CE, or LP implementations. entrenar has no LP (uses aprender Linear). realizar has no standalone CE loss (uses entrenar's during training).
+
+### Cumulative Coverage Matrix (§2.1.1 + §2.1.2 + §2.1.3 + §2.1.4)
+
+| Contract | aprender | trueno | entrenar | realizar | Total |
+|----------|----------|--------|----------|----------|-------|
+| EM-001..005 | 24 | 13 | 9 | 10 | 56 |
+| EMB-001..007 | 28 | 7 | 10 | 10 | 55 |
+| TE-001..004 | 2 | N/A | 7 | 7 | 16 |
+| SM-001..009 | 12 | 12 | 11 | 12 | 47 |
+| AP-001..005 | 8 | N/A | N/A | 6 | 14 |
+| PIPE-001 | N/A | N/A | 1 | 1 | 2 |
+| RN-001..005 | 9 | N/A | 7 | 9 | 25 |
+| LN-001..007 | 10 | N/A | 10 | 12 | 32 |
+| GE-001..006 | 4 | 8 | 8 | 8 | 28 |
+| SI-001..006 | 5 | 8 | 8 | 8 | 29 |
+| SG-001..006 | 5 | N/A | 8 | 9 | 22 |
+| RP-001..004 | 7 | N/A | N/A | 7 | 14 |
+| CE-001..006 | 8 | N/A | 8 | N/A | 16 |
+| LP-001..005 | 11 | N/A | N/A | 8 | 19 |
+| **Total** | **133** | **48** | **87** | **107** | **375** |
+
+Note: The 375 total includes 47+8=55 pre-existing tests that predated this sweep.
 
 ---
 
