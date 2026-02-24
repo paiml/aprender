@@ -79,3 +79,65 @@ fn falsify_mx_004_identity_matmul() {
         }
     }
 }
+
+mod matrix_proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// FALSIFY-MX-001-prop: Transpose involution for random matrices
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(30))]
+
+        #[test]
+        fn falsify_mx_001_prop_transpose_involution(
+            rows in 1..=8usize,
+            cols in 1..=8usize,
+            seed in 0..500u32,
+        ) {
+            let data: Vec<f32> = (0..rows * cols)
+                .map(|i| ((i as f32 + seed as f32) * 0.37).sin() * 10.0)
+                .collect();
+            let a = Matrix::from_vec(rows, cols, data).expect("valid");
+            let att = a.transpose().transpose();
+
+            prop_assert_eq!(att.shape(), a.shape(), "FALSIFIED MX-001-prop: shape mismatch");
+            for i in 0..rows {
+                for j in 0..cols {
+                    prop_assert!(
+                        (att.get(i, j) - a.get(i, j)).abs() < 1e-5,
+                        "FALSIFIED MX-001-prop: (A^T)^T[{},{}] != A[{},{}]",
+                        i, j, i, j
+                    );
+                }
+            }
+        }
+    }
+
+    /// FALSIFY-MX-004-prop: Identity matmul for random square matrices
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(20))]
+
+        #[test]
+        fn falsify_mx_004_prop_identity_matmul(
+            n in 1..=6usize,
+            seed in 0..500u32,
+        ) {
+            let data: Vec<f32> = (0..n * n)
+                .map(|i| ((i as f32 + seed as f32) * 0.37).sin() * 10.0)
+                .collect();
+            let a = Matrix::from_vec(n, n, data).expect("valid");
+            let eye = Matrix::eye(n);
+            let result = a.matmul(&eye).expect("compatible");
+
+            for i in 0..n {
+                for j in 0..n {
+                    prop_assert!(
+                        (result.get(i, j) - a.get(i, j)).abs() < 1e-3,
+                        "FALSIFIED MX-004-prop: (A*I)[{},{}] != A[{},{}]",
+                        i, j, i, j
+                    );
+                }
+            }
+        }
+    }
+}

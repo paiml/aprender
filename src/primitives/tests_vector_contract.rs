@@ -74,3 +74,64 @@ fn falsify_ve_004_mean_equals_sum_over_len() {
         "FALSIFIED VE-004: mean={mean}, expected 6.0"
     );
 }
+
+mod vector_proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// FALSIFY-VE-001-prop: Dot product commutativity for random vectors
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(50))]
+
+        #[test]
+        fn falsify_ve_001_prop_dot_commutative(
+            seed in 0..1000u32,
+            n in 2..=16usize,
+        ) {
+            let u_data: Vec<f32> = (0..n)
+                .map(|i| ((i as f32 + seed as f32) * 0.37).sin() * 10.0)
+                .collect();
+            let v_data: Vec<f32> = (0..n)
+                .map(|i| ((i as f32 + seed as f32 + 50.0) * 0.53).cos() * 10.0)
+                .collect();
+            let u = Vector::from_vec(u_data);
+            let v = Vector::from_vec(v_data);
+
+            let uv = u.dot(&v);
+            let vu = v.dot(&u);
+            prop_assert!(
+                (uv - vu).abs() < 1e-3,
+                "FALSIFIED VE-001-prop: dot(u,v)={} != dot(v,u)={}",
+                uv, vu
+            );
+        }
+    }
+
+    /// FALSIFY-VE-003-prop: Cauchy-Schwarz for random vectors
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(50))]
+
+        #[test]
+        fn falsify_ve_003_prop_cauchy_schwarz(
+            seed in 0..1000u32,
+            n in 2..=16usize,
+        ) {
+            let u_data: Vec<f32> = (0..n)
+                .map(|i| ((i as f32 + seed as f32) * 0.37).sin() * 10.0)
+                .collect();
+            let v_data: Vec<f32> = (0..n)
+                .map(|i| ((i as f32 + seed as f32 + 50.0) * 0.53).cos() * 10.0)
+                .collect();
+            let u = Vector::from_vec(u_data);
+            let v = Vector::from_vec(v_data);
+
+            let dot = u.dot(&v).abs();
+            let bound = u.norm() * v.norm();
+            prop_assert!(
+                dot <= bound + 1e-2,
+                "FALSIFIED VE-003-prop: |dot|={} > norm(u)*norm(v)={}",
+                dot, bound
+            );
+        }
+    }
+}

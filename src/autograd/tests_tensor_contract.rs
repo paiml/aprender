@@ -83,3 +83,59 @@ fn falsify_tn_004_mul_scalar() {
         );
     }
 }
+
+mod tensor_proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// FALSIFY-TN-001-prop: Addition commutativity for random tensors
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(50))]
+
+        #[test]
+        fn falsify_tn_001_prop_add_commutative(
+            seed in 0..1000u32,
+            n in 1..=16usize,
+        ) {
+            let a_data: Vec<f32> = (0..n)
+                .map(|i| ((i as f32 + seed as f32) * 0.37).sin() * 10.0)
+                .collect();
+            let b_data: Vec<f32> = (0..n)
+                .map(|i| ((i as f32 + seed as f32 + 100.0) * 0.53).sin() * 10.0)
+                .collect();
+            let a = Tensor::new(&a_data, &[n]);
+            let b = Tensor::new(&b_data, &[n]);
+
+            let ab = a.add(&b);
+            let ba = b.add(&a);
+
+            for i in 0..n {
+                prop_assert!(
+                    (ab.data()[i] - ba.data()[i]).abs() < 1e-5,
+                    "FALSIFIED TN-001-prop: add not commutative at [{}]",
+                    i
+                );
+            }
+        }
+    }
+
+    /// FALSIFY-TN-004-prop: Scalar multiplication for random values
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(50))]
+
+        #[test]
+        fn falsify_tn_004_prop_mul_scalar(
+            val in -100.0f32..100.0,
+            scalar in -10.0f32..10.0,
+        ) {
+            let a = Tensor::new(&[val], &[1]);
+            let b = a.mul_scalar(scalar);
+            let expected = val * scalar;
+            prop_assert!(
+                (b.data()[0] - expected).abs() < 1e-3,
+                "FALSIFIED TN-004-prop: {}*{}={}, expected {}",
+                val, scalar, b.data()[0], expected
+            );
+        }
+    }
+}

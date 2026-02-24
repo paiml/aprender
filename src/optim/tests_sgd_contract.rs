@@ -77,3 +77,54 @@ fn falsify_sgd_003_zero_gradient_identity() {
         params[1]
     );
 }
+
+mod sgd_proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// FALSIFY-SGD-001-prop: SGD update formula x - lr*g for random values
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(50))]
+
+        #[test]
+        fn falsify_sgd_001_prop_update_formula(
+            x0 in -100.0f32..100.0,
+            grad in -100.0f32..100.0,
+            lr in 0.001f32..1.0,
+        ) {
+            let mut sgd = SGD::new(lr);
+            let mut params = Vector::from_vec(vec![x0]);
+            let gradients = Vector::from_vec(vec![grad]);
+            sgd.step(&mut params, &gradients);
+
+            let expected = x0 - lr * grad;
+            prop_assert!(
+                (params[0] - expected).abs() < 1e-3,
+                "FALSIFIED SGD-001-prop: got {}, expected {}",
+                params[0], expected
+            );
+        }
+    }
+
+    /// FALSIFY-SGD-003-prop: Zero gradient identity for random params
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(50))]
+
+        #[test]
+        fn falsify_sgd_003_prop_zero_gradient_identity(
+            x0 in -100.0f32..100.0,
+            lr in 0.001f32..1.0,
+        ) {
+            let mut sgd = SGD::new(lr);
+            let mut params = Vector::from_vec(vec![x0]);
+            let zero_grad = Vector::from_vec(vec![0.0]);
+            sgd.step(&mut params, &zero_grad);
+
+            prop_assert!(
+                (params[0] - x0).abs() < 1e-6,
+                "FALSIFIED SGD-003-prop: got {}, expected {} (unchanged)",
+                params[0], x0
+            );
+        }
+    }
+}
