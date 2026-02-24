@@ -621,6 +621,44 @@ These matches are acceptable and should NOT be treated as violations:
 
 ---
 
+## 9. NLP Text Pipeline Contract Falsification (PMAT-346..353)
+
+**Date**: 2026-02-24
+**Scope**: Full NLP spec §2.1 pipeline — tokenization through summarization
+
+### Five-Whys Root Cause
+
+1. **Why**: NLP text modules had 1000+ unit tests but zero FALSIFY-* contract tests
+2. **Why**: Unit tests verify API behavior, not mathematical/contractual properties
+3. **Why**: Text modules were built before DbC methodology was adopted
+4. **Why**: No provable-contract YAMLs exist for text processing
+5. **Why**: Contract YAML effort focused on model formats, not NLP pipeline
+
+**Root cause**: Text processing is the critical pipeline feeding the embedding layer, but no contracts formally specify what must hold (determinism, roundtrip, metric axioms, simplex constraints).
+
+### Tests Created (86 new tests)
+
+| ID | Module | Count | Key Properties |
+|----|--------|-------|----------------|
+| FALSIFY-PP-001..006 | Text preprocessing | 17 | Tokenizer determinism, content preservation, stop word contracts, stemmer idempotence, pipeline composition |
+| FALSIFY-BPE-001..009 | BPE tokenizer | 19 | Encode determinism, roundtrip, merge priority (Sennrich 2016), special token isolation, byte coverage, token ID bounds, merge monotonicity, BPE idempotence |
+| FALSIFY-VEC-001..007 | Vectorization | 10 | BoW output shape, non-negative counts, TF-IDF rare>common, fit_transform equivalence, determinism, shape parity |
+| FALSIFY-SIM-001..008 | Similarity metrics | 12 | Cosine self-sim/symmetry/range, Jaccard axioms, edit distance identity/triangle inequality, pairwise matrix symmetry |
+| FALSIFY-SENT-001..007 | Sentiment analysis | 8 | Positive/negative polarity, empty/neutral, classify consistency, determinism, finite values |
+| FALSIFY-LDA-001..005 | Topic modeling | 6 | Output shapes, non-negative, Dirichlet simplex constraint, determinism with seed, finite values |
+| FALSIFY-ENT-001..006 | Entity extraction | 7 | Email/URL/mention/hashtag extraction, no false positives, empty input, determinism |
+| FALSIFY-SUM-001..006 | Summarization | 7 | Length bound, extractive subset, empty/short passthrough, determinism, all methods |
+
+### Commits
+
+- `9459f07d` — FALSIFY-PP-001..006 (17 tests)
+- `4269f3be` — FALSIFY-BPE-001..009 (19 tests)
+- `c9b78446` — FALSIFY-VEC-001..007 + FALSIFY-SIM-001..008 (22 tests)
+- `b3695222` — FALSIFY-SENT-001..007 + FALSIFY-LDA-001..005 (14 tests)
+- `be26cd28` — FALSIFY-ENT-001..006 + FALSIFY-SUM-001..006 (14 tests)
+
+---
+
 ## References
 
 1. Meyer, B. (1992). "Applying 'Design by Contract'." *IEEE Computer*, 25(10), 40-51.
