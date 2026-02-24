@@ -97,7 +97,13 @@ impl Embedding {
         for (s, &token_id) in input_ids.iter().enumerate() {
             let token_idx = token_id as usize;
             if token_idx >= self.vocab_size {
-                // Out of vocabulary - zeros already in buffer if initialized
+                // N-09: OOB token produces zeros (buffer already zero-initialized).
+                // Contract: embedding-lookup-v1.yaml requires token_ids[i] < vocab_size.
+                // We warn instead of panic because callers may be fuzzing or probing.
+                eprintln!(
+                    "Warning: token_id {token_id} >= vocab_size {} (N-09 OOB escape, zeros emitted)",
+                    self.vocab_size
+                );
                 continue;
             }
 

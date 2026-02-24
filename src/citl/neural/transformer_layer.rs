@@ -354,7 +354,12 @@ fn embedding_lookup(weight: &Tensor, indices: &Tensor) -> Tensor {
         if row_end <= weight_data.len() {
             output.extend_from_slice(&weight_data[row_start..row_end]);
         } else {
-            // Out of bounds - use zeros
+            // N-09: OOB token → zeros. Contract: embedding-lookup-v1.yaml
+            // requires token_ids[i] < vocab_size. Warn, don't panic.
+            eprintln!(
+                "Warning: embedding index {} OOB (max row_end={row_end}, data_len={}). N-09 escape.",
+                idx as usize, weight_data.len()
+            );
             output.extend(std::iter::repeat(0.0).take(embed_dim));
         }
     }
