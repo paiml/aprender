@@ -715,14 +715,33 @@ These matches are acceptable and should NOT be treated as violations:
 | entrenar | `embedding.rs`, `loss.rs`, `model.rs` | 8 | EMB-003 (tied sharing), EMB-005 (non-zero), EMB-006 (temp identity), EMB-007 (temp monotonicity), TE-001 (output shape), TE-003 (no extra params), TE-004 (finite output) |
 | realizar | `matmul_tests.rs` | 6 | EMB-003 (tied dim match), EMB-005 (non-zero), EMB-006 (temp identity argmax), EMB-007 (temp monotonicity), TE-001 (lm_head shape), TE-004 (lm_head finite) |
 
-### Final Coverage Matrix
+### Phase 3: Softmax + Position Embedding Contracts
+
+**Five-Whys (SM/AP gaps)**:
+1. **Why**: Zero FALSIFY-SM and FALSIFY-AP tests existed across the entire stack
+2. **Why**: Softmax has implementations in all 4 repos but tests were only functional, not contract-tagged
+3. **Why**: Absolute position embeddings (GPT-2/BERT) were added late (GH-278) with no contract tests
+4. **Why**: Most tested models use RoPE, so absolute position path had low coverage
+5. **Why**: Softmax was "obviously correct" (3-line implementation) so no formal contracts were mapped
+
+| Repo | File(s) | New Tests | Contract IDs |
+|------|---------|-----------|--------------|
+| trueno | `clip_softmax.rs` | 5 | SM-001..005 (sums-to-1, positive, order-preserving, bounded, stability) |
+| aprender | `functional.rs` | 7 | SM-001..006 (f32, f64, Tensor softmax shape) |
+| entrenar | `loss.rs` | 3 | SM-001..003 (sums-to-1, positive, order-preserving) |
+| realizar | `activation_quantize_rmsnorm.rs` | 5 | SM-001..005 (SIMD softmax contract) |
+| realizar | `matmul_tests.rs` | 3 | AP-001/002/004 (shape, identity, finite) |
+
+### Final Coverage Matrix (all §2.1.1 contracts)
 
 | Contract | aprender | trueno | entrenar | realizar | Total |
 |----------|----------|--------|----------|----------|-------|
 | EM-001..005 | 8 ✅ | 12 ✅ | 5 ✅ | 7 ✅ | 32 |
 | EMB-001..007 | 10 ✅ | 2 ✅ | 4 ✅ | 4 ✅ | 20 |
 | TE-001..004 | 6 ✅ | N/A | 3 ✅ | 2 ✅ | 11 |
-| **Total** | **24** | **14** | **12** | **13** | **63** |
+| SM-001..005 | 7 ✅ | 5 ✅ | 3 ✅ | 5 ✅ | 20 |
+| AP-001..004 | N/A | N/A | N/A | 3 ✅ | 3 |
+| **Total** | **31** | **19** | **15** | **21** | **86** |
 
 ### Commits
 
@@ -736,6 +755,13 @@ These matches are acceptable and should NOT be treated as violations:
 - entrenar `404de25` — FALSIFY-EMB-003/005/006/007 + TE-001/003/004 (8 tests)
 - realizar `2d0c8cd` — FALSIFY-EMB-003/005/006/007 + TE-001/004 (6 tests)
 
+**Phase 3 (SM/AP sweep)**:
+- trueno `bf0079a` — FALSIFY-SM-001..005 (5 tests)
+- aprender `f050bbab` — FALSIFY-SM-001..006 (7 tests)
+- entrenar `1f98f1e` — FALSIFY-SM-001..003 (3 tests)
+- realizar `de25fb1` — FALSIFY-SM-001..005 (5 tests)
+- realizar `06b7750` — FALSIFY-AP-001/002/004 (3 tests)
+
 ---
 
 ## References
@@ -747,3 +773,5 @@ These matches are acceptable and should NOT be treated as violations:
 5. Mikolov, T. et al. (2013). "Efficient Estimation of Word Representations in Vector Space." *ICLR*.
 6. Press, O. & Wolf, L. (2017). "Using the Output Embedding to Improve Language Models." *EACL*.
 7. Hinton, G. et al. (2015). "Distilling the Knowledge in a Neural Network." *NIPS Workshop*.
+8. Vaswani, A. et al. (2017). "Attention Is All You Need." *NeurIPS*.
+9. Bridle, J.S. (1990). "Training Stochastic Model Recognition Algorithms as Networks." *Current Communications in Computer and Information Science*.
