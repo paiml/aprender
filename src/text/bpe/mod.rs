@@ -189,3 +189,8 @@ mod qwen2bpe_tokenizer;
 pub use qwen2bpe_tokenizer::*;
 mod qwen2;
 pub use qwen2::*;
+
+// BPE contract falsification (FALSIFY-BPE-001..009)
+// Refs: Sennrich et al. (2016), PMAT-347
+#[cfg(test)]
+mod bpe_contract_falsify;
