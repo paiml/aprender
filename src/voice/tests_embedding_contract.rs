@@ -24,7 +24,12 @@ fn falsify_emb_001_normalize_idempotent() {
     let once = normalize_embedding(&emb);
     let twice = normalize_embedding(&once);
 
-    for (i, (&a, &b)) in once.as_slice().iter().zip(twice.as_slice().iter()).enumerate() {
+    for (i, (&a, &b)) in once
+        .as_slice()
+        .iter()
+        .zip(twice.as_slice().iter())
+        .enumerate()
+    {
         assert!(
             (a - b).abs() < 1e-6,
             "FALSIFIED EMB-001: normalize not idempotent at dim {i}: {a} vs {b}"
@@ -61,14 +66,13 @@ fn falsify_emb_003_average_preserves_dimension() {
     for &dim in &dims {
         let embeddings: Vec<SpeakerEmbedding> = (0..5)
             .map(|i| {
-                SpeakerEmbedding::from_vec(
-                    (0..dim).map(|j| (i * dim + j) as f32 * 0.01).collect(),
-                )
+                SpeakerEmbedding::from_vec((0..dim).map(|j| (i * dim + j) as f32 * 0.01).collect())
             })
             .collect();
 
-        let avg = average_embeddings(&embeddings)
-            .unwrap_or_else(|_| panic!("FALSIFIED EMB-003: average_embeddings failed for dim={dim}"));
+        let avg = average_embeddings(&embeddings).unwrap_or_else(|_| {
+            panic!("FALSIFIED EMB-003: average_embeddings failed for dim={dim}")
+        });
         assert_eq!(
             avg.dim(),
             dim,

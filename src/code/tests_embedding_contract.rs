@@ -73,7 +73,11 @@ fn falsify_emb_003_attention_weights_sum_to_one() {
         ),
         AstPath::new(
             Token::new(TokenType::Identifier, "foo"),
-            vec![AstNodeType::Function, AstNodeType::Block, AstNodeType::Return],
+            vec![
+                AstNodeType::Function,
+                AstNodeType::Block,
+                AstNodeType::Return,
+            ],
             Token::new(TokenType::Identifier, "bar"),
         ),
     ];
