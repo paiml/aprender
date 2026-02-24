@@ -402,4 +402,149 @@ pub fn cosine_similarity_slice(a: &[f32], b: &[f32]) -> f32 {
     }
 }
 
+#[cfg(test)]
+mod softmax_contract_tests {
+    use super::*;
+
+    // ========================================================================
+    // FALSIFY-SM: softmax-kernel-v1.yaml contract falsification
+    //
+    // Five-Whys (PMAT-354):
+    //   Why 1: aprender had 0 FALSIFY-SM-* tests for softmax_1d
+    //   Why 2: softmax_1d had no inline tests at all (pure utility fn)
+    //   Why 3: callers (calibration, regularization, gating) tested indirectly
+    //   Why 4: no direct mapping from softmax-kernel-v1.yaml to test names
+    //   Why 5: softmax was "obviously correct" — 3 lines of standard code
+    //
+    // References:
+    //   - provable-contracts/contracts/softmax-kernel-v1.yaml
+    //   - Bridle (1990) "Training Stochastic Model Recognition Algorithms"
+    // ========================================================================
+
+    /// FALSIFY-SM-001: Output sums to 1 (partition of unity)
+    #[test]
+    fn falsify_sm_001_sums_to_one() {
+        let cases: Vec<Vec<f32>> = vec![
+            vec![1.0, 2.0, 3.0],
+            vec![-10.0, 0.0, 10.0],
+            vec![100.0, 101.0, 102.0],
+            (0..100).map(|i| (i as f32 * 0.37).sin() * 5.0).collect(),
+        ];
+
+        for (idx, logits) in cases.iter().enumerate() {
+            let probs = softmax_1d(logits);
+            let sum: f32 = probs.iter().sum();
+            assert!(
+                (sum - 1.0).abs() < 1e-5,
+                "FALSIFIED SM-001: case {idx} sum={sum}"
+            );
+        }
+    }
+
+    /// FALSIFY-SM-001b: f64 variant also sums to 1
+    #[test]
+    fn falsify_sm_001b_f64_sums_to_one() {
+        let logits: Vec<f64> = vec![1.0, 2.0, 3.0, -5.0, 10.0];
+        let probs = softmax_1d_f64(&logits);
+        let sum: f64 = probs.iter().sum();
+        assert!(
+            (sum - 1.0).abs() < 1e-10,
+            "FALSIFIED SM-001b: f64 sum={sum}"
+        );
+    }
+
+    /// FALSIFY-SM-002: All outputs strictly positive
+    #[test]
+    fn falsify_sm_002_strictly_positive() {
+        let logits: Vec<f32> = (0..50).map(|i| (i as f32 - 25.0) * 2.0).collect();
+        let probs = softmax_1d(&logits);
+
+        for (i, &p) in probs.iter().enumerate() {
+            assert!(
+                p > 0.0,
+                "FALSIFIED SM-002: probs[{i}] = {p} not strictly positive"
+            );
+        }
+    }
+
+    /// FALSIFY-SM-003: Order preservation (argmax invariant)
+    #[test]
+    fn falsify_sm_003_order_preservation() {
+        let logits = vec![1.0f32, 5.0, 3.0, 2.0];
+        let probs = softmax_1d(&logits);
+
+        let input_argmax = logits
+            .iter()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+            .unwrap()
+            .0;
+        let output_argmax = probs
+            .iter()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+            .unwrap()
+            .0;
+
+        assert_eq!(
+            input_argmax, output_argmax,
+            "FALSIFIED SM-003: argmax changed from {input_argmax} to {output_argmax}"
+        );
+    }
+
+    /// FALSIFY-SM-004: Each output bounded in (0, 1) when n > 1
+    #[test]
+    fn falsify_sm_004_bounded_zero_one() {
+        let logits: Vec<f32> = (0..20).map(|i| (i as f32 * 1.7).sin() * 10.0).collect();
+        let probs = softmax_1d(&logits);
+
+        for (i, &p) in probs.iter().enumerate() {
+            assert!(
+                p > 0.0 && p < 1.0,
+                "FALSIFIED SM-004: probs[{i}] = {p} not in (0, 1)"
+            );
+        }
+    }
+
+    /// FALSIFY-SM-005: Numerical stability — no NaN/Inf for extreme inputs
+    #[test]
+    fn falsify_sm_005_numerical_stability() {
+        let extreme = vec![1000.0f32, 1001.0, 1002.0];
+        let probs = softmax_1d(&extreme);
+        assert!(
+            probs.iter().all(|p| p.is_finite()),
+            "FALSIFIED SM-005: extreme inputs produced non-finite"
+        );
+
+        let sum: f32 = probs.iter().sum();
+        assert!(
+            (sum - 1.0).abs() < 1e-4,
+            "FALSIFIED SM-005: extreme sum={sum}"
+        );
+    }
+
+    /// FALSIFY-SM-006: Tensor softmax preserves shape and per-row contract
+    #[test]
+    fn falsify_sm_006_tensor_softmax_shape() {
+        let x = Tensor::new(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
+        let result = softmax(&x, -1);
+
+        assert_eq!(result.shape(), &[2, 3], "FALSIFIED SM-006: shape changed");
+
+        // Each row should sum to 1
+        let data = result.data();
+        let row1_sum: f32 = data[0..3].iter().sum();
+        let row2_sum: f32 = data[3..6].iter().sum();
+
+        assert!(
+            (row1_sum - 1.0).abs() < 1e-5,
+            "FALSIFIED SM-006: row 1 sum={row1_sum}"
+        );
+        assert!(
+            (row2_sum - 1.0).abs() < 1e-5,
+            "FALSIFIED SM-006: row 2 sum={row2_sum}"
+        );
+    }
+}
+
 include!("functional_include_01.rs");
