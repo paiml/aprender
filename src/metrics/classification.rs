@@ -443,3 +443,7 @@ pub fn recall_per_class(y_pred: &[usize], y_true: &[usize]) -> Vec<f32> {
 }
 
 include!("classification_include_01.rs");
+
+#[cfg(test)]
+#[path = "tests_classification_contract.rs"]
+mod tests_classification_contract;

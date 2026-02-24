@@ -324,3 +324,7 @@ pub fn silhouette_score(data: &Matrix<f32>, labels: &[usize]) -> f32 {
 #[cfg(test)]
 #[path = "metrics_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "tests_regression_contract.rs"]
+mod tests_regression_contract;

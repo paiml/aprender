@@ -388,3 +388,7 @@ include!("lasso.rs");
 include!("lasso_impl.rs");
 include!("elastic_net.rs");
 include!("input.rs");
+
+#[cfg(test)]
+#[path = "tests_linreg_contract.rs"]
+mod tests_linreg_contract;

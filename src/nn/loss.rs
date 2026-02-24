@@ -440,3 +440,5 @@ use ucbd::*;
 mod loss_tests;
 #[path = "loss_tests_ce_contract.rs"]
 mod loss_tests_ce_contract;
+#[path = "loss_tests_lf_contract.rs"]
+mod loss_tests_lf_contract;

@@ -271,3 +271,7 @@ impl Default for GradientBoostingClassifier {
         Self::new()
     }
 }
+
+#[cfg(test)]
+#[path = "tests_gbm_contract.rs"]
+mod tests_gbm_contract;
