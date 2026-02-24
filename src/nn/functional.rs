@@ -637,4 +637,8 @@ mod functional_tests_swiglu_contract;
 #[path = "functional_tests_relu_contract.rs"]
 mod functional_tests_relu_contract;
 
+#[cfg(test)]
+#[path = "functional_tests_sigmoid_contract.rs"]
+mod functional_tests_sigmoid_contract;
+
 include!("functional_include_01.rs");
