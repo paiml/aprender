@@ -732,16 +732,38 @@ These matches are acceptable and should NOT be treated as violations:
 | realizar | `activation_quantize_rmsnorm.rs` | 5 | SM-001..005 (SIMD softmax contract) |
 | realizar | `matmul_tests.rs` | 3 | AP-001/002/004 (shape, identity, finite) |
 
+### Phase 4: aprender Cross-Module Embedding Sweep (GH-328)
+
+**Date**: 2026-02-24
+**Scope**: Fill remaining aprender-internal gaps across voice, code, citl/neural modules
+
+**Five-Whys**:
+1. **Why**: voice/code/citl modules had embedding implementations but zero FALSIFY tests
+2. **Why**: Phase 1-3 focused on the models/qwen2 and nn/transformer paths
+3. **Why**: voice (SpeakerEmbedding), code (CodeEmbedding), citl/neural (Embedding) are separate domains
+4. **Why**: No systematic audit mapped all embedding-like operations to contract claims
+5. **Why**: Cross-module sweep was deferred until after cross-repo sweep was complete
+
+| Module | File(s) | New Tests | Contract IDs |
+|--------|---------|-----------|--------------|
+| models/qwen2 | `tests_embedding_contract.rs` | 2 | EM-002, EM-002b (OOB panic freedom + mixed valid/OOB) |
+| nn/transformer | `tests_position_contract.rs` | 1 | AP-002 (additive property) |
+| voice | `tests_embedding_contract.rs` | 7 | EMB-001..007 (normalize idempotent, cosine self-sim, avg dim, symmetry, unit norm, bounded, correctness) |
+| code | `tests_embedding_contract.rs` | 7 | EMB-001..007 (cosine self-sim, dim mismatch, attention sum, deterministic, output dim, zero vector) |
+| citl/neural | `tests_embedding_contract.rs` | 5 | EM-001..005 (shape, OOB safety, deterministic, finite, row lookup) |
+
+**Finding**: `cosine_similarity_slice` returns 0.0 for vectors with L2 norm < epsilon (~1e-6). This is correct numerical stability behavior but was undocumented.
+
 ### Final Coverage Matrix (all §2.1.1 contracts)
 
 | Contract | aprender | trueno | entrenar | realizar | Total |
 |----------|----------|--------|----------|----------|-------|
-| EM-001..005 | 8 ✅ | 12 ✅ | 5 ✅ | 7 ✅ | 32 |
-| EMB-001..007 | 10 ✅ | 2 ✅ | 4 ✅ | 4 ✅ | 20 |
+| EM-001..005 | 15 ✅ | 12 ✅ | 5 ✅ | 7 ✅ | 39 |
+| EMB-001..007 | 24 ✅ | 2 ✅ | 4 ✅ | 4 ✅ | 34 |
 | TE-001..004 | 6 ✅ | N/A | 3 ✅ | 2 ✅ | 11 |
 | SM-001..005 | 7 ✅ | 5 ✅ | 3 ✅ | 5 ✅ | 20 |
-| AP-001..004 | N/A | N/A | N/A | 3 ✅ | 3 |
-| **Total** | **31** | **19** | **15** | **21** | **86** |
+| AP-001..004 | 1 ✅ | N/A | N/A | 3 ✅ | 4 |
+| **Total** | **53** | **19** | **15** | **21** | **108** |
 
 ### Commits
 
@@ -761,6 +783,9 @@ These matches are acceptable and should NOT be treated as violations:
 - entrenar `1f98f1e` — FALSIFY-SM-001..003 (3 tests)
 - realizar `de25fb1` — FALSIFY-SM-001..005 (5 tests)
 - realizar `06b7750` — FALSIFY-AP-001/002/004 (3 tests)
+
+**Phase 4 (aprender cross-module)**:
+- aprender `3c6d9f4c` — FALSIFY-EM/EMB/AP across 5 modules (22 tests)
 
 ---
 
