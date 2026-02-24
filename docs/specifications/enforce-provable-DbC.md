@@ -2,7 +2,7 @@
 
 **Reference**: Meyer, B. (1992). "Applying 'Design by Contract'." *IEEE Computer*, 25(10), 40-51.
 
-**Status**: PHASE 10 COMPLETE — 222 FALSIFY tests across stack (§2.1.2 Normalization)
+**Status**: PHASE 11 COMPLETE — 279 FALSIFY tests across stack (§2.1.3 Activations)
 **Date**: 2026-02-23 (updated 2026-02-24)
 **Scope**: trueno, realizar, aprender, entrenar, batuta, provable-contracts, apr-playbook
 
@@ -983,6 +983,89 @@ Proptest coverage by contract:
 | LN-001..007 | 6d+4p | N/A | 6d+4p | 8d+4p | 32 |
 | **Total** | **93** | **32** | **55** | **67** | **227** |
 
+## 12. §2.1.3 Activation Functions Contract Falsification (Phase 11)
+
+### Five-Whys Root Cause
+
+- Why 1: SiLU and SwiGLU FALSIFY tests existed ONLY in aprender (zero cross-stack)
+- Why 2: GELU had deterministic tests in all 4 repos but zero proptest outside aprender
+- Why 3: GELU GE-005 (tanh approx accuracy) only existed in trueno
+- Why 4: SwiGLU treated as "obviously correct" (decomposition into SiLU + multiply)
+- Why 5: Activation functions are single-line formulas — falsification blind spot
+
+### Contracts Covered
+
+**gelu-kernel-v1.yaml** (6 claims):
+- GE-001: Non-negativity for positive inputs
+- GE-002: Positive monotonicity
+- GE-003: Zero preservation (GELU(0) = 0)
+- GE-004: SIMD equivalence — N/A (requires SIMD test harness)
+- GE-005: Tanh approximation accuracy (|exact - approx| < 0.005)
+- GE-006: Large input stability
+
+**silu-kernel-v1.yaml** (6 claims):
+- SI-001: Zero preservation (SiLU(0) = 0)
+- SI-002: Global lower bound (SiLU(x) > -0.279)
+- SI-003: Positive monotonicity
+- SI-004: SIMD equivalence — N/A
+- SI-005: Asymptotic linearity (SiLU(x) ≈ x for large x)
+- SI-006: Large negative vanishing (SiLU(x) ≈ 0 for x << 0)
+
+**swiglu-kernel-v1.yaml** (6 claims):
+- SG-001: Zero preservation (SwiGLU(0, gate) = 0)
+- SG-002: Fused equivalence (SwiGLU = x * SiLU(gate))
+- SG-003: SiLU lower bound preserved in gate
+- SG-004: SIMD equivalence — N/A
+- SG-005: Empty input → empty output
+- SG-006: Monotonicity of gate (for positive x, positive gates)
+
+### Tests Created (52 new, 227→279 total)
+
+**SiLU (24 tests)**:
+- trueno `3b9eedb` — SI-001..006 + SI-002/003/005-prop (8 tests)
+- entrenar `98caf49` — SI-001..006 + SI-002/003/005-prop (8 tests)
+- realizar `185f343` — SI-001..006 + SI-002/003/005-prop (8 tests)
+
+**SwiGLU (17 tests)**:
+- entrenar `9027318` — SG-001..005 + SG-001/004/006-prop (8 tests)
+- realizar `5ad594c` — SG-001..006 + SG-001/004/006-prop (9 tests)
+- trueno: N/A (no SwiGLU implementation)
+
+**GELU proptest + GE-005 gap closure (11 tests)**:
+- trueno `e40632c` — GE-001/002/006-prop (3 proptest)
+- entrenar `cc2d62e` — GE-005 + GE-001/002/006-prop (4 tests)
+- realizar `d054a77` — GE-005 + GE-001/002/006-prop (4 tests)
+
+### Phase 11 Coverage Matrix (d=deterministic, p=proptest)
+
+| Contract | aprender | trueno | entrenar | realizar | Total |
+|----------|----------|--------|----------|----------|-------|
+| GE-001..006 | 4d | 5d+3p | 5d+3p | 5d+3p | 28 |
+| SI-001..006 | 5d | 5d+3p | 5d+3p | 5d+3p | 29 |
+| SG-001..006 | 5d | N/A | 5d+3p | 6d+3p | 22 |
+| **Phase 11** | **14** | **16** | **24** | **25** | **79** |
+
+Note: aprender's existing GELU/SiLU/SwiGLU proptest in `tests/contracts/` (12 tests) predate this sweep and are counted in the Phase 11 total for completeness.
+
+### Cumulative Coverage Matrix (§2.1.1 + §2.1.2 + §2.1.3)
+
+| Contract | aprender | trueno | entrenar | realizar | Total |
+|----------|----------|--------|----------|----------|-------|
+| EM-001..005 | 24 | 13 | 9 | 10 | 56 |
+| EMB-001..007 | 28 | 7 | 10 | 10 | 55 |
+| TE-001..004 | 2 | N/A | 7 | 7 | 16 |
+| SM-001..009 | 12 | 12 | 11 | 12 | 47 |
+| AP-001..005 | 8 | N/A | N/A | 6 | 14 |
+| PIPE-001 | N/A | N/A | 1 | 1 | 2 |
+| RN-001..005 | 9 | N/A | 7 | 9 | 25 |
+| LN-001..007 | 10 | N/A | 10 | 12 | 32 |
+| GE-001..006 | 4 | 8 | 8 | 8 | 28 |
+| SI-001..006 | 5 | 8 | 8 | 8 | 29 |
+| SG-001..006 | 5 | N/A | 8 | 9 | 22 |
+| **Total** | **107** | **48** | **79** | **92** | **326** |
+
+Note: The 326 total includes 47 pre-existing tests from aprender's `tests/contracts/` that predated this sweep but were verified as correctly mapping to YAML contracts.
+
 ---
 
 ## References
@@ -998,3 +1081,6 @@ Proptest coverage by contract:
 9. Bridle, J.S. (1990). "Training Stochastic Model Recognition Algorithms as Networks." *Current Communications in Computer and Information Science*.
 10. Zhang, B. & Sennrich, R. (2019). "Root Mean Square Layer Normalization." *NeurIPS*.
 11. Ba, J.L. et al. (2016). "Layer Normalization." *arXiv:1607.06450*.
+12. Hendrycks, D. & Gimpel, K. (2016). "Gaussian Error Linear Units (GELUs)." *arXiv:1606.08415*.
+13. Ramachandran, P. et al. (2017). "Searching for Activation Functions." *arXiv:1710.05941*.
+14. Shazeer, N. (2020). "GLU Variants Improve Transformer." *arXiv:2002.05202*.
