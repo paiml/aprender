@@ -451,3 +451,5 @@ mod tests_adam;
 mod tests_large_tensors;
 #[path = "tests_state_resize.rs"]
 mod tests_state_resize;
+#[path = "tests_adamw_contract.rs"]
+mod tests_adamw_contract;

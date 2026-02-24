@@ -438,3 +438,5 @@ mod ucbd;
 use ucbd::*;
 #[path = "loss_tests.rs"]
 mod loss_tests;
+#[path = "loss_tests_ce_contract.rs"]
+mod loss_tests_ce_contract;

@@ -446,3 +446,5 @@ fn test_flatten_no_op_for_2d() {
 
 #[path = "tests_flatten.rs"]
 mod tests_flatten;
+#[path = "tests_conv1d_contract.rs"]
+mod tests_conv1d_contract;
