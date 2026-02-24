@@ -105,3 +105,61 @@ fn falsify_sc_003_distinct_clusters() {
         labels[0]
     );
 }
+
+mod sc_proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// FALSIFY-SC-001-prop: Labels length matches sample count for random sizes
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(10))]
+
+        #[test]
+        fn falsify_sc_001_prop_labels_length(
+            n in 4..=12usize,
+            seed in 0..200u32,
+        ) {
+            let data: Vec<f32> = (0..n * 2)
+                .map(|i| ((i as f32 + seed as f32) * 0.37).sin() * 10.0)
+                .collect();
+            let matrix = Matrix::from_vec(n, 2, data).expect("valid");
+            let mut sc = SpectralClustering::new(2).with_gamma(1.0);
+            sc.fit(&matrix).expect("fit");
+
+            let labels = sc.predict(&matrix);
+            prop_assert_eq!(
+                labels.len(),
+                n,
+                "FALSIFIED SC-001-prop: labels len {} != {}",
+                labels.len(), n
+            );
+        }
+    }
+
+    /// FALSIFY-SC-002-prop: Label values in [0, n_clusters) for random data
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(10))]
+
+        #[test]
+        fn falsify_sc_002_prop_label_range(
+            n in 4..=12usize,
+            seed in 0..200u32,
+        ) {
+            let data: Vec<f32> = (0..n * 2)
+                .map(|i| ((i as f32 + seed as f32) * 0.37).sin() * 10.0)
+                .collect();
+            let matrix = Matrix::from_vec(n, 2, data).expect("valid");
+            let mut sc = SpectralClustering::new(2).with_gamma(1.0);
+            sc.fit(&matrix).expect("fit");
+
+            let labels = sc.predict(&matrix);
+            for (i, &label) in labels.iter().enumerate() {
+                prop_assert!(
+                    label < 2,
+                    "FALSIFIED SC-002-prop: label[{}]={} >= 2",
+                    i, label
+                );
+            }
+        }
+    }
+}

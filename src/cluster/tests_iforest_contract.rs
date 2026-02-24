@@ -94,3 +94,65 @@ fn falsify_if_003_predictions_length() {
         preds.len()
     );
 }
+
+mod iforest_proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// FALSIFY-IF-001-prop: Anomaly scores in [-1, 0] for random data
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(10))]
+
+        #[test]
+        fn falsify_if_001_prop_scores_bounded(
+            n in 8..=20usize,
+            seed in 0..200u32,
+        ) {
+            let data: Vec<f32> = (0..n * 2)
+                .map(|i| ((i as f32 + seed as f32) * 0.37).sin() * 10.0)
+                .collect();
+            let matrix = Matrix::from_vec(n, 2, data).expect("valid");
+            let mut iforest = IsolationForest::new()
+                .with_n_estimators(50)
+                .with_random_state(seed as u64);
+            iforest.fit(&matrix).expect("fit");
+
+            let scores = iforest.score_samples(&matrix);
+            for (i, &score) in scores.iter().enumerate() {
+                prop_assert!(
+                    (-1.0..=0.0).contains(&score),
+                    "FALSIFIED IF-001-prop: score[{}]={} not in [-1,0]",
+                    i, score
+                );
+            }
+        }
+    }
+
+    /// FALSIFY-IF-003-prop: Predictions length matches sample count
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(10))]
+
+        #[test]
+        fn falsify_if_003_prop_predictions_length(
+            n in 8..=20usize,
+            seed in 0..200u32,
+        ) {
+            let data: Vec<f32> = (0..n * 2)
+                .map(|i| ((i as f32 + seed as f32) * 0.37).sin() * 10.0)
+                .collect();
+            let matrix = Matrix::from_vec(n, 2, data).expect("valid");
+            let mut iforest = IsolationForest::new()
+                .with_n_estimators(50)
+                .with_random_state(seed as u64);
+            iforest.fit(&matrix).expect("fit");
+
+            let preds = iforest.predict(&matrix);
+            prop_assert_eq!(
+                preds.len(),
+                n,
+                "FALSIFIED IF-003-prop: predictions len {} != {}",
+                preds.len(), n
+            );
+        }
+    }
+}

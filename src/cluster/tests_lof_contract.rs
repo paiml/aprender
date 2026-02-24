@@ -92,3 +92,65 @@ fn falsify_lf_003_scores_length() {
         scores.len()
     );
 }
+
+mod lof_proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// FALSIFY-LF-001-prop: LOF scores positive for random data
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(10))]
+
+        #[test]
+        fn falsify_lf_001_prop_scores_positive(
+            n in 8..=15usize,
+            seed in 0..200u32,
+        ) {
+            let data: Vec<f32> = (0..n * 2)
+                .map(|i| ((i as f32 + seed as f32) * 0.37).sin() * 10.0)
+                .collect();
+            let matrix = Matrix::from_vec(n, 2, data).expect("valid");
+            let mut lof = LocalOutlierFactor::new()
+                .with_n_neighbors(3)
+                .with_contamination(0.1);
+            lof.fit(&matrix).expect("fit");
+
+            let scores = lof.score_samples(&matrix);
+            for (i, &score) in scores.iter().enumerate() {
+                prop_assert!(
+                    score > 0.0,
+                    "FALSIFIED LF-001-prop: score[{}]={} not > 0.0",
+                    i, score
+                );
+            }
+        }
+    }
+
+    /// FALSIFY-LF-003-prop: Scores length matches sample count
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(10))]
+
+        #[test]
+        fn falsify_lf_003_prop_scores_length(
+            n in 8..=15usize,
+            seed in 0..200u32,
+        ) {
+            let data: Vec<f32> = (0..n * 2)
+                .map(|i| ((i as f32 + seed as f32) * 0.37).sin() * 10.0)
+                .collect();
+            let matrix = Matrix::from_vec(n, 2, data).expect("valid");
+            let mut lof = LocalOutlierFactor::new()
+                .with_n_neighbors(3)
+                .with_contamination(0.1);
+            lof.fit(&matrix).expect("fit");
+
+            let scores = lof.score_samples(&matrix);
+            prop_assert_eq!(
+                scores.len(),
+                n,
+                "FALSIFIED LF-003-prop: scores len {} != {}",
+                scores.len(), n
+            );
+        }
+    }
+}

@@ -100,3 +100,63 @@ fn falsify_hc_003_distinct_clusters() {
         labels[0]
     );
 }
+
+mod hc_proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// FALSIFY-HC-001-prop: Labels length matches sample count for random sizes
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(15))]
+
+        #[test]
+        fn falsify_hc_001_prop_labels_length(
+            n in 4..=15usize,
+            seed in 0..500u32,
+        ) {
+            let data: Vec<f32> = (0..n * 2)
+                .map(|i| ((i as f32 + seed as f32) * 0.37).sin() * 10.0)
+                .collect();
+            let matrix = Matrix::from_vec(n, 2, data).expect("valid");
+            let mut hc = AgglomerativeClustering::new(2, Linkage::Average);
+            hc.fit(&matrix).expect("fit");
+
+            prop_assert_eq!(
+                hc.labels().len(),
+                n,
+                "FALSIFIED HC-001-prop: labels len {} != {}",
+                hc.labels().len(), n
+            );
+        }
+    }
+
+    /// FALSIFY-HC-002-prop: Number of distinct labels equals n_clusters
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(15))]
+
+        #[test]
+        fn falsify_hc_002_prop_n_clusters(
+            n in 6..=15usize,
+            seed in 0..500u32,
+        ) {
+            let data: Vec<f32> = (0..n * 2)
+                .map(|i| ((i as f32 + seed as f32) * 0.37).sin() * 10.0)
+                .collect();
+            let matrix = Matrix::from_vec(n, 2, data).expect("valid");
+            let mut hc = AgglomerativeClustering::new(2, Linkage::Ward);
+            hc.fit(&matrix).expect("fit");
+
+            let labels = hc.labels();
+            let mut unique: Vec<usize> = labels.clone();
+            unique.sort_unstable();
+            unique.dedup();
+
+            prop_assert_eq!(
+                unique.len(),
+                2,
+                "FALSIFIED HC-002-prop: unique labels {} != 2",
+                unique.len()
+            );
+        }
+    }
+}

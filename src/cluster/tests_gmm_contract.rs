@@ -117,3 +117,79 @@ fn falsify_gm_004_n_weights_equals_n_components() {
         gmm.weights().len()
     );
 }
+
+mod gm_proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// FALSIFY-GM-001-prop: Mixing weights sum to 1.0 for random data
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(10))]
+
+        #[test]
+        fn falsify_gm_001_prop_weights_sum(
+            seed in 0..200u32,
+        ) {
+            // Two tight clusters with separation
+            let mut data = Vec::with_capacity(16);
+            for i in 0..4 {
+                let offset = (seed as f32 + i as f32) * 0.01;
+                data.push(1.0 + offset);
+                data.push(1.0 + offset);
+            }
+            for i in 0..4 {
+                let offset = (seed as f32 + i as f32) * 0.01;
+                data.push(10.0 + offset);
+                data.push(10.0 + offset);
+            }
+            let matrix = Matrix::from_vec(8, 2, data).expect("valid");
+            let mut gmm = GaussianMixture::new(2, CovarianceType::Spherical)
+                .with_random_state(seed as u64)
+                .with_max_iter(50);
+            gmm.fit(&matrix).expect("fit");
+
+            let weights = gmm.weights();
+            let sum: f32 = weights.as_slice().iter().sum();
+            prop_assert!(
+                (sum - 1.0).abs() < 0.01,
+                "FALSIFIED GM-001-prop: weights sum={}, expected ~1.0",
+                sum
+            );
+        }
+    }
+
+    /// FALSIFY-GM-002-prop: Labels length matches sample count
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(10))]
+
+        #[test]
+        fn falsify_gm_002_prop_labels_length(
+            seed in 0..200u32,
+        ) {
+            let n = 8usize;
+            let mut data = Vec::with_capacity(n * 2);
+            for i in 0..4 {
+                let offset = (seed as f32 + i as f32) * 0.01;
+                data.push(0.0 + offset);
+                data.push(0.0 + offset);
+            }
+            for i in 0..4 {
+                let offset = (seed as f32 + i as f32) * 0.01;
+                data.push(5.0 + offset);
+                data.push(5.0 + offset);
+            }
+            let matrix = Matrix::from_vec(n, 2, data).expect("valid");
+            let mut gmm = GaussianMixture::new(2, CovarianceType::Spherical)
+                .with_random_state(seed as u64)
+                .with_max_iter(50);
+            gmm.fit(&matrix).expect("fit");
+
+            prop_assert_eq!(
+                gmm.labels().len(),
+                n,
+                "FALSIFIED GM-002-prop: labels len {} != {}",
+                gmm.labels().len(), n
+            );
+        }
+    }
+}
