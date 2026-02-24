@@ -184,6 +184,11 @@ mod metadata_bounds_contract_falsify;
 #[cfg(test)]
 mod tokenizer_vocab_contract_falsify;
 
+// Embedding contract falsification (FALSIFY-EM-001..004, FALSIFY-EMB-001..007)
+// Refs: embedding-lookup-v1.yaml, embedding-algebra-v1.yaml (PMAT-339, PMAT-340)
+#[cfg(test)]
+mod embedding_contract_falsify;
+
 // Digital signatures (spec §4.2, PMAT-198)
 #[cfg(feature = "format-signing")]
 pub mod signing;
