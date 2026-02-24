@@ -551,6 +551,39 @@ mod softmax_contract_tests {
             "FALSIFIED SM-006: row 2 sum={row2_sum}"
         );
     }
+
+    /// FALSIFY-SM-007: Translation invariance — σ(x + c) = σ(x) for any scalar c
+    ///
+    /// Five-Whys (PMAT-354):
+    ///   Why 1: SM-INV-003 (translation invariance) had ZERO coverage in any repo
+    ///   Why 2: max-subtraction trick IMPLEMENTS this but nobody tested it
+    ///   Why 3: shift invariance is "obviously true" from the definition
+    ///   Why 4: no mapping from proof obligation SM-INV-003 to any FALSIFY test
+    ///   Why 5: foundational to numerical stability but untested
+    ///
+    /// Contract: σ(x + c·1) = σ(x) for any scalar c.
+    #[test]
+    fn falsify_sm_007_translation_invariance() {
+        let base = Tensor::new(&[1.0_f32, 3.0, -2.0, 0.5], &[1, 4]);
+        let base_probs = softmax(&base, -1);
+
+        for c in [100.0_f32, -100.0, 0.0, 42.0, -999.0] {
+            let shifted = Tensor::new(&[1.0 + c, 3.0 + c, -2.0 + c, 0.5 + c], &[1, 4]);
+            let shifted_probs = softmax(&shifted, -1);
+
+            for (i, (&orig, &shift)) in base_probs
+                .data()
+                .iter()
+                .zip(shifted_probs.data().iter())
+                .enumerate()
+            {
+                assert!(
+                    (orig - shift).abs() < 1e-5,
+                    "FALSIFIED SM-007: σ(x+{c})[{i}] = {shift} != σ(x)[{i}] = {orig}"
+                );
+            }
+        }
+    }
 }
 
 #[cfg(test)]
