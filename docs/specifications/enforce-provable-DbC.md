@@ -564,6 +564,63 @@ These matches are acceptable and should NOT be treated as violations:
 
 ---
 
+## 8. Embedding Contract Falsification (PMAT-325, §2.1.1)
+
+**Date**: 2026-02-24
+**Scope**: aprender, realizar, entrenar, trueno
+
+### 8.1 Five-Whys Root Cause Analysis
+
+| Why | Finding |
+|-----|---------|
+| **Why 1** | provable-contracts defines 11 FALSIFY-EM/EMB tests, zero implemented as Rust tests |
+| **Why 2** | Existing S6/E6/TE-* tests used different IDs, creating a coverage illusion |
+| **Why 3** | No cross-reference audit between contract YAML IDs and runnable tests |
+| **Why 4** | `Embedding::forward_into` silently skips OOB tokens (zeros in buffer) |
+| **Why 5** | Nobody wrote FALSIFY-EM-002 which would catch this violation |
+| **Root cause** | Silent OOB masking + no systematic contract-to-test mapping |
+
+### 8.2 N-09: Silent OOB Token Embedding (Finding)
+
+**8 code paths** across 4 repos silently zero-fill when token_id >= vocab_size:
+
+| Repo | File | Function | Fix |
+|------|------|----------|-----|
+| aprender | `models/qwen2/mod.rs:99` | `forward_into` | `eprintln!` warning |
+| aprender | `citl/neural/transformer_layer.rs:356` | `embedding_lookup` | `eprintln!` warning |
+| realizar | `gpu/mod.rs:246` | `batch_embed` | `eprintln!` warning |
+| realizar | `apr/forward_cuda.rs:179` | `forward_cuda_embed` | `eprintln!` warning |
+| realizar | `gguf/inference/matmul_fused.rs:12` | `embed` | `eprintln!` warning |
+| realizar | `gguf/inference/matmul_fused.rs:28` | `embed_into` | `eprintln!` warning |
+| realizar | `apr_transformer/mod_apr_transformer.rs:113` | `embed` | `eprintln!` (was debug-only) |
+| entrenar | `transformer/embedding.rs:73` | `forward` | `eprintln!` warning |
+
+**Exception**: trueno `Matrix::embedding_lookup` correctly returns `Err(TruenoError::InvalidInput(...))`.
+
+### 8.3 Falsification Tests Implemented
+
+| Contract | IDs | File | Count |
+|----------|-----|------|-------|
+| embedding-lookup-v1.yaml | FALSIFY-EM-001..004 | `src/format/embedding_contract_falsify.rs` | 8 |
+| embedding-algebra-v1.yaml | FALSIFY-EMB-001..007 | `src/format/embedding_contract_falsify.rs` | 12 |
+| tied-embeddings-v1.yaml | FALSIFY-TE-CROSS | `src/format/embedding_contract_falsify.rs` | 2 |
+| **TOTAL** | | | **22** |
+
+### 8.4 PMAT-328: lm_head Dimension Validation
+
+`realizar/src/apr/forward_from_cuda_helpers.rs:forward_cuda_lm_head` now validates `lm_head.len() == vocab_size * hidden_dim` before transpose/matmul, per tied-embeddings-v1.yaml contract.
+
+### 8.5 Commits
+
+- `10c14226` — FALSIFY-EM-001..004 + FALSIFY-EMB-001..007 (20 tests)
+- `f9834e7e` — N-09 OOB warnings in aprender (2 paths)
+- `e7e0818f` — FALSIFY-TE-CROSS tied lm_head tests (2 tests)
+- `bf946dd`/`220c706` — N-09 OOB warnings in realizar (5 paths)
+- `e3e57f3` — N-09 OOB warning in entrenar (1 path)
+- `752fc2d` — PMAT-328 lm_head dimension check in realizar
+
+---
+
 ## References
 
 1. Meyer, B. (1992). "Applying 'Design by Contract'." *IEEE Computer*, 25(10), 40-51.
