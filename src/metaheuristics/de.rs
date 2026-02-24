@@ -145,3 +145,7 @@ pub enum AdaptationStrategy {
 
 include!("de_impl.rs");
 include!("de_optimize.rs");
+
+#[cfg(test)]
+#[path = "tests_de_contract.rs"]
+mod tests_de_contract;

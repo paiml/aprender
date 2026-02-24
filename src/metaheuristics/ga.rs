@@ -283,6 +283,10 @@ impl PerturbativeMetaheuristic for GeneticAlgorithm {
 }
 
 #[cfg(test)]
+#[path = "tests_ga_contract.rs"]
+mod tests_ga_contract;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
