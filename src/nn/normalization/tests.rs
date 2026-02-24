@@ -448,3 +448,5 @@ fn test_batch_norm_1d_parameters_mut() {
 mod tests_batchnorm_groupnorm;
 #[path = "tests_norm_edge_cases.rs"]
 mod tests_norm_edge_cases;
+#[path = "tests_rmsnorm_contract.rs"]
+mod tests_rmsnorm_contract;
