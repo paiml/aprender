@@ -310,3 +310,7 @@ mod parameter;
 #[cfg(test)]
 #[path = "sgd_tests.rs"]
 mod sgd_tests;
+
+#[cfg(test)]
+#[path = "tests_sgd_contract.rs"]
+mod tests_sgd_contract;
