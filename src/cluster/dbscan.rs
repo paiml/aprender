@@ -204,3 +204,7 @@ impl UnsupervisedEstimator for DBSCAN {
         self.labels().clone()
     }
 }
+
+#[cfg(test)]
+#[path = "tests_dbscan_contract.rs"]
+mod tests_dbscan_contract;

@@ -315,3 +315,7 @@ impl Mul for &Vector<f32> {
 #[cfg(test)]
 #[path = "vector_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "tests_vector_contract.rs"]
+mod tests_vector_contract;

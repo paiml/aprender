@@ -441,3 +441,7 @@ pub struct GridSearchResult {
 }
 
 include!("alpha.rs");
+
+#[cfg(test)]
+#[path = "tests_kfold_contract.rs"]
+mod tests_kfold_contract;
