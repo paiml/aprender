@@ -464,3 +464,7 @@ impl BayesianLinearRegression {
 #[cfg(test)]
 #[path = "regression_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "tests_blr_contract.rs"]
+mod tests_blr_contract;

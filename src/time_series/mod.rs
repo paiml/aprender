@@ -425,3 +425,7 @@ impl ARIMA {
 #[cfg(test)]
 #[path = "time_series_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "tests_arima_contract.rs"]
+mod tests_arima_contract;

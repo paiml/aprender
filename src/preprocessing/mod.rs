@@ -441,3 +441,7 @@ impl Default for RobustScaler {
 }
 
 include!("mod_include_01.rs");
+
+#[cfg(test)]
+#[path = "tests_normalization_contract.rs"]
+mod tests_normalization_contract;
