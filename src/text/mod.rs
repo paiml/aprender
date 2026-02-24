@@ -128,3 +128,8 @@ pub mod rag {
 
     pub use trueno_rag::*;
 }
+
+// Text preprocessing contract falsification (FALSIFY-PP-001..006)
+// Refs: NLP spec §2.1.1, PMAT-346
+#[cfg(test)]
+mod preprocessing_contract_falsify;
