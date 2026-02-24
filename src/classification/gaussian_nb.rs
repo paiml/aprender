@@ -299,3 +299,7 @@ pub struct GaussianNB {
     /// Laplace smoothing parameter (`var_smoothing`)
     pub(crate) var_smoothing: f32,
 }
+
+#[cfg(test)]
+#[path = "tests_knn_contract.rs"]
+mod tests_knn_contract;

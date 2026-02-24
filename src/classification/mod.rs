@@ -425,3 +425,7 @@ pub use gaussian_nb::*;
 mod linear_svm;
 pub use linear_svm::*;
 mod sets;
+
+#[cfg(test)]
+#[path = "tests_logreg_contract.rs"]
+mod tests_logreg_contract;
