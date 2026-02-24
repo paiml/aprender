@@ -327,3 +327,7 @@ impl Default for SpectralClustering {
         Self::new(2)
     }
 }
+
+#[cfg(test)]
+#[path = "tests_spectral_contract.rs"]
+mod tests_spectral_contract;

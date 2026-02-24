@@ -447,3 +447,7 @@ impl UnsupervisedEstimator for GaussianMixture {
         labels
     }
 }
+
+#[cfg(test)]
+#[path = "tests_gmm_contract.rs"]
+mod tests_gmm_contract;
