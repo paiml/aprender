@@ -248,3 +248,97 @@ fn test_placeholder_accessors() {
     assert!(layer.bias().is_none());
     assert_eq!(layer.weight().shape(), &[1]); // placeholder uses 1-element tensor
 }
+
+// =========================================================================
+// FALSIFY-LP: linear-projection-v1.yaml contract (aprender Linear)
+//
+// Five-Whys (PMAT-354):
+//   Why 1: aprender had 15+ Linear unit tests but zero FALSIFY-LP-* tests
+//   Why 2: unit tests verify shapes/params, not mathematical invariants
+//   Why 3: no mapping from linear-projection-v1.yaml to aprender test names
+//   Why 4: aprender predates the provable-contracts YAML convention
+//   Why 5: Linear was "obviously correct" (y = xW^T + b)
+//
+// References:
+//   - provable-contracts/contracts/linear-projection-v1.yaml
+//   - Bishop (2006) "Pattern Recognition and Machine Learning"
+// =========================================================================
+
+/// FALSIFY-LP-001: Output shape — y.shape = (batch, d_out)
+#[test]
+fn falsify_lp_001_output_shape() {
+    for &(batch, d_in, d_out) in &[(1, 4, 8), (16, 32, 16), (64, 128, 64), (1, 1, 1)] {
+        let layer = Linear::new(d_in, d_out);
+        let x = Tensor::ones(&[batch, d_in]);
+        let y = layer.forward(&x);
+        assert_eq!(
+            y.shape(),
+            &[batch, d_out],
+            "FALSIFIED LP-001: output shape {:?}, expected [{batch}, {d_out}]",
+            y.shape()
+        );
+    }
+}
+
+/// FALSIFY-LP-002: Homogeneity without bias — f(alpha*x) = alpha*f(x)
+#[test]
+fn falsify_lp_002_homogeneity_no_bias() {
+    let layer = Linear::without_bias(4, 3);
+    let x = Tensor::new(&[1.0, -2.0, 3.0, -0.5, 0.5, 1.5, -1.0, 2.0], &[2, 4]);
+    let y_base = layer.forward(&x);
+
+    for &alpha in &[2.0_f32, 0.5, -1.0, -3.0, 0.1] {
+        let scaled_data: Vec<f32> = x.data().iter().map(|&v| v * alpha).collect();
+        let x_scaled = Tensor::new(&scaled_data, x.shape());
+        let y_scaled = layer.forward(&x_scaled);
+
+        for (i, (&ys, &yb)) in y_scaled.data().iter().zip(y_base.data().iter()).enumerate() {
+            let expected = alpha * yb;
+            let diff = (ys - expected).abs();
+            let tol = 1e-3 * expected.abs().max(1.0);
+            assert!(
+                diff < tol,
+                "FALSIFIED LP-002: f({alpha}*x)[{i}] = {ys}, expected {expected}, diff = {diff}"
+            );
+        }
+    }
+}
+
+/// FALSIFY-LP-004: Zero input produces bias — f(0, W, b) = b
+#[test]
+fn falsify_lp_004_zero_input_produces_bias() {
+    let layer = Linear::new(4, 3);
+    let x = Tensor::zeros(&[2, 4]);
+    let y = layer.forward(&x);
+
+    let bias = layer.bias().expect("layer has bias");
+    let bias_data = bias.data();
+
+    // Each row of output should equal the bias vector
+    for row in 0..2 {
+        for col in 0..3 {
+            let out_val = y.data()[row * 3 + col];
+            let bias_val = bias_data[col];
+            let diff = (out_val - bias_val).abs();
+            assert!(
+                diff < 1e-5,
+                "FALSIFIED LP-004: f(0)[{row}][{col}] = {out_val}, expected bias = {bias_val}"
+            );
+        }
+    }
+}
+
+/// FALSIFY-LP-002b: Zero preservation without bias — f(0, W) = 0
+#[test]
+fn falsify_lp_002b_zero_preservation_no_bias() {
+    let layer = Linear::without_bias(4, 3);
+    let x = Tensor::zeros(&[2, 4]);
+    let y = layer.forward(&x);
+
+    for (i, &val) in y.data().iter().enumerate() {
+        assert!(
+            val.abs() < 1e-6,
+            "FALSIFIED LP-002: f_no_bias(0)[{i}] = {val}, expected 0"
+        );
+    }
+}

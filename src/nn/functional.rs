@@ -547,4 +547,78 @@ mod softmax_contract_tests {
     }
 }
 
+#[cfg(test)]
+mod gelu_contract_tests {
+    use super::*;
+
+    // =========================================================================
+    // FALSIFY-GE: gelu-kernel-v1.yaml contract (aprender functional::gelu)
+    //
+    // Five-Whys (PMAT-354):
+    //   Why 1: aprender had zero FALSIFY-GE-* tests for functional::gelu
+    //   Why 2: gelu delegates to trueno::gelu_scalar, assumed "tested upstream"
+    //   Why 3: no mapping from gelu-kernel-v1.yaml to aprender test names
+    //   Why 4: aprender predates the provable-contracts YAML convention
+    //   Why 5: GELU was "obviously correct" (single-line tanh formula)
+    //
+    // References:
+    //   - provable-contracts/contracts/gelu-kernel-v1.yaml
+    //   - Hendrycks & Gimpel (2016) "Gaussian Error Linear Units"
+    // =========================================================================
+
+    /// FALSIFY-GE-001: Non-negativity — GELU(x) >= 0 for positive x (Tensor API)
+    #[test]
+    fn falsify_ge_001_non_negativity() {
+        let x = Tensor::new(&[0.001, 0.1, 1.0, 5.0, 10.0, 100.0], &[6]);
+        let y = gelu(&x);
+        for (i, &val) in y.data().iter().enumerate() {
+            assert!(
+                val >= 0.0,
+                "FALSIFIED GE-001: gelu(positive)[{i}] = {val} < 0"
+            );
+        }
+    }
+
+    /// FALSIFY-GE-002: Monotonicity — GELU preserves ordering for positive inputs
+    #[test]
+    fn falsify_ge_002_positive_monotonicity() {
+        let x = Tensor::new(&[0.1, 0.5, 1.0, 2.0, 5.0, 10.0], &[6]);
+        let y = gelu(&x);
+        let data = y.data();
+        for i in 1..data.len() {
+            assert!(
+                data[i] > data[i - 1],
+                "FALSIFIED GE-002: GELU not monotonic: [{i}]={} not > [{}]={}",
+                data[i],
+                i - 1,
+                data[i - 1]
+            );
+        }
+    }
+
+    /// FALSIFY-GE-003: Zero preservation — GELU(0) = 0
+    #[test]
+    fn falsify_ge_003_zero_preservation() {
+        let x = Tensor::new(&[0.0], &[1]);
+        let y = gelu(&x);
+        assert!(
+            y.data()[0].abs() < 1e-7,
+            "FALSIFIED GE-003: GELU(0) = {}, expected 0",
+            y.data()[0]
+        );
+    }
+
+    /// FALSIFY-GE-006: Large input stability — GELU(x) ≈ x for large x
+    #[test]
+    fn falsify_ge_006_large_input_stability() {
+        let x = Tensor::new(&[10.0, 50.0, -10.0, -50.0], &[4]);
+        let y = gelu(&x);
+        let data = y.data();
+        assert!((data[0] - 10.0).abs() < 0.01, "FALSIFIED GE-006: GELU(10) = {}", data[0]);
+        assert!((data[1] - 50.0).abs() < 0.01, "FALSIFIED GE-006: GELU(50) = {}", data[1]);
+        assert!(data[2].abs() < 0.01, "FALSIFIED GE-006: GELU(-10) = {}", data[2]);
+        assert!(data[3].abs() < 0.01, "FALSIFIED GE-006: GELU(-50) = {}", data[3]);
+    }
+}
+
 include!("functional_include_01.rs");
