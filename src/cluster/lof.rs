@@ -376,3 +376,7 @@ impl Default for LocalOutlierFactor {
         Self::new()
     }
 }
+
+#[cfg(test)]
+#[path = "tests_lof_contract.rs"]
+mod tests_lof_contract;

@@ -327,3 +327,7 @@ impl UnsupervisedEstimator for AgglomerativeClustering {
         self.labels().clone()
     }
 }
+
+#[cfg(test)]
+#[path = "tests_agglomerative_contract.rs"]
+mod tests_agglomerative_contract;

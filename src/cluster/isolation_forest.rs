@@ -417,3 +417,7 @@ impl Default for IsolationForest {
         Self::new()
     }
 }
+
+#[cfg(test)]
+#[path = "tests_iforest_contract.rs"]
+mod tests_iforest_contract;
