@@ -71,3 +71,7 @@ include!("test_module.rs");
 #[cfg(test)]
 #[path = "tests_dijkstra_contract.rs"]
 mod tests_dijkstra_contract;
+
+#[cfg(test)]
+#[path = "tests_community_contract.rs"]
+mod tests_community_contract;

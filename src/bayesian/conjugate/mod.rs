@@ -377,3 +377,7 @@ pub struct GammaPoisson {
 include!("normal_inverse_gamma.rs");
 include!("normal_inverse_gamma_methods.rs");
 include!("dirichlet_multinomial.rs");
+
+#[cfg(test)]
+#[path = "tests_conjugate_contract.rs"]
+mod tests_conjugate_contract;
