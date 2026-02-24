@@ -355,3 +355,9 @@ pub fn top_k_similar(
 #[cfg(test)]
 #[path = "similarity_tests.rs"]
 mod tests;
+
+// Similarity metrics contract falsification (FALSIFY-SIM-001..008)
+// Refs: NLP spec §2.1.6, PMAT-349
+#[cfg(test)]
+#[path = "similarity_contract_falsify.rs"]
+mod similarity_contract_falsify;

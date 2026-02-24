@@ -91,3 +91,8 @@ fn hash_term(term: &str, n_features: usize) -> usize {
 
 #[cfg(test)]
 mod tests;
+
+// Vectorization contract falsification (FALSIFY-VEC-001..007)
+// Refs: NLP spec §2.1.2, PMAT-348
+#[cfg(test)]
+mod vectorize_contract_falsify;
