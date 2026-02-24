@@ -2,8 +2,8 @@
 
 **Reference**: Meyer, B. (1992). "Applying 'Design by Contract'." *IEEE Computer*, 25(10), 40-51.
 
-**Status**: PHASE 1 COMPLETE — all C-01–C-11 and N-01–N-08 fixed
-**Date**: 2026-02-23 (updated 2026-02-23)
+**Status**: PHASE 9 — 182 FALSIFY tests across stack (proptest closure)
+**Date**: 2026-02-23 (updated 2026-02-24)
 **Scope**: trueno, realizar, aprender, entrenar, batuta, provable-contracts, apr-playbook
 
 ---
@@ -881,6 +881,34 @@ Our implementation extends to SM-001..009 with the following mapping:
 - aprender `4678120e` — FALSIFY-AP-001/002/003-prop (3 proptest: random dim position encoding)
 - aprender `475cc736` — FALSIFY-EMB-006/007-prop (2 proptest: temperature identity+monotonicity)
 - trueno `af30d15` — FALSIFY-EM-001/EMB-001/EMB-004-prop (3 proptest: random dim/index embedding)
+
+**Phase 9 (TE/SM/EM proptest closure across stack)**:
+
+Five-Whys:
+- Why 1: TE contract had zero proptest coverage across entire stack
+- Why 2: SM-003-prop (order preservation) missing from trueno/entrenar/realizar
+- Why 3: EM proptest had zero coverage in entrenar and realizar
+- Why 4: Fixed test dimensions miss edge cases in Q4K block alignment
+- Why 5: YAML contracts explicitly call for "proptest with random..." on all claims
+
+Tests added (15 new, 167→182 total):
+- entrenar `f25e80a` — FALSIFY-TE-001/002/004-prop (3 proptest: random seq_len/tokens)
+- realizar `8ca8549` — FALSIFY-TE-001/002/004-prop (3 proptest: random hidden/vocab dims)
+- trueno `95aea7d` — FALSIFY-SM-003-prop (1 proptest: order preservation, 500 cases)
+- entrenar `c918796` — FALSIFY-SM-003-prop + EM-001/003/004-prop (4 proptest)
+- realizar `f63dc56` — FALSIFY-SM-003-prop + EM-001/003/004-prop (4 proptest)
+
+Phase 9 coverage matrix (d=deterministic, p=proptest):
+
+| Contract | aprender | trueno | entrenar | realizar | Total |
+|----------|----------|--------|----------|----------|-------|
+| EM-001..005 | 21d+3p | 12d+1p | 6d+3p | 7d+3p | 56 |
+| EMB-001..007 | 24d+4p | 5d+2p | 7d | 7d | 49 |
+| TE-001..004 | 2d | N/A | 4d+3p | 4d+3p | 16 |
+| SM-001..009 | 9d+3p | 9d+3p | 8d+3p | 9d+3p | 47 |
+| AP-001..005 | 4d+4p | N/A | N/A | 4d | 12 |
+| PIPE-001 | N/A | N/A | 1d | 1d | 2 |
+| **Total** | **74** | **32** | **35** | **41** | **182** |
 
 ---
 
