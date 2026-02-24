@@ -334,3 +334,7 @@ impl Default for DecisionTreeClassifier {
 #[cfg(test)]
 #[path = "classifier_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "tests_dt_contract.rs"]
+mod tests_dt_contract;

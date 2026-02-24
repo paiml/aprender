@@ -268,3 +268,7 @@ pub struct LinearSVM {
     /// Convergence tolerance (default: 1e-4)
     pub(crate) tol: f32,
 }
+
+#[cfg(test)]
+#[path = "tests_nb_contract.rs"]
+mod tests_nb_contract;

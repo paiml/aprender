@@ -201,3 +201,7 @@ impl Default for LinearSVM {
 #[cfg(test)]
 #[path = "tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "tests_svm_contract.rs"]
+mod tests_svm_contract;

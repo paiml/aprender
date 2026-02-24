@@ -297,3 +297,7 @@ pub struct RandomForestClassifier {
 
 include!("random_forest_classifier.rs");
 include!("random_forest_tests.rs");
+
+#[cfg(test)]
+#[path = "tests_rf_contract.rs"]
+mod tests_rf_contract;
