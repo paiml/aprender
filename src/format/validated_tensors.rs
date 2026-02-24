@@ -180,6 +180,10 @@ impl ValidatedEmbedding {
     const MIN_L2_NORM: f32 = 1e-6;
     const MIN_TOKEN_L2: f32 = 1e-6;
     const SPOT_CHECK_PCTS: [usize; 3] = [10, 50, 90];
+    /// PMAT-325: Maximum fraction of dead (all-zero) token rows.
+    /// Catches partial corruption where global density is fine but many
+    /// individual rows are dead. 25% allows special/padding tokens.
+    const MAX_DEAD_ROW_PCT: f32 = 25.0;
 
     /// Construct a validated embedding tensor
     ///
@@ -224,6 +228,9 @@ impl ValidatedEmbedding {
 
         // Gate 7: Spot check validation at 10%/50%/90% of vocab
         Self::validate_spot_checks(&data, vocab_size, hidden_dim)?;
+
+        // Gate 8: Dead-row semantic gate (PMAT-325)
+        Self::validate_dead_rows(&data, vocab_size, hidden_dim)?;
 
         Ok(Self {
             data,
@@ -300,6 +307,40 @@ impl ValidatedEmbedding {
                     });
                 }
             }
+        }
+        Ok(())
+    }
+
+    /// Validate dead-row count (Gate 8, PMAT-325).
+    ///
+    /// A "dead row" is a token embedding where L2 norm < MIN_TOKEN_L2.
+    /// Catches partial corruption: global density fine but many rows dead.
+    fn validate_dead_rows(
+        data: &[f32],
+        vocab_size: usize,
+        hidden_dim: usize,
+    ) -> Result<(), ContractValidationError> {
+        let mut dead_count = 0usize;
+        for token_id in 0..vocab_size {
+            let start = token_id * hidden_dim;
+            let end = start + hidden_dim;
+            if end <= data.len() {
+                let row_l2: f32 = data[start..end].iter().map(|x| x * x).sum::<f32>().sqrt();
+                if row_l2 < Self::MIN_TOKEN_L2 {
+                    dead_count += 1;
+                }
+            }
+        }
+        let dead_pct = 100.0 * dead_count as f32 / vocab_size as f32;
+        if dead_pct > Self::MAX_DEAD_ROW_PCT {
+            return Err(ContractValidationError {
+                tensor_name: "embedding".to_string(),
+                rule_id: "F-DATA-QUALITY-005".to_string(),
+                message: format!(
+                    "DEAD ROW FAILURE: {dead_count}/{vocab_size} rows ({dead_pct:.1}%) are dead (max {}%)",
+                    Self::MAX_DEAD_ROW_PCT
+                ),
+            });
         }
         Ok(())
     }

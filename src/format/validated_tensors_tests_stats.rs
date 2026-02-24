@@ -768,6 +768,86 @@
     }
 
     // =========================================================================
+    // FALSIFY-E8: Dead-Row Semantic Gate (PMAT-325)
+    //
+    // Five-Whys:
+    //   Why 1: Embedding table could have many dead (zero) rows
+    //   Why 2: Global density check passes if non-dead rows have good values
+    //   Why 3: Dead rows mean unused vocab entries or partial corruption
+    //   Why 4: No per-row semantic check existed before Gate 8
+    //   Why 5: Spot check only samples 3 positions — can miss concentrated dead zones
+    //
+    // Popper (1959): "These tests attempt to falsify the claim that
+    // ValidatedEmbedding catches partial row-level corruption."
+    // =========================================================================
+
+    /// FALSIFY-E8a: >25% dead rows rejected by Gate 8
+    ///
+    /// Embedding with 30% dead rows should be rejected even if
+    /// global density is below 50% (because non-dead rows have values).
+    /// Dead rows are placed to avoid spot-check positions (tokens 10, 50, 90).
+    #[test]
+    fn falsify_e8a_dead_row_gate_rejects_many_dead_rows() {
+        let vocab = 100;
+        let hidden = 8;
+        // Dead token IDs: avoid spot-check positions (10, 50, 90)
+        let dead_set: std::collections::HashSet<usize> = (0..30)
+            .map(|i| match i {
+                // Remap collisions: skip 10, 50, 90
+                _ if i < 9 => i,           // 0-8
+                _ if i < 18 => i + 2,       // 11-19 (skip 10)
+                _ if i < 27 => i + 22,      // 40-48 (skip area, avoid 50)
+                _ => i + 32,                // 62-64
+            })
+            .collect();
+        assert_eq!(dead_set.len(), 30, "Must have exactly 30 unique dead rows");
+        assert!(!dead_set.contains(&10), "Must not contain spot-check position 10");
+        assert!(!dead_set.contains(&50), "Must not contain spot-check position 50");
+        assert!(!dead_set.contains(&90), "Must not contain spot-check position 90");
+
+        let mut data = Vec::with_capacity(vocab * hidden);
+        for token_id in 0..vocab {
+            if dead_set.contains(&token_id) {
+                data.extend(std::iter::repeat_n(0.0f32, hidden));
+            } else {
+                for j in 0..hidden {
+                    data.push(((token_id * hidden + j) as f32 * 0.123).sin() * 0.5);
+                }
+            }
+        }
+        let result = ValidatedEmbedding::new(data, vocab, hidden);
+        assert!(result.is_err(),
+            "FALSIFY-E8a: PMAT-325 fix — 30% dead rows MUST be rejected (threshold: 25%)");
+        let err = result.unwrap_err();
+        assert!(err.message.contains("DEAD ROW"),
+            "FALSIFY-E8a: Error must mention DEAD ROW, got: {}", err.message);
+    }
+
+    /// FALSIFY-E8b: <25% dead rows allowed (padding/special tokens)
+    ///
+    /// Embedding with 10% dead rows should be accepted — a few dead rows
+    /// are normal for padding and special tokens.
+    #[test]
+    fn falsify_e8b_few_dead_rows_allowed() {
+        let vocab = 100;
+        let hidden = 8;
+        let mut data = Vec::with_capacity(vocab * hidden);
+        // 10 dead rows (special tokens)
+        for _ in 0..10 {
+            data.extend(std::iter::repeat_n(0.0f32, hidden));
+        }
+        // 90 alive rows
+        for i in 0..90 {
+            for j in 0..hidden {
+                data.push(((i * hidden + j) as f32 * 0.234).sin() * 0.5);
+            }
+        }
+        let result = ValidatedEmbedding::new(data, vocab, hidden);
+        assert!(result.is_ok(),
+            "FALSIFY-E8b: 10% dead rows must be ACCEPTED (padding/special tokens normal)");
+    }
+
+    // =========================================================================
     // FALSIFY-ARCH: Architecture Requirements Contract — Five-Whys Gap Analysis
     //
     // Contract: architecture-requirements-v1.yaml
