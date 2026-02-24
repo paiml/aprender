@@ -41,12 +41,8 @@ fn falsify_km_001_valid_indices() {
 /// FALSIFY-KM-002: Objective non-negative — inertia >= 0
 #[test]
 fn falsify_km_002_inertia_non_negative() {
-    let data = Matrix::from_vec(
-        4,
-        2,
-        vec![0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0],
-    )
-    .expect("valid matrix");
+    let data =
+        Matrix::from_vec(4, 2, vec![0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0]).expect("valid matrix");
 
     let mut km = KMeans::new(2).with_random_state(42);
     km.fit(&data).expect("fit succeeds");
@@ -64,7 +60,9 @@ fn falsify_km_003_nearest_centroid() {
     let data = Matrix::from_vec(
         6,
         2,
-        vec![0.0, 0.0, 0.1, 0.1, 0.2, 0.2, 10.0, 10.0, 10.1, 10.1, 10.2, 10.2],
+        vec![
+            0.0, 0.0, 0.1, 0.1, 0.2, 0.2, 10.0, 10.0, 10.1, 10.1, 10.2, 10.2,
+        ],
     )
     .expect("valid matrix");
 
@@ -107,12 +105,7 @@ fn falsify_km_003_nearest_centroid() {
 /// FALSIFY-KM-004: K=1 — all points in same cluster, centroid is mean
 #[test]
 fn falsify_km_004_single_cluster() {
-    let data = Matrix::from_vec(
-        3,
-        2,
-        vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-    )
-    .expect("valid matrix");
+    let data = Matrix::from_vec(3, 2, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]).expect("valid matrix");
 
     let mut km = KMeans::new(1).with_random_state(42);
     km.fit(&data).expect("fit succeeds");

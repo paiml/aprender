@@ -1,4 +1,3 @@
-
 // ============================================================================
 // Model Metadata Bounds Contract Falsification (FALSIFY-MB-001..005)
 //
@@ -40,8 +39,8 @@ mod metadata_bounds_contract {
 
     /// Read the bounds contract YAML.
     fn read_bounds_content() -> String {
-        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("contracts/model-metadata-bounds-v1.yaml");
+        let path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("contracts/model-metadata-bounds-v1.yaml");
         assert!(
             path.exists(),
             "contracts/model-metadata-bounds-v1.yaml must exist (Gap 2)"
@@ -65,7 +64,8 @@ mod metadata_bounds_contract {
                 continue;
             }
             // Detect section end (new top-level key)
-            if in_section && !line.starts_with(' ') && !line.starts_with('#') && !trimmed.is_empty() {
+            if in_section && !line.starts_with(' ') && !line.starts_with('#') && !trimmed.is_empty()
+            {
                 break;
             }
             if !in_section {
@@ -108,7 +108,8 @@ mod metadata_bounds_contract {
                 in_section = true;
                 continue;
             }
-            if in_section && !line.starts_with(' ') && !line.starts_with('#') && !trimmed.is_empty() {
+            if in_section && !line.starts_with(' ') && !line.starts_with('#') && !trimmed.is_empty()
+            {
                 break;
             }
             if !in_section {
@@ -164,9 +165,11 @@ mod metadata_bounds_contract {
 
     /// Load all model-family YAML configs.
     fn load_all_family_configs() -> Vec<(String, ModelFamilyConfig)> {
-        let families_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("contracts/model-families");
-        assert!(families_dir.exists(), "contracts/model-families/ must exist");
+        let families_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("contracts/model-families");
+        assert!(
+            families_dir.exists(),
+            "contracts/model-families/ must exist"
+        );
 
         let mut families = Vec::new();
         let entries = std::fs::read_dir(&families_dir).expect("read model-families dir");
@@ -175,16 +178,19 @@ mod metadata_bounds_contract {
             let entry = entry.expect("read dir entry");
             let path = entry.path();
             let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            let ext_is_yaml = path
-                .extension()
-                .is_some_and(|ext| ext.eq_ignore_ascii_case("yaml") || ext.eq_ignore_ascii_case("yml"));
+            let ext_is_yaml = path.extension().is_some_and(|ext| {
+                ext.eq_ignore_ascii_case("yaml") || ext.eq_ignore_ascii_case("yml")
+            });
             if !ext_is_yaml || file_name.starts_with('_') {
                 continue;
             }
 
             let config = load_family_yaml(&path)
                 .unwrap_or_else(|e| panic!("Failed to load {}: {e}", path.display()));
-            let name = file_name.trim_end_matches(".yaml").trim_end_matches(".yml").to_string();
+            let name = file_name
+                .trim_end_matches(".yaml")
+                .trim_end_matches(".yml")
+                .to_string();
             families.push((name, config));
         }
 
@@ -198,7 +204,10 @@ mod metadata_bounds_contract {
 
     /// Get the range for a given field from parsed range bounds.
     fn get_range_bound(bounds: &[RangeBound], field: &str) -> Option<(f64, f64)> {
-        bounds.iter().find(|b| b.field == field).map(|b| (b.min, b.max))
+        bounds
+            .iter()
+            .find(|b| b.field == field)
+            .map(|b| (b.min, b.max))
     }
 
     // ========================================================================
@@ -230,9 +239,8 @@ mod metadata_bounds_contract {
             match get_upper_bound(&bounds, field) {
                 Some(yaml_max) => {
                     if yaml_max != *rust_max {
-                        violations.push(format!(
-                            "{field}: YAML max={yaml_max}, Rust max={rust_max}"
-                        ));
+                        violations
+                            .push(format!("{field}: YAML max={yaml_max}, Rust max={rust_max}"));
                     }
                 }
                 None => {
@@ -269,12 +277,10 @@ mod metadata_bounds_contract {
         let ranges = parse_range_bounds(&content);
 
         // Hardcoded from realizar/src/gguf/config.rs validate_metadata_bounds()
-        let rust_ranges: HashMap<&str, (f64, f64)> = [
-            ("rope_theta", (1.0, 100_000_000.0)),
-            ("eps", (1e-10, 0.01)),
-        ]
-        .into_iter()
-        .collect();
+        let rust_ranges: HashMap<&str, (f64, f64)> =
+            [("rope_theta", (1.0, 100_000_000.0)), ("eps", (1e-10, 0.01))]
+                .into_iter()
+                .collect();
 
         let mut violations = Vec::new();
 
@@ -282,14 +288,12 @@ mod metadata_bounds_contract {
             match get_range_bound(&ranges, field) {
                 Some((yaml_min, yaml_max)) => {
                     if (yaml_min - rust_min).abs() > 1e-15 {
-                        violations.push(format!(
-                            "{field}: YAML min={yaml_min}, Rust min={rust_min}"
-                        ));
+                        violations
+                            .push(format!("{field}: YAML min={yaml_min}, Rust min={rust_min}"));
                     }
                     if (yaml_max - rust_max).abs() > 1e-6 {
-                        violations.push(format!(
-                            "{field}: YAML max={yaml_max}, Rust max={rust_max}"
-                        ));
+                        violations
+                            .push(format!("{field}: YAML max={yaml_max}, Rust max={rust_max}"));
                     }
                 }
                 None => {
@@ -346,9 +350,7 @@ mod metadata_bounds_contract {
                 for &(field, val) in checks {
                     if let Some(max) = get_upper_bound(&bounds, field) {
                         if val > max {
-                            violations.push(format!(
-                                "{label}.{field}: {val} > max {max}"
-                            ));
+                            violations.push(format!("{label}.{field}: {val} > max {max}"));
                         }
                     }
                 }
@@ -427,7 +429,14 @@ mod metadata_bounds_contract {
 
         // Collect max observed value for each field across all families
         let mut max_observed: HashMap<&str, u64> = HashMap::new();
-        let fields = ["hidden_dim", "num_layers", "num_heads", "num_kv_heads", "vocab_size", "intermediate_dim"];
+        let fields = [
+            "hidden_dim",
+            "num_layers",
+            "num_heads",
+            "num_kv_heads",
+            "vocab_size",
+            "intermediate_dim",
+        ];
 
         for (_, config) in &families {
             for size in config.size_variants.values() {
@@ -517,16 +526,12 @@ mod metadata_bounds_contract {
                 if size.norm_eps > 0.0 {
                     if let Some((min, max)) = get_range_bound(&ranges, "eps") {
                         if size.norm_eps < min {
-                            violations.push(format!(
-                                "{label}.norm_eps: {} < min {min}",
-                                size.norm_eps
-                            ));
+                            violations
+                                .push(format!("{label}.norm_eps: {} < min {min}", size.norm_eps));
                         }
                         if size.norm_eps > max {
-                            violations.push(format!(
-                                "{label}.norm_eps: {} > max {max}",
-                                size.norm_eps
-                            ));
+                            violations
+                                .push(format!("{label}.norm_eps: {} > max {max}", size.norm_eps));
                         }
                     }
                 }

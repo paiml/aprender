@@ -38,10 +38,7 @@ fn falsify_cal_002_non_negative() {
 
     let probs = cal.predict_proba(&logits);
     for (i, &p) in probs.as_slice().iter().enumerate() {
-        assert!(
-            p >= 0.0,
-            "FALSIFIED CAL-002: proba[{i}] = {p} < 0"
-        );
+        assert!(p >= 0.0, "FALSIFIED CAL-002: proba[{i}] = {p} < 0");
     }
 }
 
@@ -53,8 +50,10 @@ fn falsify_cal_003_output_length() {
 
     let calibrated = cal.calibrate(&logits);
     assert_eq!(
-        calibrated.len(), 5,
-        "FALSIFIED CAL-003: {} outputs for 5 inputs", calibrated.len()
+        calibrated.len(),
+        5,
+        "FALSIFIED CAL-003: {} outputs for 5 inputs",
+        calibrated.len()
     );
 }
 
@@ -64,6 +63,7 @@ fn falsify_cal_004_default_temperature() {
     let cal = TemperatureScaling::new();
     assert!(
         (cal.temperature() - 1.0).abs() < 1e-6,
-        "FALSIFIED CAL-004: default temperature={}, expected 1.0", cal.temperature()
+        "FALSIFIED CAL-004: default temperature={}, expected 1.0",
+        cal.temperature()
     );
 }

@@ -23,10 +23,7 @@ fn falsify_ak_001_relu_non_negative() {
     let output = relu(&input);
 
     for (i, &v) in output.data().iter().enumerate() {
-        assert!(
-            v >= 0.0,
-            "FALSIFIED AK-001: ReLU output[{i}] = {v} < 0"
-        );
+        assert!(v >= 0.0, "FALSIFIED AK-001: ReLU output[{i}] = {v} < 0");
     }
 }
 

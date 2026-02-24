@@ -84,7 +84,9 @@ fn falsify_al_004_head_monotonic_slopes() {
             assert!(
                 slopes[i] < slopes[i - 1],
                 "FALSIFIED AL-004: slope[{i}]={} not < slope[{}]={} (num_heads={num_heads})",
-                slopes[i], i - 1, slopes[i - 1]
+                slopes[i],
+                i - 1,
+                slopes[i - 1]
             );
         }
     }

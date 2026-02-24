@@ -20,9 +20,8 @@ use crate::primitives::Vector;
 #[test]
 fn falsify_cg_001_quadratic_convergence() {
     let objective = |x: &Vector<f32>| -> f32 { x[0] * x[0] + x[1] * x[1] };
-    let gradient = |x: &Vector<f32>| -> Vector<f32> {
-        Vector::from_vec(vec![2.0 * x[0], 2.0 * x[1]])
-    };
+    let gradient =
+        |x: &Vector<f32>| -> Vector<f32> { Vector::from_vec(vec![2.0 * x[0], 2.0 * x[1]]) };
 
     let mut cg = ConjugateGradient::new(100, 1e-6, CGBetaFormula::FletcherReeves);
     let x0 = Vector::from_vec(vec![5.0, -3.0]);
@@ -59,9 +58,8 @@ fn falsify_cg_002_finite_result() {
 #[test]
 fn falsify_cg_003_objective_decreases() {
     let objective = |x: &Vector<f32>| -> f32 { x[0] * x[0] + x[1] * x[1] };
-    let gradient = |x: &Vector<f32>| -> Vector<f32> {
-        Vector::from_vec(vec![2.0 * x[0], 2.0 * x[1]])
-    };
+    let gradient =
+        |x: &Vector<f32>| -> Vector<f32> { Vector::from_vec(vec![2.0 * x[0], 2.0 * x[1]]) };
 
     let x0 = Vector::from_vec(vec![3.0, 4.0]);
     let initial_obj = objective(&x0);

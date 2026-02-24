@@ -24,7 +24,8 @@ fn falsify_gr_001_dijkstra_shortest_path() {
     let (path, dist) = g.dijkstra(0, 2).expect("path should exist");
 
     assert_eq!(
-        path, vec![0, 1, 2],
+        path,
+        vec![0, 1, 2],
         "FALSIFIED GR-001: path={path:?}, expected [0, 1, 2]"
     );
     assert!(
@@ -53,7 +54,8 @@ fn falsify_gr_003_dijkstra_self_path() {
     let (path, dist) = g.dijkstra(0, 0).expect("self-path should exist");
 
     assert_eq!(
-        path, vec![0],
+        path,
+        vec![0],
         "FALSIFIED GR-003: self-path={path:?}, expected [0]"
     );
     assert!(

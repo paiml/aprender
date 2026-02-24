@@ -40,6 +40,7 @@
 pub mod bpe;
 pub mod chat_template;
 pub mod entities;
+pub mod shell_vocab;
 
 // Re-export key chat_template types for convenience
 pub use chat_template::{

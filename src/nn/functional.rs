@@ -252,7 +252,13 @@ pub fn dropout(x: &Tensor, p: f32, training: bool) -> Tensor {
     let data: Vec<f32> = x
         .data()
         .iter()
-        .map(|&v| if rng.random::<f32>() < p { 0.0 } else { v * scale })
+        .map(|&v| {
+            if rng.random::<f32>() < p {
+                0.0
+            } else {
+                v * scale
+            }
+        })
         .collect();
 
     Tensor::new(&data, x.shape())
@@ -614,10 +620,26 @@ mod gelu_contract_tests {
         let x = Tensor::new(&[10.0, 50.0, -10.0, -50.0], &[4]);
         let y = gelu(&x);
         let data = y.data();
-        assert!((data[0] - 10.0).abs() < 0.01, "FALSIFIED GE-006: GELU(10) = {}", data[0]);
-        assert!((data[1] - 50.0).abs() < 0.01, "FALSIFIED GE-006: GELU(50) = {}", data[1]);
-        assert!(data[2].abs() < 0.01, "FALSIFIED GE-006: GELU(-10) = {}", data[2]);
-        assert!(data[3].abs() < 0.01, "FALSIFIED GE-006: GELU(-50) = {}", data[3]);
+        assert!(
+            (data[0] - 10.0).abs() < 0.01,
+            "FALSIFIED GE-006: GELU(10) = {}",
+            data[0]
+        );
+        assert!(
+            (data[1] - 50.0).abs() < 0.01,
+            "FALSIFIED GE-006: GELU(50) = {}",
+            data[1]
+        );
+        assert!(
+            data[2].abs() < 0.01,
+            "FALSIFIED GE-006: GELU(-10) = {}",
+            data[2]
+        );
+        assert!(
+            data[3].abs() < 0.01,
+            "FALSIFIED GE-006: GELU(-50) = {}",
+            data[3]
+        );
     }
 }
 

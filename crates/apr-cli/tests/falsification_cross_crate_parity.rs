@@ -367,12 +367,16 @@ mod cross_crate_parity {
         for &(arch, expected_bos, expected_eos) in test_cases {
             let tokens = SpecialTokens::from_architecture(arch)
                 .unwrap_or_else(|| panic!("from_architecture('{arch}') returned None"));
-            assert_eq!(tokens.bos_id, expected_bos,
+            assert_eq!(
+                tokens.bos_id, expected_bos,
                 "FALSIFY-007: aprender BOS for '{arch}' ({}) != expected ({expected_bos})",
-                tokens.bos_id);
-            assert_eq!(tokens.eos_id, expected_eos,
+                tokens.bos_id
+            );
+            assert_eq!(
+                tokens.eos_id, expected_eos,
                 "FALSIFY-007: aprender EOS for '{arch}' ({}) != expected ({expected_eos})",
-                tokens.eos_id);
+                tokens.eos_id
+            );
         }
     }
 
@@ -510,8 +514,14 @@ mod cross_crate_parity {
         let apr_result = AprEmbedding::new(data.clone(), vocab_size, hidden_dim);
         let rlz_result = RlzEmbedding::new(data, vocab_size, hidden_dim);
 
-        assert!(apr_result.is_err(), "FALSIFY-E6: aprender must catch zero token at 50%");
-        assert!(rlz_result.is_err(), "FALSIFY-E6: realizar must catch zero token at 50%");
+        assert!(
+            apr_result.is_err(),
+            "FALSIFY-E6: aprender must catch zero token at 50%"
+        );
+        assert!(
+            rlz_result.is_err(),
+            "FALSIFY-E6: realizar must catch zero token at 50%"
+        );
 
         let apr_err = apr_result.unwrap_err();
         let rlz_err = rlz_result.unwrap_err();
@@ -532,8 +542,14 @@ mod cross_crate_parity {
         let apr_result = AprEmbedding::new(data.clone(), vocab_size, hidden_dim);
         let rlz_result = RlzEmbedding::new(data, vocab_size, hidden_dim);
 
-        assert!(apr_result.is_err(), "aprender must reject constant embedding");
-        assert!(rlz_result.is_err(), "realizar must reject constant embedding");
+        assert!(
+            apr_result.is_err(),
+            "aprender must reject constant embedding"
+        );
+        assert!(
+            rlz_result.is_err(),
+            "realizar must reject constant embedding"
+        );
 
         let apr_err = apr_result.unwrap_err();
         let rlz_err = rlz_result.unwrap_err();
@@ -573,10 +589,16 @@ mod cross_crate_parity {
         let apr_result = AprWeight::new(data.clone(), vocab_size, hidden_dim, "lm_head.weight");
         let rlz_result = RlzWeight::new(data, vocab_size, hidden_dim, "lm_head.weight");
 
-        assert!(apr_result.is_ok(),
-            "aprender should accept good lm_head: {:?}", apr_result.err());
-        assert!(rlz_result.is_ok(),
-            "realizar should accept good lm_head: {:?}", rlz_result.err());
+        assert!(
+            apr_result.is_ok(),
+            "aprender should accept good lm_head: {:?}",
+            apr_result.err()
+        );
+        assert!(
+            rlz_result.is_ok(),
+            "realizar should accept good lm_head: {:?}",
+            rlz_result.err()
+        );
     }
 
     #[test]
@@ -587,8 +609,14 @@ mod cross_crate_parity {
         let apr_result = AprWeight::new(data.clone(), 200, 64, "lm_head.weight");
         let rlz_result = RlzWeight::new(data, 200, 64, "lm_head.weight");
 
-        assert!(apr_result.is_err(), "aprender must reject wrong-shape lm_head");
-        assert!(rlz_result.is_err(), "realizar must reject wrong-shape lm_head");
+        assert!(
+            apr_result.is_err(),
+            "aprender must reject wrong-shape lm_head"
+        );
+        assert!(
+            rlz_result.is_err(),
+            "realizar must reject wrong-shape lm_head"
+        );
 
         let apr_err = apr_result.unwrap_err();
         let rlz_err = rlz_result.unwrap_err();
@@ -628,9 +656,11 @@ mod cross_crate_parity {
 
         let apr_err = apr_result.unwrap_err();
         let rlz_err = rlz_result.unwrap_err();
-        assert_eq!(apr_err.rule_id, rlz_err.rule_id,
+        assert_eq!(
+            apr_err.rule_id, rlz_err.rule_id,
             "FALSIFY-L6: Both must cite same rule for NaN lm_head.\n  aprender: {}\n  realizar: {}",
-            apr_err.rule_id, rlz_err.rule_id);
+            apr_err.rule_id, rlz_err.rule_id
+        );
     }
 
     #[test]
@@ -646,9 +676,11 @@ mod cross_crate_parity {
 
         let apr_err = apr_result.unwrap_err();
         let rlz_err = rlz_result.unwrap_err();
-        assert_eq!(apr_err.rule_id, rlz_err.rule_id,
+        assert_eq!(
+            apr_err.rule_id, rlz_err.rule_id,
             "FALSIFY-L6: Both must cite same rule for Inf lm_head.\n  aprender: {}\n  realizar: {}",
-            apr_err.rule_id, rlz_err.rule_id);
+            apr_err.rule_id, rlz_err.rule_id
+        );
     }
 
     #[test]
@@ -667,10 +699,21 @@ mod cross_crate_parity {
         let apr_result = AprWeight::new(data.clone(), 100, 64, "lm_head.weight");
         let rlz_result = RlzWeight::new(data, 100, 64, "lm_head.weight");
 
-        assert_eq!(apr_result.is_err(), rlz_result.is_err(),
+        assert_eq!(
+            apr_result.is_err(),
+            rlz_result.is_err(),
             "FALSIFY-L6: 81% zero lm_head: aprender={}, realizar={}. Density thresholds diverged!",
-            if apr_result.is_err() { "rejected" } else { "accepted" },
-            if rlz_result.is_err() { "rejected" } else { "accepted" });
+            if apr_result.is_err() {
+                "rejected"
+            } else {
+                "accepted"
+            },
+            if rlz_result.is_err() {
+                "rejected"
+            } else {
+                "accepted"
+            }
+        );
     }
 
     // =========================================================================
@@ -703,8 +746,16 @@ mod cross_crate_parity {
         let apr_result = AprWeight::new(data.clone(), kv_dim, hidden, "k_proj");
         let rlz_result = RlzWeight::new(data, kv_dim, hidden, "k_proj");
 
-        assert!(apr_result.is_ok(), "aprender must accept valid GQA k_proj: {:?}", apr_result.err());
-        assert!(rlz_result.is_ok(), "realizar must accept valid GQA k_proj: {:?}", rlz_result.err());
+        assert!(
+            apr_result.is_ok(),
+            "aprender must accept valid GQA k_proj: {:?}",
+            apr_result.err()
+        );
+        assert!(
+            rlz_result.is_ok(),
+            "realizar must accept valid GQA k_proj: {:?}",
+            rlz_result.err()
+        );
     }
 
     #[test]
@@ -715,8 +766,14 @@ mod cross_crate_parity {
         let apr_result = AprWeight::new(data.clone(), 896, 896, "q_proj");
         let rlz_result = RlzWeight::new(data, 896, 896, "q_proj");
 
-        assert!(apr_result.is_err(), "aprender must reject wrong-shape q_proj");
-        assert!(rlz_result.is_err(), "realizar must reject wrong-shape q_proj");
+        assert!(
+            apr_result.is_err(),
+            "aprender must reject wrong-shape q_proj"
+        );
+        assert!(
+            rlz_result.is_err(),
+            "realizar must reject wrong-shape q_proj"
+        );
 
         let apr_err = apr_result.unwrap_err();
         let rlz_err = rlz_result.unwrap_err();
@@ -740,9 +797,11 @@ mod cross_crate_parity {
 
         let apr_err = apr_result.unwrap_err();
         let rlz_err = rlz_result.unwrap_err();
-        assert_eq!(apr_err.rule_id, rlz_err.rule_id,
+        assert_eq!(
+            apr_err.rule_id, rlz_err.rule_id,
             "FALSIFY-A7: Both must cite same rule for NaN v_proj.\n  aprender: {}\n  realizar: {}",
-            apr_err.rule_id, rlz_err.rule_id);
+            apr_err.rule_id, rlz_err.rule_id
+        );
     }
 
     #[test]
@@ -785,8 +844,16 @@ mod cross_crate_parity {
         let apr_result = AprWeight::new(data.clone(), intermediate, hidden, "gate_proj");
         let rlz_result = RlzWeight::new(data, intermediate, hidden, "gate_proj");
 
-        assert!(apr_result.is_ok(), "aprender must accept good gate_proj: {:?}", apr_result.err());
-        assert!(rlz_result.is_ok(), "realizar must accept good gate_proj: {:?}", rlz_result.err());
+        assert!(
+            apr_result.is_ok(),
+            "aprender must accept good gate_proj: {:?}",
+            apr_result.err()
+        );
+        assert!(
+            rlz_result.is_ok(),
+            "realizar must accept good gate_proj: {:?}",
+            rlz_result.err()
+        );
     }
 
     /// FALSIFY-F8b: Wrong-shape down_proj rejected by both crates
@@ -802,8 +869,14 @@ mod cross_crate_parity {
         let apr_result = AprWeight::new(data.clone(), hidden, intermediate, "down_proj");
         let rlz_result = RlzWeight::new(data, hidden, intermediate, "down_proj");
 
-        assert!(apr_result.is_err(), "aprender must reject wrong-shape down_proj");
-        assert!(rlz_result.is_err(), "realizar must reject wrong-shape down_proj");
+        assert!(
+            apr_result.is_err(),
+            "aprender must reject wrong-shape down_proj"
+        );
+        assert!(
+            rlz_result.is_err(),
+            "realizar must reject wrong-shape down_proj"
+        );
 
         let apr_err = apr_result.unwrap_err();
         let rlz_err = rlz_result.unwrap_err();
@@ -839,13 +912,21 @@ mod cross_crate_parity {
         let apr_result = AprWeight::new(data.clone(), intermediate, hidden, "gate_proj");
         let rlz_result = RlzWeight::new(data, intermediate, hidden, "gate_proj");
 
-        assert!(apr_result.is_err(), "aprender must reject all-zero gate_proj");
-        assert!(rlz_result.is_err(), "realizar must reject all-zero gate_proj");
+        assert!(
+            apr_result.is_err(),
+            "aprender must reject all-zero gate_proj"
+        );
+        assert!(
+            rlz_result.is_err(),
+            "realizar must reject all-zero gate_proj"
+        );
 
         let apr_err = apr_result.unwrap_err();
         let rlz_err = rlz_result.unwrap_err();
-        assert_eq!(apr_err.rule_id, rlz_err.rule_id,
-            "FALSIFY-F8d: Both must cite same rule for all-zero gate_proj");
+        assert_eq!(
+            apr_err.rule_id, rlz_err.rule_id,
+            "FALSIFY-F8d: Both must cite same rule for all-zero gate_proj"
+        );
     }
 
     // =========================================================================
@@ -864,8 +945,16 @@ mod cross_crate_parity {
         let apr_result = AprVector::new(data.clone(), hidden, "attn_norm");
         let rlz_result = RlzVector::new(data, hidden, "attn_norm");
 
-        assert!(apr_result.is_ok(), "aprender must accept good norm: {:?}", apr_result.err());
-        assert!(rlz_result.is_ok(), "realizar must accept good norm: {:?}", rlz_result.err());
+        assert!(
+            apr_result.is_ok(),
+            "aprender must accept good norm: {:?}",
+            apr_result.err()
+        );
+        assert!(
+            rlz_result.is_ok(),
+            "realizar must accept good norm: {:?}",
+            rlz_result.err()
+        );
     }
 
     /// FALSIFY-N9b: Wrong-length norm rejected by both crates
@@ -877,8 +966,14 @@ mod cross_crate_parity {
         let apr_result = AprVector::new(data.clone(), expected_len, "output_norm");
         let rlz_result = RlzVector::new(data, expected_len, "output_norm");
 
-        assert!(apr_result.is_err(), "aprender must reject wrong-length norm");
-        assert!(rlz_result.is_err(), "realizar must reject wrong-length norm");
+        assert!(
+            apr_result.is_err(),
+            "aprender must reject wrong-length norm"
+        );
+        assert!(
+            rlz_result.is_err(),
+            "realizar must reject wrong-length norm"
+        );
 
         let apr_err = apr_result.unwrap_err();
         let rlz_err = rlz_result.unwrap_err();

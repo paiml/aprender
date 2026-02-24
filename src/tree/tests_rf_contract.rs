@@ -19,10 +19,14 @@ use crate::primitives::Matrix;
 /// FALSIFY-RF-001: Predictions in training label set
 #[test]
 fn falsify_rf_001_predictions_in_label_range() {
-    let x = Matrix::from_vec(8, 2, vec![
-        0.0, 0.0, 0.5, 0.5, 1.0, 0.0, 1.5, 0.5,
-        5.0, 5.0, 5.5, 5.5, 6.0, 5.0, 6.5, 5.5,
-    ]).expect("valid");
+    let x = Matrix::from_vec(
+        8,
+        2,
+        vec![
+            0.0, 0.0, 0.5, 0.5, 1.0, 0.0, 1.5, 0.5, 5.0, 5.0, 5.5, 5.5, 6.0, 5.0, 6.5, 5.5,
+        ],
+    )
+    .expect("valid");
     let y = vec![0_usize, 0, 0, 0, 1, 1, 1, 1];
 
     let mut rf = RandomForestClassifier::new(10).with_random_state(42);
@@ -40,10 +44,12 @@ fn falsify_rf_001_predictions_in_label_range() {
 /// FALSIFY-RF-002: Prediction count equals input sample count
 #[test]
 fn falsify_rf_002_prediction_count() {
-    let x = Matrix::from_vec(6, 2, vec![
-        0.0, 0.0, 1.0, 1.0, 2.0, 2.0,
-        5.0, 5.0, 6.0, 6.0, 7.0, 7.0,
-    ]).expect("valid");
+    let x = Matrix::from_vec(
+        6,
+        2,
+        vec![0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 5.0, 5.0, 6.0, 6.0, 7.0, 7.0],
+    )
+    .expect("valid");
     let y = vec![0_usize, 0, 0, 1, 1, 1];
 
     let mut rf = RandomForestClassifier::new(5).with_random_state(42);
@@ -51,18 +57,22 @@ fn falsify_rf_002_prediction_count() {
 
     let preds = rf.predict(&x);
     assert_eq!(
-        preds.len(), 6,
-        "FALSIFIED RF-002: {} predictions for 6 inputs", preds.len()
+        preds.len(),
+        6,
+        "FALSIFIED RF-002: {} predictions for 6 inputs",
+        preds.len()
     );
 }
 
 /// FALSIFY-RF-003: Deterministic with same seed
 #[test]
 fn falsify_rf_003_deterministic_with_seed() {
-    let x = Matrix::from_vec(6, 2, vec![
-        0.0, 0.0, 1.0, 1.0, 2.0, 2.0,
-        5.0, 5.0, 6.0, 6.0, 7.0, 7.0,
-    ]).expect("valid");
+    let x = Matrix::from_vec(
+        6,
+        2,
+        vec![0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 5.0, 5.0, 6.0, 6.0, 7.0, 7.0],
+    )
+    .expect("valid");
     let y = vec![0_usize, 0, 0, 1, 1, 1];
 
     let mut rf1 = RandomForestClassifier::new(5).with_random_state(42);
@@ -84,10 +94,14 @@ fn falsify_rf_003_deterministic_with_seed() {
 /// With sufficiently separated clusters, random forest should achieve high training accuracy.
 #[test]
 fn falsify_rf_004_ensemble_not_worse_than_random() {
-    let x = Matrix::from_vec(8, 2, vec![
-        0.0, 0.0, 0.1, 0.1, 0.2, 0.2, 0.3, 0.3,
-        10.0, 10.0, 10.1, 10.1, 10.2, 10.2, 10.3, 10.3,
-    ]).expect("valid");
+    let x = Matrix::from_vec(
+        8,
+        2,
+        vec![
+            0.0, 0.0, 0.1, 0.1, 0.2, 0.2, 0.3, 0.3, 10.0, 10.0, 10.1, 10.1, 10.2, 10.2, 10.3, 10.3,
+        ],
+    )
+    .expect("valid");
     let y = vec![0_usize, 0, 0, 0, 1, 1, 1, 1];
 
     let mut rf = RandomForestClassifier::new(20).with_random_state(42);

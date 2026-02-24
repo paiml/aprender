@@ -444,13 +444,13 @@ fn test_batch_norm_1d_parameters_mut() {
     assert_eq!(params[0].numel(), 32);
 }
 
+#[path = "tests_batchnorm_contract.rs"]
+mod tests_batchnorm_contract;
 #[path = "tests_batchnorm_groupnorm.rs"]
 mod tests_batchnorm_groupnorm;
+#[path = "tests_layernorm_contract.rs"]
+mod tests_layernorm_contract;
 #[path = "tests_norm_edge_cases.rs"]
 mod tests_norm_edge_cases;
 #[path = "tests_rmsnorm_contract.rs"]
 mod tests_rmsnorm_contract;
-#[path = "tests_layernorm_contract.rs"]
-mod tests_layernorm_contract;
-#[path = "tests_batchnorm_contract.rs"]
-mod tests_batchnorm_contract;

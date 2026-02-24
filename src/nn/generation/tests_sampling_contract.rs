@@ -61,6 +61,7 @@ fn falsify_sa_004_nucleus_top_p_stored() {
     let sampler = NucleusSampler::new(0.85);
     assert!(
         (sampler.top_p() - 0.85).abs() < 1e-6,
-        "FALSIFIED SA-004: top_p={}, expected 0.85", sampler.top_p()
+        "FALSIFIED SA-004: top_p={}, expected 0.85",
+        sampler.top_p()
     );
 }

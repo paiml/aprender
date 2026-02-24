@@ -35,10 +35,7 @@ fn falsify_ve_002_norm_nonneg() {
     let v = Vector::from_slice(&[-3.0, 4.0]);
     let n = v.norm();
 
-    assert!(
-        n >= 0.0,
-        "FALSIFIED VE-002: norm={n}, expected >= 0.0"
-    );
+    assert!(n >= 0.0, "FALSIFIED VE-002: norm={n}, expected >= 0.0");
     assert!(
         (n - 5.0).abs() < 1e-5,
         "FALSIFIED VE-002: norm of [-3,4]={n}, expected 5.0"

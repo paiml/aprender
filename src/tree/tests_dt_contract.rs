@@ -19,10 +19,12 @@ use crate::primitives::Matrix;
 /// FALSIFY-DT-001: Predictions in label range — predict(x) ∈ training labels
 #[test]
 fn falsify_dt_001_predictions_in_label_range() {
-    let x = Matrix::from_vec(6, 2, vec![
-        0.0, 0.0, 1.0, 0.0, 2.0, 0.0,
-        0.0, 1.0, 1.0, 1.0, 2.0, 1.0,
-    ]).expect("valid matrix");
+    let x = Matrix::from_vec(
+        6,
+        2,
+        vec![0.0, 0.0, 1.0, 0.0, 2.0, 0.0, 0.0, 1.0, 1.0, 1.0, 2.0, 1.0],
+    )
+    .expect("valid matrix");
     let y = vec![0_usize, 0, 1, 1, 2, 2];
 
     let mut dt = DecisionTreeClassifier::new();
@@ -40,9 +42,8 @@ fn falsify_dt_001_predictions_in_label_range() {
 /// FALSIFY-DT-002: Deterministic — same input produces same output
 #[test]
 fn falsify_dt_002_deterministic() {
-    let x = Matrix::from_vec(4, 2, vec![
-        0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 3.0, 3.0,
-    ]).expect("valid matrix");
+    let x =
+        Matrix::from_vec(4, 2, vec![0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 3.0, 3.0]).expect("valid matrix");
     let y = vec![0_usize, 0, 1, 1];
 
     let mut dt = DecisionTreeClassifier::new();
@@ -50,10 +51,7 @@ fn falsify_dt_002_deterministic() {
 
     let p1 = dt.predict(&x);
     let p2 = dt.predict(&x);
-    assert_eq!(
-        p1, p2,
-        "FALSIFIED DT-002: predictions differ on same input"
-    );
+    assert_eq!(p1, p2, "FALSIFIED DT-002: predictions differ on same input");
 }
 
 /// FALSIFY-DT-003: Perfect fit on separable data
@@ -77,9 +75,8 @@ fn falsify_dt_003_perfect_separable() {
 /// FALSIFY-DT-004: Prediction count matches input count
 #[test]
 fn falsify_dt_004_prediction_count() {
-    let x_train = Matrix::from_vec(4, 2, vec![
-        0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 3.0, 3.0,
-    ]).expect("valid");
+    let x_train =
+        Matrix::from_vec(4, 2, vec![0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 3.0, 3.0]).expect("valid");
     let y_train = vec![0_usize, 0, 1, 1];
 
     let mut dt = DecisionTreeClassifier::new();
@@ -88,7 +85,9 @@ fn falsify_dt_004_prediction_count() {
     let x_test = Matrix::from_vec(3, 2, vec![0.5, 0.5, 1.5, 1.5, 2.5, 2.5]).expect("valid");
     let preds = dt.predict(&x_test);
     assert_eq!(
-        preds.len(), 3,
-        "FALSIFIED DT-004: {} predictions for 3 inputs", preds.len()
+        preds.len(),
+        3,
+        "FALSIFIED DT-004: {} predictions for 3 inputs",
+        preds.len()
     );
 }

@@ -39,7 +39,10 @@ fn falsify_ent_001_email_extraction() {
         entities.emails
     );
     assert!(
-        entities.emails.iter().any(|e| e.contains("user@example.com")),
+        entities
+            .emails
+            .iter()
+            .any(|e| e.contains("user@example.com")),
         "FALSIFIED ENT-001: 'user@example.com' not extracted"
     );
 }
@@ -147,8 +150,5 @@ fn falsify_ent_006_extraction_determinism() {
     let e1 = extractor.extract(text).expect("first");
     let e2 = extractor.extract(text).expect("second");
 
-    assert_eq!(
-        e1, e2,
-        "FALSIFIED ENT-006: extraction is non-deterministic"
-    );
+    assert_eq!(e1, e2, "FALSIFIED ENT-006: extraction is non-deterministic");
 }

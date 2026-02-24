@@ -19,14 +19,12 @@ use crate::traits::UnsupervisedEstimator;
 /// FALSIFY-GM-001: Mixing weights sum to 1.0
 #[test]
 fn falsify_gm_001_weights_sum_to_one() {
-    let data = Matrix::from_vec(6, 2, vec![
-        1.0, 1.0,
-        1.1, 1.0,
-        1.0, 1.1,
-        5.0, 5.0,
-        5.1, 5.0,
-        5.0, 5.1,
-    ]).expect("valid matrix");
+    let data = Matrix::from_vec(
+        6,
+        2,
+        vec![1.0, 1.0, 1.1, 1.0, 1.0, 1.1, 5.0, 5.0, 5.1, 5.0, 5.0, 5.1],
+    )
+    .expect("valid matrix");
 
     let mut gmm = GaussianMixture::new(2, CovarianceType::Spherical)
         .with_random_state(42)
@@ -45,10 +43,14 @@ fn falsify_gm_001_weights_sum_to_one() {
 /// FALSIFY-GM-002: Labels length matches sample count
 #[test]
 fn falsify_gm_002_labels_length() {
-    let data = Matrix::from_vec(8, 2, vec![
-        0.0, 0.0, 0.1, 0.1, 0.2, 0.0, 0.0, 0.2,
-        5.0, 5.0, 5.1, 5.1, 5.2, 5.0, 5.0, 5.2,
-    ]).expect("valid matrix");
+    let data = Matrix::from_vec(
+        8,
+        2,
+        vec![
+            0.0, 0.0, 0.1, 0.1, 0.2, 0.0, 0.0, 0.2, 5.0, 5.0, 5.1, 5.1, 5.2, 5.0, 5.0, 5.2,
+        ],
+    )
+    .expect("valid matrix");
 
     let mut gmm = GaussianMixture::new(2, CovarianceType::Spherical)
         .with_random_state(42)
@@ -57,7 +59,8 @@ fn falsify_gm_002_labels_length() {
 
     let labels = gmm.labels();
     assert_eq!(
-        labels.len(), 8,
+        labels.len(),
+        8,
         "FALSIFIED GM-002: labels len={}, expected 8",
         labels.len()
     );
@@ -66,14 +69,14 @@ fn falsify_gm_002_labels_length() {
 /// FALSIFY-GM-003: predict_proba rows sum to ~1.0 (responsibilities)
 #[test]
 fn falsify_gm_003_predict_proba_rows_sum_to_one() {
-    let data = Matrix::from_vec(6, 2, vec![
-        0.0, 0.0,
-        0.1, 0.1,
-        0.0, 0.1,
-        10.0, 10.0,
-        10.1, 10.1,
-        10.0, 10.1,
-    ]).expect("valid matrix");
+    let data = Matrix::from_vec(
+        6,
+        2,
+        vec![
+            0.0, 0.0, 0.1, 0.1, 0.0, 0.1, 10.0, 10.0, 10.1, 10.1, 10.0, 10.1,
+        ],
+    )
+    .expect("valid matrix");
 
     let mut gmm = GaussianMixture::new(2, CovarianceType::Spherical)
         .with_random_state(42)
@@ -95,10 +98,12 @@ fn falsify_gm_003_predict_proba_rows_sum_to_one() {
 /// FALSIFY-GM-004: Number of weights equals n_components
 #[test]
 fn falsify_gm_004_n_weights_equals_n_components() {
-    let data = Matrix::from_vec(6, 2, vec![
-        1.0, 1.0, 1.1, 1.0, 1.0, 1.1,
-        5.0, 5.0, 5.1, 5.0, 5.0, 5.1,
-    ]).expect("valid matrix");
+    let data = Matrix::from_vec(
+        6,
+        2,
+        vec![1.0, 1.0, 1.1, 1.0, 1.0, 1.1, 5.0, 5.0, 5.1, 5.0, 5.0, 5.1],
+    )
+    .expect("valid matrix");
 
     let mut gmm = GaussianMixture::new(2, CovarianceType::Spherical)
         .with_random_state(42)
@@ -106,7 +111,8 @@ fn falsify_gm_004_n_weights_equals_n_components() {
     gmm.fit(&data).expect("fit succeeds");
 
     assert_eq!(
-        gmm.weights().len(), 2,
+        gmm.weights().len(),
+        2,
         "FALSIFIED GM-004: weights len={}, expected 2",
         gmm.weights().len()
     );

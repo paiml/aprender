@@ -55,10 +55,7 @@ mod tests {
         let criterion = CrossEntropyLoss::with_reduction(Reduction::None);
 
         // logit for correct class is much larger than others
-        let logits = Tensor::new(
-            &[50.0, -50.0, -50.0, -50.0, 50.0, -50.0],
-            &[2, 3],
-        );
+        let logits = Tensor::new(&[50.0, -50.0, -50.0, -50.0, 50.0, -50.0], &[2, 3]);
         let targets = Tensor::new(&[0.0, 1.0], &[2]);
         let loss = criterion.forward(&logits, &targets);
 

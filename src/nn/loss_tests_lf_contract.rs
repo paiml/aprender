@@ -12,61 +12,69 @@
 //   - provable-contracts/contracts/loss-functions-v1.yaml
 // =========================================================================
 
-use super::*;
+#[cfg(test)]
+mod tests {
+    use super::super::*;
 
-/// FALSIFY-LF-001: MSE is non-negative
-#[test]
-fn falsify_lf_001_mse_non_negative() {
-    let pred = Tensor::new(&[1.0_f32, 2.0, 3.0], &[3]);
-    let target = Tensor::new(&[1.5, 2.5, 3.5], &[3]);
+    /// FALSIFY-LF-001: MSE is non-negative
+    #[test]
+    fn falsify_lf_001_mse_non_negative() {
+        let pred = Tensor::new(&[1.0_f32, 2.0, 3.0], &[3]);
+        let target = Tensor::new(&[1.5, 2.5, 3.5], &[3]);
 
-    let criterion = MSELoss::new();
-    let loss = criterion.forward(&pred, &target);
-    assert!(
-        loss.data()[0] >= 0.0,
-        "FALSIFIED LF-001: MSE loss = {} < 0", loss.data()[0]
-    );
-}
+        let criterion = MSELoss::new();
+        let loss = criterion.forward(&pred, &target);
+        assert!(
+            loss.data()[0] >= 0.0,
+            "FALSIFIED LF-001: MSE loss = {} < 0",
+            loss.data()[0]
+        );
+    }
 
-/// FALSIFY-LF-002: MSE = 0 when pred == target
-#[test]
-fn falsify_lf_002_mse_zero_on_match() {
-    let pred = Tensor::new(&[1.0_f32, 2.0, 3.0], &[3]);
-    let target = Tensor::new(&[1.0, 2.0, 3.0], &[3]);
+    /// FALSIFY-LF-002: MSE = 0 when pred == target
+    #[test]
+    fn falsify_lf_002_mse_zero_on_match() {
+        let pred = Tensor::new(&[1.0_f32, 2.0, 3.0], &[3]);
+        let target = Tensor::new(&[1.0, 2.0, 3.0], &[3]);
 
-    let criterion = MSELoss::new();
-    let loss = criterion.forward(&pred, &target);
-    assert!(
-        loss.data()[0].abs() < 1e-6,
-        "FALSIFIED LF-002: MSE = {} for identical pred/target", loss.data()[0]
-    );
-}
+        let criterion = MSELoss::new();
+        let loss = criterion.forward(&pred, &target);
+        assert!(
+            loss.data()[0].abs() < 1e-6,
+            "FALSIFIED LF-002: MSE = {} for identical pred/target",
+            loss.data()[0]
+        );
+    }
 
-/// FALSIFY-LF-003: L1 is non-negative
-#[test]
-fn falsify_lf_003_l1_non_negative() {
-    let pred = Tensor::new(&[1.0_f32, 2.0, 3.0], &[3]);
-    let target = Tensor::new(&[1.5, 2.5, 3.5], &[3]);
+    /// FALSIFY-LF-003: L1 is non-negative
+    #[test]
+    fn falsify_lf_003_l1_non_negative() {
+        let pred = Tensor::new(&[1.0_f32, 2.0, 3.0], &[3]);
+        let target = Tensor::new(&[1.5, 2.5, 3.5], &[3]);
 
-    let criterion = L1Loss::new();
-    let loss = criterion.forward(&pred, &target);
-    assert!(
-        loss.data()[0] >= 0.0,
-        "FALSIFIED LF-003: L1 loss = {} < 0", loss.data()[0]
-    );
-}
+        let criterion = L1Loss::new();
+        let loss = criterion.forward(&pred, &target);
+        assert!(
+            loss.data()[0] >= 0.0,
+            "FALSIFIED LF-003: L1 loss = {} < 0",
+            loss.data()[0]
+        );
+    }
 
-/// FALSIFY-LF-004: MSE(a, b) == MSE(b, a) (symmetric)
-#[test]
-fn falsify_lf_004_mse_symmetric() {
-    let a = Tensor::new(&[1.0_f32, 3.0, 5.0], &[3]);
-    let b = Tensor::new(&[2.0, 4.0, 6.0], &[3]);
+    /// FALSIFY-LF-004: MSE(a, b) == MSE(b, a) (symmetric)
+    #[test]
+    fn falsify_lf_004_mse_symmetric() {
+        let a = Tensor::new(&[1.0_f32, 3.0, 5.0], &[3]);
+        let b = Tensor::new(&[2.0, 4.0, 6.0], &[3]);
 
-    let criterion = MSELoss::new();
-    let loss_ab = criterion.forward(&a, &b);
-    let loss_ba = criterion.forward(&b, &a);
-    assert!(
-        (loss_ab.data()[0] - loss_ba.data()[0]).abs() < 1e-6,
-        "FALSIFIED LF-004: MSE(a,b)={} != MSE(b,a)={}", loss_ab.data()[0], loss_ba.data()[0]
-    );
+        let criterion = MSELoss::new();
+        let loss_ab = criterion.forward(&a, &b);
+        let loss_ba = criterion.forward(&b, &a);
+        assert!(
+            (loss_ab.data()[0] - loss_ba.data()[0]).abs() < 1e-6,
+            "FALSIFIED LF-004: MSE(a,b)={} != MSE(b,a)={}",
+            loss_ab.data()[0],
+            loss_ba.data()[0]
+        );
+    }
 }

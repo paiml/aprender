@@ -30,7 +30,9 @@ fn falsify_lr_001_perfect_linear_fit() {
     for i in 0..4 {
         assert!(
             (preds[i] - y[i]).abs() < 1e-4,
-            "FALSIFIED LR-001: pred[{i}]={} != y[{i}]={}", preds[i], y[i]
+            "FALSIFIED LR-001: pred[{i}]={} != y[{i}]={}",
+            preds[i],
+            y[i]
         );
     }
 }
@@ -54,9 +56,8 @@ fn falsify_lr_002_r2_perfect() {
 /// FALSIFY-LR-003: Prediction count matches input count
 #[test]
 fn falsify_lr_003_prediction_count() {
-    let x = Matrix::from_vec(5, 2, vec![
-        1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 2.0, 0.5, 0.5, 2.0,
-    ]).expect("valid");
+    let x = Matrix::from_vec(5, 2, vec![1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 2.0, 0.5, 0.5, 2.0])
+        .expect("valid");
     let y = Vector::from_slice(&[1.0, 2.0, 3.0, 2.5, 4.5]);
 
     let mut lr = LinearRegression::new();
@@ -65,8 +66,10 @@ fn falsify_lr_003_prediction_count() {
     let x_test = Matrix::from_vec(3, 2, vec![0.5, 0.5, 1.5, 1.5, 2.0, 2.0]).expect("valid");
     let preds = lr.predict(&x_test);
     assert_eq!(
-        preds.len(), 3,
-        "FALSIFIED LR-003: {} predictions for 3 inputs", preds.len()
+        preds.len(),
+        3,
+        "FALSIFIED LR-003: {} predictions for 3 inputs",
+        preds.len()
     );
 }
 

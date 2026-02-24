@@ -19,10 +19,12 @@ use crate::primitives::Matrix;
 /// FALSIFY-SVM-001: Binary prediction — predict(x) ∈ {0, 1}
 #[test]
 fn falsify_svm_001_binary_prediction() {
-    let x = Matrix::from_vec(6, 2, vec![
-        0.0, 0.0, 0.5, 0.5, 1.0, 1.0,
-        5.0, 5.0, 5.5, 5.5, 6.0, 6.0,
-    ]).expect("valid");
+    let x = Matrix::from_vec(
+        6,
+        2,
+        vec![0.0, 0.0, 0.5, 0.5, 1.0, 1.0, 5.0, 5.0, 5.5, 5.5, 6.0, 6.0],
+    )
+    .expect("valid");
     let y = vec![0_usize, 0, 0, 1, 1, 1];
 
     let mut svm = LinearSVM::new();
@@ -40,9 +42,7 @@ fn falsify_svm_001_binary_prediction() {
 /// FALSIFY-SVM-002: Deterministic (SVM uses deterministic subgradient descent)
 #[test]
 fn falsify_svm_002_deterministic() {
-    let x = Matrix::from_vec(4, 2, vec![
-        0.0, 0.0, 1.0, 1.0, 5.0, 5.0, 6.0, 6.0,
-    ]).expect("valid");
+    let x = Matrix::from_vec(4, 2, vec![0.0, 0.0, 1.0, 1.0, 5.0, 5.0, 6.0, 6.0]).expect("valid");
     let y = vec![0_usize, 0, 1, 1];
 
     let mut svm1 = LinearSVM::new();
@@ -53,34 +53,43 @@ fn falsify_svm_002_deterministic() {
     svm2.fit(&x, &y).expect("fit 2");
     let p2 = svm2.predict(&x).expect("predict 2");
 
-    assert_eq!(p1, p2, "FALSIFIED SVM-002: same params produce different predictions");
+    assert_eq!(
+        p1, p2,
+        "FALSIFIED SVM-002: same params produce different predictions"
+    );
 }
 
 /// FALSIFY-SVM-003: Prediction count matches input
 #[test]
 fn falsify_svm_003_prediction_count() {
-    let x = Matrix::from_vec(4, 2, vec![
-        0.0, 0.0, 1.0, 1.0, 5.0, 5.0, 6.0, 6.0,
-    ]).expect("valid");
+    let x = Matrix::from_vec(4, 2, vec![0.0, 0.0, 1.0, 1.0, 5.0, 5.0, 6.0, 6.0]).expect("valid");
     let y = vec![0_usize, 0, 1, 1];
 
     let mut svm = LinearSVM::new();
     svm.fit(&x, &y).expect("fit");
 
-    let x_test = Matrix::from_vec(5, 2, vec![
-        0.5, 0.5, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0, 5.5, 5.5,
-    ]).expect("valid");
+    let x_test = Matrix::from_vec(5, 2, vec![0.5, 0.5, 2.0, 2.0, 3.0, 3.0, 4.0, 4.0, 5.5, 5.5])
+        .expect("valid");
     let preds = svm.predict(&x_test).expect("predict");
-    assert_eq!(preds.len(), 5, "FALSIFIED SVM-003: {} predictions for 5 inputs", preds.len());
+    assert_eq!(
+        preds.len(),
+        5,
+        "FALSIFIED SVM-003: {} predictions for 5 inputs",
+        preds.len()
+    );
 }
 
 /// FALSIFY-SVM-004: Well-separated data classified correctly
 #[test]
 fn falsify_svm_004_separable_data() {
-    let x = Matrix::from_vec(6, 2, vec![
-        0.0, 0.0, 0.1, 0.1, 0.2, 0.2,
-        100.0, 100.0, 100.1, 100.1, 100.2, 100.2,
-    ]).expect("valid");
+    let x = Matrix::from_vec(
+        6,
+        2,
+        vec![
+            0.0, 0.0, 0.1, 0.1, 0.2, 0.2, 100.0, 100.0, 100.1, 100.1, 100.2, 100.2,
+        ],
+    )
+    .expect("valid");
     let y = vec![0_usize, 0, 0, 1, 1, 1];
 
     let mut svm = LinearSVM::new().with_max_iter(1000);

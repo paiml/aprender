@@ -23,11 +23,15 @@ fn falsify_gq_001_weight_normalization() {
     let gqa = GroupedQueryAttention::new(32, 4, 2);
 
     let q = Tensor::new(
-        &(0..2 * 5 * 32).map(|i| (i as f32 * 0.01).sin()).collect::<Vec<_>>(),
+        &(0..2 * 5 * 32)
+            .map(|i| (i as f32 * 0.01).sin())
+            .collect::<Vec<_>>(),
         &[2, 5, 32],
     );
     let k = Tensor::new(
-        &(0..2 * 8 * 32).map(|i| (i as f32 * 0.02).cos()).collect::<Vec<_>>(),
+        &(0..2 * 8 * 32)
+            .map(|i| (i as f32 * 0.02).cos())
+            .collect::<Vec<_>>(),
         &[2, 8, 32],
     );
     let v = Tensor::ones(&[2, 8, 32]);

@@ -271,24 +271,28 @@ impl NasGenome {
 
             match layer_type {
                 LayerType::Dense => {
-                    config.units = Some(rng.random_range(space.units_range.0..=space.units_range.1));
-                    config.activation =
-                        Some(space.activations[rng.random_range(0..space.activations.len())].clone());
+                    config.units =
+                        Some(rng.random_range(space.units_range.0..=space.units_range.1));
+                    config.activation = Some(
+                        space.activations[rng.random_range(0..space.activations.len())].clone(),
+                    );
                 }
                 LayerType::Conv2d => {
                     config.units =
                         Some(rng.random_range(space.filters_range.0..=space.filters_range.1));
                     config.kernel_size =
                         Some(space.kernel_sizes[rng.random_range(0..space.kernel_sizes.len())]);
-                    config.activation =
-                        Some(space.activations[rng.random_range(0..space.activations.len())].clone());
+                    config.activation = Some(
+                        space.activations[rng.random_range(0..space.activations.len())].clone(),
+                    );
                 }
                 LayerType::Dropout => {
                     config.dropout_rate =
                         Some(rng.random_range(space.dropout_range.0..=space.dropout_range.1));
                 }
                 LayerType::Lstm => {
-                    config.units = Some(rng.random_range(space.units_range.0..=space.units_range.1));
+                    config.units =
+                        Some(rng.random_range(space.units_range.0..=space.units_range.1));
                 }
                 _ => {}
             }

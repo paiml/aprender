@@ -19,12 +19,8 @@ use crate::primitives::{Matrix, Vector};
 /// Helper: create Poisson-appropriate data where log(y) ≈ linear in x
 fn poisson_data() -> (Matrix<f32>, Vector<f32>) {
     // y ≈ exp(0.5 + 0.3*x) — clean Poisson data
-    let x = Matrix::from_vec(8, 1, vec![
-        0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0,
-    ]).expect("valid");
-    let y = Vector::from_slice(&[
-        1.6, 2.1, 2.8, 3.7, 5.0, 6.6, 8.8, 11.6,
-    ]);
+    let x = Matrix::from_vec(8, 1, vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]).expect("valid");
+    let y = Vector::from_slice(&[1.6, 2.1, 2.8, 3.7, 5.0, 6.6, 8.8, 11.6]);
     (x, y)
 }
 
@@ -40,7 +36,8 @@ fn falsify_glm_001_finite_predictions() {
     for i in 0..preds.len() {
         assert!(
             preds[i].is_finite(),
-            "FALSIFIED GLM-001: prediction[{i}] = {} is not finite", preds[i]
+            "FALSIFIED GLM-001: prediction[{i}] = {} is not finite",
+            preds[i]
         );
     }
 }
@@ -55,8 +52,10 @@ fn falsify_glm_002_prediction_count() {
 
     let preds = glm.predict(&x).expect("predict");
     assert_eq!(
-        preds.len(), 8,
-        "FALSIFIED GLM-002: {} predictions for 8 inputs", preds.len()
+        preds.len(),
+        8,
+        "FALSIFIED GLM-002: {} predictions for 8 inputs",
+        preds.len()
     );
 }
 
@@ -72,7 +71,8 @@ fn falsify_glm_003_poisson_non_negative() {
     for i in 0..preds.len() {
         assert!(
             preds[i] >= 0.0,
-            "FALSIFIED GLM-003: Poisson prediction[{i}] = {} < 0", preds[i]
+            "FALSIFIED GLM-003: Poisson prediction[{i}] = {} < 0",
+            preds[i]
         );
     }
 }

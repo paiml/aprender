@@ -431,10 +431,7 @@ fn run_real_checks_gguf(path: &Path, _no_gpu: bool) -> Result<Vec<StageResult>, 
                 ],
             ) || all_groups_match(
                 &names,
-                &[
-                    &["ffn_up", "up_proj"],
-                    &["ffn_down", "down_proj"],
-                ],
+                &[&["ffn_up", "up_proj"], &["ffn_down", "down_proj"]],
             ),
             "MLP tensors found",
             "Missing MLP tensors",
@@ -535,7 +532,10 @@ fn run_real_checks_safetensors(path: &Path) -> Result<Vec<StageResult>, CliError
             "Feed-Forward (MLP)",
             "\"Think about it\"",
             has_ffn,
-            &format!("MLP found{}", if has_gate { " (SwiGLU)" } else { " (GELU)" }),
+            &format!(
+                "MLP found{}",
+                if has_gate { " (SwiGLU)" } else { " (GELU)" }
+            ),
             "Missing MLP",
         ),
         StageResult {

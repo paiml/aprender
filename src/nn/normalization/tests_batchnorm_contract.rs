@@ -24,10 +24,7 @@ fn falsify_bn_001_training_standardization() {
     // Input: [batch=4, features=3]
     let x = Tensor::new(
         &[
-            1.0, 2.0, 3.0,
-            4.0, 5.0, 6.0,
-            7.0, 8.0, 9.0,
-            10.0, 11.0, 12.0,
+            1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
         ],
         &[4, 3],
     );
@@ -51,10 +48,7 @@ fn falsify_bn_001_training_standardization() {
 fn falsify_bn_002_denominator_safety() {
     let norm = BatchNorm1d::new(2);
     // Channel 0: all 5.0 (zero variance), Channel 1: varying
-    let x = Tensor::new(
-        &[5.0, 1.0, 5.0, 2.0, 5.0, 3.0, 5.0, 4.0],
-        &[4, 2],
-    );
+    let x = Tensor::new(&[5.0, 1.0, 5.0, 2.0, 5.0, 3.0, 5.0, 4.0], &[4, 2]);
     let y = norm.forward(&x);
 
     for (i, &val) in y.data().iter().enumerate() {
@@ -74,10 +68,7 @@ fn falsify_bn_004_eval_uses_running_stats() {
     let mut norm = BatchNorm1d::new(2);
 
     // First forward pass in training mode to update running stats
-    let x = Tensor::new(
-        &[10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0],
-        &[4, 2],
-    );
+    let x = Tensor::new(&[10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0], &[4, 2]);
     let y_train = norm.forward(&x);
 
     // Switch to eval mode

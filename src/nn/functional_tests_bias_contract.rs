@@ -20,13 +20,7 @@ use super::*;
 /// bias_add(x, bias) must return a tensor with the same shape as x.
 #[test]
 fn falsify_ba_001_shape_preservation() {
-    let shapes: Vec<(usize, usize)> = vec![
-        (1, 1),
-        (1, 64),
-        (4, 128),
-        (16, 256),
-        (32, 8),
-    ];
+    let shapes: Vec<(usize, usize)> = vec![(1, 1), (1, 64), (4, 128), (16, 256), (32, 8)];
 
     for (rows, cols) in shapes {
         let x = Tensor::ones(&[rows, cols]);
@@ -49,7 +43,9 @@ fn falsify_ba_001_shape_preservation() {
 #[test]
 fn falsify_ba_002_zero_bias_identity() {
     let x = Tensor::new(
-        &(0..4 * 8).map(|i| (i as f32 * 0.1).sin()).collect::<Vec<_>>(),
+        &(0..4 * 8)
+            .map(|i| (i as f32 * 0.1).sin())
+            .collect::<Vec<_>>(),
         &[4, 8],
     );
     // Identity weight matrix
@@ -63,7 +59,12 @@ fn falsify_ba_002_zero_bias_identity() {
     let y_no_bias = linear(&x, &weight, None);
     let y_zero_bias = linear(&x, &weight, Some(&zero_bias));
 
-    for (i, (&a, &b)) in y_no_bias.data().iter().zip(y_zero_bias.data().iter()).enumerate() {
+    for (i, (&a, &b)) in y_no_bias
+        .data()
+        .iter()
+        .zip(y_zero_bias.data().iter())
+        .enumerate()
+    {
         assert!(
             (a - b).abs() < 1e-6,
             "FALSIFIED BA-002: element[{i}] no_bias={a}, zero_bias={b}"
@@ -95,7 +96,12 @@ fn falsify_ba_003_additivity() {
     // Single apply with sum: linear(x, I, b1+b2)
     let y_single = linear(&x, &weight, Some(&b_sum));
 
-    for (i, (&a, &b)) in y_double.data().iter().zip(y_single.data().iter()).enumerate() {
+    for (i, (&a, &b)) in y_double
+        .data()
+        .iter()
+        .zip(y_single.data().iter())
+        .enumerate()
+    {
         assert!(
             (a - b).abs() < 1e-5,
             "FALSIFIED BA-003: element[{i}] double={a}, single={b}"

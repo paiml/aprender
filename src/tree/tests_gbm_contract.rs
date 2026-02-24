@@ -19,10 +19,14 @@ use crate::primitives::Matrix;
 /// FALSIFY-GBM-001: Predictions in training label set
 #[test]
 fn falsify_gbm_001_predictions_in_label_range() {
-    let x = Matrix::from_vec(8, 2, vec![
-        0.0, 0.0, 0.5, 0.5, 1.0, 0.0, 1.5, 0.5,
-        5.0, 5.0, 5.5, 5.5, 6.0, 5.0, 6.5, 5.5,
-    ]).expect("valid");
+    let x = Matrix::from_vec(
+        8,
+        2,
+        vec![
+            0.0, 0.0, 0.5, 0.5, 1.0, 0.0, 1.5, 0.5, 5.0, 5.0, 5.5, 5.5, 6.0, 5.0, 6.5, 5.5,
+        ],
+    )
+    .expect("valid");
     let y = vec![0_usize, 0, 0, 0, 1, 1, 1, 1];
 
     let mut gbm = GradientBoostingClassifier::new();
@@ -40,10 +44,12 @@ fn falsify_gbm_001_predictions_in_label_range() {
 /// FALSIFY-GBM-002: Prediction count matches input count
 #[test]
 fn falsify_gbm_002_prediction_count() {
-    let x = Matrix::from_vec(6, 2, vec![
-        0.0, 0.0, 1.0, 1.0, 2.0, 2.0,
-        5.0, 5.0, 6.0, 6.0, 7.0, 7.0,
-    ]).expect("valid");
+    let x = Matrix::from_vec(
+        6,
+        2,
+        vec![0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 5.0, 5.0, 6.0, 6.0, 7.0, 7.0],
+    )
+    .expect("valid");
     let y = vec![0_usize, 0, 0, 1, 1, 1];
 
     let mut gbm = GradientBoostingClassifier::new();
@@ -51,18 +57,24 @@ fn falsify_gbm_002_prediction_count() {
 
     let preds = gbm.predict(&x).expect("predict");
     assert_eq!(
-        preds.len(), 6,
-        "FALSIFIED GBM-002: {} predictions for 6 inputs", preds.len()
+        preds.len(),
+        6,
+        "FALSIFIED GBM-002: {} predictions for 6 inputs",
+        preds.len()
     );
 }
 
 /// FALSIFY-GBM-003: Well-separated data classified correctly
 #[test]
 fn falsify_gbm_003_separable_data() {
-    let x = Matrix::from_vec(8, 2, vec![
-        0.0, 0.0, 0.1, 0.1, 0.2, 0.2, 0.3, 0.3,
-        10.0, 10.0, 10.1, 10.1, 10.2, 10.2, 10.3, 10.3,
-    ]).expect("valid");
+    let x = Matrix::from_vec(
+        8,
+        2,
+        vec![
+            0.0, 0.0, 0.1, 0.1, 0.2, 0.2, 0.3, 0.3, 10.0, 10.0, 10.1, 10.1, 10.2, 10.2, 10.3, 10.3,
+        ],
+    )
+    .expect("valid");
     let y = vec![0_usize, 0, 0, 0, 1, 1, 1, 1];
 
     let mut gbm = GradientBoostingClassifier::new();
@@ -78,10 +90,14 @@ fn falsify_gbm_003_separable_data() {
 /// FALSIFY-GBM-004: Ensemble not worse than random on training data
 #[test]
 fn falsify_gbm_004_better_than_random() {
-    let x = Matrix::from_vec(8, 2, vec![
-        0.0, 0.0, 0.1, 0.1, 0.2, 0.2, 0.3, 0.3,
-        10.0, 10.0, 10.1, 10.1, 10.2, 10.2, 10.3, 10.3,
-    ]).expect("valid");
+    let x = Matrix::from_vec(
+        8,
+        2,
+        vec![
+            0.0, 0.0, 0.1, 0.1, 0.2, 0.2, 0.3, 0.3, 10.0, 10.0, 10.1, 10.1, 10.2, 10.2, 10.3, 10.3,
+        ],
+    )
+    .expect("valid");
     let y = vec![0_usize, 0, 0, 0, 1, 1, 1, 1];
 
     let mut gbm = GradientBoostingClassifier::new();

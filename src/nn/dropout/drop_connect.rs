@@ -72,8 +72,8 @@ impl DropBlock {
         block_size: usize,
         gamma: f32,
     ) {
-        for i in 0..(h - block_size + 1) {
-            for j in 0..(w - block_size + 1) {
+        for i in 0..=(h - block_size) {
+            for j in 0..=(w - block_size) {
                 if rng.random::<f32>() < gamma {
                     for bi in 0..block_size {
                         for bj in 0..block_size {
@@ -289,7 +289,13 @@ fn apply_dropout(input: &Tensor, p: f32, rng: &Mutex<StdRng>) -> Tensor {
     let data: Vec<f32> = input
         .data()
         .iter()
-        .map(|&x| if rng.random::<f32>() < p { 0.0 } else { x * scale })
+        .map(|&x| {
+            if rng.random::<f32>() < p {
+                0.0
+            } else {
+                x * scale
+            }
+        })
         .collect();
     Tensor::new(&data, input.shape())
 }

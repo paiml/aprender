@@ -1,0 +1,266 @@
+================================================================================
+PROVABLE CONTRACTS SYSTEM — QUICK REFERENCE
+================================================================================
+
+TOTAL: 89 YAML contracts, 13,178 lines, 284 bindings (97.5% implemented)
+
+TIER 1: KERNEL CONTRACTS (26/26) ✅ 100% COMPLETE
+────────────────────────────────────────────────
+Attention       → attention, gqa, flash-attention, sliding-window
+Activation      → gelu, relu, silu, swiglu
+Normalization   → layernorm, rmsnorm, batchnorm
+Position        → rope, absolute, alibi
+Quantization    → matmul, q4k-q6k, f16-conversion
+Loss/Optim      → cross-entropy, softmax, adamw, lbfgs
+Other           → bias-add, dropout, attention-scaling, projections
+
+TIER 2: ARCHITECTURE CONTRACTS (20/20) ✅ 100% COMPLETE
+──────────────────────────────────────────────────────
+model-config-algebra          → Divisibility, bounds, ordering
+arch-constraints              → Per-architecture normalization/activation
+qwen2-shapes, qwen3-shapes    → Concrete dimension + RoPE frequency
+qwen35-hybrid-forward         → Hybrid decoder/SSM architecture
+rope-extrapolation            → YaRN, NTK scaling techniques
+gated-delta-net               → Qwen3.5 SSM kernel
+
+TIER 3: ML ALGORITHMS (16/16) ✅ 100% COMPLETE
+──────────────────────────────
+Linear/Tree-Based/Clustering/Reduction/Bayesian/Metrics
+All formalized with proof obligations + falsification tests
+
+TIER 4: TIME SERIES / SPECIALIZED (8/8) ✅ 100% COMPLETE
+──────────────────────────────────────────────────────
+ARIMA, Drift Detection, Active Learning, CMA-ES, Metaheuristics,
+Shannon Entropy, Optimization, Performance Grading
+
+TIER 5: DATA/FORMAT CONTRACTS (9/11) ⚠️ 82% COMPLETE
+────────────────────────────────────────────────────
+✅ aprender/tensor-layout-v1.yaml      → ROW-MAJOR enforcement, GGUF transpose
+✅ aprender/quantized-dot-product-v1   → Q4K/Q6K superblock semantics
+✅ aprender/binding.yaml               → 284 kernel→function bindings
+✅ aprender/kernel-fusion-v1.yaml      → Fused operations
+✅ aprender/layer-parity-v1.yaml       → Training vs inference consistency
+✅ format-parity-v1.yaml               → GGUF ↔ SafeTensors ↔ APR
+✅ kv-cache-equivalence-v1.yaml        → Cached vs non-cached inference
+✅ kv-cache-sizing-v1.yaml             → Memory bounds
+✅ validated-tensor-v1.yaml            → Poka-yoke newtype validation
+⚠️ inference-pipeline-v1.yaml          → MISSING: tokenizer, token generation
+⚠️ tensor-inventory-v1.yaml            → PARTIAL: only LLaMA names, missing Qwen/Mistral/Phi
+
+TIER 6: E2E VERIFICATION (4/8) ⚠️ 50% COMPLETE
+───────────────────────────────────────────────
+✅ qwen2-e2e-verification      → Forward pass golden output
+✅ qwen35-e2e-verification     → Hybrid decoder+SSM
+✅ qwen3-e2e-verification      → Dense forward
+✅ qwen3moe-e2e-verification   → Sparse routing
+⚠️ backend-dispatch            → PARTIAL: missing GPU↔CPU equivalence
+⚠️ roofline-model              → PARTIAL: missing kernel benchmarks
+⚠️ hybrid-layer-dispatch       → PARTIAL: missing routing verification
+⚠️ kernel-launch-budget        → PARTIAL: missing cost model
+
+================================================================================
+CRITICAL GAPS — MISSING CONTRACTS (8 NEEDED)
+================================================================================
+
+P0 — PUBLISHING BLOCKERS (MUST HAVE) 🔴
+────────────────────────────────────────
+
+1. ❌ special-tokens-registry-v1.yaml
+   - EOS/BOS/PAD IDs for all 101+ models
+   - Currently hardcoded in: format/converter/tokenizer_loader.rs
+   - Risk: Wrong EOS ID → infinite token generation loops
+   - Status: 0 lines / Should be: 500 lines
+   
+2. ❌ model-metadata-bounds-v1.yaml
+   - Vocab size, head dim, rope_theta, max_position bounds
+   - Currently: Ad-hoc checks in format/converter/gguf_import.rs
+   - Formalizes F-QA-008 metadata plausibility gate
+   - Status: 0 lines / Should be: 300 lines
+
+3. ❌ tokenizer-vocab-v1.yaml
+   - Per-model vocab size + BPE merge rule ordering
+   - Currently hardcoded in: text/bpe/qwen2.rs, text/llama_tokenizer/mod.rs
+   - Risk: Corrupted BPE → wrong encoding
+   - Status: 0 lines / Should be: 400 lines
+
+P1 — QUALITY IMPROVEMENTS (SHOULD HAVE) 🟠
+────────────────────────────────────────────
+
+4. ❌ chat-template-semantics-v1.yaml
+   - Grammar for ChatML, HF, Mistral, Phi, Zephyr (6+ formats)
+   - Currently: Heuristic detection in chat_template/raw_template.rs
+   - Risk: Silently wrong format → garbage token sequences
+   - Status: 0 lines / Should be: 600 lines
+
+5. ⚠️ tensor-inventory-v1.yaml EXPANSION
+   - Add Qwen, Mistral, Phi naming rules
+   - Currently: Only LLaMA documented
+   - Risk: apr convert fails on non-LLaMA models
+   - Status: Partial / Should be: +300 lines
+
+6. ⚠️ format-parity-v1.yaml EXPANSION
+   - Add transposition proof (GGUF col-major → APR row-major)
+   - Add quantization equivalence (GGUF Q4_K vs APR Q4)
+   - Related bugs: GH-208, GH-205, PMAT-234
+   - Status: Partial / Should be: +400 lines
+
+P2 — FUTURE PROOFING (NICE TO HAVE) 🟡
+────────────────────────────────────────
+
+7. ⚠️ backend-dispatch-v1.yaml EXPANSION
+   - GPU ↔ CPU numeric equivalence bounds
+   - Enable automatic backend selection
+
+8. ⚠️ kernel-launch-budget-v1.yaml EXPANSION
+   - GPU kernel cost model
+   - Automatic kernel selection
+
+================================================================================
+HARDCODED VALUES NEEDING CONTRACTIFICATION
+================================================================================
+
+VOCAB SIZES (NO CONTRACT)
+─────────────────────────
+Qwen2:         151643
+Qwen3:         152000
+Qwen3-Coder:   152000
+Qwen3.5:       152064
+LLaMA 3.2:     128000
+Mistral:       32000
+Phi-3:         32064
+Whisper:       51864
+
+→ Should be in: special-tokens-registry-v1.yaml
+
+SPECIAL TOKEN IDs (NO CONTRACT)
+───────────────────────────────
+Qwen2:   pad=151643, eos=151643, bos=151644
+LLaMA:   pad=128001, eos=128001, bos=128000
+Mistral: pad=0, eos=2, bos=1
+Phi-3:   pad=32064, eos=32064, bos=1
+
+→ Should be in: special-tokens-registry-v1.yaml
+
+RoPE THETA (PARTIALLY CONTRACTED)
+──────────────────────────────────
+Qwen2:   1,000,000.0     (in qwen2-shapes-v1.yaml ✅)
+LLaMA:   500,000.0       (in arch-constraints-v1.yaml ✅)
+Mistral: 10,000.0        (MISSING)
+Phi-3:   10,000.0        (MISSING)
+
+→ Should be in: model-metadata-bounds-v1.yaml
+
+CHAT TEMPLATE MARKERS (NO CONTRACT)
+────────────────────────────────────
+ChatML:     "<|im_start|>" / "<|im_end|>"
+Mistral:    "[INST] " / " [/INST]"
+Zephyr:     "<|user|>" / "<|assistant|>"
+
+→ Should be in: chat-template-semantics-v1.yaml
+
+TENSOR NAMES (PARTIALLY CONTRACTED)
+─────────────────────────────────────
+LLaMA:    q_proj, k_proj, v_proj, o_proj            ✅ in tensor-inventory
+Qwen:     c_attn[QKV], c_proj, w2[down], w1[gate]   ❌ MISSING
+Mistral:  q_proj, k_proj, v_proj, o_proj, w1, v_proj, w2  ❌ MISSING
+Phi:      q_proj, k_proj, v_proj, o_proj, fc1, fc2  ❌ MISSING
+
+→ Should be in: tensor-inventory-v1.yaml expansion
+
+================================================================================
+SUMMARY TABLE
+================================================================================
+
+Component          Contracts  % Complete  Blocker?
+─────────────────────────────────────────────────
+Kernels            26         100% ✅     No
+Architecture       20         100% ✅     No
+ML Algorithms      16         100% ✅     No
+Time Series        8          100% ✅     No
+Data/Format        11         82% ⚠️      No (2 partial)
+E2E Verify         8          50% ⚠️      No
+──────────────────────────────────────────────
+Tokenizers         0          0% ❌       YES — P0
+Metadata Bounds    0          0% ❌       YES — P0
+Chat Templates     0          0% ❌       No (heuristic works)
+Tensor Names       1 (partial) 33%       No (LLaMA works)
+──────────────────────────────────────────────
+TOTAL              89         81%        2 P0 blockers
+
+================================================================================
+NEXT STEPS: CONTRACT PRIORITY ROADMAP
+================================================================================
+
+WEEK 1 — P0 Blocker 1: special-tokens-registry-v1.yaml
+├─ Create YAML with Qwen2, Qwen3, LLaMA, Mistral, Phi entries
+├─ Add falsification tests: token_id < vocab_size
+├─ Generate Rust bindings: src/format/converter/special_tokens_contract.rs
+└─ Integrate: format/converter/tokenizer_loader.rs uses registry
+
+WEEK 2 — P0 Blocker 2: model-metadata-bounds-v1.yaml
+├─ Create YAML with plausibility bounds
+├─ Add falsification tests for each bound
+├─ Generate Kani harnesses: cargo +nightly kani
+└─ Integrate: format/converter/gguf_import.rs uses bounds
+
+WEEK 3 — P0 Blocker 3: tokenizer-vocab-v1.yaml
+├─ Create YAML with per-model vocab + merge rules
+├─ Add proptest for merge frequency monotonicity
+├─ Generate Rust bindings
+└─ Integrate: text/bpe/mod.rs validation
+
+WEEK 4 — P1 Quality: chat-template-semantics-v1.yaml
+├─ Formalize 6+ template formats
+├─ Add grammar + proof obligations
+└─ Replace heuristic detection in chat_template/mod.rs
+
+WEEK 5 — P1 Quality: tensor-inventory-v1.yaml expansion
+├─ Add Qwen, Mistral, Phi naming sections
+└─ Update format/converter/mod.rs tensor mapping
+
+WEEK 6 — P1 Quality: format-parity-v1.yaml expansion
+├─ Add transposition proof + quantization equivalence
+└─ Verify format conversion (GGUF → SafeTensors → APR)
+
+================================================================================
+COMMAND REFERENCE
+================================================================================
+
+# Validate a contract
+pv validate contracts/special-tokens-registry-v1.yaml
+
+# Generate Rust trait + test scaffolding
+pv generate-scaffold contracts/special-tokens-registry-v1.yaml \
+  --output src/special_tokens_contract.rs
+
+# Generate property tests
+pv generate-tests contracts/special-tokens-registry-v1.yaml \
+  --output src/tests/special_tokens_contract_tests.rs
+
+# Generate Kani harnesses
+pv generate-kani contracts/model-metadata-bounds-v1.yaml \
+  --output src/contracts/kani_harnesses.rs
+
+# Audit: verify chain from paper → equation → test → code
+pv audit contracts/special-tokens-registry-v1.yaml --binding
+
+================================================================================
+REFERENCES
+================================================================================
+
+Provable Contracts Directory:
+  /home/noah/src/provable-contracts/
+
+Key Files:
+  contracts/aprender/binding.yaml          — 284 kernel↔function bindings
+  contracts/model-config-algebra-v1.yaml   — 5-level proof hierarchy
+  contracts/arch-constraints-v1.yaml       — Per-architecture rules
+  contracts/aprender/tensor-layout-v1.yaml — ROW-MAJOR enforcement
+
+Analysis Document:
+  /home/noah/src/aprender/PROVABLE_CONTRACTS_ANALYSIS.md
+
+Commitment:
+  All new models MUST have contracts before publishing
+  No hardcoded values without YAML contract source
+

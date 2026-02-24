@@ -137,9 +137,9 @@ fn falsify_sim_004_jaccard_symmetry() {
 #[test]
 fn falsify_sim_004_jaccard_range() {
     let cases = vec![
-        (vec!["a", "b", "c"], vec!["d", "e", "f"]),     // no overlap
-        (vec!["a", "b", "c"], vec!["a", "b", "c"]),     // identical
-        (vec!["a", "b", "c"], vec!["b", "c", "d"]),     // partial
+        (vec!["a", "b", "c"], vec!["d", "e", "f"]), // no overlap
+        (vec!["a", "b", "c"], vec!["a", "b", "c"]), // identical
+        (vec!["a", "b", "c"], vec!["b", "c", "d"]), // partial
     ];
 
     for (i, (a, b)) in cases.iter().enumerate() {
@@ -281,9 +281,9 @@ fn falsify_sim_007_pairwise_matrix_properties() {
 #[test]
 fn falsify_sim_008_edit_distance_similarity_range() {
     let pairs = [
-        ("hello", "hello"),    // identical = 1.0
-        ("abc", "xyz"),        // completely different
-        ("", ""),              // both empty = 1.0
+        ("hello", "hello"), // identical = 1.0
+        ("abc", "xyz"),     // completely different
+        ("", ""),           // both empty = 1.0
         ("kitten", "sitting"),
         ("rust", "dust"),
     ];

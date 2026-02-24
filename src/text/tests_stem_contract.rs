@@ -34,7 +34,13 @@ fn falsify_st_001_idempotent() {
 #[test]
 fn falsify_st_002_output_not_longer() {
     let stemmer = PorterStemmer::new();
-    let words = ["running", "studies", "flies", "processing", "generalization"];
+    let words = [
+        "running",
+        "studies",
+        "flies",
+        "processing",
+        "generalization",
+    ];
 
     for word in &words {
         let stemmed = stemmer.stem(word).expect("stem succeeds");

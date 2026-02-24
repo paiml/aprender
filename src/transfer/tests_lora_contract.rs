@@ -25,8 +25,10 @@ fn falsify_lora_001_output_shape() {
 
     let result = adapter.apply(&base_weight);
     assert_eq!(
-        result.shape(), &[16, 8],
-        "FALSIFIED LORA-001: output shape {:?} != base shape [16, 8]", result.shape()
+        result.shape(),
+        &[16, 8],
+        "FALSIFIED LORA-001: output shape {:?} != base shape [16, 8]",
+        result.shape()
     );
 }
 

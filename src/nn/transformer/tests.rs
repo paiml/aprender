@@ -434,21 +434,21 @@ fn test_alibi_creation() {
     assert_eq!(alibi.slopes().len(), 8);
 }
 
-#[path = "tests_alibi_mha.rs"]
-mod tests_alibi_mha;
-#[path = "tests_decoder_rope.rs"]
-mod tests_decoder_rope;
-#[path = "tests_rope_contract.rs"]
-mod tests_rope_contract;
-#[path = "tests_attention_contract.rs"]
-mod tests_attention_contract;
 #[path = "tests_alibi_contract.rs"]
 mod tests_alibi_contract;
-#[path = "tests_gqa_contract.rs"]
-mod tests_gqa_contract;
+#[path = "tests_alibi_mha.rs"]
+mod tests_alibi_mha;
+#[path = "tests_attention_contract.rs"]
+mod tests_attention_contract;
 #[path = "tests_attention_scaling_contract.rs"]
 mod tests_attention_scaling_contract;
+#[path = "tests_decoder_rope.rs"]
+mod tests_decoder_rope;
+#[path = "tests_gqa_contract.rs"]
+mod tests_gqa_contract;
 #[path = "tests_position_contract.rs"]
 mod tests_position_contract;
+#[path = "tests_rope_contract.rs"]
+mod tests_rope_contract;
 #[path = "tests_rope_ext_contract.rs"]
 mod tests_rope_ext_contract;

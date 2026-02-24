@@ -18,10 +18,7 @@ use super::*;
 /// FALSIFY-CD-001: Labels length matches node count
 #[test]
 fn falsify_cd_001_labels_length() {
-    let g = Graph::from_edges(
-        &[(0, 1), (1, 2), (2, 0), (3, 4), (4, 5), (5, 3)],
-        false,
-    );
+    let g = Graph::from_edges(&[(0, 1), (1, 2), (2, 0), (3, 4), (4, 5), (5, 3)], false);
 
     let labels = g.label_propagation(100, Some(42));
     assert_eq!(
@@ -68,10 +65,7 @@ fn falsify_cd_002_clique_same_community() {
 /// FALSIFY-CD-003: Deterministic with same seed
 #[test]
 fn falsify_cd_003_deterministic_with_seed() {
-    let g = Graph::from_edges(
-        &[(0, 1), (1, 2), (2, 3), (3, 4), (4, 0), (0, 3)],
-        false,
-    );
+    let g = Graph::from_edges(&[(0, 1), (1, 2), (2, 3), (3, 4), (4, 0), (0, 3)], false);
 
     let labels1 = g.label_propagation(100, Some(123));
     let labels2 = g.label_propagation(100, Some(123));

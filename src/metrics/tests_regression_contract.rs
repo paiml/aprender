@@ -35,10 +35,7 @@ fn falsify_mr_002_r2_upper_bound() {
     let y_pred = Vector::from_slice(&[1.1, 2.2, 2.8, 4.1, 4.9]);
 
     let r2 = r_squared(&y_pred, &y_true);
-    assert!(
-        r2 <= 1.0 + 1e-6,
-        "FALSIFIED MR-002: R²={r2} > 1.0"
-    );
+    assert!(r2 <= 1.0 + 1e-6, "FALSIFIED MR-002: R²={r2} > 1.0");
 }
 
 /// FALSIFY-MR-003: R² < 0 when predictions are worse than mean
@@ -61,8 +58,5 @@ fn falsify_mr_004_r2_deterministic() {
 
     let r2_1 = r_squared(&y, &y);
     let r2_2 = r_squared(&y, &y);
-    assert_eq!(
-        r2_1, r2_2,
-        "FALSIFIED MR-004: R² differs on same input"
-    );
+    assert_eq!(r2_1, r2_2, "FALSIFIED MR-004: R² differs on same input");
 }

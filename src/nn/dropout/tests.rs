@@ -510,12 +510,7 @@ fn falsify_do_002_unbiased_expectation() {
 /// FALSIFY-DO-003: Shape preservation — shape(dropout(x)) = shape(x)
 #[test]
 fn falsify_do_003_shape_preservation() {
-    for &shape in &[
-        [1_usize, 4] as [usize; 2],
-        [8, 16],
-        [32, 64],
-        [1, 1],
-    ] {
+    for &shape in &[[1_usize, 4] as [usize; 2], [8, 16], [32, 64], [1, 1]] {
         let dropout = Dropout::with_seed(0.5, 42);
         let x = Tensor::ones(&shape);
         let y = dropout.forward(&x);

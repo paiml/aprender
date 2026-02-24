@@ -158,10 +158,10 @@ impl SpecialTokens {
     #[must_use]
     pub const fn qwen3_5() -> Self {
         Self {
-            bos_id: 0,       // null in config — no explicit BOS
+            bos_id: 0, // null in config — no explicit BOS
             eos_id: 248_044,
-            pad_id: 0,       // null in config
-            im_start_id: 0,  // not documented in registry
+            pad_id: 0,      // null in config
+            im_start_id: 0, // not documented in registry
             im_end_id: 0,
         }
     }
@@ -230,7 +230,7 @@ impl SpecialTokens {
     #[must_use]
     pub const fn phi2() -> Self {
         Self {
-            bos_id: 0,      // null in config
+            bos_id: 0, // null in config
             eos_id: 50_256,
             pad_id: 50_256,
             im_start_id: 0,
@@ -242,7 +242,7 @@ impl SpecialTokens {
     #[must_use]
     pub const fn gpt2() -> Self {
         Self {
-            bos_id: 0,      // null in config
+            bos_id: 0, // null in config
             eos_id: 50_256,
             pad_id: 50_256,
             im_start_id: 0,

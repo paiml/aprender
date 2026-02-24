@@ -21,11 +21,11 @@ use super::isolation::spectral_entropy;
 #[test]
 fn falsify_se_001_range_bound() {
     let test_cases: Vec<Vec<f32>> = vec![
-        vec![1.0, 1.0, 1.0, 1.0],           // uniform → max entropy
-        vec![100.0, 0.001, 0.001, 0.001],    // peaked → low entropy
-        vec![1.0, 2.0, 3.0, 4.0, 5.0],      // varying
-        vec![0.1; 100],                       // large uniform
-        vec![1e-6, 1.0, 1e-6],               // near-singular
+        vec![1.0, 1.0, 1.0, 1.0],         // uniform → max entropy
+        vec![100.0, 0.001, 0.001, 0.001], // peaked → low entropy
+        vec![1.0, 2.0, 3.0, 4.0, 5.0],    // varying
+        vec![0.1; 100],                   // large uniform
+        vec![1e-6, 1.0, 1e-6],            // near-singular
     ];
 
     for (i, mags) in test_cases.iter().enumerate() {

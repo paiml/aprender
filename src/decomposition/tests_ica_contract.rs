@@ -19,29 +19,39 @@ use crate::primitives::Matrix;
 /// FALSIFY-ICA-001: Output dimensionality matches n_components
 #[test]
 fn falsify_ica_001_output_shape() {
-    let x = Matrix::from_vec(10, 3, vec![
-        1.0, 0.0, 0.5, 0.0, 1.0, 0.5, 1.0, 1.0, 1.0,
-        -1.0, 0.0, -0.5, 0.0, -1.0, -0.5, -1.0, -1.0, -1.0,
-        0.5, -0.5, 0.0, -0.5, 0.5, 0.0, 0.5, 0.5, 0.5,
-        0.3, 0.7, 0.5,
-    ]).expect("valid");
+    let x = Matrix::from_vec(
+        10,
+        3,
+        vec![
+            1.0, 0.0, 0.5, 0.0, 1.0, 0.5, 1.0, 1.0, 1.0, -1.0, 0.0, -0.5, 0.0, -1.0, -0.5, -1.0,
+            -1.0, -1.0, 0.5, -0.5, 0.0, -0.5, 0.5, 0.0, 0.5, 0.5, 0.5, 0.3, 0.7, 0.5,
+        ],
+    )
+    .expect("valid");
 
     let mut ica = ICA::new(2);
     ica.fit(&x).expect("fit");
 
     let transformed = ica.transform(&x).expect("transform");
     let (rows, cols) = transformed.shape();
-    assert_eq!(rows, 10, "FALSIFIED ICA-001: output rows={rows}, expected 10");
+    assert_eq!(
+        rows, 10,
+        "FALSIFIED ICA-001: output rows={rows}, expected 10"
+    );
     assert_eq!(cols, 2, "FALSIFIED ICA-001: output cols={cols}, expected 2");
 }
 
 /// FALSIFY-ICA-002: Transformed values are finite
 #[test]
 fn falsify_ica_002_finite_output() {
-    let x = Matrix::from_vec(8, 2, vec![
-        1.0, 0.0, 0.0, 1.0, -1.0, 0.0, 0.0, -1.0,
-        0.5, 0.5, -0.5, -0.5, 0.5, -0.5, -0.5, 0.5,
-    ]).expect("valid");
+    let x = Matrix::from_vec(
+        8,
+        2,
+        vec![
+            1.0, 0.0, 0.0, 1.0, -1.0, 0.0, 0.0, -1.0, 0.5, 0.5, -0.5, -0.5, 0.5, -0.5, -0.5, 0.5,
+        ],
+    )
+    .expect("valid");
 
     let mut ica = ICA::new(2);
     ica.fit(&x).expect("fit");
@@ -62,10 +72,14 @@ fn falsify_ica_002_finite_output() {
 /// FALSIFY-ICA-003: Deterministic with same data
 #[test]
 fn falsify_ica_003_deterministic() {
-    let x = Matrix::from_vec(6, 2, vec![
-        1.0, 0.0, 0.0, 1.0, -1.0, 0.0,
-        0.0, -1.0, 0.5, 0.5, -0.5, -0.5,
-    ]).expect("valid");
+    let x = Matrix::from_vec(
+        6,
+        2,
+        vec![
+            1.0, 0.0, 0.0, 1.0, -1.0, 0.0, 0.0, -1.0, 0.5, 0.5, -0.5, -0.5,
+        ],
+    )
+    .expect("valid");
 
     let mut ica1 = ICA::new(2);
     ica1.fit(&x).expect("fit 1");

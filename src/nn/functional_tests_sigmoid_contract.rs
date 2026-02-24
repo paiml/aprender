@@ -12,8 +12,8 @@
 //   - Nair & Hinton (2010) "Rectified Linear Units Improve RBMs"
 // =========================================================================
 
-use crate::nn::functional::{sigmoid, sigmoid_scalar};
 use crate::autograd::Tensor;
+use crate::nn::functional::{sigmoid, sigmoid_scalar};
 
 /// FALSIFY-SG-001: Sigmoid output is in [0, 1] (f32 saturates at extremes)
 #[test]

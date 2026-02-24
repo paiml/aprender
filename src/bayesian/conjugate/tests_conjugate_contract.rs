@@ -97,9 +97,6 @@ fn falsify_by_006_dirichlet_probs_nonneg() {
 
     let probs = model.posterior_mean();
     for (i, &p) in probs.iter().enumerate() {
-        assert!(
-            p >= 0.0,
-            "FALSIFIED BY-006: prob[{i}]={p}, expected >= 0.0"
-        );
+        assert!(p >= 0.0, "FALSIFIED BY-006: prob[{i}]={p}, expected >= 0.0");
     }
 }

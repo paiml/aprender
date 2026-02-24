@@ -20,9 +20,12 @@ use crate::traits::Transformer;
 /// FALSIFY-PN-001: StandardScaler output has zero mean (within tolerance)
 #[test]
 fn falsify_pn_001_standard_scaler_zero_mean() {
-    let x = Matrix::from_vec(5, 2, vec![
-        1.0, 10.0, 2.0, 20.0, 3.0, 30.0, 4.0, 40.0, 5.0, 50.0,
-    ]).expect("valid");
+    let x = Matrix::from_vec(
+        5,
+        2,
+        vec![1.0, 10.0, 2.0, 20.0, 3.0, 30.0, 4.0, 40.0, 5.0, 50.0],
+    )
+    .expect("valid");
 
     let mut scaler = StandardScaler::new();
     scaler.fit(&x).expect("fit");
@@ -41,9 +44,14 @@ fn falsify_pn_001_standard_scaler_zero_mean() {
 /// FALSIFY-PN-002: MinMaxScaler output in [0, 1] range
 #[test]
 fn falsify_pn_002_minmax_scaler_bounded() {
-    let x = Matrix::from_vec(5, 2, vec![
-        -10.0, 100.0, 0.0, 200.0, 10.0, 300.0, 20.0, 400.0, 30.0, 500.0,
-    ]).expect("valid");
+    let x = Matrix::from_vec(
+        5,
+        2,
+        vec![
+            -10.0, 100.0, 0.0, 200.0, 10.0, 300.0, 20.0, 400.0, 30.0, 500.0,
+        ],
+    )
+    .expect("valid");
 
     let mut scaler = MinMaxScaler::new();
     scaler.fit(&x).expect("fit");
@@ -64,32 +72,46 @@ fn falsify_pn_002_minmax_scaler_bounded() {
 /// FALSIFY-PN-003: Output shape preserved
 #[test]
 fn falsify_pn_003_shape_preserved() {
-    let x = Matrix::from_vec(4, 3, vec![
-        1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
-    ]).expect("valid");
+    let x = Matrix::from_vec(
+        4,
+        3,
+        vec![
+            1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
+        ],
+    )
+    .expect("valid");
 
     let mut std_scaler = StandardScaler::new();
     std_scaler.fit(&x).expect("fit");
     let t1 = std_scaler.transform(&x).expect("transform");
-    assert_eq!(t1.shape(), (4, 3), "FALSIFIED PN-003: StandardScaler changed shape");
+    assert_eq!(
+        t1.shape(),
+        (4, 3),
+        "FALSIFIED PN-003: StandardScaler changed shape"
+    );
 
     let mut mm_scaler = MinMaxScaler::new();
     mm_scaler.fit(&x).expect("fit");
     let t2 = mm_scaler.transform(&x).expect("transform");
-    assert_eq!(t2.shape(), (4, 3), "FALSIFIED PN-003: MinMaxScaler changed shape");
+    assert_eq!(
+        t2.shape(),
+        (4, 3),
+        "FALSIFIED PN-003: MinMaxScaler changed shape"
+    );
 }
 
 /// FALSIFY-PN-004: MinMaxScaler inverse_transform round-trip
 #[test]
 fn falsify_pn_004_minmax_inverse_roundtrip() {
-    let x = Matrix::from_vec(4, 2, vec![
-        1.0, 10.0, 2.0, 20.0, 3.0, 30.0, 4.0, 40.0,
-    ]).expect("valid");
+    let x =
+        Matrix::from_vec(4, 2, vec![1.0, 10.0, 2.0, 20.0, 3.0, 30.0, 4.0, 40.0]).expect("valid");
 
     let mut scaler = MinMaxScaler::new();
     scaler.fit(&x).expect("fit");
     let transformed = scaler.transform(&x).expect("transform");
-    let recovered = scaler.inverse_transform(&transformed).expect("inverse_transform");
+    let recovered = scaler
+        .inverse_transform(&transformed)
+        .expect("inverse_transform");
 
     let (n, p) = x.shape();
     for i in 0..n {
@@ -97,7 +119,8 @@ fn falsify_pn_004_minmax_inverse_roundtrip() {
             assert!(
                 (x.get(i, j) - recovered.get(i, j)).abs() < 1e-4,
                 "FALSIFIED PN-004: round-trip error at [{i},{j}]: original={}, recovered={}",
-                x.get(i, j), recovered.get(i, j)
+                x.get(i, j),
+                recovered.get(i, j)
             );
         }
     }

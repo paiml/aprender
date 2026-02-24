@@ -18,10 +18,14 @@ use crate::primitives::Matrix;
 /// FALSIFY-IF-001: Anomaly scores are in [-1, 0] (negated convention)
 #[test]
 fn falsify_if_001_scores_bounded() {
-    let data = Matrix::from_vec(8, 2, vec![
-        1.0, 1.0, 1.1, 1.0, 1.0, 1.1, 0.9, 0.9,
-        1.1, 1.1, 1.0, 0.9, 0.9, 1.1, 1.0, 1.0,
-    ]).expect("valid matrix");
+    let data = Matrix::from_vec(
+        8,
+        2,
+        vec![
+            1.0, 1.0, 1.1, 1.0, 1.0, 1.1, 0.9, 0.9, 1.1, 1.1, 1.0, 0.9, 0.9, 1.1, 1.0, 1.0,
+        ],
+    )
+    .expect("valid matrix");
 
     let mut iforest = IsolationForest::new()
         .with_n_estimators(50)
@@ -40,10 +44,14 @@ fn falsify_if_001_scores_bounded() {
 /// FALSIFY-IF-002: Predictions are either 1 (normal) or -1 (anomaly)
 #[test]
 fn falsify_if_002_predictions_binary() {
-    let data = Matrix::from_vec(8, 2, vec![
-        1.0, 1.0, 1.1, 1.0, 1.0, 1.1, 0.9, 0.9,
-        1.1, 1.1, 1.0, 0.9, 0.9, 1.1, 1.0, 1.0,
-    ]).expect("valid matrix");
+    let data = Matrix::from_vec(
+        8,
+        2,
+        vec![
+            1.0, 1.0, 1.1, 1.0, 1.0, 1.1, 0.9, 0.9, 1.1, 1.1, 1.0, 0.9, 0.9, 1.1, 1.0, 1.0,
+        ],
+    )
+    .expect("valid matrix");
 
     let mut iforest = IsolationForest::new()
         .with_n_estimators(50)
@@ -63,10 +71,15 @@ fn falsify_if_002_predictions_binary() {
 /// FALSIFY-IF-003: Predictions length matches sample count
 #[test]
 fn falsify_if_003_predictions_length() {
-    let data = Matrix::from_vec(10, 2, vec![
-        1.0, 1.0, 1.1, 1.0, 1.0, 1.1, 0.9, 0.9, 1.2, 1.0,
-        1.1, 1.1, 1.0, 0.9, 0.9, 1.1, 1.0, 1.0, 0.8, 1.2,
-    ]).expect("valid matrix");
+    let data = Matrix::from_vec(
+        10,
+        2,
+        vec![
+            1.0, 1.0, 1.1, 1.0, 1.0, 1.1, 0.9, 0.9, 1.2, 1.0, 1.1, 1.1, 1.0, 0.9, 0.9, 1.1, 1.0,
+            1.0, 0.8, 1.2,
+        ],
+    )
+    .expect("valid matrix");
 
     let mut iforest = IsolationForest::new()
         .with_n_estimators(50)
@@ -75,7 +88,8 @@ fn falsify_if_003_predictions_length() {
 
     let preds = iforest.predict(&data);
     assert_eq!(
-        preds.len(), 10,
+        preds.len(),
+        10,
         "FALSIFIED IF-003: predictions len={}, expected 10",
         preds.len()
     );

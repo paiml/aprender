@@ -20,14 +20,13 @@ use super::*;
 fn falsify_pr_001_probability_distribution() {
     // Simple directed graph: 0→1→2→0 (cycle)
     let g = Graph::from_edges(&[(0, 1), (1, 2), (2, 0)], true);
-    let ranks = g.pagerank(0.85, 100, 1e-8).expect("pagerank should converge");
+    let ranks = g
+        .pagerank(0.85, 100, 1e-8)
+        .expect("pagerank should converge");
 
     // Non-negativity
     for (i, &r) in ranks.iter().enumerate() {
-        assert!(
-            r >= 0.0,
-            "FALSIFIED PR-001: rank[{i}] = {r} < 0"
-        );
+        assert!(r >= 0.0, "FALSIFIED PR-001: rank[{i}] = {r} < 0");
     }
 
     // Sums to 1
@@ -44,7 +43,9 @@ fn falsify_pr_001_probability_distribution() {
 #[test]
 fn falsify_pr_002_symmetric_equal_rank() {
     let g = Graph::from_edges(&[(0, 1), (1, 2), (2, 0)], true);
-    let ranks = g.pagerank(0.85, 100, 1e-8).expect("pagerank should converge");
+    let ranks = g
+        .pagerank(0.85, 100, 1e-8)
+        .expect("pagerank should converge");
 
     let expected = 1.0 / 3.0;
     for (i, &r) in ranks.iter().enumerate() {
@@ -62,7 +63,9 @@ fn falsify_pr_002_symmetric_equal_rank() {
 fn falsify_pr_003_hub_ranks_higher() {
     // 0→2, 1→2, 2→0 — node 2 has 2 incoming, nodes 0,1 have 1 each
     let g = Graph::from_edges(&[(0, 2), (1, 2), (2, 0)], true);
-    let ranks = g.pagerank(0.85, 100, 1e-8).expect("pagerank should converge");
+    let ranks = g
+        .pagerank(0.85, 100, 1e-8)
+        .expect("pagerank should converge");
 
     assert!(
         ranks[2] > ranks[0],
@@ -76,7 +79,9 @@ fn falsify_pr_003_hub_ranks_higher() {
 #[test]
 fn falsify_pr_004_single_node() {
     let g = Graph::from_edges(&[(0, 0)], true);
-    let ranks = g.pagerank(0.85, 100, 1e-8).expect("pagerank should converge");
+    let ranks = g
+        .pagerank(0.85, 100, 1e-8)
+        .expect("pagerank should converge");
 
     assert_eq!(ranks.len(), 1);
     assert!(

@@ -37,10 +37,7 @@ fn falsify_bpe_001_encode_determinism() {
     let t1 = tokenizer.encode(input);
     let t2 = tokenizer.encode(input);
 
-    assert_eq!(
-        t1, t2,
-        "FALSIFIED BPE-001: encoder is non-deterministic"
-    );
+    assert_eq!(t1, t2, "FALSIFIED BPE-001: encoder is non-deterministic");
 }
 
 #[test]
@@ -118,8 +115,8 @@ fn falsify_bpe_002_roundtrip_preserves_all_ascii_printable() {
 fn falsify_bpe_003_merge_priority_ordering() {
     let mut tokenizer = BpeTokenizer::new(BpeConfig::default());
     // rank 0 = highest priority
-    tokenizer.add_merge("a", "b");  // rank 0
-    tokenizer.add_merge("c", "d");  // rank 1
+    tokenizer.add_merge("a", "b"); // rank 0
+    tokenizer.add_merge("c", "d"); // rank 1
     tokenizer.add_merge("ab", "cd"); // rank 2
 
     let tokens = vec![
@@ -143,14 +140,10 @@ fn falsify_bpe_003_merge_priority_ordering() {
 fn falsify_bpe_003_lower_rank_wins() {
     let mut tokenizer = BpeTokenizer::new(BpeConfig::default());
     // If both "a"+"b" and "b"+"c" are possible, rank 0 wins
-    tokenizer.add_merge("a", "b");  // rank 0 (higher priority)
-    tokenizer.add_merge("b", "c");  // rank 1 (lower priority)
+    tokenizer.add_merge("a", "b"); // rank 0 (higher priority)
+    tokenizer.add_merge("b", "c"); // rank 1 (lower priority)
 
-    let tokens = vec![
-        "a".to_string(),
-        "b".to_string(),
-        "c".to_string(),
-    ];
+    let tokens = vec!["a".to_string(), "b".to_string(), "c".to_string()];
     let result = tokenizer.bpe(&tokens);
 
     // "a"+"b" should merge first (rank 0), leaving ["ab", "c"]

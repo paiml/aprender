@@ -4218,3 +4218,248 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: GH-306
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-306'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-02-22T21:14:55.545255322+00:00
+  updated: 2026-02-22T21:14:55.545255322+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: C-04-hardcoded-eos-chat
+  github_issue: null
+  item_type: task
+  title: 'New task: C-04-hardcoded-eos-chat'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-02-23T12:58:12.438665538+00:00
+  updated: 2026-02-23T12:58:12.438665538+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-324
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-324'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-02-23T15:11:27.494301714+00:00
+  updated: 2026-02-23T15:11:27.494301714+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-325
+  github_issue: null
+  item_type: task
+  title: 'FALSIFY-E6: realizar GPU/GGUF embedding path skips ValidatedEmbedding data quality gates'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-02-23T19:09:46Z
+  updated: 2026-02-23T19:09:46Z
+  spec: null
+  acceptance_criteria:
+  - 'GPU/GGUF load path (gpu/scheduler/loading.rs) only validates embedding shape (len == vocab*hidden), but SKIPS density check (<50% zeros), NaN/Inf check, L2 norm, and spot-check gates that the SafeTensors/APR path enforces via ValidatedEmbedding::new(). A GGUF file with correct shape but 94.5% zeros (PMAT-234 scenario) would pass GPU loading silently. Five-Whys root: F-DATA-QUALITY-001 enforcement only wired for APR path, not GGUF.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-326
+  github_issue: null
+  item_type: task
+  title: 'FALSIFY-E7: entrenar saves/loads embeddings without any data quality validation'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-02-23T19:09:49Z
+  updated: 2026-02-23T19:09:49Z
+  spec: null
+  acceptance_criteria:
+  - 'entrenar::transformer::Embedding uses raw Tensor (not ValidatedEmbedding). No NaN/Inf check during training, no density check on save (merge_export.rs:29-63), no statistical validation on load (weights/mod.rs:130-182). If training diverges and embedding becomes NaN-poisoned or degenerate, the model is saved to disk without any gate catching it. Five-Whys root: entrenar predates the ValidatedEmbedding contract and was never retrofitted.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-327
+  github_issue: null
+  item_type: task
+  title: 'FALSIFY-E8: realizar OOB token_id bounds check is insufficient in GPU forward paths'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-02-23T19:09:53Z
+  updated: 2026-02-23T19:09:53Z
+  spec: null
+  acceptance_criteria:
+  - GPU forward paths (gpu_forward_pass.rs, batch.rs, kv.rs) check token_id >= vocab_size but do NOT check offset+hidden_dim <= embedding_weights.len(). If embedding_weights is truncated (corrupt GGUF) but vocab_size in config is stale, Rust panics with slice OOB instead of returning an error. 8+ call sites affected across gpu/scheduler/.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-328
+  github_issue: null
+  item_type: task
+  title: 'FALSIFY-L1: lm_head matmul dimension validation at call sites (§2.1.2)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-02-23T20:45:46Z
+  updated: 2026-02-23T20:45:46Z
+  spec: null
+  acceptance_criteria:
+  - 'enforce_matmul_contract exists but is only called at import boundary. If config.vocab_size or config.hidden_dim is corrupted after load (e.g., by a malformed merge), lm_head matmul at GPU forward sites (matmul.rs:304,366) would silently compute wrong dimensions. Five-Whys: GH-202 was dimension swap; protection at boundary but not at use site.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-329
+  github_issue: null
+  item_type: task
+  title: 'FALSIFY-L2: entrenar lm_head save/load has no shape or quality validation (§2.1.2)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-02-23T20:45:49Z
+  updated: 2026-02-23T20:45:49Z
+  spec: null
+  acceptance_criteria:
+  - entrenar writes lm_head.weight as raw tensor during merge_export (merge_export.rs:29-63). No validation that shape matches [vocab_size, hidden_dim]. No NaN/Inf check on lm_head before save. Parallels PMAT-326 for embeddings.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-330
+  github_issue: null
+  item_type: task
+  title: 'PMAT-332: ValidatedVector accepts zero-length norm vectors — no minimum length gate. Zero-length norm weight produces NaN in LayerNorm division. Gate 1 only checks data.len()==expected_len, needs data.len()>0 guard.'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-02-23T21:21:09Z
+  updated: 2026-02-23T21:21:09Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-331
+  github_issue: null
+  item_type: task
+  title: 'PMAT-333: FFN gate_proj/up_proj shape symmetry not enforced — ValidatedWeight accepts any [out,in] without verifying gate==up shape or down==[hidden,intermediate] reversal. SwiGLU requires gate_proj.shape==up_proj.shape.'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-02-23T21:21:16Z
+  updated: 2026-02-23T21:21:16Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-332
+  github_issue: null
+  item_type: task
+  title: 'PMAT-334: FALSIFY-007 dispatch exhaustiveness test only scans 2 of 6 dispatch sites listed in tensor-layout-v1.yaml. Missing: brick/dispatch.rs, quantize/dispatch.rs, layers/attention.rs, gpu/scheduler.rs. A catch-all in any unscanned file would go undetected.'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-02-23T21:29:10Z
+  updated: 2026-02-23T21:29:10Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-333
+  github_issue: null
+  item_type: task
+  title: 'PMAT-335: Q4_1 and Q5_0 formats in GPU dispatch (gemv_dispatch.rs) but missing from ALL_FORMAT_IDS registry and FALSIFY-QDOT contract tests. Orphaned formats could silently dispatch to wrong kernel without contract coverage.'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-02-23T21:31:31Z
+  updated: 2026-02-23T21:31:31Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-334
+  github_issue: null
+  item_type: task
+  title: 'PMAT-336: FALSIFY-QDOT-006 missing — gap in numbering between QDOT-005 and QDOT-007. No test verifies row-major-only constraint from quantized-dot-product-v1.yaml enforcement.row_major_only.'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-02-23T21:31:35Z
+  updated: 2026-02-23T21:31:35Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-335
+  github_issue: null
+  item_type: task
+  title: 'PMAT-337: Model-family YAML contract falsification tests (FALSIFY-MF-001..013)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-02-24T07:36:34Z
+  updated: 2026-02-24T07:36:34Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-336
+  github_issue: null
+  item_type: task
+  title: 'PMAT-338: Create special-tokens-registry-v1.yaml + FALSIFY-ST-001..006'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-02-24T07:43:29Z
+  updated: 2026-02-24T07:43:29Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

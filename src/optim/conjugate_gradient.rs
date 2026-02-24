@@ -305,7 +305,12 @@ impl Optimizer for ConjugateGradient {
             // Check convergence
             if grad_norm < self.tol {
                 return Self::make_result(
-                    x, fx, iter, ConvergenceStatus::Converged, grad_norm, start_time.elapsed(),
+                    x,
+                    fx,
+                    iter,
+                    ConvergenceStatus::Converged,
+                    grad_norm,
+                    start_time.elapsed(),
                 );
             }
 
@@ -318,7 +323,12 @@ impl Optimizer for ConjugateGradient {
             // Check for stalled progress
             if alpha < 1e-12 {
                 return Self::make_result(
-                    x, fx, iter, ConvergenceStatus::Stalled, grad_norm, start_time.elapsed(),
+                    x,
+                    fx,
+                    iter,
+                    ConvergenceStatus::Stalled,
+                    grad_norm,
+                    start_time.elapsed(),
                 );
             }
 
@@ -335,7 +345,12 @@ impl Optimizer for ConjugateGradient {
             // Check for numerical errors
             if fx_new.is_nan() || fx_new.is_infinite() {
                 return Self::make_result(
-                    x, fx, iter, ConvergenceStatus::NumericalError, grad_norm, start_time.elapsed(),
+                    x,
+                    fx,
+                    iter,
+                    ConvergenceStatus::NumericalError,
+                    grad_norm,
+                    start_time.elapsed(),
                 );
             }
 
@@ -353,7 +368,12 @@ impl Optimizer for ConjugateGradient {
 
         // Max iterations reached
         Self::make_result(
-            x, fx, self.max_iter, ConvergenceStatus::MaxIterations, grad_norm, start_time.elapsed(),
+            x,
+            fx,
+            self.max_iter,
+            ConvergenceStatus::MaxIterations,
+            grad_norm,
+            start_time.elapsed(),
         )
     }
 

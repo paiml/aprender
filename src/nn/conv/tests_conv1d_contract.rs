@@ -20,11 +20,11 @@ use super::*;
 fn falsify_cv_001_output_shape() {
     let test_cases: Vec<(usize, usize, usize, usize, usize, usize, usize)> = vec![
         // (in_ch, out_ch, K, stride, pad, L_in, expected_L_out)
-        (1, 1, 3, 1, 0, 10, 8),   // (10 - 3)/1 + 1 = 8
-        (4, 8, 5, 1, 0, 20, 16),  // (20 - 5)/1 + 1 = 16
-        (4, 8, 3, 2, 0, 10, 4),   // (10 - 3)/2 + 1 = 4
-        (4, 8, 3, 1, 1, 10, 10),  // (10 + 2 - 3)/1 + 1 = 10 (same padding)
-        (1, 1, 1, 1, 0, 5, 5),    // K=1: (5 - 1)/1 + 1 = 5
+        (1, 1, 3, 1, 0, 10, 8),  // (10 - 3)/1 + 1 = 8
+        (4, 8, 5, 1, 0, 20, 16), // (20 - 5)/1 + 1 = 16
+        (4, 8, 3, 2, 0, 10, 4),  // (10 - 3)/2 + 1 = 4
+        (4, 8, 3, 1, 1, 10, 10), // (10 + 2 - 3)/1 + 1 = 10 (same padding)
+        (1, 1, 1, 1, 0, 5, 5),   // K=1: (5 - 1)/1 + 1 = 5
     ];
 
     for (i, &(ic, oc, k, s, p, l_in, l_out)) in test_cases.iter().enumerate() {
@@ -52,7 +52,8 @@ fn falsify_cv_001b_shape_formula() {
                 let x = Tensor::ones(&[1, 2, l_in]);
                 let y = conv.forward(&x);
                 assert_eq!(
-                    y.shape()[2], expected_l_out,
+                    y.shape()[2],
+                    expected_l_out,
                     "FALSIFIED CV-001b: K={k}, S={s}, P={p}: L_out={}, expected {expected_l_out}",
                     y.shape()[2]
                 );
@@ -83,7 +84,9 @@ fn falsify_cv_005_kernel_one() {
 fn falsify_cv_002_linearity_no_bias() {
     let conv = Conv1d::with_options(2, 3, 3, 1, 0, false);
     let x = Tensor::new(
-        &(0..2 * 2 * 8).map(|i| (i as f32 * 0.1).sin()).collect::<Vec<_>>(),
+        &(0..2 * 2 * 8)
+            .map(|i| (i as f32 * 0.1).sin())
+            .collect::<Vec<_>>(),
         &[2, 2, 8],
     );
     let y_base = conv.forward(&x);

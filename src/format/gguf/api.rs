@@ -113,7 +113,12 @@ impl GgufModelConfig {
         Self::check_usize_bound(self.num_kv_heads, 1, 256, "num_kv_heads");
         Self::check_usize_bound(self.vocab_size, 1, 1_000_000, "vocab_size");
         Self::check_usize_bound(self.intermediate_size, 1, 262_144, "intermediate_size");
-        Self::check_usize_bound(self.max_position_embeddings, 0, 2_097_152, "max_position_embeddings");
+        Self::check_usize_bound(
+            self.max_position_embeddings,
+            0,
+            2_097_152,
+            "max_position_embeddings",
+        );
 
         if let Some(theta) = self.rope_theta {
             if theta > 0.0 && theta < 1.0 {
@@ -145,14 +150,10 @@ impl GgufModelConfig {
     fn check_usize_bound(value: Option<usize>, min: usize, max: usize, field: &str) {
         if let Some(v) = value {
             if v < min {
-                eprintln!(
-                    "Warning: {field} {v} below minimum {min} (model-metadata-bounds-v1)"
-                );
+                eprintln!("Warning: {field} {v} below minimum {min} (model-metadata-bounds-v1)");
             }
             if v > max {
-                eprintln!(
-                    "Warning: {field} {v} exceeds max {max} (model-metadata-bounds-v1)"
-                );
+                eprintln!("Warning: {field} {v} exceeds max {max} (model-metadata-bounds-v1)");
             }
         }
     }

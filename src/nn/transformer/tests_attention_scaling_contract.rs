@@ -95,7 +95,11 @@ fn falsify_ascl_003_entropy_non_negative() {
                 let entropy: f32 = (0..kv_len)
                     .map(|j| {
                         let p = w_data[row_start + j];
-                        if p > 1e-10 { -p * p.ln() } else { 0.0 }
+                        if p > 1e-10 {
+                            -p * p.ln()
+                        } else {
+                            0.0
+                        }
                     })
                     .sum();
                 assert!(
@@ -111,7 +115,7 @@ fn falsify_ascl_003_entropy_non_negative() {
 #[test]
 fn falsify_ascl_006_shape_correctness() {
     let test_cases = vec![
-        (32, 4, 5, 8),  // d_model=32, heads=4, q_len=5, kv_len=8
+        (32, 4, 5, 8),   // d_model=32, heads=4, q_len=5, kv_len=8
         (64, 8, 10, 10), // self-attention (q_len == kv_len)
         (16, 2, 1, 20),  // single query
     ];
@@ -172,7 +176,11 @@ fn falsify_ascl_007_entropy_upper_bound() {
             let entropy: f32 = (0..kv_len)
                 .map(|j| {
                     let p = w_data[row_start + j];
-                    if p > 1e-10 { -p * p.ln() } else { 0.0 }
+                    if p > 1e-10 {
+                        -p * p.ln()
+                    } else {
+                        0.0
+                    }
                 })
                 .sum();
             assert!(

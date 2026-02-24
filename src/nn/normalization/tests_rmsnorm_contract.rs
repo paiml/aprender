@@ -159,12 +159,7 @@ fn falsify_rn_002_functional_scale_invariance() {
     );
     let y_scaled = crate::nn::functional::rms_norm(&x_scaled, &weight, eps);
 
-    for (i, (&ys, &yb)) in y_scaled
-        .data()
-        .iter()
-        .zip(y_base.data().iter())
-        .enumerate()
-    {
+    for (i, (&ys, &yb)) in y_scaled.data().iter().zip(y_base.data().iter()).enumerate() {
         let expected = alpha.signum() * yb;
         let diff = (ys - expected).abs();
         assert!(

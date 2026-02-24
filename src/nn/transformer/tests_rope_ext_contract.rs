@@ -20,7 +20,12 @@ use super::*;
 /// freq_i = 1 / base^(2i/d) must be positive and strictly decreasing in i.
 #[test]
 fn falsify_rext_001_frequencies_positive_decreasing() {
-    for &(head_dim, base) in &[(8, 10000.0f32), (32, 10000.0), (64, 10000.0), (128, 1_000_000.0)] {
+    for &(head_dim, base) in &[
+        (8, 10000.0f32),
+        (32, 10000.0),
+        (64, 10000.0),
+        (128, 1_000_000.0),
+    ] {
         let half_dim = head_dim / 2;
         let freqs: Vec<f32> = (0..half_dim)
             .map(|i| 1.0 / base.powf(2.0 * i as f32 / head_dim as f32))

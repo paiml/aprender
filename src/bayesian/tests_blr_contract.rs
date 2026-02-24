@@ -19,9 +19,8 @@ use crate::primitives::{Matrix, Vector};
 /// FALSIFY-BLR-001: Predictions are finite
 #[test]
 fn falsify_blr_001_finite_predictions() {
-    let x = Matrix::from_vec(5, 2, vec![
-        1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 2.0, 0.5, 0.5, 2.0,
-    ]).expect("valid");
+    let x = Matrix::from_vec(5, 2, vec![1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 2.0, 0.5, 0.5, 2.0])
+        .expect("valid");
     let y = Vector::from_slice(&[1.0, 2.0, 3.0, 2.5, 4.5]);
 
     let mut blr = BayesianLinearRegression::new(2);
@@ -31,7 +30,8 @@ fn falsify_blr_001_finite_predictions() {
     for i in 0..preds.len() {
         assert!(
             preds[i].is_finite(),
-            "FALSIFIED BLR-001: prediction[{i}] = {} is not finite", preds[i]
+            "FALSIFIED BLR-001: prediction[{i}] = {} is not finite",
+            preds[i]
         );
     }
 }
@@ -39,9 +39,8 @@ fn falsify_blr_001_finite_predictions() {
 /// FALSIFY-BLR-002: Prediction count matches input count
 #[test]
 fn falsify_blr_002_prediction_count() {
-    let x = Matrix::from_vec(5, 2, vec![
-        1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 2.0, 0.5, 0.5, 2.0,
-    ]).expect("valid");
+    let x = Matrix::from_vec(5, 2, vec![1.0, 0.0, 0.0, 1.0, 1.0, 1.0, 2.0, 0.5, 0.5, 2.0])
+        .expect("valid");
     let y = Vector::from_slice(&[1.0, 2.0, 3.0, 2.5, 4.5]);
 
     let mut blr = BayesianLinearRegression::new(2);
@@ -49,8 +48,10 @@ fn falsify_blr_002_prediction_count() {
 
     let preds = blr.predict(&x).expect("predict");
     assert_eq!(
-        preds.len(), 5,
-        "FALSIFIED BLR-002: {} predictions for 5 inputs", preds.len()
+        preds.len(),
+        5,
+        "FALSIFIED BLR-002: {} predictions for 5 inputs",
+        preds.len()
     );
 }
 

@@ -41,7 +41,8 @@ fn falsify_sent_001_positive_text_positive_score() {
         assert!(
             score > 0.0,
             "FALSIFIED SENT-001: positive text '{}' got score {}, expected > 0",
-            text, score
+            text,
+            score
         );
     }
 }
@@ -66,7 +67,8 @@ fn falsify_sent_002_negative_text_negative_score() {
         assert!(
             score < 0.0,
             "FALSIFIED SENT-002: negative text '{}' got score {}, expected < 0",
-            text, score
+            text,
+            score
         );
     }
 }
@@ -93,7 +95,9 @@ fn falsify_sent_003_neutral_text_near_zero() {
     let analyzer = SentimentAnalyzer::default();
 
     // Text with no sentiment-bearing words
-    let score = analyzer.score("the cat sat on the mat").expect("score neutral");
+    let score = analyzer
+        .score("the cat sat on the mat")
+        .expect("score neutral");
     assert!(
         score.abs() < 0.5,
         "FALSIFIED SENT-003: neutral text got score {}, expected near 0",

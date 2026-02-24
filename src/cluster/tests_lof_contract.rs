@@ -18,10 +18,14 @@ use crate::primitives::Matrix;
 /// FALSIFY-LF-001: LOF scores are positive
 #[test]
 fn falsify_lf_001_scores_positive() {
-    let data = Matrix::from_vec(8, 2, vec![
-        1.0, 1.0, 1.1, 1.0, 1.0, 1.1, 0.9, 0.9,
-        1.1, 1.1, 1.0, 0.9, 0.9, 1.1, 1.0, 1.0,
-    ]).expect("valid matrix");
+    let data = Matrix::from_vec(
+        8,
+        2,
+        vec![
+            1.0, 1.0, 1.1, 1.0, 1.0, 1.1, 0.9, 0.9, 1.1, 1.1, 1.0, 0.9, 0.9, 1.1, 1.0, 1.0,
+        ],
+    )
+    .expect("valid matrix");
 
     let mut lof = LocalOutlierFactor::new()
         .with_n_neighbors(3)
@@ -40,10 +44,14 @@ fn falsify_lf_001_scores_positive() {
 /// FALSIFY-LF-002: Predictions are either 1 (normal) or -1 (anomaly)
 #[test]
 fn falsify_lf_002_predictions_binary() {
-    let data = Matrix::from_vec(8, 2, vec![
-        1.0, 1.0, 1.1, 1.0, 1.0, 1.1, 0.9, 0.9,
-        1.1, 1.1, 1.0, 0.9, 0.9, 1.1, 1.0, 1.0,
-    ]).expect("valid matrix");
+    let data = Matrix::from_vec(
+        8,
+        2,
+        vec![
+            1.0, 1.0, 1.1, 1.0, 1.0, 1.1, 0.9, 0.9, 1.1, 1.1, 1.0, 0.9, 0.9, 1.1, 1.0, 1.0,
+        ],
+    )
+    .expect("valid matrix");
 
     let mut lof = LocalOutlierFactor::new()
         .with_n_neighbors(3)
@@ -62,10 +70,14 @@ fn falsify_lf_002_predictions_binary() {
 /// FALSIFY-LF-003: Scores length matches sample count
 #[test]
 fn falsify_lf_003_scores_length() {
-    let data = Matrix::from_vec(8, 2, vec![
-        1.0, 1.0, 1.1, 1.0, 1.0, 1.1, 0.9, 0.9,
-        1.1, 1.1, 1.0, 0.9, 0.9, 1.1, 1.0, 1.0,
-    ]).expect("valid matrix");
+    let data = Matrix::from_vec(
+        8,
+        2,
+        vec![
+            1.0, 1.0, 1.1, 1.0, 1.0, 1.1, 0.9, 0.9, 1.1, 1.1, 1.0, 0.9, 0.9, 1.1, 1.0, 1.0,
+        ],
+    )
+    .expect("valid matrix");
 
     let mut lof = LocalOutlierFactor::new()
         .with_n_neighbors(3)
@@ -74,7 +86,8 @@ fn falsify_lf_003_scores_length() {
 
     let scores = lof.score_samples(&data);
     assert_eq!(
-        scores.len(), 8,
+        scores.len(),
+        8,
         "FALSIFIED LF-003: scores len={}, expected 8",
         scores.len()
     );

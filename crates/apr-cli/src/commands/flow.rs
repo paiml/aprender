@@ -294,19 +294,19 @@ fn print_encoder_decoder_flow(tensor_names: &[String], verbose: bool) {
 
 /// Print decoder-only (LLaMA/Qwen/GPT) full flow
 fn print_decoder_only_flow(tensor_names: &[String], _verbose: bool) {
-    let n_layers = count_layers_by_prefixes(
-        tensor_names,
-        &["model.layers.", "blk.", "transformer.h."],
-    );
+    let n_layers =
+        count_layers_by_prefixes(tensor_names, &["model.layers.", "blk.", "transformer.h."]);
 
     // Detect FFN type from tensor names
-    let has_gate_proj = tensor_names.iter().any(|n| {
-        n.contains("gate_proj") || n.contains("ffn_gate") || n.contains("w1")
-    });
+    let has_gate_proj = tensor_names
+        .iter()
+        .any(|n| n.contains("gate_proj") || n.contains("ffn_gate") || n.contains("w1"));
     let ffn_type = if has_gate_proj { "SwiGLU" } else { "GELU" };
 
     // Detect GQA from tensor names
-    let has_gqa = tensor_names.iter().any(|n| n.contains("k_proj") || n.contains("attn_k"));
+    let has_gqa = tensor_names
+        .iter()
+        .any(|n| n.contains("k_proj") || n.contains("attn_k"));
 
     // Input
     println!("{}  tokens [batch, seq_len]", "INPUT".green().bold());
@@ -319,9 +319,7 @@ fn print_decoder_only_flow(tensor_names: &[String], _verbose: bool) {
         "│  {}                                             │",
         "Token Embed".yellow()
     );
-    println!(
-        "│  embed_tokens.weight → [batch, seq_len, hidden_dim]      │"
-    );
+    println!("│  embed_tokens.weight → [batch, seq_len, hidden_dim]      │");
     println!("└────────────────────────────┬──────────────────────────────┘");
     println!("                             │");
     println!("                             ▼");
@@ -487,10 +485,8 @@ fn print_decoder_flow(_reader: Option<&AprReader>, tensor_names: &[String], verb
 
 fn print_decoder_block(tensor_names: &[String], _verbose: bool) {
     // Count decoder layers (encoder-decoder models: decoder.layers.*, model.decoder.layers.*)
-    let n_layers = count_layers_by_prefixes(
-        tensor_names,
-        &["decoder.layers.", "model.decoder.layers."],
-    );
+    let n_layers =
+        count_layers_by_prefixes(tensor_names, &["decoder.layers.", "model.decoder.layers."]);
 
     println!("┌─────────────────────────────────────────────────────────────┐");
     println!(

@@ -173,11 +173,7 @@ fn run_external_gate(
         },
         Ok(out) => {
             let stderr = String::from_utf8_lossy(&out.stderr);
-            let msg = stderr
-                .lines()
-                .next()
-                .unwrap_or("exit non-zero")
-                .to_string();
+            let msg = stderr.lines().next().unwrap_or("exit non-zero").to_string();
             GateResult {
                 name: name.to_string(),
                 display_name: display_name.to_string(),
@@ -233,12 +229,7 @@ fn print_summary(gates: &[GateResult], passed: bool, total_duration: Duration) {
     } else {
         println!("  {}", output::badge_fail("GATES FAILED"));
         for gate in gates.iter().filter(|g| g.is_failure()) {
-            println!(
-                "    {} {} — {}",
-                "✗".red(),
-                gate.display_name,
-                gate.message
-            );
+            println!("    {} {} — {}", "✗".red(), gate.display_name, gate.message);
         }
     }
     output::metric(
@@ -286,7 +277,9 @@ fn dispatch_smoke_gate(
         }
         "lint" => {
             let p = path.to_path_buf();
-            run_gate(name, display, timeout, verbose, move || lint::run(&p, false))
+            run_gate(name, display, timeout, verbose, move || {
+                lint::run(&p, false)
+            })
         }
         "debug" => {
             let p = path.to_path_buf();
@@ -424,7 +417,10 @@ pub fn run(
                 GateStatus::Panic => output::badge_fail("PANIC"),
                 GateStatus::Timeout => output::badge_warn("TMOUT"),
             };
-            println!("  {badge} {display} ({})", output::duration_fmt(gate.duration_ms));
+            println!(
+                "  {badge} {display} ({})",
+                output::duration_fmt(gate.duration_ms)
+            );
             // Flush stdout before next gate's gag redirects fd 1
             let _ = std::io::stdout().flush();
         }

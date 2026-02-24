@@ -1,4 +1,3 @@
-
 // ============================================================================
 // Tokenizer-Vocabulary Contract Falsification (FALSIFY-TV-001..006)
 //
@@ -97,8 +96,7 @@ mod tokenizer_vocab_contract {
     fn read_file(name: &str) -> String {
         let path = Path::new(env!("CARGO_MANIFEST_DIR")).join(name);
         assert!(path.exists(), "{name} must exist");
-        std::fs::read_to_string(&path)
-            .unwrap_or_else(|e| panic!("Failed to read {name}: {e}"))
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("Failed to read {name}: {e}"))
     }
 
     /// Parse field value from a "key: value # comment" string.
@@ -270,11 +268,7 @@ mod tokenizer_vocab_contract {
         families
     }
 
-    fn save_st_family(
-        families: &mut HashMap<String, StFamily>,
-        name: &str,
-        acc: &TokenAcc,
-    ) {
+    fn save_st_family(families: &mut HashMap<String, StFamily>, name: &str, acc: &TokenAcc) {
         if !name.is_empty() && acc.vocab_size > 0 {
             families.insert(
                 name.to_string(),
@@ -292,8 +286,7 @@ mod tokenizer_vocab_contract {
 
     /// Load all model-family YAML configs.
     fn load_model_family_configs() -> Vec<(String, ModelFamilyConfig)> {
-        let families_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("contracts/model-families");
+        let families_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("contracts/model-families");
         let mut families = Vec::new();
         let entries = std::fs::read_dir(&families_dir).expect("read model-families dir");
 

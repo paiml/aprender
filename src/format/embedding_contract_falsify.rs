@@ -76,7 +76,10 @@ fn falsify_em_002_valid_ids_no_panic() {
     // All data should be non-zero (initialized with sin-based pseudo-random)
     let data = output.data();
     let all_finite = data.iter().all(|v| v.is_finite());
-    assert!(all_finite, "FALSIFIED EM-002: valid IDs produced non-finite values");
+    assert!(
+        all_finite,
+        "FALSIFIED EM-002: valid IDs produced non-finite values"
+    );
 }
 
 #[test]

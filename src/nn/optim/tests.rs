@@ -447,9 +447,9 @@ fn test_adam_step_trait() {
 
 #[path = "tests_adam.rs"]
 mod tests_adam;
+#[path = "tests_adamw_contract.rs"]
+mod tests_adamw_contract;
 #[path = "tests_large_tensors.rs"]
 mod tests_large_tensors;
 #[path = "tests_state_resize.rs"]
 mod tests_state_resize;
-#[path = "tests_adamw_contract.rs"]
-mod tests_adamw_contract;

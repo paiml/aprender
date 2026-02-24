@@ -19,10 +19,14 @@ use crate::primitives::Matrix;
 /// FALSIFY-MCL-001: Silhouette score ∈ [-1, 1]
 #[test]
 fn falsify_mcl_001_silhouette_bounded() {
-    let data = Matrix::from_vec(6, 2, vec![
-        0.0, 0.0, 0.1, 0.1, 0.2, 0.2,
-        10.0, 10.0, 10.1, 10.1, 10.2, 10.2,
-    ]).expect("valid");
+    let data = Matrix::from_vec(
+        6,
+        2,
+        vec![
+            0.0, 0.0, 0.1, 0.1, 0.2, 0.2, 10.0, 10.0, 10.1, 10.1, 10.2, 10.2,
+        ],
+    )
+    .expect("valid");
     let labels = vec![0_usize, 0, 0, 1, 1, 1];
 
     let score = silhouette_score(&data, &labels);
@@ -35,10 +39,14 @@ fn falsify_mcl_001_silhouette_bounded() {
 /// FALSIFY-MCL-002: Well-separated clusters → high silhouette
 #[test]
 fn falsify_mcl_002_high_silhouette_for_separated() {
-    let data = Matrix::from_vec(6, 2, vec![
-        0.0, 0.0, 0.01, 0.01, 0.02, 0.02,
-        100.0, 100.0, 100.01, 100.01, 100.02, 100.02,
-    ]).expect("valid");
+    let data = Matrix::from_vec(
+        6,
+        2,
+        vec![
+            0.0, 0.0, 0.01, 0.01, 0.02, 0.02, 100.0, 100.0, 100.01, 100.01, 100.02, 100.02,
+        ],
+    )
+    .expect("valid");
     let labels = vec![0_usize, 0, 0, 1, 1, 1];
 
     let score = silhouette_score(&data, &labels);
@@ -51,9 +59,7 @@ fn falsify_mcl_002_high_silhouette_for_separated() {
 /// FALSIFY-MCL-003: Silhouette is deterministic
 #[test]
 fn falsify_mcl_003_silhouette_deterministic() {
-    let data = Matrix::from_vec(4, 2, vec![
-        0.0, 0.0, 1.0, 1.0, 5.0, 5.0, 6.0, 6.0,
-    ]).expect("valid");
+    let data = Matrix::from_vec(4, 2, vec![0.0, 0.0, 1.0, 1.0, 5.0, 5.0, 6.0, 6.0]).expect("valid");
     let labels = vec![0_usize, 0, 1, 1];
 
     let s1 = silhouette_score(&data, &labels);

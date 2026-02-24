@@ -117,19 +117,20 @@ impl BpeTokenizer {
 
     /// Encode a regular (non-special-token) text segment into token IDs.
     fn encode_segment(&self, segment: &str, ids: &mut Vec<u32>) {
-        let segment_text = if self.config.add_prefix_space
-            && !segment.starts_with(' ')
-            && ids.is_empty()
-        {
-            format!(" {segment}")
-        } else {
-            segment.to_string()
-        };
+        let segment_text =
+            if self.config.add_prefix_space && !segment.starts_with(' ') && ids.is_empty() {
+                format!(" {segment}")
+            } else {
+                segment.to_string()
+            };
 
         for word in self.pre_tokenize(&segment_text) {
             let byte_word = self.bytes_to_bpe_tokens(&word);
             for token in self.bpe(&byte_word) {
-                let id = self.vocab.get(&token).or_else(|| self.vocab.get(&self.config.unk_token));
+                let id = self
+                    .vocab
+                    .get(&token)
+                    .or_else(|| self.vocab.get(&self.config.unk_token));
                 if let Some(&id) = id {
                     ids.push(id);
                 }
@@ -157,7 +158,7 @@ impl BpeTokenizer {
                     if pos > 0 {
                         result.push(remaining[..pos].to_string());
                     }
-                    result.push(token.to_string());
+                    result.push(token.clone());
                     remaining = &remaining[pos + token.len()..];
                 }
                 None => {

@@ -21,7 +21,8 @@ fn falsify_kf_001_produces_k_splits() {
     let splits = kfold.split(100);
 
     assert_eq!(
-        splits.len(), 5,
+        splits.len(),
+        5,
         "FALSIFIED KF-001: splits={}, expected 5",
         splits.len()
     );
@@ -61,7 +62,8 @@ fn falsify_kf_003_train_test_cover_all() {
         all.dedup();
 
         assert_eq!(
-            all.len(), n,
+            all.len(),
+            n,
             "FALSIFIED KF-003: fold {fold_idx} covers {} samples, expected {n}",
             all.len()
         );

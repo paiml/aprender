@@ -37,10 +37,7 @@ fn falsify_pp_001_tokenizer_determinism() {
     let t1 = tokenizer.tokenize(input).expect("tokenize should succeed");
     let t2 = tokenizer.tokenize(input).expect("tokenize should succeed");
 
-    assert_eq!(
-        t1, t2,
-        "FALSIFIED PP-001: tokenizer is non-deterministic"
-    );
+    assert_eq!(t1, t2, "FALSIFIED PP-001: tokenizer is non-deterministic");
 }
 
 #[test]
@@ -57,7 +54,9 @@ fn falsify_pp_001_tokenizer_empty_input() {
 #[test]
 fn falsify_pp_001_tokenizer_whitespace_only() {
     let tokenizer = WhitespaceTokenizer::new();
-    let tokens = tokenizer.tokenize("   \t\n  ").expect("tokenize whitespace");
+    let tokens = tokenizer
+        .tokenize("   \t\n  ")
+        .expect("tokenize whitespace");
     assert!(
         tokens.is_empty(),
         "FALSIFIED PP-001: whitespace-only input should produce empty tokens, got {:?}",
@@ -112,7 +111,15 @@ fn falsify_pp_003_stop_words_preserve_domain_terms() {
     let filter = StopWordsFilter::english();
 
     // These domain terms must NOT be stop words
-    let domain_terms = ["fix", "null", "pointer", "dereference", "error", "bug", "race"];
+    let domain_terms = [
+        "fix",
+        "null",
+        "pointer",
+        "dereference",
+        "error",
+        "bug",
+        "race",
+    ];
     for term in &domain_terms {
         assert!(
             !filter.is_stop_word(term),
@@ -194,11 +201,7 @@ fn falsify_pp_004_stemmer_known_words() {
     let stemmer = PorterStemmer::new();
 
     // NLP spec §2.1.1 examples
-    let cases = [
-        ("running", "run"),
-        ("flies", "fli"),
-        ("easily", "easili"),
-    ];
+    let cases = [("running", "run"), ("flies", "fli"), ("easily", "easili")];
 
     for (input, expected) in &cases {
         let result = stemmer.stem(input).expect("stem should succeed");
@@ -276,7 +279,10 @@ fn falsify_pp_005_full_pipeline() {
 
     // Step 1: Tokenize
     let tokens = tokenizer.tokenize(text).expect("tokenize");
-    assert!(!tokens.is_empty(), "FALSIFIED PP-005: tokenization produced empty");
+    assert!(
+        !tokens.is_empty(),
+        "FALSIFIED PP-005: tokenization produced empty"
+    );
 
     // Step 2: Filter stop words
     let filtered = filter.filter_owned(tokens).expect("filter");

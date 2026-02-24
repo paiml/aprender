@@ -1,4 +1,3 @@
-
 // ============================================================================
 // Special Tokens Registry Contract Falsification (FALSIFY-ST-001..006)
 //
@@ -28,8 +27,8 @@ mod special_tokens_contract {
 
     /// Read the registry YAML file content.
     fn read_registry_content() -> String {
-        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("contracts/special-tokens-registry-v1.yaml");
+        let path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("contracts/special-tokens-registry-v1.yaml");
         assert!(
             path.exists(),
             "contracts/special-tokens-registry-v1.yaml must exist (P0 gap)"
@@ -201,7 +200,11 @@ mod special_tokens_contract {
                 ("bos_id", rust_tokens.bos_id, yaml_entry.bos_id),
                 ("eos_id", rust_tokens.eos_id, yaml_entry.eos_id),
                 ("pad_id", rust_tokens.pad_id, yaml_entry.pad_id),
-                ("im_start_id", rust_tokens.im_start_id, yaml_entry.im_start_id),
+                (
+                    "im_start_id",
+                    rust_tokens.im_start_id,
+                    yaml_entry.im_start_id,
+                ),
                 ("im_end_id", rust_tokens.im_end_id, yaml_entry.im_end_id),
             ];
 

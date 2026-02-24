@@ -28,7 +28,8 @@ fn falsify_lbfgs_001_quadratic_convergence() {
 
     assert!(
         result.solution[0].abs() < 0.01,
-        "FALSIFIED LBFGS-001: minimizer x={}, expected ≈ 0", result.solution[0]
+        "FALSIFIED LBFGS-001: minimizer x={}, expected ≈ 0",
+        result.solution[0]
     );
 }
 
@@ -36,9 +37,8 @@ fn falsify_lbfgs_001_quadratic_convergence() {
 #[test]
 fn falsify_lbfgs_002_objective_decreases() {
     let objective = |x: &Vector<f32>| -> f32 { x[0] * x[0] + x[1] * x[1] };
-    let gradient = |x: &Vector<f32>| -> Vector<f32> {
-        Vector::from_vec(vec![2.0 * x[0], 2.0 * x[1]])
-    };
+    let gradient =
+        |x: &Vector<f32>| -> Vector<f32> { Vector::from_vec(vec![2.0 * x[0], 2.0 * x[1]]) };
 
     let x0 = Vector::from_vec(vec![3.0, 4.0]);
     let initial_obj = objective(&x0);
@@ -48,7 +48,9 @@ fn falsify_lbfgs_002_objective_decreases() {
 
     assert!(
         result.objective_value < initial_obj,
-        "FALSIFIED LBFGS-002: final obj {} >= initial obj {}", result.objective_value, initial_obj
+        "FALSIFIED LBFGS-002: final obj {} >= initial obj {}",
+        result.objective_value,
+        initial_obj
     );
 }
 
@@ -62,7 +64,10 @@ fn falsify_lbfgs_003_finite_result() {
     let x0 = Vector::from_vec(vec![10.0]);
     let result = lbfgs.minimize(objective, gradient, x0);
 
-    assert!(result.solution[0].is_finite(), "FALSIFIED LBFGS-003: result x is not finite");
+    assert!(
+        result.solution[0].is_finite(),
+        "FALSIFIED LBFGS-003: result x is not finite"
+    );
     assert!(
         result.objective_value.is_finite(),
         "FALSIFIED LBFGS-003: objective value is not finite"

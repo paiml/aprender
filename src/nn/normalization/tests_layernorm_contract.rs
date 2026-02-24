@@ -22,8 +22,9 @@ use super::*;
 fn falsify_ln_001_centering() {
     let norm = LayerNorm::new(&[8]);
     let x = Tensor::new(
-        &[1.0, -2.0, 3.0, 0.5, -1.5, 2.5, -0.5, 1.5,
-          4.0, -1.0, 2.0, -3.0, 0.0, 1.0, -2.0, 3.0],
+        &[
+            1.0, -2.0, 3.0, 0.5, -1.5, 2.5, -0.5, 1.5, 4.0, -1.0, 2.0, -3.0, 0.0, 1.0, -2.0, 3.0,
+        ],
         &[2, 8],
     );
     let y = norm.forward(&x);
@@ -46,8 +47,9 @@ fn falsify_ln_001_centering() {
 fn falsify_ln_002_standardization() {
     let norm = LayerNorm::new(&[8]);
     let x = Tensor::new(
-        &[1.0, -2.0, 3.0, 0.5, -1.5, 2.5, -0.5, 1.5,
-          4.0, -1.0, 2.0, -3.0, 0.0, 1.0, -2.0, 3.0],
+        &[
+            1.0, -2.0, 3.0, 0.5, -1.5, 2.5, -0.5, 1.5, 4.0, -1.0, 2.0, -3.0, 0.0, 1.0, -2.0, 3.0,
+        ],
         &[2, 8],
     );
     let y = norm.forward(&x);
@@ -55,8 +57,10 @@ fn falsify_ln_002_standardization() {
 
     for row in 0..2 {
         let mean: f32 = (0..8).map(|c| y_data[row * 8 + c]).sum::<f32>() / 8.0;
-        let var: f32 =
-            (0..8).map(|c| (y_data[row * 8 + c] - mean).powi(2)).sum::<f32>() / 8.0;
+        let var: f32 = (0..8)
+            .map(|c| (y_data[row * 8 + c] - mean).powi(2))
+            .sum::<f32>()
+            / 8.0;
         // Variance should be close to 1 (gamma=1)
         assert!(
             (var - 1.0).abs() < 0.05,
@@ -71,10 +75,7 @@ fn falsify_ln_002_standardization() {
 #[test]
 fn falsify_ln_005_idempotency() {
     let norm = LayerNorm::new(&[6]);
-    let x = Tensor::new(
-        &[10.0, -5.0, 3.0, 7.0, -2.0, 0.5],
-        &[1, 6],
-    );
+    let x = Tensor::new(&[10.0, -5.0, 3.0, 7.0, -2.0, 0.5], &[1, 6]);
     let y1 = norm.forward(&x);
     let y2 = norm.forward(&y1);
 
@@ -103,7 +104,12 @@ fn falsify_ln_006_shift_invariance() {
         let x_shifted = Tensor::new(&shifted_data, x.shape());
         let y_shifted = norm.forward(&x_shifted);
 
-        for (i, (&a, &b)) in y_base.data().iter().zip(y_shifted.data().iter()).enumerate() {
+        for (i, (&a, &b)) in y_base
+            .data()
+            .iter()
+            .zip(y_shifted.data().iter())
+            .enumerate()
+        {
             let diff = (a - b).abs();
             let tol = 1e-3 * a.abs().max(1.0);
             assert!(

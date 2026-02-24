@@ -321,12 +321,7 @@ impl GLM {
     }
 
     /// Initializes IRLS state: coefficients (zero), intercept (from y mean), and linear predictor.
-    fn initialize_irls(
-        &self,
-        y: &Vector<f32>,
-        n: usize,
-        p: usize,
-    ) -> (Vec<f32>, f32, Vec<f32>) {
+    fn initialize_irls(&self, y: &Vector<f32>, n: usize, p: usize) -> (Vec<f32>, f32, Vec<f32>) {
         let beta = vec![0.0_f32; p];
         let y_mean = y.as_slice().iter().sum::<f32>() / n as f32;
         let y_mean_safe = y_mean.clamp(0.01, 0.99); // Avoid extreme values
