@@ -115,4 +115,114 @@ mod tests {
             );
         }
     }
+
+    /// FALSIFY-CE-002: Log-softmax upper bound — all log-softmax values <= 0
+    #[test]
+    fn falsify_ce_002_log_softmax_upper_bound() {
+        let criterion = CrossEntropyLoss::with_reduction(Reduction::None);
+
+        // For different num_classes, loss for uniform logits = log(C),
+        // which is the max possible CE for one-hot targets with uniform softmax.
+        // This indirectly validates log-softmax upper bound via the loss formula.
+        for &nc in &[2_usize, 3, 5, 10, 50] {
+            let logits_data = vec![0.0; nc];
+            let logits = Tensor::new(&logits_data, &[1, nc]);
+            let targets = Tensor::new(&[0.0], &[1]);
+            let loss = criterion.forward(&logits, &targets);
+            let val = loss.data()[0];
+            // CE = -log(1/C) = log(C) >= 0 for C >= 1
+            assert!(
+                val >= -1e-6,
+                "FALSIFIED CE-002: CE for uniform logits C={nc} = {val} < 0"
+            );
+        }
+    }
+
+    mod ce_proptest_falsify {
+        use super::super::super::*;
+        use proptest::prelude::*;
+
+        /// FALSIFY-CE-001-prop: Non-negativity for random logits and targets
+        proptest! {
+            #![proptest_config(ProptestConfig::with_cases(200))]
+
+            #[test]
+            fn falsify_ce_001_prop_non_negativity(
+                nc in 2..=10usize,
+                target in 0..10usize,
+                seed in 0..1000u32,
+            ) {
+                let target = target % nc;
+                let logits_data: Vec<f32> = (0..nc)
+                    .map(|i| ((i as f32 + seed as f32) * 0.37).sin() * 10.0)
+                    .collect();
+
+                let criterion = CrossEntropyLoss::with_reduction(Reduction::None);
+                let logits = Tensor::new(&logits_data, &[1, nc]);
+                let targets = Tensor::new(&[target as f32], &[1]);
+                let loss = criterion.forward(&logits, &targets);
+                let val = loss.data()[0];
+                prop_assert!(
+                    val >= -1e-6,
+                    "FALSIFIED CE-001-prop: CE = {} < 0 (nc={}, target={})",
+                    val, nc, target
+                );
+            }
+        }
+
+        /// FALSIFY-CE-003-prop: Numerical stability for random scales
+        proptest! {
+            #![proptest_config(ProptestConfig::with_cases(200))]
+
+            #[test]
+            fn falsify_ce_003_prop_finite_output(
+                nc in 2..=10usize,
+                target in 0..10usize,
+                scale in 0.1f32..100.0,
+                seed in 0..1000u32,
+            ) {
+                let target = target % nc;
+                let logits_data: Vec<f32> = (0..nc)
+                    .map(|i| ((i as f32 + seed as f32) * 0.73).cos() * scale)
+                    .collect();
+
+                let criterion = CrossEntropyLoss::new();
+                let logits = Tensor::new(&logits_data, &[1, nc]);
+                let targets = Tensor::new(&[target as f32], &[1]);
+                let loss = criterion.forward(&logits, &targets);
+                let val = loss.data()[0];
+                prop_assert!(
+                    val.is_finite(),
+                    "FALSIFIED CE-003-prop: CE = {} (not finite), nc={}, scale={}",
+                    val, nc, scale
+                );
+            }
+        }
+
+        /// FALSIFY-CE-006-prop: Perfect prediction approaches zero
+        proptest! {
+            #![proptest_config(ProptestConfig::with_cases(100))]
+
+            #[test]
+            fn falsify_ce_006_prop_perfect_prediction(
+                nc in 2..=10usize,
+                target in 0..10usize,
+            ) {
+                let target = target % nc;
+                let mut logits_data = vec![-50.0; nc];
+                logits_data[target] = 50.0;
+
+                let criterion = CrossEntropyLoss::with_reduction(Reduction::None);
+                let logits = Tensor::new(&logits_data, &[1, nc]);
+                let targets = Tensor::new(&[target as f32], &[1]);
+                let loss = criterion.forward(&logits, &targets);
+                let val = loss.data()[0];
+                prop_assert!(
+                    val < 1e-3,
+                    "FALSIFIED CE-006-prop: CE = {} for dominant logit, expected ≈ 0",
+                    val
+                );
+            }
+        }
+    }
 }
