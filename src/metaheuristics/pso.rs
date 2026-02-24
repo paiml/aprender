@@ -275,6 +275,10 @@ impl PerturbativeMetaheuristic for ParticleSwarm {
 }
 
 #[cfg(test)]
+#[path = "tests_pso_contract.rs"]
+mod tests_pso_contract;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 

@@ -213,6 +213,10 @@ impl PerturbativeMetaheuristic for SimulatedAnnealing {
 }
 
 #[cfg(test)]
+#[path = "tests_sa_contract.rs"]
+mod tests_sa_contract;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 

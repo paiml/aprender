@@ -279,3 +279,7 @@ impl std::fmt::Debug for Linear {
 #[cfg(test)]
 #[path = "linear_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "tests_linear_contract.rs"]
+mod tests_linear_contract;
