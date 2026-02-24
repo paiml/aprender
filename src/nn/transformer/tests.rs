@@ -440,3 +440,5 @@ mod tests_alibi_mha;
 mod tests_decoder_rope;
 #[path = "tests_rope_contract.rs"]
 mod tests_rope_contract;
+#[path = "tests_attention_contract.rs"]
+mod tests_attention_contract;
