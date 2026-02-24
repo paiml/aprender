@@ -4,7 +4,7 @@
 //! and ensemble methods.
 
 use super::{Leaf, Node, RegressionLeaf, RegressionNode, RegressionTreeNode, TreeNode};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 // ============================================================================
 // Classification Tree Helpers
@@ -133,8 +133,8 @@ pub fn gini_impurity(labels: &[usize]) -> f32 {
         return 0.0;
     }
 
-    // Count occurrences of each class
-    let mut counts = HashMap::new();
+    // Count occurrences of each class (BTreeMap for deterministic iteration order)
+    let mut counts = std::collections::BTreeMap::new();
     for &label in labels {
         *counts.entry(label).or_insert(0) += 1;
     }
@@ -309,13 +309,14 @@ pub(super) fn find_best_split(
 /// Find the majority class from a set of labels.
 #[allow(dead_code)]
 pub(super) fn majority_class(labels: &[usize]) -> usize {
-    let mut counts = HashMap::new();
+    let mut counts = std::collections::BTreeMap::new();
     for &label in labels {
-        *counts.entry(label).or_insert(0) += 1;
+        *counts.entry(label).or_insert(0usize) += 1;
     }
-    *counts
-        .iter()
-        .max_by_key(|(_, &count)| count)
+    // BTreeMap iterates in key order → deterministic tie-breaking (lowest class wins)
+    counts
+        .into_iter()
+        .max_by_key(|&(_, count)| count)
         .expect("at least one label should exist")
         .0
 }

@@ -102,7 +102,7 @@ impl RandomForestClassifier {
             let mut max_votes = 0;
             let mut predicted_class = 0;
             for (class, count) in votes {
-                if count > max_votes {
+                if count > max_votes || (count == max_votes && class < predicted_class) {
                     max_votes = count;
                     predicted_class = class;
                 }
@@ -204,7 +204,7 @@ impl RandomForestClassifier {
                 let mut max_votes = 0;
                 let mut predicted_class = 0;
                 for (class, count) in votes {
-                    if count > max_votes {
+                    if count > max_votes || (count == max_votes && class < predicted_class) {
                         max_votes = count;
                         predicted_class = class;
                     }
