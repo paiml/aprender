@@ -176,6 +176,10 @@ pub mod model_family_loader;
 #[cfg(test)]
 mod special_tokens_contract_falsify;
 
+// Model metadata bounds contract falsification (FALSIFY-MB-001..006)
+#[cfg(test)]
+mod metadata_bounds_contract_falsify;
+
 // Digital signatures (spec §4.2, PMAT-198)
 #[cfg(feature = "format-signing")]
 pub mod signing;

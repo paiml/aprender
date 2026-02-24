@@ -1,0 +1,188 @@
+# Model Metadata Bounds v1.0.0
+# THE SOURCE OF TRUTH for upper bounds and range checks on model config fields.
+#
+# Every model config parsed by realizar's ValidatedModelConfig::validate()
+# MUST satisfy these bounds.  The bounds prevent OOM allocations, NaN propagation,
+# and obviously-invalid configs from reaching the inference engine.
+#
+# ENFORCEMENT: realizar/src/gguf/config.rs::validate_metadata_bounds()
+# FALSIFICATION: src/format/metadata_bounds_contract_falsify.rs (FALSIFY-MB-001..005)
+# CONSUMERS:
+#   - realizar/src/gguf/config.rs (ValidatedModelConfig)
+#   - realizar/src/safetensors/config.rs (SafetensorsConfig)
+
+metadata:
+  version: "1.0.0"
+  created: "2026-02-24"
+  author: "PAIML Engineering"
+  description: "Upper bounds and range constraints for model configuration metadata"
+  references:
+    - "realizar/src/gguf/config.rs::validate_metadata_bounds()"
+    - "realizar/src/gguf/config.rs::ValidatedModelConfig::validate()"
+    - "PMAT-336: Gap 2 identification"
+
+# =============================================================================
+# STRUCTURAL INVARIANTS (from ValidatedModelConfig::validate)
+# =============================================================================
+# These are absolute requirements — violation means the config is garbage.
+
+structural_invariants:
+
+  - id: SI-001
+    field: hidden_dim
+    rule: "hidden_dim > 0"
+    severity: ERROR
+    rationale: "Zero hidden_dim → all tensors have zero size → no computation"
+
+  - id: SI-002
+    field: num_layers
+    rule: "num_layers > 0"
+    severity: ERROR
+    rationale: "Zero layers → no transformer blocks → model does nothing"
+
+  - id: SI-003
+    field: vocab_size
+    rule: "vocab_size > 0"
+    severity: ERROR
+    rationale: "Zero vocab → no embeddings → cannot tokenize"
+
+  - id: SI-004
+    field: num_heads
+    rule: "num_heads > 0"
+    severity: ERROR
+    rationale: "Zero attention heads → no self-attention"
+
+  - id: SI-005
+    field: num_kv_heads
+    rule: "num_kv_heads > 0"
+    severity: ERROR
+    rationale: "Zero KV heads → no key/value projections"
+
+  - id: SI-006
+    field: intermediate_dim
+    rule: "intermediate_dim > 0"
+    severity: ERROR
+    rationale: "Zero FFN dim → MLP produces zero output"
+
+  - id: SI-007
+    field: head_dim
+    rule: "head_dim > 0"
+    severity: ERROR
+    rationale: "Zero per-head dimension → attention dot product undefined"
+
+  - id: SI-008
+    field: hidden_dim
+    rule: "hidden_dim % num_heads == 0 when explicit_head_dim is None"
+    severity: ERROR
+    rationale: "Non-divisible → head_dim truncation → dimension mismatch in attention"
+    exception: "Qwen3-0.6B and others with explicit_head_dim (GH-305)"
+
+  - id: SI-009
+    field: num_heads
+    rule: "num_heads % num_kv_heads == 0"
+    severity: ERROR
+    rationale: "GQA ratio must be integer — non-integer → K/V repeat logic breaks"
+
+# =============================================================================
+# UPPER BOUNDS (from validate_metadata_bounds)
+# =============================================================================
+# Prevents OOM from absurdly large values due to corrupted metadata.
+
+upper_bounds:
+
+  - id: UB-001
+    field: hidden_dim
+    max: 65536
+    rationale: "Largest known model (Snowflake Arctic 480B) uses 7168. 65K is 9x headroom."
+
+  - id: UB-002
+    field: num_layers
+    max: 256
+    rationale: "Largest known model (Llama 405B) has 126 layers. 256 is 2x headroom."
+
+  - id: UB-003
+    field: num_heads
+    max: 256
+    rationale: "Largest known model heads = 128 (Llama 405B). 256 is 2x headroom."
+
+  - id: UB-004
+    field: num_kv_heads
+    max: 256
+    rationale: "KV heads ≤ num_heads, so same ceiling applies."
+
+  - id: UB-005
+    field: vocab_size
+    max: 1000000
+    rationale: "Largest known vocab = 256000 (Gemma). 1M is ~4x headroom."
+
+  - id: UB-006
+    field: intermediate_dim
+    max: 262144
+    rationale: "Largest known intermediate = 53248 (Llama 405B). 256K is ~5x headroom."
+
+  - id: UB-007
+    field: context_length
+    max: 2097152
+    rationale: "Largest deployed context = 1M (Gemini). 2M is 2x headroom."
+
+# =============================================================================
+# RANGE BOUNDS (from validate_metadata_bounds)
+# =============================================================================
+# Floating-point fields with both min and max constraints.
+
+range_bounds:
+
+  - id: RB-001
+    field: rope_theta
+    min: 1.0
+    max: 100000000.0
+    zero_means: "not configured (skip validation)"
+    rationale: "rope_theta < 1 causes position encoding collapse; > 100M is beyond any known model"
+
+  - id: RB-002
+    field: eps
+    min: 1.0e-10
+    max: 0.01
+    zero_means: "not configured (skip validation)"
+    rationale: "eps < 1e-10 causes FP32 underflow in LayerNorm; > 0.01 causes visible numerical drift"
+
+# =============================================================================
+# FALSIFICATION TESTS
+# =============================================================================
+
+falsification_tests:
+
+  - id: FALSIFY-MB-001
+    rule: "YAML upper_bounds match Rust validate_metadata_bounds() constants"
+    prediction: "Every (field, max) pair in YAML == hardcoded max in Rust"
+    status: "IMPLEMENTED"
+    implementation: "src/format/metadata_bounds_contract_falsify.rs"
+    if_fails: "Contract YAML and Rust code diverged — one was updated without the other"
+
+  - id: FALSIFY-MB-002
+    rule: "YAML range_bounds match Rust validate_metadata_bounds() constants"
+    prediction: "Every (field, min, max) triple in YAML == hardcoded range in Rust"
+    status: "IMPLEMENTED"
+    implementation: "src/format/metadata_bounds_contract_falsify.rs"
+    if_fails: "Float range check updated in code but not in contract"
+
+  - id: FALSIFY-MB-003
+    rule: "All model-family YAML configs satisfy upper bounds"
+    prediction: "For each family size variant, all fields < respective max"
+    status: "IMPLEMENTED"
+    implementation: "src/format/metadata_bounds_contract_falsify.rs"
+    if_fails: "New model family added with values exceeding safety bounds"
+
+  - id: FALSIFY-MB-004
+    rule: "All model-family YAML configs satisfy structural invariants"
+    prediction: "For each family size variant, all fields > 0 and GQA divisibility holds"
+    status: "IMPLEMENTED"
+    implementation: "src/format/metadata_bounds_contract_falsify.rs"
+    if_fails: "Model family YAML has zero field or broken GQA ratio"
+
+  - id: FALSIFY-MB-005
+    rule: "Upper bounds have sufficient headroom over real model maxima"
+    prediction: "Max observed value for each field < 50% of upper bound"
+    status: "IMPLEMENTED"
+    implementation: "src/format/metadata_bounds_contract_falsify.rs"
+    if_fails: "A new model pushes close to the ceiling — consider raising the bound"
