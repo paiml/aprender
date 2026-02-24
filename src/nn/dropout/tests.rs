@@ -444,5 +444,112 @@ fn test_dropconnect_apply_to_weights_eval_mode() {
     assert_eq!(masked.data(), weights.data());
 }
 
+// =========================================================================
+// FALSIFY-DO: dropout-v1.yaml contract (aprender Dropout)
+//
+// Five-Whys (PMAT-354):
+//   Why 1: aprender had 20+ dropout unit tests but zero FALSIFY-DO-* tests
+//   Why 2: unit tests verify train/eval modes, not mathematical invariants
+//   Why 3: no mapping from dropout-v1.yaml to aprender test names
+//   Why 4: aprender predates the provable-contracts YAML convention
+//   Why 5: dropout was "obviously correct" (Bernoulli mask + scale)
+//
+// References:
+//   - provable-contracts/contracts/dropout-v1.yaml
+//   - Srivastava et al. (2014) "Dropout: A Simple Way to Prevent Overfitting"
+// =========================================================================
+
+/// FALSIFY-DO-001: Eval identity — dropout_eval(x) = x for all x
+#[test]
+fn falsify_do_001_eval_identity() {
+    let mut dropout = Dropout::new(0.5);
+    dropout.eval();
+
+    let data = vec![1.0, -2.0, 3.5, 0.0, -0.001, 1e6, -1e6];
+    let x = Tensor::new(&data, &[data.len()]);
+    let y = dropout.forward(&x);
+
+    for (i, (&orig, &out)) in data.iter().zip(y.data().iter()).enumerate() {
+        assert_eq!(
+            orig, out,
+            "FALSIFIED DO-001: eval output[{i}] = {out}, expected {orig} (identity)"
+        );
+    }
+}
+
+/// FALSIFY-DO-002: Unbiased expectation — E[dropout_train(x, p)] ≈ x
+///
+/// Over many trials, the mean of dropout output should converge to input.
+#[test]
+fn falsify_do_002_unbiased_expectation() {
+    let p = 0.3;
+    let n_trials = 10_000;
+    let input_val = 5.0;
+    let input = Tensor::new(&[input_val; 8], &[8]);
+
+    let mut sums = vec![0.0f64; 8];
+
+    for trial in 0..n_trials {
+        let dropout = Dropout::with_seed(p, trial);
+        let y = dropout.forward(&input);
+        for (i, &val) in y.data().iter().enumerate() {
+            sums[i] += val as f64;
+        }
+    }
+
+    for (i, &sum) in sums.iter().enumerate() {
+        let mean = sum / n_trials as f64;
+        let diff = (mean - input_val as f64).abs();
+        assert!(
+            diff < 0.15,
+            "FALSIFIED DO-002: E[dropout(x)][{i}] = {mean:.4}, expected ≈ {input_val}, diff = {diff:.4}"
+        );
+    }
+}
+
+/// FALSIFY-DO-003: Shape preservation — shape(dropout(x)) = shape(x)
+#[test]
+fn falsify_do_003_shape_preservation() {
+    for &shape in &[
+        [1_usize, 4] as [usize; 2],
+        [8, 16],
+        [32, 64],
+        [1, 1],
+    ] {
+        let dropout = Dropout::with_seed(0.5, 42);
+        let x = Tensor::ones(&shape);
+        let y = dropout.forward(&x);
+        assert_eq!(
+            y.shape(),
+            &shape,
+            "FALSIFIED DO-003: output shape {:?}, expected {:?}",
+            y.shape(),
+            shape
+        );
+    }
+}
+
+/// FALSIFY-DO-004: Probability boundary — p=0 is identity, p=1.0 panics
+#[test]
+fn falsify_do_004_zero_probability_identity() {
+    let dropout = Dropout::with_seed(0.0, 42);
+    let data = vec![1.0, 2.0, 3.0, 4.0];
+    let x = Tensor::new(&data, &[4]);
+    let y = dropout.forward(&x);
+
+    for (i, (&orig, &out)) in data.iter().zip(y.data().iter()).enumerate() {
+        assert_eq!(
+            orig, out,
+            "FALSIFIED DO-004: p=0 output[{i}] = {out}, expected {orig}"
+        );
+    }
+}
+
+#[test]
+#[should_panic(expected = "Dropout probability must be in [0, 1)")]
+fn falsify_do_004_invalid_probability_panics() {
+    let _dropout = Dropout::new(1.0);
+}
+
 #[path = "tests_dropconnect.rs"]
 mod tests_dropconnect;
