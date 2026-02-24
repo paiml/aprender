@@ -328,3 +328,9 @@ impl Default for SentimentAnalyzer {
 #[cfg(test)]
 #[path = "sentiment_tests.rs"]
 mod tests;
+
+// Sentiment contract falsification (FALSIFY-SENT-001..007)
+// Refs: NLP spec §2.1.5, PMAT-350
+#[cfg(test)]
+#[path = "sentiment_contract_falsify.rs"]
+mod sentiment_contract_falsify;

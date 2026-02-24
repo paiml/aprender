@@ -355,3 +355,8 @@ impl LatentDirichletAllocation {
 
 #[cfg(test)]
 mod tests;
+
+// LDA topic modeling contract falsification (FALSIFY-LDA-001..005)
+// Refs: Blei et al. (2003), NLP spec §2.1.3, PMAT-351
+#[cfg(test)]
+mod topic_contract_falsify;
