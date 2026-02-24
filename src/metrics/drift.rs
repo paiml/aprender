@@ -377,3 +377,7 @@ fn std_dev(data: &[f32], mean_val: f32) -> f32 {
 #[cfg(test)]
 #[path = "drift_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "tests_drift_contract.rs"]
+mod tests_drift_contract;

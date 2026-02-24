@@ -332,3 +332,7 @@ mod tests_regression_contract;
 #[cfg(test)]
 #[path = "tests_clustering_contract.rs"]
 mod tests_clustering_contract;
+
+#[cfg(test)]
+#[path = "tests_ranking_contract.rs"]
+mod tests_ranking_contract;
