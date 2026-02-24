@@ -67,3 +67,59 @@ fn falsify_cal_004_default_temperature() {
         cal.temperature()
     );
 }
+
+mod cal_proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// FALSIFY-CAL-001-prop: predict_proba sums to ~1 for random logits
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(30))]
+
+        #[test]
+        fn falsify_cal_001_prop_proba_sum(
+            n in 2..=6usize,
+            seed in 0..500u32,
+        ) {
+            let logits_data: Vec<f32> = (0..n)
+                .map(|i| ((i as f32 + seed as f32) * 0.37).sin() * 3.0)
+                .collect();
+            let logits = Vector::from_vec(logits_data);
+
+            let cal = TemperatureScaling::new();
+            let probs = cal.predict_proba(&logits);
+            let sum: f32 = probs.as_slice().iter().sum();
+            prop_assert!(
+                (sum - 1.0).abs() < 1e-4,
+                "FALSIFIED CAL-001-prop: proba sum={}, expected ~1.0",
+                sum
+            );
+        }
+    }
+
+    /// FALSIFY-CAL-002-prop: predict_proba outputs non-negative
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(30))]
+
+        #[test]
+        fn falsify_cal_002_prop_non_negative(
+            n in 2..=6usize,
+            seed in 0..500u32,
+        ) {
+            let logits_data: Vec<f32> = (0..n)
+                .map(|i| ((i as f32 + seed as f32) * 0.37).sin() * 5.0)
+                .collect();
+            let logits = Vector::from_vec(logits_data);
+
+            let cal = TemperatureScaling::new();
+            let probs = cal.predict_proba(&logits);
+            for (i, &p) in probs.as_slice().iter().enumerate() {
+                prop_assert!(
+                    p >= 0.0,
+                    "FALSIFIED CAL-002-prop: proba[{}]={} < 0",
+                    i, p
+                );
+            }
+        }
+    }
+}

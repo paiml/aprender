@@ -60,3 +60,56 @@ fn falsify_mr_004_r2_deterministic() {
     let r2_2 = r_squared(&y, &y);
     assert_eq!(r2_1, r2_2, "FALSIFIED MR-004: R² differs on same input");
 }
+
+mod mr_proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// FALSIFY-MR-001-prop: Perfect predictions → R² = 1.0
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(30))]
+
+        #[test]
+        fn falsify_mr_001_prop_r2_perfect(
+            n in 3..=20usize,
+            seed in 0..500u32,
+        ) {
+            let data: Vec<f32> = (0..n)
+                .map(|i| ((i as f32 + seed as f32) * 0.37).sin() * 10.0 + 5.0)
+                .collect();
+            let y = Vector::from_vec(data);
+            let r2 = r_squared(&y, &y);
+            prop_assert!(
+                (r2 - 1.0).abs() < 1e-5,
+                "FALSIFIED MR-001-prop: R²={} for perfect predictions",
+                r2
+            );
+        }
+    }
+
+    /// FALSIFY-MR-002-prop: R² ≤ 1.0 for any predictions
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(30))]
+
+        #[test]
+        fn falsify_mr_002_prop_r2_upper_bound(
+            n in 3..=20usize,
+            seed in 0..500u32,
+        ) {
+            let y_true: Vec<f32> = (0..n)
+                .map(|i| ((i as f32 + seed as f32) * 0.37).sin() * 10.0 + 5.0)
+                .collect();
+            let y_pred: Vec<f32> = (0..n)
+                .map(|i| ((i as f32 + seed as f32 + 1.0) * 0.37).sin() * 10.0 + 5.0)
+                .collect();
+            let yt = Vector::from_vec(y_true);
+            let yp = Vector::from_vec(y_pred);
+            let r2 = r_squared(&yp, &yt);
+            prop_assert!(
+                r2 <= 1.0 + 1e-5,
+                "FALSIFIED MR-002-prop: R²={} > 1.0",
+                r2
+            );
+        }
+    }
+}

@@ -96,3 +96,71 @@ fn falsify_blr_004_posterior_exists() {
         );
     }
 }
+
+mod blr_proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// FALSIFY-BLR-002-prop: Prediction count matches input count
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(10))]
+
+        #[test]
+        fn falsify_blr_002_prop_prediction_count(
+            n in 5..=12usize,
+            seed in 0..200u32,
+        ) {
+            let x_data: Vec<f32> = (0..n)
+                .map(|i| ((i as f32 + seed as f32) * 0.37).sin() * 5.0)
+                .collect();
+            let x = Matrix::from_vec(n, 1, x_data).expect("valid");
+            let y_data: Vec<f32> = (0..n)
+                .map(|i| 2.0 + 0.5 * i as f32 + (seed as f32 * 0.01))
+                .collect();
+            let y = Vector::from_vec(y_data);
+
+            let mut blr = BayesianLinearRegression::new(1);
+            blr.fit(&x, &y).expect("fit");
+
+            let preds = blr.predict(&x).expect("predict");
+            prop_assert_eq!(
+                preds.len(),
+                n,
+                "FALSIFIED BLR-002-prop: {} predictions for {} inputs",
+                preds.len(), n
+            );
+        }
+    }
+
+    /// FALSIFY-BLR-001-prop: Predictions are finite for random data
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(10))]
+
+        #[test]
+        fn falsify_blr_001_prop_finite_predictions(
+            seed in 0..200u32,
+        ) {
+            let n = 6;
+            let x_data: Vec<f32> = (0..n)
+                .map(|i| ((i as f32 + seed as f32) * 0.37).sin() * 5.0)
+                .collect();
+            let x = Matrix::from_vec(n, 1, x_data).expect("valid");
+            let y_data: Vec<f32> = (0..n)
+                .map(|i| 2.0 + 0.5 * i as f32 + (seed as f32 * 0.01))
+                .collect();
+            let y = Vector::from_vec(y_data);
+
+            let mut blr = BayesianLinearRegression::new(1);
+            blr.fit(&x, &y).expect("fit");
+
+            let preds = blr.predict(&x).expect("predict");
+            for i in 0..preds.len() {
+                prop_assert!(
+                    preds[i].is_finite(),
+                    "FALSIFIED BLR-001-prop: prediction[{}]={} not finite",
+                    i, preds[i]
+                );
+            }
+        }
+    }
+}

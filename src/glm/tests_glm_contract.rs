@@ -94,3 +94,63 @@ fn falsify_glm_004_deterministic() {
         );
     }
 }
+
+mod glm_proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// FALSIFY-GLM-002-prop: Prediction count matches for different data sizes
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(10))]
+
+        #[test]
+        fn falsify_glm_002_prop_prediction_count(
+            extra in 0..=5usize,
+        ) {
+            let n = 8 + extra;
+            let x_data: Vec<f32> = (0..n).map(|i| i as f32).collect();
+            let x = Matrix::from_vec(n, 1, x_data).expect("valid");
+            let y_data: Vec<f32> = (0..n).map(|i| (0.5 + 0.3 * i as f32).exp()).collect();
+            let y = Vector::from_vec(y_data);
+
+            let mut glm = GLM::new(Family::Poisson).with_max_iter(5000);
+            prop_assume!(glm.fit(&x, &y).is_ok());
+
+            let preds = glm.predict(&x).expect("predict");
+            prop_assert_eq!(
+                preds.len(),
+                n,
+                "FALSIFIED GLM-002-prop: {} predictions for {} inputs",
+                preds.len(), n
+            );
+        }
+    }
+
+    /// FALSIFY-GLM-003-prop: Poisson predictions non-negative for different sizes
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(10))]
+
+        #[test]
+        fn falsify_glm_003_prop_poisson_nonneg(
+            extra in 0..=5usize,
+        ) {
+            let n = 8 + extra;
+            let x_data: Vec<f32> = (0..n).map(|i| i as f32).collect();
+            let x = Matrix::from_vec(n, 1, x_data).expect("valid");
+            let y_data: Vec<f32> = (0..n).map(|i| (0.5 + 0.3 * i as f32).exp()).collect();
+            let y = Vector::from_vec(y_data);
+
+            let mut glm = GLM::new(Family::Poisson).with_max_iter(5000);
+            prop_assume!(glm.fit(&x, &y).is_ok());
+
+            let preds = glm.predict(&x).expect("predict");
+            for i in 0..preds.len() {
+                prop_assert!(
+                    preds[i] >= 0.0,
+                    "FALSIFIED GLM-003-prop: Poisson prediction[{}]={} < 0",
+                    i, preds[i]
+                );
+            }
+        }
+    }
+}

@@ -100,3 +100,53 @@ fn falsify_by_006_dirichlet_probs_nonneg() {
         assert!(p >= 0.0, "FALSIFIED BY-006: prob[{i}]={p}, expected >= 0.0");
     }
 }
+
+mod by_proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// FALSIFY-BY-002-prop: BetaBinomial posterior mean in [0, 1]
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(30))]
+
+        #[test]
+        fn falsify_by_002_prop_beta_mean_bounded(
+            successes in 0..100u32,
+            trials in 1..200u32,
+        ) {
+            let successes = successes.min(trials);
+            let mut model = BetaBinomial::uniform();
+            model.update(successes, trials);
+
+            let mean = model.posterior_mean();
+            prop_assert!(
+                (0.0..=1.0).contains(&mean),
+                "FALSIFIED BY-002-prop: mean={} not in [0,1] (successes={}, trials={})",
+                mean, successes, trials
+            );
+        }
+    }
+
+    /// FALSIFY-BY-005-prop: Dirichlet probabilities sum to 1
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(20))]
+
+        #[test]
+        fn falsify_by_005_prop_dirichlet_sum(
+            k in 2..=5usize,
+            seed in 0..500u32,
+        ) {
+            let mut model = DirichletMultinomial::uniform(k);
+            let counts: Vec<u32> = (0..k).map(|i| ((seed + i as u32) % 20) + 1).collect();
+            model.update(&counts);
+
+            let probs = model.posterior_mean();
+            let sum: f32 = probs.iter().sum();
+            prop_assert!(
+                (sum - 1.0).abs() < 1e-4,
+                "FALSIFIED BY-005-prop: Dirichlet sum={}, expected ~1.0",
+                sum
+            );
+        }
+    }
+}
