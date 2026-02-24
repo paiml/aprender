@@ -392,3 +392,9 @@ impl TextSummarizer {
 #[cfg(test)]
 #[path = "summarize_tests.rs"]
 mod tests;
+
+// Summarization contract falsification (FALSIFY-SUM-001..006)
+// Refs: Mihalcea & Tarau (2004), NLP spec §2.1.8, PMAT-353
+#[cfg(test)]
+#[path = "summarize_contract_falsify.rs"]
+mod summarize_contract_falsify;

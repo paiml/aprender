@@ -372,3 +372,9 @@ impl Default for EntityExtractor {
 #[cfg(test)]
 #[path = "entities_tests.rs"]
 mod tests;
+
+// Entity extraction contract falsification (FALSIFY-ENT-001..006)
+// Refs: NLP spec §2.1.7, PMAT-352
+#[cfg(test)]
+#[path = "entities_contract_falsify.rs"]
+mod entities_contract_falsify;
