@@ -438,3 +438,5 @@ fn test_alibi_creation() {
 mod tests_alibi_mha;
 #[path = "tests_decoder_rope.rs"]
 mod tests_decoder_rope;
+#[path = "tests_rope_contract.rs"]
+mod tests_rope_contract;
