@@ -122,3 +122,59 @@ fn falsify_db_004_cluster_labels_nonneg_or_noise() {
         );
     }
 }
+
+mod dbscan_proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// FALSIFY-DB-003-prop: Labels length matches sample count for random sizes
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(20))]
+
+        #[test]
+        fn falsify_db_003_prop_labels_length(
+            n in 3..=20usize,
+            seed in 0..500u32,
+        ) {
+            let data: Vec<f32> = (0..n * 2)
+                .map(|i| ((i as f32 + seed as f32) * 0.37).sin() * 10.0)
+                .collect();
+            let matrix = Matrix::from_vec(n, 2, data).expect("valid");
+            let mut dbscan = DBSCAN::new(1.0, 2);
+            dbscan.fit(&matrix).expect("fit");
+
+            prop_assert_eq!(
+                dbscan.labels().len(),
+                n,
+                "FALSIFIED DB-003-prop: labels len {} != {}",
+                dbscan.labels().len(), n
+            );
+        }
+    }
+
+    /// FALSIFY-DB-004-prop: Labels >= -1 for random data
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(20))]
+
+        #[test]
+        fn falsify_db_004_prop_valid_labels(
+            n in 3..=15usize,
+            seed in 0..500u32,
+        ) {
+            let data: Vec<f32> = (0..n * 2)
+                .map(|i| ((i as f32 + seed as f32) * 0.37).sin() * 10.0)
+                .collect();
+            let matrix = Matrix::from_vec(n, 2, data).expect("valid");
+            let mut dbscan = DBSCAN::new(1.0, 2);
+            dbscan.fit(&matrix).expect("fit");
+
+            for (i, &label) in dbscan.labels().iter().enumerate() {
+                prop_assert!(
+                    label >= -1,
+                    "FALSIFIED DB-004-prop: label[{}]={} < -1",
+                    i, label
+                );
+            }
+        }
+    }
+}

@@ -61,3 +61,55 @@ fn falsify_mh_012_de_solution_dimension() {
         result.solution.len()
     );
 }
+
+mod de_proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// FALSIFY-MH-011-prop: DE solution within bounds for random dimensions
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(15))]
+
+        #[test]
+        fn falsify_mh_011_prop_within_bounds(
+            dim in 2..=5usize,
+            seed in 0..200u64,
+        ) {
+            let sphere = |x: &[f64]| -> f64 { x.iter().map(|xi| xi * xi).sum() };
+            let mut de = DifferentialEvolution::new().with_seed(seed);
+            let space = SearchSpace::continuous(dim, -5.0, 5.0);
+            let result = de.optimize(&sphere, &space, Budget::Evaluations(2000));
+
+            for (i, &v) in result.solution.iter().enumerate() {
+                prop_assert!(
+                    (-5.0..=5.0).contains(&v),
+                    "FALSIFIED MH-011-prop: solution[{}]={} outside [-5,5]",
+                    i, v
+                );
+            }
+        }
+    }
+
+    /// FALSIFY-MH-012-prop: Solution dimension matches for random dims
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(15))]
+
+        #[test]
+        fn falsify_mh_012_prop_solution_dimension(
+            dim in 1..=6usize,
+            seed in 0..200u64,
+        ) {
+            let sphere = |x: &[f64]| -> f64 { x.iter().map(|xi| xi * xi).sum() };
+            let mut de = DifferentialEvolution::new().with_seed(seed);
+            let space = SearchSpace::continuous(dim, -5.0, 5.0);
+            let result = de.optimize(&sphere, &space, Budget::Evaluations(1000));
+
+            prop_assert_eq!(
+                result.solution.len(),
+                dim,
+                "FALSIFIED MH-012-prop: solution dim {} != {}",
+                result.solution.len(), dim
+            );
+        }
+    }
+}

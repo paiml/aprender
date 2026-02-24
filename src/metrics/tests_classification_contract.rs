@@ -75,3 +75,54 @@ fn falsify_mc_005_recall_bounded() {
         "FALSIFIED MC-005: recall={rec} not in [0, 1]"
     );
 }
+
+mod mc_proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// FALSIFY-MC-001-prop: Accuracy in [0, 1] for random labels
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(50))]
+
+        #[test]
+        fn falsify_mc_001_prop_accuracy_bounded(
+            seed in 0..1000u32,
+            n in 5..=30usize,
+        ) {
+            let y_true: Vec<usize> = (0..n)
+                .map(|i| ((i as u32 + seed) % 3) as usize)
+                .collect();
+            let y_pred: Vec<usize> = (0..n)
+                .map(|i| ((i as u32 + seed + 1) % 3) as usize)
+                .collect();
+
+            let acc = accuracy(&y_pred, &y_true);
+            prop_assert!(
+                (0.0..=1.0).contains(&acc),
+                "FALSIFIED MC-001-prop: accuracy={} not in [0,1]",
+                acc
+            );
+        }
+    }
+
+    /// FALSIFY-MC-002-prop: Perfect predictions → accuracy = 1.0
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(30))]
+
+        #[test]
+        fn falsify_mc_002_prop_perfect_accuracy(
+            n in 5..=30usize,
+            seed in 0..500u32,
+        ) {
+            let y: Vec<usize> = (0..n)
+                .map(|i| ((i as u32 + seed) % 3) as usize)
+                .collect();
+            let acc = accuracy(&y, &y);
+            prop_assert!(
+                (acc - 1.0).abs() < 1e-6,
+                "FALSIFIED MC-002-prop: accuracy={} for perfect predictions",
+                acc
+            );
+        }
+    }
+}
