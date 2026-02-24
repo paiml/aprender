@@ -348,3 +348,7 @@ fn compute_correlation_values(
 #[cfg(test)]
 #[path = "covariance_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "tests_covariance_contract.rs"]
+mod tests_covariance_contract;

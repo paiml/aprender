@@ -86,3 +86,7 @@ pub enum BinMethod {
 
 include!("descriptive_impl.rs");
 include!("descriptive_tests.rs");
+
+#[cfg(test)]
+#[path = "tests_descriptive_contract.rs"]
+mod tests_descriptive_contract;
