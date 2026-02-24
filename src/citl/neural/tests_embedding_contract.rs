@@ -131,3 +131,64 @@ fn falsify_em_005_row_lookup_correctness() {
         }
     }
 }
+
+mod citl_em_proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// FALSIFY-EM-001-prop: Output shape for random seq lengths
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(15))]
+
+        #[test]
+        fn falsify_em_001_prop_output_shape(
+            seq_len in 1..=20usize,
+        ) {
+            let vocab_size = 50;
+            let embed_dim = 16;
+            let embed = Embedding::new(vocab_size, embed_dim);
+
+            let indices_data: Vec<f32> = (0..seq_len)
+                .map(|i| (i % vocab_size) as f32)
+                .collect();
+            let indices = Tensor::new(&indices_data, &[1, seq_len]);
+            let output = embed.forward(&indices);
+
+            prop_assert_eq!(
+                output.shape(),
+                &[1, seq_len, embed_dim],
+                "FALSIFIED EM-001-prop: shape {:?} != [1, {}, {}]",
+                output.shape(), seq_len, embed_dim
+            );
+        }
+    }
+
+    /// FALSIFY-EM-004-prop: Finite output for random token IDs
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(15))]
+
+        #[test]
+        fn falsify_em_004_prop_finite_output(
+            seed in 0..200u32,
+        ) {
+            let vocab_size = 30;
+            let embed_dim = 8;
+            let embed = Embedding::new(vocab_size, embed_dim);
+
+            let seq_len = 10;
+            let indices_data: Vec<f32> = (0..seq_len)
+                .map(|i| ((i + seed as usize) % vocab_size) as f32)
+                .collect();
+            let indices = Tensor::new(&indices_data, &[1, seq_len]);
+            let output = embed.forward(&indices);
+
+            for (i, &val) in output.data().iter().enumerate() {
+                prop_assert!(
+                    val.is_finite(),
+                    "FALSIFIED EM-004-prop: output[{}]={} not finite (seed={})",
+                    i, val, seed
+                );
+            }
+        }
+    }
+}

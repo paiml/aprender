@@ -81,3 +81,53 @@ fn falsify_se_003_peaked_lower_than_uniform() {
         "FALSIFIED SE-003: peaked entropy ({h_peaked}) not < uniform entropy ({h_uniform})"
     );
 }
+
+mod se_proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// FALSIFY-SE-001-prop: Range bound [0, 1] for random magnitudes
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(30))]
+
+        #[test]
+        fn falsify_se_001_prop_range_bound(
+            seed in 0..500u32,
+        ) {
+            let n = (seed % 20 + 2) as usize;
+            let mags: Vec<f32> = (0..n)
+                .map(|i| ((i as f32 + seed as f32) * 0.37).sin().abs() * 10.0 + 0.01)
+                .collect();
+
+            let h = spectral_entropy(&mags);
+            prop_assert!(
+                (0.0..=1.001).contains(&h),
+                "FALSIFIED SE-001-prop: entropy={} not in [0,1] for n={} seed={}",
+                h, n, seed
+            );
+        }
+    }
+
+    /// FALSIFY-SE-003-prop: Peaked < uniform for random sizes
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(20))]
+
+        #[test]
+        fn falsify_se_003_prop_peaked_lower(
+            n in 3..=30usize,
+        ) {
+            let uniform = vec![1.0f32; n];
+            let h_uniform = spectral_entropy(&uniform);
+
+            let mut peaked = vec![0.01f32; n];
+            peaked[0] = 100.0;
+            let h_peaked = spectral_entropy(&peaked);
+
+            prop_assert!(
+                h_peaked < h_uniform,
+                "FALSIFIED SE-003-prop: peaked({}) >= uniform({}) for n={}",
+                h_peaked, h_uniform, n
+            );
+        }
+    }
+}

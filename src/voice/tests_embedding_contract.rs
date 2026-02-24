@@ -160,3 +160,53 @@ fn falsify_emb_007_average_correctness() {
         );
     }
 }
+
+mod voice_emb_proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// FALSIFY-EMB-002-prop: Cosine self-similarity = 1.0 for random vectors
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(30))]
+
+        #[test]
+        fn falsify_emb_002_prop_cosine_self(
+            a in -50.0f32..50.0,
+            b in -50.0f32..50.0,
+            c in -50.0f32..50.0,
+        ) {
+            prop_assume!(a.abs() + b.abs() + c.abs() > 1e-4);
+
+            let emb = SpeakerEmbedding::from_vec(vec![a, b, c]);
+            let sim = cosine_similarity(&emb, &emb);
+            prop_assert!(
+                (sim - 1.0).abs() < 1e-4,
+                "FALSIFIED EMB-002-prop: cos(x,x)={} != 1.0 for [{},{},{}]",
+                sim, a, b, c
+            );
+        }
+    }
+
+    /// FALSIFY-EMB-005-prop: Normalize produces unit norm for random vectors
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(30))]
+
+        #[test]
+        fn falsify_emb_005_prop_unit_norm(
+            a in -100.0f32..100.0,
+            b in -100.0f32..100.0,
+            c in -100.0f32..100.0,
+        ) {
+            prop_assume!(a.abs() + b.abs() + c.abs() > 1e-4);
+
+            let emb = SpeakerEmbedding::from_vec(vec![a, b, c]);
+            let normalized = normalize_embedding(&emb);
+            let norm = normalized.l2_norm();
+            prop_assert!(
+                (norm - 1.0).abs() < 1e-4,
+                "FALSIFIED EMB-005-prop: ||normalize(x)||={} != 1.0 for [{},{},{}]",
+                norm, a, b, c
+            );
+        }
+    }
+}

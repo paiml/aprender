@@ -172,3 +172,57 @@ fn falsify_em_005_row_lookup_correctness() {
         }
     }
 }
+
+mod qwen2_em_proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// FALSIFY-EM-001-prop: Output shape for random seq lengths
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(15))]
+
+        #[test]
+        fn falsify_em_001_prop_output_shape(
+            seq_len in 1..=30usize,
+        ) {
+            let vocab_size = 50;
+            let hidden_size = 16;
+            let embed = Embedding::new(vocab_size, hidden_size);
+
+            let ids: Vec<u32> = (0..seq_len).map(|i| (i % vocab_size) as u32).collect();
+            let output = embed.forward(&ids);
+
+            prop_assert_eq!(
+                output.shape(),
+                &[1, seq_len, hidden_size],
+                "FALSIFIED EM-001-prop: shape {:?} != [1, {}, {}]",
+                output.shape(), seq_len, hidden_size
+            );
+        }
+    }
+
+    /// FALSIFY-EM-004-prop: Finite output for random token IDs
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(15))]
+
+        #[test]
+        fn falsify_em_004_prop_finite_output(
+            seed in 0..200u32,
+        ) {
+            let vocab_size = 40;
+            let hidden_size = 8;
+            let embed = Embedding::new(vocab_size, hidden_size);
+
+            let ids: Vec<u32> = (0..10).map(|i| ((i + seed as usize) % vocab_size) as u32).collect();
+            let output = embed.forward(&ids);
+
+            for (i, &val) in output.data().iter().enumerate() {
+                prop_assert!(
+                    val.is_finite(),
+                    "FALSIFIED EM-004-prop: output[{}]={} not finite (seed={})",
+                    i, val, seed
+                );
+            }
+        }
+    }
+}

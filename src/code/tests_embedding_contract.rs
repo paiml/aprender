@@ -198,3 +198,56 @@ fn falsify_emb_007_zero_vector_cosine() {
         "FALSIFIED EMB-007: cos(0, 0) = {sim2} != 0.0"
     );
 }
+
+mod code_emb_proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// FALSIFY-EMB-001-prop: Cosine self-similarity = 1.0 for random vectors
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(30))]
+
+        #[test]
+        fn falsify_emb_001_prop_cosine_self(
+            a in -50.0f64..50.0,
+            b in -50.0f64..50.0,
+            c in -50.0f64..50.0,
+        ) {
+            // Skip near-zero vectors
+            prop_assume!(a.abs() + b.abs() + c.abs() > 1e-6);
+
+            let emb = CodeEmbedding::new(Vector::from_vec(vec![a, b, c]));
+            let sim = emb.cosine_similarity(&emb);
+            prop_assert!(
+                (sim - 1.0).abs() < 1e-6,
+                "FALSIFIED EMB-001-prop: cos(x,x)={} != 1.0 for [{},{},{}]",
+                sim, a, b, c
+            );
+        }
+    }
+
+    /// FALSIFY-EMB-006-prop: Cosine bounded [-1, 1] for random pairs
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(30))]
+
+        #[test]
+        fn falsify_emb_006_prop_cosine_bounded(
+            a1 in -50.0f64..50.0,
+            a2 in -50.0f64..50.0,
+            b1 in -50.0f64..50.0,
+            b2 in -50.0f64..50.0,
+        ) {
+            prop_assume!(a1.abs() + a2.abs() > 1e-6);
+            prop_assume!(b1.abs() + b2.abs() > 1e-6);
+
+            let ea = CodeEmbedding::new(Vector::from_vec(vec![a1, a2]));
+            let eb = CodeEmbedding::new(Vector::from_vec(vec![b1, b2]));
+            let sim = ea.cosine_similarity(&eb);
+            prop_assert!(
+                (-1.0 - 1e-6..=1.0 + 1e-6).contains(&sim),
+                "FALSIFIED EMB-006-prop: cos(a,b)={} out of [-1,1]",
+                sim
+            );
+        }
+    }
+}
