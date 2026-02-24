@@ -101,3 +101,83 @@ fn falsify_knn_004_deterministic() {
         "FALSIFIED KNN-004: predictions differ on same input"
     );
 }
+
+mod knn_proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// FALSIFY-KNN-002-prop: Prediction count matches input count
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(15))]
+
+        #[test]
+        fn falsify_knn_002_prop_prediction_count(
+            n_train in 6..=12usize,
+            n_test in 3..=8usize,
+            seed in 0..200u32,
+        ) {
+            // Construct two well-separated clusters for training
+            let mut x_data = Vec::with_capacity(n_train * 2);
+            let mut y_data = Vec::with_capacity(n_train);
+            let half = n_train / 2;
+            for i in 0..half {
+                let offset = (seed as f32 + i as f32) * 0.01;
+                x_data.push(0.0 + offset);
+                x_data.push(0.0 + offset);
+                y_data.push(0_usize);
+            }
+            for i in 0..(n_train - half) {
+                let offset = (seed as f32 + i as f32) * 0.01;
+                x_data.push(10.0 + offset);
+                x_data.push(10.0 + offset);
+                y_data.push(1_usize);
+            }
+            let x = Matrix::from_vec(n_train, 2, x_data).expect("valid");
+
+            let mut knn = KNearestNeighbors::new(3.min(half));
+            knn.fit(&x, &y_data).expect("fit");
+
+            let x_test_data: Vec<f32> = (0..n_test * 2)
+                .map(|i| ((i as f32 + seed as f32) * 0.37).sin() * 5.0 + 5.0)
+                .collect();
+            let x_test = Matrix::from_vec(n_test, 2, x_test_data).expect("valid");
+
+            let preds = knn.predict(&x_test).expect("predict");
+            prop_assert_eq!(
+                preds.len(),
+                n_test,
+                "FALSIFIED KNN-002-prop: {} predictions for {} inputs",
+                preds.len(), n_test
+            );
+        }
+    }
+
+    /// FALSIFY-KNN-004-prop: Deterministic predictions for random data
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(15))]
+
+        #[test]
+        fn falsify_knn_004_prop_deterministic(
+            seed in 0..200u32,
+        ) {
+            let x = Matrix::from_vec(
+                6, 2,
+                vec![0.0, 0.0, 0.5, 0.5, 1.0, 0.0,
+                     5.0, 5.0, 5.5, 5.5, 6.0, 5.0],
+            ).expect("valid");
+            let y = vec![0_usize, 0, 0, 1, 1, 1];
+
+            let k = ((seed % 3) + 1) as usize;
+            let mut knn = KNearestNeighbors::new(k);
+            knn.fit(&x, &y).expect("fit");
+
+            let p1 = knn.predict(&x).expect("predict 1");
+            let p2 = knn.predict(&x).expect("predict 2");
+            prop_assert_eq!(
+                p1, p2,
+                "FALSIFIED KNN-004-prop: predictions differ (k={})",
+                k
+            );
+        }
+    }
+}

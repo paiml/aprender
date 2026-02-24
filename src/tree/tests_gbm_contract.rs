@@ -112,3 +112,86 @@ fn falsify_gbm_004_better_than_random() {
         "FALSIFIED GBM-004: accuracy={accuracy} <= 0.5 (worse than random)"
     );
 }
+
+mod gbm_proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// FALSIFY-GBM-002-prop: Prediction count matches input count
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(10))]
+
+        #[test]
+        fn falsify_gbm_002_prop_prediction_count(
+            n in 8..=16usize,
+            seed in 0..200u32,
+        ) {
+            let half = n / 2;
+            let mut x_data = Vec::with_capacity(n * 2);
+            let mut y_data = Vec::with_capacity(n);
+            for i in 0..half {
+                let offset = (seed as f32 + i as f32) * 0.01;
+                x_data.push(0.0 + offset);
+                x_data.push(0.0 + offset);
+                y_data.push(0_usize);
+            }
+            for i in 0..(n - half) {
+                let offset = (seed as f32 + i as f32) * 0.01;
+                x_data.push(10.0 + offset);
+                x_data.push(10.0 + offset);
+                y_data.push(1_usize);
+            }
+            let x = Matrix::from_vec(n, 2, x_data).expect("valid");
+
+            let mut gbm = GradientBoostingClassifier::new();
+            gbm.fit(&x, &y_data).expect("fit");
+
+            let preds = gbm.predict(&x).expect("predict");
+            prop_assert_eq!(
+                preds.len(),
+                n,
+                "FALSIFIED GBM-002-prop: {} predictions for {} inputs",
+                preds.len(), n
+            );
+        }
+    }
+
+    /// FALSIFY-GBM-001-prop: Predictions in valid label range
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(10))]
+
+        #[test]
+        fn falsify_gbm_001_prop_predictions_valid(
+            seed in 0..200u32,
+        ) {
+            let n = 8;
+            let mut x_data = Vec::with_capacity(n * 2);
+            let mut y_data = Vec::with_capacity(n);
+            for i in 0..4 {
+                let offset = (seed as f32 + i as f32) * 0.01;
+                x_data.push(0.0 + offset);
+                x_data.push(0.0 + offset);
+                y_data.push(0_usize);
+            }
+            for i in 0..4 {
+                let offset = (seed as f32 + i as f32) * 0.01;
+                x_data.push(10.0 + offset);
+                x_data.push(10.0 + offset);
+                y_data.push(1_usize);
+            }
+            let x = Matrix::from_vec(n, 2, x_data).expect("valid");
+
+            let mut gbm = GradientBoostingClassifier::new();
+            gbm.fit(&x, &y_data).expect("fit");
+
+            let preds = gbm.predict(&x).expect("predict");
+            for (i, &p) in preds.iter().enumerate() {
+                prop_assert!(
+                    p <= 1,
+                    "FALSIFIED GBM-001-prop: prediction[{}]={} not in {{0, 1}}",
+                    i, p
+                );
+            }
+        }
+    }
+}

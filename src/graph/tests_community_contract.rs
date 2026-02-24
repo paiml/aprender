@@ -75,3 +75,52 @@ fn falsify_cd_003_deterministic_with_seed() {
         "FALSIFIED CD-003: same seed gave different results"
     );
 }
+
+mod cd_proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// FALSIFY-CD-001-prop: Labels length matches node count for random graphs
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(15))]
+
+        #[test]
+        fn falsify_cd_001_prop_labels_length(
+            n in 4..=10usize,
+            seed in 0..500u32,
+        ) {
+            // Build a chain graph: 0-1-2-..-(n-1)
+            let edges: Vec<(usize, usize)> = (0..n - 1).map(|i| (i, i + 1)).collect();
+            let g = Graph::from_edges(&edges, false);
+
+            let labels = g.label_propagation(50, Some(seed as u64));
+            prop_assert_eq!(
+                labels.len(),
+                g.num_nodes(),
+                "FALSIFIED CD-001-prop: labels len {} != nodes {}",
+                labels.len(), g.num_nodes()
+            );
+        }
+    }
+
+    /// FALSIFY-CD-003-prop: Deterministic with same seed for random graphs
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(15))]
+
+        #[test]
+        fn falsify_cd_003_prop_deterministic(
+            n in 4..=8usize,
+            seed in 0..500u32,
+        ) {
+            let edges: Vec<(usize, usize)> = (0..n - 1).map(|i| (i, i + 1)).collect();
+            let g = Graph::from_edges(&edges, false);
+
+            let l1 = g.label_propagation(50, Some(seed as u64));
+            let l2 = g.label_propagation(50, Some(seed as u64));
+            prop_assert_eq!(
+                l1, l2,
+                "FALSIFIED CD-003-prop: same seed gave different results"
+            );
+        }
+    }
+}

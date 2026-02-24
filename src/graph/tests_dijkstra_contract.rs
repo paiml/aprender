@@ -82,3 +82,62 @@ fn falsify_gr_004_bfs_shortest_path() {
         p.len()
     );
 }
+
+mod gr_proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// FALSIFY-GR-003-prop: Self-path returns distance 0 for random chain graphs
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(15))]
+
+        #[test]
+        fn falsify_gr_003_prop_self_path_zero(
+            n in 3..=8usize,
+            src in 0..8usize,
+        ) {
+            let src = src % n;
+            let edges: Vec<(usize, usize, f64)> =
+                (0..n - 1).map(|i| (i, i + 1, 1.0)).collect();
+            let g = Graph::from_weighted_edges(&edges, false);
+
+            let (path, dist) = g.dijkstra(src, src).expect("self-path must exist");
+            prop_assert!(
+                path == vec![src],
+                "FALSIFIED GR-003-prop: self-path={:?}, expected [{}]",
+                path, src
+            );
+            prop_assert!(
+                dist.abs() < 1e-6,
+                "FALSIFIED GR-003-prop: self-distance={}, expected 0.0",
+                dist
+            );
+        }
+    }
+
+    /// FALSIFY-GR-004-prop: BFS finds path in connected chain graph
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(15))]
+
+        #[test]
+        fn falsify_gr_004_prop_bfs_connected(
+            n in 3..=8usize,
+        ) {
+            let edges: Vec<(usize, usize)> = (0..n - 1).map(|i| (i, i + 1)).collect();
+            let g = Graph::from_edges(&edges, false);
+
+            let path = g.shortest_path(0, n - 1);
+            prop_assert!(
+                path.is_some(),
+                "FALSIFIED GR-004-prop: BFS returned None in connected chain (n={})",
+                n
+            );
+            let p = path.expect("checked");
+            prop_assert!(
+                p.len() <= n,
+                "FALSIFIED GR-004-prop: path len {} > n={} for chain graph",
+                p.len(), n
+            );
+        }
+    }
+}
