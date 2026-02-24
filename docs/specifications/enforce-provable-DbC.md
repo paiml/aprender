@@ -758,12 +758,15 @@ These matches are acceptable and should NOT be treated as violations:
 
 | Contract | aprender | trueno | entrenar | realizar | Total |
 |----------|----------|--------|----------|----------|-------|
-| EM-001..005 | 15 ✅ | 12 ✅ | 5 ✅ | 7 ✅ | 39 |
-| EMB-001..007 | 24 ✅ | 2 ✅ | 4 ✅ | 4 ✅ | 34 |
+| EM-001..005 | 15 ✅ | 12 ✅ | 6 ✅ | 7 ✅ | 40 |
+| EMB-001..007 | 24 ✅ | 5 ✅ | 4 ✅ | 4 ✅ | 37 |
 | TE-001..004 | 6 ✅ | N/A | 4 ✅ | 4 ✅ | 14 |
-| SM-001..006 | 7 ✅ | 5 ✅ | 6 ✅ | 5 ✅ | 23 |
+| SM-001..007 | 8 ✅ | 7 ✅ | 7 ✅ | 7 ✅ | 29 |
 | AP-001..004 | 5 ✅ | N/A | N/A | 4 ✅ | 9 |
-| **Total** | **57** | **19** | **19** | **24** | **119** |
+| **Total** | **58** | **24** | **21** | **26** | **129** |
+
+SM-007 (translation invariance σ(x+c)=σ(x)) extends the YAML contract by testing
+proof obligation SM-INV-003, which was previously uncovered across the entire stack.
 
 ### Commits
 
@@ -792,6 +795,16 @@ These matches are acceptable and should NOT be treated as violations:
   - Finding: SM-004 FALSIFIED — IEEE 754 f32 underflow makes softmax interval [0,1] not (0,1). Documented as N-10 escape.
 - realizar `233724f` — FALSIFY-TE-002/003 + AP-003 (3 tests)
   - Finding: Q4K super-block overhead makes small tensors larger than F32 — correct at production scale.
+
+**Phase 6 (deep gap analysis + SM-INV-003 translation invariance)**:
+- trueno `54f1503` — FALSIFY-SM-006/007 (2 tests: identical uniform, translation invariance)
+- trueno `1a53a89` — FALSIFY-EMB-001/002/004 (3 tests: determinism, shape, vocabulary bounds)
+- aprender `08635b54` — FALSIFY-SM-007 (1 test: translation invariance)
+- entrenar `17de0f1` — FALSIFY-SM-007 (1 test: translation invariance)
+- entrenar `3c16fc2` — FALSIFY-EM-002 (1 test: OOB safety with N-09 zero-fill)
+- realizar `6bf2052` — FALSIFY-SM-006/007 (2 tests: identical uniform, translation invariance)
+  - Key finding: SM-INV-003 (σ(x+c)=σ(x)) had ZERO coverage — now 4/4 repos covered.
+  - This is the mathematical basis for the max-subtraction numerical stability trick.
 
 ---
 
