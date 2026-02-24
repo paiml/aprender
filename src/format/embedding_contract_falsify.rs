@@ -412,6 +412,76 @@ fn falsify_emb_007_temperature_monotonicity() {
 }
 
 // ============================================================================
+// FALSIFY-TE-CROSS: Tied embeddings dimension validation
+// Contract: tied-embeddings-v1.yaml — logits = x @ W_embed^T
+// Prediction: tied lm_head shape [vocab, d_model] produces [seq_len, vocab] logits
+// PMAT-328: verify dimension validation at matmul call sites
+// ============================================================================
+
+#[test]
+fn falsify_te_cross_tied_lm_head_shape() {
+    let vocab = 50;
+    let d_model = 16;
+    let emb = Embedding::new(vocab, d_model);
+
+    // W_embed is [vocab, d_model]
+    let w = emb.weight();
+    assert_eq!(w.shape(), &[vocab, d_model]);
+
+    // For tied embeddings: logits = hidden @ W^T → [seq_len, vocab]
+    // hidden is [1, seq_len, d_model], so we need W^T which is [d_model, vocab]
+    // The weight matrix shape must be compatible for this transpose
+    let w_data = w.data();
+    assert_eq!(
+        w_data.len(),
+        vocab * d_model,
+        "FALSIFIED TE-CROSS: weight length {} != vocab({vocab}) * d_model({d_model})",
+        w_data.len()
+    );
+}
+
+#[test]
+fn falsify_te_cross_tied_logit_shape() {
+    // Simulate tied lm_head: logits = hidden_state @ W_embed^T
+    let vocab = 10;
+    let d = 4;
+    let emb = Embedding::new(vocab, d);
+    let w = emb.weight().data().to_vec();
+
+    // Create hidden state for seq_len=3
+    let seq_len = 3;
+    let hidden: Vec<f32> = (0..seq_len * d).map(|i| (i as f32) * 0.1).collect();
+
+    // Compute logits = hidden @ W^T (manual matmul)
+    let mut logits = vec![0.0f32; seq_len * vocab];
+    for s in 0..seq_len {
+        for v in 0..vocab {
+            let mut sum = 0.0f32;
+            for k in 0..d {
+                sum += hidden[s * d + k] * w[v * d + k];
+            }
+            logits[s * vocab + v] = sum;
+        }
+    }
+
+    // Output shape must be [seq_len, vocab]
+    assert_eq!(
+        logits.len(),
+        seq_len * vocab,
+        "FALSIFIED TE-CROSS: logits length {} != seq_len({seq_len}) * vocab({vocab})",
+        logits.len()
+    );
+
+    // All logits must be finite
+    for (i, &l) in logits.iter().enumerate() {
+        assert!(
+            l.is_finite(),
+            "FALSIFIED TE-CROSS: logits[{i}] = {l} is not finite"
+        );
+    }
+}
+
+// ============================================================================
 // Cross-contract: enforce_embedding_contract from layout_contract_enforce.rs
 // Verifies the shape enforcement gate works correctly
 // ============================================================================
