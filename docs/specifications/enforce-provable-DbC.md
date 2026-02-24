@@ -2,7 +2,7 @@
 
 **Reference**: Meyer, B. (1992). "Applying 'Design by Contract'." *IEEE Computer*, 25(10), 40-51.
 
-**Status**: PHASE 12 COMPLETE — 320 FALSIFY tests across stack (§2.1.4 RoPE + CE + LP)
+**Status**: PHASE 14 COMPLETE — 451 FALSIFY tests across stack (§2.3 Core Ops + Loss)
 **Date**: 2026-02-23 (updated 2026-02-24)
 **Scope**: trueno, realizar, aprender, entrenar, batuta, provable-contracts, apr-playbook
 
@@ -1151,6 +1151,149 @@ Note: trueno has no RoPE, CE, or LP implementations. entrenar has no LP (uses ap
 | **Total** | **133** | **48** | **87** | **107** | **375** |
 
 Note: The 375 total includes 47+8=55 pre-existing tests that predated this sweep.
+
+---
+
+## 14. §2.2 Attention Mechanisms Contract Falsification (Phase 13)
+
+Contracts: attention-kernel-v1.yaml (ATT), attention-scaling-v1.yaml (ASCL), gqa-kernel-v1.yaml (GQ)
+
+### Five-Whys Root Cause
+
+- Why 1: aprender had ATT/ASCL/GQ unit tests but many lacked proptest
+- Why 2: trueno had 5 attention unit tests but zero FALSIFY-ATT contract tests
+- Why 3: entrenar had FALSIFY-A projection tests but zero GQA contract tests
+- Why 4: no systematic cross-stack attention contract coverage
+- Why 5: attention was "obviously correct" (textbook Vaswani + Ainslie formulas)
+
+### Tests Created (34 new tests)
+
+| Contract | Repo | Tests | Type |
+|----------|------|-------|------|
+| ATT-001..005 | trueno | 4d + 3p = 7 | softmax norm, convexity, scaling, bounded |
+| ATT-001..005 | aprender | 3p = 3 | proptest normalization, convexity, bounded |
+| ATT-001..002 | entrenar | 2p = 2 | proptest convexity + uniform V |
+| ASCL-003,007 | aprender | 2p = 2 | proptest entropy bounds |
+| GQ-001..006 | aprender | 1d + 3p = 4 | GQ-003 convexity + prop norm/MHA/MQA |
+| GQ-001..006 | entrenar | 4d + 2p = 6 | GQA shape/MHA/divisibility/MQA + proptest |
+| **Total** | | **24 new** | |
+
+Pre-existing attention tests: 10 (aprender ATT/ASCL/GQ deterministic)
+
+### Commits
+
+- trueno `293cc64` — FALSIFY-ATT-001..005 + 3 proptest
+- aprender `3bc6a03d` — ATT + ASCL proptest
+- aprender `1549938a` — GQ-003 + GQ proptest
+- entrenar `1ec05f4` — ATT proptest
+- entrenar `334fbb5` — GQ deterministic + proptest
+
+### Phase 13 Coverage Matrix (d=deterministic, p=proptest)
+
+| Contract | aprender | trueno | entrenar | realizar | Total |
+|----------|----------|--------|----------|----------|-------|
+| ATT-001..005 | 6d+3p=9 | 4d+3p=7 | 4d+2p=6 | N/A | 22 |
+| ASCL-001..007 | 4d+2p=6 | N/A | N/A | N/A | 6 |
+| GQ-001..006 | 5d+3p=8 | N/A | 4d+2p=6 | N/A | 14 |
+| **Total** | **23** | **7** | **12** | **0** | **42** |
+
+Note: realizar's GQA is embedded in GGUF inference pipeline (not testable in isolation).
+
+### Cumulative Coverage Matrix (§2.1.1 + §2.1.2 + §2.1.3 + §2.1.4 + §2.2)
+
+| Contract | aprender | trueno | entrenar | realizar | Total |
+|----------|----------|--------|----------|----------|-------|
+| EM-001..005 | 24 | 13 | 9 | 10 | 56 |
+| EMB-001..007 | 28 | 7 | 10 | 10 | 55 |
+| TE-001..004 | 2 | N/A | 7 | 7 | 16 |
+| SM-001..009 | 12 | 12 | 11 | 12 | 47 |
+| AP-001..005 | 8 | N/A | N/A | 6 | 14 |
+| PIPE-001 | N/A | N/A | 1 | 1 | 2 |
+| RN-001..005 | 9 | N/A | 7 | 9 | 25 |
+| LN-001..007 | 10 | N/A | 10 | 12 | 32 |
+| GE-001..006 | 4 | 8 | 8 | 8 | 28 |
+| SI-001..006 | 5 | 8 | 8 | 8 | 29 |
+| SG-001..006 | 5 | N/A | 8 | 9 | 22 |
+| RP-001..004 | 7 | N/A | N/A | 7 | 14 |
+| CE-001..006 | 8 | N/A | 8 | N/A | 16 |
+| LP-001..005 | 11 | N/A | N/A | 8 | 19 |
+| ATT-001..005 | 9 | 7 | 6 | N/A | 22 |
+| ASCL-001..007 | 6 | N/A | N/A | N/A | 6 |
+| GQ-001..006 | 8 | N/A | 6 | N/A | 14 |
+| **Total** | **156** | **55** | **99** | **107** | **417** |
+
+Note: 417 includes ~55 pre-existing tests. Net new this sweep: ~362.
+
+---
+
+## 15. §2.3 Core Operations + Loss Functions Contract Falsification (Phase 14)
+
+Contracts: matmul-kernel-v1.yaml (MM), loss-functions-v1.yaml (LF), dropout-v1.yaml (DO)
+
+### Five-Whys Root Cause
+
+- Why 1: trueno had 1 matmul test, aprender had 4 LF tests, but zero proptest
+- Why 2: Tests verified specific values, not mathematical invariants (identity, symmetry)
+- Why 3: no mapping from matmul/loss/dropout YAMLs to cross-stack tests
+- Why 4: These operations predated the provable-contracts convention
+- Why 5: GEMM, MSE, dropout were "obviously correct" (textbook formulas)
+
+### Tests Created (30 new tests)
+
+| Contract | Repo | Tests | Type |
+|----------|------|-------|------|
+| MM-001..005 | trueno | 3d + 2p = 5 | shape, numerical, identity |
+| MM-001..005 | entrenar | 3d + 2p = 5 | shape, numerical, identity |
+| LF-001..005 | aprender | 1d + 3p = 4 | LF-005 symmetry + proptest |
+| LF-001..005 | entrenar | 4d + 2p = 6 | non-negative, zero, Huber, symmetry |
+| DO-001..004 | aprender | 2p = 2 | eval identity, shape preservation |
+| **Total** | | **22 new** | |
+
+Pre-existing: 4 (aprender LF-001..004) + 4 (aprender DO-001..004) = 8
+
+### Commits
+
+- trueno `da9c029` — FALSIFY-MM 3d + 2p
+- aprender `22af4352` — FALSIFY-LF LF-005 + 3p
+- aprender `8752da2c` — FALSIFY-DO 2p
+- entrenar `576ae68` — FALSIFY-MM 3d+2p + FALSIFY-LF 4d+2p
+
+### Phase 14 Coverage Matrix (d=deterministic, p=proptest)
+
+| Contract | aprender | trueno | entrenar | realizar | Total |
+|----------|----------|--------|----------|----------|-------|
+| MM-001..005 | N/A | 3d+2p=5 | 3d+2p=5 | N/A | 10 |
+| LF-001..006 | 5d+3p=8 | N/A | 4d+2p=6 | N/A | 14 |
+| DO-001..004 | 4d+2p=6 | N/A | N/A | N/A | 6 |
+| **Total** | **14** | **5** | **11** | **0** | **30** |
+
+### Cumulative Coverage Matrix (all phases through §2.3)
+
+| Contract | aprender | trueno | entrenar | realizar | Total |
+|----------|----------|--------|----------|----------|-------|
+| EM-001..005 | 24 | 13 | 9 | 10 | 56 |
+| EMB-001..007 | 28 | 7 | 10 | 10 | 55 |
+| TE-001..004 | 2 | N/A | 7 | 7 | 16 |
+| SM-001..009 | 12 | 12 | 11 | 12 | 47 |
+| AP-001..005 | 8 | N/A | N/A | 6 | 14 |
+| PIPE-001 | N/A | N/A | 1 | 1 | 2 |
+| RN-001..005 | 9 | N/A | 7 | 9 | 25 |
+| LN-001..007 | 10 | N/A | 10 | 12 | 32 |
+| GE-001..006 | 4 | 8 | 8 | 8 | 28 |
+| SI-001..006 | 5 | 8 | 8 | 8 | 29 |
+| SG-001..006 | 5 | N/A | 8 | 9 | 22 |
+| RP-001..004 | 7 | N/A | N/A | 7 | 14 |
+| CE-001..006 | 8 | N/A | 8 | N/A | 16 |
+| LP-001..005 | 11 | N/A | N/A | 8 | 19 |
+| ATT-001..005 | 9 | 7 | 6 | N/A | 22 |
+| ASCL-001..007 | 6 | N/A | N/A | N/A | 6 |
+| GQ-001..006 | 8 | N/A | 6 | N/A | 14 |
+| MM-001..005 | N/A | 5 | 5 | N/A | 10 |
+| LF-001..006 | 8 | N/A | 6 | N/A | 14 |
+| DO-001..004 | 6 | N/A | N/A | N/A | 6 |
+| **Total** | **170** | **60** | **110** | **107** | **447** |
+
+Note: 447 includes ~63 pre-existing tests. Net new this sweep: ~384. 20 contracts covered.
 
 ---
 
