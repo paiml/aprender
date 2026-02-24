@@ -690,7 +690,7 @@ These matches are acceptable and should NOT be treated as violations:
 | embedding-algebra-v1.yaml (EMB-001..007) | 10 tests | N/A | — | — |
 | tied-embeddings-v1.yaml (TE-001..004) | 6 tests | N/A | 1 (L2e) | — |
 
-### Post-Sweep Coverage
+### Post-Sweep Coverage (Phase 1: EM only)
 
 | Contract | aprender | trueno | entrenar | realizar |
 |----------|----------|--------|----------|----------|
@@ -698,11 +698,43 @@ These matches are acceptable and should NOT be treated as violations:
 | EMB-001..007 | 10 tests ✅ | N/A | E7a (non-zero) ✅ | — |
 | TE-001..004 | 6 tests ✅ | N/A | L2e (tied logits) ✅ | ArchConstraints ✅ |
 
+### Phase 2: EMB/TE Cross-Stack Sweep
+
+**Five-Whys (EMB/TE gaps)**:
+1. **Why**: trueno/entrenar/realizar had 0 FALSIFY-EMB-* and 0 FALSIFY-TE-* tests
+2. **Why**: Phase 1 focused only on EM (embedding-lookup-v1.yaml), not EMB or TE
+3. **Why**: EMB-003 (tied weights), EMB-006/007 (temperature), TE-001..004 are model-level concerns
+4. **Why**: No systematic matrix mapped "which contract claim applies to which repo"
+5. **Why**: Cross-stack falsification was attempted for the first time in PMAT-354
+
+**Gap analysis**: 14 missing tests identified (1 trueno + 8 entrenar + 5 realizar)
+
+| Repo | File(s) | New Tests | Contract IDs |
+|------|---------|-----------|--------------|
+| trueno | `embedding_contract_falsify.rs` | 2 | EMB-005 (non-zero output, per-row non-zero) |
+| entrenar | `embedding.rs`, `loss.rs`, `model.rs` | 8 | EMB-003 (tied sharing), EMB-005 (non-zero), EMB-006 (temp identity), EMB-007 (temp monotonicity), TE-001 (output shape), TE-003 (no extra params), TE-004 (finite output) |
+| realizar | `matmul_tests.rs` | 6 | EMB-003 (tied dim match), EMB-005 (non-zero), EMB-006 (temp identity argmax), EMB-007 (temp monotonicity), TE-001 (lm_head shape), TE-004 (lm_head finite) |
+
+### Final Coverage Matrix
+
+| Contract | aprender | trueno | entrenar | realizar | Total |
+|----------|----------|--------|----------|----------|-------|
+| EM-001..005 | 8 ✅ | 12 ✅ | 5 ✅ | 7 ✅ | 32 |
+| EMB-001..007 | 10 ✅ | 2 ✅ | 4 ✅ | 4 ✅ | 20 |
+| TE-001..004 | 6 ✅ | N/A | 3 ✅ | 2 ✅ | 11 |
+| **Total** | **24** | **14** | **12** | **13** | **63** |
+
 ### Commits
 
+**Phase 1 (EM sweep)**:
 - trueno `3d0edc8` — FALSIFY-EM-001..005 (12 tests)
 - entrenar `6b600a2` — FALSIFY-EM-001..005 forward path (5 tests)
 - realizar `a201d32` — FALSIFY-EM-001..005 embed/embed_into (7 tests)
+
+**Phase 2 (EMB/TE sweep)**:
+- trueno `ab94fc6` — FALSIFY-EMB-005 non-zero (2 tests)
+- entrenar `404de25` — FALSIFY-EMB-003/005/006/007 + TE-001/003/004 (8 tests)
+- realizar `2d0c8cd` — FALSIFY-EMB-003/005/006/007 + TE-001/004 (6 tests)
 
 ---
 
@@ -714,3 +746,4 @@ These matches are acceptable and should NOT be treated as violations:
 4. Floyd, R.W. (1967). "Assigning Meanings to Programs." *Proc. Am. Math. Soc. Symp. in Applied Math.*, 19, 19-31.
 5. Mikolov, T. et al. (2013). "Efficient Estimation of Word Representations in Vector Space." *ICLR*.
 6. Press, O. & Wolf, L. (2017). "Using the Output Embedding to Improve Language Models." *EACL*.
+7. Hinton, G. et al. (2015). "Distilling the Knowledge in a Neural Network." *NIPS Workshop*.
