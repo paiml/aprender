@@ -797,13 +797,13 @@ These matches are acceptable and should NOT be treated as violations:
 
 | Contract | aprender | trueno | entrenar | realizar | Total |
 |----------|----------|--------|----------|----------|-------|
-| EM-001..005 | 15+5p ✅ | 12 ✅ | 6 ✅ | 7 ✅ | 45 |
-| EMB-001..007 | 24+2p ✅ | 5 ✅ | 7 ✅ | 7 ✅ | 45 |
+| EM-001..005 | 15+5p ✅ | 12+1p ✅ | 6 ✅ | 7 ✅ | 46 |
+| EMB-001..007 | 24+4p ✅ | 5+2p ✅ | 7 ✅ | 7 ✅ | 49 |
 | TE-001..004 | 6 ✅ | N/A | 4 ✅ | 4 ✅ | 14 |
 | SM-001..009 | 9+3p ✅ | 9+2p ✅ | 8+2p ✅ | 9+2p ✅ | 44 |
 | AP-001..005 | 5+3p ✅ | N/A | N/A | 4 ✅ | 12 |
 | PIPE-001 | N/A | N/A | 1 ✅ | 1 ✅ | 2 |
-| **Total** | **72** | **28** | **28** | **34** | **162** |
+| **Total** | **74** | **31** | **28** | **34** | **167** |
 
 Legend: `+Np` = N proptest (property-based) variants alongside deterministic tests.
 
@@ -879,6 +879,8 @@ Our implementation extends to SM-001..009 with the following mapping:
 - entrenar — FALSIFY-SM-001/002-prop (2 proptest: random vector normalization+positivity)
 - realizar `e544198` — FALSIFY-SM-001/002-prop (2 proptest: random vector normalization+positivity)
 - aprender `4678120e` — FALSIFY-AP-001/002/003-prop (3 proptest: random dim position encoding)
+- aprender `475cc736` — FALSIFY-EMB-006/007-prop (2 proptest: temperature identity+monotonicity)
+- trueno `af30d15` — FALSIFY-EM-001/EMB-001/EMB-004-prop (3 proptest: random dim/index embedding)
 
 ---
 
