@@ -761,12 +761,26 @@ These matches are acceptable and should NOT be treated as violations:
 | EM-001..005 | 15 ✅ | 12 ✅ | 6 ✅ | 7 ✅ | 40 |
 | EMB-001..007 | 24 ✅ | 5 ✅ | 4 ✅ | 4 ✅ | 37 |
 | TE-001..004 | 6 ✅ | N/A | 4 ✅ | 4 ✅ | 14 |
-| SM-001..007 | 8 ✅ | 7 ✅ | 7 ✅ | 7 ✅ | 29 |
+| SM-001..009 | 9 ✅ | 9 ✅ | 8 ✅ | 9 ✅ | 35 |
 | AP-001..004 | 5 ✅ | N/A | N/A | 4 ✅ | 9 |
-| **Total** | **58** | **24** | **21** | **26** | **129** |
+| **Total** | **59** | **26** | **22** | **28** | **135** |
 
-SM-007 (translation invariance σ(x+c)=σ(x)) extends the YAML contract by testing
-proof obligation SM-INV-003, which was previously uncovered across the entire stack.
+#### SM Naming Convention
+
+The YAML defines SM-001..006 as FALSIFY tests and SM-INV-003 as a proof obligation.
+Our implementation extends to SM-001..009 with the following mapping:
+
+| Our ID | YAML ID | Property |
+|--------|---------|----------|
+| SM-001 | SM-001 | Normalization (sum to 1) |
+| SM-002 | SM-002 | Strict positivity |
+| SM-003 | SM-003 | Order preservation (argmax) |
+| SM-004 | SM-BND-001 | Bounded output [0,1] (N-10: IEEE 754 makes it closed) |
+| SM-005 | — | Numerical stability (extreme inputs) |
+| SM-006 | SM-006 | Identical elements → uniform |
+| SM-007 | SM-INV-003 | Translation invariance σ(x+c)=σ(x) |
+| SM-008 | SM-004 | SIMD-scalar equivalence within 8 ULP |
+| SM-009 | SM-005 | Single element boundary: softmax([x])=[1.0] |
 
 ### Commits
 
