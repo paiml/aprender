@@ -380,60 +380,33 @@ impl Default for SpecialTokens {
 
 ---
 
-## 4. Three Missing Provable Contracts
+## 4. Three Missing Provable Contracts — ALL CLOSED
 
-The `provable-contracts/` repository has 89 YAML contracts (26 kernel, 20 architecture, 16 ML, 8 time-series, 9 data/format, 4 E2E). Three critical gaps:
+The `provable-contracts/` repository has 89 YAML contracts (26 kernel, 20 architecture, 16 ML, 8 time-series, 9 data/format, 4 E2E). All three gaps are now closed:
 
-### Gap 1: `special-tokens-registry-v1.yaml` — MISSING
+### Gap 1: `special-tokens-registry-v1.yaml` — CLOSED (PMAT-336)
 
-No contract maps architecture to BOS/EOS/PAD token IDs. This is WHY token IDs are hardcoded across 30+ sites.
+**Status**: IMPLEMENTED — `contracts/special-tokens-registry-v1.yaml`
+**Falsification**: `src/format/special_tokens_contract_falsify.rs` (FALSIFY-ST-001..006)
+**Commit**: `b5fcd84e`
 
-**Required content**:
-```yaml
-architectures:
-  qwen2:
-    bos_token_id: 151643
-    eos_token_id: 151645
-    pad_token_id: 151643
-  llama:
-    bos_token_id: 128000
-    eos_token_id: 128001
-    pad_token_id: 128001
-  mistral:
-    bos_token_id: 1
-    eos_token_id: 2
-    pad_token_id: 0
-  # ... every supported architecture
-```
+9 model families, 14 architecture mappings, 6 falsification tests verifying Rust ↔ YAML parity.
 
-### Gap 2: `model-metadata-bounds-v1.yaml` — MISSING
+### Gap 2: `model-metadata-bounds-v1.yaml` — CLOSED (PMAT-337)
 
-No contract defines valid ranges for model dimensions, rope_theta, or epsilon. This is WHY arbitrary defaults are scattered.
+**Status**: IMPLEMENTED — `contracts/model-metadata-bounds-v1.yaml`
+**Falsification**: `src/format/metadata_bounds_contract_falsify.rs` (FALSIFY-MB-001..006)
+**Commit**: `62a80437`
 
-**Required content**:
-```yaml
-fields:
-  hidden_dim:
-    required: true
-    min: 64
-    max: 65536
-    must_be_divisible_by: num_heads
-  vocab_size:
-    required: true
-    min: 100
-    max: 1000000
-  rope_theta:
-    required: false
-    default_by_architecture:
-      qwen2: 1000000.0
-      llama: 10000.0
-      mistral: 10000.0
-      # ...
-```
+7 upper bounds, 2 range bounds, 9 structural invariants. 6 falsification tests verify YAML ↔ Rust parity and all 17 model families satisfy bounds.
 
-### Gap 3: `tokenizer-vocab-v1.yaml` — MISSING
+### Gap 3: `tokenizer-vocab-v1.yaml` — CLOSED (PMAT-338)
 
-No contract ties tokenizer type to vocabulary size and special token mapping.
+**Status**: IMPLEMENTED — `contracts/tokenizer-vocab-v1.yaml`
+**Falsification**: `src/format/tokenizer_vocab_contract_falsify.rs` (FALSIFY-TV-001..006)
+**Commit**: `474ecd60`
+
+Ties together tokenizer type, vocabulary size, and special token IDs. 6 falsification tests cross-check against special-tokens-registry and model-family contracts.
 
 ---
 
@@ -511,12 +484,12 @@ All C-01–C-11 and N-01–N-08 findings fixed. Magic number fallbacks replaced 
 - [x] File GitHub issues for each finding (C-01–C-11: entrenar#82-92, realizar#73-82; N-01–N-08: aprender#324-325, realizar#83-84, entrenar#93, trueno#106)
 - [x] Fix N-01–N-08 gate escapes across 4 repos (aprender, realizar, entrenar, trueno)
 - [x] All issues closed with verified fixes
-- [ ] Create `special-tokens-registry-v1.yaml` with codegen (deferred to Phase 2)
+- [x] Create `special-tokens-registry-v1.yaml` — CLOSED (PMAT-336, `b5fcd84e`)
 
 ### Phase 2: Validated Constructors (Week 2-3)
-- [ ] Create `ValidatedModelConfig` newtype in realizar
+- [x] Create `ValidatedModelConfig` newtype in realizar — DONE (GH-305)
 - [ ] Funnel all `GGUFConfig` construction through single validated path
-- [ ] Create `model-metadata-bounds-v1.yaml` with codegen
+- [x] Create `model-metadata-bounds-v1.yaml` — CLOSED (PMAT-337, `62a80437`)
 - [ ] Replace all `.unwrap_or(dimension)` with `ok_or_else()?`
 
 ### Phase 3: Kernel Contract Enforcement (Week 4)
@@ -525,7 +498,7 @@ All C-01–C-11 and N-01–N-08 findings fixed. Magic number fallbacks replaced 
 - [ ] Deprecate colmajor kernel exports with `#[deprecated]`
 
 ### Phase 4: Full Provability (Week 5-6)
-- [ ] Create `tokenizer-vocab-v1.yaml`
+- [x] Create `tokenizer-vocab-v1.yaml` — CLOSED (PMAT-338, `474ecd60`)
 - [ ] Create `chat-template-semantics-v1.yaml`
 - [ ] Audit all 110 findings resolved
 - [ ] Add CI gate: `grep -r "unwrap_or(151" src/` must return zero matches
