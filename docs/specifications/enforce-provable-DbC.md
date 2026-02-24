@@ -659,9 +659,58 @@ These matches are acceptable and should NOT be treated as violations:
 
 ---
 
+## 10. Cross-Stack §2.1.1 Embedding Falsification Sweep (PMAT-354)
+
+**Date**: 2026-02-24
+**Scope**: embedding-lookup-v1.yaml FALSIFY-EM-001..005 across trueno, entrenar, realizar
+
+### Five-Whys Root Cause
+
+1. **Why**: Each repo had embedding unit tests but zero FALSIFY-EM-* tagged tests
+2. **Why**: Unit tests verify API examples, not provable-contract YAML claims
+3. **Why**: No mapping from embedding-lookup-v1.yaml to each repo's test names
+4. **Why**: Repos predate the provable-contracts YAML convention
+5. **Why**: Embedding lookup was "obviously correct" (simple slice copy) so no formal contracts existed
+
+**Root cause**: Provable-contract YAMLs define formal claims but no cross-repo enforcement ensured each repo's embedding implementation has matching FALSIFY tests.
+
+### Tests Created (24 new tests across 3 repos)
+
+| Repo | File | Count | Key Properties |
+|------|------|-------|----------------|
+| trueno | `src/matrix/tests/property_tests/embedding_contract_falsify.rs` | 12 | Output shape (single/batch/empty), OOB error/boundary/mixed, determinism/repeated index, finite output/no NaN, value correctness |
+| entrenar | `src/transformer/embedding.rs` (inline tests) | 5 | Forward output shape, empty input, forward determinism, finite output, value correctness |
+| realizar | `src/gguf/inference/matmul_tests.rs` (appended) | 7 | Embed output shape/empty, OOB→zeros (N-09), boundary token, determinism, finite output, embed vs embed_into consistency |
+
+### Prior Coverage (existed before this sweep)
+
+| Contract | aprender | trueno | entrenar | realizar |
+|----------|----------|--------|----------|----------|
+| embedding-lookup-v1.yaml (EM-001..004) | 8 tests | 9 functional (no tags) | 2 (E7a, E7d) | 5 functional (no tags) |
+| embedding-algebra-v1.yaml (EMB-001..007) | 10 tests | N/A | — | — |
+| tied-embeddings-v1.yaml (TE-001..004) | 6 tests | N/A | 1 (L2e) | — |
+
+### Post-Sweep Coverage
+
+| Contract | aprender | trueno | entrenar | realizar |
+|----------|----------|--------|----------|----------|
+| EM-001..005 | 8 tests ✅ | 12 FALSIFY-EM ✅ | 5 FALSIFY-EM + 5 E7 ✅ | 7 FALSIFY-EM + 5 unit ✅ |
+| EMB-001..007 | 10 tests ✅ | N/A | E7a (non-zero) ✅ | — |
+| TE-001..004 | 6 tests ✅ | N/A | L2e (tied logits) ✅ | ArchConstraints ✅ |
+
+### Commits
+
+- trueno `3d0edc8` — FALSIFY-EM-001..005 (12 tests)
+- entrenar `6b600a2` — FALSIFY-EM-001..005 forward path (5 tests)
+- realizar `a201d32` — FALSIFY-EM-001..005 embed/embed_into (7 tests)
+
+---
+
 ## References
 
 1. Meyer, B. (1992). "Applying 'Design by Contract'." *IEEE Computer*, 25(10), 40-51.
 2. Meyer, B. (1988). *Object-Oriented Software Construction*. Prentice Hall.
 3. Hoare, C.A.R. (1969). "An Axiomatic Basis for Computer Programming." *Comm. ACM*, 12(10), 576-580.
 4. Floyd, R.W. (1967). "Assigning Meanings to Programs." *Proc. Am. Math. Soc. Symp. in Applied Math.*, 19, 19-31.
+5. Mikolov, T. et al. (2013). "Efficient Estimation of Word Representations in Vector Space." *ICLR*.
+6. Press, O. & Wolf, L. (2017). "Using the Output Embedding to Improve Language Models." *EACL*.
