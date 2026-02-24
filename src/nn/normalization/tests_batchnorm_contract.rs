@@ -108,3 +108,64 @@ fn falsify_bn_006_batch_size_one() {
         );
     }
 }
+
+mod bn_proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// FALSIFY-BN-001-prop: Training standardization — per-channel mean ≈ 0
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(30))]
+
+        #[test]
+        fn falsify_bn_001_prop_training_standardization(
+            n_features in 1..=8usize,
+            seed in 0..500u32,
+        ) {
+            let batch = 8;
+            let norm = BatchNorm1d::new(n_features);
+            let data: Vec<f32> = (0..batch * n_features)
+                .map(|i| ((i as f32 + seed as f32) * 0.37).sin() * 10.0)
+                .collect();
+            let x = Tensor::new(&data, &[batch, n_features]);
+            let y = norm.forward(&x);
+            let y_data = y.data();
+
+            for c in 0..n_features {
+                let mean: f32 = (0..batch).map(|b| y_data[b * n_features + c]).sum::<f32>()
+                    / batch as f32;
+                prop_assert!(
+                    mean.abs() < 0.1,
+                    "FALSIFIED BN-001-prop: channel {} mean={} for n_features={}, seed={}",
+                    c, mean, n_features, seed
+                );
+            }
+        }
+    }
+
+    /// FALSIFY-BN-002-prop: Denominator safety — finite output for constant channels
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(30))]
+
+        #[test]
+        fn falsify_bn_002_prop_denominator_safety(
+            constant_val in -100.0f32..100.0,
+            n_features in 1..=4usize,
+        ) {
+            let batch = 4;
+            let norm = BatchNorm1d::new(n_features);
+            // All channels have constant value
+            let data: Vec<f32> = vec![constant_val; batch * n_features];
+            let x = Tensor::new(&data, &[batch, n_features]);
+            let y = norm.forward(&x);
+
+            for (i, &val) in y.data().iter().enumerate() {
+                prop_assert!(
+                    val.is_finite(),
+                    "FALSIFIED BN-002-prop: output[{}]={} for constant={}",
+                    i, val, constant_val
+                );
+            }
+        }
+    }
+}

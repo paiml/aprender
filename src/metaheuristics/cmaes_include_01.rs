@@ -165,3 +165,7 @@ impl PerturbativeMetaheuristic for CmaEs {
 #[cfg(test)]
 #[path = "cmaes_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "tests_cmaes_contract.rs"]
+mod tests_cmaes_contract;
