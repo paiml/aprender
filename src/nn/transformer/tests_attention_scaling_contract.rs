@@ -190,3 +190,111 @@ fn falsify_ascl_007_entropy_upper_bound() {
         }
     }
 }
+
+mod ascl_proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// FALSIFY-ASCL-003-prop: Entropy non-negative for random attention weights
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(100))]
+
+        #[test]
+        fn falsify_ascl_003_prop_entropy_non_negative(
+            kv_len in 2..=8usize,
+            seed in 0..1000u32,
+        ) {
+            let d_model = 16;
+            let heads = 2;
+            let mha = MultiHeadAttention::new(d_model, heads);
+
+            let q_data: Vec<f32> = (0..1 * 3 * d_model)
+                .map(|i| ((i as f32 + seed as f32) * 0.03).sin())
+                .collect();
+            let k_data: Vec<f32> = (0..1 * kv_len * d_model)
+                .map(|i| ((i as f32 + seed as f32) * 0.07).cos())
+                .collect();
+
+            let q = Tensor::new(&q_data, &[1, 3, d_model]);
+            let k = Tensor::new(&k_data, &[1, kv_len, d_model]);
+            let v = Tensor::ones(&[1, kv_len, d_model]);
+
+            let (_, attn_weights) = mha.forward_qkv(&q, &k, &v, None);
+            let w_data = attn_weights.data();
+            let w_shape = attn_weights.shape();
+
+            let h = w_shape[1];
+            let q_len = w_shape[2];
+            let kv = w_shape[3];
+
+            for hi in 0..h {
+                for qi in 0..q_len {
+                    let start = hi * q_len * kv + qi * kv;
+                    let entropy: f32 = (0..kv)
+                        .map(|j| {
+                            let p = w_data[start + j];
+                            if p > 1e-10 { -p * p.ln() } else { 0.0 }
+                        })
+                        .sum();
+                    prop_assert!(
+                        entropy >= -1e-6,
+                        "FALSIFIED ASCL-003-prop: H(attn[0][{}][{}]) = {} < 0",
+                        hi, qi, entropy
+                    );
+                }
+            }
+        }
+    }
+
+    /// FALSIFY-ASCL-007-prop: Entropy upper bound for random kv_len
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(100))]
+
+        #[test]
+        fn falsify_ascl_007_prop_entropy_upper_bound(
+            kv_len in 2..=16usize,
+            seed in 0..1000u32,
+        ) {
+            let d_model = 16;
+            let heads = 2;
+            let mha = MultiHeadAttention::new(d_model, heads);
+
+            let q_data: Vec<f32> = (0..1 * 2 * d_model)
+                .map(|i| ((i as f32 + seed as f32) * 0.03).sin())
+                .collect();
+            let k_data: Vec<f32> = (0..1 * kv_len * d_model)
+                .map(|i| ((i as f32 + seed as f32) * 0.07).cos())
+                .collect();
+
+            let q = Tensor::new(&q_data, &[1, 2, d_model]);
+            let k = Tensor::new(&k_data, &[1, kv_len, d_model]);
+            let v = Tensor::ones(&[1, kv_len, d_model]);
+
+            let (_, attn_weights) = mha.forward_qkv(&q, &k, &v, None);
+            let w_data = attn_weights.data();
+            let w_shape = attn_weights.shape();
+
+            let h = w_shape[1];
+            let q_len = w_shape[2];
+            let kv = w_shape[3];
+            let max_entropy = (kv as f32).ln();
+
+            for hi in 0..h {
+                for qi in 0..q_len {
+                    let start = hi * q_len * kv + qi * kv;
+                    let entropy: f32 = (0..kv)
+                        .map(|j| {
+                            let p = w_data[start + j];
+                            if p > 1e-10 { -p * p.ln() } else { 0.0 }
+                        })
+                        .sum();
+                    prop_assert!(
+                        entropy <= max_entropy + 1e-4,
+                        "FALSIFIED ASCL-007-prop: H = {} > log({}) = {}",
+                        entropy, kv, max_entropy
+                    );
+                }
+            }
+        }
+    }
+}

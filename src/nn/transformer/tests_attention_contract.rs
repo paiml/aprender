@@ -183,6 +183,123 @@ fn falsify_att_005_weights_bounded() {
     }
 }
 
+mod att_proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// FALSIFY-ATT-001-prop: Weight normalization for random Q/K
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(100))]
+
+        #[test]
+        fn falsify_att_001_prop_weight_normalization(
+            seq in 2..=6usize,
+            d_k in (1..=4u32).prop_map(|d| (d * 2) as usize),
+            seed in 0..1000u32,
+        ) {
+            let q_data: Vec<f32> = (0..seq * d_k)
+                .map(|i| ((i as f32 + seed as f32) * 0.37).sin())
+                .collect();
+            let k_data: Vec<f32> = (0..seq * d_k)
+                .map(|i| ((i as f32 + seed as f32) * 0.73).cos())
+                .collect();
+            let v_data = vec![1.0; seq * d_k];
+
+            let q = Tensor::new(&q_data, &[1, 1, seq, d_k]);
+            let k = Tensor::new(&k_data, &[1, 1, seq, d_k]);
+            let v = Tensor::new(&v_data, &[1, 1, seq, d_k]);
+
+            let (_, attn_weights) = scaled_dot_product_attention(&q, &k, &v, None, 0.0, false);
+            let data = attn_weights.data();
+
+            for i in 0..seq {
+                let row_sum: f32 = (0..seq).map(|j| data[i * seq + j]).sum();
+                prop_assert!(
+                    (row_sum - 1.0).abs() < 1e-4,
+                    "FALSIFIED ATT-001-prop: row {} sum = {}, expected 1.0",
+                    i, row_sum
+                );
+            }
+        }
+    }
+
+    /// FALSIFY-ATT-005-prop: Weights bounded in (0, 1)
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(100))]
+
+        #[test]
+        fn falsify_att_005_prop_weights_bounded(
+            seq in 2..=6usize,
+            seed in 0..1000u32,
+        ) {
+            let d_k = 4;
+            let q_data: Vec<f32> = (0..seq * d_k)
+                .map(|i| ((i as f32 + seed as f32) * 0.37).sin())
+                .collect();
+            let k_data: Vec<f32> = (0..seq * d_k)
+                .map(|i| ((i as f32 + seed as f32) * 0.73).cos())
+                .collect();
+            let v_data = vec![1.0; seq * d_k];
+
+            let q = Tensor::new(&q_data, &[1, 1, seq, d_k]);
+            let k = Tensor::new(&k_data, &[1, 1, seq, d_k]);
+            let v = Tensor::new(&v_data, &[1, 1, seq, d_k]);
+
+            let (_, attn_weights) = scaled_dot_product_attention(&q, &k, &v, None, 0.0, false);
+            for (i, &w) in attn_weights.data().iter().enumerate() {
+                prop_assert!(
+                    w > 0.0 && w < 1.0 + 1e-6,
+                    "FALSIFIED ATT-005-prop: weight[{}] = {} outside (0,1)",
+                    i, w
+                );
+            }
+        }
+    }
+
+    /// FALSIFY-ATT-002-prop: Output convexity for random V
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(100))]
+
+        #[test]
+        fn falsify_att_002_prop_output_convexity(
+            seed in 0..1000u32,
+        ) {
+            let seq = 3;
+            let d_v = 4;
+            let q_data: Vec<f32> = (0..seq * d_v)
+                .map(|i| ((i as f32 + seed as f32) * 0.37).sin())
+                .collect();
+            let k_data: Vec<f32> = (0..seq * d_v)
+                .map(|i| ((i as f32 + seed as f32) * 0.73).cos())
+                .collect();
+            let v_data: Vec<f32> = (0..seq * d_v)
+                .map(|i| ((i as f32 + seed as f32) * 1.23).sin() * 5.0)
+                .collect();
+
+            let q = Tensor::new(&q_data, &[1, 1, seq, d_v]);
+            let k = Tensor::new(&k_data, &[1, 1, seq, d_v]);
+            let v = Tensor::new(&v_data, &[1, 1, seq, d_v]);
+
+            let (output, _) = scaled_dot_product_attention(&q, &k, &v, None, 0.0, false);
+            let out = output.data();
+
+            for d in 0..d_v {
+                let v_min = (0..seq).map(|j| v_data[j * d_v + d]).fold(f32::INFINITY, f32::min);
+                let v_max = (0..seq).map(|j| v_data[j * d_v + d]).fold(f32::NEG_INFINITY, f32::max);
+
+                for i in 0..seq {
+                    let val = out[i * d_v + d];
+                    prop_assert!(
+                        val >= v_min - 1e-4 && val <= v_max + 1e-4,
+                        "FALSIFIED ATT-002-prop: output[{}][{}] = {} outside V [{}, {}]",
+                        i, d, val, v_min, v_max
+                    );
+                }
+            }
+        }
+    }
+}
+
 /// FALSIFY-ATT-002b: Uniform V identity — output equals V when all V rows identical
 #[test]
 fn falsify_att_002b_uniform_v_identity() {
