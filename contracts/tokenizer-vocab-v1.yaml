@@ -1,0 +1,269 @@
+# Tokenizer-Vocabulary Contract v1.0.0
+# THE SOURCE OF TRUTH for tokenizer type, vocabulary size, and special token
+# consistency per model family.
+#
+# This contract ties together three things that must be consistent:
+#   1. Tokenizer type (BPE, SentencePiece, WordPiece)
+#   2. Vocabulary size
+#   3. Special token IDs (cross-referenced with special-tokens-registry-v1.yaml)
+#
+# ENFORCEMENT: src/format/tokenizer_vocab_contract_falsify.rs (FALSIFY-TV-001..006)
+# CROSS-REFERENCES:
+#   - contracts/special-tokens-registry-v1.yaml (token IDs)
+#   - contracts/model-families/*.yaml (size-variant vocab_size)
+#   - src/demo/mod.rs (SpecialTokens constructors)
+#   - src/text/bpe/mod.rs (BpeConfig constructors)
+
+metadata:
+  version: "1.0.0"
+  created: "2026-02-24"
+  author: "PAIML Engineering"
+  description: "Tokenizer type and vocabulary size registry per model family"
+  references:
+    - "contracts/special-tokens-registry-v1.yaml (token IDs)"
+    - "contracts/model-families/*.yaml (size-variant configs)"
+    - "PMAT-337: Gap 3 identification"
+    - "Sennrich et al. (2016). Neural Machine Translation of Rare Words with Subword Units"
+    - "Kudo & Richardson (2018). SentencePiece: A simple and language independent subword tokenizer"
+
+# =============================================================================
+# TOKENIZER TYPES
+# =============================================================================
+#
+# Each entry describes a tokenizer family and its characteristics.
+
+tokenizer_types:
+
+  bpe:
+    display_name: "Byte Pair Encoding (GPT-2 style)"
+    description: "Byte-level BPE with pre-tokenization regex and merge table"
+    byte_level: true
+    requires_merges: true
+    examples: ["qwen2", "gpt2", "phi2"]
+
+  sentencepiece:
+    display_name: "SentencePiece (Unigram/BPE)"
+    description: "Google SentencePiece toolkit — unigram LM or BPE variant"
+    byte_level: false
+    requires_merges: false
+    examples: ["llama", "mistral", "gemma"]
+
+  wordpiece:
+    display_name: "WordPiece"
+    description: "BERT-style subword tokenization with ## prefix for continuations"
+    byte_level: false
+    requires_merges: false
+    examples: ["bert"]
+
+# =============================================================================
+# FAMILY REGISTRY
+# =============================================================================
+#
+# Each entry maps a model family to its tokenizer configuration.
+# vocab_size is the canonical size for the family (all size variants share it
+# unless explicitly noted).
+#
+# Special token IDs must match special-tokens-registry-v1.yaml exactly.
+
+families:
+
+  qwen2:
+    tokenizer_type: bpe
+    vocab_size: 151936
+    shared_by: ["qwen2", "qwen3", "qwen3moe"]
+    bpe_config: "BpeConfig::qwen2()"
+    special_tokens:
+      bos_id: 151643
+      eos_id: 151645
+      pad_id: 151643
+      im_start_id: 151644
+      im_end_id: 151645
+    notes: "Qwen2 and Qwen3 share exact same tokenizer and vocab"
+
+  qwen3_5:
+    tokenizer_type: bpe
+    vocab_size: 248320
+    shared_by: ["qwen3_5"]
+    bpe_config: null
+    special_tokens:
+      bos_id: 0
+      eos_id: 248044
+      pad_id: 0
+      im_start_id: 0
+      im_end_id: 0
+    notes: "New tokenizer, much larger vocab than Qwen2. BOS/PAD not used."
+
+  llama:
+    tokenizer_type: sentencepiece
+    vocab_size: 128256
+    shared_by: ["llama"]
+    bpe_config: "BpeConfig::llama()"
+    special_tokens:
+      bos_id: 128000
+      eos_id: 128001
+      pad_id: 128001
+      im_start_id: 0
+      im_end_id: 0
+    notes: "LLaMA 3 uses header-based chat format, not ChatML"
+
+  mistral:
+    tokenizer_type: sentencepiece
+    vocab_size: 32000
+    shared_by: ["mistral"]
+    bpe_config: "BpeConfig::llama()"
+    special_tokens:
+      bos_id: 1
+      eos_id: 2
+      pad_id: 0
+      im_start_id: 0
+      im_end_id: 0
+    notes: "Standard SentencePiece. BOS=1, EOS=2."
+
+  gemma:
+    tokenizer_type: sentencepiece
+    vocab_size: 256000
+    shared_by: ["gemma", "gemma2"]
+    bpe_config: null
+    special_tokens:
+      bos_id: 2
+      eos_id: 1
+      pad_id: 0
+      im_start_id: 0
+      im_end_id: 0
+    notes: "BOS=2, EOS=1 (reversed from standard SentencePiece convention)"
+
+  deepseek:
+    tokenizer_type: sentencepiece
+    vocab_size: 102400
+    shared_by: ["deepseek", "deepseek2"]
+    bpe_config: null
+    special_tokens:
+      bos_id: 0
+      eos_id: 1
+      pad_id: 0
+      im_start_id: 0
+      im_end_id: 0
+    notes: "BOS not used. Minimal special tokens. V2 vocab=102400; V3=129280 (future)."
+
+  phi3:
+    tokenizer_type: sentencepiece
+    vocab_size: 32064
+    shared_by: ["phi3"]
+    bpe_config: null
+    special_tokens:
+      bos_id: 1
+      eos_id: 32000
+      pad_id: 32000
+      im_start_id: 0
+      im_end_id: 0
+    notes: "EOS at 32000 (just past SentencePiece standard range)"
+
+  phi2:
+    tokenizer_type: bpe
+    vocab_size: 51200
+    shared_by: ["phi", "phi2"]
+    bpe_config: null
+    special_tokens:
+      bos_id: 0
+      eos_id: 50256
+      pad_id: 50256
+      im_start_id: 0
+      im_end_id: 0
+    notes: "GPT-2 tokenizer. No explicit BOS."
+
+  gpt2:
+    tokenizer_type: bpe
+    vocab_size: 50257
+    shared_by: ["gpt2"]
+    bpe_config: "BpeConfig::gpt2()"
+    special_tokens:
+      bos_id: 0
+      eos_id: 50256
+      pad_id: 50256
+      im_start_id: 0
+      im_end_id: 0
+    notes: "Original GPT-2 tokenizer. No explicit BOS."
+
+# =============================================================================
+# INVARIANTS
+# =============================================================================
+
+invariants:
+
+  - id: TV-001
+    rule: "special_tokens match special-tokens-registry-v1.yaml exactly"
+    severity: ERROR
+    rationale: "Two sources of truth for the same data must agree"
+
+  - id: TV-002
+    rule: "vocab_size matches special-tokens-registry-v1.yaml"
+    severity: ERROR
+    rationale: "Vocab size determines embedding table dimensions"
+
+  - id: TV-003
+    rule: "All non-zero special token IDs < vocab_size"
+    severity: ERROR
+    rationale: "Token ID >= vocab_size causes embedding lookup OOB"
+
+  - id: TV-004
+    rule: "eos_id is non-zero for all generative model families"
+    severity: ERROR
+    rationale: "Model without EOS will never stop generating"
+
+  - id: TV-005
+    rule: "vocab_size matches at least one size variant in model-families/*.yaml"
+    severity: ERROR
+    rationale: "Tokenizer contract must agree with model family contract"
+
+  - id: TV-006
+    rule: "Every tokenizer_type referenced by a family exists in tokenizer_types section"
+    severity: ERROR
+    rationale: "No dangling references to undefined tokenizer types"
+
+# =============================================================================
+# FALSIFICATION TESTS
+# =============================================================================
+
+falsification_tests:
+
+  - id: FALSIFY-TV-001
+    rule: "Special tokens match special-tokens-registry-v1.yaml"
+    prediction: "For each family, all 5 token IDs in tokenizer-vocab == special-tokens-registry"
+    status: "IMPLEMENTED"
+    implementation: "src/format/tokenizer_vocab_contract_falsify.rs"
+    if_fails: "Two contracts diverged — one was updated without the other"
+
+  - id: FALSIFY-TV-002
+    rule: "Vocab size matches special-tokens-registry-v1.yaml"
+    prediction: "For each family, vocab_size in tokenizer-vocab == vocab_size in special-tokens-registry"
+    status: "IMPLEMENTED"
+    implementation: "src/format/tokenizer_vocab_contract_falsify.rs"
+    if_fails: "Vocab size changed in one contract but not the other"
+
+  - id: FALSIFY-TV-003
+    rule: "Vocab size matches at least one model-family size variant"
+    prediction: "For each family, at least one size variant has matching vocab_size"
+    status: "IMPLEMENTED"
+    implementation: "src/format/tokenizer_vocab_contract_falsify.rs"
+    if_fails: "Tokenizer vocab contract disagrees with model family dimensions"
+
+  - id: FALSIFY-TV-004
+    rule: "All tokenizer_type references are valid"
+    prediction: "Every family references a tokenizer_type that exists in tokenizer_types section"
+    status: "IMPLEMENTED"
+    implementation: "src/format/tokenizer_vocab_contract_falsify.rs"
+    if_fails: "New family added with unknown tokenizer type"
+
+  - id: FALSIFY-TV-005
+    rule: "Token IDs within vocab bounds (cross-check)"
+    prediction: "For each family, all non-zero token IDs < vocab_size"
+    status: "IMPLEMENTED"
+    implementation: "src/format/tokenizer_vocab_contract_falsify.rs"
+    if_fails: "Token ID >= vocab_size — embedding lookup would OOB"
+
+  - id: FALSIFY-TV-006
+    rule: "Family count parity with special-tokens-registry"
+    prediction: "Number of families in tokenizer-vocab == special-tokens-registry"
+    status: "IMPLEMENTED"
+    implementation: "src/format/tokenizer_vocab_contract_falsify.rs"
+    if_fails: "Family added to one contract but not the other"

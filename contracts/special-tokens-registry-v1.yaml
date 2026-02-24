@@ -110,13 +110,13 @@ families:
 
   deepseek:
     display_name: "DeepSeek V2/V3"
-    vocab_size: 129280
+    vocab_size: 102400
     bos_id: 0             # null in config
     eos_id: 1
     pad_id: 0             # null in config
     im_start_id: 0
     im_end_id: 0
-    notes: "BOS not used. Minimal special tokens."
+    notes: "BOS not used. Minimal special tokens. V2=102400; V3=129280 tracked separately."
 
   phi3:
     display_name: "Microsoft Phi-3 / Phi-3.5"

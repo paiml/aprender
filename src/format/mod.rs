@@ -180,6 +180,10 @@ mod special_tokens_contract_falsify;
 #[cfg(test)]
 mod metadata_bounds_contract_falsify;
 
+// Tokenizer-vocabulary contract falsification (FALSIFY-TV-001..006)
+#[cfg(test)]
+mod tokenizer_vocab_contract_falsify;
+
 // Digital signatures (spec §4.2, PMAT-198)
 #[cfg(feature = "format-signing")]
 pub mod signing;
