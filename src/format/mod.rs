@@ -161,6 +161,11 @@ pub mod layout_contract;
 // See: contracts/tensor-layout-v1.yaml §type_enforcement
 pub mod validated_tensors;
 
+// Validated Classification Types - Classification Fine-Tuning Contract
+// Poka-Yoke types for classifier logits, labels, and weights.
+// See: contracts/classification-finetune-v1.yaml
+pub mod validated_classification;
+
 // Model Family Contract Types (PMAT-241)
 // Compiler-enforced model family contracts: trait, config types, registry.
 // See: contracts/model-families/*.yaml and
@@ -277,6 +282,11 @@ pub use layout_contract::{
 pub use validated_tensors::{
     ContractValidationError, RowMajor, TensorStats as ValidatedTensorStats, ValidatedEmbedding,
     ValidatedVector, ValidatedWeight,
+};
+
+// Re-export validated classification types (classification-finetune-v1 contract)
+pub use validated_classification::{
+    ValidatedClassLogits, ValidatedClassifierWeight, ValidatedSafetyLabel,
 };
 
 // Re-export quantization types when feature is enabled

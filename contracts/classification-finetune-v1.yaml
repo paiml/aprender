@@ -1,0 +1,279 @@
+# Classification Fine-Tuning Contract v1.0.0
+# THE SOURCE OF TRUTH for classification head validation and fine-tuning invariants
+#
+# STATUS: Authoritative
+# SPEC: docs/specifications/shell-safety-inference.md Section 10 (v2)
+# CONSUMERS:
+#   - aprender/src/format/validated_classification.rs (Poka-Yoke types)
+#   - entrenar/src/finetune/classification.rs (ClassificationHead)
+#   - entrenar/src/finetune/classify_pipeline.rs (training pipeline)
+#   - apr-cli/src/commands/finetune.rs (--task classify dispatch)
+#
+# ENFORCEMENT: Types enforce at compile-time; runtime validation at boundaries.
+
+metadata:
+  version: "1.0.0"
+  created: "2026-02-24"
+  author: "PAIML Engineering"
+  description: "Classification fine-tuning contract for LoRA + classifier head"
+  references:
+    - "shell-safety-inference.md v2.0.0 (bashrs spec)"
+    - "tensor-layout-v1.yaml (parent contract)"
+
+# =============================================================================
+# THEORETICAL FOUNDATION
+# =============================================================================
+#
+# 1. Toyota TPS - Poka-Yoke (mistake-proofing)
+#    Citation: Shingo, S. (1986). Zero Quality Control.
+#    Application: ValidatedClassLogits private constructor prevents invalid shapes.
+#
+# 2. Popperian Falsificationism
+#    Citation: Popper, K. (1959). The Logic of Scientific Discovery.
+#    Application: Each rule has explicit falsification criteria.
+#
+# 3. Type-Driven Development
+#    Citation: Brady, E. (2017). Type-Driven Development with Idris.
+#    Application: ValidatedSafetyLabel bounded enum prevents out-of-range labels.
+
+# =============================================================================
+# TYPE ENFORCEMENT (Poka-Yoke)
+# =============================================================================
+
+type_enforcement:
+  principle: "Poka-Yoke via newtype pattern — invalid classification states unrepresentable"
+
+  validated_types:
+    ValidatedClassLogits:
+      inner: "Vec<f32>"
+      constructor: "fn new(data: Vec<f32>, num_classes: usize) -> Result<Self, ContractError>"
+      invariants:
+        - "data.len() == num_classes"
+        - "num_classes >= 2 (binary classification minimum)"
+        - "no NaN or Inf values"
+      consumers:
+        - "ClassificationHead output"
+        - "CrossEntropyLoss input"
+      note: "Private inner field — ONLY way to get logits is through validated constructor"
+
+    ValidatedSafetyLabel:
+      inner: "SafetyClass"
+      constructor: "fn new(index: usize, num_classes: usize) -> Result<Self, ContractError>"
+      invariants:
+        - "index < num_classes"
+        - "num_classes == 5 for shell safety (SafetyClass::all().len())"
+      consumers:
+        - "Corpus loader label validation"
+        - "Loss computation target"
+
+    ValidatedClassifierWeight:
+      inner: "Vec<f32>"
+      constructor: "fn new(data: Vec<f32>, hidden_size: usize, num_classes: usize) -> Result<Self, ContractError>"
+      invariants:
+        - "data.len() == hidden_size * num_classes"
+        - "hidden_size > 0"
+        - "num_classes >= 2"
+        - "no NaN or Inf values"
+      consumers:
+        - "ClassificationHead linear layer"
+      note: "Validates classifier head weight shape matches model hidden_size"
+
+  compiler_guarantee: |
+    It is IMPOSSIBLE to construct ClassificationHead with mismatched dimensions because:
+    1. ValidatedClassifierWeight::new() validates hidden_size * num_classes shape
+    2. ValidatedClassLogits::new() validates output has exactly num_classes elements
+    3. ValidatedSafetyLabel::new() validates label index < num_classes
+    4. All inner fields are private — no bypass without validated constructor
+
+# =============================================================================
+# CLASSIFICATION INVARIANTS
+# =============================================================================
+
+classification_invariants:
+  forward_pass:
+    - id: F-CLASS-001
+      name: "Logit shape matches num_classes"
+      description: "ClassificationHead output must have exactly num_classes elements"
+      severity: P0
+      critical: true
+
+    - id: F-CLASS-002
+      name: "Label index in bounds"
+      description: "Training label index must be < num_classes"
+      severity: P0
+      critical: true
+
+    - id: F-CLASS-003
+      name: "Softmax sum to one"
+      description: "Softmax of logits must sum to 1.0 (within epsilon=1e-5)"
+      severity: P1
+
+    - id: F-CLASS-004
+      name: "Classifier weight shape"
+      description: "Weight matrix shape must be [hidden_size, num_classes]"
+      severity: P0
+      critical: true
+
+  training:
+    - id: F-CLASS-005
+      name: "Loss finite"
+      description: "CrossEntropyLoss output must be finite (no NaN/Inf)"
+      severity: P0
+
+    - id: F-CLASS-006
+      name: "Gradient flow through LoRA"
+      description: "LoRA A and B matrices must receive non-zero gradients"
+      severity: P1
+
+# =============================================================================
+# SHELL SAFETY DOMAIN
+# =============================================================================
+
+shell_safety:
+  num_classes: 5
+  labels:
+    - index: 0
+      name: "safe"
+      description: "Passes all lint, determinism, and idempotency checks"
+    - index: 1
+      name: "needs-quoting"
+      description: "Variable quoting issues (SC2086-class)"
+    - index: 2
+      name: "non-deterministic"
+      description: "Contains $RANDOM, $$, timestamps, or similar"
+    - index: 3
+      name: "non-idempotent"
+      description: "Missing -p/-f flags (mkdir without -p, rm without -f)"
+    - index: 4
+      name: "unsafe"
+      description: "Security rule violations (SEC001-SEC008)"
+
+  corpus:
+    source: "bashrs v6.64.0"
+    entries: 17942
+    format: "JSONL"
+    fields:
+      - name: "input"
+        type: "string"
+        description: "Shell script content"
+      - name: "label"
+        type: "integer"
+        description: "Safety class index (0-4)"
+
+# =============================================================================
+# MODEL ARCHITECTURE
+# =============================================================================
+
+model_architecture:
+  base_model: "Qwen2.5-Coder-0.5B"
+  hidden_size: 896
+  fine_tuning_method: "LoRA"
+  lora_config:
+    rank: 16
+    alpha: 16.0
+    target_modules: ["q_proj", "v_proj"]
+  classifier_head:
+    type: "mean_pool + linear"
+    input_dim: 896    # hidden_size
+    output_dim: 5     # num_classes
+    bias: true
+
+# =============================================================================
+# POPPERIAN FALSIFICATION CRITERIA
+# =============================================================================
+
+falsification_tests:
+  - id: FALSIFY-CLASS-001
+    rule: "F-CLASS-001 (Logit shape)"
+    prediction: "It is impossible to construct ValidatedClassLogits with wrong number of elements"
+    falsification_test: |
+      #[test]
+      fn falsify_class_001_logit_shape_mismatch() {
+          // 3 elements but num_classes=5 → must fail
+          let bad = vec![0.1f32; 3];
+          let result = ValidatedClassLogits::new(bad, 5);
+          assert!(result.is_err());
+      }
+    if_test_passes: "Contract is BROKEN — logit shape validation not enforced"
+
+  - id: FALSIFY-CLASS-002
+    rule: "F-CLASS-002 (Label bounds)"
+    prediction: "It is impossible to construct ValidatedSafetyLabel with index >= num_classes"
+    falsification_test: |
+      #[test]
+      fn falsify_class_002_label_out_of_range() {
+          let result = ValidatedSafetyLabel::new(5, 5); // index 5, only 0..4 valid
+          assert!(result.is_err());
+      }
+    if_test_passes: "Contract is BROKEN — label bounds not enforced"
+
+  - id: FALSIFY-CLASS-003
+    rule: "F-CLASS-003 (Softmax sum)"
+    prediction: "Softmax of any finite logits sums to 1.0 within epsilon"
+    falsification_test: |
+      #[test]
+      fn falsify_class_003_softmax_sum_invariant() {
+          let logits = ValidatedClassLogits::new(vec![1.0, 2.0, -1.0, 0.5, 3.0], 5).unwrap();
+          let probs = logits.softmax();
+          let sum: f32 = probs.iter().sum();
+          assert!((sum - 1.0).abs() < 1e-5);
+      }
+
+  - id: FALSIFY-CLASS-004
+    rule: "F-CLASS-004 (Classifier weight shape)"
+    prediction: "It is impossible to construct ValidatedClassifierWeight with wrong size"
+    falsification_test: |
+      #[test]
+      fn falsify_class_004_weight_shape_mismatch() {
+          // 100 elements but hidden_size=128, num_classes=5 needs 640
+          let bad = vec![0.1f32; 100];
+          let result = ValidatedClassifierWeight::new(bad, 128, 5);
+          assert!(result.is_err());
+      }
+    if_test_passes: "Contract is BROKEN — classifier weight shape not enforced"
+
+  - id: FALSIFY-CLASS-005
+    rule: "F-CLASS-001 (NaN rejection)"
+    prediction: "It is impossible to construct ValidatedClassLogits containing NaN"
+    falsification_test: |
+      #[test]
+      fn falsify_class_005_nan_logits_rejected() {
+          let bad = vec![0.1, f32::NAN, 0.3, 0.4, 0.5];
+          let result = ValidatedClassLogits::new(bad, 5);
+          assert!(result.is_err());
+      }
+    if_test_passes: "Contract is BROKEN — NaN validation not enforced"
+
+  - id: FALSIFY-CLASS-006
+    rule: "Type enforcement (single-class rejection)"
+    prediction: "It is impossible to construct ValidatedClassLogits with num_classes < 2"
+    falsification_test: |
+      #[test]
+      fn falsify_class_006_single_class_rejected() {
+          let result = ValidatedClassLogits::new(vec![1.0], 1);
+          assert!(result.is_err());
+      }
+    if_test_passes: "Contract is BROKEN — minimum class count not enforced"
+
+# =============================================================================
+# TOYOTA WAY PRINCIPLES
+# =============================================================================
+
+toyota_way_principles:
+  jidoka: |
+    "Automation with a human touch" — validation stops the line when a defect
+    is detected. No mismatched logits propagate to loss computation.
+
+  poka_yoke: |
+    "Mistake-proofing" — ValidatedClassLogits makes it physically impossible to
+    compute loss with wrong-shaped logits. ValidatedSafetyLabel makes out-of-range
+    labels a compile-time impossibility.
+
+  genchi_genbutsu: |
+    "Go and see" — falsification tests require actually running the code with
+    known-bad inputs. We prove validation rejects them.
+
+  kaizen: |
+    "Continuous improvement" — as the classifier evolves from v1 (MLP) to
+    v2 (Qwen2.5+LoRA), the contract evolves with it while maintaining the
+    same invariants.
