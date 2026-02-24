@@ -140,3 +140,67 @@ fn falsify_ba_004_broadcast() {
         }
     }
 }
+
+mod bias_proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// FALSIFY-BA-001-prop: Shape preservation for random dimensions
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(30))]
+
+        #[test]
+        fn falsify_ba_001_prop_shape_preservation(
+            rows in 1..=16usize,
+            cols in 1..=32usize,
+        ) {
+            let x = Tensor::ones(&[rows, cols]);
+            let mut w_data = vec![0.0f32; cols * cols];
+            for i in 0..cols {
+                w_data[i * cols + i] = 1.0;
+            }
+            let weight = Tensor::new(&w_data, &[cols, cols]);
+            let bias = Tensor::new(&vec![1.0; cols], &[cols]);
+            let y = linear(&x, &weight, Some(&bias));
+
+            prop_assert_eq!(
+                y.shape(),
+                &[rows, cols],
+                "FALSIFIED BA-001-prop: shape {:?} != [{}, {}]",
+                y.shape(), rows, cols
+            );
+        }
+    }
+
+    /// FALSIFY-BA-004-prop: Broadcast — zero input gives bias for all rows
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(30))]
+
+        #[test]
+        fn falsify_ba_004_prop_broadcast(
+            rows in 1..=8usize,
+            cols in 1..=8usize,
+            bias_val in -10.0f32..10.0,
+        ) {
+            let x = Tensor::new(&vec![0.0; rows * cols], &[rows, cols]);
+            let mut w_data = vec![0.0f32; cols * cols];
+            for i in 0..cols {
+                w_data[i * cols + i] = 1.0;
+            }
+            let weight = Tensor::new(&w_data, &[cols, cols]);
+            let bias = Tensor::new(&vec![bias_val; cols], &[cols]);
+            let y = linear(&x, &weight, Some(&bias));
+
+            for row in 0..rows {
+                for col in 0..cols {
+                    let val = y.data()[row * cols + col];
+                    prop_assert!(
+                        (val - bias_val).abs() < 1e-4,
+                        "FALSIFIED BA-004-prop: row[{}][{}]={}, expected {}",
+                        row, col, val, bias_val
+                    );
+                }
+            }
+        }
+    }
+}

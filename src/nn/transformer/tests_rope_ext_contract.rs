@@ -147,3 +147,57 @@ fn falsify_rext_005_different_base_different_output() {
         "FALSIFIED REXT-005: different bases produce same output at pos=5 (diff={diff})"
     );
 }
+
+mod rext_proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// FALSIFY-REXT-001-prop: Frequencies positive and decreasing for random dims
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(30))]
+
+        #[test]
+        fn falsify_rext_001_prop_frequencies_positive_decreasing(
+            head_dim in prop::sample::select(vec![4usize, 8, 16, 32, 64, 128]),
+            base in prop::sample::select(vec![10_000.0f32, 500_000.0, 1_000_000.0]),
+        ) {
+            let half_dim = head_dim / 2;
+            let freqs: Vec<f32> = (0..half_dim)
+                .map(|i| 1.0 / base.powf(2.0 * i as f32 / head_dim as f32))
+                .collect();
+
+            for (i, &f) in freqs.iter().enumerate() {
+                prop_assert!(
+                    f > 0.0,
+                    "FALSIFIED REXT-001-prop: freq[{}]={} <= 0 (dim={}, base={})",
+                    i, f, head_dim, base
+                );
+            }
+            for i in 1..freqs.len() {
+                prop_assert!(
+                    freqs[i] < freqs[i - 1],
+                    "FALSIFIED REXT-001-prop: freq not decreasing at {} (dim={}, base={})",
+                    i, head_dim, base
+                );
+            }
+        }
+    }
+
+    /// FALSIFY-REXT-002-prop: freq_0 = 1.0 for all base and dim combinations
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(50))]
+
+        #[test]
+        fn falsify_rext_002_prop_freq_zero_is_one(
+            base in 100.0f32..10_000_000.0,
+            head_dim in prop::sample::select(vec![4usize, 8, 16, 32, 64, 128]),
+        ) {
+            let freq_0 = 1.0 / base.powf(0.0 / head_dim as f32);
+            prop_assert!(
+                (freq_0 - 1.0).abs() < 1e-6,
+                "FALSIFIED REXT-002-prop: freq_0={} for base={}, dim={}",
+                freq_0, base, head_dim
+            );
+        }
+    }
+}

@@ -118,3 +118,48 @@ fn falsify_al_001b_bias_linearity() {
         }
     }
 }
+
+mod alibi_proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// FALSIFY-AL-001-prop: Negative bias for random head counts
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(30))]
+
+        #[test]
+        fn falsify_al_001_prop_negative_bias(
+            num_heads in prop::sample::select(vec![1usize, 2, 4, 8, 16, 32]),
+            seq_len in 2..=20usize,
+        ) {
+            let alibi = ALiBi::new(num_heads);
+            let bias = alibi.compute_bias(seq_len);
+            for (idx, &val) in bias.data().iter().enumerate() {
+                prop_assert!(
+                    val <= 0.0,
+                    "FALSIFIED AL-001-prop: bias[{}]={} > 0 (heads={}, seq={})",
+                    idx, val, num_heads, seq_len
+                );
+            }
+        }
+    }
+
+    /// FALSIFY-AL-002-prop: Slope positivity for random head counts
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(30))]
+
+        #[test]
+        fn falsify_al_002_prop_slope_positivity(
+            num_heads in prop::sample::select(vec![1usize, 2, 3, 4, 6, 8, 12, 16, 32]),
+        ) {
+            let alibi = ALiBi::new(num_heads);
+            for (h, &slope) in alibi.slopes().iter().enumerate() {
+                prop_assert!(
+                    slope > 0.0,
+                    "FALSIFIED AL-002-prop: slope[{}]={} <= 0 (heads={})",
+                    h, slope, num_heads
+                );
+            }
+        }
+    }
+}
