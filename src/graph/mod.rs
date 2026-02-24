@@ -67,3 +67,7 @@ pub struct Graph {
 
 include!("algorithms.rs");
 include!("test_module.rs");
+
+#[cfg(test)]
+#[path = "tests_dijkstra_contract.rs"]
+mod tests_dijkstra_contract;

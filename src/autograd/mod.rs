@@ -117,6 +117,10 @@ pub fn clear_grad(id: TensorId) {
 }
 
 #[cfg(test)]
+#[path = "tests_tensor_contract.rs"]
+mod tests_tensor_contract;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
