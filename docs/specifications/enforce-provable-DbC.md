@@ -784,10 +784,14 @@ These matches are acceptable and should NOT be treated as violations:
 |------|---------|-----------|--------------|
 | aprender | `embedding_contract_falsify.rs` | 5 proptest | EM-001-prop, EM-002-prop, EM-004-prop, EMB-001-prop, EMB-002-prop |
 | aprender | `functional.rs` | 3 proptest | SM-001-prop, SM-002-prop, SM-003-prop |
+| aprender | `tests_position_contract.rs` | 3 proptest | AP-001-prop, AP-002-prop, AP-003-prop |
+| trueno | `clip_softmax.rs` | 2 proptest | SM-001-prop, SM-002-prop |
 | entrenar | `embedding.rs` | 3 | EMB-001, EMB-002, EMB-004 |
+| entrenar | `loss.rs` | 2 proptest | SM-001-prop, SM-002-prop |
 | entrenar | `model.rs` | 1 | PIPE-001 (embed→tied_lm_head→softmax) |
 | realizar | `matmul_tests.rs` | 3 | EMB-001, EMB-002, EMB-004 |
 | realizar | `matmul_tests.rs` | 1 | PIPE-001 (embed→lm_head→softmax GGUF path) |
+| realizar | `activation_quantize_rmsnorm.rs` | 2 proptest | SM-001-prop, SM-002-prop |
 
 ### Final Coverage Matrix (all §2.1.1 contracts)
 
@@ -796,10 +800,10 @@ These matches are acceptable and should NOT be treated as violations:
 | EM-001..005 | 15+5p ✅ | 12 ✅ | 6 ✅ | 7 ✅ | 45 |
 | EMB-001..007 | 24+2p ✅ | 5 ✅ | 7 ✅ | 7 ✅ | 45 |
 | TE-001..004 | 6 ✅ | N/A | 4 ✅ | 4 ✅ | 14 |
-| SM-001..009 | 9+3p ✅ | 9 ✅ | 8 ✅ | 9 ✅ | 38 |
-| AP-001..004 | 5 ✅ | N/A | N/A | 4 ✅ | 9 |
+| SM-001..009 | 9+3p ✅ | 9+2p ✅ | 8+2p ✅ | 9+2p ✅ | 44 |
+| AP-001..005 | 5+3p ✅ | N/A | N/A | 4 ✅ | 12 |
 | PIPE-001 | N/A | N/A | 1 ✅ | 1 ✅ | 2 |
-| **Total** | **64** | **26** | **26** | **32** | **153** |
+| **Total** | **72** | **28** | **28** | **34** | **162** |
 
 Legend: `+Np` = N proptest (property-based) variants alongside deterministic tests.
 
@@ -871,6 +875,10 @@ Our implementation extends to SM-001..009 with the following mapping:
 - realizar `a517ecc` — FALSIFY-EMB-001/002/004 (3 tests: lookup determinism, shape, vocab bounds)
 - entrenar `3db07e5` — FALSIFY-PIPE-001 (cross-contract embed→tied_lm_head→softmax pipeline)
 - realizar `16d57ec` — FALSIFY-PIPE-001 (cross-contract embed→lm_head→softmax GGUF pipeline)
+- trueno `623e768` — FALSIFY-SM-001/002-prop (2 proptest: random vector normalization+positivity)
+- entrenar — FALSIFY-SM-001/002-prop (2 proptest: random vector normalization+positivity)
+- realizar `e544198` — FALSIFY-SM-001/002-prop (2 proptest: random vector normalization+positivity)
+- aprender `4678120e` — FALSIFY-AP-001/002/003-prop (3 proptest: random dim position encoding)
 
 ---
 
