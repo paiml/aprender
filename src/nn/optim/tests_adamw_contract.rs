@@ -181,3 +181,100 @@ fn falsify_aw_006_zero_gradient_weight_decay_only() {
         "FALSIFIED AW-006: theta_new = {theta_new}, expected {expected} (only wd), diff = {diff}"
     );
 }
+
+mod aw_proptest_falsify {
+    use proptest::prelude::*;
+
+    /// FALSIFY-AW-002-prop: Second moment non-negative for random gradients
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(100))]
+
+        #[test]
+        fn falsify_aw_002_prop_second_moment_non_negative(
+            seed in 0..1000u32,
+        ) {
+            let beta2 = 0.999_f32;
+            let n = 4;
+            let mut v = vec![0.0_f32; n];
+
+            // Simulate 20 gradient steps
+            for step in 0..20 {
+                let g: Vec<f32> = (0..n)
+                    .map(|i| ((i as f32 + seed as f32 + step as f32 * 13.0) * 0.37).sin() * 10.0)
+                    .collect();
+                for i in 0..n {
+                    v[i] = beta2 * v[i] + (1.0 - beta2) * g[i] * g[i];
+                }
+            }
+
+            for (i, &vi) in v.iter().enumerate() {
+                prop_assert!(
+                    vi >= 0.0,
+                    "FALSIFIED AW-002-prop: v[{}] = {} < 0",
+                    i, vi
+                );
+            }
+        }
+    }
+
+    /// FALSIFY-AW-003-prop: Bias correction > 1 for random betas
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(200))]
+
+        #[test]
+        fn falsify_aw_003_prop_bias_correction(
+            beta in 0.5f32..0.9999,
+            t in 1..=200i32,
+        ) {
+            let beta_power = beta.powi(t);
+            let denom = 1.0 - beta_power;
+            // For small betas with large t, beta^t is so small that
+            // 1.0 - beta^t == 1.0 in f32 (ULP absorption). Skip these.
+            if denom > 0.0 && denom < 1.0 {
+                let correction = 1.0 / denom;
+                prop_assert!(
+                    correction > 1.0,
+                    "FALSIFIED AW-003-prop: 1/(1-{}^{}) = {} not > 1",
+                    beta, t, correction
+                );
+                prop_assert!(
+                    correction.is_finite(),
+                    "FALSIFIED AW-003-prop: correction not finite"
+                );
+            }
+        }
+    }
+
+    /// FALSIFY-AW-006-prop: Zero gradient → only weight decay for random theta
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(100))]
+
+        #[test]
+        fn falsify_aw_006_prop_zero_gradient(
+            theta in -100.0f32..100.0,
+            lr in 0.0001f32..0.1,
+            wd in 0.001f32..0.5,
+        ) {
+            let beta1 = 0.9_f32;
+            let beta2 = 0.999_f32;
+            let eps = 1e-8_f32;
+
+            // With zero gradient, first step:
+            // m_hat = 0, v_hat = 0
+            // theta_new = theta - lr*wd*theta - lr * 0/(0+eps)
+            //           = theta * (1 - lr*wd)
+            let m = (1.0 - beta1) * 0.0;
+            let v = (1.0 - beta2) * 0.0;
+            let m_hat = m / (1.0 - beta1);
+            let v_hat = v / (1.0 - beta2);
+            let theta_new = theta - lr * wd * theta - lr * m_hat / (v_hat.sqrt() + eps);
+            let expected = theta * (1.0 - lr * wd);
+
+            prop_assert!(
+                (theta_new - expected).abs() < 1e-4,
+                "FALSIFIED AW-006-prop: theta_new={}, expected={}",
+                theta_new, expected
+            );
+        }
+    }
+}
