@@ -77,4 +77,108 @@ mod tests {
             loss_ba.data()[0]
         );
     }
+
+    /// FALSIFY-LF-005: L1(a, b) == L1(b, a) (symmetric)
+    #[test]
+    fn falsify_lf_005_l1_symmetric() {
+        let a = Tensor::new(&[1.0_f32, 3.0, -2.0], &[3]);
+        let b = Tensor::new(&[4.0, -1.0, 6.0], &[3]);
+
+        let criterion = L1Loss::new();
+        let loss_ab = criterion.forward(&a, &b);
+        let loss_ba = criterion.forward(&b, &a);
+        assert!(
+            (loss_ab.data()[0] - loss_ba.data()[0]).abs() < 1e-6,
+            "FALSIFIED LF-005: L1(a,b)={} != L1(b,a)={}",
+            loss_ab.data()[0],
+            loss_ba.data()[0]
+        );
+    }
+
+    mod lf_proptest_falsify {
+        use super::super::super::*;
+        use proptest::prelude::*;
+
+        /// FALSIFY-LF-001-prop: MSE is non-negative for random inputs
+        proptest! {
+            #![proptest_config(ProptestConfig::with_cases(100))]
+
+            #[test]
+            fn falsify_lf_001_prop_mse_non_negative(
+                seed in 0..1000u32,
+                n in 2..=16usize,
+            ) {
+                let pred_data: Vec<f32> = (0..n)
+                    .map(|i| ((i as f32 + seed as f32) * 0.37).sin() * 10.0)
+                    .collect();
+                let target_data: Vec<f32> = (0..n)
+                    .map(|i| ((i as f32 + seed as f32) * 0.73).cos() * 10.0)
+                    .collect();
+
+                let pred = Tensor::new(&pred_data, &[n]);
+                let target = Tensor::new(&target_data, &[n]);
+
+                let loss = MSELoss::new().forward(&pred, &target);
+                prop_assert!(
+                    loss.data()[0] >= 0.0,
+                    "FALSIFIED LF-001-prop: MSE = {} < 0",
+                    loss.data()[0]
+                );
+            }
+        }
+
+        /// FALSIFY-LF-005-prop: L1 symmetry for random inputs
+        proptest! {
+            #![proptest_config(ProptestConfig::with_cases(100))]
+
+            #[test]
+            fn falsify_lf_005_prop_l1_symmetric(
+                seed in 0..1000u32,
+                n in 2..=16usize,
+            ) {
+                let a_data: Vec<f32> = (0..n)
+                    .map(|i| ((i as f32 + seed as f32) * 0.37).sin() * 10.0)
+                    .collect();
+                let b_data: Vec<f32> = (0..n)
+                    .map(|i| ((i as f32 + seed as f32) * 0.73).cos() * 10.0)
+                    .collect();
+
+                let a = Tensor::new(&a_data, &[n]);
+                let b = Tensor::new(&b_data, &[n]);
+
+                let loss_ab = L1Loss::new().forward(&a, &b);
+                let loss_ba = L1Loss::new().forward(&b, &a);
+                prop_assert!(
+                    (loss_ab.data()[0] - loss_ba.data()[0]).abs() < 1e-5,
+                    "FALSIFIED LF-005-prop: L1(a,b)={} != L1(b,a)={}",
+                    loss_ab.data()[0], loss_ba.data()[0]
+                );
+            }
+        }
+
+        /// FALSIFY-LF-002-prop: MSE = 0 when pred == target
+        proptest! {
+            #![proptest_config(ProptestConfig::with_cases(100))]
+
+            #[test]
+            fn falsify_lf_002_prop_mse_zero_on_match(
+                seed in 0..1000u32,
+                n in 2..=16usize,
+            ) {
+                let data: Vec<f32> = (0..n)
+                    .map(|i| ((i as f32 + seed as f32) * 0.37).sin() * 10.0)
+                    .collect();
+
+                let pred = Tensor::new(&data, &[n]);
+                let target = Tensor::new(&data, &[n]);
+
+                let loss = MSELoss::new().forward(&pred, &target);
+                prop_assert!(
+                    loss.data()[0].abs() < 1e-5,
+                    "FALSIFIED LF-002-prop: MSE(x,x) = {} != 0",
+                    loss.data()[0]
+                );
+            }
+        }
+    }
 }
