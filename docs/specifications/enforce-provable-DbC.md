@@ -2,7 +2,7 @@
 
 **Reference**: Meyer, B. (1992). "Applying 'Design by Contract'." *IEEE Computer*, 25(10), 40-51.
 
-**Status**: PHASE 9 — 182 FALSIFY tests across stack (proptest closure)
+**Status**: PHASE 9 COMPLETE — 190 FALSIFY tests across stack (full proptest closure)
 **Date**: 2026-02-23 (updated 2026-02-24)
 **Scope**: trueno, realizar, aprender, entrenar, batuta, provable-contracts, apr-playbook
 
@@ -891,24 +891,35 @@ Five-Whys:
 - Why 4: Fixed test dimensions miss edge cases in Q4K block alignment
 - Why 5: YAML contracts explicitly call for "proptest with random..." on all claims
 
-Tests added (15 new, 167→182 total):
+Tests added (23 new, 167→190 total):
 - entrenar `f25e80a` — FALSIFY-TE-001/002/004-prop (3 proptest: random seq_len/tokens)
 - realizar `8ca8549` — FALSIFY-TE-001/002/004-prop (3 proptest: random hidden/vocab dims)
 - trueno `95aea7d` — FALSIFY-SM-003-prop (1 proptest: order preservation, 500 cases)
 - entrenar `c918796` — FALSIFY-SM-003-prop + EM-001/003/004-prop (4 proptest)
 - realizar `f63dc56` — FALSIFY-SM-003-prop + EM-001/003/004-prop (4 proptest)
+- entrenar `764025d` — FALSIFY-EMB-001/002/005-prop (3 proptest: algebra properties)
+- realizar `eff4da8` — FALSIFY-EMB-001/002/005-prop (3 proptest: algebra properties)
+- realizar `44bde62` — FALSIFY-AP-001/004-prop (2 proptest: position shape/finite)
 
-Phase 9 coverage matrix (d=deterministic, p=proptest):
+Phase 9 final coverage matrix (d=deterministic, p=proptest):
 
 | Contract | aprender | trueno | entrenar | realizar | Total |
 |----------|----------|--------|----------|----------|-------|
 | EM-001..005 | 21d+3p | 12d+1p | 6d+3p | 7d+3p | 56 |
-| EMB-001..007 | 24d+4p | 5d+2p | 7d | 7d | 49 |
+| EMB-001..007 | 24d+4p | 5d+2p | 7d+3p | 7d+3p | 55 |
 | TE-001..004 | 2d | N/A | 4d+3p | 4d+3p | 16 |
 | SM-001..009 | 9d+3p | 9d+3p | 8d+3p | 9d+3p | 47 |
-| AP-001..005 | 4d+4p | N/A | N/A | 4d | 12 |
+| AP-001..005 | 4d+4p | N/A | N/A | 4d+2p | 14 |
 | PIPE-001 | N/A | N/A | 1d | 1d | 2 |
-| **Total** | **74** | **32** | **35** | **41** | **182** |
+| **Total** | **74** | **32** | **38** | **46** | **190** |
+
+Proptest coverage by contract:
+- EM: 10/56 (18%) proptest — all 4 repos covered
+- EMB: 12/55 (22%) proptest — aprender+trueno+entrenar+realizar
+- TE: 6/16 (38%) proptest — entrenar+realizar
+- SM: 12/47 (26%) proptest — all 4 repos covered
+- AP: 6/14 (43%) proptest — aprender+realizar
+- PIPE: 0/2 (0%) — pipeline tests are inherently integration, proptest N/A
 
 ---
 

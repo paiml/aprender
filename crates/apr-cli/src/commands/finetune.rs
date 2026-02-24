@@ -537,7 +537,7 @@ fn run_classify(
         println!();
     }
 
-    let pipeline = ClassifyPipeline::new(&model_config, classify_config);
+    let mut pipeline = ClassifyPipeline::new(&model_config, classify_config);
 
     if !json_output {
         println!("{}", pipeline.summary());
