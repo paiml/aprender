@@ -760,10 +760,10 @@ These matches are acceptable and should NOT be treated as violations:
 |----------|----------|--------|----------|----------|-------|
 | EM-001..005 | 15 ✅ | 12 ✅ | 5 ✅ | 7 ✅ | 39 |
 | EMB-001..007 | 24 ✅ | 2 ✅ | 4 ✅ | 4 ✅ | 34 |
-| TE-001..004 | 6 ✅ | N/A | 3 ✅ | 2 ✅ | 11 |
-| SM-001..005 | 7 ✅ | 5 ✅ | 3 ✅ | 5 ✅ | 20 |
-| AP-001..004 | 1 ✅ | N/A | N/A | 3 ✅ | 4 |
-| **Total** | **53** | **19** | **15** | **21** | **108** |
+| TE-001..004 | 6 ✅ | N/A | 4 ✅ | 4 ✅ | 14 |
+| SM-001..006 | 7 ✅ | 5 ✅ | 6 ✅ | 5 ✅ | 23 |
+| AP-001..004 | 5 ✅ | N/A | N/A | 4 ✅ | 9 |
+| **Total** | **57** | **19** | **19** | **24** | **119** |
 
 ### Commits
 
@@ -786,6 +786,12 @@ These matches are acceptable and should NOT be treated as violations:
 
 **Phase 4 (aprender cross-module)**:
 - aprender `3c6d9f4c` — FALSIFY-EM/EMB/AP across 5 modules (22 tests)
+
+**Phase 5 (cross-stack gap closure)**:
+- entrenar `48db41e` — FALSIFY-SM-004/005/006 + TE-002 (4 tests)
+  - Finding: SM-004 FALSIFIED — IEEE 754 f32 underflow makes softmax interval [0,1] not (0,1). Documented as N-10 escape.
+- realizar `233724f` — FALSIFY-TE-002/003 + AP-003 (3 tests)
+  - Finding: Q4K super-block overhead makes small tensors larger than F32 — correct at production scale.
 
 ---
 
