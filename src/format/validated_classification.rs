@@ -53,9 +53,7 @@ impl ValidatedClassLogits {
             return Err(ContractValidationError {
                 tensor_name: "class_logits".to_string(),
                 rule_id: "F-CLASS-001".to_string(),
-                message: format!(
-                    "num_classes must be >= 2, got {num_classes}"
-                ),
+                message: format!("num_classes must be >= 2, got {num_classes}"),
             });
         }
 
@@ -107,11 +105,7 @@ impl ValidatedClassLogits {
     /// Contract: output sums to 1.0 (within epsilon=1e-5).
     #[must_use]
     pub fn softmax(&self) -> Vec<f32> {
-        let max_val = self
-            .data
-            .iter()
-            .copied()
-            .fold(f32::NEG_INFINITY, f32::max);
+        let max_val = self.data.iter().copied().fold(f32::NEG_INFINITY, f32::max);
         let exp_sum: f32 = self.data.iter().map(|&v| (v - max_val).exp()).sum();
         self.data
             .iter()
@@ -146,8 +140,11 @@ impl ValidatedClassLogits {
 impl fmt::Display for ValidatedClassLogits {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let (cls, conf) = self.predicted_class_with_confidence();
-        write!(f, "ClassLogits[{} classes, predicted={cls}, conf={conf:.1}%]",
-            self.num_classes)
+        write!(
+            f,
+            "ClassLogits[{} classes, predicted={cls}, conf={conf:.1}%]",
+            self.num_classes
+        )
     }
 }
 
@@ -179,18 +176,14 @@ impl ValidatedSafetyLabel {
             return Err(ContractValidationError {
                 tensor_name: "safety_label".to_string(),
                 rule_id: "F-CLASS-002".to_string(),
-                message: format!(
-                    "Label index {index} out of range (num_classes={num_classes})"
-                ),
+                message: format!("Label index {index} out of range (num_classes={num_classes})"),
             });
         }
 
         let class = SafetyClass::from_index(index).ok_or_else(|| ContractValidationError {
             tensor_name: "safety_label".to_string(),
             rule_id: "F-CLASS-002".to_string(),
-            message: format!(
-                "Index {index} does not map to a SafetyClass variant"
-            ),
+            message: format!("Index {index} does not map to a SafetyClass variant"),
         })?;
 
         Ok(Self { class, index })

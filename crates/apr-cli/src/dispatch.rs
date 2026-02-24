@@ -317,6 +317,8 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             epochs,
             learning_rate,
             model_size,
+            task,
+            num_classes,
         }) => finetune::run(
             file.as_deref(),
             method,
@@ -330,6 +332,8 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             *epochs,
             *learning_rate,
             model_size.as_deref(),
+            task.as_deref(),
+            *num_classes,
             cli.json,
         ),
         Commands::ModelOps(ModelOpsCommands::Prune {

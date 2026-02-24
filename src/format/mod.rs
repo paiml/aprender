@@ -194,6 +194,11 @@ mod tokenizer_vocab_contract_falsify;
 #[cfg(test)]
 mod embedding_contract_falsify;
 
+// Classification contract falsification (FALSIFY-CLASS-001..006)
+// Refs: classification-finetune-v1.yaml
+#[cfg(test)]
+mod classification_contract_falsify;
+
 // Digital signatures (spec §4.2, PMAT-198)
 #[cfg(feature = "format-signing")]
 pub mod signing;

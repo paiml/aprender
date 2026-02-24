@@ -39,6 +39,12 @@ pub enum ModelOpsCommands {
         /// Model size for planning (e.g., "7B", "1.5B")
         #[arg(long, value_name = "SIZE")]
         model_size: Option<String>,
+        /// Fine-tuning task: classify (sequence classification)
+        #[arg(long)]
+        task: Option<String>,
+        /// Number of classes for classification task
+        #[arg(long, default_value = "5")]
+        num_classes: usize,
     },
     /// Prune model (structured/unstructured pruning) (GH-247)
     Prune {

@@ -256,6 +256,7 @@ dependencies = [
  "colored",
  "crossterm",
  "dirs 5.0.1",
+ "entrenar",
  "entrenar-lora",
  "futures-util",
  "gag",

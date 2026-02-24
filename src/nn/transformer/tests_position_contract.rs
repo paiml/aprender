@@ -176,3 +176,104 @@ fn falsify_ap_005_deterministic() {
         "FALSIFIED AP-005: two forward passes with identical input differ"
     );
 }
+
+// =========================================================================
+// PROPTEST FALSIFY: Absolute position property-based falsification
+//
+// Five-Whys (PMAT-354, Phase 8):
+//   Why 1: YAML AP-001/002/003/004 explicitly call for "proptest with random..."
+//   Why 2: All 5 AP tests use fixed dimensions (32/64/128)
+//   Why 3: Edge cases in unusual d_model values missed by hand-picked inputs
+//   Why 4: proptest explores dimension space humans don't anticipate
+//   Why 5: Position encoding math has d_model-dependent sin/cos alternation
+//
+// References:
+//   - absolute-position-v1.yaml FALSIFY-AP-001: "proptest with random seq_len and d"
+//   - absolute-position-v1.yaml FALSIFY-AP-002: "proptest with random token_embed"
+// =========================================================================
+
+mod proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    // AP-001-prop: Shape preservation for random dimensions
+    // YAML: "proptest with random seq_len and d, verify output dimensions match"
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(100))]
+        #[test]
+        fn falsify_ap_001_prop_shape(
+            seq_len in 1_usize..64,
+            d_model in prop::sample::select(vec![16_usize, 32, 48, 64, 128]),
+        ) {
+            let mut pe = PositionalEncoding::new(d_model, 200).with_dropout(0.0);
+            pe.eval();
+            let x = Tensor::ones(&[1, seq_len, d_model]);
+            let y = pe.forward(&x);
+            prop_assert_eq!(
+                y.shape(), x.shape(),
+                "FALSIFIED AP-001-prop: seq_len={}, d_model={}, output={:?}",
+                seq_len, d_model, y.shape()
+            );
+        }
+    }
+
+    // AP-002-prop: Additive property — PE contribution is input-independent
+    // YAML: "proptest with random token_embed and zero pos_embed"
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(50))]
+        #[test]
+        fn falsify_ap_002_prop_additive(
+            d_model in prop::sample::select(vec![16_usize, 32, 64]),
+            seq_len in 1_usize..20,
+        ) {
+            let mut pe = PositionalEncoding::new(d_model, 100).with_dropout(0.0);
+            pe.eval();
+
+            let x1 = Tensor::ones(&[1, seq_len, d_model]);
+            let x2_data: Vec<f32> = (0..seq_len * d_model)
+                .map(|i| (i as f32 * 0.13).sin())
+                .collect();
+            let x2 = Tensor::new(&x2_data, &[1, seq_len, d_model]);
+
+            let y1 = pe.forward(&x1);
+            let y2 = pe.forward(&x2);
+
+            // PE contribution = output - input, must be identical for both inputs
+            for i in 0..seq_len * d_model {
+                let pe1 = y1.data()[i] - x1.data()[i];
+                let pe2 = y2.data()[i] - x2.data()[i];
+                prop_assert!(
+                    (pe1 - pe2).abs() < 1e-5,
+                    "FALSIFIED AP-002-prop: PE[{i}] differs: {pe1} vs {pe2} (d={d_model}, s={seq_len})"
+                );
+            }
+        }
+    }
+
+    // AP-003-prop: Finite output for random inputs
+    // YAML: "proptest with random finite token_embed and pos_embed values"
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(100))]
+        #[test]
+        fn falsify_ap_003_prop_finite(
+            d_model in prop::sample::select(vec![16_usize, 32, 64]),
+            seq_len in 1_usize..30,
+        ) {
+            let mut pe = PositionalEncoding::new(d_model, 200).with_dropout(0.0);
+            pe.eval();
+
+            let x_data: Vec<f32> = (0..seq_len * d_model)
+                .map(|i| (i as f32 * 0.07).cos() * 10.0)
+                .collect();
+            let x = Tensor::new(&x_data, &[1, seq_len, d_model]);
+            let y = pe.forward(&x);
+
+            for (i, &v) in y.data().iter().enumerate() {
+                prop_assert!(
+                    v.is_finite(),
+                    "FALSIFIED AP-003-prop: output[{i}]={v} (d={d_model}, s={seq_len})"
+                );
+            }
+        }
+    }
+}
