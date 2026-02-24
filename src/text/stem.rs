@@ -362,3 +362,7 @@ impl Stemmer for PorterStemmer {
 #[cfg(test)]
 #[path = "stem_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "tests_stem_contract.rs"]
+mod tests_stem_contract;

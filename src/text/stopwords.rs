@@ -344,3 +344,7 @@ pub const ENGLISH_STOP_WORDS: &[&str] = &[
 #[cfg(test)]
 #[path = "stopwords_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "tests_stopwords_contract.rs"]
+mod tests_stopwords_contract;
