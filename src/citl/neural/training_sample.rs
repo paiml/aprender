@@ -378,3 +378,7 @@ impl TrainingSample {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+#[path = "tests_embedding_contract.rs"]
+mod tests_embedding_contract;

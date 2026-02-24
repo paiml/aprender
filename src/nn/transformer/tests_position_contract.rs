@@ -42,6 +42,60 @@ fn falsify_ap_001_shape_preservation() {
     }
 }
 
+/// FALSIFY-AP-002: Additive identity — zero position encoding → output = input
+///
+/// When all positional encoding values are zero (degenerate case), the output
+/// should equal the input. Since PE uses sinusoidal encoding, we verify the
+/// weaker property: output = input + PE, so (output - input) = PE which is
+/// deterministic and independent of input values.
+#[test]
+fn falsify_ap_002_additive_property() {
+    let d_model = 32;
+    let mut pe = PositionalEncoding::new(d_model, 100).with_dropout(0.0);
+    pe.eval();
+
+    // Create two different inputs
+    let x1 = Tensor::ones(&[1, 10, d_model]);
+    let x2 = Tensor::new(
+        &(0..10 * d_model)
+            .map(|i| (i as f32 * 0.07).sin())
+            .collect::<Vec<_>>(),
+        &[1, 10, d_model],
+    );
+
+    let y1 = pe.forward(&x1);
+    let y2 = pe.forward(&x2);
+
+    // (y1 - x1) should equal (y2 - x2) because PE is additive and input-independent
+    let pe_from_x1: Vec<f32> = y1
+        .data()
+        .iter()
+        .zip(x1.data().iter())
+        .map(|(&y, &x)| y - x)
+        .collect();
+    let pe_from_x2: Vec<f32> = y2
+        .data()
+        .iter()
+        .zip(x2.data().iter())
+        .map(|(&y, &x)| y - x)
+        .collect();
+
+    for (i, (&a, &b)) in pe_from_x1.iter().zip(pe_from_x2.iter()).enumerate() {
+        assert!(
+            (a - b).abs() < 1e-6,
+            "FALSIFIED AP-002: PE contribution differs at index {i}: {a} vs {b} \
+             (PE must be additive and input-independent)"
+        );
+    }
+
+    // Verify PE contribution is non-trivial (at least one non-zero)
+    let pe_norm: f32 = pe_from_x1.iter().map(|v| v * v).sum();
+    assert!(
+        pe_norm > 1e-6,
+        "FALSIFIED AP-002: PE contribution is all-zero (norm={pe_norm})"
+    );
+}
+
 /// FALSIFY-AP-003: Finite output — all elements finite when input is finite
 #[test]
 fn falsify_ap_003_finite_output() {

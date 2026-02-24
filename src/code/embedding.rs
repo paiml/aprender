@@ -440,3 +440,7 @@ mod tests {
         assert_eq!(encoder.dim(), super::super::DEFAULT_EMBEDDING_DIM);
     }
 }
+
+#[cfg(test)]
+#[path = "tests_embedding_contract.rs"]
+mod tests_embedding_contract;

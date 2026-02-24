@@ -467,3 +467,7 @@ pub fn similarity_matrix(embeddings: &[SpeakerEmbedding]) -> Vec<Vec<f32>> {
 #[cfg(test)]
 #[path = "embedding_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "tests_embedding_contract.rs"]
+mod tests_embedding_contract;
