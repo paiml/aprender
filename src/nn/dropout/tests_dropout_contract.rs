@@ -78,3 +78,61 @@ fn falsify_do_004_training_produces_zeros() {
         "FALSIFIED DO-004: {n_zeros} zeros out of 100 (expected ~50 for p=0.5)"
     );
 }
+
+mod do_proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// FALSIFY-DO-001-prop: Eval identity for random inputs
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(100))]
+
+        #[test]
+        fn falsify_do_001_prop_eval_identity(
+            seed in 0..1000u32,
+            n in 2..=32usize,
+        ) {
+            let mut dropout = Dropout::with_seed(0.5, seed as u64);
+            dropout.eval();
+
+            let data: Vec<f32> = (0..n)
+                .map(|i| ((i as f32 + seed as f32) * 0.37).sin() * 10.0)
+                .collect();
+            let input = Tensor::new(&data, &[n]);
+            let output = dropout.forward(&input);
+
+            for (i, (&inp, &out)) in input.data().iter().zip(output.data().iter()).enumerate() {
+                prop_assert!(
+                    (inp - out).abs() < 1e-6,
+                    "FALSIFIED DO-001-prop: eval output[{}]={} != input={}",
+                    i, out, inp
+                );
+            }
+        }
+    }
+
+    /// FALSIFY-DO-003-prop: Shape preservation for random dims
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(100))]
+
+        #[test]
+        fn falsify_do_003_prop_shape_preserved(
+            seed in 0..1000u32,
+            n in 2..=64usize,
+        ) {
+            let dropout = Dropout::with_seed(0.5, seed as u64);
+            let data: Vec<f32> = (0..n)
+                .map(|i| ((i as f32 + seed as f32) * 0.37).sin())
+                .collect();
+            let input = Tensor::new(&data, &[n]);
+            let output = dropout.forward(&input);
+
+            prop_assert_eq!(
+                output.data().len(),
+                input.data().len(),
+                "FALSIFIED DO-003-prop: output len {} != input len {}",
+                output.data().len(), input.data().len()
+            );
+        }
+    }
+}
