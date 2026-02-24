@@ -438,3 +438,7 @@ mod tests {
         assert!(hc[0] > hc[1]); // center most central
     }
 }
+
+#[cfg(test)]
+#[path = "tests_pagerank_contract.rs"]
+mod tests_pagerank_contract;

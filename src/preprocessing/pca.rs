@@ -397,3 +397,7 @@ impl Transformer for PCA {
         Matrix::from_vec(n_samples, self.n_components, result).map_err(Into::into)
     }
 }
+
+#[cfg(test)]
+#[path = "tests_pca_contract.rs"]
+mod tests_pca_contract;

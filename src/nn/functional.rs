@@ -625,4 +625,12 @@ mod gelu_contract_tests {
 #[path = "functional_tests_bias_contract.rs"]
 mod functional_tests_bias_contract;
 
+#[cfg(test)]
+#[path = "functional_tests_silu_contract.rs"]
+mod functional_tests_silu_contract;
+
+#[cfg(test)]
+#[path = "functional_tests_swiglu_contract.rs"]
+mod functional_tests_swiglu_contract;
+
 include!("functional_include_01.rs");

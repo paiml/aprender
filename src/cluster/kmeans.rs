@@ -73,3 +73,7 @@ impl Default for KMeans {
 }
 
 include!("kmeans_impl.rs");
+
+#[cfg(test)]
+#[path = "tests_kmeans_contract.rs"]
+mod tests_kmeans_contract;
