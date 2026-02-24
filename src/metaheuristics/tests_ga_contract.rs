@@ -65,3 +65,57 @@ fn falsify_mh_009_ga_finite_objective() {
         "FALSIFIED MH-009: GA objective is not finite"
     );
 }
+
+mod ga_proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// FALSIFY-MH-008-prop: GA solution dimension matches for random dims
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(15))]
+
+        #[test]
+        fn falsify_mh_008_prop_solution_dimension(
+            dim in 1..=5usize,
+            seed in 0..200u64,
+        ) {
+            let sphere = |x: &[f64]| -> f64 { x.iter().map(|xi| xi * xi).sum() };
+            let mut ga = GeneticAlgorithm::default()
+                .with_seed(seed)
+                .with_population_size(30);
+            let space = SearchSpace::continuous(dim, -5.0, 5.0);
+            let result = ga.optimize(&sphere, &space, Budget::Evaluations(1000));
+
+            prop_assert_eq!(
+                result.solution.len(),
+                dim,
+                "FALSIFIED MH-008-prop: GA solution dim {} != {}",
+                result.solution.len(), dim
+            );
+        }
+    }
+
+    /// FALSIFY-MH-009-prop: GA objective finite for random seeds
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(15))]
+
+        #[test]
+        fn falsify_mh_009_prop_finite_objective(
+            dim in 2..=4usize,
+            seed in 0..200u64,
+        ) {
+            let sphere = |x: &[f64]| -> f64 { x.iter().map(|xi| xi * xi).sum() };
+            let mut ga = GeneticAlgorithm::default()
+                .with_seed(seed)
+                .with_population_size(30);
+            let space = SearchSpace::continuous(dim, -5.0, 5.0);
+            let result = ga.optimize(&sphere, &space, Budget::Evaluations(1000));
+
+            prop_assert!(
+                result.objective_value.is_finite(),
+                "FALSIFIED MH-009-prop: GA objective not finite (seed={}, dim={})",
+                seed, dim
+            );
+        }
+    }
+}

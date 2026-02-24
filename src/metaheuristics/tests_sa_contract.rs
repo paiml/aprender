@@ -65,3 +65,61 @@ fn falsify_mh_006_sa_finite_objective() {
         );
     }
 }
+
+mod sa_proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// FALSIFY-MH-005-prop: SA solution within bounds for random dims/seeds
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(15))]
+
+        #[test]
+        fn falsify_mh_005_prop_within_bounds(
+            dim in 2..=4usize,
+            seed in 0..200u64,
+        ) {
+            let sphere = |x: &[f64]| -> f64 { x.iter().map(|xi| xi * xi).sum() };
+            let mut sa = SimulatedAnnealing::default().with_seed(seed);
+            let space = SearchSpace::continuous(dim, -5.0, 5.0);
+            let result = sa.optimize(&sphere, &space, Budget::Evaluations(5000));
+
+            for (i, &v) in result.solution.iter().enumerate() {
+                prop_assert!(
+                    (-5.0..=5.0).contains(&v),
+                    "FALSIFIED MH-005-prop: SA solution[{}]={} outside [-5,5]",
+                    i, v
+                );
+            }
+        }
+    }
+
+    /// FALSIFY-MH-006-prop: SA objective and solution finite for random seeds
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(15))]
+
+        #[test]
+        fn falsify_mh_006_prop_finite(
+            dim in 2..=4usize,
+            seed in 0..200u64,
+        ) {
+            let sphere = |x: &[f64]| -> f64 { x.iter().map(|xi| xi * xi).sum() };
+            let mut sa = SimulatedAnnealing::default().with_seed(seed);
+            let space = SearchSpace::continuous(dim, -5.0, 5.0);
+            let result = sa.optimize(&sphere, &space, Budget::Evaluations(2000));
+
+            prop_assert!(
+                result.objective_value.is_finite(),
+                "FALSIFIED MH-006-prop: SA objective not finite (seed={}, dim={})",
+                seed, dim
+            );
+            for (i, &v) in result.solution.iter().enumerate() {
+                prop_assert!(
+                    v.is_finite(),
+                    "FALSIFIED MH-006-prop: SA solution[{}] not finite",
+                    i
+                );
+            }
+        }
+    }
+}

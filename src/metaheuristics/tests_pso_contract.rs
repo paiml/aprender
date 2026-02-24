@@ -61,3 +61,55 @@ fn falsify_mh_003_pso_within_bounds() {
         );
     }
 }
+
+mod pso_proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// FALSIFY-MH-002-prop: PSO solution dimension matches for random dims
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(15))]
+
+        #[test]
+        fn falsify_mh_002_prop_solution_dimension(
+            dim in 1..=5usize,
+            seed in 0..200u64,
+        ) {
+            let sphere = |x: &[f64]| -> f64 { x.iter().map(|xi| xi * xi).sum() };
+            let mut pso = ParticleSwarm::default().with_seed(seed);
+            let space = SearchSpace::continuous(dim, -5.0, 5.0);
+            let result = pso.optimize(&sphere, &space, Budget::Evaluations(1000));
+
+            prop_assert_eq!(
+                result.solution.len(),
+                dim,
+                "FALSIFIED MH-002-prop: PSO solution dim {} != {}",
+                result.solution.len(), dim
+            );
+        }
+    }
+
+    /// FALSIFY-MH-003-prop: PSO solution within bounds for random dims/seeds
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(15))]
+
+        #[test]
+        fn falsify_mh_003_prop_within_bounds(
+            dim in 2..=4usize,
+            seed in 0..200u64,
+        ) {
+            let sphere = |x: &[f64]| -> f64 { x.iter().map(|xi| xi * xi).sum() };
+            let mut pso = ParticleSwarm::default().with_seed(seed);
+            let space = SearchSpace::continuous(dim, -5.0, 5.0);
+            let result = pso.optimize(&sphere, &space, Budget::Evaluations(2000));
+
+            for (i, &v) in result.solution.iter().enumerate() {
+                prop_assert!(
+                    (-5.0..=5.0).contains(&v),
+                    "FALSIFIED MH-003-prop: PSO solution[{}]={} outside [-5,5]",
+                    i, v
+                );
+            }
+        }
+    }
+}
