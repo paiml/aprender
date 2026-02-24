@@ -275,9 +275,14 @@ enforcement:
 #   FALSIFY-QDOT-008:      realizar/src/quantize/contract_tests.rs (2 tests, cross-format garbage)
 #   Total: 16 contract tests in realizar
 #
-# GAPS FOUND:
-#   PMAT-335: Q4_1 and Q5_0 formats in GPU dispatch but missing from ALL_FORMAT_IDS
-#   PMAT-336: FALSIFY-QDOT-006 was missing (now added)
+# GAPS FIXED:
+#   PMAT-334: FIXED — FALSIFY-007 now scans all 8 WeightQuantType dispatch sites
+#   PMAT-336: FIXED — FALSIFY-QDOT-006 added (row-major enforcement)
+#
+# GAPS REMAINING:
+#   PMAT-335: Q4_1 and Q5_0 in GPU dispatch but no CPU QuantBlockFormat impl.
+#             These are GPU-only formats — adding to ALL_FORMAT_IDS requires
+#             corresponding trait impls. Tracked as future GPU→CPU parity work.
 #
 falsification_tests:
   - id: FALSIFY-QDOT-001
