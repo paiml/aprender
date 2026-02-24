@@ -754,16 +754,54 @@ These matches are acceptable and should NOT be treated as violations:
 
 **Finding**: `cosine_similarity_slice` returns 0.0 for vectors with L2 norm < epsilon (~1e-6). This is correct numerical stability behavior but was undocumented.
 
+### Phase 8: Proptest + EMB Gap Closure + Cross-Contract Pipeline
+
+**Date**: 2026-02-24
+**Scope**: Property-based testing, EMB-001/002/004 gaps, first pipeline tests
+
+**Five-Whys (proptest)**:
+1. **Why**: YAML contracts explicitly call for "proptest with random vectors" in every claim
+2. **Why**: All 135 existing FALSIFY tests were deterministic with fixed inputs
+3. **Why**: Deterministic tests cover human-chosen exemplars, not the input space
+4. **Why**: proptest generates adversarial edge cases humans don't anticipate
+5. **Why**: Popperian falsification demands maximally adversarial input generation
+
+**Five-Whys (EMB gap)**:
+1. **Why**: EMB-001/002/004 had coverage in aprender+trueno but not entrenar+realizar
+2. **Why**: EM-* (embedding-lookup-v1.yaml) was mapped first; EMB-* (algebra) was added later
+3. **Why**: EMB-001 (determinism), EMB-002 (shape), EMB-004 (bounds) overlap with EM-*
+4. **Why**: Overlap created false sense of coverage — different YAML, different perspective
+5. **Why**: No systematic per-YAML-file gap audit across all 4 repos
+
+**Five-Whys (pipeline)**:
+1. **Why**: No test exercised the full §2.1.1 pipeline as a single chain
+2. **Why**: EM, TE, SM contracts were tested in isolation
+3. **Why**: Bugs can hide at contract boundaries (shape mismatch between stages)
+4. **Why**: The embed→tied_lm_head→softmax chain is the critical inference path
+5. **Why**: Cross-contract pipeline faults would only show in integration
+
+| Repo | File(s) | New Tests | Contract IDs |
+|------|---------|-----------|--------------|
+| aprender | `embedding_contract_falsify.rs` | 5 proptest | EM-001-prop, EM-002-prop, EM-004-prop, EMB-001-prop, EMB-002-prop |
+| aprender | `functional.rs` | 3 proptest | SM-001-prop, SM-002-prop, SM-003-prop |
+| entrenar | `embedding.rs` | 3 | EMB-001, EMB-002, EMB-004 |
+| entrenar | `model.rs` | 1 | PIPE-001 (embed→tied_lm_head→softmax) |
+| realizar | `matmul_tests.rs` | 3 | EMB-001, EMB-002, EMB-004 |
+| realizar | `matmul_tests.rs` | 1 | PIPE-001 (embed→lm_head→softmax GGUF path) |
+
 ### Final Coverage Matrix (all §2.1.1 contracts)
 
 | Contract | aprender | trueno | entrenar | realizar | Total |
 |----------|----------|--------|----------|----------|-------|
-| EM-001..005 | 15 ✅ | 12 ✅ | 6 ✅ | 7 ✅ | 40 |
-| EMB-001..007 | 24 ✅ | 5 ✅ | 4 ✅ | 4 ✅ | 37 |
+| EM-001..005 | 15+5p ✅ | 12 ✅ | 6 ✅ | 7 ✅ | 45 |
+| EMB-001..007 | 24+2p ✅ | 5 ✅ | 7 ✅ | 7 ✅ | 45 |
 | TE-001..004 | 6 ✅ | N/A | 4 ✅ | 4 ✅ | 14 |
-| SM-001..009 | 9 ✅ | 9 ✅ | 8 ✅ | 9 ✅ | 35 |
+| SM-001..009 | 9+3p ✅ | 9 ✅ | 8 ✅ | 9 ✅ | 38 |
 | AP-001..004 | 5 ✅ | N/A | N/A | 4 ✅ | 9 |
-| **Total** | **59** | **26** | **22** | **28** | **135** |
+| PIPE-001 | N/A | N/A | 1 ✅ | 1 ✅ | 2 |
+| **Total** | **64** | **26** | **26** | **32** | **153** |
+
+Legend: `+Np` = N proptest (property-based) variants alongside deterministic tests.
 
 #### SM Naming Convention
 
@@ -819,6 +857,20 @@ Our implementation extends to SM-001..009 with the following mapping:
 - realizar `6bf2052` — FALSIFY-SM-006/007 (2 tests: identical uniform, translation invariance)
   - Key finding: SM-INV-003 (σ(x+c)=σ(x)) had ZERO coverage — now 4/4 repos covered.
   - This is the mathematical basis for the max-subtraction numerical stability trick.
+
+**Phase 7 (SM naming mismatch + SM-008/009)**:
+- aprender `ccf93f86` — spec update with SM naming convention table
+  - Key finding: YAML SM-004 = SIMD equivalence, our SM-004 = bounded output. Resolved by adding SM-008/009.
+  - Previously committed SM-008/009 tests in trueno/aprender/entrenar/realizar (Phase 6 & 7)
+
+**Phase 8 (proptest + EMB gap closure + cross-contract pipeline)**:
+- aprender `8f3f9821` — FALSIFY-EM/EMB/SM proptest variants (8 property-based tests)
+  - YAML contracts explicitly call for "proptest with random vectors" — first proptest falsification
+  - EM-001-prop, EM-002-prop, EM-004-prop, EMB-001-prop, EMB-002-prop, SM-001-prop, SM-002-prop, SM-003-prop
+- entrenar `e7463c3` — FALSIFY-EMB-001/002/004 (3 tests: lookup determinism, shape, vocab bounds)
+- realizar `a517ecc` — FALSIFY-EMB-001/002/004 (3 tests: lookup determinism, shape, vocab bounds)
+- entrenar `3db07e5` — FALSIFY-PIPE-001 (cross-contract embed→tied_lm_head→softmax pipeline)
+- realizar `16d57ec` — FALSIFY-PIPE-001 (cross-contract embed→lm_head→softmax GGUF pipeline)
 
 ---
 
