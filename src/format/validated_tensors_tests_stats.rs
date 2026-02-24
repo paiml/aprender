@@ -757,11 +757,14 @@
     /// 4. Why not add a minimum? → Would need to decide policy (>0? >=hidden?)
     /// 5. Why does this matter? → Zero-length norm produces NaN in LayerNorm division
     #[test]
-    fn falsify_n6_zero_length_norm_accepted_gap() {
-        // GAP: ValidatedVector::new(vec![], 0, name) returns Ok — no minimum length gate
+    fn falsify_n6_zero_length_norm_rejected() {
+        // FIXED (PMAT-332): ValidatedVector::new now rejects zero-length via Gate 0
         let result = ValidatedVector::new(vec![], 0, "attn_norm");
-        assert!(result.is_ok(),
-            "FALSIFY-N6: Documents PMAT-332 — zero-length norm NOT rejected by ValidatedVector");
+        assert!(result.is_err(),
+            "FALSIFY-N6: PMAT-332 fix — zero-length norm MUST be rejected by ValidatedVector");
+        let err = result.unwrap_err();
+        assert!(err.message.contains("Zero-length"),
+            "FALSIFY-N6: Error message must mention zero-length, got: {}", err.message);
     }
 
     // =========================================================================

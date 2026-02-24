@@ -145,6 +145,16 @@ impl ValidatedVector {
         expected_len: usize,
         name: &str,
     ) -> Result<Self, ContractValidationError> {
+        // Gate 0: Zero-length guard (PMAT-332)
+        // A zero-length norm weight is never valid — it means the tensor is missing.
+        if expected_len == 0 {
+            return Err(ContractValidationError {
+                tensor_name: name.to_string(),
+                rule_id: "F-LAYOUT-CONTRACT-003".to_string(),
+                message: "Zero-length vector: expected_len must be > 0".to_string(),
+            });
+        }
+
         // Gate 1: Length validation
         if data.len() != expected_len {
             return Err(ContractValidationError {
