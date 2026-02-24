@@ -444,3 +444,5 @@ mod tests_rope_contract;
 mod tests_attention_contract;
 #[path = "tests_alibi_contract.rs"]
 mod tests_alibi_contract;
+#[path = "tests_gqa_contract.rs"]
+mod tests_gqa_contract;

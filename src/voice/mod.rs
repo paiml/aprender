@@ -97,6 +97,10 @@ impl std::error::Error for VoiceError {}
 pub type VoiceResult<T> = Result<T, VoiceError>;
 
 #[cfg(test)]
+#[path = "tests_entropy_contract.rs"]
+mod tests_entropy_contract;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
