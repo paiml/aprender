@@ -65,3 +65,62 @@ fn falsify_sa_004_nucleus_top_p_stored() {
         sampler.top_p()
     );
 }
+
+mod sampling_proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// FALSIFY-SA-001-prop: Sampled token always in [0, vocab) for random logits
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(100))]
+
+        #[test]
+        fn falsify_sa_001_prop_sample_in_range(
+            vocab_size in 2..=50usize,
+            seed in 0..1000u32,
+        ) {
+            let data: Vec<f32> = (0..vocab_size)
+                .map(|i| ((i as f32 + seed as f32) * 0.37).sin() * 5.0)
+                .collect();
+            let logits = Tensor::new(&data, &[vocab_size]);
+
+            let sampler = NucleusSampler::new(0.9);
+            let token = sampler.sample(&logits);
+            prop_assert!(
+                token < vocab_size,
+                "FALSIFIED SA-001-prop: token={} >= vocab={}",
+                token, vocab_size
+            );
+        }
+    }
+
+    /// FALSIFY-SA-003-prop: Greedy always returns argmax for random logits
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(100))]
+
+        #[test]
+        fn falsify_sa_003_prop_greedy_argmax(
+            seed in 0..1000u32,
+        ) {
+            let vocab_size = 10;
+            let data: Vec<f32> = (0..vocab_size)
+                .map(|i| ((i as f32 + seed as f32) * 0.37).sin() * 10.0)
+                .collect();
+            let expected_argmax = data
+                .iter()
+                .enumerate()
+                .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+                .map(|(i, _)| i)
+                .unwrap();
+            let logits = Tensor::new(&data, &[vocab_size]);
+
+            let decoder = GreedyDecoder::new();
+            let token = decoder.decode(&logits);
+            prop_assert_eq!(
+                token, expected_argmax,
+                "FALSIFIED SA-003-prop: greedy={}, expected argmax={}",
+                token, expected_argmax
+            );
+        }
+    }
+}

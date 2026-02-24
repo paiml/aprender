@@ -107,3 +107,59 @@ fn falsify_cv_002_linearity_no_bias() {
         }
     }
 }
+
+mod conv1d_proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// FALSIFY-CV-001-prop: Output shape formula for random parameters
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(50))]
+
+        #[test]
+        fn falsify_cv_001_prop_output_shape(
+            k in prop::sample::select(vec![1usize, 3, 5, 7]),
+            s in prop::sample::select(vec![1usize, 2]),
+            p in prop::sample::select(vec![0usize, 1]),
+            l_in in 10..=50usize,
+        ) {
+            let in_ch = 2;
+            let out_ch = 4;
+            // Ensure valid: L + 2*p >= K
+            if l_in + 2 * p >= k {
+                let expected = (l_in + 2 * p - k) / s + 1;
+                let conv = Conv1d::with_options(in_ch, out_ch, k, s, p, false);
+                let x = Tensor::ones(&[1, in_ch, l_in]);
+                let y = conv.forward(&x);
+
+                prop_assert_eq!(
+                    y.shape()[2],
+                    expected,
+                    "FALSIFIED CV-001-prop: K={}, S={}, P={}, L_in={}: L_out={}, expected={}",
+                    k, s, p, l_in, y.shape()[2], expected
+                );
+            }
+        }
+    }
+
+    /// FALSIFY-CV-005-prop: K=1 preserves spatial dimension for random lengths
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(30))]
+
+        #[test]
+        fn falsify_cv_005_prop_kernel_one(
+            l_in in 1..=100usize,
+        ) {
+            let conv = Conv1d::new(2, 4, 1);
+            let x = Tensor::ones(&[1, 2, l_in]);
+            let y = conv.forward(&x);
+
+            prop_assert_eq!(
+                y.shape()[2],
+                l_in,
+                "FALSIFIED CV-005-prop: K=1, L_in={}, L_out={}",
+                l_in, y.shape()[2]
+            );
+        }
+    }
+}

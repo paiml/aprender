@@ -57,3 +57,45 @@ fn falsify_sg_003_monotone_increasing() {
         prev = y;
     }
 }
+
+mod sigmoid_proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// FALSIFY-SG-001-prop: Sigmoid output in [0, 1] for random inputs
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(200))]
+
+        #[test]
+        fn falsify_sg_001_prop_output_bounded(
+            x in -100.0f32..100.0,
+        ) {
+            let val = sigmoid_scalar(x);
+            prop_assert!(
+                (0.0..=1.0).contains(&val),
+                "FALSIFIED SG-001-prop: sigmoid({})={} not in [0,1]",
+                x, val
+            );
+        }
+    }
+
+    /// FALSIFY-SG-003-prop: Sigmoid monotone — sigmoid(a) <= sigmoid(b) for a < b
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(100))]
+
+        #[test]
+        fn falsify_sg_003_prop_monotone(
+            a in -50.0f32..50.0,
+            delta in 0.01f32..10.0,
+        ) {
+            let b = a + delta;
+            let ya = sigmoid_scalar(a);
+            let yb = sigmoid_scalar(b);
+            prop_assert!(
+                yb >= ya - 1e-7,
+                "FALSIFIED SG-003-prop: sigmoid({})={} > sigmoid({})={}",
+                a, ya, b, yb
+            );
+        }
+    }
+}

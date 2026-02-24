@@ -69,3 +69,44 @@ fn falsify_ak_004_relu_output_length() {
         output.data().len()
     );
 }
+
+mod relu_proptest_falsify {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// FALSIFY-AK-001-prop: ReLU non-negativity for random inputs
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(100))]
+
+        #[test]
+        fn falsify_ak_001_prop_relu_non_negative(
+            x in -1000.0f32..1000.0,
+        ) {
+            let input = Tensor::new(&[x], &[1]);
+            let output = relu(&input);
+            prop_assert!(
+                output.data()[0] >= 0.0,
+                "FALSIFIED AK-001-prop: ReLU({})={} < 0",
+                x, output.data()[0]
+            );
+        }
+    }
+
+    /// FALSIFY-AK-002-prop: ReLU(x) = x for positive inputs
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(100))]
+
+        #[test]
+        fn falsify_ak_002_prop_relu_positive_identity(
+            x in 0.001f32..1000.0,
+        ) {
+            let input = Tensor::new(&[x], &[1]);
+            let output = relu(&input);
+            prop_assert!(
+                (output.data()[0] - x).abs() < 1e-6,
+                "FALSIFIED AK-002-prop: ReLU({})={}, expected {}",
+                x, output.data()[0], x
+            );
+        }
+    }
+}
