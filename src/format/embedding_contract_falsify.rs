@@ -632,4 +632,45 @@ mod proptest_falsify {
             );
         }
     }
+
+    // FALSIFY-EMB-006-prop: Temperature identity for random logits
+    // YAML: "proptest with random logit vectors"
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(500))]
+        #[test]
+        fn falsify_emb_006_prop_temperature_identity(
+            logits in proptest::collection::vec(-50.0_f32..50.0, 2..32),
+        ) {
+            let scaled: Vec<f32> = logits.iter().map(|&l| l / 1.0).collect();
+            prop_assert_eq!(
+                logits, scaled,
+                "FALSIFIED EMB-006-prop: logits / 1.0 != logits"
+            );
+        }
+    }
+
+    // FALSIFY-EMB-007-prop: Temperature scaling monotonicity for random logits
+    // YAML: "proptest: T1 < T2 => H(softmax(logits/T1)) <= H(softmax(logits/T2))"
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(200))]
+        #[test]
+        fn falsify_emb_007_prop_temperature_monotonicity(
+            logits in proptest::collection::vec(-10.0_f32..10.0, 3..16),
+        ) {
+            // Test that entropy increases monotonically with temperature
+            let temperatures = [0.5_f32, 1.0, 2.0, 5.0];
+            let mut prev_h = f32::NEG_INFINITY;
+            for &t in &temperatures {
+                let scaled: Vec<f32> = logits.iter().map(|&l| l / t).collect();
+                let probs = super::softmax(&scaled);
+                let h = super::entropy(&probs);
+                prop_assert!(
+                    h >= prev_h - 1e-4,
+                    "FALSIFIED EMB-007-prop: T={} entropy={} < prev={}",
+                    t, h, prev_h
+                );
+                prev_h = h;
+            }
+        }
+    }
 }
