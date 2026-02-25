@@ -239,6 +239,58 @@ fn falsify_class_006_binary_class_accepted() {
 }
 
 // =============================================================================
+// FALSIFY-CLASS-007: Qwen3.5 must have use_bias=false (F-CLASS-007)
+//
+// Contract: classification-finetune-v1.yaml F-CLASS-007
+// Prediction: TransformerConfig::qwen3_5_9b().use_bias == false
+// If fails: LoRA adapters would wrongly create bias tensors for Qwen3.5
+// =============================================================================
+
+#[test]
+fn falsify_class_007_qwen35_no_bias() {
+    let config = entrenar::transformer::TransformerConfig::qwen3_5_9b();
+    assert!(
+        !config.use_bias,
+        "FALSIFIED F-CLASS-007: Qwen3.5 must have use_bias=false, got true"
+    );
+}
+
+#[test]
+fn falsify_class_007_qwen2_has_bias() {
+    // Counterexample: Qwen2 DOES have bias — confirms 007 is Qwen3.5-specific
+    let config = entrenar::transformer::TransformerConfig::qwen2_0_5b();
+    assert!(
+        config.use_bias,
+        "Qwen2 should have use_bias=true (verifies 007 is discriminating)"
+    );
+}
+
+// =============================================================================
+// FALSIFY-CLASS-008: LoRA must target Q/V projections (F-CLASS-008)
+//
+// Contract: classification-finetune-v1.yaml F-CLASS-008
+// Prediction: LoRA adapters are placed on q_proj and v_proj (2 per layer)
+// If fails: LoRA would target wrong projections, breaking fine-tuning
+// =============================================================================
+
+#[test]
+fn falsify_class_008_lora_adapter_count_per_layer() {
+    // Each transformer layer should have 2 LoRA adapters (Q, V)
+    let model_config = entrenar::transformer::TransformerConfig::qwen2_0_5b();
+    let classify_config = entrenar::finetune::ClassifyConfig::default();
+    let pipeline = entrenar::finetune::ClassifyPipeline::new(&model_config, classify_config);
+    let expected = model_config.num_hidden_layers * 2; // Q + V per layer
+    assert_eq!(
+        pipeline.lora_layers.len(),
+        expected,
+        "FALSIFIED F-CLASS-008: Expected {} LoRA adapters ({}*2), got {}",
+        expected,
+        model_config.num_hidden_layers,
+        pipeline.lora_layers.len()
+    );
+}
+
+// =============================================================================
 // INTEGRATION: predicted_class and display
 // =============================================================================
 

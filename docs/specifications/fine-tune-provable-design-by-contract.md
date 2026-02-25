@@ -35,7 +35,7 @@ This specification defines the provable contract chain for the **fine-tuning pat
 | Component | Precondition | Enforcement |
 |-----------|-------------|-------------|
 | Config Factory | `model_size` must map to valid config | CLI match arm; unknown → `TransformerConfig::tiny()` |
-| Corpus Loader | JSONL must have `input` and `label` fields | `Result<Corpus, CorpusError>` — no defaults |
+| Corpus Loader | JSONL must have `input` and `label` fields | `entrenar::Result<Vec<SafetySample>>` — no defaults |
 | LoRA Init | `rank > 0`, `rank < min(in_features, out_features)` | `lora-algebra-v1.yaml` FALSIFY-LA-003 |
 | Label Validation | `label_index < num_classes` | `ValidatedSafetyLabel::new()` returns `Err` on violation (F-CLASS-002) |
 | Logit Shape | `logits.len() == num_classes` | `ValidatedClassLogits::new()` returns `Err` on violation (F-CLASS-001) |
@@ -50,7 +50,7 @@ Meyer (p.44): "The stronger the precondition, the heavier the burden on the clie
 | AdamW | `v_t >= 0` (second moment), finite update | `adamw-kernel-v1.yaml` FALSIFY-AW-002, AW-004 |
 | LoRA Forward | `output_shape == input_shape` | `lora-algebra-v1.yaml` FALSIFY-LA-005 |
 | Softmax | `sum(probs) == 1.0` within `1e-5` | FALSIFY-CLASS-003 |
-| Gradient Flow | LoRA A, B matrices receive non-zero gradients | F-CLASS-006, proptest |
+| Gradient Flow | LoRA A, B matrices receive non-zero gradients | autograd backward pass; verified by `train()` convergence |
 
 Meyer (p.42): "Properties that are ensured in return by the execution of the call."
 
@@ -152,9 +152,11 @@ ClassifyTrainer::train() → ClassifyPipeline::train_batch()
     |    Optimizer: AdamW step with decoupled weight decay (once per batch)
     |
     v
-Checkpoint::save()
+ClassifyTrainer::save_checkpoint()
     |
-    |  LoRA weights + classifier head → .safetensors
+    |  classifier.weight, classifier.bias → model.safetensors
+    |  lora.{layer}.{q,v}_proj.lora_{a,b} → model.safetensors
+    |  metadata.json (epoch, loss, accuracy)
 ```
 
 ### 3.5 Stage 5: Kernel Contracts (Provable)
@@ -226,17 +228,17 @@ The `provable-contracts/contracts/aprender/binding.yaml` maps kernel equations t
 
 | Contract | Equation | Module Path | Status |
 |----------|----------|-------------|--------|
-| `cross-entropy-kernel-v1.yaml` | `cross_entropy` | `aprender::nn::functional::cross_entropy` | implemented |
-| `cross-entropy-kernel-v1.yaml` | `log_softmax` | `aprender::nn::functional::log_softmax` | implemented |
-| `adamw-kernel-v1.yaml` | `adam_moments` | `aprender::nn::optim::AdamW::step` | implemented |
-| `adamw-kernel-v1.yaml` | `adam_variance` | `aprender::nn::optim::AdamW::step` | implemented |
-| `adamw-kernel-v1.yaml` | `bias_correction` | `aprender::nn::optim::AdamW::step` | implemented |
-| `adamw-kernel-v1.yaml` | `weight_update` | `aprender::nn::optim::AdamW::step` | implemented |
-| `lora-algebra-v1.yaml` | `task_vector` | `aprender::nn::lora` | implemented |
-| `lora-algebra-v1.yaml` | `eckart_young` | `aprender::nn::lora` | implemented |
-| `lora-algebra-v1.yaml` | `lora_shape` | `aprender::nn::lora` | implemented |
-| `lora-algebra-v1.yaml` | `dare_unbiased` | `aprender::nn::lora` | implemented |
-| `lora-algebra-v1.yaml` | `shape_preservation` | `aprender::nn::lora` | implemented |
+| `cross-entropy-kernel-v1.yaml` | `cross_entropy` | `aprender::nn::loss::CrossEntropyLoss::forward` | implemented |
+| `cross-entropy-kernel-v1.yaml` | `log_softmax` | `aprender::nn::loss::CrossEntropyLoss::forward` | implemented |
+| `adamw-kernel-v1.yaml` | `adam_moments` | `entrenar::optim::AdamW::step` | implemented |
+| `adamw-kernel-v1.yaml` | `adam_variance` | `entrenar::optim::AdamW::step` | implemented |
+| `adamw-kernel-v1.yaml` | `bias_correction` | `entrenar::optim::AdamW::step` | implemented |
+| `adamw-kernel-v1.yaml` | `weight_update` | `entrenar::optim::AdamW::step` | implemented |
+| `lora-algebra-v1.yaml` | `task_vector` | `entrenar::lora::LoRALayer` | implemented |
+| `lora-algebra-v1.yaml` | `eckart_young` | `entrenar::lora::LoRALayer` | implemented |
+| `lora-algebra-v1.yaml` | `lora_shape` | `entrenar::lora::LoRALayer` | implemented |
+| `lora-algebra-v1.yaml` | `dare_unbiased` | `entrenar::lora::LoRALayer` | implemented |
+| `lora-algebra-v1.yaml` | `shape_preservation` | `entrenar::lora::LoRALayer` | implemented |
 
 ### Provable-Contracts Kernel Implementations
 
@@ -263,6 +265,8 @@ The `provable-contracts/contracts/aprender/binding.yaml` maps kernel equations t
 | FALSIFY-CLASS-004 | F-CLASS-004 | Construct `ValidatedClassifierWeight` with wrong shape |
 | FALSIFY-CLASS-005 | F-CLASS-001 | Construct `ValidatedClassLogits` with NaN values |
 | FALSIFY-CLASS-006 | Type enforcement | Construct `ValidatedClassLogits` with `num_classes < 2` |
+| FALSIFY-CLASS-007 | F-CLASS-007 | Qwen3.5 config must have `use_bias=false` |
+| FALSIFY-CLASS-008 | F-CLASS-008 | LoRA adapter count must equal `num_layers * 2` (Q/V per layer) |
 
 ### Fine-Tuning Config Factory (aprender)
 
@@ -318,31 +322,31 @@ The `provable-contracts/contracts/aprender/binding.yaml` maps kernel equations t
 | FALSIFY-FT-XCRATE-003 | F-CLASS-005 | `cross_entropy_loss()` output must be finite and non-negative |
 | FALSIFY-FT-XCRATE-004 | F-CLASS-001 | `ClassificationHead::forward()` logits accepted by `ValidatedClassLogits::new()` |
 
-**Total fine-tuning falsification tests: 29** (6 CLASS + 7 FT-QWEN35 + 4 FT-XCRATE + 6 CE + 6 AW + 6 LA — but CE+AW+LA are shared with inference path)
+**Total fine-tuning falsification tests: 31** (8 CLASS + 7 FT-QWEN35 + 4 FT-XCRATE + 6 CE + 6 AW + 6 LA — but CE+AW+LA are shared with inference path)
 
 ---
 
 ## 6. Kani Bounded Model Checking
 
-### Existing Harnesses (Shared with Inference)
+### Existing Harnesses (provable-contracts, Shared with Inference)
 
-| Harness | Contract | Property |
-|---------|----------|----------|
-| KANI-CE-001 | `cross-entropy-kernel-v1` | Cross-entropy non-negative for small inputs |
-| KANI-CE-002 | `cross-entropy-kernel-v1` | Log-softmax bounded above by zero |
-| KANI-CE-003 | `cross-entropy-kernel-v1` | Output finite for finite inputs |
-| KANI-AW-001 | `adamw-kernel-v1` | Weight decay decoupled from Adam update |
-| KANI-AW-002 | `adamw-kernel-v1` | Second moment stays non-negative |
-| KANI-AW-003 | `adamw-kernel-v1` | Update finite with positive epsilon |
-| KANI-LA-001 | `lora-algebra-v1` | Shape compatibility for bounded dimensions |
+| Harness | Contract | Property | Location |
+|---------|----------|----------|----------|
+| KANI-CE-001 | `cross-entropy-kernel-v1` | Cross-entropy non-negative for small inputs | `kani_proofs_cd.rs` |
+| KANI-CE-002 | `cross-entropy-kernel-v1` | Log-softmax bounded above by zero | `kani_proofs_cd.rs` |
+| KANI-CE-003 | `cross-entropy-kernel-v1` | Output finite for finite inputs | `kani_proofs_cd.rs` |
+| KANI-AW-001 | `adamw-kernel-v1` | Weight decay decoupled from Adam update | `kani_proofs_e1.rs` |
+| KANI-AW-002 | `adamw-kernel-v1` | Second moment stays non-negative | `kani_proofs_e1.rs` |
+| KANI-AW-003 | `adamw-kernel-v1` | Update finite with positive epsilon | `kani_proofs_e1.rs` |
+| KANI-LA-001 | `lora-algebra-v1` | Shape compatibility for bounded dimensions | PLANNED (contract only) |
 
-### Classification Harnesses (Fine-Tuning Specific)
+### Classification Harnesses (aprender, Fine-Tuning Specific)
 
-| Harness | Contract | Property |
-|---------|----------|----------|
-| KANI-FT-001 | `classification-finetune-v1` | `ValidatedClassLogits::new` rejects wrong len |
-| KANI-FT-002 | `classification-finetune-v1` | `ValidatedSafetyLabel::new` rejects out-of-bounds |
-| KANI-FT-003 | `classification-finetune-v1` | Classifier weight shape matches `hidden * classes` |
+| Harness | Contract | Property | Location |
+|---------|----------|----------|----------|
+| KANI-FT-001 | `classification-finetune-v1` | `ValidatedClassLogits::new` rejects wrong len | `proofs/kani_harnesses.rs` |
+| KANI-FT-002 | `classification-finetune-v1` | `ValidatedSafetyLabel::new` rejects out-of-bounds | `proofs/kani_harnesses.rs` |
+| KANI-FT-003 | `classification-finetune-v1` | Classifier weight shape matches `hidden * classes` | `proofs/kani_harnesses.rs` |
 
 ---
 
@@ -445,7 +449,7 @@ apr qa finetuned-model.apr --assert-classifier-head
 |-----------|-------------|
 | **Jidoka** (Automation with human touch) | Validation stops the training pipeline when a defect is detected. No mismatched logits propagate to loss computation. |
 | **Poka-Yoke** (Mistake-proofing) | `ValidatedClassLogits` makes wrong-shaped logits a compile-time impossibility. `ValidatedSafetyLabel` makes out-of-range labels impossible. |
-| **Genchi Genbutsu** (Go and see) | Falsification tests run known-bad inputs through constructors and verify rejection. 29 total fine-tuning falsification tests (including 4 cross-crate). |
+| **Genchi Genbutsu** (Go and see) | Falsification tests run known-bad inputs through constructors and verify rejection. 31 total fine-tuning falsification tests (8 CLASS + 7 FT-QWEN35 + 4 XCRATE + 12 kernel). |
 | **Kaizen** (Continuous improvement) | As we add GPU training (Phase 2-4), each new kernel gets the same contract chain: YAML → proc macro → falsification → Kani → PTX parity. |
 | **Heijunka** (Level production) | Config factories produce consistent dimensions regardless of CLI alias. `9B`, `qwen3.5-9b`, `qwen3_5`, `qwen3.5` all resolve to identical `qwen3_5_9b()` config. |
 
@@ -455,7 +459,7 @@ apr qa finetuned-model.apr --assert-classifier-head
 
 ```bash
 # Full fine-tuning contract validation
-cargo test -- falsify_ft_qwen35 falsify_class falsify_ft_xcrate  # 17 tests (aprender)
+cargo test -- falsify_ft_qwen35 falsify_class falsify_ft_xcrate  # 19 tests (aprender)
 cargo test -p provable-contracts -- falsify_ce falsify_aw falsify_la  # 18 tests (kernels)
 
 # QA gate for fine-tuned models
