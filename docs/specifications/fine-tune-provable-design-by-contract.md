@@ -23,7 +23,7 @@ This specification defines the provable contract chain for the **fine-tuning pat
 | **Runtime Dispatch** | `forward_block_incremental()` / `forward_linear_block_incremental()` | `ClassifyTrainer::train()` → `ClassifyPipeline::forward_backward_single()` |
 | **Kernel Contracts** | `softmax-kernel-v1`, `rmsnorm-kernel-v1`, `rope-kernel-v1` | `cross-entropy-kernel-v1`, `adamw-kernel-v1`, `lora-algebra-v1` |
 | **SIMD Dispatch** | scalar / AVX2 / PTX for all inference kernels | scalar / AVX2 / PTX for CE+AdamW (PARITY ACHIEVED) |
-| **Falsification** | `FALSIFY-MF-QWEN35-001..008`, `FALSIFY-TL-*` | `FALSIFY-CLASS-001..006`, `FALSIFY-FT-QWEN35-001..007` |
+| **Falsification** | `FALSIFY-MF-QWEN35-001..008`, `FALSIFY-TL-*` | `FALSIFY-CLASS-001..008`, `FALSIFY-FT-QWEN35-001..007` |
 | **QA Gate** | `apr qa` (8 gates) | `apr qa --assert-classifier-head` + `cargo test -- falsify` |
 
 ---
@@ -96,7 +96,7 @@ provable-contracts/contracts/adamw-kernel-v1.yaml
 ```rust
 // Private inner fields — ONLY way to construct is validated new()
 pub struct ValidatedClassLogits { data: Vec<f32>, num_classes: usize }
-pub struct ValidatedSafetyLabel { inner: SafetyClass }
+pub struct ValidatedSafetyLabel { class: SafetyClass, index: usize }
 pub struct ValidatedClassifierWeight { data: Vec<f32>, hidden_size: usize, num_classes: usize }
 
 // Poka-Yoke: invalid states are unrepresentable
@@ -411,7 +411,7 @@ dL/d_LoRA_B:     ❌ MISSING (backward LoRA B matrix gradient)
 cargo test -- falsify_ft_qwen35           # 7 tests
 
 # 2. Poka-Yoke types enforce invariants
-cargo test -- falsify_class               # 6 tests
+cargo test -- falsify_class               # 8 tests
 
 # 3. Cross-crate contract (aprender ↔ entrenar)
 cargo test -- falsify_ft_xcrate           # 4 tests

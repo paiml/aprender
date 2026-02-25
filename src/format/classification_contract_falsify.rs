@@ -4,7 +4,7 @@
 //! If ANY test here passes when it shouldn't, the contract is BROKEN.
 //!
 //! Contract: contracts/classification-finetune-v1.yaml
-//! Tests: FALSIFY-CLASS-001..006
+//! Tests: FALSIFY-CLASS-001..008
 
 #![allow(clippy::unwrap_used)]
 
