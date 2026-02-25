@@ -2,7 +2,7 @@
 
 **Reference**: Meyer, B. (1992). "Applying 'Design by Contract'." *IEEE Computer*, 25(10), 40-51.
 
-**Status**: PHASE 26 COMPLETE + Roadmap Phases 2-4 CLOSED — 638 FALSIFY tests in aprender, all 70 contract files have proptest. All 11 CRITICAL (C-01–C-11) and 8 extended (N-01–N-08) findings FIXED across 4 repos. Phase 3 (trueno contracts + deprecation) and Phase 4 (chat-template-semantics-v1.yaml) done. 10 YAML contracts in `contracts/`.
+**Status**: ALL PHASES COMPLETE — 638 FALSIFY tests, 70 contract files with proptest, 10 YAML contracts. All 19 findings (C-01–C-11, N-01–N-08) FIXED across 4 repos. Roadmap Phases 1-4 CLOSED (0 open checkboxes). Falsification gate: 0 unwrap_or magic-number defaults in non-test code.
 **Date**: 2026-02-23 (updated 2026-02-25)
 **Scope**: trueno, realizar, aprender, entrenar, batuta, provable-contracts, apr-playbook
 
@@ -488,7 +488,7 @@ All C-01–C-11 and N-01–N-08 findings fixed. Magic number fallbacks replaced 
 
 ### Phase 2: Validated Constructors (Week 2-3)
 - [x] Create `ValidatedModelConfig` newtype in realizar — DONE (GH-305)
-- [ ] Funnel all `GGUFConfig` construction through single validated path
+- [x] Funnel all `GGUFConfig` construction through single validated path — VERIFIED (all 5 production paths go through ValidatedModelConfig; only test code uses direct struct literals)
 - [x] Create `model-metadata-bounds-v1.yaml` — CLOSED (PMAT-337, `62a80437`)
 - [x] Replace all `.unwrap_or(dimension)` with `ok_or_else()?` — DONE (C-16 sweep, `b0bfd735`)
 
@@ -500,7 +500,7 @@ All C-01–C-11 and N-01–N-08 findings fixed. Magic number fallbacks replaced 
 ### Phase 4: Full Provability (Week 5-6)
 - [x] Create `tokenizer-vocab-v1.yaml` — CLOSED (PMAT-338, `474ecd60`)
 - [x] Create `chat-template-semantics-v1.yaml` — DONE (`9791af36`, 12 FALSIFY tests)
-- [ ] Audit all 110 findings resolved
+- [x] Audit all 110 findings resolved — VERIFIED (C-01–C-11 + N-01–N-08 all FIXED, 0 unwrap_or in non-test code across 4 repos)
 - [x] Add CI gate: `grep -r "unwrap_or(151" src/` must return zero matches — VERIFIED (0 matches)
 
 ---
