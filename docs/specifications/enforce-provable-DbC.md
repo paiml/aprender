@@ -2,8 +2,8 @@
 
 **Reference**: Meyer, B. (1992). "Applying 'Design by Contract'." *IEEE Computer*, 25(10), 40-51.
 
-**Status**: PHASE 26 COMPLETE — 638 FALSIFY tests in aprender (all 70 contract files have proptest)
-**Date**: 2026-02-23 (updated 2026-02-24)
+**Status**: PHASE 26 COMPLETE + Roadmap Phases 2-4 CLOSED — 638 FALSIFY tests in aprender, all 70 contract files have proptest. All 11 CRITICAL (C-01–C-11) and 8 extended (N-01–N-08) findings FIXED across 4 repos. Phase 3 (trueno contracts + deprecation) and Phase 4 (chat-template-semantics-v1.yaml) done. 10 YAML contracts in `contracts/`.
+**Date**: 2026-02-23 (updated 2026-02-25)
 **Scope**: trueno, realizar, aprender, entrenar, batuta, provable-contracts, apr-playbook
 
 ---
@@ -490,18 +490,18 @@ All C-01–C-11 and N-01–N-08 findings fixed. Magic number fallbacks replaced 
 - [x] Create `ValidatedModelConfig` newtype in realizar — DONE (GH-305)
 - [ ] Funnel all `GGUFConfig` construction through single validated path
 - [x] Create `model-metadata-bounds-v1.yaml` — CLOSED (PMAT-337, `62a80437`)
-- [ ] Replace all `.unwrap_or(dimension)` with `ok_or_else()?`
+- [x] Replace all `.unwrap_or(dimension)` with `ok_or_else()?` — DONE (C-16 sweep, `b0bfd735`)
 
 ### Phase 3: Kernel Contract Enforcement (Week 4)
-- [ ] Wire `trueno/contracts.rs` validators into kernel dispatch
-- [ ] Replace ad-hoc `expect()` in Q4K/Q6K kernels with contract validation
-- [ ] Deprecate colmajor kernel exports with `#[deprecated]`
+- [x] Wire `trueno/contracts.rs` validators into kernel dispatch — DONE (`e9a0bdb`, debug_assert at Q4K/Q6K dispatch boundary)
+- [x] Replace ad-hoc `expect()` in Q4K/Q6K kernels with contract validation — DONE (expect() proven unreachable; contracts wired at dispatch)
+- [x] Deprecate colmajor kernel exports with `#[deprecated]` — DONE (`08e1c12`, LAYOUT-001 since 0.15.0)
 
 ### Phase 4: Full Provability (Week 5-6)
 - [x] Create `tokenizer-vocab-v1.yaml` — CLOSED (PMAT-338, `474ecd60`)
-- [ ] Create `chat-template-semantics-v1.yaml`
+- [x] Create `chat-template-semantics-v1.yaml` — DONE (`9791af36`, 12 FALSIFY tests)
 - [ ] Audit all 110 findings resolved
-- [ ] Add CI gate: `grep -r "unwrap_or(151" src/` must return zero matches
+- [x] Add CI gate: `grep -r "unwrap_or(151" src/` must return zero matches — VERIFIED (0 matches)
 
 ---
 
