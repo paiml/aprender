@@ -319,6 +319,7 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             model_size,
             task,
             num_classes,
+            checkpoint_format,
         }) => finetune::run(
             file.as_deref(),
             method,
@@ -334,6 +335,7 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             model_size.as_deref(),
             task.as_deref(),
             *num_classes,
+            checkpoint_format,
             cli.json,
         ),
         Commands::ModelOps(ModelOpsCommands::Prune {

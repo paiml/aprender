@@ -45,6 +45,9 @@ pub enum ModelOpsCommands {
         /// Number of classes for classification task
         #[arg(long, default_value = "5")]
         num_classes: usize,
+        /// Output format for checkpoints: apr, safetensors, or both (comma-separated)
+        #[arg(long, value_name = "FORMAT", default_value = "apr,safetensors")]
+        checkpoint_format: String,
     },
     /// Prune model (structured/unstructured pruning) (GH-247)
     Prune {

@@ -99,7 +99,7 @@ fn handle_cached_model(fetcher: &mut ModelFetcher, model_ref: &str) -> Result<()
 
     println!("  Path: {}", result.path.display());
     println!("  Size: {}", result.size_human());
-    println!("  Format: {:?}", result.format);
+    println!("  Format: {}", result.format.name());
 
     ensure_safetensors_companions(&result)?;
     print_pull_usage(&result.path, false);
@@ -139,7 +139,7 @@ fn download_single_model(
 
     println!("  Path: {}", result.path.display().to_string().green());
     println!("  Size: {}", result.size_human().yellow());
-    println!("  Format: {:?}", result.format);
+    println!("  Format: {}", result.format.name());
     println!("  Hash: {}", &result.hash[..16]);
     Ok(result)
 }

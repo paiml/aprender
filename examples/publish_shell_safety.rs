@@ -236,8 +236,15 @@ Classifies bash/shell scripts into 5 safety categories.
 ## Usage
 
 ```bash
-# Classify with bashrs
-bashrs lint script.sh
+# Classify a shell script (rule-based, instant)
+bashrs classify script.sh
+# Output: safe (confidence: 95.0%)
+
+# JSON output with per-class scores
+bashrs classify --json script.sh
+
+# Export corpus for training
+bashrs corpus export-dataset --format classification -o corpus.jsonl
 ```
 
 ## Training
@@ -248,6 +255,16 @@ bashrs lint script.sh
 - **Loss**: CrossEntropyLoss
 - **Epochs**: 50
 - **Corpus**: bashrs v6.64.0 ({n_entries} entries)
+
+### v2 LoRA Fine-Tuning (via entrenar)
+
+```bash
+# Export classification corpus
+bashrs corpus export-dataset --format classification -o /tmp/corpus.jsonl
+
+# Fine-tune with LoRA (Qwen2-0.5B)
+apr finetune --task classify --model-size 0.5B --data /tmp/corpus.jsonl
+```
 
 ## Model Card
 

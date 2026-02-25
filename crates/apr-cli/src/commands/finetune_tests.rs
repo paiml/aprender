@@ -49,7 +49,7 @@ fn test_format_params() {
 #[test]
 fn test_run_no_model() {
     let result = run(
-        None, "auto", None, 16.0, false, None, None, None, false, 3, 2e-4, None, None, 5, false,
+        None, "auto", None, 16.0, false, None, None, None, false, 3, 2e-4, None, None, 5, "apr,safetensors", false,
     );
     assert!(result.is_err());
 }
@@ -71,6 +71,7 @@ fn test_run_plan_with_model_size() {
         Some("7B"),
         None,
         5,
+        "apr,safetensors",
         false,
     );
     assert!(result.is_ok());
@@ -93,6 +94,7 @@ fn test_run_plan_json() {
         Some("14B"),
         None,
         5,
+        "apr,safetensors",
         true,
     );
     assert!(result.is_ok());
@@ -117,6 +119,7 @@ fn test_run_with_model_file() {
         None,
         None,
         5,
+        "apr,safetensors",
         false,
     );
     assert!(result.is_ok());
@@ -222,6 +225,7 @@ fn test_run_training_creates_adapter() {
         None,
         None,
         5,
+        "apr,safetensors",
         true,
     );
     assert!(result.is_ok(), "Training should succeed: {result:?}");

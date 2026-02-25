@@ -363,6 +363,7 @@ pub(crate) fn run(
     model_size: Option<&str>,
     task: Option<&str>,
     num_classes: usize,
+    checkpoint_format: &str,
     json_output: bool,
 ) -> Result<()> {
     if merge_mode {
@@ -380,6 +381,7 @@ pub(crate) fn run(
             epochs,
             learning_rate,
             plan_only,
+            checkpoint_format,
             json_output,
         );
     }
@@ -484,8 +486,9 @@ include!("finetune_display_next_validate.rs");
 
 /// Run classification fine-tuning pipeline via entrenar.
 ///
-/// Creates a ClassifyPipeline with the specified configuration,
-/// loads the corpus, and runs a forward pass to verify the pipeline works.
+/// Creates a ClassifyPipeline, loads the corpus, and runs the full training
+/// loop via ClassifyTrainer with epoch management, validation, LR scheduling,
+/// checkpointing, and early stopping.
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::disallowed_methods)]
 fn run_classify(
@@ -497,9 +500,11 @@ fn run_classify(
     epochs: u32,
     learning_rate: f64,
     plan_only: bool,
+    checkpoint_format: &str,
     json_output: bool,
 ) -> Result<()> {
     use entrenar::finetune::classify_pipeline::{ClassifyConfig, ClassifyPipeline};
+    use entrenar::finetune::{ClassifyTrainer, TrainingConfig};
     use entrenar::transformer::TransformerConfig;
 
     if !json_output {
@@ -534,10 +539,11 @@ fn run_classify(
         output::kv("LoRA rank", rank.to_string());
         output::kv("Epochs", epochs.to_string());
         output::kv("Learning rate", format!("{learning_rate:.1e}"));
+        output::kv("Checkpoint format", checkpoint_format);
         println!();
     }
 
-    let mut pipeline = ClassifyPipeline::new(&model_config, classify_config);
+    let pipeline = ClassifyPipeline::new(&model_config, classify_config);
 
     if !json_output {
         println!("{}", pipeline.summary());
@@ -563,58 +569,185 @@ fn run_classify(
         return Ok(());
     }
 
-    // Verify corpus if provided
-    if let Some(data) = data_path {
-        if !data.exists() {
-            return Err(CliError::FileNotFound(data.to_path_buf()));
-        }
-
-        let samples = pipeline
-            .load_corpus(data)
-            .map_err(|e| CliError::ValidationFailed(format!("Failed to load corpus: {e}")))?;
-
-        let stats = entrenar::finetune::corpus_stats(&samples, num_classes);
-
+    // Training requires data
+    let Some(data) = data_path else {
         if !json_output {
-            output::subheader("Corpus");
-            output::kv("Samples", stats.total.to_string());
-            output::kv("Avg input length", format!("{} chars", stats.avg_input_len));
-            for (i, count) in stats.class_counts.iter().enumerate() {
-                let label = format!("  Class {i}");
-                output::kv(&label, count.to_string());
-            }
             println!();
+            println!("{}", "NEXT STEPS".white().bold());
+            println!("{}", "\u{2500}".repeat(50));
+            println!("  Provide --data <train.jsonl> to start training.");
+            println!(
+                "  Example: apr finetune --task classify --data train.jsonl -o checkpoints/"
+            );
         }
+        return Ok(());
+    };
 
-        // Run a single forward pass to verify pipeline works
-        if !json_output {
-            output::pipeline_stage("Verification", output::StageStatus::Running);
-        }
-
-        if let Some(sample) = samples.first() {
-            // Simple byte-level tokenization for verification
-            let token_ids: Vec<u32> = sample.input.bytes().map(u32::from).take(64).collect();
-            let loss = pipeline.train_step(&token_ids, sample.label);
-
-            if !json_output {
-                output::pipeline_stage("Verification", output::StageStatus::Done);
-                output::kv("  Sample loss", format!("{loss:.4}"));
-                println!();
-            }
-        }
+    if !data.exists() {
+        return Err(CliError::FileNotFound(data.to_path_buf()));
     }
 
-    let _out = output_path.unwrap_or(Path::new("classify-adapter.apr"));
+    // Load corpus
+    let samples = pipeline
+        .load_corpus(data)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to load corpus: {e}")))?;
+
+    let stats = entrenar::finetune::corpus_stats(&samples, num_classes);
 
     if !json_output {
-        output::subheader("Status");
-        println!("  Pipeline configured and verified.");
-        println!(
-            "  Full training loop requires GPU acceleration (--task classify --epochs {epochs})."
-        );
+        output::subheader("Corpus");
+        output::kv("Samples", stats.total.to_string());
+        output::kv("Avg input length", format!("{} chars", stats.avg_input_len));
+        for (i, count) in stats.class_counts.iter().enumerate() {
+            let label = format!("  Class {i}");
+            output::kv(&label, count.to_string());
+        }
+        println!();
     }
 
+    // Resolve output directory for checkpoints
+    let output_dir = output_path
+        .unwrap_or(Path::new("checkpoints"))
+        .to_path_buf();
+
+    // Create TrainingConfig from CLI args
+    let training_config = TrainingConfig {
+        epochs: epochs as usize,
+        val_split: 0.2,
+        save_every: 5,
+        early_stopping_patience: 10,
+        checkpoint_dir: output_dir.clone(),
+        seed: 42,
+        log_interval: 1,
+        ..TrainingConfig::default()
+    };
+
+    // Create trainer
+    let mut trainer = ClassifyTrainer::new(pipeline, samples, training_config)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to create trainer: {e}")))?;
+
+    if !json_output {
+        output::pipeline_stage("Training", output::StageStatus::Running);
+        println!("  Output dir: {}", output_dir.display());
+        println!();
+    }
+
+    // Run training
+    let result = trainer.train();
+
+    if !json_output {
+        output::pipeline_stage("Training", output::StageStatus::Done);
+        println!();
+    }
+
+    // Display results
+    display_train_result(&result, &output_dir, checkpoint_format, json_output);
+
     Ok(())
+}
+
+/// Display training results: per-epoch metrics table, best epoch, and summary.
+#[allow(clippy::disallowed_methods)]
+fn display_train_result(
+    result: &entrenar::finetune::TrainResult,
+    output_dir: &Path,
+    checkpoint_format: &str,
+    json_output: bool,
+) {
+    if json_output {
+        let epochs_json: Vec<serde_json::Value> = result
+            .epoch_metrics
+            .iter()
+            .map(|m| {
+                serde_json::json!({
+                    "epoch": m.epoch,
+                    "train_loss": m.train_loss,
+                    "train_accuracy": m.train_accuracy,
+                    "val_loss": m.val_loss,
+                    "val_accuracy": m.val_accuracy,
+                    "learning_rate": m.learning_rate,
+                    "epoch_time_ms": m.epoch_time_ms,
+                    "samples_per_sec": m.samples_per_sec,
+                })
+            })
+            .collect();
+
+        let json = serde_json::json!({
+            "status": "training_complete",
+            "best_epoch": result.best_epoch,
+            "best_val_loss": result.best_val_loss,
+            "stopped_early": result.stopped_early,
+            "total_time_ms": result.total_time_ms,
+            "total_epochs": result.epoch_metrics.len(),
+            "checkpoint_dir": output_dir.display().to_string(),
+            "checkpoint_format": checkpoint_format,
+            "epoch_metrics": epochs_json,
+        });
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json).unwrap_or_default()
+        );
+        return;
+    }
+
+    // Per-epoch metrics table
+    output::subheader("Training Metrics");
+    println!();
+    println!(
+        "  {:>5}  {:>10}  {:>10}  {:>10}  {:>10}  {:>10}  {:>8}",
+        "Epoch".white().bold(),
+        "Train Loss".white().bold(),
+        "Val Loss".white().bold(),
+        "Train Acc".white().bold(),
+        "Val Acc".white().bold(),
+        "LR".white().bold(),
+        "Time".white().bold(),
+    );
+    println!("  {}", "\u{2500}".repeat(72));
+
+    for m in &result.epoch_metrics {
+        let is_best = m.epoch == result.best_epoch;
+        let marker = if is_best { "*" } else { " " };
+        println!(
+            " {}{:>4}  {:>10.4}  {:>10.4}  {:>9.1}%  {:>9.1}%  {:>10.2e}  {:>6}ms",
+            marker,
+            m.epoch + 1,
+            m.train_loss,
+            m.val_loss,
+            m.train_accuracy * 100.0,
+            m.val_accuracy * 100.0,
+            m.learning_rate,
+            m.epoch_time_ms,
+        );
+    }
+    println!();
+
+    // Summary
+    output::subheader("Summary");
+    let total_secs = result.total_time_ms as f64 / 1000.0;
+    output::kv("Total epochs", result.epoch_metrics.len().to_string());
+    output::kv(
+        "Best epoch",
+        format!("{} (val_loss: {:.4})", result.best_epoch + 1, result.best_val_loss),
+    );
+    if result.stopped_early {
+        output::kv("Early stopping", "Yes (patience exhausted)".yellow().to_string());
+    } else {
+        output::kv("Early stopping", "No (completed all epochs)");
+    }
+    output::kv("Total time", format!("{total_secs:.1}s"));
+    output::kv("Checkpoints", output_dir.display().to_string());
+    output::kv("Format", checkpoint_format);
+
+    // Show final accuracy prominently
+    if let Some(best) = result.epoch_metrics.iter().find(|m| m.epoch == result.best_epoch) {
+        println!();
+        println!(
+            "  {} Best validation accuracy: {:.1}%",
+            "\u{2713}".green().bold(),
+            best.val_accuracy * 100.0,
+        );
+    }
 }
 
 #[cfg(test)]
