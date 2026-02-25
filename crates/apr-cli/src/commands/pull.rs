@@ -410,7 +410,7 @@ pub fn list(json: bool) -> Result<()> {
                 serde_json::json!({
                     "name": m.name,
                     "size_bytes": m.size_bytes,
-                    "format": format!("{:?}", m.format),
+                    "format": m.format.name(),
                     "path": m.path.display().to_string(),
                 })
             })
@@ -444,17 +444,17 @@ pub fn list(json: bool) -> Result<()> {
 
     // Print header
     println!(
-        "{:<40} {:<12} {:<10} {}",
+        "{:<40} {:<12} {:<12} {}",
         "NAME".dimmed(),
         "SIZE".dimmed(),
         "FORMAT".dimmed(),
         "PATH".dimmed()
     );
-    println!("{}", "-".repeat(100).dimmed());
+    println!("{}", "-".repeat(104).dimmed());
 
     for model in &models {
         let size = format_bytes(model.size_bytes);
-        let format = format!("{:?}", model.format);
+        let format = model.format.name();
         let name = if model.name.len() > 38 {
             format!("{}...", &model.name[..35])
         } else {
@@ -462,7 +462,7 @@ pub fn list(json: bool) -> Result<()> {
         };
 
         println!(
-            "{:<40} {:<12} {:<10} {}",
+            "{:<40} {:<12} {:<12} {}",
             name.cyan(),
             size.yellow(),
             format,
