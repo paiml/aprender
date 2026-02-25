@@ -120,3 +120,18 @@
 | ⏭️ | SKIP |
 | 💥 | PANIC |
 | ⏰ | TIMEOUT |
+
+## Fine-Tuning Readiness
+
+Models qualified for fine-tuning via `apr finetune --task classify`:
+
+| Model | CLI Flag | Hidden Size | LoRA Targets | Bias | Status |
+|-------|----------|-------------|-------------|------|--------|
+| Qwen2.5-Coder-0.5B | `--model-size 0.5B` | 896 | Q/V proj | Yes | Ready |
+| Qwen3.5-9B-Instruct | `--model-size 9B` | 4096 | Q/V proj | No | Ready |
+
+**Notes:**
+- Qwen3.5-9B uses `head_dim=256` (explicit), `vocab_size=248320`, and no attention bias
+- LoRA targets Q/V projections for both standard and linear attention layers
+- Use `--model-size qwen3.5-9b` or `--model-size 9B` for Qwen3.5 fine-tuning
+- Contract: `contracts/classification-finetune-v1.yaml`

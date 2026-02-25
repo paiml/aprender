@@ -373,6 +373,7 @@ pub(crate) fn run(
     // Dispatch to classification pipeline when --task classify
     if let Some("classify") = task {
         return run_classify(
+            model_path,
             model_size,
             data_path,
             output_path,
@@ -492,6 +493,7 @@ include!("finetune_display_next_validate.rs");
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::disallowed_methods)]
 fn run_classify(
+    model_path: Option<&Path>,
     model_size: Option<&str>,
     data_path: Option<&Path>,
     output_path: Option<&Path>,
@@ -515,6 +517,7 @@ fn run_classify(
     // Select model config based on model_size
     let model_config = match model_size.unwrap_or("tiny") {
         "0.5B" | "500M" | "qwen2-0.5b" => TransformerConfig::qwen2_0_5b(),
+        "9B" | "qwen3.5-9b" | "qwen3_5" | "qwen3.5" => TransformerConfig::qwen3_5_9b(),
         _ => TransformerConfig::tiny(), // For testing
     };
 
@@ -543,7 +546,13 @@ fn run_classify(
         println!();
     }
 
-    let pipeline = ClassifyPipeline::new(&model_config, classify_config);
+    // Use from_pretrained() when a model directory with weights is provided
+    let pipeline = if let Some(mp) = model_path.filter(|p| p.is_dir()) {
+        ClassifyPipeline::from_pretrained(mp, &model_config, classify_config)
+            .map_err(|e| CliError::ValidationFailed(format!("Failed to load pretrained model: {e}")))?
+    } else {
+        ClassifyPipeline::new(&model_config, classify_config)
+    };
 
     if !json_output {
         println!("{}", pipeline.summary());

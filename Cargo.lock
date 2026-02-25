@@ -6483,20 +6483,21 @@ dependencies = [
 
 [[package]]
 name = "trueno-viz"
-version = "0.1.20"
+version = "0.1.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d2cd289f7b15c454eba71083d18e4193f9e3488e384030751d091fec56acc5a7"
+checksum = "882ffd53613bef43526c08f0a87d6058a10c276a599c7055caa985103475faf9"
 dependencies = [
  "base64",
+ "batuta-common",
  "crossterm",
  "dirs 5.0.1",
  "libc",
  "png 0.17.16",
  "ratatui",
  "serde",
- "serde_yaml",
+ "serde_yaml_ng",
  "thiserror 2.0.18",
- "trueno 0.13.0",
+ "trueno 0.15.0",
 ]
 
 [[package]]

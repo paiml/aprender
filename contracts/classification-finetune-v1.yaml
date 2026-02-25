@@ -125,6 +125,17 @@ classification_invariants:
       description: "LoRA A and B matrices must receive non-zero gradients"
       severity: P1
 
+    - id: F-CLASS-007
+      name: "Qwen3.5 no attention bias"
+      description: "Qwen3.5 base model must have use_bias=false; LoRA adapters must not create bias tensors"
+      severity: P0
+      critical: true
+
+    - id: F-CLASS-008
+      name: "Qwen3.5 LoRA targets Q/V projections"
+      description: "LoRA targets q_proj and v_proj for both standard and linear attention layers"
+      severity: P1
+
 # =============================================================================
 # SHELL SAFETY DOMAIN
 # =============================================================================
@@ -165,16 +176,25 @@ shell_safety:
 # =============================================================================
 
 model_architecture:
-  base_model: "Qwen2.5-Coder-0.5B"
-  hidden_size: 896
+  supported_base_models:
+    - name: "Qwen2.5-Coder-0.5B"
+      hidden_size: 896
+      use_bias: true
+      cli_flag: "--model-size 0.5B"
+
+    - name: "Qwen3.5-9B-Instruct"
+      hidden_size: 4096
+      use_bias: false            # F-CLASS-007: no attention bias
+      cli_flag: "--model-size 9B"
+
+  default_base_model: "Qwen2.5-Coder-0.5B"
   fine_tuning_method: "LoRA"
   lora_config:
     rank: 16
     alpha: 16.0
-    target_modules: ["q_proj", "v_proj"]
+    target_modules: ["q_proj", "v_proj"]  # F-CLASS-008: same for standard and linear attention layers
   classifier_head:
     type: "mean_pool + linear"
-    input_dim: 896    # hidden_size
     output_dim: 5     # num_classes
     bias: true
 

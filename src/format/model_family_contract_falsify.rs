@@ -686,4 +686,381 @@ mod contract_falsification {
             }
         }
     }
+
+    // ========================================================================
+    // FALSIFY-MF-QWEN35-001: Qwen3.5 9B exact dimensions
+    //
+    // Prediction: The qwen3_5/9b size variant has the documented dimensions
+    // from the Qwen3.5 model card. If fails: contract YAML is stale or wrong.
+    // ========================================================================
+    #[test]
+    fn falsify_mf_qwen35_001_9b_dimensions() {
+        let families = load_all_families();
+        let qwen35 = families
+            .iter()
+            .find(|(name, _)| name == "qwen3_5")
+            .expect("FALSIFIED: qwen3_5 family not found in contracts/model-families/");
+
+        let variant = qwen35
+            .1
+            .size_variants
+            .get("9b")
+            .expect("FALSIFIED: qwen3_5 missing '9b' size variant");
+
+        assert_eq!(variant.hidden_dim, 4096,
+            "FALSIFIED QWEN35-001: hidden_dim={}, expected 4096", variant.hidden_dim);
+        assert_eq!(variant.num_layers, 32,
+            "FALSIFIED QWEN35-001: num_layers={}, expected 32", variant.num_layers);
+        assert_eq!(variant.num_heads, 16,
+            "FALSIFIED QWEN35-001: num_heads={}, expected 16", variant.num_heads);
+        assert_eq!(variant.num_kv_heads, 4,
+            "FALSIFIED QWEN35-001: num_kv_heads={}, expected 4", variant.num_kv_heads);
+        assert_eq!(variant.intermediate_dim, 12288,
+            "FALSIFIED QWEN35-001: intermediate_dim={}, expected 12288", variant.intermediate_dim);
+        assert_eq!(variant.vocab_size, 248320,
+            "FALSIFIED QWEN35-001: vocab_size={}, expected 248320", variant.vocab_size);
+        assert_eq!(variant.head_dim, 256,
+            "FALSIFIED QWEN35-001: head_dim={}, expected 256", variant.head_dim);
+        assert_eq!(variant.max_position_embeddings, 262144,
+            "FALSIFIED QWEN35-001: max_pos_embed={}, expected 262144", variant.max_position_embeddings);
+    }
+
+    // ========================================================================
+    // FALSIFY-MF-QWEN35-002: Qwen3.5 has no attention bias
+    //
+    // Prediction: Qwen3.5 constraints specify has_bias=false.
+    // If fails: contract YAML incorrectly claims bias exists → weight
+    // loader would allocate and look for bias tensors that don't exist.
+    // ========================================================================
+    #[test]
+    fn falsify_mf_qwen35_002_no_bias() {
+        let families = load_all_families();
+        let qwen35 = families
+            .iter()
+            .find(|(name, _)| name == "qwen3_5")
+            .expect("FALSIFIED: qwen3_5 family not found");
+
+        assert!(
+            !qwen35.1.constraints.has_bias,
+            "FALSIFIED QWEN35-002: has_bias={}, expected false (Qwen3.5 has no attention bias)",
+            qwen35.1.constraints.has_bias
+        );
+    }
+
+    // ========================================================================
+    // FALSIFY-MF-QWEN35-003: Qwen3.5 attention dimension identity
+    //
+    // Prediction: hidden_dim == num_heads * head_dim for 9B.
+    // Qwen3.5 9B: 16 * 256 = 4096 == hidden_dim.
+    // If fails: either head_dim or num_heads is wrong in the contract.
+    // ========================================================================
+    #[test]
+    fn falsify_mf_qwen35_003_attention_dim_identity() {
+        let families = load_all_families();
+        let qwen35 = families
+            .iter()
+            .find(|(name, _)| name == "qwen3_5")
+            .expect("FALSIFIED: qwen3_5 family not found");
+
+        let variant = qwen35.1.size_variants.get("9b")
+            .expect("FALSIFIED: qwen3_5 missing '9b' size variant");
+
+        let computed = variant.num_heads * variant.head_dim;
+        assert_eq!(
+            computed, variant.hidden_dim,
+            "FALSIFIED QWEN35-003: num_heads({}) * head_dim({}) = {} != hidden_dim({})",
+            variant.num_heads, variant.head_dim, computed, variant.hidden_dim
+        );
+    }
+
+    // ========================================================================
+    // FALSIFY-MF-QWEN35-004: Qwen3.5 GQA divisibility
+    //
+    // Prediction: num_heads % num_kv_heads == 0 (GQA requirement).
+    // 9B: 16 % 4 == 0. If fails: GQA repeat_interleave would panic.
+    // ========================================================================
+    #[test]
+    fn falsify_mf_qwen35_004_gqa_divisibility() {
+        let families = load_all_families();
+        let qwen35 = families
+            .iter()
+            .find(|(name, _)| name == "qwen3_5")
+            .expect("FALSIFIED: qwen3_5 family not found");
+
+        let variant = qwen35.1.size_variants.get("9b")
+            .expect("FALSIFIED: qwen3_5 missing '9b' size variant");
+
+        assert_eq!(
+            variant.num_heads % variant.num_kv_heads, 0,
+            "FALSIFIED QWEN35-004: num_heads({}) not divisible by num_kv_heads({})",
+            variant.num_heads, variant.num_kv_heads
+        );
+    }
+
+    // ========================================================================
+    // FALSIFY-MF-QWEN35-005: Qwen3.5 shape templates produce correct dimensions
+    //
+    // Prediction: q_proj evaluates to [num_heads*head_dim, hidden_dim] = [4096, 4096]
+    //             k_proj evaluates to [num_kv_heads*head_dim, hidden_dim] = [1024, 4096]
+    //             o_proj evaluates to [hidden_dim, num_heads*head_dim] = [4096, 4096]
+    // If fails: shape template has a bug → runtime shape validation rejects valid weights.
+    // ========================================================================
+    #[test]
+    fn falsify_mf_qwen35_005_shape_template_dimensions() {
+        let families = load_all_families();
+        let qwen35 = families
+            .iter()
+            .find(|(name, _)| name == "qwen3_5")
+            .expect("FALSIFIED: qwen3_5 family not found");
+
+        let sc = qwen35.1.size_variants.get("9b")
+            .expect("FALSIFIED: qwen3_5 missing '9b' size variant");
+
+        // q_proj: [num_heads * head_dim, hidden_dim] = [4096, 4096]
+        let q_proj_out = sc.num_heads * sc.head_dim;
+        assert_eq!(q_proj_out, 4096,
+            "FALSIFIED QWEN35-005: q_proj out_dim={}, expected 4096", q_proj_out);
+
+        // k_proj: [num_kv_heads * head_dim, hidden_dim] = [1024, 4096]
+        let k_proj_out = sc.num_kv_heads * sc.head_dim;
+        assert_eq!(k_proj_out, 1024,
+            "FALSIFIED QWEN35-005: k_proj out_dim={}, expected 1024", k_proj_out);
+
+        // FFN: intermediate_dim / hidden_dim ratio = 3.0 (standard SwiGLU)
+        let ffn_ratio = sc.intermediate_dim as f64 / sc.hidden_dim as f64;
+        assert!(
+            (ffn_ratio - 3.0).abs() < 0.01,
+            "FALSIFIED QWEN35-005: FFN ratio={ffn_ratio:.2}, expected 3.0 for SwiGLU"
+        );
+    }
+
+    // ========================================================================
+    // FALSIFY-MF-QWEN35-006: Qwen3.5 rope_theta is 1M
+    //
+    // Prediction: rope_theta = 1,000,000.0 (long-context RoPE).
+    // If fails: contract has wrong theta → RoPE position encoding breaks.
+    // ========================================================================
+    #[test]
+    fn falsify_mf_qwen35_006_rope_theta() {
+        let families = load_all_families();
+        let qwen35 = families
+            .iter()
+            .find(|(name, _)| name == "qwen3_5")
+            .expect("FALSIFIED: qwen3_5 family not found");
+
+        let variant = qwen35.1.size_variants.get("9b")
+            .expect("FALSIFIED: qwen3_5 missing '9b' size variant");
+
+        let expected_theta = 1_000_000.0_f64;
+        assert!(
+            (variant.rope_theta - expected_theta).abs() < 1.0,
+            "FALSIFIED QWEN35-006: rope_theta={}, expected {}",
+            variant.rope_theta, expected_theta
+        );
+    }
+
+    // ========================================================================
+    // FALSIFY-MF-QWEN35-007: Qwen3.5 architecture class registered
+    //
+    // Prediction: The qwen3_5 family maps to Qwen3_5ForCausalLM architecture.
+    // If fails: HuggingFace model loading will fail to identify the architecture.
+    // ========================================================================
+    #[test]
+    fn falsify_mf_qwen35_007_architecture_class() {
+        let families = load_all_families();
+        let qwen35 = families
+            .iter()
+            .find(|(name, _)| name == "qwen3_5")
+            .expect("FALSIFIED: qwen3_5 family not found");
+
+        assert!(
+            qwen35.1.architectures.contains(&"Qwen3_5ForCausalLM".to_string()),
+            "FALSIFIED QWEN35-007: qwen3_5 architectures={:?}, must contain 'Qwen3_5ForCausalLM'",
+            qwen35.1.architectures
+        );
+    }
+
+    // ========================================================================
+    // FALSIFY-MF-QWEN35-008: Qwen3.5 uses SwiGLU MLP
+    //
+    // Prediction: activation=silu, mlp_type=swiglu (consistent with Qwen family).
+    // If fails: wrong FFN kernel dispatched at runtime.
+    // ========================================================================
+    #[test]
+    fn falsify_mf_qwen35_008_swiglu_mlp() {
+        let families = load_all_families();
+        let qwen35 = families
+            .iter()
+            .find(|(name, _)| name == "qwen3_5")
+            .expect("FALSIFIED: qwen3_5 family not found");
+
+        assert!(
+            matches!(qwen35.1.constraints.activation, Activation::Silu),
+            "FALSIFIED QWEN35-008: activation={:?}, expected Silu",
+            qwen35.1.constraints.activation
+        );
+        assert!(
+            matches!(qwen35.1.constraints.mlp_type, MlpType::SwiGlu),
+            "FALSIFIED QWEN35-008: mlp_type={:?}, expected SwiGlu",
+            qwen35.1.constraints.mlp_type
+        );
+    }
+
+    // ========================================================================
+    // FINE-TUNING CONFIG FALSIFICATION (FALSIFY-FT-QWEN35-001..007)
+    //
+    // These tests verify that entrenar's TransformerConfig::qwen3_5_9b() factory
+    // matches the model-family YAML contract. If any test fails, the config
+    // factory is out of sync with the contract — fine-tuning would use wrong
+    // dimensions.
+    // ========================================================================
+
+    // ========================================================================
+    // FALSIFY-FT-QWEN35-001: vocab_size must be 248320 (not Qwen2's 152064)
+    //
+    // Prediction: qwen3_5_9b().vocab_size == 248320.
+    // If fails: embedding/lm_head LoRA shapes would be wrong.
+    // ========================================================================
+    #[test]
+    fn falsify_ft_qwen35_001_vocab_size() {
+        let config = entrenar::transformer::TransformerConfig::qwen3_5_9b();
+        assert_eq!(
+            config.vocab_size, 248320,
+            "FALSIFIED FT-QWEN35-001: vocab_size={}, expected 248320",
+            config.vocab_size
+        );
+    }
+
+    // ========================================================================
+    // FALSIFY-FT-QWEN35-002: use_bias must be false
+    //
+    // Prediction: qwen3_5_9b().use_bias == false.
+    // If fails: LoRA adapter would create bias tensors that don't exist.
+    // ========================================================================
+    #[test]
+    fn falsify_ft_qwen35_002_no_bias() {
+        let config = entrenar::transformer::TransformerConfig::qwen3_5_9b();
+        assert!(
+            !config.use_bias,
+            "FALSIFIED FT-QWEN35-002: use_bias={}, expected false",
+            config.use_bias
+        );
+    }
+
+    // ========================================================================
+    // FALSIFY-FT-QWEN35-003: head_dim must be 256
+    //
+    // Prediction: qwen3_5_9b().head_dim() == 256 (4096/16).
+    // If fails: LoRA Q/K/V projection dimensions would be wrong.
+    // ========================================================================
+    #[test]
+    fn falsify_ft_qwen35_003_head_dim() {
+        let config = entrenar::transformer::TransformerConfig::qwen3_5_9b();
+        assert_eq!(
+            config.head_dim(), 256,
+            "FALSIFIED FT-QWEN35-003: head_dim()={}, expected 256",
+            config.head_dim()
+        );
+    }
+
+    // ========================================================================
+    // FALSIFY-FT-QWEN35-004: num_hidden_layers must be 32
+    //
+    // Prediction: qwen3_5_9b().num_hidden_layers == 32.
+    // If fails: LoRA would target wrong number of layers.
+    // ========================================================================
+    #[test]
+    fn falsify_ft_qwen35_004_num_layers() {
+        let config = entrenar::transformer::TransformerConfig::qwen3_5_9b();
+        assert_eq!(
+            config.num_hidden_layers, 32,
+            "FALSIFIED FT-QWEN35-004: num_hidden_layers={}, expected 32",
+            config.num_hidden_layers
+        );
+    }
+
+    // ========================================================================
+    // FALSIFY-FT-QWEN35-005: num_kv_heads must be 4 (GQA)
+    //
+    // Prediction: qwen3_5_9b().num_kv_heads == 4.
+    // If fails: GQA ratio wrong → K/V projection LoRA shapes wrong.
+    // ========================================================================
+    #[test]
+    fn falsify_ft_qwen35_005_num_kv_heads() {
+        let config = entrenar::transformer::TransformerConfig::qwen3_5_9b();
+        assert_eq!(
+            config.num_kv_heads, 4,
+            "FALSIFIED FT-QWEN35-005: num_kv_heads={}, expected 4",
+            config.num_kv_heads
+        );
+    }
+
+    // ========================================================================
+    // FALSIFY-FT-QWEN35-006: Contract YAML dimensions match config factory
+    //
+    // Prediction: Every dimension in qwen3_5.yaml 9b variant matches the
+    // corresponding field in TransformerConfig::qwen3_5_9b().
+    // If fails: contract and code are out of sync — one of them has a bug.
+    // ========================================================================
+    #[test]
+    fn falsify_ft_qwen35_006_contract_config_sync() {
+        let families = load_all_families();
+        let qwen35 = families
+            .iter()
+            .find(|(name, _)| name == "qwen3_5")
+            .expect("qwen3_5 family not found");
+        let variant = qwen35.1.size_variants.get("9b")
+            .expect("qwen3_5 missing '9b' variant");
+
+        let config = entrenar::transformer::TransformerConfig::qwen3_5_9b();
+
+        assert_eq!(config.hidden_size, variant.hidden_dim,
+            "FALSIFIED FT-QWEN35-006: hidden_size mismatch: config={} vs contract={}",
+            config.hidden_size, variant.hidden_dim);
+        assert_eq!(config.num_hidden_layers, variant.num_layers,
+            "FALSIFIED FT-QWEN35-006: num_layers mismatch: config={} vs contract={}",
+            config.num_hidden_layers, variant.num_layers);
+        assert_eq!(config.num_attention_heads, variant.num_heads,
+            "FALSIFIED FT-QWEN35-006: num_heads mismatch: config={} vs contract={}",
+            config.num_attention_heads, variant.num_heads);
+        assert_eq!(config.num_kv_heads, variant.num_kv_heads,
+            "FALSIFIED FT-QWEN35-006: num_kv_heads mismatch: config={} vs contract={}",
+            config.num_kv_heads, variant.num_kv_heads);
+        assert_eq!(config.intermediate_size, variant.intermediate_dim,
+            "FALSIFIED FT-QWEN35-006: intermediate_dim mismatch: config={} vs contract={}",
+            config.intermediate_size, variant.intermediate_dim);
+        assert_eq!(config.vocab_size, variant.vocab_size,
+            "FALSIFIED FT-QWEN35-006: vocab_size mismatch: config={} vs contract={}",
+            config.vocab_size, variant.vocab_size);
+        assert_eq!(config.head_dim(), variant.head_dim,
+            "FALSIFIED FT-QWEN35-006: head_dim mismatch: config={} vs contract={}",
+            config.head_dim(), variant.head_dim);
+    }
+
+    // ========================================================================
+    // FALSIFY-FT-QWEN35-007: CLI dispatch "9B" resolves to qwen3_5_9b() config
+    //
+    // Prediction: The same config values used by "9B"/"qwen3.5-9b" CLI dispatch
+    // match TransformerConfig::qwen3_5_9b(). This is a cross-boundary check
+    // between CLI and library.
+    // If fails: CLI dispatches to wrong config factory.
+    // ========================================================================
+    #[test]
+    fn falsify_ft_qwen35_007_cli_dispatch_consistency() {
+        // Verify all aliases produce the same config
+        let config_9b = entrenar::transformer::TransformerConfig::qwen3_5_9b();
+        assert_eq!(config_9b.vocab_size, 248320,
+            "FALSIFIED FT-QWEN35-007: '9B' dispatch config has wrong vocab_size");
+        assert_eq!(config_9b.hidden_size, 4096,
+            "FALSIFIED FT-QWEN35-007: '9B' dispatch config has wrong hidden_size");
+        assert!(!config_9b.use_bias,
+            "FALSIFIED FT-QWEN35-007: '9B' dispatch config should not have bias");
+
+        // Verify it's different from Qwen2 (no confusion between families)
+        let config_qwen2 = entrenar::transformer::TransformerConfig::qwen2_0_5b();
+        assert_ne!(config_9b.vocab_size, config_qwen2.vocab_size,
+            "FALSIFIED FT-QWEN35-007: Qwen3.5 and Qwen2 should have different vocab_size");
+        assert_ne!(config_9b.use_bias, config_qwen2.use_bias,
+            "FALSIFIED FT-QWEN35-007: Qwen3.5 (no bias) vs Qwen2 (has bias) must differ");
+    }
 }

@@ -340,7 +340,7 @@ pub(super) fn bootstrap_sample(n_samples: usize, random_state: Option<u64>) -> V
     use rand::distr::{Distribution, Uniform};
     use rand::SeedableRng;
 
-    let dist = Uniform::new(0, n_samples).unwrap();
+    let dist = Uniform::new(0, n_samples).expect("valid uniform range: 0..n_samples");
 
     let mut indices = Vec::with_capacity(n_samples);
 
