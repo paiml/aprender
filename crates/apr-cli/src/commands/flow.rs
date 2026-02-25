@@ -85,7 +85,7 @@ pub(crate) fn run(
             .unwrap_or("model")
             .cyan(),
         arch.yellow(),
-        format!("{:?}", report.format).cyan()
+        format!("{}", report.format).cyan()
     );
     println!();
 
@@ -227,7 +227,7 @@ fn output_flow_json(
 
     println!("{{");
     println!("  \"file\": \"{filename}\",");
-    println!("  \"format\": \"{:?}\",", report.format);
+    println!("  \"format\": \"{}\",", report.format);
     println!("  \"architecture\": \"{architecture}\",");
     println!("  \"component\": \"{component_str}\",");
     println!("  \"total_tensors\": {},", tensor_names.len());

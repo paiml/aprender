@@ -269,7 +269,7 @@ fn explain_file(path: &PathBuf) {
         }
     };
 
-    println!("- **Format**: {:?}", report.format);
+    println!("- **Format**: {}", report.format);
     println!("- **Tensors**: {}", report.tensors.len());
 
     let tensor_names: Vec<String> = report.tensors.iter().map(|t| t.name.clone()).collect();
