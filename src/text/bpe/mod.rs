@@ -27,10 +27,13 @@
 //! let tokens = tokenizer.encode("Hello");
 //! assert!(tokens.is_empty()); // No vocab loaded yet
 //!
-//! // For real tokenization, load from HuggingFace:
+//! // For real tokenization, load from HuggingFace tokenizer.json:
 //! // let tokenizer = BpeTokenizer::from_huggingface("path/to/tokenizer.json")?;
 //! // let tokens = tokenizer.encode("Hello world");
 //! // assert!(!tokens.is_empty());
+//!
+//! // Or load from a JSON string directly:
+//! // let tokenizer = BpeTokenizer::from_huggingface_json(&json_string)?;
 //! ```
 //!
 //! # References

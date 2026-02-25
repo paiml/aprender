@@ -1,6 +1,6 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
-use crate::error::Result;
+use crate::error::{AprenderError, Result};
 use std::collections::HashMap;
 
 impl BpeTokenizer {
@@ -19,6 +19,64 @@ impl BpeTokenizer {
             byte_encoder,
             byte_decoder,
         }
+    }
+
+    /// Load tokenizer from a `HuggingFace` tokenizer.json file path.
+    ///
+    /// Parses the `HuggingFace` tokenizer.json format, extracting:
+    /// - `model.vocab` (token-to-ID mapping)
+    /// - `model.merges` (ordered BPE merge rules)
+    /// - `added_tokens` (special tokens like `<|endoftext|>`, `<|im_start|>`)
+    ///
+    /// The byte encoder for UTF-8 byte-level BPE is built automatically.
+    ///
+    /// # Arguments
+    /// * `path` - Path to a `HuggingFace` tokenizer.json file
+    ///
+    /// # Returns
+    /// A fully loaded `BpeTokenizer` with vocabulary, merge rules, and special tokens.
+    ///
+    /// # Errors
+    /// Returns error if the file cannot be read or the JSON is malformed.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use aprender::text::bpe::BpeTokenizer;
+    ///
+    /// let tokenizer = BpeTokenizer::from_huggingface("path/to/tokenizer.json")
+    ///     .expect("failed to load tokenizer");
+    /// assert!(tokenizer.vocab_size() > 0);
+    /// let ids = tokenizer.encode("Hello world");
+    /// assert!(!ids.is_empty());
+    /// ```
+    pub fn from_huggingface<P: AsRef<std::path::Path>>(path: P) -> Result<Self> {
+        let json = std::fs::read_to_string(path.as_ref()).map_err(|e| {
+            AprenderError::FormatError {
+                message: format!(
+                    "Failed to read tokenizer file '{}': {e}",
+                    path.as_ref().display()
+                ),
+            }
+        })?;
+        Self::from_huggingface_json(&json)
+    }
+
+    /// Load tokenizer from a `HuggingFace` tokenizer.json string.
+    ///
+    /// This is the in-memory counterpart of [`from_huggingface`](Self::from_huggingface).
+    /// Useful when the JSON has already been read into a string (e.g., from an HTTP response).
+    ///
+    /// # Arguments
+    /// * `json` - JSON string in `HuggingFace` tokenizer.json format
+    ///
+    /// # Returns
+    /// A fully loaded `BpeTokenizer`.
+    ///
+    /// # Errors
+    /// Returns error if JSON parsing fails or the structure is invalid.
+    pub fn from_huggingface_json(json: &str) -> Result<Self> {
+        super::load_from_json(json)
     }
 
     /// Create tokenizer with GPT-2 base vocabulary (stub)

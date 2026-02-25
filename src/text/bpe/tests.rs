@@ -552,3 +552,6 @@ fn test_falsify_config_from_vocab_size_dispatch() {
 
 #[path = "tests_encode_decode.rs"]
 mod tests_encode_decode;
+
+#[path = "tests_from_huggingface.rs"]
+mod tests_from_huggingface;
