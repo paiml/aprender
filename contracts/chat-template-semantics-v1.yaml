@@ -1,0 +1,305 @@
+# Chat Template Semantics Contract v1.0.0
+# THE SOURCE OF TRUTH for chat template formatting invariants.
+#
+# Every ChatTemplateEngine implementation MUST satisfy these invariants.
+# Violations are contract failures caught by FALSIFY-CT-001..012.
+#
+# ENFORCEMENT: src/text/chat_template/tests.rs (CTL-01..CTT-10)
+# CONSUMERS:
+#   - src/text/chat_template/mod.rs (ChatTemplateEngine trait)
+#   - src/text/chat_template/template.rs (format implementations)
+#   - crates/apr-cli/src/commands/run.rs (chat prompt formatting)
+#   - realizar/src/gguf/ (chat-mode inference)
+#
+# CROSS-REFERENCES:
+#   - contracts/special-tokens-registry-v1.yaml (token IDs)
+#   - contracts/tokenizer-vocab-v1.yaml (tokenizer types)
+#   - docs/specifications/chat-template-improvement-spec.md (full spec)
+
+metadata:
+  version: "1.0.0"
+  created: "2026-02-25"
+  author: "PAIML Engineering"
+  description: "Chat template formatting semantics and security invariants"
+  references:
+    - "docs/specifications/chat-template-improvement-spec.md"
+    - "Touvron et al. (2023) — LLaMA 2 (arXiv:2307.09288)"
+    - "Bai et al. (2023) — Qwen Technical Report (arXiv:2309.16609)"
+    - "OWASP LLM Top 10 — LLM01 Prompt Injection"
+    - "Perez & Ribeiro (2022) — Ignore This Title and HackAPrompt"
+
+# =============================================================================
+# TEMPLATE FORMATS
+# =============================================================================
+#
+# Each entry describes a supported template format, its structural invariants,
+# and the model families that use it.
+
+formats:
+
+  chatml:
+    display_name: "ChatML"
+    description: "OpenAI-style ChatML with <|im_start|>/<|im_end|> delimiters"
+    model_families: ["qwen2", "qwen3", "qwen3moe", "openhermes", "yi"]
+    supports_system_prompt: true
+    message_format: "<|im_start|>{role}\n{content}<|im_end|>\n"
+    generation_prompt: "<|im_start|>assistant\n"
+    required_special_tokens: ["im_start", "im_end"]
+    structural_invariants:
+      - "Output contains exactly N <|im_start|> and N <|im_end|> for N input messages (plus 1 generation prompt)"
+      - "Each <|im_start|> is followed by a role name and newline"
+      - "Each message content is terminated by <|im_end|> followed by newline"
+      - "Generation prompt is always the final line"
+
+  llama2:
+    display_name: "LLaMA 2"
+    description: "Meta LLaMA 2 instruction format with [INST] delimiters"
+    model_families: ["llama2", "tinyllama", "vicuna"]
+    supports_system_prompt: true
+    message_format: "[INST] {content} [/INST]"
+    system_wrapper: "<<SYS>>\n{system}\n<</SYS>>\n\n"
+    required_special_tokens: ["bos", "eos"]
+    structural_invariants:
+      - "System message wrapped in <<SYS>>...</</SYS>> inside first [INST]"
+      - "User messages wrapped in [INST]...[/INST]"
+      - "BOS token prepended to conversation"
+
+  mistral:
+    display_name: "Mistral"
+    description: "Mistral/Mixtral instruction format"
+    model_families: ["mistral", "mixtral"]
+    supports_system_prompt: false
+    message_format: "[INST] {content} [/INST]"
+    required_special_tokens: ["bos", "eos"]
+    structural_invariants:
+      - "No system prompt support — system content prepended to first user message"
+      - "BOS token prepended"
+
+  alpaca:
+    display_name: "Alpaca"
+    description: "Stanford Alpaca instruction-following format"
+    model_families: ["alpaca"]
+    supports_system_prompt: true
+    message_format: "### Instruction:\n{content}\n\n### Response:\n"
+    structural_invariants:
+      - "Uses markdown-style ### headers"
+      - "Instruction/Response alternation"
+
+  phi:
+    display_name: "Phi"
+    description: "Microsoft Phi-2/Phi-3 chat format"
+    model_families: ["phi2", "phi3"]
+    supports_system_prompt: true
+    message_format: "<|user|>\n{content}<|end|>\n<|assistant|>\n"
+    required_special_tokens: ["eos"]
+    structural_invariants:
+      - "Role tags: <|system|>, <|user|>, <|assistant|>"
+      - "Messages terminated by <|end|>"
+
+# =============================================================================
+# SECURITY CONSTANTS
+# =============================================================================
+#
+# Hard limits enforced by all template implementations.
+# Violating these is a security contract failure.
+
+security:
+
+  max_template_size_bytes: 102400    # 100KB — CTC-03
+  max_recursion_depth: 100           # CTC-04
+  max_loop_iterations: 10000         # CTC-05
+
+  # Injection patterns that MUST be sanitized in user content.
+  # sanitize_user_content() replaces each with a broken form (space after <).
+  injection_patterns:
+    - "<|im_start|>"
+    - "<|im_end|>"
+    - "<|endoftext|>"
+    - "<|im_sep|>"
+    - "<|end|>"
+    - "<s>"
+    - "</s>"
+    - "[INST]"
+    - "[/INST]"
+    - "<<SYS>>"
+    - "<</SYS>>"
+
+  sanitization_rule: "Insert space after opening < to break control sequences"
+  sanitization_scope: "user role messages only — system and assistant are trusted"
+
+# =============================================================================
+# TRAIT INVARIANTS
+# =============================================================================
+#
+# Properties that MUST hold for any ChatTemplateEngine implementation.
+
+trait_invariants:
+
+  - id: CTI-01
+    rule: "format_message(role, content) returns Ok for valid roles"
+    valid_roles: ["system", "user", "assistant"]
+    severity: ERROR
+
+  - id: CTI-02
+    rule: "format_conversation([]) with empty messages returns Ok (generation prompt only)"
+    severity: WARNING
+
+  - id: CTI-03
+    rule: "format_conversation preserves message ordering"
+    severity: ERROR
+
+  - id: CTI-04
+    rule: "special_tokens() returns tokens consistent with format()"
+    severity: ERROR
+    details: "ChatML format must have im_start/im_end; LLaMA2 must have bos/eos"
+
+  - id: CTI-05
+    rule: "supports_system_prompt() accurately reflects format capability"
+    severity: ERROR
+
+  - id: CTI-06
+    rule: "format_message sanitizes user content for injection patterns"
+    severity: CRITICAL
+    details: "Only user role is sanitized; system/assistant are trusted"
+
+  - id: CTI-07
+    rule: "HuggingFace template size <= max_template_size_bytes"
+    severity: ERROR
+    details: "Reject templates exceeding 100KB (DoS prevention)"
+
+  - id: CTI-08
+    rule: "Output is valid UTF-8 for any valid UTF-8 input"
+    severity: ERROR
+
+# =============================================================================
+# AUTO-DETECTION INVARIANTS
+# =============================================================================
+#
+# Properties for template format auto-detection.
+
+detection_invariants:
+
+  - id: CTD-01
+    rule: "detect_format_from_name maps known model names to correct format"
+    examples:
+      - input: "qwen2"
+        expected: ChatML
+      - input: "llama2"
+        expected: Llama2
+      - input: "mistral"
+        expected: Mistral
+    severity: ERROR
+
+  - id: CTD-02
+    rule: "detect_format_from_tokens maps special token patterns to format"
+    severity: WARNING
+    details: "Presence of im_start implies ChatML; [INST] implies LLaMA2/Mistral"
+
+  - id: CTD-03
+    rule: "Unknown model name falls back to Raw format, not panic"
+    severity: ERROR
+
+# =============================================================================
+# FALSIFICATION TESTS
+# =============================================================================
+#
+# Each test attempts to BREAK a contract invariant (Popperian falsification).
+# If the test passes, the contract holds. If it fails, we found a bug.
+
+falsification_tests:
+
+  - id: FALSIFY-CT-001
+    rule: "ChatML output contains balanced im_start/im_end delimiters"
+    prediction: "count(im_start) == count(im_end) + 1 for N messages (generation prompt adds 1 im_start)"
+    invariant: CTI-01
+    status: "IMPLEMENTED"
+    implementation: "src/text/chat_template/tests.rs::CTL-01"
+    if_fails: "Delimiter mismatch — model will see unterminated message"
+
+  - id: FALSIFY-CT-002
+    rule: "Sanitization breaks ALL known injection patterns in user content"
+    prediction: "contains_injection_patterns(sanitize_user_content(input)) == false"
+    invariant: CTI-06
+    status: "IMPLEMENTED"
+    implementation: "src/text/chat_template/tests.rs::CTL-02, tests_sanitize.rs"
+    if_fails: "Prompt injection possible — user can hijack assistant role"
+
+  - id: FALSIFY-CT-003
+    rule: "System prompt position is first in output"
+    prediction: "System message content appears before first user message"
+    invariant: CTI-03
+    status: "IMPLEMENTED"
+    implementation: "src/text/chat_template/tests.rs::CTL-03"
+    if_fails: "System prompt misplaced — model ignores system instructions"
+
+  - id: FALSIFY-CT-004
+    rule: "Empty conversation produces valid generation prompt"
+    prediction: "format_conversation([]) ends with generation prompt marker"
+    invariant: CTI-02
+    status: "IMPLEMENTED"
+    implementation: "src/text/chat_template/tests.rs::CTL-04"
+    if_fails: "Empty conversation crashes or produces invalid output"
+
+  - id: FALSIFY-CT-005
+    rule: "Multi-turn conversation preserves turn order"
+    prediction: "For [system, user, assistant, user], output preserves sequence"
+    invariant: CTI-03
+    status: "IMPLEMENTED"
+    implementation: "src/text/chat_template/tests.rs::CTL-05"
+    if_fails: "Turn order scrambled — model sees incoherent conversation"
+
+  - id: FALSIFY-CT-006
+    rule: "LLaMA2 wraps system in <<SYS>> tags"
+    prediction: "LLaMA2 system message enclosed in <<SYS>>...<</ SYS>> inside [INST]"
+    invariant: CTI-01
+    status: "IMPLEMENTED"
+    implementation: "src/text/chat_template/tests.rs::CTL-06"
+    if_fails: "LLaMA2 system prompt not in SYS tags — model treats as user input"
+
+  - id: FALSIFY-CT-007
+    rule: "HuggingFace Jinja2 template matches reference output"
+    prediction: "HuggingFaceTemplate output == reference for known model configs"
+    invariant: CTI-04
+    status: "IMPLEMENTED"
+    implementation: "src/text/chat_template/tests_huggingface.rs"
+    if_fails: "Jinja2 rendering diverges from HuggingFace reference"
+
+  - id: FALSIFY-CT-008
+    rule: "Auto-detection returns correct format for known models"
+    prediction: "detect_format_from_name(name) == expected for all registered families"
+    invariant: CTD-01
+    status: "IMPLEMENTED"
+    implementation: "src/text/chat_template/tests.rs::CTA-01..CTA-04"
+    if_fails: "Wrong template format — garbled prompt to model"
+
+  - id: FALSIFY-CT-009
+    rule: "Long conversation (100+ turns) does not crash or truncate"
+    prediction: "format_conversation with 100+ messages returns Ok with all messages"
+    invariant: CTI-08
+    status: "IMPLEMENTED"
+    implementation: "src/text/chat_template/tests_long_conversation.rs"
+    if_fails: "Long conversation truncated or OOM"
+
+  - id: FALSIFY-CT-010
+    rule: "Phi template uses <|user|>/<|assistant|>/<|end|> delimiters"
+    prediction: "PhiTemplate output contains role-specific delimiters"
+    invariant: CTI-01
+    status: "IMPLEMENTED"
+    implementation: "src/text/chat_template/tests_phi_template.rs"
+    if_fails: "Phi format uses wrong delimiters — model confusion"
+
+  - id: FALSIFY-CT-011
+    rule: "Unknown model name does not panic"
+    prediction: "detect_format_from_name(\"nonexistent_xyz\") returns Raw, not panic"
+    invariant: CTD-03
+    status: "IMPLEMENTED"
+    implementation: "src/text/chat_template/tests.rs::CTA-04"
+    if_fails: "Unknown model name panics — production crash"
+
+  - id: FALSIFY-CT-012
+    rule: "Sanitization is idempotent"
+    prediction: "sanitize(sanitize(x)) == sanitize(x) for all x"
+    invariant: CTI-06
+    status: "IMPLEMENTED"
+    implementation: "src/text/chat_template/tests_sanitize.rs"
+    if_fails: "Double sanitization corrupts content"
