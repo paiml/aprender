@@ -324,6 +324,18 @@ pub enum ExtendedCommands {
         #[arg(long)]
         json: bool,
     },
+    /// Attach live TUI to a running training session
+    Monitor {
+        /// Experiment output directory (same as finetune -o)
+        #[arg(value_name = "DIR")]
+        dir: PathBuf,
+        /// Refresh interval in milliseconds
+        #[arg(long, default_value = "500")]
+        refresh_ms: u64,
+        /// Compact display mode
+        #[arg(long)]
+        compact: bool,
+    },
     /// ComputeBrick pipeline monitor (cbtop)
     Cbtop {
         /// Model name (e.g., qwen2.5-coder-1.5b)

@@ -7,6 +7,12 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
         return None;
     };
     let result = match ext {
+        ExtendedCommands::Monitor {
+            dir,
+            refresh_ms,
+            compact,
+        } => commands::monitor::run(dir, *refresh_ms, *compact),
+
         ExtendedCommands::Cbtop {
             model,
             attach,

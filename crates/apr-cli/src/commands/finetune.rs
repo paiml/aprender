@@ -635,9 +635,26 @@ fn run_classify(
     let mut trainer = ClassifyTrainer::new(pipeline, samples, training_config)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to create trainer: {e}")))?;
 
+    // Attach monitor writer for live TUI updates
+    let model_name = model_size.unwrap_or("tiny");
+    let experiment_id = format!(
+        "classify-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0)
+    );
+    let writer = entrenar::monitor::tui::TrainingStateWriter::new(
+        &output_dir,
+        &experiment_id,
+        model_name,
+    );
+    trainer.set_monitor_writer(writer);
+
     if !json_output {
         output::pipeline_stage("Training", output::StageStatus::Running);
         println!("  Output dir: {}", output_dir.display());
+        println!("  Monitor:    apr monitor {}", output_dir.display());
         println!();
     }
 
