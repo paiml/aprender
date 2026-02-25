@@ -234,6 +234,9 @@ pub enum ExtendedCommands {
         /// Skip GPU capability match gate (GH-280)
         #[arg(long)]
         skip_capability: bool,
+        /// Assert classifier head presence and shape (F-CLASS-004)
+        #[arg(long)]
+        assert_classifier_head: bool,
     },
     /// GPU/CPU parity check (PMAT-232: genchi genbutsu — see where GPU diverges)
     Parity {

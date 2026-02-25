@@ -59,6 +59,15 @@ fn run_qa(path: &Path, config: &QaConfig) -> Result<QaReport> {
         "Skipped by --skip-metadata",
         || run_metadata_plausibility_gate(path, config),
     )?;
+    // F-CLASS-004: Classifier head shape gate (opt-in via --assert-classifier-head)
+    dispatch_gate(
+        &mut gates,
+        config.json,
+        !config.assert_classifier_head,
+        "classifier_head",
+        "Not requested (use --assert-classifier-head)",
+        || run_classifier_head_gate(path, config),
+    )?;
     dispatch_gate(
         &mut gates,
         config.json,
@@ -398,5 +407,100 @@ fn run_tensor_contract_gate(path: &Path, config: &QaConfig) -> Result<GateResult
             Some(0.0),
             duration,
         ))
+    }
+}
+
+/// F-CLASS-004: Validate classifier head tensor presence and shape.
+///
+/// A fine-tuned classification model should have a `score.weight` or
+/// `classifier.weight` tensor with shape [num_classes, hidden_size].
+/// This gate validates that the shape matches the contract:
+///   weights.len() == hidden_size * num_classes, num_classes >= 2
+fn run_classifier_head_gate(path: &Path, config: &QaConfig) -> Result<GateResult> {
+    let start = Instant::now();
+
+    if !config.json && config.verbose {
+        println!(
+            "{}",
+            "Running classifier head validation (F-CLASS-004)...".yellow()
+        );
+    }
+
+    let rosetta = aprender::format::rosetta::RosettaStone::new();
+    let report = match rosetta.inspect(path) {
+        Ok(r) => r,
+        Err(e) => {
+            let duration = start.elapsed();
+            return Ok(GateResult::failed(
+                "classifier_head",
+                &format!("Failed to inspect model: {e}"),
+                None,
+                None,
+                duration,
+            ));
+        }
+    };
+
+    // Look for classifier head tensor patterns
+    let classifier_patterns = ["score.weight", "classifier.weight", "classification_head.weight"];
+    let classifier_tensor = report.tensors.iter().find(|t| {
+        let name_lower = t.name.to_lowercase();
+        classifier_patterns
+            .iter()
+            .any(|p| name_lower.contains(p))
+    });
+
+    let duration = start.elapsed();
+
+    match classifier_tensor {
+        Some(tensor) => {
+            // Validate shape: must be 2D [num_classes, hidden_size]
+            if tensor.shape.len() != 2 {
+                return Ok(GateResult::failed(
+                    "classifier_head",
+                    &format!(
+                        "Classifier head '{}' has {}D shape {:?}, expected 2D [num_classes, hidden_size]",
+                        tensor.name,
+                        tensor.shape.len(),
+                        tensor.shape
+                    ),
+                    None,
+                    None,
+                    duration,
+                ));
+            }
+
+            let num_classes = tensor.shape[0];
+            if num_classes < 2 {
+                return Ok(GateResult::failed(
+                    "classifier_head",
+                    &format!(
+                        "Classifier head '{}' has num_classes={}, minimum is 2",
+                        tensor.name, num_classes
+                    ),
+                    Some(num_classes as f64),
+                    Some(2.0),
+                    duration,
+                ));
+            }
+
+            Ok(GateResult::passed(
+                "classifier_head",
+                &format!(
+                    "Classifier head '{}' shape {:?} (num_classes={}, hidden_size={})",
+                    tensor.name, tensor.shape, tensor.shape[0], tensor.shape[1]
+                ),
+                Some(num_classes as f64),
+                Some(2.0),
+                duration,
+            ))
+        }
+        None => Ok(GateResult::failed(
+            "classifier_head",
+            "No classifier head tensor found (expected score.weight or classifier.weight)",
+            None,
+            None,
+            duration,
+        )),
     }
 }

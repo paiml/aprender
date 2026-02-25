@@ -20,11 +20,11 @@ This specification defines the provable contract chain for the **fine-tuning pat
 | **Compile-Time Proc Macro** | `#[contract]` via `build.rs` env vars | `#[contract]` via `build.rs` env vars |
 | **Poka-Yoke Types** | `ValidatedTensorLayout`, `ValidatedShape` | `ValidatedClassLogits`, `ValidatedSafetyLabel`, `ValidatedClassifierWeight` |
 | **Config Factory** | `GpuModelConfig::from_safetensors()` | `TransformerConfig::qwen3_5_9b()`, `TransformerConfig::qwen2_0_5b()` |
-| **Runtime Dispatch** | `forward_block_incremental()` / `forward_linear_block_incremental()` | `ClassifyTrainer::train_epoch()` |
+| **Runtime Dispatch** | `forward_block_incremental()` / `forward_linear_block_incremental()` | `ClassifyTrainer::train()` → `ClassifyPipeline::forward_backward_single()` |
 | **Kernel Contracts** | `softmax-kernel-v1`, `rmsnorm-kernel-v1`, `rope-kernel-v1` | `cross-entropy-kernel-v1`, `adamw-kernel-v1`, `lora-algebra-v1` |
 | **SIMD Dispatch** | scalar / AVX2 / PTX for all inference kernels | scalar / AVX2 / PTX for CE+AdamW (PARITY ACHIEVED) |
 | **Falsification** | `FALSIFY-MF-QWEN35-001..008`, `FALSIFY-TL-*` | `FALSIFY-CLASS-001..006`, `FALSIFY-FT-QWEN35-001..007` |
-| **QA Gate** | `apr qa` (8 gates) | `cargo test -- falsify_class falsify_ft_qwen35` |
+| **QA Gate** | `apr qa` (8 gates) | `apr qa --assert-classifier-head` + `cargo test -- falsify` |
 
 ---
 
@@ -131,20 +131,25 @@ Falsification tests (FALSIFY-FT-QWEN35-001..007) verify the factory matches the 
 ### 3.4 Stage 4: Training Loop Contracts
 
 ```
-ClassifyPipeline::run()
+ClassifyTrainer::new()
     |
-    |  Loads corpus → ValidatedSafetyLabel for each sample
+    |  Loads corpus → F-CLASS-002 validated labels at load time
     |  Builds ClassificationHead(hidden_size, num_classes)
     |  Initializes LoRA adapters on Q/V projections
     |
     v
-ClassifyTrainer::train_epoch()
+ClassifyTrainer::train() → ClassifyPipeline::train_batch()
     |
-    |  For each batch:
-    |    1. Forward: embeddings → LoRA(Q,V) → attention → mean_pool → classifier
-    |    2. Loss: ValidatedClassLogits → cross_entropy(logits, label)
-    |    3. Backward: autograd computes gradients through LoRA A, B matrices
-    |    4. Optimizer: AdamW step with decoupled weight decay
+    |  For each sample in batch:
+    |    forward_backward_single():
+    |      Precondition:  debug_assert!(label < num_classes)       [F-CLASS-002]
+    |      1. Forward: embeddings → LoRA(Q,V) → attention → mean_pool → classifier
+    |      Postcondition: debug_assert!(logits.len() == num_classes) [F-CLASS-001]
+    |      Postcondition: debug_assert!(logits.all(is_finite))      [F-CLASS-001]
+    |      2. Loss: cross_entropy(logits, label)
+    |      Postcondition: debug_assert!(loss.is_finite() && loss >= 0) [F-CLASS-005]
+    |      3. Backward: autograd computes gradients through LoRA A, B matrices
+    |    Optimizer: AdamW step with decoupled weight decay (once per batch)
     |
     v
 Checkpoint::save()
@@ -304,7 +309,16 @@ The `provable-contracts/contracts/aprender/binding.yaml` maps kernel equations t
 | FALSIFY-LA-005 | Shape preservation | `shape(W + BA) == shape(W)` |
 | FALSIFY-LA-006 | SIMD equivalence | SIMD LoRA matches scalar |
 
-**Total fine-tuning falsification tests: 25** (6 CLASS + 7 FT-QWEN35 + 6 CE + 6 AW + 6 LA — but CE+AW+LA are shared with inference path)
+### Cross-Crate Contract (aprender ↔ entrenar)
+
+| Test ID | Rule | What it tries to break |
+|---------|------|----------------------|
+| FALSIFY-FT-XCRATE-001 | F-CLASS-006 | `ClassifyConfig::default().num_classes` must be >= 2 |
+| FALSIFY-FT-XCRATE-002 | F-CLASS-004 | `ClassificationHead` weight shape must equal `hidden * classes` |
+| FALSIFY-FT-XCRATE-003 | F-CLASS-005 | `cross_entropy_loss()` output must be finite and non-negative |
+| FALSIFY-FT-XCRATE-004 | F-CLASS-001 | `ClassificationHead::forward()` logits accepted by `ValidatedClassLogits::new()` |
+
+**Total fine-tuning falsification tests: 29** (6 CLASS + 7 FT-QWEN35 + 4 FT-XCRATE + 6 CE + 6 AW + 6 LA — but CE+AW+LA are shared with inference path)
 
 ---
 
@@ -395,12 +409,18 @@ cargo test -- falsify_ft_qwen35           # 7 tests
 # 2. Poka-Yoke types enforce invariants
 cargo test -- falsify_class               # 6 tests
 
-# 3. Kernel contracts verified
+# 3. Cross-crate contract (aprender ↔ entrenar)
+cargo test -- falsify_ft_xcrate           # 4 tests
+
+# 4. Kernel contracts verified
 cargo test -p provable-contracts -- falsify_ce   # 6 tests
 cargo test -p provable-contracts -- falsify_aw   # 6 tests
 cargo test -p provable-contracts -- falsify_la   # 6 tests
 
-# 4. End-to-end dogfood
+# 5. QA gate for fine-tuned models
+apr qa finetuned-model.apr --assert-classifier-head
+
+# 6. End-to-end dogfood
 apr finetune --task classify --model-size 9B --plan --json
 ```
 
@@ -425,7 +445,7 @@ apr qa finetuned-model.apr --assert-classifier-head
 |-----------|-------------|
 | **Jidoka** (Automation with human touch) | Validation stops the training pipeline when a defect is detected. No mismatched logits propagate to loss computation. |
 | **Poka-Yoke** (Mistake-proofing) | `ValidatedClassLogits` makes wrong-shaped logits a compile-time impossibility. `ValidatedSafetyLabel` makes out-of-range labels impossible. |
-| **Genchi Genbutsu** (Go and see) | Falsification tests run known-bad inputs through constructors and verify rejection. 25 total fine-tuning falsification tests. |
+| **Genchi Genbutsu** (Go and see) | Falsification tests run known-bad inputs through constructors and verify rejection. 29 total fine-tuning falsification tests (including 4 cross-crate). |
 | **Kaizen** (Continuous improvement) | As we add GPU training (Phase 2-4), each new kernel gets the same contract chain: YAML → proc macro → falsification → Kani → PTX parity. |
 | **Heijunka** (Level production) | Config factories produce consistent dimensions regardless of CLI alias. `9B`, `qwen3.5-9b`, `qwen3_5`, `qwen3.5` all resolve to identical `qwen3_5_9b()` config. |
 
@@ -435,8 +455,11 @@ apr qa finetuned-model.apr --assert-classifier-head
 
 ```bash
 # Full fine-tuning contract validation
-cargo test -- falsify_ft_qwen35 falsify_class              # 13 tests (aprender)
+cargo test -- falsify_ft_qwen35 falsify_class falsify_ft_xcrate  # 17 tests (aprender)
 cargo test -p provable-contracts -- falsify_ce falsify_aw falsify_la  # 18 tests (kernels)
+
+# QA gate for fine-tuned models
+apr qa finetuned-model.apr --assert-classifier-head
 
 # Config factory dogfood
 apr finetune --task classify --model-size 9B --plan --json

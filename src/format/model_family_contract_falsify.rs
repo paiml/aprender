@@ -1063,4 +1063,109 @@ mod contract_falsification {
         assert_ne!(config_9b.use_bias, config_qwen2.use_bias,
             "FALSIFIED FT-QWEN35-007: Qwen3.5 (no bias) vs Qwen2 (has bias) must differ");
     }
+
+    // ========================================================================
+    // CROSS-CRATE FINE-TUNING CONTRACT FALSIFICATION (FALSIFY-FT-XCRATE-001..004)
+    //
+    // These tests verify cross-crate invariants between aprender's Poka-Yoke
+    // validated types and entrenar's training pipeline. They attempt to falsify
+    // the claim that the two crates agree on classification contracts.
+    //
+    // Contract: classification-finetune-v1.yaml
+    // ========================================================================
+
+    // ========================================================================
+    // FALSIFY-FT-XCRATE-001: ClassifyConfig default num_classes >= 2
+    //
+    // Prediction: ClassifyConfig::default().num_classes >= 2.
+    // If fails: default config would violate F-CLASS-006 (degenerate class count).
+    // ========================================================================
+    #[test]
+    fn falsify_ft_xcrate_001_default_num_classes() {
+        let config = entrenar::finetune::ClassifyConfig::default();
+        assert!(
+            config.num_classes >= 2,
+            "FALSIFIED FT-XCRATE-001: ClassifyConfig default num_classes={} < 2",
+            config.num_classes
+        );
+    }
+
+    // ========================================================================
+    // FALSIFY-FT-XCRATE-002: ClassificationHead shape matches F-CLASS-004
+    //
+    // Prediction: ClassificationHead weight tensor has exactly
+    //   hidden_size * num_classes elements.
+    // If fails: weight shape contract is broken between aprender and entrenar.
+    // ========================================================================
+    #[test]
+    fn falsify_ft_xcrate_002_classifier_head_shape() {
+        let hidden_size = 896; // Qwen2-0.5B
+        let num_classes = 5;
+        let head = entrenar::finetune::ClassificationHead::new(hidden_size, num_classes);
+        let weight_data = head.weight.data();
+        let weight_slice = weight_data.as_slice().expect("contiguous weight data");
+        assert_eq!(
+            weight_slice.len(),
+            hidden_size * num_classes,
+            "FALSIFIED FT-XCRATE-002: ClassificationHead weight.len()={} != hidden_size({}) * num_classes({})",
+            weight_slice.len(), hidden_size, num_classes
+        );
+    }
+
+    // ========================================================================
+    // FALSIFY-FT-XCRATE-003: cross_entropy_loss matches F-CLASS-003 postcondition
+    //
+    // Prediction: cross_entropy_loss output is finite and non-negative.
+    // If fails: loss computation violates F-CLASS-005 postcondition.
+    // ========================================================================
+    #[test]
+    fn falsify_ft_xcrate_003_cross_entropy_postcondition() {
+        let logits = entrenar::Tensor::from_vec(vec![2.0_f32, 1.0, 0.1, -1.0, 3.0], false);
+        let label = 2; // third class
+        let num_classes = 5;
+        let loss_tensor = entrenar::finetune::cross_entropy_loss(&logits, label, num_classes);
+        let loss_data = loss_tensor.data();
+        let loss_val = loss_data.as_slice().expect("contiguous loss")[0];
+        assert!(
+            loss_val.is_finite(),
+            "FALSIFIED FT-XCRATE-003: cross_entropy_loss returned non-finite: {loss_val}"
+        );
+        assert!(
+            loss_val >= 0.0,
+            "FALSIFIED FT-XCRATE-003: cross_entropy_loss returned negative: {loss_val}"
+        );
+    }
+
+    // ========================================================================
+    // FALSIFY-FT-XCRATE-004: ValidatedClassLogits accepts entrenar logit output
+    //
+    // Prediction: logits from ClassificationHead::forward() can be validated
+    //   by aprender's ValidatedClassLogits::new() without error.
+    // If fails: the two crates disagree on logit shape contract.
+    // ========================================================================
+    #[test]
+    fn falsify_ft_xcrate_004_validated_logits_accept_head_output() {
+        use crate::format::validated_classification::ValidatedClassLogits;
+
+        let hidden_size = 896;
+        let num_classes = 5;
+        let seq_len = 1;
+        let head = entrenar::finetune::ClassificationHead::new(hidden_size, num_classes);
+
+        // Simulate a hidden state tensor [seq_len * hidden_size]
+        let hidden_state = entrenar::Tensor::from_vec(vec![0.1_f32; seq_len * hidden_size], false);
+        let logits_tensor = head.forward(&hidden_state, seq_len);
+        let logits_data: Vec<f32> = logits_tensor.data()
+            .as_slice()
+            .expect("contiguous logits")
+            .to_vec();
+
+        // aprender's Poka-Yoke type must accept these logits
+        let validated = ValidatedClassLogits::new(logits_data, num_classes);
+        assert!(
+            validated.is_ok(),
+            "FALSIFIED FT-XCRATE-004: ValidatedClassLogits rejected entrenar logits: {:?}",
+            validated.err()
+        );
+    }
 }

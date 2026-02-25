@@ -4463,3 +4463,23 @@ roadmap:
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-337
+  github_issue: null
+  item_type: task
+  title: 'FT-DBC-001: Fine-tuning provable Design by Contract parity'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-02-25T15:43:08Z
+  updated: 2026-02-25T15:43:09.983141554+00:00
+  spec: null
+  acceptance_criteria:
+  - 'Implement docs/specifications/fine-tune-provable-design-by-contract.md: Kani harnesses for classification types, PTX kernels for CE and AdamW, binding.yaml updates, apr qa fine-tuning gate'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - fine-tuning
+  - contracts
+  - parity
+  notes: null

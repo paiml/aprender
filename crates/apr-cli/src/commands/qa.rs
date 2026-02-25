@@ -113,6 +113,8 @@ pub struct QaConfig {
     pub skip_metadata: bool,
     /// Skip GPU capability match gate (GH-280)
     pub skip_capability: bool,
+    /// Assert classifier head presence and shape (F-CLASS-004)
+    pub assert_classifier_head: bool,
 }
 
 impl Default for QaConfig {
@@ -140,6 +142,7 @@ impl Default for QaConfig {
             skip_gpu_state: false,
             skip_metadata: false,
             skip_capability: false,
+            assert_classifier_head: false,
         }
     }
 }
@@ -320,6 +323,7 @@ pub fn run(
     skip_gpu_state: bool,
     skip_metadata: bool,
     skip_capability: bool,
+    assert_classifier_head: bool,
 ) -> Result<()> {
     let config = QaConfig {
         min_tps: min_tps.unwrap_or(100.0),
@@ -344,6 +348,7 @@ pub fn run(
         skip_gpu_state,
         skip_metadata,
         skip_capability,
+        assert_classifier_head,
     };
 
     let report = run_qa(path, &config)?;
@@ -398,6 +403,7 @@ fn gate_display_name(name: &str) -> &str {
         "gpu_state_isolation" => "GPU State Isolation",
         "performance_regression" => "Perf Regression",
         "metadata_plausibility" => "Metadata Plausibility",
+        "classifier_head" => "Classifier Head",
         other => other,
     }
 }
