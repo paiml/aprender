@@ -273,3 +273,146 @@ fn test_safety_label_display() {
     );
     assert!(s.contains("3"), "Display should show index");
 }
+
+// =============================================================================
+// PROPTEST: FALSIFY-CLASS-001-prop through FALSIFY-CLASS-006-prop
+// =============================================================================
+
+mod proptests {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        // FALSIFY-CLASS-001-prop: Random data.len() vs num_classes --
+        // when len != num_classes, ValidatedClassLogits::new must fail.
+        #[test]
+        fn falsify_class_001_prop_shape_mismatch(
+            data_len in 1usize..100,
+            num_classes in 2usize..50,
+        ) {
+            // Only test mismatch cases
+            prop_assume!(data_len != num_classes);
+            let data = vec![0.1f32; data_len];
+            let result = ValidatedClassLogits::new(data, num_classes);
+            prop_assert!(
+                result.is_err(),
+                "Must reject logits with {} elements when num_classes={}",
+                data_len,
+                num_classes
+            );
+        }
+
+        // FALSIFY-CLASS-002-prop: Random label vs num_classes --
+        // when label >= num_classes, ValidatedSafetyLabel::new must fail.
+        #[test]
+        fn falsify_class_002_prop_label_out_of_range(
+            label in 0usize..200,
+            num_classes in 2usize..50,
+        ) {
+            let result = ValidatedSafetyLabel::new(label, num_classes);
+            if label >= num_classes {
+                prop_assert!(
+                    result.is_err(),
+                    "Must reject label={} when num_classes={}",
+                    label,
+                    num_classes
+                );
+            } else {
+                // label < num_classes -- only valid if SafetyClass::from_index succeeds
+                // For safety labels, only indices 0..5 map to valid SafetyClass variants
+                if label < 5 {
+                    prop_assert!(
+                        result.is_ok(),
+                        "Must accept label={} when num_classes={}",
+                        label,
+                        num_classes
+                    );
+                }
+            }
+        }
+
+        // FALSIFY-CLASS-003-prop: Random finite logits -> softmax sums to ~1.0.
+        #[test]
+        fn falsify_class_003_prop_softmax_sum(
+            num_classes in 2usize..50,
+            seed in 0u64..10000,
+        ) {
+            // Generate deterministic logits from seed
+            let data: Vec<f32> = (0..num_classes)
+                .map(|i| {
+                    let x = (seed.wrapping_mul(6364136223846793005).wrapping_add(i as u64)) as f32;
+                    (x / f32::MAX).clamp(-50.0, 50.0)
+                })
+                .collect();
+            let logits = ValidatedClassLogits::new(data, num_classes).unwrap();
+            let probs = logits.softmax();
+            let sum: f32 = probs.iter().sum();
+            prop_assert!(
+                (sum - 1.0).abs() < 1e-4,
+                "Softmax must sum to ~1.0, got {} for {} classes",
+                sum,
+                num_classes
+            );
+        }
+
+        // FALSIFY-CLASS-004-prop: Random weight sizes vs hidden*num_classes --
+        // mismatch detected by ValidatedClassifierWeight.
+        #[test]
+        fn falsify_class_004_prop_weight_shape_mismatch(
+            actual_len in 1usize..1000,
+            hidden_size in 1usize..128,
+            num_classes in 2usize..20,
+        ) {
+            let expected_len = hidden_size * num_classes;
+            prop_assume!(actual_len != expected_len);
+            let data = vec![0.01f32; actual_len];
+            let result = ValidatedClassifierWeight::new(data, hidden_size, num_classes);
+            prop_assert!(
+                result.is_err(),
+                "Must reject weight with {} elements when expected {} ({}x{})",
+                actual_len,
+                expected_len,
+                hidden_size,
+                num_classes
+            );
+        }
+
+        // FALSIFY-CLASS-005-prop: Inject NaN or Inf at random positions --
+        // detected by ValidatedClassLogits.
+        #[test]
+        fn falsify_class_005_prop_nan_inf_detection(
+            num_classes in 2usize..20,
+            poison_idx in 0usize..20,
+            poison_type in 0u8..3,
+        ) {
+            let idx = poison_idx % num_classes;
+            let mut data = vec![0.5f32; num_classes];
+            data[idx] = match poison_type {
+                0 => f32::NAN,
+                1 => f32::INFINITY,
+                _ => f32::NEG_INFINITY,
+            };
+            let result = ValidatedClassLogits::new(data, num_classes);
+            prop_assert!(
+                result.is_err(),
+                "Must reject logits with NaN/Inf at index {} (poison_type={})",
+                idx,
+                poison_type
+            );
+        }
+
+        // FALSIFY-CLASS-006-prop: num_classes < 2 -> rejection by ValidatedClassLogits.
+        #[test]
+        fn falsify_class_006_prop_degenerate_class_count(
+            num_classes in 0usize..2,
+        ) {
+            let data = vec![1.0f32; num_classes];
+            let result = ValidatedClassLogits::new(data, num_classes);
+            prop_assert!(
+                result.is_err(),
+                "Must reject num_classes={} (< 2)",
+                num_classes
+            );
+        }
+    }
+}

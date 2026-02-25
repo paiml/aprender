@@ -490,3 +490,5 @@ mod tests_phi_template;
 mod tests_huggingface;
 #[path = "tests_sanitize.rs"]
 mod tests_sanitize;
+#[path = "tests_ct_proptest.rs"]
+mod tests_ct_proptest;

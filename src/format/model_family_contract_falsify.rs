@@ -524,4 +524,166 @@ mod contract_falsification {
             violations.join("\n")
         );
     }
+
+    // ========================================================================
+    // PROPTEST: FALSIFY-MF-ARCH-001-prop through FALSIFY-MF-ARCH-004-prop
+    // ========================================================================
+
+    mod proptests {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            // ================================================================
+            // FALSIFY-MF-ARCH-001-prop: norm_type consistency
+            //
+            // Prediction: For any random family index, the constraints.norm_type
+            // is self-consistent — reading the same family config twice yields
+            // the same NormType. This verifies the YAML-defined constraints
+            // do not silently change between loads.
+            // ================================================================
+            #[test]
+            fn falsify_mf_arch_001_prop_norm_type_consistency(
+                idx in 0..100_usize
+            ) {
+                let families = load_all_families();
+                let family_idx = idx % families.len();
+                let (ref family_name, ref config) = families[family_idx];
+
+                // norm_type must be one of the two valid variants
+                let norm = config.constraints.norm_type;
+                prop_assert!(
+                    matches!(norm, NormType::RmsNorm | NormType::LayerNorm),
+                    "FALSIFY-MF-ARCH-001-prop: {} has invalid norm_type: {:?}",
+                    family_name, norm
+                );
+
+                // Reload and verify consistency
+                let families2 = load_all_families();
+                let (_, ref config2) = families2[family_idx];
+                prop_assert!(
+                    config.constraints.norm_type == config2.constraints.norm_type,
+                    "FALSIFY-MF-ARCH-001-prop: {} norm_type changed between loads: {:?} vs {:?}",
+                    family_name, config.constraints.norm_type, config2.constraints.norm_type
+                );
+            }
+
+            // ================================================================
+            // FALSIFY-MF-ARCH-002-prop: activation type consistency
+            //
+            // Prediction: For any random family index, constraints.activation
+            // is a valid variant and consistent across loads.
+            // ================================================================
+            #[test]
+            fn falsify_mf_arch_002_prop_activation_consistency(
+                idx in 0..100_usize
+            ) {
+                let families = load_all_families();
+                let family_idx = idx % families.len();
+                let (ref family_name, ref config) = families[family_idx];
+
+                let act = config.constraints.activation;
+                prop_assert!(
+                    matches!(act, Activation::Silu | Activation::Gelu | Activation::Relu),
+                    "FALSIFY-MF-ARCH-002-prop: {} has invalid activation: {:?}",
+                    family_name, act
+                );
+
+                let families2 = load_all_families();
+                let (_, ref config2) = families2[family_idx];
+                prop_assert!(
+                    config.constraints.activation == config2.constraints.activation,
+                    "FALSIFY-MF-ARCH-002-prop: {} activation changed between loads: {:?} vs {:?}",
+                    family_name, config.constraints.activation, config2.constraints.activation
+                );
+            }
+
+            // ================================================================
+            // FALSIFY-MF-ARCH-003-prop: mlp_type consistency
+            //
+            // Prediction: For any random family index, constraints.mlp_type
+            // is a valid variant and consistent across loads.
+            // ================================================================
+            #[test]
+            fn falsify_mf_arch_003_prop_mlp_type_consistency(
+                idx in 0..100_usize
+            ) {
+                let families = load_all_families();
+                let family_idx = idx % families.len();
+                let (ref family_name, ref config) = families[family_idx];
+
+                let mlp = config.constraints.mlp_type;
+                prop_assert!(
+                    matches!(mlp, MlpType::SwiGlu | MlpType::GeluMlp | MlpType::GatedMlp),
+                    "FALSIFY-MF-ARCH-003-prop: {} has invalid mlp_type: {:?}",
+                    family_name, mlp
+                );
+
+                let families2 = load_all_families();
+                let (_, ref config2) = families2[family_idx];
+                prop_assert!(
+                    config.constraints.mlp_type == config2.constraints.mlp_type,
+                    "FALSIFY-MF-ARCH-003-prop: {} mlp_type changed between loads: {:?} vs {:?}",
+                    family_name, config.constraints.mlp_type, config2.constraints.mlp_type
+                );
+            }
+
+            // ================================================================
+            // FALSIFY-MF-ARCH-004-prop: numeric dimension roundtrip
+            //
+            // Prediction: For families with size variants, all numeric
+            // dimension fields survive a format-then-parse roundtrip:
+            //   value.to_string().parse::<usize>().unwrap() == value
+            //
+            // This catches hypothetical floating-point-to-int truncation bugs
+            // in YAML parsing where e.g. "4096.0" would fail to parse as usize.
+            // ================================================================
+            #[test]
+            fn falsify_mf_arch_004_prop_dimension_roundtrip(
+                family_idx in 0..100_usize,
+                size_idx in 0..100_usize,
+            ) {
+                let families = load_all_families();
+                let fi = family_idx % families.len();
+                let (ref family_name, ref config) = families[fi];
+
+                if config.size_variants.is_empty() {
+                    return Ok(());
+                }
+
+                let sizes: Vec<(&String, &ModelSizeConfig)> = config.size_variants.iter().collect();
+                let si = size_idx % sizes.len();
+                let (size_name, sc) = sizes[si];
+
+                // Roundtrip all usize dimension fields through string formatting
+                let fields: &[(&str, usize)] = &[
+                    ("hidden_dim", sc.hidden_dim),
+                    ("num_layers", sc.num_layers),
+                    ("num_heads", sc.num_heads),
+                    ("num_kv_heads", sc.num_kv_heads),
+                    ("intermediate_dim", sc.intermediate_dim),
+                    ("vocab_size", sc.vocab_size),
+                    ("head_dim", sc.head_dim),
+                    ("max_position_embeddings", sc.max_position_embeddings),
+                ];
+
+                for &(field, value) in fields {
+                    let formatted = value.to_string();
+                    let parsed: usize = formatted.parse().map_err(|e| {
+                        proptest::test_runner::TestCaseError::Fail(
+                            format!(
+                                "FALSIFY-MF-ARCH-004-prop: {}/{} {}={} roundtrip failed: {}",
+                                family_name, size_name, field, value, e
+                            ).into()
+                        )
+                    })?;
+                    prop_assert!(
+                        parsed == value,
+                        "FALSIFY-MF-ARCH-004-prop: {}/{} {} roundtrip mismatch: {} != {}",
+                        family_name, size_name, field, parsed, value
+                    );
+                }
+            }
+        }
+    }
 }

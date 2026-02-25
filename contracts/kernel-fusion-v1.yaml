@@ -108,6 +108,93 @@ fusion_decisions:
       prefill_tok_s: 290  # Batched prefill throughput
       decision_date: "2026-02-08"
 
+  fused_qkv_gemv:
+    id: "FUSION-006"
+    status: "ACTIVE"
+    description: "Fused Q/K/V projection in single kernel (3x launch reduction)"
+    kernels:
+      fused: "FusedQKVKernel (trueno-gpu/src/kernels/fused/mod.rs)"
+      replaces:
+        - "Q projection GEMV"
+        - "K projection GEMV"
+        - "V projection GEMV"
+    call_site: "realizar/src/cuda/executor/layers/indexed.rs"
+    saves_per_layer: 2  # 3 kernels → 1
+    saves_per_token_28L: 56  # 28 layers × 2 launches
+    benchmark:
+      model: "qwen2.5-coder-7b-instruct-q4_k_m"
+      decision_date: "2026-02-08"
+    falsification: "Splitting into 3 separate Q/K/V GEMVs must be slower due to 3x launch overhead"
+
+  fused_gate_up_gemv:
+    id: "FUSION-007"
+    status: "ACTIVE"
+    description: "Fused Gate+Up FFN with SwiGLU activation in single kernel"
+    kernels:
+      fused: "FusedGateUpKernel (trueno-gpu/src/kernels/fused/mod.rs)"
+      replaces:
+        - "Gate projection GEMV"
+        - "Up projection GEMV"
+        - "FusedSwigluKernel"
+    call_site: "realizar/src/cuda/executor/layers/indexed.rs"
+    saves_per_layer: 2  # 3 kernels → 1
+    saves_per_token_28L: 56  # 28 layers × 2 launches
+    benchmark:
+      model: "qwen2.5-coder-7b-instruct-q4_k_m"
+      decision_date: "2026-02-08"
+    falsification: "Splitting into separate gate+up+swiglu must show higher launch overhead"
+
+  fused_gemm_bias_gelu:
+    id: "FUSION-008"
+    status: "ACTIVE"
+    description: "Fused GEMM + Bias + GELU activation in single kernel"
+    kernels:
+      fused: "FusedGemmBiasGeluKernel (trueno-gpu/src/kernels/fused/gemm_bias_gelu.rs)"
+      replaces:
+        - "GemmKernel"
+        - "BiasAddKernel"
+        - "GeluKernel"
+    call_site: "trueno-gpu/src/kernels/fused/gemm_bias_gelu.rs"
+    saves_per_layer: 2  # 3 kernels → 1
+    benchmark:
+      decision_date: "2026-02-08"
+    falsification: "Splitting GEMM+Bias+GELU into 3 kernels must show overhead"
+
+  fused_rmsnorm_q4k_gemv:
+    id: "FUSION-009"
+    status: "ACTIVE"
+    description: "Fused RMSNorm + Q4K GEMV (2-way fusion, avoids intermediate buffer)"
+    kernels:
+      fused: "FusedRmsNormQ4KGemvKernel (trueno-gpu/src/kernels/quantize/fused/rmsnorm_gemv.rs)"
+      replaces:
+        - "RmsNormKernel"
+        - "Q4K GEMV (MWV)"
+    call_site: "realizar/src/cuda/executor/layers/indexed.rs"
+    saves_per_layer: 1  # 2 kernels → 1
+    saves_per_token_28L: 28  # 28 layers × 1 launch
+    memory_saved_bytes: 14336  # hidden_dim × 4 bytes (3584 × 4 for 7B) — avoids intermediate RMSNorm buffer
+    benchmark:
+      model: "qwen2.5-coder-7b-instruct-q4_k_m"
+      decision_date: "2026-02-09"
+    falsification: "Separate RMSNorm + Q4K GEMV must show extra memory traffic for intermediate buffer"
+
+  fused_gate_up_q4k_gemv:
+    id: "FUSION-010"
+    status: "ACTIVE"
+    description: "Fused Gate+Up Q4K GEMV sharing input vector load"
+    kernels:
+      fused: "FusedGateUpQ4KGemvKernel (trueno-gpu/src/kernels/quantize/fused/gate_up_gemv.rs)"
+      replaces:
+        - "Q4K Gate GEMV"
+        - "Q4K Up GEMV"
+    call_site: "realizar/src/cuda/executor/layers/indexed.rs"
+    saves_per_layer: 1  # 2 kernels → 1
+    saves_per_token_28L: 28  # 28 layers × 1 launch
+    benchmark:
+      model: "qwen2.5-coder-7b-instruct-q4_k_m"
+      decision_date: "2026-02-09"
+    falsification: "Separate gate+up Q4K GEMVs must load input vector twice"
+
   # -------------------------------------------------------------------------
   # BLOCKED fusions (tried, found slower — MUST remain documented)
   # -------------------------------------------------------------------------

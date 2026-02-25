@@ -1519,6 +1519,78 @@ All aprender-only proptest additions to existing inline FALSIFY test files:
 
 ---
 
+## §4 Cross-Stack Falsification Sweep (Phases 27–29)
+
+Gap analysis identified 5 contracts with incomplete falsification coverage:
+- kernel-fusion-v1.yaml: ZERO FALSIFY tests
+- layer-parity-v1.yaml: organic tests exist, not FALSIFY-mapped
+- chat-template-semantics-v1.yaml: 12 deterministic, zero proptest
+- classification-finetune-v1.yaml: aprender has FALSIFY-CLASS, entrenar has none
+- ArchConstraints + ValidatedModelConfig: deterministic complete, no proptest edge cases
+
+### Phase 27 — Kernel Fusion Contract (12 tests, 2 repos)
+
+**Prerequisite**: Updated `contracts/kernel-fusion-v1.yaml` with 5 missing fused kernel entries
+(FUSION-006 through FUSION-010: FusedQKVKernel, FusedGateUpKernel, FusedGemmBiasGeluKernel,
+FusedRmsNormQ4KGemvKernel, FusedGateUpQ4KGemvKernel).
+
+| File | Tests Added |
+|------|-------------|
+| `trueno-gpu/src/kernels/tests/fusion_contract_falsify.rs` | FALSIFY-FUSION-001..005 (det), FALSIFY-FUSION-001..003-prop |
+| `realizar/tests/fusion_gate_contract_falsify.rs` | FALSIFY-FUSION-QA-001..003 (det), FALSIFY-FUSION-QA-001-prop, FUSION-ID-uniqueness-prop |
+
+### Phase 28 — Layer Parity Contract (11 tests, 1 repo)
+
+| File | Tests Added |
+|------|-------------|
+| `realizar/tests/parity_contract_falsify.rs` | FALSIFY-PARITY-001..004 (det), FALSIFY-PARITY-001-prop, FALSIFY-PARITY-004-prop, FALSIFY-PARITY-GATE-001, 3 cosine sanity |
+
+### Phase 29a — Chat Template Proptest (9 tests, 1 repo)
+
+| File | Tests Added |
+|------|-------------|
+| `aprender/src/text/chat_template/tests_ct_proptest.rs` | FALSIFY-CT-001-prop (balanced delimiters), CT-002-prop (sanitize injections), CT-003-prop (system before user), CT-005-prop (multi-turn ordering), CT-006-prop (LLaMA2 SYS wrapping), CT-008-prop (detect never panics), CT-011-prop (unknown → Raw), CT-012-prop (sanitize idempotent), CT-UTF8-prop (Unicode preservation) |
+
+### Phase 29b — Classification Contract Cross-Stack (16 tests, 2 repos)
+
+| File | Tests Added |
+|------|-------------|
+| `entrenar/src/finetune/tests_classification_contract_falsify.rs` | FALSIFY-CLASS-ENT-001..004 (det), ENT-001b..003b (boundary), ENT-001-prop, ENT-003-prop, ENT-004-prop |
+| `aprender/src/format/classification_contract_falsify.rs` | FALSIFY-CLASS-001..006-prop (6 proptest appended) |
+
+### Phase 29c — ArchConstraints + ValidatedModelConfig Proptest (8 tests, 2 repos)
+
+| File | Tests Added |
+|------|-------------|
+| `aprender/src/format/model_family_contract_falsify.rs` | FALSIFY-MF-ARCH-001..004-prop (norm, activation, mlp, dimension roundtrip) |
+| `realizar/tests/validated_config_contract_falsify.rs` | FALSIFY-VMC-001..004-prop (divisibility, zero dim, off-by-one, valid acceptance) |
+
+### §4.1 Summary
+
+| Phase | Repo | Tests | Type |
+|-------|------|-------|------|
+| 27 | trueno-gpu | 8 | 5 det + 3 prop |
+| 27 | realizar | 5 | 3 det + 2 prop |
+| 28 | realizar | 11 | 8 det + 2 prop + 1 sanity |
+| 29a | aprender | 9 | 9 prop |
+| 29b | entrenar | 10 | 7 det + 3 prop |
+| 29b | aprender | 6 | 6 prop |
+| 29c | aprender | 4 | 4 prop |
+| 29c | realizar | 4 | 4 prop |
+| **Total** | **4 repos** | **57** | **23 det + 33 prop + 1 sanity** |
+
+**Post-sweep FALSIFY totals** (matching `cargo test -- falsify`):
+
+| Repo | Before | After | Delta |
+|------|--------|-------|-------|
+| aprender | 753 | 772 | +19 |
+| trueno-gpu | 6 | 14 | +8 |
+| realizar | 0 | 20 | +20 |
+| entrenar | 194 | 204 | +10 |
+| **Stack total** | **953** | **1010** | **+57** |
+
+---
+
 ## References
 
 1. Meyer, B. (1992). "Applying 'Design by Contract'." *IEEE Computer*, 25(10), 40-51.
