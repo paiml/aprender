@@ -707,6 +707,8 @@ fn display_train_result(
             "total_epochs": result.epoch_metrics.len(),
             "checkpoint_dir": output_dir.display().to_string(),
             "checkpoint_format": checkpoint_format,
+            "monitor": format!("apr monitor {}", output_dir.display()),
+            "training_state": output_dir.join("training_state.json").display().to_string(),
             "epoch_metrics": epochs_json,
         });
         println!(
