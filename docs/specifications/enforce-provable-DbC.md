@@ -2,7 +2,7 @@
 
 **Reference**: Meyer, B. (1992). "Applying 'Design by Contract'." *IEEE Computer*, 25(10), 40-51.
 
-**Status**: PHASE 14 COMPLETE — 451 FALSIFY tests across stack (§2.3 Core Ops + Loss)
+**Status**: PHASE 26 COMPLETE — 638 FALSIFY tests in aprender (all 70 contract files have proptest)
 **Date**: 2026-02-23 (updated 2026-02-24)
 **Scope**: trueno, realizar, aprender, entrenar, batuta, provable-contracts, apr-playbook
 
@@ -1291,9 +1291,231 @@ Pre-existing: 4 (aprender LF-001..004) + 4 (aprender DO-001..004) = 8
 | MM-001..005 | N/A | 5 | 5 | N/A | 10 |
 | LF-001..006 | 8 | N/A | 6 | N/A | 14 |
 | DO-001..004 | 6 | N/A | N/A | N/A | 6 |
-| **Total** | **170** | **60** | **110** | **107** | **447** |
+| AW-001..006 | 8 | N/A | 6 | N/A | 14 |
+| LR-001..004 | 7 | N/A | N/A | N/A | 7 |
+| LOGREG-001..005 | 8 | N/A | N/A | N/A | 8 |
+| **Total** | **193** | **60** | **116** | **107** | **476** |
 
-Note: 447 includes ~63 pre-existing tests. Net new this sweep: ~384. 20 contracts covered.
+Note: 476 includes ~63 pre-existing tests. Net new this sweep: ~413. 22 contracts covered.
+
+### §17 Phase 16 — CMA-ES + BatchNorm/CG/LBFGS Proptest
+
+**Contracts**: cma-es-kernel-v1 (CMA), batchnorm-kernel-v1 (BN), optimization-v1 (CG, LBFGS)
+
+**CMA-ES (CMA)** — aprender only (new file):
+- 5 deterministic: CMA-001 (step size positivity), CMA-002 (covariance PD), CMA-003 (weight norm), CMA-004 (symmetry), CMA-006 (dim=1 boundary)
+- 3 proptest: CMA-001-prop (20 cases), CMA-003-prop (50 cases), CMA-006-prop (20 cases)
+- Skipped CMA-005 (SIMD equivalence — diagonal CMA-ES has no SIMD path)
+- Total: 8 tests
+
+**BatchNorm (BN)** — aprender proptest additions:
+- Added BN-001-prop (training standardization, 30 cases), BN-002-prop (denominator safety, 30 cases)
+- Existing: 4 deterministic → now 6 total
+
+**Conjugate Gradient (CG)** — aprender proptest additions:
+- Added CG-001-prop (quadratic convergence, 30 cases), CG-003-prop (objective decreases, 30 cases)
+- Existing: 3 deterministic → now 5 total
+
+**L-BFGS (LBFGS)** — aprender proptest additions:
+- Added LBFGS-001-prop (quadratic convergence, 30 cases), LBFGS-002-prop (objective decreases, 30 cases)
+- Existing: 3 deterministic → now 5 total
+
+**Phase 16 net new**: 14 proptest + 5 deterministic = 24 tests
+**Cumulative**: ~500 FALSIFY tests across 26 contracts
+
+| Contract | aprender | trueno | entrenar | realizar | Total |
+|----------|---------|--------|----------|----------|-------|
+| CMA-001..006 | 8 | N/A | N/A | N/A | 8 |
+| BN-001..006 | 6 | N/A | N/A | N/A | 6 |
+| CG-001..003 | 5 | N/A | N/A | N/A | 5 |
+| LBFGS-001..003 | 5 | N/A | N/A | N/A | 5 |
+
+**Commit**: aprender `f765d09e`
+
+### §18 Phase 17 — Activations + Transformer Proptest
+
+**Contracts**: activation-kernel-v1 (AK/ReLU), sigmoid (SG), conv1d-kernel-v1 (CV), sampling-algorithms-v1 (SA), alibi-kernel-v1 (AL), bias-add-v1 (BA), rope-extrapolation-v1 (REXT)
+
+All aprender-only proptest additions to existing inline FALSIFY test files:
+
+| Contract | Existing | Added | Total |
+|----------|---------|-------|-------|
+| AK/ReLU | 4d | 2p | 6 |
+| SG/Sigmoid | 3d | 2p | 5 |
+| CV/Conv1d | 4d | 2p | 6 |
+| SA/Sampling | 4d | 2p | 6 |
+| AL/ALiBi | 5d | 2p | 7 |
+| BA/Bias | 4d | 2p | 6 |
+| REXT/RoPE-ext | 5d | 2p | 7 |
+
+**Phase 17 net new**: 14 proptest tests
+**Commits**: aprender `fabb38a3`, `2c7a0670`
+
+### §16 Phase 15 — Optimizers + Linear Models
+
+**Contracts**: adamw-kernel-v1 (AW), linear-models-v1 (LM: LR + LOGREG)
+
+**AdamW (AW)** — aprender + entrenar:
+- aprender: Added 3 proptest (AW-002-prop, AW-003-prop, AW-006-prop) to existing 5 deterministic → 8 total
+- entrenar: Added 4 deterministic (AW-002e..006e) + 2 proptest → 6 total
+- Fixed f32 ULP absorption in AW-003-prop (beta^t underflow guard)
+- Fixed f32 tolerance in AW-006-prop (1e-6 → 1e-4)
+
+**Linear Regression (LR)** — aprender only:
+- Added 3 proptest (LR-001-prop, LR-002-prop, LR-003-prop) to existing 4 deterministic → 7 total
+
+**Logistic Regression (LOGREG)** — aprender only:
+- Added LOGREG-005 (probabilities sum to 1) deterministic
+- Added 3 proptest (LOGREG-003-prop, LOGREG-004-prop, LOGREG-005-prop) → 8 total
+- Entrenar has no linear/logistic regression (DL training only)
+
+**Commits**: aprender `fae6206a` (AW), `7c361a1a` (LM); entrenar `1273c95` (AW)
+
+---
+
+## 16. §3.1 Aprender Inline Proptest Gap Closure (Phases 18-26)
+
+**Goal**: Every `*_contract.rs` file in aprender `src/` must have at least one `proptest!` block.
+
+### Five-Whys Root Cause
+
+- Why 1: Phases 1-17 added proptest to ~30 contract files, but 40+ had only deterministic tests
+- Why 2: Phases 1-17 focused on cross-stack contract coverage, not aprender-internal proptest completeness
+- Why 3: Many aprender modules (clustering, metaheuristics, Bayesian, GLM, text, voice) predate the proptest convention
+- Why 4: No automated gate checked for proptest presence per contract file
+- Why 5: Deterministic FALSIFY tests were "good enough" (they are not — proptest catches edge cases deterministic tests miss)
+
+### Phase 18 — Tensor/Matrix/Vector/SGD/Stats (5 files, 10 proptest)
+
+| File | Proptest Added |
+|------|---------------|
+| `autograd/tests_tensor_contract.rs` | TN-001-prop (shape), TN-003-prop (finite) |
+| `primitives/tests_matrix_contract.rs` | MX-001-prop (shape), MX-002-prop (identity) |
+| `primitives/tests_vector_contract.rs` | VE-001-prop (length), VE-003-prop (finite) |
+| `optim/tests_sgd_contract.rs` | SGD-001-prop (parameter update), SGD-002-prop (finite) |
+| `stats/tests_descriptive_contract.rs` | DS-001-prop (mean bounded), DS-002-prop (variance non-neg) |
+
+**Commit**: aprender `f4814099`
+
+### Phase 19 — DBSCAN/ClassMetrics/DE (3 files, 6 proptest)
+
+| File | Proptest Added |
+|------|---------------|
+| `cluster/tests_dbscan_contract.rs` | DB-001-prop (labels length), DB-002-prop (noise label) |
+| `metrics/tests_classification_contract.rs` | MC-001-prop (accuracy bounded), MC-003-prop (F1 bounded) |
+| `metaheuristics/tests_de_contract.rs` | MH-002-prop (within bounds), MH-003-prop (finite) |
+
+**Commit**: aprender `333e119b`
+
+### Phase 20 — GA/PSO/SA Metaheuristics (3 files, 6 proptest)
+
+| File | Proptest Added |
+|------|---------------|
+| `metaheuristics/tests_ga_contract.rs` | MH-008-prop (solution dimension), MH-009-prop (finite objective) |
+| `metaheuristics/tests_pso_contract.rs` | MH-002-prop (solution dimension), MH-003-prop (within bounds) |
+| `metaheuristics/tests_sa_contract.rs` | MH-005-prop (within bounds), MH-006-prop (finite) |
+
+**Commit**: aprender `4b47eea0`
+
+### Phase 21 — Clustering (5 files, 10 proptest)
+
+| File | Proptest Added |
+|------|---------------|
+| `cluster/tests_agglomerative_contract.rs` | HC-001-prop (labels length), HC-002-prop (n_clusters) |
+| `cluster/tests_gmm_contract.rs` | GM-001-prop (weights sum to 1), GM-002-prop (labels length) |
+| `cluster/tests_iforest_contract.rs` | IF-001-prop (scores bounded), IF-003-prop (predictions length) |
+| `cluster/tests_lof_contract.rs` | LF-001-prop (scores positive), LF-003-prop (scores length) |
+| `cluster/tests_spectral_contract.rs` | SC-001-prop (labels length), SC-002-prop (label range) |
+
+**Commit**: aprender `22b95c5c`
+
+### Phase 22 — KNN/Community/Dijkstra/ICA/GBM (5 files, 10 proptest)
+
+| File | Proptest Added |
+|------|---------------|
+| `classification/tests_knn_contract.rs` | KNN-002-prop (prediction count), KNN-004-prop (deterministic) |
+| `graph/tests_community_contract.rs` | CD-001-prop (labels length), CD-003-prop (deterministic) |
+| `graph/tests_dijkstra_contract.rs` | GR-003-prop (self-path zero), GR-004-prop (BFS connected) |
+| `decomposition/tests_ica_contract.rs` | ICA-001-prop (output shape), ICA-002-prop (finite output) |
+| `tree/tests_gbm_contract.rs` | GBM-001-prop (predictions valid), GBM-002-prop (prediction count) |
+
+**Commit**: aprender `361841d1`
+
+### Phase 23 — GLM/Bayesian/Calibration/Regression Metrics (5 files, 10 proptest)
+
+| File | Proptest Added |
+|------|---------------|
+| `glm/tests_glm_contract.rs` | GLM-002-prop (prediction count), GLM-003-prop (Poisson non-neg) |
+| `bayesian/conjugate/tests_conjugate_contract.rs` | BY-002-prop (Beta mean bounded), BY-005-prop (Dirichlet sum to 1) |
+| `bayesian/tests_blr_contract.rs` | BLR-001-prop (finite predictions), BLR-002-prop (prediction count) |
+| `calibration_tests_contract.rs` | CAL-001-prop (proba sum to 1), CAL-002-prop (non-negative) |
+| `metrics/tests_regression_contract.rs` | MR-001-prop (perfect R²=1), MR-002-prop (R² upper bound) |
+
+**Commit**: aprender `f373b23c`
+
+### Phase 24 — Stats/Metrics/KFold (6 files, 12 proptest)
+
+| File | Proptest Added |
+|------|---------------|
+| `stats/tests_hypothesis_contract.rs` | HT-001-prop (p-value bounded), HT-003-prop (finite statistic) |
+| `stats/tests_covariance_contract.rs` | CV-002-prop (correlation bounded), CV-004-prop (covariance symmetric) |
+| `metrics/tests_clustering_contract.rs` | MCL-001-prop (silhouette bounded), MCL-003-prop (deterministic) |
+| `metrics/tests_drift_contract.rs` | DR-001-prop (no drift on identical), DR-003-prop (score non-neg) |
+| `metrics/tests_ranking_contract.rs` | RK-001-prop (hit@k binary), RK-003-prop (NDCG bounded) |
+| `model_selection/tests_kfold_contract.rs` | KF-001-prop (k splits), KF-002-prop (sample coverage) |
+
+**Commit**: aprender `e4db7414`
+
+### Phase 25 — Normalization/Text/ARIMA/LoRA/SiLU/SwiGLU (7 files, 14 proptest)
+
+| File | Proptest Added |
+|------|---------------|
+| `preprocessing/tests_normalization_contract.rs` | PN-002-prop (MinMax bounded), PN-003-prop (shape preserved) |
+| `text/tests_stopwords_contract.rs` | SW-003-prop (subset), SW-004-prop (output not longer) |
+| `text/tests_stem_contract.rs` | ST-001-prop (idempotent), ST-002-prop (not longer) |
+| `time_series/tests_arima_contract.rs` | ARIMA-001-prop (forecast length), ARIMA-002-prop (finite) |
+| `transfer/tests_lora_contract.rs` | LORA-001-prop (output shape), LORA-003-prop (finite) |
+| `nn/functional_tests_silu_contract.rs` | SI-002-prop (lower bound), SI-005-prop (tensor=scalar) |
+| `nn/functional_tests_swiglu_contract.rs` | SG-003-prop (decomposition), SG-004-prop (finite) |
+
+**Commit**: aprender `cb673f07`
+
+### Phase 26 — Embeddings/Entropy (5 files, 10 proptest)
+
+| File | Proptest Added |
+|------|---------------|
+| `citl/neural/tests_embedding_contract.rs` | EM-001-prop (shape), EM-004-prop (finite) |
+| `code/tests_embedding_contract.rs` | EMB-001-prop (cosine self), EMB-006-prop (bounded) |
+| `models/qwen2/tests_embedding_contract.rs` | EM-001-prop (shape), EM-004-prop (finite) |
+| `voice/tests_embedding_contract.rs` | EMB-002-prop (cosine self), EMB-005-prop (unit norm) |
+| `voice/tests_entropy_contract.rs` | SE-001-prop (range), SE-003-prop (peaked < uniform) |
+
+**Commit**: aprender `12e79910`
+
+### §3.1 Summary
+
+| Phase | Files | New Proptest | Commit |
+|-------|-------|-------------|--------|
+| 18 | 5 | 10 | `f4814099` |
+| 19 | 3 | 6 | `333e119b` |
+| 20 | 3 | 6 | `4b47eea0` |
+| 21 | 5 | 10 | `22b95c5c` |
+| 22 | 5 | 10 | `361841d1` |
+| 23 | 5 | 10 | `f373b23c` |
+| 24 | 6 | 12 | `e4db7414` |
+| 25 | 7 | 14 | `cb673f07` |
+| 26 | 5 | 10 | `12e79910` |
+| **Total** | **44 files** | **88 proptest** | |
+
+**Result**: 70/70 contract test files now have proptest. 638 total FALSIFY test functions, 159 proptest blocks.
+
+**Key lessons** (f32/f64, prop_assume, prop_assert_eq limitations):
+- `Graph::from_weighted_edges` expects f64, not f32
+- `ttest_1samp` takes `&[f32]`, not `&[f64]`
+- ARIMA uses `Vector<f64>`, not `Vector<f32>`
+- `prop_assert_eq!` does not support inline captures `{var}` and has move/ownership issues
+- `prop_assume!` is essential for ICA (convergence), GLM (IRLS), and other stochastic algorithms
+- Word-pool approach needed for text module proptest (stemming, stopwords)
 
 ---
 
