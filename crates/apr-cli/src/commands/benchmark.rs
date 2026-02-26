@@ -213,8 +213,8 @@ fn run_gguf_benchmark(
 fn resolve_apr_prompt_tokens(path: &Path, prompt: &str) -> Vec<u32> {
     use realizar::apr::AprV2Model;
 
-    if let Some(tokenizer) =
-        AprV2Model::load_tokenizer_from_path(&path.with_file_name("tokenizer.json"))
+    if let Some(tokenizer) = realizar::safetensors::find_sibling_file(path, "tokenizer.json")
+        .and_then(|tp| AprV2Model::load_tokenizer_from_path(&tp))
     {
         tokenizer.encode(prompt)
     } else if let Some((vocab, _, _)) = AprV2Model::load_tokenizer_from_sibling(path) {

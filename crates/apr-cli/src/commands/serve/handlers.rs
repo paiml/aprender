@@ -205,22 +205,21 @@ fn load_apr_model_state(model_path: &Path, config: &ServerConfig) -> Result<AprS
         );
     }
 
-    // Load tokenizer
-    let tokenizer_json_path = model_path.with_file_name("tokenizer.json");
-    let bpe_tokenizer = if tokenizer_json_path.exists() {
-        load_safetensors_tokenizer(&tokenizer_json_path)
-    } else {
-        None
-    };
-
-    if bpe_tokenizer.is_some() {
-        println!("{}", "BPE tokenizer loaded from tokenizer.json".green());
-    } else {
-        println!(
-            "{}",
-            "No tokenizer.json found - using fallback tokenization".yellow()
-        );
-    }
+    // Load tokenizer (GAP-UX-002: hash-prefix aware)
+    let bpe_tokenizer =
+        if let Some(tokenizer_path) = realizar::safetensors::find_sibling_file(model_path, "tokenizer.json") {
+            println!(
+                "{}",
+                format!("BPE tokenizer loaded from {}", tokenizer_path.display()).green()
+            );
+            load_safetensors_tokenizer(&tokenizer_path)
+        } else {
+            println!(
+                "{}",
+                "No tokenizer.json found - using fallback tokenization".yellow()
+            );
+            None
+        };
 
     // GH-259: GPU is handled by start_apr_server before reaching here.
     // This path is CPU-only.
@@ -314,9 +313,8 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
             println!("{}", "Loading APR model for GPU...".dimmed());
             match AprModel::load(model_path) {
                 Ok(model) => {
-                    let tokenizer_path = model_path.with_file_name("tokenizer.json");
-                    let tokenizer = if tokenizer_path.exists() {
-                        load_safetensors_tokenizer(&tokenizer_path)
+                    let tokenizer = if let Some(tp) = realizar::safetensors::find_sibling_file(model_path, "tokenizer.json") {
+                        load_safetensors_tokenizer(&tp)
                     } else {
                         None
                     };
