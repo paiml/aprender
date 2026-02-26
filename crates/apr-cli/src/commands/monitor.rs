@@ -36,7 +36,7 @@ pub(crate) fn run(experiment_dir: &Path, refresh_ms: u64, compact: bool) -> Resu
 
     let mut monitor = entrenar::monitor::tui::TuiMonitor::new(experiment_dir, config);
 
-    monitor.run().map_err(|e| {
-        CliError::ValidationFailed(format!("Monitor error: {e}"))
-    })
+    monitor
+        .run()
+        .map_err(|e| CliError::ValidationFailed(format!("Monitor error: {e}")))
 }

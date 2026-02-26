@@ -548,16 +548,15 @@ fn run_classify(
 
     // Use from_pretrained() when a model directory with weights is provided
     let pipeline = if let Some(mp) = model_path.filter(|p| p.is_dir()) {
-        ClassifyPipeline::from_pretrained(mp, &model_config, classify_config)
-            .map_err(|e| CliError::ValidationFailed(format!("Failed to load pretrained model: {e}")))?
+        ClassifyPipeline::from_pretrained(mp, &model_config, classify_config).map_err(|e| {
+            CliError::ValidationFailed(format!("Failed to load pretrained model: {e}"))
+        })?
     } else {
         ClassifyPipeline::new(&model_config, classify_config)
     };
 
     // Capture GPU info before pipeline is moved into trainer
-    let gpu_info: Option<(String, usize)> = pipeline
-        .gpu_name()
-        .zip(pipeline.gpu_total_memory());
+    let gpu_info: Option<(String, usize)> = pipeline.gpu_name().zip(pipeline.gpu_total_memory());
 
     if !json_output {
         if let Some((ref name, _)) = gpu_info {
@@ -595,9 +594,7 @@ fn run_classify(
             println!("{}", "NEXT STEPS".white().bold());
             println!("{}", "\u{2500}".repeat(50));
             println!("  Provide --data <train.jsonl> to start training.");
-            println!(
-                "  Example: apr finetune --task classify --data train.jsonl -o checkpoints/"
-            );
+            println!("  Example: apr finetune --task classify --data train.jsonl -o checkpoints/");
         }
         return Ok(());
     };
@@ -654,11 +651,8 @@ fn run_classify(
             .map(|d| d.as_secs())
             .unwrap_or(0)
     );
-    let mut writer = entrenar::monitor::tui::TrainingStateWriter::new(
-        &output_dir,
-        &experiment_id,
-        model_name,
-    );
+    let mut writer =
+        entrenar::monitor::tui::TrainingStateWriter::new(&output_dir, &experiment_id, model_name);
     // Wire GPU telemetry into training state for `apr monitor`
     if let Some((ref name, mem)) = gpu_info {
         writer.set_gpu(name, mem as f32 / 1e9);
@@ -770,10 +764,17 @@ fn display_train_result(
     output::kv("Total epochs", result.epoch_metrics.len().to_string());
     output::kv(
         "Best epoch",
-        format!("{} (val_loss: {:.4})", result.best_epoch + 1, result.best_val_loss),
+        format!(
+            "{} (val_loss: {:.4})",
+            result.best_epoch + 1,
+            result.best_val_loss
+        ),
     );
     if result.stopped_early {
-        output::kv("Early stopping", "Yes (patience exhausted)".yellow().to_string());
+        output::kv(
+            "Early stopping",
+            "Yes (patience exhausted)".yellow().to_string(),
+        );
     } else {
         output::kv("Early stopping", "No (completed all epochs)");
     }
@@ -782,7 +783,11 @@ fn display_train_result(
     output::kv("Format", checkpoint_format);
 
     // Show final accuracy prominently
-    if let Some(best) = result.epoch_metrics.iter().find(|m| m.epoch == result.best_epoch) {
+    if let Some(best) = result
+        .epoch_metrics
+        .iter()
+        .find(|m| m.epoch == result.best_epoch)
+    {
         println!();
         println!(
             "  {} Best validation accuracy: {:.1}%",

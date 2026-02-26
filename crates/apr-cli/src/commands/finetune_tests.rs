@@ -49,7 +49,22 @@ fn test_format_params() {
 #[test]
 fn test_run_no_model() {
     let result = run(
-        None, "auto", None, 16.0, false, None, None, None, false, 3, 2e-4, None, None, 5, "apr,safetensors", false,
+        None,
+        "auto",
+        None,
+        16.0,
+        false,
+        None,
+        None,
+        None,
+        false,
+        3,
+        2e-4,
+        None,
+        None,
+        5,
+        "apr,safetensors",
+        false,
     );
     assert!(result.is_err());
 }

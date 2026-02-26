@@ -100,20 +100,21 @@ pub(crate) fn start_safetensors_server(model_path: &Path, config: &ServerConfig)
     };
 
     // Try to load tokenizer from sibling tokenizer.json (GAP-UX-002: hash-prefix aware)
-    let tokenizer_info =
-        if let Some(tokenizer_path) = realizar::safetensors::find_sibling_file(model_path, "tokenizer.json") {
-            println!(
-                "{}",
-                format!("Tokenizer loaded from {}", tokenizer_path.display()).dimmed()
-            );
-            load_safetensors_tokenizer(&tokenizer_path)
-        } else {
-            println!(
-                "{}",
-                "No tokenizer.json found - using fallback tokenization".yellow()
-            );
-            None
-        };
+    let tokenizer_info = if let Some(tokenizer_path) =
+        realizar::safetensors::find_sibling_file(model_path, "tokenizer.json")
+    {
+        println!(
+            "{}",
+            format!("Tokenizer loaded from {}", tokenizer_path.display()).dimmed()
+        );
+        load_safetensors_tokenizer(&tokenizer_path)
+    } else {
+        println!(
+            "{}",
+            "No tokenizer.json found - using fallback tokenization".yellow()
+        );
+        None
+    };
 
     // Create tokio runtime
     let runtime = tokio::runtime::Runtime::new()
@@ -281,20 +282,21 @@ pub(crate) fn start_sharded_safetensors_server(
     };
 
     // Try to load tokenizer from sibling tokenizer.json (GAP-UX-002: hash-prefix aware)
-    let tokenizer_info =
-        if let Some(tokenizer_path) = realizar::safetensors::find_sibling_file(model_path, "tokenizer.json") {
-            println!(
-                "{}",
-                format!("Tokenizer loaded from {}", tokenizer_path.display()).dimmed()
-            );
-            load_safetensors_tokenizer(&tokenizer_path)
-        } else {
-            println!(
-                "{}",
-                "No tokenizer.json found - using fallback tokenization".yellow()
-            );
-            None
-        };
+    let tokenizer_info = if let Some(tokenizer_path) =
+        realizar::safetensors::find_sibling_file(model_path, "tokenizer.json")
+    {
+        println!(
+            "{}",
+            format!("Tokenizer loaded from {}", tokenizer_path.display()).dimmed()
+        );
+        load_safetensors_tokenizer(&tokenizer_path)
+    } else {
+        println!(
+            "{}",
+            "No tokenizer.json found - using fallback tokenization".yellow()
+        );
+        None
+    };
 
     // Create tokio runtime
     let runtime = tokio::runtime::Runtime::new()
