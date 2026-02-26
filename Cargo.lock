@@ -245,7 +245,7 @@ checksum = "a23eb6b1614318a8071c9b2521f36b424b2c83db5eb3a0fead4a6c0809af6e61"
 name = "apr-cli"
 version = "0.3.1"
 dependencies = [
- "aprender 0.26.3",
+ "aprender 0.27.0",
  "assert_cmd",
  "axum",
  "axum-test",
@@ -308,6 +308,29 @@ dependencies = [
 [[package]]
 name = "aprender"
 version = "0.26.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2c3d93f3daa67ae709f70bd4befb9676b4412fe1962cd475a30b5ae433a0c1f0"
+dependencies = [
+ "batuta-common",
+ "bincode",
+ "getrandom 0.2.17",
+ "memmap2",
+ "minijinja",
+ "provable-contracts-macros 0.1.1",
+ "rand 0.9.2",
+ "rand_chacha 0.9.0",
+ "rayon",
+ "rmp-serde",
+ "serde",
+ "serde_json",
+ "serde_yaml_ng",
+ "trueno 0.15.0",
+ "trueno-quant 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "aprender"
+version = "0.27.0"
 dependencies = [
  "aes-gcm",
  "alimentar",
@@ -331,7 +354,7 @@ dependencies = [
  "minijinja",
  "proptest",
  "provable-contracts",
- "provable-contracts-macros",
+ "provable-contracts-macros 0.1.0",
  "rand 0.9.2",
  "rand_chacha 0.9.0",
  "rayon",
@@ -345,8 +368,8 @@ dependencies = [
  "sha2",
  "tempfile",
  "thiserror 2.0.18",
- "trueno 0.15.0",
- "trueno-quant",
+ "trueno 0.16.0",
+ "trueno-quant 0.1.0",
  "trueno-rag",
  "trueno-zram-core",
  "ureq",
@@ -359,7 +382,7 @@ dependencies = [
 name = "aprender-monte-carlo"
 version = "0.1.1"
 dependencies = [
- "aprender 0.26.3",
+ "aprender 0.27.0",
  "assert_cmd",
  "chrono",
  "clap",
@@ -378,7 +401,7 @@ dependencies = [
 name = "aprender-shell"
 version = "0.3.0"
 dependencies = [
- "aprender 0.26.3",
+ "aprender 0.27.0",
  "assert_cmd",
  "clap",
  "criterion",
@@ -395,7 +418,7 @@ dependencies = [
 name = "aprender-tsp"
 version = "0.2.0"
 dependencies = [
- "aprender 0.26.3",
+ "aprender 0.27.0",
  "assert_cmd",
  "clap",
  "crc32fast",
@@ -4745,6 +4768,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "provable-contracts-macros"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c383d865124fe9fda96af4a04d0c2641bcb93e16eb5e13f7c665f98c15333447"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.114",
+]
+
+[[package]]
 name = "pxfm"
 version = "0.1.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5029,10 +5063,12 @@ dependencies = [
 
 [[package]]
 name = "realizar"
-version = "0.7.1"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "09ad9aee5aae114fe2cda87706bbd9e7782a72167839df5268ef5cd5e61ea7af"
 dependencies = [
  "anyhow",
- "aprender 0.26.3",
+ "aprender 0.27.0",
  "arc-swap",
  "async-stream",
  "axum",
@@ -5050,7 +5086,7 @@ dependencies = [
  "rayon",
  "serde",
  "serde_json",
- "serde_yaml_ng",
+ "serde_yaml",
  "smallvec",
  "thiserror 1.0.69",
  "tokio",
@@ -5059,7 +5095,7 @@ dependencies = [
  "tracing",
  "trueno 0.15.0",
  "trueno-gpu",
- "trueno-quant",
+ "trueno-quant 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "uuid",
 ]
 
@@ -6430,6 +6466,27 @@ dependencies = [
 [[package]]
 name = "trueno"
 version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "85e19fa22753d395f043b205999122520efd45a33e0867d137f20b777ad794ef"
+dependencies = [
+ "anyhow",
+ "bytemuck",
+ "chrono",
+ "futures-intrusive",
+ "hostname",
+ "num_cpus",
+ "pollster",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "toml",
+ "trueno-quant 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "wgpu",
+]
+
+[[package]]
+name = "trueno"
+version = "0.16.0"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -6443,7 +6500,7 @@ dependencies = [
  "thiserror 2.0.18",
  "toml",
  "trueno-gpu",
- "trueno-quant",
+ "trueno-quant 0.1.0",
  "wgpu",
 ]
 
@@ -6521,6 +6578,15 @@ dependencies = [
 [[package]]
 name = "trueno-quant"
 version = "0.1.0"
+dependencies = [
+ "half",
+]
+
+[[package]]
+name = "trueno-quant"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5da5ac788b596e45d1d3fa0991c04b0e1bac63ffe4ae2faf6ae7c0d9fdfc00eb"
 dependencies = [
  "half",
 ]
@@ -7684,3 +7750,7 @@ checksum = "2959ca473aae96a14ecedf501d20b3608d2825ba280d5adb57d651721885b0c2"
 dependencies = [
  "zune-core 0.5.1",
 ]
+
+[[patch.unused]]
+name = "realizar"
+version = "0.7.1"
