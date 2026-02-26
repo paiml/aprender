@@ -2,7 +2,7 @@
 name = "apr-cli"
 version = "0.4.6"
 edition = "2021"
-rust-version = "1.70"
+rust-version = "1.89"
 authors = ["Noah Gift <noah@paiml.com>"]
 license = "MIT"
 description = "CLI tool for APR model inspection, debugging, and operations"

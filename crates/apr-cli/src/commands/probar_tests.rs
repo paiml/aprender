@@ -356,86 +356,39 @@ fn test_export_format_debug_all_variants() {
 // ========================================================================
 
 #[test]
-fn test_generate_snapshots_empty_metadata_returns_placeholder() {
-    let snapshots = generate_snapshots(None, &[], None);
+fn test_generate_snapshots_zero_layers_returns_fallback() {
+    let snapshots = generate_snapshots(None, 0, None);
     assert_eq!(snapshots.len(), 1);
-    assert_eq!(snapshots[0].name, "placeholder");
+    assert_eq!(snapshots[0].name, "fallback");
     assert_eq!(snapshots[0].index, 0);
     assert_eq!(snapshots[0].histogram.len(), 256);
     assert!(snapshots[0].heatmap.is_none());
 }
 
 #[test]
-fn test_generate_snapshots_invalid_msgpack_returns_placeholder() {
-    let bad_bytes = b"this is definitely not msgpack";
-    let snapshots = generate_snapshots(None, bad_bytes, None);
-    assert_eq!(snapshots.len(), 1);
-    assert_eq!(snapshots[0].name, "placeholder");
-}
-
-#[test]
-fn test_generate_snapshots_empty_map_returns_placeholder() {
-    // Valid msgpack encoding of an empty map
-    let metadata: BTreeMap<String, serde_json::Value> = BTreeMap::new();
-    let bytes = rmp_serde::to_vec(&metadata).expect("encode");
-    let snapshots = generate_snapshots(None, &bytes, None);
-    assert_eq!(snapshots.len(), 1);
-    assert_eq!(snapshots[0].name, "placeholder");
-}
-
-#[test]
-fn test_generate_snapshots_with_n_layer_hyperparameter() {
-    let mut hp = serde_json::Map::new();
-    hp.insert("n_layer".to_string(), serde_json::json!(3));
-
-    let mut metadata: BTreeMap<String, serde_json::Value> = BTreeMap::new();
-    metadata.insert("hyperparameters".to_string(), serde_json::Value::Object(hp));
-
-    let bytes = rmp_serde::to_vec(&metadata).expect("encode");
-    let snapshots = generate_snapshots(None, &bytes, None);
+fn test_generate_snapshots_with_layer_count() {
+    let snapshots = generate_snapshots(None, 3, None);
 
     assert_eq!(snapshots.len(), 3);
     for (i, snap) in snapshots.iter().enumerate() {
         assert_eq!(snap.name, format!("block_{i}"));
         assert_eq!(snap.index, i);
         assert_eq!(snap.histogram.len(), 256);
-        // All histogram bins should be 100 (uniform placeholder)
-        assert!(snap.histogram.iter().all(|&v| v == 100));
+        // No model path → all zeros (no tensor data)
+        assert!(snap.histogram.iter().all(|&v| v == 0));
         assert_eq!(snap.mean, 0.0);
-        assert_eq!(snap.std, 1.0);
-        assert_eq!(snap.min, -3.0);
-        assert_eq!(snap.max, 3.0);
+        assert_eq!(snap.std, 0.0);
         assert!(snap.heatmap.is_none());
     }
 }
 
 #[test]
-fn test_generate_snapshots_with_n_layers_alternative_key() {
-    let mut hp = serde_json::Map::new();
-    hp.insert("n_layers".to_string(), serde_json::json!(2));
-
-    let mut metadata: BTreeMap<String, serde_json::Value> = BTreeMap::new();
-    metadata.insert("hyperparameters".to_string(), serde_json::Value::Object(hp));
-
-    let bytes = rmp_serde::to_vec(&metadata).expect("encode");
-    let snapshots = generate_snapshots(None, &bytes, None);
+fn test_generate_snapshots_two_layers() {
+    let snapshots = generate_snapshots(None, 2, None);
 
     assert_eq!(snapshots.len(), 2);
     assert_eq!(snapshots[0].name, "block_0");
     assert_eq!(snapshots[1].name, "block_1");
-}
-
-#[test]
-fn test_generate_snapshots_defaults_to_4_layers_when_key_missing() {
-    let hp = serde_json::Map::new(); // no n_layer or n_layers key
-
-    let mut metadata: BTreeMap<String, serde_json::Value> = BTreeMap::new();
-    metadata.insert("hyperparameters".to_string(), serde_json::Value::Object(hp));
-
-    let bytes = rmp_serde::to_vec(&metadata).expect("encode");
-    let snapshots = generate_snapshots(None, &bytes, None);
-
-    assert_eq!(snapshots.len(), 4, "should default to 4 layers");
 }
 
 include!("probar_tests_generate_snapshots.rs");

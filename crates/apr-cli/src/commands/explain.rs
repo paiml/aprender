@@ -1,5 +1,5 @@
 use crate::error::Result;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Explain command - provides documentation about errors, tensors, and models.
 ///
@@ -28,9 +28,9 @@ pub(crate) fn run(
     if let Some(c) = code {
         explain_error_code(&c);
     } else if let Some(t) = tensor {
-        explain_tensor(t, resolved_file.as_ref());
-    } else if let Some(f) = resolved_file {
-        explain_file(&f);
+        explain_tensor(t, resolved_file.as_deref());
+    } else if let Some(ref f) = resolved_file {
+        explain_file(f);
     } else {
         println!("Please provide an error code, model file path, or --tensor");
         println!();
@@ -43,7 +43,7 @@ pub(crate) fn run(
 }
 
 /// Check if an argument looks like a model file path (exists or has model extension)
-fn is_model_path(arg: &str, path: &PathBuf) -> bool {
+fn is_model_path(arg: &str, path: &Path) -> bool {
     // Check if file exists on disk
     if path.exists() {
         return true;
@@ -92,7 +92,7 @@ fn explain_error_code(code: &str) {
 }
 
 /// PMAT-266: Explain tensor — look up in actual model file via RosettaStone
-fn explain_tensor(tensor_name: &str, file: Option<&PathBuf>) {
+fn explain_tensor(tensor_name: &str, file: Option<&Path>) {
     println!("Explain tensor: {tensor_name}");
 
     // If a file is provided, try to look up the actual tensor
@@ -109,7 +109,7 @@ fn explain_tensor(tensor_name: &str, file: Option<&PathBuf>) {
 /// Attempt to explain a tensor by inspecting a model file.
 /// Returns `true` if the file was successfully inspected (tensor found or not),
 /// `false` if the file could not be read.
-fn explain_tensor_from_file(tensor_name: &str, path: &PathBuf) -> bool {
+fn explain_tensor_from_file(tensor_name: &str, path: &Path) -> bool {
     if !path.exists() {
         return false;
     }
@@ -248,7 +248,7 @@ fn count_layers(tensor_names: &[String]) -> usize {
         .map_or(0, |n| n + 1)
 }
 
-fn explain_file(path: &PathBuf) {
+fn explain_file(path: &Path) {
     println!("Explain model architecture: {}", path.display());
 
     if !path.exists() {

@@ -335,10 +335,6 @@ fn print_apr_cpu_banner(bind_addr: &str, is_transformer: bool) {
 // APR GPU server handler
 // ============================================================================
 
-/// Start APR server with GPU acceleration
-/// PMAT-098: Updated to use BPE tokenizer for proper encoding
-#[cfg(all(feature = "inference", feature = "cuda"))]
-#[allow(clippy::disallowed_methods)] // serde_json::json!() macro uses infallible unwrap internally
 /// Encode a prompt using BPE tokenizer or char fallback (PMAT-098).
 fn encode_prompt(tok: Option<&SafeTensorsTokenizerInfo>, prompt: &str) -> Vec<u32> {
     match tok {

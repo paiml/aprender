@@ -8,12 +8,10 @@
 
 use crate::error::CliError;
 use crate::output;
-use aprender::format::HEADER_SIZE;
 use colored::Colorize;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
 use std::fs::{self, File};
-use std::io::{BufReader, Read, Seek, SeekFrom, Write};
+use std::io::Write;
 use std::path::Path;
 
 /// Layer activation snapshot for visual testing
@@ -86,8 +84,15 @@ pub(crate) fn run(
     validate_path(path)?;
     fs::create_dir_all(output_dir)?;
 
-    let (model_format, metadata_bytes) = read_model_metadata(path)?;
-    let layers = generate_snapshots(Some(path), &metadata_bytes, layer_filter);
+    // Use RosettaStone for universal format detection (GGUF, APR, SafeTensors)
+    let rosetta = aprender::format::rosetta::RosettaStone::new();
+    let report = rosetta
+        .inspect(path)
+        .map_err(|e| CliError::InvalidFormat(format!("Failed to inspect model: {e}")))?;
+    let model_format = report.format.to_string();
+    let n_layers = detect_layer_count(&report);
+
+    let layers = generate_snapshots(Some(path), n_layers, layer_filter);
     let manifest = create_manifest(path, &model_format, &layers, golden);
 
     export_by_format(format, &manifest, &layers, output_dir)?;
@@ -103,22 +108,28 @@ pub(crate) fn run(
     Ok(())
 }
 
-fn read_model_metadata(path: &Path) -> Result<(String, Vec<u8>), CliError> {
-    let file = File::open(path)?;
-    let mut reader = BufReader::new(file);
+/// Detect the number of transformer layers from a RosettaStone inspection report.
+///
+/// Uses tensor naming conventions: `blk.N.`, `.layers.N.`, `block.N.`, `layer.N.`
+fn detect_layer_count(report: &aprender::format::rosetta::InspectionReport) -> usize {
+    let mut max_layer: Option<usize> = None;
+    let patterns = ["blk.", ".layers.", "block.", "layer."];
 
-    let model_format = validate_header(&mut reader)?;
+    for tensor in &report.tensors {
+        for pattern in &patterns {
+            if let Some(pos) = tensor.name.find(pattern) {
+                let after = &tensor.name[pos + pattern.len()..];
+                if let Some(dot_pos) = after.find('.') {
+                    if let Ok(idx) = after[..dot_pos].parse::<usize>() {
+                        max_layer = Some(max_layer.map_or(idx, |prev: usize| prev.max(idx)));
+                    }
+                }
+            }
+        }
+    }
 
-    let mut size_buf = [0u8; 4];
-    reader.seek(SeekFrom::Start(8))?;
-    reader.read_exact(&mut size_buf)?;
-    let metadata_size = u32::from_le_bytes(size_buf) as usize;
-
-    reader.seek(SeekFrom::Start(HEADER_SIZE as u64))?;
-    let mut metadata_bytes = vec![0u8; metadata_size];
-    reader.read_exact(&mut metadata_bytes)?;
-
-    Ok((model_format, metadata_bytes))
+    // Layer indices are 0-based, so count = max + 1
+    max_layer.map_or(0, |m| m + 1)
 }
 
 fn create_manifest(
@@ -210,22 +221,6 @@ fn validate_path(path: &Path) -> Result<(), CliError> {
     Ok(())
 }
 
-fn validate_header(reader: &mut BufReader<File>) -> Result<String, CliError> {
-    let mut magic = [0u8; 4];
-    reader
-        .read_exact(&mut magic)
-        .map_err(|_| CliError::InvalidFormat("File too small".to_string()))?;
-
-    // BUG-PROBAR-001 FIX: Updated error message to include GGUF
-    if !output::is_valid_magic(&magic) {
-        return Err(CliError::InvalidFormat(format!(
-            "Invalid magic: expected APRN, APR1, APR2, APR\\0, or GGUF, got {magic:?}"
-        )));
-    }
-
-    Ok(output::format_name(&magic).to_string())
-}
-
 /// Build a 256-bin histogram from tensor values.
 fn build_histogram(values: &[f32], min: f32, max: f32) -> Vec<u32> {
     let mut histogram = vec![0u32; 256];
@@ -265,82 +260,61 @@ fn collect_layer_tensor_values(
 
 fn generate_snapshots(
     model_path: Option<&Path>,
-    metadata_bytes: &[u8],
+    n_layers: usize,
     filter: Option<&str>,
 ) -> Vec<LayerSnapshot> {
-    // Parse metadata
-    let metadata: BTreeMap<String, serde_json::Value> = match rmp_serde::from_slice(metadata_bytes)
-    {
-        Ok(m) => m,
-        Err(e) => {
-            eprintln!("Warning: failed to parse APR metadata (msgpack), using empty: {e}");
-            BTreeMap::new()
-        }
-    };
-
     // Try to load tensor data from model file for real statistics
     let tensor_data = model_path.and_then(super::rosetta::load_tensor_data_direct);
 
     let mut snapshots = Vec::new();
 
-    // Extract layer info from hyperparameters
-    if let Some(hp) = metadata.get("hyperparameters") {
-        if let Some(hp_obj) = hp.as_object() {
-            let n_layers = hp_obj
-                .get("n_layer")
-                .or_else(|| hp_obj.get("n_layers"))
-                .and_then(serde_json::Value::as_u64)
-                .unwrap_or(4) as usize;
+    for i in 0..n_layers {
+        let name = format!("block_{i}");
 
-            for i in 0..n_layers {
-                let name = format!("block_{i}");
-
-                if let Some(f) = filter {
-                    if !name.contains(f) {
-                        continue;
-                    }
-                }
-
-                // Try to compute real stats from tensor data
-                let (histogram, mean, std, min, max) = if let Some(ref td) = tensor_data {
-                    let values = collect_layer_tensor_values(td, i);
-                    if values.is_empty() {
-                        (vec![100u32; 256], 0.0, 1.0, -3.0, 3.0)
-                    } else {
-                        let (m, s, mn, mx, ..) = super::rosetta::compute_tensor_stats(&values);
-                        let hist = build_histogram(&values, mn, mx);
-                        (hist, m, s, mn, mx)
-                    }
-                } else {
-                    (vec![100u32; 256], 0.0, 1.0, -3.0, 3.0)
-                };
-
-                snapshots.push(LayerSnapshot {
-                    name,
-                    index: i,
-                    histogram,
-                    mean,
-                    std,
-                    min,
-                    max,
-                    heatmap: None,
-                    heatmap_width: None,
-                    heatmap_height: None,
-                });
+        if let Some(f) = filter {
+            if !name.contains(f) {
+                continue;
             }
         }
+
+        // Try to compute real stats from tensor data
+        let (histogram, mean, std, min, max) = if let Some(ref td) = tensor_data {
+            let values = collect_layer_tensor_values(td, i);
+            if values.is_empty() {
+                (vec![0u32; 256], 0.0, 0.0, 0.0, 0.0)
+            } else {
+                let (m, s, mn, mx, ..) = super::rosetta::compute_tensor_stats(&values);
+                let hist = build_histogram(&values, mn, mx);
+                (hist, m, s, mn, mx)
+            }
+        } else {
+            (vec![0u32; 256], 0.0, 0.0, 0.0, 0.0)
+        };
+
+        snapshots.push(LayerSnapshot {
+            name,
+            index: i,
+            histogram,
+            mean,
+            std,
+            min,
+            max,
+            heatmap: None,
+            heatmap_width: None,
+            heatmap_height: None,
+        });
     }
 
-    // If no layers found, create a placeholder
+    // If no layers found, create a fallback entry
     if snapshots.is_empty() {
         snapshots.push(LayerSnapshot {
-            name: "placeholder".to_string(),
+            name: "fallback".to_string(),
             index: 0,
-            histogram: vec![100; 256],
+            histogram: vec![0; 256],
             mean: 0.0,
-            std: 1.0,
-            min: -1.0,
-            max: 1.0,
+            std: 0.0,
+            min: 0.0,
+            max: 0.0,
             heatmap: None,
             heatmap_width: None,
             heatmap_height: None,
