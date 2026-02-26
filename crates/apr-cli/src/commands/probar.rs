@@ -228,8 +228,16 @@ fn validate_header(reader: &mut BufReader<File>) -> Result<String, CliError> {
 
 fn generate_snapshots(metadata_bytes: &[u8], filter: Option<&str>) -> Vec<LayerSnapshot> {
     // Parse metadata
-    let metadata: BTreeMap<String, serde_json::Value> =
-        rmp_serde::from_slice(metadata_bytes).unwrap_or_else(|_| BTreeMap::new());
+    let metadata: BTreeMap<String, serde_json::Value> = match rmp_serde::from_slice(metadata_bytes)
+    {
+        Ok(m) => m,
+        Err(e) => {
+            eprintln!(
+                "Warning: failed to parse APR metadata (msgpack), using empty: {e}"
+            );
+            BTreeMap::new()
+        }
+    };
 
     let mut snapshots = Vec::new();
 
