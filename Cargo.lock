@@ -243,7 +243,7 @@ checksum = "a23eb6b1614318a8071c9b2521f36b424b2c83db5eb3a0fead4a6c0809af6e61"
 
 [[package]]
 name = "apr-cli"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "aprender 0.27.0",
  "assert_cmd",
@@ -256,7 +256,7 @@ dependencies = [
  "colored",
  "crossterm",
  "dirs 5.0.1",
- "entrenar 0.7.1",
+ "entrenar 0.7.2",
  "entrenar-lora",
  "futures-util",
  "gag",
@@ -2198,7 +2198,7 @@ dependencies = [
 
 [[package]]
 name = "entrenar"
-version = "0.7.1"
+version = "0.7.2"
 dependencies = [
  "aprender 0.27.0",
  "bytemuck",
@@ -2243,7 +2243,7 @@ name = "entrenar-lora"
 version = "0.2.0"
 dependencies = [
  "clap",
- "entrenar 0.7.1",
+ "entrenar 0.7.2",
  "entrenar-common",
  "serde",
  "serde_json",
