@@ -222,8 +222,9 @@ alimentar = { version = "0.2.2", optional = true }
 # entrenar: removed as runtime dep — explainable types now live in aprender (GH-305)
 # entrenar remains as dev-dependency for InferenceMonitor integration tests
 
-# Syscall/GPU profiling for showcase benchmarks (optional)
-renacer = { version = "0.9", optional = true }
+# Syscall/GPU profiling for showcase benchmarks (dev-only to avoid circular dep)
+# renacer depends on aprender, so it cannot be a runtime dep
+# renacer = { version = "0.10", optional = true }
 
 # SIMD-accelerated compression for KV cache (optional)
 trueno-zram-core = { version = "0.3.0", optional = true }
@@ -257,7 +258,7 @@ serde_yaml_ng = "0.10"
 [dev-dependencies]
 proptest = "1.6"
 criterion = "0.5"
-renacer = "0.9"
+renacer = "0.10"
 tempfile = "3.14"  # For format module tests
 jugar-probar = "0.5"  # TUI/GUI testing framework with coverage tracking (spec §8)
 ctrlc = "3.4"  # Signal handling for SIGINT/SIGTERM (PMAT-098-PF: zombie process mitigation)
@@ -292,7 +293,7 @@ gpu = ["trueno/gpu"]  # Enable GPU acceleration via trueno wgpu backend
 model-tests = []  # Enable heavy model/inference tests (requires models/ dir, ollama, GPU)
 cuda = ["trueno/cuda-monitor"]  # Enable CUDA monitoring via trueno-gpu (NVIDIA GPUs)
 cpu-only = []
-showcase-profile = ["renacer"]  # Enable renacer syscall/GPU profiling for showcase benchmarks (PAR-040)
+showcase-profile = []  # Renacer profiling (disabled: renacer→aprender circular dep)
 showcase-zram = ["trueno-zram-core"]  # Enable trueno-zram KV cache compression for showcase benchmarks (PAR-040)
 # Chaos engineering features (from renacer)
 chaos-basic = []
@@ -392,7 +393,5 @@ replace = "## [{{version}}] - {{date}}"
 aprender = { path = "." }
 realizar = { path = "../realizar" }
 entrenar = { path = "../entrenar" }  # GH-305: needed for dev-dep integration tests
-renacer = { path = "../renacer" }
-trueno-viz = { path = "../trueno-viz" }
 trueno = { path = "../trueno" }
 trueno-gpu = { path = "../trueno/trueno-gpu" }
