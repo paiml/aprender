@@ -554,7 +554,17 @@ fn run_classify(
         ClassifyPipeline::new(&model_config, classify_config)
     };
 
+    // Capture GPU info before pipeline is moved into trainer
+    let gpu_info: Option<(String, usize)> = pipeline
+        .gpu_name()
+        .zip(pipeline.gpu_total_memory());
+
     if !json_output {
+        if let Some((ref name, _)) = gpu_info {
+            output::kv("Device", format!("CUDA ({name})"));
+        } else {
+            output::kv("Device", "CPU");
+        }
         println!("{}", pipeline.summary());
         println!();
     }
@@ -644,11 +654,15 @@ fn run_classify(
             .map(|d| d.as_secs())
             .unwrap_or(0)
     );
-    let writer = entrenar::monitor::tui::TrainingStateWriter::new(
+    let mut writer = entrenar::monitor::tui::TrainingStateWriter::new(
         &output_dir,
         &experiment_id,
         model_name,
     );
+    // Wire GPU telemetry into training state for `apr monitor`
+    if let Some((ref name, mem)) = gpu_info {
+        writer.set_gpu(name, mem as f32 / 1e9);
+    }
     trainer.set_monitor_writer(writer);
 
     if !json_output {
