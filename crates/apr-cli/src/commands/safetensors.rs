@@ -213,20 +213,16 @@ fn execute_safetensors_inference(
         t.trace_embed(input_tokens.len(), hidden_size, None);
     }
 
-    // Run simplified generation (single forward pass for demonstration)
-    // Full transformer inference would require implementing the full forward pass
+    // Run real generation via SafetensorsToAprConverter
     let infer_start = Instant::now();
 
-    // For now, generate a simple output based on model inspection
-    // Full generation would require: embedding lookup, attention, FFN, etc.
     let generated_tokens = run_safetensors_generation(
-        &st_model,
-        &cfg,
+        model_path,
         &input_tokens,
         options.max_tokens,
         eos_id,
         &mut tracer,
-    );
+    )?;
 
     let infer_time = infer_start.elapsed();
 
@@ -326,84 +322,38 @@ fn find_embedding_tensor(model: &realizar::safetensors::SafetensorsModel) -> Opt
         .map(|v| v as _)
 }
 
-/// Run simplified SafeTensors generation
+/// Run SafeTensors generation via `SafetensorsToAprConverter`.
 ///
-/// This is a placeholder that demonstrates the tracing flow.
-/// Full inference would require implementing the complete transformer forward pass.
+/// Converts the SafeTensors model to an APR transformer and runs real
+/// autoregressive generation with KV-cache.
 #[cfg(feature = "inference")]
 fn run_safetensors_generation(
-    model: &realizar::safetensors::SafetensorsModel,
-    config: &realizar::safetensors::SafetensorsConfig,
+    model_path: &Path,
     input_tokens: &[u32],
     max_tokens: usize,
     eos_id: Option<u32>,
     tracer: &mut Option<realizar::InferenceTracer>,
-) -> Vec<u32> {
-    // C-16 (Meyer DbC): 0 = unknown, no architecture-specific magic number.
-    let vocab_size = config.vocab_size.unwrap_or(0);
-    let num_layers = config.num_hidden_layers.unwrap_or(0);
-    let hidden_size = config.hidden_size.unwrap_or(0);
+) -> Result<Vec<u32>> {
+    use realizar::apr_transformer::GenerateConfig;
+    use realizar::safetensors_infer::SafetensorsToAprConverter;
 
-    let mut generated = Vec::new();
-    let eos = eos_id.unwrap_or(2);
+    let transformer = SafetensorsToAprConverter::convert(model_path)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to convert SafeTensors: {e}")))?;
 
-    // Create placeholder logits for tracing (in real impl, would be computed)
-    let placeholder_logits: Vec<f32> = vec![0.0; vocab_size];
+    let gen_config = GenerateConfig {
+        max_tokens,
+        temperature: 0.0,
+        top_k: 1,
+        stop_tokens: eos_id.map_or_else(Vec::new, |id| vec![id]),
+        trace: tracer.is_some(),
+        ..Default::default()
+    };
 
-    // WARN: This is a placeholder — no actual transformer forward pass.
-    // Real SafeTensors inference should go through realizar (apr run / apr serve).
-    eprintln!(
-        "{}",
-        "Warning: SafeTensors generation is placeholder-only (no forward pass). Use 'apr run' for real inference."
-            .yellow()
-    );
+    let tokens = transformer
+        .generate_with_cache(input_tokens, &gen_config)
+        .map_err(|e| CliError::ValidationFailed(format!("SafeTensors generation failed: {e}")))?;
 
-    for i in 0..max_tokens.min(16) {
-        // Trace TRANSFORMER step (simulated)
-        if let Some(ref mut t) = tracer {
-            t.start_step(realizar::TraceStep::TransformerBlock);
-            t.trace_layer(
-                num_layers.saturating_sub(1), // Last layer
-                i,
-                None, // No actual hidden state values
-                1,    // seq_len
-                hidden_size,
-            );
-        }
-
-        // Generate token (placeholder - real impl would use logits)
-        // For now, copy input pattern or generate based on tensor inspection
-        let token = if i < input_tokens.len() {
-            // Echo input during "prefill" phase
-            input_tokens[i]
-        } else {
-            // Placeholder generation
-            let last_input = input_tokens.last().copied().unwrap_or(1);
-            // Simple pattern: increment token ID (bounded by vocab)
-            (last_input.wrapping_add(i as u32)) % (vocab_size as u32)
-        };
-
-        // Trace LM_HEAD step
-        if let Some(ref mut t) = tracer {
-            t.start_step(realizar::TraceStep::LmHead);
-            t.trace_lm_head(i, &placeholder_logits, vocab_size);
-        }
-
-        // Trace SAMPLE step
-        if let Some(ref mut t) = tracer {
-            t.start_step(realizar::TraceStep::Sample);
-            t.trace_sample(i, &placeholder_logits, token, 0.0, 1);
-        }
-
-        // Check for EOS
-        if token == eos {
-            break;
-        }
-
-        generated.push(token);
-    }
-
-    generated
+    Ok(tokens)
 }
 
 /// Format and encode a GGUF prompt: detect instruct mode, apply chat template, encode, and log.

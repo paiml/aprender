@@ -288,7 +288,7 @@
     #[test]
     fn test_load_fingerprints_from_json_with_quoted_name() {
         let mut file = NamedTempFile::with_suffix(".json").expect("create temp file");
-        let content = r#"{"name": "layer.0.attn.q_proj.weight"}"#;
+        let content = r#"{"fingerprints": [{"name": "layer.0.attn.q_proj.weight"}]}"#;
         file.write_all(content.as_bytes()).expect("write");
         let result = load_fingerprints_from_json(file.path());
         assert!(result.is_ok());
@@ -300,21 +300,23 @@
     #[test]
     fn test_load_fingerprints_from_json_empty_file() {
         let file = NamedTempFile::with_suffix(".json").expect("create temp file");
-        // Empty file - no "name" fields
+        // Empty file is invalid JSON
         let result = load_fingerprints_from_json(file.path());
-        assert!(result.is_ok());
-        assert!(result.expect("parsed").is_empty());
+        assert!(result.is_err());
     }
 
     // ====================================================================
-    // Coverage-boost: parse_tensor_stats_json placeholder
+    // Coverage-boost: parse_tensor_stats_json
     // ====================================================================
 
     #[test]
     fn test_parse_tensor_stats_json_with_valid_looking_json() {
-        // Even valid-looking JSON returns None (placeholder implementation)
         let json_str = r#"{"tensors": {"layer.0.weight": [1.0, 2.0, 3.0]}}"#;
-        assert!(parse_tensor_stats_json(json_str).is_none());
+        let result = parse_tensor_stats_json(json_str);
+        assert!(result.is_some());
+        let map = result.expect("parsed");
+        assert_eq!(map.len(), 1);
+        assert_eq!(map["layer.0.weight"], vec![1.0, 2.0, 3.0]);
     }
 
     // ====================================================================

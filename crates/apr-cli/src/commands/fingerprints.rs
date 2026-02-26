@@ -1,7 +1,7 @@
 
 /// Compute statistics for a tensor
 #[allow(clippy::type_complexity)]
-fn compute_tensor_stats(
+pub(crate) fn compute_tensor_stats(
     values: &[f32],
 ) -> (
     f32,
@@ -312,43 +312,15 @@ fn load_fingerprints_from_json(path: &Path) -> Result<Vec<TensorFingerprint>> {
     let content = std::fs::read_to_string(path)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to read fingerprints: {e}")))?;
 
-    // Simple JSON parsing - in production would use serde
-    let mut fingerprints = Vec::new();
-
-    // Parse JSON manually (simplified)
-    for line in content.lines() {
-        if line.contains("\"name\":") {
-            // Extract tensor info from JSON
-            // This is a placeholder - proper implementation would use serde_json
-            let name = line
-                .split("\"name\": \"")
-                .nth(1)
-                .and_then(|s| s.split('"').next())
-                .unwrap_or("unknown")
-                .to_string();
-
-            fingerprints.push(TensorFingerprint {
-                name,
-                shape: vec![],
-                dtype: "unknown".to_string(),
-                mean: 0.0,
-                std: 1.0,
-                min: 0.0,
-                max: 0.0,
-                p5: 0.0,
-                p25: 0.0,
-                p50: 0.0,
-                p75: 0.0,
-                p95: 0.0,
-                nan_count: 0,
-                inf_count: 0,
-                zero_fraction: 0.0,
-                checksum: 0,
-            });
-        }
+    #[derive(serde::Deserialize)]
+    struct FingerprintFile {
+        fingerprints: Vec<TensorFingerprint>,
     }
 
-    Ok(fingerprints)
+    let parsed: FingerprintFile = serde_json::from_str(&content)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to parse fingerprints JSON: {e}")))?;
+
+    Ok(parsed.fingerprints)
 }
 
 /// Compare a single tensor fingerprint against a reference and collect anomalies.

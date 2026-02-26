@@ -87,7 +87,7 @@ pub(crate) fn run(
     fs::create_dir_all(output_dir)?;
 
     let (model_format, metadata_bytes) = read_model_metadata(path)?;
-    let layers = generate_snapshots(&metadata_bytes, layer_filter);
+    let layers = generate_snapshots(Some(path), &metadata_bytes, layer_filter);
     let manifest = create_manifest(path, &model_format, &layers, golden);
 
     export_by_format(format, &manifest, &layers, output_dir)?;
@@ -226,18 +226,60 @@ fn validate_header(reader: &mut BufReader<File>) -> Result<String, CliError> {
     Ok(output::format_name(&magic).to_string())
 }
 
-fn generate_snapshots(metadata_bytes: &[u8], filter: Option<&str>) -> Vec<LayerSnapshot> {
+/// Build a 256-bin histogram from tensor values.
+fn build_histogram(values: &[f32], min: f32, max: f32) -> Vec<u32> {
+    let mut histogram = vec![0u32; 256];
+    let range = max - min;
+    if range < f32::EPSILON || values.is_empty() {
+        return histogram;
+    }
+    for &v in values {
+        if v.is_nan() || v.is_infinite() {
+            continue;
+        }
+        let bin = (((v - min) / range) * 255.0) as usize;
+        histogram[bin.min(255)] += 1;
+    }
+    histogram
+}
+
+/// Collect all tensor values matching a layer index (e.g. "blk.3." or ".layers.3.").
+fn collect_layer_tensor_values(
+    tensor_data: &std::collections::HashMap<String, Vec<f32>>,
+    layer_idx: usize,
+) -> Vec<f32> {
+    let patterns = [
+        format!("blk.{layer_idx}."),
+        format!(".layers.{layer_idx}."),
+        format!("block.{layer_idx}."),
+        format!("layer.{layer_idx}."),
+    ];
+    let mut values = Vec::new();
+    for (name, data) in tensor_data {
+        if patterns.iter().any(|p| name.contains(p.as_str())) {
+            values.extend_from_slice(data);
+        }
+    }
+    values
+}
+
+fn generate_snapshots(
+    model_path: Option<&Path>,
+    metadata_bytes: &[u8],
+    filter: Option<&str>,
+) -> Vec<LayerSnapshot> {
     // Parse metadata
     let metadata: BTreeMap<String, serde_json::Value> = match rmp_serde::from_slice(metadata_bytes)
     {
         Ok(m) => m,
         Err(e) => {
-            eprintln!(
-                "Warning: failed to parse APR metadata (msgpack), using empty: {e}"
-            );
+            eprintln!("Warning: failed to parse APR metadata (msgpack), using empty: {e}");
             BTreeMap::new()
         }
     };
+
+    // Try to load tensor data from model file for real statistics
+    let tensor_data = model_path.and_then(super::rosetta::load_tensor_data_direct);
 
     let mut snapshots = Vec::new();
 
@@ -259,18 +301,28 @@ fn generate_snapshots(metadata_bytes: &[u8], filter: Option<&str>) -> Vec<LayerS
                     }
                 }
 
-                // Generate placeholder histogram (uniform distribution)
-                // In real implementation, this would come from actual activations
-                let histogram: Vec<u32> = (0..256).map(|_| 100).collect();
+                // Try to compute real stats from tensor data
+                let (histogram, mean, std, min, max) = if let Some(ref td) = tensor_data {
+                    let values = collect_layer_tensor_values(td, i);
+                    if values.is_empty() {
+                        (vec![100u32; 256], 0.0, 1.0, -3.0, 3.0)
+                    } else {
+                        let (m, s, mn, mx, ..) = super::rosetta::compute_tensor_stats(&values);
+                        let hist = build_histogram(&values, mn, mx);
+                        (hist, m, s, mn, mx)
+                    }
+                } else {
+                    (vec![100u32; 256], 0.0, 1.0, -3.0, 3.0)
+                };
 
                 snapshots.push(LayerSnapshot {
                     name,
                     index: i,
                     histogram,
-                    mean: 0.0,
-                    std: 1.0,
-                    min: -3.0,
-                    max: 3.0,
+                    mean,
+                    std,
+                    min,
+                    max,
                     heatmap: None,
                     heatmap_width: None,
                     heatmap_height: None,

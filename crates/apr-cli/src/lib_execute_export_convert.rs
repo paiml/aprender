@@ -196,6 +196,7 @@
             skip_gpu_state: false,
             skip_metadata: true,
             skip_capability: true,
+            assert_classifier_head: false,
         }));
         let result = execute_command(&cli);
         assert!(
@@ -231,6 +232,7 @@
             skip_gpu_state: false,
             skip_metadata: true,
             skip_capability: true,
+            assert_classifier_head: false,
         }));
         let result = execute_command(&cli);
         assert!(

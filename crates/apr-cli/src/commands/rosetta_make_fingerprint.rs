@@ -302,8 +302,10 @@
         assert_eq!(fps.len(), 2);
         assert_eq!(fps[0].name, "tensor_a");
         assert_eq!(fps[1].name, "tensor_b");
-        // All other fields are placeholder defaults
-        assert_eq!(fps[0].std, 1.0);
+        // Deserialized mean values
+        assert!((fps[0].mean - 0.5).abs() < f32::EPSILON);
+        assert!((fps[1].mean - 1.0).abs() < f32::EPSILON);
+        // Missing fields get serde defaults
         assert_eq!(fps[0].dtype, "unknown");
     }
 
@@ -313,18 +315,21 @@
         file.write_all(b"{\"data\": [1, 2, 3]}").expect("write");
 
         let result = load_fingerprints_from_json(file.path());
-        assert!(result.is_ok());
-        assert!(result.expect("parsed").is_empty());
+        // Not in {"fingerprints": [...]} format — returns Err
+        assert!(result.is_err());
     }
 
     // ========================================================================
-    // NEW: parse_tensor_stats_json always returns None
+    // parse_tensor_stats_json
     // ========================================================================
 
     #[test]
-    fn test_parse_tensor_stats_json_placeholder() {
+    fn test_parse_tensor_stats_json_edge_cases() {
+        // Empty JSON object has no "tensors" key
         assert!(parse_tensor_stats_json("{}").is_none());
+        // Empty tensors map
         assert!(parse_tensor_stats_json("{\"tensors\": {}}").is_none());
+        // Empty string is invalid JSON
         assert!(parse_tensor_stats_json("").is_none());
     }
 

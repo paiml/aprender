@@ -357,7 +357,7 @@ fn test_export_format_debug_all_variants() {
 
 #[test]
 fn test_generate_snapshots_empty_metadata_returns_placeholder() {
-    let snapshots = generate_snapshots(&[], None);
+    let snapshots = generate_snapshots(None, &[], None);
     assert_eq!(snapshots.len(), 1);
     assert_eq!(snapshots[0].name, "placeholder");
     assert_eq!(snapshots[0].index, 0);
@@ -368,7 +368,7 @@ fn test_generate_snapshots_empty_metadata_returns_placeholder() {
 #[test]
 fn test_generate_snapshots_invalid_msgpack_returns_placeholder() {
     let bad_bytes = b"this is definitely not msgpack";
-    let snapshots = generate_snapshots(bad_bytes, None);
+    let snapshots = generate_snapshots(None, bad_bytes, None);
     assert_eq!(snapshots.len(), 1);
     assert_eq!(snapshots[0].name, "placeholder");
 }
@@ -378,7 +378,7 @@ fn test_generate_snapshots_empty_map_returns_placeholder() {
     // Valid msgpack encoding of an empty map
     let metadata: BTreeMap<String, serde_json::Value> = BTreeMap::new();
     let bytes = rmp_serde::to_vec(&metadata).expect("encode");
-    let snapshots = generate_snapshots(&bytes, None);
+    let snapshots = generate_snapshots(None, &bytes, None);
     assert_eq!(snapshots.len(), 1);
     assert_eq!(snapshots[0].name, "placeholder");
 }
@@ -392,7 +392,7 @@ fn test_generate_snapshots_with_n_layer_hyperparameter() {
     metadata.insert("hyperparameters".to_string(), serde_json::Value::Object(hp));
 
     let bytes = rmp_serde::to_vec(&metadata).expect("encode");
-    let snapshots = generate_snapshots(&bytes, None);
+    let snapshots = generate_snapshots(None, &bytes, None);
 
     assert_eq!(snapshots.len(), 3);
     for (i, snap) in snapshots.iter().enumerate() {
@@ -418,7 +418,7 @@ fn test_generate_snapshots_with_n_layers_alternative_key() {
     metadata.insert("hyperparameters".to_string(), serde_json::Value::Object(hp));
 
     let bytes = rmp_serde::to_vec(&metadata).expect("encode");
-    let snapshots = generate_snapshots(&bytes, None);
+    let snapshots = generate_snapshots(None, &bytes, None);
 
     assert_eq!(snapshots.len(), 2);
     assert_eq!(snapshots[0].name, "block_0");
@@ -433,7 +433,7 @@ fn test_generate_snapshots_defaults_to_4_layers_when_key_missing() {
     metadata.insert("hyperparameters".to_string(), serde_json::Value::Object(hp));
 
     let bytes = rmp_serde::to_vec(&metadata).expect("encode");
-    let snapshots = generate_snapshots(&bytes, None);
+    let snapshots = generate_snapshots(None, &bytes, None);
 
     assert_eq!(snapshots.len(), 4, "should default to 4 layers");
 }

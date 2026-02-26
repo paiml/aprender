@@ -36,9 +36,8 @@
         file.write_all(b"not valid json").expect("write");
 
         let result = load_fingerprints_from_json(file.path());
-        // Returns Ok with empty vec for invalid JSON (no "name" fields found)
-        assert!(result.is_ok());
-        assert!(result.unwrap().is_empty());
+        // Invalid JSON now properly returns Err
+        assert!(result.is_err());
     }
 
     #[test]

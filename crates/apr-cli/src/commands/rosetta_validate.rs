@@ -80,7 +80,8 @@ pub fn run_validate_stats(
 }
 
 /// Tensor statistical fingerprint (PMAT-201)
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(default)]
 pub struct TensorFingerprint {
     pub name: String,
     pub shape: Vec<usize>,
@@ -98,6 +99,29 @@ pub struct TensorFingerprint {
     pub inf_count: u32,
     pub zero_fraction: f32,
     pub checksum: u32,
+}
+
+impl Default for TensorFingerprint {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            shape: Vec::new(),
+            dtype: "unknown".to_string(),
+            mean: 0.0,
+            std: 0.0,
+            min: 0.0,
+            max: 0.0,
+            p5: 0.0,
+            p25: 0.0,
+            p50: 0.0,
+            p75: 0.0,
+            p95: 0.0,
+            nan_count: 0,
+            inf_count: 0,
+            zero_fraction: 0.0,
+            checksum: 0,
+        }
+    }
 }
 
 /// Statistical anomaly detected during validation
@@ -330,7 +354,7 @@ fn dequantize_by_dtype(dtype: u8, bytes: &[u8], dims: &[usize]) -> Option<Vec<f3
     }
 }
 
-fn load_tensor_data_direct(
+pub(crate) fn load_tensor_data_direct(
     model_path: &Path,
 ) -> Option<std::collections::HashMap<String, Vec<f32>>> {
     let ext = model_path.extension()?.to_str()?;
@@ -442,9 +466,25 @@ fn f16_to_f32(bytes: &[u8]) -> f32 {
 }
 
 /// Parse tensor statistics from JSON
-fn parse_tensor_stats_json(_json_str: &str) -> Option<std::collections::HashMap<String, Vec<f32>>> {
-    // Simple JSON parsing for tensor data
-    // Format expected: {"tensors": {"name": [values...], ...}}
-    // PMAT-201: Would need proper JSON parsing for full implementation
-    None // Placeholder - returns None to use placeholder stats
+///
+/// Expected format: `{"tensors": {"name": [values...], ...}}`
+fn parse_tensor_stats_json(json_str: &str) -> Option<std::collections::HashMap<String, Vec<f32>>> {
+    let parsed: serde_json::Value = serde_json::from_str(json_str).ok()?;
+    let tensors = parsed.get("tensors")?.as_object()?;
+    let mut result = std::collections::HashMap::new();
+    for (name, values) in tensors {
+        let arr = values.as_array()?;
+        let floats: Vec<f32> = arr
+            .iter()
+            .filter_map(|v| v.as_f64().map(|f| f as f32))
+            .collect();
+        if !floats.is_empty() {
+            result.insert(name.clone(), floats);
+        }
+    }
+    if result.is_empty() {
+        None
+    } else {
+        Some(result)
+    }
 }

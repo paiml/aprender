@@ -28,6 +28,7 @@
             false,
             false,
             false, // skip_capability
+            false, // assert_classifier_head
         );
         // Should fail (invalid file)
         assert!(result.is_err());
@@ -62,6 +63,7 @@
             false,
             false,
             false, // skip_capability
+            false, // assert_classifier_head
         );
         // Should fail (invalid file)
         assert!(result.is_err());
@@ -97,6 +99,7 @@
             false,
             false,
             false, // skip_capability
+            false, // assert_classifier_head
         );
         // Should fail (invalid files)
         assert!(result.is_err());
@@ -131,6 +134,7 @@
             false,
             false,
             false, // skip_capability
+            false, // assert_classifier_head
         );
         // Should fail (invalid file)
         assert!(result.is_err());

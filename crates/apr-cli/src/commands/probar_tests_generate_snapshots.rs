@@ -10,7 +10,7 @@ fn test_generate_snapshots_filter_matches_subset() {
     let bytes = rmp_serde::to_vec(&metadata).expect("encode");
 
     // Filter for "block_3" - should match only block_3
-    let snapshots = generate_snapshots(&bytes, Some("block_3"));
+    let snapshots = generate_snapshots(None, &bytes, Some("block_3"));
     assert_eq!(snapshots.len(), 1);
     assert_eq!(snapshots[0].name, "block_3");
     assert_eq!(snapshots[0].index, 3);
@@ -27,7 +27,7 @@ fn test_generate_snapshots_filter_matches_none_returns_placeholder() {
     let bytes = rmp_serde::to_vec(&metadata).expect("encode");
 
     // Filter for something that doesn't match any layer
-    let snapshots = generate_snapshots(&bytes, Some("nonexistent"));
+    let snapshots = generate_snapshots(None, &bytes, Some("nonexistent"));
     assert_eq!(snapshots.len(), 1);
     assert_eq!(snapshots[0].name, "placeholder");
 }
@@ -43,7 +43,7 @@ fn test_generate_snapshots_filter_partial_match() {
     let bytes = rmp_serde::to_vec(&metadata).expect("encode");
 
     // "block_" matches all layers
-    let snapshots = generate_snapshots(&bytes, Some("block_"));
+    let snapshots = generate_snapshots(None, &bytes, Some("block_"));
     assert_eq!(snapshots.len(), 10);
 }
 
@@ -57,7 +57,7 @@ fn test_generate_snapshots_hyperparameters_not_object() {
     );
 
     let bytes = rmp_serde::to_vec(&metadata).expect("encode");
-    let snapshots = generate_snapshots(&bytes, None);
+    let snapshots = generate_snapshots(None, &bytes, None);
 
     // Falls through to placeholder since as_object() returns None
     assert_eq!(snapshots.len(), 1);
@@ -73,7 +73,7 @@ fn test_generate_snapshots_zero_layers() {
     metadata.insert("hyperparameters".to_string(), serde_json::Value::Object(hp));
 
     let bytes = rmp_serde::to_vec(&metadata).expect("encode");
-    let snapshots = generate_snapshots(&bytes, None);
+    let snapshots = generate_snapshots(None, &bytes, None);
 
     // 0 layers => empty => placeholder
     assert_eq!(snapshots.len(), 1);
@@ -82,7 +82,7 @@ fn test_generate_snapshots_zero_layers() {
 
 #[test]
 fn test_generate_snapshots_placeholder_stats() {
-    let snapshots = generate_snapshots(&[], None);
+    let snapshots = generate_snapshots(None, &[], None);
     let placeholder = &snapshots[0];
     assert_eq!(placeholder.mean, 0.0);
     assert_eq!(placeholder.std, 1.0);

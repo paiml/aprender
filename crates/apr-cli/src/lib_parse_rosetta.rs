@@ -189,6 +189,7 @@
                 skip_gpu_state: false,
                 skip_metadata: false,
                 skip_capability: false,
+                assert_classifier_head: false,
             }),
             Commands::Extended(ExtendedCommands::Hex {
                 file: PathBuf::from("m.apr"),
