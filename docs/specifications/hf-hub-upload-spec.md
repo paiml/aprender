@@ -92,7 +92,7 @@ Add `ureq` as direct dependency (already transitive via `hf-hub`):
 [dependencies]
 ureq = { version = "2.12", optional = true, features = ["json"] }
 presentar = { version = "0.3", optional = true }  # Terminal feedback
-renacer = { version = "0.9", optional = true }    # Syscall/network tracing
+renacer = { version = "0.10", optional = true }   # Syscall/network tracing
 
 [features]
 hf-hub-integration = ["hf-hub", "dirs", "ureq", "presentar", "renacer"]

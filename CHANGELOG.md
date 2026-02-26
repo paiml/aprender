@@ -19,7 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - realizar 0.8.0 (inference engine)
 - entrenar 0.7.2 (training library)
 - trueno-viz 0.2.1 (visualization)
-- apr-cli 0.4.3 (CLI tool)
+- apr-cli 0.4.4 (CLI tool)
+- renacer 0.10.0 (syscall tracer)
 
 ## [0.25.0] - 2026-01-26
 
