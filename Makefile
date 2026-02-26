@@ -19,7 +19,7 @@ SHELL := /bin/bash
 # Multi-line recipes execute in same shell
 .ONESHELL:
 
-.PHONY: all build test test-smoke test-fast test-quick test-full test-heavy lint fmt clean doc book book-build book-serve book-test tier1 tier2 tier3 tier4 coverage coverage-fast profile hooks-install hooks-verify lint-scripts bashrs-score bashrs-lint-makefile chaos-test chaos-test-full chaos-test-lite fuzz bench dev pre-push ci check run-ci run-bench audit deps-validate deny pmat-score pmat-gates quality-report semantic-search examples mutants mutants-fast property-test install-alsa test-alsa test-audio-full contract-validate contract-test contract-audit contract-regen contract-check
+.PHONY: all build test test-smoke test-fast test-quick test-full test-heavy lint fmt clean doc book book-build book-serve book-test tier1 tier2 tier3 tier4 coverage coverage-fast profile hooks-install hooks-verify lint-scripts bashrs-score bashrs-lint-makefile chaos-test chaos-test-full chaos-test-lite fuzz bench dev pre-push ci check run-ci run-bench audit deps-validate deny pmat-score pmat-gates quality-report semantic-search examples mutants mutants-fast property-test install-alsa test-alsa test-audio-full contract-validate contract-test contract-audit contract-regen contract-check dev-setup check-siblings
 
 # Default target
 all: tier2
@@ -794,3 +794,49 @@ contract-regen: ## Regenerate wired test files from contracts
 contract-check: contract-validate contract-test contract-audit ## Full contract compliance check
 	@echo ""
 	@echo "Contract compliance check: PASSED"
+
+# ============================================================================
+# DEVELOPMENT ENVIRONMENT SETUP (GH-344, GH-345)
+# ============================================================================
+
+# Sibling repos required for full-stack development
+SIBLINGS := ../realizar ../entrenar ../trueno ../renacer ../provable-contracts ../pacha
+
+dev-setup: ## Set up local dev environment with sibling repo overrides
+	@echo "Setting up full-stack development environment..."
+	@if [ ! -f .cargo/config.toml ]; then \
+		cp .cargo/config.toml.dev-overrides .cargo/config.toml; \
+		echo "Created .cargo/config.toml with sibling overrides"; \
+	elif ! grep -q '\[patch.crates-io\]' .cargo/config.toml; then \
+		echo "" >> .cargo/config.toml; \
+		cat .cargo/config.toml.dev-overrides >> .cargo/config.toml; \
+		echo "Appended sibling overrides to .cargo/config.toml"; \
+	else \
+		echo ".cargo/config.toml already has [patch.crates-io] section"; \
+	fi
+	@echo ""
+	@$(MAKE) --no-print-directory check-siblings
+
+check-siblings: ## Verify sibling repos exist and versions are compatible
+	@echo "Checking sibling repositories..."
+	@all_ok=true; \
+	for repo in $(SIBLINGS); do \
+		name=$$(basename "$$repo"); \
+		if [ -d "$$repo" ]; then \
+			version=$$(grep '^version' "$$repo/Cargo.toml" 2>/dev/null | head -1 | sed 's/.*"\(.*\)"/\1/'); \
+			echo "  ✓ $$name ($$version)"; \
+		else \
+			echo "  ✗ $$name — not found at $$repo"; \
+			all_ok=false; \
+		fi; \
+	done; \
+	echo ""; \
+	if [ "$$all_ok" = true ]; then \
+		echo "All sibling repos present"; \
+	else \
+		echo "Missing sibling repos. Clone them alongside aprender:"; \
+		echo "  cd .. && git clone <repo-url>"; \
+		echo ""; \
+		echo "Or build standalone (uses crates.io versions):"; \
+		echo "  Remove [patch.crates-io] from .cargo/config.toml"; \
+	fi

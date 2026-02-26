@@ -216,11 +216,11 @@ batuta-common = "0.1"
 
 # Core compute primitives - SIMD-accelerated tensor operations
 # v0.14.5: wgpu adapter limits fix (buffer >256MB for 7B+ models)
-trueno = { version = "0.16.0", path = "../trueno" }
+trueno = "0.16.0"
 
 # K-quantization formats (Q4_K, Q5_K, Q6_K) - Toyota Way: ONE source of truth
 # Path dependency until published to crates.io
-trueno-quant = { version = "0.1", path = "../trueno/crates/trueno-quant" }
+trueno-quant = "0.1"
 
 # RAG pipeline for document-based ML (optional, GH-125)
 trueno-rag = { version = "0.2", optional = true }
@@ -269,7 +269,7 @@ js-sys = { version = "0.3", optional = true }
 minijinja = { version = "2.14.0", features = ["loader", "serde"] }
 
 # UCBD: compile-time contract enforcement via #[contract] proc macro
-provable-contracts-macros = { version = "0.1", path = "../provable-contracts/crates/provable-contracts-macros" }
+provable-contracts-macros = "0.1"
 
 # Toyota Way: ONE source of truth for quantization (Step E)
 # NOTE: Currently blocked by cyclic dependency (realizar optionally depends on aprender).
@@ -288,7 +288,7 @@ renacer = "0.10"
 tempfile = "3.14"  # For format module tests
 jugar-probar = "0.5"  # TUI/GUI testing framework with coverage tracking (spec §8)
 ctrlc = "3.4"  # Signal handling for SIGINT/SIGTERM (PMAT-098-PF: zombie process mitigation)
-provable-contracts = { version = "0.1", path = "../provable-contracts/crates/provable-contracts" }  # Contract enforcement (dev-only)
+provable-contracts = "0.1"  # Contract enforcement (dev-only)
 entrenar = "0.7"  # Integration tests for InferenceMonitor (GH-305: was runtime dep, now dev-only)
 
 [features]
@@ -411,13 +411,11 @@ file = "CHANGELOG.md"
 search = "## \\[Unreleased\\]"
 replace = "## [{{version}}] - {{date}}"
 
-# PMAT-088: Override with local versions for API consistency.
-# PMAT-262: Override aprender so `cargo install --path crates/apr-cli` uses local,
-# not crates.io aprender (which may be stale and fail to compile).
-# All sibling crates must be patched to prevent type mismatches from mixed versions.
+# PMAT-262: Self-patch so transitive deps (realizar, entrenar) use the local
+# workspace aprender instead of a stale crates.io version. This prevents type
+# mismatches when building apr-cli from the workspace.
+# GH-344: Sibling patches (realizar, trueno, etc.) moved to .cargo/config.toml
+# so that `git clone && cargo check` works without sibling repos.
+# See .cargo/config.toml.dev-overrides for full-stack development setup.
 [patch.crates-io]
 aprender = { path = "." }
-realizar = { path = "../realizar" }
-entrenar = { path = "../entrenar" }  # GH-305: needed for dev-dep integration tests
-trueno = { path = "../trueno" }
-trueno-gpu = { path = "../trueno/trueno-gpu" }

@@ -1,0 +1,29 @@
+# Full-stack development overrides for aprender
+#
+# GH-344: Sibling repo path overrides are NOT in the committed Cargo.toml
+# so that `git clone && cargo check` works standalone.
+#
+# To enable local sibling overrides, append this to your .cargo/config.toml:
+#   cat .cargo/config.toml.dev-overrides >> .cargo/config.toml
+#
+# Or run: make dev-setup
+#
+# Required sibling repos (clone alongside aprender):
+#   ../realizar      — inference engine
+#   ../entrenar      — training engine (includes entrenar-lora)
+#   ../trueno        — SIMD compute (includes trueno-gpu, trueno-quant)
+#   ../renacer       — profiling
+#   ../provable-contracts — compile-time contract macros
+#   ../pacha         — model registry
+
+[patch.crates-io]
+realizar = { path = "../realizar" }
+entrenar = { path = "../entrenar" }
+trueno = { path = "../trueno" }
+trueno-gpu = { path = "../trueno/trueno-gpu" }
+trueno-quant = { path = "../trueno/crates/trueno-quant" }
+provable-contracts-macros = { path = "../provable-contracts/crates/provable-contracts-macros" }
+provable-contracts = { path = "../provable-contracts/crates/provable-contracts" }
+pacha = { path = "../pacha" }
+entrenar-lora = { path = "../entrenar/crates/entrenar-lora" }
+renacer = { path = "../renacer" }
