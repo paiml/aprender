@@ -194,6 +194,8 @@ tier3:
 	@cargo clippy -- -D warnings
 	@echo "Checking include!() files tracked by git..."
 	@bash scripts/check_include_files.sh
+	@echo "Checking publish safety (symlinks, companion lookups)..."
+	@bash scripts/check_publish_safety.sh
 	@echo "Tier 3: PASSED"
 
 # Tier 4: CI/CD (5-60 minutes, heavyweight)

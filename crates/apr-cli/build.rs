@@ -7,6 +7,11 @@ fn main() {
         _ => "unknown".to_string(),
     };
     println!("cargo:rustc-env=APR_GIT_SHA={sha}");
-    println!("cargo:rerun-if-changed=../../.git/HEAD");
-    println!("cargo:rerun-if-changed=../../.git/refs/heads/");
+    // Only set rerun-if-changed when .git exists (avoids rebuild-every-time
+    // on crates.io installs where no .git directory is present)
+    let git_head = std::path::Path::new("../../.git/HEAD");
+    if git_head.exists() {
+        println!("cargo:rerun-if-changed=../../.git/HEAD");
+        println!("cargo:rerun-if-changed=../../.git/refs/heads/");
+    }
 }

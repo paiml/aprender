@@ -11,6 +11,10 @@ documentation = "https://docs.rs/apr-cli"
 readme = "README.md"
 keywords = ["machine-learning", "model-inspection", "cli", "debugging"]
 categories = ["command-line-utilities", "science"]
+exclude = [
+    "playbooks/snapshots/",
+    "models/",
+]
 
 [lints.rust]
 # Safety

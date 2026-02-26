@@ -1,0 +1,161 @@
+# Publish Safety Contract v1.1.0
+# Prevents P0 regressions from shipping to crates.io
+#
+# STATUS: Authoritative
+# ENFORCEMENT: scripts/check_publish_safety.sh (wired into make tier3)
+# CONSUMERS:
+#   - scripts/check_publish_safety.sh (automated gate)
+#   - Makefile tier3 target (pre-push)
+#   - Developer awareness (pre-publish checklist)
+
+metadata:
+  version: "1.1.0"
+  created: "2026-02-26"
+  updated: "2026-02-26"
+  author: "PAIML Engineering"
+  description: "Contract preventing tracked symlinks, broken lookups, dev artifacts, and binary bloat from publishing"
+
+# =============================================================================
+# BUG CLASS 1: Tracked Symlinks (PMAT-SQI)
+# =============================================================================
+#
+# Root cause: Symlinks with mode 120000 pointing to local paths (e.g.,
+# /mnt/nvme-raid0/models/) were committed to git. When published to crates.io,
+# these symlinks broke cargo install for ALL external users because the target
+# paths don't exist on their machines.
+#
+# Detection: git ls-files -s | grep "^120000"
+# Fix: git rm --cached <symlink-path>
+#
+symlink_rule:
+  id: PUB-SAFETY-001
+  name: "No tracked symlinks"
+  description: "Git must contain zero files with mode 120000 (symlink)"
+  severity: P0
+  detection: "git ls-files -s | grep '^120000'"
+  fix: "git rm --cached <path>"
+  lesson: "Symlinks to local NVMe paths broke cargo install for all crates.io users"
+
+# =============================================================================
+# BUG CLASS 2: Cargo Config Leak
+# =============================================================================
+#
+# Root cause: .cargo/config.toml with [patch.crates-io] sections leaked into
+# published packages, causing dependency resolution failures for users.
+#
+# Detection: cargo package -p <pkg> --list | grep .cargo/config
+# Fix: exclude in Cargo.toml or .gitignore
+#
+config_leak_rule:
+  id: PUB-SAFETY-002
+  name: "No .cargo/config.toml in packages"
+  description: "Published packages must not contain .cargo/config.toml"
+  severity: P0
+  detection: "cargo package -p <pkg> --list | grep .cargo/config"
+  fix: "Add .cargo/ to Cargo.toml [package] exclude"
+
+# =============================================================================
+# BUG CLASS 3: Broken Companion File Lookup (GAP-UX-002)
+# =============================================================================
+#
+# Root cause: path.with_file_name("tokenizer.json") assumes the companion file
+# is in the same directory with a simple name. But HuggingFace Hub caches files
+# with hash-prefixed names in a flat directory, so the companion file may be at
+# a completely different path.
+#
+# The correct approach is find_sibling_file() which searches:
+#   1. Same directory (simple case)
+#   2. Parent directory (nested model dirs)
+#   3. HF cache snapshots (hash-prefixed layout)
+#
+# Anti-pattern: path.with_file_name("tokenizer.json")
+# Correct:      find_sibling_file(path, "tokenizer.json")
+#
+companion_lookup_rule:
+  id: PUB-SAFETY-003
+  name: "Use find_sibling_file for companion lookups"
+  description: "Never use with_file_name() to find tokenizer.json or config.json"
+  severity: P0
+  anti_pattern: 'path.with_file_name("tokenizer.json")'
+  correct_pattern: 'find_sibling_file(path, "tokenizer.json")'
+  detection: "grep -rn 'with_file_name.*tokenizer\\|with_file_name.*config\\.json' crates/apr-cli/src/"
+  fix: "Replace with_file_name() calls with find_sibling_file()"
+  lesson: "HF cache uses hash-prefixed filenames; with_file_name misses them entirely"
+
+# =============================================================================
+# BUG CLASS 4: Dev Tool Artifacts in Packages (CB-510 class)
+# =============================================================================
+#
+# Root cause: .gitignore used root-anchored patterns (.pmat/context.db-shm)
+# that only matched the root directory. Subcrate directories (crates/apr-cli/
+# .pmat/) were NOT covered, so their .pmat files were tracked by git and
+# shipped to crates.io.
+#
+# This is the EXACT SAME root cause as CB-510 (models/ hiding src/models/).
+# Non-recursive gitignore patterns are a recurring P0 bug class.
+#
+# Detection: git ls-files | grep '.pmat/'
+# Fix: use **/.pmat/ (recursive) in .gitignore, git rm --cached the files
+#
+dev_artifacts_rule:
+  id: PUB-SAFETY-004
+  name: "No dev tool artifacts tracked by git"
+  description: ".pmat/ database files, caches, and metrics must not be git-tracked"
+  severity: P1
+  detection: "git ls-files | grep '.pmat/'"
+  fix: "git rm --cached <paths> and use **/.pmat/ in .gitignore"
+  lesson: "Root-anchored gitignore (.pmat/) misses subcrate dirs (crates/*/.pmat/)"
+  files_removed: 27
+  size_saved: "163KB of SQLite WAL/SHM files + JSON caches"
+
+# =============================================================================
+# BUG CLASS 5: Large Binary Files in Packages
+# =============================================================================
+#
+# Root cause: Test fixture files (playbooks/snapshots/test.apr, 28MB) were
+# tracked by git and included in the cargo package. This bloated the crates.io
+# download by 28MB for every user.
+#
+# Detection: cargo package --list | grep -E '\.(apr|gguf|safetensors|bin|db)'
+# Fix: add to Cargo.toml [package] exclude
+#
+binary_bloat_rule:
+  id: PUB-SAFETY-005
+  name: "No large binary files in packages"
+  description: "Model files, test fixtures, and database files must not ship in cargo packages"
+  severity: P1
+  detection: "cargo package --list | grep binary extensions"
+  fix: "Add directory to Cargo.toml [package] exclude"
+  lesson: "28MB test.apr shipped in apr-cli package, bloating every cargo install"
+  extensions_checked:
+    - ".apr"
+    - ".gguf"
+    - ".safetensors"
+    - ".bin"
+    - ".pt"
+    - ".onnx"
+    - ".db"
+    - ".db-shm"
+    - ".db-wal"
+
+# =============================================================================
+# ENFORCEMENT
+# =============================================================================
+
+enforcement:
+  script: "scripts/check_publish_safety.sh"
+  wired_into:
+    - "make tier3 (pre-push gate)"
+  checks:
+    - rule: PUB-SAFETY-001
+      method: "git ls-files -s | grep '^120000'"
+    - rule: PUB-SAFETY-002
+      method: "cargo package --list | grep .cargo/config"
+    - rule: PUB-SAFETY-003
+      method: "grep for with_file_name anti-pattern in apr-cli"
+    - rule: "Sanity"
+      method: "Verify find_sibling_file is used at least once"
+    - rule: PUB-SAFETY-004
+      method: "git ls-files | grep '.pmat/'"
+    - rule: PUB-SAFETY-005
+      method: "cargo package --list | grep binary extensions"

@@ -145,20 +145,46 @@ readme = "README.md"
 keywords = ["machine-learning", "classification", "clustering", "statistics", "graph-algorithms"]
 categories = ["science", "algorithms"]
 exclude = [
+    # Build/IDE artifacts
     "target/",
     "*.profraw",
     "*.profdata",
     ".vscode/",
     ".idea/",
-    ".pmat/",
     "proptest-regressions/",
+    # Dev tool artifacts (CB-510 class: recursive patterns required)
+    ".pmat/",
+    ".pmat-metrics/",
+    ".pmat-metrics.toml",
+    "*.bak",
+    # CI/CD and dev infrastructure (not needed by library consumers)
+    ".github/",
+    ".githooks/",
+    ".bashrsignore",
+    "Makefile",
+    "scripts/",
+    # Documentation (published on GitHub Pages, not crates.io)
+    "docs/",
+    "book/",
+    # Test data and traces
+    "golden_traces/",
     "tokenizer.json",
     "defect-report-*.json",
     "trace_*.json",
-    "docs/specifications/",
-    "docs/roadmaps/",
     "fuzz/",
+    # Model files (root-anchored: /models/ not models/ per CB-510)
     "/models/",
+    # Contracts not consumed by build.rs (model-families/ IS needed)
+    "contracts/chat-template-semantics-v1.yaml",
+    "contracts/classification-finetune-v1.yaml",
+    "contracts/kernel-fusion-v1.yaml",
+    "contracts/layer-parity-v1.yaml",
+    "contracts/model-metadata-bounds-v1.yaml",
+    "contracts/quantized-dot-product-v1.yaml",
+    "contracts/special-tokens-registry-v1.yaml",
+    "contracts/tensor-layout-v1.yaml",
+    "contracts/tokenizer-vocab-v1.yaml",
+    "contracts/publish-safety-v1.yaml",
 ]
 
 [lints]
