@@ -338,8 +338,8 @@ fn test_dequantize_q4_truncated_data() {
 #[test]
 fn test_dequantize_q4_multiple_blocks() {
     // Two blocks: 64 elements
-    let mut data = vec![0u8; 36]; // 2 * 18 bytes
-                                  // Block 1: scale = 1.0
+    // 2 * 18 bytes. Block 1: scale = 1.0
+    let mut data = vec![0u8; 36];
     data[0] = 0x00;
     data[1] = 0x3C;
     // Block 2: scale = 2.0 (f16 0x4000)

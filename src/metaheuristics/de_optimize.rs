@@ -110,7 +110,7 @@ mod tests {
         x.iter().map(|xi| xi * xi).sum()
     }
 
-    #[allow(dead_code)]
+    
     fn rastrigin(x: &[f64]) -> f64 {
         let n = f64::from(x.len() as i32);
         10.0 * n

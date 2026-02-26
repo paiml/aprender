@@ -130,11 +130,11 @@ mod tests_pmat202_validate_stats_falsification {
     /// Role-specific validation thresholds
     struct RoleThreshold {
         expected_mean: f32,
-        #[allow(dead_code)]
+        
         mean_tolerance: f32,
-        #[allow(dead_code)]
+        
         expected_std_min: f32,
-        #[allow(dead_code)]
+        
         expected_std_max: f32,
         sigma_threshold: f32,
     }

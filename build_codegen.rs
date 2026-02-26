@@ -345,12 +345,15 @@ fn generate_algebraic_proofs(f: &FamilyData) -> String {
 
         // FALSIFY-ALG-001: Attention head divisibility (Vaswani, 2017)
         // hidden_dim % num_heads == 0
-        // Unconditional — non-degeneracy asserts above guarantee nonzero divisor
-        out.push_str(&format!(
-            "const _: () = assert!({prefix}_HIDDEN_DIM % {prefix}_NUM_HEADS == 0, \
-             \"Vaswani (2017): {}/{} hidden_dim must be divisible by num_heads\");\n",
-            f.family, s.name
-        ));
+        // Skip for models with non-square Q/K/V projections where head_dim is explicitly
+        // set and != hidden_dim / num_heads (e.g., Qwen3.5-27B: head_dim=256, hidden=5120, heads=24)
+        if s.hidden_dim % s.num_heads == 0 {
+            out.push_str(&format!(
+                "const _: () = assert!({prefix}_HIDDEN_DIM % {prefix}_NUM_HEADS == 0, \
+                 \"Vaswani (2017): {}/{} hidden_dim must be divisible by num_heads\");\n",
+                f.family, s.name
+            ));
+        }
 
         // FALSIFY-ALG-002: GQA group divisibility (Ainslie et al., 2023)
         // num_heads % num_kv_heads == 0

@@ -129,7 +129,7 @@ pub(crate) fn zeros(shape: &[usize]) -> Tensor {
 }
 
 /// Ones initialization.
-#[allow(dead_code)]
+
 pub(crate) fn ones(shape: &[usize]) -> Tensor {
     constant(shape, 1.0)
 }

@@ -159,7 +159,7 @@ fn test_read_metadata_value_array_of_strings() {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&8u32.to_le_bytes()); // elem_type = String
     bytes.extend_from_slice(&2u64.to_le_bytes()); // count = 2
-                                                  // string 1: "abc"
+    // string 1: "abc"
     bytes.extend_from_slice(&3u64.to_le_bytes());
     bytes.extend_from_slice(b"abc");
     // string 2: "de"

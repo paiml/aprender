@@ -162,6 +162,48 @@ impl Conv2d {
 }
 
 impl Conv2d {
+    /// Compute the kernel dot product for a single output pixel.
+    fn conv_kernel_sum(
+        &self,
+        input_data: &[f32],
+        weight_data: &[f32],
+        n: usize,
+        oc: usize,
+        oh: usize,
+        ow: usize,
+        in_channels: usize,
+        in_h: usize,
+        in_w: usize,
+    ) -> f32 {
+        let mut sum = 0.0;
+        for ic in 0..self.in_channels {
+            for kh in 0..self.kernel_h {
+                for kw in 0..self.kernel_w {
+                    let ih = oh * self.stride_h + kh;
+                    let iw = ow * self.stride_w + kw;
+                    let val = if ih < self.padding_h
+                        || ih >= in_h + self.padding_h
+                        || iw < self.padding_w
+                        || iw >= in_w + self.padding_w
+                    {
+                        0.0
+                    } else {
+                        let actual_ih = ih - self.padding_h;
+                        let actual_iw = iw - self.padding_w;
+                        input_data
+                            [n * in_channels * in_h * in_w + ic * in_h * in_w + actual_ih * in_w + actual_iw]
+                    };
+                    let w_idx = oc * self.in_channels * self.kernel_h * self.kernel_w
+                        + ic * self.kernel_h * self.kernel_w
+                        + kh * self.kernel_w
+                        + kw;
+                    sum += val * weight_data[w_idx];
+                }
+            }
+        }
+        sum
+    }
+
     /// Naive 7-loop convolution (fallback path).
     fn forward_naive(&self, input: &Tensor) -> Tensor {
         let shape = input.shape();
@@ -179,38 +221,11 @@ impl Conv2d {
             for oc in 0..self.out_channels {
                 for oh in 0..out_h {
                     for ow in 0..out_w {
-                        let mut sum = 0.0;
-
-                        for ic in 0..self.in_channels {
-                            for kh in 0..self.kernel_h {
-                                for kw in 0..self.kernel_w {
-                                    let ih = oh * self.stride_h + kh;
-                                    let iw = ow * self.stride_w + kw;
-
-                                    let val = if ih < self.padding_h
-                                        || ih >= in_h + self.padding_h
-                                        || iw < self.padding_w
-                                        || iw >= in_w + self.padding_w
-                                    {
-                                        0.0
-                                    } else {
-                                        let actual_ih = ih - self.padding_h;
-                                        let actual_iw = iw - self.padding_w;
-                                        input_data[n * in_channels * in_h * in_w
-                                            + ic * in_h * in_w
-                                            + actual_ih * in_w
-                                            + actual_iw]
-                                    };
-
-                                    let w_idx =
-                                        oc * self.in_channels * self.kernel_h * self.kernel_w
-                                            + ic * self.kernel_h * self.kernel_w
-                                            + kh * self.kernel_w
-                                            + kw;
-                                    sum += val * weight_data[w_idx];
-                                }
-                            }
-                        }
+                        let mut sum = self.conv_kernel_sum(
+                            input_data, weight_data,
+                            n, oc, oh, ow,
+                            in_channels, in_h, in_w,
+                        );
 
                         if let Some(ref bias) = self.bias {
                             sum += bias.data()[oc];

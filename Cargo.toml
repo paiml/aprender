@@ -1,12 +1,25 @@
 [workspace]
 members = [".", "crates/aprender-shell", "crates/aprender-tsp", "crates/aprender-monte-carlo", "crates/apr-cli"]
 exclude = ["fuzz"]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/paiml/aprender"
+
+[workspace.dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+rand = { version = "0.9", features = ["small_rng"] }
+proptest = "1.6"
 
 [workspace.lints.rust]
 # Safety
 # Note: Using "deny" (not "forbid") to allow documented unsafe in mmap module.
 # See bundle-mmap-spec.md Section 4 for safety justification.
 unsafe_code = "deny"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)', 'cfg(coverage_nightly)'] }
 unsafe_op_in_unsafe_fn = "warn"
 
 # Code Quality
@@ -344,7 +357,32 @@ name = "time_series_forecasting"
 [profile.release]
 lto = true
 codegen-units = 1
+panic = "abort"
+strip = "none"
 debug = true  # Enable debug info for flamegraph/profiling
+
+[profile.dev]
+lto = false
+panic = "abort"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--generate-link-to-definition"]
+targets = ["x86_64-unknown-linux-gnu"]
+
+[package.metadata.release]
+sign-commit = false
+sign-tag = false
+push = true
+publish = true
+shared-version = true
+tag-name = "v{{version}}"
+pre-release-commit-message = "release: aprender v{{version}}"
+
+[[package.metadata.release.pre-release-replacements]]
+file = "CHANGELOG.md"
+search = "## \\[Unreleased\\]"
+replace = "## [{{version}}] - {{date}}"
 
 # PMAT-088: Override with local versions for API consistency.
 # PMAT-262: Override aprender so `cargo install --path crates/apr-cli` uses local,

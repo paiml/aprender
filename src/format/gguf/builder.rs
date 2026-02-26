@@ -280,7 +280,7 @@ fn test_skip_metadata_value_array_of_strings() {
     let mut value_bytes = Vec::new();
     value_bytes.extend_from_slice(&8u32.to_le_bytes()); // elem_type String
     value_bytes.extend_from_slice(&2u64.to_le_bytes()); // count
-                                                        // string 1: "hi"
+    // string 1: "hi"
     value_bytes.extend_from_slice(&2u64.to_le_bytes());
     value_bytes.extend_from_slice(b"hi");
     // string 2: "world"

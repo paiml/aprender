@@ -210,8 +210,8 @@ fn test_list_tensors_v1_too_small() {
 #[test]
 fn test_list_tensors_v1_metadata_truncated() {
     // Header says metadata is 1000 bytes but file is too small
-    let mut data = vec![0u8; 64]; // HEADER_SIZE
-                                  // offset 8-11: metadata_size = 1000
+    // HEADER_SIZE; offset 8-11: metadata_size = 1000
+    let mut data = vec![0u8; 64];
     data[8..12].copy_from_slice(&1000u32.to_le_bytes());
     let result = super::list_tensors_v1(&data, TensorListOptions::default());
     assert!(result.is_err());
@@ -327,14 +327,14 @@ fn test_ggml_dtype_element_size_exhaustive() {
     assert!((super::ggml_dtype_element_size(21) - 0.4375).abs() < 0.01); // IQ3_S
     assert!((super::ggml_dtype_element_size(22) - 0.625).abs() < 0.01); // IQ2_S
     assert!((super::ggml_dtype_element_size(23) - 0.5).abs() < 0.01); // IQ4_XS
-                                                                      // Integer types
+    // Integer types
     assert!((super::ggml_dtype_element_size(24) - 1.0).abs() < 0.01); // I8
     assert!((super::ggml_dtype_element_size(25) - 2.0).abs() < 0.01); // I16
     assert!((super::ggml_dtype_element_size(27) - 4.0).abs() < 0.01); // I32
     assert!((super::ggml_dtype_element_size(28) - 8.0).abs() < 0.01); // I64
     assert!((super::ggml_dtype_element_size(29) - 8.0).abs() < 0.01); // F64
     assert!((super::ggml_dtype_element_size(30) - 0.375).abs() < 0.01); // IQ1_M
-                                                                        // Unknown defaults to F32 (4.0) — conservative size estimate
+    // Unknown defaults to F32 (4.0) — conservative size estimate
     assert!((super::ggml_dtype_element_size(99) - 4.0).abs() < 0.001);
     assert!((super::ggml_dtype_element_size(u32::MAX) - 4.0).abs() < 0.001);
 }

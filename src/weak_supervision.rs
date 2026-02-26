@@ -131,18 +131,14 @@ impl LabelModel {
 
                     // Likelihood from each LF
                     for (j, &output) in lf_outputs.iter().enumerate() {
-                        if let LFOutput::Label(lf_class) = output {
-                            // Accuracy-based likelihood
-                            if lf_class == c {
-                                *log_prob += self.accuracies[j][c].ln();
-                            } else {
-                                // Probability of wrong label
-                                let wrong_prob =
-                                    (1.0 - self.accuracies[j][c]) / (self.n_classes - 1) as f32;
-                                *log_prob += wrong_prob.max(1e-10).ln();
-                            }
+                        let LFOutput::Label(lf_class) = output else { continue };
+                        if lf_class == c {
+                            *log_prob += self.accuracies[j][c].ln();
+                        } else {
+                            let wrong_prob =
+                                (1.0 - self.accuracies[j][c]) / (self.n_classes - 1) as f32;
+                            *log_prob += wrong_prob.max(1e-10).ln();
                         }
-                        // Abstain doesn't contribute
                     }
                 }
 
@@ -210,14 +206,13 @@ impl LabelModel {
                     *log_prob = self.class_priors[c].ln();
 
                     for (j, &output) in lf_outputs.iter().enumerate() {
-                        if let LFOutput::Label(lf_class) = output {
-                            if lf_class == c {
-                                *log_prob += self.accuracies[j][c].ln();
-                            } else {
-                                let wrong_prob =
-                                    (1.0 - self.accuracies[j][c]) / (self.n_classes - 1) as f32;
-                                *log_prob += wrong_prob.max(1e-10).ln();
-                            }
+                        let LFOutput::Label(lf_class) = output else { continue };
+                        if lf_class == c {
+                            *log_prob += self.accuracies[j][c].ln();
+                        } else {
+                            let wrong_prob =
+                                (1.0 - self.accuracies[j][c]) / (self.n_classes - 1) as f32;
+                            *log_prob += wrong_prob.max(1e-10).ln();
                         }
                     }
                 }

@@ -216,7 +216,7 @@ impl Graph {
     /// # Returns
     /// * `Some(weight)` if edge exists
     /// * `None` if no edge exists
-    #[allow(dead_code)]
+    
     fn edge_weight(&self, source: NodeId, target: NodeId) -> Option<f64> {
         if source >= self.n_nodes {
             return None;

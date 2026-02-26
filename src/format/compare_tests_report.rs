@@ -414,7 +414,7 @@ fn test_full_round_trip_mismatching_model() {
     let mut target = HashMap::new();
     target.insert("w1".to_string(), (vec![1.0_f32], vec![1])); // match
     target.insert("w2".to_string(), (vec![2.5_f32], vec![1])); // mismatch
-                                                               // w3 missing from target, w4 extra in target
+    // w3 missing from target, w4 extra in target
     target.insert("w4".to_string(), (vec![4.0_f32], vec![1]));
 
     let report = comparer.compare_models(&source, &target);

@@ -328,8 +328,8 @@ mod tests {
 
     #[test]
     fn test_dequantize_q4_0_with_nonzero_start() {
-        let mut data = vec![0u8; 36]; // 18 bytes padding + 18 bytes block
-                                      // Put scale at offset 18
+        // 18 bytes padding + 18 bytes block; put scale at offset 18
+        let mut data = vec![0u8; 36];
         data[18] = 0x00;
         data[19] = 0x3C;
         let result = dequantize_q4_0(&data, 18, 32).expect("should succeed");

@@ -117,8 +117,8 @@ fn test_dequantize_q8_0_multiple_blocks() {
 #[test]
 fn test_dequantize_q8_0_signed_quant_values() {
     // Test that quant bytes are treated as signed int8
-    let mut bytes = vec![0x00, 0x3C]; // f16 scale = 1.0
-                                      // Byte 0xFF as i8 = -1, byte 0x80 as i8 = -128
+    // f16 scale = 1.0; Byte 0xFF as i8 = -1, byte 0x80 as i8 = -128
+    let mut bytes = vec![0x00, 0x3C];
     let mut quants = vec![0u8; 32];
     quants[0] = 0xFF; // -1 as i8
     quants[1] = 0x80; // -128 as i8

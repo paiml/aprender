@@ -219,7 +219,7 @@ fn test_read_metadata_value_array_string() {
     let mut data = Vec::new();
     data.extend_from_slice(&8u32.to_le_bytes()); // element type 8 = string
     data.extend_from_slice(&2u64.to_le_bytes()); // 2 elements
-                                                 // First string "ab"
+    // First string "ab"
     data.extend_from_slice(&2u64.to_le_bytes());
     data.extend_from_slice(b"ab");
     // Second string "cd"

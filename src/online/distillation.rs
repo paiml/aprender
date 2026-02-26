@@ -322,7 +322,7 @@ pub struct LinearDistiller {
     /// Number of features
     n_features: usize,
     /// Number of classes (stored for validation)
-    #[allow(dead_code)]
+    
     n_classes: usize,
     /// Loss calculator
     loss: DistillationLoss,

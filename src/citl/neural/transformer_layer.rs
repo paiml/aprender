@@ -83,7 +83,7 @@ impl TransformerLayer {
 struct LayerNorm {
     weight: Tensor,
     bias: Tensor,
-    #[allow(dead_code)]
+    
     normalized_shape: usize,
     eps: f32,
 }
@@ -112,7 +112,7 @@ pub struct Vocabulary {
     /// Token to ID mapping
     token_to_id: HashMap<String, usize>,
     /// Special token IDs
-    #[allow(dead_code)]
+    
     pad_id: usize,
     unk_id: usize,
     cls_id: usize,

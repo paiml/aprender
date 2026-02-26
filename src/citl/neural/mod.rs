@@ -336,9 +336,9 @@ impl Default for NeuralErrorEncoder {
 #[allow(clippy::struct_field_names)]
 struct Embedding {
     weight: Tensor,
-    #[allow(dead_code)]
+    
     num_embeddings: usize,
-    #[allow(dead_code)]
+    
     embedding_dim: usize,
 }
 

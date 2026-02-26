@@ -36,6 +36,32 @@ impl MaxPool2d {
     }
 }
 
+impl MaxPool2d {
+    /// Compute max value over kernel window at a single output position.
+    fn pool_kernel_max(
+        &self,
+        input_data: &[f32],
+        n: usize,
+        c: usize,
+        oh: usize,
+        ow: usize,
+        channels: usize,
+        in_h: usize,
+        in_w: usize,
+    ) -> f32 {
+        let mut max_val = f32::NEG_INFINITY;
+        for kh in 0..self.kernel_h {
+            for kw in 0..self.kernel_w {
+                let ih = oh * self.stride_h + kh;
+                let iw = ow * self.stride_w + kw;
+                let idx = n * channels * in_h * in_w + c * in_h * in_w + ih * in_w + iw;
+                max_val = max_val.max(input_data[idx]);
+            }
+        }
+        max_val
+    }
+}
+
 impl Module for MaxPool2d {
     fn forward(&self, input: &Tensor) -> Tensor {
         assert_eq!(input.ndim(), 4, "MaxPool2d expects 4D input [N, C, H, W]");
@@ -47,28 +73,18 @@ impl Module for MaxPool2d {
         let out_w = (in_w - self.kernel_w) / self.stride_w + 1;
 
         let mut output = vec![f32::NEG_INFINITY; batch_size * channels * out_h * out_w];
-
         let input_data = input.data();
 
         for n in 0..batch_size {
             for c in 0..channels {
                 for oh in 0..out_h {
                     for ow in 0..out_w {
-                        let mut max_val = f32::NEG_INFINITY;
-
-                        for kh in 0..self.kernel_h {
-                            for kw in 0..self.kernel_w {
-                                let ih = oh * self.stride_h + kh;
-                                let iw = ow * self.stride_w + kw;
-                                let val = input_data
-                                    [n * channels * in_h * in_w + c * in_h * in_w + ih * in_w + iw];
-                                max_val = max_val.max(val);
-                            }
-                        }
-
-                        output
-                            [n * channels * out_h * out_w + c * out_h * out_w + oh * out_w + ow] =
-                            max_val;
+                        let max_val = self.pool_kernel_max(
+                            input_data, n, c, oh, ow, channels, in_h, in_w,
+                        );
+                        let out_idx = n * channels * out_h * out_w
+                            + c * out_h * out_w + oh * out_w + ow;
+                        output[out_idx] = max_val;
                     }
                 }
             }
@@ -113,6 +129,32 @@ impl AvgPool2d {
     }
 }
 
+impl AvgPool2d {
+    /// Compute sum over kernel window at a single output position.
+    fn pool_kernel_sum(
+        &self,
+        input_data: &[f32],
+        n: usize,
+        c: usize,
+        oh: usize,
+        ow: usize,
+        channels: usize,
+        in_h: usize,
+        in_w: usize,
+    ) -> f32 {
+        let mut sum = 0.0;
+        for kh in 0..self.kernel_h {
+            for kw in 0..self.kernel_w {
+                let ih = oh * self.stride_h + kh;
+                let iw = ow * self.stride_w + kw;
+                let idx = n * channels * in_h * in_w + c * in_h * in_w + ih * in_w + iw;
+                sum += input_data[idx];
+            }
+        }
+        sum
+    }
+}
+
 impl Module for AvgPool2d {
     fn forward(&self, input: &Tensor) -> Tensor {
         assert_eq!(input.ndim(), 4, "AvgPool2d expects 4D input [N, C, H, W]");
@@ -125,27 +167,18 @@ impl Module for AvgPool2d {
 
         let mut output = vec![0.0; batch_size * channels * out_h * out_w];
         let kernel_area = (self.kernel_h * self.kernel_w) as f32;
-
         let input_data = input.data();
 
         for n in 0..batch_size {
             for c in 0..channels {
                 for oh in 0..out_h {
                     for ow in 0..out_w {
-                        let mut sum = 0.0;
-
-                        for kh in 0..self.kernel_h {
-                            for kw in 0..self.kernel_w {
-                                let ih = oh * self.stride_h + kh;
-                                let iw = ow * self.stride_w + kw;
-                                sum += input_data
-                                    [n * channels * in_h * in_w + c * in_h * in_w + ih * in_w + iw];
-                            }
-                        }
-
-                        output
-                            [n * channels * out_h * out_w + c * out_h * out_w + oh * out_w + ow] =
-                            sum / kernel_area;
+                        let sum = self.pool_kernel_sum(
+                            input_data, n, c, oh, ow, channels, in_h, in_w,
+                        );
+                        let out_idx = n * channels * out_h * out_w
+                            + c * out_h * out_w + oh * out_w + ow;
+                        output[out_idx] = sum / kernel_area;
                     }
                 }
             }

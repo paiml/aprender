@@ -1,3 +1,19 @@
+/// Extract the maximum data offset end from a SafeTensors header JSON.
+fn extract_max_data_end(header_json: &serde_json::Value) -> u64 {
+    let Some(obj) = header_json.as_object() else {
+        return 0;
+    };
+    obj.iter()
+        .filter(|(k, _)| *k != "__metadata__")
+        .filter_map(|(_, v)| {
+            v.get("data_offsets")
+                .and_then(|d| d.as_array())
+                .and_then(|arr| arr.get(1))
+                .and_then(|e| e.as_u64())
+        })
+        .max()
+        .unwrap_or(0)
+}
 
 impl FormatType {
     /// Detect format from file extension
@@ -106,27 +122,15 @@ impl FormatType {
                     .map_err(|e| AprenderError::FormatError {
                         message: format!("Cannot read SafeTensors header: {e}"),
                     })?;
-                if let Ok(header_json) = serde_json::from_slice::<serde_json::Value>(&header_buf) {
-                    if let Some(obj) = header_json.as_object() {
-                        let max_data_end = obj
-                            .iter()
-                            .filter(|(k, _)| *k != "__metadata__")
-                            .filter_map(|(_, v)| {
-                                v.get("data_offsets")
-                                    .and_then(|d| d.as_array())
-                                    .and_then(|arr| arr.get(1))
-                                    .and_then(|e| e.as_u64())
-                            })
-                            .max()
-                            .unwrap_or(0);
-                        let required_size = data_section_start + max_data_end;
-                        if file_size < required_size {
-                            return Err(AprenderError::FormatError {
-                                message: format!(
-                                    "Truncated SafeTensors file: tensor data requires {required_size} bytes but file is only {file_size} bytes"
-                                ),
-                            });
-                        }
+                let header_json = serde_json::from_slice::<serde_json::Value>(&header_buf);
+                if let Ok(header_json) = header_json {
+                    let max_data_end = extract_max_data_end(&header_json);
+                    let required_size = data_section_start + max_data_end;
+                    if file_size < required_size {
+                        let msg = format!(
+                            "Truncated SafeTensors file: needs {required_size}B, got {file_size}B"
+                        );
+                        return Err(AprenderError::FormatError { message: msg });
                     }
                 }
                 return Ok(Self::SafeTensors);

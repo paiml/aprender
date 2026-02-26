@@ -298,6 +298,8 @@ mod contract_falsification {
             ("qwen3", "30b"),   // need to verify
             ("qwen3", "32b"),   // need to verify
             ("qwen3", "235b"),  // need to verify
+            // Qwen3.5 27B: head_dim=256 fixed, 24*256=6144 != 5120
+            ("qwen3_5", "27b"),
         ]
         .into_iter()
         .collect();
@@ -903,6 +905,73 @@ mod contract_falsification {
             matches!(qwen35.1.constraints.mlp_type, MlpType::SwiGlu),
             "FALSIFIED QWEN35-008: mlp_type={:?}, expected SwiGlu",
             qwen35.1.constraints.mlp_type
+        );
+    }
+
+    // ========================================================================
+    // FALSIFY-MF-QWEN35-008b: Qwen3.5 27B exact dimensions
+    //
+    // Prediction: The qwen3_5/27b size variant has the documented dimensions
+    // from the Qwen3.5-27B config.json. If fails: contract YAML is stale.
+    // ========================================================================
+    #[test]
+    fn falsify_mf_qwen35_008b_27b_dimensions() {
+        let families = load_all_families();
+        let qwen35 = families
+            .iter()
+            .find(|(name, _)| name == "qwen3_5")
+            .expect("FALSIFIED: qwen3_5 family not found");
+
+        let variant = qwen35
+            .1
+            .size_variants
+            .get("27b")
+            .expect("FALSIFIED: qwen3_5 missing '27b' size variant");
+
+        assert_eq!(variant.hidden_dim, 5120,
+            "FALSIFIED QWEN35-008b: hidden_dim={}, expected 5120", variant.hidden_dim);
+        assert_eq!(variant.num_layers, 64,
+            "FALSIFIED QWEN35-008b: num_layers={}, expected 64", variant.num_layers);
+        assert_eq!(variant.num_heads, 24,
+            "FALSIFIED QWEN35-008b: num_heads={}, expected 24", variant.num_heads);
+        assert_eq!(variant.num_kv_heads, 4,
+            "FALSIFIED QWEN35-008b: num_kv_heads={}, expected 4", variant.num_kv_heads);
+        assert_eq!(variant.intermediate_dim, 17408,
+            "FALSIFIED QWEN35-008b: intermediate_dim={}, expected 17408", variant.intermediate_dim);
+        assert_eq!(variant.vocab_size, 248320,
+            "FALSIFIED QWEN35-008b: vocab_size={}, expected 248320", variant.vocab_size);
+        assert_eq!(variant.head_dim, 256,
+            "FALSIFIED QWEN35-008b: head_dim={}, expected 256", variant.head_dim);
+    }
+
+    // ========================================================================
+    // FALSIFY-MF-QWEN35-009: completeness_key returns "qwen3_5" (not "qwen3")
+    //
+    // Prediction: Architecture::Qwen3_5.completeness_key() == Some("qwen3_5").
+    // Qwen3.5 has NO QK norm tensors (unlike Qwen3 which has q_norm/k_norm).
+    // If mapped to "qwen3", import would require nonexistent q_norm/k_norm
+    // tensors and fail validation.
+    // ========================================================================
+    #[test]
+    fn falsify_mf_qwen35_009_completeness_key() {
+        use crate::format::converter_types::Architecture;
+
+        let key = Architecture::Qwen3_5.completeness_key();
+        assert_eq!(
+            key,
+            Some("qwen3_5"),
+            "FALSIFIED QWEN35-009: completeness_key()={:?}, expected Some(\"qwen3_5\"). \
+             Using \"qwen3\" would require nonexistent q_norm/k_norm tensors.",
+            key
+        );
+
+        // Also verify Qwen3 still maps to "qwen3" (regression guard)
+        let qwen3_key = Architecture::Qwen3.completeness_key();
+        assert_eq!(
+            qwen3_key,
+            Some("qwen3"),
+            "FALSIFIED QWEN35-009: Qwen3 completeness_key()={:?}, expected Some(\"qwen3\")",
+            qwen3_key
         );
     }
 

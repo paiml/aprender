@@ -26,8 +26,8 @@ fn test_decode_with_unknown_id() {
 fn test_decode_skips_special_tokens() {
     let tokenizer = BpeTokenizer::gpt2_base();
     // Decode with special token ID
-    let decoded = tokenizer.decode(&[50256, 72]); // endoftext + 'H'
-                                                  // Should not contain the special token text
+    // endoftext + 'H' — should not contain the special token text
+    let decoded = tokenizer.decode(&[50256, 72]);
     assert!(!decoded.contains("<|endoftext|>"));
 }
 

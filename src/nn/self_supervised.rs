@@ -344,7 +344,7 @@ pub struct MoCo {
     /// Queue size
     queue_size: usize,
     /// Embedding dimension
-    #[allow(dead_code)]
+    
     dim: usize,
     /// Queue of negative keys
     queue: Vec<Vec<f32>>,

@@ -133,8 +133,8 @@ fn test_encode_multibyte_unicode_byte_fallback() {
     let tokenizer = LlamaTokenizer::new(tokens_vec, scores, 1, 2, 0).unwrap();
 
     // Chinese character takes 3 bytes in UTF-8
-    let encoded = tokenizer.encode("\u{4e16}"); // "世"
-                                                // Should produce 3 byte tokens (0xE4, 0xB8, 0x96) plus the leading ▁
+    // "世" — should produce 3 byte tokens (0xE4, 0xB8, 0x96) plus the leading ▁
+    let encoded = tokenizer.encode("\u{4e16}");
     assert!(!encoded.is_empty());
 }
 

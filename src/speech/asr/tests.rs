@@ -234,8 +234,8 @@ fn test_cross_attention_weights_new_invalid_size() {
 
 #[test]
 fn test_cross_attention_get_attention() {
-    let mut data = vec![0.0f32; 2 * 3 * 4]; // 2 layers, 3 tokens, 4 frames
-                                            // Set specific values
+    // 2 layers, 3 tokens, 4 frames - set specific values
+    let mut data = vec![0.0f32; 2 * 3 * 4];
     data[0..4].copy_from_slice(&[0.1, 0.2, 0.3, 0.4]); // layer 0, token 0
     data[4..8].copy_from_slice(&[0.5, 0.6, 0.7, 0.8]); // layer 0, token 1
 
@@ -256,8 +256,8 @@ fn test_cross_attention_get_attention() {
 
 #[test]
 fn test_cross_attention_peak_frame() {
-    let mut data = vec![0.0f32; 2 * 1 * 5]; // 2 layers, 1 token, 5 frames
-                                            // Layer 0: peak at frame 2
+    // 2 layers, 1 token, 5 frames. Layer 0: peak at frame 2
+    let mut data = vec![0.0f32; 2 * 1 * 5];
     data[0..5].copy_from_slice(&[0.1, 0.2, 0.9, 0.1, 0.1]);
     // Layer 1: peak at frame 2
     data[5..10].copy_from_slice(&[0.1, 0.1, 0.8, 0.2, 0.1]);

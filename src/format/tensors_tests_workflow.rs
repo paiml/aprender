@@ -54,9 +54,9 @@ fn test_ggml_dtype_name_unknown() {
 fn test_ggml_dtype_element_size() {
     assert!((ggml_dtype_element_size(0) - 4.0).abs() < 0.001); // F32
     assert!((ggml_dtype_element_size(1) - 2.0).abs() < 0.001); // F16
-                                                               // Q8_0 = 1.0 + 2.0/32.0 ≈ 1.0625
+    // Q8_0 = 1.0 + 2.0/32.0 ≈ 1.0625
     assert!((ggml_dtype_element_size(8) - 1.0625).abs() < 0.01); // Q8_0
-                                                                 // Q4_0 = 0.5 + 2.0/32.0 ≈ 0.5625
+    // Q4_0 = 0.5 + 2.0/32.0 ≈ 0.5625
     assert!((ggml_dtype_element_size(2) - 0.5625).abs() < 0.01); // Q4_0
 }
 

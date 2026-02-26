@@ -377,7 +377,7 @@ impl Default for ErrorEncoder {
 #[derive(Debug)]
 pub struct GNNErrorEncoder {
     /// Hidden dimension for GNN layers
-    #[allow(dead_code)]
+    
     hidden_dim: usize,
     /// Output embedding dimension
     output_dim: usize,
@@ -390,6 +390,6 @@ pub struct GNNErrorEncoder {
     /// Node type embedding dimension
     node_type_dim: usize,
     /// Base feature extractor for node features
-    #[allow(dead_code)]
+    
     base_encoder: ErrorEncoder,
 }

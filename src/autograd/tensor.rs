@@ -241,7 +241,7 @@ impl Tensor {
     }
 
     /// Get the gradient function.
-    #[allow(dead_code)]
+    
     pub(crate) fn grad_fn(&self) -> Option<&Arc<dyn GradFn>> {
         self.grad_fn.as_ref()
     }

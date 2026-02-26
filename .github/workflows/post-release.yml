@@ -1,0 +1,19 @@
+name: Post-Release
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  verify-publish:
+    name: Verify crates.io publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Wait for crates.io propagation
+        run: sleep 30
+      - name: Verify published version
+        run: |
+          VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*= *"\(.*\)"/\1/')
+          cargo install aprender --version "$VERSION" --dry-run

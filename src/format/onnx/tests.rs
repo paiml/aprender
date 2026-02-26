@@ -159,8 +159,11 @@ pub(super) fn write_string(buf: &mut Vec<u8>, s: &str) {
 
 #[test]
 fn test_parse_single_tensor() {
-    let data = build_test_onnx("weight", &[3, 4], &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0,
-                                                       7.0, 8.0, 9.0, 10.0, 11.0, 12.0]);
+    let data = build_test_onnx(
+        "weight",
+        &[3, 4],
+        &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0],
+    );
     let reader = OnnxReader::from_bytes(&data).expect("parse ONNX");
     assert_eq!(reader.tensors().len(), 1);
 

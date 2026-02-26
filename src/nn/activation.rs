@@ -155,7 +155,7 @@ impl Module for GELU {
 /// * `dim` - Dimension along which to compute softmax
 #[derive(Debug, Clone, Copy)]
 pub struct Softmax {
-    #[allow(dead_code)]
+    
     dim: i32,
 }
 

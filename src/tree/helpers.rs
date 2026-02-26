@@ -127,7 +127,7 @@ pub(super) fn reconstruct_tree_node(
 ///
 /// Formula: Gini = 1 - `Σ(p_i²)` where `p_i` is the proportion of class i
 // Contract: decision-tree-v1, equation = "gini_impurity"
-#[allow(dead_code)]
+
 pub fn gini_impurity(labels: &[usize]) -> f32 {
     if labels.is_empty() {
         return 0.0;
@@ -153,7 +153,7 @@ pub fn gini_impurity(labels: &[usize]) -> f32 {
 
 /// Calculate weighted Gini impurity for a split.
 // Contract: decision-tree-v1, equation = "gini_split"
-#[allow(dead_code)]
+
 pub fn gini_split(left_labels: &[usize], right_labels: &[usize]) -> f32 {
     let n_left = left_labels.len() as f32;
     let n_right = right_labels.len() as f32;
@@ -170,7 +170,7 @@ pub fn gini_split(left_labels: &[usize], right_labels: &[usize]) -> f32 {
 }
 
 /// Get sorted unique values from feature data.
-#[allow(dead_code)]
+
 pub(super) fn get_sorted_unique_values(x: &[f32]) -> Vec<f32> {
     let mut sorted_indices: Vec<usize> = (0..x.len()).collect();
     sorted_indices.sort_by(|&a, &b| {
@@ -193,7 +193,7 @@ pub(super) fn get_sorted_unique_values(x: &[f32]) -> Vec<f32> {
 }
 
 /// Split labels into left and right partitions based on threshold.
-#[allow(dead_code)]
+
 pub(super) fn split_labels_by_threshold(
     x: &[f32],
     y: &[usize],
@@ -218,7 +218,7 @@ pub(super) fn split_labels_by_threshold(
 }
 
 /// Calculate information gain for a potential split.
-#[allow(dead_code)]
+
 pub(super) fn calculate_information_gain(
     current_impurity: f32,
     left_labels: &[usize],
@@ -229,7 +229,7 @@ pub(super) fn calculate_information_gain(
 }
 
 /// Find the best split for a given feature.
-#[allow(dead_code)]
+
 pub(super) fn find_best_split_for_feature(x: &[f32], y: &[usize]) -> Option<(f32, f32)> {
     if x.len() < 2 {
         return None;
@@ -266,7 +266,7 @@ pub(super) fn find_best_split_for_feature(x: &[f32], y: &[usize]) -> Option<(f32
 }
 
 /// Find the best split across all features.
-#[allow(dead_code)]
+
 pub(super) fn find_best_split(
     x_matrix: &crate::primitives::Matrix<f32>,
     y: &[usize],
@@ -307,7 +307,7 @@ pub(super) fn find_best_split(
 }
 
 /// Find the majority class from a set of labels.
-#[allow(dead_code)]
+
 pub(super) fn majority_class(labels: &[usize]) -> usize {
     let mut counts = std::collections::BTreeMap::new();
     for &label in labels {
@@ -322,7 +322,7 @@ pub(super) fn majority_class(labels: &[usize]) -> usize {
 }
 
 /// Split data into subsets based on indices.
-#[allow(dead_code)]
+
 pub(super) fn split_data_by_indices(
     x: &crate::primitives::Matrix<f32>,
     y: &[usize],
@@ -345,7 +345,7 @@ pub(super) fn split_data_by_indices(
 }
 
 /// Check if tree building should stop at this node.
-#[allow(dead_code)]
+
 pub(super) fn check_stopping_criteria(
     y: &[usize],
     depth: usize,
@@ -376,7 +376,7 @@ pub(super) fn check_stopping_criteria(
 }
 
 /// Split data indices based on feature threshold.
-#[allow(dead_code)]
+
 pub(super) fn split_indices_by_threshold(
     x: &crate::primitives::Matrix<f32>,
     feature_idx: usize,
@@ -402,7 +402,7 @@ pub(super) fn split_indices_by_threshold(
 }
 
 /// Build a decision tree recursively.
-#[allow(dead_code)]
+
 pub(super) fn build_tree(
     x: &crate::primitives::Matrix<f32>,
     y: &[usize],

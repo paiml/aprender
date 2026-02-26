@@ -243,6 +243,7 @@ pub fn enforce_architecture_completeness(
     // Derive architecture requirements
     let (has_qk_norm, has_bias) = match architecture {
         "qwen3" => (true, false),
+        "qwen3_5" | "qwen3.5" => (false, false),  // no QK norm, no bias
         "qwen2" | "qwen2.5" | "qwen" => (false, true),
         "phi" | "phi2" | "phi3" => (false, true),
         _ => (false, false), // LLaMA, Mistral, Gemma, etc.

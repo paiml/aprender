@@ -2,7 +2,7 @@ use super::*;
 pub(crate) use crate::autograd::{clear_graph, no_grad};
 
 /// Numerical gradient check using central differences.
-#[allow(dead_code)]
+
 pub(super) fn numerical_gradient<F>(f: F, x: &Tensor, eps: f32) -> Tensor
 where
     F: Fn(&Tensor) -> Tensor,
@@ -24,7 +24,7 @@ where
     Tensor::new(&grad_data, x.shape())
 }
 
-#[allow(dead_code)]
+
 pub(super) fn check_gradient<F>(f: F, x: &Tensor, eps: f32, tol: f32) -> bool
 where
     F: Fn(&Tensor) -> Tensor,

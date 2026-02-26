@@ -314,7 +314,7 @@ pub struct RustCompiler {
     /// Path to rustc binary
     rustc_path: PathBuf,
     /// Path to cargo binary (reserved for Cargo mode)
-    #[allow(dead_code)]
+    
     cargo_path: PathBuf,
     /// Rust edition
     edition: RustEdition,

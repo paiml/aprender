@@ -207,6 +207,13 @@ pub mod signing;
 #[cfg(feature = "format-encryption")]
 pub mod encryption;
 
+// Formal verification: Kani proofs for APR format invariants
+#[cfg(any(kani, test))]
+mod kani_proofs;
+
+// Formal verification: Verus-compatible specification contracts
+pub mod verification_specs;
+
 // Test factory - Pygmy model builders (T-COV-95)
 // Implements the "Active Pygmy" pattern for creating minimal valid models in memory
 #[cfg(test)]

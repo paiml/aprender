@@ -185,8 +185,8 @@
     #[test]
     fn test_compute_mse_mixed() {
         let left = vec![1.0, 3.0]; // variance = 1.0
-        let right = vec![5.0, 7.0]; // variance = 1.0
-                                    // MSE = (2/4)*1.0 + (2/4)*1.0 = 1.0
+        // variance = 1.0; MSE = (2/4)*1.0 + (2/4)*1.0 = 1.0
+        let right = vec![5.0, 7.0];
         assert!((compute_mse(&left, &right) - 1.0).abs() < 1e-6);
     }
 

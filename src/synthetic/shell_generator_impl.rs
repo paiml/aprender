@@ -62,37 +62,37 @@ impl ShellSyntheticGenerator {
         let mut results = Vec::new();
         let args = seed.arguments();
 
+        let cmd = match seed.command_name() {
+            Some(c) => c,
+            None => return results,
+        };
+
         for (i, arg) in args.iter().enumerate() {
-            if let Some(variants) = self.substitutions.get(*arg) {
-                for (vi, variant) in variants.iter().enumerate() {
-                    // Use deterministic selection based on rng_seed
-                    if (rng_seed + i as u64 + vi as u64) % 3 == 0 {
-                        let mut new_args = args.clone();
-                        if variant.is_empty() {
-                            new_args.remove(i);
-                        } else {
-                            new_args[i] = variant.as_str();
-                        }
-
-                        if let Some(cmd) = seed.command_name() {
-                            let new_completion = if new_args.is_empty() {
-                                cmd.to_string()
-                            } else {
-                                format!("{} {}", cmd, new_args.join(" "))
-                            };
-
-                            // Generate matching prefix
-                            let prefix_len = seed.prefix().len().min(new_completion.len());
-                            let new_prefix = &new_completion[..prefix_len];
-
-                            results.push(
-                                ShellSample::new(new_prefix, &new_completion)
-                                    .with_history(seed.history().to_vec())
-                                    .with_cwd(seed.cwd()),
-                            );
-                        }
-                    }
+            let Some(variants) = self.substitutions.get(*arg) else { continue };
+            for (vi, variant) in variants.iter().enumerate() {
+                if (rng_seed + i as u64 + vi as u64) % 3 != 0 {
+                    continue;
                 }
+                let mut new_args = args.clone();
+                if variant.is_empty() {
+                    new_args.remove(i);
+                } else {
+                    new_args[i] = variant.as_str();
+                }
+
+                let new_completion = if new_args.is_empty() {
+                    cmd.to_string()
+                } else {
+                    format!("{} {}", cmd, new_args.join(" "))
+                };
+
+                let prefix_len = seed.prefix().len().min(new_completion.len());
+                let new_prefix = &new_completion[..prefix_len];
+
+                let sample = ShellSample::new(new_prefix, &new_completion)
+                    .with_history(seed.history().to_vec())
+                    .with_cwd(seed.cwd());
+                results.push(sample);
             }
         }
 

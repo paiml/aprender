@@ -19,6 +19,18 @@ size_variants:
     head_dim: 256
     rope_theta: 1000000.0
     rms_norm_eps: 0.000001
+  27b:
+    parameters: "27B"
+    hidden_dim: 5120
+    num_layers: 64
+    num_heads: 24
+    num_kv_heads: 4
+    intermediate_dim: 17408
+    vocab_size: 248320
+    max_position_embeddings: 262144
+    head_dim: 256
+    rope_theta: 10000000.0
+    rms_norm_eps: 0.000001
 
 constraints:
   attention_type: gqa
@@ -80,3 +92,4 @@ certification:
   csv_family_key: "qwen3_5"
   size_categories:
     9b: medium
+    27b: large

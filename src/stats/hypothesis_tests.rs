@@ -208,8 +208,8 @@ mod tests {
         let result = ttest_ind(&control, &treatment, true).expect("Valid comparison");
 
         // Treatment should show significantly higher reduction
-        assert!(result.statistic < 0.0); // control < treatment
-                                         // With this difference, p-value should be small (< 0.05 typically)
+        // control < treatment; p-value should be small (< 0.05 typically)
+        assert!(result.statistic < 0.0);
         assert!(result.pvalue < 0.1, "Should show significant difference");
     }
 

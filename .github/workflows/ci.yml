@@ -11,6 +11,15 @@ env:
   RUSTFLAGS: -Dwarnings
 
 jobs:
+  # MSRV check - verify minimum supported Rust version
+  msrv:
+    name: MSRV (rust: 1.70)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.70
+      - run: cargo check --lib
+
   # Fast sanity check - catches common mistakes
   makefile-lint:
     name: Makefile Lint
@@ -62,6 +71,29 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev
       - name: Clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
+
+  # Feature matrix - test minimal, default, and full feature combinations
+  features:
+    name: Feature Matrix
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        features: [minimal, default, full]
+        include:
+          - features: minimal
+            flags: "--no-default-features"
+          - features: default
+            flags: ""
+          - features: full
+            flags: "--all-features"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+      - name: Check (${{ matrix.features }})
+        run: cargo check ${{ matrix.flags }}
 
   test:
     name: Test

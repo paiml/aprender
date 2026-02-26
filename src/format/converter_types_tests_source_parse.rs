@@ -179,8 +179,8 @@
         let (q_data, q_shape) = tensors
             .get("model.layers.0.self_attn.q_proj.weight")
             .unwrap();
-        assert_eq!(q_shape, &vec![4, 4]); // [rows, cols_per_proj]
-                                          // First row of Q: cols 0..4 from row 0 = [0, 1, 2, 3]
+        // [rows, cols_per_proj]; First row of Q: cols 0..4 from row 0 = [0, 1, 2, 3]
+        assert_eq!(q_shape, &vec![4, 4]);
         assert_eq!(&q_data[0..4], &[0.0, 1.0, 2.0, 3.0]);
 
         let (k_data, k_shape) = tensors

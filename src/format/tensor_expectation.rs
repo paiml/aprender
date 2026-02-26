@@ -37,7 +37,7 @@ impl Architecture {
             Self::Llama => Some("llama"),
             Self::Qwen2 => Some("qwen2"),
             Self::Qwen3 => Some("qwen3"),
-            Self::Qwen3_5 => Some("qwen3"),  // Same transformer block structure as Qwen3
+            Self::Qwen3_5 => Some("qwen3_5"),  // Different: no QK norm (unlike Qwen3)
             Self::Phi => Some("phi"),
             // Auto, Whisper, BERT, GPT-2: no completeness check (different tensor naming)
             _ => None,

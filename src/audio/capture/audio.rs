@@ -195,7 +195,7 @@ pub struct AudioCapture {
     #[cfg(not(all(target_os = "linux", feature = "audio-alsa")))]
     config: CaptureConfig,
     #[cfg(not(all(target_os = "linux", feature = "audio-alsa")))]
-    #[allow(dead_code)]
+    
     device_id: Option<String>,
     #[cfg(not(all(target_os = "linux", feature = "audio-alsa")))]
     running: bool,

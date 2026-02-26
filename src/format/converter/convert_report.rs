@@ -287,8 +287,8 @@ fn dequantize_bf16_to_f32(bytes: &[u8], _num_elements: usize) -> Vec<f32> {
 #[cfg(test)]
 fn dequantize_q8_0_to_f32(bytes: &[u8], num_elements: usize) -> Vec<f32> {
     const BLOCK_SIZE: usize = 32;
-    const BLOCK_BYTES: usize = 2 + 32; // f16 scale + 32 int8s
-                                       // MSRV-compatible div_ceil: (n + d - 1) / d
+    // f16 scale + 32 int8s. MSRV-compatible div_ceil: (n + d - 1) / d
+    const BLOCK_BYTES: usize = 2 + 32;
     let num_blocks = (num_elements + BLOCK_SIZE - 1) / BLOCK_SIZE;
     let mut result = Vec::with_capacity(num_elements);
 

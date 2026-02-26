@@ -325,7 +325,7 @@ impl CaptureBackend for AlsaBackend {
 /// Requires the `audio-coreaudio` feature flag.
 #[cfg(all(target_os = "macos", feature = "audio-coreaudio"))]
 pub struct CoreAudioBackend {
-    #[allow(dead_code)]
+    
     config: CaptureConfig,
     // Future: AudioUnit handle
 }
@@ -365,7 +365,7 @@ impl CaptureBackend for CoreAudioBackend {
 /// Requires the `audio-wasapi` feature flag.
 #[cfg(all(target_os = "windows", feature = "audio-wasapi"))]
 pub struct WasapiBackend {
-    #[allow(dead_code)]
+    
     config: CaptureConfig,
     // Future: IAudioClient handle
 }
@@ -404,7 +404,7 @@ impl CaptureBackend for WasapiBackend {
 /// Requires the `audio-webaudio` feature flag.
 #[cfg(all(target_arch = "wasm32", feature = "audio-webaudio"))]
 pub struct WebAudioBackend {
-    #[allow(dead_code)]
+    
     config: CaptureConfig,
     // Future: AudioContext and MediaStreamSource handles
 }

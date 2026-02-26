@@ -195,7 +195,7 @@ mod tests {
     }
 
     #[test]
-    fn test_is_safe_f16_scale_unsafe_values() {
+    fn test_is_safe_f16_scale_invalid_values() {
         assert!(!is_safe_f16_scale(f32::NAN));
         assert!(!is_safe_f16_scale(f32::INFINITY));
         assert!(!is_safe_f16_scale(f32::NEG_INFINITY));
