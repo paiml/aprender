@@ -243,7 +243,7 @@ checksum = "a23eb6b1614318a8071c9b2521f36b424b2c83db5eb3a0fead4a6c0809af6e61"
 
 [[package]]
 name = "apr-cli"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "aprender 0.27.0",
  "assert_cmd",
@@ -256,7 +256,7 @@ dependencies = [
  "colored",
  "crossterm",
  "dirs 5.0.1",
- "entrenar",
+ "entrenar 0.7.0",
  "entrenar-lora",
  "futures-util",
  "gag",
@@ -279,7 +279,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tower 0.5.3",
- "trueno 0.14.6",
+ "trueno 0.16.0",
  "trueno-explain",
  "trueno-viz",
  "trueno-zram-core",
@@ -342,7 +342,7 @@ dependencies = [
  "ctrlc",
  "dirs 6.0.0",
  "ed25519-dalek",
- "entrenar",
+ "entrenar 0.6.1",
  "getrandom 0.2.17",
  "half",
  "hf-hub",
@@ -2169,8 +2169,38 @@ checksum = "34aa73646ffb006b8f5147f3dc182bd4bcb190227ce861fc4a4844bf8e3cb2c0"
 [[package]]
 name = "entrenar"
 version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ca05159361e6d4ad3d4aa9d321158ba5bf203e8e8f25755ee025841eb9c01b6d"
 dependencies = [
  "aprender 0.26.3",
+ "bytemuck",
+ "chrono",
+ "clap",
+ "clap_complete",
+ "dirs 5.0.1",
+ "ed25519-dalek",
+ "half",
+ "hex",
+ "ndarray",
+ "rand 0.9.2",
+ "regex",
+ "safetensors 0.7.0",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sha2",
+ "thiserror 2.0.18",
+ "toml",
+ "trueno 0.15.0",
+ "trueno-viz",
+ "zip",
+]
+
+[[package]]
+name = "entrenar"
+version = "0.7.0"
+dependencies = [
+ "aprender 0.27.0",
  "bytemuck",
  "chrono",
  "clap",
@@ -2191,7 +2221,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "toml",
- "trueno 0.15.0",
+ "trueno 0.16.0",
  "trueno-gpu",
  "trueno-viz",
  "zip",
@@ -2213,7 +2243,7 @@ name = "entrenar-lora"
 version = "0.2.0"
 dependencies = [
  "clap",
- "entrenar",
+ "entrenar 0.7.0",
  "entrenar-common",
  "serde",
  "serde_json",
@@ -5063,9 +5093,7 @@ dependencies = [
 
 [[package]]
 name = "realizar"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "09ad9aee5aae114fe2cda87706bbd9e7782a72167839df5268ef5cd5e61ea7af"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "aprender 0.27.0",
@@ -5086,16 +5114,16 @@ dependencies = [
  "rayon",
  "serde",
  "serde_json",
- "serde_yaml",
+ "serde_yaml_ng",
  "smallvec",
  "thiserror 1.0.69",
  "tokio",
  "tokio-stream",
  "tower 0.4.13",
  "tracing",
- "trueno 0.15.0",
+ "trueno 0.16.0",
  "trueno-gpu",
- "trueno-quant 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "trueno-quant 0.1.0",
  "uuid",
 ]
 
@@ -6470,18 +6498,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "85e19fa22753d395f043b205999122520efd45a33e0867d137f20b777ad794ef"
 dependencies = [
  "anyhow",
- "bytemuck",
  "chrono",
- "futures-intrusive",
  "hostname",
  "num_cpus",
- "pollster",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
  "toml",
  "trueno-quant 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "wgpu",
 ]
 
 [[package]]
@@ -7750,7 +7774,3 @@ checksum = "2959ca473aae96a14ecedf501d20b3608d2825ba280d5adb57d651721885b0c2"
 dependencies = [
  "zune-core 0.5.1",
 ]
-
-[[patch.unused]]
-name = "realizar"
-version = "0.7.1"
