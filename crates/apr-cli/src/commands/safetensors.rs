@@ -426,7 +426,13 @@ fn format_gguf_prompt(
 
     let formatted_prompt = if is_instruct {
         let messages = vec![ChatMessage::user(prompt)];
-        format_messages(&messages, Some(model_name)).unwrap_or_else(|_| prompt.to_owned())
+        match format_messages(&messages, Some(model_name)) {
+            Ok(formatted) => formatted,
+            Err(e) => {
+                eprintln!("Warning: chat template formatting failed, using raw prompt: {e}");
+                prompt.to_owned()
+            }
+        }
     } else {
         prompt.to_owned()
     };
