@@ -302,7 +302,7 @@ fn health_monitoring_demo() {
     // Simulate component health checks
     health.set_component(
         StackComponent::Aprender,
-        ComponentHealth::healthy("0.15.0").with_response_time(5),
+        ComponentHealth::healthy("0.27.0").with_response_time(5),
     );
 
     health.set_component(

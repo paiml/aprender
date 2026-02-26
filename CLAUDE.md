@@ -2,13 +2,13 @@
 
 ## Project Overview
 
-Aprender is a next-generation machine learning library written in pure Rust. v0.25.7 implements the TOP 10 ML algorithms plus advanced modules (time series, NLP, Bayesian, GLM, graph, audio, format conversion). 11,230 tests with comprehensive quality gates.
+Aprender is a next-generation machine learning library written in pure Rust. v0.27.0 implements the TOP 10 ML algorithms plus advanced modules (time series, NLP, Bayesian, GLM, graph, audio, format conversion). 12,587 tests with comprehensive quality gates.
 
 ## Build Commands
 
 ```bash
 cargo build --release        # Optimized build
-cargo test                   # Full test suite (11230 tests)
+cargo test                   # Full test suite (12587 tests)
 cargo test --lib             # Unit tests only
 cargo fmt --check            # Check formatting
 cargo clippy -- -D warnings  # Strict linting
@@ -75,7 +75,7 @@ TraceSteps: `Tokenize`, `Embed`, `LayerNorm`, `Attention`, `FFN`, `TransformerBl
 2. **Backend Agnostic** - CPU (SIMD), GPU, WASM via Trueno
 3. **Three-Tier API**: High (`Estimator` trait), Mid (`Optimizer`/`Loss`/`Regularizer`), Low (Trueno primitives)
 
-**Runtime:** `trueno = "0.4.0"` (SIMD-accelerated tensor ops)
+**Runtime:** `trueno = "0.16.0"` (SIMD-accelerated tensor ops)
 **Dev Tools:** `proptest`, `criterion`, `pmat` v2.216.0, `renacer`, `cargo-mutants`
 **Banned:** serde, rayon, tokio, thiserror, ndarray, polars, arrow (see spec)
 
@@ -209,7 +209,7 @@ Required: `set -euo pipefail`, no `ls` for iteration, quoted variables, explicit
 Target: 60% unit, 30% property, 10% integration. Coverage: 96.35% line (target ≥95%).
 
 ```bash
-cargo test                    # All 11230 tests
+cargo test                    # All 12587 tests
 cargo test --lib              # Unit only
 cargo test --test integration # Integration
 cargo test --doc              # Doctests

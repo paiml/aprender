@@ -262,7 +262,7 @@ tempfile = "3.14"  # For format module tests
 jugar-probar = "0.5"  # TUI/GUI testing framework with coverage tracking (spec §8)
 ctrlc = "3.4"  # Signal handling for SIGINT/SIGTERM (PMAT-098-PF: zombie process mitigation)
 provable-contracts = { version = "0.1", path = "../provable-contracts/crates/provable-contracts" }  # Contract enforcement (dev-only)
-entrenar = "0.6"  # Integration tests for InferenceMonitor (GH-305: was runtime dep, now dev-only)
+entrenar = "0.7"  # Integration tests for InferenceMonitor (GH-305: was runtime dep, now dev-only)
 
 [features]
 default = ["parallel"]
@@ -392,7 +392,7 @@ replace = "## [{{version}}] - {{date}}"
 aprender = { path = "." }
 realizar = { path = "../realizar" }
 entrenar = { path = "../entrenar" }  # GH-305: needed for dev-dep integration tests
-# renacer patch removed: renacer depends on aprender, creating a cycle.
-# Uses crates.io version instead (optional dep, no type mismatch risk).
+renacer = { path = "../renacer" }
+trueno-viz = { path = "../trueno-viz" }
 trueno = { path = "../trueno" }
 trueno-gpu = { path = "../trueno/trueno-gpu" }

@@ -66,7 +66,7 @@ fn test_quality_score_full_metadata() {
         description: Some("A test model".to_string()),
         model_type: Some(ScoredModelType::LinearRegression),
         n_parameters: Some(100),
-        aprender_version: Some("0.15.0".to_string()),
+        aprender_version: Some("0.27.0".to_string()),
         training: Some(TrainingInfo {
             source: Some("test_data.csv".to_string()),
             n_samples: Some(1000),

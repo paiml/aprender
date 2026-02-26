@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-02-26
+
+### Changed
+- Coordinated PAIML Sovereign AI Stack release
+- Updated trueno dependency from 0.15.0 to 0.16.0
+- 12,587 tests passing with 96.35% coverage
+
+### Dependencies
+- trueno 0.16.0 (SIMD compute backend)
+- realizar 0.8.0 (inference engine)
+- entrenar 0.7.2 (training library)
+- trueno-viz 0.2.1 (visualization)
+- apr-cli 0.4.3 (CLI tool)
+
 ## [0.25.0] - 2026-01-26
 
 ### Added

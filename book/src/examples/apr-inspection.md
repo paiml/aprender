@@ -76,7 +76,7 @@ meta.training_info = Some(TrainingInfo {
     n_samples: Some(10000),
     final_loss: Some(0.0234),
     framework: Some("aprender".to_string()),
-    framework_version: Some("0.15.0".to_string()),
+    framework_version: Some("0.27.0".to_string()),
 });
 ```
 

@@ -150,7 +150,7 @@ fn full_metadata_scoring_demo() {
         description: Some("Random Forest classifier for Iris species prediction".to_string()),
         model_type: Some(ScoredModelType::RandomForest),
         n_parameters: Some(5000),
-        aprender_version: Some("0.15.0".to_string()),
+        aprender_version: Some("0.27.0".to_string()),
         training: Some(TrainingInfo {
             source: Some("iris_dataset.csv".to_string()),
             n_samples: Some(150),

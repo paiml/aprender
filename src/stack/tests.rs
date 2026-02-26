@@ -141,7 +141,7 @@ fn test_stack_health() {
     let mut health = StackHealth::new();
     assert_eq!(health.overall, HealthStatus::Unknown);
 
-    health.set_component(StackComponent::Aprender, ComponentHealth::healthy("0.15.0"));
+    health.set_component(StackComponent::Aprender, ComponentHealth::healthy("0.27.0"));
     health.set_component(StackComponent::Pacha, ComponentHealth::healthy("1.0.0"));
 
     assert!(health.is_healthy());
@@ -152,7 +152,7 @@ fn test_stack_health() {
 fn test_stack_health_degraded() {
     let mut health = StackHealth::new();
 
-    health.set_component(StackComponent::Aprender, ComponentHealth::healthy("0.15.0"));
+    health.set_component(StackComponent::Aprender, ComponentHealth::healthy("0.27.0"));
     health.set_component(
         StackComponent::Pacha,
         ComponentHealth::degraded("1.0.0", "high latency"),
@@ -166,7 +166,7 @@ fn test_stack_health_degraded() {
 fn test_stack_health_unhealthy() {
     let mut health = StackHealth::new();
 
-    health.set_component(StackComponent::Aprender, ComponentHealth::healthy("0.15.0"));
+    health.set_component(StackComponent::Aprender, ComponentHealth::healthy("0.27.0"));
     health.set_component(
         StackComponent::Pacha,
         ComponentHealth::unhealthy("connection refused"),

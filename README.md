@@ -50,14 +50,14 @@ Add aprender to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-aprender = "0.25"
+aprender = "0.27"
 ```
 
 ### Optional Features
 
 ```toml
 [dependencies]
-aprender = { version = "0.25", features = ["format-encryption", "hf-hub-integration"] }
+aprender = { version = "0.27", features = ["format-encryption", "hf-hub-integration"] }
 ```
 
 | Feature | Description |

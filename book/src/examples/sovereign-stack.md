@@ -198,7 +198,7 @@ let mut health = StackHealth::new();
 
 health.set_component(
     StackComponent::Aprender,
-    ComponentHealth::healthy("0.15.0").with_response_time(5),
+    ComponentHealth::healthy("0.27.0").with_response_time(5),
 );
 
 health.set_component(
