@@ -167,14 +167,27 @@ fn run_safetensors_cuda_measurement(
     let mut first_token_time = Duration::ZERO;
     let budget_us = config.max_tokens as u64 * 100_000;
 
+    let mut generate_errors = 0usize;
+
     for i in 0..config.iterations {
         model.reset_kv_cache();
         let traced = tracer.trace("bench_safetensors_gpu_iter", budget_us, || {
             model
                 .generate(prompt_tokens, config.max_tokens.min(32), eos_token)
-                .unwrap_or_else(|_| prompt_tokens.to_vec())
         });
-        let output = traced.result;
+        let output = match traced.result {
+            Ok(tokens) => tokens,
+            Err(e) => {
+                if generate_errors == 0 {
+                    eprintln!(
+                        "{}",
+                        format!("Warning: generate() failed on iteration {i}: {e}").yellow()
+                    );
+                }
+                generate_errors += 1;
+                prompt_tokens.to_vec()
+            }
+        };
         let tokens_generated = output.len().saturating_sub(prompt_tokens.len());
         let iter_time = Duration::from_micros(traced.duration_us);
         iteration_times.push(iter_time);
@@ -184,6 +197,16 @@ fn run_safetensors_cuda_measurement(
                 Duration::from_secs_f64(iter_time.as_secs_f64() / tokens_generated.max(1) as f64);
         }
         bench_log_iter(config, i, iter_time, Some(tokens_generated));
+    }
+    if generate_errors > 0 {
+        eprintln!(
+            "{}",
+            format!(
+                "Warning: {generate_errors}/{} iterations had generate() errors",
+                config.iterations
+            )
+            .yellow()
+        );
     }
     bench_log_done(config);
 

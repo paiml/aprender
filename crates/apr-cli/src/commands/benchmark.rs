@@ -323,13 +323,26 @@ fn run_apr_benchmark(
     let mut generation_failed = false;
     let budget_us = config.max_tokens as u64 * 100_000;
 
+    let mut generate_errors = 0usize;
+
     for i in 0..config.iterations {
         let traced = tracer.trace("bench_apr_iter", budget_us, || {
             transformer
                 .generate_with_cache(&prompt_tokens, &gen_config)
-                .unwrap_or_else(|_| prompt_tokens.clone())
         });
-        let output = traced.result;
+        let output = match traced.result {
+            Ok(tokens) => tokens,
+            Err(e) => {
+                if generate_errors == 0 {
+                    eprintln!(
+                        "{}",
+                        format!("Warning: generate_with_cache() failed on iteration {i}: {e}").yellow()
+                    );
+                }
+                generate_errors += 1;
+                prompt_tokens.clone()
+            }
+        };
         let tokens_generated = output.len().saturating_sub(prompt_tokens.len());
 
         let iter_time = Duration::from_micros(traced.duration_us);
