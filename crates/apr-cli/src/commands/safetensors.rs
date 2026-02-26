@@ -350,8 +350,14 @@ fn run_safetensors_generation(
     // Create placeholder logits for tracing (in real impl, would be computed)
     let placeholder_logits: Vec<f32> = vec![0.0; vocab_size];
 
-    // For demonstration: trace transformer layers and generate placeholder tokens
-    // In a real implementation, this would run the actual transformer forward pass
+    // WARN: This is a placeholder — no actual transformer forward pass.
+    // Real SafeTensors inference should go through realizar (apr run / apr serve).
+    eprintln!(
+        "{}",
+        "Warning: SafeTensors generation is placeholder-only (no forward pass). Use 'apr run' for real inference."
+            .yellow()
+    );
+
     for i in 0..max_tokens.min(16) {
         // Trace TRANSFORMER step (simulated)
         if let Some(ref mut t) = tracer {
@@ -395,14 +401,6 @@ fn run_safetensors_generation(
         }
 
         generated.push(token);
-    }
-
-    // Add note that this is demo output
-    if !model.tensors.is_empty() && tracer.is_some() {
-        eprintln!(
-            "{}",
-            "Note: SafeTensors generation is in demo mode (tracing enabled).".yellow()
-        );
     }
 
     generated
