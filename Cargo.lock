@@ -256,7 +256,7 @@ dependencies = [
  "colored",
  "crossterm",
  "dirs 5.0.1",
- "entrenar 0.7.0",
+ "entrenar 0.7.1",
  "entrenar-lora",
  "futures-util",
  "gag",
@@ -281,7 +281,7 @@ dependencies = [
  "tower 0.5.3",
  "trueno 0.16.0",
  "trueno-explain",
- "trueno-viz",
+ "trueno-viz 0.2.0",
  "trueno-zram-core",
  "ureq",
 ]
@@ -2192,13 +2192,13 @@ dependencies = [
  "thiserror 2.0.18",
  "toml",
  "trueno 0.15.0",
- "trueno-viz",
+ "trueno-viz 0.1.27",
  "zip",
 ]
 
 [[package]]
 name = "entrenar"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "aprender 0.27.0",
  "bytemuck",
@@ -2223,7 +2223,7 @@ dependencies = [
  "toml",
  "trueno 0.16.0",
  "trueno-gpu",
- "trueno-viz",
+ "trueno-viz 0.2.0",
  "zip",
 ]
 
@@ -2235,7 +2235,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.18",
- "trueno-viz",
+ "trueno-viz 0.1.27",
 ]
 
 [[package]]
@@ -2243,7 +2243,7 @@ name = "entrenar-lora"
 version = "0.2.0"
 dependencies = [
  "clap",
- "entrenar 0.7.0",
+ "entrenar 0.7.1",
  "entrenar-common",
  "serde",
  "serde_json",
@@ -5236,7 +5236,7 @@ dependencies = [
  "trueno 0.13.0",
  "trueno-db",
  "trueno-graph",
- "trueno-viz",
+ "trueno-viz 0.1.27",
 ]
 
 [[package]]
@@ -6647,6 +6647,20 @@ dependencies = [
  "ratatui",
  "serde",
  "serde_yaml_ng",
+ "thiserror 2.0.18",
+ "trueno 0.15.0",
+]
+
+[[package]]
+name = "trueno-viz"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2505b561c34d49686c2045b95b4a0be1f2985857c772566986fba61e99f759e2"
+dependencies = [
+ "base64",
+ "batuta-common",
+ "libc",
+ "png 0.17.16",
  "thiserror 2.0.18",
  "trueno 0.15.0",
 ]
