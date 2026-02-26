@@ -79,10 +79,13 @@ pub(crate) async fn safetensors_generate_handler(
     // Decode using BPE tokenizer (PMAT-093)
     let new_tokens = &output_ids[input_ids.len()..];
     let output_text = if let Some(ref tok_info) = state.tokenizer_info {
-        tok_info
-            .tokenizer
-            .decode(new_tokens)
-            .unwrap_or_else(|_| simple_decode(new_tokens, &tok_info.vocab))
+        match tok_info.tokenizer.decode(new_tokens) {
+            Ok(text) => text,
+            Err(e) => {
+                eprintln!("Warning: BPE decode failed, falling back to vocab lookup: {e}");
+                simple_decode(new_tokens, &tok_info.vocab)
+            }
+        }
     } else {
         new_tokens
             .iter()
