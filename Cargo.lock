@@ -282,7 +282,7 @@ dependencies = [
  "trueno 0.14.6",
  "trueno-explain",
  "trueno-viz",
- "trueno-zram-core 0.2.0",
+ "trueno-zram-core",
  "ureq",
 ]
 
@@ -348,7 +348,7 @@ dependencies = [
  "trueno 0.15.0",
  "trueno-quant",
  "trueno-rag",
- "trueno-zram-core 0.3.0",
+ "trueno-zram-core",
  "ureq",
  "wasm-bindgen",
  "x25519-dalek",
@@ -4727,7 +4727,7 @@ dependencies = [
 
 [[package]]
 name = "provable-contracts"
-version = "0.1.1"
+version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -4737,7 +4737,7 @@ dependencies = [
 
 [[package]]
 name = "provable-contracts-macros"
-version = "0.1.1"
+version = "0.1.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -6563,18 +6563,9 @@ dependencies = [
 
 [[package]]
 name = "trueno-zram-core"
-version = "0.2.0"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a910ae76a7f13dd9243657311bafac99164c0fa839840034e0955b7058699e13"
-dependencies = [
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "trueno-zram-core"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dca7191b8dba48c103538578e8dc9f204be1de557ad226052c87e96a5c7d62d9"
+checksum = "e75a0f63770d4b926254d02d2fc9a0abd286f333d9e2d19f18cf8b801daf235e"
 dependencies = [
  "thiserror 2.0.18",
 ]

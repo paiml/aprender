@@ -132,7 +132,7 @@ renacer = { version = "0.9.7", optional = true, default-features = false }
 trueno-viz = { version = "0.1.19", optional = true, default-features = false, features = ["svg"] }
 
 # ZRAM compression (SIMD-accelerated LZ4/ZSTD)
-trueno-zram-core = { version = "0.2", optional = true }
+trueno-zram-core = { version = "0.3", optional = true }
 
 # Model registry and caching (Ollama-like model management)
 pacha = { path = "../../../pacha", version = "0.2.4", default-features = false, features = ["remote"] }
