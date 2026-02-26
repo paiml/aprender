@@ -1,6 +1,6 @@
 [package]
 name = "apr-cli"
-version = "0.4.4"
+version = "0.4.5"
 edition = "2021"
 rust-version = "1.70"
 authors = ["Noah Gift <noah@paiml.com>"]
@@ -69,7 +69,7 @@ zram = ["trueno-zram-core"]
 
 [dependencies]
 # Core aprender library
-aprender = { path = "../..", version = "0.27.0", default-features = true, features = ["format-compression"] }
+aprender = { path = "../..", version = "0.27.1", default-features = true, features = ["format-compression"] }
 
 # Shared formatting and system utilities (Batuta stack)
 batuta-common = "0.1"
