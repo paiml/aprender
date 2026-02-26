@@ -37244,7 +37244,7 @@ meta.hyperparameters.insert(&quot;max_depth&quot;.to_string(), &quot;10&quot;.to
     n_samples: Some(10000),
     final_loss: Some(0.0234),
     framework: Some(&quot;aprender&quot;.to_string()),
-    framework_version: Some(&quot;0.15.0&quot;.to_string()),
+    framework_version: Some(&quot;0.27.0&quot;.to_string()),
 });</code></pre>
 <h2 id="weight-statistics"><a class="header" href="#weight-statistics">Weight Statistics</a></h2>
 <p>Analyze model weights for health issues:</p>
@@ -37362,7 +37362,7 @@ println!(&quot;Total: {:.1}/100 (Grade: {})&quot;, score.total, score.grade);</c
     description: Some(&quot;Random Forest classifier for Iris&quot;.to_string()),
     model_type: Some(ScoredModelType::RandomForest),
     n_parameters: Some(5000),
-    aprender_version: Some(&quot;0.15.0&quot;.to_string()),
+    aprender_version: Some(&quot;0.27.0&quot;.to_string()),
     training: Some(TrainingInfo {
         source: Some(&quot;iris_dataset.csv&quot;.to_string()),
         n_samples: Some(150),
@@ -38389,7 +38389,7 @@ let mel_spectrogram = compute_mel(&amp;audio_samples, &amp;filterbank, n_mels, n
 <p>Enable GPU or CUDA support in your <code>Cargo.toml</code>:</p>
 <pre><code class="language-toml">[dependencies]
 # Default CPU SIMD backend
-aprender = &quot;0.18&quot;
+aprender = &quot;0.27&quot;
 
 # With GPU acceleration (wgpu/WebGPU)
 aprender = { version = &quot;0.18&quot;, features = [&quot;gpu&quot;] }
@@ -40209,7 +40209,7 @@ println!(&quot;Batch URL: {}&quot;, config.batch_predict_url());
 
 health.set_component(
     StackComponent::Aprender,
-    ComponentHealth::healthy(&quot;0.15.0&quot;).with_response_time(5),
+    ComponentHealth::healthy(&quot;0.27.0&quot;).with_response_time(5),
 );
 
 health.set_component(
