@@ -13,6 +13,8 @@ impl Architecture {
             Self::Qwen3_5 => Self::qwen2_map_name(source_name), // Qwen3.5 uses same tensor naming as Qwen2
             Self::Gpt2 => Self::gpt2_map_name(source_name),
             Self::Phi => Self::llama_map_name(source_name), // Phi uses HuggingFace model.layers naming
+            Self::GptNeoX => Self::gpt_neox_map_name(source_name),
+            Self::Opt => Self::opt_map_name(source_name),
         }
     }
 
@@ -39,7 +41,7 @@ impl Architecture {
             Self::Qwen3 => Some("qwen3"),
             Self::Qwen3_5 => Some("qwen3_5"),  // Different: no QK norm (unlike Qwen3)
             Self::Phi => Some("phi"),
-            // Auto, Whisper, BERT, GPT-2: no completeness check (different tensor naming)
+            // Auto, Whisper, BERT, GPT-2, GPT-NeoX, OPT: no completeness check (different tensor naming)
             _ => None,
         }
     }
@@ -57,6 +59,8 @@ impl Architecture {
             Self::Qwen3_5 => "Qwen3.5",
             Self::Gpt2 => "GPT-2",
             Self::Phi => "Phi",
+            Self::GptNeoX => "GPT-NeoX",
+            Self::Opt => "OPT",
         }
     }
 
@@ -75,6 +79,12 @@ impl Architecture {
             "bert" => Some(Self::Bert),
             "gpt2" => Some(Self::Gpt2),
             "phi" | "phi3" | "phi4" => Some(Self::Phi),
+            // GH-311: GPT-NeoX family (EleutherAI)
+            "gpt-neox" | "gpt_neox" | "gptneox" | "pythia" => Some(Self::GptNeoX),
+            // GH-311: Meta OPT family
+            "opt" | "galactica" => Some(Self::Opt),
+            // GH-311: StarCoder reuses GPT-2 tensor naming
+            "starcoder" | "starcoder2" | "bigcode" => Some(Self::Gpt2),
             // LLaMA derivatives
             "smollm" | "smollm2" | "granite" | "granite3" | "nemotron" | "mistral" | "gemma"
             | "gemma2" | "gemma3" => Some(Self::Llama),
@@ -153,6 +163,253 @@ impl Architecture {
             "output.weight" => "lm_head.weight".to_string(),
             "output_norm.weight" => "model.norm.weight".to_string(),
             _ => name.to_string(), // Preserve unknown names
+        }
+    }
+
+    /// GH-311: Map GPT-NeoX tensor names to APR canonical format.
+    ///
+    /// GPT-NeoX uses `gpt_neox.layers.N.*` naming. The fused `query_key_value` tensor
+    /// is preserved here and split by `split_neox_fused_qkv()` after mapping.
+    fn gpt_neox_map_name(name: &str) -> String {
+        if let Some(rest) = name.strip_prefix("gpt_neox.layers.") {
+            if let Some(dot_pos) = rest.find('.') {
+                let layer_num = &rest[..dot_pos];
+                let suffix = &rest[dot_pos + 1..];
+
+                let apr_suffix = match suffix {
+                    "input_layernorm.weight" => "input_layernorm.weight",
+                    "input_layernorm.bias" => "input_layernorm.bias",
+                    "post_attention_layernorm.weight" => "post_attention_layernorm.weight",
+                    "post_attention_layernorm.bias" => "post_attention_layernorm.bias",
+                    // Fused QKV — preserved, split later by split_neox_fused_qkv()
+                    "attention.query_key_value.weight" => "self_attn.query_key_value.weight",
+                    "attention.query_key_value.bias" => "self_attn.query_key_value.bias",
+                    "attention.dense.weight" => "self_attn.o_proj.weight",
+                    "attention.dense.bias" => "self_attn.o_proj.bias",
+                    // GPT-NeoX MLP (no gate projection — uses dense_h_to_4h / dense_4h_to_h)
+                    "mlp.dense_h_to_4h.weight" => "mlp.up_proj.weight",
+                    "mlp.dense_h_to_4h.bias" => "mlp.up_proj.bias",
+                    "mlp.dense_4h_to_h.weight" => "mlp.down_proj.weight",
+                    "mlp.dense_4h_to_h.bias" => "mlp.down_proj.bias",
+                    other => other,
+                };
+
+                return format!("model.layers.{layer_num}.{apr_suffix}");
+            }
+        }
+
+        // Non-layer tensors
+        match name {
+            "gpt_neox.embed_in.weight" => "model.embed_tokens.weight".to_string(),
+            "gpt_neox.final_layer_norm.weight" => "model.norm.weight".to_string(),
+            "gpt_neox.final_layer_norm.bias" => "model.norm.bias".to_string(),
+            "embed_out.weight" => "lm_head.weight".to_string(),
+            _ => name.to_string(),
+        }
+    }
+
+    /// GH-311: Map OPT tensor names to APR canonical format.
+    ///
+    /// OPT uses `model.decoder.layers.N.*` naming with separate Q/K/V projections.
+    fn opt_map_name(name: &str) -> String {
+        if let Some(rest) = name.strip_prefix("model.decoder.layers.") {
+            if let Some(dot_pos) = rest.find('.') {
+                let layer_num = &rest[..dot_pos];
+                let suffix = &rest[dot_pos + 1..];
+
+                let apr_suffix = match suffix {
+                    "self_attn_layer_norm.weight" => "input_layernorm.weight",
+                    "self_attn_layer_norm.bias" => "input_layernorm.bias",
+                    "final_layer_norm.weight" => "post_attention_layernorm.weight",
+                    "final_layer_norm.bias" => "post_attention_layernorm.bias",
+                    // OPT has separate Q/K/V (no fusion)
+                    "self_attn.q_proj.weight" => "self_attn.q_proj.weight",
+                    "self_attn.q_proj.bias" => "self_attn.q_proj.bias",
+                    "self_attn.k_proj.weight" => "self_attn.k_proj.weight",
+                    "self_attn.k_proj.bias" => "self_attn.k_proj.bias",
+                    "self_attn.v_proj.weight" => "self_attn.v_proj.weight",
+                    "self_attn.v_proj.bias" => "self_attn.v_proj.bias",
+                    "self_attn.out_proj.weight" => "self_attn.o_proj.weight",
+                    "self_attn.out_proj.bias" => "self_attn.o_proj.bias",
+                    // OPT MLP (fc1 = up, fc2 = down, no gate)
+                    "fc1.weight" => "mlp.up_proj.weight",
+                    "fc1.bias" => "mlp.up_proj.bias",
+                    "fc2.weight" => "mlp.down_proj.weight",
+                    "fc2.bias" => "mlp.down_proj.bias",
+                    other => other,
+                };
+
+                return format!("model.layers.{layer_num}.{apr_suffix}");
+            }
+        }
+
+        // Non-layer tensors
+        match name {
+            "model.decoder.embed_tokens.weight" => "model.embed_tokens.weight".to_string(),
+            "model.decoder.embed_positions.weight" => "model.position_embedding.weight".to_string(),
+            "model.decoder.final_layer_norm.weight" => "model.norm.weight".to_string(),
+            "model.decoder.final_layer_norm.bias" => "model.norm.bias".to_string(),
+            "lm_head.weight" => "lm_head.weight".to_string(),
+            _ => name.to_string(),
+        }
+    }
+
+    /// GH-311: Split GPT-NeoX fused QKV tensors into separate Q, K, V projections.
+    ///
+    /// GPT-NeoX uses `query_key_value` which concatenates Q, K, V along dim 0.
+    /// Shape: `[3*hidden, hidden]` for weights, `[3*hidden]` for biases.
+    pub fn split_neox_fused_qkv(tensors: &mut BTreeMap<String, (Vec<f32>, Vec<usize>)>) {
+        let fused_keys: Vec<String> = tensors
+            .keys()
+            .filter(|k| k.contains("self_attn.query_key_value."))
+            .cloned()
+            .collect();
+
+        for fused_name in fused_keys {
+            let (data, shape) = match tensors.remove(&fused_name) {
+                Some(v) => v,
+                None => continue,
+            };
+
+            let is_bias = fused_name.ends_with(".bias");
+
+            if is_bias {
+                if data.len() % 3 != 0 {
+                    tensors.insert(fused_name, (data, shape));
+                    continue;
+                }
+                let chunk = data.len() / 3;
+                let base = fused_name.replace("self_attn.query_key_value.bias", "");
+
+                tensors.insert(
+                    format!("{base}self_attn.q_proj.bias"),
+                    (data[..chunk].to_vec(), vec![chunk]),
+                );
+                tensors.insert(
+                    format!("{base}self_attn.k_proj.bias"),
+                    (data[chunk..2 * chunk].to_vec(), vec![chunk]),
+                );
+                tensors.insert(
+                    format!("{base}self_attn.v_proj.bias"),
+                    (data[2 * chunk..].to_vec(), vec![chunk]),
+                );
+            } else {
+                if shape.len() != 2 || shape[0] % 3 != 0 {
+                    tensors.insert(fused_name, (data, shape));
+                    continue;
+                }
+                let rows_per_proj = shape[0] / 3;
+                let cols = shape[1];
+                let chunk = rows_per_proj * cols;
+                let base = fused_name.replace("self_attn.query_key_value.weight", "");
+
+                tensors.insert(
+                    format!("{base}self_attn.q_proj.weight"),
+                    (data[..chunk].to_vec(), vec![rows_per_proj, cols]),
+                );
+                tensors.insert(
+                    format!("{base}self_attn.k_proj.weight"),
+                    (data[chunk..2 * chunk].to_vec(), vec![rows_per_proj, cols]),
+                );
+                tensors.insert(
+                    format!("{base}self_attn.v_proj.weight"),
+                    (data[2 * chunk..].to_vec(), vec![rows_per_proj, cols]),
+                );
+            }
+        }
+    }
+
+    /// GH-311: Split GPT-NeoX fused QKV tensors (raw/quantized version).
+    ///
+    /// Like `split_neox_fused_qkv()` but works with raw quantized bytes
+    /// (`GgufRawTensor`). Splits by dividing raw bytes into 3 equal parts.
+    pub fn split_neox_fused_qkv_raw(
+        tensors: &mut BTreeMap<String, crate::format::gguf::GgufRawTensor>,
+    ) {
+        let fused_keys: Vec<String> = tensors
+            .keys()
+            .filter(|k| k.contains("self_attn.query_key_value."))
+            .cloned()
+            .collect();
+
+        for fused_name in fused_keys {
+            let tensor = match tensors.remove(&fused_name) {
+                Some(v) => v,
+                None => continue,
+            };
+
+            let is_bias = fused_name.ends_with(".bias");
+
+            if is_bias {
+                if tensor.data.len() % 3 != 0 || tensor.shape.len() != 1 || tensor.shape[0] % 3 != 0
+                {
+                    tensors.insert(fused_name, tensor);
+                    continue;
+                }
+                let byte_chunk = tensor.data.len() / 3;
+                let elem_chunk = tensor.shape[0] / 3;
+                let base = fused_name.replace("self_attn.query_key_value.bias", "");
+
+                tensors.insert(
+                    format!("{base}self_attn.q_proj.bias"),
+                    crate::format::gguf::GgufRawTensor {
+                        data: tensor.data[..byte_chunk].to_vec(),
+                        shape: vec![elem_chunk],
+                        dtype: tensor.dtype,
+                    },
+                );
+                tensors.insert(
+                    format!("{base}self_attn.k_proj.bias"),
+                    crate::format::gguf::GgufRawTensor {
+                        data: tensor.data[byte_chunk..2 * byte_chunk].to_vec(),
+                        shape: vec![elem_chunk],
+                        dtype: tensor.dtype,
+                    },
+                );
+                tensors.insert(
+                    format!("{base}self_attn.v_proj.bias"),
+                    crate::format::gguf::GgufRawTensor {
+                        data: tensor.data[2 * byte_chunk..].to_vec(),
+                        shape: vec![elem_chunk],
+                        dtype: tensor.dtype,
+                    },
+                );
+            } else {
+                if tensor.shape.len() != 2 || tensor.shape[0] % 3 != 0 || tensor.data.len() % 3 != 0
+                {
+                    tensors.insert(fused_name, tensor);
+                    continue;
+                }
+                let rows_per_proj = tensor.shape[0] / 3;
+                let cols = tensor.shape[1];
+                let byte_chunk = tensor.data.len() / 3;
+                let base = fused_name.replace("self_attn.query_key_value.weight", "");
+
+                tensors.insert(
+                    format!("{base}self_attn.q_proj.weight"),
+                    crate::format::gguf::GgufRawTensor {
+                        data: tensor.data[..byte_chunk].to_vec(),
+                        shape: vec![rows_per_proj, cols],
+                        dtype: tensor.dtype,
+                    },
+                );
+                tensors.insert(
+                    format!("{base}self_attn.k_proj.weight"),
+                    crate::format::gguf::GgufRawTensor {
+                        data: tensor.data[byte_chunk..2 * byte_chunk].to_vec(),
+                        shape: vec![rows_per_proj, cols],
+                        dtype: tensor.dtype,
+                    },
+                );
+                tensors.insert(
+                    format!("{base}self_attn.v_proj.weight"),
+                    crate::format::gguf::GgufRawTensor {
+                        data: tensor.data[2 * byte_chunk..].to_vec(),
+                        shape: vec![rows_per_proj, cols],
+                        dtype: tensor.dtype,
+                    },
+                );
+            }
         }
     }
 

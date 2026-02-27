@@ -139,9 +139,13 @@ fn parse_architecture(arch: Option<&str>) -> Result<Architecture> {
         Some("qwen2") => Ok(Architecture::Qwen2),
         Some("qwen3") => Ok(Architecture::Qwen3),
         Some("qwen3_5" | "qwen3.5") => Ok(Architecture::Qwen3_5),
+        Some("gpt2" | "starcoder" | "bigcode") => Ok(Architecture::Gpt2),
+        Some("gpt-neox" | "gpt_neox" | "pythia") => Ok(Architecture::GptNeoX),
+        Some("opt" | "galactica") => Ok(Architecture::Opt),
+        Some("phi" | "phi3" | "phi4") => Ok(Architecture::Phi),
         Some("auto") | None => Ok(Architecture::Auto),
         Some(other) => Err(CliError::ValidationFailed(format!(
-            "Unknown architecture: {other}. Supported: whisper, llama, bert, qwen2, qwen3, qwen3_5, auto"
+            "Unknown architecture: {other}. Supported: whisper, llama, bert, qwen2, qwen3, qwen3_5, gpt2, gpt-neox, opt, phi, auto"
         ))),
     }
 }

@@ -408,6 +408,26 @@ fn infer_architecture_from_names(
             .any(|k| k.starts_with("h.") && k.contains(".attn."));
     let has_blk = tensors.keys().any(|k| k.contains("blk."));
 
+    // GH-311: Detect GPT-NeoX (gpt_neox.layers.N.*) — must check before model.layers
+    let has_gpt_neox = tensors.keys().any(|k| k.starts_with("gpt_neox."));
+    if has_gpt_neox {
+        return Some("gpt-neox".to_string());
+    }
+
+    // GH-311: Detect OPT (model.decoder.layers.N.*) — must check before model.layers
+    let has_opt_decoder = tensors
+        .keys()
+        .any(|k| k.starts_with("model.decoder.layers."));
+    if has_opt_decoder {
+        return Some("opt".to_string());
+    }
+
+    // GH-311: Detect BERT (bert.encoder.layer.N.*)
+    let has_bert = tensors.keys().any(|k| k.starts_with("bert."));
+    if has_bert {
+        return Some("bert".to_string());
+    }
+
     if has_model_layers {
         // Distinguish Qwen2 from LLaMA/Mistral by attention bias presence
         let has_attn_bias = tensors.keys().any(|k| k.contains("self_attn.q_proj.bias"));

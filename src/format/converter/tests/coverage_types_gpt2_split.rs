@@ -82,6 +82,8 @@ fn test_source_parse_hf_resolve_main_gh219() {
     }
 }
 
+include!("coverage_gh311_arch.rs");
+
 #[test]
 fn test_source_parse_hf_blob_main_gh219() {
     let source = Source::parse("hf://org/repo/blob/main/weights.bin").unwrap();

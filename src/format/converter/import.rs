@@ -75,6 +75,10 @@ pub fn apr_import<P: AsRef<Path>>(
     if effective_arch == Architecture::Gpt2 {
         Architecture::split_gpt2_fused_qkv(&mut mapped_tensors);
     }
+    // GH-311: Split fused QKV tensors for GPT-NeoX after name mapping
+    if effective_arch == Architecture::GptNeoX {
+        Architecture::split_neox_fused_qkv(&mut mapped_tensors);
+    }
 
     // GH-205: Also map F16 raw tensor names for passthrough
     let mapped_f16_raw: BTreeMap<String, (Vec<u8>, Vec<usize>)> = load_result
@@ -213,9 +217,12 @@ fn map_and_enforce_raw_tensors(
         .map(|(name, tensor)| (effective_arch.map_name(&name), tensor))
         .collect();
 
-    // Stage 2: GPT-2 QKV splitting
+    // Stage 2: GPT-2 / GPT-NeoX QKV splitting
     if *effective_arch == Architecture::Gpt2 {
         Architecture::split_gpt2_fused_qkv_raw(&mut mapped);
+    }
+    if *effective_arch == Architecture::GptNeoX {
+        Architecture::split_neox_fused_qkv_raw(&mut mapped);
     }
 
     // Stage 3: Contract enforcement (GH-208)

@@ -113,10 +113,14 @@ pub enum Architecture {
     Qwen3,
     /// Alibaba Qwen3.5 (hybrid linear/quadratic attention)
     Qwen3_5,
-    /// `OpenAI` GPT-2
+    /// `OpenAI` GPT-2 (also `StarCoder`, `bigcode` models)
     Gpt2,
     /// Microsoft Phi (Phi-3, Phi-4)
     Phi,
+    /// `EleutherAI` GPT-NeoX (Pythia, GPT-NeoX-20B)
+    GptNeoX,
+    /// Meta OPT (Open Pre-trained Transformer)
+    Opt,
 }
 
 include!("tensor_expectation.rs");
