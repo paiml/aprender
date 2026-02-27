@@ -82,6 +82,74 @@ impl RosettaStone {
         })
     }
 
+    /// GH-346: Validate a sharded SafeTensors model via its index.json.
+    /// Iterates shard files and validates each tensor's data quality.
+    fn validate_sharded_safetensors(&self, index_path: &Path) -> Result<ValidationReport> {
+        use crate::format::sharded::ShardIndex;
+        use crate::serialization::safetensors::MappedSafeTensors;
+
+        let content =
+            std::fs::read_to_string(index_path).map_err(|e| AprenderError::FormatError {
+                message: format!("Failed to read shard index {}: {e}", index_path.display()),
+            })?;
+        let index = ShardIndex::from_json(&content)?;
+
+        let base_dir = index_path
+            .parent()
+            .ok_or_else(|| AprenderError::FormatError {
+                message: format!(
+                    "Cannot determine parent directory of {}",
+                    index_path.display()
+                ),
+            })?;
+
+        let mut tensors = Vec::new();
+        let mut total_nan = 0;
+        let mut total_inf = 0;
+        let mut all_zero_tensors = Vec::new();
+
+        for shard_file in index.shard_files() {
+            let shard_path = base_dir.join(shard_file);
+            if !shard_path.exists() {
+                continue;
+            }
+
+            let mapped =
+                MappedSafeTensors::open(&shard_path).map_err(|e| AprenderError::FormatError {
+                    message: format!("SafeTensors open failed for shard {shard_file}: {e}"),
+                })?;
+
+            for name in mapped.tensor_names() {
+                if let Ok(f32_data) = mapped.get_tensor(name) {
+                    let tv = self.compute_tensor_validation(name, &f32_data);
+
+                    total_nan += tv.nan_count;
+                    total_inf += tv.inf_count;
+                    if tv.is_all_zeros() {
+                        all_zero_tensors.push(name.to_string());
+                    }
+                    tensors.push(tv);
+                }
+            }
+        }
+
+        let failed_count = tensors.iter().filter(|t| !t.is_valid).count();
+        let is_valid = failed_count == 0;
+
+        Ok(ValidationReport {
+            format: FormatType::SafeTensors,
+            file_path: index_path.display().to_string(),
+            is_valid,
+            tensor_count: tensors.len(),
+            failed_tensor_count: failed_count,
+            total_nan_count: total_nan,
+            total_inf_count: total_inf,
+            all_zero_tensors,
+            tensors,
+            duration_ms: 0, // Set by caller
+        })
+    }
+
     /// Bug 212: Convert a sharded SafeTensors model to any target format.
     /// Routes through import (sharded ST → APR) then converts APR → target.
     fn convert_sharded(

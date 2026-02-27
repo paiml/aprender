@@ -363,3 +363,6 @@ fn test_bug_212_convert_sharded_nonexistent() {
     // Should fail because the source doesn't exist
     assert!(result.is_err());
 }
+
+#[path = "tests_gh346.rs"]
+mod tests_gh346;

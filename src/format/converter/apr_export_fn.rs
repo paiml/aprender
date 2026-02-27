@@ -275,6 +275,12 @@ fn apply_export_quantization(
     let Some(ref quant_type) = options.quantize else {
         return Ok(tensors);
     };
+    // GH-346: Skip pre-quantization for GGUF format. encode_gguf_data() handles
+    // matrix-aware Q4K quantization directly. Applying flat quantize_q4_k() here
+    // first causes double quantization (flat → dequant → matrix), amplifying error.
+    if options.format == ExportFormat::Gguf {
+        return Ok(tensors);
+    }
     if let Some(detected) = detect_apr_quantization(input_path) {
         return Err(AprenderError::FormatError {
             message: format!(

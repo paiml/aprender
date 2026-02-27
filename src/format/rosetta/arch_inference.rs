@@ -50,6 +50,11 @@ impl RosettaStone {
             return self.inspect_sharded_safetensors(path);
         }
 
+        // GH-346: Fallback for missing single-file SafeTensors (sharded models)
+        if let Some(index_path) = try_resolve_sharded_index(path) {
+            return self.inspect_sharded_safetensors(&index_path);
+        }
+
         // Detect format from magic bytes first, fall back to extension
         let format = FormatType::from_magic(path).or_else(|_| FormatType::from_extension(path))?;
 
@@ -77,6 +82,18 @@ impl RosettaStone {
     pub fn validate<P: AsRef<Path>>(&self, path: P) -> Result<ValidationReport> {
         let path = path.as_ref();
         let start = std::time::Instant::now();
+
+        // GH-346: Sharded SafeTensors support for validate
+        if is_sharded_index(path) {
+            let mut report = self.validate_sharded_safetensors(path)?;
+            report.duration_ms = start.elapsed().as_millis() as u64;
+            return Ok(report);
+        }
+        if let Some(index_path) = try_resolve_sharded_index(path) {
+            let mut report = self.validate_sharded_safetensors(&index_path)?;
+            report.duration_ms = start.elapsed().as_millis() as u64;
+            return Ok(report);
+        }
 
         // Detect format
         let format = FormatType::from_magic(path).or_else(|_| FormatType::from_extension(path))?;

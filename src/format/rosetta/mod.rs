@@ -97,6 +97,22 @@ fn is_sharded_index(path: &Path) -> bool {
         .is_some_and(|n| n.ends_with(".index.json"))
 }
 
+/// GH-346: Resolve a missing single-file SafeTensors path to its sharded index.
+///
+/// When `model.safetensors` doesn't exist but `model.safetensors.index.json` does,
+/// the model is sharded. Returns the index path for sharded dispatch.
+fn try_resolve_sharded_index(path: &Path) -> Option<PathBuf> {
+    if path.exists() {
+        return None;
+    }
+    if path.extension().and_then(|e| e.to_str()) != Some("safetensors") {
+        return None;
+    }
+    let file_name = path.file_name()?.to_str()?;
+    let index_path = path.with_file_name(format!("{file_name}.index.json"));
+    index_path.exists().then_some(index_path)
+}
+
 // ============================================================================
 // Format Types
 // ============================================================================
