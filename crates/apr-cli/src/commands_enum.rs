@@ -287,7 +287,7 @@ pub enum Commands {
         /// Output .apr file path (default: derived from source name)
         #[arg(short, long)]
         output: Option<PathBuf>,
-        /// Model architecture (whisper, llama, bert, auto)
+        /// Model architecture (whisper, llama, bert, qwen2, qwen3, gpt2, gpt-neox, opt, phi, auto)
         #[arg(long, default_value = "auto")]
         arch: String,
         /// Quantization (int8, int4, fp16)
