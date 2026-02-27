@@ -135,19 +135,20 @@ impl Default for QaConfig {
 }
 
 fn find_apr_binary() -> PathBuf {
-    // Check custom target directory FIRST (common dev setup)
-    for p in [
-        "/mnt/nvme-raid0/targets/aprender/release/apr",
-        "/mnt/nvme-raid0/targets/aprender/debug/apr",
-        "target/release/apr",
-        "target/debug/apr",
-    ] {
-        let path = PathBuf::from(p);
+    // GH-301: Use CARGO_TARGET_DIR if set, then standard target/, then PATH
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    if let Ok(target_dir) = env::var("CARGO_TARGET_DIR") {
+        candidates.push(PathBuf::from(&target_dir).join("release").join("apr"));
+        candidates.push(PathBuf::from(&target_dir).join("debug").join("apr"));
+    }
+    candidates.push(PathBuf::from("target/release/apr"));
+    candidates.push(PathBuf::from("target/debug/apr"));
+    for path in candidates {
         if path.exists() {
             return path;
         }
     }
-    PathBuf::from("cargo")
+    PathBuf::from("apr")
 }
 
 fn find_default_model() -> Option<PathBuf> {

@@ -151,21 +151,24 @@ fn safetensors_model_dir() -> Option<PathBuf> {
 
 /// Find the apr CLI binary (release preferred, then debug)
 fn apr_binary() -> PathBuf {
-    let target_base = PathBuf::from("/mnt/nvme-raid0/targets/aprender");
-    let release = target_base.join("release").join("apr");
-    if release.exists() {
-        return release;
+    // GH-301: Use CARGO_TARGET_DIR if set, then standard target/, then PATH
+    let target_bases: Vec<PathBuf> = std::env::var("CARGO_TARGET_DIR")
+        .ok()
+        .into_iter()
+        .map(PathBuf::from)
+        .chain(std::iter::once(project_root().join("target")))
+        .collect();
+    for base in &target_bases {
+        let release = base.join("release").join("apr");
+        if release.exists() {
+            return release;
+        }
+        let debug = base.join("debug").join("apr");
+        if debug.exists() {
+            return debug;
+        }
     }
-    let debug = target_base.join("debug").join("apr");
-    if debug.exists() {
-        return debug;
-    }
-    // Fallback to standard target dir
-    let standard_release = project_root().join("target").join("release").join("apr");
-    if standard_release.exists() {
-        return standard_release;
-    }
-    project_root().join("target").join("debug").join("apr")
+    PathBuf::from("apr")
 }
 
 /// Find ollama binary if installed

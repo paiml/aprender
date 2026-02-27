@@ -95,20 +95,20 @@ impl Default for Config {
 }
 
 fn find_apr_binary() -> PathBuf {
-    // Check custom target directory FIRST (common dev setup)
-    let candidates = [
-        "/mnt/nvme-raid0/targets/aprender/release/apr",
-        "/mnt/nvme-raid0/targets/aprender/debug/apr",
-        "target/release/apr",
-        "target/debug/apr",
-    ];
-    for c in candidates {
-        let p = PathBuf::from(c);
-        if p.exists() {
-            return p;
+    // GH-301: Use CARGO_TARGET_DIR if set, then standard target/, then PATH
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    if let Ok(target_dir) = std::env::var("CARGO_TARGET_DIR") {
+        candidates.push(PathBuf::from(&target_dir).join("release").join("apr"));
+        candidates.push(PathBuf::from(&target_dir).join("debug").join("apr"));
+    }
+    candidates.push(PathBuf::from("target/release/apr"));
+    candidates.push(PathBuf::from("target/debug/apr"));
+    for path in candidates {
+        if path.exists() {
+            return path;
         }
     }
-    PathBuf::from("cargo")
+    PathBuf::from("apr")
 }
 
 /// Canonical GGUF model - the SINGLE SOURCE OF TRUTH for quantized comparisons
