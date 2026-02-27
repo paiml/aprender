@@ -141,12 +141,25 @@ fn apr_model_path() -> Option<PathBuf> {
 
 /// Get path to SafeTensors model directory (0.5B)
 fn safetensors_model_dir() -> Option<PathBuf> {
-    let path = PathBuf::from("/home/noah/models/qwen2.5-coder-0.5b-instruct");
-    if path.join("model.safetensors").exists() {
-        Some(path)
-    } else {
-        None
+    // GH-327: Use MODEL_DIR or HOME-relative path, never hard-coded absolute paths
+    let candidates: Vec<PathBuf> = [
+        std::env::var("MODEL_DIR")
+            .ok()
+            .map(|d| PathBuf::from(d).join("qwen2.5-coder-0.5b-instruct")),
+        std::env::var("HOME")
+            .ok()
+            .map(|h| PathBuf::from(h).join("models/qwen2.5-coder-0.5b-instruct")),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+
+    for path in candidates {
+        if path.join("model.safetensors").exists() {
+            return Some(path);
+        }
     }
+    None
 }
 
 /// Find the apr CLI binary (release preferred, then debug)
