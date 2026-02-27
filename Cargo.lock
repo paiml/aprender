@@ -4661,8 +4661,6 @@ dependencies = [
 [[package]]
 name = "provable-contracts"
 version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d25d845cee13c0160ff2d644c8bd4b65a8487f894a827d9d0fe23d47980a9fa5"
 dependencies = [
  "serde",
  "serde_json",
@@ -4673,8 +4671,6 @@ dependencies = [
 [[package]]
 name = "provable-contracts-macros"
 version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c383d865124fe9fda96af4a04d0c2641bcb93e16eb5e13f7c665f98c15333447"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -7596,11 +7592,3 @@ checksum = "2959ca473aae96a14ecedf501d20b3608d2825ba280d5adb57d651721885b0c2"
 dependencies = [
  "zune-core 0.5.1",
 ]
-
-[[patch.unused]]
-name = "provable-contracts"
-version = "0.1.0"
-
-[[patch.unused]]
-name = "provable-contracts-macros"
-version = "0.1.0"
