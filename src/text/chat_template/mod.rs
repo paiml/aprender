@@ -244,7 +244,6 @@ struct TokenizerConfig {
     pad_token: Option<String>,
     // Map other fields if needed, or use a flexible map
     #[serde(flatten)]
-    
     extra: HashMap<String, serde_json::Value>,
 }
 

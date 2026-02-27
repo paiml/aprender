@@ -51,14 +51,13 @@ impl BpeTokenizer {
     /// assert!(!ids.is_empty());
     /// ```
     pub fn from_huggingface<P: AsRef<std::path::Path>>(path: P) -> Result<Self> {
-        let json = std::fs::read_to_string(path.as_ref()).map_err(|e| {
-            AprenderError::FormatError {
+        let json =
+            std::fs::read_to_string(path.as_ref()).map_err(|e| AprenderError::FormatError {
                 message: format!(
                     "Failed to read tokenizer file '{}': {e}",
                     path.as_ref().display()
                 ),
-            }
-        })?;
+            })?;
         Self::from_huggingface_json(&json)
     }
 

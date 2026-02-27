@@ -138,7 +138,6 @@ pub struct LlamaTokenizer {
     /// ID to token string mapping
     id_to_token: HashMap<u32, String>,
     /// Token scores (priorities for merging)
-    
     scores: Vec<f32>,
     /// BOS token ID
     bos_token_id: u32,
@@ -147,7 +146,6 @@ pub struct LlamaTokenizer {
     /// Unknown token ID
     unk_token_id: u32,
     /// Padding token ID (optional)
-    
     pad_token_id: Option<u32>,
     /// Vocabulary size
     vocab_size: usize,

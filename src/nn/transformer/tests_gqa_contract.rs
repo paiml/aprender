@@ -116,12 +116,8 @@ fn falsify_gq_002_mha_degeneration() {
 fn falsify_gq_003_output_convexity() {
     let gqa = GroupedQueryAttention::new(16, 4, 2);
 
-    let q_data: Vec<f32> = (0..1 * 3 * 16)
-        .map(|i| (i as f32 * 0.37).sin())
-        .collect();
-    let k_data: Vec<f32> = (0..1 * 3 * 16)
-        .map(|i| (i as f32 * 0.73).cos())
-        .collect();
+    let q_data: Vec<f32> = (0..1 * 3 * 16).map(|i| (i as f32 * 0.37).sin()).collect();
+    let k_data: Vec<f32> = (0..1 * 3 * 16).map(|i| (i as f32 * 0.73).cos()).collect();
     let v_data: Vec<f32> = (0..1 * 3 * 16)
         .map(|i| (i as f32 * 1.23).sin() * 5.0)
         .collect();

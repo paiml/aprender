@@ -55,9 +55,8 @@ pub struct Graph {
     edge_weights: Vec<f64>,   // Parallel to col_indices (empty if unweighted)
 
     // Metadata (accessed less frequently)
-    
     node_labels: Vec<Option<String>>, // Indexed by NodeId
-    
+
     label_to_id: HashMap<String, NodeId>, // For label lookups
 
     is_directed: bool,

@@ -103,7 +103,6 @@ pub struct GCNConv {
     /// Whether to add self-loops
     add_self_loops: bool,
     /// Whether to use bias
-    
     use_bias: bool,
 }
 

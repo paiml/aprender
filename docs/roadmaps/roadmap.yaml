@@ -4483,3 +4483,105 @@ roadmap:
   - contracts
   - parity
   notes: null
+- id: GH-341
+  github_issue: 341
+  item_type: task
+  title: 'chore: publish safety gate + package bloat cleanup (28MB savings)'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-02-26T18:12:34.145741206+00:00
+  updated: 2026-02-26T18:12:34.145741206+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - enhancement
+  notes: null
+- id: GH-336
+  github_issue: 336
+  item_type: task
+  title: 'fix(P2): benchmark silently swallows generate() errors, reports 0 tok/s'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-02-26T18:14:12.757672034+00:00
+  updated: 2026-02-26T18:14:12.757672034+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - bug
+  notes: null
+- id: GH-337
+  github_issue: 337
+  item_type: task
+  title: 'fix(P2): chat server silently degrades to byte-level decode on tokenizer error'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-02-26T18:17:17.543326734+00:00
+  updated: 2026-02-26T18:17:17.543326734+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - bug
+  notes: null
+- id: GH-338
+  github_issue: 338
+  item_type: task
+  title: 'fix(P2): probar silently ignores corrupted msgpack metadata'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-02-26T18:25:24.218479042+00:00
+  updated: 2026-02-26T18:25:24.218479042+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - bug
+  notes: null
+- id: GH-339
+  github_issue: 339
+  item_type: task
+  title: 'fix(P2): chat template failure silently falls back to raw prompt'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-02-26T18:26:49.640389821+00:00
+  updated: 2026-02-26T18:26:49.640389821+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - bug
+  notes: null
+- id: GH-340
+  github_issue: 340
+  item_type: task
+  title: 'fix(P3): safetensors.rs placeholder generation produces fake tokens'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-02-26T18:28:00.080317052+00:00
+  updated: 2026-02-26T18:28:00.080317052+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - bug
+  notes: null

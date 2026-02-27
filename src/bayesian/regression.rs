@@ -38,7 +38,7 @@ use crate::primitives::{Matrix, Vector};
 /// // Fit and predict methods to be implemented
 /// ```
 #[derive(Debug, Clone)]
- // Fields used after fit() implementation
+// Fields used after fit() implementation
 pub struct BayesianLinearRegression {
     /// Number of features (including intercept if applicable)
     n_features: usize,

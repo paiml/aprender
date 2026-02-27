@@ -88,7 +88,6 @@ pub struct ErrorEncoder {
     /// Error code embeddings (learned or hashed)
     error_code_embeddings: HashMap<String, Vec<f32>>,
     /// Vocabulary for source tokens (reserved for future token-level encoding)
-    
     vocab: HashMap<String, usize>,
 }
 

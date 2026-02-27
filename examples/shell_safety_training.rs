@@ -158,7 +158,8 @@ fn main() {
     let (train_indices, val_indices) = &splits[0];
 
     // Build train/val sets from indices
-    let train_encoded: Vec<Vec<usize>> = train_indices.iter().map(|&i| encoded[i].clone()).collect();
+    let train_encoded: Vec<Vec<usize>> =
+        train_indices.iter().map(|&i| encoded[i].clone()).collect();
     let train_labels: Vec<usize> = train_indices.iter().map(|&i| samples[i].label).collect();
     let val_encoded: Vec<Vec<usize>> = val_indices.iter().map(|&i| encoded[i].clone()).collect();
     let val_labels: Vec<usize> = val_indices.iter().map(|&i| samples[i].label).collect();
@@ -178,7 +179,11 @@ fn main() {
         "  Input: {} (normalized token features per position)",
         input_dim
     );
-    println!("  Hidden: {} → {}", config.hidden_dim, config.hidden_dim / 2);
+    println!(
+        "  Hidden: {} → {}",
+        config.hidden_dim,
+        config.hidden_dim / 2
+    );
     println!("  Output: {} classes", config.num_classes);
 
     // Prepare full feature tensors for accuracy evaluation
@@ -382,14 +387,8 @@ fn run_epoch_batches(
             .iter()
             .map(|&i| train_encoded[i].clone())
             .collect();
-        let batch_labels: Vec<usize> = batch_indices
-            .iter()
-            .map(|&i| train_labels[i])
-            .collect();
-        let batch_weights: Vec<f32> = batch_indices
-            .iter()
-            .map(|&i| sample_weights[i])
-            .collect();
+        let batch_labels: Vec<usize> = batch_indices.iter().map(|&i| train_labels[i]).collect();
+        let batch_weights: Vec<f32> = batch_indices.iter().map(|&i| sample_weights[i]).collect();
 
         let batch_x = prepare_features(&batch_encoded, config.max_seq_len, config.vocab_size);
         let batch_y = prepare_labels_from_vec(&batch_labels);

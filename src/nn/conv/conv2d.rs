@@ -190,8 +190,10 @@ impl Conv2d {
                     } else {
                         let actual_ih = ih - self.padding_h;
                         let actual_iw = iw - self.padding_w;
-                        input_data
-                            [n * in_channels * in_h * in_w + ic * in_h * in_w + actual_ih * in_w + actual_iw]
+                        input_data[n * in_channels * in_h * in_w
+                            + ic * in_h * in_w
+                            + actual_ih * in_w
+                            + actual_iw]
                     };
                     let w_idx = oc * self.in_channels * self.kernel_h * self.kernel_w
                         + ic * self.kernel_h * self.kernel_w
@@ -222,9 +224,15 @@ impl Conv2d {
                 for oh in 0..out_h {
                     for ow in 0..out_w {
                         let mut sum = self.conv_kernel_sum(
-                            input_data, weight_data,
-                            n, oc, oh, ow,
-                            in_channels, in_h, in_w,
+                            input_data,
+                            weight_data,
+                            n,
+                            oc,
+                            oh,
+                            ow,
+                            in_channels,
+                            in_h,
+                            in_w,
                         );
 
                         if let Some(ref bias) = self.bias {

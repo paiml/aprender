@@ -79,11 +79,10 @@ impl Module for MaxPool2d {
             for c in 0..channels {
                 for oh in 0..out_h {
                     for ow in 0..out_w {
-                        let max_val = self.pool_kernel_max(
-                            input_data, n, c, oh, ow, channels, in_h, in_w,
-                        );
-                        let out_idx = n * channels * out_h * out_w
-                            + c * out_h * out_w + oh * out_w + ow;
+                        let max_val =
+                            self.pool_kernel_max(input_data, n, c, oh, ow, channels, in_h, in_w);
+                        let out_idx =
+                            n * channels * out_h * out_w + c * out_h * out_w + oh * out_w + ow;
                         output[out_idx] = max_val;
                     }
                 }
@@ -173,11 +172,10 @@ impl Module for AvgPool2d {
             for c in 0..channels {
                 for oh in 0..out_h {
                     for ow in 0..out_w {
-                        let sum = self.pool_kernel_sum(
-                            input_data, n, c, oh, ow, channels, in_h, in_w,
-                        );
-                        let out_idx = n * channels * out_h * out_w
-                            + c * out_h * out_w + oh * out_w + ow;
+                        let sum =
+                            self.pool_kernel_sum(input_data, n, c, oh, ow, channels, in_h, in_w);
+                        let out_idx =
+                            n * channels * out_h * out_w + c * out_h * out_w + oh * out_w + ow;
                         output[out_idx] = sum / kernel_area;
                     }
                 }

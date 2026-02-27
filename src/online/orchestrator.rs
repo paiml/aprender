@@ -106,7 +106,6 @@ pub struct RetrainOrchestrator<
     /// Statistics
     stats: OrchestratorStats,
     /// Number of features (for validation)
-    
     n_features: usize,
 }
 

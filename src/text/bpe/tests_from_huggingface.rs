@@ -26,9 +26,7 @@ fn mock_tokenizer_json(
     let added_entries: Vec<String> = added_tokens
         .iter()
         .map(|(content, id, special)| {
-            format!(
-                "{{\"id\": {id}, \"content\": \"{content}\", \"special\": {special}}}"
-            )
+            format!("{{\"id\": {id}, \"content\": \"{content}\", \"special\": {special}}}")
         })
         .collect();
 
@@ -169,9 +167,8 @@ fn test_ssc023_from_huggingface_json_missing_model() {
 
 #[test]
 fn test_ssc023_from_huggingface_json_missing_vocab() {
-    let result = BpeTokenizer::from_huggingface_json(
-        r#"{"model": {"merges": []}, "added_tokens": []}"#,
-    );
+    let result =
+        BpeTokenizer::from_huggingface_json(r#"{"model": {"merges": []}, "added_tokens": []}"#);
     // serde should fail because vocab is required in HfModel
     assert!(result.is_err());
 }
@@ -193,8 +190,7 @@ fn test_ssc023_from_huggingface_file_basic() {
     let mut file = std::fs::File::create(&file_path).expect("create file");
     file.write_all(json.as_bytes()).expect("write file");
 
-    let tokenizer =
-        BpeTokenizer::from_huggingface(&file_path).expect("should load from file");
+    let tokenizer = BpeTokenizer::from_huggingface(&file_path).expect("should load from file");
 
     assert_eq!(tokenizer.vocab_size(), 3); // hello + world + <|endoftext|>
     assert!(tokenizer.is_special_token("<|endoftext|>"));
@@ -246,11 +242,7 @@ fn test_ssc023_encode_decode_roundtrip_loaded() {
     all_vocab.push(("Hell", 258));
     all_vocab.push(("Hello", 259));
 
-    let json = mock_tokenizer_json(
-        &all_vocab,
-        &["H e", "l l", "He ll", "Hell o"],
-        &[],
-    );
+    let json = mock_tokenizer_json(&all_vocab, &["H e", "l l", "He ll", "Hell o"], &[]);
 
     let tokenizer =
         BpeTokenizer::from_huggingface_json(&json).expect("should load from valid JSON");
@@ -271,7 +263,10 @@ fn test_ssc023_encode_empty_input() {
         BpeTokenizer::from_huggingface_json(&json).expect("should load from valid JSON");
 
     let ids = tokenizer.encode("");
-    assert!(ids.is_empty(), "encoding empty string should produce no tokens");
+    assert!(
+        ids.is_empty(),
+        "encoding empty string should produce no tokens"
+    );
 }
 
 #[test]
@@ -281,7 +276,10 @@ fn test_ssc023_decode_empty_ids() {
         BpeTokenizer::from_huggingface_json(&json).expect("should load from valid JSON");
 
     let text = tokenizer.decode(&[]);
-    assert!(text.is_empty(), "decoding empty IDs should produce empty string");
+    assert!(
+        text.is_empty(),
+        "decoding empty IDs should produce empty string"
+    );
 }
 
 // ============================================================================
@@ -290,11 +288,7 @@ fn test_ssc023_decode_empty_ids() {
 
 #[test]
 fn test_ssc023_deterministic_encoding() {
-    let json = mock_tokenizer_json(
-        &[("a", 0), ("b", 1), ("ab", 2), ("c", 3)],
-        &["a b"],
-        &[],
-    );
+    let json = mock_tokenizer_json(&[("a", 0), ("b", 1), ("ab", 2), ("c", 3)], &["a b"], &[]);
     let tokenizer =
         BpeTokenizer::from_huggingface_json(&json).expect("should load from valid JSON");
 
@@ -306,7 +300,10 @@ fn test_ssc023_deterministic_encoding() {
     // Running again after clone
     let tokenizer2 = tokenizer.clone();
     let ids3 = tokenizer2.encode("abc");
-    assert_eq!(ids1, ids3, "cloned tokenizer must produce identical encoding");
+    assert_eq!(
+        ids1, ids3,
+        "cloned tokenizer must produce identical encoding"
+    );
 }
 
 // ============================================================================
@@ -316,16 +313,9 @@ fn test_ssc023_deterministic_encoding() {
 #[test]
 fn test_ssc023_encode_with_special_tokens_in_text() {
     let json = mock_tokenizer_json(
-        &[
-            ("hello", 0),
-            ("<|im_start|>", 100),
-            ("<|im_end|>", 101),
-        ],
+        &[("hello", 0), ("<|im_start|>", 100), ("<|im_end|>", 101)],
         &[],
-        &[
-            ("<|im_start|>", 100, true),
-            ("<|im_end|>", 101, true),
-        ],
+        &[("<|im_start|>", 100, true), ("<|im_end|>", 101, true)],
     );
     let tokenizer =
         BpeTokenizer::from_huggingface_json(&json).expect("should load from valid JSON");
@@ -417,8 +407,7 @@ fn test_ssc023_config_detection_qwen2_vocab() {
         "{{\"model\": {{\"vocab\": {{ {} }}, \"merges\": []}}, \"added_tokens\": []}}",
         vocab_entries.join(", ")
     );
-    let tokenizer =
-        BpeTokenizer::from_huggingface_json(&json).expect("should load large vocab");
+    let tokenizer = BpeTokenizer::from_huggingface_json(&json).expect("should load large vocab");
 
     // Config should be auto-detected as Qwen2 (no prefix space, unk = <|endoftext|>)
     assert!(
@@ -438,13 +427,8 @@ fn test_ssc023_config_detection_qwen2_vocab() {
 
 #[test]
 fn test_ssc023_unicode_tokens_in_vocab() {
-    let json = mock_tokenizer_json(
-        &[("日本語", 0), ("世界", 1)],
-        &[],
-        &[],
-    );
-    let tokenizer =
-        BpeTokenizer::from_huggingface_json(&json).expect("should load unicode vocab");
+    let json = mock_tokenizer_json(&[("日本語", 0), ("世界", 1)], &[], &[]);
+    let tokenizer = BpeTokenizer::from_huggingface_json(&json).expect("should load unicode vocab");
 
     assert_eq!(tokenizer.token_to_id("日本語"), Some(0));
     assert_eq!(tokenizer.token_to_id("世界"), Some(1));
@@ -453,11 +437,7 @@ fn test_ssc023_unicode_tokens_in_vocab() {
 
 #[test]
 fn test_ssc023_id_to_token_roundtrip() {
-    let json = mock_tokenizer_json(
-        &[("alpha", 10), ("beta", 20), ("gamma", 30)],
-        &[],
-        &[],
-    );
+    let json = mock_tokenizer_json(&[("alpha", 10), ("beta", 20), ("gamma", 30)], &[], &[]);
     let tokenizer =
         BpeTokenizer::from_huggingface_json(&json).expect("should load from valid JSON");
 
@@ -471,11 +451,7 @@ fn test_ssc023_id_to_token_roundtrip() {
 #[test]
 fn test_ssc023_merge_rules_without_matching_vocab() {
     // Merge rules reference tokens not in vocab - should still load without error
-    let json = mock_tokenizer_json(
-        &[("x", 0)],
-        &["a b", "c d"],
-        &[],
-    );
+    let json = mock_tokenizer_json(&[("x", 0)], &["a b", "c d"], &[]);
     let tokenizer =
         BpeTokenizer::from_huggingface_json(&json).expect("should load even with orphan merges");
 
@@ -522,8 +498,5 @@ fn test_ssc023_qwen2_from_json_uses_from_huggingface_json_path() {
 
     // Both should have the same vocabulary
     assert_eq!(qwen2.base.vocab_size(), base.vocab_size());
-    assert_eq!(
-        qwen2.base.token_to_id("hello"),
-        base.token_to_id("hello")
-    );
+    assert_eq!(qwen2.base.token_to_id("hello"), base.token_to_id("hello"));
 }

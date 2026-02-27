@@ -131,7 +131,9 @@ impl LabelModel {
 
                     // Likelihood from each LF
                     for (j, &output) in lf_outputs.iter().enumerate() {
-                        let LFOutput::Label(lf_class) = output else { continue };
+                        let LFOutput::Label(lf_class) = output else {
+                            continue;
+                        };
                         if lf_class == c {
                             *log_prob += self.accuracies[j][c].ln();
                         } else {
@@ -206,7 +208,9 @@ impl LabelModel {
                     *log_prob = self.class_priors[c].ln();
 
                     for (j, &output) in lf_outputs.iter().enumerate() {
-                        let LFOutput::Label(lf_class) = output else { continue };
+                        let LFOutput::Label(lf_class) = output else {
+                            continue;
+                        };
                         if lf_class == c {
                             *log_prob += self.accuracies[j][c].ln();
                         } else {
