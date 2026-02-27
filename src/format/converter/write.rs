@@ -152,21 +152,22 @@ fn build_f32_custom_metadata(
     custom
 }
 
-/// Add a single F32 tensor (or its F16 passthrough) to the APR writer.
+/// Add a single F32 tensor (or its F16/BF16 passthrough) to the APR writer.
 ///
-/// GH-205: If the tensor exists in `f16_raw_tensors`, raw F16 bytes are used
-/// directly to avoid precision loss. Returns `true` if F16 passthrough was used.
+/// GH-205 + GH-353: If the tensor exists in `f16_raw_tensors`, raw bytes are used
+/// directly to avoid precision loss. Returns `true` if passthrough was used.
 fn add_f32_tensor_to_writer(
     writer: &mut AprV2Writer,
     name: &str,
     data: &[f32],
     shape: &[usize],
-    f16_raw_tensors: &BTreeMap<String, (Vec<u8>, Vec<usize>)>,
+    f16_raw_tensors: &BTreeMap<String, (Vec<u8>, Vec<usize>, bool)>,
     quantize: Option<QuantizationType>,
 ) -> bool {
-    // GH-205: Check if we have raw F16 bytes for this tensor
-    if let Some((f16_bytes, f16_shape)) = f16_raw_tensors.get(name) {
-        writer.add_tensor(name, TensorDType::F16, f16_shape.clone(), f16_bytes.clone());
+    // GH-205 + GH-353: Check if we have raw F16/BF16 bytes for this tensor
+    if let Some((raw_bytes, raw_shape, is_bf16)) = f16_raw_tensors.get(name) {
+        let dtype = if *is_bf16 { TensorDType::BF16 } else { TensorDType::F16 };
+        writer.add_tensor(name, dtype, raw_shape.clone(), raw_bytes.clone());
         return true;
     }
 
@@ -217,12 +218,12 @@ fn flush_writer_to_file(mut writer: AprV2Writer, output: &Path) -> Result<()> {
 /// PMAT-223: `user_metadata` preserves arbitrary user metadata from SafeTensors `__metadata__`
 /// section through the conversion pipeline. Stored under `"source_metadata"` in APR custom field.
 ///
-/// GH-205: `f16_raw_tensors` contains raw F16 bytes for passthrough. When a tensor appears
-/// in both `tensors` (as F32) and `f16_raw_tensors` (raw bytes), the raw bytes are preferred
-/// to avoid precision loss from F16→F32→F16 conversion.
+/// GH-205 + GH-353: `f16_raw_tensors` contains raw F16/BF16 bytes for passthrough.
+/// When a tensor appears in both `tensors` and `f16_raw_tensors`, the raw bytes are
+/// preferred to avoid precision loss and save memory (no F32 conversion needed).
 pub(crate) fn write_apr_file(
     tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
-    f16_raw_tensors: &BTreeMap<String, (Vec<u8>, Vec<usize>)>,
+    f16_raw_tensors: &BTreeMap<String, (Vec<u8>, Vec<usize>, bool)>,
     output: &Path,
     options: &ImportOptions,
     tokenizer: Option<&GgufTokenizer>,
@@ -232,9 +233,17 @@ pub(crate) fn write_apr_file(
     // PMAT-100: Handle tied embeddings (common in Qwen, LLaMA, etc.)
     let (tensors_with_lm_head, has_tied_embeddings) = resolve_f32_tied_embeddings(tensors);
 
+    // GH-353: Use shape product for F16 passthrough tensors (empty data placeholder).
+    // Previously used data.len() which returns 0 for F16 passthrough placeholders.
     let param_count: u64 = tensors_with_lm_head
         .values()
-        .map(|(data, _)| data.len() as u64)
+        .map(|(data, shape)| {
+            if data.is_empty() && !shape.is_empty() {
+                shape.iter().product::<usize>() as u64
+            } else {
+                data.len() as u64
+            }
+        })
         .sum();
 
     let custom = build_f32_custom_metadata(

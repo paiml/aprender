@@ -80,13 +80,13 @@ pub fn apr_import<P: AsRef<Path>>(
         Architecture::split_neox_fused_qkv(&mut mapped_tensors);
     }
 
-    // GH-205: Also map F16 raw tensor names for passthrough
-    let mapped_f16_raw: BTreeMap<String, (Vec<u8>, Vec<usize>)> = load_result
+    // GH-205 + GH-353: Also map F16/BF16 raw tensor names for passthrough
+    let mapped_f16_raw: BTreeMap<String, (Vec<u8>, Vec<usize>, bool)> = load_result
         .f16_raw_tensors
         .iter()
-        .map(|(name, (bytes, shape))| {
+        .map(|(name, (bytes, shape, is_bf16))| {
             let mapped_name = effective_arch.map_name(name);
-            (mapped_name, (bytes.clone(), shape.clone()))
+            (mapped_name, (bytes.clone(), shape.clone(), *is_bf16))
         })
         .collect();
 

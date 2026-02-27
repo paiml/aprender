@@ -1,4 +1,16 @@
 
+/// GH-353: Format the memory savings from F16/BF16 passthrough (skipping F32 conversion).
+/// Each passthrough tensor saves 4 bytes/param (the F32 copy that was never used).
+fn format_passthrough_savings<'a>(shapes: impl Iterator<Item = &'a Vec<usize>>) -> String {
+    let total_params: u64 = shapes.map(|s| s.iter().product::<usize>() as u64).sum();
+    let saved_bytes = total_params * 4; // 4 bytes/param for the skipped F32 copy
+    if saved_bytes >= 1_073_741_824 {
+        format!("{:.1} GB RAM", saved_bytes as f64 / 1_073_741_824.0)
+    } else {
+        format!("{:.0} MB RAM", saved_bytes as f64 / 1_048_576.0)
+    }
+}
+
 /// Architecture-specific defaults for rope_type, rope_theta, max_position_embeddings.
 fn arch_specific_defaults(arch: Option<&str>) -> (Option<u32>, Option<f32>, Option<usize>) {
     let rope_type = match arch {
@@ -250,7 +262,7 @@ pub(crate) fn load_sharded_safetensors(
     );
 
     let mut merged_tensors: BTreeMap<String, (Vec<f32>, Vec<usize>)> = BTreeMap::new();
-    let mut merged_f16: BTreeMap<String, (Vec<u8>, Vec<usize>)> = BTreeMap::new();
+    let mut merged_f16: BTreeMap<String, (Vec<u8>, Vec<usize>, bool)> = BTreeMap::new();
     let mut merged_metadata = UserMetadata::new();
 
     for shard_file in index.shard_files() {
@@ -354,12 +366,13 @@ pub(crate) fn load_safetensors_tensors(
     Ok(tensors)
 }
 
-/// GH-205: Result of loading SafeTensors with F16 passthrough support.
+/// GH-205 + GH-353: Result of loading SafeTensors with F16/BF16 passthrough support.
 pub(crate) struct SafeTensorsLoadResult {
-    /// F32 tensors (native F32 or converted from other dtypes for non-passthrough)
+    /// F32 tensors (native F32 or shape-only placeholders for passthrough tensors)
     pub tensors: BTreeMap<String, (Vec<f32>, Vec<usize>)>,
-    /// Raw F16 tensor bytes for passthrough (avoids F16→F32→F16 precision loss)
-    pub f16_raw_tensors: BTreeMap<String, (Vec<u8>, Vec<usize>)>,
+    /// Raw F16/BF16 tensor bytes for passthrough (avoids precision loss from round-trip).
+    /// Tuple: (raw_bytes, shape, is_bf16).
+    pub f16_raw_tensors: BTreeMap<String, (Vec<u8>, Vec<usize>, bool)>,
     /// User metadata from `__metadata__` section
     pub user_metadata: UserMetadata,
 }
@@ -407,16 +420,21 @@ pub(crate) fn load_safetensors_with_f16_passthrough(path: &Path) -> Result<SafeT
                 message: format!("Tensor metadata not found for '{name}'"),
             })?;
 
-        // GH-205: Check if this is an F16 tensor for passthrough
-        if meta.dtype == "F16" {
-            // Get raw bytes for passthrough (no conversion)
+        // GH-205 + GH-353: Passthrough for F16/BF16 tensors.
+        // Raw bytes are written directly to APR — skip the expensive F32 conversion
+        // which was never used but consumed 4 bytes/param of RAM (e.g. 32 GB for 8B params).
+        let is_bf16 = meta.dtype == "BF16";
+        if meta.dtype == "F16" || is_bf16 {
             if let Some(raw_bytes) = mapped.get_tensor_bytes(name) {
-                f16_raw_tensors.insert(name.clone(), (raw_bytes.to_vec(), meta.shape.clone()));
+                f16_raw_tensors.insert(name.clone(), (raw_bytes.to_vec(), meta.shape.clone(), is_bf16));
                 f16_count += 1;
+                // GH-353: Store shape-only placeholder for metadata callers.
+                tensors.insert(name.clone(), (Vec::new(), meta.shape.clone()));
+                continue;
             }
         }
 
-        // Always also get F32 representation (for validation and backward compat)
+        // F32 / other dtype path: convert to F32
         let data = mapped
             .get_tensor(name)
             .map_err(|e| AprenderError::FormatError {
@@ -429,9 +447,10 @@ pub(crate) fn load_safetensors_with_f16_passthrough(path: &Path) -> Result<SafeT
 
     if f16_count > 0 {
         eprintln!(
-            "[GH-205] F16 passthrough: {} of {} tensors will be written as raw F16",
+            "[GH-353] F16/BF16 passthrough: {} of {} tensors (skipped F32 conversion, saving ~{})",
             f16_count,
-            tensors.len()
+            tensors.len(),
+            format_passthrough_savings(f16_raw_tensors.values().map(|(_, s, _)| s)),
         );
     }
 

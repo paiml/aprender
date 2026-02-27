@@ -185,9 +185,9 @@ fn download_from_hf(repo_id: &str, filename: &str) -> Result<PathBuf> {
 pub(crate) struct SourceLoadResult {
     /// Tensor data (name -> (data, shape))
     pub(crate) tensors: BTreeMap<String, (Vec<f32>, Vec<usize>)>,
-    /// GH-205: Raw F16 tensor bytes for passthrough (name -> bytes)
+    /// GH-205 + GH-353: Raw F16/BF16 tensor bytes for passthrough (name -> (bytes, shape, is_bf16))
     /// Tensors in this map should NOT be converted - write raw to APR
-    pub(crate) f16_raw_tensors: BTreeMap<String, (Vec<u8>, Vec<usize>)>,
+    pub(crate) f16_raw_tensors: BTreeMap<String, (Vec<u8>, Vec<usize>, bool)>,
     /// Tokenizer data (only present for GGUF files)
     pub(crate) tokenizer: Option<GgufTokenizer>,
     /// Model config (CRITICAL for inference - from GGUF)
