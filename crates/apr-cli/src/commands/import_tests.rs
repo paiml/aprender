@@ -135,7 +135,7 @@ fn test_run_unknown_architecture() {
     match result {
         Err(CliError::ValidationFailed(msg)) => {
             assert!(msg.contains("Unknown architecture"));
-            assert!(msg.contains("Supported: whisper, llama, bert, qwen2, qwen3, qwen3_5, auto"));
+            assert!(msg.contains("Supported: whisper, llama, bert, qwen2, qwen3, qwen3_5, gpt2, gpt-neox, opt, phi, auto"));
         }
         other => panic!("Expected ValidationFailed, got {:?}", other),
     }

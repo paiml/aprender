@@ -482,6 +482,17 @@ fn display_run_header(
 include!("finetune_display_next_validate.rs");
 
 // =============================================================================
+/// Print corpus stats (extracted to reduce cognitive complexity in run_classify).
+fn print_corpus_stats(stats: &entrenar::finetune::SafetyCorpusStats) {
+    output::subheader("Corpus");
+    output::kv("Samples", stats.total.to_string());
+    output::kv("Avg input length", format!("{} chars", stats.avg_input_len));
+    for (i, count) in stats.class_counts.iter().enumerate() {
+        output::kv(&format!("  Class {i}"), count.to_string());
+    }
+    println!();
+}
+
 // Classification fine-tuning (--task classify)
 // =============================================================================
 
@@ -611,14 +622,7 @@ fn run_classify(
     let stats = entrenar::finetune::corpus_stats(&samples, num_classes);
 
     if !json_output {
-        output::subheader("Corpus");
-        output::kv("Samples", stats.total.to_string());
-        output::kv("Avg input length", format!("{} chars", stats.avg_input_len));
-        for (i, count) in stats.class_counts.iter().enumerate() {
-            let label = format!("  Class {i}");
-            output::kv(&label, count.to_string());
-        }
-        println!();
+        print_corpus_stats(&stats);
     }
 
     // Resolve output directory for checkpoints

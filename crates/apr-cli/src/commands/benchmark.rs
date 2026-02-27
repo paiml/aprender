@@ -254,6 +254,26 @@ fn handle_zero_generation_fallback(
     }
 }
 
+/// Try CUDA benchmark, returning None if GPU produced 0 tokens (extracted to reduce complexity).
+#[cfg(feature = "inference")]
+fn try_cuda_benchmark(
+    path: &Path,
+    config: &BenchConfig,
+    tracer: &renacer::brick_tracer::BrickTracer,
+) -> Result<Option<BenchResult>> {
+    let result = run_apr_cuda_benchmark(path, config, tracer)?;
+    if result.total_tokens > 0 {
+        return Ok(Some(result));
+    }
+    if !config.quiet {
+        eprintln!(
+            "{}",
+            "GPU generated 0 tokens, falling back to CPU...".yellow()
+        );
+    }
+    Ok(None)
+}
+
 /// APR format benchmark
 /// GH-192: Now supports CUDA GPU acceleration and uses KV cache for O(n) generation
 #[cfg(feature = "inference")]
@@ -266,15 +286,8 @@ fn run_apr_benchmark(
     use realizar::apr_transformer::{AprTransformer, GenerateConfig};
 
     if use_cuda {
-        let result = run_apr_cuda_benchmark(path, config, tracer)?;
-        if result.total_tokens > 0 {
+        if let Some(result) = try_cuda_benchmark(path, config, tracer)? {
             return Ok(result);
-        }
-        if !config.quiet {
-            eprintln!(
-                "{}",
-                "GPU generated 0 tokens, falling back to CPU...".yellow()
-            );
         }
     }
 

@@ -278,7 +278,7 @@ fn p115_bitflip_safetensors_corruption_detected() {
 
 // P116: Bit-flip corruption detection - APR
 // H0: A corrupted APR file is detected via checksum
-// Refutation: If corrupted file passes checksum validation, system is broken
+// Refutation: If corrupted file passes checksum validation, integrity check has failed
 #[test]
 fn p116_bitflip_apr_corruption_detected() {
     let path = create_apr_fixture();
@@ -353,8 +353,8 @@ fn p118_gguf_inspection_real_file() {
 // ========================================================================
 //
 // PMAT-ROSETTA-001 Gap: The original Rosetta tests did NOT verify embedded
-// tokenizer functionality in APR files. This caused BUG-APR-002 to go
-// undetected until QA matrix testing exposed it.
+// tokenizer functionality in APR files. This allowed GH-APR-002 to go
+// unnoticed until QA matrix testing exposed it.
 //
 // These tests ensure APR's "executable model" design (self-contained with
 // embedded tokenizer) is maintained and verified.

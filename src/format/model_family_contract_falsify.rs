@@ -4,7 +4,7 @@
 //
 // Popperian falsification: each test attempts to BREAK a mathematical invariant
 // claimed by the model-family YAML contracts. If a test fails, the contract
-// has a bug (wrong dimension, missing field, etc.).
+// contains an error (wrong dimension, missing field, etc.).
 //
 // Contract: contracts/model-families/*.yaml
 // Schema:   contracts/model-families/_schema.yaml

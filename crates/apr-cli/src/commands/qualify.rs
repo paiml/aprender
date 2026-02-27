@@ -364,6 +364,26 @@ const SMOKE_GATES: &[(&str, &str)] = &[
     ("check", "Check (pipeline)"),
 ];
 
+/// Print a gate result with badge formatting (extracted to reduce cognitive complexity).
+fn print_gate_result(gate: &GateResult, json: bool) {
+    if json {
+        return;
+    }
+    let badge = match gate.status {
+        GateStatus::Pass => output::badge_pass("PASS"),
+        GateStatus::Fail => output::badge_fail("FAIL"),
+        GateStatus::Skip => output::badge_skip("SKIP"),
+        GateStatus::Panic => output::badge_fail("PANIC"),
+        GateStatus::Timeout => output::badge_warn("TMOUT"),
+    };
+    println!(
+        "  {badge} {} ({})",
+        gate.display_name,
+        output::duration_fmt(gate.duration_ms)
+    );
+    let _ = std::io::stdout().flush();
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn run(
     file: &Path,
@@ -408,23 +428,7 @@ pub fn run(
         }
 
         let gate = dispatch_smoke_gate(name, display, file, timeout, verbose);
-
-        if !json {
-            let badge = match gate.status {
-                GateStatus::Pass => output::badge_pass("PASS"),
-                GateStatus::Fail => output::badge_fail("FAIL"),
-                GateStatus::Skip => output::badge_skip("SKIP"),
-                GateStatus::Panic => output::badge_fail("PANIC"),
-                GateStatus::Timeout => output::badge_warn("TMOUT"),
-            };
-            println!(
-                "  {badge} {display} ({})",
-                output::duration_fmt(gate.duration_ms)
-            );
-            // Flush stdout before next gate's gag redirects fd 1
-            let _ = std::io::stdout().flush();
-        }
-
+        print_gate_result(&gate, json);
         gates.push(gate);
     }
 
@@ -438,18 +442,7 @@ pub fn run(
             &["audit", "contracts/aprender/tensor-layout-v1.yaml"],
             timeout,
         );
-        if !json {
-            let badge = match gate.status {
-                GateStatus::Pass => output::badge_pass("PASS"),
-                GateStatus::Skip => output::badge_skip("SKIP"),
-                _ => output::badge_fail("FAIL"),
-            };
-            println!(
-                "  {badge} {} ({})",
-                gate.display_name,
-                output::duration_fmt(gate.duration_ms)
-            );
-        }
+        print_gate_result(&gate, json);
         gates.push(gate);
     }
 
@@ -464,18 +457,7 @@ pub fn run(
             &["tools", &file_str, "--no-gpu"],
             timeout,
         );
-        if !json {
-            let badge = match gate.status {
-                GateStatus::Pass => output::badge_pass("PASS"),
-                GateStatus::Skip => output::badge_skip("SKIP"),
-                _ => output::badge_fail("FAIL"),
-            };
-            println!(
-                "  {badge} {} ({})",
-                gate.display_name,
-                output::duration_fmt(gate.duration_ms)
-            );
-        }
+        print_gate_result(&gate, json);
         gates.push(gate);
     }
 
