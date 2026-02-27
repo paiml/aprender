@@ -2131,6 +2131,8 @@ checksum = "34aa73646ffb006b8f5147f3dc182bd4bcb190227ce861fc4a4844bf8e3cb2c0"
 [[package]]
 name = "entrenar"
 version = "0.7.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "626745d961e0f94e1f2986ad6d2a41e5c4f84900870ef88a045a7847c03f3265"
 dependencies = [
  "aprender 0.27.2",
  "bytemuck",
@@ -2162,6 +2164,8 @@ dependencies = [
 [[package]]
 name = "entrenar-common"
 version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8558b7437f5b1eb77bdc2d43c6a3ace5cc418effac4cbf1e395bf4f0f670e61a"
 dependencies = [
  "clap",
  "serde",
@@ -2173,6 +2177,8 @@ dependencies = [
 [[package]]
 name = "entrenar-lora"
 version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "99d768472539adac6d7ec1954eb9cefc77d5f61df93a11c5d2697cf9775cb0de"
 dependencies = [
  "clap",
  "entrenar",
@@ -4219,6 +4225,8 @@ dependencies = [
 [[package]]
 name = "pacha"
 version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "873be034730a0b6ae567897812926b649f13f12d59d0f1805a7eb5f3622702a8"
 dependencies = [
  "anyhow",
  "blake3",
@@ -4708,6 +4716,8 @@ dependencies = [
 [[package]]
 name = "provable-contracts"
 version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d25d845cee13c0160ff2d644c8bd4b65a8487f894a827d9d0fe23d47980a9fa5"
 dependencies = [
  "serde",
  "serde_json",
@@ -4718,6 +4728,8 @@ dependencies = [
 [[package]]
 name = "provable-contracts-macros"
 version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c383d865124fe9fda96af4a04d0c2641bcb93e16eb5e13f7c665f98c15333447"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -5010,6 +5022,8 @@ dependencies = [
 [[package]]
 name = "realizar"
 version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "76ac94cb7508ac0e151b85c597aec509e51d59dbf13c804dfc5ed26fd26e74df"
 dependencies = [
  "anyhow",
  "aprender 0.27.2",
@@ -5115,6 +5129,8 @@ checksum = "7a2d987857b319362043e95f5353c0535c1f58eec5336fdfcf626430af7def58"
 [[package]]
 name = "renacer"
 version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b29e60ecc0f423b24f6e68df5927e2632afe79c45725e541df38dbfeb8b9ea9a"
 dependencies = [
  "addr2line",
  "anyhow",
@@ -6400,6 +6416,8 @@ dependencies = [
 [[package]]
 name = "trueno"
 version = "0.16.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9715d8cfb8858f90018316f8b9201c98de5e3beea4dedb2e35c4c140504f656f"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -6466,6 +6484,8 @@ dependencies = [
 [[package]]
 name = "trueno-gpu"
 version = "0.4.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "651a027349006e05a64755dcf21e53b46facad18ddb1f4c6f6a20ac8409758d7"
 dependencies = [
  "batuta-common",
  "libloading",
@@ -6491,6 +6511,8 @@ dependencies = [
 [[package]]
 name = "trueno-quant"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5da5ac788b596e45d1d3fa0991c04b0e1bac63ffe4ae2faf6ae7c0d9fdfc00eb"
 dependencies = [
  "half",
 ]

@@ -143,9 +143,14 @@ fn parse_architecture(arch: Option<&str>) -> Result<Architecture> {
         Some("gpt-neox" | "gpt_neox" | "pythia") => Ok(Architecture::GptNeoX),
         Some("opt" | "galactica") => Ok(Architecture::Opt),
         Some("phi" | "phi3" | "phi4") => Ok(Architecture::Phi),
+        Some("gemma" | "gemma2" | "gemma3") => Ok(Architecture::Llama),
+        Some("falcon" | "mamba" | "t5") => Err(CliError::ValidationFailed(format!(
+            "Architecture '{other}' is not yet supported. Tracking: https://github.com/anthropics/aprender/issues",
+            other = arch.unwrap()
+        ))),
         Some("auto") | None => Ok(Architecture::Auto),
         Some(other) => Err(CliError::ValidationFailed(format!(
-            "Unknown architecture: {other}. Supported: whisper, llama, bert, qwen2, qwen3, qwen3_5, gpt2, gpt-neox, opt, phi, auto"
+            "Unknown architecture: {other}. Supported: whisper, llama, bert, qwen2, qwen3, qwen3_5, gpt2, starcoder, gpt-neox, opt, phi, gemma, falcon, mamba, t5, auto"
         ))),
     }
 }

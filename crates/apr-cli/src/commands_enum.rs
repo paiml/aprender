@@ -287,7 +287,7 @@ pub enum Commands {
         /// Output .apr file path (default: derived from source name)
         #[arg(short, long)]
         output: Option<PathBuf>,
-        /// Model architecture (whisper, llama, bert, qwen2, qwen3, gpt2, gpt-neox, opt, phi, auto)
+        /// Model architecture (whisper, llama, bert, qwen2, qwen3, gpt2, starcoder, gpt-neox, opt, phi, gemma, falcon, mamba, t5, auto)
         #[arg(long, default_value = "auto")]
         arch: String,
         /// Quantization (int8, int4, fp16)
@@ -350,6 +350,33 @@ pub enum Commands {
         /// Force overwrite existing files
         #[arg(short, long)]
         force: bool,
+    },
+    /// Compile model into standalone executable (APR-SPEC §4.16)
+    Compile {
+        /// Input .apr model file
+        #[arg(value_name = "FILE", required_unless_present = "list_targets")]
+        file: Option<PathBuf>,
+        /// Output binary path (default: derived from model name)
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        /// Target triple (e.g., x86_64-unknown-linux-musl)
+        #[arg(long)]
+        target: Option<String>,
+        /// Quantize weights before embedding (int8, int4, fp16)
+        #[arg(long)]
+        quantize: Option<String>,
+        /// Release mode (optimized)
+        #[arg(long)]
+        release: bool,
+        /// Strip debug symbols
+        #[arg(long)]
+        strip: bool,
+        /// Enable LTO (Link-Time Optimization)
+        #[arg(long)]
+        lto: bool,
+        /// List available compilation targets
+        #[arg(long)]
+        list_targets: bool,
     },
     /// Merge multiple models
     Merge {

@@ -11,6 +11,7 @@ pub mod cbtop;
 pub mod chat;
 pub mod check;
 pub mod compare_hf;
+pub(crate) mod compile;
 pub(crate) mod convert;
 pub(crate) mod debug;
 pub(crate) mod diff;

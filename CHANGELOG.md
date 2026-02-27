@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `apr compile` subcommand: build standalone executables with embedded .apr models (APR-SPEC §4.16)
+  - Generates temporary Cargo project with `include_bytes!` model embedding
+  - Supports `--release`, `--strip`, `--lto` size optimization flags
+  - Cross-compilation via `--target` (10 native + WASM targets)
+  - `--list-targets` enumerates available compilation targets
+  - JSON output with `--json`
+- Architecture help text now lists all recognized `--arch` values: starcoder, gemma, falcon, mamba, t5
+- `--arch gemma` (and gemma2, gemma3) now accepted in `apr import`, maps to Llama architecture
+- `--arch falcon`, `--arch mamba`, `--arch t5` return clear "not yet supported" errors
+
 ## [0.27.0] - 2026-02-26
 
 ### Changed

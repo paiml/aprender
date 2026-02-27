@@ -231,6 +231,7 @@ cargo install apr-cli
 | `apr pull` | Download and cache model from HuggingFace (Ollama-style UX) |
 | `apr list` | List cached models |
 | `apr rm` | Remove model from cache |
+| `apr compile` | Compile model into standalone executable (APR-SPEC §4.16) |
 | `apr convert` | Quantization (int8, int4, fp16) and optimization |
 | `apr merge` | Merge models (average, weighted strategies) |
 | `apr tui` | Interactive terminal UI |
@@ -279,6 +280,9 @@ apr canary create model.apr --input ref.wav --output canary.json
 
 # Check model against canary
 apr canary check optimized.apr --canary canary.json
+
+# Compile model into standalone binary
+apr compile whisper.apr -o whisper-cli --release --strip
 
 # Publish to HuggingFace Hub
 apr publish ./model-dir/ org/model-name --license mit

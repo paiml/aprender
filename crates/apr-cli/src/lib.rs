@@ -28,7 +28,7 @@ pub mod federation;
 
 // Commands are crate-private, used internally by execute_command
 use commands::{
-    bench, canary, canary::CanaryCommands, cbtop, chat, compare_hf, convert, debug, diff, distill,
+    bench, canary, canary::CanaryCommands, cbtop, chat, compare_hf, compile, convert, debug, diff, distill,
     eval, explain, export, finetune, flow, hex, import, inspect, lint, merge, oracle, probar,
     profile, prune, ptx_explain, publish, pull, qa, qualify, quantize, rosetta,
     rosetta::RosettaCommands, run, serve, showcase, tensors, trace, tree, tui, tune, validate,
