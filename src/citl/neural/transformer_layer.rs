@@ -80,10 +80,11 @@ impl TransformerLayer {
 
 /// Layer normalization.
 #[derive(Debug)]
+#[allow(dead_code)]
 struct LayerNorm {
     weight: Tensor,
     bias: Tensor,
-    
+
     normalized_shape: usize,
     eps: f32,
 }
@@ -108,11 +109,12 @@ impl LayerNorm {
 
 /// Vocabulary for tokenization.
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct Vocabulary {
     /// Token to ID mapping
     token_to_id: HashMap<String, usize>,
     /// Special token IDs
-    
+
     pad_id: usize,
     unk_id: usize,
     cls_id: usize,
@@ -360,7 +362,7 @@ fn embedding_lookup(weight: &Tensor, indices: &Tensor) -> Tensor {
                 "Warning: embedding index {} OOB (max row_end={row_end}, data_len={}). N-09 escape.",
                 idx as usize, weight_data.len()
             );
-            output.extend(std::iter::repeat(0.0).take(embed_dim));
+            output.extend(std::iter::repeat_n(0.0, embed_dim));
         }
     }
 

@@ -96,6 +96,7 @@ fn quantize_int4(data: &[f32]) -> Vec<f32> {
 ///
 /// Note: Scaffolding for PMAT-103 layout conversion optimization.
 
+#[allow(dead_code)]
 fn needs_transpose(name: &str, shape: &[usize]) -> bool {
     // Only transpose 2D weight tensors
     if shape.len() != 2 {

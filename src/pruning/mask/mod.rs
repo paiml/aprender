@@ -300,7 +300,7 @@ pub fn generate_unstructured_mask(
 /// Validate N:M sparsity pattern: every M consecutive elements must have exactly N non-zeros.
 fn validate_nm(mask: &Tensor, n: usize, m: usize) -> Result<(), PruningError> {
     let data = mask.data();
-    if data.len() % m != 0 {
+    if !data.len().is_multiple_of(m) {
         return Err(PruningError::InvalidPattern {
             message: format!("Tensor length {} not divisible by M={}", data.len(), m),
         });

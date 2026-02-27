@@ -15,7 +15,7 @@ impl GroupNorm {
     #[must_use]
     pub fn new(num_groups: usize, num_channels: usize) -> Self {
         assert!(
-            num_channels % num_groups == 0,
+            num_channels.is_multiple_of(num_groups),
             "num_channels ({num_channels}) must be divisible by num_groups ({num_groups})"
         );
 
@@ -41,7 +41,7 @@ impl GroupNorm {
     #[must_use]
     pub fn without_affine(num_groups: usize, num_channels: usize) -> Self {
         assert!(
-            num_channels % num_groups == 0,
+            num_channels.is_multiple_of(num_groups),
             "num_channels ({num_channels}) must be divisible by num_groups ({num_groups})"
         );
 

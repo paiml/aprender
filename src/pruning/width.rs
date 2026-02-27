@@ -226,7 +226,10 @@ impl WidthPruner {
         original_intermediate_dim: usize,
     ) -> Result<(), PruningError> {
         // Check head divisibility
-        if self.target_hidden_dim % self.num_attention_heads != 0 {
+        if !self
+            .target_hidden_dim
+            .is_multiple_of(self.num_attention_heads)
+        {
             return Err(PruningError::InvalidPattern {
                 message: format!(
                     "target_hidden_dim ({}) must be divisible by num_attention_heads ({})",

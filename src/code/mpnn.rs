@@ -203,7 +203,7 @@ impl CodeMPNNLayer {
     /// Create a new MPNN layer
     #[must_use]
     pub fn new(in_dim: usize, out_dim: usize) -> Self {
-        let hidden_dim = (in_dim + out_dim) / 2;
+        let hidden_dim = usize::midpoint(in_dim, out_dim);
         let seed = 42;
 
         // Initialize edge type weights

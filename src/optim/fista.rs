@@ -160,7 +160,7 @@ impl FISTA {
             }
 
             // Nesterov acceleration
-            let t_new = (1.0_f32 + (1.0_f32 + 4.0_f32 * t * t).sqrt()) / 2.0_f32;
+            let t_new = f32::midpoint(1.0_f32, (1.0_f32 + 4.0_f32 * t * t).sqrt());
             let beta = (t - 1.0_f32) / t_new;
 
             // y_new = x_new + β(x_new - x)

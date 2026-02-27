@@ -407,7 +407,7 @@ pub fn detect_voice_activity(audio: &[f32], frame_size: usize, threshold: f32) -
     }
 
     // Ceiling division to include partial trailing frame (differs from STFT framing)
-    let num_frames = (audio.len() + frame_size - 1) / frame_size;
+    let num_frames = audio.len().div_ceil(frame_size);
     (0..num_frames)
         .map(|i| {
             let start = i * frame_size;

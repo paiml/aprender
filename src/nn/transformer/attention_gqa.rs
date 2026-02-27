@@ -96,7 +96,7 @@ impl LinearAttention {
     #[must_use]
     pub fn new(embed_dim: usize, num_heads: usize) -> Self {
         assert!(
-            embed_dim % num_heads == 0,
+            embed_dim.is_multiple_of(num_heads),
             "embed_dim ({embed_dim}) must be divisible by num_heads ({num_heads})"
         );
 
@@ -265,11 +265,11 @@ impl GroupedQueryAttention {
     #[must_use]
     pub fn new(embed_dim: usize, num_heads: usize, num_kv_heads: usize) -> Self {
         assert!(
-            embed_dim % num_heads == 0,
+            embed_dim.is_multiple_of(num_heads),
             "embed_dim ({embed_dim}) must be divisible by num_heads ({num_heads})"
         );
         assert!(
-            num_heads % num_kv_heads == 0,
+            num_heads.is_multiple_of(num_kv_heads),
             "num_heads ({num_heads}) must be divisible by num_kv_heads ({num_kv_heads})"
         );
 

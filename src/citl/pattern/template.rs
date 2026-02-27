@@ -5,6 +5,7 @@
 ///
 /// These templates are used by the fix generator to suggest fixes.
 
+#[allow(dead_code)]
 pub(super) mod templates {
     use super::{FixTemplate, Placeholder};
 

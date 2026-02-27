@@ -99,7 +99,7 @@ impl LRScheduler for StepLR {
         self.last_epoch += 1;
 
         // Decay at step boundaries
-        if self.last_epoch % self.step_size == 0 {
+        if self.last_epoch.is_multiple_of(self.step_size) {
             self.current_lr *= self.gamma;
             optimizer.set_lr(self.current_lr);
         }

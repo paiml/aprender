@@ -375,9 +375,10 @@ impl Default for ErrorEncoder {
 /// let embedding = encoder.encode_graph(&graph);
 /// ```
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct GNNErrorEncoder {
     /// Hidden dimension for GNN layers
-    
+
     hidden_dim: usize,
     /// Output embedding dimension
     output_dim: usize,
@@ -390,6 +391,6 @@ pub struct GNNErrorEncoder {
     /// Node type embedding dimension
     node_type_dim: usize,
     /// Base feature extractor for node features
-    
+
     base_encoder: ErrorEncoder,
 }

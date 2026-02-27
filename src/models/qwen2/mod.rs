@@ -362,6 +362,7 @@ pub struct Qwen2Model {
     /// Language model head [`hidden_size`, `vocab_size`]
     lm_head: Linear,
     /// Rotary position embeddings (used by realizar for inference)
+    #[allow(dead_code)]
     rope: RotaryPositionEmbedding,
     /// Model configuration
     config: Qwen2Config,

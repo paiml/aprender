@@ -278,14 +278,14 @@ impl LayoutContract {
     /// Uses the formula: `out_dim * ceil(in_dim / QK_K) * block_bytes`
     #[must_use]
     pub fn calculate_q4k_bytes(out_dim: usize, in_dim: usize) -> usize {
-        let superblocks = (in_dim + block_sizes::QK_K - 1) / block_sizes::QK_K;
+        let superblocks = in_dim.div_ceil(block_sizes::QK_K);
         out_dim * superblocks * block_sizes::Q4_K
     }
 
     /// Calculate the expected byte size for Q6K quantized tensor.
     #[must_use]
     pub fn calculate_q6k_bytes(out_dim: usize, in_dim: usize) -> usize {
-        let superblocks = (in_dim + block_sizes::QK_K - 1) / block_sizes::QK_K;
+        let superblocks = in_dim.div_ceil(block_sizes::QK_K);
         out_dim * superblocks * block_sizes::Q6_K
     }
 

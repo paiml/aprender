@@ -93,6 +93,7 @@ pub trait GNNModule: Module {
 /// let gcn = GCNConv::new(16, 32);  // 16 in → 32 out
 /// ```
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct GCNConv {
     /// Linear transformation
     linear: Linear,

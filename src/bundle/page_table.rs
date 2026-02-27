@@ -53,7 +53,7 @@ impl PageTable {
 
     /// Get the least recently used page offset.
     #[must_use]
-
+    #[allow(dead_code)]
     pub(crate) fn lru_page(&self) -> Option<u64> {
         self.pages
             .iter()
@@ -77,28 +77,28 @@ impl PageTable {
 
     /// Get page entry by offset.
     #[must_use]
-
+    #[allow(dead_code)]
     pub(crate) fn get(&self, offset: u64) -> Option<&PageEntry> {
         self.pages.get(&offset)
     }
 
     /// Get number of pages.
     #[must_use]
-
+    #[allow(dead_code)]
     pub(crate) fn len(&self) -> usize {
         self.pages.len()
     }
 
     /// Check if table is empty.
     #[must_use]
-
+    #[allow(dead_code)]
     pub(crate) fn is_empty(&self) -> bool {
         self.pages.is_empty()
     }
 
     /// Get total size of all pages.
     #[must_use]
-
+    #[allow(dead_code)]
     pub(crate) fn total_size(&self) -> usize {
         self.pages.values().map(|p| p.size).sum()
     }

@@ -50,9 +50,11 @@ pub struct BayesianLinearRegression {
     beta_prior_precision: f32, // Simplified: Σ₀ = (1/precision) * I
 
     /// `InverseGamma` shape parameter for noise variance prior
+    #[allow(dead_code)]
     noise_alpha: f32,
 
     /// `InverseGamma` scale parameter for noise variance prior
+    #[allow(dead_code)]
     noise_beta: f32,
 
     /// Posterior mean βₙ (after fitting)

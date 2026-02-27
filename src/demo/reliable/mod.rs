@@ -86,10 +86,10 @@ impl ModelCache {
     /// Ensure cache directory exists
     pub fn ensure_dir(&self) -> Result<(), AprenderError> {
         std::fs::create_dir_all(&self.cache_dir).map_err(|e| {
-            AprenderError::Io(io::Error::new(
-                io::ErrorKind::Other,
-                format!("Failed to create cache directory: {}", e),
-            ))
+            AprenderError::Io(io::Error::other(format!(
+                "Failed to create cache directory: {}",
+                e
+            )))
         })
     }
 }

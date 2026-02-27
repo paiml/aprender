@@ -122,7 +122,7 @@ pub fn extract_tensor(raw_data: &[u8], tensor_meta: &TensorMetadata) -> Result<V
 
 /// Extract F32 tensor data
 pub(super) fn extract_f32(tensor_bytes: &[u8]) -> Result<Vec<f32>, String> {
-    if tensor_bytes.len() % 4 != 0 {
+    if !tensor_bytes.len().is_multiple_of(4) {
         return Err(format!(
             "Invalid F32 tensor data: size {} is not a multiple of 4 bytes",
             tensor_bytes.len()
@@ -142,7 +142,7 @@ pub(super) fn extract_f32(tensor_bytes: &[u8]) -> Result<Vec<f32>, String> {
 
 /// Extract BF16 tensor data and convert to F32
 pub(crate) fn extract_bf16_to_f32(tensor_bytes: &[u8]) -> Result<Vec<f32>, String> {
-    if tensor_bytes.len() % 2 != 0 {
+    if !tensor_bytes.len().is_multiple_of(2) {
         return Err(format!(
             "Invalid BF16 tensor data: size {} is not a multiple of 2 bytes",
             tensor_bytes.len()
@@ -162,7 +162,7 @@ pub(crate) fn extract_bf16_to_f32(tensor_bytes: &[u8]) -> Result<Vec<f32>, Strin
 
 /// Extract F16 tensor data and convert to F32
 pub(crate) fn extract_f16_to_f32(tensor_bytes: &[u8]) -> Result<Vec<f32>, String> {
-    if tensor_bytes.len() % 2 != 0 {
+    if !tensor_bytes.len().is_multiple_of(2) {
         return Err(format!(
             "Invalid F16 tensor data: size {} is not a multiple of 2 bytes",
             tensor_bytes.len()

@@ -16,7 +16,7 @@ impl<S: CurriculumScheduler + std::fmt::Debug> CurriculumTrainer<S> {
         n_features: usize,
         scorer: &D,
     ) -> Result<()> {
-        if features.len() % n_features != 0 {
+        if !features.len().is_multiple_of(n_features) {
             return Err(AprenderError::dimension_mismatch(
                 "features",
                 n_features,

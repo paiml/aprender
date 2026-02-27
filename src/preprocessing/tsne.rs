@@ -201,14 +201,14 @@ impl TSNE {
                     beta = if beta_max.is_infinite() {
                         beta * 2.0
                     } else {
-                        (beta + beta_max) / 2.0
+                        f32::midpoint(beta, beta_max)
                     };
                 } else {
                     beta_max = beta;
                     beta = if beta_min.is_infinite() {
                         beta / 2.0
                     } else {
-                        (beta + beta_min) / 2.0
+                        f32::midpoint(beta, beta_min)
                     };
                 }
             }

@@ -246,7 +246,7 @@ pub(super) fn find_best_split_for_feature(x: &[f32], y: &[usize]) -> Option<(f32
 
     // Try each midpoint as threshold
     for i in 0..unique_values.len() - 1 {
-        let threshold = (unique_values[i] + unique_values[i + 1]) / 2.0;
+        let threshold = f32::midpoint(unique_values[i], unique_values[i + 1]);
 
         if let Some((left_labels, right_labels)) = split_labels_by_threshold(x, y, threshold) {
             let gain = calculate_information_gain(current_impurity, &left_labels, &right_labels);

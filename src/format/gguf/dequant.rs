@@ -50,7 +50,7 @@ pub fn dequantize_q4_0(data: &[u8], start: usize, num_elements: usize) -> Result
     const BLOCK_SIZE: usize = 32;
     const BLOCK_BYTES: usize = 2 + 16; // f16 scale + 16 bytes of 4-bit values
 
-    let num_blocks = (num_elements + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    let num_blocks = num_elements.div_ceil(BLOCK_SIZE);
     let total_bytes = num_blocks * BLOCK_BYTES;
 
     if start + total_bytes > data.len() {
@@ -101,7 +101,7 @@ pub fn dequantize_q8_0(data: &[u8], start: usize, num_elements: usize) -> Result
     const BLOCK_SIZE: usize = 32;
     const BLOCK_BYTES: usize = 2 + 32; // f16 scale + 32 bytes of int8 values
 
-    let num_blocks = (num_elements + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    let num_blocks = num_elements.div_ceil(BLOCK_SIZE);
     let total_bytes = num_blocks * BLOCK_BYTES;
 
     if start + total_bytes > data.len() {
@@ -145,7 +145,7 @@ pub fn dequantize_q5_0(data: &[u8], start: usize, num_elements: usize) -> Result
     const BLOCK_SIZE: usize = 32;
     const BLOCK_BYTES: usize = 2 + 4 + 16; // f16 scale + 4 high bits + 16 low nibbles = 22
 
-    let num_blocks = (num_elements + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    let num_blocks = num_elements.div_ceil(BLOCK_SIZE);
     let total_bytes = num_blocks * BLOCK_BYTES;
 
     if start + total_bytes > data.len() {
@@ -210,7 +210,7 @@ pub(crate) fn dequantize_q5_1(data: &[u8], start: usize, num_elements: usize) ->
     const BLOCK_SIZE: usize = 32;
     const BLOCK_BYTES: usize = 2 + 2 + 4 + 16; // f16 scale + f16 min + 4 high bits + 16 low nibbles = 24
 
-    let num_blocks = (num_elements + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    let num_blocks = num_elements.div_ceil(BLOCK_SIZE);
     let total_bytes = num_blocks * BLOCK_BYTES;
 
     if start + total_bytes > data.len() {
@@ -275,7 +275,7 @@ pub(crate) fn dequantize_q4_k(data: &[u8], start: usize, num_elements: usize) ->
     const SUPER_BLOCK_SIZE: usize = 256;
     const SUPER_BLOCK_BYTES: usize = 144;
 
-    let num_blocks = (num_elements + SUPER_BLOCK_SIZE - 1) / SUPER_BLOCK_SIZE;
+    let num_blocks = num_elements.div_ceil(SUPER_BLOCK_SIZE);
     let total_bytes = num_blocks * SUPER_BLOCK_BYTES;
 
     if start + total_bytes > data.len() {
@@ -299,7 +299,7 @@ pub(crate) fn dequantize_q5_k(data: &[u8], start: usize, num_elements: usize) ->
     const SUPER_BLOCK_SIZE: usize = 256;
     const SUPER_BLOCK_BYTES: usize = 176;
 
-    let num_blocks = (num_elements + SUPER_BLOCK_SIZE - 1) / SUPER_BLOCK_SIZE;
+    let num_blocks = num_elements.div_ceil(SUPER_BLOCK_SIZE);
     let total_bytes = num_blocks * SUPER_BLOCK_BYTES;
 
     if start + total_bytes > data.len() {

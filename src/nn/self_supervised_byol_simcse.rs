@@ -68,7 +68,7 @@ impl BYOL {
         pred_2: &[Vec<f32>],
         proj_1: &[Vec<f32>],
     ) -> f32 {
-        (self.loss(pred_1, proj_2) + self.loss(pred_2, proj_1)) / 2.0
+        f32::midpoint(self.loss(pred_1, proj_2), self.loss(pred_2, proj_1))
     }
 
     /// Update target network parameters with momentum.

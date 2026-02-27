@@ -82,6 +82,7 @@ impl ErrorEmbedding {
 /// In production, this would use a GNN per Yasunaga & Liang (2020).
 /// For now, we use bag-of-features encoding suitable for pattern matching.
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct ErrorEncoder {
     /// Embedding dimension
     dim: usize,

@@ -271,7 +271,9 @@ impl Architecture {
                 None => continue,
             };
 
-            let is_bias = fused_name.ends_with(".bias");
+            let is_bias = std::path::Path::new(&fused_name)
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("bias"));
 
             if is_bias {
                 if data.len() % 3 != 0 {
@@ -338,7 +340,9 @@ impl Architecture {
                 None => continue,
             };
 
-            let is_bias = fused_name.ends_with(".bias");
+            let is_bias = std::path::Path::new(&fused_name)
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("bias"));
 
             if is_bias {
                 if tensor.data.len() % 3 != 0 || tensor.shape.len() != 1 || tensor.shape[0] % 3 != 0

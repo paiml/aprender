@@ -120,7 +120,7 @@ impl AprV2Writer {
         }
 
         // Blocks: each block has 2-byte scale + 16 bytes of packed nibbles
-        let num_blocks = (data.len() + BLOCK_SIZE - 1) / BLOCK_SIZE;
+        let num_blocks = data.len().div_ceil(BLOCK_SIZE);
         let mut bytes = Vec::with_capacity(num_blocks * 18);
 
         for block_start in (0..data.len()).step_by(BLOCK_SIZE) {
@@ -159,7 +159,7 @@ impl AprV2Writer {
 
         // CONTRACT: Q4 byte count must be num_blocks * 18
         let element_count: usize = shape.iter().product();
-        let expected_blocks = (element_count + 31) / 32;
+        let expected_blocks = element_count.div_ceil(32);
         assert_eq!(
             bytes.len(),
             expected_blocks * 18,

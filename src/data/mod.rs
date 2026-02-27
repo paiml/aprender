@@ -217,8 +217,8 @@ impl DataFrame {
                 let max = sorted.last().copied().unwrap_or(0.0);
                 let median = if sorted.is_empty() {
                     0.0
-                } else if sorted.len() % 2 == 0 {
-                    (sorted[sorted.len() / 2 - 1] + sorted[sorted.len() / 2]) / 2.0
+                } else if sorted.len().is_multiple_of(2) {
+                    f32::midpoint(sorted[sorted.len() / 2 - 1], sorted[sorted.len() / 2])
                 } else {
                     sorted[sorted.len() / 2]
                 };

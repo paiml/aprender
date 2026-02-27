@@ -280,13 +280,13 @@ fn main() {
         let path = entry.path();
 
         // Skip non-YAML and _-prefixed files
-        if path.extension().map_or(true, |e| e != "yaml") {
+        if path.extension().is_none_or(|e| e != "yaml") {
             continue;
         }
         if path
             .file_name()
             .and_then(|n| n.to_str())
-            .map_or(true, |s| s.starts_with('_'))
+            .is_none_or(|s| s.starts_with('_'))
         {
             continue;
         }

@@ -131,7 +131,7 @@ fn format_hex_bytes(result: &mut String, chunk: &[u8], bytes_per_line: usize, gr
         result.push_str(&format!("{byte:02x} "));
     }
     for i in 0..(bytes_per_line - chunk.len()) {
-        if group_size > 1 && (chunk.len() + i) % group_size == 0 {
+        if group_size > 1 && (chunk.len() + i).is_multiple_of(group_size) {
             result.push(' ');
         }
         result.push_str("   ");

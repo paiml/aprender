@@ -70,7 +70,7 @@ impl ShellSyntheticGenerator {
         for (i, arg) in args.iter().enumerate() {
             let Some(variants) = self.substitutions.get(*arg) else { continue };
             for (vi, variant) in variants.iter().enumerate() {
-                if (rng_seed + i as u64 + vi as u64) % 3 != 0 {
+                if !(rng_seed + i as u64 + vi as u64).is_multiple_of(3) {
                     continue;
                 }
                 let mut new_args = args.clone();
@@ -122,7 +122,7 @@ impl ShellSyntheticGenerator {
             // Only use if different from original
             if new_completion != seed.completion() {
                 // Add common option based on rng
-                let final_completion = if rng_seed % 2 == 0 {
+                let final_completion = if rng_seed.is_multiple_of(2) {
                     format!("{new_completion} --verbose")
                 } else {
                     new_completion
@@ -312,6 +312,6 @@ impl SyntheticGenerator for ShellSyntheticGenerator {
         let cmd_diversity = unique_commands.len() as f32 / batch.len() as f32;
         let completion_diversity = unique_completions.len() as f32 / batch.len() as f32;
 
-        (cmd_diversity + completion_diversity) / 2.0
+        f32::midpoint(cmd_diversity, completion_diversity)
     }
 }

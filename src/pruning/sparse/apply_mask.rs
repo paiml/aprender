@@ -141,8 +141,8 @@ impl BlockSparseTensor {
         }
 
         // Pad dimensions if needed
-        let nblock_rows = (nrows + block_height - 1) / block_height;
-        let nblock_cols = (ncols + block_width - 1) / block_width;
+        let nblock_rows = nrows.div_ceil(block_height);
+        let nblock_cols = ncols.div_ceil(block_width);
 
         let data = tensor.data();
         let mut blocks = Vec::new();

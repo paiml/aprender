@@ -81,7 +81,7 @@ pub fn is_valid_quant_block_size(block_size: usize) -> bool {
 /// #[requires(elements % block_size == 0)]
 /// #[ensures(result * block_size == elements)]
 pub fn quant_block_count(elements: usize, block_size: usize) -> usize {
-    debug_assert!(block_size > 0 && elements % block_size == 0);
+    debug_assert!(block_size > 0 && elements.is_multiple_of(block_size));
     elements / block_size
 }
 

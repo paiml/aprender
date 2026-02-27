@@ -349,7 +349,7 @@ impl RDrop {
     /// Compute bidirectional KL divergence (symmetric).
     #[must_use]
     pub fn symmetric_kl(&self, p: &[f32], q: &[f32]) -> f32 {
-        (self.kl_divergence(p, q) + self.kl_divergence(q, p)) / 2.0
+        f32::midpoint(self.kl_divergence(p, q), self.kl_divergence(q, p))
     }
 
     /// Compute R-Drop regularization loss between two forward passes.

@@ -349,7 +349,7 @@ fn generate_algebraic_proofs(f: &FamilyData) -> String {
         // set and != hidden_dim / num_heads (e.g., Qwen3.5-27B: head_dim=256, hidden=5120, heads=24)
         if s.hidden_dim % s.num_heads == 0 {
             out.push_str(&format!(
-                "const _: () = assert!({prefix}_HIDDEN_DIM % {prefix}_NUM_HEADS == 0, \
+                "const _: () = assert!({prefix}_HIDDEN_DIM.is_multiple_of({prefix}_NUM_HEADS), \
                  \"Vaswani (2017): {}/{} hidden_dim must be divisible by num_heads\");\n",
                 f.family, s.name
             ));
@@ -360,7 +360,7 @@ fn generate_algebraic_proofs(f: &FamilyData) -> String {
         // Skip when num_kv_heads == 1 (MQA) to avoid clippy::modulo_one
         if s.num_kv_heads > 1 {
             out.push_str(&format!(
-                "const _: () = assert!({prefix}_NUM_HEADS % {prefix}_NUM_KV_HEADS == 0, \
+                "const _: () = assert!({prefix}_NUM_HEADS.is_multiple_of({prefix}_NUM_KV_HEADS), \
                  \"Ainslie (2023) GQA: {}/{} num_heads must be divisible by num_kv_heads\");\n",
                 f.family, s.name
             ));
@@ -424,7 +424,7 @@ fn generate_algebraic_proofs(f: &FamilyData) -> String {
 
             // head_dim must be even for cos/sin pairs — UNCONDITIONAL
             out.push_str(&format!(
-                "const _: () = assert!({prefix}_HEAD_DIM % 2 == 0, \
+                "const _: () = assert!({prefix}_HEAD_DIM.is_multiple_of(2), \
                  \"Su (2024) RoPE: {}/{} head_dim must be even for cos/sin pairs\");\n",
                 f.family, s.name
             ));

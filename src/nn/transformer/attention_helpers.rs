@@ -218,7 +218,7 @@ impl RotaryPositionEmbedding {
     /// * `max_seq_len` - Maximum sequence length to precompute
     #[must_use]
     pub fn new(head_dim: usize, max_seq_len: usize) -> Self {
-        assert!(head_dim % 2 == 0, "head_dim must be even for RoPE");
+        assert!(head_dim.is_multiple_of(2), "head_dim must be even for RoPE");
         Self::with_base(head_dim, max_seq_len, 10000.0)
     }
 

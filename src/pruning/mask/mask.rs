@@ -24,7 +24,7 @@ pub fn generate_nm_mask(scores: &Tensor, n: usize, m: usize) -> Result<SparsityM
     }
 
     let data = scores.data();
-    if data.len() % m != 0 {
+    if !data.len().is_multiple_of(m) {
         return Err(PruningError::InvalidPattern {
             message: format!("Tensor length {} not divisible by M={}", data.len(), m),
         });

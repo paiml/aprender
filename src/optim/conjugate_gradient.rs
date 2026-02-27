@@ -229,7 +229,7 @@ impl ConjugateGradient {
         };
 
         // Check if periodic restart is needed
-        if self.restart_interval > 0 && self.iter_count % self.restart_interval == 0 {
+        if self.restart_interval > 0 && self.iter_count.is_multiple_of(self.restart_interval) {
             return Self::steepest_descent(grad, n);
         }
 

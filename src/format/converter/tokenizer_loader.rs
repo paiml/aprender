@@ -344,7 +344,7 @@ fn infer_head_counts(
 fn infer_gqa_heads(q: usize, kv: usize) -> (Option<usize>, Option<usize>) {
     const HEAD_DIMS: [usize; 4] = [64, 128, 96, 80];
     for head_dim in HEAD_DIMS {
-        if kv % head_dim == 0 && q % head_dim == 0 {
+        if kv.is_multiple_of(head_dim) && q.is_multiple_of(head_dim) {
             let n_kv = kv / head_dim;
             let n_heads = q / head_dim;
             if n_heads >= n_kv && n_kv > 0 {
@@ -359,7 +359,7 @@ fn infer_gqa_heads(q: usize, kv: usize) -> (Option<usize>, Option<usize>) {
 fn infer_mha_heads(hidden_size: usize) -> (Option<usize>, Option<usize>) {
     const HEAD_DIMS: [usize; 4] = [64, 128, 96, 80];
     for head_dim in HEAD_DIMS {
-        if hidden_size % head_dim == 0 {
+        if hidden_size.is_multiple_of(head_dim) {
             let n_heads = hidden_size / head_dim;
             return (Some(n_heads), Some(n_heads));
         }

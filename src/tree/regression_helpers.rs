@@ -98,7 +98,7 @@ pub(super) fn find_best_regression_split_for_feature(
     let mut best_gain = 0.0;
 
     for i in 0..feature_values.len().saturating_sub(1) {
-        let threshold = (feature_values[i] + feature_values[i + 1]) / 2.0;
+        let threshold = f32::midpoint(feature_values[i], feature_values[i + 1]);
         let (y_left, y_right) = split_by_threshold(x, y, feature_idx, threshold);
 
         if let Some(gain) = evaluate_split_gain(&y_left, &y_right, current_variance) {

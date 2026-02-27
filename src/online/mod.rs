@@ -215,7 +215,7 @@ impl OnlineLearner for OnlineLinearRegression {
         }
 
         let n_features = self.weights.len();
-        if x.len() % n_features != 0 {
+        if !x.len().is_multiple_of(n_features) {
             return Err(AprenderError::dimension_mismatch(
                 "input features",
                 n_features,
@@ -390,7 +390,7 @@ impl OnlineLearner for OnlineLogisticRegression {
         }
 
         let n_features = self.weights.len();
-        if x.len() % n_features != 0 {
+        if !x.len().is_multiple_of(n_features) {
             return Err(AprenderError::dimension_mismatch(
                 "input features",
                 n_features,

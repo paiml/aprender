@@ -168,7 +168,7 @@ impl SoftTargetGenerator {
     /// Generate soft targets for batch
     #[must_use]
     pub fn generate_batch(&self, logits: &[f64], n_classes: usize) -> Vec<f64> {
-        if logits.is_empty() || n_classes == 0 || logits.len() % n_classes != 0 {
+        if logits.is_empty() || n_classes == 0 || !logits.len().is_multiple_of(n_classes) {
             return vec![];
         }
 
@@ -314,6 +314,7 @@ impl DistillationLoss {
 
 /// Simple linear distillation model (for testing/simple cases)
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct LinearDistiller {
     /// Student weights (`n_classes` × `n_features`)
     weights: Vec<f64>,

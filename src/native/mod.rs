@@ -264,7 +264,7 @@ impl<T: Copy + Default> AlignedVec<T> {
     pub fn with_capacity(capacity: usize) -> Self {
         let size_of_t = size_of::<T>();
         let aligned_cap = if size_of_t > 0 {
-            (capacity * size_of_t + 63) / 64 * 64 / size_of_t
+            (capacity * size_of_t).div_ceil(64) * 64 / size_of_t
         } else {
             capacity
         };
@@ -349,7 +349,7 @@ impl<T: Copy + Default> AlignedVec<T> {
             return true;
         }
         // Check at least type alignment (natural alignment)
-        self.data.as_ptr() as usize % align_of::<T>() == 0
+        (self.data.as_ptr() as usize).is_multiple_of(align_of::<T>())
     }
 
     /// Size in bytes (actual data, not capacity)

@@ -365,19 +365,19 @@ impl GgufTensor {
             GgmlType::Q4_0 | GgmlType::Q4_1 => {
                 // Block-quantized: 32 elements per block
                 // Q4_0: 2 bytes scale + 16 bytes data = 18 bytes per 32 elements
-                ((elements as usize + 31) / 32) * 18
+                (elements as usize).div_ceil(32) * 18
             }
             GgmlType::Q8_0 => {
                 // Q8_0: 2 bytes scale + 32 bytes data = 34 bytes per 32 elements
-                ((elements as usize + 31) / 32) * 34
+                (elements as usize).div_ceil(32) * 34
             }
             GgmlType::Q4K => {
                 // Q4_K: 256-element super-blocks, 144 bytes each
-                ((elements as usize + 255) / 256) * 144
+                (elements as usize).div_ceil(256) * 144
             }
             GgmlType::Q6K => {
                 // Q6_K: 256-element super-blocks, 210 bytes each
-                ((elements as usize + 255) / 256) * 210
+                (elements as usize).div_ceil(256) * 210
             }
             GgmlType::F64 | GgmlType::I64 => elements as usize * 8,
         }

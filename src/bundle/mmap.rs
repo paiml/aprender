@@ -426,7 +426,7 @@ impl MemoryMappedFile {
 
 /// Entry in the page table.
 #[derive(Debug, Clone)]
-
+#[allow(dead_code)]
 pub(crate) struct PageEntry {
     /// Offset in the file.
     pub(crate) offset: u64,

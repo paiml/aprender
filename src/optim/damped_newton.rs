@@ -129,7 +129,7 @@ impl DampedNewton {
         // Symmetrize the Hessian (since it should be symmetric)
         for i in 0..n {
             for j in (i + 1)..n {
-                let avg = (h_data[i * n + j] + h_data[j * n + i]) / 2.0;
+                let avg = f32::midpoint(h_data[i * n + j], h_data[j * n + i]);
                 h_data[i * n + j] = avg;
                 h_data[j * n + i] = avg;
             }

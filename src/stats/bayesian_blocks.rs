@@ -89,7 +89,7 @@ fn bayesian_blocks_edges_from_change_points(
 
     for &cp in change_points {
         if cp > 0 && cp < n {
-            let edge = (sorted_data[cp - 1] + sorted_data[cp]) / 2.0;
+            let edge = f32::midpoint(sorted_data[cp - 1], sorted_data[cp]);
             edges.push(edge);
         }
     }

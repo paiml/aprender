@@ -292,7 +292,7 @@ impl LineSearch for WolfeLineSearch {
             if fx_new > fx + self.c1 * alpha * dir_deriv {
                 // Armijo fails - alpha too large
                 alpha_hi = alpha;
-                alpha = (alpha_lo + alpha_hi) / 2.0;
+                alpha = f32::midpoint(alpha_lo, alpha_hi);
                 continue;
             }
 
@@ -313,7 +313,7 @@ impl LineSearch for WolfeLineSearch {
 
             // Update alpha
             if alpha_hi.is_finite() {
-                alpha = (alpha_lo + alpha_hi) / 2.0;
+                alpha = f32::midpoint(alpha_lo, alpha_hi);
             } else {
                 alpha *= 2.0;
             }

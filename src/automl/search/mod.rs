@@ -259,6 +259,7 @@ pub struct LogScale {
 
 /// Extension trait for creating log-scale ranges.
 // Used in tests
+#[allow(dead_code)]
 trait LogScaleExt {
     /// Convert range to log-scale.
     fn log_scale(self) -> LogScale;

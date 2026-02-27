@@ -177,9 +177,9 @@ impl BenchStats {
 
         let min = samples.first().copied().unwrap_or(0.0);
         let max = samples.last().copied().unwrap_or(0.0);
-        let median = if samples.len() % 2 == 0 {
+        let median = if samples.len().is_multiple_of(2) {
             let mid = samples.len() / 2;
-            (samples[mid - 1] + samples[mid]) / 2.0
+            f64::midpoint(samples[mid - 1], samples[mid])
         } else {
             samples[samples.len() / 2]
         };

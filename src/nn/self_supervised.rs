@@ -336,6 +336,7 @@ impl SimCLR {
 /// He, K., et al. (2020). Momentum Contrast for Unsupervised Visual
 /// Representation Learning. CVPR.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct MoCo {
     /// Temperature for `InfoNCE`
     temperature: f32,

@@ -333,7 +333,7 @@ impl Default for NeuralErrorEncoder {
 
 /// Simple embedding layer.
 #[derive(Debug)]
-#[allow(clippy::struct_field_names)]
+#[allow(clippy::struct_field_names, dead_code)]
 struct Embedding {
     weight: Tensor,
 

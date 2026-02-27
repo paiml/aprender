@@ -371,7 +371,7 @@ pub fn min_ring_buffer_size(decomp_max_mbps: f64, consume_min_mbps: f64, window_
     let buffer_bytes = (buffer_mb * 1024.0 * 1024.0).ceil() as usize;
 
     // Round up to page boundary (4KB alignment)
-    ((buffer_bytes + 4095) / 4096) * 4096
+    buffer_bytes.div_ceil(4096) * 4096
 }
 
 /// Safety error for time/memory budget violations

@@ -8,7 +8,7 @@ pub(crate) fn dequantize_q6_k(data: &[u8], start: usize, num_elements: usize) ->
     const SUPER_BLOCK_SIZE: usize = 256;
     const SUPER_BLOCK_BYTES: usize = 210;
 
-    let num_blocks = (num_elements + SUPER_BLOCK_SIZE - 1) / SUPER_BLOCK_SIZE;
+    let num_blocks = num_elements.div_ceil(SUPER_BLOCK_SIZE);
     let total_bytes = num_blocks * SUPER_BLOCK_BYTES;
 
     if start + total_bytes > data.len() {
@@ -33,7 +33,7 @@ pub fn dequantize_q4_1(data: &[u8], start: usize, num_elements: usize) -> Result
     const BLOCK_SIZE: usize = 32;
     const BLOCK_BYTES: usize = 2 + 2 + 16; // f16 scale + f16 min + 16 bytes
 
-    let num_blocks = (num_elements + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    let num_blocks = num_elements.div_ceil(BLOCK_SIZE);
     let total_bytes = num_blocks * BLOCK_BYTES;
 
     if start + total_bytes > data.len() {
@@ -78,7 +78,7 @@ pub(crate) fn dequantize_q2_k(data: &[u8], start: usize, num_elements: usize) ->
     const SUPER_BLOCK_SIZE: usize = 256;
     const SUPER_BLOCK_BYTES: usize = 2 + 2 + 16 + 64; // d, dmin, scales, qs = 84 bytes
 
-    let num_blocks = (num_elements + SUPER_BLOCK_SIZE - 1) / SUPER_BLOCK_SIZE;
+    let num_blocks = num_elements.div_ceil(SUPER_BLOCK_SIZE);
     let total_bytes = num_blocks * SUPER_BLOCK_BYTES;
 
     if start + total_bytes > data.len() {
@@ -131,7 +131,7 @@ pub(crate) fn dequantize_q3_k(data: &[u8], start: usize, num_elements: usize) ->
     const SUPER_BLOCK_SIZE: usize = 256;
     const SUPER_BLOCK_BYTES: usize = 32 + 64 + 12 + 2; // hmask, qs, scales, d = 110 bytes
 
-    let num_blocks = (num_elements + SUPER_BLOCK_SIZE - 1) / SUPER_BLOCK_SIZE;
+    let num_blocks = num_elements.div_ceil(SUPER_BLOCK_SIZE);
     let total_bytes = num_blocks * SUPER_BLOCK_BYTES;
 
     if start + total_bytes > data.len() {
@@ -200,15 +200,15 @@ pub(crate) fn dequantize_iq_approximate(
     // I-quants have variable block sizes and complex lookup tables
     // Approximate by treating as low-bit quantization with estimated scale
 
-    let (bits_per_element, block_size) = match dtype {
+    let (bits_per_element, block_size): (usize, usize) = match dtype {
         13..=15 => (2, 256), // IQ2_XXS, IQ2_XS, IQ2_S
         16 | 17 => (3, 256), // IQ3_XXS, IQ3_S
         18 => (1, 256),      // IQ1_S
         _ => (4, 256),       // IQ4_NL, IQ4_XS, and default
     };
 
-    let bytes_per_block = (block_size * bits_per_element + 7) / 8 + 4; // data + scale overhead
-    let num_blocks = (num_elements + block_size - 1) / block_size;
+    let bytes_per_block = (block_size * bits_per_element).div_ceil(8) + 4; // data + scale overhead
+    let num_blocks = num_elements.div_ceil(block_size);
 
     // For approximation, create small random-ish values based on byte patterns
     // This is NOT correct dequantization but allows import to proceed

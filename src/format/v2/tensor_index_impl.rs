@@ -237,7 +237,7 @@ pub const fn padding_to_align(value: usize, alignment: usize) -> usize {
 /// Check if value is 64-byte aligned
 #[must_use]
 pub const fn is_aligned_64(value: usize) -> bool {
-    value % ALIGNMENT == 0
+    value.is_multiple_of(ALIGNMENT)
 }
 
 // ============================================================================
