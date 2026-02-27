@@ -157,88 +157,44 @@ fn fetch_safetensors_companions(model_path: &Path, resolved_uri: &str) -> Result
     Ok(())
 }
 
-/// GH-211: Convert a SafeTensors model to APR and GGUF formats for full QA qualification.
+/// GH-352: Print a hint about format conversion instead of doing it eagerly.
 ///
-/// After download, produces sibling `.apr` and `.gguf` files so that all MVP
-/// test matrix cells (SafeTensors/APR/GGUF × run/chat/serve) can execute.
+/// Previously (GH-211), this function ran `apr_import()` + `apr_export()` to produce
+/// sibling `.apr` and `.gguf` files. This loaded the ENTIRE model into memory — twice —
+/// causing 55+ GB RSS for large models like Qwen3-30B-A3B.
+///
+/// Root cause (five-whys): pull should download only. Conversion is `apr convert`'s job.
+/// The realizar inference engine reads SafeTensors directly — no conversion needed to run.
 fn convert_safetensors_formats(safetensors_path: &Path) -> Result<()> {
-    println!();
-    println!("{}", "Converting formats...".yellow());
-
-    // Derive output paths from the SafeTensors path
     let apr_path = safetensors_path.with_extension("apr");
     let gguf_path = safetensors_path.with_extension("gguf");
 
-    // Step 1: SafeTensors → APR
-    if apr_path.exists() {
+    // If both already exist (from a previous pull), just note it
+    if apr_path.exists() && gguf_path.exists() {
+        println!();
         println!(
-            "  {} {} (already exists)",
+            "  {} APR and GGUF formats available",
             "✓".green(),
-            apr_path.file_name().unwrap_or_default().to_string_lossy()
         );
-    } else {
-        let source = safetensors_path.to_string_lossy().to_string();
-        let options = ImportOptions {
-            architecture: aprender::format::Architecture::Auto,
-            validation: ValidationConfig::Basic,
-            quantize: None,
-            compress: None,
-            strict: false,
-            cache: false,
-            tokenizer_path: None,
-            allow_no_config: true,
-        };
-        match apr_import(&source, &apr_path, options) {
-            Ok(_report) => {
-                println!(
-                    "  {} {} (SafeTensors → APR)",
-                    "✓".green(),
-                    apr_path.file_name().unwrap_or_default().to_string_lossy()
-                );
-            }
-            Err(e) => {
-                eprintln!(
-                    "  {} APR conversion failed: {} (non-fatal)",
-                    "⚠".yellow(),
-                    e
-                );
-            }
-        }
+        return Ok(());
     }
 
-    // Step 2: APR → GGUF (requires APR to exist)
-    if gguf_path.exists() {
+    // GH-352: Hint instead of eagerly converting (which loads entire model into RAM)
+    println!();
+    println!(
+        "  {} To convert formats, run:",
+        "ℹ".cyan(),
+    );
+    if !apr_path.exists() {
         println!(
-            "  {} {} (already exists)",
-            "✓".green(),
-            gguf_path.file_name().unwrap_or_default().to_string_lossy()
+            "    apr convert {} --format apr",
+            safetensors_path.display()
         );
-    } else if apr_path.exists() {
-        let options = ExportOptions {
-            format: ExportFormat::Gguf,
-            quantize: None,
-            ..Default::default()
-        };
-        match apr_export(&apr_path, &gguf_path, options) {
-            Ok(_report) => {
-                println!(
-                    "  {} {} (APR → GGUF)",
-                    "✓".green(),
-                    gguf_path.file_name().unwrap_or_default().to_string_lossy()
-                );
-            }
-            Err(e) => {
-                eprintln!(
-                    "  {} GGUF conversion failed: {} (non-fatal)",
-                    "⚠".yellow(),
-                    e
-                );
-            }
-        }
-    } else {
-        eprintln!(
-            "  {} GGUF conversion skipped (APR not available)",
-            "⚠".yellow()
+    }
+    if !gguf_path.exists() {
+        println!(
+            "    apr convert {} --format gguf",
+            safetensors_path.display()
         );
     }
 

@@ -9,9 +9,6 @@
 //!   apr pull TheBloke/Llama-2-7B-GGUF   # Will auto-detect quant
 
 use crate::error::{CliError, Result};
-use aprender::format::{
-    apr_export, apr_import, ExportFormat, ExportOptions, ImportOptions, ValidationConfig,
-};
 use colored::Colorize;
 use pacha::fetcher::{FetchConfig, ModelFetcher};
 use pacha::format::ModelFormat;
@@ -72,9 +69,18 @@ pub fn run(model_ref: &str, force: bool) -> Result<()> {
     }
 }
 
-/// Pull a single-file model via pacha (existing behavior)
+/// Pull a single-file model.
+///
+/// GH-352: For HuggingFace URIs, streams directly to disk instead of buffering
+/// the entire file in memory through pacha's resolver. For non-HF URIs (pacha
+/// aliases), falls back to the pacha fetcher.
 fn run_single_file(model_ref: &str, force: bool) -> Result<()> {
     println!("Model: {}", model_ref.cyan());
+
+    // GH-352: HuggingFace URIs bypass pacha to avoid O(model_size) memory buffering
+    if model_ref.starts_with("hf://") {
+        return run_single_file_streaming(model_ref, force);
+    }
 
     let mut fetcher = ModelFetcher::with_config(FetchConfig::default()).map_err(|e| {
         CliError::ValidationFailed(format!("Failed to initialize model fetcher: {e}"))
@@ -88,6 +94,84 @@ fn run_single_file(model_ref: &str, force: bool) -> Result<()> {
     ensure_safetensors_companions(&result)?;
     print_pull_usage(&result.path, true);
     Ok(())
+}
+
+/// GH-352: Stream a single HuggingFace file directly to disk.
+///
+/// Uses O(64KB) memory instead of O(model_size). The pacha fetcher's
+/// `resolver.resolve()` buffers the entire response via `response.bytes()`,
+/// which consumed ~4.5 GB for a 7B GGUF. This function streams with a 64KB
+/// chunked read, computes BLAKE3 incrementally, and saves to the pacha cache.
+fn run_single_file_streaming(model_ref: &str, force: bool) -> Result<()> {
+    let path = model_ref.strip_prefix("hf://").unwrap_or(model_ref);
+    let parts: Vec<&str> = path.split('/').collect();
+    if parts.len() < 3 {
+        return Err(CliError::ValidationFailed(format!(
+            "HuggingFace URI must include a filename: {model_ref}"
+        )));
+    }
+
+    let filename = parts[2..].join("/");
+    let url = format!(
+        "https://huggingface.co/{}/{}/resolve/main/{}",
+        parts[0], parts[1], filename
+    );
+
+    // Determine cache path in pacha cache dir
+    let cache_dir = get_pacha_cache_dir()?;
+    std::fs::create_dir_all(&cache_dir)?;
+
+    // Check if already cached (by URI hash)
+    let uri_hash = blake3::hash(model_ref.as_bytes()).to_hex().to_string();
+    let extension = std::path::Path::new(&filename)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("bin");
+    let cache_filename = format!("{}.{}", &uri_hash[..16], extension);
+    let cache_path = cache_dir.join(&cache_filename);
+
+    if !force && cache_path.exists() {
+        let metadata = std::fs::metadata(&cache_path)?;
+        println!("{} Model already cached", "✓".green());
+        println!("  Path: {}", cache_path.display());
+        println!("  Size: {}", format_bytes(metadata.len()));
+        print_pull_usage(&cache_path, true);
+        return Ok(());
+    }
+
+    println!();
+    println!("{}", "Downloading (streaming)...".yellow());
+
+    let checksum = download_file_with_progress(&url, &cache_path)?;
+
+    println!();
+    println!("{} Downloaded successfully", "✓".green());
+    println!("  Path: {}", cache_path.display().to_string().green());
+    println!("  Size: {}", format_bytes(checksum.size).yellow());
+    println!("  Hash: {}", &checksum.blake3[..16]);
+
+    // Handle SafeTensors companions
+    if extension == "safetensors" {
+        fetch_safetensors_companions(&cache_path, model_ref)?;
+        convert_safetensors_formats(&cache_path)?;
+    }
+
+    print_pull_usage(&cache_path, true);
+    Ok(())
+}
+
+/// Get the pacha model cache directory.
+fn get_pacha_cache_dir() -> Result<std::path::PathBuf> {
+    if let Ok(cache_home) = std::env::var("XDG_CACHE_HOME") {
+        return Ok(std::path::PathBuf::from(cache_home)
+            .join("pacha")
+            .join("models"));
+    }
+    Ok(dirs::home_dir()
+        .ok_or_else(|| CliError::ValidationFailed("Cannot find home directory".to_string()))?
+        .join(".cache")
+        .join("pacha")
+        .join("models"))
 }
 
 /// Handle a model that is already cached in pacha.
