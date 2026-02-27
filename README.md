@@ -32,6 +32,7 @@ Aprender provides implementations of classical machine learning algorithms optim
 - [Algorithms](#algorithms)
 - [Model Persistence](#model-persistence)
 - [Documentation](#documentation)
+- [Claude Code Skills](#claude-code-skills)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -355,6 +356,27 @@ apr-qa run playbooks/models/qwen2.5-coder-7b-mvp.playbook.yaml \
 - **Models tested**: 0.5B, 1.5B, 3B, 7B, 14B
 - **Falsification**: 43 rounds, 206 bugs found, 155/163 gates passing (95.1%)
 
+## Claude Code Skills
+
+aprender ships with [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview) skills that automate development and debugging workflows. If you're contributing or investigating bugs, these replace manual multi-step processes with a single command.
+
+| Skill | Command | Purpose |
+|-------|---------|---------|
+| **Dogfood** | `/dogfood` | Rebuild apr-cli, exercise against real models, run quality gates, find next work (6 gates) |
+| **Pre-release** | `/pre-release` | Prevent crates.io publish breakage — derived from 5 historical release failures (10 gates) |
+
+**Quick start:**
+
+```
+# After making changes — rebuild, test, verify
+> /dogfood
+
+# Before publishing — full release QA
+> /pre-release
+```
+
+See [`docs/claude-code-skills/`](docs/claude-code-skills/) for gate details, debugging workflows, and examples.
+
 ## Documentation
 
 | Resource | Link |
@@ -365,6 +387,7 @@ apr-qa run playbooks/models/qwen2.5-coder-7b-mvp.playbook.yaml \
 | APR Format Spec | [`docs/specifications/APR-SPEC.md`](docs/specifications/APR-SPEC.md) |
 | QA Protocol | [`docs/specifications/qa-showcase-methodology.md`](docs/specifications/qa-showcase-methodology.md) |
 | Qualify Matrix | [`docs/qualify-matrix.md`](docs/qualify-matrix.md) |
+| Claude Code Skills | [`docs/claude-code-skills/`](docs/claude-code-skills/) |
 🤖 [Coursera Hugging Face AI Development Specialization](https://www.coursera.org/specializations/hugging-face-ai-development) - Build Production AI systems with Hugging Face in Pure Rust
 
 ## Contributing
