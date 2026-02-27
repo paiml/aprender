@@ -1,4 +1,18 @@
 
+/// Insert a usize metadata field if present.
+fn insert_usize_meta(
+    custom: &mut std::collections::HashMap<String, serde_json::Value>,
+    key: &str,
+    value: Option<usize>,
+) {
+    if let Some(v) = value {
+        custom.insert(
+            key.to_string(),
+            serde_json::Value::Number(serde_json::Number::from(v)),
+        );
+    }
+}
+
 /// Insert model config metadata into the custom metadata map.
 fn insert_model_config_metadata(
     cfg: &GgufModelConfig,
@@ -10,48 +24,13 @@ fn insert_model_config_metadata(
             serde_json::Value::String(arch.clone()),
         );
     }
-    if let Some(hidden_size) = cfg.hidden_size {
-        custom.insert(
-            "model.hidden_size".to_string(),
-            serde_json::Value::Number(serde_json::Number::from(hidden_size)),
-        );
-    }
-    if let Some(num_layers) = cfg.num_layers {
-        custom.insert(
-            "model.num_layers".to_string(),
-            serde_json::Value::Number(serde_json::Number::from(num_layers)),
-        );
-    }
-    if let Some(num_heads) = cfg.num_heads {
-        custom.insert(
-            "model.num_heads".to_string(),
-            serde_json::Value::Number(serde_json::Number::from(num_heads)),
-        );
-    }
-    if let Some(num_kv_heads) = cfg.num_kv_heads {
-        custom.insert(
-            "model.num_kv_heads".to_string(),
-            serde_json::Value::Number(serde_json::Number::from(num_kv_heads)),
-        );
-    }
-    if let Some(vocab_size) = cfg.vocab_size {
-        custom.insert(
-            "model.vocab_size".to_string(),
-            serde_json::Value::Number(serde_json::Number::from(vocab_size)),
-        );
-    }
-    if let Some(intermediate_size) = cfg.intermediate_size {
-        custom.insert(
-            "model.intermediate_size".to_string(),
-            serde_json::Value::Number(serde_json::Number::from(intermediate_size)),
-        );
-    }
-    if let Some(max_pos) = cfg.max_position_embeddings {
-        custom.insert(
-            "model.max_position_embeddings".to_string(),
-            serde_json::Value::Number(serde_json::Number::from(max_pos)),
-        );
-    }
+    insert_usize_meta(custom, "model.hidden_size", cfg.hidden_size);
+    insert_usize_meta(custom, "model.num_layers", cfg.num_layers);
+    insert_usize_meta(custom, "model.num_heads", cfg.num_heads);
+    insert_usize_meta(custom, "model.num_kv_heads", cfg.num_kv_heads);
+    insert_usize_meta(custom, "model.vocab_size", cfg.vocab_size);
+    insert_usize_meta(custom, "model.intermediate_size", cfg.intermediate_size);
+    insert_usize_meta(custom, "model.max_position_embeddings", cfg.max_position_embeddings);
     if let Some(rope_theta) = cfg.rope_theta {
         custom.insert(
             "model.rope_theta".to_string(),
@@ -71,12 +50,7 @@ fn insert_model_config_metadata(
         );
     }
     // PMAT-114: Write rope_type for correct RoPE style
-    if let Some(rope_type) = cfg.rope_type {
-        custom.insert(
-            "model.rope_type".to_string(),
-            serde_json::Value::Number(serde_json::Number::from(rope_type)),
-        );
-    }
+    insert_usize_meta(custom, "model.rope_type", cfg.rope_type.map(|v| v as usize));
 }
 
 /// Map GGUF dtype code to APR `TensorDType`, or return an error for unsupported formats.
@@ -141,18 +115,13 @@ pub(crate) fn write_apr_file_raw(
         .sum();
 
     // Build tensor_shapes map for metadata
-    // GH-202 FIX: All 2D tensors get shape reversal [ne0, ne1] → [ne1, ne0]
-    // This is the standard convention where shape[0]=rows, shape[1]=cols.
-    // 1D tensors keep original shape.
+    // GH-351 FIX: Shapes are already in APR [rows, cols] format after
+    // enforce_import_contract() — do NOT reverse again (was double-reversing).
     let tensor_shapes: serde_json::Map<String, serde_json::Value> = tensors
         .iter()
         .map(|(name, tensor)| {
-            let output_shape = if tensor.shape.len() == 2 {
-                vec![tensor.shape[1], tensor.shape[0]]
-            } else {
-                tensor.shape.clone()
-            };
-            let shape_array: Vec<serde_json::Value> = output_shape
+            let shape_array: Vec<serde_json::Value> = tensor
+                .shape
                 .iter()
                 .map(|&dim| serde_json::Value::Number(serde_json::Number::from(dim as u64)))
                 .collect();

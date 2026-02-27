@@ -219,7 +219,17 @@ fn try_tokenizer_at(path: &Path, label: &str) -> Option<Qwen2BpeTokenizer> {
 
 /// PMAT-109: Find Qwen tokenizer from model dir, HF cache, or APR cache.
 fn find_qwen_tokenizer(model_path: &Path) -> Result<Option<Qwen2BpeTokenizer>, CliError> {
-    // 1. Model's parent directory
+    // 1a. Hash-prefixed sibling (pacha cache: {hash}.tokenizer.json)
+    if let Some(parent) = model_path.parent() {
+        if let Some(stem) = model_path.file_stem().and_then(|s| s.to_str()) {
+            let prefixed = parent.join(format!("{stem}.tokenizer.json"));
+            if let Some(tok) = try_tokenizer_at(&prefixed, " from pacha cache") {
+                return Ok(Some(tok));
+            }
+        }
+    }
+
+    // 1b. Plain tokenizer.json in model's parent directory
     if let Some(tok) = model_path
         .parent()
         .and_then(|p| try_tokenizer_at(&p.join("tokenizer.json"), ""))
@@ -242,9 +252,10 @@ fn find_qwen_tokenizer(model_path: &Path) -> Result<Option<Qwen2BpeTokenizer>, C
 
     Err(CliError::InvalidFormat(
         "No Qwen tokenizer found. Searched:\n\
-         1. Model directory (tokenizer.json)\n\
-         2. HuggingFace cache (~/.cache/huggingface/hub/models--Qwen--*/snapshots/*/tokenizer.json)\n\
-         3. APR cache (~/.apr/tokenizers/qwen2/tokenizer.json)\n\n\
+         1. Pacha cache ({stem}.tokenizer.json alongside model)\n\
+         2. Model directory (tokenizer.json)\n\
+         3. HuggingFace cache (~/.cache/huggingface/hub/models--Qwen--*/snapshots/*/tokenizer.json)\n\
+         4. APR cache (~/.apr/tokenizers/qwen2/tokenizer.json)\n\n\
          To fix: Download a Qwen model with tokenizer:\n\
            apr pull hf://Qwen/Qwen2.5-0.5B-Instruct-GGUF"
             .to_string(),
