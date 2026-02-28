@@ -9,6 +9,50 @@ fn infer_architecture(user_arch: &Architecture, config_arch: Option<&str>) -> Ar
         .unwrap_or(Architecture::Auto)
 }
 
+/// CONTRACT: Tensor evidence is ground truth. Metadata strings are CLAIMS.
+///
+/// QK norm presence ⟹ Qwen3 (unique to Qwen3, never in Qwen2/LLaMA/Phi).
+/// Attention bias presence ⟹ Qwen2 or Phi (never in Qwen3/LLaMA).
+/// This is provable — logical implication, not heuristic.
+fn verify_architecture_from_tensor_evidence<S: AsRef<str>>(
+    metadata_arch: Architecture,
+    tensor_names: impl Iterator<Item = S>,
+) -> Architecture {
+    let mut has_qk_norm = false;
+    let mut has_attn_bias = false;
+
+    for name in tensor_names {
+        let n = name.as_ref();
+        if n.contains("attn_q_norm.weight") || n.contains("self_attn.q_norm.weight") {
+            has_qk_norm = true;
+        }
+        if n.contains("attn_q.bias") || n.contains("self_attn.q_proj.bias") {
+            has_attn_bias = true;
+        }
+        if has_qk_norm {
+            break; // QK norm is conclusive, no need to scan further
+        }
+    }
+
+    if has_qk_norm && metadata_arch != Architecture::Qwen3 {
+        eprintln!(
+            "[ARCH-EVIDENCE] Override: QK norm detected → Qwen3 (metadata claimed: {:?})",
+            metadata_arch
+        );
+        return Architecture::Qwen3;
+    }
+
+    if has_attn_bias && !matches!(metadata_arch, Architecture::Qwen2 | Architecture::Phi) {
+        eprintln!(
+            "[ARCH-EVIDENCE] Override: attention bias detected → Qwen2 (metadata claimed: {:?})",
+            metadata_arch
+        );
+        return Architecture::Qwen2;
+    }
+
+    metadata_arch
+}
+
 /// Emit warnings for unverified architectures; error in strict mode.
 fn warn_unverified_architecture(arch: &Architecture, strict: bool) -> Result<()> {
     if arch.is_inference_verified() {

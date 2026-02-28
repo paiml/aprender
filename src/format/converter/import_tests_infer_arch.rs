@@ -306,3 +306,125 @@
         let result = find_in_aprender_cache(tmp.path(), "Qwen", "Qwen3-8B", "model.safetensors");
         assert!(result.is_some(), "Should find existing file in aprender cache");
     }
+
+    // =========================================================================
+    // verify_architecture_from_tensor_evidence (Provable Architecture Detection)
+    // =========================================================================
+
+    #[test]
+    fn falsify_arch_evidence_001_qk_norm_overrides_qwen2() {
+        // QK norm present → must override "qwen2" metadata to Qwen3
+        let names = vec![
+            "blk.0.attn_q.weight",
+            "blk.0.attn_q_norm.weight",
+            "blk.0.attn_k_norm.weight",
+        ];
+        let result = verify_architecture_from_tensor_evidence(
+            Architecture::Qwen2,
+            names.into_iter(),
+        );
+        assert_eq!(result, Architecture::Qwen3, "QK norm must force Qwen3");
+    }
+
+    #[test]
+    fn falsify_arch_evidence_002_bias_preserves_qwen2() {
+        // Correct qwen2 metadata with bias → unchanged
+        let names = vec![
+            "blk.0.attn_q.weight",
+            "blk.0.attn_q.bias",
+        ];
+        let result = verify_architecture_from_tensor_evidence(
+            Architecture::Qwen2,
+            names.into_iter(),
+        );
+        assert_eq!(result, Architecture::Qwen2, "Correct qwen2 metadata must be preserved");
+    }
+
+    #[test]
+    fn falsify_arch_evidence_003_no_evidence_preserves_llama() {
+        // No QK norm, no bias → LLaMA stays LLaMA (backward compat)
+        let names = vec![
+            "blk.0.attn_q.weight",
+            "blk.0.attn_k.weight",
+            "blk.0.attn_v.weight",
+        ];
+        let result = verify_architecture_from_tensor_evidence(
+            Architecture::Llama,
+            names.into_iter(),
+        );
+        assert_eq!(result, Architecture::Llama, "No contradicting evidence must preserve metadata");
+    }
+
+    #[test]
+    fn falsify_arch_evidence_004_hf_naming_qk_norm() {
+        // HF-style names (self_attn.q_norm.weight) also trigger Qwen3 override
+        let names = vec![
+            "model.layers.0.self_attn.q_proj.weight",
+            "model.layers.0.self_attn.q_norm.weight",
+        ];
+        let result = verify_architecture_from_tensor_evidence(
+            Architecture::Qwen2,
+            names.into_iter(),
+        );
+        assert_eq!(result, Architecture::Qwen3, "HF-style QK norm must also force Qwen3");
+    }
+
+    #[test]
+    fn falsify_arch_evidence_005_correct_qwen3_unchanged() {
+        // Already-correct Qwen3 metadata with QK norm → unchanged
+        let names = vec![
+            "blk.0.attn_q_norm.weight",
+            "blk.0.attn_k_norm.weight",
+        ];
+        let result = verify_architecture_from_tensor_evidence(
+            Architecture::Qwen3,
+            names.into_iter(),
+        );
+        assert_eq!(result, Architecture::Qwen3, "Correct qwen3 metadata must be preserved");
+    }
+
+    #[test]
+    fn falsify_arch_evidence_006_bias_overrides_llama() {
+        // Attention bias present with LLaMA metadata → override to Qwen2
+        let names = vec![
+            "blk.0.attn_q.weight",
+            "blk.0.attn_q.bias",
+            "blk.0.attn_k.bias",
+        ];
+        let result = verify_architecture_from_tensor_evidence(
+            Architecture::Llama,
+            names.into_iter(),
+        );
+        assert_eq!(result, Architecture::Qwen2, "Bias must override LLaMA to Qwen2");
+    }
+
+    #[test]
+    fn falsify_arch_evidence_007_phi_bias_not_overridden() {
+        // Phi with bias → stays Phi (Phi legitimately has bias)
+        let names = vec![
+            "blk.0.attn_q.weight",
+            "blk.0.attn_q.bias",
+        ];
+        let result = verify_architecture_from_tensor_evidence(
+            Architecture::Phi,
+            names.into_iter(),
+        );
+        assert_eq!(result, Architecture::Phi, "Phi with bias must stay Phi");
+    }
+
+    #[test]
+    fn test_infer_arch_qwen3_with_qk_norm() {
+        // infer_architecture_from_names() must detect Qwen3 via QK norm
+        let mut tensors: BTreeMap<String, (Vec<f32>, Vec<usize>)> = BTreeMap::new();
+        tensors.insert(
+            "model.layers.0.self_attn.q_proj.weight".to_string(),
+            (vec![1.0], vec![1]),
+        );
+        tensors.insert(
+            "model.layers.0.self_attn.q_norm.weight".to_string(),
+            (vec![1.0], vec![1]),
+        );
+
+        let result = infer_architecture_from_names(&tensors);
+        assert_eq!(result, Some("qwen3".to_string()), "QK norm must infer qwen3");
+    }

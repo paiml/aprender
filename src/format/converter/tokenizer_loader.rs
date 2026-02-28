@@ -429,6 +429,13 @@ fn infer_architecture_from_names(
     }
 
     if has_model_layers {
+        // Qwen3 has QK norm — unique signal, check first
+        let has_qk_norm = tensors
+            .keys()
+            .any(|k| k.contains("self_attn.q_norm.weight"));
+        if has_qk_norm {
+            return Some("qwen3".to_string());
+        }
         // Distinguish Qwen2 from LLaMA/Mistral by attention bias presence
         let has_attn_bias = tensors.keys().any(|k| k.contains("self_attn.q_proj.bias"));
         let has_fused_qkv = tensors.keys().any(|k| k.contains("qkv_proj.weight"));

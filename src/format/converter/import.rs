@@ -59,12 +59,17 @@ pub fn apr_import<P: AsRef<Path>>(
     }
 
     // PMAT-224: Warn about unverified architectures before proceeding
-    let effective_arch = infer_architecture(
+    let metadata_arch = infer_architecture(
         &options.architecture,
         load_result
             .model_config
             .as_ref()
             .and_then(|c| c.architecture.as_deref()),
+    );
+    // CONTRACT: Tensor evidence overrides metadata claims
+    let effective_arch = verify_architecture_from_tensor_evidence(
+        metadata_arch,
+        load_result.tensors.keys().map(String::as_str),
     );
     warn_unverified_architecture(&effective_arch, options.strict)?;
 
@@ -160,11 +165,16 @@ pub(crate) fn apr_import_gguf_raw(
         options.tokenizer_path.as_deref(),
     )?;
 
-    let effective_arch = resolve_and_log_architecture(
+    let metadata_arch = resolve_and_log_architecture(
         &options.architecture,
         raw_result.model_config.architecture.as_deref(),
         options.strict,
     )?;
+    // CONTRACT: Tensor evidence overrides metadata claims (e.g., bartowski Qwen3 GGUFs claim "qwen2")
+    let effective_arch = verify_architecture_from_tensor_evidence(
+        metadata_arch,
+        raw_result.tensors.keys().map(String::as_str),
+    );
 
     let mapped_tensors =
         map_and_enforce_raw_tensors(raw_result.tensors, &effective_arch, &raw_result.model_config)?;

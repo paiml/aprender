@@ -185,3 +185,25 @@ fn falsify_arch_004_missing_at_layer_3_not_0() {
         "Error must name the specific missing tensor: {msg}"
     );
 }
+
+// ============================================================================
+// FALSIFY-ARCH-005: Tensor evidence corrects architecture for completeness gate
+// ============================================================================
+
+#[test]
+fn falsify_arch_005_qwen3_tensors_pass_when_evidence_corrects_metadata() {
+    // Qwen3 tensors (with QK norm) PASS under correct "qwen3" architecture
+    let names = with_qk_norm(base_tensor_names(2), 2);
+    let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+    assert!(
+        enforce_architecture_completeness(&refs, "qwen3", 2).is_ok(),
+        "Qwen3 tensors with QK norm must pass under qwen3 architecture"
+    );
+
+    // Same tensors FAIL under wrong "qwen2" architecture (bias missing)
+    let result = enforce_architecture_completeness(&refs, "qwen2", 2);
+    assert!(
+        result.is_err(),
+        "Qwen3 tensors must fail under qwen2 architecture (no bias)"
+    );
+}
