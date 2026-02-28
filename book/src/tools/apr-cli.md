@@ -54,6 +54,8 @@ The binary will be available at `target/release/apr`.
 | `explain` | Explain errors, architecture, and tensors | Knowledge Sharing |
 | `tui` | Interactive terminal UI | Visualization |
 | `canary` | Regression testing via tensor statistics | Jidoka |
+| `finetune` | Fine-tune model with LoRA (classification, test-gen) | Kaizen |
+| `tune` | Hyperparameter search for fine-tuning | Kaizen |
 
 ## Serve Command
 
@@ -1360,6 +1362,109 @@ Uploading...
 
 ✓ Published to https://huggingface.co/org/model-name
 ```
+
+## Finetune Command
+
+Fine-tune a model with LoRA adapters for classification or test generation tasks.
+
+```bash
+# Classification fine-tuning (shell safety classifier)
+apr finetune --task classify --model-size 0.5B \
+    ./models/qwen2.5-coder-0.5b \
+    --data corpus.jsonl \
+    --epochs 3 \
+    --learning-rate 0.0001 \
+    --num-classes 5 \
+    -o ./ssc-checkpoints/
+
+# Test generation fine-tuning
+apr finetune --task test-gen --model-size 0.5B \
+    ./models/qwen2.5-coder-0.5b \
+    --data tests.jsonl \
+    --epochs 5 \
+    -o ./test-gen-checkpoints/
+```
+
+### Corpus Format
+
+Classification JSONL with `input` (text) and `label` (integer):
+
+```json
+{"input": "#!/bin/sh\necho \"hello\"\n", "label": 0}
+{"input": "#!/bin/bash\neval \"$x\"\n", "label": 4}
+```
+
+Export from bashrs: `cargo run -p bashrs --release --example fast_classify_export /tmp/ssc-corpus.jsonl`
+
+## Tune Command
+
+Automatic hyperparameter search for fine-tuning (SPEC-TUNE-2026-001). Searches over 9 parameters using TPE, Grid, or Random strategies.
+
+```bash
+# Scout: fast 1-epoch sweep to find good HP region
+apr tune --task classify --budget 5 --scout --data corpus.jsonl --json
+
+# Full: multi-epoch search with ASHA early stopping
+apr tune --task classify --budget 10 --data corpus.jsonl \
+    --strategy tpe --scheduler asha
+
+# Grid search
+apr tune --task classify --budget 27 --data corpus.jsonl \
+    --strategy grid --scheduler none
+```
+
+### Options
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--task` | Task type: `classify` | Required |
+| `--budget` | Number of trials | 10 |
+| `--strategy` | Search strategy: `tpe`, `grid`, `random` | `tpe` |
+| `--scheduler` | Early stopping: `asha`, `median`, `none` | `asha` |
+| `--scout` | Scout mode (1 epoch per trial, no scheduling) | false |
+| `--data` | Path to JSONL corpus | Required |
+| `--json` | Output result as JSON | false |
+| `--seed` | Random seed for reproducibility | 42 |
+
+### Search Space (Classification)
+
+| Parameter | Domain | Range |
+|-----------|--------|-------|
+| `learning_rate` | Continuous (log) | 5e-6 .. 5e-4 |
+| `lora_rank` | Discrete | 4 .. 64 (step 4) |
+| `lora_alpha_ratio` | Continuous | 0.5 .. 2.0 |
+| `batch_size` | Categorical | {8, 16, 32, 64, 128} |
+| `warmup_fraction` | Continuous | 0.01 .. 0.2 |
+| `gradient_clip_norm` | Continuous | 0.5 .. 5.0 |
+| `class_weights` | Categorical | {uniform, inverse_freq, sqrt_inverse} |
+| `target_modules` | Categorical | {qv, qkv, all_linear} |
+| `lr_min_ratio` | Continuous (log) | 0.001 .. 0.1 |
+
+### Example Output
+
+```
+{
+  "strategy": "tpe",
+  "mode": "scout",
+  "budget": 3,
+  "trials": [
+    {"id": 0, "val_loss": 1.5823, "val_accuracy": 0.333, ...},
+    {"id": 1, "val_loss": 1.5987, "val_accuracy": 0.267, ...},
+    {"id": 2, "val_loss": 1.6094, "val_accuracy": 0.200, ...}
+  ],
+  "best_trial_id": 0,
+  "total_time_ms": 1430
+}
+```
+
+### Workflow
+
+1. **Export corpus** from bashrs: `cargo run -p bashrs --release --example fast_classify_export /tmp/ssc-corpus.jsonl`
+2. **Scout** to find good HP region: `apr tune --task classify --budget 5 --scout --data /tmp/ssc-corpus.jsonl --json`
+3. **Full run** with best strategy: `apr tune --task classify --budget 20 --data /tmp/ssc-corpus.jsonl --strategy tpe --scheduler asha`
+4. **Fine-tune** with discovered HPs: `apr finetune --task classify --model-size 0.5B ...`
+
+See also: [entrenar classify_tune_demo example](https://github.com/paiml/entrenar/blob/main/examples/classify_tune_demo.rs) for the programmatic API.
 
 ## Exit Codes
 

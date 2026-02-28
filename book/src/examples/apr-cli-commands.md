@@ -15,7 +15,7 @@ APR model files need comprehensive tooling for:
 
 ## The Solution: apr-cli
 
-The `apr` CLI provides 27 commands for complete model lifecycle management:
+The `apr` CLI provides 29+ commands for complete model lifecycle management:
 
 ```bash
 # Build the CLI
@@ -39,7 +39,7 @@ Run: `cargo run --example apr_cli_commands`
 {{#include ../../../examples/apr_cli_commands.rs}}
 ```
 
-## All 27 Commands
+## All Commands
 
 ### Model Inspection
 
@@ -441,7 +441,7 @@ apr debug model.apr --drama
 | Benefit | Description |
 |---------|-------------|
 | Standardized | Consistent CLI for all APR models |
-| Comprehensive | 27 commands cover full lifecycle |
+| Comprehensive | 29+ commands cover full lifecycle |
 | Scriptable | JSON output for automation |
 | Debuggable | Deep inspection with drama mode |
 | Validatable | 100-point QA with grades |
