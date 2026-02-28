@@ -283,6 +283,11 @@
             text: None,
             max_tokens: 32,
             threshold: 20.0,
+            task: None,
+            data: None,
+            model_size: None,
+            num_classes: 5,
+            generate_card: false,
         }));
         let result = execute_command(&cli);
         assert!(result.is_err(), "Eval should fail with non-existent file");

@@ -23,12 +23,22 @@
                 text,
                 max_tokens,
                 threshold,
+                task,
+                data,
+                model_size,
+                num_classes,
+                generate_card,
             }) => {
                 assert_eq!(file, PathBuf::from("model.gguf"));
                 assert_eq!(dataset, "lambada");
                 assert_eq!(text, Some("The quick brown fox".to_string()));
                 assert_eq!(max_tokens, 256);
                 assert!((threshold - 15.5).abs() < f32::EPSILON);
+                assert!(task.is_none());
+                assert!(data.is_none());
+                assert!(model_size.is_none());
+                assert_eq!(num_classes, 5);
+                assert!(!generate_card);
             }
             _ => panic!("Expected Eval command"),
         }

@@ -74,9 +74,9 @@ pub enum ExtendedCommands {
         #[arg(long)]
         brick: Option<String>,
     },
-    /// Evaluate model perplexity (spec H13: PPL <= 20)
+    /// Evaluate model perplexity (spec H13: PPL <= 20) or classification metrics
     Eval {
-        /// Path to model file
+        /// Path to model file or checkpoint directory
         #[arg(value_name = "FILE")]
         file: PathBuf,
         /// Dataset: wikitext-2, lambada, or custom
@@ -91,6 +91,21 @@ pub enum ExtendedCommands {
         /// Perplexity threshold for pass/fail
         #[arg(long, default_value = "20.0")]
         threshold: f32,
+        /// Task type: omit for perplexity, "classify" for classification eval
+        #[arg(long)]
+        task: Option<String>,
+        /// Test data file (JSONL) for classification evaluation
+        #[arg(long, value_name = "FILE")]
+        data: Option<PathBuf>,
+        /// Model size hint: "0.5B", "tiny" (for classification eval)
+        #[arg(long)]
+        model_size: Option<String>,
+        /// Number of output classes (default: 5)
+        #[arg(long, default_value = "5")]
+        num_classes: usize,
+        /// Generate HuggingFace model card (README.md) in checkpoint dir
+        #[arg(long)]
+        generate_card: bool,
     },
     /// Deep profiling with Roofline analysis
     Profile {
@@ -294,7 +309,7 @@ pub enum ExtendedCommands {
         #[arg(short, long)]
         verbose: bool,
     },
-    /// ML tuning: LoRA/QLoRA configuration and memory planning (GH-176)
+    /// ML tuning: LoRA/QLoRA configuration, memory planning, and HPO (GH-176, SPEC-TUNE-2026-001)
     Tune {
         /// Path to model file (optional if using --model)
         #[arg(value_name = "FILE")]
@@ -323,6 +338,39 @@ pub enum ExtendedCommands {
         /// Output as JSON (for CI integration)
         #[arg(long)]
         json: bool,
+        /// Task type for HPO: classify (SPEC-TUNE-2026-001)
+        #[arg(long)]
+        task: Option<String>,
+        /// Number of HPO trials (default: 10)
+        #[arg(long, default_value = "10")]
+        budget: usize,
+        /// HPO search strategy: tpe, grid, random
+        #[arg(long, default_value = "tpe")]
+        strategy: String,
+        /// HPO scheduler: asha, median, none
+        #[arg(long, default_value = "asha")]
+        scheduler: String,
+        /// Scout mode: 1 epoch per trial for fast exploration
+        #[arg(long)]
+        scout: bool,
+        /// Training data file for HPO (JSONL format)
+        #[arg(long, value_name = "FILE")]
+        data: Option<PathBuf>,
+        /// Number of output classes for classification
+        #[arg(long, default_value = "5")]
+        num_classes: usize,
+        /// Model size hint for HPO (e.g., "0.5B", "1.5B")
+        #[arg(long)]
+        model_size: Option<String>,
+        /// Warm-start from scout phase results directory
+        #[arg(long, value_name = "DIR")]
+        from_scout: Option<PathBuf>,
+        /// Maximum epochs per trial (full mode, default: 20)
+        #[arg(long, default_value = "20")]
+        max_epochs: usize,
+        /// Maximum wall-clock time (e.g., "8h", "30m")
+        #[arg(long)]
+        time_limit: Option<String>,
     },
     /// Attach live TUI to a running training session
     Monitor {

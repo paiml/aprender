@@ -267,14 +267,32 @@ fn dispatch_profiling_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             text,
             max_tokens,
             threshold,
-        } => eval::run(
-            file,
-            dataset,
-            text.as_deref(),
-            Some(*max_tokens),
-            Some(*threshold),
-            cli.json,
-        ),
+            task,
+            data,
+            model_size,
+            num_classes,
+            generate_card,
+        } => {
+            if task.as_deref() == Some("classify") {
+                eval::run_classify_eval(
+                    file,
+                    data.as_deref(),
+                    model_size.as_deref(),
+                    *num_classes,
+                    *generate_card,
+                    cli.json,
+                )
+            } else {
+                eval::run(
+                    file,
+                    dataset,
+                    text.as_deref(),
+                    Some(*max_tokens),
+                    Some(*threshold),
+                    cli.json,
+                )
+            }
+        }
 
         ExtendedCommands::Qa {
             file,
@@ -376,17 +394,48 @@ fn dispatch_profiling_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             freeze_base,
             train_data,
             json,
-        } => tune::run(
-            file.as_deref(),
-            method.parse().unwrap_or(tune::TuneMethod::Auto),
-            *rank,
-            *vram,
-            *plan,
-            model.as_deref(),
-            *freeze_base,
-            train_data.as_deref(),
-            *json || cli.json,
-        ),
+            task,
+            budget,
+            strategy,
+            scheduler,
+            scout,
+            data,
+            num_classes,
+            model_size,
+            from_scout,
+            max_epochs,
+            time_limit,
+        } => {
+            // Route to classify tune if --task classify is specified
+            if task.as_deref() == Some("classify") {
+                tune::run_classify_tune(
+                    file.as_deref(),
+                    *budget,
+                    strategy,
+                    scheduler,
+                    *scout,
+                    data.as_deref().or(train_data.as_deref()),
+                    *num_classes,
+                    model_size.as_deref().or(model.as_deref()),
+                    from_scout.as_deref(),
+                    *max_epochs,
+                    time_limit.as_deref(),
+                    *json || cli.json,
+                )
+            } else {
+                tune::run(
+                    file.as_deref(),
+                    method.parse().unwrap_or(tune::TuneMethod::Auto),
+                    *rank,
+                    *vram,
+                    *plan,
+                    model.as_deref(),
+                    *freeze_base,
+                    train_data.as_deref(),
+                    *json || cli.json,
+                )
+            }
+        }
 
         _ => return None,
     };

@@ -1,4 +1,4 @@
-[1mModel:[0m [36mtest.apr[0m ([33mencoder-decoder (Whisper/T5)[0m, [36mApr[0m)
+[1mModel:[0m [36mtest.apr[0m ([33mencoder-decoder (Whisper/T5)[0m, [36mAPR[0m)
 
 [2m═══════════════════════════════════════════════════════════════[0m
 [1m                   CROSS-ATTENTION DATA FLOW[0m

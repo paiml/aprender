@@ -440,4 +440,116 @@ fn run_safetensors_evaluation(
     ))
 }
 
+/// Run classification evaluation on a checkpoint directory.
+///
+/// Loads a saved ClassifyPipeline checkpoint, evaluates against a JSONL test set,
+/// and reports per-class precision/recall/F1 with optional model card generation.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn run_classify_eval(
+    checkpoint_dir: &Path,
+    data_path: Option<&Path>,
+    model_size: Option<&str>,
+    num_classes: usize,
+    generate_card: bool,
+    json_output: bool,
+) -> Result<()> {
+    use entrenar::finetune::classify_pipeline::ClassifyConfig;
+    use entrenar::finetune::{evaluate_checkpoint, SSC_LABELS};
+    use entrenar::transformer::TransformerConfig;
+
+    let data_path = data_path.ok_or_else(|| {
+        CliError::ValidationFailed(
+            "--data <test.jsonl> is required for classification evaluation".to_string(),
+        )
+    })?;
+
+    if !data_path.exists() {
+        return Err(CliError::FileNotFound(data_path.to_path_buf()));
+    }
+
+    if !checkpoint_dir.is_dir() {
+        return Err(CliError::ValidationFailed(format!(
+            "Checkpoint directory not found: {}",
+            checkpoint_dir.display()
+        )));
+    }
+
+    // Resolve model config
+    let model_config = match model_size.unwrap_or("tiny") {
+        "0.5B" | "500M" | "qwen2-0.5b" => TransformerConfig::qwen2_0_5b(),
+        "9B" | "qwen3.5-9b" | "qwen3_5" | "qwen3.5" => TransformerConfig::qwen3_5_9b(),
+        _ => TransformerConfig::tiny(),
+    };
+
+    let classify_config = ClassifyConfig {
+        num_classes,
+        ..ClassifyConfig::default()
+    };
+
+    // Build label names
+    let label_names: Vec<String> = if num_classes == 5 {
+        SSC_LABELS.iter().map(|s| (*s).to_string()).collect()
+    } else {
+        (0..num_classes).map(|i| format!("class_{i}")).collect()
+    };
+
+    if !json_output {
+        output::section("APR Classification Evaluation");
+        println!();
+        output::kv("Checkpoint", checkpoint_dir.display());
+        output::kv("Test data", data_path.display());
+        output::kv(
+            "Model",
+            format!(
+                "{}h x {}L",
+                model_config.hidden_size, model_config.num_hidden_layers,
+            ),
+        );
+        output::kv("Classes", num_classes.to_string());
+        println!();
+        println!("{}", "Loading checkpoint and evaluating...".yellow());
+        println!();
+    }
+
+    let report = evaluate_checkpoint(
+        checkpoint_dir,
+        data_path,
+        &model_config,
+        classify_config,
+        &label_names,
+    )
+    .map_err(|e| CliError::ValidationFailed(format!("Evaluation failed: {e}")))?;
+
+    // Output results
+    if json_output {
+        println!("{}", report.to_json());
+    } else {
+        println!("{}", report.to_report());
+    }
+
+    // Generate model card if requested
+    if generate_card {
+        let model_name = "paiml/shell-safety-classifier";
+        let base_model = Some("Qwen/Qwen2.5-Coder-0.5B");
+        let card = report.to_model_card(model_name, base_model);
+        let card_path = checkpoint_dir.join("README.md");
+        std::fs::write(&card_path, &card).map_err(|e| {
+            CliError::ValidationFailed(format!(
+                "Failed to write model card to {}: {e}",
+                card_path.display()
+            ))
+        })?;
+        if !json_output {
+            println!();
+            println!(
+                "{} Model card written to {}",
+                "✓".green(),
+                card_path.display()
+            );
+        }
+    }
+
+    Ok(())
+}
+
 include!("using.rs");

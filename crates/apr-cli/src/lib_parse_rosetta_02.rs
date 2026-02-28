@@ -256,6 +256,11 @@
             text: None,
             max_tokens: 512,
             threshold: 20.0,
+            task: None,
+            data: None,
+            model_size: None,
+            num_classes: 5,
+            generate_card: false,
         });
         let paths = extract_model_paths(&cmd);
         assert_eq!(paths, vec![PathBuf::from("model.gguf")]);

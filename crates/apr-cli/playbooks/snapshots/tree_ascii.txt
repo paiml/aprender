@@ -1,121 +1,121 @@
-[1;36mtest.apr[0m ([32m48[0m tensors, [33m27.00 MB[0m)
-├── [1;34mdecoder[0m [[2m32[0m tensors, [2m18.00 MB[0m]
-│   └── [1;34mlayers[0m [[2m32[0m tensors, [2m18.00 MB[0m]
-│       ├── [1;34m0[0m [[2m8[0m tensors, [2m4.50 MB[0m]
-│       │   ├── [1;34mcross_attn[0m [[2m4[0m tensors, [2m2.25 MB[0m]
-│       │   │   ├── [1;34mk_proj[0m [[2m1[0m tensors, [2m576.00 KB[0m]
-│       │   │   │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.00 KB[0m
-│       │   │   ├── [1;34mout_proj[0m [[2m1[0m tensors, [2m576.00 KB[0m]
-│       │   │   │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.00 KB[0m
-│       │   │   ├── [1;34mq_proj[0m [[2m1[0m tensors, [2m576.00 KB[0m]
-│       │   │   │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.00 KB[0m
-│       │   │   └── [1;34mv_proj[0m [[2m1[0m tensors, [2m576.00 KB[0m]
-│       │   │       └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.00 KB[0m
-│       │   └── [1;34mself_attn[0m [[2m4[0m tensors, [2m2.25 MB[0m]
-│       │       ├── [1;34mk_proj[0m [[2m1[0m tensors, [2m576.00 KB[0m]
-│       │       │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.00 KB[0m
-│       │       ├── [1;34mout_proj[0m [[2m1[0m tensors, [2m576.00 KB[0m]
-│       │       │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.00 KB[0m
-│       │       ├── [1;34mq_proj[0m [[2m1[0m tensors, [2m576.00 KB[0m]
-│       │       │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.00 KB[0m
-│       │       └── [1;34mv_proj[0m [[2m1[0m tensors, [2m576.00 KB[0m]
-│       │           └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.00 KB[0m
-│       ├── [1;34m1[0m [[2m8[0m tensors, [2m4.50 MB[0m]
-│       │   ├── [1;34mcross_attn[0m [[2m4[0m tensors, [2m2.25 MB[0m]
-│       │   │   ├── [1;34mk_proj[0m [[2m1[0m tensors, [2m576.00 KB[0m]
-│       │   │   │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.00 KB[0m
-│       │   │   ├── [1;34mout_proj[0m [[2m1[0m tensors, [2m576.00 KB[0m]
-│       │   │   │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.00 KB[0m
-│       │   │   ├── [1;34mq_proj[0m [[2m1[0m tensors, [2m576.00 KB[0m]
-│       │   │   │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.00 KB[0m
-│       │   │   └── [1;34mv_proj[0m [[2m1[0m tensors, [2m576.00 KB[0m]
-│       │   │       └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.00 KB[0m
-│       │   └── [1;34mself_attn[0m [[2m4[0m tensors, [2m2.25 MB[0m]
-│       │       ├── [1;34mk_proj[0m [[2m1[0m tensors, [2m576.00 KB[0m]
-│       │       │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.00 KB[0m
-│       │       ├── [1;34mout_proj[0m [[2m1[0m tensors, [2m576.00 KB[0m]
-│       │       │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.00 KB[0m
-│       │       ├── [1;34mq_proj[0m [[2m1[0m tensors, [2m576.00 KB[0m]
-│       │       │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.00 KB[0m
-│       │       └── [1;34mv_proj[0m [[2m1[0m tensors, [2m576.00 KB[0m]
-│       │           └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.00 KB[0m
-│       ├── [1;34m2[0m [[2m8[0m tensors, [2m4.50 MB[0m]
-│       │   ├── [1;34mcross_attn[0m [[2m4[0m tensors, [2m2.25 MB[0m]
-│       │   │   ├── [1;34mk_proj[0m [[2m1[0m tensors, [2m576.00 KB[0m]
-│       │   │   │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.00 KB[0m
-│       │   │   ├── [1;34mout_proj[0m [[2m1[0m tensors, [2m576.00 KB[0m]
-│       │   │   │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.00 KB[0m
-│       │   │   ├── [1;34mq_proj[0m [[2m1[0m tensors, [2m576.00 KB[0m]
-│       │   │   │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.00 KB[0m
-│       │   │   └── [1;34mv_proj[0m [[2m1[0m tensors, [2m576.00 KB[0m]
-│       │   │       └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.00 KB[0m
-│       │   └── [1;34mself_attn[0m [[2m4[0m tensors, [2m2.25 MB[0m]
-│       │       ├── [1;34mk_proj[0m [[2m1[0m tensors, [2m576.00 KB[0m]
-│       │       │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.00 KB[0m
-│       │       ├── [1;34mout_proj[0m [[2m1[0m tensors, [2m576.00 KB[0m]
-│       │       │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.00 KB[0m
-│       │       ├── [1;34mq_proj[0m [[2m1[0m tensors, [2m576.00 KB[0m]
-│       │       │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.00 KB[0m
-│       │       └── [1;34mv_proj[0m [[2m1[0m tensors, [2m576.00 KB[0m]
-│       │           └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.00 KB[0m
-│       └── [1;34m3[0m [[2m8[0m tensors, [2m4.50 MB[0m]
-│           ├── [1;34mcross_attn[0m [[2m4[0m tensors, [2m2.25 MB[0m]
-│           │   ├── [1;34mk_proj[0m [[2m1[0m tensors, [2m576.00 KB[0m]
-│           │   │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.00 KB[0m
-│           │   ├── [1;34mout_proj[0m [[2m1[0m tensors, [2m576.00 KB[0m]
-│           │   │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.00 KB[0m
-│           │   ├── [1;34mq_proj[0m [[2m1[0m tensors, [2m576.00 KB[0m]
-│           │   │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.00 KB[0m
-│           │   └── [1;34mv_proj[0m [[2m1[0m tensors, [2m576.00 KB[0m]
-│           │       └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.00 KB[0m
-│           └── [1;34mself_attn[0m [[2m4[0m tensors, [2m2.25 MB[0m]
-│               ├── [1;34mk_proj[0m [[2m1[0m tensors, [2m576.00 KB[0m]
-│               │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.00 KB[0m
-│               ├── [1;34mout_proj[0m [[2m1[0m tensors, [2m576.00 KB[0m]
-│               │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.00 KB[0m
-│               ├── [1;34mq_proj[0m [[2m1[0m tensors, [2m576.00 KB[0m]
-│               │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.00 KB[0m
-│               └── [1;34mv_proj[0m [[2m1[0m tensors, [2m576.00 KB[0m]
-│                   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.00 KB[0m
-└── [1;34mencoder[0m [[2m16[0m tensors, [2m9.00 MB[0m]
-    └── [1;34mlayers[0m [[2m16[0m tensors, [2m9.00 MB[0m]
-        ├── [1;34m0[0m [[2m4[0m tensors, [2m2.25 MB[0m]
-        │   └── [1;34mself_attn[0m [[2m4[0m tensors, [2m2.25 MB[0m]
-        │       ├── [1;34mk_proj[0m [[2m1[0m tensors, [2m576.00 KB[0m]
-        │       │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.00 KB[0m
-        │       ├── [1;34mout_proj[0m [[2m1[0m tensors, [2m576.00 KB[0m]
-        │       │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.00 KB[0m
-        │       ├── [1;34mq_proj[0m [[2m1[0m tensors, [2m576.00 KB[0m]
-        │       │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.00 KB[0m
-        │       └── [1;34mv_proj[0m [[2m1[0m tensors, [2m576.00 KB[0m]
-        │           └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.00 KB[0m
-        ├── [1;34m1[0m [[2m4[0m tensors, [2m2.25 MB[0m]
-        │   └── [1;34mself_attn[0m [[2m4[0m tensors, [2m2.25 MB[0m]
-        │       ├── [1;34mk_proj[0m [[2m1[0m tensors, [2m576.00 KB[0m]
-        │       │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.00 KB[0m
-        │       ├── [1;34mout_proj[0m [[2m1[0m tensors, [2m576.00 KB[0m]
-        │       │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.00 KB[0m
-        │       ├── [1;34mq_proj[0m [[2m1[0m tensors, [2m576.00 KB[0m]
-        │       │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.00 KB[0m
-        │       └── [1;34mv_proj[0m [[2m1[0m tensors, [2m576.00 KB[0m]
-        │           └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.00 KB[0m
-        ├── [1;34m2[0m [[2m4[0m tensors, [2m2.25 MB[0m]
-        │   └── [1;34mself_attn[0m [[2m4[0m tensors, [2m2.25 MB[0m]
-        │       ├── [1;34mk_proj[0m [[2m1[0m tensors, [2m576.00 KB[0m]
-        │       │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.00 KB[0m
-        │       ├── [1;34mout_proj[0m [[2m1[0m tensors, [2m576.00 KB[0m]
-        │       │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.00 KB[0m
-        │       ├── [1;34mq_proj[0m [[2m1[0m tensors, [2m576.00 KB[0m]
-        │       │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.00 KB[0m
-        │       └── [1;34mv_proj[0m [[2m1[0m tensors, [2m576.00 KB[0m]
-        │           └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.00 KB[0m
-        └── [1;34m3[0m [[2m4[0m tensors, [2m2.25 MB[0m]
-            └── [1;34mself_attn[0m [[2m4[0m tensors, [2m2.25 MB[0m]
-                ├── [1;34mk_proj[0m [[2m1[0m tensors, [2m576.00 KB[0m]
-                │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.00 KB[0m
-                ├── [1;34mout_proj[0m [[2m1[0m tensors, [2m576.00 KB[0m]
-                │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.00 KB[0m
-                ├── [1;34mq_proj[0m [[2m1[0m tensors, [2m576.00 KB[0m]
-                │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.00 KB[0m
-                └── [1;34mv_proj[0m [[2m1[0m tensors, [2m576.00 KB[0m]
-                    └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.00 KB[0m
+[1;36mtest.apr[0m ([32m48[0m tensors, [33m27.0 MB[0m)
+├── [1;34mdecoder[0m [[2m32[0m tensors, [2m18.0 MB[0m]
+│   └── [1;34mlayers[0m [[2m32[0m tensors, [2m18.0 MB[0m]
+│       ├── [1;34m0[0m [[2m8[0m tensors, [2m4.5 MB[0m]
+│       │   ├── [1;34mcross_attn[0m [[2m4[0m tensors, [2m2.2 MB[0m]
+│       │   │   ├── [1;34mk_proj[0m [[2m1[0m tensors, [2m576.0 KB[0m]
+│       │   │   │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.0 KB[0m
+│       │   │   ├── [1;34mout_proj[0m [[2m1[0m tensors, [2m576.0 KB[0m]
+│       │   │   │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.0 KB[0m
+│       │   │   ├── [1;34mq_proj[0m [[2m1[0m tensors, [2m576.0 KB[0m]
+│       │   │   │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.0 KB[0m
+│       │   │   └── [1;34mv_proj[0m [[2m1[0m tensors, [2m576.0 KB[0m]
+│       │   │       └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.0 KB[0m
+│       │   └── [1;34mself_attn[0m [[2m4[0m tensors, [2m2.2 MB[0m]
+│       │       ├── [1;34mk_proj[0m [[2m1[0m tensors, [2m576.0 KB[0m]
+│       │       │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.0 KB[0m
+│       │       ├── [1;34mout_proj[0m [[2m1[0m tensors, [2m576.0 KB[0m]
+│       │       │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.0 KB[0m
+│       │       ├── [1;34mq_proj[0m [[2m1[0m tensors, [2m576.0 KB[0m]
+│       │       │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.0 KB[0m
+│       │       └── [1;34mv_proj[0m [[2m1[0m tensors, [2m576.0 KB[0m]
+│       │           └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.0 KB[0m
+│       ├── [1;34m1[0m [[2m8[0m tensors, [2m4.5 MB[0m]
+│       │   ├── [1;34mcross_attn[0m [[2m4[0m tensors, [2m2.2 MB[0m]
+│       │   │   ├── [1;34mk_proj[0m [[2m1[0m tensors, [2m576.0 KB[0m]
+│       │   │   │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.0 KB[0m
+│       │   │   ├── [1;34mout_proj[0m [[2m1[0m tensors, [2m576.0 KB[0m]
+│       │   │   │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.0 KB[0m
+│       │   │   ├── [1;34mq_proj[0m [[2m1[0m tensors, [2m576.0 KB[0m]
+│       │   │   │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.0 KB[0m
+│       │   │   └── [1;34mv_proj[0m [[2m1[0m tensors, [2m576.0 KB[0m]
+│       │   │       └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.0 KB[0m
+│       │   └── [1;34mself_attn[0m [[2m4[0m tensors, [2m2.2 MB[0m]
+│       │       ├── [1;34mk_proj[0m [[2m1[0m tensors, [2m576.0 KB[0m]
+│       │       │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.0 KB[0m
+│       │       ├── [1;34mout_proj[0m [[2m1[0m tensors, [2m576.0 KB[0m]
+│       │       │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.0 KB[0m
+│       │       ├── [1;34mq_proj[0m [[2m1[0m tensors, [2m576.0 KB[0m]
+│       │       │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.0 KB[0m
+│       │       └── [1;34mv_proj[0m [[2m1[0m tensors, [2m576.0 KB[0m]
+│       │           └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.0 KB[0m
+│       ├── [1;34m2[0m [[2m8[0m tensors, [2m4.5 MB[0m]
+│       │   ├── [1;34mcross_attn[0m [[2m4[0m tensors, [2m2.2 MB[0m]
+│       │   │   ├── [1;34mk_proj[0m [[2m1[0m tensors, [2m576.0 KB[0m]
+│       │   │   │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.0 KB[0m
+│       │   │   ├── [1;34mout_proj[0m [[2m1[0m tensors, [2m576.0 KB[0m]
+│       │   │   │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.0 KB[0m
+│       │   │   ├── [1;34mq_proj[0m [[2m1[0m tensors, [2m576.0 KB[0m]
+│       │   │   │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.0 KB[0m
+│       │   │   └── [1;34mv_proj[0m [[2m1[0m tensors, [2m576.0 KB[0m]
+│       │   │       └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.0 KB[0m
+│       │   └── [1;34mself_attn[0m [[2m4[0m tensors, [2m2.2 MB[0m]
+│       │       ├── [1;34mk_proj[0m [[2m1[0m tensors, [2m576.0 KB[0m]
+│       │       │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.0 KB[0m
+│       │       ├── [1;34mout_proj[0m [[2m1[0m tensors, [2m576.0 KB[0m]
+│       │       │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.0 KB[0m
+│       │       ├── [1;34mq_proj[0m [[2m1[0m tensors, [2m576.0 KB[0m]
+│       │       │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.0 KB[0m
+│       │       └── [1;34mv_proj[0m [[2m1[0m tensors, [2m576.0 KB[0m]
+│       │           └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.0 KB[0m
+│       └── [1;34m3[0m [[2m8[0m tensors, [2m4.5 MB[0m]
+│           ├── [1;34mcross_attn[0m [[2m4[0m tensors, [2m2.2 MB[0m]
+│           │   ├── [1;34mk_proj[0m [[2m1[0m tensors, [2m576.0 KB[0m]
+│           │   │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.0 KB[0m
+│           │   ├── [1;34mout_proj[0m [[2m1[0m tensors, [2m576.0 KB[0m]
+│           │   │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.0 KB[0m
+│           │   ├── [1;34mq_proj[0m [[2m1[0m tensors, [2m576.0 KB[0m]
+│           │   │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.0 KB[0m
+│           │   └── [1;34mv_proj[0m [[2m1[0m tensors, [2m576.0 KB[0m]
+│           │       └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.0 KB[0m
+│           └── [1;34mself_attn[0m [[2m4[0m tensors, [2m2.2 MB[0m]
+│               ├── [1;34mk_proj[0m [[2m1[0m tensors, [2m576.0 KB[0m]
+│               │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.0 KB[0m
+│               ├── [1;34mout_proj[0m [[2m1[0m tensors, [2m576.0 KB[0m]
+│               │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.0 KB[0m
+│               ├── [1;34mq_proj[0m [[2m1[0m tensors, [2m576.0 KB[0m]
+│               │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.0 KB[0m
+│               └── [1;34mv_proj[0m [[2m1[0m tensors, [2m576.0 KB[0m]
+│                   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.0 KB[0m
+└── [1;34mencoder[0m [[2m16[0m tensors, [2m9.0 MB[0m]
+    └── [1;34mlayers[0m [[2m16[0m tensors, [2m9.0 MB[0m]
+        ├── [1;34m0[0m [[2m4[0m tensors, [2m2.2 MB[0m]
+        │   └── [1;34mself_attn[0m [[2m4[0m tensors, [2m2.2 MB[0m]
+        │       ├── [1;34mk_proj[0m [[2m1[0m tensors, [2m576.0 KB[0m]
+        │       │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.0 KB[0m
+        │       ├── [1;34mout_proj[0m [[2m1[0m tensors, [2m576.0 KB[0m]
+        │       │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.0 KB[0m
+        │       ├── [1;34mq_proj[0m [[2m1[0m tensors, [2m576.0 KB[0m]
+        │       │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.0 KB[0m
+        │       └── [1;34mv_proj[0m [[2m1[0m tensors, [2m576.0 KB[0m]
+        │           └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.0 KB[0m
+        ├── [1;34m1[0m [[2m4[0m tensors, [2m2.2 MB[0m]
+        │   └── [1;34mself_attn[0m [[2m4[0m tensors, [2m2.2 MB[0m]
+        │       ├── [1;34mk_proj[0m [[2m1[0m tensors, [2m576.0 KB[0m]
+        │       │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.0 KB[0m
+        │       ├── [1;34mout_proj[0m [[2m1[0m tensors, [2m576.0 KB[0m]
+        │       │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.0 KB[0m
+        │       ├── [1;34mq_proj[0m [[2m1[0m tensors, [2m576.0 KB[0m]
+        │       │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.0 KB[0m
+        │       └── [1;34mv_proj[0m [[2m1[0m tensors, [2m576.0 KB[0m]
+        │           └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.0 KB[0m
+        ├── [1;34m2[0m [[2m4[0m tensors, [2m2.2 MB[0m]
+        │   └── [1;34mself_attn[0m [[2m4[0m tensors, [2m2.2 MB[0m]
+        │       ├── [1;34mk_proj[0m [[2m1[0m tensors, [2m576.0 KB[0m]
+        │       │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.0 KB[0m
+        │       ├── [1;34mout_proj[0m [[2m1[0m tensors, [2m576.0 KB[0m]
+        │       │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.0 KB[0m
+        │       ├── [1;34mq_proj[0m [[2m1[0m tensors, [2m576.0 KB[0m]
+        │       │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.0 KB[0m
+        │       └── [1;34mv_proj[0m [[2m1[0m tensors, [2m576.0 KB[0m]
+        │           └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.0 KB[0m
+        └── [1;34m3[0m [[2m4[0m tensors, [2m2.2 MB[0m]
+            └── [1;34mself_attn[0m [[2m4[0m tensors, [2m2.2 MB[0m]
+                ├── [1;34mk_proj[0m [[2m1[0m tensors, [2m576.0 KB[0m]
+                │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.0 KB[0m
+                ├── [1;34mout_proj[0m [[2m1[0m tensors, [2m576.0 KB[0m]
+                │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.0 KB[0m
+                ├── [1;34mq_proj[0m [[2m1[0m tensors, [2m576.0 KB[0m]
+                │   └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.0 KB[0m
+                └── [1;34mv_proj[0m [[2m1[0m tensors, [2m576.0 KB[0m]
+                    └── [32mweight[0m [2m[384, 384][0m ━━━ [2m576.0 KB[0m
