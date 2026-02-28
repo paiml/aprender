@@ -1038,7 +1038,9 @@ Spec H12 (>= 10 tok/s): ✓ PASS
 
 ## Eval Command
 
-Evaluate model perplexity (spec H13: PPL <= 20).
+Evaluate model quality. Supports two modes: **perplexity** (language models) and **classification** (fine-tuned classifiers).
+
+### Perplexity Evaluation (default)
 
 ```bash
 # Evaluate perplexity
@@ -1054,7 +1056,7 @@ apr eval model.gguf --context 512
 apr eval model.gguf --json
 ```
 
-### Example Output
+#### Example Output (Perplexity)
 
 ```
 === Evaluation: model.gguf ===
@@ -1069,6 +1071,73 @@ Results:
   Cross-entropy: 2.13
 
 Spec H13 (PPL <= 20): ✓ PASS
+```
+
+### Classification Evaluation (--task classify)
+
+Evaluate a fine-tuned classifier checkpoint against a JSONL test set. Computes 13 metrics
+with bootstrap confidence intervals and optional HuggingFace model card generation.
+
+```bash
+# Text report (sklearn-style)
+apr eval /path/to/checkpoint/ --task classify \
+    --data test.jsonl --model-size 0.5B --num-classes 5
+
+# JSON output
+apr eval /path/to/checkpoint/ --task classify \
+    --data test.jsonl --model-size 0.5B --num-classes 5 --json
+
+# Generate HuggingFace model card
+apr eval /path/to/checkpoint/ --task classify \
+    --data test.jsonl --model-size 0.5B --num-classes 5 --generate-card
+```
+
+| Flag | Description |
+|------|-------------|
+| `--task classify` | Switch to classification evaluation mode |
+| `--data FILE` | JSONL test set (`{"input":"...","label":N}`) |
+| `--model-size SIZE` | Base model size hint: `0.5B`, `tiny` |
+| `--num-classes N` | Number of output classes (default: 5) |
+| `--generate-card` | Write HuggingFace README.md to checkpoint directory |
+| `--json` | Machine-readable JSON output |
+
+#### Metrics Computed
+
+- **Accuracy & Agreement**: accuracy, top-2 accuracy, Cohen's kappa, MCC (with 95% bootstrap CIs)
+- **Per-Class**: precision, recall, F1, support for each class
+- **Proper Scoring Rules**: Brier score, log loss
+- **Calibration**: ECE, mean confidence, confidence gap
+- **Baselines**: random (1/K), majority-class, lift
+
+#### Example Output (Classification)
+
+```
+=== Classification Report ===
+
+                precision    recall  f1-score   support
+              safe    0.8022    0.5840    0.6759       125
+     needs-quoting    0.5000    0.0526    0.0952        38
+ non-deterministic    0.5423    0.7624    0.6337       101
+    non-idempotent    0.5389    0.8333    0.6545       108
+            unsafe    0.7188    0.5391    0.6161       128
+ ----------------------------------------------------------
+         macro avg    0.6204    0.5543    0.5351       500
+      weighted avg    0.6329    0.6220    0.6033       500
+
+Accuracy: 62.20% [57.80%, 66.80%]
+Cohen's kappa: 0.5124 (moderate)
+MCC: 0.5241 [0.4701, 0.5793]
+Macro F1: 0.5351 [0.4901, 0.5791]
+
+Brier Score: 0.6077 (lower is better)
+Log Loss: 1.8209 (lower is better)
+
+Baselines: random=20.0%, majority=25.6%, model=62.2% (2.4x lift over majority)
+
+Top confused pairs:
+  safe → non-deterministic: 28
+  unsafe → non-idempotent: 24
+  safe → non-idempotent: 22
 ```
 
 ## Profile Command

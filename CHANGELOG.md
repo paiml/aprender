@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `apr eval --task classify`: Classification evaluation against JSONL test sets
+  - 13 metrics: accuracy, top-2 accuracy, Cohen's kappa, MCC, per-class P/R/F1, Brier score, log loss, ECE
+  - Bootstrap 95% confidence intervals on accuracy, macro F1, MCC
+  - Baselines (random, majority-class, lift)
+  - Error analysis (top-5 most confused class pairs)
+  - `--json` for machine-readable output
+  - `--generate-card` writes HuggingFace model card (README.md) to checkpoint directory
+  - New args: `--task`, `--data`, `--model-size`, `--num-classes`, `--generate-card`
 - `apr compile` subcommand: build standalone executables with embedded .apr models (APR-SPEC §4.16)
   - Generates temporary Cargo project with `include_bytes!` model embedding
   - Supports `--release`, `--strip`, `--lto` size optimization flags

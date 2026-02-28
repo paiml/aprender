@@ -240,7 +240,7 @@ cargo install apr-cli
 | `apr hex` | Hex dump tensor data |
 | `apr flow` | Data flow visualization |
 | `apr bench` | Benchmark throughput (spec H12: >= 10 tok/s) |
-| `apr eval` | Evaluate model perplexity (spec H13: PPL <= 20) |
+| `apr eval` | Evaluate model: perplexity (LM) or classification metrics (--task classify) |
 | `apr profile` | Deep profiling with Roofline analysis |
 | `apr qa` | Falsifiable QA checklist for model releases |
 | `apr qualify` | Cross-subcommand smoke test (does every tool handle this model?) |
