@@ -191,7 +191,7 @@
 </tbody></table>
 </div>
 <h2 id="the-solution-apr-cli"><a class="header" href="#the-solution-apr-cli">The Solution: apr-cli</a></h2>
-<p>The <code>apr</code> CLI provides 27 commands for complete model lifecycle management:</p>
+<p>The <code>apr</code> CLI provides 29+ commands for complete model lifecycle management:</p>
 <pre><code class="language-bash"># Build the CLI
 cargo build -p apr-cli
 
@@ -564,7 +564,7 @@ fn print_cli_commands(model_path: &amp;Path, model_v2_path: &amp;Path) {
     println!(&quot;    ./target/debug/apr bench model.gguf&quot;);
     println!(&quot;    ./target/debug/apr bench model.gguf --iterations 100\n&quot;);
 }</code></pre>
-<h2 id="all-27-commands"><a class="header" href="#all-27-commands">All 27 Commands</a></h2>
+<h2 id="all-commands"><a class="header" href="#all-commands">All Commands</a></h2>
 <h3 id="model-inspection"><a class="header" href="#model-inspection">Model Inspection</a></h3>
 <h4 id="1-inspect---view-model-metadata"><a class="header" href="#1-inspect---view-model-metadata">1. INSPECT - View Model Metadata</a></h4>
 <pre><code class="language-bash">apr inspect model.apr              # Basic info
@@ -838,7 +838,7 @@ apr debug model.apr --drama
 <h2 id="benefits"><a class="header" href="#benefits">Benefits</a></h2>
 <div class="table-wrapper"><table><thead><tr><th>Benefit</th><th>Description</th></tr></thead><tbody>
 <tr><td>Standardized</td><td>Consistent CLI for all APR models</td></tr>
-<tr><td>Comprehensive</td><td>27 commands cover full lifecycle</td></tr>
+<tr><td>Comprehensive</td><td>29+ commands cover full lifecycle</td></tr>
 <tr><td>Scriptable</td><td>JSON output for automation</td></tr>
 <tr><td>Debuggable</td><td>Deep inspection with drama mode</td></tr>
 <tr><td>Validatable</td><td>100-point QA with grades</td></tr>

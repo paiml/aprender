@@ -224,6 +224,8 @@
 <tr><td><code>explain</code></td><td>Explain errors, architecture, and tensors</td><td>Knowledge Sharing</td></tr>
 <tr><td><code>tui</code></td><td>Interactive terminal UI</td><td>Visualization</td></tr>
 <tr><td><code>canary</code></td><td>Regression testing via tensor statistics</td><td>Jidoka</td></tr>
+<tr><td><code>finetune</code></td><td>Fine-tune model with LoRA (classification, test-gen)</td><td>Kaizen</td></tr>
+<tr><td><code>tune</code></td><td>Hyperparameter search for fine-tuning</td><td>Kaizen</td></tr>
 </tbody></table>
 </div>
 <h2 id="serve-command"><a class="header" href="#serve-command">Serve Command</a></h2>
@@ -1278,6 +1280,90 @@ Uploading...
 
 ✓ Published to https://huggingface.co/org/model-name
 </code></pre>
+<h2 id="finetune-command"><a class="header" href="#finetune-command">Finetune Command</a></h2>
+<p>Fine-tune a model with LoRA adapters for classification or test generation tasks.</p>
+<pre><code class="language-bash"># Classification fine-tuning (shell safety classifier)
+apr finetune --task classify --model-size 0.5B \
+    ./models/qwen2.5-coder-0.5b \
+    --data corpus.jsonl \
+    --epochs 3 \
+    --learning-rate 0.0001 \
+    --num-classes 5 \
+    -o ./ssc-checkpoints/
+
+# Test generation fine-tuning
+apr finetune --task test-gen --model-size 0.5B \
+    ./models/qwen2.5-coder-0.5b \
+    --data tests.jsonl \
+    --epochs 5 \
+    -o ./test-gen-checkpoints/
+</code></pre>
+<h3 id="corpus-format"><a class="header" href="#corpus-format">Corpus Format</a></h3>
+<p>Classification JSONL with <code>input</code> (text) and <code>label</code> (integer):</p>
+<pre><code class="language-json">{&quot;input&quot;: &quot;#!/bin/sh\necho \&quot;hello\&quot;\n&quot;, &quot;label&quot;: 0}
+{&quot;input&quot;: &quot;#!/bin/bash\neval \&quot;$x\&quot;\n&quot;, &quot;label&quot;: 4}
+</code></pre>
+<p>Export from bashrs: <code>cargo run -p bashrs --release --example fast_classify_export /tmp/ssc-corpus.jsonl</code></p>
+<h2 id="tune-command"><a class="header" href="#tune-command">Tune Command</a></h2>
+<p>Automatic hyperparameter search for fine-tuning (SPEC-TUNE-2026-001). Searches over 9 parameters using TPE, Grid, or Random strategies.</p>
+<pre><code class="language-bash"># Scout: fast 1-epoch sweep to find good HP region
+apr tune --task classify --budget 5 --scout --data corpus.jsonl --json
+
+# Full: multi-epoch search with ASHA early stopping
+apr tune --task classify --budget 10 --data corpus.jsonl \
+    --strategy tpe --scheduler asha
+
+# Grid search
+apr tune --task classify --budget 27 --data corpus.jsonl \
+    --strategy grid --scheduler none
+</code></pre>
+<h3 id="options"><a class="header" href="#options">Options</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Flag</th><th>Description</th><th>Default</th></tr></thead><tbody>
+<tr><td><code>--task</code></td><td>Task type: <code>classify</code></td><td>Required</td></tr>
+<tr><td><code>--budget</code></td><td>Number of trials</td><td>10</td></tr>
+<tr><td><code>--strategy</code></td><td>Search strategy: <code>tpe</code>, <code>grid</code>, <code>random</code></td><td><code>tpe</code></td></tr>
+<tr><td><code>--scheduler</code></td><td>Early stopping: <code>asha</code>, <code>median</code>, <code>none</code></td><td><code>asha</code></td></tr>
+<tr><td><code>--scout</code></td><td>Scout mode (1 epoch per trial, no scheduling)</td><td>false</td></tr>
+<tr><td><code>--data</code></td><td>Path to JSONL corpus</td><td>Required</td></tr>
+<tr><td><code>--json</code></td><td>Output result as JSON</td><td>false</td></tr>
+<tr><td><code>--seed</code></td><td>Random seed for reproducibility</td><td>42</td></tr>
+</tbody></table>
+</div>
+<h3 id="search-space-classification"><a class="header" href="#search-space-classification">Search Space (Classification)</a></h3>
+<div class="table-wrapper"><table><thead><tr><th>Parameter</th><th>Domain</th><th>Range</th></tr></thead><tbody>
+<tr><td><code>learning_rate</code></td><td>Continuous (log)</td><td>5e-6 .. 5e-4</td></tr>
+<tr><td><code>lora_rank</code></td><td>Discrete</td><td>4 .. 64 (step 4)</td></tr>
+<tr><td><code>lora_alpha_ratio</code></td><td>Continuous</td><td>0.5 .. 2.0</td></tr>
+<tr><td><code>batch_size</code></td><td>Categorical</td><td>{8, 16, 32, 64, 128}</td></tr>
+<tr><td><code>warmup_fraction</code></td><td>Continuous</td><td>0.01 .. 0.2</td></tr>
+<tr><td><code>gradient_clip_norm</code></td><td>Continuous</td><td>0.5 .. 5.0</td></tr>
+<tr><td><code>class_weights</code></td><td>Categorical</td><td>{uniform, inverse_freq, sqrt_inverse}</td></tr>
+<tr><td><code>target_modules</code></td><td>Categorical</td><td>{qv, qkv, all_linear}</td></tr>
+<tr><td><code>lr_min_ratio</code></td><td>Continuous (log)</td><td>0.001 .. 0.1</td></tr>
+</tbody></table>
+</div>
+<h3 id="example-output-21"><a class="header" href="#example-output-21">Example Output</a></h3>
+<pre><code>{
+  &quot;strategy&quot;: &quot;tpe&quot;,
+  &quot;mode&quot;: &quot;scout&quot;,
+  &quot;budget&quot;: 3,
+  &quot;trials&quot;: [
+    {&quot;id&quot;: 0, &quot;val_loss&quot;: 1.5823, &quot;val_accuracy&quot;: 0.333, ...},
+    {&quot;id&quot;: 1, &quot;val_loss&quot;: 1.5987, &quot;val_accuracy&quot;: 0.267, ...},
+    {&quot;id&quot;: 2, &quot;val_loss&quot;: 1.6094, &quot;val_accuracy&quot;: 0.200, ...}
+  ],
+  &quot;best_trial_id&quot;: 0,
+  &quot;total_time_ms&quot;: 1430
+}
+</code></pre>
+<h3 id="workflow"><a class="header" href="#workflow">Workflow</a></h3>
+<ol>
+<li><strong>Export corpus</strong> from bashrs: <code>cargo run -p bashrs --release --example fast_classify_export /tmp/ssc-corpus.jsonl</code></li>
+<li><strong>Scout</strong> to find good HP region: <code>apr tune --task classify --budget 5 --scout --data /tmp/ssc-corpus.jsonl --json</code></li>
+<li><strong>Full run</strong> with best strategy: <code>apr tune --task classify --budget 20 --data /tmp/ssc-corpus.jsonl --strategy tpe --scheduler asha</code></li>
+<li><strong>Fine-tune</strong> with discovered HPs: <code>apr finetune --task classify --model-size 0.5B ...</code></li>
+</ol>
+<p>See also: <a href="https://github.com/paiml/entrenar/blob/main/examples/classify_tune_demo.rs">entrenar classify_tune_demo example</a> for the programmatic API.</p>
 <h2 id="exit-codes"><a class="header" href="#exit-codes">Exit Codes</a></h2>
 <div class="table-wrapper"><table><thead><tr><th>Code</th><th>Meaning</th></tr></thead><tbody>
 <tr><td>0</td><td>Success</td></tr>
