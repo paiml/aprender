@@ -1360,11 +1360,14 @@ apr finetune --task test-gen --model-size 0.5B \
     -o ./test-gen-checkpoints/
 </code></pre>
 <h3 id="corpus-format"><a class="header" href="#corpus-format">Corpus Format</a></h3>
-<p>Classification JSONL with <code>input</code> (text) and <code>label</code> (integer):</p>
-<pre><code class="language-json">{&quot;input&quot;: &quot;#!/bin/sh\necho \&quot;hello\&quot;\n&quot;, &quot;label&quot;: 0}
-{&quot;input&quot;: &quot;#!/bin/bash\neval \&quot;$x\&quot;\n&quot;, &quot;label&quot;: 4}
+<p>Classification JSONL with <code>input</code> (text) and <code>label</code> (integer). The shell preamble (shebang, <code>set -euf</code>, <code>trap</code> cleanup) is automatically stripped during export so the model sees only safety-relevant commands:</p>
+<pre><code class="language-json">{&quot;input&quot;: &quot;echo \&quot;hello\&quot;\n&quot;, &quot;label&quot;: 0}
+{&quot;input&quot;: &quot;eval \&quot;$x\&quot;\n&quot;, &quot;label&quot;: 4}
 </code></pre>
 <p>Export from bashrs: <code>cargo run -p bashrs --release --example fast_classify_export /tmp/ssc-corpus.jsonl</code></p>
+<blockquote>
+<p><strong>Auto-class-balancing</strong>: When training with <code>apr finetune --task classify</code>, entrenar auto-detects class imbalance (ratio &gt;2:1) and applies sqrt-inverse weights. No manual <code>--class-weights</code> flag is needed for typical corpora.</p>
+</blockquote>
 <h2 id="tune-command"><a class="header" href="#tune-command">Tune Command</a></h2>
 <p>Automatic hyperparameter search for fine-tuning (SPEC-TUNE-2026-001). Searches over 9 parameters using TPE, Grid, or Random strategies.</p>
 <pre><code class="language-bash"># Scout: fast 1-epoch sweep to find good HP region
