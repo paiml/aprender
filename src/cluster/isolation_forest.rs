@@ -134,7 +134,7 @@ impl IsolationTree {
         }
     }
 
-    #[allow(clippy::self_only_used_in_recursion)]
+    #[allow(clippy::only_used_in_recursion)]
     fn path_length_recursive(&self, sample: &[f32], node: &IsolationNode, depth: f32) -> f32 {
         // Leaf node - add average path length for remaining samples
         if node.split_feature.is_none() {

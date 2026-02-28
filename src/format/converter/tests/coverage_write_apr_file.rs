@@ -19,7 +19,7 @@
             allow_no_config: true,
             ..ImportOptions::default()
         };
-        let empty_f16: BTreeMap<String, (Vec<u8>, Vec<usize>)> = BTreeMap::new();
+        let empty_f16: BTreeMap<String, (Vec<u8>, Vec<usize>, bool)> = BTreeMap::new();
         let result = write_apr_file(
             &tensors,
             &empty_f16, // GH-205: F16 passthrough
@@ -68,7 +68,7 @@
             allow_no_config: true,
             ..ImportOptions::default()
         };
-        let empty_f16: BTreeMap<String, (Vec<u8>, Vec<usize>)> = BTreeMap::new();
+        let empty_f16: BTreeMap<String, (Vec<u8>, Vec<usize>, bool)> = BTreeMap::new();
         let result = write_apr_file(
             &tensors,
             &empty_f16, // GH-205: F16 passthrough
@@ -126,7 +126,7 @@
             allow_no_config: true,
             ..ImportOptions::default()
         };
-        let empty_f16: BTreeMap<String, (Vec<u8>, Vec<usize>)> = BTreeMap::new();
+        let empty_f16: BTreeMap<String, (Vec<u8>, Vec<usize>, bool)> = BTreeMap::new();
         let result = write_apr_file(
             &tensors,
             &empty_f16,
@@ -160,7 +160,7 @@
         };
         options.quantize = Some(QuantizationType::Fp16);
 
-        let empty_f16: BTreeMap<String, (Vec<u8>, Vec<usize>)> = BTreeMap::new();
+        let empty_f16: BTreeMap<String, (Vec<u8>, Vec<usize>, bool)> = BTreeMap::new();
         let result = write_apr_file(
             &tensors,
             &empty_f16,
@@ -190,7 +190,7 @@
         };
         options.quantize = Some(QuantizationType::Int8);
 
-        let empty_f16: BTreeMap<String, (Vec<u8>, Vec<usize>)> = BTreeMap::new();
+        let empty_f16: BTreeMap<String, (Vec<u8>, Vec<usize>, bool)> = BTreeMap::new();
         let result = write_apr_file(
             &tensors,
             &empty_f16,
@@ -220,7 +220,7 @@
             allow_no_config: true,
             ..ImportOptions::default()
         };
-        let empty_f16: BTreeMap<String, (Vec<u8>, Vec<usize>)> = BTreeMap::new();
+        let empty_f16: BTreeMap<String, (Vec<u8>, Vec<usize>, bool)> = BTreeMap::new();
         let result = write_apr_file(
             &tensors,
             &empty_f16,
@@ -287,7 +287,7 @@
             allow_no_config: true,
             ..ImportOptions::default()
         };
-        let empty_f16: BTreeMap<String, (Vec<u8>, Vec<usize>)> = BTreeMap::new();
+        let empty_f16: BTreeMap<String, (Vec<u8>, Vec<usize>, bool)> = BTreeMap::new();
         let result = write_apr_file(
             &tensors,
             &empty_f16,

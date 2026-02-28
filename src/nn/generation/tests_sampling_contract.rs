@@ -109,7 +109,7 @@ mod sampling_proptest_falsify {
             let expected_argmax = data
                 .iter()
                 .enumerate()
-                .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+                .max_by(|(_, a), (_, b)| a.total_cmp(b))
                 .map(|(i, _)| i)
                 .unwrap();
             let logits = Tensor::new(&data, &[vocab_size]);

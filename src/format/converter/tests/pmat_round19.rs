@@ -41,7 +41,7 @@ mod tests {
             ..Default::default()
         };
 
-        let empty_f16: BTreeMap<String, (Vec<u8>, Vec<usize>)> = BTreeMap::new();
+        let empty_f16: BTreeMap<String, (Vec<u8>, Vec<usize>, bool)> = BTreeMap::new();
         write_apr_file(
             &tensors,
             &empty_f16,
