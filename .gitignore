@@ -68,3 +68,9 @@ probar-export/
 *.bak
 *.cov-backup
 .cargo/config.toml.coverage-backup
+
+# PMAT
+.pmat/backup/
+.pmat/context.idx/
+.pmat/workspace.idx/
+.pmat/deps-cache.json
