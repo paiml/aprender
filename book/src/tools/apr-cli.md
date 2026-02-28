@@ -1456,14 +1456,16 @@ apr finetune --task test-gen --model-size 0.5B \
 
 ### Corpus Format
 
-Classification JSONL with `input` (text) and `label` (integer):
+Classification JSONL with `input` (text) and `label` (integer). The shell preamble (shebang, `set -euf`, `trap` cleanup) is automatically stripped during export so the model sees only safety-relevant commands:
 
 ```json
-{"input": "#!/bin/sh\necho \"hello\"\n", "label": 0}
-{"input": "#!/bin/bash\neval \"$x\"\n", "label": 4}
+{"input": "echo \"hello\"\n", "label": 0}
+{"input": "eval \"$x\"\n", "label": 4}
 ```
 
 Export from bashrs: `cargo run -p bashrs --release --example fast_classify_export /tmp/ssc-corpus.jsonl`
+
+> **Auto-class-balancing**: When training with `apr finetune --task classify`, entrenar auto-detects class imbalance (ratio >2:1) and applies sqrt-inverse weights. No manual `--class-weights` flag is needed for typical corpora.
 
 ## Tune Command
 

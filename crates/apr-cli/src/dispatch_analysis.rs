@@ -180,9 +180,152 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             },
         ),
 
+        ExtendedCommands::Train { command } => dispatch_train_command(command, cli),
+
+        ExtendedCommands::Data { command } => dispatch_data_command(command, cli.json),
+
+        ExtendedCommands::Diagnose {
+            checkpoint_dir,
+            data,
+            model_size,
+            num_classes,
+        } => diagnose::run(
+            checkpoint_dir,
+            data.as_deref(),
+            model_size.as_deref(),
+            *num_classes,
+            cli.json,
+        ),
+
         _ => return None,
     };
     Some(result)
+}
+
+/// Dispatch `apr data` subcommands to alimentar-backed implementations.
+fn dispatch_data_command(command: &DataCommands, json: bool) -> std::result::Result<(), CliError> {
+    match command {
+        DataCommands::Audit {
+            file,
+            num_classes,
+            input_column,
+            label_column,
+            preamble_prefix,
+        } => data::run_audit(
+            file,
+            *num_classes,
+            input_column,
+            label_column,
+            preamble_prefix.as_deref(),
+            json,
+        ),
+        DataCommands::Split {
+            file,
+            train,
+            val,
+            test,
+            label_column,
+            seed,
+            output,
+        } => data::run_split(
+            file,
+            label_column,
+            *train,
+            *val,
+            *test,
+            *seed,
+            output,
+            json,
+        ),
+        DataCommands::Balance {
+            file,
+            strategy,
+            label_column,
+            num_classes,
+            seed,
+            output,
+        } => data::run_balance(
+            file,
+            label_column,
+            strategy,
+            *num_classes,
+            *seed,
+            output.as_deref(),
+            json,
+        ),
+    }
+}
+
+/// Dispatch `apr train` subcommands to entrenar-backed implementations.
+fn dispatch_train_command(command: &TrainCommands, cli: &Cli) -> std::result::Result<(), CliError> {
+    match command {
+        TrainCommands::Plan {
+            data,
+            model_size,
+            model_path,
+            num_classes,
+            task,
+            output,
+            strategy,
+            budget,
+            scout,
+            max_epochs,
+            learning_rate,
+            lora_rank,
+            batch_size,
+            val_data,
+            test_data,
+            format,
+        } => train::run_plan(
+            data,
+            model_size,
+            model_path.as_deref(),
+            *num_classes,
+            task,
+            output,
+            strategy,
+            *budget,
+            *scout,
+            *max_epochs,
+            *learning_rate,
+            *lora_rank,
+            *batch_size,
+            val_data.as_deref(),
+            test_data.as_deref(),
+            format,
+            cli.json,
+        ),
+        TrainCommands::Apply {
+            plan,
+            data,
+            model_size,
+            model_path,
+            num_classes,
+            output,
+            strategy,
+            budget,
+            scout,
+            max_epochs,
+            learning_rate,
+            lora_rank,
+            batch_size,
+        } => train::run_apply(
+            plan.as_deref(),
+            data.as_deref(),
+            model_size,
+            model_path.as_deref(),
+            *num_classes,
+            output,
+            strategy,
+            *budget,
+            *scout,
+            *max_epochs,
+            *learning_rate,
+            *lora_rank,
+            *batch_size,
+            cli.json,
+        ),
+    }
 }
 
 /// Dispatch profiling and QA commands (profile, bench, eval, qa, parity, ptx, ptx-map, tune).

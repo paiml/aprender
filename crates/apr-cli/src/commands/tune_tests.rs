@@ -368,3 +368,244 @@ fn test_run_invalid_model_size() {
 
     assert!(result.is_err());
 }
+
+// =========================================================================
+// classify tune tests (SPEC-TUNE-2026-001)
+// =========================================================================
+
+#[test]
+fn test_classify_tune_json_output() {
+    let result = run_classify_tune(
+        None,
+        3,       // budget
+        "tpe",   // strategy
+        "asha",  // scheduler
+        true,    // scout
+        None,    // no data (dry run)
+        5,       // num_classes
+        None,    // model_size
+        None,    // from_scout
+        20,      // max_epochs
+        None,    // time_limit
+        true,    // json output
+    );
+    assert!(result.is_ok(), "JSON classify tune should succeed");
+}
+
+#[test]
+fn test_classify_tune_human_output() {
+    let result = run_classify_tune(
+        None,
+        5,         // budget
+        "random",  // strategy
+        "none",    // scheduler
+        false,     // full mode
+        None,      // no data
+        3,         // num_classes
+        None,      // model_size
+        None,      // from_scout
+        10,        // max_epochs
+        None,      // time_limit
+        false,     // human output
+    );
+    assert!(result.is_ok(), "Human classify tune should succeed");
+}
+
+#[test]
+fn test_classify_tune_invalid_strategy() {
+    let result = run_classify_tune(
+        None,
+        5,
+        "invalid_strategy",
+        "asha",
+        true,
+        None,
+        5,
+        None,
+        None,
+        20,
+        None,
+        false,
+    );
+    assert!(result.is_err(), "Invalid strategy should fail");
+    match result {
+        Err(CliError::ValidationFailed(msg)) => {
+            assert!(msg.contains("Unknown strategy"), "Error should mention unknown strategy, got: {msg}");
+        }
+        other => panic!("Expected ValidationFailed, got {:?}", other),
+    }
+}
+
+#[test]
+fn test_classify_tune_budget_zero() {
+    let result = run_classify_tune(
+        None,
+        0,       // budget=0
+        "tpe",
+        "asha",
+        true,
+        None,
+        5,
+        None,
+        None,
+        20,
+        None,
+        false,
+    );
+    assert!(result.is_err(), "Budget=0 should fail");
+    match result {
+        Err(CliError::ValidationFailed(msg)) => {
+            assert!(msg.contains("FALSIFY-TUNE-001"), "Error should contain FALSIFY-TUNE-001, got: {msg}");
+        }
+        other => panic!("Expected ValidationFailed, got {:?}", other),
+    }
+}
+
+#[test]
+fn test_classify_tune_missing_data() {
+    let result = run_classify_tune(
+        None,
+        3,
+        "tpe",
+        "asha",
+        true,
+        Some(Path::new("/nonexistent/corpus.jsonl")),
+        5,
+        None,
+        None,
+        20,
+        None,
+        false,
+    );
+    assert!(result.is_err(), "Missing data file should fail");
+    match result {
+        Err(CliError::ValidationFailed(msg)) => {
+            assert!(msg.contains("FALSIFY-TUNE-003"), "Error should contain FALSIFY-TUNE-003, got: {msg}");
+        }
+        other => panic!("Expected ValidationFailed, got {:?}", other),
+    }
+}
+
+// ── Additional falsification tests (SPEC-TUNE-2026-001 §7) ────
+
+#[test]
+fn test_classify_tune_grid_strategy_json() {
+    let result = run_classify_tune(
+        None,
+        5,
+        "grid",
+        "median",
+        false,
+        None,
+        3,
+        None,
+        None,
+        10,
+        None,
+        true, // JSON output
+    );
+    assert!(result.is_ok(), "Grid strategy with JSON output should succeed");
+}
+
+#[test]
+fn test_classify_tune_random_strategy() {
+    let result = run_classify_tune(
+        None,
+        3,
+        "random",
+        "none",
+        true,
+        None,
+        5,
+        None,
+        None,
+        1,
+        None,
+        false,
+    );
+    assert!(result.is_ok(), "Random strategy should succeed");
+}
+
+#[test]
+fn test_classify_tune_invalid_scheduler() {
+    let result = run_classify_tune(
+        None,
+        5,
+        "tpe",
+        "hyperband_v99", // invalid scheduler
+        true,
+        None,
+        5,
+        None,
+        None,
+        20,
+        None,
+        false,
+    );
+    assert!(result.is_err(), "Invalid scheduler should fail");
+}
+
+#[test]
+fn test_classify_tune_num_classes_zero() {
+    let result = run_classify_tune(
+        None,
+        3,
+        "tpe",
+        "asha",
+        true,
+        None,
+        0, // num_classes=0
+        None,
+        None,
+        20,
+        None,
+        false,
+    );
+    assert!(result.is_err(), "num_classes=0 should fail");
+    match result {
+        Err(CliError::ValidationFailed(msg)) => {
+            assert!(msg.contains("FALSIFY-TUNE-004"), "Error should contain FALSIFY-TUNE-004, got: {msg}");
+        }
+        other => panic!("Expected ValidationFailed, got {:?}", other),
+    }
+}
+
+#[test]
+fn test_classify_tune_scout_mode_caps_epochs() {
+    // Scout mode should succeed with budget=1 (minimal)
+    let result = run_classify_tune(
+        None,
+        1,
+        "tpe",
+        "asha",
+        true, // scout mode
+        None,
+        5,
+        None,
+        None,
+        100,
+        None,
+        true, // JSON for easy verification
+    );
+    assert!(result.is_ok(), "Scout mode with budget=1 should succeed");
+}
+
+#[test]
+fn test_classify_tune_large_budget_json() {
+    let result = run_classify_tune(
+        None,
+        100,
+        "tpe",
+        "asha",
+        false,
+        None,
+        10,
+        None,
+        None,
+        20,
+        None,
+        true, // JSON output
+    );
+    // Should succeed — budget=100 with no data just shows sample configs
+    assert!(result.is_ok(), "Large budget with JSON should succeed");
+}

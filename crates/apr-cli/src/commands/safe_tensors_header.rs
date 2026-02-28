@@ -56,7 +56,7 @@ fn list_gguf_tensors(
 ) -> Result<(), CliError> {
     let filtered: Vec<&GgufTensorEntry> = tensors
         .iter()
-        .filter(|t| filter.map_or(true, |f| t.name.contains(f)))
+        .filter(|t| filter.is_none_or(|f| t.name.contains(f)))
         .collect();
 
     if json_output {
@@ -225,7 +225,7 @@ fn run_safetensors(opts: &HexOptions, bytes: &[u8]) -> Result<(), CliError> {
     let filter = opts.tensor.as_deref();
     let matching: Vec<&&String> = tensor_names
         .iter()
-        .filter(|n| filter.map_or(true, |f| n.contains(f)))
+        .filter(|n| filter.is_none_or(|f| n.contains(f)))
         .collect();
 
     if matching.is_empty() {

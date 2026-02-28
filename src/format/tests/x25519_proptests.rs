@@ -25,7 +25,7 @@ proptest! {
         let model = Model { weights: data.clone() };
 
         // Generate recipient keypair
-        let recipient_secret = X25519SecretKey::random_from_rng(rand::rng());
+        let recipient_secret = X25519SecretKey::random_from_rng(aes_gcm::aead::OsRng);
         let recipient_public = X25519PublicKey::from(&recipient_secret);
 
         let dir = tempdir().expect("tempdir");
@@ -50,9 +50,9 @@ proptest! {
         let model = Model { weights: data };
 
         // Generate two different keypairs
-        let recipient_secret = X25519SecretKey::random_from_rng(rand::rng());
+        let recipient_secret = X25519SecretKey::random_from_rng(aes_gcm::aead::OsRng);
         let recipient_public = X25519PublicKey::from(&recipient_secret);
-        let wrong_secret = X25519SecretKey::random_from_rng(rand::rng());
+        let wrong_secret = X25519SecretKey::random_from_rng(aes_gcm::aead::OsRng);
 
         let dir = tempdir().expect("tempdir");
         let path = dir.path().join("test.apr");
@@ -73,7 +73,7 @@ proptest! {
         struct Model { v: i32 }
 
         let model = Model { v: 1 };
-        let recipient_secret = X25519SecretKey::random_from_rng(rand::rng());
+        let recipient_secret = X25519SecretKey::random_from_rng(aes_gcm::aead::OsRng);
         let recipient_public = X25519PublicKey::from(&recipient_secret);
 
         let dir = tempdir().expect("tempdir");

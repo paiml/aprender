@@ -27,7 +27,7 @@ fn print_cross_attention_flow(
         .iter()
         .filter(|n| n.contains("encoder_attn") || n.contains("cross_attn"))
         .filter(|n| n.contains("q_proj.weight"))
-        .filter(|n| layer_filter.map_or(true, |f| n.contains(f)))
+        .filter(|n| layer_filter.is_none_or(|f| n.contains(f)))
         .collect();
 
     if cross_attn_layers.is_empty() {

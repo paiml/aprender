@@ -15,6 +15,7 @@ use super::{
     RECIPIENT_HASH_SIZE, SALT_SIZE, X25519_PUBLIC_KEY_SIZE,
 };
 use super::{X25519PublicKey, X25519SecretKey};
+use aes_gcm::aead::rand_core::RngCore;
 use crate::error::{AprenderError, Result};
 
 /// Save a model with password-based encryption (spec §4.1.2)
@@ -60,8 +61,8 @@ pub fn save_encrypted<M: Serialize>(
     // Generate random salt and nonce
     let mut salt = [0u8; SALT_SIZE];
     let mut nonce_bytes = [0u8; NONCE_SIZE];
-    rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut salt);
-    rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut nonce_bytes);
+    aes_gcm::aead::OsRng.fill_bytes(&mut salt);
+    aes_gcm::aead::OsRng.fill_bytes(&mut nonce_bytes);
 
     // Derive key using Argon2id (spec §4.1.2)
     let mut key = [0u8; KEY_SIZE];
@@ -277,7 +278,7 @@ pub fn save_for_recipient<M: Serialize>(
         compress_payload(&payload_uncompressed, options.compression)?;
 
     // Generate ephemeral keypair for this encryption
-    let ephemeral_secret = X25519SecretKey::random_from_rng(rand::rngs::OsRng);
+    let ephemeral_secret = X25519SecretKey::random_from_rng(&mut aes_gcm::aead::OsRng);
     let ephemeral_public = X25519PublicKey::from(&ephemeral_secret);
 
     // Perform X25519 key agreement
@@ -291,7 +292,7 @@ pub fn save_for_recipient<M: Serialize>(
 
     // Generate random nonce
     let mut nonce_bytes = [0u8; NONCE_SIZE];
-    rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut nonce_bytes);
+    aes_gcm::aead::OsRng.fill_bytes(&mut nonce_bytes);
 
     // Encrypt payload with AES-256-GCM
     let cipher = Aes256Gcm::new_from_slice(&key)

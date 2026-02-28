@@ -378,7 +378,7 @@ fn dequantize_q4k_for_stats(data: &[u8], num_elements: usize) -> Vec<f32> {
     const QK_K: usize = 256;
     const BLOCK_SIZE: usize = 144; // Q4_K block size
 
-    let num_blocks = (num_elements + QK_K - 1) / QK_K;
+    let num_blocks = num_elements.div_ceil(QK_K);
     let mut result = Vec::with_capacity(num_elements);
 
     for block_idx in 0..num_blocks {
@@ -429,7 +429,7 @@ fn dequantize_q6k_for_stats(data: &[u8], num_elements: usize) -> Vec<f32> {
     const QK_K: usize = 256;
     const BLOCK_SIZE: usize = 210; // Q6_K block size
 
-    let num_blocks = (num_elements + QK_K - 1) / QK_K;
+    let num_blocks = num_elements.div_ceil(QK_K);
     let mut result = Vec::with_capacity(num_elements);
 
     for block_idx in 0..num_blocks {

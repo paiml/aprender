@@ -71,10 +71,31 @@ fn hf_get(url: &str) -> ureq::Request {
     }
 }
 
+/// GH-355: Format a user-friendly error for HTTP 401 from HuggingFace gated models.
+fn format_gated_model_error(url: &str) -> String {
+    let has_token = resolve_hf_token().is_some();
+    if has_token {
+        format!(
+            "Access denied (HTTP 401) for {url}\n\
+             Your HF_TOKEN was sent but lacks access to this gated model.\n\
+             Request access at the model page on huggingface.co, then retry."
+        )
+    } else {
+        format!(
+            "Access denied (HTTP 401) for {url}\n\
+             This is a gated model that requires authentication.\n\
+             Set HF_TOKEN=hf_... or run: huggingface-cli login"
+        )
+    }
+}
+
 fn download_file(url: &str, path: &Path) -> Result<()> {
-    let response = hf_get(url)
-        .call()
-        .map_err(|e| CliError::NetworkError(format!("Download failed: {e}")))?;
+    let response = hf_get(url).call().map_err(|e| match &e {
+        ureq::Error::Status(401, _) => {
+            CliError::NetworkError(format_gated_model_error(url))
+        }
+        _ => CliError::NetworkError(format!("Download failed: {e}")),
+    })?;
 
     let mut file = std::fs::File::create(path)?;
     let mut reader = response.into_reader();
@@ -88,9 +109,12 @@ fn download_file(url: &str, path: &Path) -> Result<()> {
 /// Returns a `FileChecksum` with the downloaded size and BLAKE3 hash.
 /// Verifies that downloaded bytes match Content-Length when available.
 fn download_file_with_progress(url: &str, path: &Path) -> Result<FileChecksum> {
-    let response = hf_get(url)
-        .call()
-        .map_err(|e| CliError::NetworkError(format!("Download failed: {e}")))?;
+    let response = hf_get(url).call().map_err(|e| match &e {
+        ureq::Error::Status(401, _) => {
+            CliError::NetworkError(format_gated_model_error(url))
+        }
+        _ => CliError::NetworkError(format!("Download failed: {e}")),
+    })?;
 
     let total = response
         .header("Content-Length")

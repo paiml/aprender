@@ -26,6 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `--arch gemma` (and gemma2, gemma3) now accepted in `apr import`, maps to Llama architecture
 - `--arch falcon`, `--arch mamba`, `--arch t5` return clear "not yet supported" errors
 
+### Changed
+- `apr finetune --task classify` now auto-detects and corrects class imbalance (via entrenar auto-balancing)
+
 ## [0.27.0] - 2026-02-26
 
 ### Changed

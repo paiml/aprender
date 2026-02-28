@@ -72,9 +72,7 @@ pub(crate) fn run(
     let info = read_model_info(file)?;
 
     let bin_name = derive_binary_name(file);
-    let output_path = output_path
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| PathBuf::from(&bin_name));
+    let output_path = output_path.map_or_else(|| PathBuf::from(&bin_name), Path::to_path_buf);
 
     if !json_output {
         output::header("APR Compile Pipeline");
@@ -92,21 +90,46 @@ pub(crate) fn run(
         println!();
     }
 
-    // Generate temp Cargo project
+    // Generate ephemeral Cargo project for compilation
     let tmp_dir = tempfile::tempdir()
-        .map_err(|e| CliError::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+        .map_err(|e| CliError::Io(std::io::Error::other(e)))?;
     let project_dir = tmp_dir.path().join(&bin_name);
 
     generate_cargo_project(&project_dir, &bin_name, file, &info, release, strip, lto)?;
 
-    // Build
     if !json_output {
         output::pipeline_stage("Compiling", output::StageStatus::Running);
     }
 
+    let built_binary = run_cargo_build(&project_dir, target, release, strip, lto, &bin_name)?;
+
+    // Copy to output and make executable
+    fs::copy(&built_binary, &output_path)?;
+    make_executable(&output_path)?;
+
+    let binary_size = fs::metadata(&output_path)?.len();
+
+    if json_output {
+        print_compile_result_json(file, &output_path, &info, binary_size, release, strip, lto, target);
+    } else {
+        print_compile_result_text(&output_path, &info, binary_size, release, strip, lto);
+    }
+
+    Ok(())
+}
+
+/// Run cargo build and return the path to the built binary.
+fn run_cargo_build(
+    project_dir: &Path,
+    target: Option<&str>,
+    release: bool,
+    strip: bool,
+    lto: bool,
+    bin_name: &str,
+) -> Result<PathBuf> {
     let mut cmd = Command::new("cargo");
     cmd.arg("build")
-        .current_dir(&project_dir)
+        .current_dir(project_dir)
         .env_remove("CARGO_TARGET_DIR");
 
     if release {
@@ -149,9 +172,9 @@ pub(crate) fn run(
             .join("target")
             .join(t)
             .join(profile_dir)
-            .join(&bin_name)
+            .join(bin_name)
     } else {
-        project_dir.join("target").join(profile_dir).join(&bin_name)
+        project_dir.join("target").join(profile_dir).join(bin_name)
     };
 
     if !built_binary.exists() {
@@ -161,71 +184,94 @@ pub(crate) fn run(
         )));
     }
 
-    // Copy to output
-    fs::copy(&built_binary, &output_path)?;
+    Ok(built_binary)
+}
 
-    // Make executable on Unix
+/// Make a file executable on Unix.
+fn make_executable(_path: &Path) -> Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let mut perms = fs::metadata(&output_path)?.permissions();
+        let mut perms = fs::metadata(_path)?.permissions();
         perms.set_mode(0o755);
-        fs::set_permissions(&output_path, perms)?;
+        fs::set_permissions(_path, perms)?;
     }
-
-    let binary_size = fs::metadata(&output_path)?.len();
-
-    if json_output {
-        let result = serde_json::json!({
-            "status": "success",
-            "input": file.display().to_string(),
-            "output": output_path.display().to_string(),
-            "model_name": info.name,
-            "architecture": info.model_type,
-            "param_count": info.param_count,
-            "model_size_bytes": info.file_size,
-            "binary_size_bytes": binary_size,
-            "release": release,
-            "strip": strip,
-            "lto": lto,
-            "target": target,
-        });
-        println!("{}", serde_json::to_string_pretty(&result).unwrap());
-    } else {
-        println!();
-        output::subheader("Build Report");
-        println!(
-            "{}",
-            output::kv_table(&[
-                ("Binary", output_path.display().to_string()),
-                ("Binary size", output::format_size(binary_size)),
-                ("Model size", output::format_size(info.file_size)),
-                ("Mode", if release { "release" } else { "debug" }.into()),
-                ("Strip", if strip { "yes" } else { "no" }.into()),
-                ("LTO", if lto { "yes" } else { "no" }.into()),
-            ])
-        );
-        println!();
-        println!("  {}", output::badge_pass("Compile successful"));
-        println!(
-            "  Run with: {}",
-            output_path.display().to_string().as_str()
-        );
-    }
-
     Ok(())
+}
+
+/// Print compile result as JSON.
+#[allow(clippy::fn_params_excessive_bools)]
+fn print_compile_result_json(
+    input: &Path,
+    output_path: &Path,
+    info: &ModelInfo,
+    binary_size: u64,
+    release: bool,
+    strip: bool,
+    lto: bool,
+    target: Option<&str>,
+) {
+    // serde_json::json!() macro uses infallible unwrap internally
+    #[allow(clippy::disallowed_methods)]
+    let result = serde_json::json!({
+        "status": "success",
+        "input": input.display().to_string(),
+        "output": output_path.display().to_string(),
+        "model_name": info.name,
+        "architecture": info.model_type,
+        "param_count": info.param_count,
+        "model_size_bytes": info.file_size,
+        "binary_size_bytes": binary_size,
+        "release": release,
+        "strip": strip,
+        "lto": lto,
+        "target": target,
+    });
+    println!("{}", serde_json::to_string_pretty(&result).unwrap_or_default());
+}
+
+/// Print compile result as text.
+fn print_compile_result_text(
+    output_path: &Path,
+    info: &ModelInfo,
+    binary_size: u64,
+    release: bool,
+    strip: bool,
+    lto: bool,
+) {
+    println!();
+    output::subheader("Build Report");
+    println!(
+        "{}",
+        output::kv_table(&[
+            ("Binary", output_path.display().to_string()),
+            ("Binary size", output::format_size(binary_size)),
+            ("Model size", output::format_size(info.file_size)),
+            ("Mode", if release { "release" } else { "debug" }.into()),
+            ("Strip", if strip { "yes" } else { "no" }.into()),
+            ("LTO", if lto { "yes" } else { "no" }.into()),
+        ])
+    );
+    println!();
+    println!("  {}", output::badge_pass("Compile successful"));
+    println!(
+        "  Run with: {}",
+        output_path.display().to_string().as_str()
+    );
 }
 
 /// Print available compilation targets.
 fn print_targets(json_output: bool) -> Result<()> {
     if json_output {
+        // serde_json::json!() macro uses infallible unwrap internally
+        #[allow(clippy::disallowed_methods)]
         let targets: Vec<_> = TARGETS
             .iter()
             .map(|(triple, desc)| {
                 serde_json::json!({ "triple": triple, "description": desc })
             })
             .collect();
-        println!("{}", serde_json::to_string_pretty(&targets).unwrap());
+        println!("{}", serde_json::to_string_pretty(&targets).unwrap_or_default());
     } else {
         output::header("Available Compilation Targets");
         println!();
@@ -269,7 +315,7 @@ fn read_model_info(path: &Path) -> Result<ModelInfo> {
     let (name, model_type, param_count) = if header.metadata_size > 0 {
         reader
             .seek(SeekFrom::Start(header.metadata_offset))
-            .map_err(|e| CliError::Io(e))?;
+            .map_err(CliError::Io)?;
         let mut meta_bytes = vec![0u8; header.metadata_size as usize];
         reader.read_exact(&mut meta_bytes)?;
 
@@ -335,91 +381,7 @@ codegen-units = 1
     Ok(())
 }
 
-/// Generate the main.rs source for the compiled binary.
-fn generate_main_rs(bin_name: &str, info: &ModelInfo) -> String {
-    let arch_desc = if info.model_type.is_empty() || info.model_type == "unknown" {
-        "ML model".to_string()
-    } else {
-        format!("{} model", info.model_type)
-    };
-
-    let param_desc = format_param_count(info.param_count);
-
-    format!(
-        r##"//! Auto-generated by `apr compile` (APR-SPEC §4.16)
-//!
-//! Standalone {arch_desc} binary with embedded weights.
-
-use clap::Parser;
-
-/// Embedded model data ({param_desc} parameters)
-const MODEL_DATA: &[u8] = include_bytes!("../model.apr");
-
-/// {bin_name} - compiled {arch_desc}
-#[derive(Parser)]
-#[command(name = "{bin_name}")]
-#[command(about = "Standalone {arch_desc} ({param_desc} parameters)")]
-struct Cli {{
-    /// Input file (audio for ASR, text file for LLM)
-    #[arg(value_name = "INPUT")]
-    input: Option<String>,
-
-    /// Text prompt (for text generation models)
-    #[arg(short, long)]
-    prompt: Option<String>,
-
-    /// Maximum tokens to generate
-    #[arg(short = 'n', long, default_value = "128")]
-    max_tokens: usize,
-
-    /// Output format (text, json)
-    #[arg(short, long, default_value = "text")]
-    format: String,
-
-    /// Show model info
-    #[arg(long)]
-    info: bool,
-}}
-
-fn main() {{
-    let cli = Cli::parse();
-
-    if cli.info {{
-        println!("Model: {name}");
-        println!("Architecture: {model_type}");
-        println!("Parameters: {param_desc}");
-        println!("Embedded size: {{}} bytes", MODEL_DATA.len());
-        return;
-    }}
-
-    // Model data is available as MODEL_DATA.
-    // Full inference requires linking against aprender + realizar at compile time.
-    // This binary serves as the deployment scaffold.
-    eprintln!("Model loaded: {{}} bytes", MODEL_DATA.len());
-    eprintln!("Architecture: {model_type}");
-
-    if let Some(prompt) = &cli.prompt {{
-        eprintln!("Prompt: {{}}", prompt);
-        eprintln!("Max tokens: {{}}", cli.max_tokens);
-    }}
-
-    if let Some(input) = &cli.input {{
-        eprintln!("Input: {{}}", input);
-    }}
-
-    eprintln!();
-    eprintln!("Note: Full inference dispatch requires the aprender runtime.");
-    eprintln!("To enable inference, rebuild with: apr compile --release <model.apr>");
-    eprintln!("  and ensure `aprender` + `realizar` crates are available.");
-}}
-"##,
-        arch_desc = arch_desc,
-        param_desc = param_desc,
-        bin_name = bin_name,
-        name = info.name,
-        model_type = info.model_type,
-    )
-}
+include!("compile_codegen.rs");
 
 /// Derive binary name from model file path.
 fn derive_binary_name(path: &Path) -> String {

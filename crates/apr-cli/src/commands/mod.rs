@@ -17,6 +17,9 @@ pub(crate) mod debug;
 pub(crate) mod diff;
 pub(crate) mod distill;
 
+pub(crate) mod data;
+pub(crate) mod diagnose;
+
 pub(crate) mod eval;
 pub(crate) mod explain;
 pub(crate) mod export;
@@ -47,6 +50,7 @@ pub(crate) mod serve;
 pub(crate) mod showcase;
 pub(crate) mod tensors;
 pub(crate) mod trace;
+pub(crate) mod train;
 pub(crate) mod tree;
 pub(crate) mod tui;
 pub(crate) mod tune;

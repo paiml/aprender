@@ -11,8 +11,7 @@ fn prefault_mmap_pages(data: &[u8]) {
         checksum = checksum.wrapping_add(data[i]);
     }
     std::hint::black_box(checksum);
-    // Manual div_ceil to avoid MSRV incompatibility (clippy::incompatible_msrv)
-    let pages_touched = (data.len() + page_size - 1) / page_size;
+    let pages_touched = data.len().div_ceil(page_size);
     let _ = pages_touched;
 }
 

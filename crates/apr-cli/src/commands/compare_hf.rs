@@ -97,7 +97,7 @@ fn run_compare(
     let comparisons: Vec<TensorComparison> = hf_model
         .tensor_names()
         .iter()
-        .filter(|name| tensor_filter.map_or(true, |f| name.contains(f)))
+        .filter(|name| tensor_filter.is_none_or(|f| name.contains(f)))
         .filter_map(|name| {
             let hf_tensor = hf_model.tensor(name).ok()?;
 

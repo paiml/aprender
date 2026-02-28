@@ -144,9 +144,8 @@ fn parse_architecture(arch: Option<&str>) -> Result<Architecture> {
         Some("opt" | "galactica") => Ok(Architecture::Opt),
         Some("phi" | "phi3" | "phi4") => Ok(Architecture::Phi),
         Some("gemma" | "gemma2" | "gemma3") => Ok(Architecture::Llama),
-        Some("falcon" | "mamba" | "t5") => Err(CliError::ValidationFailed(format!(
-            "Architecture '{other}' is not yet supported. Tracking: https://github.com/anthropics/aprender/issues",
-            other = arch.unwrap()
+        Some(unsupported @ ("falcon" | "mamba" | "t5")) => Err(CliError::ValidationFailed(format!(
+            "Architecture '{unsupported}' is not yet supported. Tracking: https://github.com/anthropics/aprender/issues"
         ))),
         Some("auto") | None => Ok(Architecture::Auto),
         Some(other) => Err(CliError::ValidationFailed(format!(

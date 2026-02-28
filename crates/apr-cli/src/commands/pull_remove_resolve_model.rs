@@ -91,14 +91,20 @@ fn fetch_safetensors_companions(model_path: &Path, resolved_uri: &str) -> Result
         .and_then(|s| s.to_str())
         .unwrap_or("model");
 
-    let companions = ["tokenizer.json", "config.json"];
+    // GH-356: tokenizer.json is optional — some models only have tokenizer.model (SentencePiece)
+    let companions = [
+        "tokenizer.json",
+        "config.json",
+        "tokenizer_config.json",
+        "tokenizer.model",
+    ];
     let cache_dir = model_path
         .parent()
         .ok_or_else(|| CliError::ValidationFailed("Model path has no parent directory".into()))?;
 
     for filename in &companions {
         // GAP-UX-002: Use hash-prefixed filename (e.g., "d71534cb.config.json")
-        let prefixed_filename = format!("{}.{}", model_stem, filename);
+        let prefixed_filename = format!("{model_stem}.{filename}");
         let sibling_path = cache_dir.join(&prefixed_filename);
 
         if sibling_path.exists() {
@@ -115,7 +121,8 @@ fn fetch_safetensors_companions(model_path: &Path, resolved_uri: &str) -> Result
             repo_id, filename
         );
 
-        match ureq::get(&url).call() {
+        // GH-355: Use hf_get() for auth — ureq::get() bypassed gated model tokens
+        match hf_get(&url).call() {
             Ok(response) => {
                 let mut body = Vec::new();
                 response.into_reader().read_to_end(&mut body).map_err(|e| {
@@ -135,11 +142,18 @@ fn fetch_safetensors_companions(model_path: &Path, resolved_uri: &str) -> Result
                 );
             }
             Err(ureq::Error::Status(404, _)) => {
-                // File doesn't exist in repo — not fatal
+                // File doesn't exist in repo — not fatal for any companion
                 println!(
                     "  {} {} (not found in repo)",
                     "⚠".yellow(),
                     prefixed_filename.dimmed()
+                );
+            }
+            Err(ureq::Error::Status(401, _)) => {
+                eprintln!(
+                    "  {} {} (access denied — set HF_TOKEN for gated models)",
+                    "⚠".yellow(),
+                    prefixed_filename,
                 );
             }
             Err(e) => {
@@ -152,6 +166,21 @@ fn fetch_safetensors_companions(model_path: &Path, resolved_uri: &str) -> Result
                 );
             }
         }
+    }
+
+    // GH-356: Post-condition — at least one tokenizer file must exist.
+    // Same contract as download_companion_files (sharded path). Without this,
+    // inference fails late with a cryptic "tokenizer not found" instead of failing fast here.
+    let tokenizer_prefixes = ["tokenizer.json", "tokenizer.model", "tokenizer_config.json"];
+    let has_tokenizer = tokenizer_prefixes
+        .iter()
+        .any(|f| cache_dir.join(format!("{model_stem}.{f}")).exists());
+    if !has_tokenizer {
+        return Err(CliError::ValidationFailed(format!(
+            "No tokenizer found for this model. Tried: {}.\n\
+             The model may require a custom tokenizer not hosted in the repository.",
+            tokenizer_prefixes.join(", ")
+        )));
     }
 
     Ok(())
@@ -332,9 +361,12 @@ fn resolve_hf_model(uri: &str) -> Result<ResolvedModel> {
     let repo = parts[1];
 
     let api_url = format!("https://huggingface.co/api/models/{org}/{repo}");
-    let response = hf_get(&api_url)
-        .call()
-        .map_err(|e| CliError::NetworkError(format!("Failed to query HuggingFace API: {e}")))?;
+    let response = hf_get(&api_url).call().map_err(|e| match &e {
+        ureq::Error::Status(401, _) => {
+            CliError::NetworkError(format_gated_model_error(&api_url))
+        }
+        _ => CliError::NetworkError(format!("Failed to query HuggingFace API: {e}")),
+    })?;
 
     let body: serde_json::Value = response.into_json().map_err(|e| {
         CliError::ValidationFailed(format!("Failed to parse HuggingFace response: {e}"))
@@ -365,6 +397,21 @@ fn resolve_hf_model(uri: &str) -> Result<ResolvedModel> {
 
     if let Some(model) = find_safetensors_file(&filenames, org, repo) {
         return Ok(model);
+    }
+
+    // GH-357: Detect PyTorch-only repos and give a helpful conversion hint
+    let has_bin_files = filenames
+        .iter()
+        .any(|f| f.to_lowercase().ends_with(".bin"));
+    if has_bin_files {
+        return Err(CliError::ValidationFailed(format!(
+            "{org}/{repo} only has PyTorch .bin weights (no SafeTensors or GGUF).\n\
+             Convert first with:\n  \
+             python -c \"from transformers import AutoModelForCausalLM; \
+             m = AutoModelForCausalLM.from_pretrained('{org}/{repo}'); \
+             m.save_pretrained('{repo}-st', safe_serialization=True)\"\n\
+             Or request SafeTensors on the model page."
+        )));
     }
 
     Err(CliError::ValidationFailed(format!(

@@ -577,6 +577,31 @@ pub enum ExtendedCommands {
         #[arg(long, value_delimiter = ',')]
         skip: Option<Vec<String>>,
     },
+    /// Training pipeline (plan/apply) — forjar-style pre-flight validation
+    Train {
+        #[command(subcommand)]
+        command: TrainCommands,
+    },
+    /// Data quality pipeline (audit, split, balance) — powered by alimentar
+    Data {
+        #[command(subcommand)]
+        command: DataCommands,
+    },
+    /// Automated Five Whys diagnosis on a training checkpoint
+    Diagnose {
+        /// Path to checkpoint directory
+        #[arg(value_name = "CHECKPOINT_DIR")]
+        checkpoint_dir: PathBuf,
+        /// Test data file (JSONL) for evaluation
+        #[arg(long, value_name = "FILE")]
+        data: Option<PathBuf>,
+        /// Model size hint: "0.5B", "tiny"
+        #[arg(long)]
+        model_size: Option<String>,
+        /// Number of output classes (default: 5)
+        #[arg(long, default_value = "5")]
+        num_classes: usize,
+    },
     /// Publishing, conversion, and analysis tools
     #[command(flatten)]
     Tools(ToolCommands),

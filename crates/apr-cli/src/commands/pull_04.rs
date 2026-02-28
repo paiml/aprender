@@ -7,4 +7,5 @@ include!("pull_gh213_resolve.rs");
 include!("pull_resolve.rs");
 include!("pull_extract.rs");
 include!("pull_resolve_fetch_companions.rs");
+include!("pull_gh355_356_357.rs");
 }

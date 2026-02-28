@@ -58,6 +58,17 @@
             freeze_base: false,
             train_data: None,
             json: false,
+            task: None,
+            budget: 10,
+            strategy: "tpe".to_string(),
+            scheduler: "asha".to_string(),
+            scout: false,
+            data: None,
+            num_classes: 5,
+            model_size: None,
+            from_scout: None,
+            max_epochs: 20,
+            time_limit: None,
         });
         let paths = extract_model_paths(&cmd);
         assert!(paths.is_empty(), "Tune is a diagnostic command (exempt)");

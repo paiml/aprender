@@ -354,6 +354,7 @@
                 freeze_base,
                 train_data,
                 json,
+                ..
             }) => {
                 assert_eq!(file, Some(PathBuf::from("model.apr")));
                 assert_eq!(method, "lora");
@@ -385,6 +386,7 @@
                 freeze_base,
                 train_data,
                 json,
+                ..
             }) => {
                 assert!(file.is_none());
                 assert_eq!(method, "auto");

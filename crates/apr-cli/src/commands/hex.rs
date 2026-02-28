@@ -181,7 +181,7 @@ fn run_apr(opts: &HexOptions) -> Result<(), CliError> {
         .filter(|name| {
             opts.tensor
                 .as_ref()
-                .map_or(true, |f| name.contains(f.as_str()))
+                .is_none_or(|f| name.contains(f.as_str()))
         })
         .copied()
         .collect();
@@ -329,7 +329,7 @@ fn run_gguf(opts: &HexOptions, bytes: &[u8]) -> Result<(), CliError> {
         .filter(|t| {
             opts.tensor
                 .as_ref()
-                .map_or(true, |f| t.name.contains(f.as_str()))
+                .is_none_or(|f| t.name.contains(f.as_str()))
         })
         .collect();
 

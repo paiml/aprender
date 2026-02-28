@@ -151,6 +151,8 @@ trueno-explain = "0.2.2"
 entrenar-lora = "0.3.0"
 # ML training engine: classification fine-tuning pipeline (--task classify)
 entrenar = { version = "0.7.3", features = ["cuda"] }
+# Data loading, splitting, imbalance detection (apr data subcommands)
+alimentar = { path = "/home/noah/src/alimentar", default-features = false, features = ["shuffle"] }
 half = "2.4.1"
 
 [[example]]

@@ -123,7 +123,7 @@ fn print_per_layer_timing(results: &RealProfileResults, granular: bool) {
         .copied()
         .fold(f64::INFINITY, f64::min);
     if max_t > 0.0 && min_t > 0.0 {
-        let cv = (max_t - min_t) / ((max_t + min_t) / 2.0);
+        let cv = (max_t - min_t) / f64::midpoint(max_t, min_t);
         if cv < 0.01 {
             println!(
                 "  {}",
