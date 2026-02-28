@@ -438,14 +438,79 @@ fn parse_special_tokens(
 }
 
 /// Extract BPE merge rules from `model.merges` (PMAT-171).
+///
+/// Handles two HuggingFace tokenizer.json merge formats:
+/// - String format: `"Ġ Ġ"` (space-separated pair)
+/// - Array format:  `["Ġ", "Ġ"]` (two-element array, used by Qwen3)
 fn parse_merges(json: &serde_json::Value) -> Vec<String> {
     json.get("model")
         .and_then(|m| m.get("merges"))
         .and_then(|m| m.as_array())
         .map(|arr| {
             arr.iter()
-                .filter_map(|v| v.as_str().map(String::from))
+                .filter_map(|v| {
+                    // Format 1: "Ġ Ġ" (single string with space separator)
+                    if let Some(s) = v.as_str() {
+                        return Some(s.to_string());
+                    }
+                    // Format 2: ["Ġ", "Ġ"] (two-element array — Qwen3 tokenizer.json)
+                    if let Some(pair) = v.as_array() {
+                        if let (Some(a), Some(b)) = (pair.first(), pair.get(1)) {
+                            if let (Some(a_str), Some(b_str)) = (a.as_str(), b.as_str()) {
+                                return Some(format!("{a_str} {b_str}"));
+                            }
+                        }
+                    }
+                    None
+                })
                 .collect()
         })
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod parse_merges_tests {
+    use super::*;
+
+    #[test]
+    fn parse_merges_string_format() {
+        let json: serde_json::Value = serde_json::json!({
+            "model": {
+                "type": "BPE",
+                "vocab": {},
+                "merges": ["Ġ t", "i n", "e r"]
+            }
+        });
+        let merges = parse_merges(&json);
+        assert_eq!(merges, vec!["Ġ t", "i n", "e r"]);
+    }
+
+    #[test]
+    fn parse_merges_array_format_qwen3() {
+        let json: serde_json::Value = serde_json::json!({
+            "model": {
+                "type": "BPE",
+                "vocab": {},
+                "merges": [["Ġ", "Ġ"], ["ĠĠ", "ĠĠ"], ["i", "n"]]
+            }
+        });
+        let merges = parse_merges(&json);
+        assert_eq!(merges, vec!["Ġ Ġ", "ĠĠ ĠĠ", "i n"]);
+    }
+
+    #[test]
+    fn parse_merges_empty() {
+        let json: serde_json::Value = serde_json::json!({
+            "model": { "type": "BPE", "vocab": {}, "merges": [] }
+        });
+        assert!(parse_merges(&json).is_empty());
+    }
+
+    #[test]
+    fn parse_merges_missing() {
+        let json: serde_json::Value = serde_json::json!({
+            "model": { "type": "BPE", "vocab": {} }
+        });
+        assert!(parse_merges(&json).is_empty());
+    }
 }
