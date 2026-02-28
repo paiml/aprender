@@ -1004,7 +1004,8 @@ Results:
 Spec H12 (&gt;= 10 tok/s): ✓ PASS
 </code></pre>
 <h2 id="eval-command"><a class="header" href="#eval-command">Eval Command</a></h2>
-<p>Evaluate model perplexity (spec H13: PPL &lt;= 20).</p>
+<p>Evaluate model quality. Supports two modes: <strong>perplexity</strong> (language models) and <strong>classification</strong> (fine-tuned classifiers).</p>
+<h3 id="perplexity-evaluation-default"><a class="header" href="#perplexity-evaluation-default">Perplexity Evaluation (default)</a></h3>
 <pre><code class="language-bash"># Evaluate perplexity
 apr eval model.gguf
 
@@ -1017,7 +1018,7 @@ apr eval model.gguf --context 512
 # JSON output
 apr eval model.gguf --json
 </code></pre>
-<h3 id="example-output-14"><a class="header" href="#example-output-14">Example Output</a></h3>
+<h4 id="example-output-perplexity"><a class="header" href="#example-output-perplexity">Example Output (Perplexity)</a></h4>
 <pre><code>=== Evaluation: model.gguf ===
 
 Dataset: wikitext-2
@@ -1030,6 +1031,66 @@ Results:
   Cross-entropy: 2.13
 
 Spec H13 (PPL &lt;= 20): ✓ PASS
+</code></pre>
+<h3 id="classification-evaluation---task-classify"><a class="header" href="#classification-evaluation---task-classify">Classification Evaluation (--task classify)</a></h3>
+<p>Evaluate a fine-tuned classifier checkpoint against a JSONL test set. Computes 13 metrics
+with bootstrap confidence intervals and optional HuggingFace model card generation.</p>
+<pre><code class="language-bash"># Text report (sklearn-style)
+apr eval /path/to/checkpoint/ --task classify \
+    --data test.jsonl --model-size 0.5B --num-classes 5
+
+# JSON output
+apr eval /path/to/checkpoint/ --task classify \
+    --data test.jsonl --model-size 0.5B --num-classes 5 --json
+
+# Generate HuggingFace model card
+apr eval /path/to/checkpoint/ --task classify \
+    --data test.jsonl --model-size 0.5B --num-classes 5 --generate-card
+</code></pre>
+<div class="table-wrapper"><table><thead><tr><th>Flag</th><th>Description</th></tr></thead><tbody>
+<tr><td><code>--task classify</code></td><td>Switch to classification evaluation mode</td></tr>
+<tr><td><code>--data FILE</code></td><td>JSONL test set (<code>{&quot;input&quot;:&quot;...&quot;,&quot;label&quot;:N}</code>)</td></tr>
+<tr><td><code>--model-size SIZE</code></td><td>Base model size hint: <code>0.5B</code>, <code>tiny</code></td></tr>
+<tr><td><code>--num-classes N</code></td><td>Number of output classes (default: 5)</td></tr>
+<tr><td><code>--generate-card</code></td><td>Write HuggingFace README.md to checkpoint directory</td></tr>
+<tr><td><code>--json</code></td><td>Machine-readable JSON output</td></tr>
+</tbody></table>
+</div>
+<h4 id="metrics-computed"><a class="header" href="#metrics-computed">Metrics Computed</a></h4>
+<ul>
+<li><strong>Accuracy &amp; Agreement</strong>: accuracy, top-2 accuracy, Cohen's kappa, MCC (with 95% bootstrap CIs)</li>
+<li><strong>Per-Class</strong>: precision, recall, F1, support for each class</li>
+<li><strong>Proper Scoring Rules</strong>: Brier score, log loss</li>
+<li><strong>Calibration</strong>: ECE, mean confidence, confidence gap</li>
+<li><strong>Baselines</strong>: random (1/K), majority-class, lift</li>
+</ul>
+<h4 id="example-output-classification"><a class="header" href="#example-output-classification">Example Output (Classification)</a></h4>
+<pre><code>=== Classification Report ===
+
+                precision    recall  f1-score   support
+              safe    0.8022    0.5840    0.6759       125
+     needs-quoting    0.5000    0.0526    0.0952        38
+ non-deterministic    0.5423    0.7624    0.6337       101
+    non-idempotent    0.5389    0.8333    0.6545       108
+            unsafe    0.7188    0.5391    0.6161       128
+ ----------------------------------------------------------
+         macro avg    0.6204    0.5543    0.5351       500
+      weighted avg    0.6329    0.6220    0.6033       500
+
+Accuracy: 62.20% [57.80%, 66.80%]
+Cohen's kappa: 0.5124 (moderate)
+MCC: 0.5241 [0.4701, 0.5793]
+Macro F1: 0.5351 [0.4901, 0.5791]
+
+Brier Score: 0.6077 (lower is better)
+Log Loss: 1.8209 (lower is better)
+
+Baselines: random=20.0%, majority=25.6%, model=62.2% (2.4x lift over majority)
+
+Top confused pairs:
+  safe → non-deterministic: 28
+  unsafe → non-idempotent: 24
+  safe → non-idempotent: 22
 </code></pre>
 <h2 id="profile-command"><a class="header" href="#profile-command">Profile Command</a></h2>
 <p>Deep profiling with Roofline analysis.</p>
@@ -1045,7 +1106,7 @@ apr profile model.gguf --roofline
 # Output as JSON
 apr profile model.gguf --json
 </code></pre>
-<h3 id="example-output-15"><a class="header" href="#example-output-15">Example Output</a></h3>
+<h3 id="example-output-14"><a class="header" href="#example-output-14">Example Output</a></h3>
 <pre><code>=== Profile: model.gguf ===
 
 Roofline Analysis:
@@ -1081,7 +1142,7 @@ apr qa model.gguf --skip-ollama
 # JSON output for CI
 apr qa model.gguf --json
 </code></pre>
-<h3 id="example-output-16"><a class="header" href="#example-output-16">Example Output</a></h3>
+<h3 id="example-output-15"><a class="header" href="#example-output-15">Example Output</a></h3>
 <pre><code>=== QA Checklist: model.gguf ===
 
 [1/10] Format Validation
@@ -1133,7 +1194,7 @@ apr qualify model.gguf --verbose
 <tr><td><code>full</code></td><td>13</td><td>Standard + playbook check via <code>apr-qa</code></td></tr>
 </tbody></table>
 </div>
-<h3 id="example-output-17"><a class="header" href="#example-output-17">Example Output</a></h3>
+<h3 id="example-output-16"><a class="header" href="#example-output-16">Example Output</a></h3>
 <pre><code>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   Qualify
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1169,7 +1230,7 @@ apr showcase model.gguf --gpu
 # Batched GPU mode
 apr showcase model.gguf --gpu --batch
 </code></pre>
-<h3 id="example-output-18"><a class="header" href="#example-output-18">Example Output</a></h3>
+<h3 id="example-output-17"><a class="header" href="#example-output-17">Example Output</a></h3>
 <pre><code>╔════════════════════════════════════════════════════════════╗
 ║           APR Showcase: Qwen2.5-Coder Performance          ║
 ╚════════════════════════════════════════════════════════════╝
@@ -1200,7 +1261,7 @@ apr check model.gguf --verbose
 # JSON output
 apr check model.gguf --json
 </code></pre>
-<h3 id="example-output-19"><a class="header" href="#example-output-19">Example Output</a></h3>
+<h3 id="example-output-18"><a class="header" href="#example-output-18">Example Output</a></h3>
 <pre><code>=== Model Self-Test: model.gguf ===
 
 Stage 1: Format Validation
@@ -1261,7 +1322,7 @@ apr publish ./model-dir/ org/model-name --license mit --tags rust,ml
 # Custom commit message
 apr publish ./model-dir/ org/model-name --message &quot;v1.0.0 release&quot;
 </code></pre>
-<h3 id="example-output-20"><a class="header" href="#example-output-20">Example Output</a></h3>
+<h3 id="example-output-19"><a class="header" href="#example-output-19">Example Output</a></h3>
 <pre><code>=== Publishing to HuggingFace Hub ===
 
 Repository: org/model-name
@@ -1342,7 +1403,7 @@ apr tune --task classify --budget 27 --data corpus.jsonl \
 <tr><td><code>lr_min_ratio</code></td><td>Continuous (log)</td><td>0.001 .. 0.1</td></tr>
 </tbody></table>
 </div>
-<h3 id="example-output-21"><a class="header" href="#example-output-21">Example Output</a></h3>
+<h3 id="example-output-20"><a class="header" href="#example-output-20">Example Output</a></h3>
 <pre><code>{
   &quot;strategy&quot;: &quot;tpe&quot;,
   &quot;mode&quot;: &quot;scout&quot;,
