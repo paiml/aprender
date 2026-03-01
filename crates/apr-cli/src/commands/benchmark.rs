@@ -391,43 +391,59 @@ fn run_apr_benchmark(
     calculate_benchmark_stats(iteration_times, total_tokens, first_token_time, config)
 }
 
-/// APR format CUDA benchmark (GH-192)
+/// APR format CUDA benchmark using fused Q4K kernels (GH-87)
+///
+/// F-KERNEL-DISPATCH-001: Uses OwnedQuantizedModelCuda (fused Q4K/Q6K GEMV,
+/// 190+ tok/s) instead of AprV2ModelCuda (generic transformer, 0.5 tok/s).
+/// Loading path: MappedAprModel → OwnedQuantizedModel::from_apr() → OwnedQuantizedModelCuda.
 #[cfg(feature = "inference")]
 fn run_apr_cuda_benchmark(
     path: &Path,
     config: &BenchConfig,
     tracer: &renacer::brick_tracer::BrickTracer,
 ) -> Result<BenchResult> {
-    use realizar::apr::{AprV2Model, AprV2ModelCuda};
+    use realizar::apr::{AprV2Model, MappedAprModel};
+    use realizar::gguf::{OwnedQuantizedModel, OwnedQuantizedModelCuda, QuantizedGenerateConfig};
 
     if !config.quiet {
-        eprintln!("{}", "Loading APR model (GPU)...".yellow());
+        eprintln!("{}", "Loading APR model (GPU, fused Q4K kernels)...".yellow());
     }
     let start = Instant::now();
 
-    // First load APR model (CPU), then wrap with CUDA
-    let cpu_model = AprV2Model::load(path)
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to load APR: {e}")))?;
+    // GH-87: Load via MappedAprModel -> OwnedQuantizedModel for fused kernel path
+    let mapped = MappedAprModel::from_path(path)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to map APR: {e}")))?;
 
-    let tensor_count = cpu_model.tensor_count();
+    let tensor_count = mapped.tensors.len();
 
     // Use embedded tokenizer if available, else fall back to sibling/default
-    let prompt_tokens: Vec<u32> = if let Some(tokenizer) = cpu_model.load_embedded_bpe_tokenizer() {
-        tokenizer.encode(&config.prompt)
-    } else {
-        resolve_apr_prompt_tokens(path, &config.prompt)
+    let prompt_tokens: Vec<u32> = {
+        let cpu_model = AprV2Model::load(path)
+            .map_err(|e| CliError::ValidationFailed(format!("Failed to load APR for tokenizer: {e}")))?;
+        if let Some(tokenizer) = cpu_model.load_embedded_bpe_tokenizer() {
+            tokenizer.encode(&config.prompt)
+        } else {
+            resolve_apr_prompt_tokens(path, &config.prompt)
+        }
     };
 
-    let mut model = AprV2ModelCuda::new(cpu_model, 0)
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to init APR CUDA: {e}")))?;
+    let model = OwnedQuantizedModel::from_apr(&mapped)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to create quantized model from APR: {e}")))?;
 
-    // Qwen2 EOS (source of truth: special-tokens-registry-v1.yaml)
-    let eos_token: u32 = aprender::demo::SpecialTokens::qwen2().eos_id;
+    let mut cuda_model = OwnedQuantizedModelCuda::new(model, 0)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to init CUDA: {e}")))?;
+
+    let gen_config = QuantizedGenerateConfig {
+        max_tokens: config.max_tokens.min(128),
+        temperature: 0.0,
+        top_k: 1,
+        ..Default::default()
+    };
 
     let load_time = start.elapsed();
     if !config.quiet {
         eprintln!(
-            "{} in {:.2}s ({} tensors, GPU device 0)",
+            "{} in {:.2}s ({} tensors, GPU device 0, fused Q4K kernels)",
             "Model ready".green(),
             load_time.as_secs_f32(),
             tensor_count
@@ -437,8 +453,7 @@ fn run_apr_cuda_benchmark(
 
     // Warmup (untraced)
     run_bench_warmup(config, config.warmup, || {
-        model.reset_kv_cache();
-        let _ = model.generate_cuda_with_cache(&prompt_tokens, config.max_tokens.min(16), eos_token);
+        let _ = cuda_model.generate_gpu_resident(&prompt_tokens, &gen_config);
     });
 
     // Measurement
@@ -451,10 +466,9 @@ fn run_apr_cuda_benchmark(
     let budget_us = config.max_tokens as u64 * 100_000;
 
     for i in 0..config.iterations {
-        model.reset_kv_cache();
         let traced = tracer.trace("bench_apr_gpu_iter", budget_us, || {
-            model
-                .generate_cuda_with_cache(&prompt_tokens, config.max_tokens.min(32), eos_token)
+            cuda_model
+                .generate_gpu_resident(&prompt_tokens, &gen_config)
                 .unwrap_or_default()
         });
         let output = traced.result;

@@ -326,40 +326,18 @@ struct AprCompletionResponse {
 }
 
 fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
-    // GH-259: Try GPU path first when requested (reuses existing start_apr_server_gpu)
+    // GH-87: Try fused Q4K GPU path first (same kernels as GGUF, 190+ tok/s)
     #[cfg(feature = "cuda")]
     {
         let use_gpu = config.gpu && !config.no_gpu;
         if use_gpu {
-            use realizar::apr::AprModel;
-
-            println!("{}", "Loading APR model for GPU...".dimmed());
-            match AprModel::load(model_path) {
-                Ok(model) => {
-                    let tokenizer = if let Some(tp) =
-                        realizar::safetensors::find_sibling_file(model_path, "tokenizer.json")
-                    {
-                        load_safetensors_tokenizer(&tp)
-                    } else {
-                        None
-                    };
-
-                    match start_apr_server_gpu(model_path, model, config, tokenizer) {
-                        Ok(()) => return Ok(()),
-                        Err(e) => {
-                            println!(
-                                "{}",
-                                format!("GPU init failed, falling back to CPU: {e}").yellow()
-                            );
-                        }
-                    }
-                }
+            match start_apr_server_gpu(model_path, config) {
+                Ok(()) => return Ok(()),
                 Err(e) => {
                     println!(
                         "{}",
-                        format!("Failed to load APR model for GPU: {e}").yellow()
+                        format!("GPU init failed, falling back to CPU: {e}").yellow()
                     );
-                    println!("{}", "Falling back to CPU path...".dimmed());
                 }
             }
         }

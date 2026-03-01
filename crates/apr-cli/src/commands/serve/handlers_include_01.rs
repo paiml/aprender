@@ -1,60 +1,71 @@
+/// GH-87 / F-KERNEL-DISPATCH-001: APR GPU serve using fused Q4K kernels.
+///
+/// Loading path: MappedAprModel → OwnedQuantizedModel::from_apr() → OwnedQuantizedModelCuda.
+/// Uses realizar's built-in AppState + create_router (same as GGUF serve path)
+/// for full Ollama-parity endpoints with fused Q4K/Q6K GEMV kernels.
 #[cfg(feature = "inference")]
 fn start_apr_server_gpu(
     model_path: &Path,
-    model: realizar::apr::AprModel,
     config: &ServerConfig,
-    tokenizer: Option<SafeTensorsTokenizerInfo>,
 ) -> Result<()> {
-    use realizar::apr::AprV2ModelCuda;
-    use std::sync::Mutex;
+    use realizar::apr::MappedAprModel;
+    use realizar::api::{create_router, AppState};
+    use realizar::gguf::{OwnedQuantizedModel, OwnedQuantizedModelCuda};
 
-    println!("{}", "Initializing CUDA...".dimmed());
-    let cuda_model = AprV2ModelCuda::new(model, 0)
-        .map_err(|e| CliError::InferenceFailed(format!("CUDA init failed: {e}")))?;
+    println!("{}", "Loading APR model (fused Q4K kernels)...".dimmed());
+
+    let mapped = MappedAprModel::from_path(model_path)
+        .map_err(|e| CliError::InferenceFailed(format!("Failed to map APR: {e}")))?;
 
     println!(
         "{}",
         format!(
-            "GPU: {} ({} MB VRAM)",
-            cuda_model.device_name(),
-            cuda_model.vram_mb()
+            "APR loaded: {} tensors, {} metadata entries",
+            mapped.tensors.len(),
+            mapped.metadata.extra.len()
+        )
+        .dimmed()
+    );
+
+    let quantized = OwnedQuantizedModel::from_apr(&mapped)
+        .map_err(|e| CliError::InferenceFailed(format!("Failed to create quantized model: {e}")))?;
+
+    println!(
+        "{}",
+        format!(
+            "Model ready: {} layers, vocab_size={}, hidden_dim={}",
+            quantized.layers().len(),
+            quantized.config().vocab_size,
+            quantized.config().hidden_dim
         )
         .green()
     );
 
-    // GH-261: Load CPU transformer as per-request fallback
-    let cpu_state = load_apr_model_state(model_path, config)?;
-    println!(
-        "{}",
-        "CPU fallback: enabled (AprTransformer ready)".cyan()
-    );
+    // Extract vocabulary from embedded APR metadata
+    let vocab = mapped.metadata.get_embedded_vocabulary().unwrap_or_else(|| {
+        let vocab_size = mapped.metadata.vocab_size.unwrap_or(32000);
+        eprintln!("Warning: No embedded vocabulary in APR, using placeholder tokens");
+        let mut v: Vec<String> = (0..vocab_size).map(|i| format!("token{i}")).collect();
+        if !v.is_empty() {
+            v[0] = "<unk>".to_string();
+        }
+        v
+    });
 
-    let runtime = tokio::runtime::Runtime::new()
-        .map_err(|e| CliError::InferenceFailed(format!("Failed to create runtime: {e}")))?;
+    println!("{}", "Enabling fused CUDA acceleration (GH-87)...".cyan());
 
-    let bind_addr = config.bind_addr();
-    let cuda_model = Arc::new(Mutex::new(cuda_model));
-    let tokenizer = Arc::new(tokenizer);
-    let cpu_state = Arc::new(Mutex::new(cpu_state));
+    let mut cuda_model = OwnedQuantizedModelCuda::new(quantized, 0)
+        .map_err(|e| CliError::InferenceFailed(format!("CUDA init failed: {e}")))?;
 
-    runtime.block_on(async move {
-        let app = build_gpu_router(cuda_model, tokenizer, cpu_state);
+    preload_gpu_weights(&mut cuda_model);
+    println!("{}", "CUDA fused Q4K model ready".green());
 
-        let listener = tokio::net::TcpListener::bind(&bind_addr)
-            .await
-            .map_err(|e| CliError::InferenceFailed(format!("Failed to bind: {e}")))?;
+    let state = AppState::with_cuda_model_and_vocab(cuda_model, vocab)
+        .map_err(|e| CliError::InferenceFailed(format!("Failed to create state: {e}")))?
+        .with_verbose(config.verbose);
 
-        print_gpu_server_banner(&bind_addr);
-
-        axum::serve(listener, app)
-            .with_graceful_shutdown(shutdown_signal())
-            .await
-            .map_err(|e| CliError::InferenceFailed(format!("Server error: {e}")))?;
-
-        println!();
-        println!("{}", "Server stopped".yellow());
-        Ok(())
-    })
+    let app = create_router(state);
+    run_server_async(app, &config.bind_addr(), "APR GPU (fused Q4K kernels)")
 }
 
 /// Build the axum Router for GPU inference endpoints.
