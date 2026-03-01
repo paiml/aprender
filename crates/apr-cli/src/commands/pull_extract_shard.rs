@@ -91,6 +91,9 @@ fn format_gated_model_error(url: &str) -> String {
 
 fn download_file(url: &str, path: &Path) -> Result<()> {
     let response = hf_get(url).call().map_err(|e| match &e {
+        ureq::Error::Status(404, _) => {
+            CliError::HttpNotFound(format!("HTTP 404: {url}"))
+        }
         ureq::Error::Status(401, _) => {
             CliError::NetworkError(format_gated_model_error(url))
         }

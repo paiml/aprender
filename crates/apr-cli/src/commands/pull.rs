@@ -440,6 +440,14 @@ fn download_companion_files(cache_dir: &Path, base_url: &str, force: bool) -> Re
         let url = format!("{base_url}/{filename}");
         match download_file(&url, &companion_path) {
             Ok(()) => println!("  {} {}", "✓".green(), filename),
+            Err(CliError::HttpNotFound(_)) if *required => {
+                return Err(CliError::ValidationFailed(format!(
+                    "{filename} is required for inference but was not found (HTTP 404) at {url}"
+                )));
+            }
+            Err(CliError::HttpNotFound(_)) => {
+                println!("  {} {} (not found in repo)", "⚠".yellow(), filename);
+            }
             Err(e) if *required => {
                 return Err(CliError::ValidationFailed(format!(
                     "{filename} is required for inference but download failed: {e}"

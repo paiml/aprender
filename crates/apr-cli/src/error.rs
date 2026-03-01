@@ -54,6 +54,10 @@ pub enum CliError {
     /// Network error
     #[error("Network error: {0}")]
     NetworkError(String),
+
+    /// HTTP 404 Not Found (GH-356: distinguish from other network errors)
+    #[error("HTTP 404 Not Found: {0}")]
+    HttpNotFound(String),
 }
 
 impl CliError {
@@ -69,6 +73,7 @@ impl CliError {
             Self::InferenceFailed(_) => ExitCode::from(8),
             Self::FeatureDisabled(_) => ExitCode::from(9),
             Self::NetworkError(_) => ExitCode::from(10),
+            Self::HttpNotFound(_) => ExitCode::from(11),
         }
     }
 }
@@ -146,6 +151,12 @@ mod tests {
         assert_eq!(err.exit_code(), ExitCode::from(10));
     }
 
+    #[test]
+    fn test_http_not_found_exit_code() {
+        let err = CliError::HttpNotFound("test".to_string());
+        assert_eq!(err.exit_code(), ExitCode::from(11));
+    }
+
     // ==================== Display Tests ====================
 
     #[test]
@@ -200,6 +211,12 @@ mod tests {
     fn test_network_error_display() {
         let err = CliError::NetworkError("timeout".to_string());
         assert_eq!(err.to_string(), "Network error: timeout");
+    }
+
+    #[test]
+    fn test_http_not_found_display() {
+        let err = CliError::HttpNotFound("tokenizer.json".to_string());
+        assert_eq!(err.to_string(), "HTTP 404 Not Found: tokenizer.json");
     }
 
     // ==================== Conversion Tests ====================
@@ -271,6 +288,10 @@ mod tests {
             (
                 CliError::NetworkError("a".to_string()).exit_code(),
                 "network",
+            ),
+            (
+                CliError::HttpNotFound("a".to_string()).exit_code(),
+                "http_not_found",
             ),
         ];
         // FileNotFound and NotAFile intentionally share exit code 3
