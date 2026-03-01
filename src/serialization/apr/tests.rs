@@ -369,3 +369,186 @@ fn test_open_filtered_with_file() {
 
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+// =========================================================================
+// Falsification Tests (F-CKPT contracts)
+// =========================================================================
+
+/// FALSIFY F-CKPT-009: Atomic write leaves no orphan .tmp on success
+#[test]
+fn falsify_ckpt_009_atomic_write_no_orphan_tmp() {
+    let dir = std::env::temp_dir().join("apr_f009_test");
+    let _ = std::fs::create_dir_all(&dir);
+    let path = dir.join("model.apr");
+
+    let mut writer = AprWriter::new();
+    writer.add_tensor_f32("w", vec![2], &[1.0, 2.0]);
+    writer.write(&path).unwrap();
+
+    // The .tmp file must NOT exist after successful write
+    let tmp_path = path.with_extension("apr.tmp");
+    assert!(!tmp_path.exists(), "FALSIFIED F-CKPT-009: orphan .tmp file exists after write");
+
+    // The target file must exist
+    assert!(path.exists(), "FALSIFIED F-CKPT-009: target file missing after write");
+
+    // Must be a valid APR
+    let reader = AprReader::open(&path).unwrap();
+    assert_eq!(reader.tensors.len(), 1);
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// FALSIFY F-CKPT-011: CRC32 corrupt file is rejected
+#[test]
+fn falsify_ckpt_011_corrupt_crc_rejected() {
+    let mut writer = AprWriter::new();
+    writer.add_tensor_f32("w", vec![2], &[1.0, 2.0]);
+    let mut bytes = writer.to_bytes().unwrap();
+
+    // Corrupt a byte in the data section
+    if bytes.len() > 100 {
+        bytes[100] ^= 0xFF;
+    }
+
+    let result = AprReader::from_bytes(bytes);
+    assert!(result.is_err(), "FALSIFIED F-CKPT-011: corrupt APR accepted without CRC error");
+}
+
+/// FALSIFY F-CKPT-013: NaN in tensor is detected
+#[test]
+fn falsify_ckpt_013_nan_detected() {
+    let mut writer = AprWriter::new();
+    writer.add_tensor_f32("w", vec![3], &[1.0, f32::NAN, 3.0]);
+    let bytes = writer.to_bytes().unwrap();
+    let reader = AprReader::from_bytes(bytes).unwrap();
+
+    let result = reader.read_tensor_f32_checked("w");
+    assert!(result.is_err(), "FALSIFIED F-CKPT-013: NaN tensor accepted by checked read");
+    assert!(
+        result.unwrap_err().contains("F-CKPT-013"),
+        "Error should reference F-CKPT-013 contract"
+    );
+}
+
+/// FALSIFY F-CKPT-013: Inf in tensor is detected
+#[test]
+fn falsify_ckpt_013_inf_detected() {
+    let mut writer = AprWriter::new();
+    writer.add_tensor_f32("w", vec![3], &[1.0, f32::INFINITY, 3.0]);
+    let bytes = writer.to_bytes().unwrap();
+    let reader = AprReader::from_bytes(bytes).unwrap();
+
+    let result = reader.read_tensor_f32_checked("w");
+    assert!(result.is_err(), "FALSIFIED F-CKPT-013: Inf tensor accepted by checked read");
+}
+
+/// FALSIFY F-CKPT-013: Clean tensor passes checked read
+#[test]
+fn falsify_ckpt_013_clean_tensor_passes() {
+    let mut writer = AprWriter::new();
+    writer.add_tensor_f32("w", vec![3], &[1.0, 2.0, 3.0]);
+    let bytes = writer.to_bytes().unwrap();
+    let reader = AprReader::from_bytes(bytes).unwrap();
+
+    let result = reader.read_tensor_f32_checked("w");
+    assert!(result.is_ok(), "Clean tensor should pass checked read");
+    assert_eq!(result.unwrap(), vec![1.0, 2.0, 3.0]);
+}
+
+/// FALSIFY F-CKPT-014: Shape mismatch detected
+#[test]
+fn falsify_ckpt_014_shape_mismatch() {
+    let mut writer = AprWriter::new();
+    writer.add_tensor_f32("w", vec![2, 3], &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+    let bytes = writer.to_bytes().unwrap();
+    let reader = AprReader::from_bytes(bytes).unwrap();
+
+    // Expect 6 elements, should pass
+    let ok = reader.validate_tensor_shape("w", 6);
+    assert!(ok.is_ok(), "Correct shape should validate");
+
+    // Expect 4 elements, should fail
+    let err = reader.validate_tensor_shape("w", 4);
+    assert!(err.is_err(), "FALSIFIED F-CKPT-014: wrong shape accepted");
+    assert!(err.unwrap_err().contains("F-CKPT-014"));
+}
+
+/// FALSIFY F-CKPT-014: Missing tensor detected
+#[test]
+fn falsify_ckpt_014_missing_tensor() {
+    let writer = AprWriter::new();
+    let bytes = writer.to_bytes().unwrap();
+    let reader = AprReader::from_bytes(bytes).unwrap();
+
+    let err = reader.validate_tensor_shape("nonexistent", 10);
+    assert!(err.is_err(), "FALSIFIED F-CKPT-014: missing tensor not detected");
+}
+
+/// FALSIFY F-CKPT-015: Canonical ordering verified
+#[test]
+fn falsify_ckpt_015_canonical_ordering() {
+    let mut writer = AprWriter::new();
+    // Add tensors in reverse order
+    writer.add_tensor_f32("z_last", vec![1], &[1.0]);
+    writer.add_tensor_f32("a_first", vec![1], &[2.0]);
+    writer.add_tensor_f32("m_middle", vec![1], &[3.0]);
+
+    let bytes = writer.to_bytes().unwrap();
+    let reader = AprReader::from_bytes(bytes).unwrap();
+
+    // Tensors must be in sorted order
+    let names: Vec<&str> = reader.tensors.iter().map(|t| t.name.as_str()).collect();
+    assert_eq!(
+        names,
+        vec!["a_first", "m_middle", "z_last"],
+        "FALSIFIED F-CKPT-015: tensors not in canonical order"
+    );
+}
+
+/// FALSIFY F-CKPT-016: Filtered reader excludes __training__
+#[test]
+fn falsify_ckpt_016_training_filtered() {
+    let mut writer = AprWriter::new();
+    writer.add_tensor_f32("model.w", vec![2], &[1.0, 2.0]);
+    writer.add_tensor_f32("__training__.lr", vec![1], &[0.001]);
+    writer.add_tensor_f32("__training__.optimizer.m.0", vec![2], &[0.1, 0.2]);
+
+    let bytes = writer.to_bytes().unwrap();
+    let reader =
+        AprReader::from_bytes_filtered(bytes, |n| !n.starts_with("__training__.")).unwrap();
+
+    assert_eq!(reader.tensors.len(), 1, "FALSIFIED F-CKPT-016: training tensors not filtered");
+    assert_eq!(reader.tensors[0].name, "model.w");
+}
+
+/// FALSIFY F-CKPT-018: APR write→read round-trip is bit-identical
+#[test]
+fn falsify_ckpt_018_roundtrip_bit_identical() {
+    let mut writer = AprWriter::new();
+    writer.set_metadata("model_type", JsonValue::String("test".into()));
+    writer.set_metadata("custom_key", JsonValue::Number(42.into()));
+    writer.add_tensor_f32("layer.0.weight", vec![4, 4], &vec![0.123_456_78; 16]);
+    writer.add_tensor_f32("layer.0.bias", vec![4], &[0.1, 0.2, 0.3, 0.4]);
+
+    let bytes1 = writer.to_bytes().unwrap();
+
+    // Read back
+    let reader = AprReader::from_bytes(bytes1.clone()).unwrap();
+
+    // Re-write from reader
+    let mut writer2 = AprWriter::new();
+    for (k, v) in &reader.metadata {
+        writer2.set_metadata(k.clone(), v.clone());
+    }
+    for t in &reader.tensors {
+        let data = reader.read_tensor_f32(&t.name).unwrap();
+        writer2.add_tensor_f32(t.name.clone(), t.shape.clone(), &data);
+    }
+    let bytes2 = writer2.to_bytes().unwrap();
+
+    assert_eq!(
+        bytes1, bytes2,
+        "FALSIFIED F-CKPT-018: write→read→write is NOT bit-identical"
+    );
+}
