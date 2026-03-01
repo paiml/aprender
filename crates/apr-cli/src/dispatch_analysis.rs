@@ -440,26 +440,38 @@ fn dispatch_profiling_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             model_size,
             num_classes,
             generate_card,
-        } => {
-            if task.as_deref() == Some("classify") {
-                eval::run_classify_eval(
-                    file,
-                    data.as_deref(),
-                    model_size.as_deref(),
-                    *num_classes,
-                    *generate_card,
-                    cli.json,
-                )
-            } else {
-                eval::run(
-                    file,
-                    dataset,
-                    text.as_deref(),
-                    Some(*max_tokens),
-                    Some(*threshold),
-                    cli.json,
-                )
-            }
+        } => match task.as_deref() {
+            Some("classify") => eval::run_classify_eval(
+                file,
+                data.as_deref(),
+                model_size.as_deref(),
+                *num_classes,
+                *generate_card,
+                cli.json,
+            ),
+            Some("code") => eval::run_code_eval(
+                file,
+                data.as_deref(),
+                *max_tokens,
+                *threshold,
+                cli.json,
+            ),
+            Some("plan") => eval::run_eval_plan(
+                file,
+                dataset,
+                data.as_deref(),
+                *max_tokens,
+                *threshold,
+                cli.json,
+            ),
+            _ => eval::run(
+                file,
+                dataset,
+                text.as_deref(),
+                Some(*max_tokens),
+                Some(*threshold),
+                cli.json,
+            ),
         }
 
         ExtendedCommands::Qa {
