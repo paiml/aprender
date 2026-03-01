@@ -582,6 +582,11 @@ pub enum ExtendedCommands {
         #[command(subcommand)]
         command: TrainCommands,
     },
+    /// Tokenizer training pipeline (plan/apply) — BPE vocabulary learning
+    Tokenize {
+        #[command(subcommand)]
+        command: TokenizeCommands,
+    },
     /// Data quality pipeline (audit, split, balance) — powered by alimentar
     Data {
         #[command(subcommand)]

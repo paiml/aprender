@@ -49,6 +49,7 @@ pub(crate) mod run;
 pub(crate) mod serve;
 pub(crate) mod showcase;
 pub(crate) mod tensors;
+pub(crate) mod tokenize;
 pub(crate) mod trace;
 pub(crate) mod train;
 pub(crate) mod tree;

@@ -182,6 +182,8 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
 
         ExtendedCommands::Train { command } => dispatch_train_command(command, cli),
 
+        ExtendedCommands::Tokenize { command } => dispatch_tokenize_command(command, cli),
+
         ExtendedCommands::Data { command } => dispatch_data_command(command, cli.json),
 
         ExtendedCommands::Diagnose {
@@ -325,6 +327,29 @@ fn dispatch_train_command(command: &TrainCommands, cli: &Cli) -> std::result::Re
             *batch_size,
             cli.json,
         ),
+    }
+}
+
+/// Dispatch `apr tokenize` subcommands.
+fn dispatch_tokenize_command(
+    command: &TokenizeCommands,
+    cli: &Cli,
+) -> std::result::Result<(), CliError> {
+    match command {
+        TokenizeCommands::Plan {
+            data,
+            vocab_size,
+            algorithm,
+            output,
+            format,
+        } => tokenize::run_plan(data, *vocab_size, algorithm, output, format, cli.json),
+        TokenizeCommands::Apply {
+            data,
+            vocab_size,
+            algorithm,
+            output,
+            max_lines,
+        } => tokenize::run_apply(data, *vocab_size, algorithm, output, *max_lines, cli.json),
     }
 }
 
