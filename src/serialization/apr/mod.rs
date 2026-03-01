@@ -175,6 +175,47 @@ impl AprReader {
             .get_f32_tensor(name)
             .ok_or_else(|| format!("Tensor not found or not F32: {name}"))
     }
+
+    /// Read tensor and validate it contains no NaN/Inf (F-CKPT-013).
+    ///
+    /// # Errors
+    /// Returns error if tensor not found, not F32, or contains NaN/Inf
+    pub fn read_tensor_f32_checked(&self, name: &str) -> Result<Vec<f32>, String> {
+        let data = self.read_tensor_f32(name)?;
+        for (i, &v) in data.iter().enumerate() {
+            if !v.is_finite() {
+                return Err(format!(
+                    "F-CKPT-013: tensor '{name}' contains non-finite value at index {i}: {v}"
+                ));
+            }
+        }
+        Ok(data)
+    }
+
+    /// Validate that a tensor's element count matches an expected shape (F-CKPT-014).
+    ///
+    /// # Errors
+    /// Returns error if tensor shape doesn't match expected dimensions
+    pub fn validate_tensor_shape(
+        &self,
+        name: &str,
+        expected_elements: usize,
+    ) -> Result<(), String> {
+        let desc = self
+            .tensors
+            .iter()
+            .find(|t| t.name == name)
+            .ok_or_else(|| format!("F-CKPT-014: tensor '{name}' not found"))?;
+        let actual_elements: usize = desc.shape.iter().product();
+        if actual_elements != expected_elements {
+            return Err(format!(
+                "F-CKPT-014: tensor '{name}' shape mismatch: \
+                 expected {expected_elements} elements, got {actual_elements} (shape {:?})",
+                desc.shape,
+            ));
+        }
+        Ok(())
+    }
 }
 
 /// APR format writer — delegates to `AprV2Writer` for ONE format.
@@ -248,13 +289,33 @@ impl AprWriter {
             .map_err(|e| format!("APR serialization failed: {e}"))
     }
 
-    /// Write to file
+    /// Write to file atomically (F-CKPT-009).
+    ///
+    /// Writes to a `.tmp` file, fsyncs, then renames. A crash at any point
+    /// leaves the original file intact.
     ///
     /// # Errors
     /// Returns error if write fails
     pub fn write<P: AsRef<Path>>(&self, path: P) -> Result<(), String> {
+        use std::io::Write;
+
+        let path = path.as_ref();
         let bytes = self.to_bytes()?;
-        fs::write(path, bytes).map_err(|e| format!("Write failed: {e}"))
+
+        // F-CKPT-009: Atomic write via tmp+fsync+rename
+        let tmp_path = path.with_extension("apr.tmp");
+        let mut file = fs::File::create(&tmp_path)
+            .map_err(|e| format!("Failed to create temp file: {e}"))?;
+        file.write_all(&bytes)
+            .map_err(|e| format!("Failed to write temp file: {e}"))?;
+        file.sync_all()
+            .map_err(|e| format!("Failed to fsync temp file: {e}"))?;
+        drop(file);
+
+        fs::rename(&tmp_path, path)
+            .map_err(|e| format!("Failed to rename temp file: {e}"))?;
+
+        Ok(())
     }
 }
 
