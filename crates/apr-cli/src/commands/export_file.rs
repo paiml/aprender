@@ -20,6 +20,7 @@ mod tests {
             false,
             None,
             false,
+            false,
         );
         assert!(result.is_err());
         match result {
@@ -30,7 +31,7 @@ mod tests {
 
     #[test]
     fn test_run_no_file() {
-        let result = run(None, "safetensors", None, None, false, None, false);
+        let result = run(None, "safetensors", None, None, false, None, false, false);
         assert!(result.is_err());
         match result {
             Err(CliError::ValidationFailed(msg)) => {
@@ -50,6 +51,7 @@ mod tests {
             None,
             false,
             None,
+            false,
             false,
         );
         assert!(result.is_err());
@@ -72,6 +74,7 @@ mod tests {
             false,
             None,
             false,
+            false,
         );
         assert!(result.is_err());
         match result {
@@ -92,6 +95,7 @@ mod tests {
             Some("unknown_quant"),
             false,
             None,
+            false,
             false,
         );
         assert!(result.is_err());
@@ -114,6 +118,7 @@ mod tests {
             false,
             None,
             false,
+            false,
         );
         assert!(result.is_err());
         match result {
@@ -135,6 +140,7 @@ mod tests {
             false,
             None,
             false,
+            false,
         );
         assert!(result.is_err());
         match result {
@@ -155,6 +161,7 @@ mod tests {
             None,
             false,
             None,
+            false,
             false,
         );
         assert!(result.is_err());
@@ -207,6 +214,7 @@ mod tests {
             false,
             None,
             false,
+            false,
         );
         assert!(result.is_err());
     }
@@ -217,13 +225,13 @@ mod tests {
 
     #[test]
     fn test_list_formats() {
-        let result = run(None, "safetensors", None, None, true, None, false);
+        let result = run(None, "safetensors", None, None, true, None, false, false);
         assert!(result.is_ok());
     }
 
     #[test]
     fn test_list_formats_json() {
-        let result = run(None, "safetensors", None, None, true, None, true);
+        let result = run(None, "safetensors", None, None, true, None, true, false);
         assert!(result.is_ok());
     }
 
@@ -242,6 +250,7 @@ mod tests {
             false,
             Some("gguf,unknown"),
             false,
+            false,
         );
         assert!(result.is_err());
     }
@@ -256,6 +265,7 @@ mod tests {
             None,
             false,
             Some("gguf,onnx"),
+            false,
             false,
         );
         assert!(result.is_err());
@@ -354,6 +364,7 @@ mod tests {
             false,
             None,
             false,
+            false,
         );
         assert!(result.is_err());
     }
@@ -430,6 +441,7 @@ mod tests {
             false,
             None,
             false,
+            false,
         );
         // Fails with FileNotFound (not output validation) because stdout is detected
         assert!(result.is_err());
@@ -445,6 +457,7 @@ mod tests {
             None,
             false,
             None,
+            false,
             false,
         );
         assert!(result.is_err());

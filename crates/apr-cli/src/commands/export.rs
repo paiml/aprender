@@ -92,6 +92,101 @@ fn execute_and_display(
     }
 }
 
+/// Run the export plan (dry-run validation).
+#[allow(clippy::too_many_arguments, clippy::disallowed_methods)]
+fn run_plan(
+    file: &Path,
+    format: &str,
+    output: Option<&Path>,
+    quantize: Option<&str>,
+    batch: Option<&str>,
+    json_output: bool,
+) -> Result<()> {
+    if !file.exists() {
+        return Err(CliError::FileNotFound(file.to_path_buf()));
+    }
+
+    let file_size = std::fs::metadata(file).map(|m| m.len()).unwrap_or(0);
+
+    // Validate format(s)
+    if let Some(batch_formats) = batch {
+        let formats: Vec<ExportFormat> = batch_formats
+            .split(',')
+            .map(|s| {
+                s.trim()
+                    .parse::<ExportFormat>()
+                    .map_err(|_| CliError::ValidationFailed(format!("Unknown format in batch: {s}")))
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        for f in &formats {
+            if !f.is_supported() {
+                return Err(CliError::ValidationFailed(format!(
+                    "Format '{}' in batch is not yet supported",
+                    f.display_name()
+                )));
+            }
+        }
+
+        let quant_type = parse_quantization(quantize)?;
+
+        if json_output {
+            let json = serde_json::json!({
+                "plan": true,
+                "status": "valid",
+                "input": file.display().to_string(),
+                "input_size": file_size,
+                "batch": true,
+                "formats": formats.iter().map(|f| f.display_name()).collect::<Vec<_>>(),
+                "quantization": quant_type.as_ref().map(|q| format!("{q:?}")),
+                "output_dir": output.map(|p| p.display().to_string()),
+            });
+            println!("{}", serde_json::to_string_pretty(&json).unwrap_or_default());
+        } else {
+            output::header("APR Export — Plan (Batch)");
+            let pairs: Vec<(&str, String)> = vec![
+                ("Input", format!("{} ({})", file.display(), humansize::format_size(file_size, BINARY))),
+                ("Formats", formats.iter().map(ExportFormat::display_name).collect::<Vec<_>>().join(", ")),
+                ("Output dir", output.map_or("exports/".to_string(), |p| p.display().to_string())),
+            ];
+            println!("{}", output::kv_table(&pairs));
+            println!();
+            println!("  {}", output::badge_pass("Plan valid — ready to export"));
+        }
+        return Ok(());
+    }
+
+    let effective_output = output.unwrap_or(Path::new("model.safetensors"));
+    let (export_format, quant_type) = resolve_export_options(format, effective_output, quantize)?;
+
+    if json_output {
+        let json = serde_json::json!({
+            "plan": true,
+            "status": "valid",
+            "input": file.display().to_string(),
+            "input_size": file_size,
+            "output": effective_output.display().to_string(),
+            "format": export_format.display_name(),
+            "quantization": quant_type.as_ref().map(|q| format!("{q:?}")),
+        });
+        println!("{}", serde_json::to_string_pretty(&json).unwrap_or_default());
+    } else {
+        output::header("APR Export — Plan");
+        let mut pairs: Vec<(&str, String)> = vec![
+            ("Input", format!("{} ({})", file.display(), humansize::format_size(file_size, BINARY))),
+            ("Output", effective_output.display().to_string()),
+            ("Format", export_format.display_name().to_string()),
+        ];
+        if let Some(ref q) = quant_type {
+            pairs.push(("Quantization", format!("{q:?}")));
+        }
+        println!("{}", output::kv_table(&pairs));
+        println!();
+        println!("  {}", output::badge_pass("Plan valid — ready to export"));
+    }
+    Ok(())
+}
+
 /// Run the export command
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::disallowed_methods)]
@@ -103,6 +198,7 @@ pub(crate) fn run(
     list_formats: bool,
     batch: Option<&str>,
     json_output: bool,
+    plan: bool,
 ) -> Result<()> {
     // Handle --list-formats
     if list_formats {
@@ -113,6 +209,11 @@ pub(crate) fn run(
     let file = file.ok_or_else(|| {
         CliError::ValidationFailed("Model file path required. Usage: apr export <FILE>".to_string())
     })?;
+
+    // Handle --plan mode (validate inputs, no execution)
+    if plan {
+        return run_plan(file, format, output, quantize, batch, json_output);
+    }
 
     if !file.exists() {
         return Err(CliError::FileNotFound(file.to_path_buf()));

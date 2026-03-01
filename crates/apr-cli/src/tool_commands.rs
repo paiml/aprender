@@ -71,6 +71,9 @@ pub enum ToolCommands {
         /// Dry run (preview without uploading)
         #[arg(long)]
         dry_run: bool,
+        /// Plan mode (alias for --dry-run)
+        #[arg(long)]
+        plan: bool,
     },
     /// Model Oracle: identify family, size, constraints, and contract compliance
     ///

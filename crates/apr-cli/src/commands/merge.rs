@@ -113,6 +113,83 @@ fn display_merge_header(files: &[PathBuf], output_path: &Path) {
     println!("{}", output::kv_table(&input_pairs));
 }
 
+/// Run the merge plan (dry-run validation).
+#[allow(clippy::too_many_arguments, clippy::disallowed_methods)]
+pub(crate) fn run_plan(
+    files: &[PathBuf],
+    strategy: &str,
+    output: &Path,
+    weights: Option<Vec<f32>>,
+    base_model: Option<PathBuf>,
+    drop_rate: f32,
+    density: f32,
+    seed: u64,
+    json_output: bool,
+) -> Result<()> {
+    validate_merge_inputs(files)?;
+
+    let merge_strategy: MergeStrategy = strategy.parse().map_err(|_| {
+        CliError::ValidationFailed(format!(
+            "Unknown merge strategy: {strategy}. Supported: average, weighted, slerp, ties, dare"
+        ))
+    })?;
+
+    if !merge_strategy.is_supported() {
+        return Err(CliError::ValidationFailed(format!(
+            "Merge strategy '{strategy}' is not yet supported."
+        )));
+    }
+
+    let validated_weights = validate_merge_weights(merge_strategy, weights, files.len(), strategy)?;
+
+    // Compute total input size
+    let total_input_size: u64 = files
+        .iter()
+        .filter_map(|f| std::fs::metadata(f).ok())
+        .map(|m| m.len())
+        .sum();
+
+    if json_output {
+        let json = serde_json::json!({
+            "plan": true,
+            "status": "valid",
+            "inputs": files.iter().map(|f| f.display().to_string()).collect::<Vec<_>>(),
+            "output": output.display().to_string(),
+            "strategy": strategy,
+            "model_count": files.len(),
+            "total_input_size": total_input_size,
+            "weights": validated_weights,
+            "base_model": base_model.as_ref().map(|p| p.display().to_string()),
+            "drop_rate": drop_rate,
+            "density": density,
+            "seed": seed,
+        });
+        println!("{}", serde_json::to_string_pretty(&json).unwrap_or_default());
+    } else {
+        output::header("APR Merge — Plan");
+        let mut pairs: Vec<(&str, String)> = Vec::new();
+        for (i, file) in files.iter().enumerate() {
+            let size = std::fs::metadata(file).map(|m| m.len()).unwrap_or(0);
+            pairs.push(("Input", format!("{}. {} ({})", i + 1, file.display(), humansize::format_size(size, BINARY))));
+        }
+        pairs.push(("Output", output.display().to_string()));
+        pairs.push(("Strategy", format!("{merge_strategy:?}")));
+        pairs.push(("Models", files.len().to_string()));
+        pairs.push(("Total input", humansize::format_size(total_input_size, BINARY)));
+        if let Some(ref w) = validated_weights {
+            let w_str = w.iter().map(|w| format!("{w:.3}")).collect::<Vec<_>>().join(", ");
+            pairs.push(("Weights", w_str));
+        }
+        if let Some(ref base) = base_model {
+            pairs.push(("Base model", base.display().to_string()));
+        }
+        println!("{}", output::kv_table(&pairs));
+        println!();
+        println!("  {}", output::badge_pass("Plan valid — ready to merge"));
+    }
+    Ok(())
+}
+
 /// Run the merge command
 #[allow(clippy::too_many_arguments, clippy::disallowed_methods)]
 pub(crate) fn run(
@@ -125,7 +202,12 @@ pub(crate) fn run(
     density: f32,
     seed: u64,
     json_output: bool,
+    plan: bool,
 ) -> Result<()> {
+    if plan {
+        return run_plan(files, strategy, output, weights, base_model, drop_rate, density, seed, json_output);
+    }
+
     validate_merge_inputs(files)?;
 
     if !json_output {

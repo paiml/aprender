@@ -40,6 +40,7 @@
             tags: None,
             message: None,
             dry_run: false,
+            plan: false,
         }));
         let paths = extract_model_paths(&cmd);
         assert!(paths.is_empty(), "Publish is a diagnostic command (exempt)");

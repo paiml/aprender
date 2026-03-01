@@ -10,6 +10,7 @@
             list_formats: false,
             batch: None,
             json: false,
+            plan: false,
         });
         let result = execute_command(&cli);
         assert!(result.is_err(), "Export should fail with non-existent file");

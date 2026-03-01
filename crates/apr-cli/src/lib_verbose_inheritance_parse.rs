@@ -373,6 +373,7 @@
             tags: None,
             message: None,
             dry_run: true, // Use dry_run to avoid actual upload
+            plan: false,
         })));
         let result = execute_command(&cli);
         assert!(

@@ -711,6 +711,7 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
             tags,
             message,
             dry_run,
+            plan,
         }) => publish::execute(
             directory,
             repo_id,
@@ -720,7 +721,7 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
             library_name.as_deref(),
             tags.as_ref().map_or(&[], std::vec::Vec::as_slice),
             message.as_deref(),
-            *dry_run,
+            *dry_run || *plan,
             cli.verbose,
         ),
 

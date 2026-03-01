@@ -320,6 +320,7 @@
             drop_rate: 0.9,
             density: 0.2,
             seed: 42,
+            plan: false,
         };
         let paths = extract_model_paths(&cmd);
         assert_eq!(paths.len(), 3);
@@ -378,6 +379,7 @@
                 tags,
                 message,
                 dry_run,
+                plan: _,
             })) => {
                 assert_eq!(directory, PathBuf::from("/tmp/models"));
                 assert_eq!(repo_id, "paiml/whisper-apr-tiny");

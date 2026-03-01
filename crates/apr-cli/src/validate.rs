@@ -54,12 +54,14 @@ fn extract_model_paths(command: &Commands) -> Vec<PathBuf> {
                 vec![]
             }
         }
+        Commands::Export { plan: true, .. } => vec![],
         Commands::Export { file, .. } => file.iter().cloned().collect(),
         Commands::Serve { file, .. }
         | Commands::Trace { file, .. }
         | Commands::Convert { file, .. }
         | Commands::Check { file, .. } => vec![file.clone()],
 
+        Commands::Merge { plan: true, .. } => vec![],
         Commands::Merge { files, .. } => files.clone(),
 
         Commands::Quantize { file, .. } => vec![file.clone()],

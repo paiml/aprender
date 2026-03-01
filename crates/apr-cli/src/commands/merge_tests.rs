@@ -21,6 +21,7 @@ fn test_run_insufficient_files() {
         0.2,
         42,
         false,
+        false,
     );
     assert!(result.is_err());
     match result {
@@ -42,6 +43,7 @@ fn test_run_empty_files() {
         0.9,
         0.2,
         42,
+        false,
         false,
     );
     assert!(result.is_err());
@@ -68,6 +70,7 @@ fn test_run_file_not_found() {
         0.2,
         42,
         false,
+        false,
     );
     assert!(result.is_err());
     match result {
@@ -93,6 +96,7 @@ fn test_run_second_file_not_found() {
         0.2,
         42,
         false,
+        false,
     );
     assert!(result.is_err());
     match result {
@@ -115,6 +119,7 @@ fn test_run_unknown_strategy() {
         0.9,
         0.2,
         42,
+        false,
         false,
     );
     assert!(result.is_err());
@@ -140,6 +145,7 @@ fn test_run_ties_without_base_model() {
         0.9,
         0.2,
         42,
+        false,
         false,
     );
     assert!(result.is_err());
@@ -167,6 +173,7 @@ fn test_run_dare_without_base_model() {
         0.9,
         0.2,
         42,
+        false,
         false,
     );
     assert!(result.is_err());
@@ -199,6 +206,7 @@ fn test_run_slerp_with_three_models() {
         0.9,
         0.2,
         42,
+        false,
         false,
     );
     assert!(result.is_err());
@@ -268,6 +276,7 @@ fn test_run_invalid_apr_files() {
         0.2,
         42,
         false,
+        false,
     );
     // Should fail because files are not valid APR
     assert!(result.is_err());
@@ -290,6 +299,7 @@ fn test_run_with_weights() {
         0.9,
         0.2,
         42,
+        false,
         false,
     );
     // Will fail at actual merge, but tests weight parsing path

@@ -233,6 +233,7 @@ fn dispatch_format_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             list_formats,
             batch,
             json,
+            plan,
         } => export::run(
             file.as_deref(),
             format,
@@ -241,6 +242,7 @@ fn dispatch_format_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             *list_formats,
             batch.as_deref(),
             *json || cli.json,
+            *plan,
         ),
         Commands::Import {
             source,
@@ -323,7 +325,8 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             drop_rate,
             density,
             seed,
-        } => merge::run(files, strategy, output, weights.clone(), base_model.clone(), *drop_rate, *density, *seed, cli.json),
+            plan,
+        } => merge::run(files, strategy, output, weights.clone(), base_model.clone(), *drop_rate, *density, *seed, cli.json, *plan),
         Commands::ModelOps(ModelOpsCommands::Finetune {
             file,
             method,

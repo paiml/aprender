@@ -278,6 +278,9 @@ pub enum Commands {
         /// Output in JSON format
         #[arg(long)]
         json: bool,
+        /// Plan mode (validate inputs, show export plan, no execution)
+        #[arg(long)]
+        plan: bool,
     },
     /// Import from external formats (hf://org/repo, local files, URLs)
     Import {
@@ -404,6 +407,9 @@ pub enum Commands {
         /// RNG seed for DARE (default: 42)
         #[arg(long, default_value = "42")]
         seed: u64,
+        /// Plan mode (validate inputs, show merge plan, no execution)
+        #[arg(long)]
+        plan: bool,
     },
     /// Quantize model weights (GH-243)
     Quantize {
