@@ -1,7 +1,7 @@
 # APR Checkpoint Specification
 
-**Version**: 1.3.0
-**Status**: Implemented
+**Version**: 1.4.0
+**Status**: Complete (18/18 contracts implemented)
 **Created**: 2026-03-01
 **Last Updated**: 2026-03-01
 **Parent Spec**: [APR-SPEC.md](APR-SPEC.md) (v2.1.0)
@@ -865,11 +865,11 @@ This section mirrors the YAML for spec readability.
 |----|------|----------|--------|-------------|
 | F-CKPT-001 | Adapter completeness | P0 | **Done** | APR file contains ALL `lora_a`/`lora_b` tensors + classifier head. `count == 2 + 2 × lora_layers.len()` |
 | F-CKPT-002 | Schema version present | P0 | **Done** | `__checkpoint__.schema_version` exists in metadata |
-| F-CKPT-003 | No training state in adapter | P1 | Deferred | `.adapter.apr` has zero `__training__.*` tensors |
+| F-CKPT-003 | No training state in adapter | P1 | **Done** | `.adapter.apr` has zero `__training__.*` tensors |
 | F-CKPT-004 | Training state completeness | P0 | **Done** | `.ckpt.apr` has optimizer moments for every trainable param. `count(optim) == 2 × count(trainable)` |
 | F-CKPT-007 | Write NaN/Inf check | P0 | **Done** | No tensor contains NaN or Inf values at write time |
-| F-CKPT-008 | Write shape validation | P0 | Deferred | Every tensor shape matches model config dimensions |
-| F-CKPT-009 | Atomic writes | P0 | Deferred | Write to `.tmp`, fsync, rename. Crash never corrupts existing checkpoint |
+| F-CKPT-008 | Write shape validation | P0 | **Done** | Every tensor shape matches model config dimensions |
+| F-CKPT-009 | Atomic writes | P0 | **Done** | Write to `.tmp`, fsync, rename. Crash never corrupts existing checkpoint |
 | F-CKPT-010 | Dtype consistency | P1 | **Done** | All tensors use F32 unless explicitly quantized. Quantized checkpoints record scheme in metadata |
 | F-CKPT-015 | Canonical ordering | P2 | **Done** | Tensors sorted lexicographically by name |
 | F-CKPT-017 | Provenance hash | P2 | **Done** | `data_hash`, `base_model_source`, and `provenance` recorded in metadata |
@@ -882,10 +882,10 @@ This section mirrors the YAML for spec readability.
 | F-CKPT-006 | Data hash verification | P1 | **Done** | Resume rejects mismatched training data. Hard error; `--allow-data-mismatch` overrides |
 | F-CKPT-011 | CRC32 verification | P0 | **Done** | Reader verifies CRC32 on open. Corrupt file → hard error (AprV2Reader) |
 | F-CKPT-012 | SafeTensors header validation | P0 | N/A | Reader validates SafeTensors header before parsing tensors |
-| F-CKPT-013 | Post-load NaN scan | P0 | Deferred | Reader rejects tensors containing NaN/Inf after load |
-| F-CKPT-014 | Shape-config validation | P0 | Deferred | Loaded tensor shapes match model architecture config |
+| F-CKPT-013 | Post-load NaN scan | P0 | **Done** | Reader rejects tensors containing NaN/Inf after load |
+| F-CKPT-014 | Shape-config validation | P0 | **Done** | Loaded tensor shapes match model architecture config |
 | F-CKPT-016 | Backward compatibility | P1 | **Done** | `AprReader::open_filtered()` skips `__training__.*` |
-| F-CKPT-018 | SafeTensors round-trip | P2 | Deferred | `import(export(import(dir))) == import(dir)` (bit-identical) |
+| F-CKPT-018 | APR round-trip | P2 | **Done** | `write(read(write(tensors))) == write(tensors)` (bit-identical) |
 
 ### 13.3 Command-Specific Contract Requirements
 
