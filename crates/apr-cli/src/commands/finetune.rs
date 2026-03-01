@@ -389,6 +389,21 @@ pub(crate) fn run(
         );
     }
 
+    // Dispatch to instruction fine-tuning pipeline when --task instruct (GH-371)
+    if let Some("instruct") = task {
+        return run_instruct(
+            model_path,
+            model_size,
+            data_path,
+            output_path,
+            rank.unwrap_or(16),
+            epochs,
+            learning_rate,
+            plan_only,
+            json_output,
+        );
+    }
+
     let ft_method: FinetuneMethod = method.parse().map_err(CliError::ValidationFailed)?;
 
     if !json_output {
@@ -809,6 +824,285 @@ fn display_train_result(
             best.val_accuracy * 100.0,
         );
     }
+}
+
+// =============================================================================
+// Instruction fine-tuning (--task instruct) (GH-371)
+// =============================================================================
+
+/// Run instruction fine-tuning pipeline via entrenar.
+#[allow(clippy::too_many_arguments)]
+#[allow(clippy::disallowed_methods)]
+fn run_instruct(
+    model_path: Option<&Path>,
+    model_size: Option<&str>,
+    data_path: Option<&Path>,
+    output_path: Option<&Path>,
+    rank: u32,
+    epochs: u32,
+    learning_rate: f64,
+    plan_only: bool,
+    json_output: bool,
+) -> Result<()> {
+    use entrenar::finetune::instruct_corpus::{load_instruct_corpus, instruct_corpus_stats};
+    use entrenar::finetune::instruct_pipeline::{InstructConfig, InstructPipeline};
+    use entrenar::finetune::instruct_trainer::{InstructTrainer, InstructTrainingConfig};
+    use entrenar::transformer::TransformerConfig;
+
+    if !json_output {
+        output::section("apr finetune --task instruct (GH-371: Instruction Fine-tuning)");
+        println!();
+    }
+
+    let model_config = match model_size.unwrap_or("tiny") {
+        "0.5B" | "500M" | "qwen2-0.5b" => TransformerConfig::qwen2_0_5b(),
+        "7B" | "qwen2.5-7b" => TransformerConfig::qwen2_7b(),
+        "9B" | "qwen3.5-9b" | "qwen3_5" | "qwen3.5" => TransformerConfig::qwen3_5_9b(),
+        _ => TransformerConfig::tiny(),
+    };
+
+    let instruct_config = InstructConfig {
+        lora_rank: rank as usize,
+        lora_alpha: rank as f32 * 2.0,
+        learning_rate: learning_rate as f32,
+        epochs: epochs as usize,
+        ..InstructConfig::default()
+    };
+
+    if !json_output {
+        output::kv(
+            "Model",
+            format!(
+                "{}h x {}L (vocab {})",
+                model_config.hidden_size,
+                model_config.num_hidden_layers,
+                model_config.vocab_size,
+            ),
+        );
+        output::kv("LoRA rank", rank.to_string());
+        output::kv("LoRA alpha", format!("{:.0}", rank as f32 * 2.0));
+        output::kv("Epochs", epochs.to_string());
+        output::kv("Learning rate", format!("{learning_rate:.1e}"));
+        println!();
+    }
+
+    let pipeline = if let Some(mp) = model_path.filter(|p| p.is_dir()) {
+        InstructPipeline::from_pretrained(mp, &model_config, instruct_config).map_err(|e| {
+            CliError::ValidationFailed(format!("Failed to load pretrained model: {e}"))
+        })?
+    } else {
+        let mut pipe = InstructPipeline::new(&model_config, instruct_config);
+        if let Some(mp) = model_path {
+            pipe.set_model_path(mp);
+        }
+        pipe
+    };
+
+    if !json_output {
+        println!("{}", pipeline.summary());
+        println!();
+    }
+
+    if plan_only {
+        if json_output {
+            let json = serde_json::json!({
+                "task": "instruct",
+                "lora_rank": rank,
+                "lora_alpha": rank as f32 * 2.0,
+                "hidden_size": model_config.hidden_size,
+                "num_layers": model_config.num_hidden_layers,
+                "vocab_size": model_config.vocab_size,
+                "trainable_params": pipeline.num_trainable_parameters(),
+            });
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&json).unwrap_or_default()
+            );
+        }
+        return Ok(());
+    }
+
+    let Some(data) = data_path else {
+        if !json_output {
+            println!("{}", "NEXT STEPS".white().bold());
+            println!("{}", "\u{2500}".repeat(50));
+            println!("  Provide --data <train.jsonl> to start training.");
+            println!("  JSONL format: {{\"instruction\": \"...\", \"response\": \"...\"}}");
+            println!(
+                "  Example: apr finetune --task instruct --data instruct.jsonl -o checkpoints/"
+            );
+        }
+        return Ok(());
+    };
+
+    if !data.exists() {
+        return Err(CliError::FileNotFound(data.to_path_buf()));
+    }
+
+    let samples = load_instruct_corpus(data)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to load corpus: {e}")))?;
+
+    let stats = instruct_corpus_stats(&samples);
+
+    if !json_output {
+        output::subheader("Corpus");
+        output::kv("Samples", stats.total.to_string());
+        output::kv(
+            "Avg instruction",
+            format!("{} chars", stats.avg_instruction_len),
+        );
+        output::kv("Avg response", format!("{} chars", stats.avg_response_len));
+        if !stats.sources.is_empty() {
+            output::kv("Sources", stats.sources.join(", "));
+        }
+        println!();
+    }
+
+    let output_dir = output_path
+        .unwrap_or(Path::new("checkpoints"))
+        .to_path_buf();
+
+    let training_config = InstructTrainingConfig {
+        epochs: epochs as usize,
+        checkpoint_dir: output_dir.clone(),
+        ..InstructTrainingConfig::default()
+    };
+
+    let mut trainer = InstructTrainer::new(pipeline, samples, training_config)
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to create trainer: {e}")))?;
+
+    if !json_output {
+        output::pipeline_stage("Training", output::StageStatus::Running);
+        output::kv("Train samples", trainer.train_size().to_string());
+        output::kv("Val samples", trainer.val_size().to_string());
+        output::kv("Data hash", trainer.data_hash().to_string());
+        output::kv("Output dir", output_dir.display().to_string());
+        println!();
+    }
+
+    let result = trainer.train();
+
+    if !json_output {
+        output::pipeline_stage("Training", output::StageStatus::Done);
+        println!();
+        display_instruct_result(&result, &output_dir);
+    } else {
+        display_instruct_result_json(&result, &output_dir);
+    }
+
+    Ok(())
+}
+
+/// Display instruction training results as human-readable text.
+fn display_instruct_result(
+    result: &entrenar::finetune::InstructTrainResult,
+    output_dir: &Path,
+) {
+    output::subheader("Training Metrics");
+    println!();
+    println!(
+        "  {:>5}  {:>10}  {:>10}  {:>10}  {:>10}  {:>10}  {:>8}",
+        "Epoch".white().bold(),
+        "Train Loss".white().bold(),
+        "Val Loss".white().bold(),
+        "Train PPL".white().bold(),
+        "Val PPL".white().bold(),
+        "LR".white().bold(),
+        "Time".white().bold(),
+    );
+    println!("  {}", "\u{2500}".repeat(72));
+
+    for m in &result.epoch_metrics {
+        let is_best = m.epoch == result.best_epoch;
+        let marker = if is_best { "*" } else { " " };
+        println!(
+            " {}{:>4}  {:>10.4}  {:>10.4}  {:>10.2}  {:>10.2}  {:>10.2e}  {:>6}ms",
+            marker,
+            m.epoch + 1,
+            m.train_loss,
+            m.val_loss,
+            m.train_perplexity,
+            m.val_perplexity,
+            m.learning_rate,
+            m.epoch_time_ms,
+        );
+    }
+    println!();
+
+    output::subheader("Summary");
+    let total_secs = result.total_time_ms as f64 / 1000.0;
+    output::kv("Total epochs", result.epoch_metrics.len().to_string());
+    output::kv(
+        "Best epoch",
+        format!(
+            "{} (val_loss: {:.4})",
+            result.best_epoch + 1,
+            result.best_val_loss
+        ),
+    );
+    if result.stopped_early {
+        output::kv(
+            "Early stopping",
+            "Yes (patience exhausted)".yellow().to_string(),
+        );
+    } else {
+        output::kv("Early stopping", "No (completed all epochs)");
+    }
+    output::kv("Total time", format!("{total_secs:.1}s"));
+    output::kv("Checkpoints", output_dir.display().to_string());
+
+    if let Some(best) = result
+        .epoch_metrics
+        .iter()
+        .find(|m| m.epoch == result.best_epoch)
+    {
+        println!();
+        println!(
+            "  {} Best validation perplexity: {:.2}",
+            "\u{2713}".green().bold(),
+            best.val_perplexity,
+        );
+    }
+}
+
+/// Display instruction training results as JSON.
+#[allow(clippy::disallowed_methods)]
+fn display_instruct_result_json(
+    result: &entrenar::finetune::InstructTrainResult,
+    output_dir: &Path,
+) {
+    let epochs_json: Vec<serde_json::Value> = result
+        .epoch_metrics
+        .iter()
+        .map(|m| {
+            serde_json::json!({
+                "epoch": m.epoch,
+                "train_loss": m.train_loss,
+                "train_perplexity": m.train_perplexity,
+                "val_loss": m.val_loss,
+                "val_perplexity": m.val_perplexity,
+                "learning_rate": m.learning_rate,
+                "epoch_time_ms": m.epoch_time_ms,
+                "samples_per_sec": m.samples_per_sec,
+            })
+        })
+        .collect();
+
+    let json = serde_json::json!({
+        "status": "training_complete",
+        "task": "instruct",
+        "best_epoch": result.best_epoch,
+        "best_val_loss": result.best_val_loss,
+        "stopped_early": result.stopped_early,
+        "total_time_ms": result.total_time_ms,
+        "total_epochs": result.epoch_metrics.len(),
+        "checkpoint_dir": output_dir.display().to_string(),
+        "epoch_metrics": epochs_json,
+    });
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&json).unwrap_or_default()
+    );
 }
 
 #[cfg(test)]
