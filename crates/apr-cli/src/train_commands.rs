@@ -12,9 +12,9 @@ pub enum TrainCommands {
     ///
     /// Analogous to `forjar plan` — shows what will happen before committing GPU time.
     Plan {
-        /// Path to training data (JSONL)
+        /// Path to training data (JSONL) — required for --task classify
         #[arg(long, value_name = "FILE")]
-        data: PathBuf,
+        data: Option<PathBuf>,
         /// Model size: "0.5B", "9B", "7B", "13B"
         #[arg(long, default_value = "0.5B")]
         model_size: String,
@@ -24,9 +24,12 @@ pub enum TrainCommands {
         /// Number of output classes
         #[arg(long, default_value = "5")]
         num_classes: usize,
-        /// Task type: classify
+        /// Task type: classify, pretrain
         #[arg(long, default_value = "classify")]
         task: String,
+        /// YAML training config (for --task pretrain)
+        #[arg(long, value_name = "FILE")]
+        config: Option<PathBuf>,
         /// Output directory for checkpoints
         #[arg(short, long, default_value = "/tmp/training-output")]
         output: PathBuf,
@@ -73,6 +76,14 @@ pub enum TrainCommands {
         /// Path to a saved plan file (YAML or JSON from `apr train plan`)
         #[arg(long, value_name = "FILE")]
         plan: Option<PathBuf>,
+
+        /// YAML training config (for --task pretrain)
+        #[arg(long, value_name = "FILE")]
+        config: Option<PathBuf>,
+
+        /// Task type: classify, pretrain
+        #[arg(long, default_value = "classify")]
+        task: String,
 
         // ── Inline plan params (used when no --plan file is given) ─────
         /// Path to training data (JSONL)
