@@ -66,7 +66,7 @@ fn extract_model_paths(command: &Commands) -> Vec<PathBuf> {
 
         Commands::Quantize { file, .. } => vec![file.clone()],
         Commands::ModelOps(ModelOpsCommands::Prune { file, .. }) => vec![file.clone()],
-        Commands::ModelOps(ModelOpsCommands::Distill { teacher, .. }) => vec![teacher.clone()],
+        Commands::ModelOps(ModelOpsCommands::Distill { teacher, .. }) => teacher.iter().cloned().collect(),
         Commands::ModelOps(ModelOpsCommands::Finetune { file, .. }) => file.iter().cloned().collect(),
 
         Commands::Tui { file, .. } => file.iter().cloned().collect(),

@@ -82,11 +82,11 @@ pub enum ModelOpsCommands {
         #[arg(long, value_name = "FILE")]
         calibration: Option<PathBuf>,
     },
-    /// Knowledge distillation (teacher -> student) (GH-247)
+    /// Knowledge distillation (teacher -> student) (GH-247, ALB-011)
     Distill {
-        /// Teacher model file
+        /// Teacher model file (positional, for file-based mode)
         #[arg(value_name = "TEACHER")]
-        teacher: PathBuf,
+        teacher: Option<PathBuf>,
         /// Student model file
         #[arg(long, value_name = "FILE")]
         student: Option<PathBuf>,
@@ -111,5 +111,11 @@ pub enum ModelOpsCommands {
         /// Plan mode (estimate only)
         #[arg(long)]
         plan: bool,
+        /// YAML config file for two-stage distillation (ALB-011)
+        #[arg(long, value_name = "FILE")]
+        config: Option<PathBuf>,
+        /// Distillation stage: precompute (extract teacher logits) or train (student KD)
+        #[arg(long, value_name = "STAGE")]
+        stage: Option<String>,
     },
 }

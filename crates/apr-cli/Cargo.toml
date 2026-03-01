@@ -155,6 +155,8 @@ entrenar = { version = "0.7.3", features = ["cuda"] }
 # Data loading, splitting, imbalance detection (apr data subcommands)
 alimentar = { path = "/home/noah/src/alimentar", default-features = false, features = ["shuffle"] }
 half = "2.4.1"
+# YAML config parsing (distillation configs, ALB-011)
+serde_yaml_ng = "0.10"
 
 [[example]]
 name = "probar_tui_testing"
