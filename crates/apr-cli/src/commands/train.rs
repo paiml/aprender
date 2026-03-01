@@ -41,10 +41,10 @@ pub(crate) fn run_plan(
     let config = entrenar::finetune::PlanConfig {
         task: task.to_string(),
         data_path: data.to_path_buf(),
-        val_path: val_data.map(|p| p.to_path_buf()),
-        test_path: test_data.map(|p| p.to_path_buf()),
+        val_path: val_data.map(std::path::Path::to_path_buf),
+        test_path: test_data.map(std::path::Path::to_path_buf),
         model_size: model_size.to_string(),
-        model_path: model_path.map(|p| p.to_path_buf()),
+        model_path: model_path.map(std::path::Path::to_path_buf),
         num_classes,
         output_dir: output_dir.to_path_buf(),
         strategy: strategy.to_string(),
@@ -54,6 +54,12 @@ pub(crate) fn run_plan(
         manual_lr,
         manual_lora_rank,
         manual_batch_size,
+        manual_lora_alpha: None,
+        manual_warmup: None,
+        manual_gradient_clip: None,
+        manual_lr_min_ratio: None,
+        manual_class_weights: None,
+        manual_target_modules: None,
     };
 
     let plan = entrenar::finetune::training_plan(&config)
@@ -79,6 +85,95 @@ pub(crate) fn run_plan(
 
 include!("train_output.rs");
 
+/// Load a training plan from file, or generate one inline.
+#[allow(clippy::too_many_arguments)]
+fn load_or_generate_plan(
+    plan_file: Option<&std::path::Path>,
+    data: Option<&std::path::Path>,
+    model_size: &str,
+    model_path: Option<&std::path::Path>,
+    num_classes: usize,
+    output_dir: &std::path::Path,
+    strategy: &str,
+    budget: usize,
+    scout: bool,
+    max_epochs: usize,
+    manual_lr: Option<f32>,
+    manual_lora_rank: Option<usize>,
+    manual_batch_size: Option<usize>,
+) -> Result<entrenar::finetune::TrainingPlan> {
+    if let Some(plan_path) = plan_file {
+        let content = std::fs::read_to_string(plan_path).map_err(|_| {
+            CliError::FileNotFound(plan_path.to_path_buf())
+        })?;
+        entrenar::finetune::TrainingPlan::from_str(&content)
+            .map_err(|e| {
+                CliError::ValidationFailed(format!(
+                    "Failed to parse plan file {}: {e}",
+                    plan_path.display()
+                ))
+            })
+    } else {
+        let data_path = data.ok_or_else(|| {
+            CliError::ValidationFailed(
+                "Either --plan <file> or --data <file> is required".to_string(),
+            )
+        })?;
+        let config = entrenar::finetune::PlanConfig {
+            task: "classify".to_string(),
+            data_path: data_path.to_path_buf(),
+            val_path: None,
+            test_path: None,
+            model_size: model_size.to_string(),
+            model_path: model_path.map(std::path::Path::to_path_buf),
+            num_classes,
+            output_dir: output_dir.to_path_buf(),
+            strategy: strategy.to_string(),
+            budget,
+            scout,
+            max_epochs,
+            manual_lr,
+            manual_lora_rank,
+            manual_batch_size,
+            manual_lora_alpha: None,
+            manual_warmup: None,
+            manual_gradient_clip: None,
+            manual_lr_min_ratio: None,
+            manual_class_weights: None,
+            manual_target_modules: None,
+        };
+        entrenar::finetune::training_plan(&config)
+            .map_err(|e| CliError::ValidationFailed(e.to_string()))
+    }
+}
+
+/// Print apply summary before execution.
+fn print_apply_summary(
+    plan: &entrenar::finetune::TrainingPlan,
+    output_dir: &std::path::Path,
+) {
+    output::header("apr train apply — Executing Training Plan");
+    println!();
+    output::kv("  Strategy", &plan.hyperparameters.strategy);
+    if plan.hyperparameters.strategy == "manual" {
+        if let Some(ref m) = plan.hyperparameters.manual {
+            output::kv("  Learning rate", format!("{:.2e}", m.learning_rate));
+            output::kv("  LoRA rank", m.lora_rank.to_string());
+            output::kv("  Batch size", m.batch_size.to_string());
+        }
+    } else {
+        output::kv("  Budget", format!("{} trials", plan.hyperparameters.budget));
+        output::kv(
+            "  Mode",
+            if plan.hyperparameters.scout { "scout (1 epoch/trial)" } else { "full" },
+        );
+    }
+    output::kv("  Model", &plan.model.size);
+    output::kv("  Data", &plan.data.train_path);
+    output::kv("  Output", output_dir.display().to_string());
+    println!();
+}
+
 /// Run `apr train apply` — execute a training plan.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn run_apply(
@@ -97,49 +192,11 @@ pub(crate) fn run_apply(
     manual_batch_size: Option<usize>,
     json_output: bool,
 ) -> Result<()> {
-    // ── Load or generate plan ──────────────────────────────────────────
-    let plan = if let Some(plan_path) = plan_file {
-        // Load plan from YAML/JSON file
-        let content = std::fs::read_to_string(plan_path).map_err(|_| {
-            CliError::FileNotFound(plan_path.to_path_buf())
-        })?;
-
-        entrenar::finetune::TrainingPlan::from_str(&content)
-            .map_err(|e| {
-                CliError::ValidationFailed(format!(
-                    "Failed to parse plan file {}: {e}",
-                    plan_path.display()
-                ))
-            })?
-    } else {
-        // Generate plan inline (same as `apr train plan`)
-        let data_path = data.ok_or_else(|| {
-            CliError::ValidationFailed(
-                "Either --plan <file> or --data <file> is required".to_string(),
-            )
-        })?;
-
-        let config = entrenar::finetune::PlanConfig {
-            task: "classify".to_string(),
-            data_path: data_path.to_path_buf(),
-            val_path: None,
-            test_path: None,
-            model_size: model_size.to_string(),
-            model_path: model_path.map(|p| p.to_path_buf()),
-            num_classes,
-            output_dir: output_dir.to_path_buf(),
-            strategy: strategy.to_string(),
-            budget,
-            scout,
-            max_epochs,
-            manual_lr,
-            manual_lora_rank,
-            manual_batch_size,
-        };
-
-        entrenar::finetune::training_plan(&config)
-            .map_err(|e| CliError::ValidationFailed(e.to_string()))?
-    };
+    let plan = load_or_generate_plan(
+        plan_file, data, model_size, model_path, num_classes,
+        output_dir, strategy, budget, scout, max_epochs,
+        manual_lr, manual_lora_rank, manual_batch_size,
+    )?;
 
     // ── Check verdict ──────────────────────────────────────────────────
     if plan.verdict == entrenar::finetune::PlanVerdict::Blocked {
@@ -157,13 +214,11 @@ pub(crate) fn run_apply(
         ));
     }
 
-    // ── Resolve model path ─────────────────────────────────────────────
+    // ── Resolve paths ───────────────────────────────────────────────────
     let resolved_model_path = model_path
-        .map(|p| p.to_path_buf())
+        .map(std::path::Path::to_path_buf)
         .or_else(|| {
-            // Try to extract from plan
             plan.model.weights_available.then(|| {
-                // Default: look in standard locations
                 std::path::PathBuf::from("/home/noah/src/models/qwen2.5-coder-0.5b")
             })
         })
@@ -173,31 +228,13 @@ pub(crate) fn run_apply(
             )
         })?;
 
-    let resolved_data_path = data
-        .map(|p| p.to_path_buf())
-        .unwrap_or_else(|| std::path::PathBuf::from(&plan.data.train_path));
+    let resolved_data_path = match data {
+        Some(p) => p.to_path_buf(),
+        None => std::path::PathBuf::from(&plan.data.train_path),
+    };
 
     if !json_output {
-        output::header("apr train apply — Executing Training Plan");
-        println!();
-        output::kv("  Strategy", &plan.hyperparameters.strategy);
-        if plan.hyperparameters.strategy == "manual" {
-            if let Some(ref m) = plan.hyperparameters.manual {
-                output::kv("  Learning rate", format!("{:.2e}", m.learning_rate));
-                output::kv("  LoRA rank", m.lora_rank.to_string());
-                output::kv("  Batch size", m.batch_size.to_string());
-            }
-        } else {
-            output::kv("  Budget", format!("{} trials", plan.hyperparameters.budget));
-            output::kv(
-                "  Mode",
-                if plan.hyperparameters.scout { "scout (1 epoch/trial)" } else { "full" },
-            );
-        }
-        output::kv("  Model", &plan.model.size);
-        output::kv("  Data", &plan.data.train_path);
-        output::kv("  Output", output_dir.display().to_string());
-        println!();
+        print_apply_summary(&plan, output_dir);
     }
 
     // ── Execute ────────────────────────────────────────────────────────

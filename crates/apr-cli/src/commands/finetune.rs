@@ -364,6 +364,7 @@ pub(crate) fn run(
     task: Option<&str>,
     num_classes: usize,
     checkpoint_format: &str,
+    oversample: bool,
     json_output: bool,
 ) -> Result<()> {
     if merge_mode {
@@ -383,6 +384,7 @@ pub(crate) fn run(
             learning_rate,
             plan_only,
             checkpoint_format,
+            oversample,
             json_output,
         );
     }
@@ -514,6 +516,7 @@ fn run_classify(
     learning_rate: f64,
     plan_only: bool,
     checkpoint_format: &str,
+    oversample: bool,
     json_output: bool,
 ) -> Result<()> {
     use entrenar::finetune::classify_pipeline::{ClassifyConfig, ClassifyPipeline};
@@ -557,13 +560,19 @@ fn run_classify(
         println!();
     }
 
-    // Use from_pretrained() when a model directory with weights is provided
+    // Use from_pretrained() when a model directory with weights is provided.
+    // When the user passes an .apr file (not a directory), create a random-init
+    // pipeline but record the file path so checkpoints can reference it.
     let pipeline = if let Some(mp) = model_path.filter(|p| p.is_dir()) {
         ClassifyPipeline::from_pretrained(mp, &model_config, classify_config).map_err(|e| {
             CliError::ValidationFailed(format!("Failed to load pretrained model: {e}"))
         })?
     } else {
-        ClassifyPipeline::new(&model_config, classify_config)
+        let mut pipe = ClassifyPipeline::new(&model_config, classify_config);
+        if let Some(mp) = model_path {
+            pipe.set_model_path(mp);
+        }
+        pipe
     };
 
     // Capture GPU info before pipeline is moved into trainer
@@ -639,6 +648,7 @@ fn run_classify(
         checkpoint_dir: output_dir.clone(),
         seed: 42,
         log_interval: 1,
+        oversample_minority: oversample,
         ..TrainingConfig::default()
     };
 

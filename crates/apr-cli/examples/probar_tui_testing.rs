@@ -193,13 +193,12 @@ fn demo_frame_sequence() {
     println!("    Total frames: {}", sequence.len());
     let first = sequence.first().expect("first frame");
     let last = sequence.last().expect("last frame");
-    print!("    First != Last: ");
     println!(
-        "{}",
-        if !first.matches(last) {
-            "✓ (different content)"
-        } else {
+        "    First != Last: {}",
+        if first.matches(last) {
             "✗ (unexpected match)"
+        } else {
+            "✓ (different content)"
         }
     );
 }
@@ -317,7 +316,7 @@ fn demo_snapshot_manager(frame: &TuiFrame) {
 
     let temp_dir = tempfile::TempDir::new().expect("temp dir");
     let manager = SnapshotManager::new(temp_dir.path());
-    println!("  Snapshot directory: {:?}\n", temp_dir.path());
+    println!("  Snapshot directory: {}\n", temp_dir.path().display());
 
     print!("  First run (create golden): ");
     match manager.assert_snapshot("federation_dashboard", frame) {

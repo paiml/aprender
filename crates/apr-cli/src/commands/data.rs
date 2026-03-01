@@ -64,7 +64,7 @@ fn print_audit_report(r: &AuditResult) {
     for (label, count) in &classes {
         let pct = **count as f64 / total as f64 * 100.0;
         let bar_len = (pct / 3.0) as usize;
-        let bar: String = std::iter::repeat('█').take(bar_len).collect();
+        let bar: String = "█".repeat(bar_len);
         println!("  {label:>20}  {count:>8}  {pct:5.1}%  {bar}");
     }
 
@@ -226,7 +226,7 @@ pub(crate) fn run_audit(
 
     // Label range validation (use imbalance distribution counts)
     let mut out_of_range = 0usize;
-    for (label_str, _) in &imbalance_report.distribution.counts {
+    for label_str in imbalance_report.distribution.counts.keys() {
         if let Ok(v) = label_str.parse::<i64>() {
             if v < 0 || v >= num_classes as i64 {
                 out_of_range += imbalance_report.distribution.get_count(label_str);
@@ -247,6 +247,7 @@ pub(crate) fn run_audit(
         .sum();
 
     if json_output {
+        #[allow(clippy::disallowed_methods)] // serde_json::json!() macro uses infallible unwrap
         let report = serde_json::json!({
             "path": path.display().to_string(),
             "total_samples": total,
@@ -347,9 +348,10 @@ pub(crate) fn run_split(
 
     let train_len = split.train().len();
     let test_len = split.test().len();
-    let val_len = split.validation().map_or(0, |v| v.len());
+    let val_len = split.validation().map_or(0, alimentar::Dataset::len);
 
     if json_output {
+        #[allow(clippy::disallowed_methods)] // serde_json::json!() macro uses infallible unwrap
         let report = serde_json::json!({
             "source": path.display().to_string(),
             "total": total,
@@ -426,6 +428,7 @@ pub(crate) fn run_balance(
         let weights = alimentar::sqrt_inverse_weights(&ordered_counts);
 
         if json_output {
+            #[allow(clippy::disallowed_methods)] // serde_json::json!() macro uses infallible unwrap
             let report = serde_json::json!({
                 "strategy": "sqrt-inverse",
                 "class_counts": ordered_counts,
@@ -468,6 +471,7 @@ pub(crate) fn run_balance(
         })?;
 
         if json_output {
+            #[allow(clippy::disallowed_methods)] // serde_json::json!() macro uses infallible unwrap
             let report = serde_json::json!({
                 "strategy": strategy,
                 "original_samples": original_len,

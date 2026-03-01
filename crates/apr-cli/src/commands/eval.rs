@@ -440,6 +440,57 @@ fn run_safetensors_evaluation(
     ))
 }
 
+/// Resolve checkpoint subdirectory: if the root dir doesn't contain
+/// adapter_config.json or model.safetensors, look in best/ then epoch-N/ subdirs.
+fn resolve_checkpoint_dir(dir: &Path) -> Option<std::path::PathBuf> {
+    let has_adapter = dir.join("adapter_config.json").exists();
+    let has_weights = dir.join("model.safetensors").exists();
+    if has_adapter || has_weights {
+        return None; // Already the right directory
+    }
+
+    // Try best/ subdir first
+    let best = dir.join("best");
+    if best.is_dir()
+        && (best.join("adapter_config.json").exists()
+            || best.join("model.safetensors").exists())
+    {
+        eprintln!(
+            "Resolved checkpoint: {} → {}/best",
+            dir.display(),
+            dir.display()
+        );
+        return Some(best);
+    }
+
+    // Try latest epoch-N subdir
+    let mut epoch_dirs: Vec<_> = std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|e| {
+            e.file_name()
+                .to_str()
+                .is_some_and(|n| n.starts_with("epoch-"))
+                && e.path().is_dir()
+        })
+        .collect();
+    epoch_dirs.sort_by_key(std::fs::DirEntry::file_name);
+    if let Some(latest) = epoch_dirs.last() {
+        let p = latest.path();
+        if p.join("adapter_config.json").exists() || p.join("model.safetensors").exists() {
+            eprintln!(
+                "Resolved checkpoint: {} → {}",
+                dir.display(),
+                p.display()
+            );
+            return Some(p);
+        }
+    }
+
+    None
+}
+
 /// Run classification evaluation on a checkpoint directory.
 ///
 /// Loads a saved ClassifyPipeline checkpoint, evaluates against a JSONL test set,
@@ -473,6 +524,9 @@ pub(crate) fn run_classify_eval(
             checkpoint_dir.display()
         )));
     }
+
+    let resolved_checkpoint = resolve_checkpoint_dir(checkpoint_dir);
+    let checkpoint_dir = resolved_checkpoint.as_deref().unwrap_or(checkpoint_dir);
 
     // Resolve model config
     let model_config = match model_size.unwrap_or("tiny") {

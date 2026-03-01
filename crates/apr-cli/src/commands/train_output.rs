@@ -272,8 +272,8 @@ fn print_apply_result(result: &entrenar::finetune::TuneResult) {
 
     // Header
     println!(
-        "  {:>5}  {:>10}  {:>10}  {:>10}  {:>8}  {:>8}  {}",
-        "Trial", "Val Loss", "Val Acc", "Train Acc", "Epochs", "Time", "Status"
+        "  {:>5}  {:>10}  {:>10}  {:>10}  {:>8}  {:>8}  Status",
+        "Trial", "Val Loss", "Val Acc", "Train Acc", "Epochs", "Time"
     );
     println!("  {}", "\u{2500}".repeat(68));
 

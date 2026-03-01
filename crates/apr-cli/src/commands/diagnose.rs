@@ -47,7 +47,7 @@ pub(crate) fn run(
             &findings,
             &recommendations,
             &epoch_metrics,
-            &eval_report,
+            eval_report.as_ref(),
         );
         return Ok(());
     }
@@ -106,7 +106,7 @@ fn check_checkpoint_integrity(
     let has_class_weights = metadata
         .as_ref()
         .and_then(|m| m.get("class_weights"))
-        .map_or(false, |v| !v.is_null());
+        .is_some_and(|v| !v.is_null());
 
     if !has_class_weights {
         findings.push(Finding {
@@ -193,8 +193,9 @@ fn output_json(
     findings: &[Finding],
     recommendations: &[Recommendation],
     epoch_metrics: &[EpochInfo],
-    eval_report: &Option<serde_json::Value>,
+    eval_report: Option<&serde_json::Value>,
 ) {
+    #[allow(clippy::disallowed_methods)] // serde_json::json!() macro uses infallible unwrap
     let report = serde_json::json!({
         "checkpoint": checkpoint_dir.display().to_string(),
         "findings": findings.iter().map(|f| serde_json::json!({
@@ -272,12 +273,11 @@ fn output_text(
     if !epoch_metrics.is_empty() {
         println!("{}", "Epoch History:".white().bold());
         for e in epoch_metrics {
-            let marker = if e.val_loss
-                == epoch_metrics
-                    .iter()
-                    .map(|x| x.val_loss)
-                    .fold(f64::MAX, f64::min)
-            {
+            let min_val_loss = epoch_metrics
+                .iter()
+                .map(|x| x.val_loss)
+                .fold(f64::MAX, f64::min);
+            let marker = if (e.val_loss - min_val_loss).abs() < f64::EPSILON {
                 " <- BEST".green().to_string()
             } else {
                 String::new()
@@ -298,7 +298,7 @@ fn output_text(
         println!("{}", "RECOMMENDATIONS:".cyan().bold());
         // Sort by priority
         let mut recs = recommendations;
-        recs.sort_by(|a, b| a.priority.cmp(&b.priority));
+        recs.sort_by(|a, b| a.priority.cmp(b.priority));
         for (i, r) in recs.iter().enumerate() {
             println!(
                 "  {}. [{}] {}",

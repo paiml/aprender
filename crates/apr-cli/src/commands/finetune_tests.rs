@@ -65,6 +65,7 @@ fn test_run_no_model() {
         5,
         "apr,safetensors",
         false,
+        false,
     );
     assert!(result.is_err());
 }
@@ -88,6 +89,7 @@ fn test_run_plan_with_model_size() {
         5,
         "apr,safetensors",
         false,
+        false,
     );
     assert!(result.is_ok());
 }
@@ -110,6 +112,7 @@ fn test_run_plan_json() {
         None,
         5,
         "apr,safetensors",
+        false,
         true,
     );
     assert!(result.is_ok());
@@ -135,6 +138,7 @@ fn test_run_with_model_file() {
         None,
         5,
         "apr,safetensors",
+        false,
         false,
     );
     assert!(result.is_ok());
@@ -241,6 +245,7 @@ fn test_run_training_creates_adapter() {
         None,
         5,
         "apr,safetensors",
+        false,
         true,
     );
     assert!(result.is_ok(), "Training should succeed: {result:?}");

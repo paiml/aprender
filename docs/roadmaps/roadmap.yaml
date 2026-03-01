@@ -4585,3 +4585,35 @@ roadmap:
   labels:
   - bug
   notes: null
+- id: PMAT-342
+  github_issue: null
+  item_type: task
+  title: APR checkpoint spec v1.2.0 — full command matrix and falsification
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-03-01T11:47:17Z
+  updated: 2026-03-01T11:47:17Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-366
+  github_issue: null
+  item_type: task
+  title: 'New task: GH-366'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-03-01T11:50:50.562288413+00:00
+  updated: 2026-03-01T11:50:50.562288413+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null

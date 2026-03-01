@@ -48,6 +48,9 @@ pub enum ModelOpsCommands {
         /// Output format for checkpoints: apr, safetensors, or both (comma-separated)
         #[arg(long, value_name = "FORMAT", default_value = "apr,safetensors")]
         checkpoint_format: String,
+        /// Oversample minority classes to match majority (for imbalanced datasets)
+        #[arg(long)]
+        oversample: bool,
     },
     /// Prune model (structured/unstructured pruning) (GH-247)
     Prune {

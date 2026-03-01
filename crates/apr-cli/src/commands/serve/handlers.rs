@@ -86,6 +86,8 @@ struct AprServerState {
     architecture: String,
     is_transformer: bool,
     tokenizer: Option<SafeTensorsTokenizerInfo>,
+    /// Embedded BPE tokenizer from APR file metadata (GGUF-imported models)
+    embedded_tokenizer: Option<realizar::apr::BpeTokenizer>,
     /// GH-283: Model name for request validation (derived from filename stem)
     model_name: String,
 }
@@ -115,10 +117,13 @@ fn run_apr_cpu_inference(
         .as_ref()
         .ok_or("Transformer not loaded, inference not supported")?;
 
-    // Tokenize (BPE or character-level fallback)
-    let input_tokens: Vec<u32> = match &state.tokenizer {
-        Some(tok) => tok.tokenizer.encode(prompt),
-        None => prompt.chars().map(|c| c as u32).collect(),
+    // Tokenize: embedded APR tokenizer → sibling tokenizer.json → character-level fallback
+    let input_tokens: Vec<u32> = if let Some(ref tok) = state.embedded_tokenizer {
+        tok.encode(prompt)
+    } else if let Some(ref tok) = state.tokenizer {
+        tok.tokenizer.encode(prompt)
+    } else {
+        prompt.chars().map(|c| c as u32).collect()
     };
     let input_token_count = input_tokens.len();
 
@@ -149,13 +154,16 @@ fn run_apr_cpu_inference(
         &output_tokens[..]
     };
 
-    // Decode (BPE or character-level fallback)
-    let text = match &state.tokenizer {
-        Some(tok) => tok.tokenizer.decode(new_tokens).unwrap_or_default(),
-        None => new_tokens
+    // Decode: embedded APR tokenizer → sibling tokenizer.json → character-level fallback
+    let text = if let Some(ref tok) = state.embedded_tokenizer {
+        tok.decode(new_tokens)
+    } else if let Some(ref tok) = state.tokenizer {
+        tok.tokenizer.decode(new_tokens).unwrap_or_default()
+    } else {
+        new_tokens
             .iter()
             .filter_map(|&t| char::from_u32(t))
-            .collect(),
+            .collect()
     };
 
     Ok(AprInferenceOutput {
@@ -205,20 +213,33 @@ fn load_apr_model_state(model_path: &Path, config: &ServerConfig) -> Result<AprS
         );
     }
 
-    // Load tokenizer (GAP-UX-002: hash-prefix aware)
-    let bpe_tokenizer = if let Some(tokenizer_path) =
-        realizar::safetensors::find_sibling_file(model_path, "tokenizer.json")
-    {
+    // Try embedded tokenizer first (GGUF-imported .apr files embed tokenizer in metadata)
+    let embedded_tokenizer = model.load_embedded_bpe_tokenizer();
+    if embedded_tokenizer.is_some() {
         println!(
             "{}",
-            format!("BPE tokenizer loaded from {}", tokenizer_path.display()).green()
+            "Embedded BPE tokenizer loaded from APR metadata".green()
         );
-        load_safetensors_tokenizer(&tokenizer_path)
+    }
+
+    // Fall back to sibling tokenizer.json (GAP-UX-002: hash-prefix aware)
+    let bpe_tokenizer = if embedded_tokenizer.is_none() {
+        if let Some(tokenizer_path) =
+            realizar::safetensors::find_sibling_file(model_path, "tokenizer.json")
+        {
+            println!(
+                "{}",
+                format!("BPE tokenizer loaded from {}", tokenizer_path.display()).green()
+            );
+            load_safetensors_tokenizer(&tokenizer_path)
+        } else {
+            println!(
+                "{}",
+                "No tokenizer found - using character-level fallback".yellow()
+            );
+            None
+        }
     } else {
-        println!(
-            "{}",
-            "No tokenizer.json found - using fallback tokenization".yellow()
-        );
         None
     };
 
@@ -265,6 +286,7 @@ fn load_apr_model_state(model_path: &Path, config: &ServerConfig) -> Result<AprS
         architecture,
         is_transformer,
         tokenizer: bpe_tokenizer,
+        embedded_tokenizer,
         model_name,
     })
 }

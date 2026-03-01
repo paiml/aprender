@@ -34,19 +34,19 @@ fn collect_epoch_metrics(parent_dir: &Path, epoch_metrics: &mut Vec<EpochInfo>) 
                         epoch_metrics.push(EpochInfo {
                             epoch: val
                                 .get("epoch")
-                                .and_then(|v| v.as_u64())
+                                .and_then(serde_json::Value::as_u64)
                                 .unwrap_or(0) as usize,
                             train_loss: val
                                 .get("train_loss")
-                                .and_then(|v| v.as_f64())
+                                .and_then(serde_json::Value::as_f64)
                                 .unwrap_or(0.0),
                             val_loss: val
                                 .get("val_loss")
-                                .and_then(|v| v.as_f64())
+                                .and_then(serde_json::Value::as_f64)
                                 .unwrap_or(0.0),
                             val_accuracy: val
                                 .get("val_accuracy")
-                                .and_then(|v| v.as_f64())
+                                .and_then(serde_json::Value::as_f64)
                                 .unwrap_or(0.0),
                         });
                     }
@@ -64,7 +64,7 @@ fn analyze_loss_curve(
 ) {
     // Check for divergence
     let first_loss = epoch_metrics[0].train_loss;
-    let last_loss = epoch_metrics.last().map(|e| e.train_loss).unwrap_or(0.0);
+    let last_loss = epoch_metrics.last().map_or(0.0, |e| e.train_loss);
     if last_loss > first_loss * 1.5 {
         findings.push(Finding {
             category: "Loss Curve",
@@ -206,8 +206,7 @@ fn analyze_eval_report(
         .iter()
         .enumerate()
         .max_by_key(|(_, c)| **c)
-        .map(|(i, _)| i)
-        .unwrap_or(0);
+        .map_or(0, |(i, _)| i);
     let max_pred_pct =
         class_predictions[max_pred_class] as f64 / total_samples as f64;
 
@@ -221,8 +220,7 @@ fn analyze_eval_report(
                 max_pred_class,
                 label_names
                     .get(max_pred_class)
-                    .map(String::as_str)
-                    .unwrap_or("?")
+                    .map_or("?", String::as_str)
             ),
         });
     }
