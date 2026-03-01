@@ -32,6 +32,7 @@ pub(crate) mod lint;
 pub(crate) mod merge;
 pub(crate) mod monitor;
 pub(crate) mod oracle;
+pub(crate) mod pipeline;
 pub(crate) mod parity;
 pub(crate) mod probar;
 pub(crate) mod profile;

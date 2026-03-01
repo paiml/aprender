@@ -30,7 +30,7 @@ pub mod federation;
 use commands::{
     bench, canary, canary::CanaryCommands, cbtop, chat, compare_hf, compile, convert, data, debug,
     diagnose, diff, distill, eval, explain, export, finetune, flow, hex, import, inspect, lint,
-    merge, oracle, probar, profile, prune, ptx_explain, publish, pull, qa, qualify, quantize,
+    merge, oracle, pipeline, probar, profile, prune, ptx_explain, publish, pull, qa, qualify, quantize,
     rosetta, rosetta::RosettaCommands, run, serve, showcase, tensors, tokenize, trace, train,
     tree, tui, tune, validate,
 };
@@ -75,6 +75,7 @@ include!("tool_commands.rs");
 include!("data_commands.rs");
 include!("train_commands.rs");
 include!("tokenize_commands.rs");
+include!("pipeline_commands.rs");
 include!("validate.rs");
 include!("dispatch_run.rs");
 include!("dispatch.rs");

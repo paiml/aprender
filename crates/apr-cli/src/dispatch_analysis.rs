@@ -186,6 +186,8 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
 
         ExtendedCommands::Data { command } => dispatch_data_command(command, cli.json),
 
+        ExtendedCommands::Pipeline { command } => dispatch_pipeline_command(command, cli),
+
         ExtendedCommands::Diagnose {
             checkpoint_dir,
             data,
@@ -350,6 +352,43 @@ fn dispatch_tokenize_command(
             output,
             max_lines,
         } => tokenize::run_apply(data, *vocab_size, algorithm, output, *max_lines, cli.json),
+    }
+}
+
+/// Dispatch `apr pipeline` subcommands — wraps forjar DAG engine.
+fn dispatch_pipeline_command(
+    command: &PipelineCommands,
+    cli: &Cli,
+) -> std::result::Result<(), CliError> {
+    match command {
+        PipelineCommands::Plan {
+            manifest,
+            machine,
+            tag,
+            cost,
+        } => pipeline::run_plan(
+            manifest,
+            machine.as_deref(),
+            tag.as_deref(),
+            *cost,
+            cli.json,
+        ),
+        PipelineCommands::Apply {
+            manifest,
+            machine,
+            tag,
+            parallel,
+            keep_going,
+        } => pipeline::run_apply(
+            manifest,
+            machine.as_deref(),
+            tag.as_deref(),
+            *parallel,
+            *keep_going,
+            cli.json,
+        ),
+        PipelineCommands::Status { manifest } => pipeline::run_status(manifest, cli.json),
+        PipelineCommands::Validate { manifest } => pipeline::run_validate(manifest, cli.json),
     }
 }
 

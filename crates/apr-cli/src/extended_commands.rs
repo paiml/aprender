@@ -592,6 +592,11 @@ pub enum ExtendedCommands {
         #[command(subcommand)]
         command: DataCommands,
     },
+    /// Pipeline orchestration (plan/apply/status) — wraps forjar DAG engine
+    Pipeline {
+        #[command(subcommand)]
+        command: PipelineCommands,
+    },
     /// Automated Five Whys diagnosis on a training checkpoint
     Diagnose {
         /// Path to checkpoint directory

@@ -123,6 +123,7 @@ tempfile = "3.14"
 # File/directory utilities
 glob = "0.3"
 dirs = "5.0"
+which = "7"
 
 # HTTP client for downloads
 ureq = "2.10"
