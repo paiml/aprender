@@ -55,7 +55,8 @@ pub(crate) fn load_tokenizer_from_json(model_path: &Path) -> Option<GgufTokenize
         );
         p
     } else {
-        return None;
+        // GH-366: No tokenizer.json found — try SentencePiece tokenizer.model
+        return load_tokenizer_from_sentencepiece(model_path);
     };
 
     let content = fs::read_to_string(&tokenizer_path).ok()?;
@@ -451,5 +452,222 @@ fn infer_architecture_from_names(
         Some("unknown".to_string())
     } else {
         Some("unknown".to_string())
+    }
+}
+
+/// GH-366: Load tokenizer from SentencePiece tokenizer.model (protobuf format)
+///
+/// Fallback when tokenizer.json is absent. Parses the SentencePiece protobuf
+/// to extract vocabulary tokens and scores for Unigram/Viterbi encoding.
+fn load_tokenizer_from_sentencepiece(model_path: &Path) -> Option<GgufTokenizer> {
+    let sp_path = find_sentencepiece_model(model_path)?;
+
+    let data = fs::read(&sp_path).ok()?;
+    let (vocab, scores) = parse_sentencepiece_protobuf(&data)?;
+
+    eprintln!(
+        "[GH-366] Loaded SentencePiece tokenizer: {} vocab tokens from {}",
+        vocab.len(),
+        sp_path.display()
+    );
+
+    if vocab.is_empty() {
+        return None;
+    }
+
+    // Load BOS/EOS from sibling tokenizer_config.json or config.json
+    let config_json = load_sibling_config(&sp_path)
+        .or_else(|| {
+            let tc_path = sp_path.with_file_name("tokenizer_config.json");
+            tc_path.exists()
+                .then(|| fs::read_to_string(&tc_path).ok())
+                .flatten()
+                .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+        });
+
+    let bos = config_json.as_ref()
+        .and_then(|cfg| cfg.get("bos_token_id").and_then(|v| v.as_u64()))
+        .map(|v| v as u32)
+        .or(Some(1)); // SentencePiece default: <s> = 1
+    let eos = config_json.as_ref()
+        .and_then(|cfg| cfg.get("eos_token_id").and_then(|v| v.as_u64()))
+        .map(|v| v as u32)
+        .or(Some(2)); // SentencePiece default: </s> = 2
+
+    Some(GgufTokenizer {
+        vocabulary: vocab,
+        scores,
+        model_type: Some("unigram".to_string()),
+        bos_token_id: bos,
+        eos_token_id: eos,
+        ..Default::default()
+    })
+}
+
+/// Find tokenizer.model in the same directory search paths as tokenizer.json
+fn find_sentencepiece_model(model_path: &Path) -> Option<PathBuf> {
+    let standard = model_path.with_file_name("tokenizer.model");
+    if standard.exists() {
+        return Some(standard);
+    }
+    // Pacha cache layout
+    let stem = model_path.file_stem()?.to_str()?;
+    let base = stem.split('.').next().unwrap_or(stem);
+    let pacha = model_path.with_file_name(format!("{base}.tokenizer.model"));
+    if pacha.exists() {
+        return Some(pacha);
+    }
+    // Parent directory
+    let parent = model_path.parent()?.parent()?.join("tokenizer.model");
+    if parent.exists() {
+        return Some(parent);
+    }
+    // Sibling safetensors/ directory
+    let sibling = model_path.parent()?.parent()?.join("safetensors").join("tokenizer.model");
+    if sibling.exists() {
+        return Some(sibling);
+    }
+    None
+}
+
+/// Parse SentencePiece ModelProto protobuf to extract vocabulary and scores.
+///
+/// Wire format (minimal parse — only field 1 of ModelProto):
+///   ModelProto.pieces (field 1, length-delimited) → repeated SentencePiece
+///     SentencePiece.piece (field 1, length-delimited) → string
+///     SentencePiece.score (field 2, wire type 5) → float32
+fn parse_sentencepiece_protobuf(data: &[u8]) -> Option<(Vec<String>, Vec<f32>)> {
+    let mut vocab = Vec::new();
+    let mut scores = Vec::new();
+    let mut pos = 0;
+
+    while pos < data.len() {
+        let (tag, new_pos) = read_varint(data, pos)?;
+        pos = new_pos;
+
+        let field_number = tag >> 3;
+        let wire_type = tag & 0x7;
+
+        match (field_number, wire_type) {
+            // ModelProto.pieces — field 1, length-delimited
+            (1, 2) => {
+                let (len, new_pos) = read_varint(data, pos)?;
+                pos = new_pos;
+                let len = len as usize;
+                if pos + len > data.len() {
+                    return None;
+                }
+                let submsg = &data[pos..pos + len];
+                let (piece, score) = parse_sentencepiece_entry(submsg)?;
+                vocab.push(piece);
+                scores.push(score);
+                pos += len;
+            }
+            // Skip other length-delimited fields (TrainerSpec, NormalizerSpec, etc.)
+            (_, 2) => {
+                let (len, new_pos) = read_varint(data, pos)?;
+                pos = new_pos;
+                pos += len as usize;
+            }
+            // Skip varint fields
+            (_, 0) => {
+                let (_, new_pos) = read_varint(data, pos)?;
+                pos = new_pos;
+            }
+            // Skip 64-bit fields
+            (_, 1) => pos += 8,
+            // Skip 32-bit fields
+            (_, 5) => pos += 4,
+            _ => return None,
+        }
+    }
+
+    if vocab.is_empty() {
+        None
+    } else {
+        Some((vocab, scores))
+    }
+}
+
+/// Parse a single SentencePiece submessage to extract piece string and score.
+fn parse_sentencepiece_entry(data: &[u8]) -> Option<(String, f32)> {
+    let mut piece = String::new();
+    let mut score: f32 = 0.0;
+    let mut pos = 0;
+
+    while pos < data.len() {
+        let (tag, new_pos) = read_varint(data, pos)?;
+        pos = new_pos;
+
+        let field_number = tag >> 3;
+        let wire_type = tag & 0x7;
+
+        match (field_number, wire_type) {
+            // SentencePiece.piece — field 1, string
+            (1, 2) => {
+                let (len, new_pos) = read_varint(data, pos)?;
+                pos = new_pos;
+                let len = len as usize;
+                if pos + len > data.len() {
+                    return None;
+                }
+                piece = String::from_utf8_lossy(&data[pos..pos + len]).into_owned();
+                pos += len;
+            }
+            // SentencePiece.score — field 2, float32
+            (2, 5) => {
+                if pos + 4 > data.len() {
+                    return None;
+                }
+                score = f32::from_le_bytes([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]]);
+                pos += 4;
+            }
+            // SentencePiece.type — field 3, varint
+            (3, 0) => {
+                let (_, new_pos) = read_varint(data, pos)?;
+                pos = new_pos;
+            }
+            // Skip other length-delimited fields
+            (_, 2) => {
+                let (len, new_pos) = read_varint(data, pos)?;
+                pos = new_pos;
+                pos += len as usize;
+            }
+            // Skip other varint fields
+            (_, 0) => {
+                let (_, new_pos) = read_varint(data, pos)?;
+                pos = new_pos;
+            }
+            // Skip 32-bit fields
+            (_, 5) => pos += 4,
+            // Skip 64-bit fields
+            (_, 1) => pos += 8,
+            _ => return None,
+        }
+    }
+
+    Some((piece, score))
+}
+
+/// Read a protobuf varint (LEB128 encoding).
+fn read_varint(data: &[u8], start: usize) -> Option<(u64, usize)> {
+    let mut result: u64 = 0;
+    let mut shift = 0;
+    let mut pos = start;
+
+    loop {
+        if pos >= data.len() {
+            return None;
+        }
+        let byte = data[pos];
+        result |= u64::from(byte & 0x7F) << shift;
+        pos += 1;
+        if byte & 0x80 == 0 {
+            return Some((result, pos));
+        }
+        shift += 7;
+        if shift >= 64 {
+            return None;
+        }
     }
 }

@@ -190,6 +190,7 @@ fn test_build_tokenizer_gguf_metadata_with_full_tokenizer() {
         add_bos_token: None,
         chat_template: None,
         pre_type: None,
+        scores: Vec::new(),
     };
 
     let metadata = build_tokenizer_gguf_metadata(&tok, "qwen2", "model");
@@ -220,6 +221,7 @@ fn test_build_tokenizer_gguf_metadata_without_optional_fields() {
         add_bos_token: None,
         chat_template: None,
         pre_type: None,
+        scores: Vec::new(),
     };
 
     let metadata = build_tokenizer_gguf_metadata(&tok, "llama", "model");
@@ -334,6 +336,7 @@ fn test_append_tokenizer_prefers_json_over_apr_fallback() {
         add_bos_token: None,
         chat_template: None,
         pre_type: None,
+        scores: Vec::new(),
     };
 
     let mut metadata = Vec::new();

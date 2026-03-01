@@ -278,12 +278,13 @@ fn test_metadata_custom_fields() {
 fn test_tensor_dtype_from_u8() {
     assert_eq!(TensorDType::from_u8(0), Some(TensorDType::F32));
     assert_eq!(TensorDType::from_u8(1), Some(TensorDType::F16));
-    assert_eq!(TensorDType::from_u8(2), Some(TensorDType::BF16));
+    assert_eq!(TensorDType::from_u8(2), None); // Was BF16, now 30 (GGML alignment)
     assert_eq!(TensorDType::from_u8(3), Some(TensorDType::F64));
     assert_eq!(TensorDType::from_u8(4), Some(TensorDType::I32));
     assert_eq!(TensorDType::from_u8(5), Some(TensorDType::I64));
     assert_eq!(TensorDType::from_u8(6), Some(TensorDType::I8));
     assert_eq!(TensorDType::from_u8(7), Some(TensorDType::U8));
+    assert_eq!(TensorDType::from_u8(30), Some(TensorDType::BF16));
     assert_eq!(TensorDType::from_u8(99), None);
 }
 

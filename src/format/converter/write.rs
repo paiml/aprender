@@ -96,6 +96,22 @@ fn insert_f32_tokenizer_metadata(
         );
         insert_string_array(custom, "tokenizer.merges", &tok.merges);
     }
+    // GH-366: Embed SentencePiece scores for Unigram models
+    if !tok.scores.is_empty() {
+        let scores_array: Vec<serde_json::Value> = tok.scores
+            .iter()
+            .filter_map(|&s| serde_json::Number::from_f64(f64::from(s))
+                .map(serde_json::Value::Number))
+            .collect();
+        custom.insert(
+            "tokenizer.scores".to_string(),
+            serde_json::Value::Array(scores_array),
+        );
+        eprintln!(
+            "[GH-366] Embedding {} SentencePiece scores into APR metadata",
+            tok.scores.len()
+        );
+    }
 }
 
 /// Build the custom metadata map for the F32 tensor import path.
@@ -405,6 +421,22 @@ fn insert_tokenizer_metadata(
             tok.merges.len()
         );
         insert_string_array(custom, "tokenizer.merges", &tok.merges);
+    }
+    // GH-366: Embed SentencePiece scores for Unigram models (GGUF path)
+    if !tok.scores.is_empty() {
+        let scores_array: Vec<serde_json::Value> = tok.scores
+            .iter()
+            .filter_map(|&s| serde_json::Number::from_f64(f64::from(s))
+                .map(serde_json::Value::Number))
+            .collect();
+        custom.insert(
+            "tokenizer.scores".to_string(),
+            serde_json::Value::Array(scores_array),
+        );
+        eprintln!(
+            "[GH-366] Embedding {} SentencePiece scores into APR metadata (GGUF path)",
+            tok.scores.len()
+        );
     }
     // GH-253: Store additional tokenizer metadata for GGUF export round-trip
     insert_gh253_tokenizer_fields(tok, custom);
