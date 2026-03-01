@@ -135,8 +135,8 @@ pub enum TensorDType {
     F32 = 0,
     /// 16-bit float (half precision)
     F16 = 1,
-    /// Brain float 16
-    BF16 = 2,
+    /// Brain float 16 (GGML type 30 — must match GgmlQuantType::BF16)
+    BF16 = 30,
     /// 64-bit float
     F64 = 3,
     /// 32-bit signed integer
@@ -165,7 +165,7 @@ impl TensorDType {
         match value {
             0 => Some(Self::F32),
             1 => Some(Self::F16),
-            2 => Some(Self::BF16),
+            30 => Some(Self::BF16),
             3 => Some(Self::F64),
             4 => Some(Self::I32),
             5 => Some(Self::I64),
