@@ -9,7 +9,7 @@ use crate::serialization::safetensors::UserMetadata;
 // Import quantization functions from parent module
 // GH-202 FIX: transpose functions removed - GGML data is already row-major
 // NOTE: Local implementations until trueno-quant crate resolves cyclic dependency
-use super::quantize_q4_k;
+// GH-370: quantize_q4_k replaced by quantize_q4_k_matrix (row-aligned blocks)
 use crate::format::v2::{AprV2Metadata, AprV2Writer, TensorDType};
 use std::collections::BTreeMap;
 use std::fs;
@@ -193,7 +193,10 @@ fn dispatch_quantize(
             writer.add_q4_tensor(name, shape, data);
         }
         Some(QuantizationType::Q4K) if !should_skip => {
-            let q4k_bytes = quantize_q4_k(data);
+            // GH-370: Use matrix-aware quantization for proper row-aligned
+            // block layout. quantize_q4_k treats data as flat 1D, which
+            // produces wrong block boundaries when row width != multiple of 256.
+            let q4k_bytes = super::quantize_q4_k_matrix(data, &shape);
             writer.add_q4k_raw_tensor(name, shape, q4k_bytes);
         }
         _ => {
