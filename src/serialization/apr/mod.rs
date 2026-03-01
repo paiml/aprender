@@ -117,6 +117,44 @@ impl AprReader {
         })
     }
 
+    /// Load APR file, keeping only tensors that pass the filter predicate.
+    ///
+    /// This is the primary mechanism for inference readers to skip `__training__.*`
+    /// tensors when loading checkpoint files (F-CKPT-016).
+    ///
+    /// # Example
+    /// ```no_run
+    /// # use aprender::serialization::apr::AprReader;
+    /// // Load only inference tensors, skip training state
+    /// let reader = AprReader::open_filtered("model.ckpt.apr", |name| {
+    ///     !name.starts_with("__training__.")
+    /// }).unwrap();
+    /// ```
+    ///
+    /// # Errors
+    /// Returns error if file is invalid or cannot be read
+    pub fn open_filtered<P, F>(path: P, filter: F) -> Result<Self, String>
+    where
+        P: AsRef<Path>,
+        F: Fn(&str) -> bool,
+    {
+        let data = fs::read(path).map_err(|e| format!("Failed to read file: {e}"))?;
+        Self::from_bytes_filtered(data, filter)
+    }
+
+    /// Parse APR format from bytes, keeping only tensors that pass the filter.
+    ///
+    /// # Errors
+    /// Returns error if format is invalid
+    pub fn from_bytes_filtered<F>(data: Vec<u8>, filter: F) -> Result<Self, String>
+    where
+        F: Fn(&str) -> bool,
+    {
+        let mut reader = Self::from_bytes(data)?;
+        reader.tensors.retain(|t| filter(&t.name));
+        Ok(reader)
+    }
+
     /// Get metadata value by key
     #[must_use]
     pub fn get_metadata(&self, key: &str) -> Option<&JsonValue> {

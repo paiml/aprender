@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used)]
+
 pub(crate) use super::*;
 
 // =========================================================================
@@ -254,4 +256,116 @@ fn test_well_known_metadata_fields() {
         reader.get_metadata("custom_field"),
         Some(&JsonValue::Number(42.into()))
     );
+}
+
+// =========================================================================
+// Filtered Reader Tests (F-CKPT-016)
+// =========================================================================
+
+#[test]
+fn test_open_filtered_skips_training_tensors() {
+    let mut writer = AprWriter::new();
+    writer.set_metadata("model_type", JsonValue::String("adapter".into()));
+
+    // Inference tensors
+    writer.add_tensor_f32("classifier.weight", vec![5, 896], &vec![0.1; 4480]);
+    writer.add_tensor_f32("classifier.bias", vec![5], &[0.1, 0.2, 0.3, 0.4, 0.5]);
+    writer.add_tensor_f32("lora.0.q_proj.lora_a", vec![8, 896], &vec![0.01; 7168]);
+
+    // Training-only tensors (should be filtered out)
+    writer.add_tensor_f32("__training__.optimizer.m.0", vec![4], &[1.0, 2.0, 3.0, 4.0]);
+    writer.add_tensor_f32("__training__.optimizer.v.0", vec![4], &[0.1, 0.2, 0.3, 0.4]);
+    writer.add_tensor_f32("__training__.step", vec![1], &[100.0]);
+
+    let bytes = writer.to_bytes().unwrap();
+    let reader =
+        AprReader::from_bytes_filtered(bytes, |name| !name.starts_with("__training__.")).unwrap();
+
+    // Only inference tensors remain
+    assert_eq!(reader.tensors.len(), 3);
+    assert!(reader.tensors.iter().any(|t| t.name == "classifier.weight"));
+    assert!(reader.tensors.iter().any(|t| t.name == "classifier.bias"));
+    assert!(reader
+        .tensors
+        .iter()
+        .any(|t| t.name == "lora.0.q_proj.lora_a"));
+
+    // Training tensors are gone
+    assert!(reader
+        .tensors
+        .iter()
+        .all(|t| !t.name.starts_with("__training__.")));
+
+    // Metadata preserved
+    assert_eq!(
+        reader.get_metadata("model_type"),
+        Some(&JsonValue::String("adapter".into()))
+    );
+}
+
+#[test]
+fn test_filtered_reader_can_still_read_kept_tensors() {
+    let mut writer = AprWriter::new();
+    writer.add_tensor_f32("weights", vec![3], &[1.0, 2.0, 3.0]);
+    writer.add_tensor_f32("__training__.lr", vec![1], &[0.001]);
+
+    let bytes = writer.to_bytes().unwrap();
+    let reader =
+        AprReader::from_bytes_filtered(bytes, |name| !name.starts_with("__training__.")).unwrap();
+
+    // Can read kept tensor
+    let data = reader.read_tensor_f32("weights").unwrap();
+    assert_eq!(data, vec![1.0, 2.0, 3.0]);
+
+    // Filtered tensor not in descriptors
+    assert!(!reader.tensors.iter().any(|t| t.name == "__training__.lr"));
+}
+
+#[test]
+fn test_filtered_reader_no_filter_match_keeps_all() {
+    let mut writer = AprWriter::new();
+    writer.add_tensor_f32("a", vec![2], &[1.0, 2.0]);
+    writer.add_tensor_f32("b", vec![2], &[3.0, 4.0]);
+
+    let bytes = writer.to_bytes().unwrap();
+    // Filter matches nothing — all tensors kept
+    let reader = AprReader::from_bytes_filtered(bytes, |_| true).unwrap();
+
+    assert_eq!(reader.tensors.len(), 2);
+}
+
+#[test]
+fn test_filtered_reader_filter_all_leaves_empty() {
+    let mut writer = AprWriter::new();
+    writer.add_tensor_f32("a", vec![2], &[1.0, 2.0]);
+    writer.add_tensor_f32("b", vec![2], &[3.0, 4.0]);
+
+    let bytes = writer.to_bytes().unwrap();
+    // Filter rejects everything
+    let reader = AprReader::from_bytes_filtered(bytes, |_| false).unwrap();
+
+    assert!(reader.tensors.is_empty());
+}
+
+#[test]
+fn test_open_filtered_with_file() {
+    let dir = std::env::temp_dir().join("apr_filtered_test");
+    let _ = std::fs::create_dir_all(&dir);
+    let path = dir.join("test_filtered.apr");
+
+    let mut writer = AprWriter::new();
+    writer.add_tensor_f32("model.weight", vec![2], &[1.0, 2.0]);
+    writer.add_tensor_f32("__training__.step", vec![1], &[42.0]);
+    writer.write(&path).unwrap();
+
+    let reader =
+        AprReader::open_filtered(&path, |name| !name.starts_with("__training__.")).unwrap();
+
+    assert_eq!(reader.tensors.len(), 1);
+    assert_eq!(reader.tensors[0].name, "model.weight");
+
+    let data = reader.read_tensor_f32("model.weight").unwrap();
+    assert_eq!(data, vec![1.0, 2.0]);
+
+    let _ = std::fs::remove_dir_all(&dir);
 }
