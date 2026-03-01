@@ -413,6 +413,68 @@
     }
 
     // ------------------------------------------------------------------------
+    // GH-205 fix: F16 passthrough must respect --quantize
+    // ------------------------------------------------------------------------
+
+    #[test]
+    fn test_f16_passthrough_respects_quantize_q4k() {
+        // When --quantize q4k is requested on an F16 SafeTensors source,
+        // non-embedding tensors must be stored as Q4K, NOT passed through as F16.
+        use crate::format::converter::import::apr_import;
+        use crate::format::test_factory::{build_pygmy_safetensors_f16_with_config, PygmyConfig};
+        use crate::format::v2::AprV2Reader;
+
+        let config = PygmyConfig {
+            vocab_size: 64,
+            hidden_size: 32,
+            num_layers: 1,
+            include_embedding: true,
+            include_attention: true,
+            include_norms: true,
+            include_mlp: true,
+            include_bias: true,
+            ..Default::default()
+        };
+
+        let temp_dir = TempDir::new().expect("Create temp dir");
+        let st_path = temp_dir.path().join("f16_model.safetensors");
+        let apr_path = temp_dir.path().join("f16_q4k.apr");
+
+        let st_data = build_pygmy_safetensors_f16_with_config(config);
+        fs::write(&st_path, &st_data).expect("Write F16 SafeTensors");
+
+        // Import with Q4K quantization
+        let mut options = ImportOptions {
+            allow_no_config: true,
+            quantize: Some(QuantizationType::Q4K),
+            ..ImportOptions::default()
+        };
+        options.architecture = Architecture::Qwen2;
+
+        let result = apr_import(st_path.to_str().unwrap(), &apr_path, options);
+        assert!(
+            result.is_ok(),
+            "F16 import with --quantize q4k should succeed: {:?}",
+            result.err()
+        );
+
+        // Read back APR and verify attention tensor is Q4K (not F16)
+        let apr_bytes = fs::read(&apr_path).expect("Read APR");
+        let reader = AprV2Reader::from_bytes(&apr_bytes).expect("Parse APR");
+
+        let q_proj_entry = reader
+            .get_tensor("model.layers.0.self_attn.q_proj.weight")
+            .expect("q_proj tensor should exist");
+
+        assert_eq!(
+            q_proj_entry.dtype,
+            crate::format::v2::TensorDType::Q4K,
+            "Attention weight should be Q4K when --quantize q4k is requested, got {:?}",
+            q_proj_entry.dtype
+        );
+    }
+
+    // ------------------------------------------------------------------------
     // Rosetta conversion coverage tests
     // ------------------------------------------------------------------------
 

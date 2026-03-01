@@ -172,6 +172,36 @@ fn build_f32_custom_metadata(
 ///
 /// GH-205 + GH-353: If the tensor exists in `f16_raw_tensors`, raw bytes are used
 /// directly to avoid precision loss. Returns `true` if passthrough was used.
+/// Dispatch quantization for a single tensor. Shared by both native F32 and
+/// dequantized-F16 paths to avoid duplicating the match logic.
+fn dispatch_quantize(
+    writer: &mut AprV2Writer,
+    name: &str,
+    data: &[f32],
+    shape: Vec<usize>,
+    quantize: Option<QuantizationType>,
+) {
+    let should_skip = super::should_skip_quantization(name, data.len());
+    match quantize {
+        Some(QuantizationType::Fp16) => {
+            writer.add_f16_tensor(name, shape, data);
+        }
+        Some(QuantizationType::Int8) if !should_skip => {
+            writer.add_q8_tensor(name, shape, data);
+        }
+        Some(QuantizationType::Int4) if !should_skip => {
+            writer.add_q4_tensor(name, shape, data);
+        }
+        Some(QuantizationType::Q4K) if !should_skip => {
+            let q4k_bytes = quantize_q4_k(data);
+            writer.add_q4k_raw_tensor(name, shape, q4k_bytes);
+        }
+        _ => {
+            writer.add_f32_tensor(name, shape, data);
+        }
+    }
+}
+
 fn add_f32_tensor_to_writer(
     writer: &mut AprV2Writer,
     name: &str,
@@ -180,34 +210,35 @@ fn add_f32_tensor_to_writer(
     f16_raw_tensors: &BTreeMap<String, (Vec<u8>, Vec<usize>, bool)>,
     quantize: Option<QuantizationType>,
 ) -> bool {
-    // GH-205 + GH-353: Check if we have raw F16/BF16 bytes for this tensor
+    // GH-205 + GH-353: Check if we have raw F16/BF16 bytes for this tensor.
+    // Only passthrough when no quantization (or Fp16) is requested.
+    // When the user explicitly requests Int8/Int4/Q4K, dequantize F16→F32
+    // and dispatch to the quantization routine.
     if let Some((raw_bytes, raw_shape, is_bf16)) = f16_raw_tensors.get(name) {
-        let dtype = if *is_bf16 { TensorDType::BF16 } else { TensorDType::F16 };
-        writer.add_tensor(name, dtype, raw_shape.clone(), raw_bytes.clone());
-        return true;
+        if matches!(quantize, None | Some(QuantizationType::Fp16)) {
+            let dtype = if *is_bf16 { TensorDType::BF16 } else { TensorDType::F16 };
+            writer.add_tensor(name, dtype, raw_shape.clone(), raw_bytes.clone());
+            return true;
+        }
+        // Dequantize F16/BF16 → F32 so quantization can proceed.
+        // The loader stored an empty placeholder in `data` for passthrough tensors,
+        // so we reconstruct F32 values from the raw bytes here.
+        let f32_data: Vec<f32> = raw_bytes
+            .chunks_exact(2)
+            .map(|c| {
+                let bits = u16::from_le_bytes([c[0], c[1]]);
+                if *is_bf16 {
+                    f32::from_bits((bits as u32) << 16)
+                } else {
+                    crate::format::gguf::f16_to_f32(bits)
+                }
+            })
+            .collect();
+        dispatch_quantize(writer, name, &f32_data, raw_shape.clone(), quantize);
+        return false;
     }
 
-    let should_skip_quant = super::should_skip_quantization(name, data.len());
-
-    match quantize {
-        Some(QuantizationType::Fp16) => {
-            writer.add_f16_tensor(name, shape.to_vec(), data);
-        }
-        Some(QuantizationType::Int8) if !should_skip_quant => {
-            writer.add_q8_tensor(name, shape.to_vec(), data);
-        }
-        Some(QuantizationType::Int4) if !should_skip_quant => {
-            writer.add_q4_tensor(name, shape.to_vec(), data);
-        }
-        Some(QuantizationType::Q4K) if !should_skip_quant => {
-            let q4k_bytes = quantize_q4_k(data);
-            writer.add_q4k_raw_tensor(name, shape.to_vec(), q4k_bytes);
-        }
-        _ => {
-            writer.add_f32_tensor(name, shape.to_vec(), data);
-        }
-    }
-
+    dispatch_quantize(writer, name, data, shape.to_vec(), quantize);
     false
 }
 

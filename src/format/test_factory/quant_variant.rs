@@ -177,6 +177,86 @@ pub fn build_pygmy_safetensors_f16_with_config(config: PygmyConfig) -> Vec<u8> {
         ));
     }
 
+    // Per-layer tensors
+    let h = config.hidden_size;
+    for layer_idx in 0..config.num_layers {
+        // Norm tensors: [hidden_size]
+        if config.include_norms {
+            let norm_data: Vec<f32> = vec![1.0; h];
+            tensors.push((
+                format!("model.layers.{layer_idx}.input_layernorm.weight"),
+                vec![h],
+                norm_data.clone(),
+            ));
+            tensors.push((
+                format!("model.layers.{layer_idx}.post_attention_layernorm.weight"),
+                vec![h],
+                norm_data,
+            ));
+        }
+
+        // Attention tensors: [hidden_size, hidden_size] per projection
+        if config.include_attention {
+            let qkvo_data = gen_weight_data(h * h);
+            for suffix in &["q_proj", "k_proj", "v_proj", "o_proj"] {
+                tensors.push((
+                    format!("model.layers.{layer_idx}.self_attn.{suffix}.weight"),
+                    vec![h, h],
+                    qkvo_data.clone(),
+                ));
+            }
+
+            // Biases (Qwen2-style)
+            if config.include_bias {
+                let kv_dim = config.kv_dim();
+                let q_bias: Vec<f32> = (0..h).map(|i| (i as f32) / 1000.0).collect();
+                tensors.push((
+                    format!("model.layers.{layer_idx}.self_attn.q_proj.bias"),
+                    vec![h],
+                    q_bias,
+                ));
+                let kv_bias: Vec<f32> = (0..kv_dim).map(|i| (i as f32) / 1000.0).collect();
+                tensors.push((
+                    format!("model.layers.{layer_idx}.self_attn.k_proj.bias"),
+                    vec![kv_dim],
+                    kv_bias.clone(),
+                ));
+                tensors.push((
+                    format!("model.layers.{layer_idx}.self_attn.v_proj.bias"),
+                    vec![kv_dim],
+                    kv_bias,
+                ));
+            }
+        }
+
+        // MLP tensors: gate, up, down projections
+        if config.include_mlp {
+            let intermediate = h * 2;
+            let gate_up_data = gen_weight_data(intermediate * h);
+            let down_data = gen_weight_data(h * intermediate);
+            tensors.push((
+                format!("model.layers.{layer_idx}.mlp.gate_proj.weight"),
+                vec![intermediate, h],
+                gate_up_data.clone(),
+            ));
+            tensors.push((
+                format!("model.layers.{layer_idx}.mlp.up_proj.weight"),
+                vec![intermediate, h],
+                gate_up_data,
+            ));
+            tensors.push((
+                format!("model.layers.{layer_idx}.mlp.down_proj.weight"),
+                vec![h, intermediate],
+                down_data,
+            ));
+        }
+    }
+
+    // Final norm
+    if config.include_norms && config.num_layers > 0 {
+        tensors.push(("model.norm.weight".to_string(), vec![h], vec![1.0; h]));
+    }
+
     build_safetensors_bytes_f16(&tensors)
 }
 
