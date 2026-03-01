@@ -41,6 +41,9 @@ pub struct GgufTokenizer {
     /// GH-277: Pre-tokenizer type (e.g., "default", "gpt-2", "qwen2")
     /// Preserved for GGUF→APR→GGUF round-trip fidelity
     pub pre_type: Option<String>,
+    /// GH-366: SentencePiece token scores (log probabilities, parallel to vocabulary)
+    /// Used by Unigram models for Viterbi encoding
+    pub scores: Vec<f32>,
 }
 
 impl GgufTokenizer {
@@ -272,6 +275,7 @@ pub fn load_gguf_raw<P: AsRef<Path>>(path: P) -> Result<GgufRawLoadResult> {
         add_bos_token: reader.add_bos_token(),
         chat_template: reader.chat_template(),
         pre_type: reader.pre_tokenizer_type(),
+        scores: Vec::new(),
     };
 
     // PMAT-114: Infer rope_type from architecture
