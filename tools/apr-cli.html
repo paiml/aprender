@@ -240,11 +240,12 @@ apr serve model.gguf --port 8080 --gpu
 apr serve model.gguf --port 8080 --gpu --batch
 </code></pre>
 <h3 id="performance"><a class="header" href="#performance">Performance</a></h3>
-<div class="table-wrapper"><table><thead><tr><th>Mode</th><th>Throughput</th><th>vs Ollama</th><th>Memory</th></tr></thead><tbody>
-<tr><td>CPU (baseline)</td><td>~15 tok/s</td><td>0.05x</td><td>1.1 GB</td></tr>
-<tr><td>GPU (single)</td><td>~83 tok/s</td><td>0.25x</td><td>1.5 GB</td></tr>
-<tr><td>GPU (batched)</td><td>~850 tok/s</td><td>2.9x</td><td>1.9 GB</td></tr>
-<tr><td>Ollama</td><td>~333 tok/s</td><td>1.0x</td><td>-</td></tr>
+<div class="table-wrapper"><table><thead><tr><th>Mode</th><th>Model</th><th>Throughput</th><th>vs Ollama</th><th>Memory</th></tr></thead><tbody>
+<tr><td>GPU (APR Q4K, GH-88)</td><td>Qwen 1.5B</td><td><strong>240 tok/s</strong></td><td>—</td><td>1.5 GB</td></tr>
+<tr><td>GPU (batched M=16)</td><td>Qwen 1.5B</td><td>~850 tok/s</td><td>2.9x</td><td>1.9 GB</td></tr>
+<tr><td>GPU (single GGUF)</td><td>Qwen 7B</td><td>~68 tok/s</td><td>0.2x</td><td>5.5 GB</td></tr>
+<tr><td>CPU (baseline)</td><td>Qwen 1.5B</td><td>~18 tok/s</td><td>0.05x</td><td>1.1 GB</td></tr>
+<tr><td>Ollama</td><td>Qwen 1.5B</td><td>~333 tok/s</td><td>1.0x</td><td>-</td></tr>
 </tbody></table>
 </div>
 <h3 id="endpoints"><a class="header" href="#endpoints">Endpoints</a></h3>
@@ -975,34 +976,47 @@ Output:
 </code></pre>
 <h2 id="bench-command"><a class="header" href="#bench-command">Bench Command</a></h2>
 <p>Benchmark model throughput (spec H12: &gt;= 10 tok/s).</p>
-<pre><code class="language-bash"># Run benchmark
+<pre><code class="language-bash"># Real GPU benchmark (recommended)
+apr bench model.apr --fast
+
+# CPU benchmark
 apr bench model.gguf
 
 # Specify iterations
-apr bench model.gguf --iterations 100
+apr bench model.apr --fast --iterations 10
 
 # Benchmark with specific prompt
-apr bench model.gguf --prompt &quot;Hello, world!&quot;
+apr bench model.apr --fast --prompt &quot;Hello, world!&quot;
 
 # JSON output for CI
-apr bench model.gguf --json
+apr bench model.apr --fast --json
+
+# Brick-level analytical budgets (GH-90: these are theoretical, not measured)
+apr bench model.apr --brick qkv
+apr bench model.apr --brick layer
 </code></pre>
-<h3 id="example-output-13"><a class="header" href="#example-output-13">Example Output</a></h3>
-<pre><code>=== Benchmark: model.gguf ===
+<h3 id="example-output-gpu"><a class="header" href="#example-output-gpu">Example Output (GPU)</a></h3>
+<pre><code>=== APR Benchmark ===
 
-Configuration:
-  Iterations: 50
-  Warmup: 5
-  Prompt: &quot;Hello, how are you?&quot;
+  Model: qwen2.5-coder-1.5b-q4k.apr
+  Warmup iterations: 3
+  Measurement iterations: 5
+  Max tokens: 32
 
-Results:
-  Throughput: 125.3 tok/s
-  Latency (p50): 8.0 ms
-  Latency (p99): 12.3 ms
-  Memory Peak: 1.2 GB
+Using realizar inference engine
+Model ready in 1.42s (339 tensors, GPU device 0, fused Q4K kernels)
 
-Spec H12 (&gt;= 10 tok/s): ✓ PASS
+=== Results ===
+
+Throughput: 240.0 tok/s (PASS: &gt;= 10 tok/s)
+
+  Time to first token: 4ms
+  Mean iteration time: 0.13s
+  Performance Grade: A+ (Excellent)
 </code></pre>
+<h3 id="brick-benchmarks"><a class="header" href="#brick-benchmarks">Brick Benchmarks</a></h3>
+<p>Brick benchmarks (<code>--brick</code>) report <strong>analytical budget estimates</strong>, not measured execution time (GH-90). Only <code>rms_norm</code> has a real <code>run()</code> implementation. All other bricks (qkv, rope, attn, ffn, o_proj, layer) report their theoretical FLOP/bandwidth budget.</p>
+<p>Use <code>apr bench --fast</code> for real measured GPU throughput.</p>
 <h2 id="eval-command"><a class="header" href="#eval-command">Eval Command</a></h2>
 <p>Evaluate model quality. Supports two modes: <strong>perplexity</strong> (language models) and <strong>classification</strong> (fine-tuned classifiers).</p>
 <h3 id="perplexity-evaluation-default"><a class="header" href="#perplexity-evaluation-default">Perplexity Evaluation (default)</a></h3>
@@ -1106,7 +1120,7 @@ apr profile model.gguf --roofline
 # Output as JSON
 apr profile model.gguf --json
 </code></pre>
-<h3 id="example-output-14"><a class="header" href="#example-output-14">Example Output</a></h3>
+<h3 id="example-output-13"><a class="header" href="#example-output-13">Example Output</a></h3>
 <pre><code>=== Profile: model.gguf ===
 
 Roofline Analysis:
@@ -1142,7 +1156,7 @@ apr qa model.gguf --skip-ollama
 # JSON output for CI
 apr qa model.gguf --json
 </code></pre>
-<h3 id="example-output-15"><a class="header" href="#example-output-15">Example Output</a></h3>
+<h3 id="example-output-14"><a class="header" href="#example-output-14">Example Output</a></h3>
 <pre><code>=== QA Checklist: model.gguf ===
 
 [1/10] Format Validation
@@ -1194,7 +1208,7 @@ apr qualify model.gguf --verbose
 <tr><td><code>full</code></td><td>13</td><td>Standard + playbook check via <code>apr-qa</code></td></tr>
 </tbody></table>
 </div>
-<h3 id="example-output-16"><a class="header" href="#example-output-16">Example Output</a></h3>
+<h3 id="example-output-15"><a class="header" href="#example-output-15">Example Output</a></h3>
 <pre><code>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   Qualify
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1230,7 +1244,7 @@ apr showcase model.gguf --gpu
 # Batched GPU mode
 apr showcase model.gguf --gpu --batch
 </code></pre>
-<h3 id="example-output-17"><a class="header" href="#example-output-17">Example Output</a></h3>
+<h3 id="example-output-16"><a class="header" href="#example-output-16">Example Output</a></h3>
 <pre><code>╔════════════════════════════════════════════════════════════╗
 ║           APR Showcase: Qwen2.5-Coder Performance          ║
 ╚════════════════════════════════════════════════════════════╝
@@ -1261,7 +1275,7 @@ apr check model.gguf --verbose
 # JSON output
 apr check model.gguf --json
 </code></pre>
-<h3 id="example-output-18"><a class="header" href="#example-output-18">Example Output</a></h3>
+<h3 id="example-output-17"><a class="header" href="#example-output-17">Example Output</a></h3>
 <pre><code>=== Model Self-Test: model.gguf ===
 
 Stage 1: Format Validation
@@ -1322,7 +1336,7 @@ apr publish ./model-dir/ org/model-name --license mit --tags rust,ml
 # Custom commit message
 apr publish ./model-dir/ org/model-name --message &quot;v1.0.0 release&quot;
 </code></pre>
-<h3 id="example-output-19"><a class="header" href="#example-output-19">Example Output</a></h3>
+<h3 id="example-output-18"><a class="header" href="#example-output-18">Example Output</a></h3>
 <pre><code>=== Publishing to HuggingFace Hub ===
 
 Repository: org/model-name
@@ -1406,7 +1420,7 @@ apr tune --task classify --budget 27 --data corpus.jsonl \
 <tr><td><code>lr_min_ratio</code></td><td>Continuous (log)</td><td>0.001 .. 0.1</td></tr>
 </tbody></table>
 </div>
-<h3 id="example-output-20"><a class="header" href="#example-output-20">Example Output</a></h3>
+<h3 id="example-output-19"><a class="header" href="#example-output-19">Example Output</a></h3>
 <pre><code>{
   &quot;strategy&quot;: &quot;tpe&quot;,
   &quot;mode&quot;: &quot;scout&quot;,
