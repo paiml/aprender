@@ -1,0 +1,49 @@
+[package]
+name = "aprender-bench-tokenizer"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Head-to-head BPE tokenizer benchmarks: aprender vs HuggingFace tokenizers v0.22"
+
+# Benchmarks legitimately use unwrap() on known-good data
+[lints.clippy]
+disallowed_methods = "allow"
+
+[dependencies]
+# The implementation under test
+aprender = { path = "../.." }
+
+# HuggingFace reference for A/B comparison
+# Regular dep (not dev-dep) because [[bench]] harness=false binaries can't see dev-deps
+tokenizers = { version = "0.22", default-features = false, features = ["progressbar", "fancy-regex"] }
+
+# Benchmark harness
+criterion = "0.5"
+
+[[bench]]
+name = "encode"
+harness = false
+
+[[bench]]
+name = "decode"
+harness = false
+
+[[bench]]
+name = "loading"
+harness = false
+
+[[bench]]
+name = "roundtrip"
+harness = false
+
+[[bench]]
+name = "special_tokens"
+harness = false
+
+[[bench]]
+name = "batch"
+harness = false
+
+[[bench]]
+name = "scaling"
+harness = false

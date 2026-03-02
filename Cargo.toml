@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "crates/aprender-shell", "crates/aprender-tsp", "crates/aprender-monte-carlo", "crates/apr-cli"]
+members = [".", "crates/aprender-shell", "crates/aprender-tsp", "crates/aprender-monte-carlo", "crates/apr-cli", "crates/aprender-bench-tokenizer", "crates/aprender-bench-compute"]
 exclude = ["fuzz"]
 resolver = "2"
 

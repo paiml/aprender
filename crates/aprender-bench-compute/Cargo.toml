@@ -1,0 +1,45 @@
+[package]
+name = "aprender-bench-compute"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Head-to-head compute benchmarks: aprender/trueno vs ndarray for LLM inference hotspots"
+
+# Benchmarks legitimately use unwrap() on known-good data
+[lints.clippy]
+disallowed_methods = "allow"
+
+[dependencies]
+# The implementation under test
+aprender = { path = "../..", features = ["format-quantize"] }
+
+# Reference implementation for A/B comparison
+# Pure Rust (no BLAS) to keep comparison fair — both are pure Rust SIMD
+ndarray = { version = "0.16", default-features = false }
+
+# Benchmark harness
+criterion = "0.5"
+
+[[bench]]
+name = "matmul"
+harness = false
+
+[[bench]]
+name = "activations"
+harness = false
+
+[[bench]]
+name = "norms"
+harness = false
+
+[[bench]]
+name = "quantization"
+harness = false
+
+[[bench]]
+name = "softmax"
+harness = false
+
+[[bench]]
+name = "scaling"
+harness = false
