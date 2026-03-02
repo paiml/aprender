@@ -564,6 +564,7 @@ fn run_classify(
         learning_rate: learning_rate as f32,
         epochs: epochs as usize,
         max_seq_len: max_seq_len.unwrap_or(ClassifyConfig::default().max_seq_len),
+        quantize_nf4,
         ..ClassifyConfig::default()
     };
 
