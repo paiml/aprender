@@ -281,19 +281,31 @@ pub fn layer_norm(x: &Tensor, weight: &Tensor, bias: &Tensor, eps: f32) -> Tenso
     let data = x.data();
     let weight_data = weight.data();
     let bias_data = bias.data();
-    let mut output = Vec::with_capacity(data.len());
+    let mut output = vec![0.0f32; data.len()];
 
     for b in 0..batch_size {
         let start = b * last_dim;
         let slice = &data[start..start + last_dim];
+        let out_slice = &mut output[start..start + last_dim];
 
-        let mean: f32 = slice.iter().sum::<f32>() / last_dim as f32;
-        let var: f32 = slice.iter().map(|&x| (x - mean).powi(2)).sum::<f32>() / last_dim as f32;
-        let inv_std = 1.0 / (var + eps).sqrt();
+        // Pass 1: mean — auto-vectorizable
+        let mut sum = 0.0f32;
+        for &val in slice {
+            sum += val;
+        }
+        let mean = sum / last_dim as f32;
 
-        for (i, &val) in slice.iter().enumerate() {
-            let normalized = (val - mean) * inv_std;
-            output.push(normalized * weight_data[i] + bias_data[i]);
+        // Pass 2: variance — auto-vectorizable
+        let mut var_sum = 0.0f32;
+        for &val in slice {
+            let d = val - mean;
+            var_sum += d * d;
+        }
+        let inv_std = 1.0 / (var_sum / last_dim as f32 + eps).sqrt();
+
+        // Pass 3: fused normalize + scale + shift — auto-vectorizable
+        for i in 0..last_dim {
+            out_slice[i] = (slice[i] - mean) * inv_std * weight_data[i] + bias_data[i];
         }
     }
 
@@ -316,17 +328,23 @@ pub fn rms_norm(x: &Tensor, weight: &Tensor, eps: f32) -> Tensor {
 
     let data = x.data();
     let weight_data = weight.data();
-    let mut output = Vec::with_capacity(data.len());
+    let mut output = vec![0.0f32; data.len()];
 
     for b in 0..batch_size {
         let start = b * last_dim;
         let slice = &data[start..start + last_dim];
+        let out_slice = &mut output[start..start + last_dim];
 
-        let rms: f32 = (slice.iter().map(|&x| x * x).sum::<f32>() / last_dim as f32 + eps).sqrt();
-        let inv_rms = 1.0 / rms;
+        // Sum of squares — auto-vectorizable with fixed-length slice
+        let mut sum_sq = 0.0f32;
+        for &val in slice {
+            sum_sq += val * val;
+        }
+        let inv_rms = 1.0 / (sum_sq / last_dim as f32 + eps).sqrt();
 
-        for (i, &val) in slice.iter().enumerate() {
-            output.push(val * inv_rms * weight_data[i]);
+        // Fused scale — auto-vectorizable with aligned slices
+        for i in 0..last_dim {
+            out_slice[i] = slice[i] * inv_rms * weight_data[i];
         }
     }
 
