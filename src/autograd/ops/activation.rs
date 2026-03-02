@@ -7,8 +7,13 @@ impl Tensor {
     /// `ReLU` activation: z = max(0, self)
     #[must_use]
     pub fn relu(&self) -> Tensor {
-        let data: Vec<f32> = self.data().iter().map(|&a| a.max(0.0)).collect();
-        let mut result = Tensor::new(&data, self.shape());
+        let src = self.data();
+        let n = src.len();
+        let mut data = vec![0.0f32; n];
+        for i in 0..n {
+            data[i] = src[i].max(0.0);
+        }
+        let mut result = Tensor::from_vec(data, self.shape());
 
         if is_grad_enabled() && self.requires_grad_enabled() {
             result.requires_grad_(true);
@@ -27,12 +32,13 @@ impl Tensor {
     /// Sigmoid activation: z = 1 / (1 + exp(-self))
     #[must_use]
     pub fn sigmoid(&self) -> Tensor {
-        let data: Vec<f32> = self
-            .data()
-            .iter()
-            .map(|&a| 1.0 / (1.0 + (-a).exp()))
-            .collect();
-        let mut result = Tensor::new(&data, self.shape());
+        let src = self.data();
+        let n = src.len();
+        let mut data = vec![0.0f32; n];
+        for i in 0..n {
+            data[i] = 1.0 / (1.0 + (-src[i]).exp());
+        }
+        let mut result = Tensor::from_vec(data, self.shape());
 
         if is_grad_enabled() && self.requires_grad_enabled() {
             result.requires_grad_(true);
@@ -54,7 +60,7 @@ impl Tensor {
     #[must_use]
     pub fn tanh_(&self) -> Tensor {
         let data: Vec<f32> = self.data().iter().map(|&a| a.tanh()).collect();
-        let mut result = Tensor::new(&data, self.shape());
+        let mut result = Tensor::from_vec(data, self.shape());
 
         if is_grad_enabled() && self.requires_grad_enabled() {
             result.requires_grad_(true);
@@ -79,12 +85,13 @@ impl Tensor {
     /// * `negative_slope` - Controls the angle of the negative slope (default: 0.01)
     #[must_use]
     pub fn leaky_relu(&self, negative_slope: f32) -> Tensor {
-        let data: Vec<f32> = self
-            .data()
-            .iter()
-            .map(|&x| if x > 0.0 { x } else { negative_slope * x })
-            .collect();
-        let mut result = Tensor::new(&data, self.shape());
+        let src = self.data();
+        let n = src.len();
+        let mut data = vec![0.0f32; n];
+        for i in 0..n {
+            data[i] = if src[i] > 0.0 { src[i] } else { negative_slope * src[i] };
+        }
+        let mut result = Tensor::from_vec(data, self.shape());
 
         if is_grad_enabled() && self.requires_grad_enabled() {
             result.requires_grad_(true);
@@ -111,15 +118,15 @@ impl Tensor {
     pub fn gelu(&self) -> Tensor {
         let sqrt_2_over_pi = (2.0_f32 / std::f32::consts::PI).sqrt();
 
-        let data: Vec<f32> = self
-            .data()
-            .iter()
-            .map(|&x| {
-                let inner = sqrt_2_over_pi * (x + 0.044715 * x.powi(3));
-                0.5 * x * (1.0 + inner.tanh())
-            })
-            .collect();
-        let mut result = Tensor::new(&data, self.shape());
+        let src = self.data();
+        let n = src.len();
+        let mut data = vec![0.0f32; n];
+        for i in 0..n {
+            let x = src[i];
+            let inner = sqrt_2_over_pi * (x + 0.044715 * x.powi(3));
+            data[i] = 0.5 * x * (1.0 + inner.tanh());
+        }
+        let mut result = Tensor::from_vec(data, self.shape());
 
         if is_grad_enabled() && self.requires_grad_enabled() {
             result.requires_grad_(true);
@@ -145,7 +152,7 @@ impl Tensor {
         // ONE PATH: Computation delegates to nn::functional::softmax (UCBD §4).
         // Gradient tracking is handled here (autograd layer).
         let computed = crate::nn::functional::softmax(self, -1);
-        let mut result = Tensor::new(computed.data(), self.shape());
+        let mut result = Tensor::from_vec(computed.data().to_vec(), self.shape());
 
         if is_grad_enabled() && self.requires_grad_enabled() {
             result.requires_grad_(true);
@@ -193,7 +200,7 @@ impl Tensor {
         let result_matrix = a_matrix.matmul(&b_matrix).expect("matmul should succeed");
         let data = result_matrix.as_slice().to_vec();
 
-        let mut result = Tensor::new(&data, &[m, n]);
+        let mut result = Tensor::from_vec(data, &[m, n]);
 
         if is_grad_enabled() && (self.requires_grad_enabled() || other.requires_grad_enabled()) {
             result.requires_grad_(true);
@@ -302,7 +309,7 @@ impl Tensor {
             }
         }
 
-        let mut result = Tensor::new(&data, self.shape());
+        let mut result = Tensor::from_vec(data, self.shape());
 
         if is_grad_enabled() && (self.requires_grad_enabled() || other.requires_grad_enabled()) {
             result.requires_grad_(true);

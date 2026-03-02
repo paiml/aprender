@@ -349,7 +349,7 @@ impl Embedding {
             .map(|i| (i as f32 * 0.1).sin() * 0.02)
             .collect();
 
-        let weight = Tensor::new(&data, &[num_embeddings, embedding_dim]).requires_grad();
+        let weight = Tensor::from_vec(data, &[num_embeddings, embedding_dim]).requires_grad();
 
         Self {
             weight,

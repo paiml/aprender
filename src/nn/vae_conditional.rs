@@ -169,13 +169,13 @@ pub(super) fn sample_standard_normal(shape: &[usize]) -> Tensor {
         })
         .collect();
 
-    Tensor::new(&data, shape)
+    Tensor::from_vec(data, shape)
 }
 
 /// Compute exp(0.5 * x) for standard deviation from log variance.
 pub(super) fn exp_half(log_var: &Tensor) -> Tensor {
     let data: Vec<f32> = log_var.data().iter().map(|&x| (0.5 * x).exp()).collect();
-    Tensor::new(&data, log_var.shape())
+    Tensor::from_vec(data, log_var.shape())
 }
 
 /// Compute a + b * c element-wise.
@@ -187,7 +187,7 @@ pub(super) fn add_mul(a: &Tensor, b: &Tensor, c: &Tensor) -> Tensor {
         .zip(c.data().iter())
         .map(|((&ai, &bi), &ci)| ai + bi * ci)
         .collect();
-    Tensor::new(&data, a.shape())
+    Tensor::from_vec(data, a.shape())
 }
 
 /// MSE loss between reconstruction and target.
@@ -220,7 +220,7 @@ pub(super) fn lerp(a: &Tensor, b: &Tensor, alpha: f32) -> Tensor {
         .zip(b.data().iter())
         .map(|(&ai, &bi)| (1.0 - alpha) * ai + alpha * bi)
         .collect();
-    Tensor::new(&data, a.shape())
+    Tensor::from_vec(data, a.shape())
 }
 
 /// Concatenate one-hot encoding of class label to tensor.
@@ -239,5 +239,5 @@ pub(super) fn concat_one_hot(x: &Tensor, class_label: usize, num_classes: usize)
         data[b * (input_dim + num_classes) + input_dim + class_label] = 1.0;
     }
 
-    Tensor::new(&data, &[batch_size, input_dim + num_classes])
+    Tensor::from_vec(data, &[batch_size, input_dim + num_classes])
 }

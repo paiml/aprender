@@ -311,7 +311,7 @@ pub(super) fn add_mask(scores: &Tensor, mask: &Tensor) -> Tensor {
         .zip(mask.data().iter())
         .map(|(&s, &m)| s + m)
         .collect();
-    Tensor::new(&data, scores.shape())
+    Tensor::from_vec(data, scores.shape())
 }
 
 /// Softmax over last dimension.

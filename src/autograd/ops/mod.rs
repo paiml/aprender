@@ -25,14 +25,15 @@ impl Tensor {
     /// Element-wise addition: z = self + other
     #[must_use]
     pub fn add(&self, other: &Tensor) -> Tensor {
-        let data: Vec<f32> = self
-            .data()
-            .iter()
-            .zip(other.data().iter())
-            .map(|(&a, &b)| a + b)
-            .collect();
+        let src_a = self.data();
+        let src_b = other.data();
+        let n = src_a.len();
+        let mut data = vec![0.0f32; n];
+        for i in 0..n {
+            data[i] = src_a[i] + src_b[i];
+        }
 
-        let mut result = Tensor::new(&data, self.shape());
+        let mut result = Tensor::from_vec(data, self.shape());
 
         // Record to graph if needed
         if is_grad_enabled() && (self.requires_grad_enabled() || other.requires_grad_enabled()) {
@@ -56,14 +57,15 @@ impl Tensor {
     /// Element-wise subtraction: z = self - other
     #[must_use]
     pub fn sub(&self, other: &Tensor) -> Tensor {
-        let data: Vec<f32> = self
-            .data()
-            .iter()
-            .zip(other.data().iter())
-            .map(|(&a, &b)| a - b)
-            .collect();
+        let src_a = self.data();
+        let src_b = other.data();
+        let n = src_a.len();
+        let mut data = vec![0.0f32; n];
+        for i in 0..n {
+            data[i] = src_a[i] - src_b[i];
+        }
 
-        let mut result = Tensor::new(&data, self.shape());
+        let mut result = Tensor::from_vec(data, self.shape());
 
         if is_grad_enabled() && (self.requires_grad_enabled() || other.requires_grad_enabled()) {
             result.requires_grad_(true);
@@ -86,14 +88,15 @@ impl Tensor {
     /// Element-wise multiplication: z = self * other
     #[must_use]
     pub fn mul(&self, other: &Tensor) -> Tensor {
-        let data: Vec<f32> = self
-            .data()
-            .iter()
-            .zip(other.data().iter())
-            .map(|(&a, &b)| a * b)
-            .collect();
+        let src_a = self.data();
+        let src_b = other.data();
+        let n = src_a.len();
+        let mut data = vec![0.0f32; n];
+        for i in 0..n {
+            data[i] = src_a[i] * src_b[i];
+        }
 
-        let mut result = Tensor::new(&data, self.shape());
+        let mut result = Tensor::from_vec(data, self.shape());
 
         if is_grad_enabled() && (self.requires_grad_enabled() || other.requires_grad_enabled()) {
             result.requires_grad_(true);
@@ -116,14 +119,15 @@ impl Tensor {
     /// Element-wise division: z = self / other
     #[must_use]
     pub fn div(&self, other: &Tensor) -> Tensor {
-        let data: Vec<f32> = self
-            .data()
-            .iter()
-            .zip(other.data().iter())
-            .map(|(&a, &b)| a / b)
-            .collect();
+        let src_a = self.data();
+        let src_b = other.data();
+        let n = src_a.len();
+        let mut data = vec![0.0f32; n];
+        for i in 0..n {
+            data[i] = src_a[i] / src_b[i];
+        }
 
-        let mut result = Tensor::new(&data, self.shape());
+        let mut result = Tensor::from_vec(data, self.shape());
 
         if is_grad_enabled() && (self.requires_grad_enabled() || other.requires_grad_enabled()) {
             result.requires_grad_(true);
@@ -146,9 +150,14 @@ impl Tensor {
     /// Element-wise negation: z = -self
     #[must_use]
     pub fn neg(&self) -> Tensor {
-        let data: Vec<f32> = self.data().iter().map(|&a| -a).collect();
+        let src = self.data();
+        let n = src.len();
+        let mut data = vec![0.0f32; n];
+        for i in 0..n {
+            data[i] = -src[i];
+        }
 
-        let mut result = Tensor::new(&data, self.shape());
+        let mut result = Tensor::from_vec(data, self.shape());
 
         if is_grad_enabled() && self.requires_grad_enabled() {
             result.requires_grad_(true);
@@ -167,9 +176,13 @@ impl Tensor {
     /// Scalar multiplication: z = self * scalar
     #[must_use]
     pub fn mul_scalar(&self, scalar: f32) -> Tensor {
-        // Broadcast scalar to match self shape
-        let broadcast: Vec<f32> = self.data().iter().map(|&a| a * scalar).collect();
-        let mut result = Tensor::new(&broadcast, self.shape());
+        let src = self.data();
+        let n = src.len();
+        let mut data = vec![0.0f32; n];
+        for i in 0..n {
+            data[i] = src[i] * scalar;
+        }
+        let mut result = Tensor::from_vec(data, self.shape());
 
         if is_grad_enabled() && self.requires_grad_enabled() {
             result.requires_grad_(true);
@@ -199,7 +212,7 @@ impl Tensor {
     #[must_use]
     pub fn exp(&self) -> Tensor {
         let data: Vec<f32> = self.data().iter().map(|&a| a.exp()).collect();
-        let mut result = Tensor::new(&data, self.shape());
+        let mut result = Tensor::from_vec(data, self.shape());
 
         if is_grad_enabled() && self.requires_grad_enabled() {
             result.requires_grad_(true);
@@ -221,7 +234,7 @@ impl Tensor {
     #[must_use]
     pub fn log(&self) -> Tensor {
         let data: Vec<f32> = self.data().iter().map(|&a| a.ln()).collect();
-        let mut result = Tensor::new(&data, self.shape());
+        let mut result = Tensor::from_vec(data, self.shape());
 
         if is_grad_enabled() && self.requires_grad_enabled() {
             result.requires_grad_(true);
@@ -241,7 +254,7 @@ impl Tensor {
     #[must_use]
     pub fn pow(&self, n: f32) -> Tensor {
         let data: Vec<f32> = self.data().iter().map(|&a| a.powf(n)).collect();
-        let mut result = Tensor::new(&data, self.shape());
+        let mut result = Tensor::from_vec(data, self.shape());
 
         if is_grad_enabled() && self.requires_grad_enabled() {
             result.requires_grad_(true);
@@ -261,7 +274,7 @@ impl Tensor {
     #[must_use]
     pub fn sqrt(&self) -> Tensor {
         let data: Vec<f32> = self.data().iter().map(|&a| a.sqrt()).collect();
-        let mut result = Tensor::new(&data, self.shape());
+        let mut result = Tensor::from_vec(data, self.shape());
 
         if is_grad_enabled() && self.requires_grad_enabled() {
             result.requires_grad_(true);

@@ -210,7 +210,7 @@ impl BlockSparseTensor {
             }
         }
 
-        Tensor::new(&data, &[nrows, ncols])
+        Tensor::from_vec(data, &[nrows, ncols])
     }
 
     /// Get number of non-zero elements.

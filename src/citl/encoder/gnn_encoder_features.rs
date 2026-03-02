@@ -51,7 +51,7 @@ impl GNNErrorEncoder {
             }
         }
 
-        Tensor::new(&data, &[num_nodes, feature_dim])
+        Tensor::from_vec(data, &[num_nodes, feature_dim])
     }
 
     /// Convert graph edges to adjacency matrix.

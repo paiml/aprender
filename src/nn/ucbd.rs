@@ -38,7 +38,7 @@ impl NLLLoss {
 /// Element-wise absolute value.
 pub(super) fn abs(x: &Tensor) -> Tensor {
     let data: Vec<f32> = x.data().iter().map(|&v| v.abs()).collect();
-    Tensor::new(&data, x.shape())
+    Tensor::from_vec(data, x.shape())
 }
 
 /// Softmax computation for gradient tracking.

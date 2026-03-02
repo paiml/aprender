@@ -70,7 +70,7 @@ impl Embedding {
             .collect();
 
         Self {
-            weight: Tensor::new(&data, &[vocab_size, hidden_size]),
+            weight: Tensor::from_vec(data, &[vocab_size, hidden_size]),
             vocab_size,
             hidden_size,
         }

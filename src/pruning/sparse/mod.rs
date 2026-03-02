@@ -186,7 +186,7 @@ impl CSRTensor {
             }
         }
 
-        Tensor::new(&data, &[self.nrows, self.ncols])
+        Tensor::from_vec(data, &[self.nrows, self.ncols])
     }
 
     /// Get number of non-zero elements.
@@ -372,7 +372,7 @@ impl COOTensor {
             }
         }
 
-        Tensor::new(&data, &[self.nrows, self.ncols])
+        Tensor::from_vec(data, &[self.nrows, self.ncols])
     }
 
     /// Convert COO to CSR format.

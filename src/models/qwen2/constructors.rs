@@ -273,7 +273,7 @@ impl Qwen2Model {
                 .get_metadata(name)
                 .ok_or_else(|| format!("Weight '{name}' not found in SafeTensors file"))?;
             let data = mapped.get_tensor(name)?;
-            Ok(Tensor::new(&data, &meta.shape))
+            Ok(Tensor::from_vec(data, &meta.shape))
         };
 
         // Load embedding weights
@@ -396,7 +396,7 @@ impl Qwen2Model {
             let data = reader
                 .get_f32_tensor(name)
                 .ok_or_else(|| format!("Failed to read f32 data for '{name}'"))?;
-            Ok(Tensor::new(&data, &entry.shape))
+            Ok(Tensor::from_vec(data, &entry.shape))
         };
 
         // Load embedding weights (APR uses "embed_tokens.weight" not "model.embed_tokens.weight")
