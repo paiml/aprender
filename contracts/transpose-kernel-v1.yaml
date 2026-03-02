@@ -55,30 +55,21 @@ equations:
 # =============================================================================
 
 implementation:
-  tiled_transpose:
-    description: "ALL transpose implementations MUST use tiled blocking"
-    tile_size: 32
-    pattern: |
-      const TILE: usize = 32;
-      for i0 in (0..rows).step_by(TILE) {
-          let i_end = (i0 + TILE).min(rows);
-          for j0 in (0..cols).step_by(TILE) {
-              let j_end = (j0 + TILE).min(cols);
-              for i in i0..i_end {
-                  let src_base = i * cols;
-                  for j in j0..j_end {
-                      data[j * rows + i] = src[src_base + j];
-                  }
-              }
-          }
-      }
+  simd_transpose_delegation:
+    description: "Tensor::transpose delegates to trueno's AVX2 8×8 micro-kernel"
+    contract: "provable-contracts/contracts/transpose-kernel-v1.yaml"
+    assertion: "Calls trueno::blis::transpose::transpose(rows, cols, src, &mut data)"
     rationale: |
-      TILE=32 → 32×32×4 = 4096 bytes per tile, fits in L1 (32KB).
-      src_base hoisting reduces multiplies in the inner loop.
-      Both read stride (1 element) and write stride (rows) are bounded
-      by TILE, keeping both access patterns within cache lines.
+      AVX2 8×8 in-register transpose via 3-phase shuffle/permute.
+      8 contiguous 32-byte stores per block (vs 64 scattered 4-byte stores).
+      4.0x improvement at 2048×128 (459M → 1.85G).
+    location: "src/autograd/ops/activation.rs:Tensor::transpose"
+
+  tiled_transpose:
+    description: "Matrix::transpose and transpose_last_two use TILE=32 blocking"
+    tile_size: 32
+    rationale: "Fallback for non-Tensor paths; auto-vectorizable by LLVM"
     locations:
-      - "src/autograd/ops/activation.rs:Tensor::transpose"
       - "src/primitives/matrix.rs:Matrix::transpose"
       - "src/nn/transformer/positional_encoding.rs:transpose_last_two"
 
@@ -99,34 +90,36 @@ performance:
 
   bounds:
     transpose_2048x128:
-      min_ratio_vs_ndarray: 0.05
+      min_ratio_vs_ndarray: 0.20
       target_ratio: 0.50
-      measured_ratio: 0.068
+      measured_ratio: 0.28
       measured_date: "2026-03-02"
       history:
         - { date: "2026-03-01", ratio: 0.004, note: "Naive double loop (242x slower)" }
         - { date: "2026-03-02", ratio: 0.07, note: "Tiled 16×16" }
         - { date: "2026-03-02", ratio: 0.15, note: "Tiled 16×16 + from_vec" }
         - { date: "2026-03-02", ratio: 0.068, note: "Tiled 32×32 + src_base hoist (459 M vs 6.79 G)" }
+        - { date: "2026-03-02", ratio: 0.28, note: "AVX2 8×8 micro-kernel (1.85 G vs 6.61 G)" }
 
     transpose_4096x4096:
-      min_ratio_vs_ndarray: 0.25
-      target_ratio: 0.50
-      measured_ratio: 0.48
+      min_ratio_vs_ndarray: 0.50
+      target_ratio: 0.90
+      measured_ratio: 0.88
       measured_date: "2026-03-02"
       history:
         - { date: "2026-03-02", ratio: 0.35, note: "Tiled 16×16 + from_vec" }
         - { date: "2026-03-02", ratio: 0.48, note: "Tiled 32×32 + src_base hoist (241 M vs 500 M)" }
+        - { date: "2026-03-02", ratio: 0.88, note: "AVX2 8×8 micro-kernel (358 M vs 406 M)" }
 
   remaining_gap_analysis: |
-    ndarray achieves 16+ Gelem/s at attention shapes (128x128, 512x128)
-    which is near memory bandwidth. Their .t().to_owned() uses cache-oblivious
-    recursive blocking that adapts to the full cache hierarchy (L1→L2→L3).
-    At 4096×4096 the gap narrows to 2x since both are TLB-limited.
-    Options for further improvement:
-    1. Delegate to trueno's SIMD transpose with explicit AVX2 8x8 shuffles
-    2. Two-level tiling: outer TILE=128 (L2), inner TILE=32 (L1)
-    3. Lazy transpose (track layout flag, defer until element access)
+    AVX2 8×8 micro-kernel closed the gap significantly:
+    - 2048×128: 0.004x → 0.28x (70x improvement from naive baseline)
+    - 4096×4096: 0.48x → 0.88x (near parity)
+
+    Remaining gap at attention shapes (0.28x) is due to:
+    1. ndarray uses cache-oblivious recursive blocking (adapts to L1→L2→L3)
+    2. Our 8×8 blocks cause TLB pressure at tall matrices (2048 dest rows)
+    Next: two-level tiling (outer 64×64 for TLB, inner 8×8 for AVX2)
 
 # =============================================================================
 # FALSIFICATION TESTS
@@ -168,7 +161,7 @@ qa_gate:
   id: "F-TRANSPOSE-001"
   name: "Transpose Kernel Contract"
   checks:
-    - "All transpose implementations use TILE=16 blocked pattern"
+    - "Tensor::transpose delegates to trueno AVX2 8×8 micro-kernel"
     - "Benchmark ratio >= min_ratio for all measured bounds"
     - "All FALSIFY tests pass"
     - "No naive (non-tiled) transpose in production code"

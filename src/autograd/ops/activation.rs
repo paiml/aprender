@@ -237,22 +237,10 @@ impl Tensor {
         let src = self.data();
         let mut data = vec![0.0; rows * cols];
 
-        // Tiled transpose: process TILE×TILE blocks to keep both read and
-        // write strides within L1 cache. Eliminates the cache-line striding
-        // that makes naive transpose 9-242x slower at LLM attention shapes.
-        const TILE: usize = 32;
-        for i0 in (0..rows).step_by(TILE) {
-            let i_end = (i0 + TILE).min(rows);
-            for j0 in (0..cols).step_by(TILE) {
-                let j_end = (j0 + TILE).min(cols);
-                for i in i0..i_end {
-                    let src_base = i * cols;
-                    for j in j0..j_end {
-                        data[j * rows + i] = src[src_base + j];
-                    }
-                }
-            }
-        }
+        // Delegate to trueno's AVX2 8×8 in-register transpose.
+        // Contract: provable-contracts/contracts/transpose-kernel-v1.yaml
+        trueno::blis::transpose::transpose(rows, cols, src, &mut data)
+            .expect("transpose: dimension mismatch (should be impossible)");
 
         let mut result = Tensor::from_vec(data, &[cols, rows]);
 

@@ -11,7 +11,18 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             dir,
             refresh_ms,
             compact,
-        } => commands::monitor::run(dir, *refresh_ms, *compact),
+            json,
+            format,
+        } => commands::monitor::run(dir.as_deref(), *refresh_ms, *compact, *json, format),
+
+        ExtendedCommands::Runs { command } => match command {
+            RunsCommands::Ls {
+                dir, global, status, json, limit,
+            } => commands::runs::run_ls(dir, *global, status, *json, *limit),
+            RunsCommands::Show {
+                run_id, dir, global, json,
+            } => commands::runs::run_show(run_id, dir, *global, *json),
+        },
 
         ExtendedCommands::Cbtop {
             model,

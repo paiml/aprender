@@ -376,13 +376,24 @@ pub enum ExtendedCommands {
     Monitor {
         /// Experiment output directory (same as finetune -o)
         #[arg(value_name = "DIR")]
-        dir: PathBuf,
+        dir: Option<PathBuf>,
         /// Refresh interval in milliseconds
         #[arg(long, default_value = "500")]
         refresh_ms: u64,
         /// Compact display mode
         #[arg(long)]
         compact: bool,
+        /// Output JSON lines instead of TUI (for LLM agents and CI)
+        #[arg(long)]
+        json: bool,
+        /// Output format: tui (default), json, text
+        #[arg(long, default_value = "tui")]
+        format: String,
+    },
+    /// List, show, and compare training experiment runs
+    Runs {
+        #[command(subcommand)]
+        command: RunsCommands,
     },
     /// ComputeBrick pipeline monitor (cbtop)
     Cbtop {
@@ -615,4 +626,42 @@ pub enum ExtendedCommands {
     /// Publishing, conversion, and analysis tools
     #[command(flatten)]
     Tools(ToolCommands),
+}
+
+/// Subcommands for `apr runs` — experiment run management (ALB-050)
+#[derive(Subcommand, Debug)]
+pub enum RunsCommands {
+    /// List all training experiment runs
+    Ls {
+        /// Directory to scan for experiments (default: current dir)
+        #[arg(long, value_name = "DIR")]
+        dir: Option<PathBuf>,
+        /// Read from global experiment registry (~/.entrenar/experiments.db)
+        #[arg(long)]
+        global: bool,
+        /// Filter by status: running, completed, failed, all
+        #[arg(long, default_value = "all")]
+        status: String,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+        /// Maximum number of runs to show
+        #[arg(long, default_value = "50")]
+        limit: usize,
+    },
+    /// Show detailed metrics for a specific run
+    Show {
+        /// Run ID
+        #[arg(value_name = "RUN_ID")]
+        run_id: String,
+        /// Directory containing experiment DB
+        #[arg(long, value_name = "DIR")]
+        dir: Option<PathBuf>,
+        /// Read from global registry
+        #[arg(long)]
+        global: bool,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
 }

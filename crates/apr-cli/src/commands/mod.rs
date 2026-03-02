@@ -48,6 +48,7 @@ pub(crate) mod qualify;
 pub(crate) mod quantize;
 pub(crate) mod rosetta;
 pub(crate) mod run;
+pub(crate) mod runs;
 pub(crate) mod serve;
 pub(crate) mod serve_plan;
 pub(crate) mod serve_plan_output;
