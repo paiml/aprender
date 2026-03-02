@@ -27,6 +27,12 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             } => commands::runs::run_diff(run_a, run_b, dir, *global, *json),
         },
 
+        ExtendedCommands::Experiment { command } => match command {
+            ExperimentCommands::View { db, global, json } => {
+                commands::experiment::experiment_view(db, *global, *json || cli.json)
+            }
+        },
+
         ExtendedCommands::Cbtop {
             model,
             attach,

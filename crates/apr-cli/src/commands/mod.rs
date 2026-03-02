@@ -21,6 +21,7 @@ pub(crate) mod data;
 pub(crate) mod diagnose;
 
 pub(crate) mod eval;
+pub(crate) mod experiment;
 pub(crate) mod explain;
 pub(crate) mod export;
 pub(crate) mod finetune;

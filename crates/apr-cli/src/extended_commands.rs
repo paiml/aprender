@@ -395,6 +395,11 @@ pub enum ExtendedCommands {
         #[command(subcommand)]
         command: RunsCommands,
     },
+    /// Interactive experiment browser (TUI with loss curves)
+    Experiment {
+        #[command(subcommand)]
+        command: ExperimentCommands,
+    },
     /// ComputeBrick pipeline monitor (cbtop)
     Cbtop {
         /// Model name (e.g., qwen2.5-coder-1.5b)
@@ -679,6 +684,23 @@ pub enum RunsCommands {
         #[arg(long)]
         global: bool,
         /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+/// Subcommands for `apr experiment` — interactive experiment browser (ALB-024)
+#[derive(Subcommand, Debug)]
+pub enum ExperimentCommands {
+    /// Browse experiment history with interactive TUI (loss curves, params)
+    View {
+        /// Path to experiment database file
+        #[arg(long, value_name = "FILE")]
+        db: Option<PathBuf>,
+        /// Read from global experiment registry (~/.entrenar/experiments.db)
+        #[arg(long)]
+        global: bool,
+        /// Output as JSON (non-interactive)
         #[arg(long)]
         json: bool,
     },
