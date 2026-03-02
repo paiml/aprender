@@ -55,20 +55,25 @@ implementation:
     assertion: "Matrix::matmul checks self.rows == 1 before BLIS path"
     rationale: "BLIS 5-loop has packing overhead that dominates for M=1"
 
-  k_unrolled_axpy:
-    description: "K-unrolled 4-way axpy pattern for auto-vectorizable inner loop"
-    pattern: |
-      let k4 = k / 4 * 4;
-      for ki in (0..k4).step_by(4) {
-          let a0 = a[ki]; let a1 = a[ki+1]; let a2 = a[ki+2]; let a3 = a[ki+3];
-          for j in 0..n {
-              c[j] += a0*b[b0+j] + a1*b[b1+j] + a2*b[b2+j] + a3*b[b3+j];
-          }
-      }
+  simd_gemv_delegation:
+    description: "Delegates to trueno GEMV kernel (blis::gemv::gemv)"
+    contract: "trueno/contracts/gemv-kernel-v1.yaml"
+    assertion: "matmul_vector_matrix calls crate::blis::gemv::gemv(k, n, a, b, c)"
     rationale: |
-      4-way unrolling reduces loop overhead 4x and enables FMA chains.
-      The inner j-loop is a pure axpy (c += scalar * row) which LLVM
-      auto-vectorizes to AVX2/AVX-512 VFMADD instructions.
+      Dedicated AVX2+FMA GEMV kernel with 4-way K-unrolled axpy pattern.
+      At cache-resident sizes: 2.32x FASTER than ndarray (5.88 G vs 2.54 G).
+      At bandwidth-bound sizes: matches scalar auto-vectorized version.
+      Scalar fallback on non-AVX2 platforms.
+
+  k_unrolled_axpy:
+    description: "4-way K-unrolled axpy pattern (both SIMD and scalar paths)"
+    pattern: |
+      Outer loop: K in steps of 4
+      Inner loop: N in steps of 8 (AVX2) or scalar
+        c[:] += a[ki]*B[ki,:] + a[ki+1]*B[ki+1,:] + a[ki+2]*B[ki+2,:] + a[ki+3]*B[ki+3,:]
+    rationale: |
+      4-way unrolling provides 4 independent FMA chains that hide load latency.
+      Axpy pattern (outer K, inner N) matches row-major B: B[k,:] is contiguous.
 
   no_branch_in_inner_loop:
     description: "MUST NOT have conditional branches (e.g., zero-check) in inner loop"
@@ -89,40 +94,50 @@ performance:
 
   bounds:
     matvec_1x1536x1536:
-      description: "Small square matvec"
-      min_ratio_vs_reference: 1.0
-      target_ratio: 2.5
-      measured_ratio: 2.5
+      description: "Small square matvec — cache-resident, compute-bound"
+      min_ratio_vs_reference: 1.5
+      target_ratio: 3.0
+      measured_ratio: 2.32
       measured_date: "2026-03-02"
-      note: "FASTER than ndarray at small sizes"
+      note: "FASTER than ndarray — AVX2 GEMV kernel dominates"
+      history:
+        - { date: "2026-03-02", ratio: 2.5, note: "Scalar K-unrolled axpy" }
+        - { date: "2026-03-02", ratio: 2.32, note: "AVX2 SIMD GEMV (5.88 G vs 2.54 G)" }
 
     matvec_1x4096x11008:
-      description: "LLM FFN matvec (7B model, decode hot path)"
+      description: "LLM FFN matvec (7B model, decode hot path) — bandwidth-bound"
       min_ratio_vs_reference: 0.25
       target_ratio: 0.50
-      measured_ratio: 0.34
+      measured_ratio: 0.32
       measured_date: "2026-03-02"
       history:
         - { date: "2026-03-01", ratio: 0.29, note: "Scalar loop with zero-check branch" }
         - { date: "2026-03-02", ratio: 0.34, note: "4-way K-unrolled axpy, no branch (1.01 G vs 2.95 G)" }
+        - { date: "2026-03-02", ratio: 0.32, note: "AVX2 SIMD GEMV (952 M vs 2.94 G) — bandwidth-bound, SIMD breaks even" }
 
     matvec_1x4096x4096:
       description: "LLM attention matvec (7B model)"
       min_ratio_vs_reference: 0.25
       target_ratio: 0.50
-      measured_ratio: 0.54
+      measured_ratio: 0.45
       measured_date: "2026-03-02"
       history:
         - { date: "2026-03-01", ratio: 0.44, note: "Scalar loop" }
         - { date: "2026-03-02", ratio: 0.54, note: "4-way K-unrolled axpy (962 M vs 1.79 G)" }
+        - { date: "2026-03-02", ratio: 0.45, note: "AVX2 SIMD GEMV (951 M vs 2.10 G)" }
 
   remaining_gap_analysis: |
-    ndarray's matrixmultiply crate uses hand-written x86 SIMD with:
-    1. M=1 specialized microkernel with register blocking
-    2. Prefetch hints for B matrix rows
-    3. Explicit AVX2 VFMADD instructions
-    Our auto-vectorized axpy achieves ~1.0 Gelem/s vs ndarray's ~3.0 Gelem/s.
-    Closing this gap requires hand-written SIMD or linking to an external BLAS.
+    Two regimes identified:
+    1. Cache-resident (K*N*4 < L3 ~16MB): aprender 2.32x FASTER than ndarray
+    2. Bandwidth-bound (K*N*4 >> L3): ~950M vs ndarray ~3.0G (0.32x)
+
+    At LLM sizes (4096×11008), B = 172 MB >> L3. The 3x gap suggests
+    ndarray's matrixmultiply uses:
+    - Software prefetch hints (PREFETCHT0) for B rows
+    - Cache-line-aligned memory allocation
+    - N-blocking for TLB efficiency
+
+    Next optimization: PREFETCHT0 hints in gemv_avx2 inner loop.
 
 # =============================================================================
 # FALSIFICATION TESTS
