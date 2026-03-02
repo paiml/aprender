@@ -43,3 +43,7 @@ harness = false
 [[bench]]
 name = "scaling"
 harness = false
+
+[[bench]]
+name = "tensor_overhead"
+harness = false
