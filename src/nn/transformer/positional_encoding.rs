@@ -235,7 +235,8 @@ pub(crate) fn transpose_last_two(x: &Tensor) -> Tensor {
     let mut output = vec![0.0; x.data().len()];
 
     // Tiled transpose: process TILE×TILE blocks per batch slice to stay in L1 cache.
-    const TILE: usize = 16;
+    // src_base hoisting reduces multiplies in the inner loop.
+    const TILE: usize = 32;
     let src = x.data();
     for b in 0..batch_size {
         let offset = b * matrix_size;
@@ -244,9 +245,9 @@ pub(crate) fn transpose_last_two(x: &Tensor) -> Tensor {
             for j0 in (0..last).step_by(TILE) {
                 let j_end = (j0 + TILE).min(last);
                 for i in i0..i_end {
+                    let src_base = offset + i * last;
                     for j in j0..j_end {
-                        output[offset + j * second_last + i] =
-                            src[offset + i * last + j];
+                        output[offset + j * second_last + i] = src[src_base + j];
                     }
                 }
             }

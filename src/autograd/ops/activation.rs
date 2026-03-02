@@ -240,14 +240,15 @@ impl Tensor {
         // Tiled transpose: process TILE×TILE blocks to keep both read and
         // write strides within L1 cache. Eliminates the cache-line striding
         // that makes naive transpose 9-242x slower at LLM attention shapes.
-        const TILE: usize = 16;
+        const TILE: usize = 32;
         for i0 in (0..rows).step_by(TILE) {
             let i_end = (i0 + TILE).min(rows);
             for j0 in (0..cols).step_by(TILE) {
                 let j_end = (j0 + TILE).min(cols);
                 for i in i0..i_end {
+                    let src_base = i * cols;
                     for j in j0..j_end {
-                        data[j * rows + i] = src[i * cols + j];
+                        data[j * rows + i] = src[src_base + j];
                     }
                 }
             }

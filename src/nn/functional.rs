@@ -169,10 +169,27 @@ pub fn softmax_1d(logits: &[f32]) -> Vec<f32> {
 /// ONE PATH: All f64 slice-based softmax MUST delegate here (UCBD §4).
 #[must_use]
 pub fn softmax_1d_f64(logits: &[f64]) -> Vec<f64> {
-    let max = logits.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
-    let exp: Vec<f64> = logits.iter().map(|&x| (x - max).exp()).collect();
-    let sum: f64 = exp.iter().sum();
-    exp.iter().map(|&x| x / sum).collect()
+    let n = logits.len();
+    let mut out = vec![0.0f64; n];
+
+    let mut max_val = f64::NEG_INFINITY;
+    for &v in logits {
+        max_val = max_val.max(v);
+    }
+
+    let mut sum = 0.0f64;
+    for i in 0..n {
+        let e = (logits[i] - max_val).exp();
+        out[i] = e;
+        sum += e;
+    }
+
+    let inv_sum = 1.0 / sum;
+    for i in 0..n {
+        out[i] *= inv_sum;
+    }
+
+    out
 }
 
 /// Log-softmax on a 1D slice of f32 values.
@@ -183,9 +200,25 @@ pub fn softmax_1d_f64(logits: &[f64]) -> Vec<f64> {
 /// Equation: log\_softmax(x)\_i = x\_i - max - log(sum exp(x\_j - max))
 #[must_use]
 pub fn log_softmax_1d(logits: &[f32]) -> Vec<f32> {
-    let max = logits.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b));
-    let log_sum_exp: f32 = logits.iter().map(|&x| (x - max).exp()).sum::<f32>().ln();
-    logits.iter().map(|&x| x - max - log_sum_exp).collect()
+    let n = logits.len();
+    let mut out = vec![0.0f32; n];
+
+    let mut max_val = f32::NEG_INFINITY;
+    for &v in logits {
+        max_val = max_val.max(v);
+    }
+
+    let mut sum_exp = 0.0f32;
+    for &v in logits {
+        sum_exp += (v - max_val).exp();
+    }
+    let log_sum_exp = sum_exp.ln();
+
+    for i in 0..n {
+        out[i] = logits[i] - max_val - log_sum_exp;
+    }
+
+    out
 }
 
 /// Tanh activation
