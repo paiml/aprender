@@ -506,8 +506,6 @@ pub(crate) fn run_classify_eval(
 ) -> Result<()> {
     use entrenar::finetune::classify_pipeline::ClassifyConfig;
     use entrenar::finetune::{evaluate_checkpoint, SSC_LABELS};
-    use entrenar::transformer::TransformerConfig;
-
     let data_path = data_path.ok_or_else(|| {
         CliError::ValidationFailed(
             "--data <test.jsonl> is required for classification evaluation".to_string(),
@@ -528,12 +526,8 @@ pub(crate) fn run_classify_eval(
     let resolved_checkpoint = resolve_checkpoint_dir(checkpoint_dir);
     let checkpoint_dir = resolved_checkpoint.as_deref().unwrap_or(checkpoint_dir);
 
-    // Resolve model config
-    let model_config = match model_size.unwrap_or("tiny") {
-        "0.5B" | "500M" | "qwen2-0.5b" => TransformerConfig::qwen2_0_5b(),
-        "9B" | "qwen3.5-9b" | "qwen3_5" | "qwen3.5" => TransformerConfig::qwen3_5_9b(),
-        _ => TransformerConfig::tiny(),
-    };
+    // GH-377: Resolve model config from --model-size (checkpoint dirs don't have .apr metadata)
+    let model_config = super::model_config::resolve_transformer_config_by_size(model_size)?;
 
     let classify_config = ClassifyConfig {
         num_classes,

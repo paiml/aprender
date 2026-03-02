@@ -542,20 +542,14 @@ fn run_classify(
 ) -> Result<()> {
     use entrenar::finetune::classify_pipeline::{ClassifyConfig, ClassifyPipeline};
     use entrenar::finetune::{ClassifyTrainer, TrainingConfig};
-    use entrenar::transformer::TransformerConfig;
 
     if !json_output {
         output::section("apr finetune --task classify (Shell Safety Classification)");
         println!();
     }
 
-    // Select model config based on model_size
-    let model_config = match model_size.unwrap_or("tiny") {
-        "0.5B" | "500M" | "qwen2-0.5b" => TransformerConfig::qwen2_0_5b(),
-        "4B" | "qwen3-4b" | "qwen3" => TransformerConfig::qwen3_4b(),
-        "9B" | "qwen3.5-9b" | "qwen3_5" | "qwen3.5" => TransformerConfig::qwen3_5_9b(),
-        _ => TransformerConfig::tiny(), // For testing
-    };
+    // GH-377: Read architecture from .apr metadata or --model-size fallback
+    let model_config = super::model_config::resolve_transformer_config(model_path, model_size)?;
 
     let classify_config = ClassifyConfig {
         num_classes,
@@ -841,88 +835,8 @@ fn display_train_result(
 // Instruction fine-tuning (--task instruct) (GH-371)
 // =============================================================================
 
-/// GH-376: Extract TransformerConfig from an .apr file's metadata header.
-///
-/// Reads only the 64-byte header + metadata JSON section (~4 KB), not the full
-/// model file. Returns None if the file isn't a valid APR v2 file or if
-/// required architecture fields are missing.
-fn read_apr_architecture(path: &Path) -> Option<entrenar::transformer::TransformerConfig> {
-    use aprender::format::v2::{AprV2Header, AprV2Metadata, HEADER_SIZE_V2, MAGIC_V2};
-    use std::io::{Read, Seek, SeekFrom};
-
-    let mut file = std::fs::File::open(path).ok()?;
-    let mut header_buf = [0u8; HEADER_SIZE_V2];
-    file.read_exact(&mut header_buf).ok()?;
-    if header_buf[..4] != MAGIC_V2 {
-        return None;
-    }
-
-    let header = AprV2Header::from_bytes(&header_buf).ok()?;
-    file.seek(SeekFrom::Start(header.metadata_offset)).ok()?;
-    let mut meta_buf = vec![0u8; header.metadata_size as usize];
-    file.read_exact(&mut meta_buf).ok()?;
-
-    let metadata = AprV2Metadata::from_json(&meta_buf).ok()?;
-    entrenar::transformer::TransformerConfig::from_apr_metadata(
-        metadata.hidden_size,
-        metadata.num_heads,
-        metadata.num_kv_heads,
-        metadata.intermediate_size,
-        metadata.num_layers,
-        metadata.vocab_size,
-        metadata.max_position_embeddings,
-        metadata.rms_norm_eps,
-        metadata.rope_theta,
-        metadata.architecture.as_deref(),
-    )
-}
-
-/// GH-376: Resolve TransformerConfig from .apr metadata or --model-size fallback.
-///
-/// CONTRACT: The .apr file is the single source of truth for model architecture.
-/// Architecture fields were validated at import time by tensor-layout-v1.
-///
-/// Precedence:
-///   1. .apr file metadata (provable, validated at import)
-///   2. --model-size string match (legacy fallback, no .apr file)
-///   3. Error (refuse to silently degrade to tiny)
-fn resolve_transformer_config(
-    model_path: Option<&Path>,
-    model_size: Option<&str>,
-) -> Result<entrenar::transformer::TransformerConfig> {
-    use entrenar::transformer::TransformerConfig;
-
-    // Attempt 1: Read architecture from .apr file metadata
-    if let Some(path) = model_path.filter(|p| p.is_file()) {
-        if let Some(config) = read_apr_architecture(path) {
-            return Ok(config);
-        }
-        eprintln!(
-            "[GH-376] WARNING: could not read architecture from .apr metadata, \
-             falling back to --model-size"
-        );
-    }
-
-    // Attempt 2: Legacy --model-size string matching (no .apr file available)
-    match model_size {
-        Some("0.5B") | Some("500M") | Some("qwen2-0.5b") => {
-            Ok(TransformerConfig::qwen2_0_5b())
-        }
-        Some("7B") | Some("qwen2.5-7b") => Ok(TransformerConfig::qwen2_7b()),
-        Some("4B") | Some("qwen3-4b") => Ok(TransformerConfig::qwen3_4b()),
-        Some("9B") | Some("qwen3.5-9b") | Some("qwen3_5") | Some("qwen3.5") => {
-            Ok(TransformerConfig::qwen3_5_9b())
-        }
-        Some(unknown) => Err(CliError::ValidationFailed(format!(
-            "No .apr metadata available and --model-size '{unknown}' is not recognized. \
-             Provide a valid .apr checkpoint (recommended) or use a known size: \
-             0.5B, 4B, 7B, 9B"
-        ))),
-        None => Err(CliError::ValidationFailed(
-            "No model path or --model-size provided. Cannot determine architecture.".to_string(),
-        )),
-    }
-}
+// GH-376/GH-377: resolve_transformer_config and read_apr_architecture
+// moved to shared module: super::model_config
 
 /// Run instruction fine-tuning pipeline via entrenar.
 #[allow(clippy::too_many_arguments)]
@@ -941,7 +855,6 @@ fn run_instruct(
     use entrenar::finetune::instruct_corpus::{load_instruct_corpus, instruct_corpus_stats};
     use entrenar::finetune::instruct_pipeline::{InstructConfig, InstructPipeline};
     use entrenar::finetune::instruct_trainer::{InstructTrainer, InstructTrainingConfig};
-    use entrenar::transformer::TransformerConfig;
 
     if !json_output {
         output::section("apr finetune --task instruct (GH-371: Instruction Fine-tuning)");
@@ -949,9 +862,7 @@ fn run_instruct(
     }
 
     // GH-376: Read architecture from .apr metadata (single source of truth).
-    // The .apr file's architecture was validated at import time by tensor-layout-v1.
-    // Hardcoded model_size matching is kept ONLY as fallback when no .apr file exists.
-    let model_config = resolve_transformer_config(model_path, model_size)?;
+    let model_config = super::model_config::resolve_transformer_config(model_path, model_size)?;
 
     let instruct_config = InstructConfig {
         lora_rank: rank as usize,

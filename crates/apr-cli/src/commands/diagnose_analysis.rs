@@ -123,8 +123,6 @@ fn run_evaluation(
 ) -> Result<Option<serde_json::Value>> {
     use entrenar::finetune::classify_pipeline::ClassifyConfig;
     use entrenar::finetune::{evaluate_checkpoint, SSC_LABELS};
-    use entrenar::transformer::TransformerConfig;
-
     let mut eval_report: Option<serde_json::Value> = None;
 
     let Some(data) = data_path else {
@@ -140,11 +138,17 @@ fn run_evaluation(
         return Ok(eval_report);
     }
 
-    // Run evaluation via entrenar
-    let model_config = match model_size.unwrap_or("tiny") {
-        "0.5B" | "500M" | "qwen2-0.5b" => TransformerConfig::qwen2_0_5b(),
-        "9B" | "qwen3.5-9b" => TransformerConfig::qwen3_5_9b(),
-        _ => TransformerConfig::tiny(),
+    // GH-377: Resolve model config — error on unknown instead of silent tiny()
+    let model_config = match super::model_config::resolve_transformer_config_by_size(model_size) {
+        Ok(config) => config,
+        Err(e) => {
+            findings.push(Finding {
+                category: "Model",
+                severity: Severity::Error,
+                message: format!("Cannot resolve model architecture: {e}"),
+            });
+            return Ok(eval_report);
+        }
     };
 
     let classify_config = ClassifyConfig {
