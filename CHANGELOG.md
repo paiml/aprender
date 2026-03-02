@@ -11,7 +11,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **GH-375: GGUF Q4_0/Q5_0/Q8_0 import fallback** — `apr import` of GGUF files with unsupported quantization types (Q4_0, Q5_0, Q8_0) now falls back to dequant-requant path instead of failing. Raw import preserves Q4_K/Q6_K exactly; legacy types go through f32 intermediate with optional `--quantize q4k`.
 - **GH-90: Honest brick benchmarks** — `apr bench --brick` no longer times a no-op `budget()` call (which reported 0.02us / 55M tok/s). Bricks without `run()` implementations now report their analytical budget estimate with a clear "ANALYTICAL" label. Use `apr bench --fast` for real measured throughput.
 
+### Changed
+- **GH-378: Priority-queue BPE merge algorithm** — Replaced O(n^2) greedy-rescan with priority-queue (BinaryHeap) + doubly-linked symbol list. 2.06x encode speedup (145us -> 70us on Qwen3 151K vocab). Beats HuggingFace tokenizers v0.22 reference (104us). Zero allocation in merge loop. All 117 BPE tests pass.
+
 ### Added
+- `apr serve plan` now accepts HuggingFace repo IDs (`hf://org/repo` or bare `org/repo`)
+  - Fetches only ~2KB `config.json` — no weight download needed
+  - Computes VRAM budget, throughput estimates, and contract checks from architecture params alone
+  - New `--quant` flag to specify quantization for HF models (e.g., `--quant Q4_K_M`)
+  - Handles gated models (401/403) with clear auth instructions
+  - Cross-validated: HF path produces identical estimates to local GGUF for same model
 - `apr eval --task classify`: Classification evaluation against JSONL test sets
   - 13 metrics: accuracy, top-2 accuracy, Cohen's kappa, MCC, per-class P/R/F1, Brier score, log loss, ECE
   - Bootstrap 95% confidence intervals on accuracy, macro F1, MCC

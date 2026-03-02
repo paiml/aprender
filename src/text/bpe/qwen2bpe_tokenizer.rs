@@ -1,7 +1,49 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
 use crate::error::{AprenderError, Result};
-use std::collections::HashMap;
+use std::cmp::Ordering;
+use std::collections::{BinaryHeap, HashMap};
+
+// ============================================================================
+// Priority-queue BPE merge internals (GH-378)
+// Port of HuggingFace tokenizers word.rs algorithm.
+// ============================================================================
+
+/// A pending merge in the priority queue.
+/// Min-heap ordered: lowest rank (= highest priority) pops first.
+#[derive(Debug, Eq, PartialEq)]
+struct BpeMerge {
+    pos: usize,
+    rank: u32,
+    new_id: u32,
+}
+
+impl Ord for BpeMerge {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // Reverse for min-heap: lower rank = higher priority
+        other
+            .rank
+            .cmp(&self.rank)
+            .then_with(|| other.pos.cmp(&self.pos))
+    }
+}
+
+impl PartialOrd for BpeMerge {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+/// A symbol in the doubly-linked list used during BPE merging.
+/// Merges update pointers in O(1) — no array shifting.
+#[derive(Debug, Clone, Copy)]
+struct BpeSymbol {
+    id: u32,
+    prev: i32, // -1 = no predecessor
+    next: i32, // -1 = no successor
+    len: u32,  // 0 = deleted
+    src: u32,  // index into original tokens array (fallback for unknown IDs)
+}
 
 impl BpeTokenizer {
     /// Create a new BPE tokenizer with given config
@@ -15,6 +57,9 @@ impl BpeTokenizer {
             id_to_token: HashMap::new(),
             merges: Vec::new(),
             merge_ranks: HashMap::new(),
+            merge_id_map: HashMap::new(),
+            merge_token_ids: HashMap::new(),
+            merge_id_to_token: HashMap::new(),
             special_tokens: HashMap::new(),
             byte_encoder,
             byte_decoder,
@@ -117,6 +162,31 @@ impl BpeTokenizer {
         self.merge_ranks
             .insert((first.to_string(), second.to_string()), rank);
         self.merges.push(rule);
+
+        // Build ID-based merge map for priority-queue algorithm (GH-378)
+        let merged = format!("{first}{second}");
+        let first_id = self.get_or_assign_id(first);
+        let second_id = self.get_or_assign_id(second);
+        let merged_id = self.get_or_assign_id(&merged);
+        self.merge_id_map
+            .insert((first_id, second_id), (rank as u32, merged_id));
+    }
+
+    /// Get vocab ID for a token, auto-assigning internally if absent.
+    /// Checks public vocab first, then internal merge_token_ids.
+    /// Never adds to public vocab — keeps vocab_size() accurate.
+    fn get_or_assign_id(&mut self, token: &str) -> u32 {
+        if let Some(&id) = self.vocab.get(token) {
+            return id;
+        }
+        if let Some(&id) = self.merge_token_ids.get(token) {
+            return id;
+        }
+        // Assign internal IDs starting above any possible vocab ID
+        let id = (u32::MAX / 2) + self.merge_token_ids.len() as u32;
+        self.merge_token_ids.insert(token.to_string(), id);
+        self.merge_id_to_token.insert(id, token.to_string());
+        id
     }
 
     /// Get vocabulary size
@@ -337,40 +407,129 @@ impl BpeTokenizer {
         String::from_utf8_lossy(&bytes).into_owned()
     }
 
-    /// Apply BPE merges to token list
+    /// Apply BPE merges to token list.
+    ///
+    /// Uses priority-queue + doubly-linked-list algorithm (GH-378):
+    /// - O(n) initial pair scan → seed min-heap
+    /// - O(log n) per merge pop, O(1) pointer update, O(1) new-pair enqueue
+    /// - Lazy validation: stale queue entries skipped on pop
+    ///
+    /// Port of HuggingFace `tokenizers` word.rs `merge_all()`.
     pub(crate) fn bpe(&self, tokens: &[String]) -> Vec<String> {
         if tokens.len() <= 1 {
             return tokens.to_vec();
         }
 
-        let mut result = tokens.to_vec();
+        let n = tokens.len();
 
-        loop {
-            // Find best merge (lowest rank)
-            let mut best_merge: Option<(usize, usize)> = None;
-            let mut best_rank = usize::MAX;
+        // Convert strings → u32 IDs (check public vocab, then internal merge vocab)
+        let ids: Vec<u32> = tokens
+            .iter()
+            .map(|t| {
+                self.vocab
+                    .get(t.as_str())
+                    .or_else(|| self.merge_token_ids.get(t.as_str()))
+                    .copied()
+                    .unwrap_or(u32::MAX)
+            })
+            .collect();
 
-            for i in 0..result.len().saturating_sub(1) {
-                let pair = (result[i].clone(), result[i + 1].clone());
-                if let Some(&rank) = self.merge_ranks.get(&pair) {
-                    if rank < best_rank {
-                        best_rank = rank;
-                        best_merge = Some((i, rank));
-                    }
-                }
-            }
+        // Build doubly-linked symbol list
+        let mut symbols: Vec<BpeSymbol> = Vec::with_capacity(n);
+        for (i, &id) in ids.iter().enumerate() {
+            symbols.push(BpeSymbol {
+                id,
+                prev: if i > 0 { i as i32 - 1 } else { -1 },
+                next: if i < n - 1 { (i + 1) as i32 } else { -1 },
+                len: 1,
+                src: i as u32,
+            });
+        }
 
-            // Apply best merge or stop
-            match best_merge {
-                Some((idx, _)) => {
-                    let merged = format!("{}{}", result[idx], result[idx + 1]);
-                    result.splice(idx..=idx + 1, std::iter::once(merged));
-                }
-                None => break,
+        // Seed priority queue with all adjacent pairs that have merge rules
+        let mut queue = BinaryHeap::with_capacity(n);
+        for i in 0..n - 1 {
+            let pair = (symbols[i].id, symbols[i + 1].id);
+            if let Some(&(rank, new_id)) = self.merge_id_map.get(&pair) {
+                queue.push(BpeMerge { pos: i, rank, new_id });
             }
         }
 
-        result
+        // Merge loop: pop lowest-rank merge, apply, enqueue new pairs
+        while let Some(top) = queue.pop() {
+            if !Self::is_valid_merge(&top, &symbols, &self.merge_id_map) {
+                continue;
+            }
+            Self::apply_merge(&top, &mut symbols);
+            Self::enqueue_neighbor_pairs(&symbols, &self.merge_id_map, top.pos, &mut queue);
+        }
+
+        // Convert surviving symbols back to strings
+        symbols
+            .iter()
+            .filter(|s| s.len > 0)
+            .map(|s| {
+                self.id_to_token
+                    .get(&s.id)
+                    .or_else(|| self.merge_id_to_token.get(&s.id))
+                    .cloned()
+                    .unwrap_or_else(|| tokens[s.src as usize].clone())
+            })
+            .collect()
+    }
+
+    /// Check whether a queued merge is still valid (symbol alive, pair unchanged).
+    fn is_valid_merge(
+        top: &BpeMerge,
+        symbols: &[BpeSymbol],
+        merge_id_map: &HashMap<(u32, u32), (u32, u32)>,
+    ) -> bool {
+        if symbols[top.pos].len == 0 || symbols[top.pos].next < 0 {
+            return false;
+        }
+        let right = symbols[symbols[top.pos].next as usize];
+        let pair = (symbols[top.pos].id, right.id);
+        merge_id_map
+            .get(&pair)
+            .map_or(false, |&(_, new_id)| new_id == top.new_id)
+    }
+
+    /// Apply a merge: left symbol absorbs right, right marked deleted.
+    fn apply_merge(top: &BpeMerge, symbols: &mut [BpeSymbol]) {
+        let next_pos = symbols[top.pos].next as usize;
+        let right = symbols[next_pos];
+
+        symbols[top.pos].id = top.new_id;
+        symbols[top.pos].len += right.len;
+        symbols[top.pos].next = right.next;
+        symbols[next_pos].len = 0;
+
+        if right.next >= 0 && (right.next as usize) < symbols.len() {
+            symbols[right.next as usize].prev = top.pos as i32;
+        }
+    }
+
+    /// Enqueue merge pairs for the left and right neighbors of a just-merged symbol.
+    fn enqueue_neighbor_pairs(
+        symbols: &[BpeSymbol],
+        merge_id_map: &HashMap<(u32, u32), (u32, u32)>,
+        pos: usize,
+        queue: &mut BinaryHeap<BpeMerge>,
+    ) {
+        // Left neighbor + merged symbol
+        if symbols[pos].prev >= 0 {
+            let prev_pos = symbols[pos].prev as usize;
+            if let Some(&(rank, new_id)) = merge_id_map.get(&(symbols[prev_pos].id, symbols[pos].id)) {
+                queue.push(BpeMerge { pos: prev_pos, rank, new_id });
+            }
+        }
+        // Merged symbol + right neighbor
+        if symbols[pos].next >= 0 {
+            let next = symbols[pos].next as usize;
+            if let Some(&(rank, new_id)) = merge_id_map.get(&(symbols[pos].id, symbols[next].id)) {
+                queue.push(BpeMerge { pos, rank, new_id });
+            }
+        }
     }
 }
 

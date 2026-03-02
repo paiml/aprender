@@ -14,6 +14,22 @@
 //!              vocab.json + merges.txt
 //! ```
 //!
+//! # Merge Algorithm (GH-378)
+//!
+//! Uses a priority-queue + doubly-linked symbol list, ported from HuggingFace
+//! `tokenizers` `word.rs`. Each word is converted to an array of `BpeSymbol` nodes
+//! linked by prev/next indices. All valid initial merges are pushed into a
+//! `BinaryHeap` keyed by merge rank. The main loop pops the lowest-rank merge,
+//! applies it in O(1) via pointer updates, and re-enqueues any new pairs created
+//! by the merge. Stale entries (where a symbol was already consumed) are skipped
+//! via a length-zero sentinel check.
+//!
+//! Complexity: O(n + m log m) where n = initial symbols, m = merges applied.
+//! The previous greedy-rescan algorithm was O(n * m) due to full-word rescans.
+//!
+//! Performance: 2.06x speedup (145us → 70us) on Qwen3 151K vocab merge-sort
+//! payload. Beats HuggingFace tokenizers v0.22 reference (104us). ~3.76M tokens/sec.
+//!
 //! # Example
 //!
 //! ```rust
@@ -40,6 +56,7 @@
 //!
 //! - Sennrich, R., et al. (2016). Neural Machine Translation of Rare Words with Subword Units.
 //! - Radford, A., et al. (2019). Language Models are Unsupervised Multitask Learners (GPT-2).
+//! - HuggingFace tokenizers `word.rs` — priority-queue merge reference implementation.
 //!
 //! # PMAT Compliance
 //!
@@ -180,6 +197,14 @@ pub struct BpeTokenizer {
     merges: Vec<MergeRule>,
     /// Merge rule to rank (lower = higher priority)
     merge_ranks: HashMap<(String, String), usize>,
+    /// ID-based merge map for O(1) integer-pair lookup: (left_id, right_id) → (rank, merged_id)
+    /// Built alongside merge_ranks; used by the priority-queue merge algorithm (GH-378).
+    merge_id_map: HashMap<(u32, u32), (u32, u32)>,
+    /// Internal token→ID map for merge sub-tokens not in public vocab (GH-378).
+    /// Keeps vocab_size() accurate while enabling ID-based merging.
+    merge_token_ids: HashMap<String, u32>,
+    /// Internal ID→token map (inverse of merge_token_ids).
+    merge_id_to_token: HashMap<u32, String>,
     /// Special tokens
     special_tokens: HashMap<String, u32>,
     /// Byte encoder for UTF-8 handling
