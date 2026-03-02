@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **GH-375: GGUF Q4_0/Q5_0/Q8_0 import fallback** — `apr import` of GGUF files with unsupported quantization types (Q4_0, Q5_0, Q8_0) now falls back to dequant-requant path instead of failing. Raw import preserves Q4_K/Q6_K exactly; legacy types go through f32 intermediate with optional `--quantize q4k`.
+- **GH-90: Honest brick benchmarks** — `apr bench --brick` no longer times a no-op `budget()` call (which reported 0.02us / 55M tok/s). Bricks without `run()` implementations now report their analytical budget estimate with a clear "ANALYTICAL" label. Use `apr bench --fast` for real measured throughput.
+
 ### Added
 - `apr eval --task classify`: Classification evaluation against JSONL test sets
   - 13 metrics: accuracy, top-2 accuracy, Cohen's kappa, MCC, per-class P/R/F1, Brier score, log loss, ECE

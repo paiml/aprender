@@ -74,12 +74,13 @@ apr serve model.gguf --port 8080 --gpu --batch
 
 ### Performance
 
-| Mode | Throughput | vs Ollama | Memory |
-|------|------------|-----------|--------|
-| CPU (baseline) | ~15 tok/s | 0.05x | 1.1 GB |
-| GPU (single) | ~83 tok/s | 0.25x | 1.5 GB |
-| GPU (batched) | ~850 tok/s | 2.9x | 1.9 GB |
-| Ollama | ~333 tok/s | 1.0x | - |
+| Mode | Model | Throughput | vs Ollama | Memory |
+|------|-------|------------|-----------|--------|
+| GPU (APR Q4K, GH-88) | Qwen 1.5B | **240 tok/s** | — | 1.5 GB |
+| GPU (batched M=16) | Qwen 1.5B | ~850 tok/s | 2.9x | 1.9 GB |
+| GPU (single GGUF) | Qwen 7B | ~68 tok/s | 0.2x | 5.5 GB |
+| CPU (baseline) | Qwen 1.5B | ~18 tok/s | 0.05x | 1.1 GB |
+| Ollama | Qwen 1.5B | ~333 tok/s | 1.0x | - |
 
 ### Endpoints
 
@@ -1004,37 +1005,53 @@ apr flow model.safetensors --json
 Benchmark model throughput (spec H12: >= 10 tok/s).
 
 ```bash
-# Run benchmark
+# Real GPU benchmark (recommended)
+apr bench model.apr --fast
+
+# CPU benchmark
 apr bench model.gguf
 
 # Specify iterations
-apr bench model.gguf --iterations 100
+apr bench model.apr --fast --iterations 10
 
 # Benchmark with specific prompt
-apr bench model.gguf --prompt "Hello, world!"
+apr bench model.apr --fast --prompt "Hello, world!"
 
 # JSON output for CI
-apr bench model.gguf --json
+apr bench model.apr --fast --json
+
+# Brick-level analytical budgets (GH-90: these are theoretical, not measured)
+apr bench model.apr --brick qkv
+apr bench model.apr --brick layer
 ```
 
-### Example Output
+### Example Output (GPU)
 
 ```
-=== Benchmark: model.gguf ===
+=== APR Benchmark ===
 
-Configuration:
-  Iterations: 50
-  Warmup: 5
-  Prompt: "Hello, how are you?"
+  Model: qwen2.5-coder-1.5b-q4k.apr
+  Warmup iterations: 3
+  Measurement iterations: 5
+  Max tokens: 32
 
-Results:
-  Throughput: 125.3 tok/s
-  Latency (p50): 8.0 ms
-  Latency (p99): 12.3 ms
-  Memory Peak: 1.2 GB
+Using realizar inference engine
+Model ready in 1.42s (339 tensors, GPU device 0, fused Q4K kernels)
 
-Spec H12 (>= 10 tok/s): ✓ PASS
+=== Results ===
+
+Throughput: 240.0 tok/s (PASS: >= 10 tok/s)
+
+  Time to first token: 4ms
+  Mean iteration time: 0.13s
+  Performance Grade: A+ (Excellent)
 ```
+
+### Brick Benchmarks
+
+Brick benchmarks (`--brick`) report **analytical budget estimates**, not measured execution time (GH-90). Only `rms_norm` has a real `run()` implementation. All other bricks (qkv, rope, attn, ffn, o_proj, layer) report their theoretical FLOP/bandwidth budget.
+
+Use `apr bench --fast` for real measured GPU throughput.
 
 ## Eval Command
 

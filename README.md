@@ -40,7 +40,7 @@ Aprender provides implementations of classical machine learning algorithms optim
 
 - **Pure Rust** — Zero C/C++ dependencies, memory-safe, thread-safe by default
 - **SIMD Acceleration** — Vectorized operations via [trueno](https://github.com/paiml/trueno) backend
-- **GPU Inference** — CUDA-accelerated inference via [realizar](https://github.com/paiml/realizar) (67.8 tok/s 7B, 851 tok/s 1.5B)
+- **GPU Inference** — CUDA-accelerated inference via [realizar](https://github.com/paiml/realizar) (67.8 tok/s 7B, 240 tok/s 1.5B single-decode, 851 tok/s 1.5B batched)
 - **Multi-Format** — Native `.apr`, SafeTensors (single + sharded), and GGUF support
 - **WebAssembly Ready** — Compile to WASM for browser and edge deployment
 - **11,251 Tests** — 96.35% coverage, zero SATD, TDG 96.9/100 A+
@@ -320,7 +320,8 @@ apr serve qwen2.5-coder-7b-q4_k_m.gguf --port 8080 --gpu
 | Mode | Throughput | vs Ollama | Status |
 |------|------------|-----------|--------|
 | GPU Batched (M=16) | **851.8 tok/s** | **2.93x** | Pass |
-| GPU Single | 120.1 tok/s | 1.0x | Pass |
+| GPU Single (APR Q4K, GH-88) | **240 tok/s** | — | Pass |
+| GPU Single (GGUF) | 120.1 tok/s | 1.0x | Pass |
 | CPU | 25.3 tok/s | 1.69x | Pass |
 
 **Supported model sizes:** 0.5B, 1.5B, 3B, 7B, 14B (SafeTensors sharded, GGUF Q4_K, APR native).
