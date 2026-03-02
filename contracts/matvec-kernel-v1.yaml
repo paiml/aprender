@@ -1,0 +1,172 @@
+# Matrix-Vector Multiplication (MatVec) Kernel Contract v1.0.0
+# THE SOURCE OF TRUTH for M=1 matvec correctness and performance
+#
+# STATUS: Authoritative — all M=1 matmul paths MUST follow this contract
+# CONSUMERS:
+#   - trueno/src/matrix/ops/arithmetic.rs (matmul_vector_matrix)
+#   - src/autograd/ops/activation.rs (Tensor::matmul dispatches to trueno)
+#   - crates/aprender-bench-compute/benches/matmul.rs
+#
+# Mathematical Foundation:
+#   For M=1: c[j] = Σ_k a[k] * B[k,j]
+#   This is a multi-dot-product: each output element is dot(a, B[:,j])
+#   Equivalent to summing K scaled rows of B: c += a[k] * B[k,:]
+#
+# Performance Model:
+#   Memory-bandwidth bound: reads K*N floats from B, writes N floats
+#   Arithmetic intensity = 2*K*N / (4*(K*N + N)) ≈ 2*K/(4*(K+1)) ≈ K/2
+#   At K=4096: AI ≈ 2048 → compute bound in theory, but limited by
+#   store bandwidth to the result vector (read-modify-write per axpy)
+
+metadata:
+  version: "1.0.0"
+  created: "2026-03-02"
+  author: "PAIML Engineering"
+  description: "Correctness and performance specification for M=1 matvec"
+  references:
+    - "GH-380: matvec (M=1) 3.4x slower than ndarray at LLM-relevant sizes"
+    - "Van Zee & Van de Geijn (2015). BLIS: A Framework for Rapidly Instantiating BLAS Functionality"
+  issues:
+    - "https://github.com/paiml/aprender/issues/380"
+
+# =============================================================================
+# KERNEL EQUATION
+# =============================================================================
+
+equations:
+  matvec:
+    formula: |
+      For M=1, K columns, N output:
+        c[j] = Σ_{k=0}^{K-1} a[k] * B[k*N + j]    for j = 0..N-1
+    domain: "a ∈ R^K, B ∈ R^{K×N}, c ∈ R^N"
+    properties:
+      - linearity: "matvec(a, B1 + B2) = matvec(a, B1) + matvec(a, B2)"
+      - scaling: "matvec(α*a, B) = α * matvec(a, B)"
+      - identity: "matvec(e_i, B) = B[i,:] (row selection)"
+      - zeros: "matvec(0, B) = 0"
+
+# =============================================================================
+# IMPLEMENTATION MANDATES
+# =============================================================================
+
+implementation:
+  dispatch:
+    description: "M=1 MUST be detected at dispatch and routed to specialized path"
+    assertion: "Matrix::matmul checks self.rows == 1 before BLIS path"
+    rationale: "BLIS 5-loop has packing overhead that dominates for M=1"
+
+  k_unrolled_axpy:
+    description: "K-unrolled 4-way axpy pattern for auto-vectorizable inner loop"
+    pattern: |
+      let k4 = k / 4 * 4;
+      for ki in (0..k4).step_by(4) {
+          let a0 = a[ki]; let a1 = a[ki+1]; let a2 = a[ki+2]; let a3 = a[ki+3];
+          for j in 0..n {
+              c[j] += a0*b[b0+j] + a1*b[b1+j] + a2*b[b2+j] + a3*b[b3+j];
+          }
+      }
+    rationale: |
+      4-way unrolling reduces loop overhead 4x and enables FMA chains.
+      The inner j-loop is a pure axpy (c += scalar * row) which LLVM
+      auto-vectorizes to AVX2/AVX-512 VFMADD instructions.
+
+  no_branch_in_inner_loop:
+    description: "MUST NOT have conditional branches (e.g., zero-check) in inner loop"
+    assertion: "No 'if a_k == 0.0 { continue; }' pattern"
+    rationale: "Branches prevent SIMD auto-vectorization. The zero case is rare."
+
+  from_vec_output:
+    description: "MUST use Matrix::from_vec for output (no pre-allocated zeros)"
+
+# =============================================================================
+# PERFORMANCE BOUNDS
+# =============================================================================
+
+performance:
+  benchmark_crate: "aprender-bench-compute"
+  benchmark_file: "benches/matmul.rs"
+  reference: "ndarray (matrixmultiply crate, hand-tuned SIMD)"
+
+  bounds:
+    matvec_1x1536x1536:
+      description: "Small square matvec"
+      min_ratio_vs_reference: 1.0
+      target_ratio: 2.5
+      measured_ratio: 2.5
+      measured_date: "2026-03-02"
+      note: "FASTER than ndarray at small sizes"
+
+    matvec_1x4096x11008:
+      description: "LLM FFN matvec (7B model, decode hot path)"
+      min_ratio_vs_reference: 0.25
+      target_ratio: 0.50
+      measured_ratio: 0.34
+      measured_date: "2026-03-02"
+      history:
+        - { date: "2026-03-01", ratio: 0.29, note: "Scalar loop with zero-check branch" }
+        - { date: "2026-03-02", ratio: 0.34, note: "4-way K-unrolled axpy, no branch (1.01 G vs 2.95 G)" }
+
+    matvec_1x4096x4096:
+      description: "LLM attention matvec (7B model)"
+      min_ratio_vs_reference: 0.25
+      target_ratio: 0.50
+      measured_ratio: 0.54
+      measured_date: "2026-03-02"
+      history:
+        - { date: "2026-03-01", ratio: 0.44, note: "Scalar loop" }
+        - { date: "2026-03-02", ratio: 0.54, note: "4-way K-unrolled axpy (962 M vs 1.79 G)" }
+
+  remaining_gap_analysis: |
+    ndarray's matrixmultiply crate uses hand-written x86 SIMD with:
+    1. M=1 specialized microkernel with register blocking
+    2. Prefetch hints for B matrix rows
+    3. Explicit AVX2 VFMADD instructions
+    Our auto-vectorized axpy achieves ~1.0 Gelem/s vs ndarray's ~3.0 Gelem/s.
+    Closing this gap requires hand-written SIMD or linking to an external BLAS.
+
+# =============================================================================
+# FALSIFICATION TESTS
+# =============================================================================
+
+falsification:
+  tests_file: "trueno/src/matrix/tests/matmul.rs"
+
+  FALSIFY-MV-001:
+    name: "Correctness vs naive"
+    assertion: "matvec matches naive O(KN) loop within 1e-4"
+    status: "PASS"
+
+  FALSIFY-MV-002:
+    name: "Identity row selection"
+    assertion: "matvec(e_i, B) == B[i,:] for all i"
+    status: "PASS"
+
+  FALSIFY-MV-003:
+    name: "Zero vector"
+    assertion: "matvec(0, B) == 0"
+    status: "PASS"
+
+  FALSIFY-MV-004:
+    name: "Dimension mismatch"
+    assertion: "Returns error when K doesn't match"
+    status: "PASS"
+
+  FALSIFY-MV-005:
+    name: "Associativity with matmul"
+    assertion: "matmul([[a]], B) == matvec(a, B) reshaped"
+    status: "PASS"
+
+# =============================================================================
+# QA GATE
+# =============================================================================
+
+qa_gate:
+  id: "F-MATVEC-001"
+  name: "MatVec Kernel Contract"
+  checks:
+    - "M=1 dispatch to specialized path"
+    - "4-way K-unrolled axpy (no branches in inner loop)"
+    - "Matrix::from_vec for output"
+    - "Performance >= 0.25x ndarray at all sizes"
+    - "All FALSIFY tests pass"
+  pass_criteria: "All checks pass"
