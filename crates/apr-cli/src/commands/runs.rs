@@ -109,7 +109,7 @@ pub(crate) fn run_show(
         }
 
         let params_map: std::collections::HashMap<_, _> = params.iter()
-            .map(|(k, v)| (k.clone(), v.to_json()))
+            .map(|(k, v)| (k.clone(), param_to_value(v)))
             .collect();
 
         let output = serde_json::json!({
@@ -139,7 +139,7 @@ pub(crate) fn run_show(
             let mut sorted_params: Vec<_> = params.iter().collect();
             sorted_params.sort_by_key(|(k, _)| *k);
             for (k, v) in sorted_params {
-                println!("    {:<20} {}", k, v.to_json());
+                println!("    {:<20} {}", k, param_display(v));
             }
             println!();
         }
@@ -283,4 +283,32 @@ fn print_runs_json(runs: &[(entrenar::storage::sqlite::Experiment, entrenar::sto
         .collect();
 
     println!("{}", serde_json::to_string_pretty(&entries).unwrap_or_else(|_| "[]".to_string()));
+}
+
+/// Convert ParameterValue to serde_json::Value (unwrapping the tagged enum).
+fn param_to_value(pv: &entrenar::storage::ParameterValue) -> serde_json::Value {
+    use entrenar::storage::ParameterValue;
+    match pv {
+        ParameterValue::String(s) => serde_json::Value::String(s.clone()),
+        ParameterValue::Int(i) => serde_json::json!(*i),
+        ParameterValue::Float(f) => serde_json::json!(*f),
+        ParameterValue::Bool(b) => serde_json::json!(*b),
+        ParameterValue::List(l) => serde_json::Value::Array(l.iter().map(param_to_value).collect()),
+        ParameterValue::Dict(d) => {
+            let map: serde_json::Map<_, _> = d.iter().map(|(k, v)| (k.clone(), param_to_value(v))).collect();
+            serde_json::Value::Object(map)
+        }
+    }
+}
+
+/// Display a ParameterValue as a human-readable string.
+fn param_display(pv: &entrenar::storage::ParameterValue) -> String {
+    use entrenar::storage::ParameterValue;
+    match pv {
+        ParameterValue::String(s) => s.clone(),
+        ParameterValue::Int(i) => i.to_string(),
+        ParameterValue::Float(f) => format!("{f}"),
+        ParameterValue::Bool(b) => b.to_string(),
+        _ => pv.to_json(),
+    }
 }
