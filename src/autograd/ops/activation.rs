@@ -189,13 +189,21 @@ impl Tensor {
         let (k2, n) = (other.shape()[0], other.shape()[1]);
         assert_eq!(k1, k2, "matmul dimension mismatch: {k1} vs {k2}");
 
-        // Use trueno's SIMD-accelerated matmul
-        let a_matrix =
-            trueno::Matrix::from_vec(m, k1, self.data().to_vec()).expect("valid matrix dimensions");
-        let b_matrix = trueno::Matrix::from_vec(k2, n, other.data().to_vec())
-            .expect("valid matrix dimensions");
-        let result_matrix = a_matrix.matmul(&b_matrix).expect("matmul should succeed");
-        let data = result_matrix.as_slice().to_vec();
+        let data = if m == 1 {
+            // GEMV fast path: call trueno's SIMD gemv directly on borrowed slices.
+            // Avoids copying the K×N weight matrix (172MB at LLM scale).
+            let mut c = vec![0.0f32; n];
+            trueno::blis::gemv::gemv(k1, n, self.data(), other.data(), &mut c);
+            c
+        } else {
+            // General matmul via trueno Matrix (copies data for Matrix ownership)
+            let a_matrix = trueno::Matrix::from_vec(m, k1, self.data().to_vec())
+                .expect("valid matrix dimensions");
+            let b_matrix = trueno::Matrix::from_vec(k2, n, other.data().to_vec())
+                .expect("valid matrix dimensions");
+            let result_matrix = a_matrix.matmul(&b_matrix).expect("matmul should succeed");
+            result_matrix.as_slice().to_vec()
+        };
 
         let mut result = Tensor::from_vec(data, &[m, n]);
 
