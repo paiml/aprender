@@ -160,6 +160,16 @@ fn run_plan_pretrain(
                 "mixed_precision": spec.training.mixed_precision,
             },
             "verdict": "ready",
+            "vram_estimate": spec.model.architecture.as_ref()
+                .and_then(|arch| estimate_vram(arch, &spec))
+                .map(|e| serde_json::json!({
+                    "parameters": e.param_count,
+                    "weights_gb": e.weights_gb,
+                    "gradients_gb": e.gradients_gb,
+                    "optimizer_gb": e.optimizer_gb,
+                    "activations_gb": e.activations_gb,
+                    "total_gb": e.total_gb,
+                })),
         });
         println!("{}", serde_json::to_string_pretty(&plan).unwrap_or_default());
     } else {
@@ -191,11 +201,106 @@ fn run_plan_pretrain(
             output::kv("  LoRA rank", lora.rank.to_string());
             output::kv("  LoRA alpha", format!("{:.1}", lora.alpha));
         }
+        // VRAM estimation from architecture overrides
+        if let Some(ref arch) = spec.model.architecture {
+            if let Some(estimate) = estimate_vram(arch, &spec) {
+                println!();
+                output::kv("  Parameters", format_params(estimate.param_count));
+                println!();
+                println!("  {}:", "VRAM Estimate".bold());
+                println!("    Weights ({})       {:>8.1} GB", estimate.dtype_label, estimate.weights_gb);
+                println!("    Gradients (f32)       {:>8.1} GB", estimate.gradients_gb);
+                println!("    Optimizer (AdamW)     {:>8.1} GB", estimate.optimizer_gb);
+                println!("    Activations (est.)    {:>8.1} GB", estimate.activations_gb);
+                println!("    ─────────────────────────────");
+                println!("    {}        {:>8.1} GB", "Total".bold(), estimate.total_gb);
+            }
+        }
+
         println!();
         println!("  {} Config validated, ready for apply", "READY".green().bold());
     }
 
     Ok(())
+}
+
+/// VRAM estimate from training-memory-kernel-v1.yaml contract.
+struct VramEstimate {
+    param_count: usize,
+    dtype_label: &'static str,
+    weights_gb: f64,
+    gradients_gb: f64,
+    optimizer_gb: f64,
+    activations_gb: f64,
+    total_gb: f64,
+}
+
+/// Estimate VRAM usage from architecture parameters.
+///
+/// All formulas from `contracts/training-memory-kernel-v1.yaml`:
+///   - parameter_count: P_total = P_embed + L × P_layer + P_norm (equivalence, tolerance=0)
+///   - weight_memory:   M_weights = P_total × B_w (equivalence, tolerance=0)
+///   - gradient_memory: M_grad = P_total × 4 (equivalence, tolerance=0)
+///   - optimizer_memory: M_opt = P_total × 8 (equivalence, tolerance=0)
+///   - activation_memory: M_act = L × S × H × K × 4 (bound, K=10)
+///   - total_memory: M_total = sum + M_cuda (M_cuda = 512 MB)
+fn estimate_vram(
+    arch: &entrenar::config::ArchitectureOverrides,
+    spec: &entrenar::config::TrainSpec,
+) -> Option<VramEstimate> {
+    let h = arch.hidden_size?;
+    let l = arch.num_hidden_layers?;
+    let v = arch.vocab_size?;
+    let i = arch.intermediate_size.unwrap_or(h * 4);
+    let num_heads = arch.num_attention_heads?;
+    let kv_heads = arch.num_kv_heads.unwrap_or(num_heads);
+    let head_dim = h / num_heads;
+    let d_kv = kv_heads * head_dim;
+
+    // Contract eq: parameter_count
+    // P_embed = V × H
+    let p_embed = v * h;
+    // P_layer = 2H + 2H² + 2H×D_kv + 3H×I
+    let p_layer = 2 * h + 2 * h * h + 2 * h * d_kv + 3 * h * i;
+    // P_norm = H
+    let p_norm = h;
+    // P_total = P_embed + L × P_layer + P_norm
+    let p_total = p_embed + l * p_layer + p_norm;
+
+    // Contract eq: weight_memory — M_weights = P_total × B_w
+    // entrenar stores f32 master weights; fp16 cast at matmul site
+    let b_w: f64 = 4.0; // always f32 in current entrenar impl
+    let is_fp16 = matches!(
+        spec.training.mixed_precision.as_deref(),
+        Some("fp16") | Some("bf16")
+    );
+
+    let gb = |bytes: f64| bytes / (1024.0 * 1024.0 * 1024.0);
+
+    let weights_gb = gb(p_total as f64 * b_w);
+    // Contract eq: gradient_memory — M_grad = P_total × 4
+    let gradients_gb = gb(p_total as f64 * 4.0);
+    // Contract eq: optimizer_memory — M_opt = P_total × 8
+    let optimizer_gb = gb(p_total as f64 * 8.0);
+
+    // Contract eq: activation_memory — M_act = L × S × H × K × 4 (upper bound)
+    let s = spec.data.seq_len.unwrap_or(512) as f64;
+    let k: f64 = 10.0; // contract constant: Q,K,V,attn_scores,attn_out,gate,up,down,2×residual
+    let activations_gb = gb(l as f64 * s * h as f64 * k * 4.0);
+
+    // Contract eq: total_memory — M_total = sum + M_cuda
+    let m_cuda_gb = 0.5; // 512 MB CUDA context overhead
+    let total_gb = weights_gb + gradients_gb + optimizer_gb + activations_gb + m_cuda_gb;
+
+    Some(VramEstimate {
+        param_count: p_total,
+        dtype_label: if is_fp16 { "fp16" } else { "f32" },
+        weights_gb,
+        gradients_gb,
+        optimizer_gb,
+        activations_gb,
+        total_gb,
+    })
 }
 
 include!("train_output.rs");
