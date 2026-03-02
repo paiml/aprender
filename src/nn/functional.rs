@@ -368,30 +368,15 @@ pub fn layer_norm(x: &Tensor, weight: &Tensor, bias: &Tensor, eps: f32) -> Tenso
     let bias_data = bias.data();
     let mut output = vec![0.0f32; data.len()];
 
+    // Delegate to trueno's AVX2+FMA SIMD layer_norm per row.
+    // Contract: provable-contracts/contracts/layernorm-kernel-v1.yaml
     for b in 0..batch_size {
         let start = b * last_dim;
         let slice = &data[start..start + last_dim];
         let out_slice = &mut output[start..start + last_dim];
 
-        // Pass 1: mean — auto-vectorizable
-        let mut sum = 0.0f32;
-        for &val in slice {
-            sum += val;
-        }
-        let mean = sum / last_dim as f32;
-
-        // Pass 2: variance — auto-vectorizable
-        let mut var_sum = 0.0f32;
-        for &val in slice {
-            let d = val - mean;
-            var_sum += d * d;
-        }
-        let inv_std = 1.0 / (var_sum / last_dim as f32 + eps).sqrt();
-
-        // Pass 3: fused normalize + scale + shift — auto-vectorizable
-        for i in 0..last_dim {
-            out_slice[i] = (slice[i] - mean) * inv_std * weight_data[i] + bias_data[i];
-        }
+        trueno::blis::norms::layer_norm(slice, weight_data, bias_data, eps, out_slice)
+            .expect("layer_norm: dimension mismatch (should be impossible)");
     }
 
     Tensor::from_vec(output, shape)
@@ -415,22 +400,15 @@ pub fn rms_norm(x: &Tensor, weight: &Tensor, eps: f32) -> Tensor {
     let weight_data = weight.data();
     let mut output = vec![0.0f32; data.len()];
 
+    // Delegate to trueno's AVX2+FMA SIMD rms_norm per row.
+    // Contract: provable-contracts/contracts/rmsnorm-kernel-v1.yaml
     for b in 0..batch_size {
         let start = b * last_dim;
         let slice = &data[start..start + last_dim];
         let out_slice = &mut output[start..start + last_dim];
 
-        // Sum of squares — auto-vectorizable with fixed-length slice
-        let mut sum_sq = 0.0f32;
-        for &val in slice {
-            sum_sq += val * val;
-        }
-        let inv_rms = 1.0 / (sum_sq / last_dim as f32 + eps).sqrt();
-
-        // Fused scale — auto-vectorizable with aligned slices
-        for i in 0..last_dim {
-            out_slice[i] = slice[i] * inv_rms * weight_data[i];
-        }
+        trueno::blis::norms::rms_norm(slice, weight_data, eps, out_slice)
+            .expect("rms_norm: dimension mismatch (should be impossible)");
     }
 
     Tensor::from_vec(output, shape)
