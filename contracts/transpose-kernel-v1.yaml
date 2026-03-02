@@ -1,0 +1,168 @@
+# Transpose Kernel Contract v1.0.0
+# THE SOURCE OF TRUTH for matrix transpose correctness and performance
+#
+# STATUS: Authoritative — all transpose operations MUST follow this contract
+# CONSUMERS:
+#   - src/autograd/ops/activation.rs (Tensor::transpose)
+#   - src/primitives/matrix.rs (Matrix::transpose)
+#   - src/nn/transformer/positional_encoding.rs (transpose_last_two)
+#   - crates/aprender-bench-compute/benches/transpose.rs
+#
+# ENFORCEMENT: benchmark gate + tiled pattern mandate
+#
+# Mathematical Foundation:
+#   A^T[j][i] = A[i][j] for 0 ≤ i < rows, 0 ≤ j < cols
+#   Cache analysis: naive transpose has O(cols) stride on writes,
+#   causing one cache miss per element at large dimensions.
+#   Tiled transpose keeps both strides within TILE×sizeof(f32) ≤ L1.
+#
+# Citation: Lam, Rothberg & Wolf (1991). "The Cache Performance and
+#   Optimizations of Blocked Algorithms." ASPLOS IV.
+
+metadata:
+  version: "1.0.0"
+  created: "2026-03-02"
+  author: "PAIML Engineering"
+  description: "Correctness and performance specification for matrix transpose"
+  references:
+    - "GH-388: Transpose 242x slower than ndarray at attention shapes"
+    - "Lam, Rothberg & Wolf (1991). Cache Performance of Blocked Algorithms. ASPLOS"
+    - "contracts/tensor-layout-v1.yaml (LAYOUT-002: row-major mandate)"
+  issues:
+    - "https://github.com/paiml/aprender/issues/388"
+
+# =============================================================================
+# KERNEL EQUATION
+# =============================================================================
+
+equations:
+  transpose_2d:
+    formula: "B[j * rows + i] = A[i * cols + j]"
+    domain: "∀i ∈ [0, rows), ∀j ∈ [0, cols)"
+    properties:
+      - involution: "transpose(transpose(A)) == A"
+      - shape: "shape(transpose(A)) == (cols, rows) where shape(A) == (rows, cols)"
+      - trace_invariant: "trace(A) == trace(transpose(A)) for square A"
+      - determinant_invariant: "det(A) == det(transpose(A))"
+
+  transpose_last_two:
+    formula: "B[b][h][j][i] = A[b][h][i][j]"
+    domain: "∀b ∈ [0, batch), ∀h ∈ [0, heads), ∀i ∈ [0, seq), ∀j ∈ [0, dim)"
+    description: "Batched transpose of last two dimensions (attention K^T)"
+
+# =============================================================================
+# IMPLEMENTATION MANDATES
+# =============================================================================
+
+implementation:
+  tiled_transpose:
+    description: "ALL transpose implementations MUST use tiled blocking"
+    tile_size: 16
+    pattern: |
+      const TILE: usize = 16;
+      for i0 in (0..rows).step_by(TILE) {
+          let i_end = (i0 + TILE).min(rows);
+          for j0 in (0..cols).step_by(TILE) {
+              let j_end = (j0 + TILE).min(cols);
+              for i in i0..i_end {
+                  for j in j0..j_end {
+                      data[j * rows + i] = src[i * cols + j];
+                  }
+              }
+          }
+      }
+    rationale: |
+      TILE=16 → 16×16×4 = 1024 bytes per tile, fits in L1 (32KB).
+      Both read stride (1 element) and write stride (rows) are bounded
+      by TILE, keeping both access patterns within cache lines.
+    locations:
+      - "src/autograd/ops/activation.rs:Tensor::transpose"
+      - "src/primitives/matrix.rs:Matrix::transpose"
+      - "src/nn/transformer/positional_encoding.rs:transpose_last_two"
+
+  zero_copy_output:
+    description: "MUST use Tensor::from_vec / Matrix::from_vec for output"
+
+  row_major:
+    description: "Both input and output are row-major (LAYOUT-002)"
+
+# =============================================================================
+# PERFORMANCE BOUNDS
+# =============================================================================
+
+performance:
+  benchmark_crate: "aprender-bench-compute"
+  benchmark_file: "benches/transpose.rs"
+  reference: "ndarray .t().to_owned() (cache-oblivious algorithm)"
+
+  bounds:
+    transpose_2048x128:
+      min_ratio_vs_ndarray: 0.10
+      target_ratio: 0.50
+      measured_ratio: 0.15
+      measured_date: "2026-03-02"
+      history:
+        - { date: "2026-03-01", ratio: 0.004, note: "Naive double loop (242x slower)" }
+        - { date: "2026-03-02", ratio: 0.07, note: "Tiled 16×16" }
+        - { date: "2026-03-02", ratio: 0.15, note: "Tiled + from_vec" }
+
+    transpose_4096x4096:
+      min_ratio_vs_ndarray: 0.25
+      target_ratio: 0.50
+      measured_ratio: 0.35
+      measured_date: "2026-03-02"
+
+  remaining_gap_analysis: |
+    ndarray uses a cache-oblivious recursive algorithm that adapts to
+    the entire cache hierarchy (L1→L2→L3). Our fixed TILE=16 is optimal
+    for L1 but sub-optimal for larger matrices where L2 tiling helps.
+    Options for further improvement:
+    1. Two-level tiling: outer TILE=64 (L2), inner TILE=16 (L1)
+    2. Delegate to trueno's SIMD transpose with explicit AVX2 shuffles
+    3. Use lazy transpose (track layout flag, defer until element access)
+
+# =============================================================================
+# FALSIFICATION TESTS
+# =============================================================================
+
+falsification:
+  tests_file: "src/primitives/matrix_tests.rs"
+
+  FALSIFY-TR-001:
+    name: "Involution"
+    assertion: "transpose(transpose(A)) == A (bitwise exact)"
+    status: "PASS"
+
+  FALSIFY-TR-002:
+    name: "Shape correctness"
+    assertion: "shape(transpose([3,5])) == (5, 3)"
+    status: "PASS"
+
+  FALSIFY-TR-003:
+    name: "Element correctness"
+    assertion: "transpose(A)[j][i] == A[i][j] for random A"
+    status: "PASS"
+
+  FALSIFY-TR-004:
+    name: "Non-square correctness"
+    assertion: "transpose works for rectangular matrices (2048×128, 128×2048)"
+    status: "PASS"
+
+  FALSIFY-TR-005:
+    name: "Identity transpose"
+    assertion: "transpose(I) == I for identity matrix"
+    status: "PASS"
+
+# =============================================================================
+# QA GATE
+# =============================================================================
+
+qa_gate:
+  id: "F-TRANSPOSE-001"
+  name: "Transpose Kernel Contract"
+  checks:
+    - "All transpose implementations use TILE=16 blocked pattern"
+    - "Benchmark ratio >= min_ratio for all measured bounds"
+    - "All FALSIFY tests pass"
+    - "No naive (non-tiled) transpose in production code"
+  pass_criteria: "All checks pass"

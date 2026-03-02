@@ -1,0 +1,217 @@
+# Element-wise Tensor Operations Contract v1.0.0
+# THE SOURCE OF TRUTH for element-wise Tensor kernel correctness and performance
+#
+# STATUS: Authoritative — every element-wise Tensor op MUST follow this contract
+# CONSUMERS:
+#   - src/autograd/ops/mod.rs (add, sub, mul, div, neg, mul_scalar)
+#   - src/autograd/ops/activation.rs (relu, sigmoid, tanh, leaky_relu, gelu, broadcast_add)
+#   - src/nn/functional.rs (leaky_relu, silu, swiglu, gelu)
+#   - tests/contracts/activation_contract.rs
+#   - src/autograd/tests_tensor_contract.rs
+#
+# ENFORCEMENT: provable_contracts_macros::contract annotations + benchmark gate
+#
+# WHY THIS CONTRACT EXISTS (Five-Whys, 2026-03-02):
+#   Why 1: Why are Tensor add/mul_scalar 1.8x slower than ndarray?
+#   → Tensor::new(&data, shape) copies data that was just allocated
+#   Why 2: Why does Tensor::new copy?
+#   → It takes &[f32] and calls Vector::from_slice, which allocates + memcpy
+#   Why 3: Why not take ownership of Vec<f32> directly?
+#   → Tensor::from_vec was missing (added in #388 fix)
+#   Why 4: Why didn't iterator chains auto-vectorize well?
+#   → LLVM struggles with zip+map+collect for simple arithmetic
+#   Why 5: ROOT CAUSE — No performance contract mandating zero-copy + explicit loops
+#   → FIX: This contract mandates from_vec + indexed loop patterns
+
+metadata:
+  version: "1.0.0"
+  created: "2026-03-02"
+  author: "PAIML Engineering"
+  description: "Correctness and performance specification for element-wise Tensor operations"
+  references:
+    - "GH-387: Element-wise Tensor ops 1.8x slower than ndarray"
+    - "GH-383: ReLU 2x slower than ndarray"
+    - "Wulf & McKee (1995). Hitting the Memory Wall. ACM SIGARCH 23(1)"
+  issues:
+    - "https://github.com/paiml/aprender/issues/387"
+    - "https://github.com/paiml/aprender/issues/383"
+
+# =============================================================================
+# KERNEL EQUATIONS
+# =============================================================================
+
+equations:
+  add:
+    formula: "output[i] = a[i] + b[i]"
+    domain: "∀i ∈ [0, n)"
+    properties:
+      - commutative: "add(a, b) == add(b, a)"
+      - associative: "add(add(a, b), c) == add(a, add(b, c))"
+      - identity: "add(a, zeros) == a"
+
+  sub:
+    formula: "output[i] = a[i] - b[i]"
+    domain: "∀i ∈ [0, n)"
+    properties:
+      - inverse: "sub(a, a) == zeros"
+      - anti_commutative: "sub(a, b) == neg(sub(b, a))"
+
+  mul:
+    formula: "output[i] = a[i] * b[i]"
+    domain: "∀i ∈ [0, n)"
+    properties:
+      - commutative: "mul(a, b) == mul(b, a)"
+      - identity: "mul(a, ones) == a"
+      - zero: "mul(a, zeros) == zeros"
+
+  div:
+    formula: "output[i] = a[i] / b[i]"
+    domain: "∀i ∈ [0, n), b[i] ≠ 0"
+    properties:
+      - identity: "div(a, ones) == a"
+      - self: "div(a, a) == ones (where a[i] ≠ 0)"
+
+  neg:
+    formula: "output[i] = -a[i]"
+    domain: "∀i ∈ [0, n)"
+    properties:
+      - involution: "neg(neg(a)) == a"
+      - zero: "neg(zeros) == zeros"
+
+  mul_scalar:
+    formula: "output[i] = a[i] * s"
+    domain: "∀i ∈ [0, n)"
+    properties:
+      - identity: "mul_scalar(a, 1.0) == a"
+      - zero: "mul_scalar(a, 0.0) == zeros"
+      - distributive: "mul_scalar(add(a, b), s) == add(mul_scalar(a, s), mul_scalar(b, s))"
+
+  relu:
+    formula: "output[i] = max(0, a[i])"
+    domain: "∀i ∈ [0, n)"
+    properties:
+      - non_negative: "relu(a)[i] >= 0"
+      - idempotent: "relu(relu(a)) == relu(a)"
+      - positive_identity: "a[i] > 0 → relu(a)[i] == a[i]"
+      - negative_zero: "a[i] <= 0 → relu(a)[i] == 0"
+
+  leaky_relu:
+    formula: "output[i] = a[i] > 0 ? a[i] : slope * a[i]"
+    domain: "∀i ∈ [0, n)"
+    properties:
+      - reduces_to_relu: "leaky_relu(a, 0.0) == relu(a)"
+      - reduces_to_identity: "leaky_relu(a, 1.0) == a"
+
+# =============================================================================
+# IMPLEMENTATION MANDATES
+# =============================================================================
+
+implementation:
+  zero_copy_output:
+    description: "All element-wise ops MUST use Tensor::from_vec, never Tensor::new(&data, ...)"
+    rationale: "Tensor::new copies data via from_slice; from_vec takes ownership"
+    enforcement: "grep for 'Tensor::new(&data' in ops/mod.rs and activation.rs must return 0"
+
+  auto_vectorizable_loops:
+    description: "Binary ops MUST use explicit indexed loops, not iterator chains"
+    pattern: |
+      let src_a = self.data();
+      let src_b = other.data();
+      let n = src_a.len();
+      let mut data = vec![0.0f32; n];
+      for i in 0..n {
+          data[i] = src_a[i] OP src_b[i];
+      }
+      Tensor::from_vec(data, self.shape())
+    rationale: "LLVM auto-vectorizes explicit indexed loops better than zip+map+collect"
+
+  contiguous_access:
+    description: "All element-wise ops assume contiguous row-major storage"
+    rationale: "No stride calculation needed for dense tensors (LAYOUT-002)"
+
+# =============================================================================
+# PERFORMANCE BOUNDS
+# =============================================================================
+
+performance:
+  benchmark_crate: "aprender-bench-compute"
+  benchmark_file: "benches/tensor_overhead.rs"
+  reference: "ndarray (pure Rust, no BLAS)"
+
+  bounds:
+    add_4096:
+      min_ratio_vs_ndarray: 0.70
+      target_ratio: 0.85
+      measured_ratio: 0.76
+      measured_date: "2026-03-02"
+
+    mul_scalar_4096:
+      min_ratio_vs_ndarray: 0.60
+      target_ratio: 0.80
+      measured_ratio: 0.67
+      measured_date: "2026-03-02"
+
+    relu_11008:
+      min_ratio_vs_ndarray: 0.55
+      target_ratio: 0.75
+      measured_ratio: 0.64
+      measured_date: "2026-03-02"
+
+  remaining_gap_analysis: |
+    The 1.3-1.5x remaining gap is structural (not algorithmic):
+    - Tensor has ~120 bytes of metadata (shape, grad, grad_fn, id) vs ndarray's ~24 bytes
+    - from_vec still allocates shape Vec + sets up autograd fields
+    - Further optimization requires arena allocation or no-grad fast paths
+
+# =============================================================================
+# FALSIFICATION TESTS
+# =============================================================================
+
+falsification:
+  tests_file: "src/autograd/tests_tensor_contract.rs"
+
+  FALSIFY-EW-001:
+    name: "Add commutativity"
+    assertion: "add(a, b) == add(b, a)"
+    status: "PASS"
+
+  FALSIFY-EW-002:
+    name: "Mul scalar identity"
+    assertion: "mul_scalar(x, 1.0) == x"
+    status: "PASS"
+
+  FALSIFY-EW-003:
+    name: "from_vec output parity"
+    assertion: "Tensor::from_vec(data.clone(), shape) has identical data to Tensor::new(&data, shape)"
+    status: "PASS"
+
+  FALSIFY-EW-004:
+    name: "ReLU non-negativity"
+    assertion: "∀i: relu(x)[i] >= 0"
+    status: "PASS"
+
+  FALSIFY-EW-005:
+    name: "Sub as add+neg"
+    assertion: "sub(a, b) == add(a, neg(b))"
+    status: "PASS"
+
+  FALSIFY-EW-006:
+    name: "Div inverse of mul"
+    assertion: "div(mul(a, b), b) ≈ a (where b[i] ≠ 0, within f32 ULP)"
+    status: "PASS"
+
+# =============================================================================
+# QA GATE
+# =============================================================================
+
+qa_gate:
+  id: "F-ELEMWISE-001"
+  name: "Element-wise Operations Contract"
+  description: "Validates element-wise ops use from_vec + auto-vectorizable patterns"
+  checks:
+    - "No Tensor::new(&data, ...) in ops/mod.rs or activation.rs"
+    - "All binary ops use explicit indexed loop pattern"
+    - "Benchmark ratio >= min_ratio for all measured bounds"
+    - "All FALSIFY tests pass"
+  pass_criteria: "All checks pass"
+  falsification: "Revert to Tensor::new — benchmark must show regression"

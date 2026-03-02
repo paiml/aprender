@@ -38,12 +38,13 @@ pub fn relu_scalar(x: f32) -> f32 {
 /// Leaky `ReLU` activation: `max(negative_slope` * x, x)
 #[must_use]
 pub fn leaky_relu(x: &Tensor, negative_slope: f32) -> Tensor {
-    let data: Vec<f32> = x
-        .data()
-        .iter()
-        .map(|&v| if v > 0.0 { v } else { negative_slope * v })
-        .collect();
-    Tensor::new(&data, x.shape())
+    let src = x.data();
+    let n = src.len();
+    let mut data = vec![0.0f32; n];
+    for i in 0..n {
+        data[i] = if src[i] > 0.0 { src[i] } else { negative_slope * src[i] };
+    }
+    Tensor::from_vec(data, x.shape())
 }
 
 /// Sigmoid activation: 1 / (1 + exp(-x))
@@ -83,8 +84,13 @@ pub fn sigmoid_scalar_f64(x: f64) -> f64 {
 // Contract: silu-kernel-v1, equation = "silu"
 #[must_use]
 pub fn silu(x: &Tensor) -> Tensor {
-    let data: Vec<f32> = x.data().iter().map(|&v| trueno::silu_scalar(v)).collect();
-    Tensor::new(&data, x.shape())
+    let src = x.data();
+    let n = src.len();
+    let mut data = vec![0.0f32; n];
+    for i in 0..n {
+        data[i] = trueno::silu_scalar(src[i]);
+    }
+    Tensor::from_vec(data, x.shape())
 }
 
 /// Scalar SiLU for non-Tensor contexts.
@@ -106,13 +112,14 @@ pub fn silu_scalar(x: f32) -> f32 {
 // Contract: swiglu-kernel-v1, equation = "swiglu"
 #[must_use]
 pub fn swiglu(x: &Tensor, gate: &Tensor) -> Tensor {
-    let data: Vec<f32> = x
-        .data()
-        .iter()
-        .zip(gate.data().iter())
-        .map(|(&xi, &gi)| xi * trueno::silu_scalar(gi))
-        .collect();
-    Tensor::new(&data, x.shape())
+    let src_x = x.data();
+    let src_g = gate.data();
+    let n = src_x.len();
+    let mut data = vec![0.0f32; n];
+    for i in 0..n {
+        data[i] = src_x[i] * trueno::silu_scalar(src_g[i]);
+    }
+    Tensor::from_vec(data, x.shape())
 }
 
 /// Scalar SwiGLU for non-Tensor contexts.
@@ -131,10 +138,30 @@ pub fn swiglu_scalar(x: f32, gate: f32) -> f32 {
 /// Equation: softmax(x)\_i = exp(x\_i - max) / sum\_j exp(x\_j - max)
 #[must_use]
 pub fn softmax_1d(logits: &[f32]) -> Vec<f32> {
-    let max = logits.iter().fold(f32::NEG_INFINITY, |a, &b| a.max(b));
-    let exp: Vec<f32> = logits.iter().map(|&x| (x - max).exp()).collect();
-    let sum: f32 = exp.iter().sum();
-    exp.iter().map(|&x| x / sum).collect()
+    let n = logits.len();
+    let mut out = vec![0.0f32; n];
+
+    // Pass 1: max — auto-vectorizable
+    let mut max_val = f32::NEG_INFINITY;
+    for &v in logits {
+        max_val = max_val.max(v);
+    }
+
+    // Pass 2: exp + sum — auto-vectorizable
+    let mut sum = 0.0f32;
+    for i in 0..n {
+        let e = (logits[i] - max_val).exp();
+        out[i] = e;
+        sum += e;
+    }
+
+    // Pass 3: normalize — auto-vectorizable
+    let inv_sum = 1.0 / sum;
+    for i in 0..n {
+        out[i] *= inv_sum;
+    }
+
+    out
 }
 
 /// Softmax on a 1D slice of f64 values.
@@ -176,9 +203,13 @@ pub fn tanh(x: &Tensor) -> Tensor {
 #[must_use]
 pub fn gelu(x: &Tensor) -> Tensor {
     // ONE PATH: Per-element delegates to trueno::gelu_scalar (UCBD §4).
-    let data: Vec<f32> = x.data().iter().map(|&v| trueno::gelu_scalar(v)).collect();
-
-    Tensor::new(&data, x.shape())
+    let src = x.data();
+    let n = src.len();
+    let mut data = vec![0.0f32; n];
+    for i in 0..n {
+        data[i] = trueno::gelu_scalar(src[i]);
+    }
+    Tensor::from_vec(data, x.shape())
 }
 
 /// Softmax along the last dimension of an ND tensor.
@@ -195,12 +226,33 @@ pub fn softmax(x: &Tensor, _dim: i32) -> Tensor {
     let shape = x.shape();
     let last_dim = shape[shape.len() - 1];
     let batch_size: usize = shape[..shape.len() - 1].iter().product();
+    let data = x.data();
+    let mut output = vec![0.0f32; data.len()];
 
-    let mut output = Vec::with_capacity(x.data().len());
     for b in 0..batch_size {
         let start = b * last_dim;
-        let row = &x.data()[start..start + last_dim];
-        output.extend(softmax_1d(row));
+        let row = &data[start..start + last_dim];
+        let out = &mut output[start..start + last_dim];
+
+        // Pass 1: max — auto-vectorizable
+        let mut max_val = f32::NEG_INFINITY;
+        for &v in row {
+            max_val = max_val.max(v);
+        }
+
+        // Pass 2: exp + sum — auto-vectorizable
+        let mut sum = 0.0f32;
+        for i in 0..last_dim {
+            let e = (row[i] - max_val).exp();
+            out[i] = e;
+            sum += e;
+        }
+
+        // Pass 3: normalize — auto-vectorizable
+        let inv_sum = 1.0 / sum;
+        for i in 0..last_dim {
+            out[i] *= inv_sum;
+        }
     }
 
     Tensor::from_vec(output, shape)
