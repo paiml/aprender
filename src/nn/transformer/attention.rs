@@ -104,7 +104,7 @@ impl ALiBi {
             }
         }
 
-        Tensor::new(&output, shape)
+        Tensor::from_vec(output, shape)
     }
 
     /// Get slopes for each head.

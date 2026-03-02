@@ -234,17 +234,26 @@ pub(crate) fn transpose_last_two(x: &Tensor) -> Tensor {
 
     let mut output = vec![0.0; x.data().len()];
 
+    // Tiled transpose: process TILE×TILE blocks per batch slice to stay in L1 cache.
+    const TILE: usize = 16;
+    let src = x.data();
     for b in 0..batch_size {
         let offset = b * matrix_size;
-        for i in 0..second_last {
-            for j in 0..last {
-                // Original: [b, i, j] -> New: [b, j, i]
-                output[offset + j * second_last + i] = x.data()[offset + i * last + j];
+        for i0 in (0..second_last).step_by(TILE) {
+            let i_end = (i0 + TILE).min(second_last);
+            for j0 in (0..last).step_by(TILE) {
+                let j_end = (j0 + TILE).min(last);
+                for i in i0..i_end {
+                    for j in j0..j_end {
+                        output[offset + j * second_last + i] =
+                            src[offset + i * last + j];
+                    }
+                }
             }
         }
     }
 
-    Tensor::new(&output, &new_shape)
+    Tensor::from_vec(output, &new_shape)
 }
 
 /// Batched matrix multiplication using SIMD-accelerated Trueno.
@@ -276,7 +285,7 @@ pub(crate) fn matmul_batched(a: &Tensor, b: &Tensor) -> Tensor {
         let output = Matrix::batched_matmul_4d(a.data(), b.data(), batch, heads, m, k1, n)
             .expect("batched_matmul_4d failed: dimensions validated but operation failed");
 
-        Tensor::new(&output, &[batch, heads, m, n])
+        Tensor::from_vec(output, &[batch, heads, m, n])
     } else {
         // Fallback for 2D/3D - uses Tensor's SIMD matmul
         a.matmul(b)
@@ -347,7 +356,7 @@ pub(super) fn reshape_for_attention(
         }
     }
 
-    Tensor::new(&output, &[batch, num_heads, seq_len, head_dim])
+    Tensor::from_vec(output, &[batch, num_heads, seq_len, head_dim])
 }
 
 /// Reshape from multi-head attention: [batch, heads, seq, `head_dim`] -> [batch, seq, embed]
@@ -381,7 +390,7 @@ pub(crate) fn reshape_from_attention(
         }
     }
 
-    Tensor::new(&output, &[batch, seq_len, embed_dim])
+    Tensor::from_vec(output, &[batch, seq_len, embed_dim])
 }
 
 /// ONE PATH: Delegates to `nn::functional::gelu` (UCBD §4).

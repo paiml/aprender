@@ -43,7 +43,7 @@ pub(super) fn sum_last_dim(x: &Tensor) -> Tensor {
     }
 
     let new_shape: Vec<usize> = shape[..shape.len() - 1].to_vec();
-    Tensor::new(&output, &new_shape)
+    Tensor::from_vec(output, &new_shape)
 }
 
 /// Matrix multiply with broadcasting for normalizer computation.
@@ -72,7 +72,7 @@ pub(super) fn matmul_with_broadcast(q: &Tensor, k_sum: &Tensor) -> Tensor {
         }
     }
 
-    Tensor::new(&output, &[batch, heads, seq_len, 1])
+    Tensor::from_vec(output, &[batch, heads, seq_len, 1])
 }
 
 /// Divide tensor by normalizer with epsilon for numerical stability.
@@ -99,7 +99,7 @@ pub(super) fn divide_with_eps(x: &Tensor, normalizer: &Tensor, eps: f32) -> Tens
         }
     }
 
-    Tensor::new(&output, x_shape)
+    Tensor::from_vec(output, x_shape)
 }
 
 /// Dimensions for KV head repetition.
@@ -173,7 +173,7 @@ pub(super) fn repeat_kv_heads(x: &Tensor, groups: usize) -> Tensor {
         }
     }
 
-    Tensor::new(&output, &[batch, num_heads, seq_len, head_dim])
+    Tensor::from_vec(output, &[batch, num_heads, seq_len, head_dim])
 }
 
 // ============================================================================
@@ -305,7 +305,7 @@ impl RotaryPositionEmbedding {
             }
         }
 
-        Tensor::new(&output, shape)
+        Tensor::from_vec(output, shape)
     }
 
     /// Get head dimension.

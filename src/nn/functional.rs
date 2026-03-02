@@ -203,7 +203,7 @@ pub fn softmax(x: &Tensor, _dim: i32) -> Tensor {
         output.extend(softmax_1d(row));
     }
 
-    Tensor::new(&output, shape)
+    Tensor::from_vec(output, shape)
 }
 
 /// Log softmax along the last dimension of an ND tensor.
@@ -235,7 +235,7 @@ pub fn log_softmax(x: &Tensor, _dim: i32) -> Tensor {
         }
     }
 
-    Tensor::new(&output, shape)
+    Tensor::from_vec(output, shape)
 }
 
 /// Dropout (must be called with training flag)
@@ -261,7 +261,7 @@ pub fn dropout(x: &Tensor, p: f32, training: bool) -> Tensor {
         })
         .collect();
 
-    Tensor::new(&data, x.shape())
+    Tensor::from_vec(data, x.shape())
 }
 
 /// Layer normalization over the last dimension of an ND tensor.
@@ -297,7 +297,7 @@ pub fn layer_norm(x: &Tensor, weight: &Tensor, bias: &Tensor, eps: f32) -> Tenso
         }
     }
 
-    Tensor::new(&output, shape)
+    Tensor::from_vec(output, shape)
 }
 
 /// RMS normalization over the last dimension of an ND tensor.
@@ -330,7 +330,7 @@ pub fn rms_norm(x: &Tensor, weight: &Tensor, eps: f32) -> Tensor {
         }
     }
 
-    Tensor::new(&output, shape)
+    Tensor::from_vec(output, shape)
 }
 
 /// Linear transformation: y = x @ weight^T + bias

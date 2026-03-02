@@ -133,9 +133,17 @@ impl Matrix<f32> {
     #[must_use]
     pub fn transpose(&self) -> Self {
         let mut data = vec![0.0; self.rows * self.cols];
-        for i in 0..self.rows {
-            for j in 0..self.cols {
-                data[j * self.rows + i] = self.data[i * self.cols + j];
+        // Tiled transpose: process TILE×TILE blocks to stay in L1 cache.
+        const TILE: usize = 16;
+        for i0 in (0..self.rows).step_by(TILE) {
+            let i_end = (i0 + TILE).min(self.rows);
+            for j0 in (0..self.cols).step_by(TILE) {
+                let j_end = (j0 + TILE).min(self.cols);
+                for i in i0..i_end {
+                    for j in j0..j_end {
+                        data[j * self.rows + i] = self.data[i * self.cols + j];
+                    }
+                }
             }
         }
         Self {

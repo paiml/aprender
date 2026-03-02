@@ -101,6 +101,33 @@ impl Tensor {
         }
     }
 
+    /// Create a tensor from an owned Vec, avoiding a copy.
+    ///
+    /// Use this instead of `Tensor::new(&data, shape)` when you already own the
+    /// data and don't need it afterwards. Eliminates one memcpy.
+    #[must_use]
+    pub fn from_vec(data: Vec<f32>, shape: &[usize]) -> Self {
+        let expected_len: usize = shape.iter().product();
+        assert_eq!(
+            data.len(),
+            expected_len,
+            "Data length {} doesn't match shape {:?} (expected {})",
+            data.len(),
+            shape,
+            expected_len
+        );
+
+        Self {
+            data: Vector::from_vec(data),
+            shape: shape.to_vec(),
+            grad: None,
+            requires_grad: false,
+            is_leaf: true,
+            grad_fn: None,
+            id: TensorId::new(),
+        }
+    }
+
     /// Create a tensor from a 1D slice (vector).
     #[must_use]
     pub fn from_slice(data: &[f32]) -> Self {
