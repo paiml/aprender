@@ -628,10 +628,10 @@ pub enum ExtendedCommands {
     Tools(ToolCommands),
 }
 
-/// Subcommands for `apr runs` — experiment run management (ALB-050)
+/// Subcommands for `apr runs` — experiment run management (ALB-050/051)
 #[derive(Subcommand, Debug)]
 pub enum RunsCommands {
-    /// List all training experiment runs
+    /// List all training experiment runs (with inline loss sparklines)
     Ls {
         /// Directory to scan for experiments (default: current dir)
         #[arg(long, value_name = "DIR")]
@@ -649,11 +649,29 @@ pub enum RunsCommands {
         #[arg(long, default_value = "50")]
         limit: usize,
     },
-    /// Show detailed metrics for a specific run
+    /// Show detailed metrics for a specific run (with braille loss curve)
     Show {
         /// Run ID
         #[arg(value_name = "RUN_ID")]
         run_id: String,
+        /// Directory containing experiment DB
+        #[arg(long, value_name = "DIR")]
+        dir: Option<PathBuf>,
+        /// Read from global registry
+        #[arg(long)]
+        global: bool,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Compare two runs side-by-side (loss curves, config diff, metrics)
+    Diff {
+        /// First run ID
+        #[arg(value_name = "RUN_A")]
+        run_a: String,
+        /// Second run ID
+        #[arg(value_name = "RUN_B")]
+        run_b: String,
         /// Directory containing experiment DB
         #[arg(long, value_name = "DIR")]
         dir: Option<PathBuf>,

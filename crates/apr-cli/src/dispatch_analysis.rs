@@ -22,6 +22,9 @@ fn dispatch_analysis_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             RunsCommands::Show {
                 run_id, dir, global, json,
             } => commands::runs::run_show(run_id, dir, *global, *json),
+            RunsCommands::Diff {
+                run_a, run_b, dir, global, json,
+            } => commands::runs::run_diff(run_a, run_b, dir, *global, *json),
         },
 
         ExtendedCommands::Cbtop {
