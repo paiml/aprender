@@ -686,7 +686,8 @@ fn run_classify(
             .unwrap_or(0)
     );
     let mut writer =
-        entrenar::monitor::tui::TrainingStateWriter::new(&output_dir, &experiment_id, model_name);
+        entrenar::monitor::tui::TrainingStateWriter::new(&output_dir, &experiment_id, model_name)
+            .with_console_progress(!json_output);
     // Wire GPU telemetry into training state for `apr monitor`
     if let Some((ref name, mem)) = gpu_info {
         writer.set_gpu(name, mem as f32 / 1e9);
