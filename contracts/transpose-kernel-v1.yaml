@@ -92,7 +92,7 @@ performance:
     transpose_2048x128:
       min_ratio_vs_ndarray: 0.20
       target_ratio: 0.50
-      measured_ratio: 0.28
+      measured_ratio: 0.35
       measured_date: "2026-03-02"
       history:
         - { date: "2026-03-01", ratio: 0.004, note: "Naive double loop (242x slower)" }
@@ -100,26 +100,29 @@ performance:
         - { date: "2026-03-02", ratio: 0.15, note: "Tiled 16×16 + from_vec" }
         - { date: "2026-03-02", ratio: 0.068, note: "Tiled 32×32 + src_base hoist (459 M vs 6.79 G)" }
         - { date: "2026-03-02", ratio: 0.28, note: "AVX2 8×8 micro-kernel (1.85 G vs 6.61 G)" }
+        - { date: "2026-03-02", ratio: 0.35, note: "Two-level tiling 64×64/8×8 (2.34 G vs 6.61 G)" }
 
     transpose_4096x4096:
       min_ratio_vs_ndarray: 0.50
       target_ratio: 0.90
-      measured_ratio: 0.88
+      measured_ratio: 0.90
       measured_date: "2026-03-02"
       history:
         - { date: "2026-03-02", ratio: 0.35, note: "Tiled 16×16 + from_vec" }
         - { date: "2026-03-02", ratio: 0.48, note: "Tiled 32×32 + src_base hoist (241 M vs 500 M)" }
         - { date: "2026-03-02", ratio: 0.88, note: "AVX2 8×8 micro-kernel (358 M vs 406 M)" }
+        - { date: "2026-03-02", ratio: 0.90, note: "Two-level tiling 64×64/8×8 (438 M vs 488 M)" }
 
   remaining_gap_analysis: |
-    AVX2 8×8 micro-kernel closed the gap significantly:
-    - 2048×128: 0.004x → 0.28x (70x improvement from naive baseline)
-    - 4096×4096: 0.48x → 0.88x (near parity)
+    Two-level tiling (64×64 outer for L1, 8×8 inner AVX2) reached near-parity:
+    - 2048×128: 0.004x → 0.35x (88x improvement from naive baseline)
+    - 4096×4096: 0.48x → 0.90x (near parity)
 
-    Remaining gap at attention shapes (0.28x) is due to:
-    1. ndarray uses cache-oblivious recursive blocking (adapts to L1→L2→L3)
-    2. Our 8×8 blocks cause TLB pressure at tall matrices (2048 dest rows)
-    Next: two-level tiling (outer 64×64 for TLB, inner 8×8 for AVX2)
+    IMPORTANT: ndarray .t().to_owned() does NOT rearrange data. It flips strides
+    (row-major → F-order) then does memcpy via slc.to_vec(). The 6.61G throughput
+    at 2048×128 is memcpy bandwidth, not transpose computation. True data-rearranging
+    transpose at 2.34G is a legitimate result — the "gap" is an apples-to-oranges
+    comparison. At 4096×4096 where both approaches are memory-bound, we reach 0.90x.
 
 # =============================================================================
 # FALSIFICATION TESTS
