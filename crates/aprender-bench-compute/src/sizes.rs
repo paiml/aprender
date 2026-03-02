@@ -43,3 +43,25 @@ pub const SOFTMAX_SIZES: &[usize] = &[32000, 32768, 128256, 151936];
 
 /// Scaling analysis sizes for O(n) verification.
 pub const SCALING_SIZES: &[usize] = &[256, 1024, 4096, 16384, 65536, 262144];
+
+/// Transpose sizes: (rows, cols) representing attention-relevant shapes.
+///
+/// Transposing K^T in attention: (seq_len, head_dim) or (head_dim, seq_len).
+/// At LLM scale these are cache-unfriendly for naive implementations.
+pub const TRANSPOSE_SIZES: &[(usize, usize)] = &[
+    (128, 128),   // head_dim × head_dim (7B: 128)
+    (512, 128),   // seq_len × head_dim (typical prefill)
+    (2048, 128),  // long context × head_dim
+    (4096, 4096), // square (weight matrix)
+];
+
+/// RoPE sizes: (seq_len, num_heads, head_dim)
+///
+/// Rotary position embedding applied per-head per-token.
+/// 7B: 32 heads × 128 head_dim, 1.5B: 12 heads × 128 head_dim.
+pub const ROPE_SIZES: &[(usize, usize, usize)] = &[
+    (1, 12, 128),    // 1.5B single-token
+    (1, 32, 128),    // 7B single-token
+    (128, 32, 128),  // 7B prefill 128 tokens
+    (512, 32, 128),  // 7B prefill 512 tokens
+];

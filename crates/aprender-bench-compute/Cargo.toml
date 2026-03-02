@@ -47,3 +47,11 @@ harness = false
 [[bench]]
 name = "tensor_overhead"
 harness = false
+
+[[bench]]
+name = "transpose"
+harness = false
+
+[[bench]]
+name = "rope"
+harness = false
