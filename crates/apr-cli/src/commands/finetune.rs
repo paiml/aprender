@@ -405,6 +405,10 @@ pub(crate) fn run(
             learning_rate,
             plan_only,
             json_output,
+            method,
+            quantize_nf4,
+            max_seq_len,
+            vram_gb,
         );
     }
 
@@ -551,16 +555,49 @@ fn run_classify(
     // GH-377: Read architecture from .apr metadata or --model-size fallback
     let model_config = super::model_config::resolve_transformer_config(model_path, model_size)?;
 
-    let classify_config = ClassifyConfig {
-        num_classes,
-        lora_rank: rank as usize,
-        lora_alpha: rank as f32,
-        learning_rate: learning_rate as f32,
-        epochs: epochs as usize,
-        max_seq_len: max_seq_len.unwrap_or(ClassifyConfig::default().max_seq_len),
-        quantize_nf4,
-        ..ClassifyConfig::default()
+    // Contract: provable-contracts/contracts/entrenar/qlora-hyperparameters-v1.yaml
+    //
+    // When QLoRA (quantize_nf4), start from research-grounded defaults.
+    // CLI args override where explicitly provided.
+    let classify_config = if quantize_nf4 {
+        let model_params = model_config.hidden_size as u64
+            * model_config.num_hidden_layers as u64
+            * 12; // rough param estimate
+        let mut cfg = ClassifyConfig::qlora_default(model_params);
+        cfg.num_classes = num_classes;
+        cfg.lora_rank = rank as usize;
+        cfg.learning_rate = learning_rate as f32;
+        cfg.epochs = epochs as usize;
+        // C-HP-003: alpha = 2 * rank (unless explicitly overridden via max_seq_len flag)
+        cfg.lora_alpha = (2 * rank) as f32;
+        // C-HP-004: use CLI --max-seq-len if provided, else contract default (256)
+        if let Some(msl) = max_seq_len {
+            cfg.max_seq_len = msl;
+        }
+        // C-HP-002: accumulation_steps to reach effective_batch=16
+        cfg.accumulation_steps = (16 / cfg.batch_size.max(1)).max(1);
+        cfg
+    } else {
+        ClassifyConfig {
+            num_classes,
+            lora_rank: rank as usize,
+            lora_alpha: rank as f32,
+            learning_rate: learning_rate as f32,
+            epochs: epochs as usize,
+            max_seq_len: max_seq_len.unwrap_or(ClassifyConfig::default().max_seq_len),
+            quantize_nf4,
+            ..ClassifyConfig::default()
+        }
     };
+
+    // Validate hyperparameters against research contracts
+    let model_params_est = model_config.hidden_size as u64
+        * model_config.num_hidden_layers as u64 * 12;
+    let diags = classify_config.validate_hyperparameters(model_params_est);
+    if !diags.items.is_empty() {
+        eprintln!("[HP] Contract validation (qlora-hyperparameters-v1.yaml):");
+        diags.print_all();
+    }
 
     if !json_output {
         output::kv(
@@ -579,20 +616,7 @@ fn run_classify(
         println!();
     }
 
-    // Use from_pretrained() when a model directory with weights is provided.
-    // When the user passes an .apr file (not a directory), create a random-init
-    // pipeline but record the file path so checkpoints can reference it.
-    let pipeline = if let Some(mp) = model_path.filter(|p| p.is_dir()) {
-        ClassifyPipeline::from_pretrained(mp, &model_config, classify_config).map_err(|e| {
-            CliError::ValidationFailed(format!("Failed to load pretrained model: {e}"))
-        })?
-    } else {
-        let mut pipe = ClassifyPipeline::new(&model_config, classify_config);
-        if let Some(mp) = model_path {
-            pipe.set_model_path(mp);
-        }
-        pipe
-    };
+    let pipeline = load_classify_pipeline(model_path, &model_config, classify_config)?;
 
     // Capture GPU info before pipeline is moved into trainer
     let gpu_info: Option<(String, usize)> = pipeline.gpu_name().zip(pipeline.gpu_total_memory());
@@ -608,33 +632,12 @@ fn run_classify(
     }
 
     if plan_only {
-        if json_output {
-            let json = serde_json::json!({
-                "task": "classify",
-                "num_classes": num_classes,
-                "lora_rank": rank,
-                "hidden_size": model_config.hidden_size,
-                "num_layers": model_config.num_hidden_layers,
-                "trainable_params": pipeline.num_trainable_parameters(),
-                "lora_adapters": pipeline.lora_layers.len(),
-            });
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&json).unwrap_or_default()
-            );
-        }
+        display_classify_plan(&pipeline, &model_config, num_classes, rank, json_output);
         return Ok(());
     }
 
-    // Training requires data
     let Some(data) = data_path else {
-        if !json_output {
-            println!();
-            println!("{}", "NEXT STEPS".white().bold());
-            println!("{}", "\u{2500}".repeat(50));
-            println!("  Provide --data <train.jsonl> to start training.");
-            println!("  Example: apr finetune --task classify --data train.jsonl -o checkpoints/");
-        }
+        display_classify_next_steps(json_output);
         return Ok(());
     };
 
@@ -852,6 +855,10 @@ fn run_instruct(
     learning_rate: f64,
     plan_only: bool,
     json_output: bool,
+    method: &str,
+    quantize_nf4: bool,
+    max_seq_len: Option<usize>,
+    vram_gb: f64,
 ) -> Result<()> {
     use entrenar::finetune::instruct_corpus::{load_instruct_corpus, instruct_corpus_stats};
     use entrenar::finetune::instruct_pipeline::{InstructConfig, InstructPipeline};
@@ -865,11 +872,16 @@ fn run_instruct(
     // GH-376: Read architecture from .apr metadata (single source of truth).
     let model_config = super::model_config::resolve_transformer_config(model_path, model_size)?;
 
+    // Determine if QLoRA is requested via --method qlora or --quantize-nf4
+    let is_qlora = quantize_nf4 || method.eq_ignore_ascii_case("qlora");
+
     let instruct_config = InstructConfig {
         lora_rank: rank as usize,
         lora_alpha: rank as f32 * 2.0,
         learning_rate: learning_rate as f32,
         epochs: epochs as usize,
+        max_seq_len: max_seq_len.unwrap_or(InstructConfig::default().max_seq_len),
+        quantize_nf4: is_qlora,
         ..InstructConfig::default()
     };
 
@@ -883,59 +895,37 @@ fn run_instruct(
                 model_config.vocab_size,
             ),
         );
+        output::kv("Method", if is_qlora { "QLoRA (NF4)" } else { "LoRA" });
         output::kv("LoRA rank", rank.to_string());
         output::kv("LoRA alpha", format!("{:.0}", rank as f32 * 2.0));
         output::kv("Epochs", epochs.to_string());
         output::kv("Learning rate", format!("{learning_rate:.1e}"));
+        output::kv("Max seq len", instruct_config.max_seq_len.to_string());
+        if is_qlora {
+            output::kv("VRAM budget", format!("{vram_gb:.1} GB"));
+        }
         println!();
     }
 
-    let pipeline = if let Some(mp) = model_path.filter(|p| p.is_dir()) {
-        InstructPipeline::from_pretrained(mp, &model_config, instruct_config).map_err(|e| {
-            CliError::ValidationFailed(format!("Failed to load pretrained model: {e}"))
-        })?
-    } else {
-        let mut pipe = InstructPipeline::new(&model_config, instruct_config);
-        if let Some(mp) = model_path {
-            pipe.set_model_path(mp);
-        }
-        pipe
-    };
+    let pipeline = load_instruct_pipeline(model_path, &model_config, instruct_config)?;
 
     if !json_output {
+        if let Some(ref name) = pipeline.gpu_name() {
+            output::kv("Device", format!("CUDA ({name})"));
+        } else {
+            output::kv("Device", "CPU");
+        }
         println!("{}", pipeline.summary());
         println!();
     }
 
     if plan_only {
-        if json_output {
-            let json = serde_json::json!({
-                "task": "instruct",
-                "lora_rank": rank,
-                "lora_alpha": rank as f32 * 2.0,
-                "hidden_size": model_config.hidden_size,
-                "num_layers": model_config.num_hidden_layers,
-                "vocab_size": model_config.vocab_size,
-                "trainable_params": pipeline.num_trainable_parameters(),
-            });
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&json).unwrap_or_default()
-            );
-        }
+        display_instruct_plan(&pipeline, &model_config, is_qlora, rank, json_output);
         return Ok(());
     }
 
     let Some(data) = data_path else {
-        if !json_output {
-            println!("{}", "NEXT STEPS".white().bold());
-            println!("{}", "\u{2500}".repeat(50));
-            println!("  Provide --data <train.jsonl> to start training.");
-            println!("  JSONL format: {{\"instruction\": \"...\", \"response\": \"...\"}}");
-            println!(
-                "  Example: apr finetune --task instruct --data instruct.jsonl -o checkpoints/"
-            );
-        }
+        display_instruct_next_steps(json_output);
         return Ok(());
     };
 
@@ -986,15 +976,152 @@ fn run_instruct(
 
     let result = trainer.train();
 
-    if !json_output {
+    if json_output {
+        display_instruct_result_json(&result, &output_dir);
+    } else {
         output::pipeline_stage("Training", output::StageStatus::Done);
         println!();
         display_instruct_result(&result, &output_dir);
-    } else {
-        display_instruct_result_json(&result, &output_dir);
     }
 
     Ok(())
+}
+
+/// Load classify pipeline from model path (directory, .apr file, or new).
+fn load_classify_pipeline(
+    model_path: Option<&Path>,
+    model_config: &entrenar::transformer::TransformerConfig,
+    config: entrenar::finetune::classify_pipeline::ClassifyConfig,
+) -> Result<entrenar::finetune::classify_pipeline::ClassifyPipeline> {
+    if let Some(mp) = model_path.filter(|p| p.is_dir()) {
+        entrenar::finetune::classify_pipeline::ClassifyPipeline::from_pretrained(
+            mp,
+            model_config,
+            config,
+        )
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to load pretrained model: {e}")))
+    } else if let Some(mp) = model_path.filter(|p| p.is_file()) {
+        entrenar::finetune::classify_pipeline::ClassifyPipeline::from_apr(
+            mp,
+            model_config,
+            config,
+        )
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to load APR model: {e}")))
+    } else {
+        let mut pipe =
+            entrenar::finetune::classify_pipeline::ClassifyPipeline::new(model_config, config);
+        if let Some(mp) = model_path {
+            pipe.set_model_path(mp);
+        }
+        Ok(pipe)
+    }
+}
+
+/// Display plan-only output for classify fine-tuning.
+fn display_classify_plan(
+    pipeline: &entrenar::finetune::classify_pipeline::ClassifyPipeline,
+    model_config: &entrenar::transformer::TransformerConfig,
+    num_classes: usize,
+    rank: u32,
+    json_output: bool,
+) {
+    if json_output {
+        let json = serde_json::json!({
+            "task": "classify",
+            "num_classes": num_classes,
+            "lora_rank": rank,
+            "hidden_size": model_config.hidden_size,
+            "num_layers": model_config.num_hidden_layers,
+            "trainable_params": pipeline.num_trainable_parameters(),
+            "lora_adapters": pipeline.lora_layers.len(),
+        });
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json).unwrap_or_default()
+        );
+    }
+}
+
+/// Display next-steps guidance when no classify training data is provided.
+fn display_classify_next_steps(json_output: bool) {
+    if !json_output {
+        println!();
+        println!("{}", "NEXT STEPS".white().bold());
+        println!("{}", "\u{2500}".repeat(50));
+        println!("  Provide --data <train.jsonl> to start training.");
+        println!("  Example: apr finetune --task classify --data train.jsonl -o checkpoints/");
+    }
+}
+
+/// Load instruct pipeline from model path (directory, .apr file, or new).
+fn load_instruct_pipeline(
+    model_path: Option<&Path>,
+    model_config: &entrenar::transformer::TransformerConfig,
+    config: entrenar::finetune::instruct_pipeline::InstructConfig,
+) -> Result<entrenar::finetune::instruct_pipeline::InstructPipeline> {
+    if let Some(mp) = model_path.filter(|p| p.is_dir()) {
+        entrenar::finetune::instruct_pipeline::InstructPipeline::from_pretrained(
+            mp,
+            model_config,
+            config,
+        )
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to load pretrained model: {e}")))
+    } else if let Some(mp) = model_path.filter(|p| p.is_file()) {
+        entrenar::finetune::instruct_pipeline::InstructPipeline::from_apr(
+            mp,
+            model_config,
+            config,
+        )
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to load APR model: {e}")))
+    } else {
+        let mut pipe =
+            entrenar::finetune::instruct_pipeline::InstructPipeline::new(model_config, config);
+        if let Some(mp) = model_path {
+            pipe.set_model_path(mp);
+        }
+        Ok(pipe)
+    }
+}
+
+/// Display plan-only output for instruct fine-tuning.
+fn display_instruct_plan(
+    pipeline: &entrenar::finetune::instruct_pipeline::InstructPipeline,
+    model_config: &entrenar::transformer::TransformerConfig,
+    is_qlora: bool,
+    rank: u32,
+    json_output: bool,
+) {
+    if json_output {
+        let json = serde_json::json!({
+            "task": "instruct",
+            "method": if is_qlora { "qlora" } else { "lora" },
+            "quantize_nf4": is_qlora,
+            "lora_rank": rank,
+            "lora_alpha": rank as f32 * 2.0,
+            "hidden_size": model_config.hidden_size,
+            "num_layers": model_config.num_hidden_layers,
+            "vocab_size": model_config.vocab_size,
+            "trainable_params": pipeline.num_trainable_parameters(),
+            "is_cuda": pipeline.is_cuda(),
+        });
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json).unwrap_or_default()
+        );
+    }
+}
+
+/// Display next-steps guidance when no training data is provided.
+fn display_instruct_next_steps(json_output: bool) {
+    if !json_output {
+        println!("{}", "NEXT STEPS".white().bold());
+        println!("{}", "\u{2500}".repeat(50));
+        println!("  Provide --data <train.jsonl> to start training.");
+        println!("  JSONL format: {{\"instruction\": \"...\", \"response\": \"...\"}}");
+        println!(
+            "  Example: apr finetune --task instruct --data instruct.jsonl -o checkpoints/"
+        );
+    }
 }
 
 /// Display instruction training results as human-readable text.
