@@ -42,8 +42,10 @@ pub fn apr_import<P: AsRef<Path>>(
         });
     if is_gguf {
         // PMAT-103: Use raw GGUF loading to preserve Q4_K/Q6_K quantization
-        // This is critical for format parity - we don't want to dequantize and re-quantize
-        return apr_import_gguf_raw(&local_path, output_path, &options);
+        // GH-375: Falls back to dequant→requant for unsupported dtypes (Q4_0, Q5_0, Q8_0)
+        if let Some(report) = try_gguf_raw_import(&local_path, output_path, &options)? {
+            return Ok(report);
+        }
     }
 
     // Non-GGUF path: Load tensors as f32, apply quantization during write
@@ -143,6 +145,32 @@ pub fn apr_import<P: AsRef<Path>>(
     )?;
 
     Ok(validation_result)
+}
+
+/// GH-375: Try raw GGUF import, falling back to dequant path for unsupported dtypes.
+///
+/// Returns `Ok(Some(report))` on raw success, `Ok(None)` to fall through to
+/// the dequant→requant path, or `Err` for non-recoverable failures.
+fn try_gguf_raw_import(
+    path: &Path,
+    output_path: &Path,
+    options: &ImportOptions,
+) -> Result<Option<ValidationReport>> {
+    match apr_import_gguf_raw(path, output_path, options) {
+        Ok(report) => Ok(Some(report)),
+        Err(e) => {
+            let msg = e.to_string();
+            if msg.contains("cannot represent exactly") || msg.contains("not yet supported") {
+                eprintln!(
+                    "[GH-375] Raw import failed ({}), falling back to dequant→requant path",
+                    msg.lines().next().unwrap_or("unsupported dtype")
+                );
+                Ok(None)
+            } else {
+                Err(e)
+            }
+        }
+    }
 }
 
 /// Import GGUF file preserving original quantization (Q4_K, Q6_K, etc.)

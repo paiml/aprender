@@ -201,6 +201,32 @@ fn resolve_brick_spec(brick_name: &str) -> Result<(f64, &'static str)> {
     }
 }
 
+/// GH-90: Return analytical budget for bricks without run() implementations.
+/// These bricks are architectural contracts — they define performance budgets
+/// but don't execute real computation. The budget is a theoretical estimate
+/// based on FLOP counts and memory bandwidth, not measured wall-clock time.
+#[cfg(feature = "inference")]
+fn analytical_budget_report(brick: &impl realizar::brick::ComputeBrick) -> realizar::brick::BenchmarkReport {
+    let budget = brick.budget();
+    eprintln!(
+        "[GH-90] Brick '{}' has no run() implementation — reporting analytical budget ({:.1}µs), not measured timing",
+        brick.name(),
+        budget.us_per_token
+    );
+    realizar::brick::BenchmarkReport {
+        brick_name: brick.name().to_string(),
+        mean_us: budget.us_per_token,
+        std_us: 0.0,
+        cv: 0.0,
+        p50_us: budget.us_per_token,
+        p99_us: budget.us_per_token,
+        tokens_per_sec: 1_000_000.0 / budget.us_per_token,
+        budget_us: budget.us_per_token,
+        budget_met: true,
+        statistically_valid: true,
+    }
+}
+
 /// Execute the benchmark for a specific brick type, returning the report.
 #[cfg(feature = "inference")]
 fn execute_brick_benchmark(
@@ -212,6 +238,10 @@ fn execute_brick_benchmark(
         RmsNormBrick, RopeBrick, TransformerLayerBrick,
     };
 
+    // GH-90: Bricks without run() return analytical budget directly.
+    // Only rms_norm has a real run() implementation — all others are
+    // architectural contracts with budget() only. Report the analytical
+    // budget rather than timing a no-op budget() call.
     match brick_name {
         "rms_norm" => {
             let brick = RmsNormBrick::new(vec![1.0; 896], 1e-5);
@@ -228,76 +258,40 @@ fn execute_brick_benchmark(
         }
         "qkv" => {
             let brick = QkvBrick::new(896, 896, 128, 128);
-            benchmark_brick(
-                &brick,
-                || {
-                    let start = Instant::now();
-                    let _ = brick.budget();
-                    start.elapsed().as_nanos() as f64 / 1000.0
-                },
-                bench_config,
-            )
+            analytical_budget_report(&brick)
         }
         "rope" => {
             let brick = RopeBrick::new(64, 14, 1_000_000.0, 2);
-            benchmark_brick(
-                &brick,
-                || {
-                    let start = Instant::now();
-                    let _ = brick.budget();
-                    start.elapsed().as_nanos() as f64 / 1000.0
-                },
-                bench_config,
-            )
+            analytical_budget_report(&brick)
         }
         "attn" | "attention" => {
             let brick = AttentionBrick::new(14, 2, 64);
-            benchmark_brick(
-                &brick,
-                || {
-                    let start = Instant::now();
-                    let _ = brick.budget();
-                    start.elapsed().as_nanos() as f64 / 1000.0
-                },
-                bench_config,
-            )
+            analytical_budget_report(&brick)
         }
         "o_proj" => {
             let brick = OProjBrick::new(896, 896);
-            benchmark_brick(
-                &brick,
-                || {
-                    let start = Instant::now();
-                    let _ = brick.budget();
-                    start.elapsed().as_nanos() as f64 / 1000.0
-                },
-                bench_config,
-            )
+            analytical_budget_report(&brick)
         }
         "ffn" => {
             let brick = FfnBrick::new(896, 4864);
-            benchmark_brick(
-                &brick,
-                || {
-                    let start = Instant::now();
-                    let _ = brick.budget();
-                    start.elapsed().as_nanos() as f64 / 1000.0
-                },
-                bench_config,
-            )
+            analytical_budget_report(&brick)
         }
         "layer" => {
             let brick =
                 TransformerLayerBrick::from_config(0, 896, 14, 2, 4864, 1e-5, 1_000_000.0, 2);
-            benchmark_brick(
-                &brick,
-                || {
-                    let start = Instant::now();
-                    let _ = brick.total_budget_us();
-                    start.elapsed().as_nanos() as f64 / 1000.0
-                },
-                bench_config,
-            )
+            let budget_us = brick.total_budget_us();
+            realizar::brick::BenchmarkReport {
+                brick_name: "layer".to_string(),
+                mean_us: budget_us,
+                std_us: 0.0,
+                cv: 0.0,
+                p50_us: budget_us,
+                p99_us: budget_us,
+                tokens_per_sec: 1_000_000.0 / budget_us,
+                budget_us,
+                budget_met: true,
+                statistically_valid: true,
+            }
         }
         _ => unreachable!(),
     }
@@ -317,6 +311,20 @@ fn print_brick_results(
     let cv = report.cv;
     let budget_met = mean_us <= budget_target;
     let cv_stable = cv <= 0.05;
+
+    // GH-90: Indicate when results are analytical (not measured)
+    let is_analytical = report.std_us == 0.0 && report.p50_us == report.p99_us && report.p50_us == report.mean_us;
+    if is_analytical {
+        println!(
+            "{}",
+            "NOTE: This is an ANALYTICAL budget estimate (no run() implementation).".yellow()
+        );
+        println!(
+            "{}",
+            "Use `apr bench <model> --fast` for real measured throughput.".yellow()
+        );
+        println!();
+    }
 
     // Mean latency
     let mean_str = format!("{:.2}µs", mean_us);
