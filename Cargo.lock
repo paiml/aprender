@@ -290,6 +290,7 @@ dependencies = [
  "rmp-serde",
  "serde",
  "serde_json",
+ "serde_yaml_ng",
  "tabled",
  "tempfile",
  "thiserror 2.0.18",
@@ -2160,7 +2161,9 @@ checksum = "34aa73646ffb006b8f5147f3dc182bd4bcb190227ce861fc4a4844bf8e3cb2c0"
 name = "entrenar"
 version = "0.7.5"
 dependencies = [
+ "alimentar 0.2.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "aprender 0.27.2",
+ "arrow 57.2.0",
  "bytemuck",
  "chrono",
  "clap",
@@ -2183,7 +2186,7 @@ dependencies = [
  "tokio",
  "toml",
  "trueno 0.16.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "trueno-gpu 0.4.19 (registry+https://github.com/rust-lang/crates.io-index)",
+ "trueno-gpu",
  "trueno-viz 0.2.1",
  "zip",
 ]
@@ -5103,7 +5106,7 @@ dependencies = [
  "tower 0.4.13",
  "tracing",
  "trueno 0.16.1",
- "trueno-gpu 0.4.19",
+ "trueno-gpu",
  "trueno-quant 0.1.0",
  "uuid",
 ]
@@ -6529,7 +6532,7 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.18",
  "toml",
- "trueno-gpu 0.4.19 (registry+https://github.com/rust-lang/crates.io-index)",
+ "trueno-gpu",
  "trueno-quant 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "wgpu",
 ]
@@ -6577,23 +6580,12 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.18",
- "trueno-gpu 0.4.19 (registry+https://github.com/rust-lang/crates.io-index)",
+ "trueno-gpu",
 ]
 
 [[package]]
 name = "trueno-gpu"
 version = "0.4.19"
-dependencies = [
- "batuta-common",
- "libloading",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "trueno-gpu"
-version = "0.4.19"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "57884e4d63829bd5e4207f1bd84d18e005c7182d2c22c0a816eaf6e29f9fe2e5"
 dependencies = [
  "batuta-common",
  "libloading",

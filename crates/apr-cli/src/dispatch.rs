@@ -82,32 +82,7 @@ fn dispatch_runtime_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             )
         }
 
-        Commands::Serve {
-            file,
-            port,
-            host,
-            no_cors,
-            no_metrics,
-            no_gpu,
-            gpu,
-            batch,
-            trace,
-            trace_level,
-            profile,
-        } => dispatch_serve(
-            file,
-            *port,
-            host,
-            *no_cors,
-            *no_metrics,
-            *no_gpu,
-            *gpu,
-            *batch,
-            *trace,
-            trace_level,
-            *profile,
-            cli.verbose,
-        ),
+        Commands::Serve { command } => dispatch_serve_command(command, cli),
 
         _ => return None,
     })
@@ -344,6 +319,8 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             num_classes,
             checkpoint_format,
             oversample,
+            max_seq_len,
+            quantize_nf4,
         }) => finetune::run(
             file.as_deref(),
             method,
@@ -361,6 +338,8 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             *num_classes,
             checkpoint_format,
             *oversample,
+            *max_seq_len,
+            *quantize_nf4,
             cli.json,
         ),
         Commands::ModelOps(ModelOpsCommands::Prune {

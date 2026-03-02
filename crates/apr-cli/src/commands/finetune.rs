@@ -365,6 +365,8 @@ pub(crate) fn run(
     num_classes: usize,
     checkpoint_format: &str,
     oversample: bool,
+    max_seq_len: Option<usize>,
+    quantize_nf4: bool,
     json_output: bool,
 ) -> Result<()> {
     if merge_mode {
@@ -385,6 +387,8 @@ pub(crate) fn run(
             plan_only,
             checkpoint_format,
             oversample,
+            max_seq_len,
+            quantize_nf4,
             json_output,
         );
     }
@@ -532,6 +536,8 @@ fn run_classify(
     plan_only: bool,
     checkpoint_format: &str,
     oversample: bool,
+    max_seq_len: Option<usize>,
+    quantize_nf4: bool,
     json_output: bool,
 ) -> Result<()> {
     use entrenar::finetune::classify_pipeline::{ClassifyConfig, ClassifyPipeline};
@@ -546,6 +552,7 @@ fn run_classify(
     // Select model config based on model_size
     let model_config = match model_size.unwrap_or("tiny") {
         "0.5B" | "500M" | "qwen2-0.5b" => TransformerConfig::qwen2_0_5b(),
+        "4B" | "qwen3-4b" | "qwen3" => TransformerConfig::qwen3_4b(),
         "9B" | "qwen3.5-9b" | "qwen3_5" | "qwen3.5" => TransformerConfig::qwen3_5_9b(),
         _ => TransformerConfig::tiny(), // For testing
     };
@@ -556,6 +563,7 @@ fn run_classify(
         lora_alpha: rank as f32,
         learning_rate: learning_rate as f32,
         epochs: epochs as usize,
+        max_seq_len: max_seq_len.unwrap_or(ClassifyConfig::default().max_seq_len),
         ..ClassifyConfig::default()
     };
 
@@ -571,6 +579,7 @@ fn run_classify(
         output::kv("LoRA rank", rank.to_string());
         output::kv("Epochs", epochs.to_string());
         output::kv("Learning rate", format!("{learning_rate:.1e}"));
+        output::kv("Max seq len", classify_config.max_seq_len.to_string());
         output::kv("Checkpoint format", checkpoint_format);
         println!();
     }
@@ -664,6 +673,7 @@ fn run_classify(
         seed: 42,
         log_interval: 1,
         oversample_minority: oversample,
+        quantize_nf4,
         ..TrainingConfig::default()
     };
 

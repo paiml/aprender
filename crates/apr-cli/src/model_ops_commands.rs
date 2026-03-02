@@ -51,6 +51,12 @@ pub enum ModelOpsCommands {
         /// Oversample minority classes to match majority (for imbalanced datasets)
         #[arg(long)]
         oversample: bool,
+        /// Maximum sequence length for GPU buffer allocation (lower = less VRAM)
+        #[arg(long, value_name = "LEN")]
+        max_seq_len: Option<usize>,
+        /// Quantize frozen weights to NF4 (4-bit) for QLoRA training (~8x VRAM savings)
+        #[arg(long)]
+        quantize_nf4: bool,
     },
     /// Prune model (structured/unstructured pruning) (GH-247)
     Prune {

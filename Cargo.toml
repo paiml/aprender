@@ -425,3 +425,4 @@ replace = "## [{{version}}] - {{date}}"
 aprender = { path = "." }
 entrenar = { path = "../entrenar" }
 realizar = { path = "../realizar" }
+trueno-gpu = { path = "../trueno/trueno-gpu" }
