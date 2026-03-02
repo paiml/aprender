@@ -366,10 +366,16 @@ pub fn layer_norm(x: &Tensor, weight: &Tensor, bias: &Tensor, eps: f32) -> Tenso
     let data = x.data();
     let weight_data = weight.data();
     let bias_data = bias.data();
-    let mut output = vec![0.0f32; data.len()];
 
     // Delegate to trueno's AVX2+FMA SIMD layer_norm per row.
     // Contract: provable-contracts/contracts/layernorm-kernel-v1.yaml
+    if batch_size == 1 {
+        // Fast path: single row, use alloc variant (no zero-fill)
+        let output = trueno::blis::norms::layer_norm_alloc(data, weight_data, bias_data, eps);
+        return Tensor::from_vec(output, shape);
+    }
+
+    let mut output = vec![0.0f32; data.len()];
     for b in 0..batch_size {
         let start = b * last_dim;
         let slice = &data[start..start + last_dim];
@@ -398,10 +404,16 @@ pub fn rms_norm(x: &Tensor, weight: &Tensor, eps: f32) -> Tensor {
 
     let data = x.data();
     let weight_data = weight.data();
-    let mut output = vec![0.0f32; data.len()];
 
     // Delegate to trueno's AVX2+FMA SIMD rms_norm per row.
     // Contract: provable-contracts/contracts/rmsnorm-kernel-v1.yaml
+    if batch_size == 1 {
+        // Fast path: single row, use alloc variant (no zero-fill)
+        let output = trueno::blis::norms::rms_norm_alloc(data, weight_data, eps);
+        return Tensor::from_vec(output, shape);
+    }
+
+    let mut output = vec![0.0f32; data.len()];
     for b in 0..batch_size {
         let start = b * last_dim;
         let slice = &data[start..start + last_dim];

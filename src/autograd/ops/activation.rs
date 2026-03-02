@@ -7,12 +7,9 @@ impl Tensor {
     /// `ReLU` activation: z = max(0, self)
     #[must_use]
     pub fn relu(&self) -> Tensor {
-        let src = self.data();
-        let n = src.len();
-        let mut data = vec![0.0f32; n];
-        for i in 0..n {
-            data[i] = src[i].max(0.0);
-        }
+        // Delegate to trueno's AVX2 SIMD relu with zero-copy allocation.
+        // Contract: provable-contracts/contracts/activation-kernel-v1.yaml
+        let data = trueno::blis::elementwise::relu_alloc(self.data());
         let mut result = Tensor::from_vec(data, self.shape());
 
         if is_grad_enabled() && self.requires_grad_enabled() {

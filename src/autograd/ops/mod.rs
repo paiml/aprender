@@ -25,13 +25,8 @@ impl Tensor {
     /// Element-wise addition: z = self + other
     #[must_use]
     pub fn add(&self, other: &Tensor) -> Tensor {
-        let src_a = self.data();
-        let src_b = other.data();
-        let n = src_a.len();
-        let mut data = vec![0.0f32; n];
-        for i in 0..n {
-            data[i] = src_a[i] + src_b[i];
-        }
+        // Delegate to trueno's AVX2 SIMD add with zero-copy allocation.
+        let data = trueno::blis::elementwise::add_alloc(self.data(), other.data());
 
         let mut result = Tensor::from_vec(data, self.shape());
 
@@ -176,12 +171,8 @@ impl Tensor {
     /// Scalar multiplication: z = self * scalar
     #[must_use]
     pub fn mul_scalar(&self, scalar: f32) -> Tensor {
-        let src = self.data();
-        let n = src.len();
-        let mut data = vec![0.0f32; n];
-        for i in 0..n {
-            data[i] = src[i] * scalar;
-        }
+        // Delegate to trueno's AVX2 SIMD mul_scalar with zero-copy allocation.
+        let data = trueno::blis::elementwise::mul_scalar_alloc(self.data(), scalar);
         let mut result = Tensor::from_vec(data, self.shape());
 
         if is_grad_enabled() && self.requires_grad_enabled() {
