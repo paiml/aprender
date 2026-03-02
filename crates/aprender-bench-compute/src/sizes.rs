@@ -55,6 +55,9 @@ pub const TRANSPOSE_SIZES: &[(usize, usize)] = &[
     (4096, 4096), // square (weight matrix)
 ];
 
+/// Element-wise op sizes (hidden dimensions for add, mul_scalar).
+pub const ELEMENTWISE_SIZES: &[usize] = &[1536, 4096, 8192, 16384];
+
 /// RoPE sizes: (seq_len, num_heads, head_dim)
 ///
 /// Rotary position embedding applied per-head per-token.
