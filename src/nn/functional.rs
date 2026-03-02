@@ -135,33 +135,13 @@ pub fn swiglu_scalar(x: f32, gate: f32) -> f32 {
 ///
 /// ONE PATH: All slice-based softmax in the codebase MUST delegate here (UCBD §4).
 ///
+/// Delegates to trueno's AVX2 SIMD softmax kernel (4-pass: max, exp, sum, normalize).
+/// Contract: trueno/contracts/softmax-kernel-v1.yaml
+///
 /// Equation: softmax(x)\_i = exp(x\_i - max) / sum\_j exp(x\_j - max)
 #[must_use]
 pub fn softmax_1d(logits: &[f32]) -> Vec<f32> {
-    let n = logits.len();
-    let mut out = vec![0.0f32; n];
-
-    // Pass 1: max — auto-vectorizable
-    let mut max_val = f32::NEG_INFINITY;
-    for &v in logits {
-        max_val = max_val.max(v);
-    }
-
-    // Pass 2: exp + sum — auto-vectorizable
-    let mut sum = 0.0f32;
-    for i in 0..n {
-        let e = (logits[i] - max_val).exp();
-        out[i] = e;
-        sum += e;
-    }
-
-    // Pass 3: normalize — auto-vectorizable
-    let inv_sum = 1.0 / sum;
-    for i in 0..n {
-        out[i] *= inv_sum;
-    }
-
-    out
+    trueno::blis::softmax::softmax_1d_alloc(logits)
 }
 
 /// Softmax on a 1D slice of f64 values.
