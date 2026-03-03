@@ -367,6 +367,12 @@ pub(crate) fn run(
     oversample: bool,
     max_seq_len: Option<usize>,
     quantize_nf4: bool,
+    gpus: Option<&str>,
+    gpu_backend: &str,
+    role: Option<&str>,
+    bind: Option<&str>,
+    coordinator: Option<&str>,
+    expect_workers: Option<usize>,
     json_output: bool,
 ) -> Result<()> {
     if merge_mode {
@@ -389,6 +395,12 @@ pub(crate) fn run(
             oversample,
             max_seq_len,
             quantize_nf4,
+            gpus,
+            gpu_backend,
+            role,
+            bind,
+            coordinator,
+            expect_workers,
             json_output,
         );
     }
@@ -507,6 +519,52 @@ fn display_run_header(
 include!("finetune_display_next_validate.rs");
 
 // =============================================================================
+// Distributed training config builder
+// =============================================================================
+
+/// Build `DistributedConfig` from CLI flags, if `--role` is specified.
+///
+/// Returns `None` for single-machine training (no `--role` flag).
+fn build_distributed_config(
+    role: Option<&str>,
+    bind: Option<&str>,
+    coordinator: Option<&str>,
+    expect_workers: Option<usize>,
+) -> Result<Option<entrenar::finetune::DistributedConfig>> {
+    let Some(role_str) = role else {
+        return Ok(None);
+    };
+
+    match role_str {
+        "coordinator" => {
+            let bind_addr = bind
+                .unwrap_or("0.0.0.0:9000")
+                .parse()
+                .map_err(|e| CliError::ValidationFailed(format!("Invalid bind address: {e}")))?;
+            let workers = expect_workers.unwrap_or(1);
+            Ok(Some(entrenar::finetune::DistributedConfig::coordinator(
+                bind_addr, workers,
+            )))
+        }
+        "worker" => {
+            let coord_addr = coordinator
+                .or(bind)
+                .unwrap_or("127.0.0.1:9000")
+                .parse()
+                .map_err(|e| {
+                    CliError::ValidationFailed(format!("Invalid coordinator address: {e}"))
+                })?;
+            Ok(Some(entrenar::finetune::DistributedConfig::worker(
+                coord_addr,
+            )))
+        }
+        other => Err(CliError::ValidationFailed(format!(
+            "Unknown role '{other}'. Use: coordinator, worker"
+        ))),
+    }
+}
+
+// =============================================================================
 /// Print corpus stats (extracted to reduce cognitive complexity in run_classify).
 fn print_corpus_stats(stats: &entrenar::finetune::SafetyCorpusStats) {
     output::subheader("Corpus");
@@ -520,6 +578,119 @@ fn print_corpus_stats(stats: &entrenar::finetune::SafetyCorpusStats) {
 
 // Classification fine-tuning (--task classify)
 // =============================================================================
+
+/// Build ClassifyConfig from CLI args, applying QLoRA defaults when appropriate.
+///
+/// Contract: provable-contracts/contracts/entrenar/qlora-hyperparameters-v1.yaml
+fn build_classify_config(
+    model_config: &entrenar::transformer::TransformerConfig,
+    num_classes: usize,
+    rank: u32,
+    epochs: u32,
+    learning_rate: f64,
+    max_seq_len: Option<usize>,
+    quantize_nf4: bool,
+) -> entrenar::finetune::classify_pipeline::ClassifyConfig {
+    use entrenar::finetune::classify_pipeline::ClassifyConfig;
+
+    let classify_config = if quantize_nf4 {
+        let model_params = model_config.hidden_size as u64
+            * model_config.num_hidden_layers as u64
+            * 12;
+        let mut cfg = ClassifyConfig::qlora_default(model_params);
+        cfg.num_classes = num_classes;
+        cfg.lora_rank = rank as usize;
+        cfg.learning_rate = learning_rate as f32;
+        cfg.epochs = epochs as usize;
+        cfg.lora_alpha = (2 * rank) as f32;
+        if let Some(msl) = max_seq_len {
+            cfg.max_seq_len = msl;
+        }
+        cfg.accumulation_steps = (16 / cfg.batch_size.max(1)).max(1);
+        cfg
+    } else {
+        ClassifyConfig {
+            num_classes,
+            lora_rank: rank as usize,
+            lora_alpha: rank as f32,
+            learning_rate: learning_rate as f32,
+            epochs: epochs as usize,
+            max_seq_len: max_seq_len.unwrap_or(ClassifyConfig::default().max_seq_len),
+            quantize_nf4,
+            ..ClassifyConfig::default()
+        }
+    };
+
+    // Validate against research contracts
+    let model_params_est = model_config.hidden_size as u64
+        * model_config.num_hidden_layers as u64 * 12;
+    let diags = classify_config.validate_hyperparameters(model_params_est);
+    if !diags.items.is_empty() {
+        eprintln!("[HP] Contract validation (qlora-hyperparameters-v1.yaml):");
+        diags.print_all();
+    }
+
+    classify_config
+}
+
+/// Display classify header info (model, config, GPU settings).
+#[allow(clippy::too_many_arguments)]
+fn display_classify_header(
+    model_config: &entrenar::transformer::TransformerConfig,
+    classify_config: &entrenar::finetune::classify_pipeline::ClassifyConfig,
+    num_classes: usize,
+    rank: u32,
+    epochs: u32,
+    learning_rate: f64,
+    checkpoint_format: &str,
+    gpu_backend: &str,
+    gpus: Option<&str>,
+) {
+    output::kv(
+        "Model",
+        format!("{}h x {}L", model_config.hidden_size, model_config.num_hidden_layers),
+    );
+    output::kv("Classes", num_classes.to_string());
+    output::kv("LoRA rank", rank.to_string());
+    output::kv("Epochs", epochs.to_string());
+    output::kv("Learning rate", format!("{learning_rate:.1e}"));
+    output::kv("Max seq len", classify_config.max_seq_len.to_string());
+    output::kv("Checkpoint format", checkpoint_format);
+    output::kv("GPU backend", gpu_backend);
+    if let Some(g) = gpus {
+        output::kv("GPU indices", g);
+    }
+    println!();
+}
+
+/// Display distributed training config info.
+fn display_distributed_info(config: &Option<entrenar::finetune::DistributedConfig>) {
+    if let Some(ref dc) = config {
+        output::kv("Distributed", format!("{:?}", dc.role));
+        output::kv("Bind address", dc.bind_addr.to_string());
+        if let Some(addr) = dc.coordinator_addr {
+            output::kv("Coordinator", addr.to_string());
+        }
+        output::kv("Expected workers", dc.expect_workers.to_string());
+    }
+}
+
+/// Display GPU/device info in non-JSON output.
+fn display_device_info(gpu_info: &Option<(String, usize)>, gpu_backend: &str) {
+    if let Some((ref name, _)) = gpu_info {
+        output::kv("Device", format!("CUDA ({name})"));
+    } else {
+        let device_str = match gpu_backend {
+            "wgpu" => "wgpu (GPU)".to_string(),
+            "auto" => {
+                if gpu_info.is_some() { "CUDA".to_string() }
+                else { "CPU".to_string() }
+            }
+            _ => "CPU".to_string(),
+        };
+        output::kv("Device", device_str);
+    }
+}
 
 /// Run classification fine-tuning pipeline via entrenar.
 ///
@@ -542,6 +713,12 @@ fn run_classify(
     oversample: bool,
     max_seq_len: Option<usize>,
     quantize_nf4: bool,
+    gpus: Option<&str>,
+    gpu_backend: &str,
+    role: Option<&str>,
+    bind: Option<&str>,
+    coordinator: Option<&str>,
+    expect_workers: Option<usize>,
     json_output: bool,
 ) -> Result<()> {
     use entrenar::finetune::classify_pipeline::{ClassifyConfig, ClassifyPipeline};
@@ -555,65 +732,21 @@ fn run_classify(
     // GH-377: Read architecture from .apr metadata or --model-size fallback
     let model_config = super::model_config::resolve_transformer_config(model_path, model_size)?;
 
-    // Contract: provable-contracts/contracts/entrenar/qlora-hyperparameters-v1.yaml
-    //
-    // When QLoRA (quantize_nf4), start from research-grounded defaults.
-    // CLI args override where explicitly provided.
-    let classify_config = if quantize_nf4 {
-        let model_params = model_config.hidden_size as u64
-            * model_config.num_hidden_layers as u64
-            * 12; // rough param estimate
-        let mut cfg = ClassifyConfig::qlora_default(model_params);
-        cfg.num_classes = num_classes;
-        cfg.lora_rank = rank as usize;
-        cfg.learning_rate = learning_rate as f32;
-        cfg.epochs = epochs as usize;
-        // C-HP-003: alpha = 2 * rank (unless explicitly overridden via max_seq_len flag)
-        cfg.lora_alpha = (2 * rank) as f32;
-        // C-HP-004: use CLI --max-seq-len if provided, else contract default (256)
-        if let Some(msl) = max_seq_len {
-            cfg.max_seq_len = msl;
-        }
-        // C-HP-002: accumulation_steps to reach effective_batch=16
-        cfg.accumulation_steps = (16 / cfg.batch_size.max(1)).max(1);
-        cfg
-    } else {
-        ClassifyConfig {
-            num_classes,
-            lora_rank: rank as usize,
-            lora_alpha: rank as f32,
-            learning_rate: learning_rate as f32,
-            epochs: epochs as usize,
-            max_seq_len: max_seq_len.unwrap_or(ClassifyConfig::default().max_seq_len),
-            quantize_nf4,
-            ..ClassifyConfig::default()
-        }
-    };
-
-    // Validate hyperparameters against research contracts
-    let model_params_est = model_config.hidden_size as u64
-        * model_config.num_hidden_layers as u64 * 12;
-    let diags = classify_config.validate_hyperparameters(model_params_est);
-    if !diags.items.is_empty() {
-        eprintln!("[HP] Contract validation (qlora-hyperparameters-v1.yaml):");
-        diags.print_all();
-    }
+    let classify_config = build_classify_config(
+        &model_config, num_classes, rank, epochs, learning_rate, max_seq_len, quantize_nf4,
+    );
 
     if !json_output {
-        output::kv(
-            "Model",
-            format!(
-                "{}h x {}L",
-                model_config.hidden_size, model_config.num_hidden_layers
-            ),
+        display_classify_header(
+            &model_config, &classify_config, num_classes, rank, epochs,
+            learning_rate, checkpoint_format, gpu_backend, gpus,
         );
-        output::kv("Classes", num_classes.to_string());
-        output::kv("LoRA rank", rank.to_string());
-        output::kv("Epochs", epochs.to_string());
-        output::kv("Learning rate", format!("{learning_rate:.1e}"));
-        output::kv("Max seq len", classify_config.max_seq_len.to_string());
-        output::kv("Checkpoint format", checkpoint_format);
-        println!();
+    }
+
+    let distributed_config = build_distributed_config(role, bind, coordinator, expect_workers)?;
+
+    if !json_output {
+        display_distributed_info(&distributed_config);
     }
 
     let pipeline = load_classify_pipeline(model_path, &model_config, classify_config)?;
@@ -622,11 +755,7 @@ fn run_classify(
     let gpu_info: Option<(String, usize)> = pipeline.gpu_name().zip(pipeline.gpu_total_memory());
 
     if !json_output {
-        if let Some((ref name, _)) = gpu_info {
-            output::kv("Device", format!("CUDA ({name})"));
-        } else {
-            output::kv("Device", "CPU");
-        }
+        display_device_info(&gpu_info, gpu_backend);
         println!("{}", pipeline.summary());
         println!();
     }
@@ -672,6 +801,7 @@ fn run_classify(
         log_interval: 1,
         oversample_minority: oversample,
         quantize_nf4,
+        distributed: distributed_config.clone(),
         ..TrainingConfig::default()
     };
 
@@ -704,8 +834,23 @@ fn run_classify(
         println!();
     }
 
-    // Run training
-    let result = trainer.train();
+    // Run training — dispatch to worker mode if configured
+    let is_worker = distributed_config
+        .as_ref()
+        .is_some_and(|dc| matches!(dc.role, entrenar::finetune::NodeRole::Worker));
+
+    let result = if is_worker {
+        if !json_output {
+            output::pipeline_stage("Worker mode", output::StageStatus::Running);
+            println!("  Connecting to coordinator...");
+            println!();
+        }
+        trainer
+            .run_worker()
+            .map_err(|e| CliError::ValidationFailed(format!("Worker training failed: {e}")))?
+    } else {
+        trainer.train()
+    };
 
     if !json_output {
         output::pipeline_stage("Training", output::StageStatus::Done);

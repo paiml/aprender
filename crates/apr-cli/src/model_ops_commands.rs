@@ -57,6 +57,24 @@ pub enum ModelOpsCommands {
         /// Quantize frozen weights to NF4 (4-bit) for QLoRA training (~8x VRAM savings)
         #[arg(long)]
         quantize_nf4: bool,
+        /// GPU indices for data-parallel training (e.g., "0,1" for dual GPU)
+        #[arg(long, value_name = "INDICES")]
+        gpus: Option<String>,
+        /// GPU backend selection: auto, cuda, wgpu
+        #[arg(long, default_value = "auto")]
+        gpu_backend: String,
+        /// Distributed training role: coordinator or worker
+        #[arg(long, value_name = "ROLE")]
+        role: Option<String>,
+        /// Address to bind (coordinator) or connect to (worker)
+        #[arg(long, value_name = "ADDR")]
+        bind: Option<String>,
+        /// Coordinator address for worker nodes (e.g., "intel:9000")
+        #[arg(long, value_name = "ADDR")]
+        coordinator: Option<String>,
+        /// Expected number of workers (coordinator only)
+        #[arg(long, value_name = "N")]
+        expect_workers: Option<usize>,
     },
     /// Prune model (structured/unstructured pruning) (GH-247)
     Prune {
