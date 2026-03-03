@@ -154,7 +154,7 @@ entrenar-lora = "0.3.0"
 # ALB-007: parquet feature enables Parquet→LMBatch loading via alimentar
 entrenar = { version = "0.7.3", features = ["cuda", "parquet"] }
 # Data loading, splitting, imbalance detection (apr data subcommands)
-alimentar = { path = "/home/noah/src/alimentar", default-features = false, features = ["shuffle"] }
+alimentar = { version = "0.2.6", path = "/home/noah/src/alimentar", default-features = false, features = ["shuffle"] }
 half = "2.4.1"
 # YAML config parsing (distillation configs, ALB-011)
 serde_yaml_ng = "0.10"
