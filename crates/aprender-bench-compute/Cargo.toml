@@ -11,7 +11,7 @@ disallowed_methods = "allow"
 
 [dependencies]
 # The implementation under test
-aprender = { path = "../..", features = ["format-quantize"] }
+aprender = { version = "0.27", path = "../..", features = ["format-quantize"] }
 
 # Reference implementation for A/B comparison
 # Pure Rust (no BLAS) to keep comparison fair — both are pure Rust SIMD

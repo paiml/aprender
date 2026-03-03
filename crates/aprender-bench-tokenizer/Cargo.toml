@@ -11,7 +11,7 @@ disallowed_methods = "allow"
 
 [dependencies]
 # The implementation under test
-aprender = { path = "../.." }
+aprender = { version = "0.27", path = "../.." }
 
 # HuggingFace reference for A/B comparison
 # Regular dep (not dev-dep) because [[bench]] harness=false binaries can't see dev-deps
