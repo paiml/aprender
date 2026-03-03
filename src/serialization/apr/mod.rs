@@ -161,10 +161,10 @@ impl AprReader {
         self.metadata.get(key)
     }
 
-    /// Read tensor data as f32 values
+    /// Read tensor data as f32 values (F32 dtype only)
     ///
     /// # Errors
-    /// Returns error if tensor not found or data invalid
+    /// Returns error if tensor not found or not F32 dtype
     pub fn read_tensor_f32(&self, name: &str) -> Result<Vec<f32>, String> {
         use crate::format::v2::AprV2ReaderRef;
 
@@ -174,6 +174,24 @@ impl AprReader {
         reader
             .get_f32_tensor(name)
             .ok_or_else(|| format!("Tensor not found or not F32: {name}"))
+    }
+
+    /// Read tensor data as f32, dequantizing from any supported dtype (F32, F16, Q4K, Q6K, Q8, Q4).
+    ///
+    /// Unlike `read_tensor_f32` which only handles F32 dtype, this method handles
+    /// all stored formats — essential for loading imported models stored as F16/Q4K.
+    ///
+    /// # Errors
+    /// Returns error if tensor not found or dtype not supported
+    pub fn read_tensor_as_f32(&self, name: &str) -> Result<Vec<f32>, String> {
+        use crate::format::v2::AprV2ReaderRef;
+
+        let reader =
+            AprV2ReaderRef::from_bytes(&self.data).map_err(|e| format!("Invalid APR file: {e}"))?;
+
+        reader
+            .get_tensor_as_f32(name)
+            .ok_or_else(|| format!("Tensor '{name}' not found or unsupported dtype"))
     }
 
     /// Read tensor and validate it contains no NaN/Inf (F-CKPT-013).
