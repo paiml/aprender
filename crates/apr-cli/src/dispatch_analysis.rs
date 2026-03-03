@@ -355,6 +355,20 @@ fn dispatch_train_command(command: &TrainCommands, cli: &Cli) -> std::result::Re
             *batch_size,
             cli.json,
         ),
+        TrainCommands::Watch {
+            config,
+            max_restarts,
+            heartbeat_timeout,
+            backoff_initial,
+            backoff_max,
+        } => train::run_watch(
+            config,
+            *max_restarts,
+            *heartbeat_timeout,
+            *backoff_initial,
+            *backoff_max,
+            cli.json,
+        ),
     }
 }
 
@@ -519,6 +533,25 @@ fn dispatch_profiling_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                 data.as_deref(),
                 *max_tokens,
                 *threshold,
+                cli.json,
+            ),
+            Some("humaneval") => eval::run_humaneval(
+                file,
+                data.as_deref(),
+                &[1, 10, 100],
+                cli.json,
+            ),
+            Some("contamination") => eval::run_contamination(
+                file,
+                data.as_deref(),
+                None,
+                *threshold / 100.0,
+                cli.json,
+            ),
+            Some("compare") => eval::run_compare(
+                file,
+                data.as_deref(),
+                None,
                 cli.json,
             ),
             Some("plan") => eval::run_eval_plan(

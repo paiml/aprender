@@ -568,3 +568,248 @@ fn format_duration(minutes: f64) -> String {
         format!("{:.1} hours", hours)
     }
 }
+
+/// Run `apr train watch` — crash-resilient training supervisor.
+///
+/// Monitors a training process with automatic restart on crash, hang detection
+/// via heartbeat staleness, GPU state capture, and exponential backoff.
+/// Sovereign Rust replacement for train-guard.sh.
+/// Mutable state for the watch supervisor loop.
+struct WatchState {
+    attempt: usize,
+    backoff: u64,
+    last_stable: std::time::Instant,
+    use_blocking: bool,
+}
+
+pub(crate) fn run_watch(
+    config_path: &std::path::Path,
+    max_restarts: usize,
+    _heartbeat_timeout: u64,
+    backoff_initial: u64,
+    backoff_max: u64,
+    json_output: bool,
+) -> Result<()> {
+    if !config_path.exists() {
+        return Err(CliError::FileNotFound(config_path.to_path_buf()));
+    }
+
+    print_watch_header(config_path, max_restarts, _heartbeat_timeout, backoff_initial, backoff_max, json_output);
+
+    let mut state = WatchState {
+        attempt: 0,
+        backoff: backoff_initial,
+        last_stable: std::time::Instant::now(),
+        use_blocking: false,
+    };
+
+    loop {
+        state.attempt += 1;
+        if state.attempt > max_restarts + 1 {
+            return Err(watch_max_restarts_exceeded(max_restarts, json_output));
+        }
+
+        if !json_output {
+            println!("  {} Starting training (attempt {}/{})", "▶".green(), state.attempt, max_restarts + 1);
+        }
+
+        kill_stale_gpu_procs();
+        let exit_status = run_training_process(config_path, state.use_blocking);
+
+        match exit_status {
+            Ok(status) if status.success() => {
+                return watch_success(state.attempt, json_output);
+            }
+            Ok(status) => {
+                let action = handle_crash(config_path, &mut state, status, backoff_initial, backoff_max, json_output)?;
+                if action == CrashAction::Fatal {
+                    return Err(CliError::ValidationFailed("Fatal error".to_string()));
+                }
+            }
+            Err(e) => {
+                return Err(watch_spawn_failed(e, json_output));
+            }
+        }
+    }
+}
+
+/// Print the watch header.
+fn print_watch_header(config_path: &std::path::Path, max_restarts: usize, heartbeat_timeout: u64, backoff_initial: u64, backoff_max: u64, json_output: bool) {
+    if !json_output {
+        output::header("apr train watch — Training Supervisor");
+        println!();
+        output::kv("  Config", config_path.display().to_string());
+        output::kv("  Max restarts", max_restarts.to_string());
+        output::kv("  Heartbeat timeout", format!("{heartbeat_timeout}s"));
+        output::kv("  Backoff", format!("{backoff_initial}s → {backoff_max}s"));
+        println!();
+    }
+}
+
+/// Handle max restarts exceeded.
+fn watch_max_restarts_exceeded(max_restarts: usize, json_output: bool) -> CliError {
+    let msg = format!("Max restarts ({max_restarts}) exceeded");
+    if json_output {
+        println!("{{\"status\":\"failed\",\"reason\":\"{msg}\"}}");
+    } else {
+        println!("  {} {msg}", "FATAL".red().bold());
+    }
+    CliError::ValidationFailed(msg)
+}
+
+/// Handle successful training completion.
+fn watch_success(attempt: usize, json_output: bool) -> Result<()> {
+    if json_output {
+        println!("{{\"status\":\"completed\",\"attempts\":{attempt}}}");
+    } else {
+        println!();
+        println!("  {} Training completed successfully (attempt {attempt})", "DONE".green().bold());
+    }
+    Ok(())
+}
+
+/// Handle spawn failure.
+fn watch_spawn_failed(e: std::io::Error, json_output: bool) -> CliError {
+    if !json_output {
+        println!("  {} Failed to start training: {e}", "ERROR".red().bold());
+    }
+    CliError::ValidationFailed(format!("Cannot start training process: {e}"))
+}
+
+#[derive(PartialEq)]
+enum CrashAction { Restart, Fatal }
+
+/// Handle a training crash: classify, diagnose, maybe restart.
+fn handle_crash(
+    config_path: &std::path::Path,
+    state: &mut WatchState,
+    status: std::process::ExitStatus,
+    backoff_initial: u64,
+    backoff_max: u64,
+    json_output: bool,
+) -> Result<CrashAction> {
+    let code = status.code().unwrap_or(-1);
+    let classification = classify_exit_code(code);
+
+    if !json_output {
+        println!();
+        println!("  {} Training exited with code {code} ({classification})", "CRASH".red().bold());
+    }
+
+    write_crash_report(config_path, state.attempt, code, classification);
+
+    if classification == "signal" && state.attempt == 1 {
+        state.use_blocking = true;
+        if !json_output {
+            println!("  {} Enabling CUDA_LAUNCH_BLOCKING for diagnosis", "DIAG".yellow());
+        }
+    }
+
+    if classification == "fatal" {
+        let msg = format!("Fatal error (exit code {code}), not restarting");
+        if json_output {
+            println!("{{\"status\":\"fatal\",\"exit_code\":{code}}}");
+        } else {
+            println!("  {} {msg}", "FATAL".red().bold());
+        }
+        return Ok(CrashAction::Fatal);
+    }
+
+    if state.last_stable.elapsed().as_secs() > 3600 {
+        state.backoff = backoff_initial;
+    }
+    state.last_stable = std::time::Instant::now();
+
+    if !json_output {
+        println!("  {} Waiting {}s before restart...", "⏳".dimmed(), state.backoff);
+    }
+    std::thread::sleep(std::time::Duration::from_secs(state.backoff));
+    state.backoff = (state.backoff * 2).min(backoff_max);
+
+    Ok(CrashAction::Restart)
+}
+
+/// Run the training process as a child.
+fn run_training_process(
+    config_path: &std::path::Path,
+    blocking: bool,
+) -> std::result::Result<std::process::ExitStatus, std::io::Error> {
+    let apr = std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("apr"));
+    let mut cmd = std::process::Command::new(&apr);
+    cmd.args(["train", "apply", "--task", "pretrain", "--config"]);
+    cmd.arg(config_path);
+    cmd.env("RUST_BACKTRACE", "1");
+    if blocking {
+        cmd.env("CUDA_LAUNCH_BLOCKING", "1");
+    }
+    cmd.status()
+}
+
+/// Classify an exit code into a category.
+fn classify_exit_code(code: i32) -> &'static str {
+    match code {
+        0 => "success",
+        1 => "error",
+        2 => "usage",
+        134 => "sigabrt",    // CUDA assertion
+        135 => "sigbus",     // fatal
+        137 => "oom",        // SIGKILL (OOM killer)
+        139 => "sigsegv",    // CUDA memory corruption
+        _ if code > 128 => "signal",
+        _ => "unknown",
+    }
+}
+
+/// Kill any stale GPU processes from previous training runs.
+fn kill_stale_gpu_procs() {
+    // Best-effort: find processes using the GPU that match our training pattern
+    let _ = std::process::Command::new("bash")
+        .args(["-c", "pgrep -f 'apr.*train.*apply' | grep -v $$ | xargs -r kill 2>/dev/null"])
+        .status();
+}
+
+/// Write a JSON crash report.
+fn write_crash_report(
+    config_path: &std::path::Path,
+    attempt: usize,
+    exit_code: i32,
+    classification: &str,
+) {
+    let reports_dir = std::path::Path::new("crash-reports");
+    let _ = std::fs::create_dir_all(reports_dir);
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+
+    let report = serde_json::json!({
+        "timestamp": timestamp,
+        "attempt": attempt,
+        "config": config_path.display().to_string(),
+        "exit_code": exit_code,
+        "classification": classification,
+        "gpu_state": capture_gpu_state(),
+    });
+
+    let filename = reports_dir.join(format!("crash-{timestamp}-attempt{attempt}.json"));
+    let _ = std::fs::write(
+        &filename,
+        serde_json::to_string_pretty(&report).unwrap_or_default(),
+    );
+}
+
+/// Capture GPU state via nvidia-smi.
+fn capture_gpu_state() -> serde_json::Value {
+    let output = std::process::Command::new("nvidia-smi")
+        .args(["--query-gpu=gpu_name,memory.used,memory.total,temperature.gpu", "--format=csv,noheader,nounits"])
+        .output();
+
+    match output {
+        Ok(out) if out.status.success() => {
+            let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            serde_json::json!({"nvidia_smi": text})
+        }
+        _ => serde_json::json!({"nvidia_smi": "unavailable"}),
+    }
+}

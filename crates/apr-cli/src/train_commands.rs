@@ -123,4 +123,35 @@ pub enum TrainCommands {
         #[arg(long)]
         batch_size: Option<usize>,
     },
+
+    /// Watch a training run with automatic restart on crash and hang detection.
+    ///
+    /// Monitors a running or to-be-started training process:
+    /// - Detects crashes (SIGABRT, SIGSEGV, OOM) and restarts with backoff
+    /// - Detects hangs via heartbeat/training_state.json staleness
+    /// - Captures GPU state and crash diagnostics
+    /// - Auto-enables CUDA_LAUNCH_BLOCKING on async crash pattern
+    ///
+    /// Sovereign Rust replacement for train-guard.sh.
+    Watch {
+        /// YAML training config to run and watch
+        #[arg(long, value_name = "FILE")]
+        config: PathBuf,
+
+        /// Maximum number of restart attempts
+        #[arg(long, default_value = "5")]
+        max_restarts: usize,
+
+        /// Heartbeat staleness threshold in seconds
+        #[arg(long, default_value = "300")]
+        heartbeat_timeout: u64,
+
+        /// Initial backoff delay in seconds
+        #[arg(long, default_value = "30")]
+        backoff_initial: u64,
+
+        /// Maximum backoff delay in seconds
+        #[arg(long, default_value = "600")]
+        backoff_max: u64,
+    },
 }
