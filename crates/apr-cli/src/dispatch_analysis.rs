@@ -369,6 +369,32 @@ fn dispatch_train_command(command: &TrainCommands, cli: &Cli) -> std::result::Re
             *backoff_max,
             cli.json,
         ),
+        TrainCommands::Sweep {
+            config,
+            strategy,
+            num_configs,
+            output_dir,
+            seed,
+        } => train::run_sweep(
+            config,
+            strategy,
+            *num_configs,
+            output_dir,
+            *seed,
+            cli.json,
+        ),
+        TrainCommands::Archive {
+            checkpoint_dir,
+            output,
+            version,
+            notes,
+        } => train::run_archive(
+            checkpoint_dir,
+            output,
+            version.as_deref(),
+            notes.as_deref(),
+            cli.json,
+        ),
     }
 }
 
@@ -556,6 +582,16 @@ fn dispatch_profiling_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             ),
             Some("verify") => eval::run_verify(
                 file,
+                cli.json,
+            ),
+            Some("correlation") => eval::run_correlation(
+                file,
+                data.as_deref(),
+                cli.json,
+            ),
+            Some("human") => eval::run_human_eval(
+                file,
+                data.as_deref(),
                 cli.json,
             ),
             Some("plan") => eval::run_eval_plan(
@@ -825,6 +861,28 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
             message.as_deref(),
             *dry_run || *plan,
             cli.verbose,
+        ),
+
+        ExtendedCommands::Tools(ToolCommands::Encrypt {
+            file,
+            output,
+            key_file,
+        }) => eval::run_encrypt(
+            file,
+            output,
+            key_file.as_deref(),
+            cli.json,
+        ),
+
+        ExtendedCommands::Tools(ToolCommands::Decrypt {
+            file,
+            output,
+            key_file,
+        }) => eval::run_decrypt(
+            file,
+            output,
+            key_file.as_deref(),
+            cli.json,
         ),
 
         // All other extended commands handled by sub-dispatchers above

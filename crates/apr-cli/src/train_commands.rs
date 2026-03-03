@@ -154,4 +154,55 @@ pub enum TrainCommands {
         #[arg(long, default_value = "600")]
         backoff_max: u64,
     },
+
+    /// Generate hyperparameter sweep configs from a base YAML.
+    ///
+    /// Creates N training configs with varied hyperparameters using grid
+    /// or random search. Each config is a complete YAML that can be
+    /// passed to `apr train apply --task pretrain --config <file>`.
+    ///
+    /// Sovereign Rust replacement for hyperparam-sweep.py.
+    Sweep {
+        /// Base YAML training config to sweep from
+        #[arg(long, value_name = "FILE")]
+        config: PathBuf,
+
+        /// Search strategy: grid or random
+        #[arg(long, default_value = "random")]
+        strategy: String,
+
+        /// Number of configs to generate (random) or max combinations (grid)
+        #[arg(long, default_value = "10")]
+        num_configs: usize,
+
+        /// Output directory for generated configs
+        #[arg(long, default_value = "sweeps/")]
+        output_dir: PathBuf,
+
+        /// Seed for random search reproducibility
+        #[arg(long, default_value = "42")]
+        seed: u64,
+    },
+
+    /// Archive a checkpoint into a release bundle.
+    ///
+    /// Packages model weights, config, training state, and metadata
+    /// into a self-contained directory with integrity manifest.
+    Archive {
+        /// Path to checkpoint directory
+        #[arg(value_name = "CHECKPOINT_DIR")]
+        checkpoint_dir: PathBuf,
+
+        /// Output archive directory
+        #[arg(short, long, value_name = "DIR")]
+        output: PathBuf,
+
+        /// Release version tag (e.g., "v1.0")
+        #[arg(long)]
+        version: Option<String>,
+
+        /// Release notes
+        #[arg(long)]
+        notes: Option<String>,
+    },
 }

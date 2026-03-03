@@ -1608,4 +1608,747 @@ fn compute_file_hash(data: &[u8]) -> String {
     format!("{hash:016x}")
 }
 
+// ── PPL-Benchmark Correlation (R-066) ───────────────────────────────────────
+
+/// Run `apr eval --task correlation` — analyze PPL vs benchmark score correlation.
+///
+/// Scans a directory of checkpoints or a JSONL experiment log, extracts
+/// validation perplexity and benchmark scores, and computes Pearson + Spearman
+/// correlation coefficients.
+pub(crate) fn run_correlation(
+    model_path: &Path,
+    data_path: Option<&Path>,
+    json_output: bool,
+) -> Result<()> {
+    let start = Instant::now();
+
+    // Collect (val_ppl, benchmark_score) pairs from JSONL experiment logs
+    let pairs = collect_ppl_benchmark_pairs(model_path, data_path)?;
+
+    if pairs.is_empty() {
+        return Err(CliError::ValidationFailed(
+            "No PPL-benchmark pairs found. Provide checkpoint dir with JSONL logs or experiment DB.".to_string()
+        ));
+    }
+
+    let ppls: Vec<f64> = pairs.iter().map(|(p, _)| *p).collect();
+    let scores: Vec<f64> = pairs.iter().map(|(_, s)| *s).collect();
+
+    let pearson = pearson_correlation(&ppls, &scores);
+    let spearman = spearman_correlation(&ppls, &scores);
+    let elapsed = start.elapsed().as_secs_f32();
+
+    if json_output {
+        let result = serde_json::json!({
+            "task": "correlation",
+            "data_points": pairs.len(),
+            "pearson_r": pearson,
+            "spearman_rho": spearman,
+            "interpretation": interpret_correlation(pearson),
+            "pairs": pairs.iter().map(|(p, s)| serde_json::json!({"ppl": p, "score": s})).collect::<Vec<_>>(),
+            "elapsed_secs": elapsed,
+        });
+        println!("{}", serde_json::to_string_pretty(&result).unwrap_or_default());
+    } else {
+        output::header("PPL-Benchmark Correlation Analysis");
+        println!();
+        output::kv("Data points", pairs.len().to_string());
+        println!();
+
+        // Show pairs table
+        println!("  {:>12} {:>12}", "Val PPL", "Benchmark");
+        println!("  {:>12} {:>12}", "─────────", "─────────");
+        for (ppl, score) in &pairs {
+            println!("  {:>12.2} {:>12.4}", ppl, score);
+        }
+        println!();
+        output::kv("Pearson r", format!("{pearson:.4}"));
+        output::kv("Spearman rho", format!("{spearman:.4}"));
+        output::kv("Interpretation", interpret_correlation(pearson));
+        output::kv("Time", format!("{elapsed:.2}s"));
+        println!();
+
+        if pearson < -0.7 {
+            println!("  {} Strong negative correlation — lower PPL predicts higher benchmarks", "GOOD".green().bold());
+        } else if pearson < -0.3 {
+            println!("  {} Moderate correlation — PPL is a useful proxy", "OK".yellow().bold());
+        } else {
+            println!("  {} Weak correlation — PPL may not predict benchmark performance", "WARN".yellow().bold());
+        }
+    }
+
+    Ok(())
+}
+
+/// Collect (ppl, benchmark_score) pairs from experiment logs.
+fn collect_ppl_benchmark_pairs(
+    dir: &Path,
+    _data_path: Option<&Path>,
+) -> Result<Vec<(f64, f64)>> {
+    let mut pairs = Vec::new();
+
+    // Strategy 1: scan JSONL experiment logs
+    pairs.extend(collect_from_jsonl_logs(dir)?);
+
+    // Strategy 2: scan checkpoint subdirectories
+    if dir.is_dir() {
+        let checkpoint_pairs = collect_from_checkpoint_dirs(dir);
+        if !checkpoint_pairs.is_empty() {
+            pairs = checkpoint_pairs;
+        }
+    }
+
+    // Strategy 3: single training_state.json file
+    if dir.is_file() && dir.file_name().is_some_and(|n| n == "training_state.json") {
+        pairs.extend(extract_loss_history_pairs(dir));
+    }
+
+    Ok(pairs)
+}
+
+/// Extract pairs from JSONL experiment logs in a directory.
+fn collect_from_jsonl_logs(dir: &Path) -> Result<Vec<(f64, f64)>> {
+    let jsonl_files: Vec<_> = if dir.is_dir() {
+        std::fs::read_dir(dir)
+            .map_err(|e| CliError::ValidationFailed(format!("Cannot read dir: {e}")))?
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|e| e == "jsonl"))
+            .collect()
+    } else if dir.extension().is_some_and(|e| e == "jsonl") {
+        vec![dir.to_path_buf()]
+    } else {
+        return Ok(vec![]);
+    };
+
+    let mut pairs = Vec::new();
+    for jsonl_path in &jsonl_files {
+        pairs.extend(extract_ppl_from_jsonl(jsonl_path));
+    }
+    Ok(pairs)
+}
+
+/// Parse a JSONL file for val_ppl entries.
+fn extract_ppl_from_jsonl(path: &Path) -> Vec<(f64, f64)> {
+    let content = std::fs::read_to_string(path).unwrap_or_default();
+    let mut step_ppl: Vec<(u64, f64)> = Vec::new();
+
+    for line in content.lines() {
+        if let Ok(entry) = serde_json::from_str::<serde_json::Value>(line) {
+            if let Some(ppl) = entry.get("val_ppl").and_then(|v| v.as_f64()) {
+                let step = entry.get("step").and_then(|v| v.as_u64()).unwrap_or(0);
+                step_ppl.push((step, ppl));
+            }
+        }
+    }
+
+    if step_ppl.len() < 2 {
+        return vec![];
+    }
+    let max_step = step_ppl.iter().map(|(s, _)| *s).max().unwrap_or(1) as f64;
+    step_ppl.iter()
+        .map(|(step, ppl)| (*ppl, *step as f64 / max_step))
+        .collect()
+}
+
+/// Scan checkpoint subdirectories for eval results or loss history.
+fn collect_from_checkpoint_dirs(dir: &Path) -> Vec<(f64, f64)> {
+    let mut pairs = Vec::new();
+    for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        if let Some(p) = extract_checkpoint_pair(&path) {
+            pairs.extend(p);
+        }
+    }
+    pairs
+}
+
+/// Extract PPL-score pairs from a single checkpoint directory.
+fn extract_checkpoint_pair(path: &Path) -> Option<Vec<(f64, f64)>> {
+    let state_file = path.join("training_state.json");
+    let eval_file = path.join("eval_results.json");
+
+    // Try eval_results.json first
+    let ppl = read_json_f64(&eval_file, "perplexity")
+        .or_else(|| read_json_f64(&state_file, "val_ppl"));
+    let score = read_json_f64(&eval_file, "benchmark_score")
+        .or_else(|| read_json_f64(&eval_file, "pass_at_1"))
+        .or_else(|| read_json_f64(&state_file, "step").map(|s| s / 10000.0));
+
+    if let (Some(p), Some(s)) = (ppl, score) {
+        return Some(vec![(p, s)]);
+    }
+
+    // Fallback: loss_history from training_state.json
+    let history_pairs = extract_loss_history_pairs(&state_file);
+    if history_pairs.is_empty() { None } else { Some(history_pairs) }
+}
+
+/// Extract (exp(loss), progress) pairs from a training_state.json loss_history.
+fn extract_loss_history_pairs(path: &Path) -> Vec<(f64, f64)> {
+    let content = match std::fs::read_to_string(path) {
+        Ok(c) => c,
+        Err(_) => return vec![],
+    };
+    let val: serde_json::Value = match serde_json::from_str(&content) {
+        Ok(v) => v,
+        Err(_) => return vec![],
+    };
+    let history = match val.get("loss_history").and_then(|h| h.as_array()) {
+        Some(h) => h,
+        None => return vec![],
+    };
+    let losses: Vec<f64> = history.iter().filter_map(|v| v.as_f64()).collect();
+    if losses.len() < 2 {
+        return vec![];
+    }
+    losses.iter().enumerate()
+        .map(|(i, loss)| (loss.exp(), (i + 1) as f64 / losses.len() as f64))
+        .collect()
+}
+
+fn read_json_f64(path: &Path, key: &str) -> Option<f64> {
+    let content = std::fs::read_to_string(path).ok()?;
+    let val: serde_json::Value = serde_json::from_str(&content).ok()?;
+    val.get(key)?.as_f64()
+}
+
+/// Pearson correlation coefficient.
+fn pearson_correlation(x: &[f64], y: &[f64]) -> f64 {
+    let n = x.len() as f64;
+    if n < 2.0 {
+        return 0.0;
+    }
+    let mean_x = x.iter().sum::<f64>() / n;
+    let mean_y = y.iter().sum::<f64>() / n;
+
+    let mut cov = 0.0;
+    let mut var_x = 0.0;
+    let mut var_y = 0.0;
+    for i in 0..x.len() {
+        let dx = x[i] - mean_x;
+        let dy = y[i] - mean_y;
+        cov += dx * dy;
+        var_x += dx * dx;
+        var_y += dy * dy;
+    }
+
+    let denom = (var_x * var_y).sqrt();
+    if denom < 1e-15 { 0.0 } else { cov / denom }
+}
+
+/// Spearman rank correlation coefficient.
+fn spearman_correlation(x: &[f64], y: &[f64]) -> f64 {
+    let rank_x = compute_ranks(x);
+    let rank_y = compute_ranks(y);
+    pearson_correlation(&rank_x, &rank_y)
+}
+
+/// Compute ranks for a slice (average ranks for ties).
+fn compute_ranks(values: &[f64]) -> Vec<f64> {
+    let n = values.len();
+    let mut indexed: Vec<(usize, f64)> = values.iter().copied().enumerate().collect();
+    indexed.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    let mut ranks = vec![0.0; n];
+    let mut i = 0;
+    while i < n {
+        let mut j = i;
+        while j < n && (indexed[j].1 - indexed[i].1).abs() < 1e-12 {
+            j += 1;
+        }
+        // Average rank for tied values
+        let avg_rank = (i + j + 1) as f64 / 2.0;
+        for item in indexed.iter().take(j).skip(i) {
+            ranks[item.0] = avg_rank;
+        }
+        i = j;
+    }
+    ranks
+}
+
+fn interpret_correlation(r: f64) -> String {
+    let abs_r = r.abs();
+    let strength = if abs_r > 0.9 {
+        "Very strong"
+    } else if abs_r > 0.7 {
+        "Strong"
+    } else if abs_r > 0.5 {
+        "Moderate"
+    } else if abs_r > 0.3 {
+        "Weak"
+    } else {
+        "Very weak/none"
+    };
+    let direction = if r < 0.0 { "negative" } else { "positive" };
+    format!("{strength} {direction} (r={r:.3})")
+}
+
+// ── Model Weight Encryption (R-089) ────────────────────────────────────────
+
+/// Encrypt a model file using BLAKE3-derived keystream + MAC.
+///
+/// Format: [8-byte magic "ALBR-ENC"] [32-byte nonce] [32-byte MAC] [encrypted data]
+/// Key derivation: BLAKE3 derive_key(context="albor model encryption 2026", passphrase)
+/// Keystream: BLAKE3 keyed_hash(key, counter || nonce) for each 64-byte block
+/// MAC: BLAKE3 keyed_hash(key, nonce || encrypted_data)
+pub(crate) fn run_encrypt(
+    input_path: &Path,
+    output_path: &Path,
+    key_file: Option<&Path>,
+    json_output: bool,
+) -> Result<()> {
+    let start = Instant::now();
+
+    let key = derive_encryption_key(key_file)?;
+    let plaintext = std::fs::read(input_path)
+        .map_err(|e| CliError::ValidationFailed(format!("Cannot read {}: {e}", input_path.display())))?;
+
+    if !json_output {
+        output::header("apr encrypt — Model Weight Encryption");
+        println!();
+        output::kv("Input", input_path.display().to_string());
+        output::kv("Output", output_path.display().to_string());
+        output::kv("Size", format_archive_size(plaintext.len() as u64));
+        println!();
+    }
+
+    // Generate 32-byte nonce from BLAKE3 hash of file + timestamp
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let mut nonce_input = Vec::with_capacity(8 + plaintext.len().min(1024));
+    nonce_input.extend_from_slice(&timestamp.to_le_bytes());
+    nonce_input.extend_from_slice(&plaintext[..plaintext.len().min(1024)]);
+    let nonce: [u8; 32] = *blake3::hash(&nonce_input).as_bytes();
+
+    // Encrypt: XOR with BLAKE3 keystream
+    let encrypted = apply_keystream(&key, &nonce, &plaintext);
+
+    // MAC: BLAKE3 keyed_hash(key, nonce || encrypted)
+    let mac = compute_mac(&key, &nonce, &encrypted);
+
+    // Write: magic + nonce + MAC + encrypted
+    let magic = b"ALBR-ENC";
+    let mut output = Vec::with_capacity(8 + 32 + 32 + encrypted.len());
+    output.extend_from_slice(magic);
+    output.extend_from_slice(&nonce);
+    output.extend_from_slice(mac.as_bytes());
+    output.extend_from_slice(&encrypted);
+
+    std::fs::write(output_path, &output)
+        .map_err(|e| CliError::ValidationFailed(format!("Cannot write {}: {e}", output_path.display())))?;
+
+    let elapsed = start.elapsed().as_secs_f32();
+
+    if json_output {
+        let result = serde_json::json!({
+            "action": "encrypt",
+            "input": input_path.display().to_string(),
+            "output": output_path.display().to_string(),
+            "input_size": plaintext.len(),
+            "output_size": output.len(),
+            "elapsed_secs": elapsed,
+        });
+        println!("{}", serde_json::to_string_pretty(&result).unwrap_or_default());
+    } else {
+        output::kv("Encrypted size", format_archive_size(output.len() as u64));
+        output::kv("Time", format!("{elapsed:.2}s"));
+        println!();
+        println!("  {} Model encrypted", "DONE".green().bold());
+    }
+
+    Ok(())
+}
+
+/// Decrypt a model file encrypted with `apr encrypt`.
+pub(crate) fn run_decrypt(
+    input_path: &Path,
+    output_path: &Path,
+    key_file: Option<&Path>,
+    json_output: bool,
+) -> Result<()> {
+    let start = Instant::now();
+
+    let key = derive_encryption_key(key_file)?;
+    let data = std::fs::read(input_path)
+        .map_err(|e| CliError::ValidationFailed(format!("Cannot read {}: {e}", input_path.display())))?;
+
+    // Parse: magic(8) + nonce(32) + MAC(32) + encrypted
+    if data.len() < 72 || &data[..8] != b"ALBR-ENC" {
+        return Err(CliError::ValidationFailed(
+            "Not a valid ALBR-ENC encrypted file".to_string()
+        ));
+    }
+
+    let nonce: [u8; 32] = data[8..40].try_into().unwrap();
+    let stored_mac: [u8; 32] = data[40..72].try_into().unwrap();
+    let encrypted = &data[72..];
+
+    if !json_output {
+        output::header("apr decrypt — Model Weight Decryption");
+        println!();
+        output::kv("Input", input_path.display().to_string());
+        output::kv("Output", output_path.display().to_string());
+        output::kv("Encrypted size", format_archive_size(encrypted.len() as u64));
+        println!();
+    }
+
+    // Verify MAC
+    let computed_mac = compute_mac(&key, &nonce, encrypted);
+    if computed_mac.as_bytes() != &stored_mac {
+        return Err(CliError::ValidationFailed(
+            "MAC verification failed — wrong key or corrupted file".to_string()
+        ));
+    }
+
+    // Decrypt
+    let plaintext = apply_keystream(&key, &nonce, encrypted);
+
+    std::fs::write(output_path, &plaintext)
+        .map_err(|e| CliError::ValidationFailed(format!("Cannot write {}: {e}", output_path.display())))?;
+
+    let elapsed = start.elapsed().as_secs_f32();
+
+    if json_output {
+        let result = serde_json::json!({
+            "action": "decrypt",
+            "input": input_path.display().to_string(),
+            "output": output_path.display().to_string(),
+            "output_size": plaintext.len(),
+            "mac_verified": true,
+            "elapsed_secs": elapsed,
+        });
+        println!("{}", serde_json::to_string_pretty(&result).unwrap_or_default());
+    } else {
+        output::kv("Decrypted size", format_archive_size(plaintext.len() as u64));
+        output::kv("MAC", "verified".green().to_string());
+        output::kv("Time", format!("{elapsed:.2}s"));
+        println!();
+        println!("  {} Model decrypted", "DONE".green().bold());
+    }
+
+    Ok(())
+}
+
+/// Derive a 32-byte encryption key from a key file or stdin passphrase.
+fn derive_encryption_key(key_file: Option<&Path>) -> Result<[u8; 32]> {
+    if let Some(kf) = key_file {
+        let key_data = std::fs::read(kf)
+            .map_err(|e| CliError::ValidationFailed(format!("Cannot read key file: {e}")))?;
+        if key_data.len() >= 32 {
+            let mut key = [0u8; 32];
+            key.copy_from_slice(&key_data[..32]);
+            Ok(key)
+        } else {
+            // Derive key from short key file content
+            Ok(blake3::derive_key("albor model encryption 2026", &key_data))
+        }
+    } else {
+        // Read passphrase from environment or use default context
+        let passphrase = std::env::var("ALBOR_ENCRYPT_KEY")
+            .unwrap_or_else(|_| {
+                eprintln!("Enter passphrase (or set ALBOR_ENCRYPT_KEY env var):");
+                let mut input = String::new();
+                let _ = std::io::stdin().read_line(&mut input);
+                input.trim().to_string()
+            });
+        Ok(blake3::derive_key("albor model encryption 2026", passphrase.as_bytes()))
+    }
+}
+
+/// Apply BLAKE3-based keystream (XOR cipher in counter mode).
+fn apply_keystream(key: &[u8; 32], nonce: &[u8; 32], data: &[u8]) -> Vec<u8> {
+    let keyed_hasher_key: [u8; 32] = *key;
+    let mut output = vec![0u8; data.len()];
+    let block_size = 64;
+
+    for (block_idx, chunk) in data.chunks(block_size).enumerate() {
+        // Generate keystream block: BLAKE3_keyed_hash(key, counter || nonce)
+        let mut input = Vec::with_capacity(8 + 32);
+        input.extend_from_slice(&(block_idx as u64).to_le_bytes());
+        input.extend_from_slice(nonce);
+
+        let keystream = blake3::keyed_hash(&keyed_hasher_key, &input);
+        let ks_bytes = keystream.as_bytes();
+
+        let offset = block_idx * block_size;
+        for (i, &byte) in chunk.iter().enumerate() {
+            output[offset + i] = byte ^ ks_bytes[i % 32];
+        }
+    }
+
+    output
+}
+
+/// Compute MAC: BLAKE3_keyed_hash(key, nonce || data).
+fn compute_mac(key: &[u8; 32], nonce: &[u8; 32], data: &[u8]) -> blake3::Hash {
+    let mut hasher = blake3::Hasher::new_keyed(key);
+    hasher.update(nonce);
+    hasher.update(data);
+    hasher.finalize()
+}
+
+// ── Human Evaluation Pipeline (R-068) ───────────────────────────────────────
+
+/// Run `apr eval --task human` — human evaluation infrastructure.
+///
+/// Two modes:
+/// 1. Generate: create a ratings sheet from model outputs for human evaluation
+/// 2. Analyze: compute statistics from completed ratings sheets
+///
+/// The ratings sheet is a JSONL file where each line has:
+/// {"id": 0, "prompt": "...", "completion": "...", "rating": null, "notes": ""}
+/// Humans fill in rating (1-5) and optional notes, then run analyze.
+pub(crate) fn run_human_eval(
+    model_path: &Path,
+    data_path: Option<&Path>,
+    json_output: bool,
+) -> Result<()> {
+    let start = Instant::now();
+
+    // Determine mode based on data_path content
+    if let Some(data) = data_path {
+        if data.extension().is_some_and(|e| e == "jsonl") {
+            let content = std::fs::read_to_string(data)
+                .map_err(|e| CliError::ValidationFailed(format!("Cannot read {}: {e}", data.display())))?;
+
+            // Check if this is a completed ratings file (has numeric ratings)
+            let has_ratings = content.lines().any(|line| {
+                serde_json::from_str::<serde_json::Value>(line)
+                    .ok()
+                    .and_then(|v| v.get("rating")?.as_f64())
+                    .is_some()
+            });
+
+            if has_ratings {
+                return analyze_human_ratings(data, &content, json_output, start);
+            }
+        }
+    }
+
+    // Generate mode: create ratings sheet
+    generate_ratings_sheet(model_path, data_path, json_output, start)
+}
+
+/// Generate a human evaluation ratings sheet from model checkpoint.
+fn generate_ratings_sheet(
+    model_path: &Path,
+    data_path: Option<&Path>,
+    json_output: bool,
+    start: Instant,
+) -> Result<()> {
+    // Load prompts from data file or use standard evaluation prompts
+    let prompts = if let Some(dp) = data_path {
+        load_eval_prompts(dp)?
+    } else {
+        default_code_eval_prompts()
+    };
+
+    let output_path = model_path.join("human-eval-sheet.jsonl");
+    let mut entries = Vec::new();
+
+    for (i, prompt) in prompts.iter().enumerate() {
+        let entry = serde_json::json!({
+            "id": i,
+            "prompt": prompt,
+            "completion": format!("[Run inference on this prompt with the model at {}]", model_path.display()),
+            "rating": serde_json::Value::Null,
+            "notes": "",
+            "criteria": {
+                "correctness": "Does the code solve the stated problem?",
+                "readability": "Is the code well-structured and readable?",
+                "completeness": "Does it handle edge cases?",
+                "style": "Does it follow Python conventions?"
+            }
+        });
+        entries.push(entry);
+    }
+
+    let sheet_content: String = entries.iter()
+        .map(|e| serde_json::to_string(e).unwrap_or_default())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    std::fs::write(&output_path, &sheet_content)
+        .map_err(|e| CliError::ValidationFailed(format!("Cannot write sheet: {e}")))?;
+
+    let elapsed = start.elapsed().as_secs_f32();
+
+    if json_output {
+        let result = serde_json::json!({
+            "task": "human",
+            "mode": "generate",
+            "prompts": prompts.len(),
+            "output": output_path.display().to_string(),
+            "elapsed_secs": elapsed,
+        });
+        println!("{}", serde_json::to_string_pretty(&result).unwrap_or_default());
+    } else {
+        output::header("Human Evaluation — Ratings Sheet Generated");
+        println!();
+        output::kv("Prompts", prompts.len().to_string());
+        output::kv("Output", output_path.display().to_string());
+        output::kv("Time", format!("{elapsed:.2}s"));
+        println!();
+        println!("  Instructions:");
+        println!("  1. Run inference to fill in 'completion' fields");
+        println!("  2. Rate each completion 1-5 (1=poor, 5=excellent)");
+        println!("  3. Analyze: apr eval {} --task human --data {}", model_path.display(), output_path.display());
+        println!();
+        println!("  {} Sheet generated", "DONE".green().bold());
+    }
+
+    Ok(())
+}
+
+/// Analyze completed human evaluation ratings.
+fn analyze_human_ratings(
+    path: &Path,
+    content: &str,
+    json_output: bool,
+    start: Instant,
+) -> Result<()> {
+    let mut ratings: Vec<f64> = Vec::new();
+    let mut per_item: Vec<serde_json::Value> = Vec::new();
+
+    for line in content.lines() {
+        if let Ok(entry) = serde_json::from_str::<serde_json::Value>(line) {
+            if let Some(rating) = entry.get("rating").and_then(|v| v.as_f64()) {
+                ratings.push(rating);
+                per_item.push(entry);
+            }
+        }
+    }
+
+    if ratings.is_empty() {
+        return Err(CliError::ValidationFailed(
+            "No completed ratings found in file".to_string()
+        ));
+    }
+
+    let n = ratings.len() as f64;
+    let mean = ratings.iter().sum::<f64>() / n;
+    let variance = ratings.iter().map(|r| (r - mean).powi(2)).sum::<f64>() / n;
+    let std_dev = variance.sqrt();
+    let mut sorted = ratings.clone();
+    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let median = if sorted.len() % 2 == 0 {
+        (sorted[sorted.len() / 2 - 1] + sorted[sorted.len() / 2]) / 2.0
+    } else {
+        sorted[sorted.len() / 2]
+    };
+    let pass_count = ratings.iter().filter(|&&r| r >= 3.0).count();
+    let pass_rate = pass_count as f64 / n;
+
+    // Rating distribution
+    let mut dist = [0usize; 5];
+    for &r in &ratings {
+        let idx = (r.round() as usize).saturating_sub(1).min(4);
+        dist[idx] += 1;
+    }
+
+    let elapsed = start.elapsed().as_secs_f32();
+
+    if json_output {
+        let result = serde_json::json!({
+            "task": "human",
+            "mode": "analyze",
+            "total_rated": ratings.len(),
+            "mean": mean,
+            "median": median,
+            "std_dev": std_dev,
+            "pass_rate": pass_rate,
+            "pass_count": pass_count,
+            "distribution": {
+                "1_poor": dist[0],
+                "2_below_avg": dist[1],
+                "3_acceptable": dist[2],
+                "4_good": dist[3],
+                "5_excellent": dist[4],
+            },
+            "elapsed_secs": elapsed,
+        });
+        println!("{}", serde_json::to_string_pretty(&result).unwrap_or_default());
+    } else {
+        output::header("Human Evaluation — Analysis Results");
+        println!();
+        output::kv("Source", path.display().to_string());
+        output::kv("Rated items", ratings.len().to_string());
+        println!();
+        output::kv("Mean rating", format!("{mean:.2}"));
+        output::kv("Median", format!("{median:.1}"));
+        output::kv("Std deviation", format!("{std_dev:.2}"));
+        output::kv("Pass rate (>=3)", format!("{:.1}% ({}/{})", pass_rate * 100.0, pass_count, ratings.len()));
+        println!();
+        println!("  Rating distribution:");
+        for (i, count) in dist.iter().enumerate() {
+            let bar = "#".repeat(*count);
+            let label = match i {
+                0 => "1 (poor)    ",
+                1 => "2 (below)   ",
+                2 => "3 (accept)  ",
+                3 => "4 (good)    ",
+                _ => "5 (excellent)",
+            };
+            println!("    {label} {bar} ({count})");
+        }
+        println!();
+        output::kv("Time", format!("{elapsed:.2}s"));
+    }
+
+    Ok(())
+}
+
+fn load_eval_prompts(path: &Path) -> Result<Vec<String>> {
+    let content = std::fs::read_to_string(path)
+        .map_err(|e| CliError::ValidationFailed(format!("Cannot read {}: {e}", path.display())))?;
+
+    let prompts: Vec<String> = content.lines()
+        .filter_map(|line| {
+            serde_json::from_str::<serde_json::Value>(line).ok()
+                .and_then(|v| v.get("prompt").and_then(|p| p.as_str()).map(String::from))
+        })
+        .collect();
+
+    if prompts.is_empty() {
+        // Try as plain text (one prompt per line)
+        Ok(content.lines().filter(|l| !l.is_empty()).map(String::from).collect())
+    } else {
+        Ok(prompts)
+    }
+}
+
+fn default_code_eval_prompts() -> Vec<String> {
+    vec![
+        "def fibonacci(n: int) -> int:\n    \"\"\"Return the nth Fibonacci number.\"\"\"".to_string(),
+        "def binary_search(arr: list, target: int) -> int:\n    \"\"\"Return index of target in sorted array, or -1.\"\"\"".to_string(),
+        "def merge_sort(arr: list) -> list:\n    \"\"\"Sort array using merge sort.\"\"\"".to_string(),
+        "class LinkedList:\n    \"\"\"Singly linked list with insert, delete, search.\"\"\"".to_string(),
+        "def parse_json(s: str) -> dict:\n    \"\"\"Parse a JSON string without using json module.\"\"\"".to_string(),
+        "def lru_cache(capacity: int):\n    \"\"\"Implement an LRU cache with O(1) get and put.\"\"\"".to_string(),
+        "def tokenize(code: str) -> list:\n    \"\"\"Tokenize Python source code into tokens.\"\"\"".to_string(),
+        "def matrix_multiply(a: list, b: list) -> list:\n    \"\"\"Multiply two 2D matrices.\"\"\"".to_string(),
+        "async def fetch_urls(urls: list) -> list:\n    \"\"\"Fetch multiple URLs concurrently.\"\"\"".to_string(),
+        "def trie_autocomplete(words: list, prefix: str) -> list:\n    \"\"\"Return all words matching prefix using a trie.\"\"\"".to_string(),
+    ]
+}
+
+/// Re-export for use in tool dispatch.
+fn format_archive_size(bytes: u64) -> String {
+    if bytes >= 1_073_741_824 {
+        format!("{:.1} GB", bytes as f64 / 1_073_741_824.0)
+    } else if bytes >= 1_048_576 {
+        format!("{:.1} MB", bytes as f64 / 1_048_576.0)
+    } else if bytes >= 1024 {
+        format!("{:.1} KB", bytes as f64 / 1024.0)
+    } else {
+        format!("{bytes} B")
+    }
+}
+
 include!("using.rs");

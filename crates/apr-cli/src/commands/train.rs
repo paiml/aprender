@@ -169,6 +169,10 @@ fn run_plan_pretrain(
                     "optimizer_gb": e.optimizer_gb,
                     "activations_gb": e.activations_gb,
                     "total_gb": e.total_gb,
+                    "ram_total_gb": e.ram_total_gb,
+                    "disk_checkpoint_gb": e.disk_checkpoint_gb,
+                    "tokens_per_step": e.tokens_per_step,
+                    "estimated_step_ms": e.estimated_step_ms,
                 })),
         });
         println!("{}", serde_json::to_string_pretty(&plan).unwrap_or_default());
@@ -215,6 +219,16 @@ fn run_plan_pretrain(
                 println!("    CUDA context          {:>8.1} GB  (VRAM)", 0.5);
                 println!("    ─────────────────────────────────────");
                 println!("    {}        {:>8.1} GB  (system total)", "Total".bold(), estimate.total_gb);
+                println!();
+                println!("  {} (R-095):", "Extended Resource Estimates".bold());
+                println!("    RAM (total)           {:>8.1} GB", estimate.ram_total_gb);
+                println!("    Disk (per checkpoint) {:>8.1} GB", estimate.disk_checkpoint_gb);
+                println!("    Tokens/step           {:>8}", estimate.tokens_per_step);
+                println!("    Est. step time        {:>8.0} ms  (RTX 4090 peak)", estimate.estimated_step_ms);
+                if estimate.tokens_per_step > 0 && estimate.estimated_step_ms > 0.0 {
+                    let tok_per_sec = estimate.tokens_per_step as f64 / (estimate.estimated_step_ms / 1000.0);
+                    println!("    Est. throughput       {:>8.0} tok/s", tok_per_sec);
+                }
             }
         }
 
@@ -225,7 +239,7 @@ fn run_plan_pretrain(
     Ok(())
 }
 
-/// VRAM estimate from training-memory-kernel-v1.yaml contract.
+/// Comprehensive resource estimate from training-memory-kernel-v1.yaml contract.
 struct VramEstimate {
     param_count: usize,
     dtype_label: &'static str,
@@ -234,6 +248,11 @@ struct VramEstimate {
     optimizer_gb: f64,
     activations_gb: f64,
     total_gb: f64,
+    // Extended estimates (R-095)
+    ram_total_gb: f64,
+    disk_checkpoint_gb: f64,
+    tokens_per_step: usize,
+    estimated_step_ms: f64,
 }
 
 /// Estimate VRAM usage from architecture parameters.
@@ -293,6 +312,22 @@ fn estimate_vram(
     let m_cuda_gb = 0.5; // 512 MB CUDA context overhead
     let total_gb = weights_gb + gradients_gb + optimizer_gb + activations_gb + m_cuda_gb;
 
+    // Extended estimates (R-095)
+    let batch_size = spec.data.batch_size as usize;
+    let seq_len = spec.data.seq_len.unwrap_or(512) as usize;
+    let tokens_per_step = batch_size * seq_len;
+
+    // RAM: data loading + embedding table + workspace
+    let data_buffer_gb = gb(tokens_per_step as f64 * 4.0 * 16.0); // ~16 batches buffered
+    let ram_total_gb = weights_gb + optimizer_gb + data_buffer_gb + 1.0; // +1 GB overhead
+
+    // Disk: checkpoint = weights + optimizer state + metadata
+    let disk_checkpoint_gb = weights_gb + optimizer_gb + 0.01; // ~10 MB metadata
+    // Time estimate: ~6NBS / TFLOPS per step (RTX 4090 ≈ 82 TFLOPS fp32)
+    let tflops = 82.0; // RTX 4090 theoretical peak
+    let flops_per_step = 6.0 * p_total as f64 * tokens_per_step as f64;
+    let estimated_step_ms = flops_per_step / (tflops * 1e9); // TFLOPS = 1e12, ms = 1e-3
+
     Some(VramEstimate {
         param_count: p_total,
         dtype_label: if is_fp16 { "fp16" } else { "f32" },
@@ -301,6 +336,10 @@ fn estimate_vram(
         optimizer_gb,
         activations_gb,
         total_gb,
+        ram_total_gb,
+        disk_checkpoint_gb,
+        tokens_per_step,
+        estimated_step_ms,
     })
 }
 
@@ -811,5 +850,302 @@ fn capture_gpu_state() -> serde_json::Value {
             serde_json::json!({"nvidia_smi": text})
         }
         _ => serde_json::json!({"nvidia_smi": "unavailable"}),
+    }
+}
+
+// ── Hyperparameter Sweep (R-027 Rust replacement) ───────────────────────────
+
+/// Run `apr train sweep` — generate hyperparameter sweep configs.
+///
+/// Creates N training configs with varied hyperparameters (grid or random).
+/// Each output is a complete YAML that can be passed to `apr train apply`.
+pub(crate) fn run_sweep(
+    config_path: &std::path::Path,
+    strategy: &str,
+    num_configs: usize,
+    output_dir: &std::path::Path,
+    seed: u64,
+    json_output: bool,
+) -> Result<()> {
+    if !config_path.exists() {
+        return Err(CliError::FileNotFound(config_path.to_path_buf()));
+    }
+
+    let base_content = std::fs::read_to_string(config_path)
+        .map_err(|e| CliError::ValidationFailed(format!("Cannot read config: {e}")))?;
+    let base: serde_yaml_ng::Value = serde_yaml_ng::from_str(&base_content)
+        .map_err(|e| CliError::ValidationFailed(format!("Invalid YAML: {e}")))?;
+
+    std::fs::create_dir_all(output_dir)
+        .map_err(|e| CliError::ValidationFailed(format!("Cannot create output dir: {e}")))?;
+
+    if !json_output {
+        output::header("apr train sweep — Hyperparameter Sweep Generator");
+        println!();
+        output::kv("  Base config", config_path.display().to_string());
+        output::kv("  Strategy", strategy);
+        output::kv("  Configs", num_configs.to_string());
+        output::kv("  Output", output_dir.display().to_string());
+        println!();
+    }
+
+    let configs = match strategy {
+        "grid" => generate_grid_configs(&base, num_configs),
+        "random" | _ => generate_random_configs(&base, num_configs, seed),
+    };
+
+    let mut results = Vec::new();
+    for (i, config) in configs.iter().enumerate() {
+        let filename = output_dir.join(format!("sweep-{i:03}.yaml"));
+        let yaml_str = serde_yaml_ng::to_string(config)
+            .map_err(|e| CliError::ValidationFailed(format!("YAML serialize error: {e}")))?;
+        std::fs::write(&filename, &yaml_str)
+            .map_err(|e| CliError::ValidationFailed(format!("Cannot write {}: {e}", filename.display())))?;
+
+        let lr = config.get("optimizer")
+            .and_then(|o| o.get("lr"))
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0);
+        let bs = config.get("data")
+            .and_then(|d| d.get("batch_size"))
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+
+        results.push(serde_json::json!({
+            "file": filename.display().to_string(),
+            "lr": lr,
+            "batch_size": bs,
+        }));
+
+        if !json_output {
+            println!("  [{}] {} (lr={:.2e}, bs={})", i, filename.display(), lr, bs);
+        }
+    }
+
+    if json_output {
+        let output = serde_json::json!({
+            "strategy": strategy,
+            "configs_generated": configs.len(),
+            "output_dir": output_dir.display().to_string(),
+            "configs": results,
+        });
+        println!("{}", serde_json::to_string_pretty(&output).unwrap_or_default());
+    } else {
+        println!();
+        println!("  {} Generated {} configs", "DONE".green().bold(), configs.len());
+    }
+
+    Ok(())
+}
+
+/// Generate grid search configs over LR × batch_size × weight_decay.
+fn generate_grid_configs(
+    base: &serde_yaml_ng::Value,
+    max_configs: usize,
+) -> Vec<serde_yaml_ng::Value> {
+    let lr_values = [1e-5, 3e-5, 1e-4, 3e-4, 1e-3];
+    let bs_values: &[u64] = &[2, 4, 8];
+    let wd_values = [0.0, 0.01, 0.1];
+
+    let mut configs = Vec::new();
+    for &lr in &lr_values {
+        for &bs in bs_values {
+            for &wd in &wd_values {
+                if configs.len() >= max_configs {
+                    return configs;
+                }
+                let mut c = base.clone();
+                set_yaml_f64(&mut c, &["optimizer", "lr"], lr);
+                set_yaml_u64(&mut c, &["data", "batch_size"], bs);
+                set_yaml_f64(&mut c, &["optimizer", "weight_decay"], wd);
+                configs.push(c);
+            }
+        }
+    }
+    configs
+}
+
+/// Generate random search configs using LCG PRNG.
+fn generate_random_configs(
+    base: &serde_yaml_ng::Value,
+    num_configs: usize,
+    seed: u64,
+) -> Vec<serde_yaml_ng::Value> {
+    let mut rng_state = seed;
+    let mut configs = Vec::new();
+
+    for _ in 0..num_configs {
+        let mut c = base.clone();
+
+        // LR: log-uniform in [1e-5, 1e-2]
+        let lr_log = -5.0 + lcg_f64(&mut rng_state) * 3.0; // [-5, -2]
+        let lr = 10.0_f64.powf(lr_log);
+        set_yaml_f64(&mut c, &["optimizer", "lr"], lr);
+
+        // Batch size: uniform choice from [1, 2, 4, 8, 16]
+        let bs_choices: &[u64] = &[1, 2, 4, 8, 16];
+        let bs_idx = (lcg_f64(&mut rng_state) * bs_choices.len() as f64) as usize;
+        let bs = bs_choices[bs_idx.min(bs_choices.len() - 1)];
+        set_yaml_u64(&mut c, &["data", "batch_size"], bs);
+
+        // Weight decay: log-uniform in [1e-3, 0.5]
+        let wd_log = -3.0 + lcg_f64(&mut rng_state) * 2.7; // [-3, -0.3]
+        let wd = 10.0_f64.powf(wd_log);
+        set_yaml_f64(&mut c, &["optimizer", "weight_decay"], wd);
+
+        // Warmup steps: uniform in [50, 2000]
+        let warmup = 50 + (lcg_f64(&mut rng_state) * 1950.0) as u64;
+        set_yaml_u64(&mut c, &["training", "warmup_steps"], warmup);
+
+        configs.push(c);
+    }
+    configs
+}
+
+/// LCG pseudo-random: returns f64 in [0, 1).
+fn lcg_f64(state: &mut u64) -> f64 {
+    *state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+    (*state >> 33) as f64 / (1u64 << 31) as f64
+}
+
+/// Set a nested YAML value (f64).
+fn set_yaml_f64(root: &mut serde_yaml_ng::Value, path: &[&str], val: f64) {
+    let mut node = root;
+    for (i, key) in path.iter().enumerate() {
+        if i == path.len() - 1 {
+            node[*key] = serde_yaml_ng::Value::Number(serde_yaml_ng::Number::from(val));
+        } else {
+            if node.get(*key).is_none() {
+                node[*key] = serde_yaml_ng::Value::Mapping(serde_yaml_ng::Mapping::new());
+            }
+            node = &mut node[*key];
+        }
+    }
+}
+
+/// Set a nested YAML value (u64).
+fn set_yaml_u64(root: &mut serde_yaml_ng::Value, path: &[&str], val: u64) {
+    let mut node = root;
+    for (i, key) in path.iter().enumerate() {
+        if i == path.len() - 1 {
+            node[*key] = serde_yaml_ng::Value::Number(serde_yaml_ng::Number::from(val));
+        } else {
+            if node.get(*key).is_none() {
+                node[*key] = serde_yaml_ng::Value::Mapping(serde_yaml_ng::Mapping::new());
+            }
+            node = &mut node[*key];
+        }
+    }
+}
+
+// ── Checkpoint Archival (R-085) ─────────────────────────────────────────────
+
+/// Run `apr train archive` — package checkpoint into a release bundle.
+pub(crate) fn run_archive(
+    checkpoint_dir: &std::path::Path,
+    output_dir: &std::path::Path,
+    version: Option<&str>,
+    notes: Option<&str>,
+    json_output: bool,
+) -> Result<()> {
+    if !checkpoint_dir.is_dir() {
+        return Err(CliError::ValidationFailed(format!(
+            "Not a directory: {}", checkpoint_dir.display()
+        )));
+    }
+
+    std::fs::create_dir_all(output_dir)
+        .map_err(|e| CliError::ValidationFailed(format!("Cannot create output dir: {e}")))?;
+
+    if !json_output {
+        output::header("apr train archive — Checkpoint Release Bundle");
+        println!();
+        output::kv("  Source", checkpoint_dir.display().to_string());
+        output::kv("  Output", output_dir.display().to_string());
+        if let Some(v) = version {
+            output::kv("  Version", v);
+        }
+        println!();
+    }
+
+    // Copy checkpoint files
+    let mut manifest_entries = Vec::new();
+    let mut total_bytes: u64 = 0;
+
+    for entry in std::fs::read_dir(checkpoint_dir)
+        .map_err(|e| CliError::ValidationFailed(format!("Cannot read dir: {e}")))?
+    {
+        let entry = entry
+            .map_err(|e| CliError::ValidationFailed(format!("Dir entry error: {e}")))?;
+        let src = entry.path();
+        if !src.is_file() {
+            continue;
+        }
+
+        let filename = src.file_name().unwrap_or_default().to_string_lossy().to_string();
+        let dst = output_dir.join(&filename);
+
+        let data = std::fs::read(&src)
+            .map_err(|e| CliError::ValidationFailed(format!("Cannot read {}: {e}", src.display())))?;
+        let size = data.len() as u64;
+        let hash = blake3::hash(&data).to_hex().to_string();
+
+        std::fs::write(&dst, &data)
+            .map_err(|e| CliError::ValidationFailed(format!("Cannot write {}: {e}", dst.display())))?;
+
+        manifest_entries.push(serde_json::json!({
+            "file": filename,
+            "size": size,
+            "blake3": hash,
+        }));
+        total_bytes += size;
+
+        if !json_output {
+            println!("  [COPY] {} ({}, BLAKE3: {}…)", filename, format_archive_size(size), &hash[..16]);
+        }
+    }
+
+    // Write MANIFEST.json
+    let manifest = serde_json::json!({
+        "format": "albor-checkpoint-archive",
+        "version": version.unwrap_or("0.0.0"),
+        "created": chrono::Utc::now().to_rfc3339(),
+        "notes": notes.unwrap_or(""),
+        "source": checkpoint_dir.display().to_string(),
+        "files": manifest_entries,
+        "total_bytes": total_bytes,
+    });
+
+    let manifest_path = output_dir.join("MANIFEST.json");
+    std::fs::write(
+        &manifest_path,
+        serde_json::to_string_pretty(&manifest).unwrap_or_default(),
+    ).map_err(|e| CliError::ValidationFailed(format!("Cannot write manifest: {e}")))?;
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&manifest).unwrap_or_default());
+    } else {
+        println!();
+        println!("  [MANIFEST] {} ({} files, {})",
+            manifest_path.display(),
+            manifest_entries.len(),
+            format_archive_size(total_bytes),
+        );
+        println!();
+        println!("  {} Archive created", "DONE".green().bold());
+    }
+
+    Ok(())
+}
+
+fn format_archive_size(bytes: u64) -> String {
+    if bytes >= 1_073_741_824 {
+        format!("{:.1} GB", bytes as f64 / 1_073_741_824.0)
+    } else if bytes >= 1_048_576 {
+        format!("{:.1} MB", bytes as f64 / 1_048_576.0)
+    } else if bytes >= 1024 {
+        format!("{:.1} KB", bytes as f64 / 1024.0)
+    } else {
+        format!("{bytes} B")
     }
 }

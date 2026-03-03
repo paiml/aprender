@@ -113,4 +113,37 @@ pub enum ToolCommands {
         #[arg(long)]
         full: bool,
     },
+
+    /// Encrypt model weights at rest using BLAKE3-derived keystream + MAC.
+    ///
+    /// Produces an encrypted `.enc` file with integrity verification.
+    /// Key derivation uses BLAKE3 derive_key from a passphrase or key file.
+    Encrypt {
+        /// Path to model file (safetensors, GGUF, etc.)
+        #[arg(value_name = "FILE")]
+        file: PathBuf,
+
+        /// Output path for encrypted file
+        #[arg(short, long, value_name = "FILE")]
+        output: PathBuf,
+
+        /// Encryption key file (32 bytes). If omitted, reads passphrase from stdin.
+        #[arg(long, value_name = "FILE")]
+        key_file: Option<PathBuf>,
+    },
+
+    /// Decrypt model weights encrypted with `apr encrypt`.
+    Decrypt {
+        /// Path to encrypted `.enc` file
+        #[arg(value_name = "FILE")]
+        file: PathBuf,
+
+        /// Output path for decrypted model
+        #[arg(short, long, value_name = "FILE")]
+        output: PathBuf,
+
+        /// Decryption key file (32 bytes). If omitted, reads passphrase from stdin.
+        #[arg(long, value_name = "FILE")]
+        key_file: Option<PathBuf>,
+    },
 }
