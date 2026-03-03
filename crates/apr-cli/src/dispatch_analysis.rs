@@ -554,6 +554,10 @@ fn dispatch_profiling_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                 None,
                 cli.json,
             ),
+            Some("verify") => eval::run_verify(
+                file,
+                cli.json,
+            ),
             Some("plan") => eval::run_eval_plan(
                 file,
                 dataset,
