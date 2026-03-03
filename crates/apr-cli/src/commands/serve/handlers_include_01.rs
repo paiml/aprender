@@ -3,7 +3,7 @@
 /// Loading path: MappedAprModel → OwnedQuantizedModel::from_apr() → OwnedQuantizedModelCuda.
 /// Uses realizar's built-in AppState + create_router (same as GGUF serve path)
 /// for full Ollama-parity endpoints with fused Q4K/Q6K GEMV kernels.
-#[cfg(feature = "inference")]
+#[cfg(all(feature = "inference", feature = "cuda"))]
 fn start_apr_server_gpu(
     model_path: &Path,
     config: &ServerConfig,
@@ -83,7 +83,7 @@ fn start_apr_server_gpu(
 /// OwnedQuantizedModel::from_apr() → OwnedQuantizedModelCuda.
 /// Uses realizar's built-in AppState + create_router (same as GGUF/APR serve path)
 /// for full Ollama-parity endpoints with fused Q4K/Q6K GEMV kernels.
-#[cfg(feature = "inference")]
+#[cfg(all(feature = "inference", feature = "cuda"))]
 fn start_safetensors_server_gpu(
     model_path: &Path,
     config: &ServerConfig,
@@ -161,10 +161,73 @@ fn start_safetensors_server_gpu(
     run_server_async(app, &config.bind_addr(), "SafeTensors GPU (fused Q4K kernels)")
 }
 
+/// GH-99: SafeTensors CPU serve using fused Q4K kernels.
+///
+/// Loading path: SafeTensors → apr_import(Q4K) → temp APR → MappedAprModel →
+/// OwnedQuantizedModel::from_apr() → run_cpu_server (quantized CPU inference).
+/// Eliminates 36% throughput gap vs GGUF CPU by using Q4K matmul instead of F32.
+#[cfg(feature = "inference")]
+fn start_safetensors_server_cpu_quantized(
+    model_path: &Path,
+    config: &ServerConfig,
+) -> Result<()> {
+    use aprender::format::{ImportOptions, QuantizationType};
+    use realizar::apr::MappedAprModel;
+    use realizar::gguf::OwnedQuantizedModel;
+
+    println!("{}", "Converting SafeTensors → Q4K (one-time)...".dimmed());
+
+    // Convert SafeTensors to temp APR Q4K for fused kernel access
+    let tmp_apr = std::env::temp_dir().join("serve-safetensors-cpu-q4k.apr");
+    let import_opts = ImportOptions {
+        quantize: Some(QuantizationType::Q4K),
+        ..ImportOptions::default()
+    };
+    aprender::format::apr_import(&model_path.display().to_string(), &tmp_apr, import_opts)
+        .map_err(|e| CliError::InferenceFailed(format!("SafeTensors→APR Q4K conversion failed: {e}")))?;
+
+    println!("{}", "Loading Q4K model (fused kernels)...".dimmed());
+
+    let mapped = MappedAprModel::from_path(&tmp_apr)
+        .map_err(|e| CliError::InferenceFailed(format!("Failed to map temp APR: {e}")))?;
+
+    let quantized = OwnedQuantizedModel::from_apr(&mapped)
+        .map_err(|e| CliError::InferenceFailed(format!("Failed to create quantized model: {e}")))?;
+
+    println!(
+        "{}",
+        format!(
+            "Model ready: {} layers, vocab_size={}, hidden_dim={}",
+            quantized.layers().len(),
+            quantized.config().vocab_size,
+            quantized.config().hidden_dim
+        )
+        .green()
+    );
+
+    // Extract vocabulary from embedded APR metadata
+    let vocab = mapped.metadata.get_embedded_vocabulary().unwrap_or_else(|| {
+        let vocab_size = mapped.metadata.vocab_size.unwrap_or(32000);
+        eprintln!("Warning: No embedded vocabulary in APR, using placeholder tokens");
+        let mut v: Vec<String> = (0..vocab_size).map(|i| format!("token{i}")).collect();
+        if !v.is_empty() {
+            v[0] = "<unk>".to_string();
+        }
+        v
+    });
+
+    // Cleanup temp file (model is already loaded into memory)
+    let _ = std::fs::remove_file(&tmp_apr);
+
+    println!("{}", "Q4K CPU inference ready (GH-99)".green());
+
+    run_cpu_server(quantized, vocab, config)
+}
+
 /// Build the axum Router for GPU inference endpoints.
 ///
 /// GH-284: Handlers are async with `spawn_blocking` to avoid blocking the runtime.
-#[cfg(feature = "inference")]
+#[cfg(all(feature = "inference", feature = "cuda"))]
 #[allow(clippy::disallowed_methods)] // serde_json::json!() uses infallible unwrap
 fn build_gpu_router(
     cuda_model: Arc<std::sync::Mutex<realizar::apr::AprV2ModelCuda>>,
